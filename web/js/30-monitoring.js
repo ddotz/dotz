@@ -261,6 +261,11 @@ function drOriginal(t) {
   const brief = mailBrief(m, t);
   return el("div", { class: "dr-orig" }, el("div", { class: "dr-ok", text: "답장할 메일" }), el("div", { class: "dr-os" }, el("b", { text: mailSender(m.from) }), m.subject ? ` · ${m.subject}` : ""), brief ? el("div", { class: "dr-ob", text: brief }) : null);
 }
+// The app instance that holds a conversation target, for the card's head (a peer's row first: PQ.of).
+const monInstLabel = t => { const pe = PQ.of.get(t); if (pe) return pe.label || ""; const it = INTG.items.find(x => intgHas(x, t)); return it ? it.label : ""; };
+// The send approval as the one reply card (web/js/10-reply-card.js): same head (앱 · 계정 · 컴퓨터 · 모델), same 첨부 줄, clamped body, and the same
+// three actions as the 답장 확인 queue, the KakaoTalk room and a comment thread. The answer path is the notice's (answerInline / ntPost), so this
+// card and the chat card stay in step.
 // o.bare: only the mail it sends (a handled draft unfolded inside its mail's conversation, 30-mail-sent.js).
 function draftCardNode(n, o = {}) {
   const d = n.decision, dr = d.draft, st = drState(d), open = st === "open", [stText, stTone] = DR_STATE[st], busy = dcSending.has(n.id);
@@ -280,12 +285,10 @@ function draftCardNode(n, o = {}) {
     man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
     draftFilesNode(dr, { t: d.to, edit: open }), draftMailNode(dr.mail));
   if (o.bare) return mailBox;
-  if (editing && !man) mailBox.append(el("div", { class: "dr-q2", text: "어떻게 고칠까요?" }), ta);
-  const kids = [
-    el("div", { class: "rc-hd" }, el("span", { class: "dr-ic" }, icon(mail ? "mail" : "send")), el("span", { class: "rc-src", text: mail ? "메일" : (targetName(d.to) || "초안") }), el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
+  const head = { app: mail ? "mail" : d.to, label: mail ? monInstLabel(d.to) : targetName(d.to), pc: mail && pqPc(d.to) ? pqPc(d.to).name : pqSelf(), model: dr.model || "", at: d.answered_at || n.updated || n.ts,
+    tail: [el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
       // 지우기 on a waiting draft is 보내지 않기: the same answer path, so the owning computer drops it once and nothing is sent
-      open && !editing && oDrop ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => { if (!busy) answerInline(n, oDrop); } }, icon("close")) : null),
-    q ? el("div", { class: "rc-title dr-q", text: q }) : null, mail ? drOriginal(d.to) : null, mailBox];
+      open && !editing && oDrop ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => { if (!busy) answerInline(n, oDrop); } }, icon("close")) : null] };
   if (editing) {
     go2 = el("button", { class: "btn", type: "button", disabled: busy || !ta.value.trim(), text: man ? "이 내용으로 고치기" : "고쳐 달라고 하기", onclick: async () => {
       const text = ta.value.trim();
@@ -294,16 +297,25 @@ function draftCardNode(n, o = {}) {
       try { await ntPost(n, oEdit.n, man ? MANUAL_LEAD + text : text); leave(); } catch (e) { toast(e.message, true); }
       dcSending.delete(n.id); syncInlineChoices();
     } });
-    kids.push(el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: "취소", onclick: () => { leave(); redraw(); } }),
-      man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: "직접 수정" }))));
-  } else if (open) {
-    const go = o => () => { if (!o || busy) return; if (o === oSend && (dr.warning || (dr.attachments || []).length)) drfSure(dr, d.to).then(ok => ok && answerInline(n, o)); else answerInline(n, o); };
-    kids.push(el("div", { class: "dr-act dr-row" },
-      el("button", { class: "btn dr-send", type: "button", disabled: busy || !oSend, text: "보내기", onclick: go(oSend) }),
-      el("button", { class: "btn tonal", type: "button", disabled: busy || !oEdit, text: "고치기", onclick: () => { DR.edit.add(n.id); redraw(); } }),
-      el("button", { class: "btn text dr-drop", type: "button", disabled: busy || !oDrop, text: "보내지 않기", onclick: go(oDrop) })));
   }
-  const card = el("div", { class: `bm alert rc dr ${st}`, "data-nid": n.id }, ...kids.filter(Boolean));
+  const acts = editing ? null : open ? {
+    send: () => { if (!oSend || busy) return; if (dr.warning || (dr.attachments || []).length) drfSure(dr, d.to).then(ok => ok && answerInline(n, oSend)); else answerInline(n, oSend); },
+    edit: oEdit ? () => { DR.edit.add(n.id); redraw(); } : null,
+    drop: oDrop ? () => { if (!busy) answerInline(n, oDrop); } : null,
+    busy,
+  } : null;
+  // 직접 수정 (man) types the mail itself: the field stands where the body was, with only the two buttons below it.
+  const revise = editing ? el("div", { class: "rq-edit" }, man ? null : el("div", { class: "dr-q2", text: "어떻게 고칠까요?" }), man ? null : ta,
+    el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: "취소", onclick: () => { leave(); redraw(); } }),
+      man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: "직접 수정" })))) : null;
+  const card = rqCard({ key: `dr:${n.id}`, cls: `bm alert rc dr ${st}`, attrs: { "data-nid": n.id }, head,
+    label: q || null, labelCls: "rc-title dr-q",
+    to: [dr.toLabel || "받는이", dr.to || "-"], subject: dr.subject,
+    body: { text: dr.body, node: man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))), cls: "dr-body" },
+    // A mail draft always shows its 첨부 줄 (files, or 첨부: 없음) right before 보내기; the files are editable while the draft waits.
+    attach: draftFilesNode(dr, { t: d.to, edit: open }),
+    extra: [mail ? drOriginal(d.to) : null, draftOriginNode(dr), draftMailNode(dr.mail)],
+    ...(revise ? { revise } : acts ? { acts } : {}) });
   return card;
 }
 // A decision: the question and the same choice rows a chat message has; an open one is answered here, an answered one shows what was chosen.
@@ -865,11 +877,11 @@ function renderMonitoring() {
   const kakao = kkItem(sel);
   const cm = !kakao && sel ? cmAppOf(sel.key) : "";
   kkMode(kakao, kakao && !(narrowChat() && MON.list), kakao ? sel.pc : null);
-  cmMode(cm, !!cm && !(narrowChat() && MON.list));
+  cmMode(cm, !!cm && !(narrowChat() && MON.list), cm ? sel.pc : null);
   mailLand(sel);
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
-    const head = JSON.stringify([sel.name, monState(sel), sel.unreplied | 0, sel.drafts | 0, !!AS.by[monSettingsApp(sel)], !!KK.open]);
+    const head = JSON.stringify([sel.name, monState(sel), sel.unreplied | 0, sel.drafts | 0, !!AS.by[monSettingsApp(sel)], !!KK.open, pqSig(sel)]);
     if (head !== MON.kkHead) { MON.kkHead = head; clear($("#mon-head")).append(...monHead(sel)); }
     MON.sig = ""; MON.shown = sel.key;
     convTitle();

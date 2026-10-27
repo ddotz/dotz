@@ -135,7 +135,7 @@ describe("attachments in the mail draft card", () => {
 		const html = await v.evaluate(`(() => { const n = ${JSON.stringify(n)}; const c = draftCardNode(n); document.body.append(c); return c.querySelectorAll("a.dr-att").length + "|" + [...c.querySelectorAll(".dr-fn")].map(e => e.textContent).join(",") + "|" + c.querySelector("a.dr-att").getAttribute("href"); })()`);
 		expect(html).toBe("2|견적서 최종.pdf,현장사진.jpg|/api/drafts/RATT0001/files/0");
 		const plain = await v.evaluate(`(() => { const n = ${JSON.stringify({ ...n, decision: { ...n.decision, draft: { toLabel: "받는이", to: "a@b.c", body: "안녕하세요." } } })}; const f = draftFilesNode(n.decision.draft), c = draftCardNode(n).querySelector(".dr-files"); return [f.hidden, c.hidden, c.querySelector(".dr-none")?.textContent].join("|"); })()`);
-		expect(plain).toBe("false|false|첨부 없음");
+		expect(plain).toBe("false|false|첨부: 없음");
 	});
 });
 

@@ -122,17 +122,20 @@ function rqOriginalOf(x) {
   return d.draft.origin && d.draft.origin.text ? { who: "", text: d.draft.origin.text } : null;
 }
 function rqCardOf(x) {
-  const head = { app: x.inst, label: x.label, pc: rqPcName(x.pc), at: x.at, tail: [el("button", { class: "btn text rq-open", type: "button", "data-k": "open", text: "열기", onclick: () => rqGoTo(x) })] };
+  const dr = x.kind === "notice" ? x.n.decision.draft : null;
+  const head = { app: x.inst, label: x.label, pc: rqPcName(x.pc), model: (dr && dr.model) || (x.d && x.d.model) || "", at: x.at, tail: [el("button", { class: "btn text rq-open", type: "button", "data-k": "open", text: "열기", onclick: () => rqGoTo(x) })] };
   const editing = RQ.edit === x.key, busy = rqIsBusy(x), base = { key: x.key, cls: busy ? "busy" : "", attrs: { "data-rq": x.key, "data-kind": x.kind }, head, original: rqOriginalOf(x) };
   if (x.kind === "notice") {
-    const dr = x.n.decision.draft;
-    return rqCard({ ...base, to: [dr.toLabel || "받는이", dr.to], subject: dr.subject, body: { text: dr.body },
-      extra: [dr.toLabel === "받는이" ? draftFilesNode(dr, { t: x.n.decision.to, edit: false }) : null, draftMailNode(dr.mail)],
+    // The mail draft's own 첨부 줄 (files, or 첨부: 없음) is editable in its conversation and read-only here; anything else says it cannot attach.
+    const attach = dr.toLabel === "받는이" ? draftFilesNode(dr, { t: x.n.decision.to, edit: false }) : { attachments: dr.attachments, cannotAttach: [] };
+    return rqCard({ ...base, to: [dr.toLabel || "받는이", dr.to], subject: dr.subject, body: { text: dr.body }, attach,
+      extra: [draftMailNode(dr.mail)],
       ...(editing ? { revise: rqRevise(x) } : { acts: { ...rqNoticeActs(x), busy } }) });
   }
   const d = x.d, kakao = x.kind === "kakao";
   return rqCard({ ...base, label: kakao && d.intent ? "새 메시지 초안" : "", to: kakao ? ["대화방", d.room] : ["댓글", d.to], subject: kakao ? "" : d.title,
     body: { text: d.text, parts: kakao ? d.parts : null, sentParts: d.sentParts },
+    attach: d,
     extra: kakao ? [] : [draftMailNode(d.mail), (d.notes || []).length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
     ...(editing ? { revise: rqRevise(x) } : { acts: { ...rqStoreActs(x), busy } }) });
 }

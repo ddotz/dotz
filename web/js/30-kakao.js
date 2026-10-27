@@ -955,8 +955,9 @@ function kkDraftCard(d) {
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); kkTail(); } finally { btn.disabled = false; } };
   const making = !!KK.open && KK.drafting === KK.open && KK.reviseCode === d.code, rv = !making && KK.revise && KK.revise.code === d.code ? KK.revise : null;
   const parts = kkDraftParts(d), inst = (INTG.items.find(i => i.key === "kakao") || {}).label;
+  // A KakaoTalk draft is text only: its card says so in the 첨부 줄 (10-reply-card.js rqAttachNode), never hiding it.
   const card = { key: `kk:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: "kakao", label: KK.pc ? "" : inst, pc: KK.pc ? KK.pc.name : pqSelf(), at: d.created }, label: kkDraftLabel(d), labelCls: "kk-dh",
-    body: { text: d.text, parts, sentParts: d.sentParts, cls: parts.length > 1 ? "kk-dt kk-dps" : "kk-dt", partCls: "kk-dp" } };
+    body: { text: d.text, parts, sentParts: d.sentParts, cls: parts.length > 1 ? "kk-dt kk-dps" : "kk-dt", partCls: "kk-dp" }, attach: { attachmentsNone: true, cannotAttach: [] } };
   if (making) return rqCard({ ...card, status: "고치는 중…" });
   if (rv) return rqCard({ ...card, revise: kkReviseBox(d, rv) });
   return rqCard({ ...card, acts: {
