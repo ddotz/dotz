@@ -1,8 +1,12 @@
-// The options of the 답장 모델 setting, read from the runtime's own model list (the data behind /model): the Claude subscription models, each with
-// the efforts a reasoning model offers, under friendly names ("Sonnet 5.5 · high"). The first option, "", is the default and names the model it means now.
+// The options of the 답장 모델 setting, read from the runtime's own model list (the data behind /model), which holds only the providers the owner
+// connected an account or key for (providers.ts availableModels). The Claude subscription models come first, each with the efforts a reasoning model
+// offers, under friendly names ("Sonnet 5.5 · high"); then every other connected provider's models, one entry each, named with the provider
+// ("OpenGateway · GPT 5.5 · medium", owner 2026-10-27). The first option, "", is the default and names the model it means now.
+import { providerLabel } from "./accounts-providers.ts";
 import { setReplyModelChoices, type ReplyModelChoices } from "./app-settings.ts";
 import { splitThinking, workerModel } from "./config.ts";
 import { modelChoices } from "./control.ts";
+import { pickDraftModel } from "./kakao/draft.ts";
 import { availableModels, type ModelInfo } from "./providers.ts";
 import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
 
@@ -37,6 +41,13 @@ export function replyModelChoices(models: readonly ModelInfo[], worker: string, 
 			options.push(value);
 			labels[value] = `${m.name}${level ? ` · ${level}` : ""}`;
 		}
+	}
+	// Another provider's models: one entry per model (a reasoning one at medium), never one a draft would swap away (pickDraftModel: mini, flash, lite...).
+	for (const m of modelChoices(models.filter(x => x.provider !== "anthropic"))) {
+		if (m.older || pickDraftModel(m.selector) !== m.selector) continue;
+		const value = m.reasoning ? `${m.selector}:medium` : m.selector;
+		options.push(value);
+		labels[value] = `${providerLabel(m.provider)} · ${m.name}${m.reasoning ? " · medium" : ""}`;
 	}
 	return { options, labels };
 }
