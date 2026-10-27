@@ -226,6 +226,13 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (p.ok) r = await send(peerHeaders(token(target.url)) ?? h);
 				else if (!get) return off(p);
 			}
+			// A forwarded action changed that computer: its snapshot is read again before the answer, so the page's next read shows the change
+			// (a switched-off monitor reads 꺼짐 at once, not after the 20 s cache).
+			const e = !get && r.ok ? cache.get(target.url) : undefined;
+			if (e) {
+				await refresh(e);
+				await inflight.get(target.url);
+			}
 			const type = r.headers.get("content-type");
 			return new Response(r.status === 204 || r.status === 304 ? null : await r.arrayBuffer(), { status: r.status, ...(type ? { headers: { "content-type": type } } : {}) });
 		} catch {
@@ -260,7 +267,9 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (a.op === "run") return ask("POST", `/api/watches/${name}/run`, {}, login);
 				// A monitor's settings (hub/watch-settings.ts): the same plain PATCH the owner's web sends, with the change set as `values`.
 				if (a.op === "settings") return ask("PATCH", `/api/watches/${name}/settings`, { values: a.values }, login);
-				return bad("op must be pause, resume, run or settings");
+				// 감시 삭제 from the monitor's settings screen on another computer.
+				if (a.op === "delete") return ask("DELETE", `/api/watches/${name}`, undefined, login);
+				return bad("op must be pause, resume, run, settings or delete");
 			}
 			// An app's switch, settings, 제거 and 앱 추가 on the machine that owns the app (hub/app-off.ts): off and remove are per machine, so the web sends them here, never to its own gateway.
 			case "app": {
