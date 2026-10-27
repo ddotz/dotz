@@ -189,10 +189,10 @@ function pqMerge(items) {
       const notices = (it.notices || []).map(id => sn.find(n => String(n.id) === String(id))).filter(n => n && monMine(n, it));
       const mails = (s.conversations || []).filter(c => isMailT(String(c.target)) && intgHas(it, c.target)).map(c => pqMail(c, pc, key(`i:${it.key}`))).filter(Boolean);
       for (const n of notices) shown.add(n.id);
-      const needs = it.needs || { drafts: 0, unread: it.unread | 0, sentToday: 0 };
+      const needs = it.needs || { drafts: 0, unread: it.unread | 0, sentToday: 0 }, conn = it.state === "disconnected";
       const at = [...notices.map(monNoticeAt), ...mails.map(t => (CONV.get(t) || {}).ts || "")].sort().pop() || "";
       PQ.of.set(`settings:${pqApp(it.key, pc)}`, { pc, key: key(`i:${it.key}`), app: true, label: it.label });   // the app's settings conversation lives on that computer
-      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: it.state === "disconnected" && it.hint ? it.hint : monNeedLine(needs), at, pc, chips, owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
+      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, conn, hint: conn && it.hint ? it.hint : monNeedLine(needs, conn), at, pc, chips, owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
     }
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
     for (const m of mons) {
@@ -211,8 +211,7 @@ function pqMerge(items) {
   const feed = items.find(i => i.key === "notice");
   if (feed && news.length) {
     feed.notices = [...feed.notices, ...news];
-    const l = monNewest(feed.notices);
-    if (l.pc) { feed.hint = `${l.pc.name} · ${monLine(l)}`; feed.at = monNoticeAt(l); }
+    Object.assign(feed, monFeedHead(feed.notices));
   }
   const grp = g => items.filter(i => i.group === g);
   return [...grp(""), ...grp(MON_GROUP.app), ...apps, ...grp(MON_GROUP.plain), ...plain, ...off];
