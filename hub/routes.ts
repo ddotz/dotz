@@ -1,6 +1,6 @@
 // HTTP routing of the hub: the install files, the identity check and the first part of the route chain; the rest is routes-settings.ts and routes-lanes.ts.
 // Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
-import { draftActionOf } from "./draft-approval.ts";
+import { dropAnsweredMailDraft } from "./draft-drop.ts";
 import { join } from "node:path";
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
@@ -85,18 +85,6 @@ const APP_FILES: Record<string, [string, string]> = {
 };
 const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
 
-// A mail reply draft (features/reply-drafts, ids R + 6 letters) answered 보내지 않기 on its card.
-export async function dropAnsweredMailDraft(item: Notice | undefined, n: number): Promise<void> {
-	const ref = item?.decision?.draft?.ref, opt = item?.decision?.options.find(o => o.n === n);
-	if (!ref || !/^R[A-Z2-7]{6}$/.test(ref) || !opt || draftActionOf(opt.label) !== "drop") return;
-	try {
-		const { dropDraft } = await import("../features/reply-drafts/lib/flow.ts");
-		const r = dropDraft(ref);
-		if (!r.ok) log(`draft ${ref}: 보내지 않기 not applied to the store: ${r.text}`);
-	} catch (e) {
-		log(`draft ${ref}: 보내지 않기 not applied to the store: ${(e as Error).message}`);
-	}
-}
 
 function authorized(req: Request): boolean {
 	if (req.headers.get("x-dotz-token") === HUB_TOKEN) return true;
@@ -428,7 +416,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			});
 			// 보내지 않기 on a mail reply draft drops it in the reply-drafts store at once (not only when the bot gets to it), so every count and
 			// list, here and on the other computer, sees it gone.
-			if (r.status === 200 && !r.body.already) await dropAnsweredMailDraft(r.body.item as Notice | undefined, Number(answer.n));
+			if (r.status === 200 && !r.body.already) await dropAnsweredMailDraft(r.body.item as Notice | undefined, Number(answer.n), log);
 			return json(r.body, r.status);
 		}
 		if (req.method === "POST" && url.pathname === "/api/read") {
