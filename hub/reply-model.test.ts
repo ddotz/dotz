@@ -41,11 +41,20 @@ describe("the model list of the setting", () => {
 		expect(c.options[0]).toBe("");
 		expect(c.options).toContain(WORKER);
 		expect(c.options).toContain(OPUS);
-		expect(c.options.some(o => /gpt|haiku-4/.test(o))).toBe(false);
+		expect(c.options.some(o => /haiku-4/.test(o))).toBe(false);
 		expect(c.options).toContain("anthropic/claude-haiku-5-5:low");
 		expect(c.labels["anthropic/claude-haiku-5-5:low"]).toBe("Haiku 5.5 · low");
 		expect(c.labels[WORKER]).toBe("Sonnet 5.5 · high");
 		expect(c.labels[`${SONNET}:low`]).toContain("Sonnet 5.5 · low");
+	});
+	test("every other connected provider's models follow, one entry each with the provider's name; never one a draft would swap away", () => {
+		const c = replyModelChoices([...LIST, m("openai/gpt-5.5", "openai/gpt-5.5", true, "opengateway"), m("openai/gpt-5-mini", "openai/gpt-5-mini", true, "opengateway"), m("openai/gpt-4o", "openai/gpt-4o", false, "opengateway")], WORKER);
+		expect(c.options).toContain("openai/gpt-5:medium");
+		expect(c.labels["openai/gpt-5:medium"]).toBe("OpenAI · GPT 5 · medium");
+		expect(c.labels["opengateway/openai/gpt-5.5:medium"]).toBe("OpenGateway · openai/gpt-5.5 · medium");
+		expect(c.labels["opengateway/openai/gpt-4o"]).toBe("OpenGateway · openai/gpt-4o");
+		expect(c.options.some(o => /mini/.test(o))).toBe(false);
+		expect(c.options.indexOf("openai/gpt-5:medium")).toBeGreaterThan(c.options.indexOf(OPUS));
 	});
 	test("the default option names the subagent model now, or the global reply model when one is set", () => {
 		expect(replyModelChoices(LIST, WORKER).labels[""]).toBe("서브에이전트와 같음 · Sonnet 5.5 high");
