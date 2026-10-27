@@ -373,10 +373,24 @@ const mailFilterOf = () => MAIL_FILTERS.find(f => f[0] === MON.mailFilter) || MA
 // A reply draft still in the owner's hands: waiting for 보내기 / 고치기 / 보내지 않기, or being rewritten after 고치기 (a peer's too, as its plain report).
 const mailDraftOpen = n => !!(n.decision && n.decision.draft) && drState(n.decision) === "open";
 const mailDraftHeld = n => !!(n.decision && n.decision.draft) && ["open", "revising"].includes(drState(n.decision));
+// The newest reply draft of each mail (and of each computer): a draft a newer one replaced for the same mail is stale and asks nothing.
+// A draft of anything that is not a mail (an id-keyed decision) is its own.
+const mailDraftKey = n => `${n.pc ? n.pc.url : ""}|${String(n.decision.to || "").startsWith("mail:") ? n.decision.to : `#${n.id}`}`;
+function mailDraftLive(notices) {
+  const newest = new Map();
+  for (const n of notices) {
+    if (!n.decision || !n.decision.draft) continue;
+    const k = mailDraftKey(n), cur = newest.get(k);
+    if (!cur || ntAt(n) > ntAt(cur) || (ntAt(n) === ntAt(cur) && String(n.ts) > String(cur.ts))) newest.set(k, n);
+  }
+  return newest;
+}
+// 보내지 않기 was answered: the card leaves every view, like a stale one. A sent draft stays as its little history card under 전체.
+const mailDraftGone = (n, newest) => !!(n.decision && n.decision.draft) && String(n.decision.to || "").startsWith("mail:") && (drState(n.decision) === "drop" || newest.get(mailDraftKey(n)) !== n);
 function mailFilterBar(mails, notices) {
   const cur = mailFilterOf()[0];
   return el("div", { class: "mr-filter", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.map(([k, label, ok]) => {
-    const n = k === "all" ? 0 : k === "pending" ? notices.filter(mailDraftOpen).length : mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length;
+    const n = k === "all" ? 0 : k === "pending" ? [...mailDraftLive(notices).values()].filter(mailDraftOpen).length : mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length;
     return el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); } }, label, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
   }));
 }
@@ -581,8 +595,10 @@ function monFeedNodes(it, names) {
 // last report, the mails, and the monitor's latest run last.
 function monChronoNodes(it, names) {
   const ok = monFilterOf()[2], withMails = it.mails.some(t => MAILS.has(t)), mf = withMails ? mailFilterOf() : null, held = mf && mf[0] === "pending";
-  // a mail list keeps the reply drafts awaiting the owner under 확인 대기 alone; every other view drops them
-  const notices = it.notices.filter(n => ok(n) && (!mf || mailDraftHeld(n) === held));
+  // a mail list keeps the reply drafts awaiting the owner under 확인 대기 alone; every other view drops them. A draft answered 보내지 않기, and one a
+  // newer draft of the same mail replaced, is gone from every view.
+  const newestDraft = mailDraftLive(it.notices);
+  const notices = it.notices.filter(n => ok(n) && (!mf || mailDraftHeld(n) === held) && !mailDraftGone(n, newestDraft));
   const runs = [];
   for (const n of notices.sort((a, b) => ntAt(a) - ntAt(b))) {
     const last = runs[runs.length - 1], k = monNeed(n) || ntIsDec(n) ? "" : monFoldKey(n, names);
