@@ -56,6 +56,20 @@ function pqAct(path, body) {
   const nm = /^\/api\/mail\/([^/?]+)\/no-reply$/.exec(path);
   if (nm && pqPc(`mail:${decodeURIComponent(nm[1])}`)) return { pc: pqPc(`mail:${decodeURIComponent(nm[1])}`), action: "no-reply", args: { kind: "mail", key: decodeURIComponent(nm[1]) } };
   if (path === "/api/read") return { pc: pqPc(b.target), action: "read", args: { target: pqBare(b.target), ts: b.ts } };
+  // The comments pane of another computer (CM.pc, 30-monitoring-comments.js): its drafts, failed sends, drafted replies and source switches run there,
+  // on the routes hub/peer-monitor.ts act "comments" forwards (once per click).
+  if (CM.pc) {
+    const e = v => decodeURIComponent(v), c = CM.pc, d = /^\/api\/comments\/drafts\/([^/]+)\/(send|drop|restore|revise)$/.exec(path);
+    if (d) return { pc: c, action: "comments", args: { op: `draft-${d[2]}`, code: e(d[1]), ...(d[2] === "revise" ? { change: b.change, ...(b.part ? { part: b.part } : {}) } : {}) } };
+    const s = /^\/api\/comments\/sends\/([^/]+)\/(retry|dismiss)$/.exec(path);
+    if (s) return { pc: c, action: "comments", args: { op: `send-${s[2]}`, id: e(s[1]) } };
+    const m = /^\/api\/comments\/comment\/([^/]+)\/(draft|no-reply)$/.exec(path);
+    if (m) return { pc: c, action: "comments", args: m[2] === "draft" ? { op: "draft", commentId: e(m[1]) } : { op: "no-reply", commentId: e(m[1]), on: true } };
+    const t = /^\/api\/comments\/thread\/([^/]+)\/([^/]+)\/read$/.exec(path);
+    if (t) return { pc: c, action: "comments", args: { op: "read", source: e(t[1]), thread: e(t[2]) } };
+    const k = /^\/api\/comments\/sources\/([^/]+)$/.exec(path);
+    if (k) return { pc: c, action: "comments", args: { op: "source", key: e(k[1]), ...(typeof b.watch !== "undefined" ? { watch: b.watch } : {}), ...(typeof b.autoDraft !== "undefined" ? { autoDraft: b.autoDraft } : {}) } };
+  }
   if (!path.startsWith("/api/kakao/") || !KK.pc) return null;
   const nk = /^\/api\/kakao\/chat\/([^/]+)\/no-reply$/.exec(path);
   if (nk) return { pc: KK.pc, action: "no-reply", args: { kind: "kakao", chatId: decodeURIComponent(nk[1]) } };

@@ -12,9 +12,12 @@ const rqAppName = app => (RQ_APPS[rqBase(app)] || [""])[0];
 // h: { app (instance id), label (the instance's own name), pc (computer name), model, at (ms or ISO), tail (nodes at the end) }
 function rqHeadNode(h) {
   const [name, ic] = RQ_APPS[rqBase(h.app)] || [h.appName || "답장", "send"];
-  const meta = [name, h.label && h.label !== name ? h.label : "", h.pc || "", h.model || ""].filter(Boolean).join(" · ");
+  // The computer is its own .mon-pc span, like every other row's machine chip (a peer's card then differs only by that chip).
+  const meta = [name, h.label && h.label !== name ? h.label : "", h.model || ""].filter(Boolean).join(" · ");
   const at = h.at ? new Date(h.at) : null, when = at && !isNaN(at) ? rcWhen(at.toISOString()) : "";
-  return el("div", { class: "rq-hd" }, el("span", { class: "dr-ic" }, icon(ICONS[ic] ? ic : "send")), el("span", { class: "rq-meta", title: meta, text: meta }), when ? el("span", { class: "rc-time", text: when }) : null, ...(h.tail || []));
+  return el("div", { class: "rq-hd" }, el("span", { class: "dr-ic" }, icon(ICONS[ic] ? ic : "send")),
+    el("span", { class: "rq-meta", title: meta }, meta, h.pc ? el("span", { class: "mon-pc", text: ` · ${h.pc}` }) : null),
+    when ? el("span", { class: "rc-time", text: when }) : null, ...(h.tail || []));
 }
 // A body is long when it would take more than RQ_LINES lines at a phone's width (about 36 Korean characters a line).
 const rqLong = text => String(text || "").split("\n").reduce((n, l) => n + Math.max(1, Math.ceil([...l].length / 36)), 0) > RQ_LINES;
@@ -70,7 +73,7 @@ function rqCard(c) {
   return el("div", { class: `rq${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
     rqHeadNode(c.head),
     c.label ? el("div", { class: c.labelCls || "rq-lb", text: c.label }) : null,
-    c.to ? el("div", { class: "rq-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" })) : null,
+    c.to ? el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" })) : null,
     c.subject ? el("div", { class: "dr-sub rq-sub", text: c.subject }) : null,
     c.original && c.original.text ? el("div", { class: "rq-orig", title: c.original.text }, c.original.who ? el("b", { class: "rq-ow", text: c.original.who }) : null, el("span", { class: "rq-ot", text: c.original.text })) : null,
     rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean), foot);
