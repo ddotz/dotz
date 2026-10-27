@@ -140,7 +140,8 @@ ta.addEventListener("keydown", ev => {
 // so a repeat is a no-op, and the box is refocused so the keyboard stays up like a messenger.
 $("#send-btn").addEventListener("pointerdown", ev => ev.preventDefault());
 $("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.contains("stop") && !ta.value.trim() && !ATT.length) stopTarget(); else sendChat(); if (!ta.disabled) ta.focus({ preventScroll: true }); };
-$("#working-stop").onclick = () => stopTarget();
+// With no turn running, the line is a background worker's (renderWorking): 중단 ends that worker (06-subagents.js workCancel).
+$("#working-stop").onclick = ev => (workingBg.length ? workCancel(workingBg[0].id, ev.currentTarget) : stopTarget());
 ta.addEventListener("input", () => { if (!$("#working").hidden) renderWorking(); });
 async function stopTarget() {
   try {
@@ -239,7 +240,7 @@ function renderWorking() {
     $("#working-stop").hidden = st === "rate-limited";
   } else if (bg.length) {
     $(".dot", box).className = "dot pri";
-    $("#working-stop").hidden = true;
+    $("#working-stop").hidden = false;
     tickWorking();
   }
   renderQueue(); renderCtxRing();
