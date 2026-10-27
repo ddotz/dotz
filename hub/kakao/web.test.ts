@@ -1113,3 +1113,95 @@ describe("owner voice in the draft prompt", () => {
 		t.close();
 	});
 });
+
+describe("draft of several messages: 다시 보내기", () => {
+	const PARTS = "첫째\n\n둘째\n\n셋째";
+	// The 2nd part fails on every rung of the first send (no input found); after that every part goes through.
+	const failingSecond = () => {
+		const flag = { failing: true };
+		const screen = fakeScreen([{ id: "chat_alex", title: "Alex", window: { title: "Alex" } }], { axSend: (_n, req) => (flag.failing && req.text === "둘째" ? { ok: false, why: "no_input" } : { ok: true }) });
+		return { flag, screen };
+	};
+	const drafts = () => listDrafts({ paths, runner: async () => ({ code: 0, stdout: "", stderr: "" }) });
+	const okTexts = (screen: ReturnType<typeof fakeScreen>) => screen.sends.map(s => s[2]);
+
+	test("after a failed part, 다시 보내기 sends only the parts not yet sent, one message each, and the draft ends sent with every part", async () => {
+		const { flag, screen } = failingSecond();
+		const t = setup({}, undefined, { runner: screen.runner });
+		const d = await t.draft({ text: PARTS });
+		const first = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
+		await t.web.idle();
+		const failed = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends.find((s: any) => s.id === first.json.id);
+		expect(failed).toMatchObject({ state: "failed", draft: d.code, text: PARTS });
+		expect(failed.reason).toContain("3개 중 1개를 보냈어요");
+		expect((await drafts())[0]).toMatchObject({ status: "pending", sentParts: 1 });
+
+		flag.failing = false;
+		const before = screen.sends.length;
+		const again = await t.call("POST", `/api/kakao/chat/${DIRECT}/send/${first.json.id}/retry`, {});
+		expect(again.status).toBe(202);
+		await t.web.idle();
+		expect(okTexts(screen).slice(before)).toEqual(["둘째", "셋째"]);
+		expect(okTexts(screen).filter(x => x === "첫째")).toHaveLength(1);
+		expect(okTexts(screen)).not.toContain(PARTS);
+		expect((await drafts())[0]).toMatchObject({ status: "sent", sentParts: 3 });
+		// The room lists the new send only; the failed one stays in the store with its attempts, marked as retried.
+		const listed = (await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends;
+		expect(listed.map((s: any) => [s.id, s.state, s.draft])).toEqual([[again.json.id, "sent", d.code]]);
+		const stored = JSON.parse(readFileSync(join(dir, "kakao", "sends.json"), "utf8"));
+		expect(stored.find((s: any) => s.id === first.json.id)).toMatchObject({ state: "failed", retried: again.json.id });
+		expect(t.events).toContainEqual({ kind: "kakao_send", chatId: DIRECT, id: first.json.id, state: "deleted" });
+		// A second 다시 보내기 of the same failed send does nothing.
+		expect((await t.call("POST", `/api/kakao/chat/${DIRECT}/send/${first.json.id}/retry`, {})).status).toBe(404);
+		t.close();
+	});
+
+	test("an older web's retry (delete, then the joined text as a typed send) still goes out part by part from the first unsent part", async () => {
+		const { flag, screen } = failingSecond();
+		const t = setup({}, undefined, { runner: screen.runner });
+		const d = await t.draft({ text: PARTS });
+		const first = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
+		await t.web.idle();
+		flag.failing = false;
+		await t.call("DELETE", `/api/kakao/chat/${DIRECT}/send/${first.json.id}`);
+		const before = screen.sends.length;
+		const typed = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: PARTS });
+		expect(typed.status).toBe(202);
+		await t.web.idle();
+		expect(okTexts(screen).slice(before)).toEqual(["둘째", "셋째"]);
+		expect((await drafts())[0]).toMatchObject({ status: "sent", sentParts: 3 });
+		t.close();
+	});
+
+	test("a partly sent draft that was dropped is never sent again as one joined message, by retry or as typed text", async () => {
+		const { screen } = failingSecond();
+		const t = setup({}, undefined, { runner: screen.runner });
+		const d = await t.draft({ text: PARTS });
+		const first = await t.call("POST", `/api/kakao/drafts/${d.code}/send`, {});
+		await t.web.idle();
+		await t.call("POST", `/api/kakao/drafts/${d.code}/drop`);
+		const before = screen.sends.length;
+		const retry = await t.call("POST", `/api/kakao/chat/${DIRECT}/send/${first.json.id}/retry`, {});
+		expect(retry.status).toBe(409);
+		expect(retry.json.error).toContain("3개 중 1개는 이미 보냈어요");
+		const typed = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: PARTS });
+		expect(typed.status).toBe(409);
+		await t.web.idle();
+		expect(screen.sends.length).toBe(before);
+		t.close();
+	});
+
+	test("다시 보내기 of a failed typed send sends that text again as typed", async () => {
+		const t = setup();
+		t.state.failSend = true;
+		const first = await t.call("POST", `/api/kakao/chat/${DIRECT}/send`, { text: "hello there" });
+		await t.web.idle();
+		t.state.failSend = false;
+		const again = await t.call("POST", `/api/kakao/chat/${DIRECT}/send/${first.json.id}/retry`, {});
+		expect(again.status).toBe(202);
+		await t.web.idle();
+		expect(t.calls.at(-1)).toEqual(["ax-send", "Alex", "hello there"]);
+		expect((await t.call("GET", `/api/kakao/chat/${DIRECT}`)).json.sends.map((s: any) => [s.id, s.state])).toEqual([[again.json.id, "sent"]]);
+		t.close();
+	});
+});

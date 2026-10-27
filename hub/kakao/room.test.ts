@@ -165,11 +165,14 @@ test("a scan whose time runs out says so; a scan that reached the list end says 
 	const r = await sendText({ chatId: "far", roomName: "먼방", text: "안녕" }, { paths, runner: slowed.runner, roomNames: async () => farFacts });
 	expect(r.ok).toBe(false);
 	expect(r.reason).toContain(REFUSE.notFoundTime);
-	expect(r.attempts!.every(a => a.reason === REFUSE.notFoundTime)).toBe(true);
+	expect(r.attempts!.every(a => a.reason?.includes(REFUSE.notFoundTime))).toBe(true);
+	// The owner reads which room and how far the read got, in Korean.
+	expect(r.attempts![0]!.reason).toBe("카카오톡 대화 목록에서 '먼방' 방을 시간 안에 찾지 못했어요(목록 290개 중 50개 확인)");
 	expect(slowed.sends).toHaveLength(0);
 	const ended = fakeScreen(Array.from({ length: 20 }, (_, i) => ({ id: `e${i}`, title: `다른방${i}` })));
 	const e = await sendText({ chatId: "far", roomName: "먼방", text: "안녕" }, { paths, runner: ended.runner, roomNames: async () => farFacts });
 	expect(e.reason).toContain(REFUSE.notFoundEnd);
+	expect(e.reason).toContain("'먼방' 방을 목록 끝까지 찾지 못했어요(목록 20개 중 20개 확인)");
 });
 
 test("a kept window on the wrong room is caught by its check and the room is reopened instead of typed into", async () => {
@@ -345,7 +348,7 @@ test("same name and size told apart by preview: a twin that moved into the chose
 		return screen.runner(argv, o);
 	};
 	const r = await sendText({ chatId: "20", roomName: "스터디", text: "안녕" }, { paths, runner, roomNames: async () => [a, b] });
-	expect(r.attempts![0]).toMatchObject({ state: "failed", reason: REFUSE.openFailed });
+	expect(r.attempts![0]).toMatchObject({ state: "failed", reason: "카카오톡 목록에서 '스터디' 방을 찾았지만 방을 열지 못했어요(그사이 목록 순서가 바뀜)" });
 	expect(r.attempts![0]!.ax.find(s => s.step === "recheck")).toMatchObject({ ok: false });
 	expect(screen.opened).not.toContain("ax:chat_b");
 	expect(screen.opened).toEqual(["ax:chat_a"]);
