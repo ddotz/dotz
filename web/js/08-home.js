@@ -35,7 +35,7 @@ function homeMenu(anchor, id, inChat) {
     const cur = M && (id === MAIN ? M.orchestrator : (M.lanes || []).find(l => `lane:${l.name}` === id));
     if (cur) {
       add("모델 변경…", () => showMenu(anchor, modelItems(key, cur.model, ""), { value: cur.model, onPick: v => busy(null, () => putModel(key, name, { model: v }, restartNote, `${modelName(v)} · ${cur.thinking}`)) }));
-      add("추론 강도…", () => showMenu(anchor, (M.thinking_levels || []).map(v => ({ value: v, label: v })), { value: cur.thinking, onPick: v => busy(null, () => putModel(key, name, { thinking: v }, restartNote, `${modelName(cur.model)} · ${v}`)) }));
+      add("추론 강도…", () => showMenu(anchor, (M.thinking_levels || []).map(v => ({ value: v, label: thinkKo(v) })), { value: cur.thinking, onPick: v => busy(null, () => putModel(key, name, { thinking: v }, restartNote, `${modelName(cur.model)} · ${thinkKo(v)}`)) }));
       add("모델 · 폴백 설정", () => openModels(key));
     }
     if (id === MAIN) {
@@ -213,7 +213,7 @@ function homeNowRow(t, label, tone) {
   const i = targetInfo(t), subs = SUBS[sourceOf(t)] || [], done = subs.filter(s => s.status !== "running").length;
   const lane = isLaneT(t) && S ? S.lanes.find(x => x.name === laneOf(t)) : null;
   // A session waiting on the owner says its question, so the row tells what to answer.
-  const line = (tone === "att" && i.ask && friendlyLine(i.ask.text)) || nowLine(t) || modelChipText(t === MAIN ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model) || (i.alive ? statusKo(i.status) : "종료됨");
+  const line = (tone === "att" && i.ask && friendlyLine(i.ask.text)) || nowLine(t) || modelChipText(String(liveModel(t).sel || "").split(":")[0]) || (i.alive ? statusKo(i.status) : "종료됨");
   if (lane) return sessionRow(lane, { line, ...(tone === "att" ? { word: label, tone: "warn" } : {}) });   // a session: title, project, status, one tap to its chat
   return el("button", { class: "hr", type: "button", onclick: () => openTarget(t, lastChatView()), "aria-label": `${targetName(t)} · ${label}` },
     el("span", { class: `dot ${tone === "att" ? "att" : statusTone(i.status)}` }),
@@ -255,7 +255,7 @@ function renderHome() {
   if (openMenu && box.contains(openMenu.anchor)) return;   // a ⋯ menu is open: repaint after it closes
   $("#title").textContent = botName;
   if (!homeBoard) homeBoard = makeBoard(box, "home", { actions: [{ label: "카드 추가", run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
-  const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, items = [], seen = new Set();
+  const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, live = liveModel(MAIN), [liveBase, liveLevel] = String(live.sel || "").split(":"), items = [], seen = new Set();
   const add = (id, node, def, size) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def, ...size }); } };
 
   // assistant
@@ -263,8 +263,8 @@ function renderHome() {
   const mainAttn = attnKind(MAIN);
   add(MAIN, itemCard(() => openTarget(MAIN, lastChatView()), mainAttn || o.status === "rate-limited" ? "warn" : "",
     el("div", { class: "ch" }, el("span", { class: `dot ${mainAttn ? "att" : statusTone(o.status)}` }), el("h3", { text: botName }), mainAttn ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), menuBtn(MAIN)),
-    el("div", { class: "big", text: om ? (modelName(om.model).includes("-") ? modelChipText(om.model) : modelName(om.model)) : "…" }),
-    el("div", { class: "sup sub", text: om && om.thinking ? `추론 강도 ${thinkKo(om.thinking)}` : "\u00a0" }),
+    el("div", { class: "big", text: om && liveBase ? (modelName(liveBase).includes("-") ? modelChipText(liveBase) : modelName(liveBase)) : "…" }),
+    el("div", { class: "sup sub" }, liveLevel ? `추론 강도 ${thinkKo(liveLevel)}` : "\u00a0", live.fallback ? fbTag(live.fallback, live.conf) : null),
     subLine("orchestrator")), { w: 4, h: 4 }, HOME_BIG);
   add("notices:alert", homeAlertCard(), { w: 4, h: 4 }, HOME_NOTICE);
   add("notices:worklog", homeWorklogCard(), { w: 4, h: 4 }, HOME_NOTICE);
@@ -273,11 +273,11 @@ function renderHome() {
   // entries per kind: {id, tone, open, card() (own floating card), row() (contents of its row in a bundle)}
   const E = { lane: [], ctx: [], limit: [], prov: [] };
   for (const l of (S ? S.lanes : []).filter(laneAlive)) {
-    const t = `lane:${l.name}`, k = attnKind(t), m = ((M && M.lanes) || []).find(x => x.name === l.name), model = (m && m.model) || l.model;
+    const t = `lane:${l.name}`, k = attnKind(t), lv = liveModel(t), [model, level] = String(lv.sel || "").split(":");
     laneLastFetch(l.name);
     E.lane.push({ id: t, tone: k || l.status === "rate-limited" ? "warn" : "", open: () => openTarget(t, lastChatView()), size: [{ w: 4, h: 4 }, HOME_BIG],
       card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("h3", { text: targetName(t) }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(l.status)}`, text: statusKo(l.status) }), menuBtn(t)),
-        model ? el("div", { class: "sup", text: `${modelName(model)}${m && m.thinking ? ` · ${thinkKo(m.thinking)}` : ""}` }) : null,
+        model ? el("div", { class: "sup" }, `${modelName(model)}${level ? ` · ${thinkKo(level)}` : ""}`, lv.fallback ? fbTag(lv.fallback, lv.conf) : null) : null,
         subLine(t),
         LAST[l.name] ? el("div", { class: "sup clamp", text: LAST[l.name] }) : null],
       row: () => [el("div", { class: "row" }, el("span", { class: `dot ${k ? "att" : statusTone(l.status)}` }), el("span", { class: "nm", text: targetName(t) }), k ? el("span", { class: "tag warn", text: "확인 필요" }) : el("span", { class: "sup", text: statusKo(l.status) }))] });
