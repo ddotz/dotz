@@ -298,6 +298,10 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if ((a.op === "draft-send" || a.op === "draft-drop") && a.code) return ask("POST", `/api/kakao/drafts/${id}/${a.op.slice(6)}`, a.text === undefined ? {} : { text: a.text }, login);
 				return bad("op must be send, send-delete, read, draft, ask-drop, draft-send or draft-drop");
 			}
+			// 초안 작성 on a mail the other computer holds: its draft is made and offered there.
+			case "mail-draft":
+				if (typeof a.key !== "string" || !a.key) return bad("key required");
+				return ask("POST", `/api/mail/${encodeURIComponent(a.key)}/draft`, {}, login);
 			// 답장 안 함 (hub/unreplied.ts) on the computer that holds the mail or the room, or taking it back (on false).
 			case "no-reply": {
 				const verb = a.on === false ? "DELETE" : "POST";

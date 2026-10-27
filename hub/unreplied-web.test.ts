@@ -150,8 +150,12 @@ describe("home and the peer's mail", () => {
 		await waitFor(v, `document.querySelector('#mon-side .cv-row[data-k^="p:"][data-k$="i:mail"]')`);
 		await run(v, `document.querySelector('#mon-side .cv-row[data-k^="p:"][data-k$="i:mail"]').click()`);
 		await waitFor(v, `document.querySelector("#mon-tl .mr .tag.unreplied")`);
+		// 초안 작성 sits beside 답장 안 함 and asks the computer that holds the mail for the draft
+		await run(v, `document.querySelector("#mon-tl .mr .mr-draft").click()`);
+		const asked = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "mail-draft");
+		expect(asked.body).toMatchObject({ action: "mail-draft", args: { key: "peer-1" } });
 		await run(v, `document.querySelector("#mon-tl .mr .unrep-no").click()`);
-		const sent = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy");
+		const sent = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "no-reply");
 		expect(sent.body).toMatchObject({ action: "no-reply", args: { kind: "mail", key: "peer-1" } });
 	});
 });

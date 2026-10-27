@@ -48,7 +48,7 @@ import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { mailByKey, mailByThread, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailSuggest, type MailDeps } from "./mail.ts";
-import { offerMailDraft } from "../features/reply-drafts/lib/offer.ts";
+import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/offer.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
 import { readMailBody } from "../features/reply-drafts/lib/senders.ts";
 import { installSentMail, realRunner } from "../features/reply-drafts/lib/tone.ts";
@@ -240,6 +240,7 @@ const mailDeps = (): MailDeps => ({
 	wake: (event, target) => deliver(inboxText(event), { target }),
 	offerDraft: m =>
 		void offerMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id) => readMailBody(source, id, realRunner), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner) }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
+	requestDraft: m => requestMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id) => readMailBody(source, id, realRunner), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner) }),
 });
 
 function classifyStoredMails(): void {

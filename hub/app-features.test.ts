@@ -178,6 +178,11 @@ describe("a peer gets the same through /api/peer/proxy and /api/peer/act", () =>
 			{ method: "POST", path: "/api/integrations/instagram/retry", body: { watch: "ig-site-login" } },
 		]);
 	});
+	test("초안 작성 of a peer's mail is a POST of its draft route on the owning machine", async () => {
+		seen.length = 0;
+		await pm.route(new Request("http://local/api/peer/act", { method: "POST", body: JSON.stringify({ action: "mail-draft", from: "B", args: { key: "kdb-66943118" } }) }), new URL("http://local/api/peer/act"));
+		expect(seen.map(s => [s.method, s.path])).toEqual([["POST", "/api/mail/kdb-66943118/draft"]]);
+	});
 	test("감시 삭제 of a peer's monitor is a DELETE of the watch on the owning machine", async () => {
 		seen.length = 0;
 		await pm.route(new Request("http://local/api/peer/act", { method: "POST", body: JSON.stringify({ action: "watch", from: "B", args: { op: "delete", name: "login-cartier-com" } }) }), new URL("http://local/api/peer/act"));

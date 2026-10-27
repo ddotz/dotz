@@ -38,6 +38,16 @@ function mayDraft(m: OfferMail): boolean {
 
 // Offers run one at a time: a burst of new mail never starts many model calls at once.
 let chain: Promise<unknown> = Promise.resolve();
+/** 초안 작성 on a mail (POST /api/mail/<key>/draft): the owner asked for a draft himself, so the auto-draft switch, the one-look-per-message mark and
+ *  the sender filter do not apply, and the model must draft (ReplyItem.requested). The draft arrives like an offered one: the send-approval card
+ *  in the mail's conversation and the 답장 초안 chip on its row. */
+export function requestMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offered" | "skipped" | "off" | "failed"> {
+	const body = m.body !== undefined || !deps.readBody ? Promise.resolve(m.body) : deps.readBody(m.source, m.id).catch(() => undefined);
+	const queued = Date.now();
+	const next = chain.then(() => offerOne(m, deps, body, queued, true));
+	chain = next.catch(() => undefined);
+	return next;
+}
 export function offerMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offered" | "skipped" | "off" | "failed"> {
 	// The body read (a mail CLI or webmail round trip) starts now, while an earlier offer may still be in its model call; only the model calls queue.
 	const body = m.body !== undefined || !deps.readBody || !mayDraft(m) ? Promise.resolve(m.body) : deps.readBody(m.source, m.id).catch(e => ((deps.log ?? console.error)(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), undefined));
@@ -47,17 +57,17 @@ export function offerMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offered"
 	return next;
 }
 
-async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | undefined>, queued: number): Promise<"offered" | "skipped" | "off" | "failed"> {
+async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | undefined>, queued: number, requested = false): Promise<"offered" | "skipped" | "off" | "failed"> {
 	const log = deps.log ?? ((line: string) => console.error(line));
 	const started = Date.now();
 	try {
 		const settings = loadSettings();
-		if (!appOn(settings, "mail")) return "off";
+		if (!requested && !appOn(settings, "mail")) return "off";
 		// One look per message: a newer message of the same thread (messageId) is looked at again, a repeat of the same one is not.
 		const looked = m.messageId ? `${m.key}#${m.messageId}` : m.key;
-		if (isDrafted(looked)) return "skipped";
-		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "" };
-		if (precheck(item, settings.senders)) {
+		if (!requested && isDrafted(looked)) return "skipped";
+		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "", ...(requested ? { requested: true } : {}) };
+		if (!requested && precheck(item, settings.senders)) {
 			markDrafted(looked);
 			return "skipped";
 		}

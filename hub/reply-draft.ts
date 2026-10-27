@@ -21,6 +21,7 @@ export type ReplyItem = {
 	text: string;
 	context?: string;
 	choice?: string; // chat: the user's pick for the open question of an earlier "ask" result; the draft then carries it out
+	requested?: boolean; // the user asked for a reply to this message himself (초안 작성): always a draft, never a skip
 };
 
 export type ReplyStyle = {
@@ -125,6 +126,7 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		"",
 		...(item.kind === "chat" && item.choice ? [`The user's decision (his own words, data): "${item.choice.replace(/\s+/g, " ").trim().slice(0, 60).replace(/"/g, "'")}"`, ""] : []),
 		`Keep the body within ${style.maxChars ?? DEFAULT_MAX[item.kind]} characters.`,
+		...(item.requested ? ["", 'The user asked for a reply to this message himself: action must be "draft", never "skip".'] : []),
 	];
 	if (extra.previous) parts.push("", "Previous draft:", `to: ${extra.previous.to}`, ...(extra.previous.subject ? [`subject: ${extra.previous.subject}`] : []), "<<<DRAFT", extra.previous.body, "DRAFT>>>");
 	if (extra.change) parts.push("", "The user asked for this change to the previous draft (apply it, keep the rest):", extra.change.trim());
@@ -208,6 +210,10 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		const parsed = parseResult(await call(p.system, p.user));
 		if (!parsed) {
 			failures = ["the output was not exactly one JSON object in a ```json block"];
+			continue;
+		}
+		if (parsed.action === "skip" && item.requested) {
+			failures = ["the user asked for this reply himself: action must be draft"];
 			continue;
 		}
 		if (parsed.action === "skip") return { action: "skip", reason: parsed.reason || "no reply needed" };

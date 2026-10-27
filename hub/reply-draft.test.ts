@@ -114,3 +114,12 @@ test("the prompt keeps received text as data and carries the user's samples, cor
 	expect(buildPrompt(item, { ...style, samples: [] }).user).toContain("neutral, polite");
 	expect(addressesOf("Kim <KIM@example.com>, lee@example.com")).toEqual(["kim@example.com", "lee@example.com"]);
 });
+
+test("a reply the user asked for himself (초안 작성) is never a skip: the prompt says so and a skip is sent back once", async () => {
+	const m = fake([j({ action: "skip", reason: "newsletter" }), j(good)]);
+	const r = await generateReply({ ...item, requested: true }, style, m.call);
+	expect(r).toMatchObject({ action: "draft", draft: { to: "kim@example.com" }, tries: 2 });
+	expect(m.calls[0]!.user).toContain('action must be "draft", never "skip"');
+	expect(m.calls[1]!.user).toContain("the user asked for this reply himself: action must be draft");
+	expect(buildPrompt(item, style).user).not.toContain("never \"skip\"");
+});
