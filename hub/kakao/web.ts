@@ -244,7 +244,8 @@ export function createKakaoWeb(deps: WebDeps) {
 		return Promise.all(list.map(async d => {
 			const m = db && d.basisLogId ? await messageById(db, d.chatId, d.basisLogId, config!.userId ?? "").catch(() => undefined) : undefined;
 			const text = m ? readText(m).replace(/\s+/g, " ").trim() : "";
-			return { code: d.code, chatId: d.chatId, room: roomsCache?.names.get(d.chatId) ?? d.roomName, text: d.text, parts: draftParts(d.text), ...(d.sentParts ? { sentParts: d.sentParts } : {}), ...(d.intent ? { intent: d.intent } : {}), created: d.created,
+			// A KakaoTalk draft is text only, so its card always says so (첨부: 없음 · 파일을 붙일 수 없는 곳) and nothing is hidden behind a file row.
+			return { code: d.code, chatId: d.chatId, room: roomsCache?.names.get(d.chatId) ?? d.roomName, text: d.text, parts: draftParts(d.text), ...(d.sentParts ? { sentParts: d.sentParts } : {}), ...(d.intent ? { intent: d.intent } : {}), created: d.created, attachmentsNone: true, cannotAttach: [],
 				...(m && text ? { original: { who: m.fromMe ? "나" : m.sender || "상대", text: [...text].slice(0, 200).join(""), at: sentAtMs(m.sentAt) } } : {}) };
 		}));
 	};

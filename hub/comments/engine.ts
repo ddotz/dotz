@@ -285,7 +285,9 @@ export function createEngine(deps: EngineDeps) {
 		const comments = store.comments();
 		return store.drafts().filter(d => d.status === "pending" && cfg.sources[d.source]).map(d => {
 			const src = cfg.sources[d.source]!, c = comments.find(x => x.id === d.commentId);
-			return { code: d.code, app: ownerOf(src), kind: src.kind, source: src.key, sourceLabel: src.label, thread: d.thread, commentId: d.commentId, title: c?.postTitle ?? "", link: c?.postLink ?? null, to: c?.author ?? "", text: d.text, notes: d.notes, created: d.created,
+			// A comment reply goes out as text only, so its card always says so (첨부: 없음 · 파일을 붙일 수 없는 곳): a file goes only with the mail that rides along,
+			// and those files are the mail's own (mailJson).
+			return { code: d.code, app: ownerOf(src), kind: src.kind, source: src.key, sourceLabel: src.label, thread: d.thread, commentId: d.commentId, title: c?.postTitle ?? "", link: c?.postLink ?? null, to: c?.author ?? "", text: d.text, notes: d.notes, created: d.created, attachmentsNone: true, cannotAttach: [],
 				...(c ? { original: { who: c.author, text: clip(c.text, 200), at: c.at } } : {}), ...mailJson(d) };
 		});
 	}
