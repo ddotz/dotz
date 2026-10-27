@@ -11,7 +11,7 @@ import { canAttach, sendWith, webmailSite, type SendOutcome } from "./senders.ts
 import { addStagedFile, carryStagedFiles, stagedFiles } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
 import { maybeRefine } from "./persona.ts";
-import { addDraft, getDraft, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
+import { addDraft, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
@@ -171,6 +171,18 @@ export function dropDraft(id: string): Step {
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태예요` };
 	setStatus(id, "dropped");
 	return { ok: true, text: `초안 ${id}을(를) 버렸어요` };
+}
+
+// 되돌리기 after the owner's 보내지 기: a dropped draft waits for approval again. A sent or replaced (stale) draft stays as it is, and so does one
+// whose mail already has a newer draft waiting, so a mail never has two drafts pending.
+export function restoreDraft(ref: string): { ok: boolean; text: string } {
+	const d = getDraft(ref);
+	if (!d) return { ok: false, text: `초안 ${ref}을(를) 찾지 못했어요` };
+	if (d.status === "pending") return { ok: true, text: `초안 ${ref}은(는) 이미 기다리는 중이에요` };
+	if (d.status !== "dropped") return { ok: false, text: `초안 ${ref}은(는) 이미 ${d.status} 상태라 되돌릴 수 없어요` };
+	if (listDrafts().some(x => x.id !== d.id && x.ref === d.ref && x.status === "pending")) return { ok: false, text: `같은 메일에 새 초안이 있어서 초안 ${ref}은(는) 되돌리지 않았어요` };
+	setStatus(ref, "pending");
+	return { ok: true, text: `초안 ${ref}을(를) 되돌렸어요` };
 }
 
 // Refuses unless the user's latest pick for this exact draft id, made after the draft was created, is 1) 보내기; lints again first.
