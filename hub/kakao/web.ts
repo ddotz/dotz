@@ -15,7 +15,7 @@ import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, dr
 import { buildPersonPrompt, personStats, type PersonStats } from "./person.ts";
 import { bodyText, fetchMedia, mediaOf, mediaTarget, replySource, serveLocalFile } from "./media.ts";
 import { type AxStep, type Focus, sameText } from "./room.ts";
-import { createDraft, draftTextError, dropDraft, type Draft, listDrafts, markStale, newer, type SendMs, type SendResult } from "./send.ts";
+import { createDraft, draftTextError, dropDraft, type Draft, listDrafts, markStale, newer, readDrafts, restoreDraft, type SendMs, type SendResult } from "./send.ts";
 import type { KakaoConfig, KakaoPaths, Room, Runner } from "./types.ts";
 import { kakaoUnreplied } from "../unreplied.ts";
 
@@ -234,6 +234,22 @@ export function createKakaoWeb(deps: WebDeps) {
 			return (await waitingRooms(config).catch(() => undefined))?.has(chatId);
 		},
 	};
+	// The pending reply drafts of the watched rooms for the one 답장 확인 queue (GET /api/kakao/drafts): the draft, its room's name and the message it
+	// answers (one row read per draft, never the whole room). `skip`: codes a send-approval notice already shows (hub/draft-approval.ts ref).
+	const pendingOf = (config: KakaoConfig | undefined, skip: ReadonlySet<string> = new Set()) =>
+		config?.enabled === true ? readDrafts(paths).filter(d => d.status === "pending" && (config.watch_chats ?? []).includes(d.chatId) && !skip.has(d.code)) : [];
+	const pendingDrafts = async (skip?: ReadonlySet<string>) => {
+		const config = readConfig(paths), list = pendingOf(config, skip);
+		const db = list.length ? await getDb(config!).catch(() => undefined) : undefined;
+		return Promise.all(list.map(async d => {
+			const m = db && d.basisLogId ? await messageById(db, d.chatId, d.basisLogId, config!.userId ?? "").catch(() => undefined) : undefined;
+			const text = m ? readText(m).replace(/\s+/g, " ").trim() : "";
+			return { code: d.code, chatId: d.chatId, room: roomsCache?.names.get(d.chatId) ?? d.roomName, text: d.text, parts: draftParts(d.text), ...(d.sentParts ? { sentParts: d.sentParts } : {}), ...(d.intent ? { intent: d.intent } : {}), created: d.created,
+				...(m && text ? { original: { who: m.fromMe ? "나" : m.sender || "상대", text: [...text].slice(0, 200).join(""), at: sentAtMs(m.sentAt) } } : {}) };
+		}));
+	};
+	/** How many reply drafts wait in the watched rooms (the app row's 답장 확인 count): the drafts file only, no database read. */
+	const pendingCount = (skip?: ReadonlySet<string>): number => pendingOf(readConfig(paths), skip).length;
 	let lastCount = 0;
 	// Only rooms that are still watched count (a room taken off the list mid-cache must not keep the number up).
 	const owedIn = (rooms: Map<string, string>, config: KakaoConfig) => [...rooms.keys()].filter(id => (config.watch_chats ?? []).includes(id)).length;
@@ -752,6 +768,21 @@ export function createKakaoWeb(deps: WebDeps) {
 			return fetchMedia(target.url, deps.fetch ?? fetch);
 		}
 
+		if (area === "drafts" && parts.length === 3 && method === "GET") {
+			if (!on) return json({ items: [] });
+			return json({ items: await pendingDrafts() });
+		}
+		if (area === "drafts" && parts.length === 5 && method === "POST" && parts[4] === "restore") {
+			if (!on) return json(OFF, 409);
+			const code = decodeURIComponent(parts[3]!);
+			const draft = readDrafts(paths).find(d => d.code === code);
+			if (!draft) return json({ error: "그 초안을 찾지 못했어요" }, 404);
+			if (!watched.has(draft.chatId)) return json({ error: "이 대화방은 보고 있지 않아요" }, 403);
+			const r = restoreDraft(code, { paths });
+			if (!r.ok) return json({ error: r.reason }, 409);
+			deps.broadcast({ kind: "kakao_draft", chatId: draft.chatId });
+			return json({ ok: true });
+		}
 		if (area === "drafts" && parts.length === 5 && method === "POST" && (parts[4] === "send" || parts[4] === "drop")) {
 			if (!on) return json(OFF, 409);
 			const code = decodeURIComponent(parts[3]!);
@@ -776,5 +807,5 @@ export function createKakaoWeb(deps: WebDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { route, idle, unrepliedCount, draftFacts };
+	return { route, idle, unrepliedCount, draftFacts, pendingDrafts, pendingCount };
 }

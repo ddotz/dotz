@@ -18,7 +18,8 @@ export type Computer = { name: string; url: string; self: boolean };
 // It is part of the rev, so a change of pause reaches a peer holding the older snapshot.
 export type OrchestratorPause = { status: string; pauseKind: string };
 // `runs`: the run state of that gateway's mail conversations (`mail:<key>`), so a mail opened here shows what its bot is doing there.
-export type Snapshot = { name: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause; runs?: Record<string, unknown> };
+// `replies`: the reply drafts its apps keep in their own stores (GET /api/replies: KakaoTalk rooms, comment sources), for the 답장 확인 queue here.
+export type Snapshot = { name: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause; runs?: Record<string, unknown>; replies?: unknown[] };
 export type PeerView = { name: string; url: string; online: boolean; stale: boolean; items: Snapshot | null };
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 export type MonitorDeps = {
@@ -100,11 +101,13 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 	const read = async (path: string): Promise<any> => (await ask("GET", path)).json();
 
 	const PARTS = ["/api/monitors", "/api/notices?limit=100", "/api/integrations", "/api/conversations"];
-	const build = (name: string, [m, n, i, c]: any[]): Snapshot => {
-		const part = { name, monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv), ...(deps.orchestrator ? { orchestrator: deps.orchestrator() } : {}), ...(deps.runs ? { runs: deps.runs() } : {}) };
+	const build = (name: string, [m, n, i, c]: any[], replies?: unknown[]): Snapshot => {
+		const part = { name, monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv), ...(deps.orchestrator ? { orchestrator: deps.orchestrator() } : {}), ...(deps.runs ? { runs: deps.runs() } : {}), ...(replies ? { replies } : {}) };
 		return { ...part, rev: createHash("sha1").update(JSON.stringify(part)).digest("hex").slice(0, 12) };
 	};
-	const snapshot = async (): Promise<Snapshot> => build(deps.name(), await Promise.all(PARTS.map(read)));
+	// The reply drafts are optional: a handler without /api/replies (or one that fails) leaves them out instead of failing the snapshot.
+	const replies = async (): Promise<unknown[] | undefined> => { try { const r = await ask("GET", "/api/replies"); return r.ok ? ((await r.json()) as { items?: unknown[] }).items ?? [] : undefined; } catch { return undefined; } };
+	const snapshot = async (): Promise<Snapshot> => { const [parts, rs] = await Promise.all([Promise.all(PARTS.map(read)), replies()]); return build(deps.name(), parts, rs); };
 
 	// An older peer (404 on /api/peer/monitoring) or no shared token here: the four plain reads, which the peer allows through the owner's
 	// tailnet identity like the computer switcher's reads. Read-only: forwarded actions always need the token.
@@ -326,8 +329,22 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (a.op === "ask-drop" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/ask/drop`, {}, login);
 				// 지켜보기 / 자동 초안 of a room, switched from the other computer: the owner's own room PUT, which checks the values.
 				if (a.op === "room" && a.chatId) return ask("PUT", `/api/kakao/rooms/${id}`, { watched: a.watched, autoDraft: a.autoDraft }, login);
-				if ((a.op === "draft-send" || a.op === "draft-drop") && a.code) return ask("POST", `/api/kakao/drafts/${id}/${a.op.slice(6)}`, a.text === undefined ? {} : { text: a.text }, login);
-				return bad("op must be send, send-delete, read, draft, ask-drop, room, draft-send or draft-drop");
+				if ((a.op === "draft-send" || a.op === "draft-drop" || a.op === "draft-restore") && a.code) return ask("POST", `/api/kakao/drafts/${id}/${a.op.slice(6)}`, a.text === undefined ? {} : { text: a.text }, login);
+				return bad("op must be send, send-delete, read, draft, ask-drop, room, draft-send, draft-drop or draft-restore");
+			}
+			// Comment replies (hub/comments/web.ts) of a source the other computer collects: its drafts, failed sends and threads are acted on there.
+			case "comments": {
+				const e = (v: unknown) => encodeURIComponent(String(v ?? ""));
+				if ((a.op === "draft-send" || a.op === "draft-drop" || a.op === "draft-restore" || a.op === "draft-revise") && a.code) {
+					const b = a.op === "draft-revise" ? { change: a.change, ...(a.part ? { part: a.part } : {}) } : a.op === "draft-send" && typeof a.text === "string" ? { text: a.text } : {};
+					return ask("POST", `/api/comments/drafts/${e(a.code)}/${a.op.slice(6)}`, b, login);
+				}
+				if ((a.op === "send-retry" || a.op === "send-dismiss") && a.id) return ask("POST", `/api/comments/sends/${e(a.id)}/${a.op.slice(5)}`, {}, login);
+				if (a.op === "draft" && a.commentId) return ask("POST", `/api/comments/comment/${e(a.commentId)}/draft`, {}, login);
+				if (a.op === "no-reply" && a.commentId) return ask(a.on === false ? "DELETE" : "POST", `/api/comments/comment/${e(a.commentId)}/no-reply`, a.on === false ? undefined : {}, login);
+				if (a.op === "read" && a.source && a.thread) return ask("POST", `/api/comments/thread/${e(a.source)}/${e(a.thread)}/read`, {}, login);
+				if (a.op === "source" && a.key) return ask("PUT", `/api/comments/sources/${e(a.key)}`, { ...(a.watch !== undefined ? { watch: a.watch } : {}), ...(a.autoDraft !== undefined ? { autoDraft: a.autoDraft } : {}) }, login);
+				return bad("op must be draft-send, draft-drop, draft-restore, draft-revise, send-retry, send-dismiss, draft, no-reply, read or source");
 			}
 			// 초안 작성 on a mail the other computer holds: its draft is made and offered there.
 			case "mail-draft":

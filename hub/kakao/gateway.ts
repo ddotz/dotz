@@ -84,5 +84,7 @@ const web = createKakaoWeb({
 export const kakaoRoute = web.route;
 export const kakaoUnreplied = web.unrepliedCount;
 export const kakaoDraftFacts = web.draftFacts;
+export const kakaoPendingDrafts = web.pendingDrafts;
+export const kakaoPendingCount = web.pendingCount;
 export const startKakaoLive = () => void live.sync();
 export const stopKakaoLive = () => live.stop();
