@@ -7,7 +7,7 @@ import { isAbsolute, join, sep } from "node:path";
 import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { FileError, safeName, serveFile } from "./files.ts";
 import { MAIL_HTML_MAX, sanitizeMailHtml } from "./mailhtml.ts";
-import { directionOf, migrateMails, nextReply, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type StoredMail } from "./mail-state.ts";
+import { directionOf, migrateMails, nextReply, replyExpected, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type StoredMail } from "./mail-state.ts";
 import { mailUnreplied } from "./unreplied.ts";
 
 /** One attached file of a mail. `file` is relative to the mail files folder (`<key>/<n>/<name>`); it never leaves that folder. */
@@ -296,6 +296,7 @@ export function briefMail(key: string, text: string): boolean {
 	const brief = mailBriefOf(text, r.from, r.subject);
 	if (!brief) return false;
 	r.summary = brief;
+	if (r.dir !== "out" && !replyOf(r) && replyExpected({ from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: brief })) r.reply = "needs";
 	persistSoon();
 	return true;
 }
@@ -451,7 +452,9 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps, r
 	const html = await saveHtml(key, m.html, attachments);
 	const summary = m.summary ?? "";
 	const preview = summary ? "" : mailPreview(m.body);
-	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(m.needsReply ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(reopened ? { reopenedAt: at } : {}) });
+	// 답장 필요: the poster's word, else the gateway reads the mail (hub/mail-state.ts replyExpected).
+	const needs = m.needsReply || replyExpected({ from: m.from, to: m.to, cc: m.cc, subject: m.subject, text: summary || m.body || "" });
+	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(needs ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(reopened ? { reopenedAt: at } : {}) });
 	const event = { ts: at, kind: "mail", source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), ...(html ? { html: true } : {}), text: mailText(m) };
 	deps.emit(event);
 	if (m.wake) deps.wake(event, thread ? `th:${thread}` : target);
