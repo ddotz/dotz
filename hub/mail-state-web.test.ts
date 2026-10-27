@@ -77,19 +77,27 @@ const pick = async (v: View, f: string) => {
 
 for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 	describe(`mail list at ${width}px`, () => {
-		test("every row has one state label; reading keeps 답장 필요; the unread count stays beside a reply state", async () => {
+		test("every row has one layout: sender, a reply-state tag only when there is one (답장 안 함 for both marks, never 읽음), 안 읽음 N apart, clip, time, ⋯", async () => {
 			const v = await boot(width, height);
 			expect(await states(v)).toEqual({
-				"견적 문의드립니다": "새 메일",
-				"회의록 공유": "읽음",
+				"견적 문의드립니다": "안 읽음 1",
+				"회의록 공유": "",
 				"계약서 확인 부탁드립니다": "답장 필요",
 				"자료 요청": "초안 있음|안 읽음 1",
 				"일정 조율": "답장함",
 				"업데이트 안내": "답장 안 함",
-				"배송 완료": "답장 불필요",
-				"Re: 일정 조율": "내가 보냄",
+				"배송 완료": "답장 안 함",
+				"Re: 일정 조율": "",
 			});
 			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr .tag.unreplied")].map(t => t.textContent)`)).toEqual(["답장 필요", "초안 있음"]);
+			// one order on every row: sender · state · unread · clip · time · ⋯ (each only when it has something to say, the ⋯ always)
+			const order = await q<string[][]>(v, `return [...document.querySelectorAll("#mon-tl .mr")].map(r => [...r.querySelector(".rc-hd").children].map(c => c.matches(".rc-src") ? "src" : c.matches(".mr-state, .tag.unreplied") ? "state" : c.matches(".mr-unread") ? "unread" : c.matches(".mr-clip") ? "clip" : c.matches(".rc-time") ? "time" : c.matches(".mr-more") ? "more" : c.className))`);
+			const RANK = ["src", "state", "unread", "clip", "time", "more"];
+			for (const o of order) {
+				expect(o.every(k => RANK.includes(k))).toBe(true);
+				expect(o.map(k => RANK.indexOf(k))).toEqual([...o.map(k => RANK.indexOf(k))].sort((a, b) => a - b));
+				expect([o[0], o.at(-1)]).toEqual(["src", "more"]);
+			}
 			expect(await q<string>(v, `return [...document.querySelectorAll("#mon-tl .mr")].find(r => r.querySelector(".rc-title").textContent === "Re: 일정 조율").querySelector(".rc-src").textContent`)).toBe("나 → Han");
 			expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
 			await shot(v, `mail-states-${width}-light.png`);
