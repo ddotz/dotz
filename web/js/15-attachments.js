@@ -1,7 +1,8 @@
 /* ---------- attachments: + button, drag-drop, paste -> POST /api/upload; sent as `files` with the message ---------- */
 let ATT = [];   // [{id, name, type, size, url (local preview), file (server record once uploaded)}]
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
-const fileUrl = (p, dl) => `/api/file?path=${enc(p)}${dl ? "&download=1" : ""}`;
+// pc: the file is an upload of that other computer (a file sent to its conversation), read there through the peer proxy (hub/routes.ts /api/peer/file).
+const fileUrl = (p, dl, pc) => pc ? pqProxy(pc, `/api/peer/file?path=${enc(p)}${dl ? "&download=1" : ""}`) : `/api/file?path=${enc(p)}${dl ? "&download=1" : ""}`;
 const fsize = n => n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : n >= 1024 ? `${Math.round(n / 1024)}KB` : `${n}B`;
 const extOf = n => (String(n).match(/\.([A-Za-z0-9]{1,6})$/) || [0, ""])[1].toUpperCase();
 $("#c-attach").append(icon("add"));
@@ -70,9 +71,9 @@ const offChip = (f, why) => fileChip(f.name, why, { cls: "off" });
 function fileItem(f) {
   const img = IMG_RE.test(f.name || f.path);
   const main = img
-    ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name) }, el("img", { src: fileUrl(f.path), alt: f.name, loading: "lazy" }))
-    : fileChip(f.name, fileMeta(f.name, f.size), VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name) } : { href: fileUrl(f.path) });
-  const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download"))), pathCopy(f.path));
+    ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name, f.pc) }, el("img", { src: fileUrl(f.path, false, f.pc), alt: f.name, loading: "lazy" }))
+    : fileChip(f.name, fileMeta(f.name, f.size), VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name, f.pc) } : { href: fileUrl(f.path, false, f.pc) });
+  const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true, f.pc), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download"))), pathCopy(f.path));
   if (!f.check) return item;
   const off = why => { if (item.isConnected || item.parentNode) item.replaceWith(offChip(f, why)); };
   if (img) main.querySelector("img").onerror = () => off("열 수 없는 파일이에요");
@@ -131,12 +132,12 @@ function mdFiles(src) {
   return [text.trim() ? mdNode(text) : null, filesNode(files)].filter(Boolean);
 }
 // Markdown renders, other text shows as it is; a big file shows its first 200KB and offers the download.
-async function viewer(path, name) {
+async function viewer(path, name, pc) {
   const body = el("div", { class: "tv-body md", tabindex: "-1", autofocus: true }, el("p", { class: "tv-st", text: "불러오는 중…" }));
   const d = el("dialog", { class: "tbox", "aria-label": name },
     el("div", { class: "tv-in" },
       el("div", { class: "tv-bar" }, el("span", { class: "tv-n", text: name }),
-        el("a", { href: fileUrl(path, true), download: name }, "다운로드"),
+        el("a", { href: fileUrl(path, true, pc), download: name }, "다운로드"),
         el("button", { class: "x", type: "button", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
       pathCopy(path, "tv-p"),
       body));
@@ -144,7 +145,7 @@ async function viewer(path, name) {
   d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
   document.body.append(d); d.showModal(); dialogHist(d);
   try {
-    const r = await fetch(fileUrl(path));
+    const r = await fetch(fileUrl(path, false, pc));
     if (!r.ok) throw fileNote(r, r.status === 404 ? "파일이 지워졌어요" : "열 수 없는 파일이에요");
     let t = await r.text();
     const cut = t.length > 200000;
@@ -153,15 +154,15 @@ async function viewer(path, name) {
     if (cut) body.append(el("p", { class: "tv-st", text: "앞부분만 보여요. 전체는 다운로드해 주세요" }));
   } catch (e) { clear(body).append(el("p", { class: "tv-st", text: typeof e === "string" ? e : "열 수 없어요" })); }
 }
-function lightbox(path, name) {
+function lightbox(path, name, pc) {
   const d = el("dialog", { class: "lbox", "aria-label": name },
     el("div", { class: "lb-in" },
       el("div", { class: "lb-bar" }, el("span", { class: "lb-n", text: name }),
-        el("a", { href: fileUrl(path), target: "_blank", rel: "noopener" }, "새 탭"),
-        el("a", { href: fileUrl(path, true), download: name }, "다운로드"),
+        el("a", { href: fileUrl(path, false, pc), target: "_blank", rel: "noopener" }, "새 탭"),
+        el("a", { href: fileUrl(path, true, pc), download: name }, "다운로드"),
         el("button", { class: "x", type: "button", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
       pathCopy(path, "lb-p"),
-      el("div", { class: "lb-img", tabindex: "-1", autofocus: true, onclick: ev => { if (ev.target === ev.currentTarget) d.close(); } }, el("img", { src: fileUrl(path), alt: name }))));
+      el("div", { class: "lb-img", tabindex: "-1", autofocus: true, onclick: ev => { if (ev.target === ev.currentTarget) d.close(); } }, el("img", { src: fileUrl(path, false, pc), alt: name }))));
   d.addEventListener("close", () => d.remove());
   document.body.append(d); d.showModal(); dialogHist(d);
 }

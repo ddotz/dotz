@@ -112,5 +112,5 @@ test("the web turns [file] lines into chips, keeps them out of notice text and h
 	expect(r.files.map((x: { name: string }) => x.name)).toEqual(["notice-arch.png", "findings.md"]);
 	expect(r.text).toContain("[file] /in/fence");
 	expect(fn.ntPlain("끝났어요\n[file] /a/b.png")).toBe("끝났어요");
-	expect(js).toContain("async function viewer(path, name)");
+	expect(js).toContain("async function viewer(path, name, pc)");
 });

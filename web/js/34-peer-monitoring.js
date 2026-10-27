@@ -67,6 +67,23 @@ function pqAct(path, body) {
   if (k && k[1] === "drafts") return { pc: KK.pc, action: "kakao", args: { op: k[3] === "send" ? "draft-send" : "draft-drop", code: id, ...(b.text === undefined ? {} : { text: b.text }) } };
   throw new Error(`${KK.pc.name}에서 바꿔 주세요`);
 }
+// The files of a message to another computer's conversation: the bytes kept in the composer go to THAT computer (act "upload", one file per
+// request), and its own upload paths are what the message carries; a path of this computer never goes there. Any failure throws, so the
+// message is not sent without its file.
+const PQ_WIRE_MAX = 50 * 1024 * 1024;
+async function pqUpload(pc, atts) {
+  const out = [];
+  for (const a of atts) {
+    if (!a.raw) throw new Error(`${a.name}: 파일을 다시 붙여 주세요`);
+    if (a.raw.size > PQ_WIRE_MAX) throw new Error(`${a.name}: 다른 컴퓨터의 대화에는 50MB 이하 파일만 보낼 수 있어요`);
+    let r;
+    try { r = await api(pqProxy(pc, "/api/peer/act"), "POST", { action: "upload", args: { files: [{ name: a.name, type: a.type || "", data: await drfBase64(a.raw) }] } }); }
+    catch (e) { throw new Error(`${pc.name}에 ${a.name}을(를) 올리지 못해서 보내지 않았어요 (${e.message})`); }
+    if (!r || !Array.isArray(r.files) || !r.files[0]) throw new Error(`${pc.name}에 ${a.name}을(를) 올리지 못해서 보내지 않았어요`);
+    out.push(r.files[0]);
+  }
+  return out;
+}
 // api() in 02-basic-markdown.js runs every request through here: [path, method, body] as they go to this gateway.
 function pqRoute(path, method, body) {
   if (method === "GET") return [pqLink(path), method, body];
