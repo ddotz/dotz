@@ -365,13 +365,17 @@ const MAIL_STATE = { needs: ["답장 필요", "warn"], draft: ["초안 있음", 
 const mailStateOf = (m, unread) => m.dir === "out" ? ["내가 보냄", ""] : MAIL_STATE[m.reply] || (unread ? ["새 메일", "warn"] : ["읽음", ""]);
 // An app whose conversation is a list of mails (메일 and its instances): newest on top, opened at the top.
 const monMailList = it => !!(it && it.app && !it.mon && it.mails.some(t => MAILS.has(t)));
-// The filter of the mail list: 전체 / 안 읽음 / 답장 필요 / 답장함 / 보낸 메일. A filter gets the mail and its conversation target.
-const MAIL_FILTERS = [["all", "전체", () => true], ["unread", "안 읽음", (m, t) => m.dir !== "out" && (ts(t).unread | 0) > 0], ["owed", "답장 필요", m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft")], ["replied", "답장함", m => m.dir !== "out" && m.reply === "replied"], ["sent", "보낸 메일", m => m.dir === "out"]];
+// The filter of the mail list: 전체 / 안 읽음 / 답장 필요 / 확인 대기 / 답장함 / 보낸 메일. A filter gets the mail and its conversation target.
+// 확인 대기 holds no mail rows: it is the reply drafts waiting on the owner (owner 2026-10-27), and those approval cards show only there.
+const MAIL_FILTERS = [["all", "전체", () => true], ["unread", "안 읽음", (m, t) => m.dir !== "out" && (ts(t).unread | 0) > 0], ["owed", "답장 필요", m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft")], ["pending", "확인 대기", () => false], ["replied", "답장함", m => m.dir !== "out" && m.reply === "replied"], ["sent", "보낸 메일", m => m.dir === "out"]];
 const mailFilterOf = () => MAIL_FILTERS.find(f => f[0] === MON.mailFilter) || MAIL_FILTERS[0];
-function mailFilterBar(mails) {
+// A reply draft still in the owner's hands: waiting for 보내기 / 고치기 / 보내지 않기, or being rewritten after 고치기 (a peer's too, as its plain report).
+const mailDraftOpen = n => !!(n.decision && n.decision.draft) && drState(n.decision) === "open";
+const mailDraftHeld = n => !!(n.decision && n.decision.draft) && ["open", "revising"].includes(drState(n.decision));
+function mailFilterBar(mails, notices) {
   const cur = mailFilterOf()[0];
   return el("div", { class: "mr-filter", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.map(([k, label, ok]) => {
-    const n = k === "all" ? 0 : mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length;
+    const n = k === "all" ? 0 : k === "pending" ? notices.filter(mailDraftOpen).length : mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length;
     return el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); } }, label, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
   }));
 }
@@ -571,9 +575,11 @@ function monFeedNodes(it, names) {
 // A monitor or an app, oldest to newest: the newest MON_PAGE reports (이전 소식 보기 brings the older ones above), a run of the same result folded into its
 // last report, the mails, and the monitor's latest run last.
 function monChronoNodes(it, names) {
-  const ok = monFilterOf()[2], withMails = it.mails.some(t => MAILS.has(t)), mf = withMails ? mailFilterOf() : null;
+  const ok = monFilterOf()[2], withMails = it.mails.some(t => MAILS.has(t)), mf = withMails ? mailFilterOf() : null, held = mf && mf[0] === "pending";
+  // a mail list keeps the reply drafts awaiting the owner under 확인 대기 alone; every other view drops them
+  const notices = it.notices.filter(n => ok(n) && (!mf || mailDraftHeld(n) === held));
   const runs = [];
-  for (const n of it.notices.filter(ok).sort((a, b) => ntAt(a) - ntAt(b))) {
+  for (const n of notices.sort((a, b) => ntAt(a) - ntAt(b))) {
     const last = runs[runs.length - 1], k = monNeed(n) || ntIsDec(n) ? "" : monFoldKey(n, names);
     if (k && last && last.k === k) { last.all.push(n); last.n = n; } else runs.push({ k, n, all: [n] });
   }
@@ -582,15 +588,15 @@ function monChronoNodes(it, names) {
     if (r.all.length < MON_FOLD_MIN) return r.all.map(n => ({ at: ntAt(n), node: () => monNoticeNode(n, names) }));
     return [{ at: ntAt(r.n), node: () => { const x = monNoticeNode(r.n, names); if (!x) return null; x.dataset.nids = r.all.map(n => n.id).join(","); x.querySelector(".rc-hd").after(el("div", { class: "mon-rep", text: `같은 결과 ${r.all.length}번 · 처음 ${monWhen(r.all[0])}` })); return x; } }];
   };
-  const msgs = [...runs.slice(cut).flatMap(rep), ...(mf ? it.mails.filter(t => !MAILS.has(t) || mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, node: () => monConvNode(t, it.name) })),
-    ...(it.mon ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])];
+  const msgs = [...runs.slice(cut).flatMap(rep), ...(held ? [] : mf ? it.mails.filter(t => !MAILS.has(t) || mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, node: () => monConvNode(t, it.name) })),
+    ...(it.mon && !held ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])];
   // A mail app reads like a mailbox, newest on top (owner 2026-10-27); a monitor stays a chat, oldest to newest. Equal times keep their order.
   const newestTop = monMailList(it);
   msgs.sort((a, b) => newestTop ? b.at - a.at : a.at - b.at);
   const nodes = msgs.map(x => x.node()).filter(Boolean);
   if (cut && newestTop) nodes.push(monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
   else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
-  if (withMails) return [mailFilterBar(it.mails), ...(nodes.length ? nodes : [el("div", { class: "empty", text: "이 보기에 해당하는 메일이 없어요" })])];
+  if (withMails) return [mailFilterBar(it.mails, it.notices.filter(ok)), ...(nodes.length ? nodes : [el("div", { class: "empty", text: held ? "확인할 초안이 없어요" : "이 보기에 해당하는 메일이 없어요" })])];
   return nodes;
 }
 // A short feed (a handful of reports) reads best as the whole cards, newest first, with the machine of a peer's report; past MON_COMPACT
