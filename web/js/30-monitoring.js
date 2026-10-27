@@ -412,23 +412,27 @@ const monRunNow = (btn, m) => busy(btn, async () => {
     }
     await loadMonitors();
     if (m.pc) pqSoon();
-    toast(r && r.item && r.item.connection === "disconnected" ? "확인했지만 아직 연결이 끊겨 있어요" : "확인했어요");
+    toast(r && r.approved ? MON_RECONNECT : r && r.item && r.item.connection === "disconnected" ? "확인했지만 아직 연결이 끊겨 있어요" : "확인했어요");
   } finally {
     MON.running.delete(m.watch); MON.sig = ""; MON.side = ""; monSchedule();
     if (btn) btn.textContent = was;
   }
 });
-// 지금 다시 확인 on a disconnected app: every watch the app owns runs on this computer, then the app and the list are read again.
+// A down watch behind an approval gate is approved by the tap (hub/routes-lanes.ts run): its login may now ask the owner on his phone.
+const MON_RECONNECT = "다시 연결을 요청했어요. 승인 요청이 오면 눌러 주세요";
+// 다시 연결 on a disconnected app: every watch the app owns runs on this computer, then the app and the list are read again.
 const monRecheckApp = (btn, it, names) => busy(btn, async () => {
   for (const n of names) MON.running.add(n);
   MON.sig = ""; MON.side = ""; monSchedule();
   // allSettled: one watch failing to run still lets the others finish, the data reload and the owner hear how it went.
-  const res = await Promise.allSettled(names.map(n => api(`/api/watches/${enc(n)}/run`, "POST", {})));
+  // A peer's app: its watches run (and a gated login is approved) on the computer that owns them.
+  const runOne = n => it.pc ? api(pqProxy(it.pc, "/api/peer/act"), "POST", { action: "watch", args: { op: "run", name: n } }) : api(`/api/watches/${enc(n)}/run`, "POST", {});
+  const res = await Promise.allSettled(names.map(runOne));
   for (const n of names) MON.running.delete(n);
   await Promise.allSettled([loadMonitors(), it.pc ? pqLoad() : loadIntegrations()]);
   MON.sig = ""; MON.side = ""; monSchedule();
-  const bad = res.filter(r => r.status === "rejected").length;
-  toast(bad ? `${names.length}개 중 ${bad}개는 확인하지 못했어요` : "지금 다시 확인했어요", !!bad);
+  const bad = res.filter(r => r.status === "rejected").length, asked = res.some(r => r.status === "fulfilled" && r.value && r.value.approved);
+  toast(bad ? `${names.length}개 중 ${bad}개는 확인하지 못했어요` : asked ? MON_RECONNECT : "지금 다시 확인했어요", !!bad);
 });
 // An item reads like a chat: its reports and mails oldest to newest, a monitor's latest run last. The 감시 소식 feed is a list, not a chat: newest on top.
 const monFeed = it => it.key === "notice";
@@ -631,7 +635,7 @@ function monBannerNode(kind, detail, btn) {
 // The app hint the hub writes for a down app starts with the row word ("연결 끊김 · ..."); the banner has its own head, so only the why is kept.
 const monHintWhy = h => String(h || "").replace(/^\s*연결\s*(끊김|이 끊겼어요)\s*(·\s*)?/, "");
 const monRunBtn = (m, text) => el("button", { class: "btn tonal sm mon-run", type: "button", "data-run": m.watch, text: text || "지금 확인", onclick: ev => monRunNow(ev.currentTarget, m) });
-const monRecheckBtn = (watch, onclick) => el("button", { class: "btn tonal sm mon-recheck", type: "button", "data-watch": watch, text: "지금 다시 확인", onclick });
+const monRecheckBtn = (watch, onclick, text = "지금 다시 확인") => el("button", { class: "btn tonal sm mon-recheck", type: "button", "data-watch": watch, text, onclick });
 // One re-check control per conversation: a down or failing monitor, and a down app, get the banner and its button; a healthy one gets 지금 확인
 // in the head (a phone at the top of the timeline). The latest-run card never repeats it.
 function monBannerOf(it) {
@@ -639,11 +643,11 @@ function monBannerOf(it) {
     const m = it.mon, down = m.connection === "disconnected";
     if (!down && m.last_result !== "fail") return null;
     const detail = down ? monConnWhy(m) : [m.fails > 1 ? `${m.fails}번 연속 실패했어요` : "마지막 확인이 실패했어요", m.last_summary || ""].filter(Boolean).join(" · ");
-    return monBannerNode(down ? "down" : "fail", detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m)) : null);
+    return monBannerNode(down ? "down" : "fail", detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m), down ? "다시 연결" : undefined) : null);
   }
   if (!it.conn) return null;
   const names = (it.owned || []).map(m => m.watch).filter(Boolean);
-  return monBannerNode("down", monHintWhy(it.hint), names.length ? monRecheckBtn(it.key, ev => monRecheckApp(ev.currentTarget, it, names)) : null);
+  return monBannerNode("down", monHintWhy(it.hint), names.length ? monRecheckBtn(it.key, ev => monRecheckApp(ev.currentTarget, it, names), "다시 연결") : null);
 }
 // The title bar of an open item; the kakao pane puts the gear in its room head once a room is open.
 // A monitor adds its own progress block and 지금 확인 under the name, so the conversation always says how far the wait has come.
