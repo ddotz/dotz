@@ -162,6 +162,7 @@ function chatPlace() {
   if (Math.abs(timeline.scrollTop - want) > 1) timeline.scrollTop = want;
   chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
   $("#chat-jump").hidden = chatStick;
+  if (isMailT(CV.key)) convMaybeRead();   // a mail is read as it is shown, not after holding at its bottom; the dwell still records that it settled (CV.seen)
   convDwell();
 }
 // Anchored views count as read only after they held still for a moment (the owner can see them), never on the draw itself.
@@ -183,21 +184,30 @@ new ResizeObserver(chatPlace).observe(tl);
 // The owner takes over by touching the timeline: the anchor lets go, the normal stick-to-bottom rules apply from there.
 for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) timeline.addEventListener(ev, chatUnpin, { passive: true });
 
-// The owner is at the bottom of the open conversation (page visible): everything in it counts as read.
+// The open conversation counts as read (page visible): a chat once the owner is at its bottom, a mail as soon as it is on screen. A mail opens at
+// its top and reads top-down (chatOpen), so waiting for the bottom left a long mail unread however it was read (owner 2026-10-27); its unread is
+// dotz's own read position (hub/reads.ts), never the real mailbox's flag, so a newer message of that mail still makes it unread again.
 function convMaybeRead() {
   const t = CV.key;
-  if (!t || t !== target || !CV.captured || !CV.placed || !chatStick || (CV.pin && !CV.seen) || document.visibilityState !== "visible") return;
+  if (!t || t !== target || !CV.placed || document.visibilityState !== "visible") return;
+  const mail = isMailT(t);
+  if (!mail && (!CV.captured || !chatStick || (CV.pin && !CV.seen))) return;
   const s = ts(t), last = s.hLoaded && s.msgs.findLast(convReal);
   if (!last) return;
-  if (READ[t] && READ[t] >= last.ts) { if (s.unread) { s.unread = 0; renderBars(); } return; }
+  if (READ[t] && READ[t] >= last.ts) { if (s.unread) { s.unread = 0; renderBars(); if (mail) mailReadPainted(); } return; }
   READ[t] = last.ts; s.unread = 0;
   convPend.set(t, last.ts);
   if (!convPendT) convPendT = setTimeout(convFlush, 150);
   renderBars();
+  if (mail) mailReadPainted();
 }
+// A mail read on the page moves its row, the app's badge and the 안 읽음 filter now; once the hub holds the position its app counts raise
+// (needs.unread, GET /api/integrations), and a peer's mail has its snapshot read again (34-peer-monitoring.js).
+function mailReadPainted() { MON.sig = ""; monSchedule(); }
+function mailReadSynced(t) { if (typeof pqPc === "function" && pqPc(t)) pqSoon(); else loadIntegrations(); }
 function convFlush() {
   convPendT = 0;
-  for (const [t, at] of convPend) api("/api/read", "POST", { target: t, ts: at }).catch(() => { if (READ[t] === at) READ[t] = null; convLoad(); });
+  for (const [t, at] of convPend) api("/api/read", "POST", { target: t, ts: at }).then(() => { if (isMailT(t)) mailReadSynced(t); }, () => { if (READ[t] === at) READ[t] = null; convLoad(); });
   convPend.clear();
 }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { if (CV.pin) convDwell(); convMaybeRead(); convLoad(); } });
