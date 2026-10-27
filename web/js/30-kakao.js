@@ -938,51 +938,45 @@ function kkAskCard() {
       el("button", { class: "btn text", type: "button", "data-k": "own", text: "직접 쓸게", onclick: own })));
 }
 // 고치기 asks what to change; the bot rewrites the draft (one model call, POST .../draft { revise }) and the old draft stays until the new one lands.
-const KK_REVISE_HINT = "더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘";
+// 고치기 on a draft: what to change, typed once (the model rewrites it), or 직접 수정 in the composer. The one reply card's field (10-reply-card.js).
 function kkReviseBox(d, rv) {
-  const inp = el("input", { class: "kk-rv", type: "text", maxlength: "500", placeholder: KK_REVISE_HINT, "aria-label": "고칠 내용", autocomplete: "off" });
-  inp.value = rv.text;
-  const go = el("button", { class: "btn", type: "button", "data-k": "revise-go", text: "고쳐 줘", disabled: !rv.text.trim(), onclick: () => { const change = inp.value.trim(); if (change) { KK.revise = null; kkMakeDraft(undefined, { code: d.code, change }); } } });
-  inp.oninput = () => { rv.text = inp.value; go.disabled = !inp.value.trim(); };
-  inp.onkeydown = ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); go.click(); } };
-  return [el("div", { class: "kk-rq", text: "어떻게 고칠까요?" }), inp,
-    el("div", { class: "btns" }, go,
-      el("button", { class: "btn text", type: "button", "data-k": "revise-cancel", text: "취소", onclick: () => { KK.revise = null; kkPaintFoot(); } }),
-      el("button", { class: "btn text kk-manual", type: "button", "data-k": "manual", "aria-label": "직접 수정", onclick: () => { KK.revise = null; kkEdit(d); } }, icon("pencil"), el("span", { text: "직접 수정" })))];
+  return rqReviseNode({ value: rv.text, onInput: v => { rv.text = v; }, go: change => { KK.revise = null; kkMakeDraft(undefined, { code: d.code, change }); },
+    cancel: () => { KK.revise = null; kkPaintFoot(); }, manual: () => { KK.revise = null; kkEdit(d); } });
 }
 // A draft of several KakaoTalk messages (d.parts) shows one bubble per message, in the order they go out; one 보내기 sends them all.
 const kkDraftParts = d => (Array.isArray(d.parts) && d.parts.length ? d.parts : [d.text]);
-const kkDraftHead = d => el("div", { class: "kk-dh", text: `${d.intent ? "새 메시지 초안" : "답장 초안"}${kkDraftParts(d).length > 1 ? ` · 메시지 ${kkDraftParts(d).length}개` : ""}` });
-function kkDraftText(d) {
-  const parts = kkDraftParts(d);
-  if (parts.length < 2) return el("div", { class: "kk-dt", text: d.text });
-  return el("div", { class: "kk-dt kk-dps" }, ...parts.map((p, i) => el("div", { class: `kk-dp${i < (d.sentParts | 0) ? " sent" : ""}`, text: p })));
+const kkDraftLabel = d => `${d.intent ? "새 메시지 초안" : "답장 초안"}${kkDraftParts(d).length > 1 ? ` · 메시지 ${kkDraftParts(d).length}개` : ""}`;
+// 되돌리기 on the 보내지 않았어요 toast: the dropped draft waits again (POST .../restore; a peer's room on its own computer, 34-peer-monitoring.js).
+async function kkRestore(code) {
+  try { await api(`/api/kakao/drafts/${enc(code)}/restore`, "POST", {}); toast("초안을 되돌렸어요"); kkTail(); kkIntgSoon(); } catch (e) { toast(e.message, true); }
 }
+// The room's draft as the one reply card (10-reply-card.js): the same head, body and 보내기 · 고치기 · 보내지 않기 as the 답장 확인 queue.
 function kkDraftCard(d) {
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); kkTail(); } finally { btn.disabled = false; } };
   const making = !!KK.open && KK.drafting === KK.open && KK.reviseCode === d.code, rv = !making && KK.revise && KK.revise.code === d.code ? KK.revise : null;
-  if (making || rv) return el("div", { class: "kk-draft", "data-code": d.code },
-    kkDraftHead(d),
-    kkDraftText(d),
-    ...(making ? [el("div", { class: "kk-st", role: "status", text: "고치는 중…" })] : kkReviseBox(d, rv)));
-  return el("div", { class: "kk-draft", "data-code": d.code },
-    kkDraftHead(d),
-    kkDraftText(d),
-    el("div", { class: "btns" },
-      el("button", { class: "btn", type: "button", "data-k": "send", text: "보내기", onclick: ev => run(ev.currentTarget, async () => {
-        const id = KK.open, r = await api(`/api/kakao/drafts/${enc(d.code)}/send`, "POST", {});
-        if (KK.open !== id) return;
-        kkAddSend(r, d.text); KK.drafts = KK.drafts.filter(x => x.code !== d.code); KK.stick = true; KK.pin = "bottom";
-        kkPaintTl(true); kkPaintFoot();
-      }) }),
-      el("button", { class: "btn tonal", type: "button", "data-k": "edit", text: "고치기", onclick: () => { KK.revise = { code: d.code, text: "" }; kkPaintFoot(); const i = $(".kk-rv", kkDrafts); if (i) i.focus(); } }),
-      el("button", { class: "btn text", type: "button", "data-k": "drop", text: "버리기", onclick: ev => run(ev.currentTarget, async () => {
-        const id = KK.open;
-        await api(`/api/kakao/drafts/${enc(d.code)}/drop`, "POST", {});
-        if (KK.open !== id) return;
-        KK.drafts = KK.drafts.filter(x => x.code !== d.code);
-        if (KK.edit && KK.edit.code === d.code) kkEditCancel(); else kkPaintFoot();
-      }) })));
+  const parts = kkDraftParts(d), inst = (INTG.items.find(i => i.key === "kakao") || {}).label;
+  // A KakaoTalk draft is text only: its card says so in the 첨부 줄 (10-reply-card.js rqAttachNode), never hiding it.
+  const card = { key: `kk:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: "kakao", label: KK.pc ? "" : inst, pc: KK.pc ? KK.pc.name : pqSelf(), at: d.created }, label: kkDraftLabel(d), labelCls: "kk-dh",
+    body: { text: d.text, parts, sentParts: d.sentParts, cls: parts.length > 1 ? "kk-dt kk-dps" : "kk-dt", partCls: "kk-dp" }, attach: { attachmentsNone: true, cannotAttach: [] } };
+  if (making) return rqCard({ ...card, status: "고치는 중…" });
+  if (rv) return rqCard({ ...card, revise: kkReviseBox(d, rv) });
+  return rqCard({ ...card, acts: {
+    send: ev => run(ev.currentTarget, async () => {
+      const id = KK.open, r = await api(`/api/kakao/drafts/${enc(d.code)}/send`, "POST", {});
+      if (KK.open !== id) return;
+      kkAddSend(r, d.text); KK.drafts = KK.drafts.filter(x => x.code !== d.code); KK.stick = true; KK.pin = "bottom";
+      kkPaintTl(true); kkPaintFoot();
+    }),
+    edit: () => { KK.revise = { code: d.code, text: "" }; kkPaintFoot(); const i = $(".kk-rv", kkDrafts); if (i) i.focus(); },
+    drop: ev => run(ev.currentTarget, async () => {
+      const id = KK.open;
+      await api(`/api/kakao/drafts/${enc(d.code)}/drop`, "POST", {});
+      rqDroppedToast(() => kkRestore(d.code));
+      if (KK.open !== id) return;
+      KK.drafts = KK.drafts.filter(x => x.code !== d.code);
+      if (KK.edit && KK.edit.code === d.code) kkEditCancel(); else kkPaintFoot();
+    }),
+  } });
 }
 function kkEdit(d) {
   KK.edit = { code: d.code };
@@ -1082,6 +1076,7 @@ function kkSetRow(chatId, d) {
 }
 // The event stream (99-boot.js): ids only, so the bodies are fetched here.
 function kkLive(e) {
+  if (e.kind === "kakao_draft" || e.kind === "kakao_send") rqSoon();   // the 답장 확인 queue (30-replies.js) reads this computer's drafts again
   if (KK.pc) return;   // the stream is this computer's; a peer's room is refreshed by the timer
   if (e.kind === "kakao_read") { if (KK.vis && e.chatId === KK.open) kkReads(); return; }
   if (e.kind === "kakao_rooms" || e.kind === "kakao_unreplied") { if (KK.vis) kkLoadRooms(); kkIntgSoon(); return; }

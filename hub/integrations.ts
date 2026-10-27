@@ -236,6 +236,13 @@ export function integrationItems(ctx: IntegrationContext, notices: readonly Noti
 	});
 }
 
+// The drafts an app keeps in its own store (KakaoTalk rooms: hub/kakao/send.ts drafts.json) added to what that app waits on, beside the comment apps'
+// counts (`needs`, hub/comments engine.needs): the app row and its badge then count every reply draft that waits for 보내기.
+export const withStoreDrafts = (needs: Readonly<Record<string, { drafts: number; unread: number; unreplied?: number }>>, app: string, drafts: number): Record<string, { drafts: number; unread: number; unreplied?: number }> => {
+	const cur = needs[app] ?? { drafts: 0, unread: 0, unreplied: 0 };
+	return { ...needs, [app]: { ...cur, drafts: cur.drafts + drafts } };
+};
+
 // The item's connection from the watches it owns (`own`, GET /api/integrations): `state` "connected" | "disconnected" whatever was alerted, and for a
 // disconnected one `since` (ISO) and `hint`, the row text ("연결 끊김 · 10월 23일 21:29부터 · 다시 로그인 필요") that replaces the needs line.
 export function withConnection<T extends { own?: string[] }>(item: T, watches: readonly WatchStatusLike[], timeZone?: string): T & { state: "connected" | "disconnected"; since?: string; hint?: string } {

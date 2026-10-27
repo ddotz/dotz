@@ -462,7 +462,7 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		await run(v, `document.querySelector('.kk-ask [data-k="pick"][data-i="0"]').click()`);
 		expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft" && r.body?.choice === "취소해")).body).toEqual({ choice: "취소해" });
 		await waitFor(v, `!document.querySelector(".kk-ask") && document.querySelector('.kk-draft[data-code="dp"] .kk-dt')`);
-		expect(await q(v, `return [...document.querySelectorAll('.kk-draft[data-code="dp"] .btn')].map(b => b.textContent)`)).toEqual(["보내기", "고치기", "버리기"]);
+		expect(await q(v, `return [...document.querySelectorAll('.kk-draft[data-code="dp"] .btn')].map(b => b.textContent)`)).toEqual(["보내기", "고치기", "보내지 않기"]);
 		expect(await q(v, `return document.querySelector('.kk-draft[data-code="dp"] .kk-dt').textContent`)).toBe("답장: 취소해");
 
 		ask = { question: "다시 묻습니다", choices: ["응", "아니"] };
@@ -892,7 +892,7 @@ describe("카카오톡 메시지 만들어 줘", () => {
 		expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft")).body).toEqual({ intent: "내일 7시로 미루자고 정중하게" });
 		await waitFor(v, `document.querySelector('.kk-draft[data-code="di"] .kk-dp') && !document.querySelector("#kk-draft-btn").disabled`);
 		const card = await q<Record<string, any>>(v, `const c = document.querySelector('.kk-draft[data-code="di"]'); return { head: c.querySelector(".kk-dh").textContent, parts: [...c.querySelectorAll(".kk-dp")].map(p => p.textContent), buttons: [...c.querySelectorAll(".btn")].map(b => b.textContent), intent: !!document.querySelector("#kk-intent-in") }`);
-		expect(card).toEqual({ head: "새 메시지 초안 · 메시지 2개", parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], buttons: ["보내기", "고치기", "버리기"], intent: false });
+		expect(card).toEqual({ head: "새 메시지 초안 · 메시지 2개", parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], buttons: ["보내기", "고치기", "보내지 않기"], intent: false });
 		await shot(v, "17-desktop-compose.png");
 
 		await run(v, `document.querySelector("#kk-new-btn").click()`);

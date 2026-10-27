@@ -11,14 +11,15 @@ import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
 import { conversationList, unreadOf } from "./conversations.ts";
-import { appEntries, INTEGRATIONS, readAppOff, integrationAvailable, integrationContext, integrationItems, withConnection } from "./integrations.ts";
+import { appEntries, INTEGRATIONS, readAppOff, integrationAvailable, integrationContext, integrationItems, withConnection, withStoreDrafts } from "./integrations.ts";
 import { createApp, deleteApp, removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
 import { allWatches, approveWatch, removeWatch, runWatch } from "./watch.ts";
 import { watchConnection } from "./watch-status.ts";
 import { featuresOf, ownedWatches, retryInternal, setFeature } from "./app-features.ts";
 import { fieldsOf, isSettingsTarget, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
-import { refreshReplyModelChoices } from "./reply-model-choices.ts";
+import { refreshReplyModelChoices, replyModelLabel } from "./reply-model-choices.ts";
+import { replyModel } from "./reply-model.ts";
 import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
 import { activityItems, broadcast, historyEvents, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
@@ -60,11 +61,11 @@ import { json, body, terminals } from "./routes-util.ts";
 import { ptyRoute } from "./pty.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { routeSettings } from "./routes-settings.ts";
-import { commentFlags, commentNeeds, commentsRoute } from "./comments/gateway.ts";
+import { commentFlags, commentNeeds, commentPending, commentsRoute } from "./comments/gateway.ts";
 import { appHealth, loadUserApps, PROXY_ROOT, removeUserApp, setUserAppOff, userApp } from "./user-apps.ts";
 import { proxyMatch, proxyRequest } from "./app-proxy.ts";
 import { igDmRoute } from "./ig-dm-gateway.ts";
-import { kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
+import { kakaoPendingCount, kakaoPendingDrafts, kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
 
 const BOOT_ID = Date.now().toString(36);
 // Installable-app files next to index.html: manifest, service worker (never cached by HTTP, so an update is seen at once), icons.
@@ -317,14 +318,34 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			await settleHandledDrafts().catch(e => log(`mail ${key}: handled-draft settle failed: ${(e as Error).message}`));
 		};
 		const unrepliedMailList = () => unrepliedMails(sentMailRefs());
+		// A draft a send-approval notice already shows (its `> 참조:` ref) is that notice's card; the store's own list leaves it out, so nothing counts twice.
+		const noticeDraftRefs = (): Set<string> => new Set(listNotices(NOTICE_CAP).items.flatMap(n => (n.decision?.state === "open" && !n.ignored && typeof n.decision.draft?.ref === "string" ? [n.decision.draft.ref] : [])));
+		// The KakaoTalk reply drafts waiting in watched rooms count as the kakao app's drafts beside the comment apps' (hub/integrations.ts needs.drafts).
+		const draftNeeds = () => withStoreDrafts(commentNeeds(), "kakao", kakaoPendingCount(noticeDraftRefs()));
 		const integrationView = () => {
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
 			const ctx = integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags());
 			const own = ownedWatches(DATA_DIR, allWatches());
-			const items = integrationItems(ctx, listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), commentNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => withConnection({ ...i, own: own.get(i.key) ?? [] }, allWatches()));
+			const items = integrationItems(ctx, listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), draftNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => withConnection({ ...i, own: own.get(i.key) ?? [] }, allWatches()));
 			return { items, available: integrationAvailable(items, ctx) };
 		};
 		if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
+		// 답장 확인 (web/js/30-replies.js): the reply drafts the apps keep in their own stores (KakaoTalk rooms, comment sources), newest first. A mail
+		// draft is a send-approval notice and is read from the notices; a store draft such a notice already shows is left out.
+		if (req.method === "GET" && url.pathname === "/api/replies") {
+			const skip = noticeDraftRefs();
+			const kakao = (await kakaoPendingDrafts(skip).catch(() => [])).map(d => ({ kind: "kakao", app: "kakao", conv: `kakao:${d.chatId}`, at: Date.parse(d.created) || 0, ...d }));
+			const comments = commentPending().filter(d => !skip.has(d.code)).map(d => ({ ...d, kind: "comment", via: d.kind, at: d.created }));
+			// The model a draft of that app uses (the app instance's 답장 모델, else the reply default) goes on the card's head when known.
+			const models = new Map<string, string>();
+			const withModel = async <T extends { app: string; conv?: string }>(item: T) => {
+				const key = `${item.app}|${item.conv ?? ""}`;
+				if (!models.has(key)) models.set(key, await replyModel(item.app, item.conv).then(replyModelLabel).catch(() => ""));
+				return models.get(key) ? { ...item, model: models.get(key) } : item;
+			};
+			const items = await Promise.all([...kakao, ...comments].map(withModel));
+			return json({ items: items.sort((a, b) => b.at - a.at) });
+		}
 		// The 앱 list (hub/user-apps.ts): the 모니터링 apps this install has on, then the owner's own manifests (with their health).
 		if (req.method === "GET" && url.pathname === "/api/apps") {
 			const view = integrationView();

@@ -80,6 +80,7 @@ export function createStore(dir: string) {
 		setDraftStatus: (code: string, status: DraftStatus) => writeAtomic(f("drafts.json"), drafts().map(d => (d.code === code ? { ...d, status } : d))),
 		replies,
 		putReply: (r: Reply) => writeAtomic(f("replies.json"), upsert(replies(), r, "id", MAX_REPLIES)),
+		removeReply: (id: string) => writeAtomic(f("replies.json"), replies().filter(r => r.id !== id)),
 		cursors,
 		setCursor: (key: string, c: Cursor) => writeAtomic(f("cursors.json"), { ...cursors(), [key]: c }),
 		dismissed,

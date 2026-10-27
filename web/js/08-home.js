@@ -233,12 +233,18 @@ function homeOwedRow(it) {
     el("span", { class: "dot unreplied" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: it.name })), el("span", { class: "ha", text: "답장을 기다리는 것이 있어요" })),
     el("span", { class: "hs unreplied", text: `미답장 ${it.unreplied}` }));
 }
+// 답장 확인: the reply drafts of every app and computer that wait for 보내기, one row that opens the queue (30-replies.js).
+function homeRepliesRow(n) {
+  return el("button", { class: "hr", type: "button", "data-k": "replies", onclick: () => rqOpen(), "aria-label": `답장 확인 ${n}건` },
+    el("span", { class: "dot att" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: "답장 확인" })), el("span", { class: "ha", text: "보내기 전에 확인할 답장 초안이 있어요" })),
+    el("span", { class: "hs warn", text: `${n}건` }));
+}
 function renderHomeNow() {
   const box = $("#home-now");
   if (!box) return;
   const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`)];
   const needs = nyList(), crit = needs.filter(x => x.crit).length;   // 09-needs-you.js: what only the owner can do, critical first
-  const owed = monItems().filter(i => i.app && i.unreplied), owedN = owed.reduce((c, i) => c + i.unreplied, 0);
+  const owed = monItems().filter(i => i.app && i.unreplied), owedN = owed.reduce((c, i) => c + i.unreplied, 0), drafts = rqCount();
   const waiting = needs.length;
   // 지금 진행 중 is only what runs now (a turn, a background worker); a waiting or idle conversation is a row of 대기 중 below it,
   // and background work that ended within the hour is listed last (실패 · 이유 · 다시 맡기기).
@@ -250,7 +256,7 @@ function renderHomeNow() {
     // Three kinds, three places: 답변 필요 (a decision only the owner can make), 답장 대기 (replies he owes, per app), 지금 진행 중; plain news is the 알림 card.
     el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), crit ? el("span", { class: "tag err", text: `중요 ${crit}` }) : null, waiting ? el("span", { class: "sup", text: `${waiting}` }) : null),
     nyListNode(needs),
-    ...(owed.length ? [el("div", { class: "hn-h" }, el("h2", { text: "답장 대기" }), unrepPill(`미답장 ${owedN}`)), el("div", { class: "hn" }, ...owed.map(homeOwedRow))] : []),
+    ...(owed.length || drafts ? [el("div", { class: "hn-h" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null), el("div", { class: "hn" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : []),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), working ? el("span", { class: "sup", text: `${working}개 작업 중` }) : null),
     el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...bg.map(workRow), ...(working ? [] : [el("div", { class: "empty", text: "진행 중인 작업이 없어요" })])),
     ...(restT.length ? [el("div", { class: "hn-h" }, el("h2", { text: "대기 중" })), el("div", { class: "hn", "data-k": "waiting" }, ...restT.map(restRow))] : []),
