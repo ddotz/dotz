@@ -345,8 +345,22 @@ async function answerInline(nd, opt) {
   // An option that needs detail opens the notice sheet with its text field; nothing is sent from the row.
   if (!nd.decision.draft && ntNeedsNote(nd, opt)) { await noticeSheetOpen(nd.pc ? nd : nd.id); ntAnswer(nd, opt); return; }
   dcSending.add(nd.id); syncInlineChoices();
-  try { await ntPost(nd, opt.n); } catch (e) { toast(e.message, true); }
+  try { await ntPost(nd, opt.n); dcAnswerToast(nd, opt); } catch (e) { toast(e.message, true); }
   dcSending.delete(nd.id); syncInlineChoices();
+}
+// What a draft answered in place did, with the next step: 보냈어요 · 메일 열기 (the mail it answered), 보내지 않았어요 · 되돌리기 (the draft waits again).
+function dcAnswerToast(nd, opt) {
+  const to = String(nd.decision.to || "");
+  if (!nd.decision.draft) return;
+  if (opt.label === "보내기") toast("보냈어요", false, to.startsWith("mail:") ? { label: "메일 열기", onclick: () => go("monitoring", `c:${to}`) } : null);
+  else if (opt.label === "보내지 않기") toast("보내지 않았어요", false, { label: "되돌리기", onclick: () => dcReopen(nd) });
+}
+async function dcReopen(nd) {
+  try {
+    if (nd.pc) await pqNotice(nd, "notice", { op: "reopen", id: String(nd.id) });
+    else { const r = await api("/api/notices/reopen", "POST", { ids: [String(nd.id)] }); ntApply(null, r.unread); await loadNotices(); }
+    toast("초안을 되돌렸어요");
+  } catch (e) { toast(e.message, true); }
 }
 function choicesNode(sig, pc, at) {
   const box = el("div", { class: isFixedT(target) ? "dcm fx" : "dcm", "data-sig": sig, "data-at": at || null });
