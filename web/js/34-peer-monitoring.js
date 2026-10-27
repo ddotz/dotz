@@ -68,6 +68,9 @@ function pqAct(path, body) {
 // api() in 02-basic-markdown.js runs every request through here: [path, method, body] as they go to this gateway.
 function pqRoute(path, method, body) {
   if (method === "GET") return [pqLink(path), method, body];
+  // 감시 삭제 of a peer's monitor runs on the computer that owns the watch.
+  const wd = method === "DELETE" ? /^\/api\/watches\/([a-z0-9-]+)$/.exec(path) : null;
+  if (wd && pqPc(`settings:w:${wd[1]}`)) return [pqProxy(pqPc(`settings:w:${wd[1]}`), "/api/peer/act"), "POST", { action: "watch", args: { op: "delete", name: wd[1] } }];
   const del = method === "DELETE" && KK.pc ? /^\/api\/kakao\/chat\/([^/]+)\/send\/([^/?]+)$/.exec(path) : null;   // a failed send of a peer's room is deleted on its owner
   if (del) return [pqProxy(KK.pc, "/api/peer/act"), "POST", { action: "kakao", args: { op: "send-delete", chatId: decodeURIComponent(del[1]), sendId: decodeURIComponent(del[2]) } }];
   const a = pqAct(path, body);
@@ -144,7 +147,7 @@ function pqMerge(items) {
       const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
       plain.push({ key: key(`m:${m.name}`), group: MON_GROUP.plain, name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: 0,
         hint: fresh ? monStrip(monLine(last), monNames(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
-        badge: m.last_result === "fail" ? ["실패", "err"] : m.kind === "schedule" ? [MON_KIND.schedule, ""] : null, pc, chips });
+        badge: m.connection === "disconnected" ? ["연결 끊김", "err"] : m.paused ? ["꺼짐", ""] : m.last_result === "fail" ? ["실패", "err"] : m.kind === "schedule" ? [MON_KIND.schedule, ""] : null, pc, chips });
     }
     news.push(...sn.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)));
   }
