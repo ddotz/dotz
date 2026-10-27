@@ -28,10 +28,12 @@ if (!args.includes("rpc")) {
 	out({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "print 답" }], stopReason: "stop", usage: { input: 7, output: 1 } } });
 } else {
 	if (mode === "start-crash") process.exit(3);
-	let n = 0;
+	let n = 0, resetting = false;
 	for await (const line of console) {
 		const c = JSON.parse(line);
 		appendFileSync(${JSON.stringify(cmdFile)}, c.type + "\\n");
+		// like OmO: a prompt that arrives while the session is being replaced is dropped (no response, no turn)
+		if (c.type === "prompt" && resetting) continue;
 		if (c.type === "prompt") {
 			n++;
 			if (mode === "hang") continue;
@@ -47,7 +49,10 @@ if (!args.includes("rpc")) {
 			out({ type: "agent_end" });
 			if (mode === "crash-after") process.exit(0);
 		} else if (c.type === "new_session") {
-			out({ id: c.id, type: "response", command: "new_session", success: true, data: {} });
+			if (mode === "slow-reset") {
+				resetting = true;
+				setTimeout(() => { resetting = false; out({ id: c.id, type: "response", command: "new_session", success: true, data: {} }); }, 30);
+			} else out({ id: c.id, type: "response", command: "new_session", success: true, data: {} });
 		}
 	}
 }
@@ -137,6 +142,19 @@ test("the first call starts one warm process and later calls reuse it", async ()
 	// each answer resets the session, so the next prompt starts without the one before it
 	await flush();
 	expect(commands().filter(c => c === "new_session")).toHaveLength(2);
+});
+
+test("the next prompt waits for the session reset to finish: OmO drops a prompt sent while it replaces the session", async () => {
+	auth([account()]);
+	process.env.FAKE_OMO_MODE = "slow-reset";
+	try {
+		const first = await callModel("sys", "u", { model: SONNET });
+		const second = await callModel("sys", "u", { model: SONNET });
+		expect([first.text, second.text]).toEqual(["warm 답 1", "warm 답 2"]);
+		expect(spawns()).toHaveLength(1);
+	} finally {
+		delete process.env.FAKE_OMO_MODE;
+	}
 });
 
 test("the effort suffix of the reply model reaches the warm process", async () => {

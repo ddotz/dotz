@@ -152,6 +152,10 @@ class WarmRunner {
 	private buf = "";
 	private seq = 0;
 	private pending?: { frame: (f: Frame) => boolean; fail: (e: Error) => void };
+	// The session reset after each answer (new_session) must be finished before the next prompt goes in: OmO drops a prompt that arrives
+	// while it replaces the session (no response, no turn), so the second call on a warm process used to hang until its timeout.
+	private ready: Promise<void> = Promise.resolve();
+	private resetDone?: () => void;
 	// Calls handed to this process and not settled yet (counted when handed out, so two callers never pick the same idle process).
 	private inUse = 0;
 	get busy(): boolean {
@@ -196,6 +200,11 @@ class WarmRunner {
 					try {
 						f = JSON.parse(line);
 					} catch {
+						continue;
+					}
+					if (f.type === "response" && f.command === "new_session") {
+						this.resetDone?.();
+						this.resetDone = undefined;
 						continue;
 					}
 					if (this.pending?.frame(f)) this.pending = undefined;
@@ -277,6 +286,7 @@ class WarmRunner {
 			let firstTokenMs: number | undefined;
 			const settle = (fn: () => void) => {
 				clearTimeout(timer);
+				this.ready = new Promise<void>(r => (this.resetDone = r));
 				this.write({ type: "new_session" });
 				fn();
 				return true;
@@ -297,7 +307,7 @@ class WarmRunner {
 					return settle(() => resolve({ text: out, inputTokens: (u.input ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0), outputTokens: u.output ?? 0, ms: runnerDeps.now() - started, ...(firstTokenMs !== undefined ? { firstTokenMs } : {}) }));
 				},
 			};
-			this.write({ type: "prompt", message: text });
+			void this.ready.then(() => this.write({ type: "prompt", message: text }));
 		});
 	}
 }
