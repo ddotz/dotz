@@ -40,6 +40,37 @@ export function nextReply(cur: MailReply | undefined, ev: MailReplyEvent): MailR
 	}
 }
 
+// ---- does this incoming mail expect a reply? ----
+// The poster may say so (`needsReply`); otherwise the gateway reads the mail itself, so 답장 필요 does not depend on a watcher or a bot
+// remembering to mark it (owner 2026-10-27: every mail of the company webmail sat at no state). Conservative on purpose: a sender that
+// is a machine or a mailing list, a bulk subject, an unsubscribe footer, or a copy where the owner is only in CC never expects one; else
+// a request in the subject or the text does (asks, questions, deadlines), and a mail that only delivers an answer does not.
+const MACHINE_SENDER = /no-?reply|do-?not-?reply|mailer-daemon|postmaster|administrator|notification|newsletter|news@|marketing|알림|공지/i;
+const BULK_SUBJECT = /^\s*[[(]?\s*(?:광고|ad|advertisement)\s*[\])]|스팸\s*리포트|spam report|뉴스레터|newsletter|시황|일일\s*(?:보고|리포트)|weekly digest|webinar|웨비나|unsubscribe|수신\s*거부/i;
+const BULK_TEXT = /수신\s*거부|unsubscribe|더 이상 받지 않|광고성 정보|this email was sent to/i;
+const ASKS = /요청|부탁|회신\s*(?:바랍|부탁|주|요망|해)|답변\s*(?:바랍|부탁|주|요망|해)|답장\s*(?:바랍|부탁|주)|문의|검토\s*(?:해|부탁|요청|후|바랍)|확인\s*(?:부탁|요청|해\s*주|바랍|하시고)|의견\s*(?:을|주|부탁|바랍)|제출\s*(?:해|부탁|바랍|요망)|견적|주시기\s*바랍|주시면|주세요|해\s*주실|해\s*주시|가능(?:하신지|할까요|한지|하실까요)|어떻게\s*생각|까지\s*(?:회신|제출|송부|보내)|[?？]|please|could you|can you|would you|let me know|request|kindly|asap/i;
+const TODO = /할\s*일[\s\S]*/;
+const TODO_NONE = /^할\s*일\W*\s*(?:•|-|·)?\s*없음/;
+const REPLY_TODO = /회신|답장|답변|제출|작성|송부|보내|알려|의견|참석\s*여부|견적|reply|respond|send/i;
+const ANSWERS = /답변\s*(?:전달|드립니다|드려요|입니다)|회신\s*(?:드립니다|드려요|입니다)|감사합니다\.?\s*$/i;
+export type ReplyCue = { from?: string; to?: string; cc?: string; subject: string; text?: string };
+export function replyExpected(m: ReplyCue, own: ReadonlySet<string> = ownAddresses()): boolean {
+	if (MACHINE_SENDER.test(m.from ?? "") || BULK_SUBJECT.test(m.subject)) return false;
+	const text = (m.text ?? "").slice(0, 4000);
+	if (BULK_TEXT.test(text)) return false;
+	const inTo = (m.to ?? "").split(",").some(t => own.has(addressKey(t)));
+	const inCc = (m.cc ?? "").split(",").some(t => own.has(addressKey(t)));
+	if (own.size && m.to && !inTo && inCc) return false;
+	// The mail summary ends with what the owner has to do ("할 일"): when it is there, it decides. A reply is owed when one of those
+	// things goes back to the sender (회신, 제출, 작성해 보내기, 참석 여부...); "없음" or only reading and checking owes none.
+	const todo = TODO.exec(text)?.[0];
+	if (todo) return !TODO_NONE.test(todo) && REPLY_TODO.test(todo);
+	const hay = `${m.subject}\n${text}`;
+	if (!ASKS.test(hay)) return false;
+	// A mail that only hands over an answer ("답변 전달", "회신 드립니다") and asks nothing else of its own.
+	return !(ANSWERS.test(m.subject) && !ASKS.test(text.replace(new RegExp(ANSWERS.source, "gi"), "")));
+}
+
 /** What older records say: `needsReply` / `noReply` flags and the suggested reply draft's state. */
 export type LegacyReplyFacts = { reply?: MailReply; needsReply?: boolean; noReply?: boolean; suggest?: { state?: string } };
 export function replyOf(m: LegacyReplyFacts): MailReply | undefined {
@@ -92,7 +123,9 @@ export function directionOf(f: DirectionFacts, own: ReadonlySet<string> = ownAdd
 
 // ---- migration ----
 
-export type StoredMail = LegacyReplyFacts & { key: string; subject: string; from: string; to?: string; cc?: string; at: string; dir?: "out"; sentAt?: string };
+export type StoredMail = LegacyReplyFacts & { key: string; subject: string; from: string; to?: string; cc?: string; at: string; dir?: "out"; sentAt?: string; summary?: string; preview?: string };
+/** Mails older than this keep no reply state from replyExpected when the stored mails are brought up to the rules: history, not a backlog. */
+const JUDGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
 const subjectKey = (s: string): string => s.replace(/^\s*(?:(?:re|fw|fwd|답장|회신|전달)\s*:\s*)+/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
 
 /**
@@ -100,8 +133,9 @@ const subjectKey = (s: string): string => s.replace(/^\s*(?:(?:re|fw|fwd|답장|
  * reply of his own (a sent dotz draft for it, or an outgoing mail with the same subject to its sender after it) becomes 답장함.
  * Returns the number of records it changed; a second run changes none.
  */
-export function migrateMails(records: StoredMail[], opts: { own?: ReadonlySet<string>; sentRefs?: ReadonlySet<string> } = {}): number {
+export function migrateMails(records: StoredMail[], opts: { own?: ReadonlySet<string>; sentRefs?: ReadonlySet<string>; now?: number } = {}): number {
 	const own = opts.own ?? ownAddresses();
+	const now = opts.now ?? Date.now();
 	let changed = 0;
 	for (const r of records) {
 		let touched = false;
@@ -117,7 +151,8 @@ export function migrateMails(records: StoredMail[], opts: { own?: ReadonlySet<st
 				touched = true;
 			}
 		} else {
-			const reply = opts.sentRefs?.has(r.key) ? "replied" : replyOf(r);
+			const fresh = now - Date.parse(r.at) <= JUDGE_WINDOW_MS;
+			const reply = opts.sentRefs?.has(r.key) ? "replied" : replyOf(r) ?? (fresh && replyExpected({ from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: r.summary || r.preview || "" }, own) ? "needs" : undefined);
 			if (reply !== r.reply || "needsReply" in r || "noReply" in r) {
 				if (reply) r.reply = reply;
 				delete r.needsReply;
