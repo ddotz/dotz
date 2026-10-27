@@ -21,6 +21,7 @@ const SENDS = [{ id: "send:cm:youtube:c3", commentId: "cm:youtube:c3", text: "�
 const YT = { key: "youtube", app: "youtube", label: "유튜브", icon: "chat", kind: "app", unread: 1, notices: [], needs: { drafts: 1, unread: 1, sentToday: 0 } };
 const snapshot = () => ({ name: "맥미니", rev: "r1", monitors: [], notices: [], integrations: [YT], available: [], conversations: [], replies: [] });
 
+const acts: { action: string; args: Record<string, unknown> }[] = [];
 const gets: string[] = [];
 const localPosts: { path: string; body: unknown }[] = [];
 const json = (v: unknown, status = 200) => Response.json(v, { status });
@@ -50,7 +51,7 @@ const server = Bun.serve({
 		if (p === "/api/replies") return json({ items: [] });
 		if (p === "/api/monitoring/peers") return json([{ name: "맥미니", url: MINI, online: true, stale: false, items: snapshot() }]);
 		if (p === "/api/peer/proxy") {
-			if (req.method === "POST") return json({ ok: true });
+			if (req.method === "POST") { acts.push((await req.json()) as (typeof acts)[number]); return json({ ok: true }); }
 			const pp = url.searchParams.get("p") ?? "";
 			gets.push(pp);
 			return peerGet(pp) ?? json({});
@@ -69,7 +70,7 @@ const q = async <R = unknown>(v: View, code: string): Promise<R> => JSON.parse((
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const KEY = `p:${MINI}|i:youtube`;
 const boot = async (width: number, height: number) => {
-	gets.length = 0; localPosts.length = 0;
+	gets.length = 0; localPosts.length = 0; acts.length = 0;
 	const v = new Bun.WebView({ width, height });
 	views.push(v);
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
@@ -129,4 +130,5 @@ describe.each([[390, 844], [1280, 900]])("another computer's comment app at %ipx
 		]);
 		expect(localPosts).toEqual([]);
 	}, 20000);
+
 });
