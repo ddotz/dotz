@@ -177,7 +177,7 @@ describe("settings conversations on the home and in the log", () => {
 		await waitFor(v, `S && S.work && S.work.length && NM.loaded`);
 		await run(v, `go("home")`);
 		await waitFor(v, `[...document.querySelectorAll("#home-now .hr")].some(r => r.textContent.includes("로그인 원인 조사"))`);
-		await run(v, `[...document.querySelectorAll("#home-now .hr")].find(r => r.textContent.includes("로그인 원인 조사")).click()`);
+		await run(v, `[...document.querySelectorAll("#home-now .hr")].find(r => r.textContent.includes("로그인 원인 조사")).querySelector(".hrx-m").click()`);
 		await waitFor(v, `current === "chat" && target === "settings:w:login-local" && monCtx === target`);
 	});
 
