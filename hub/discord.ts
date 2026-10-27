@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.ts";
 import { askComponentsFor } from "./askbuttons.ts";
+import type { Pick } from "./intake.ts";
 import { msg } from "./i18n.ts";
 import { gatewayDryRun } from "./live-guard.ts";
 import { threadForReply, threadTitle } from "./threads.ts";
@@ -647,6 +648,7 @@ export type Incoming = {
 	content: string;
 	attachments: { name: string; url: string; type?: string }[];
 	replyTo?: { author: string; content: string };
+	picks?: Pick[];
 };
 
 // Owner messages sent while the gateway restarts or is disconnected are fetched after the next READY, as 오모냥 handles

@@ -1,6 +1,7 @@
 // Pure message formatting for hub/discord.ts: text -> Discord payloads (chunking, plain/readable text, reply reference).
 // Moved out of discord.ts unchanged; discord.ts re-exports the public functions. No module state, no imports from discord.ts.
 import { isSnowflake } from "./threads.ts";
+import { DECISION_HEAD } from "./choices.ts";
 import { metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
 
 const LIMIT = 1900;
@@ -30,6 +31,11 @@ export function chunks(text: string, limit = LIMIT): string[] {
 	let fence = false;
 	for (const line of text.split("\n")) {
 		if (/^\s*```/.test(line)) fence = !fence;
+		// Keep a decision's question with its options, even when a long quoted draft immediately precedes it.
+		if (!fence && DECISION_HEAD.test(line) && cur.length) {
+			blocks.push(cur.join("\n"));
+			cur = [];
+		}
 		if (!fence && !line.trim()) {
 			if (cur.length) blocks.push(cur.join("\n"));
 			cur = [];

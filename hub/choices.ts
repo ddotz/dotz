@@ -104,7 +104,7 @@ export const detailOf = (o: { label: string; desc?: string; detail?: boolean }):
 type DecisionBlock = { title: string; options: DecisionOption[]; headed?: true };
 export const hasDecisionHead = (blocks: DecisionBlock[]): boolean => blocks.some(b => b.headed);
 const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
-const D_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
+export const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 export function parseDecisions(text: string): { question: string; blocks: DecisionBlock[] } {
 	const lines = text.replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
@@ -114,7 +114,7 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 	let cur: DecisionBlock | undefined;
 	let fence = false;
 	while (i < lines.length && !lines[i]!.trim()) i++;
-	if (i < lines.length && !D_OPT.test(lines[i]!) && !D_HEAD.test(lines[i]!)) question = lines[i++]!.trim();
+	if (i < lines.length && !D_OPT.test(lines[i]!) && !DECISION_HEAD.test(lines[i]!)) question = lines[i++]!.trim();
 	for (; i < lines.length; i++) {
 		const line = lines[i]!;
 		if (FENCE.test(line)) {
@@ -122,7 +122,7 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 			continue;
 		}
 		if (fence) continue;
-		const h = D_HEAD.exec(line);
+		const h = DECISION_HEAD.exec(line);
 		if (h) {
 			cur = { title: h[1]!.trim(), options: [], headed: true };
 			blocks.push(cur);
@@ -137,7 +137,7 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 		}
 		let desc = "";
 		const next = lines[i + 1];
-		if (next !== undefined && next.trim() && !D_OPT.test(next) && !D_HEAD.test(next) && !D_CLOSE.test(next) && !FENCE.test(next)) {
+		if (next !== undefined && next.trim() && !D_OPT.test(next) && !DECISION_HEAD.test(next) && !D_CLOSE.test(next) && !FENCE.test(next)) {
 			desc = next.trim();
 			i++;
 		}

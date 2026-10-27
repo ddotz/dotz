@@ -4,6 +4,7 @@ import { parseChoices, parseDecisions } from "./choices.ts";
 import type { Interaction } from "./discord.ts";
 import { emit } from "./events.ts";
 import { inboxText } from "./intake.ts";
+import type { Pick } from "./intake.ts";
 import { answerDecision, type DecisionSend, listNotices } from "./notices.ts";
 
 const ASK = "[ask] 확인\n결정: 확인\n**1) 확인됨** ← 추천\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n";
@@ -52,7 +53,8 @@ function click(customId: string, type = 3, content = ASK, note?: string): Intera
 function harness() {
 	const replies: { type: number; data?: any }[] = [];
 	const answers: [string, string][] = [];
-	return { replies, answers, run: (d: Interaction) => askInteraction(d, { owner: "owner", reply: async (_d, type, data) => void replies.push({ type, data }), answer: (t, text) => void answers.push([t, text]) }) };
+	const picks: Pick[][] = [];
+	return { replies, answers, picks, run: (d: Interaction) => askInteraction(d, { owner: "owner", reply: async (_d, type, data) => void replies.push({ type, data }), answer: (t, text, p) => { answers.push([t, text]); picks.push(p); } }) };
 }
 
 test("Discord: a needs-detail button opens a modal and sends nothing; the submit sends '2) 안 됨 - <text>'; '1) 확인됨' sends at once", async () => {
@@ -64,9 +66,11 @@ test("Discord: a needs-detail button opens a modal and sends nothing; the submit
 	expect(h.replies[0]!.data.components[0].components[0]).toMatchObject({ type: 4, custom_id: "note", style: 2, required: true });
 	await h.run(click(`${ASK_PREFIX}:chat:2`, 5, ASK, "  화면이\n안 열려요 "));
 	expect(h.answers).toEqual([["chat", "2) 안 됨 - 화면이 안 열려요"]]);
+	expect(h.picks).toEqual([[{ q: "결정: 확인", n: 2, label: "안 됨", note: "화면이 안 열려요" }]]);
 	expect(h.replies[1]!.type).toBe(7);
 	await h.run(click(`${ASK_PREFIX}:chat:1`));
 	expect(h.answers.at(-1)).toEqual(["chat", "1) 확인됨"]);
+	expect(h.picks.at(-1)).toEqual([{ q: "결정: 확인", n: 1, label: "확인됨" }]);
 	expect(h.replies.at(-1)!.type).toBe(7);
 });
 
