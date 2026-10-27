@@ -8,19 +8,25 @@
 // Reply state of an incoming thread, kept apart from read / unread (reading never changes it):
 //   (none)  nothing is expected          needs   답장 필요        draft  초안 있음 (a draft waits for approval)
 //   replied 답장함 (sent by dotz, or an outgoing mail of his found later in the thread)
-//   skipped 답장 안 함 (his mark)         fyi     답장 불필요 (no reply needed, his mark)
+//   skipped 답장 안 함 (his mark, older)  fyi     답장 안 함 (his mark)
+// skipped and fyi are kept apart in the data but read the same to him: one label, 답장 안 함. Only he sets either (hub/mail.ts setMailReply
+// refuses them without `by: "owner"`), and his mark records who and when (`reply_by: "owner"`, `reply_at`), so a skipped without that
+// evidence is known to be from older code (hub/mail-repair.ts lists them).
 // `nextReply` is the only place that moves between them.
 export type MailDirection = "in" | "out";
 export type MailReply = "needs" | "draft" | "replied" | "skipped" | "fyi";
 /** need = a reply is expected; draft = a reply draft was offered; sent = a reply went out (dotz) or his own mail was found in the thread;
- *  skip / fyi = his marks; reopen = he took a mark back. */
+ *  skip / fyi = his marks; reopen = his 답장 필요로 표시 (from no state, a mark, or an answered thread that needs another answer). */
 export type MailReplyEvent = "need" | "draft" | "sent" | "skip" | "fyi" | "reopen";
 
-export const REPLY_LABEL: Readonly<Record<MailReply, string>> = { needs: "답장 필요", draft: "초안 있음", replied: "답장함", skipped: "답장 안 함", fyi: "답장 불필요" };
-/** The label of a mail row: outgoing = 내가 보냄; incoming = its reply state, else 읽음 / 새 메일. */
-export function mailLabel(dir: MailDirection, read: boolean, reply?: MailReply): string {
-	return dir === "out" ? "내가 보냄" : reply ? REPLY_LABEL[reply] : read ? "읽음" : "새 메일";
+export const REPLY_LABEL: Readonly<Record<MailReply, string>> = { needs: "답장 필요", draft: "초안 있음", replied: "답장함", skipped: "답장 안 함", fyi: "답장 안 함" };
+/** The reply-state tag of a mail row: an incoming mail's reply state, else none (""). Read / unread is never in this slot (the row has its own
+ *  안 읽음 N pill), and an outgoing mail has no reply state (its sender slot says 나 → 받는 사람). */
+export function mailLabel(dir: MailDirection, reply?: MailReply): string {
+	return dir === "out" || !reply ? "" : REPLY_LABEL[reply];
 }
+/** Who set the reply state: "owner" = his own mark (답장 안 함, 답장 필요로 표시). Missing = the gateway, a poster or older code. */
+export type ReplyBy = "owner";
 
 /** The transition table. A sent reply wins over everything; his marks only replace an open state; a new expectation never reopens a closed one. */
 export function nextReply(cur: MailReply | undefined, ev: MailReplyEvent): MailReply | undefined {
@@ -36,7 +42,7 @@ export function nextReply(cur: MailReply | undefined, ev: MailReplyEvent): MailR
 		case "fyi":
 			return cur === "replied" ? cur : "fyi";
 		case "reopen":
-			return cur === "skipped" || cur === "fyi" ? "needs" : cur;
+			return cur === "draft" ? cur : "needs";
 	}
 }
 
@@ -51,7 +57,8 @@ const BULK_TEXT = /수신\s*거부|unsubscribe|더 이상 받지 않|광고성 �
 const ASKS = /요청|부탁|회신\s*(?:바랍|부탁|주|요망|해)|답변\s*(?:바랍|부탁|주|요망|해)|답장\s*(?:바랍|부탁|주)|문의|검토\s*(?:해|부탁|요청|후|바랍)|확인\s*(?:부탁|요청|해\s*주|바랍|하시고)|의견\s*(?:을|주|부탁|바랍)|제출\s*(?:해|부탁|바랍|요망)|견적|주시기\s*바랍|주시면|주세요|해\s*주실|해\s*주시|가능(?:하신지|할까요|한지|하실까요)|어떻게\s*생각|까지\s*(?:회신|제출|송부|보내)|[?？]|please|could you|can you|would you|let me know|request|kindly|asap/i;
 const TODO = /할\s*일[\s\S]*/;
 const TODO_NONE = /^할\s*일\W*\s*(?:•|-|·)?\s*없음/;
-const REPLY_TODO = /회신|답장|답변|제출|작성|송부|보내|알려|의견|참석\s*여부|견적|reply|respond|send/i;
+// Making something for the sender counts (작성, 견적, 해설, 자료 준비...): what is made goes back to him.
+const REPLY_TODO = /회신|답장|답변|제출|작성|송부|보내|알려|의견|참석\s*여부|견적|해설|자료\s*(?:준비|정리|제공|전달)|reply|respond|send/i;
 const ANSWERS = /답변\s*(?:전달|드립니다|드려요|입니다)|회신\s*(?:드립니다|드려요|입니다)|감사합니다\.?\s*$/i;
 export type ReplyCue = { from?: string; to?: string; cc?: string; subject: string; text?: string };
 export function replyExpected(m: ReplyCue, own: ReadonlySet<string> = ownAddresses()): boolean {
@@ -123,7 +130,7 @@ export function directionOf(f: DirectionFacts, own: ReadonlySet<string> = ownAdd
 
 // ---- migration ----
 
-export type StoredMail = LegacyReplyFacts & { key: string; subject: string; from: string; to?: string; cc?: string; at: string; dir?: "out"; sentAt?: string; summary?: string; preview?: string };
+export type StoredMail = LegacyReplyFacts & { reply_by?: ReplyBy; reply_at?: string; key: string; subject: string; from: string; to?: string; cc?: string; at: string; dir?: "out"; sentAt?: string; summary?: string; preview?: string };
 /** Mails older than this keep no reply state from replyExpected when the stored mails are brought up to the rules: history, not a backlog. */
 const JUDGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
 const subjectKey = (s: string): string => s.replace(/^\s*(?:(?:re|fw|fwd|답장|회신|전달)\s*:\s*)+/gi, "").replace(/\s+/g, " ").trim().toLowerCase();

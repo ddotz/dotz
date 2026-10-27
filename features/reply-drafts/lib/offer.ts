@@ -2,7 +2,7 @@
 // the user's tone, offered as a send-approval [ask] (hub/draft-approval.ts). Never throws; nothing is sent from here.
 import { addressesOf, precheck, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
-import { askText, buildDraft, stageForReply } from "./flow.ts";
+import { askText, buildDraft, draftTrace, libraryFor, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
 import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
@@ -60,6 +60,7 @@ export function offerMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offered"
 async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | undefined>, queued: number, requested = false): Promise<"offered" | "skipped" | "off" | "failed"> {
 	const log = deps.log ?? ((line: string) => console.error(line));
 	const started = Date.now();
+	let trace: DraftTrace | undefined;
 	try {
 		const settings = loadSettings();
 		if (!requested && !appOn(settings, "mail")) return "off";
@@ -81,13 +82,17 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		const read = Date.now();
 		if (deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
 		const learned = Date.now();
-		const built = await buildDraft(item, { source: m.source, mailId: m.id, ref: m.key, ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, { call: deps.call });
+		// One budget for every model call of this draft; the file match (and its tie-break call, if any) runs beside the draft call.
+		trace = draftTrace();
+		const flow = { call: deps.call, pick: deps.pick, trace };
+		const files = libraryFor(item, { source: m.source, ref: m.key }, flow).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined));
+		const built = await buildDraft(item, { source: m.source, mailId: m.id, ref: m.key, ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, flow);
 		if (built.action !== "draft") {
 			markDrafted(looked);
 			return "skipped";
 		}
 		ensureSwitch();
-		await stageForReply(built.rec, { call: deps.call, pick: deps.pick }).catch(e => log(`reply draft: files for mail ${m.key} not staged: ${(e as Error).message}`));
+		await stageForReply(built.rec, flow, files).catch(e => log(`reply draft: files for mail ${m.key} not staged: ${(e as Error).message}`));
 		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, built.warnings));
 		addDraft(built.rec);
 		markDrafted(looked);
@@ -98,5 +103,8 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 	} catch (e) {
 		log(`reply draft: offer for mail ${m.key} failed: ${(e as Error).message}`);
 		return "failed";
+	} finally {
+		// Every model call this draft made (skipped, failed or offered), so a slow or costly draft can be traced.
+		if (trace) log(`reply draft: mail ${m.key} ${traceLine(trace)}`);
 	}
 }

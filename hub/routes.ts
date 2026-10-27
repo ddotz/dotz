@@ -21,23 +21,23 @@ import { fieldsOf, isSettingsTarget, readSettings, SettingsError, writeSettings 
 import { refreshReplyModelChoices } from "./reply-model-choices.ts";
 import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
-import { activityItems, broadcast, historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
+import { activityItems, broadcast, historyEvents, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { subagentLists } from "./activity.ts";
-import { runningOmoWorkers } from "./bgwork.ts";
+import { cancelOmoWorker, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
 import { lastTurnEnd, mailConversation, openTodos, runIntent, runState, workConversationRuns, type RunState } from "./runstate.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { draftAttachRoute } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
 import { composeMail, deleteMail, MailError, mailBodyRoute, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
-import { listDrafts } from "../features/reply-drafts/lib/store.ts";
+import { holdDrafts, listDrafts, restoreDrafts } from "../features/reply-drafts/lib/store.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
 import { orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
+import { type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissedAlertAts, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenDraftNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
@@ -120,7 +120,8 @@ function stateRuns(): Record<string, RunState> {
 		stoppedBy: orch.stoppedBy || undefined,
 		error: orch.error ? { text: orch.error.text, since: orch.error.since } : undefined,
 		ask: askFor("main"),
-		work: running.filter(w => { const t = (w as { target?: string }).target; return t === "web" || t === "terminal" || !t; }),
+		work: running.filter(w => mainWork(w.target)),
+		failed: works.find(w => w.status !== "running" && mainWork(w.target)),
 		children: runningChildren("orchestrator"),
 		later: deferred.filter(d => d.target === "web" || d.target === "terminal").length,
 		lastTurnEnd: lastTurnEnd(mainItems),
@@ -129,13 +130,13 @@ function stateRuns(): Record<string, RunState> {
 	});
 	const lanesOut: Record<string, RunState> = {};
 	for (const lane of lanes.values()) {
-		const source = `lane:${lane.name}`, items = activityItems(source), workers = runningOmoWorkers(lane.sessionFile);
+		const source = `lane:${lane.name}`, items = activityItems(source), workers = runningOmoWork(lane.sessionFile);
 		lanesOut[source] = runState({
 			status: lane.status,
 			since: turnStart(source, lane.startedAt),
 			intent: runIntent(items),
 			ask: lane.pendingAsk ? { text: lane.pendingAsk.text, at: lane.pendingAsk.at } : undefined,
-			work: workers ? [{ description: "백그라운드 작업" }] : undefined,
+			work: workers,
 			children: runningChildren(source),
 			later: deferred.filter(d => d.target === source).length,
 			capacity: lane.waiting,
@@ -149,6 +150,7 @@ function stateRuns(): Record<string, RunState> {
 	const mailRuns = workConversationRuns(works, t => mailConversation(t, thread => mailByThread(thread)?.key));
 	return { main, ...lanesOut, ...mailRuns };
 }
+const mainWork = (t: string | undefined) => t === "web" || t === "terminal" || !t;
 const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefined => {
 	for (let i = items.length - 1; i >= 0; i--) if (items[i]!.type === "turn_start") return items[i]!.ts;
 	return undefined;
@@ -260,10 +262,32 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return json({ name: resolveName(name, hostname()), custom: name, default: friendlyName(hostname()) });
 		}
 		if (req.method === "GET" && url.pathname === "/api/workers") return json({ items: bgWork.list() });
+		// 중단 (the worker's process ends; a lane's worker too) and 다시 맡기기 (its request goes to the orchestrator again, in its own conversation).
+		const workerAct = req.method === "POST" ? /^\/api\/workers\/([\w.-]{1,80})\/(cancel|retry)$/.exec(url.pathname) : null;
+		if (workerAct) {
+			const id = workerAct[1]!;
+			if (workerAct[2] === "cancel") {
+				let r = await bgWork.cancel(id);
+				for (const lane of lanes.values()) if (!r.ok && r.status === 404) r = await cancelOmoWorker(id, lane.sessionFile);
+				return r.ok ? json({ ok: true, item: bgWork.list().find(w => w.id === id) }) : json({ error: r.error }, r.status);
+			}
+			const w = bgWork.list().find(x => x.id === id);
+			if (!w) return json({ error: "이 작업을 찾을 수 없어요" }, 404);
+			if (w.status !== "failed") return json({ error: w.status === "running" ? "아직 하고 있는 작업이에요" : "이미 끝난 작업이에요" }, 409);
+			const to = workConversation(w.target, thread => mailByThread(thread)?.key);
+			const mail = to.startsWith("mail:") ? mailByKey(to.slice(5)) : undefined;
+			try {
+				const project = to.startsWith("ch:") ? projectTarget(to, discord.channels.work) : undefined;
+				await sendWeb({ mail, project, settings: to.startsWith("settings:") ? to.slice(9) : undefined, channel: "web", text: retryText(w, w.reply_to ? ownerMessage(w.reply_to)?.text : undefined), mode: "default", login: req.headers.get("tailscale-user-login") ?? "local" });
+			} catch (error) {
+				return json({ error: (error as Error).message }, 409);
+			}
+			return json({ ok: true, to });
+		}
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
 			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
-		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
+		if (req.method === "GET" && url.pathname === "/api/notices") return json({ ...listNotices(Number(url.searchParams.get("limit") ?? 100)), gone: dismissedAlertAts() });
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		// Run one watch now (the web's 지금 확인 / 지금 다시 확인): the same runner the timer uses, awaited so the answer carries the new result.
 		const watchRun = req.method === "POST" ? /^\/api\/watches\/([a-z0-9-]{1,40})\/run$/.exec(url.pathname) : null;
@@ -285,7 +309,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		const sentMailRefs = () => sentReplyRefs(listDrafts());
 		// The pending reply drafts of one mail are dropped (the same store step as 보내지 않기) and their approval cards settled at once.
 		const dropMailDrafts = async (key: string) => {
-			const pending = listDrafts().filter(d => d.ref === key && d.status === "pending");
+			const pending = listDrafts().filter(d => d.ref === key && (d.status === "pending" || d.status === "held"));
 			if (pending.length) {
 				const { dropDraft } = await import("../features/reply-drafts/lib/flow.ts");
 				for (const d of pending) { const r = dropDraft(d.id); if (!r.ok) log(`draft ${d.id}: not dropped with its mail: ${r.text}`); }
@@ -456,9 +480,14 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "GET" && url.pathname === "/api/conversations") {
 			const owed = new Set(unrepliedMailList().map(m => m.key));
 			const sent = sentMailRefs();
-			const items = conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).map(c => {
-				const m = c.target.startsWith("mail:") ? mailByKey(c.target.slice(5)) : undefined;
-				return m ? { ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key)) } : c;
+			// Ended sessions are listed too: their unread count and 답변 필요 stay on their row in the folded 끝난 세션 group (web/js/04-state.js endedGroup).
+			// A mail conversation is listed only while its mail is: a deleted mail (mail-deleted.json) keeps its messages in the log, but it leaves
+			// this list, so it leaves every list and count here and on the other computer (its snapshot is this list, hub/peer-monitor.ts).
+			const lv = liveLanes();
+			const items = conversationList([...[...lv.live, ...lv.ended].map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).flatMap(c => {
+				if (!c.target.startsWith("mail:")) return [c];
+				const m = mailByKey(c.target.slice(5));
+				return m ? [{ ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key)) }] : [];
 			});
 			return json({ items });
 		}
@@ -471,13 +500,20 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// Add or remove a file of a mail reply draft, and the 첨부 파일 폴더 listing (hub/draft-attach.ts).
 		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library|original)$/.exec(url.pathname);
 		if (draftAttach) return draftAttachRoute(req, url, draftAttach[1]!, draftAttach[2]!);
-		// 답장 안 함 / 답장 안 해도 돼요 (fyi) on a mail (POST) or taking it back (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
-		// Its reply draft waiting for approval is dropped through the drafts store and its card leaves 확인 대기 before the answer.
+		// 답장 안 함 (no-reply = skipped, fyi; one label to the owner) on a mail (POST) or 답장 필요로 표시 (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
+		// Its reply draft waiting for approval is held in the drafts store (not dropped) and its card leaves 확인 대기 before the answer; taking the
+		// mark back restores the newest held draft and reopens its card. A peer's 되돌리기 arrives here too (hub/peer-monitor.ts act fyi / no-reply).
 		const mailNoReply = (req.method === "POST" || req.method === "DELETE") && /^\/api\/mail\/([a-z0-9._-]+)\/(no-reply|fyi)$/.exec(url.pathname);
 		if (mailNoReply) {
 			const key = mailNoReply[1]!;
 			if (!(mailNoReply[2] === "fyi" ? setMailFyi : setMailNoReply)(key, req.method === "POST")) return json({ error: "이 메일을 찾지 못했어요" }, 404);
-			if (req.method === "POST") await dropMailDrafts(key);
+			if (req.method === "POST") {
+				holdDrafts(key);
+				await settleHandledDrafts().catch(e => log(`mail ${key}: handled-draft settle failed: ${(e as Error).message}`));
+			} else {
+				const back = restoreDrafts(key);
+				if (back) reopenDraftNotices([back]);
+			}
 			broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
 			return json({ ok: true });
 		}
