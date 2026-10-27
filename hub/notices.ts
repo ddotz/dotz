@@ -1114,6 +1114,9 @@ export function listNotices(limit = 100): { items: Notice[]; unread: number } {
 	return { items: sorted.slice(0, n).map(readable), unread: unreadCount() };
 }
 
+// The 알림 conversation's messages whose notice was dismissed (지우기 on it, web/js/30-notices.js): their event times, so every page hides them there.
+export const dismissedAlertAts = (): string[] => items.filter(i => i.dismissed && (i.src ?? i.open) === "alert" && i.at).map(i => i.at!);
+
 // Swipe / x in the bell: read and gone from every list and count, on every open tab (a notice_dismiss frame).
 export function dismissNotice(id: unknown): { ok: boolean; held?: boolean; unread: number } {
 	const item = items.find(i => i.id === String(id));

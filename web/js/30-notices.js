@@ -3,7 +3,7 @@
 // (routed here by 99-boot.js, never into the chat timeline or the corner toasts). There is no notice list screen: 알림 and 작업내역 are their own
 // conversations (chat list), 모니터링 is its own screen (30-monitoring.js); what waits on the owner shows on 홈 and in the decision sheet below.
 const ntTabOf = n => n.kind === "worklog" ? "worklog" : n.kind === "watch" ? "watch" : "alert";
-const NT = { items: [], unread: 0, loaded: false, failed: false };
+const NT = { items: [], unread: 0, loaded: false, failed: false, gone: new Set() };   // gone: event times of 알림 messages whose notice was dismissed (GET /api/notices gone)
 // The 홈 알림 card lists alerts only: a reply in a conversation or a session's report (kind message / result) is not a notice there; it is
 // unread in its own conversation, which the 채팅 tab and the session list lead to (owner 2026-10-23).
 const ntHomeAlert = n => ntTabOf(n) === "alert" && n.kind !== "message" && n.kind !== "result";
@@ -35,11 +35,13 @@ async function loadNotices() {
     const r = await api("/api/notices?limit=300");
     NT.items = Array.isArray(r.items) ? r.items : [];
     NT.unread = r.unread | 0; NT.loaded = true; NT.failed = false;
+    if (Array.isArray(r.gone)) NT.gone = new Set(r.gone);
   } catch { NT.failed = !NT.loaded; }
   ntPaint();
   homeSoon();
   syncInlineChoices();
   ntSeenSoon();
+  ntAlertMarks();
 }
 
 // /api/state carries notices_unread: a count that disagrees with ours means a frame was missed, so refetch.
@@ -56,7 +58,10 @@ function noticeLive(e) {
     if (i < 0 && ntOpenDec(e.item) && NT.loaded) toast("답변이 필요해요", false, { label: "열기", onclick: () => noticeOpenId(e.item.id) }, 8000);
     if (e.item.kind === "watch") loadMonitors();
   } else if (e.kind === "notice_dismiss") {
+    const g = NT.items.find(x => x.id === e.id);
+    if (g && g.at && (g.src || g.open) === "alert") NT.gone.add(g.at);
     NT.items = NT.items.filter(x => x.id !== e.id);
+    ntAlertMarks();
   } else if (e.kind === "notice_read") {
     const ids = new Set(e.ids || []);
     for (const n of NT.items) if (ids.has(n.id)) n.read = true;   // the hub names the ids it read (never "all"): what waits on the owner stays unread
@@ -258,6 +263,45 @@ timeline.addEventListener("click", ev => {
   ev.stopPropagation(); ev.preventDefault();
   noticeOpen(ntOfEvent(e));
 }, true);
+
+/* ---- the 알림 conversation: 모두 읽음 in its head (31-conversations.js convPaintHead), 지우기 on each alert ---- */
+// 모두 읽음 reads the conversation to its newest message and every 알림 notice that needs no answer (a question keeps waiting).
+const ntAlertUnread = () => NT.items.filter(n => n.id && !n.read && !ntNeeds(n) && ntTabOf(n) === "alert");
+const ntAlertReadAll = btn => busy(btn, async () => {
+  const ids = ntAlertUnread().map(n => n.id), last = CONV.get("alert");
+  const jobs = [];
+  if (ids.length) jobs.push(api("/api/notices/read", "POST", { ids }));
+  if (last && last.ts) { READ.alert = last.ts; ts("alert").unread = 0; jobs.push(api("/api/read", "POST", { target: "alert", ts: last.ts })); }
+  for (const n of NT.items) if (ids.includes(n.id)) n.read = true;
+  renderBars(); convSig = ""; convHeadSig = ""; ntPaint();
+  try { await Promise.all(jobs); } finally { loadNotices(); convLoad(); }
+  toast("알림을 모두 읽음으로 표시했어요");
+});
+// 지우기 (x) on an alert in that conversation dismisses its notice on the hub (POST /api/notices/<id>/dismiss): gone from the bell, 홈 and every
+// count, and hidden in the conversation on every page (NT.gone). A question that waits on the owner has no x (the hub refuses it).
+async function ntAlertDismiss(n, row) {
+  row.hidden = true;
+  try {
+    const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
+    if (!r || !r.ok) throw new Error(r && r.held ? "답이 필요한 알림은 지울 수 없어요" : "지우지 못했어요");
+    if (n.at) NT.gone.add(n.at);
+    NT.items = NT.items.filter(x => x.id !== n.id);
+    if (typeof r.unread === "number") NT.unread = r.unread;
+    ntPaint(); homeSoon();
+    toast("알림을 지웠어요");
+  } catch (e) { row.hidden = false; toast(e.message || "지우지 못했어요", true); }
+}
+function ntAlertMarks() {
+  if (current !== "chat" || target !== "alert") return;
+  for (const row of tl.querySelectorAll(":scope > [data-ts]")) {
+    if (NT.gone.has(row.dataset.ts)) { row.hidden = true; continue; }
+    if (row.querySelector(".al-x")) continue;
+    const e = ts("alert").msgs.find(x => x.ts === row.dataset.ts), n = e && ntOfEvent(e);
+    if (!n || !n.id || ntNeeds(n) || ntOpenDec(n)) continue;
+    row.append(el("button", { class: "ib al-x", type: "button", "aria-label": "이 알림 지우기", title: "지우기", onclick: ev => { ev.stopPropagation(); ntAlertDismiss(n, row); } }, icon("close")));
+  }
+}
+new MutationObserver(ntAlertMarks).observe(tl, { childList: true });
 
 /* ---- decision sheet: the docked decision card (10-decision-card.js) over the current screen ---- */
 // Same card and same answer path as the one above the composer, for the conversation the notice came from; no navigation, no scroll.
