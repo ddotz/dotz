@@ -252,3 +252,14 @@ describe("a mail posted without a summary", () => {
 		expect(mailByKey(r.key)?.summary).toBeUndefined();
 	});
 });
+
+test("a source that reports the sender by a cut-off name only: the mail is recorded with the address its own text names", async () => {
+	const { deps } = fakes(false);
+	const id = uid("nm");
+	const r = await postMail({ source: "plug", id, subject: "Re: 자료", from: "redacted Lee (KR - A", to: "me@corp.example", body: "감사합니다.\nredacted Lee (KR)\nEmail: someone@example.com" }, deps);
+	expect(mailByKey(r.key)!.from).toBe("redacted Lee <someone@example.com>");
+	const html = await postMail({ source: "plug", id: uid("nh"), subject: "Re: 자료", from: "redacted Lee (KR - A", html: "<p>보낸 사람: redacted Lee (KR - Assurance) &lt;someone@example.com&gt;</p>" }, deps);
+	expect(mailByKey(html.key)!.from).toBe("redacted Lee <someone@example.com>");
+	const none = await postMail({ source: "plug", id: uid("nn"), subject: "Re: 자료", from: "redacted Lee (KR - A", body: "주소 없음" }, deps);
+	expect(mailByKey(none.key)!.from).toBe("redacted Lee (KR - A");
+});

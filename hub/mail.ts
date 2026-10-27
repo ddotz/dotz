@@ -7,8 +7,9 @@ import { isAbsolute, join, sep } from "node:path";
 import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { FileError, safeName, serveFile } from "./files.ts";
 import { MAIL_HTML_MAX, sanitizeMailHtml } from "./mailhtml.ts";
-import { directionOf, migrateMails, nextReply, replyExpected, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type StoredMail } from "./mail-state.ts";
+import { directionOf, migrateMails, nextReply, ownAddresses, replyExpected, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type StoredMail } from "./mail-state.ts";
 import { mailUnreplied } from "./unreplied.ts";
+import { withSenderAddress } from "./reply-draft.ts";
 
 /** One attached file of a mail. `file` is relative to the mail files folder (`<key>/<n>/<name>`); it never leaves that folder. */
 export type MailAttachment = { name: string; type: string; size: number; file: string; cid?: string };
@@ -392,6 +393,9 @@ const inflight = new Map<string, Promise<MailResult>>();
 
 export async function postMail(raw: unknown, deps: MailDeps): Promise<MailResult> {
 	const m = parseMail(raw);
+	// A source that reports the sender by name only (a list view's cut-off display name): the address is read from the mail's own text, so the
+	// list, the draft's recipient and every reply rule see a real sender.
+	if (m.from) m.from = withSenderAddress(m.from, `${m.body ?? ""}\n${(m.html ?? "").replace(/<[^>]*>/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")}`, [...ownAddresses(), ...(m.to ? [m.to] : [])]);
 	const key = mailKey(m.source, m.id);
 	const target = mailTarget(key);
 	if (deps.newMailOn && !deps.newMailOn(m.source, key)) return { ok: true, key, target, skipped: true };
