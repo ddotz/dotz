@@ -453,7 +453,7 @@ describe("원문 보기 for a comment reply draft", () => {
 			await mountCard(v, ref);
 			delete hits[ref];
 			expect(hits[ref] ?? 0).toBe(0);
-			expect(await v.evaluate(`document.querySelectorAll("#t-box .kk-draft .btns .btn").length`)).toBe(3);
+			expect(await v.evaluate(`document.querySelectorAll("#t-box .kk-draft .rq-acts .btn").length`)).toBe(3);
 			await Bun.write(`${SNAP}/comment-card-closed-${w}-light.png`, await v.screenshot());
 			await showOrig(v, "#t-box");
 			await waitFor(v, `document.querySelector("#t-box .od-pane .od-ct")`);
