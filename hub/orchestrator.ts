@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
-import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, tzLabel, workerModel, writeAtomic } from "./config.ts";
+import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { dropSection, renderState } from "./recall-parts.ts";
 import { featurePrompt } from "./featuredirs.ts";
@@ -17,7 +17,8 @@ import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRI
 import { pinnedLimitAlert } from "./accounts-api.ts";
 import { authStamp, blockText, limitAccount, limitKind, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, quotaResetAt, Reverter, revertWhy, workerKeyEnv } from "./fallback.ts";
+import { writeOrchestratorProfile } from "./runtime/omo.ts";
+import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, quotaResetAt, Reverter, revertWhy } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 import { orchestratorTurnStarted } from "./notices.ts";
@@ -122,6 +123,7 @@ function settleRevert(idle: boolean): void {
 	const to = reverter.take(idle);
 	if (!to) return;
 	proc.setModel(to);
+	workersFollow(to);
 	orch.activeModel = to;
 	const line = msg().modelReverted(parseSelector(to).model);
 	log(`orchestrator ${line}`);
@@ -651,9 +653,9 @@ export function start(): void {
 	capped = undefined;
 	usable = undefined;
 	const env: Record<string, string> = { DOTZ_ORCHESTRATOR: "1" };
-	if (chain) Object.assign(env, chain.env(chain.active, workerModel()));
-	// The workers' own chain may stand on an API-key entry; a process already on a key follows that entry's `workers` switch instead.
-	if (!env.DOTZ_KEY_PROVIDER) Object.assign(env, workerKeyEnv(workerModel(), fallbackChain("workers")));
+	// The orchestrator's task workers run on its own model (runtime/omo.ts writeOrchestratorProfile): on an API-key entry with
+	// `workers` on, the key's copy of that entry's model; the task-worker settings and chain are the lanes' workers'.
+	if (chain) Object.assign(env, chain.env(chain.active, chain.list[chain.active].model));
 	const switchNote = switched && chain ? msg().fallbackFresh(chain.label(chain.active), Boolean(chain.list[chain.active].key_file), switched.again, Boolean(chain.list[chain.active].workers)) : "";
 	startedModel = spawnModel;
 	reverter.reset();
@@ -867,6 +869,11 @@ export function applyModelChange(): "live" | "restarted" | "next-start" {
 	restart();
 	return "restarted";
 }
+// A model switched in place moves the orchestrator's task workers with it (the profile OmO reads); the guard pins subagent_type
+// workers to the live model on each call (extension/guard.ts pinOmoTaskModel).
+function workersFollow(model: string): void {
+	if (adapter?.id === "omo") writeOrchestratorProfile(undefined, model);
+}
 function switchInPlace(): boolean {
 	if (!proc?.setModel || !adapter || chained || orch.status !== "idle" || (chain && chain.active !== 0)) return false;
 	const model = selectorOf(orchestratorModel());
@@ -874,6 +881,7 @@ function switchInPlace(): boolean {
 	const next = driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined;
 	if (next && next.initial() !== 0) return false;
 	proc.setModel(model);
+	workersFollow(model);
 	chain = next;
 	capped = undefined;
 	currentModel = startedModel = orch.activeModel = model;
