@@ -16,7 +16,8 @@ export type Computer = { name: string; url: string; self: boolean };
 // `orchestrator`: that gateway's bot status ("rate-limited" = paused; pauseKind "owner" = login/billing), for the composer's status line.
 // It is part of the rev, so a change of pause reaches a peer holding the older snapshot.
 export type OrchestratorPause = { status: string; pauseKind: string };
-export type Snapshot = { name: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause };
+// `runs`: the run state of that gateway's mail conversations (`mail:<key>`), so a mail opened here shows what its bot is doing there.
+export type Snapshot = { name: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause; runs?: Record<string, unknown> };
 export type PeerView = { name: string; url: string; online: boolean; stale: boolean; items: Snapshot | null };
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 export type MonitorDeps = {
@@ -24,6 +25,7 @@ export type MonitorDeps = {
 	local: (req: Request) => Promise<Response>;               // this gateway's own handler chain (the same one the web app talks to)
 	localHeaders?: Record<string, string>;                    // what makes a local request pass the owner check
 	orchestrator?: () => OrchestratorPause;                   // this gateway's orchestrator status, read when the snapshot is built
+	runs?: () => Record<string, unknown>;                     // the run state of this gateway's mail conversations, read when the snapshot is built
 	computers?: () => Promise<Computer[]>;
 	fetch?: Fetcher;
 	now?: () => number;
@@ -95,7 +97,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 
 	const PARTS = ["/api/monitors", "/api/notices?limit=100", "/api/integrations", "/api/conversations"];
 	const build = (name: string, [m, n, i, c]: any[]): Snapshot => {
-		const part = { name, monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv), ...(deps.orchestrator ? { orchestrator: deps.orchestrator() } : {}) };
+		const part = { name, monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv), ...(deps.orchestrator ? { orchestrator: deps.orchestrator() } : {}), ...(deps.runs ? { runs: deps.runs() } : {}) };
 		return { ...part, rev: createHash("sha1").update(JSON.stringify(part)).digest("hex").slice(0, 12) };
 	};
 	const snapshot = async (): Promise<Snapshot> => build(deps.name(), await Promise.all(PARTS.map(read)));

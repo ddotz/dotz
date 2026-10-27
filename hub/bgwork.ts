@@ -23,6 +23,8 @@ type BgWork = {
 	reply_to?: string;
 	/** The project folder the worker was briefed for ("Repo: <path>" in its brief, else its working folder), when known. */
 	folder?: string;
+	/** Why a failed worker failed, as its task record wrote it (a worker that dies at spawn still names the cause there). */
+	error?: string;
 };
 
 /** An owner message whose turn ended with `[later]` and is still waiting for its answer. */
@@ -42,6 +44,9 @@ type Rec = {
 	pid?: number;
 	recovery_deadline_at?: string;
 	spawn_spec?: { cwd?: string; prompt?: string; isolation?: unknown };
+	error_message?: string;
+	terminal_reason?: string;
+	error?: string;
 };
 
 // Finished work stays listed this long.
@@ -78,6 +83,8 @@ type BgWorkDeps = {
 	now?: () => number;
 	/** Is this process still alive? A record that says running while its process is gone is a worker the restart killed. */
 	alive?: (pid: number) => boolean;
+	/** The hub log: one line per failed worker, so the reason is kept even after the record leaves the list. */
+	log?: (message: string) => void;
 };
 
 export function createBgWork(deps: BgWorkDeps) {
@@ -87,6 +94,8 @@ export function createBgWork(deps: BgWorkDeps) {
 	const cache = new Map<string, { stamp: string; rec?: Rec }>();
 	// The conversation a worker was waiting for, kept after it ends (the open message is gone then).
 	const served = new Map<string, { target: string; reply_to?: string }>();
+	// Failures already written to the log (list() runs on every /api/state read).
+	const told = new Set<string>();
 
 	function records(sessionFile: string): Rec[] {
 		const root = /_([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/.exec(sessionFile)?.[1];
@@ -136,7 +145,9 @@ export function createBgWork(deps: BgWorkDeps) {
 		}
 		const description = scrub(String(r.description || r.task_summary || r.category || r.task_id)).replace(/\s+/g, " ").trim().slice(0, 120);
 		const folder = folderOf(r);
-		return { id: r.task_id!, description, status, started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}) };
+		const why = status === "failed" ? [r.error_message, r.terminal_reason, r.error].find(v => typeof v === "string" && v.trim()) : undefined;
+		const error = why ? scrub(why).replace(/\s+/g, " ").trim().slice(0, 200) : "";
+		return { id: r.task_id!, description, status, started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}), ...(error ? { error } : {}) };
 	}
 
 	/** Running work (oldest first), then what finished within the last hour (newest first). */
@@ -148,8 +159,11 @@ export function createBgWork(deps: BgWorkDeps) {
 		const works = records(file).map(toWork).filter(w => w.status === "running" || t - (w.ended_at ?? 0) <= FINISHED_KEEP_MS);
 		for (const w of works) {
 			// The turn that spawned the worker is its message; only a worker no turn of ours spawned falls back to the latest
-			// deferred message before it (an answered or newer message is no reason to move it: owner 2026-10-23).
-			const p = w.status === "running" ? (deps.turn?.(w.started_at) ?? served.get(w.id) ?? open.filter(d => d.at <= w.started_at + SPAWN_SLACK_MS).at(-1)) : undefined;
+			// deferred message before it (an answered or newer message is no reason to move it: owner 2026-10-23). A worker that
+			// failed at spawn was never seen running, so a finished one still asks the turn at its spawn time (st_01a17c03, 2026-10-27).
+			const p: { target: string; replyTo?: string; reply_to?: string } | undefined = w.status === "running"
+				? (deps.turn?.(w.started_at) ?? served.get(w.id) ?? open.filter(d => d.at <= w.started_at + SPAWN_SLACK_MS).at(-1))
+				: (served.get(w.id) ?? deps.turn?.(w.started_at));
 			if (p) {
 				w.target = p.target;
 				const ref = "reply_to" in p ? p.reply_to : p.replyTo;
@@ -159,6 +173,12 @@ export function createBgWork(deps: BgWorkDeps) {
 				const k = served.get(w.id);
 				if (k) Object.assign(w, k);
 			}
+		}
+		// A failed worker's reason goes to the hub log once, while it is still in the list (the record itself stays in OmO's store).
+		for (const w of works) {
+			if (w.status !== "failed" || told.has(w.id)) continue;
+			told.add(w.id);
+			deps.log?.(`background work ${w.id} failed${w.target ? ` in ${w.target}` : ""}: ${w.error || "no reason recorded"}`);
 		}
 		const running = works.filter(w => w.status === "running").sort((a, b) => a.started_at - b.started_at);
 		const finished = works.filter(w => w.status !== "running").sort((a, b) => (b.ended_at ?? 0) - (a.ended_at ?? 0));
