@@ -1,6 +1,6 @@
 // The gateway's hook for a new mail: when this install turned the feature on (and auto), a mail that warrants a reply gets a draft in
 // the user's tone, offered as a send-approval [ask] (hub/draft-approval.ts). Never throws; nothing is sent from here.
-import { addressesOf, precheck, type ReplyItem } from "../../../hub/reply-draft.ts";
+import { addressesOf, precheck, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { askText, buildDraft, stageForReply } from "./flow.ts";
 import { learnFirst } from "./persona.ts";
@@ -30,7 +30,7 @@ function mayDraft(m: OfferMail): boolean {
 	try {
 		const settings = loadSettings();
 		if (!appOn(settings, "mail") || isDrafted(m.messageId ? `${m.key}#${m.messageId}` : m.key)) return false;
-		return !precheck({ kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "" }, settings.senders);
+		return !precheck({ kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "" }, settings.senders, { addressLater: true });
 	} catch {
 		return false;
 	}
@@ -67,11 +67,17 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		const looked = m.messageId ? `${m.key}#${m.messageId}` : m.key;
 		if (!requested && isDrafted(looked)) return "skipped";
 		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "", ...(requested ? { requested: true } : {}) };
-		if (!requested && precheck(item, settings.senders)) {
+		if (!requested && precheck(item, settings.senders, { addressLater: true })) {
 			markDrafted(looked);
 			return "skipped";
 		}
 		item.text = ((await body) ?? m.summary ?? "").trim().slice(0, BODY_MAX) || m.subject;
+		// A source that reports the sender by name only: the address comes from the mail's own text (its quoted headers, the signature).
+		item.from = withSenderAddress(item.from, item.text, item.self);
+		if (!requested && precheck(item, settings.senders)) {
+			markDrafted(looked);
+			return "skipped";
+		}
 		const read = Date.now();
 		if (deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
 		const learned = Date.now();

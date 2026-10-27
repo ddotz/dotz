@@ -55,6 +55,48 @@ export function addressesOf(s: string | undefined): string[] {
 	return (s?.match(EMAIL) ?? []).map(a => a.toLowerCase().replace(/[.:]+$/, ""));
 }
 
+export const NO_RECIPIENT = "no recipient address in 'to'";
+
+// A sender shown by name only, as some mail sources report it ("Myungwoo Lee (KR - A": a name cut short, no address). The name without a cut-off
+// "(..." tail, for display beside a recovered address.
+export function senderName(from: string): string {
+	const bare = from.replace(/<[^>]*>?/g, " ").replace(/"/g, "").replace(/\s+/g, " ").trim();
+	const open = bare.lastIndexOf("("), close = bare.lastIndexOf(")");
+	return (open > close ? bare.slice(0, open) : bare).replace(/[\s,;:·-]+$/, "").trim();
+}
+
+const nameTokens = (name: string): string[] => [...new Set(senderName(name).replace(/\([^)]*\)/g, " ").toLowerCase().split(/[^a-z0-9가-힣]+/).filter(t => t.length >= 2))];
+
+// The address of a sender the source reported by name only, read from the mail's own text: a "Name <address>" line of that name (the quoted
+// headers of a thread, a signature), else the one address whose local part spells the name (myungwoo.lee for "Myungwoo Lee"). The user's own
+// addresses never count; two different addresses that fit equally well give none, so a guess is never made.
+export function senderAddress(from: string, text: string, self: readonly string[] = []): string | undefined {
+	const own = new Set(self.flatMap(addressesOf));
+	const tokens = nameTokens(from);
+	if (!tokens.length) return undefined;
+	const score = new Map<string, number>();
+	const add = (a: string, n: number) => !own.has(a) && score.set(a, Math.max(score.get(a) ?? 0, n));
+	for (const m of text.matchAll(/([^<>\n:]{2,80})<\s*([^<>\s]+@[^<>\s]+)\s*>/g)) {
+		const shown = nameTokens(m[1]!), a = addressesOf(m[2])[0];
+		if (a && shown.length && tokens.every(t => shown.includes(t))) add(a, 100);
+	}
+	for (const a of addressesOf(text)) {
+		const parts = a.split("@")[0]!.split(/[._+-]+/);
+		const hit = tokens.filter(t => parts.includes(t)).length;
+		if (hit) add(a, hit + (hit === tokens.length ? 10 : 0));
+	}
+	const ranked = [...score].sort((x, y) => y[1] - x[1]);
+	if (!ranked.length || (ranked[1] && ranked[1][1] === ranked[0]![1])) return undefined;
+	return ranked[0]![0];
+}
+
+// The sender with its address when the source gave only a name and the text names the address; else the sender as it came.
+export function withSenderAddress(from: string, text: string, self: readonly string[] = []): string {
+	if (addressesOf(from).length) return from;
+	const a = senderAddress(from, text, self);
+	return a ? `${senderName(from) || a} <${a}>` : from;
+}
+
 const addrOrHandle = (s: string) => addressesOf(s)[0] ?? norm(s);
 const matches = (entry: string, item: string) => {
 	const e = norm(entry);
@@ -63,12 +105,13 @@ const matches = (entry: string, item: string) => {
 };
 
 // Why this item gets no draft without asking the model; undefined means "worth a model call".
-export function precheck(item: ReplyItem, filter: SenderFilter): string | undefined {
+// `addressLater`: the sender is a name only and its address may still be read from the mail's text (offer.ts reads the body first).
+export function precheck(item: ReplyItem, filter: SenderFilter, opts: { addressLater?: boolean } = {}): string | undefined {
 	const sender = addrOrHandle(item.from);
 	if ((item.self ?? []).some(s => matches(s, item.from))) return "own message";
 	if (item.kind === "mail") {
 		const local = sender.split("@")[0] ?? "";
-		if (!sender.includes("@")) return "no sender address";
+		if (!sender.includes("@") && !opts.addressLater) return "no sender address";
 		if (AUTOMATED.test(local)) return "automated sender";
 	}
 	if (filter.skip.some(e => matches(e, item.from))) return "sender is on the skip list";
@@ -85,7 +128,8 @@ Never promise dates, times, prices, money or terms, and never state facts you ca
 Never use anything from the forbidden list. Never leave a placeholder (names in brackets, TODO, XXX).
 Output exactly one JSON object in a \`\`\`json block and nothing after it:
 {"action":"skip"|"draft","reason":"one short sentence","to":"recipient","subject":"subject","body":"the reply text","questions":["what the user must decide"]}
-"to" must be the sender or an address already on the thread (for a comment or chat message: the author's handle). For a skip, leave to/subject/body empty.`;
+"to" must be the sender or an address already on the thread (for a comment or chat message: the author's handle). For a skip, leave to/subject/body empty.
+"reason" and "questions" are read by the user, not the sender: write them in the language of the user's own rules and corrections (Korean when there are none), whatever language the message is in.`;
 
 // Chat only. The same single model call first decides whether the message needs the user's own decision.
 const CHAT_ASK = `
@@ -187,7 +231,7 @@ export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle): 
 		const allowed = new Set([item.from, item.replyTo ?? "", ...(item.cc ?? [])].flatMap(addressesOf));
 		const self = new Set((item.self ?? []).flatMap(addressesOf));
 		const to = addressesOf(draft.to);
-		if (!to.length) out.push("no recipient address in 'to'");
+		if (!to.length) out.push(NO_RECIPIENT);
 		for (const a of to) {
 			if (self.has(a)) out.push(`'${a}' is the user's own address`);
 			else if (!allowed.has(a)) out.push(`'${a}' is not the sender, reply-to or a cc of the original`);
@@ -223,7 +267,9 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 			failures = [item.choice ? "the user already decided: action must be draft" : "action ask needs a chat message, a question and 2 to 4 choices"];
 			continue;
 		}
-		const draft: DraftOut = { to: parsed.to || defaultTo(item), subject: parsed.subject ?? defaultSubject(item), body: parsed.body };
+		// A mail goes to an address: a name-only "to" (the model copied a sender shown without one) becomes the sender's address when it is known.
+		const to = item.kind === "mail" && !addressesOf(parsed.to).length && addressesOf(defaultTo(item)).length ? defaultTo(item) : parsed.to || defaultTo(item);
+		const draft: DraftOut = { to, subject: parsed.subject ?? defaultSubject(item), body: parsed.body };
 		if (!draft.subject) delete draft.subject;
 		const found = lintReply(draft, item, style);
 		if (!found.length) return { action: "draft", draft, questions: parsed.questions, warnings: [], tries };
