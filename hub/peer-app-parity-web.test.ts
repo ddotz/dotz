@@ -84,7 +84,8 @@ const waitFor = (v: View, expr: string, ms = 10_000) =>
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const KEYS = { mail: { local: "i:mail", peer: `p:${MINI}|i:mail` }, kakao: { local: "i:kakao", peer: `p:${MINI}|i:kakao` } };
-const boot = async (width: number, height: number, key: string, ready: string) => {
+// `filter` picks a mail view before waiting (the reply-draft cards wait under 확인 대기, not under 전체; owner 2026-10-27).
+const boot = async (width: number, height: number, key: string, ready: string, filter = "") => {
 	const v = new Bun.WebView({ width, height });
 	views.push(v);
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
@@ -93,6 +94,10 @@ const boot = async (width: number, height: number, key: string, ready: string) =
 	await run(v, `go("monitoring")`);
 	await waitFor(v, `PQ.loaded && PQ.list.length && monItems().some(i => i.key === ${JSON.stringify(key)})`);
 	await run(v, `go("monitoring", ${JSON.stringify(key)})`);
+	if (filter) {
+		await waitFor(v, `document.querySelector('#mon-tl .mr-f[data-filter=${JSON.stringify(filter)}]')`);
+		await run(v, `document.querySelector('#mon-tl .mr-f[data-filter=${JSON.stringify(filter)}]').click()`);
+	}
 	await waitFor(v, ready);
 	return v;
 };
@@ -113,10 +118,10 @@ describe.each([[390, 844], [1280, 900]])("the same app on this computer and on t
 		const parts = async (v: View) => q<{ card: string; buttons: string[]; orig: boolean; chip: string }>(v, `${NORMALIZE}
 			const c = document.querySelector("#mon-tl .bm.dr");
 			return { card: clean(c), buttons: [...c.querySelectorAll("button")].map(b => b.textContent.trim()), orig: !!c.querySelector(".dr-orig"), chip: c.querySelector(".dr-chip").textContent };`);
-		const lv = await boot(width, height, KEYS.mail.local, DRAFT_READY);
+		const lv = await boot(width, height, KEYS.mail.local, DRAFT_READY, "pending");
 		const local = await parts(lv);
 		await Bun.write(join(SHOTS, `local-mail-draft-${width}.png`), await lv.screenshot());
-		const pv = await boot(width, height, KEYS.mail.peer, DRAFT_READY);
+		const pv = await boot(width, height, KEYS.mail.peer, DRAFT_READY, "pending");
 		const peer = await parts(pv);
 		await Bun.write(join(SHOTS, `peer-mail-draft-${width}.png`), await pv.screenshot());
 		expect(local.buttons).toEqual(["보내기", "고치기", "보내지 않기"]);
@@ -148,11 +153,13 @@ describe.each([[390, 844], [1280, 900]])("the same app on this computer and on t
 });
 
 test("a peer's draft card answers on the Mac mini once and turns to 보냄; nothing is posted to this computer", async () => {
-	const v = await boot(1280, 900, KEYS.mail.peer, DRAFT_READY);
+	const v = await boot(1280, 900, KEYS.mail.peer, DRAFT_READY, "pending");
 	acts.length = 0; localPosts.length = 0;
 	await run(v, `document.querySelector("#mon-tl .bm.dr .dr-send").click()`);
-	await waitFor(v, `document.querySelector('#mon-tl .bm.dr .dr-st[data-state="send"]')`);
+	await waitFor(v, `!document.querySelector("#mon-tl .bm.dr .dr-send")`);   // answered: it leaves 확인 대기
 	expect(acts).toEqual([{ action: "answer", args: { id: "dp", n: 1 } }]);
 	expect(localPosts.filter(x => x.path.startsWith("/api/notices"))).toEqual([]);
+	await run(v, `document.querySelector('#mon-tl .mr-f[data-filter="all"]').click()`);
+	await waitFor(v, `document.querySelector('#mon-tl .bm.dr .dr-st[data-state="send"]')`);   // 전체 keeps it as the sent card
 	expect(await q(v, `return document.querySelectorAll("#mon-tl .bm.dr .dr-send").length`)).toBe(0);
 });
