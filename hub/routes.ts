@@ -441,6 +441,19 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			broadcast({ kind: "mail_unreplied", target: mailTarget(mailNoReply[1]!) });
 			return json({ ok: true });
 		}
+		// 초안 작성 on a mail: the owner asks for a reply draft himself. It is made behind the request (a model call takes a while, and a peer's
+		// forwarded act has a short timeout); the draft lands as the send-approval card in the mail's conversation, a failure as a line there.
+		const mailDraft = req.method === "POST" && /^\/api\/mail\/([a-z0-9._-]+)\/draft$/.exec(url.pathname);
+		if (mailDraft) {
+			const key = mailDraft[1]!, r = mailByKey(key), deps = mailDeps?.();
+			if (!r || r.dir === "out") return json({ error: "이 메일을 찾지 못했어요" }, 404);
+			if (!deps?.requestDraft) return json({ error: "이 설치에는 답장 초안 기능이 없어요" }, 503);
+			const target = mailTarget(key);
+			void deps.requestDraft({ key, target, ...(r.thread ? { thread: r.thread } : {}), ...(r.msg ? { messageId: r.msg } : {}), source: r.source, id: r.id, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.attachments?.length ? { attachments: r.attachments.map(a => ({ name: a.name, size: a.size })) } : {}) })
+				.then(res => { if (res !== "offered") return deps.send(target, "답장 초안을 만들지 못했어요. 잠시 뒤 다시 눌러 주세요"); })
+				.catch(e => log(`mail ${key}: requested draft failed: ${(e as Error).message}`));
+			return json({ ok: true, started: true }, 202);
+		}
 		const mailBody = req.method === "GET" && /^\/api\/mail\/([a-z0-9._-]+)\/body$/.exec(url.pathname);
 		if (mailBody) return mailBodyRoute(mailBody[1]!);
 		// A mail from an outside poster (a webmail watcher, a custom plugin): one conversation per mail (hub/mail.ts, docs/custom-plugins.md).

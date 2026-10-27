@@ -393,7 +393,7 @@ function monConvNode(t, label) {
     el("div", { class: "rc-title", text: title }),
     m && m.to ? el("div", { class: "mr-to", text: mailToText(m) }) : null,
     ...mailSumNodes(m, t, brief),
-    chip || owed ? el("div", { class: "mr-slot" }, chip, owed ? unrepNo(`/api/mail/${t.slice(5)}/no-reply`, () => { m.unreplied = false; m.reply = "skipped"; monSchedule(); if (pqPc(t)) pqSoon(); }) : null, owed ? mailFyiButton(t, m) : null) : null);
+    chip || owed ? el("div", { class: "mr-slot" }, chip, owed && m.reply !== "draft" ? mailDraftButton(t) : null, owed ? unrepNo(`/api/mail/${t.slice(5)}/no-reply`, () => { m.unreplied = false; m.reply = "skipped"; monSchedule(); if (pqPc(t)) pqSoon(); }) : null, owed ? mailFyiButton(t, m) : null) : null);
 }
 // The summary lines of a mail row: a bulleted 요약 as a two-point list, else the brief as one clamped text; then the first 할 일.
 function mailSumNodes(m, t, brief) {
@@ -403,6 +403,14 @@ function mailSumNodes(m, t, brief) {
   const todo = p.todo ? el("div", { class: "mr-todo" }, el("b", { text: "할 일" }), el("span", { text: p.more ? `${p.todo} 외 ${p.more}건` : p.todo })) : null;
   return [sum, todo].filter(Boolean);
 }
+// 초안 작성: the owner asks for a reply draft of this mail (POST /api/mail/<key>/draft, made behind the request); the draft arrives as the send-approval
+// card in the mail's conversation. In a row and in the open mail's head.
+const mailDraftAsk = async (t, btn) => {
+  await api(`/api/mail/${t.slice(5)}/draft`, "POST", {});
+  toast("답장 초안을 만들고 있어요. 다 되면 이 메일에 승인 카드가 떠요");
+  if (btn) { btn.disabled = true; btn.textContent = "만드는 중…"; }
+};
+const mailDraftButton = (t, cls = "cchip mr-draft") => el("button", { class: cls, type: "button", "data-k": "mail-draft", text: "초안 작성", onclick: ev => { ev.stopPropagation(); const b = ev.currentTarget; busy(b, () => mailDraftAsk(t, b).catch(e => toast(e.message || "초안을 요청하지 못했어요", true))); } });
 // 참고만: this mail needs no reply (POST /api/mail/<key>/fyi); the label changes at once, the lists re-read.
 const mailFyiButton = (t, m) => el("button", { class: "cchip unrep-no mr-fyi", type: "button", text: "참고만", onclick: ev => { ev.stopPropagation(); busy(ev.currentTarget, async () => { await api(`/api/mail/${t.slice(5)}/fyi`, "POST", {}); toast("참고만으로 표시했어요"); m.unreplied = false; m.reply = "fyi"; monSchedule(); if (pqPc(t)) pqSoon(); loadIntegrations(); }); } });   // busy: a second tap while it posts does nothing
 // A monitor's latest run, as the newest message of its conversation: the result in words, when it checks next, and its project chat.
