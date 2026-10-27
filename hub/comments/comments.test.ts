@@ -423,3 +423,63 @@ describe("댓글 답글 switch (hub/app-feature-flags.ts)", () => {
 		expect(t.prompts).toHaveLength(1);
 	});
 });
+
+describe("답장 확인: a failed reply, a dropped draft and the pending list", () => {
+	async function drafted() {
+		const t = setup([src()]);
+		t.state.pages = [[raw("c1", { author: "가나", text: "자막 언제 나와요?" })]];
+		await t.engine.collect({ force: true });
+		const step = await t.engine.makeDraft(commentId("youtube", "c1"));
+		if (!step.ok) throw new Error(step.reason);
+		const web = createCommentsWeb({ engine: t.engine, broadcast: () => {} });
+		const call = async (method: string, path: string, body?: unknown) => {
+			const url = new URL(`http://local${path}`);
+			const res = await web.route(new Request(url, { method, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }), url, url.pathname.split("/").filter(Boolean));
+			return { status: res!.status, json: (await res!.json()) as any };
+		};
+		return { ...t, code: step.draft.code, call };
+	}
+
+	test("the pending list carries where the reply goes and the comment it answers", async () => {
+		const t = await drafted();
+		const items = (await t.call("GET", "/api/comments/drafts")).json.items;
+		expect(items).toEqual([expect.objectContaining({ code: t.code, app: "youtube", kind: "youtube", source: "youtube", sourceLabel: "유튜브 댓글", thread: "p1", title: "Post one", to: "가나", text: "고마워요, 곧 알려 드릴게요.", original: { who: "가나", text: "자막 언제 나와요?", at: NOW - 1000 } })]);
+	});
+
+	test("다시 보내기 of a failed reply posts it once; a sent one is neither retried nor dismissed", async () => {
+		const t = await drafted();
+		t.state.failReply = "403 forbidden";
+		const first = t.engine.send(t.code, { by: "owner" });
+		if (first.ok) await first.done;
+		const id = first.ok ? first.reply.id : "";
+		t.state.failReply = undefined;
+		expect((await t.call("POST", `/api/comments/sends/${encodeURIComponent(id)}/retry`)).status).toBe(202);
+		await t.engine.idle();
+		expect(t.state.posted).toHaveLength(1);
+		expect((await t.call("POST", `/api/comments/sends/${encodeURIComponent(id)}/retry`)).status).toBe(409);
+		expect((await t.call("POST", `/api/comments/sends/${encodeURIComponent(id)}/dismiss`)).status).toBe(409);
+		expect(t.state.posted).toHaveLength(1);
+	});
+
+	test("지우기 of a failed reply forgets the record and keeps its draft waiting", async () => {
+		const u = await drafted();
+		u.state.failReply = "timeout";
+		const f = u.engine.send(u.code, { by: "owner" });
+		if (f.ok) await f.done;
+		const fid = f.ok ? f.reply.id : "";
+		expect(await u.call("POST", `/api/comments/sends/${encodeURIComponent(fid)}/dismiss`)).toEqual({ status: 200, json: { ok: true } });
+		expect(u.engine.store.replies()).toEqual([]);
+		expect(u.engine.store.drafts().find(d => d.code === u.code)!.status).toBe("pending");
+		expect(u.events.some(e => e.kind === "comment_send" && e.state === "removed")).toBe(true);
+	});
+
+	test("되돌리기 after 보내지 않기 makes the draft wait again, once", async () => {
+		const t = await drafted();
+		expect((await t.call("POST", `/api/comments/drafts/${t.code}/restore`)).status).toBe(409);
+		expect((await t.call("POST", `/api/comments/drafts/${t.code}/drop`)).status).toBe(200);
+		expect((await t.call("GET", "/api/comments/drafts")).json.items).toEqual([]);
+		expect(await t.call("POST", `/api/comments/drafts/${t.code}/restore`)).toEqual({ status: 200, json: { ok: true } });
+		expect((await t.call("GET", "/api/comments/drafts")).json.items.map((d: any) => d.code)).toEqual([t.code]);
+		expect((await t.call("POST", `/api/comments/drafts/${t.code}/restore`)).status).toBe(409);
+	});
+});

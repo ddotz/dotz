@@ -34,7 +34,7 @@ function pqFor(path) {
 function pqLink(path) { const pc = pqFor(path); return pc ? pqProxy(pc, pqBare(path)) : path; }
 // The action a POST of the page means on the computer that owns the item (hub/peer-monitor.ts act), or null for a local one.
 function pqAct(path, body) {
-  const b = body || {}, k = /^\/api\/kakao\/(chat|drafts)\/([^/]+)\/(send|read|draft|drop|ask\/drop)$/.exec(path);
+  const b = body || {}, k = /^\/api\/kakao\/(chat|drafts)\/([^/]+)\/(send|read|draft|drop|restore|ask\/drop)$/.exec(path);
   if (path === "/api/message" && b.mail) { const { mail, lane, project, via, ...rest } = b; return { pc: pqPc(`mail:${mail}`), action: "message", args: { target: `mail:${mail}`, ...rest } }; }
   // A monitor's conversation and switches go to the computer that owns the watch: the same message and the same settings PATCH, forwarded.
   const sp = /^\/api\/watches\/([a-z0-9-]+)\/settings$/.exec(path);
@@ -56,6 +56,20 @@ function pqAct(path, body) {
   const nm = /^\/api\/mail\/([^/?]+)\/no-reply$/.exec(path);
   if (nm && pqPc(`mail:${decodeURIComponent(nm[1])}`)) return { pc: pqPc(`mail:${decodeURIComponent(nm[1])}`), action: "no-reply", args: { kind: "mail", key: decodeURIComponent(nm[1]) } };
   if (path === "/api/read") return { pc: pqPc(b.target), action: "read", args: { target: pqBare(b.target), ts: b.ts } };
+  // The comments pane of another computer (CM.pc, 30-monitoring-comments.js): its drafts, failed sends, drafted replies and source switches run there,
+  // on the routes hub/peer-monitor.ts act "comments" forwards (once per click).
+  if (CM.pc) {
+    const e = v => decodeURIComponent(v), c = CM.pc, d = /^\/api\/comments\/drafts\/([^/]+)\/(send|drop|restore|revise)$/.exec(path);
+    if (d) return { pc: c, action: "comments", args: { op: `draft-${d[2]}`, code: e(d[1]), ...(d[2] === "revise" ? { change: b.change, ...(b.part ? { part: b.part } : {}) } : {}) } };
+    const s = /^\/api\/comments\/sends\/([^/]+)\/(retry|dismiss)$/.exec(path);
+    if (s) return { pc: c, action: "comments", args: { op: `send-${s[2]}`, id: e(s[1]) } };
+    const m = /^\/api\/comments\/comment\/([^/]+)\/(draft|no-reply)$/.exec(path);
+    if (m) return { pc: c, action: "comments", args: m[2] === "draft" ? { op: "draft", commentId: e(m[1]) } : { op: "no-reply", commentId: e(m[1]), on: true } };
+    const t = /^\/api\/comments\/thread\/([^/]+)\/([^/]+)\/read$/.exec(path);
+    if (t) return { pc: c, action: "comments", args: { op: "read", source: e(t[1]), thread: e(t[2]) } };
+    const k = /^\/api\/comments\/sources\/([^/]+)$/.exec(path);
+    if (k) return { pc: c, action: "comments", args: { op: "source", key: e(k[1]), ...(typeof b.watch !== "undefined" ? { watch: b.watch } : {}), ...(typeof b.autoDraft !== "undefined" ? { autoDraft: b.autoDraft } : {}) } };
+  }
   if (!path.startsWith("/api/kakao/") || !KK.pc) return null;
   const nk = /^\/api\/kakao\/chat\/([^/]+)\/no-reply$/.exec(path);
   if (nk) return { pc: KK.pc, action: "no-reply", args: { kind: "kakao", chatId: decodeURIComponent(nk[1]) } };
@@ -67,7 +81,7 @@ function pqAct(path, body) {
   // 지켜보기 / 자동 초안 of a room (PUT /api/kakao/rooms/<id>): the same change on the computer that has the room.
   const rm = /^\/api\/kakao\/rooms\/([^/?]+)$/.exec(path);
   if (rm) return { pc: KK.pc, action: "kakao", args: { op: "room", chatId: decodeURIComponent(rm[1]), ...(typeof b.watched === "boolean" ? { watched: b.watched } : {}), ...(typeof b.autoDraft === "boolean" ? { autoDraft: b.autoDraft } : {}) } };
-  if (k && k[1] === "drafts") return { pc: KK.pc, action: "kakao", args: { op: k[3] === "send" ? "draft-send" : "draft-drop", code: id, ...(b.text === undefined ? {} : { text: b.text }) } };
+  if (k && k[1] === "drafts") return { pc: KK.pc, action: "kakao", args: { op: `draft-${k[3]}`, code: id, ...(b.text === undefined ? {} : { text: b.text }) } };
   throw new Error(`${KK.pc.name}에서 바꿔 주세요`);
 }
 // The files of a message to another computer's conversation: the bytes kept in the composer go to THAT computer (act "upload", one file per
@@ -195,7 +209,7 @@ function pqMerge(items) {
       const needs = it.needs || { drafts: 0, unread: it.unread | 0, sentToday: 0 }, conn = it.state === "disconnected";
       const at = [...notices.map(monNoticeAt), ...mails.map(t => (CONV.get(t) || {}).ts || "")].sort().pop() || "";
       PQ.of.set(`settings:${pqApp(it.key, pc)}`, { pc, key: key(`i:${it.key}`), app: true, label: it.label });   // the app's settings conversation lives on that computer
-      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, conn, hint: conn && it.hint ? it.hint : monNeedLine(needs, conn), at, pc, chips, owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
+      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, drafts: needs.drafts | 0, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, conn, hint: conn && it.hint ? it.hint : monNeedLine(needs, conn), at, pc, chips, owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
     }
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
     for (const m of mons) {

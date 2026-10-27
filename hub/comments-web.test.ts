@@ -3,8 +3,9 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { appAsset, indexPage } from "./webapp.ts";
 
-// 모니터링 > 앱 > 유튜브 (web/js/30-monitoring-comments.js): the app entry's status line, the posts as conversations, the inline draft with
-// 보내기 / 고치기 / 버리기, run as shipped in a headless browser (Bun.WebView) against a stubbed /api/comments/* (docs/comments-api.md).
+// 모니터링 > 앱 > 유튜브 (web/js/30-monitoring-comments.js): the app entry's status line, the posts as conversations, the one reply card with
+// 보내기 / 고치기 / 보내지 않기, a failed reply's 다시 보내기 / 지우기, run as shipped in a headless browser (Bun.WebView) against a stubbed
+// /api/comments/* (docs/comments-api.md).
 // Names and texts are placeholders. Screenshots are written only when COMMENTS_SHOTS names a folder.
 const SHOTS = process.env.COMMENTS_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
@@ -67,6 +68,14 @@ const server = Bun.serve({
 		if (p === "/api/comments/thread/youtube/v1" && req.method === "GET")
 			return json({ source: { key: "youtube", kind: "youtube", label: "유튜브 댓글" }, thread: { id: "v1", title: "첫 번째 영상", link: "https://video.example/v1" }, comments: COMMENTS, read: null, drafts, sends });
 		if (p === "/api/comments/thread/youtube/v1/read") { record({ method: "POST", path: p, body }); return json({ ok: true }); }
+		const sf = /^\/api\/comments\/sends\/([^/]+)\/(retry|dismiss)$/.exec(p);
+		if (sf && req.method === "POST") {
+			record({ method: "POST", path: p, body });
+			const id = decodeURIComponent(sf[1]!);
+			if (sf[2] === "retry") { sends = sends.map(s => (s.id === id ? { ...s, state: "sent", reason: undefined } : s)); return json({ id, state: "sending" }, 202); }
+			sends = sends.filter(s => s.id !== id);
+			return json({ ok: true });
+		}
 		const d = /^\/api\/comments\/drafts\/(\w+)\/(send|drop|revise)$/.exec(p);
 		if (d && req.method === "POST") {
 			record({ method: "POST", path: p, body });
@@ -121,7 +130,7 @@ describe("댓글 on a phone (390x844)", () => {
 		expect(s.texts[1]).toContain("<b>굵게</b>");
 		expect(s.xss).toBe(false);
 		expect(s.draft).toBe("고마워요! 자막은 이번 주 안에 올릴게요.");
-		expect(s.buttons).toEqual(["보내기", "고치기", "버리기"]);
+		expect(s.buttons).toEqual(["보내기", "고치기", "보내지 않기"]);   // the one reply card's words (10-reply-card.js)
 		expect(s.overflow).toBe(false);
 		await shot(v, "comments-thread-390.png");
 
@@ -132,19 +141,42 @@ describe("댓글 on a phone (390x844)", () => {
 		await shot(v, "comments-sent-390.png");
 	});
 
-	test("고치기 asks what to change and shows the rewritten draft; 버리기 removes it", async () => {
+	test("고치기 asks what to change and shows the rewritten draft; 보내지 않기 removes it", async () => {
 		await boot(v);
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
 		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .kk-draft")`);
 		await run(v, `document.querySelector('#cm [data-k="edit"]').click()`);
-		await waitFor(v, `document.querySelector('#cm [data-k="rewrite"]')`);
-		await run(v, `const i = document.querySelector("#cm .kk-draft input"); i.value = "더 짧게"; document.querySelector('#cm [data-k="rewrite"]').click()`);
+		await waitFor(v, `document.querySelector('#cm [data-k="revise-go"]')`);
+		await run(v, `const i = document.querySelector("#cm .rq-edit input"); i.value = "더 짧게"; i.dispatchEvent(new Event("input")); document.querySelector('#cm [data-k="revise-go"]').click()`);
 		const req = await expectReq(r => r.path === "/api/comments/drafts/Dabc234/revise");
 		expect(req.body).toEqual({ change: "더 짧게" });
 		await waitFor(v, `document.querySelector("#cm .kk-dt") && document.querySelector("#cm .kk-dt").textContent === "짧게 답할게요."`);
 		await run(v, `document.querySelector('#cm [data-k="drop"]').click()`);
 		await expectReq(r => r.path === "/api/comments/drafts/Dnew999/drop");
 		await waitFor(v, `!document.querySelector("#cm .kk-draft")`);
+	});
+
+	test("a reply that did not go out offers 다시 보내기 and 지우기, and each posts once", async () => {
+		sends = [{ id: "send:cm:youtube:c2", commentId: "cm:youtube:c2", text: "곧 올릴게요", state: "failed", reason: "403 forbidden", at: at(22, 4, 0) }];
+		const v = open(390, 844);
+		await boot(v);
+		await run(v, `document.querySelector("#cm .kk-row").click()`);
+		await waitFor(v, `CM.view && CM.view.sends.length && document.querySelector('#cm [data-k="retry"]')`);
+		const got = await q<{ state: string; buttons: string[] }>(v, `const s = document.querySelector("#cm .kk-m.pend.failed"); return { state: s.querySelector(".kk-state").textContent, buttons: [...s.querySelectorAll("button")].map(b => b.textContent) }`);
+		expect(got.state).toBe("실패 · 403 forbidden");
+		expect(got.buttons).toEqual(["다시 보내기", "지우기"]);
+		await run(v, `document.querySelector('#cm [data-k="retry"]').click()`);
+		await expectReq(r => r.path === "/api/comments/sends/send%3Acm%3Ayoutube%3Ac2/retry");
+		await waitFor(v, `!document.querySelector("#cm [data-k=\\"retry\\"]")`);
+		expect(reqs.filter(r => r.path.endsWith("/retry"))).toHaveLength(1);
+		sends = [{ id: "send:cm:youtube:c2", commentId: "cm:youtube:c2", text: "곧 올릴게요", state: "failed", reason: "timeout", at: at(22, 4, 0) }];
+		await run(v, `CM.view.sends = [{ id: "send:cm:youtube:c2", commentId: "cm:youtube:c2", text: "곧 올릴게요", state: "failed", reason: "timeout", at: ${at(22, 4, 0)} }]; cmPaintChat(false)`);
+		await waitFor(v, `document.querySelector('#cm [data-k="dismiss"]')`);
+		await run(v, `document.querySelector('#cm [data-k="dismiss"]').click()`);
+		await expectReq(r => r.path === "/api/comments/sends/send%3Acm%3Ayoutube%3Ac2/dismiss");
+		await waitFor(v, `!document.querySelector("#cm .kk-m.pend.failed")`);
+		expect(reqs.filter(r => r.path.endsWith("/dismiss"))).toHaveLength(1);
+		await shot(v, "comments-send-failed-390.png");
 	});
 
 	test("the app list row carries the status line", async () => {
