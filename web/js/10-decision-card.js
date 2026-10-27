@@ -195,7 +195,7 @@ function draftFilesNode(d, o = {}) {
     // A mail draft always shows its 첨부 row, files or 없음, so the owner can tell a missing file from a hidden one (owner 2026-10-26).
     const mailDraft = d.toLabel === "받는이";
     clear(box).append(...[fl.length ? el("div", { class: "dr-fh", text: `첨부 ${fl.length}개` }) : null, ...rows,
-      !fl.length && (d.noAttachments || mailDraft) ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부 없음" })) : null,
+      !fl.length && (d.noAttachments || mailDraft) ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부: 없음" })) : null,
       add, menu, lib, ...(o.warn ? [] : warns), pickers].filter(Boolean));
     box.hidden = !box.querySelector(".dr-fh, .dr-none, .dr-warn, .dr-add");
   }

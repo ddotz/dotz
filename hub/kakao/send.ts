@@ -52,7 +52,7 @@ const NO = new Set(["2", "2)", "3", "3)", "고치기", "보내지 않기", "보�
 
 const nowMs = (d: SendDeps) => (d.now ?? Date.now)();
 
-function readDrafts(paths: KakaoPaths): Draft[] {
+export function readDrafts(paths: KakaoPaths): Draft[] {
 	try {
 		const raw = JSON.parse(readFileSync(paths.drafts, "utf8"));
 		return Array.isArray(raw) ? raw.filter(d => d && typeof d.code === "string" && typeof d.chatId === "string") : [];
@@ -539,6 +539,16 @@ export function dropDraft(code: string, deps: Pick<SendDeps, "paths">): SendResu
 	if (!d) return refuse("그 초안을 찾지 못했어요");
 	if (d.status !== "pending") return refuse("더 이상 보낼 수 없는 초안이에요");
 	setStatus(deps.paths, code, "dropped");
+	return { ok: true };
+}
+
+// 되돌리기 after 보내지 않기: the dropped draft waits again, unless a newer draft of the room came meanwhile (that one is the room's draft now).
+export function restoreDraft(code: string, deps: Pick<SendDeps, "paths">): SendResult {
+	const list = readDrafts(deps.paths), d = list.find(x => x.code === code);
+	if (!d) return refuse("그 초안을 찾지 못했어요");
+	if (d.status !== "dropped") return refuse("보내지 않기로 한 초안만 되돌릴 수 있어요");
+	if (list.some(x => x.chatId === d.chatId && x.code !== code && x.status === "pending")) return refuse("그사이 새 초안이 와서 되돌리지 않았어요");
+	setStatus(deps.paths, code, "pending");
 	return { ok: true };
 }
 
