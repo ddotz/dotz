@@ -1215,6 +1215,8 @@ describe("pending drafts for the 답장 확인 queue", () => {
 		const list = (await t.call("GET", "/api/kakao/drafts")).json.items;
 		expect(list.map((d: any) => [d.code, d.chatId, d.room, d.parts])).toEqual([[a.code, DIRECT, "Alex", ["좋아요", "내일 봐요"]], [g.code, GROUP, "Study Group", ["그룹 답"]]]);
 		expect(list[0].original).toEqual({ who: "Alex", text: "fine, lunch tomorrow?", at: (BASE_TIME + 30) * 1000 });
+		// a KakaoTalk draft is text only: its card always says so (첨부: 없음 · 파일을 붙일 수 없는 곳), never hiding a file row
+		expect([list[0].attachmentsNone, list[0].cannotAttach]).toEqual([true, []]);
 		expect(list[1].original).toBeUndefined();
 		expect(t.web.pendingCount()).toBe(2);
 		expect(t.web.pendingCount(new Set([a.code]))).toBe(1);
