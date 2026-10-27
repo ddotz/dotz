@@ -132,6 +132,15 @@ setInterval(() => {
   if (Date.now() - PQ.at > 15000) pqLoad();
 }, 4000);
 
+// The run state of a peer's mail conversation (the worker its request was deferred to on that computer): the snapshot's `runs`
+// (hub/peer-monitor.ts). null for a local conversation, so 41-runstate.js reads /api/state instead.
+function pqRuns(t) {
+  const pc = pqPc(t);
+  if (!pc) return null;
+  const p = PQ.list.find(x => x && x.url === pc.url);
+  return (p && p.items && p.items.runs && p.items.runs[t]) || null;
+}
+
 // A peer's mail as the local stores hold a mail (MAILS, CONV, the unread count), so monConvNode and the chat view draw it. A mail this computer has itself stays local.
 function pqMail(c, pc, itemKey) {
   const t = String(c.target);

@@ -1,6 +1,6 @@
 // The run state derivation (hub/runstate.ts): every kind and every reason an idle conversation can give for leaving todos open.
 import { expect, test } from "bun:test";
-import { lastTurnEnd, openTodos, runIntent, runState } from "./runstate.ts";
+import { lastTurnEnd, mailConversation, openTodos, runIntent, runState, workConversationRuns } from "./runstate.ts";
 
 const now = Date.UTC(2026, 9, 26, 3, 0);
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
@@ -66,6 +66,35 @@ test("openTodos counts tasks that are neither completed nor abandoned and picks 
 	] }] };
 	expect(openTodos(plan)).toEqual({ open: 2, current: "테스트" });
 	expect(openTodos({ phases: [] })).toEqual({ open: 0 });
+});
+
+test("a mail conversation's run state is the worker its request was deferred to, whichever target names it", () => {
+	const threads: Record<string, string> = { "1564523279849357364": "kdb-67010497" };
+	const conv = (t: string) => mailConversation(t, id => threads[id]);
+	expect(conv("th:1564523279849357364")).toBe("mail:kdb-67010497");
+	expect(conv("mail:kdb-67010497")).toBe("mail:kdb-67010497");
+	expect(conv("web")).toBeUndefined();
+	const work = { id: "st_01a17c04", description: "큐피드 연결 스크립트 흐름도 HTML", status: "running" as const, started_at: now - 240_000, target: "th:1564523279849357364" };
+	// The thread target and the mail key name the one conversation the owner sees, so either yields its line.
+	expect(workConversationRuns([work], conv)).toEqual({ "mail:kdb-67010497": { kind: "working", since: iso(240_000), detail: "큐피드 연결 스크립트 흐름도 HTML" } });
+	expect(workConversationRuns([{ ...work, target: "mail:kdb-67010497" }], conv)).toEqual({ "mail:kdb-67010497": { kind: "working", since: iso(240_000), detail: "큐피드 연결 스크립트 흐름도 HTML" } });
+	expect(workConversationRuns([{ ...work, target: "web" }], conv)).toEqual({});
+});
+
+test("a worker that failed at spawn says why, and whether it was handed over again", () => {
+	const conv = (t: string) => mailConversation(t, () => "kdb-67010497");
+	const failed = { id: "st_01a17c03", description: "큐피드 연결 스크립트 흐름도 HTML", status: "failed" as const, started_at: now - 300_000, ended_at: now - 300_000, target: "th:1564523279849357364", error: "child turn produced no assistant output" };
+	expect(workConversationRuns([failed], conv)["mail:kdb-67010497"]).toEqual({ kind: "error", since: iso(300_000), detail: "child turn produced no assistant output · 다시 맡기지 않았어요" });
+	const retry = { id: "st_01a17c04", description: "다시", status: "running" as const, started_at: now - 240_000, target: "th:1564523279849357364" };
+	expect(workConversationRuns([failed, retry], conv)["mail:kdb-67010497"]).toMatchObject({ kind: "working", detail: "다시" });
+	const failedAgain = { ...retry, status: "failed" as const, ended_at: now - 60_000 };
+	expect(workConversationRuns([failed, failedAgain], conv)["mail:kdb-67010497"]).toMatchObject({ kind: "error", detail: "이유가 기록되지 않았어요 · 다시 맡긴 작업도 실패했어요" });
+});
+
+test("a finished worker leaves the conversation done with what it was", () => {
+	const conv = (t: string) => mailConversation(t, () => "k1");
+	const done = { id: "st_1", description: "흐름도 그리기", status: "done" as const, started_at: now - 600_000, ended_at: now - 120_000, target: "mail:k1" };
+	expect(workConversationRuns([done], conv)).toEqual({ "mail:k1": { kind: "done", since: iso(120_000), detail: "흐름도 그리기" } });
 });
 
 test("runIntent reads only the current turn; lastTurnEnd is the newest turn's end", () => {

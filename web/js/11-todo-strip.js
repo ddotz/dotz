@@ -147,6 +147,8 @@ function cardNode(c) {
 }
 function msgNode(e) {
   const text = String(e.text ?? ""), hm = kstHM(e.ts);
+  // Nothing to read: an outbox record with no text and no card is not a bubble (a deferral note must never look like an empty one).
+  if (!text.trim() && !e.card && !(Array.isArray(e.files) && e.files.length) && e.kind !== "result" && e.kind !== "lane_start") return null;
   switch (e.kind) {
     case "message": case "lane_message": case "_cmd": {
       const via = e.kind === "_cmd" ? "명령" : e.source === "discord" ? "Discord" : e.source === "terminal" ? "터미널" : "";

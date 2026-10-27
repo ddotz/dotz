@@ -52,6 +52,16 @@ test("running work comes first, oldest first, and only the orchestrator's own se
 	expect(make(() => T0 + 90_000).list().map(w => w.id)).toEqual(["st_old", "st_new", "st_done"]);
 });
 
+test("a worker that failed at spawn still names its conversation and why, and the hub log keeps the reason once", () => {
+	// st_01a17c03 (2026-10-27): status error, started_at == terminal_at, a turn of ours had just spawned it.
+	record("st_start", { status: "error", terminal_at: iso(T0 + 400), error_message: "child turn produced no assistant output" });
+	const lines: string[] = [];
+	const turn = (at: number) => (at === T0 + 400 ? { target: "th:1564523279849357364", replyTo: "m-1" } : undefined);
+	const work = createBgWork({ sessionFile: () => session, deferred: () => [], turn, now: () => T0 + 60_000, log: m => lines.push(m) });
+	for (let i = 0; i < 3; i++) expect(work.list()[0]).toMatchObject({ id: "st_start", status: "failed", target: "th:1564523279849357364", reply_to: "m-1", error: "child turn produced no assistant output" });
+	expect(lines).toEqual(["background work st_start failed in th:1564523279849357364: child turn produced no assistant output"]);
+});
+
 test("a gateway restart rebuilds the same list from the task store alone", () => {
 	record("st_a");
 	record("st_b", { status: "completed", terminal_at: iso(T0 + 20_000) });
