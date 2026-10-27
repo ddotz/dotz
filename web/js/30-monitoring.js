@@ -396,6 +396,15 @@ function mailDraftLive(notices) {
 // folded inside its mail's conversation (30-mail-sent.js).
 const mailDraftDone = n => !!(n.decision && n.decision.draft) && String(n.decision.to || "").startsWith("mail:") && !mailDraftHeld(n);
 const mailDraftGone = (n, newest) => !!(n.decision && n.decision.draft) && String(n.decision.to || "").startsWith("mail:") && (drState(n.decision) === "drop" || newest.get(mailDraftKey(n)) !== n);
+// Opening a mail app while reply drafts wait lands on 확인 대기 (once per opening, so a filter the owner picks stays); with none waiting a
+// left-over 확인 대기 goes back to 전체. It waits for the notices, so a draft that loads late still decides the landing.
+function mailLand(sel) {
+  if (!monMailList(sel)) { MON.land = ""; return; }
+  if (MON.land === sel.key || !NT.loaded) return;
+  MON.land = sel.key;
+  const waiting = [...mailDraftLive(sel.notices).values()].some(mailDraftOpen);
+  if (waiting) MON.mailFilter = "pending"; else if (MON.mailFilter === "pending") MON.mailFilter = "all";
+}
 function mailFilterBar(mails, notices) {
   const cur = mailFilterOf()[0];
   return el("div", { class: "mr-filter", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.map(([k, label, ok]) => {
@@ -817,6 +826,7 @@ function renderMonitoring() {
   const cm = !kakao && sel ? cmAppOf(sel.key) : "";
   kkMode(kakao, kakao && !(narrowChat() && MON.list), kakao ? sel.pc : null);
   cmMode(cm, !!cm && !(narrowChat() && MON.list));
+  mailLand(sel);
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
     const head = JSON.stringify([sel.name, monState(sel), sel.unreplied | 0, !!AS.by[monSettingsApp(sel)], !!KK.open]);
