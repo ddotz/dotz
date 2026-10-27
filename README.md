@@ -437,7 +437,9 @@ when omp is selected.
   in a git repo is made `isolated: true, apply: false, merge: "patch"` (read-only agents such as explore/librarian run in
   place), the completion's `isolation: retained via … -> <root.patch>` line is kept as `<id>.patch`, and `git apply` of a patch
   (in an OmO `eval` cell or bash) is refused until the patch was read. A repo OmO reports `isolation_unavailable` for (e.g. over
-  its snapshot budget) gets in-place subagents. Probe: `workers_isolated_patch`.
+  its snapshot budget) gets in-place subagents, and so does the dotz data folder (`~/.dotz` is a git repo only for the
+  settings snapshot); in-place workers are sent `isolated: false` so an omo.json `task.isolation.enabled` does not isolate
+  them anyway. A worker that still cannot start says why in Korean in its conversation. Probe: `workers_isolated_patch`.
 - *Session subagent model*: OmO task subagents take their model from OmO's categories (`omo.json`), so each session spawn writes
   `profiles.dotz-workers-<model>` into `~/.omo/omo.json` (every category on the session's subagent model, then
   `models.workers.fallback`) and starts the session with `OMO_PROFILE` naming it; the owner's own OmO runs, which set no
