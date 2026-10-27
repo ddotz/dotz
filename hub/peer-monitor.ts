@@ -340,7 +340,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (a.kind === "kakao" && typeof a.chatId === "string" && a.chatId) return ask(verb, `/api/kakao/chat/${encodeURIComponent(a.chatId)}/no-reply`, verb === "POST" ? {} : undefined, login);
 				return bad("kind must be mail or kakao");
 			}
-			// 답장 안 해도 돼요 on a mail the other computer holds, or taking it back (on false), and 삭제 of that mail from dotz there.
+			// 답장 안 함 on a mail the other computer holds, or 답장 필요로 표시 (on false), and 삭제 of that mail from dotz there.
 			case "fyi":
 				if (typeof a.key !== "string" || !a.key) return bad("key required");
 				return a.on === false ? ask("DELETE", `/api/mail/${encodeURIComponent(a.key)}/fyi`, undefined, login) : ask("POST", `/api/mail/${encodeURIComponent(a.key)}/fyi`, {}, login);

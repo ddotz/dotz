@@ -444,9 +444,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "GET" && url.pathname === "/api/conversations") {
 			const owed = new Set(unrepliedMailList().map(m => m.key));
 			const sent = sentMailRefs();
-			const items = conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).map(c => {
-				const m = c.target.startsWith("mail:") ? mailByKey(c.target.slice(5)) : undefined;
-				return m ? { ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key)) } : c;
+			// A mail conversation is listed only while its mail is: a deleted mail (mail-deleted.json) keeps its messages in the log, but it leaves
+			// this list, so it leaves every list and count here and on the other computer (its snapshot is this list, hub/peer-monitor.ts).
+			const items = conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).flatMap(c => {
+				if (!c.target.startsWith("mail:")) return [c];
+				const m = mailByKey(c.target.slice(5));
+				return m ? [{ ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key)) }] : [];
 			});
 			return json({ items });
 		}
@@ -459,7 +462,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// Add or remove a file of a mail reply draft, and the 첨부 파일 폴더 listing (hub/draft-attach.ts).
 		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library|original)$/.exec(url.pathname);
 		if (draftAttach) return draftAttachRoute(req, url, draftAttach[1]!, draftAttach[2]!);
-		// 답장 안 함 / 답장 안 해도 돼요 (fyi) on a mail (POST) or taking it back (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
+		// 답장 안 함 (no-reply = skipped, fyi; one label to the owner) on a mail (POST) or 답장 필요로 표시 (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
 		// Its reply draft waiting for approval is dropped through the drafts store and its card leaves 확인 대기 before the answer.
 		const mailNoReply = (req.method === "POST" || req.method === "DELETE") && /^\/api\/mail\/([a-z0-9._-]+)\/(no-reply|fyi)$/.exec(url.pathname);
 		if (mailNoReply) {
