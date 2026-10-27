@@ -1114,6 +1114,9 @@ export function listNotices(limit = 100): { items: Notice[]; unread: number } {
 	return { items: sorted.slice(0, n).map(readable), unread: unreadCount() };
 }
 
+// The 알림 conversation's messages whose notice was dismissed (지우기 on it, web/js/30-notices.js): their event times, so every page hides them there.
+export const dismissedAlertAts = (): string[] => items.filter(i => i.dismissed && (i.src ?? i.open) === "alert" && i.at).map(i => i.at!);
+
 // Swipe / x in the bell: read and gone from every list and count, on every open tab (a notice_dismiss frame).
 export function dismissNotice(id: unknown): { ok: boolean; held?: boolean; unread: number } {
 	const item = items.find(i => i.id === String(id));
@@ -1222,6 +1225,13 @@ export function reopenNotices(ids: unknown): { reopened: string[]; unread: numbe
 	}
 	if (hit.length) announce(hit, at);
 	return { reopened: hit.map(i => i.id), unread: unreadCount() };
+}
+
+// The send approvals of drafts that wait again (답장 필요로 되돌리기 restored a held draft): a card that was settled as resolved (never answered
+// by the owner) opens again in 확인 대기.
+export function reopenDraftNotices(draftIds: string[]): { reopened: string[]; unread: number } {
+	const want = new Set(draftIds);
+	return reopenNotices(items.filter(i => i.decision?.draft?.ref && want.has(i.decision.draft.ref) && i.decision.state === "answered" && i.decision.resolved).map(i => i.id));
 }
 
 // Test hook: an empty store and no per-conversation memory, so a test does not depend on what an earlier test left behind.
