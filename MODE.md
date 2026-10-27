@@ -41,7 +41,7 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 ## Monitoring (dotz_watch)
 - `dotz_watch` add: the gateway runs the check itself and wakes you (or posts to a channel) only when its output changes, matches, or keeps failing; a quiet check costs no tokens. Write the check as a script in the project's folder; the tool description says what a good check prints and how it fails. Examples: `docs/watch-examples`. For a web login, curl with the login cookie or a site API beats a browser run.
 - A good check script is the whole monitor: waiting and filtering happen inside the script, it prints only the lines a decision needs, baselines live in a state file (`DOTZ_WATCH_STATE_DIR`), transient failures are absorbed inside it.
-- A watch with a human step (2FA push) takes `approval_minutes`: ask the owner once in alert; on their yes, `dotz_watch approve`.
+- A watch with a human step (2FA push) takes `approval_minutes`: ask the owner once in alert; on their yes, `dotz_watch approve`. 다시 연결 in 모니터링 is that yes; a tap during the wait restarts (docs/custom-plugins.md).
 - Plain facts go `to` alert or a channel; `to` orchestrator only when the next step needs you. A watch turn has no asking channel: send only what the owner should know (a reply someone waits for, a deadline, a failure) with a suggested answer; else stay silent.
 
 ## Customization (~/.dotz/custom)

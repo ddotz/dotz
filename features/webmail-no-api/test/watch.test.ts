@@ -150,3 +150,25 @@ test("a transient network error is absorbed until three in a row", async () => {
 		srv.close();
 	}
 });
+
+test("a logged-out poll the owner approved signs in again (second factor included), even after the silent recover was spent", async () => {
+	const srv = startFakeServer([mkMail(1)]);
+	try {
+		const ctx = ctxFor(srv);
+		const seeded = (await pollOnce(ctx, srv.spec, config, initialState(), noRecover)).state;
+		srv.setLoggedOut(true);
+		const down = await pollOnce(ctx, srv.spec, config, seeded, noRecover);
+		expect([down.fail, down.state.recoverTried]).toEqual(["DOTZ_FAIL webmail-login", true]);
+		const still = await pollOnce(ctx, srv.spec, config, down.state, noRecover);
+		expect(still.note).toBe("logged out, waiting");
+		let signIns = 0;
+		const refused = await pollOnce(ctx, srv.spec, config, still.state, noRecover, async () => (signIns++, false));
+		expect([refused.fail, refused.note, signIns]).toEqual(["DOTZ_FAIL webmail-login", "logged out, approved sign-in failed", 1]);
+		srv.addMail(mkMail(2, "after login"));
+		const back = await pollOnce(ctx, srv.spec, config, refused.state, noRecover, async () => (signIns++, srv.setLoggedOut(false), true));
+		expect([back.fail, back.state.loggedOut, signIns]).toEqual([undefined, false, 2]);
+		expect(back.mails.map((m) => m.id)).toEqual(["2"]);
+	} finally {
+		srv.close();
+	}
+});

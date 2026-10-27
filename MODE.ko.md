@@ -41,7 +41,7 @@
 ## Monitoring (dotz_watch)
 - `dotz_watch` add: 게이트웨이가 확인을 직접 돌리고 출력이 바뀌거나 맞거나 계속 실패할 때만 당신을 깨우거나 채널에 올려요. 조용한 확인은 토큰이 들지 않아요. 확인은 프로젝트 폴더 안의 스크립트로 쓰고, 좋은 확인이 무엇을 찍고 어떻게 실패하는지는 도구 설명을 따르세요. 예시: `docs/watch-examples`. 웹 로그인은 브라우저보다 로그인 쿠키 curl이나 사이트 API가 나아요.
 - 좋은 확인 스크립트가 감시의 전부예요: 기다림과 거르기는 스크립트 안에서, 출력은 판단에 필요한 줄만, 기준값은 상태 파일(`DOTZ_WATCH_STATE_DIR`)에, 일시 실패는 스크립트 안에서 흡수해요.
-- 사람 단계(2FA 푸시)가 있는 watch는 `approval_minutes`를 받아요. alert에서 오너에게 한 번 묻고, 하라고 하면 `dotz_watch approve`.
+- 사람 단계(2FA 푸시)가 있는 watch는 `approval_minutes`를 받아요. alert에서 오너에게 한 번 묻고, 하라고 하면 `dotz_watch approve`. 모니터링의 다시 연결도 그 허락이고, 기다리는 중에 또 누르면 다시 시작해요(docs/custom-plugins.md).
 - 단순 사실은 alert나 채널로 바로(`to`), 다음 단계에 당신이 필요할 때만 orchestrator로. watch 턴에는 질문한 채널이 없어요. 오너가 알아야 할 것(누가 답을 기다림, 마감, 실패)만 제안 답과 함께 보내고, 아니면 조용히 있으세요.
 
 ## Customization (~/.dotz/custom)

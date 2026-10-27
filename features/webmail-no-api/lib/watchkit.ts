@@ -54,7 +54,9 @@ function onAlive(state: WatchState, now: number, etag?: string, lastModified?: s
 // and shows the app as disconnected until a poll passes; a watch that went quiet after the first one was never alerted and read as connected.
 // `recover` is attempted at most once per logout outage; it returns whether the session came back (real:
 // trigger the stored-credential relogin through Aside / the gateway session watch; test: a canned boolean).
-export async function pollOnce(ctx: Ctx, spec: SiteSpec, config: SiteConfig, state: WatchState, recover: () => Promise<boolean>): Promise<PollResult> {
+// `relogin` exists only on a run the owner approved (다시 연결 in 모니터링, or his yes to the alert: DOTZ_APPROVED=1): the full
+// sign-in, second factor included, tried on every logged-out poll it is given, whatever the silent recover did before.
+export async function pollOnce(ctx: Ctx, spec: SiteSpec, config: SiteConfig, state: WatchState, recover: () => Promise<boolean>, relogin?: () => Promise<boolean>): Promise<PollResult> {
 	const cookie = await ctx.cookieHeader(spec);
 	const ka = await keepalive(ctx, spec, cookie, { etag: state.etag, lastModified: state.lastModified });
 
@@ -69,6 +71,11 @@ export async function pollOnce(ctx: Ctx, spec: SiteSpec, config: SiteConfig, sta
 	}
 
 	if (ka.status === "loggedout") {
+		if (relogin) {
+			const back = await relogin().catch(() => false);
+			if (back) return pollOnce(ctx, spec, config, { ...state, loggedOut: false, recoverTried: true }, recover);
+			return { lines: [], mails: [], fail: "DOTZ_FAIL webmail-login", note: "logged out, approved sign-in failed", state: { ...state, loggedOut: true, recoverTried: true } };
+		}
 		if (!state.recoverTried) {
 			const recovered = await recover().catch(() => false);
 			if (recovered) return pollOnce(ctx, spec, config, { ...state, loggedOut: false, recoverTried: true }, recover);

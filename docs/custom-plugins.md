@@ -30,6 +30,16 @@ A plugin that fails to load, whose `start` throws (it is dropped for the run), o
 A plugin may also serve as a watch check: `ensureWatch({ command: "bun '<plugin file>' check" })` with `if (import.meta.main)` in the file.
 A check that sends its own alerts and exits 0 while its source is logged out should print `DOTZ_DISCONNECTED since=<ISO time>`: the app's 모니터링 row then shows 연결 끊김 with that time (hub/watch-status.ts). Without it the row reads as connected.
 
+### A login keeper the owner can reconnect from the app
+
+What a site login with a second factor (a push to the owner's phone) needs, learned from a company webmail that sat disconnected for days while 다시 연결 did nothing:
+
+- Gate the push: give the watch `approval_minutes`. The check gets `DOTZ_APPROVED=1` only after the owner's yes and prints `DOTZ_APPROVAL_USED` when it starts the sign-in (one yes, one attempt). The 다시 연결 tap in 모니터링 is that yes: the gateway approves a disconnected gated watch instead of re-running it, so the check must actually sign in on an approved run, not only report that it waits.
+- Report the state: a logged-out run fails (`DOTZ_FAIL <kind>`) or prints `DOTZ_DISCONNECTED`; a run that signed in exits 0 without it, so the row turns 연결됨 in that same run. If an outside process does the sign-in, have it record success at once and run the dotz watch (`POST /api/watches/<name>/run`) instead of waiting for the next interval.
+- A second tap restarts: approving a watch whose check is still running kills that check's process group and starts a fresh approved run. Keep the sign-in inside the check (or make an outside sign-in stop when a new approval arrives) so the owner never waits on an attempt he already gave up on.
+- Bound every step: a hard timeout on each browser or `osascript` call, `timeout_seconds` on the watch long enough for the push wait, a few tries per outage, and no automatic retry after a wrong-password or locked answer.
+- Browser automation on macOS: work in one dedicated, minimized window and never focus the owner's windows; find that window by reading each window's name by id, not with an AppleScript `whose` filter (Aside answered one only after about 110 s, and every event queued behind it timed out); type a password only into the page (never OS keystrokes) and submit only after checking the field holds it, so a mistyped password cannot lock the account.
+
 ## Posting a mail
 
 A watcher or plugin that finds new mail posts it to the gateway, and each mail becomes its own conversation: `mail:<key>` in the web app (group "메일") and, with Discord on, one thread in the mail channel. Same auth as every `/api` route (the hub token or a tailnet login):
