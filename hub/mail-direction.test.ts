@@ -110,7 +110,7 @@ describe("the watch", () => {
 		const { deps, calls } = fakes();
 		await pass([], [], deps);
 		const id = uid("in");
-		await pass([{ id, from: "Kim <kim@example.com>", subject: "문의드립니다" }], [], deps);
+		await pass([{ id, from: "Kim <kim@example.com>", subject: "자료 공유드립니다" }], [], deps);
 		const key = `zele-${id}`;
 		expect(calls.wakes).toBe(1);
 		expect(unreadOf(mailTarget(key))).toBe(1);
@@ -174,8 +174,8 @@ describe("a newer message in a thread decides its state again", () => {
 	const KIM = "Kim <kim@example.com>";
 	const OWNER = "Owner <owner@example.com>";
 	const d = (n: number) => `10월 25일, 오전 ${9 + n}:00`;
-	const kim = (id: string, n: number, flags = "unread"): Thread => ({ id, from: KIM, subject: "일정 문의", messages: n, date: d(n), flags });
-	const owner = (id: string, n: number): Thread => ({ id, from: OWNER, to: KIM, subject: "Re: 일정 문의", messages: n, date: d(n), flags: "sent" });
+	const kim = (id: string, n: number, flags = "unread"): Thread => ({ id, from: KIM, subject: "일정 공유", messages: n, date: d(n), flags });
+	const owner = (id: string, n: number): Thread => ({ id, from: OWNER, to: KIM, subject: "Re: 일정 공유", messages: n, date: d(n), flags: "sent" });
 
 	test("owner replied -> the other side replies again -> new mail and 답장 필요 once; owner replies again -> 답장함", async () => {
 		const { deps, calls } = fakes();
@@ -266,7 +266,7 @@ describe("a newer message in a thread decides its state again", () => {
 		await pass([kim(id, 2)], [], deps);
 		expect(calls.wakes).toBe(2);
 		expect(calls.offers).toBe(2);
-		const post = { source: "zele", id, messageId: mailByKey(key)!.msg, subject: "일정 문의", from: KIM, wake: true };
+		const post = { source: "zele", id, messageId: mailByKey(key)!.msg, subject: "일정 공유", from: KIM, wake: true };
 		expect((await postMail(post, deps)).duplicate).toBe(true);
 		expect(calls.wakes).toBe(2);
 		expect((await postMail({ ...post, messageId: "another" }, deps)).duplicate).toBeUndefined();

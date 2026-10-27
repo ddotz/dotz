@@ -1,6 +1,6 @@
 // Mail direction and reply state (hub/mail-state.ts): addresses and aliases, folders and labels, every reply transition, the old flags, and the one-time migration.
 import { describe, expect, test } from "bun:test";
-import { addressKey, directionOf, isOwnAddress, mailLabel, migrateMails, nextReply, replyOf, type MailReply, type MailReplyEvent, type StoredMail } from "./mail-state.ts";
+import { addressKey, directionOf, isOwnAddress, mailLabel, migrateMails, nextReply, replyExpected, replyOf, type MailReply, type MailReplyEvent, type StoredMail } from "./mail-state.ts";
 import { mailUnreplied } from "./unreplied.ts";
 
 const own = new Set(["owner@example.com", "owner@gmail.com"]);
@@ -152,5 +152,34 @@ describe("migration", () => {
 		const once = JSON.stringify(rows);
 		expect(migrateMails(rows, { own, sentRefs: new Set(["zele-in4"]) })).toBe(0);
 		expect(JSON.stringify(rows)).toBe(once);
+	});
+});
+
+describe("does an incoming mail expect a reply", () => {
+	const m = (subject: string, text = "", more: Partial<{ from: string; to: string; cc: string }> = {}) => replyExpected({ from: "Kim <kim@example.com>", subject, text, ...more }, own);
+	test("the summary's 할 일 decides: a thing to send back owes a reply; 없음 or only reading owes none", () => {
+		expect(m("견적 요청 드립니다", "**요약** • 내년 자문 견적 요청 **할 일** • 견적서 작성·회신 — 10/27까지")).toBe(true);
+		expect(m("회의 개최 안내", "**요약** • 10.29 회의 **할 일** • 참석자 명단·식사 여부 회신 — 10.27")).toBe(true);
+		expect(m("RE: 현황 조사", "**요약** • 조사에 대한 회신 **할 일** • 없음")).toBe(false);
+		expect(m("수정본 송부", "**요약** • 진술서 수정본 **할 일** • 수정본 내용 검토·확인 (기한 없음)")).toBe(false);
+	});
+	test("without a 할 일 line: a request or a question does, a plain notice does not", () => {
+		expect(m("대출 문의 드립니다", "변동 사유를 알려 주시기 바랍니다")).toBe(true);
+		expect(m("Quick question", "Could you send the file by Friday?")).toBe(true);
+		expect(m("자료 공유드립니다", "첨부 참고 바랍니다")).toBe(false);
+	});
+	test("machines, mailing lists, ads and a copy where the owner is only in CC never do", () => {
+		expect(m("[AntiSpam] 스팸 리포트 (10/27자)", "회신 바랍니다", { from: "Administrator" })).toBe(false);
+		expect(m("일일 환율 및 금리시황", "의견 주세요")).toBe(false);
+		expect(m("SAP 리더들의 전략", "문의 주세요. 수신거부는 여기를 누르세요")).toBe(false);
+		expect(m("검토 요청", "검토 부탁드립니다", { to: "Lee <lee@example.com>", cc: "Owner <owner@example.com>" })).toBe(false);
+		expect(m("검토 요청", "검토 부탁드립니다", { to: "Owner <owner@example.com>" })).toBe(true);
+	});
+	test("the stored mails get it once, only within 30 days, and a second pass changes nothing", () => {
+		const base = { from: "Kim <kim@example.com>", subject: "견적 요청", summary: "**할 일** • 견적서 회신" };
+		const recs: StoredMail[] = [{ ...base, key: "a", at: "2026-10-24T00:00:00Z" }, { ...base, key: "old", at: "2026-08-01T00:00:00Z" }, { ...base, key: "fyi", at: "2026-10-24T00:00:00Z", reply: "fyi" }];
+		expect(migrateMails(recs, { own, now: NOW })).toBe(1);
+		expect(recs.map(r => r.reply)).toEqual(["needs", undefined, "fyi"]);
+		expect(migrateMails(recs, { own, now: NOW })).toBe(0);
 	});
 });
