@@ -67,6 +67,9 @@ const LAST_MAX = 2000; // the last output is kept so the next change can be told
 const stateDir = (w: Watch) => join(DATA_DIR, "watches", w.id);
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const running = new Map<string, Promise<void>>();
+// The process group of a running check (approveWatch kills it to start over) and the runs cancelled that way (their result is not counted).
+const killers = new Map<string, () => void>();
+const cancelled = new Set<string>();
 let stopped = false;
 // An app the owner switched off on this install keeps its watches registered but they do not run (hub/app-off.ts); main.ts sets the check.
 let offGate: (name: string) => boolean = () => false;
@@ -77,13 +80,14 @@ let notify: (w: Watch, reason: string, output: string, prev?: string) => void = 
 // The check gets its own process group and the deadline SIGKILLs the whole group: killing only the shell left a
 // grandchild holding the output pipe, so the read waited for it (measured: `sleep 3 &` held a 0.5 s kill for 3 s).
 // What the check leaves running after it exits is killed too, and the read gets a short grace after the exit.
-export async function exec(argv: string[], cwd?: string, timeoutMs = RUN_TIMEOUT_MS, env?: Record<string, string>, maxOutput = 1500): Promise<{ code: number; output: string; timedOut: boolean }> {
+export async function exec(argv: string[], cwd?: string, timeoutMs = RUN_TIMEOUT_MS, env?: Record<string, string>, maxOutput = 1500, onKill?: (kill: () => void) => void): Promise<{ code: number; output: string; timedOut: boolean }> {
 	const proc = Bun.spawn(argv, { cwd, stdout: "pipe", stderr: "pipe", detached: true, ...(env ? { env: { ...process.env, ...env } } : {}) });
 	const killGroup = () => {
 		try {
 			process.kill(-proc.pid, "SIGKILL");
 		} catch {}
 	};
+	onKill?.(killGroup);
 	let timedOut = false;
 	const kill = setTimeout(() => {
 		timedOut = true;
@@ -189,7 +193,12 @@ async function runOnce(w: Watch): Promise<void> {
 		mkdirSync(stateDir(w), { recursive: true });
 		const env = { DOTZ_WATCH_STATE_DIR: stateDir(w), ...(w.approval_minutes ? { DOTZ_APPROVED: ok ? "1" : "0", DOTZ_APPROVAL_FILE: approvalFile(w) } : {}) };
 		const argv = w.script ? [w.script] : ["/bin/zsh", "-lc", w.command];
-		const { code, output } = w.session ? await serialSessionRun(w) : await exec(argv, w.cwd, (w.timeout_seconds ?? RUN_TIMEOUT_MS / 1000) * 1000, env);
+		const { code, output } = w.session ? await serialSessionRun(w) : await exec(argv, w.cwd, (w.timeout_seconds ?? RUN_TIMEOUT_MS / 1000) * 1000, env, undefined, k => killers.set(w.id, k));
+		killers.delete(w.id);
+		if (cancelled.delete(w.id)) {
+			log(`watch ${w.name}: the running check was cancelled for a fresh approved run`);
+			return;
+		}
 		w.state.lastRun = now();
 		w.state.nextAt = undefined;
 		if (/^DOTZ_APPROVAL_USED\b/m.test(output)) rmSync(approvalFile(w), { force: true });
@@ -279,7 +288,9 @@ export function runWatch(idOrName: string): Promise<void> {
 	return w ? run(w) : Promise.resolve();
 }
 
-// The owner said yes: write the approval file (valid for approval_minutes), start a fresh round of retries, run now.
+// The owner said yes: write the approval file (valid for approval_minutes), start a fresh round of retries, run now. A yes while
+// a check of the watch is still running (다시 연결 pressed again during a login that waits on the phone) cancels that check and
+// starts over with the new approval, so the owner gets a fresh second factor instead of a tap that does nothing (owner 2026-10-27).
 export function approveWatch(idOrName: string): Watch {
 	const w = items.find(x => x.id === idOrName || x.name === idOrName);
 	if (!w) throw new Error(`no watch ${idOrName}`);
@@ -289,7 +300,12 @@ export function approveWatch(idOrName: string): Watch {
 	w.state.paused = w.state.approvalAskedAt = w.state.nextAt = undefined;
 	w.state.kindFails = 0;
 	save();
-	void run(w);
+	const busy = running.get(w.id), kill = killers.get(w.id);
+	if (busy && kill) {
+		cancelled.add(w.id);
+		kill();
+		void busy.then(() => run(w));
+	} else void run(w);
 	return w;
 }
 
