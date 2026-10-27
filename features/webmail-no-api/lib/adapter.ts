@@ -11,7 +11,7 @@ export type MailFile = { name: string; id?: string; url?: string; size?: number;
 export type PostedFile = { name: string; type?: string; data: string };
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
-export const MAX_FILES = 10;
+export const MAX_FILES = 300;
 const BODY_POST_MAX = 8000;
 const HTML_POST_MAX = 400_000;
 

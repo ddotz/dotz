@@ -2,7 +2,7 @@
 // owner turned on 디스코드에도 올리기 for the mail's app instance (MailDeps.threadOn), one thread in the mail channel. A web message in that conversation reaches the orchestrator the way a message in
 // the mail's Discord thread does (hub/intake.ts sendWeb `mail`). Posters come in through POST /api/mail (docs/custom-plugins.md).
 // Discord and the event bus are injected (MailDeps), so this module has no hub imports beyond config.
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, sep } from "node:path";
 import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { FileError, safeName, serveFile } from "./files.ts";
@@ -55,8 +55,9 @@ export class MailError extends Error {
 const FILE = join(DATA_DIR, "mail-conversations.json");
 /** Attachments live only here: <data dir>/mail-files/<key>/<n>/<name>. The route serves nothing outside it. */
 export const MAIL_FILES = join(DATA_DIR, "mail-files");
-const FILE_MAX_BYTES = 25 * 1024 * 1024;
-const FILES_MAX = 10;
+// Every file of a mail is kept (owner 2026-10-27: a mail with more than 10 files lost the rest). The caps only stop a runaway poster.
+const FILE_MAX_BYTES = 1024 * 1024 * 1024;
+const FILES_MAX = 300;
 const PREVIEW_MAX = 240;
 const KEEP = 500;
 const BODY_MAX = 20_000;
@@ -170,8 +171,8 @@ const str = (v: unknown, name: string, max: number, required: boolean): string |
 function parseAttachments(v: unknown): AttachmentInput[] | undefined {
 	if (v === undefined || v === null) return undefined;
 	if (!Array.isArray(v)) throw new MailError("attachments must be an array");
-	if (v.length > FILES_MAX) throw new MailError(`attachments: at most ${FILES_MAX} files`);
-	return v.map((a, i) => {
+	if (v.length > FILES_MAX) log(`mail: ${v.length} attachments, the first ${FILES_MAX} are kept`);
+	return v.slice(0, FILES_MAX).map((a, i) => {
 		if (!a || typeof a !== "object") throw new MailError(`attachments[${i}] must be an object`);
 		const { name, type, data, path, cid } = a as Record<string, unknown>;
 		if (typeof name !== "string" || !name.trim()) throw new MailError(`attachments[${i}].name is required`);
@@ -233,18 +234,16 @@ function saveAttachments(key: string, inputs: AttachmentInput[] | undefined): Ma
 			const name = safeName(a.name);
 			const file = `${key}/${n}/${name}`;
 			const dest = join(MAIL_FILES, file);
-			let bytes: Buffer;
-			if (a.data !== undefined) {
-				bytes = Buffer.from(a.data, "base64");
-			} else {
-				const src = insideMailFiles(a.path!);
-				if (!src) throw new Error("path is not a file inside the mail files folder");
-				bytes = readFileSync(src);
-			}
-			if (!bytes.length || bytes.length > FILE_MAX_BYTES) throw new Error(`size ${bytes.length} not accepted`);
+			// A file the poster put under mail-files is copied as it is (a big file never passes through memory or JSON).
+			const src = a.data === undefined ? insideMailFiles(a.path!) : undefined;
+			if (a.data === undefined && !src) throw new Error("path is not a file inside the mail files folder");
+			const bytes = a.data !== undefined ? Buffer.from(a.data, "base64") : undefined;
+			const size = bytes ? bytes.length : statSync(src!).size;
+			if (!size || size > FILE_MAX_BYTES) throw new Error(`size ${size} not accepted`);
 			mkdirSync(join(MAIL_FILES, key, String(n)), { recursive: true });
-			writeFileSync(dest, bytes);
-			out.push({ name, type: a.type || Bun.file(dest).type || "application/octet-stream", size: bytes.length, file, ...(a.cid ? { cid: a.cid } : {}) });
+			if (bytes) writeFileSync(dest, bytes);
+			else copyFileSync(src!, dest);
+			out.push({ name, type: a.type || Bun.file(dest).type || "application/octet-stream", size, file, ...(a.cid ? { cid: a.cid } : {}) });
 		} catch (error) {
 			log(`mail ${key}: attachment ${n} (${a.name}) not stored: ${(error as Error).message}`);
 		}
