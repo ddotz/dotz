@@ -10,7 +10,7 @@ const URL_A = "https://a.example.test";
 const URL_B = "https://b.example.test";
 let clock = 1_000_000;
 
-type Gateway = { name: string; mon: PeerMonitor; handle: (req: Request) => Promise<Response>; events: Array<{ target: string; text: string; via?: string }>; down: boolean; hang: boolean; statuses: number[]; seen: Request[] };
+type Gateway = { name: string; mon: PeerMonitor; handle: (req: Request) => Promise<Response>; events: Array<{ target: string; text: string; via?: string }>; notes: Array<{ id: string; title: string }>; down: boolean; hang: boolean; statuses: number[]; seen: Request[] };
 const nodes = new Map<string, Gateway>();
 
 const netFetch = async (url: string, init?: RequestInit): Promise<Response> => {
@@ -26,6 +26,7 @@ const netFetch = async (url: string, init?: RequestInit): Promise<Response> => {
 
 function gateway(name: string, self: string, other: string, otherName: string): Gateway {
 	const events: Gateway["events"] = [];
+	const notes: Gateway["notes"] = [];
 	const local = async (req: Request): Promise<Response> => {
 		const path = new URL(req.url).pathname;
 		if (req.method === "POST" && path === "/api/message") {
@@ -69,7 +70,7 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			return Response.json({ ok: true });
 		}
 		if (path === "/api/monitors") return Response.json({ items: [{ name: `${name} 감시`, kind: "watch" }] });
-		if (path === "/api/notices") return Response.json({ items: [{ id: `n-${name}`, title: `${name} 알림`, read: false }], unread: 1 });
+		if (path === "/api/notices") return Response.json({ items: [{ id: `n-${name}`, title: `${name} 알림`, read: false }, ...notes], unread: 1 + notes.length });
 		if (path === "/api/integrations") return Response.json({ items: [{ key: "mail", unread: events.length }] });
 		if (path === "/api/conversations") {
 			const last = events.at(-1);
@@ -83,7 +84,7 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 		if (checkPeer(req, TOKEN) === "denied") return new Response("forbidden", { status: 403 });
 		return (await mon.route(req, new URL(req.url))) ?? local(req);
 	};
-	const g: Gateway = { name, mon, handle, events, down: false, hang: false, statuses: [], seen: [] };
+	const g: Gateway = { name, mon, handle, events, notes, down: false, hang: false, statuses: [], seen: [] };
 	nodes.set(self, g);
 	return g;
 }
@@ -106,6 +107,26 @@ test("merge: the peer's items come with its name, mail and kakao rows only, and 
 	expect(own.monitors).toEqual([{ name: "노트북 감시", kind: "watch" }]);
 	expect(JSON.stringify(own)).not.toContain("맥미니");
 	expect(B.mon).toBeDefined();
+});
+
+// A page read of the merged 모니터링 answers with what the peer says now: a change its stream already reported (invalidatePeer, started but not
+// finished) and a cache past its 20 s interval are both read before the answer, so a decision answered on the other computer is not drawn open
+// here for another interval.
+test("the peer's change reaches the answer: a refresh in flight and a stale cache are both read first", async () => {
+	const { A, B } = pair();
+	const first = (await A.mon.peerMonitoring())[0]!;
+	expect(first.items!.notices).toHaveLength(1);
+
+	B.notes.push({ id: "n-answer", title: "answered: 보내지 않기" });
+	A.mon.invalidatePeer(URL_B);   // the peer's stream reported the change: the read runs now
+	const inFlight = (await A.mon.peerMonitoring())[0]!;
+	expect((inFlight.items!.notices as Array<{ id: string }>).map(n => n.id)).toEqual(["n-맥미니", "n-answer"]);
+	expect(inFlight.items!.rev).not.toBe(first.items!.rev);
+
+	B.notes.push({ id: "n-later", title: "answered later" });
+	clock += 21_000;   // the cache is past its interval: this answer must carry the read, not just start it
+	const later = (await A.mon.peerMonitoring())[0]!;
+	expect((later.items!.notices as Array<{ id: string }>).map(n => n.id)).toEqual(["n-맥미니", "n-answer", "n-later"]);
 });
 
 test("a peer that is down: offline, answered within the timeout budget, cached items kept as stale", async () => {

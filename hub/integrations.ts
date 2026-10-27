@@ -83,7 +83,7 @@ export const INTEGRATIONS: IntegrationEntry[] = [
 ];
 
 export type IntegrationContext = { features: ReadonlySet<string>; files: (spec: string) => boolean; flags: ReadonlySet<string>; off: ReadonlySet<string>; entries?: readonly IntegrationEntry[] };
-type NoticeLike = { id: string; title?: string; text?: string; open?: string; src?: string; read?: boolean; dismissed?: boolean; ignored?: string; decision?: { to?: string; state?: string; draft?: unknown } };
+type NoticeLike = { id: string; title?: string; text?: string; open?: string; src?: string; ts?: string; updated?: string; read?: boolean; dismissed?: boolean; ignored?: string; decision?: { to?: string; state?: string; draft?: unknown } };
 // What waits on the owner in one app, counted here so the web scans nothing: `drafts` = reply drafts that wait for his 보내기 (open send-approval
 // [ask]s), `unread` = unread notices and conversation messages (the draft asks are not counted twice), `sentToday` = replies sent by themselves today.
 export type IntegrationNeeds = { drafts: number; unread: number; sentToday: number; unreplied: number };
@@ -220,10 +220,18 @@ export function integrationItems(ctx: IntegrationContext, notices: readonly Noti
 		const convs = e.match.conv ?? [];
 		const fromConvs = Object.entries(convUnread).reduce((c, [t, n]) => c + (inConv(e, t) ? n : 0), 0);
 		const waitsDraft = (n: NoticeLike) => n.decision?.state === "open" && !!n.decision.draft && !n.ignored;
+		// One draft per mail counts: a draft a newer one replaced for the same mail thread is stale and waits on nobody (the web drops it too).
+		// A draft of anything else (a comment reply ask, a decision of another conversation) is its own.
+		const atOf = (n: NoticeLike) => Date.parse(String(n.updated ?? n.ts ?? "")) || 0;
+		const newestDraft = new Map<string, NoticeLike>();
+		for (const n of mine) if (waitsDraft(n)) {
+			const to = n.decision!.to ?? "", k = to.startsWith("mail:") ? to : `#${n.id}`, cur = newestDraft.get(k);
+			if (!cur || atOf(n) > atOf(cur)) newestDraft.set(k, n);
+		}
 		const sentToday = suggests.filter(s => s.state === "sent" && inConv(e, s.target) && s.at && new Date(s.at).toDateString() === today).length;
 		const cm = comments[e.key] ?? { drafts: 0, unread: 0 };
 		const unreplied = waits.targets.filter(t => inConv(e, t)).length + (waits.apps[e.key] ?? 0) + (cm.unreplied ?? 0);
-		const needs = { drafts: mine.filter(waitsDraft).length + cm.drafts, unread: mine.filter(n => !n.read && !waitsDraft(n)).length + fromConvs + cm.unread, sentToday, unreplied };
+		const needs = { drafts: newestDraft.size + cm.drafts, unread: mine.filter(n => !n.read && !waitsDraft(n)).length + fromConvs + cm.unread, sentToday, unreplied };
 		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), ...(e.watches?.length ? { watches: e.watches } : {}), ...(e.not?.watches.length ? { watchesNot: e.not.watches } : {}), unread: mine.filter(n => !n.read).length + fromConvs + cm.unread, unreplied, notices: mine.slice(0, cap).map(n => n.id), needs };
 	});
 }
