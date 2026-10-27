@@ -71,7 +71,7 @@ for (const width of [1440, 390]) {
 	test(`a mail opened from 모니터링 stays in 모니터링 at ${width}px, and its HTML original is drawn in a sandboxed frame`, async () => {
 		const v = await open(width, "monitoring/i:mail");
 		await v.evaluate(until(`current === "monitoring" && document.querySelectorAll("#mon-tl .mr").length === 2`, "mail rows not drawn"));
-		await v.evaluate(`document.querySelector("#mon-tl .mr").click()`);
+		await v.evaluate(`[...document.querySelectorAll("#mon-tl .mr")].find(r => r.textContent.includes("월간 점검 보고서")).click()`);
 		await v.evaluate(until(`current === "chat" && document.querySelector("#tl iframe.mb-frame") && document.querySelector("#chat-convo .cv-row")`, "mail conversation not drawn"));
 		const s = await ev(v, `({ hash: location.hash, cur: current, ctx: monCtx, on: [...document.querySelectorAll("#nav .ni.on")].map(b => b.dataset.view), chatHidden: document.querySelector("#v-chat").hidden, monHidden: document.querySelector("#v-monitoring").hidden,
 			title: document.querySelector("#title").textContent, back: !document.querySelector("#back").hidden,
@@ -119,6 +119,12 @@ for (const width of [1440, 390]) {
 			await v.evaluate(`history.back()`);
 			await v.evaluate(until(`current === "monitoring" && MON.list`, "browser back did not return to the 모니터링 list"));
 		} else {
+			// the browser's back from a mail lands on the mail list in 모니터링, not on 홈: the entry below the mail is that list
+			// (a scripted history.back() is skipped by the browser for entries pushed without a user gesture, so the chain itself is checked)
+			expect(await ev(v, `history.state.c`)).toEqual(["home", "monitoring/i%3Amail", "monitoring/c:mail%3Afx-1"]);
+			// and the ← in the mail's head goes back to that list inside the page
+			await v.evaluate(`document.querySelector('#chat-head [data-k="cv-up"], [data-k="cv-up"]').click()`);
+			await v.evaluate(until(`current === "monitoring" && MON.sel === "i:mail" && location.hash === "#monitoring/i%3Amail" && document.querySelectorAll("#mon-tl .mr").length === 2`, "the head's back did not return to the mail list"));
 			await v.evaluate(`document.querySelector('#nav .ni[data-view="chat"]').click()`);
 			await v.evaluate(until(`current === "chat" && !monCtx && target === MAIN`, "the 채팅 tab did not open the chat"));
 			expect(await ev(v, `[...document.querySelectorAll("#nav .ni.on")].map(b => b.dataset.view)`)).toEqual(["chat"]);

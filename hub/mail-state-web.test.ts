@@ -89,7 +89,7 @@ for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 				"배송 완료": "참고만",
 				"Re: 일정 조율": "내가 보냄",
 			});
-			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr .tag.unreplied")].map(t => t.textContent)`)).toEqual(["초안 있음", "답장 필요"]);
+			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr .tag.unreplied")].map(t => t.textContent)`)).toEqual(["답장 필요", "초안 있음"]);
 			expect(await q<string>(v, `return [...document.querySelectorAll("#mon-tl .mr")].find(r => r.querySelector(".rc-title").textContent === "Re: 일정 조율").querySelector(".rc-src").textContent`)).toBe("나 → Han");
 			expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
 			await shot(v, `mail-states-${width}-light.png`);
@@ -97,9 +97,11 @@ for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 
 		test("the filter shows 답장 필요, 답장함 or 보낸 메일 only, with counts, and 전체 brings everything back", async () => {
 			const v = await boot(width, height);
-			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "답장 필요2", "답장함1", "보낸 메일1"]);
+			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "안 읽음2", "답장 필요2", "답장함1", "보낸 메일1"]);
+			await pick(v, "unread");
+			expect((await titles(v)).length).toBe(2);
 			await pick(v, "owed");
-			expect(await titles(v)).toEqual(["자료 요청", "계약서 확인 부탁드립니다"]);
+			expect(await titles(v)).toEqual(["계약서 확인 부탁드립니다", "자료 요청"]);
 			await shot(v, `mail-filter-owed-${width}-light.png`);
 			await pick(v, "replied");
 			expect(await titles(v)).toEqual(["일정 조율"]);
