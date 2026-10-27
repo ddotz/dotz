@@ -58,9 +58,9 @@ const clip = (s: string, max: number) => {
 	return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : flat;
 };
 
-// The model of a draft: the reply-drafts setting when it names a real model, else sonnet-class. Never a role such as @tiny or a mini/flash
-// model; Haiku is allowed because the owner picks it in 답장 모델 (2026-10-26).
-export const DRAFT_MODEL = "anthropic/claude-sonnet-5-5";
+// The model of a draft: the reply-drafts setting when it names a real model, else Sonnet 5.5 medium (the reply default, hub/reply-model.ts
+// REPLY_DEFAULT; owner 2026-10-27). Never a role such as @tiny or a mini/flash model; Haiku is allowed because the owner picks it in 답장 모델 (2026-10-26).
+export const DRAFT_MODEL = "anthropic/claude-sonnet-5-5:medium";
 export const pickDraftModel = (configured?: string): string => (configured && !configured.startsWith("@") && !/mini|tiny|nano|flash|lite/i.test(configured) ? configured : DRAFT_MODEL);
 
 // What the reply answers: the messages after the owner's last own message. The owner's own memo room (self) has no other side,
