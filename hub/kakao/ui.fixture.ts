@@ -7,9 +7,8 @@ import type { Runner } from "./types.ts";
 // texts: what the row cell shows after the title: [title, member count (groups), time, ...noise (unread badge, ...), preview].
 export type FakeRow = { id: string; title: string; count?: number; noise?: string[]; preview?: string; window?: WindowFacts | "unreadable" };
 
-const norm = (s: string) => s.normalize("NFC").replace(/[\u200b-\u200f\u2060\ufeff]/g, "").trim();
-// The open step's recheck is room.jxa.js's own rule.
-const { rowStillIs } = loadJxa();
+// The title rule and the open step's recheck are room.jxa.js's own.
+const { norm, rowStillIs } = loadJxa();
 
 // What room.jxa.js (axScan) prints: the hint row first, then its neighbours, then the list; a paged list scrolls page by page; the budget
 // stops the read. `scanned` is how many rows were actually read, `hits` those whose title is the name (with all their texts).
@@ -34,6 +33,7 @@ function scanRows(rows: FakeRow[], req: { name: string; first?: boolean; hint?: 
 				if (hint + d < to) order.push(hint + d);
 				if (hint - d >= from) order.push(hint - d);
 			}
+			for (let i = from; i < hint - 30; i++) order.push(i);
 		}
 		for (let i = from; i < to; i++) order.push(i);
 		let over = false;
@@ -123,7 +123,7 @@ export function fakeScreen(
 			rowCalls.push(req);
 			if (!listShown) return out({ ok: false, step: "list", why: "no_list" });
 			const open = rows.find(r => r.id === current);
-			if (open && open.title === req.name) return out({ ok: true, opened: true });
+			if (open && norm(open.title) === norm(req.name)) return out({ ok: true, opened: true });
 			return out(scanRows(rows, req, opts.pageSize, opts.scanLimit));
 		}
 		if (req.action === "openlist") {
