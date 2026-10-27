@@ -177,6 +177,10 @@ describe("needs: what waits on the owner per app", () => {
 		const m = mail([draft("d1"), draft("d2")], { "mail:a": 2, "mail:b": 1 });
 		expect(m.needs).toEqual({ drafts: 2, unread: 3, sentToday: 0, unreplied: 0 });
 	});
+	test("one draft per mail counts: a newer draft of the same mail replaces the older one, which waits on nobody", () => {
+		const mailDraft = (id: string, at: string) => notice(id, { ts: at, updated: at, kind: "decision", text: "> 받는이: a@example.com\n초안", decision: { to: "mail:m1", state: "open", draft: { toLabel: "받는이", to: "a@example.com", body: "초안" } } });
+		expect(mail([mailDraft("d1", "2026-10-23T10:00:00+09:00"), mailDraft("d2", "2026-10-23T11:00:00+09:00")], { "mail:m1": 0 }).needs.drafts).toBe(1);
+	});
 	test("answered, ignored or dismissed drafts do not wait; no item: all zero", () => {
 		const items = [draft("d1", { read: true, decision: { to: "main", state: "answered", draft: {} } }), draft("d2", { read: true, ignored: "x" }), draft("d3", { read: true, dismissed: true })];
 		expect(mail(items, { "mail:a": 0 }).needs).toEqual({ drafts: 0, unread: 0, sentToday: 0, unreplied: 0 });
