@@ -5,6 +5,11 @@
 .mt-intro { flex: 1 1 320px; margin: 0 4px; color: var(--fg-2); font-size: 13px; line-height: 20px; }
 .mt-filter { flex: 0 1 220px; min-width: 160px; }
 .mt-card { display: flex; flex-direction: column; gap: 16px; scroll-margin-top: 12px; }
+.mt-use-list { display: flex; flex-direction: column; }
+.mt-use-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.mt-use-row:first-child { border-top: 0; }
+.mt-use-tx { flex: 1 1 200px; display: flex; flex-direction: column; min-width: 0; }
+.mt-use-m { font-weight: 600; white-space: nowrap; }
 .mt-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .mt-head .t { min-width: 0; font: 700 17px/24px var(--font); overflow-wrap: anywhere; }
 .mt-head .sup { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -293,3 +298,5 @@ details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); backgr
 .mfiles .thumb img { display: block; max-width: min(240px, 60vw); max-height: 200px; object-fit: cover; }
 .mfiles .fatt { cursor: pointer; padding-right: 12px; text-decoration: none; }
 .mfiles .fatt:hover { background: var(--hover); }
+/* a session row on a fallback model: the model it runs and the 폴백 중 tag (08-home.js homeNowRow) */
+.srow .smodel { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }

@@ -204,7 +204,7 @@ async function loadQuota() {
       ev.currentTarget.textContent = open ? "이전 기록 접기" : `이전 기록 ${older.length}개 더 보기`;
     } }) : null;
     box.append(el("div", { class: "list" },
-      el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: A.account_label || A.account }), el("div", { class: "sup", text: `${A.since ? `${kstStamp(Date.parse(A.since))}부터 · ` : ""}${A.pinned ? "고정한 계정이에요. 한도에 걸리면 풀릴 때까지 기다려요" : "규칙이나 한도로 바뀌기 전까지 이 계정을 계속 써요"}` })),
+      el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: A.account_label || A.account }), el("div", { class: "sup", text: `${A.since ? `${kstStamp(Date.parse(A.since))}부터 · ` : ""}${A.pinned ? "고정한 계정이에요. 한도에 걸리면 다른 계정 대신 폴백 순서를 따라요" : "규칙이나 한도로 바뀌기 전까지 이 계정을 계속 써요"}` })),
       ...all.slice(0, SHOWN).map(row), ...older));
     if (more) box.append(more);
     if (all.length) box.append(el("button", { class: "btn text danger", type: "button", text: "기록 모두 지우기", onclick: () => dialog({ title: "기록을 모두 지울까요?", body: el("div", { class: "sup", text: `계정 전환 기록 ${all.length}개를 지워요. 되돌릴 수 없어요.` }), actions: [{ label: "취소" , onclick: c => c() }, { label: "모두 지우기", kind: "danger", onclick: c => { c(); drop("", "기록을 모두 지웠어요"); } }] }) }));

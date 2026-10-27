@@ -1,4 +1,5 @@
-// The ⋯ at the top right of a mail card in 모니터링: 답장 안 해도 돼요 / 답장 필요로 되돌리기 and 삭제, on this computer's mail and on a peer's mail
+// The ⋯ at the top right of a mail card in 모니터링: the same actions on every incoming mail (초안 작성, 답장 안 함 or 답장 필요로 표시 by state, 삭제),
+// 삭제 alone on an outgoing one, and the row's buttons by the one rule (owed rows only), on this computer's mail and on a peer's mail
 // (sent once to the computer that holds it), in a headless browser against a fake hub that keeps the changes, so a reload shows them.
 // MAIL_MENU_SHOTS=<dir> keeps the screenshots of a card with its menu open (390 and 1280 wide).
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
@@ -14,16 +15,19 @@ const iso = (h: number) => new Date(Date.UTC(2026, 9, 27, h, 0)).toISOString();
 
 type Mail = { target: string; h: number; unread: number; card: Record<string, unknown> };
 const mail = (target: string, subject: string, h: number, owed: boolean): Mail => ({ target, h, unread: 0, card: { subject, from: "Kim <kim@example.com>", source: "mail", at: iso(h), summary: "금요일까지 회신 부탁드려요.", ...(owed ? { reply: "needs", unreplied: true } : {}) } });
+const sent = (target: string, subject: string, h: number): Mail => ({ target, h, unread: 0, card: { subject, from: "Owner <owner@example.com>", to: "Kim <kim@example.com>", dir: "out", source: "mail", at: iso(h), summary: "보내 드립니다." } });
 let local: Mail[] = [];
 let peer: Mail[] = [];
 beforeEach(() => {
-	local = [mail("mail:loc-1", "계약서 확인 부탁드립니다", 9, true), mail("mail:loc-2", "회의록 공유", 8, false)];
+	local = [mail("mail:loc-1", "계약서 확인 부탁드립니다", 9, true), mail("mail:loc-2", "회의록 공유", 8, false), sent("mail:loc-3", "Re: 회의록 공유", 7)];
 	peer = [mail("mail:peer-1", "견적 문의드립니다", 7, true), mail("mail:peer-2", "배송 안내", 6, false)];
 	reqs = [];
 });
 const owed = (list: Mail[]) => list.filter(m => m.card.unreplied).length;
 const app = (list: Mail[]) => ({ key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: [], unread: 0, unreplied: owed(list), needs: { drafts: 0, unread: 0, sentToday: 0, unreplied: owed(list) } });
-const convs = (list: Mail[]) => list.map(m => ({ target: m.target, unread: m.unread, read: null, mail: m.card, last: { ts: iso(m.h), text: String(m.card.subject), from: "bot" } }));
+// A mail conversation whose mail was deleted (an older hub still lists it, without a mail): never a row, on this computer or the other.
+const GHOST = { target: "mail:gone-1", unread: 2, read: null, last: { ts: iso(10), text: "지운 메일에 봇이 남긴 말", from: "bot" } };
+const convs = (list: Mail[]) => [...list.map(m => ({ target: m.target, unread: m.unread, read: null, mail: m.card, last: { ts: iso(m.h), text: String(m.card.subject), from: "bot" } })), GHOST];
 // The hub's rules for the marks and 삭제 (hub/routes.ts), on whichever list holds the mail.
 function apply(list: Mail[], key: string, op: "fyi" | "unfyi" | "delete"): Mail[] {
 	const t = `mail:${key}`;
@@ -79,9 +83,11 @@ const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
 
-const SUBJECT: Record<string, string> = { "mail:loc-1": "계약서 확인 부탁드립니다", "mail:loc-2": "회의록 공유", "mail:peer-1": "견적 문의드립니다", "mail:peer-2": "배송 안내" };
+const SUBJECT: Record<string, string> = { "mail:loc-1": "계약서 확인 부탁드립니다", "mail:loc-2": "회의록 공유", "mail:loc-3": "Re: 회의록 공유", "mail:peer-1": "견적 문의드립니다", "mail:peer-2": "배송 안내" };
 const row = (t: string) => `[...document.querySelectorAll("#mon-tl .mr")].find(r => r.querySelector(".rc-title").textContent === ${JSON.stringify(SUBJECT[t])})`;
-const stateOf = (v: View, t: string) => q<string>(v, `const r = ${row(t)}; return r ? r.querySelector(".rc-hd .tag").textContent : "gone"`);
+const stateOf = (v: View, t: string) => q<string>(v, `const r = ${row(t)}; return r ? (r.querySelector(".rc-hd .tag") || {}).textContent || "" : "gone"`);
+const menuOf = async (v: View, t: string) => { await run(v, `${row(t)}.querySelector(".mr-more").click()`); await waitFor(v, `document.querySelector(".menu .mi")`); const l = await menuLabels(v); await run(v, `closeMenu()`); return l; };
+const inlineOf = (v: View, t: string) => q<string[]>(v, `return [...${row(t)}.querySelectorAll(".mr-slot button")].map(b => b.textContent)`);
 async function openList(v: View, peerItem: boolean) {
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S && typeof INTG !== "undefined" && INTG.items.length === 1`);
@@ -108,36 +114,51 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 		const v = new Bun.WebView({ width, height });
 		views.push(v);
 
-		test("the ⋯ sits at the top right of every card and opens 답장 안 해도 돼요 and 삭제", async () => {
+		test("the ⋯ sits at the top right of every card and opens 초안 작성, 답장 안 함 and 삭제", async () => {
 			await openList(v, false);
 			const box = await q<{ card: DOMRect; btn: DOMRect }[]>(v, `return [...document.querySelectorAll("#mon-tl .mr")].map(r => ({ card: r.getBoundingClientRect().toJSON(), btn: r.querySelector(".mr-more").getBoundingClientRect().toJSON() }))`);
-			expect(box.length).toBe(2);
+			expect(box.length).toBe(3);
+			expect(await q<boolean>(v, `return document.querySelector("#mon-tl").textContent.includes("지운 메일에 봇이 남긴 말")`)).toBe(false);
 			for (const { card, btn } of box) {
 				expect(card.right - btn.right).toBeLessThanOrEqual(16);
 				expect(btn.top - card.top).toBeLessThanOrEqual(12);
 			}
 			await run(v, `${row("mail:loc-1")}.querySelector(".mr-more").click()`);
 			await waitFor(v, `document.querySelector(".menu .mi")`);
-			expect(await menuLabels(v)).toEqual(["답장 안 해도 돼요", "삭제"]);
+			expect(await menuLabels(v)).toEqual(["초안 작성", "답장 안 함", "삭제"]);
 			expect(await q<string>(v, `return location.hash`)).not.toContain("c:");   // the tap opened the menu, not the mail
 			expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
 			await shot(v, `mail-menu-${width}.png`);
 			await run(v, `closeMenu()`);
 		});
 
-		test("답장 안 해도 돼요 updates the row, the 답장 필요 filter and the 미답장 badge at once, survives a reload, and can be undone", async () => {
+		test("every incoming mail offers the same actions by its state, an outgoing one only 삭제, and the row buttons follow one rule", async () => {
+			await openList(v, false);
+			expect(await menuOf(v, "mail:loc-2")).toEqual(["초안 작성", "답장 필요로 표시", "삭제"]);
+			expect(await menuOf(v, "mail:loc-3")).toEqual(["삭제"]);
+			expect(await inlineOf(v, "mail:loc-1")).toEqual(["초안 작성", "답장 안 함"]);
+			expect(await inlineOf(v, "mail:loc-2")).toEqual([]);
+			expect(await inlineOf(v, "mail:loc-3")).toEqual([]);
+			// 답장 필요로 표시 on a mail with no state makes it 답장 필요, with the same buttons as every owed row
+			await pick(v, "mail:loc-2", "답장 필요로 표시");
+			await waitFor(v, `${row("mail:loc-2")}.querySelector(".rc-hd .tag")?.textContent === "답장 필요"`);
+			expect(await inlineOf(v, "mail:loc-2")).toEqual(["초안 작성", "답장 안 함"]);
+			expect(reqs.map(r => [r.method, r.path])).toEqual([["DELETE", "/api/mail/loc-2/fyi"]]);
+		});
+
+		test("답장 안 함 updates the row, the 답장 필요 filter and the 미답장 badge at once, survives a reload, and can be undone", async () => {
 			await openList(v, false);
 			expect(await stateOf(v, "mail:loc-1")).toBe("답장 필요");
-			await pick(v, "mail:loc-1", "답장 안 해도 돼요");
-			await waitFor(v, `${row("mail:loc-1")}.querySelector(".rc-hd .tag").textContent === "답장 불필요"`);
+			await pick(v, "mail:loc-1", "답장 안 함");
+			await waitFor(v, `${row("mail:loc-1")}.querySelector(".rc-hd .tag").textContent === "답장 안 함"`);
 			expect(await q<string>(v, `return document.querySelector('#mon-tl .mr-f[data-filter="owed"]').textContent`)).toBe("답장 필요");
 			await waitFor(v, `!document.querySelector('#mon-side .cv-row[data-k="i:mail"] .nb.unreplied')`);
-			expect(await q<number>(v, `return ${row("mail:loc-1")}.querySelectorAll(".mr-fyi, .tag.unreplied").length`)).toBe(0);
+			expect(await q<number>(v, `return ${row("mail:loc-1")}.querySelectorAll(".mr-slot .unrep-no, .tag.unreplied").length`)).toBe(0);
 			expect(reqs.map(r => [r.method, r.path])).toEqual([["POST", "/api/mail/loc-1/fyi"]]);
 
 			await openList(v, false);
-			expect(await stateOf(v, "mail:loc-1")).toBe("답장 불필요");
-			await pick(v, "mail:loc-1", "답장 필요로 되돌리기");
+			expect(await stateOf(v, "mail:loc-1")).toBe("답장 안 함");
+			await pick(v, "mail:loc-1", "답장 필요로 표시");
 			await waitFor(v, `${row("mail:loc-1")}.querySelector(".rc-hd .tag").textContent === "답장 필요"`);
 			await waitFor(v, `document.querySelector('#mon-side .cv-row[data-k="i:mail"] .nb.unreplied')`);
 			expect(reqs.at(-1)).toMatchObject({ method: "DELETE", path: "/api/mail/loc-1/fyi" });
@@ -151,14 +172,14 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			expect(reqs.map(r => [r.method, r.path])).toEqual([["DELETE", "/api/mail/loc-2"]]);
 			await openList(v, false);
 			expect(await stateOf(v, "mail:loc-2")).toBe("gone");
-			expect(await q<number>(v, `return document.querySelectorAll("#mon-tl .mr").length`)).toBe(1);
+			expect(await q<number>(v, `return document.querySelectorAll("#mon-tl .mr").length`)).toBe(2);
 		});
 
 		test("a peer's mail: the mark, its undo and 삭제 each go once to the computer that holds it", async () => {
 			await openList(v, true);
-			await pick(v, "mail:peer-1", "답장 안 해도 돼요");
-			await waitFor(v, `${row("mail:peer-1")}.querySelector(".rc-hd .tag").textContent === "답장 불필요"`);
-			await pick(v, "mail:peer-1", "답장 필요로 되돌리기");
+			await pick(v, "mail:peer-1", "답장 안 함");
+			await waitFor(v, `${row("mail:peer-1")}.querySelector(".rc-hd .tag").textContent === "답장 안 함"`);
+			await pick(v, "mail:peer-1", "답장 필요로 표시");
 			await waitFor(v, `${row("mail:peer-1")}.querySelector(".rc-hd .tag").textContent === "답장 필요"`);
 			await pick(v, "mail:peer-2", "삭제");
 			await confirmDelete(v);
@@ -170,6 +191,7 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			]);
 			await openList(v, true);
 			expect(await stateOf(v, "mail:peer-2")).toBe("gone");
+			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr .rc-title")].map(t => t.textContent)`)).toEqual(["견적 문의드립니다"]);
 		});
 
 		test("the card at the top of a mail's conversation has the same ⋯", async () => {
@@ -182,7 +204,7 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			await waitFor(v, `(() => { const b = [...document.querySelectorAll(".bm.rc:not(.mr) .rc-hd .mr-more")].find(b => b.offsetParent), y = b && b.getBoundingClientRect().top; window.__mm = window.__mm && window.__mm.y === y ? { y, n: window.__mm.n + 1 } : { y, n: 0 }; return window.__mm.n >= 10; })()`);
 			await run(v, `[...document.querySelectorAll(".bm.rc:not(.mr) .rc-hd .mr-more")].find(b => b.offsetParent).click()`);
 			await waitFor(v, `document.querySelector(".menu .mi")`);
-			expect(await menuLabels(v)).toEqual(["답장 안 해도 돼요", "삭제"]);
+			expect(await menuLabels(v)).toEqual(["초안 작성", "답장 안 함", "삭제"]);
 			const at = await q<{ a: DOMRect; m: DOMRect }>(v, `return { a: openMenu.anchor.getBoundingClientRect().toJSON(), m: document.querySelector(".menu").getBoundingClientRect().toJSON() }`);
 			expect(at.a.width).toBeGreaterThan(0);
 			expect(Math.abs(at.m.top - at.a.bottom)).toBeLessThanOrEqual(12);

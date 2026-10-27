@@ -95,7 +95,7 @@ function pqRoute(path, method, body) {
   if (wd && pqPc(`settings:w:${wd[1]}`)) return [pqProxy(pqPc(`settings:w:${wd[1]}`), "/api/peer/act"), "POST", { action: "watch", args: { op: "delete", name: wd[1] } }];
   const del = method === "DELETE" && KK.pc ? /^\/api\/kakao\/chat\/([^/]+)\/send\/([^/?]+)$/.exec(path) : null;   // a failed send of a peer's room is deleted on its owner
   if (del) return [pqProxy(KK.pc, "/api/peer/act"), "POST", { action: "kakao", args: { op: "send-delete", chatId: decodeURIComponent(del[1]), sendId: decodeURIComponent(del[2]) } }];
-  // 답장 안 해도 돼요 (POST) / 답장 필요로 되돌리기 (DELETE) and 삭제 (DELETE /api/mail/<key>) of a peer's mail run on the computer that holds it.
+  // 답장 안 함 (POST) / 답장 필요로 표시 (DELETE) and 삭제 (DELETE /api/mail/<key>) of a peer's mail run on the computer that holds it.
   const mf = /^\/api\/mail\/([^/?]+)(\/fyi)?$/.exec(path), mk = mf && decodeURIComponent(mf[1]), mpc = mk && pqPc(`mail:${mk}`);
   if (mpc && mf[2] && (method === "POST" || method === "DELETE")) return [pqProxy(mpc, "/api/peer/act"), "POST", { action: "fyi", args: { key: mk, on: method === "POST" } }];
   if (mpc && !mf[2] && method === "DELETE") return [pqProxy(mpc, "/api/peer/act"), "POST", { action: "mail-delete", args: { key: mk } }];
@@ -190,7 +190,7 @@ function pqMerge(items) {
     for (const it of s.integrations || []) {
       if (it.iconPath && !ICONS[it.icon]) ICONS[it.icon] = it.iconPath;
       const notices = (it.notices || []).map(id => sn.find(n => String(n.id) === String(id))).filter(n => n && monMine(n, it));
-      const mails = (s.conversations || []).filter(c => isMailT(String(c.target)) && intgHas(it, c.target)).map(c => pqMail(c, pc, key(`i:${it.key}`))).filter(Boolean);
+      const mails = (s.conversations || []).filter(c => isMailT(String(c.target)) && c.mail && intgHas(it, c.target)).map(c => pqMail(c, pc, key(`i:${it.key}`))).filter(Boolean);
       for (const n of notices) shown.add(n.id);
       const needs = it.needs || { drafts: 0, unread: it.unread | 0, sentToday: 0 }, conn = it.state === "disconnected";
       const at = [...notices.map(monNoticeAt), ...mails.map(t => (CONV.get(t) || {}).ts || "")].sort().pop() || "";

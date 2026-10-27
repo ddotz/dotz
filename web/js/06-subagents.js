@@ -6,6 +6,22 @@ const runningSubs = src => (SUBS[src] || []).filter(s => s.status === "running")
 
 /* ---------- 백그라운드 작업: S.work from /api/state (hub/bgwork.ts). A request answered with [later] keeps working after its turn ended. ---------- */
 const workRunning = () => ((S && S.work) || []).filter(w => w.status === "running");
+// What ended within the last hour (the gateway keeps it that long, hub/bgwork.ts FINISHED_KEEP_MS), newest first.
+const workEnded = () => ((S && S.work) || []).filter(w => w.status !== "running");
+// 실패 · <이유> (중단됨 for one the owner stopped): the reason is the gateway's own Korean line (hub/runstate.ts failureText).
+const workFailText = w => (w.cancelled ? "중단됨" : `실패 · ${w.reason || "이유가 기록되지 않았어요"}`);
+// 중단: the worker's process ends (POST /api/workers/:id/cancel); 다시 맡기기: its request goes to the orchestrator again in its own conversation.
+const workCancel = (id, btn) => busy(btn, async () => {
+  if (!await ask("백그라운드 작업 중단", "하던 작업을 멈춰요. 필요하면 다시 맡길 수 있어요.", "중단", true)) return;
+  await api(`/api/workers/${enc(id)}/cancel`, "POST", {});
+  toast("작업을 중단했어요");
+  refreshState();
+});
+const workRetry = (id, btn) => busy(btn, async () => {
+  await api(`/api/workers/${enc(id)}/retry`, "POST", {});
+  toast("다시 맡겼어요");
+  refreshState();
+});
 // A chat's own work: what was started for its open message; work no message claimed belongs to the main chat.
 const workOfTarget = t => workRunning().filter(w => (w.target ? (t === MAIN ? w.target === "web" : w.target === t) : t === MAIN));
 // The gateway's clock, not this device's, measures how long work has run (S.work_skew is set on every state refresh).
