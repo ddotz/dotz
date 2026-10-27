@@ -687,7 +687,10 @@ function monChronoNodes(it, names) {
   // a mail list keeps the reply drafts awaiting the owner under 확인 대기 alone; every other view drops them. A draft answered 보내지 않기, and one a
   // newer draft of the same mail replaced, is gone from every view.
   const newestDraft = mailDraftLive(it.notices);
-  const notices = it.notices.filter(n => ok(n) && (!mf || (mailDraftHeld(n) === held && !mailDraftDone(n))) && !mailDraftGone(n, newestDraft));
+  // A message about one mail (the bot's note in its conversation, src/open = that mail) is read inside that mail, not as a card of its own between
+  // the mail rows: every row of a mail list is a mail. Reply drafts keep their own place (확인 대기).
+  const rowMail = n => !!mf && !(n.decision && n.decision.draft) && MAILS.has(n.src || n.open) && it.mails.includes(n.src || n.open);
+  const notices = it.notices.filter(n => ok(n) && !rowMail(n) && (!mf || (mailDraftHeld(n) === held && !mailDraftDone(n))) && !mailDraftGone(n, newestDraft));
   const runs = [];
   for (const n of notices.sort((a, b) => ntAt(a) - ntAt(b))) {
     const last = runs[runs.length - 1], k = monNeed(n) || ntIsDec(n) ? "" : monFoldKey(n, names);
