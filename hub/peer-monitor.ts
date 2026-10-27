@@ -3,8 +3,9 @@
 //   GET  /api/monitoring/peers    every other gateway's snapshot from the cache: [{name, url, online, stale, items}]
 //   GET|POST /api/peer/proxy      the page's way to a peer (pc must be a known peer origin; GET only the peer read list, POST only /api/peer/act)
 //   POST /api/peer/act            an action forwarded here; it runs through this gateway's own handlers, so the owner's web and history show it
-// A peer is read at most once per 20 s (If-None-Match), and again when hub/peer-stream.ts reports a change (invalidatePeer). The page's request
-// never waits on a refresh, except the very first read of a peer (bounded by the 2.5 s fetch timeout, all peers in parallel).
+// A peer is read at most once per 20 s (If-None-Match), and again when hub/peer-stream.ts reports a change (invalidatePeer). A page request waits
+// only for a read it needs: one it triggers (a cache older than 20 s) or one already running after a peer's change (bounded by the 2.5 s fetch
+// timeout, all peers in parallel), so a decision answered on the other computer never shows stale here for the next interval.
 // Everything outside (fetch, computers, clock, token, the local handler) is injected, so tests run two gateways in one process.
 import { createHash } from "node:crypto";
 import { PEER_GET, peerHeaders, peerTokenFor } from "./peer-auth.ts";
@@ -163,19 +164,20 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 	async function peerMonitoring(): Promise<PeerView[]> {
 		const others = (await computers()).filter(c => !c.self);
 		for (const url of cache.keys()) if (!others.some(c => c.url === url)) cache.delete(url);
-		const fresh: Promise<void>[] = [];
+		const pending: Promise<void>[] = [];
 		for (const c of others) {
 			let e = cache.get(c.url);
 			if (!e) {
 				e = { computer: c, items: null, online: false, at: 0 };
 				cache.set(c.url, e);
-				fresh.push(refresh(e));
+				pending.push(refresh(e));
 			} else {
 				e.computer = c;
-				if (now() - e.at >= refreshMs) void refresh(e);
+				if (now() - e.at >= refreshMs) pending.push(refresh(e));
+				else { const running = inflight.get(c.url); if (running) pending.push(running); }
 			}
 		}
-		await Promise.all(fresh);
+		await Promise.all(pending);
 		return others.map(c => {
 			const e = cache.get(c.url)!;
 			return { name: c.name, url: c.url, online: e.online, stale: !e.online && e.items !== null, items: e.items };
