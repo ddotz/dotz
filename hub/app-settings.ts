@@ -54,7 +54,7 @@ const deviceSwitch = (app: string): SettingField => ({ key: "use_here", label: "
 // The instance's name (hub/integrations.ts appEntries): shown in the list, the title and the notices; empty = the app's own name.
 const nameField = (app: string): SettingField => ({ key: "label", label: "앱 이름", type: "text", help: "목록과 제목에 보이는 이름이에요. 비우면 기본 이름으로 돌아가요", store: "custom/apps.json", path: `${app}.label`, max: 30, def: INTEGRATIONS.find(e => e.key === app.split("-")[0])?.label ?? "", switch: true, section: "advanced" });
 
-// 답장 모델: the model of the reply drafts of one app or instance (hub/reply-model.ts reads it, then the global model, then the subagent model).
+// 답장 모델: the model of the reply drafts of one app or instance (hub/reply-model.ts reads it, then the global 답장 기본값, then Sonnet 5.5 medium).
 // The options are the runtime's model list, installed by hub/reply-model-choices.ts before a read or write; "" (기본값) is always valid.
 export type ReplyModelChoices = { options: string[]; labels: Record<string, string> };
 let replyChoices: ReplyModelChoices = { options: [""], labels: { "": "기본값" } };
