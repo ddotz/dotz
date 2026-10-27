@@ -32,7 +32,10 @@ export function watchSpec(site: string, config: SiteConfig): Record<string, unkn
 		every_minutes: config.poll_minutes,
 		on: "match",
 		pattern: ".",
-		timeout_seconds: 90,
+		// 다시 연결 in 모니터링 approves this watch (the owner's yes to a second factor), and that run signs in again and waits for the
+		// push on his phone (bin/watch.ts signInApproved), so the run gets room for it; a plain poll still ends in seconds.
+		approval_minutes: 30,
+		timeout_seconds: 240,
 		to: "orchestrator",
 		...(config.channel ? { channels: [config.channel.replace(/^ch:/, "")] } : {}),
 	};

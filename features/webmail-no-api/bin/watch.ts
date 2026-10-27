@@ -11,6 +11,8 @@ import { endpointUrl } from "../lib/spec.ts";
 import { liveGateway } from "../lib/gateway.ts";
 import { initialState, pollOnce, postToGateway, type WatchState } from "../lib/watchkit.ts";
 import { describeMail } from "../lib/adapter.ts";
+import { loginViaRepl } from "../lib/login.ts";
+import { loadOnboard } from "../lib/onboard.ts";
 
 const SITE = process.env.WEBMAIL_SITE ?? process.argv[2] ?? "";
 
@@ -35,6 +37,22 @@ async function recoverViaAside(origin: string): Promise<boolean> {
 	return out.includes("WEBMAIL_RECOVER_DONE");
 }
 
+// The full sign-in the owner approved (DOTZ_APPROVED=1 from the gateway's approval gate): the onboarding login in a background tab with
+// the browser's saved password, waiting for the second factor (a push he approves on his phone). One yes is one attempt, so
+// DOTZ_APPROVAL_USED is printed before it starts; 다시 연결 pressed again while it waits makes the gateway cancel this run and start over.
+async function signInApproved(url: string): Promise<boolean> {
+	console.log("DOTZ_APPROVAL_USED");
+	const repl = async (code: string, ms: number) => {
+		const proc = Bun.spawn(["aside", "repl", code], { stdout: "pipe", stderr: "pipe" });
+		const timer = setTimeout(() => proc.kill(9), ms);
+		const out = await new Response(proc.stdout).text().catch(() => "");
+		await proc.exited;
+		clearTimeout(timer);
+		return out;
+	};
+	return (await loginViaRepl(repl, url, true)) === "in";
+}
+
 async function main(): Promise<number> {
 	const spec = loadSpec(SITE);
 	const config = loadConfig(SITE);
@@ -47,7 +65,8 @@ async function main(): Promise<number> {
 	const f = stateFile();
 	const state = loadState(f);
 	const recover = () => recoverViaAside(spec.origin);
-	const res = await pollOnce(ctx, spec, config, state, recover);
+	const approved = process.env.DOTZ_APPROVED === "1";
+	const res = await pollOnce(ctx, spec, config, state, recover, approved ? () => signInApproved(loadOnboard(SITE)?.url ?? spec.origin) : undefined);
 	saveState(f, res.state);
 	const newCount = res.mails.length;
 	writeJson(paths.status(SITE), { lastRun: new Date(ctx.now()).toISOString(), lastOk: res.state.lastOk, loggedOut: res.state.loggedOut, failing: res.fail ?? null, ...(newCount ? { lastNewAt: new Date(ctx.now()).toISOString(), lastNewCount: newCount } : {}) }, 0o644);
