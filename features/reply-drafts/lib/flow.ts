@@ -74,8 +74,12 @@ export const askWith = (question: string, open: string[]): string => (open.lengt
 export function withRecipient(rec: DraftRec): DraftRec {
 	if (rec.kind !== "mail" || addressesOf(rec.to).length) return rec;
 	const from = withSenderAddress(rec.item.from, rec.item.text, rec.item.self);
-	return addressesOf(from).length ? { ...rec, to: from, item: { ...rec.item, from } } : rec;
+	if (!addressesOf(from).length) return rec;
+	// The open point "what is the address" is settled now: it leaves the card's question.
+	const questions = (rec.questions ?? []).filter(q => !ADDRESS_ASK.test(q));
+	return { ...rec, to: from, item: { ...rec.item, from }, questions };
 }
+const ADDRESS_ASK = /e-?mail address|recipient|address|주소|받는\s*(?:사람|분|이)|수신자/i;
 
 // The lint's findings as the owner reads them on the card (the model gets them in English, hub/reply-draft.ts lintReply).
 export function ownerWarning(w: string): string {
@@ -175,7 +179,7 @@ export function dropDraft(id: string): Step {
 export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: true } = {}): Promise<Step> {
 	const stored = getDraft(id);
 	const d = stored && withRecipient(stored);
-	if (stored && d && d !== stored && stored.status === "pending") patchDraft(id, { to: d.to, item: d.item });
+	if (stored && d && d !== stored && stored.status === "pending") patchDraft(id, { to: d.to, item: d.item, questions: d.questions });
 	if (!d) return { ok: false, text: `초안 ${id}을(를) 찾지 못했어요` };
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 보내지 않았어요` };
 	const card = opts.withReply ? undefined : linkedComment(id);
