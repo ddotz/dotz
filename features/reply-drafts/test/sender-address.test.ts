@@ -28,8 +28,11 @@ test("a name-only, cut-off sender gets a draft to the address the mail's own tex
 const stale = (over: Partial<DraftRec> = {}): DraftRec => ({ id: "ROLD1", kind: "mail", app: "mail", source: "kdb", mailId: "2", ref: "kdb-2", to: "Myungwoo Lee (KR - A", subject: "Re: 자료 요청", body: "확인했습니다.", status: "pending", created: new Date(Date.now() - 60_000).toISOString(), changes: [], questions: [], item: { kind: "mail", from: "Myungwoo Lee (KR - A", self: ["me@corp.example"], subject: "Re: 자료 요청", text: BODY }, ...over });
 
 test("a draft made before the fix shows and sends with the recovered address; the stored draft is corrected once", async () => {
-	addDraft(stale());
-	expect(askText(getDraft("ROLD1")!, ["no recipient address in 'to'"])).toContain("> 받는이: Myungwoo Lee <myungwoo.lee@pwc.com>");
+	addDraft(stale({ questions: ["The sender's email address is cut off at \"Myungwoo Lee KR - A\". Please enter the recipient address before sending.", "회신 기한"] }));
+	const card = askText(getDraft("ROLD1")!, ["no recipient address in 'to'"]);
+	expect(card).toContain("> 받는이: Myungwoo Lee <myungwoo.lee@pwc.com>");
+	expect(card).toContain("정할 것: 회신 기한");
+	expect(card).not.toContain("cut off");
 	expect(askText(getDraft("ROLD1")!, ["no recipient address in 'to'"])).not.toContain("확인:");
 	pick(env, "ROLD1", 1);
 	const seen: DraftRec[] = [];
