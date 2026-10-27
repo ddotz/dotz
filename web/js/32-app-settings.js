@@ -110,7 +110,7 @@ async function asPatch(app, values) {
   MON.sig = ""; monSchedule();
   if (app.includes("~") || pqPc(`settings:${app}`)) pqSoon(); else if (app.startsWith("w:")) loadMonitors(); else loadIntegrations();   // a peer's app or monitor is read back from that computer
   // The Kakao room list draws the same watch and draft lists: read it again so its switches and the screen never disagree.
-  if (app === "kakao" && typeof KK !== "undefined" && KK.loaded) kkLoadRooms().catch(() => {});
+  if (pqBare(app) === "kakao" && typeof KK !== "undefined" && KK.loaded) kkLoadRooms().catch(() => {});
   return r;
 }
 

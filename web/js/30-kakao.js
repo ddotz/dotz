@@ -7,6 +7,8 @@
 // Message text only ever goes through el({text}) / textContent, never innerHTML.
 const KK_KEY = "i:kakao";
 const kkItem = it => !!it && (it.key === KK_KEY || !!it.kk);   // a peer's Kakao item (34-peer-monitoring.js) shows this same pane, its rooms read through the proxy (KK.pc)
+// The kakao item the pane shows: this computer's, or the peer's while KK.pc names it.
+const kkItemNow = () => monItems().find(i => kkItem(i) && (KK.pc ? !!i.pc && i.pc.url === KK.pc.url : !i.pc)) || null;
 const KK_PAGE = 50;
 const KK = {
   vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, pick: null,   // pick: null = open while no room is chosen
@@ -552,8 +554,8 @@ function kkPaintRooms() {
     if (watched.length) list.append(...watched.map(kkRow));
     else list.append(el("div", { class: "kk-note", id: "kk-empty", text: "지켜볼 대화방을 골라 주세요" }));
   }
-  // A peer's kakao has no settings panel here: the status of the watches it owns (a login keeper) is at the top of its pane.
-  const own = KK.pc ? (monItems().find(i => i.app && i.kk && i.pc && i.pc.url === KK.pc.url) || {}).owned || [] : [];
+  // The status of the watches the app owns (its new-message check, a login keeper) is at the top of the pane, on this computer and on the other alike.
+  const own = (kkItemNow() || {}).owned || [];
   clear(kkRooms).append(...(own.length ? [el("section", { class: "kk-own", "aria-label": "감시 상태" }, ...own.map(monStatNode))] : []), pick, list);
   kkRooms.scrollTop = top;
 }
@@ -567,7 +569,7 @@ function kkPaintChat() {
   const open = !!KK.open, room = kkRoom(KK.open), info = KK.room || room || {};
   kkFoot.hidden = !open || KK.loading || !!KK.roomErr;
   kkPill.hidden = !(open && KK.pill);
-  const watching = kkWatching(), owed = watching && !!(room && room.unreplied), sig = `${KK.open}|${info.name}|${info.group}|${!!AS.by.kakao}|${owed}|${watching}`;
+  const app = monSettingsApp(kkItemNow()), watching = kkWatching(), owed = watching && !!(room && room.unreplied), sig = `${KK.open}|${info.name}|${info.group}|${app}|${!!AS.by[app]}|${owed}|${watching}`;
   const readOnly = open && !KK.loading && !KK.roomErr && !watching;
   kkFoot.hidden = kkFoot.hidden || !watching;
   kkRo.hidden = !readOnly;
@@ -575,7 +577,7 @@ function kkPaintChat() {
   if (sig !== KK.headSig) {
     KK.headSig = sig;
     clear(kkHead);
-    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: kkKindLine(info) || (info.group ? "단체 대화방" : "1:1 대화") })), ...(owed ? [unrepPill(), kkNoReply(room)] : []), ...(KK.pc ? [] : asEntry("kakao")));
+    if (open) kkHead.append(kkAvatar(info.name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: info.name || "" }), el("span", { class: "cv-p", text: kkKindLine(info) || (info.group ? "단체 대화방" : "1:1 대화") })), ...(owed ? [unrepPill(), kkNoReply(room)] : []), ...asEntry(app));
     monSchedule();   // the item's head gives the gear to the room head while a room is open
   }
   if (!open) { clear(kkIn).append(el("div", { class: "kk-note", text: "대화방을 골라 주세요" })); return; }
