@@ -3,7 +3,7 @@ const hPj = () => (HGB && hProjId && (HGB.projects || []).find(p => p.id === hPr
 const hProjWhere = (p, full) => `${(p.channels[0] || {}).name || p.name} · ${full ? p.cwd : shortPath(p.cwd)}`;
 const pjSize = b => (b < 1024 ? `${b}B` : `${(b / 1024).toFixed(1)}KB`);
 const pjChain = c => (c.length ? c.map(e => [modelName(fbBase(e.model)) + (e.key_file ? " (API 키)" : ""), e.when ? FB_WHEN[e.when] : "", e.cap ? fbCapText(e.cap) : "", e.revert ? "리셋되면 복귀" : ""].filter(Boolean).join(" · ")).join(" → ") : "없음");
-const PJ_ROWS = [["모델", "model", modelName], ["강도", "effort", v => v], ["서브에이전트 모델", "worker_model", modelName], ["서브에이전트 강도", "worker_effort", v => v], ["런타임", "runtime", v => v || "–"], ["폴백", "fallback", pjChain], ["서브에이전트 폴백", "worker_fallback", pjChain]];
+const PJ_ROWS = [["모델", "model", modelName], ["강도", "effort", thinkKo], ["서브에이전트 모델", "worker_model", modelName], ["서브에이전트 강도", "worker_effort", thinkKo], ["런타임", "runtime", v => v || "–"], ["폴백", "fallback", pjChain], ["서브에이전트 폴백", "worker_fallback", pjChain]];
 
 // One field: the project's value against the global one. A differing value is emphasised like the 내 설정 marker (바뀜 badge,
 // --mine) and shows global → project; an equal one is muted with "전역 기본".
