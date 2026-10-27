@@ -39,6 +39,9 @@ export type MonitorDeps = {
 
 const GET_MS = 2500;
 const POST_MS = 15_000;
+const UPLOAD_MS = 120_000;   // one file's bytes (base64) to the other computer: bigger than an action, so it gets its own budget
+// What a proxied read keeps of the peer's answer: a file (GET /api/peer/file) keeps its name, the reason it was refused and its sandbox.
+const KEEP = ["content-type", "content-disposition", "content-security-policy", "x-content-type-options", "x-file-note"];
 const REFRESH_MS = 20_000;
 const FROM_MAX = 40;
 const LOCAL = "http://local";
@@ -210,6 +213,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			if (!h) return off(p);
 		}
 		let body: string | undefined;
+		let upload = false;
 		if (!get) {
 			// The owner records who asked: the sender's own name replaces whatever the page sent.
 			let b: Record<string, unknown>;
@@ -218,10 +222,11 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			} catch {
 				return json({ error: "json body required" }, 400);
 			}
+			upload = b.action === "upload";
 			body = JSON.stringify({ ...b, from: deps.name() });
 		}
 		const send = (hh: Record<string, string> | undefined) =>
-			f(`${target.url}${parsed.pathname}${parsed.search}`, { method: req.method, headers: { ...hh, ...(body === undefined ? {} : { "content-type": "application/json" }) }, ...(body === undefined ? {} : { body }), signal: AbortSignal.timeout(get ? getMs : postMs), redirect: "manual" });
+			f(`${target.url}${parsed.pathname}${parsed.search}`, { method: req.method, headers: { ...hh, ...(body === undefined ? {} : { "content-type": "application/json" }) }, ...(body === undefined ? {} : { body }), signal: AbortSignal.timeout(get ? getMs : upload ? UPLOAD_MS : postMs), redirect: "manual" });
 		try {
 			let r = await send(h);
 			if (h && r.status === 403) {
@@ -237,8 +242,9 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				await refresh(e);
 				await inflight.get(target.url);
 			}
-			const type = r.headers.get("content-type");
-			return new Response(r.status === 204 || r.status === 304 ? null : await r.arrayBuffer(), { status: r.status, ...(type ? { headers: { "content-type": type } } : {}) });
+			const headers: Record<string, string> = {};
+			for (const k of KEEP) { const v = r.headers.get(k); if (v) headers[k] = v; }
+			return new Response(r.status === 204 || r.status === 304 ? null : await r.arrayBuffer(), { status: r.status, headers });
 		} catch {
 			return json(OFFLINE, 502);
 		}
@@ -257,7 +263,18 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				const fields = targetFields(a.target);
 				if (!fields) return bad("unknown target");
 				const pick = (k: string) => (a[k] === undefined ? {} : { [k]: a[k] });
-				return ask("POST", "/api/message", { ...fields, ...pick("text"), ...pick("mode"), ...pick("reply"), ...pick("reply_to"), ...pick("picks"), via: from }, login);
+				// `files` must be uploads of this gateway (the "upload" act below); /api/message refuses any other path, so a message never goes out
+				// without the file it was sent with, and a path of the other computer never reaches this one's agent.
+				return ask("POST", "/api/message", { ...fields, ...pick("text"), ...pick("mode"), ...pick("reply"), ...pick("reply_to"), ...pick("picks"), ...pick("files"), via: from }, login);
+			}
+			// A file attached on the other computer to a conversation of this one: its bytes ({name, type, data: base64}) are stored through this
+			// gateway's own /api/upload (same size limit and file names), and the answer's paths are what the "message" act then sends.
+			case "upload": {
+				const list = Array.isArray(a.files) ? a.files : [];
+				if (!list.length || list.length > 10 || !list.every(x => x && typeof x.data === "string" && x.data)) return bad("files [{name, type, data}] required (1 to 10)");
+				const form = new FormData();
+				for (const x of list) form.append("file", new File([Buffer.from(x.data, "base64")], String(x.name ?? "file"), { type: typeof x.type === "string" ? x.type : "" }));
+				return deps.local(new Request(`${LOCAL}/api/upload`, { method: "POST", headers: { ...deps.localHeaders, ...(login ? { "tailscale-user-login": login } : {}) }, body: form }));
 			}
 			case "answer":
 				if (typeof a.id !== "string" || !a.id) return bad("id required");

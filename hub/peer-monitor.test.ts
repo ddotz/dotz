@@ -10,7 +10,7 @@ const URL_A = "https://a.example.test";
 const URL_B = "https://b.example.test";
 let clock = 1_000_000;
 
-type Gateway = { name: string; mon: PeerMonitor; handle: (req: Request) => Promise<Response>; events: Array<{ target: string; text: string; via?: string }>; notes: Array<{ id: string; title: string }>; down: boolean; hang: boolean; statuses: number[]; seen: Request[] };
+type Gateway = { name: string; mon: PeerMonitor; handle: (req: Request) => Promise<Response>; events: Array<{ target: string; text: string; via?: string; files?: unknown }>; uploads: Map<string, Uint8Array>; notes: Array<{ id: string; title: string }>; down: boolean; hang: boolean; statuses: number[]; seen: Request[] };
 const nodes = new Map<string, Gateway>();
 
 const netFetch = async (url: string, init?: RequestInit): Promise<Response> => {
@@ -27,11 +27,24 @@ const netFetch = async (url: string, init?: RequestInit): Promise<Response> => {
 function gateway(name: string, self: string, other: string, otherName: string): Gateway {
 	const events: Gateway["events"] = [];
 	const notes: Gateway["notes"] = [];
+	const uploads = new Map<string, Uint8Array>();
 	const local = async (req: Request): Promise<Response> => {
 		const path = new URL(req.url).pathname;
+		// The gateway's own /api/upload: stores the bytes under this gateway's upload folder and answers with its paths.
+		if (req.method === "POST" && path === "/api/upload") {
+			const files = (await req.formData()).getAll("file") as File[];
+			const out = await Promise.all(files.map(async f => {
+				const p = `/${name}/uploads/${f.name}`;
+				uploads.set(p, new Uint8Array(await f.arrayBuffer()));
+				return { path: p, name: f.name, type: f.type, size: f.size };
+			}));
+			return Response.json({ ok: true, files: out });
+		}
 		if (req.method === "POST" && path === "/api/message") {
-			const b = (await req.json()) as { mail?: string; lane?: string; project?: string; settings?: string; text: string; via?: string };
-			events.push({ target: b.project ?? (b.settings ? `settings:${b.settings}` : b.mail ? `mail:${b.mail}` : `lane:${b.lane}`), text: b.text, ...(b.project && b.settings ? { settings: b.settings } : {}), ...(b.via ? { via: b.via } : {}) });
+			const b = (await req.json()) as { mail?: string; lane?: string; project?: string; settings?: string; text: string; via?: string; files?: Array<{ path: string }> };
+			// Like routes.ts ownerFiles: only this gateway's own uploads are accepted.
+			if (b.files && !b.files.every(f => uploads.has(f.path))) return Response.json({ error: "첨부파일을 찾지 못했어요" }, { status: 400 });
+			events.push({ target: b.project ?? (b.settings ? `settings:${b.settings}` : b.mail ? `mail:${b.mail}` : `lane:${b.lane}`), text: b.text, ...(b.project && b.settings ? { settings: b.settings } : {}), ...(b.via ? { via: b.via } : {}), ...(b.files ? { files: b.files } : {}) });
 			return Response.json({ ok: true });
 		}
 		if (req.method === "DELETE" && path.startsWith("/api/kakao/chat/")) {
@@ -84,7 +97,7 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 		if (checkPeer(req, TOKEN) === "denied") return new Response("forbidden", { status: 403 });
 		return (await mon.route(req, new URL(req.url))) ?? local(req);
 	};
-	const g: Gateway = { name, mon, handle, events, notes, down: false, hang: false, statuses: [], seen: [] };
+	const g: Gateway = { name, mon, handle, events, uploads, notes, down: false, hang: false, statuses: [], seen: [] };
 	nodes.set(self, g);
 	return g;
 }
@@ -244,6 +257,32 @@ test("a forwarded message is recorded once on the owner with via, and shows once
 	const rows = view.conversations.filter(c => (c as { target: string }).target === "mail:inbox") as Array<{ last: { text: string; via: string } }>;
 	expect(rows).toHaveLength(1);
 	expect(rows[0]!.last).toEqual({ text: "알겠습니다", via: "노트북" });
+});
+
+test("a file attached to a peer's conversation is uploaded to that peer, and the message carries the peer's own paths", async () => {
+	const { A, B } = pair();
+	const act = (b: object) => A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", body: JSON.stringify(b) }));
+	const bytes = new TextEncoder().encode("<html>흐름도</html>");
+	const up = await act({ action: "upload", args: { files: [{ name: "흐름도.html", type: "text/html", data: Buffer.from(bytes).toString("base64") }] } });
+	expect(up.status).toBe(200);
+	const { files } = (await up.json()) as { files: Array<{ path: string; name: string; size: number }> };
+	expect(files.map(({ path, name, size }) => ({ path, name, size }))).toEqual([{ path: "/맥미니/uploads/흐름도.html", name: "흐름도.html", size: bytes.length }]);
+	expect(files[0]!.type).toStartWith("text/html");
+	expect(B.uploads.get(files[0]!.path)).toEqual(bytes);
+	expect(A.uploads.size).toBe(0);
+	const sent = await act({ action: "message", args: { target: "mail:inbox", text: "이걸로 다시 보내놓", files } });
+	expect(sent.status).toBe(200);
+	expect(B.events).toEqual([{ target: "mail:inbox", text: "이걸로 다시 보내놓", via: "노트북", files }]);
+	// A path of the sending computer is refused there, never forwarded as text without its file.
+	const foreign = await act({ action: "message", args: { target: "mail:inbox", text: "x", files: [{ path: "/노트북/uploads/a.html", name: "a.html" }] } });
+	expect(foreign.status).toBe(400);
+	expect(B.events).toHaveLength(1);
+	expect((await act({ action: "upload", args: { files: [] } })).status).toBe(400);
+	expect((await act({ action: "upload", args: { files: [{ name: "a" }] } })).status).toBe(400);
+	// The bubble's chip reads the file back through the proxy: /api/peer/file is on the peer read list (this fake has no such GET: 404, not 400).
+	expect((await A.handle(req(`/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent(`/api/peer/file?path=${encodeURIComponent(files[0]!.path)}`)}`))).status).toBe(404);
+	expect(checkPeer(new Request(`${URL_B}/api/peer/file?path=x`, { headers: { "x-dotz-peer": TOKEN, "tailscale-user-login": LOGIN } }), TOKEN)).toBe("ok");
+	expect(checkPeer(new Request(`${URL_B}/api/file?path=x`, { headers: { "x-dotz-peer": TOKEN, "tailscale-user-login": LOGIN } }), TOKEN)).toBe("denied");
 });
 
 test("act: unknown action, unknown target and a missing sender are refused", async () => {

@@ -30,7 +30,7 @@ import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
 import { composeMail, MailError, mailBodyRoute, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
-import { attachmentLines, fileRoute, FileError, ownerFiles, uploadsFrom } from "./files.ts";
+import { attachmentLines, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
 import { orch } from "./orchestrator.ts";
@@ -512,6 +512,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/file") {
 			return fileRoute(req, url, fileRoots(), sentFiles());
+		}
+		// A file the owner attached to a conversation of this computer, opened from the other one (the chip in the sent bubble): uploads only.
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer/file") {
+			const [f] = messageFiles([{ path: url.searchParams.get("path") ?? "" }]);
+			if (!f) return json({ error: "열 수 없는 파일이에요" }, 404);
+			const res = serveFile(f.path, req, url.searchParams.get("download") === "1");
+			return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
 		}
 		if (req.method === "GET" && url.pathname === "/api/lanes/live") return json(liveLanes());
 		if (url.pathname === "/api/target") {
