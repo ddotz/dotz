@@ -5,7 +5,8 @@ import { existsSync, readFileSync } from "node:fs";
 import type { ReplyItem, ReplyKind } from "../../../hub/reply-draft.ts";
 import { paths, writeAtomic } from "./settings.ts";
 
-export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
+// held = set aside by 답장 안 해도 돼요 on its mail (holdDrafts); 되돌리기 makes it pending again (restoreDrafts).
+export type DraftStatus = "pending" | "sent" | "dropped" | "stale" | "held";
 export type DraftRec = {
 	id: string;
 	kind: ReplyKind;
@@ -62,16 +63,34 @@ export function markDrafted(ref: string): void {
 	if (!f.keys.includes(ref)) write({ ...f, keys: [...f.keys, ref] });
 }
 
-// A newer draft for the same mail makes every older pending one stale.
+// A newer draft for the same mail makes every older pending (or held) one stale.
 export function addDraft(rec: DraftRec): void {
 	const f = read();
-	for (const d of f.drafts) if (d.ref === rec.ref && d.status === "pending") d.status = "stale";
+	for (const d of f.drafts) if (d.ref === rec.ref && (d.status === "pending" || d.status === "held")) d.status = "stale";
 	write({ drafts: [...f.drafts, rec], keys: f.keys.includes(rec.ref) ? f.keys : [...f.keys, rec.ref] });
 }
 
 export function patchDraft(id: string, patch: Partial<Pick<DraftRec, "to" | "item" | "questions">>): void {
 	const f = read();
 	write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, ...patch } : d)) });
+}
+
+// 답장 안 해도 돼요 on a mail: its waiting drafts are kept aside (held), not dropped, so the undo can bring them back. Returns the held ids.
+export function holdDrafts(ref: string): string[] {
+	const f = read();
+	const hit = f.drafts.filter(d => d.ref === ref && d.status === "pending");
+	if (hit.length) write({ ...f, drafts: f.drafts.map(d => (hit.includes(d) ? { ...d, status: "held" as const } : d)) });
+	return hit.map(d => d.id);
+}
+
+// Its undo: the newest held draft of the mail waits for approval again (older held ones were already replaced by it: stale). Returns its id.
+export function restoreDrafts(ref: string): string | undefined {
+	const f = read();
+	const held = f.drafts.filter(d => d.ref === ref && d.status === "held");
+	const top = held.reduce<DraftRec | undefined>((a, d) => (!a || d.created >= a.created ? d : a), undefined);
+	if (!top) return undefined;
+	write({ ...f, drafts: f.drafts.map(d => (d === top ? { ...d, status: "pending" as const } : held.includes(d) ? { ...d, status: "stale" as const } : d)) });
+	return top.id;
 }
 
 export function setStatus(id: string, status: DraftStatus): void {

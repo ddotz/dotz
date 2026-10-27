@@ -1224,6 +1224,13 @@ export function reopenNotices(ids: unknown): { reopened: string[]; unread: numbe
 	return { reopened: hit.map(i => i.id), unread: unreadCount() };
 }
 
+// The send approvals of drafts that wait again (답장 필요로 되돌리기 restored a held draft): a card that was settled as resolved (never answered
+// by the owner) opens again in 확인 대기.
+export function reopenDraftNotices(draftIds: string[]): { reopened: string[]; unread: number } {
+	const want = new Set(draftIds);
+	return reopenNotices(items.filter(i => i.decision?.draft?.ref && want.has(i.decision.draft.ref) && i.decision.state === "answered" && i.decision.resolved).map(i => i.id));
+}
+
 // Test hook: an empty store and no per-conversation memory, so a test does not depend on what an earlier test left behind.
 export function resetNoticesForTest(): void {
 	items = [];
