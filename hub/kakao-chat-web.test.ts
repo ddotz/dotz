@@ -136,6 +136,16 @@ const server = Bun.serve({
 		if (/^\/api\/kakao\/chat\/\w+\/no-reply$/.test(p) && req.method === "POST") { record({ method: "POST", path: p, body }); return json({ ok: true }); }
 		const ad = /^\/api\/kakao\/chat\/(\w+)\/ask\/drop$/.exec(p);
 		if (ad && req.method === "POST") { record({ method: "POST", path: p, body }); ask = null; return json({ ok: true }); }
+		// 다시 보내기: the gateway resends what the failed send was (a draft's remaining parts, or the typed text); the old record leaves the list.
+		const rt = /^\/api\/kakao\/chat\/(\w+)\/send\/(\w+)\/retry$/.exec(p);
+		if (rt && req.method === "POST") {
+			record({ method: "POST", path: p, body });
+			const old = sends.find(s => s.id === rt[2]);
+			if (!old) return json({ error: "다시 보낼 전송을 찾지 못했어요" }, 404);
+			const s = { id: `s${sends.length + 1}`, text: old.text, state: "sending", at: Date.now() };
+			sends.splice(sends.indexOf(old), 1, s);
+			return json({ id: s.id, state: "sending" }, 202);
+		}
 		const c = /^\/api\/kakao\/chat\/(\w+)(?:\/(reads?|send|draft))?$/.exec(p);
 		if (c) {
 			const room = rooms.find(x => x.chatId === c[1]);
@@ -386,7 +396,9 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		await shot(v, "07-desktop-send-failed.png");
 		await run(v, `document.querySelector('.kk-m.pend [data-k="retry"]').click()`);
 		await waitFor(v, `document.querySelectorAll(".kk-m.me.pend").length === 1 && document.querySelector(".kk-m.me.pend .kk-state").textContent === "보내는 중"`);
-		expect(reqs.filter(r => r.path === "/api/kakao/chat/100/send" && r.body?.text === "두번째 글")).toHaveLength(2);
+		// The retry is the gateway's (it knows a draft's unsent parts); the web never posts the text again itself.
+		expect(reqs.filter(r => r.path === "/api/kakao/chat/100/send/s2/retry")).toHaveLength(1);
+		expect(reqs.filter(r => r.path === "/api/kakao/chat/100/send" && r.body?.text === "두번째 글")).toHaveLength(1);
 	});
 
 	test("Shift+Enter is a new line and sends nothing", async () => {

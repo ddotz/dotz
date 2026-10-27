@@ -883,8 +883,24 @@ async function kkDeleteSend(s) {
   if (KK.open === id) { KK.sends = KK.sends.filter(x => x.id !== s.id); kkPaintTl(KK.stick); }
   return true;
 }
+// 다시 보내기 goes through the gateway, which knows what the failed send was: a draft's send resumes from its first unsent part, one
+// message each (never the joined text as one message); a typed send goes again as typed.
 async function kkRetry(s) {
-  if (await kkDeleteSend(s)) kkSendText(s.text, null);
+  const id = KK.open;
+  if (!id || KK.sending) return;
+  KK.sending = true;
+  try {
+    const r = await api(`/api/kakao/chat/${enc(id)}/send/${enc(s.id)}/retry`, "POST", {});
+    if (KK.open !== id) return;
+    KK.sends = KK.sends.filter(x => x.id !== s.id);
+    if (r && r.id && !KK.sends.some(x => x.id === r.id)) KK.sends.push({ id: r.id, text: s.text, state: r.state || "sending", at: Date.now(), ...(s.draft ? { draft: s.draft } : {}) });
+    if (s.draft) KK.drafts = KK.drafts.filter(d => d.code !== s.draft);
+    KK.stick = true; KK.pin = "bottom";
+    kkPaintTl(true); kkPaintFoot();
+  } catch (e) {
+    toast(e.message, true);
+    kkTail();
+  } finally { KK.sending = false; }
 }
 async function kkSendEvent(e) {
   const s = KK.sends.find(x => x.id === e.id);
