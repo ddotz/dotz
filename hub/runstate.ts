@@ -61,6 +61,54 @@ export function openTodos(t: TodoLike): { open: number; current?: string } {
 	return { open: live.length, ...(cur?.content ? { current: cur.content } : {}) };
 }
 
+export type WorkLike = { id?: string; description?: string; status: "running" | "done" | "failed"; started_at?: number; ended_at?: number; target?: string; error?: string };
+
+/** A mail's conversation: the web target `mail:<key>` itself, or the Discord thread (`th:<id>`) an owner message in it was delivered to. */
+export function mailConversation(target: string, keyOfThread: (thread: string) => string | undefined): string | undefined {
+	if (/^mail:[a-z0-9._-]+$/.test(target)) return target;
+	const thread = /^th:(\d{15,22})$/.exec(target)?.[1];
+	const key = thread ? keyOfThread(thread) : undefined;
+	return key ? `mail:${key}` : undefined;
+}
+
+// Why a failed worker failed: the record's own message when OmO wrote one, else said plainly so the line never claims a cause it does not know.
+const failureReason = (w: WorkLike) => short(w.error) || "이유가 기록되지 않았어요";
+
+/**
+ * The run state of every mail conversation a background worker serves, keyed by the conversation (`mail:<key>`). A worker's own
+ * target is the thread (`th:<id>`) or the mail key; both name the one conversation the owner sees. Nothing is returned for a
+ * conversation no worker of the last hour served, so the line stays absent instead of claiming it is idle.
+ */
+export function workConversationRuns(works: readonly WorkLike[], conversationOf: (target: string) => string | undefined): Record<string, RunState> {
+	const byConv = new Map<string, WorkLike[]>();
+	for (const w of works) {
+		const conv = w.target ? conversationOf(w.target) : undefined;
+		if (!conv) continue;
+		const list = byConv.get(conv);
+		if (list) list.push(w);
+		else byConv.set(conv, [w]);
+	}
+	const out: Record<string, RunState> = {};
+	for (const [conv, list] of byConv) {
+		const running = list.filter(w => w.status === "running").sort((a, b) => (a.started_at ?? 0) - (b.started_at ?? 0)).at(-1);
+		if (running) {
+			out[conv] = { kind: "working", since: iso(running.started_at), detail: short(running.description || "백그라운드 작업") };
+			continue;
+		}
+		const last = list.filter(w => w.status !== "running").sort((a, b) => (a.ended_at ?? 0) - (b.ended_at ?? 0)).at(-1);
+		if (!last) continue;
+		if (last.status === "failed") {
+			// Whether this failing attempt was itself a retry (st_01a17c03 failed at spawn and st_01a17c04 took it over): an earlier
+			// worker of the same conversation says so, while a retry that is still running is the line above it.
+			const retried = list.some(w => w !== last && (w.started_at ?? 0) < (last.started_at ?? 0));
+			out[conv] = { kind: "error", since: iso(last.ended_at), detail: `${failureReason(last)} · ${retried ? "다시 맡긴 작업도 실패했어요" : "다시 맡기지 않았어요"}` };
+		} else {
+			out[conv] = { kind: "done", since: iso(last.ended_at), detail: short(last.description) };
+		}
+	}
+	return out;
+}
+
 type Act = { ts?: string; type?: string; intent?: string; text?: string };
 
 /** The latest tool intent of the turn that is still running (after the last turn_start), if any. */
