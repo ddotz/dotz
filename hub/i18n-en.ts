@@ -207,6 +207,8 @@ Do this, briefly:
 5. Finish with one dotz_send worklog line in the identity's language and Notices style, starting "Nightly review: ...". If nothing was wrong, that one line is all you send: nothing to alert.`,
 
 	// Appended to `reflect` only when LESSONS.md has stale or near-duplicate lines or is over its byte cap (hub/reflect.ts lessonCandidates).
+	// Appended to `reflect` when a lesson with no "(enforced: ...)" matches one of today's corrections (hub/reflect.ts repeatedLessons).
+	lessonRepeats: (lines: string[]) => `\n\nThese lessons were broken again today and nothing enforces them. Fix each at the highest level that works: remove the cause in the code or this contract, then a guard or check whose message names the right way, then a test; reword only a pure judgment call (and add the failure as an example). After the fix, end the line with "(enforced: <the guard, check or test>)"; delete a lesson once its mistake cannot happen:\n${lines.join("\n")}`,
 	// Appended to `reflect` when observations.md has lines older than 90 days (hub/reflect.ts).
 	staleObservations: (stale: string[]) => `\n\nObservations older than 90 days in ${paths.observations}: delete them (move a pattern that still holds to owner.md or LESSONS.md first):\n${stale.join("\n")}`,
 	lessonCandidates: (stale: string[], duplicates: string[], over: string) => `\n\nLESSONS.md cleanup candidates picked by code; you decide which to delete or merge (keep the newer or more specific wording):${over ? `\n- ${over}` : ""}${stale.length ? `\n- Older than 90 days:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- Near-duplicates (token overlap >= 0.6):\n${duplicates.join("\n")}` : ""}`,
