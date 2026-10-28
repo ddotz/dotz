@@ -490,13 +490,23 @@ function mailSumNodes(m, t, brief) {
 }
 // 초안 작성: the owner asks for a reply draft of this mail (POST /api/mail/<key>/draft, made behind the request); the draft arrives as the send-approval
 // card in the mail's conversation. In a row and in the open mail's head.
-const mailDraftAsk = async (t, btn) => {
-  await api(`/api/mail/${t.slice(5)}/draft`, "POST", {});
+const mailDraftAsk = async (t, btn, instruction = "") => {
+  await api(`/api/mail/${t.slice(5)}/draft`, "POST", instruction ? { instruction } : {});
   toast("답장 초안을 만들고 있어요. 다 되면 이 메일에 승인 카드가 떠요");
   if (btn) { btn.disabled = true; btn.textContent = "만드는 중…"; }
 };
-const mailDraftRun = (t, b) => mailDraftAsk(t, b).catch(e => toast(e.message || "초안을 요청하지 못했어요", true));
-const mailDraftButton = (t, cls = "cchip mr-act mr-draft") => el("button", { class: cls, type: "button", "data-k": "mail-draft", text: "초안 작성", onclick: ev => { ev.stopPropagation(); const b = ev.currentTarget; busy(b, () => mailDraftRun(t, b)); } });
+// 초안 작성 asks first what the reply should say (owner 2026-10-28); an empty box makes the draft on its own, as before.
+function mailDraftDialog(t, btn) {
+  const ta = el("textarea", { class: "fi", rows: "3", maxlength: "500", "data-k": "draft-instruction", "aria-label": "초안에 넣을 내용",
+    placeholder: "비워 두면 메일을 읽고 알아서 써요.\n예: 금요일까지 보내 드린다고, 견적서도 첨부한다고 써 줘" });
+  const go = (close, b) => busy(b, async () => { close(); await mailDraftAsk(t, btn, ta.value.trim()).catch(e => toast(e.message || "초안을 요청하지 못했어요", true)); });
+  const d = dialog({ title: "답장 초안 만들기", body: el("div", { class: "col" }, el("div", { class: "sup", text: "어떻게 답할지 적으면 그대로 반영해요." }), ta),
+    actions: [{ label: "초안 만들기", kind: "pri", onclick: (close, b) => go(close, b) }] });
+  ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
+  ta.focus();
+}
+const mailDraftRun = (t, b) => mailDraftDialog(t, b);
+const mailDraftButton = (t, cls = "cchip mr-act mr-draft") => el("button", { class: cls, type: "button", "data-k": "mail-draft", text: "초안 작성", onclick: ev => { ev.stopPropagation(); mailDraftDialog(t, ev.currentTarget); } });
 // 답장 안 함 / 답장 필요로 표시: the owner's own mark (POST / DELETE /api/mail/<key>/fyi, recorded as his with the time; a peer's mail on the computer
 // that holds it: 34-peer-monitoring.js pqRoute). The row, its tag, the filter counts and the app badges change at once; 답장 안 함 drops the mail's
 // waiting reply draft (확인 대기). 답장 필요로 표시 works from no state, from 답장 안 함 and from 답장함 (it needs another answer).
