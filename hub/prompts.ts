@@ -107,7 +107,7 @@ export function createPrompts(deps: PromptDeps) {
 	const openDeferred = () => deferred.filter(p => !p.done && !isAnswered(p.replyTo) && Date.now() - p.at <= DEFER_MAX_AGE_MS);
 
 	const save = () => {
-		const open = [...openDeferred().filter(p => p !== current), ...(current && !current.done ? [current] : []), ...prompts].filter(p => !isAnswered(p.replyTo)).map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
+		const open = [...openDeferred().filter(p => p !== current), ...(current && !current.done ? [current] : []), ...prompts.filter(p => !p.cancelled)].filter(p => !isAnswered(p.replyTo)).map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
 		deps.persist(open);
 	};
 	const isAnswered = (replyTo?: string) => replyTo !== undefined && (answered.has(replyTo) || deps.pending?.(replyTo) === true);
@@ -205,6 +205,8 @@ export function createPrompts(deps: PromptDeps) {
 			prompts.splice(prompts.indexOf(q), 1);
 			cancelledNotes.push({ text: q.text, at: Date.now() });
 		}
+		// Messages of that conversation sent while it worked wait in the runtime's queue as next prompts: each is stopped when it starts.
+		for (const q of prompts.filter(q => !q.steered && q.target === target)) Object.assign(q, { cancelled: true, done: true });
 		for (const d of openDeferred().filter(d => d.target === target)) Object.assign(d, { done: true, cancelled: true });
 		for (const o of owners.filter(o => o.target === target && o.prompt && !o.prompt.done)) Object.assign(o.prompt!, { done: true, cancelled: true });
 		deps.log(`turn for ${target ?? "-"} cancelled by the owner`);
@@ -247,7 +249,13 @@ export function createPrompts(deps: PromptDeps) {
 		// are not prompts either; clearing `current` on them dropped the turn's final answer (owner 2026-10-20: "작업 끝나도
 		// 보고 안하는거", the 17:18 web turn).
 		if (text.trimStart().startsWith("<")) return false;
+		for (const q of prompts.filter(q => q.cancelled && Date.now() - q.at > CANCEL_NOTE_MS)) prompts.splice(prompts.indexOf(q), 1);
 		const i = prompts.findIndex(p => !p.steered && text.includes(p.key));
+		if (i >= 0 && prompts[i]!.cancelled) {
+			prompts.splice(i, 1);
+			deps.log("a turn started with a message the owner cancelled; it is stopped");
+			return true;
+		}
 		// omp runs prompts in the order they were delivered, so a prompt older than the one that just started was taken into a
 		// turn already. A lane report (no target, no message id) has no answer that could settle it: it was consumed by that turn,
 		// and kept it would be replayed after the next restart (2026-10-23, a morning [done] came back at 08:48).

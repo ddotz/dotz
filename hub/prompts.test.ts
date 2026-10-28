@@ -600,6 +600,9 @@ test("the owner's 중단 closes the request: nothing steered into it is delivere
 	expect(q.onPrompt("[note] also check the mail")).toBe(true);
 	expect(q.onPrompt("[note] also check the mail")).toBe(false);
 	state.working = false;
+	expect(state.delivered).toEqual(["analyse the files"]);
+	q.settleTurn();
+	q.redeliverSteered();
 	q.settleTurn();
 	q.redeliverSteered();
 	expect(state.delivered).toEqual(["analyse the files"]);
@@ -608,4 +611,19 @@ test("the owner's 중단 closes the request: nothing steered into it is delivere
 	q.onAnswer("here is the analysis you asked for");   // a worker's result waking a run with no prompt of ours
 	expect(state.posts).toEqual([]);
 	expect(q.cancel()).toBeUndefined();
+});
+
+test("a message queued as the next prompt while the cancelled turn ran is stopped when the runtime starts it, and is not replayed", () => {
+	const { q, state, open, startTurn } = setup();
+	startTurn("analyse the files", { target: "web", replyTo: "m1" });
+	state.working = false;   // the gateway's queue mode: the second message goes to the runtime as the next prompt, not steered
+	q.deliver("count the commits too", { target: "web", replyTo: "m2" });
+	state.working = true;
+	expect(state.delivered).toEqual(["analyse the files", "count the commits too"]);
+	expect(q.cancel()).toBe("web");
+	expect(open()).toEqual([]);
+	expect(q.onPrompt("count the commits too")).toBe(true);
+	q.onAnswer("390 commits");
+	expect(state.posts).toEqual([]);
+	expect(q.onPrompt("an unrelated later message")).toBe(false);
 });
