@@ -123,6 +123,9 @@ export function createOrchestrator(opts: OrchOpts) {
 		ctx: newCtx(),
 	};
 	let proc: AgentProcess | undefined;
+	// The running turn stopped on a provider error (a usage limit, a dead login, a failure past its retries): its request was not
+	// answered and must stay open for the retry, not be closed as a turn that wrote nothing (prompts.ts settleTurn).
+	let turnFailed = false;
 	// The runtime of the running process, chosen at each start().
 	let adapter: RuntimeAdapter | undefined;
 	const orchestratorPid = (): number | undefined => proc?.pid;
@@ -390,6 +393,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			noteEvent(orch.ctx, ev, port);
 			switch (ev.type) {
 				case "turn_start":
+					turnFailed = false;
 					// The turn watermark of the notices (a [done] never settles an ask of its own turn) is one per gateway: the main session's.
 					if (opts.key === "main") orchestratorTurnStarted();
 				// How long a conversation session takes from its spawn to its first turn (fresh, resumed): the warm-up decision reads it.
@@ -448,6 +452,7 @@ export function createOrchestrator(opts: OrchOpts) {
 						save({ apiSince: undefined });
 						onAlert(`${NAME}: ${msg().apiEnd(chain.label(chain.active))}`);
 					}
+					if (ev.stop === "error" && !inKeepalive) turnFailed = true;
 					if (ev.stop !== "error") {
 						transientTries = 0;
 						errorStreak.ok();
@@ -1030,9 +1035,9 @@ export function createOrchestrator(opts: OrchOpts) {
 		return true;
 	}
 
-	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, heldCount: () => held.length + unstarted.length };
+	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, heldCount: () => held.length + unstarted.length, turnFailed: () => turnFailed };
 }
 export type Orchestrator = ReturnType<typeof createOrchestrator>;
 
 export const main = createOrchestrator({ key: "main", stateFile: join(DATA_DIR, "orchestrator.json"), source: "orchestrator", keepalive: true });
-export const { orch, orchestratorPid, setTurnHeader, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact } = main;
+export const { orch, orchestratorPid, setTurnHeader, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, turnFailed } = main;
