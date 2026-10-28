@@ -102,6 +102,19 @@ test("a new notice on A reaches B's stream once, named for A, then A's counts fo
 	expect(ofKind("peer_notice")).toHaveLength(1);
 });
 
+test("a state change on A (a mail answered, a draft sent, a room read) makes B read A again: its counts and the merged monitoring follow at once", async () => {
+	await until(() => aStreams.size === 1);
+	for (const kind of ["mail_unreplied", "comment_send", "kakao_draft", "read"]) {
+		const before = ofKind("peer_counts").length;
+		sendA({ kind, target: "mail:k1" });
+		await until(() => ofKind("peer_counts").length > before);
+	}
+	const before = ofKind("peer_counts").length;
+	sendA({ kind: "activity", source: "orchestrator", type: "tool" });
+	await settle();
+	expect(ofKind("peer_counts").length).toBe(before);
+});
+
 test("a peer's own peer_* frames and a lost connection: nothing is forwarded as a notice, the stream reconnects and the chip goes offline then back", async () => {
 	sendA({ kind: "peer_notice", peer: { name: "다른 곳", url: "http://x" }, id: "z", title: "되돌아온 프레임" });
 	await settle();
