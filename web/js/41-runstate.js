@@ -5,6 +5,10 @@
 // "todo는 남아있는데 아무것도 안하고 있을때 왜 안하는지 모르는 경우가 많음", so "쉬는 중" alone is never the answer.
 const RUN_LABEL = { working: "작업 중", waiting: "답을 기다려요", idle: "쉬는 중", limited: "한도에 걸렸어요", error: "오류로 멈췄어요", stopped: "멈춤", done: "끝났어요" };
 const RUN_DOT = { working: "pri", waiting: "warn", idle: "", limited: "warn", error: "err", stopped: "", done: "ok" };
+// "답을 기다려요" only when the owner's answer is awaited (a question); work the agent handed off reads as its own progress and is not
+// colored as needing him (owner 2026-10-28: "답을 기다려요" read as waiting on him; he picked "맡긴 작업 진행 중").
+const waitLabel = r => r.reason === "ask" ? RUN_LABEL.waiting : r.reason === "capacity" ? "순서를 기다려요" : "맡긴 작업 진행 중";
+const waitsOnOwner = r => r.kind === "waiting" && r.reason === "ask";
 const RUN_MEMO = { sig: "" };
 const runStateOf = () => {
   if (isFixedT(target) || isSettingsT(target)) return null;
@@ -25,10 +29,7 @@ function runText(r) {
   const label = RUN_LABEL[r.kind] || "알 수 없음", left = r.todos ? `할 일 ${r.todos}개 남음` : "";
   switch (r.kind) {
     case "working": return [label, r.detail, r.since ? runSince(r.since) : ""].filter(Boolean).join(" · ");
-    case "waiting": {
-      const what = r.reason === "later" ? "백그라운드 작업의 답을 기다리는 중" : r.detail;
-      return [label, what, r.reason === "work" && r.since ? runSince(r.since) : "", left].filter(Boolean).join(" · ");
-    }
+    case "waiting": return [waitLabel(r), r.reason === "later" ? "" : r.detail, r.reason === "work" && r.since ? runSince(r.since) : "", left].filter(Boolean).join(" · ");
     case "idle": {
       const why = r.reason === "unfinished" ? "이번 턴이 끝났는데 할 일이 남아 있어요" : r.reason === "unknown" ? "이유를 알 수 없어요" : "";
       return [label, left, why].filter(Boolean).join(" · ");
@@ -49,7 +50,8 @@ function runAction(r, t = target) {
   if (isFixedT(t)) return null;
   const peer = isMailT(t) && typeof pqPc === "function" && !!pqPc(t);
   if (r.work && !peer) {
-    if (r.kind === "working" || (r.kind === "waiting" && r.reason === "work")) return { label: "중단", run: ev => workCancel(r.work, ev.currentTarget) };
+    // 중단 is the send button itself while work runs (14-slash-commands.js renderWorking: send turns into stop), not a second button here.
+    if (r.kind === "working" || (r.kind === "waiting" && r.reason === "work")) return null;
     if (r.kind === "error" && r.reason === "work") return { label: "다시 맡기기", run: ev => workRetry(r.work, ev.currentTarget) };
   }
   if (isMailT(t)) return null;
@@ -69,8 +71,8 @@ function paintRunState() {
   const sig = JSON.stringify([target, r]), act = runAction(r);
   if (RUN_MEMO.sig !== sig) {
     RUN_MEMO.sig = sig;
-    $("#runstate-dot").className = `dot ${RUN_DOT[r.kind] || ""}`.trim();
-    box.classList.toggle("warn", r.kind === "waiting" || r.kind === "limited");
+    $("#runstate-dot").className = `dot ${r.kind === "waiting" && !waitsOnOwner(r) ? "pri" : RUN_DOT[r.kind] || ""}`.trim();
+    box.classList.toggle("warn", waitsOnOwner(r) || r.kind === "limited");
     box.classList.toggle("err", r.kind === "error");
     const b = $("#runstate-act");
     b.hidden = !act;
