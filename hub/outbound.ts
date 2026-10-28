@@ -14,7 +14,7 @@ import { outEvent } from "./projectchat.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
 import { allowedRoots } from "./files.ts";
 import { claimPrefix, LaneRuntimeMismatch, lanes, type LaneDelivery, turnHeader } from "./lanes.ts";
-import { deliver as deliverToOrchestrator, orch, setAlertHandler, setAnswerHandlers, setTurnHeader, steer as steerOrchestrator } from "./orchestrator.ts";
+import { deliver as deliverToOrchestrator, orch, setAlertHandler, setAnswerHandlers, setOwnerCancel, setTurnHeader, steer as steerOrchestrator } from "./orchestrator.ts";
 import { createBgWork } from "./bgwork.ts";
 import { createPrompts } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
@@ -254,7 +254,19 @@ export function replayPending(): number {
 export const replayOpen = () => queue.reopen(replayWrap);
 
 // Registrations main.ts makes at the same point of its start (kept out of import time).
+// The owner's 중단: the running request is closed with what it set going (owner 2026-10-28: "취소하면 바로 취소되어야하는데 일이 그대로
+// 넘어가서 진행"): the messages steered into it are not delivered again, its background workers are cancelled, and one short line
+// tells the conversation (it also takes the progress line away).
+export function cancelOwnerTurn(): void {
+	const target = queue.cancel();
+	if (!target) return;
+	for (const w of bgWork.list().filter(w => w.status === "running" && w.target === target))
+		void bgWork.cancel(w.id).then(r => (r.ok ? log(`worker ${w.id} cancelled with its request`) : log(`worker ${w.id} not cancelled: ${r.error}`)));
+	void out(target, "중단했어요.", undefined, { source: "gateway" }).catch(() => undefined);
+}
+
 export function installDelivery(): void {
+	setOwnerCancel(cancelOwnerTurn);
 	livestatus.setWebProgress(webNote);
 	// The final answer of a turn goes to every channel that asked and did not already get a dotz_send reply.
 	setAnswerHandlers(
