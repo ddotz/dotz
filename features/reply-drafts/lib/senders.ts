@@ -53,7 +53,7 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 	if (webmailSite(rec.source) && (cc.length || recipientList(rec.to).length > 1))
 		return fail("이 웹메일은 참조나 여러 받는 사람에게 보낼 수 없어요. 받는 사람을 한 명만 남기고 참조를 비우면 보내요");
 	if (rec.compose && rec.source === "zele") {
-		const r = await run(sendArgv(rec.to, rec.subject ?? "", rec.body, files.map(f => f.path)));
+		const r = await run(sendArgv(rec.to, rec.subject ?? "", rec.body, files.map(f => f.path), cc));
 		return r.code === 0 ? { ok: true, message: `${rec.to}에게 메일을 보냈어요` } : fail(`보내지 못했어요: ${tail(r)}`);
 	}
 	if (rec.source === "zele") {
