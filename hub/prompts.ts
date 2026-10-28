@@ -86,6 +86,8 @@ const DEFER_BLOCKS_RESTART_MS = 60 * 60_000;
 const MAX_TURNS = 200;
 const TURN_SLACK_MS = 1000;
 
+const CANCEL_NOTE_MS = 10 * 60_000;
+
 export function createPrompts(deps: PromptDeps) {
 	const prompts: Prompt[] = [];
 	let current: Prompt | undefined;
@@ -184,6 +186,10 @@ export function createPrompts(deps: PromptDeps) {
 		return true;
 	}
 
+	// What was steered into a cancelled request may still wait in the runtime's queue, and the runtime starts a turn with it after the
+	// abort (2026-10-28 live check: the turn came back 1 s after 중단 and answered). onPrompt tells the caller to abort that turn too.
+	let cancelledNotes: { text: string; at: number }[] = [];
+
 	/**
 	 * The owner's 중단 (the web stop button, /abort): the running turn's request ends here, unanswered on purpose. Its prompt, the
 	 * messages steered into it and the requests of that conversation still waiting on background workers are closed, so the idle hook
@@ -197,6 +203,7 @@ export function createPrompts(deps: PromptDeps) {
 		for (const q of prompts.filter(q => q.steered && q.target === target)) {
 			q.cancelled = true;
 			prompts.splice(prompts.indexOf(q), 1);
+			cancelledNotes.push({ text: q.text, at: Date.now() });
 		}
 		for (const d of openDeferred().filter(d => d.target === target)) Object.assign(d, { done: true, cancelled: true });
 		for (const o of owners.filter(o => o.target === target && o.prompt && !o.prompt.done)) Object.assign(o.prompt!, { done: true, cancelled: true });
@@ -226,14 +233,20 @@ export function createPrompts(deps: PromptDeps) {
 		if (dropped) save();
 	}
 
-	/** omp started a prompt: pair it with the delivered one it came from. */
-	function onPrompt(text: string): void {
+	/** omp started a prompt: pair it with the delivered one it came from. Returns true when the turn that just started carries only messages of a request the owner cancelled: the caller aborts it. */
+	function onPrompt(text: string): boolean {
+		cancelledNotes = cancelledNotes.filter(n => Date.now() - n.at <= CANCEL_NOTE_MS);
+		if (deps.isNote(text) && cancelledNotes.some(n => text.includes(n.text)) && (!current || current.done)) {
+			cancelledNotes = cancelledNotes.filter(n => !text.includes(n.text));
+			deps.log("a turn started with a message of a cancelled request; it is stopped");
+			return true;
+		}
 		// Notes steered into a running turn are not new requests: the turn keeps answering the prompt it started with.
-		if (deps.isNote(text)) return;
+		if (deps.isNote(text)) return false;
 		// The harness's own mid-turn injections (OmO: `<system-reminder>` when a detached cell finishes, `<omo-senpi-task>`)
 		// are not prompts either; clearing `current` on them dropped the turn's final answer (owner 2026-10-20: "작업 끝나도
 		// 보고 안하는거", the 17:18 web turn).
-		if (text.trimStart().startsWith("<")) return;
+		if (text.trimStart().startsWith("<")) return false;
 		const i = prompts.findIndex(p => !p.steered && text.includes(p.key));
 		// omp runs prompts in the order they were delivered, so a prompt older than the one that just started was taken into a
 		// turn already. A lane report (no target, no message id) has no answer that could settle it: it was consumed by that turn,
@@ -248,7 +261,7 @@ export function createPrompts(deps: PromptDeps) {
 			// still answering the prompt it started with, so its answer must not lose its prompt (2026-10-20 10:43Z, 10:52Z).
 			if (!current.unmatched) deps.log(`a user prompt matched nothing delivered; the running turn keeps its prompt for ${current.target ?? "-"}: ${text.trim().slice(0, 80)}`);
 			current.unmatched = true;
-			return;
+			return false;
 		}
 		closeTurn();
 		current = i >= 0 ? prompts.splice(i, 1)[0] : undefined;
@@ -263,6 +276,7 @@ export function createPrompts(deps: PromptDeps) {
 			deps.log(`the prompt for ${current.target ?? "-"} was already answered by a dotz_send; this turn's answer is dropped`);
 		}
 		save();
+		return false;
 	}
 
 	/** Any assistant text of the running turn: the safety net's answer when the turn ends without a stop. */

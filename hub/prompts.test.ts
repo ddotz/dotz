@@ -596,6 +596,9 @@ test("the owner's 중단 closes the request: nothing steered into it is delivere
 	expect(state.steered).toEqual(["[note] also check the mail"]);
 	q.onText("looking at the first file");
 	expect(q.cancel()).toBe("web");
+	// the runtime still holds the steered note and starts a turn with it after the abort: that turn is stopped too
+	expect(q.onPrompt("[note] also check the mail")).toBe(true);
+	expect(q.onPrompt("[note] also check the mail")).toBe(false);
 	state.working = false;
 	q.settleTurn();
 	q.redeliverSteered();
