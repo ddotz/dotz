@@ -101,15 +101,13 @@ test("waiting at 1280px names the question too", async () => {
 	ITEMS = [];
 }, 20_000);
 
-test("idle with tasks left and a turn that ended: the reason and 계속하기, which sends a continue message", async () => {
+// Owner 2026-10-28: the 계속하기 button was in the way; the line only says why it stopped, a message continues it.
+test("idle with tasks left and a turn that ended: the reason, and no button", async () => {
 	const v = await boot();
 	const r = await show(v, { kind: "idle", reason: "unfinished", since: ts(12), detail: "테스트", todos: 2 });
 	expect(r.text).toBe("쉬는 중 · 할 일 2개 남음 · 이번 턴이 끝났는데 할 일이 남아 있어요");
-	expect(r.act).toBe("계속하기");
+	expect(await v.evaluate(`$("#runstate-act").hidden`)).toBe(true);
 	await shot(v, "run-idle-todos-390.png");
-	const got = new Promise<Record<string, unknown>>(res => { posted = res; });
-	await v.evaluate(`document.querySelector("#runstate-act").click()`);
-	expect(String((await got).text)).toBe("계속해 주세요");
 }, 20_000);
 
 test("idle at 1280px with tasks left", async () => {
@@ -118,11 +116,11 @@ test("idle at 1280px with tasks left", async () => {
 	await shot(v, "run-idle-todos-1280.png");
 }, 20_000);
 
-test("idle with tasks left and no known turn: 이유를 알 수 없어요 and 계속하기", async () => {
+test("idle with tasks left and no known turn: 이유를 알 수 없어요, and no button", async () => {
 	const v = await boot();
 	const r = await show(v, { kind: "idle", reason: "unknown", todos: 1 });
 	expect(r.text).toBe("쉬는 중 · 할 일 1개 남음 · 이유를 알 수 없어요");
-	expect(r.act).toBe("계속하기");
+	expect(await v.evaluate(`$("#runstate-act").hidden`)).toBe(true);
 }, 20_000);
 
 test("idle waiting on background work or a deferred answer names it", async () => {
