@@ -30,7 +30,7 @@ import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { draftAttachRoute } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
-import { composeMail, deleteMail, MailError, mailBodyRoute, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { composeMail, deleteMail, MailError, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { holdDrafts, listDrafts, restoreDrafts } from "../features/reply-drafts/lib/store.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
@@ -487,6 +487,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return json(r, r.ok ? 200 : 400);
 		}
 		if (req.method === "GET" && url.pathname === "/api/conversations") {
+			settleMailDrafts(listDrafts());   // a dropped draft takes its 초안 있음 off before the rows are drawn
 			const owed = new Set(unrepliedMailList().map(m => m.key));
 			const sent = sentMailRefs();
 			// Ended sessions are listed too: their unread count and 답변 필요 stay on their row in the folded 끝난 세션 group (web/js/04-state.js endedGroup).

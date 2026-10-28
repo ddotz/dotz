@@ -25,7 +25,7 @@ export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; sta
 // `msg` = the id of the newest incoming message the record stands for (MailInput.messageId); a post with another id is a newer message of the
 // same thread and reopens it (postMail). `reopenedAt` = when that happened: a reply draft sent before it answered an older message.
 export type MailRecord = { msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; cc?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest; dir?: "out"; reply?: MailReply; reply_by?: ReplyBy; reply_at?: string; sentAt?: string; needsReply?: true; noReply?: true };
-export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[] };
+export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; /** when the mail was sent (ISO 8601 with a zone); an outgoing mail is kept at that time */ at?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[] };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true; direction?: "out"; replied?: true };
 export type MailDeps = {
 	/** Opens a thread under `parent` (a work channel target `ch:<id>`) from a starter message; discord.ts createThread. */
@@ -124,6 +124,22 @@ export function setMailReply(key: string, event: MailReplyEvent, at = new Date()
 	const next: MailRecord = { ...rest, ...(reply ? { reply } : {}), ...mark, ...(sentNow ? { sentAt: at } : {}), ...keep };
 	if (JSON.stringify(next) !== JSON.stringify(r)) recordMail(next);
 	return true;
+}
+/** A mail whose reply draft was dropped or replaced (보내지 않기, a newer draft, a stale one) and has no other draft waiting no longer has a draft:
+ *  its 초안 있음 chip goes and the state goes back to 답장 필요. `drafts` is the reply-drafts list; true when a record changed. */
+export function settleMailDrafts(drafts: ReadonlyArray<{ id: string; ref: string; status: string }>): boolean {
+	const live = new Set(drafts.filter(d => d.status === "pending" || d.status === "held").map(d => d.ref));
+	const ended = new Map(drafts.filter(d => d.status === "dropped" || d.status === "stale").map(d => [d.id, d.ref]));
+	let changed = false;
+	for (const r of [...records]) {
+		if (r.dir === "out" || live.has(r.key)) continue;
+		const chip = r.suggest && (r.suggest.state ?? "draft") === "draft" && r.suggest.ref && ended.get(r.suggest.ref) === r.key;
+		if (!chip) continue;
+		const { suggest: _s, ...rest } = r;
+		recordMail({ ...rest, ...(r.reply === "draft" ? { reply: "needs" as const } : {}) });
+		changed = true;
+	}
+	return changed;
 }
 /** The keys whose reply draft was sent (from the drafts list); a draft sent before the thread was reopened by a newer message does not count. */
 export function sentReplyRefs(drafts: ReadonlyArray<{ ref: string; status: string; created: string }>): Set<string> {
@@ -239,6 +255,7 @@ export function parseMail(raw: unknown): MailInput {
 		messageId: str(b.messageId, "messageId", 200, false),
 		wake: b.wake === true,
 		needsReply: b.needsReply === true,
+		...(typeof b.at === "string" && /[zZ]|[+-]\d\d:?\d\d$/.test(b.at.trim()) && !Number.isNaN(Date.parse(b.at)) ? { at: new Date(b.at).toISOString() } : {}),
 		attachments: parseAttachments(b.attachments),
 		...(b.direction ? { direction: b.direction as "in" | "out" } : {}),
 		folder: str(b.folder, "folder", 100, false),
@@ -508,8 +525,26 @@ function recordOutgoing(m: MailInput, key: string, target: string, deps: MailDep
 	}
 	const summary = m.summary ?? "";
 	const preview = summary ? "" : mailPreview(m.body);
-	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at, dir: "out", ...(summary ? { summary } : {}), ...(preview ? { preview } : {}) });
-	return { ok: true, key, target, direction: "out" };
+	const sentAt = m.at ?? at;
+	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at: sentAt, dir: "out", ...(summary ? { summary } : {}), ...(preview ? { preview } : {}) });
+	const answered = answeredBy({ subject: m.subject, to: m.to, cc: m.cc, at: sentAt });
+	for (const k of answered) setMailReply(k, "sent", sentAt);
+	return { ok: true, key, target, direction: "out", ...(answered.length ? { replied: true as const } : {}) };
+}
+
+// The incoming mails an outgoing one answers: the same subject once Re: / Fwd: / 답장: prefixes are dropped, received before it, from a sender
+// the outgoing mail went to. A mailbox that reports its sent folder (a reply written in the webmail itself, or sent by a helper) so marks the
+// mail it answered 답장함, whichever way the reply was written.
+const baseSubject = (s: string): string => {
+	let x = s.trim();
+	for (let prev = ""; prev !== x; ) { prev = x; x = x.replace(/^\s*(?:re|fw|fwd|답장|회신|전달)\s*(?:\[\d+\])?\s*[:：]\s*/i, ""); }
+	return x.replace(/\s+/g, " ").toLowerCase();
+};
+const addresses = (s: string | undefined): string[] => (s ?? "").toLowerCase().match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) ?? [];
+export function answeredBy(out: { subject: string; to?: string; cc?: string; at: string }): string[] {
+	const base = baseSubject(out.subject), to = new Set([...addresses(out.to), ...addresses(out.cc)]);
+	if (!base || !to.size) return [];
+	return records.filter(r => r.dir !== "out" && r.at <= out.at && baseSubject(r.subject) === base && addresses(r.from).some(a => to.has(a))).map(r => r.key);
 }
 
 async function post(m: MailInput, key: string, target: string, deps: MailDeps, reopened?: MailRecord): Promise<MailResult> {
