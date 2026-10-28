@@ -1,8 +1,8 @@
 // The real step machine against a fake world: runner, gateway, ports and clock. Nothing real runs, nothing leaves a temp dir.
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DATA_DIR } from "../config.ts";
 import { readCards } from "../custom.ts";
 import { loadFeatureDirs } from "../featuredirs.ts";
@@ -283,8 +283,13 @@ test("the card the setup writes passes the gateway's own card validation", async
 	const { w, deps } = world({ dataDir: DATA_DIR, sqlcipher: true, kmsg: true });
 	w.fda = true;
 	w.ax = true;
-	await runOnboarding(deps);
-	const card = readCards().find(c => c.id === "kakao")!;
-	expect("error" in card).toBe(false);
-	expect((card as any).spec).toMatchObject({ title: "카톡", view: "kv", actions: [{ label: "다시 로그인" }, { label: "설정 이어서" }, { label: "끄기", confirm: true }] });
+	try {
+		await runOnboarding(deps);
+		const card = readCards().find(c => c.id === "kakao")!;
+		expect("error" in card).toBe(false);
+		expect((card as any).spec).toMatchObject({ title: "카톡", view: "kv", actions: [{ label: "다시 로그인" }, { label: "설정 이어서" }, { label: "끄기", confirm: true }] });
+	} finally {
+		// The shared test data dir: the switch, card, config and state this setup wrote would read as the owner's own to later files.
+		for (const p of [dirname(featureFile(w.paths)), dirname(cardFile(w.paths)), dirname(w.paths.config), dirname(w.paths.onboard), w.paths.secretFile]) rmSync(p, { recursive: true, force: true });
+	}
 });

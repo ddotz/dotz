@@ -161,7 +161,7 @@ beforeAll(async () => {
 afterAll(() => {
 	for (const v of views) v.close();
 	server.stop(true);
-	for (const p of [paths.config(), paths.drafts(), join(paths.config(), "..", "..", "..", "draft-files"), ...["org-plain", "org-html", "org-gone", "org-peer"].map(k => join(MAIL_FILES, k))]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.drafts(), join(paths.personalFeature(), ".."), join(paths.config(), "..", "..", "..", "draft-files"), ...["org-plain", "org-html", "org-gone", "org-peer"].map(k => join(MAIL_FILES, k))]) rmSync(p, { force: true, recursive: true });
 	rmSync(commentsDir(DATA_DIR), { force: true, recursive: true });
 });
 

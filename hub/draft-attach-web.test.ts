@@ -76,7 +76,7 @@ beforeAll(async () => {
 });
 afterAll(() => {
 	hub.stop();
-	for (const p of [paths.config(), paths.drafts(), join(paths.config(), "..", "..", "..", "draft-files")]) rmSync(p, { force: true, recursive: true });
+	for (const p of [paths.config(), paths.drafts(), join(paths.personalFeature(), ".."), join(paths.config(), "..", "..", "..", "draft-files")]) rmSync(p, { force: true, recursive: true });
 	rmSync(lib, { recursive: true, force: true });
 });
 
