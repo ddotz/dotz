@@ -128,7 +128,9 @@ function rqCardOf(x) {
   if (x.kind === "notice") {
     // The mail draft's own 첨부 줄 (files, or 첨부: 없음) is editable in its conversation and read-only here; anything else says it cannot attach.
     const attach = dr.toLabel === "받는이" ? draftFilesNode(dr, { t: x.n.decision.to, edit: false }) : { attachments: dr.attachments, cannotAttach: [] };
-    return rqCard({ ...base, to: [dr.toLabel || "받는이", dr.to], subject: dr.subject, body: { text: dr.body }, attach,
+    // The 받는이·참조 of a mail draft are read here as they are on its card; the queue does not edit them (its mail's own card does).
+    const recv = dr.toLabel === "받는이" || !dr.toLabel ? draftToNode(dr, { t: x.n.decision.to, edit: false }) : null;
+    return rqCard({ ...base, ...(recv ? { recv } : { to: [dr.toLabel || "받는이", dr.to] }), subject: dr.subject, body: { text: dr.body }, attach,
       extra: [draftMailNode(dr.mail)],
       ...(editing ? { revise: rqRevise(x) } : { acts: { ...rqNoticeActs(x), busy } }) });
   }
