@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR, paths } from "./config.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
-import { addWatch, allWatches, approveWatch, exec, listWatches, patchWatch, putWatchScript, reloadWatches, removeWatch, runWatch, startWatches, watchScript } from "./watch.ts";
+import type { ReloginOpts, ReloginResult } from "./autologin.ts";
+import { addWatch, allWatches, approveWatch, exec, learnLife, listWatches, patchWatch, putWatchScript, reloadWatches, removeWatch, runWatch, sessionGapMs, setSessionIo, startWatches, watchScript } from "./watch.ts";
 
 const notes: { name: string; reason: string }[] = [];
 let waiter: (() => void) | undefined;
@@ -282,4 +283,70 @@ test("a flapping watch tells the owner once per episode; a refail that lasts, or
 	await step(1, 120);
 	await step(1);
 	expect(notes.map(n => n.reason)).toEqual(["failed 2 times in a row (exit 1)", "recovered", "failed 3 times in a row (exit 1)", "recovered", "failed 2 times in a row (exit 1)"]);
+});
+
+// A kept login the gateway signs in again itself (hub/autologin.ts through sessionRun). The Aside check and sign-in are swapped for scripted
+// ones: `answers` is what the check page says on each call, `verdicts` what each sign-in attempt ends with.
+function fakeSession(answers: ("ok" | "lost")[], verdicts: ReloginResult[]) {
+	const calls: { url: string; o: ReloginOpts }[] = [];
+	setSessionIo({
+		ready: async () => {},
+		renew: async () => {},
+		check: async () => ({ state: answers.shift() ?? "ok", output: "DOTZ_SESSION_LOST 302 /login" }),
+		relogin: async (url, o = {}) => (calls.push({ url, o }), verdicts.shift() ?? "failed"),
+	});
+	return calls;
+}
+const addLogin = (name: string, extra: Record<string, unknown> = {}) => addWatch({ name, session_url: "https://site.example/secure", ...extra }, "");
+
+test("a lost kept login is signed in again by the gateway: the login form and the secret are used, the check passes, nobody is told", async () => {
+	const calls = fakeSession(["lost", "ok"], ["in"]);
+	const w = addLogin("login-relog", { login_url: "https://site.example/login", secret: "site-login" });
+	await runWatch(w.name);
+	expect(calls).toEqual([{ url: "https://site.example/login", o: { secret: "site-login" } }]);
+	const s = state(w.name);
+	expect([s.fails, !!s.lastOk, !!s.reloginAt]).toEqual([0, true, true]);
+	expect(notes).toEqual([]);
+	expect([w.approval_minutes, w.retry?.password]).toEqual([30, []]);
+});
+
+test("a login form nothing fills stops the login with one notice until the owner says 다시 연결", async () => {
+	const calls = fakeSession(["lost", "lost"], ["need-password"]);
+	const w = addLogin("login-nopass");
+	await runWatch(w.name);
+	expect([state(w.name).kind, state(w.name).paused]).toEqual(["password", "password"]);
+	expect(notes.map(n => n.reason.split(";")[0])).toEqual(["stopped after a password failure"]);
+	await runWatch(w.name);
+	expect(calls.length).toBe(1);
+	expect(notes.length).toBe(1);
+});
+
+test("a second factor is asked once, and only the owner's yes runs the sign-in that waits for it", async () => {
+	const calls = fakeSession(["lost", "lost", "lost", "ok"], ["need-2fa", "in"]);
+	const w = addLogin("login-2fa");
+	await runWatch(w.name);
+	expect(calls.map(c => c.o.allow2fa ?? false)).toEqual([false]);
+	expect(notes.map(n => n.reason.slice(0, 50))).toEqual(["needs the owner's approval for a second factor (다시"]);
+	await runWatch(w.name);   // waiting for the owner: the form is not submitted again (a submit could send the push), nothing new is said
+	expect([calls.length, notes.length]).toEqual([1, 1]);
+	approveWatch(w.name);
+	await runWatch(w.name);
+	expect(calls.map(c => c.o.allow2fa ?? false)).toEqual([false, true]);
+	expect(state(w.name).fails).toBe(0);
+	expect(existsSync(approval(w.name))).toBe(false);
+});
+
+test("a login's learned life sets its next check and renewal at half of it, never under 10 minutes", () => {
+	const t0 = 1_000_000_000_000, min = 60_000;
+	const st: { fails: number; refreshedAt?: number; reloginAt?: number; lifeMs?: number } = { fails: 0, refreshedAt: t0 };
+	learnLife(st, t0 + 120 * min);
+	expect(st.lifeMs).toBe(120 * min);
+	learnLife({ ...st, refreshedAt: undefined, reloginAt: undefined }, t0);
+	expect(sessionGapMs({ every_minutes: 30, session: { url: "https://x", refresh_hours: 6 }, state: st })).toEqual({ check: 30 * min, refresh: 60 * min });
+	st.reloginAt = t0 + 200 * min;
+	learnLife(st, t0 + 240 * min);
+	expect(st.lifeMs).toBe(40 * min);
+	expect(sessionGapMs({ every_minutes: 30, session: { url: "https://x", refresh_hours: 6 }, state: st })).toEqual({ check: 20 * min, refresh: 20 * min });
+	st.lifeMs = 8 * min;
+	expect(sessionGapMs({ every_minutes: 30, session: { url: "https://x", refresh_hours: 6 }, state: st }).check).toBe(10 * min);
 });
