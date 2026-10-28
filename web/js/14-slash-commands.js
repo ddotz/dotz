@@ -107,7 +107,11 @@ function taFloor() {
   const border = cs.boxSizing === "border-box" ? (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0) : 0;
   return Math.ceil(Math.max(lh + pad + border, parseFloat(cs.minHeight) || 0));
 }
+// "ulw" written as a word anywhere in the message: the box takes the ultrawork gradient edge (owner 2026-10-28), with no explanation line.
+// autosize runs on every change of the text (typing, a restored draft, a cleared box), so the edge follows it.
+const ULW_RE = /(^|[^a-z0-9])ulw(?![a-z0-9])/i;
 function autosize() {
+  sendRow.classList.toggle("ulw", ULW_RE.test(ta.value));
   const keep = sendRow.offsetHeight;
   sendRow.style.height = `${keep}px`;
   ta.style.height = "auto";
