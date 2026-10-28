@@ -26,7 +26,7 @@ function mailAddrList(v) {
     const m = /^(.*?)<([^<>]+)>\s*$/.exec(p);
     const addr = (m ? m[2] : p).trim(), mail = /@/.test(addr);
     // a name with no address ("김경모", a list view's cut-off "Lee (KR - A") is still who it is: shown as the name, not dropped
-    const name = m ? m[1].replace(/^["']|["']$/g, "").trim() : mail ? "" : p.replace(/^["']|["']$/g, "").trim();
+    const name = m ? m[1].trim().replace(/^["']|["']$/g, "").trim() : mail ? "" : p.replace(/^["']|["']$/g, "").trim();
     return { name, addr: mail ? addr : "", raw: p };
   }).filter(a => a.addr || a.name);
 }
