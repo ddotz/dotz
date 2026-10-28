@@ -5,7 +5,8 @@ import * as discord from "./discord.ts";
 import { msg } from "./i18n.ts";
 import { emit, emitDelivery } from "./events.ts";
 import { setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler } from "./lanes.ts";
-import { orch, setNoticeHandler as setOrchNoticeHandler, steer as steerOrchestrator } from "./orchestrator.ts";
+import { orch, steer as steerOrchestrator } from "./orchestrator.ts";
+import { convs } from "./convsessions.ts";
 import { createLaneRelay } from "./lanerelay.ts";
 import { inOrder, localize, noteHandoffLeak } from "./outlang.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
@@ -73,7 +74,7 @@ export function installLaneHandlers(): void {
 	});
 
 	// A model fallback of a lane (and its task workers) is one plain line in the lane's channel, the orchestrator's task workers' one in worklog (the orchestrator's own goes to the alert channel). None wakes the orchestrator.
-	setOrchNoticeHandler(text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`model fallback notice failed: ${e}`)));
+	convs.everyInstance(c => c.o.setNoticeHandler(text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`model fallback notice failed: ${e}`))));
 	setLaneNoticeHandler((lane, text) => {
 		const channel = `lane:${lane.name}`;
 		void inOrder(channel, async () => {

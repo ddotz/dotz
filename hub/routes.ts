@@ -57,6 +57,8 @@ import { handleLease, type LeaseReq } from "./send-lease.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { hostname } from "node:os";
 import { queue, bgWork, out, progress, fileRoots } from "./outbound.ts";
+import { convs } from "./convsessions.ts";
+import { MAIN, primaryTarget } from "./session-key.ts";
 import { parseReply, replyLine, sendWeb } from "./intake.ts";
 import { json, body, terminals } from "./routes-util.ts";
 import { ptyRoute } from "./pty.ts";
@@ -147,10 +149,34 @@ function stateRuns(): Record<string, RunState> {
 			now: nowMs,
 		});
 	}
-	// A mail conversation has no session of its own: the worker its owner message was deferred to is its run state (a thread target
+	// A conversation with a session of its own (hub/convsessions.ts) shows that session's line, so its window shows its turn, its
+	// waiting worker and its own 중단; its state wins over the worker-only line below.
+	const convOut: Record<string, RunState> = {};
+	for (const c of convs.conversations()) {
+		if (!convs.live(c)) continue;
+		const source = `conv:${c.key}`, items = activityItems(source), own = c.bg.list();
+		convOut[c.primary] = runState({
+			status: c.o.orch.status,
+			since: (c.o.orch.status === "stopped" ? c.o.orch.stoppedAt || c.o.orch.startedAt : turnStart(source, c.o.orch.startedAt)) || undefined,
+			intent: runIntent(items),
+			rateLimitedUntil: c.o.orch.rateLimitedUntil,
+			pauseKind: c.o.orch.pauseKind,
+			stoppedBy: c.o.orch.stoppedBy || undefined,
+			error: c.o.orch.error ? { text: c.o.orch.error.text, since: c.o.orch.error.since } : undefined,
+			ask: askFor(c.primary),
+			work: own.filter(w => w.status === "running"),
+			failed: own.find(w => w.status !== "running"),
+			children: runningChildren(source),
+			later: c.queue.deferredOpen().length,
+			lastTurnEnd: lastTurnEnd(items),
+			todos: openTodos(readTodo(c.o.orch.sessionFile)),
+			now: nowMs,
+		});
+	}
+	// A mail conversation with no session of its own: the worker its owner message was deferred to is its run state (a thread target
 	// and the mail key name the same conversation). Peer snapshots show the same lines, so the other computer's mail is not silent.
 	const mailRuns = workConversationRuns(works, t => mailConversation(t, thread => mailByThread(thread)?.key));
-	return { main, ...lanesOut, ...mailRuns };
+	return { main, ...lanesOut, ...mailRuns, ...convOut };
 }
 const mainWork = (t: string | undefined) => t === "web" || t === "terminal" || !t;
 const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefined => {
@@ -702,9 +728,53 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			spendOnKey(String(b.key_file), tokens, Number(b.usd) > 0 ? Number(b.usd) : undefined);
 			return json({ ok: true });
 		}
+		// The conversations main oversees (hub/convsessions.ts) for the dotz_conv tool: which have a session of their own, what it is doing,
+		// and the exchange a read asks for. A conversation session may write only into main; main may send into any conversation.
+		if (req.method === "GET" && url.pathname === "/api/conv-sessions") {
+			return json({
+				items: convs.conversations().map(c => ({ key: c.key, name: c.meta.name || c.primary, primary: c.primary, live: convs.live(c), state: convs.stateOf(c.primary), status: c.o.orch.status, model: c.o.orch.activeModel, ctx: { tokens: c.o.orch.ctx.tokens }, lastOwnerAt: c.meta.lastOwnerAt })),
+			});
+		}
+		{
+			const m = /^\/api\/conv-sessions\/([^/]+)\/(history|send)$/.exec(url.pathname);
+			const key = m ? decodeURIComponent(m[1]!) : "";
+			if (m && m[2] === "history" && req.method === "GET") {
+				const c = convs.get(key);
+				if (!c) return json({ error: `no conversation session ${key}` }, 404);
+				const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 20) || 20, 1), 40);
+				return json({ key, primary: c.primary, events: historyEvents(c.primary, limit) });
+			}
+			if (m && m[2] === "send" && req.method === "POST") {
+				const b = await body(req);
+				const text = String(b.text ?? "").trim();
+				const from = String(b.from ?? "").trim() || MAIN;
+				if (!text) return json({ error: "text required" }, 400);
+				const sender = convs.get(from);
+				if (!sender) return json({ error: `unknown session ${from}` }, 400);
+				// One round only: a turn a session was handed another session's work for must not hand it back or onward.
+				const cur = sender.queue.current();
+				if (cur && !cur.done && cur.text.startsWith(MAIN === from ? "[conversation " : "[main session] ")) return json({ error: "handed work: answer it here, do not pass it on" }, 409);
+				const toMain = from !== MAIN;
+				if (!toMain && !convs.get(key)) return json({ error: `no conversation session ${key}` }, 404);
+				// Into main: its answer goes to the conversation that asked, where its own window shows it.
+				if (toMain) {
+					queue.deliver(`[conversation ${from}] ${text}`, { target: sender.primary, replyTo: cur?.replyTo });
+					return json({ ok: true, to: MAIN, answers_in: sender.primary });
+				}
+				const c = convs.get(key)!;
+				// Main's request goes in as that conversation's next turn with no reply_to: its answer is posted into the conversation.
+				convs.deliverTo(key, `[main session] ${text}`, undefined);
+				return json({ ok: true, to: key, answers_in: c.primary });
+			}
+		}
 		if (req.method === "POST" && url.pathname === "/api/send") {
 			const b = await body(req);
 			const target = String(b.target ?? "chat");
+			// A conversation's own session answers only there (hub/convsessions.ts): a post of it anywhere else, an early text, a
+			// progress note or a send with no reply_to alike, is refused, so another window's answer never lands in this one.
+			const session = typeof b.session === "string" && b.session ? b.session : MAIN;
+			if (session !== MAIN && convs.keyOf(target) !== session) return json({ delivered: false, reason: `this session answers only ${primaryTarget(session)}; hand other work to main with dotz_conv send main` }, 403);
+			const sender = convs.get(session)?.queue ?? queue;
 			// `resolves` (text in the title / text of the open questions it settles, or "*" for all): this post says their matter is over.
 			if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves });
 			if (b.update_key) {
@@ -716,11 +786,11 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			}
 			// Answer only when it is ready: an early text to the asking channel waits for the turn's final answer. Meanwhile the owner
 			// sees it at once on that conversation's progress line (owner 2026-10-28: 중간 말을 바로 보여 주기), which the answer replaces.
-			if (queue.holdEarly(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined)) {
+			if (sender.holdEarly(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined)) {
 				void progress(target, "progress", String(b.text ?? ""), b.reply_to).catch(e => log(`early text not shown on the progress line: ${(e as Error).message}`));
 				return json({ delivered: true, held: true, note: "held: it is shown on the progress line now and goes out together with your final answer for this request; do not send it again" });
 			}
-			queue.sent(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined);
+			sender.sent(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined);
 			try {
 				return json(await out(target, String(b.text ?? ""), b.reply_to));
 			} catch (error) {
