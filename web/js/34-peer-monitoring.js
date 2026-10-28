@@ -125,6 +125,7 @@ function pqNoticeOf(n) {
 }
 const pqNoticeNow = n => { const raw = pqNoticeOf(n); return raw ? { ...raw, pc: n.pc } : n; };
 async function pqNotice(n, action, args) {
+  if (n.decision && n.decision.to) prActed(n.decision.to);
   const r = await api(pqProxy(n.pc, "/api/peer/act"), "POST", { action, args });
   const raw = pqNoticeOf(n);
   if (r && r.item) { if (raw) Object.assign(raw, r.item); Object.assign(n, r.item, { pc: n.pc }); }

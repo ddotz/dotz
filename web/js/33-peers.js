@@ -45,7 +45,17 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("mess
 // peer_counts updates that computer's chip numbers at once; peer_notice is a new notice there. It toasts (tap = that computer, at the item, like a
 // push tap) only while this page is visible: a hidden page gets the push instead, and the hub quiets the push while the page is open (hub/push.ts presence).
 const prSeen = new Set();
+// A conversation of the other computer this page just acted in (a draft sent, fixed or dropped through it): what that computer says about it next is
+// already in front of the owner, so it does not toast here (owner 2026-10-28: a mail sent from 맥북 still raised 맥미니 toasts).
+const PR_ACTED = new Map(), PR_ACTED_MS = 5 * 60_000;
+const prActed = t => { if (t) PR_ACTED.set(t, Date.now()); };
+// The open conversation counts only when it is the other computer's one open in 모니터링 (names repeat across computers: "main" is on both).
+const prQuiet = t => !!t && (Date.now() - (PR_ACTED.get(t) || 0) < PR_ACTED_MS || (t === monCtx && typeof pqPc === "function" && !!pqPc(t)));
 function prLive(e) {
+  if (e.kind === "peer_notice_done") {   // answered or read over there: its toast here goes away
+    for (const s of document.querySelectorAll(".snack[data-peer-nid]")) if ((e.ids || []).includes(s.dataset.peerNid)) s.remove();
+    return;
+  }
   pqSoon();
   const p = PR.list.find(x => !x.self && x.url === (e.kind === "peer_counts" ? e.url : e.peer && e.peer.url));
   if (e.kind === "peer_counts") {
@@ -54,7 +64,7 @@ function prLive(e) {
     prPaint();
     return;
   }
-  if (!p || document.hidden) return;
+  if (!p || document.hidden || prQuiet(e.to)) return;
   const key = `${p.url}|${e.key || e.id}`;
   if (prSeen.has(key)) return;
   prSeen.add(key);
@@ -62,6 +72,8 @@ function prLive(e) {
   const ask = e.notice === "decision" || e.tone === "ask";
   const text = e.title ? (ask ? `답변이 필요해요 · ${e.title}` : e.title) : ask ? "답변이 필요해요" : "새 알림";
   toast(`${p.name} · ${text}`, false, { label: "열기", onclick: () => prOpenItem(p, e.id) }, 8000);
+  const s = document.querySelector(".snack:last-of-type");
+  if (s) s.dataset.peerNid = String(e.id);
 }
 // The same hand-over as a tapped push: ?pc= names the computer, ?n= the notice, which opens there by its kind (a decision opens its sheet).
 function prOpenItem(p, id) {

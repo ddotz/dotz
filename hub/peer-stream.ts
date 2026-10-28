@@ -4,6 +4,7 @@
 // forwards what matters as two frames in its own stream:
 //   {kind:"peer_notice", peer:{name,url}, id, key, notice, tone, title}   a new notice worth a toast (web/js/33-peers.js prLive)
 //   {kind:"peer_counts", url, name, online, unread, need}                 the peer's counts after any change (the computer chip)
+//   {kind:"peer_notice_done", url, ids}                                  notices answered, read or dismissed there: their toast here goes away
 // Frames from a peer are never re-emitted as notices, and a peer's own peer_* frames are ignored here, so nothing loops between N computers.
 import { log } from "./config.ts";
 import { broadcast } from "./events.ts";
@@ -11,7 +12,7 @@ import { invalidatePeer } from "./peer-monitor.ts";
 import { type Found, knownComputers, refreshCounts } from "./peers.ts";
 
 type Computer = Pick<Found, "name" | "url" | "self">;
-type Item = { id?: unknown; kind?: unknown; tone?: unknown; title?: unknown; read?: unknown; dismissed?: unknown; ignored?: unknown; at?: unknown; decision?: { state?: unknown; reply_to?: unknown } };
+type Item = { id?: unknown; kind?: unknown; tone?: unknown; title?: unknown; read?: unknown; dismissed?: unknown; ignored?: unknown; at?: unknown; open?: unknown; decision?: { state?: unknown; reply_to?: unknown; to?: unknown } };
 
 const SCAN_MS = 30_000; // how often the list of computers is re-read (hub/peers.ts caches discovery for a minute)
 const IDLE_MS = 75_000; // a hub pings every 25 s; silence this long means a dead connection
@@ -84,16 +85,23 @@ export function startPeerStreams(opts: Opts = {}): () => void {
 		if (event === "reset") { countsSoon(url); return; }
 		const e = data as { kind?: unknown; item?: Item } | null;
 		if (!e) return;
+		if (e.kind === "notice_read" || e.kind === "notice_dismiss") {
+			const ids = (e as { ids?: unknown }).ids;
+			if (Array.isArray(ids) && ids.length) broadcast({ ts: new Date().toISOString(), kind: "peer_notice_done", source: "gateway", url, ids: ids.map(String) });
+		}
 		if (e.kind === "notice_read" || e.kind === "notice_dismiss" || STATE_KINDS.has(String(e.kind))) { countsSoon(url); return; }
 		if (e.kind !== "notice") return;
 		countsSoon(url);
 		const n = e.item;
-		if (!toastWorthy(n)) return;
+		if (!toastWorthy(n)) {
+			if (n && typeof n.id === "string" && n.id) broadcast({ ts: new Date().toISOString(), kind: "peer_notice_done", source: "gateway", url, ids: [n.id] });
+			return;
+		}
 		const key = `${url}|${noticeKey(n!)}`;
 		if (seen.has(key)) return;
 		seen.add(key);
 		if (seen.size > SEEN_MAX) seen.delete(seen.values().next().value!);
-		broadcast({ ts: new Date().toISOString(), kind: "peer_notice", source: "gateway", peer: { name: name(), url }, id: n!.id, key: noticeKey(n!), notice: n!.kind, tone: n!.tone ?? "", title: plain(n!.title) });
+		broadcast({ ts: new Date().toISOString(), kind: "peer_notice", source: "gateway", peer: { name: name(), url }, id: n!.id, key: noticeKey(n!), notice: n!.kind, tone: n!.tone ?? "", title: plain(n!.title), to: String(n!.decision?.to ?? n!.open ?? "") });
 	};
 
 	// One connection until it ends, then again after a growing pause (reset to the first when a connection delivered something).
