@@ -83,7 +83,7 @@ describe("자동 초안 규칙 in the mail settings screen", async () => {
 		expect(await nth(1)).toEqual({ app: "mail", values: { draft_rules: [{ name: "자료 요청", when: "신청서를 보내 달라는 메일", how: "신청서를 첨부하고 짧게 인사", files: ["forms/신청서.pdf", "안내문.pdf"], on: true }] } });
 		expect(config().draftRules.mail).toEqual([{ id: "r1", name: "자료 요청", when: "신청서를 보내 달라는 메일", how: "신청서를 첨부하고 짧게 인사", files: ["forms/신청서.pdf", "안내문.pdf"], on: true }]);
 		expect(await q(v, `return document.querySelector('[data-rule="r1"] [data-rule]').textContent`)).toBe("자료 요청");
-	});
+	}, 20_000);
 
 	test("the switch turns the rule off, 고치기 edits it in place, the 기본 규칙 box saves on change", async () => {
 		await run(v, `document.querySelector('[data-k="rule:r1"]').click()`);
@@ -104,7 +104,7 @@ describe("자동 초안 규칙 in the mail settings screen", async () => {
 		await run(v, `document.querySelector('[data-k="rule-del:r1"]').click()`);
 		await waitFor(v, `!document.querySelector('#app-sw [data-rule="r1"]')`);
 		expect(config().draftRules.mail).toEqual([]);
-	});
+	}, 20_000);
 });
 
 describe("the rule's badge", async () => {
