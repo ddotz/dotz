@@ -549,8 +549,10 @@ function kkRow(r) {
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), hint ? el("span", { class: "cv-p", text: hint }) : null),
     el("span", { class: "cv-m" },
       r.lastAt ? el("span", { class: "kk-t", text: kkListTime(r.lastAt) }) : null,
-      r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null,
-      r.unreplied ? unrepPill() : null));
+      // 미답장 and the unread count share the second line, so a row never grows a third one (owner 2026-10-28).
+      r.unread || r.unreplied ? el("span", { class: "kk-rmeta" },
+        r.unreplied ? unrepPill() : null,
+        r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null));
 }
 function kkPaintRooms() {
   const top = kkRooms.scrollTop, watched = KK.rooms.filter(r => r.watched).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
