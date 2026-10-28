@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
-import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, parseDraftApproval, quotedDraft, refreshDraft } from "./draft-approval.ts";
+import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, parseDraftApproval, quotedDraft, refreshDraft, rewriteDraftTo } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { broadcast, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
@@ -1272,6 +1272,24 @@ export function reopenNotices(ids: unknown): { reopened: string[]; unread: numbe
 export function reopenDraftNotices(draftIds: string[]): { reopened: string[]; unread: number } {
 	const want = new Set(draftIds);
 	return reopenNotices(items.filter(i => i.decision?.draft?.ref && want.has(i.decision.draft.ref) && i.decision.state === "answered" && i.decision.resolved).map(i => i.id));
+}
+
+// The 받는 사람·참조 of a waiting mail draft changed (hub/draft-recipients.ts): every open card of that draft shows the new lines at once, on
+// every page, and its stored text is rewritten so a restart reads the same card. Returns how many cards changed.
+export function updateDraftRecipients(ref: string, r: { to: string; cc: string[]; mode?: "reply" | "all" }): number {
+	const hit = items.filter(i => i.decision?.state === "open" && i.decision.draft?.ref === ref);
+	if (!hit.length) return 0;
+	const at = now();
+	for (const n of hit) {
+		const d = n.decision!;
+		const next: DraftApproval = { ...d.draft!, to: r.to, ...(r.cc.length ? { cc: r.cc } : {}), ...(r.mode ? { mode: r.mode } : {}) };
+		if (!r.cc.length) delete next.cc;
+		d.draft = next;
+		n.text = rewriteDraftTo(n.text, r.to, r.cc);
+		n.updated = at;
+	}
+	announce(hit, at);
+	return hit.length;
 }
 
 // Test hook: an empty store and no per-conversation memory, so a test does not depend on what an earlier test left behind.

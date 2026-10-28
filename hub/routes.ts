@@ -30,6 +30,7 @@ import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { draftAttachRoute } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
+import { draftRecipientsRoute } from "./draft-recipients.ts";
 import { composeMail, deleteMail, MailError, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { holdDrafts, listDrafts, restoreDrafts } from "../features/reply-drafts/lib/store.ts";
 import { attachmentLines, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
@@ -512,6 +513,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// Add or remove a file of a mail reply draft, and the 첨부 파일 폴더 listing (hub/draft-attach.ts).
 		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library|original)$/.exec(url.pathname);
 		if (draftAttach) return draftAttachRoute(req, url, draftAttach[1]!, draftAttach[2]!);
+		// 답장 | 전체 답장 and the 받는 사람·참조 of a waiting mail draft (hub/draft-recipients.ts).
+		const draftRecipients = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/recipients$/.exec(url.pathname);
+		if (draftRecipients) return draftRecipientsRoute(req, draftRecipients[1]!);
 		// 답장 안 함 (no-reply = skipped, fyi; one label to the owner) on a mail (POST) or 답장 필요로 표시 (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
 		// Its reply draft waiting for approval is held in the drafts store (not dropped) and its card leaves 확인 대기 before the answer; taking the
 		// mark back restores the newest held draft and reopens its card. A peer's 되돌리기 arrives here too (hub/peer-monitor.ts act fyi / no-reply).
@@ -547,7 +551,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			if (!r || r.dir === "out") return json({ error: "이 메일을 찾지 못했어요" }, 404);
 			if (!deps?.requestDraft) return json({ error: "이 설치에는 답장 초안 기능이 없어요" }, 503);
 			const target = mailTarget(key);
-			void deps.requestDraft({ key, target, ...(r.thread ? { thread: r.thread } : {}), ...(r.msg ? { messageId: r.msg } : {}), source: r.source, id: r.id, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.attachments?.some(a => !a.inline) ? { attachments: r.attachments.filter(a => !a.inline).map(a => ({ name: a.name, size: a.size })) } : {}) })
+			void deps.requestDraft({ key, target, ...(r.thread ? { thread: r.thread } : {}), ...(r.msg ? { messageId: r.msg } : {}), source: r.source, id: r.id, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.cc ? { cc: r.cc } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.attachments?.some(a => !a.inline) ? { attachments: r.attachments.filter(a => !a.inline).map(a => ({ name: a.name, size: a.size })) } : {}) })
 				.then(res => { if (res !== "offered") return deps.send(target, "답장 초안을 만들지 못했어요. 잠시 뒤 다시 눌러 주세요"); })
 				.catch(e => log(`mail ${key}: requested draft failed: ${(e as Error).message}`));
 			return json({ ok: true, started: true }, 202);

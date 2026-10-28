@@ -7,7 +7,7 @@ import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
 
-export type OfferMail = { key: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
+export type OfferMail = { key: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
 export type OfferDeps = {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
@@ -20,6 +20,8 @@ export type OfferDeps = {
 	log?: (line: string) => void;
 	/** Records the suggested action on the mail (hub/mail.ts setMailSuggest), for the web's suggestion slot of that mail. */
 	suggest?: (key: string, s: { kind: "reply-draft"; label: string; ref: string }) => void;
+	/** The owner's own addresses (hub/mail-state.ts ownAddresses in the gateway): never a recipient of 전체 답장. Absent = the mail's 받는 사람. */
+	own?: () => string[];
 };
 
 // The text a model call sees is capped; a long thread's tail (quoted history) adds tokens and nothing for the reply.
@@ -67,7 +69,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		// One look per message: a newer message of the same thread (messageId) is looked at again, a repeat of the same one is not.
 		const looked = m.messageId ? `${m.key}#${m.messageId}` : m.key;
 		if (!requested && isDrafted(looked)) return "skipped";
-		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "", ...(requested ? { requested: true } : {}) };
+		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: deps.own?.() ?? addressesOf(m.to), to: addressesOf(m.to), ...(m.cc ? { cc: addressesOf(m.cc) } : {}), subject: m.subject, text: "", ...(requested ? { requested: true } : {}) };
 		if (!requested && precheck(item, settings.senders, { addressLater: true })) {
 			markDrafted(looked);
 			return "skipped";
@@ -91,6 +93,8 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 			markDrafted(looked);
 			return "skipped";
 		}
+		// A mail draft starts as 답장 (the sender alone); the card's 전체 답장 switch reads the original's 받는 사람·참조 from the mail record.
+		built.rec.mode = "reply";
 		ensureSwitch();
 		await stageForReply(built.rec, flow, files).catch(e => log(`reply draft: files for mail ${m.key} not staged: ${(e as Error).message}`));
 		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, built.warnings));
