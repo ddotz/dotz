@@ -16,6 +16,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSyn
 import { dirname, join } from "node:path";
 import { blockedBy } from "../extension/index.ts";
 import { ensureAside, replInTab } from "./aside.ts";
+import { type Relogin, relogin } from "./autologin.ts";
 import { issueBlock } from "./choices.ts";
 import { DATA_DIR, log, now, paths, writeAtomic } from "./config.ts";
 import { blockedByFeatures } from "./featuredirs.ts";
@@ -31,7 +32,7 @@ export type Watch = {
 	every_minutes: number;
 	on: "change" | "match" | "fail";
 	pattern?: string;
-	session?: { url: string; expect?: string; refresh_hours: number; host?: string; profile?: string };
+	session?: { url: string; expect?: string; refresh_hours: number; host?: string; profile?: string; login_url?: string; secret?: string };
 	channels?: string[];
 	to: string;
 	created: string;
@@ -43,6 +44,8 @@ export type Watch = {
 	state: {
 		hash?: string; last?: string; fails: number; failAlertAt?: number; failSince?: number; recoveredAt?: number; lastRun?: string; lastOk?: string; lastChanged?: boolean; refreshedAt?: number;
 		kind?: string; kindFails?: number; nextAt?: number; paused?: string; approvalAskedAt?: number;
+		reloginAt?: number; lifeMs?: number; // the last sign-in the gateway did itself, and the shortest session it has seen live
+		twoFactor?: boolean; // the site asked for a second factor: its form is never submitted again without the owner's yes (a submit may send the push)
 	};
 };
 
@@ -62,6 +65,16 @@ export const watchChoice = (name: string): string =>
 	issueBlock(`모니터링 ${name}을(를) 어떻게 할까요?`, [{ name: "원인 확인", result: "출력을 보고 원인과 고칠 방법을 알려드려요." }, { name: "모니터링 끄기", result: "고칠 때까지 이 모니터링을 멈춰 둬요." }]);
 const loadItems = (): Watch[] => (existsSync(paths.watches) ? JSON.parse(readFileSync(paths.watches, "utf8")) : []);
 const items: Watch[] = loadItems();
+// A kept login signs itself in again (sessionRun), so it has the gate for the one human step: a second factor waits for the owner's yes
+// (approval), and a site with no saved password stops until the owner saves one and says so (retry password: []). Older stored logins get both.
+const LOGIN_APPROVAL_MINUTES = 30;
+const loginGate = (w: Watch): boolean => {
+	if (!w.session || (w.approval_minutes && w.retry?.password)) return false;
+	w.approval_minutes ??= LOGIN_APPROVAL_MINUTES;
+	w.retry = { ...w.retry, password: w.retry?.password ?? [] };
+	return true;
+};
+if (items.map(loginGate).some(Boolean)) writeAtomic(paths.watches, `${JSON.stringify(items, null, 2)}\n`);
 const SCRIPT_MAX_BYTES = 64 * 1024;
 const LAST_MAX = 2000; // the last output is kept so the next change can be told as what was added or gone
 const stateDir = (w: Watch) => join(DATA_DIR, "watches", w.id);
@@ -126,25 +139,80 @@ function approved(w: Watch): boolean {
 // the background when it is stopped (aside.ts), and the load is a background `openTab()` tab that is closed at once: the
 // front app and the owner's active tabs stay as they were, so it needs no waiting. A remote host or another profile is not
 // started from here and still loads the tab only while Aside is not the front app (the owner is not looking at it).
-async function sessionRun(w: Watch): Promise<{ code: number; output: string }> {
-	const s = w.session!;
+// The check, and the sign-in the gateway does itself when it finds the login lost (hub/autologin.ts). Tests swap them (setSessionIo).
+type Check = (s: NonNullable<Watch["session"]>, where: string[]) => Promise<{ state: "ok" | "lost" | "error"; output: string }>;
+const asideCheck: Check = async (s, where) => {
 	const check = `const dz = await fetch(${JSON.stringify(s.url)}, { redirect: 'manual' }); const dzBody = dz.status === 200 ? await dz.text() : ''; const dzOk = dz.status === 200 && ${s.expect ? `new RegExp(${JSON.stringify(s.expect)}, 'i').test(dzBody)` : "true"}; console.log(dzOk ? 'DOTZ_SESSION_OK' : 'DOTZ_SESSION_LOST', dz.status, dz.headers.get('location') ?? '');`;
+	const r = await exec(["aside", "repl", ...where, check]);
+	return { state: r.output.includes("DOTZ_SESSION_OK") ? "ok" : r.output.includes("DOTZ_SESSION_LOST") ? "lost" : "error", output: r.output };
+};
+let checkSession: Check = asideCheck;
+let signIn: Relogin = relogin;
+let asideReady: () => Promise<void> = ensureAside;
+let renewTab: (url: string) => Promise<unknown> = url => replInTab(url, "return 'DOTZ_REFRESHED';");
+export function setSessionIo(io: { check?: Check; relogin?: Relogin; ready?: () => Promise<void>; renew?: (url: string) => Promise<unknown> }): void {
+	checkSession = io.check ?? asideCheck;
+	signIn = io.relogin ?? relogin;
+	asideReady = io.ready ?? ensureAside;
+	renewTab = io.renew ?? (url => replInTab(url, "return 'DOTZ_REFRESHED';"));
+}
+
+// How long a login lived: from the last time it was renewed (a tab load or a sign-in) to the run that found it lost. The shortest one seen is
+// kept, and the login is then checked and renewed at half of it (never under 10 minutes), so the next one is renewed before it runs out.
+const MIN_GAP_MS = 10 * 60_000;
+export function learnLife(state: Watch["state"], at = Date.now()): void {
+	const renewed = Math.max(state.refreshedAt ?? 0, state.reloginAt ?? 0);
+	if (!renewed || at <= renewed) return;
+	state.lifeMs = Math.min(state.lifeMs ?? Number.POSITIVE_INFINITY, at - renewed);
+}
+export const sessionGapMs = (w: Pick<Watch, "every_minutes" | "session" | "state">): { check: number; refresh: number } => {
+	const half = w.state.lifeMs ? Math.max(MIN_GAP_MS, w.state.lifeMs / 2) : Number.POSITIVE_INFINITY;
+	return { check: Math.min(w.every_minutes * 60_000, half), refresh: Math.min((w.session?.refresh_hours ?? 6) * 3600_000, half) };
+};
+
+// Login keeping in the owner's Aside browser, no model calls. A REPL fetch sends the stored cookies (enough to check
+// the login and to extend server-side sliding sessions) but does not store Set-Cookie (measured 2026-10-16), so a real tab load renews
+// rotating cookies, every refresh_hours or at half the session's learned life. On this machine's default profile the local Aside is started in
+// the background when it is stopped (aside.ts), and the load is a background `openTab()` tab that is closed at once: the
+// front app and the owner's active tabs stay as they were, so it needs no waiting. A remote host or another profile is not
+// started from here and still loads the tab only while Aside is not the front app (the owner is not looking at it).
+// A lost login on this machine's default profile is signed in again right here (owner 2026-10-28): the browser's saved password, else the
+// `dotz_auth` secret; a second factor only with the owner's yes (`approved`, the approval file 다시 연결 writes); a site with no password stops.
+async function sessionRun(w: Watch, approvedNow = false): Promise<{ code: number; output: string }> {
+	const s = w.session!;
 	const where = [...(s.host ? ["--host", s.host] : []), ...(s.profile ? ["--profile", s.profile] : [])];
 	const dedicated = !s.profile && (!s.host || s.host === "local");
 	if (dedicated) {
 		try {
-			await ensureAside();
+			await asideReady();
 		} catch (error) {
 			return { code: 1, output: `check could not run: ${String(error).slice(-400)}` };
 		}
 	}
-	const r = await exec(["aside", "repl", ...where, check]);
-	if (!r.output.includes("DOTZ_SESSION_OK")) return { code: 1, output: r.output.includes("DOTZ_SESSION_LOST") ? `logged out: ${r.output.match(/DOTZ_SESSION_LOST.*/)?.[0]}` : `check could not run (is Aside running?): ${r.output.slice(-400)}` };
-	const due = !w.state.refreshedAt || Date.now() - w.state.refreshedAt > s.refresh_hours * 3600_000;
+	const r = await checkSession(s, where);
+	if (r.state === "error") return { code: 1, output: `check could not run (is Aside running?): ${r.output.slice(-400)}` };
+	if (r.state === "lost") {
+		const lost = `logged out: ${r.output.match(/DOTZ_SESSION_LOST.*/)?.[0] ?? "the check page answered signed out"}`;
+		learnLife(w.state);
+		if (!dedicated) return { code: 1, output: lost };
+		if (w.state.twoFactor && !approvedNow) return { code: 1, output: `DOTZ_FAIL approval\n${lost}\nthe site asks for a second factor; 다시 연결 sends it` };
+		const v = await signIn(s.login_url ?? s.url, { ...(approvedNow ? { allow2fa: true } : {}), ...(s.secret ? { secret: s.secret } : {}) });
+		const used = approvedNow ? "\nDOTZ_APPROVAL_USED" : "";
+		log(`watch ${w.name}: signed out, signing in again by itself: ${v}`);
+		if (v === "need-2fa") w.state.twoFactor = true;
+		if (v === "need-2fa") return { code: 1, output: `DOTZ_FAIL approval\n${lost}\nthe site asks for a second factor; 다시 연결 sends it${used}` };
+		if (v === "need-password") return { code: 1, output: `DOTZ_FAIL password\n${lost}\nno saved password filled the login form (Mac Passwords or dotz_auth)${used}` };
+		if (v === "failed") return { code: 1, output: `${lost}\nsigning in again did not finish${used}` };
+		const again = await checkSession(s, where);
+		if (again.state !== "ok") return { code: 1, output: `${lost}\nsigned in, but the check page still answers signed out${used}` };
+		w.state.reloginAt = Date.now();
+		return { code: 0, output: `logged in (signed in again by the gateway)${used}` };
+	}
+	const due = !w.state.refreshedAt || Date.now() - w.state.refreshedAt > sessionGapMs(w).refresh;
 	if (due) {
 		if (dedicated) {
 			try {
-				await replInTab(s.url, "return 'DOTZ_REFRESHED';");
+				await renewTab(s.url);
 				w.state.refreshedAt = Date.now();
 				log(`watch ${w.name} refreshed cookies with a background tab load`);
 			} catch (error) {
@@ -165,8 +233,8 @@ async function sessionRun(w: Watch): Promise<{ code: number; output: string }> {
 }
 
 let asideQueue: Promise<unknown> = Promise.resolve();
-function serialSessionRun(w: Watch): Promise<{ code: number; output: string }> {
-	const next = asideQueue.then(() => sessionRun(w));
+function serialSessionRun(w: Watch, approvedNow: boolean): Promise<{ code: number; output: string }> {
+	const next = asideQueue.then(() => sessionRun(w, approvedNow));
 	asideQueue = next.catch(() => undefined);
 	return next;
 }
@@ -193,7 +261,7 @@ async function runOnce(w: Watch): Promise<void> {
 		mkdirSync(stateDir(w), { recursive: true });
 		const env = { DOTZ_WATCH_STATE_DIR: stateDir(w), ...(w.approval_minutes ? { DOTZ_APPROVED: ok ? "1" : "0", DOTZ_APPROVAL_FILE: approvalFile(w) } : {}) };
 		const argv = w.script ? [w.script] : ["/bin/zsh", "-lc", w.command];
-		const { code, output } = w.session ? await serialSessionRun(w) : await exec(argv, w.cwd, (w.timeout_seconds ?? RUN_TIMEOUT_MS / 1000) * 1000, env, undefined, k => killers.set(w.id, k));
+		const { code, output } = w.session ? await serialSessionRun(w, ok) : await exec(argv, w.cwd, (w.timeout_seconds ?? RUN_TIMEOUT_MS / 1000) * 1000, env, undefined, k => killers.set(w.id, k));
 		killers.delete(w.id);
 		if (cancelled.delete(w.id)) {
 			log(`watch ${w.name}: the running check was cancelled for a fresh approved run`);
@@ -212,7 +280,7 @@ async function runOnce(w: Watch): Promise<void> {
 			if (kind === "approval" && w.approval_minutes) {
 				if (!w.state.approvalAskedAt) {
 					w.state.approvalAskedAt = Date.now();
-					notify(w, `needs the owner's approval first (dotz_watch approve ${w.name}, valid ${w.approval_minutes} min)`, output);
+					notify(w, w.session ? `needs the owner's approval for a second factor (다시 연결 or dotz_watch approve ${w.name}, valid ${w.approval_minutes} min)` : `needs the owner's approval first (dotz_watch approve ${w.name}, valid ${w.approval_minutes} min)`, output);
 				}
 				return;
 			}
@@ -238,6 +306,8 @@ async function runOnce(w: Watch): Promise<void> {
 		w.state.failSince = undefined;
 		w.state.kind = w.state.kindFails = w.state.approvalAskedAt = undefined;
 		w.state.lastOk = now();
+		// a kept login with a learned life is checked again at half of it (sessionGapMs), not only every every_minutes
+		if (w.session && w.state.lifeMs) w.state.nextAt = Date.now() + sessionGapMs(w).check;
 		const hash = createHash("sha256").update(output).digest("hex").slice(0, 16);
 		const changed = w.state.hash !== undefined && hash !== w.state.hash;
 		const prev = w.state.last;
@@ -355,7 +425,10 @@ export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 	const url = input.session_url ? String(input.session_url) : "";
 	if (url && !/^https:\/\//.test(url)) throw new Error("session_url must be https://");
 	if (url && input.expect) new RegExp(String(input.expect));
-	const session = url ? { url, ...(input.expect ? { expect: String(input.expect) } : {}), refresh_hours: Math.max(1, Number(input.refresh_hours ?? 6)), ...(input.host ? { host: String(input.host) } : {}), ...(input.profile ? { profile: String(input.profile) } : {}) } : undefined;
+	const loginUrl = input.login_url ? String(input.login_url) : "";
+	if (loginUrl && !/^https:\/\//.test(loginUrl)) throw new Error("login_url must be https://");
+	if (input.secret !== undefined && !/^[A-Za-z0-9._-]+$/.test(String(input.secret))) throw new Error("secret must be the dotz_auth secret's file name ([A-Za-z0-9._-])");
+	const session = url ? { url, ...(input.expect ? { expect: String(input.expect) } : {}), refresh_hours: Math.max(1, Number(input.refresh_hours ?? 6)), ...(input.host ? { host: String(input.host) } : {}), ...(input.profile ? { profile: String(input.profile) } : {}), ...(loginUrl ? { login_url: loginUrl } : {}), ...(input.secret ? { secret: String(input.secret) } : {}) } : undefined;
 	const script = input.script ? String(input.script) : "";
 	if (script && (input.command || session)) throw new Error("give script or command, not both");
 	if (script) {
@@ -390,6 +463,7 @@ export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 	const site = session ? new URL(session.url).hostname.replace(/^www\./, "") : undefined;
 	const label = String(input.label ?? "").trim().slice(0, 60) || deriveLabel({ name, header: scriptHeader(script), site });
 	const w: Watch = { id: randomBytes(3).toString("hex"), name, ...(label ? { label } : {}), command, ...(script ? { script } : {}), ...(input.cwd ? { cwd: String(input.cwd) } : script ? { cwd: dirname(script) } : {}), every_minutes: every, on, ...(on === "match" ? { pattern: String(input.pattern) } : {}), ...(session ? { session } : {}), ...(Array.isArray(input.channels) && input.channels.length ? { channels: input.channels.map(String) } : {}), to: String(input.to ?? "orchestrator"), created: now(), ...(timeout ? { timeout_seconds: timeout } : {}), ...(retry ? { retry: retry as Record<string, number[]> } : {}), ...(approval ? { approval_minutes: approval } : {}), ...(input.once === true ? { once: true } : {}), state: { fails: 0 } };
+	loginGate(w);
 	items.push(w);
 	save();
 	void run(w);
