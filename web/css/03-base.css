@@ -260,6 +260,12 @@ details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); backgr
 .sendrow { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ta ta" "bar send"; align-items: center; gap: 6px 8px; padding: 14px 12px 10px 18px !important; border: 1px solid var(--line) !important; border-radius: 22px !important; background: var(--card) !important; box-shadow: var(--shadow-panel); }
 .sendrow:focus-within { border-color: var(--line-2) !important; }
 /* "ulw" in the message (14-slash-commands.js autosize): a 2px blue → violet → pink edge, padding 1px less so nothing inside moves */
+/* the keyword itself: the backdrop (14-slash-commands.js paintUlw) sits in the textarea's grid cell under it; its text is invisible, only the
+   mark shows, as the same gradient under the word */
+.sendrow .ta-hl { grid-area: ta; align-self: stretch; overflow: hidden; white-space: pre-wrap; overflow-wrap: break-word; color: transparent; pointer-events: none; box-sizing: border-box; }
+.sendrow .ta-hl[hidden] { display: none; }
+.sendrow .ta-hl ~ textarea { position: relative; z-index: 1; }
+.ta-hl .ulw-kw { color: transparent; background: linear-gradient(90deg, #5b9fe3, #9d8fe0, #e98aa6) bottom / 100% 2px no-repeat; border-radius: 2px; box-shadow: 0 -0.9em 0 0 color-mix(in srgb, #9d8fe0 14%, transparent) inset; }
 .sendrow.ulw { border: 2px solid transparent !important; padding: 13px 11px 9px 17px !important; background: linear-gradient(var(--card), var(--card)) padding-box, linear-gradient(90deg, #5b9fe3, #9d8fe0 45%, #d98bc9 75%, #e98aa6) border-box !important; }
 .sendrow textarea { grid-area: ta; }
 .sendrow > .ib { grid-area: send; }
