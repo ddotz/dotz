@@ -135,3 +135,8 @@ test("a quote above the draft (the comment being answered) is not part of the dr
 	const text = ["[ask] 댓글 답글 초안", "> 원댓글 Bob: 영상 잘 봤어요", draftApprovalBlock({ to: "Bob 댓글", toLabel: "대상", body: "고마워요", ref: "j-1-ab12", question: "이 답글 올릴까요?" })].join("\n");
 	expect(parseDraftApproval(text)).toEqual({ toLabel: "대상", to: "Bob 댓글", body: "고마워요", ref: "j-1-ab12" });
 });
+
+test("a card with both 참조 and 규칙 lines reads back with each", () => {
+	const text = draftApprovalBlock({ to: "kim@example.com, lee@example.com", toLabel: "받는이", cc: ["park@example.com"], rule: "악보 요청", subject: "Re: 악보", body: "보내 드립니다.", ref: "RABCDEF", question: "이 답장 보낼까요?" });
+	expect(parseDraftApproval(text)).toMatchObject({ to: "kim@example.com, lee@example.com", cc: ["park@example.com"], rule: "악보 요청", subject: "Re: 악보", body: "보내 드립니다." });
+});
