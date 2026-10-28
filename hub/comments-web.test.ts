@@ -133,7 +133,7 @@ describe("댓글 on a phone (390x844)", async () => {
 
 	test("a reply that did not go out offers 다시 보내기 and 지우기, and each posts once", async () => {
 		sends = [{ id: "send:cm:youtube:c2", commentId: "cm:youtube:c2", text: "곧 올릴게요", state: "failed", reason: "403 forbidden", at: at(22, 4, 0) }];
-		const v = open(390, 844);
+		const v = await open(390, 844);
 		await boot(v);
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
 		await waitFor(v, `CM.view && CM.view.sends.length && document.querySelector('#cm [data-k="retry"]')`);
