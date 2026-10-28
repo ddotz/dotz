@@ -65,7 +65,7 @@ async function boot(width: number, height: number, theme: "light" | "dark" = "li
 	await run(v, `if (dotzTheme.get() !== ${JSON.stringify(theme)}) dotzTheme.toggle()`);
 	await waitFor(v, `typeof INTG !== "undefined" && INTG.items.length === 1 && CONV.has("mail:fx-out")`);
 	await run(v, `go("monitoring", "i:mail")`);
-	await waitFor(v, `document.querySelectorAll("#mon-tl .mr").length === 8`);
+	await waitFor(v, `document.querySelectorAll("#mon-tl .mr").length === 7`);
 	return v;
 }
 const states = (v: View) => q<Record<string, string>>(v, `const o = {}; for (const r of document.querySelectorAll("#mon-tl .mr")) o[r.querySelector(".rc-title").textContent] = [...r.querySelectorAll(".rc-hd .tag")].map(t => t.textContent).join("|"); return o;`);
@@ -87,7 +87,6 @@ for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 				"일정 조율": "답장함",
 				"업데이트 안내": "답장 안 함",
 				"배송 완료": "답장 안 함",
-				"Re: 일정 조율": "",
 			});
 			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr .tag.unreplied")].map(t => t.textContent)`)).toEqual(["답장 필요", "초안 있음"]);
 			// one order on every row: sender · state · unread · clip · time · ⋯ (each only when it has something to say, the ⋯ always)
@@ -98,12 +97,11 @@ for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 				expect(o.map(k => RANK.indexOf(k))).toEqual([...o.map(k => RANK.indexOf(k))].sort((a, b) => a - b));
 				expect([o[0], o.at(-1)]).toEqual(["src", "more"]);
 			}
-			expect(await q<string>(v, `return [...document.querySelectorAll("#mon-tl .mr")].find(r => r.querySelector(".rc-title").textContent === "Re: 일정 조율").querySelector(".rc-src").textContent`)).toBe("나 → Han");
 			expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
 			await shot(v, `mail-states-${width}-light.png`);
 		});
 
-		test("the filter shows 답장 필요, 답장함 or 보낸 메일 only, with counts, and 전체 brings everything back", async () => {
+		test("the filter shows 답장 필요, 답장함 or 보낸 메일 only, with counts, and 전체 brings back the received mail (the sent one stays under 보낸 메일)", async () => {
 			const v = await boot(width, height);
 			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "안 읽음2", "답장 필요2", "확인 대기", "답장함1", "보낸 메일1"]);
 			await pick(v, "unread");
@@ -115,14 +113,17 @@ for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 			expect(await titles(v)).toEqual(["일정 조율"]);
 			await pick(v, "sent");
 			expect(await titles(v)).toEqual(["Re: 일정 조율"]);
+			expect(await states(v)).toEqual({ "Re: 일정 조율": "" });
+			expect(await q<string>(v, `return document.querySelector("#mon-tl .mr .rc-src").textContent`)).toBe("나 → Han");
 			await shot(v, `mail-filter-sent-${width}-light.png`);
 			await pick(v, "all");
-			expect((await titles(v)).length).toBe(8);
+			expect((await titles(v)).length).toBe(7);
+			expect(await titles(v)).not.toContain("Re: 일정 조율");
 		});
 
 		test("dark theme draws the same labels", async () => {
 			const v = await boot(width, height, "dark");
-			expect(Object.keys(await states(v)).length).toBe(8);
+			expect(Object.keys(await states(v)).length).toBe(7);
 			await shot(v, `mail-states-${width}-dark.png`);
 		});
 	});
