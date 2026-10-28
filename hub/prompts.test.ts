@@ -661,3 +661,22 @@ test("a promptless answer stays in the last turn's conversation and never goes t
 	await Promise.resolve();
 	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([["web", "w1"], ["th:9", "t1"]]);
 });
+
+// 2026-10-28 13:25Z (Mac mini): the pinned account was rate-limited at the start of the turn; the turn ended with no text and the owner's
+// message was closed as answered-with-nothing, so the run that resumed after the limit had no request to answer.
+test("a turn stopped by a provider error before writing anything keeps its request open, and the resumed run answers it there", async () => {
+	const { q, state, open, startTurn } = setup();
+	startTurn("A: sleep 후 답해 줘", { target: "web", replyTo: "a1" });
+	q.settleTurn(true);
+	expect(open().map(p => p.replyTo)).toEqual(["a1"]);
+	expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["a1"]);
+	q.onAnswer("A 작업이 끝났어요");
+	await Promise.resolve();
+	expect(state.posts).toEqual([{ target: "web", text: "A 작업이 끝났어요", replyTo: "a1" }]);
+	expect(open()).toEqual([]);
+	// without the error the same textless turn is closed as before
+	const plain = setup();
+	plain.startTurn("B", { target: "web", replyTo: "b1" });
+	plain.q.settleTurn();
+	expect(plain.open()).toEqual([]);
+});
