@@ -161,11 +161,11 @@ window.addEventListener("hashchange", () => { if (history.state && history.state
 
 /* ---------- shared bits ---------- */
 const limitFrac = l => l.limit ? Math.max(0, Math.min(1, l.remaining != null ? l.remaining / l.limit : 1 - (l.used || 0) / l.limit)) : null;
+// A limit hit or running out pauses work until the owner switches account or waits: orange, never red (owner 2026-10-28).
+const limitHit = l => { const f = limitFrac(l); return /exhaust|reach|over|critical|block|deni|limit_hit|full/.test(String(l.status || "").toLowerCase()) || (f != null && f <= .1); };
 function limitTone(l) {
-  const st = String(l.status || "").toLowerCase(), f = limitFrac(l);
-  if (/exhaust|reach|over|critical|block|deni|limit_hit|full/.test(st) || (f != null && f <= .1)) return "err";
-  if (/warn|low|near|high/.test(st) || (f != null && f <= .3)) return "warn";
-  return "";
+  const f = limitFrac(l);
+  return limitHit(l) || /warn|low|near|high/.test(String(l.status || "").toLowerCase()) || (f != null && f <= .3) ? "warn" : "";
 }
 const bar = l => { const f = limitFrac(l); return f == null ? null : el("div", { class: `bar ${limitTone(l)}`, role: "progressbar", "aria-valuenow": Math.round(f * 100), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${(f * 100).toFixed(1)}%` })); };
 const pctText = l => { const f = limitFrac(l); return f == null ? "–" : `${Math.round(f * 100)}% 남음`; };

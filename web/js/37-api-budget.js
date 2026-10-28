@@ -6,7 +6,7 @@ function budgetCard(B) {
     el("button", { class: "btn text", type: "button", onclick: () => budgetDialog() }, "설정")));
   const src = B.source === "admin" ? "콘솔 기준 (관리자 키)" : "dotz 사용분 추정";
   if (B.limit_usd) {
-    const pct = B.pct || 0, tone = pct >= 90 ? "err" : pct >= 80 ? "warn" : "";
+    const pct = B.pct || 0, tone = pct >= 80 ? "warn" : "";
     card.append(el("div", { class: "lim" },
       el("div", { class: "kv" }, el("span", { class: "k", text: `${abUsd(B.spent_usd)} / ${abUsd(B.limit_usd)}` }), el("span", { style: "font-weight:500", text: `${Math.round(pct)}% 사용` })),
       el("div", { class: `bar ${tone}`, role: "progressbar", "aria-valuenow": Math.round(Math.min(100, pct)), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct).toFixed(1)}%` })),

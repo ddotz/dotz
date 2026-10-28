@@ -1,7 +1,7 @@
 /* ---------- subagents: live progress per source ---------- */
 let SUBS = {};
 const subKo = { running: "진행 중", done: "완료", failed: "실패", aborted: "중단됨" };
-const subTone = s => ({ running: "pri", done: "ok", failed: "err", aborted: "warn" })[s] || "";
+const subTone = s => ({ running: "pri", done: "ok", failed: "err", aborted: "" })[s] || "";
 const runningSubs = src => (SUBS[src] || []).filter(s => s.status === "running");
 
 /* ---------- 백그라운드 작업: S.work from /api/state (hub/bgwork.ts). A request answered with [later] keeps working after its turn ended. ---------- */

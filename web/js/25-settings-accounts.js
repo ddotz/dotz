@@ -16,7 +16,7 @@ function accTags(a, pin) {
   // a.current: the account requests really use (OmO skips a blocked one); blocked_tag: "한도 걸림 · 01:00까지"
   // 고정: the fixed account (pin) carries the badge instead
   if (pin ? a.name === pin : a.current) t.push([pin ? "사용 중 · 고정" : "사용 중", "pri"]);
-  if (a.blocked) t.push([a.blocked_tag || "쓸 수 없음", a.blocked === "rate_limit" ? "warn" : "err"]);
+  if (a.blocked) t.push([a.blocked_tag || "쓸 수 없음", "warn"]);   // a limit or a login only the owner can fix: orange
   else if (!(pin ? a.name === pin : a.current)) t.push(["쓸 수 있음", "ok"]);
   return t;
 }
@@ -125,7 +125,7 @@ function accProviderSections(groups) {
       const tags = [];
       if (a.current) tags.push(["사용 중", "pri"]);
       if (a.pinned) tags.push(["고정", "ok"]);
-      if (a.blocked) tags.push([a.blocked_tag || (a.blocked === "auth_error" ? "로그인 필요" : "쓸 수 없음"), a.blocked === "rate_limit" ? "warn" : "err"]);
+      if (a.blocked) tags.push([a.blocked_tag || (a.blocked === "auth_error" ? "로그인 필요" : "쓸 수 없음"), "warn"]);
       else if (!a.current && !a.pinned) tags.push(["쓸 수 있음", "ok"]);
       const label = a.label || a.name;
       rows.push(el("div", { class: `li acc gen${a.current ? " on" : ""}` },

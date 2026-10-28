@@ -178,7 +178,7 @@ function nyRows(items) {
     if (it.n && it.n.pc) for (const h of node.querySelectorAll(".hrx-m:not(.ntg-h) .hn1")) h.append(el("span", { class: "tag mon-pc", text: it.n.pc.name }));   // another computer's question names it
     for (const hs of node.querySelectorAll(".hrx-m:not(.ntg-h) .hs")) hs.textContent = it.act;
     for (const b of node.querySelectorAll(".hrx-m:not(.ntg-h)")) b.setAttribute("aria-label", b.getAttribute("aria-label").replace(/답변 필요$/, it.crit ? `중요 · ${it.act}` : it.act));
-    if (it.crit) { node.classList.add("crit"); for (const e of node.querySelectorAll(".hs, .dot")) e.classList.add("err"); }
+    if (it.crit) { node.classList.add("crit"); if (it.n && it.n.tone === "fail") for (const e of node.querySelectorAll(".hs, .dot")) e.classList.add("err"); }   // a login stays orange; only a failure is red
     return node;
   };
   for (let i = 0; i < items.length;) {

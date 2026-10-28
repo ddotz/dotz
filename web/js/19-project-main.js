@@ -78,7 +78,7 @@ function pmPrimary(rows, live, working, workRun) {
     el("button", { class: "btn pm-need-a", type: "button", "data-k": "answer", onclick: () => openTarget(`lane:${ask.name}`, lastChatView()) }, "답하기"));
   const run = working[0] || live[0];
   if (run) return el("div", { class: "card pm-calm" },
-    el("div", { class: "pm-calm-k" }, el("span", { class: `dot ${run.status === "working" || run.status === "starting" ? "pri" : "ok"}` }), el("span", { text: run.status === "working" || run.status === "starting" ? "지금 작업 중" : "세션이 열려 있어요" })),
+    el("div", { class: "pm-calm-k" }, el("span", { class: `dot${run.status === "working" || run.status === "starting" ? " pri" : ""}` }), el("span", { text: run.status === "working" || run.status === "starting" ? "지금 작업 중" : "세션이 열려 있어요" })),
     el("div", { class: "pm-calm-t", text: run.title }),
     el("button", { class: "btn tonal", type: "button", onclick: () => openTarget(`lane:${run.name}`, lastChatView()) }, "채팅 열기"));
   if (workRun.length) return el("div", { class: "card pm-calm" },
@@ -281,12 +281,12 @@ function pmSessions(D, rows) {
 
 const PM_KIND = { monitor: "모니터링", routine: "루틴", schedule: "예약" };
 const pmEvery = n => !(n > 0) ? "" : n % 60 === 0 ? `매 ${n / 60}시간` : `매 ${n}분`;
-// Health dot: ok after a clean run, warn after a failed one, err after three in a row; a paused item has none.
+// Health dot: ok after a clean run, err after a failed one (failure is red, owner 2026-10-28); a paused item has none.
 function pmHealth(x) {
   if (x.paused) return ["", ""];
   const n = x.fails || 0;
-  if (x.lastOk === false) return n >= 3 ? ["err", `계속 실패 ${n}번`] : ["warn", "마지막 실행 실패"];
-  if (n > 0) return ["warn", `실패 ${n}번`];
+  if (x.lastOk === false) return n >= 3 ? ["err", `계속 실패 ${n}번`] : ["err", "마지막 실행 실패"];
+  if (n > 0) return ["err", `실패 ${n}번`];
   return [x.lastRun ? "ok" : "", ""];
 }
 // The recurring work of a project, monitors first: scripts the gateway runs, then routines and one-off schedules that wake the model.
@@ -377,8 +377,8 @@ const pmSessionRow = r => sessionRow({ name: r.name, title: r.title, status: r.s
 const pmWorkRow = w => {
   const run = w.status === "running";
   return el("button", { class: "li tap", type: "button", onclick: () => workGo(w) },
-    el("span", { class: `dot ${run ? "pri" : w.status === "done" ? "ok" : "err"}` }),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${w.status === "done" ? "끝남" : "실패"} · ${workAgo(w)}` })),
+    el("span", { class: `dot ${run ? "pri" : w.status === "done" ? "ok" : w.cancelled ? "" : "err"}` }),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : "실패"} · ${workAgo(w)}` })),
     icon("chev", "lead"));
 };
 // 진행 중: sessions that are alive and background jobs that are running. 최근 세션: the ended ones, newest first.
@@ -460,11 +460,11 @@ setInterval(() => {
 /* ---------- context ---------- */
 let C = null, ctxTimer;
 const ctxTokens = name => ((C && C.processes) || []).find(p => p.name === name)?.tokens ?? 0;
-const ctxTone = pct => pct == null ? "" : pct >= 80 ? "err" : pct >= 60 ? "warn" : "";
+const ctxTone = pct => pct != null && pct >= 60 ? "warn" : "";   // context running out needs the owner: orange, never red (owner 2026-10-28)
 function compactState(c) {
   if (!c || !c.state) return null;
   const t = c.at ? kstTime(c.at) : "";
-  if (c.state === "queued") return { tone: "warn", text: "압축 대기" };
+  if (c.state === "queued") return { tone: "pri", text: "압축 대기" };
   if (c.state === "compacting") return { tone: "pri", text: `압축 중 · ${t}` };
   if (c.state === "done") return { tone: "ok", text: `압축 완료 ${t}${c.tokensBefore ? ` · ${num(c.tokensBefore)} 토큰 전` : ""}` };
   return { tone: "err", text: `압축 실패 ${t}${c.error ? ` · ${c.error}` : ""}` };

@@ -576,7 +576,7 @@ function ntDetailOpen(n) {
 }
 function ntDetailPaint(n) {
   clear(NS.h.box).append(
-    fsHead([el("span", { class: "fs-ey warn", text: "문제가 생겼어요" })], { close: () => ntSheetClose() }),
+    fsHead([el("span", { class: "fs-ey err", text: "문제가 생겼어요" })], { close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "알림" }),
       el("div", { class: "ds-m", text: ntWhen(n) }),
