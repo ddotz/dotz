@@ -222,10 +222,10 @@ function homeNowRow(t, label, tone) {
   const lv = lane ? liveModel(t) : null, extra = lv && lv.fallback ? el("span", { class: "smodel" }, selText(lv.sel), fbTag(lv.fallback, lv.conf)) : null;
   if (lane) return sessionRow(lane, { line, extra, ...(tone === "att" ? { word: label, tone: "warn" } : {}) });   // a session: title, project, status, one tap to its chat
   return el("button", { class: "hr", type: "button", onclick: () => openTarget(t, lastChatView()), "aria-label": `${targetName(t)} · ${label}` },
-    el("span", { class: `dot ${tone === "att" ? "att" : statusTone(i.status)}` }),
+    el("span", { class: `dot ${tone === "att" ? "att" : runBusy(t) ? "pri" : statusTone(i.status)}` }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: targetName(t) })), el("span", { class: "ha", text: line })),
     subs.length ? el("span", { class: "hp", title: "서브에이전트 끝난 수 / 전체", text: `서브에이전트 ${done}/${subs.length}` }) : null,
-    el("span", { class: `hs ${tone === "att" ? "warn" : statusTone(i.status)}`, text: label }));
+    el("span", { class: `hs ${tone === "att" ? "warn" : runBusy(t) ? "pri" : statusTone(i.status)}`, text: label }));
 }
 // 미답장 (hub/unreplied.ts): the apps whose items still wait for the owner's reply, each one row, apart from the read/unread counts.
 function homeOwedRow(it) {
@@ -251,10 +251,10 @@ function renderHomeNow() {
   const live = t => { const s = targetInfo(t).status; return s === "working" || s === "starting"; };
   const runT = all.filter(live), restT = all.filter(t => !live(t));
   const bg = workRunning(), ended = workEnded(), working = runT.length + bg.length;
-  const restRow = t => homeNowRow(t, targetInfo(t).alive ? statusKo(targetInfo(t).status) : "종료됨", "");
+  const restRow = t => homeNowRow(t, !targetInfo(t).alive ? "종료됨" : runBusy(t) ? "진행 중" : statusKo(targetInfo(t).status), "");
   clear(box).append(
     // Three kinds, three places: 답변 필요 (a decision only the owner can make), 답장 대기 (replies he owes, per app), 지금 진행 중; plain news is the 알림 card.
-    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), crit ? el("span", { class: "tag err", text: `중요 ${crit}` }) : null, waiting ? el("span", { class: "sup", text: `${waiting}` }) : null),
+    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), crit ? el("span", { class: "tag warn", text: `중요 ${crit}` }) : null, waiting ? el("span", { class: "sup", text: `${waiting}` }) : null),
     nyListNode(needs),
     ...(owed.length || drafts ? [el("div", { class: "hn-h" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null), el("div", { class: "hn" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : []),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), working ? el("span", { class: "sup", text: `${working}개 작업 중` }) : null),
@@ -293,7 +293,7 @@ function renderHome() {
   for (const p of ((C && C.processes) || []).filter(x => x.running)) {
     const id = `ctx:${p.name}`, pct = p.percent, who = p.kind === "lane" ? targetName(`lane:${p.name}`) : botName, v = pct != null ? `${pct}%` : `${num(p.tokens)} 토큰`;
     const bar = () => el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` }));
-    E.ctx.push({ id, tone: pct >= 90 ? "err" : pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 4, h: 2 }, HOME_SMALL],
+    E.ctx.push({ id, tone: pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 4, h: 2 }, HOME_SMALL],
       card: () => [el("div", { class: "ch" }, el("h3", { text: `컨텍스트 · ${who}` }), el("span", { class: "sup", text: v }), menuBtn(id)), bar()],
       row: () => [el("div", { class: "kv" }, el("span", { class: "k", text: who }), el("span", { class: "v", text: v })), bar()] });
   }
@@ -301,7 +301,7 @@ function renderHome() {
     const provs = (HQ.providers || []).filter(p => (p.limits || []).length), multi = provs.length > 1;
     for (const pr of provs) for (const l of pr.limits) {
       const id = `limit:${pr.provider}:${l.id}`, f = limitFrac(l), name = limitLabel(pr, l, multi);
-      E.limit.push({ id, tone: limitTone(l) === "err" ? "err" : f != null && f <= .2 ? "warn" : "", open: () => go("usage"), size: [{ w: 4, h: 2 }, HOME_SMALL],
+      E.limit.push({ id, tone: limitHit(l) || (f != null && f <= .2) ? "warn" : "", open: () => go("usage"), size: [{ w: 4, h: 2 }, HOME_SMALL],
         card: () => [el("div", { class: "ch" }, el("h3", { text: name }), el("span", { class: "sup", text: pctText(l) }), menuBtn(id)), bar(l)],
         row: () => [el("div", { class: "kv" }, el("span", { class: "k", text: name }), el("span", { class: "v", text: pctText(l) })), bar(l)] });
     }
@@ -309,10 +309,10 @@ function renderHome() {
   for (const p of (P && P.providers) || []) {
     if (!isConnected(p) && !needsAttention(p)) continue;
     const id = `prov:${p.id}`, bad = needsAttention(p), st = bad ? "로그인 필요" : p.auth === "api_key" ? "API 키" : "로그인됨";
-    E.prov.push({ id, tone: bad ? "err" : "", open: () => go("providers"), size: [{ w: 4, h: 2 }, HOME_SMALL],
-      card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${bad ? "err" : "ok"}` }), el("h3", { text: p.name || p.id }), el("span", { class: `tag ${bad ? "err" : ""}`, text: st }), menuBtn(id)),
+    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("providers"), size: [{ w: 4, h: 2 }, HOME_SMALL],
+      card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${bad ? "att" : "ok"}` }), el("h3", { text: p.name || p.id }), el("span", { class: `tag ${bad ? "warn" : ""}`, text: st }), menuBtn(id)),
         p.account ? el("div", { class: "sup", text: p.account }) : null],
-      row: () => [el("div", { class: "row" }, el("span", { class: `dot ${bad ? "err" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: bad ? st : p.account || st }))] });
+      row: () => [el("div", { class: "row" }, el("span", { class: `dot ${bad ? "att" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: bad ? st : p.account || st }))] });
   }
   const loaded = { ctx: !!C, limit: !!HQ, prov: !!P };
   for (const [kind, list] of Object.entries(E)) {
@@ -421,8 +421,8 @@ function workRow(w) {
   const act = run ? ["중단", b => workCancel(w.id, b)] : done ? null : ["다시 맡기기", b => workRetry(w.id, b)];
   return el("div", { class: "hr hrx", "data-work": w.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => workGo(w), "aria-label": `${w.description} · ${state} · 대화로 가기` },
-      el("span", { class: `dot ${run ? "pri" : done ? "ok" : "err"}` }),
+      el("span", { class: `dot ${run ? "pri" : done ? "ok" : w.cancelled ? "" : "err"}` }),
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: line })),
-      el("span", { class: `hs ${run ? "pri" : done ? "" : "err"}`, text: state })),
+      el("span", { class: `hs ${run ? "pri" : done || w.cancelled ? "" : "err"}`, text: state })),
     act ? el("button", { class: "btn text", type: "button", style: "flex:none;margin-right:8px", "data-act": run ? "cancel" : "retry", onclick: ev => act[1](ev.currentTarget), text: act[0] }) : null);
 }

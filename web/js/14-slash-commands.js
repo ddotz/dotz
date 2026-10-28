@@ -341,7 +341,7 @@ function renderCtxRing() {
   const label = `${owner} 컨텍스트 ${p.percent != null ? `${Math.round(p.percent)}% · ${kfmt(p.tokens)}/${kfmt(p.window)}` : `${kfmt(p.tokens)} 토큰`}`;
   b.title = label; b.setAttribute("aria-label", label);
   b.textContent = p.percent != null ? `컨텍스트 ${Math.round(p.percent)}%` : `컨텍스트 ${kfmt(p.tokens)}`;
-  b.classList.toggle("err", pct >= 80);
+  b.classList.toggle("warn", pct >= 80);
 }
 /* ---------- composer chips: model / effort / context of the current target (GET/PUT /api/target) ---------- */
 // The chips are quick switches; the last row of each opens the 모델 · 폴백 screen at this target (fallback order lives there).
