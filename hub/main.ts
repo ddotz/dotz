@@ -61,6 +61,7 @@ import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { compressResponse } from "./compress.ts";
 import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, replies, bgWork } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
+import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
@@ -366,9 +367,12 @@ startWorktreeCleanup();
 startDataCleanup();
 startMemoryGuard((key, text) => {
 	if (key === "orchestrator") return alert(`${NAME}: ${text}`);
+	// A conversation session's notice goes into its own conversation.
+	if (key.startsWith("conv:")) return void out(convs.get(key.slice(5))?.primary ?? "alert", text, undefined, { source: "gateway" }).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 	void send(key, text).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 });
 startLaneIdleStop();
+convs.startIdleSweep();
 startLaneQueue();
 startOrphanReaper();
 startHostSweep();
@@ -476,9 +480,16 @@ function busyNow(): string[] {
 	const justDeferred = queue.deferredOpen().some(d => Date.now() - d.at <= DEFER_GRACE_MS);
 	const workers = running ? `orchestrator background workers (${running})` : justDeferred ? "orchestrator background workers" : "";
 	const laneWorkers = (l: { sessionFile?: string }) => runningOmoWorkers(l.sessionFile);
+	// Each conversation session holds a restart the way main does: its turn or compaction, its workers, a request it just deferred.
+	const sessions = convs.conversations().flatMap(c => {
+		const n = c.bg.running();
+		const deferred = c.queue.deferredOpen().some(d => Date.now() - d.at <= DEFER_GRACE_MS);
+		return [orchBusy(c.o.orch) ? `conversation session ${c.key}` : "", n ? `conversation session ${c.key} background workers (${n})` : deferred ? `conversation session ${c.key} background workers` : ""];
+	});
 	return [
 		orchBusy() ?? "",
 		workers,
+		...sessions,
 		replies.size() ? "reply" : "",
 		...[...lanes.values()].flatMap(l => {
 			const n = laneWorkers(l);

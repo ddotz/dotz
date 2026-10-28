@@ -232,12 +232,15 @@ function verifyTool(pi: any): void {
 	});
 }
 
+// A conversation's own session (DOTZ_CONV, hub/convsessions.ts) is reminded of its scope after a compaction, as at its start.
+const convScope = (): string => `You are ${NAME}'s session for the conversation ${process.env.DOTZ_CONV_NAME || process.env.DOTZ_CONV} (${process.env.DOTZ_CONV}). You answer only here; the main session oversees every conversation; to hand work elsewhere use dotz_conv send main.`;
+
 function orchestratorTools(pi: any): void {
 	const z = pi.zod;
 	verifyTool(pi);
 	authTool(pi);
 	pi.on("session_compact", (_e: any, ctx: any) => {
-		if (isMain(ctx)) pi.sendMessage({ customType: "dotz-mode", content: recall(), display: false }, { deliverAs: "nextTurn" });
+		if (isMain(ctx)) pi.sendMessage({ customType: "dotz-mode", content: recall() + (process.env.DOTZ_CONV ? `\n\n${convScope()}` : ""), display: false }, { deliverAs: "nextTurn" });
 	});
 	pi.registerTool({
 		name: "dotz_send",
@@ -245,8 +248,27 @@ function orchestratorTools(pi: any): void {
 		description: `Send a message as ${NAME} to a channel other than the one that asked, or the one progress note (update_key) mid-turn. Your final answer is already delivered to the asking channel; text you send there before it is held and goes out with it, so answer only when it is ready. target: chat, dm, worklog, alert, lane:<name>, ch:<id> (a work channel), th:<id> (a thread), web, terminal. reply_to = a Discord msg id. update_key (e.g. "progress") = one evolving status message per target and key, edited in place on each call instead of posting again (not counted as your answer). A \`[file] /absolute/path\` line in text attaches that file (too big: a download link). resolves = words from the title or text of an earlier [ask] of yours (or "*" for all your open ones) whose matter is now over, e.g. the owner did the step you asked for outside the app and you went on: those questions leave the owner's 답변 필요 list and badge; give it on the post that reports it ([done]). Never include secrets.`,
 		parameters: z.object({ target: z.string(), text: z.string(), reply_to: z.string().optional(), update_key: z.string().optional(), resolves: z.string().optional() }),
 		async execute(_id: string, p: any) {
-			const r = await call("/api/send", { method: "POST", body: JSON.stringify(p) });
+			// The hub refuses a conversation session's post into another conversation (hub/routes.ts /api/send).
+			const r = await call("/api/send", { method: "POST", body: JSON.stringify({ ...p, session: process.env.DOTZ_CONV ?? "main" }) });
 			return { content: [{ type: "text", text: r.delivered ? `sent to ${p.target}` : `not delivered: ${r.reason}` }] };
+		},
+	});
+	pi.registerTool({
+		name: "dotz_conv",
+		label: "Dotz conversations",
+		description: `The other conversations ${NAME} runs: each mail thread, project channel, settings screen and the 알림/작업내역 windows answers in its own session, so its context is not mixed with yours. You (the main session) oversee them all: action=list shows each one and what it is doing; read {key} shows its recent exchange; send {key, text} hands work into it (its answer is posted in that conversation). A conversation session may send only to main. Do not pass work on in a loop: when you are handed another session's work, answer it yourself.`,
+		parameters: z.object({ action: z.enum(["list", "read", "send"]), key: z.string().optional(), text: z.string().optional(), limit: z.number().min(1).max(40).optional() }),
+		async execute(_id: string, p: any) {
+			const from = process.env.DOTZ_CONV ?? "main";
+			if (p.action === "list") {
+				const r = await call("/api/conv-sessions");
+				return { content: [{ type: "text", text: JSON.stringify(r).slice(0, 4000) }] };
+			}
+			if (!p.key) return { content: [{ type: "text", text: "key required (from list)" }] };
+			const out = p.action === "read"
+				? await call(`/api/conv-sessions/${encodeURIComponent(p.key)}/history?limit=${p.limit ?? 20}`).catch(e => ({ error: e.message }))
+				: await call(`/api/conv-sessions/${encodeURIComponent(p.key)}/send`, { method: "POST", body: JSON.stringify({ text: p.text, from }) }).catch(e => ({ error: e.message }));
+			return { content: [{ type: "text", text: JSON.stringify(out).slice(0, 8000) }] };
 		},
 	});
 	pi.registerTool({

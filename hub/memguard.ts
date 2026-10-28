@@ -9,6 +9,7 @@ import { lanesMaxRssGb, log } from "./config.ts";
 import { msg } from "./i18n.ts";
 import { lanes, restartLane } from "./lanes.ts";
 import { orch, orchestratorPid, restart as restartOrchestrator } from "./orchestrator.ts";
+import { convs } from "./convsessions.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export const CHECK_MS = 30_000;
@@ -45,6 +46,10 @@ function agents(): Agent[] {
 	const list: Agent[] = [];
 	const op = orchestratorPid();
 	if (op && orch.status !== "rate-limited") list.push({ key: "orchestrator", pid: op, busy: orch.status === "working", restart: () => restartOrchestrator() });
+	for (const c of convs.conversations()) {
+		const pid = c.o.orchestratorPid();
+		if (pid && c.o.orch.status !== "rate-limited") list.push({ key: `conv:${c.key}`, pid, busy: c.o.orch.status === "working", restart: () => c.o.restart() });
+	}
 	for (const lane of lanes.values()) {
 		if (!lane.proc || lane.status === "rate-limited") continue;
 		list.push({ key: `lane:${lane.name}`, pid: lane.proc.pid, busy: lane.status === "working" || lane.status === "starting", restart: note => restartLane(lane.name, note) });
