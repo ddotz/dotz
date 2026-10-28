@@ -24,6 +24,7 @@ export type DraftRec = {
 	cc?: string[]; // 참조 addresses; absent = none
 	mode?: "reply" | "all"; // 답장 | 전체 답장 of the card: which answer the recipients came from (absent on older records and on a chat or comment draft)
 	ownerRecipients?: true; // the owner set the 받는 사람·참조 himself on the card: any address he added is sent, not only the original's people
+	rule?: { id: string; name: string }; // the 자동 초안 규칙 that drafted it (lib/rules.ts): its name is the card's badge
 	subject?: string;
 	body: string;
 	status: DraftStatus;
