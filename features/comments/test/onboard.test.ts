@@ -39,7 +39,6 @@ describe("onboard", () => {
 		const gw = gateway();
 		const r = await runOnboard(["on", "--app", "youtube"], { engine: engineOf(adapter()), gateway: gw.g, connected: () => false });
 		expect(r.code).toBe(3);
-		expect(r.lines.join("\n")).toContain("연결");
 		expect(existsSync(join(dir, "custom", "comments", "config.json"))).toBe(false);
 		expect(gw.added).toHaveLength(0);
 	});

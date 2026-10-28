@@ -1,48 +1,35 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { PtyHost, ptyRoute } from "./pty.ts";
 import { advance } from "./runtime/test-clock.ts";
 import { join } from "node:path";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // A stand-in for the owner's shell: a prompt, an echo for plain commands, and a sudo that asks for a password with echo off.
 const SHELL = `printf '$ '; while IFS= read -r line; do case "$line" in sudo*) printf '[sudo] password for test: '; stty -echo; IFS= read -r pw; stty echo; printf '\\n'; printf 'PW:%s\\n' "$(printf %s "$pw" | cksum | cut -d' ' -f1)";; *) printf 'RAN:%s\\n' "$line";; esac; printf '$ '; done`;
 const SECRET = "s3cret-테스트-77";
 const cksum = (s: string) => new TextDecoder().decode(Bun.spawnSync(["sh", "-c", `printf %s "$1" | cksum | cut -d' ' -f1`, "sh", s]).stdout).trim();
-const SNAP = "/tmp/dotz-shell-test";
 
 const host = new PtyHost({ cmd: ["/bin/sh", "-c", SHELL] });
 // What the page POSTs to the PTY endpoints: the stand-in for the socket the keystrokes must reach.
 const sent: { path: string; body: Record<string, unknown> }[] = [];
 const wake = new Set<() => void>();
 const typed = () => sent.filter(x => x.path === "/api/pty/input" && !x.body.secret).map(x => x.body.data as string).join("");
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
+const hub = fakeHub({
+	api: async (req, url) => {
 		if (url.pathname.startsWith("/vendor/")) return new Response(Bun.file(join(import.meta.dir, "..", "web", url.pathname)));
 		if (req.method === "POST" && url.pathname.startsWith("/api/pty/")) { sent.push({ path: url.pathname, body: (await req.clone().json()) as Record<string, unknown> }); for (const f of [...wake]) f(); }
 		const pty = await ptyRoute(req, url, host);
 		if (pty) return pty;
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
 		return url.pathname.startsWith("/api/") ? Response.json({}) : new Response("not found", { status: 404 });
 	},
 });
-const base = `http://127.0.0.1:${server.port}/`;
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
+const base = `${hub.origin}/`;
 const open = async (width: number, height: number): Promise<View> => {
-	const v = new Bun.WebView({ width, height });
-	views.push(v);
+	const v = await hub.view({ width, height });
 	await v.navigate(base);
 	return v;
 };
 // Resolves once the page-side condition holds (checked on every DOM change); rejects after `ms`.
-const waitFor = (v: View, expr: string, ms = 30_000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const done = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true }); done(); })`);
 // Terminal output can sit undelivered in the headless page until the stream's next write (seen under load: the hub's ring had
 // the sudo prompt, the page had only the command's echo, and the next write brought it). In the app that next write is the
 // stream's 15 s ping at the latest, so a wait that runs out moves the test clock past one ping and waits again.
@@ -89,8 +76,7 @@ const openTerm = async (v: View) => {
 	await waitTerm(v, `typeof SH !== "undefined" && SH.alive && ${BUF}.startsWith("$")`);
 };
 
-beforeAll(() => { Bun.spawnSync(["mkdir", "-p", SNAP]); });
-afterAll(() => { for (const v of views) v.close(); host.kill(); server.stop(true); });
+afterAll(() => hub.stop());
 
 describe("the web terminal is a real terminal, in a headless browser", () => {
 	test("on a desktop width: the prompt is in the terminal, there is no command field, no run button, no key row", async () => {
@@ -109,7 +95,6 @@ describe("the web terminal is a real terminal, in a headless browser", () => {
 		expect(m.cols).toBeGreaterThan(60);
 		expect(m.title).toStartWith("터미널 ·");
 		await settled(v);
-		await Bun.write(`${SNAP}/terminal-desktop.png`, await v.screenshot());
 	}, 90_000);
 
 	test("keystrokes reach the PTY: typing, Enter, arrows, Ctrl+C, paste, and the shell's answer shows in the terminal", async () => {
@@ -159,7 +144,6 @@ describe("the web terminal is a real terminal, in a headless browser", () => {
 		expect(m.termH).toBeGreaterThan(m.dlgH * 0.6);
 		expect(m.cols).toBeGreaterThanOrEqual(30);
 		await settled(v);
-		await Bun.write(`${SNAP}/terminal-390.png`, await v.screenshot());
 		sent.length = 0;
 		await v.evaluate(`document.querySelector(".sh-keys .sh-k:nth-child(4)").click()`);
 		await v.evaluate(`document.querySelector(".sh-keys .sh-k:nth-child(8)").click()`);
@@ -200,7 +184,6 @@ describe("the web terminal is a real terminal, in a headless browser", () => {
 		expect(asked).toMatchObject({ type: "password", ac: "off", inForm: false });
 		expect(asked.sw).toBeLessThanOrEqual(390);
 		await settled(v);
-		await Bun.write(`${SNAP}/terminal-password-390.png`, await v.screenshot());
 
 		sent.length = 0;
 		await v.evaluate(`document.querySelector(".sh-pw-in").value = ${JSON.stringify(SECRET)}`);
