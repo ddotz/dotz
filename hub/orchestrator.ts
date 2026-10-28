@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
-import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
+import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { dropSection, renderState } from "./recall-parts.ts";
 import { featurePrompt } from "./featuredirs.ts";
@@ -27,7 +27,9 @@ import { isLater, LATER_LINE } from "./tone.ts";
 
 const STATE = join(DATA_DIR, "orchestrator.json");
 const ROTATE_BYTES = 50e6;
-const ROTATE_TOKENS = cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens;
+// The orchestrator's compaction point: the running model's own (config context.models, the 컨텍스트 screen) or
+// orchestrator.rotate_tokens; re-read at every idle point, so a saved value applies from the next turn.
+export const orchestratorCompactAt = () => compactAtFor(orch.activeModel || selectorOf(orchestratorModel()), cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens);
 export const MAX_RESTARTS = 3;
 export const RESTART_WINDOW_MS = 10 * 60_000;
 // pausedUntil: a usage-limit pause, so a gateway restart inside it holds messages instead of replaying them into the limit.
@@ -347,7 +349,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					pauseAlerted = false;
 					for (const h of held.splice(0)) sendOwner(h.text, h.header);
 				} else if (orch.status === "idle") {
-					if (rotateWhenIdle || (++turnsSinceStart > 1 && orch.ctx.tokens > ROTATE_TOKENS && !compacting())) limitContext();
+					if (rotateWhenIdle || (++turnsSinceStart > 1 && orch.ctx.tokens > orchestratorCompactAt() && !compacting())) limitContext();
 					else if (pendingRestart) {
 						pendingRestart = false;
 						restart();
@@ -423,13 +425,13 @@ async function readEvents(p: AgentProcess): Promise<void> {
 					// contract and state.json (open_tasks) into it.
 					retainNext = true;
 					asksNext = true;
-				} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > ROTATE_TOKENS && /retry compaction/i.test(ev.error) && !compactRetried) {
+				} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > orchestratorCompactAt() && /retry compaction/i.test(ev.error) && !compactRetried) {
 					// OmO refuses a summary when the session changed while it was made; the next idle point tries once more.
 					compactRetried = true;
 					log(`orchestrator compaction raced a session write (${ev.error.slice(0, 120)}); retrying at the next idle point`);
 					orch.ctx.compaction = { state: "queued", at: now() };
 					if (orch.status === "idle") flushCompact(orch.ctx, port);
-				} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > ROTATE_TOKENS) {
+				} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > orchestratorCompactAt()) {
 					log(`orchestrator compaction failed (${ev.error.slice(0, 160)}); moving to a fresh session with a handover`);
 					if (orch.status === "idle") rotate();
 					else rotateWhenIdle = true;
@@ -573,7 +575,7 @@ function retryTransient(err: string): void {
 	}, wait);
 }
 
-// Past ROTATE_TOKENS of context, at an idle point, the context is made small so each message does not re-read a huge
+// Past orchestratorCompactAt() tokens of context, at an idle point, the context is made small so each message does not re-read a huge
 // prefix (the runtime's own threshold is sized for coding sessions, not a secretary). A runtime that compacts in place
 // (OmO) keeps its session and with it what it was doing; a fresh session with a handover of recent exchanges forgot the
 // progress, so that is only the fallback when compaction fails (and the omp/Claude Code behaviour).
@@ -582,7 +584,7 @@ let compactRetried = false;
 const compacting = () => orch.ctx.compaction.state === "queued" || orch.ctx.compaction.state === "compacting";
 function limitContext(): void {
 	if (!rotateWhenIdle && adapter?.caps.contextLimit === "compact") {
-		log(`orchestrator context ${orch.ctx.tokens} tokens > ${ROTATE_TOKENS}; compacting in place`);
+		log(`orchestrator context ${orch.ctx.tokens} tokens > ${orchestratorCompactAt()}; compacting in place`);
 		requestCompact(orch.ctx, port);
 	} else rotate();
 }

@@ -1,13 +1,13 @@
 // Owner controls shared by the web API, the web chat box and Discord: model/effort switching, provider and quota
 // views, and the slash/bang command parser that drives them.
-import { DEFAULT_WORKER_MODEL, entryId, NAME, entryOf, FALLBACK_MAX, type FallbackEntry, type FallbackTarget, fallbackChain, isPlain, lanesModel, log, orchestratorModel, parseSelector, selectorOf, setFallbackChain, splitThinking, THINKING_LEVELS, TZ, updateModels, workerModel } from "./config.ts";
+import { cfg, compactAtFor, CONTEXT_LIMITS, CONTEXT_RESERVE, contextLimitsOf, DEFAULTS, lanesCompactAt, setContextLimits, DEFAULT_WORKER_MODEL, entryId, NAME, entryOf, FALLBACK_MAX, type FallbackEntry, type FallbackTarget, fallbackChain, isPlain, lanesModel, log, orchestratorModel, parseSelector, selectorOf, setFallbackChain, splitThinking, THINKING_LEVELS, TZ, updateModels, workerModel } from "./config.ts";
 import { label, readAliases } from "./account-alias.ts";
 import { AccountsError, accountCommand } from "./accounts-api.ts";
 import { entryView, hubChain, keyFileOk, keyProviderOk } from "./fallback.ts";
 import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
 import { liveModelsInUse } from "./models-in-use.ts";
 import { homedir } from "node:os";
-import { type Compaction, ctxView, describeCompaction, describeCtx, kTokens } from "./context.ts";
+import { type Compaction, type Ctx, ctxView, percentOf, describeCompaction, describeCtx, kTokens } from "./context.ts";
 import { msg } from "./i18n.ts";
 import { RESTART_NOTICE_MS } from "./restart.ts";
 import type { AccountSwitch } from "./account-sticky.ts";
@@ -73,15 +73,53 @@ export async function modelsView() {
 	};
 }
 
-// Per-process context size and compaction state (orchestrator first, then every lane).
+// The window the runtime last reported per model id (memory only, a number per model): the default the 컨텍스트 screen shows
+// and the bound `compact_at` is checked against when no window is set. 0/missing until a process on the model reported one.
+const nativeWindows = new Map<string, number>();
+// One process's numbers with its model's limits applied: a set window replaces the reported one (and the percent with it).
+function procCtx(model: string, c: Ctx, roleDefault: number) {
+	if (c.window > 0) nativeWindows.set(parseSelector(model).model, c.window);
+	const window = contextLimitsOf(model).window ?? c.window;
+	return { ...ctxView(c), window, percent: percentOf({ ...c, window }), compact_at: compactAtFor(model, roleDefault) };
+}
+const CONTEXT_APPLIES = "저장하면 다음 턴부터 적용돼요. 다시 시작할 필요는 없어요. omp·Claude Code 런타임 세션은 다음에 시작하거나 재개할 때 적용돼요.";
+
+// Per-process context size and compaction state (orchestrator first, then every lane), and the context limits of every
+// model in use (the orchestrator's, each lane's and the default for new lanes) with their defaults.
 export function contextView() {
-	return {
-		note: COMPACT_NOTE,
-		processes: [
-			{ name: "orchestrator", kind: "orchestrator", status: orch.status, running: orch.status !== "stopped", model: selectorOf(orchestratorModel()), ...ctxView(orch.ctx) },
-			...[...lanes.values()].map(l => ({ name: l.name, kind: "lane", status: l.status, live: laneLive(l), running: Boolean(l.proc), model: l.model, ...ctxView(l.ctx) })),
-		],
+	const orchModel = orch.activeModel || selectorOf(orchestratorModel());
+	const orchDefault = cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens;
+	const processes = [
+		{ name: "orchestrator", kind: "orchestrator", status: orch.status, running: orch.status !== "stopped", model: selectorOf(orchestratorModel()), ...procCtx(orchModel, orch.ctx, orchDefault) },
+		...[...lanes.values()].map(l => ({ name: l.name, kind: "lane", status: l.status, live: laneLive(l), running: Boolean(l.proc), model: l.model, ...procCtx(l.activeModel || l.model, l.ctx, lanesCompactAt()) })),
+	];
+	const users = new Map<string, { names: string[]; roleDefault: number }>();
+	const use = (selector: string, name: string, roleDefault: number) => {
+		const id = parseSelector(selector).model;
+		const u = users.get(id) ?? { names: [], roleDefault };
+		if (!u.names.includes(name)) u.names.push(name);
+		users.set(id, u);
 	};
+	use(orchModel, "orchestrator", orchDefault);
+	for (const l of lanes.values()) use(l.activeModel || l.model, l.name, lanesCompactAt());
+	use(lanesModel().model, "lanes", lanesCompactAt());
+	const models = [...users].map(([model, u]) => {
+		const l = contextLimitsOf(model);
+		return {
+			model,
+			used_by: u.names,
+			window: l.window ?? null,
+			window_default: nativeWindows.get(model) ?? null,
+			compact_at: l.compact_at ?? null,
+			compact_at_default: l.window ? Math.min(u.roleDefault, l.window - CONTEXT_RESERVE) : u.roleDefault,
+		};
+	});
+	return { note: COMPACT_NOTE, processes, models, limits: { ...CONTEXT_LIMITS, applies: CONTEXT_APPLIES } };
+}
+
+// PUT /api/context/model {model, window, compact_at}: null (or missing) resets a value to the default.
+export function setContextModel(model: string, values: { window?: number | null; compact_at?: number | null }) {
+	return setContextLimits(model, values, nativeWindows.get(parseSelector(model).model) ?? 0);
 }
 
 // Model pickers never offer Haiku (owner: never) or Fable (only on the owner's explicit ask; still settable by name).

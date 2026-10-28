@@ -508,5 +508,63 @@ function renderContext() {
       p.running ? el("div", { class: "mt8" }, ctxBar(p)) : el("div", { class: "sup mt8", text: off ? "꺼져 있어요. 다음 메시지가 오면 다시 시작해요" : "실행 중이 아니에요" }),
       el("div", { class: "row mt12", style: "justify-content:space-between" }, cs ? el("span", { class: `tag ${cs.tone}`, text: cs.text }) : el("span"), btn)));
   }
-  clear(box).append(list);
+  clear(box).append(list, ...ctxModels());
+}
+/* Per-model context window and auto-compaction point (PUT /api/context/model, stored in config context.models). */
+const ctxUser = n => n === "orchestrator" ? botName : n === "lanes" ? "새 세션 기본" : n;
+// "300000", "300,000", "300k", "1.5m" -> tokens; "80%" -> that share of `window`. "" -> null (default). NaN when unreadable.
+function ctxParse(v, window) {
+  const s = String(v || "").replace(/[\s,_]/g, "").toLowerCase();
+  if (!s) return null;
+  const m = s.match(/^(\d+(?:\.\d+)?)(%|k|m)?$/);
+  if (!m) return NaN;
+  const n = Number(m[1]);
+  if (m[2] === "%") return window ? Math.round(window * n / 100) : NaN;
+  return Math.round(m[2] === "k" ? n * 1e3 : m[2] === "m" ? n * 1e6 : n);
+}
+function ctxModels() {
+  const list = (C && C.models) || [];
+  if (!list.length) return [];
+  return [el("div", { class: "sec mt12", text: "모델별 컨텍스트 설정" }), el("div", { class: "col" }, ...list.map(m => {
+    const win = m.window || m.window_default, at = m.compact_at || m.compact_at_default;
+    const pct = win ? ` (${Math.round(at / win * 100)}%)` : "";
+    return el("div", { class: "card ctx-model" },
+      el("div", { class: "ch" }, el("h3", { text: modelName(m.model) }), el("button", { class: "btn text", type: "button", onclick: () => ctxDialog(m) }, "설정")),
+      el("div", { class: "kv" }, el("span", { class: "k", text: "컨텍스트 크기" }), el("span", { class: "v", text: win ? `${num(win)} 토큰${m.window ? " · 직접 설정" : " · 기본"}` : "아직 모름 (처음 응답 뒤 표시)" })),
+      el("div", { class: "kv" }, el("span", { class: "k", text: "자동 압축" }), el("span", { class: "v", text: `${num(at)} 토큰${pct}${m.compact_at ? " · 직접 설정" : " · 기본"}` })),
+      el("div", { class: "sup", text: `사용: ${m.used_by.map(ctxUser).join(", ")}` }));
+  }))];
+}
+function ctxDialog(m) {
+  const L = C.limits || {};
+  const win = input({ type: "text", inputmode: "numeric", value: m.window ? String(m.window) : "", placeholder: m.window_default ? `기본 ${num(m.window_default)}` : "기본 (런타임 값)" });
+  const at = input({ type: "text", inputmode: "numeric", value: m.compact_at ? String(m.compact_at) : "", placeholder: `기본 ${num(m.compact_at_default)}` });
+  const err = el("p", { class: "sup err-t", role: "alert" });
+  const save = (c, btn, body, msg) => busy(btn, async () => {
+    try { C = await api("/api/context/model", "PUT", { model: m.model, ...body }); }
+    catch (e) { err.textContent = e.message; return; }
+    c(); toast(msg); renderContext();
+  });
+  const actions = [{ label: "취소", onclick: c => c() }];
+  if (m.window || m.compact_at) actions.push({ label: "기본값으로", onclick: (c, btn) => save(c, btn, { window: null, compact_at: null }, "기본값으로 되돌렸어요") });
+  actions.push({ label: "저장", kind: "pri", onclick: (c, btn) => {
+    const w = ctxParse(win.value, null);
+    const a = ctxParse(at.value, w || m.window_default);
+    if (Number.isNaN(w)) { err.textContent = "컨텍스트 크기는 토큰 수로 적어 주세요 (예: 1000000, 200k)"; return; }
+    if (Number.isNaN(a)) { err.textContent = "자동 압축 시점은 토큰 수나 %로 적어 주세요 (예: 300k, 80%). %는 컨텍스트 크기를 알 때만 써요"; return; }
+    return save(c, btn, { window: w, compact_at: a }, "저장했어요. 다음 턴부터 적용돼요");
+  } });
+  dialog({
+    classic: true,
+    title: `${modelName(m.model)} 컨텍스트`,
+    body: el("div", { class: "col" },
+      el("p", { class: "sup", text: `이 모델을 쓰는 모든 세션(${m.used_by.map(ctxUser).join(", ")})에 적용돼요. 비우면 기본값을 써요.` }),
+      textField("컨텍스트 크기 (토큰)", win),
+      el("p", { class: "sup", text: L.window ? `${num(L.window.min)}~${num(L.window.max)} 토큰. 화면의 사용률과 기본 압축 시점의 기준이 돼요.` : "" }),
+      textField("자동 압축 시작 (토큰 또는 %)", at),
+      el("p", { class: "sup", text: `컨텍스트가 이만큼 차면 한가할 때 요약해서 줄여요. ${L.compact_at ? num(L.compact_at.min) : ""} 토큰 이상, 컨텍스트 크기보다 작게. 낮게 할수록 매 턴 다시 읽는 토큰과 비용이 줄어요.` }),
+      el("p", { class: "sup", text: L.applies || "" }),
+      err),
+    actions,
+  });
 }

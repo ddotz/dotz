@@ -464,6 +464,10 @@ when omp is selected.
   session itself. omp has `supportsPerMessageEffort=false` for anthropic, which is behind the force rule.
 - `GET /api/context`: `{note, processes: [{name, kind, status, running, model, tokens, window, percent, compaction: {state, at, tokensBefore, error}}]}`
   for the orchestrator and every session; `POST /api/compact {target: "orchestrator"|"<lane>"}` compacts (or queues) one.
+  The view also lists `models: [{model, used_by, window, window_default, compact_at, compact_at_default}]`;
+  `PUT /api/context/model {model, window, compact_at}` stores one model's limits in config.json `context.models[<model id>]`
+  (`null` resets to the default). A set `window` replaces the reported one; `compact_at` replaces `orchestrator.rotate_tokens` /
+  `lanes.compact_at` for sessions on that model and applies from the next turn (omp/Claude Code sessions at their next start).
 - `GET /api/activity?source=orchestrator|lane:<name>&limit=N`: in-memory ring (300) of what an agent conversation did; the
   same items stream on `/api/events` as `{kind: "activity", ...}` (live only, not in the inbox/outbox files).
 - `GET /api/providers` -> `{providers: [{id, name, auth: "oauth"|"api_key"|"none", account?, masked?, models, in_use, can_login, can_logout}], addable: [{id, name, kind: "oauth"|"api_key"}]}`
