@@ -1,7 +1,7 @@
 /* ---------- run state: one line above the composer saying what this conversation's agent is doing ---------- */
 // /api/state `runs` (hub/runstate.ts, derived from real hub state) carries {kind, reason, since, detail, todos} for the main
 // conversation and every lane. The line always says one of 작업 중 / 답을 기다려요 / 쉬는 중 / 한도에 걸렸어요 / 오류로 멈췄어요 /
-// 멈춤 / 끝났어요. An idle conversation with plan tasks left names the reason and offers 계속하기: the owner's complaint was
+// 멈춤 / 끝났어요. An idle conversation with plan tasks left names the reason (no button): the owner's complaint was
 // "todo는 남아있는데 아무것도 안하고 있을때 왜 안하는지 모르는 경우가 많음", so "쉬는 중" alone is never the answer.
 const RUN_LABEL = { working: "작업 중", waiting: "답을 기다려요", idle: "쉬는 중", limited: "한도에 걸렸어요", error: "오류로 멈췄어요", stopped: "멈춤", done: "끝났어요" };
 const RUN_DOT = { working: "pri", waiting: "warn", idle: "", limited: "warn", error: "err", stopped: "", done: "ok" };
@@ -55,7 +55,7 @@ function runAction(r, t = target) {
     if (r.kind === "error" && r.reason === "work") return { label: "다시 맡기기", run: ev => workRetry(r.work, ev.currentTarget) };
   }
   if (isMailT(t)) return null;
-  if (r.kind === "idle") return { label: "계속하기", run: () => runContinue() };
+  // idle with tasks left only says why; no 계속하기 button (owner 2026-10-28: "계속하기 버튼 너무 거슬린다") - a message continues it.
   if (isLaneT(t)) return r.kind === "error" || r.kind === "stopped" ? { label: "다시 시작", run: ev => runLaneRestart(laneOf(t), ev.currentTarget) } : null;
   if (r.kind === "limited" || r.kind === "error") return { label: r.kind === "limited" ? "지금 다시 시도" : "다시 시도", run: ev => orchResume(ev.currentTarget) };
   if (r.kind === "stopped") return { label: "다시 시작", run: ev => runRestart(ev.currentTarget) };
@@ -92,13 +92,6 @@ async function runAskGo() {
   });
   if (d) return noticeOpenId(d.id);
   toast("질문을 찾지 못했어요. 알림에서 확인해 주세요");
-}
-// 계속하기: one short message that starts the next turn where the last one stopped.
-function runContinue() {
-  if (ta.value.trim()) { toast("쓰던 메시지가 있어요. 먼저 보내 주세요"); ta.focus(); return; }
-  ta.value = "계속해 주세요";
-  autosize();
-  sendChat();
 }
 // 다시 시작 (a stopped session): the gateway's restart, the same as the stopped banner (08-home.js).
 const runRestart = btn => busy(btn, async () => {
