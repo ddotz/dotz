@@ -25,7 +25,8 @@ export type Config = {
 	// Days the account switch history (bottom of the usage screen) is kept; older entries are pruned.
 	accounts?: { history_days?: number };
 	// One agent session per conversation (hub/convsessions.ts): `sessions` turns it on (read at boot), `kinds` the conversation kinds that
-	// get one (hub/session-key.ts CONV_KINDS), `idle_stop_min` parks an idle one, `max_live` caps the live ones (main and lanes not counted).
+	// get one (hub/session-key.ts CONV_KINDS), `idle_stop_min` parks an idle one, `max_live` fixes how many run at once (main and lanes not counted; unset: sized from the
+	// computer's free memory and load, hub/convcapacity.ts).
 	conversations?: { sessions?: boolean; kinds?: string[]; idle_stop_min?: number; max_live?: number };
 	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; max_workers?: number; idle_stop_min?: number; worker_idle_min?: number };
 	// Model choice and fallback order, one block per target (the web 모델 · 폴백 screen edits exactly this).
@@ -140,7 +141,7 @@ export const LANES_COMPACT_AT = 300_000;
 // longer merge window only delayed every message (~/.dotz/reports/speed-20261021.md).
 export const DEFAULTS = {
 	rotate_tokens: 300_000, nightly_at: "04:30", nightly_compact_at: 300_000, keep_recent: 40_000, rotate_mb: 50, max_rss_gb: 8, idle_stop_min: 20, worker_idle_min: 5,
-	conv_idle_stop_min: 20, conv_max_live: 3,
+	conv_idle_stop_min: 20,
 	coalesce_ms: 2000, reflect_at: "04:40", token_audit_at: "04:30", update_at: "04:20", zele_poll_sec: 120, zele_brief_hour: 8, outlang_timeout_s: 30, web_port: 7420,
 } as const;
 // The web server listens only here; the tailnet reaches it through `tailscale serve` (web.tailscale_https_port).
@@ -211,7 +212,7 @@ export const lanesMaxWorkers = () => cap(cfg.lanes?.max_workers);
 export const convSessionsOn = () => cfg.conversations?.sessions === true;
 export const convKinds = (): string[] | undefined => (Array.isArray(cfg.conversations?.kinds) ? cfg.conversations.kinds.filter(k => typeof k === "string") : undefined);
 export const convIdleStopMin = () => count(cfg.conversations?.idle_stop_min, DEFAULTS.conv_idle_stop_min, 0);
-export const convMaxLive = () => count(cfg.conversations?.max_live, DEFAULTS.conv_max_live, 1);
+export const convMaxLive = (): number | undefined => cap(cfg.conversations?.max_live);
 export const lanesIdleStopMin = () => count(cfg.lanes?.idle_stop_min, DEFAULTS.idle_stop_min, 0);
 export const workerIdleMin = () => count(cfg.lanes?.worker_idle_min, DEFAULTS.worker_idle_min, 1);
 // `ui.origin_view` (default false): the 구성 view marks what the owner changed against what ships with dotz, and its requests carry a
