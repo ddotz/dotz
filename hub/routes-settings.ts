@@ -105,7 +105,10 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 	}
 	if (req.method === "GET" && url.pathname === "/api/subagents") return json({ sources: subagentLists() });
 	if (req.method === "GET" && parts[0] === "api" && parts[1] === "subagents" && parts.length === 3) {
-		const detail = await subagentDetail(url.searchParams.get("source") ?? "orchestrator", decodeURIComponent(parts[2]));
+		const source = url.searchParams.get("source") ?? "orchestrator";
+		// An OmO process's workers are read from its task store, which its session file locates.
+		const sessionFile = source === "orchestrator" ? orch.sessionFile : source.startsWith("lane:") ? lanes.get(source.slice(5))?.sessionFile : undefined;
+		const detail = await subagentDetail(source, decodeURIComponent(parts[2]), sessionFile);
 		return detail ? json(detail) : json({ error: "no such subagent (finished ones are kept 10 minutes)" }, 404);
 	}
 	if (req.method === "GET" && url.pathname === "/api/activity") {
