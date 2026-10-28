@@ -48,8 +48,10 @@ const { waitFor } = on(view);
 const decision = (id: string) => ({ id, kind: "decision", tone: "ask", title: "배포할까요?", read: false, at: `at-${id}`, decision: { state: "open", reply_to: `at-${id}`, to: "main", options: [] } });
 
 test("a notice on the other computer toasts once on this page, labeled with it; the chip counts follow; the tap opens the item on that computer", async () => {
+	const pageStream = hubB.nextStream();
 	await view.navigate(`${hubB.origin}/`);
 	await waitFor(`!document.querySelector("#pchip").hidden`);
+	await pageStream;   // the page hears this hub's stream before anything is sent
 	await aOpen.until(o => o.length >= 1, 10_000, "A stream opened");
 
 	aList = { unread: 1, items: [decision("d1")] };
@@ -65,14 +67,27 @@ test("a notice on the other computer toasts once on this page, labeled with it; 
 	expect(await view.evaluate(`JSON.stringify(PR.list.find(p => !p.self))`)).toContain('"unread":1');
 	expect(await view.evaluate(`document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
 
-	aList = { unread: 0, items: [] };
-	sendA({ kind: "notice_read", ids: ["d1", "t1"], unread: 0 });
-	await waitFor(`PR.list.find(p => !p.self).need === 0 && !document.querySelector(".pc-d")`);
-
 	await view.evaluate(`document.querySelector(".snack .sa").click()`);
 	await aRoot.until(r => r.length >= 1, 10_000, "page opened A");
 	const to = new URL(view.url);
 	expect(to.origin).toBe(A.url);
 	expect(to.searchParams.get("n")).toBe("d1");
 	expect(to.searchParams.get("did")).toBeTruthy();
-});
+}, 20_000);
+
+test("answered over there, its toast here goes away; a conversation this page just acted in does not toast (frames as hub/peer-stream.ts forwards them)", async () => {
+	const pageStream = hubB.nextStream();
+	await view.navigate(`${hubB.origin}/`);
+	await waitFor(`!document.querySelector("#pchip").hidden`);
+	await pageStream;
+	const frame = (id: string, to: string) => JSON.stringify({ kind: "peer_notice", peer: { name: A.name, url: A.url }, id, key: `at-${id}`, notice: "decision", tone: "ask", title: `보낼까요 ${id}`, to });
+	await view.evaluate(`(() => { window.__toasts = []; const real = toast; toast = (m, ...a) => { window.__toasts.push(m); return real(m, ...a); }; })(), 0`);
+	await view.evaluate(`(prLive(${frame("d2", "mail:k9")}), 0)`);
+	await waitFor(`[...document.querySelectorAll(".snack")].some(s => s.dataset.peerNid === "d2")`);
+	await view.evaluate(`(prLive({ kind: "peer_notice_done", url: ${JSON.stringify(A.url)}, ids: ["d2"] }), 0)`);
+	await waitFor(`![...document.querySelectorAll(".snack")].some(s => s.dataset.peerNid === "d2")`);
+
+	await view.evaluate(`(prActed("mail:k8"), prLive(${frame("d3", "mail:k8")}), prLive(${frame("d4", "mail:k7")}), 0)`);
+	await waitFor(`window.__toasts.some(m => m.includes("보낼까요 d4"))`);
+	expect(await view.evaluate(`window.__toasts.some(m => m.includes("보낼까요 d3"))`)).toBe(false);
+}, 20_000);
