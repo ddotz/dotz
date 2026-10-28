@@ -51,6 +51,9 @@ function pqAct(path, body) {
   if (path === "/api/message" && b.settings && pqPc(`settings:${b.settings}`)) { const { settings, lane, project, mail, via, ...rest } = b; return { pc: pqPc(`settings:${settings}`), action: "message", args: { target: `settings:${pqBare(settings)}`, ...rest } }; }
   const df = /^\/api\/drafts\/([^/?]+)\/files$/.exec(path), dref = df && decodeURIComponent(df[1]);
   if (dref && DRF.pc[dref]) return { pc: DRF.pc[dref], action: "draft-files", args: { ref: dref, ...b } };
+  // The 받는이·참조 of a peer's mail draft (hub/draft-recipients.ts) change on the computer that owns it.
+  const drec = /^\/api\/drafts\/([^/?]+)\/recipients$/.exec(path), drref = drec && decodeURIComponent(drec[1]);
+  if (drref && (DRR.pc[drref] || DRF.pc[drref])) return { pc: DRR.pc[drref] || DRF.pc[drref], action: "draft-recipients", args: { ref: drref, ...b } };
   const md = /^\/api\/mail\/([^/?]+)\/draft$/.exec(path);
   if (md && pqPc(`mail:${decodeURIComponent(md[1])}`)) return { pc: pqPc(`mail:${decodeURIComponent(md[1])}`), action: "mail-draft", args: { key: decodeURIComponent(md[1]) } };
   const nm = /^\/api\/mail\/([^/?]+)\/no-reply$/.exec(path);
