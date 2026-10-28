@@ -139,8 +139,10 @@ export function keepWatchNewest<T extends Aged>(list: T[], nowMs: number): T[] {
 	}
 	return drop.size ? list.filter(i => !drop.has(i)) : list;
 }
+// The clock of a backfill (its `nowMs`): what is old is judged at the time the replay is for, not by the wall clock.
+let replayClock: number | undefined;
 function pruneWatch(): boolean {
-	const kept = keepWatchNewest(items, Date.parse(now()));
+	const kept = keepWatchNewest(items, replayClock ?? Date.parse(now()));
 	if (kept === items) return false;
 	items = kept;
 	return true;
@@ -1062,10 +1064,12 @@ export function backfillNotices(nowMs = Date.now()): number {
 	}
 	events.sort((a, b) => a.ts.localeCompare(b.ts));
 	replaying = true;
+	replayClock = nowMs;
 	try {
 		for (const e of events) feed(e);
 	} finally {
 		replaying = false;
+		replayClock = undefined;
 	}
 	// A question older than a day that nobody answered in the replayed history is no longer waiting.
 	for (const i of items) if (isOpenDecision(i) && Date.parse(i.updated) < nowMs - DAY_MS) settleDecision(i, "", i.updated, true);
