@@ -124,15 +124,15 @@ window.addEventListener("message", ev => {
   if (p.self) prFrameClose(); else prGo(prUrl(p, `?did=${enc(DEVICE_ID)}`));
 });
 
-function prPick(p) {
+function prPick(p, o = {}) {
   // inside another computer's app frame: the app around it does the switch (back to itself, or to a third computer)
   if (prEmbedded && !p.self) { prClose(false); window.parent.postMessage({ dotz: "peer-pick", url: p.url }, "*"); return; }
   if (p.self) { prClose(); return; }
   // the online flags come from this computer's gateway: while it is unreachable they are stale, so the switch is tried anyway
   if (!p.online && !selfDown) { toast(`${p.name}에 연결할 수 없어요`, true); return; }
-  toast(`${p.name}(으)로 넘어가요`);
+  if (!o.quiet) toast(`${p.name}(으)로 넘어가요`);
   prClose(false);
-  prGo(prUrl(p, `?did=${enc(DEVICE_ID)}`));   // the device id goes along: the push subscriptions on both computers become one device
+  prGo(prUrl(p, `?did=${enc(DEVICE_ID)}${o.auto ? "&auto=1" : ""}`));   // the device id goes along: the push subscriptions on both computers become one device
 }
 
 function prSheet() {
