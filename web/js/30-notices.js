@@ -53,14 +53,30 @@ function ntSync(s) {
   NT.unread = s.notices_unread; ntPaint(); loadNotices();
 }
 
+// A decision answered or dismissed (here, on another device or by the bot): its "답변이 필요해요" toast and this device's notification go at once
+// (owner 2026-10-28: a finished item still saying it needs checking is confusing). The hub also takes the notification back on other devices (hub/push.ts).
+function ntHandled(id) {
+  for (const s of document.querySelectorAll(".snack[data-nid]")) if (s.dataset.nid === String(id)) s.remove();
+  closePushTags([`decision:${id}`]);
+}
+function closePushTags(tags) {
+  if (!("serviceWorker" in navigator) || !tags.length) return;
+  navigator.serviceWorker.ready.then(r => r.getNotifications()).then(ns => { for (const n of ns) if (tags.includes(n.tag)) n.close(); }).catch(e => console.warn(`notifications not closed: ${e.message}`));
+}
 function noticeLive(e) {
   if (e.kind === "notice" && e.item && e.item.id != null) {
     const i = NT.items.findIndex(x => x.id === e.item.id);
     if (e.item.dismissed) { if (i >= 0) NT.items.splice(i, 1); }
     else if (i < 0) NT.items.push(e.item); else NT.items[i] = e.item;
-    if (i < 0 && ntOpenDec(e.item) && NT.loaded) toast("답변이 필요해요", false, { label: "열기", onclick: () => noticeOpenId(e.item.id) }, 8000);
+    if (i < 0 && ntOpenDec(e.item) && NT.loaded) {
+      toast("답변이 필요해요", false, { label: "열기", onclick: () => noticeOpenId(e.item.id) }, 8000);
+      const s = document.querySelector(".snack:last-of-type");
+      if (s) s.dataset.nid = String(e.item.id);
+    }
+    if (!ntOpenDec(e.item) || e.item.dismissed) ntHandled(e.item.id);
     if (e.item.kind === "watch") loadMonitors();
   } else if (e.kind === "notice_dismiss") {
+    ntHandled(e.id);
     const g = NT.items.find(x => x.id === e.id);
     if (g && g.at && (g.src || g.open) === "alert") NT.gone.add(g.at);
     NT.items = NT.items.filter(x => x.id !== e.id);
