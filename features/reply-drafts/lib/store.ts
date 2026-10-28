@@ -20,6 +20,7 @@ export type DraftRec = {
 	libraryMiss?: boolean; // the 첨부 파일 폴더 is set and held no file that fits
 	compose?: boolean; // a new mail the bot wrote (hub/mail-cli.ts compose), not an answer to a received one: `mailId` is not a mail, `ref` is its own key
 	origin?: { kind: string; id: string; text: string; link?: string }; // the approved action it follows up (hub/followup.ts): the card says so
+	rule?: { id: string; name: string }; // the 자동 초안 규칙 that drafted it (lib/rules.ts): its name is the card's badge
 	to: string;
 	subject?: string;
 	body: string;

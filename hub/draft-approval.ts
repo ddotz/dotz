@@ -7,6 +7,7 @@
 //   > 첨부: <name> (<size>)                  (optional, one line per file that goes out; "> 첨부: 없음" = the mail it answers had files and this
 //                                            reply carries none, so the owner sees they are not included)
 //   > 이어서: <what it follows> (<link>)  (optional, a draft made as a follow-up of an approved action, e.g. "댓글 답글에 이어서" + the comment's link)
+//   > 규칙: <name>                         (optional, the 자동 초안 규칙 that drafted it: the card's badge)
 //   >
 //   > <body, every line quoted>
 //   >                                       (optional second part, a mail that goes out with a comment reply and is approved by the same pick:)
@@ -42,9 +43,9 @@ const NOTE_ASKED = "받은 메일이 파일을 요청했어요";
 export type DraftFileIn = { name: string; size?: number };
 export type DraftFile = { name: string; size?: string };
 export type DraftOrigin = { text: string; link?: string };
-export type DraftApproval = { toLabel: string; to: string; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin; mail?: DraftApproval };
+export type DraftApproval = { toLabel: string; to: string; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin; rule?: string; mail?: DraftApproval };
 // One part of a card: the reply (or the mail) with its recipient line, files and body.
-export type DraftPart = { origin?: DraftOrigin; to: string; toLabel?: DraftToLabel; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[] };
+export type DraftPart = { origin?: DraftOrigin; rule?: string; to: string; toLabel?: DraftToLabel; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[] };
 // `mail`: the mail that goes out right after this comment reply, shown below it in the same card (hub/comments).
 export type DraftInput = DraftPart & { ref: string; question?: string; sendResult?: string; mail?: DraftPart };
 export const MAIL_MARK = "함께 보낼 메일";
@@ -78,7 +79,7 @@ function partLines(d: DraftPart): string[] {
 	const left = (d.cannotAttach ?? []).map(n => n.replace(/\s+/g, " ").trim());
 	const reasons = [...(d.cannotAttach && (left.length || note) ? [CANNOT_ATTACH] : []), ...(left.length ? [`빠진 파일: ${left.join(", ")}`] : []), ...(note ? [note] : []), ...(note && d.libraryMiss ? [LIBRARY_MISS] : [])];
 	const none = reasons.length ? `> 첨부: 없음 (${reasons.join(" · ")})` : d.attachmentsNone || mail ? "> 첨부: 없음" : "";
-	const head = [`> ${d.toLabel ?? "받는이"}: ${d.to.replace(/\s+/g, " ").trim()}`, ...(d.subject ? [`> 제목: ${d.subject.replace(/\s+/g, " ").trim()}`] : []), ...(files.length ? files : none ? [none] : []), ...(d.origin ? [`> 이어서: ${d.origin.text.replace(/\s+/g, " ").trim()}${d.origin.link ? ` (${d.origin.link.replace(/\s+/g, "")})` : ""}`] : []), ">"];
+	const head = [`> ${d.toLabel ?? "받는이"}: ${d.to.replace(/\s+/g, " ").trim()}`, ...(d.subject ? [`> 제목: ${d.subject.replace(/\s+/g, " ").trim()}`] : []), ...(files.length ? files : none ? [none] : []), ...(d.origin ? [`> 이어서: ${d.origin.text.replace(/\s+/g, " ").trim()}${d.origin.link ? ` (${d.origin.link.replace(/\s+/g, "")})` : ""}`] : []), ...(d.rule ? [`> 규칙: ${d.rule.replace(/\s+/g, " ").trim()}`] : []), ">"];
 	return [...head, ...quote(d.body.replace(/\r\n?/g, "\n").trim())];
 }
 
@@ -94,7 +95,7 @@ export function draftApprovalBlock(d: DraftInput): string {
 
 // A card made before a change to how drafts are read (the always-shown 첨부 row, 2026-10-26) re-read from its own text with the current
 // rules: the head (recipient, subject, files, warning, origin) is replaced, the body and ref stay (the stored text may be cut shorter).
-const HEAD_KEYS = ["toLabel", "to", "subject", "attachments", "noAttachments", "warning", "note", "origin"] as const;
+const HEAD_KEYS = ["toLabel", "to", "subject", "attachments", "noAttachments", "warning", "note", "origin", "rule"] as const;
 export function refreshDraft(old: DraftApproval, text: string): DraftApproval {
 	const fresh = parseQuotedDraft(text);
 	if (!fresh) return old;
@@ -115,6 +116,7 @@ const HEADER = /^(받는이|대상|대화방)\s*[:：]\s*(.*)$/;
 const SUBJECT = /^제목\s*[:：]\s*(.*)$/;
 const ATTACH = /^첨부\s*[:：]\s*(.*)$/;
 const ORIGIN = /^이어서\s*[:：]\s*(.*?)(?:\s+\(((?:https?:\/\/|#|\/)\S*)\))?$/;
+const RULE = /^규칙\s*[:：]\s*(.+)$/;
 const NONE_NOTE = /^없음\s*\((.+)\)$/;
 const FILE_SIZE = /^(.*\S)\s+\((\d+(?:\.\d+)?(?:B|KB|MB|GB))\)$/;
 const REF = /\(([A-Za-z0-9][A-Za-z0-9_.:-]{1,63})\)\s*$/;
@@ -159,16 +161,19 @@ function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 	let none = false;
 	let note: string | undefined;
 	let origin: DraftOrigin | undefined;
+	let rule: string | undefined;
 	let i = 0;
 	for (; i < quoted.length; i++) {
 		const h = HEADER.exec(quoted[i]!) ?? undefined;
 		const s = SUBJECT.exec(quoted[i]!);
 		const a = to ? ATTACH.exec(quoted[i]!) : null;
 		const o = to && !origin ? ORIGIN.exec(quoted[i]!) : null;
+		const r = to && rule === undefined ? RULE.exec(quoted[i]!) : null;
 		if (h && !to) {
 			toLabel = h[1]!;
 			to = h[2]!.trim();
 		} else if (s && subject === undefined) subject = s[1]!.trim();
+		else if (r) rule = r[1]!.trim();
 		else if (o && o[1]!.trim()) origin = { text: o[1]!.trim(), ...(o[2] ? { link: o[2] } : {}) };
 		else if (a) {
 			const v = a[1]!.trim();
@@ -190,7 +195,7 @@ function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 	if (!body) return undefined;
 	const clipped = body.slice(0, DRAFT_BODY_MAX);
 	const warn = toLabel === "받는이" && !attachments.length && (!!note || claimsAttachment(`${subject ?? ""}\n${clipped}`));
-	return { toLabel, to, ...(subject ? { subject } : {}), body: clipped, ...(attachments.length ? { attachments } : none || toLabel === "받는이" ? { noAttachments: true as const } : {}), ...(warn ? { warning: note?.startsWith(CANNOT_ATTACH) ? CANNOT_ATTACH_WARNING : NO_ATTACHMENT_WARNING } : {}), ...(note ? { note } : {}), ...(origin ? { origin } : {}) };
+	return { toLabel, to, ...(subject ? { subject } : {}), body: clipped, ...(attachments.length ? { attachments } : none || toLabel === "받는이" ? { noAttachments: true as const } : {}), ...(warn ? { warning: note?.startsWith(CANNOT_ATTACH) ? CANNOT_ATTACH_WARNING : NO_ATTACHMENT_WARNING } : {}), ...(note ? { note } : {}), ...(origin ? { origin } : {}), ...(rule ? { rule } : {}) };
 }
 
 // The quoted draft of a message (recipient line first, as draftApprovalBlock writes it), as standard "> " lines; undefined when the message
