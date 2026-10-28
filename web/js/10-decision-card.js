@@ -231,11 +231,14 @@ const dcStText = (dc, st) => (dc.draft && ((DC.picks[dc.key] || [])[0] || {}).la
 // 고치기 on a draft, or an option that needs detail (안 됨 …): the owner types the change / reason, then the answer goes out with it.
 // 고치기 on a draft asks "어떻게 고칠까요?" and the bot rewrites it; 직접 수정 (ed.manual) is the owner's own text, sent as the change "이 내용으로 고쳐 주세요: ...".
 const DRAFT_HINT = "더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘", MANUAL_LEAD = "이 내용으로 고쳐 주세요: ";
+// The button under the typed text names what it does with the choice made, never a bare "보내기": after 고치기 on a draft a 내용 보내기 read as if
+// the mail would go out (owner 2026-10-28). One rule for the chat card and the notice sheet.
+const noteGoLabel = (opt, drf, man) => (man ? "이 내용으로 고치기" : drf ? "고쳐 달라고 하기" : `${opt.label}(으)로 답하기`);
 function editNode(dc, ed, st) {
   const opt = ed.opt, drf = !!dc.draft, man = !!ed.manual;
   const ta = el("textarea", { class: "dc-note", rows: man ? "7" : "2", maxlength: man ? "6000" : "500", placeholder: drf ? (man ? "보낼 내용을 직접 고쳐 주세요" : DRAFT_HINT) : "이유나 내용을 적어 주세요", "aria-label": man ? "직접 수정" : drf ? "고칠 내용" : "자세한 내용", disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
   ta.value = DC.note[dc.key] ?? (man ? dc.draft.body : "");
-  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, man ? MANUAL_LEAD + note : note); } }, man ? "이 내용으로 고치기" : drf ? "고쳐 달라고 하기" : "내용 보내기");
+  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, man ? MANUAL_LEAD + note : note); } }, noteGoLabel(opt, drf, man));
   const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; paintDecision(); } }, "돌아가기");
   return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: man ? "직접 수정" : drf ? "어떻게 고칠까요?" : opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }

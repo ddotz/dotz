@@ -518,11 +518,12 @@ async function ntAnswer(n, opt, note) {
   NS.busy = false; ntSheetPaint();
 }
 function ntEditNode(n, ed) {
-  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: "500", placeholder: "이유나 내용을 적어 주세요", "aria-label": "자세한 내용", disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); } });
+  const drf = !!n.decision.draft;
+  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: "500", placeholder: drf ? DRAFT_HINT : "이유나 내용을 적어 주세요", "aria-label": drf ? "고칠 내용" : "자세한 내용", disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); } });
   ta.value = ed.text;
-  const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, "내용 보내기");
+  const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, noteGoLabel(ed.opt, drf, false));
   const back = el("button", { class: "dc-back", type: "button", "data-k": "back", disabled: NS.busy, onclick: () => { NS.edit = null; ntSheetPaint(); } }, "돌아가기");
-  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: ed.opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
+  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: drf ? "어떻게 고칠까요?" : ed.opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
 // A notice sheet's body: the text without its `[file]` lines, then those files as the same image / file chips a chat message shows (15-attachments.js).
 function ntBody(n, text) {
