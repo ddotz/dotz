@@ -10,7 +10,7 @@ import { abortLane, approvesBudget, lanes, ownerNotes, sendToLane } from "./lane
 import { accountView, readPool } from "./account-sticky.ts";
 import { readAliases } from "./account-alias.ts";
 import { accountAnswer, accountAsk } from "./accounts-api.ts";
-import { abort as abortOrchestrator, orch, resumeNow } from "./orchestrator.ts";
+import { abort as abortOrchestrator, onOwnerCancel, orch, resumeNow } from "./orchestrator.ts";
 import { legacyAnswer } from "./migrations.ts";
 import { errorAnswer } from "./orch-error.ts";
 import { drain, restore } from "./queue.ts";
@@ -119,6 +119,19 @@ export function intake(event: Record<string, any>, target: string, replyTo?: str
 	if (replyTo) lastOwner.set(target, replyTo);
 	b.timer = setTimeout(() => flush(target), Math.max(0, Math.min(COALESCE_MS, b.first + COALESCE_MAX_MS - Date.now())));
 }
+
+/** The owner's 중단 of `target`: what was sent there and not yet delivered (a burst still gathering, the web queue) is dropped. */
+export function dropPending(target: string): number {
+	const b = bursts.get(target);
+	if (b) {
+		clearTimeout(b.timer);
+		bursts.delete(target);
+	}
+	const n = (b?.events.length ?? 0) + drain(target).length;
+	if (n) log(`${n} message(s) for ${target} not delivered: the owner cancelled`);
+	return n;
+}
+onOwnerCancel(target => void dropPending(target));
 
 export function flush(target: string): void {
 	const b = bursts.get(target);
