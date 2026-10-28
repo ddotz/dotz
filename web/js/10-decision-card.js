@@ -270,6 +270,10 @@ function draftToNode(d, o = {}) {
   if (ref && o.edit !== false && !DRR.st[ref]) drrLoad(ref).then(paint);
   return box;
 }
+// The 자동 초안 규칙 that drafted a draft or a mail (hub/draft-approval.ts "> 규칙:", hub/mail.ts rule): its name as a plain tag, the same on the mail row,
+// the reply card and the chat card.
+const draftRuleTag = (name, cls) => el("span", { class: `tag ${cls}`, "data-rule": name, title: `자동 초안 규칙: ${name}`, text: name });
+const draftRuleNode = d => d.rule ? el("div", { class: "dr-rulebar" }, draftRuleTag(d.rule, "dr-rule")) : null;
 // "댓글 답글에 이어서" (+ the comment's link): a draft made as the follow-up of an approved action says where it came from (hub/draft-approval.ts 이어서).
 function draftOriginNode(d) {
   const o = d.origin;
@@ -290,7 +294,7 @@ function draftNode(d, o) {
   return el("div", { class: "dc-draft" },
     !d.toLabel || d.toLabel === "받는이" ? draftToNode(d, o) : el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
     d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
-    draftOriginNode(d),
+    draftRuleNode(d), draftOriginNode(d),
     el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d, o), draftMailNode(d.mail));
 }
 // What the status line says after an answer: a 고치기 on a draft is the bot rewriting it.
@@ -323,7 +327,7 @@ function renderSheet(box, dc, picks, step) {
     d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null]
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
-  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail))
+  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), draftRuleNode(d), draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   // 원문 보기 (10-draft-original.js): the original is its own panel beside the draft (a toggle on a phone); the draft side (body + footer) is the one that slides.
   box.classList.remove("od-host", "od-on");

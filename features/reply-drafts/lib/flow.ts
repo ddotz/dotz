@@ -83,7 +83,7 @@ function tracedCall(deps: FlowDeps, item: ReplyItem, conv: string | undefined, t
 	};
 }
 
-const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "draft"): ModelCall => (deps.trace ? tracedCall(deps, item, conv, deps.trace, what) : deps.call ?? replyCall(item.app ?? "mail", conv));
+export const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "draft"): ModelCall => (deps.trace ? tracedCall(deps, item, conv, deps.trace, what) : deps.call ?? replyCall(item.app ?? "mail", conv));
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
 
 function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[] }, changes: string[], deps: FlowDeps): DraftRec {
@@ -143,7 +143,7 @@ export function askText(draft: DraftRec, warnings: string[], headline = draft.co
 	const noFiles = rec.kind === "mail" && !!webmailSite(rec.source);
 	const attachments = noFiles ? [] : staged;
 	const keptBack = noFiles && staged.length ? { sendResult: "파일이 붙어 있어 보내지 않아요. 파일을 빼면 본문만 보내요" } : {};
-	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: askWith(rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", rec.questions ?? []), ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}) });
+	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: askWith(rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", rec.questions ?? []), ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}), ...(rec.rule ? { rule: rec.rule.name } : {}) });
 	return [`[ask] ${headline}`, ...(notes ? [`-# ${notes}`] : []), block].join("\n");
 }
 
@@ -152,7 +152,7 @@ export async function attachFolder(ref: string): Promise<string | undefined> {
 	try {
 		const { instanceOf } = await import("../../../hub/reply-model.ts");
 		const { appEntries } = await import("../../../hub/integrations.ts");
-		return loadSettings().attachFolders?.[instanceOf(appEntries(dataDir()), "mail", ref)];
+		return loadSettings().attachFolders?.[instanceOf(appEntries(dataDir()), "mail", `mail:${ref}`)];
 	} catch {
 		return undefined;
 	}
@@ -212,6 +212,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	if (old.libraryMiss) rec.libraryMiss = true;
 	if (old.compose) rec.compose = true;
 	if (old.origin) rec.origin = old.origin;
+	if (old.rule) rec.rule = old.rule;
 	carryStagedFiles(old.id, rec.id);
 	addDraft(rec);
 	return { ok: true, text: askText(rec, r.warnings, "답장 초안을 고쳤어요"), id: rec.id };
