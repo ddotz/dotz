@@ -14,7 +14,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { FIELD_TYPES } from "../hub/authfields.ts";
 import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
@@ -160,11 +160,11 @@ function authTool(pi: any, lane?: string): void {
 				}
 				if (r.status === "pending") continue;
 				if (r.status === "entered" && p.kind === "form") {
-					return text(`The owner filled in the ${p.site} form. Stored at ${r.path} as a JSON object {${(r.keys ?? []).join(", ")}}, mode 0600${r.once ? "; one-time: the gateway removes it within an hour, you delete it right after use" : "; kept for reuse"}. Read it at run time; never put the values in prompts, briefs, reports, logs or chat.`);
+					return text(`The owner filled in the ${p.site} form. Stored encrypted at ${r.path}, a JSON object {${(r.keys ?? []).join(", ")}}${r.once ? "; one-time: the gateway removes it within an hour, you delete it right after use" : "; kept for reuse"}. Read it at run time with \`bun ${join(PKG, "hub", "secrets-cli.ts")} get ${relative(join(DATA, "secrets"), r.path ?? "")} [field]\` piped straight into what needs it; never put the values in prompts, briefs, reports, logs or chat.`);
 				}
 				if (r.status === "entered" && p.kind !== "otp") {
 					const fields = (p.fields ?? (p.kind === "secret" ? ["username", "password"] : [])).join(", ");
-					return text(`The owner entered the ${p.site} credentials. Stored at ${r.path} as a JSON object {${fields}}, mode 0600. Read it at run time; never put the values in prompts, briefs, reports or logs.`);
+					return text(`The owner entered the ${p.site} credentials. Stored encrypted at ${r.path}, a JSON object {${fields}}. Read it at run time with \`bun ${join(PKG, "hub", "secrets-cli.ts")} get ${relative(join(DATA, "secrets"), r.path ?? "")} [field]\` piped straight into what needs it; never put the values in prompts, briefs, reports or logs.`);
 				}
 				if (r.status === "entered") {
 					const h = hub();

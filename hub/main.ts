@@ -28,6 +28,7 @@ import { errorAsk, startErrorWatch } from "./orch-error.ts";
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { forgetAccountUsage, usageSnapshot } from "./providers.ts";
+import { sealPlainSecrets } from "./secretbox.ts";
 import { backfillNotices, dropChannelNotices, setAppLabelResolver, setDraftHandled, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
 import { startReflection } from "./reflect.ts";
 import { syncFeatureWatches } from "./features.ts";
@@ -100,6 +101,13 @@ setOrchestratorAvailable(() => orch.status !== "stopped" && orch.status !== "rat
 setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] ?? discord.channels.threads[conv.slice(3)]?.name : conv.startsWith("mail:") ? mailByKey(conv.slice(5))?.subject : conv.startsWith("settings:") ? appEntries(DATA_DIR).find(e => e.key === conv.slice(9))?.label : undefined));
 // An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).
 backfillNotices();
+// A dotz_auth value written before it was stored encrypted is encrypted now (hub/secretbox.ts); a Keychain that refuses leaves it for the next start.
+try {
+	const sealed = sealPlainSecrets(join(DATA_DIR, "secrets"));
+	if (sealed.length) log(`secrets: encrypted ${sealed.length} plain value file(s)`);
+} catch (error) {
+	log(`secrets: plain values not encrypted yet: ${String(error).slice(0, 200)}`);
+}
 tagStoredApps();
 setAppLabelResolver(key => appEntries(DATA_DIR).find(e => e.key === key)?.label ?? key);
 setDraftHandled(d => draftHandled(d.draft!.ref!, { mail: { drafts: listMailDrafts, record: mailByKey }, comment: commentDraftFacts, kakao: kakaoDraftFacts }));

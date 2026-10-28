@@ -1,8 +1,9 @@
 // KakaoTalk id / password / database key store: the macOS Keychain only (service dotz.kakao, accounts id|password|dbkey).
 // No plaintext copy is kept: the 0600 file the gateway's secret flow writes (<dataDir>/secrets/kakao) is moved into the Keychain
 // and deleted at once, also when the move fails. A value is only ever written to the `security -i` STDIN (never argv), and never put into a log line or an error.
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { readSecretFile } from "../secretbox.ts";
 import { KEYCHAIN_SERVICE, type KakaoPaths, type Runner } from "./types.ts";
 
 export type SecretName = "id" | "password" | "dbkey";
@@ -25,7 +26,7 @@ export function writePrivate(file: string, text: string): void {
 
 function readFallback(paths: KakaoPaths): Record<string, string> {
 	try {
-		const raw = JSON.parse(readFileSync(paths.secretFile, "utf8"));
+		const raw = JSON.parse(readSecretFile(paths.secretFile));
 		const out: Record<string, string> = {};
 		if (raw && typeof raw === "object") for (const [k, v] of Object.entries(raw)) if (typeof v === "string" && v) out[k] = v;
 		return out;

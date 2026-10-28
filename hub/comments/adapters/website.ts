@@ -5,8 +5,8 @@
 // Script/JSON read output:  {"comments":[{"id","thread","parent?","author","text","postTitle?","postLink?","at"(ISO or ms),"mine?"}],"cursor?"}
 // A read script is run as `<command...> --since <cursor>`; a JSON endpoint gets `?since=<cursor>`.
 // Post body (webhook JSON, or stdin of the script): {"sendId","commentId","thread","parent?","text"}; answer {"ok":true,"ref?"} or {"ok":false,"reason"}.
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { readSecretFile } from "../../secretbox.ts";
 import type { CommentAdapter, RawComment, SiteConfig } from "../contract.ts";
 
 export type Exec = (argv: string[], stdin?: string) => Promise<{ code: number; stdout: string; stderr: string }>;
@@ -80,7 +80,7 @@ export function websiteAdapter(deps: WebsiteDeps): CommentAdapter {
 	const secret = (name?: string): string | undefined => {
 		if (!name || !/^[A-Za-z0-9._-]+$/.test(name)) return undefined;
 		try {
-			return readFileSync(join(deps.secretsDir, name), "utf8").trim();
+			return readSecretFile(join(deps.secretsDir, name)).trim();
 		} catch {
 			return undefined;
 		}

@@ -6,6 +6,7 @@ import * as discord from "./discord.ts";
 import { authRoute, pendingAuth, setFormLink } from "./auth.ts";
 import { normalizeValue } from "./authfields.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
+import { readSecretFile } from "./secretbox.ts";
 
 const call = (path: string, method = "GET", body?: unknown) =>
 	authRoute(new Request(`http://local${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body) }), new URL(`http://local${path}`))!;
@@ -93,7 +94,10 @@ test("one-time form: 0600 file under secrets/once, path and field names only, no
 	expect(parsed.keys).toEqual(["name", "phone", "email", "postal_code", "address1", "card_holder", "card_number", "card_expiry", "card_cvc", "birth_date", "id_number", "other_gift_code"]);
 	expect(mode(parsed.path)).toBe(0o600);
 	expect(mode(join(DATA_DIR, "secrets"))).toBe(0o700);
-	const stored = JSON.parse(readFileSync(parsed.path, "utf8")) as Record<string, string>;
+	const raw = readFileSync(parsed.path, "utf8");
+	expect(raw.startsWith("dotzenc1:")).toBe(true);   // stored encrypted: no value in the file as text
+	for (const bit of SECRET_BITS) expect(raw).not.toContain(bit);
+	const stored = JSON.parse(readSecretFile(parsed.path)) as Record<string, string>;
 	expect(stored.card_number).toBe("4539771203846918");
 	expect(stored.card_expiry).toBe("12/30");
 	expect(stored.address2).toBeUndefined();

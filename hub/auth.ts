@@ -7,12 +7,13 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
-import { cfg, DATA_DIR, HUB_TOKEN, log, TZ, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, HUB_TOKEN, log, TZ } from "./config.ts";
 import { ASK_PREFIX, askInteraction } from "./askbuttons.ts";
 import * as discord from "./discord.ts";
 import { msg } from "./i18n.ts";
 import { authRequested, authSettled } from "./notices.ts";
 import { buildForm, type FormField, normalizeValue } from "./authfields.ts";
+import { writeSecretFile } from "./secretbox.ts";
 
 type Kind = "secret" | "otp" | "approve" | "form";
 type Field = "username" | "password" | "code";
@@ -162,7 +163,7 @@ function store(r: AuthRequest, values: Record<string, string>): void {
 		chmodSync(SECRETS_DIR, 0o700);
 		chmodSync(dir, 0o700);
 		const file = r.remember ? join(SECRETS_DIR, r.site) : join(ONCE_DIR, `${r.site}-${r.id}`);
-		writeAtomic(file, `${JSON.stringify(values)}\n`, 0o600);
+		writeSecretFile(file, `${JSON.stringify(values)}\n`);
 		r.path = file;
 		r.keys = Object.keys(values);
 		if (!r.remember) setTimeout(() => rmSync(file, { force: true }), ONCE_MS).unref();
@@ -170,7 +171,7 @@ function store(r: AuthRequest, values: Record<string, string>): void {
 		mkdirSync(SECRETS_DIR, { recursive: true, mode: 0o700 });
 		chmodSync(SECRETS_DIR, 0o700);
 		const file = join(SECRETS_DIR, r.site);
-		writeAtomic(file, `${JSON.stringify(values)}\n`, 0o600);
+		writeSecretFile(file, `${JSON.stringify(values)}\n`);
 		r.path = file;
 	} else {
 		r.otp = values.code;
