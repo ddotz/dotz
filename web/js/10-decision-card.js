@@ -203,6 +203,73 @@ function draftFilesNode(d, o = {}) {
   if (ref && o.edit !== false && d.toLabel === "받는이" && !DRF.st[ref]) drfLoad(ref).then(paint);
   return box;
 }
+/* ---------- 받는 사람·참조 of a mail reply draft (hub/draft-recipients.ts) ---------- */
+// The rows above a mail draft's body: 답장 | 전체 답장, the 받는이 chips and the 참조 chips, a tap to edit one, its x to take it off, one add field
+// per row. Only a pending draft is editable (o.edit false = read only, a sent draft keeps the lines it went with). The live list is
+// GET /api/drafts/<ref>/recipients and each change is one POST to the same path - through the peer proxy for a draft of the other computer -
+// and the hub rewrites the approval notice, so the card in every view shows the same list. o.t = the draft's conversation.
+const DRR = { st: {}, pc: {}, busy: {}, add: {}, edit: {} };
+const DRR_NONE = { to: [], cc: [], mode: "reply", editable: false, reply: false, failed: true };
+const drrPath = ref => `/api/drafts/${enc(ref)}/recipients`;
+const drrSplit = s => String(s || "").split(/\s*,\s*/).map(a => a.trim()).filter(Boolean);
+async function drrLoad(ref) { try { const r = await api(drrPath(ref)); DRR.st[ref] = r && Array.isArray(r.to) ? r : DRR_NONE; } catch { DRR.st[ref] = DRR_NONE; } }
+async function drrWrite(ref, body) {
+  const r = await api(drrPath(ref), "POST", body);
+  DRR.st[ref] = { to: r.to || [], cc: r.cc || [], mode: r.mode || "reply", editable: !!r.editable, reply: !!r.reply };
+  DRR.add[ref] = ""; DRR.edit[ref] = "";
+  return DRR.st[ref];
+}
+function draftToNode(d, o = {}) {
+  const ref = d.ref;
+  // Which computer holds the draft: a peer's rows change there (the same map the 첨부 줄 uses for its own requests).
+  if (ref && o.t !== undefined) DRF.pc[ref] = DRR.pc[ref] = o.t ? pqPc(o.t) : null;
+  const box = el("div", { class: "dr-recv" });
+  const busy = () => !!DRR.busy[ref];
+  const run = async job => {
+    if (!ref || DRR.busy[ref]) return;
+    DRR.busy[ref] = true; paint();
+    try { const st = await job(); Object.assign(d, { to: st.to.join(", ") }); if (st.cc.length) d.cc = st.cc; else delete d.cc; d.mode = st.mode; }
+    catch (e) { toast(e instanceof TypeError ? "연결이 끊겨 바꾸지 못했어요" : e.message, true); }
+    DRR.busy[ref] = false; paint();
+  };
+  const change = (row, list) => run(() => drrWrite(ref, { [row]: list }));
+  const field = (label, value, done) => {
+    const i = el("input", { class: "dr-rc-in", type: "email", inputmode: "email", autocomplete: "off", placeholder: label, "aria-label": label, disabled: busy() });
+    i.value = value || "";
+    const go = () => { const v = i.value.trim(); if (v) done(v); };
+    i.onkeydown = ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); go(); } };
+    return { i, go };
+  };
+  const editor = (label, value, done) => {
+    const f = field(label, value, done);
+    return el("span", { class: "dr-rc-edit" }, f.i, el("button", { class: "btn text dr-rc-go", type: "button", disabled: busy(), text: "확인", onclick: f.go }),
+      el("button", { class: "btn text", type: "button", disabled: busy(), text: "취소", onclick: () => { DRR.add[ref] = ""; DRR.edit[ref] = ""; paint(); } }));
+  };
+  const row = (name, label, list, editable) => {
+    const editing = String(DRR.edit[ref] || "");
+    const chips = list.map((a, i) => (editing === `${name}:${i}`
+      ? editor(name === "to" ? "받는 사람 주소" : "참조 주소", a, v => change(name, list.map((x, n) => (n === i ? v : x))))
+      : el("span", { class: "dr-chip dr-rc" },
+        editable ? el("button", { class: "dr-rc-t", type: "button", title: "고치기", "aria-label": `${a} 고치기`, disabled: busy(), text: a, onclick: () => { DRR.add[ref] = ""; DRR.edit[ref] = `${name}:${i}`; paint(); } }) : el("span", { class: "dr-rc-t", text: a }),
+        editable ? el("button", { class: "dr-rc-x", type: "button", title: "빼기", "aria-label": `${a} 빼기`, disabled: busy(), onclick: () => change(name, list.filter((_, n) => n !== i)) }, icon("close")) : null)));
+    if (editable && DRR.add[ref] === name) chips.push(editor(name === "to" ? "메일 주소 추가" : "참조 주소 추가", "", v => change(name, [...list, v])));
+    else if (editable) chips.push(el("button", { class: "dr-rc-add", type: "button", "aria-label": `${label} 추가`, disabled: busy(), onclick: () => { DRR.edit[ref] = ""; DRR.add[ref] = name; paint(); } }, icon("add"), el("span", { text: "추가" })));
+    return el("div", { class: "dr-to dr-rcrow", "data-row": name }, el("span", { class: "dr-k", text: label }), chips.length ? el("div", { class: "dr-rc-list" }, ...chips) : el("span", { class: "dr-k", text: "-" }));
+  };
+  function paint() {
+    const st = ref ? DRR.st[ref] : null;
+    const live = st && !st.failed ? st : { to: drrSplit(d.to), cc: Array.isArray(d.cc) ? d.cc : [], mode: d.mode || "reply", editable: !!ref && o.edit !== false, reply: !!d.mode };
+    const editable = live.editable && o.edit !== false, off = busy();
+    const seg = live.reply ? el("div", { class: "seg dr-seg", role: "group", "aria-label": "답장 범위" },
+      ...[['reply', '답장'], ['all', '전체 답장']].map(([k, text]) => el("button", { class: live.mode === k ? "on" : "", type: "button", "data-k": `mode-${k}`, "aria-pressed": String(live.mode === k), disabled: off || !editable, text, onclick: () => { if (editable && !off && live.mode !== k) run(() => drrWrite(ref, { mode: k })); } }))) : null;
+    const ccRow = live.cc.length || (live.reply && editable) ? row("cc", "참조", live.cc, editable) : null;
+    clear(box).append(...[seg, live.reply || live.to.length ? row("to", "받는이", live.to, editable) : null, ccRow].filter(Boolean));
+    box.hidden = !box.querySelector(".dr-rcrow");
+  }
+  paint();
+  if (ref && o.edit !== false && !DRR.st[ref]) drrLoad(ref).then(paint);
+  return box;
+}
 // "댓글 답글에 이어서" (+ the comment's link): a draft made as the follow-up of an approved action says where it came from (hub/draft-approval.ts 이어서).
 function draftOriginNode(d) {
   const o = d.origin;
@@ -221,7 +288,7 @@ function draftMailNode(m) {
 }
 function draftNode(d, o) {
   return el("div", { class: "dc-draft" },
-    el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
+    !d.toLabel || d.toLabel === "받는이" ? draftToNode(d, o) : el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
     d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
     draftOriginNode(d),
     el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d, o), draftMailNode(d.mail));
@@ -248,11 +315,11 @@ function renderSheet(box, dc, picks, step) {
   const qText = d ? ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "") : dc.question;
   const head = fsHead(d ? [
     el("span", { class: "fs-ey", text: qText || "보내기 전에 확인해요" }),
-    el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
+    el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: [d.to || "-", ...(d.cc || []).map(a => `참조 ${a}`)].join(" · ") })),
     d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null]
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
-  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail))
+  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   // 원문 보기 (10-draft-original.js): the original is its own panel beside the draft (a toggle on a phone); the draft side (body + footer) is the one that slides.
   box.classList.remove("od-host", "od-on");
@@ -392,5 +459,6 @@ function paintDecision() {
 // What a decision card shows; the card (docked or in the sheet) is redrawn only when this changes. A redraw replaces the reason field, and on
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
-  return JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0]);
+  const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
+  return JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr]);
 }

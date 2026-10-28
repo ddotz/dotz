@@ -113,6 +113,27 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .dr-k { flex: none; color: var(--fg-3); font-size: 13px; line-height: 20px; }
 .dr-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 10px; border-radius: 12px; background: var(--layer); color: var(--fg); font-size: 13px; line-height: 20px; }
 .dr-sub { color: var(--fg); font-size: 16px; line-height: 24px; font-weight: 700; overflow-wrap: anywhere; }
+/* 받는이·참조 of a mail reply draft (10-decision-card.js draftToNode): 답장 | 전체 답장, chips with x, one add field per row */
+.dr-recv { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dr-recv[hidden] { display: none; }
+.dr-seg { align-self: flex-start; flex-wrap: nowrap; }
+.dr-seg button { flex: none; padding: 0 12px; }
+.dr-rcrow { align-items: flex-start; }
+.dr-rc-list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.dr-rc { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; padding-right: 2px; }
+.dr-rc-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }
+.dr-rc-t:disabled { cursor: default; }
+.dr-rc-x { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--fg-3); cursor: pointer; }
+.dr-rc-x:hover { background: var(--hover); color: var(--fg); }
+.dr-rc-x .ic { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.dr-rc-add { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 10px; border: 1px dashed var(--line-2); border-radius: 14px; background: transparent; color: var(--fg-2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.dr-rc-add:hover { background: var(--hover); }
+.dr-rc-add .ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.dr-rc-edit { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.dr-rc-in { min-width: 0; width: 15em; max-width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 16px; background: var(--card); color: var(--fg); font: inherit; font-size: 13px; }
+.dr-rc-in:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.dr-rc-edit .btn { min-height: 32px; padding: 0 10px; }
+@media (pointer: coarse) { .dr-rc-x { width: 32px; height: 32px; } .dr-rc-add, .dr-rc-in, .dr-rc-edit .btn { min-height: 36px; } }
 /* the mail that goes out right after a comment reply, in the same card (10-decision-card.js draftMailNode) */
 .dr-mailpart { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line-2); }
 .dr-mh { display: flex; align-items: center; gap: 6px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
