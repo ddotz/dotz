@@ -1,6 +1,6 @@
 // HTTP routes of models, runtimes, accounts, providers, activity and commands (the middle part of the route chain). Split out of main.ts.
-import { log } from "./config.ts";
-import { compactTarget, ControlError, contextView, ForceRequired, modelsView, providersView, runCommand, setFallback, setModel } from "./control.ts";
+import { ContextLimitError, log } from "./config.ts";
+import { compactTarget, ControlError, contextView, setContextModel, ForceRequired, modelsView, providersView, runCommand, setFallback, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
 import { activityItems } from "./events.ts";
 import { lanes } from "./lanes.ts";
@@ -85,6 +85,17 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		}
 	}
 	if (req.method === "GET" && url.pathname === "/api/context") return json(contextView());
+	if (req.method === "PUT" && url.pathname === "/api/context/model") {
+		const b = await body(req);
+		const val = (v: unknown) => (v === null || v === undefined || v === "" ? null : (v as number));
+		try {
+			const saved = setContextModel(String(b.model ?? ""), { window: val(b.window), compact_at: val(b.compact_at) });
+			return json({ ok: true, saved, ...contextView() });
+		} catch (error) {
+			if (error instanceof ContextLimitError) return json({ error: error.message }, 400);
+			throw error;
+		}
+	}
 	if (req.method === "POST" && url.pathname === "/api/compact") {
 		try {
 			const r = compactTarget(String((await body(req)).target ?? ""));
