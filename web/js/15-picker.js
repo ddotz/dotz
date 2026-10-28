@@ -6,7 +6,7 @@ let PICKING = false;
 const PK_UI = "#composer, #pick-box, #pick-pill, #pick-marks";
 const PK_FIELD = /^(input|textarea|select)$/;
 const PK_MARKS = new Map();   // pick id -> marker element
-let pkTouchAt = 0, pkRaf = 0;
+let pkTouchAt = 0, pkRaf = 0, pkTickT = 0, pkStart = null;
 const pkFlat = s => String(s ?? "").replace(/\s+/g, " ").trim();
 const pkItems = () => PICK.map(p => ({ n: p.n, tag: p.tag, sel: p.sel, text: p.text, html: p.html, view: p.view, title: p.title }));
 const pkCount = () => PICK.length;
@@ -111,13 +111,14 @@ function pkPlace() {
     m.style.top = `${Math.round(y)}px`;
   }
 }
-function pkLoop() {
-  pkRaf = 0;
-  if (!PICK.length) return;
-  pkPlace();
-  pkRaf = requestAnimationFrame(pkLoop);
+// One frame per scroll or resize, not one per frame: a phone in pick mode keeps its main thread.
+const pkKick = () => { if (!pkRaf) pkRaf = requestAnimationFrame(() => { pkRaf = 0; pkPlace(); }); };
+// A slow pass for lazy images and layout shifts; off while nothing is picked.
+function pkTick() {
+  if (!PICK.length) { if (pkTickT) { clearInterval(pkTickT); pkTickT = 0; } return; }
+  if (pkTickT) return;
+  pkTickT = setInterval(() => { if (PICK.length > 0 && document.visibilityState === "visible") pkPlace(); }, 400);
 }
-const pkKick = () => { if (!pkRaf && PICK.length) pkRaf = requestAnimationFrame(pkLoop); };
 
 function pkChip(p) {
   return el("div", { class: "fatt pk-chip", title: `${p.tag} · ${p.text || p.sel}` },
@@ -139,6 +140,7 @@ function renderPicks() {
   pkSyncMarks();
   pkPlace();
   pkKick();
+  pkTick();
 }
 function pkDrop(id) {
   PICK = PICK.filter(p => p.id !== id);
@@ -188,8 +190,29 @@ function pkBind(doc, frame) {
     const n = hit(ev) || pkTouchHit(ev, doc);
     if (n) pkDo(n, doc, frame);
   }, true);
-  doc.addEventListener("touchstart", ev => { if (!PICKING || inUI(ev)) return; pkStop(ev); const n = pkTouchHit(ev, doc); if (n) pkHover(n, frame); }, { capture: true, passive: false });
-  doc.addEventListener("touchend", ev => { if (!PICKING || inUI(ev)) return; pkStop(ev); const n = pkTouchHit(ev, doc); if (n) { pkTouchAt = Date.now(); pkDo(n, doc, frame); } }, { capture: true, passive: false });
+  // touchstart lets the page scroll: no preventDefault, only the pick's own events are taken.
+  doc.addEventListener("touchstart", ev => {
+    if (!PICKING || inUI(ev)) return;
+    ev.stopPropagation();
+    if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+    const t = (ev.changedTouches && ev.changedTouches[0]) || (ev.touches && ev.touches[0]);
+    pkStart = t ? { x: t.clientX, y: t.clientY } : null;
+    const n = pkTouchHit(ev, doc);
+    if (n) pkHover(n, frame);
+  }, { capture: true, passive: true });
+  doc.addEventListener("touchend", ev => {
+    if (!PICKING || inUI(ev)) return;
+    pkStop(ev);   // no synthesized click reaches the element
+    const s = pkStart;
+    pkStart = null;
+    const t = (ev.changedTouches && ev.changedTouches[0]) || (ev.touches && ev.touches[0]);
+    if (t && s && Math.hypot(t.clientX - s.x, t.clientY - s.y) > 10) { pkHover(null); return; }   // a scroll, not a pick
+    const n = pkTouchHit(ev, doc);
+    if (n) { pkTouchAt = Date.now(); pkDo(n, doc, frame); }
+  }, { capture: true, passive: false });
+  doc.addEventListener("touchcancel", () => { pkStart = null; if (PICKING) pkHover(null); }, { capture: true, passive: true });
+  const esc = ev => { if (!PICKING || (ev.key !== "Escape" && ev.key !== "Esc")) return; pkStop(ev); pkSet(false); };
+  (doc.defaultView || doc).addEventListener("keydown", esc, true);
   doc.addEventListener("scroll", pkKick, true);
 }
 function pkFrame(f) {
@@ -209,16 +232,13 @@ function pkSet(on) {
   document.body.classList.toggle("picking", PICKING);
   if (PICKING) for (const f of document.querySelectorAll("iframe")) pkFrame(f);
   else pkHover(null);
+  pkKick();
+  pkTick();
 }
 
 $("#c-pick").append(icon("pick"));
 $("#c-pick").onclick = () => pkSet(!PICKING);
 pkBind(document, null);
-addEventListener("keydown", ev => {
-  if (!PICKING || (ev.key !== "Escape" && ev.key !== "Esc")) return;
-  pkStop(ev);
-  pkSet(false);
-}, true);
 addEventListener("resize", pkKick);
 document.addEventListener("load", ev => { const t = ev.target; if (t && t.tagName === "IFRAME") pkFrame(t); }, true);
 new MutationObserver(muts => {
