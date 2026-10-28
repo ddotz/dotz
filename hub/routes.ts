@@ -544,7 +544,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			if (!r || r.dir === "out") return json({ error: "이 메일을 찾지 못했어요" }, 404);
 			if (!deps?.requestDraft) return json({ error: "이 설치에는 답장 초안 기능이 없어요" }, 503);
 			const target = mailTarget(key);
-			void deps.requestDraft({ key, target, ...(r.thread ? { thread: r.thread } : {}), ...(r.msg ? { messageId: r.msg } : {}), source: r.source, id: r.id, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.attachments?.length ? { attachments: r.attachments.map(a => ({ name: a.name, size: a.size })) } : {}) })
+			void deps.requestDraft({ key, target, ...(r.thread ? { thread: r.thread } : {}), ...(r.msg ? { messageId: r.msg } : {}), source: r.source, id: r.id, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.attachments?.some(a => !a.inline) ? { attachments: r.attachments.filter(a => !a.inline).map(a => ({ name: a.name, size: a.size })) } : {}) })
 				.then(res => { if (res !== "offered") return deps.send(target, "답장 초안을 만들지 못했어요. 잠시 뒤 다시 눌러 주세요"); })
 				.catch(e => log(`mail ${key}: requested draft failed: ${(e as Error).message}`));
 			return json({ ok: true, started: true }, 202);

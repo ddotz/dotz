@@ -39,11 +39,11 @@ function orgFill(pane, d, t, retry) {
   const m = s.data, pc = t ? pqPc(t) : null;
   if (m.kind === "comment") { orgComment(pane, m); return; }
   if (pc) PQ.of.set(`mail:${m.key}`, { pc, key: m.key });   // its body and files are read from the computer that owns the mail
-  const files = m.attachments || [];
+  const files = mailRealFiles(m.attachments);   // the body's own pictures are drawn in it, not listed as files
   // 보낸 사람 / 받는 사람 / 참조 come from the mail view's own header (30-mail-thread.js), so every place a mail is read names them the same way
   pane.append(...[mailHeadNode(m), orgRow("날짜", kstStamp(m.date)), orgRow("제목", m.subject),
     el("div", { class: "od-body" }, mailBodyNode(m.key, m.html, m.text)),
-    files.length ? el("div", { class: "od-files" }, ...files.map((f, i) => el("a", { class: "dr-att", href: mailFileUrl(m.key, i), target: "_blank", rel: "noopener", title: `${f.name} 열기` },
+    files.length ? el("div", { class: "od-files" }, ...files.map(({ f, i }) => el("a", { class: "dr-att", href: mailFileUrl(m.key, i), target: "_blank", rel: "noopener", title: `${f.name} 열기` },
       icon("clip"), el("span", { class: "dr-fn", text: f.name }), f.size ? el("span", { class: "dr-fs", text: mailSize(f.size) }) : null))) : null].filter(Boolean));
 }
 // The bar (desktop: one 원문 보기 button; phone: the 초안 | 원문 toggle) and the original panel for `host`, the box both panels live in; `draftEl` is the draft's own
