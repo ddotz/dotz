@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { offerMailDraft } from "../features/reply-drafts/lib/offer.ts";
-import { paths } from "../features/reply-drafts/lib/settings.ts";
+import { dataDir, paths } from "../features/reply-drafts/lib/settings.ts";
 import { listDrafts, setStatus } from "../features/reply-drafts/lib/store.ts";
 import { draftRecipientsRoute } from "./draft-recipients.ts";
 import { emit } from "./events.ts";
@@ -65,7 +65,8 @@ beforeAll(async () => {
 });
 afterAll(() => {
 	hub.stop();
-	for (const p of [paths.config(), paths.drafts()]) rmSync(p, { force: true, recursive: true });
+	// The draft flow also leaves the feature's personal switch (<data>/features/reply-drafts), which later tests read as a feature of the owner's.
+	for (const p of [paths.config(), paths.drafts(), join(dataDir(), "features", "reply-drafts")]) rmSync(p, { force: true, recursive: true });
 });
 
 test("전체 답장, a chip off and one added: each is one request and the card shows the same list", async () => {
