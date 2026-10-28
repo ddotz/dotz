@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readSettings, writeSettings } from "./app-settings.ts";
@@ -7,6 +7,9 @@ import { fakeHub, inbox, json, run, waitFor, type View } from "./test-web.ts";
 
 // 자동 초안 규칙 in the mail app's settings screen (web/js/32-app-settings.js arNodes) against a stub gateway whose settings route calls the real
 // hub/app-settings.ts on a temp data dir, and the rule's badge on a mail row and a draft card. Names and addresses are placeholders.
+// RULES_SHOTS=<dir> keeps a screenshot of the form and of the saved rule.
+const SHOTS = process.env.RULES_SHOTS;
+if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 const data = mkdtempSync(join(tmpdir(), "rules-web-"));
 const config = () => JSON.parse(readFileSync(join(data, "custom/reply-drafts/config.json"), "utf8"));
 const patches = inbox<Record<string, unknown>>();
@@ -42,6 +45,7 @@ afterAll(() => {
 
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
 const nth = async (n: number) => (await patches.until(p => p.length >= n, 10_000, `patch ${n}`))[n - 1];
+const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
 const type = (sel: string, value: string) => `{ const e = document.querySelector(${JSON.stringify(sel)}); e.value = ${JSON.stringify(value)}; e.dispatchEvent(new Event("input", { bubbles: true })); }`;
 
 describe("자동 초안 규칙 in the mail settings screen", async () => {
@@ -71,8 +75,11 @@ describe("자동 초안 규칙 in the mail settings screen", async () => {
 		await waitFor(v, `document.querySelector('[data-rule-form="new"]')`);
 		const ph = await q<string[]>(v, `return ["name", "when", "how", "files"].map(k => document.querySelector('[data-k="rule-' + k + '"]').placeholder)`);
 		expect(ph.map(p => p.split(":")[0])).toEqual(["이름", "언제", "어떻게", "붙일 파일"]);
-		await run(v, [type('[data-k="rule-name"]', "자료 요청"), type('[data-k="rule-when"]', "신청서를 보내 달라는 메일"), type('[data-k="rule-how"]', "신청서를 첨부하고 짧게 인사"), type('[data-k="rule-files"]', "forms/신청서.pdf, 안내문.pdf"), `document.querySelector('[data-k="rule-save"]').click()`].join("\n"));
+		await run(v, [type('[data-k="rule-name"]', "자료 요청"), type('[data-k="rule-when"]', "신청서를 보내 달라는 메일"), type('[data-k="rule-how"]', "신청서를 첨부하고 짧게 인사"), type('[data-k="rule-files"]', "forms/신청서.pdf, 안내문.pdf"), ].join("\n"));
+		await shot(v, "rules-form.png");
+		await run(v, `document.querySelector('[data-k="rule-save"]').click()`);
 		await waitFor(v, `document.querySelector('#app-sw [data-rule="r1"]') && !document.querySelector("[data-rule-form]")`);
+		await shot(v, "rules-saved.png");
 		expect(await nth(1)).toEqual({ app: "mail", values: { draft_rules: [{ name: "자료 요청", when: "신청서를 보내 달라는 메일", how: "신청서를 첨부하고 짧게 인사", files: ["forms/신청서.pdf", "안내문.pdf"], on: true }] } });
 		expect(config().draftRules.mail).toEqual([{ id: "r1", name: "자료 요청", when: "신청서를 보내 달라는 메일", how: "신청서를 첨부하고 짧게 인사", files: ["forms/신청서.pdf", "안내문.pdf"], on: true }]);
 		expect(await q(v, `return document.querySelector('[data-rule="r1"] [data-rule]').textContent`)).toBe("자료 요청");
