@@ -84,6 +84,21 @@ self.addEventListener("push", ev => {
   // A decision (m.id): up to two of its option buttons where the platform shows action buttons (Android); a tap elsewhere opens the detail.
   const max = typeof Notification !== "undefined" && Notification.maxActions ? Math.min(2, Notification.maxActions) : 0;
   const actions = m.id && Array.isArray(m.actions) ? m.actions.slice(0, max) : [];
+  // Notifications about something already handled are closed (hub/push.ts withdraw): a "withdraw" push carries only those; a real one may carry
+  // them too. A push must still show something (Chrome otherwise posts its own "updated in the background" line): when nothing else is left,
+  // one silent line is shown and closed at once. Apple endpoints never get a bare withdraw (Safari revokes push that shows nothing).
+  const gone = Array.isArray(m.withdraw) ? m.withdraw.filter(t => typeof t === "string") : [];
+  const closeGone = async () => { for (const n of await self.registration.getNotifications()) if (gone.includes(n.tag)) n.close(); };
+  if (m.kind === "withdraw") {
+    ev.waitUntil((async () => {
+      await closeGone();
+      if ((await self.registration.getNotifications()).length) return;
+      await self.registration.showNotification("dotz", { tag: "withdrawn", body: "처리한 알림을 정리했어요", silent: true, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png" });
+      for (const n of await self.registration.getNotifications({ tag: "withdrawn" })) n.close();
+    })());
+    return;
+  }
+  if (gone.length) ev.waitUntil(closeGone());
   ev.waitUntil(self.registration.showNotification(m.title || "dotz", {
     body: m.body || "",
     tag: m.tag || undefined,
