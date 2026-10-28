@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { commentAsk } from "./ask.ts";
 import { FALLBACK_TITLE, type SourceConfig } from "./contract.ts";
 import { createEngine, type DraftModel } from "./engine.ts";
 import { instagramAdapter, youtubeAdapter, type YoutubeApi } from "./adapters/google-meta.ts";
