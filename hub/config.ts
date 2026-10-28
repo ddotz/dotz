@@ -27,7 +27,10 @@ export type Config = {
 	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; max_workers?: number; idle_stop_min?: number; worker_idle_min?: number };
 	// Model choice and fallback order, one block per target (the web 모델 · 폴백 screen edits exactly this).
 	models?: ModelsConfig;
+	// Per-model context window and auto-compaction point, keyed by model id without the thinking level (the 컨텍스트 screen edits this).
+	context?: { models?: Record<string, ContextLimits> };
 };
+export type ContextLimits = { window?: number; compact_at?: number };
 // One target's model, thinking level and ordered fallback chain: the orchestrator, the lanes (default of every lane) and the
 // lanes' task workers. Missing values take the defaults below.
 type TargetModels = { model?: string; thinking?: string; fallback?: Array<string | FallbackEntry> };
@@ -143,6 +146,50 @@ export const COALESCE_MAX_MS = 20_000;
 export const ACCOUNT_HISTORY_DAYS = 3;
 export const accountHistoryDays = () => positive(cfg.accounts?.history_days, ACCOUNT_HISTORY_DAYS);
 export const lanesCompactAt = () => positive(cfg.lanes?.compact_at, LANES_COMPACT_AT);
+// Per-model context limits (config.json `context.models[<model id>]`). `window` replaces the window the runtime reports
+// (shown and used for the percent); `compact_at` is the token count at which the hub compacts a session on that model,
+// in place of the role's default (orchestrator.rotate_tokens / lanes.compact_at). With only `window` set, the default
+// point stays below it by OmO's own reserve (OmO compacts at window - reserveTokens, 16384 by default). Read on every
+// turn end, so a saved value applies from the next turn.
+export const CONTEXT_RESERVE = 16_384;
+export const CONTEXT_LIMITS = { window: { min: 32_000, max: 10_000_000 }, compact_at: { min: 20_000 } } as const;
+export const contextLimitsOf = (model: string): ContextLimits => cfg.context?.models?.[parseSelector(model).model] ?? {};
+export function compactAtFor(model: string, roleDefault: number): number {
+	const l = contextLimitsOf(model);
+	if (l.compact_at) return l.compact_at;
+	return l.window ? Math.min(roleDefault, l.window - CONTEXT_RESERVE) : roleDefault;
+}
+export class ContextLimitError extends Error {}
+// Checks and stores one model's limits; `null` (or a missing key) resets that value to the default. `nativeWindow` is the
+// window the runtime reported for the model (0 = not known yet), used to check `compact_at` when no window is set.
+export function setContextLimits(model: string, values: { window?: number | null; compact_at?: number | null }, nativeWindow = 0): ContextLimits {
+	const id = parseSelector(model).model;
+	if (!id || !id.includes("/")) throw new ContextLimitError("모델을 알 수 없어요");
+	const whole = (v: unknown, name: string) => {
+		if (v === null || v === undefined) return undefined;
+		if (typeof v !== "number" || !Number.isSafeInteger(v) || v <= 0) throw new ContextLimitError(`${name}는 양의 정수여야 해요`);
+		return v;
+	};
+	const window = whole(values.window, "컨텍스트 크기");
+	const at = whole(values.compact_at, "자동 압축 시점");
+	const W = CONTEXT_LIMITS.window, A = CONTEXT_LIMITS.compact_at;
+	if (window !== undefined && (window < W.min || window > W.max)) throw new ContextLimitError(`컨텍스트 크기는 ${W.min.toLocaleString("en-US")}~${W.max.toLocaleString("en-US")} 토큰이어야 해요`);
+	if (at !== undefined && at < A.min) throw new ContextLimitError(`자동 압축 시점은 ${A.min.toLocaleString("en-US")} 토큰 이상이어야 해요`);
+	const cap = window ?? nativeWindow;
+	if (at !== undefined && cap > 0 && at >= cap) throw new ContextLimitError(`자동 압축 시점은 컨텍스트 크기(${cap.toLocaleString("en-US")})보다 작아야 해요`);
+	const next: ContextLimits = { ...(window !== undefined ? { window } : {}), ...(at !== undefined ? { compact_at: at } : {}) };
+	const apply = (c: Config) => {
+		const models = { ...c.context?.models };
+		if (Object.keys(next).length) models[id] = next;
+		else delete models[id];
+		c.context = { ...c.context, models };
+	};
+	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
+	apply(disk);
+	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
+	apply(cfg);
+	return next;
+}
 export const lanesNightlyCompactAt = () => positive(cfg.lanes?.nightly_compact_at, DEFAULTS.nightly_compact_at);
 export const lanesKeepRecent = () => positive(cfg.lanes?.keep_recent, DEFAULTS.keep_recent);
 export const lanesRotateMb = () => positive(cfg.lanes?.rotate_mb, DEFAULTS.rotate_mb);
