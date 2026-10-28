@@ -12,7 +12,8 @@ const runStateOf = () => {
   // A mail conversation's run state is the background worker its request was deferred to (hub/routes.ts stateRuns): this
   // computer's under /api/state `runs`, the other computer's in its monitoring snapshot (34-peer-monitoring.js pqRuns).
   if (isMailT(target)) return (typeof pqRuns === "function" && pqRuns(target)) || runs[target] || null;
-  return (isLaneT(target) ? runs[target] : runs.main) || null;
+  // A project channel, thread or settings screen with a session of its own (hub/convsessions.ts) has its own line.
+  return (isLaneT(target) ? runs[target] : runs[target] || runs.main) || null;
 };
 // The gateway's clock, not this device's, so the elapsed time ticks every second between state refreshes (workNow, 06-subagents.js).
 const runClock = () => (typeof workNow === "function" ? workNow() : Date.now());

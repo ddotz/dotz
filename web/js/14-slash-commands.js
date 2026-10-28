@@ -145,7 +145,7 @@ $("#working-stop").onclick = ev => (workingBg.length ? workCancel(workingBg[0].i
 ta.addEventListener("input", () => { if (!$("#working").hidden) renderWorking(); });
 async function stopTarget() {
   try {
-    await api(isLaneT(target) ? `/api/lanes/${enc(laneOf(target))}/abort` : "/api/orchestrator/abort", "POST", {});
+    await api(isLaneT(target) ? `/api/lanes/${enc(laneOf(target))}/abort` : "/api/orchestrator/abort", "POST", isLaneT(target) ? {} : { target });
     toast("작업을 중단했어요");
     scheduleState();
   } catch (e) { toast(e.message, true); }
