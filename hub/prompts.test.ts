@@ -627,3 +627,37 @@ test("a message queued as the next prompt while the cancelled turn ran is stoppe
 	expect(state.posts).toEqual([]);
 	expect(q.onPrompt("an unrelated later message")).toBe(false);
 });
+
+// 2026-10-28 21:44 KST (Mac mini): a mail thread's question arrived while the web conversation's KTX run worked. It was steered into
+// that run, and the run's promptless KTX answer went to the owner's newest message, the mail thread.
+test("a message of another conversation is never steered into a running turn; only the same conversation's is", () => {
+	const { q, state, startTurn } = setup();
+	startTurn("ktx", { target: "web", replyTo: "w1" });
+	expect(q.deliver("file question", { target: "th:9", replyTo: "t1", owner: true })).toBe(false);
+	expect(state.steered).toEqual([]);
+	expect(state.delivered).toEqual(["ktx", "file question"]);
+	expect(q.deliver("ktx follow-up", { target: "web", replyTo: "w2", owner: true })).toBe(true);
+	expect(state.steered).toEqual(["[note] ktx follow-up"]);
+	// a run no prompt of ours started (the turn was settled): nothing is steered into it, not even the same conversation's
+	q.onAnswer("ktx answer");
+	q.settleTurn();
+	expect(q.deliver("mail again", { target: "mail:k", replyTo: "m1", owner: true })).toBe(false);
+	expect(state.steered).toEqual(["[note] ktx follow-up"]);
+});
+
+test("a promptless answer stays in the last turn's conversation and never goes to another conversation's waiting message", async () => {
+	const { q, state, startTurn } = setup();
+	q.deliver("ktx", { target: "web", replyTo: "w1", owner: true });
+	state.working = true;
+	q.onPrompt("ktx");
+	q.settleTurn(); // the turn ended without an answer; the runtime keeps running on its own
+	q.deliver("? 이거 파일 어디감?", { target: "th:9", replyTo: "t1", owner: true });
+	q.onAnswer("KTX 쪽은 예약을 걸려면 값이 필요해요. 날짜와 구간을 주세요.");
+	await Promise.resolve();
+	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([["web", "w1"]]);
+	// the mail question's own turn answers it in its own conversation
+	q.onPrompt("? 이거 파일 어디감?");
+	q.onAnswer("파일은 그대로 있어요.");
+	await Promise.resolve();
+	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([["web", "w1"], ["th:9", "t1"]]);
+});

@@ -122,8 +122,14 @@ export function createPrompts(deps: PromptDeps) {
 		save();
 	}
 
-	function deliver(text: string, reply?: Reply): void {
-		const steered = Boolean(reply) && deps.working();
+	/**
+	 * Delivers one prompt; true when it was steered into the running turn. Only a message of the conversation that turn answers is
+	 * steered in: another conversation's message waits as its own prompt, so one turn never mixes two conversations and its answer
+	 * cannot land in the wrong one (2026-10-28 21:44 KST: a mail thread's question was steered into a KTX run and the KTX answer
+	 * was posted in the mail thread).
+	 */
+	function deliver(text: string, reply?: Reply): boolean {
+		const steered = Boolean(reply) && deps.working() && Boolean(current && !current.done && current.target && sameConv(current.target, reply!.target));
 		const prompt: Prompt = { key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered };
 		prompts.push(prompt);
 		if (prompts.length > MAX_PROMPTS) prompts.splice(0, prompts.length - MAX_PROMPTS);
@@ -134,13 +140,15 @@ export function createPrompts(deps: PromptDeps) {
 		save();
 		if (!steered) {
 			// A turn still owes an answer, yet the orchestrator does not look busy: logged to find why (10-20 17:19).
-			if (reply && current && !current.done) deps.log(`message for ${reply.target} delivered as a new prompt while the turn for ${current.target ?? "-"} is unanswered`);
-			return deps.deliver(text, Boolean(reply?.owner));
+			if (reply && deps.working()) deps.log(`message for ${reply.target} waits as its own prompt: the running turn answers ${current && !current.done ? (current.target ?? "-") : "no request of ours"}`);
+			deps.deliver(text, Boolean(reply?.owner));
+			return false;
 		}
-		if (deps.steer(deps.note(reply!.target, reply!.replyTo, text)) !== false) return;
+		if (deps.steer(deps.note(reply!.target, reply!.replyTo, text)) !== false) return true;
 		// The turn ended between the check and the steer: the message goes in as a normal prompt instead of waiting.
 		prompts.at(-1)!.steered = false;
 		deps.deliver(text, Boolean(reply?.owner));
+		return false;
 	}
 
 	/**
@@ -322,11 +330,19 @@ export function createPrompts(deps: PromptDeps) {
 		return { target: t.prompt.target, ...(t.prompt.replyTo ? { replyTo: t.prompt.replyTo } : {}) };
 	}
 
-	/** Who an answer without a prompt goes to: the owner's newest message of the last 30 minutes, one still unanswered first. */
+	/**
+	 * Who an answer without a prompt goes to: a request waiting on a background worker first; else the owner's newest message of the
+	 * last 30 minutes, one still unanswered first. When a turn ran in this process in the last 30 minutes, only that turn's conversation
+	 * qualifies (the run is its continuation), and a message still waiting as its own prompt never does: its turn answers it
+	 * (2026-10-28 21:44 KST, a KTX answer went to a mail thread's newer question).
+	 */
 	function orphanTarget(): OwnerMessage | undefined {
 		const d = openDeferred()[0];
 		if (d?.target) return { target: d.target, replyTo: d.replyTo, at: d.at, prompt: d };
-		const fresh = owners.filter(o => Date.now() - o.at <= ORPHAN_MAX_AGE_MS).sort((a, b) => a.at - b.at);
+		const last = turns.at(-1);
+		const conv = last?.prompt.target && Date.now() - (last.end ?? Date.now()) <= ORPHAN_MAX_AGE_MS ? last.prompt.target : undefined;
+		const queuedNow = new Set(prompts.filter(p => !p.steered));
+		const fresh = owners.filter(o => Date.now() - o.at <= ORPHAN_MAX_AGE_MS && !(o.prompt && queuedNow.has(o.prompt)) && (!conv || sameConv(o.target, conv))).sort((a, b) => a.at - b.at);
 		return fresh.findLast(o => !(o.prompt?.done || isAnswered(o.replyTo))) ?? fresh.at(-1);
 	}
 

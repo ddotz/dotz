@@ -147,8 +147,9 @@ export function flush(target: string): void {
 	if (ask) return void accountChatAnswer(target, ask, b.replyTo);
 	rateLimitNotice(target, b.replyTo);
 	const merged = b.events.length > 1 ? { ...head, message_id: refOf(b.events.at(-1)!), parts: b.events } : head;
-	const how = orch.status === "working" ? "steered" : orch.status === "rate-limited" ? "held" : "received";
-	deliver(inboxText(merged), { target, replyTo: b.replyTo, owner: true });
+	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, owner: true });
+	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver).
+	const how = steered ? "steered" : orch.status === "rate-limited" ? "held" : orch.status === "working" ? "queued" : "received";
 	expectReply(target);
 	const refs = b.events.flatMap(e => refOf(e) ?? []);
 	for (const ref of refs) emitDelivery(target, ref, how);
@@ -241,9 +242,9 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	else if (s.mode === "steer" && orch.status === "working") {
 		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
-		deliver(inboxText(turn), { target: to, replyTo: mid, owner: true });
+		const steered = deliver(inboxText(turn), { target: to, replyTo: mid, owner: true });
 		expectReply(to);
-		emitDelivery(to, mid, "steered");
+		emitDelivery(to, mid, steered ? "steered" : "queued");
 		awaiting.set(to, [...(awaiting.get(to) ?? []), { ref: mid, by: mid }]);
 		lastOwner.set(to, mid);
 	} else {
