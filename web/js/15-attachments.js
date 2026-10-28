@@ -49,6 +49,7 @@ function renderAtt() {
     if (a.url) return el("div", { class: `fatt img${a.file ? "" : " up"}`, title: a.name }, el("img", { src: a.url, alt: a.name }), x);
     return fileChip(a.name, a.file ? [extOf(a.name), fsize(a.size)].filter(Boolean).join(" · ") : "올리는 중…", { cls: a.file ? "" : "up", x });
   }));
+  if (typeof renderPicks === "function") renderPicks();   // the tray holds the picked elements next to the files (15-picker.js)
 }
 ta.addEventListener("paste", ev => {
   const files = [...(ev.clipboardData && ev.clipboardData.files || [])];

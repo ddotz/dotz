@@ -168,7 +168,7 @@ ta.addEventListener("keydown", ev => {
 // and the click never lands (owner 2026-10-21: the first tap only hid the keyboard). The click then submits once; sendChat clears the box,
 // so a repeat is a no-op, and the box is refocused so the keyboard stays up like a messenger.
 $("#send-btn").addEventListener("pointerdown", ev => ev.preventDefault());
-$("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.contains("stop") && !ta.value.trim() && !ATT.length) stopTarget(); else sendChat(); if (!ta.disabled) ta.focus({ preventScroll: true }); };
+$("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.contains("stop") && !ta.value.trim() && !ATT.length && !pkCount()) stopTarget(); else sendChat(); if (!ta.disabled) ta.focus({ preventScroll: true }); };
 // With no turn running, the line is a background worker's (renderWorking): 중단 ends that worker (06-subagents.js workCancel).
 $("#working-stop").onclick = ev => (workingBg.length ? workCancel(workingBg[0].id, ev.currentTarget) : stopTarget());
 ta.addEventListener("input", () => { if (!$("#working").hidden) renderWorking(); });
@@ -195,10 +195,11 @@ async function sendCommand(text) {
 async function sendChat(how) {
   const text = ta.value.trim();
   if (ATT.some(a => !a.file)) { toast("파일을 올리는 중이에요"); return; }
-  const files = ATT.map(a => a.file);
-  if ((!text && !files.length) || ta.disabled) return;
+  const files = ATT.map(a => a.file), picks = pkItems();
+  if ((!text && !files.length && !picks.length) || ta.disabled) return;
   if (files.length && text.startsWith("/")) { toast("명령에는 파일을 붙일 수 없어요", true); return; }
-  const sentAtt = ATT; ATT = []; renderAtt();
+  if (picks.length && text.startsWith("/")) { toast("명령에는 요소를 붙일 수 없어요", true); return; }
+  const sentAtt = ATT, sentPicks = PICK; ATT = []; renderAtt(); pkClear();
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
   if (typeof asTplEnd === "function") asTplEnd();
@@ -207,7 +208,7 @@ async function sendChat(how) {
   const mode = how || (isWorking(t) ? "steer" : undefined), reply = rpTake();
   if (isSettingsT(t) && !TURN.has(t)) TURN.set(t, Date.now() - 5000);
   try {
-    const body = { text, ...(reply ? { reply } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}) };
+    const body = { text, ...(reply ? { reply } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}), ...(picks.length ? { elements: picks } : {}) };
     // A conversation of another computer gets the files uploaded there first (34-peer-monitoring.js pqUpload); a failed upload sends nothing.
     const owner = pqAct("/api/message", body);
     if (owner && owner.pc && files.length) body.files = await pqUpload(owner.pc, sentAtt);
@@ -221,8 +222,8 @@ async function sendChat(how) {
   }
   catch (e) {
     // a failed send goes back to the conversation it came from, even when the owner has moved to another one meanwhile
-    if (t !== target) { ts(t).draft = text; try { localStorage.setItem(DRAFT_KEY(t), text); } catch {} toast(`${e.message} · 보내지 못한 글은 원래 대화에 남겨 뒀어요${sentAtt.length ? " (파일은 다시 붙여 주세요)" : ""}`, true); return; }
-    toast(e.message, true); ta.value = text; autosize(); ATT = sentAtt.concat(ATT); renderAtt(); rpRestore(reply);
+    if (t !== target) { ts(t).draft = text; ts(t).pick = sentPicks.concat(ts(t).pick || []); try { localStorage.setItem(DRAFT_KEY(t), text); } catch {} toast(`${e.message} · 보내지 못한 글은 원래 대화에 남겨 뒀어요${sentAtt.length ? " (파일은 다시 붙여 주세요)" : ""}`, true); return; }
+    toast(e.message, true); ta.value = text; autosize(); ATT = sentAtt.concat(ATT); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
   }
 }
 // The composer follows the selected target and the view mode.
@@ -259,7 +260,7 @@ function renderWorking() {
   // Only while the gateway reports this target running: status line, model-chip spinner, and stop in place of send
   // (with text typed the button sends it into the running turn instead).
   // The send button is the one stop control (owner 2026-10-28): it stops the running turn, or, with no turn running, this conversation's background worker.
-  const line = $("#runline"), stopMode = ((on && st !== "rate-limited") || bg.length > 0) && !ta.value.trim() && !ATT.length;
+  const line = $("#runline"), stopMode = ((on && st !== "rate-limited") || bg.length > 0) && !ta.value.trim() && !ATT.length && !pkCount();
   line.hidden = !show; line.classList.toggle("warn", st === "rate-limited");
   $("#c-model").classList.toggle("run", on && st !== "rate-limited");
   const sb = $("#send-btn"); sb.classList.toggle("stop", stopMode); sb.setAttribute("aria-label", stopMode ? "중단" : "보내기"); sb.title = stopMode ? "지금 하는 일 중단" : "";
