@@ -27,6 +27,7 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number } = {}) 
 	const fakes = new Map<string, Fake>();
 	const created: string[] = [];
 	const delivered: { key: string; text: string; target?: string }[] = [];
+	const open = new Map<string, { text: string; replyTo?: string; done?: boolean; cancelled?: boolean }[]>();
 
 	function fake(key: string): Fake {
 		let pid: number | undefined;
@@ -66,6 +67,8 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number } = {}) 
 				return false;
 			},
 			deferredOpen: () => [],
+			queued: () => open.get(key) ?? [],
+			isAnswered: () => false,
 			current: () => undefined,
 			markAnswered: () => undefined,
 			reopen: () => ({ replayed: 0, texts: [] }),
@@ -96,7 +99,7 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number } = {}) 
 		const f = fake(MAIN);
 		registry.setMain({ key: MAIN, o: f.o, queue: queue(MAIN), bg: { list: () => [], running: () => 0 } as unknown as BgWork } as unknown as Parameters<typeof registry.setMain>[0]);
 	}
-	return { registry, delivered, created, dir, tick: (ms: number) => (clock += ms), fakes };
+	return { registry, delivered, created, dir, tick: (ms: number) => (clock += ms), now: () => clock, fakes, open };
 }
 
 test("an owner message in a mail conversation goes to that conversation's own session, never into main", () => {
@@ -180,4 +183,23 @@ test("restoring with the feature off hands every stored session's open prompt to
 	expect(out[0]!.key).toBe(MAIN);
 	expect(out[0]!.pending.map(p => p.text)).toEqual(["open question"]);
 	expect(readFileSync(join(sdir, "pending.json"), "utf8").trim()).toBe("[]");
+});
+
+// 2026-10-28 13:46Z (Mac mini): the alert session hit the account's usage limit with the owner's message still open, and the idle sweep
+// parked it 4 minutes before the limit lifted, so nothing ever retried the message.
+test("a session that still owes a request, or is paused on a usage limit, is not parked by the idle sweep", () => {
+	const { registry, fakes, tick, now, open } = setup({ idleMin: 20 });
+	registry.deliverTo("alert", "B 확인이라고만 답해 줘", { target: "web:alert", replyTo: "b1", owner: true });
+	const c = registry.get("alert")!;
+	open.set("alert", [{ text: "B 확인이라고만 답해 줘", replyTo: "b1" }]);
+	fakes.get("alert")!.o.orch.rateLimitedUntil = new Date(now() + 30 * 60_000).toISOString();
+	tick(21 * 60_000);
+	registry.sweep();
+	expect(registry.live(c)).toBe(true);
+	open.set("alert", []);
+	registry.sweep();
+	expect(registry.live(c)).toBe(true);
+	tick(10 * 60_000);
+	registry.sweep();
+	expect(registry.live(c)).toBe(false);
 });

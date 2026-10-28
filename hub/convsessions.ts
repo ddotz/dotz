@@ -111,6 +111,10 @@ export function createConvSessions(d: ConvDeps) {
 		if (d.workers(c) > 0 || c.queue.deferredOpen().length > 0 || c.o.heldCount() > 0) return false;
 		const cur = c.queue.current();
 		if (cur && !cur.done) return false;
+		// A request it still owes (delivered, not answered) or a usage-limit pause keeps it running: parked, nothing would retry them
+		// (2026-10-28 13:46Z on the Mac mini: the alert session was parked 4 min before its limit lifted, and its message waited unanswered).
+		if (c.queue.queued().some(p => !p.cancelled && !p.done && !c.queue.isAnswered(p.replyTo))) return false;
+		if (Date.parse(c.o.orch.rateLimitedUntil || "") > now()) return false;
 		return now() - c.o.lastTurnEndAt() >= idleMs;
 	}
 	function park(c: Conv, why: string): void {
