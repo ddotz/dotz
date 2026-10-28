@@ -705,9 +705,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 					return json({ delivered: false, reason: (error as Error).message }, 502);
 				}
 			}
-			// Answer only when it is ready: an early text to the asking channel waits for the turn's final answer.
-			if (queue.holdEarly(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined))
-				return json({ delivered: true, held: true, note: "held: it goes out together with your final answer for this request; do not send it again" });
+			// Answer only when it is ready: an early text to the asking channel waits for the turn's final answer. Meanwhile the owner
+			// sees it at once on that conversation's progress line (owner 2026-10-28: 중간 말을 바로 보여 주기), which the answer replaces.
+			if (queue.holdEarly(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined)) {
+				void progress(target, "progress", String(b.text ?? ""), b.reply_to).catch(e => log(`early text not shown on the progress line: ${(e as Error).message}`));
+				return json({ delivered: true, held: true, note: "held: it is shown on the progress line now and goes out together with your final answer for this request; do not send it again" });
+			}
 			queue.sent(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined);
 			try {
 				return json(await out(target, String(b.text ?? ""), b.reply_to));
