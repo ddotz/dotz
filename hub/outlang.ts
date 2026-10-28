@@ -60,15 +60,18 @@ function prose(text: string): string {
 
 // Plain English-looking words of a text: letters only, 2+ of them (identifiers with digits/underscores/dots do not count).
 const latinWords = (s: string): number => (s.match(/(?<![\w-])[A-Za-z][A-Za-z'’]+(?![\w-])/g) ?? []).length;
+// The words of sentence-like parts only: a list of names ("contact_manager, dotz, findr, hdocs", one per item or line) is not
+// English prose. A 137-char repo list was sent for a rewrite that took 12 s and came back 8x longer (2026-10-28).
+const sentenceWords = (s: string): number => s.split(/[,;|·\n]+/).map(latinWords).filter(n => n >= 2).reduce((a, n) => a + n, 0);
 
 // True when `text` should be in `language` but is mostly Latin-script prose.
-function languageMismatch(text: string, language: string): boolean {
+export function languageMismatch(text: string, language: string): boolean {
 	const script = SCRIPTS[baseLanguage(language)];
 	if (!script) return false;
 	const body = prose(text);
 	const words = latinWords(body);
 	const native = (body.match(script) ?? []).length;
-	if (native === 0) return words >= MIN_LATIN_WORDS_PURE;
+	if (native === 0) return sentenceWords(body) >= MIN_LATIN_WORDS_PURE;
 	if (words < MIN_LATIN_WORDS) return false;
 	const latin = (body.match(/[A-Za-z]/g) ?? []).length;
 	return native / (native + latin) < MAX_NATIVE_SHARE;
