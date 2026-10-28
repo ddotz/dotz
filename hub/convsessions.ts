@@ -11,6 +11,7 @@ import { convIdleStopMin, convKinds, convMaxLive, convSessionsOn, DATA_DIR, log 
 import { historyEvents, type HubEvent } from "./events.ts";
 import { mailByThread } from "./mail.ts";
 import { createOrchestrator, orchBusy, type OrchOpts, type Orchestrator } from "./orchestrator.ts";
+import { createCapacity } from "./convcapacity.ts";
 import type { createPrompts, Pending } from "./prompts.ts";
 import { MAIN, primaryTarget, safeDir, sessionKeyOf } from "./session-key.ts";
 import { trackTimer } from "./shutdown.ts";
@@ -239,6 +240,10 @@ export function createConvSessions(d: ConvDeps) {
 			const timer = setInterval(sweep, SWEEP_MS);
 			timer.unref?.();
 			trackTimer("conversation sessions idle stop", timer);
+			void capacity.sample();
+			const sampler = setInterval(() => void capacity.sample(), CAPACITY_MS);
+			sampler.unref?.();
+			trackTimer("conversation sessions capacity", sampler);
 		},
 	};
 }
@@ -250,10 +255,17 @@ let wiring: ((c: Conv) => { queue: Prompts; bg: BgWork }) | undefined;
 export const setWiring = (fn: (c: Conv) => { queue: Prompts; bg: BgWork }): void => {
 	wiring = fn;
 };
+// How many may run at once: the owner's fixed `conversations.max_live`, else what this computer's free memory and load allow now.
+const CAPACITY_MS = 30_000;
+export const capacity = createCapacity(() => convs.conversations().flatMap(c => c.o.orchestratorPid() ?? []), hubLog);
+export const maxLiveView = () => {
+	const fixed = convMaxLive();
+	return fixed ? { max: fixed, reason: "설정(conversations.max_live)으로 고정" } : capacity.view();
+};
 export const convs = createConvSessions({
 	on: () => (on ??= convSessionsOn()),
 	kinds: convKinds,
-	maxLive: convMaxLive,
+	maxLive: () => convMaxLive() ?? capacity.max(),
 	idleMin: convIdleStopMin,
 	mailOf: thread => mailByThread(thread)?.key,
 	make: createOrchestrator,
