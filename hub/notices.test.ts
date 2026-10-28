@@ -494,7 +494,8 @@ test("live posts shaped like main.ts out() (gateway worklog, orchestrator alert,
 });
 
 // The backfill runs in a fresh process on a throwaway DOTZ_DIR holding sample persisted history (this process's store is not empty).
-const NOW = "2026-10-21T00:00:00.000Z";
+// Now, to the hour: a restart (module load) prunes old watch items by the wall clock, so the sample history is laid out back from it.
+const NOW = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000).toISOString();
 const hoursAgo = (h: number) => new Date(Date.parse(NOW) - h * 3_600_000).toISOString();
 const jsonl = (rows: Record<string, unknown>[]) => `${rows.map(r => JSON.stringify(r)).join("\n")}\n`;
 const outRow = (h: number, target: string, text: string, extra: Record<string, unknown> = {}) => ({ ts: hoursAgo(h), kind: "out", source: "orchestrator", target, text, reply_to: null, ...extra });
