@@ -36,7 +36,7 @@ function tabs(platform: string, o: { current?: string; dialog?: boolean; sheet?:
 function gateways(platform: string, list: Peer[], o: { dialog?: boolean } = {}) {
 	const handlers: Handler[] = [], log: string[] = [];
 	const env: Record<string, unknown> = {
-		isMac: /Mac/.test(platform), PR: { list },
+		isMac: /Mac/.test(platform), PR: { list }, selfDown: false,
 		document: { addEventListener: (_: string, h: Handler) => handlers.push(h), querySelector: () => (o.dialog ? {} : null) },
 		prPick: (p: Peer) => log.push(`pick:${p.name}`), toast: (m: string, bad?: boolean) => log.push(`toast:${bad ? "bad:" : ""}${m}`),
 	};

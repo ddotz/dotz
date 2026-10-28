@@ -2,6 +2,10 @@
 // (31-conversations.js) and the notices (30-notices.js), whose top-level state must exist by then.
 /* ---------- boot ---------- */
 (async () => {
+  // The owner's custom layer (web/custom.js) comes in after the page has loaded and never holds it: a <script> tag for it kept the document
+  // loading while the gateway did not answer, and the load event (the service worker's registration waits on it) never came. It catches up on the open view.
+  const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "/custom.js" }));
+  if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
   const h = parseHash();
   go(h.view || "home", h.t);
   // The first paint needs the history and the plan, not the state: ask for all of them at once instead of state first (the state
