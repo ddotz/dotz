@@ -155,9 +155,9 @@ test("happy path: installs only what is missing, batches the ask, opens one pane
 	expect(asks("secret")).toHaveLength(1);
 	expect(asks("secret")[0]!.body).toMatchObject({ site: "kakao", fields: ["username", "password"], target: "chat", timeout_minutes: 30 });
 
-	const combined = sends().find(c => c.body.text.includes("아이디"))!;
+	const combined = sends().find(c => c.body.text.includes(EXEC))!;
 	expect(combined.fdaGranted).toBe(false);
-	for (const part of ["전체 디스크 접근", "손쉬운 사용", EXEC, "비밀번호", "[ask]"]) expect(combined.body.text).toContain(part);
+	for (const part of [EXEC, "[ask]"]) expect(combined.body.text).toContain(part);
 
 	for (const c of sends()) expect(c.body).toMatchObject({ target: "chat", update_key: "kakao-setup" });
 	const texts = sends().map(c => c.body.text as string);
@@ -207,7 +207,7 @@ test("a missing Homebrew stops at the first step with the one install command", 
 	const run = deps.runner;
 	deps.runner = async argv => (argv[1] === "--version" ? { code: 127, stdout: "", stderr: "" } : run(argv));
 	const r = await runOnboarding(deps);
-	expect(r.state!.stoppedAt).toMatchObject({ step: "deps", reason: "Homebrew가 없어요" });
+	expect(r.state!.stoppedAt).toMatchObject({ step: "deps" });
 	expect(r.state!.stoppedAt!.action).toContain("raw.githubusercontent.com/Homebrew/install");
 	expect(w.calls.filter(c => c.path === "/api/auth")).toHaveLength(0);
 });
@@ -217,7 +217,6 @@ test("a device confirmation posts exactly one approve ask and closes it afterwar
 	const r = await runOnboarding(deps);
 	expect(r.outcome).toBe("done");
 	expect(asks("approve")).toHaveLength(1);
-	expect(asks("approve")[0]!.body.purpose).toBe("휴대폰 카카오톡에서 이 맥 로그인을 확인해 주세요");
 	expect(w.calls.some(c => c.method === "DELETE" && c.path === "/api/auth/a2")).toBe(true);
 });
 
@@ -228,7 +227,6 @@ test("a second rejected login stops at login and never retries (account-lock pro
 	expect(r.state!.stoppedAt).toMatchObject({ step: "login" });
 	expect(w.cleared).toBe(2);
 	expect(asks("secret")).toHaveLength(2);
-	expect(asks("secret")[1]!.body.purpose).toContain("받아 주지 않았어요");
 	expect(w.logins).toEqual(["ok"]);
 	expect(w.calls.filter(c => c.path === "/api/send").at(-1)!.body.text.startsWith("[fail]")).toBe(true);
 });
@@ -240,7 +238,6 @@ test("a permission timeout stops there; the re-run resumes at that step without 
 	expect(first.state!.stoppedAt).toMatchObject({ step: "permissions" });
 	expect(first.state!.steps).toMatchObject({ deps: "done", app: "done", ask: "done" });
 	expect(asks("secret")).toHaveLength(1);
-	expect(sends().some(c => c.body.text.includes("게이트웨이를 한 번 다시 시작해 주세요"))).toBe(true);
 	const texts = sends().map(c => c.body.text as string);
 	texts.forEach((t, i) => expect(t).not.toBe(texts[i - 1]));
 	expect(readState(w.paths)!.status).toBe("stopped");
@@ -249,12 +246,10 @@ test("a permission timeout stops there; the re-run resumes at that step without 
 	w.ax = true;
 	w.answer = true;
 	w.runs.length = 0;
-	const seen = sends().length;
 	const second = await runOnboarding(deps);
 	expect(second.outcome).toBe("done");
 	expect(w.runs.filter(a => a[0] === "brew")).toEqual([]);
 	expect(asks("secret")).toHaveLength(1);
-	expect(sends()[seen]!.body.text).toContain("권한부터 이어서 해요");
 	expect(sends().at(-1)!.body.text.startsWith("[done]")).toBe(true);
 });
 

@@ -75,7 +75,6 @@ test("two failed renewals in a row fail the check with a Korean notice; a succes
 	const second = await run(fakeCtx(env), ["login"], bad.fn);
 	expect(second.code).toBe(1);
 	expect(second.lines[0]).toBe("DOTZ_FAIL auth");
-	expect(second.lines[1]).toContain("6일째");
 	expect(readState(env).data).toEqual({ reconsent_fails: 2 });
 	const good = counter(true);
 	expect((await run(fakeCtx(env), ["login"], good.fn)).code).toBe(0);

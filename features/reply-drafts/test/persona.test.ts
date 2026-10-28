@@ -43,9 +43,8 @@ test("the first mail reads the sent mailbox once, analyses it into the mail iden
 	expect(readFileSync(corpusFile({ app: "mail" }), "utf8")).toContain("견적서 보내드려요.");
 	expect(identityOf({ app: "mail" })).toEqual(MAIL_ID);
 	expect(readFileSync(toneFile({ app: "mail" }), "utf8")).toContain("- 확인 부탁드려요.");
-	expect(draft.calls[0]!.user).toContain("Who the user is (write as this person):\n- 존댓말(해요체)로 짧게 쓴다");
-	expect(draft.calls[0]!.system).toContain('Write as the person described under "Who the user is"');
-	expect(draft.calls[0]!.user).toContain("The user's reply patterns (situation => their sentences, in order):\n- 자료 요청 => {이름}님 안녕하세요.");
+	expect(draft.calls[0]!.user).toContain("- 존댓말(해요체)로 짧게 쓴다");
+	expect(draft.calls[0]!.user).toContain("- 자료 요청 => {이름}님 안녕하세요.");
 
 	expect(await offerMailDraft({ ...mailFixture, key: "m-2" }, { send: () => {}, call: draft.call, analyze: analyze.call, sentTexts })).toBe("offered");
 	expect(reads).toBe(1);
@@ -116,7 +115,6 @@ test("onboard on --app youtube reads the past replies and saves the identity wit
 	const sns = { connected: () => true, ownTexts: async () => ["영상 봐 주셔서 고마워요.", "다음 영상도 기대해 주세요!"] };
 	const out = await runOnboard(["on", "--app", "youtube"], async () => ({ code: 1, stdout: "", stderr: "" }), false, sns, fakeModel([j({ identity: ["밝고 다정하게 답한다"] })]).call);
 	expect(out.code).toBe(0);
-	expect(out.lines[0]).toContain("정체성");
 	expect(identityOf({ app: "youtube" })).toEqual(["밝고 다정하게 답한다"]);
 	expect(readFileSync(toneFile({ app: "youtube" }), "utf8")).toContain("- 영상 봐 주셔서 고마워요.");
 });

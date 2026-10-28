@@ -1,46 +1,28 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { emit, sseResponse } from "./events.ts";
+import { emit } from "./events.ts";
 import { listNotices, markNoticesRead, type Notice, resolveNotices, unreadCount } from "./notices.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // Every pop-up over the app is the same full-screen frame (web/css/14-overlay.css, web/js/38-overlay.js): on a phone it covers the tab bar with a fixed
 // header and footer, on desktop it is a centered dialog. The computer switcher and the settings tab's dialogs (dialog({ classic: true })) keep their earlier look. Headless browser against the real notice store; every decision and form here is a fixture.
-const SNAP = "/tmp/dotz-overlay-fullscreen";
-const json = (v: unknown, status = 200) => Response.json(v, { status });
 type Field = { name: string; label: string; type: string; optional?: boolean };
 const FIELDS: Field[] = Array.from({ length: 12 }, (_, i) => ({ name: `f${i}`, label: `칸 ${i + 1}`, type: "text" }));
 let authList: unknown[] = [];
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
+const hub = fakeHub({
+	api: async (req, url) => {
 		if (url.pathname === "/api/state")
 			return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, auth: authList, notices_unread: unreadCount() });
 		if (url.pathname === "/api/notices" && req.method === "GET") return json(listNotices(100));
 		if (url.pathname === "/api/notices/read") return json(markNoticesRead(await req.json()));
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
-const base = `http://127.0.0.1:${server.port}/`;
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
+const base = `${hub.origin}/`;
 const open = async (width: number, height: number): Promise<View> => {
-	const v = new Bun.WebView({ width, height });
-	views.push(v);
+	const v = await hub.view({ width, height });
 	await v.navigate(base);
 	await waitFor(v, `typeof noticeSheetOpen === "function" && document.querySelector(".hn")`);
 	return v;
 };
-const waitFor = (v: View, expr: string, ms = 10_000) =>
-	v.evaluate(
-		`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const done = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document, { subtree: true, childList: true, attributes: true, characterData: true }); done(); })`,
-	);
 const settled = (v: View) => v.evaluate(`Promise.all(document.getAnimations().map(a => a.finished.catch(() => 0))).then(() => true)`);
 type Box = { l: number; t: number; r: number; b: number; w: number; h: number };
 const box = async (v: View, sel: string): Promise<Box | null> =>
@@ -74,14 +56,12 @@ const KINDS: { name: string; open: (id: string) => string; ready: string; frame:
 ];
 
 beforeAll(() => {
-	Bun.spawnSync(["mkdir", "-p", SNAP]);
 	resolveNotices({ ids: listNotices(300).items.filter(n => n.decision?.state === "open").map(n => n.id) });
 	markNoticesRead({ all: true });
 	ask("오버레이 확인");
 });
 afterAll(() => {
-	for (const v of views) v.close();
-	server.stop(true);
+	hub.stop();
 	// the notice store is one per process: leave no open fixture decision behind for the next file
 	resolveNotices({ ids: listNotices(300).items.filter(n => n.decision?.state === "open").map(n => n.id) });
 	markNoticesRead({ all: true });
@@ -125,7 +105,6 @@ describe("every overlay opens as the shared full-screen frame", () => {
 				await coversPhone(phone, w, h, k.frame);
 				if (w === 390) {
 					const slug = k.name.replace(/[^a-z]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
-					await Bun.write(`${SNAP}/${slug}-390.png`, await phone.screenshot());
 				}
 				// Esc closes it
 				await phone.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))`);
@@ -154,7 +133,6 @@ describe("every overlay opens as the shared full-screen frame", () => {
 		expect(sheet.t).toBeGreaterThan(0);
 		expect(sheet.h).toBeLessThan(844);
 		expect(await phone.evaluate(`getComputedStyle(document.querySelector(".ds-sheet")).borderTopLeftRadius`)).toBe("20px");
-		await Bun.write(`${SNAP}/computer-switcher-390.png`, await phone.screenshot());
 		await phone.evaluate(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))`);
 		await waitFor(phone, `!document.querySelector(".ds-bd")`);
 	}, 30_000);
@@ -171,7 +149,6 @@ describe("every overlay opens as the shared full-screen frame", () => {
 		expect(dlg.t).toBeGreaterThan(0);
 		expect(dlg.h).toBeLessThan(844);
 		expect(await phone.evaluate(`getComputedStyle(document.querySelector("dialog.dlg.cl")).paddingTop`)).toBe("20px");
-		await Bun.write(`${SNAP}/settings-dialog-390.png`, await phone.screenshot());
 		await phone.click("dialog.dlg.cl .dhd .dx");
 		await waitFor(phone, `!document.querySelector("dialog[open]")`);
 	}, 30_000);
@@ -187,14 +164,12 @@ describe("every overlay opens as the shared full-screen frame", () => {
 		expect(send.h).toBeGreaterThanOrEqual(44);
 		expect(send.b).toBeLessThanOrEqual(card.b);
 		expect(await phone.evaluate(`(() => { const b = document.querySelector(".fs-body"); return b.scrollHeight > b.clientHeight + 100; })()`)).toBe(true);
-		await Bun.write(`${SNAP}/dotz-auth-form-390-top.png`, await phone.screenshot());
 		const footTop = (await box(phone, ".fs-ft"))!.t;
 		await phone.evaluate(`document.querySelector(".fs-body").scrollTop = 1e6`);
 		await settled(phone);
 		expect((await box(phone, ".fs-ft"))!.t).toBe(footTop);
 		expect((await box(phone, ".fs-hd"))!.t).toBe(0);
 		expect((await box(phone, ".fs-ft .btn[type=submit]"))!.b).toBeLessThanOrEqual(card.b);
-		await Bun.write(`${SNAP}/dotz-auth-form-390-scrolled.png`, await phone.screenshot());
 		// closing hides it without answering; the request is still pending
 		await phone.click(".fs-hd .fs-x");
 		await waitFor(phone, `!document.querySelector(".fs-bd")`);

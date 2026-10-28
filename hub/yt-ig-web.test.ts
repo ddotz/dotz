@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createIgDmWeb } from "./ig-dm-web.ts";
 import { PERMISSION_LINE, type DmState } from "../features/youtube-instagram/lib/ig-dm.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // 모니터링 > 유튜브 (comments grouped by video: title, thumbnail, 영상 열기) and 모니터링 > 인스타그램 > DM (read only), run as shipped in a
 // headless browser (Bun.WebView) against stubbed /api/comments/* and the real DM routes (hub/ig-dm-web.ts). Names and texts are placeholders.
@@ -55,31 +55,12 @@ const dmWeb = createIgDmWeb({
 	sync: async () => { refreshes++; for (const w of refreshWaiters.splice(0)) w(); return { perm: dm.perm, fetched: 0 }; },
 });
 
-const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
-let streamWaiters: (() => void)[] = [];
-const te = new TextEncoder();
-const streamOpen = () => new Promise<void>(r => streamWaiters.push(r));
-const json = (v: unknown, status = 200) => Response.json(v, { status });
 let app = "youtube";
 
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url), p = url.pathname;
-		if (p === "/") return indexPage(req);
-		const asset = appAsset(req, p);
-		if (asset) return asset;
-		if (p === "/api/events") {
-			let ctl: ReadableStreamDefaultController<Uint8Array>;
-			const body = new ReadableStream<Uint8Array>({
-				start(c) { ctl = c; streams.add(c); c.enqueue(te.encode(": open\n\n")); const w = streamWaiters; streamWaiters = []; for (const f of w) f(); },
-				cancel() { streams.delete(ctl); },
-			});
-			return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
-		}
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+const hub = fakeHub({
+	stream: "fake",
+	api: async (req, url) => {
+		const p = url.pathname;
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: [] });
@@ -93,25 +74,19 @@ const server = Bun.serve({
 		if (p === "/api/comments/thread/youtube/v1/read") return json({ ok: true });
 		const r = await dmWeb.route(req, url, p.split("/").filter(Boolean));
 		if (r) return r;
-		return new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-const open = (width: number, height: number): View => { const v = new Bun.WebView({ width, height }); views.push(v); return v; };
-afterAll(() => { for (const v of views) v.close(); for (const c of streams) { try { c.close(); } catch { /* already closed */ } } server.stop(true); });
+const open = (width: number, height: number): Promise<View> => hub.view({ width, height });
+afterAll(() => { hub.stop(); });
 beforeEach(reset);
 
-const waitFor = (v: View, expr: string, ms = 3500) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
 const boot = async (v: View, which: "youtube" | "instagram") => {
 	app = which;
-	const opened = streamOpen();
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const opened = hub.nextStream();
+	await v.navigate(`${hub.origin}/`);
 	await opened;
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
@@ -120,8 +95,8 @@ const boot = async (v: View, which: "youtube" | "instagram") => {
 	await waitFor(v, `!$("#cm").hidden && document.querySelector("#cm .kk-row, #cm .kk-note")`);
 };
 
-describe("유튜브 댓글 grouped by video on a phone (390x844)", () => {
-	const v = open(390, 844);
+describe("유튜브 댓글 grouped by video on a phone (390x844)", async () => {
+	const v = await open(390, 844);
 
 	test("each video is a row with its title and thumbnail, and its conversation starts with the video and 영상 열기", async () => {
 		await boot(v, "youtube");
@@ -140,8 +115,8 @@ describe("유튜브 댓글 grouped by video on a phone (390x844)", () => {
 	});
 });
 
-describe("인스타 DM on a phone (390x844)", () => {
-	const v = open(390, 844);
+describe("인스타 DM on a phone (390x844)", async () => {
+	const v = await open(390, 844);
 
 	test("the DM tab lists the conversations, opens the messages as text, and has no way to send", async () => {
 		await boot(v, "instagram");

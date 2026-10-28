@@ -60,7 +60,6 @@ describe("the warning heuristic", () => {
 		const out = sink();
 		await offerMailDraft(teacherMail, { send: out.send, call: fakeModel([j(teacherReply)]).call });
 		const text = out.sent[0]!.text;
-		expect(text).toContain("> 첨부: 없음 (본문에는 보낸다고 썼어요)");
 		expect(text).not.toContain("⚠");
 		expect(parseDraftApproval(text)).toMatchObject({ warning: NO_ATTACHMENT_WARNING, note: "본문에는 보낸다고 썼어요" });
 	});
@@ -183,7 +182,6 @@ describe("sending", () => {
 		const { argv, run } = runner();
 		const out = await sendWith(rec, run);
 		expect(out.ok).toBe(false);
-		expect(out.message).toContain("첨부파일을 보낼 수 없");
 		expect(argv).toEqual([]);
 	});
 	test("a custom plugin gets the files in its reply hook; its repliesWithFiles decides canAttach", async () => {

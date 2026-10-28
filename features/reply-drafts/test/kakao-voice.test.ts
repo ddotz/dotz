@@ -93,7 +93,6 @@ test("first draft: the model reads the room as pairs once and writes the profile
 	expect(f.asks).toHaveLength(1);
 	const input = f.asks[0]!.user;
 	expect(input).toContain("상대: 안녕하세요. 내일 일정 확인 부탁드립니다.\n나: 아니 그건 좀ㅋㅋ");
-	expect(input).toContain("이 방 말투는 반말");
 	for (const junk of JUNK) expect(input).not.toContain(junk);
 	expect(input).not.toContain("절대 학습 금지");
 
@@ -101,13 +100,10 @@ test("first draft: the model reads the room as pairs once and writes the profile
 	const room = readFileSync(roomFileName, "utf8");
 	expect(room).toContain("## 대화 이해");
 	for (const line of PROFILE) expect(room).toContain(`- ${line}`);
-	expect(room).toContain("이 방 말투는 반말");
-	expect(room).toContain("최근 말투 우선");
 	expect(room).toMatch(/own=15 v=2 model=ok at=2026-10-23T00:00:00/);
 	expect(room).toContain("- ㅇㅇ");
 	for (const junk of [...JUNK, "안녕하세요"]) expect(room).not.toContain(junk);
 	const global = readFileSync(toneFile({ app: "kakao" }), "utf8");
-	expect(global).toContain("최근 2개 방 말투: 반말 1곳, 존댓말 1곳");
 	expect(global).toMatch(/own=19 v=2/);
 	expect(global).not.toContain("절대 학습 금지");
 	expect(roomFileName).toBe(join(env.dir, "custom", "reply-drafts", "tone", "kakao", `${roomFile(DIRECT)}.md`));

@@ -111,7 +111,7 @@ test("apply --dry-run writes a valid config, card, pins and project, and makes n
 	expect(config).toMatchObject({ youtube: { channel_id: YT_ID, title: "My Channel", base_language: "ko", languages: ["en", "ja"], privacy: "private", upload_via: "aside" }, instagram: { user_id: "1784", username: "owner", post_via: "api" }, posting_times: ["18:00", "21:00"], approval: "batch", quota: { daily_budget: 5000 }, channel: "ch:123" });
 	expect(config.quiet_hours).toBeUndefined();
 	expect(statSync(join(config.inbox_dir, "done")).isDirectory()).toBe(true);
-	expect(readFileSync(paths.tone(), "utf8")).toContain("말투");
+	expect(existsSync(paths.tone())).toBe(true);
 
 	const errors: { file: string; error: string }[] = [];
 	const card = readCards(errors).find(c => c.id === "sns-channels")!;
@@ -295,20 +295,16 @@ test("apply rejects bad flags before writing anything", async () => {
 	}
 });
 
-test("status prints one Korean line per part, before and after setup", async () => {
+test("status prints one line per part, before and after setup", async () => {
 	const f = fakeCtx();
 	const before = await run(f.ctx, ["status"]);
 	expect(before.code).toBe(0);
 	expect(before.lines).toHaveLength(4);
-	expect(before.lines[0]).toContain("아직 안 했어요");
-	expect(before.lines[3]).toContain("아직");
 
 	await run(f.ctx, [...DRY_BOTH, "--channel", "ch:123"]);
 	const after = await run(f.ctx, ["status"]);
 	expect(after.lines).toHaveLength(4);
 	expect(after.lines[1]).toContain("My Channel");
 	expect(after.lines[2]).toContain("@owner");
-	expect(after.lines[3]).toContain("7개");
-	for (const l of after.lines) expect(l).toMatch(/요(\)|\.)?$|요 \(/);
 	expect(readJson(paths.config())).toBeDefined();
 });

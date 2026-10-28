@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { sseResponse } from "./events.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, on } from "./test-web.ts";
 
 // The owner's custom cards on 홈 (web/custom.js) are items of the home board, in a headless browser at 1100px: the same drag handle,
 // resize grip and ⋯ menu as every other card, size and place kept in localStorage across a reload, and card values shown as people read
@@ -17,36 +16,25 @@ const live = process.env.DOTZ_WEB_LIVE;
 beforeAll(() => { process.env.DOTZ_WEB_LIVE = "1"; });
 afterAll(() => { if (live === undefined) delete process.env.DOTZ_WEB_LIVE; else process.env.DOTZ_WEB_LIVE = live; });
 
-const json = (v: unknown) => Response.json(v);
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
+const hub = fakeHub({
+	api: (_req, url) => {
 		if (url.pathname === "/custom.js") return new Response(Bun.file(new URL("../web/custom.js", import.meta.url).pathname), { headers: { "content-type": "text/javascript" } });
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes, terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
 		if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
 		if (url.pathname === "/api/activity") return json({ items: [], more: false, history: false });
 		if (url.pathname === "/api/conversations") return json({ items: [] });
 		if (url.pathname === "/api/notices") return json({ unread: 0, items: [] });
 		if (url.pathname === "/api/custom") return json({ dir: "~/.dotz/custom", cards, projects: [], routines: [], links: [] });
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-const view = new Bun.WebView({ width: 1100, height: 800 } as ConstructorParameters<typeof Bun.WebView>[0]);
-afterAll(() => { view.close(); server.stop(true); });
+const view = await hub.view({ width: 1100, height: 800 });
+afterAll(() => hub.stop());
 
-const waitFor = (expr: string, ms = 10_000) =>
-	view.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else setTimeout(tick, 30); }; tick(); })`);
+const { waitFor } = on(view);
 const frames = (n = 12) => view.evaluate(`new Promise(r => { let i = 0; const f = () => ++i >= ${n} ? r(1) : requestAnimationFrame(f); f(); })`);
 const boot = async (card = "kakao") => {
-	await view.navigate(`http://127.0.0.1:${server.port}/`);
+	await view.navigate(`${hub.origin}/`);
 	await waitFor(`current === "home" && S && document.querySelector('.bi[data-id="custom:${card}"] .card')`);
 	await frames();
 };

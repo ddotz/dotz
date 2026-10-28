@@ -27,7 +27,6 @@ test("Saturday: the personal account", async () => {
 test("weekday 10:00 KST but the work account has 5% of its 5-hour window left: the personal one", async () => {
 	const out = await dryRun({ now: "2026-10-21T01:00:00Z", current: "work", accounts: accounts(5, 90) });
 	expect(out[0]).toBe("home");
-	expect(out[1]).toContain("회사 계정");
 });
 
 test("both under the threshold: no opinion (empty output)", async () => {

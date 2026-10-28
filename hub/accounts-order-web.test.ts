@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // The 계정 card in a headless Bun.WebView against a stub gateway that holds five accounts: the 자동 전환 switch, the order numbers, the
 // drag-to-reorder grips (synthetic pointer events) and the tap-to-fix rows work through the real page, and the card fits 390px without sideways scrolling.
@@ -35,28 +35,10 @@ const stateBody = () => ({
 	script: { path: null, timeout_ms: 5000, every_minutes: 5, last: null },
 });
 
-const te = new TextEncoder();
-const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
-let streamWaiters: (() => void)[] = [];
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url), p = url.pathname;
-		if (p === "/") return indexPage(req);
-		const asset = appAsset(req, p);
-		if (asset) return asset;
-		if (p === "/api/events") {
-			let ctl: ReadableStreamDefaultController<Uint8Array>;
-			const body = new ReadableStream<Uint8Array>({
-				start(c) { ctl = c; streams.add(c); c.enqueue(te.encode(": open\n\n")); const w = streamWaiters; streamWaiters = []; for (const f of w) f(); },
-				cancel() { streams.delete(ctl); },
-			});
-			return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
-		}
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+const hub = fakeHub({
+	stream: "fake",
+	api: async (req, url) => {
+		const p = url.pathname;
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: [] });
@@ -85,27 +67,21 @@ const server = Bun.serve({
 			order = b.order;
 			return json(stateBody());
 		}
-		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-const open = (width: number, height: number): View => { const v = new Bun.WebView({ width, height }); views.push(v); return v; };
-afterAll(() => { for (const v of views) v.close(); for (const c of streams) { try { c.close(); } catch { /* already closed */ } } server.stop(true); });
+const open = (width: number, height: number): Promise<View> => hub.view({ width, height });
+afterAll(() => { hub.stop(); });
 
-const waitFor = (v: View, expr: string, ms = 4000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => {
 	if (!SHOTS) return;
 	await run(v, `[...document.querySelectorAll(".sec")].find(x => x.textContent === "계정").scrollIntoView()`);
 	await Bun.write(join(SHOTS, name), await v.screenshot());
 };
 const boot = async (v: View) => {
-	const opened = new Promise<void>(r => streamWaiters.push(r));
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const opened = hub.nextStream();
+	await v.navigate(`${hub.origin}/`);
 	await opened;
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && NM.loaded && S`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
@@ -122,7 +98,7 @@ const fit = (v: View) => q<{ vw: number; doc: number; over: string[]; nums: stri
 for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1440, 900]] as const) {
 	test(`${label} ${w}px: five accounts fit, numbered 1-5, in both states`, async () => {
 		reset();
-		const v = open(w, h);
+		const v = await open(w, h);
 		await boot(v);
 		let f = await fit(v);
 		expect(f.nums).toEqual(["1", "2", "3", "4", "5"]);
@@ -152,7 +128,7 @@ const firstName = (v: View) => q<string>(v, `return document.querySelector(".li.
 for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1440, 900]] as const) {
 	test(`${label} ${w}px: dragging a grip moves the row, the others shift, and the drop saves the new order`, async () => {
 		reset();
-		const v = open(w, h);
+		const v = await open(w, h);
 		await boot(v);
 		const [r0, r2] = [await rowRect(v, 0), await rowRect(v, 2)];
 		await fire(v, "pointerdown", rowEl(2, ".acc-grip"), r2.mid);
@@ -175,7 +151,7 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1440, 900]] as con
 
 test("touch: a long press on a row lifts it and a drag saves the order; a tap and a click right after a drop do not pick", async () => {
 	reset();
-	const v = open(390, 844);
+	const v = await open(390, 844);
 	await boot(v);
 	const r3 = await rowRect(v, 3), r4 = await rowRect(v, 4);
 	await fire(v, "pointerdown", rowEl(4, ".acc-main"), r4.mid, "touch");

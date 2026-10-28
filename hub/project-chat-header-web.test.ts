@@ -1,7 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // A project's conversation in 채팅 (web/js/31-conversations.js): the same ⋯ menu as the project page, in a headless Bun.WebView against a stub gateway.
 // Screenshots are written only when PROJECT_CHAT_HEAD_SHOTS names a folder. Names are placeholders.
@@ -16,27 +16,10 @@ const PLAN = {
 };
 const deletes: { path: string; body: unknown }[] = [];
 let running: string[] = [];
-const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
-let streamWaiters: (() => void)[] = [];
-const te = new TextEncoder();
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url), p = url.pathname;
-		if (p === "/") return indexPage(req);
-		const asset = appAsset(req, p);
-		if (asset) return asset;
-		if (p === "/api/events") {
-			let ctl: ReadableStreamDefaultController<Uint8Array>;
-			const body = new ReadableStream<Uint8Array>({
-				start(c) { ctl = c; streams.add(c); c.enqueue(te.encode(": open\n\n")); const w = streamWaiters; streamWaiters = []; for (const f of w) f(); },
-				cancel() { streams.delete(ctl); },
-			});
-			return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
-		}
+const hub = fakeHub({
+	stream: "fake",
+	api: async (req, url) => {
+		const p = url.pathname;
 		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [{ name: "yt-upload", status: "idle", alive: true, home: "ch:7001" }], terminals: {}, channels: { work: { "7001": { name: "유튜브" } } }, discord: {}, notices_unread: 0 });
 		if (p === "/api/custom") return json({ dir: "~/.dotz/custom", cards: [], projects: [{ key: "ch:7001", name: "유튜브", pinned: false, lanes: [], newest: 0, channel: { id: "7001", name: "유튜브" }, recordKey: "ch:7001" }], routines: [], links: [] });
 		if (p === "/api/custom/project") return json({ key: "ch:7001", monitors: [], lanes: [], work: [], results: [], routines: [], schedules: [], watches: [] });
@@ -48,18 +31,12 @@ const server = Bun.serve({
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
 		if (p === "/api/conversations" || p === "/api/monitors") return json({ items: [] });
 		if (p === "/api/notices") return json({ unread: 0, items: [] });
-		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-afterAll(() => { for (const v of views) v.close(); for (const c of streams) { try { c.close(); } catch { /* already closed */ } } server.stop(true); });
+afterAll(() => { hub.stop(); });
 
-const waitFor = (v: View, expr: string, ms = 4000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => { if (SHOTS) { await waitFor(v, `document.getAnimations().every(a => a.playState !== "running")`); await Bun.write(join(SHOTS, name), await v.screenshot()); } };
 
 // The menu button lives in the app bar on a phone and in the conversation head on a wide screen.
@@ -67,10 +44,9 @@ const BTN = { 390: "#pjmenu:not([hidden])", 1280: ".cv-head .cvmenu" } as const;
 type W = keyof typeof BTN;
 
 async function boot(width: W, tgt: string): Promise<View> {
-	const v = new Bun.WebView({ width, height: 844 });
-	views.push(v);
-	const opened = new Promise<void>(r => streamWaiters.push(r));
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const v = await hub.view({ width, height: 844 });
+	const opened = hub.nextStream();
+	await v.navigate(`${hub.origin}/`);
 	await opened;
 	await waitFor(v, `typeof S !== "undefined" && S && typeof PRJ !== "undefined"`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);

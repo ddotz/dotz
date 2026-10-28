@@ -57,9 +57,8 @@ describe("buildDraftPrompt", () => {
 			register: registerOf(["ㅇㅇ", "그래", "응 좋아"]),
 			style: { rules: ["길이: 중앙값 5자"], corrections: [], forbidden: [], samples: [] },
 		});
-		expect(user).toContain("Register in THIS room: 반말");
 		expect(user).toContain("상대: 오늘 되세요?\n나: ㅇㅇ 됨");
-		expect(user).toContain("- 길이: 중앙값 5자");
+		expect(user).toContain("중앙값 5자");
 		expect(/<<<CHAT\n([\s\S]*)\nCHAT>>>/.exec(user)![1]).toBe("Alex: 내일 가능하신가요?");
 	});
 

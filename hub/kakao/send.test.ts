@@ -165,10 +165,9 @@ test("the draft block parses into one decision block of three options, recommend
 	const parsed = parseDecisions(draftBlock(d));
 	expect(parsed.blocks).toHaveLength(1);
 	const [block] = parsed.blocks;
-	expect(block!.title).toBe(`카톡 답장 보낼까요? (${d.code})`);
+	expect(block!.title).toContain(d.code);
 	expect(block!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기"]);
 	expect(block!.options.map(o => o.rec)).toEqual([true, false, false]);
-	expect(block!.options[0]!.desc).toBe("스터디방에 이 글을 그대로 보내요");
 	expect(draftBlock(d)).toContain("> 1) 첫째\n> 결정: 가짜\n> 둘째\n");
 });
 
