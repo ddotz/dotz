@@ -9,6 +9,9 @@ const RUN_DOT = { working: "pri", waiting: "warn", idle: "", limited: "warn", er
 // colored as needing him (owner 2026-10-28: "답을 기다려요" read as waiting on him; he picked "맡긴 작업 진행 중").
 const waitLabel = r => r.reason === "ask" ? RUN_LABEL.waiting : r.reason === "capacity" ? "순서를 기다려요" : "맡긴 작업 진행 중";
 const waitsOnOwner = r => r.kind === "waiting" && r.reason === "ask";
+// A conversation waiting on work it handed off or on its turn (capacity) is progressing: blue on every row that shows it, like this line.
+const runOf = t => (S && S.runs && S.runs[t === MAIN ? "main" : t]) || null;
+const runBusy = t => { const r = runOf(t); return !!r && r.kind === "waiting" && !waitsOnOwner(r); };
 const RUN_MEMO = { sig: "" };
 const runStateOf = () => {
   if (isFixedT(target) || isSettingsT(target)) return null;
@@ -71,9 +74,10 @@ function paintRunState() {
   const sig = JSON.stringify([target, r]), act = runAction(r);
   if (RUN_MEMO.sig !== sig) {
     RUN_MEMO.sig = sig;
-    $("#runstate-dot").className = `dot ${r.kind === "waiting" && !waitsOnOwner(r) ? "pri" : RUN_DOT[r.kind] || ""}`.trim();
+    const mine = r.kind === "error" && r.cancelled;   // work the owner stopped himself is neutral, not a failure
+    $("#runstate-dot").className = `dot ${r.kind === "waiting" && !waitsOnOwner(r) ? "pri" : mine ? "" : RUN_DOT[r.kind] || ""}`.trim();
     box.classList.toggle("warn", waitsOnOwner(r) || r.kind === "limited");
-    box.classList.toggle("err", r.kind === "error");
+    box.classList.toggle("err", r.kind === "error" && !mine);
     const b = $("#runstate-act");
     b.hidden = !act;
     b.dataset.kind = r.kind;

@@ -120,7 +120,7 @@ async function restoreEnded(ids) {
   } catch (e) { toast(e.message, true); }
 }
 // An exited or stopped lane is a normal end, so it gets the neutral dot; red is kept for real failures.
-const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
+const statusTone = s => ({ working: "pri", starting: "pri", idle: "", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
 const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 걸림", exited: "종료됨" })[s] || s || "알 수 없음";
 const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id === id); return (p && p.name) || id; };
 // Thinking levels said in Korean (the stored value stays the API id).

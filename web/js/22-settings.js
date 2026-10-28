@@ -16,7 +16,7 @@ let fbDragging = false;
 function fbTags(e) {
   const t = [];
   if (e.key_file) t.push(el("span", { class: "tag", text: "API 키" }));
-  if (e.enabled === false) t.push(el("span", { class: "tag warn", text: "꺼짐" }));
+  if (e.enabled === false) t.push(el("span", { class: "tag", text: "꺼짐" }));
   if (e.key_file && e.workers) t.push(el("span", { class: "tag", text: "서브에이전트·세션도 사용" }));
   if (e.when) t.push(el("span", { class: "tag", text: FB_WHEN[e.when] }));
   if (e.cap) t.push(el("span", { class: "tag", text: fbCapText(e.cap) }));
