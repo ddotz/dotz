@@ -182,3 +182,20 @@ test("an upload to the Mac mini that fails sends nothing and says so in Korean; 
 		peerUploadFails = false;
 	}
 }, 30_000);
+
+// 2026-10-28: the Mac mini's answer in its mail conversation named its result files ([file] lines); opened on the MacBook, each chip asked
+// the MacBook's own /api/file, found nothing there and read "파일이 지워졌어요". A result file of the other computer opens from there.
+test("a result file the Mac mini's bot posted in its conversation opens here through the peer proxy, not as a deleted file", async () => {
+	const RESULT = "/Users/mini/.dotz/projects/ifrs18/files/취합본.pdf", PDF = "%PDF-1.4 취합본";
+	peerUp.set(RESULT, new TextEncoder().encode(PDF));
+	peerHist.push({ ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: PEER_T, text: `취합본 보내 드려요.\n[file] ${RESULT}` });
+	const v = await openConv(1280, PEER_T);
+	const RCHIP = `[...document.querySelectorAll(".bm .mfiles .fatt")].find(c => c.querySelector(".fi-n").textContent === "취합본.pdf")`;
+	// the HEAD check answered: the size fills in (a refused check would turn the chip into a disabled "파일이 지워졌어요" one)
+	await waitFor(v, `${RCHIP} && ${RCHIP}.querySelector(".fi-m").textContent === "PDF · ${new TextEncoder().encode(PDF).length}B"`);
+	const c = await q<{ off: boolean; href: string; open: string }>(v, `const c = ${RCHIP}; return { off: c.classList.contains("off"), href: c.getAttribute("href"), open: await (await fetch(c.href)).text() }`);
+	expect(c.off).toBe(false);
+	expect(decodeURIComponent(decodeURIComponent(c.href))).toContain(`/api/peer/file?path=${RESULT}`);
+	expect(c.open).toBe(PDF);
+	await Bun.write(join(SHOTS, "peer-result-file-1280.png"), await v.screenshot());
+}, 30_000);
