@@ -52,7 +52,7 @@ function pqAct(path, body) {
   const df = /^\/api\/drafts\/([^/?]+)\/files$/.exec(path), dref = df && decodeURIComponent(df[1]);
   if (dref && DRF.pc[dref]) return { pc: DRF.pc[dref], action: "draft-files", args: { ref: dref, ...b } };
   const md = /^\/api\/mail\/([^/?]+)\/draft$/.exec(path);
-  if (md && pqPc(`mail:${decodeURIComponent(md[1])}`)) return { pc: pqPc(`mail:${decodeURIComponent(md[1])}`), action: "mail-draft", args: { key: decodeURIComponent(md[1]) } };
+  if (md && pqPc(`mail:${decodeURIComponent(md[1])}`)) return { pc: pqPc(`mail:${decodeURIComponent(md[1])}`), action: "mail-draft", args: { key: decodeURIComponent(md[1]), ...(body && body.instruction ? { instruction: body.instruction } : {}) } };
   const nm = /^\/api\/mail\/([^/?]+)\/no-reply$/.exec(path);
   if (nm && pqPc(`mail:${decodeURIComponent(nm[1])}`)) return { pc: pqPc(`mail:${decodeURIComponent(nm[1])}`), action: "no-reply", args: { kind: "mail", key: decodeURIComponent(nm[1]) } };
   if (path === "/api/read") return { pc: pqPc(b.target), action: "read", args: { target: pqBare(b.target), ts: b.ts } };

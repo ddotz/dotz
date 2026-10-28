@@ -7,7 +7,7 @@ import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
 
-export type OfferMail = { key: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
+export type OfferMail = { key: string; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
 export type OfferDeps = {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
@@ -67,7 +67,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		// One look per message: a newer message of the same thread (messageId) is looked at again, a repeat of the same one is not.
 		const looked = m.messageId ? `${m.key}#${m.messageId}` : m.key;
 		if (!requested && isDrafted(looked)) return "skipped";
-		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "", ...(requested ? { requested: true } : {}) };
+		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "", ...(requested ? { requested: true } : {}), ...(requested && m.instruction?.trim() ? { instruction: m.instruction.trim().slice(0, 500) } : {}) };
 		if (!requested && precheck(item, settings.senders, { addressLater: true })) {
 			markDrafted(looked);
 			return "skipped";

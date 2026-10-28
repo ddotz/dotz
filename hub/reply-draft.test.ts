@@ -152,3 +152,12 @@ test("a reply the user asked for himself (초안 작성) is never a skip: the pr
 	expect(m.calls[1]!.user).toContain("the user asked for this reply himself: action must be draft");
 	expect(buildPrompt(item, style).user).not.toContain("never \"skip\"");
 });
+
+test("초안 작성 with text: the owner's instruction is in the prompt as his words; without it there is no such line", () => {
+	const base = { kind: "mail" as const, from: "Kim <kim@example.com>", subject: "견적", text: "견적 부탁드립니다", requested: true };
+	const withIt = buildPrompt({ ...base, instruction: '금요일까지 보낸다고 "꼭" 써 줘' }, { identity: "", templates: "", samples: [], rules: "", corrections: [], forbidden: [] } as never);
+	expect(withIt.user).toContain("The user's instruction for this reply");
+	expect(withIt.user).toContain("금요일까지 보낸다고 '꼭' 써 줘");
+	const without = buildPrompt(base, { identity: "", templates: "", samples: [], rules: "", corrections: [], forbidden: [] } as never);
+	expect(without.user).not.toContain("The user's instruction for this reply");
+});

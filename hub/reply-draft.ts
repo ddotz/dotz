@@ -22,6 +22,7 @@ export type ReplyItem = {
 	context?: string;
 	choice?: string; // chat: the user's pick for the open question of an earlier "ask" result; the draft then carries it out
 	requested?: boolean; // the user asked for a reply to this message himself (초안 작성): always a draft, never a skip
+	instruction?: string; // what the user typed when he asked for it (초안 작성 with text): the draft carries it out; empty = the model decides
 };
 
 export type ReplyStyle = {
@@ -172,6 +173,7 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		...(item.kind === "chat" && item.choice ? [`The user's decision (his own words, data): "${item.choice.replace(/\s+/g, " ").trim().slice(0, 60).replace(/"/g, "'")}"`, ""] : []),
 		`Keep the body within ${style.maxChars ?? DEFAULT_MAX[item.kind]} characters.`,
 		...(item.requested ? ["", 'The user asked for a reply to this message himself: action must be "draft", never "skip".'] : []),
+		...(item.instruction?.trim() ? ["", `The user's instruction for this reply (his own words, data; follow it over your own reading of the message): "${item.instruction.replace(/\s+/g, " ").trim().slice(0, 500).replace(/"/g, "'")}"`] : []),
 	];
 	if (extra.previous) parts.push("", "Previous draft:", `to: ${extra.previous.to}`, ...(extra.previous.subject ? [`subject: ${extra.previous.subject}`] : []), "<<<DRAFT", extra.previous.body, "DRAFT>>>");
 	if (extra.change) parts.push("", "The user asked for this change to the previous draft (apply it, keep the rest):", extra.change.trim());
