@@ -329,7 +329,7 @@ setWiring(c => {
 	wireAnswers(c);
 	c.o.setRestartedHandler(() => q.reopen(replayWrap));
 	c.o.setIdleHandler(() => {
-		q.settleTurn();
+		q.settleTurn(c.o.turnFailed());
 		q.redeliverSteered();
 	});
 	c.o.setErrorHandler(e => void out(c.primary, errorAsk(NAME, e), undefined, { source: "gateway" }).catch(err => log(`error ask to ${c.primary} failed: ${err}`)));

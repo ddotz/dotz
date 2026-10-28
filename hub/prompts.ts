@@ -304,9 +304,21 @@ export function createPrompts(deps: PromptDeps) {
 	 * The orchestrator went idle: a prompt the turn never answered (no stop with text: aborted, cut off, a lost pairing)
 	 * gets the turn's last text, so an answer is never dropped without a trace (owner 2026-10-20: "작업 끝나도 보고 안하는거").
 	 */
-	function settleTurn(): void {
+	function settleTurn(failed = false): void {
 		const p = current;
 		if (!p) return;
+		// A turn stopped by a provider error before it wrote anything is not answered: its request stays open like a deferred one, so the
+		// run that resumes after the pause answers it in its own conversation and a restart replays it (2026-10-28 13:25Z on the Mac mini:
+		// the owner's message was closed as a turn that wrote no text while the account was rate-limited, and never answered).
+		if (failed && !p.done && p.target && !p.deferred && !p.last && !p.cancelled) {
+			p.deferred = true;
+			deferred.push(p);
+			deps.log(`turn for ${p.target} stopped on an error before answering; its request stays open for the retry`);
+			closeTurn();
+			current = undefined;
+			save();
+			return;
+		}
 		// The run is over: a run that starts next without a prompt of ours (OmO wakes the session when a task worker finishes,
 		// also right after a restart) is a new one and must not be taken for a continuation of this prompt (2026-10-20 12:51Z).
 		if (!p.done && p.target && !p.deferred) {

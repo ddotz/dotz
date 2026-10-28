@@ -23,7 +23,7 @@ import { setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
 import { announceUsedChanges } from "./accounts-api.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch, orchBusy, resumeAfterError, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
+import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch, orchBusy, resumeAfterError, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator, turnFailed } from "./orchestrator.ts";
 import { errorAsk, startErrorWatch } from "./orch-error.ts";
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
@@ -288,7 +288,7 @@ if (!restarted) {
 }
 
 setOrchIdleHandler(() => {
-	queue.settleTurn();
+	queue.settleTurn(turnFailed());
 	queue.redeliverSteered();
 	laneRelay.flush();
 	flushQueue("main");
