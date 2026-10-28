@@ -117,7 +117,8 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 		test("the ⋯ sits at the top right of every card and opens 초안 작성, 답장 안 함 and 삭제", async () => {
 			await openList(v, false);
 			const box = await q<{ card: DOMRect; btn: DOMRect }[]>(v, `return [...document.querySelectorAll("#mon-tl .mr")].map(r => ({ card: r.getBoundingClientRect().toJSON(), btn: r.querySelector(".mr-more").getBoundingClientRect().toJSON() }))`);
-			expect(box.length).toBe(3);
+			expect(box.length).toBe(2);   // 전체 is the received mail; the sent one is under 보낸 메일
+			expect(await q<boolean>(v, `return !!${row("mail:loc-3")}`)).toBe(false);
 			expect(await q<boolean>(v, `return document.querySelector("#mon-tl").textContent.includes("지운 메일에 봇이 남긴 말")`)).toBe(false);
 			for (const { card, btn } of box) {
 				expect(card.right - btn.right).toBeLessThanOrEqual(16);
@@ -135,15 +136,19 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 		test("every incoming mail offers the same actions by its state, an outgoing one only 삭제, and the row buttons follow one rule", async () => {
 			await openList(v, false);
 			expect(await menuOf(v, "mail:loc-2")).toEqual(["초안 작성", "답장 필요로 표시", "삭제"]);
-			expect(await menuOf(v, "mail:loc-3")).toEqual(["삭제"]);
 			expect(await inlineOf(v, "mail:loc-1")).toEqual(["초안 작성", "답장 안 함"]);
 			expect(await inlineOf(v, "mail:loc-2")).toEqual([]);
-			expect(await inlineOf(v, "mail:loc-3")).toEqual([]);
 			// 답장 필요로 표시 on a mail with no state makes it 답장 필요, with the same buttons as every owed row
 			await pick(v, "mail:loc-2", "답장 필요로 표시");
 			await waitFor(v, `${row("mail:loc-2")}.querySelector(".rc-hd .tag")?.textContent === "답장 필요"`);
 			expect(await inlineOf(v, "mail:loc-2")).toEqual(["초안 작성", "답장 안 함"]);
 			expect(reqs.map(r => [r.method, r.path])).toEqual([["DELETE", "/api/mail/loc-2/fyi"]]);
+			// the sent mail, under 보낸 메일: only 삭제, no row buttons
+			await run(v, `document.querySelector('#mon-tl .mr-f[data-filter="sent"]').click()`);
+			await waitFor(v, `${row("mail:loc-3")} && !${row("mail:loc-2")}`);
+			expect(await menuOf(v, "mail:loc-3")).toEqual(["삭제"]);
+			expect(await inlineOf(v, "mail:loc-3")).toEqual([]);
+			await run(v, `document.querySelector('#mon-tl .mr-f[data-filter="all"]').click()`);
 		});
 
 		test("답장 안 함 updates the row, the 답장 필요 filter and the 미답장 badge at once, survives a reload, and can be undone", async () => {
@@ -172,7 +177,7 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			expect(reqs.map(r => [r.method, r.path])).toEqual([["DELETE", "/api/mail/loc-2"]]);
 			await openList(v, false);
 			expect(await stateOf(v, "mail:loc-2")).toBe("gone");
-			expect(await q<number>(v, `return document.querySelectorAll("#mon-tl .mr").length`)).toBe(2);
+			expect(await q<number>(v, `return document.querySelectorAll("#mon-tl .mr").length`)).toBe(1);
 		});
 
 		test("a peer's mail: the mark, its undo and 삭제 each go once to the computer that holds it", async () => {
