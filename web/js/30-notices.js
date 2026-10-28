@@ -318,8 +318,9 @@ function dkClose(restore = true) {
 function dkPaint() {
   if (!DK.node) return;
   let dc = DK.dc;
-  if (DK.nid) {   // a draft sheet follows its own notice
+  if (DK.nid) {   // a draft sheet follows its own notice, whose draft (받는이·참조) may have changed since it opened
     const n = ntById(DK.nid), rv = n ? ntRevising(n) : null;
+    if (n && n.decision?.draft) { DK.dc = { ...DK.dc, draft: n.decision.draft }; dc = DK.dc; }
     if (rv) {   // 고치기 was answered: the sheet keeps the old draft with 고치는 중… until the new one lands, then shows that one
       const nx = ntSuccessor(n);
       if (nx && ntOpenDec(nx)) { ntDraftSheet(nx); return; }

@@ -2,7 +2,8 @@
 // The features build the asking message with draftApprovalBlock; the gateway reads it back with parseDraftApproval, so the bell shows
 // the draft itself and the bottom sheet offers 1) send 2) change 3) do not send. A pick maps to an action with draftActionOf.
 //
-//   > 받는이: <recipient or target>          (label: 받는이 | 대상 | 대화방, one line)
+//   > 받는이: <recipient or target>          (label: 받는이 | 대상 | 대화방, one line; a mail's 받는 사람 may be a comma list)
+//   > 참조: <addresses>                      (optional, a mail that goes to 참조 as well, one comma list)
 //   > 제목: <subject>                        (optional)
 //   > 첨부: <name> (<size>)                  (optional, one line per file that goes out; "> 첨부: 없음" = the mail it answers had files and this
 //                                            reply carries none, so the owner sees they are not included)
@@ -42,9 +43,9 @@ const NOTE_ASKED = "받은 메일이 파일을 요청했어요";
 export type DraftFileIn = { name: string; size?: number };
 export type DraftFile = { name: string; size?: string };
 export type DraftOrigin = { text: string; link?: string };
-export type DraftApproval = { toLabel: string; to: string; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin; mail?: DraftApproval };
+export type DraftApproval = { toLabel: string; to: string; cc?: string[]; mode?: "reply" | "all"; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin; mail?: DraftApproval };
 // One part of a card: the reply (or the mail) with its recipient line, files and body.
-export type DraftPart = { origin?: DraftOrigin; to: string; toLabel?: DraftToLabel; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[] };
+export type DraftPart = { origin?: DraftOrigin; to: string; toLabel?: DraftToLabel; cc?: string[]; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[] };
 // `mail`: the mail that goes out right after this comment reply, shown below it in the same card (hub/comments).
 export type DraftInput = DraftPart & { ref: string; question?: string; sendResult?: string; mail?: DraftPart };
 export const MAIL_MARK = "함께 보낼 메일";
@@ -78,7 +79,8 @@ function partLines(d: DraftPart): string[] {
 	const left = (d.cannotAttach ?? []).map(n => n.replace(/\s+/g, " ").trim());
 	const reasons = [...(d.cannotAttach && (left.length || note) ? [CANNOT_ATTACH] : []), ...(left.length ? [`빠진 파일: ${left.join(", ")}`] : []), ...(note ? [note] : []), ...(note && d.libraryMiss ? [LIBRARY_MISS] : [])];
 	const none = reasons.length ? `> 첨부: 없음 (${reasons.join(" · ")})` : d.attachmentsNone || mail ? "> 첨부: 없음" : "";
-	const head = [`> ${d.toLabel ?? "받는이"}: ${d.to.replace(/\s+/g, " ").trim()}`, ...(d.subject ? [`> 제목: ${d.subject.replace(/\s+/g, " ").trim()}`] : []), ...(files.length ? files : none ? [none] : []), ...(d.origin ? [`> 이어서: ${d.origin.text.replace(/\s+/g, " ").trim()}${d.origin.link ? ` (${d.origin.link.replace(/\s+/g, "")})` : ""}`] : []), ">"];
+	const cc = (d.cc ?? []).map(a => a.replace(/\s+/g, " ").trim()).filter(Boolean);
+	const head = [`> ${d.toLabel ?? "받는이"}: ${d.to.replace(/\s+/g, " ").trim()}`, ...(cc.length ? [`> 참조: ${cc.join(", ")}`] : []), ...(d.subject ? [`> 제목: ${d.subject.replace(/\s+/g, " ").trim()}`] : []), ...(files.length ? files : none ? [none] : []), ...(d.origin ? [`> 이어서: ${d.origin.text.replace(/\s+/g, " ").trim()}${d.origin.link ? ` (${d.origin.link.replace(/\s+/g, "")})` : ""}`] : []), ">"];
 	return [...head, ...quote(d.body.replace(/\r\n?/g, "\n").trim())];
 }
 
@@ -94,7 +96,7 @@ export function draftApprovalBlock(d: DraftInput): string {
 
 // A card made before a change to how drafts are read (the always-shown 첨부 row, 2026-10-26) re-read from its own text with the current
 // rules: the head (recipient, subject, files, warning, origin) is replaced, the body and ref stay (the stored text may be cut shorter).
-const HEAD_KEYS = ["toLabel", "to", "subject", "attachments", "noAttachments", "warning", "note", "origin"] as const;
+const HEAD_KEYS = ["toLabel", "to", "cc", "subject", "attachments", "noAttachments", "warning", "note", "origin"] as const;
 export function refreshDraft(old: DraftApproval, text: string): DraftApproval {
 	const fresh = parseQuotedDraft(text);
 	if (!fresh) return old;
@@ -111,7 +113,25 @@ export function refreshDraft(old: DraftApproval, text: string): DraftApproval {
 	return next;
 }
 
+// The stored asking message of a card whose 받는 사람·참조 changed (hub/draft-recipients.ts): its 받는이 line and 참조 line become the new ones,
+// everything else (제목, 첨부, 이어서, body) stays, so the card is re-read as the same card after a restart.
+export function rewriteDraftTo(text: string, to: string, cc: readonly string[]): string {
+	const lines = text.split("\n");
+	const head = lines.findIndex(l => /^>\s*받는이\s*[:：]/.test(l));
+	if (head < 0) return text;
+	const out = [...lines.slice(0, head), `> 받는이: ${to.replace(/\s+/g, " ").trim()}`, ...(cc.length ? [`> 참조: ${cc.join(", ")}`] : [])];
+	let i = head + 1;
+	for (; i < lines.length; i++) {
+		const line = lines[i]!;
+		if (/^>\s*참조\s*[:：]/.test(line)) continue;
+		if (!/^>\s*(?:제목|첨부|이어서)\s*[:：]/.test(line)) break;
+		out.push(line);
+	}
+	return [...out, ...lines.slice(i)].join("\n");
+}
+
 const HEADER = /^(받는이|대상|대화방)\s*[:：]\s*(.*)$/;
+const CC = /^참조\s*[:：]\s*(.*)$/;
 const SUBJECT = /^제목\s*[:：]\s*(.*)$/;
 const ATTACH = /^첨부\s*[:：]\s*(.*)$/;
 const ORIGIN = /^이어서\s*[:：]\s*(.*?)(?:\s+\(((?:https?:\/\/|#|\/)\S*)\))?$/;
@@ -155,6 +175,7 @@ function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 	let toLabel = "받는이";
 	let to = "";
 	let subject: string | undefined;
+	let cc: string[] = [];
 	const attachments: DraftFile[] = [];
 	let none = false;
 	let note: string | undefined;
@@ -162,13 +183,15 @@ function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 	let i = 0;
 	for (; i < quoted.length; i++) {
 		const h = HEADER.exec(quoted[i]!) ?? undefined;
+		const c = to && !cc.length ? CC.exec(quoted[i]!) : null;
 		const s = SUBJECT.exec(quoted[i]!);
 		const a = to ? ATTACH.exec(quoted[i]!) : null;
 		const o = to && !origin ? ORIGIN.exec(quoted[i]!) : null;
 		if (h && !to) {
 			toLabel = h[1]!;
 			to = h[2]!.trim();
-		} else if (s && subject === undefined) subject = s[1]!.trim();
+		} else if (c) cc = c[1]!.split(/\s*,\s*/).map(a => a.trim()).filter(Boolean);
+		else if (s && subject === undefined) subject = s[1]!.trim();
 		else if (o && o[1]!.trim()) origin = { text: o[1]!.trim(), ...(o[2] ? { link: o[2] } : {}) };
 		else if (a) {
 			const v = a[1]!.trim();
@@ -190,7 +213,7 @@ function parseDraftLines(quoted: string[]): DraftApproval | undefined {
 	if (!body) return undefined;
 	const clipped = body.slice(0, DRAFT_BODY_MAX);
 	const warn = toLabel === "받는이" && !attachments.length && (!!note || claimsAttachment(`${subject ?? ""}\n${clipped}`));
-	return { toLabel, to, ...(subject ? { subject } : {}), body: clipped, ...(attachments.length ? { attachments } : none || toLabel === "받는이" ? { noAttachments: true as const } : {}), ...(warn ? { warning: note?.startsWith(CANNOT_ATTACH) ? CANNOT_ATTACH_WARNING : NO_ATTACHMENT_WARNING } : {}), ...(note ? { note } : {}), ...(origin ? { origin } : {}) };
+	return { toLabel, to, ...(cc.length ? { cc } : {}), ...(subject ? { subject } : {}), body: clipped, ...(attachments.length ? { attachments } : none || toLabel === "받는이" ? { noAttachments: true as const } : {}), ...(warn ? { warning: note?.startsWith(CANNOT_ATTACH) ? CANNOT_ATTACH_WARNING : NO_ATTACHMENT_WARNING } : {}), ...(note ? { note } : {}), ...(origin ? { origin } : {}) };
 }
 
 // The quoted draft of a message (recipient line first, as draftApprovalBlock writes it), as standard "> " lines; undefined when the message

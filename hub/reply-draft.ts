@@ -15,7 +15,8 @@ export type ReplyItem = {
 	room?: string; // the conversation inside a messenger app: its own tone profile
 	from: string;
 	replyTo?: string;
-	cc?: string[];
+	cc?: string[]; // the original mail's 참조 addresses: allowed as a recipient (전체 답장 keeps them)
+	to?: string[]; // the original mail's 받는 사람 addresses: allowed the same way
 	self?: string[]; // the user's own addresses/handles: never a recipient
 	subject?: string;
 	text: string;
@@ -224,20 +225,21 @@ function forbiddenHit(body: string, entry: string): boolean {
 }
 
 // Deterministic checks, run on a fresh draft and again right before sending; returns the failures (empty = clean).
-export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle): string[] {
+// `anyRecipient`: the owner chose the addresses himself on the card (a new colleague, a group list), so only the other checks apply.
+export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle, opts: { anyRecipient?: boolean } = {}): string[] {
 	const out: string[] = [];
 	const body = draft.body ?? "";
 	if (!body.trim()) out.push("the body is empty");
 	const max = style.maxChars ?? DEFAULT_MAX[item.kind];
 	if ([...body].length > max) out.push(`the body is ${[...body].length} characters; the limit is ${max}`);
 	if (item.kind === "mail") {
-		const allowed = new Set([item.from, item.replyTo ?? "", ...(item.cc ?? [])].flatMap(addressesOf));
+		const allowed = new Set([item.from, item.replyTo ?? "", ...(item.cc ?? []), ...(item.to ?? [])].flatMap(addressesOf));
 		const self = new Set((item.self ?? []).flatMap(addressesOf));
 		const to = addressesOf(draft.to);
 		if (!to.length) out.push(NO_RECIPIENT);
 		for (const a of to) {
 			if (self.has(a)) out.push(`'${a}' is the user's own address`);
-			else if (!allowed.has(a)) out.push(`'${a}' is not the sender, reply-to or a cc of the original`);
+			else if (!allowed.has(a) && !opts.anyRecipient) out.push(`'${a}' is not the sender, reply-to or a cc of the original`);
 		}
 		if (item.subject?.trim() && !/^re\s*:/i.test((draft.subject ?? "").trim())) out.push("the subject must start with 'Re:'");
 	}
@@ -258,7 +260,7 @@ function recipientOf(to: string, item: ReplyItem): string {
 	if (item.kind !== "mail") return to || defaultTo(item);
 	const known = defaultTo(item);
 	if (!addressesOf(known).length) return to || known;
-	const allowed = new Set([item.from, item.replyTo ?? "", ...(item.cc ?? [])].flatMap(addressesOf));
+	const allowed = new Set([item.from, item.replyTo ?? "", ...(item.cc ?? []), ...(item.to ?? [])].flatMap(addressesOf));
 	const self = new Set((item.self ?? []).flatMap(addressesOf));
 	const got = addressesOf(to);
 	return got.length && got.every(a => allowed.has(a) && !self.has(a)) ? to : known;
