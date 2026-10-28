@@ -608,10 +608,11 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/file") {
 			return fileRoute(req, url, fileRoots(), sentFiles());
 		}
-		// A file the owner attached to a conversation of this computer, opened from the other one (the chip in the sent bubble): uploads only.
+		// A file of a conversation of this computer, opened from the other one: an upload the owner attached (the chip in the sent bubble),
+		// or a result file the bot posted or wrote ([file] lines, paths), under the same rules as this computer's own /api/file.
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer/file") {
 			const [f] = messageFiles([{ path: url.searchParams.get("path") ?? "" }]);
-			if (!f) return json({ error: "열 수 없는 파일이에요" }, 404);
+			if (!f) return fileRoute(req, url, fileRoots(), sentFiles());
 			const res = serveFile(f.path, req, url.searchParams.get("download") === "1");
 			return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
 		}

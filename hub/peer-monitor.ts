@@ -205,7 +205,8 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 		if (!target || !pc) return json({ error: "unknown computer" }, 400);
 		const p = url.searchParams.get("p") ?? "";
 		const parsed = p.startsWith("/") && !p.startsWith("//") ? new URL(p, LOCAL) : undefined;
-		const get = req.method === "GET";
+		// HEAD is a read too: a file chip asks for a peer file's size and existence before it offers it.
+		const get = req.method === "GET" || req.method === "HEAD";
 		const allowed = !!parsed && parsed.origin === LOCAL && (get ? PEER_GET.some(r => r.test(parsed.pathname)) : parsed.pathname === "/api/peer/act");
 		if (!allowed || !parsed) return json({ error: "path not allowed" }, 400);
 		const off = (p: PairResult) => json({ error: "peering is off", ...(!p.ok && p.reason ? { reason: p.reason } : {}) }, 503);
@@ -247,6 +248,11 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			}
 			const headers: Record<string, string> = {};
 			for (const k of KEEP) { const v = r.headers.get(k); if (v) headers[k] = v; }
+			// A HEAD answer has no body to measure: the peer's own size is the answer (the file chip shows it).
+			if (req.method === "HEAD") {
+				const n = r.headers.get("content-length");
+				return new Response(null, { status: r.status, headers: n ? { ...headers, "content-length": n } : headers });
+			}
 			return new Response(r.status === 204 || r.status === 304 ? null : await r.arrayBuffer(), { status: r.status, headers });
 		} catch {
 			return json(OFFLINE, 502);
@@ -398,7 +404,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			return etagMatch(req.headers.get("if-none-match"), s.rev) ? new Response(null, { status: 304, headers }) : Response.json(s, { headers });
 		}
 		if (get && url.pathname === "/api/monitoring/peers") return json(await peerMonitoring());
-		if (url.pathname === "/api/peer/proxy" && (req.method === "GET" || req.method === "POST")) return proxy(req, url);
+		if (url.pathname === "/api/peer/proxy" && (req.method === "GET" || req.method === "HEAD" || req.method === "POST")) return proxy(req, url);
 		if (req.method === "POST" && url.pathname === "/api/peer/act") return act(req);
 		return undefined;
 	}
