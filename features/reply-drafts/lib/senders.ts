@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadPlugins, pluginReply, pluginRepliesWithFiles, pluginsLoaded } from "../../../hub/plugins.ts";
 import { dataDir } from "./settings.ts";
+import { recipientList } from "./recipients.ts";
 import { stagedFiles } from "./staged.ts";
 import type { DraftRec } from "./store.ts";
 import type { Runner } from "./tone.ts";
@@ -14,11 +15,13 @@ export type SendOutcome = { ok: boolean; message: string };
 const WEBMAIL_MAIL = join(import.meta.dir, "..", "..", "webmail-no-api", "bin", "mail.ts");
 const MANUAL = "이 메일은 여기서 보낼 수 없어서 직접 보내야 해요. 초안은 위에 있는 글을 그대로 쓰면 돼요";
 
-// zele refuses a reply unless `zele mail read <id>` ran first and showed the latest message of the thread; --to overrides the recipients.
+// zele refuses a reply unless `zele mail read <id>` ran first and showed the latest message of the thread; --to overrides the recipients
+// (one address or a comma list) and --cc adds 참조.
 export const readArgv = (mailId: string): string[] => ["zele", "mail", "read", mailId];
+const ccArgv = (cc: readonly string[]): string[] => (cc.length ? ["--cc", cc.join(", ")] : []);
 // A new mail (hub/mail-cli.ts compose): no mail to answer, so no `mail read` first.
-export const sendArgv = (to: string, subject: string, body: string, files: string[] = []): string[] => ["zele", "mail", "send", "--to", to, "--subject", subject, "--body", body, ...files.flatMap(f => ["--attach", f])];
-export const replyArgv = (mailId: string, to: string, body: string, files: string[] = []): string[] => ["zele", "mail", "reply", mailId, "--to", to, "--body", body, ...files.flatMap(f => ["--attach", f])];
+export const sendArgv = (to: string, subject: string, body: string, files: string[] = [], cc: string[] = []): string[] => ["zele", "mail", "send", "--to", to, "--subject", subject, ...ccArgv(cc), "--body", body, ...files.flatMap(f => ["--attach", f])];
+export const replyArgv = (mailId: string, to: string, body: string, files: string[] = [], cc: string[] = []): string[] => ["zele", "mail", "reply", mailId, "--to", to, ...ccArgv(cc), "--body", body, ...files.flatMap(f => ["--attach", f])];
 
 // A webmail-no-api site: "webmail:<site>" (a new mail composed for it), or the plain site name its watch posts as the mail's `source`
 // (features/webmail-no-api/lib/watchkit.ts postToGateway) when this install onboarded that site.
@@ -43,24 +46,27 @@ const tail = (r: { stdout: string; stderr: string }) => (r.stderr || r.stdout).t
 
 export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome> {
 	if (rec.kind !== "mail") return fail(MANUAL);
-	const files = stagedFiles(rec.id);
+	const files = stagedFiles(rec.id), cc = rec.cc ?? [];
 	if (rec.source !== "zele" && !webmailSite(rec.source) && !pluginsLoaded()) await loadPlugins(dataDir());
 	if (files.length && !canAttach(rec.source)) return fail("이 메일은 첨부파일을 보낼 수 없어서 보내지 않았어요. 첨부를 빼거나 직접 보내야 해요");
+	// This site's adapter saves a text draft with one recipient and no 참조: sending it would drop the rest without a word.
+	if (webmailSite(rec.source) && (cc.length || recipientList(rec.to).length > 1))
+		return fail("이 웹메일은 참조나 여러 받는 사람에게 보낼 수 없어요. 받는 사람을 한 명만 남기고 참조를 비우면 보내요");
 	if (rec.compose && rec.source === "zele") {
-		const r = await run(sendArgv(rec.to, rec.subject ?? "", rec.body, files.map(f => f.path)));
+		const r = await run(sendArgv(rec.to, rec.subject ?? "", rec.body, files.map(f => f.path), cc));
 		return r.code === 0 ? { ok: true, message: `${rec.to}에게 메일을 보냈어요` } : fail(`보내지 못했어요: ${tail(r)}`);
 	}
 	if (rec.source === "zele") {
 		const seen = await run(readArgv(rec.mailId));
 		if (seen.code !== 0) return fail(`보내기 전에 메일을 읽지 못해서 보내지 않았어요: ${tail(seen)}`);
-		const r = await run(replyArgv(rec.mailId, rec.to, rec.body, files.map(f => f.path)));
+		const r = await run(replyArgv(rec.mailId, rec.to, rec.body, files.map(f => f.path), cc));
 		if (r.code === 0) return { ok: true, message: `${rec.to}에게 답장을 보냈어요` };
 		return fail(`보내지 못했어요. 그 사이 새 메일이 왔다면 이 초안은 낡은 거예요. 다시 초안을 만들어야 해요: ${tail(r)}`);
 	}
 	const site = webmailSite(rec.source);
 	if (!site) {
 		if (rec.compose) return fail(MANUAL);
-		const sent = await pluginReply({ source: rec.source, id: rec.mailId, to: rec.to, ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, attachments: files.map(f => ({ name: f.name, path: f.path, size: f.size })) });
+		const sent = await pluginReply({ source: rec.source, id: rec.mailId, to: rec.to, ...(cc.length ? { cc: cc.join(", ") } : {}), ...(rec.mode === "all" ? { all: true } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, attachments: files.map(f => ({ name: f.name, path: f.path, size: f.size })) });
 		return sent ?? fail(MANUAL);
 	}
 	const saved = await run(["bun", WEBMAIL_MAIL, site, "draft", rec.to, rec.subject ?? "", rec.body]);
