@@ -66,14 +66,16 @@ curl -s -X POST http://127.0.0.1:<web.port>/api/mail \
 The reply-drafts feature sends a reply the owner approved (보내기). For a mail whose `source` is neither `zele` nor a webmail-no-api site, it asks the plugins, in file-name order, until one returns a result:
 
 ```ts
-reply(draft) { // draft: { source, id, to, subject?, body, attachments: [{ name, path, size }] }
+reply(draft) { // draft: { source, id, to, cc?, all?, subject?, body, attachments: [{ name, path, size }] }
 	if (draft.source !== "work") return undefined;           // not mine: the next plugin, else "send it by hand"
-	// ... send draft.body to draft.to; attach every file at draft.attachments[i].path (absolute, on this computer)
+	// ... send draft.body to every address of draft.to (one address or a comma list), with draft.cc as 참조 when it is there,
+	// and attach every file at draft.attachments[i].path (absolute, on this computer)
 	return { ok: true, message: "답장을 보냈어요" };            // or { ok: false, message: "why" }
 },
 repliesWithFiles(source) { return source === "work"; },     // true only when reply really sends draft.attachments
 ```
 
+- `to` is what the owner left on the card's 받는 사람 rows: one address or a comma list. `cc` is the 참조 list the same way, absent when there is none, and `all` is true when the owner picked 전체 답장 (the sender plus the original's 받는 사람·참조). Send every address you are given; a source that cannot (one recipient only, no 참조) should return `{ ok: false, message }` saying so rather than dropping them.
 - `attachments` are the files staged for that draft: the owner added them in the send sheet, or reply-drafts matched them in the mail instance's 첨부 파일 폴더 setting and the owner confirmed them. Without `repliesWithFiles`, the sheet says the account cannot send files, asks once more before 보내기, and a draft that holds files is not sent at all.
 - zele sends them with `zele mail reply <id> --attach <path>` (one flag per file). A webmail-no-api site cannot send files: its adapter only saves a text draft.
 - A throw in `reply` is a failed send (logged, the owner sees why); returning `undefined` means the source is not this plugin's.
