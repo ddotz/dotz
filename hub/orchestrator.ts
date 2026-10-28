@@ -196,10 +196,10 @@ export function setIdleHandler(fn: () => void): void {
 // Messages that arrive while a turn runs are queued into the same agent run, so one run can answer several prompts.
 // Each user prompt and each final answer is reported as it happens, letting the gateway route every answer to the
 // channel that asked it instead of posting only the run's last text.
-let onPrompt: (text: string) => void = () => {};
+let onPrompt: (text: string) => boolean | void = () => {};
 let onAnswer: (text: string) => void = () => {};
 let onText: (text: string) => void = () => {};
-export function setAnswerHandlers(prompt: (text: string) => void, answer: (text: string) => void, text: (text: string) => void = () => {}): void {
+export function setAnswerHandlers(prompt: (text: string) => boolean | void, answer: (text: string) => void, text: (text: string) => void = () => {}): void {
 	onText = text;
 	onPrompt = prompt;
 	onAnswer = answer;
@@ -362,7 +362,7 @@ async function readEvents(p: AgentProcess): Promise<void> {
 				if (orch.status === "idle") setTimeout(() => orch.status === "idle" && onIdle(), 200);
 				break;
 			case "user":
-				if (!isResumeNote(ev.text)) onPrompt(ev.text);
+				if (!isResumeNote(ev.text) && onPrompt(ev.text) === true) proc?.abort();
 				break;
 			case "assistant":
 				if (ev.text) {
