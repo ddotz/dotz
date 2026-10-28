@@ -349,7 +349,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			// 초안 작성 on a mail the other computer holds: its draft is made and offered there.
 			case "mail-draft":
 				if (typeof a.key !== "string" || !a.key) return bad("key required");
-				return ask("POST", `/api/mail/${encodeURIComponent(a.key)}/draft`, {}, login);
+				return ask("POST", `/api/mail/${encodeURIComponent(a.key)}/draft`, typeof a.instruction === "string" && a.instruction.trim() ? { instruction: a.instruction.trim().slice(0, 500) } : {}, login);
 			// 답장 안 함 (hub/unreplied.ts) on the computer that holds the mail or the room, or taking it back (on false).
 			case "no-reply": {
 				const verb = a.on === false ? "DELETE" : "POST";

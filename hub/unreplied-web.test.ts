@@ -134,10 +134,13 @@ describe("home and the peer's mail", async () => {
 		await waitFor(v, `document.querySelector('#mon-side .cv-row[data-k^="p:"][data-k$="i:mail"]')`);
 		await run(v, `document.querySelector('#mon-side .cv-row[data-k^="p:"][data-k$="i:mail"]').click()`);
 		await waitFor(v, `document.querySelector("#mon-tl .mr .tag.unreplied")`);
-		// 초안 작성 sits beside 답장 안 함 and asks the computer that holds the mail for the draft
+		// 초안 작성 sits beside 답장 안 함: it asks first what the reply should say, then the computer that holds the mail makes the draft with it
 		await run(v, `document.querySelector("#mon-tl .mr .mr-draft").click()`);
+		await waitFor(v, `document.querySelector('dialog[open] [data-k="draft-instruction"]')`);
+		await run(v, `const ta = document.querySelector('dialog[open] [data-k="draft-instruction"]'); ta.value = "금요일까지 보낸다고"; document.querySelector("dialog[open] .dact .btn:last-child").click()`);
 		const asked = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "mail-draft");
-		expect(asked.body).toMatchObject({ action: "mail-draft", args: { key: "peer-1" } });
+		expect(asked.body).toMatchObject({ action: "mail-draft", args: { key: "peer-1", instruction: "금요일까지 보낸다고" } });
+		await waitFor(v, `!document.querySelector("dialog[open]")`);
 		await run(v, `document.querySelector('#mon-tl .mr [data-k="mail-no"]').click()`);
 		const sent = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "fyi");
 		expect(sent.body).toMatchObject({ action: "fyi", args: { key: "peer-1", on: true } });

@@ -45,7 +45,7 @@ export type MailDeps = {
 	/** Offered every new mail (never a duplicate), fire-and-forget: a throw is logged and never breaks postMail. features/reply-drafts offers an [ask] reply draft here. */
 	offerDraft?: (m: { key: string; target: string; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; body?: string; attachments?: { name: string; size: number }[] }) => void;
 	/** 초안 작성: a reply draft the owner asked for on a recorded mail (features/reply-drafts requestMailDraft); resolves with how it went. */
-	requestDraft?: (m: { key: string; target: string; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; attachments?: { name: string; size: number }[] }) => Promise<string>;
+	requestDraft?: (m: { key: string; instruction?: string; target: string; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; summary?: string; attachments?: { name: string; size: number }[] }) => Promise<string>;
 	now?: () => string;
 };
 
