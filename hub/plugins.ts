@@ -22,8 +22,13 @@ export type PluginContext = {
 	/** Owner approval of a watch that has `approval_minutes`. */
 	approveWatch: (name: string) => void;
 };
-/** An approved reply to a mail the plugin posted. `attachments` are the files staged for the draft, absolute paths on this computer. */
-export type MailReply = { source: string; id: string; to: string; subject?: string; body: string; attachments: { name: string; path: string; size: number }[] };
+/**
+ * An approved reply to a mail the plugin posted. `attachments` are the files staged for the draft, absolute paths on this computer.
+ * `to` is one address or a comma list of them (the owner may keep several on the card); `cc` is the 참조 list the same way, absent or ""
+ * when there is none; `all` is true when the owner picked 전체 답장, so a source that can differ between 답장 and 전체 답장 (a mail UI's own
+ * 회신 / 모두 회신) should follow it. A plugin must send every address it is given, or return ok: false saying what it cannot send.
+ */
+export type MailReply = { source: string; id: string; to: string; cc?: string; all?: boolean; subject?: string; body: string; attachments: { name: string; path: string; size: number }[] };
 export type MailReplyResult = { ok: boolean; message: string };
 export type ThreadMessage = { thread: string; text: string };
 /** `note` is appended to the orchestrator's inbox turn for this message; `parentName` replaces the parent's name there. */

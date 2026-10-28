@@ -370,6 +370,13 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (!a.ref) return bad("ref required");
 				return ask("POST", `/api/drafts/${ref}/files`, Number.isInteger(a.remove) ? { remove: a.remove } : typeof a.library === "string" ? { library: a.library } : { name: a.name, data: a.data }, login);
 			}
+			// The 받는 사람·참조 and 답장 | 전체 답장 of a mail reply draft (hub/draft-recipients.ts), changed on the computer that owns the draft.
+			case "draft-recipients": {
+				if (typeof a.ref !== "string" || !a.ref) return bad("ref required");
+				const body = { ...(a.mode === "reply" || a.mode === "all" ? { mode: a.mode } : {}), ...(a.to !== undefined ? { to: a.to } : {}), ...(a.cc !== undefined ? { cc: a.cc } : {}) };
+				if (!Object.keys(body).length) return bad("mode, to or cc required");
+				return ask("POST", `/api/drafts/${encodeURIComponent(a.ref)}/recipients`, body, login);
+			}
 			// A project on this machine (hub/projectdelete.ts): what deleting it removes, and the delete itself.
 			case "project": {
 				const key = encodeURIComponent(String(a.key ?? ""));

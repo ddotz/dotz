@@ -20,7 +20,10 @@ export type DraftRec = {
 	libraryMiss?: boolean; // the 첨부 파일 폴더 is set and held no file that fits
 	compose?: boolean; // a new mail the bot wrote (hub/mail-cli.ts compose), not an answer to a received one: `mailId` is not a mail, `ref` is its own key
 	origin?: { kind: string; id: string; text: string; link?: string }; // the approved action it follows up (hub/followup.ts): the card says so
-	to: string;
+	to: string; // the 받는 사람, one address or a comma list (features/reply-drafts/lib/recipients.ts recipientText)
+	cc?: string[]; // 참조 addresses; absent = none
+	mode?: "reply" | "all"; // 답장 | 전체 답장 of the card: which answer the recipients came from (absent on older records and on a chat or comment draft)
+	ownerRecipients?: true; // the owner set the 받는 사람·참조 himself on the card: any address he added is sent, not only the original's people
 	subject?: string;
 	body: string;
 	status: DraftStatus;
@@ -70,7 +73,7 @@ export function addDraft(rec: DraftRec): void {
 	write({ drafts: [...f.drafts, rec], keys: f.keys.includes(rec.ref) ? f.keys : [...f.keys, rec.ref] });
 }
 
-export function patchDraft(id: string, patch: Partial<Pick<DraftRec, "to" | "item" | "questions">>): void {
+export function patchDraft(id: string, patch: Partial<Pick<DraftRec, "to" | "cc" | "mode" | "ownerRecipients" | "item" | "questions">>): void {
 	const f = read();
 	write({ ...f, drafts: f.drafts.map(d => (d.id === id ? { ...d, ...patch } : d)) });
 }
