@@ -1,10 +1,25 @@
 /* ---------- state refresh ---------- */
 // A short drop (the stream reconnects and replays what it missed) shows nothing; past 2s the header says it is reconnecting.
-let connTimer = 0;
-function setConn(ok) { clearTimeout(connTimer); if (ok) $("#conn").hidden = true; else connTimer = setTimeout(() => { $("#conn").hidden = false; }, 2000); }
+// A gateway that is off (the computer asleep, the process down) often does not refuse: the request just hangs. So a state that has not come
+// within STATE_WAIT_MS counts as a drop too, and while this computer is unreachable the header line is a button to another computer (33-peers.js).
+const STATE_WAIT_MS = 4000;
+let connTimer = 0, selfDown = false;
+function setConn(ok) {
+  clearTimeout(connTimer);
+  if (ok) { selfDown = false; $("#conn").hidden = true; return; }
+  connTimer = setTimeout(() => { selfDown = true; paintConn(); }, 2000);
+}
+function paintConn() {
+  const c = $("#conn"), other = typeof prOthers === "function" ? prOthers()[0] : null;
+  c.hidden = !selfDown;
+  c.textContent = other ? `연결 끊김 · ${other.name}(으)로 전환` : "연결 끊김 · 다시 연결 중";
+  c.disabled = !other;
+  c.onclick = other ? () => prPick(other) : null;
+}
 async function refreshState() {
   try {
-    S = await api("/api/state?limit=0");
+    const slow = setTimeout(() => setConn(false), STATE_WAIT_MS - 2000);
+    try { S = await api("/api/state?limit=0"); } finally { clearTimeout(slow); }
     S.work_skew = (S.work_now || Date.now()) - Date.now();
     setConn(true);
     webBuildCheck(S.web_build);

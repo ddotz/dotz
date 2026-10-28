@@ -92,6 +92,8 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .ustrip { grid-column: 11; margin-left: 4px; }
 .pchip { grid-column: 3; }
 .conn { flex: none; height: 20px; padding: 0 8px; border-radius: 10px; background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); font-size: 12px; line-height: 20px; font-weight: 500; white-space: nowrap; }
+button.conn { border: 0; font-family: inherit; cursor: pointer; }
+button.conn:disabled { cursor: default; }
 .ustrip { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; }
 .ustrip:hover { background: var(--hover); color: var(--fg); }
 .ustrip .ubar { width: 48px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }

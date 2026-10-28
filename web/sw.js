@@ -2,9 +2,10 @@
 // The page, script and styles answer from the cache at once (a tapped notification starts the app without waiting for the
 // network) and are fetched again in the background. When that fetch brings a changed shell, the open pages get a
 // {type:"shell-updated"} message (web/js/23-installable-app-web.js shellUpdated) and reload onto it, so a web change does not wait for the open after next.
-const CACHE = "dotz-shell-v10";
-// the page and its joined script and styles: cache first, refreshed together in the background
-const FRESH = ["/", "/app.js", "/app.css"];
+const CACHE = "dotz-shell-v11";
+// the page, its joined script and styles and the owner's custom.js: cache first, refreshed together in the background. A file the page loads that
+// is not here waits on the gateway, and with the gateway off the page never finished loading (2026-10-28).
+const FRESH = ["/", "/app.js", "/app.css", "/custom.js"];
 // icons: cache first too, but each is fetched again in the same background refresh (no ETag test, no reload), so a changed icon never needs a CACHE bump
 const ICONS = ["/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/badge-96.png"];
 const SHELL = [...FRESH, ...ICONS];
