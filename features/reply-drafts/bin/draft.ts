@@ -65,9 +65,16 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			addDraft(built.rec);
 			return { lines: [askText(built.rec, built.warnings)], code: 0, notes };
 		}
-		case "revise":
+		case "revise": {
 			if (!pos[0]) return { lines: [USAGE], code: 2 };
-			return done(await reviseDraft(pos[0], flag(rest, "--change") ?? "", deps));
+			const r = await reviseDraft(pos[0], flag(rest, "--change") ?? "", deps);
+			const rec = r.ok && r.id ? getDraft(r.id) : undefined;
+			// The rewritten mail draft goes to its mail's conversation from here, not through the bot's answer: a second 고치기 changes a word or
+			// two, and the runtime cut the near-identical card off as a repeated reply, so the owner never got it (2026-10-28, RZV7KMZ).
+			if (rec?.kind === "mail" && (await notifyGateway({ path: "/api/send", body: { target: `mail:${rec.ref}`, text: r.text } }, deps.hub)))
+				return { lines: [`고친 초안(${rec.id})을 그 메일 대화에 올렸어요. 초안을 다시 붙이지 말고, 무엇을 고쳤는지 한 줄로만 답하세요.`], code: 0 };
+			return done(r);
+		}
 		case "send": {
 			if (!pos[0]) return { lines: [USAGE], code: 2 };
 			const rec = getDraft(pos[0]);
