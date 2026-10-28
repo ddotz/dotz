@@ -942,10 +942,46 @@ function rerenderPending(): number {
 	return changed;
 }
 
+// A message of the last day stored as a plain message whose text the current rules read as a decision (a choice-block format the parser learned
+// later, e.g. "결정 1:") and that nobody answered in its conversation since: it becomes the decision card it would be today, and the plain
+// message item folds (one message, one notice). An answered one stays as it is. Returns how many messages turned into decisions.
+function upgradeMessages(nowMs = Date.now()): number {
+	const DAY = 86_400_000;   // reconcileStored runs at load, before DAY below exists
+	const cands = items.filter(i => i.kind === "message" && !i.dismissed && !i.decision && i.at && Date.parse(i.at) > nowMs - DAY);
+	if (!cands.length) return 0;
+	const wanted = new Set(cands.map(i => i.at!));
+	const outs: HubEvent[] = [], ins: HubEvent[] = [];
+	for (const file of [paths.outbox, paths.inbox]) {
+		if (!existsSync(file)) continue;
+		for (const line of readFileSync(file, "utf8").split("\n")) {
+			const ts = /"ts":"([^"]+)"/.exec(line)?.[1];
+			if (!ts || Date.parse(ts) <= nowMs - DAY) continue;
+			try {
+				const e = JSON.parse(line) as HubEvent;
+				if (file === paths.inbox) ins.push(e);
+				else if (wanted.has(e.ts) && e.kind === "out") outs.push(e);
+			} catch {
+				continue;
+			}
+		}
+	}
+	let n = 0;
+	for (const e of outs) {
+		const ds = decisionsOf(e);
+		if (!ds.length) continue;
+		const conv = eventTarget(e);
+		if (ins.some(x => x.ts > e.ts && eventTarget(x) === conv)) continue;
+		for (const d of ds) putDecision(d, e.ts);
+		for (const i of cands) if (i.at === e.ts) { i.read = true; i.dismissed = true; }
+		n++;
+	}
+	return n;
+}
+
 function reconcileStored(): void {
 	replaying = true;
 	try {
-		const redrawn = rerenderPending();
+		const redrawn = rerenderPending() + upgradeMessages();
 		// An open question stored without options (made before ask-options.ts) gets them by the same rule, in memory only: the file keeps what
 		// was stored until the item changes for another reason.
 		for (const i of items)

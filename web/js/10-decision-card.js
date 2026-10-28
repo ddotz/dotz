@@ -2,7 +2,7 @@
 // Choice block (MODE.md "Message layout"): `**1) name** ← 추천`, then one description line; a `결정:` line titles a block.
 // Several blocks = several decisions: the card walks them one at a time and sends the numbers as "1-2".
 const CH_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
-const CH_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
+const CH_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 const CH_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 // An option that needs detail (tap opens a text field; the answer goes out as `n) label - <text>`): the bot marks it with a trailing ` …` on the name
 // (stripped from the label), or it is guessed from a negative / edit label or a description that asks for text. Mirrors hub/choices.ts detailOf.
