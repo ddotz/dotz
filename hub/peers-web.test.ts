@@ -60,7 +60,7 @@ describe("computer chip after coming back from the other computer", () => {
 
 // Switching computers in the installed app (web/js/33-peers.js prGo): the phone would open another origin outside the app, so the other
 // computer opens in a full-screen frame inside it; a browser tab still goes to the other address.
-const embed = src.slice(src.indexOf("// The installed app (iPhone"), src.indexOf("function prPick(p) {"));
+const embed = src.slice(src.indexOf("// The installed app (iPhone"), src.indexOf("function prPick(p, o = {}) {"));
 function shell(standalone: boolean) {
 	const appended: any[] = [], listeners: Record<string, (ev: unknown) => void> = {}, loc = { href: "https://mac:8443/", replace(h: string) { loc.href = h; } };
 	let open = 0;
