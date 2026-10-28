@@ -18,6 +18,10 @@ const IDLE_MS = 75_000; // a hub pings every 25 s; silence this long means a dea
 const BACKOFF_MS = [2000, 5000, 15_000, 60_000];
 const COUNTS_DEBOUNCE_MS = 400;
 const SEEN_MAX = 500;
+// A peer's frames that say its stored state changed (a mail answered or deleted, a draft sent or made, a room or conversation read): this computer
+// reads that peer again (its counts, and the merged 모니터링 the page draws from), so a mail sent on the other computer, or from here through it,
+// stops showing 초안 있음 without a re-click (owner 2026-10-28). Activity, answers and progress lines change nothing the lists show.
+const STATE_KINDS = new Set(["mail_unreplied", "read", "comment", "comment_send", "comment_draft", "comment_sources", "kakao", "kakao_send", "kakao_draft", "kakao_rooms", "kakao_read", "kakao_unreplied", "queue"]);
 
 // Which notices toast: what the owner is asked or told about (a question, a finished or failed piece of work, an alert), not the progress lines
 // (작업내역) or monitor results, and only while unread. A question and its [ask] message twin are one matter: the caller dedupes by `noticeKey`.
@@ -80,7 +84,7 @@ export function startPeerStreams(opts: Opts = {}): () => void {
 		if (event === "reset") { countsSoon(url); return; }
 		const e = data as { kind?: unknown; item?: Item } | null;
 		if (!e) return;
-		if (e.kind === "notice_read" || e.kind === "notice_dismiss") { countsSoon(url); return; }
+		if (e.kind === "notice_read" || e.kind === "notice_dismiss" || STATE_KINDS.has(String(e.kind))) { countsSoon(url); return; }
 		if (e.kind !== "notice") return;
 		countsSoon(url);
 		const n = e.item;
