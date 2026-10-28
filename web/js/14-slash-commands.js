@@ -110,8 +110,33 @@ function taFloor() {
 // "ulw" written as a word anywhere in the message: the box takes the ultrawork gradient edge (owner 2026-10-28), with no explanation line.
 // autosize runs on every change of the text (typing, a restored draft, a cleared box), so the edge follows it.
 const ULW_RE = /(^|[^a-z0-9])ulw(?![a-z0-9])/i;
+// The keyword itself is marked too: a backdrop under the (transparent) textarea repeats the text with the keyword wrapped, same box and
+// font, scrolled with it; only the mark is visible.
+const ULW_ALL = /(^|[^a-z0-9])(ulw)(?![a-z0-9])/gi;
+const ulwHl = el("div", { class: "ta-hl", "aria-hidden": "true" });
+ta.before(ulwHl);
+ta.addEventListener("scroll", () => { ulwHl.scrollTop = ta.scrollTop; });
+function paintUlw(on) {
+  ulwHl.hidden = !on;
+  if (!on) { clear(ulwHl); return; }
+  const cs = getComputedStyle(ta);
+  for (const k of ["font", "letterSpacing", "padding", "lineHeight", "textIndent"]) ulwHl.style[k] = cs[k];
+  ulwHl.style.height = cs.height;
+  const parts = [], v = ta.value;
+  let at = 0;
+  for (const m of v.matchAll(ULW_ALL)) {
+    const s = m.index + m[1].length;
+    parts.push(v.slice(at, s), el("mark", { class: "ulw-kw", text: m[2] }));
+    at = s + m[2].length;
+  }
+  parts.push(v.slice(at), "\n");
+  clear(ulwHl).append(...parts);
+  ulwHl.scrollTop = ta.scrollTop;
+}
 function autosize() {
-  sendRow.classList.toggle("ulw", ULW_RE.test(ta.value));
+  const ulw = ULW_RE.test(ta.value);
+  sendRow.classList.toggle("ulw", ulw);
+  paintUlw(ulw);
   const keep = sendRow.offsetHeight;
   sendRow.style.height = `${keep}px`;
   ta.style.height = "auto";
@@ -148,6 +173,7 @@ $("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.
 $("#working-stop").onclick = ev => (workingBg.length ? workCancel(workingBg[0].id, ev.currentTarget) : stopTarget());
 ta.addEventListener("input", () => { if (!$("#working").hidden) renderWorking(); });
 async function stopTarget() {
+  if (workingBg.length && !$("#c-model").classList.contains("run")) return workCancel(workingBg[0].id, $("#send-btn"));
   try {
     await api(isLaneT(target) ? `/api/lanes/${enc(laneOf(target))}/abort` : "/api/orchestrator/abort", "POST", isLaneT(target) ? {} : { target });
     toast("작업을 중단했어요");
@@ -232,7 +258,8 @@ function renderWorking() {
   box.hidden = !show;
   // Only while the gateway reports this target running: status line, model-chip spinner, and stop in place of send
   // (with text typed the button sends it into the running turn instead).
-  const line = $("#runline"), stopMode = on && st !== "rate-limited" && !ta.value.trim() && !ATT.length;
+  // The send button is the one stop control (owner 2026-10-28): it stops the running turn, or, with no turn running, this conversation's background worker.
+  const line = $("#runline"), stopMode = ((on && st !== "rate-limited") || bg.length > 0) && !ta.value.trim() && !ATT.length;
   line.hidden = !show; line.classList.toggle("warn", st === "rate-limited");
   $("#c-model").classList.toggle("run", on && st !== "rate-limited");
   const sb = $("#send-btn"); sb.classList.toggle("stop", stopMode); sb.setAttribute("aria-label", stopMode ? "중단" : "보내기"); sb.title = stopMode ? "지금 하는 일 중단" : "";
@@ -241,10 +268,10 @@ function renderWorking() {
     $(".dot", box).className = `dot ${st === "rate-limited" ? "warn" : "pri"}`;
     workingLabel = `${st === "rate-limited" ? "사용량 한도로 대기 중" : "작업 중…"}`; workingSubs = n;
     tickWorking();
-    $("#working-stop").hidden = st === "rate-limited";
+    $("#working-stop").hidden = true;
   } else if (bg.length) {
     $(".dot", box).className = "dot pri";
-    $("#working-stop").hidden = false;
+    $("#working-stop").hidden = true;
     tickWorking();
   }
   renderQueue(); renderCtxRing();
