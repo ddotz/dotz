@@ -963,12 +963,17 @@ export function abort(): void {
 // The owner's 중단 (the web stop button, /abort): besides the model's turn, what the turn set going ends too (outbound.ts registers
 // the hook: the request and the messages steered into it are closed, its background workers cancelled). An interrupt that sends a
 // new message right after uses abort() alone.
-let ownerCancel: () => void = () => {};
-export const setOwnerCancel = (fn: () => void): void => {
+let ownerCancel: () => string | undefined = () => undefined;
+export const setOwnerCancel = (fn: () => string | undefined): void => {
 	ownerCancel = fn;
 };
+// Others that hold that conversation's messages back (intake's burst, the web queue) drop them too: a message sent a moment before
+// 중단 started a new turn right after it (2026-10-28 live check).
+const cancelHooks: ((target: string) => void)[] = [];
+export const onOwnerCancel = (fn: (target: string) => void): void => void cancelHooks.push(fn);
 export function cancelByOwner(): void {
-	ownerCancel();
+	const target = ownerCancel();
+	if (target) for (const f of cancelHooks) f(target);
 	if (proc && orch.status === "working") proc.abort();
 }
 
