@@ -84,3 +84,4 @@ select.as-in { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 textarea.as-in.as-ta { padding-top: 6px; padding-bottom: 6px; }
 .as-rule .as-n { display: flex; }
 .as-rform .as-act { margin-top: 0; }
+.as-rl { display: flex; flex-direction: column; gap: 4px; }
