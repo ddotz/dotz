@@ -313,9 +313,10 @@ function renderSheet(box, dc, picks, step) {
   const old = $(".fs-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   const oldNote = $(".dc-note", box), refocus = !!oldNote && document.activeElement === oldNote, caret = refocus ? oldNote.selectionStart : 0;
   const qText = d ? ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "") : dc.question;
+  // A mail draft's 받는이·참조 live in its own rows at the top of the body and change in place, so the head does not repeat them.
   const head = fsHead(d ? [
     el("span", { class: "fs-ey", text: qText || "보내기 전에 확인해요" }),
-    el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: d.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: [d.to || "-", ...(d.cc || []).map(a => `참조 ${a}`)].join(" · ") })),
+    !d.toLabel || d.toLabel !== "받는이" ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: d.toLabel }), el("span", { class: "dc-dr-v", text: d.to || "-" })) : null,
     d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null]
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
