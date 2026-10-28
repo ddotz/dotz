@@ -128,7 +128,8 @@ function prPick(p) {
   // inside another computer's app frame: the app around it does the switch (back to itself, or to a third computer)
   if (prEmbedded && !p.self) { prClose(false); window.parent.postMessage({ dotz: "peer-pick", url: p.url }, "*"); return; }
   if (p.self) { prClose(); return; }
-  if (!p.online) { toast(`${p.name}에 연결할 수 없어요`, true); return; }
+  // the online flags come from this computer's gateway: while it is unreachable they are stale, so the switch is tried anyway
+  if (!p.online && !selfDown) { toast(`${p.name}에 연결할 수 없어요`, true); return; }
   toast(`${p.name}(으)로 넘어가요`);
   prClose(false);
   prGo(prUrl(p, `?did=${enc(DEVICE_ID)}`));   // the device id goes along: the push subscriptions on both computers become one device
@@ -143,7 +144,7 @@ function prSheet() {
     return el("button", { type: "button", class: `pr-row${p.self ? " on" : ""}`, "aria-current": p.self ? "true" : null, onclick: () => prPick(p) },
       el("span", { class: "pr-b" }, el("span", { class: "pr-t", text: p.name }), p.self ? el("span", { class: "pr-s", text: "지금 보고 있어요" }) : null),
       note ? el("span", { class: `pr-bd${p.need > 0 ? " need" : ""}`, text: note }) : null,
-      el("span", { class: `pr-st${p.online ? " ok" : ""}`, text: p.online ? "연결됨" : "연결 안 됨" }));
+      el("span", { class: `pr-st${!p.self && selfDown ? "" : p.online ? " ok" : ""}`, text: p.self && selfDown ? "연결 안 됨" : !p.self && selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨" }));
   });
   clear(PR.node.firstElementChild).append(
     el("div", { class: "ds-hd" }, el("span", { class: "ds-ey pr-ey", text: "컴퓨터" }), x),
@@ -215,7 +216,7 @@ const prKeyHint = isMac ? "⌘` · Ctrl+`" : "Ctrl+`";
 function prNext() {
   const n = PR.list.length, at = PR.list.findIndex(p => p.self);
   if (n < 2 || at < 0) return false;
-  const next = Array.from({ length: n - 1 }, (_, i) => PR.list[(at + 1 + i) % n]).find(p => p.online);
+  const next = Array.from({ length: n - 1 }, (_, i) => PR.list[(at + 1 + i) % n]).find(p => p.online || selfDown);
   if (next) prPick(next); else toast("다른 컴퓨터에 연결할 수 없어요", true);
   return true;
 }

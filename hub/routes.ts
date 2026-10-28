@@ -199,7 +199,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (asset) return asset;
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/custom.js") {
 			const file = Bun.file(join(import.meta.dir, "..", "web", "custom.js"));
-			return (await file.exists()) ? new Response(req.method === "HEAD" ? null : file, { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache" } }) : new Response("not found", { status: 404 });
+			// No file is an empty script, not a 404: the service worker caches it with the shell, and one failed file would stop the whole cache.
+			const body = req.method === "HEAD" ? null : (await file.exists()) ? file : "";
+			return new Response(body, { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache" } });
 		}
 		const pushResponse = await pushRoute(req, url);
 		if (pushResponse) return pushResponse;
