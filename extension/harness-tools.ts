@@ -74,7 +74,7 @@ function lastReports(entries: any[], count: number, cap: number): string {
 
 function orchestratorState(cwd: string): string[] {
 	try {
-		const state = JSON.parse(readFileSync(statePath(stateDir(host), cwd, process.env.DOTZ_LANE || undefined), "utf8"));
+		const state = JSON.parse(readFileSync(statePath(stateDir(host), cwd, process.env.DOTZ_LANE || process.env.DOTZ_CONV || undefined), "utf8"));
 		return Object.entries(state.workers ?? {}).map(([id, w]: [string, any]) =>
 			w.status === "running" ? `${id}: running - ${w.brief}` : `${id}: ${w.status}${w.patch && !w.applied ? `, patch NOT applied: ${w.patch}` : ""} - ${w.brief}`,
 		);

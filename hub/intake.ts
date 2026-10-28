@@ -10,7 +10,9 @@ import { abortLane, approvesBudget, lanes, ownerNotes, sendToLane } from "./lane
 import { accountView, readPool } from "./account-sticky.ts";
 import { readAliases } from "./account-alias.ts";
 import { accountAnswer, accountAsk } from "./accounts-api.ts";
-import { abort as abortOrchestrator, onOwnerCancel, orch, resumeNow } from "./orchestrator.ts";
+import { orch, type Orchestrator } from "./orchestrator.ts";
+import { convs } from "./convsessions.ts";
+import { digest } from "./convdigest.ts";
 import { legacyAnswer } from "./migrations.ts";
 import { errorAnswer } from "./orch-error.ts";
 import { drain, restore } from "./queue.ts";
@@ -131,15 +133,17 @@ export function dropPending(target: string): number {
 	if (n) log(`${n} message(s) for ${target} not delivered: the owner cancelled`);
 	return n;
 }
-onOwnerCancel(target => void dropPending(target));
+convs.everyInstance(c => c.o.onOwnerCancel(target => void dropPending(target)));
 
 export function flush(target: string): void {
 	const b = bursts.get(target);
 	if (!b) return;
 	bursts.delete(target);
 	const head = b.events[0];
-	const errAnswer = orch.error && b.events.length === 1 ? errorAnswer(String(head.text ?? "")) : undefined;
-	if (errAnswer) return void answerOrchError(target, errAnswer, b.replyTo);
+	// The session that answers this conversation (main with conversation sessions off); one not started yet has no error.
+	const session = convs.forTarget(target)?.o;
+	const errAnswer = session?.orch.error && b.events.length === 1 ? errorAnswer(String(head.text ?? "")) : undefined;
+	if (errAnswer) return void answerOrchError(target, errAnswer, session!, b.replyTo);
 	const legacy = b.events.length === 1 ? legacyAnswer(DATA_DIR, String(head.text ?? "")) : undefined;
 	if (legacy) return void out(target, legacy, b.replyTo, { source: "gateway" }).catch(e => log(`legacy import reply failed: ${e}`));
 	if (b.events.length === 1 && LIMITS_ASK.test(String(head.text)) && !head.attachments?.length) return void limitsAnswer(target, b.replyTo);
@@ -147,9 +151,13 @@ export function flush(target: string): void {
 	if (ask) return void accountChatAnswer(target, ask, b.replyTo);
 	rateLimitNotice(target, b.replyTo);
 	const merged = b.events.length > 1 ? { ...head, message_id: refOf(b.events.at(-1)!), parts: b.events } : head;
+	const was = convs.stateOf(target);
+	digest.note(convs.keyOf(target), "owner", String(merged.text ?? ""));
 	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, owner: true });
-	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver).
-	const how = steered ? "steered" : orch.status === "rate-limited" ? "held" : orch.status === "working" ? "queued" : "received";
+	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver); a parked
+	// conversation session was started again for it.
+	const status = convs.forTarget(target)?.o.orch.status;
+	const how = steered ? "steered" : status === "rate-limited" ? "held" : status === "working" ? "queued" : was === "parked" ? "resumed" : "received";
 	expectReply(target);
 	const refs = b.events.flatMap(e => refOf(e) ?? []);
 	for (const ref of refs) emitDelivery(target, ref, how);
@@ -168,9 +176,9 @@ export async function answerCommand(target: string, text: string, replyTo?: stri
 
 // The owner's answer to the orchestrator-error ask (orch-error.ts): handled here because the orchestrator cannot read it.
 // Restart is the same call as `/restart orchestrator`; waiting leaves the one automatic resume to the health probe.
-async function answerOrchError(target: string, answer: "restart" | "wait", replyTo?: string): Promise<void> {
-	if (answer === "restart") resumeNow();
-	else if (orch.error) orch.error.waiting = true;
+async function answerOrchError(target: string, answer: "restart" | "wait", session: Orchestrator, replyTo?: string): Promise<void> {
+	if (answer === "restart") session.resumeNow();
+	else if (session.orch.error) session.orch.error.waiting = true;
 	const text = answer === "restart" ? "오케스트레이터만 다시 시작하고 답하지 못한 요청을 다시 처리해요." : "연결이 돌아오면 한 번 자동으로 다시 시도해요.";
 	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`orchestrator error reply failed: ${e}`));
 }
@@ -238,8 +246,10 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	const mem = s.mail && !hook?.note ? memoryNote(DATA_DIR, instanceOf(appEntries(DATA_DIR), "mail", `mail:${s.mail.key}`)) : "";
 	const note = s.settings ? settingsNote(s.settings, to) : s.mail ? (hook?.note ?? `${msg().mailNote(s.mail.source, s.mail.id, s.mail.subject)}${mem ? `\n${mem}` : ""}`) : undefined;
 	const turn = note ? { ...event, plugin_note: note } : event;
+	// The session that answers `to` (main with conversation sessions off): steer and interrupt act on its turn only.
+	const session = convs.forTarget(to)?.o;
 	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(to, event.text);
-	else if (s.mode === "steer" && orch.status === "working") {
+	else if (s.mode === "steer" && session?.orch.status === "working") {
 		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
 		const steered = deliver(inboxText(turn), { target: to, replyTo: mid, owner: true });
@@ -248,7 +258,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		awaiting.set(to, [...(awaiting.get(to) ?? []), { ref: mid, by: mid }]);
 		lastOwner.set(to, mid);
 	} else {
-		if (s.mode === "interrupt" && orch.status === "working") abortOrchestrator();
+		if (s.mode === "interrupt" && session?.orch.status === "working") session.abort();
 		intake(turn, to, mid);
 	}
 }

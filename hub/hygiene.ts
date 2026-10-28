@@ -14,6 +14,7 @@ import { sweepSnapshots } from "./filesnap.ts";
 import { compactLane, lanes, refreshLaneStats, rotateLane } from "./lanes.ts";
 import { purgeTrash } from "./lanetrash.ts";
 import { nightlyHandover, orchestratorPid } from "./orchestrator.ts";
+import { convs } from "./convsessions.ts";
 import { trackTimer } from "./shutdown.ts";
 
 const STATS_WAIT_MS = 3000;
@@ -69,6 +70,12 @@ async function runLaneHygiene(): Promise<string[]> {
 	if (handover) {
 		log(`nightly hygiene: ${handover}`);
 		actions.push(handover);
+	}
+	for (const c of convs.conversations()) {
+		const done = c.o.nightlyHandover(limitBytes);
+		if (!done) continue;
+		log(`nightly hygiene: conversation session ${c.key}: ${done}`);
+		actions.push(`${c.key}: ${done}`);
 	}
 	log(`lane hygiene: ${idle.length} idle lane(s) checked, ${actions.length} action(s)${skipped.length ? `, skipped ${skipped.join(", ")}` : ""}`);
 	return actions;
@@ -211,7 +218,7 @@ const alive = (pid: number): boolean => {
 async function reapOrphanHosts(only?: RegExp, minAgeMin = ORPHAN_MIN_AGE_MIN): Promise<number[]> {
 	const rows = psRows();
 	const parentOf = new Map(rows.map(r => [r.pid, r.ppid]));
-	const tracked = new Set<number>([process.pid, orchestratorPid() ?? 0, ...[...lanes.values()].map(l => l.proc?.pid ?? 0)]);
+	const tracked = new Set<number>([process.pid, orchestratorPid() ?? 0, ...convs.conversations().map(c => c.o.orchestratorPid() ?? 0), ...[...lanes.values()].map(l => l.proc?.pid ?? 0)]);
 	const inOwnTree = (pid: number): boolean => {
 		for (let p: number | undefined = pid, n = 0; p && p > 1 && n < 64; p = parentOf.get(p), n++) if (p === process.pid) return true;
 		return false;

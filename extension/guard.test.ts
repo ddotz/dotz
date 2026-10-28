@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GUARD_DEFAULTS, guardConfigFrom, installedOriginal, loadGuardConfig } from "./guard-config.ts";
 import { LOOKUP_MODEL, omoSelector } from "../hub/runtime/omo.ts";
-import { budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, relativizeRoots, settleFromText, shouldIsolate, shellText, trimWaitOutput } from "./guard.ts";
+import { budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
 
 let dir: string;
 beforeAll(() => {
@@ -319,6 +319,41 @@ test("the orchestrator's task workers are pinned to its live model and effort; a
 		process.env.DOTZ_LANE = "probe";
 		const laneCall = { subagent_type: "explore", prompt: "x\nDone when: y" };
 		expect((await handlers.tool_call[0]({ toolName: "task", input: laneCall }, ctx)).input.model).toBeUndefined();
+	} finally {
+		process.env = saved;
+	}
+});
+
+// A conversation's own session (DOTZ_CONV) keeps its own worker state, and hands writes of the files every session reads to main.
+test("the worker state is keyed by DOTZ_CONV, and shared files are written only by the main session", async () => {
+	const saved = { ...process.env };
+	try {
+		delete process.env.DOTZ_LANE;
+		delete process.env.DOTZ_CONV;
+		expect(stateOwner()).toBeUndefined();
+		process.env.DOTZ_CONV = "mail:kdb-1";
+		expect(stateOwner()).toBe("mail:kdb-1");
+		process.env.DOTZ_LANE = "ktx";
+		expect(stateOwner()).toBe("ktx");
+		delete process.env.DOTZ_LANE;
+		const data = join(dir, "data");
+		expect(sharedWriteBlock("write", { path: join(data, "state.json") }, data, "mail:kdb-1")).toContain("dotz_conv send main");
+		expect(sharedWriteBlock("edit", { path: join(data, "RULES.md") }, data, "mail:kdb-1")).toBeDefined();
+		expect(sharedWriteBlock("write", { path: join(data, "memory", "owner.md") }, data, "mail:kdb-1")).toBeDefined();
+		expect(sharedWriteBlock("eval", { language: "js", code: `await Bun.write("${join(data, "LESSONS.md")}", "x")` }, data, "mail:kdb-1")).toBeDefined();
+		// Reading them, and writing anything else, is fine; so is every write from the main session.
+		expect(sharedWriteBlock("eval", { language: "js", code: `print(read("${join(data, "state.json")}"))` }, data, "mail:kdb-1")).toBeUndefined();
+		expect(sharedWriteBlock("write", { path: join(data, "reports", "x.md") }, data, "mail:kdb-1")).toBeUndefined();
+		expect(sharedWriteBlock("write", { path: join(data, "state.json") }, data, "")).toBeUndefined();
+		// Through the installed hook: blocked under DOTZ_CONV, allowed for main.
+		const { pi, handlers } = fakePi(join(dir, "agent-empty"));
+		installGuard(pi, noGate);
+		const ctx = { agent: { kind: "main" }, cwd: dir };
+		process.env.DOTZ_CONV = "ch:333";
+		const call = { toolName: "write", input: { path: join(process.env.DOTZ_DIR!, "state.json"), content: "{}" } };
+		expect((await handlers.tool_call[0](call, ctx))?.block).toBe(true);
+		delete process.env.DOTZ_CONV;
+		expect((await handlers.tool_call[0](call, ctx))?.block).toBeUndefined();
 	} finally {
 		process.env = saved;
 	}
