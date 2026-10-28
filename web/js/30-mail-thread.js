@@ -97,9 +97,11 @@ function mailThreadOpen(t) {
 function mailThreadRows(t, rel) {
   return rel.map(({ t: k, m }) => {
     const cur = k === t, brief = mailBrief(m, k), [state, tone] = mailStateOf(m, 0);
+    // the same state tag as the mail list's row (30-monitoring.js monConvNode): filled 미답장 colour while the mail is unreplied, else its tone
+    const tag = state ? (m.unreplied ? unrepPill(state) : el("span", { class: `tag${tone ? ` ${tone}` : ""}`, text: state })) : null;
     return el("li", {},
       el("button", { class: `mth-row${cur ? " on" : ""}`, type: "button", "aria-current": cur ? "true" : null, "data-t": k, onclick: cur ? null : () => mailThreadOpen(k) },
-        el("span", { class: "mth-top" }, el("span", { class: "mth-when", text: rcWhen(m.at) || "" }), state ? el("span", { class: `tag mth-st${tone ? ` ${tone}` : ""}`, text: state }) : null),
+        el("span", { class: "mth-top" }, tag, el("span", { class: "mth-when", text: rcWhen(m.at) || "" })),
         el("span", { class: "mth-subj", text: m.subject || "(제목 없음)" }),
         brief ? el("span", { class: "mth-sum", text: brief }) : null));
   });

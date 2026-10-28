@@ -22,11 +22,10 @@
 .mth-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .mth-m > .mth-list { margin-top: 4px; padding: 4px; border-radius: var(--r-ctl); background: var(--layer); }
 .mth-row { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.mth-row:hover { background: var(--hover); }
-.mth-row.on { background: var(--card); box-shadow: inset 3px 0 0 var(--accent); cursor: default; }
+.mth-row:hover { background: var(--card-hover); }
+.mth-row.on { background: var(--layer); cursor: default; }   /* the selected fill of every list (.cv-row.on) */
 .mth-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.mth-when { flex: 1; min-width: 0; color: var(--fg-3); font-size: 12px; line-height: 16px; }
-.mth-st { flex: none; }
+.mth-when { flex: 1; min-width: 0; color: var(--fg-3); font-size: 12px; line-height: 16px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mth-subj { font-size: 14px; line-height: 20px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mth-sum { color: var(--fg-3); font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mth-h { display: flex; align-items: center; gap: 6px; padding: 4px 6px 8px; }
