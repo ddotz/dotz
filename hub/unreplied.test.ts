@@ -260,7 +260,7 @@ describe("counts per app", () => {
 		const ctx = integrationContext(dir, ["zele"]);
 		const items = integrationItems(ctx, [], { "mail:a": 2 }, 100, undefined, [], NOW, { youtube: { drafts: 0, unread: 1, unreplied: 3 } }, { targets: ["mail:a", "mail:b"], apps: { kakao: 2 } });
 		const by = (k: string) => items.find(i => i.key === k);
-		expect(by("mail")?.needs).toMatchObject({ unread: 2, unreplied: 2 });
+		expect(by("mail")?.needs).toMatchObject({ unread: 1, unreplied: 2 });   // one mail with 2 unread messages is one unread item
 		expect(by("mail")?.unreplied).toBe(2);
 		const none = integrationItems(ctx, [], {}, 100, undefined, [], NOW, {}, { targets: [], apps: {} });
 		expect(none.every(i => i.needs.unreplied === 0)).toBe(true);

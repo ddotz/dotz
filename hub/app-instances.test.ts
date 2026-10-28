@@ -30,7 +30,7 @@ describe("the old apps.json shape", () => {
 		expect(appEntries(dir).map(e => [e.key, e.label, !!e.created])).toEqual([["mail", "메일", false], ["kakao", "카카오톡", false], ["instagram", "인스타그램", false], ["youtube", "유튜브", false], ["site", "웹사이트 댓글", false]]);
 		expect(items().map(i => i.key)).toEqual([]);
 		apps({});
-		expect(items().map(i => [i.key, i.app, i.label, i.conv, i.unread])).toEqual([["mail", "mail", "메일", ["mail:"], 5]]);
+		expect(items().map(i => [i.key, i.app, i.label, i.conv, i.unread])).toEqual([["mail", "mail", "메일", ["mail:"], 2]]);   // two mails with unread messages: two items
 	});
 
 	test("no file at all is the same as an empty one", () => {
@@ -44,7 +44,7 @@ describe("two mail instances", () => {
 		apps(TWO);
 		const notices = [note("a", "mail:gmail-1"), note("b", "mail:naver-1"), note("c", "mail:naver-2", { read: true })];
 		const got = items(["zele"], notices);
-		expect(got.map(i => [i.key, i.app, i.label, i.unread, i.notices])).toEqual([["mail", "mail", "메일", 3, ["a"]], ["mail-2", "mail", "개인 메일", 4, ["b", "c"]]]);
+		expect(got.map(i => [i.key, i.app, i.label, i.unread, i.notices])).toEqual([["mail", "mail", "메일", 1, ["a"]], ["mail-2", "mail", "개인 메일", 1, ["b", "c"]]]);   // a notice of an unread mail is that mail
 		expect(got[0]).toMatchObject({ conv: ["mail:"], convNot: ["mail:naver-"] });
 		expect(got[1]).toMatchObject({ conv: ["mail:naver-"] });
 		expect(got[1]!.convNot).toBeUndefined();
@@ -180,7 +180,7 @@ describe("a custom mail reader", () => {
 	test("a company mail plugin is a mail instance by its source and its own watch names: its mails, counts and watches are the instance's alone", () => {
 		expect(createApp(dir, { app: "mail", label: "회사 메일", filter: { source: "KDB Work", watches: ["kdb-login", "kdb-mail"] } })).toEqual({ id: "mail-2", label: "회사 메일" });
 		const got = items(["zele"], [note("w1", "mail:kdb-work-77"), note("g1", "mail:gmail-1")], { "mail:kdb-work-77": 4, "mail:gmail-1": 1 });
-		expect(got.map(i => [i.key, i.label, i.unread, i.notices])).toEqual([["mail", "메일", 2, ["g1"]], ["mail-2", "회사 메일", 5, ["w1"]]]);
+		expect(got.map(i => [i.key, i.label, i.unread, i.notices])).toEqual([["mail", "메일", 1, ["g1"]], ["mail-2", "회사 메일", 1, ["w1"]]]);
 		expect(got[1]!.conv).toEqual(["mail:kdb-work-"]);
 		expect(watchOff(dir, "kdb-login")).toBe(false);
 		writeSettings(dir, "mail-2", { use_here: false });

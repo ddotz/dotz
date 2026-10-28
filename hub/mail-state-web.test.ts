@@ -80,10 +80,10 @@ for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 		test("every row has one layout: sender, a reply-state tag only when there is one (답장 안 함 for both marks, never 읽음), 안 읽음 N apart, clip, time, ⋯", async () => {
 			const v = await boot(width, height);
 			expect(await states(v)).toEqual({
-				"견적 문의드립니다": "안 읽음 1",
+				"견적 문의드립니다": "안 읽음",
 				"회의록 공유": "",
 				"계약서 확인 부탁드립니다": "답장 필요",
-				"자료 요청": "초안 있음|안 읽음 1",
+				"자료 요청": "초안 있음|안 읽음",
 				"일정 조율": "답장함",
 				"업데이트 안내": "답장 안 함",
 				"배송 완료": "답장 안 함",
