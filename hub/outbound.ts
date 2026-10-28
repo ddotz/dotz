@@ -70,9 +70,10 @@ export const queue = createPrompts({
 // The orchestrator's background task workers (what a `[later]` turn waits for), read from OmO's task store: /api/workers, /api/state `work`.
 export const bgWork = createBgWork({ sessionFile: () => orch.sessionFile, deferred: queue.deferredOpen, turn: queue.turnAt, log });
 // `owner` marks the owner's own message (it leads with the what-runs-now line); schedules, watches and mail carry a target but are not.
-export function deliver(text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): void {
+// True when the message was steered into the running turn (only one of the same conversation is, prompts.ts deliver).
+export function deliver(text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): boolean {
 	if (reply) discord.typing(reply.target);
-	queue.deliver(text, reply);
+	return queue.deliver(text, reply);
 }
 
 // "web:alert" / "web:worklog": the answer to a question the owner asked in that web conversation (hub/intake.ts sendWeb).
