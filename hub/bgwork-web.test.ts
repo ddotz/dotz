@@ -115,9 +115,10 @@ test("the run line says 실패 · 작업 · 이유 with 다시 맡기기, and th
 	WORK = [{ ...RUNNING, target: "web" }];
 	RUNS = { main: { kind: "waiting", reason: "work", since: agoIso(3), detail: "흐름도 그리기 · Opus 5.5 medium", work: "st_run" } };
 	await v.evaluate(`refreshState().then(() => true)`);
-	await waitFor(v, `!$("#working").hidden && !$("#working-stop").hidden`);
-	expect(await v.evaluate(`$("#runstate-act").textContent`)).toBe("중단");
-	await v.evaluate(`(setTimeout(() => $("#working-stop").click()), 0)`);
+	// The send button is the one 중단 (owner 2026-10-28): it turns into stop for the background worker; the run line has no second button.
+	await waitFor(v, `!$("#working").hidden && $("#send-btn").classList.contains("stop")`);
+	expect(await v.evaluate(`$("#runstate-act").hidden`)).toBe(true);
+	await v.evaluate(`(setTimeout(() => $("#send-btn").click()), 0)`);
 	await waitFor(v, `document.querySelector("dialog[open] .dact .danger")`);
 	const p__api_workers_st_run_cancel = posted("/api/workers/st_run/cancel");
 	await v.evaluate(`(setTimeout(() => document.querySelector("dialog[open] .dact .danger").click()), 0)`);
@@ -134,7 +135,7 @@ test("the run line's button acts on its own conversation: a session restarts its
 	expect(await act({ kind: "stopped" }, "lane:fix")).toBe("다시 시작");
 	expect(await act({ kind: "limited", reason: "rate" }, "lane:fix")).toBeNull();
 	expect(await act({ kind: "error", reason: "work", work: "st_fail" }, "mail:k1")).toBe("다시 맡기기");
-	expect(await act({ kind: "working", work: "st_run" }, "mail:k1")).toBe("중단");
+	expect(await act({ kind: "working", work: "st_run" }, "mail:k1")).toBeNull();   // stopped by the send button, not the run line
 	expect(await act(err, "mail:k1")).toBeNull();
 	expect(await act(err, "alert")).toBeNull();
 	expect(await act({ kind: "stopped" }, "worklog")).toBeNull();

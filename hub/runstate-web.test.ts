@@ -128,8 +128,8 @@ test("idle with tasks left and no known turn: 이유를 알 수 없어요 and �
 test("idle waiting on background work or a deferred answer names it", async () => {
 	const v = await boot();
 	expect((await show(v, { kind: "waiting", reason: "work", since: ago(4), detail: "LiveStatusLine 구현", todos: 1 })).text)
-		.toBe("답을 기다려요 · LiveStatusLine 구현 · 4분 · 할 일 1개 남음");
-	expect((await show(v, { kind: "waiting", reason: "later", todos: 2 })).text).toBe("답을 기다려요 · 백그라운드 작업의 답을 기다리는 중 · 할 일 2개 남음");
+		.toBe("맡긴 작업 진행 중 · LiveStatusLine 구현 · 4분 · 할 일 1개 남음");
+	expect((await show(v, { kind: "waiting", reason: "later", todos: 2 })).text).toBe("맡긴 작업 진행 중 · 할 일 2개 남음");
 }, 20_000);
 
 test("a usage limit says until when and offers 지금 다시 시도", async () => {
