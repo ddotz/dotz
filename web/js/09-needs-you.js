@@ -97,6 +97,8 @@ function toastAttn() {
   for (const t of liveTargets()) {
     const k = attnRaw(t), was = ATTN_LAST[t] || "";
     ATTN_LAST[t] = k;
+    // Answered, read or opened: its "확인 필요" card no longer stands (owner 2026-10-28: a finished item still asking to be checked confuses).
+    if (was && (k !== was || watching(t))) ntfDropFor(t);
     if (!k || k === was || watching(t) || (k === "done" && isLaneT(t)) || (!attnPainted && k !== "ask")) continue;
     if (!attnPainted) { first.push(t); continue; }
     attnToast(t, k);
