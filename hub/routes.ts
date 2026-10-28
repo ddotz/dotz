@@ -57,7 +57,7 @@ import { handleLease, type LeaseReq } from "./send-lease.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { hostname } from "node:os";
 import { queue, bgWork, out, progress, fileRoots } from "./outbound.ts";
-import { convs } from "./convsessions.ts";
+import { convs, maxLiveView } from "./convsessions.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
 import { parseReply, replyLine, sendWeb } from "./intake.ts";
 import { json, body, terminals } from "./routes-util.ts";
@@ -732,6 +732,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// and the exchange a read asks for. A conversation session may write only into main; main may send into any conversation.
 		if (req.method === "GET" && url.pathname === "/api/conv-sessions") {
 			return json({
+				capacity: maxLiveView(),
 				items: convs.conversations().map(c => ({ key: c.key, name: c.meta.name || c.primary, primary: c.primary, live: convs.live(c), state: convs.stateOf(c.primary), status: c.o.orch.status, model: c.o.orch.activeModel, ctx: { tokens: c.o.orch.ctx.tokens }, lastOwnerAt: c.meta.lastOwnerAt })),
 			});
 		}
