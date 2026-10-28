@@ -13,7 +13,7 @@ for (const k of Object.keys(process.env)) if (k.startsWith("DOTZ_") && k !== "DO
 // folder; on macOS use the per-user temp dir a login shell would have.
 if (!process.env.TMPDIR && process.platform === "darwin") process.env.TMPDIR = execFileSync("/usr/bin/getconf", ["DARWIN_USER_TEMP_DIR"], { encoding: "utf8" }).trim();
 // dotz_auth values are encrypted with a throwaway key here, never the machine's Keychain one (hub/secretbox.ts).
-process.env.DOTZ_TEST_SECRET_KEY = require("node:crypto").randomBytes(32).toString("hex");
+process.env.SECRETBOX_TEST_KEY = require("node:crypto").randomBytes(32).toString("hex");
 process.env.DOTZ_WEB_LIVE = "1";   // tests read the working-tree web files; hub/web-committed.test.ts turns this off
 if (!process.env.DOTZ_TEST_DIR) {
 	const dir = mkdtempSync(join(tmpdir(), "dotz-test-"));

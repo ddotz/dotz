@@ -4,9 +4,8 @@
 // Keychain (service dotz.secrets, account key), made on first use and written through `security -i` stdin, never argv. Reading goes
 // through readSecretFile (the gateway) or `bun hub/secrets-cli.ts get <name>` (the bot's scripts), which also read an older plain file.
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { writeAtomic } from "./config.ts";
 
 const SERVICE = "dotz.secrets";
 const ACCOUNT = "key";
@@ -14,7 +13,7 @@ const PREFIX = "dotzenc1:";
 
 let key: Buffer | undefined;
 // Under bun test (hub/runtime/test-setup.ts) a throwaway key, so a test run never reads or makes the machine's Keychain item.
-const testKey = process.env.DOTZ_TEST_DIR && /^[0-9a-f]{64}$/.test(process.env.DOTZ_TEST_SECRET_KEY ?? "") ? Buffer.from(process.env.DOTZ_TEST_SECRET_KEY!, "hex") : undefined;
+const testKey = process.env.DOTZ_TEST_DIR && /^[0-9a-f]{64}$/.test(process.env.SECRETBOX_TEST_KEY ?? "") ? Buffer.from(process.env.SECRETBOX_TEST_KEY!, "hex") : undefined;
 let keySource = (create: boolean): Buffer => testKey ?? keychainKey(create);
 /** Tests give their own key; production reads (and on first need makes) the Keychain one. */
 export const setSecretKey = (k: Buffer | undefined): void => {
@@ -65,7 +64,12 @@ export function readSecretFile(file: string): string {
 	return isSealed(text) ? unseal(basename(file), text) : text;
 }
 
-export const writeSecretFile = (file: string, plain: string): void => writeAtomic(file, seal(basename(file), plain), 0o600);
+// No config.ts here: light tools (adapters, CLIs) read secrets without loading the gateway's config.
+export function writeSecretFile(file: string, plain: string): void {
+	const tmp = `${file}.${process.pid}.tmp`;
+	writeFileSync(tmp, seal(basename(file), plain), { mode: 0o600 });
+	renameSync(tmp, file);
+}
 
 // What a dotz_auth answer leaves behind is a JSON object (username / password, or a form's fields). Gateway-owned key files of the same shape
 // that other programs read as they are stay plain; so do plain-string tokens (hub-token, API keys), which are not the owner's passwords.
