@@ -16,7 +16,7 @@ function setup(name: string) {
 	writeFileSync(join(repo, "a.txt"), "1\n");
 	sh(repo, "add", "-A");
 	sh(repo, "commit", "-qm", "one");
-	const path = join(repo, "..", `${name}-wt-${Date.now()}`);
+	const path = join(mkdtempSync(join(tmpdir(), "dotz-lanetree-wt-")), name);
 	sh(repo, "worktree", "add", "-q", "-b", `lane/${name}`, path, "HEAD");
 	const lane = { name, cwd: path, worktree: { path, repo, branch: `lane/${name}`, base: "main" } } as never as Parameters<typeof dropWorktree>[0];
 	return { repo, path, lane };
