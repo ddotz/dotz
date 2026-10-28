@@ -15,7 +15,7 @@ import type { AccountReport } from "./usage-account.ts";
 import * as discord from "./discord.ts";
 import { keepHome } from "./lanestate.ts";
 import { abortLane, applyChainChange as applyLaneChain, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, stopLane } from "./lanes.ts";
-import { abort as abortOrchestrator, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
+import { cancelByOwner, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
 import { availableModels, cancelLogin, completeLogin, ControlError, listProviders, loginProviders, logoutProvider, type ModelInfo, pendingLogin, quota, startLogin } from "./providers.ts";
 
 export { ControlError };
@@ -486,7 +486,7 @@ async function execute(text: string): Promise<CommandCard> {
 			return card(t.resumed(laneLabel(first)), [], { tone: "ok" });
 		case "abort":
 			if (!first || first === "orchestrator") {
-				abortOrchestrator();
+				cancelByOwner();
 				return card(t.aborted(NAME), [], { tone: "ok" });
 			}
 			abortLane(first);

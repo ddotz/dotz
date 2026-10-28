@@ -6,7 +6,7 @@ import { activityItems } from "./events.ts";
 import { lanes } from "./lanes.ts";
 import { checkNow as checkAccountNow } from "./account-rules.ts";
 import { accountsRoute } from "./accounts-api.ts";
-import { abort as abortOrchestrator, orch, restart as restartOrchestrator, resumeNow } from "./orchestrator.ts";
+import { cancelByOwner, orch, restart as restartOrchestrator, resumeNow } from "./orchestrator.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { featureCatalog } from "./features.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
@@ -199,7 +199,7 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 			// resume: the owner's 재개 on a stopped or paused orchestrator (orchestrator.ts resumeNow); restart: a plain process restart
 			if (parts[2] === "resume") resumeNow();
 			else if (parts[2] === "restart") restartOrchestrator();
-			else abortOrchestrator();
+			else cancelByOwner();
 			return json({ ok: true });
 		} catch (error) {
 			return fail(error);

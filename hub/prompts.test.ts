@@ -588,3 +588,21 @@ test("a lane report a turn already took is not replayed after a restart, an unan
 	expect(lone.open().map(p => p.text)).toEqual(["[dotz inbox] session report 1: [done] fresh"]);
 	expect(state.delivered.length).toBe(2);
 });
+
+test("the owner's 중단 closes the request: nothing steered into it is delivered again, its partial text is not sent, a late answer is dropped", async () => {
+	const { q, state, open, startTurn } = setup();
+	startTurn("analyse the files", { target: "web", replyTo: "m1" });
+	q.deliver("also check the mail", { target: "web", replyTo: "m2", owner: true });
+	expect(state.steered).toEqual(["[note] also check the mail"]);
+	q.onText("looking at the first file");
+	expect(q.cancel()).toBe("web");
+	state.working = false;
+	q.settleTurn();
+	q.redeliverSteered();
+	expect(state.delivered).toEqual(["analyse the files"]);
+	expect(state.posts).toEqual([]);
+	expect(open().map(p => p.text)).toEqual([]);
+	q.onAnswer("here is the analysis you asked for");   // a worker's result waking a run with no prompt of ours
+	expect(state.posts).toEqual([]);
+	expect(q.cancel()).toBeUndefined();
+});

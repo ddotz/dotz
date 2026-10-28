@@ -960,6 +960,18 @@ export function abort(): void {
 	proc.abort();
 }
 
+// The owner's 중단 (the web stop button, /abort): besides the model's turn, what the turn set going ends too (outbound.ts registers
+// the hook: the request and the messages steered into it are closed, its background workers cancelled). An interrupt that sends a
+// new message right after uses abort() alone.
+let ownerCancel: () => void = () => {};
+export const setOwnerCancel = (fn: () => void): void => {
+	ownerCancel = fn;
+};
+export function cancelByOwner(): void {
+	ownerCancel();
+	if (proc && orch.status === "working") proc.abort();
+}
+
 // Compacts the orchestrator's context: now when idle, after the running turn otherwise. Rewrites the prompt cache once.
 export function compact(): Compaction {
 	if (!proc) throw new Error("the orchestrator is not running");

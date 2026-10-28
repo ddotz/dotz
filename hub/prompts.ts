@@ -25,7 +25,7 @@
 // a long inline turn kept every next message waiting a median 238 s): its prompt stays open (deferred) with nothing sent,
 // and the answer of the run the worker's result wakes (no prompt of ours) goes to the oldest open deferred prompt first.
 
-export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean };
+export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean };
 /** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
 export type OwnerMessage = { target: string; replyTo?: string; at: number; prompt?: Prompt };
 export type Pending = { text: string; at?: number; target?: string; replyTo?: string };
@@ -184,6 +184,27 @@ export function createPrompts(deps: PromptDeps) {
 		return true;
 	}
 
+	/**
+	 * The owner's 중단 (the web stop button, /abort): the running turn's request ends here, unanswered on purpose. Its prompt, the
+	 * messages steered into it and the requests of that conversation still waiting on background workers are closed, so the idle hook
+	 * does not deliver them again, a restart does not replay them, and a late answer for them is dropped. Returns the conversation.
+	 */
+	function cancel(): string | undefined {
+		const p = current;
+		if (!p || p.done) return undefined;
+		const target = p.target;
+		Object.assign(p, { done: true, cancelled: true, last: undefined, held: undefined });
+		for (const q of prompts.filter(q => q.steered && q.target === target)) {
+			q.cancelled = true;
+			prompts.splice(prompts.indexOf(q), 1);
+		}
+		for (const d of openDeferred().filter(d => d.target === target)) Object.assign(d, { done: true, cancelled: true });
+		for (const o of owners.filter(o => o.target === target && o.prompt && !o.prompt.done)) Object.assign(o.prompt!, { done: true, cancelled: true });
+		deps.log(`turn for ${target ?? "-"} cancelled by the owner`);
+		save();
+		return target;
+	}
+
 	/** The current turn's answer goes to `to` instead of `from` (work that moved into a lane's thread is answered there). */
 	function retarget(from: string, to: string): void {
 		if (current && !current.done && current.target === from) current.target = to;
@@ -296,6 +317,7 @@ export function createPrompts(deps: PromptDeps) {
 		if (t === LATER) return void deps.log(`a run without a prompt said ${LATER}; ${openDeferred().length} deferred prompt(s) keep waiting`);
 		const to = orphanTarget();
 		if (!to) return void deps.log(`an answer had no prompt to go to (${t.length} chars): ${t.slice(0, 80)}`);
+		if (to.prompt?.cancelled) return void deps.log(`an answer for a request the owner cancelled was dropped (${t.length} chars)`);
 		if (recentSent.some(s => s.target === to.target && Date.now() - s.at <= ORPHAN_MAX_AGE_MS && s.text.includes(t))) return;
 		deps.log(`an answer had no prompt; sent to the owner's newest message in ${to.target} (${t.length} chars): ${t.slice(0, 80)}`);
 		recentSent.push({ target: to.target, text: t, at: Date.now() });
@@ -410,5 +432,5 @@ export function createPrompts(deps: PromptDeps) {
 	/** The deferred prompts still waiting for their worker's answer (bgwork.ts ties a worker to one of them). */
 	const deferredOpen = () => openDeferred().flatMap(p => (p.target ? [{ target: p.target, replyTo: p.replyTo, at: p.at }] : []));
 
-	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, reopen, waitingOnWorkers, deferredOpen, turnAt, queued: () => prompts.slice(), current: () => current };
+	return { deliver, settleSteered, sent, holdEarly, cancel, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, reopen, waitingOnWorkers, deferredOpen, turnAt, queued: () => prompts.slice(), current: () => current };
 }
