@@ -12,7 +12,7 @@ import { mailUnreplied } from "./unreplied.ts";
 import { withSenderAddress } from "./reply-draft.ts";
 
 /** One attached file of a mail. `file` is relative to the mail files folder (`<key>/<n>/<name>`); it never leaves that folder. */
-export type MailAttachment = { name: string; type: string; size: number; file: string; cid?: string };
+export type MailAttachment = { name: string; type: string; size: number; file: string; cid?: string; /** a picture the HTML body shows (cid:), not a file of the mail */ inline?: true };
 /** What a poster sends: the bytes inline (`data`, base64) or a file it already put in the mail files folder (`path`, absolute or relative to it). */
 export type AttachmentInput = { name: string; type?: string; data?: string; path?: string; cid?: string };
 // A suggested next action the web shows in the mail's row and conversation slot (only when present): `reply-draft` = a reply draft
@@ -263,9 +263,10 @@ export function insideMailFiles(p: string): string | undefined {
 
 // Stores each attachment under mail-files/<key>/<n>/<safe name> and returns what the record keeps. A file that cannot be stored
 // is skipped with a log line: the mail still opens, only that file is missing.
-function saveAttachments(key: string, inputs: AttachmentInput[] | undefined): MailAttachment[] {
+function saveAttachments(key: string, inputs: AttachmentInput[] | undefined, start = 0): MailAttachment[] {
 	const out: MailAttachment[] = [];
-	for (const [n, a] of (inputs ?? []).entries()) {
+	for (const [i, a] of (inputs ?? []).entries()) {
+		const n = start + i;
 		try {
 			const name = safeName(a.name);
 			const file = `${key}/${n}/${name}`;
@@ -367,7 +368,11 @@ export function mailBodyRoute(key: string): Response {
 }
 
 /** The public face of a mail's files for the web: no stored paths. */
-export const attachmentList = (m: Pick<MailRecord, "attachments">) => (m.attachments ?? []).map(({ name, type, size }) => ({ name, type, size }));
+export const attachmentList = (m: Pick<MailRecord, "attachments">) => (m.attachments ?? []).map(({ name, type, size, inline }) => ({ name, type, size, ...(inline ? { inline } : {}) }));
+/** The files a reply can mention or forward: the mail's attachments without the pictures of its body. */
+const realFiles = (atts: MailAttachment[]) => attachmentList({ attachments: atts.filter(a => !a.inline) });
+// A cid: picture the HTML body shows is part of the body (drawn in place), not a file of the mail.
+const markInline = (atts: MailAttachment[], html: string | undefined): MailAttachment[] => atts.map(a => (a.cid && html && html.toLowerCase().includes(`cid:${a.cid.toLowerCase()}`) ? { ...a, inline: true as const } : a));
 
 /** The direction and reply state a row shows (`sent` = a dotz send of a draft for this mail is on record). */
 const mailStateOf = (m: MailRecord, sent: boolean) => {
@@ -440,7 +445,10 @@ export async function postMail(raw: unknown, deps: MailDeps): Promise<MailResult
 	// A known incoming thread is a repeat, unless the post names another message than the one recorded: then the thread got a newer
 	// message and it is a new mail again, whatever state it was in (answered, 답장 안 함, 답장 불필요).
 	const again = known && known.dir !== "out" && !!m.messageId && m.messageId !== known.msg ? known : undefined;
-	if (known && known.dir !== "out" && !again) return { ok: true, key, target, ...(known.thread ? { thread: known.thread } : {}), duplicate: true };
+	if (known && known.dir !== "out" && !again) {
+		await completeKnown(known, m);
+		return { ok: true, key, target, ...(known.thread ? { thread: known.thread } : {}), duplicate: true };
+	}
 	// A mail the owner deleted stays gone for the message it stood for. A record kept before message ids has none on file: the first id seen
 	// after the delete is taken as that message, and only a later, different one brings the mail back.
 	if (!known && key in deleted) {
@@ -462,6 +470,29 @@ export async function postMail(raw: unknown, deps: MailDeps): Promise<MailResult
 		return await job;
 	} finally {
 		inflight.delete(key);
+	}
+}
+
+// A repeat of a known mail completes what its first post left out, and changes nothing else (no event, no wake, no draft): the 받는 사람 /
+// 참조 it had none of, a sender that was a name only and now comes with an address, and the body's pictures (cid:) when none were kept.
+// A poster that learned to send them can so post its earlier mails again to fill them in.
+async function completeKnown(known: MailRecord, m: MailInput): Promise<void> {
+	const next: MailRecord = { ...known };
+	if (m.to && !known.to) next.to = m.to;
+	if (m.cc && !known.cc) next.cc = m.cc;
+	if (m.from && m.from.includes("@") && !known.from.includes("@")) next.from = m.from;
+	const had = known.attachments ?? [];
+	const pics = (m.attachments ?? []).filter(a => a.cid && m.html?.toLowerCase().includes(`cid:${a.cid.toLowerCase()}`));
+	if (pics.length && m.html && !had.some(a => a.inline)) {
+		const added = markInline(saveAttachments(known.key, pics, had.length), m.html);
+		if (added.length) {
+			next.attachments = [...had, ...added];
+			if (await saveHtml(known.key, m.html, next.attachments)) next.html = true;
+		}
+	}
+	if (JSON.stringify(next) !== JSON.stringify(known)) {
+		recordMail(next);
+		log(`mail ${known.key}: completed from a repeat post (${[next.to !== known.to && "to", next.cc !== known.cc && "cc", next.from !== known.from && "from", next.attachments !== known.attachments && "pictures"].filter(Boolean).join(", ")})`);
 	}
 }
 
@@ -502,7 +533,7 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps, r
 		}
 	}
 	const at = deps.now?.() ?? new Date().toISOString();
-	const attachments = saveAttachments(key, m.attachments);
+	const attachments = markInline(saveAttachments(key, m.attachments), m.html);
 	const html = await saveHtml(key, m.html, attachments);
 	const summary = m.summary ?? "";
 	const preview = summary ? "" : mailPreview(m.body);
@@ -513,7 +544,7 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps, r
 	deps.emit(event);
 	if (m.wake) deps.wake(event, thread ? `th:${thread}` : target);
 	try {
-		deps.offerDraft?.({ key, target, ...(thread ? { thread } : {}), ...(m.messageId ? { messageId: m.messageId } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}) });
+		deps.offerDraft?.({ key, target, ...(thread ? { thread } : {}), ...(m.messageId ? { messageId: m.messageId } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}), ...(realFiles(attachments).length ? { attachments: realFiles(attachments) } : {}) });
 	} catch (error) {
 		log(`mail ${key}: reply draft offer failed: ${(error as Error).message}`);
 	}
