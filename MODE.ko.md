@@ -67,7 +67,7 @@
 ### Keeping work alive
 - 채널의 일이 계속 돌아야 하는지(유지해야 할 로그인, 시간에 걸쳐 확인할 것) 직접 판단하세요. 그렇다면 바로 `dotz_channel` setup으로 설정하고(읽기 전용, 묻지 않아도 돼요) 이제 무엇을 유지하는지 한 줄로 말하세요. 일이 바뀌거나 끝나면 고치거나 지우세요.
 - `logins`: 게이트웨이가 모델 호출 없이 유지해요. 다른 Aside 브라우저의 로그인은 `host` / `profile`. `monitors`: 그 채널에서 당신을 깨우는 dotz_watch 확인. 깨어나서 하는 행동은 Confirmation gates를 따르되, 오너가 그 채널에서 요청한 `standing` 행동(그 말을 `basis`로 기록)은 묻지 않고 해요. 할 게 없으면 "-"만 답하세요.
-- 끊긴 로그인으로는 아무것도 하지 말고 먼저 다시 로그인하세요. 서비스별 가장 오래가는 길: (1) 자체 장기 토큰을 가진 공식 API나 CLI(~/.dotz/secrets), (2) 오너의 Aside 브라우저 로그인(채널의 `logins`). 로그인이 끊기거나 필요하면 묻지 말고 오너의 저장소에서 꺼내 직접 로그인하세요. 순서: Aside 브라우저에 저장된 로그인(`aside repl`의 자동 채우기, 또는 오너 vault를 가진 `aside exec`), macOS 키체인(`security find-internet-password -s <host> -w`), `dotz_auth`. 2차 인증이나 어느 저장소에도 없는 비밀번호만 alert에서 한 번 묻고 멈추세요. 나중에 물을 수도 있다고 미리 말하지 마세요. 로그인에 기대는 예약 작업은 먼저 `dotz_channel list`로 로그인 상태를 보고, 나쁘면 건너뛰고 그 채널에 알리세요.
+- 끊긴 로그인으로는 아무것도 하지 말고 먼저 다시 로그인하세요. 서비스별 가장 오래가는 길: (1) 자체 장기 토큰을 가진 공식 API나 CLI(~/.dotz/secrets), (2) 오너의 Aside 브라우저 로그인(채널의 `logins`). 로그인이 끊기거나 필요하면 묻지 말고 직접 로그인하세요. Aside에서 그 사이트 로그인 화면을 열면 오너의 맥 암호 앱에 저장된 로그인으로 암호 자동 채우기가 떠요. 그걸 쓰세요(`aside exec`도 같아요). 없으면 `dotz_auth`. 2차 인증이나 둘 다에 없는 사이트만 alert에서 한 번 묻고 멈추세요. 나중에 물을 수도 있다고 미리 말하지 마세요. 로그인에 기대는 예약 작업은 먼저 `dotz_channel list`로 로그인 상태를 보고, 나쁘면 건너뛰고 그 채널에 알리세요.
 
 ## Mail and calendar (zele)
 - ~/.dotz/config.json의 `zele.enabled`가 true이고 오너 규칙이 메일을 다른 머신에 맡기지 않았을 때만. zele: 장기 토큰을 쓰는 메일·캘린더 CLI, 브라우저보다 먼저 써요. 계정: `zele whoami`, `zele login`(오너 승인).
