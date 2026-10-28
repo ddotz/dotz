@@ -167,6 +167,7 @@ function setTarget(t) {
   if (!validTarget(t) || t === target) return;
   saveDraft();
   ts(target).att = ATT;   // the files waiting in the composer stay with their conversation, like the typed text
+  ts(target).pick = PICK;   // the picked elements stay with it too (15-picker.js)
   closeSheet();
   target = t;
   try { localStorage.setItem(TARGET_KEY, t); } catch {}
@@ -175,7 +176,7 @@ function setTarget(t) {
   convSync();
   markSeen();
   if (!s.draft) { try { s.draft = localStorage.getItem(DRAFT_KEY(target)) || ""; } catch {} }
-  ta.value = s.draft; ATT = s.att || []; renderAtt(); autosize(); updateHints();
+  ta.value = s.draft; ATT = s.att || []; renderAtt(); pkAssign(s.pick || []); autosize(); updateHints();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
   renderAll();
   if (!(s.hLoaded && s.aLoaded)) loadTarget(t);
