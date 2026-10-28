@@ -341,7 +341,7 @@ async function arSave(app, list, done) {
 }
 const arFiles = s => String(s || "").split(/[,\n]/).map(x => x.trim()).filter(Boolean);
 function arForm(app, rules, ed) {
-  const v = ed.v, box = (k, tag, extra) => { const c = el(tag, { class: `fi as-in as-ta`, "data-k": `rule-${k}`, placeholder: AR_PH[k], "aria-label": AR_PH[k].split(":")[0], ...extra, oninput: () => { v[k] = c.value; } }); c.value = v[k] || ""; return c; };
+  const v = ed.v, box = (k, tag, extra) => { const c = el(tag, { class: `fi as-in as-ta`, "data-k": `rule-${k}`, placeholder: AR_PH[k], "aria-label": AR_PH[k].split(":")[0], ...extra, oninput: () => { v[k] = c.value; } }); c.value = v[k] || ""; return el("label", { class: "as-rl" }, el("span", { class: "as-h", text: AR_PH[k].split(":")[0] }), c); };   // the box's name stays above it once the greyed text is gone
   const save = () => {
     const name = (v.name || "").trim(), when = (v.when || "").trim();
     if (!name || !when) return toast("이름과 언제를 적어 주세요", true);
@@ -355,7 +355,7 @@ function arForm(app, rules, ed) {
       el("button", { class: "btn tonal", type: "button", "data-k": "rule-cancel", onclick: () => { delete AR.edit[app]; asPaint(); } }, "취소")));
 }
 function arRow(app, rules, r) {
-  const files = (r.files || []).length ? `파일 ${r.files.join(", ")}` : "";
+  const files = (r.files || []).length ? `붙일 파일: ${r.files.join(", ")}` : "";
   return el("div", { class: "as-row as-rule", "data-rule": r.id },
     el("span", { class: "as-b" }, el("span", { class: "as-n" }, draftRuleTag(r.name, "as-rtag")), el("span", { class: "as-h", text: `언제: ${r.when}` }),
       r.how ? el("span", { class: "as-h", text: `어떻게: ${r.how}` }) : null, files ? el("span", { class: "as-h", text: files }) : null),
