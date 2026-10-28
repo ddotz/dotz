@@ -211,14 +211,17 @@ export function appKeyOf(n: NoticeLike, ctx: IntegrationContext, entries: readon
 	return entries.find(e => belongsTo(e, n) && (integrationOn(e, ctx) || ctx.off.has(e.key) || where.some(w => inConv(e, w))))?.key;
 }
 
-// The enabled entries with their notices (newest first as given, at most `cap`) and the unread count: unread notices plus the unread messages
-// of the conversations under the entry's `conv` prefixes (`convUnread`: target -> unread messages). `suggests` = the mails' reply states, `now` = the clock.
+// The enabled entries with their notices (newest first as given, at most `cap`) and the unread count, counted by item (owner 2026-10-28: one mail
+// showed 2 because its unread notice and its unread conversation were both counted): each conversation under the entry's `conv` prefixes with
+// unread messages is one (`convUnread`: target -> unread messages, however many), and an unread notice counts only when it lives outside those. `suggests` = the mails' reply states, `now` = the clock.
 export function integrationItems(ctx: IntegrationContext, notices: readonly NoticeLike[], convUnread: Readonly<Record<string, number>> = {}, cap = 100, entries: readonly IntegrationEntry[] = ctx.entries ?? INTEGRATIONS, suggests: readonly SuggestLike[] = [], now = Date.now(), comments: Readonly<Record<string, { drafts: number; unread: number; unreplied?: number }>> = {}, waits: ReplyWaits = { targets: [], apps: {} }): IntegrationItem[] {
 	const today = new Date(now).toDateString();
 	return entries.filter(e => !ctx.off.has(e.key) && (integrationOn(e, ctx) || hasConvs(e, notices, convUnread))).map(e => {
 		const mine = notices.filter(n => !n.dismissed && belongsTo(e, n));
 		const convs = e.match.conv ?? [];
-		const fromConvs = Object.entries(convUnread).reduce((c, [t, n]) => c + (inConv(e, t) ? n : 0), 0);
+		const unreadConvs = new Set(Object.entries(convUnread).filter(([t, n]) => n > 0 && inConv(e, t)).map(([t]) => t));
+		const fromConvs = unreadConvs.size;
+		const ownItem = (n: NoticeLike) => !whereOf(n).some(w => unreadConvs.has(w));
 		const waitsDraft = (n: NoticeLike) => n.decision?.state === "open" && !!n.decision.draft && !n.ignored;
 		// One draft per mail counts: a draft a newer one replaced for the same mail thread is stale and waits on nobody (the web drops it too).
 		// A draft of anything else (a comment reply ask, a decision of another conversation) is its own.
@@ -231,8 +234,8 @@ export function integrationItems(ctx: IntegrationContext, notices: readonly Noti
 		const sentToday = suggests.filter(s => s.state === "sent" && inConv(e, s.target) && s.at && new Date(s.at).toDateString() === today).length;
 		const cm = comments[e.key] ?? { drafts: 0, unread: 0 };
 		const unreplied = waits.targets.filter(t => inConv(e, t)).length + (waits.apps[e.key] ?? 0) + (cm.unreplied ?? 0);
-		const needs = { drafts: newestDraft.size + cm.drafts, unread: mine.filter(n => !n.read && !waitsDraft(n)).length + fromConvs + cm.unread, sentToday, unreplied };
-		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), ...(e.watches?.length ? { watches: e.watches } : {}), ...(e.not?.watches.length ? { watchesNot: e.not.watches } : {}), unread: mine.filter(n => !n.read).length + fromConvs + cm.unread, unreplied, notices: mine.slice(0, cap).map(n => n.id), needs };
+		const needs = { drafts: newestDraft.size + cm.drafts, unread: mine.filter(n => !n.read && !waitsDraft(n) && ownItem(n)).length + fromConvs + cm.unread, sentToday, unreplied };
+		return { key: e.key, app: e.app ?? e.key, label: e.label, kind: e.kind, icon: e.icon, ...(e.iconPath ? { iconPath: e.iconPath } : {}), conv: convs, ...(e.not?.conv.length ? { convNot: e.not.conv } : {}), ...(e.watches?.length ? { watches: e.watches } : {}), ...(e.not?.watches.length ? { watchesNot: e.not.watches } : {}), unread: mine.filter(n => !n.read && ownItem(n)).length + fromConvs + cm.unread, unreplied, notices: mine.slice(0, cap).map(n => n.id), needs };
 	});
 }
 
