@@ -2,7 +2,9 @@
 // the user's tone, offered as a send-approval [ask] (hub/draft-approval.ts). Never throws; nothing is sent from here.
 import { addressesOf, precheck, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
-import { askText, buildDraft, draftTrace, libraryFor, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
+import { asksForFile } from "../../../hub/draft-approval.ts";
+import { askText, attachFolder, buildDraft, callOf, draftTrace, libraryFor, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
+import { anyRuleOn, mailInstanceOf, matchRule, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles } from "./rules.ts";
 import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
@@ -19,7 +21,7 @@ export type OfferDeps = {
 	readBody?: (source: string, id: string) => Promise<string | undefined>;
 	log?: (line: string) => void;
 	/** Records the suggested action on the mail (hub/mail.ts setMailSuggest), for the web's suggestion slot of that mail. */
-	suggest?: (key: string, s: { kind: "reply-draft"; label: string; ref: string }) => void;
+	suggest?: (key: string, s: { kind: "reply-draft"; label: string; ref: string; rule?: string }) => void;
 };
 
 // The text a model call sees is capped; a long thread's tail (quoted history) adds tokens and nothing for the reply.
@@ -29,12 +31,16 @@ const BODY_MAX = 8000;
 function mayDraft(m: OfferMail): boolean {
 	try {
 		const settings = loadSettings();
-		if (!appOn(settings, "mail") || isDrafted(m.messageId ? `${m.key}#${m.messageId}` : m.key)) return false;
+		if (!(appOn(settings, "mail") || (rulesAllowed(settings) && anyRuleOn())) || isDrafted(m.messageId ? `${m.key}#${m.messageId}` : m.key)) return false;
 		return !precheck({ kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "" }, settings.senders, { addressLater: true });
 	} catch {
 		return false;
 	}
 }
+
+// A 자동 초안 규칙 is its own opt-in: it drafts its mails while the app's 자동 초안 switch is off, but not on an install whose owner turned the
+// whole feature off (onboard.ts off).
+const rulesAllowed = (s: ReturnType<typeof loadSettings>) => !(s.decided && !s.enabled);
 
 // Offers run one at a time: a burst of new mail never starts many model calls at once.
 let chain: Promise<unknown> = Promise.resolve();
@@ -63,11 +69,15 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 	let trace: DraftTrace | undefined;
 	try {
 		const settings = loadSettings();
-		if (!requested && !appOn(settings, "mail")) return "off";
+		const auto = appOn(settings, "mail");
+		// The rules of the mail's own app instance; a mail of an instance without a rule switched on costs nothing more.
+		const own = rulesAllowed(settings) ? await rulesOf(await mailInstanceOf(m.key)) : undefined;
+		const rules = own?.rules.filter(r => r.on) ?? [];
+		if (!requested && !auto && !rules.length) return "off";
 		// One look per message: a newer message of the same thread (messageId) is looked at again, a repeat of the same one is not.
 		const looked = m.messageId ? `${m.key}#${m.messageId}` : m.key;
 		if (!requested && isDrafted(looked)) return "skipped";
-		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "", ...(requested ? { requested: true } : {}), ...(requested && m.instruction?.trim() ? { instruction: m.instruction.trim().slice(0, 500) } : {}) };
+		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "", ...(requested ? { requested: true } : {}) };
 		if (!requested && precheck(item, settings.senders, { addressLater: true })) {
 			markDrafted(looked);
 			return "skipped";
@@ -79,24 +89,39 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 			markDrafted(looked);
 			return "skipped";
 		}
+		// One budget for every model call of this draft: the rule match, the draft call and the file tie-break.
+		trace = draftTrace();
+		const flow = { call: deps.call, pick: deps.pick, trace };
+		const rule = rules.length ? await matchRule({ from: item.from, subject: item.subject, text: item.text }, rules, callOf(flow, item, m.key, "rule")).catch(e => (log(`reply draft: rules for mail ${m.key} not matched: ${(e as Error).message}`), undefined)) : undefined;
+		if (!requested && !auto && !rule) {
+			markDrafted(looked);
+			return "skipped";
+		}
+		const instruction = ruleInstruction(own?.base ?? "", rule, requested ? m.instruction?.trim().slice(0, 500) : undefined);
+		if (instruction) item.instruction = instruction;
 		const read = Date.now();
 		if (deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
 		const learned = Date.now();
-		// One budget for every model call of this draft; the file match (and its tie-break call, if any) runs beside the draft call.
-		trace = draftTrace();
-		const flow = { call: deps.call, pick: deps.pick, trace };
-		const files = libraryFor(item, { source: m.source, ref: m.key }, flow).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined));
+		// The file match (and its tie-break call, if any) runs beside the draft call; a rule that names its files stages those instead.
+		const ruleFiles = !!rule?.files.length;
+		const files = ruleFiles ? undefined : libraryFor(item, { source: m.source, ref: m.key }, flow).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined));
 		const built = await buildDraft(item, { source: m.source, mailId: m.id, ref: m.key, ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, flow);
 		if (built.action !== "draft") {
 			markDrafted(looked);
 			return "skipped";
 		}
 		ensureSwitch();
-		await stageForReply(built.rec, flow, files).catch(e => log(`reply draft: files for mail ${m.key} not staged: ${(e as Error).message}`));
-		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, built.warnings));
+		if (rule) built.rec.rule = { id: rule.id, name: rule.name };
+		const warnings = [...built.warnings];
+		if (rule && ruleFiles) {
+			built.rec.asksFile = asksForFile(item.text) || undefined;
+			const missing = stageRuleFiles(built.rec.id, rule, await attachFolder(m.key));
+			if (missing.length) warnings.push(ruleFileMissing(missing));
+		} else await stageForReply(built.rec, flow, files).catch(e => log(`reply draft: files for mail ${m.key} not staged: ${(e as Error).message}`));
+		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, warnings));
 		addDraft(built.rec);
 		markDrafted(looked);
-		deps.suggest?.(m.key, { kind: "reply-draft", label: "답장 초안", ref: built.rec.id });
+		deps.suggest?.(m.key, { kind: "reply-draft", label: "답장 초안", ref: built.rec.id, ...(rule ? { rule: rule.name } : {}) });
 		// Where the time went, so a slow draft can be traced: queue wait, body read, identity sweep (first draft only), the draft model call and the rest.
 		log(`reply draft: mail ${m.key} offered in ${Date.now() - queued}ms (queue ${started - queued}, body ${read - started}, identity ${learned - read}, draft+files ${Date.now() - learned})`);
 		return "offered";

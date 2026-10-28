@@ -139,6 +139,20 @@ describe("the watch", () => {
 		expect(mailCard(rec)).toMatchObject({ reply: "replied" });
 	});
 
+	test("a mail drafted by a 자동 초안 규칙 keeps the rule's name as its badge after the draft's suggestion is gone", async () => {
+		const { deps } = fakes();
+		await pass([], [], deps);
+		const id = uid("rule");
+		const key = `zele-${id}`;
+		await pass([{ id, from: "Kim <kim@example.com>", subject: "자료 문의" }], [], deps);
+		setMailSuggest(key, { kind: "reply-draft", label: "답장 초안", ref: "d9", rule: "자료 요청" });
+		expect(mailCard(mailByKey(key)!)).toMatchObject({ rule: "자료 요청", suggest: { rule: "자료 요청" } });
+		await pass([], [{ id, from: "Owner <owner@example.com>", to: "Kim <kim@example.com>", subject: "Re: 자료 문의", flags: "sent" }], deps);
+		const rec = mailByKey(key)!;
+		expect(rec.suggest).toBeUndefined();
+		expect(mailCard(rec)).toMatchObject({ reply: "replied", rule: "자료 요청" });
+	});
+
 	test("a thread the other side answered after the owner's own mail is a new mail again", async () => {
 		const { deps, calls } = fakes();
 		await pass([], [], deps);
