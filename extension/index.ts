@@ -28,6 +28,8 @@ import { defaultDataDir, dryRun, hubPid, liveDataDir, liveWrite, throwawayReason
 import { dropLongTtl, installGuard } from "./guard.ts";
 import { installHarnessTools } from "./harness-tools.ts";
 import { installOutputCap } from "./output-cap.ts";
+import { installOwnerValues } from "./owner-values.ts";
+import { installTaskCap } from "./task-cap.ts";
 import { jsonZod, params } from "./schema.ts";
 
 const DATA = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
@@ -532,6 +534,7 @@ export default function dotz(host: any) {
 	// parent's tools or commands (as before, no prompt growth).
 	if ((process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1") && process.env.OMO_SENPI_TASK_DEPTH) {
 		keyProvider(pi, true);
+		installTaskCap(pi);
 		enforceRules(pi);
 		installOutputCap(pi);
 		installCompactKept(pi);
@@ -542,6 +545,7 @@ export default function dotz(host: any) {
 	// owner's original ~/.omp extension of the same name is installed (guard-config.ts installedOriginal).
 	installGuard(pi);
 	installHarnessTools(pi);
+	installOwnerValues(pi);
 	if (process.env.DOTZ_LANE) {
 		enforceRules(pi);
 		installOutputCap(pi);
