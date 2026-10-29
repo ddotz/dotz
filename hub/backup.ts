@@ -2,7 +2,7 @@
 // machine unless every file about to be pushed passes the secret scan below (ported from 오모냥 backup.py).
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { hostname } from "node:os";
+import { machineHost } from "./hostname.ts";
 import { join } from "node:path";
 import { log, TZ, writeAtomic } from "./config.ts";
 
@@ -115,7 +115,7 @@ export async function pushBackup(dir: string, remote: string, flagged: string[])
 		const bad = await scan(dir, f => `${c}:${f}`, changed);
 		if (bad.length) return fail(`push blocked, secret-like content in history ${c.slice(0, 8)}: ${bad.join(", ")}`, `백업 기록(${c.slice(0, 8)})에 비밀값처럼 보이는 내용이 있어서 올리기를 막았어요 (파일: ${bad.join(", ")}). 기록 정리가 필요해요.`);
 	}
-	const r = await git(dir, ["push", "-q", remote, `HEAD:refs/heads/${backupBranch(hostname())}`], 120_000);
+	const r = await git(dir, ["push", "-q", remote, `HEAD:refs/heads/${backupBranch(machineHost())}`], 120_000);
 	if (r.code !== 0) return fail(`push failed: ${scrub(r.out).trim().slice(-300)}`, "백업을 올리지 못했어요. hub.log의 'backup:' 줄을 확인해 주세요.");
 	await git(dir, ["update-ref", ref, head]);
 	log(`backup: pushed ${commits.length} commit(s)`);

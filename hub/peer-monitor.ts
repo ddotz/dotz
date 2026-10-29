@@ -7,6 +7,7 @@
 // only for a read it needs: one it triggers (a cache older than 20 s) or one already running after a peer's change (bounded by the 2.5 s fetch
 // timeout, all peers in parallel), so a decision answered on the other computer never shows stale here for the next interval.
 // Everything outside (fetch, computers, clock, token, the local handler) is injected, so tests run two gateways in one process.
+import { peerFetch } from "./tailnet-fetch.ts";
 import { createHash } from "node:crypto";
 import { PEER_GET, peerHeaders, peerTokenFor } from "./peer-auth.ts";
 import { createPairer, type PairResult } from "./peer-pair.ts";
@@ -80,7 +81,7 @@ export type PeerMonitor = {
 };
 
 export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
-	const f: Fetcher = deps.fetch ?? ((u, init) => fetch(u, init));
+	const f: Fetcher = deps.fetch ?? ((u, init) => peerFetch(u, init));
 	const now = deps.now ?? Date.now;
 	const token = deps.token ?? peerTokenFor;
 	const computers = deps.computers ?? knownComputers;

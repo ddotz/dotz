@@ -1,6 +1,7 @@
 // Web Push to the installed web app: VAPID keys made once in ~/.dotz/secrets/vapid.json (0600, never logged), the
 // subscriptions with their per-kind toggles in ~/.dotz/push.json, and the rule that picks which hub events become a
 // notification. A device whose page reported itself visible and focused in the last minute is skipped (no double alert).
+import { peerFetch } from "./tailnet-fetch.ts";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -295,7 +296,7 @@ function cover(list: Stored[], m: PushMessage, done: Set<string>): void {
 // undefined: the peer did not take the relay (down, refused, an error); otherwise the devices it covered.
 async function relayTo(peerUrl: string, body: string): Promise<string[] | undefined> {
 	try {
-		const r = await fetch(`${peerUrl}/api/push/relay`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" });
+		const r = await peerFetch(`${peerUrl}/api/push/relay`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" });
 		if (!r.ok) return undefined;
 		const served = ((await r.json()) as { served?: unknown }).served;
 		return Array.isArray(served) ? served.filter((k): k is string => typeof k === "string") : [];
@@ -331,7 +332,7 @@ async function fanOut(m: PushMessage): Promise<void> {
 
 async function peerJson(peerUrl: string, path: string, body?: object): Promise<Record<string, any> | undefined> {
 	try {
-		const r = await fetch(`${peerUrl}${path}`, { method: body ? "POST" : "GET", ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" });
+		const r = await peerFetch(`${peerUrl}${path}`, { method: body ? "POST" : "GET", ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" });
 		return r.ok ? ((await r.json()) as Record<string, any>) : undefined;
 	} catch {
 		return undefined;
@@ -364,7 +365,7 @@ async function gatewayView(did: string): Promise<{ app: boolean; gateways: Array
 
 async function forwardPresence(did: string, active: boolean): Promise<void> {
 	const list = await relayPeers().catch(() => []);
-	await Promise.all(list.filter(f => !f.self).map(f => fetch(`${f.url}/api/push/presence`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ did, active, relayed: true }), signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" }).catch(() => {})));
+	await Promise.all(list.filter(f => !f.self).map(f => peerFetch(`${f.url}/api/push/presence`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ did, active, relayed: true }), signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" }).catch(() => {})));
 }
 
 const RELAY_HASH = /^#[\w:%.\-/]{0,200}$/;

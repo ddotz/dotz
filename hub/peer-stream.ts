@@ -6,6 +6,7 @@
 //   {kind:"peer_counts", url, name, online, unread, need}                 the peer's counts after any change (the computer chip)
 //   {kind:"peer_notice_done", url, ids}                                  notices answered, read or dismissed there: their toast here goes away
 // Frames from a peer are never re-emitted as notices, and a peer's own peer_* frames are ignored here, so nothing loops between N computers.
+import { peerFetch } from "./tailnet-fetch.ts";
 import { log } from "./config.ts";
 import { broadcast } from "./events.ts";
 import { invalidatePeer } from "./peer-monitor.ts";
@@ -114,7 +115,7 @@ export function startPeerStreams(opts: Opts = {}): () => void {
 			const arm = () => { clearTimeout(idle); idle = setTimeout(() => ctl.abort(), idleMs); };
 			try {
 				arm();
-				const r = await fetch(`${url}/api/events`, { signal: ctl.signal, redirect: "manual", headers: { Accept: "text/event-stream" } });
+				const r = await peerFetch(`${url}/api/events`, { signal: ctl.signal, redirect: "manual", headers: { Accept: "text/event-stream" } });
 				if (!r.ok || !r.body) throw new Error(`HTTP ${r.status}`);
 				const dec = new TextDecoder();
 				let buf = "";
