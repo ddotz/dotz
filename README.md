@@ -560,13 +560,12 @@ fetches the tracked branch and announces a new version. Local commits that upstr
 apply) are dropped; the others are re-applied on the new version in a temporary worktree with the same checks (`bun install`,
 tests), and only a clean, green result moves the checkout. Local commits that conflict or fail the checks, and uncommitted
 changes, are saved first (branch `dotz-local/<YYYYMMDD-HHMM>` + a patch, and for uncommitted changes a diff and a plain copy of the
-files, under `<data dir>/logs`) and the update waits for the button '내 수정을 보관하고 새 버전 받기' in settings → 업데이트
-(`bun hub/selfupdate.ts --apply --keep` from a terminal). Otherwise an update is fast-forward, runs `bun install` when needed and
-the tests, and returns to the old commit if they fail. With `self_update.auto_apply: true` (default off) the daily check applies
-it itself and restarts through the idle gate; for an install that is not a developer checkout it also does the save-and-move
-itself and tells what was saved and how to get it back. A developer checkout never auto-discards: `self_update.keep_local`
-(true/false) says which it is; unset, a `install.sh --git` clone (marker `.git/dotz-install`) or the default install folder
-counts as not a developer checkout. A refusal or failure alerts with a choice block.
+files, under `<data dir>/logs`) and the update goes on: a local edit never stops a shipped update. After the move the uncommitted
+changes go back on top as a local patch when they still apply and the tests still pass with them; otherwise the new version stays
+clean and the patch stays in the backup, which the bot carries over to the custom layer (docs/customization.md, Surviving updates).
+An update is otherwise fast-forward, runs `bun install` when needed and the tests, and returns to the old commit if they fail. With
+`self_update.auto_apply: true` (default off) the daily check applies it itself, the same way, and restarts through the idle gate.
+A failure alerts with a choice block.
 
 **Setup steps after an update** (`hub/migrations.ts`). A feature that needs a one-time step for existing installs ships it as a migration: the gateway runs every migration it has not run yet at start (so after the restart that applies an update), records the id in `<data dir>/migrations.json`, logs one line each, and posts one line listing what changed. A migration is idempotent, never deletes user data, and on failure posts a Korean notice and is retried at the next start. Today: `site-comment-apps` (an app instance in `custom/apps.json` for every website comment source that has none, the same as `features/comments/bin/onboard.ts on --app site --name X`) and `legacy-sns-tokens` (finding the earlier YouTube/Instagram login asks the owner once, `1) 가져오기` / `2) 안 가져오기`; only yes copies, 0600, values never printed). The `onboard.ts` commands stay for manual use.
 

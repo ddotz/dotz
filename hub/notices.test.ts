@@ -533,6 +533,8 @@ test("backfill builds the store once from persisted history: last 7 days, one it
 		jsonl([
 			{ ts: hoursAgo(50), kind: "lane_report", source: "lane:bb", lane: "bb", text: "[done] 두 번째 세션 끝" },
 			{ ts: hoursAgo(1), kind: "schedule", source: "schedule", id: "s1", channel: "main", text: "예약 시작" },
+			// the gateway's own wake (update carry-over) is an instruction to the assistant, never an owner notice (Mac mini 2026-10-29)
+			{ ts: hoursAgo(1), kind: "schedule", source: "gateway", id: "self-update-local", channel: "web", text: "[dotz 업데이트] 보관됐어요" },
 			{ ts: hoursAgo(1), kind: "message", source: "web", channel: "web", author: "local", text: "안녕" },
 		]),
 	);

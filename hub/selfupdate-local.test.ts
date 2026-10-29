@@ -72,18 +72,19 @@ test("local commits that rebase cleanly are applied on the new version after its
 	expect(branches()).toEqual([]);
 });
 
-test("a rebase whose checks fail saves the commits and does not move the checkout", async () => {
+// Owner 2026-10-29: a local edit never stops a shipped update; what cannot ride along is saved and the update goes on.
+test("a rebase whose checks fail saves the commits on a branch and still moves to the new version", async () => {
 	commit(work, "FAIL", "boom\n", "makes tests fail");
 	const mine = head(work);
 	push("a.txt", "2\n", "second");
 	const j = await apply(opts());
-	expect(j.status).toBe("refused");
-	expect(j.keep).toBeDefined();
-	expect(head(work)).toBe(mine);
+	expect(j.status).toBe("updated");
+	expect(head(work)).toBe(head(pusher));
 	expect(branches()).toHaveLength(1);
+	expect(sh(work, "rev-parse", branches()[0]!)).toBe(mine);
 });
 
-test("a conflict is saved as a branch and a patch first, the checkout stays until the button, then the button moves and applies", async () => {
+test("a conflict is saved as a branch and a patch first, then the update moves on by itself", async () => {
 	commit(work, "a.txt", "local\n", "my conflicting change");
 	const mine = head(work);
 	push("a.txt", "2\n", "second");
@@ -94,11 +95,7 @@ test("a conflict is saved as a branch and a patch first, the checkout stays unti
 	expect(br).toMatch(/^dotz-local\/\d{8}-\d{4}/);
 	expect(sh(work, "rev-parse", br)).toBe(mine);
 	expect(readFileSync(c.keep?.saved?.patch ?? "", "utf8")).toContain("my conflicting change");
-	const refused = await apply(opts());
-	expect(refused.status).toBe("refused");
-	expect(head(work)).toBe(mine);
-	expect(branches()).toHaveLength(1);
-	const j = await apply(opts(), { keep: true });
+	const j = await apply(opts());
 	expect(j.status).toBe("updated");
 	expect(head(work)).toBe(upstream);
 	expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("2\n");
@@ -107,15 +104,17 @@ test("a conflict is saved as a branch and a patch first, the checkout stays unti
 	expect(logFiles().filter(f => f.endsWith(".patch"))).toHaveLength(1);
 });
 
-test("uncommitted changes are saved as a patch and a plain copy, then only the button moves on", async () => {
+test("uncommitted changes are saved as a patch and a plain copy, the update moves on, and they come back on top as a local patch", async () => {
 	push("b.txt", "1\n", "adds b");
 	writeFileSync(join(work, "a.txt"), "my edit\n");
 	writeFileSync(join(work, "notes.txt"), "untracked\n");
-	const before = head(work);
-	const refused = await apply(opts());
-	expect(refused.status).toBe("refused");
-	expect(head(work)).toBe(before);
+	const j = await apply(opts());
+	expect(j.status).toBe("updated");
+	expect(head(work)).toBe(head(pusher));
+	expect(readFileSync(join(work, "b.txt"), "utf8")).toBe("1\n");
 	expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("my edit\n");
+	expect(readFileSync(join(work, "notes.txt"), "utf8")).toBe("untracked\n");
+	expect(j.note).toContain("다시 얹었어요");
 	const dirtyDirs = logFiles().filter(f => f.endsWith("-dirty"));
 	expect(dirtyDirs).toHaveLength(1);
 	expect(readFileSync(join(logDir, dirtyDirs[0], "files", "notes.txt"), "utf8")).toBe("untracked\n");
@@ -123,10 +122,28 @@ test("uncommitted changes are saved as a patch and a plain copy, then only the b
 	expect(readFileSync(join(logDir, `${dirtyDirs[0]}.patch`), "utf8")).toContain("+my edit");
 	await check(opts());
 	expect(logFiles().filter(f => f.endsWith("-dirty"))).toHaveLength(1);
-	const j = await apply(opts(), { keep: true });
+});
+
+test("an uncommitted change the new version touches too stays in the backup, and the new version is clean", async () => {
+	writeFileSync(join(work, "a.txt"), "my edit\n");
+	push("a.txt", "2\n", "second");
+	const j = await apply(opts());
 	expect(j.status).toBe("updated");
 	expect(head(work)).toBe(head(pusher));
-	expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("1\n");
+	expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("2\n");
+	expect(j.note).toContain("보관만 했어요");
+	expect(readFileSync(join(logDir, `${logFiles().find(f => f.endsWith("-dirty"))}.patch`), "utf8")).toContain("+my edit");
+});
+
+test("an uncommitted change that breaks the tests on the new version is taken off again and kept in the backup", async () => {
+	writeFileSync(join(work, "FAIL"), "boom\n");
+	sh(work, "add", "-N", "FAIL");
+	push("b.txt", "1\n", "adds b");
+	const j = await apply(opts());
+	expect(j.status).toBe("updated");
+	expect(head(work)).toBe(head(pusher));
+	expect(existsSync(join(work, "FAIL"))).toBe(false);
+	expect(j.note).toContain("빼고 보관만 했어요");
 });
 
 test("auto-apply on an install that is not a developer checkout saves the conflicting work, updates and says how to get it back", async () => {
@@ -143,19 +160,18 @@ test("auto-apply on an install that is not a developer checkout saves the confli
 	expect(h.worklog[0]).toContain("git cherry-pick");
 });
 
-test("auto-apply never discards the work of a developer checkout: no move, one alert, no summary and no orchestrator turn", async () => {
+test("auto-apply on a developer checkout updates too: the conflicting commit is saved on a branch and the untracked work stays", async () => {
 	setCfg({ auto_apply: true });
 	commit(work, "a.txt", "local\n", "my conflicting change");
 	const mine = head(work);
 	push("a.txt", "2\n", "second");
 	writeFileSync(join(work, "wip.txt"), "wip\n");
-	const { h, saved } = await autoCheckSaved();
-	expect(head(work)).toBe(mine);
+	const { h } = await autoCheckSaved();
+	expect(head(work)).toBe(head(pusher));
+	expect(sh(work, "rev-parse", branches()[0]!)).toBe(mine);
 	expect(existsSync(join(work, "wip.txt"))).toBe(true);
-	expect(h.restarts).toBe(0);
-	expect(h.alerts).toHaveLength(1);
-	expect(saved).toEqual([]);
-	expect(existsSync(join(root, "self-update"))).toBe(false);
+	expect(h.restarts).toBe(1);
+	expect(h.alerts).toEqual([]);
 });
 
 test("saved local commits get a summary in the data dir and queue one orchestrator turn", async () => {

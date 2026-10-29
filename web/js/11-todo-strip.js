@@ -194,6 +194,8 @@ function msgNode(e) {
     }
     // falls through: a mail without a subject line shows as plain text
     case "schedule": case "watch": {
+      // the gateway's own wake (hub/main.ts wakeOnce: update carry-over, text overrides) is an instruction to the assistant: no card
+      if (e.kind === "schedule" && e.source === "gateway") return null;
       // Same card as any other assistant message: who, when, then the plain line; the raw output folds under 원문.
       const body = e.kind === "watch" ? watchLine(e.label || e.watch, e.reason, text, { prev: e.prev }) : scheduleLine(text);
       return resultCard({ src: e.kind === "watch" ? humanLabel(e.label || e.watch) : SYS_LABEL[e.kind], at: e.ts, text: e.kind === "watch" ? body : body.replace(/^[^\n]*\n?/, ""), title: e.kind === "watch" ? undefined : body.split("\n")[0] });
