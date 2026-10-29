@@ -4,7 +4,7 @@
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DATA_DIR, log, writeAtomic } from "./config.ts";
+import { DATA_DIR, log, NAME, writeAtomic } from "./config.ts";
 import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { quietAlert } from "./alert-gate.ts";
@@ -99,11 +99,11 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 	const lane = typeof e.lane === "string" ? e.lane : src.startsWith("lane:") ? src.slice(5) : undefined;
 	if (lane && tone === "ask" && orchestratorOnlyAsk(rest)) return undefined;
 	if (e.kind === "out" && e.target === "alert") {
-		if (tone === "ask") return { kind: "ask", title: "dotz · 확인 필요", body: plain(rest), url: "/#chat/main", tag: "ask:alert" };
+		if (tone === "ask") return { kind: "ask", title: `${NAME} · 확인 필요`, body: plain(rest), url: "/#chat/main", tag: "ask:alert" };
 		// An all-clear, or the same alert again (hub/alert-gate.ts), was already as good as told.
 		if (e.reply_to || tone === "done" || tone === "run" || ROUTINE_ALERT.test(rest) || e.repeat === true || quietAlert(text)) return undefined;
 		if (tone !== "fail" && src !== "gateway" && !CRITICAL.test(rest)) return undefined;
-		return { kind: "usage", title: "dotz · 경고", body: plain(rest), url: "/#chat/main", tag: "alert" };
+		return { kind: "usage", title: `${NAME} · 경고`, body: plain(rest), url: "/#chat/main", tag: "alert" };
 	}
 	if (lane && (e.kind === "out" || e.kind === "lane_report")) {
 		const url = `/#chat/lane:${encodeURIComponent(lane)}`;
@@ -116,7 +116,7 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 	if (chat) {
 		const url = `/#chat/${chat}`, sfx = chat === "main" ? "" : `:${chat}`;
 		// A monitor's or app's settings conversation is titled with its label, like its notice in the bell.
-		const name = chat.startsWith("settings:") ? conversationTitle(chat) : "dotz";
+		const name = chat.startsWith("settings:") ? conversationTitle(chat) : NAME;
 		if (tone === "ask") return { kind: "ask", title: `${name} · 확인 필요`, body: plain(rest), url, tag: `ask:${chat}` };
 		if (tone === "fail") return { kind: "answer", title: `${name} · 실패`, body: plain(rest), url, tag: `answer${sfx}` };
 		if (tone === "done" || (sinceOwner ?? 0) >= LONG_TURN_MS) return { kind: "answer", title: `${name} · 완료`, body: plain(rest), url, tag: `answer${sfx}` };
@@ -547,7 +547,7 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 	if (req.method === "POST" && p === "/api/push/test") {
 		const s = findSub(b.endpoint);
 		if (!s) return json({ error: "not subscribed" }, 404);
-		const status = await deliver(s, { kind: "test", title: "dotz 테스트 알림", body: "알림이 잘 와요. 누르면 대화로 가요.", url: "/#chat/main", tag: "test" });
+		const status = await deliver(s, { kind: "test", title: `${NAME} 테스트 알림`, body: "알림이 잘 와요. 누르면 대화로 가요.", url: "/#chat/main", tag: "test" });
 		return json({ ok: status >= 200 && status < 300, status }, status >= 200 && status < 300 ? 200 : 502);
 	}
 	return json({ error: "unknown push route" }, 404);

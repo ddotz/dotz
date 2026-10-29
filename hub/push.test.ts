@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { createECDH } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { paths } from "./config.ts";
+import { NAME, paths } from "./config.ts";
 import { emit, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { type Notice, onDecision, setWatchLabelResolver } from "./notices.ts";
 import { classify, decisionPush, LONG_TURN_MS, pushRoute, startPush } from "./push.ts";
@@ -12,17 +12,17 @@ const ev = (e: Record<string, unknown>) => ({ ts: "2026-10-20T00:00:00Z", kind: 
 
 test("a web answer notifies only when it finishes work or needs the owner; a quick reply does not", () => {
 	expect(classify(ev({ target: "web", text: "네, 맞아요" }), 5_000)).toBeUndefined();
-	expect(classify(ev({ target: "web", text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: "dotz · 완료", url: "/#chat/main", body: "다 했어요" });
-	expect(classify(ev({ target: "web", text: "[done] 배포 끝" }), 5_000)).toMatchObject({ title: "dotz · 완료" });
+	expect(classify(ev({ target: "web", text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: `${NAME} · 완료`, url: "/#chat/main", body: "다 했어요" });
+	expect(classify(ev({ target: "web", text: "[done] 배포 끝" }), 5_000)).toMatchObject({ title: `${NAME} · 완료` });
 	expect(classify(ev({ target: "web", text: "[ask] 어느 쪽?" }))).toMatchObject({ kind: "ask", body: "어느 쪽?" });
 });
 
 test("a project's answers notify like the main chat's and open that project's chat; a thread of it does too", () => {
 	const CH = "ch:1561565203714408448";
 	expect(classify(ev({ target: CH, text: "네, 맞아요" }), 5_000)).toBeUndefined();
-	expect(classify(ev({ target: CH, text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: "dotz · 완료", url: `/#chat/${CH}`, tag: `answer:${CH}` });
+	expect(classify(ev({ target: CH, text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: `${NAME} · 완료`, url: `/#chat/${CH}`, tag: `answer:${CH}` });
 	expect(classify(ev({ target: CH, text: "[ask] 어느 쪽?" }))).toMatchObject({ kind: "ask", url: `/#chat/${CH}` });
-	expect(classify(ev({ target: "th:42", channel: CH, text: "[done] 끝" }))).toMatchObject({ title: "dotz · 완료", url: `/#chat/${CH}` });
+	expect(classify(ev({ target: "th:42", channel: CH, text: "[done] 끝" }))).toMatchObject({ title: `${NAME} · 완료`, url: `/#chat/${CH}` });
 	expect(classify(ev({ target: CH, source: "gateway", text: "[done] 끝" }))).toBeUndefined();
 	expect(classify(ev({ target: "th:42", text: "[done] 끝" }))).toBeUndefined(); // a thread of no known project stays on Discord
 });
@@ -35,7 +35,7 @@ test("a lane's worklog entry notifies once as a start; its later edits do not", 
 });
 
 test("alerts notify only when critical or when the owner is needed", () => {
-	expect(classify(ev({ source: "gateway", target: "alert", text: "뙃쥐: 사용량 한도(429)로 멈춤." }))).toMatchObject({ kind: "usage", title: "dotz · 경고" });
+	expect(classify(ev({ source: "gateway", target: "alert", text: "뙃쥐: 사용량 한도(429)로 멈춤." }))).toMatchObject({ kind: "usage", title: `${NAME} · 경고` });
 	expect(classify(ev({ source: "gateway", target: "alert", text: "토큰 누수 점검 (10-19): 경고 3건" }))).toBeUndefined();
 	expect(classify(ev({ target: "alert", reply_to: "1", text: "ㅇㅋ 형, 바로 할게요." }))).toBeUndefined();
 	expect(classify(ev({ target: "alert", text: "어제 영어 답변이 또 나왔어요. 고칠 곳을 정리했어요." }))).toBeUndefined();

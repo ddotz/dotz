@@ -470,7 +470,7 @@ test("a found dotz update creates one notice, a later check reuses it, and apply
 	updateAvailable("dotz 새 버전이 있어요: 커밋 2개 (첫 번째). 설정 → 업데이트에서 적용해요.");
 	const first = stored().filter(n => n.key === UPDATE_NOTICE_KEY);
 	expect(first).toHaveLength(1);
-	expect(first[0]).toMatchObject({ kind: "alert", title: "dotz 새 버전", open: "settings", read: false });
+	expect(first[0]).toMatchObject({ kind: "alert", title: "새 버전", open: "settings", read: false });
 	expect(first[0]!.text).toContain("커밋 2개");
 
 	markNoticesRead({ ids: [first[0]!.id] });

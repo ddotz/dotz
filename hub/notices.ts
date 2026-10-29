@@ -93,6 +93,8 @@ const load = (): Notice[] => {
 	}
 };
 let items: Notice[] = load();
+// Notices stored before the project name left the screen keep their old title; they read with the current one (owner 2026-10-29).
+for (const n of items) if (n.key === "self-update" && n.title === "dotz 새 버전") n.title = "새 버전";
 // The title a lane was launched with, from its lane_start event (live or replayed): the fallback once lane.json is gone.
 const launchTitles = new Map<string, string>();
 // True while backfillNotices replays old events: upsert then neither writes the file nor broadcasts per item.
@@ -1097,7 +1099,7 @@ export function laneVerified(name: string, fallbackText: string): void {
 // turns it unread again), opening 설정 → 업데이트.
 export const UPDATE_NOTICE_KEY = "self-update";
 export function updateAvailable(text: string): void {
-	upsert({ kind: "alert", tone: "", title: "dotz 새 버전", text: clean(text).text, open: "settings", key: UPDATE_NOTICE_KEY, unread: true });
+	upsert({ kind: "alert", tone: "", title: "새 버전", text: clean(text).text, open: "settings", key: UPDATE_NOTICE_KEY, unread: true });
 }
 
 // The Claude account requests really use changed without the owner's pick in the web: only logged. It is no notice (owner 2026-10-23:
