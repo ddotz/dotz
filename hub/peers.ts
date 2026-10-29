@@ -104,7 +104,9 @@ const getJson: Fetcher = async url => {
 // A URL is a dotz gateway when its manifest is dotz's. /manifest.webmanifest is public and exists on every hub version.
 export async function isDotz(url: string, get: Fetcher = getJson): Promise<boolean> {
 	try {
-		return (await get(`${url}/manifest.webmanifest`) as { name?: unknown } | null)?.name === "dotz";
+		// `gateway` since the manifest carries the owner's assistant name; `name` for a gateway from before that.
+		const m = (await get(`${url}/manifest.webmanifest`)) as { name?: unknown; gateway?: unknown } | null;
+		return m?.gateway === "dotz" || m?.name === "dotz";
 	} catch {
 		return false;
 	}

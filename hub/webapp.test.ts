@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 import { compressResponse } from "./compress.ts";
-import { appAsset, bundle, indexPage, moduleFiles } from "./webapp.ts";
+import { appAsset, bundle, indexPage, moduleFiles, named } from "./webapp.ts";
 
 // An in-memory stand-in for Cache Storage, shared by the service worker and the page like the real one.
 function fakeCaches() {
@@ -287,4 +287,12 @@ describe("service worker shell", () => {
 		await done;
 		expect(events).toEqual(["focus", "msg https://dotz.test/#chat/lane:a"]);
 	});
+});
+
+// Owner 2026-10-29: the project's name is not shown to the owner; the page's title, home-screen name and header are the assistant's name.
+test("the page carries the assistant's name, escaped, and no 'dotz' where the owner sees it", () => {
+	const html = named(readFileSync(join(import.meta.dir, "..", "web", "index.html"), "utf8"), "땃쥐<b>");
+	expect(html).toContain("<title>땃쥐&lt;b&gt;</title>");
+	expect(html).toContain('content="땃쥐&lt;b&gt;"');
+	expect(html).not.toMatch(/>dotz<|content="dotz"/);
 });
