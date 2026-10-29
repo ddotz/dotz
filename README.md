@@ -239,7 +239,11 @@ the dotz extension into every agent it runs in: the orchestrator, sessions and t
   subagent is blocked (spawn a new one).
 - *Subagents*: external-impact commands (`git push`, `gh` writes, publish, deploy, `ssh`/`scp`/`rsync`, outbound HTTP writes,
   plus your `external_commands`) are blocked and handed back; the first compaction steers a subagent to wrap up and the second
-  disables its tools; the 1h cache TTL is dropped (5-minute cache).
+  disables its tools; the 1h cache TTL is dropped (5-minute cache). An OmO task worker past `task_token_cap` (8000000 tokens,
+  input + cache read/write + output summed over its turns; 0 = off) has its tools blocked with a `[fail]` note naming what it
+  spent, so its next answer goes back to the parent as a failure with its last state; it is aborted if it keeps calling tools.
+- *Owner thresholds*: a tool call that changes `orchestrator.rotate_tokens` or `lanes.compact_at` in `config.json` is undone
+  unless one of the latest user messages names the new number (`300000`, `300k`, `30만`, `0.3M`); the tool result says so.
 - *Loops*: the same tool call (or a 2-4 call cycle) repeated with unchanging results is blocked; after more ignored blocks a
   human is asked, a headless agent is told to stop. `repeat_block_threshold` (8) sets how many calls it takes.
 - *Searches*: recursive grep/find/rg/du/ls -R of `/`, `~`, `~/Library` or with an unquoted shell expansion is blocked.
@@ -265,7 +269,7 @@ there is no gate. `budget_gate: false` turns it off.
 - Config: the `guard` object in `config.json`, every key optional (`enabled`, `max_brief_chars`, `max_fence_lines`,
   `max_output_chars`, `worker_answer_chars` 800, `worker_context_tokens` 400000, `budget_gate`, `budget_margin_percent`,
   `budget_default_estimate_percent`, `override_minutes`, `repeat_block_threshold`, `switch_compact_min_tokens`,
-  `external_commands` (regex strings), `ask_before_expensive`, `expensive_models`, `no_api_key_accounts`, `defer_to_installed`, `harness_tools`).
+  `external_commands` (regex strings), `ask_before_expensive`, `expensive_models`, `no_api_key_accounts`, `defer_to_installed`, `harness_tools`, `task_token_cap`).
 - *Already installed copies*: the runtime lists no loaded extensions to an extension, so the guard looks for
   `<agent dir>/extensions/orchestrator-guard.ts` (and `harness-tools.ts` for the commands), unless discovery is
   switched off or the config disables it. When it exists, this copy leaves those hooks to it (the same hooks
