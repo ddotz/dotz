@@ -807,7 +807,7 @@ export async function autoCheck(o: Options, hooks: AutoHooks | undefined = autoH
 	}
 	if (c.ok && c.incomingTotal > 0 && c.remoteHead && s.notified !== c.remoteHead) {
 		s.notified = c.remoteHead;
-		const text = `dotz 새 버전이 있어요: 커밋 ${c.incomingTotal}개 (${c.incoming[0]?.subject.slice(0, 60) ?? ""}). 설정 → 업데이트에서 적용해요.${c.keep ? ` ${c.keep.line}` : ""}`;
+		const text = `새 버전이 있어요: 커밋 ${c.incomingTotal}개 (${c.incoming[0]?.subject.slice(0, 60) ?? ""}). 설정 → 업데이트에서 적용해요.${c.keep ? ` ${c.keep.line}` : ""}`;
 		record(resolve(o).logDir, `auto-check: notified ${c.remoteHead.slice(0, 7)}`);
 		notifyFn?.(text, c.incomingTotal);
 	}
