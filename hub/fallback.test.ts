@@ -5,11 +5,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
 import { cfg, chainAfter, DATA_DIR, entryOf } from "./config.ts";
-import { atTime, Chain, failsOver, failureReason, hubChain, keyedWorker, keyHostOk, keyProviderOk, resetFallbackState, spendOnKey, workerKeyEnv } from "./fallback.ts";
+import { atTime, Chain, failsOver, failureReason, hubChain, keyedWorker, keyHostOk, keyProviderOk, modelsDev, resetFallbackState, spendOnKey, workerKeyEnv } from "./fallback.ts";
 import { writeWorkerProfile } from "./runtime/omo.ts";
 import { classifyProviderError, poolRetryAt } from "./providers.ts";
 
 mkdirSync(join(DATA_DIR, "secrets"), { recursive: true });
+// The models.dev boundary: OmO lists no model in tests, so a key entry's limits come from this catalog.
+let devFetches = 0;
+modelsDev.file = join(mkdtempSync(join(tmpdir(), "dotz-models-dev-")), "models-dev.json");
+modelsDev.fetch = () => {
+	devFetches++;
+	return JSON.stringify({ anthropic: { models: { "claude-opus-5-5": { name: "Claude Opus 5.5", reasoning: true, modalities: { input: ["text", "image", "pdf"] }, limit: { context: 1_000_000, output: 128_000 }, cost: { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 } } } } });
+};
 
 const HOUR = 3600e3;
 
@@ -146,6 +153,10 @@ test("workers on a keyed entry: workers get the key provider and worker model, n
 		expect(on.DOTZ_KEY_VALUE).toBe("sk-ant-test-key");
 		expect(on.DOTZ_KEY_PROVIDER).not.toContain("sk-ant-test-key");
 		expect(JSON.parse(on.DOTZ_KEY_PROVIDER).models.map((m: { id: string }) => m.id)).toEqual(["claude-opus-5-5", "claude-sonnet-5-5"]);
+		const [opus] = JSON.parse(on.DOTZ_KEY_PROVIDER).models;
+		expect(opus).toMatchObject({ name: "Claude Opus 5.5 (API key)", reasoning: true, input: ["text", "image"], contextWindow: 1_000_000, maxTokens: 128_000, cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } });
+		expect(JSON.parse(readFileSync(modelsDev.file, "utf8")).anthropic).toBeDefined();
+		expect(devFetches).toBe(1);
 		expect(keyedWorker(on)).toBe("anthropic-apikey/claude-sonnet-5-5:high");
 		for (const entry of [{ ...keyed, workers: false }, { model: keyed.model, key_file: keyed.key_file }]) {
 			const off = new Chain("anthropic/claude-opus-5-5:medium", [entry], "medium").env(1, worker);

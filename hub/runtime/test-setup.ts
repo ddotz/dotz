@@ -23,6 +23,8 @@ if (!process.env.DOTZ_TEST_DIR) {
 const dir = process.env.DOTZ_TEST_DIR;
 const data = join(dir, "data");
 mkdirSync(data, { recursive: true });
+// An empty models.dev cache, so an API-key entry's model lookup (hub/fallback.ts modelsDevDef) never reaches the network.
+writeFileSync(join(data, "models-dev.json"), "{}");
 process.env.DOTZ_DIR = data;
 process.env.DOTZ_OMP = join(dir, "no-such-omp");
 process.env.DOTZ_OMO = join(dir, "no-such-omo");
