@@ -93,13 +93,13 @@ self.addEventListener("push", ev => {
     ev.waitUntil((async () => {
       await closeGone();
       if ((await self.registration.getNotifications()).length) return;
-      await self.registration.showNotification("dotz", { tag: "withdrawn", body: "처리한 알림을 정리했어요", silent: true, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png" });
+      await self.registration.showNotification("알림 정리", { tag: "withdrawn", body: "처리한 알림을 정리했어요", silent: true, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png" });
       for (const n of await self.registration.getNotifications({ tag: "withdrawn" })) n.close();
     })());
     return;
   }
   if (gone.length) ev.waitUntil(closeGone());
-  ev.waitUntil(self.registration.showNotification(m.title || "dotz", {
+  ev.waitUntil(self.registration.showNotification(m.title || "알림", {
     body: m.body || "",
     tag: m.tag || undefined,
     renotify: Boolean(m.tag),
