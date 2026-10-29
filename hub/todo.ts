@@ -60,62 +60,52 @@ export function readTodo(file: string | undefined): Todo {
 	return { phases: [] };
 }
 
-// The watch a session's last turn left running (owner 2026-10-29: kdb-loss-review showed 쉬는 중 · 할 일 13개 남음 while it waited on its
-// own "추출 워커 종료 대기" monitor). A monitor started in the last turn whose completion has not come back is what the session waits on;
-// its event wakes the session later. Persistent watches from earlier turns do not count. Only the file's tail is read, cached by size.
+// What a session's harness says it waits on (owner 2026-10-29: kdb-loss-review showed 쉬는 중 · 할 일 13개 남음 while it waited on its own
+// "HTML 워커 종료" monitor, and the stall rule then told it to go on). OmO writes a `session-lifecycle` record at every change: its state
+// ("waiting_background" when a turn ended on purpose to wait) and `waitingOn` (subagents, background shells, monitors). The latest record
+// is the truth; only the file's tail is read, cached by size, time and last bytes.
 const TAIL = 1024 * 1024;
 const waitCache = new Map<string, { stamp: string; desc?: string }>();
-const monitorDesc = (call: any): string | undefined => {
-	if (call?.name === "monitor") return str(call.arguments?.description) || undefined;
-	const code = str(call?.arguments?.code);
-	if (call?.name !== "eval" || !code.includes("monitor(")) return undefined;
-	return /description\s*:\s*["'`]([^"'`]{1,120})["'`]/.exec(code)?.[1];
-};
 export function openMonitor(file: string | undefined): string | undefined {
 	if (!file || !existsSync(file)) return undefined;
-	const size = statSync(file).size;
-	const hit = waitCache.get(file);
-	if (hit && hit.stamp === String(size)) return hit.desc;
+	const st = statSync(file), size = st.size;
 	const fd = openSync(file, "r");
-	let text = "";
+	let text = "", stamp = "";
 	try {
+		const end = Buffer.alloc(Math.min(64, size));
+		readSync(fd, end, 0, end.length, size - end.length);
+		stamp = `${size}:${st.mtimeMs}:${end.toString("hex")}`;
+		const hit = waitCache.get(file);
+		if (hit && hit.stamp === stamp) return hit.desc;
 		const start = Math.max(0, size - TAIL);
 		const buf = Buffer.alloc(size - start);
 		readSync(fd, buf, 0, buf.length, start);
 		text = buf.toString("utf8");
-		if (start > 0) text = text.slice(text.indexOf("\n") + 1);
 	} finally {
 		closeSync(fd);
 	}
-	const rows: any[] = [];
-	for (const line of text.split("\n")) {
-		if (!line) continue;
+	let desc: string | undefined;
+	const lines = text.split("\n");
+	for (let i = lines.length - 1; i >= 0; i--) {
+		if (!lines[i]!.includes('"session-lifecycle"')) continue;
+		let e: any;
 		try {
-			rows.push(JSON.parse(line));
-		} catch {}
-	}
-	// the last turn: from the last prompt (an owner/gateway message or a monitor event) to the end
-	let from = 0;
-	for (let i = rows.length - 1; i >= 0; i--) {
-		const e = rows[i];
-		if (e?.message?.role === "user" || e?.type === "custom_message") {
-			from = i;
-			break;
+			e = JSON.parse(lines[i]!);
+		} catch {
+			continue;
 		}
-	}
-	const open: string[] = [];
-	for (const e of rows.slice(from)) {
-		const m = e?.message;
-		if (m?.role === "assistant" && Array.isArray(m.content)) for (const c of m.content) if (c?.type === "toolCall") {
-			const d = monitorDesc(c);
-			if (d) open.push(d);
+		const d = e?.data;
+		if (e?.customType !== "session-lifecycle" || !d) continue;
+		if (String(d.state ?? "").startsWith("waiting")) {
+			const bg: any[] = Array.isArray(d.waitingOn?.background) ? d.waitingOn.background : [];
+			const items = (src: string) => bg.filter(b => b?.source === src && b.activeCount > 0).flatMap(b => (Array.isArray(b.items) ? b.items : []));
+			const mon = items("terminal-monitors").map(x => str(x?.description)).find(Boolean);
+			const shells = items("terminal-background-sessions").length;
+			const kids = Number(d.waitingOn?.children) || 0;
+			desc = mon || (shells ? `백그라운드 작업 ${shells}개` : kids ? `서브에이전트 ${kids}개` : undefined);
 		}
-		const said = e?.type === "custom_message" ? str(e.content) : "";
-		const done = /Monitor event\(([^)]*)\)[\s\S]*watcher (completed|killed)/.exec(said)?.[1];
-		const k = done === undefined ? -1 : open.indexOf(done);
-		if (k >= 0) open.splice(k, 1);
+		break;
 	}
-	const desc = open[0];
-	waitCache.set(file, { stamp: String(size), desc });
+	waitCache.set(file, { stamp, desc });
 	return desc;
 }

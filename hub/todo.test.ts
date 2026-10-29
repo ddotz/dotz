@@ -36,22 +36,22 @@ test("a todo result far from the end of a large file is found by reading growing
 	expect(readTodo(newer).at).toBe("2026-10-21T03:00:00.000Z");
 });
 
-// kdb-loss-review on the Mac mini (2026-10-29 01:53Z): its last turn armed a monitor for its extraction worker and ended with a [run]
-// report; the session was waiting on that watch, not resting.
-test("a monitor the last turn armed is what the session waits on until its completion comes back; an older standing watch does not count", () => {
+// kdb-loss-review on the Mac mini (2026-10-29): its turn ended to wait on its own "HTML 워커 종료" monitor (armed two turns before) and a
+// background shell; the harness's own lifecycle record says so, and that is what the session waits on.
+test("a session waits on what its harness's latest lifecycle record says: a monitor first, else its background shells or subagents", () => {
 	const d = join(process.env.DOTZ_DIR!, "todo-monitor");
 	mkdirSync(d, { recursive: true });
 	const f = join(d, "s.jsonl");
-	const user = (text: string) => ({ type: "message", message: { role: "user", content: [{ type: "text", text }] } });
-	const call = (name: string, args: unknown) => ({ type: "message", message: { role: "assistant", content: [{ type: "toolCall", name, arguments: args }] } });
-	const event = (desc: string, tail: string) => ({ type: "custom_message", customType: "senpi-monitor:notification", content: `<system-reminder>Monitor event(${desc}): ${tail}</system-reminder>` });
-	const stop = { type: "message", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "[run] 워커를 기다려요" }] } };
+	const life = (state: string, background: unknown[] = [], children = 0) => ({ type: "custom", customType: "session-lifecycle", data: { state, waitingOn: { children, background } } });
+	const mons = (...desc: string[]) => ({ source: "terminal-monitors", activeCount: desc.length, items: desc.map(description => ({ description })) });
+	const shells = (n: number) => ({ source: "terminal-background-sessions", activeCount: n, items: Array.from({ length: n }, () => ({ label: "cd x && omo -p" })) });
 	const write = (rows: unknown[]) => writeFileSync(f, `${rows.map(r => JSON.stringify(r)).join("\n")}\n`);
-	const standing = call("eval", { language: "js", code: 'await tool.monitor({ description: "zele events", command: "tail -F x", persistent: true })' });
-	write([user("old"), standing, stop, user("리뷰해"), call("eval", { language: "js", code: 'return await tool.monitor({ description: "추출 워커 종료 대기", command: "until ! kill -0 1; do sleep 5; done" })' }), stop]);
-	expect(openMonitor(f)).toBe("추출 워커 종료 대기");
-	write([user("old"), standing, stop, user("리뷰해"), call("monitor", { description: "추출 워커 종료 대기", command: "x" }), stop, event("추출 워커 종료 대기", "DONE\nwatcher completed (exit code 0)"), stop]);
+	write([life("running", [shells(1), mons("HTML 워커 종료")]), life("waiting_background", [shells(1), mons("HTML 워커 종료")])]);
+	expect(openMonitor(f)).toBe("HTML 워커 종료");
+	write([life("waiting_background", [shells(1), mons("HTML 워커 종료")]), life("running", [shells(1), mons("HTML 워커 종료")])]);
 	expect(openMonitor(f)).toBeUndefined();
-	write([user("old"), standing, stop, user("다음 일"), stop]);
+	write([life("waiting_background", [shells(2)])]);
+	expect(openMonitor(f)).toBe("백그라운드 작업 2개");
+	write([life("idle", [])]);
 	expect(openMonitor(f)).toBeUndefined();
 });
