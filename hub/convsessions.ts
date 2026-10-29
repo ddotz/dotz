@@ -64,6 +64,8 @@ export function seedText(primary: string, events: HubEvent[], max = SEED_CHARS):
 export const scopeText = (m: ConvMeta): string =>
 	`You are ${NAME}'s session for the conversation ${m.name || m.primary} (${m.primary}). You answer only here; the main session oversees every conversation; to hand work elsewhere use dotz_conv send main.`;
 
+// Under the memory cap a session resting this long is parked at once (a session between two quick messages keeps running).
+export const PRESSURE_IDLE_MS = 60_000;
 export function createConvSessions(d: ConvDeps) {
 	const now = d.now ?? Date.now;
 	const convs = new Map<string, Conv>();
@@ -169,8 +171,14 @@ export function createConvSessions(d: ConvDeps) {
 
 	function sweep(): void {
 		const min = d.idleMin();
-		if (min <= 0) return;
-		for (const c of convs.values()) if (parkable(c, min * 60_000)) park(c, `idle ${min} min`);
+		if (min > 0) for (const c of convs.values()) if (parkable(c, min * 60_000)) park(c, `idle ${min} min`);
+		// Short of memory (the cap fell below what runs): the longest-resting sessions are parked now instead of after the idle time, so
+		// the memory goes back while nothing is lost (a parked session resumes on its next message).
+		const over = () => [...convs.values()].filter(live).length - d.maxLive();
+		for (const c of [...convs.values()].filter(c => parkable(c, PRESSURE_IDLE_MS)).sort((a, b) => a.o.lastTurnEndAt() - b.o.lastTurnEndAt())) {
+			if (over() <= 0) break;
+			park(c, `memory: cap of ${d.maxLive()} live sessions, resting longest`);
+		}
 	}
 
 	/**

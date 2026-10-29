@@ -6,7 +6,8 @@ import { type Lane, lanes } from "./lanestate.ts";
 import { limitsNow, type Running, waitText } from "./limits.ts";
 
 export const waitingLanes = () => [...lanes.values()].filter(l => l.waiting).sort((a, b) => a.startedAt.localeCompare(b.startedAt));
-const isActive = (l: Lane) => !l.waiting && (l.status === "working" || l.status === "starting");
+// Only a lane with a live process holds a slot: one whose start failed, or that no process runs for, uses no memory.
+const isActive = (l: Lane) => !l.waiting && !!l.proc && (l.status === "working" || l.status === "starting");
 export const activeCount = () => [...lanes.values()].filter(isActive).length;
 // A process started in the last minute has not reached its ~1 GB yet, so each counts as taken.
 const RAMP_MS = 60_000;

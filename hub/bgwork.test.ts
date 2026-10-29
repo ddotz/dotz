@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createBgWork, FINISHED_KEEP_MS, type OpenDeferred, retryText, runningOmoWork, workConversation, workModel } from "./bgwork.ts";
+import { createBgWork, FINISHED_KEEP_MS, HANDOVER_AFTER_MS, type OpenDeferred, retryText, runningOmoWork, workConversation, workModel } from "./bgwork.ts";
 
 const ROOT = "01a159d6-b330-71dd-b28a-301dd01d6031";
 const T0 = Date.parse("2026-10-21T06:00:00.000Z");
@@ -181,4 +181,24 @@ test("a worker names the model it runs on, as OmO's record says (Mac mini st_01a
 	expect(make(() => T0 + 60_000).list()[0]!.model).toBe("Opus 5.5 medium");
 	expect(workModel({ model: "openai-codex/gpt-5.5" })).toBe("Gpt 5.5");
 	expect(workModel({})).toBeUndefined();
+});
+
+// Owner 2026-10-29: "왜 재요청을 나에게 물어보지? 알아서 수정해서 목표 달성해야지" - a failure is the session's to take up.
+test("a failure a later turn took up is handled; one no turn took up is handed back once, only after the grace time and only to an idle session", () => {
+	record("st_fail", { status: "failed", terminal_at: iso(T0 + 10_000), error_message: "Concurrent turn admission" });
+	let t = T0 + 20_000, ended = T0, busy = false;
+	const handed: string[] = [];
+	const work = createBgWork({ sessionFile: () => session, deferred: () => [], now: () => t, turnEndedAt: () => ended, busy: () => busy, handover: w => handed.push(w.id) });
+	expect(work.list()[0]!.handled).toBeUndefined();
+	expect(handed).toEqual([]);
+	t = T0 + 10_000 + HANDOVER_AFTER_MS;
+	busy = true;
+	work.list();
+	expect(handed).toEqual([]);
+	busy = false;
+	work.list();
+	work.list();
+	expect(handed).toEqual(["st_fail"]);
+	ended = T0 + 10_001 + HANDOVER_AFTER_MS;
+	expect(work.list()[0]).toMatchObject({ id: "st_fail", status: "failed", handled: true });
 });

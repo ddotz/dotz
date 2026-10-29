@@ -32,6 +32,9 @@ type BgWork = {
 	reason?: string;
 	/** The owner stopped it (중단), so it is no failure of its own. */
 	cancelled?: boolean;
+	/** A failure the session already took up: one of its turns ended after the worker failed (it read OmO's failure notice, or the
+	 * gateway's handover below). Nothing is asked of the owner about it. */
+	handled?: boolean;
 };
 
 /** What 중단 answered: done, or why not (an HTTP status for the route). */
@@ -136,9 +139,18 @@ type BgWorkDeps = {
 	alive?: (pid: number) => boolean;
 	/** The hub log: one line per failed worker, so the reason is kept even after the record leaves the list. */
 	log?: (message: string) => void;
+	/** When the session's last turn ended (ms): a failure before it was taken up by that turn. */
+	turnEndedAt?: () => number;
+	/** Is the session in a turn now? A failure is handed over only to an idle session (a running one reads OmO's notice itself). */
+	busy?: () => boolean;
+	/** The safety net for a failure the session never took up: hand it to the session to fix and finish (owner 2026-10-29: "왜
+	 * 재요청을 나에게 물어보지? 알아서 수정해서 목표 달성해야지"). Called once per worker. */
+	handover?: (w: BgWork) => void;
 	/** Sends a signal to a worker process (default process.kill); 중단 ends the worker with it. */
 	kill?: (pid: number, signal: NodeJS.Signals) => void;
 };
+// A failure no turn took up this long after it ended is handed over (OmO's own notice wakes the session within seconds).
+export const HANDOVER_AFTER_MS = 3 * 60_000;
 // 중단 waits this long for a worker to end on SIGTERM before it is killed outright.
 const STOP_GRACE_MS = 3_000;
 
@@ -151,6 +163,8 @@ export function createBgWork(deps: BgWorkDeps) {
 	const served = new Map<string, { target: string; reply_to?: string }>();
 	// Failures already written to the log (list() runs on every /api/state read).
 	const told = new Set<string>();
+	// Failures already handed to the session (once each; a restart re-reads turnEndedAt, which the handed turn moved past them).
+	const handed = new Set<string>();
 	// Workers the owner stopped (중단), with when: OmO's record still says running for a while after its process ended.
 	const cancelled = new Map<string, number>();
 	const kill = deps.kill ?? ((pid: number, signal: NodeJS.Signals) => process.kill(pid, signal));
@@ -245,6 +259,18 @@ export function createBgWork(deps: BgWorkDeps) {
 			if (w.status !== "failed" || w.cancelled || told.has(w.id)) continue;
 			told.add(w.id);
 			deps.log?.(`background work ${w.id} failed${w.target ? ` in ${w.target}` : ""}: ${w.error || "no reason recorded"}`);
+		}
+		const ended = deps.turnEndedAt?.() ?? 0;
+		for (const w of works) {
+			if (w.status !== "failed" || w.cancelled) continue;
+			if (ended > (w.ended_at ?? 0)) {
+				w.handled = true;
+				continue;
+			}
+			if (!deps.handover || handed.has(w.id) || t - (w.ended_at ?? 0) < HANDOVER_AFTER_MS || deps.busy?.()) continue;
+			handed.add(w.id);
+			deps.log?.(`background work ${w.id} failed and no turn took it up: handed to the session to fix and finish`);
+			deps.handover(w);
 		}
 		const running = works.filter(w => w.status === "running").sort((a, b) => a.started_at - b.started_at);
 		const finished = works.filter(w => w.status !== "running").sort((a, b) => (b.ended_at ?? 0) - (a.ended_at ?? 0));

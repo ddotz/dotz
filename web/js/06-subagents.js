@@ -7,7 +7,10 @@ const runningSubs = src => (SUBS[src] || []).filter(s => s.status === "running")
 /* ---------- 백그라운드 작업: S.work from /api/state (hub/bgwork.ts). A request answered with [later] keeps working after its turn ended. ---------- */
 const workRunning = () => ((S && S.work) || []).filter(w => w.status === "running");
 // What ended within the last hour (the gateway keeps it that long, hub/bgwork.ts FINISHED_KEEP_MS), newest first.
-const workEnded = () => ((S && S.work) || []).filter(w => w.status !== "running");
+// A failure the agent already took up (hub/bgwork.ts handled) is over for the owner: it leaves the ended list.
+const workEnded = () => ((S && S.work) || []).filter(w => w.status !== "running" && !(w.status === "failed" && !w.cancelled && w.handled));
+// A failure no turn took up yet is being taken up by the agent itself (owner 2026-10-29), so it reads as progress, never as a retry request.
+const workRecovering = w => w.status === "failed" && !w.cancelled && !w.handled;
 // 실패 · <이유> (중단됨 for one the owner stopped): the reason is the gateway's own Korean line (hub/runstate.ts failureText).
 const workFailText = w => (w.cancelled ? "중단됨" : `실패 · ${w.reason || "이유가 기록되지 않았어요"}`);
 // 중단: the worker's process ends (POST /api/workers/:id/cancel); 다시 맡기기: its request goes to the orchestrator again in its own conversation.
