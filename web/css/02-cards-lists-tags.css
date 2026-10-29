@@ -34,6 +34,8 @@ code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom
 button.cchip.unrep-no { height: 22px; padding: 0 8px; font-size: 11.5px; color: var(--unreplied); }
 /* 초안 작성 beside 답장 안 함: the one action that moves the mail forward, so it carries the accent (30-monitoring.js mailActButton) */
 button.cchip.mr-draft { height: 22px; padding: 0 8px; font-size: 11.5px; font-weight: 600; color: var(--accent); }
+/* a mail's row buttons on a phone: a finger-sized target (the row itself opens the mail, so a near miss must not) */
+@media (pointer: coarse), (max-width: 639px) { button.cchip.mr-act { height: 32px; padding: 0 12px; font-size: 13px; } }
 .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .row + .row { margin-top: 8px; }
 .row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

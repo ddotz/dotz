@@ -82,6 +82,12 @@ const waitFor = (v: View, expr: string, ms = 5000) =>
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
+// the same view in the light and the dark theme
+const shots = async (v: View, name: string) => {
+	if (!SHOTS) return;
+	for (const theme of ["light", "dark"]) { await run(v, `document.documentElement.dataset.theme = "${theme}"`); await shot(v, `${name}-${theme}.png`); }
+	await run(v, `delete document.documentElement.dataset.theme`);
+};
 
 const SUBJECT: Record<string, string> = { "mail:loc-1": "계약서 확인 부탁드립니다", "mail:loc-2": "회의록 공유", "mail:loc-3": "Re: 회의록 공유", "mail:peer-1": "견적 문의드립니다", "mail:peer-2": "배송 안내" };
 const row = (t: string) => `[...document.querySelectorAll("#mon-tl .mr")].find(r => r.querySelector(".rc-title").textContent === ${JSON.stringify(SUBJECT[t])})`;
@@ -116,6 +122,7 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 
 		test("the ⋯ sits at the top right of every card and opens 초안 작성, 답장 안 함 and 삭제", async () => {
 			await openList(v, false);
+			await shots(v, `mail-list-${width}`);
 			const box = await q<{ card: DOMRect; btn: DOMRect }[]>(v, `return [...document.querySelectorAll("#mon-tl .mr")].map(r => ({ card: r.getBoundingClientRect().toJSON(), btn: r.querySelector(".mr-more").getBoundingClientRect().toJSON() }))`);
 			expect(box.length).toBe(2);   // 전체 is the received mail; the sent one is under 보낸 메일
 			expect(await q<boolean>(v, `return !!${row("mail:loc-3")}`)).toBe(false);
@@ -137,7 +144,7 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			await openList(v, false);
 			expect(await menuOf(v, "mail:loc-2")).toEqual(["초안 작성", "답장 필요로 표시", "삭제"]);
 			expect(await inlineOf(v, "mail:loc-1")).toEqual(["초안 작성", "답장 안 함"]);
-			expect(await inlineOf(v, "mail:loc-2")).toEqual([]);
+			expect(await inlineOf(v, "mail:loc-2")).toEqual(["초안 작성"]);   // 초안 작성 shows on every incoming row, owed or not
 			// 답장 필요로 표시 on a mail with no state makes it 답장 필요, with the same buttons as every owed row
 			await pick(v, "mail:loc-2", "답장 필요로 표시");
 			await waitFor(v, `${row("mail:loc-2")}.querySelector(".rc-hd .tag")?.textContent === "답장 필요"`);
@@ -207,6 +214,10 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			await waitFor(v, `[...document.querySelectorAll(".bm.rc:not(.mr) .rc-hd .mr-more")].find(b => b.offsetParent)`);
 			// the conversation finishes loading (its thread panel) before the tap: the ⋯ has kept the same place for 10 frames
 			await waitFor(v, `(() => { const b = [...document.querySelectorAll(".bm.rc:not(.mr) .rc-hd .mr-more")].find(b => b.offsetParent), y = b && b.getBoundingClientRect().top; window.__mm = window.__mm && window.__mm.y === y ? { y, n: window.__mm.n + 1 } : { y, n: 0 }; return window.__mm.n >= 10; })()`);
+			// 초안 작성 is visible without the ⋯: on the card on a phone, in the conversation head (and not again on the card) on a wide screen
+			const draft = await q<{ card: number; head: number; inView: boolean }>(v, `const vis = s => [...document.querySelectorAll(s)].filter(b => b.offsetParent), d = [...vis(".bm.rc:not(.mr) .mr-conv-act .mr-draft"), ...vis(".cv-head .cv-draft")][0], r = d && d.getBoundingClientRect(); return { card: vis(".bm.rc:not(.mr) .mr-conv-act .mr-draft").length, head: vis(".cv-head .cv-draft").length, inView: !!r && r.width > 0 && r.bottom <= innerHeight && r.right <= innerWidth }`);
+			expect(draft).toEqual(width < 1100 ? { card: 1, head: 0, inView: true } : { card: 0, head: 1, inView: true });
+			await shots(v, `mail-conv-${width}`);
 			await run(v, `[...document.querySelectorAll(".bm.rc:not(.mr) .rc-hd .mr-more")].find(b => b.offsetParent).click()`);
 			await waitFor(v, `document.querySelector(".menu .mi")`);
 			expect(await menuLabels(v)).toEqual(["초안 작성", "답장 안 함", "삭제"]);

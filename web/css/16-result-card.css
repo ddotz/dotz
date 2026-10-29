@@ -85,7 +85,13 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .mr-todo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mr-slot { margin-top: 6px; display: flex; gap: 6px; }
 /* the ⋯ of a mail card (30-monitoring.js mailMenuBtn): the last item of the header, at the top right; the negative margin keeps the 16px header line */
-.rc-hd .mr-more { margin: -6px -8px -6px 0; color: var(--fg-3); }
+/* --fg-2 and a larger icon (owner 2026-10-29): the --fg-3 dots were easy to miss on the card */
+.rc-hd .mr-more { margin: -6px -8px -6px 0; color: var(--fg-2); }
+.rc-hd .mr-more .ic { width: 20px; height: 20px; }
+.rc-hd .mr-more:hover, .rc-hd .mr-more[aria-expanded="true"] { background: var(--active); color: var(--fg); }
+/* 초안 작성 on the open mail's card (11-todo-strip.js): below 1100px, where the conversation head and its 초안 작성 are hidden */
+.mr-conv-act { margin-top: 2px; }
+@media (min-width: 1100px) { .mr-conv-act { display: none; } }
 .rc-hd .rc-src + .mr-more, .rc-hd .tag + .mr-more { margin-left: auto; }
 @media (pointer: coarse), (max-width: 639px) { .rc-hd .mr-more { margin: -10px -10px -10px 0; } }
 .mr-clip { flex: none; display: inline-flex; align-items: center; gap: 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; }

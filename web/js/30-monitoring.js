@@ -523,12 +523,12 @@ async function mailSetFyi(t, on) {
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
 // The actions of a mail, one list for the ⋯ of every mail card and for the buttons of every row. Incoming: 초안 작성, then 답장 안 함 while a reply
-// is owed (답장 필요 / 초안 있음) or 답장 필요로 표시 in any other state, then 삭제. Outgoing: 삭제. The one rule for a row's buttons: a row whose reply
-// is owed shows these actions without 삭제 under its summary; every other row keeps them in its ⋯ only.
+// is owed (답장 필요 / 초안 있음) or 답장 필요로 표시 in any other state, then 삭제. Outgoing: 삭제. The one rule for a row's buttons: every incoming row
+// shows 초안 작성 under its summary, without a tap on the ⋯ (owner 2026-10-29); a row whose reply is owed adds 답장 안 함. The rest stays in the ⋯.
 const MAIL_ACT = { draft: "초안 작성", no: "답장 안 함", need: "답장 필요로 표시", delete: "삭제" };
 const mailOwed = m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft");
 const mailActs = m => m.dir === "out" ? ["delete"] : ["draft", mailOwed(m) ? "no" : "need", "delete"];
-const mailRowActs = m => mailOwed(m) ? mailActs(m).filter(a => a !== "delete") : [];
+const mailRowActs = m => m.dir === "out" ? [] : mailOwed(m) ? ["draft", "no"] : ["draft"];
 const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "delete" ? mailDelete(t) : mailSetFyi(t, a === "no");
 // busy: a second tap while it posts does nothing
 const mailActButton = (t, a) => a === "draft" ? mailDraftButton(t) : el("button", { class: "cchip mr-act unrep-no", type: "button", "data-k": `mail-${a}`, text: MAIL_ACT[a], onclick: ev => { ev.stopPropagation(); busy(ev.currentTarget, () => mailActRun(t, a, null)); } });

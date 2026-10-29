@@ -97,7 +97,7 @@ for (const width of [1440, 390]) {
 		expect(got.rowCount).toBe(0);
 		expect(got.over).toBe(false);
 		expect(got.rowRole).toEqual(["button", 0]);
-		expect(got.rowButtons).toEqual(["mail-menu"]);   // the row itself is the link; its one button is the ⋯ every mail row has
+		expect(got.rowButtons).toEqual(["mail-menu", "mail-draft"]);   // the row itself is the link; its buttons are the ⋯ every mail row has and 초안 작성 of an incoming mail
 
 		const edit = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .btn.tonal").click(), JSON.stringify((() => {
 			const c = document.querySelector("#mon-tl > .bm.dr"), ta = c.querySelector("textarea.dr-edit");

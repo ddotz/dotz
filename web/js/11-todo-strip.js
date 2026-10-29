@@ -180,6 +180,9 @@ function msgNode(e) {
         const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: text.split("\n").slice(1).join("\n").trim(), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw) : undefined });
         // 보낸 사람 / 받는 사람 / 참조 and the same-sender thread (30-mail-thread.js) sit under the summary, above the original
         if (card && key) { const meta = mailMetaNode(`mail:${key}`, e), fold = card.querySelector(".rc-raw"); if (fold) card.insertBefore(meta, fold); else card.append(meta); if (MT_READY) mailThreadSync(); }
+        // 초안 작성 under the summary of an incoming mail, the same button as on its row (30-monitoring.js mailDraftButton): no tap on the ⋯ first.
+        // A wide screen hides it (16-result-card.css): the conversation head there has its own 초안 작성 (31-conversations.js cv-draft).
+        if (card && key && ((MAILS.get(`mail:${key}`) || {}).dir || e.dir) !== "out") { const meta = card.querySelector(".mhd-wrap"); card.insertBefore(el("div", { class: "mr-slot mr-conv-act" }, mailDraftButton(`mail:${key}`)), meta || card.querySelector(".rc-raw")); }
         const files = card && key && Array.isArray(e.attachments) ? mailFilesNode(key, e.attachments) : null;
         if (files) card.append(files);
         // the same ⋯ as the mail's row in the list, at the top right (30-monitoring.js mailMenuBtn)
