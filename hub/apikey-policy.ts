@@ -44,32 +44,44 @@ function liftedUntil(): number | undefined {
 	}
 }
 
-// The accounts named in <DOTZ_DIR>/config.json guard.no_api_key_accounts, re-read when the file changes. Read from the file itself (not
-// config.ts) so any process that spawns agents applies the same rule. Missing, unreadable or not a list of strings: none.
-let banCache: { file: string; stamp: string; names: Set<string> } | undefined;
-function bannedAccounts(): Set<string> {
+// API keys are off unless <DOTZ_DIR>/config.json sets guard.allow_api_key to true (owner 2026-10-22: "api로 넘어가지마라";
+// a subscription limit moves to another subscription account, never to a key). 2026-10-28 22:20 KST an API-key fallback entry
+// left on moved the orchestrator onto the key. A missing, unreadable or non-true value keeps keys off (fail closed).
+export const API_KEY_OFF = "guard.allow_api_key";
+
+// The accounts named in <DOTZ_DIR>/config.json guard.no_api_key_accounts and the guard.allow_api_key switch, re-read when the
+// file changes. Read from the file itself (not config.ts) so any process that spawns agents applies the same rule. Missing,
+// unreadable or not a list of strings: no account named, keys off.
+let banCache: { file: string; stamp: string; names: Set<string>; allow: boolean } | undefined;
+function guardRules(): { names: Set<string>; allow: boolean } {
 	const file = join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "config.json");
 	let stamp: string;
 	try {
 		const st = statSync(file);
 		stamp = `${st.mtimeMs}:${st.size}`;
 	} catch {
-		return new Set();
+		return { names: new Set(), allow: false };
 	}
-	if (banCache?.file === file && banCache.stamp === stamp) return banCache.names;
+	if (banCache?.file === file && banCache.stamp === stamp) return banCache;
 	let names = new Set<string>();
+	let allow = false;
 	try {
-		const v = JSON.parse(readFileSync(file, "utf8"))?.guard?.no_api_key_accounts;
+		const guard = JSON.parse(readFileSync(file, "utf8"))?.guard;
+		const v = guard?.no_api_key_accounts;
 		if (Array.isArray(v)) names = new Set(v.filter((x): x is string => typeof x === "string" && x.length > 0));
+		allow = guard?.allow_api_key === true;
 	} catch {}
-	banCache = { file, stamp, names };
-	return names;
+	banCache = { file, stamp, names, allow };
+	return banCache;
 }
 
-// The pinned account that forbids API keys right now, or undefined when keys are allowed.
+// What forbids API keys right now: API_KEY_OFF while keys are off, else the pinned account that forbids them, or undefined
+// when keys are allowed. The lift file only lifts the account pin, never API_KEY_OFF.
 export function apiKeyBan(): string | undefined {
+	const rules = guardRules();
+	if (!rules.allow) return API_KEY_OFF;
 	const a = pinnedAccount();
-	return a && bannedAccounts().has(a) && !liftedUntil() ? a : undefined;
+	return a && rules.names.has(a) && !liftedUntil() ? a : undefined;
 }
 
 // `env` without API-key variables while the ban holds (unchanged otherwise).
