@@ -261,6 +261,8 @@ describe("against temp git repos", () => {
 			expect(h.alerts).toHaveLength(1);
 			expect(h.alerts[0]).toContain("결정:");
 			expect(h.alerts[0]).toContain("1) ");
+			// the first changed file keeps its two-column status, so the screen does not read "M .txt" (Mac mini 2026-10-29: "ub/laneops.ts")
+			expect((await check(opts())).dirty).toEqual([" M a.txt"]);
 			expect(h.restarts).toBe(0);
 			expect(h.worklog).toEqual([]);
 		});
