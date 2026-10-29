@@ -384,7 +384,8 @@ function fromInbox(e: HubEvent): void {
 			void summarizeWatch(output).then(summary => summary && retextWatch(item.id, clean(watchLine(head, reason, output, { prev, summary })).text));
 		return;
 	}
-	if (e.kind === "schedule") {
+	// the gateway's own wakes (update carry-over, text overrides: main.ts wakeOnce) are instructions to the assistant, not the owner's schedules
+	if (e.kind === "schedule" && e.source !== "gateway") {
 		const ch = typeof e.channel === "string" && /^ch:\d+$/.test(e.channel) ? e.channel : "main";
 		upsert({ kind: "watch", tone: "", title: "예약", text: clean(scheduleLine(String(e.text ?? ""), { raw: false })).text, open: ch, at: e.ts });
 	}
