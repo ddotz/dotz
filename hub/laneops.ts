@@ -162,7 +162,8 @@ export function claimPrefix(name: string): string {
 export function stopLane(name: string): void {
 	const lane = known(name);
 	const proc = lane.proc;
-	if (lane.waiting) {
+	// Queued, or no process at all (a spawn that failed): nothing to kill, the lane just ends and frees its slot.
+	if (lane.waiting || !proc) {
 		lane.waiting = undefined;
 		setStatus(lane, "exited");
 	}
@@ -341,7 +342,9 @@ export function restoreLanes(): string[] {
 }
 
 // A lane is busy while its turn runs or any of its task workers still runs (a turn often ends while workers go on).
-export const laneBusy = (lane: Lane): boolean => lane.status === "working" || lane.status === "starting" || runningSubagents(`lane:${lane.name}`) > 0;
+// Only a live process is busy: a queued lane or one whose spawn failed has nothing a gateway restart could cut off (the Mac mini's
+// restart waited on the dead kdb-allowance-review, 2026-10-29).
+export const laneBusy = (lane: Lane): boolean => (Boolean(lane.proc) && (lane.status === "working" || lane.status === "starting")) || runningSubagents(`lane:${lane.name}`) > 0;
 
 // Memory: stops an idle lane's process (~1 GB with its claude child) and keeps the lane idle on the same session file; the
 // next message resumes it there (sendToLane), and a gateway restart leaves it stopped (restoreLanes). Never a busy lane.

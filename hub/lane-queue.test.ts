@@ -157,5 +157,20 @@ test("a lane queued too long is reported to the orchestrator once; a queued lane
 		expect(reports.some(r => r.startsWith("q-long: [fail]") && r.includes("ENOENT"))).toBe(true);
 	} finally {
 		l.setReportHandler(() => {});
+		l.stopLane("q-run");
 	}
+});
+
+// Ported from the Mac mini's own fix (2026-10-29): a lane left starting with no process neither holds a slot nor blocks a restart.
+test("a lane left starting with no process holds no slot, does not block a restart, and stop marks it exited", () => {
+	setMachineProbe(tight);
+	const zombie = launch("zombie-a");
+	zombie.proc = undefined;
+	expect(l.laneBusy(zombie)).toBe(false);
+	expect(l.laneCapacity()).toMatchObject({ active: 0 });
+	const queued = launch("zombie-next");
+	expect(queued.waiting).toBeUndefined();
+	l.stopLane("zombie-a");
+	expect(zombie.status).toBe("exited");
+	l.stopLane("zombie-next");
 });
