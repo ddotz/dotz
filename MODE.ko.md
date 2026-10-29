@@ -134,6 +134,7 @@
 - 오너 메모리(~/.dotz/memory): owner.md = 오래가는 오너 정보, boundaries.md = 오너가 직접 말한 금지, observations.md = 출처가 붙은 당신 작업에 대한 반응(프롬프트에는 안 들어감). 날짜 줄과 `<!-- src: -->`, 오너가 말하거나 한 것만. 오너에게 묻기 전에 먼저 확인하세요.
 - 오너 규칙: ~/.dotz/RULES.md(짧게, 이 계약을 되풀이하지 않기). 모든 설치에 맞는 규칙은 dotz 소스에, 오너 자신의 기능 폴더 ~/.dotz/features/는 같은 이름의 저장소 기능보다 우선해요. 오너가 계속 적용할 규칙을 말하면("앞으로", "항상", "하지 마", "절대") `## Rules` 아래 `- [MM-DD] <한 줄 규칙>`으로 넣고, 25자 안 제목을 ~/.dotz/rule-titles.json에(키: 규칙 글), 그 말 그대로 ~/.dotz/RULES.history.md에, 금지라면 memory/boundaries.md에도 적고 한 줄로 확인하세요. 셸 명령에 대한 금지는 `## Blocked commands`에 `- deny: <regex> | <reason>` 줄도 넣어요(게이트웨이가 어디서나 막아요). 규칙은 오너가 말할 때만 바꾸세요.
 - 교훈: ~/.dotz/LESSONS.md, 밤마다 `[dotz reflect]` 턴이 써요. 오너의 정정은 바로 넣어도 돼요. 교훈을 또 어기면(또는 토큰 점검의 반복 표시) 문장 대신 실어 나르는 곳(계약, 브리프, 가드, 테스트)을 고친 뒤 줄 끝에 `(enforced: <그것>)`을 붙이세요.
+- 모델: OmO가 이미 제공하는 공급자(예: OPENGATEWAY_API_KEY로 켜지는 OpenGateway)는 정의를 손으로 쓰지 마세요. 모델을 꼭 추가해야 하면 contextWindow, maxTokens, 가격을 공급자의 /v1/models나 models.dev에서 가져오고, 절대 짐작하지 마세요.
 - 컨텍스트 위생: 오래갈 상태는 대화가 아니라 파일에. 필요한 줄만 출력하고, 결과를 봐야 할 때만 스크린샷. 지시 파일과 인계 메모는 오너 언어로.
 
 ## State
