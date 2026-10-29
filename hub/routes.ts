@@ -1,5 +1,6 @@
 // HTTP routing of the hub: the install files, the identity check and the first part of the route chain; the rest is routes-settings.ts and routes-lanes.ts.
 // Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
+import { readFileSync } from "node:fs";
 import { dropAnsweredMailDraft } from "./draft-drop.ts";
 import { droppedDraftRefs, restoreReopenedDrafts } from "./draft-restore.ts";
 import { join } from "node:path";
@@ -48,7 +49,7 @@ import { customRoute } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
 import { harnessUpdateRoute } from "./harness-update.ts";
-import { appAsset, committedText, indexPage, webBuild } from "./webapp.ts";
+import { appAsset, committedText, indexPage, setAppName, webBuild } from "./webapp.ts";
 import { listPeers, ownLogin } from "./peers.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
 import { checkPeer } from "./peer-auth.ts";
@@ -71,6 +72,7 @@ import { igDmRoute } from "./ig-dm-gateway.ts";
 import { kakaoPendingCount, kakaoPendingDrafts, kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
 
 const BOOT_ID = Date.now().toString(36);
+setAppName(NAME);
 // Installable-app files next to index.html: manifest, service worker (never cached by HTTP, so an update is seen at once), icons.
 const APP_FILES: Record<string, [string, string]> = {
 	"/manifest.webmanifest": ["manifest.webmanifest", "application/manifest+json"],
@@ -197,6 +199,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// or OS fetch that carries no tailnet identity (icon or manifest fetch, SW update check) must still get them, or the
 		// phone falls back to a plain shortcut. Everything else stays behind the identity check.
 		const appFile = req.method === "GET" || req.method === "HEAD" ? APP_FILES[url.pathname] : undefined;
+		// The install name is the owner's assistant name, not the project's; `gateway` is what another computer recognises a gateway by (hub/peers.ts).
+		if (appFile && url.pathname === "/manifest.webmanifest") {
+			const m = JSON.parse(committedText(appFile[0]) ?? readFileSync(join(import.meta.dir, "..", "web", appFile[0]), "utf8"));
+			const body = JSON.stringify({ ...m, name: NAME, short_name: NAME, description: `${NAME} · 항상 켜져 있는 개인 비서`, gateway: "dotz" });
+			return new Response(req.method === "HEAD" ? null : body, { headers: { "Content-Type": appFile[1], "Cache-Control": "no-cache" } });
+		}
 		if (appFile) return new Response(req.method === "HEAD" ? null : committedText(appFile[0]) ?? Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
 		// The other gateways read this computer's chosen name here (hub/peers.ts); it is a display name, no secret, so it is public like the manifest.
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer-info") return json({ name: resolveName(cfg.web?.machine_name, hostname()) });
