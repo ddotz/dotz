@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
-import { analyze, fallbackAfterCapacity, findingsOf, projectLabel } from "./token-audit.ts";
+import { analyze, auditAlert, fallbackAfterCapacity, findingsOf, material, projectLabel } from "./token-audit.ts";
 
 const T0 = Date.UTC(2026, 9, 19, 12);
 const at = (min: number) => new Date(T0 + min * 60e3).toISOString();
@@ -79,4 +79,26 @@ test("fallback minutes count only after the 429 window ends", () => {
 	const w = [{ from: 0, to: 60 * 60e3 }];
 	expect(fallbackAfterCapacity([10 * 60e3, 50 * 60e3], w)).toBe(0);
 	expect(fallbackAfterCapacity([10 * 60e3, 70 * 60e3, 150 * 60e3], w)).toBe(90);
+});
+
+// Owner 2026-10-29: the nightly message drops the minor warnings; with nothing that matters it is not sent at all.
+const f = (kind: string, cost: number, recur?: number) => ({ flag: true, kind, who: "오케스트레이터 01a1", what: kind, amount: `$${cost}`, save: 0, cost, tip: "확인", ...(recur ? { recur } : {}) });
+const base = { since: Date.parse("2026-10-28T19:30:00Z"), now: Date.parse("2026-10-29T19:30:00Z"), total: 116.4e6, totalCost: 37.79, reportPath: "/tmp/r.md" };
+
+test("only minor warnings: nothing is sent", () => {
+	expect(auditAlert({ ...base, flags: [f("에러 연속", 0, 2), f("캐시 깨짐", 0.72)], recurring: ["에러 연속"] })).toBeUndefined();
+});
+
+test("the message carries only what matters and says how many minor ones stayed in the report", () => {
+	const text = auditAlert({ ...base, flags: [f("급증", 0), f("캐시 깨짐", 0.72), f("헛깨움", 3.2), f("에러 연속", 0, 3), f("반복 호출", 0.4, 3)], recurring: ["에러 연속", "반복 호출"] })!;
+	expect(text).toContain("볼 만한 경고 3건");
+	expect(text).toContain("- 급증");
+	expect(text).toContain("- 헛깨움");
+	// a warning back three days running is told when it costs something; a 0-token error streak (the gateway alerts errors itself) is not
+	expect(text).toContain("며칠째 반복: 반복 호출");
+	expect(text).not.toContain("에러 연속");
+	expect(text).not.toContain("캐시 깨짐");
+	expect(text).toContain("사소한 경고 2건은 보고서에만");
+	expect(material(f("캐시 깨짐", 0.99))).toBe(false);
+	expect(material(f("캐시 깨짐", 1))).toBe(true);
 });
