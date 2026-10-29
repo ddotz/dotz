@@ -56,7 +56,7 @@ import { checkPeer } from "./peer-auth.ts";
 import { activatePeerMonitor, createPeerMonitor } from "./peer-monitor.ts";
 import { handleLease, type LeaseReq } from "./send-lease.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
-import { hostname } from "node:os";
+import { machineHost } from "./hostname.ts";
 import { queue, bgWork, out, progress, fileRoots } from "./outbound.ts";
 import { convs, maxLiveView } from "./convsessions.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
@@ -238,7 +238,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if (appFile) return new Response(req.method === "HEAD" ? null : committedText(appFile[0]) ?? Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
 		// The other gateways read this computer's chosen name here (hub/peers.ts); it is a display name, no secret, so it is public like the manifest.
-		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer-info") return json({ name: resolveName(cfg.web?.machine_name, hostname()) });
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer-info") return json({ name: resolveName(cfg.web?.machine_name, machineHost()) });
 		// Pairing gates itself: only a request from this node's own tailscale login gets a token (hub/peer-pair.ts), so it needs no owner check first.
 		if (req.method === "POST" && url.pathname === PAIR_PATH) return handlePair(req, { ownLogin });
 		// A request with the peer header gets only the peer paths (hub/peer-auth.ts); a good one skips the owner check, a bad one never reaches it.
@@ -324,11 +324,11 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// Send lease of another gateway (hub/send-lease.ts): claim, release or record a sent id before an app message goes out.
 		if (req.method === "POST" && url.pathname === "/api/peer/lease") return json(handleLease((await body(req)) as LeaseReq, Date.now()));
 		// This computer's name for the settings screen: the one in use, the one the owner set (empty = none), and the hostname default.
-		if (url.pathname === "/api/machine" && req.method === "GET") return json({ name: resolveName(cfg.web?.machine_name, hostname()), custom: cleanName(cfg.web?.machine_name), default: friendlyName(hostname()) });
+		if (url.pathname === "/api/machine" && req.method === "GET") return json({ name: resolveName(cfg.web?.machine_name, machineHost()), custom: cleanName(cfg.web?.machine_name), default: friendlyName(machineHost()) });
 		if (url.pathname === "/api/machine" && req.method === "PUT") {
 			const name = cleanName((await body(req)).name);
 			setMachineName(name);
-			return json({ name: resolveName(name, hostname()), custom: name, default: friendlyName(hostname()) });
+			return json({ name: resolveName(name, machineHost()), custom: name, default: friendlyName(machineHost()) });
 		}
 		if (req.method === "GET" && url.pathname === "/api/workers") return json({ items: bgWork.list() });
 		// 중단 (the worker's process ends; a lane's worker too) and 다시 맡기기 (its request goes to the orchestrator again, in its own conversation).
@@ -849,7 +849,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (laneResponse) return laneResponse;
 		return new Response("not found", { status: 404 });
 	};
-	const peers = createPeerMonitor({ name: () => resolveName(cfg.web?.machine_name, hostname()), local: route, localHeaders: { "x-dotz-token": HUB_TOKEN }, orchestrator: () => ({ status: orch.status, pauseKind: orch.pauseKind }), runs: () => Object.fromEntries(Object.entries(stateRuns()).filter(([k]) => k.startsWith("mail:"))) });
+	const peers = createPeerMonitor({ name: () => resolveName(cfg.web?.machine_name, machineHost()), local: route, localHeaders: { "x-dotz-token": HUB_TOKEN }, orchestrator: () => ({ status: orch.status, pauseKind: orch.pauseKind }), runs: () => Object.fromEntries(Object.entries(stateRuns()).filter(([k]) => k.startsWith("mail:"))) });
 	activatePeerMonitor(peers);
 	return route;
 }
