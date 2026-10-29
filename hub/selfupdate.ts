@@ -537,7 +537,9 @@ export async function check(o: Options): Promise<CheckResult> {
 		incoming: parseCommits(inc.out),
 		incomingTotal: Number(count.out.trim()) || 0,
 		ahead: parseCommits(ahead.out),
-		dirty: dirty.out.split("\n").filter(Boolean).slice(0, 40),
+		// exec trims its output, which takes the first line's leading blank (" M hub/x.ts" -> "M hub/x.ts"): put the two-column status back,
+		// or the screen reads the path one letter short ("ub/x.ts").
+		dirty: dirty.out.split("\n").filter(Boolean).map(l => (/^\S /.test(l) ? ` ${l}` : l)).slice(0, 40),
 	};
 	if (v.branch !== branch) r.blocked.push(`지금 브랜치가 ${v.branch}이에요. ${branch}에서만 업데이트해요.`);
 	if (r.incomingTotal > 0 && r.remoteHead && (r.ahead.length || r.dirty.length)) {
