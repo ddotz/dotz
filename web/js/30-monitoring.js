@@ -498,18 +498,40 @@ const mailDraftAsk = async (t, btn, instruction = "") => {
   toast("답장 초안을 만들고 있어요. 다 되면 이 메일에 승인 카드가 떠요");
   if (btn) { btn.disabled = true; btn.textContent = "만드는 중…"; }
 };
-// 초안 작성 asks first what the reply should say (owner 2026-10-28); an empty box makes the draft on its own, as before.
+// The sample in the 초안 작성 box, made from the summary the mail already has (hub/mail.ts MailRecord.summary: 요약, 할 일), no model call:
+// the first 할 일, else the first point of 요약, quoted in one example instruction that fits it. "" without a summary (the fixed hint then).
+const mailDraftCut = s => { const one = s.split(/(?<=[.!?])\s+/)[0].replace(/[.!?。]+$/, "").trim(); return one.length > 28 ? `${one.slice(0, 27).trim()}…` : one; };
+function mailDraftSample(m) {
+  if (!m || !m.summary) return "";
+  const skip = mailSkip(m), p = mailParts(m.summary, skip), lead = p.todo || p.points[0] || mailLines(m.summary, skip)[0] || "";
+  if (!lead) return "";
+  const cut = mailDraftCut(lead), x = `‘${cut}’`;
+  if (p.todo) return `예: ${x} 건은 이번 주 안에 처리하겠다고 써 줘`;
+  // a point is a sentence: quoted with 라는 / 이라는 by the last syllable (a final consonant takes 이라는)
+  const h = [...cut].reverse().find(c => c >= "가" && c <= "힣"), said = `${x}${h && (h.charCodeAt(0) - 0xac00) % 28 ? "이라는" : "라는"}`;
+  if (/일정|회의|미팅|약속|방문|참석/.test(lead)) return `예: ${said} 제안에 그 시간 괜찮다고, 장소만 다시 알려 달라고 써 줘`;
+  if (/요청|문의|부탁|검토|확인|회신|답변|제안/.test(lead)) return `예: ${said} 내용은 확인하고 금요일까지 답드린다고 써 줘`;
+  return `예: ${said} 내용 잘 받았다고, 감사 인사와 함께 짧게 써 줘`;
+}
+// 초안 작성 asks first what the reply should say (owner 2026-10-28); an empty box makes the draft on its own, as before. Above the box: the mail
+// it answers (sender, subject, the row's summary lines), so the owner writes the instruction without going back to the mail.
 function mailDraftDialog(t, btn) {
+  const m = MAILS.get(t), sample = mailDraftSample(m);
   const ta = el("textarea", { class: "fi", rows: "3", maxlength: "500", "data-k": "draft-instruction", "aria-label": "초안에 넣을 내용",
-    placeholder: "비워 두면 메일을 읽고 알아서 써요.\n예: 금요일까지 보내 드린다고, 견적서도 첨부한다고 써 줘" });
+    placeholder: sample || "비워 두면 메일을 읽고 알아서 써요.\n예: 금요일까지 보내 드린다고, 견적서도 첨부한다고 써 줘" });
+  const ctx = m ? el("div", { class: "md-ctx", "data-k": "draft-mail" },
+    el("div", { class: "md-from" }, icon("mail"), el("span", { text: mailSender(m.from) || m.from || "보낸 사람 없음" })),
+    el("div", { class: "md-subj", text: m.subject || "(제목 없음)" }),
+    ...mailSumNodes(m, t, mailBrief(m, t))) : null;
   const go = (close, b) => busy(b, async () => { close(); await mailDraftAsk(t, btn, ta.value.trim()).catch(e => toast(e.message || "초안을 요청하지 못했어요", true)); });
-  const d = dialog({ title: "답장 초안 만들기", body: el("div", { class: "col" }, el("div", { class: "sup", text: "어떻게 답할지 적으면 그대로 반영해요." }), ta),
+  const d = dialog({ title: "답장 초안 만들기", body: el("div", { class: "col md-dlg" }, ctx,
+      el("div", { class: "md-ask" }, el("div", { class: "md-lbl", text: "어떻게 답할까요?" }), ta, el("div", { class: "sup", text: sample ? "적은 내용을 그대로 반영해요. 비워 두면 메일을 읽고 알아서 써요." : "적은 내용을 그대로 반영해요." }))),
     actions: [{ label: "초안 만들기", kind: "pri", onclick: (close, b) => go(close, b) }] });
   ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   ta.focus();
 }
 const mailDraftRun = (t, b) => mailDraftDialog(t, b);
-const mailDraftButton = (t, cls = "cchip mr-act mr-draft") => el("button", { class: cls, type: "button", "data-k": "mail-draft", text: "초안 작성", onclick: ev => { ev.stopPropagation(); mailDraftDialog(t, ev.currentTarget); } });
+const mailDraftButton = (t, cls = "cchip mr-act mr-draft") => el("button", { class: cls, type: "button", "data-k": "mail-draft", onclick: ev => { ev.stopPropagation(); mailDraftDialog(t, ev.currentTarget); } }, icon("pencil"), "초안 작성");
 // 답장 안 함 / 답장 필요로 표시: the owner's own mark (POST / DELETE /api/mail/<key>/fyi, recorded as his with the time; a peer's mail on the computer
 // that holds it: 34-peer-monitoring.js pqRoute). The row, its tag, the filter counts and the app badges change at once; 답장 안 함 drops the mail's
 // waiting reply draft (확인 대기). 답장 필요로 표시 works from no state, from 답장 안 함 and from 답장함 (it needs another answer).

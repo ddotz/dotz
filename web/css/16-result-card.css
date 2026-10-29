@@ -84,6 +84,22 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .mr-todo b { flex: none; color: var(--warn); font-weight: 600; }
 .mr-todo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mr-slot { margin-top: 6px; display: flex; gap: 6px; }
+/* the 초안 작성 dialog (30-monitoring.js mailDraftDialog): the mail it answers as a tonal block (sender, subject, summary), then the box.
+   The block is a --bg well in the floating dialog (its --pop equals --layer in dark), and --card on the phone's full-screen --bg (14-overlay.css) */
+.md-dlg { gap: 16px; }
+.md-ctx { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 14px 16px; border-radius: var(--r-ctl); background: var(--bg); }
+@media (max-width: 639px) { .md-ctx { background: var(--card); } }
+.md-from { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.md-from span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-from .ic { width: 14px; height: 14px; }
+.md-subj { color: var(--fg); font-size: 16px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+.md-ctx .mr-sum { margin-top: 2px; font-size: 14px; line-height: 22px; -webkit-line-clamp: 3; }
+.md-ctx ul.mr-pts li { position: relative; padding-left: 12px; }
+.md-ctx ul.mr-pts li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 3px; height: 3px; border-radius: 50%; background: var(--fg-3); }
+.md-ctx .mr-todo { margin-top: 2px; font-size: 13px; line-height: 20px; }
+.md-ask { display: flex; flex-direction: column; gap: 8px; }
+.md-lbl { color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 600; }
+.md-ask textarea.fi { min-height: 88px; font-size: 15px; line-height: 22px; padding: 10px 12px; }
 /* the ⋯ of a mail card (30-monitoring.js mailMenuBtn): the last item of the header, at the top right; the negative margin keeps the 16px header line */
 /* --fg-2 and a larger icon (owner 2026-10-29): the --fg-3 dots were easy to miss on the card */
 .rc-hd .mr-more { margin: -6px -8px -6px 0; color: var(--fg-2); }
