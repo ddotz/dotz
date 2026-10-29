@@ -203,3 +203,19 @@ test("a session that still owes a request, or is paused on a usage limit, is not
 	registry.sweep();
 	expect(registry.live(c)).toBe(false);
 });
+
+// Mac mini 2026-10-29: short of memory, resting sessions held their memory for the whole 20-minute idle time.
+test("when the memory cap falls below what runs, the longest-resting sessions are parked at once; one that just answered stays", () => {
+	const o = { maxLive: 3 };
+	const { registry, tick } = setup(o);
+	registry.deliverTo("ch:1", "a", { target: "ch:1", owner: true });
+	tick(120_000);
+	registry.deliverTo("ch:2", "b", { target: "ch:2", owner: true });
+	tick(120_000);
+	registry.deliverTo("ch:3", "c", { target: "ch:3", owner: true });
+	registry.sweep();
+	expect(["ch:1", "ch:2", "ch:3"].map(k => registry.live(registry.get(k)!))).toEqual([true, true, true]);
+	o.maxLive = 1;
+	registry.sweep();
+	expect(["ch:1", "ch:2", "ch:3"].map(k => registry.live(registry.get(k)!))).toEqual([false, false, true]);
+});

@@ -377,8 +377,8 @@ const pmSessionRow = r => sessionRow({ name: r.name, title: r.title, status: r.s
 const pmWorkRow = w => {
   const run = w.status === "running";
   return el("button", { class: "li tap", type: "button", onclick: () => workGo(w) },
-    el("span", { class: `dot ${run ? "pri" : w.status === "done" ? "ok" : w.cancelled ? "" : "err"}` }),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : "실패"} · ${workAgo(w)}` })),
+    el("span", { class: `dot ${run || workRecovering(w) ? "pri" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err"}` }),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : workRecovering(w) ? "이어서 처리 중" : "실패 · 이어서 처리함"} · ${workAgo(w)}` })),
     icon("chev", "lead"));
 };
 // 진행 중: sessions that are alive and background jobs that are running. 최근 세션: the ended ones, newest first.

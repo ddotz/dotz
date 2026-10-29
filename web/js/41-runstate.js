@@ -7,7 +7,8 @@ const RUN_LABEL = { working: "작업 중", waiting: "답을 기다려요", idle:
 const RUN_DOT = { working: "pri", waiting: "warn", idle: "", limited: "warn", error: "err", stopped: "", done: "ok" };
 // "답을 기다려요" only when the owner's answer is awaited (a question); work the agent handed off reads as its own progress and is not
 // colored as needing him (owner 2026-10-28: "답을 기다려요" read as waiting on him; he picked "맡긴 작업 진행 중").
-const waitLabel = r => r.reason === "ask" ? RUN_LABEL.waiting : r.reason === "capacity" ? "순서를 기다려요" : "맡긴 작업 진행 중";
+// recover: a background worker failed and the agent takes it up itself (hub/runstate.ts failedRun) - its progress, not a request to the owner.
+const waitLabel = r => r.reason === "ask" ? RUN_LABEL.waiting : r.reason === "capacity" ? "순서를 기다려요" : r.reason === "recover" ? "이어서 처리 중" : "맡긴 작업 진행 중";
 const waitsOnOwner = r => r.kind === "waiting" && r.reason === "ask";
 // A conversation waiting on work it handed off or on its turn (capacity) is progressing: blue on every row that shows it, like this line.
 const runOf = t => (S && S.runs && S.runs[t === MAIN ? "main" : t]) || null;
@@ -32,7 +33,7 @@ function runText(r) {
   const label = RUN_LABEL[r.kind] || "알 수 없음", left = r.todos ? `할 일 ${r.todos}개 남음` : "";
   switch (r.kind) {
     case "working": return [label, r.detail, r.since ? runSince(r.since) : ""].filter(Boolean).join(" · ");
-    case "waiting": return [waitLabel(r), r.reason === "later" ? "" : r.detail, r.reason === "work" && r.since ? runSince(r.since) : "", left].filter(Boolean).join(" · ");
+    case "waiting": return [waitLabel(r), r.reason === "later" ? "" : r.reason === "recover" && r.detail ? `${r.detail.split(" · ")[0]} 실패` : r.detail, r.reason === "work" && r.since ? runSince(r.since) : "", left].filter(Boolean).join(" · ");
     case "idle": {
       const why = r.reason === "unfinished" ? "이번 턴이 끝났는데 할 일이 남아 있어요" : r.reason === "unknown" ? "이유를 알 수 없어요" : "";
       return [label, left, why].filter(Boolean).join(" · ");
@@ -54,7 +55,7 @@ function runAction(r, t = target) {
   const peer = isMailT(t) && typeof pqPc === "function" && !!pqPc(t);
   if (r.work && !peer) {
     // 중단 is the send button itself while work runs (14-slash-commands.js renderWorking: send turns into stop), not a second button here.
-    if (r.kind === "working" || (r.kind === "waiting" && r.reason === "work")) return null;
+    if (r.kind === "working" || (r.kind === "waiting" && (r.reason === "work" || r.reason === "recover"))) return null;
     if (r.kind === "error" && r.reason === "work") return { label: "다시 맡기기", run: ev => workRetry(r.work, ev.currentTarget) };
   }
   if (isMailT(t)) return null;

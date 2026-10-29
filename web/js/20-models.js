@@ -10,18 +10,30 @@ async function loadModels(quiet) {
   if (current === "settings") renderSettings();
   if (current === "context") renderContext();
 }
+// Where a model is reached (owner 2026-10-29: two "Opus 5.5" rows could not be told apart): a subscription login says 구독 and the
+// account name it is signed in as, an API key says API and the provider (/api/providers: auth, account, name).
+function modelSource(provider) {
+  const p = ((P && P.providers) || []).find(x => x.id === provider);
+  if (!p) return "";
+  if (p.auth === "oauth") return `구독 ${p.account || "계정"}`;
+  if (p.auth === "api_key") return `API ${p.name || p.id}`;
+  return "";
+}
 // Model picker rows from the server's choices: one "<Family> <version>" per model grouped by family, the latest two per
 // family shown and the rest folded under '이전 모델' (the current selection is never folded).
 function modelPickItems(avail, val) {
   const items = [], groups = new Map(), older = [];
   for (const a of avail) { const g = a.family || providerName(a.provider); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(a); }
-  const row = a => ({ value: a.selector, label: a.name || a.selector });
+  // Each row says where the model is reached when its group mixes sources (Opus over a subscription and over an API key); a group from
+  // one source says it once, in its header.
+  const one = list => new Set(list.map(a => a.provider)).size === 1;
+  const row = (a, tag = true) => ({ value: a.selector, label: [a.name || a.selector, tag ? modelSource(a.provider) : ""].filter(Boolean).join(" · ") });
   for (const [g, list] of groups) {
-    const now = list.filter(a => !a.older || a.selector === val);
-    if (now.length) items.push({ header: g }, ...now.map(row));
+    const now = list.filter(a => !a.older || a.selector === val), src = one(list) ? modelSource(list[0].provider) : "";
+    if (now.length) items.push({ header: src ? (g === list[0].provider || g === providerName(list[0].provider) ? src : `${g} · ${src}`) : g }, ...now.map(a => row(a, !src)));
     older.push(...list.filter(a => a.older && a.selector !== val));
   }
-  if (older.length) items.push({ fold: [{ header: "이전 모델" }, ...older.map(row)], label: `이전 모델 ${older.length}개` });
+  if (older.length) items.push({ fold: [{ header: "이전 모델" }, ...older.map(a => row(a))], label: `이전 모델 ${older.length}개` });
   return items;
 }
 function modelItems(key, curModel, filter = providerFilter) {
