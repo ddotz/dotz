@@ -1,6 +1,6 @@
 /* ---------- installable app + web push (web/sw.js, /api/push in hub/push.ts) ---------- */
 const PWA = { reg: null, sub: null, info: null, gw: null, claimed: false };
-const PUSH_KINDS = [["answer", "웹에서 맡긴 작업 완료 (짧은 답은 안 울려요)"], ["ask", "확인 필요 (질문 · 승인)"], ["lane", "세션 시작 · 완료 · 실패"], ["usage", "중요한 경고 (한도 · 오류 · 멈춤)"], ["update", "dotz 새 버전"]];
+const PUSH_KINDS = [["answer", "웹에서 맡긴 작업 완료 (짧은 답은 안 울려요)"], ["ask", "확인 필요 (질문 · 승인)"], ["lane", "세션 시작 · 완료 · 실패"], ["usage", "중요한 경고 (한도 · 오류 · 멈춤)"], ["update", "앱 새 버전"]];
 const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const pushCapable = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
@@ -136,7 +136,7 @@ async function pushGw(g, on) {
 }
 async function pushEnable(btn) {
   await busy(btn, async () => {
-    if ((await Notification.requestPermission()) !== "granted") throw new Error("알림 권한이 꺼져 있어요. 기기 설정에서 dotz 알림을 허용해 주세요");
+    if ((await Notification.requestPermission()) !== "granted") throw new Error(`알림 권한이 꺼져 있어요. 기기 설정에서 ${botName} 알림을 허용해 주세요`);
     const reg = PWA.reg || await navigator.serviceWorker.ready;
     const info = PWA.info || await api("/api/push");
     PWA.sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(info.publicKey) });
@@ -176,7 +176,7 @@ window.addEventListener("load", pwaInit);
 // iOS has no prompt, so the button opens the Share -> 홈 화면에 추가 steps.
 let installEvt = null;
 window.addEventListener("beforeinstallprompt", ev => { ev.preventDefault(); installEvt = ev; if (current === "settings") renderSettings(); });
-window.addEventListener("appinstalled", () => { installEvt = null; toast("앱을 설치했어요. 홈 화면의 dotz로 열어 주세요"); if (current === "settings") renderSettings(); });
+window.addEventListener("appinstalled", () => { installEvt = null; toast(`앱을 설치했어요. 홈 화면의 ${botName} 아이콘으로 열어 주세요`); if (current === "settings") renderSettings(); });
 async function installApp() {
   if (installEvt) {
     const e = installEvt;
@@ -192,7 +192,7 @@ async function installApp() {
     : /Android/.test(ua)
       ? ["브라우저 메뉴(⋮)를 열어요", "'앱 설치'를 골라요. '홈 화면에 추가'라면 다음 창에서 '설치'를 골라요", "'바로가기 만들기'는 브라우저로 열려요. 고르지 마세요"]
       : ["주소창 오른쪽의 설치 아이콘을 눌러요", "없으면 브라우저 메뉴에서 '앱 설치'를 골라요"];
-  dialog({ classic: true, title: "앱 설치", body: el("div", {}, el("ol", { class: "steps" }, ...steps.map(s => el("li", { text: s }))), el("p", { class: "note", text: "전에 추가한 dotz 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요." })), actions: [{ label: "확인", kind: "pri", onclick: c => c() }] });
+  dialog({ classic: true, title: "앱 설치", body: el("div", {}, el("ol", { class: "steps" }, ...steps.map(s => el("li", { text: s }))), el("p", { class: "note", text: `전에 추가한 ${botName} 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요.` })), actions: [{ label: "확인", kind: "pri", onclick: c => c() }] });
 }
 // Which conversations also go to Discord (GET/PUT /api/discord/post, hub/discord-post.ts). The web always gets everything; a switch that is
 // off keeps that kind on the web only. Shown only while Discord is connected.

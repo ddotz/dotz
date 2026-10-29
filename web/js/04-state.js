@@ -2,7 +2,10 @@
 let S = null;          // /api/state (no events)
 let M = null;          // /api/models
 let P = null;          // /api/providers
-let botName = "dotz";
+// The assistant's own name (config identity.name): the page arrives with it in its title (hub/webapp.ts indexPage), /api/state keeps it current.
+let botName = document.title || "비서";
+// The name with 이/가 by its last syllable (땃쥐가, 단비가 / 하늘이), for a sentence the name starts.
+const iGa = s => { const c = String(s).slice(-1).charCodeAt(0) - 0xac00; return `${s}${c >= 0 && c <= 11171 && c % 28 ? "이" : "가"}`; };
 let current = "home", prevView = null;
 // Narrow screens: 채팅 shows the chat list (31-conversations.js) until a row is opened; from 1100px the list always sits beside the conversation.
 let chatList = false;
