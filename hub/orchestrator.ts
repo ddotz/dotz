@@ -15,14 +15,14 @@ import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { pinnedLimitAlert } from "./accounts-api.ts";
-import { authStamp, blockText, limitAccount, limitKind, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
+import { authStamp, blockText, limitAccount, limitKind, markTold, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { writeOrchestratorProfile } from "./runtime/omo.ts";
 import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, quotaResetAt, Reverter, revertWhy } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 import { orchestratorTurnStarted } from "./notices.ts";
-import { type OrchError, plainError } from "./orch-error.ts";
+import { errorAskHold, noteErrorAsked, type OrchError, plainError } from "./orch-error.ts";
 import { isLater, LATER_LINE } from "./tone.ts";
 
 const ROTATE_BYTES = 50e6;
@@ -221,11 +221,30 @@ export function createOrchestrator(opts: OrchOpts) {
 		if (orch.error) return;
 		orch.error = { since: new Date().toISOString(), ...plainError(raw), raw: raw.replace(/\s+/g, " ").slice(0, 200) };
 		log(`${who} error episode begins: ${orch.error.kind} (${orch.error.raw.slice(0, 120)})`);
-		// asked once per stoppage, also across a gateway restart or after a manual resume that fails again (hub/limit-alert.ts)
-		if (noteBlock("orchestrator", "", "error").alert) onError(orch.error);
+		// asked once per stoppage, also across a gateway restart or after a manual resume that fails again (hub/limit-alert.ts),
+		// and only when it lasts past the hold (hub/orch-error.ts errorAskHold); the web banner shows it at once
+		const note = noteBlock("orchestrator", "", "error", Date.now(), true);
+		if (!note.alert) return;
+		const e = orch.error;
+		clearTimeout(askTimer);
+		askTimer = setTimeout(() => {
+			askTimer = undefined;
+			if (orch.error !== e) return;
+			markTold("orchestrator");
+			noteErrorAsked();
+			onError(e);
+		}, Math.max(0, note.since + errorAskHold() - Date.now()));
 	}
+	let askTimer: Timer | undefined;
 	function clearError(): void {
 		if (!orch.error) return;
+		if (askTimer) {
+			// over before the owner was asked: a worklog line instead of an alert, and no recovery alert (noteRecovered)
+			clearTimeout(askTimer);
+			askTimer = undefined;
+			const min = Math.max(1, Math.round((Date.now() - Date.parse(orch.error.since)) / 60_000));
+			onNotice(`모델 오류로 ${min}분 멈춘 뒤 스스로 다시 연결됐어요(${orch.error.text}). 알림은 보내지 않았어요.`);
+		}
 		log(`${who} error episode over: a turn succeeded`);
 		orch.error = undefined;
 	}
@@ -863,6 +882,8 @@ export function createOrchestrator(opts: OrchOpts) {
 		// A pause timer (usage limit, spent chain) must not start a stopped orchestrator again.
 		clearTimeout(resumeTimer);
 		resumeTimer = undefined;
+		clearTimeout(askTimer);
+		askTimer = undefined;
 		proc?.kill();
 	}
 
