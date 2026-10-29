@@ -355,7 +355,9 @@ const json = (data: unknown, status = 200) => Response.json(data, { status });
 export async function harnessUpdateRoute(req: Request, url: URL, deps: RouteDeps): Promise<Response | undefined> {
 	const p = url.pathname;
 	if (p !== "/api/harness/update" && !p.startsWith("/api/harness/update/")) return undefined;
-	const t = deps.tools ?? tools(deps);
+	// The route is given the gateway's idle-gated restart as restartIdle; the tools call it restart (it was dropped, so a finished install
+	// failed with "t.restart is not a function" and never restarted onto the new binary).
+	const t = deps.tools ?? tools({ busy: deps.busy, restart: deps.restartIdle, dataDir: deps.dataDir });
 	if (req.method === "GET" && p === "/api/harness/update") {
 		const v = viewHarness(t);
 		const stale = v.stale && !isChecking();
