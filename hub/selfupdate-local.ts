@@ -190,7 +190,7 @@ export async function writeSavedSummary(exec: Exec, dir: string, dataDir: string
 
 export function keepLine(commits: Commit[], dirty: number, why?: string): string {
 	const parts: string[] = [];
-	if (commits.length) parts.push(`로컬 커밋 ${commits.length}개(${commits.slice(0, 3).map(c => c.subject.slice(0, 40)).join(" / ")}${commits.length > 3 ? " 외" : ""})를 새 버전 위에 얹을 수 없어요${why ? ` — ${why}` : ""}`);
-	if (dirty) parts.push(`커밋하지 않은 변경 ${dirty}개가 있어요`);
-	return `${parts.join(". ")}. 내 수정은 먼저 보관해 뒀어요. '내 수정을 보관하고 새 버전 받기'를 누르면 새 버전으로 바꿔요.`;
+	if (commits.length) parts.push(`로컬 커밋 ${commits.length}개(${commits.slice(0, 3).map(c => c.subject.slice(0, 40)).join(" / ")}${commits.length > 3 ? " 외" : ""})는 새 버전 위에 얹을 수 없어서 보관만 해요${why ? ` — ${why}` : ""}`);
+	if (dirty) parts.push(`커밋하지 않은 변경 ${dirty}개는 보관한 뒤 새 버전 위에 다시 얹어요. 겹치거나 테스트가 깨지면 보관만 해요`);
+	return `${parts.join(". ")}. 업데이트는 그대로 진행해요.`;
 }
