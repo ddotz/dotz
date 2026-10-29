@@ -105,7 +105,7 @@ async function pick(v: View, t: string, label: string) {
 const menuLabels = (v: View) => q<string[]>(v, `return [...document.querySelectorAll(".menu .mi")].map(b => b.textContent)`);
 const confirmDelete = async (v: View) => {
 	await waitFor(v, `document.querySelector("dialog[open] .btn.danger")`);
-	expect(await q<string>(v, `return document.querySelector("dialog[open] .dbody").textContent`)).toBe("이 메일을 dotz에서 지울까요? 실제 메일함의 메일은 그대로 있어요");
+	expect(await q<string>(v, `return document.querySelector("dialog[open] .dbody").textContent`)).toBe("이 메일을 목록에서 지울까요? 실제 메일함의 메일은 그대로 있어요");
 	await run(v, `document.querySelector("dialog[open] .btn.danger").click()`);
 };
 

@@ -534,7 +534,7 @@ const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "dele
 const mailActButton = (t, a) => a === "draft" ? mailDraftButton(t) : el("button", { class: "cchip mr-act unrep-no", type: "button", "data-k": `mail-${a}`, text: MAIL_ACT[a], onclick: ev => { ev.stopPropagation(); busy(ev.currentTarget, () => mailActRun(t, a, null)); } });
 // 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it. A newer message of the thread brings it back.
 async function mailDelete(t) {
-  if (!await ask("메일 삭제", "이 메일을 dotz에서 지울까요? 실제 메일함의 메일은 그대로 있어요", "삭제", true)) return;
+  if (!await ask("메일 삭제", "이 메일을 목록에서 지울까요? 실제 메일함의 메일은 그대로 있어요", "삭제", true)) return;
   const pc = pqPc(t);
   await api(`/api/mail/${t.slice(5)}`, "DELETE");
   MAILS.delete(t); CONV.delete(t);
@@ -543,7 +543,7 @@ async function mailDelete(t) {
   if (monCtx === t && current === "chat") go("monitoring", MON.sel);   // deleted from its open conversation: back to the list
   PQ.of.delete(t);
   MON.sig = ""; MON.side = ""; monSchedule();
-  toast("메일을 dotz에서 지웠어요");
+  toast("메일을 목록에서 지웠어요");
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
 // The ⋯ at the top right of a mail card (every row of the list and the card at the top of the mail's conversation): mailActs, built from the
