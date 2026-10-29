@@ -189,12 +189,12 @@ function updateSection() {
   const i = UPD.info;
   const li = (title, sub, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), ...trail);
   const head = el("div", { class: "sec", id: "upd-sec" }, "업데이트", updRestartPending() ? el("span", { class: "tag warn upd-new", text: "재시작 필요" }) : updAvailable() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null);
-  if (!i || i.error) return [head, el("div", { class: "list" }, li("dotz 버전", i ? i.error : "불러오는 중…")), ...hvSection()];
+  if (!i || i.error) return [head, el("div", { class: "list" }, li("앱 버전", i ? i.error : "불러오는 중…")), ...hvSection()];
   const { running: run, disk, job, settings: s } = i;
   const jobRunning = job && job.status === "running";
   const { pending, c } = updState(i);
   const off = jobRunning || UPD.wait ? { disabled: true } : {};
-  const rows = [li("dotz 버전", `실행 중 ${updVer(run)}`, el("button", { class: "btn tonal", type: "button", ...off, onclick: ev => updCheck(ev.currentTarget) }, "확인"))];
+  const rows = [li("앱 버전", `실행 중 ${updVer(run)}`, el("button", { class: "btn tonal", type: "button", ...off, onclick: ev => updCheck(ev.currentTarget) }, "확인"))];
   if (c && !c.ok) rows.push(el("div", { class: "upd-box err" }, el("div", { class: "hd", text: c.error.reason }), el("div", { class: "sup" }, ...updCode(c.error.fix)), c.error.detail ? el("div", { class: "upd-detail", text: c.error.detail }) : null));
   else if (c && !c.incomingTotal) rows.push(li("최신 버전이에요", `${c.upstream} · 확인 ${updWhen(c.at)}${c.ahead.length ? ` · ${c.upstream}에 없는 로컬 커밋 ${c.ahead.length}개 (아직 올리지 않음)` : ""}${c.dirty.length ? ` · 커밋 안 한 변경 ${c.dirty.length}개` : ""}`));
   else if (c) {

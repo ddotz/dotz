@@ -179,7 +179,7 @@ function renderHarness() {
     FC && !pj ? el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hFeat), title: "각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요", onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, "기능 보기") : null,
     el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hDetail), title: "모든 시스템과 연결선을 한 화면에 그려요", onclick: () => { hDetail = !hDetail; try { localStorage.setItem("dotz-hdetail", hDetail ? "1" : "0"); } catch {} renderHarness(); } }, "자세히"),
     el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await loadHarness(); toast("새로 불러왔어요"); }) }, icon("refresh"), "새로고침"),
-    hOrigin() ? el("div", { class: "sup hm-legend" }, el("span", { class: "bd m", text: "내 설정" }), `내가 바꾼 값·파일·기능이에요. 표시가 없는 것은 dotz 기본이에요 (${shortPath(hData())}).`) : null);
+    hOrigin() ? el("div", { class: "sup hm-legend" }, el("span", { class: "bd m", text: "내 설정" }), `내가 바꾼 값·파일·기능이에요. 표시가 없는 것은 기본값이에요 (${shortPath(hData())}).`) : null);
   const parts = [bar];
   const keep = box.querySelector(".hm-scroll");
   const left = keep ? keep.scrollLeft : 0;

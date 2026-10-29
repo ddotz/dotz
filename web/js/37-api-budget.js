@@ -4,7 +4,7 @@ const abUsd = n => `$${n.toFixed(2)}`;
 function budgetCard(B) {
   const card = el("div", { class: "card" }, el("div", { class: "ch" }, el("h3", { text: "API 월 한도" }),
     el("button", { class: "btn text", type: "button", onclick: () => budgetDialog() }, "설정")));
-  const src = B.source === "admin" ? "콘솔 기준 (관리자 키)" : "dotz 사용분 추정";
+  const src = B.source === "admin" ? "콘솔 기준 (관리자 키)" : "이 앱 사용분 추정";
   if (B.limit_usd) {
     const pct = B.pct || 0, tone = pct >= 80 ? "warn" : "";
     card.append(el("div", { class: "lim" },
@@ -51,7 +51,7 @@ async function budgetDialog() {
     body: el("div", { class: "col" },
       el("p", { class: "sup", text: "Anthropic 콘솔에서 정한 월 한도(달러)예요. API로는 읽을 수 없어서 직접 입력해요. 비우면 한도 없이 사용액만 보여줘요." }),
       textField("월 한도 (USD)", limit),
-      el("p", { class: "sup", text: has ? `관리자 키: ${AB.admin_key.masked}. 새 키를 붙여 넣으면 바꿔요.` : "관리자 키가 없어요. 콘솔 → 설정 → Admin keys에서 만들어 붙여 넣으면 콘솔 기준 사용액을 보여줘요. 없으면 dotz 사용분 추정만 보여줘요." }),
+      el("p", { class: "sup", text: has ? `관리자 키: ${AB.admin_key.masked}. 새 키를 붙여 넣으면 바꿔요.` : "관리자 키가 없어요. 콘솔 → 설정 → Admin keys에서 만들어 붙여 넣으면 콘솔 기준 사용액을 보여줘요. 없으면 이 앱 사용분 추정만 보여줘요." }),
       textField("관리자 키 (sk-ant-admin…)", key),
       el("p", { class: "sup", text: "키는 저장하기 전에 한 번 확인하고, 다시 보여주거나 기록에 남기지 않아요." })),
     actions,
