@@ -413,16 +413,17 @@ async function workGo(w) {
   if (!asked) return openSub("orchestrator", w.id, null, w.description);
   ntJump({ src: t, at: asked.ts });
 }
-// A running one offers 중단, a failed or stopped one 다시 맡기기 (06-subagents.js workCancel / workRetry); the rest of the row goes to the conversation.
+// A running one offers 중단, one the owner stopped 다시 맡기기 (06-subagents.js workCancel / workRetry); a failed one is the agent's to take
+// up (blue 이어서 처리 중, no button); the rest of the row goes to the conversation.
 function workRow(w) {
-  const run = w.status === "running", done = w.status === "done";
-  const state = run ? "작업 중" : done ? "완료" : w.cancelled ? "중단됨" : "실패";
+  const run = w.status === "running", done = w.status === "done", rec = workRecovering(w);
+  const state = run ? "작업 중" : done ? "완료" : w.cancelled ? "중단됨" : rec ? "이어서 처리 중" : "실패";
   const line = run ? [workElapsed(w), w.model].filter(Boolean).join(" · ") : done ? `끝남 · ${workAgo(w)}` : `${workFailText(w)} · ${workAgo(w)}`;
-  const act = run ? ["중단", b => workCancel(w.id, b)] : done ? null : ["다시 맡기기", b => workRetry(w.id, b)];
+  const act = run ? ["중단", b => workCancel(w.id, b)] : w.cancelled ? ["다시 맡기기", b => workRetry(w.id, b)] : null;
   return el("div", { class: "hr hrx", "data-work": w.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => workGo(w), "aria-label": `${w.description} · ${state} · 대화로 가기` },
-      el("span", { class: `dot ${run ? "pri" : done ? "ok" : w.cancelled ? "" : "err"}` }),
+      el("span", { class: `dot ${run || rec ? "pri" : done ? "ok" : w.cancelled ? "" : "err"}` }),
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: line })),
-      el("span", { class: `hs ${run ? "pri" : done || w.cancelled ? "" : "err"}`, text: state })),
+      el("span", { class: `hs ${run || rec ? "pri" : done || w.cancelled ? "" : "err"}`, text: state })),
     act ? el("button", { class: "btn text", type: "button", style: "flex:none;margin-right:8px", "data-act": run ? "cancel" : "retry", onclick: ev => act[1](ev.currentTarget), text: act[0] }) : null);
 }

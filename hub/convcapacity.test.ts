@@ -1,6 +1,6 @@
 // How many conversation sessions may run at once follows the computer's free memory and load (owner 2026-10-28), never below 1.
 import { expect, test } from "bun:test";
-import { availableBytes, capacityFrom, treeRss } from "./convcapacity.ts";
+import { availableBytes, capacityFrom, settleMax, treeRss } from "./convcapacity.ts";
 
 const GB = 1024 ** 3, MB = 1024 ** 2;
 const base = { totalBytes: 16 * GB, cpus: 10, load1: 2, live: 0, perSessionBytes: 600 * MB };
@@ -28,4 +28,20 @@ test("available memory reads free plus reclaimable pages from vm_stat, MemAvaila
 test("a session's memory is its process together with every child", () => {
 	const ps = " 10 1 1000\n 11 10 500\n 12 11 250\n 20 1 300\n";
 	expect(treeRss(ps, [10, 20, 99])).toEqual([1750 * 1024, 300 * 1024, 0]);
+});
+
+// Mac mini 2026-10-29: the cap was logged anew every 30 s, 2 -> 7 -> 6 -> 2 ...; one reading alone no longer moves it.
+test("the cap moves only when two samples in a row point the same way, by the smaller step", () => {
+	let cur = settleMax(undefined, undefined, 3);
+	expect(cur).toEqual({ max: 3 });
+	const seq = [7, 2, 6, 3];
+	for (const n of seq) cur = settleMax(cur.max, cur.pending, n);
+	expect(cur.max).toBe(3);
+	cur = settleMax(cur.max, cur.pending, 5);
+	expect(cur).toEqual({ max: 3, pending: 5 });
+	cur = settleMax(cur.max, cur.pending, 6);
+	expect(cur.max).toBe(5);
+	cur = settleMax(cur.max, cur.pending, 2);
+	cur = settleMax(cur.max, cur.pending, 1);
+	expect(cur.max).toBe(2);
 });

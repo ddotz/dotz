@@ -26,7 +26,7 @@ import { markRead } from "./reads.ts";
 import { activityItems, broadcast, historyEvents, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { subagentLists } from "./activity.ts";
 import { cancelOmoWorker, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
-import { lastTurnEnd, mailConversation, openTodos, runIntent, runState, workConversationRuns, type RunState } from "./runstate.ts";
+import { lastTurnEnd, mailConversation, openTodos, runIntent, runState, stallNudge, workConversationRuns, type RunState } from "./runstate.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { draftAttachRoute } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
@@ -44,7 +44,7 @@ import { type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissed
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
-import { readTodo } from "./todo.ts";
+import { openMonitor, readTodo } from "./todo.ts";
 import { customRoute } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
@@ -102,6 +102,30 @@ function authorized(req: Request): boolean {
 	return false;
 }
 
+const compactingNow = (ctx: { compaction?: { state?: string } } | undefined): boolean => ctx?.compaction?.state === "queued" || ctx?.compaction?.state === "compacting";
+// Every 30 s: a conversation (main, a conversation session or a session) resting with plan tasks left and nothing to wait for is told to go on
+// (runstate.ts stallNudge); `nudge` delivers the prompt into that conversation's own session.
+export function startStallSweep(nudge: (conversation: string, r: RunState) => void): void {
+	const told = new Map<string, { at: number[]; since?: string }>();
+	const timer = setInterval(() => {
+		try {
+			const runs = stateRuns(), now = Date.now();
+			// sessions too: kdb-loss-review on the Mac mini (2026-10-29 01:53Z) ended a turn with a [run] report and 13 tasks open, and
+			// nothing woke it (a [run] report stays on disk)
+			const keys = ["main", ...convs.conversations().filter(c => convs.live(c)).map(c => c.primary), ...[...lanes.values()].filter(l => !!l.proc).map(l => `lane:${l.name}`)];
+			for (const k of keys) {
+				const r = runs[k], seen = told.get(k) ?? { at: [] };
+				if (!r || !stallNudge(r, now, seen.at, seen.since)) continue;
+				told.set(k, { at: [...seen.at.filter(at => now - at < 3_600_000), now], since: r.since });
+				log(`stall: ${k} rested with ${r.todos ?? 0} task(s) left since ${r.since}; told to go on`);
+				nudge(k, r);
+			}
+		} catch (e) {
+			log(`stall sweep failed: ${e}`);
+		}
+	}, 30_000);
+	timer.unref();
+}
 // The run state of every conversation (/api/state `runs`): what each session is doing, and when it is idle with plan tasks left, why.
 function stateRuns(): Record<string, RunState> {
 	const nowMs = Date.now();
@@ -127,10 +151,13 @@ function stateRuns(): Record<string, RunState> {
 		error: orch.error ? { text: orch.error.text, since: orch.error.since } : undefined,
 		ask: askFor("main"),
 		work: running.filter(w => mainWork(w.target)),
-		failed: works.find(w => w.status !== "running" && mainWork(w.target)),
+		// a failure a later turn took up (bgwork.ts handled) is over: the line no longer shows it
+		failed: (w => (w && !w.handled ? w : undefined))(works.find(w => w.status !== "running" && mainWork(w.target))),
 		children: runningChildren("orchestrator"),
 		later: deferred.filter(d => d.target === "web" || d.target === "terminal").length,
 		lastTurnEnd: lastTurnEnd(mainItems),
+		compacting: compactingNow(orch.ctx),
+		watching: openMonitor(orch.sessionFile),
 		todos: openTodos(readTodo(orch.sessionFile)),
 		now: nowMs,
 	});
@@ -147,6 +174,8 @@ function stateRuns(): Record<string, RunState> {
 			later: deferred.filter(d => d.target === source).length,
 			capacity: lane.waiting,
 			lastTurnEnd: lastTurnEnd(items),
+			compacting: compactingNow(lane.ctx),
+			watching: openMonitor(lane.sessionFile),
 			todos: openTodos(readTodo(lane.sessionFile)),
 			now: nowMs,
 		});
@@ -167,10 +196,12 @@ function stateRuns(): Record<string, RunState> {
 			error: c.o.orch.error ? { text: c.o.orch.error.text, since: c.o.orch.error.since } : undefined,
 			ask: askFor(c.primary),
 			work: own.filter(w => w.status === "running"),
-			failed: own.find(w => w.status !== "running"),
+			failed: (w => (w && !w.handled ? w : undefined))(own.find(w => w.status !== "running")),
 			children: runningChildren(source),
 			later: c.queue.deferredOpen().length,
 			lastTurnEnd: lastTurnEnd(items),
+			compacting: compactingNow(c.o.orch.ctx),
+			watching: openMonitor(c.o.orch.sessionFile),
 			todos: openTodos(readTodo(c.o.orch.sessionFile)),
 			now: nowMs,
 		});

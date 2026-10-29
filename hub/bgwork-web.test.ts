@@ -1,5 +1,6 @@
-// Background work on the page (web/js/06-subagents.js, 08-home.js, 41-runstate.js, 14-slash-commands.js): a worker that failed
-// stays on 홈 and on the run line as 실패 · 이유 with 다시 맡기기, a running one offers 중단 there and on the work line, the run
+// Background work on the page (web/js/06-subagents.js, 08-home.js, 41-runstate.js, 14-slash-commands.js): a worker that failed is
+// the agent's to take up (owner 2026-10-29), so 홈 and the run line say 이어서 처리 중 in blue with no button and drop it once a turn
+// took it up; only work the owner stopped offers 다시 맡기기. A running one offers 중단 there and on the work line, the run
 // line's button acts on the conversation it is shown in, and 지금 진행 중 lists only what runs now.
 import { afterAll, expect, test } from "bun:test";
 import { sseResponse } from "./events.ts";
@@ -10,6 +11,8 @@ const agoIso = (min: number) => new Date(ago(min)).toISOString();
 type Work = Record<string, unknown>;
 const RUNNING: Work = { id: "st_run", description: "흐름도 그리기", status: "running", started_at: ago(3), model: "Opus 5.5 medium" };
 const FAILED: Work = { id: "st_fail", description: "빌드 고치기", status: "failed", started_at: ago(20), ended_at: ago(10), reason: "작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요" };
+const STOPPED: Work = { id: "st_stop", description: "로그 정리", status: "failed", cancelled: true, started_at: ago(15), ended_at: ago(12), reason: "직접 중단했어요" };
+const TAKEN: Work = { id: "st_taken", description: "이미 다룬 실패", status: "failed", handled: true, started_at: ago(40), ended_at: ago(35), reason: "x" };
 const DONE: Work = { id: "st_done", description: "요약 쓰기", status: "done", started_at: ago(30), ended_at: ago(25) };
 let WORK: Work[] = [RUNNING, FAILED, DONE];
 let RUNS: Record<string, Record<string, unknown>> = {};
@@ -57,8 +60,8 @@ const boot = async (hash: string) => {
 };
 const sections = (v: View) => q<Record<string, string[]>>(v, `const out = {}; for (const box of document.querySelectorAll("#home-now .hn[data-k]")) out[box.dataset.k] = [...box.children].map(r => r.textContent.replace(/\\s+/g, " ").trim()); return out;`);
 
-test("홈: 지금 진행 중 is only what runs; waiting rows say their state in Korean; failed work offers 다시 맡기기 and a lane is drawn once", async () => {
-	WORK = [RUNNING, FAILED, DONE];
+test("홈: 지금 진행 중 is only what runs; waiting rows say their state in Korean; failed work is taken up, stopped work offers 다시 맡기기, and a lane is drawn once", async () => {
+	WORK = [RUNNING, FAILED, STOPPED, TAKEN, DONE];
 	RUNS = { main: { kind: "done", since: agoIso(5) }, "lane:fix": { kind: "idle", reason: "unfinished", todos: 2 } };
 	ORCH = "idle";
 	posts.length = 0;
@@ -71,15 +74,18 @@ test("홈: 지금 진행 중 is only what runs; waiting rows say their state in 
 	expect(s.waiting!.some(r => r.includes("끝났어요"))).toBe(true);
 	expect(s.waiting!.some(r => r.includes("쉬는 중 · 할 일 2개 남음"))).toBe(true);
 	expect(s.waiting!.join("|")).not.toContain("The WebView worker");
+	expect(s["ended-work"]!.find(r => r.includes("빌드 고치기"))).toContain("이어서 처리 중");
 	expect(s["ended-work"]!.find(r => r.includes("빌드 고치기"))).toContain("실패 · 작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요");
+	expect(s["ended-work"]!.some(r => r.includes("이미 다룬 실패"))).toBe(false);
+	expect(await v.evaluate(`document.querySelector('#home-now [data-work="st_fail"] .dot').className`)).toBe("dot pri");
 	expect(s["ended-work"]!.find(r => r.includes("요약 쓰기"))).toContain("완료");
 	// The session is a row above, not also a card on the board.
 	await waitFor(v, `document.querySelector('#home-cards [data-id="main"]')`);
 	expect(await v.evaluate(`!!document.querySelector('#home-cards [data-id="lane:fix"], #home-cards [data-id="group:lane"]')`)).toBe(false);
 	expect(await v.evaluate(`document.querySelectorAll('#home-now [data-act="retry"]').length`)).toBe(1);
-	const p__api_workers_st_fail_retry = posted("/api/workers/st_fail/retry");
-	await v.evaluate(`(document.querySelector('#home-now [data-work="st_fail"] [data-act="retry"]').click(), 0)`);
-	await p__api_workers_st_fail_retry;
+	const p__api_workers_st_stop_retry = posted("/api/workers/st_stop/retry");
+	await v.evaluate(`(document.querySelector('#home-now [data-work="st_stop"] [data-act="retry"]').click(), 0)`);
+	await p__api_workers_st_stop_retry;
 	// 중단 on the running row asks first, then ends that worker.
 	await v.evaluate(`(setTimeout(() => document.querySelector('#home-now [data-work="st_run"] [data-act="cancel"]').click()), 0)`);
 	await waitFor(v, `document.querySelector("dialog[open] .dact .danger")`);
@@ -99,18 +105,16 @@ test("홈: nothing running says so instead of listing idle conversations under �
 	expect(s["ended-work"]).toBeUndefined();
 }, 20_000);
 
-test("the run line says 실패 · 작업 · 이유 with 다시 맡기기, and the work line's 중단 ends the background worker", async () => {
+test("the run line says 이어서 처리 중 for a failed worker, in blue with no button, and the work line's 중단 ends the background worker", async () => {
 	WORK = [FAILED];
-	RUNS = { main: { kind: "error", reason: "work", since: agoIso(10), detail: "빌드 고치기 · 작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요", work: "st_fail" } };
+	RUNS = { main: { kind: "waiting", reason: "recover", since: agoIso(10), detail: "빌드 고치기 · 작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요", work: "st_fail" } };
 	posts.length = 0;
 	const v = await boot("#chat");
 	await v.evaluate(`(setTarget(MAIN), go("chat"), 0)`);
 	await waitFor(v, `!$("#runstate").hidden`);
-	expect(await v.evaluate(`$("#runstate-tx").textContent`)).toBe("실패 · 빌드 고치기 · 작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요");
-	expect(await v.evaluate(`$("#runstate-act").textContent`)).toBe("다시 맡기기");
-	const p__api_workers_st_fail_retry = posted("/api/workers/st_fail/retry");
-	await v.evaluate(`($("#runstate-act").click(), 0)`);
-	await p__api_workers_st_fail_retry;
+	expect(await v.evaluate(`$("#runstate-tx").textContent`)).toBe("이어서 처리 중 · 빌드 고치기 실패");
+	expect(await v.evaluate(`$("#runstate-act").hidden`)).toBe(true);
+	expect(await v.evaluate(`$("#runstate-dot").className`)).toBe("dot pri");
 
 	WORK = [{ ...RUNNING, target: "web" }];
 	RUNS = { main: { kind: "waiting", reason: "work", since: agoIso(3), detail: "흐름도 그리기 · Opus 5.5 medium", work: "st_run" } };
@@ -134,7 +138,8 @@ test("the run line's button acts on its own conversation: a session restarts its
 	expect(await act(err, "lane:fix")).toBe("다시 시작");
 	expect(await act({ kind: "stopped" }, "lane:fix")).toBe("다시 시작");
 	expect(await act({ kind: "limited", reason: "rate" }, "lane:fix")).toBeNull();
-	expect(await act({ kind: "error", reason: "work", work: "st_fail" }, "mail:k1")).toBe("다시 맡기기");
+	expect(await act({ kind: "error", reason: "work", cancelled: true, work: "st_stop" }, "mail:k1")).toBe("다시 맡기기");
+	expect(await act({ kind: "waiting", reason: "recover", work: "st_fail" }, "mail:k1")).toBeNull();
 	expect(await act({ kind: "working", work: "st_run" }, "mail:k1")).toBeNull();   // stopped by the send button, not the run line
 	expect(await act(err, "mail:k1")).toBeNull();
 	expect(await act(err, "alert")).toBeNull();

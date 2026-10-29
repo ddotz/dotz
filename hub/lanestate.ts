@@ -73,6 +73,10 @@ export type Lane = Record_ & {
 	// Task workers this lane's process was started with (hub/limits.ts, computed at spawn) and when it started.
 	workerSlots?: number;
 	spawnedAt?: number;
+	/** Why the last start failed (lanerun.ts startFailed). */
+	startError?: string;
+	/** The orchestrator was told this queued lane waits too long (laneops.ts startQueuedLanes). */
+	queueTold?: boolean;
 };
 
 export const lanes = new Map<string, Lane>();

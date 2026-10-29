@@ -65,7 +65,7 @@ import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
-import { makeRoute } from "./routes.ts";
+import { makeRoute, startStallSweep } from "./routes.ts";
 import { appProxySocket } from "./app-proxy.ts";
 import { appEntries, appKeyOf, integrationContext } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
@@ -342,7 +342,8 @@ if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 	const lines = textsToReport();
 	if (lines.length) wakeOnce("texts-override", msg().textsReport(lines.join("\n")));
 	void pendingBackups(defaultExec, join(import.meta.dir, ".."), join(DATA_DIR, "logs"), DATA_DIR)
-		.then(list => list.forEach(b => wakeOnce("self-update-local", msg().carryOver(b.where, b.read, b.stat, b.files))))
+		// several backups of one update are one wake (the Mac mini got two cards for the same edit, 2026-10-29)
+		.then(list => list.length && wakeOnce("self-update-local", list.map(b => msg().carryOver(b.where, b.read, b.stat, b.files)).join("\n\n---\n\n")))
 		.catch(e => log(`carry-over check failed: ${e}`));
 }
 // One Claude account for the orchestrator and its lanes (hub/account-sticky.ts, the owner's rules in hub/account-rules.ts).
@@ -374,6 +375,12 @@ startMemoryGuard((key, text) => {
 startLaneIdleStop();
 convs.startIdleSweep();
 startLaneQueue();
+startStallSweep((conversation, r) => {
+	const text = msg().stallNudge(r.todos ?? 0, r.detail ?? "");
+	if (conversation === "main") deliver(text);
+	else if (conversation.startsWith("lane:")) sendToLane(conversation.slice(5), text);
+	else convs.deliverTo(convs.keyOf(conversation), text, { target: conversation });
+});
 startOrphanReaper();
 startHostSweep();
 startSchedules(s => {

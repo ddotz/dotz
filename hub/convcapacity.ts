@@ -4,6 +4,7 @@
 // (capacityFrom) is what the tests pin. `conversations.max_live` in config still fixes the number when the owner sets it.
 import { cpus, freemem, loadavg, platform, totalmem } from "node:os";
 import { readFileSync } from "node:fs";
+import { reserveGb } from "./limits.ts";
 
 export type Sample = { availBytes: number; totalBytes: number; cpus: number; load1: number; live: number; perSessionBytes: number };
 export type Capacity = { max: number; reason: string };
@@ -19,8 +20,8 @@ const mb = (b: number) => `${Math.round(b / 1024 ** 2)}MB`;
 /** The live-session cap for one sample: what fits in available memory above a reserve, bounded by the CPUs and the current load. Never below 1. */
 export function capacityFrom(s: Sample): Capacity {
 	const per = Math.max(MIN_SESSION_BYTES, s.perSessionBytes || DEFAULT_SESSION_BYTES);
-	// The rest of the computer (the owner's apps, main, lanes, workers) keeps 15% of memory and never less than 2 GB.
-	const reserve = Math.max(2 * GIB, 0.15 * s.totalBytes);
+	// The rest of the computer (the owner's apps, main, lanes, workers) keeps the one reserve lanes keep too (hub/limits.ts reserveGb).
+	const reserve = reserveGb(s.totalBytes / GIB) * GIB;
 	const extra = Math.floor(Math.max(0, s.availBytes - reserve) / per);
 	const byMem = s.live + extra;
 	const cores = Math.max(1, s.cpus);
@@ -81,10 +82,22 @@ const run = async (cmd: string[]): Promise<string> => {
 	}
 };
 
+/**
+ * The cap moves only when two samples in a row point the same way, and then by the smaller of the two steps, so a one-off reading (a
+ * session still ramping up, a passing load spike) does not flip it: the Mac mini logged a new cap every 30 s between 2 and 7 (2026-10-29).
+ */
+export function settleMax(current: number | undefined, pending: number | undefined, next: number): { max: number; pending?: number } {
+	if (current === undefined || next === current) return { max: next };
+	if (pending !== undefined && Math.sign(pending - current) === Math.sign(next - current))
+		return { max: Math.abs(pending - current) < Math.abs(next - current) ? pending : next };
+	return { max: current, pending: next };
+}
+
 /** Keeps the latest sample; `livePids` are the conversation sessions running now. */
 export function createCapacity(livePids: () => number[], log: (line: string) => void) {
 	let last: Capacity | undefined;
 	let lastMax = 0;
+	let pending: number | undefined;
 	async function sample(): Promise<Capacity> {
 		const os = platform();
 		const vm = os === "darwin" ? await run(["vm_stat"]) : undefined;
@@ -97,7 +110,10 @@ export function createCapacity(livePids: () => number[], log: (line: string) => 
 		const pids = livePids();
 		const sizes = pids.length ? treeRss(await run(["ps", "-axo", "pid=,ppid=,rss="]), pids).filter(n => n > 0) : [];
 		const per = sizes.length ? sizes.reduce((a, b) => a + b, 0) / sizes.length : DEFAULT_SESSION_BYTES;
-		last = capacityFrom({ availBytes: availableBytes(vm || undefined, meminfo), totalBytes: totalmem(), cpus: cpus().length, load1: loadavg()[0] ?? 0, live: pids.length, perSessionBytes: per });
+		const raw = capacityFrom({ availBytes: availableBytes(vm || undefined, meminfo), totalBytes: totalmem(), cpus: cpus().length, load1: loadavg()[0] ?? 0, live: pids.length, perSessionBytes: per });
+		const s = settleMax(last?.max, pending, raw.max);
+		pending = s.pending;
+		last = { max: s.max, reason: raw.reason };
 		if (last.max !== lastMax) log(`conversation sessions: up to ${last.max} at once now (${last.reason})`);
 		lastMax = last.max;
 		return last;

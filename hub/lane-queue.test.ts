@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import * as l from "./lanes.ts";
 import { cfg } from "./config.ts";
+import { activeCount } from "./lanelimits.ts";
+import { QUEUE_TELL_MS } from "./laneops.ts";
 import { setMachineProbe } from "./limits.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
@@ -37,7 +39,7 @@ const fake: RuntimeAdapter = {
 	detect: async () => ({ installed: true }),
 };
 const rich = () => ({ totalGb: 64, availableGb: 56, cpus: 16 });
-const tight = () => ({ totalGb: 48, availableGb: 10, cpus: 12 });
+const tight = () => ({ totalGb: 48, availableGb: 5.2, cpus: 12 });
 const savedCfg = { lanes: cfg.lanes };
 beforeAll(() => {
 	adapters.fakeomo = fake;
@@ -109,4 +111,51 @@ test("a lane's worker slots come from the limits at spawn and go to the runtime"
 	cfg.lanes = { ...cfg.lanes, max_workers: undefined };
 	l.stopLane("slots-a");
 	l.stopLane("slots-b");
+});
+
+// Mac mini 2026-10-29: kdb-allowance-review's spawn threw and the lane stayed "starting", so kdb-loss-review waited for memory behind it.
+test("a lane whose start throws ends at once and holds no slot", () => {
+	setMachineProbe(rich);
+	const before = activeCount();
+	const start = fake.start;
+	fake.start = () => {
+		throw new Error("posix_spawn ENOENT omo");
+	};
+	try {
+		expect(() => launch("q-dead")).toThrow("ENOENT");
+	} finally {
+		fake.start = start;
+	}
+	expect(l.lanes.get("q-dead")?.status).toBe("exited");
+	expect(activeCount()).toBe(before);
+});
+
+// No wait goes on unseen: a lane queued past QUEUE_TELL_MS is reported once, and a queued lane whose start fails is reported as a failure.
+test("a lane queued too long is reported to the orchestrator once; a queued lane that cannot start is reported as a failure", () => {
+	const reports: string[] = [];
+	l.setReportHandler((lane, text) => reports.push(`${lane.name}: ${text}`));
+	try {
+		setMachineProbe(tight);
+		launch("q-run");
+		const q = launch("q-long");
+		expect(q.waiting).toBeTruthy();
+		q.startedAt = new Date(Date.now() - QUEUE_TELL_MS - 60_000).toISOString();
+		l.startQueuedLanes();
+		l.startQueuedLanes();
+		expect(reports.filter(r => r.startsWith("q-long: [blocked]"))).toHaveLength(1);
+		setMachineProbe(rich);
+		const start = fake.start;
+		fake.start = () => {
+			throw new Error("posix_spawn ENOENT omo");
+		};
+		try {
+			l.startQueuedLanes();
+		} finally {
+			fake.start = start;
+		}
+		expect(l.lanes.get("q-long")?.status).toBe("exited");
+		expect(reports.some(r => r.startsWith("q-long: [fail]") && r.includes("ENOENT"))).toBe(true);
+	} finally {
+		l.setReportHandler(() => {});
+	}
 });

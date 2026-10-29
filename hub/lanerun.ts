@@ -45,6 +45,17 @@ export function runtimeMismatch(lane: Pick<Lane, "name" | "runtime" | "sessionFi
 
 // Starts the lane's process; false when a resume is refused because the session belongs to another runtime (the lane is
 // then left exited, untouched).
+// A process that could not start leaves the lane ended, never "starting" with no process holding a slot (kdb-allowance-review on the
+// Mac mini, 2026-10-29, kept the next lane waiting for memory). A start nobody is waiting on (a resume) is reported to the
+// orchestrator as a failure to fix; a launch returns the error to its caller (laneops begin).
+function startFailed(lane: Lane, why: string, resume: boolean): void {
+	lane.proc = undefined;
+	lane.startError = why;
+	setStatus(lane, "exited");
+	log(`lane ${lane.name} could not start: ${why}`);
+	if (resume) report(lane, `[fail] 세션 프로세스를 다시 띄우지 못했어요: ${why}. 원인(작업 폴더, 하네스, 모델)을 고쳐 다시 띄우세요.`, true);
+}
+
 export function spawn(lane: Lane, resume: boolean): boolean {
 	if (resume) {
 		const wrong = runtimeMismatch(lane);
@@ -79,9 +90,11 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 	const keyedWorkers = keyedWorker(env);
 	const workerModel = keyedWorkers ?? laneWorkerModel(lane);
 	lane.workerSlots = laneLimits(0, lane).workers;
+	let proc: ReturnType<ReturnType<typeof runtimeFor>["start"]>;
+	try {
 	// posix_spawn with a missing cwd reports ENOENT for the binary (`omo`), which hides the real cause.
-	if (!existsSync(lane.cwd)) throw new Error(`lane ${lane.name}: working directory does not exist: ${lane.cwd}`);
-	const proc = runtimeFor("lane").start({
+	if (!existsSync(lane.cwd)) throw new Error(`working directory does not exist: ${lane.cwd}`);
+	proc = runtimeFor("lane").start({
 		role: "lane",
 		cwd: lane.cwd,
 		model: spawnModel,
@@ -94,6 +107,10 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 		// Rewritten at every spawn so changed lanes.* settings apply the next time the lane starts or resumes.
 		lane: { name: lane.name, dir: dir(lane.name), workerModel, workerFallback: keyedWorkers ? [] : chainAfter(laneWorkerModel(lane), fallbackChain("workers")).filter(e => !e.key_file).map(e => e.model), compactAt: compactAtFor(spawnModel, lanesCompactAt()), keepRecent: lanesKeepRecent(), workerSlots: lane.workerSlots },
 	});
+	} catch (e) {
+		startFailed(lane, (e as Error).message, resume);
+		return false;
+	}
 	lane.activeModel = spawnModel;
 	lane.startedModel = spawnModel;
 	lane.reverter = new Reverter();
