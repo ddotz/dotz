@@ -1,8 +1,10 @@
 // The orchestrator stopped working on errors (its automatic retries gave up): what the owner is told, how the owner's
 // answer is read, and the one automatic resume once the model is reachable again. Detection itself is in orchestrator.ts
 // (orch.error); this file has no model calls. The web banner reads orch.error from /api/state (web/js/40-orch-error.js).
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { issueBlock } from "./choices.ts";
-import { TZ } from "./config.ts";
+import { DATA_DIR, TZ, writeAtomic } from "./config.ts";
 
 export type OrchError = { since: string; kind: "timeout" | "dns" | "network" | "overload" | "crash" | "other"; text: string; raw: string; waiting?: boolean; probed?: boolean };
 
@@ -24,6 +26,22 @@ export const errorAsk = (name: string, e: OrchError): string =>
 		{ name: "다시 시작", result: "오케스트레이터만 다시 시작하고, 답하지 못한 요청을 오래된 것부터 한 번씩 다시 처리해요." },
 		{ name: "기다리기", result: "연결이 돌아오면 한 번 자동으로 다시 시도해요." },
 	])}`;
+
+// The ask waits (owner 2026-10-29: "장애 알림이 너무 자주 와요"; 7 of 9 asks in a week ended on their own, 3 of them within 20
+// minutes): the error watch below resumes by itself, so an episode that ends inside the hold leaves one worklog line and no
+// alert. A new episode within ERROR_ASK_COOLDOWN_MS of the last ask sent waits longer: the owner already knows the model is flaky.
+export const ERROR_ASK_HOLD_MS = 20 * 60_000;
+export const ERROR_ASK_REPEAT_HOLD_MS = 60 * 60_000;
+export const ERROR_ASK_COOLDOWN_MS = 6 * 3600_000;
+export const errorAskFile = () => join(DATA_DIR, "error-ask.json");
+export function errorAskHold(now = Date.now()): number {
+	let last = 0;
+	try {
+		last = Number(JSON.parse(readFileSync(errorAskFile(), "utf8")).at) || 0;
+	} catch {}
+	return now - last < ERROR_ASK_COOLDOWN_MS ? ERROR_ASK_REPEAT_HOLD_MS : ERROR_ASK_HOLD_MS;
+}
+export const noteErrorAsked = (at = Date.now()): void => writeAtomic(errorAskFile(), `${JSON.stringify({ at })}\n`);
 
 // The owner's answer to that ask (a Discord button click or the web card types it); only read while an error is on.
 export function errorAnswer(text: string): "restart" | "wait" | undefined {
