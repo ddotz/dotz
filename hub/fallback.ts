@@ -7,7 +7,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { cfg, DATA_DIR, entryId, entryOn, type FallbackEntry, isPlain, OMP, parseSelector, writeAtomic } from "./config.ts";
-import { apiKeyBan } from "./apikey-policy.ts";
+import { API_KEY_OFF, apiKeyBan } from "./apikey-policy.ts";
 import { rateLimitDelay } from "./providers.ts";
 
 // A chain the hub switches itself: any entry omp cannot walk.
@@ -181,7 +181,7 @@ const keyedModel = (e: FallbackEntry) => {
 function keyEnv(e: FallbackEntry, worker?: string): Record<string, string> {
 	if (!keyHostOk(keyBaseUrl(e))) throw new Error(`API-key entry ${e.model}: base URL host is not allowed`);
 	const ban = apiKeyBan();
-	if (ban) throw new Error(`API-key entry ${e.model}: no API key while ${ban} is pinned`);
+	if (ban) throw new Error(`API-key entry ${e.model}: no API key (${ban === API_KEY_OFF ? `${API_KEY_OFF} is not true` : `${ban} is pinned`})`);
 	const base = parseSelector(e.model).model;
 	const [provider, ...rest] = base.split("/");
 	const api = KEY_APIS[provider];
@@ -276,7 +276,7 @@ export class Chain {
 		const b = load().blocked[poolOf(e)];
 		if (b && b.until > at) return b;
 		if (capReached(e, at)) return { why: "cap", until: periodEnd(e.cap!.period, at) };
-		// No API key while a no-API-key account is pinned (hub/apikey-policy.ts); re-checked each minute, like a missing key.
+		// No API key while keys are off or a no-API-key account is pinned (hub/apikey-policy.ts); re-checked each minute, like a missing key.
 		if (e.key_file && (apiKeyBan() || !readKey(e.key_file) || !keyHostOk(keyBaseUrl(e)))) return { why: "error", until: at + KEY_BLOCK_MS };
 		return undefined;
 	}
@@ -389,7 +389,7 @@ export function entryView(e: FallbackEntry) {
 	const why = d && d.why !== "off" ? d : undefined;
 	// an API-key entry is down because OmO is pinned to an account that forbids keys (hub/apikey-policy.ts): say so, with that account
 	const ban = e.key_file && why?.why === "error" ? apiKeyBan() : undefined;
-	return { ...e, enabled: entryOn(e), ...(ban ? { down_reason: "api_key_ban", down_account: ban } : {}), ...(used ? { used: { period: e.cap!.period, tokens: used.tokens, usd: used.usd } } : {}), ...(why ? { down: why.why, until: new Date(why.until).toISOString() } : {}), id: entryId(e) };
+	return { ...e, enabled: entryOn(e), ...(ban === API_KEY_OFF ? { down_reason: "api_key_off" } : ban ? { down_reason: "api_key_ban", down_account: ban } : {}), ...(used ? { used: { period: e.cap!.period, tokens: used.tokens, usd: used.usd } } : {}), ...(why ? { down: why.why, until: new Date(why.until).toISOString() } : {}), id: entryId(e) };
 }
 
 // Failures the chain moves on from: a usage limit, a billing/auth problem only the owner can fix, a provider error. Anything

@@ -21,7 +21,7 @@ function fbTags(e) {
   if (e.when) t.push(el("span", { class: "tag", text: FB_WHEN[e.when] }));
   if (e.cap) t.push(el("span", { class: "tag", text: fbCapText(e.cap) }));
   if (e.revert === false) t.push(el("span", { class: "tag", text: "복귀 안 함" }));
-  if (e.down) t.push(el("span", { class: "tag warn", title: e.until ? `풀리는 때: ${new Date(e.until).toLocaleString("ko-KR")}` : "", text: e.down === "cap" ? "상한 도달" : e.down === "quota" ? "한도 소진" : e.down_reason === "api_key_ban" ? "공유 계정 사용 중이라 꺼짐" : "쓸 수 없음" }));
+  if (e.down) t.push(el("span", { class: "tag warn", title: e.until ? `풀리는 때: ${new Date(e.until).toLocaleString("ko-KR")}` : "", text: e.down === "cap" ? "상한 도달" : e.down === "quota" ? "한도 소진" : e.down_reason === "api_key_ban" ? "공유 계정 사용 중이라 꺼짐" : e.down_reason === "api_key_off" ? "API 키 사용 안 함(설정)" : "쓸 수 없음" }));
   return t.length ? el("div", { class: "fb-tags" }, ...t) : null;
 }
 function fbBar(e) {
