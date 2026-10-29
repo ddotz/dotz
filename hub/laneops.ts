@@ -67,6 +67,7 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 	const selector = model ?? selectorOf(lanesModel());
 	mkdirSync(dir(name), { recursive: true });
 	const place = laneWorktree(name, cwd);
+	if (!existsSync(place.cwd)) throw new Error(`lane ${name}: working directory does not exist: ${place.cwd}`);
 	const lane: Lane = { name, ...(title ? { title } : {}), cwd: place.cwd, worktree: place.worktree, model: selector, workerModel: worker || undefined, fableOk: fableOk || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, ctx: newCtx(), orchAsked: true, ...(why ? { waiting: why } : {}) };
 	lanes.set(name, lane);
 	persist(lane);

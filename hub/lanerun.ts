@@ -10,7 +10,7 @@ import { abandonCompact } from "./context.ts";
 import { report, withHeld } from "./lanereport.ts";
 import { withWorktree } from "./lanetree.ts";
 import { prompt } from "./laneprompt.ts";
-import { rmSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { laneLimits } from "./lanelimits.ts";
 
 export const RECOVERY_MAX = 3;
@@ -79,6 +79,8 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 	const keyedWorkers = keyedWorker(env);
 	const workerModel = keyedWorkers ?? laneWorkerModel(lane);
 	lane.workerSlots = laneLimits(0, lane).workers;
+	// posix_spawn with a missing cwd reports ENOENT for the binary (`omo`), which hides the real cause.
+	if (!existsSync(lane.cwd)) throw new Error(`lane ${lane.name}: working directory does not exist: ${lane.cwd}`);
 	const proc = runtimeFor("lane").start({
 		role: "lane",
 		cwd: lane.cwd,

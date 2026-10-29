@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dropWorktree } from "./lanetree.ts";
+import { dropWorktree, laneWorktree } from "./lanetree.ts";
 
 const sh = (cwd: string, ...args: string[]) => {
 	const r = Bun.spawnSync(["git", ...args], { cwd, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@x", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@x" } });
@@ -21,6 +21,47 @@ function setup(name: string) {
 	const lane = { name, cwd: path, worktree: { path, repo, branch: `lane/${name}`, base: "main" } } as never as Parameters<typeof dropWorktree>[0];
 	return { repo, path, lane };
 }
+
+test("a lane in a tracked subfolder gets a worktree and the same subfolder inside it", () => {
+	const { repo } = setup("tree-sub-base");
+	mkdirSync(join(repo, "src", "deep"), { recursive: true });
+	writeFileSync(join(repo, "src", "deep", "x.ts"), "1\n");
+	sh(repo, "add", "-A");
+	sh(repo, "commit", "-qm", "src");
+	const place = laneWorktree("tree-sub", join(repo, "src", "deep"));
+	expect(place.worktree).toBeDefined();
+	expect(place.cwd).toBe(join(place.worktree!.path, "src", "deep"));
+	expect(existsSync(place.cwd)).toBe(true);
+});
+
+test("a lane in an ignored folder (a `*` .gitignore, as ~/.dotz) runs in place without a worktree", () => {
+	const { repo } = setup("tree-ign-base");
+	writeFileSync(join(repo, ".gitignore"), "*\n");
+	sh(repo, "add", "-f", ".gitignore");
+	sh(repo, "commit", "-qm", "ignore all");
+	const cwd = join(repo, "projects", "kdb");
+	mkdirSync(cwd, { recursive: true });
+	writeFileSync(join(cwd, "notes.md"), "x\n");
+	expect(laneWorktree("tree-ign", cwd)).toEqual({ cwd });
+	expect(sh(repo, "worktree", "list")).not.toContain("tree-ign/worktree");
+});
+
+test("a nested repo inside an ignored folder gets its worktree from that repo", () => {
+	const { repo } = setup("tree-nest-base");
+	writeFileSync(join(repo, ".gitignore"), "*\n");
+	sh(repo, "add", "-f", ".gitignore");
+	sh(repo, "commit", "-qm", "ignore all");
+	const inner = join(repo, "projects", "inner");
+	mkdirSync(inner, { recursive: true });
+	sh(inner, "init", "-q", "-b", "main");
+	writeFileSync(join(inner, "b.txt"), "1\n");
+	sh(inner, "add", "-A");
+	sh(inner, "commit", "-qm", "inner");
+	const place = laneWorktree("tree-nest", inner);
+	expect(place.worktree?.repo).toBe(sh(inner, "rev-parse", "--show-toplevel"));
+	expect(place.cwd).toBe(place.worktree!.path);
+	expect(existsSync(join(place.cwd, "b.txt"))).toBe(true);
+});
 
 test("a merged lane with nothing of its own is removed with its branch", () => {
 	const { repo, path, lane } = setup("tree-merged");
