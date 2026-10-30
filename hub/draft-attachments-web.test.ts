@@ -16,11 +16,15 @@ const src = mkdtempSync(join(tmpdir(), "dotz-draft-atts-src-"));
 writeFileSync(join(src, "견적서 최종.pdf"), "%PDF-1.4 fixture-bytes");
 writeFileSync(join(src, "현장사진.jpg"), "jpg-fixture-bytes");
 const staged = stageDraftFiles("RATT0001", [join(src, "견적서 최종.pdf"), join(src, "현장사진.jpg")], root);
+const mailStaged = stageDraftFiles("RMAIL001", [join(src, "견적서 최종.pdf")], root);
+const COMMENT = { kind: "comment", key: "RCMT0001", author: "마피아팬", text: "악보 받을 수 있나요?", post: { title: "마피아 영상", link: "https://example.com/post/1", kind: "website" } };
 
 const hub = fakeHub({
 	api: async (req, url) => {
 		const file = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/files\/(\d+)$/.exec(url.pathname);
 		if (file) return draftFileRoute(req, url, file[1]!, file[2]!, root);
+		if (url.pathname === "/api/drafts/RCMT0001/original") return json(COMMENT);
+		if (url.pathname === "/api/drafts/RMAIL001/files" && req.method === "GET") return json({ files: mailStaged.map(f => ({ name: f.name, size: "22B" })), canAttach: true, library: false, editable: true, tracked: true });
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: unreadCount() });
 		if (url.pathname === "/api/notices" && req.method === "GET") return json(listNotices(100));
 		if (url.pathname === "/api/notices/read") return json(markNoticesRead(await req.json()));
@@ -114,6 +118,52 @@ describe("attachments in the mail draft card", () => {
 		expect(html).toBe("2|견적서 최종.pdf,현장사진.jpg|/api/drafts/RATT0001/files/0");
 		const plain = await v.evaluate(`(() => { const n = ${JSON.stringify({ ...n, decision: { ...n.decision, draft: { toLabel: "받는이", to: "a@b.c", body: "안녕하세요." } } })}; const f = draftFilesNode(n.decision.draft), c = draftCardNode(n).querySelector(".dr-files"); return [f.hidden, c.hidden, c.querySelector(".dr-none")?.textContent].join("|"); })()`);
 		expect(plain).toBe("false|false|첨부: 없음");
+	});
+});
+
+describe("a comment reply that sends a mail too", () => {
+	const combined = () => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${draftApprovalBlock({ to: "마피아팬 댓글", toLabel: "대상", body: "악보는 메일로 보내 드렸어요", ref: "RCMT0001", question: "이 답글을 올리고 메일도 보낼까요?", mail: { id: "RMAIL001", to: "fan@example.com", subject: "악보 보내드립니다", body: "요청하신 악보를 보내드립니다.", attachments: mailStaged } })}` });
+	beforeAll(combined);
+
+	test("the mail part carries the mail draft id the files are staged under", () => {
+		expect(find("RCMT0001").decision!.draft!.mail).toMatchObject({ ref: "RMAIL001", to: "fan@example.com", attachments: [{ name: "견적서 최종.pdf", size: "22B" }] });
+	});
+
+	for (const [name, w, h] of [["390", 390, 844], ["1280", 1280, 800]] as const) {
+		test(`${name}px: the sheet shows the original, my reply, the mail fields and a clickable attached file`, async () => {
+			const v = await open(w, h);
+			await openSheet(v, String(find("RCMT0001").id));
+			await waitFor(v, `document.querySelector(".fs-body .od-inline .od-ct") && document.querySelector(".fs-body .dr-mailpart .dr-fh.ok")`);
+			expect(await texts(v, ".fs-body .dr-mh")).toEqual(["댓글 원문", "내 답글", "함께 보낼 메일"]);
+			expect(await texts(v, ".fs-body .od-inline .dc-dr-v")).toEqual(["마피아팬"]);
+			expect(await texts(v, ".fs-body .od-inline .od-ct")).toEqual(["악보 받을 수 있나요?"]);
+			expect(await v.evaluate(`document.querySelector(".fs-body .od-inline a.od-open").getAttribute("href")`)).toBe("https://example.com/post/1");
+			expect(await texts(v, ".fs-body > .dc-dr-b")).toEqual(["악보는 메일로 보내 드렸어요"]);
+			expect(await texts(v, ".fs-body .dr-mailpart .dc-dr-k")).toEqual(["받는이", "제목"]);
+			expect(await texts(v, ".fs-body .dr-mailpart .dc-dr-v")).toEqual(["fan@example.com", "악보 보내드립니다"]);
+			expect(await texts(v, ".fs-body .dr-mailpart .dc-dr-b")).toEqual(["요청하신 악보를 보내드립니다."]);
+			expect(await texts(v, ".fs-body .dr-mailpart .dr-fh")).toEqual(["✓ 첨부 1개 붙어 있어요"]);
+			expect(await v.evaluate(`!!document.querySelector(".od-bar, .od-tg, .fs-body .dr-warn")`)).toBe(false);
+			const href = await v.evaluate(`document.querySelector(".fs-body .dr-mailpart a.dr-att").getAttribute("href")`);
+			expect(href).toBe("/api/drafts/RMAIL001/files/0");
+			expect(await v.evaluate(`fetch(${JSON.stringify(href)}).then(r => r.status + ":" + r.headers.get("content-disposition")?.slice(0, 6))`)).toBe("200:inline");
+			expect(await v.evaluate(`fetch(${JSON.stringify(href)}).then(r => r.text())`)).toBe("%PDF-1.4 fixture-bytes");
+			expect(await texts(v, ".fs-ft .dc-act")).toEqual(["보내기", "고치기", "보내지 않기"]);
+			const card = (await box(v, ".fs-card"))!, row = (await box(v, ".fs-body .dr-mailpart a.dr-att"))!;
+			expect(row.h).toBeGreaterThanOrEqual(44);
+			expect(row.l).toBeGreaterThanOrEqual(card.l);
+			expect(row.r).toBeLessThanOrEqual(card.r);
+		});
+	}
+
+	test("the docked card shows the same parts in order", async () => {
+		const v = await open(390, 900);
+		await waitFor(v, `typeof draftNode === "function"`);
+		const d = find("RCMT0001").decision!.draft;
+		await v.evaluate(`(() => { const c = draftNode(${JSON.stringify(d)}, { edit: true }); c.id = "combined-card"; document.body.append(c); return true; })()`);
+		await waitFor(v, `document.querySelector("#combined-card .od-ct") && document.querySelector("#combined-card .dr-fh.ok")`);
+		const out = await v.evaluate(`(() => { const c = document.getElementById("combined-card"); return [[...c.querySelectorAll(".dr-mh span")].map(e => e.textContent).join(","), c.querySelector(".od-ct").textContent, c.querySelector("a.dr-att").getAttribute("href")].join("|"); })()`);
+		expect(out).toBe("댓글 원문,내 답글,함께 보낼 메일|악보 받을 수 있나요?|/api/drafts/RMAIL001/files/0");
 	});
 });
 

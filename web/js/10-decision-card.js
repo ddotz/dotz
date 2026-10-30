@@ -194,13 +194,14 @@ function draftFilesNode(d, o = {}) {
     if (o.warn) { clear(o.warn).append(...warns.filter(Boolean)); o.warn.hidden = !warns.some(Boolean); }
     // A mail draft always shows its 첨부 row, files or 없음, so the owner can tell a missing file from a hidden one (owner 2026-10-26).
     const mailDraft = d.toLabel === "받는이";
-    clear(box).append(...[fl.length ? el("div", { class: "dr-fh", text: `첨부 ${fl.length}개` }) : null, ...rows,
+    // o.live (the mail of a combined card, read only): the list is read from the staged files, so a ✓ says they are on the mail.
+    clear(box).append(...[fl.length ? el("div", { class: o.live && live ? "dr-fh ok" : "dr-fh", text: o.live && live ? `✓ 첨부 ${fl.length}개 붙어 있어요` : `첨부 ${fl.length}개` }) : null, ...rows,
       !fl.length && (d.noAttachments || mailDraft) ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부: 없음" })) : null,
       add, menu, lib, ...(o.warn ? [] : warns), pickers].filter(Boolean));
     box.hidden = !box.querySelector(".dr-fh, .dr-none, .dr-warn, .dr-add");
   }
   paint();
-  if (ref && o.edit !== false && d.toLabel === "받는이" && !DRF.st[ref]) drfLoad(ref).then(paint);
+  if (ref && (o.edit !== false || o.live) && d.toLabel === "받는이" && !DRF.st[ref]) drfLoad(ref).then(paint);
   return box;
 }
 /* ---------- 받는 사람·참조 of a mail reply draft (hub/draft-recipients.ts) ---------- */
@@ -281,21 +282,27 @@ function draftOriginNode(d) {
   return el("div", { class: "dr-origin" }, icon("open"), o.link ? el("a", { href: o.link, target: "_blank", rel: "noopener", text: o.text }) : el("span", { text: o.text }));
 }
 // The mail that goes out right after a comment reply, in the same card (hub/draft-approval.ts "함께 보낼 메일"): recipient, subject, files, body.
-function draftMailNode(m) {
+// m.ref / m.id = the mail draft its files are staged under (GET /api/drafts/<id>/files/<n>), so each file row opens the file.
+function draftMailNode(m, o = {}) {
   if (!m) return null;
+  const ref = m.ref || m.id, part = ref ? { ...m, ref } : m;
   return el("div", { class: "dr-mailpart" },
     el("div", { class: "dr-mh" }, icon("mail"), el("span", { text: "함께 보낼 메일" })),
     el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: m.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: m.to || "-" })),
     m.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: m.subject })) : null,
     el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "함께 보낼 메일 내용", text: m.body }),
-    draftFilesNode(m, { edit: false }));
+    draftFilesNode(part, { edit: false, live: !!ref, t: o.t }));
 }
+// A combined card (comment reply + mail): the comment it answers on top, then 내 답글, then the mail (draftMailNode).
+const replyHead = () => el("div", { class: "dr-mh" }, icon("chat"), el("span", { text: "내 답글" }));
 function draftNode(d, o) {
+  const both = !!d.mail && d.toLabel === "대상";
   return el("div", { class: "dc-draft" },
+    both ? orgInline(d, o.t) : null, both ? replyHead() : null,
     !d.toLabel || d.toLabel === "받는이" ? draftToNode(d, o) : el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
     d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
     draftRuleNode(d), draftOriginNode(d),
-    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d, o), draftMailNode(d.mail));
+    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d, o), draftMailNode(d.mail, o));
 }
 // What the status line says after an answer: a 고치기 on a draft is the bot rewriting it.
 const dcStText = (dc, st) => (dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? "고치는 중…" : st === "sending" ? "보내는 중…" : "보냈어요 · 처리하는 중");
@@ -327,11 +334,12 @@ function renderSheet(box, dc, picks, step) {
     d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null]
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
-  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), draftRuleNode(d), draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail))
+  const both = !!d && !!d.mail && d.toLabel === "대상";   // a comment reply + mail: the original sits inline at the top (no room for the side panel beside the mail part)
+  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   // 원문 보기 (10-draft-original.js): the original is its own panel beside the draft (a toggle on a phone); the draft side (body + footer) is the one that slides.
   box.classList.remove("od-host", "od-on");
-  const col = d && d.ref && body && (d.toLabel === "대상" || (d.toLabel === "받는이" && !d.mail)) ? el("div", { class: "od-draftcol" }) : null;
+  const col = d && d.ref && body && ((d.toLabel === "대상" && !d.mail) || (d.toLabel === "받는이" && !d.mail)) ? el("div", { class: "od-draftcol" }) : null;
   const org = col ? orgNodes(d, dc.t, box, col) : null;
   const foot = el("div", { class: "fs-ft" });
   foot.append(warnBox);
