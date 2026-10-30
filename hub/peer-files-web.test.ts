@@ -119,10 +119,10 @@ const attachAndSend = async (v: View, text: string) => {
 	await run(v, `ta.value = ${JSON.stringify(text)}; document.querySelector("#send-btn").click()`);
 };
 const CHIP = `[...document.querySelectorAll(".um .mfiles .fatt")].find(c => c.querySelector(".fi-n").textContent === ${JSON.stringify(NAME)})`;
-// The chip's name and size, and what its link (open) and the download button give back.
+// The chip's name and size, and what its link (open; none for an HTML file of this computer, which opens in the 캔버스) and the download button give back.
 const chip = (v: View) => q<{ name: string; meta: string; href: string; open: string; dl: string }>(v, `
 	const c = ${CHIP}, item = c.closest(".fitem"), dl = item.querySelector(".fdl").href;
-	return { name: c.querySelector(".fi-n").textContent, meta: c.querySelector(".fi-m").textContent, href: c.getAttribute("href"), open: await (await fetch(c.href)).text(), dl: await (await fetch(dl)).text() };`);
+	return { name: c.querySelector(".fi-n").textContent, meta: c.querySelector(".fi-m").textContent, href: c.getAttribute("href"), open: c.getAttribute("href") ? await (await fetch(c.href)).text() : "", dl: await (await fetch(dl)).text() };`);
 
 const SIZE = `HTML · ${new TextEncoder().encode(BODY).length}B`;
 describe.each([390, 1280])("the sent bubble shows the attached file at %ipx", width => {
@@ -132,12 +132,13 @@ describe.each([390, 1280])("the sent bubble shows the attached file at %ipx", wi
 		await attachAndSend(v, `이걸로 다시 보내놔 ${width}`);
 		await waitFor(v, CHIP);
 		const c = await chip(v);
-		expect(c).toMatchObject({ name: NAME, meta: SIZE, open: BODY, dl: BODY });
-		expect(c.href).toStartWith("/api/file?path=");
+		expect(c).toMatchObject({ name: NAME, meta: SIZE, href: null, dl: BODY });
 		await Bun.write(join(SHOTS, `local-bubble-${width}.png`), await v.screenshot());
+		await run(v, `${CHIP}.click()`);
+		await waitFor(v, `!document.querySelector("#canvas").hidden && document.querySelector("#canvas .apps-n").textContent === ${JSON.stringify(NAME)}`);
 		const again = await openConv(width, LOCAL_T);
 		await waitFor(again, CHIP);
-		expect((await chip(again)).open).toBe(BODY);
+		expect((await chip(again)).dl).toBe(BODY);
 		expect(await q<number>(again, `return document.documentElement.scrollWidth`)).toBeLessThanOrEqual(width);
 	}, 30_000);
 

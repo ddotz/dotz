@@ -1,5 +1,5 @@
 /* ---------- element picker: Cmd+click (a phone: a long press) an element inside an app's frame and send it with the message ---------- */
-// Only an inner canvas can be picked: the same-origin app frame of the 앱 screen (30-apps.js, iframe.apps-frame). There is no pick
+// Only an inner canvas can be picked: the same-origin app frame of the 앱 screen (30-apps.js, iframe.apps-frame) or of the 캔버스 (30-canvas.js). There is no pick
 // button and no pick mode. Inside the frame, holding Cmd (Ctrl off a Mac) outlines the element under the pointer and Cmd+click picks
 // it; releasing Cmd hides the outline. On a phone a long press (PK_HOLD ms, no move) picks; a tap or a scroll stays the app's own.
 // Outside the frame Cmd+click is the browser's. The app header says how (pkHint).
@@ -59,6 +59,7 @@ const pkHtml = n => pkFlat(n.outerHTML || "").replace(/\s(?:value|checked|select
 function pkView(doc, frame) {
   if (frame) {
     const src = frame.getAttribute("src") || "";
+    if (frame.classList.contains("cvs-frame")) return `canvas:${frame.title || "html"}`;
     const id = (src.match(/\/apps\/([^/?#]+)/) || [])[1] || frame.title || "app";
     let path = "/";
     try { path = doc.defaultView.location.pathname; } catch {}

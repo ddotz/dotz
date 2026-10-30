@@ -206,6 +206,23 @@ export function fileRoute(req: Request, url: URL, roots: string[], listed: Reado
 	}
 }
 
+// GET/HEAD /api/canvas?path=<file>.html: an HTML file the bot made, rendered as a page for the 캔버스 panel (web/js/30-canvas.js) under the
+// same roots and rules as /api/file. Same origin, so the element picker reaches the frame's document; the CSP sandbox keeps that origin
+// (allow-same-origin) but runs none of the page's own script, so a page can never call /api as the owner. Styles, images and fonts load.
+const CANVAS_CSP = "sandbox allow-same-origin; default-src 'none'; img-src 'self' data: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:";
+export function canvasRoute(req: Request, url: URL, roots: string[], listed: ReadonlySet<string>): Response {
+	try {
+		const path = resolveAllowed(url.searchParams.get("path") ?? "", roots, listed);
+		if (!/\.html?$/i.test(path)) throw new FileError("HTML 파일만 캔버스에서 열 수 있어요", 415);
+		const f = Bun.file(path);
+		const headers = { "Content-Type": "text/html; charset=utf-8", "Content-Length": String(f.size), "X-Content-Type-Options": "nosniff", "Content-Security-Policy": CANVAS_CSP, "Cache-Control": "private, no-cache" };
+		return new Response(req.method === "HEAD" ? null : f, { headers });
+	} catch (error) {
+		const message = (error as Error).message;
+		return Response.json({ error: message }, { status: error instanceof FileError ? error.status : 400, headers: { "X-File-Note": encodeURIComponent(message) } });
+	}
+}
+
 // The lines appended to a message for the agent: one per file, with its absolute path.
 export const attachmentLines = (files: Upload[]): string => files.map(f => `[attachment] ${f.name}${f.type ? ` (${f.type})` : ""} ${f.path}`).join("\n");
 
