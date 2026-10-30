@@ -1,10 +1,6 @@
-/* ---------- element picker (web/js/15-picker.js): the pick button, hover box, numbered markers, the pill, composer chips ---------- */
-#c-pick { width: 30px; padding: 0; justify-content: center; }
-#c-pick svg { width: 18px; height: 18px; }
-#c-pick[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-#c-pick[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
-body.picking, body.picking * { cursor: crosshair; }
-body.picking #pick-pill, body.picking #pick-pill * { cursor: pointer; }
+/* ---------- element picker (web/js/15-picker.js): the app header's pick button, hover box, numbered markers, the pill, composer chips ---------- */
+.apps-hd .pk-toggle[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.apps-hd .pk-toggle[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
 .pk-box { position: fixed; z-index: 70; pointer-events: none; border-radius: 4px; outline: 2px solid var(--accent); outline-offset: -1px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .pk-box[hidden] { display: none; }
 .pk-lab { position: absolute; left: -2px; bottom: 100%; margin-bottom: 4px; max-width: min(320px, 80vw); padding: 3px 8px; border-radius: 8px; background: var(--pop); color: var(--fg); font: 500 12px/16px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 2px 8px rgb(0 0 0 / .18); }
@@ -26,5 +22,5 @@ body.picking #pick-pill, body.picking #pick-pill * { cursor: pointer; }
 .pk-chip .fi-m { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pk-chip .ax { top: 8px; right: 2px; width: 28px; height: 28px; border-radius: 14px; background: transparent; color: var(--fg-3); }
 .pk-chip .ax svg { width: 14px; height: 14px; }
-@media (pointer: coarse) { #c-pick { width: 36px; } .pk-end { height: 32px; } #pick-pill { height: 40px; } .pk-chip .ax { top: 6px; width: 32px; height: 32px; border-radius: 16px; } }
+@media (pointer: coarse) { .pk-end { height: 32px; } #pick-pill { height: 40px; } .pk-chip .ax { top: 6px; width: 32px; height: 32px; border-radius: 16px; } }
 @media (max-width: 639px) { .pk-chip { max-width: 100%; } .pk-chip .fi-n { max-width: 168px; } .pk-chip .fi-m { max-width: 180px; } }
