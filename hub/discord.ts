@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.ts";
 import { askComponentsFor } from "./askbuttons.ts";
 import { msg } from "./i18n.ts";
+import { pushReachesOwner } from "./push.ts";
 import { gatewayDryRun } from "./live-guard.ts";
 import { threadForReply, threadTitle } from "./threads.ts";
 import { type Body, buildPayloads, buildSingle, mentionsOff, noEmoji, reference } from "./discord-format.ts";
@@ -548,7 +549,7 @@ export async function send(
 	const ids: string[] = [];
 	sentAt.set(target, Date.now());
 	const { text: bare, files: paths } = fileLines(text);
-	const bodies = buildPayloads(bare, replyTo, SOFT_LIMIT, opts?.ping && OWNER ? OWNER : undefined);
+	const bodies = buildPayloads(bare, replyTo, SOFT_LIMIT, opts?.ping && OWNER && !pushReachesOwner() ? OWNER : undefined);
 	if (paths.length && !bodies.length) bodies.push({ content: "", allowed_mentions: mentionsOff, ...reference(replyTo) });
 	// The files go with the last part, planned only when that part is still to be sent (a retry may have sent it already).
 	const last = bodies.length - 1;

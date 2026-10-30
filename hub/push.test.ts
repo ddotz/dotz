@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { NAME, paths } from "./config.ts";
 import { emit, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { type Notice, onDecision, setWatchLabelResolver } from "./notices.ts";
-import { classify, decisionPush, LONG_TURN_MS, pushRoute, startPush } from "./push.ts";
+import { answersReach, classify, decisionPush, LONG_TURN_MS, pushRoute, startPush } from "./push.ts";
 import { b64u } from "./webpush.ts";
 
 const ev = (e: Record<string, unknown>) => ({ ts: "2026-10-20T00:00:00Z", kind: "out", source: "orchestrator", text: "", ...e });
@@ -67,6 +67,16 @@ test("a subscription the push service reports gone (410) is dropped", async () =
 		globalThis.fetch = real;
 	}
 	expect(await (await call(q, "GET"))!.json()).toMatchObject({ subscribed: false });
+});
+
+test("Discord pings the owner only when no device takes this gateway's answer notifications", () => {
+	const on = { prefs: { answer: true }, did: "dev-aaaaaaaa" };
+	const never = () => false;
+	expect(answersReach([], never)).toBe(false);
+	expect(answersReach([on], never)).toBe(true);
+	expect(answersReach([{ ...on, prefs: { answer: false } }], never)).toBe(false);
+	expect(answersReach([on], did => did === "dev-aaaaaaaa")).toBe(false);
+	expect(answersReach([{ prefs: {} }], never)).toBe(true);
 });
 
 test("a notification carries the id (ts) of the event it is about", () => {
