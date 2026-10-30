@@ -72,11 +72,12 @@ function appsOpen(tgt) {
 
 function appsHeader(a) {
   const st = a.off ? APP_STATUS.off : APP_STATUS[a.status] || APP_STATUS.unknown;
+  const hint = appsTool(a) && !a.off && a.status !== "unreachable" ? pkHint() : null;   // a phone: a line under the status, the title keeps its width
   return el("header", { class: "apps-hd" },
     appsNarrow() ? el("button", { class: "ib", type: "button", "aria-label": "앱 목록", title: "앱 목록", onclick: () => go("apps") }, icon("back")) : null,
     appsAv(a.icon, a.off ? "off" : a.status),
-    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: a.label }), el("p", { class: "apps-p" }, st[0], a.reason && !a.off ? ` · ${a.reason}` : "")),
-    appsTool(a) && !a.off && a.status !== "unreachable" ? pkButton() : null,
+    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: a.label }), el("p", { class: "apps-p" }, st[0], a.reason && !a.off ? ` · ${a.reason}` : ""), appsNarrow() ? hint : null),
+    appsNarrow() ? null : hint,
     appsTool(a) && !a.off ? el("a", { class: "ib", href: a.web.href, target: "_blank", rel: "noopener", "aria-label": "새 탭에서 열기", title: "새 탭에서 열기" }, icon("open")) : null,
     el("button", { class: "ib", type: "button", "aria-label": "앱 메뉴", title: "앱 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => appsMenu(ev.currentTarget, a) }, icon("more")));
 }

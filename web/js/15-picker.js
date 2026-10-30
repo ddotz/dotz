@@ -1,26 +1,24 @@
-/* ---------- element picker: tap an element inside an app's frame and send it with the message ---------- */
-// Only an inner canvas can be picked: the same-origin app frame of the 앱 screen (30-apps.js, iframe.apps-frame). Its header has the
-// pick button; a plain conversation has none. When the frame leaves the screen, pick mode ends (the picks already made stay).
+/* ---------- element picker: Cmd+click (a phone: a long press) an element inside an app's frame and send it with the message ---------- */
+// Only an inner canvas can be picked: the same-origin app frame of the 앱 screen (30-apps.js, iframe.apps-frame). There is no pick
+// button and no pick mode. Inside the frame, holding Cmd (Ctrl off a Mac) outlines the element under the pointer and Cmd+click picks
+// it; releasing Cmd hides the outline. On a phone a long press (PK_HOLD ms, no move) picks; a tap or a scroll stays the app's own.
+// Outside the frame Cmd+click is the browser's. The app header says how (pkHint).
 // Picks belong to the conversation open now; another conversation's wait in its ts(t).pick, like its files (13-data.js setTarget).
 // A pick never calls the element's own handler: every pointer event of the pick is taken in the capture phase and cancelled.
 let PICK = [];   // [{id, n, tag, sel, text, html, view, title, node, doc, frame}]
-let PICKING = false;
-const PK_UI = "#composer, #pick-box, #pick-pill, #pick-marks, .pk-toggle";
 const PK_FRAME = "iframe.apps-frame";
 const PK_FIELD = /^(input|textarea|select)$/;
+const PK_HOLD = 500;
 const PK_MARKS = new Map();   // pick id -> marker element
-let pkTouchAt = 0, pkRaf = 0, pkTickT = 0, pkStart = null;
+let pkTouchAt = 0, pkRaf = 0, pkTickT = 0;
+let pkArmed = false, pkLast = null, pkPress = null;   // Cmd held; {n, frame} under the mouse in a frame; {x, y, n, doc, frame, t, done} of a touch
 const pkFlat = s => String(s ?? "").replace(/\s+/g, " ").trim();
 const pkItems = () => PICK.map(p => ({ n: p.n, tag: p.tag, sel: p.sel, text: p.text, html: p.html, view: p.view, title: p.title }));
 const pkCount = () => PICK.length;
 
 const pkBox = el("div", { id: "pick-box", class: "pk-box", "aria-hidden": "true", hidden: true }, el("span", { class: "pk-lab" }));
 const pkMarks = el("div", { id: "pick-marks", "aria-hidden": "true" });
-const pkPill = el("div", { id: "pick-pill", role: "status", hidden: true },
-  el("span", { class: "pk-dot" }),
-  el("span", { class: "pk-msg", text: "앱 화면의 요소를 고르는 중" }),
-  el("button", { class: "pk-end", type: "button", text: "끝내기", onclick: () => pkSet(false) }));
-document.body.append(pkBox, pkMarks, pkPill);
+document.body.append(pkBox, pkMarks);
 
 /* ---------- what a pick carries ---------- */
 function pkText(n) {
@@ -133,7 +131,6 @@ function pkChip(p) {
       el("span", { class: "fi-m", text: [p.view, p.title].filter(Boolean).join(" · ") })),
     el("button", { class: "ax", type: "button", "aria-label": `${p.n}번 요소 빼기`, onclick: () => pkDrop(p.id) }, icon("close")));
 }
-function pkPill_() { pkPill.querySelector(".pk-msg").textContent = PICK.length ? `요소 ${PICK.length}개 고름` : "앱 화면의 요소를 고르는 중"; }
 function renderPicks() {
   const tray = $("#atray");
   if (!tray) return;
@@ -144,7 +141,6 @@ function renderPicks() {
   tray.hidden = !total;
   $("#send").classList.toggle("has-att", total > 0);
   pkSyncMarks();
-  pkPill_();
   pkPlace();
   pkKick();
   pkTick();
@@ -159,103 +155,120 @@ function pkAssign(list) { PICK = list || []; renderPicks(); }
 
 /* ---------- picking itself ---------- */
 function pkDo(n, doc, frame) {
-  if (!PICKING || !n) return;
+  if (!n) return;
   if (PICK.length >= 10) { toast("요소는 한 번에 10개까지 보낼 수 있어요", true); return; }
   PICK.push({ id: Math.random().toString(36).slice(2), n: PICK.length + 1, tag: n.tagName.toLowerCase(), sel: pkSel(n, doc), text: pkText(n), html: pkHtml(n), view: pkView(doc, frame), title: String(doc.title || ""), node: n, doc, frame: frame || null });
   pkHover(null);
   renderPicks();
 }
-// Every pointer and click event of a pick is cancelled in the capture phase: the element's own handler never runs.
+// Every pointer and click event of a pick is cancelled in the capture phase: the element's own handler never runs, no link opens.
 function pkStop(ev) {
   ev.preventDefault();
   ev.stopPropagation();
   if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
 }
-function pkTouchHit(ev, doc) {
-  const t = (ev.changedTouches && ev.changedTouches[0]) || (ev.touches && ev.touches[0]);
-  if (!t) return null;
+const pkMod = ev => !!ev && (isMac ? ev.metaKey : ev.ctrlKey);
+const pkModKey = k => k === (isMac ? "Meta" : "Control");
+// Cmd down: the element under the mouse gets the outline and the frame the crosshair; Cmd up (or the window losing focus) clears both.
+function pkArm(on) {
+  on = !!on;
+  if (on === pkArmed) return;
+  pkArmed = on;
+  for (const f of document.querySelectorAll(PK_FRAME)) { try { f.contentDocument.documentElement.classList.toggle("dz-picking", on); } catch {} }
+  pkHover(on && pkLast && pkLast.n.isConnected ? pkLast.n : null, pkLast && pkLast.frame);
+}
+function pkTouchHit(t, doc) {
   let n = null;
   try { n = doc.elementFromPoint(t.clientX, t.clientY); } catch {}
-  return n && n.nodeType === 1 ? n : null;
+  return n && n.nodeType === 1 && n !== doc.body && n !== doc.documentElement ? n : null;
 }
+function pkPressEnd() { if (pkPress) clearTimeout(pkPress.t); pkPress = null; }
 function pkBind(doc, frame) {
   if (!doc || doc.__pkBound) return;
   doc.__pkBound = true;
-  const inUI = ev => !frame || !!(ev.target && ev.target.closest && ev.target.closest(PK_UI));
+  const win = doc.defaultView;
   const hit = ev => {
     const n = ev.target && ev.target.nodeType === 1 ? ev.target : ev.target && ev.target.parentElement;
-    return n && n.isConnected && n !== doc.body && n !== doc.documentElement && !n.closest(PK_UI) ? n : null;
+    return n && n.isConnected && n !== doc.body && n !== doc.documentElement ? n : null;
   };
-  doc.addEventListener("pointermove", ev => { if (PICKING) pkHover(inUI(ev) ? null : hit(ev) || null, frame); }, true);
-  doc.addEventListener("pointerdown", ev => { if (!PICKING || inUI(ev)) return; pkStop(ev); pkHover(hit(ev) || pkTouchHit(ev, doc), frame); }, { capture: true, passive: false });
-  doc.addEventListener("mousedown", ev => { if (PICKING && !inUI(ev)) pkStop(ev); }, true);
-  doc.addEventListener("mouseup", ev => { if (PICKING && !inUI(ev)) pkStop(ev); }, true);
-  doc.addEventListener("click", ev => {
-    if (!PICKING || inUI(ev)) return;
-    pkStop(ev);
-    if (Date.now() - pkTouchAt < 400) return;   // the click the browser makes after a touch pick is not a second pick
-    const n = hit(ev) || pkTouchHit(ev, doc);
-    if (n) pkDo(n, doc, frame);
+  doc.addEventListener("pointermove", ev => {
+    if (ev.pointerType === "touch") return;
+    const n = hit(ev);
+    pkLast = n ? { n, frame } : null;
+    if (pkMod(ev) !== pkArmed) pkArm(pkMod(ev));   // Cmd pressed while another window had the keys
+    else if (pkArmed) pkHover(n, frame);
   }, true);
-  // touchstart lets the page scroll: no preventDefault, only the pick's own events are taken.
+  doc.documentElement.addEventListener("mouseleave", () => { pkLast = null; if (pkArmed) pkHover(null); });
+  for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup", "auxclick"]) doc.addEventListener(type, ev => { if (pkMod(ev) && ev.pointerType !== "touch") pkStop(ev); }, { capture: true, passive: false });
+  doc.addEventListener("click", ev => {
+    if (Date.now() - pkTouchAt < 600) { pkStop(ev); return; }   // the click a phone makes after a long-press pick
+    if (!pkMod(ev)) return;
+    pkStop(ev);
+    const n = hit(ev);
+    if (n) pkDo(n, doc, frame);
+    if (pkArmed && pkLast) pkHover(pkLast.n, frame);   // Cmd still down: the outline stays for the next pick
+  }, true);
+  // A long press picks. touchstart stays passive: the page scrolls as before, and a short tap is the app's own.
   doc.addEventListener("touchstart", ev => {
-    if (!PICKING || inUI(ev)) return;
-    ev.stopPropagation();
-    if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
-    const t = (ev.changedTouches && ev.changedTouches[0]) || (ev.touches && ev.touches[0]);
-    pkStart = t ? { x: t.clientX, y: t.clientY } : null;
-    const n = pkTouchHit(ev, doc);
-    if (n) pkHover(n, frame);
+    pkPressEnd();
+    if (ev.touches.length !== 1) return;
+    const t = ev.touches[0], n = pkTouchHit(t, doc);
+    if (!n) return;
+    const p = { x: t.clientX, y: t.clientY, n, done: false, t: 0 };
+    p.t = setTimeout(() => {
+      if (pkPress !== p || !n.isConnected) return;
+      p.done = true;
+      pkTouchAt = Date.now();
+      try { doc.getSelection().removeAllRanges(); } catch {}
+      if (navigator.vibrate) try { navigator.vibrate(10); } catch {}
+      pkDo(n, doc, frame);
+    }, PK_HOLD);
+    pkPress = p;
+  }, { capture: true, passive: true });
+  doc.addEventListener("touchmove", ev => {
+    const t = ev.touches[0];
+    if (pkPress && !pkPress.done && t && Math.hypot(t.clientX - pkPress.x, t.clientY - pkPress.y) > 10) pkPressEnd();   // a scroll
   }, { capture: true, passive: true });
   doc.addEventListener("touchend", ev => {
-    if (!PICKING || inUI(ev)) return;
-    pkStop(ev);   // no synthesized click reaches the element
-    const s = pkStart;
-    pkStart = null;
-    const t = (ev.changedTouches && ev.changedTouches[0]) || (ev.touches && ev.touches[0]);
-    if (t && s && Math.hypot(t.clientX - s.x, t.clientY - s.y) > 10) { pkHover(null); return; }   // a scroll, not a pick
-    const n = pkTouchHit(ev, doc);
-    if (n) { pkTouchAt = Date.now(); pkDo(n, doc, frame); }
+    const p = pkPress;
+    pkPressEnd();
+    if (p && p.done) { pkTouchAt = Date.now(); pkStop(ev); }   // no click reaches the picked element
   }, { capture: true, passive: false });
-  doc.addEventListener("touchcancel", () => { pkStart = null; if (PICKING) pkHover(null); }, { capture: true, passive: true });
-  const esc = ev => { if (!PICKING || (ev.key !== "Escape" && ev.key !== "Esc")) return; pkStop(ev); pkSet(false); };
-  (doc.defaultView || doc).addEventListener("keydown", esc, true);
-  doc.addEventListener("scroll", pkKick, true);
-  if (frame) doc.head.append(Object.assign(doc.createElement("style"), { textContent: "html.dz-picking, html.dz-picking * { cursor: crosshair !important; }" }));
+  doc.addEventListener("touchcancel", pkPressEnd, { capture: true, passive: true });
+  // The long press is the pick: no menu, no link preview, no text selection.
+  doc.addEventListener("contextmenu", ev => { if (pkPress || Date.now() - pkTouchAt < 800) pkStop(ev); }, true);
+  doc.addEventListener("selectstart", ev => { if (pkPress) pkStop(ev); }, true);
+  pkKeys(win);
+  doc.addEventListener("scroll", () => { pkKick(); if (pkArmed && pkLast) pkHover(pkLast.n, frame); }, true);
+  doc.head.append(Object.assign(doc.createElement("style"), { textContent: "html.dz-picking, html.dz-picking * { cursor: crosshair !important; } html { -webkit-touch-callout: none; }" }));
+}
+// The keys reach whichever window has the focus: dotz's own, or the app's frame after a click in it.
+function pkKeys(win) {
+  if (!win || win.__pkKeys) return;
+  win.__pkKeys = true;
+  win.addEventListener("keydown", ev => { if (pkModKey(ev.key)) pkArm(true); else if (pkArmed && !pkMod(ev)) pkArm(false); }, true);
+  win.addEventListener("keyup", ev => { if (pkModKey(ev.key) || !pkMod(ev)) pkArm(false); }, true);
+  win.addEventListener("blur", () => pkArm(false));
 }
 function pkFrame(f) {
   if (!f.matches(PK_FRAME)) return;
   try {
     const d = f.contentDocument;
-    if (!d) return;
+    if (!d || !d.head) return;
     d.defaultView.location.pathname;   // a cross-origin frame throws here and is skipped
     pkBind(d, f);
-    d.documentElement.classList.toggle("dz-picking", PICKING);
   } catch {}
 }
-// An app frame on screen now (a hidden view or the narrow list screen is display:none, so it has no box).
-const pkSurface = () => [...document.querySelectorAll(PK_FRAME)].some(f => f.getClientRects().length > 0);
-function pkSet(on) {
-  PICKING = !!on && pkSurface();
-  for (const b of document.querySelectorAll(".pk-toggle")) b.setAttribute("aria-pressed", PICKING ? "true" : "false");
-  pkPill.hidden = !PICKING;
-  pkPill_();
-  document.body.classList.toggle("picking", PICKING);
-  for (const f of document.querySelectorAll(PK_FRAME)) pkFrame(f);
-  if (!PICKING) pkHover(null);
-  pkKick();
-  pkTick();
+// The app header's hint (30-apps.js appsHeader): a phone has no keys, so it says the long press.
+const pkTouch = () => matchMedia("(hover: none) and (pointer: coarse)").matches;
+function pkHint() {
+  return el("span", { class: "pk-hint", text: pkTouch() ? "길게 눌러 요소 고르기" : isMac ? "⌘+클릭으로 요소 고르기" : "Ctrl+클릭으로 요소 고르기" });
 }
-
-// The app header's own pick button (30-apps.js appsHeader).
-function pkButton() {
-  return el("button", { class: "ib pk-toggle", type: "button", "aria-label": "요소 고르기", title: "요소 고르기 · 고른 요소는 대화 입력창에 붙어요", "aria-pressed": PICKING ? "true" : "false", onclick: () => pkSet(!PICKING) }, icon("pick"));
-}
-let pkGoneRaf = 0;
-const pkGone = () => { if (PICKING && !pkGoneRaf) pkGoneRaf = requestAnimationFrame(() => { pkGoneRaf = 0; if (PICKING && !pkSurface()) pkSet(false); }); };
-pkBind(document, null);
-addEventListener("resize", () => { pkKick(); pkGone(); });
+pkKeys(window);
+addEventListener("resize", pkKick);
 document.addEventListener("load", ev => { const t = ev.target; if (t && t.tagName === "IFRAME") pkFrame(t); }, true);
+// The app screen left (a tab key with Cmd still down, the back button): the outline goes with it.
+const pkGone = () => { if (!pkBox.hidden && pkLast && !(pkLast.frame && pkLast.frame.getClientRects().length)) pkHover(null); };
 new MutationObserver(muts => {
   pkGone();
   for (const m of muts) for (const n of m.addedNodes) {
