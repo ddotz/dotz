@@ -1,9 +1,12 @@
-/* ---------- element picker: tap an element of the page (or of an app's frame) and send it with the message ---------- */
+/* ---------- element picker: tap an element inside an app's frame and send it with the message ---------- */
+// Only an inner canvas can be picked: the same-origin app frame of the 앱 screen (30-apps.js, iframe.apps-frame). Its header has the
+// pick button; a plain conversation has none. When the frame leaves the screen, pick mode ends (the picks already made stay).
 // Picks belong to the conversation open now; another conversation's wait in its ts(t).pick, like its files (13-data.js setTarget).
 // A pick never calls the element's own handler: every pointer event of the pick is taken in the capture phase and cancelled.
 let PICK = [];   // [{id, n, tag, sel, text, html, view, title, node, doc, frame}]
 let PICKING = false;
-const PK_UI = "#composer, #pick-box, #pick-pill, #pick-marks";
+const PK_UI = "#composer, #pick-box, #pick-pill, #pick-marks, .pk-toggle";
+const PK_FRAME = "iframe.apps-frame";
 const PK_FIELD = /^(input|textarea|select)$/;
 const PK_MARKS = new Map();   // pick id -> marker element
 let pkTouchAt = 0, pkRaf = 0, pkTickT = 0, pkStart = null;
@@ -15,7 +18,7 @@ const pkBox = el("div", { id: "pick-box", class: "pk-box", "aria-hidden": "true"
 const pkMarks = el("div", { id: "pick-marks", "aria-hidden": "true" });
 const pkPill = el("div", { id: "pick-pill", role: "status", hidden: true },
   el("span", { class: "pk-dot" }),
-  el("span", { class: "pk-msg", text: "요소 고르는 중" }),
+  el("span", { class: "pk-msg", text: "앱 화면의 요소를 고르는 중" }),
   el("button", { class: "pk-end", type: "button", text: "끝내기", onclick: () => pkSet(false) }));
 document.body.append(pkBox, pkMarks, pkPill);
 
@@ -100,6 +103,8 @@ function pkPlace() {
     try { r = p.node && p.node.isConnected ? p.node.getBoundingClientRect() : null; } catch { r = null; }
     let seen = true;
     try { seen = !!p.doc.defaultView && p.doc.defaultView.getComputedStyle(p.node).visibility !== "hidden"; } catch {}
+    // A frame that is off screen (its view hidden) has no box: its element keeps a box of its own, so check the frame.
+    if (p.frame && !p.frame.getClientRects().length) seen = false;
     const vis = !!r && r.width > 0 && r.height > 0 && seen;
     m.hidden = !vis;
     if (!vis) continue;
@@ -128,6 +133,7 @@ function pkChip(p) {
       el("span", { class: "fi-m", text: [p.view, p.title].filter(Boolean).join(" · ") })),
     el("button", { class: "ax", type: "button", "aria-label": `${p.n}번 요소 빼기`, onclick: () => pkDrop(p.id) }, icon("close")));
 }
+function pkPill_() { pkPill.querySelector(".pk-msg").textContent = PICK.length ? `요소 ${PICK.length}개 고름` : "앱 화면의 요소를 고르는 중"; }
 function renderPicks() {
   const tray = $("#atray");
   if (!tray) return;
@@ -138,6 +144,7 @@ function renderPicks() {
   tray.hidden = !total;
   $("#send").classList.toggle("has-att", total > 0);
   pkSyncMarks();
+  pkPill_();
   pkPlace();
   pkKick();
   pkTick();
@@ -174,12 +181,12 @@ function pkTouchHit(ev, doc) {
 function pkBind(doc, frame) {
   if (!doc || doc.__pkBound) return;
   doc.__pkBound = true;
-  const inUI = ev => !!(ev.target && ev.target.closest && ev.target.closest(PK_UI));
+  const inUI = ev => !frame || !!(ev.target && ev.target.closest && ev.target.closest(PK_UI));
   const hit = ev => {
     const n = ev.target && ev.target.nodeType === 1 ? ev.target : ev.target && ev.target.parentElement;
     return n && n.isConnected && n !== doc.body && n !== doc.documentElement && !n.closest(PK_UI) ? n : null;
   };
-  doc.addEventListener("pointermove", ev => { if (PICKING && !inUI(ev)) pkHover(hit(ev) || null, frame); }, true);
+  doc.addEventListener("pointermove", ev => { if (PICKING) pkHover(inUI(ev) ? null : hit(ev) || null, frame); }, true);
   doc.addEventListener("pointerdown", ev => { if (!PICKING || inUI(ev)) return; pkStop(ev); pkHover(hit(ev) || pkTouchHit(ev, doc), frame); }, { capture: true, passive: false });
   doc.addEventListener("mousedown", ev => { if (PICKING && !inUI(ev)) pkStop(ev); }, true);
   doc.addEventListener("mouseup", ev => { if (PICKING && !inUI(ev)) pkStop(ev); }, true);
@@ -214,37 +221,46 @@ function pkBind(doc, frame) {
   const esc = ev => { if (!PICKING || (ev.key !== "Escape" && ev.key !== "Esc")) return; pkStop(ev); pkSet(false); };
   (doc.defaultView || doc).addEventListener("keydown", esc, true);
   doc.addEventListener("scroll", pkKick, true);
+  if (frame) doc.head.append(Object.assign(doc.createElement("style"), { textContent: "html.dz-picking, html.dz-picking * { cursor: crosshair !important; }" }));
 }
 function pkFrame(f) {
+  if (!f.matches(PK_FRAME)) return;
   try {
     const d = f.contentDocument;
     if (!d) return;
     d.defaultView.location.pathname;   // a cross-origin frame throws here and is skipped
     pkBind(d, f);
+    d.documentElement.classList.toggle("dz-picking", PICKING);
   } catch {}
 }
+// An app frame on screen now (a hidden view or the narrow list screen is display:none, so it has no box).
+const pkSurface = () => [...document.querySelectorAll(PK_FRAME)].some(f => f.getClientRects().length > 0);
 function pkSet(on) {
-  PICKING = !!on;
-  const b = $("#c-pick");
-  b.setAttribute("aria-pressed", PICKING ? "true" : "false");
-  b.classList.toggle("on", PICKING);
+  PICKING = !!on && pkSurface();
+  for (const b of document.querySelectorAll(".pk-toggle")) b.setAttribute("aria-pressed", PICKING ? "true" : "false");
   pkPill.hidden = !PICKING;
+  pkPill_();
   document.body.classList.toggle("picking", PICKING);
-  if (PICKING) for (const f of document.querySelectorAll("iframe")) pkFrame(f);
-  else pkHover(null);
+  for (const f of document.querySelectorAll(PK_FRAME)) pkFrame(f);
+  if (!PICKING) pkHover(null);
   pkKick();
   pkTick();
 }
 
-$("#c-pick").append(icon("pick"));
-$("#c-pick").onclick = () => pkSet(!PICKING);
+// The app header's own pick button (30-apps.js appsHeader).
+function pkButton() {
+  return el("button", { class: "ib pk-toggle", type: "button", "aria-label": "요소 고르기", title: "요소 고르기 · 고른 요소는 대화 입력창에 붙어요", "aria-pressed": PICKING ? "true" : "false", onclick: () => pkSet(!PICKING) }, icon("pick"));
+}
+let pkGoneRaf = 0;
+const pkGone = () => { if (PICKING && !pkGoneRaf) pkGoneRaf = requestAnimationFrame(() => { pkGoneRaf = 0; if (PICKING && !pkSurface()) pkSet(false); }); };
 pkBind(document, null);
-addEventListener("resize", pkKick);
+addEventListener("resize", () => { pkKick(); pkGone(); });
 document.addEventListener("load", ev => { const t = ev.target; if (t && t.tagName === "IFRAME") pkFrame(t); }, true);
 new MutationObserver(muts => {
+  pkGone();
   for (const m of muts) for (const n of m.addedNodes) {
     if (n.nodeType !== 1) continue;
     if (n.tagName === "IFRAME") pkFrame(n);
     else if (n.querySelectorAll) for (const f of n.querySelectorAll("iframe")) pkFrame(f);
   }
-}).observe(document.body, { childList: true, subtree: true });
+}).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "class"] });
