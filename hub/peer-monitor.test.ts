@@ -10,7 +10,7 @@ const URL_A = "https://a.example.test";
 const URL_B = "https://b.example.test";
 let clock = 1_000_000;
 
-type Gateway = { name: string; mon: PeerMonitor; handle: (req: Request) => Promise<Response>; events: Array<{ target: string; text: string; via?: string; files?: unknown }>; uploads: Map<string, Uint8Array>; notes: Array<{ id: string; title: string }>; down: boolean; hang: boolean; statuses: number[]; seen: Request[] };
+type Gateway = { name: string; mon: PeerMonitor; handle: (req: Request) => Promise<Response>; events: Array<{ target: string; text: string; via?: string; files?: unknown }>; uploads: Map<string, Uint8Array>; notes: Array<{ id: string; title: string }>; sends: Array<{ target: string; text: string; session?: string }>; logs: string[]; down: boolean; hang: boolean; statuses: number[]; seen: Request[] };
 const nodes = new Map<string, Gateway>();
 
 const netFetch = async (url: string, init?: RequestInit): Promise<Response> => {
@@ -27,6 +27,8 @@ const netFetch = async (url: string, init?: RequestInit): Promise<Response> => {
 function gateway(name: string, self: string, other: string, otherName: string): Gateway {
 	const events: Gateway["events"] = [];
 	const notes: Gateway["notes"] = [];
+	const sends: Gateway["sends"] = [];
+	const logs: string[] = [];
 	const uploads = new Map<string, Uint8Array>();
 	const local = async (req: Request): Promise<Response> => {
 		const path = new URL(req.url).pathname;
@@ -46,6 +48,10 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 			if (b.files && !b.files.every(f => uploads.has(f.path))) return Response.json({ error: "첨부파일을 찾지 못했어요" }, { status: 400 });
 			events.push({ target: b.project ?? (b.settings ? `settings:${b.settings}` : b.mail ? `mail:${b.mail}` : `lane:${b.lane}`), text: b.text, ...(b.project && b.settings ? { settings: b.settings } : {}), ...(b.via ? { via: b.via } : {}), ...(b.files ? { files: b.files } : {}) });
 			return Response.json({ ok: true });
+		}
+		if (req.method === "POST" && path === "/api/send") {
+			sends.push((await req.json()) as Gateway["sends"][number]);
+			return Response.json({ delivered: true });
 		}
 		if (req.method === "DELETE" && path.startsWith("/api/kakao/chat/")) {
 			const p = path.split("/");
@@ -105,12 +111,12 @@ function gateway(name: string, self: string, other: string, otherName: string): 
 		return new Response("not found", { status: 404 });
 	};
 	const computers: Computer[] = [{ name, url: self, self: true }, { name: otherName, url: other, self: false }];
-	const mon = createPeerMonitor({ name: () => name, local, computers: async () => computers, fetch: netFetch, now: () => clock, token: () => TOKEN, timeoutMs: 20 });
+	const mon = createPeerMonitor({ name: () => name, local, computers: async () => computers, fetch: netFetch, now: () => clock, token: () => TOKEN, timeoutMs: 20, log: m => logs.push(m) });
 	const handle = async (req: Request): Promise<Response> => {
 		if (checkPeer(req, TOKEN) === "denied") return new Response("forbidden", { status: 403 });
 		return (await mon.route(req, new URL(req.url))) ?? local(req);
 	};
-	const g: Gateway = { name, mon, handle, events, uploads, notes, down: false, hang: false, statuses: [], seen: [] };
+	const g: Gateway = { name, mon, handle, events, uploads, notes, sends, logs, down: false, hang: false, statuses: [], seen: [] };
 	nodes.set(self, g);
 	return g;
 }
@@ -481,4 +487,65 @@ test("a peer's comment draft, failed reply and dropped draft are acted on its ow
 	const k = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "kakao", args: { op: "draft-restore", code: "K1" } }) }));
 	expect(k.status).toBe(200);
 	expect(B.events.at(-1)!.text).toBe("/api/kakao/drafts/K1/restore {}");
+});
+
+test("handoff: B gets the owner's words and note as a chat message from A, then A's chat shows B's ack", async () => {
+	const { A, B } = pair();
+	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
+	const r = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "handoff", args: { owner_words: "맥미니에서 이어서 해", note: "branch feat/x pushed; next: bun test", id: "h1" }, from: "spoofed" }) }));
+	expect(r.status).toBe(200);
+	expect(await r.json()).toEqual({ ok: true, id: "h1", ack: true });
+	expect(B.events).toHaveLength(1);
+	expect(B.events[0]!.via).toBe("노트북");
+	expect(B.events[0]!.text).toStartWith("[peer handoff from 노트북 id=h1]");
+	expect(B.events[0]!.text).toContain("Owner's words (verbatim):\n맥미니에서 이어서 해");
+	expect(B.events[0]!.text).toContain("Handoff note:\nbranch feat/x pushed; next: bun test");
+	await B.mon.idle();
+	expect(A.sends).toHaveLength(1);
+	expect(A.sends[0]).toMatchObject({ target: "chat", session: "main" });
+	expect(A.sends[0]!.text).toContain("맥미니");
+	expect(A.sends[0]!.text).toContain("id h1");
+	expect(B.sends).toEqual([]);
+	// no id given: one is generated
+	const g = await A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "handoff", args: { owner_words: "넘겨서 작업해", note: "n" } }) }));
+	const { id } = (await g.json()) as { id: string };
+	expect(id).toMatch(/^[0-9a-f]{8}$/);
+	await B.mon.idle();
+	expect(A.sends[1]!.text).toContain(`id ${id}`);
+});
+
+test("handoff: owner_words and note are both required, nothing is delivered and no ack goes back", async () => {
+	const { A, B } = pair();
+	const p = `/api/peer/proxy?pc=${encodeURIComponent(URL_B)}&p=${encodeURIComponent("/api/peer/act")}`;
+	const go = (args: object) => A.handle(req(p, { method: "POST", body: JSON.stringify({ action: "handoff", args }) }));
+	expect((await go({ note: "n" })).status).toBe(400);
+	expect((await go({ owner_words: "넘겨", note: "  " })).status).toBe(400);
+	expect((await go({ owner_words: "넘겨" })).status).toBe(400);
+	expect((await go({ owner_words: "x".repeat(2001), note: "n" })).status).toBe(400);
+	expect((await go({ owner_words: "넘겨", note: "n", id: "bad id" })).status).toBe(400);
+	await B.mon.idle();
+	expect(B.events).toEqual([]);
+	expect(A.sends).toEqual([]);
+	expect(A.seen).toHaveLength(0);
+});
+
+test("handoff-ack without an id is refused", async () => {
+	const { A } = pair();
+	const act = (args: object) => A.handle(new Request(`${URL_A}/api/peer/act`, { method: "POST", headers: { "x-dotz-peer": TOKEN, "tailscale-user-login": LOGIN }, body: JSON.stringify({ action: "handoff-ack", args, from: "맥미니" }) }));
+	expect((await act({})).status).toBe(400);
+	expect(A.sends).toEqual([]);
+	expect((await act({ id: "h1" })).status).toBe(200);
+	expect(A.sends).toHaveLength(1);
+});
+
+test("handoff from a sender that is not a known computer is delivered, with no ack call and no throw", async () => {
+	const { A, B } = pair();
+	const r = await B.handle(new Request(`${URL_B}/api/peer/act`, { method: "POST", headers: { "x-dotz-peer": TOKEN, "tailscale-user-login": LOGIN }, body: JSON.stringify({ action: "handoff", args: { owner_words: "넘겨", note: "n", id: "h9" }, from: "낯선PC" }) }));
+	expect(r.status).toBe(200);
+	await B.mon.idle();
+	expect(B.events).toHaveLength(1);
+	expect(B.events[0]!.via).toBe("낯선PC");
+	expect(A.seen).toHaveLength(0);
+	expect(A.sends).toEqual([]);
+	expect(B.logs).toHaveLength(1);
 });
