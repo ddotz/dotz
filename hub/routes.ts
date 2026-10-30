@@ -28,7 +28,7 @@ import { subagentLists } from "./activity.ts";
 import { cancelOmoWorker, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
 import { lastTurnEnd, mailConversation, openTodos, runIntent, runState, stallNudge, workConversationRuns, type RunState } from "./runstate.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
-import { draftAttachRoute } from "./draft-attach.ts";
+import { askedFile, draftAttachRoute } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
 import { draftRecipientsRoute } from "./draft-recipients.ts";
@@ -575,7 +575,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (mailFile) return mailFileRoute(req, url, mailFile[1]!, mailFile[2]!);
 		// One file a draft sends along (the `> 첨부:` lines of a send approval): only files staged for that draft (hub/draft-files.ts).
 		const draftFile = (req.method === "GET" || req.method === "HEAD") && /^\/api\/drafts\/([A-Za-z0-9._-]+)\/files\/(\d+)$/.exec(url.pathname);
-		if (draftFile) return draftFileRoute(req, url, draftFile[1]!, draftFile[2]!);
+		if (draftFile) return draftFileRoute(req, url, draftFile[1]!, draftFile[2]!, undefined, askedFile);
 		// Add or remove a file of a mail reply draft, and the 첨부 파일 폴더 listing (hub/draft-attach.ts).
 		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library|original)$/.exec(url.pathname);
 		if (draftAttach) return draftAttachRoute(req, url, draftAttach[1]!, draftAttach[2]!);
