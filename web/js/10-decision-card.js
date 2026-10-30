@@ -417,8 +417,12 @@ function syncInlineChoices() {
 }
 // A tap on a message that is no longer the pending card: answered through the notice path, so the notice and the buttons settle together.
 async function answerInline(nd, opt) {
-  // An option that needs detail opens the notice sheet with its text field; nothing is sent from the row.
-  if (!nd.decision.draft && ntNeedsNote(nd, opt)) { await noticeSheetOpen(nd.pc ? nd : nd.id); ntAnswer(nd, opt); return; }
+  // An option that needs detail opens the notice sheet with its text field; nothing is sent from the row. A draft's own sheet
+  // (ntDraftSheet) is the decision card, so its 고치기 field is that card's edit state.
+  if (ntNeedsNote(nd, opt)) {
+    if (nd.decision.draft && !nd.pc) { DC.edit[`dk:${nd.id}`] = { bi: 0, opt }; ntDraftSheet(nd); return; }
+    await noticeSheetOpen(nd.pc ? nd : nd.id); ntAnswer(nd, opt); return;
+  }
   dcSending.add(nd.id); syncInlineChoices();
   try { await ntPost(nd, opt.n); dcAnswerToast(nd, opt); } catch (e) { toast(e.message, true); }
   dcSending.delete(nd.id); syncInlineChoices();
