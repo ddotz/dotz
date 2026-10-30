@@ -261,6 +261,9 @@ try {
 const saveDevices = () => writeAtomic(DEVICES_FILE, `${JSON.stringify(devices, null, 2)}\n`, 0o600);
 const hasApp = (did?: string) => !!did && (devices[did]?.app === true || subs.some(s => s.did === did && s.app === true));
 const isOff = (did: string) => devices[did]?.off === true;
+// Whether some device of the owner takes this gateway's answer notifications; then Discord does not ping him for the same answer (owner 2026-10-30).
+export const answersReach = (list: Array<Pick<Stored, "prefs" | "did">>, off: (did: string) => boolean): boolean => list.some(s => s.prefs.answer !== false && !(s.did && off(s.did)));
+export const pushReachesOwner = (): boolean => answersReach(subs, isOff);
 function dropBrowsers(did: string): void {
 	const rest = subs.filter(s => s.did !== did || s.app === true);
 	if (rest.length === subs.length) return;
