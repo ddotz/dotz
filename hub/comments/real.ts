@@ -12,6 +12,8 @@ import { featureEnabled } from "../app-feature-flags.ts";
 import { callReplyModel } from "../reply-model.ts";
 import { appOf, type DraftModel, createEngine, type Engine, type EngineDeps, type MailLink } from "./engine.ts";
 import { realMailLink } from "./mail-link.ts";
+import { mailMatchLines, zeleMailSearch } from "./mail-match.ts";
+import { zeleAccounts, zeleState } from "../zele.ts";
 import { instagramAdapter, youtubeAdapter } from "./adapters/google-meta.ts";
 import { bunExec, websiteAdapter } from "./adapters/website.ts";
 import { commentsDir } from "./store.ts";
@@ -41,6 +43,8 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		collector: opts.collector ?? hostname(),
 		model: opts.model ?? realModel,
 		mail: opts.mail ?? realMailLink(),
+		// Used only by sources whose owner turned `mailMatch` on; read-only zele search over his own mail.
+		...(zeleState() === "on" ? { mailMatch: (q: Parameters<typeof mailMatchLines>[0]) => mailMatchLines(q, zeleMailSearch(zeleAccounts), Date.now()) } : {}),
 		// custom/apps.json is read live: a site added as its own app instance owns its threads, its needs and its reply model setting.
 		owner: src => commentOwner(appEntries(dataDir), appOf(src), src.key),
 		broadcast: opts.broadcast,
