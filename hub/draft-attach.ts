@@ -7,14 +7,17 @@
 //   GET    /api/drafts/<ref>/original     what this draft answers (the sheet's 원문 보기); 404 when it is gone. A mail: { kind: "mail", key, from, to?, date, subject?, text, html, attachments }.
 //                                          A comment (YouTube, Instagram, site): { kind: "comment", key, author, date?, text, post: { title?, link?, thumb?, kind }, parent? } (hub/comments/original.ts)
 // Only a pending mail draft of reply-drafts can change; nothing is sent from here (the owner's 보내기 does that).
+import { statSync } from "node:fs";
 import { basename } from "node:path";
+import { paths } from "./config.ts";
+import { sentFiles, tailEvents } from "./events.ts";
 import { attachFolder } from "../features/reply-drafts/lib/flow.ts";
 import { libraryFile, listLibrary, rankLibrary } from "../features/reply-drafts/lib/library.ts";
 import { canAttach } from "../features/reply-drafts/lib/senders.ts";
 import { addStagedBytes, addStagedFile, removeStagedFile, stagedFiles } from "../features/reply-drafts/lib/staged.ts";
 import { getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
-import { fileSizeText } from "./draft-approval.ts";
-import { messageFiles } from "./files.ts";
+import { fileSizeText, parseDraftApproval } from "./draft-approval.ts";
+import { fileLinePaths, messageFiles, resolveAllowed } from "./files.ts";
 import { commentOriginalOf } from "./comments/gateway.ts";
 import type { CommentOriginal } from "./comments/original.ts";
 import { attachmentList, mailByKey } from "./mail.ts";
@@ -23,16 +26,48 @@ const FILE_MAX = 25 * 1024 * 1024;
 const LIBRARY_LIST_MAX = 100;
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
+// A send approval dotz did not make (a block a session wrote, sent by its own tool with the file, e.g. kdb-mail-act.ts --att-file): its
+// `> 첨부:` files are the ones the asking message names in its [file] lines, matched by file name. Each has to be a file GET /api/file
+// serves for that message (resolveAllowed with the sent [file] lines), so nothing else is reachable. undefined unless every file is found.
+const nfc = (s: string) => s.normalize("NFC").trim();
+export function askedFiles(ref: string): { name: string; size: string; path: string }[] | undefined {
+	const tag = `(${ref})`;
+	const events = tailEvents(paths.outbox);
+	for (let i = events.length - 1; i >= 0; i--) {
+		const e = events[i]!;
+		if (e.kind !== "out" || typeof e.text !== "string" || !e.text.includes(tag) || !e.text.includes("[file]")) continue;
+		const draft = parseDraftApproval(e.text);
+		if (draft?.ref !== ref) continue;
+		const lines = fileLinePaths(e.text);
+		const out: { name: string; size: string; path: string }[] = [];
+		for (const a of draft.attachments ?? []) {
+			const p = lines.find(l => nfc(basename(l)) === nfc(a.name));
+			if (!p) return undefined;
+			try {
+				const real = resolveAllowed(p, [], sentFiles());
+				out.push({ name: a.name, size: fileSizeText(statSync(real).size), path: real });
+			} catch {
+				return undefined;
+			}
+		}
+		return out.length ? out : undefined;
+	}
+	return undefined;
+}
+export const askedFile = (ref: string, n: number): { path: string; name: string } | undefined => (getDraft(ref) ? undefined : askedFiles(ref)?.[n]);
+
 async function view(rec: DraftRec | undefined, ref: string) {
 	const editable = !!rec && rec.kind === "mail" && rec.status === "pending";
+	const asked = rec ? undefined : askedFiles(ref);
 	return {
-		files: stagedFiles(rec?.id ?? ref).map(f => ({ name: f.name, size: fileSizeText(f.size) })),
+		files: asked ? asked.map(f => ({ name: f.name, size: f.size })) : stagedFiles(rec?.id ?? ref).map(f => ({ name: f.name, size: fileSizeText(f.size) })),
 		canAttach: !!rec && canAttach(rec.source),
 		library: editable && !!(await attachFolder(rec.ref)),
 		editable,
 		// false: dotz holds no record of this draft (a block written by hand, another tool sends it), so the files it names are not
 		// files dotz has staged and nothing here can say they go out.
-		tracked: !!rec,
+		// A block a session wrote counts as tracked when every file it names is a [file] line of the asking message (askedFiles).
+		tracked: !!rec || !!asked,
 	};
 }
 
