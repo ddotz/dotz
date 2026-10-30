@@ -10,7 +10,7 @@ import { featureEnabled } from "../app-feature-flags.ts";
 import { addOnce, dispatchSend, type Lease, messageId } from "./contract.ts";
 import { writePrivate } from "./creds.ts";
 import { owedMessage } from "./address.ts";
-import { hasWords, type KakaoDb, lastLines, memberLabels, messageById, ownerNames, peopleNames, readText, roomKinds, roomShown, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, TEXT_TYPE, unreadCount, watermarks } from "./db.ts";
+import { hasWords, type KakaoDb, lastLines, memberLabels, messageById, ownerNames, peopleNames, readText, roomKinds, roomShown, messages, ownTextCounts, ownTexts, roomHead, rooms, sentAtMs, unreadCount, watermarks } from "./db.ts";
 import { basisOf, buildDraftPrompt, chatLines, contextLines, type DraftModel, draftParts, estimateTokens, ownPairs, ownSamples, parseDraftReply, registerOf, type StyleHint, sinceOwnLast, type VoiceSource } from "./draft.ts";
 import { buildPersonPrompt, personStats, type PersonStats } from "./person.ts";
 import { bodyText, fetchMedia, mediaOf, mediaTarget, replySource, serveLocalFile } from "./media.ts";
@@ -75,6 +75,7 @@ const STUCK = "60초가 지나도 끝나지 않아서 실패로 처리했어요"
 const NO_REPLY = "답할 내용이 없어서 초안을 만들지 않았어요";
 const DRAFT_FAILED = "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요";
 const DRAFT_READ = 300;
+const REGISTER_LINES = 80;
 const VOICE_ROOMS = 8;
 const READS_MAX = 500;
 // A cached room head is trusted this long even when the database files look unchanged.
@@ -348,8 +349,13 @@ export function createKakaoWeb(deps: WebDeps) {
 			try {
 				style = deps.draftStyle?.(chatId);
 			} catch {}
-			const ownLines = recent.filter(m => m.fromMe && m.type === TEXT_TYPE).map(m => m.text);
-			const { system, user } = buildDraftPrompt({ lines: chatLines(window), context: compose ? [] : contextLines(recent, window), summary: readJsonText(summaryFile(chatId)), pairs: ownPairs(recent), samples: ownSamples(recent), register: registerOf(ownLines.slice(-80)), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}) });
+			// The register from his own last lines of the room, not only those among the last messages: a busy group room has few of them there.
+			const ownLines = await ownTexts(db, chatId, config.userId ?? "", REGISTER_LINES);
+			const context = compose ? [] : contextLines(recent, window);
+			// The pairs come from before the context, so the prompt does not spend its budget on the same lines twice.
+			const pairs = ownPairs(compose ? recent : recent.slice(0, recent.length - window.length - context.length));
+			const group = room.kind === "group" || room.kind === "open";
+			const { system, user } = buildDraftPrompt({ lines: chatLines(window), context, group, summary: readJsonText(summaryFile(chatId)), pairs, samples: ownSamples(recent), register: registerOf(ownLines), style, ...(choice ? { choice } : {}), ...(revise ? { revise: { draft: revise.draft, change: revise.change } } : {}), ...(intent ? { intent } : {}) });
 			const reply = await deps.draftModel!(system, user, chatId);
 			const parsed = parseDraftReply(reply.text);
 			if (!parsed) return done(DRAFT_FAILED);
