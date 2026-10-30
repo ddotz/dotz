@@ -14,6 +14,8 @@ const ts = (minusMin: number) => new Date(Date.UTC(2026, 9, 26, 3, 0) - minusMin
 let RUN: Run = { kind: "idle" };
 let ORCH: Record<string, unknown> = { status: "idle" };
 let ITEMS: unknown[] = [];
+const LAST = { ts: ts(30), kind: "out", source: "orchestrator", text: "지난 답변이에요." };
+let HIST: unknown[] = [LAST];
 let posted: (body: Record<string, unknown>) => void = () => {};
 let resumed = 0, restarted = 0;
 let resumeHit: () => void = () => {}, restartHit: () => void = () => {};
@@ -32,7 +34,7 @@ const server = Bun.serve({
 		if (p === "/api/state") return json({ name: "dotz", orchestrator: ORCH, runs: { main: RUN }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0, work: [], work_now: Date.now() });
 		if (p === "/api/notices") return json({ unread: 0, items: ITEMS });
 		if (p === "/api/todo") return json({ phases: [] });
-		if (p === "/api/history") return json({ target: "main", events: [{ ts: ts(30), kind: "out", source: "orchestrator", text: "지난 답변이에요." }] });
+		if (p === "/api/history") return json({ target: "main", events: HIST });
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: [] });
 		if (p === "/api/message") { posted(await req.json()); return json({ ok: true }); }
@@ -90,6 +92,22 @@ test("a question waiting on the owner: 답을 기다려요 with 질문으로 가
 	await v.evaluate(`document.querySelector("#runstate-act").click()`);
 	await waitFor(v, `document.querySelector('.fs-card[role="dialog"] #ds-t') && document.querySelector("#ds-t").textContent.includes("배포할까요")`);
 	ITEMS = [];
+}, 20_000);
+
+// A question docked above the composer with no notice of its own (a session's [ask] makes none, hub/notices.ts laneTone): 질문으로 가기
+// opens that card, never "질문을 찾지 못했어요" under a question the owner can see.
+test("질문으로 가기 with no notice opens the docked question card, folded or not", async () => {
+	HIST = [LAST, { ts: ts(2), kind: "out", source: "orchestrator", text: "[ask] 어느 화면으로 할까요?\n1) 캔버스\n2) 앱 화면" }];
+	const v = await boot(1280, 900);
+	await waitFor(v, `!document.querySelector("#dcard").hidden && document.querySelectorAll("#dcard .dc-row").length === 2`);
+	await show(v, { kind: "waiting", reason: "ask", since: ts(2), detail: "어느 화면으로 할까요?" });
+	await v.evaluate(`(document.querySelector("#dcard .dc-fold").click(), 0)`);
+	await waitFor(v, `document.querySelector("#dcard").classList.contains("fold")`);
+	await v.evaluate(`(window.__toasts = [], window.toast = (m) => __toasts.push(m), document.querySelector("#runstate-act").click(), 0)`);
+	await waitFor(v, `!document.querySelector("#dcard").classList.contains("fold") && document.activeElement && document.activeElement.classList.contains("dc-row")`);
+	expect(await v.evaluate(`({ toasts: __toasts, sheet: !!document.querySelector('.fs-card[role="dialog"] #ds-t'), focused: document.activeElement.textContent })`)).toEqual({ toasts: [], sheet: false, focused: "1캔버스" });
+	await shot(v, "run-ask-docked-1280.png");
+	HIST = [LAST];
 }, 20_000);
 
 test("waiting at 1280px names the question too", async () => {
