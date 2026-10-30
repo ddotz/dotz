@@ -34,7 +34,7 @@ import { draftFileRoute } from "./draft-files.ts";
 import { draftRecipientsRoute } from "./draft-recipients.ts";
 import { composeMail, deleteMail, MailError, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { holdDrafts, listDrafts, restoreDrafts } from "../features/reply-drafts/lib/store.ts";
-import { attachmentLines, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
+import { attachmentLines, canvasRoute, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
 import { ownerElements, pickedLines } from "./picked.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
@@ -673,6 +673,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/file") {
 			return fileRoute(req, url, fileRoots(), sentFiles());
+		}
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/canvas") {
+			return canvasRoute(req, url, fileRoots(), sentFiles());
 		}
 		// A file of a conversation of this computer, opened from the other one: an upload the owner attached (the chip in the sent bubble),
 		// or a result file the bot posted or wrote ([file] lines, paths), under the same rules as this computer's own /api/file.
