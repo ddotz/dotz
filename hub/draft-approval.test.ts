@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { parseDecisions } from "./choices.ts";
 import { paths } from "./config.ts";
-import { draftActionOf, draftApprovalBlock, draftVerdict, parseDraftApproval } from "./draft-approval.ts";
+import { draftActionOf, draftApprovalBlock, draftVerdict, parseDraftApproval, textVerdict } from "./draft-approval.ts";
 import { emit } from "./events.ts";
 import { inboxText } from "./intake.ts";
 import { approval, createDraft, draftBlock } from "./kakao/send.ts";
@@ -106,6 +106,35 @@ test("draftVerdict: the owner's latest pick for one ref after the cutoff; sessio
 	expect(draftVerdict(paths.inbox, refs[0]!, Date.parse(ts()) + 60_000)).toEqual({ verdict: "none" });
 	emit("inbox", { ts: ts(), kind: "message", source: "terminal", text: "3) 보내지 않기", picks: [{ q: `답장 보낼까요? #${refs[0]} (${refs[0]})`, n: 3, label: "보내지 않기" }] });
 	expect(draftVerdict(paths.inbox, refs[0]!, since)).toEqual({ verdict: "drop" });
+});
+
+test("textVerdict: a typed yes or send verb approves, a negative refuses, anything else says nothing", () => {
+	for (const t of ["보내", "보내자", "보내줘", "ㅇㅇ", "ㅇㅇㅇ 메일 보내", "아잇 보내라고", "이걸로 다시 보내놔", "보내자. 그리고 이거 리뷰 요청 화면도 고쳐줘", "응 답장 보내줘~"]) expect([t, textVerdict(t)]).toEqual([t, "send"]);
+	for (const t of ["보내지 마", "안 보내", "메일 안 보내도 돼", "ㄴㄴ", "보내지 말고 고쳐"]) expect([t, textVerdict(t)]).toEqual([t, "drop"]);
+	for (const t of ["보내기 전에 제목 바꿔", "파일 하나 더 붙여서 보내줘", "보내?", "정산표 기준이 필요함", "메일"]) expect([t, textVerdict(t)]).toEqual([t, undefined]);
+});
+
+test("draftVerdict: a typed reply in the draft's conversation counts, the latest word wins, other conversations do not", () => {
+	const since = Date.parse(ts()) - 1000;
+	const ref = "RTEXT01", conv = "mail:kdb-RTEXT01";
+	const say = (text: string, extra: Record<string, unknown> = {}) => emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "th:1", conv, text, ...extra });
+	say("3) 보내지 않기", { picks: [{ q: `이 답장을 보낼까요? (${ref})`, n: 3, label: "보내지 않기" }] });
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
+	say("보내자. 그리고 화면도 고쳐 줘");
+	// the conversation is the one the pick came from, or the one the caller names
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "send" });
+	expect(draftVerdict(paths.inbox, "RTEXT02", since, { conv })).toEqual({ verdict: "send" });
+	expect(draftVerdict(paths.inbox, "RTEXT03", since)).toEqual({ verdict: "none" });
+	say("아니 보내지 마");
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
+	say("정산표 기준도 봐줘");
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
+	emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "th:2", conv: "mail:other", text: "보내" });
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
+	emit("inbox", { ts: ts(), kind: "lane_message", source: "web", conv, text: "보내" });
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
+	say("ㅇㅇㅇ 메일 보내");
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "send" });
 });
 
 test("kakao: the web sheet's 보내기 is an owner message the approval check accepts; 보내지 않기 and a session's answer are not", async () => {
