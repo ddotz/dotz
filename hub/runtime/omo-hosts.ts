@@ -11,6 +11,8 @@ import { join } from "node:path";
 import { DATA_DIR, log, writeAtomic } from "../config.ts";
 
 export const OMO = process.env.DOTZ_OMO ?? "omo";
+// The real path of a bun global omo-ai install (`bun add -g` reaches only this copy), shared by both update paths.
+export const BUN_GLOBAL_OMO = /\/install\/global\/node_modules\/(omo-ai)\//;
 const agentDir = () => process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent");
 const recordFile = () => join(DATA_DIR, "omo-processes.json");
 
