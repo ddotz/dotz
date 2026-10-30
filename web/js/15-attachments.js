@@ -66,7 +66,7 @@ ta.addEventListener("paste", ev => {
   zone.addEventListener("dragleave", ev => { if (hasFiles(ev) && --depth <= 0) { depth = 0; comp.classList.remove("dropping"); } });
   zone.addEventListener("drop", ev => { if (!hasFiles(ev)) return; ev.preventDefault(); depth = 0; comp.classList.remove("dropping"); if (!ta.disabled) addFiles([...ev.dataTransfer.files]); });
 }
-// Files in a message: image thumbnails open the lightbox, other files open the read-only preview in a new tab; each has a
+// Files in a message: image thumbnails open the lightbox, an HTML file of this computer opens in the 캔버스 (30-canvas.js), other files open the read-only preview in a new tab; each has a
 // one-click download (Content-Disposition: attachment, so iOS Safari saves it too). `check` files (an agent's [file] line)
 // are asked with HEAD first: the size fills in, and one /api/file refuses (outside the roots, secret, missing) turns into a
 // disabled chip.
@@ -78,7 +78,7 @@ function fileItem(f) {
   const img = IMG_RE.test(f.name || f.path);
   const main = img
     ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name, f.pc) }, el("img", { src: fileUrl(f.path, false, f.pc), alt: f.name, loading: "lazy" }))
-    : fileChip(f.name, fileMeta(f.name, f.size), VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name, f.pc) } : { href: fileUrl(f.path, false, f.pc) });
+    : fileChip(f.name, fileMeta(f.name, f.size), VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name, f.pc) } : !f.pc && canvasIsHtml(f.name) ? { onclick: () => canvasOpen(f.path, f.name) } : { href: fileUrl(f.path, false, f.pc) });
   const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true, f.pc), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download"))), pathCopy(f.path));
   if (!f.check) return item;
   const off = why => { if (item.isConnected || item.parentNode) item.replaceWith(offChip(f, why)); };

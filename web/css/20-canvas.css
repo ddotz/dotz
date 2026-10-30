@@ -1,0 +1,11 @@
+/* 캔버스 (web/js/30-canvas.js): the 앱 screen's header and frame (20-apps.css) for an HTML page the bot made. From 1100px a third
+   column beside the conversation; below that a full-screen sheet on the page canvas, under the pick outline (21-picker.css, z 70). */
+#v-chat > #canvas { display: none; }
+#v-chat.canvas-open > #canvas:not([hidden]) { display: flex; }
+@media (max-width: 1099px) {
+  #v-chat.canvas-open > #canvas { position: fixed; inset: 0; z-index: 60; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px)); background: var(--bg); }
+}
+@media (min-width: 1100px) {
+  #v-chat.canvas-open { grid-template-columns: var(--cv-w) minmax(360px, 1fr) minmax(0, 1.25fr); }
+  #v-chat.canvas-open > #canvas { grid-column: 3; grid-row: 1 / -1; min-height: 0; margin-bottom: 16px; }
+}
