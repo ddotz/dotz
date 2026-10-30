@@ -59,7 +59,7 @@ gateway that owns the item. That gateway executes it and records it.
 
 - `POST /api/peer/act {action, args, from}` on the owning gateway. The actions are `message` (a reply or a confirmed draft
   in a conversation), `answer` (a decision, with `note` for 고치기), `notice` (`op` read with `ids`, ignore or unignore with `id`), `read` (mark read), `watch` (pause, resume or run a watch) and `kakao`
-  (`op` send, read, draft, draft-send or draft-drop on the owner's `/api/kakao/...` routes). The owner runs
+  (`op` send, read, draft, draft-send or draft-drop on the owner's `/api/kakao/...` routes). `handoff` (`owner_words`, `note`, `id?`: the owner's work handed over from the sender; it lands in the owner's main chat as the owner's own instruction, then the owner sends `handoff-ack` back, fire and forget) and `handoff-ack` (`id`: a note in the sender's chat that the other computer took it). The owner runs
   the same handler as its own web app. It records the event with `via: <from machine name>`. Its own web and history show
   the action the same as a local action, with a small 'from <machine>' note. The other gateway keeps no copy beyond its cache.
 

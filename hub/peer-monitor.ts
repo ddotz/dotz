@@ -8,7 +8,7 @@
 // timeout, all peers in parallel), so a decision answered on the other computer never shows stale here for the next interval.
 // Everything outside (fetch, computers, clock, token, the local handler) is injected, so tests run two gateways in one process.
 import { peerFetch } from "./tailnet-fetch.ts";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { PEER_GET, peerHeaders, peerTokenFor } from "./peer-auth.ts";
 import { createPairer, type PairResult } from "./peer-pair.ts";
 import { knownComputers } from "./peers.ts";
@@ -37,6 +37,7 @@ export type MonitorDeps = {
 	timeoutMs?: number;
 	postTimeoutMs?: number;
 	refreshMs?: number;
+	log?: (message: string) => void;                          // where a failed handoff ack is noted (never thrown)
 };
 
 const GET_MS = 2500;
@@ -46,6 +47,9 @@ const UPLOAD_MS = 120_000;   // one file's bytes (base64) to the other computer:
 const KEEP = ["content-type", "content-disposition", "content-security-policy", "x-content-type-options", "x-file-note"];
 const REFRESH_MS = 20_000;
 const FROM_MAX = 40;
+const WORDS_MAX = 2000;   // a handoff's owner_words, and its note
+const NOTE_MAX = 8000;
+const HANDOFF_ID = /^[A-Za-z0-9_-]{1,40}$/;
 const LOCAL = "http://local";
 const OFFLINE = { error: "연결 안 됨" };
 
@@ -92,6 +96,8 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 	const cache = new Map<string, Entry>();
 	const inflight = new Map<string, Promise<void>>();
 	const dirty = new Set<string>();
+	const acks = new Set<Promise<void>>();   // handoff acks on their way back to the sender (idle() waits for them)
+	const log = deps.log ?? (() => {});
 
 	const ask = (method: string, path: string, data?: unknown, login?: string) =>
 		deps.local(new Request(`${LOCAL}${path}`, {
@@ -260,6 +266,27 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 		}
 	}
 
+	// Tells the sender's gateway that its handoff was taken. Never throws: a failure is noted in the log, the handoff itself already succeeded.
+	async function ackHandoff(to: string, id: string): Promise<void> {
+		try {
+			const target = (await computers()).find(c => !c.self && c.name === to);
+			if (!target) return log(`handoff ack ${id}: ${to} is not a known computer`);
+			const body = JSON.stringify({ action: "handoff-ack", args: { id }, from: deps.name() });
+			const send = (h: Record<string, string>) => f(`${target.url}/api/peer/act`, { method: "POST", headers: { ...h, "content-type": "application/json" }, body, signal: AbortSignal.timeout(postMs), redirect: "manual" });
+			let h = peerHeaders(token(target.url));
+			if (!h) {
+				await pair(target.url);
+				h = peerHeaders(token(target.url));
+			}
+			if (!h) return log(`handoff ack ${id}: no peer token for ${to}`);
+			let r = await send(h);
+			if (r.status === 403 && (await pair(target.url, true)).ok) r = await send(peerHeaders(token(target.url)) ?? h);
+			if (!r.ok) log(`handoff ack ${id}: ${to} answered ${r.status}`);
+		} catch (e) {
+			log(`handoff ack ${id}: ${e instanceof Error ? e.message : String(e)}`);
+		}
+	}
+
 	// A forwarded action, run through the same local handlers as the owner's own web app; `via` records who asked.
 	async function act(req: Request): Promise<Response> {
 		const b = (await req.json().catch(() => ({}))) as { action?: unknown; args?: unknown; from?: unknown };
@@ -286,6 +313,25 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				for (const x of list) form.append("file", new File([Buffer.from(x.data, "base64")], String(x.name ?? "file"), { type: typeof x.type === "string" ? x.type : "" }));
 				return deps.local(new Request(`${LOCAL}/api/upload`, { method: "POST", headers: { ...deps.localHeaders, ...(login ? { "tailscale-user-login": login } : {}) }, body: form }));
 			}
+			// The owner handed work over from the other computer: it arrives in this gateway's main chat as the owner's own instruction, and the ack goes back (not awaited).
+			case "handoff": {
+				const words = typeof a.owner_words === "string" ? a.owner_words.trim() : "";
+				const note = typeof a.note === "string" ? a.note.trim() : "";
+				if (!words || words.length > WORDS_MAX) return bad(`owner_words required (at most ${WORDS_MAX} characters)`);
+				if (!note || note.length > NOTE_MAX) return bad(`note required (at most ${NOTE_MAX} characters)`);
+				if (a.id !== undefined && !(typeof a.id === "string" && HANDOFF_ID.test(a.id))) return bad("id must be 1-40 letters, digits, - or _");
+				const id = typeof a.id === "string" ? a.id : randomBytes(4).toString("hex");
+				const text = `[peer handoff from ${from} id=${id}] The owner explicitly handed this work over from ${from}. Take it as the owner's own instruction and continue it here now; do not ask whether to take it. Answer the owner here as usual.\n\nOwner's words (verbatim):\n${words}\n\nHandoff note:\n${note}`;
+				const r = await ask("POST", "/api/message", { text, via: from }, login);
+				if (!r.ok) return r;
+				const p: Promise<void> = ackHandoff(from, id).finally(() => acks.delete(p));
+				acks.add(p);
+				return json({ ok: true, id, ack: true });
+			}
+			// The other computer took the work this one handed over: a bot note in this gateway's chat.
+			case "handoff-ack":
+				if (typeof a.id !== "string" || !HANDOFF_ID.test(a.id)) return bad("id required");
+				return ask("POST", "/api/send", { target: "chat", text: `✅ ${from}에서 넘긴 작업을 받아 이어서 해요 (id ${a.id})`, session: "main" }, login);
 			case "answer":
 				if (typeof a.id !== "string" || !a.id) return bad("id required");
 				return ask("POST", `/api/notices/${encodeURIComponent(a.id)}/answer`, { n: a.n, note: a.note, via: from }, login);
@@ -411,7 +457,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 	}
 
 	async function idle(): Promise<void> {
-		while (inflight.size) await Promise.all([...inflight.values()]);
+		while (inflight.size || acks.size) await Promise.all([...inflight.values(), ...acks]);
 	}
 
 	return { snapshot, peerMonitoring, invalidatePeer, idle, route };
