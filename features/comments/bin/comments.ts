@@ -2,6 +2,8 @@
 // `drop <code>`, `status`. A reply draft can carry a mail (hub/mail-cli.ts compose --with-comment <code>, or the draft API): the one card shows
 // both, `send` posts the reply and then sends the mail, `revise --part mail` changes only the mail, `drop` drops both. `send` goes out only when the owner's latest pick for exactly that draft code, made after the draft was
 // created, is 1) 보내기 (hub/draft-approval.ts draftVerdict); the engine's gate (hub/comments/contract.ts) then posts it once.
+// `send <code> --only reply|mail` sends one part of a reply + mail card: also allowed after the card's 답글만 보내기 / 메일만 보내기 pick, and after
+// 어떻게 보낼지 직접 입력 (the owner's own words, printed back so the bot does what they say). The other part stays and is asked again.
 import { join } from "node:path";
 import { commentAsk } from "../../../hub/comments/ask.ts";
 import type { Engine } from "../../../hub/comments/engine.ts";
@@ -44,13 +46,25 @@ export async function run(args: string[], engine: Engine = realEngine(dataDir())
 			if (!d) return fail("그 초안을 찾지 못했어요");
 			// A pick made before the mail was put on the card did not show the mail: it counts from `mailAt` on.
 			const v = draftVerdict(inbox, d.code, Math.max(d.created, d.mailAt ?? 0));
-			if (v.verdict !== "send") return fail(`사용자가 1) 보내기를 고른 기록이 없어서 보내지 않았어요 (${v.verdict === "none" ? "고른 기록 없음" : v.verdict})`);
-			const r = engine.send(d.code, { by: "owner" });
+			const only = flag(args, "--only");
+			if (only !== undefined && only !== "reply" && only !== "mail") return fail("--only는 reply 또는 mail이에요");
+			// Labels of the send-mode options on the card (hub/draft-approval.ts, when the card offers them).
+			const picked: string = v.verdict;
+			const allowed = ["send", "own", ...(only === "reply" ? ["send-main"] : only === "mail" ? ["send-mail"] : [])];
+			if (!allowed.includes(picked)) return fail(`사용자가 1) 보내기를 고른 기록이 없어서 보내지 않았어요 (${v.verdict === "none" ? "고른 기록 없음" : v.verdict})`);
+			const said = picked === "own" && v.detail ? [`사용자 지시: ${v.detail}`] : [];
+			if (only === "mail") {
+				const m = await engine.sendMailOnly(d.code);
+				if (!m.ok) return fail(`메일을 보내지 못했어요: ${m.text}`);
+				return { lines: [...said, `메일만 보냈어요. 답글은 아직 올리지 않았어요 (${d.code})`, askOf(d.code, "메일은 보냈어요. 답글은 따로 물어봐요") ?? ""].filter(Boolean), code: 0 };
+			}
+			const r = engine.send(d.code, { by: "owner", ...(only === "reply" ? { only } : {}) });
 			if (!r.ok) return fail(r.reason);
 			const done = await r.done;
 			if (done.state !== "sent") return fail(`답글을 올리지 못했어요${d.mail ? " (메일도 보내지 않았어요)" : ""}: ${done.reason ?? "알 수 없는 이유"}`);
+			if (only === "reply" && d.mail) return { lines: [...said, `답글만 올렸어요 (${d.code}). 메일 초안 ${d.mail}은 따로 물어요: bun hub/mail-cli.ts ask --draft ${d.mail}`], code: 0 };
 			if (done.mail?.state === "failed") return fail(`답글은 올렸지만 메일은 보내지 못했어요: ${done.mail.text} (메일 초안 ${d.mail}은 남아 있어요. 사용자에게 알려 주세요)`);
-			return { lines: [done.mail ? `답글을 올리고 메일을 보냈어요 (${d.code})` : `답글을 올렸어요 (${d.code})`], code: 0 };
+			return { lines: [...said, done.mail ? `답글을 올리고 메일을 보냈어요 (${d.code})` : `답글을 올렸어요 (${d.code})`], code: 0 };
 		}
 		case "status": {
 			const cfg = engine.store.config();
@@ -60,7 +74,7 @@ export async function run(args: string[], engine: Engine = realEngine(dataDir())
 			return { lines: [cfg.enabled ? "댓글 연동: 켜짐" : "댓글 연동: 꺼짐", ...rows, `초안 ${t.drafts}건, 초안 한 건당 평균 입력 ${t.avgIn} / 출력 ${t.avgOut} 토큰`], code: 0 };
 		}
 		default:
-			return { lines: ["usage: comments.ts draft <comment id> | send <code> | revise <code> --change <text> [--part reply|mail] | drop <code> | status"], code: 2 };
+			return { lines: ["usage: comments.ts draft <comment id> | send <code> [--only reply|mail] | revise <code> --change <text> [--part reply|mail] | drop <code> | status"], code: 2 };
 	}
 }
 
