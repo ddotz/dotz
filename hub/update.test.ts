@@ -24,11 +24,12 @@ function fakeOmo(version: string, opts: { installTo?: string; addCode?: number }
 	};
 	return { state, run };
 }
-const harness = (o: { mode?: "check" | "install" | "off"; run: Run; latest?: string }) => {
+const GLOBAL_OMO = "/home/u/.bun/install/global/node_modules/omo-ai/bin/omo.js";
+const harness = (o: { mode?: "check" | "install" | "off"; run: Run; latest?: string; omoAt?: string }) => {
 	const posts: string[] = [];
 	const alerts: string[] = [];
 	let restarts = 0;
-	const deps = { mode: o.mode ?? "install", run: o.run, latest: async () => o.latest, harnesses: ["omo"], stateDir: dir, post: (t: string) => void posts.push(t), alert: (t: string) => void alerts.push(t), restart: () => (restarts++, "restarting") };
+	const deps = { mode: o.mode ?? "install", run: o.run, latest: async () => o.latest, locate: () => o.omoAt ?? GLOBAL_OMO, harnesses: ["omo"], stateDir: dir, post: (t: string) => void posts.push(t), alert: (t: string) => void alerts.push(t), restart: () => (restarts++, "restarting") };
 	return { deps, posts, alerts, restarts: () => restarts };
 };
 const adds = (calls: string[][]) => calls.filter(c => c[1] === "add");
@@ -42,6 +43,19 @@ test("a new omo-ai installs, verifies and asks for one restart", async () => {
 	expect(h.posts).toEqual(lines);
 	expect(h.alerts).toEqual([]);
 	expect(h.restarts()).toBe(1);
+});
+
+test("an omo on PATH that bun -g does not own is not installed over: one worklog line, no alert", async () => {
+	const omo = fakeOmo("5.1.48", { installTo: "5.1.51" });
+	const h = harness({ run: omo.run, latest: "5.1.51", omoAt: "/home/u/node_modules/omo-ai/bin/omo.js" });
+	const lines = await runHarnessUpdate(h.deps);
+	expect(adds(omo.state.calls)).toEqual([]);
+	expect(lines).toHaveLength(1);
+	expect(lines[0]).toContain("/home/u/node_modules/omo-ai/bin/omo.js");
+	expect(h.alerts).toEqual([]);
+	expect(h.restarts()).toBe(0);
+	// The same latest version is reported once.
+	expect(await runHarnessUpdate(h.deps)).toEqual([]);
 });
 
 test("a failed install keeps the old version: alert with a choice block, no restart", async () => {
