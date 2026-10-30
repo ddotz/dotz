@@ -88,8 +88,18 @@ function paintRunState() {
 }
 setInterval(() => { if (!document.hidden) paintRunState(); }, 1000);
 
-// 질문으로 가기: the open question for this conversation, at the decision sheet (or its message).
+// 질문으로 가기: the open question for this conversation. The card docked above the composer first: a session's own [ask] is docked
+// there and has no notice (hub/notices.ts laneTone), so a notice-only lookup said 질문을 찾지 못했어요 under a visible question.
+// Then the decision sheet of its notice.
 async function runAskGo() {
+  const box = $("#dcard");
+  if (DC.cur && DC.cur.t === target && box && !box.hidden) {
+    if (DC.fold[DC.cur.key]) { DC.fold[DC.cur.key] = false; paintDecision(); }
+    box.scrollIntoView({ block: "nearest" });
+    const row = $(".dc-row:not(:disabled), .dc-note, .dc-act:not(:disabled)", box);
+    (row || box).focus({ preventScroll: true });
+    return;
+  }
   if (!NT.loaded) await loadNotices();
   const d = ntDecisions().find(n => {
     const to = n.decision && n.decision.to;
