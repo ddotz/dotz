@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { basisOf, buildDraftPrompt, chatLines, DRAFT_MODEL, MAX_PAIRS, MAX_PROMPT_CHARS, ownPairs, pickDraftModel, registerOf } from "./draft.ts";
+import { basisOf, buildDraftPrompt, chatLines, DRAFT_MODEL, MAX_PAIRS, MAX_PROMPT_CHARS, MIN_CONTEXT_LINES, ownPairs, pickDraftModel, registerOf } from "./draft.ts";
 import type { Msg } from "./types.ts";
 
 let n = 0;
@@ -10,6 +10,10 @@ describe("registerOf", () => {
 		expect(registerOf(["ㅇㅇ 가능", "아직 못봄ㅋㅋ", "그래 ㄱㄱ~", "좋아 😀"])?.label).toBe("반말");
 		expect(registerOf(["네 알겠습니다", "확인했어요ㅎㅎ", "감사합니다!", "그건 좀 곤란한데요"])?.label).toBe("존댓말");
 		expect(registerOf(["네 알겠습니다", "ㅇㅇ", "그래", "좋아요"])?.label).toBe("혼용");
+	});
+	test("fragments of split messages and 음슴체 are neither: a polite group room is 존댓말, not 반말", () => {
+		const lines = ["그 눈 찜질팩 이거", "하고 그대로 끼고 자요?", "아 그럼 유튜브 보다가", "자기전에 끼고 자야겠어요", "그게 나음", "그럼 그걸로 쓸듯", "좋습니다", "폰 가격이더라구요"];
+		expect(registerOf(lines)).toEqual({ label: "존댓말", polite: 4, casual: 0 });
 	});
 	test("too few judgeable lines give no register (ㅋㅋ alone and English do not count)", () => {
 		expect(registerOf(["ㅋㅋㅋ", "ok", "응"])).toBeUndefined();
@@ -77,6 +81,16 @@ describe("buildDraftPrompt", () => {
 		expect(user).not.toContain("own-0-");
 	});
 
+	test("the earlier lines outlast the voice examples: with pairs and samples over the budget, the newest context lines stay", () => {
+		const pairs = Array.from({ length: MAX_PAIRS }, (_, i) => ({ other: [`q${i} ${"가".repeat(70)}`], own: [`a${i} ${"나".repeat(100)}`] }));
+		const samples = Array.from({ length: 12 }, (_, i) => `s${i} ${"다".repeat(100)}`);
+		const context = Array.from({ length: 12 }, (_, i) => `나: ctx-${i} ${"라".repeat(60)}`);
+		const { system, user } = buildDraftPrompt({ lines: ["Alex: 응응"], context, pairs, style: { rules: [], corrections: [], forbidden: [], samples } });
+		expect(system.length + user.length).toBeLessThanOrEqual(MAX_PROMPT_CHARS);
+		for (let i = 12 - MIN_CONTEXT_LINES; i < 12; i++) expect(user).toContain(`ctx-${i} `);
+		expect(user).not.toContain("s11 ");
+	});
+
 	test("a normal room (a full set of pairs of short lines) is not cut at all", () => {
 		const pairs = Array.from({ length: MAX_PAIRS }, (_, i) => ({ other: [`질문 ${i} 알려 주시겠어요?`], own: [`답 ${i} ㅇㅇ`] }));
 		const { user } = buildDraftPrompt({ lines: ["Alex: 내일 되나요?"], pairs });
@@ -89,7 +103,7 @@ describe("buildDraftPrompt", () => {
 		expect(system).toContain('"action":"draft"');
 		expect(system).not.toContain('"action":"skip"');
 		expect(user).toContain('The message the owner wants to send (his own words, data): "내일 7시로 미루자고 정중하게"');
-		expect(user).toContain("Recent messages in the room (context only");
+		expect(user).toContain("Recent messages in the room (");
 		expect(user).toContain("Write that new message");
 		expect(user).not.toContain("New messages since the owner's last reply");
 	});

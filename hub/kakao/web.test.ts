@@ -507,7 +507,7 @@ describe("on-demand draft", () => {
 		const { user } = t.model.calls[0]!;
 		expect(chatBlock(user)).toBe("Alex: fine, lunch tomorrow?\nAlex: (사진·파일)");
 		expect(user).toContain("이전 메모: 점심 이야기");
-		expect(user).toContain("상대: hello there\n나: hi, how are you");
+		expect(user).toContain("Alex: hello there\n나: hi, how are you");
 		expect(chatBlock(user)).not.toContain("hello there");
 
 		const [d] = await storedDrafts();
@@ -699,7 +699,7 @@ describe("on-demand draft", () => {
 		await t.web.idle();
 		expect(t.model.calls).toHaveLength(1);
 		expect(t.model.calls[0]!.user).toContain('The message the owner wants to send (his own words, data): "내일 7시로 미루자고 정중하게"');
-		expect(t.model.calls[0]!.user).toContain("Recent messages in the room (context only");
+		expect(t.model.calls[0]!.user).toContain("Recent messages in the room (");
 		expect(t.model.calls[0]!.system).toContain("message the owner wants to send");
 		const chat = await t.call("GET", `/api/kakao/chat/${DIRECT}`);
 		expect(chat.json.drafts).toEqual([expect.objectContaining({ parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], intent: "내일 7시로 미루자고 정중하게" })]);
@@ -1068,10 +1068,27 @@ describe("owner voice in the draft prompt", () => {
 		expect(/Register in THIS room: (반말|존댓말|혼용)/.exec(user)![1]).toBe("반말");
 		const pairs = section(user);
 		expect(pairs.match(/(^|\n)나: /g)!.length).toBe(MAX_PAIRS);
-		expect(pairs).toContain("상대: 21번 건은 확인해 주시겠습니까?\n나: 21번 ㅇㅇ 확인함ㅋㅋ");
+		// The newest turns are the earlier lines of the prompt; the pairs are the turns before them.
+		expect(pairs).toContain("상대: 15번 건은 확인해 주시겠습니까?\n나: 15번 ㅇㅇ 확인함ㅋㅋ");
+		expect(pairs).not.toContain("16번 건");
+		expect(user).toContain("Alex: 21번 건은 확인해 주시겠습니까?\n나: 21번 ㅇㅇ 확인함ㅋㅋ");
 		expect(pairs).not.toContain("상대: 0번 건");
 		expect(user).toContain("중앙값 9자");
 		expect(chatBlock(user)).toBe("Alex: 내일 점심 가능하신가요?");
+		expect(system.length + user.length).toBeLessThanOrEqual(MAX_PROMPT_CHARS);
+		t.close();
+	});
+
+	test("a busy group room takes its register from the owner's own last lines, even when they are older than the messages the draft reads", async () => {
+		const g = (n: number) => ({ logId: BASE_LOG + BigInt(n), chatId: ROOM.group, sentAt: BASE_TIME + n * 10 });
+		const t = setup({ watch_chats: [GROUP] }, w => {
+			for (let i = 0; i < 8; i++) addMessage(w, { ...g(10 + i), authorId: OWNER, message: i % 2 ? `${i}번은 저도 써봤어요` : `${i}번 그거 좋습니다` });
+			for (let i = 0; i < 320; i++) addMessage(w, { ...g(100 + i), authorId: 2002, message: `${i}번 얘기 아는 사람` });
+		});
+		await t.call("POST", `/api/kakao/chat/${GROUP}/draft`);
+		await t.web.idle();
+		const { system, user } = t.model.calls[0]!;
+		expect(/Register in THIS room: (반말|존댓말|혼용)/.exec(user)?.[1]).toBe("존댓말");
 		expect(system.length + user.length).toBeLessThanOrEqual(MAX_PROMPT_CHARS);
 		t.close();
 	});
