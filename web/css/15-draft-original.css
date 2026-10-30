@@ -78,3 +78,8 @@
 @media (prefers-reduced-motion: reduce) {
   .od-orig, .od-draftcol, .od-cwrap .kk-draft, .fs-card.tall.od-host, .od-cwrap .od-orig { transition: none; }
 }
+/* the comment a combined card (reply + mail) answers, inline at the top of the card (10-draft-original.js orgInline) */
+.od-inline { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px dashed var(--line-2); }
+.od-inline .od-pane, .fs-card .od-inline .od-pane { flex: none; overflow: visible; margin: 0; padding: 0; border-radius: 0; background: none; }
+.od-inline .od-open { min-height: 36px; }
+.dr-fh.ok { color: var(--ok); }

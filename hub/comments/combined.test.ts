@@ -101,6 +101,7 @@ describe("the combined card", () => {
 		expect(card).toMatchObject({ toLabel: "대상", to: "팬 댓글", body: "악보는 메일로 보내 드렸어요", ref: d.code });
 		expect(card?.mail).toMatchObject({ toLabel: "받는이", to: "fan@example.com", subject: "악보 보내드립니다", body: "안녕하세요.\n요청하신 악보를 보내드립니다.", attachments: [{ name: "score.pdf", size: "2KB" }] });
 		expect(card?.mail?.warning).toBeUndefined();
+		expect(card?.mail?.ref).toBe("M1");   // the mail draft id its files are staged under: the card opens them at /api/drafts/M1/files/<n>
 	});
 
 	test("a reply without a mail keeps the single-part block", async () => {

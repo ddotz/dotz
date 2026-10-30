@@ -46,10 +46,12 @@ export type DraftFile = { name: string; size?: string };
 export type DraftOrigin = { text: string; link?: string };
 export type DraftApproval = { toLabel: string; to: string; cc?: string[]; mode?: "reply" | "all"; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin; rule?: string; mail?: DraftApproval };
 // One part of a card: the reply (or the mail) with its recipient line, files and body.
-export type DraftPart = { origin?: DraftOrigin; rule?: string; to: string; toLabel?: DraftToLabel; cc?: string[]; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[] };
+export type DraftPart = { /** The mail draft id its files are staged under: the "함께 보낼 메일 (<id>)" line, so the card can open them. */ id?: string; origin?: DraftOrigin; rule?: string; to: string; toLabel?: DraftToLabel; cc?: string[]; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[] };
 // `mail`: the mail that goes out right after this comment reply, shown below it in the same card (hub/comments).
 export type DraftInput = DraftPart & { ref: string; question?: string; sendResult?: string; mail?: DraftPart };
 export const MAIL_MARK = "함께 보낼 메일";
+const MAIL_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
+const MAIL_LINE = /^함께 보낼 메일(?: \(([A-Za-z0-9][A-Za-z0-9_.-]{1,63})\))?$/;
 
 export function fileSizeText(b: number): string {
 	return b >= 1073741824 ? `${(b / 1073741824).toFixed(1)}GB` : b >= 1048576 ? `${(b / 1048576).toFixed(1)}MB` : b >= 1024 ? `${Math.round(b / 1024)}KB` : `${Math.max(0, Math.round(b))}B`;
@@ -91,7 +93,7 @@ export function draftApprovalBlock(d: DraftInput): string {
 		{ name: `${DRAFT_EDIT} …`, result: d.mail ? "답글과 메일 중 어느 쪽을 어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" : "어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" },
 		{ name: DRAFT_DROP, result: d.mail ? "답글과 메일을 모두 버려요" : "이 초안은 버려요" },
 	];
-	const mail = d.mail ? [">", `> ${MAIL_MARK}`, ...partLines({ ...d.mail, toLabel: "받는이" })] : [];
+	const mail = d.mail ? [">", `> ${MAIL_MARK}${d.mail.id && MAIL_ID.test(d.mail.id) ? ` (${d.mail.id})` : ""}`, ...partLines({ ...d.mail, toLabel: "받는이" })] : [];
 	return [...partLines(d), ...mail, issueBlock(`${d.question ?? "보낼까요?"} (${d.ref})`, options)].join("\n");
 }
 
@@ -110,7 +112,7 @@ export function refreshDraft(old: DraftApproval, text: string): DraftApproval {
 		return out as DraftApproval;
 	};
 	const next = head(old, fresh);
-	if (old.mail && fresh.mail) next.mail = head(old.mail, fresh.mail);
+	if (old.mail && fresh.mail) next.mail = { ...head(old.mail, fresh.mail), ...(fresh.mail.ref ? { ref: fresh.mail.ref } : {}) };
 	return next;
 }
 
@@ -166,11 +168,12 @@ export function parseQuotedDraft(text: string): DraftApproval | undefined {
 	if (!quoted.length) return undefined;
 	const first = quoted.findIndex(l => HEADER.test(l));
 	if (first > 0) quoted.splice(0, first); // a quote above the draft (the comment being answered) is not part of it
-	const cut = quoted.indexOf(MAIL_MARK);
+	const cut = quoted.findIndex(l => MAIL_LINE.test(l));
 	if (cut < 0) return parseDraftLines(quoted);
+	const id = MAIL_LINE.exec(quoted[cut]!)?.[1];
 	const mail = parseDraftLines(quoted.slice(cut + 1));
 	const main = parseDraftLines(quoted.slice(0, cut));
-	return main && mail ? { ...main, mail } : main;
+	return main && mail ? { ...main, mail: id ? { ...mail, ref: id } : mail } : main;
 }
 
 // One part (the reply or the mail) from its quoted lines: recipient line, optional subject / files / origin, then the body.

@@ -132,11 +132,11 @@ async function offer(name: string, mail: { key: string; html?: boolean }) {
 }
 const stored = () => listNotices(300).items;
 const find = (ref: string) => stored().find(n => n.kind === "decision" && n.decision?.state === "open" && n.decision.draft?.ref === ref)! as Notice;
-const openSheet = async (v: View, ref: string, before = "") => {
+const openSheet = async (v: View, ref: string, before = "", ready = ".od-tg") => {
 	await waitFor(v, `typeof noticeSheetOpen === "function" && document.querySelector(".hn")`);
 	if (before) await v.evaluate(before);
 	await v.evaluate(`noticeSheetOpen(${JSON.stringify(String(find(ref).id))})`);
-	await waitFor(v, `document.querySelector(".fs-bd .fs-card .od-tg")`);
+	await waitFor(v, `document.querySelector(${JSON.stringify(`.fs-bd .fs-card ${ready}`)})`);
 	await settled(v);
 };
 const theme = (v: View, t: "light" | "dark") => v.evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(t)}`);
@@ -412,13 +412,13 @@ describe("원문 보기 for a comment reply draft", () => {
 		expect(await text(v, ".od-ct")).toBe("링크 부탁드려요!");
 	});
 
-	test("a combined reply + mail card keeps working: its original is the comment", async () => {
+	test("a combined reply + mail card shows its original, the comment, inline at the top (no side panel to open)", async () => {
 		const v = await open(1280, 800);
-		await openSheet(v, code.combo!);
-		await showOrig(v);
-		await waitFor(v, `document.querySelector(".od-pane .od-ct")`);
+		await openSheet(v, code.combo!, "", ".od-inline");
+		await waitFor(v, `document.querySelector(".od-inline .od-ct")`);
 		expect(await text(v, ".od-ct")).toBe(CTEXT);
-		const body = await text(v, ".od-draftcol > .fs-body");
+		expect(await v.evaluate(`!document.querySelector(".od-tg, .od-orig")`)).toBe(true);
+		const body = await text(v, ".fs-body");
 		expect(body).toContain("함께 보낼 메일");
 		expect(body).toContain("악보 보내드립니다");
 	});
