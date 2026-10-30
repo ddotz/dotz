@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, log, writeAtomic } from "./config.ts";
 import { issueBlock } from "./choices.ts";
 import { activeHarness } from "./runtime/index.ts";
-import { OMO } from "./runtime/omo-hosts.ts";
+import { BUN_GLOBAL_OMO, OMO } from "./runtime/omo-hosts.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export type Mode = "check" | "install" | "off";
@@ -122,7 +122,7 @@ const SPECS: Record<string, Spec> = {
 		// `bun add -g` only moves bun's global copy; an `omo` on PATH from anywhere else (a project's node_modules) stays put.
 		blocked: t => {
 			const real = t.locate(OMO);
-			return real && /\/install\/global\/node_modules\/omo-ai\//.test(real) ? undefined : `${OMO}가 bun 전역 설치가 아니라서(${real ?? "경로 없음"}) 여기서 올리지 않아요`;
+			return real && BUN_GLOBAL_OMO.test(real) ? undefined : `${OMO}가 bun 전역 설치가 아니라서(${real ?? "경로 없음"}) 여기서 올리지 않아요`;
 		},
 	},
 };
