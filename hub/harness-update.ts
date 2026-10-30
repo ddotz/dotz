@@ -18,7 +18,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } fro
 import { join } from "node:path";
 import { DATA_DIR, log, OMP, writeAtomic } from "./config.ts";
 import { activeHarness, HARNESS_NAMES } from "./runtime/index.ts";
-import { OMO } from "./runtime/omo-hosts.ts";
+import { BUN_GLOBAL_OMO, OMO } from "./runtime/omo-hosts.ts";
 import { trackTimer } from "./shutdown.ts";
 import { newer } from "./update.ts";
 
@@ -168,7 +168,7 @@ export function installMethodOf(id: string, path: string | undefined, t: Pick<To
 	// The owner's OmO desktop app is a separate copy whose updates belong to the app, never to dotz.
 	if (/\.app\/Contents\//.test(real)) return { installMethod: "app" };
 	if (id === "omo") {
-		const m = /\/install\/global\/node_modules\/(omo-ai)\//.exec(real);
+		const m = BUN_GLOBAL_OMO.exec(real);
 		return m ? { installMethod: "bun-global", pkg: m[1]! } : { installMethod: "unknown" };
 	}
 	return { installMethod: "omp-update" };
