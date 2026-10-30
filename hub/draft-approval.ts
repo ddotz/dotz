@@ -138,7 +138,8 @@ const ATTACH = /^첨부\s*[:：]\s*(.*)$/;
 const ORIGIN = /^이어서\s*[:：]\s*(.*?)(?:\s+\(((?:https?:\/\/|#|\/)\S*)\))?$/;
 const RULE = /^규칙\s*[:：]\s*(.+)$/;
 const NONE_NOTE = /^없음\s*\((.+)\)$/;
-const FILE_SIZE = /^(.*\S)\s+\((\d+(?:\.\d+)?(?:B|KB|MB|GB))\)$/;
+// "a.pdf (352KB)", also with a note after the size as a session writes it by hand ("a.pdf (352KB, 3쪽)").
+const FILE_SIZE = /^(.*\S)\s+\((\d+(?:\.\d+)?(?:B|KB|MB|GB))(?:\s*[,·][^()]*)?\)$/;
 const REF = /\(([A-Za-z0-9][A-Za-z0-9_.:-]{1,63})\)\s*$/;
 
 // The draft a message asks approval for; undefined when the message is not a draft-approval decision (one block whose options are exactly

@@ -35,9 +35,10 @@ export function stagedDraftFile(ref: string, index: string, root: string = DRAFT
 	return real.startsWith(realpathSync(root) + sep) ? { path: real, name } : undefined;
 }
 
-export function draftFileRoute(req: Request, url: URL, ref: string, index: string, root: string = DRAFT_FILES): Response {
+// `named`: the file a draft dotz did not stage names for attachment n (hub/draft-attach.ts askedFile), served when nothing is staged.
+export function draftFileRoute(req: Request, url: URL, ref: string, index: string, root: string = DRAFT_FILES, named?: (ref: string, n: number) => { path: string; name: string } | undefined): Response {
 	try {
-		const f = stagedDraftFile(ref, index, root);
+		const f = stagedDraftFile(ref, index, root) ?? (/^\d{1,2}$/.test(index) ? named?.(ref, Number(index)) : undefined);
 		if (!f) throw new FileError("첨부파일을 찾을 수 없어요", 404);
 		const res = serveFile(f.path, req, url.searchParams.get("dl") === "1");
 		const kind = res.headers.get("content-disposition")?.startsWith("attachment") ? "attachment" : "inline";
