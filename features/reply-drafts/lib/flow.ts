@@ -238,7 +238,8 @@ export function restoreDraft(ref: string): { ok: boolean; text: string } {
 	return { ok: true, text: `초안 ${ref}을(를) 되돌렸어요` };
 }
 
-// Refuses unless the user's latest pick for this exact draft id, made after the draft was created, is 1) 보내기; lints again first.
+// Refuses unless the user's latest word for this exact draft id, made after the draft was created, is 1) 보내기 or a typed yes in the mail's
+// conversation ("보내자", hub/draft-approval.ts textVerdict); lints again first.
 // `withReply`: the mail rides on a comment reply (hub/comments/linked.ts) and the caller is that reply's send, which has already passed the
 // reply's gate (the owner's pick on the one card, or the owner's own click); a linked mail is refused without it.
 export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: true } = {}): Promise<Step> {
@@ -249,7 +250,7 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	if (d.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${d.status} 상태라 보내지 않았어요` };
 	const card = opts.withReply ? undefined : linkedComment(id);
 	if (card) return { ok: false, text: `이 메일은 댓글 답글(${card})과 한 장으로 승인해요. 답글 쪽 comments.ts send ${card}로 보내 주세요` };
-	const v: DraftVerdict = opts.withReply ? { verdict: "send" } : draftVerdict(paths.inbox(), d.id, Date.parse(d.created));
+	const v: DraftVerdict = opts.withReply ? { verdict: "send" } : draftVerdict(paths.inbox(), d.id, Date.parse(d.created), d.kind === "mail" ? { conv: `mail:${d.ref}` } : {});
 	if (v.verdict === "drop") {
 		setStatus(id, "dropped");
 		return { ok: false, text: "보내지 않기로 한 초안이에요" };

@@ -248,10 +248,27 @@ export type DraftVerdict = { verdict: DraftAction | "none"; detail?: string };
 const OWNER_SOURCES = new Set(["web", "discord", "terminal"]);
 const TAIL_BYTES = 2 * 1024 * 1024;
 
-// What the owner picked for the draft `ref` (the id in the question's trailing "(<ref>)") after `sinceMs`, read from the inbox log.
-// Only the owner's own messages count (web, discord, terminal; not a session's lane_message) and the latest pick wins. For 고치기 the
+// The owner's own words about a waiting draft, typed instead of a tap: "보내자", "ㅇㅇㅇ 메일 보내", "아잇 보내라고" approve, "보내지 마", "안 보내",
+// "ㄴㄴ" refuse. Only the first clause counts ("보내자. 그리고 화면도 고쳐" approves), and it approves only when it is nothing but a yes or a send
+// verb with filler words, so "파일 하나 더 붙여서 보내줘" or "보내기 전에 제목 바꿔" says nothing (the draft is not what he asked for). A question says nothing.
+const TEXT_NO = /보내지\s*(?:마|말|않)|안\s*보내|보내면\s*안|ㄴㄴ|보류|취소|그만/;
+const TEXT_YES = /^(?:ㅇ{2,}|ㅇㅋ|응|네|넵|예|ok|okay|오케이|좋아|좋아요|그래|ㄱ|ㄱㄱ|고|고고)$/i;
+const TEXT_SEND = /^(?:보내(?:자|줘|줘요|주세요|요|라|라고|라니까|놔|놔라|버려|도)?|(?:전송|발송)(?:해|해줘|해요|하자|하라고)?)$/;
+const TEXT_FILLER = /^(?:아|아잇|아니|그냥|빨리|얼른|어서|이제|그럼|일단|좀|메일|답장|회신|답글|댓글|이거|그거|이걸로|그걸로|이대로|그대로|다시|바로|지금|돼|됨)$/;
+export function textVerdict(text: string): "send" | "drop" | undefined {
+	const m = /^\s*([^.!?\n]*)([.!?\n]?)/.exec(text);
+	const first = (m?.[1] ?? "").trim();
+	if (!first || m?.[2] === "?") return undefined;
+	if (TEXT_NO.test(first)) return "drop";
+	const words = first.split(/[\s,~ㅎ]+/).filter(Boolean);
+	return words.some(w => TEXT_YES.test(w) || TEXT_SEND.test(w)) && words.every(w => TEXT_YES.test(w) || TEXT_SEND.test(w) || TEXT_FILLER.test(w)) ? "send" : undefined;
+}
+
+// What the owner decided for the draft `ref` (the id in the question's trailing "(<ref>)") after `sinceMs`, read from the inbox log.
+// Only the owner's own messages count (web, discord, terminal; not a session's lane_message) and the latest word wins: a pick on the card,
+// or a typed reply (textVerdict) in the conversation the draft was asked in (`conv`, or the one a pick for this ref came from). For 고치기 the
 // detail is the change the owner typed ("2) 고치기 - <change>").
-export function draftVerdict(inboxPath: string, ref: string, sinceMs: number): DraftVerdict {
+export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, opts: { conv?: string } = {}): DraftVerdict {
 	if (!existsSync(inboxPath)) return { verdict: "none" };
 	const size = statSync(inboxPath).size;
 	const start = Math.max(0, size - TAIL_BYTES);
@@ -265,22 +282,33 @@ export function draftVerdict(inboxPath: string, ref: string, sinceMs: number): D
 	const lines = buf.toString("utf8").split("\n");
 	if (start > 0) lines.shift();
 	const tag = `(${ref})`;
-	let out: DraftVerdict = { verdict: "none" };
+	type Entry = { ts?: unknown; kind?: unknown; source?: unknown; text?: unknown; picks?: unknown; conv?: unknown; channel?: unknown };
+	const owned: Entry[] = [];
 	for (const line of lines) {
-		let e: { ts?: unknown; kind?: unknown; source?: unknown; text?: unknown; picks?: unknown };
+		let e: Entry;
 		try {
 			e = JSON.parse(line);
 		} catch {
 			continue;
 		}
 		if (!e || e.kind !== "message" || typeof e.source !== "string" || !OWNER_SOURCES.has(e.source) || typeof e.ts !== "string" || !(Date.parse(e.ts) > sinceMs)) continue;
-		for (const p of Array.isArray(e.picks) ? (e.picks as { q?: unknown; label?: unknown }[]) : []) {
-			if (typeof p?.q !== "string" || !p.q.includes(tag) || typeof p.label !== "string") continue;
-			const verdict = draftActionOf(p.label);
-			if (!verdict) continue;
+		owned.push(e);
+	}
+	const picksOf = (e: Entry) => (Array.isArray(e.picks) ? (e.picks as { q?: unknown; label?: unknown }[]) : []).filter(p => typeof p?.q === "string" && p.q.includes(tag) && typeof p.label === "string" && !!draftActionOf(p.label));
+	const where = new Set<string>(opts.conv ? [opts.conv] : []);
+	for (const e of owned) if (picksOf(e).length) for (const c of [e.conv, e.channel]) if (typeof c === "string" && c) where.add(c);
+	let out: DraftVerdict = { verdict: "none" };
+	for (const e of owned) {
+		const picks = picksOf(e);
+		for (const p of picks) {
+			const verdict = draftActionOf(p.label as string)!;
 			const detail = verdict === "edit" && typeof e.text === "string" ? e.text.split(" - ").slice(1).join(" - ").trim() : "";
 			out = { verdict, ...(detail ? { detail } : {}) };
 		}
+		// A typed reply: a message without picks, in the draft's own conversation.
+		if (picks.length || Array.isArray(e.picks) || typeof e.text !== "string" || ![e.conv, e.channel].some(c => typeof c === "string" && where.has(c))) continue;
+		const said = textVerdict(e.text);
+		if (said) out = { verdict: said };
 	}
 	return out;
 }
