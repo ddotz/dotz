@@ -5,7 +5,7 @@
 // reports it, then asks the restart gate for one restart once everything is idle; "check" posts one worklog line per new
 // version and never installs; "off" does nothing. A failed install keeps the old version and goes to the alert conversation.
 // `bun hub/update.ts --check-now` runs the check path once per harness in use and prints the result without posting.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, log, writeAtomic } from "./config.ts";
 import { issueBlock } from "./choices.ts";
@@ -23,11 +23,22 @@ export type Check =
 // Runs a whole command line (the binary is the first element).
 export type Run = (cmd: string[], timeoutMs: number) => Promise<{ code: number; out: string }>;
 export type Latest = () => Promise<string | undefined>;
-type Tools = { run: Run; latest: Latest };
+// The real path of a binary on PATH, or undefined when it is not there.
+export type Locate = (bin: string) => string | undefined;
+type Tools = { run: Run; latest: Latest; locate: Locate };
 type Out = { code: number; out: string };
 
 const ANSI = /\x1b\[[0-9;]*m/g;
 const VERSION = /(\d+\.\d+\.\d+[^\s)]*)/;
+
+const defaultLocate: Locate = bin => {
+	const p = Bun.which(bin);
+	try {
+		return p ? realpathSync(p) : undefined;
+	} catch {
+		return p;
+	}
+};
 
 const defaultRun: Run = async (cmd, timeoutMs) => {
 	const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", stdin: "ignore", timeout: timeoutMs });
@@ -89,6 +100,8 @@ type Spec = {
 	landed: (now: string, c: { current: string; latest: string }) => boolean;
 	// Puts the previous version back after an install that did not verify.
 	rollback?: (t: Tools, version: string) => Promise<Out>;
+	// Why `install` cannot reach the copy on PATH (undefined: it can).
+	blocked?: (t: Tools) => string | undefined;
 };
 const bunAdd = (pkg: string, t: Tools) => t.run([process.execPath, "add", "-g", pkg], 10 * 60_000).catch(e => ({ code: -1, out: String(e) }));
 const SPECS: Record<string, Spec> = {
@@ -106,6 +119,11 @@ const SPECS: Record<string, Spec> = {
 		install: t => bunAdd("omo-ai@latest", t),
 		landed: (now, c) => newer(now, c.current),
 		rollback: (t, version) => bunAdd(`omo-ai@${version}`, t),
+		// `bun add -g` only moves bun's global copy; an `omo` on PATH from anywhere else (a project's node_modules) stays put.
+		blocked: t => {
+			const real = t.locate(OMO);
+			return real && /\/install\/global\/node_modules\/omo-ai\//.test(real) ? undefined : `${OMO}가 bun 전역 설치가 아니라서(${real ?? "경로 없음"}) 여기서 올리지 않아요`;
+		},
 	},
 };
 
@@ -126,18 +144,20 @@ const readState = (file: string): State => {
 
 // `post`: the one-line worklog entry; `alert`: an issue (a failed install) with its choice block, which goes to the alert conversation.
 // `harnesses`: runtime ids to update (default: the ones dotz runs on); `restart` is called at most once per pass.
-type Deps = { mode: Mode; post: (text: string) => void; alert?: (text: string) => void; restart: () => string; run?: Run; latest?: Latest; harnesses?: string[]; stateDir?: string };
+type Deps = { mode: Mode; post: (text: string) => void; alert?: (text: string) => void; restart: () => string; run?: Run; latest?: Latest; locate?: Locate; harnesses?: string[]; stateDir?: string };
 
 // One harness: the worklog line it posted, if any, and whether it installed something that needs a restart.
-async function updateOne(id: string, spec: Spec, { mode, post, alert = post, run = defaultRun, latest = npmLatest, stateDir = DATA_DIR }: Deps): Promise<{ line?: string; installed?: boolean }> {
-	const t = { run, latest };
+async function updateOne(id: string, spec: Spec, { mode, post, alert = post, run = defaultRun, latest = npmLatest, locate = defaultLocate, stateDir = DATA_DIR }: Deps): Promise<{ line?: string; installed?: boolean }> {
+	const t = { run, latest, locate };
 	const c = await spec.check(t);
 	if (c.status === "error") log(`${id} update: ${describe(c, spec.label)}`);
 	if (c.status !== "new") return {};
-	if (mode === "check") {
+	const blocked = mode === "install" ? spec.blocked?.(t) : undefined;
+	if (mode === "check" || blocked) {
 		const stateFile = join(stateDir, `${id}-update.json`);
 		if (readState(stateFile).notified === c.latest) return {};
-		const line = `${describe(c, spec.label)} 설치는 확인한 뒤에 해요.`;
+		const line = blocked ? `${describe(c, spec.label)} ${blocked}. 그 설치 방식대로 올려 주세요.` : `${describe(c, spec.label)} 설치는 확인한 뒤에 해요.`;
+		if (blocked) log(`${id} update: ${line}`);
 		writeAtomic(stateFile, JSON.stringify({ notified: c.latest }));
 		post(line);
 		return { line };
