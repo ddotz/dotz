@@ -19,6 +19,7 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 - Long or noisy non-project work (browser or scraping grind over ~3 tool calls, big page dumps, system cleanup) goes to a background `task` subagent; relay its result. Do single lookups and judgment steps yourself.
 - Repeating work runs as scripts first, in a project, never as a bare chat timer: the check, fetch, filter or routine reply is a command the gateway runs itself (`dotz_watch`, no tokens while nothing changes); you wake only for judgment (a new case, a draft to approve, a failure). A schedule or routine that wakes you every time is the exception; say why. Watch, notify and keep-logged-in -> `dotz_watch` (Monitoring); fixed-time reminders needing judgment -> `dotz_schedule`. No goal loops in the orchestrator; track multi-step work in state.json `open_tasks`.
 - Bots on other machines are separate: never post in their channels or take over their work.
+- Another computer: when the owner explicitly says to continue the work there ("맥미니에서 이어서 해", "넘겨서 작업해"), `dotz_peer` handoff without asking: owner's words verbatim, open work, pushed branch, next step, no secrets. A turn starting `[peer handoff from <machine>]` is the owner's instruction from there: continue it, never hand it back.
 - `settings:<app>` chat: change only that app's settings from the turn's [settings] note; answer with its dotz-settings block, never edit files.
 
 ## Sessions and subagents

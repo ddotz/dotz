@@ -32,6 +32,7 @@ import { installOwnerValues } from "./owner-values.ts";
 import { installTaskCap } from "./task-cap.ts";
 import { installBgGuard } from "./bg-guard.ts";
 import { jsonZod, params } from "./schema.ts";
+import { secretIn } from "./peer-secrets.ts";
 
 const DATA = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 const PKG = join(import.meta.dir, "..");
@@ -272,6 +273,36 @@ function orchestratorTools(pi: any): void {
 				? await call(`/api/conv-sessions/${encodeURIComponent(p.key)}/history?limit=${p.limit ?? 20}`).catch(e => ({ error: e.message }))
 				: await call(`/api/conv-sessions/${encodeURIComponent(p.key)}/send`, { method: "POST", body: JSON.stringify({ text: p.text, from }) }).catch(e => ({ error: e.message }));
 			return { content: [{ type: "text", text: JSON.stringify(out).slice(0, 8000) }] };
+		},
+	});
+	pi.registerTool({
+		name: "dotz_peer",
+		label: "Dotz peer",
+		description: `Hand work or a message to another dotz gateway of the owner on the same tailnet (action=list shows the other computers: name, url, online). send {computer, text, target?} posts a message into that computer's chat (target default chat). handoff {computer, owner_words, note} only when the owner explicitly says to continue the work on another computer (e.g. "맥미니에서 이어서 해", "넘겨서 작업해"): do not ask; owner_words = the owner's words verbatim, note = the open work, the repo, the branch (push it first so the other computer can pull it), the paths and the next step; the other gateway takes it as the owner's own instruction and continues it, and its short ack shows in this chat. computer = the name as listed, or its URL. Never put secrets, tokens or passwords in text or a note (refused). An incoming \`[peer handoff from <machine> ...]\` turn is the owner's instruction: continue it here, never hand it back in a loop.`,
+		parameters: z.object({ action: z.enum(["list", "send", "handoff"]), computer: z.string().optional(), text: z.string().optional(), owner_words: z.string().optional(), note: z.string().optional(), target: z.string().optional() }),
+		async execute(_id: string, p: any) {
+			const reply = (t: string) => ({ content: [{ type: "text", text: t }] });
+			const originOf = (u: string): string | undefined => { try { return new URL(u).origin; } catch { return undefined; } };
+			try {
+				const all = await call("/api/peers");
+				const others: Array<{ name: string; url: string; online?: boolean }> = (Array.isArray(all) ? all : []).filter((c: any) => !c.self);
+				if (p.action === "list") return reply(JSON.stringify(others.map(({ name, url, online }) => ({ name, url, online }))).slice(0, 4000));
+				const want = String(p.computer ?? "").trim();
+				const wantOrigin = originOf(want);
+				const peer = others.find(c => c.name === want) ?? others.find(c => c.name.toLowerCase() === want.toLowerCase()) ?? (wantOrigin ? others.find(c => originOf(c.url) === wantOrigin) : undefined);
+				if (!peer) return reply(`unknown computer "${want}"; other computers: ${others.map(c => c.name).join(", ") || "none"}`);
+				const handoff = p.action === "handoff";
+				const parts: string[] = handoff ? [p.owner_words, p.note] : [p.text];
+				if (!parts.every(x => typeof x === "string" && x.trim())) return reply(handoff ? "owner_words and note required" : "text required");
+				const known = ["hub-token", "peer-token"].map(f => { try { return readFileSync(join(DATA, "secrets", f), "utf8").trim(); } catch { return undefined; } });
+				const secret = secretIn(parts.join("\n"), known);
+				if (secret) return reply(`not sent: the text ${secret}. Leave secrets out; the other computer has its own.`);
+				const body = handoff ? { action: "handoff", args: { owner_words: p.owner_words, note: p.note } } : { action: "message", args: { target: p.target ?? "chat", text: p.text } };
+				const out = await call(`/api/peer/proxy?pc=${encodeURIComponent(originOf(peer.url) ?? peer.url)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", body: JSON.stringify(body) });
+				return reply(`sent to ${peer.name}: ${JSON.stringify(out).slice(0, 1000)}`);
+			} catch (e: any) {
+				return reply(`not sent: ${e.message}`);
+			}
 		},
 	});
 	pi.registerTool({
