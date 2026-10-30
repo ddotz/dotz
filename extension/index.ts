@@ -30,6 +30,7 @@ import { installHarnessTools } from "./harness-tools.ts";
 import { installOutputCap } from "./output-cap.ts";
 import { installOwnerValues } from "./owner-values.ts";
 import { installTaskCap } from "./task-cap.ts";
+import { installBgGuard } from "./bg-guard.ts";
 import { jsonZod, params } from "./schema.ts";
 
 const DATA = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
@@ -535,6 +536,7 @@ export default function dotz(host: any) {
 	if ((process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1") && process.env.OMO_SENPI_TASK_DEPTH) {
 		keyProvider(pi, true);
 		installTaskCap(pi);
+		installBgGuard(pi);
 		enforceRules(pi);
 		installOutputCap(pi);
 		installCompactKept(pi);
