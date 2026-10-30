@@ -50,6 +50,35 @@ test("only a draft with the three labels is a draft-approval decision", () => {
 	expect(["보내기", "고치기", "보내지 않기", "올리기"].map(draftActionOf)).toEqual(["send", "edit", "drop", undefined]);
 });
 
+test("send modes: a reply + mail card keeps 1-3 and adds 답글만 / 메일만 / 직접 입력 …; it still reads as a draft", () => {
+	const card = { to: "인디스쿨 a 댓글", toLabel: "대상" as const, body: "메일 보내드렸습니다^^", ref: "indi:1", question: "이대로 보낼까?", mail: { to: "t@example.com", subject: "MR", body: "MR 보내드립니다", attachments: [{ name: "a.mp3", size: 2048 }] } };
+	const block = draftApprovalBlock({ ...card, sendModes: true });
+	const opts = parseDecisions(block).blocks[0]!.options;
+	expect(opts.map(o => [o.n, o.label])).toEqual([[1, "보내기"], [2, "고치기"], [3, "보내지 않기"], [4, "답글만 보내기"], [5, "메일만 보내기"], [6, "어떻게 보낼지 직접 입력"]]);
+	expect(block).toContain("**6) 어떻게 보낼지 직접 입력 …**");
+	expect(opts[5]).toMatchObject({ detail: true });
+	expect(parseDraftApproval(block)).toMatchObject({ toLabel: "대상", ref: "indi:1", mail: { to: "t@example.com" } });
+	// A card without a mail part has nothing to split: only the free-text mode is added. Without sendModes the card is the old three.
+	expect(parseDecisions(draftApprovalBlock({ ...card, mail: undefined, sendModes: true })).blocks[0]!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기", "어떻게 보낼지 직접 입력"]);
+	expect(parseDecisions(draftApprovalBlock(card)).blocks[0]!.options).toHaveLength(3);
+	expect(["답글만 보내기", "메일만 보내기", "어떻게 보낼지 직접 입력"].map(draftActionOf)).toEqual(["send-main", "send-mail", "own"]);
+	// Any other fourth option is not a draft card.
+	expect(parseDraftApproval(`${draftApprovalBlock(card)}\n**4) 나중에**`)).toBeUndefined();
+});
+
+test("직접 입력 needs the owner's words; they go out with the answer and draftVerdict returns them", async () => {
+	const card = { to: "인디스쿨 b 댓글", toLabel: "대상" as const, body: "답글", ref: "DOWN1", question: "직접 입력 카드 보낼까?", mail: { to: "t@example.com", subject: "MR", body: "본문" }, sendModes: true };
+	const since = Date.parse(ts()) - 1;
+	ask(draftApprovalBlock(card));
+	const n = noticeFor("직접 입력 카드");
+	expect(n.decision!.draft).toMatchObject({ ref: "DOWN1" });
+	const sent: Parameters<DecisionSend>[0][] = [];
+	const send: DecisionSend = async a => void sent.push(a);
+	expect((await answerDecision(n.id, { n: 6 }, send)).status).toBe(400);
+	expect((await answerDecision(n.id, { n: 6, note: "메일 먼저, 답글은 내일" }, web)).status).toBe(200);
+	expect(draftVerdict(paths.inbox, "DOWN1", since)).toEqual({ verdict: "own", detail: "메일 먼저, 답글은 내일" });
+});
+
 test("a long draft stays whole in the notice's draft and the notice is a normal open decision", () => {
 	const body = Array.from({ length: 120 }, (_, i) => `${i + 1}번째 줄이에요`).join("\n");
 	ask(draftApprovalBlock({ ...mail, body, ref: "DLONG", question: "긴 메일 보낼까요?" }));

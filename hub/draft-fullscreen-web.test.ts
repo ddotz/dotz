@@ -121,3 +121,20 @@ describe("draft approval opens full screen", () => {
 		expect((await box(desk, ".dc-act.main"))!.b).toBeLessThanOrEqual(dc.b);
 	}, 90_000);
 });
+
+test("a reply + mail draft with send modes shows all six choices; 직접 입력 opens the text box that asks how to send", async () => {
+	resolveNotices({ ids: stored().filter(n => n.decision?.state === "open").map(n => n.id) });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${draftApprovalBlock({ to: "인디스쿨 a 댓글", toLabel: "대상", body: "선생님 MR 메일로 보내드렸습니다^^", ref: "indi:9", question: "이대로 보낼까?", mail: { to: "t@example.com", subject: "MR 보내드립니다", body: "선생님 안녕하세요:)" }, sendModes: true })}` });
+	const dn = find(n => n.decision?.draft?.ref === "indi:9");
+	expect(dn.decision!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기", "답글만 보내기", "메일만 보내기", "어떻게 보낼지 직접 입력"]);
+	const v = await open(390, 844);
+	await waitFor(v, `typeof noticeSheetOpen === "function" && document.querySelector(".hn")`);
+	await v.evaluate(`noticeSheetOpen(${JSON.stringify(String(dn.id))})`);
+	await waitFor(v, `document.querySelectorAll(".fs-ft .dc-acts .dc-act").length === 6`);
+	expect(JSON.parse(await v.evaluate(`JSON.stringify([...document.querySelectorAll(".fs-ft .dc-acts .dc-act")].map(b => b.textContent))`))).toEqual(["보내기", "고치기", "보내지 않기", "답글만 보내기", "메일만 보내기", "어떻게 보낼지 직접 입력"]);
+	expect(await v.evaluate(`[draftAsksText({ label: "답글만 보내기" }), draftAsksText({ label: "메일만 보내기" }), draftAsksText({ label: "어떻게 보낼지 직접 입력" })].join()`)).toBe("false,false,true");
+	await v.evaluate(`document.querySelector(".fs-ft .dc-acts .dc-act:nth-child(6)").click()`);
+	await waitFor(v, `document.querySelector(".fs-ft .dc-note")`);
+	expect(await v.evaluate(`document.querySelector(".fs-ft .dc-edit .dc-lb").textContent + "|" + document.querySelector(".fs-ft .dc-go").textContent`)).toBe("어떻게 보낼까요?|이렇게 보내 달라고 하기");
+	await v.evaluate(`dkClose()`);
+});
