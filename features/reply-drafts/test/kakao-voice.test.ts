@@ -100,11 +100,11 @@ test("first draft: the model reads the room as pairs once and writes the profile
 	const room = readFileSync(roomFileName, "utf8");
 	expect(room).toContain("## 대화 이해");
 	for (const line of PROFILE) expect(room).toContain(`- ${line}`);
-	expect(room).toMatch(/own=15 v=2 model=ok at=2026-10-23T00:00:00/);
+	expect(room).toMatch(/own=15 v=3 model=ok at=2026-10-23T00:00:00/);
 	expect(room).toContain("- ㅇㅇ");
 	for (const junk of [...JUNK, "안녕하세요"]) expect(room).not.toContain(junk);
 	const global = readFileSync(toneFile({ app: "kakao" }), "utf8");
-	expect(global).toMatch(/own=19 v=2/);
+	expect(global).toMatch(/own=19 v=3/);
 	expect(global).not.toContain("절대 학습 금지");
 	expect(roomFileName).toBe(join(env.dir, "custom", "reply-drafts", "tone", "kakao", `${roomFile(DIRECT)}.md`));
 	expect(statSync(roomFileName).mode & 0o777).toBe(0o600);
@@ -143,7 +143,7 @@ test("after the 200th new own line the model updates the old profile from only t
 	expect(input).not.toContain("안녕하세요. 내일 일정 확인 부탁드립니다.");
 
 	const md = readFileSync(file, "utf8");
-	expect(md).toMatch(/own=215 v=2 model=ok at=2026-11-30/);
+	expect(md).toMatch(/own=215 v=3 model=ok at=2026-11-30/);
 	expect(md).toContain("- 반말로 짧게, 요즘은 ㅎㅎ도 붙임");
 	expect(md).not.toContain(PROFILE[3]!);
 	expect(md).toContain("- 내가 쓴 규칙");
@@ -172,7 +172,7 @@ test("a failing model keeps the counted profile; it is tried again after an hour
 	f.state.reply = async () => ({ text: "no json", inputTokens: 10, outputTokens: 5 });
 	await ensureKakaoVoice(f.src(DIRECT), new Date("2026-12-01T00:00:00Z"));
 	const md = readFileSync(file, "utf8");
-	expect(md).toMatch(/own=215 v=2 model=ok/);
+	expect(md).toMatch(/own=215 v=3 model=ok/);
 	for (const line of PROFILE) expect(md).toContain(`- ${line}`);
 	f.close();
 });
@@ -184,9 +184,9 @@ test("without a model the counted profile is still written, and a profile of the
 	expect(readFileSync(file, "utf8")).toMatch(/model=none/);
 	expect(f.asks).toHaveLength(0);
 
-	writeFileSync(file, readFileSync(file, "utf8").replace(/own=\d+ v=2 model=none/, "own=13"));
+	writeFileSync(file, readFileSync(file, "utf8").replace(/own=\d+ v=3 model=none/, "own=13"));
 	expect((await ensureKakaoVoice(f.src(DIRECT))).mode).toBe("learn");
-	expect(readFileSync(file, "utf8")).toMatch(/v=2 model=ok/);
+	expect(readFileSync(file, "utf8")).toMatch(/v=3 model=ok/);
 	f.close();
 });
 
