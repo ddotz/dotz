@@ -110,6 +110,8 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 		const url = `/#chat/lane:${encodeURIComponent(lane)}`;
 		if (tone === "ask") return { kind: "ask", title: `${lane} · 질문`, body: plain(rest), url, tag: `ask:${lane}` };
 		if (tone === "done" || tone === "fail") return { kind: "lane", title: `${lane} · ${tone === "done" ? "완료" : "실패"}`, body: plain(rest), url, tag: `lane:${lane}` };
+		// An untagged turn-end report that answers the owner, after a long turn: the session's answer, like the main chat's below.
+		if (e.kind === "lane_report" && e.answering === true && !tone && (sinceOwner ?? 0) >= LONG_TURN_MS) return { kind: "answer", title: `${lane} · 완료`, body: plain(rest), url, tag: `lane:${lane}` };
 		return undefined;
 	}
 	// The main chat's answers and a project's (work channel or one of its threads) are the same kind of message: one rule, each opening its own chat.

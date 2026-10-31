@@ -19,7 +19,8 @@ export function installLaneHandlers(): void {
 	setReportHandler((lane, raw, answering) => {
 		noteHandoffLeak(`lane:${lane.name}`, raw);
 		const text = stripHandoff(raw);
-		emit("inbox", { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text });
+		// `answering`: the report answers an owner message (the bell and push treat it as the session's answer, hub/notices.ts, hub/push.ts).
+		emit("inbox", { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text, ...(answering ? { answering: true } : {}) });
 		const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), lane.orchAsked === false);
 		if (how === "relayed" || how === "held" || how === "steered") lane.orchAsked = false;
 		if (how === "steered") log(`lane ${lane.name} report steered into the orchestrator's turn`);

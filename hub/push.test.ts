@@ -51,6 +51,14 @@ test("lane [ask]/[done]/[fail] lines notify and open that lane; progress does no
 	expect(classify(ev({ source: "lane:x", target: "lane:x", text: "그냥 메모" }))).toBeUndefined();
 });
 
+test("a session's untagged report that answers the owner after a long turn notifies as its answer", () => {
+	const report = (extra: Record<string, unknown>) => ev({ kind: "lane_report", source: "lane:x", lane: "x", text: "리포트가 완성됐어요", ...extra });
+	expect(classify(report({ answering: true }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: "x · 완료", url: "/#chat/lane:x", tag: "lane:x", body: "리포트가 완성됐어요" });
+	expect(classify(report({ answering: true }), LONG_TURN_MS - 1)).toBeUndefined();
+	expect(classify(report({}), LONG_TURN_MS)).toBeUndefined();
+	expect(classify(report({ answering: true, text: "[run] 아직 하는 중" }), LONG_TURN_MS)).toBeUndefined();
+});
+
 test("a subscription the push service reports gone (410) is dropped", async () => {
 	const ua = createECDH("prime256v1");
 	ua.generateKeys();
