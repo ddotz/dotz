@@ -430,9 +430,10 @@ function ntApply(item, unread) {
   syncInlineChoices();
 }
 // Throws with the hub's reason when the answer could not be delivered.
-async function ntPost(n, num, note) {
+// `files` (uploads, 10-decision-card.js uploadFile) go with a draft's 직접 수정 answer to the bot; a peer's question takes none.
+async function ntPost(n, num, note, files) {
   if (n.pc) { await pqNotice(n, "answer", { id: String(n.id), n: num, ...(note ? { note } : {}) }); return; }   // a peer's question: answered on that computer (34-peer-monitoring.js)
-  const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(note ? { note } : {}) });
+  const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(note ? { note } : {}), ...(files && files.length ? { files } : {}) });
   ntApply(r.item, r.unread);
 }
 // The open decision that is this chat card's question (a card with one block), so the card and the notice answer through the same path.

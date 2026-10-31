@@ -44,6 +44,9 @@
 .dc-note { width: 100%; box-sizing: border-box; min-height: 72px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--card); resize: vertical; font-size: 14px; line-height: 22px; }
 .dc-note:focus { outline: 0; border-color: var(--accent); }
 .dc-eb { display: flex; gap: 8px; }
+.dc-fl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.dc-fl .dr-add { flex: none; padding: 0 12px; }
+.dc-fl .fatt { height: 48px; max-width: 100%; }
 /* 돌아가기 (secondary) and the send button (primary) are the one button system (01-tokens.css); only the row layout is here */
 .dc-back, .dc-go { flex: 1; }
 @media (pointer: coarse) { .dc-note { font-size: 16px; } }
