@@ -10,6 +10,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .fs-hd { flex: none; display: flex; align-items: center; gap: 8px; padding: 16px 8px 12px 24px; }
 .fs-tt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .fs-ey { display: block; color: var(--fg-2); font: 600 13px/20px var(--font); }
+.fs-ey .fs-left { color: var(--accent); }
 .fs-t { margin: 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
 .fs-ey.warn { color: var(--warn); }
 .fs-ey.err { color: var(--err); }
