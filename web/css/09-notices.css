@@ -104,7 +104,7 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .fs-body .dc-dr-b { max-height: none; margin: 0; overflow: visible; font-size: 15px; line-height: 24px; word-break: keep-all; }
 .fs-body .dc-q { margin-top: 0; font-size: 17px; line-height: 26px; }
 /* the send sheet's buttons are the one button system (01-tokens.css): .dc-act quiet, .dc-act.alt secondary, .dc-act.main primary */
-.dc-acts { display: flex; align-items: center; gap: 6px; }
+.dc-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .dc-act { flex: none; }
 .dc-act:active:not(:disabled) { background: var(--active); }
 .dc-act.alt { background: var(--fs-fill); }
