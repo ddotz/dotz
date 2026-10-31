@@ -24,6 +24,7 @@ const FIELD_RE: Record<keyof FieldMap, RegExp> = {
 	from: /from|sender|author/i,
 	time: /date|time|sent|received|timestamp|created/i,
 	read: /^(is_?)?(read|seen|unread)$|read_?(yn|flag)|seen_?flag/i,
+	answered: /^(is_?)?(answered|replied)$|(reply|answer)_?(yn|flag)|answered_?flag/i,
 };
 
 const isJsonResponse = (r: CapturedRequest): boolean => {
@@ -65,7 +66,7 @@ function inferFields(items: Record<string, unknown>[]): FieldMap | undefined {
 	const id = pick("id");
 	if (!id) return undefined;
 	const fields: FieldMap = { id };
-	for (const which of ["from", "subject", "time", "read"] as const) {
+	for (const which of ["from", "subject", "time", "read", "answered"] as const) {
 		const k = pick(which);
 		if (k && k !== id && !Object.values(fields).includes(k)) fields[which] = k;
 	}

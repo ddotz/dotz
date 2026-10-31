@@ -5,7 +5,7 @@ import { endpointUrl, getPath, parseJson, requestInit, type Endpoint, type SiteS
 import { headers, fetchList, type LoginState } from "./session.ts";
 import { type Ctx } from "./config.ts";
 
-export type Mail = { id: string; from: string; subject: string; time: string; read: boolean };
+export type Mail = { id: string; from: string; subject: string; time: string; read: boolean; /** the site says he replied (spec field `answered`); missing = the site does not say */ replied?: boolean };
 export type Detail = { id: string; body: string; html?: string; raw: unknown };
 export type MailFile = { name: string; id?: string; url?: string; size?: number; type?: string };
 export type PostedFile = { name: string; type?: string; data: string };
@@ -26,7 +26,9 @@ export function mapMails(spec: SiteSpec, body: unknown): Mail[] {
 		from: f.from ? str(getPath(item, f.from)) : "",
 		subject: f.subject ? str(getPath(item, f.subject)) : "",
 		time: f.time ? str(getPath(item, f.time)) : "",
-		read: f.read ? truthyRead(getPath(item, f.read)) : false,
+		// A field that holds "unread" is true for an unread mail, so it is read the other way round.
+		read: f.read ? truthyRead(getPath(item, f.read)) !== /unread/i.test(f.read) : false,
+		...(f.answered ? { replied: truthyRead(getPath(item, f.answered)) } : {}),
 	})).filter((m) => m.id);
 }
 

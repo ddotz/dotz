@@ -471,13 +471,15 @@ function monConvNode(t, label) {
   const stateTag = stateText ? (m.unreplied ? unrepPill(stateText) : el("span", { class: `tag mr-state${stateTone ? ` ${stateTone}` : ""}`, "data-state": stateText, text: stateText })) : null;
   // The 자동 초안 규칙 that drafted this mail (hub/mail.ts MailRecord.rule): its name, as a plain tag beside the reply state.
   const ruleTag = m && m.rule && m.dir !== "out" ? draftRuleTag(m.rule, "mr-rule") : null;
+  // Why a mail is not 답장 필요: he is not its main recipient (hub/mail-state.ts replyExclusion: 참조로 받음, 단체 메일, 자동 발송, 다른 사람 앞).
+  const whyTag = m && m.why && m.dir !== "out" && m.reply !== "replied" ? el("span", { class: "tag mr-why", "data-why": m.why, text: m.why }) : null;
   const inline = m ? mailRowActs(m).map(a => mailActButton(t, a)) : [];
   const files = m ? mailRealFiles(m.attachments).map(x => x.f) : [], brief = m ? mailBrief(m, t) : "", when = rcWhen(last ? last.ts : m && m.at), chip = m && (m.dir === "out" || !m.reply || (m.suggest && m.suggest.state === "sent")) ? mailReplyChip(m.suggest) : null;
   const title = m ? m.subject || "(제목 없음)" : rcPlain(String(last ? last.text : "").split("\n").find(l => l.trim() && !/^\s*>/.test(l)) || "") || label;
   const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
   return el("div", { class: "bm alert rc mr", role: "button", tabindex: "0", "aria-label": `${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
-    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label }), stateTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m ? mailMenuBtn(t) : null),
+    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label }), stateTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m ? mailMenuBtn(t) : null),
     el("div", { class: "rc-title", text: title }),
     m && m.to ? el("div", { class: "mr-to", text: mailToText(m) }) : null,
     ...mailSumNodes(m, t, brief),

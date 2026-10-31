@@ -23,6 +23,9 @@ type Hooks = {
 	sent?: (m: NewMail) => Promise<void>;
 	/** The owner's accounts are known (startup, and again when they change): the stored mails are classified with them. */
 	accounts?: (addresses: string[]) => void;
+	/** Every thread this poll listed (inbox and sent folder, no extra zele call): `read` = no message of it is unread any more (read in Gmail,
+	 *  another client or dotz), `replied` = its newest message is the owner's (he answered it, from dotz or anywhere else). Called once per poll. */
+	states?: (items: { id: string; read?: boolean; replied?: boolean }[]) => void | Promise<void>;
 	brief: (text: string) => void;
 };
 
@@ -211,6 +214,15 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 		}
 		await h.mail(newMail(m));
 	}
+	// The mailbox's own state of every listed thread, on every poll: what dotz shows follows it (hub/mail.ts syncMailStates).
+	const states = new Map<string, { id: string; read?: boolean; replied?: boolean }>();
+	for (const m of [...mail, ...sent]) {
+		const id = String(m.id ?? "");
+		if (!id || states.has(id)) continue;
+		const read = m.flags === undefined ? undefined : !/unread/i.test(String(m.flags));
+		states.set(id, { id, ...(read !== undefined ? { read } : {}), ...(isOwnAddress(String(m.from ?? ""), own) ? { replied: true } : {}) });
+	}
+	if (states.size) await h.states?.([...states.values()]);
 
 	const upcoming = (await calendar(list, ["cal", "events", "--days", "14", "--all", "--limit", "100"])).filter(ev => !isHoliday(ev));
 	const current = new Map(upcoming.map(ev => [String(ev.id), seen(ev)]));

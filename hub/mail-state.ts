@@ -60,14 +60,48 @@ const TODO_NONE = /^할\s*일\W*\s*(?:•|-|·)?\s*없음/;
 // Making something for the sender counts (작성, 견적, 해설, 자료 준비...): what is made goes back to him.
 const REPLY_TODO = /회신|답장|답변|제출|작성|송부|보내|알려|의견|참석\s*여부|견적|해설|자료\s*(?:준비|정리|제공|전달)|reply|respond|send/i;
 const ANSWERS = /답변\s*(?:전달|드립니다|드려요|입니다)|회신\s*(?:드립니다|드려요|입니다)|감사합니다\.?\s*$/i;
-export type ReplyCue = { from?: string; to?: string; cc?: string; subject: string; text?: string };
-export function replyExpected(m: ReplyCue, own: ReadonlySet<string> = ownAddresses()): boolean {
-	if (MACHINE_SENDER.test(m.from ?? "") || BULK_SUBJECT.test(m.subject)) return false;
+/** `list` = the poster saw a List-Id / List-Unsubscribe header (a mailing list or group mail). */
+export type ReplyCue = { from?: string; to?: string; cc?: string; subject: string; text?: string; list?: boolean };
+
+// ---- is the owner a main recipient? ----
+// 답장 필요 is only for a mail written to him (owner 2026-10-31: "내가 주요 대상이 아닌 경우에는 답장 필요에서 제외"). Deterministic rules, no model:
+//   cc     참조로 받음   his address is in Cc and not in To
+//   list   단체 메일     a mailing list / group mail: List-Id or List-Unsubscribe, an unsubscribe footer or bulk subject, or a To that is a
+//                       group address (all@, team@, googlegroups.com...) with none of his addresses in To / Cc
+//   bulk   자동 발송     a machine sender (noreply, notification, newsletter...)
+//   other  다른 사람 앞  he is one of 3+ To recipients and the mail greets another of them by name ("Lee님,", "Hi Lee,")
+// A mail that is excluded still shows in the list, only never as 답장 필요, with the reason as a small tag (mailCard `why`).
+export type ReplyExclusion = "cc" | "list" | "bulk" | "other";
+export const EXCLUSION_LABEL: Readonly<Record<ReplyExclusion, string>> = { cc: "참조로 받음", list: "단체 메일", bulk: "자동 발송", other: "다른 사람 앞" };
+const GROUP_ADDRESS = /^(?:all|everyone|team|staff|group|groups|list|members?|announce\w*|notice|news|company|office|전체)(?:[._-][\w.-]*)?@|@googlegroups\.com$|@groups\./i;
+const parts = (s: string | undefined): string[] => (s ?? "").split(/[,;](?=(?:[^"]*"[^"]*")*[^"]*$)/).map(t => t.trim()).filter(Boolean);
+const nameOf = (t: string): string => t.replace(/<[^>]*>/, "").replace(/["']/g, "").trim().toLowerCase();
+// The name a mail greets in its first line: "이영희님," / "영희 님" / "Dear Lee," / "Hi Lee".
+const GREETING = /^\s*(?:(?:dear|hi|hello)\s+([a-z][\w.-]*)|([가-힣a-z][가-힣\w.-]{0,20}?)\s*(?:님|씨))\s*[,.:!\s]/i;
+export function replyExclusion(m: ReplyCue, own: ReadonlySet<string> = ownAddresses()): ReplyExclusion | undefined {
+	if (m.list) return "list";
+	if (MACHINE_SENDER.test(m.from ?? "")) return "bulk";
 	const text = (m.text ?? "").slice(0, 4000);
-	if (BULK_TEXT.test(text)) return false;
-	const inTo = (m.to ?? "").split(",").some(t => own.has(addressKey(t)));
-	const inCc = (m.cc ?? "").split(",").some(t => own.has(addressKey(t)));
-	if (own.size && m.to && !inTo && inCc) return false;
+	if (BULK_SUBJECT.test(m.subject) || BULK_TEXT.test(text)) return "list";
+	if (!own.size || !m.to) return undefined;
+	const to = parts(m.to), cc = parts(m.cc);
+	const mine = (t: string) => own.has(addressKey(t));
+	if (!to.some(mine)) {
+		if (cc.some(mine)) return "cc";
+		return to.some(t => GROUP_ADDRESS.test(addressKey(t))) ? "list" : undefined;
+	}
+	const others = to.filter(t => !mine(t));
+	if (others.length < 2) return undefined;
+	const g = GREETING.exec(text.split("\n").find(l => l.trim()) ?? "");
+	const name = (g?.[1] ?? g?.[2] ?? "").toLowerCase();
+	if (name.length < 2) return undefined;
+	const named = (t: string) => { const n = nameOf(t); const local = addressKey(t).split("@")[0] ?? ""; return (!!n && (n === name || n.split(/\s+/).includes(name) || (name.length >= 2 && /[가-힣]/.test(name) && n.endsWith(name)))) || local === name; };
+	return others.some(named) && !to.filter(mine).some(named) ? "other" : undefined;
+}
+
+export function replyExpected(m: ReplyCue, own: ReadonlySet<string> = ownAddresses()): boolean {
+	if (replyExclusion(m, own)) return false;
+	const text = (m.text ?? "").slice(0, 4000);
 	// The mail summary ends with what the owner has to do ("할 일"): when it is there, it decides. A reply is owed when one of those
 	// things goes back to the sender (회신, 제출, 작성해 보내기, 참석 여부...); "없음" or only reading and checking owes none.
 	const todo = TODO.exec(text)?.[0];
@@ -130,7 +164,7 @@ export function directionOf(f: DirectionFacts, own: ReadonlySet<string> = ownAdd
 
 // ---- migration ----
 
-export type StoredMail = LegacyReplyFacts & { reply_by?: ReplyBy; reply_at?: string; key: string; subject: string; from: string; to?: string; cc?: string; at: string; dir?: "out"; sentAt?: string; summary?: string; preview?: string };
+export type StoredMail = LegacyReplyFacts & { list?: true; reply_by?: ReplyBy; reply_at?: string; key: string; subject: string; from: string; to?: string; cc?: string; at: string; dir?: "out"; sentAt?: string; summary?: string; preview?: string };
 /** Mails older than this keep no reply state from replyExpected when the stored mails are brought up to the rules: history, not a backlog. */
 const JUDGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
 const subjectKey = (s: string): string => s.replace(/^\s*(?:(?:re|fw|fwd|답장|회신|전달)\s*:\s*)+/gi, "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -159,9 +193,13 @@ export function migrateMails(records: StoredMail[], opts: { own?: ReadonlySet<st
 			}
 		} else {
 			const fresh = now - Date.parse(r.at) <= JUDGE_WINDOW_MS;
-			const reply = opts.sentRefs?.has(r.key) ? "replied" : replyOf(r) ?? (fresh && replyExpected({ from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: r.summary || r.preview || "" }, own) ? "needs" : undefined);
+			const cue = { from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: r.summary || r.preview || "", list: r.list };
+			let reply = opts.sentRefs?.has(r.key) ? "replied" : replyOf(r) ?? (fresh && replyExpected(cue, own) ? "needs" : undefined);
+			// 답장 필요 the gateway or a poster set, on a mail he is not a main recipient of: none (his own 답장 필요로 표시 stays).
+			if (reply === "needs" && r.reply_by !== "owner" && replyExclusion(cue, own)) reply = undefined;
 			if (reply !== r.reply || "needsReply" in r || "noReply" in r) {
 				if (reply) r.reply = reply;
+				else delete r.reply;
 				delete r.needsReply;
 				delete r.noReply;
 				touched = true;

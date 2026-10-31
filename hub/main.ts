@@ -49,7 +49,7 @@ import { blockedByOff, watchOff } from "./app-off.ts";
 import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
-import { mailByKey, mailByThread, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailSuggest, type MailDeps } from "./mail.ts";
+import { mailByKey, mailByThread, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailReadOut, setMailSuggest, type MailDeps } from "./mail.ts";
 import { ownAddresses } from "./mail-state.ts";
 import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/offer.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
@@ -66,7 +66,7 @@ import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
-import { makeRoute, startStallSweep } from "./routes.ts";
+import { applyMailStates, makeRoute, startStallSweep } from "./routes.ts";
 import { appProxySocket } from "./app-proxy.ts";
 import { appEntries, appKeyOf, integrationContext } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
@@ -262,15 +262,23 @@ function classifyStoredMails(): void {
 }
 classifyStoredMails();
 
+// A zele mail he opened in dotz is read in Gmail too: one `zele mail read-mark` per opening.
+setMailReadOut(r => {
+	if (r.source !== "zele") return;
+	void Bun.$`zele mail read-mark ${r.id} ${r.account ? ["--account", r.account] : []}`.nothrow().quiet().then(x => x.exitCode !== 0 && log(`zele: thread ${r.id} not marked read: ${x.stderr.toString().trim().slice(0, 200)}`));
+});
+
 void startZele({
 	alert,
 	mail: async m => {
-		await postMail({ source: "zele", id: m.id, messageId: m.message, from: m.from, to: m.to, ...(m.cc ? { cc: m.cc } : {}), subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, wake: true }, mailDeps()).catch(e => log(`zele: mail ${m.id} not posted: ${(e as Error).message}`));
+		await postMail({ source: "zele", id: m.id, messageId: m.message, ...(m.account ? { account: m.account } : {}), from: m.from, to: m.to, ...(m.cc ? { cc: m.cc } : {}), subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, wake: true }, mailDeps()).catch(e => log(`zele: mail ${m.id} not posted: ${(e as Error).message}`));
 	},
 	// The owner's own mail: listed as 내가 보냄, never new; a thread he answered becomes 답장함 (hub/mail-state.ts).
 	sent: async m => {
 		await postMail({ source: "zele", id: m.id, from: m.from, to: m.to, ...(m.cc ? { cc: m.cc } : {}), subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, direction: "out" }, mailDeps()).catch(e => log(`zele: sent mail ${m.id} not recorded: ${(e as Error).message}`));
 	},
+	// Gmail's read / replied state of the listed threads, every poll: read there is read here, answered from anywhere is 답장함.
+	states: items => void applyMailStates("zele", items),
 	// His accounts are known now: stored mails written from them become 내가 보냄, and threads that already have his reply 답장함 (once; a rerun changes nothing).
 	accounts: classifyStoredMails,
 	brief: text => {
