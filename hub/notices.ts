@@ -650,8 +650,8 @@ const closedHooks: Array<(to: string, ref: string | undefined) => void> = [];
 export const onDecisionClosed = (fn: (to: string, ref: string | undefined) => void): void => void closedHooks.push(fn);
 export const openDraftRefs = (to: string): string[] => items.flatMap(i => (isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref ? [i.decision!.draft.ref] : []));
 /** The open send-approval cards (of one conversation, or all): notice id, conversation, draft ref, question and draft (hub/approval-wire.ts). */
-export const openDraftCards = (to?: string): { id: string; to: string; ref: string; title: string; draft: DraftApproval; at: string }[] =>
-	items.flatMap(i => (isOpenDecision(i) && (to === undefined || i.decision!.to === to) && i.decision!.draft?.ref ? [{ id: i.id, to: i.decision!.to, ref: i.decision!.draft.ref, title: i.title, draft: i.decision!.draft, at: i.at ?? i.ts }] : []));
+export const openDraftCards = (to?: string): { id: string; to: string; ref: string; title: string; draft: DraftApproval; at: string; text: string }[] =>
+	items.flatMap(i => (isOpenDecision(i) && (to === undefined || i.decision!.to === to) && i.decision!.draft?.ref ? [{ id: i.id, to: i.decision!.to, ref: i.decision!.draft.ref, title: i.title, draft: i.decision!.draft, at: i.at ?? i.ts, text: i.text }] : []));
 /** The open card `id` answered by the gateway's own path (a batch answer, a send the gateway runs): its queue shows the next card. */
 export function settleOpenDecision(id: string, label: string): void {
 	const item = items.find(i => i.id === id);
