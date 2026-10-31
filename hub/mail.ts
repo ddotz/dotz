@@ -7,7 +7,7 @@ import { isAbsolute, join, sep } from "node:path";
 import { cfg, DATA_DIR, log, writeAtomic } from "./config.ts";
 import { FileError, safeName, serveFile } from "./files.ts";
 import { MAIL_HTML_MAX, sanitizeMailHtml } from "./mailhtml.ts";
-import { directionOf, migrateMails, nextReply, ownAddresses, replyExpected, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
+import { directionOf, EXCLUSION_LABEL, migrateMails, nextReply, ownAddresses, replyExclusion, replyExpected, replyOf, setOwnAddresses, type MailReply, type MailReplyEvent, type ReplyBy, type StoredMail } from "./mail-state.ts";
 import { mailUnreplied } from "./unreplied.ts";
 import { withSenderAddress } from "./reply-draft.ts";
 
@@ -25,8 +25,9 @@ export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; sta
 // state is his own mark and when he set it; any other change of the state drops them.
 // `msg` = the id of the newest incoming message the record stands for (MailInput.messageId); a post with another id is a newer message of the
 // same thread and reopens it (postMail). `reopenedAt` = when that happened: a reply draft sent before it answered an older message.
-export type MailRecord = { msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; cc?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest; rule?: string; dir?: "out"; reply?: MailReply; reply_by?: ReplyBy; reply_at?: string; sentAt?: string; needsReply?: true; noReply?: true };
-export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; /** when the mail was sent (ISO 8601 with a zone); an outgoing mail is kept at that time */ at?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[] };
+// `list` = the poster saw a List-Id / List-Unsubscribe header; `account` = the mailbox it came to (zele: the account, for marking it read there).
+export type MailRecord = { list?: true; account?: string; msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; cc?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest; rule?: string; dir?: "out"; reply?: MailReply; reply_by?: ReplyBy; reply_at?: string; sentAt?: string; needsReply?: true; noReply?: true };
+export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; /** when the mail was sent (ISO 8601 with a zone); an outgoing mail is kept at that time */ at?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[]; /** a List-Id / List-Unsubscribe header was on the mail (`list: true`, `listId` or `listUnsubscribe`) */ list?: boolean; account?: string };
 export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true; direction?: "out"; replied?: true };
 export type MailDeps = {
 	/** Opens a thread under `parent` (a work channel target `ch:<id>`) from a starter message; discord.ts createThread. */
@@ -194,6 +195,59 @@ export function migrateStoredMails(sentRefs?: ReadonlySet<string>): number {
 	if (n) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
 	return n;
 }
+/** What a mailbox says now about one of its mails (POST /api/mail/state, the zele poll): `read` = read there (Gmail no UNREAD label, IMAP \Seen,
+ *  a webmail read flag), `replied` = a mail of the owner's own came after it in the thread (the newest message is his, or the site's answered flag). */
+export type MailSourceState = { id: string; read?: boolean; replied?: boolean };
+/**
+ * Brings the stored mails of `source` to what the mailbox says on this poll, so read and 답장함 are the real state, not the one copied at the
+ * first post: a mail read in the mailbox is read in dotz (`markRead` moves the conversation's read position up to the mail; true when it
+ * moved), and a thread he answered outside dotz (phone, Gmail) is 답장함. Unread in the mailbox never unreads what he opened in dotz.
+ * Then every stored mail's 답장 필요 is checked again against the main-recipient rules (hub/mail-state.ts replyExclusion), so older
+ * records follow them with no migration. Returns the mail targets that changed (read or reply state). Ids it does not hold are ignored.
+ */
+export function syncMailStates(source: string, items: readonly MailSourceState[], markRead: (target: string, ts: string) => boolean, at = new Date().toISOString()): string[] {
+	const changed = new Set<string>();
+	for (const it of items) {
+		let key: string;
+		try {
+			key = mailKey(source, it.id);
+		} catch {
+			continue;
+		}
+		const r = byKey.get(key);
+		if (!r || r.dir === "out") continue;
+		if (it.read && markRead(mailTarget(key), r.at)) changed.add(mailTarget(key));
+		if (it.replied && r.reply !== "replied" && setMailReply(key, "sent", at)) changed.add(mailTarget(key));
+	}
+	for (const k of settleNotMine()) changed.add(mailTarget(k));
+	return [...changed];
+}
+// The other way: a mail he opened in dotz is marked read in its mailbox where that is one cheap call (zele: `zele mail read-mark`, wired in
+// hub/main.ts). Called once per move of the read position (POST /api/read), never by the sync above.
+let readOut: ((r: MailRecord) => void) | undefined;
+export const setMailReadOut = (fn: ((r: MailRecord) => void) | undefined): void => void (readOut = fn);
+export function mailOpened(target: string): void {
+	const r = target.startsWith("mail:") ? byKey.get(target.slice(5)) : undefined;
+	if (!r || r.dir === "out" || !readOut) return;
+	try {
+		readOut(r);
+	} catch (error) {
+		log(`mail ${r.key}: not marked read in its mailbox: ${(error as Error).message}`);
+	}
+}
+/** 답장 필요 that the gateway or a poster set on a mail he is not a main recipient of goes (his own 답장 필요로 표시 stays). One write. */
+function settleNotMine(): string[] {
+	const own = ownAddresses();
+	const gone: string[] = [];
+	for (const r of records) {
+		if (r.dir === "out" || r.reply !== "needs" || r.reply_by === "owner") continue;
+		if (!replyExclusion({ from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: r.summary || r.preview || "", list: r.list }, own)) continue;
+		delete r.reply;
+		gone.push(r.key);
+	}
+	if (gone.length) writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	return gone;
+}
 // The reply states of the mails (the 모니터링 app lines count them: hub/integrations.ts).
 export const mailSuggests = (): Array<{ target: string; state?: string; at: string }> => records.flatMap(r => r.suggest ? [{ target: mailTarget(r.key), state: r.suggest.state ?? "draft", at: r.suggest.at ?? r.at }] : []);
 export const mailTargets = (): string[] => [...records].sort((a, b) => b.at.localeCompare(a.at)).map(r => mailTarget(r.key));
@@ -270,6 +324,8 @@ export function parseMail(raw: unknown): MailInput {
 		...(b.direction ? { direction: b.direction as "in" | "out" } : {}),
 		folder: str(b.folder, "folder", 100, false),
 		...(b.labels ? { labels: (b.labels as string[]).slice(0, 50) } : {}),
+		...(b.list === true || (typeof b.listId === "string" && b.listId.trim()) || (typeof b.listUnsubscribe === "string" && b.listUnsubscribe.trim()) ? { list: true } : {}),
+		...(str(b.account, "account", 200, false) ? { account: str(b.account, "account", 200, false) } : {}),
 	};
 }
 
@@ -362,7 +418,7 @@ export function briefMail(key: string, text: string): boolean {
 	const brief = mailBriefOf(text, r.from, r.subject);
 	if (!brief) return false;
 	r.summary = brief;
-	if (r.dir !== "out" && !replyOf(r) && replyExpected({ from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: brief })) r.reply = "needs";
+	if (r.dir !== "out" && !replyOf(r) && replyExpected({ from: r.from, to: r.to, cc: r.cc, subject: r.subject, text: brief, list: r.list })) r.reply = "needs";
 	persistSoon();
 	return true;
 }
@@ -407,8 +463,15 @@ const mailStateOf = (m: MailRecord, sent: boolean) => {
 	return { ...(m.dir === "out" ? { dir: "out" as const } : {}), ...(reply ? { reply } : {}), ...(m.sentAt ? { sentAt: m.sentAt } : {}) };
 };
 
-/** What the web draws a mail row from (GET /api/conversations `mail`, and a watch report that points at the mail): no stored paths. */
-export const mailCard = (m: MailRecord, unreplied = false, sent = false) => ({ ...mailStateOf(m, sent), subject: m.subject, from: m.from, ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), source: m.source, at: m.at, ...(m.summary ? { summary: m.summary } : {}), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}), ...(m.html ? { html: true as const } : {}), ...(m.suggest ? { suggest: m.suggest } : {}), ...(m.rule ? { rule: m.rule } : {}), ...(unreplied ? { unreplied: true as const } : {}) });
+/** Why an incoming mail is not 답장 필요 although it may look like it: he is not a main recipient (hub/mail-state.ts replyExclusion). */
+const whyOf = (m: MailRecord): string | undefined => {
+	if (m.dir === "out") return undefined;
+	const x = replyExclusion({ from: m.from, to: m.to, cc: m.cc, subject: m.subject, text: m.summary || m.preview || "", list: m.list });
+	return x ? EXCLUSION_LABEL[x] : undefined;
+};
+/** What the web draws a mail row from (GET /api/conversations `mail`, and a watch report that points at the mail): no stored paths.
+ *  `why` = the small reason tag of a mail he is not a main recipient of (참조로 받음, 단체 메일...). */
+export const mailCard = (m: MailRecord, unreplied = false, sent = false) => ({ ...mailStateOf(m, sent), ...(whyOf(m) ? { why: whyOf(m) } : {}), subject: m.subject, from: m.from, ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), source: m.source, at: m.at, ...(m.summary ? { summary: m.summary } : {}), ...(m.preview ? { preview: m.preview } : {}), ...(m.attachments?.length ? { attachments: attachmentList(m) } : {}), ...(m.html ? { html: true as const } : {}), ...(m.suggest ? { suggest: m.suggest } : {}), ...(m.rule ? { rule: m.rule } : {}), ...(unreplied ? { unreplied: true as const } : {}) });
 
 /** GET/HEAD /api/mail/<key>/files/<n>[?dl=1]: main.ts adds the web auth in front. Only files of a known mail, only inside MAIL_FILES. */
 export function mailFileRoute(req: Request, url: URL, key: string, index: string): Response {
@@ -585,8 +648,10 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps, r
 	const summary = m.summary ?? "";
 	const preview = summary ? "" : mailPreview(m.body);
 	// 답장 필요: the poster's word, else the gateway reads the mail (hub/mail-state.ts replyExpected).
-	const needs = m.needsReply || replyExpected({ from: m.from, to: m.to, cc: m.cc, subject: m.subject, text: summary || m.body || "" });
-	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(needs ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(reopened ? { reopenedAt: now } : {}) });
+	// Never when he is not a main recipient (only in Cc, a list or group mail, a machine sender), whatever the poster says.
+	const cue = { from: m.from, to: m.to, cc: m.cc, subject: m.subject, text: summary || m.body || "", list: m.list };
+	const needs = (m.needsReply && !replyExclusion(cue)) || replyExpected(cue);
+	recordMail({ ...(m.list ? { list: true as const } : {}), ...(m.account ? { account: m.account } : {}), key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(needs ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(reopened ? { reopenedAt: now } : {}) });
 	const event = { ts: at, kind: "mail", source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), ...(html ? { html: true } : {}), text: mailText(m) };
 	deps.emit(event);
 	if (m.wake) deps.wake(event, thread ? `th:${thread}` : target);

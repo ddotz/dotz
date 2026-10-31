@@ -31,7 +31,8 @@ export const MAX_MAIL_LINES = 10;
 const oneLine = (s: string, max = 200): string => s.replace(/\s+/g, " ").trim().slice(0, max);
 const mailLine = (m: Mail): string => `mail ${m.id} from=${oneLine(m.from, 80) || "?"}: ${oneLine(m.subject) || "(제목 없음)"}`;
 
-export type PollResult = { lines: string[]; mails: Mail[]; fail?: string; note: string; state: WatchState };
+/** `listed`: every mail of the list this poll read (new or not), for the read / replied state sync (postStates). */
+export type PollResult = { lines: string[]; mails: Mail[]; listed?: Mail[]; fail?: string; note: string; state: WatchState };
 
 function diffNew(state: WatchState, mails: Mail[]): { fresh: Mail[]; state: WatchState } {
 	const ids = mails.map((m) => m.id);
@@ -90,7 +91,7 @@ export async function pollOnce(ctx: Ctx, spec: SiteSpec, config: SiteConfig, sta
 	const shown = fresh.slice(-MAX_MAIL_LINES);
 	const more = fresh.length - shown.length;
 	const lines = [...(more > 0 ? [`mail-backlog ${more}: 이전 새 메일 ${more}통은 목록으로만 볼 수 있어요 (mail.ts list)`] : []), ...shown.map(mailLine)];
-	return { lines, mails: shown, note: `ok ${mails.length} new ${fresh.length}`, state: next };
+	return { lines, mails: shown, listed: mails, note: `ok ${mails.length} new ${fresh.length}`, state: next };
 }
 
 // Hands each new mail to the gateway (POST /api/mail, docs/custom-plugins.md "Posting a mail"): the gateway opens its thread
@@ -109,4 +110,13 @@ export async function postToGateway(gw: Gateway, site: string, res: Pick<PollRes
 		}
 	}
 	return res.lines.filter((l) => !(l.startsWith("mail ") && posted.has(l.slice(5).split(" ")[0])));
+}
+
+// The mailbox's own read / replied state of every listed mail, in one POST /api/mail/state per poll: the gateway marks a mail read in dotz
+// once the site says it was read (read on the site or another client) and 답장함 once the site says he replied, for the mails it holds
+// (the rest are ignored there). Only clearly-true states are sent; an unread mail is left as dotz has it. A failure is logged, never fatal.
+export async function postStates(gw: Gateway, site: string, res: Pick<PollResult, "listed">, log: (s: string) => void): Promise<void> {
+	const items = (res.listed ?? []).filter((m) => m.read || m.replied).slice(0, 500).map((m) => ({ id: m.id, ...(m.read ? { read: true } : {}), ...(m.replied ? { replied: true } : {}) }));
+	if (!items.length) return;
+	await gw("POST", "/api/mail/state", { source: site, items }).catch((error) => log(`watch ${site}: read state not sent to the gateway (${(error as Error).message})`));
 }
