@@ -2,7 +2,9 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { askComponentsFor, askInteraction, ASK_PREFIX } from "./askbuttons.ts";
 import { parseDecisions } from "./choices.ts";
+import { buildPayloads } from "./discord-format.ts";
 import { paths } from "./config.ts";
 import { draftActionOf, draftApprovalBlock, draftVerdict, parseDraftApproval, textVerdict } from "./draft-approval.ts";
 import { emit } from "./events.ts";
@@ -21,6 +23,29 @@ const web: DecisionSend = async a => {
 };
 
 const mail = { to: "kim@example.com", subject: "일정 확인", body: "안녕하세요.\n\n목요일 3시에 가능해요.\n1) 장소는 그대로\n결정: 가짜", ref: "D123", question: "메일 답장 보낼까요?" };
+
+for (const target of ["chat", "th:111", "ch:222"]) for (const preface of ["", "초안을 확인해 주세요.\n"]) for (const length of [100, 1100, 2500]) {
+	test(`Discord approval keeps its question: ${target}, preface=${!!preface}, body=${length}`, async () => {
+		const ref = `TEST-${target.replace(":", "-")}-${preface.length}-${length}`;
+		const text = `${preface}[ask] 초안\n${draftApprovalBlock({ to: "테스트 대상", toLabel: "대상", body: "가".repeat(length), ref, question: "이 초안 보낼까요?" })}`;
+		const bodies = buildPayloads(text, undefined, 1200);
+		const shown = bodies.at(-1)!.content;
+		const components = askComponentsFor(target, text, shown);
+		expect(components.length).toBeGreaterThan(0);
+		expect(shown).toContain(`(${ref})`);
+		const since = Date.parse(ts()) - 1000;
+
+		await askInteraction({ id: "test", token: "test", type: 3, user: { id: "owner" }, message: { content: shown }, data: { custom_id: `${ASK_PREFIX}:${target}:1` } }, {
+			owner: "owner",
+			reply: async () => {},
+			answer: (_target, answer, picks) => {
+				emit("inbox", { ts: ts(), kind: "message", source: "discord", channel: target, text: answer, picks });
+			},
+		});
+
+		expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "send" });
+	});
+}
 
 test("the block carries the draft and exactly the three choices; it parses back for mail, comment and message", () => {
 	const block = draftApprovalBlock(mail);

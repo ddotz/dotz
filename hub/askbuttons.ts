@@ -1,10 +1,11 @@
 // Decision buttons on an [ask] message (docs/layers.md section 3): one button per option of the message's choice block.
 // A click is the owner typing `<n>) <name>` in that channel: the answer goes through the same inbound path (main.ts).
 import { log } from "./config.ts";
-import { type ChoiceOption, parseChoices } from "./choices.ts";
+import { type ChoiceOption, hasDecisionHead, parseChoices, parseDecisions } from "./choices.ts";
 import type { Interaction } from "./discord.ts";
+import type { Pick } from "./intake.ts";
 import { msg } from "./i18n.ts";
-import { parseTone } from "./tone.ts";
+import { parseTone, TONE_EMOJI } from "./tone.ts";
 
 export const ASK_PREFIX = "dz-ask";
 const PRIMARY = 1;
@@ -21,11 +22,13 @@ export function askComponents(target: string, options: ChoiceOption[], disabled 
 	return rows;
 }
 
-/** Buttons for a message about to be posted: only an [ask] with a choice block gets any, and only on the part (`shown`) that still holds every option, since a click reads its labels from that message. */
+/** Buttons for an [ask] or headed decision, only on the part that still holds its question and every option. */
 export function askComponentsFor(target: string, text: string, shown = text): unknown[] {
-	if (parseTone(text).tone !== "ask") return [];
-	const options = parseChoices(text).options;
-	return parseChoices(shown).options.length === options.length ? askComponents(target, options) : [];
+	if (parseTone(text).tone !== "ask" && !hasDecisionHead(parseDecisions(text).blocks)) return [];
+	const { question, options } = parseChoices(text);
+	const part = parseChoices(shown);
+	const sameQuestion = !question || part.question === question || part.question === `${TONE_EMOJI.ask} ${question}`;
+	return part.options.length === options.length && sameQuestion ? askComponents(target, options) : [];
 }
 
 export function parseAskId(customId: string): { target: string; n: number } | undefined {
@@ -38,7 +41,7 @@ const noteOf = (d: Interaction): string => {
 	return "";
 };
 
-type Answer = (target: string, text: string) => void;
+type Answer = (target: string, text: string, picks: Pick[]) => void;
 let answer: Answer = () => {
 	throw new Error("no answer handler");
 };
@@ -74,18 +77,19 @@ export async function askInteraction(d: Interaction, deps: AskDeps): Promise<voi
 		log(`ask ${parsed.target} refused user ${user}`);
 		return deps.reply(d, 4, ephemeral(m.notOwner));
 	}
-	const options = parseChoices(String(d.message?.content ?? "")).options;
+	const { question, options } = parseChoices(String(d.message?.content ?? ""));
 	const picked = options.find(o => o.n === parsed.n);
 	if (!picked) return deps.reply(d, 4, ephemeral(m.finished));
 	let text = `${picked.n}) ${picked.label}`;
+	let note = "";
 	if (picked.detail) {
 		if (d.type === 3) return deps.reply(d, 9, noteModal(parsed.target, picked));   // nothing is sent until the modal is submitted
-		const note = noteOf(d);
+		note = noteOf(d);
 		if (!note) return deps.reply(d, 4, ephemeral(m.noteMissing));
 		text += ` - ${note}`;
 	} else if (d.type === 5) return deps.reply(d, 4, ephemeral(m.finished));
 	try {
-		(deps.answer ?? answer)(parsed.target, text);
+		(deps.answer ?? answer)(parsed.target, text, question ? [{ q: question, n: picked.n, label: picked.label, ...(note ? { note } : {}) }] : []);
 	} catch (e) {
 		log(`ask ${parsed.target} answer failed: ${e}`);
 		return deps.reply(d, 4, ephemeral(m.answerFailed));
