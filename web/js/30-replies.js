@@ -22,7 +22,7 @@ function rqApps() {
   const out = INTG.items.map(it => ({ inst: it.key, label: it.label, pc: null, notices: (it.notices || []).map(ntById).filter(Boolean) }));
   for (const p of PQ.list) {
     if (!p || !p.items) continue;
-    const pc = { name: p.name, url: p.url }, sn = p.items.notices || [];
+    const pc = pqPcOf(p), sn = p.items.notices || [];
     for (const it of p.items.integrations || []) out.push({ inst: it.key, label: it.label, pc, notices: (it.notices || []).map(id => sn.find(n => String(n.id) === String(id))).filter(Boolean).map(n => ({ ...n, pc })) });
   }
   return out;
@@ -41,7 +41,7 @@ function rqAll() {
       out.push({ key: `n:${rqPcKey(a.pc)}|${n.id}`, kind: "notice", inst: a.inst, label: a.label, pc: a.pc, at: ntAt(n), n });
     }
   }
-  const store = [...RQ.local.map(d => ({ d, pc: null })), ...PQ.list.filter(p => p && p.items).flatMap(p => (p.items.replies || []).map(d => ({ d, pc: { name: p.name, url: p.url } })))];
+  const store = [...RQ.local.map(d => ({ d, pc: null })), ...PQ.list.filter(p => p && p.items).flatMap(p => (p.items.replies || []).map(d => ({ d, pc: pqPcOf(p) })))];
   for (const { d, pc } of store) {
     if (!d || (d.kind !== "kakao" && d.kind !== "comment") || !d.code) continue;
     out.push({ key: `${d.kind}:${rqPcKey(pc)}|${d.code}`, kind: d.kind, inst: d.app || d.kind, label: labelOf(pc, d.app || d.kind), pc, at: Number(d.at) || 0, d });

@@ -134,6 +134,13 @@ test("a peer snapshot carries the run state of that gateway's mail conversations
 	expect((await plain.snapshot()).runs).toBeUndefined();
 });
 
+test("a peer snapshot carries that gateway's own bot name, so its items are labeled with it on the computer that shows them", async () => {
+	const mon = createPeerMonitor({ name: () => "맥북", bot: () => "맥북봇", local: async () => Response.json({}), computers: async () => [] });
+	expect(await mon.snapshot()).toMatchObject({ name: "맥북", bot: "맥북봇" });
+	const plain = createPeerMonitor({ name: () => "맥북", local: async () => Response.json({}), computers: async () => [] });
+	expect((await plain.snapshot()).bot).toBeUndefined();
+});
+
 test("merge: the peer's items come with its name, mail and kakao rows only, and this gateway's own list stays local", async () => {
 	const { A, B } = pair();
 	const merged = await A.mon.peerMonitoring();

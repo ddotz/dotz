@@ -176,7 +176,7 @@ const AT = { items: [], key: "", h: null };
 const asOffApps = () => {
   const peers = PQ.list.filter(p => p && p.url), me = peers.length ? pqSelf() : "";
   return [...INTG.available.map(a => ({ ...a, pc: null, machine: me })),
-    ...peers.flatMap(p => ((p.items && p.items.available) || []).map(a => ({ ...a, pc: { name: p.name, url: p.url }, machine: p.name })))];
+    ...peers.flatMap(p => ((p.items && p.items.available) || []).map(a => ({ ...a, pc: pqPcOf(p), machine: p.name })))];
 };
 // 삭제: an off instance is deleted for good (DELETE /api/apps/<id>, hub/app-off.ts deleteApp). AD.del = the row with its confirm open: {key, pcUrl, label, machine, plan, data, busy}.
 const AD = { del: null };

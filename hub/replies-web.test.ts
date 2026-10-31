@@ -146,13 +146,13 @@ describe.each([[390, 844], [1280, 900]])("답장 확인 at %ipx", (width, height
 		await Bun.write(join(SHOTS, `replies-${width}.png`), await v.screenshot());
 	});
 
-	test("the home 답장 대기 row and an app row's 답장 확인 open the queue, the app's own drafts only", async () => {
+	test("the home 답장 대기 row counts this computer's drafts and opens the queue of every computer (모니터링); an app row's 답장 확인 the app's own drafts only", async () => {
 		const v = await boot(width, height);
 		await run(v, `go("home")`);
 		await waitFor(v, `document.querySelector('#home-now .hr[data-k="replies"]')`);
 		const home = await q<string>(v, `return document.querySelector('#home-now .hr[data-k="replies"]').textContent`);
 		expect(home).toContain("답장 확인");
-		expect(home).toContain("5건");
+		expect(home).toContain("3건");   // 홈 is this computer's alone; the queue in 모니터링 holds the other computer's 2 as well
 		await run(v, `document.querySelector('#home-now .hr[data-k="replies"]').click()`);
 		await waitFor(v, `current === "monitoring" && MON.sel === "replies" && document.querySelectorAll("#mon-tl .rq-q > .rq").length === 5`);
 		// an app's row opens the queue on that app's drafts of that computer

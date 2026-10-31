@@ -46,7 +46,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("mess
 
 // Frames this gateway forwards from the other computers' event streams (hub/peer-stream.ts), so the page hears them without leaving its own origin:
 // peer_counts updates that computer's chip numbers at once; peer_notice is a new notice there. It toasts (tap = that computer, at the item, like a
-// push tap) only while this page is visible: a hidden page gets the push instead, and the hub quiets the push while the page is open (hub/push.ts presence).
+// push tap) only in 모니터링 and while this page is visible: a hidden page gets the push instead, and the hub quiets the push while the page is open (hub/push.ts presence).
 const prSeen = new Set();
 // A conversation of the other computer this page just acted in (a draft sent, fixed or dropped through it): what that computer says about it next is
 // already in front of the owner, so it does not toast here (owner 2026-10-28: a mail sent from 맥북 still raised 맥미니 toasts).
@@ -59,7 +59,7 @@ function prLive(e) {
     for (const s of document.querySelectorAll(".snack[data-peer-nid]")) if ((e.ids || []).includes(s.dataset.peerNid)) s.remove();
     return;
   }
-  pqSoon();
+  if (current === "monitoring" || monCtx) pqSoon();   // the snapshot is read only by 모니터링
   const p = PR.list.find(x => !x.self && x.url === (e.kind === "peer_counts" ? e.url : e.peer && e.peer.url));
   if (e.kind === "peer_counts") {
     if (!p) return;
@@ -67,7 +67,8 @@ function prLive(e) {
     prPaint();
     return;
   }
-  if (!p || document.hidden || prQuiet(e.to)) return;
+  // Outside 모니터링 each tab is this computer's alone (owner 2026-10-31): there the chip's dot (peer_counts above) is the only sign.
+  if (!p || document.hidden || prQuiet(e.to) || (current !== "monitoring" && !monCtx)) return;
   const key = `${p.url}|${e.key || e.id}`;
   if (prSeen.has(key)) return;
   prSeen.add(key);
