@@ -275,7 +275,7 @@ function eventTarget(e) {
 /* ---------- conversation view (대화) ---------- */
 const timeline = $("#timeline"), tl = $("#tl"), term = $("#term");
 let chatStick = true, termStick = true;
-timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; if (chatStick) convMaybeRead(); if (timeline.scrollTop < 80) loadOlderMsgs(); });
+timeline.addEventListener("scroll", () => { chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40; $("#chat-jump").hidden = chatStick; convReadSoon(); if (timeline.scrollTop < 80) loadOlderMsgs(); });
 timeline.addEventListener("scroll", () => edgeFade(timeline), { passive: true });
 term.addEventListener("scroll", () => edgeFade(term), { passive: true });
 term.addEventListener("scroll", () => { termStick = term.scrollTop + term.clientHeight >= term.scrollHeight - 40; $("#act-jump").hidden = termStick; if (term.scrollTop < 80) loadOlder(); });
@@ -320,8 +320,8 @@ let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 
 // The open conversation's read state (31-conversations.js): key = the target being looked at, div = the read position when it was opened
 // (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.
 // pin = what the view is anchored to while the opening settles (late images, the todo strip, an SSE frame): "div" (the divider at the top),
-// "top" (a mail's start), "bottom", or "" once the owner took over; placed = the opening has been positioned; seen = the pin held still long enough to count as read.
-const CV = { key: "", div: "", divNode: null, jump: "", loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", seen: false, openAt: 0, dwellT: 0, gateT: 0 };
+// "top" (a mail's start), "bottom", or "" once the owner took over; placed = the opening has been positioned.
+const CV = { key: "", div: "", divNode: null, jump: "", loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", openAt: 0, gateT: 0 };
 // 31-conversations.js state; declared here because the boot code calls go() before that file has run.
 const CONV = new Map(), READ = {}, convPend = new Map();
-let convRaf = 0, convSig = "", convHeadSig = "", convRetry = 0, convReadT = 0, convPendT = 0;
+let convRaf = 0, convSig = "", convHeadSig = "", convRetry = 0, convReadT = 0, convPendT = 0, convReadF = 0;
