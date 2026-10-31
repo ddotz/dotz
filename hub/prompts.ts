@@ -46,8 +46,12 @@ export type PromptDeps = {
 	post: (target: string, text: string, replyTo?: string) => Promise<{ delivered: boolean }>;
 	/** A gateway note in a conversation that answers nothing (the deferral acknowledgement must not settle the open prompt). */
 	announce?: (target: string, text: string) => void;
-	/** The description of the background worker now serving a message that was just deferred, when it is already listed. */
-	workFor?: (target: string) => string | undefined;
+	/** The background worker now running for a conversation (the oldest one), when it is already listed. */
+	workFor?: (target: string) => { id: string; description: string } | undefined;
+	/** The gateway note (one line) that points a new owner message at the worker already running for its conversation. */
+	joinNote?: (worker: { id: string; description: string }) => string;
+	/** Does this text already carry that note (a restart replay stored it with the prompt)? */
+	hasJoinNote?: (text: string) => boolean;
 	clearProgress: (target: string) => void;
 	/** Writes the open prompts to disk. */
 	persist: (open: Pending[]) => void;
@@ -98,6 +102,10 @@ export function createPrompts(deps: PromptDeps) {
 	const recentSent: { target: string; text: string; at: number }[] = [];
 	// Prompts whose turn ended with LATER, oldest first, until a later run answers them.
 	const deferred: Prompt[] = [];
+	// Deferral receipts already announced, one per (conversation, worker id); the key with an empty id is the plain note sent while no
+	// worker was listed. The plain one is dropped when a non-deferred answer goes out there, a worker receipt stays while its worker runs.
+	const receipted = new Set<string>();
+	const receiptKey = (target: string, id = "") => `${target}\u0000${id}`;
 	// Every turn that ran (omp started it from a delivered prompt), oldest first: a worker belongs to the turn it was spawned in.
 	const turns: { prompt: Prompt; start: number; end?: number }[] = [];
 	const closeTurn = () => {
@@ -130,6 +138,11 @@ export function createPrompts(deps: PromptDeps) {
 	 */
 	function deliver(text: string, reply?: Reply): boolean {
 		const steered = Boolean(reply) && deps.working() && Boolean(current && !current.done && current.target && sameConv(current.target, reply!.target));
+		// A new owner turn for a conversation whose background worker is still running starts with a note naming that worker, so the
+		// orchestrator passes a follow-up to it (task_send) instead of spawning a second worker for the same job (owner 2026-10-30:
+		// four follow-ups to one posting job). The Prompt keeps the text as delivered: onPrompt pairs by it and a replay re-sends it.
+		const worker = !steered && reply?.owner ? deps.workFor?.(reply.target) : undefined;
+		if (worker && deps.joinNote && !deps.hasJoinNote?.(text)) text = `${deps.joinNote(worker)}\n\n${text}`;
 		const prompt: Prompt = { key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered };
 		prompts.push(prompt);
 		if (prompts.length > MAX_PROMPTS) prompts.splice(0, prompts.length - MAX_PROMPTS);
@@ -407,15 +420,25 @@ export function createPrompts(deps: PromptDeps) {
 			// 다른 일 시키니까 일 안하네"): one short note names who took it. It is a gateway note, so it settles no prompt.
 			p.deferred = true;
 			deferred.push(p);
-			const took = deps.workFor?.(p.target)?.trim();
+			const w = deps.workFor?.(p.target);
+			const took = w?.description.trim();
 			const note = took ? `백그라운드 작업으로 맡겼어요: ${took}` : "백그라운드 작업으로 맡겼어요";
-			deps.log(`the answer to ${p.target} is deferred to a background worker`);
-			deps.announce?.(p.target, note);
+			// One receipt per worker (owner 2026-10-30: the same "유튜브 답글 게시" note came 4x in 2 minutes): a later deferral in the
+			// conversation while that worker still runs is silent.
+			const rk = receiptKey(p.target, w?.id);
+			if (receipted.has(rk)) deps.log(`the answer to ${p.target} is deferred again to ${w ? `worker ${w.id}` : "a background worker"}; receipt already sent`);
+			else {
+				receipted.add(rk);
+				if (receipted.size > MAX_ANSWERED) receipted.delete(receipted.values().next().value!);
+				deps.log(`the answer to ${p.target} is deferred to a background worker`);
+				deps.announce?.(p.target, note);
+			}
 			save();
 			return;
 		}
 		if (t === LATER) return;
 		p.done = true;
+		if (p.target && t !== "-") receipted.delete(receiptKey(p.target));
 		if (p.target && t !== "-" && deps.covers?.(p.target)) coverSteered(p.target);
 		save();
 		if (!p.target) return;
