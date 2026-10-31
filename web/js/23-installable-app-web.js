@@ -1,6 +1,8 @@
 /* ---------- installable app + web push (web/sw.js, /api/push in hub/push.ts) ---------- */
 const PWA = { reg: null, sub: null, info: null, gw: null, claimed: false };
-const PUSH_KINDS = [["answer", "웹에서 맡긴 작업 완료 (짧은 답은 안 울려요)"], ["ask", "확인 필요 (질문 · 승인)"], ["lane", "세션 시작 · 완료 · 실패"], ["usage", "중요한 경고 (한도 · 오류 · 멈춤)"], ["update", "앱 새 버전"]];
+const PUSH_KINDS = [["answer", "웹에서 맡긴 작업 완료 (짧은 답은 안 울려요)"], ["ask", "확인 필요 (질문 · 승인)"], ["lane", "세션 완료 · 실패"], ["usage", "중요한 경고 (한도 · 오류 · 멈춤)"], ["watch", "모니터링 새 소식 (메일 · 감시 · 예약)"], ["update", "앱 새 버전"]];
+// Set when the owner turns notifications on here, cleared when he turns them off: a subscription the push service dropped (404/410) is then made again quietly.
+const PUSH_ON = "dotz-push-on";
 const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const pushCapable = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
@@ -111,6 +113,18 @@ async function pushLoad() {
   if (PWA.sub && PWA.info && PWA.info.subscribed && (PWA.info.did !== DEVICE_ID || (!PWA.info.app && isStandalone()))) {
     try { await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), did: DEVICE_ID, ...(isStandalone() ? { app: true } : {}) }); PWA.info.did = DEVICE_ID; if (isStandalone()) PWA.info.app = true; } catch {}
   }
+  // The gateway dropped this device's subscription (the push service answered 404/410, hub/push.ts deliver) while permission is still granted: subscribe
+  // again once per load, with a fresh subscription, so the phone does not go silent until someone opens the settings (2026-10-30).
+  if (!PWA.resub && pushCapable() && Notification.permission === "granted" && PWA.info && PWA.info.publicKey && !PWA.info.subscribed && (PWA.sub || localStorage.getItem(PUSH_ON) === "1")) {
+    PWA.resub = true;
+    try {
+      if (PWA.sub) await PWA.sub.unsubscribe().catch(() => {});
+      PWA.sub = await PWA.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(PWA.info.publicKey) });
+      await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), app: isStandalone(), did: DEVICE_ID });
+      localStorage.setItem(PUSH_ON, "1");
+      PWA.info = await api(`/api/push?endpoint=${enc(PWA.sub.endpoint)}`);
+    } catch (e) { console.warn("push resubscribe", e); }
+  }
   await pushGateways();
   if (current === "settings") renderSettings();
 }
@@ -141,6 +155,7 @@ async function pushEnable(btn) {
     const info = PWA.info || await api("/api/push");
     PWA.sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(info.publicKey) });
     await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), app: isStandalone(), did: DEVICE_ID });
+    localStorage.setItem(PUSH_ON, "1");
     toast("알림을 켰어요");
   });
   await pushLoad();
@@ -150,6 +165,7 @@ async function pushDisable(btn) {
   await busy(btn, async () => {
     const sub = PWA.sub;
     PWA.sub = null;
+    localStorage.removeItem(PUSH_ON);
     if (sub) { await api("/api/push/unsubscribe", "POST", { endpoint: sub.endpoint }); await sub.unsubscribe().catch(() => {}); }
     toast("알림을 껐어요");
   });
@@ -160,17 +176,18 @@ async function pushPref(kind, on) {
   renderSettings();
 }
 const pushTest = btn => busy(btn, async () => { await api("/api/push/test", "POST", { endpoint: PWA.sub.endpoint }); toast("테스트 알림을 보냈어요"); });
-// The gateway skips a push to this device while its page is visible and focused (heartbeat every 25s, stale after 60s).
+// The gateway skips a push to this device while its page is visible and focused on the same conversation (heartbeat every 25s, stale after 60s);
+// a push about another conversation still shows.
 let presTimer = 0;
 function presence() {
   clearTimeout(presTimer);
   if (!PWA.sub) return;
   const active = document.visibilityState === "visible" && document.hasFocus();
-  fetch("/api/push/presence", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: PWA.sub.endpoint, active }), keepalive: true }).catch(() => {});
+  fetch("/api/push/presence", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: PWA.sub.endpoint, active, conv: current === "chat" ? target : "" }), keepalive: true }).catch(() => {});
   if (active) presTimer = setTimeout(presence, 25000);
 }
 document.addEventListener("visibilitychange", presence);
-["focus", "blur", "pagehide"].forEach(t => window.addEventListener(t, presence));
+["focus", "blur", "pagehide", "hashchange"].forEach(t => window.addEventListener(t, presence));
 window.addEventListener("load", pwaInit);
 // Install: Chrome/Edge/Samsung hand over beforeinstallprompt (a real app install, never the menu's shortcut);
 // iOS has no prompt, so the button opens the Share -> 홈 화면에 추가 steps.

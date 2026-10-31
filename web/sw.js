@@ -78,6 +78,20 @@ self.addEventListener("fetch", ev => {
   if (SHELL.includes(url.pathname)) ev.respondWith(caches.match(url.pathname).then(hit => hit || fetch(req)));
 });
 
+// Whether a notification would only repeat what is on screen: an open window of this app that is visible and focused shows the same conversation
+// (#chat/<conv>) the notification opens. A notification for any other page or conversation still shows. Pure, so hub/push-sw-web.test.ts runs it.
+function pushSuppressed(wins, url, origin) {
+  let want;
+  try { want = new URL(url || "/", origin); } catch { return false; }
+  if (!/^#chat\/./.test(want.hash)) return false;
+  return wins.some(w => {
+    try {
+      const at = new URL(w.url);
+      return at.origin === want.origin && w.visibilityState === "visible" && w.focused === true && at.hash === want.hash;
+    } catch { return false; }
+  });
+}
+
 self.addEventListener("push", ev => {
   let m = {};
   try { m = ev.data ? ev.data.json() : {}; } catch { m = { body: ev.data ? ev.data.text() : "" }; }
@@ -99,7 +113,7 @@ self.addEventListener("push", ev => {
     return;
   }
   if (gone.length) ev.waitUntil(closeGone());
-  ev.waitUntil(self.registration.showNotification(m.title || "알림", {
+  const show = () => self.registration.showNotification(m.title || "알림", {
     body: m.body || "",
     tag: m.tag || undefined,
     renotify: Boolean(m.tag),
@@ -107,7 +121,17 @@ self.addEventListener("push", ev => {
     badge: "/icons/badge-96.png",   // Android draws it as a white mask: the dotz dot on a transparent background
     ...(actions.length ? { actions } : {}),
     data: { url: m.url || "/", ts: m.id ? "" : m.ts || "", id: m.id || "", pc: m.pc || "" },
-  }));
+  });
+  ev.waitUntil((async () => {
+    const wins = m.pc ? [] : await self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => []);
+    if (!pushSuppressed(wins, m.url, location.origin)) return show();
+    // The owner is looking at that conversation already. Safari revokes a subscription whose push shows nothing (webkit.org/blog/16535), so an Apple
+    // endpoint still gets a silent notification that is closed at once; other browsers show nothing while a focused window of the app is open.
+    const sub = await self.registration.pushManager.getSubscription().catch(() => null);
+    if (!sub || !/(^|\.)push\.apple\.com$/.test(new URL(sub.endpoint).host)) return;
+    await self.registration.showNotification(m.title || "알림", { tag: "on-screen", body: m.body || "", silent: true, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png" });
+    for (const n of await self.registration.getNotifications({ tag: "on-screen" })) n.close();
+  })());
 });
 
 self.addEventListener("notificationclick", ev => {

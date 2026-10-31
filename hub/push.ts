@@ -9,12 +9,12 @@ import { DATA_DIR, log, NAME, writeAtomic } from "./config.ts";
 import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { quietAlert } from "./alert-gate.ts";
-import { answerReply, confirmGroup, conversationTitle, decisionsOf, type Notice, onDecision } from "./notices.ts";
+import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, type Notice, onDecision, onNoticeUnread } from "./notices.ts";
 import { type Found, knownComputers } from "./peers.ts";
 import { isLater, parseTone, previewSource, stripMarkers } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
 
-export const PUSH_KINDS = ["answer", "ask", "lane", "usage", "update"] as const;
+export const PUSH_KINDS = ["answer", "ask", "lane", "usage", "update", "watch"] as const;
 type PushKind = (typeof PUSH_KINDS)[number];
 type Prefs = Record<PushKind, boolean>;
 // `app`: made by the installed app (the page runs standalone), the subscription a device is reached through when it has one.
@@ -33,7 +33,7 @@ const KEY_FILE = join(DATA_DIR, "secrets", "vapid.json");
 const SUBS_FILE = join(DATA_DIR, "push.json");
 const PRESENCE_MS = 60_000;
 const DEDUPE_MS = 10 * 60_000;
-const defaults = (): Prefs => ({ answer: true, ask: true, lane: true, usage: true, update: true });
+const defaults = (): Prefs => ({ answer: true, ask: true, lane: true, usage: true, update: true, watch: true });
 
 let keys: VapidKeys | undefined;
 function vapid(): VapidKeys {
@@ -54,7 +54,9 @@ try {
 	log(`push: ${SUBS_FILE} unreadable, starting empty (${e})`);
 }
 const save = () => writeAtomic(SUBS_FILE, `${JSON.stringify(subs, null, 2)}\n`, 0o600);
-const presence = new Map<string, number>();
+// endpoint -> when its page last said it is visible and focused, and the conversation it shows ("" = not a chat). A presence without `conv` (an
+// older page, or one forwarded from another computer whose page shows this computer's notices as toasts) quiets every push to that device.
+const presence = new Map<string, { at: number; conv?: string }>();
 const origin = (endpoint: string) => {
 	try {
 		return new URL(endpoint).host;
@@ -70,8 +72,9 @@ const plain = (t: string, max = 180) => {
 	return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 };
 
-// Only four things notify (owner 2026-10-20: "작업시작/완료/개입필요/중대한 경고에만 지능적으로 알림 보내. 전부 다 보낼 필요는 없다"):
-// - work started: a lane's worklog entry when it is first posted ([run] ... 시작);
+// Events notify for what the owner must see now (owner 2026-10-20: "완료/개입필요/중대한 경고에만"; 2026-11-01: "결과보고, 개입필요, 모니터링 인앱 새로운
+// 알림 등 사용자가 바로 확인해야하는 것들은 알림 발송"). Routine progress ([run], a lane's start included) never notifies. Everything that lands unread in
+// the bell also notifies once through noticePush below; the two paths share tags and notify() keeps one push per tag.
 // - work done: a lane's [done]/[fail], and an answer on web that was marked [done]/[fail] or took LONG_TURN_MS or more
 //   since the owner's message (the owner has likely left); a quick reply does not notify;
 // - input needed: any [ask];
@@ -92,11 +95,8 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 	const src = String(e.source ?? "");
 	const { tone, text: rest } = parseTone(text);
 	const key = typeof e.update_key === "string" ? e.update_key : "";
-	if (key) {
-		if (e.kind !== "out" || e.target !== "worklog" || !key.startsWith("lane:") || tone !== "run" || !/시작/.test(rest)) return undefined;
-		const name = key.slice(5);
-		return { kind: "lane", title: `${name} · 시작`, body: plain(rest), url: `/#chat/lane:${encodeURIComponent(name)}`, tag: `start:${name}` };
-	}
+	// An edited line (a lane's worklog entry, progress): its [done]/[fail] arrives as a bell notice (noticePush), its [run] never notifies.
+	if (key) return undefined;
 	const lane = typeof e.lane === "string" ? e.lane : src.startsWith("lane:") ? src.slice(5) : undefined;
 	if (lane && tone === "ask" && orchestratorOnlyAsk(rest)) return undefined;
 	if (e.kind === "out" && e.target === "alert") {
@@ -124,6 +124,44 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 		if (tone === "fail") return { kind: "answer", title: `${name} · 실패`, body: plain(rest), url, tag: `answer${sfx}` };
 		if (tone === "done" || (sinceOwner ?? 0) >= LONG_TURN_MS) return { kind: "answer", title: `${name} · 완료`, body: plain(rest), url, tag: `answer${sfx}` };
 		return undefined;
+	}
+	return undefined;
+}
+
+// The conversation a notification opens (`/#chat/<conv>`), for the "already on screen" check; undefined for any other page.
+export function convOfUrl(url: string): string | undefined {
+	const m = /#chat\/([^?#]+)$/.exec(url);
+	if (!m) return undefined;
+	try {
+		return decodeURIComponent(m[1]!);
+	} catch {
+		return undefined;
+	}
+}
+const convUrl = (conv: string) => (conv === "settings" ? "/#settings" : conv.startsWith("lane:") ? `/#chat/lane:${encodeURIComponent(conv.slice(5))}` : `/#chat/${conv}`);
+// The tag a conversation's answer notification carries (the same as classify's), so one matter is one notification whichever path sends it.
+const answerTag = (conv: string) => (conv === "main" ? "answer" : conv.startsWith("lane:") ? conv : conv === "alert" ? "alert" : `answer:${conv}`);
+
+// A bell notice that just became unread (hub/notices.ts onNoticeUnread) as a notification: results, monitoring news, alerts, unread answers.
+// Decisions push through decisionPush (onDecision), so an [ask] twin here stays quiet; [run] progress and the gateway's routine records never notify.
+export function noticePush(n: Notice): PushMessage | undefined {
+	if (n.decision || n.kind === "decision" || n.tone === "ask" || n.tone === "run" || n.read || n.dismissed) return undefined;
+	const conv = n.open || "main";
+	const base = { body: plain(n.text) || plain(n.title), url: convUrl(conv), ...(n.at ? { ts: n.at } : {}) };
+	const word = n.tone === "fail" ? "실패" : "완료";
+	switch (n.kind) {
+		case "result":
+			return n.tone === "done" || n.tone === "fail" ? { ...base, kind: "lane", title: `${n.title} · ${word}`, tag: conv.startsWith("lane:") ? conv : `result:${n.key ?? n.id}` } : undefined;
+		case "worklog":
+			return n.tone === "fail" ? { ...base, kind: "usage", title: `${n.title} · 실패`, tag: `worklog:${n.key ?? n.id}` } : undefined;
+		case "watch":
+			return { ...base, kind: "watch", title: `${n.title} · 새 소식`, tag: `watch:${n.key ?? n.watch ?? n.id}` };
+		case "alert":
+			if (n.key === "self-update") return { ...base, kind: "update", title: `${NAME} · ${n.title}`, tag: "update" };
+			if (ROUTINE_ALERT.test(n.text)) return undefined;
+			return { ...base, kind: "usage", title: `${NAME} · ${n.tone === "fail" || CRITICAL.test(n.text) ? "경고" : n.title}`, tag: "alert" };
+		case "message":
+			return { ...base, kind: conv.startsWith("lane:") ? "lane" : "answer", title: `${n.title} · 새 메시지`, tag: answerTag(conv) };
 	}
 	return undefined;
 }
@@ -163,6 +201,8 @@ function noteShown(endpoint: string, tag: string | undefined): void {
 export async function withdraw(tags: readonly string[], relay = true): Promise<number> {
 	const now = new Map<string, Set<string>>();
 	for (const tag of new Set(tags)) {
+		// A settled matter may notify again when something new comes for it.
+		recentTags.delete(tag);
 		const eps = shown.get(tag);
 		if (!eps) continue;
 		shown.delete(tag);
@@ -217,6 +257,12 @@ async function deliver(sub: Stored, m: PushMessage): Promise<number> {
 			subs = subs.filter(s => s.endpoint !== sub.endpoint);
 			save();
 			log(`push: subscription at ${origin(sub.endpoint)} expired (${status}), removed`);
+			// A dead app subscription no longer makes the app the device's only channel (as an unsubscribe does): otherwise its browser pages
+			// are refused (409) and the device gets nothing until the app subscribes again (2026-10-30: push.json emptied, push-devices.json kept app).
+			if (sub.app && sub.did && !subs.some(s => s.did === sub.did && s.app === true) && devices[sub.did]?.app) {
+				patchDevice(sub.did, { app: undefined });
+				void tellPeers({ did: sub.did, app: false });
+			}
 		} else if (status >= 300) log(`push: ${origin(sub.endpoint)} answered ${status}`);
 		return status;
 	} catch (e) {
@@ -283,7 +329,12 @@ function patchDevice(did: string, patch: Device & { app?: true | undefined; off?
 	if (hasApp(did)) dropBrowsers(did);
 }
 for (const did of new Set([...Object.keys(devices), ...subs.flatMap(s => (s.app && s.did ? [s.did] : []))])) if (hasApp(did)) dropBrowsers(did);
-const wants = (s: Stored, m: PushMessage, t: number) => (m.kind === "test" || s.prefs[m.kind] !== false) && (presence.get(s.endpoint) ?? 0) <= t - PRESENCE_MS;
+// A device whose page is visible and focused skips the notification when that page shows the same conversation (or did not say which it shows).
+export function presenceQuiets(p: { at: number; conv?: string } | undefined, url: string, t: number): boolean {
+	if (!p || p.at <= t - PRESENCE_MS) return false;
+	return p.conv === undefined || p.conv === convOfUrl(url);
+}
+const wants = (s: Stored, m: PushMessage, t: number) => (m.kind === "test" || s.prefs[m.kind] !== false) && (m.kind === "test" || !presenceQuiets(presence.get(s.endpoint), m.url, t));
 
 // Deliver through one subscription for each device not in `done` (an app's before a browser's) and mark the device done. A device whose chosen
 // subscription has the kind switched off (or whose page is open) stays quiet: that is its owner's choice there, and no other subscription fires.
@@ -394,13 +445,31 @@ export function relayedMessage(peer: { name: string; url: string }, p: Record<st
 }
 
 const recent = new Map<string, number>();
+// One matter, one notification: an event and the bell notice it makes (or a lane's mid-turn line and its turn-end report) carry the same tag, so a
+// second push of a tag within TAG_MS is dropped. A tag taken back (withdraw: read, answered) may notify again at once.
+const TAG_MS = 2 * 60_000;
+const recentTags = new Map<string, number>();
+/** Whether `m` goes out: not the same tag+body within DEDUPE_MS, not the same tag within TAG_MS, not a conversation someone has on screen. */
+export function shouldNotify(m: Pick<PushMessage, "kind" | "tag" | "body" | "url">, t = Date.now(), viewing: (conv: string) => boolean = isViewing): boolean {
+	if (m.kind === "test") return true;
+	const conv = convOfUrl(m.url);
+	if (conv && viewing(conv)) return false;
+	const key = `${m.tag}|${m.body}`;
+	for (const [k, at] of recent) if (t - at > DEDUPE_MS) recent.delete(k);
+	for (const [k, at] of recentTags) if (t - at > TAG_MS) recentTags.delete(k);
+	if (recent.has(key) || (m.tag && recentTags.has(m.tag))) return false;
+	recent.set(key, t);
+	if (m.tag) recentTags.set(m.tag, t);
+	return true;
+}
+export const resetPushDedupeForTest = (): void => {
+	recent.clear();
+	recentTags.clear();
+};
 // Resolves once every device has been decided (sent, covered by a peer, or quiet by its own setting).
 export function notify(m: PushMessage): Promise<void> {
-	const key = `${m.tag}|${m.body}`;
 	const t = Date.now();
-	for (const [k, at] of recent) if (t - at > DEDUPE_MS) recent.delete(k);
-	if (recent.has(key)) return Promise.resolve();
-	recent.set(key, t);
+	if (!shouldNotify(m, t)) return Promise.resolve();
 	if (m.kind === "test") {
 		for (const s of subs) if (wants(s, m, t)) void deliver(s, m);
 		return Promise.resolve();
@@ -422,6 +491,10 @@ export function startPush(opts: { subject: () => string }): void {
 		if (m && !decisionsOf(e).length && !answerReply(e)) notify(m);
 	});
 	onDecision(n => notify(decisionPush(n)));
+	onNoticeUnread(n => {
+		const m = noticePush(n);
+		if (m) void notify(m);
+	});
 	onBroadcast(e => {
 		const tags = staleTags(e);
 		if (tags.length) void withdraw(tags).catch(err => log(`push: withdraw failed: ${(err as Error).message}`));
@@ -543,7 +616,8 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 	// A page that is open and visible quiets its device's subscriptions here. The same device (`did`) is quieted on the other computers too: the page shows
 	// their notices as toasts (hub/peer-stream.ts), so a push there would be a second alert. The forward carries `relayed` and is never sent on.
 	if (req.method === "POST" && p === "/api/push/presence") {
-		const mark = (endpoint: string) => (b.active ? presence.set(endpoint, Date.now()) : presence.delete(endpoint));
+		const conv = typeof b.conv === "string" && b.conv.length <= 120 && b.relayed !== true ? b.conv : undefined;
+		const mark = (endpoint: string) => (b.active ? presence.set(endpoint, { at: Date.now(), ...(conv !== undefined ? { conv } : {}) }) : presence.delete(endpoint));
 		if (typeof b.endpoint === "string") mark(b.endpoint);
 		const did = typeof b.did === "string" && DID.test(b.did) ? b.did : typeof b.endpoint === "string" ? findSub(b.endpoint)?.did : undefined;
 		if (did) for (const s of subs) if (s.did === did) mark(s.endpoint);

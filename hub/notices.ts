@@ -254,9 +254,14 @@ function trim(): void {
 
 type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; key?: string; by?: string; ref?: string; item?: WatchItem; read?: boolean; unread?: boolean; src?: string; at?: string };
 
+// A notice that just became unread (new, or a read one reopened): the phone notification for it (hub/push.ts noticePush). Decisions have onDecision.
+const unreadHooks: Array<(n: Notice) => void> = [];
+export const onNoticeUnread = (fn: (n: Notice) => void): void => void unreadHooks.push(fn);
+
 function upsert(i: Input): Notice {
 	const at = i.at ?? now();
 	const old = i.key ? items.find(n => n.key === i.key) : undefined;
+	const wasUnread = old ? !old.read && !old.dismissed : false;
 	const quiet = appBlocked({ app: i.kind === "watch" ? appOf(i as unknown as Notice) : undefined, src: i.src ?? i.open, open: i.open });
 	if (quiet && old) return old;
 	let item: Notice;
@@ -295,6 +300,7 @@ function upsert(i: Input): Notice {
 	if (!replaying) {
 		save();
 		broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
+		if (!wasUnread && !item.read && !item.dismissed) for (const fn of unreadHooks) fn(item);
 	}
 	return item;
 }
