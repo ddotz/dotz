@@ -2,7 +2,10 @@
 let S = null;          // /api/state (no events)
 let M = null;          // /api/models
 let P = null;          // /api/providers
-let botName = "dotz";
+// The assistant's own name (config identity.name): the page arrives with it in its title (hub/webapp.ts indexPage), /api/state keeps it current.
+let botName = document.title || "비서";
+// The name with 이/가 by its last syllable (땃쥐가, 단비가 / 하늘이), for a sentence the name starts.
+const iGa = s => { const c = String(s).slice(-1).charCodeAt(0) - 0xac00; return `${s}${c >= 0 && c <= 11171 && c % 28 ? "이" : "가"}`; };
 let current = "home", prevView = null;
 // Narrow screens: 채팅 shows the chat list (31-conversations.js) until a row is opened; from 1100px the list always sits beside the conversation.
 let chatList = false;
@@ -16,8 +19,8 @@ const convListing = () => current === "chat" && chatList && narrowChat();
 let monCtx = "";
 // 채팅 is one tab: its 대화 | 터미널 toggle picks the "chat" or "activity" view, and the tab reopens the last one used.
 const NAV = [["home", "홈"], ["chat", "채팅"], ["projects", "프로젝트"], ["monitoring", "모니터링"], ["apps", "앱"], ["settings", "설정"]];
-// 앱 (user apps, 30-apps.js): the tab is shown but disabled until user apps ship; every way into it (tab, shortcut, palette, address) goes
-// home instead. true opens it (the 앱 tests switch it on).
+// 앱 (user apps, 30-apps.js): the tab is hidden until user apps ship (owner 2026-10-27; the code stays); every way into it (shortcut, palette,
+// address) goes home instead. true shows the tab and opens it (the 앱 tests switch it on).
 let APPS_ON = false;
 const navOff = id => id === "apps" && !APPS_ON;
 const CHAT_MODE_KEY = "dotz-chat-mode";
@@ -42,8 +45,12 @@ const UNDO_MS = 8000;
 function refreshEnded() {
   document.querySelectorAll("details.ended").forEach(d => d.replaceWith(endedGroup() || ""));
 }
+// An ended session keeps its marks: its unread count (the hub lists ended lanes in /api/conversations too) and 답변 필요 while a question waits there.
+const endedMark = l => { const t = `lane:${l.name}`; return { unread: ts(t).unread | 0, need: convNeeds(t) }; };
 function endedGroup() {
   const list = endedLanes();
+  const marks = new Map(list.map(l => [l.name, endedMark(l)]));
+  const nUnread = list.filter(l => marks.get(l.name).unread > 0).length, nNeed = list.filter(l => marks.get(l.name).need).length;
   if (endedSel) for (const n of endedSel) if (!list.some(l => l.name === n)) endedSel.delete(n);
   if (!list.length) { endedSel = null; return null; }
   const sel = endedSel;
@@ -62,9 +69,13 @@ function endedGroup() {
         el("span", { class: "en", text: l.name }), el("span", { class: "sup", text: l.startedAt ? kstDay(l.startedAt) : "" }))
     : el("div", { class: "erow" },
         el("button", { class: "er", type: "button", onclick: () => openTarget(`lane:${l.name}`, lastChatView()) },
-          el("span", { class: "dot" }), el("span", { class: "en", text: l.title || l.name }), el("span", { class: "sup", text: [laneProject(l), l.startedAt ? kstDay(l.startedAt) : ""].filter(Boolean).join(" · ") })),
+          el("span", { class: "dot" }), el("span", { class: "en", text: l.title || l.name }), el("span", { class: "sup", text: [laneProject(l), l.startedAt ? kstDay(l.startedAt) : ""].filter(Boolean).join(" · ") }),
+          marks.get(l.name).need ? el("span", { class: "tag warn", text: "답변 필요" }) : null,
+          marks.get(l.name).unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${marks.get(l.name).unread}개`, text: marks.get(l.name).unread > 99 ? "99+" : String(marks.get(l.name).unread) }) : null),
         el("button", { class: "ib edel", type: "button", "aria-label": `${l.name} 삭제`, title: "삭제", onclick: () => deleteEnded([l.name]) }, icon("trash")));
-  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { text: `끝난 세션 ${list.length}` }), tools),
+  const d = el("details", { class: `ended${sel ? " selecting" : ""}` }, el("summary", {}, icon("chev"), el("span", { class: "elabel", text: `끝난 세션 ${list.length}` }),
+    nNeed || nUnread ? el("span", { class: "ecounts" }, nNeed ? el("span", { class: "ecount need", "data-k": "need", text: `답변 필요 ${nNeed}` }) : null,
+      nUnread ? el("span", { class: "ecount", "data-k": "unread", text: `안 읽음 ${nUnread}` }) : null) : null, tools),
     ...(all ? [all] : []), ...list.map(row));
   d.open = endedOpen;
   d.addEventListener("toggle", () => { endedOpen = d.open; if (!d.open && endedSel) { endedSel = null; refreshEnded(); } });
@@ -112,7 +123,7 @@ async function restoreEnded(ids) {
   } catch (e) { toast(e.message, true); }
 }
 // An exited or stopped lane is a normal end, so it gets the neutral dot; red is kept for real failures.
-const statusTone = s => ({ working: "pri", idle: "ok", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
+const statusTone = s => ({ working: "pri", starting: "pri", idle: "", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
 const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 걸림", exited: "종료됨" })[s] || s || "알 수 없음";
 const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id === id); return (p && p.name) || id; };
 // Thinking levels said in Korean (the stored value stays the API id).
@@ -149,8 +160,9 @@ const chatTabModeSet = v => { try { localStorage.setItem(CHAT_TAB_KEY, v); } cat
 const chatTabEnter = () => { if (chatTabMode() === "main" || monOwned(target)) setTarget(MAIN); go(lastChatView()); };
 const chatTabTap = () => (monCtx ? chatTabEnter() : convListing() ? closeChatList() : narrowChat() && (current === "chat" || current === "activity") ? openChatList() : current === "chat" || current === "activity" ? go(lastChatView()) : chatTabEnter());
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
-// ⌘/Ctrl+1..6 open the tabs in NAV order (a disabled tab does nothing); the browser may keep ⌘1..9 for its own tabs in a normal tab (it reaches the page in an installed app window).
-const navKeyHint = id => { const i = NAV.findIndex(n => n[0] === id); return i < 0 ? "" : isMac ? `⌘${i + 1}` : `Ctrl+${i + 1}`; };
+// ⌘/Ctrl+1..6 open the shown tabs in NAV order (a hidden tab has no number); the browser may keep ⌘1..9 for its own tabs in a normal tab (it reaches the page in an installed app window).
+const navTabs = () => NAV.filter(n => !navOff(n[0]));
+const navKeyHint = id => { const i = navTabs().findIndex(n => n[0] === id); return i < 0 ? "" : isMac ? `⌘${i + 1}` : `Ctrl+${i + 1}`; };
 function navShortcut(id) {
   if (navOff(id)) return;
   if (id !== "home" && PR.node) prClose(false);
@@ -159,12 +171,13 @@ function navShortcut(id) {
 }
 document.addEventListener("keydown", ev => {
   if (ev.isComposing || ev.altKey || ev.shiftKey || !(isMac ? ev.metaKey : ev.ctrlKey) || document.querySelector("dialog[open]")) return;
-  const n = /^Digit([1-6])$/.exec(ev.code || "")?.[1] || (/^[1-6]$/.test(ev.key) ? ev.key : "");
-  if (!n) return;
+  const n = /^Digit([1-6])$/.exec(ev.code || "")?.[1] || (/^[1-6]$/.test(ev.key) ? ev.key : ""), tab = n && navTabs()[n - 1];
+  if (!tab) return;
   ev.preventDefault();
-  navShortcut(NAV[n - 1][0]);
+  navShortcut(tab[0]);
 });
-for (const [id, label] of NAV) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: navOff(id) ? `${label} · 준비 중` : `${label} (${navKeyHint(id)})`, ...(navOff(id) ? { disabled: true, "aria-disabled": "true" } : {}), onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "settings" ? el("span", { class: "nb nub", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
+// 모니터링's badge (#nav-mon) counts what waits there (09-needs-you.js paintMonAttn).
+for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
 // Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";

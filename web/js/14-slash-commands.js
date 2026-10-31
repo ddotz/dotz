@@ -107,7 +107,36 @@ function taFloor() {
   const border = cs.boxSizing === "border-box" ? (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0) : 0;
   return Math.ceil(Math.max(lh + pad + border, parseFloat(cs.minHeight) || 0));
 }
+// "ulw" written as a word anywhere in the message: the box takes the ultrawork gradient edge (owner 2026-10-28), with no explanation line.
+// autosize runs on every change of the text (typing, a restored draft, a cleared box), so the edge follows it.
+const ULW_RE = /(^|[^a-z0-9])ulw(?![a-z0-9])/i;
+// The keyword itself is marked too: a backdrop under the (transparent) textarea repeats the text with the keyword wrapped, same box and
+// font, scrolled with it; only the mark is visible.
+const ULW_ALL = /(^|[^a-z0-9])(ulw)(?![a-z0-9])/gi;
+const ulwHl = el("div", { class: "ta-hl", "aria-hidden": "true" });
+ta.before(ulwHl);
+ta.addEventListener("scroll", () => { ulwHl.scrollTop = ta.scrollTop; });
+function paintUlw(on) {
+  ulwHl.hidden = !on;
+  if (!on) { clear(ulwHl); return; }
+  const cs = getComputedStyle(ta);
+  for (const k of ["font", "letterSpacing", "padding", "lineHeight", "textIndent"]) ulwHl.style[k] = cs[k];
+  ulwHl.style.height = cs.height;
+  const parts = [], v = ta.value;
+  let at = 0;
+  for (const m of v.matchAll(ULW_ALL)) {
+    const s = m.index + m[1].length;
+    parts.push(v.slice(at, s), el("mark", { class: "ulw-kw", text: m[2] }));
+    at = s + m[2].length;
+  }
+  parts.push(v.slice(at), "\n");
+  clear(ulwHl).append(...parts);
+  ulwHl.scrollTop = ta.scrollTop;
+}
 function autosize() {
+  const ulw = ULW_RE.test(ta.value);
+  sendRow.classList.toggle("ulw", ulw);
+  paintUlw(ulw);
   const keep = sendRow.offsetHeight;
   sendRow.style.height = `${keep}px`;
   ta.style.height = "auto";
@@ -139,12 +168,14 @@ ta.addEventListener("keydown", ev => {
 // and the click never lands (owner 2026-10-21: the first tap only hid the keyboard). The click then submits once; sendChat clears the box,
 // so a repeat is a no-op, and the box is refocused so the keyboard stays up like a messenger.
 $("#send-btn").addEventListener("pointerdown", ev => ev.preventDefault());
-$("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.contains("stop") && !ta.value.trim() && !ATT.length) stopTarget(); else sendChat(); if (!ta.disabled) ta.focus({ preventScroll: true }); };
-$("#working-stop").onclick = () => stopTarget();
+$("#send").onsubmit = ev => { ev.preventDefault(); if ($("#send-btn").classList.contains("stop") && !ta.value.trim() && !ATT.length && !pkCount()) stopTarget(); else sendChat(); if (!ta.disabled) ta.focus({ preventScroll: true }); };
+// With no turn running, the line is a background worker's (renderWorking): 중단 ends that worker (06-subagents.js workCancel).
+$("#working-stop").onclick = ev => (workingBg.length ? workCancel(workingBg[0].id, ev.currentTarget) : stopTarget());
 ta.addEventListener("input", () => { if (!$("#working").hidden) renderWorking(); });
 async function stopTarget() {
+  if (workingBg.length && !$("#c-model").classList.contains("run")) return workCancel(workingBg[0].id, $("#send-btn"));
   try {
-    await api(isLaneT(target) ? `/api/lanes/${enc(laneOf(target))}/abort` : "/api/orchestrator/abort", "POST", {});
+    await api(isLaneT(target) ? `/api/lanes/${enc(laneOf(target))}/abort` : "/api/orchestrator/abort", "POST", isLaneT(target) ? {} : { target });
     toast("작업을 중단했어요");
     scheduleState();
   } catch (e) { toast(e.message, true); }
@@ -164,10 +195,11 @@ async function sendCommand(text) {
 async function sendChat(how) {
   const text = ta.value.trim();
   if (ATT.some(a => !a.file)) { toast("파일을 올리는 중이에요"); return; }
-  const files = ATT.map(a => a.file);
-  if ((!text && !files.length) || ta.disabled) return;
+  const files = ATT.map(a => a.file), picks = pkItems();
+  if ((!text && !files.length && !picks.length) || ta.disabled) return;
   if (files.length && text.startsWith("/")) { toast("명령에는 파일을 붙일 수 없어요", true); return; }
-  const sentAtt = ATT; ATT = []; renderAtt();
+  if (picks.length && text.startsWith("/")) { toast("명령에는 요소를 붙일 수 없어요", true); return; }
+  const sentAtt = ATT, sentPicks = PICK; ATT = []; renderAtt(); pkClear();
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
   if (typeof asTplEnd === "function") asTplEnd();
@@ -176,7 +208,7 @@ async function sendChat(how) {
   const mode = how || (isWorking(t) ? "steer" : undefined), reply = rpTake();
   if (isSettingsT(t) && !TURN.has(t)) TURN.set(t, Date.now() - 5000);
   try {
-    const body = { text, ...(reply ? { reply } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}) };
+    const body = { text, ...(reply ? { reply } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}), ...(picks.length ? { elements: picks } : {}) };
     // A conversation of another computer gets the files uploaded there first (34-peer-monitoring.js pqUpload); a failed upload sends nothing.
     const owner = pqAct("/api/message", body);
     if (owner && owner.pc && files.length) body.files = await pqUpload(owner.pc, sentAtt);
@@ -190,8 +222,8 @@ async function sendChat(how) {
   }
   catch (e) {
     // a failed send goes back to the conversation it came from, even when the owner has moved to another one meanwhile
-    if (t !== target) { ts(t).draft = text; try { localStorage.setItem(DRAFT_KEY(t), text); } catch {} toast(`${e.message} · 보내지 못한 글은 원래 대화에 남겨 뒀어요${sentAtt.length ? " (파일은 다시 붙여 주세요)" : ""}`, true); return; }
-    toast(e.message, true); ta.value = text; autosize(); ATT = sentAtt.concat(ATT); renderAtt(); rpRestore(reply);
+    if (t !== target) { ts(t).draft = text; ts(t).pick = sentPicks.concat(ts(t).pick || []); try { localStorage.setItem(DRAFT_KEY(t), text); } catch {} toast(`${e.message} · 보내지 못한 글은 원래 대화에 남겨 뒀어요${sentAtt.length ? " (파일은 다시 붙여 주세요)" : ""}`, true); return; }
+    toast(e.message, true); ta.value = text; autosize(); ATT = sentAtt.concat(ATT); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
   }
 }
 // The composer follows the selected target and the view mode.
@@ -227,7 +259,8 @@ function renderWorking() {
   box.hidden = !show;
   // Only while the gateway reports this target running: status line, model-chip spinner, and stop in place of send
   // (with text typed the button sends it into the running turn instead).
-  const line = $("#runline"), stopMode = on && st !== "rate-limited" && !ta.value.trim() && !ATT.length;
+  // The send button is the one stop control (owner 2026-10-28): it stops the running turn, or, with no turn running, this conversation's background worker.
+  const line = $("#runline"), stopMode = ((on && st !== "rate-limited") || bg.length > 0) && !ta.value.trim() && !ATT.length && !pkCount();
   line.hidden = !show; line.classList.toggle("warn", st === "rate-limited");
   $("#c-model").classList.toggle("run", on && st !== "rate-limited");
   const sb = $("#send-btn"); sb.classList.toggle("stop", stopMode); sb.setAttribute("aria-label", stopMode ? "중단" : "보내기"); sb.title = stopMode ? "지금 하는 일 중단" : "";
@@ -236,7 +269,7 @@ function renderWorking() {
     $(".dot", box).className = `dot ${st === "rate-limited" ? "warn" : "pri"}`;
     workingLabel = `${st === "rate-limited" ? "사용량 한도로 대기 중" : "작업 중…"}`; workingSubs = n;
     tickWorking();
-    $("#working-stop").hidden = st === "rate-limited";
+    $("#working-stop").hidden = true;
   } else if (bg.length) {
     $(".dot", box).className = "dot pri";
     $("#working-stop").hidden = true;
@@ -281,7 +314,8 @@ function modelChipText(sel) {
 function renderCtxRing() {
   const mb = $("#c-model"), lane = isLaneT(target) && S ? S.lanes.find(x => x.name === laneOf(target)) : null;
   const orchT = target === MAIN || isProjT(target);
-  const sel = orchT ? S && S.orchestrator && S.orchestrator.activeModel : lane && lane.model;
+  // The model it answers on now, a fallback included (20-models.js liveModel), with 폴백 중 beside it when that is not the configured one.
+  const live = orchT ? liveModel(MAIN) : lane ? liveModel(`lane:${lane.name}`) : null, sel = live && live.sel;
   // The chips say whose they are: the orchestrator and a lane often run the same model with a similar context, and
   // unlabeled they read as one (owner 2026-10-20: "오케스트레이터와 레인별로 구분 안되는거 같은데").
   const owner = orchT ? botName : lane ? `세션 ${lane.title || lane.name}` : "";
@@ -297,6 +331,9 @@ function renderCtxRing() {
   if (level) { eb.textContent = thinkKo(level); eb.title = `${owner} 추론 강도 · ${thinkKo(level)}`; }
   const keyed = !!(orchT ? S && S.orchestrator && S.orchestrator.key_fallback : lane && lane.key_fallback);
   $("#c-api").hidden = !keyed;
+  const fbc = $("#c-fb"), fb = live && live.fallback;
+  fbc.hidden = !fb;
+  if (fb) { fbc.textContent = fbTagText(fb); fbc.title = `${owner} 기본 모델 ${selText(live.conf)} 대신 쓰는 중`; }
   $("#cbar").classList.toggle("api", keyed);
   const b = $("#ctx-ring"), p = ((C && C.processes) || []).find(x => x.name === (orchT ? "orchestrator" : laneOf(target)));
   b.hidden = !(p && p.running && p.tokens != null);
@@ -305,7 +342,7 @@ function renderCtxRing() {
   const label = `${owner} 컨텍스트 ${p.percent != null ? `${Math.round(p.percent)}% · ${kfmt(p.tokens)}/${kfmt(p.window)}` : `${kfmt(p.tokens)} 토큰`}`;
   b.title = label; b.setAttribute("aria-label", label);
   b.textContent = p.percent != null ? `컨텍스트 ${Math.round(p.percent)}%` : `컨텍스트 ${kfmt(p.tokens)}`;
-  b.classList.toggle("err", pct >= 80);
+  b.classList.toggle("warn", pct >= 80);
 }
 /* ---------- composer chips: model / effort / context of the current target (GET/PUT /api/target) ---------- */
 // The chips are quick switches; the last row of each opens the 모델 · 폴백 screen at this target (fallback order lives there).
@@ -357,7 +394,7 @@ $("#c-effort").onclick = ev => busy(null, () => {
     const name = targetName(target);
     const levels = ["low", "medium", "high"].filter(v => T.thinking_levels.includes(v));
     if (T.thinking && !levels.includes(T.thinking)) levels.push(T.thinking);
-    showMenu(anchor, [{ header: "추론 강도" }, ...levels.map(v => ({ value: v, label: v })), MODELS_LINK], { value: T.thinking, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${v}`)) });
+    showMenu(anchor, [{ header: "추론 강도" }, ...levels.map(v => ({ value: v, label: thinkKo(v) })), MODELS_LINK], { value: T.thinking, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${thinkKo(v)}`)) });
   });
 });
 $("#ctx-ring").setAttribute("aria-haspopup", "listbox");

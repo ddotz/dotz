@@ -163,6 +163,9 @@ function toast(msg, bad, action, ms) {
 const NTF_MAX = 3, NTF_MS = 4000, NTF_KEY = "dotz-ntf-done";
 const ntfDone = new Set((() => { const v = lsJson(NTF_KEY, []); return Array.isArray(v) ? v : []; })());
 const ntfShown = new Set(), ntfLive = new Set();
+// The open "needs" card of each conversation (09-needs-you.js attnToast): it goes as soon as that conversation no longer needs the owner.
+const NTF_BY = new Map();
+function ntfDropFor(target) { const c = NTF_BY.get(target); if (c) c(); }
 const ntfActive = () => document.visibilityState === "visible" && document.hasFocus();
 const ntfSync = () => { for (const t of ntfLive) t.sync(); };
 addEventListener("focus", ntfSync); addEventListener("blur", ntfSync); document.addEventListener("visibilitychange", ntfSync);
@@ -193,6 +196,7 @@ function notify(e) {
   function close() {
     if (gone) return;
     gone = true; clearTimeout(timer); ntfLive.delete(t);
+    if (NTF_BY.get(e.target) === close) NTF_BY.delete(e.target);
     ntfDone.add(key);
     try { localStorage.setItem(NTF_KEY, JSON.stringify([...ntfDone].slice(-300))); } catch {}
     n.classList.add("out");
@@ -206,6 +210,7 @@ function notify(e) {
   n.addEventListener("animationend", () => n.classList.remove("in"), { once: true });
   box.prepend(n);
   ntfLive.add(t);
+  if (e.kind === "needs" && e.target) NTF_BY.set(e.target, close);
   // Over the cap the oldest card leaves; it was on screen, so it counts as dismissed.
   const cards = [...box.querySelectorAll(".ntf:not(.out)")];
   for (const c of cards.slice(NTF_MAX)) c.querySelector(".x").click();

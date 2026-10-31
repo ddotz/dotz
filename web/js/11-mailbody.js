@@ -65,7 +65,9 @@ function mbMeasure(srcdoc, width) {
     const f = el("iframe", { sandbox: "allow-same-origin", tabindex: "-1", "aria-hidden": "true", style: `position:fixed;left:-99999px;top:0;width:${width}px;height:10px;border:0;visibility:hidden` });
     let settled = false;
     let fits = () => [];
-    const done = h => { const fit = fits(); settled = true; clearTimeout(t); f.remove(); res({ h, fits: fit }); };
+    // a remote picture that finished and has no size did not load (an address only an intranet or a signed-in browser can open)
+    const broken = () => { try { return [...f.contentDocument.images].filter(i => /^https?:/i.test(i.getAttribute("src") || "") && i.complete && !i.naturalWidth).length; } catch { return 0; } };
+    const done = h => { const fit = fits(), bad = broken(); settled = true; clearTimeout(t); f.remove(); res({ h, fits: fit, broken: bad }); };
     const t = setTimeout(() => { if (!settled) done(0); }, 8000);
     const read = () => {
       try {
@@ -132,7 +134,8 @@ function mailHtmlNode(key) {
       if (my !== seq) return;
       const base = mbDoc(p.body, remote);
       bar.hidden = !(p.held || remote);
-      note.textContent = remote ? "바깥 이미지를 보고 있어요" : `바깥 이미지 ${p.held}개를 막았어요`;
+      const paint = () => { note.textContent = !remote ? `바깥 이미지 ${p.held}개를 막았어요` : st.broken ? `바깥 이미지 ${st.broken}개는 이 기기에서 열리지 않아요` : "바깥 이미지를 보고 있어요"; };
+      paint();
       tog.textContent = remote ? "이미지 숨기기" : "이미지 보기";
       const known = st.h && st.w === w && st.base === base;
       if (known) frame.style.height = `${st.h}px`;
@@ -148,9 +151,10 @@ function mailHtmlNode(key) {
           if (my !== seq) return;
         }
         // a pixel of slack so a rounded-up line never turns into the frame's own scrollbar
-        Object.assign(st, { h: m.h ? m.h + 1 : st.h || 200, w, base, doc });
+        Object.assign(st, { h: m.h ? m.h + 1 : st.h || 200, w, base, doc, broken: remote ? m.broken | 0 : 0 });
         if (frame.srcdoc !== doc) frame.srcdoc = doc;
         frame.style.height = `${st.h}px`;
+        paint();
       }
       shownW = w;
     } catch {

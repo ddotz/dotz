@@ -1,27 +1,16 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor } from "./test-web.ts";
 
 // Plain-text mail (web/js/11-mailtext.js) in a headless browser: market-quote runs as a table, "label :text" bullets, the caption line. Set MT_SHOTS=<dir> to keep screenshots.
 const SHOTS = process.env.MT_SHOTS ?? "";
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
+const hub = fakeHub({
+	api: (_req, url) => {
 		if (url.pathname === "/api/events") return new Response(new ReadableStream({}), { headers: { "content-type": "text/event-stream" } });
 		return url.pathname.startsWith("/api/") ? Response.json({}) : new Response("not found", { status: 404 });
 	},
 });
-const views: InstanceType<typeof Bun.WebView>[] = [];
-afterAll(() => {
-	for (const v of views) v.close();
-	server.stop(true);
-});
+afterAll(() => hub.stop());
 
 const MAIL = [
 	"[금리]",
@@ -39,10 +28,9 @@ const MAIL = [
 ].join("\n");
 
 async function open(width: number) {
-	const v = new Bun.WebView({ width, height: 900 });
-	views.push(v);
-	await v.navigate(`http://127.0.0.1:${server.port}/?light`);
-	await v.evaluate(`new Promise(res => { const f = () => typeof mailTextNode === "function" ? res(true) : setTimeout(f, 20); f(); })`);
+	const v = await hub.view({ width, height: 900 });
+	await v.navigate(`${hub.origin}/?light`);
+	await waitFor(v, `typeof mailTextNode === "function"`);
 	await v.evaluate(`(() => {
 		cancelAnimationFrame(monRaf); renderMonitoring = () => {};
 		document.body.replaceChildren(Object.assign(document.createElement("div"), { id: "stage", style: "max-width:560px;margin:0 auto;padding:12px" }));

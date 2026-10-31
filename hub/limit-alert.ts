@@ -14,7 +14,9 @@ export type LimitKind = "auth" | "billing" | "limit" | "error";
 const OWNER_RETRY_MAX_MS = 6 * 3600_000;
 export const AUTH_WATCH_MS = 30_000;
 
-type Episode = { account: string; kind: LimitKind; since: number; sentAt: number; failures: number };
+// told: the owner was alerted about this episode (false while an error ask is held, hub/orch-error.ts errorAskHold); a missing
+// field (records written before it) counts as told.
+type Episode = { account: string; kind: LimitKind; since: number; sentAt: number; failures: number; told?: boolean };
 export const limitAlertsFile = () => join(DATA_DIR, "limit-alerts.json");
 const read = (): Record<string, Episode> => {
 	try {
@@ -35,8 +37,10 @@ export function limitAccount(err: string, model: string): string {
 }
 export const providerOf = (model: string): string => model.split("/")[0] || "anthropic";
 
-// Records one blocked turn. `alert` is true when the owner should be told now; `failures` counts the blocked turns of this agent.
-export function noteBlock(agent: string, account: string, kind: LimitKind, at = Date.now()): { alert: boolean; failures: number } {
+// Records one blocked turn. `alert` is true when the owner should be told; `failures` counts the blocked turns of this agent.
+// `hold`: the caller tells the owner later, or not at all when the episode ends first (markTold records the actual send).
+// An episode not told yet alerts again (a held ask lost to a gateway restart); `since` is when the episode began.
+export function noteBlock(agent: string, account: string, kind: LimitKind, at = Date.now(), hold = false): { alert: boolean; failures: number; since: number } {
 	const all = read();
 	const prev = all[agent];
 	// One stoppage is one alert until a turn succeeds, even when its cause shows up differently on the way (a limit, then a login
@@ -46,23 +50,40 @@ export function noteBlock(agent: string, account: string, kind: LimitKind, at = 
 		prev.failures++;
 		prev.kind = kind;
 		prev.account = account;
+		const alert = prev.told === false;
+		if (alert && !hold) prev.told = true;
 		write(all);
-		return { alert: false, failures: prev.failures };
+		return { alert, failures: prev.failures, since: prev.since };
 	}
-	const told = Object.entries(all).some(([a, e]) => a !== agent && e.kind === kind);
-	all[agent] = { account, kind, since: at, sentAt: at, failures: 1 };
+	const told = Object.entries(all).some(([a, e]) => a !== agent && e.kind === kind && e.told !== false);
+	all[agent] = { account, kind, since: at, sentAt: at, failures: 1, told: !hold };   // told by another agent's alert counts as told
 	write(all);
-	return { alert: !told, failures: 1 };
+	return { alert: !told, failures: 1, since: at };
+}
+
+// A held alert of this agent's episode was sent now.
+export function markTold(agent: string, at = Date.now()): void {
+	const all = read();
+	const e = all[agent];
+	if (!e) return;
+	e.told = true;
+	e.sentAt = at;
+	write(all);
 }
 
 // A turn succeeded: the episode is over for every agent blocked the same way (they share the cause); the caller tells the owner once.
+// Returns the episode only when the owner was told about it: a recovery line without its alert is noise (owner 2026-10-29).
 export function noteRecovered(agent: string): Episode | undefined {
 	const all = read();
 	const prev = all[agent];
 	if (!prev) return undefined;
-	for (const [a, e] of Object.entries(all)) if (e.kind === prev.kind) delete all[a];
+	let told = false;
+	for (const [a, e] of Object.entries(all)) if (e.kind === prev.kind) {
+		told ||= e.told !== false;
+		delete all[a];
+	}
 	write(all);
-	return prev;
+	return told ? prev : undefined;
 }
 
 // A billing/auth block waits for the owner, so its probe backs off: 30 min, 1 h, 2 h ... up to 6 h (a held prompt retried

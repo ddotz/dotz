@@ -166,7 +166,7 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 	test("mail: 연결됨 first, then 알림 (새 메일), 자동 초안과 승인, 감시, 고급; no second 자동 초안 switch", async () => {
 		const inv = await appInventory("mail");
 		expect(inv.secs).toEqual(EXPECTED_SECS.mail!);
-		expect(inv.settings).toEqual(["auto_draft", "skip_senders", "only_senders", "use_here", "label", "reply_model", "memory"]);
+		expect(inv.settings).toEqual(["auto_draft", "skip_senders", "only_senders", "draft_rules", "draft_default", "use_here", "label", "reply_model", "memory"]);
 		expect(inv.features).toEqual(["new_mail"]);
 		expect(inv.labels[0]).toBe("자동 초안");
 		expect(inv.stats).toEqual(["webmail-inbox"]);

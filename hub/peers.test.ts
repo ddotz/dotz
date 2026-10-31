@@ -87,3 +87,9 @@ test("isDotz accepts only a dotz manifest", async () => {
 	expect(await isDotz("https://a", async () => ({ name: "herdr web ui" }))).toBe(false);
 	expect(await isDotz("https://a", async () => { throw new Error("timeout"); })).toBe(false);
 });
+
+test("a gateway is recognised by the manifest's gateway marker (its name is the owner's assistant's) or, from an older gateway, by its name", async () => {
+	expect(await isDotz("https://a", async () => ({ name: "땃쥐", gateway: "dotz" }))).toBe(true);
+	expect(await isDotz("https://b", async () => ({ name: "dotz" }))).toBe(true);
+	expect(await isDotz("https://c", async () => ({ name: "Other app" }))).toBe(false);
+});

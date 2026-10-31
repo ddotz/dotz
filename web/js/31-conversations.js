@@ -252,7 +252,7 @@ function convRows() {
     const open = ((S && S.lanes) || []).find(l => !laneAlive(l) && `lane:${l.name}` === target);
     if (open) out.push(sess(open));
     if (out.length === 1) out.push({ empty: CVF.view === "need" ? "답을 기다리는 대화가 없어요" : "안 읽은 대화가 없어요" });
-    if (CVF.view === "all") { const ended = endedLanes(); if (ended.length) out.push({ ended: true, key: `${ended.map(l => l.name).join("|")}|${endedOpen}` }); }
+    if (CVF.view === "all") { const ended = endedLanes(); if (ended.length) out.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` }); }
     return out;
   }
   if (projects.length) rows.push({ header: "프로젝트" }, ...projects.map(mk));
@@ -260,7 +260,7 @@ function convRows() {
   if (open) rows.push(sess(open));
   // Mails are not listed here: each is a conversation under 모니터링's 앱 group (30-monitoring.js).
   const ended = endedLanes();
-  if (ended.length) rows.push({ ended: true, key: `${ended.map(l => l.name).join("|")}|${endedOpen}` });
+  if (ended.length) rows.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
   return rows;
 }
 const FIXED_DESC = { alert: "경고와 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
@@ -327,12 +327,12 @@ $("#v-chat").prepend(convSide, convHead);
 function convPaintHead() {
   asSync();
   if (isProjT(target) && !PRJ && !PRJ_FAIL) prjLoad().then(convSchedule);
-  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
+  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", alertN = target === "alert" ? cvAlertN() : 0, sig = `${target}|${targetName(target)}|${state}|${alertN}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
   // A conversation opened from a 모니터링 list (a mail of the 메일 list): ← goes back to that list inside the page, like the app bar's back on a phone.
   const up = monCtx && MON.sel && !isSettingsT(target) ? el("button", { class: "ib cv-up", type: "button", "aria-label": "목록으로", title: "목록으로", "data-k": "cv-up", onclick: () => go("monitoring", MON.sel) }, icon("back")) : null;
-  clear(convHead).append(...[up, convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), monCtx ? pqLabel({ pc: pqPc(target) }) : null), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, isMailT(target) && MAILS.get(target) && MAILS.get(target).dir !== "out" ? mailDraftButton(target, "btn tonal sm cv-draft") : null, ...asEntry(app)].filter(Boolean));
+  clear(convHead).append(...[up, convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), monCtx ? pqLabel({ pc: pqPc(target) }) : null), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, target === "alert" ? el("button", { class: "btn text sm cv-readall", type: "button", "data-k": "read-all", disabled: !alertN, title: "답이 필요한 알림은 그대로 둬요", onclick: ev => ntAlertReadAll(ev.currentTarget), text: "모두 읽음" }) : null, isMailT(target) && MAILS.get(target) && MAILS.get(target).dir !== "out" ? mailDraftButton(target, "btn tonal sm cv-draft") : null, ...asEntry(app)].filter(Boolean));
 }
 // A project's conversation gets the project page's ⋯ menu (수정 / 삭제, built by pmMenuButton in 19-project-main.js) once the project is known.
 const pjMenuOn = () => isProjT(target) && !!pmOfTarget(target);
@@ -344,6 +344,10 @@ $("#vtog").before(cvAppMenu);
 const pjAppMenu = pmMenuButton(() => pmOfTarget(target), "cvmenu");
 pjAppMenu.id = "pjmenu"; pjAppMenu.hidden = true;
 cvAppMenu.before(pjAppMenu);
+// 모두 읽음 of the 알림 conversation (30-notices.js ntAlertReadAll): in its head on wide screens, in the app bar on a phone.
+const cvAlertN = () => ts("alert").unread + ntAlertUnread().length;
+const cvReadAllBar = el("button", { class: "btn text sm cv-readall", id: "cvreadall", type: "button", hidden: true, "data-k": "read-all", title: "답이 필요한 알림은 그대로 둬요", onclick: ev => ntAlertReadAll(ev.currentTarget), text: "모두 읽음" });
+pjAppMenu.before(cvReadAllBar);
 function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
@@ -371,6 +375,8 @@ function convTitle() {
   if (tag) $("#title").append(tag);
   cvAppMenu.hidden = !(convOnPhone() && isLaneT(target));
   pjAppMenu.hidden = !(convOnPhone() && pjMenuOn());
+  cvReadAllBar.hidden = !(convOnPhone() && target === "alert");
+  if (!cvReadAllBar.hidden) cvReadAllBar.disabled = !cvAlertN();
   if (asBar) asBarSync(narrowChat() ? monDetailApp() : "");
   if (asMoreBar) asMoreSync(convOnPhone() && isSettingsT(target) ? settingsApp(target) : narrowChat() ? monDetailApp() : "");
 }

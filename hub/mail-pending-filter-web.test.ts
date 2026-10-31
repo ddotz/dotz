@@ -1,17 +1,18 @@
 // The mail list's 확인 대기 filter: a reply draft waiting on the owner (the send-approval card) shows only there, with its count on the chip,
 // for this computer's mail and a peer's alike; 전체 / 답장함 and the other views show the mails without it. Headless (Bun.WebView) against a fake hub.
-// Screenshots go to MAIL_PENDING_SHOTS (default /tmp/dotz-mail-pending): 390x844 and 1280x900, under 전체 and 확인 대기.
+// Opening the app while drafts wait lands on 확인 대기 (30-monitoring.js mailLand). Screenshots go to MAIL_PENDING_SHOTS (default <tmpdir>/dotz-mail-pending): 390x844 and 1280x900, under 전체 and 확인 대기.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sseResponse } from "./events.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
-const SHOTS = process.env.MAIL_PENDING_SHOTS ?? "/tmp/dotz-mail-pending";
+const SHOTS = process.env.MAIL_PENDING_SHOTS ?? join(tmpdir(), "dotz-mail-pending");
 mkdirSync(SHOTS, { recursive: true });
 const json = (v: unknown) => Response.json(v);
 const iso = (h: number) => new Date(Date.UTC(2026, 9, 27, h, 0)).toISOString();
-const MAIL = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: ["open-1", "open-2", "sent-1"], unread: 0, unreplied: 1, needs: { drafts: 2, unread: 0, sentToday: 1, unreplied: 1 } };
+const MAIL = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: ["open-1", "open-2", "sent-1", "note-a"], unread: 0, unreplied: 1, needs: { drafts: 2, unread: 0, sentToday: 1, unreplied: 1 } };
 const card = (subject: string, from: string, h: number, extra: Record<string, unknown> = {}) => ({ subject, from, source: "mail", at: iso(h), summary: `${subject} 요약이에요.`, ...extra });
 const ROWS = [
 	{ id: "a", h: 2, card: card("자료 요청", "Park <park@example.com>", 2, { reply: "draft", unreplied: true, suggest: { kind: "reply-draft", label: "답장 초안", ref: "d1" } }) },
@@ -27,6 +28,8 @@ const NOTES = [
 	draft("open-1", "mail:fx-a", 3, "Re: 자료 요청"),
 	draft("open-2", "mail:fx-b", 4, "Re: 회의 일정 문의"),
 	draft("sent-1", "mail:fx-c", 1, "Re: 일정 조율", "answered", { answer: "1) 보내기", answered_at: iso(1) }),
+	// the bot's note about one mail: read inside that mail's conversation, never a card of its own between the mail rows
+	{ id: "note-a", ts: iso(6), updated: iso(6), kind: "message", tone: "", title: "자료 요청", text: "이 메일에는 첨부 파일이 없었어요.", open: "mail:fx-a", src: "mail:fx-a", at: iso(6), read: true },
 ];
 // another computer's mail app with one pending draft of its own
 const PEER_T = "mail:px-1";
@@ -83,14 +86,18 @@ async function boot(width: number, height: number, key: string): Promise<View> {
 	await run(v, `if (dotzTheme.get() !== "light") dotzTheme.toggle()`);
 	await waitFor(v, `typeof INTG !== "undefined" && INTG.items.length === 1 && CONV.has("mail:fx-c") && PQ.loaded`);
 	await run(v, `go("monitoring", ${JSON.stringify(key)})`);
-	await waitFor(v, `document.querySelector('#mon-tl .mr-f[data-filter="all"].on') && document.querySelectorAll("#mon-tl .mr").length > 0`);
+	await waitFor(v, `document.querySelector('#mon-tl .mr-f.on')`);
 	return v;
 }
+const landed = (v: View) => q<string>(v, `return document.querySelector("#mon-tl .mr-f.on").dataset.filter`);
 
 for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 	describe(`mail 확인 대기 at ${width}px`, () => {
 		test("approval cards show only under 확인 대기, newest first, with the count on the chip", async () => {
 			const v = await boot(width, height, "i:mail");
+			expect(await landed(v)).toBe("pending");
+			await pick(v, "all");
+			await waitFor(v, `document.querySelectorAll("#mon-tl .mr").length > 0`);
 			const all = await seen(v);
 			expect(all.chips).toEqual(["전체", "안 읽음", "답장 필요2", "확인 대기2", "답장함1", "보낸 메일"]);
 			expect(all.cards).toEqual([]);   // a sent draft is folded inside its mail's conversation (30-mail-sent.js); nothing waiting shows under 전체
@@ -118,6 +125,9 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 
 test("a peer's mail app counts and shows its pending draft under 확인 대기 only", async () => {
 	const v = await boot(390, 844, `p:http://127.0.0.1:${server.port}/mini|i:mail`);
+	expect(await landed(v)).toBe("pending");
+	await pick(v, "all");
+	await waitFor(v, `document.querySelectorAll("#mon-tl .mr").length > 0`);
 	const all = await seen(v);
 	expect(all.chips).toContain("확인 대기1");
 	expect(all.cards).toEqual([]);
@@ -132,6 +142,7 @@ test("a peer's mail app counts and shows its pending draft under 확인 대기 o
 test("확인 대기 with nothing waiting says so", async () => {
 	settled = true;
 	const v = await boot(390, 844, "i:mail");
+	expect(await landed(v)).toBe("all");
 	expect((await seen(v)).chips).toContain("확인 대기");
 	await pick(v, "pending");
 	const p = await seen(v);

@@ -63,8 +63,8 @@ test("verifyRuntime: a probe that never answers fails after its timeout", async 
 
 test("verifyRuntime: no adapter -> every item fails and the verdict is blocked", async () => {
 	const r = await verifyRuntime("codex", { probes: {}, version: "0.1" });
-	expect(r.items.every(i => i.result === "fail" && i.note === "dotz 어댑터 없음")).toBe(true);
-	expect(r.items.filter(i => i.core).every(i => i.result === "fail" && i.note === "dotz 어댑터 없음")).toBe(true);
+	expect(r.items.every(i => i.result === "fail" && i.note === "어댑터 없음")).toBe(true);
+	expect(r.items.filter(i => i.core).every(i => i.result === "fail" && i.note === "어댑터 없음")).toBe(true);
 	expect(r.verdict).toBe("blocked");
 });
 
@@ -94,6 +94,6 @@ test("use: an ok report writes the runtime keys and keeps the rest of config.jso
 test("refusalFor: omp needs no report; uninstalled and adapterless runtimes are refused", () => {
 	expect(refusalFor("omp", undefined, undefined)).toBeUndefined();
 	expect(refusalFor("omo", { id: "omo", label: "", installed: false, hasAdapter: false, usable: false }, undefined)).toBe("설치되어 있지 않아요");
-	expect(refusalFor("codex", { id: "codex", label: "", installed: true, hasAdapter: false, usable: false }, undefined)).toBe("dotz 어댑터가 없어요");
+	expect(refusalFor("codex", { id: "codex", label: "", installed: true, hasAdapter: false, usable: false }, undefined)).toBe("이 하네스용 어댑터가 없어요");
 	expect(existsSync(join(DATA_DIR, "runtime-checks", "omp.json"))).toBe(false);
 });

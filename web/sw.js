@@ -2,9 +2,10 @@
 // The page, script and styles answer from the cache at once (a tapped notification starts the app without waiting for the
 // network) and are fetched again in the background. When that fetch brings a changed shell, the open pages get a
 // {type:"shell-updated"} message (web/js/23-installable-app-web.js shellUpdated) and reload onto it, so a web change does not wait for the open after next.
-const CACHE = "dotz-shell-v10";
-// the page and its joined script and styles: cache first, refreshed together in the background
-const FRESH = ["/", "/app.js", "/app.css"];
+const CACHE = "dotz-shell-v11";
+// the page, its joined script and styles and the owner's custom.js: cache first, refreshed together in the background. A file the page loads that
+// is not here waits on the gateway, and with the gateway off the page never finished loading (2026-10-28).
+const FRESH = ["/", "/app.js", "/app.css", "/custom.js"];
 // icons: cache first too, but each is fetched again in the same background refresh (no ETag test, no reload), so a changed icon never needs a CACHE bump
 const ICONS = ["/icons/icon-192.png", "/icons/icon-512.png", "/icons/apple-touch-icon.png", "/icons/badge-96.png"];
 const SHELL = [...FRESH, ...ICONS];
@@ -83,7 +84,22 @@ self.addEventListener("push", ev => {
   // A decision (m.id): up to two of its option buttons where the platform shows action buttons (Android); a tap elsewhere opens the detail.
   const max = typeof Notification !== "undefined" && Notification.maxActions ? Math.min(2, Notification.maxActions) : 0;
   const actions = m.id && Array.isArray(m.actions) ? m.actions.slice(0, max) : [];
-  ev.waitUntil(self.registration.showNotification(m.title || "dotz", {
+  // Notifications about something already handled are closed (hub/push.ts withdraw): a "withdraw" push carries only those; a real one may carry
+  // them too. A push must still show something (Chrome otherwise posts its own "updated in the background" line): when nothing else is left,
+  // one silent line is shown and closed at once. Apple endpoints never get a bare withdraw (Safari revokes push that shows nothing).
+  const gone = Array.isArray(m.withdraw) ? m.withdraw.filter(t => typeof t === "string") : [];
+  const closeGone = async () => { for (const n of await self.registration.getNotifications()) if (gone.includes(n.tag)) n.close(); };
+  if (m.kind === "withdraw") {
+    ev.waitUntil((async () => {
+      await closeGone();
+      if ((await self.registration.getNotifications()).length) return;
+      await self.registration.showNotification("알림 정리", { tag: "withdrawn", body: "처리한 알림을 정리했어요", silent: true, icon: "/icons/icon-192.png", badge: "/icons/badge-96.png" });
+      for (const n of await self.registration.getNotifications({ tag: "withdrawn" })) n.close();
+    })());
+    return;
+  }
+  if (gone.length) ev.waitUntil(closeGone());
+  ev.waitUntil(self.registration.showNotification(m.title || "알림", {
     body: m.body || "",
     tag: m.tag || undefined,
     renotify: Boolean(m.tag),

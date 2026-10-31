@@ -6,7 +6,7 @@ import { join } from "node:path";
 // next computer without the sheet (web/js/33-peers.js prNext). Only the page around the handlers is faked.
 const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
 const state = web("04-state.js"), peers = web("33-peers.js");
-const tabSrc = state.slice(state.indexOf("const isMac ="), state.indexOf("for (const [id, label] of NAV)"));
+const tabSrc = state.slice(state.indexOf("const isMac ="), state.indexOf("for (const [id, label] of navTabs())"));
 const gwSrc = peers.slice(peers.indexOf("const prKeyHint"), peers.indexOf("// Tapping 홈 again"));
 const navStart = state.indexOf("const NAV =");
 const NAV = new Function(`${state.slice(navStart, state.indexOf(";\n", navStart) + 1)} return NAV;`)() as [string, string][];
@@ -36,7 +36,7 @@ function tabs(platform: string, o: { current?: string; dialog?: boolean; sheet?:
 function gateways(platform: string, list: Peer[], o: { dialog?: boolean } = {}) {
 	const handlers: Handler[] = [], log: string[] = [];
 	const env: Record<string, unknown> = {
-		isMac: /Mac/.test(platform), PR: { list },
+		isMac: /Mac/.test(platform), PR: { list }, selfDown: false,
 		document: { addEventListener: (_: string, h: Handler) => handlers.push(h), querySelector: () => (o.dialog ? {} : null) },
 		prPick: (p: Peer) => log.push(`pick:${p.name}`), toast: (m: string, bad?: boolean) => log.push(`toast:${bad ? "bad:" : ""}${m}`),
 	};
@@ -45,9 +45,10 @@ function gateways(platform: string, list: Peer[], o: { dialog?: boolean } = {}) 
 }
 
 describe("Cmd/Ctrl+1..6 tab shortcuts", () => {
-	test("on a Mac Cmd+1..6 open 홈, 채팅, 프로젝트, 모니터링, 설정 in tab order; the disabled 앱 (Cmd+5) opens nothing", () => {
+	test("on a Mac Cmd+1..5 open 홈, 채팅, 프로젝트, 모니터링, 설정 in tab order; the hidden 앱 has no number, so Cmd+6 is left alone", () => {
 		const t = tabs("MacIntel", { current: "settings" });
-		for (const n of [1, 2, 3, 4, 5, 6]) expect(fire(t.handlers, { key: String(n), code: `Digit${n}`, metaKey: true })).toBe(true);
+		for (const n of [1, 2, 3, 4, 5]) expect(fire(t.handlers, { key: String(n), code: `Digit${n}`, metaKey: true })).toBe(true);
+		expect(fire(t.handlers, { key: "6", code: "Digit6", metaKey: true })).toBe(false);
 		expect(t.log).toEqual(["go:home", "chatEnter", "go:projects", "go:monitoring", "go:settings"]);
 	});
 
@@ -77,7 +78,8 @@ describe("Cmd/Ctrl+1..6 tab shortcuts", () => {
 
 	test("tooltips name the shortcut", () => {
 		expect(tabs("MacIntel").navKeyHint("monitoring")).toBe("⌘4");
-		expect(tabs("Win32").navKeyHint("settings")).toBe("Ctrl+6");
+		expect(tabs("Win32").navKeyHint("settings")).toBe("Ctrl+5");
+		expect(tabs("MacIntel").navKeyHint("apps")).toBe("");
 		expect(tabs("Win32").navKeyHint("models")).toBe("");
 	});
 });

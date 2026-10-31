@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // 모니터링 > 앱 > 카카오톡 (web/js/30-kakao.js): the room choice, the chosen rooms as conversation rows and the per-room chat, run as shipped in a headless
 // browser (Bun.WebView) against a stubbed /api/kakao/* (docs/kakao-rooms-api.md). Names and texts are placeholders. Screenshots are written only when KAKAO_SHOTS names a folder.
@@ -58,35 +58,12 @@ const expectReq = (pred: (r: Req) => boolean, ms = 3500): Promise<Req> => {
 };
 const isReq = (method: string, path: string) => (r: Req) => r.method === method && r.path === path;
 
-const streams = new Set<ReadableStreamDefaultController<Uint8Array>>();
-let streamWaiters: (() => void)[] = [];
-const te = new TextEncoder();
-const emit = (e: object) => {
-	for (const c of streams) {
-		try { c.enqueue(te.encode(`data: ${JSON.stringify(e)}\n\n`)); } catch { streams.delete(c); }
-	}
-};
-const streamOpen = () => new Promise<void>(r => streamWaiters.push(r));
+const emit = (e: object) => hub.push(e);
 
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url), p = url.pathname;
-		if (p === "/") return indexPage(req);
-		const asset = appAsset(req, p);
-		if (asset) return asset;
-		if (p === "/api/events") {
-			let ctl: ReadableStreamDefaultController<Uint8Array>;
-			const body = new ReadableStream<Uint8Array>({
-				start(c) { ctl = c; streams.add(c); c.enqueue(te.encode(": open\n\n")); const w = streamWaiters; streamWaiters = []; for (const f of w) f(); },
-				cancel() { streams.delete(ctl); },
-			});
-			return new Response(body, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
-		}
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+const hub = fakeHub({
+	stream: "fake",
+	api: async (req, url) => {
+		const p = url.pathname;
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: [] });
@@ -123,6 +100,8 @@ const server = Bun.serve({
 		if (media) {
 			record({ method: "GET", path: `${p}${url.search}`, body: null });
 			if (media[2] === "5008") return json({ error: "기간이 지나 볼 수 없어요" }, 410);
+			// the full video never finishes loading: the viewer's <video> stays as it is (a PNG body would fire `error` at a load-dependent moment)
+			if (media[2] === "5003" && url.searchParams.get("v") === "full") return new Response(new ReadableStream({}), { headers: { "Content-Type": "video/mp4" } });
 			return new Response(PNG, { headers: { "Content-Type": "image/png" } });
 		}
 		const body = req.method === "GET" ? null : ((await req.json().catch(() => ({}))) as Record<string, unknown>);
@@ -192,23 +171,17 @@ const server = Bun.serve({
 			if (d[2] === "send") { const s = { id: `s${sends.length + 1}`, text: String(body!.text ?? "초안"), state: "sending", at: Date.now() }; sends.push(s); return json({ id: s.id, state: "sending" }, 202); }
 			return json({ ok: true });
 		}
-		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-const open = (width: number, height: number): View => { const v = new Bun.WebView({ width, height }); views.push(v); return v; };
-afterAll(() => { for (const v of views) v.close(); for (const c of streams) { try { c.close(); } catch { /* already closed */ } } server.stop(true); });
+const open = (width: number, height: number): Promise<View> => hub.view({ width, height });
+afterAll(() => { hub.stop(); });
 beforeEach(reset);
 
-const waitFor = (v: View, expr: string, ms = 3500) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const boot = async (v: View) => {
-	const opened = streamOpen();
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const opened = hub.nextStream();
+	await v.navigate(`${hub.origin}/`);
 	await opened;
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S`);
 	await light(v);
@@ -232,8 +205,8 @@ const newestInSight = (v: View, logId: string) =>
 type Geo = { markTop: number; scrollTop: number; stick: boolean; markNext: string | null };
 const geo = (v: View) => q<Geo>(v, `const m = document.querySelector(".kk-new"), t = document.querySelector("#kk-tl"); return { markTop: m ? Math.round(m.getBoundingClientRect().top - t.getBoundingClientRect().top) : -999, scrollTop: Math.round(t.scrollTop), stick: KK.stick, markNext: m && m.nextElementSibling ? m.nextElementSibling.dataset.log : null }`);
 
-describe("카카오톡 at desktop width (1280x800)", () => {
-	const v = open(1280, 800);
+describe("카카오톡 at desktop width (1280x800)", async () => {
+	const v = await open(1280, 800);
 
 	test("the room choice lists every room with a switch; the chosen ones are conversation rows with name, initial, time and unread", async () => {
 		await boot(v);
@@ -462,7 +435,7 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		await run(v, `document.querySelector('.kk-ask [data-k="pick"][data-i="0"]').click()`);
 		expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft" && r.body?.choice === "취소해")).body).toEqual({ choice: "취소해" });
 		await waitFor(v, `!document.querySelector(".kk-ask") && document.querySelector('.kk-draft[data-code="dp"] .kk-dt')`);
-		expect(await q(v, `return [...document.querySelectorAll('.kk-draft[data-code="dp"] .btn')].map(b => b.textContent)`)).toEqual(["보내기", "고치기", "버리기"]);
+		expect(await q(v, `return [...document.querySelectorAll('.kk-draft[data-code="dp"] .btn')].map(b => b.textContent)`)).toEqual(["보내기", "고치기", "보내지 않기"]);
 		expect(await q(v, `return document.querySelector('.kk-draft[data-code="dp"] .kk-dt').textContent`)).toBe("답장: 취소해");
 
 		ask = { question: "다시 묻습니다", choices: ["응", "아니"] };
@@ -478,10 +451,19 @@ describe("카카오톡 at desktop width (1280x800)", () => {
 		await shot(v, "05-desktop-dark.png");
 		await light(v);
 	});
+	test("a system line holding KakaoTalk's own feed record reads as words, never as JSON; an unknown record is not drawn", async () => {
+		msgs.push(mk("4040", "가나", JSON.stringify({ feedType: 25, logId: "1", hidden: true, targetRevision: 1 }), at(22, 3, 0), 0));
+		msgs.push(mk("4041", "가나", JSON.stringify({ feedType: 4, members: [{ userId: 9, nickName: "마바" }] }), at(22, 3, 1), 0));
+		msgs.push(mk("4042", "가나", JSON.stringify({ feedType: 77 }), at(22, 3, 2), 0));
+		emit({ kind: "kakao", chatId: "100", logId: "4042" });
+		await waitFor(v, `document.querySelector('[data-log="4041"]')`);
+		const s = await q<{ hidden: string; join: string; unknown: boolean; json: boolean }>(v, `return { hidden: document.querySelector('[data-log="4040"]')?.textContent ?? "", join: document.querySelector('[data-log="4041"]')?.textContent ?? "", unknown: !!document.querySelector('[data-log="4042"]'), json: document.querySelector("#kk-tl").textContent.includes('{"feedType') }`);
+		expect(s).toEqual({ hidden: "가려진 메시지예요", join: "마바님이 들어왔어요", unknown: false, json: false });
+	});
 });
 
-describe("카카오톡 on a phone (390x844)", () => {
-	const v = open(390, 844);
+describe("카카오톡 on a phone (390x844)", async () => {
+	const v = await open(390, 844);
 
 	test("the room list and the chat are separate screens with a back button; the composer stays on screen", async () => {
 		await boot(v);
@@ -541,8 +523,8 @@ describe("카카오톡 on a phone (390x844)", () => {
 	});
 });
 
-describe("대화방 검색 (room search)", () => {
-	const v = open(1280, 800);
+describe("대화방 검색 (room search)", async () => {
+	const v = await open(1280, 800);
 	const rowsOf = (v: View) => q<string[]>(v, `return [...document.querySelectorAll(".kk-pr")].map(r => r.dataset.chat)`);
 
 	test("a search input tops the room choice; it filters by name (substring, case-insensitive, initial consonants) and says so when nothing matches", async () => {
@@ -585,8 +567,8 @@ describe("대화방 검색 (room search)", () => {
 	});
 });
 
-describe("empty and error states", () => {
-	const v = open(1280, 800);
+describe("empty and error states", async () => {
+	const v = await open(1280, 800);
 
 	test("no room chosen: the picker is open and one line asks to choose", async () => {
 		reset();
@@ -632,8 +614,8 @@ const MEDIA = (): Msg[] => [
 ];
 const useMedia = () => { reset(); msgs = MEDIA(); drafts = []; };
 
-describe("카카오톡 media at desktop width", () => {
-	const v = open(1280, 800);
+describe("카카오톡 media at desktop width", async () => {
+	const v = await open(1280, 800);
 
 	test("a photo is a lazy rounded thumbnail from the media route, no colored bubble, at most 240px wide", async () => {
 		useMedia();
@@ -675,11 +657,11 @@ describe("카카오톡 media at desktop width", () => {
 	});
 
 	test("a video shows its thumbnail with a play icon and the length; tapping plays it with controls in the viewer", async () => {
+		await waitFor(v, `document.querySelector('[data-log="5003"] .kk-video .kk-dur') && !document.querySelector("dialog.kk-vwd")`);
 		const s = await q<Record<string, any>>(v, `const b = document.querySelector('[data-log="5003"] .kk-video'); return { play: !!b.querySelector(".kk-play"), dur: b.querySelector(".kk-dur").textContent, src: b.querySelector("img").getAttribute("src"), label: b.getAttribute("aria-label") }`);
 		expect(s).toEqual({ play: true, dur: "1:15", src: "/api/kakao/media/100/5003?i=0&v=thumb", label: "동영상 재생" });
 		await run(v, `document.querySelector('[data-log="5003"] .kk-video').click()`);
-		await waitFor(v, `document.querySelector('dialog.kk-vwd[open] video[controls]')`);
-		expect(await q(v, `return document.querySelector('dialog.kk-vwd video').getAttribute('src')`)).toBe("/api/kakao/media/100/5003?i=0&v=full");
+		await waitFor(v, `document.querySelector('dialog.kk-vwd[open] video[controls]')?.getAttribute("src") === "/api/kakao/media/100/5003?i=0&v=full"`);
 		await run(v, `document.querySelector('dialog.kk-vwd [data-k="close"]').click()`);
 		await waitFor(v, `!document.querySelector('dialog.kk-vwd')`);
 	});
@@ -731,8 +713,8 @@ describe("카카오톡 media at desktop width", () => {
 });
 
 for (const [w, h] of [[1280, 800], [390, 844]] as const)
-	describe(`카카오톡 사용자별 분석 at ${w}px`, () => {
-		const v = open(w, h);
+	describe(`카카오톡 사용자별 분석 at ${w}px`, async () => {
+		const v = await open(w, h);
 
 		test("tapping a sender's name opens the panel with the counted stats; 요약 분석 asks the model and shows the summary with its time", async () => {
 			reset();
@@ -772,8 +754,8 @@ for (const [w, h] of [[1280, 800], [390, 844]] as const)
 		});
 	});
 
-describe("카카오톡 방 목록 실시간 갱신", () => {
-	const v = open(1280, 800);
+describe("카카오톡 방 목록 실시간 갱신", async () => {
+	const v = await open(1280, 800);
 
 	test("a kakao event updates another room's preview, time and unread at once; the open room's row follows the message just appended", async () => {
 		reset();
@@ -796,8 +778,8 @@ describe("카카오톡 방 목록 실시간 갱신", () => {
 	});
 });
 
-describe("카카오톡 지원하지 않는 메시지와 빈 줄", () => {
-	const v = open(1280, 800);
+describe("카카오톡 지원하지 않는 메시지와 빈 줄", async () => {
+	const v = await open(1280, 800);
 
 	test("a JSON record is never a bubble (neutral label), an empty system line leaves no row, and no large blank gaps remain", async () => {
 		reset();
@@ -823,8 +805,8 @@ describe("카카오톡 지원하지 않는 메시지와 빈 줄", () => {
 	});
 });
 
-describe("카카오톡 이전 메시지 자동 불러오기", () => {
-	const v = open(1280, 800);
+describe("카카오톡 이전 메시지 자동 불러오기", async () => {
+	const v = await open(1280, 800);
 
 	test("reaching the top loads the older page once and keeps the anchor message at its offset; the button stays, and loading stops at the room's beginning", async () => {
 		reset();
@@ -857,8 +839,8 @@ describe("카카오톡 이전 메시지 자동 불러오기", () => {
 	});
 });
 
-describe("카카오톡 link previews at 390px", () => {
-	const v = open(390, 844);
+describe("카카오톡 link previews at 390px", async () => {
+	const v = await open(390, 844);
 
 	test("the preview card fits the phone width without a sideways scroll", async () => {
 		reset();
@@ -875,8 +857,8 @@ describe("카카오톡 link previews at 390px", () => {
 	});
 });
 
-describe("카카오톡 메시지 만들어 줘", () => {
-	const v = open(1280, 800);
+describe("카카오톡 메시지 만들어 줘", async () => {
+	const v = await open(1280, 800);
 
 	test("the composer asks what to send; one intent makes a 새 메시지 초안 card through the same draft route, and 취소 closes it", async () => {
 		reset();
@@ -892,7 +874,7 @@ describe("카카오톡 메시지 만들어 줘", () => {
 		expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft")).body).toEqual({ intent: "내일 7시로 미루자고 정중하게" });
 		await waitFor(v, `document.querySelector('.kk-draft[data-code="di"] .kk-dp') && !document.querySelector("#kk-draft-btn").disabled`);
 		const card = await q<Record<string, any>>(v, `const c = document.querySelector('.kk-draft[data-code="di"]'); return { head: c.querySelector(".kk-dh").textContent, parts: [...c.querySelectorAll(".kk-dp")].map(p => p.textContent), buttons: [...c.querySelectorAll(".btn")].map(b => b.textContent), intent: !!document.querySelector("#kk-intent-in") }`);
-		expect(card).toEqual({ head: "새 메시지 초안 · 메시지 2개", parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], buttons: ["보내기", "고치기", "버리기"], intent: false });
+		expect(card).toEqual({ head: "새 메시지 초안 · 메시지 2개", parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], buttons: ["보내기", "고치기", "보내지 않기"], intent: false });
 		await shot(v, "17-desktop-compose.png");
 
 		await run(v, `document.querySelector("#kk-new-btn").click()`);
@@ -902,7 +884,7 @@ describe("카카오톡 메시지 만들어 줘", () => {
 		expect(await q(v, `return document.querySelector("#kk-intent").hidden`)).toBe(true);
 	});
 
-	const pv = open(390, 844);
+	const pv = await open(390, 844);
 	test("on a phone the intent box fits the width above the composer", async () => {
 		reset();
 		await boot(pv);
@@ -916,8 +898,8 @@ describe("카카오톡 메시지 만들어 줘", () => {
 	});
 });
 
-describe("카카오톡 이전 메시지 자동 불러오기 at 390px", () => {
-	const v = open(390, 844);
+describe("카카오톡 이전 메시지 자동 불러오기 at 390px", async () => {
+	const v = await open(390, 844);
 
 	test("reaching the top on a phone loads the older page once and keeps the anchor message at its offset", async () => {
 		reset();
@@ -935,8 +917,8 @@ describe("카카오톡 이전 메시지 자동 불러오기 at 390px", () => {
 	});
 });
 
-describe("카카오톡 link previews", () => {
-	const v = open(1280, 800);
+describe("카카오톡 link previews", async () => {
+	const v = await open(1280, 800);
 
 	test("an address is a link with a lazy preview card under the bubble; one request per address; a failed preview keeps only the link", async () => {
 		reset();
@@ -966,8 +948,8 @@ describe("카카오톡 link previews", () => {
 	});
 });
 
-describe("카카오톡 reply quotes", () => {
-	const v = open(1280, 800);
+describe("카카오톡 reply quotes", async () => {
+	const v = await open(1280, 800);
 
 	test("the quote names the original's author; a tap jumps to the original (loading the page around it when not shown); a source the room lacks says so", async () => {
 		useMedia();
@@ -1024,8 +1006,8 @@ describe("카카오톡 reply quotes", () => {
 	});
 });
 
-describe("카카오톡 media at 390px", () => {
-	const v = open(390, 844);
+describe("카카오톡 media at 390px", async () => {
+	const v = await open(390, 844);
 
 	test("a photo is at most 200px wide and the timeline does not scroll sideways", async () => {
 		useMedia();
@@ -1077,8 +1059,8 @@ const useOpen = () => {
 	];
 };
 for (const [w, h] of [[390, 844], [1280, 800]] as const)
-	describe(`오픈채팅 room at ${w}px`, () => {
-		const v = open(w, h);
+	describe(`오픈채팅 room at ${w}px`, async () => {
+		const v = await open(w, h);
 		test("senders are named over their runs, the emoticon is an image (or one chip), the reply names the original's author", async () => {
 			useOpen();
 			await boot(v);
@@ -1147,8 +1129,8 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const)
 
 // 오픈채팅 rooms and the hint line: a room's kind and its newest message (or member count) under its name, in the choice and in the rows.
 for (const [w, h] of [[390, 844], [1280, 800]] as const)
-	describe(`오픈채팅 and room hints at ${w}px`, () => {
-		const v = open(w, h);
+	describe(`오픈채팅 and room hints at ${w}px`, async () => {
+		const v = await open(w, h);
 		test("an open chat room is listed with 오픈채팅 and its hint; similar rooms are told apart by their hints; nothing overflows", async () => {
 			rooms = [
 				{ chatId: "100", name: "가나다 모임", kind: "group", watched: true, autoDraft: false, unread: 0, lastAt: at(22, 1, 29), hint: "오늘 모임은 일곱 시예요" },

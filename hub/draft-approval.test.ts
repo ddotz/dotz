@@ -6,7 +6,7 @@ import { askComponentsFor, askInteraction, ASK_PREFIX } from "./askbuttons.ts";
 import { parseDecisions } from "./choices.ts";
 import { buildPayloads } from "./discord-format.ts";
 import { paths } from "./config.ts";
-import { draftActionOf, draftApprovalBlock, draftVerdict, parseDraftApproval } from "./draft-approval.ts";
+import { draftActionOf, draftApprovalBlock, draftVerdict, parseDraftApproval, textVerdict } from "./draft-approval.ts";
 import { emit } from "./events.ts";
 import { inboxText } from "./intake.ts";
 import { approval, createDraft, draftBlock } from "./kakao/send.ts";
@@ -75,6 +75,35 @@ test("only a draft with the three labels is a draft-approval decision", () => {
 	expect(["보내기", "고치기", "보내지 않기", "올리기"].map(draftActionOf)).toEqual(["send", "edit", "drop", undefined]);
 });
 
+test("send modes: a reply + mail card keeps 1-3 and adds 답글만 / 메일만 / 직접 입력 …; it still reads as a draft", () => {
+	const card = { to: "인디스쿨 a 댓글", toLabel: "대상" as const, body: "메일 보내드렸습니다^^", ref: "indi:1", question: "이대로 보낼까?", mail: { to: "t@example.com", subject: "MR", body: "MR 보내드립니다", attachments: [{ name: "a.mp3", size: 2048 }] } };
+	const block = draftApprovalBlock({ ...card, sendModes: true });
+	const opts = parseDecisions(block).blocks[0]!.options;
+	expect(opts.map(o => [o.n, o.label])).toEqual([[1, "보내기"], [2, "고치기"], [3, "보내지 않기"], [4, "답글만 보내기"], [5, "메일만 보내기"], [6, "어떻게 보낼지 직접 입력"]]);
+	expect(block).toContain("**6) 어떻게 보낼지 직접 입력 …**");
+	expect(opts[5]).toMatchObject({ detail: true });
+	expect(parseDraftApproval(block)).toMatchObject({ toLabel: "대상", ref: "indi:1", mail: { to: "t@example.com" } });
+	// A card without a mail part has nothing to split: only the free-text mode is added. Without sendModes the card is the old three.
+	expect(parseDecisions(draftApprovalBlock({ ...card, mail: undefined, sendModes: true })).blocks[0]!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기", "어떻게 보낼지 직접 입력"]);
+	expect(parseDecisions(draftApprovalBlock(card)).blocks[0]!.options).toHaveLength(3);
+	expect(["답글만 보내기", "메일만 보내기", "어떻게 보낼지 직접 입력"].map(draftActionOf)).toEqual(["send-main", "send-mail", "own"]);
+	// Any other fourth option is not a draft card.
+	expect(parseDraftApproval(`${draftApprovalBlock(card)}\n**4) 나중에**`)).toBeUndefined();
+});
+
+test("직접 입력 needs the owner's words; they go out with the answer and draftVerdict returns them", async () => {
+	const card = { to: "인디스쿨 b 댓글", toLabel: "대상" as const, body: "답글", ref: "DOWN1", question: "직접 입력 카드 보낼까?", mail: { to: "t@example.com", subject: "MR", body: "본문" }, sendModes: true };
+	const since = Date.parse(ts()) - 1;
+	ask(draftApprovalBlock(card));
+	const n = noticeFor("직접 입력 카드");
+	expect(n.decision!.draft).toMatchObject({ ref: "DOWN1" });
+	const sent: Parameters<DecisionSend>[0][] = [];
+	const send: DecisionSend = async a => void sent.push(a);
+	expect((await answerDecision(n.id, { n: 6 }, send)).status).toBe(400);
+	expect((await answerDecision(n.id, { n: 6, note: "메일 먼저, 답글은 내일" }, web)).status).toBe(200);
+	expect(draftVerdict(paths.inbox, "DOWN1", since)).toEqual({ verdict: "own", detail: "메일 먼저, 답글은 내일" });
+});
+
 test("a long draft stays whole in the notice's draft and the notice is a normal open decision", () => {
 	const body = Array.from({ length: 120 }, (_, i) => `${i + 1}번째 줄이에요`).join("\n");
 	ask(draftApprovalBlock({ ...mail, body, ref: "DLONG", question: "긴 메일 보낼까요?" }));
@@ -133,6 +162,35 @@ test("draftVerdict: the owner's latest pick for one ref after the cutoff; sessio
 	expect(draftVerdict(paths.inbox, refs[0]!, since)).toEqual({ verdict: "drop" });
 });
 
+test("textVerdict: a typed yes or send verb approves, a negative refuses, anything else says nothing", () => {
+	for (const t of ["보내", "보내자", "보내줘", "ㅇㅇ", "ㅇㅇㅇ 메일 보내", "아잇 보내라고", "이걸로 다시 보내놔", "보내자. 그리고 이거 리뷰 요청 화면도 고쳐줘", "응 답장 보내줘~"]) expect([t, textVerdict(t)]).toEqual([t, "send"]);
+	for (const t of ["보내지 마", "안 보내", "메일 안 보내도 돼", "ㄴㄴ", "보내지 말고 고쳐"]) expect([t, textVerdict(t)]).toEqual([t, "drop"]);
+	for (const t of ["보내기 전에 제목 바꿔", "파일 하나 더 붙여서 보내줘", "보내?", "정산표 기준이 필요함", "메일"]) expect([t, textVerdict(t)]).toEqual([t, undefined]);
+});
+
+test("draftVerdict: a typed reply in the draft's conversation counts, the latest word wins, other conversations do not", () => {
+	const since = Date.parse(ts()) - 1000;
+	const ref = "RTEXT01", conv = "mail:kdb-RTEXT01";
+	const say = (text: string, extra: Record<string, unknown> = {}) => emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "th:1", conv, text, ...extra });
+	say("3) 보내지 않기", { picks: [{ q: `이 답장을 보낼까요? (${ref})`, n: 3, label: "보내지 않기" }] });
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
+	say("보내자. 그리고 화면도 고쳐 줘");
+	// the conversation is the one the pick came from, or the one the caller names
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "send" });
+	expect(draftVerdict(paths.inbox, "RTEXT02", since, { conv })).toEqual({ verdict: "send" });
+	expect(draftVerdict(paths.inbox, "RTEXT03", since)).toEqual({ verdict: "none" });
+	say("아니 보내지 마");
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
+	say("정산표 기준도 봐줘");
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
+	emit("inbox", { ts: ts(), kind: "message", source: "web", channel: "th:2", conv: "mail:other", text: "보내" });
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
+	emit("inbox", { ts: ts(), kind: "lane_message", source: "web", conv, text: "보내" });
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "drop" });
+	say("ㅇㅇㅇ 메일 보내");
+	expect(draftVerdict(paths.inbox, ref, since)).toEqual({ verdict: "send" });
+});
+
 test("kakao: the web sheet's 보내기 is an owner message the approval check accepts; 보내지 않기 and a session's answer are not", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "da-kakao-"));
 	try {
@@ -159,4 +217,9 @@ test("kakao: the web sheet's 보내기 is an owner message the approval check ac
 test("a quote above the draft (the comment being answered) is not part of the draft", () => {
 	const text = ["[ask] 댓글 답글 초안", "> 원댓글 Bob: 영상 잘 봤어요", draftApprovalBlock({ to: "Bob 댓글", toLabel: "대상", body: "고마워요", ref: "j-1-ab12", question: "이 답글 올릴까요?" })].join("\n");
 	expect(parseDraftApproval(text)).toEqual({ toLabel: "대상", to: "Bob 댓글", body: "고마워요", ref: "j-1-ab12" });
+});
+
+test("a card with both 참조 and 규칙 lines reads back with each", () => {
+	const text = draftApprovalBlock({ to: "kim@example.com, lee@example.com", toLabel: "받는이", cc: ["park@example.com"], rule: "악보 요청", subject: "Re: 악보", body: "보내 드립니다.", ref: "RABCDEF", question: "이 답장 보낼까요?" });
+	expect(parseDraftApproval(text)).toMatchObject({ to: "kim@example.com, lee@example.com", cc: ["park@example.com"], rule: "악보 요청", subject: "Re: 악보", body: "보내 드립니다." });
 });

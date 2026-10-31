@@ -12,6 +12,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .fs-ey { display: block; color: var(--fg-2); font: 600 13px/20px var(--font); }
 .fs-t { margin: 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
 .fs-ey.warn { color: var(--warn); }
+.fs-ey.err { color: var(--err); }
 .fs-ey.done { color: var(--ok); }
 .fs-ey.ign { color: var(--fg-3); }
 .fs-hb { flex: none; display: flex; align-items: center; gap: 2px; }

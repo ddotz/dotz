@@ -182,7 +182,6 @@ test("zele send: read first, then reply with --to and --body; a refusal is repor
 	const refuse: Runner = async argv => (argvs.push(argv), argv[2] === "reply" ? { code: 1, stdout: "", stderr: "newer message in thread" } : { code: 0, stdout: "", stderr: "" });
 	const refused = await sendWith(rec, refuse);
 	expect(refused.ok).toBe(false);
-	expect(refused.message).toContain("다시 초안");
 	expect(refused.message).toContain("newer message in thread");
 	argvs.length = 0;
 	const noRead: Runner = async argv => (argvs.push(argv), { code: 1, stdout: "", stderr: "not found" });

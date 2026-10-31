@@ -1,39 +1,22 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
-import { sseResponse } from "./events.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json } from "./test-web.ts";
 
 // The mail rows of the 모니터링 tab (web/js/30-monitoring.js monConvNode) in a headless browser: compact, the summary visible, no right-side buttons but the ⋯ at the top right,
 // the whole card opens the mail, the reply chip only with data; and the attachments of the original view. Set MAIL_SHOTS=<dir> to keep screenshots.
 const SHOTS = process.env.MAIL_SHOTS ?? "";
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
-		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+const hub = fakeHub({
+	api: (_req, url) => {
 		if (url.pathname === "/api/notices") return json({ items: [], unread: 0 });
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
-const views: InstanceType<typeof Bun.WebView>[] = [];
-afterAll(() => {
-	for (const v of views) v.close();
-	server.stop(true);
-});
+afterAll(() => hub.stop());
 
 async function open(width: number) {
-	const v = new Bun.WebView({ width, height: 900 });
-	views.push(v);
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const v = await hub.view({ width, height: 900 });
+	await v.navigate(`${hub.origin}/`);
 	await v.evaluate(`(localStorage.setItem("dotz-theme", "light"), true)`);
-	await v.navigate(`http://127.0.0.1:${server.port}/?light#monitoring/notice`);
+	await v.navigate(`${hub.origin}/?light#monitoring/notice`);
 	await v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("page not ready")), 10000); const done = () => { if (typeof go === "function" && current !== "monitoring") go("monitoring", "notice"); if (document.querySelector("#mon-tl") && NT.loaded && NM.loaded) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document.documentElement, { subtree: true, childList: true }); done(); })`);
 	return v;
 }
@@ -66,7 +49,7 @@ for (const width of [1440, 390]) {
 			return { n: rows.length, h: rows.map(r => r.getBoundingClientRect().height), src: rows.map(r => r.querySelector(".rc-src").textContent), title: rows.map(r => r.querySelector(".rc-title").textContent),
 				time: rows.map(r => !!r.querySelector(".rc-hd .rc-time")?.textContent),
 				sum: rows.map(r => r.querySelector(".mr-sum")?.textContent ?? null), sumH: rows.map(r => r.querySelector(".mr-sum")?.getBoundingClientRect().height ?? 0),
-				buttons: document.querySelectorAll("#mon-tl button:not(.mr-more), #mon-tl .mr-btn").length, more: rows.map(r => r.querySelectorAll(".rc-hd > .mr-more:last-child").length), role: rows.map(r => [r.getAttribute("role"), r.tabIndex]),
+				buttons: document.querySelectorAll("#mon-tl button:not(.mr-more):not(.mr-draft), #mon-tl .mr-btn").length, drafts: rows.map(r => r.querySelectorAll(".mr-slot > .mr-draft").length), more: rows.map(r => r.querySelectorAll(".rc-hd > .mr-more:last-child").length), role: rows.map(r => [r.getAttribute("role"), r.tabIndex]),
 				clip: rows.map(r => r.querySelector(".mr-clip")?.textContent ?? null), clipTag: rows.map(r => r.querySelector(".mr-clip")?.tagName ?? null),
 				chip: rows.map(r => r.querySelector("[data-slot=suggest]")?.textContent ?? null), chipBottom: rows.map(r => { const c = r.querySelector("[data-slot=suggest]"); return c ? box(c).y >= box(r.querySelector(".rc-title")).y + box(r.querySelector(".rc-title")).h : null; }),
 				rowBox: rows.map(box), over: document.documentElement.scrollWidth > innerWidth };
@@ -84,6 +67,8 @@ for (const width of [1440, 390]) {
 		for (const r of got.h) expect(r).toBeLessThan(width === 390 ? 190 : 150);
 		// no right-side buttons but the one ⋯ ending each header (owner 2026-10-27); the card is a keyboard-reachable button; the attachment count is information only
 		expect(got.buttons).toBe(0);
+		// 초안 작성 under the summary of every incoming row, without the ⋯ (owner 2026-10-29)
+		expect(got.drafts).toEqual(got.drafts.map(() => 1));
 		expect(got.more.every(n => n === 1)).toBe(true);
 		expect(got.role).toEqual([["button", 0], ["button", 0], ["button", 0], ["button", 0]]);
 		expect(got.clip).toEqual(["2", null, null, null]);
@@ -140,6 +125,21 @@ for (const width of [1440, 390]) {
 			await v.evaluate(draw2);
 			await Bun.write(`${SHOTS}/mail-list-derived-${width}.png`, await v.screenshot());
 		}
+	}, 30_000);
+
+	// 초안 작성: the dialog shows the mail above the box, and the box's sample comes from the mail's summary (the fixed hint without one)
+	test(`초안 작성 at ${width}px shows the mail and a sample made from its summary`, async () => {
+		const v = await open(width);
+		const got = JSON.parse((await v.evaluate(`(${draw}, JSON.stringify(["mail:fx-1", "mail:fx-4"].map(t => {
+			mailDraftDialog(t, null);
+			const d = document.querySelector("dialog[open]"), r = [d.querySelector(".md-subj")?.textContent ?? null, d.querySelector('[data-k="draft-instruction"]').placeholder];
+			d.close();
+			return r;
+		})))`)) as string) as [string | null, string][];
+		expect(got[0][0]).toBe("월간 점검 보고서 확인 요청");
+		expect(got[0][1]).toMatch(/^예: ‘.+’/);
+		expect(got[0][1]).not.toContain("비워 두면");
+		expect(got[1]).toEqual(["본문이 없는 메일", "비워 두면 메일을 읽고 알아서 써요.\n예: 금요일까지 보내 드린다고, 견적서도 첨부한다고 써 줘"]);
 	}, 30_000);
 
 	test(`the original view at ${width}px lists the attachments with name and size as download links`, async () => {

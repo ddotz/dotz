@@ -588,3 +588,95 @@ test("a lane report a turn already took is not replayed after a restart, an unan
 	expect(lone.open().map(p => p.text)).toEqual(["[dotz inbox] session report 1: [done] fresh"]);
 	expect(state.delivered.length).toBe(2);
 });
+
+test("the owner's 중단 closes the request: nothing steered into it is delivered again, its partial text is not sent, a late answer is dropped", async () => {
+	const { q, state, open, startTurn } = setup();
+	startTurn("analyse the files", { target: "web", replyTo: "m1" });
+	q.deliver("also check the mail", { target: "web", replyTo: "m2", owner: true });
+	expect(state.steered).toEqual(["[note] also check the mail"]);
+	q.onText("looking at the first file");
+	expect(q.cancel()).toBe("web");
+	// the runtime still holds the steered note and starts a turn with it after the abort: that turn is stopped too
+	expect(q.onPrompt("[note] also check the mail")).toBe(true);
+	expect(q.onPrompt("[note] also check the mail")).toBe(false);
+	state.working = false;
+	expect(state.delivered).toEqual(["analyse the files"]);
+	q.settleTurn();
+	q.redeliverSteered();
+	q.settleTurn();
+	q.redeliverSteered();
+	expect(state.delivered).toEqual(["analyse the files"]);
+	expect(state.posts).toEqual([]);
+	expect(open().map(p => p.text)).toEqual([]);
+	q.onAnswer("here is the analysis you asked for");   // a worker's result waking a run with no prompt of ours
+	expect(state.posts).toEqual([]);
+	expect(q.cancel()).toBeUndefined();
+});
+
+test("a message queued as the next prompt while the cancelled turn ran is stopped when the runtime starts it, and is not replayed", () => {
+	const { q, state, open, startTurn } = setup();
+	startTurn("analyse the files", { target: "web", replyTo: "m1" });
+	state.working = false;   // the gateway's queue mode: the second message goes to the runtime as the next prompt, not steered
+	q.deliver("count the commits too", { target: "web", replyTo: "m2" });
+	state.working = true;
+	expect(state.delivered).toEqual(["analyse the files", "count the commits too"]);
+	expect(q.cancel()).toBe("web");
+	expect(open()).toEqual([]);
+	expect(q.onPrompt("count the commits too")).toBe(true);
+	q.onAnswer("390 commits");
+	expect(state.posts).toEqual([]);
+	expect(q.onPrompt("an unrelated later message")).toBe(false);
+});
+
+// 2026-10-28 21:44 KST (Mac mini): a mail thread's question arrived while the web conversation's KTX run worked. It was steered into
+// that run, and the run's promptless KTX answer went to the owner's newest message, the mail thread.
+test("a message of another conversation is never steered into a running turn; only the same conversation's is", () => {
+	const { q, state, startTurn } = setup();
+	startTurn("ktx", { target: "web", replyTo: "w1" });
+	expect(q.deliver("file question", { target: "th:9", replyTo: "t1", owner: true })).toBe(false);
+	expect(state.steered).toEqual([]);
+	expect(state.delivered).toEqual(["ktx", "file question"]);
+	expect(q.deliver("ktx follow-up", { target: "web", replyTo: "w2", owner: true })).toBe(true);
+	expect(state.steered).toEqual(["[note] ktx follow-up"]);
+	// a run no prompt of ours started (the turn was settled): nothing is steered into it, not even the same conversation's
+	q.onAnswer("ktx answer");
+	q.settleTurn();
+	expect(q.deliver("mail again", { target: "mail:k", replyTo: "m1", owner: true })).toBe(false);
+	expect(state.steered).toEqual(["[note] ktx follow-up"]);
+});
+
+test("a promptless answer stays in the last turn's conversation and never goes to another conversation's waiting message", async () => {
+	const { q, state, startTurn } = setup();
+	q.deliver("ktx", { target: "web", replyTo: "w1", owner: true });
+	state.working = true;
+	q.onPrompt("ktx");
+	q.settleTurn(); // the turn ended without an answer; the runtime keeps running on its own
+	q.deliver("? 이거 파일 어디감?", { target: "th:9", replyTo: "t1", owner: true });
+	q.onAnswer("KTX 쪽은 예약을 걸려면 값이 필요해요. 날짜와 구간을 주세요.");
+	await Promise.resolve();
+	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([["web", "w1"]]);
+	// the mail question's own turn answers it in its own conversation
+	q.onPrompt("? 이거 파일 어디감?");
+	q.onAnswer("파일은 그대로 있어요.");
+	await Promise.resolve();
+	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([["web", "w1"], ["th:9", "t1"]]);
+});
+
+// 2026-10-28 13:25Z (Mac mini): the pinned account was rate-limited at the start of the turn; the turn ended with no text and the owner's
+// message was closed as answered-with-nothing, so the run that resumed after the limit had no request to answer.
+test("a turn stopped by a provider error before writing anything keeps its request open, and the resumed run answers it there", async () => {
+	const { q, state, open, startTurn } = setup();
+	startTurn("A: sleep 후 답해 줘", { target: "web", replyTo: "a1" });
+	q.settleTurn(true);
+	expect(open().map(p => p.replyTo)).toEqual(["a1"]);
+	expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["a1"]);
+	q.onAnswer("A 작업이 끝났어요");
+	await Promise.resolve();
+	expect(state.posts).toEqual([{ target: "web", text: "A 작업이 끝났어요", replyTo: "a1" }]);
+	expect(open()).toEqual([]);
+	// without the error the same textless turn is closed as before
+	const plain = setup();
+	plain.startTurn("B", { target: "web", replyTo: "b1" });
+	plain.q.settleTurn();
+	expect(plain.open()).toEqual([]);
+});

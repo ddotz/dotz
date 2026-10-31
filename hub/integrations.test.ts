@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commentAsk, type CommentAdapter } from "../features/reply-drafts/lib/comments.ts";
-import { appKeyOf, belongsTo, INTEGRATIONS, integrationContext, integrationItems, integrationOn } from "./integrations.ts";
+import { appKeyOf, belongsTo, INTEGRATIONS, integrationContext, integrationItems, integrationOn, withStoreDrafts } from "./integrations.ts";
 
 const dirs: string[] = [];
 afterAll(() => dirs.forEach(d => rmSync(d, { recursive: true, force: true })));
@@ -114,9 +114,10 @@ describe("unread counts and notice lists per sub-item", () => {
 		expect(kakao.notices).toEqual(["k1", "k2"]);
 	});
 
-	test("mail adds the unread messages of its conversations, and only of its own prefix", () => {
+	test("mail adds one per conversation with unread messages, however many, and only of its own prefix", () => {
 		const items = integrationItems(ctx, notices, { "mail:a": 2, "mail:b": 1, "ch:7": 5 });
-		expect(items.find(i => i.key === "mail")).toMatchObject({ unread: 4, notices: ["m1"], conv: ["mail:"] });
+		// m1 lives in mail:a, so it is the same item as that conversation: two items, mail:a and mail:b
+		expect(items.find(i => i.key === "mail")).toMatchObject({ unread: 2, notices: ["m1"], conv: ["mail:"] });
 		expect(items.find(i => i.key === "kakao")!.unread).toBe(1);
 	});
 
@@ -175,7 +176,14 @@ describe("needs: what waits on the owner per app", () => {
 
 	test("2 waiting drafts + 3 unread: drafts are not counted twice as unread", () => {
 		const m = mail([draft("d1"), draft("d2")], { "mail:a": 2, "mail:b": 1 });
-		expect(m.needs).toEqual({ drafts: 2, unread: 3, sentToday: 0, unreplied: 0 });
+		expect(m.needs).toEqual({ drafts: 2, unread: 2, sentToday: 0, unreplied: 0 });
+	});
+	test("one mail is one unread item: its unread notice and its conversation's unread messages are not added up (owner 2026-10-28)", () => {
+		const own = notice("n1", { open: "mail:a", src: "mail:a", read: false });
+		const m = mail([own], { "mail:a": 2 });
+		expect([m.unread, m.needs.unread]).toEqual([1, 1]);
+		const elsewhere = mail([notice("n2", { open: "mail:z", src: "mail:z", read: false })], { "mail:a": 2 });
+		expect(elsewhere.needs.unread).toBe(2);
 	});
 	test("one draft per mail counts: a newer draft of the same mail replaces the older one, which waits on nobody", () => {
 		const mailDraft = (id: string, at: string) => notice(id, { ts: at, updated: at, kind: "decision", text: "> 받는이: a@example.com\n초안", decision: { to: "mail:m1", state: "open", draft: { toLabel: "받는이", to: "a@example.com", body: "초안" } } });
@@ -205,5 +213,16 @@ describe("appKeyOf: which notices are an app's, from data", () => {
 	test("a plain monitor, or text of an app this install does not have, is not", () => {
 		expect(appKeyOf(notice("p", { title: "샘플 점검", text: "샘플 점검: 결과가 바뀌었어요" }), ctx)).toBeUndefined();
 		expect(appKeyOf(notice("y", { title: "유튜브 확인" }), ctx)).toBeUndefined();
+	});
+});
+
+describe("needs: drafts an app keeps in its own store", () => {
+	test("KakaoTalk room drafts count as the kakao app's drafts beside a comment app's, and leave the others alone", () => {
+		const ctx = integrationContext(install(["kakao"]), []);
+		const needs = withStoreDrafts({ youtube: { drafts: 1, unread: 0 } }, "kakao", 2);
+		expect(needs).toEqual({ youtube: { drafts: 1, unread: 0 }, kakao: { drafts: 2, unread: 0, unreplied: 0 } });
+		const kk = integrationItems(ctx, [], {}, 100, undefined, [], Date.now(), needs).find(i => i.key === "kakao")!;
+		expect(kk.needs.drafts).toBe(2);
+		expect(withStoreDrafts({ kakao: { drafts: 1, unread: 3 } }, "kakao", 2).kakao).toEqual({ drafts: 3, unread: 3 });
 	});
 });

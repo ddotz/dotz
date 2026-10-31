@@ -91,3 +91,18 @@ test("no backups, or not a git folder, wakes nothing and writes nothing", async 
 	expect(await pendingBackups(defaultExec, repo, logDir, dataDir)).toEqual([]);
 	expect(await pendingBackups(defaultExec, root, logDir, dataDir)).toEqual([]);
 });
+
+// Mac mini 2026-10-29: the same local edit, saved twice and already in the new version, woke the assistant twice. Neither needs a wake.
+test("a backup already in the files or already upstream is handled quietly", async () => {
+	const name = `dotz-local-${stamp(new Date())}-dirty`;
+	writeFileSync(join(repo, "base.txt"), "one\nchanged\n");
+	writeFileSync(join(logDir, `${name}.patch`), sh("diff", "HEAD"));
+	mkdirSync(join(logDir, name));
+	commit("base.txt", "one\nchanged\n");
+	sh("checkout", "-q", "-b", "dotz-local/20261029-1033");
+	commit("x.txt", "x\n");
+	sh("checkout", "-q", "main");
+	sh("cherry-pick", "dotz-local/20261029-1033");
+	expect(await pendingBackups(defaultExec, repo, logDir, dataDir)).toEqual([]);
+	expect(Object.keys(JSON.parse(readFileSync(join(dataDir, "self-update", "carryover-handled.json"), "utf8"))).sort()).toEqual([name, "dotz-local/20261029-1033"].sort());
+});

@@ -32,8 +32,13 @@ code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom
 .tag.unreplied, .nb.unreplied { background: var(--unreplied); color: var(--on-unreplied); font-weight: 600; }
 .dot.unreplied { background: var(--unreplied); }
 button.cchip.unrep-no { height: 22px; padding: 0 8px; font-size: 11.5px; color: var(--unreplied); }
-/* 초안 작성 beside 답장 안 해도 돼요: the one action that moves the mail forward, so it carries the accent (30-monitoring.js mailDraftButton) */
-button.cchip.mr-draft { height: 22px; padding: 0 8px; font-size: 11.5px; font-weight: 600; color: var(--accent); }
+/* 초안 작성 beside 답장 안 함: the one action that moves the mail forward, so it carries the accent (30-monitoring.js mailDraftButton).
+   A tonal pill with the pencil (owner 2026-10-29: bare accent text looked unfinished); --layer on the card, --hover under the pointer. */
+button.cchip.mr-draft { height: 24px; gap: 4px; padding: 0 10px 0 8px; background: var(--layer); font-size: 12px; font-weight: 600; color: var(--accent); }
+button.cchip.mr-draft:hover { background: var(--hover); }
+button.cchip.mr-draft .ic { width: 14px; height: 14px; stroke-width: 2; }
+/* a mail's row buttons on a phone: a finger-sized target (the row itself opens the mail, so a near miss must not) */
+@media (pointer: coarse), (max-width: 639px) { button.cchip.mr-act { height: 32px; padding: 0 12px; font-size: 13px; } button.cchip.mr-draft { padding: 0 14px 0 10px; } button.cchip.mr-draft .ic { width: 16px; height: 16px; } }
 .row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .row + .row { margin-top: 8px; }
 .row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

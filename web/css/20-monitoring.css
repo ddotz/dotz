@@ -24,6 +24,7 @@
 .cv-row.has-mon-prog > .mon-prog-wrap { flex: 1 0 100%; order: 9; margin-top: 2px; }
 /* the result tag (same look as .tag, its own class so the row's other tags keep their place in a query) */
 .mon-ptag { display: inline-flex; align-items: center; align-self: center; flex: none; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--layer); color: var(--fg-2); font-size: 11px; line-height: 16px; font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.mon-ptag.pri { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
 .mon-ptag.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
 .mon-ptag.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
 .mon-ptag.err { background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); }
@@ -41,9 +42,10 @@
 .mon-banner-tx { flex: 1; min-width: 0; color: var(--fg-2); overflow-wrap: break-word; }
 .mon-banner-tx b { color: var(--err); font-weight: 600; }
 .mon-banner .btn { flex: none; }
+/* disconnected: only the owner can reconnect it, so orange; a failed check stays red (web/DESIGN.md status color rule) */
+.mon-banner.down { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.mon-banner.down .ic, .mon-banner.down .mon-banner-tx b { color: var(--warn); }
 /* connected, but the last check failed: a warning, not the outage colour */
-.mon-banner.fail { background: color-mix(in srgb, var(--warn) 12%, transparent); }
-.mon-banner.fail .ic, .mon-banner.fail .mon-banner-tx b { color: var(--warn); }
 
 /* 감시 소식 opens with this: one compact row per plain monitor, what needs the owner first */
 .mon-ov { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); }

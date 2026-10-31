@@ -129,7 +129,7 @@ describe.each([[390, 844], [1280, 900]] as const)("reading a mail at %ipx", (wid
 		await waitFor(v, `document.querySelectorAll("#mon-tl .mr").length === 2`);
 		const before = await seen(v);
 		expect(before.chips).toEqual(["전체", "안 읽음1", "답장 필요", "확인 대기", "답장함", "보낸 메일"]);
-		expect(before.states["견적 요청"]).toBe("새 메일");
+		expect(before.states["견적 요청"]).toBe("안 읽음");
 		await Bun.write(join(SHOTS, `list-before-${width}.png`), await v.screenshot());
 
 		await openMail(v, "견적 요청");
@@ -141,7 +141,7 @@ describe.each([[390, 844], [1280, 900]] as const)("reading a mail at %ipx", (wid
 
 		await backToList(v, "i:mail");
 		const after = await seen(v);
-		expect(after.states["견적 요청"]).toBe("읽음");
+		expect(after.states["견적 요청"]).toBe("");
 		expect(after.chips).toEqual(["전체", "안 읽음", "답장 필요", "확인 대기", "답장함", "보낸 메일"]);
 		expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
 		await pick(v, "unread");
@@ -151,7 +151,7 @@ describe.each([[390, 844], [1280, 900]] as const)("reading a mail at %ipx", (wid
 		// a reload starts from what the hub holds (reads.json): still read
 		const again = await boot(width, height, "i:mail");
 		await waitFor(again, `document.querySelectorAll("#mon-tl .mr").length === 2`);
-		expect((await seen(again)).states["견적 요청"]).toBe("읽음");
+		expect((await seen(again)).states["견적 요청"]).toBe("");
 		expect((await seen(again)).chips).toContain("안 읽음");
 		expect(readPosts).toHaveLength(1);
 	}, 30_000);
@@ -162,13 +162,13 @@ test("a newer message of that mail makes it unread again", async () => {
 		{ key: "fx-b", subject: "회의록 공유", from: "Lee <lee@example.com>", unread: 0, at: iso(8) }]);
 	const v = await boot(390, 844, "i:mail");
 	await waitFor(v, `document.querySelectorAll("#mon-tl .mr").length === 2`);
-	expect((await seen(v)).states["견적 요청"]).toBe("읽음");
+	expect((await seen(v)).states["견적 요청"]).toBe("");
 
 	// the mail's thread got a newer mail (a reply to it): the position stays, the new message sits after it
 	mails[0] = { key: "fx-a", subject: "Re: 견적 요청", from: "Kim <kim@example.com>", unread: 1, at: iso(11) };
 	const next = await boot(390, 844, "i:mail");
 	await waitFor(next, `document.querySelectorAll("#mon-tl .mr").length === 2`);
-	expect((await seen(next)).states["Re: 견적 요청"]).toBe("새 메일");
+	expect((await seen(next)).states["Re: 견적 요청"]).toBe("안 읽음");
 	expect((await seen(next)).chips).toContain("안 읽음1");
 }, 30_000);
 
@@ -177,7 +177,7 @@ test("a peer's mail is read on the computer that holds it, once, and this page n
 	peers = [peer()];
 	const v = await boot(390, 844, `p:${MINI}|i:mail`);
 	await waitFor(v, `document.querySelectorAll("#mon-tl .mr").length === 1`);
-	expect((await seen(v)).states).toEqual({ "견적 문의": "새 메일" });
+	expect((await seen(v)).states).toEqual({ "견적 문의": "안 읽음" });
 	expect((await seen(v)).chips).toContain("안 읽음1");
 
 	await openMail(v, "견적 문의");
@@ -189,6 +189,6 @@ test("a peer's mail is read on the computer that holds it, once, and this page n
 
 	await backToList(v, `p:${MINI}|i:mail`);
 	const after = await seen(v);
-	expect(after.states["견적 문의"]).not.toBe("새 메일");
+	expect(after.states["견적 문의"]).not.toBe("안 읽음");
 	expect(after.chips).toContain("안 읽음");
 }, 30_000);

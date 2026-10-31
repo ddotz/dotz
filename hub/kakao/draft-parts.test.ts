@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildDraftPrompt, contextLines, draftParts, MAX_PARTS, parseDraftReply } from "./draft.ts";
+import { buildDraftPrompt, contextLines, draftParts, MAX_CONTEXT_LINES, MAX_PARTS, parseDraftReply } from "./draft.ts";
 import { createDraft, forgetWarm, listDrafts, sendDraft } from "./send.ts";
 import { kakaoPaths, type Msg } from "./types.ts";
 import { fakeScreen } from "./ui.fixture.ts";
@@ -13,8 +13,8 @@ describe("the draft call", () => {
 	test("the output contract has a parts list, and the context reaches back further than the last four lines", () => {
 		const { system } = buildDraftPrompt({ lines: ["가나: 내일 몇 시?", "가나: 장소는 어디로 해?"] });
 		expect(system).toContain('"parts"');
-		const recent: Msg[] = Array.from({ length: 12 }, (_, i) => ({ logId: String(i + 1), chatId: "1", authorId: i % 2 ? "me" : "u", sender: i % 2 ? "나" : "가나", text: `line ${i}`, type: 1, sentAt: i, fromMe: i % 2 === 1 }));
-		expect(contextLines(recent, recent.slice(-2)).length).toBe(8);
+		const recent: Msg[] = Array.from({ length: 20 }, (_, i) => ({ logId: String(i + 1), chatId: "1", authorId: i % 2 ? "me" : "u", sender: i % 2 ? "나" : "가나", text: `line ${i}`, type: 1, sentAt: i, fromMe: i % 2 === 1 }));
+		expect(contextLines(recent, recent.slice(-2)).length).toBe(MAX_CONTEXT_LINES);
 	});
 
 	test("parts come back as one draft text, a blank line between parts; a one-line answer stays one part; at most MAX_PARTS", () => {

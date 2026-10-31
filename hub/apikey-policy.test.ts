@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "bun:test";
-import { allowFile, apiKeyBan, withoutApiKeys } from "./apikey-policy.ts";
+import { API_KEY_OFF, allowFile, apiKeyBan, withoutApiKeys } from "./apikey-policy.ts";
 import { DATA_DIR } from "./config.ts";
 import { Chain, entryView, resetFallbackState } from "./fallback.ts";
 
@@ -27,6 +27,31 @@ test("no account is banned unless the install's config names it: the shipped cod
 
 mkdirSync(join(DATA_DIR, "secrets"), { recursive: true });
 writeFileSync(join(DATA_DIR, "secrets", "anthropic-api-key"), "sk-ant-test\n");
+
+test("API keys are off unless guard.allow_api_key is true: no entry moves onto a key, no key reaches a process", () => {
+	const setAllow = (v: unknown) => {
+		const c = JSON.parse(readFileSync(CONFIG, "utf8"));
+		c.guard = { ...c.guard, allow_api_key: v };
+		if (v === undefined) delete c.guard.allow_api_key;
+		writeFileSync(CONFIG, JSON.stringify(c));
+	};
+	const entries = [{ model: "anthropic/claude-sonnet-5-5:high", when: "quota" as const, key_file: "anthropic-api-key", workers: true }];
+	for (const v of [undefined, false, "true"]) {
+		resetFallbackState();
+		setAllow(v);
+		expect(apiKeyBan()).toBe(API_KEY_OFF);
+		const c = new Chain("anthropic/claude-opus-5-5:medium", entries, "medium");
+		expect(c.down(1)?.why).toBe("error");
+		expect(c.fail("quota", Date.now() + 3600e3)).toBeUndefined();
+		expect(() => c.env(1)).toThrow(/allow_api_key/);
+		expect(withoutApiKeys({ PATH: "/bin", ANTHROPIC_API_KEY: "sk", DOTZ_KEY_VALUE: "k" })).toEqual({ PATH: "/bin" });
+		expect(entryView(entries[0]).down_reason).toBe("api_key_off");
+	}
+	resetFallbackState();
+	setAllow(true);
+	expect(apiKeyBan()).toBeUndefined();
+	expect(new Chain("anthropic/claude-opus-5-5:medium", entries, "medium").fail("quota", Date.now() + 3600e3)?.to).toBe(1);
+});
 
 test("the config list is the ban: naming an account bans it", () => {
 	setBan(["miseol-shared"]);

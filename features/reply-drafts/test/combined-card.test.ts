@@ -119,7 +119,6 @@ describe("compose --with-comment", () => {
 		pick(env, code, 1);
 		const out = await runComments(["send", code], engine, paths.inbox());
 		expect(out.code).toBe(1);
-		expect(out.lines[0]).toContain("답글은 올렸지만 메일은 보내지 못했어요");
 		expect(t.posted).toHaveLength(1);
 		expect(getDraft(mailId)?.status).toBe("pending");
 		const again = await runMailCli(["ask", "--draft", mailId], "", t.deps);

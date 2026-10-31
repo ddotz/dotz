@@ -13,7 +13,9 @@ test("an orchestrator or lane the live gateway did not start is a throwaway; the
 	expect(throwawayReason({ env: { DOTZ_ORCHESTRATOR: "1" }, ppid: 100, hubPid: 100 })).toBeUndefined();
 	expect(throwawayReason({ env: { DOTZ_LANE: "web" }, ppid: 100, hubPid: 100 })).toBeUndefined();
 	expect(throwawayReason({ env: {}, ppid: 5, hubPid: 100 })).toBeUndefined();
-	expect(throwawayReason({ env: { DOTZ_ORCHESTRATOR: "1" }, ppid: 777, hubPid: 100 })).toContain("did not start");
+	expect(throwawayReason({ env: { DOTZ_ORCHESTRATOR: "1" }, ppid: 777, hubPid: 100, ancestors: () => [777, 5] })).toContain("did not start");
+	// A conversation session's task subagent: gateway -> session -> ... -> subagent.
+	expect(throwawayReason({ env: { DOTZ_ORCHESTRATOR: "1" }, ppid: 777, hubPid: 100, ancestors: () => [777, 555, 100, 5] })).toBeUndefined();
 	expect(throwawayReason({ env: { DOTZ_ORCHESTRATOR: "1" }, ppid: 777 })).toContain("no live gateway");
 	expect(throwawayReason({ env: { DOTZ_LANE: "probe" }, ppid: 100, hubPid: 100 })).toBe("a runtime probe");
 	expect(throwawayReason({ env: { DOTZ_DRY_RUN: "1" } })).toBe("DOTZ_DRY_RUN=1");
@@ -27,6 +29,24 @@ test("a throwaway may not write the live data dir, by tool or by shell; reads an
 	expect(liveWrite({ toolName: "bash", input: { command: "cat ~/.dotz/state.json" } }, [LIVE])).toBeUndefined();
 	expect(liveWrite({ toolName: "read", input: { path: join(LIVE, "state.json") } }, [LIVE])).toBeUndefined();
 	expect(liveWrite({ toolName: "write", input: { path: "/tmp/dotz-x/state.json" } }, [LIVE])).toBeUndefined();
+});
+
+test("the live data dir counts as written only as a write target, not as a read source", () => {
+	const sh = (command: string) => liveWrite({ toolName: "bash", input: { command } }, [LIVE]);
+	const ev = (code: string) => liveWrite({ toolName: "eval", input: { code } }, [LIVE]);
+	expect(sh(`cp ${LIVE}/x ~/kdb-work/`)).toBeUndefined();
+	expect(ev(`await Bun.$\`cp -r ${LIVE}/x ~/kdb-work/\`.text();`)).toBeUndefined();
+	expect(sh("cat ~/.dotz/state.json > /tmp/s.json")).toBeUndefined();
+	expect(sh(`cp ~/kdb-work/x ${LIVE}/`)).toContain("live data dir");
+	expect(ev(`await Bun.$\`cp /tmp/x ~/.dotz/state.json\`;`)).toContain("live data dir");
+	expect(sh("cat x | tee -a ~/.dotz/log")).toContain("live data dir");
+	expect(sh("rm -rf ~/.dotz/sessions")).toContain("live data dir");
+	expect(sh("mv ~/.dotz/state.json /tmp/")).toContain("live data dir");
+	expect(sh("sed -i '' s/a/b/ ~/.dotz/config.json")).toContain("live data dir");
+	expect(sh("cd ~/.dotz && echo x > state.json")).toContain("live data dir");
+	expect(ev(`write("${LIVE}/state.json", "{}")`)).toContain("live data dir");
+	expect(ev(`const p = "${LIVE}/a";\nawait Bun.write(p, "x");`)).toContain("live data dir");
+	expect(ev(`const s = read("${LIVE}/a");\nwrite("/tmp/out", s);`)).toBeUndefined();
 });
 
 test("a throwaway's gateway call lands in the dry-run sink and says nothing was sent", () => {

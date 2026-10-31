@@ -34,7 +34,7 @@ function pqFor(path) {
 function pqLink(path) { const pc = pqFor(path); return pc ? pqProxy(pc, pqBare(path)) : path; }
 // The action a POST of the page means on the computer that owns the item (hub/peer-monitor.ts act), or null for a local one.
 function pqAct(path, body) {
-  const b = body || {}, k = /^\/api\/kakao\/(chat|drafts)\/([^/]+)\/(send|read|draft|drop|ask\/drop)$/.exec(path);
+  const b = body || {}, k = /^\/api\/kakao\/(chat|drafts)\/([^/]+)\/(send|read|draft|drop|restore|ask\/drop)$/.exec(path);
   if (path === "/api/message" && b.mail) { const { mail, lane, project, via, ...rest } = b; return { pc: pqPc(`mail:${mail}`), action: "message", args: { target: `mail:${mail}`, ...rest } }; }
   // A monitor's conversation and switches go to the computer that owns the watch: the same message and the same settings PATCH, forwarded.
   const sp = /^\/api\/watches\/([a-z0-9-]+)\/settings$/.exec(path);
@@ -51,11 +51,28 @@ function pqAct(path, body) {
   if (path === "/api/message" && b.settings && pqPc(`settings:${b.settings}`)) { const { settings, lane, project, mail, via, ...rest } = b; return { pc: pqPc(`settings:${settings}`), action: "message", args: { target: `settings:${pqBare(settings)}`, ...rest } }; }
   const df = /^\/api\/drafts\/([^/?]+)\/files$/.exec(path), dref = df && decodeURIComponent(df[1]);
   if (dref && DRF.pc[dref]) return { pc: DRF.pc[dref], action: "draft-files", args: { ref: dref, ...b } };
+  // The 받는이·참조 of a peer's mail draft (hub/draft-recipients.ts) change on the computer that owns it.
+  const drec = /^\/api\/drafts\/([^/?]+)\/recipients$/.exec(path), drref = drec && decodeURIComponent(drec[1]);
+  if (drref && (DRR.pc[drref] || DRF.pc[drref])) return { pc: DRR.pc[drref] || DRF.pc[drref], action: "draft-recipients", args: { ref: drref, ...b } };
   const md = /^\/api\/mail\/([^/?]+)\/draft$/.exec(path);
-  if (md && pqPc(`mail:${decodeURIComponent(md[1])}`)) return { pc: pqPc(`mail:${decodeURIComponent(md[1])}`), action: "mail-draft", args: { key: decodeURIComponent(md[1]) } };
+  if (md && pqPc(`mail:${decodeURIComponent(md[1])}`)) return { pc: pqPc(`mail:${decodeURIComponent(md[1])}`), action: "mail-draft", args: { key: decodeURIComponent(md[1]), ...(body && body.instruction ? { instruction: body.instruction } : {}) } };
   const nm = /^\/api\/mail\/([^/?]+)\/no-reply$/.exec(path);
   if (nm && pqPc(`mail:${decodeURIComponent(nm[1])}`)) return { pc: pqPc(`mail:${decodeURIComponent(nm[1])}`), action: "no-reply", args: { kind: "mail", key: decodeURIComponent(nm[1]) } };
   if (path === "/api/read") return { pc: pqPc(b.target), action: "read", args: { target: pqBare(b.target), ts: b.ts } };
+  // The comments pane of another computer (CM.pc, 30-monitoring-comments.js): its drafts, failed sends, drafted replies and source switches run there,
+  // on the routes hub/peer-monitor.ts act "comments" forwards (once per click).
+  if (CM.pc) {
+    const e = v => decodeURIComponent(v), c = CM.pc, d = /^\/api\/comments\/drafts\/([^/]+)\/(send|drop|restore|revise)$/.exec(path);
+    if (d) return { pc: c, action: "comments", args: { op: `draft-${d[2]}`, code: e(d[1]), ...(d[2] === "revise" ? { change: b.change, ...(b.part ? { part: b.part } : {}) } : {}) } };
+    const s = /^\/api\/comments\/sends\/([^/]+)\/(retry|dismiss)$/.exec(path);
+    if (s) return { pc: c, action: "comments", args: { op: `send-${s[2]}`, id: e(s[1]) } };
+    const m = /^\/api\/comments\/comment\/([^/]+)\/(draft|no-reply)$/.exec(path);
+    if (m) return { pc: c, action: "comments", args: m[2] === "draft" ? { op: "draft", commentId: e(m[1]) } : { op: "no-reply", commentId: e(m[1]), on: true } };
+    const t = /^\/api\/comments\/thread\/([^/]+)\/([^/]+)\/read$/.exec(path);
+    if (t) return { pc: c, action: "comments", args: { op: "read", source: e(t[1]), thread: e(t[2]) } };
+    const k = /^\/api\/comments\/sources\/([^/]+)$/.exec(path);
+    if (k) return { pc: c, action: "comments", args: { op: "source", key: e(k[1]), ...(typeof b.watch !== "undefined" ? { watch: b.watch } : {}), ...(typeof b.autoDraft !== "undefined" ? { autoDraft: b.autoDraft } : {}) } };
+  }
   if (!path.startsWith("/api/kakao/") || !KK.pc) return null;
   const nk = /^\/api\/kakao\/chat\/([^/]+)\/no-reply$/.exec(path);
   if (nk) return { pc: KK.pc, action: "no-reply", args: { kind: "kakao", chatId: decodeURIComponent(nk[1]) } };
@@ -64,7 +81,10 @@ function pqAct(path, body) {
   if (k && k[1] === "chat" && k[3] === "read") return { pc: KK.pc, action: "kakao", args: { op: "read", chatId: id, logId: b.logId } };
   if (k && k[1] === "chat" && k[3] === "draft") return { pc: KK.pc, action: "kakao", args: { op: "draft", chatId: id, ...(typeof b.choice === "string" ? { choice: b.choice } : {}), ...(b.revise ? { revise: b.revise } : {}) } };
   if (k && k[1] === "chat" && k[3] === "ask/drop") return { pc: KK.pc, action: "kakao", args: { op: "ask-drop", chatId: id } };
-  if (k && k[1] === "drafts") return { pc: KK.pc, action: "kakao", args: { op: k[3] === "send" ? "draft-send" : "draft-drop", code: id, ...(b.text === undefined ? {} : { text: b.text }) } };
+  // 지켜보기 / 자동 초안 of a room (PUT /api/kakao/rooms/<id>): the same change on the computer that has the room.
+  const rm = /^\/api\/kakao\/rooms\/([^/?]+)$/.exec(path);
+  if (rm) return { pc: KK.pc, action: "kakao", args: { op: "room", chatId: decodeURIComponent(rm[1]), ...(typeof b.watched === "boolean" ? { watched: b.watched } : {}), ...(typeof b.autoDraft === "boolean" ? { autoDraft: b.autoDraft } : {}) } };
+  if (k && k[1] === "drafts") return { pc: KK.pc, action: "kakao", args: { op: `draft-${k[3]}`, code: id, ...(b.text === undefined ? {} : { text: b.text }) } };
   throw new Error(`${KK.pc.name}에서 바꿔 주세요`);
 }
 // The files of a message to another computer's conversation: the bytes kept in the composer go to THAT computer (act "upload", one file per
@@ -92,7 +112,7 @@ function pqRoute(path, method, body) {
   if (wd && pqPc(`settings:w:${wd[1]}`)) return [pqProxy(pqPc(`settings:w:${wd[1]}`), "/api/peer/act"), "POST", { action: "watch", args: { op: "delete", name: wd[1] } }];
   const del = method === "DELETE" && KK.pc ? /^\/api\/kakao\/chat\/([^/]+)\/send\/([^/?]+)$/.exec(path) : null;   // a failed send of a peer's room is deleted on its owner
   if (del) return [pqProxy(KK.pc, "/api/peer/act"), "POST", { action: "kakao", args: { op: "send-delete", chatId: decodeURIComponent(del[1]), sendId: decodeURIComponent(del[2]) } }];
-  // 답장 안 해도 돼요 (POST) / 답장 필요로 되돌리기 (DELETE) and 삭제 (DELETE /api/mail/<key>) of a peer's mail run on the computer that holds it.
+  // 답장 안 함 (POST) / 답장 필요로 표시 (DELETE) and 삭제 (DELETE /api/mail/<key>) of a peer's mail run on the computer that holds it.
   const mf = /^\/api\/mail\/([^/?]+)(\/fyi)?$/.exec(path), mk = mf && decodeURIComponent(mf[1]), mpc = mk && pqPc(`mail:${mk}`);
   if (mpc && mf[2] && (method === "POST" || method === "DELETE")) return [pqProxy(mpc, "/api/peer/act"), "POST", { action: "fyi", args: { key: mk, on: method === "POST" } }];
   if (mpc && !mf[2] && method === "DELETE") return [pqProxy(mpc, "/api/peer/act"), "POST", { action: "mail-delete", args: { key: mk } }];
@@ -108,6 +128,7 @@ function pqNoticeOf(n) {
 }
 const pqNoticeNow = n => { const raw = pqNoticeOf(n); return raw ? { ...raw, pc: n.pc } : n; };
 async function pqNotice(n, action, args) {
+  if (n.decision && n.decision.to) prActed(n.decision.to);
   const r = await api(pqProxy(n.pc, "/api/peer/act"), "POST", { action, args });
   const raw = pqNoticeOf(n);
   if (r && r.item) { if (raw) Object.assign(raw, r.item); Object.assign(n, r.item, { pc: n.pc }); }
@@ -187,12 +208,12 @@ function pqMerge(items) {
     for (const it of s.integrations || []) {
       if (it.iconPath && !ICONS[it.icon]) ICONS[it.icon] = it.iconPath;
       const notices = (it.notices || []).map(id => sn.find(n => String(n.id) === String(id))).filter(n => n && monMine(n, it));
-      const mails = (s.conversations || []).filter(c => isMailT(String(c.target)) && intgHas(it, c.target)).map(c => pqMail(c, pc, key(`i:${it.key}`))).filter(Boolean);
+      const mails = (s.conversations || []).filter(c => isMailT(String(c.target)) && c.mail && intgHas(it, c.target)).map(c => pqMail(c, pc, key(`i:${it.key}`))).filter(Boolean);
       for (const n of notices) shown.add(n.id);
-      const needs = it.needs || { drafts: 0, unread: it.unread | 0, sentToday: 0 };
+      const needs = it.needs || { drafts: 0, unread: it.unread | 0, sentToday: 0 }, conn = it.state === "disconnected";
       const at = [...notices.map(monNoticeAt), ...mails.map(t => (CONV.get(t) || {}).ts || "")].sort().pop() || "";
       PQ.of.set(`settings:${pqApp(it.key, pc)}`, { pc, key: key(`i:${it.key}`), app: true, label: it.label });   // the app's settings conversation lives on that computer
-      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: it.state === "disconnected" && it.hint ? it.hint : monNeedLine(needs), at, pc, chips, owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
+      apps.push({ key: key(`i:${it.key}`), group: MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, kk: it.key === "kakao", app: true, inst: it.key, drafts: needs.drafts | 0, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, conn, hint: conn && it.hint ? it.hint : monNeedLine(needs, conn), at, pc, chips, owned: owned.get(it.key) || [], badge: monFail(owned.get(it.key) || []) });
     }
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
     for (const m of mons) {
@@ -211,8 +232,7 @@ function pqMerge(items) {
   const feed = items.find(i => i.key === "notice");
   if (feed && news.length) {
     feed.notices = [...feed.notices, ...news];
-    const l = monNewest(feed.notices);
-    if (l.pc) { feed.hint = `${l.pc.name} · ${monLine(l)}`; feed.at = monNoticeAt(l); }
+    Object.assign(feed, monFeedHead(feed.notices));
   }
   const grp = g => items.filter(i => i.group === g);
   return [...grp(""), ...grp(MON_GROUP.app), ...apps, ...grp(MON_GROUP.plain), ...plain, ...off];

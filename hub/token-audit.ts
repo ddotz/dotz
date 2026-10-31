@@ -273,7 +273,7 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = []): Stats
 	return s;
 }
 
-type Finding = { flag: boolean; kind: string; who: string; what: string; amount: string; save: number; evidence?: string; fix?: string; hold?: string; tip?: string; recur?: number };
+type Finding = { flag: boolean; kind: string; who: string; what: string; amount: string; save: number; cost?: number; evidence?: string; fix?: string; hold?: string; tip?: string; recur?: number };
 
 // Minutes a fallback segment ran after the intended model had capacity again (0 when every turn sat inside a 429 window).
 export function fallbackAfterCapacity(seg: number[], exhaust: Exhaust[]): number {
@@ -297,7 +297,7 @@ export function findingsOf(results: Stats[], exhaust: Exhaust[] = []): Finding[]
 			const known = Object.keys(CAUSE).map(c => [c, s.busts.filter(b => b.cause === c).length] as const).filter(([, n]) => n);
 			F.push({
 				flag: s.busts.length >= 3 || uncached > 1e6, kind: "캐시 깨짐", who, tip: "직전 주입 이벤트 확인",
-				what: `캐시 깨짐 ${s.busts.length}회 (압축/모델 변경/TTL 공백 아님)`, amount: `미캐시 재입력 ${M(uncached)} tok, ${usd(cost)}`, save,
+				what: `캐시 깨짐 ${s.busts.length}회 (압축/모델 변경/TTL 공백 아님)`, amount: `미캐시 재입력 ${M(uncached)} tok, ${usd(cost)}`, save, cost,
 				evidence: s.busts.slice(0, 6).map(b => `${kst(b.ts)} 새로 ${K(b.uncached)}/읽기 ${K(b.cr)} (직전 ${K(b.prevCtx)}) <- ${b.cause ? `원인: ${CAUSE[b.cause][0]}` : b.events.join(", ") || "이벤트 없음: 도구 목록/시스템 프롬프트 변경 의심"}`).join("; "),
 				fix: [
 					...known.map(([c, n]) => `${CAUSE[c][0]} x${n} -> ${CAUSE[c][1]}`),
@@ -312,7 +312,7 @@ export function findingsOf(results: Stats[], exhaust: Exhaust[] = []): Finding[]
 			const tokens = wakes.reduce((a, [, w]) => a + w.tokens, 0);
 			const cost = wakes.reduce((a, [, w]) => a + w.cost, 0);
 			F.push({
-				flag: wakeN >= 10 || cost >= 5, kind: "헛깨움", who, tip: "알림을 소스에서 거르기", what: `할 일 없이 깨어난 턴 ${wakeN}회`, amount: `${M(tokens)} tok, ${usd(cost)}`, save: cost,
+				flag: wakeN >= 10 || cost >= 5, kind: "헛깨움", who, tip: "알림을 소스에서 거르기", what: `할 일 없이 깨어난 턴 ${wakeN}회`, amount: `${M(tokens)} tok, ${usd(cost)}`, save: cost, cost,
 				evidence: wakes.sort((a, b) => b[1].cost - a[1].cost).map(([k, w]) => `${k} ${w.n}회 ${usd(w.cost)}`).join(", "),
 				fix: `제안: 반응할 필요 없는 알림(모니터링 라인·완료 알림 중복)을 소스에서 걸러 세션을 깨우지 않게 - 예상 절감 ~${usd(cost)}. 실제 일을 시키는 이벤트는 그대로라 성능 영향 없음`,
 			});
@@ -339,7 +339,7 @@ export function findingsOf(results: Stats[], exhaust: Exhaust[] = []): Finding[]
 			const cost = s.expensiveCost;
 			F.push({
 				flag: s.fable > 0 || s.effortTurns >= EFFORT_FLAG_TURNS, kind: "비싼 모델", who, tip: "오너가 요청한 것인지 확인",
-				what: parts.join(" + "), amount: usd(cost), save: 0,
+				what: parts.join(" + "), amount: usd(cost), save: 0, cost,
 				evidence: "규칙: Fable·max/xhigh는 오너가 요청할 때만 (오너가 요청한 세션이면 무시)",
 				fix: "제안: 이 세션/워커의 모델 경로(역할·폴백 체인·레인 모델 선택)에서 비싼 모델이 기본으로 새어 들어오는지 확인",
 			});
@@ -355,14 +355,14 @@ export function findingsOf(results: Stats[], exhaust: Exhaust[] = []): Finding[]
 		}
 		if (s.maxToolStreak >= 5) {
 			F.push({
-				flag: true, kind: "반복 호출", who, tip: "폴링 대신 한 번 대기", what: `같은 도구 호출 연속 ${s.maxToolStreak}회`, amount: `~${M(s.loopTokens)} tok, ${usd(s.loopCost)}`, save: s.loopCost, evidence: s.maxToolDesc,
+				flag: true, kind: "반복 호출", who, tip: "폴링 대신 한 번 대기", what: `같은 도구 호출 연속 ${s.maxToolStreak}회`, amount: `~${M(s.loopTokens)} tok, ${usd(s.loopCost)}`, save: s.loopCost, cost: s.loopCost, evidence: s.maxToolDesc,
 				fix: `제안: 같은 호출로 폴링하는 대신 wait/monitor로 대기 - 예상 절감 ~${usd(s.loopCost)}, 결과 동일`,
 			});
 		}
 		if (s.src.child && s.tokens > SUB_NOTE) {
 			F.push({
 				flag: s.tokens > SUB_FLAG, kind: "대형 하위에이전트", who, tip: "브리프를 단계별 워커로 분할",
-				what: `${M(s.tokens)} tok, ${s.turns}턴, 압축 ${s.compactions}회, 최대 컨텍스트 ${K(s.maxCtx)}`, amount: usd(s.cost), save: 0,
+				what: `${M(s.tokens)} tok, ${s.turns}턴, 압축 ${s.compactions}회, 최대 컨텍스트 ${K(s.maxCtx)}`, amount: usd(s.cost), save: 0, cost: s.cost,
 				fix: "제안: 브리프를 독립 단계(조사 -> 구현 -> 검증)로 나눠 별도 워커로, 후속은 새 워커로 - 모델·검증은 그대로",
 			});
 		}
@@ -381,6 +381,28 @@ function readHistory(): Day[] {
 	} catch {
 		return [];
 	}
+}
+
+// What reaches the owner is built from what matters, not a fixed form (owner 2026-10-29: "마이너한 경우에는 메시지에서 제외"): a warning is
+// told only when it costs at least MINOR_USD, keeps costing three days running, or is the day's spike; the rest stays in the report (a
+// 0-token error streak is the gateway's own error alert's matter). With
+// nothing that matters, nothing is sent. The decision (원인 확인 / 넘어가요) is asked only when something is told.
+export const MINOR_USD = 1;
+export const material = (f: Pick<Finding, "flag" | "kind" | "recur" | "cost" | "save">): boolean =>
+	f.flag && (f.kind === "급증" || (f.cost ?? f.save ?? 0) >= MINOR_USD || ((f.recur ?? 0) >= 3 && (f.cost ?? f.save ?? 0) > 0));
+export function auditAlert(a: { since: number; now: number; total: number; totalCost: number; flags: Finding[]; recurring: string[]; reportPath: string }): string | undefined {
+	const told = a.flags.filter(material);
+	if (!told.length) return undefined;
+	const minor = a.flags.length - told.length;
+	const plain = (t: string) => t.replace(/ tok\b/g, " 토큰");
+	const brief = (f: Finding) => `- ${f.kind} ${f.who.replace(/ 워커 /, " · ")}: ${plain(f.amount.split(" / ")[0])}${f.tip ? ` → ${f.tip}` : ""}`;
+	const recurring = a.recurring.filter(k => told.some(f => f.kind === k));
+	return [
+		`토큰 점검 (${kst(a.since)}~${kst(a.now)}): ${M(a.total)} 토큰 ${usd(a.totalCost)}, 볼 만한 경고 ${told.length}건`,
+		...(recurring.length ? [`며칠째 반복: ${recurring.join(", ")}`] : []),
+		...Object.values(Object.groupBy([...told].sort((x, y) => (y.cost ?? y.save) - (x.cost ?? x.save)), f => f.kind)).slice(0, 4).map(g => (g!.length === 1 ? brief(g![0]) : `${brief(g![0])} 외 ${g!.length - 1}건`)),
+		`전체 보고서: ${tilde(a.reportPath)}${minor ? ` (사소한 경고 ${minor}건은 보고서에만)` : ""}`,
+	].join("\n") + `\n${issueBlock("이 경고를 어떻게 할까요?", [{ name: "원인 확인", result: "세션별 원인을 살펴보고 고칠 방법을 제안해요." }, { name: "이번엔 넘어가요", result: "보고서만 남기고 다음 점검 때 다시 봐요." }])}`;
 }
 
 export type AuditResult = { flags: number; notes: number; sessions: number; tokens: number; cost: number; report: string; alert?: string; summary: string };
@@ -480,16 +502,7 @@ function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditResult {
 	].join("\n");
 	mkdirSync(LOG_DIR, { recursive: true });
 	writeFileSync(reportPath, `${report}\n`);
-	const plain = (t: string) => t.replace(/ tok\b/g, " 토큰");
-	const brief = (f: Finding) => `- ${f.kind} ${f.who.replace(/ 워커 /, " · ")}: ${plain(f.amount.split(" / ")[0])}${f.tip ? ` → ${f.tip}` : ""}`;
-	const alert = flags.length
-		? [
-			`토큰 누수 점검 (${kst(since)}~${kst(now)}): 합계 ${M(total)} 토큰 ${usd(totalCost)}, 경고 ${flags.length}건`,
-			...(recurring.length ? [`며칠째 반복되는 경고: ${recurring.join(", ")}`] : []),
-			...Object.values(Object.groupBy([...flags].sort((a, b) => b.save - a.save), f => f.kind)).slice(0, 4).map(g => (g!.length === 1 ? brief(g![0]) : `${brief(g![0])} 외 ${g!.length - 1}건`)),
-			`전체 보고서: ${tilde(reportPath)} (자동으로 고치지는 않아요)`,
-		].slice(0, 7).join("\n") + `\n${issueBlock("이 경고를 어떻게 할까요?", [{ name: "원인 확인", result: "세션별 원인을 살펴보고 고칠 방법을 제안해요." }, { name: "이번엔 넘어가요", result: "보고서만 남기고 다음 점검 때 다시 봐요." }])}`
-		: undefined;
+	const alert = auditAlert({ since, now, total, totalCost, flags, recurring, reportPath });
 	const summary = `토큰 점검: 세션 ${results.length}개, ${M(total)} tok ${usd(totalCost)}, 경고 ${flags.length}건 / 참고 ${findings.length - flags.length}건, 보고서 ${tilde(reportPath)}`;
 	return { flags: flags.length, notes: findings.length - flags.length, sessions: results.length, tokens: total, cost: Number(totalCost.toFixed(2)), report: reportPath, alert, summary };
 }
@@ -505,7 +518,12 @@ export function startTokenAudit(alert: (text: string) => void): void {
 		if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
 		return d.getTime() - Date.now();
 	};
+	// One run per night: a timer that fires a moment early is re-armed for the same minute and must not run twice (the Mac mini posted
+	// the same audit at 04:29:59.9 and 04:30:00.1 on 2026-10-29).
+	let lastRun = 0;
 	const run = () => {
+		if (Date.now() - lastRun < 3600e3) return void trackTimer("token audit", setTimeout(run, next() + 60_000));
+		lastRun = Date.now();
 		try {
 			const r = runAudit();
 			log(`token audit: ${r.sessions} sessions, ${r.flags} warning(s), report ${tilde(r.report)}`);

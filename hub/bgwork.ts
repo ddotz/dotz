@@ -10,6 +10,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { scrub } from "./activity.ts";
+import { failureText } from "./runstate.ts";
 
 type BgWork = {
 	id: string;
@@ -27,7 +28,38 @@ type BgWork = {
 	error?: string;
 	/** The model and effort the worker runs on, as the owner reads it ("Opus 5.5 medium"), when its record names one. */
 	model?: string;
+	/** A failed worker's reason as the owner reads it (runstate.ts failureText), so every screen says the same words. */
+	reason?: string;
+	/** The owner stopped it (중단), so it is no failure of its own. */
+	cancelled?: boolean;
+	/** A failure the session already took up: one of its turns ended after the worker failed (it read OmO's failure notice, or the
+	 * gateway's handover below). Nothing is asked of the owner about it. */
+	handled?: boolean;
 };
+
+/** What 중단 answered: done, or why not (an HTTP status for the route). */
+export type CancelResult = { ok: true } | { ok: false; status: number; error: string };
+
+/**
+ * The conversation a worker's request came from, as the web names it: the main chat for "web"/"terminal"/none, a mail
+ * conversation for its Discord thread, else the target itself (a project ch:<id>, a mail:<key>, a settings:<app>).
+ */
+export function workConversation(target: string | undefined, keyOfThread: (thread: string) => string | undefined): string {
+	if (!target || target === "web" || target === "terminal") return "main";
+	const thread = /^th:(\d{15,22})$/.exec(target)?.[1];
+	if (thread) {
+		const key = keyOfThread(thread);
+		return key ? `mail:${key}` : "main";
+	}
+	return target;
+}
+
+/** 다시 맡기기: the request handed to the orchestrator again, in the owner's own words when the inbox still has them. */
+export function retryText(w: { description: string; reason?: string; cancelled?: boolean }, original?: string): string {
+	const why = w.cancelled ? "중단했던" : `실패한(${w.reason || "이유가 기록되지 않았어요"})`;
+	const asked = (original ?? "").trim();
+	return [`${why} 백그라운드 작업 "${w.description}"을 다시 맡아 주세요.`, asked ? `처음 요청:\n${asked}` : ""].filter(Boolean).join("\n\n");
+}
 
 type RecModel = { provider?: string; model_id?: string; display?: string; variant?: string; reasoning_effort?: string; reasoning?: string };
 // "claude-opus-5-5" -> "Opus 5.5", "gpt-5.5" -> "Gpt 5.5"; a record's display name ("Claude Opus 5.5") wins over the id.
@@ -107,7 +139,20 @@ type BgWorkDeps = {
 	alive?: (pid: number) => boolean;
 	/** The hub log: one line per failed worker, so the reason is kept even after the record leaves the list. */
 	log?: (message: string) => void;
+	/** When the session's last turn ended (ms): a failure before it was taken up by that turn. */
+	turnEndedAt?: () => number;
+	/** Is the session in a turn now? A failure is handed over only to an idle session (a running one reads OmO's notice itself). */
+	busy?: () => boolean;
+	/** The safety net for a failure the session never took up: hand it to the session to fix and finish (owner 2026-10-29: "왜
+	 * 재요청을 나에게 물어보지? 알아서 수정해서 목표 달성해야지"). Called once per worker. */
+	handover?: (w: BgWork) => void;
+	/** Sends a signal to a worker process (default process.kill); 중단 ends the worker with it. */
+	kill?: (pid: number, signal: NodeJS.Signals) => void;
 };
+// A failure no turn took up this long after it ended is handed over (OmO's own notice wakes the session within seconds).
+export const HANDOVER_AFTER_MS = 3 * 60_000;
+// 중단 waits this long for a worker to end on SIGTERM before it is killed outright.
+const STOP_GRACE_MS = 3_000;
 
 export function createBgWork(deps: BgWorkDeps) {
 	const now = deps.now ?? Date.now;
@@ -118,6 +163,11 @@ export function createBgWork(deps: BgWorkDeps) {
 	const served = new Map<string, { target: string; reply_to?: string }>();
 	// Failures already written to the log (list() runs on every /api/state read).
 	const told = new Set<string>();
+	// Failures already handed to the session (once each; a restart re-reads turnEndedAt, which the handed turn moved past them).
+	const handed = new Set<string>();
+	// Workers the owner stopped (중단), with when: OmO's record still says running for a while after its process ended.
+	const cancelled = new Map<string, number>();
+	const kill = deps.kill ?? ((pid: number, signal: NodeJS.Signals) => process.kill(pid, signal));
 
 	function records(sessionFile: string): Rec[] {
 		const root = /_([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/.exec(sessionFile)?.[1];
@@ -157,8 +207,13 @@ export function createBgWork(deps: BgWorkDeps) {
 		const raw = (r.status ?? "").toLowerCase();
 		let status: BgWork["status"] = RUNNING.has(raw) ? "running" : DONE.has(raw) ? "done" : "failed";
 		let ended = stamp(r.terminal_at) || stamp(r.updated_at);
-		// The workers die with the gateway's process tree; the record of one that died mid-run is never closed by anyone.
-		if (status === "running" && typeof r.pid === "number" && !alive(r.pid) && stamp(r.recovery_deadline_at) <= now()) {
+		// A worker the owner stopped is listed as stopped from then on, whatever OmO's record says; the workers die with the
+		// gateway's process tree, and the record of one that died mid-run is never closed by anyone.
+		const stoppedAt = cancelled.get(r.task_id!);
+		if (stoppedAt !== undefined && status !== "done") {
+			status = "failed";
+			ended = stoppedAt;
+		} else if (status === "running" && typeof r.pid === "number" && !alive(r.pid) && stamp(r.recovery_deadline_at) <= now()) {
 			status = "failed";
 			ended = stamp(r.updated_at) || started;
 		} else if (status === "running" && typeof r.pid !== "number" && now() - (stamp(r.updated_at) || started) > NO_PID_STALE_MS) {
@@ -167,10 +222,12 @@ export function createBgWork(deps: BgWorkDeps) {
 		}
 		const description = scrub(String(r.description || r.task_summary || r.category || r.task_id)).replace(/\s+/g, " ").trim().slice(0, 120);
 		const folder = folderOf(r);
-		const why = status === "failed" ? [r.error_message, r.terminal_reason, r.error].find(v => typeof v === "string" && v.trim()) : undefined;
+		const stopped = stoppedAt !== undefined && status === "failed";
+		const why = status === "failed" && !stopped ? [r.error_message, r.terminal_reason, r.error].find(v => typeof v === "string" && v.trim()) : undefined;
 		const error = why ? scrub(why).replace(/\s+/g, " ").trim().slice(0, 200) : "";
 		const model = workModel(r);
-		return { id: r.task_id!, description, status, started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}), ...(error ? { error } : {}), ...(model ? { model } : {}) };
+		const reason = stopped ? "직접 중단했어요" : status === "failed" ? failureText(error) : "";
+		return { id: r.task_id!, description, status, started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}), ...(error ? { error } : {}), ...(model ? { model } : {}), ...(reason ? { reason } : {}), ...(stopped ? { cancelled: true } : {}) };
 	}
 
 	/** Running work (oldest first), then what finished within the last hour (newest first). */
@@ -199,9 +256,21 @@ export function createBgWork(deps: BgWorkDeps) {
 		}
 		// A failed worker's reason goes to the hub log once, while it is still in the list (the record itself stays in OmO's store).
 		for (const w of works) {
-			if (w.status !== "failed" || told.has(w.id)) continue;
+			if (w.status !== "failed" || w.cancelled || told.has(w.id)) continue;
 			told.add(w.id);
 			deps.log?.(`background work ${w.id} failed${w.target ? ` in ${w.target}` : ""}: ${w.error || "no reason recorded"}`);
+		}
+		const ended = deps.turnEndedAt?.() ?? 0;
+		for (const w of works) {
+			if (w.status !== "failed" || w.cancelled) continue;
+			if (ended > (w.ended_at ?? 0)) {
+				w.handled = true;
+				continue;
+			}
+			if (!deps.handover || handed.has(w.id) || t - (w.ended_at ?? 0) < HANDOVER_AFTER_MS || deps.busy?.()) continue;
+			handed.add(w.id);
+			deps.log?.(`background work ${w.id} failed and no turn took it up: handed to the session to fix and finish`);
+			deps.handover(w);
 		}
 		const running = works.filter(w => w.status === "running").sort((a, b) => a.started_at - b.started_at);
 		const finished = works.filter(w => w.status !== "running").sort((a, b) => (b.ended_at ?? 0) - (a.ended_at ?? 0));
@@ -214,12 +283,52 @@ export function createBgWork(deps: BgWorkDeps) {
 	 * frames, so the live subagent map (activity.ts runningSubagents) is always 0 for it.
 	 */
 	function running(file = deps.sessionFile()): number {
-		return file ? records(file).map(toWork).filter(w => w.status === "running").length : 0;
+		return runningWork(file).length;
 	}
 
-	return { list, running };
+	/** The running workers of one OmO session (default: the orchestrator's), oldest first: what a lane's run line names. */
+	function runningWork(file = deps.sessionFile()): BgWork[] {
+		return file ? records(file).map(toWork).filter(w => w.status === "running").sort((a, b) => a.started_at - b.started_at) : [];
+	}
+
+	/**
+	 * 중단: ends a running worker's process (SIGTERM, then SIGKILL when it is still there after a grace period) and lists it as
+	 * stopped from then on. A worker with no process id cannot be ended from here, and that is said instead of claimed done.
+	 */
+	async function cancel(id: string, file = deps.sessionFile()): Promise<CancelResult> {
+		const rec = file ? records(file).find(r => r.task_id === id) : undefined;
+		if (!rec) return { ok: false, status: 404, error: "이 작업을 찾을 수 없어요" };
+		if (toWork(rec).status !== "running") return { ok: false, status: 409, error: "이미 끝난 작업이에요" };
+		const pid = rec.pid;
+		if (typeof pid !== "number") return { ok: false, status: 409, error: "이 작업은 프로세스를 알 수 없어 여기서 멈출 수 없어요" };
+		const gone = async (ms: number) => {
+			for (let waited = 0; waited < ms; waited += 100) {
+				if (!alive(pid)) return true;
+				await Bun.sleep(100);
+			}
+			return !alive(pid);
+		};
+		try {
+			kill(pid, "SIGTERM");
+			if (!(await gone(STOP_GRACE_MS))) {
+				kill(pid, "SIGKILL");
+				if (!(await gone(1_000))) return { ok: false, status: 500, error: "작업 프로세스가 끝나지 않았어요" };
+			}
+		} catch (e) {
+			if ((e as NodeJS.ErrnoException).code !== "ESRCH") return { ok: false, status: 500, error: `작업을 멈추지 못했어요: ${(e as Error).message}` };
+		}
+		cancelled.set(id, now());
+		deps.log?.(`background work ${id} stopped by the owner (pid ${pid})`);
+		return { ok: true };
+	}
+
+	return { list, running, runningWork, cancel };
 }
 
 const anySession = createBgWork({ sessionFile: () => undefined, deferred: () => [] });
 /** Running OmO workers under one session file (a lane's, say); 0 for no session. */
 export const runningOmoWorkers = (sessionFile: string | undefined): number => anySession.running(sessionFile);
+/** The running OmO workers under one session file (a lane's), as records with description, start and model; none for no session. */
+export const runningOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.runningWork(sessionFile) : []);
+/** 중단 for a worker of another session (a lane's). */
+export const cancelOmoWorker = (id: string, sessionFile: string | undefined): Promise<CancelResult> => anySession.cancel(id, sessionFile);

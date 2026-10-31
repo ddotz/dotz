@@ -62,3 +62,27 @@ Scripts and commands run with the owner's rights and come only from his own conf
 `GET /api/comments/threads` rows and `GET /api/comments/thread/<source>/<thread>` carry the post: `title` (the video title, or the first 80 characters of an Instagram caption),
 `link` (the video or post URL), `thumb` (picture URL or null) and, on the rows, `kind` (`youtube` | `instagram` | `website`). A comment collected before its title was readable is renamed
 on the next poll (`adapter.retitle`); the drafts' [ask] text names the post (`> 영상 <title>`) and says nothing about it while the title is unknown.
+
+## Per-source options (off by default)
+
+- `mailMatch: true`: before a draft, the owner's mail is searched read-only (zele `mail search`/`mail read`, window +-14 days, `-from:me`) for a mail from the
+  commenter (same sender name or the commenter's handle in the mail; a mail that only names the same post is reported as someone else's). The draft gets the
+  notes `메일 대조: 있음|못 찾음|확인 실패 ...`, `근거: ...` and, when that mail is not answered yet, `초안 메모: ...` (`hub/comments/mail-match.ts`).
+- `pastSeed: true`: the 3 stored comments most like this one that the owner answered (his reply under it, or a reply sent through the gate) go into the
+  draft prompt; when the model skips or leaves the reply empty, the closest past answer becomes the draft with a `확인 필요:` note (`hub/comments/past.ts`).
+- Sending one part of a reply + mail card: `features/comments/bin/comments.ts send <code> --only reply|mail` (after the owner's 보내기, 답글만/메일만 보내기
+  or own-words pick). `reply` posts the reply and leaves the mail draft as a mail of its own; `mail` sends the mail and leaves the reply draft pending alone.
+
+## Website DM inbox (`site.dm`, optional)
+
+```json
+{"site": {"read": {"kind": "rss", "url": "https://blog.example/comments/feed"}, "post": {"kind": "script", "command": ["bun", "{site}/post.ts"]},
+  "dm": {"read": {"kind": "script", "command": ["bun", "{site}/dm-read.ts"]}, "post": {"kind": "script", "command": ["bun", "{site}/dm-post.ts"]}}}}
+```
+
+- Read: `<command...> [--since <cursor>] [--room <room>]` (or `GET <url>?since=&room=`) prints
+  `{"messages":[{"room","id","author","text","at","mine?","title?"}],"cursor?"}`. Each message is a comment of thread `dm:<room>` (id `dm:<room>:<id>`);
+  a room is answered once the owner wrote in it after the message. A DM read failure keeps the comments and becomes the source's error (`쪽지함: ...`).
+- Post: `{"sendId","room","text"}` to the webhook or on the script's stdin, same answers as a comment post. Then the room is read back (`--room`) and the
+  send counts only when its newest message is the owner's with that text.
+- The site's own login, tokens and API stay in the owner's scripts under `~/.dotz/custom/comments/sites/`; nothing from a message is ever run.

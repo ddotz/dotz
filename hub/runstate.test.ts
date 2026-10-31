@@ -1,6 +1,6 @@
 // The run state derivation (hub/runstate.ts): every kind and every reason an idle conversation can give for leaving todos open.
 import { expect, test } from "bun:test";
-import { failureText, lastTurnEnd, mailConversation, openTodos, runIntent, runState, workConversationRuns } from "./runstate.ts";
+import { failureText, lastTurnEnd, mailConversation, openTodos, runIntent, runState, STALL_MS, stallNudge, workConversationRuns } from "./runstate.ts";
 
 const now = Date.UTC(2026, 9, 26, 3, 0);
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
@@ -76,8 +76,9 @@ test("a mail conversation's run state is the worker its request was deferred to,
 	expect(conv("web")).toBeUndefined();
 	const work = { id: "st_01a17c04", description: "큐피드 연결 스크립트 흐름도 HTML", status: "running" as const, started_at: now - 240_000, target: "th:1564523279849357364" };
 	// The thread target and the mail key name the one conversation the owner sees, so either yields its line.
-	expect(workConversationRuns([work], conv)).toEqual({ "mail:kdb-67010497": { kind: "working", since: iso(240_000), detail: "큐피드 연결 스크립트 흐름도 HTML" } });
-	expect(workConversationRuns([{ ...work, target: "mail:kdb-67010497" }], conv)).toEqual({ "mail:kdb-67010497": { kind: "working", since: iso(240_000), detail: "큐피드 연결 스크립트 흐름도 HTML" } });
+	// It names the worker, so the line's 중단 stops that one.
+	expect(workConversationRuns([work], conv)).toEqual({ "mail:kdb-67010497": { kind: "working", since: iso(240_000), detail: "큐피드 연결 스크립트 흐름도 HTML", work: "st_01a17c04" } });
+	expect(workConversationRuns([{ ...work, target: "mail:kdb-67010497" }], conv)).toEqual({ "mail:kdb-67010497": { kind: "working", since: iso(240_000), detail: "큐피드 연결 스크립트 흐름도 HTML", work: "st_01a17c04" } });
 	expect(workConversationRuns([{ ...work, target: "web" }], conv)).toEqual({});
 	// The model the worker runs on follows its description: the owner sees which model does the work he asked for there.
 	expect(workConversationRuns([{ ...work, model: "Opus 5.5 medium" }], conv)["mail:kdb-67010497"]!.detail).toBe("큐피드 연결 스크립트 흐름도 HTML · Opus 5.5 medium");
@@ -87,11 +88,13 @@ test("a mail conversation's run state is the worker its request was deferred to,
 test("a worker that failed at spawn says why, and whether it was handed over again", () => {
 	const conv = (t: string) => mailConversation(t, () => "kdb-67010497");
 	const failed = { id: "st_01a17c03", description: "큐피드 연결 스크립트 흐름도 HTML", status: "failed" as const, started_at: now - 300_000, ended_at: now - 300_000, target: "th:1564523279849357364", error: "child turn produced no assistant output" };
-	expect(workConversationRuns([failed], conv)["mail:kdb-67010497"]).toEqual({ kind: "error", since: iso(300_000), detail: "child turn produced no assistant output · 다시 맡기지 않았어요" });
+	// <작업> · <이유> while the agent takes it up; once a turn took it up (handled) the conversation has no line for it.
+	expect(workConversationRuns([failed], conv)["mail:kdb-67010497"]).toEqual({ kind: "waiting", reason: "recover", since: iso(300_000), detail: "큐피드 연결 스크립트 흐름도 HTML · child turn produced no assistant output", work: "st_01a17c03" });
+	expect(workConversationRuns([{ ...failed, handled: true }], conv)["mail:kdb-67010497"]).toBeUndefined();
 	const retry = { id: "st_01a17c04", description: "다시", status: "running" as const, started_at: now - 240_000, target: "th:1564523279849357364" };
 	expect(workConversationRuns([failed, retry], conv)["mail:kdb-67010497"]).toMatchObject({ kind: "working", detail: "다시" });
 	const failedAgain = { ...retry, status: "failed" as const, ended_at: now - 60_000 };
-	expect(workConversationRuns([failed, failedAgain], conv)["mail:kdb-67010497"]).toMatchObject({ kind: "error", detail: "이유가 기록되지 않았어요 · 다시 맡긴 작업도 실패했어요" });
+	expect(workConversationRuns([failed, failedAgain], conv)["mail:kdb-67010497"]).toMatchObject({ kind: "waiting", reason: "recover", detail: "다시 · 이유가 기록되지 않았어요 · 다시 맡긴 작업도 실패했어요", work: "st_01a17c04" });
 });
 
 test("an isolation refusal is said in Korean instead of raw git output", () => {
@@ -104,7 +107,20 @@ test("an isolation refusal is said in Korean instead of raw git output", () => {
 	expect(failureText(undefined)).toBe("이유가 기록되지 않았어요");
 	const conv = (t: string) => mailConversation(t, () => "k1");
 	const failed = { id: "st_01a17c1a", status: "failed" as const, started_at: now - 60_000, ended_at: now - 60_000, target: "mail:k1", error: raw };
-	expect(workConversationRuns([failed], conv)["mail:k1"]).toMatchObject({ kind: "error", detail: "작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요 · 다시 맡기지 않았어요" });
+	expect(workConversationRuns([failed], conv)["mail:k1"]).toMatchObject({ kind: "waiting", reason: "recover", detail: "백그라운드 작업 · 작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요" });
+});
+
+// Owner 2026-10-29: a failed worker is the agent's to finish, never a retry request: it reads as being taken up (waiting · recover).
+test("a main-chat worker that failed after the last turn is being taken up, with its reason and id, until a turn answers after it", () => {
+	const failed = { id: "st_f", description: "빌드 고치기", status: "failed" as const, started_at: now - 600_000, ended_at: now - 120_000, reason: "작업 폴더의 격리 사본을 만들지 못해 시작하지 못했어요" };
+	expect(runState({ ...base, failed, lastTurnEnd: iso(300_000), todos: todos(1) }))
+		.toEqual({ kind: "waiting", reason: "recover", since: iso(120_000), detail: "빌드 고치기 · 작업 폴더의 격리 사본을 만들지 못해 시작하지 못했어요", work: "st_f", todos: 1 });
+	// A turn that ended after the failure answered it; a finished (done) worker is no failure; running work still comes first.
+	expect(runState({ ...base, failed, lastTurnEnd: iso(60_000) })).toEqual({ kind: "done", since: iso(60_000) });
+	expect(runState({ ...base, failed: { ...failed, status: "done" } }).kind).toBe("idle");
+	expect(runState({ ...base, failed, work: [{ id: "st_r", description: "다시", started_at: now - 10_000 }] })).toMatchObject({ kind: "waiting", reason: "work", work: "st_r" });
+	// One the owner stopped is said as stopped, not as a failure.
+	expect(runState({ ...base, failed: { ...failed, cancelled: true, reason: "직접 중단했어요" } })).toMatchObject({ kind: "error", reason: "work", cancelled: true, detail: "빌드 고치기 · 직접 중단했어요" });
 });
 
 test("a finished worker leaves the conversation done with what it was", () => {
@@ -125,4 +141,26 @@ test("runIntent reads only the current turn; lastTurnEnd is the newest turn's en
 	expect(runIntent(items)).toBe("설정 파일 읽는 중");
 	expect(runIntent([{ ts: iso(10), type: "turn_start" }])).toBeUndefined();
 	expect(lastTurnEnd(items)).toBe(iso(700_000));
+});
+
+// Mac mini 2026-10-29 01:46: the orchestrator folded its context after a turn and the line said 쉬는 중 with tasks left until it went on.
+test("a session folding its context is working (대화 정리 중), never resting with tasks left", () => {
+	expect(runState({ ...base, compacting: true, todos: todos(2), lastTurnEnd: iso(30_000) })).toEqual({ kind: "working", detail: "대화 정리 중", todos: 2 });
+	expect(runState({ ...base, todos: todos(2), lastTurnEnd: iso(30_000) }).kind).toBe("idle");
+});
+
+test("a session resting with tasks left is told to go on once per resting spell after the grace time, at most 3 times an hour", () => {
+	const r = runState({ ...base, todos: todos(2), lastTurnEnd: iso(STALL_MS + 1_000) });
+	expect(r).toMatchObject({ kind: "idle", reason: "unfinished" });
+	expect(stallNudge(r, now, [])).toBe(true);
+	expect(stallNudge(r, now, [], r.since)).toBe(false);
+	expect(stallNudge(runState({ ...base, todos: todos(2), lastTurnEnd: iso(10_000) }), now, [])).toBe(false);
+	expect(stallNudge(r, now, [now - 60_000, now - 120_000, now - 180_000])).toBe(false);
+	expect(stallNudge(runState({ ...base, todos: todos(2), lastTurnEnd: iso(STALL_MS + 1_000), later: 1 }), now, [])).toBe(false);
+});
+
+test("a working session says what it is doing: its tool-call intent, else the plan task it is on", () => {
+	expect(runState({ ...base, status: "working", intent: "T1 수식 훑기", todos: todos(3, "질문 1 분석") })).toMatchObject({ kind: "working", detail: "T1 수식 훑기", todos: 3 });
+	expect(runState({ ...base, status: "working", todos: todos(3, "질문 1 분석") })).toMatchObject({ kind: "working", detail: "질문 1 분석" });
+	expect(runState({ ...base, status: "idle", watching: "추출 워커 종료 대기", todos: todos(13), lastTurnEnd: iso(600_000) })).toMatchObject({ kind: "waiting", reason: "work", detail: "추출 워커 종료 대기", todos: 13 });
 });

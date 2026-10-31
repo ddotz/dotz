@@ -25,7 +25,7 @@
 // a long inline turn kept every next message waiting a median 238 s): its prompt stays open (deferred) with nothing sent,
 // and the answer of the run the worker's result wakes (no prompt of ours) goes to the oldest open deferred prompt first.
 
-export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean };
+export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean };
 /** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
 export type OwnerMessage = { target: string; replyTo?: string; at: number; prompt?: Prompt };
 export type Pending = { text: string; at?: number; target?: string; replyTo?: string };
@@ -86,6 +86,8 @@ const DEFER_BLOCKS_RESTART_MS = 60 * 60_000;
 const MAX_TURNS = 200;
 const TURN_SLACK_MS = 1000;
 
+const CANCEL_NOTE_MS = 10 * 60_000;
+
 export function createPrompts(deps: PromptDeps) {
 	const prompts: Prompt[] = [];
 	let current: Prompt | undefined;
@@ -105,7 +107,7 @@ export function createPrompts(deps: PromptDeps) {
 	const openDeferred = () => deferred.filter(p => !p.done && !isAnswered(p.replyTo) && Date.now() - p.at <= DEFER_MAX_AGE_MS);
 
 	const save = () => {
-		const open = [...openDeferred().filter(p => p !== current), ...(current && !current.done ? [current] : []), ...prompts].filter(p => !isAnswered(p.replyTo)).map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
+		const open = [...openDeferred().filter(p => p !== current), ...(current && !current.done ? [current] : []), ...prompts.filter(p => !p.cancelled)].filter(p => !isAnswered(p.replyTo)).map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
 		deps.persist(open);
 	};
 	const isAnswered = (replyTo?: string) => replyTo !== undefined && (answered.has(replyTo) || deps.pending?.(replyTo) === true);
@@ -120,8 +122,14 @@ export function createPrompts(deps: PromptDeps) {
 		save();
 	}
 
-	function deliver(text: string, reply?: Reply): void {
-		const steered = Boolean(reply) && deps.working();
+	/**
+	 * Delivers one prompt; true when it was steered into the running turn. Only a message of the conversation that turn answers is
+	 * steered in: another conversation's message waits as its own prompt, so one turn never mixes two conversations and its answer
+	 * cannot land in the wrong one (2026-10-28 21:44 KST: a mail thread's question was steered into a KTX run and the KTX answer
+	 * was posted in the mail thread).
+	 */
+	function deliver(text: string, reply?: Reply): boolean {
+		const steered = Boolean(reply) && deps.working() && Boolean(current && !current.done && current.target && sameConv(current.target, reply!.target));
 		const prompt: Prompt = { key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered };
 		prompts.push(prompt);
 		if (prompts.length > MAX_PROMPTS) prompts.splice(0, prompts.length - MAX_PROMPTS);
@@ -132,13 +140,15 @@ export function createPrompts(deps: PromptDeps) {
 		save();
 		if (!steered) {
 			// A turn still owes an answer, yet the orchestrator does not look busy: logged to find why (10-20 17:19).
-			if (reply && current && !current.done) deps.log(`message for ${reply.target} delivered as a new prompt while the turn for ${current.target ?? "-"} is unanswered`);
-			return deps.deliver(text, Boolean(reply?.owner));
+			if (reply && deps.working()) deps.log(`message for ${reply.target} waits as its own prompt: the running turn answers ${current && !current.done ? (current.target ?? "-") : "no request of ours"}`);
+			deps.deliver(text, Boolean(reply?.owner));
+			return false;
 		}
-		if (deps.steer(deps.note(reply!.target, reply!.replyTo, text)) !== false) return;
+		if (deps.steer(deps.note(reply!.target, reply!.replyTo, text)) !== false) return true;
 		// The turn ended between the check and the steer: the message goes in as a normal prompt instead of waiting.
 		prompts.at(-1)!.steered = false;
 		deps.deliver(text, Boolean(reply?.owner));
+		return false;
 	}
 
 	/**
@@ -184,6 +194,34 @@ export function createPrompts(deps: PromptDeps) {
 		return true;
 	}
 
+	// What was steered into a cancelled request may still wait in the runtime's queue, and the runtime starts a turn with it after the
+	// abort (2026-10-28 live check: the turn came back 1 s after 중단 and answered). onPrompt tells the caller to abort that turn too.
+	let cancelledNotes: { text: string; at: number }[] = [];
+
+	/**
+	 * The owner's 중단 (the web stop button, /abort): the running turn's request ends here, unanswered on purpose. Its prompt, the
+	 * messages steered into it and the requests of that conversation still waiting on background workers are closed, so the idle hook
+	 * does not deliver them again, a restart does not replay them, and a late answer for them is dropped. Returns the conversation.
+	 */
+	function cancel(): string | undefined {
+		const p = current;
+		if (!p || p.done) return undefined;
+		const target = p.target;
+		Object.assign(p, { done: true, cancelled: true, last: undefined, held: undefined });
+		for (const q of prompts.filter(q => q.steered && q.target === target)) {
+			q.cancelled = true;
+			prompts.splice(prompts.indexOf(q), 1);
+			cancelledNotes.push({ text: q.text, at: Date.now() });
+		}
+		// Messages of that conversation sent while it worked wait in the runtime's queue as next prompts: each is stopped when it starts.
+		for (const q of prompts.filter(q => !q.steered && q.target === target)) Object.assign(q, { cancelled: true, done: true });
+		for (const d of openDeferred().filter(d => d.target === target)) Object.assign(d, { done: true, cancelled: true });
+		for (const o of owners.filter(o => o.target === target && o.prompt && !o.prompt.done)) Object.assign(o.prompt!, { done: true, cancelled: true });
+		deps.log(`turn for ${target ?? "-"} cancelled by the owner`);
+		save();
+		return target;
+	}
+
 	/** The current turn's answer goes to `to` instead of `from` (work that moved into a lane's thread is answered there). */
 	function retarget(from: string, to: string): void {
 		if (current && !current.done && current.target === from) current.target = to;
@@ -205,15 +243,27 @@ export function createPrompts(deps: PromptDeps) {
 		if (dropped) save();
 	}
 
-	/** omp started a prompt: pair it with the delivered one it came from. */
-	function onPrompt(text: string): void {
+	/** omp started a prompt: pair it with the delivered one it came from. Returns true when the turn that just started carries only messages of a request the owner cancelled: the caller aborts it. */
+	function onPrompt(text: string): boolean {
+		cancelledNotes = cancelledNotes.filter(n => Date.now() - n.at <= CANCEL_NOTE_MS);
+		if (deps.isNote(text) && cancelledNotes.some(n => text.includes(n.text)) && (!current || current.done)) {
+			cancelledNotes = cancelledNotes.filter(n => !text.includes(n.text));
+			deps.log("a turn started with a message of a cancelled request; it is stopped");
+			return true;
+		}
 		// Notes steered into a running turn are not new requests: the turn keeps answering the prompt it started with.
-		if (deps.isNote(text)) return;
+		if (deps.isNote(text)) return false;
 		// The harness's own mid-turn injections (OmO: `<system-reminder>` when a detached cell finishes, `<omo-senpi-task>`)
 		// are not prompts either; clearing `current` on them dropped the turn's final answer (owner 2026-10-20: "작업 끝나도
 		// 보고 안하는거", the 17:18 web turn).
-		if (text.trimStart().startsWith("<")) return;
+		if (text.trimStart().startsWith("<")) return false;
+		for (const q of prompts.filter(q => q.cancelled && Date.now() - q.at > CANCEL_NOTE_MS)) prompts.splice(prompts.indexOf(q), 1);
 		const i = prompts.findIndex(p => !p.steered && text.includes(p.key));
+		if (i >= 0 && prompts[i]!.cancelled) {
+			prompts.splice(i, 1);
+			deps.log("a turn started with a message the owner cancelled; it is stopped");
+			return true;
+		}
 		// omp runs prompts in the order they were delivered, so a prompt older than the one that just started was taken into a
 		// turn already. A lane report (no target, no message id) has no answer that could settle it: it was consumed by that turn,
 		// and kept it would be replayed after the next restart (2026-10-23, a morning [done] came back at 08:48).
@@ -227,7 +277,7 @@ export function createPrompts(deps: PromptDeps) {
 			// still answering the prompt it started with, so its answer must not lose its prompt (2026-10-20 10:43Z, 10:52Z).
 			if (!current.unmatched) deps.log(`a user prompt matched nothing delivered; the running turn keeps its prompt for ${current.target ?? "-"}: ${text.trim().slice(0, 80)}`);
 			current.unmatched = true;
-			return;
+			return false;
 		}
 		closeTurn();
 		current = i >= 0 ? prompts.splice(i, 1)[0] : undefined;
@@ -242,6 +292,7 @@ export function createPrompts(deps: PromptDeps) {
 			deps.log(`the prompt for ${current.target ?? "-"} was already answered by a dotz_send; this turn's answer is dropped`);
 		}
 		save();
+		return false;
 	}
 
 	/** Any assistant text of the running turn: the safety net's answer when the turn ends without a stop. */
@@ -253,9 +304,21 @@ export function createPrompts(deps: PromptDeps) {
 	 * The orchestrator went idle: a prompt the turn never answered (no stop with text: aborted, cut off, a lost pairing)
 	 * gets the turn's last text, so an answer is never dropped without a trace (owner 2026-10-20: "작업 끝나도 보고 안하는거").
 	 */
-	function settleTurn(): void {
+	function settleTurn(failed = false): void {
 		const p = current;
 		if (!p) return;
+		// A turn stopped by a provider error before it wrote anything is not answered: its request stays open like a deferred one, so the
+		// run that resumes after the pause answers it in its own conversation and a restart replays it (2026-10-28 13:25Z on the Mac mini:
+		// the owner's message was closed as a turn that wrote no text while the account was rate-limited, and never answered).
+		if (failed && !p.done && p.target && !p.deferred && !p.last && !p.cancelled) {
+			p.deferred = true;
+			deferred.push(p);
+			deps.log(`turn for ${p.target} stopped on an error before answering; its request stays open for the retry`);
+			closeTurn();
+			current = undefined;
+			save();
+			return;
+		}
 		// The run is over: a run that starts next without a prompt of ours (OmO wakes the session when a task worker finishes,
 		// also right after a restart) is a new one and must not be taken for a continuation of this prompt (2026-10-20 12:51Z).
 		if (!p.done && p.target && !p.deferred) {
@@ -279,11 +342,19 @@ export function createPrompts(deps: PromptDeps) {
 		return { target: t.prompt.target, ...(t.prompt.replyTo ? { replyTo: t.prompt.replyTo } : {}) };
 	}
 
-	/** Who an answer without a prompt goes to: the owner's newest message of the last 30 minutes, one still unanswered first. */
+	/**
+	 * Who an answer without a prompt goes to: a request waiting on a background worker first; else the owner's newest message of the
+	 * last 30 minutes, one still unanswered first. When a turn ran in this process in the last 30 minutes, only that turn's conversation
+	 * qualifies (the run is its continuation), and a message still waiting as its own prompt never does: its turn answers it
+	 * (2026-10-28 21:44 KST, a KTX answer went to a mail thread's newer question).
+	 */
 	function orphanTarget(): OwnerMessage | undefined {
 		const d = openDeferred()[0];
 		if (d?.target) return { target: d.target, replyTo: d.replyTo, at: d.at, prompt: d };
-		const fresh = owners.filter(o => Date.now() - o.at <= ORPHAN_MAX_AGE_MS).sort((a, b) => a.at - b.at);
+		const last = turns.at(-1);
+		const conv = last?.prompt.target && Date.now() - (last.end ?? Date.now()) <= ORPHAN_MAX_AGE_MS ? last.prompt.target : undefined;
+		const queuedNow = new Set(prompts.filter(p => !p.steered));
+		const fresh = owners.filter(o => Date.now() - o.at <= ORPHAN_MAX_AGE_MS && !(o.prompt && queuedNow.has(o.prompt)) && (!conv || sameConv(o.target, conv))).sort((a, b) => a.at - b.at);
 		return fresh.findLast(o => !(o.prompt?.done || isAnswered(o.replyTo))) ?? fresh.at(-1);
 	}
 
@@ -296,6 +367,7 @@ export function createPrompts(deps: PromptDeps) {
 		if (t === LATER) return void deps.log(`a run without a prompt said ${LATER}; ${openDeferred().length} deferred prompt(s) keep waiting`);
 		const to = orphanTarget();
 		if (!to) return void deps.log(`an answer had no prompt to go to (${t.length} chars): ${t.slice(0, 80)}`);
+		if (to.prompt?.cancelled) return void deps.log(`an answer for a request the owner cancelled was dropped (${t.length} chars)`);
 		if (recentSent.some(s => s.target === to.target && Date.now() - s.at <= ORPHAN_MAX_AGE_MS && s.text.includes(t))) return;
 		deps.log(`an answer had no prompt; sent to the owner's newest message in ${to.target} (${t.length} chars): ${t.slice(0, 80)}`);
 		recentSent.push({ target: to.target, text: t, at: Date.now() });
@@ -410,5 +482,5 @@ export function createPrompts(deps: PromptDeps) {
 	/** The deferred prompts still waiting for their worker's answer (bgwork.ts ties a worker to one of them). */
 	const deferredOpen = () => openDeferred().flatMap(p => (p.target ? [{ target: p.target, replyTo: p.replyTo, at: p.at }] : []));
 
-	return { deliver, settleSteered, sent, holdEarly, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, reopen, waitingOnWorkers, deferredOpen, turnAt, queued: () => prompts.slice(), current: () => current };
+	return { deliver, settleSteered, sent, holdEarly, cancel, retarget, markAnswered, isAnswered, redeliverSteered, onPrompt, onText, settleTurn, onAnswer, replay, reopen, waitingOnWorkers, deferredOpen, turnAt, queued: () => prompts.slice(), current: () => current };
 }

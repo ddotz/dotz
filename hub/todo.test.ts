@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { readTodo } from "./todo.ts";
+import { openMonitor, readTodo } from "./todo.ts";
 
 const DIR = join(process.env.DOTZ_TEST_DIR!, "todo-sessions");
 mkdirSync(DIR, { recursive: true });
@@ -34,4 +34,24 @@ test("a todo result far from the end of a large file is found by reading growing
 	expect(readTodo(file)).toEqual({ phases: phases(false), at: "2026-10-21T01:00:00.000Z" });
 	const newer = session("big-newer", [todoLine("2026-10-21T01:00:00.000Z", phases(false)), ...filler.slice(0, 2500), todoLine("2026-10-21T03:00:00.000Z", phases(true)), ...filler.slice(2500)]);
 	expect(readTodo(newer).at).toBe("2026-10-21T03:00:00.000Z");
+});
+
+// kdb-loss-review on the Mac mini (2026-10-29): its turn ended to wait on its own "HTML 워커 종료" monitor (armed two turns before) and a
+// background shell; the harness's own lifecycle record says so, and that is what the session waits on.
+test("a session waits on what its harness's latest lifecycle record says: a monitor first, else its background shells or subagents", () => {
+	const d = join(process.env.DOTZ_DIR!, "todo-monitor");
+	mkdirSync(d, { recursive: true });
+	const f = join(d, "s.jsonl");
+	const life = (state: string, background: unknown[] = [], children = 0) => ({ type: "custom", customType: "session-lifecycle", data: { state, waitingOn: { children, background } } });
+	const mons = (...desc: string[]) => ({ source: "terminal-monitors", activeCount: desc.length, items: desc.map(description => ({ description })) });
+	const shells = (n: number) => ({ source: "terminal-background-sessions", activeCount: n, items: Array.from({ length: n }, () => ({ label: "cd x && omo -p" })) });
+	const write = (rows: unknown[]) => writeFileSync(f, `${rows.map(r => JSON.stringify(r)).join("\n")}\n`);
+	write([life("running", [shells(1), mons("HTML 워커 종료")]), life("waiting_background", [shells(1), mons("HTML 워커 종료")])]);
+	expect(openMonitor(f)).toBe("HTML 워커 종료");
+	write([life("waiting_background", [shells(1), mons("HTML 워커 종료")]), life("running", [shells(1), mons("HTML 워커 종료")])]);
+	expect(openMonitor(f)).toBeUndefined();
+	write([life("waiting_background", [shells(2)])]);
+	expect(openMonitor(f)).toBe("백그라운드 작업 2개");
+	write([life("idle", [])]);
+	expect(openMonitor(f)).toBeUndefined();
 });

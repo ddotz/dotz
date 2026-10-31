@@ -45,7 +45,17 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("mess
 // peer_counts updates that computer's chip numbers at once; peer_notice is a new notice there. It toasts (tap = that computer, at the item, like a
 // push tap) only while this page is visible: a hidden page gets the push instead, and the hub quiets the push while the page is open (hub/push.ts presence).
 const prSeen = new Set();
+// A conversation of the other computer this page just acted in (a draft sent, fixed or dropped through it): what that computer says about it next is
+// already in front of the owner, so it does not toast here (owner 2026-10-28: a mail sent from 맥북 still raised 맥미니 toasts).
+const PR_ACTED = new Map(), PR_ACTED_MS = 5 * 60_000;
+const prActed = t => { if (t) PR_ACTED.set(t, Date.now()); };
+// The open conversation counts only when it is the other computer's one open in 모니터링 (names repeat across computers: "main" is on both).
+const prQuiet = t => !!t && (Date.now() - (PR_ACTED.get(t) || 0) < PR_ACTED_MS || (t === monCtx && typeof pqPc === "function" && !!pqPc(t)));
 function prLive(e) {
+  if (e.kind === "peer_notice_done") {   // answered or read over there: its toast here goes away
+    for (const s of document.querySelectorAll(".snack[data-peer-nid]")) if ((e.ids || []).includes(s.dataset.peerNid)) s.remove();
+    return;
+  }
   pqSoon();
   const p = PR.list.find(x => !x.self && x.url === (e.kind === "peer_counts" ? e.url : e.peer && e.peer.url));
   if (e.kind === "peer_counts") {
@@ -54,7 +64,7 @@ function prLive(e) {
     prPaint();
     return;
   }
-  if (!p || document.hidden) return;
+  if (!p || document.hidden || prQuiet(e.to)) return;
   const key = `${p.url}|${e.key || e.id}`;
   if (prSeen.has(key)) return;
   prSeen.add(key);
@@ -62,6 +72,8 @@ function prLive(e) {
   const ask = e.notice === "decision" || e.tone === "ask";
   const text = e.title ? (ask ? `답변이 필요해요 · ${e.title}` : e.title) : ask ? "답변이 필요해요" : "새 알림";
   toast(`${p.name} · ${text}`, false, { label: "열기", onclick: () => prOpenItem(p, e.id) }, 8000);
+  const s = document.querySelector(".snack:last-of-type");
+  if (s) s.dataset.peerNid = String(e.id);
 }
 // The same hand-over as a tapped push: ?pc= names the computer, ?n= the notice, which opens there by its kind (a decision opens its sheet).
 function prOpenItem(p, id) {
@@ -124,14 +136,15 @@ window.addEventListener("message", ev => {
   if (p.self) prFrameClose(); else prGo(prUrl(p, `?did=${enc(DEVICE_ID)}`));
 });
 
-function prPick(p) {
+function prPick(p, o = {}) {
   // inside another computer's app frame: the app around it does the switch (back to itself, or to a third computer)
   if (prEmbedded && !p.self) { prClose(false); window.parent.postMessage({ dotz: "peer-pick", url: p.url }, "*"); return; }
   if (p.self) { prClose(); return; }
-  if (!p.online) { toast(`${p.name}에 연결할 수 없어요`, true); return; }
-  toast(`${p.name}(으)로 넘어가요`);
+  // the online flags come from this computer's gateway: while it is unreachable they are stale, so the switch is tried anyway
+  if (!p.online && !selfDown) { toast(`${p.name}에 연결할 수 없어요`, true); return; }
+  if (!o.quiet) toast(`${p.name}(으)로 넘어가요`);
   prClose(false);
-  prGo(prUrl(p, `?did=${enc(DEVICE_ID)}`));   // the device id goes along: the push subscriptions on both computers become one device
+  prGo(prUrl(p, `?did=${enc(DEVICE_ID)}${o.auto ? "&auto=1" : ""}`));   // the device id goes along: the push subscriptions on both computers become one device
 }
 
 function prSheet() {
@@ -143,7 +156,7 @@ function prSheet() {
     return el("button", { type: "button", class: `pr-row${p.self ? " on" : ""}`, "aria-current": p.self ? "true" : null, onclick: () => prPick(p) },
       el("span", { class: "pr-b" }, el("span", { class: "pr-t", text: p.name }), p.self ? el("span", { class: "pr-s", text: "지금 보고 있어요" }) : null),
       note ? el("span", { class: `pr-bd${p.need > 0 ? " need" : ""}`, text: note }) : null,
-      el("span", { class: `pr-st${p.online ? " ok" : ""}`, text: p.online ? "연결됨" : "연결 안 됨" }));
+      el("span", { class: `pr-st${!p.self && selfDown ? "" : p.online ? " ok" : ""}`, text: p.self && selfDown ? "연결 안 됨" : !p.self && selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨" }));
   });
   clear(PR.node.firstElementChild).append(
     el("div", { class: "ds-hd" }, el("span", { class: "ds-ey pr-ey", text: "컴퓨터" }), x),
@@ -215,7 +228,7 @@ const prKeyHint = isMac ? "⌘` · Ctrl+`" : "Ctrl+`";
 function prNext() {
   const n = PR.list.length, at = PR.list.findIndex(p => p.self);
   if (n < 2 || at < 0) return false;
-  const next = Array.from({ length: n - 1 }, (_, i) => PR.list[(at + 1 + i) % n]).find(p => p.online);
+  const next = Array.from({ length: n - 1 }, (_, i) => PR.list[(at + 1 + i) % n]).find(p => p.online || selfDown);
   if (next) prPick(next); else toast("다른 컴퓨터에 연결할 수 없어요", true);
   return true;
 }

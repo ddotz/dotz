@@ -4,10 +4,10 @@
 // has such an entry is switched by restarting the process with the next model in a fresh session with a handover (owner
 // 2026-10-21: a model switch never continues the same session, it would write the whole prompt cache again; see
 // hub/orchestrator.ts switchTo); a chain of bare models stays with omp (hub/runtime/omp.ts). Usage and limit state persists in <data dir>/fallback-usage.json.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 import { cfg, DATA_DIR, entryId, entryOn, type FallbackEntry, isPlain, OMP, parseSelector, writeAtomic } from "./config.ts";
-import { apiKeyBan } from "./apikey-policy.ts";
+import { API_KEY_OFF, apiKeyBan } from "./apikey-policy.ts";
 import { rateLimitDelay } from "./providers.ts";
 
 // A chain the hub switches itself: any entry omp cannot walk.
@@ -123,7 +123,47 @@ function modelDef(selector: string): ModelDef | undefined {
 			for (const m of (JSON.parse(r.stdout.toString()).models ?? []) as Array<ModelDef & { selector: string }>) defs.set(m.selector, m);
 		} catch {}
 	}
+	if (!defs.has(selector)) defs.set(selector, modelsDevDef(selector));
 	return defs.get(selector);
+}
+
+// A model OmO does not list is looked up on models.dev (owner 2026-10-29: a window guessed at 131072 for a 1M model made
+// compaction fire far too early), never guessed. The catalog is cached in <data dir>/models-dev.json for a day; the fetch is
+// blocking like the omp read above and bounded to 5 s. `modelsDev` is the cache file and the network boundary (tests replace both).
+export const modelsDev = {
+	file: join(DATA_DIR, "models-dev.json"),
+	fetch: (): string | undefined => {
+		const r = Bun.spawnSync(["curl", "-sf", "--max-time", "5", "https://models.dev/api.json"], { stdout: "pipe", stderr: "ignore" });
+		return r.success ? r.stdout.toString() : undefined;
+	},
+};
+type DevModel = { name?: string; reasoning?: boolean; modalities?: { input?: string[] }; limit?: { context?: number; output?: number }; cost?: { input?: number; output?: number; cache_read?: number; cache_write?: number } };
+let devCatalog: Record<string, { models?: Record<string, DevModel> }> | undefined;
+function modelsDevDef(selector: string): ModelDef | undefined {
+	if (!devCatalog) {
+		devCatalog = {};
+		try {
+			const { file } = modelsDev;
+			const fresh = existsSync(file) && Date.now() - statSync(file).mtimeMs < 86_400_000;
+			const text = fresh ? readFileSync(file, "utf8") : modelsDev.fetch();
+			if (text) {
+				devCatalog = JSON.parse(text);
+				if (!fresh) writeAtomic(file, text);
+			}
+		} catch {}
+	}
+	const [provider, ...rest] = selector.split("/");
+	const m = devCatalog[provider]?.models?.[rest.join("/")];
+	if (!m?.limit?.context) return undefined;
+	const c = m.cost;
+	return {
+		name: m.name,
+		reasoning: m.reasoning,
+		input: m.modalities?.input?.filter(i => i === "text" || i === "image"),
+		contextWindow: m.limit.context,
+		maxTokens: m.limit.output,
+		...(c ? { cost: { input: c.input ?? 0, output: c.output ?? 0, cacheRead: c.cache_read ?? 0, cacheWrite: c.cache_write ?? 0 } } : {}),
+	};
 }
 
 // An entry with a key runs as its own provider ("<provider>-apikey"), because omp prefers a stored login over an API key for
@@ -141,7 +181,7 @@ const keyedModel = (e: FallbackEntry) => {
 function keyEnv(e: FallbackEntry, worker?: string): Record<string, string> {
 	if (!keyHostOk(keyBaseUrl(e))) throw new Error(`API-key entry ${e.model}: base URL host is not allowed`);
 	const ban = apiKeyBan();
-	if (ban) throw new Error(`API-key entry ${e.model}: no API key while ${ban} is pinned`);
+	if (ban) throw new Error(`API-key entry ${e.model}: no API key (${ban === API_KEY_OFF ? `${API_KEY_OFF} is not true` : `${ban} is pinned`})`);
 	const base = parseSelector(e.model).model;
 	const [provider, ...rest] = base.split("/");
 	const api = KEY_APIS[provider];
@@ -150,6 +190,7 @@ function keyEnv(e: FallbackEntry, worker?: string): Record<string, string> {
 	const row = (full: string) => {
 		const def = modelDef(full);
 		const id = full.split("/").slice(1).join("/");
+		if (!def?.contextWindow) console.warn(`[dotz] API-key entry ${full}: neither OmO nor models.dev lists this model; it runs with assumed limits (context 200000, output 32000). Check the model id.`);
 		return { id, name: `${def?.name ?? id} (API key)`, reasoning: Boolean(def?.reasoning), input: def?.input ?? ["text"], contextWindow: def?.contextWindow ?? 200_000, maxTokens: def?.maxTokens ?? 32_000, ...(def?.cost ? { cost: def.cost } : {}) };
 	};
 	const spec = {
@@ -235,7 +276,7 @@ export class Chain {
 		const b = load().blocked[poolOf(e)];
 		if (b && b.until > at) return b;
 		if (capReached(e, at)) return { why: "cap", until: periodEnd(e.cap!.period, at) };
-		// No API key while a no-API-key account is pinned (hub/apikey-policy.ts); re-checked each minute, like a missing key.
+		// No API key while keys are off or a no-API-key account is pinned (hub/apikey-policy.ts); re-checked each minute, like a missing key.
 		if (e.key_file && (apiKeyBan() || !readKey(e.key_file) || !keyHostOk(keyBaseUrl(e)))) return { why: "error", until: at + KEY_BLOCK_MS };
 		return undefined;
 	}
@@ -348,7 +389,7 @@ export function entryView(e: FallbackEntry) {
 	const why = d && d.why !== "off" ? d : undefined;
 	// an API-key entry is down because OmO is pinned to an account that forbids keys (hub/apikey-policy.ts): say so, with that account
 	const ban = e.key_file && why?.why === "error" ? apiKeyBan() : undefined;
-	return { ...e, enabled: entryOn(e), ...(ban ? { down_reason: "api_key_ban", down_account: ban } : {}), ...(used ? { used: { period: e.cap!.period, tokens: used.tokens, usd: used.usd } } : {}), ...(why ? { down: why.why, until: new Date(why.until).toISOString() } : {}), id: entryId(e) };
+	return { ...e, enabled: entryOn(e), ...(ban === API_KEY_OFF ? { down_reason: "api_key_off" } : ban ? { down_reason: "api_key_ban", down_account: ban } : {}), ...(used ? { used: { period: e.cap!.period, tokens: used.tokens, usd: used.usd } } : {}), ...(why ? { down: why.why, until: new Date(why.until).toISOString() } : {}), id: entryId(e) };
 }
 
 // Failures the chain moves on from: a usage limit, a billing/auth problem only the owner can fix, a provider error. Anything

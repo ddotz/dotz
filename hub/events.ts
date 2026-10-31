@@ -90,7 +90,17 @@ export function replayAfter(lastId: string | null | undefined): string[] | null 
 
 export const lastEventId = (): string => `${BOOT}-${seq}`;
 
+// Listeners of the page-only frames (a notice answered, a conversation read): the push layer takes back notifications they settle (hub/push.ts).
+const broadcastTaps: ((event: Record<string, unknown>) => void)[] = [];
+export const onBroadcast = (fn: (event: Record<string, unknown>) => void): void => void broadcastTaps.push(fn);
 export function broadcast(event: unknown): void {
+	for (const tap of broadcastTaps) {
+		try {
+			tap(event as Record<string, unknown>);
+		} catch (e) {
+			console.error(`broadcast listener failed: ${(e as Error).message}`);
+		}
+	}
 	seq++;
 	const frame = `id: ${BOOT}-${seq}\ndata: ${JSON.stringify(event)}\n\n`;
 	frames.push({ seq, frame });

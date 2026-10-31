@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { parseChoices } from "./choices.ts";
 import type * as Orchestrator from "./orchestrator.ts";
 import { cfg } from "./config.ts";
-import { errorAnswer, errorAsk, type OrchError, plainError, startErrorWatch } from "./orch-error.ts";
+import { ERROR_ASK_HOLD_MS, ERROR_ASK_REPEAT_HOLD_MS, errorAnswer, errorAsk, errorAskFile, type OrchError, plainError, startErrorWatch } from "./orch-error.ts";
 import { createPrompts } from "./prompts.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
@@ -83,7 +83,8 @@ test("the ask is one [ask] with the restart option recommended first, and its an
 	expect(errorAnswer("다시 시작")).toBeUndefined();
 });
 
-test("five failed turns in a row give up once: the error is marked, the ask goes out once, a good turn clears it", async () => {
+test("five failed turns in a row give up once: the error is marked at once, the ask goes out once after the hold", async () => {
+	rmSync(errorAskFile(), { force: true });
 	const asked: OrchError[] = [];
 	o.setErrorHandler(e => asked.push(e));
 	o.start();
@@ -92,6 +93,9 @@ test("five failed turns in a row give up once: the error is marked, the ask goes
 		agent.push(failed("stream start timed out"));
 		await flush();
 	}
+	expect(o.orch.error).toBeDefined();
+	expect(asked).toHaveLength(0);
+	await advance(ERROR_ASK_HOLD_MS);
 	expect(asked).toHaveLength(1);
 	expect(o.orch.error).toMatchObject({ kind: "timeout", text: "모델 연결이 계속 시간 초과로 끊겨요" });
 	expect(Date.parse(o.orch.error!.since)).toBeGreaterThan(0);
@@ -122,6 +126,48 @@ test("a restart starts only the orchestrator and replays the open prompts once; 
 	started.at(-1)!.push({ type: "assistant", text: "-", stop: "stop" });
 	await flush();
 	expect(o.orch.error).toBeUndefined();
+});
+
+test("an episode over inside the hold goes to the worklog with no ask and no recovery alert; a repeat within the cooldown waits longer", async () => {
+	const asked: OrchError[] = [];
+	const alerts: string[] = [];
+	const notices: string[] = [];
+	o.setErrorHandler(e => asked.push(e));
+	o.setAlertHandler(t => alerts.push(t));
+	o.setNoticeHandler(t => notices.push(t));
+	const episode = async () => {
+		for (let i = 0; i < 6; i++) {
+			started.at(-1)!.push(failed("stream start timed out"));
+			await flush();
+		}
+		expect(o.orch.error).toBeDefined();
+	};
+	const recover = async () => {
+		started.at(-1)!.push({ type: "assistant", text: "-", stop: "stop" });
+		await flush();
+		expect(o.orch.error).toBeUndefined();
+	};
+
+	// the ask of the first test was sent moments ago: past the normal hold, still quiet, and over before the longer one
+	await episode();
+	await advance(ERROR_ASK_HOLD_MS + 60_000);
+	expect(asked).toHaveLength(0);
+	await recover();
+	await advance(ERROR_ASK_REPEAT_HOLD_MS);
+	expect(asked).toHaveLength(0);
+	expect(alerts).toEqual([]);
+	expect(notices).toHaveLength(1);
+	expect(notices[0]).toContain("스스로 다시 연결됐어요");
+
+	// no ask in the cooldown: a lasting episode is asked after the normal hold, and its end is told
+	rmSync(errorAskFile(), { force: true });
+	await episode();
+	await advance(ERROR_ASK_HOLD_MS);
+	expect(asked).toHaveLength(1);
+	await recover();
+	expect(alerts).toHaveLength(1);
+	expect(alerts[0]).toContain("다시 연결됐어요");
+	expect(notices).toHaveLength(1);
 });
 
 test("the watch resumes once per episode, only after the model host answers", async () => {

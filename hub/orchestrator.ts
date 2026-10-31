@@ -8,26 +8,27 @@ import { join } from "node:path";
 import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { emitEventActivity, runningSubagents, statusActivity } from "./activity.ts";
 import { pendingAsksBlock } from "./asks.ts";
-import { cfg, chainAfter, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
+import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
 import { dropSection, renderState } from "./recall-parts.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { pinnedLimitAlert } from "./accounts-api.ts";
-import { authStamp, blockText, limitAccount, limitKind, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
+import { authStamp, blockText, limitAccount, limitKind, markTold, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { writeOrchestratorProfile } from "./runtime/omo.ts";
 import { atTime, Chain, ERROR_STREAK_STOP, ErrorStreak, failsOver, failureReason, hubChain, keyedSelector, type Move, quotaResetAt, Reverter, revertWhy } from "./fallback.ts";
 import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.ts";
 import { setupsSummary } from "./workchannels.ts";
 import { orchestratorTurnStarted } from "./notices.ts";
-import { type OrchError, plainError } from "./orch-error.ts";
+import { errorAskHold, noteErrorAsked, type OrchError, plainError } from "./orch-error.ts";
 import { isLater, LATER_LINE } from "./tone.ts";
 
-const STATE = join(DATA_DIR, "orchestrator.json");
 const ROTATE_BYTES = 50e6;
-const ROTATE_TOKENS = cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens;
+// The compaction point of a session: the running model's own (config context.models, the 컨텍스트 screen) or
+// orchestrator.rotate_tokens; the factory re-reads it at every idle point, so a saved value applies from the next turn.
+export const orchestratorCompactAt = (model = ""): number => compactAtFor(model || main.orch.activeModel || selectorOf(orchestratorModel()), cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens);
 export const MAX_RESTARTS = 3;
 export const RESTART_WINDOW_MS = 10 * 60_000;
 // pausedUntil: a usage-limit pause, so a gateway restart inside it holds messages instead of replaying them into the limit.
@@ -35,56 +36,6 @@ export const RESTART_WINDOW_MS = 10 * 60_000;
 // start was announced, its end is announced once a turn succeeds on a non-key entry).
 type Saved = { sessionFile?: string; model?: string; runtime?: string; pausedUntil?: string; pausedKind?: "owner"; pausedAuth?: number; activeModel?: string; apiSince?: string };
 
-export const orch = {
-	status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",
-	// Why a "rate-limited" pause is on: a usage limit, or a billing/auth problem only the owner can fix.
-	pauseKind: "rate" as "rate" | "owner",
-	// Who stopped it (the run state line says "주인님이 멈추게 했어요" for the owner's own stop, hub/runstate.ts).
-	stoppedBy: "" as "" | "owner",
-	stoppedAt: "",
-	sessionFile: "",
-	// The model the running process answers on now: the configured one, or the fallback it switched to (reset at every start).
-	activeModel: "",
-	startedAt: "",
-	lastText: "",
-	rateLimitedUntil: "",
-	restarts: [] as number[],
-	// Set when the automatic retries gave up (markError); cleared by the next successful turn. The web banner reads it.
-	error: undefined as OrchError | undefined,
-	ctx: newCtx(),
-};
-let proc: AgentProcess | undefined;
-// The runtime of the running process, chosen at each start().
-let adapter: RuntimeAdapter | undefined;
-export const orchestratorPid = (): number | undefined => proc?.pid;
-let stopping = false;
-let rotating = false;
-let restarting = false;
-let pendingRestart = false;
-// A model/effort change made while a turn or a compaction ran: switched in place at turn_end / when the compaction ends (applyModelChange).
-let pendingModel = false;
-let turnsSinceStart = 0;
-let lastTurnEnd = Date.now();
-let keepalives = 0;
-let inKeepalive = false;
-const held: { text: string; header: boolean }[] = [];
-// Owner prompts sent to the process while no turn has started since (cleared at turn_start). A process that exits or is
-// killed by the watchdog first would lose them (2026-10-21 01:02 KST: a web message sent during a compaction was never
-// answered), so they are held again and go to the next process.
-const unstarted: { text: string; header: boolean }[] = [];
-// A process started with a fallback chain: after a failed request the runtime may move to the next model by itself and
-// redo the turn, so the failure is acted on (pause, retry, alert) only when no such switch follows within a short grace.
-const FALLBACK_GRACE_MS = 3000;
-let chained = false;
-let errorHold: Timer | undefined;
-// The chain the hub drives itself (conditional entries, spend caps; hub/fallback.ts), with what is waiting for an idle moment.
-let chain: Chain | undefined;
-let capped: { move?: Move } | undefined;
-let continueAfterSwitch = false;
-// A chain switch in progress: the next start() begins a fresh session with a handover and a note on the new entry.
-let freshSwitch: { again: boolean } | undefined;
-// Whether the subscription's usage report says it can take requests (undefined: unknown), read once a minute while on an API key.
-let usable: boolean | undefined;
 export const subscriptionCheck = {
 	usable: async (): Promise<boolean | undefined> => {
 		const r = await anthropicUsage("orchestrator").catch(() => undefined);
@@ -92,652 +43,9 @@ export const subscriptionCheck = {
 		return r.limits.every(l => l.amount.remaining >= 1);
 	},
 };
-// Going back to the configured model after the runtime moved the process to a fallback by itself (not when the hub drives a chain).
-const reverter = new Reverter();
-let startedModel = "";
-// Set when a compaction finished: the next owner message sent to the process carries the retain nudge once (no extra turn).
-let retainNext = false;
-// Set when a session was resumed (gateway or crash restart): the next owner message carries the lane questions still
-// waiting for the owner's answer once, as the session may not have heard them in full.
-let asksNext = false;
-// An owner prompt leads with one line of what runs now (lanes, workers), so the orchestrator need not poll for it; the
-// provider is registered by main.ts (lanes.ts would be an import cycle) and the line is empty when nothing runs.
-let turnHeader: () => string = () => "";
-export function setTurnHeader(fn: () => string): void {
-	turnHeader = fn;
-}
-function sendOwner(text: string, header = false): void {
-	settleRevert(false);
-	const nudge = retainNext ? `\n\n${msg().retainNudge}` : "";
-	const asks = asksNext ? pendingAsksBlock() : "";
-	retainNext = false;
-	asksNext = false;
-	const line = header ? turnHeader() : "";
-	if (proc) unstarted.push({ text, header });
-	proc?.send((line ? `${line}\n` : "") + text + nudge + (asks ? `\n\n${asks}` : ""), "followUp");
-}
-// Switches the process back to its configured model once that is due: before a prompt starts a turn (a refusal, a provider
-// error, or a usage limit that has reset), or at an idle moment for a usage limit that has reset. Never in the middle of a turn.
-function settleRevert(idle: boolean): void {
-	if (!proc?.setModel || chain || orch.status === "working" || orch.status === "rate-limited" || (idle && orch.status !== "idle")) return;
-	const to = reverter.take(idle);
-	if (!to) return;
-	proc.setModel(to);
-	workersFollow(to);
-	orch.activeModel = to;
-	const line = msg().modelReverted(parseSelector(to).model);
-	log(`orchestrator ${line}`);
-	onAlert(`${NAME}: ${line}`);
-}
-// One line for the worklog when the runtime moves the orchestrator (or one of its task workers) to the next model of a fallback chain.
-let onNotice: (text: string) => void = () => {};
-export function setNoticeHandler(fn: (text: string) => void): void {
-	onNotice = fn;
-}
-let onAlert: (text: string) => void = () => {};
-export function setAlertHandler(fn: (text: string) => void): void {
-	onAlert = fn;
-}
-// An error episode begins: the owner is asked once (main.ts posts the [ask]).
-let onError: (e: OrchError) => void = () => {};
-export function setErrorHandler(fn: (e: OrchError) => void): void {
-	onError = fn;
-}
-// After any orchestrator restart: the owner's open prompts go in again (outbound.ts replayOpen); returns how many, and the
-// texts it took over (a held copy of those must not be sent a second time).
-let onRestarted: () => { replayed: number; texts: string[] } = () => ({ replayed: 0, texts: [] });
-export function setRestartedHandler(fn: () => { replayed: number; texts: string[] }): void {
-	onRestarted = fn;
-}
-let replayAfterStart = false;
-let probeAfterStart = false;
-function markError(raw: string): void {
-	if (orch.error) return;
-	orch.error = { since: new Date().toISOString(), ...plainError(raw), raw: raw.replace(/\s+/g, " ").slice(0, 200) };
-	log(`orchestrator error episode begins: ${orch.error.kind} (${orch.error.raw.slice(0, 120)})`);
-	// asked once per stoppage, also across a gateway restart or after a manual resume that fails again (hub/limit-alert.ts)
-	if (noteBlock("orchestrator", "", "error").alert) onError(orch.error);
-}
-function clearError(): void {
-	if (!orch.error) return;
-	log("orchestrator error episode over: a turn succeeded");
-	orch.error = undefined;
-}
+
 // The tiny turn that tests a resumed orchestrator when no owner request was open to replay; it answers "-" (never posted).
 export const PROBE_TEXT = "[dotz gateway] 연결 확인입니다. 아무 작업도 하지 말고 '-' 한 글자로만 답하세요.";
-// One automatic resume: restart, and with no open request to replay, one tiny probe turn.
-export function resumeAfterError(): void {
-	probeAfterStart = true;
-	restart();
-}
-// The owner's 재개 (the stopped banner, the paused line, the error ask's 다시 시작): the pause ends now instead of at its timer, the
-// process starts again, and the held or open requests go in; with none, one tiny probe turn tests the model. A success clears the
-// error and sends the one recovery line; a failure pauses again quietly (the stoppage was already announced).
-export function resumeNow(): "resumed" {
-	clearTimeout(resumeTimer);
-	resumeTimer = undefined;
-	if (orch.status === "rate-limited") {
-		save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
-		orch.status = "idle";
-		orch.rateLimitedUntil = "";
-	}
-	if (orch.error) orch.error.waiting = false;
-	probeAfterStart = true;
-	restart();
-	return "resumed";
-}
-
-// Called when a turn ended and the orchestrator is idle again; main.ts sends the web messages queued for it.
-let onIdle: () => void = () => {};
-export function setIdleHandler(fn: () => void): void {
-	onIdle = fn;
-}
-
-// Messages that arrive while a turn runs are queued into the same agent run, so one run can answer several prompts.
-// Each user prompt and each final answer is reported as it happens, letting the gateway route every answer to the
-// channel that asked it instead of posting only the run's last text.
-let onPrompt: (text: string) => void = () => {};
-let onAnswer: (text: string) => void = () => {};
-let onText: (text: string) => void = () => {};
-export function setAnswerHandlers(prompt: (text: string) => void, answer: (text: string) => void, text: (text: string) => void = () => {}): void {
-	onText = text;
-	onPrompt = prompt;
-	onAnswer = answer;
-}
-
-const saved = (): Saved => (existsSync(STATE) ? JSON.parse(readFileSync(STATE, "utf8")) : {});
-let currentModel = "";
-const save = (s: Saved) => writeAtomic(STATE, `${JSON.stringify({ ...saved(), ...s }, null, 2)}\n`);
-// Compaction needs an idle process: a runtime may abort a running turn to compact, so a busy orchestrator queues it until turn_end.
-const port: CompactPort = { idle: () => orch.status === "idle", compact: () => proc?.compact(), refreshUsage: () => proc?.refreshUsage() };
-
-function recall(): string {
-	// The mail and calendar section is only useful while zele runs (zele.enabled defaults to on, as in zele.ts).
-	const zeleOn = (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false;
-	const modeText = readFileSync(modeFile(), "utf8");
-	const mode = zeleOn ? modeText : dropSection(modeText, "## Mail and calendar");
-	const stateFile = join(DATA_DIR, "state.json");
-	const state = existsSync(stateFile) ? renderState(readFileSync(stateFile, "utf8"), stateFile) : "{}";
-	const id = cfg.identity;
-	const identity = existsSync(IDENTITY_FILE) ? readFileSync(IDENTITY_FILE, "utf8").slice(0, 3000) : msg().identityFallback(id?.character ?? "", id?.tone ?? "");
-	// A cut file says so: RULES.md outgrew the old 6000-character cap and silently lost its last lines (blocked commands).
-	const file = (p: string, max: number) => {
-		const t = existsSync(p) ? readFileSync(p, "utf8") : "";
-		return t.length > max ? `${t.slice(0, max)}\n[... cut at ${max} characters; read ${p} for the rest]` : t;
-	};
-	const features = featurePrompt(DATA_DIR, "orchestrator", log);
-	return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, 3000), memory: `${file(paths.owner, 3000)}\n${file(paths.boundaries, 2000)}`, setups: setupsSummary(), state }));
-}
-
-function handover(runtime: RuntimeAdapter, previous: string): string {
-	const tail = runtime.recentExchanges(previous);
-	if (tail === undefined) return "";
-	return msg().handover(previous, tail);
-}
-
-// A failed request: a usage limit or a billing/auth problem pauses the orchestrator, a temporary provider error is retried with backoff.
-// With a hub-driven chain the next entry takes over first (a temporary error is retried a few times before that).
-function handleError(e: AgentError): void {
-	if (chain && failsOver(e.kind) && !(e.kind === "transient" && transientTries < TRANSIENT_RETRIES)) void failOver(e).then(moved => !moved && legacyError(e));
-	else legacyError(e);
-}
-function legacyError(e: AgentError): void {
-	if (e.kind === "rate" || e.kind === "owner") void scheduleResume(e.text, e.kind);
-	else if (e.kind === "transient") retryTransient(e.text);
-}
-async function failOver(e: AgentError): Promise<boolean> {
-	const active = chain;
-	if (!active) return false;
-	const reason = failureReason({ kind: e.kind, text: e.text });
-	const until = reason === "quota" ? await quotaResetAt(e.text, active.selector(active.active), "orchestrator") : undefined;
-	if (chain !== active) return false;
-	const move = active.fail(reason, until);
-	if (!move) return false;
-	return switchTo(move, true);
-}
-// Restarts with another entry of the chain (start() picks it from the persisted limit and spend state) in a fresh session
-// with a handover, never on the same session (owner 2026-10-21: "쿐시 깨지는거 곤란하다"; a model switch on a session
-// writes its whole prompt cache again, a handover is small). `again` tells it to answer the request that just failed. One
-// switch at a time: a revert racing a failover is dropped. The alert channel hears an API-key episode once at its start
-// and once at its end (the first turn that succeeds off the key), not at every hop or probe. The same holds for the notice
-// and the log line: a fall-back says when the limit ends (KST), a return waits for the first turn that works on the entry
-// it returned to, and a return that falls back again right away (a failed probe) says nothing at all.
-let returning: Move | undefined;
-function switchTo(move: Move, again: boolean): boolean {
-	if (!chain || restarting) return false;
-	const quiet = move.why === "revert" || (returning !== undefined && move.why === "quota");
-	returning = move.why === "revert" ? move : undefined;
-	if (!quiet) {
-		const reset = move.why === "quota" ? chain.down(move.from)?.until : undefined;
-		const back = reset ? `${new Date(reset).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" })} (${tzLabel()})` : undefined;
-		const line = msg().fallbackMove(chain.label(move.from), chain.label(move.to), move.why, back);
-		log(`orchestrator ${line}`);
-		onNotice(line);
-		if (!chain.list[move.to].key_file && !saved().apiSince && (move.why === "quota" || move.why === "error")) onAlert(`${NAME}: ${line}`);
-	}
-	const keyed = Boolean(chain.list[move.to].key_file);
-	if (keyed && !saved().apiSince) {
-		save({ apiSince: now() });
-		onAlert(`${NAME}: ${msg().apiStart(chain.label(move.to))}`);
-	}
-	freshSwitch = { again };
-	continueAfterSwitch = again;
-	restart();
-	return true;
-}
-// At an idle moment: act on a spend cap reached during the turn, or go back to an earlier entry whose limit has reset.
-function settleChain(): boolean {
-	if (!chain || orch.status !== "idle" || runningSubagents("orchestrator") > 0) return false;
-	if (capped) {
-		const reached = capped;
-		capped = undefined;
-		if (reached.move) switchTo(reached.move, false);
-		else pauseExhausted(chain, chain.exhaustedUntil() ?? chain.down(chain.active)?.until ?? Date.now() + 3_600_000);
-		return true;
-	}
-	const onKey = Boolean(chain.list[chain.active].key_file);
-	if (onKey && usable === false) return false;
-	const back = chain.revertTarget(undefined, onKey && usable === true);
-	if (!back) return false;
-	switchTo(back, false);
-	return true;
-}
-// Every entry is spent: hold messages until the earliest cap period ends, then start again.
-function pauseExhausted(c: Chain, until: number): void {
-	orch.status = "rate-limited";
-	orch.pauseKind = "rate";
-	orch.rateLimitedUntil = new Date(until).toISOString();
-	const at = new Date(until).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
-	const line = msg().fallbackExhausted(c.label(c.active), at);
-	log(`orchestrator ${line}`);
-	onNotice(line);
-	if (noteBlock("orchestrator", c.label(c.active), "limit").alert) onAlert(`${NAME}: ${line}`);
-	pauseAlerted = true;
-	clearTimeout(resumeTimer);
-	atTime(until, t => (resumeTimer = t), () => {
-		resumeTimer = undefined;
-		pauseAlerted = false;
-		orch.status = "idle";
-		restart();
-	});
-}
-
-async function readEvents(p: AgentProcess): Promise<void> {
-	for await (const ev of p.events) {
-		emitEventActivity("orchestrator", ev);
-		noteEvent(orch.ctx, ev, port);
-		switch (ev.type) {
-			case "turn_start":
-				orchestratorTurnStarted();
-				clearTimeout(errorHold);
-				orch.status = "working";
-				unstarted.length = 0;
-				clearTimeout(watchdog);
-				clearTimeout(transientTimer);
-				transientTimer = undefined;
-				break;
-			case "turn_end":
-				orch.status = orch.status === "rate-limited" ? "rate-limited" : "idle";
-				settleRevert(true);
-				if (orch.status === "idle" && settleChain()) break;
-				lastTurnEnd = Date.now();
-				if (inKeepalive) inKeepalive = false;
-				else if (orch.status === "idle") keepalives = 0;
-				if (orch.status === "idle" && pauseAlerted) {
-					pauseAlerted = false;
-					for (const h of held.splice(0)) sendOwner(h.text, h.header);
-				} else if (orch.status === "idle") {
-					if (rotateWhenIdle || (++turnsSinceStart > 1 && orch.ctx.tokens > ROTATE_TOKENS && !compacting())) limitContext();
-					else if (pendingRestart) {
-						pendingRestart = false;
-						restart();
-					} else if (pendingModel) {
-						pendingModel = false;
-						if (!switchInPlace()) restart();
-					} else {
-						proc?.refreshUsage();
-						flushCompact(orch.ctx, port);
-					}
-				}
-				if (orch.status === "idle") setTimeout(() => orch.status === "idle" && onIdle(), 200);
-				break;
-			case "user":
-				if (!isResumeNote(ev.text)) onPrompt(ev.text);
-				break;
-			case "assistant":
-				if (ev.text) {
-					orch.lastText = isLater(ev.text) ? LATER_LINE : ev.text;
-					onText(ev.text);
-				}
-				if (ev.text && (ev.stop === "stop" || ev.stop === "length")) onAnswer(ev.text);
-				if (ev.stop !== "error" && ev.text && returning && chain && p === proc) {
-					const line = msg().fallbackMove(chain.label(returning.from), chain.label(returning.to), "revert");
-					returning = undefined;
-					log(`orchestrator ${line}`);
-					onNotice(line);
-				}
-				if (ev.stop !== "error" && ev.text && chain && !chain.list[chain.active].key_file && saved().apiSince) {
-					save({ apiSince: undefined });
-					onAlert(`${NAME}: ${msg().apiEnd(chain.label(chain.active))}`);
-				}
-				if (ev.stop !== "error") {
-					transientTries = 0;
-					errorStreak.ok();
-					streakAlerted = false;
-					clearError();
-					if (noteRecovered("orchestrator")) onAlert(`${NAME}: ${recoveryText()}`);
-				} else if (inKeepalive && keepaliveErrorDropped(ev.error.kind)) {
-					log(`keepalive failed (${ev.error.text.replace(/\s+/g, " ").slice(0, 120)}); not retried, the next message is the next try`);
-				} else if (ev.error.kind !== "rate" && ev.error.kind !== "owner" && errorStreak.fail() !== "go") {
-					// A run of failed turns: no more automatic retries, failovers or keepalives until a turn succeeds (the owner's
-					// next message is the next try); the owner hears it once.
-					if (errorStreak.stopped && !streakAlerted) {
-						streakAlerted = true;
-						log(`orchestrator ${ERROR_STREAK_STOP} failed turns in a row; automatic retries stop until a turn succeeds`);
-						markError(ev.error.text);
-					}
-				} else if (chained) {
-					const failed = ev.error;
-					clearTimeout(errorHold);
-					errorHold = setTimeout(() => handleError(failed), FALLBACK_GRACE_MS);
-				} else handleError(ev.error);
-				break;
-			case "session":
-				orch.sessionFile = ev.ref;
-				save({ sessionFile: orch.sessionFile, model: currentModel, runtime: adapter?.id, activeModel: orch.activeModel });
-				if (orch.status === "starting") {
-					orch.status = "idle";
-					flushCompact(orch.ctx, port);
-				}
-				break;
-			case "spend": {
-				const reached = chain?.spend(ev.tokens, ev.usd);
-				if (reached?.capped) capped = reached;
-				break;
-			}
-			case "compaction":
-				if (ev.state === "done") {
-					compactRetried = false;
-					// The compacted session keeps going: the next owner message reminds it to retain, and carries the lane
-					// questions still waiting for the owner (the summary may have cut them); the dotz extension re-reads the
-					// contract and state.json (open_tasks) into it.
-					retainNext = true;
-					asksNext = true;
-				} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > ROTATE_TOKENS && /retry compaction/i.test(ev.error) && !compactRetried) {
-					// OmO refuses a summary when the session changed while it was made; the next idle point tries once more.
-					compactRetried = true;
-					log(`orchestrator compaction raced a session write (${ev.error.slice(0, 120)}); retrying at the next idle point`);
-					orch.ctx.compaction = { state: "queued", at: now() };
-					if (orch.status === "idle") flushCompact(orch.ctx, port);
-				} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > ROTATE_TOKENS) {
-					log(`orchestrator compaction failed (${ev.error.slice(0, 160)}); moving to a fresh session with a handover`);
-					if (orch.status === "idle") rotate();
-					else rotateWhenIdle = true;
-				}
-				// A model/effort change that arrived during the compaction: a set_model mid-compaction cancels it.
-				if (pendingModel && !compacting() && !rotating && orch.status === "idle") {
-					pendingModel = false;
-					if (!switchInPlace()) restart();
-				}
-				// Owner prompts that arrived during the compaction go in now (OmO refuses a prompt while a requested
-				// compaction runs).
-				if (!compacting() && !rotating && !restarting && orch.status === "idle" && held.length) {
-					log(`orchestrator compaction over; delivering ${held.length} prompt(s) that arrived during it`);
-					for (const h of held.splice(0)) sendOwner(h.text, h.header);
-					armWatchdog();
-				}
-				break;
-			case "fallback": {
-				log(`orchestrator model fallback${ev.worker ? " (task worker)" : ""}: ${ev.from} -> ${ev.to}${ev.reason ? ` (${ev.reason.replace(/\s+/g, " ").slice(0, 200)})` : ""}`);
-				const line = msg().modelFallback(ev.from, ev.to, ev.reason, ev.worker);
-				if (!ev.worker) {
-					clearTimeout(errorHold);
-					orch.activeModel = ev.to;
-				}
-				if (ev.worker || chain) onNotice(line);
-				else {
-					// A silent switch to a weaker model went unnoticed for 50 minutes: the owner hears about it where alerts go.
-					if (p.setModel) reverter.note(startedModel, revertWhy(ev.reason ?? "", adapter?.classifyError(ev.reason ?? "")), ev.from, ev.reason ?? "");
-					onAlert(`${NAME}: ${line}${p.setModel ? "" : ` ${msg().modelNoRevert}`}`);
-				}
-				break;
-			}
-		}
-	}
-}
-
-// The runtime can stop reading prompts after a failed turn; if no turn starts soon after a delivery, restart it (the session is resumed).
-const WATCHDOG_MS = 120_000;
-let watchdog: ReturnType<typeof setTimeout> | undefined;
-function armWatchdog(): void {
-	clearTimeout(watchdog);
-	if (orch.status === "working" || orch.status === "rate-limited") return;
-	watchdog = setTimeout(() => {
-		log("orchestrator did not start a turn after a delivery; restarting it");
-		const hung = proc;
-		hung?.kill();
-		setTimeout(() => {
-			if (proc === hung) hung?.kill(true);
-		}, 10_000);
-	}, WATCHDOG_MS);
-}
-
-// While paused by a rate limit (5h or a spent week), prompts are held instead of each starting a turn that fails at once;
-// right after the spent window resets (from the provider's usage report; retry-after otherwise) they all go in, oldest
-// first, after the resume note. A retry that hits the limit again re-arms quietly. A billing/auth error ("owner") pauses
-// the same way, but nothing says when the owner fixes it, so it is probed on a slow backoff (ownerRetryMs) or when the login changes; the owner is told once per episode (limit-alert.ts).
-const isResumeNote = (t: string) => isNote(t, "rateLead") || isNote(t, "providerLead") || isNote(t, "transientLead");
-let resumeTimer: Timer | undefined;
-let pausing = false;
-let pauseAlerted = false;
-async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<void> {
-	if (resumeTimer || pausing) return;
-	pausing = true;
-	orch.status = "rate-limited";
-	orch.rateLimitedUntil = "";
-	const owner = kind === "owner";
-	const lk = limitKind(err, kind);
-	const account = limitAccount(err, currentModel);
-	log(`orchestrator blocked (${lk}, ${account}): ${err.replace(/\s+/g, " ").slice(0, 300)}`);
-	let note = owner ? noteBlock("orchestrator", account, lk) : undefined;
-	const { ms: retry, reset } = owner ? { ms: ownerRetryMs(note!.failures), reset: false } : await rateLimitDelay(err, currentModel);
-	pausing = false;
-	if (orch.status !== "rate-limited") return;
-	note ??= noteBlock("orchestrator", account, lk);
-	const until = new Date(Date.now() + retry);
-	orch.rateLimitedUntil = until.toISOString();
-	const at = until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
-	orch.pauseKind = owner ? "owner" : "rate";
-	const authSince = authStamp();
-	save({ pausedUntil: orch.rateLimitedUntil, pausedKind: owner ? "owner" : undefined, pausedAuth: owner ? authSince : undefined });
-	if (note.alert) {
-		if (owner) onAlert(`${NAME}: ${blockText(lk as "auth" | "billing", account, providerOf(currentModel), retry)}`);
-		else if (pinnedLimitAlert(until.getTime())) onAlert(`${NAME}: ${pinnedLimitAlert(until.getTime())}`);
-		else onAlert(`${NAME}: 사용량 한도에 걸려서 멈췄어요. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리해요.`);
-	}
-	pauseAlerted = true;
-	armResume(retry, owner, authSince);
-}
-// A billing/auth pause also ends the moment the login store changes (the owner logged in again), still without a word.
-function armResume(retry: number, owner: boolean, authSince: number): void {
-	const fire = () => {
-		clearTimeout(resumeTimer);
-		resumeTimer = undefined;
-		save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
-		orch.status = "idle";
-		// The held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds, so a
-		// retry that hits the limit again loses nothing.
-		const m = msg();
-		settleRevert(false);
-		proc?.send(owner ? m.orchProvider(held.length) : m.orchRate(held.length), "followUp");
-		armWatchdog();
-	};
-	const mine = (resumeTimer = setTimeout(fire, retry));
-	if (owner) {
-		watchAuth(authSince, () => resumeTimer === mine, () => {
-			// The running process keeps the login and account pin it read at start (Mac mini 2026-10-26: after a new /login and a pin
-			// on the new account, the retry still went out on the dead one). A fresh process reads the store again; the held prompts
-			// are replayed into it, and a login that is still broken pauses again without a new alert.
-			log("orchestrator login store changed; restarting it on the new login and retrying the held prompts");
-			clearTimeout(resumeTimer);
-			resumeTimer = undefined;
-			save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
-			orch.status = "idle";
-			if (proc) restart();
-			else fire();
-		});
-	}
-}
-
-// Overloaded/5xx/network errors: after a failed turn, retry with backoff (bounded). Messages arriving meanwhile are not
-// held: a new turn cancels the pending retry and itself serves as the retry. Past the limit the owner is told once.
-let transientTries = 0;
-const errorStreak = new ErrorStreak();
-let streakAlerted = false;
-let transientTimer: Timer | undefined;
-function retryTransient(err: string): void {
-	if (transientTimer) return;
-	if (transientTries >= TRANSIENT_RETRIES) {
-		transientTries = 0;
-		markError(err);
-		return;
-	}
-	const wait = transientBackoff(transientTries++);
-	log(`orchestrator provider error (${err.slice(0, 120)}); retry ${transientTries}/${TRANSIENT_RETRIES} in ${Math.round(wait / 1000)}s`);
-	transientTimer = setTimeout(() => {
-		transientTimer = undefined;
-		if (orch.status !== "idle") return;
-		settleRevert(false);
-		proc?.send(msg().orchTransient, "followUp");
-		armWatchdog();
-	}, wait);
-}
-
-// Past ROTATE_TOKENS of context, at an idle point, the context is made small so each message does not re-read a huge
-// prefix (the runtime's own threshold is sized for coding sessions, not a secretary). A runtime that compacts in place
-// (OmO) keeps its session and with it what it was doing; a fresh session with a handover of recent exchanges forgot the
-// progress, so that is only the fallback when compaction fails (and the omp/Claude Code behaviour).
-let rotateWhenIdle = false;
-let compactRetried = false;
-const compacting = () => orch.ctx.compaction.state === "queued" || orch.ctx.compaction.state === "compacting";
-function limitContext(): void {
-	if (!rotateWhenIdle && adapter?.caps.contextLimit === "compact") {
-		log(`orchestrator context ${orch.ctx.tokens} tokens > ${ROTATE_TOKENS}; compacting in place`);
-		requestCompact(orch.ctx, port);
-	} else rotate();
-}
-
-// The nightly handover (hygiene.ts): an idle orchestrator whose session file grew past `limitBytes` starts a fresh
-// session with a handover. Returns what it did, or undefined when nothing was needed.
-export function nightlyHandover(limitBytes: number): string | undefined {
-	if (!proc || orch.status !== "idle" || !orch.sessionFile || !existsSync(orch.sessionFile)) return undefined;
-	const bytes = statSync(orch.sessionFile).size;
-	if (bytes <= limitBytes) return undefined;
-	rotate();
-	return `orchestrator session file ${+(bytes / 1e6).toFixed(2)} MB > ${+(limitBytes / 1e6).toFixed(0)} MB: rotated to a fresh session with a handover`;
-}
-
-function rotate(): void {
-	if (!proc || rotating) return;
-	log(`orchestrator context ${orch.ctx.tokens} tokens; rotating to a fresh session`);
-	rotateWhenIdle = false;
-	compactRetried = false;
-	rotating = true;
-	proc.kill();
-}
-
-export function start(): void {
-	if (proc) return;
-	stopping = false;
-	const { sessionFile: prior, runtime: priorRuntime, activeModel: priorActive } = saved();
-	const model = selectorOf(orchestratorModel());
-	const runtime = runtimeFor("orchestrator");
-	const entries = chainAfter(model, fallbackChain("orchestrator"));
-	// The hub switches the chain itself on OmO, and on omp when an entry is conditional (fallback.ts hubChain); otherwise the
-	// runtime gets the models as its own plain fallback list.
-	const driven = hubChain(runtime.id, entries);
-	const nextChain = driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined;
-	let spawnModel = model;
-	if (nextChain) {
-		const until = nextChain.exhaustedUntil();
-		if (until !== undefined) {
-			adapter = runtime;
-			currentModel = model;
-			chain = nextChain;
-			return pauseExhausted(nextChain, until);
-		}
-		nextChain.active = nextChain.initial();
-		spawnModel = nextChain.selector(nextChain.active);
-	}
-	// A change of runtime starts a fresh session with a handover (a session written by omp is not resumed by OmO; a state
-	// saved before the runtime was recorded is omp's). So does a chain switch (switchTo), and a start whose entry moves onto
-	// or off an API key since the session last ran (a gateway restart after the limit lifted). A model or effort change in
-	// config does not: the session is resumed on the new model, as OmO does on /model (owner 2026-10-21: a fresh session on
-	// every switch reloaded the whole context).
-	const keyMove = Boolean(priorActive) && priorActive !== spawnModel && (keyedSelector(priorActive) || keyedSelector(spawnModel));
-	const rotate = prior && existsSync(prior) && (rotating || Boolean(freshSwitch) || keyMove || statSync(prior).size > ROTATE_BYTES || (priorRuntime ?? "omp") !== runtime.id);
-	const switched = freshSwitch ?? (keyMove ? { again: false } : undefined);
-	freshSwitch = undefined;
-	rotating = false;
-	pendingModel = false;
-	orch.ctx = newCtx();
-	turnsSinceStart = 0;
-	const resume = prior && existsSync(prior) && !rotate;
-	// The keepalive's idle clock continues from the session's last answer, not from this process start: the cache of a
-	// resumed session aged while the gateway was down (2026-10-20: a ping 2 h after the last turn re-wrote 98.7K).
-	if (resume) lastTurnEnd = lastAnswerAt(prior) ?? lastTurnEnd;
-	currentModel = model;
-	clearTimeout(errorHold);
-	adapter = runtime;
-	chain = nextChain;
-	capped = undefined;
-	usable = undefined;
-	const env: Record<string, string> = { DOTZ_ORCHESTRATOR: "1" };
-	// The orchestrator's task workers run on its own model (runtime/omo.ts writeOrchestratorProfile): on an API-key entry with
-	// `workers` on, the key's copy of that entry's model; the task-worker settings and chain are the lanes' workers'.
-	if (chain) Object.assign(env, chain.env(chain.active, chain.list[chain.active].model));
-	const switchNote = switched && chain ? msg().fallbackFresh(chain.label(chain.active), Boolean(chain.list[chain.active].key_file), switched.again, Boolean(chain.list[chain.active].workers)) : "";
-	startedModel = spawnModel;
-	reverter.reset();
-	orch.activeModel = spawnModel;
-	chained = !chain && entries.length > 0;
-	proc = runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, fallback: chain ? [] : entries.filter(e => !e.key_file).map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env });
-	orch.status = "starting";
-	orch.stoppedBy = "";
-	orch.stoppedAt = "";
-	orch.startedAt = now();
-	const pausedUntil = Date.parse(saved().pausedUntil ?? "");
-	const ownerPause = saved().pausedKind === "owner";
-	if (pausedUntil > Date.now() && !(ownerPause && authStamp() !== saved().pausedAuth)) {
-		orch.status = "rate-limited";
-		orch.pauseKind = ownerPause ? "owner" : "rate";
-		orch.rateLimitedUntil = new Date(pausedUntil).toISOString();
-		pauseAlerted = true;
-		clearTimeout(resumeTimer);
-		armResume(pausedUntil - Date.now(), ownerPause, saved().pausedAuth ?? 0);
-		log(`orchestrator still paused on ${ownerPause ? "a billing/auth block" : "a usage limit"} until ${orch.rateLimitedUntil}; messages are held`);
-	}
-	void readEvents(proc);
-	const self = proc;
-	void proc.exited.then(code => {
-		if (proc !== self) return;
-		proc = undefined;
-		orch.status = "stopped";
-		clearTimeout(errorHold);
-		abandonCompact(orch.ctx, "the orchestrator process exited");
-		if (unstarted.length) log(`orchestrator exited with ${unstarted.length} prompt(s) it never started; holding them for the next process`);
-		held.unshift(...unstarted.splice(0));
-		log(`orchestrator exited (${code})`);
-		statusActivity("orchestrator", `orchestrator exited (code ${code})`);
-		if (stopping) return;
-		if (!rotating) replayAfterStart = true;
-		if (restarting) {
-			restarting = false;
-			return start();
-		}
-		if (rotating) return start();
-		orch.restarts = orch.restarts.filter(t => Date.now() - t < RESTART_WINDOW_MS);
-		if (orch.restarts.length >= MAX_RESTARTS) return markError(`the assistant process exited repeatedly (${MAX_RESTARTS} times in 10 minutes)`);
-		orch.restarts.push(Date.now());
-		setTimeout(start, 10_000);
-	});
-	if (!resume) {
-		retainNext = false; // a fresh session's start prompt (and handover) already carries it
-		asksNext = false;
-		const asks = pendingAsksBlock();
-		// The runtime keeps this first message through every compaction, so it carries only what must stay: the handover tail
-		// and the pending asks would be re-sent on every request after each compaction. They go in a second message, as "steer":
-		// a steer queued before the turn starts is drained at the start of the agent loop, so it joins the first model call
-		// (a "followUp" would wait until the first answer is done and start an extra paid turn; a "prompt" would start one too),
-		// and a queued steer is not dropped when it arrives before the turn has begun.
-		proc.send(recall() + switchNote, "prompt");
-		const later = (rotate ? handover(runtime, prior!) : "") + (asks ? `${rotate ? "\n\n" : ""}${asks}` : "");
-		if (later) proc.send(later, "steer");
-	} else asksNext = true;
-	proc.watchSubagents();
-	if (continueAfterSwitch && resume) {
-		proc.send(msg().orchTransient, "followUp");
-		armWatchdog();
-	}
-	continueAfterSwitch = false;
-	// A restart lost the turn in flight and what the process had not started: every open prompt goes in again once; the held
-	// copies of those are dropped rather than sent twice (a held text the queue does not know still goes out below).
-	let replayed = 0;
-	if (replayAfterStart) {
-		replayAfterStart = false;
-		const r = onRestarted();
-		replayed = r.replayed;
-		for (let i = held.length - 1; i >= 0; i--) if (r.texts.includes(held[i]!.text)) held.splice(i, 1);
-	}
-	if (probeAfterStart) {
-		probeAfterStart = false;
-		if (!replayed && !held.length) proc.send(PROBE_TEXT, "followUp");
-	}
-	if (orch.status !== "rate-limited") for (const h of held.splice(0)) sendOwner(h.text, h.header);
-	setTimeout(() => proc?.refreshSession(), 4000);
-	log(`orchestrator ${resume ? `resumed ${prior}` : rotate ? "rotated to a fresh session" : "started"} (${model})`);
-	statusActivity("orchestrator", `orchestrator ${resume ? "resumed its session" : rotate ? "started a fresh session with a handover" : "started"} (${model})`);
-}
 
 // When the model last answered in a session file: the timestamp of its last assistant message, read from the file's tail
 // (startup bookkeeping lines after it and the file's mtime say nothing about the prompt cache).
@@ -777,40 +85,7 @@ export const keepaliveErrorDropped = (kind: ProviderErrorKind): boolean => kind 
 export const KEEPALIVE_FROM_MS = Number(process.env.DOTZ_KEEPALIVE_FROM_MS ?? 50 * 60_000);
 export const KEEPALIVE_TO_MS = Number(process.env.DOTZ_KEEPALIVE_TO_MS ?? 58 * 60_000);
 export const KEEPALIVE_MAX = 12;
-// Whether this runtime's prompt cache pays for an idle ping (the 구성 view shows the keep-alive only then).
-export const keepaliveSupported = (): boolean => Boolean(adapter?.caps.promptCacheKeepalive);
-setInterval(() => {
-	const idle = Date.now() - lastTurnEnd;
-	if (!proc || !adapter?.caps.promptCacheKeepalive || rotating || orch.status !== "idle" || keepalives >= KEEPALIVE_MAX || errorStreak.stopped) return;
-	if (idle < KEEPALIVE_FROM_MS || idle > KEEPALIVE_TO_MS) return;
-	keepalives++;
-	inKeepalive = true;
-	log(`keepalive ${keepalives}/${KEEPALIVE_MAX} after ${Math.round(idle / 60_000)} min idle`);
-	proc.send(msg().keepalive, "prompt");
-	armWatchdog();
-}, Math.min(60_000, Math.max(5_000, (KEEPALIVE_TO_MS - KEEPALIVE_FROM_MS) / 2)));
 
-// `owner` marks a prompt that carries an owner message (it gets the what-runs-now line); lane reports and gateway notes do not.
-export function deliver(text: string, owner = false): void {
-	// DOTZ_NO_ORCHESTRATOR=1 (the update smoke check, hub/update-smoke.ts): the gateway runs without an agent, so a prompt (the first-start
-	// greeting) is held instead of spawning one.
-	if (process.env.DOTZ_NO_ORCHESTRATOR === "1") {
-		held.push({ text, header: owner });
-		return;
-	}
-	checkAccountSoon();
-	// A prompt sent while a requested compaction runs is refused by OmO and was lost; it waits for the compaction's end.
-	if (rotating || restarting || orch.status === "rate-limited" || orch.ctx.compaction.state === "compacting") {
-		held.push({ text, header: owner });
-		return;
-	}
-	if (!proc) start();
-	sendOwner(text, owner);
-	armWatchdog();
-}
-
-// Injects a note into the running turn (no effect when idle: the next prompt starts a turn anyway).
-// True when the text went into the running turn.
 // What keeps a requested gateway restart waiting: a turn, or a compaction queued or running (2026-10-20 19:47 KST: a restart
 // 1 s after "compacting in place" lost the compaction, and the session came back at 244K tokens).
 export function orchBusy(o: Pick<typeof orch, "status" | "ctx"> = orch): string | undefined {
@@ -819,162 +94,971 @@ export function orchBusy(o: Pick<typeof orch, "status" | "ctx"> = orch): string 
 	return undefined;
 }
 
-export function steer(text: string): boolean {
-	if (orch.status !== "working" || !proc) return false;
-	proc.send(text, "steer");
-	return true;
-}
-
-export function stop(): void {
-	stopping = true;
-	if (orch.status !== "stopped") {
-		orch.stoppedBy = "owner";
-		orch.stoppedAt = now();
+// One orchestrator instance: `main` (the gateway's session, every module's default) or a conversation's own session
+// (hub/convsessions.ts). key: "main" or the conversation key; stateFile: where its Saved state lives; source: its activity
+// source ("orchestrator" for main, "conv:<key>"); keepalive: whether it pings to keep the 1h prompt cache; env: extra
+// environment for its process (DOTZ_CONV); scope: a paragraph its start prompt ends with; seed: what a brand-new session is
+// handed with its first prompt (the conversation's recent history), in the steer slot a handover uses.
+export type OrchOpts = { key: string; stateFile: string; source: string; keepalive: boolean; env?: Record<string, string>; scope?: () => string; seed?: () => string };
+export function createOrchestrator(opts: OrchOpts) {
+	const who = opts.key === "main" ? "orchestrator" : `conversation session ${opts.key}`;
+	// This session's compaction point, from the model it is running now (config context.models or orchestrator.rotate_tokens).
+	const compactAt = () => compactAtFor(orch.activeModel || selectorOf(orchestratorModel()), cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens);
+	const orch = {
+		status: "stopped" as "stopped" | "starting" | "idle" | "working" | "rate-limited",
+		// Why a "rate-limited" pause is on: a usage limit, or a billing/auth problem only the owner can fix.
+		pauseKind: "rate" as "rate" | "owner",
+		// Who stopped it (the run state line says "주인님이 멈추게 했어요" for the owner's own stop, hub/runstate.ts).
+		stoppedBy: "" as "" | "owner",
+		stoppedAt: "",
+		sessionFile: "",
+		// The model the running process answers on now: the configured one, or the fallback it switched to (reset at every start).
+		activeModel: "",
+		startedAt: "",
+		lastText: "",
+		rateLimitedUntil: "",
+		restarts: [] as number[],
+		// Set when the automatic retries gave up (markError); cleared by the next successful turn. The web banner reads it.
+		error: undefined as OrchError | undefined,
+		ctx: newCtx(),
+	};
+	let proc: AgentProcess | undefined;
+	// The running turn stopped on a provider error (a usage limit, a dead login, a failure past its retries): its request was not
+	// answered and must stay open for the retry, not be closed as a turn that wrote nothing (prompts.ts settleTurn).
+	let turnFailed = false;
+	// The runtime of the running process, chosen at each start().
+	let adapter: RuntimeAdapter | undefined;
+	const orchestratorPid = (): number | undefined => proc?.pid;
+	let stopping = false;
+	let rotating = false;
+	let restarting = false;
+	let pendingRestart = false;
+	// A model/effort change made while a turn or a compaction ran: switched in place at turn_end / when the compaction ends (applyModelChange).
+	let pendingModel = false;
+	let turnsSinceStart = 0;
+	let lastTurnEnd = Date.now();
+	let keepalives = 0;
+	let inKeepalive = false;
+	const held: { text: string; header: boolean }[] = [];
+	// Owner prompts sent to the process while no turn has started since (cleared at turn_start). A process that exits or is
+	// killed by the watchdog first would lose them (2026-10-21 01:02 KST: a web message sent during a compaction was never
+	// answered), so they are held again and go to the next process.
+	const unstarted: { text: string; header: boolean }[] = [];
+	// A process started with a fallback chain: after a failed request the runtime may move to the next model by itself and
+	// redo the turn, so the failure is acted on (pause, retry, alert) only when no such switch follows within a short grace.
+	const FALLBACK_GRACE_MS = 3000;
+	let chained = false;
+	let errorHold: Timer | undefined;
+	// The chain the hub drives itself (conditional entries, spend caps; hub/fallback.ts), with what is waiting for an idle moment.
+	let chain: Chain | undefined;
+	let capped: { move?: Move } | undefined;
+	let continueAfterSwitch = false;
+	// A chain switch in progress: the next start() begins a fresh session with a handover and a note on the new entry.
+	let freshSwitch: { again: boolean } | undefined;
+	// Whether the subscription's usage report says it can take requests (undefined: unknown), read once a minute while on an API key.
+	let usable: boolean | undefined;
+	// Going back to the configured model after the runtime moved the process to a fallback by itself (not when the hub drives a chain).
+	const reverter = new Reverter();
+	let startedModel = "";
+	// Set when a compaction finished: the next owner message sent to the process carries the retain nudge once (no extra turn).
+	let retainNext = false;
+	// Set when a session was resumed (gateway or crash restart): the next owner message carries the lane questions still
+	// waiting for the owner's answer once, as the session may not have heard them in full.
+	let asksNext = false;
+	// An owner prompt leads with one line of what runs now (lanes, workers), so the orchestrator need not poll for it; the
+	// provider is registered by main.ts (lanes.ts would be an import cycle) and the line is empty when nothing runs.
+	let turnHeader: () => string = () => "";
+	function setTurnHeader(fn: () => string): void {
+		turnHeader = fn;
 	}
-	// A pause timer (usage limit, spent chain) must not start a stopped orchestrator again.
-	clearTimeout(resumeTimer);
-	resumeTimer = undefined;
-	proc?.kill();
-}
-
-// Restart the agent process; the session is resumed unless the configured model or thinking level changed since it was
-// saved (start() then begins a fresh session with a handover, the model-change rule above). Prompts arriving
-// meanwhile are held and delivered by the new process.
-export function restart(): void {
-	errorStreak.ok();
-	streakAlerted = false;
-	transientTries = 0;
-	orch.restarts.length = 0;
-	if (!proc) return start();
-	restarting = true;
-	clearTimeout(watchdog);
-	const old = proc;
-	old.kill();
-	setTimeout(() => {
-		if (proc === old) old.kill(true);
-	}, 10_000);
-}
-
-// The model/thinking in config just changed. The running process switches in place on its session (set_model /
-// set_thinking_level, no restart): now when idle, at the end of the running turn otherwise. On OmO an effort change on a
-// model with per-message effort (Opus 5.5, Sonnet 5.5, ...) keeps the prompt cache; a model change re-writes it once.
-// A process that cannot switch in place (on a fallback entry, or a runtime-owned fallback list) restarts and resumes.
-export function applyModelChange(): "live" | "restarted" | "next-start" {
-	if (!proc) return "next-start";
-	if (orch.status === "working" || compacting()) {
-		pendingModel = true;
-		return "next-start";
+	function sendOwner(text: string, header = false): void {
+		settleRevert(false);
+		const nudge = retainNext ? `\n\n${msg().retainNudge}` : "";
+		const asks = asksNext ? pendingAsksBlock() : "";
+		retainNext = false;
+		asksNext = false;
+		const line = header ? turnHeader() : "";
+		if (proc) unstarted.push({ text, header });
+		proc?.send((line ? `${line}\n` : "") + text + nudge + (asks ? `\n\n${asks}` : ""), "followUp");
 	}
-	if (switchInPlace()) return "live";
-	restart();
-	return "restarted";
-}
-// A model switched in place moves the orchestrator's task workers with it (the profile OmO reads); the guard pins subagent_type
-// workers to the live model on each call (extension/guard.ts pinOmoTaskModel).
-function workersFollow(model: string): void {
-	if (adapter?.id === "omo") writeOrchestratorProfile(undefined, model);
-}
-function switchInPlace(): boolean {
-	if (!proc?.setModel || !adapter || chained || orch.status !== "idle" || (chain && chain.active !== 0)) return false;
-	const model = selectorOf(orchestratorModel());
-	const driven = hubChain(adapter.id, chainAfter(model, fallbackChain("orchestrator")));
-	const next = driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined;
-	if (next && next.initial() !== 0) return false;
-	proc.setModel(model);
-	workersFollow(model);
-	chain = next;
-	capped = undefined;
-	currentModel = startedModel = orch.activeModel = model;
-	reverter.reset();
-	if (orch.sessionFile) save({ sessionFile: orch.sessionFile, model, runtime: adapter.id });
-	log(`orchestrator switched in place to ${model}`);
-	statusActivity("orchestrator", `orchestrator switched to ${model} on its session`);
-	return true;
-}
-
-// dotz's Claude account changed (hub/account-sticky.ts: a rule, the owner's script or pick, a limit): the running process
-// is not restarted, it pins the new account itself at the start of its next turn (extension/index.ts followAccount). No
-// keepalive pings until the next real turn: a ping right after a switch would pay the whole prefix on the new account for
-// nothing (2 of the 4 switches of 2026-10-20 did).
-// The orchestrator's fallback chain in config changed (hub/control.ts setFallback). A hub-driven chain is built at start,
-// so: on OmO, while the process runs its primary, the new chain replaces the old one in place (no restart; the next failure
-// walks it). A process paused on a limit restarts at once so held messages go to the new chain; the primary's usage limit
-// is recorded first, so it starts on the first usable entry and comes back by the revert rule once the limit resets. A
-// process on a fallback entry (or on omp, whose chain is its spawn list) restarts on its session when idle.
-export function applyChainChange(): "updated" | "restarted" | "after-turn" | "next-start" {
-	const paused = orch.status === "rate-limited";
-	if (!proc && !paused) return "next-start";
-	const model = currentModel || selectorOf(orchestratorModel());
-	const driven = adapter ? hubChain(adapter.id, chainAfter(model, fallbackChain("orchestrator"))) : undefined;
-	const fresh = () => (driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined);
-	if (paused) {
-		const until = Date.parse(orch.rateLimitedUntil ?? "");
-		const next = fresh();
-		if (next && orch.pauseKind === "rate" && until > Date.now() && !next.down(0)) next.fail("quota", until);
+	// Switches the process back to its configured model once that is due: before a prompt starts a turn (a refusal, a provider
+	// error, or a usage limit that has reset), or at an idle moment for a usage limit that has reset. Never in the middle of a turn.
+	function settleRevert(idle: boolean): void {
+		if (!proc?.setModel || chain || orch.status === "working" || orch.status === "rate-limited" || (idle && orch.status !== "idle")) return;
+		const to = reverter.take(idle);
+		if (!to) return;
+		proc.setModel(to);
+		workersFollow(to);
+		orch.activeModel = to;
+		const line = msg().modelReverted(parseSelector(to).model);
+		log(`${who} ${line}`);
+		onAlert(`${NAME}: ${line}`);
+	}
+	// One line for the worklog when the runtime moves the orchestrator (or one of its task workers) to the next model of a fallback chain.
+	let onNotice: (text: string) => void = () => {};
+	function setNoticeHandler(fn: (text: string) => void): void {
+		onNotice = fn;
+	}
+	let onAlert: (text: string) => void = () => {};
+	function setAlertHandler(fn: (text: string) => void): void {
+		onAlert = fn;
+	}
+	// An error episode begins: the owner is asked once (main.ts posts the [ask]).
+	let onError: (e: OrchError) => void = () => {};
+	function setErrorHandler(fn: (e: OrchError) => void): void {
+		onError = fn;
+	}
+	// After any orchestrator restart: the owner's open prompts go in again (outbound.ts replayOpen); returns how many, and the
+	// texts it took over (a held copy of those must not be sent a second time).
+	let onRestarted: () => { replayed: number; texts: string[] } = () => ({ replayed: 0, texts: [] });
+	function setRestartedHandler(fn: () => { replayed: number; texts: string[] }): void {
+		onRestarted = fn;
+	}
+	let replayAfterStart = false;
+	let spawnedAt: { at: number; how: "fresh" | "resumed" } | undefined;
+	let probeAfterStart = false;
+	function markError(raw: string): void {
+		if (orch.error) return;
+		orch.error = { since: new Date().toISOString(), ...plainError(raw), raw: raw.replace(/\s+/g, " ").slice(0, 200) };
+		log(`${who} error episode begins: ${orch.error.kind} (${orch.error.raw.slice(0, 120)})`);
+		// asked once per stoppage, also across a gateway restart or after a manual resume that fails again (hub/limit-alert.ts),
+		// and only when it lasts past the hold (hub/orch-error.ts errorAskHold); the web banner shows it at once
+		const note = noteBlock("orchestrator", "", "error", Date.now(), true);
+		if (!note.alert) return;
+		const e = orch.error;
+		clearTimeout(askTimer);
+		askTimer = setTimeout(() => {
+			askTimer = undefined;
+			if (orch.error !== e) return;
+			markTold("orchestrator");
+			noteErrorAsked();
+			onError(e);
+		}, Math.max(0, note.since + errorAskHold() - Date.now()));
+	}
+	let askTimer: Timer | undefined;
+	function clearError(): void {
+		if (!orch.error) return;
+		if (askTimer) {
+			// over before the owner was asked: a worklog line instead of an alert, and no recovery alert (noteRecovered)
+			clearTimeout(askTimer);
+			askTimer = undefined;
+			const min = Math.max(1, Math.round((Date.now() - Date.parse(orch.error.since)) / 60_000));
+			onNotice(`모델 오류로 ${min}분 멈춘 뒤 스스로 다시 연결됐어요(${orch.error.text}). 알림은 보내지 않았어요.`);
+		}
+		log(`${who} error episode over: a turn succeeded`);
+		orch.error = undefined;
+	}
+	// One automatic resume: restart, and with no open request to replay, one tiny probe turn.
+	function resumeAfterError(): void {
+		probeAfterStart = true;
+		restart();
+	}
+	// The owner's 재개 (the stopped banner, the paused line, the error ask's 다시 시작): the pause ends now instead of at its timer, the
+	// process starts again, and the held or open requests go in; with none, one tiny probe turn tests the model. A success clears the
+	// error and sends the one recovery line; a failure pauses again quietly (the stoppage was already announced).
+	function resumeNow(): "resumed" {
 		clearTimeout(resumeTimer);
 		resumeTimer = undefined;
-		pauseAlerted = false;
-		save({ pausedUntil: undefined });
-		continueAfterSwitch = Boolean(proc);
+		if (orch.status === "rate-limited") {
+			save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
+			orch.status = "idle";
+			orch.rateLimitedUntil = "";
+		}
+		if (orch.error) orch.error.waiting = false;
+		probeAfterStart = true;
+		restart();
+		return "resumed";
+	}
+
+	// Called when a turn ended and the orchestrator is idle again; main.ts sends the web messages queued for it.
+	let onIdle: () => void = () => {};
+	function setIdleHandler(fn: () => void): void {
+		onIdle = fn;
+	}
+
+	// Messages that arrive while a turn runs are queued into the same agent run, so one run can answer several prompts.
+	// Each user prompt and each final answer is reported as it happens, letting the gateway route every answer to the
+	// channel that asked it instead of posting only the run's last text.
+	let onPrompt: (text: string) => boolean | void = () => {};
+	let onAnswer: (text: string) => void = () => {};
+	let onText: (text: string) => void = () => {};
+	function setAnswerHandlers(prompt: (text: string) => boolean | void, answer: (text: string) => void, text: (text: string) => void = () => {}): void {
+		onText = text;
+		onPrompt = prompt;
+		onAnswer = answer;
+	}
+
+	const saved = (): Saved => (existsSync(opts.stateFile) ? JSON.parse(readFileSync(opts.stateFile, "utf8")) : {});
+	let currentModel = "";
+	const save = (s: Saved) => writeAtomic(opts.stateFile, `${JSON.stringify({ ...saved(), ...s }, null, 2)}\n`);
+	// Compaction needs an idle process: a runtime may abort a running turn to compact, so a busy orchestrator queues it until turn_end.
+	const port: CompactPort = { idle: () => orch.status === "idle", compact: () => proc?.compact(), refreshUsage: () => proc?.refreshUsage() };
+
+	function recall(): string {
+		// The mail and calendar section is only useful while zele runs (zele.enabled defaults to on, as in zele.ts).
+		const zeleOn = (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false;
+		const modeText = readFileSync(modeFile(), "utf8");
+		const mode = zeleOn ? modeText : dropSection(modeText, "## Mail and calendar");
+		const stateFile = join(DATA_DIR, "state.json");
+		const state = existsSync(stateFile) ? renderState(readFileSync(stateFile, "utf8"), stateFile) : "{}";
+		const id = cfg.identity;
+		const identity = existsSync(IDENTITY_FILE) ? readFileSync(IDENTITY_FILE, "utf8").slice(0, 3000) : msg().identityFallback(id?.character ?? "", id?.tone ?? "");
+		// A cut file says so: RULES.md outgrew the old 6000-character cap and silently lost its last lines (blocked commands).
+		const file = (p: string, max: number) => {
+			const t = existsSync(p) ? readFileSync(p, "utf8") : "";
+			return t.length > max ? `${t.slice(0, max)}\n[... cut at ${max} characters; read ${p} for the rest]` : t;
+		};
+		const features = featurePrompt(DATA_DIR, "orchestrator", log);
+		const scope = opts.scope?.() ?? "";
+		return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, 3000), memory: `${file(paths.owner, 3000)}\n${file(paths.boundaries, 2000)}`, setups: setupsSummary(), state }) + (scope ? `\n\n${scope}` : ""));
+	}
+
+	function handover(runtime: RuntimeAdapter, previous: string): string {
+		const tail = runtime.recentExchanges(previous);
+		if (tail === undefined) return "";
+		return msg().handover(previous, tail);
+	}
+
+	// A failed request: a usage limit or a billing/auth problem pauses the orchestrator, a temporary provider error is retried with backoff.
+	// With a hub-driven chain the next entry takes over first (a temporary error is retried a few times before that).
+	function handleError(e: AgentError): void {
+		if (chain && failsOver(e.kind) && !(e.kind === "transient" && transientTries < TRANSIENT_RETRIES)) void failOver(e).then(moved => !moved && legacyError(e));
+		else legacyError(e);
+	}
+	function legacyError(e: AgentError): void {
+		if (e.kind === "rate" || e.kind === "owner") void scheduleResume(e.text, e.kind);
+		else if (e.kind === "transient") retryTransient(e.text);
+	}
+	async function failOver(e: AgentError): Promise<boolean> {
+		const active = chain;
+		if (!active) return false;
+		const reason = failureReason({ kind: e.kind, text: e.text });
+		const until = reason === "quota" ? await quotaResetAt(e.text, active.selector(active.active), "orchestrator") : undefined;
+		if (chain !== active) return false;
+		const move = active.fail(reason, until);
+		if (!move) return false;
+		return switchTo(move, true);
+	}
+	// Restarts with another entry of the chain (start() picks it from the persisted limit and spend state) in a fresh session
+	// with a handover, never on the same session (owner 2026-10-21: "쿐시 깨지는거 곤란하다"; a model switch on a session
+	// writes its whole prompt cache again, a handover is small). `again` tells it to answer the request that just failed. One
+	// switch at a time: a revert racing a failover is dropped. The alert channel hears an API-key episode once at its start
+	// and once at its end (the first turn that succeeds off the key), not at every hop or probe. The same holds for the notice
+	// and the log line: a fall-back says when the limit ends (KST), a return waits for the first turn that works on the entry
+	// it returned to, and a return that falls back again right away (a failed probe) says nothing at all.
+	let returning: Move | undefined;
+	function switchTo(move: Move, again: boolean): boolean {
+		if (!chain || restarting) return false;
+		const quiet = move.why === "revert" || (returning !== undefined && move.why === "quota");
+		returning = move.why === "revert" ? move : undefined;
+		if (!quiet) {
+			const reset = move.why === "quota" ? chain.down(move.from)?.until : undefined;
+			const back = reset ? `${new Date(reset).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" })} (${tzLabel()})` : undefined;
+			const line = msg().fallbackMove(chain.label(move.from), chain.label(move.to), move.why, back);
+			log(`${who} ${line}`);
+			onNotice(line);
+			if (!chain.list[move.to].key_file && !saved().apiSince && (move.why === "quota" || move.why === "error")) onAlert(`${NAME}: ${line}`);
+		}
+		const keyed = Boolean(chain.list[move.to].key_file);
+		if (keyed && !saved().apiSince) {
+			save({ apiSince: now() });
+			onAlert(`${NAME}: ${msg().apiStart(chain.label(move.to))}`);
+		}
+		freshSwitch = { again };
+		continueAfterSwitch = again;
+		restart();
+		return true;
+	}
+	// At an idle moment: act on a spend cap reached during the turn, or go back to an earlier entry whose limit has reset.
+	function settleChain(): boolean {
+		if (!chain || orch.status !== "idle" || runningSubagents(opts.source) > 0) return false;
+		if (capped) {
+			const reached = capped;
+			capped = undefined;
+			if (reached.move) switchTo(reached.move, false);
+			else pauseExhausted(chain, chain.exhaustedUntil() ?? chain.down(chain.active)?.until ?? Date.now() + 3_600_000);
+			return true;
+		}
+		const onKey = Boolean(chain.list[chain.active].key_file);
+		if (onKey && usable === false) return false;
+		const back = chain.revertTarget(undefined, onKey && usable === true);
+		if (!back) return false;
+		switchTo(back, false);
+		return true;
+	}
+	// Every entry is spent: hold messages until the earliest cap period ends, then start again.
+	function pauseExhausted(c: Chain, until: number): void {
+		orch.status = "rate-limited";
+		orch.pauseKind = "rate";
+		orch.rateLimitedUntil = new Date(until).toISOString();
+		const at = new Date(until).toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
+		const line = msg().fallbackExhausted(c.label(c.active), at);
+		log(`${who} ${line}`);
+		onNotice(line);
+		if (noteBlock("orchestrator", c.label(c.active), "limit").alert) onAlert(`${NAME}: ${line}`);
+		pauseAlerted = true;
+		clearTimeout(resumeTimer);
+		atTime(until, t => (resumeTimer = t), () => {
+			resumeTimer = undefined;
+			pauseAlerted = false;
+			orch.status = "idle";
+			restart();
+		});
+	}
+
+	async function readEvents(p: AgentProcess): Promise<void> {
+		for await (const ev of p.events) {
+			emitEventActivity(opts.source, ev);
+			noteEvent(orch.ctx, ev, port);
+			switch (ev.type) {
+				case "turn_start":
+					turnFailed = false;
+					// The turn watermark of the notices (a [done] never settles an ask of its own turn) is one per gateway: the main session's.
+					if (opts.key === "main") orchestratorTurnStarted();
+				// How long a conversation session takes from its spawn to its first turn (fresh, resumed): the warm-up decision reads it.
+				if (spawnedAt) {
+					log(`${who} first turn started ${Date.now() - spawnedAt.at} ms after its ${spawnedAt.how} spawn`);
+					spawnedAt = undefined;
+				}
+					clearTimeout(errorHold);
+					orch.status = "working";
+					unstarted.length = 0;
+					clearTimeout(watchdog);
+					clearTimeout(transientTimer);
+					transientTimer = undefined;
+					break;
+				case "turn_end":
+					orch.status = orch.status === "rate-limited" ? "rate-limited" : "idle";
+					settleRevert(true);
+					if (orch.status === "idle" && settleChain()) break;
+					lastTurnEnd = Date.now();
+					if (inKeepalive) inKeepalive = false;
+					else if (orch.status === "idle") keepalives = 0;
+					if (orch.status === "idle" && pauseAlerted) {
+						pauseAlerted = false;
+						for (const h of held.splice(0)) sendOwner(h.text, h.header);
+					} else if (orch.status === "idle") {
+						if (rotateWhenIdle || (++turnsSinceStart > 1 && orch.ctx.tokens > compactAt() && !compacting())) limitContext();
+						else if (pendingRestart) {
+							pendingRestart = false;
+							restart();
+						} else if (pendingModel) {
+							pendingModel = false;
+							if (!switchInPlace()) restart();
+						} else {
+							proc?.refreshUsage();
+							flushCompact(orch.ctx, port);
+						}
+					}
+					if (orch.status === "idle") setTimeout(() => orch.status === "idle" && onIdle(), 200);
+					break;
+				case "user":
+					if (!isResumeNote(ev.text) && onPrompt(ev.text) === true) proc?.abort();
+					break;
+				case "assistant":
+					if (ev.text) {
+						orch.lastText = isLater(ev.text) ? LATER_LINE : ev.text;
+						onText(ev.text);
+					}
+					if (ev.text && (ev.stop === "stop" || ev.stop === "length")) onAnswer(ev.text);
+					if (ev.stop !== "error" && ev.text && returning && chain && p === proc) {
+						const line = msg().fallbackMove(chain.label(returning.from), chain.label(returning.to), "revert");
+						returning = undefined;
+						log(`${who} ${line}`);
+						onNotice(line);
+					}
+					if (ev.stop !== "error" && ev.text && chain && !chain.list[chain.active].key_file && saved().apiSince) {
+						save({ apiSince: undefined });
+						onAlert(`${NAME}: ${msg().apiEnd(chain.label(chain.active))}`);
+					}
+					if (ev.stop === "error" && !inKeepalive) turnFailed = true;
+					if (ev.stop !== "error") {
+						transientTries = 0;
+						errorStreak.ok();
+						streakAlerted = false;
+						clearError();
+						if (noteRecovered("orchestrator")) onAlert(`${NAME}: ${recoveryText()}`);
+					} else if (inKeepalive && keepaliveErrorDropped(ev.error.kind)) {
+						log(`keepalive failed (${ev.error.text.replace(/\s+/g, " ").slice(0, 120)}); not retried, the next message is the next try`);
+					} else if (ev.error.kind !== "rate" && ev.error.kind !== "owner" && errorStreak.fail() !== "go") {
+						// A run of failed turns: no more automatic retries, failovers or keepalives until a turn succeeds (the owner's
+						// next message is the next try); the owner hears it once.
+						if (errorStreak.stopped && !streakAlerted) {
+							streakAlerted = true;
+							log(`${who} ${ERROR_STREAK_STOP} failed turns in a row; automatic retries stop until a turn succeeds`);
+							markError(ev.error.text);
+						}
+					} else if (chained) {
+						const failed = ev.error;
+						clearTimeout(errorHold);
+						errorHold = setTimeout(() => handleError(failed), FALLBACK_GRACE_MS);
+					} else handleError(ev.error);
+					break;
+				case "session":
+					orch.sessionFile = ev.ref;
+					save({ sessionFile: orch.sessionFile, model: currentModel, runtime: adapter?.id, activeModel: orch.activeModel });
+					if (orch.status === "starting") {
+						orch.status = "idle";
+						flushCompact(orch.ctx, port);
+					}
+					break;
+				case "spend": {
+					const reached = chain?.spend(ev.tokens, ev.usd);
+					if (reached?.capped) capped = reached;
+					break;
+				}
+				case "compaction":
+					if (ev.state === "done") {
+						compactRetried = false;
+						// The compacted session keeps going: the next owner message reminds it to retain, and carries the lane
+						// questions still waiting for the owner (the summary may have cut them); the dotz extension re-reads the
+						// contract and state.json (open_tasks) into it.
+						retainNext = true;
+						asksNext = true;
+					} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > compactAt() && /retry compaction/i.test(ev.error) && !compactRetried) {
+						// OmO refuses a summary when the session changed while it was made; the next idle point tries once more.
+						compactRetried = true;
+						log(`${who} compaction raced a session write (${ev.error.slice(0, 120)}); retrying at the next idle point`);
+						orch.ctx.compaction = { state: "queued", at: now() };
+						if (orch.status === "idle") flushCompact(orch.ctx, port);
+					} else if (adapter?.caps.contextLimit === "compact" && orch.ctx.tokens > compactAt()) {
+						log(`${who} compaction failed (${ev.error.slice(0, 160)}); moving to a fresh session with a handover`);
+						if (orch.status === "idle") rotate();
+						else rotateWhenIdle = true;
+					}
+					// A model/effort change that arrived during the compaction: a set_model mid-compaction cancels it.
+					if (pendingModel && !compacting() && !rotating && orch.status === "idle") {
+						pendingModel = false;
+						if (!switchInPlace()) restart();
+					}
+					// Owner prompts that arrived during the compaction go in now (OmO refuses a prompt while a requested
+					// compaction runs).
+					if (!compacting() && !rotating && !restarting && orch.status === "idle" && held.length) {
+						log(`${who} compaction over; delivering ${held.length} prompt(s) that arrived during it`);
+						for (const h of held.splice(0)) sendOwner(h.text, h.header);
+						armWatchdog();
+					}
+					break;
+				case "fallback": {
+					log(`${who} model fallback${ev.worker ? " (task worker)" : ""}: ${ev.from} -> ${ev.to}${ev.reason ? ` (${ev.reason.replace(/\s+/g, " ").slice(0, 200)})` : ""}`);
+					const line = msg().modelFallback(ev.from, ev.to, ev.reason, ev.worker);
+					if (!ev.worker) {
+						clearTimeout(errorHold);
+						orch.activeModel = ev.to;
+					}
+					if (ev.worker || chain) onNotice(line);
+					else {
+						// A silent switch to a weaker model went unnoticed for 50 minutes: the owner hears about it where alerts go.
+						if (p.setModel) reverter.note(startedModel, revertWhy(ev.reason ?? "", adapter?.classifyError(ev.reason ?? "")), ev.from, ev.reason ?? "");
+						onAlert(`${NAME}: ${line}${p.setModel ? "" : ` ${msg().modelNoRevert}`}`);
+					}
+					break;
+				}
+			}
+		}
+	}
+
+	// The runtime can stop reading prompts after a failed turn; if no turn starts soon after a delivery, restart it (the session is resumed).
+	const WATCHDOG_MS = 120_000;
+	let watchdog: ReturnType<typeof setTimeout> | undefined;
+	function armWatchdog(): void {
+		clearTimeout(watchdog);
+		if (orch.status === "working" || orch.status === "rate-limited") return;
+		watchdog = setTimeout(() => {
+			log(`${who} did not start a turn after a delivery; restarting it`);
+			const hung = proc;
+			hung?.kill();
+			setTimeout(() => {
+				if (proc === hung) hung?.kill(true);
+			}, 10_000);
+		}, WATCHDOG_MS);
+	}
+
+	// While paused by a rate limit (5h or a spent week), prompts are held instead of each starting a turn that fails at once;
+	// right after the spent window resets (from the provider's usage report; retry-after otherwise) they all go in, oldest
+	// first, after the resume note. A retry that hits the limit again re-arms quietly. A billing/auth error ("owner") pauses
+	// the same way, but nothing says when the owner fixes it, so it is probed on a slow backoff (ownerRetryMs) or when the login changes; the owner is told once per episode (limit-alert.ts).
+	const isResumeNote = (t: string) => isNote(t, "rateLead") || isNote(t, "providerLead") || isNote(t, "transientLead");
+	let resumeTimer: Timer | undefined;
+	let pausing = false;
+	let pauseAlerted = false;
+	async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<void> {
+		if (resumeTimer || pausing) return;
+		pausing = true;
+		orch.status = "rate-limited";
+		orch.rateLimitedUntil = "";
+		const owner = kind === "owner";
+		const lk = limitKind(err, kind);
+		const account = limitAccount(err, currentModel);
+		log(`${who} blocked (${lk}, ${account}): ${err.replace(/\s+/g, " ").slice(0, 300)}`);
+		let note = owner ? noteBlock("orchestrator", account, lk) : undefined;
+		const { ms: retry, reset } = owner ? { ms: ownerRetryMs(note!.failures), reset: false } : await rateLimitDelay(err, currentModel);
+		pausing = false;
+		if (orch.status !== "rate-limited") return;
+		note ??= noteBlock("orchestrator", account, lk);
+		const until = new Date(Date.now() + retry);
+		orch.rateLimitedUntil = until.toISOString();
+		const at = until.toLocaleString("ko-KR", { timeZone: TZ, month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
+		orch.pauseKind = owner ? "owner" : "rate";
+		const authSince = authStamp();
+		save({ pausedUntil: orch.rateLimitedUntil, pausedKind: owner ? "owner" : undefined, pausedAuth: owner ? authSince : undefined });
+		if (note.alert) {
+			if (owner) onAlert(`${NAME}: ${blockText(lk as "auth" | "billing", account, providerOf(currentModel), retry)}`);
+			else if (pinnedLimitAlert(until.getTime())) onAlert(`${NAME}: ${pinnedLimitAlert(until.getTime())}`);
+			else onAlert(`${NAME}: 사용량 한도에 걸려서 멈췄어요. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리해요.`);
+		}
+		pauseAlerted = true;
+		armResume(retry, owner, authSince);
+	}
+	// A billing/auth pause also ends the moment the login store changes (the owner logged in again), still without a word.
+	function armResume(retry: number, owner: boolean, authSince: number): void {
+		const fire = () => {
+			clearTimeout(resumeTimer);
+			resumeTimer = undefined;
+			save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
+			orch.status = "idle";
+			// The held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds, so a
+			// retry that hits the limit again loses nothing.
+			const m = msg();
+			settleRevert(false);
+			proc?.send(owner ? m.orchProvider(held.length) : m.orchRate(held.length), "followUp");
+			armWatchdog();
+		};
+		const mine = (resumeTimer = setTimeout(fire, retry));
+		if (owner) {
+			watchAuth(authSince, () => resumeTimer === mine, () => {
+				// The running process keeps the login and account pin it read at start (Mac mini 2026-10-26: after a new /login and a pin
+				// on the new account, the retry still went out on the dead one). A fresh process reads the store again; the held prompts
+				// are replayed into it, and a login that is still broken pauses again without a new alert.
+				log(`${who} login store changed; restarting it on the new login and retrying the held prompts`);
+				clearTimeout(resumeTimer);
+				resumeTimer = undefined;
+				save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
+				orch.status = "idle";
+				if (proc) restart();
+				else fire();
+			});
+		}
+	}
+
+	// Overloaded/5xx/network errors: after a failed turn, retry with backoff (bounded). Messages arriving meanwhile are not
+	// held: a new turn cancels the pending retry and itself serves as the retry. Past the limit the owner is told once.
+	let transientTries = 0;
+	const errorStreak = new ErrorStreak();
+	let streakAlerted = false;
+	let transientTimer: Timer | undefined;
+	function retryTransient(err: string): void {
+		if (transientTimer) return;
+		if (transientTries >= TRANSIENT_RETRIES) {
+			transientTries = 0;
+			markError(err);
+			return;
+		}
+		const wait = transientBackoff(transientTries++);
+		log(`${who} provider error (${err.slice(0, 120)}); retry ${transientTries}/${TRANSIENT_RETRIES} in ${Math.round(wait / 1000)}s`);
+		transientTimer = setTimeout(() => {
+			transientTimer = undefined;
+			if (orch.status !== "idle") return;
+			settleRevert(false);
+			proc?.send(msg().orchTransient, "followUp");
+			armWatchdog();
+		}, wait);
+	}
+
+	// The session's own compaction point (compactAt()), re-read here: past it of context, at an idle point, the context is made small so each message does not re-read a huge
+	// prefix (the runtime's own threshold is sized for coding sessions, not a secretary). A runtime that compacts in place
+	// (OmO) keeps its session and with it what it was doing; a fresh session with a handover of recent exchanges forgot the
+	// progress, so that is only the fallback when compaction fails (and the omp/Claude Code behaviour).
+	let rotateWhenIdle = false;
+	let compactRetried = false;
+	const compacting = () => orch.ctx.compaction.state === "queued" || orch.ctx.compaction.state === "compacting";
+	function limitContext(): void {
+		if (!rotateWhenIdle && adapter?.caps.contextLimit === "compact") {
+			log(`${who} context ${orch.ctx.tokens} tokens > ${compactAt()}; compacting in place`);
+			requestCompact(orch.ctx, port);
+		} else rotate();
+	}
+
+	// The nightly handover (hygiene.ts): an idle orchestrator whose session file grew past `limitBytes` starts a fresh
+	// session with a handover. Returns what it did, or undefined when nothing was needed.
+	function nightlyHandover(limitBytes: number): string | undefined {
+		if (!proc || orch.status !== "idle" || !orch.sessionFile || !existsSync(orch.sessionFile)) return undefined;
+		const bytes = statSync(orch.sessionFile).size;
+		if (bytes <= limitBytes) return undefined;
+		rotate();
+		return `orchestrator session file ${+(bytes / 1e6).toFixed(2)} MB > ${+(limitBytes / 1e6).toFixed(0)} MB: rotated to a fresh session with a handover`;
+	}
+
+	function rotate(): void {
+		if (!proc || rotating) return;
+		log(`${who} context ${orch.ctx.tokens} tokens; rotating to a fresh session`);
+		rotateWhenIdle = false;
+		compactRetried = false;
+		rotating = true;
+		proc.kill();
+	}
+
+	function start(): void {
+		if (proc) return;
+		stopping = false;
+		const { sessionFile: prior, runtime: priorRuntime, activeModel: priorActive } = saved();
+		const model = selectorOf(orchestratorModel());
+		const runtime = runtimeFor("orchestrator");
+		const entries = chainAfter(model, fallbackChain("orchestrator"));
+		// The hub switches the chain itself on OmO, and on omp when an entry is conditional (fallback.ts hubChain); otherwise the
+		// runtime gets the models as its own plain fallback list.
+		const driven = hubChain(runtime.id, entries);
+		const nextChain = driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined;
+		let spawnModel = model;
+		if (nextChain) {
+			const until = nextChain.exhaustedUntil();
+			if (until !== undefined) {
+				adapter = runtime;
+				currentModel = model;
+				chain = nextChain;
+				return pauseExhausted(nextChain, until);
+			}
+			nextChain.active = nextChain.initial();
+			spawnModel = nextChain.selector(nextChain.active);
+		}
+		// A change of runtime starts a fresh session with a handover (a session written by omp is not resumed by OmO; a state
+		// saved before the runtime was recorded is omp's). So does a chain switch (switchTo), and a start whose entry moves onto
+		// or off an API key since the session last ran (a gateway restart after the limit lifted). A model or effort change in
+		// config does not: the session is resumed on the new model, as OmO does on /model (owner 2026-10-21: a fresh session on
+		// every switch reloaded the whole context).
+		const keyMove = Boolean(priorActive) && priorActive !== spawnModel && (keyedSelector(priorActive) || keyedSelector(spawnModel));
+		const rotate = prior && existsSync(prior) && (rotating || Boolean(freshSwitch) || keyMove || statSync(prior).size > ROTATE_BYTES || (priorRuntime ?? "omp") !== runtime.id);
+		const switched = freshSwitch ?? (keyMove ? { again: false } : undefined);
+		freshSwitch = undefined;
+		rotating = false;
+		pendingModel = false;
+		orch.ctx = newCtx();
+		turnsSinceStart = 0;
+		const resume = prior && existsSync(prior) && !rotate;
+	spawnedAt = opts.key === "main" ? undefined : { at: Date.now(), how: resume ? "resumed" : "fresh" };
+		// The keepalive's idle clock continues from the session's last answer, not from this process start: the cache of a
+		// resumed session aged while the gateway was down (2026-10-20: a ping 2 h after the last turn re-wrote 98.7K).
+		if (resume) lastTurnEnd = lastAnswerAt(prior) ?? lastTurnEnd;
+		currentModel = model;
+		clearTimeout(errorHold);
+		adapter = runtime;
+		chain = nextChain;
+		capped = undefined;
+		usable = undefined;
+		const env: Record<string, string> = { DOTZ_ORCHESTRATOR: "1", ...opts.env };
+		// The orchestrator's task workers run on its own model (runtime/omo.ts writeOrchestratorProfile): on an API-key entry with
+		// `workers` on, the key's copy of that entry's model; the task-worker settings and chain are the lanes' workers'.
+		if (chain) Object.assign(env, chain.env(chain.active, chain.list[chain.active].model));
+		const switchNote = switched && chain ? msg().fallbackFresh(chain.label(chain.active), Boolean(chain.list[chain.active].key_file), switched.again, Boolean(chain.list[chain.active].workers)) : "";
+		startedModel = spawnModel;
+		reverter.reset();
+		orch.activeModel = spawnModel;
+		chained = !chain && entries.length > 0;
+		proc = runtime.start({ role: "orchestrator", cwd: DATA_DIR, model: spawnModel, fallback: chain ? [] : entries.filter(e => !e.key_file).map(e => e.model), hubSwitches: Boolean(chain), resume: resume ? prior : undefined, env });
+		orch.status = "starting";
+		orch.stoppedBy = "";
+		orch.stoppedAt = "";
+		orch.startedAt = now();
+		const pausedUntil = Date.parse(saved().pausedUntil ?? "");
+		const ownerPause = saved().pausedKind === "owner";
+		if (pausedUntil > Date.now() && !(ownerPause && authStamp() !== saved().pausedAuth)) {
+			orch.status = "rate-limited";
+			orch.pauseKind = ownerPause ? "owner" : "rate";
+			orch.rateLimitedUntil = new Date(pausedUntil).toISOString();
+			pauseAlerted = true;
+			clearTimeout(resumeTimer);
+			armResume(pausedUntil - Date.now(), ownerPause, saved().pausedAuth ?? 0);
+			log(`${who} still paused on ${ownerPause ? "a billing/auth block" : "a usage limit"} until ${orch.rateLimitedUntil}; messages are held`);
+		}
+		void readEvents(proc);
+		const self = proc;
+		void proc.exited.then(code => {
+			if (proc !== self) return;
+			proc = undefined;
+			orch.status = "stopped";
+			clearTimeout(errorHold);
+			abandonCompact(orch.ctx, "the orchestrator process exited");
+			if (unstarted.length) log(`${who} exited with ${unstarted.length} prompt(s) it never started; holding them for the next process`);
+			held.unshift(...unstarted.splice(0));
+			log(`${who} exited (${code})`);
+			statusActivity(opts.source, `orchestrator exited (code ${code})`);
+			if (stopping) return;
+			if (!rotating) replayAfterStart = true;
+			if (restarting) {
+				restarting = false;
+				return start();
+			}
+			if (rotating) return start();
+			orch.restarts = orch.restarts.filter(t => Date.now() - t < RESTART_WINDOW_MS);
+			if (orch.restarts.length >= MAX_RESTARTS) return markError(`the assistant process exited repeatedly (${MAX_RESTARTS} times in 10 minutes)`);
+			orch.restarts.push(Date.now());
+			setTimeout(start, 10_000);
+		});
+		if (!resume) {
+			retainNext = false; // a fresh session's start prompt (and handover) already carries it
+			asksNext = false;
+			const asks = pendingAsksBlock();
+			// The runtime keeps this first message through every compaction, so it carries only what must stay: the handover tail
+			// and the pending asks would be re-sent on every request after each compaction. They go in a second message, as "steer":
+			// a steer queued before the turn starts is drained at the start of the agent loop, so it joins the first model call
+			// (a "followUp" would wait until the first answer is done and start an extra paid turn; a "prompt" would start one too),
+			// and a queued steer is not dropped when it arrives before the turn has begun.
+			proc.send(recall() + switchNote, "prompt");
+			const seed = rotate ? "" : (opts.seed?.() ?? "");
+		const later = (rotate ? handover(runtime, prior!) : seed) + (asks ? `${rotate || seed ? "\n\n" : ""}${asks}` : "");
+			if (later) proc.send(later, "steer");
+		} else asksNext = true;
+		proc.watchSubagents();
+		if (continueAfterSwitch && resume) {
+			proc.send(msg().orchTransient, "followUp");
+			armWatchdog();
+		}
+		continueAfterSwitch = false;
+		// A restart lost the turn in flight and what the process had not started: every open prompt goes in again once; the held
+		// copies of those are dropped rather than sent twice (a held text the queue does not know still goes out below).
+		let replayed = 0;
+		if (replayAfterStart) {
+			replayAfterStart = false;
+			const r = onRestarted();
+			replayed = r.replayed;
+			for (let i = held.length - 1; i >= 0; i--) if (r.texts.includes(held[i]!.text)) held.splice(i, 1);
+		}
+		if (probeAfterStart) {
+			probeAfterStart = false;
+			if (!replayed && !held.length) proc.send(PROBE_TEXT, "followUp");
+		}
+		if (orch.status !== "rate-limited") for (const h of held.splice(0)) sendOwner(h.text, h.header);
+		setTimeout(() => proc?.refreshSession(), 4000);
+		log(`${who} ${resume ? `resumed ${prior}` : rotate ? "rotated to a fresh session" : "started"} (${model})`);
+		statusActivity(opts.source, `orchestrator ${resume ? "resumed its session" : rotate ? "started a fresh session with a handover" : "started"} (${model})`);
+	}
+
+	// Whether this runtime's prompt cache pays for an idle ping (the 구성 view shows the keep-alive only then).
+	const keepaliveSupported = (): boolean => Boolean(adapter?.caps.promptCacheKeepalive);
+	if (opts.keepalive) setInterval(() => {
+		const idle = Date.now() - lastTurnEnd;
+		if (!proc || !adapter?.caps.promptCacheKeepalive || rotating || orch.status !== "idle" || keepalives >= KEEPALIVE_MAX || errorStreak.stopped) return;
+		if (idle < KEEPALIVE_FROM_MS || idle > KEEPALIVE_TO_MS) return;
+		keepalives++;
+		inKeepalive = true;
+		log(`keepalive ${keepalives}/${KEEPALIVE_MAX} after ${Math.round(idle / 60_000)} min idle`);
+		proc.send(msg().keepalive, "prompt");
+		armWatchdog();
+	}, Math.min(60_000, Math.max(5_000, (KEEPALIVE_TO_MS - KEEPALIVE_FROM_MS) / 2)));
+
+	// `owner` marks a prompt that carries an owner message (it gets the what-runs-now line); lane reports and gateway notes do not.
+	function deliver(text: string, owner = false): void {
+		// DOTZ_NO_ORCHESTRATOR=1 (the update smoke check, hub/update-smoke.ts): the gateway runs without an agent, so a prompt (the first-start
+		// greeting) is held instead of spawning one.
+		if (process.env.DOTZ_NO_ORCHESTRATOR === "1") {
+			held.push({ text, header: owner });
+			return;
+		}
+		checkAccountSoon();
+		// A prompt sent while a requested compaction runs is refused by OmO and was lost; it waits for the compaction's end.
+		if (rotating || restarting || orch.status === "rate-limited" || orch.ctx.compaction.state === "compacting") {
+			held.push({ text, header: owner });
+			return;
+		}
+		if (!proc) start();
+		sendOwner(text, owner);
+		armWatchdog();
+	}
+
+	// Injects a note into the running turn (no effect when idle: the next prompt starts a turn anyway).
+	// True when the text went into the running turn.
+	function steer(text: string): boolean {
+		if (orch.status !== "working" || !proc) return false;
+		proc.send(text, "steer");
+		return true;
+	}
+
+	function stop(): void {
+		stopping = true;
+		if (orch.status !== "stopped") {
+			orch.stoppedBy = "owner";
+			orch.stoppedAt = now();
+		}
+		// A pause timer (usage limit, spent chain) must not start a stopped orchestrator again.
+		clearTimeout(resumeTimer);
+		resumeTimer = undefined;
+		clearTimeout(askTimer);
+		askTimer = undefined;
+		proc?.kill();
+	}
+
+	// Restart the agent process; the session is resumed unless the configured model or thinking level changed since it was
+	// saved (start() then begins a fresh session with a handover, the model-change rule above). Prompts arriving
+	// meanwhile are held and delivered by the new process.
+	function restart(): void {
+		errorStreak.ok();
+		streakAlerted = false;
+		transientTries = 0;
+		orch.restarts.length = 0;
+		if (!proc) return start();
+		restarting = true;
+		clearTimeout(watchdog);
+		const old = proc;
+		old.kill();
+		setTimeout(() => {
+			if (proc === old) old.kill(true);
+		}, 10_000);
+	}
+
+	// The model/thinking in config just changed. The running process switches in place on its session (set_model /
+	// set_thinking_level, no restart): now when idle, at the end of the running turn otherwise. On OmO an effort change on a
+	// model with per-message effort (Opus 5.5, Sonnet 5.5, ...) keeps the prompt cache; a model change re-writes it once.
+	// A process that cannot switch in place (on a fallback entry, or a runtime-owned fallback list) restarts and resumes.
+	function applyModelChange(): "live" | "restarted" | "next-start" {
+		if (!proc) return "next-start";
+		if (orch.status === "working" || compacting()) {
+			pendingModel = true;
+			return "next-start";
+		}
+		if (switchInPlace()) return "live";
 		restart();
 		return "restarted";
 	}
-	if (adapter?.id === "omo" && (!chain || chain.active === 0)) {
-		chain = fresh();
+	// A model switched in place moves the orchestrator's task workers with it (the profile OmO reads); the guard pins subagent_type
+	// workers to the live model on each call (extension/guard.ts pinOmoTaskModel).
+	function workersFollow(model: string): void {
+		if (adapter?.id === "omo") writeOrchestratorProfile(undefined, model);
+	}
+	function switchInPlace(): boolean {
+		if (!proc?.setModel || !adapter || chained || orch.status !== "idle" || (chain && chain.active !== 0)) return false;
+		const model = selectorOf(orchestratorModel());
+		const driven = hubChain(adapter.id, chainAfter(model, fallbackChain("orchestrator")));
+		const next = driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined;
+		if (next && next.initial() !== 0) return false;
+		proc.setModel(model);
+		workersFollow(model);
+		chain = next;
 		capped = undefined;
-		return "updated";
+		currentModel = startedModel = orch.activeModel = model;
+		reverter.reset();
+		if (orch.sessionFile) save({ sessionFile: orch.sessionFile, model, runtime: adapter.id });
+		log(`${who} switched in place to ${model}`);
+		statusActivity(opts.source, `orchestrator switched to ${model} on its session`);
+		return true;
 	}
-	if (orch.status === "working") {
-		pendingRestart = true;
-		return "after-turn";
+
+	// dotz's Claude account changed (hub/account-sticky.ts: a rule, the owner's script or pick, a limit): the running process
+	// is not restarted, it pins the new account itself at the start of its next turn (extension/index.ts followAccount). No
+	// keepalive pings until the next real turn: a ping right after a switch would pay the whole prefix on the new account for
+	// nothing (2 of the 4 switches of 2026-10-20 did).
+	// The orchestrator's fallback chain in config changed (hub/control.ts setFallback). A hub-driven chain is built at start,
+	// so: on OmO, while the process runs its primary, the new chain replaces the old one in place (no restart; the next failure
+	// walks it). A process paused on a limit restarts at once so held messages go to the new chain; the primary's usage limit
+	// is recorded first, so it starts on the first usable entry and comes back by the revert rule once the limit resets. A
+	// process on a fallback entry (or on omp, whose chain is its spawn list) restarts on its session when idle.
+	function applyChainChange(): "updated" | "restarted" | "after-turn" | "next-start" {
+		const paused = orch.status === "rate-limited";
+		if (!proc && !paused) return "next-start";
+		const model = currentModel || selectorOf(orchestratorModel());
+		const driven = adapter ? hubChain(adapter.id, chainAfter(model, fallbackChain("orchestrator"))) : undefined;
+		const fresh = () => (driven ? new Chain(model, driven, orchestratorModel().thinking) : undefined);
+		if (paused) {
+			const until = Date.parse(orch.rateLimitedUntil ?? "");
+			const next = fresh();
+			if (next && orch.pauseKind === "rate" && until > Date.now() && !next.down(0)) next.fail("quota", until);
+			clearTimeout(resumeTimer);
+			resumeTimer = undefined;
+			pauseAlerted = false;
+			save({ pausedUntil: undefined });
+			continueAfterSwitch = Boolean(proc);
+			restart();
+			return "restarted";
+		}
+		if (adapter?.id === "omo" && (!chain || chain.active === 0)) {
+			chain = fresh();
+			capped = undefined;
+			return "updated";
+		}
+		if (orch.status === "working") {
+			pendingRestart = true;
+			return "after-turn";
+		}
+		restart();
+		return "restarted";
 	}
-	restart();
-	return "restarted";
-}
 
-export function applyAccountChange(): void {
-	keepalives = KEEPALIVE_MAX;
-}
-
-// The account requests run on changed (the owner's pick, a rule, a limit): OmO keeps the account pin it read at start, so the process
-// restarts on the new one, now when idle, after the running turn otherwise. A pause on the old account (its limit, a dead login) ends
-// with it: the held prompts are replayed on the new account at once.
-export function applyAccountPin(): "restarted" | "after-turn" | "not-running" {
-	if (!proc) return "not-running";
-	if (orch.status === "working" || compacting()) {
-		pendingRestart = true;
-		return "after-turn";
+	function applyAccountChange(): void {
+		keepalives = KEEPALIVE_MAX;
 	}
-	if (orch.status === "rate-limited") {
-		clearTimeout(resumeTimer);
-		resumeTimer = undefined;
-		save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
-		orch.status = "idle";
+
+	// The account requests run on changed (the owner's pick, a rule, a limit): OmO keeps the account pin it read at start, so the process
+	// restarts on the new one, now when idle, after the running turn otherwise. A pause on the old account (its limit, a dead login) ends
+	// with it: the held prompts are replayed on the new account at once.
+	function applyAccountPin(): "restarted" | "after-turn" | "not-running" {
+		if (!proc) return "not-running";
+		if (orch.status === "working" || compacting()) {
+			pendingRestart = true;
+			return "after-turn";
+		}
+		if (orch.status === "rate-limited") {
+			clearTimeout(resumeTimer);
+			resumeTimer = undefined;
+			save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
+			orch.status = "idle";
+		}
+		restart();
+		return "restarted";
 	}
-	restart();
-	return "restarted";
-}
 
-export function abort(): void {
-	if (!proc) throw new Error("the orchestrator is not running");
-	proc.abort();
-}
+	function abort(): void {
+		if (!proc) throw new Error("the orchestrator is not running");
+		proc.abort();
+	}
 
-// Compacts the orchestrator's context: now when idle, after the running turn otherwise. Rewrites the prompt cache once.
-export function compact(): Compaction {
-	if (!proc) throw new Error("the orchestrator is not running");
-	return requestCompact(orch.ctx, port);
-}
+	// The owner's 중단 (the web stop button, /abort): besides the model's turn, what the turn set going ends too (outbound.ts registers
+	// the hook: the request and the messages steered into it are closed, its background workers cancelled). An interrupt that sends a
+	// new message right after uses abort() alone.
+	let ownerCancel: () => string | undefined = () => undefined;
+	const setOwnerCancel = (fn: () => string | undefined): void => {
+		ownerCancel = fn;
+	};
+	// Others that hold that conversation's messages back (intake's burst, the web queue) drop them too: a message sent a moment before
+	// 중단 started a new turn right after it (2026-10-28 live check).
+	const cancelHooks: ((target: string) => void)[] = [];
+	const onOwnerCancel = (fn: (target: string) => void): void => void cancelHooks.push(fn);
+	function cancelByOwner(): void {
+		const target = ownerCancel();
+		if (target) for (const f of cancelHooks) f(target);
+		if (proc && orch.status === "working") proc.abort();
+	}
 
-// A hub-driven chain may owe a return to an earlier entry (its limit reset) or a spend-cap decision; checked once a minute while idle.
-setInterval(() => {
-	settleRevert(true);
-	// On an API key the subscription's usage report decides the return: back as soon as it is usable, never while it is still
-	// out (unknown: the probe rule of Chain.revertTarget).
-	if (chain && chain.list[chain.active].key_file && chain.list[0].model.startsWith("anthropic/") && orch.status === "idle")
-		void subscriptionCheck.usable().then(v => {
-			usable = v;
-			settleChain();
-		});
-	else void settleChain();
-}, 60_000);
+	// Compacts the orchestrator's context: now when idle, after the running turn otherwise. Rewrites the prompt cache once.
+	function compact(): Compaction {
+		if (!proc) throw new Error("the orchestrator is not running");
+		return requestCompact(orch.ctx, port);
+	}
+
+	// A hub-driven chain may owe a return to an earlier entry (its limit reset) or a spend-cap decision; checked once a minute while idle.
+	setInterval(() => {
+		settleRevert(true);
+		// On an API key the subscription's usage report decides the return: back as soon as it is usable, never while it is still
+		// out (unknown: the probe rule of Chain.revertTarget).
+		if (chain && chain.list[chain.active].key_file && chain.list[0].model.startsWith("anthropic/") && orch.status === "idle")
+			void subscriptionCheck.usable().then(v => {
+				usable = v;
+				settleChain();
+			});
+		else void settleChain();
+	}, 60_000);
+
+	// A conversation session that sat idle is parked (hub/convsessions.ts): its process ends like a stop, but nobody stopped it, so
+	// the run state does not say the owner did, and the next message resumes the session (as a lane is parked, laneops.ts parkLane).
+	function park(): boolean {
+		if (!proc) return false;
+		stopping = true;
+		clearTimeout(watchdog);
+		proc.kill();
+		return true;
+	}
+
+	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, heldCount: () => held.length + unstarted.length, turnFailed: () => turnFailed };
+}
+export type Orchestrator = ReturnType<typeof createOrchestrator>;
+
+export const main = createOrchestrator({ key: "main", stateFile: join(DATA_DIR, "orchestrator.json"), source: "orchestrator", keepalive: true });
+export const { orch, orchestratorPid, setTurnHeader, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, turnFailed } = main;

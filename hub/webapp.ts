@@ -62,12 +62,29 @@ export function appAsset(req: Request, path: string): Promise<Response> | undefi
 const notModified = (req: Request, etag: string): boolean => (req.headers.get("if-none-match") ?? "").split(",").some(t => t.trim() === etag);
 
 // GET / : the page markup, revalidated by ETag (size + mtime) so a warm open costs one 304.
+// The owner's assistant name (config identity.name, set by main.ts): the page's title, home-screen name and header carry it instead of the
+// project's name; the page reads it back from its title before /api/state arrives (web/js/04-state.js botName).
+let appName: string | undefined;
+export const setAppName = (name: string): void => {
+	appName = name.trim() || undefined;
+};
+const escHtml = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+export const named = (html: string, name = appName): string => {
+	if (!name) return html;
+	const n = escHtml(name);
+	return html
+		.replace('<meta name="apple-mobile-web-app-title" content="dotz">', `<meta name="apple-mobile-web-app-title" content="${n}">`)
+		.replace("<title>dotz</title>", `<title>${n}</title>`)
+		.replace('<span id="brand-name">dotz</span>', `<span id="brand-name">${n}</span>`)
+		.replace('<h1 id="title">dotz</h1>', `<h1 id="title">${n}</h1>`);
+};
 export function indexPage(req: Request): Promise<Response> {
 	const file = join(WEB_DIR, "index.html");
-	const html = committedText("index.html");
+	const raw = committedText("index.html");
+	const html = raw === undefined ? undefined : named(raw);
 	const st = html === undefined ? statSync(file) : undefined;
-	const etag = st ? `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}"` : `W/"${createHash("sha1").update(html!).digest("hex").slice(0, 16)}"`;
+	const etag = st ? `W/"${st.size.toString(16)}-${Math.floor(st.mtimeMs).toString(16)}-${createHash("sha1").update(appName ?? "").digest("hex").slice(0, 6)}"` : `W/"${createHash("sha1").update(html!).digest("hex").slice(0, 16)}"`;
 	const headers = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache", ETag: etag };
 	if (notModified(req, etag)) return Promise.resolve(new Response(null, { status: 304, headers }));
-	return compressResponse(req, new Response(req.method === "HEAD" ? null : html ?? readFileSync(file, "utf8"), { headers }), etag);
+	return compressResponse(req, new Response(req.method === "HEAD" ? null : html ?? named(readFileSync(file, "utf8")), { headers }), etag);
 }

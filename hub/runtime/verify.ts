@@ -42,7 +42,7 @@ export const CHECKLIST: { id: string; label: string; core: boolean }[] = [
 	{ id: "steer_abort", label: "끼어들기·중단", core: false },
 	{ id: "deny_lines", label: "차단 명령 적용", core: true },
 	{ id: "guard_extension", label: "가드 확장 적재", core: false },
-	{ id: "dotz_tools", label: "dotz 도구", core: false },
+	{ id: "dotz_tools", label: "게이트웨이 도구", core: false },
 	{ id: "tool_intent", label: "도구 호출 의도 표시", core: false },
 	{ id: "workers_spawn", label: "작업자 생성", core: false },
 	{ id: "workers_isolated_patch", label: "격리 작업자 패치", core: false },
@@ -56,7 +56,7 @@ const ADJUST: Record<string, { result: "adapted" | "disabled"; note: string }> =
 	compaction_events: { result: "adapted", note: "허브가 토큰 수치로 직접 컴팩션 시점을 정해요" },
 	steer_abort: { result: "adapted", note: "끼어들기는 현재 턴이 끝난 뒤 이어서 보내고, 중단은 프로세스 종료로 처리해요" },
 	guard_extension: { result: "disabled", note: "가드 확장(브리핑·패치·예산 점검)은 이 런타임에서 돌지 않아요. 차단 명령은 '차단 명령 적용' 항목이 따로 막아요" },
-	dotz_tools: { result: "disabled", note: "dotz 도구(레인·기억 등)를 이 런타임에서는 쓰지 않아요" },
+	dotz_tools: { result: "disabled", note: "게이트웨이 도구(레인·기억 등)를 이 런타임에서는 쓰지 않아요" },
 	tool_intent: { result: "disabled", note: "도구 호출의 의도 줄을 보여주지 않아요" },
 	workers_spawn: { result: "disabled", note: "작업자(서브에이전트) 기능을 꺼요" },
 	workers_isolated_patch: { result: "disabled", note: "격리 작업자와 패치 병합을 꺼요" },
@@ -98,7 +98,7 @@ export async function detectAll(refresh = false): Promise<Detected[]> {
 			const adapter = Object.hasOwn(adapters, id) ? adapters[id] : undefined;
 			const d = await (adapter ?? DETECT_ONLY[id]).detect();
 			const hasAdapter = !!adapter;
-			const reason = !d.installed ? "설치 안 됨" : !hasAdapter ? "dotz 어댑터 없음" : undefined;
+			const reason = !d.installed ? "설치 안 됨" : !hasAdapter ? "어댑터 없음" : undefined;
 			return { id, label: RUNTIME_LABEL[id], ...d, hasAdapter, usable: d.installed && hasAdapter, reason };
 		}),
 	);
@@ -135,7 +135,7 @@ export async function verifyRuntime(id: RuntimeId, o: VerifyOpts = {}): Promise<
 		mkdirSync(dir(), { recursive: true });
 		const version = o.version ?? (await detectAll()).find(d => d.id === id)?.version;
 		if (!adapter) {
-			for (const c of CHECKLIST) raw.push({ ...c, result: "fail", note: "dotz 어댑터 없음" });
+			for (const c of CHECKLIST) raw.push({ ...c, result: "fail", note: "어댑터 없음" });
 		} else {
 			const probes = o.probes ?? (adapter as Probing).probes ?? {};
 			const model = o.model ?? selectorOf(orchestratorModel());
@@ -203,7 +203,7 @@ export function refusalFor(id: string, detected: Detected | undefined, report: V
 	if (id === "omp") return undefined;
 	if (id === DEFAULT_RUNTIME && detected?.installed && detected.hasAdapter) return undefined;
 	if (!detected?.installed) return "설치되어 있지 않아요";
-	if (!detected.hasAdapter) return "dotz 어댑터가 없어요";
+	if (!detected.hasAdapter) return "이 하네스용 어댑터가 없어요";
 	if (states.get(id)?.running) return "호환성 검사가 아직 끝나지 않았어요";
 	if (!report) return "호환성 검사를 먼저 해야 해요";
 	// The stored verdict is not trusted: it is recomputed, and a report missing a core item counts as blocked.

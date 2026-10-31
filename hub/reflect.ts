@@ -47,6 +47,11 @@ function usage(sessionFile: string, since: number): string {
 	return `${requests} requests, cache read ${Math.round(read / 1000)}K, cache write ${Math.round(write / 1000)}K, full rewrites >30K: ${busts}`;
 }
 
+// The owner's messages of the last 24h that read like a correction or a repeat (the digest lists them; repeatedLessons matches lessons against them).
+export function ownerCorrections(now = Date.now()): string[] {
+	return jsonl(paths.inbox, now - DAY).filter(e => (e.kind === "message" || e.kind === "lane_message") && CORRECTION.test(String(e.text))).map(e => String(e.text));
+}
+
 export function digest(sessionFile: string, now = Date.now()): string | undefined {
 	const since = now - DAY;
 	const inbox = jsonl(paths.inbox, since);
@@ -105,7 +110,17 @@ export async function snapshot(): Promise<string | undefined> {
 // Code picks removal/merge candidates in LESSONS.md, the model decides (stale >90 days, near-duplicates by token overlap).
 const STALE_DAYS = 90;
 const DUPLICATE_SIMILARITY = 0.6;
-const LESSON_LINE = /^- \[(\d{4})-(\d{2})-(\d{2})\]\s*(.*)$/;
+// A lesson line is dated [YYYY-MM-DD] or, as the nightly turn writes it, [MM-DD]: a year-less date is this year's, or last year's when that
+// would lie in the future.
+const LESSON_LINE = /^- \[(?:(\d{4})-)?(\d{2})-(\d{2})\]\s*(.*)$/;
+const lessonYear = (y: string | undefined, mo: number, d: number, now: number): number => {
+	if (y) return Number(y);
+	const year = new Date(now).getUTCFullYear();
+	return Date.UTC(year, mo - 1, d) > now + DAY ? year - 1 : year;
+};
+// A lesson carried by structure names its enforcer: "(enforced: <guard, test, lint or check>)". pstack's correct / encode-lessons-in-structure:
+// a rule that keeps recurring is fixed where it cannot happen again, and the line says where.
+const ENFORCED = /\(enforced:\s*[^)]+\)/i;
 // Same tokens as OMH's duplicate check (lowercase alphanumeric/hangul runs of 2+); the date prefix is dropped so shared dates never count as overlap.
 const tokens = (text: string): Set<string> => new Set(text.toLowerCase().match(/[0-9a-z가-힣]{2,}/g) ?? []);
 
@@ -116,12 +131,12 @@ export function lessonCandidates(text: string, now: number): { stale: string[]; 
 		const line = raw.trim();
 		const m = LESSON_LINE.exec(line);
 		if (!m) continue;
-		const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+		const [mo, d] = [Number(m[2]), Number(m[3])], y = lessonYear(m[1], mo, d, now);
 		const at = Date.UTC(y, mo - 1, d);
 		const back = new Date(at);
 		if (back.getUTCFullYear() !== y || back.getUTCMonth() !== mo - 1 || back.getUTCDate() !== d) continue;
 		if (now - at > STALE_DAYS * DAY) stale.push(line);
-		dated.push({ line, tokens: tokens(m[4]) });
+		dated.push({ line, tokens: tokens(m[4].replace(BROKEN, "").replace(ENFORCED, "")) });   // the trailers' dates and names are not the lesson
 	}
 	const duplicates: { a: string; b: string; score: number }[] = [];
 	for (let i = 0; i < dated.length; i++) {
@@ -137,9 +152,73 @@ export function lessonCandidates(text: string, now: number): { stale: string[]; 
 	return { stale, duplicates };
 }
 
-function candidateBlock(now: number): string {
+// Matching a lesson to today's corrections (pstack's correct: a rule broken again gets a structural fix). Words alone miss the same mistake said
+// another way and catch a correction that only shares common words, so code does the cheap part and the nightly turn judges by meaning:
+// - words are compared without Korean particles/endings and without common words, and a Hangul word also matches one sharing most of its
+//   letter pairs ("체크아웃을" ~ "체크아웃했어"), so a lesson scores how much of it a correction repeats (likely = 0.4 or more, 2+ words);
+// - every lesson with no enforcer is handed over when there were corrections, the likely ones first with their score, for the turn to decide;
+// - a lesson the turn finds broken gets the date in "(broken: MM-DD, ...)", so a repeat across nights is counted, not re-guessed.
+const STOP = new Set(["the", "a", "an", "to", "of", "and", "or", "is", "are", "be", "it", "its", "this", "that", "with", "for", "on", "in", "at", "as", "by", "from", "before", "after", "never", "not", "no", "do", "does", "did", "when", "once", "only", "each", "every", "his", "him", "he", "you", "your", "그", "이", "저", "것", "수", "좀", "또", "다시", "그냥", "이거", "그거", "저거", "왜", "뭐", "지금", "이번", "있는", "없는", "하는", "한", "할", "해", "하고", "했어", "했어요", "해요", "합니다", "하세요", "말고"]);
+const PARTICLE = /(?:에서는|에게서|으로는|으로|에서|에게|까지|부터|처럼|보다|하고|이랑|랑|은|는|이|가|을|를|에|의|와|과|도|만|로|요|죠|네)$/;
+const ENDING = /(?:했었어요|했었어|했어요|했어|했다|했음|하세요|하지마|하지|해서|해요|해야|하는|하고|하면|되면|됐어|된|하기|함|해|한|할)$/;
+const HANGUL = /^[가-힣]+$/;
+function stem(w: string): string {
+	if (!HANGUL.test(w)) return w;
+	for (let i = 0; i < 3; i++) {
+		const next = w.replace(ENDING, "").replace(PARTICLE, "");
+		if (next === w || next.length < 2) break;
+		w = next;
+	}
+	return w;
+}
+/** The words of a text that carry meaning: lowercased, particles and endings stripped, common words dropped. */
+export const meaningWords = (text: string): string[] => [...new Set((text.toLowerCase().match(/[0-9a-z가-힣]{2,}/g) ?? []).map(stem).filter(w => w.length >= 2 && !STOP.has(w)))];
+const pairs = (w: string): Set<string> => new Set([...w].slice(1).map((c, i) => w[i] + c));
+// Two words are the same word: equal, or both Hangul and one keeps at least two thirds of the other's letter pairs.
+function sameWord(a: string, b: string): boolean {
+	if (a === b) return true;
+	if (!HANGUL.test(a) || !HANGUL.test(b) || a.length < 2 || b.length < 2) return false;
+	const [x, y] = [pairs(a), pairs(b)], small = x.size <= y.size ? x : y, big = small === x ? y : x;
+	let hit = 0;
+	for (const p of small) if (big.has(p)) hit++;
+	return small.size > 0 && hit / small.size >= 2 / 3;
+}
+const LIKELY = 0.4;
+/** How much of a lesson one correction repeats: the share of its meaning words found there (0 when fewer than two match). */
+export function lessonScore(lesson: string, correction: string): number {
+	const own = meaningWords(lesson), said = meaningWords(correction);
+	if (!own.length) return 0;
+	const hit = own.filter(w => said.some(s => sameWord(w, s))).length;
+	return hit >= 2 ? Math.round((hit / own.length) * 100) / 100 : 0;
+}
+const BROKEN = /\(broken:\s*([^)]*)\)/i;
+export type LessonCheck = { line: string; score: number; broken: number };
+/** Every lesson with no enforcer, with its best score against today's corrections and how many nights it was found broken; repeats first,
+ *  then the likely ones by score. */
+export function lessonChecks(text: string, corrections: readonly string[]): LessonCheck[] {
+	const out: LessonCheck[] = [];
+	for (const raw of text.split("\n")) {
+		const line = raw.trim();
+		const m = LESSON_LINE.exec(line);
+		if (!m || ENFORCED.test(line)) continue;
+		const words = m[4].replace(BROKEN, "");
+		const score = Math.max(0, ...corrections.map(c => lessonScore(words, c)));
+		const broken = (BROKEN.exec(line)?.[1] ?? "").split(",").map(s => s.trim()).filter(Boolean).length;
+		out.push({ line, score, broken });
+	}
+	return out.sort((a, b) => b.broken - a.broken || b.score - a.score);
+}
+/** The lessons today's corrections most likely broke again (score 0.4 or more). */
+export const repeatedLessons = (text: string, corrections: readonly string[]): string[] => lessonChecks(text, corrections).filter(c => c.score >= LIKELY).map(c => c.line);
+
+const localMd = (now: number): string => { const d = new Date(now); return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+function candidateBlock(now: number, corrections: readonly string[] = []): string {
 	const stale = existsSync(paths.observations) ? lessonCandidates(readFileSync(paths.observations, "utf8"), now).stale : [];
-	return lessonBlock(now) + (stale.length ? msg().staleObservations(stale) : "");
+	// With corrections today, every unenforced lesson goes to the turn (LESSONS.md is capped, so this stays small); a lesson already broken on
+	// two nights is listed even on a quiet day of matches, since it is a repeat by count, not by words.
+	const checks = existsSync(paths.lessons) ? lessonChecks(readFileSync(paths.lessons, "utf8"), corrections) : [];
+	const shown = corrections.length ? checks : checks.filter(c => c.broken >= 2);
+	return lessonBlock(now) + (shown.length ? msg().lessonRepeats(shown.map(c => ({ ...c, likely: c.score >= LIKELY })), localMd(now)) : "") + (stale.length ? msg().staleObservations(stale) : "");
 }
 
 function lessonBlock(now: number): string {
@@ -152,7 +231,7 @@ function lessonBlock(now: number): string {
 	return msg().lessonCandidates(stale, duplicates.map(d => `${d.a}\n  ~ ${d.b} (${d.score})`), over);
 }
 
-export const reflectPrompt = (d: string, now = Date.now()): string => withReplyLine(msg().reflect(d, paths.lessons) + candidateBlock(now));
+export const reflectPrompt = (d: string, now = Date.now(), corrections: readonly string[] = []): string => withReplyLine(msg().reflect(d, paths.lessons) + candidateBlock(now, corrections));
 
 if (import.meta.main && process.argv[2] === "--candidates" && process.argv[3]) {
 	console.log(JSON.stringify(lessonCandidates(readFileSync(process.argv[3], "utf8"), Date.now()), null, 2));
@@ -174,7 +253,7 @@ export function startReflection(deliver: (text: string) => void, sessionFile: ()
 		const d = digest(sessionFile());
 		if (d) {
 			log("reflection: delivering nightly self-review");
-			deliver(reflectPrompt(d));
+			deliver(reflectPrompt(d, Date.now(), ownerCorrections()));
 		} else log("reflection: quiet day, skipped");
 		trackTimer("reflection", setTimeout(run, next()));
 	};

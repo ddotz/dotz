@@ -33,7 +33,7 @@ export function writeAtomic(file: string, text: string, mode = 0o600): void {
 // `enabled` is the feature switch; `apps` has one switch per source (mail, youtube, instagram, ...), every source off until turned on.
 // A config from before `apps` existed has no apps.mail: mail then follows the top-level `auto` (kept valid, and kept in sync by setApp).
 // `decided` = the config file says enabled true or false (the user or onboarding chose); without it each source follows its monitoring.
-export type Settings = { enabled: boolean; decided: boolean; auto: boolean; apps: Record<string, { auto: boolean }>; senders: { only: string[]; skip: string[] }; model?: string; models?: Record<string, string>; attachFolders?: Record<string, string>; followups?: Record<string, string> };
+export type Settings = { enabled: boolean; decided: boolean; auto: boolean; apps: Record<string, { auto: boolean }>; senders: { only: string[]; skip: string[] }; model?: string; models?: Record<string, string>; attachFolders?: Record<string, string>; followups?: Record<string, string>; draftRules?: Record<string, unknown>; draftDefaults?: Record<string, string> };
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()).map(x => x.trim()) : []);
 
@@ -56,6 +56,11 @@ export function loadSettings(): Settings {
 	// `followups`: the 이어서 할 일 rule of one app instance (hub/followup.ts); free text, empty = none.
 	const followups: Record<string, string> = {};
 	for (const [app, v] of Object.entries(raw.followups && typeof raw.followups === "object" ? (raw.followups as Record<string, any>) : {})) if (validApp(app) && typeof v === "string" && v.trim()) followups[app] = v.trim();
+	// `draftRules` / `draftDefaults`: the 자동 초안 규칙 and 기본 규칙 of one mail app instance, validated where they are written and read (hub/app-settings.ts,
+	// lib/rules.ts); kept here as they are so a save of another setting never drops them.
+	const draftRules = raw.draftRules && typeof raw.draftRules === "object" && !Array.isArray(raw.draftRules) ? (raw.draftRules as Record<string, unknown>) : undefined;
+	const draftDefaults: Record<string, string> = {};
+	for (const [app, v] of Object.entries(raw.draftDefaults && typeof raw.draftDefaults === "object" ? (raw.draftDefaults as Record<string, any>) : {})) if (validApp(app) && typeof v === "string" && v.trim()) draftDefaults[app] = v.trim();
 	return {
 		enabled: raw.enabled === true,
 		decided: typeof raw.enabled === "boolean",
@@ -66,6 +71,8 @@ export function loadSettings(): Settings {
 		...(Object.keys(models).length ? { models } : {}),
 		...(Object.keys(attachFolders).length ? { attachFolders } : {}),
 		...(Object.keys(followups).length ? { followups } : {}),
+		...(draftRules && Object.keys(draftRules).length ? { draftRules } : {}),
+		...(Object.keys(draftDefaults).length ? { draftDefaults } : {}),
 	};
 }
 

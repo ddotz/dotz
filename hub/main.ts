@@ -23,11 +23,12 @@ import { setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
 import { announceUsedChanges } from "./accounts-api.ts";
 import { runtimeFor } from "./runtime/index.ts";
-import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch, orchBusy, resumeAfterError, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator } from "./orchestrator.ts";
+import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch, orchBusy, resumeAfterError, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator, turnFailed } from "./orchestrator.ts";
 import { errorAsk, startErrorWatch } from "./orch-error.ts";
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { forgetAccountUsage, usageSnapshot } from "./providers.ts";
+import { sealPlainSecrets } from "./secretbox.ts";
 import { backfillNotices, dropChannelNotices, setAppLabelResolver, setDraftHandled, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
 import { startReflection } from "./reflect.ts";
 import { syncFeatureWatches } from "./features.ts";
@@ -48,6 +49,7 @@ import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { mailByKey, mailByThread, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailSuggest, type MailDeps } from "./mail.ts";
+import { ownAddresses } from "./mail-state.ts";
 import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/offer.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
 import { readMailBody } from "../features/reply-drafts/lib/senders.ts";
@@ -59,10 +61,11 @@ import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { compressResponse } from "./compress.ts";
 import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, replies, bgWork } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
+import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
-import { makeRoute } from "./routes.ts";
+import { makeRoute, startStallSweep } from "./routes.ts";
 import { appProxySocket } from "./app-proxy.ts";
 import { appEntries, appKeyOf, integrationContext } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
@@ -100,6 +103,13 @@ setOrchestratorAvailable(() => orch.status !== "stopped" && orch.status !== "rat
 setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] ?? discord.channels.threads[conv.slice(3)]?.name : conv.startsWith("mail:") ? mailByKey(conv.slice(5))?.subject : conv.startsWith("settings:") ? appEntries(DATA_DIR).find(e => e.key === conv.slice(9))?.label : undefined));
 // An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).
 backfillNotices();
+// A dotz_auth value written before it was stored encrypted is encrypted now (hub/secretbox.ts); a Keychain that refuses leaves it for the next start.
+try {
+	const sealed = sealPlainSecrets(join(DATA_DIR, "secrets"));
+	if (sealed.length) log(`secrets: encrypted ${sealed.length} plain value file(s)`);
+} catch (error) {
+	log(`secrets: plain values not encrypted yet: ${String(error).slice(0, 200)}`);
+}
 tagStoredApps();
 setAppLabelResolver(key => appEntries(DATA_DIR).find(e => e.key === key)?.label ?? key);
 setDraftHandled(d => draftHandled(d.draft!.ref!, { mail: { drafts: listMailDrafts, record: mailByKey }, comment: commentDraftFacts, kakao: kakaoDraftFacts }));
@@ -239,8 +249,8 @@ const mailDeps = (): MailDeps => ({
 	emit: event => emit("inbox", event as Parameters<typeof emit>[1]),
 	wake: (event, target) => deliver(inboxText(event), { target }),
 	offerDraft: m =>
-		void offerMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id) => readMailBody(source, id, realRunner), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner) }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
-	requestDraft: m => requestMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id) => readMailBody(source, id, realRunner), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner) }),
+		void offerMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id) => readMailBody(source, id, realRunner), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
+	requestDraft: m => requestMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id) => readMailBody(source, id, realRunner), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }),
 });
 
 function classifyStoredMails(): void {
@@ -278,7 +288,7 @@ if (!restarted) {
 }
 
 setOrchIdleHandler(() => {
-	queue.settleTurn();
+	queue.settleTurn(turnFailed());
 	queue.redeliverSteered();
 	laneRelay.flush();
 	flushQueue("main");
@@ -332,7 +342,8 @@ if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 	const lines = textsToReport();
 	if (lines.length) wakeOnce("texts-override", msg().textsReport(lines.join("\n")));
 	void pendingBackups(defaultExec, join(import.meta.dir, ".."), join(DATA_DIR, "logs"), DATA_DIR)
-		.then(list => list.forEach(b => wakeOnce("self-update-local", msg().carryOver(b.where, b.read, b.stat, b.files))))
+		// several backups of one update are one wake (the Mac mini got two cards for the same edit, 2026-10-29)
+		.then(list => list.length && wakeOnce("self-update-local", list.map(b => msg().carryOver(b.where, b.read, b.stat, b.files)).join("\n\n---\n\n")))
 		.catch(e => log(`carry-over check failed: ${e}`));
 }
 // One Claude account for the orchestrator and its lanes (hub/account-sticky.ts, the owner's rules in hub/account-rules.ts).
@@ -357,10 +368,19 @@ startWorktreeCleanup();
 startDataCleanup();
 startMemoryGuard((key, text) => {
 	if (key === "orchestrator") return alert(`${NAME}: ${text}`);
+	// A conversation session's notice goes into its own conversation.
+	if (key.startsWith("conv:")) return void out(convs.get(key.slice(5))?.primary ?? "alert", text, undefined, { source: "gateway" }).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 	void send(key, text).catch(e => log(`memory guard notice to ${key} failed: ${e}`));
 });
 startLaneIdleStop();
+convs.startIdleSweep();
 startLaneQueue();
+startStallSweep((conversation, r) => {
+	const text = msg().stallNudge(r.todos ?? 0, r.detail ?? "");
+	if (conversation === "main") deliver(text);
+	else if (conversation.startsWith("lane:")) sendToLane(conversation.slice(5), text);
+	else convs.deliverTo(convs.keyOf(conversation), text, { target: conversation });
+});
 startOrphanReaper();
 startHostSweep();
 startSchedules(s => {
@@ -385,7 +405,7 @@ setFollowupWake(text => {
 });
 void startSelfUpdate(text => {
 	updateAvailable(text);
-	pushNotify({ kind: "update", title: "dotz 업데이트", body: text, url: "/#settings", tag: "update" });
+	pushNotify({ kind: "update", title: `${NAME} 업데이트`, body: text, url: "/#settings", tag: "update" });
 	broadcast({ ts: now(), kind: "update_available", source: "gateway", text });
 }, undefined, {
 	worklog: text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`self-update worklog post failed: ${e}`)),
@@ -467,9 +487,16 @@ function busyNow(): string[] {
 	const justDeferred = queue.deferredOpen().some(d => Date.now() - d.at <= DEFER_GRACE_MS);
 	const workers = running ? `orchestrator background workers (${running})` : justDeferred ? "orchestrator background workers" : "";
 	const laneWorkers = (l: { sessionFile?: string }) => runningOmoWorkers(l.sessionFile);
+	// Each conversation session holds a restart the way main does: its turn or compaction, its workers, a request it just deferred.
+	const sessions = convs.conversations().flatMap(c => {
+		const n = c.bg.running();
+		const deferred = c.queue.deferredOpen().some(d => Date.now() - d.at <= DEFER_GRACE_MS);
+		return [orchBusy(c.o.orch) ? `conversation session ${c.key}` : "", n ? `conversation session ${c.key} background workers (${n})` : deferred ? `conversation session ${c.key} background workers` : ""];
+	});
 	return [
 		orchBusy() ?? "",
 		workers,
+		...sessions,
 		replies.size() ? "reply" : "",
 		...[...lanes.values()].flatMap(l => {
 			const n = laneWorkers(l);

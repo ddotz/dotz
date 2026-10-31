@@ -76,12 +76,12 @@ async function asEvery(app, i, v) {
 // One row for a watch: the monitor's own facts (the status card its detail shows) and, for a watch an app owns, the app's kind, reason, period and
 // 다시 시도. The machine hooks other panels read stay stable: .as-stat, data-watch, data-internal.
 function asStatRow(app, m, i) {
-  const res = m && m.last_result ? NT_RESULT[m.last_result] : null;
-  const dot = i ? i.dot : m ? (m.paused ? "idle" : res && res[1] === "fail" ? "fail" : res ? "ok" : "idle") : "idle";
+  const st = m ? monStatus(m) : null;   // the monitor's one status (30-monitoring.js)
+  const dot = i ? i.dot : st ? (st.tone === "err" ? "fail" : st.key === "off" || st.key === "need" ? "idle" : "ok") : "idle";
   const name = m ? monTitle(m) : i ? i.name : "";
   const line = i
     ? [i.status, i.last_run ? `마지막 확인 ${monTime(i.last_run)}` : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ")
-    : [res && res[0], m ? ntMonRun(m) : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ");
+    : [st && st.text, m ? ntMonRun(m) : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ");
   const facts = [m && m.fails ? `연속 실패 ${m.fails}번` : "", m && m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m && m.last_output ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
   return el("div", { class: `as-row as-stat${i ? " as-int" : " as-conn"}`, "data-watch": m ? m.watch || m.name : i.id, ...(i ? { "data-internal": i.id, "data-kind": i.kind } : { "data-conn": dot === "fail" ? "disconnected" : dot === "ok" ? "connected" : "unknown" }) },
     el("span", { class: `as-dot ${dot}`, "aria-hidden": "true" }),
@@ -96,7 +96,7 @@ function asStatRow(app, m, i) {
         el("input", { class: "as-in as-every", type: "number", min: 1, max: 10080, inputmode: "numeric", "aria-label": `${i.name} 감시 주기(분)`, title: "감시 주기(분)", "data-k": `every:${i.id}`, value: String(i.every_minutes), onchange: ev => asEvery(app, i, ev.target.value) }),
         el("span", { class: "as-unit", text: "분" }))) : null,
     i && i.dot !== "ok" ? el("button", { class: "btn tonal", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id, i.down) }, i.down ? "다시 연결" : "다시 시도") : null,
-    !i && res && res[1] === "fail" ? el("span", { class: "tag err", text: "실패" }) : null);
+    !i && st && st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
 }
 function asFeatRow(app, f) {
   return el("div", { class: "as-row as-feat", "data-feature": f.id },
@@ -302,7 +302,7 @@ async function asAdd(key, pc) {
 const asYes = v => v ? "켜짐" : "꺼짐";
 function asFmt(f, v) {
   if (f.type === "bool") return asYes(v);
-  if (f.type === "list") return v.length ? `${v.length}개` : "없음";
+  if (f.type === "list" || f.type === "rules") return v.length ? `${v.length}개` : "없음";
   if (f.type === "enum") return (f.labels || {})[v] || String(v);
   return String(v) || "없음";
 }
@@ -322,6 +322,61 @@ function asControl(f, set) {
     : el("input", { class: "fi as-in", type: num ? "number" : "text", ...(num ? { min: f.min, max: f.max, inputmode: "numeric" } : {}), "aria-label": f.label, "data-k": f.key, onchange: () => set(num ? Number(c.value) : c.value.trim()) });
   c.value = String(f.value);
   return c;
+}
+/* ---- 자동 초안 규칙 (hub/app-settings.ts draft_rules, draft_default): the rules of a mail app, edited here or by the bot (bin/rules.ts) ---- */
+// A rule = 이름 (the badge), 언제 (a plain condition one short model call checks), 어떻게 (the draft's instruction) and 붙일 파일; the 기본 규칙 goes into every
+// draft. Every change is the same settings PATCH, so a peer computer's mail app is edited through its own proxy like any other setting.
+const AR_PH = {
+  name: "이름: 메일 옆 뱃지에 보일 짧은 이름 (예: 자료 요청)",
+  when: "언제: 이 규칙을 쓸 메일 (예: 자료나 양식을 보내 달라는 메일)",
+  how: "어떻게: 초안에 바라는 것 (예: 요청한 자료를 첨부하고 짧게 인사)",
+  files: "붙일 파일: 첨부 파일 폴더 안의 파일 이름이나 전체 경로를 쉼표로 구분. 비우면 메일에 맞는 파일을 폴더에서 찾아요",
+};
+const AR = { edit: {} };   // app -> { id: rule id or "" for a new rule, v: { name, when, how, files } }
+async function arSave(app, list, done) {
+  if (AS.busy[app]) return;
+  AS.busy[app] = true;
+  try { await asPatch(app, { draft_rules: list }); if (done) done(); } catch (e) { toast(e.message || "규칙을 저장하지 못했어요", true); }
+  AS.busy[app] = false; asPaint();
+}
+const arFiles = s => String(s || "").split(/[,\n]/).map(x => x.trim()).filter(Boolean);
+function arForm(app, rules, ed) {
+  const v = ed.v, box = (k, tag, extra) => { const c = el(tag, { class: `fi as-in as-ta`, "data-k": `rule-${k}`, placeholder: AR_PH[k], "aria-label": AR_PH[k].split(":")[0], ...extra, oninput: () => { v[k] = c.value; } }); c.value = v[k] || ""; return el("label", { class: "as-rl" }, el("span", { class: "as-h", text: AR_PH[k].split(":")[0] }), c); };   // the box's name stays above it once the greyed text is gone
+  const save = () => {
+    const name = (v.name || "").trim(), when = (v.when || "").trim();
+    if (!name || !when) return toast("이름과 언제를 적어 주세요", true);
+    const rule = { name, when, how: (v.how || "").trim(), files: arFiles(v.files) };
+    const list = ed.id ? rules.map(r => r.id === ed.id ? { ...r, ...rule } : r) : [...rules, { ...rule, on: true }];
+    arSave(app, list, () => { delete AR.edit[app]; });
+  };
+  return el("div", { class: "as-row as-col as-rform", "data-rule-form": ed.id || "new" },
+    box("name", "input", { type: "text", maxlength: 20 }), box("when", "textarea", { rows: 2, maxlength: 300 }), box("how", "textarea", { rows: 3, maxlength: 1000 }), box("files", "input", { type: "text" }),
+    el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-k": "rule-save", disabled: !!AS.busy[app], onclick: save }, "저장"),
+      el("button", { class: "btn tonal", type: "button", "data-k": "rule-cancel", onclick: () => { delete AR.edit[app]; asPaint(); } }, "취소")));
+}
+function arRow(app, rules, r) {
+  const files = (r.files || []).length ? `붙일 파일: ${r.files.join(", ")}` : "";
+  return el("div", { class: "as-row as-rule", "data-rule": r.id },
+    el("span", { class: "as-b" }, el("span", { class: "as-n" }, draftRuleTag(r.name, "as-rtag")), el("span", { class: "as-h", text: `언제: ${r.when}` }),
+      r.how ? el("span", { class: "as-h", text: `어떻게: ${r.how}` }) : null, files ? el("span", { class: "as-h", text: files }) : null),
+    el("span", { class: "as-btns" },
+      kkSwitch(r.on, r.name, `rule:${r.id}`, on => arSave(app, rules.map(x => x.id === r.id ? { ...x, on } : x))),
+      el("button", { class: "btn text", type: "button", "data-k": `rule-edit:${r.id}`, onclick: () => { AR.edit[app] = { id: r.id, v: { name: r.name, when: r.when, how: r.how, files: (r.files || []).join(", ") } }; asPaint(); } }, "고치기"),
+      el("button", { class: "btn text", type: "button", "data-k": `rule-del:${r.id}`, onclick: () => arSave(app, rules.filter(x => x.id !== r.id), () => toast(`규칙 ${r.name}을(를) 지웠어요`)) }, "지우기")));
+}
+// The rows of the section, in order: heading, what rules do, the 기본 규칙 box, each rule (or its form), then 규칙 추가 (or the new rule's form).
+function arNodes(app, fRules, fDef) {
+  const rules = Array.isArray(fRules.value) ? fRules.value : [], ed = AR.edit[app];
+  const def = el("textarea", { class: "fi as-in as-ta", rows: 2, maxlength: fDef.max || 1000, "data-k": "draft_default", placeholder: fDef.placeholder || "", "aria-label": fDef.label,
+    onchange: async () => { if (AS.busy[app]) return; AS.busy[app] = true; try { await asPatch(app, { draft_default: def.value.trim() }); toast("기본 규칙을 저장했어요"); } catch (e) { toast(e.message || "기본 규칙을 저장하지 못했어요", true); } AS.busy[app] = false; asPaint(); } });
+  def.value = fDef.value || "";
+  return [
+    el("div", { class: "as-sub", "data-sub": "rules", text: fRules.label }),
+    el("div", { class: "as-row", "data-setting": "draft_rules" }, el("span", { class: "as-b" }, el("span", { class: "as-h", text: fRules.help }))),
+    el("div", { class: "as-row as-col", "data-setting": "draft_default" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: fDef.label }), el("span", { class: "as-h", text: fDef.help })), def),
+    ...rules.map(r => ed && ed.id === r.id ? arForm(app, rules, ed) : arRow(app, rules, r)),
+    ed && !ed.id ? arForm(app, rules, ed) : el("div", { class: "as-row" }, el("button", { class: "btn tonal", type: "button", "data-k": "rule-add", disabled: rules.length >= 20, onclick: () => { AR.edit[app] = { id: "", v: {} }; asPaint(); } }, "규칙 추가")),
+  ];
 }
 // The sections of the settings screen in the order the owner reads them (hub/app-settings.ts SettingSection); a row is drawn once, under one heading.
 const AS_SECTIONS = [["notify", "알림"], ["draft", "자동 초안과 승인"], ["watch", "감시"], ["more", "기타 기능"], ["advanced", "고급"]];
@@ -368,7 +423,7 @@ function asPaint() {
   const feat = app.startsWith("w:") ? null : AS.feat[app] || null;
   // The watch status rows and the connection row are drawn from the monitor and integration data, so their changes repaint too.
   const statSig = app.startsWith("w:") ? [asMon(app)] : [monStatMons(app), (({ it }) => it ? [it.state, it.since, it.hint] : null)(asConnItem(app))];
-  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], feat, statSig]);
+  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], feat, statSig, AR.edit[app] ? AR.edit[app].id || "new" : null]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   // Within a section: the switch that turns the feature on, then the feature rows, then the other values, then the lists, then what waits or runs.
@@ -376,7 +431,9 @@ function asPaint() {
   const put = (sec, rank, node) => (secs.get(sec) || secs.get("advanced")).push({ rank, node });
   const keys = new Set(fields.map(f => f.key));
   // 기억 항목 (attach folder, follow-up rule) are learned in conversation, never typed here: shown read only, with how to change them.
-  for (const f of fields.filter(f => !f.memory)) put(f.section || "advanced", f.type === "list" ? 4 : f.switch ? 1 : 3, asSettingRow(app, f, feat, box));
+  const fRules = fields.find(f => f.type === "rules"), fDef = fRules && fields.find(f => f.key === "draft_default");
+  if (fRules && fDef) for (const node of arNodes(app, fRules, fDef)) put("draft", 6, node);
+  for (const f of fields.filter(f => !f.memory && f !== fRules && f !== fDef)) put(f.section || "advanced", f.type === "list" ? 4 : f.switch ? 1 : 3, asSettingRow(app, f, feat, box));
   if (feat) {
     for (const f of feat.features) if (!(f.setting && keys.has(f.setting))) put(f.section || "more", 2, asFeatRow(app, f));
     if (feat.approvals.length) { put("draft", 5, el("div", { class: "as-sub", "data-sub": "approvals", text: "승인 대기" })); for (const a of feat.approvals) put("draft", 5, asApprovalNode(app, a)); }

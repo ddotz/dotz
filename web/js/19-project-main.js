@@ -78,7 +78,7 @@ function pmPrimary(rows, live, working, workRun) {
     el("button", { class: "btn pm-need-a", type: "button", "data-k": "answer", onclick: () => openTarget(`lane:${ask.name}`, lastChatView()) }, "답하기"));
   const run = working[0] || live[0];
   if (run) return el("div", { class: "card pm-calm" },
-    el("div", { class: "pm-calm-k" }, el("span", { class: `dot ${run.status === "working" || run.status === "starting" ? "pri" : "ok"}` }), el("span", { text: run.status === "working" || run.status === "starting" ? "지금 작업 중" : "세션이 열려 있어요" })),
+    el("div", { class: "pm-calm-k" }, el("span", { class: `dot${run.status === "working" || run.status === "starting" ? " pri" : ""}` }), el("span", { text: run.status === "working" || run.status === "starting" ? "지금 작업 중" : "세션이 열려 있어요" })),
     el("div", { class: "pm-calm-t", text: run.title }),
     el("button", { class: "btn tonal", type: "button", onclick: () => openTarget(`lane:${run.name}`, lastChatView()) }, "채팅 열기"));
   if (workRun.length) return el("div", { class: "card pm-calm" },
@@ -281,12 +281,12 @@ function pmSessions(D, rows) {
 
 const PM_KIND = { monitor: "모니터링", routine: "루틴", schedule: "예약" };
 const pmEvery = n => !(n > 0) ? "" : n % 60 === 0 ? `매 ${n / 60}시간` : `매 ${n}분`;
-// Health dot: ok after a clean run, warn after a failed one, err after three in a row; a paused item has none.
+// Health dot: ok after a clean run, err after a failed one (failure is red, owner 2026-10-28); a paused item has none.
 function pmHealth(x) {
   if (x.paused) return ["", ""];
   const n = x.fails || 0;
-  if (x.lastOk === false) return n >= 3 ? ["err", `계속 실패 ${n}번`] : ["warn", "마지막 실행 실패"];
-  if (n > 0) return ["warn", `실패 ${n}번`];
+  if (x.lastOk === false) return n >= 3 ? ["err", `계속 실패 ${n}번`] : ["err", "마지막 실행 실패"];
+  if (n > 0) return ["err", `실패 ${n}번`];
   return [x.lastRun ? "ok" : "", ""];
 }
 // The recurring work of a project, monitors first: scripts the gateway runs, then routines and one-off schedules that wake the model.
@@ -377,8 +377,8 @@ const pmSessionRow = r => sessionRow({ name: r.name, title: r.title, status: r.s
 const pmWorkRow = w => {
   const run = w.status === "running";
   return el("button", { class: "li tap", type: "button", onclick: () => workGo(w) },
-    el("span", { class: `dot ${run ? "pri" : w.status === "done" ? "ok" : "err"}` }),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${w.status === "done" ? "끝남" : "실패"} · ${workAgo(w)}` })),
+    el("span", { class: `dot ${run || workRecovering(w) ? "pri" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err"}` }),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : workRecovering(w) ? "이어서 처리 중" : "실패 · 이어서 처리함"} · ${workAgo(w)}` })),
     icon("chev", "lead"));
 };
 // 진행 중: sessions that are alive and background jobs that are running. 최근 세션: the ended ones, newest first.
@@ -460,11 +460,11 @@ setInterval(() => {
 /* ---------- context ---------- */
 let C = null, ctxTimer;
 const ctxTokens = name => ((C && C.processes) || []).find(p => p.name === name)?.tokens ?? 0;
-const ctxTone = pct => pct == null ? "" : pct >= 80 ? "err" : pct >= 60 ? "warn" : "";
+const ctxTone = pct => pct != null && pct >= 60 ? "warn" : "";   // context running out needs the owner: orange, never red (owner 2026-10-28)
 function compactState(c) {
   if (!c || !c.state) return null;
   const t = c.at ? kstTime(c.at) : "";
-  if (c.state === "queued") return { tone: "warn", text: "압축 대기" };
+  if (c.state === "queued") return { tone: "pri", text: "압축 대기" };
   if (c.state === "compacting") return { tone: "pri", text: `압축 중 · ${t}` };
   if (c.state === "done") return { tone: "ok", text: `압축 완료 ${t}${c.tokensBefore ? ` · ${num(c.tokensBefore)} 토큰 전` : ""}` };
   return { tone: "err", text: `압축 실패 ${t}${c.error ? ` · ${c.error}` : ""}` };
@@ -508,5 +508,63 @@ function renderContext() {
       p.running ? el("div", { class: "mt8" }, ctxBar(p)) : el("div", { class: "sup mt8", text: off ? "꺼져 있어요. 다음 메시지가 오면 다시 시작해요" : "실행 중이 아니에요" }),
       el("div", { class: "row mt12", style: "justify-content:space-between" }, cs ? el("span", { class: `tag ${cs.tone}`, text: cs.text }) : el("span"), btn)));
   }
-  clear(box).append(list);
+  clear(box).append(list, ...ctxModels());
+}
+/* Per-model context window and auto-compaction point (PUT /api/context/model, stored in config context.models). */
+const ctxUser = n => n === "orchestrator" ? botName : n === "lanes" ? "새 세션 기본" : n;
+// "300000", "300,000", "300k", "1.5m" -> tokens; "80%" -> that share of `window`. "" -> null (default). NaN when unreadable.
+function ctxParse(v, window) {
+  const s = String(v || "").replace(/[\s,_]/g, "").toLowerCase();
+  if (!s) return null;
+  const m = s.match(/^(\d+(?:\.\d+)?)(%|k|m)?$/);
+  if (!m) return NaN;
+  const n = Number(m[1]);
+  if (m[2] === "%") return window ? Math.round(window * n / 100) : NaN;
+  return Math.round(m[2] === "k" ? n * 1e3 : m[2] === "m" ? n * 1e6 : n);
+}
+function ctxModels() {
+  const list = (C && C.models) || [];
+  if (!list.length) return [];
+  return [el("div", { class: "sec mt12", text: "모델별 컨텍스트 설정" }), el("div", { class: "col" }, ...list.map(m => {
+    const win = m.window || m.window_default, at = m.compact_at || m.compact_at_default;
+    const pct = win ? ` (${Math.round(at / win * 100)}%)` : "";
+    return el("div", { class: "card ctx-model" },
+      el("div", { class: "ch" }, el("h3", { text: modelName(m.model) }), el("button", { class: "btn text", type: "button", onclick: () => ctxDialog(m) }, "설정")),
+      el("div", { class: "kv" }, el("span", { class: "k", text: "컨텍스트 크기" }), el("span", { class: "v", text: win ? `${num(win)} 토큰${m.window ? " · 직접 설정" : " · 기본"}` : "아직 모름 (처음 응답 뒤 표시)" })),
+      el("div", { class: "kv" }, el("span", { class: "k", text: "자동 압축" }), el("span", { class: "v", text: `${num(at)} 토큰${pct}${m.compact_at ? " · 직접 설정" : " · 기본"}` })),
+      el("div", { class: "sup", text: `사용: ${m.used_by.map(ctxUser).join(", ")}` }));
+  }))];
+}
+function ctxDialog(m) {
+  const L = C.limits || {};
+  const win = input({ type: "text", inputmode: "numeric", value: m.window ? String(m.window) : "", placeholder: m.window_default ? `기본 ${num(m.window_default)}` : "기본 (런타임 값)" });
+  const at = input({ type: "text", inputmode: "numeric", value: m.compact_at ? String(m.compact_at) : "", placeholder: `기본 ${num(m.compact_at_default)}` });
+  const err = el("p", { class: "sup err-t", role: "alert" });
+  const save = (c, btn, body, msg) => busy(btn, async () => {
+    try { C = await api("/api/context/model", "PUT", { model: m.model, ...body }); }
+    catch (e) { err.textContent = e.message; return; }
+    c(); toast(msg); renderContext();
+  });
+  const actions = [{ label: "취소", onclick: c => c() }];
+  if (m.window || m.compact_at) actions.push({ label: "기본값으로", onclick: (c, btn) => save(c, btn, { window: null, compact_at: null }, "기본값으로 되돌렸어요") });
+  actions.push({ label: "저장", kind: "pri", onclick: (c, btn) => {
+    const w = ctxParse(win.value, null);
+    const a = ctxParse(at.value, w || m.window_default);
+    if (Number.isNaN(w)) { err.textContent = "컨텍스트 크기는 토큰 수로 적어 주세요 (예: 1000000, 200k)"; return; }
+    if (Number.isNaN(a)) { err.textContent = "자동 압축 시점은 토큰 수나 %로 적어 주세요 (예: 300k, 80%). %는 컨텍스트 크기를 알 때만 써요"; return; }
+    return save(c, btn, { window: w, compact_at: a }, "저장했어요. 다음 턴부터 적용돼요");
+  } });
+  dialog({
+    classic: true,
+    title: `${modelName(m.model)} 컨텍스트`,
+    body: el("div", { class: "col" },
+      el("p", { class: "sup", text: `이 모델을 쓰는 모든 세션(${m.used_by.map(ctxUser).join(", ")})에 적용돼요. 비우면 기본값을 써요.` }),
+      textField("컨텍스트 크기 (토큰)", win),
+      el("p", { class: "sup", text: L.window ? `${num(L.window.min)}~${num(L.window.max)} 토큰. 화면의 사용률과 기본 압축 시점의 기준이 돼요.` : "" }),
+      textField("자동 압축 시작 (토큰 또는 %)", at),
+      el("p", { class: "sup", text: `컨텍스트가 이만큼 차면 한가할 때 요약해서 줄여요. ${L.compact_at ? num(L.compact_at.min) : ""} 토큰 이상, 컨텍스트 크기보다 작게. 낮게 할수록 매 턴 다시 읽는 토큰과 비용이 줄어요.` }),
+      el("p", { class: "sup", text: L.applies || "" }),
+      err),
+    actions,
+  });
 }

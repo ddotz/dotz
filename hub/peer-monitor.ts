@@ -7,7 +7,8 @@
 // only for a read it needs: one it triggers (a cache older than 20 s) or one already running after a peer's change (bounded by the 2.5 s fetch
 // timeout, all peers in parallel), so a decision answered on the other computer never shows stale here for the next interval.
 // Everything outside (fetch, computers, clock, token, the local handler) is injected, so tests run two gateways in one process.
-import { createHash } from "node:crypto";
+import { peerFetch } from "./tailnet-fetch.ts";
+import { createHash, randomBytes } from "node:crypto";
 import { PEER_GET, peerHeaders, peerTokenFor } from "./peer-auth.ts";
 import { createPairer, type PairResult } from "./peer-pair.ts";
 import { knownComputers } from "./peers.ts";
@@ -18,7 +19,8 @@ export type Computer = { name: string; url: string; self: boolean };
 // It is part of the rev, so a change of pause reaches a peer holding the older snapshot.
 export type OrchestratorPause = { status: string; pauseKind: string };
 // `runs`: the run state of that gateway's mail conversations (`mail:<key>`), so a mail opened here shows what its bot is doing there.
-export type Snapshot = { name: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause; runs?: Record<string, unknown> };
+// `replies`: the reply drafts its apps keep in their own stores (GET /api/replies: KakaoTalk rooms, comment sources), for the 답장 확인 queue here.
+export type Snapshot = { name: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause; runs?: Record<string, unknown>; replies?: unknown[] };
 export type PeerView = { name: string; url: string; online: boolean; stale: boolean; items: Snapshot | null };
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 export type MonitorDeps = {
@@ -35,6 +37,7 @@ export type MonitorDeps = {
 	timeoutMs?: number;
 	postTimeoutMs?: number;
 	refreshMs?: number;
+	log?: (message: string) => void;                          // where a failed handoff ack is noted (never thrown)
 };
 
 const GET_MS = 2500;
@@ -44,6 +47,9 @@ const UPLOAD_MS = 120_000;   // one file's bytes (base64) to the other computer:
 const KEEP = ["content-type", "content-disposition", "content-security-policy", "x-content-type-options", "x-file-note"];
 const REFRESH_MS = 20_000;
 const FROM_MAX = 40;
+const WORDS_MAX = 2000;   // a handoff's owner_words, and its note
+const NOTE_MAX = 8000;
+const HANDOFF_ID = /^[A-Za-z0-9_-]{1,40}$/;
 const LOCAL = "http://local";
 const OFFLINE = { error: "연결 안 됨" };
 
@@ -79,7 +85,7 @@ export type PeerMonitor = {
 };
 
 export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
-	const f: Fetcher = deps.fetch ?? ((u, init) => fetch(u, init));
+	const f: Fetcher = deps.fetch ?? ((u, init) => peerFetch(u, init));
 	const now = deps.now ?? Date.now;
 	const token = deps.token ?? peerTokenFor;
 	const computers = deps.computers ?? knownComputers;
@@ -90,6 +96,8 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 	const cache = new Map<string, Entry>();
 	const inflight = new Map<string, Promise<void>>();
 	const dirty = new Set<string>();
+	const acks = new Set<Promise<void>>();   // handoff acks on their way back to the sender (idle() waits for them)
+	const log = deps.log ?? (() => {});
 
 	const ask = (method: string, path: string, data?: unknown, login?: string) =>
 		deps.local(new Request(`${LOCAL}${path}`, {
@@ -100,11 +108,13 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 	const read = async (path: string): Promise<any> => (await ask("GET", path)).json();
 
 	const PARTS = ["/api/monitors", "/api/notices?limit=100", "/api/integrations", "/api/conversations"];
-	const build = (name: string, [m, n, i, c]: any[]): Snapshot => {
-		const part = { name, monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv), ...(deps.orchestrator ? { orchestrator: deps.orchestrator() } : {}), ...(deps.runs ? { runs: deps.runs() } : {}) };
+	const build = (name: string, [m, n, i, c]: any[], replies?: unknown[]): Snapshot => {
+		const part = { name, monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv), ...(deps.orchestrator ? { orchestrator: deps.orchestrator() } : {}), ...(deps.runs ? { runs: deps.runs() } : {}), ...(replies ? { replies } : {}) };
 		return { ...part, rev: createHash("sha1").update(JSON.stringify(part)).digest("hex").slice(0, 12) };
 	};
-	const snapshot = async (): Promise<Snapshot> => build(deps.name(), await Promise.all(PARTS.map(read)));
+	// The reply drafts are optional: a handler without /api/replies (or one that fails) leaves them out instead of failing the snapshot.
+	const replies = async (): Promise<unknown[] | undefined> => { try { const r = await ask("GET", "/api/replies"); return r.ok ? ((await r.json()) as { items?: unknown[] }).items ?? [] : undefined; } catch { return undefined; } };
+	const snapshot = async (): Promise<Snapshot> => { const [parts, rs] = await Promise.all([Promise.all(PARTS.map(read)), replies()]); return build(deps.name(), parts, rs); };
 
 	// An older peer (404 on /api/peer/monitoring) or no shared token here: the four plain reads, which the peer allows through the owner's
 	// tailnet identity like the computer switcher's reads. Read-only: forwarded actions always need the token.
@@ -202,7 +212,8 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 		if (!target || !pc) return json({ error: "unknown computer" }, 400);
 		const p = url.searchParams.get("p") ?? "";
 		const parsed = p.startsWith("/") && !p.startsWith("//") ? new URL(p, LOCAL) : undefined;
-		const get = req.method === "GET";
+		// HEAD is a read too: a file chip asks for a peer file's size and existence before it offers it.
+		const get = req.method === "GET" || req.method === "HEAD";
 		const allowed = !!parsed && parsed.origin === LOCAL && (get ? PEER_GET.some(r => r.test(parsed.pathname)) : parsed.pathname === "/api/peer/act");
 		if (!allowed || !parsed) return json({ error: "path not allowed" }, 400);
 		const off = (p: PairResult) => json({ error: "peering is off", ...(!p.ok && p.reason ? { reason: p.reason } : {}) }, 503);
@@ -244,9 +255,35 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			}
 			const headers: Record<string, string> = {};
 			for (const k of KEEP) { const v = r.headers.get(k); if (v) headers[k] = v; }
+			// A HEAD answer has no body to measure: the peer's own size is the answer (the file chip shows it).
+			if (req.method === "HEAD") {
+				const n = r.headers.get("content-length");
+				return new Response(null, { status: r.status, headers: n ? { ...headers, "content-length": n } : headers });
+			}
 			return new Response(r.status === 204 || r.status === 304 ? null : await r.arrayBuffer(), { status: r.status, headers });
 		} catch {
 			return json(OFFLINE, 502);
+		}
+	}
+
+	// Tells the sender's gateway that its handoff was taken. Never throws: a failure is noted in the log, the handoff itself already succeeded.
+	async function ackHandoff(to: string, id: string): Promise<void> {
+		try {
+			const target = (await computers()).find(c => !c.self && c.name === to);
+			if (!target) return log(`handoff ack ${id}: ${to} is not a known computer`);
+			const body = JSON.stringify({ action: "handoff-ack", args: { id }, from: deps.name() });
+			const send = (h: Record<string, string>) => f(`${target.url}/api/peer/act`, { method: "POST", headers: { ...h, "content-type": "application/json" }, body, signal: AbortSignal.timeout(postMs), redirect: "manual" });
+			let h = peerHeaders(token(target.url));
+			if (!h) {
+				await pair(target.url);
+				h = peerHeaders(token(target.url));
+			}
+			if (!h) return log(`handoff ack ${id}: no peer token for ${to}`);
+			let r = await send(h);
+			if (r.status === 403 && (await pair(target.url, true)).ok) r = await send(peerHeaders(token(target.url)) ?? h);
+			if (!r.ok) log(`handoff ack ${id}: ${to} answered ${r.status}`);
+		} catch (e) {
+			log(`handoff ack ${id}: ${e instanceof Error ? e.message : String(e)}`);
 		}
 	}
 
@@ -276,15 +313,36 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				for (const x of list) form.append("file", new File([Buffer.from(x.data, "base64")], String(x.name ?? "file"), { type: typeof x.type === "string" ? x.type : "" }));
 				return deps.local(new Request(`${LOCAL}/api/upload`, { method: "POST", headers: { ...deps.localHeaders, ...(login ? { "tailscale-user-login": login } : {}) }, body: form }));
 			}
+			// The owner handed work over from the other computer: it arrives in this gateway's main chat as the owner's own instruction, and the ack goes back (not awaited).
+			case "handoff": {
+				const words = typeof a.owner_words === "string" ? a.owner_words.trim() : "";
+				const note = typeof a.note === "string" ? a.note.trim() : "";
+				if (!words || words.length > WORDS_MAX) return bad(`owner_words required (at most ${WORDS_MAX} characters)`);
+				if (!note || note.length > NOTE_MAX) return bad(`note required (at most ${NOTE_MAX} characters)`);
+				if (a.id !== undefined && !(typeof a.id === "string" && HANDOFF_ID.test(a.id))) return bad("id must be 1-40 letters, digits, - or _");
+				const id = typeof a.id === "string" ? a.id : randomBytes(4).toString("hex");
+				const text = `[peer handoff from ${from} id=${id}] The owner explicitly handed this work over from ${from}. Take it as the owner's own instruction and continue it here now; do not ask whether to take it. Answer the owner here as usual.\n\nOwner's words (verbatim):\n${words}\n\nHandoff note:\n${note}`;
+				const r = await ask("POST", "/api/message", { text, via: from }, login);
+				if (!r.ok) return r;
+				const p: Promise<void> = ackHandoff(from, id).finally(() => acks.delete(p));
+				acks.add(p);
+				return json({ ok: true, id, ack: true });
+			}
+			// The other computer took the work this one handed over: a bot note in this gateway's chat.
+			case "handoff-ack":
+				if (typeof a.id !== "string" || !HANDOFF_ID.test(a.id)) return bad("id required");
+				return ask("POST", "/api/send", { target: "chat", text: `✅ ${from}에서 넘긴 작업을 받아 이어서 해요 (id ${a.id})`, session: "main" }, login);
 			case "answer":
 				if (typeof a.id !== "string" || !a.id) return bad("id required");
 				return ask("POST", `/api/notices/${encodeURIComponent(a.id)}/answer`, { n: a.n, note: a.note, via: from }, login);
 			// A notice of this computer seen in the other one's 모니터링: 읽음 처리, the x (무시) and its undo, the same routes the owner's own web uses.
 			case "notice":
 				if (a.op === "read" && Array.isArray(a.ids)) return ask("POST", "/api/notices/read", { ids: a.ids.map(String) }, login);
+				// reopen: 되돌리기 on the toast after a reply draft was answered 보내지 않기 from the other computer.
+				if (a.op === "reopen" && typeof a.id === "string" && a.id) return ask("POST", "/api/notices/reopen", { ids: [a.id] }, login);
 				// dismiss: the 지우기 of a handled reply draft folded in a mail's conversation (web/js/30-mail-sent.js); an open question is refused there.
 				if ((a.op === "ignore" || a.op === "unignore" || a.op === "dismiss") && typeof a.id === "string" && a.id) return ask("POST", `/api/notices/${encodeURIComponent(a.id)}/${a.op}`, {}, login);
-				return bad("op must be read, ignore, unignore or dismiss");
+				return bad("op must be read, reopen, ignore, unignore or dismiss");
 			case "read":
 				return ask("POST", "/api/read", { target: a.target, ts: a.ts }, login);
 			case "watch": {
@@ -322,13 +380,29 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (a.op === "read" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/read`, { logId: a.logId }, login);
 				if (a.op === "draft" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/draft`, typeof a.choice === "string" ? { choice: a.choice } : a.revise && typeof a.revise === "object" ? { revise: a.revise } : {}, login);
 				if (a.op === "ask-drop" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/ask/drop`, {}, login);
-				if ((a.op === "draft-send" || a.op === "draft-drop") && a.code) return ask("POST", `/api/kakao/drafts/${id}/${a.op.slice(6)}`, a.text === undefined ? {} : { text: a.text }, login);
-				return bad("op must be send, send-delete, read, draft, ask-drop, draft-send or draft-drop");
+				// 지켜보기 / 자동 초안 of a room, switched from the other computer: the owner's own room PUT, which checks the values.
+				if (a.op === "room" && a.chatId) return ask("PUT", `/api/kakao/rooms/${id}`, { watched: a.watched, autoDraft: a.autoDraft }, login);
+				if ((a.op === "draft-send" || a.op === "draft-drop" || a.op === "draft-restore") && a.code) return ask("POST", `/api/kakao/drafts/${id}/${a.op.slice(6)}`, a.text === undefined ? {} : { text: a.text }, login);
+				return bad("op must be send, send-delete, read, draft, ask-drop, room, draft-send, draft-drop or draft-restore");
+			}
+			// Comment replies (hub/comments/web.ts) of a source the other computer collects: its drafts, failed sends and threads are acted on there.
+			case "comments": {
+				const e = (v: unknown) => encodeURIComponent(String(v ?? ""));
+				if ((a.op === "draft-send" || a.op === "draft-drop" || a.op === "draft-restore" || a.op === "draft-revise") && a.code) {
+					const b = a.op === "draft-revise" ? { change: a.change, ...(a.part ? { part: a.part } : {}) } : a.op === "draft-send" && typeof a.text === "string" ? { text: a.text } : {};
+					return ask("POST", `/api/comments/drafts/${e(a.code)}/${a.op.slice(6)}`, b, login);
+				}
+				if ((a.op === "send-retry" || a.op === "send-dismiss") && a.id) return ask("POST", `/api/comments/sends/${e(a.id)}/${a.op.slice(5)}`, {}, login);
+				if (a.op === "draft" && a.commentId) return ask("POST", `/api/comments/comment/${e(a.commentId)}/draft`, {}, login);
+				if (a.op === "no-reply" && a.commentId) return ask(a.on === false ? "DELETE" : "POST", `/api/comments/comment/${e(a.commentId)}/no-reply`, a.on === false ? undefined : {}, login);
+				if (a.op === "read" && a.source && a.thread) return ask("POST", `/api/comments/thread/${e(a.source)}/${e(a.thread)}/read`, {}, login);
+				if (a.op === "source" && a.key) return ask("PUT", `/api/comments/sources/${e(a.key)}`, { ...(a.watch !== undefined ? { watch: a.watch } : {}), ...(a.autoDraft !== undefined ? { autoDraft: a.autoDraft } : {}) }, login);
+				return bad("op must be draft-send, draft-drop, draft-restore, draft-revise, send-retry, send-dismiss, draft, no-reply, read or source");
 			}
 			// 초안 작성 on a mail the other computer holds: its draft is made and offered there.
 			case "mail-draft":
 				if (typeof a.key !== "string" || !a.key) return bad("key required");
-				return ask("POST", `/api/mail/${encodeURIComponent(a.key)}/draft`, {}, login);
+				return ask("POST", `/api/mail/${encodeURIComponent(a.key)}/draft`, typeof a.instruction === "string" && a.instruction.trim() ? { instruction: a.instruction.trim().slice(0, 500) } : {}, login);
 			// 답장 안 함 (hub/unreplied.ts) on the computer that holds the mail or the room, or taking it back (on false).
 			case "no-reply": {
 				const verb = a.on === false ? "DELETE" : "POST";
@@ -336,7 +410,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (a.kind === "kakao" && typeof a.chatId === "string" && a.chatId) return ask(verb, `/api/kakao/chat/${encodeURIComponent(a.chatId)}/no-reply`, verb === "POST" ? {} : undefined, login);
 				return bad("kind must be mail or kakao");
 			}
-			// 답장 안 해도 돼요 on a mail the other computer holds, or taking it back (on false), and 삭제 of that mail from dotz there.
+			// 답장 안 함 on a mail the other computer holds, or 답장 필요로 표시 (on false), and 삭제 of that mail from dotz there.
 			case "fyi":
 				if (typeof a.key !== "string" || !a.key) return bad("key required");
 				return a.on === false ? ask("DELETE", `/api/mail/${encodeURIComponent(a.key)}/fyi`, undefined, login) : ask("POST", `/api/mail/${encodeURIComponent(a.key)}/fyi`, {}, login);
@@ -348,6 +422,13 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				const ref = encodeURIComponent(String(a.ref ?? ""));
 				if (!a.ref) return bad("ref required");
 				return ask("POST", `/api/drafts/${ref}/files`, Number.isInteger(a.remove) ? { remove: a.remove } : typeof a.library === "string" ? { library: a.library } : { name: a.name, data: a.data }, login);
+			}
+			// The 받는 사람·참조 and 답장 | 전체 답장 of a mail reply draft (hub/draft-recipients.ts), changed on the computer that owns the draft.
+			case "draft-recipients": {
+				if (typeof a.ref !== "string" || !a.ref) return bad("ref required");
+				const body = { ...(a.mode === "reply" || a.mode === "all" ? { mode: a.mode } : {}), ...(a.to !== undefined ? { to: a.to } : {}), ...(a.cc !== undefined ? { cc: a.cc } : {}) };
+				if (!Object.keys(body).length) return bad("mode, to or cc required");
+				return ask("POST", `/api/drafts/${encodeURIComponent(a.ref)}/recipients`, body, login);
 			}
 			// A project on this machine (hub/projectdelete.ts): what deleting it removes, and the delete itself.
 			case "project": {
@@ -370,13 +451,13 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			return etagMatch(req.headers.get("if-none-match"), s.rev) ? new Response(null, { status: 304, headers }) : Response.json(s, { headers });
 		}
 		if (get && url.pathname === "/api/monitoring/peers") return json(await peerMonitoring());
-		if (url.pathname === "/api/peer/proxy" && (req.method === "GET" || req.method === "POST")) return proxy(req, url);
+		if (url.pathname === "/api/peer/proxy" && (req.method === "GET" || req.method === "HEAD" || req.method === "POST")) return proxy(req, url);
 		if (req.method === "POST" && url.pathname === "/api/peer/act") return act(req);
 		return undefined;
 	}
 
 	async function idle(): Promise<void> {
-		while (inflight.size) await Promise.all([...inflight.values()]);
+		while (inflight.size || acks.size) await Promise.all([...inflight.values(), ...acks]);
 	}
 
 	return { snapshot, peerMonitoring, invalidatePeer, idle, route };

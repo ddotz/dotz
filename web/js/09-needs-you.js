@@ -58,7 +58,34 @@ function paintAttn() {
   b.parentElement.setAttribute("aria-label", n ? `채팅, ${say}` : "채팅");
   document.title = n ? `(${n}) ${botName}` : botName;
   toastAttn();
+  monAttnSoon();
 }
+// The 모니터링 nav badge counts what waits there, on this computer and the other ones alike: each list row whose monitor or app failed or lost its
+// connection (a watch an app owns counts as that app's row, as the list shows it), plus each reply draft waiting for 보내기. It clears by what clears
+// those: a passing check, a reconnect, a draft sent or dropped. srcs: [{apps (GET /api/integrations items), mons (GET /api/monitors items)}].
+function monAttnCount(srcs) {
+  let n = 0;
+  for (const { apps, mons } of srcs) {
+    const bad = new Set();
+    for (const a of apps) { if (a.state === "disconnected") bad.add(`i:${a.key}`); n += ((a.needs || {}).drafts | 0); }
+    for (const m of mons) { const k = monStatus(m).key; if (k === "fail" || k === "disconnected") { const o = monOwner(apps, m); bad.add(o ? `i:${o.key}` : `m:${m.name}`); } }
+    n += bad.size;
+  }
+  return n;
+}
+// Deferred: paintAttn runs while the page's later files (INTG, NM) are still loading, and one paint per frame of changes is enough.
+let monAttnT = 0;
+const monAttnSoon = () => { if (!monAttnT) monAttnT = setTimeout(() => { monAttnT = 0; paintMonAttn(); }, 0); };
+function paintMonAttn() {
+  const b = $("#nav-mon");
+  if (!b) return;
+  const peers = PQ.list.filter(p => p && p.items).map(p => ({ apps: p.items.integrations || [], mons: p.items.monitors || [] }));
+  const n = monAttnCount([{ apps: INTG.items, mons: NM.items }, ...peers]), say = n ? `확인할 것 ${n}개` : "";
+  b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n); b.title = say;
+  b.parentElement.setAttribute("aria-label", n ? `모니터링, ${say}` : "모니터링");
+}
+// The badge and 답변 필요 read the monitors and the other computers on every tab: 홈 and 모니터링 refresh them themselves, any other tab here.
+setInterval(() => { if (!document.hidden && current !== "home" && current !== "monitoring" && !monCtx) { loadMonitors(); pqLoad(); } }, 60_000);
 // A target that starts needing the owner pops one toast (tap = switch to it): a lane question, a rate limit, or the main chat
 // finishing unseen (a lane's finished turn already has its report toast). On page load only open questions pop, and several of them are
 // one toast with their count that opens 홈 (they are all rows of 답변 필요 there), not a stack of cards over the screen.
@@ -70,6 +97,8 @@ function toastAttn() {
   for (const t of liveTargets()) {
     const k = attnRaw(t), was = ATTN_LAST[t] || "";
     ATTN_LAST[t] = k;
+    // Answered, read or opened: its "확인 필요" card no longer stands (owner 2026-10-28: a finished item still asking to be checked confuses).
+    if (was && (k !== was || watching(t))) ntfDropFor(t);
     if (!k || k === was || watching(t) || (k === "done" && isLaneT(t)) || (!attnPainted && k !== "ask")) continue;
     if (!attnPainted) { first.push(t); continue; }
     attnToast(t, k);
@@ -123,11 +152,22 @@ function nyOf(n) {
 }
 // A question waiting on the owner that is a gateway notice it handles itself (not listed in 답변 필요).
 const nyHandled = n => ntNeeds(n) && !ntOpenDec(n) && !ntLinkedDec(n) && !nyOf(n);
+// A monitor that failed NY_FAILS times in a row (about an hour) waits on the owner too: 확인 필요, with the computer it runs on and the count,
+// opening its row in 모니터링 (an app's watch opens the app). Only here: no push or Discord alert is sent for it.
+const NY_FAILS = 3;
+function nyMonFails() {
+  const out = [];
+  for (const i of monItems()) for (const m of i.mon ? [i.mon] : i.owned || [])
+    if (!m.paused && (m.fails | 0) >= NY_FAILS) out.push({ m, key: i.key, pc: i.pc || null, rank: 2, crit: false, act: "확인 필요", at: m.last_run || "" });
+  return out;
+}
+// The open decisions of the other computers (their snapshot's notices, 34-peer-monitoring.js): answered on that computer through the same sheet.
+const nyPeerDecisions = () => PQ.list.filter(p => p && p.items).flatMap(p => (p.items.notices || []).filter(n => ntOpenDec(n) && ntNeeds(n)).map(n => ({ ...n, pc: { name: p.name, url: p.url } })));
 function nyList() {
   const lanes = ((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`);
   const asks = lanes.filter(t => (askOf(t) || attnKind(t) === "ask") && !ntHasDecision(t)).map(t => ({ t, rank: 3, crit: false, act: "답변", at: (targetInfo(t).ask || {}).at || "" }));
   const loose = ntLooseAsks().filter(n => !asks.some(x => x.t === (n.src || n.open)));
-  const items = [...ntDecisions(), ...loose].map(nyOf).filter(Boolean).concat(asks);
+  const items = [...ntDecisions(), ...nyPeerDecisions(), ...loose].map(nyOf).filter(Boolean).concat(asks, nyMonFails());
   const when = x => x.n ? ntAt(x.n) : Date.parse(x.at) || 0;
   return items.sort((a, b) => a.rank - b.rank || when(b) - when(a));
 }
@@ -135,9 +175,10 @@ function nyList() {
 function nyRows(items) {
   const out = [];
   const mark = (node, it) => {
+    if (it.n && it.n.pc) for (const h of node.querySelectorAll(".hrx-m:not(.ntg-h) .hn1")) h.append(el("span", { class: "tag mon-pc", text: it.n.pc.name }));   // another computer's question names it
     for (const hs of node.querySelectorAll(".hrx-m:not(.ntg-h) .hs")) hs.textContent = it.act;
     for (const b of node.querySelectorAll(".hrx-m:not(.ntg-h)")) b.setAttribute("aria-label", b.getAttribute("aria-label").replace(/답변 필요$/, it.crit ? `중요 · ${it.act}` : it.act));
-    if (it.crit) { node.classList.add("crit"); for (const e of node.querySelectorAll(".hs, .dot")) e.classList.add("err"); }
+    if (it.crit) { node.classList.add("crit"); if (it.n && it.n.tone === "fail") for (const e of node.querySelectorAll(".hs, .dot")) e.classList.add("err"); }   // a login stays orange; only a failure is red
     return node;
   };
   for (let i = 0; i < items.length;) {
@@ -149,10 +190,19 @@ function nyRows(items) {
       for (const node of nodes) out.push({ node: mark(node, it), count: node.matches(".ntg") ? run.filter(x => ntGroupKey(x.n) === node.dataset.group).length : 1 });
       continue;
     }
-    out.push({ node: it.n ? mark(ntHomeRow(it.n), it) : homeNowRow(it.t, it.act, "att"), count: 1 });
+    out.push({ node: it.n ? mark(ntHomeRow(it.n), it) : it.m ? nyMonRow(it) : homeNowRow(it.t, it.act, "att"), count: 1 });
     i++;
   }
   return out;
+}
+// A monitor failing again and again: its name, the computer, how many times in a row; a tap opens it in 모니터링.
+function nyMonRow(it) {
+  const m = it.m, who = it.pc ? it.pc.name : pqSelf(), title = monTitle(m);
+  return el("button", { class: "hr", type: "button", "data-mon": it.key, onclick: () => go("monitoring", it.key), "aria-label": `${title} · ${it.act}` },
+    el("span", { class: "dot att" }),
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title }), who ? el("span", { class: "tag mon-pc", text: who }) : null),
+      el("span", { class: "ha", text: [`${m.fails}번 연속 실패했어요`, m.last_summary || ""].filter(Boolean).join(" · ") })),
+    el("span", { class: "hs warn", text: it.act }));
 }
 // The list of the 홈 card: the first NY.top rows, then 더 보기 with how many items are behind it.
 function nyListNode(items) {

@@ -60,15 +60,18 @@ function prose(text: string): string {
 
 // Plain English-looking words of a text: letters only, 2+ of them (identifiers with digits/underscores/dots do not count).
 const latinWords = (s: string): number => (s.match(/(?<![\w-])[A-Za-z][A-Za-z'’]+(?![\w-])/g) ?? []).length;
+// The words of sentence-like parts only: a list of names ("contact_manager, dotz, findr, hdocs", one per item or line) is not
+// English prose. A 137-char repo list was sent for a rewrite that took 12 s and came back 8x longer (2026-10-28).
+const sentenceWords = (s: string): number => s.split(/[,;|·\n]+/).map(latinWords).filter(n => n >= 2).reduce((a, n) => a + n, 0);
 
 // True when `text` should be in `language` but is mostly Latin-script prose.
-function languageMismatch(text: string, language: string): boolean {
+export function languageMismatch(text: string, language: string): boolean {
 	const script = SCRIPTS[baseLanguage(language)];
 	if (!script) return false;
 	const body = prose(text);
 	const words = latinWords(body);
 	const native = (body.match(script) ?? []).length;
-	if (native === 0) return words >= MIN_LATIN_WORDS_PURE;
+	if (native === 0) return sentenceWords(body) >= MIN_LATIN_WORDS_PURE;
 	if (words < MIN_LATIN_WORDS) return false;
 	const latin = (body.match(/[A-Za-z]/g) ?? []).length;
 	return native / (native + latin) < MAX_NATIVE_SHARE;
@@ -111,6 +114,8 @@ export const modelDeps = { spawn: (argv: string[], options: Parameters<typeof Bu
 // The small model of an OmO call: OmO has no model roles, and its `anthropic` provider bills the API key while dotz's
 // `anthropic` selectors mean the subscription (as in hub/runtime/omo.ts omoSelector). Never Haiku (owner rule).
 const OMO_SMALL = "anthropic-subscription/claude-sonnet-5-5";
+// The model of a rewrite or a card summary as its selector (dotz names; the effort, if any, after a colon): the setting, else OMO_SMALL thinking off.
+export const outlangModel = (): string => setting().model ?? OMO_SMALL.replace(/^anthropic-subscription\//, "anthropic/");
 const omoModel = (m: string | undefined) => (!m || m.startsWith("@") ? OMO_SMALL : m.replace(/^anthropic\//, "anthropic-subscription/"));
 // One minimal call on the orchestrator's runtime (OmO by default; omp when config.json names it) with no tools, skills,
 // extensions, rules or memory, `system` as the system prompt and `text` as the only message; throws on any failure.

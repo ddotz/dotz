@@ -1,5 +1,5 @@
 // Post titles of the comments: the YouTube adapter names every video from one batched lookup, a stored comment without a title is
-// backfilled on the next poll, the ask names the post, and Instagram posts show the caption start and a thumbnail. No network.
+// backfilled on the next poll, and Instagram posts show the caption start and a thumbnail. No network.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -66,17 +66,6 @@ test("a video with no readable title is collected under the fallback and renamed
 	expect(engine.threads("youtube").map(t => [t.thread, t.title, t.thumb, t.kind])).toContainEqual(["v1", "첫 영상", "https://img.example/v1.jpg", "youtube"]);
 	const view = engine.threadView("youtube", "v1")!;
 	expect([view.thread.title, view.thread.thumb, view.thread.link]).toEqual(["첫 영상", "https://img.example/v1.jpg", "https://www.youtube.com/watch?v=v1"]);
-});
-
-test("the draft ask names the video by its title, and says nothing for an untitled one", async () => {
-	const { adapter } = youtube({ v1: { title: "첫 영상" } });
-	const engine = engineWith(adapter);
-	await engine.collect({ force: true });
-	const [named, untitled] = [engine.store.comments().find(c => c.native === "c1")!, engine.store.comments().find(c => c.native === "c2")!];
-	const draft = { code: "Dabc234", text: "고마워요", notes: [] } as never;
-	expect(commentAsk(YT, named, draft)).toContain("> 영상 첫 영상\n");
-	expect(commentAsk(YT, untitled, draft)).not.toContain("유튜브 영상");
-	expect(commentAsk(YT, untitled, draft)).not.toContain("> 영상 ");
 });
 
 test("an Instagram post shows the caption start and its picture, and a post without a caption gets the fallback", async () => {

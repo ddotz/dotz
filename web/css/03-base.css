@@ -5,6 +5,11 @@
 .mt-intro { flex: 1 1 320px; margin: 0 4px; color: var(--fg-2); font-size: 13px; line-height: 20px; }
 .mt-filter { flex: 0 1 220px; min-width: 160px; }
 .mt-card { display: flex; flex-direction: column; gap: 16px; scroll-margin-top: 12px; }
+.mt-use-list { display: flex; flex-direction: column; }
+.mt-use-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.mt-use-row:first-child { border-top: 0; }
+.mt-use-tx { flex: 1 1 200px; display: flex; flex-direction: column; min-width: 0; }
+.mt-use-m { font-weight: 600; white-space: nowrap; }
 .mt-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .mt-head .t { min-width: 0; font: 700 17px/24px var(--font); overflow-wrap: anywhere; }
 .mt-head .sup { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -148,7 +153,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 /* A new shell waits for a tap: a bar across the top that pushes the app down (body:has), so it never covers a screen's own controls */
 .shell-chip { position: fixed; z-index: 1999; inset: 0 0 auto 0; padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 8px; border: 0; border-radius: 0; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 13px; line-height: 18px; font-weight: 600; text-align: center; cursor: pointer; }
 body:has(.shell-chip) .app { padding-top: 0; margin-top: calc(34px + env(safe-area-inset-top, 0px)); height: calc(100dvh - 34px - env(safe-area-inset-top, 0px)); }
-.snack.bad::before { content: ""; display: inline-block; flex: none; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--warn); vertical-align: 1px; }
+.snack.bad::before { content: ""; display: inline-block; flex: none; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--err); vertical-align: 1px; }
 .snack.act { display: flex; align-items: center; gap: 12px; }
 .snack .sa { flex: none; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; }
 @media (max-width: 639px) { .snack { bottom: calc(60px + max(2px, calc(env(safe-area-inset-bottom) - 16px))); } }
@@ -254,6 +259,14 @@ details.work.bad:not(.live) .wdot { display: block; background: var(--err); anim
 details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); background: var(--card); }
 .sendrow { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ta ta" "bar send"; align-items: center; gap: 6px 8px; padding: 14px 12px 10px 18px !important; border: 1px solid var(--line) !important; border-radius: 22px !important; background: var(--card) !important; box-shadow: var(--shadow-panel); }
 .sendrow:focus-within { border-color: var(--line-2) !important; }
+/* "ulw" in the message (14-slash-commands.js autosize): a 2px blue → violet → pink edge, padding 1px less so nothing inside moves */
+/* the keyword itself: the backdrop (14-slash-commands.js paintUlw) sits in the textarea's grid cell under it; its text is invisible, only the
+   mark shows, as the same gradient under the word */
+.sendrow .ta-hl { grid-area: ta; align-self: stretch; overflow: hidden; white-space: pre-wrap; overflow-wrap: break-word; color: transparent; pointer-events: none; box-sizing: border-box; }
+.sendrow .ta-hl[hidden] { display: none; }
+.sendrow .ta-hl ~ textarea { position: relative; z-index: 1; }
+.ta-hl .ulw-kw { color: transparent; background: linear-gradient(90deg, #5b9fe3, #9d8fe0, #e98aa6) bottom / 100% 2px no-repeat; border-radius: 2px; box-shadow: 0 -0.9em 0 0 color-mix(in srgb, #9d8fe0 14%, transparent) inset; }
+.sendrow.ulw { border: 2px solid transparent !important; padding: 13px 11px 9px 17px !important; background: linear-gradient(var(--card), var(--card)) padding-box, linear-gradient(90deg, #5b9fe3, #9d8fe0 45%, #d98bc9 75%, #e98aa6) border-box !important; }
 .sendrow textarea { grid-area: ta; }
 .sendrow > .ib { grid-area: send; }
 .sendrow > .cbar { grid-area: bar; margin: 0 0 0 -10px; padding: 0; min-height: 26px; }
@@ -293,3 +306,5 @@ details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); backgr
 .mfiles .thumb img { display: block; max-width: min(240px, 60vw); max-height: 200px; object-fit: cover; }
 .mfiles .fatt { cursor: pointer; padding-right: 12px; text-decoration: none; }
 .mfiles .fatt:hover { background: var(--hover); }
+/* a session row on a fallback model: the model it runs and the 폴백 중 tag (08-home.js homeNowRow) */
+.srow .smodel { display: inline-flex; align-items: center; gap: 6px; margin-left: 6px; }

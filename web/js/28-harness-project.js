@@ -3,7 +3,7 @@ const hPj = () => (HGB && hProjId && (HGB.projects || []).find(p => p.id === hPr
 const hProjWhere = (p, full) => `${(p.channels[0] || {}).name || p.name} · ${full ? p.cwd : shortPath(p.cwd)}`;
 const pjSize = b => (b < 1024 ? `${b}B` : `${(b / 1024).toFixed(1)}KB`);
 const pjChain = c => (c.length ? c.map(e => [modelName(fbBase(e.model)) + (e.key_file ? " (API 키)" : ""), e.when ? FB_WHEN[e.when] : "", e.cap ? fbCapText(e.cap) : "", e.revert ? "리셋되면 복귀" : ""].filter(Boolean).join(" · ")).join(" → ") : "없음");
-const PJ_ROWS = [["모델", "model", modelName], ["강도", "effort", v => v], ["서브에이전트 모델", "worker_model", modelName], ["서브에이전트 강도", "worker_effort", v => v], ["런타임", "runtime", v => v || "–"], ["폴백", "fallback", pjChain], ["서브에이전트 폴백", "worker_fallback", pjChain]];
+const PJ_ROWS = [["모델", "model", modelName], ["강도", "effort", thinkKo], ["서브에이전트 모델", "worker_model", modelName], ["서브에이전트 강도", "worker_effort", thinkKo], ["런타임", "runtime", v => v || "–"], ["폴백", "fallback", pjChain], ["서브에이전트 폴백", "worker_fallback", pjChain]];
 
 // One field: the project's value against the global one. A differing value is emphasised like the 내 설정 marker (바뀜 badge,
 // --mine) and shows global → project; an equal one is muted with "전역 기본".
@@ -386,7 +386,7 @@ function hOriginLine(n) {
   const mine = n.origin === "personal";
   const where = n.file ? `${hData()}/${n.file}` : mine && FC && FC.harness ? FC.harness.dirs.join(", ") : "";
   const tags = [el("span", { class: `tag${mine ? " m" : ""}`, text: mine ? "개인" : "배포" })];
-  const text = mine ? `내 ${n.file ? "파일" : "확장"}이에요${where ? ` (${shortPath(where)})` : ""}` : `dotz와 함께 오는 기본이에요${n.file ? " (저장소 파일 · 읽기 전용)" : ""}`;
+  const text = mine ? `내 ${n.file ? "파일" : "확장"}이에요${where ? ` (${shortPath(where)})` : ""}` : `기본으로 함께 오는 거예요${n.file ? " (저장소 파일 · 읽기 전용)" : ""}`;
   const extra = !mine && n.custom && n.custom.length ? ` · 설정값 ${n.custom.length}개는 내가 바꿨어요 (${shortPath(`${hData()}/config.json`)})` : !mine && n.settings.some(s => s.editable) ? ` · 설정값은 ${shortPath(`${hData()}/config.json`)}에 저장돼요` : "";
   return el("div", { class: "hs-or" }, ...tags, el("span", { text: text + extra }));
 }
@@ -461,7 +461,7 @@ function hSetting(s, drafts) {
   };
   drafts.push(() => dirty() && !asked());
   const shown = v => (s.type === "model" ? modelName(v) : hFmt(v, s.unit));
-  const chg = pj ? (s.default !== undefined && !Object.is(s.default, s.value) ? el("span", { class: "tag m", title: "전역 기본과 다른 값이에요", text: `바꿈 · 전역 ${shown(s.default)}` }) : null) : hChanged(s.key) ? el("span", { class: "tag m", title: "dotz 기본값과 다른 값이에요", text: `바꿈 · 기본 ${hFmt(s.default, s.unit)}` }) : null;
+  const chg = pj ? (s.default !== undefined && !Object.is(s.default, s.value) ? el("span", { class: "tag m", title: "전역 기본과 다른 값이에요", text: `바꿈 · 전역 ${shown(s.default)}` }) : null) : hChanged(s.key) ? el("span", { class: "tag m", title: "기본값과 다른 값이에요", text: `바꿈 · 기본 ${hFmt(s.default, s.unit)}` }) : null;
   box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), chg, tag), ctl, el("div", { class: "btns hs-act" }, reset, hScopeTag(sk, sw), send), note);
   paint();
   return box;

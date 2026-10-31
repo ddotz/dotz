@@ -1,42 +1,24 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { draftApprovalBlock } from "./draft-approval.ts";
-import { emit, sseResponse } from "./events.ts";
+import { emit } from "./events.ts";
 import { listNotices, markNoticesRead, type Notice, resolveNotices, unreadCount } from "./notices.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // Send-approval drafts open as a full-screen view (a large dialog on desktop); every other decision uses the same full-screen frame (hub/overlay-fullscreen-web.test.ts) without the large size.
 // Headless browser against the real notice store; the decisions are fixtures and nothing is sent.
-const SNAP = "/tmp/dotz-draft-fullscreen";
-const json = (v: unknown, status = 200) => Response.json(v, { status });
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
+const hub = fakeHub({
+	api: async (req, url) => {
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: unreadCount() });
 		if (url.pathname === "/api/notices" && req.method === "GET") return json(listNotices(100));
 		if (url.pathname === "/api/notices/read") return json(markNoticesRead(await req.json()));
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
-const base = `http://127.0.0.1:${server.port}/`;
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
+const base = `${hub.origin}/`;
 const open = async (width: number, height: number): Promise<View> => {
-	const v = new Bun.WebView({ width, height });
-	views.push(v);
+	const v = await hub.view({ width, height });
 	await v.navigate(base);
 	return v;
 };
-const waitFor = (v: View, expr: string, ms = 10_000) =>
-	v.evaluate(
-		`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const done = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document, { subtree: true, childList: true, attributes: true, characterData: true }); done(); })`,
-	);
 const settled = (v: View) => v.evaluate(`Promise.all(document.getAnimations().map(a => a.finished.catch(() => 0))).then(() => true)`);
 type Box = { l: number; t: number; r: number; b: number; w: number; h: number };
 const box = async (v: View, sel: string): Promise<Box | null> =>
@@ -47,13 +29,7 @@ const draft = (ref: string) => emit("outbox", { ts: new Date().toISOString(), ki
 const plain = (title: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}\n**1) 예**\n**2) 아니요**` });
 const find = (pred: (n: Notice) => boolean) => stored().find(n => n.kind === "decision" && n.decision?.state === "open" && pred(n))! as Notice;
 
-beforeAll(() => {
-	Bun.spawnSync(["mkdir", "-p", SNAP]);
-});
-afterAll(() => {
-	for (const v of views) v.close();
-	server.stop(true);
-});
+afterAll(() => hub.stop());
 
 describe("draft approval opens full screen", () => {
 	test("a draft decision opens the full-screen view with the buttons always visible; any other decision opens the normal-size frame", async () => {
@@ -90,7 +66,6 @@ describe("draft approval opens full screen", () => {
 		expect(send.h).toBeGreaterThanOrEqual(44);
 		expect(send.h).toBeLessThanOrEqual(48);
 		expect(await phone.evaluate(`document.querySelector(".fs-body").scrollHeight > document.querySelector(".fs-body").clientHeight + 200`)).toBe(true);
-		await Bun.write(`${SNAP}/draft-390-top.png`, await phone.screenshot());
 
 		// scrolled to the end of the draft: header and footer did not move
 		const footTop = (await box(phone, ".fs-ft"))!.t;
@@ -99,7 +74,6 @@ describe("draft approval opens full screen", () => {
 		expect((await box(phone, ".fs-ft"))!.t).toBe(footTop);
 		expect((await box(phone, ".fs-hd"))!.t).toBe(card.t);
 		await inside(".dc-act.main");
-		await Bun.write(`${SNAP}/draft-390-scrolled.png`, await phone.screenshot());
 
 		// 고치기: the input and its send button stay in the footer
 		await phone.evaluate(`document.querySelector(".dc-acts .dc-act:nth-child(2)").click()`);
@@ -111,7 +85,6 @@ describe("draft approval opens full screen", () => {
 		await phone.evaluate(`(() => { const t = document.querySelector(".dc-note"); t.value = "인사말을 더 짧게 해 주세요"; t.dispatchEvent(new Event("input")); })()`);
 		expect(await phone.evaluate(`!!document.querySelector(".fs-ft .dc-go").disabled`)).toBe(false);
 		await settled(phone);
-		await Bun.write(`${SNAP}/draft-390-edit.png`, await phone.screenshot());
 		await phone.evaluate(`dkClose()`);
 		await waitFor(phone, `!document.querySelector(".fs-bd")`);
 
@@ -124,7 +97,6 @@ describe("draft approval opens full screen", () => {
 		const sc = (await box(small, ".fs-card.tall"))!;
 		expect(sc.w).toBe(360);
 		for (const sel of [".dc-act.main", ".dc-acts .dc-act:nth-child(3)", ".fs-hd .fs-ign", ".fs-hd .fs-x"]) expect((await box(small, sel))!.b).toBeLessThanOrEqual(sc.b);
-		await Bun.write(`${SNAP}/draft-360.png`, await small.screenshot());
 
 		// a plain decision is full screen on the phone too, but not the large dialog
 		await phone.evaluate(`noticeSheetOpen(${JSON.stringify(String(pn.id))})`);
@@ -147,6 +119,22 @@ describe("draft approval opens full screen", () => {
 		expect(Math.abs((dc.l + dc.r) / 2 - 640)).toBeLessThanOrEqual(2);
 		expect(Math.abs((dc.t + dc.b) / 2 - 400)).toBeLessThanOrEqual(2);
 		expect((await box(desk, ".dc-act.main"))!.b).toBeLessThanOrEqual(dc.b);
-		await Bun.write(`${SNAP}/draft-desktop.png`, await desk.screenshot());
 	}, 90_000);
+});
+
+test("a reply + mail draft with send modes shows all six choices; 직접 입력 opens the text box that asks how to send", async () => {
+	resolveNotices({ ids: stored().filter(n => n.decision?.state === "open").map(n => n.id) });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${draftApprovalBlock({ to: "인디스쿨 a 댓글", toLabel: "대상", body: "선생님 MR 메일로 보내드렸습니다^^", ref: "indi:9", question: "이대로 보낼까?", mail: { to: "t@example.com", subject: "MR 보내드립니다", body: "선생님 안녕하세요:)" }, sendModes: true })}` });
+	const dn = find(n => n.decision?.draft?.ref === "indi:9");
+	expect(dn.decision!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기", "답글만 보내기", "메일만 보내기", "어떻게 보낼지 직접 입력"]);
+	const v = await open(390, 844);
+	await waitFor(v, `typeof noticeSheetOpen === "function" && document.querySelector(".hn")`);
+	await v.evaluate(`noticeSheetOpen(${JSON.stringify(String(dn.id))})`);
+	await waitFor(v, `document.querySelectorAll(".fs-ft .dc-acts .dc-act").length === 6`);
+	expect(JSON.parse(await v.evaluate(`JSON.stringify([...document.querySelectorAll(".fs-ft .dc-acts .dc-act")].map(b => b.textContent))`))).toEqual(["보내기", "고치기", "보내지 않기", "답글만 보내기", "메일만 보내기", "어떻게 보낼지 직접 입력"]);
+	expect(await v.evaluate(`[draftAsksText({ label: "답글만 보내기" }), draftAsksText({ label: "메일만 보내기" }), draftAsksText({ label: "어떻게 보낼지 직접 입력" })].join()`)).toBe("false,false,true");
+	await v.evaluate(`document.querySelector(".fs-ft .dc-acts .dc-act:nth-child(6)").click()`);
+	await waitFor(v, `document.querySelector(".fs-ft .dc-note")`);
+	expect(await v.evaluate(`document.querySelector(".fs-ft .dc-edit .dc-lb").textContent + "|" + document.querySelector(".fs-ft .dc-go").textContent`)).toBe("어떻게 보낼까요?|이렇게 보내 달라고 하기");
+	await v.evaluate(`dkClose()`);
 });

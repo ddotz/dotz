@@ -11,7 +11,8 @@ export const KAKAO_APP = "kakao";
 export const STALE_AFTER = 200;
 export const RECENT_LINES = 100;
 export const RECENT_WEIGHT = 2;
-export const FORMAT = 2;
+// 3: 반말/존댓말 counts only sentence endings (draft.ts registerOf), so every room profile is learned again once.
+export const FORMAT = 3;
 const ROOM_TEXTS = 400;
 const GLOBAL_TEXTS_PER_ROOM = 100;
 const GLOBAL_RECENT = 40;

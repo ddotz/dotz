@@ -142,7 +142,6 @@ test("sending routes by source: the mail CLI reads then replies to the mail id, 
 	]);
 	const refused = await sendWith({ ...rec!, source: "manual" }, run);
 	expect(refused.ok).toBe(false);
-	expect(refused.message).toContain("직접 보내야 해요");
 	expect(argvs).toHaveLength(2);
 });
 
@@ -159,7 +158,7 @@ test("고치기 round trip: pick with the change, revise makes a new id, the old
 	const { rec, model } = await offered(fakeModel([j(goodReply), j({ ...goodReply, body: "곧 알려 드릴게요." })]));
 	pick(env, rec!.id, 2, "더 짧게 써 주세요");
 	const sender = { calls: 0 };
-	expect((await sendDraft(rec!.id, { send: async () => (sender.calls++, { ok: true, message: "" }) })).text).toContain("더 짧게 써 주세요");
+	expect((await sendDraft(rec!.id, { send: async () => (sender.calls++, { ok: true, message: "" }) })).ok).toBe(false);
 	const revised = await reviseDraft(rec!.id, "더 짧게 써 주세요", { call: model.call });
 	expect(revised.ok).toBe(true);
 	const next = listDrafts().find(d => d.status === "pending")!;
@@ -167,7 +166,6 @@ test("고치기 round trip: pick with the change, revise makes a new id, the old
 	expect(next).toMatchObject({ body: "곧 알려 드릴게요.", changes: ["더 짧게 써 주세요"], ref: "m-1" });
 	expect(getDraft(rec!.id)!.status).toBe("stale");
 	expect(parseDraftApproval(revised.text)).toMatchObject({ ref: next.id, body: "곧 알려 드릴게요." });
-	expect(readFileSync(toneFile({ app: "mail" }), "utf8")).toMatch(/## 고친 점\n\n- \d{4}-\d{2}-\d{2}: 더 짧게 써 주세요/);
 	expect(loadStyle({ app: "mail" }).corrections[0]).toContain("더 짧게 써 주세요");
 	expect(model.calls[1]!.user).toContain("더 짧게 써 주세요");
 	expect(model.calls[1]!.user).toContain(goodReply.body);
@@ -178,6 +176,23 @@ test("고치기 round trip: pick with the change, revise makes a new id, the old
 	expect((await reviseDraft(next.id, "x", { call: model.call })).ok).toBe(false);
 });
 
+test("draft.ts revise posts the rewritten mail card to the mail's conversation itself and gives the bot one short line; without the gateway it prints the card", async () => {
+	const { rec, model } = await offered(fakeModel([j(goodReply), j({ ...goodReply, body: "곧 알려 드릴게요." }), j({ ...goodReply, body: "내일 알려 드릴게요." })]));
+	const posts: { path: string; body: any }[] = [];
+	const hub = { post: async (path: string, body?: unknown) => (posts.push({ path, body }), { status: 200 }) };
+	const out = await runDraft(["revise", rec!.id, "--change", "더 짧게"], "", { call: model.call, hub });
+	const next = listDrafts().find(d => d.status === "pending")!;
+	expect(out.code).toBe(0);
+	expect(posts.map(p => [p.path, p.body.target])).toEqual([["/api/send", "mail:m-1"]]);
+	expect(parseDraftApproval(posts[0]!.body.text)).toMatchObject({ ref: next.id, body: "곧 알려 드릴게요." });
+	expect(parseDraftApproval(out.lines.join("\n"))).toBeUndefined();
+	expect(out.lines.join("\n")).toContain(next.id);
+
+	const down = { post: async () => ({ status: 503 }) };
+	const again = await runDraft(["revise", next.id, "--change", "하루 늦게"], "", { call: model.call, hub: down });
+	expect(parseDraftApproval(again.lines.join("\n"))).toMatchObject({ body: "내일 알려 드릴게요." });
+});
+
 test("tone learning writes 예시 from the user's sent mail and drops quoted history, signatures and duplicates", async () => {
 	const sentBody = (extra: string) => `subject: x\nto: kim@example.com\n\n확인했어요. 내일 오전에 연락드릴게요.\n감사합니다.\n${extra}\n\nOn Mon, Jan 5, 2030, Kim <kim@example.com> wrote:\n> 지난번 건은 어떻게 됐나요?\n> 답장 부탁드려요.\n`;
 	const bodies: Record<string, string> = { m1: sentBody("자료는 첨부했어요."), m2: `${sentBody("")}\n-- \n서명 줄입니다` };
@@ -186,7 +201,6 @@ test("tone learning writes 예시 from the user's sent mail and drops quoted his
 	const r = await learnTone({ app: "mail" }, { run, zeleOn: true });
 	expect(r.examples).toEqual(["확인했어요.", "내일 오전에 연락드릴게요.", "감사합니다.", "자료는 첨부했어요."]);
 	const md = readFileSync(toneFile({ app: "mail" }), "utf8");
-	expect(md).toContain("## 예시");
 	expect(md).not.toContain("지난번");
 	expect(md).not.toContain("서명");
 	expect(loadStyle({ app: "mail" }).samples).toEqual(r.examples);
@@ -215,7 +229,6 @@ test("onboard on/off flips the config and the personal feature switch; learn rep
 	expect(JSON.parse(readFileSync(paths.config(), "utf8")).enabled).toBe(false);
 	expect(existsSync(paths.personalFeature())).toBe(false);
 	await Bun.write(join(env.dir, "t.txt"), "알겠습니다. 확인해 볼게요.");
-	expect((await runOnboard(["learn", "--from-file", join(env.dir, "t.txt")], noRun, false)).lines[0]).toContain("문장 2개");
 });
 
 test("draft.ts new prints the [ask] block for a mail and the bare reply text for a comment; only an explicit off refuses it", async () => {

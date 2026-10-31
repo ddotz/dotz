@@ -135,6 +135,7 @@ function laneProject(l) {
 function sessionStatus(l) {
   if (!laneAlive(l)) return ["끝남", ""];
   if (l.status === "working" || l.status === "starting") return ["작업 중", "pri"];
+  if (!l.pendingAsk && runBusy(`lane:${l.name}`)) return [runOf(`lane:${l.name}`).reason === "capacity" ? "순서 대기" : "진행 중", "pri"];
   return ["기다림", l.pendingAsk ? "warn" : ""];
 }
 // o.project: the project name when the caller knows it better than the lane's own home; o.line: a short activity line after it;
@@ -143,9 +144,9 @@ function sessionRow(l, o = {}) {
   const proj = o.project !== undefined ? o.project : laneProject(l), [word, tone] = o.word ? [o.word, o.tone || ""] : sessionStatus(l), name = l.title || l.name, t = `lane:${l.name}`;
   const subs = SUBS[t] || [], done = subs.filter(s => s.status !== "running").length;
   return el("button", { class: "hr srow", type: "button", "data-t": t, onclick: () => openTarget(t, lastChatView()), "aria-label": `${name} · ${proj ? `프로젝트 ${proj}` : "프로젝트 없음"} · ${word} · 대화 열기` },
-    el("span", { class: `dot ${tone === "warn" ? "att" : statusTone(l.status)}` }),
+    el("span", { class: `dot ${tone === "warn" ? "att" : tone === "pri" ? "pri" : statusTone(l.status)}` }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: name })),
-      el("span", { class: "ha" }, el("span", { class: `sproj${proj ? "" : " none"}`, text: proj || "프로젝트 없음" }), o.line ? el("span", { class: "sline", text: o.line }) : null)),
+      el("span", { class: "ha" }, el("span", { class: `sproj${proj ? "" : " none"}`, text: proj || "프로젝트 없음" }), o.line ? el("span", { class: "sline", text: o.line }) : null, o.extra || null)),
     subs.length ? el("span", { class: "hp", title: "서브에이전트 끝난 수 / 전체", text: `서브에이전트 ${done}/${subs.length}` }) : null,
     el("span", { class: `hs ${tone}`, text: word }));
 }

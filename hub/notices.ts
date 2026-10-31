@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
-import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, parseDraftApproval, quotedDraft, refreshDraft } from "./draft-approval.ts";
+import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, draftNeedsText, parseDraftApproval, quotedDraft, refreshDraft, rewriteDraftTo } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { broadcast, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
@@ -93,6 +93,8 @@ const load = (): Notice[] => {
 	}
 };
 let items: Notice[] = load();
+// Notices stored before the project name left the screen keep their old title; they read with the current one (owner 2026-10-29).
+for (const n of items) if (n.key === "self-update" && n.title === "dotz 새 버전") n.title = "새 버전";
 // The title a lane was launched with, from its lane_start event (live or replayed): the fallback once lane.json is gone.
 const launchTitles = new Map<string, string>();
 // True while backfillNotices replays old events: upsert then neither writes the file nor broadcasts per item.
@@ -139,8 +141,10 @@ export function keepWatchNewest<T extends Aged>(list: T[], nowMs: number): T[] {
 	}
 	return drop.size ? list.filter(i => !drop.has(i)) : list;
 }
+// The clock of a backfill (its `nowMs`): what is old is judged at the time the replay is for, not by the wall clock.
+let replayClock: number | undefined;
 function pruneWatch(): boolean {
-	const kept = keepWatchNewest(items, Date.parse(now()));
+	const kept = keepWatchNewest(items, replayClock ?? Date.parse(now()));
 	if (kept === items) return false;
 	items = kept;
 	return true;
@@ -380,7 +384,8 @@ function fromInbox(e: HubEvent): void {
 			void summarizeWatch(output).then(summary => summary && retextWatch(item.id, clean(watchLine(head, reason, output, { prev, summary })).text));
 		return;
 	}
-	if (e.kind === "schedule") {
+	// the gateway's own wakes (update carry-over, text overrides: main.ts wakeOnce) are instructions to the assistant, not the owner's schedules
+	if (e.kind === "schedule" && e.source !== "gateway") {
 		const ch = typeof e.channel === "string" && /^ch:\d+$/.test(e.channel) ? e.channel : "main";
 		upsert({ kind: "watch", tone: "", title: "예약", text: clean(scheduleLine(String(e.text ?? ""), { raw: false })).text, open: ch, at: e.ts });
 	}
@@ -653,10 +658,10 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	const label = `${o.n}) ${o.label}`;
 	// 고치기 on a draft carries what to change and needs it. Elsewhere an option that needs detail (choices.ts detailOf: 안 됨 …) needs the owner's written reason too;
 	// a button with its own `say` / `action` (login request, fixed yes / no) never does.
-	const draftEdit = !!d.draft && draftActionOf(o.label) === "edit";
+	const draftEdit = !!d.draft && draftNeedsText(o.label);
 	const asksDetail = !d.draft && !o.say && !o.action && detailOf(o);
 	const note = draftEdit || asksDetail ? String(body.note ?? "").replace(/\s+/g, " ").trim().slice(0, draftEdit ? DRAFT_BODY_MAX : 500) : "";
-	if (draftEdit && !note) return { status: 400, body: { error: "무엇을 고칠지 적어 주세요" } };
+	if (draftEdit && !note) return { status: 400, body: { error: draftActionOf(o.label) === "own" ? "어떻게 보낼지 적어 주세요" : "무엇을 고칠지 적어 주세요" } };
 	if (asksDetail && !note) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = (o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label)) + (note ? ` - ${note}` : "");
 	sending.set(item.id, label);
@@ -942,10 +947,46 @@ function rerenderPending(): number {
 	return changed;
 }
 
+// A message of the last day stored as a plain message whose text the current rules read as a decision (a choice-block format the parser learned
+// later, e.g. "결정 1:") and that nobody answered in its conversation since: it becomes the decision card it would be today, and the plain
+// message item folds (one message, one notice). An answered one stays as it is. Returns how many messages turned into decisions.
+function upgradeMessages(nowMs = Date.now()): number {
+	const DAY = 86_400_000;   // reconcileStored runs at load, before DAY below exists
+	const cands = items.filter(i => i.kind === "message" && !i.dismissed && !i.decision && i.at && Date.parse(i.at) > nowMs - DAY);
+	if (!cands.length) return 0;
+	const wanted = new Set(cands.map(i => i.at!));
+	const outs: HubEvent[] = [], ins: HubEvent[] = [];
+	for (const file of [paths.outbox, paths.inbox]) {
+		if (!existsSync(file)) continue;
+		for (const line of readFileSync(file, "utf8").split("\n")) {
+			const ts = /"ts":"([^"]+)"/.exec(line)?.[1];
+			if (!ts || Date.parse(ts) <= nowMs - DAY) continue;
+			try {
+				const e = JSON.parse(line) as HubEvent;
+				if (file === paths.inbox) ins.push(e);
+				else if (wanted.has(e.ts) && e.kind === "out") outs.push(e);
+			} catch {
+				continue;
+			}
+		}
+	}
+	let n = 0;
+	for (const e of outs) {
+		const ds = decisionsOf(e);
+		if (!ds.length) continue;
+		const conv = eventTarget(e);
+		if (ins.some(x => x.ts > e.ts && eventTarget(x) === conv)) continue;
+		for (const d of ds) putDecision(d, e.ts);
+		for (const i of cands) if (i.at === e.ts) { i.read = true; i.dismissed = true; }
+		n++;
+	}
+	return n;
+}
+
 function reconcileStored(): void {
 	replaying = true;
 	try {
-		const redrawn = rerenderPending();
+		const redrawn = rerenderPending() + upgradeMessages();
 		// An open question stored without options (made before ask-options.ts) gets them by the same rule, in memory only: the file keeps what
 		// was stored until the item changes for another reason.
 		for (const i of items)
@@ -1026,10 +1067,12 @@ export function backfillNotices(nowMs = Date.now()): number {
 	}
 	events.sort((a, b) => a.ts.localeCompare(b.ts));
 	replaying = true;
+	replayClock = nowMs;
 	try {
 		for (const e of events) feed(e);
 	} finally {
 		replaying = false;
+		replayClock = undefined;
 	}
 	// A question older than a day that nobody answered in the replayed history is no longer waiting.
 	for (const i of items) if (isOpenDecision(i) && Date.parse(i.updated) < nowMs - DAY_MS) settleDecision(i, "", i.updated, true);
@@ -1057,7 +1100,7 @@ export function laneVerified(name: string, fallbackText: string): void {
 // turns it unread again), opening 설정 → 업데이트.
 export const UPDATE_NOTICE_KEY = "self-update";
 export function updateAvailable(text: string): void {
-	upsert({ kind: "alert", tone: "", title: "dotz 새 버전", text: clean(text).text, open: "settings", key: UPDATE_NOTICE_KEY, unread: true });
+	upsert({ kind: "alert", tone: "", title: "새 버전", text: clean(text).text, open: "settings", key: UPDATE_NOTICE_KEY, unread: true });
 }
 
 // The Claude account requests really use changed without the owner's pick in the web: only logged. It is no notice (owner 2026-10-23:
@@ -1113,6 +1156,9 @@ export function listNotices(limit = 100): { items: Notice[]; unread: number } {
 	const sorted = [...shown].sort((a, b) => Number(isOpenDecision(b)) - Number(isOpenDecision(a)) || Number(a.read) - Number(b.read) || b.updated.localeCompare(a.updated) || order.get(b)! - order.get(a)!);
 	return { items: sorted.slice(0, n).map(readable), unread: unreadCount() };
 }
+
+// The 알림 conversation's messages whose notice was dismissed (지우기 on it, web/js/30-notices.js): their event times, so every page hides them there.
+export const dismissedAlertAts = (): string[] => items.filter(i => i.dismissed && (i.src ?? i.open) === "alert" && i.at).map(i => i.at!);
 
 // Swipe / x in the bell: read and gone from every list and count, on every open tab (a notice_dismiss frame).
 export function dismissNotice(id: unknown): { ok: boolean; held?: boolean; unread: number } {
@@ -1222,6 +1268,31 @@ export function reopenNotices(ids: unknown): { reopened: string[]; unread: numbe
 	}
 	if (hit.length) announce(hit, at);
 	return { reopened: hit.map(i => i.id), unread: unreadCount() };
+}
+
+// The send approvals of drafts that wait again (답장 필요로 되돌리기 restored a held draft): a card that was settled as resolved (never answered
+// by the owner) opens again in 확인 대기.
+export function reopenDraftNotices(draftIds: string[]): { reopened: string[]; unread: number } {
+	const want = new Set(draftIds);
+	return reopenNotices(items.filter(i => i.decision?.draft?.ref && want.has(i.decision.draft.ref) && i.decision.state === "answered" && i.decision.resolved).map(i => i.id));
+}
+
+// The 받는 사람·참조 of a waiting mail draft changed (hub/draft-recipients.ts): every open card of that draft shows the new lines at once, on
+// every page, and its stored text is rewritten so a restart reads the same card. Returns how many cards changed.
+export function updateDraftRecipients(ref: string, r: { to: string; cc: string[]; mode?: "reply" | "all" }): number {
+	const hit = items.filter(i => i.decision?.state === "open" && i.decision.draft?.ref === ref);
+	if (!hit.length) return 0;
+	const at = now();
+	for (const n of hit) {
+		const d = n.decision!;
+		const next: DraftApproval = { ...d.draft!, to: r.to, ...(r.cc.length ? { cc: r.cc } : {}), ...(r.mode ? { mode: r.mode } : {}) };
+		if (!r.cc.length) delete next.cc;
+		d.draft = next;
+		n.text = rewriteDraftTo(n.text, r.to, r.cc);
+		n.updated = at;
+	}
+	announce(hit, at);
+	return hit.length;
 }
 
 // Test hook: an empty store and no per-conversation memory, so a test does not depend on what an earlier test left behind.

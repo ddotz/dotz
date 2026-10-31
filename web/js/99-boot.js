@@ -2,6 +2,10 @@
 // (31-conversations.js) and the notices (30-notices.js), whose top-level state must exist by then.
 /* ---------- boot ---------- */
 (async () => {
+  // The owner's custom layer (web/custom.js) comes in after the page has loaded and never holds it: a <script> tag for it kept the document
+  // loading while the gateway did not answer, and the load event (the service worker's registration waits on it) never came. It catches up on the open view.
+  const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "/custom.js" }));
+  if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
   const h = parseHash();
   go(h.view || "home", h.t);
   // The first paint needs the history and the plan, not the state: ask for all of them at once instead of state first (the state
@@ -33,13 +37,13 @@
     else if (e.kind === "subagents") setSubs(e.source, e.items);
     else if (e.kind === "queue") { QUEUE = e.items || []; renderQueue(); }
     else if (e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss") noticeLive(e);
-    else if (e.kind === "peer_notice" || e.kind === "peer_counts") prLive(e);
+    else if (e.kind === "peer_notice" || e.kind === "peer_counts" || e.kind === "peer_notice_done") prLive(e);
     else if (e.kind === "read") convOnRead(e);
     else if (e.kind === "comment" || e.kind === "comment_send" || e.kind === "comment_draft" || e.kind === "comment_sources") cmLive(e);
     else if (e.kind === "kakao" || e.kind === "kakao_send" || e.kind === "kakao_draft" || e.kind === "kakao_rooms" || e.kind === "kakao_read" || e.kind === "kakao_unreplied") kkLive(e);
     else if (e.kind === "mail_unreplied") { convLoad(); loadIntegrations(); }
     else if (e.kind === "runtime_check") { if (rtLive) rtLive(); }
-    else if (e.kind === "update_available") { if (!e.ts || Date.now() - Date.parse(e.ts) < 60_000) toast(e.text, false, { label: "보기", onclick: () => go("settings") }, 10000); loadUpdate(); }
+    else if (e.kind === "update_available") { if (!e.ts || Date.now() - Date.parse(e.ts) < 60_000) toast(e.text, false, { label: "보기", onclick: updOpen }, 10000); loadUpdate(); }
     // 구성 (lanes node, 프로젝트) is drawn from /api/harness, not the state: reload it too when a lane starts or ends.
     else if (e.kind === "lanes") { if (e.was_live && !e.live) refreshState(); else scheduleState(); if (e.was_live !== e.live && current === "harness") loadHarness(true); }
     else {

@@ -119,10 +119,10 @@ const attachAndSend = async (v: View, text: string) => {
 	await run(v, `ta.value = ${JSON.stringify(text)}; document.querySelector("#send-btn").click()`);
 };
 const CHIP = `[...document.querySelectorAll(".um .mfiles .fatt")].find(c => c.querySelector(".fi-n").textContent === ${JSON.stringify(NAME)})`;
-// The chip's name and size, and what its link (open) and the download button give back.
+// The chip's name and size, and what its link (open; none for an HTML file of this computer, which opens in the 캔버스) and the download button give back.
 const chip = (v: View) => q<{ name: string; meta: string; href: string; open: string; dl: string }>(v, `
 	const c = ${CHIP}, item = c.closest(".fitem"), dl = item.querySelector(".fdl").href;
-	return { name: c.querySelector(".fi-n").textContent, meta: c.querySelector(".fi-m").textContent, href: c.getAttribute("href"), open: await (await fetch(c.href)).text(), dl: await (await fetch(dl)).text() };`);
+	return { name: c.querySelector(".fi-n").textContent, meta: c.querySelector(".fi-m").textContent, href: c.getAttribute("href"), open: c.getAttribute("href") ? await (await fetch(c.href)).text() : "", dl: await (await fetch(dl)).text() };`);
 
 const SIZE = `HTML · ${new TextEncoder().encode(BODY).length}B`;
 describe.each([390, 1280])("the sent bubble shows the attached file at %ipx", width => {
@@ -132,12 +132,13 @@ describe.each([390, 1280])("the sent bubble shows the attached file at %ipx", wi
 		await attachAndSend(v, `이걸로 다시 보내놔 ${width}`);
 		await waitFor(v, CHIP);
 		const c = await chip(v);
-		expect(c).toMatchObject({ name: NAME, meta: SIZE, open: BODY, dl: BODY });
-		expect(c.href).toStartWith("/api/file?path=");
+		expect(c).toMatchObject({ name: NAME, meta: SIZE, href: null, dl: BODY });
 		await Bun.write(join(SHOTS, `local-bubble-${width}.png`), await v.screenshot());
+		await run(v, `${CHIP}.click()`);
+		await waitFor(v, `!document.querySelector("#canvas").hidden && document.querySelector("#canvas .apps-n").textContent === ${JSON.stringify(NAME)}`);
 		const again = await openConv(width, LOCAL_T);
 		await waitFor(again, CHIP);
-		expect((await chip(again)).open).toBe(BODY);
+		expect((await chip(again)).dl).toBe(BODY);
 		expect(await q<number>(again, `return document.documentElement.scrollWidth`)).toBeLessThanOrEqual(width);
 	}, 30_000);
 
@@ -181,4 +182,21 @@ test("an upload to the Mac mini that fails sends nothing and says so in Korean; 
 	} finally {
 		peerUploadFails = false;
 	}
+}, 30_000);
+
+// 2026-10-28: the Mac mini's answer in its mail conversation named its result files ([file] lines); opened on the MacBook, each chip asked
+// the MacBook's own /api/file, found nothing there and read "파일이 지워졌어요". A result file of the other computer opens from there.
+test("a result file the Mac mini's bot posted in its conversation opens here through the peer proxy, not as a deleted file", async () => {
+	const RESULT = "/Users/mini/.dotz/projects/ifrs18/files/취합본.pdf", PDF = "%PDF-1.4 취합본";
+	peerUp.set(RESULT, new TextEncoder().encode(PDF));
+	peerHist.push({ ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: PEER_T, text: `취합본 보내 드려요.\n[file] ${RESULT}` });
+	const v = await openConv(1280, PEER_T);
+	const RCHIP = `[...document.querySelectorAll(".bm .mfiles .fatt")].find(c => c.querySelector(".fi-n").textContent === "취합본.pdf")`;
+	// the HEAD check answered: the size fills in (a refused check would turn the chip into a disabled "파일이 지워졌어요" one)
+	await waitFor(v, `${RCHIP} && ${RCHIP}.querySelector(".fi-m").textContent === "PDF · ${new TextEncoder().encode(PDF).length}B"`);
+	const c = await q<{ off: boolean; href: string; open: string }>(v, `const c = ${RCHIP}; return { off: c.classList.contains("off"), href: c.getAttribute("href"), open: await (await fetch(c.href)).text() }`);
+	expect(c.off).toBe(false);
+	expect(decodeURIComponent(decodeURIComponent(c.href))).toContain(`/api/peer/file?path=${RESULT}`);
+	expect(c.open).toBe(PDF);
+	await Bun.write(join(SHOTS, "peer-result-file-1280.png"), await v.screenshot());
 }, 30_000);

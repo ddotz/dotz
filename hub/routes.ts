@@ -1,6 +1,8 @@
 // HTTP routing of the hub: the install files, the identity check and the first part of the route chain; the rest is routes-settings.ts and routes-lanes.ts.
 // Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
+import { readFileSync } from "node:fs";
 import { dropAnsweredMailDraft } from "./draft-drop.ts";
+import { droppedDraftRefs, restoreReopenedDrafts } from "./draft-restore.ts";
 import { join } from "node:path";
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
@@ -10,62 +12,68 @@ import * as discord from "./discord.ts";
 import { authRoute, pendingAuth } from "./auth.ts";
 import { pushRoute } from "./push.ts";
 import { conversationList, unreadOf } from "./conversations.ts";
-import { appEntries, INTEGRATIONS, readAppOff, integrationAvailable, integrationContext, integrationItems, withConnection } from "./integrations.ts";
+import { appEntries, INTEGRATIONS, readAppOff, integrationAvailable, integrationContext, integrationItems, withConnection, withStoreDrafts } from "./integrations.ts";
 import { createApp, deleteApp, removalPlan, removeApp } from "./app-off.ts";
 import { readAppTemplates } from "./app-templates.ts";
 import { allWatches, approveWatch, removeWatch, runWatch } from "./watch.ts";
 import { watchConnection } from "./watch-status.ts";
 import { featuresOf, ownedWatches, retryInternal, setFeature } from "./app-features.ts";
 import { fieldsOf, isSettingsTarget, readSettings, SettingsError, writeSettings } from "./app-settings.ts";
-import { refreshReplyModelChoices } from "./reply-model-choices.ts";
+import { refreshReplyModelChoices, replyModelLabel } from "./reply-model-choices.ts";
+import { replyModel } from "./reply-model.ts";
 import { watchOfSubject } from "./watch-settings.ts";
 import { markRead } from "./reads.ts";
-import { activityItems, broadcast, historyEvents, recentEvents, sentFiles, sseResponse } from "./events.ts";
+import { activityItems, broadcast, historyEvents, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { subagentLists } from "./activity.ts";
-import { runningOmoWorkers } from "./bgwork.ts";
-import { lastTurnEnd, mailConversation, openTodos, runIntent, runState, workConversationRuns, type RunState } from "./runstate.ts";
+import { cancelOmoWorker, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
+import { lastTurnEnd, mailConversation, openTodos, runIntent, runState, stallNudge, workConversationRuns, type RunState } from "./runstate.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
-import { draftAttachRoute } from "./draft-attach.ts";
+import { askedFile, draftAttachRoute } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
-import { composeMail, deleteMail, MailError, mailBodyRoute, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
-import { listDrafts } from "../features/reply-drafts/lib/store.ts";
-import { attachmentLines, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
+import { draftRecipientsRoute } from "./draft-recipients.ts";
+import { composeMail, deleteMail, MailError, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { holdDrafts, listDrafts, restoreDrafts } from "../features/reply-drafts/lib/store.ts";
+import { attachmentLines, canvasRoute, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
+import { ownerElements, pickedLines } from "./picked.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
 import { orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
+import { type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissedAlertAts, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenDraftNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
-import { readTodo } from "./todo.ts";
+import { openMonitor, readTodo } from "./todo.ts";
 import { customRoute } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
 import { harnessUpdateRoute } from "./harness-update.ts";
-import { appAsset, committedText, indexPage, webBuild } from "./webapp.ts";
+import { appAsset, committedText, indexPage, setAppName, webBuild } from "./webapp.ts";
 import { listPeers, ownLogin } from "./peers.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
 import { checkPeer } from "./peer-auth.ts";
 import { activatePeerMonitor, createPeerMonitor } from "./peer-monitor.ts";
 import { handleLease, type LeaseReq } from "./send-lease.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
-import { hostname } from "node:os";
+import { machineHost } from "./hostname.ts";
 import { queue, bgWork, out, progress, fileRoots } from "./outbound.ts";
+import { convs, maxLiveView } from "./convsessions.ts";
+import { MAIN, primaryTarget } from "./session-key.ts";
 import { parseReply, replyLine, sendWeb } from "./intake.ts";
 import { json, body, terminals } from "./routes-util.ts";
 import { ptyRoute } from "./pty.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { routeSettings } from "./routes-settings.ts";
-import { commentFlags, commentNeeds, commentsRoute } from "./comments/gateway.ts";
+import { commentFlags, commentNeeds, commentPending, commentsRoute } from "./comments/gateway.ts";
 import { appHealth, loadUserApps, PROXY_ROOT, removeUserApp, setUserAppOff, userApp } from "./user-apps.ts";
 import { proxyMatch, proxyRequest } from "./app-proxy.ts";
 import { igDmRoute } from "./ig-dm-gateway.ts";
-import { kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
+import { kakaoPendingCount, kakaoPendingDrafts, kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
 
 const BOOT_ID = Date.now().toString(36);
+setAppName(NAME);
 // Installable-app files next to index.html: manifest, service worker (never cached by HTTP, so an update is seen at once), icons.
 const APP_FILES: Record<string, [string, string]> = {
 	"/manifest.webmanifest": ["manifest.webmanifest", "application/manifest+json"],
@@ -95,6 +103,30 @@ function authorized(req: Request): boolean {
 	return false;
 }
 
+const compactingNow = (ctx: { compaction?: { state?: string } } | undefined): boolean => ctx?.compaction?.state === "queued" || ctx?.compaction?.state === "compacting";
+// Every 30 s: a conversation (main, a conversation session or a session) resting with plan tasks left and nothing to wait for is told to go on
+// (runstate.ts stallNudge); `nudge` delivers the prompt into that conversation's own session.
+export function startStallSweep(nudge: (conversation: string, r: RunState) => void): void {
+	const told = new Map<string, { at: number[]; since?: string }>();
+	const timer = setInterval(() => {
+		try {
+			const runs = stateRuns(), now = Date.now();
+			// sessions too: kdb-loss-review on the Mac mini (2026-10-29 01:53Z) ended a turn with a [run] report and 13 tasks open, and
+			// nothing woke it (a [run] report stays on disk)
+			const keys = ["main", ...convs.conversations().filter(c => convs.live(c)).map(c => c.primary), ...[...lanes.values()].filter(l => !!l.proc).map(l => `lane:${l.name}`)];
+			for (const k of keys) {
+				const r = runs[k], seen = told.get(k) ?? { at: [] };
+				if (!r || !stallNudge(r, now, seen.at, seen.since)) continue;
+				told.set(k, { at: [...seen.at.filter(at => now - at < 3_600_000), now], since: r.since });
+				log(`stall: ${k} rested with ${r.todos ?? 0} task(s) left since ${r.since}; told to go on`);
+				nudge(k, r);
+			}
+		} catch (e) {
+			log(`stall sweep failed: ${e}`);
+		}
+	}, 30_000);
+	timer.unref();
+}
 // The run state of every conversation (/api/state `runs`): what each session is doing, and when it is idle with plan tasks left, why.
 function stateRuns(): Record<string, RunState> {
 	const nowMs = Date.now();
@@ -119,35 +151,68 @@ function stateRuns(): Record<string, RunState> {
 		stoppedBy: orch.stoppedBy || undefined,
 		error: orch.error ? { text: orch.error.text, since: orch.error.since } : undefined,
 		ask: askFor("main"),
-		work: running.filter(w => { const t = (w as { target?: string }).target; return t === "web" || t === "terminal" || !t; }),
+		work: running.filter(w => mainWork(w.target)),
+		// a failure a later turn took up (bgwork.ts handled) is over: the line no longer shows it
+		failed: (w => (w && !w.handled ? w : undefined))(works.find(w => w.status !== "running" && mainWork(w.target))),
 		children: runningChildren("orchestrator"),
 		later: deferred.filter(d => d.target === "web" || d.target === "terminal").length,
 		lastTurnEnd: lastTurnEnd(mainItems),
+		compacting: compactingNow(orch.ctx),
+		watching: openMonitor(orch.sessionFile),
 		todos: openTodos(readTodo(orch.sessionFile)),
 		now: nowMs,
 	});
 	const lanesOut: Record<string, RunState> = {};
 	for (const lane of lanes.values()) {
-		const source = `lane:${lane.name}`, items = activityItems(source), workers = runningOmoWorkers(lane.sessionFile);
+		const source = `lane:${lane.name}`, items = activityItems(source), workers = runningOmoWork(lane.sessionFile);
 		lanesOut[source] = runState({
 			status: lane.status,
 			since: turnStart(source, lane.startedAt),
 			intent: runIntent(items),
 			ask: lane.pendingAsk ? { text: lane.pendingAsk.text, at: lane.pendingAsk.at } : undefined,
-			work: workers ? [{ description: "백그라운드 작업" }] : undefined,
+			work: workers,
 			children: runningChildren(source),
 			later: deferred.filter(d => d.target === source).length,
 			capacity: lane.waiting,
 			lastTurnEnd: lastTurnEnd(items),
+			compacting: compactingNow(lane.ctx),
+			watching: openMonitor(lane.sessionFile),
 			todos: openTodos(readTodo(lane.sessionFile)),
 			now: nowMs,
 		});
 	}
-	// A mail conversation has no session of its own: the worker its owner message was deferred to is its run state (a thread target
+	// A conversation with a session of its own (hub/convsessions.ts) shows that session's line, so its window shows its turn, its
+	// waiting worker and its own 중단; its state wins over the worker-only line below.
+	const convOut: Record<string, RunState> = {};
+	for (const c of convs.conversations()) {
+		if (!convs.live(c)) continue;
+		const source = `conv:${c.key}`, items = activityItems(source), own = c.bg.list();
+		convOut[c.primary] = runState({
+			status: c.o.orch.status,
+			since: (c.o.orch.status === "stopped" ? c.o.orch.stoppedAt || c.o.orch.startedAt : turnStart(source, c.o.orch.startedAt)) || undefined,
+			intent: runIntent(items),
+			rateLimitedUntil: c.o.orch.rateLimitedUntil,
+			pauseKind: c.o.orch.pauseKind,
+			stoppedBy: c.o.orch.stoppedBy || undefined,
+			error: c.o.orch.error ? { text: c.o.orch.error.text, since: c.o.orch.error.since } : undefined,
+			ask: askFor(c.primary),
+			work: own.filter(w => w.status === "running"),
+			failed: (w => (w && !w.handled ? w : undefined))(own.find(w => w.status !== "running")),
+			children: runningChildren(source),
+			later: c.queue.deferredOpen().length,
+			lastTurnEnd: lastTurnEnd(items),
+			compacting: compactingNow(c.o.orch.ctx),
+			watching: openMonitor(c.o.orch.sessionFile),
+			todos: openTodos(readTodo(c.o.orch.sessionFile)),
+			now: nowMs,
+		});
+	}
+	// A mail conversation with no session of its own: the worker its owner message was deferred to is its run state (a thread target
 	// and the mail key name the same conversation). Peer snapshots show the same lines, so the other computer's mail is not silent.
 	const mailRuns = workConversationRuns(works, t => mailConversation(t, thread => mailByThread(thread)?.key));
-	return { main, ...lanesOut, ...mailRuns };
+	return { main, ...lanesOut, ...mailRuns, ...convOut };
 }
+const mainWork = (t: string | undefined) => t === "web" || t === "terminal" || !t;
 const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefined => {
 	for (let i = items.length - 1; i >= 0; i--) if (items[i]!.type === "turn_start") return items[i]!.ts;
 	return undefined;
@@ -166,9 +231,15 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// or OS fetch that carries no tailnet identity (icon or manifest fetch, SW update check) must still get them, or the
 		// phone falls back to a plain shortcut. Everything else stays behind the identity check.
 		const appFile = req.method === "GET" || req.method === "HEAD" ? APP_FILES[url.pathname] : undefined;
+		// The install name is the owner's assistant name, not the project's; `gateway` is what another computer recognises a gateway by (hub/peers.ts).
+		if (appFile && url.pathname === "/manifest.webmanifest") {
+			const m = JSON.parse(committedText(appFile[0]) ?? readFileSync(join(import.meta.dir, "..", "web", appFile[0]), "utf8"));
+			const body = JSON.stringify({ ...m, name: NAME, short_name: NAME, description: `${NAME} · 항상 켜져 있는 개인 비서`, gateway: "dotz" });
+			return new Response(req.method === "HEAD" ? null : body, { headers: { "Content-Type": appFile[1], "Cache-Control": "no-cache" } });
+		}
 		if (appFile) return new Response(req.method === "HEAD" ? null : committedText(appFile[0]) ?? Bun.file(join(import.meta.dir, "..", "web", appFile[0])), { headers: { "Content-Type": appFile[1], "Cache-Control": url.pathname === "/sw.js" || url.pathname.endsWith(".webmanifest") ? "no-cache" : "public, max-age=86400" } });
 		// The other gateways read this computer's chosen name here (hub/peers.ts); it is a display name, no secret, so it is public like the manifest.
-		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer-info") return json({ name: resolveName(cfg.web?.machine_name, hostname()) });
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer-info") return json({ name: resolveName(cfg.web?.machine_name, machineHost()) });
 		// Pairing gates itself: only a request from this node's own tailscale login gets a token (hub/peer-pair.ts), so it needs no owner check first.
 		if (req.method === "POST" && url.pathname === PAIR_PATH) return handlePair(req, { ownLogin });
 		// A request with the peer header gets only the peer paths (hub/peer-auth.ts); a good one skips the owner check, a bad one never reaches it.
@@ -195,7 +266,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (asset) return asset;
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/custom.js") {
 			const file = Bun.file(join(import.meta.dir, "..", "web", "custom.js"));
-			return (await file.exists()) ? new Response(req.method === "HEAD" ? null : file, { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache" } }) : new Response("not found", { status: 404 });
+			// No file is an empty script, not a 404: the service worker caches it with the shell, and one failed file would stop the whole cache.
+			const body = req.method === "HEAD" ? null : (await file.exists()) ? file : "";
+			return new Response(body, { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-cache" } });
 		}
 		const pushResponse = await pushRoute(req, url);
 		if (pushResponse) return pushResponse;
@@ -252,17 +325,39 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// Send lease of another gateway (hub/send-lease.ts): claim, release or record a sent id before an app message goes out.
 		if (req.method === "POST" && url.pathname === "/api/peer/lease") return json(handleLease((await body(req)) as LeaseReq, Date.now()));
 		// This computer's name for the settings screen: the one in use, the one the owner set (empty = none), and the hostname default.
-		if (url.pathname === "/api/machine" && req.method === "GET") return json({ name: resolveName(cfg.web?.machine_name, hostname()), custom: cleanName(cfg.web?.machine_name), default: friendlyName(hostname()) });
+		if (url.pathname === "/api/machine" && req.method === "GET") return json({ name: resolveName(cfg.web?.machine_name, machineHost()), custom: cleanName(cfg.web?.machine_name), default: friendlyName(machineHost()) });
 		if (url.pathname === "/api/machine" && req.method === "PUT") {
 			const name = cleanName((await body(req)).name);
 			setMachineName(name);
-			return json({ name: resolveName(name, hostname()), custom: name, default: friendlyName(hostname()) });
+			return json({ name: resolveName(name, machineHost()), custom: name, default: friendlyName(machineHost()) });
 		}
 		if (req.method === "GET" && url.pathname === "/api/workers") return json({ items: bgWork.list() });
+		// 중단 (the worker's process ends; a lane's worker too) and 다시 맡기기 (its request goes to the orchestrator again, in its own conversation).
+		const workerAct = req.method === "POST" ? /^\/api\/workers\/([\w.-]{1,80})\/(cancel|retry)$/.exec(url.pathname) : null;
+		if (workerAct) {
+			const id = workerAct[1]!;
+			if (workerAct[2] === "cancel") {
+				let r = await bgWork.cancel(id);
+				for (const lane of lanes.values()) if (!r.ok && r.status === 404) r = await cancelOmoWorker(id, lane.sessionFile);
+				return r.ok ? json({ ok: true, item: bgWork.list().find(w => w.id === id) }) : json({ error: r.error }, r.status);
+			}
+			const w = bgWork.list().find(x => x.id === id);
+			if (!w) return json({ error: "이 작업을 찾을 수 없어요" }, 404);
+			if (w.status !== "failed") return json({ error: w.status === "running" ? "아직 하고 있는 작업이에요" : "이미 끝난 작업이에요" }, 409);
+			const to = workConversation(w.target, thread => mailByThread(thread)?.key);
+			const mail = to.startsWith("mail:") ? mailByKey(to.slice(5)) : undefined;
+			try {
+				const project = to.startsWith("ch:") ? projectTarget(to, discord.channels.work) : undefined;
+				await sendWeb({ mail, project, settings: to.startsWith("settings:") ? to.slice(9) : undefined, channel: "web", text: retryText(w, w.reply_to ? ownerMessage(w.reply_to)?.text : undefined), mode: "default", login: req.headers.get("tailscale-user-login") ?? "local" });
+			} catch (error) {
+				return json({ error: (error as Error).message }, 409);
+			}
+			return json({ ok: true, to });
+		}
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
 			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
-		if (req.method === "GET" && url.pathname === "/api/notices") return json(listNotices(Number(url.searchParams.get("limit") ?? 100)));
+		if (req.method === "GET" && url.pathname === "/api/notices") return json({ ...listNotices(Number(url.searchParams.get("limit") ?? 100)), gone: dismissedAlertAts() });
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		// Run one watch now (the web's 지금 확인 / 지금 다시 확인): the same runner the timer uses, awaited so the answer carries the new result.
 		const watchRun = req.method === "POST" ? /^\/api\/watches\/([a-z0-9-]{1,40})\/run$/.exec(url.pathname) : null;
@@ -284,7 +379,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		const sentMailRefs = () => sentReplyRefs(listDrafts());
 		// The pending reply drafts of one mail are dropped (the same store step as 보내지 않기) and their approval cards settled at once.
 		const dropMailDrafts = async (key: string) => {
-			const pending = listDrafts().filter(d => d.ref === key && d.status === "pending");
+			const pending = listDrafts().filter(d => d.ref === key && (d.status === "pending" || d.status === "held"));
 			if (pending.length) {
 				const { dropDraft } = await import("../features/reply-drafts/lib/flow.ts");
 				for (const d of pending) { const r = dropDraft(d.id); if (!r.ok) log(`draft ${d.id}: not dropped with its mail: ${r.text}`); }
@@ -292,14 +387,34 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			await settleHandledDrafts().catch(e => log(`mail ${key}: handled-draft settle failed: ${(e as Error).message}`));
 		};
 		const unrepliedMailList = () => unrepliedMails(sentMailRefs());
+		// A draft a send-approval notice already shows (its `> 참조:` ref) is that notice's card; the store's own list leaves it out, so nothing counts twice.
+		const noticeDraftRefs = (): Set<string> => new Set(listNotices(NOTICE_CAP).items.flatMap(n => (n.decision?.state === "open" && !n.ignored && typeof n.decision.draft?.ref === "string" ? [n.decision.draft.ref] : [])));
+		// The KakaoTalk reply drafts waiting in watched rooms count as the kakao app's drafts beside the comment apps' (hub/integrations.ts needs.drafts).
+		const draftNeeds = () => withStoreDrafts(commentNeeds(), "kakao", kakaoPendingCount(noticeDraftRefs()));
 		const integrationView = () => {
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
 			const ctx = integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags());
 			const own = ownedWatches(DATA_DIR, allWatches());
-			const items = integrationItems(ctx, listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), commentNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => withConnection({ ...i, own: own.get(i.key) ?? [] }, allWatches()));
+			const items = integrationItems(ctx, listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), draftNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => withConnection({ ...i, own: own.get(i.key) ?? [] }, allWatches()));
 			return { items, available: integrationAvailable(items, ctx) };
 		};
 		if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
+		// 답장 확인 (web/js/30-replies.js): the reply drafts the apps keep in their own stores (KakaoTalk rooms, comment sources), newest first. A mail
+		// draft is a send-approval notice and is read from the notices; a store draft such a notice already shows is left out.
+		if (req.method === "GET" && url.pathname === "/api/replies") {
+			const skip = noticeDraftRefs();
+			const kakao = (await kakaoPendingDrafts(skip).catch(() => [])).map(d => ({ kind: "kakao", app: "kakao", conv: `kakao:${d.chatId}`, at: Date.parse(d.created) || 0, ...d }));
+			const comments = commentPending().filter(d => !skip.has(d.code)).map(d => ({ ...d, kind: "comment", via: d.kind, at: d.created }));
+			// The model a draft of that app uses (the app instance's 답장 모델, else the reply default) goes on the card's head when known.
+			const models = new Map<string, string>();
+			const withModel = async <T extends { app: string; conv?: string }>(item: T) => {
+				const key = `${item.app}|${item.conv ?? ""}`;
+				if (!models.has(key)) models.set(key, await replyModel(item.app, item.conv).then(replyModelLabel).catch(() => ""));
+				return models.get(key) ? { ...item, model: models.get(key) } : item;
+			};
+			const items = await Promise.all([...kakao, ...comments].map(withModel));
+			return json({ items: items.sort((a, b) => b.at - a.at) });
+		}
 		// The 앱 list (hub/user-apps.ts): the 모니터링 apps this install has on, then the owner's own manifests (with their health).
 		if (req.method === "GET" && url.pathname === "/api/apps") {
 			const view = integrationView();
@@ -385,7 +500,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "POST" && url.pathname === "/api/notices/read") return json(markNoticesRead(await body(req)));
 		// The bot closes the questions whose matter is over (ids, match text, conv or all): they are answered, read and off 답변 필요.
 		if (req.method === "POST" && url.pathname === "/api/notices/resolve") return json(resolveNotices(await body(req)));
-		if (req.method === "POST" && url.pathname === "/api/notices/reopen") return json(reopenNotices((await body(req)).ids));
+		// 되돌리기 after 보내지 않기 also puts the mail reply draft back in its store (the peer act notice reopen lands here too).
+		if (req.method === "POST" && url.pathname === "/api/notices/reopen") {
+			const ids = (await body(req)).ids, refs = droppedDraftRefs(listNotices(NOTICE_CAP).items, ids);
+			const r = reopenNotices(ids);
+			await restoreReopenedDrafts(refs, r.reopened, log);
+			return json(r);
+		}
 		// The page reports the conversation it shows ("" = hidden): answers there make no unread message item (hub/notices.ts).
 		if (req.method === "POST" && url.pathname === "/api/viewing") {
 			const b = await body(req);
@@ -435,11 +556,17 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return json(r, r.ok ? 200 : 400);
 		}
 		if (req.method === "GET" && url.pathname === "/api/conversations") {
+			settleMailDrafts(listDrafts());   // a dropped draft takes its 초안 있음 off before the rows are drawn
 			const owed = new Set(unrepliedMailList().map(m => m.key));
 			const sent = sentMailRefs();
-			const items = conversationList([...liveLanes().live.map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).map(c => {
-				const m = c.target.startsWith("mail:") ? mailByKey(c.target.slice(5)) : undefined;
-				return m ? { ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key)) } : c;
+			// Ended sessions are listed too: their unread count and 답변 필요 stay on their row in the folded 끝난 세션 group (web/js/04-state.js endedGroup).
+			// A mail conversation is listed only while its mail is: a deleted mail (mail-deleted.json) keeps its messages in the log, but it leaves
+			// this list, so it leaves every list and count here and on the other computer (its snapshot is this list, hub/peer-monitor.ts).
+			const lv = liveLanes();
+			const items = conversationList([...[...lv.live, ...lv.ended].map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).flatMap(c => {
+				if (!c.target.startsWith("mail:")) return [c];
+				const m = mailByKey(c.target.slice(5));
+				return m ? [{ ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key)) }] : [];
 			});
 			return json({ items });
 		}
@@ -448,17 +575,27 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (mailFile) return mailFileRoute(req, url, mailFile[1]!, mailFile[2]!);
 		// One file a draft sends along (the `> 첨부:` lines of a send approval): only files staged for that draft (hub/draft-files.ts).
 		const draftFile = (req.method === "GET" || req.method === "HEAD") && /^\/api\/drafts\/([A-Za-z0-9._-]+)\/files\/(\d+)$/.exec(url.pathname);
-		if (draftFile) return draftFileRoute(req, url, draftFile[1]!, draftFile[2]!);
+		if (draftFile) return draftFileRoute(req, url, draftFile[1]!, draftFile[2]!, undefined, askedFile);
 		// Add or remove a file of a mail reply draft, and the 첨부 파일 폴더 listing (hub/draft-attach.ts).
 		const draftAttach = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/(files|library|original)$/.exec(url.pathname);
 		if (draftAttach) return draftAttachRoute(req, url, draftAttach[1]!, draftAttach[2]!);
-		// 답장 안 함 / 답장 안 해도 돼요 (fyi) on a mail (POST) or taking it back (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
-		// Its reply draft waiting for approval is dropped through the drafts store and its card leaves 확인 대기 before the answer.
+		// 답장 | 전체 답장 and the 받는 사람·참조 of a waiting mail draft (hub/draft-recipients.ts).
+		const draftRecipients = /^\/api\/drafts\/([A-Za-z0-9._-]+)\/recipients$/.exec(url.pathname);
+		if (draftRecipients) return draftRecipientsRoute(req, draftRecipients[1]!);
+		// 답장 안 함 (no-reply = skipped, fyi; one label to the owner) on a mail (POST) or 답장 필요로 표시 (DELETE): the owner's mark that this mail needs no reply (hub/mail-state.ts).
+		// Its reply draft waiting for approval is held in the drafts store (not dropped) and its card leaves 확인 대기 before the answer; taking the
+		// mark back restores the newest held draft and reopens its card. A peer's 되돌리기 arrives here too (hub/peer-monitor.ts act fyi / no-reply).
 		const mailNoReply = (req.method === "POST" || req.method === "DELETE") && /^\/api\/mail\/([a-z0-9._-]+)\/(no-reply|fyi)$/.exec(url.pathname);
 		if (mailNoReply) {
 			const key = mailNoReply[1]!;
 			if (!(mailNoReply[2] === "fyi" ? setMailFyi : setMailNoReply)(key, req.method === "POST")) return json({ error: "이 메일을 찾지 못했어요" }, 404);
-			if (req.method === "POST") await dropMailDrafts(key);
+			if (req.method === "POST") {
+				holdDrafts(key);
+				await settleHandledDrafts().catch(e => log(`mail ${key}: handled-draft settle failed: ${(e as Error).message}`));
+			} else {
+				const back = restoreDrafts(key);
+				if (back) reopenDraftNotices([back]);
+			}
 			broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
 			return json({ ok: true });
 		}
@@ -480,7 +617,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			if (!r || r.dir === "out") return json({ error: "이 메일을 찾지 못했어요" }, 404);
 			if (!deps?.requestDraft) return json({ error: "이 설치에는 답장 초안 기능이 없어요" }, 503);
 			const target = mailTarget(key);
-			void deps.requestDraft({ key, target, ...(r.thread ? { thread: r.thread } : {}), ...(r.msg ? { messageId: r.msg } : {}), source: r.source, id: r.id, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.attachments?.length ? { attachments: r.attachments.map(a => ({ name: a.name, size: a.size })) } : {}) })
+			// What the owner typed in the 초안 작성 box (empty: the draft is made on its own).
+			const instruction = String((await body(req).catch(() => ({})) as { instruction?: unknown }).instruction ?? "").trim().slice(0, 500);
+			void deps.requestDraft({ key, ...(instruction ? { instruction } : {}), target, ...(r.thread ? { thread: r.thread } : {}), ...(r.msg ? { messageId: r.msg } : {}), source: r.source, id: r.id, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.cc ? { cc: r.cc } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.attachments?.some(a => !a.inline) ? { attachments: r.attachments.filter(a => !a.inline).map(a => ({ name: a.name, size: a.size })) } : {}) })
 				.then(res => { if (res !== "offered") return deps.send(target, "답장 초안을 만들지 못했어요. 잠시 뒤 다시 눌러 주세요"); })
 				.catch(e => log(`mail ${key}: requested draft failed: ${(e as Error).message}`));
 			return json({ ok: true, started: true }, 202);
@@ -535,10 +674,14 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/file") {
 			return fileRoute(req, url, fileRoots(), sentFiles());
 		}
-		// A file the owner attached to a conversation of this computer, opened from the other one (the chip in the sent bubble): uploads only.
+		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/canvas") {
+			return canvasRoute(req, url, fileRoots(), sentFiles());
+		}
+		// A file of a conversation of this computer, opened from the other one: an upload the owner attached (the chip in the sent bubble),
+		// or a result file the bot posted or wrote ([file] lines, paths), under the same rules as this computer's own /api/file.
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/peer/file") {
 			const [f] = messageFiles([{ path: url.searchParams.get("path") ?? "" }]);
-			if (!f) return json({ error: "열 수 없는 파일이에요" }, 404);
+			if (!f) return fileRoute(req, url, fileRoots(), sentFiles());
 			const res = serveFile(f.path, req, url.searchParams.get("download") === "1");
 			return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
 		}
@@ -563,7 +706,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			} catch (error) {
 				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
 			}
-			if (!b.text && !files.length) return json({ error: "text required" }, 400);
+			const elements = ownerElements(b.elements);
+			if (!b.text && !files.length && !elements.length) return json({ error: "text required" }, 400);
 			const text = String(b.text ?? "");
 			const login = req.headers.get("tailscale-user-login") ?? "local";
 			// mode: none (main takes it as the next message, a working lane is steered), "steer" (into the running turn
@@ -589,13 +733,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			}
 			// The queue sends to the main conversation when the turn ends; a project message goes in now (intake merges a burst).
 			if (mode === "queue" && !project && !mail && !conv && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
-				const item = enqueue(lane ? `lane:${lane}` : "main", [reply ? replyLine(reply) : "", text, files.length ? attachmentLines(files) : ""].filter(Boolean).join("\n"), login);
+				const item = enqueue(lane ? `lane:${lane}` : "main", [reply ? replyLine(reply) : "", text, files.length ? attachmentLines(files) : "", elements.length ? pickedLines(elements) : ""].filter(Boolean).join("\n"), login);
 				return json({ ok: true, queued: item });
 			}
 			try {
 				// A decision answer from the chat card: the asking message (its ts) and the chosen option per block (intake.ts decisionLines).
 				const picks = Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120), ...(typeof p.note === "string" && p.note.trim() ? { note: p.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}) }] : [])) : [];
-				await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(picks.length ? { picks } : {}), via: viaOf(b.via) });
+				await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(elements.length ? { elements } : {}), ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(picks.length ? { picks } : {}), via: viaOf(b.via) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 409);
 			}
@@ -628,9 +772,54 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			spendOnKey(String(b.key_file), tokens, Number(b.usd) > 0 ? Number(b.usd) : undefined);
 			return json({ ok: true });
 		}
+		// The conversations main oversees (hub/convsessions.ts) for the dotz_conv tool: which have a session of their own, what it is doing,
+		// and the exchange a read asks for. A conversation session may write only into main; main may send into any conversation.
+		if (req.method === "GET" && url.pathname === "/api/conv-sessions") {
+			return json({
+				capacity: maxLiveView(),
+				items: convs.conversations().map(c => ({ key: c.key, name: c.meta.name || c.primary, primary: c.primary, live: convs.live(c), state: convs.stateOf(c.primary), status: c.o.orch.status, model: c.o.orch.activeModel, ctx: { tokens: c.o.orch.ctx.tokens }, lastOwnerAt: c.meta.lastOwnerAt })),
+			});
+		}
+		{
+			const m = /^\/api\/conv-sessions\/([^/]+)\/(history|send)$/.exec(url.pathname);
+			const key = m ? decodeURIComponent(m[1]!) : "";
+			if (m && m[2] === "history" && req.method === "GET") {
+				const c = convs.get(key);
+				if (!c) return json({ error: `no conversation session ${key}` }, 404);
+				const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 20) || 20, 1), 40);
+				return json({ key, primary: c.primary, events: historyEvents(c.primary, limit) });
+			}
+			if (m && m[2] === "send" && req.method === "POST") {
+				const b = await body(req);
+				const text = String(b.text ?? "").trim();
+				const from = String(b.from ?? "").trim() || MAIN;
+				if (!text) return json({ error: "text required" }, 400);
+				const sender = convs.get(from);
+				if (!sender) return json({ error: `unknown session ${from}` }, 400);
+				// One round only: a turn a session was handed another session's work for must not hand it back or onward.
+				const cur = sender.queue.current();
+				if (cur && !cur.done && cur.text.startsWith(MAIN === from ? "[conversation " : "[main session] ")) return json({ error: "handed work: answer it here, do not pass it on" }, 409);
+				const toMain = from !== MAIN;
+				if (!toMain && !convs.get(key)) return json({ error: `no conversation session ${key}` }, 404);
+				// Into main: its answer goes to the conversation that asked, where its own window shows it.
+				if (toMain) {
+					queue.deliver(`[conversation ${from}] ${text}`, { target: sender.primary, replyTo: cur?.replyTo });
+					return json({ ok: true, to: MAIN, answers_in: sender.primary });
+				}
+				const c = convs.get(key)!;
+				// Main's request goes in as that conversation's next turn with no reply_to: its answer is posted into the conversation.
+				convs.deliverTo(key, `[main session] ${text}`, undefined);
+				return json({ ok: true, to: key, answers_in: c.primary });
+			}
+		}
 		if (req.method === "POST" && url.pathname === "/api/send") {
 			const b = await body(req);
 			const target = String(b.target ?? "chat");
+			// A conversation's own session answers only there (hub/convsessions.ts): a post of it anywhere else, an early text, a
+			// progress note or a send with no reply_to alike, is refused, so another window's answer never lands in this one.
+			const session = typeof b.session === "string" && b.session ? b.session : MAIN;
+			if (session !== MAIN && convs.keyOf(target) !== session) return json({ delivered: false, reason: `this session answers only ${primaryTarget(session)}; hand other work to main with dotz_conv send main` }, 403);
+			const sender = convs.get(session)?.queue ?? queue;
 			// `resolves` (text in the title / text of the open questions it settles, or "*" for all): this post says their matter is over.
 			if (typeof b.resolves === "string" && b.resolves.trim()) resolveNotices(b.resolves.trim() === "*" ? { all: true } : { match: b.resolves });
 			if (b.update_key) {
@@ -640,10 +829,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 					return json({ delivered: false, reason: (error as Error).message }, 502);
 				}
 			}
-			// Answer only when it is ready: an early text to the asking channel waits for the turn's final answer.
-			if (queue.holdEarly(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined))
-				return json({ delivered: true, held: true, note: "held: it goes out together with your final answer for this request; do not send it again" });
-			queue.sent(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined);
+			// Answer only when it is ready: an early text to the asking channel waits for the turn's final answer. Meanwhile the owner
+			// sees it at once on that conversation's progress line (owner 2026-10-28: 중간 말을 바로 보여 주기), which the answer replaces.
+			if (sender.holdEarly(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined)) {
+				void progress(target, "progress", String(b.text ?? ""), b.reply_to).catch(e => log(`early text not shown on the progress line: ${(e as Error).message}`));
+				return json({ delivered: true, held: true, note: "held: it is shown on the progress line now and goes out together with your final answer for this request; do not send it again" });
+			}
+			sender.sent(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined);
 			try {
 				return json(await out(target, String(b.text ?? ""), b.reply_to));
 			} catch (error) {
@@ -662,7 +854,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (laneResponse) return laneResponse;
 		return new Response("not found", { status: 404 });
 	};
-	const peers = createPeerMonitor({ name: () => resolveName(cfg.web?.machine_name, hostname()), local: route, localHeaders: { "x-dotz-token": HUB_TOKEN }, orchestrator: () => ({ status: orch.status, pauseKind: orch.pauseKind }), runs: () => Object.fromEntries(Object.entries(stateRuns()).filter(([k]) => k.startsWith("mail:"))) });
+	const peers = createPeerMonitor({ name: () => resolveName(cfg.web?.machine_name, machineHost()), local: route, localHeaders: { "x-dotz-token": HUB_TOKEN }, orchestrator: () => ({ status: orch.status, pauseKind: orch.pauseKind }), runs: () => Object.fromEntries(Object.entries(stateRuns()).filter(([k]) => k.startsWith("mail:"))) });
 	activatePeerMonitor(peers);
 	return route;
 }

@@ -5,7 +5,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GUARD_DEFAULTS, guardConfigFrom, installedOriginal, loadGuardConfig } from "./guard-config.ts";
-import { budgetLine, budgetProblem, checkOmoTaskInput, livePin, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, relativizeRoots, settleFromText, shouldIsolate, shellText, trimWaitOutput } from "./guard.ts";
+import { LOOKUP_MODEL, omoSelector } from "../hub/runtime/omo.ts";
+import { budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
 
 let dir: string;
 beforeAll(() => {
@@ -278,11 +279,21 @@ test("OmO task completion settles the worker and keeps its retained patch; eval 
 	expect(shellText({ code: "await tool.bash({ command: 'git apply x.patch' })" })).toContain("git apply x.patch");
 });
 
+test("lookup subagents (explore, librarian) run Sonnet 5.5 medium on the subscription; other subagent types keep the live model; on an API-key session lookups follow the pin", () => {
+	const batch: any = { tasks: [{ subagent_type: "explore", prompt: "a" }, { subagent_type: "librarian", prompt: "b" }, { subagent_type: "oracle", prompt: "c" }] };
+	pinOmoTaskModel(batch, "anthropic-subscription/claude-opus-5-5:high");
+	expect(batch.tasks.map((t: any) => t.model)).toEqual([LOOKUP_PIN, LOOKUP_PIN, "anthropic-subscription/claude-opus-5-5:high"]);
+	expect(LOOKUP_PIN).toBe(omoSelector(LOOKUP_MODEL));
+	const keyed: any = { subagent_type: "explore", prompt: "a" };
+	pinOmoTaskModel(keyed, "anthropic-apikey/claude-opus-5-5:high");
+	expect(keyed.model).toBe("anthropic-apikey/claude-opus-5-5:high");
+});
+
 test("the orchestrator's task workers are pinned to its live model and effort; a category worker's model is left to the profile (OmO refuses both)", async () => {
 	expect(livePin({ provider: "anthropic-subscription", id: "claude-opus-5-5" }, "medium")).toBe("anthropic-subscription/claude-opus-5-5:medium");
 	expect(livePin({ provider: "anthropic-subscription", id: "claude-opus-5-5" }, "off")).toBe("anthropic-subscription/claude-opus-5-5");
 	expect(livePin(undefined, "medium")).toBeUndefined();
-	const batch: any = { tasks: [{ subagent_type: "explore", model: "anthropic-subscription/claude-sonnet-5-5", prompt: "x" }, { category: "quick", model: "anthropic-subscription/claude-sonnet-5-5", prompt: "y" }] };
+	const batch: any = { tasks: [{ subagent_type: "oracle", model: "anthropic-subscription/claude-sonnet-5-5", prompt: "x" }, { category: "quick", model: "anthropic-subscription/claude-sonnet-5-5", prompt: "y" }] };
 	pinOmoTaskModel(batch, "anthropic-subscription/claude-opus-5-5:medium");
 	expect(batch.tasks[0].model).toBe("anthropic-subscription/claude-opus-5-5:medium");
 	expect("model" in batch.tasks[1]).toBe(false);
@@ -297,15 +308,52 @@ test("the orchestrator's task workers are pinned to its live model and effort; a
 	process.env.DOTZ_ORCHESTRATOR = "1";
 	delete process.env.DOTZ_LANE;
 	try {
-		const one = { subagent_type: "librarian", prompt: "mail:kdb-1 요청: 큐피드 흐름도 자료 찾기\nDone when: 링크 3개" };
+		const one = { subagent_type: "oracle", prompt: "mail:kdb-1 요청: 큐피드 흐름도 검토\nDone when: 의견 3개" };
 		const r = await handlers.tool_call[0]({ toolName: "task", input: one }, ctx);
 		expect(r.input.model).toBe("anthropic-subscription/claude-opus-5-5:medium");
+		const look = { subagent_type: "librarian", prompt: "mail:kdb-1 요청: 큐피드 흐름도 자료 찾기\nDone when: 링크 3개" };
+		expect((await handlers.tool_call[0]({ toolName: "task", input: look }, ctx)).input.model).toBe(LOOKUP_PIN);
 		const cat = { category: "deep-low", model: "anthropic-subscription/claude-sonnet-5-5", prompt: "흐름도 만들기\nAcceptance: html" };
 		expect("model" in (await handlers.tool_call[0]({ toolName: "task", input: cat }, ctx)).input).toBe(false);
 		// A lane's own spawns are not the orchestrator's: left as they are.
 		process.env.DOTZ_LANE = "probe";
 		const laneCall = { subagent_type: "explore", prompt: "x\nDone when: y" };
 		expect((await handlers.tool_call[0]({ toolName: "task", input: laneCall }, ctx)).input.model).toBeUndefined();
+	} finally {
+		process.env = saved;
+	}
+});
+
+// A conversation's own session (DOTZ_CONV) keeps its own worker state, and hands writes of the files every session reads to main.
+test("the worker state is keyed by DOTZ_CONV, and shared files are written only by the main session", async () => {
+	const saved = { ...process.env };
+	try {
+		delete process.env.DOTZ_LANE;
+		delete process.env.DOTZ_CONV;
+		expect(stateOwner()).toBeUndefined();
+		process.env.DOTZ_CONV = "mail:kdb-1";
+		expect(stateOwner()).toBe("mail:kdb-1");
+		process.env.DOTZ_LANE = "ktx";
+		expect(stateOwner()).toBe("ktx");
+		delete process.env.DOTZ_LANE;
+		const data = join(dir, "data");
+		expect(sharedWriteBlock("write", { path: join(data, "state.json") }, data, "mail:kdb-1")).toContain("dotz_conv send main");
+		expect(sharedWriteBlock("edit", { path: join(data, "RULES.md") }, data, "mail:kdb-1")).toBeDefined();
+		expect(sharedWriteBlock("write", { path: join(data, "memory", "owner.md") }, data, "mail:kdb-1")).toBeDefined();
+		expect(sharedWriteBlock("eval", { language: "js", code: `await Bun.write("${join(data, "LESSONS.md")}", "x")` }, data, "mail:kdb-1")).toBeDefined();
+		// Reading them, and writing anything else, is fine; so is every write from the main session.
+		expect(sharedWriteBlock("eval", { language: "js", code: `print(read("${join(data, "state.json")}"))` }, data, "mail:kdb-1")).toBeUndefined();
+		expect(sharedWriteBlock("write", { path: join(data, "reports", "x.md") }, data, "mail:kdb-1")).toBeUndefined();
+		expect(sharedWriteBlock("write", { path: join(data, "state.json") }, data, "")).toBeUndefined();
+		// Through the installed hook: blocked under DOTZ_CONV, allowed for main.
+		const { pi, handlers } = fakePi(join(dir, "agent-empty"));
+		installGuard(pi, noGate);
+		const ctx = { agent: { kind: "main" }, cwd: dir };
+		process.env.DOTZ_CONV = "ch:333";
+		const call = { toolName: "write", input: { path: join(process.env.DOTZ_DIR!, "state.json"), content: "{}" } };
+		expect((await handlers.tool_call[0](call, ctx))?.block).toBe(true);
+		delete process.env.DOTZ_CONV;
+		expect((await handlers.tool_call[0](call, ctx))?.block).toBeUndefined();
 	} finally {
 		process.env = saved;
 	}

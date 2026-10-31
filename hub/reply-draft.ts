@@ -15,13 +15,15 @@ export type ReplyItem = {
 	room?: string; // the conversation inside a messenger app: its own tone profile
 	from: string;
 	replyTo?: string;
-	cc?: string[];
+	cc?: string[]; // the original mail's 참조 addresses: allowed as a recipient (전체 답장 keeps them)
+	to?: string[]; // the original mail's 받는 사람 addresses: allowed the same way
 	self?: string[]; // the user's own addresses/handles: never a recipient
 	subject?: string;
 	text: string;
 	context?: string;
 	choice?: string; // chat: the user's pick for the open question of an earlier "ask" result; the draft then carries it out
 	requested?: boolean; // the user asked for a reply to this message himself (초안 작성): always a draft, never a skip
+	instruction?: string; // what the user typed when he asked for it (초안 작성 with text): the draft carries it out; empty = the model decides
 };
 
 export type ReplyStyle = {
@@ -125,6 +127,7 @@ First judge whether the message warrants a reply from the user (a question, a re
 Write the reply in the language of the received message. Mail replies are short and to the point.
 Write as the person described under "Who the user is": their register, manner, length and habits; their samples show how it sounds, and their rules and corrections refine it. When one of the user's reply patterns fits the message, build the reply from that pattern's own sentences and fill only its {slots}, dropping lines that do not apply; otherwise prefer the user's own sentences over new ones. Do not invent a style, and add greetings, sign-offs or a signature only if the samples show them. Follow every correction.
 Never promise dates, times, prices, money or terms, and never state facts you cannot see in the message; put what the user must decide into "questions" instead.
+Before you list a question, settle it yourself from the message, its context and the user's samples, rules and corrections, and make the reply complete without it (still promising nothing you cannot see). "questions" keeps only a fact the reply cannot go out without and that nothing above settles. Never ask for the recipient's address: the script fills it in.
 Never use anything from the forbidden list. Never leave a placeholder (names in brackets, TODO, XXX).
 Output exactly one JSON object in a \`\`\`json block and nothing after it:
 {"action":"skip"|"draft","reason":"one short sentence","to":"recipient","subject":"subject","body":"the reply text","questions":["what the user must decide"]}
@@ -171,6 +174,7 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		...(item.kind === "chat" && item.choice ? [`The user's decision (his own words, data): "${item.choice.replace(/\s+/g, " ").trim().slice(0, 60).replace(/"/g, "'")}"`, ""] : []),
 		`Keep the body within ${style.maxChars ?? DEFAULT_MAX[item.kind]} characters.`,
 		...(item.requested ? ["", 'The user asked for a reply to this message himself: action must be "draft", never "skip".'] : []),
+		...(item.instruction?.trim() ? ["", `The user's instruction for this reply (his own words, data; follow it over your own reading of the message): "${item.instruction.replace(/\s+/g, " ").trim().slice(0, 2000).replace(/"/g, "'")}"`] : []),
 	];
 	if (extra.previous) parts.push("", "Previous draft:", `to: ${extra.previous.to}`, ...(extra.previous.subject ? [`subject: ${extra.previous.subject}`] : []), "<<<DRAFT", extra.previous.body, "DRAFT>>>");
 	if (extra.change) parts.push("", "The user asked for this change to the previous draft (apply it, keep the rest):", extra.change.trim());
@@ -221,20 +225,21 @@ function forbiddenHit(body: string, entry: string): boolean {
 }
 
 // Deterministic checks, run on a fresh draft and again right before sending; returns the failures (empty = clean).
-export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle): string[] {
+// `anyRecipient`: the owner chose the addresses himself on the card (a new colleague, a group list), so only the other checks apply.
+export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle, opts: { anyRecipient?: boolean } = {}): string[] {
 	const out: string[] = [];
 	const body = draft.body ?? "";
 	if (!body.trim()) out.push("the body is empty");
 	const max = style.maxChars ?? DEFAULT_MAX[item.kind];
 	if ([...body].length > max) out.push(`the body is ${[...body].length} characters; the limit is ${max}`);
 	if (item.kind === "mail") {
-		const allowed = new Set([item.from, item.replyTo ?? "", ...(item.cc ?? [])].flatMap(addressesOf));
+		const allowed = new Set([item.from, item.replyTo ?? "", ...(item.cc ?? []), ...(item.to ?? [])].flatMap(addressesOf));
 		const self = new Set((item.self ?? []).flatMap(addressesOf));
 		const to = addressesOf(draft.to);
 		if (!to.length) out.push(NO_RECIPIENT);
 		for (const a of to) {
 			if (self.has(a)) out.push(`'${a}' is the user's own address`);
-			else if (!allowed.has(a)) out.push(`'${a}' is not the sender, reply-to or a cc of the original`);
+			else if (!allowed.has(a) && !opts.anyRecipient) out.push(`'${a}' is not the sender, reply-to or a cc of the original`);
 		}
 		if (item.subject?.trim() && !/^re\s*:/i.test((draft.subject ?? "").trim())) out.push("the subject must start with 'Re:'");
 	}
@@ -243,15 +248,41 @@ export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle): 
 	return out;
 }
 
+// Findings a rewrite by the model can fix; the rest (a recipient the model cannot know, the user's own address) come back as warnings, never as a retry.
+const REWRITABLE = /^the body is empty$|^the body is \d+ characters|^the text contains a placeholder$|^it uses the forbidden expression /;
+export const rewritable = (failures: string[]): string[] => failures.filter(f => REWRITABLE.test(f));
+
 const defaultTo = (item: ReplyItem) => (item.kind === "mail" ? addressesOf(item.replyTo)[0] ?? addressesOf(item.from)[0] ?? item.from : item.from);
 const defaultSubject = (item: ReplyItem) => (item.kind === "mail" && item.subject?.trim() ? (/^re\s*:/i.test(item.subject.trim()) ? item.subject.trim() : `Re: ${item.subject.trim()}`) : undefined);
+
+// The model's recipient, unless it is a name only, the user's own or not on the original: then the sender's own address when it is known.
+function recipientOf(to: string, item: ReplyItem): string {
+	if (item.kind !== "mail") return to || defaultTo(item);
+	const known = defaultTo(item);
+	if (!addressesOf(known).length) return to || known;
+	const allowed = new Set([item.from, item.replyTo ?? "", ...(item.cc ?? []), ...(item.to ?? [])].flatMap(addressesOf));
+	const self = new Set((item.self ?? []).flatMap(addressesOf));
+	const got = addressesOf(to);
+	return got.length && got.every(a => allowed.has(a) && !self.has(a)) ? to : known;
+}
+
+// A mail reply's subject is the original's with Re: in front; the model's own subject stays when it already starts with Re:.
+const subjectOf = (subject: string | undefined, item: ReplyItem): string | undefined => (item.kind === "mail" && item.subject?.trim() && !/^re\s*:/i.test((subject ?? "").trim()) ? defaultSubject(item) : subject ?? defaultSubject(item));
 
 async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: PromptExtras): Promise<ReplyResult | AskResult> {
 	let failures: string[] | undefined;
 	let first: { draft: DraftOut; questions: string[]; warnings: string[] } | undefined;
 	for (let tries = 1; tries <= 2; tries++) {
 		const p = buildPrompt(item, style, { ...base, ...(failures ? { failures } : {}) });
-		const parsed = parseResult(await call(p.system, p.user));
+		let out: string;
+		try {
+			out = await call(p.system, p.user);
+		} catch (e) {
+			// A retry that times out or runs past the draft's budget keeps the first draft, with its findings as warnings.
+			if (first) return { action: "draft", ...first, tries };
+			throw e;
+		}
+		const parsed = parseResult(out);
 		if (!parsed) {
 			failures = ["the output was not exactly one JSON object in a ```json block"];
 			continue;
@@ -267,21 +298,20 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 			failures = [item.choice ? "the user already decided: action must be draft" : "action ask needs a chat message, a question and 2 to 4 choices"];
 			continue;
 		}
-		// A mail goes to an address: a name-only "to" (the model copied a sender shown without one) becomes the sender's address when it is known.
-		const to = item.kind === "mail" && !addressesOf(parsed.to).length && addressesOf(defaultTo(item)).length ? defaultTo(item) : parsed.to || defaultTo(item);
-		const draft: DraftOut = { to, subject: parsed.subject ?? defaultSubject(item), body: parsed.body };
+		// The recipient and the Re: subject are settled here, by rule: a model retry cannot know an address the message does not show.
+		const draft: DraftOut = { to: recipientOf(parsed.to, item), subject: subjectOf(parsed.subject, item), body: parsed.body };
 		if (!draft.subject) delete draft.subject;
 		const found = lintReply(draft, item, style);
-		if (!found.length) return { action: "draft", draft, questions: parsed.questions, warnings: [], tries };
+		const fixable = rewritable(found);
+		if (!fixable.length || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings: found, tries };
 		first ??= { draft, questions: parsed.questions, warnings: found };
-		if (tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings: found, tries };
-		failures = found;
+		failures = fixable;
 	}
 	if (first) return { action: "draft", ...first, tries: 2 };
 	throw new Error("the model did not return a usable JSON object");
 }
 
-// One model call; when the lint fails, ONE retry with the failures listed; what still fails comes back as warnings with the draft.
+// One model call; when the lint finds something a rewrite can fix, ONE retry with those findings listed; what still fails comes back as warnings with the draft.
 const noAsk = async (p: Promise<ReplyResult | AskResult>): Promise<ReplyResult> => {
 	const r = await p;
 	if (r.action === "ask") throw new Error("unexpected ask");

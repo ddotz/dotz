@@ -239,7 +239,11 @@ the dotz extension into every agent it runs in: the orchestrator, sessions and t
   subagent is blocked (spawn a new one).
 - *Subagents*: external-impact commands (`git push`, `gh` writes, publish, deploy, `ssh`/`scp`/`rsync`, outbound HTTP writes,
   plus your `external_commands`) are blocked and handed back; the first compaction steers a subagent to wrap up and the second
-  disables its tools; the 1h cache TTL is dropped (5-minute cache).
+  disables its tools; the 1h cache TTL is dropped (5-minute cache). An OmO task worker past `task_token_cap` (8000000 tokens,
+  input + cache read/write + output summed over its turns; 0 = off) has its tools blocked with a `[fail]` note naming what it
+  spent, so its next answer goes back to the parent as a failure with its last state; it is aborted if it keeps calling tools.
+- *Owner thresholds*: a tool call that changes `orchestrator.rotate_tokens` or `lanes.compact_at` in `config.json` is undone
+  unless one of the latest user messages names the new number (`300000`, `300k`, `30만`, `0.3M`); the tool result says so.
 - *Loops*: the same tool call (or a 2-4 call cycle) repeated with unchanging results is blocked; after more ignored blocks a
   human is asked, a headless agent is told to stop. `repeat_block_threshold` (8) sets how many calls it takes.
 - *Searches*: recursive grep/find/rg/du/ls -R of `/`, `~`, `~/Library` or with an unquoted shell expansion is blocked.
@@ -265,7 +269,7 @@ there is no gate. `budget_gate: false` turns it off.
 - Config: the `guard` object in `config.json`, every key optional (`enabled`, `max_brief_chars`, `max_fence_lines`,
   `max_output_chars`, `worker_answer_chars` 800, `worker_context_tokens` 400000, `budget_gate`, `budget_margin_percent`,
   `budget_default_estimate_percent`, `override_minutes`, `repeat_block_threshold`, `switch_compact_min_tokens`,
-  `external_commands` (regex strings), `ask_before_expensive`, `expensive_models`, `no_api_key_accounts`, `defer_to_installed`, `harness_tools`).
+  `external_commands` (regex strings), `ask_before_expensive`, `expensive_models`, `no_api_key_accounts`, `defer_to_installed`, `harness_tools`, `task_token_cap`).
 - *Already installed copies*: the runtime lists no loaded extensions to an extension, so the guard looks for
   `<agent dir>/extensions/orchestrator-guard.ts` (and `harness-tools.ts` for the commands), unless discovery is
   switched off or the config disables it. When it exists, this copy leaves those hooks to it (the same hooks
@@ -464,6 +468,10 @@ when omp is selected.
   session itself. omp has `supportsPerMessageEffort=false` for anthropic, which is behind the force rule.
 - `GET /api/context`: `{note, processes: [{name, kind, status, running, model, tokens, window, percent, compaction: {state, at, tokensBefore, error}}]}`
   for the orchestrator and every session; `POST /api/compact {target: "orchestrator"|"<lane>"}` compacts (or queues) one.
+  The view also lists `models: [{model, used_by, window, window_default, compact_at, compact_at_default}]`;
+  `PUT /api/context/model {model, window, compact_at}` stores one model's limits in config.json `context.models[<model id>]`
+  (`null` resets to the default). A set `window` replaces the reported one; `compact_at` replaces `orchestrator.rotate_tokens` /
+  `lanes.compact_at` for sessions on that model and applies from the next turn (omp/Claude Code sessions at their next start).
 - `GET /api/activity?source=orchestrator|lane:<name>&limit=N`: in-memory ring (300) of what an agent conversation did; the
   same items stream on `/api/events` as `{kind: "activity", ...}` (live only, not in the inbox/outbox files).
 - `GET /api/providers` -> `{providers: [{id, name, auth: "oauth"|"api_key"|"none", account?, masked?, models, in_use, can_login, can_logout}], addable: [{id, name, kind: "oauth"|"api_key"}]}`
@@ -552,13 +560,12 @@ fetches the tracked branch and announces a new version. Local commits that upstr
 apply) are dropped; the others are re-applied on the new version in a temporary worktree with the same checks (`bun install`,
 tests), and only a clean, green result moves the checkout. Local commits that conflict or fail the checks, and uncommitted
 changes, are saved first (branch `dotz-local/<YYYYMMDD-HHMM>` + a patch, and for uncommitted changes a diff and a plain copy of the
-files, under `<data dir>/logs`) and the update waits for the button '내 수정을 보관하고 새 버전 받기' in settings → 업데이트
-(`bun hub/selfupdate.ts --apply --keep` from a terminal). Otherwise an update is fast-forward, runs `bun install` when needed and
-the tests, and returns to the old commit if they fail. With `self_update.auto_apply: true` (default off) the daily check applies
-it itself and restarts through the idle gate; for an install that is not a developer checkout it also does the save-and-move
-itself and tells what was saved and how to get it back. A developer checkout never auto-discards: `self_update.keep_local`
-(true/false) says which it is; unset, a `install.sh --git` clone (marker `.git/dotz-install`) or the default install folder
-counts as not a developer checkout. A refusal or failure alerts with a choice block.
+files, under `<data dir>/logs`) and the update goes on: a local edit never stops a shipped update. After the move the uncommitted
+changes go back on top as a local patch when they still apply and the tests still pass with them; otherwise the new version stays
+clean and the patch stays in the backup, which the bot carries over to the custom layer (docs/customization.md, Surviving updates).
+An update is otherwise fast-forward, runs `bun install` when needed and the tests, and returns to the old commit if they fail. With
+`self_update.auto_apply: true` (default off) the daily check applies it itself, the same way, and restarts through the idle gate.
+A failure alerts with a choice block.
 
 **Setup steps after an update** (`hub/migrations.ts`). A feature that needs a one-time step for existing installs ships it as a migration: the gateway runs every migration it has not run yet at start (so after the restart that applies an update), records the id in `<data dir>/migrations.json`, logs one line each, and posts one line listing what changed. A migration is idempotent, never deletes user data, and on failure posts a Korean notice and is retried at the next start. Today: `site-comment-apps` (an app instance in `custom/apps.json` for every website comment source that has none, the same as `features/comments/bin/onboard.ts on --app site --name X`) and `legacy-sns-tokens` (finding the earlier YouTube/Instagram login asks the owner once, `1) 가져오기` / `2) 안 가져오기`; only yes copies, 0600, values never printed). The `onboard.ts` commands stay for manual use.
 

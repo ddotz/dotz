@@ -22,7 +22,7 @@ export function attachMail(store: Store, code: string, mailId: string, now: numb
 /** The mail draft as the card shows it. */
 export function mailPartOf(rec: DraftRec): DraftPart {
 	const attachments = stagedFiles(rec.id).map(f => ({ name: f.name, size: f.size }));
-	return { to: rec.to, ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ...(attachments.length ? { attachments } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}) };
+	return { id: rec.id, to: rec.to, ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ...(attachments.length ? { attachments } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}) };
 }
 
 /** The pending mail draft `id` for the engine (card, sheet), or undefined when it is gone or already handled. */

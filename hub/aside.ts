@@ -3,10 +3,11 @@
 // selects one of his tabs: `openTab()` in `aside repl` adds a background tab (the window's active tab and the front app
 // stay as they were, measured 2026-10-19) and every tab we open is closed in the same repl run. A stopped Aside is started
 // hidden in the background (`open -g -j`), never brought to the front.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { asideReason } from "./aside-errors.ts";
 import { DATA_DIR } from "./config.ts";
+import { readSecretFile } from "./secretbox.ts";
 
 const ASIDE = Bun.which("aside") ?? "aside";
 const START_WAIT_MS = 20_000;
@@ -56,7 +57,7 @@ function readSecret(name: string): string {
 	if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error("secret name must be [A-Za-z0-9._-]");
 	const file = join(DATA_DIR, "secrets", name);
 	if (!existsSync(file)) throw new Error(`secret ${name} not found in ${join(DATA_DIR, "secrets")}`);
-	return readFileSync(file, "utf8").trim();
+	return readSecretFile(file).trim();
 }
 
 // Serves `value` once from a random-token localhost URL so a secret never appears in repl code or argv. stop() when done.

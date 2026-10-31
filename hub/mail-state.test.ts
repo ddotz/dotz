@@ -45,7 +45,9 @@ describe("reply transitions", () => {
 		[undefined, "sent", "replied"],
 		[undefined, "skip", "skipped"],
 		[undefined, "fyi", "fyi"],
-		[undefined, "reopen", undefined],
+		[undefined, "reopen", "needs"],
+		["needs", "reopen", "needs"],
+		["draft", "reopen", "draft"],
 		["needs", "draft", "draft"],
 		["needs", "need", "needs"],
 		["needs", "sent", "replied"],
@@ -59,7 +61,7 @@ describe("reply transitions", () => {
 		["replied", "draft", "replied"],
 		["replied", "skip", "replied"],
 		["replied", "fyi", "replied"],
-		["replied", "reopen", "replied"],
+		["replied", "reopen", "needs"],
 		["skipped", "need", "skipped"],
 		["skipped", "draft", "skipped"],
 		["skipped", "reopen", "needs"],
@@ -72,16 +74,15 @@ describe("reply transitions", () => {
 });
 
 describe("labels", () => {
-	test("outgoing is 내가 보냄; incoming shows the reply state, else read or unread", () => {
-		expect(mailLabel("out", false)).toBe("내가 보냄");
-		expect(mailLabel("in", false)).toBe("새 메일");
-		expect(mailLabel("in", true)).toBe("읽음");
-		expect(mailLabel("in", true, "needs")).toBe("답장 필요");
-		expect(mailLabel("in", false, "needs")).toBe("답장 필요");
-		expect(mailLabel("in", true, "draft")).toBe("초안 있음");
-		expect(mailLabel("in", true, "replied")).toBe("답장함");
-		expect(mailLabel("in", true, "skipped")).toBe("답장 안 함");
-		expect(mailLabel("in", true, "fyi")).toBe("답장 불필요");
+	test("the tag is an incoming mail's reply state only: never read or unread, none for outgoing, and both marks read 답장 안 함", () => {
+		expect(mailLabel("out")).toBe("");
+		expect(mailLabel("out", "needs")).toBe("");
+		expect(mailLabel("in")).toBe("");
+		expect(mailLabel("in", "needs")).toBe("답장 필요");
+		expect(mailLabel("in", "draft")).toBe("초안 있음");
+		expect(mailLabel("in", "replied")).toBe("답장함");
+		expect(mailLabel("in", "skipped")).toBe("답장 안 함");
+		expect(mailLabel("in", "fyi")).toBe("답장 안 함");
 	});
 });
 
@@ -162,6 +163,14 @@ describe("does an incoming mail expect a reply", () => {
 		expect(m("회의 개최 안내", "**요약** • 10.29 회의 **할 일** • 참석자 명단·식사 여부 회신 — 10.27")).toBe(true);
 		expect(m("RE: 현황 조사", "**요약** • 조사에 대한 회신 **할 일** • 없음")).toBe(false);
 		expect(m("수정본 송부", "**요약** • 진술서 수정본 **할 일** • 수정본 내용 검토·확인 (기한 없음)")).toBe(false);
+	});
+	test("a 할 일 that makes something for the sender owes a reply: 작성, 견적, 해설, 자료 (anonymized real mails)", () => {
+		expect(m("(기관) (내일 퇴근 전까지) 기능개편 관련 자료작성 요청", "**요약** • 상급 기관 요청, 대상 기관 개요 작성 **할 일** • 1팀: 5년 예산 세부내역 작성\n• 2팀: 자회사 개요·예산 작성\n• 회신 기한: 화 17시")).toBe(true);
+		expect(m("[회사] 내년 자문 용역 견적 요청 드립니다.", "**요약** • 자문 용역 견적 요청 **할 일** • 견적서 작성·회신 — 화 오전까지")).toBe(true);
+		expect(m("연결 스크립트 파일 송부", "**요약** • 스크립트 파일 전달 **할 일** • 배치별 사용 자료·계산식 해설 (기한 미정)")).toBe(true);
+		expect(m("월말 보고 준비", "**요약** • 다음 주 보고 **할 일** • 보고용 자료 준비 — 금요일까지")).toBe(true);
+		expect(m("(협회) 특별출연금 계정과목 현황 조사", "**요약** • 계정과목 현황 조사 **할 일** • 현 시점 기준 전환 계획 유무 회신 (기한 미명시)")).toBe(true);
+		expect(m("수정본 송부", "**요약** • 진술서 수정본 **할 일** • 첨부 자료 확인")).toBe(false);
 	});
 	test("without a 할 일 line: a request or a question does, a plain notice does not", () => {
 		expect(m("대출 문의 드립니다", "변동 사유를 알려 주시기 바랍니다")).toBe(true);

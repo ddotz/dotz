@@ -24,6 +24,8 @@ const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 const HANDOVER_RE = /^\s*(인계|인계해(줘|요)?|인계\s*ㄱ+|handover|hand\s*over|새\s*(세션|대화\s*기록)(으로)?(\s*이어가(기|줘)?)?)\s*[.!]*\s*$/i;
 const ownerWords = (text: string) => text.replace(/^\[owner via [^\]]+\]\s*/, "");
 
+// A queued lane waiting longer than this is reported to the orchestrator once (it never waits unseen).
+export const QUEUE_TELL_MS = 30 * 60_000;
 // Queued launches start, oldest first, as soon as the limits allow; checked every few seconds.
 export function startQueuedLanes(): string[] {
 	const started: string[] = [];
@@ -34,11 +36,22 @@ export function startQueuedLanes(): string[] {
 				lane.waiting = why;
 				persist(lane);
 			}
+			// A wait never goes on unseen: past QUEUE_TELL_MS the orchestrator is told once, to make room, split the work or move it.
+			const waited = Date.now() - Date.parse(lane.startedAt);
+			if (!lane.queueTold && waited > QUEUE_TELL_MS) {
+				lane.queueTold = true;
+				report(lane, `[blocked] 세션이 ${Math.round(waited / 60_000)}분째 시작하지 못하고 기다리고 있어요: ${why}. 끝난 세션을 정리하거나, 일을 더 작게 나누거나, 서브에이전트로 돌려서 진행하세요.`, true);
+			}
 			break;
 		}
 		lane.waiting = undefined;
-		begin(lane, readFileSync(join(dir(lane.name), "brief.md"), "utf8").trim());
-		started.push(lane.name);
+		try {
+			begin(lane, readFileSync(join(dir(lane.name), "brief.md"), "utf8").trim());
+			started.push(lane.name);
+		} catch (e) {
+			// nobody waits on a queued start: the orchestrator gets the failure to fix
+			report(lane, `[fail] 기다리던 세션을 시작하지 못했어요: ${lane.startError ?? (e as Error).message}. 원인(작업 폴더, 하네스, 모델)을 고쳐 다시 띄우세요.`, true);
+		}
 	}
 	return started;
 }
@@ -67,6 +80,7 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 	const selector = model ?? selectorOf(lanesModel());
 	mkdirSync(dir(name), { recursive: true });
 	const place = laneWorktree(name, cwd);
+	if (!existsSync(place.cwd)) throw new Error(`lane ${name}: working directory does not exist: ${place.cwd}`);
 	const lane: Lane = { name, ...(title ? { title } : {}), cwd: place.cwd, worktree: place.worktree, model: selector, workerModel: worker || undefined, fableOk: fableOk || undefined, status: "starting", startedAt: now(), lastText: "", reports: 0, ctx: newCtx(), orchAsked: true, ...(why ? { waiting: why } : {}) };
 	lanes.set(name, lane);
 	persist(lane);
@@ -77,7 +91,8 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 }
 
 function begin(lane: Lane, brief: string): void {
-	spawn(lane, false);
+	// A start that failed has already ended the lane (lanerun.ts startFailed); the launch reports why to its caller.
+	if (!spawn(lane, false)) throw new Error(`lane ${lane.name} could not start: ${lane.startError ?? "unknown"}`);
 	prompt(lane, brief + footer(lane));
 	log(`lane ${lane.name} launched in ${lane.cwd} (${lane.model}, workers ${laneWorkerModel(lane)}, up to ${lane.workerSlots})`);
 }
@@ -147,7 +162,8 @@ export function claimPrefix(name: string): string {
 export function stopLane(name: string): void {
 	const lane = known(name);
 	const proc = lane.proc;
-	if (lane.waiting) {
+	// Queued, or no process at all (a spawn that failed): nothing to kill, the lane just ends and frees its slot.
+	if (lane.waiting || !proc) {
 		lane.waiting = undefined;
 		setStatus(lane, "exited");
 	}
@@ -326,7 +342,9 @@ export function restoreLanes(): string[] {
 }
 
 // A lane is busy while its turn runs or any of its task workers still runs (a turn often ends while workers go on).
-export const laneBusy = (lane: Lane): boolean => lane.status === "working" || lane.status === "starting" || runningSubagents(`lane:${lane.name}`) > 0;
+// Only a live process is busy: a queued lane or one whose spawn failed has nothing a gateway restart could cut off (the Mac mini's
+// restart waited on the dead kdb-allowance-review, 2026-10-29).
+export const laneBusy = (lane: Lane): boolean => (Boolean(lane.proc) && (lane.status === "working" || lane.status === "starting")) || runningSubagents(`lane:${lane.name}`) > 0;
 
 // Memory: stops an idle lane's process (~1 GB with its claude child) and keeps the lane idle on the same session file; the
 // next message resumes it there (sendToLane), and a gateway restart leaves it stopped (restoreLanes). Never a busy lane.
