@@ -5,6 +5,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run as runComments } from "../../features/comments/bin/comments.ts";
+import { parseDecisions } from "../choices.ts";
 import { parseDraftApproval } from "../draft-approval.ts";
 import { commentAsk } from "./ask.ts";
 import { type Comment, type CommentAdapter, commentId, type RawComment, type SourceConfig } from "./contract.ts";
@@ -102,6 +103,8 @@ describe("the combined card", () => {
 		expect(card?.mail).toMatchObject({ toLabel: "받는이", to: "fan@example.com", subject: "악보 보내드립니다", body: "안녕하세요.\n요청하신 악보를 보내드립니다.", attachments: [{ name: "score.pdf", size: "2KB" }] });
 		expect(card?.mail?.warning).toBeUndefined();
 		expect(card?.mail?.ref).toBe("M1");   // the mail draft id its files are staged under: the card opens them at /api/drafts/M1/files/<n>
+		// The split send of `comments.ts send --only` is on the card itself: 4) 답글만 보내기, 5) 메일만 보내기, 6) 직접 입력 after the three.
+		expect(parseDecisions(text).blocks[0]!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기", "답글만 보내기", "메일만 보내기", "어떻게 보낼지 직접 입력"]);
 	});
 
 	test("a reply without a mail keeps the single-part block", async () => {
@@ -111,6 +114,7 @@ describe("the combined card", () => {
 		if (!s.ok) throw new Error(s.reason);
 		const text = commentAsk(source, t.engine.store.comments()[0]!, s.draft);
 		expect(parseDraftApproval(text)?.mail).toBeUndefined();
+		expect(parseDecisions(text).blocks[0]!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기"]);
 	});
 
 	test("보내기 posts the reply and then sends the mail, once", async () => {
@@ -259,5 +263,41 @@ describe("the draft API", () => {
 		const r = t.engine.send(s.draft.code, { by: "owner" });
 		expect(r.ok && (await r.done).state).toBe("sent");
 		expect(t.woke).toHaveLength(1);
+	});
+});
+
+describe("sending one part of the card (send --only)", () => {
+	test("--only reply posts the reply and leaves the mail draft on its own, unsent", async () => {
+		const t = setup();
+		const d = await withMail(t);
+		pick(t, d.code, 1);
+		const r = await runComments(["send", d.code, "--only", "reply"], t.engine, t.inbox);
+		expect(r.code).toBe(0);
+		expect(r.lines.join("\n")).toContain("mail-cli.ts ask --draft M1");
+		expect(t.log).toEqual(["compose M1", "reply"]);
+		expect(t.engine.store.drafts().find(x => x.code === d.code)!.status).toBe("sent");
+	});
+
+	test("--only mail sends the mail; the reply waits alone and its card no longer carries the mail", async () => {
+		const t = setup();
+		const d = await withMail(t);
+		pick(t, d.code, 1);
+		const r = await runComments(["send", d.code, "--only", "mail"], t.engine, t.inbox);
+		expect(r.code).toBe(0);
+		expect(t.log).toEqual(["compose M1", "send M1"]);
+		const after = t.engine.store.drafts().find(x => x.code === d.code)!;
+		expect(after.status).toBe("pending");
+		expect(after.mail).toBeUndefined();
+		expect(r.lines.join("\n")).toContain("이 답글 올릴까요?");
+	});
+
+	test("without the owner's pick nothing goes out, and --only takes reply or mail only", async () => {
+		const t = setup();
+		const d = await withMail(t);
+		expect((await runComments(["send", d.code, "--only", "mail"], t.engine, t.inbox)).code).toBe(1);
+		pick(t, d.code, 3);
+		expect((await runComments(["send", d.code, "--only", "reply"], t.engine, t.inbox)).code).toBe(1);
+		expect((await runComments(["send", d.code, "--only", "both"], t.engine, t.inbox)).lines[0]).toBe("--only는 reply 또는 mail이에요");
+		expect(t.log).toEqual(["compose M1"]);
 	});
 });
