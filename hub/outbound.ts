@@ -193,7 +193,7 @@ export const replies = createInflight<OutJob>(j => {
 });
 // One send-approval card at a time per conversation, and no second post of an open card (hub/approval-queue.ts).
 const HELD = join(DATA_DIR, "approval-queue.json");
-const convOfTarget = (target: string) => eventTarget(outEvent({ ts: "", kind: "out", source: "orchestrator", target, text: "" } as HubEvent, threadHome, threadMail)) ?? "main";
+export const convOfTarget = (target: string) => eventTarget(outEvent({ ts: "", kind: "out", source: "orchestrator", target, text: "" } as HubEvent, threadHome, threadMail)) ?? "main";
 export const approvals = createApprovalQueue({
 	convOf: convOfTarget,
 	openRefs: openDraftRefs,

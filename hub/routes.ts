@@ -2,6 +2,7 @@
 // Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
 import { readFileSync } from "node:fs";
 import { dropAnsweredMailDraft } from "./draft-drop.ts";
+import { approvalRoute, TRIAGE_MIN_DEFAULT, webAnswer } from "./approval-wire.ts";
 import { droppedDraftRefs, restoreReopenedDrafts } from "./draft-restore.ts";
 import { join } from "node:path";
 import type { Server } from "bun";
@@ -41,7 +42,7 @@ import { withHomes } from "./laneviews.ts";
 import { orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissedAlertAts, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenDraftNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
+import { type DecisionSend, type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissedAlertAts, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenDraftNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
@@ -224,6 +225,22 @@ type RestartHooks = { busyNow: () => string[]; restartGateway: () => string; res
 const isMailTarget = (t: string) => /^mail:[a-z0-9._-]+$/.test(t);
 // Where a forwarded action came from (a machine name), as one short line; the event it makes carries it as `via`.
 const viaOf = (v: unknown): string | undefined => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 40) || undefined : undefined);
+// A card's answer to where its question came from (chat, session, project chat, mail or login request): the bot's turn.
+async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: string; via?: ReturnType<typeof viaOf> }): Promise<void> {
+	if (a.to.startsWith("auth:")) {
+		const path = `/api/auth/${a.to.slice(5)}`;
+		const res = await authRoute(new Request(`http://local${path}`, { method: "POST", body: JSON.stringify({ action: a.action }) }), new URL(`http://local${path}`));
+		if (!res?.ok) throw new Error("로그인 요청을 처리하지 못했어요");
+		return;
+	}
+	const lane = a.to.startsWith("lane:") ? a.to.slice(5) : undefined;
+	const project = a.to.startsWith("ch:") ? projectTarget(a.to, discord.channels.work) : undefined;
+	const conv = a.to === "alert" || a.to === "worklog" ? a.to : undefined;
+	const mail = a.to.startsWith("mail:") ? mailByKey(a.to.slice(5)) : undefined;
+	if (a.to.startsWith("mail:") && !mail) throw new Error("이 메일 대화를 찾을 수 없어요");
+	await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login: a.login, replyTo: a.replyTo, decision: a.notice, picks: a.picks, files: a.files, via: a.via });
+}
+
 export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
 	const route = async (req: Request, srv?: Server<unknown>): Promise<Response> => {
 		const url = new URL(req.url);
@@ -524,6 +541,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const r = (ignore[2] === "ignore" ? ignoreNotice : unignoreNotice)(decodeURIComponent(ignore[1]!));
 			return json(r.body, r.status);
 		}
+		// The waiting send-approval cards of a conversation, their batch answer and the owner's own edit of a draft (hub/approval-wire.ts).
+		if (url.pathname === "/api/approvals" || /^\/api\/drafts\/[^/]+\/body$/.test(url.pathname)) {
+			const login = req.headers.get("tailscale-user-login") ?? "local";
+			const res = await approvalRoute(req, url, { login, triageMin: cfg.web.triage_min ?? TRIAGE_MIN_DEFAULT, deliver: (to, text, picks, decision) => deliverAnswer({ to, text, picks, notice: decision ?? "", login }) });
+			if (res) return res;
+		}
 		// A button of a decision notice: the answer goes where the question came from (chat, session, project chat or login request).
 		const decide = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/answer$/.exec(url.pathname) : null;
 		if (decide) {
@@ -536,20 +559,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			} catch (error) {
 				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
 			}
-			const r = await answerDecision(decodeURIComponent(decide[1]!), { ...answer, files }, async a => {
-				if (a.to.startsWith("auth:")) {
-					const path = `/api/auth/${a.to.slice(5)}`;
-					const res = await authRoute(new Request(`http://local${path}`, { method: "POST", body: JSON.stringify({ action: a.action }) }), new URL(`http://local${path}`));
-					if (!res?.ok) throw new Error("로그인 요청을 처리하지 못했어요");
-					return;
-				}
-				const lane = a.to.startsWith("lane:") ? a.to.slice(5) : undefined;
-				const project = a.to.startsWith("ch:") ? projectTarget(a.to, discord.channels.work) : undefined;
-				const conv = a.to === "alert" || a.to === "worklog" ? a.to : undefined;
-				const mail = a.to.startsWith("mail:") ? mailByKey(a.to.slice(5)) : undefined;
-				if (a.to.startsWith("mail:") && !mail) throw new Error("이 메일 대화를 찾을 수 없어요");
-				await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice, picks: a.picks, files: a.files, via });
-			});
+			// 보내기 on a draft the gateway sends itself takes its path (hub/approval-wire.ts webAnswer); every other answer goes to the bot.
+			const r = await webAnswer(decodeURIComponent(decide[1]!), { ...answer, files }, login, a => deliverAnswer({ ...a, login, via }));
 			// 보내지 않기 on a mail reply draft drops it in the reply-drafts store at once (not only when the bot gets to it), so every count and
 			// list, here and on the other computer, sees it gone.
 			if (r.status === 200 && !r.body.already) await dropAnsweredMailDraft(r.body.item as Notice | undefined, Number(answer.n), log);

@@ -17,7 +17,7 @@ export type Config = {
 	// Extra hosts an API-key fallback entry's base_url may point at (https only); the providers' own API hosts are always allowed.
 	key_hosts?: string[];
 	discord: { token_file: string; owner_id: string; guild: string; app_id?: string; category?: string; work_category?: string };
-	web: { port: number; tailscale_https_port: number; allow_logins: string[]; machine_name?: string; peers?: string[]; peer_discovery?: boolean; peer_ports?: number[] };
+	web: { port: number; tailscale_https_port: number; allow_logins: string[]; machine_name?: string; peers?: string[]; peer_discovery?: boolean; peer_ports?: number[]; /** Waiting approval cards in one conversation that open the web's triage view (hub/approval-wire.ts; default 3). */ triage_min?: number };
 	orchestrator?: { rotate_tokens?: number; runtime?: string };
 	ui?: { origin_view?: boolean };
 	// Monthly spend limit (USD) the owner set on the Anthropic platform console; the usage screen shows how much of it is used. Empty = none.

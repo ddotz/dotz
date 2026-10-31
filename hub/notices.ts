@@ -76,6 +76,8 @@ export type Decision = {
 	// The options are the gateway's defaults for a question without a choice block (ask-options.ts): buttons for the owner, but the matter still
 	// ends like a plain question (the resolving signals may close it).
 	assumed?: true;
+	// An approved draft the gateway sends itself (hub/approval-send.ts): how that send went, shown on the answered card.
+	send?: { state: "queued" | "sending" | "sent" | "failed"; text?: string; at: string };
 };
 
 export const NOTICE_CAP = 300;
@@ -647,6 +649,22 @@ function settleDecision(item: Notice, answer: string, at = now(), resolved = fal
 const closedHooks: Array<(to: string, ref: string | undefined) => void> = [];
 export const onDecisionClosed = (fn: (to: string, ref: string | undefined) => void): void => void closedHooks.push(fn);
 export const openDraftRefs = (to: string): string[] => items.flatMap(i => (isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref ? [i.decision!.draft.ref] : []));
+/** The open send-approval cards (of one conversation, or all): notice id, conversation, draft ref, question and draft (hub/approval-wire.ts). */
+export const openDraftCards = (to?: string): { id: string; to: string; ref: string; title: string; draft: DraftApproval; at: string }[] =>
+	items.flatMap(i => (isOpenDecision(i) && (to === undefined || i.decision!.to === to) && i.decision!.draft?.ref ? [{ id: i.id, to: i.decision!.to, ref: i.decision!.draft.ref, title: i.title, draft: i.decision!.draft, at: i.at ?? i.ts }] : []));
+/** The open card `id` answered by the gateway's own path (a batch answer, a send the gateway runs): its queue shows the next card. */
+export function settleOpenDecision(id: string, label: string): void {
+	const item = items.find(i => i.id === id);
+	if (item && isOpenDecision(item)) settleDecision(item, label);
+}
+/** The newest card of draft `ref` in `to` shows how the gateway's send of it went. */
+export function markDraftSend(to: string, ref: string, state: NonNullable<Decision["send"]>["state"], text = ""): void {
+	const n = items.findLast(i => i.decision?.to === to && i.decision.draft?.ref === ref);
+	if (!n) return;
+	const at = now();
+	n.decision!.send = { state, ...(text ? { text: text.slice(0, 300) } : {}), at };
+	announce([n], at);
+}
 // The bot posted the open card of draft `ref` again with changes (or the queue changed its "남은 N건" line): the open card shows the new text in place.
 export function rewriteOpenDraft(to: string, ref: string, text: string): number {
 	const hit = items.filter(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref);
