@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import "./conversations.ts"; // listens to the event bus: the first message of a mail conversation gives the mail its summary
 import { emit, eventTarget, type HubEvent } from "./events.ts";
-import { MailError, answeredBy, attachmentList, mailBriefOf, settleMailDrafts, mailByKey, mailByThread, mailCard, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
+import { MailError, mailKeep, answeredBy, attachmentList, mailBriefOf, settleMailDrafts, mailByKey, mailByThread, mailCard, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
 import { outEvent } from "./projectchat.ts";
 
 function fakes(discordOn: boolean, channel: string | undefined = "1561565203714408448", threadOn: MailDeps["threadOn"] = () => true) {
@@ -201,6 +201,31 @@ describe("postMail", () => {
 		const r = await postMail({ source: "zele", id: uid("f"), subject: "실패" }, deps);
 		expect(r.thread).toBeUndefined();
 		expect(calls.events).toHaveLength(1);
+	});
+});
+
+describe("a backfill keeps each mail's own time", () => {
+	const NOW = "2026-10-31T10:00:00.000Z";
+	test("a valid `at` (or `date`) is the mail's time in the record and its event; a future one or none is now", async () => {
+		const { deps, calls } = fakes(false);
+		deps.now = () => NOW;
+		const [a, b, c, d] = [uid("at"), uid("at"), uid("at"), uid("at")];
+		await postMail({ source: "zele", id: a, subject: "old", at: "2026-10-24T11:00:00+09:00" }, deps);
+		await postMail({ source: "zele", id: b, subject: "old by date", date: "2026-10-20T08:30:00Z" }, deps);
+		await postMail({ source: "zele", id: c, subject: "future", at: "2099-01-01T00:00:00Z" }, deps);
+		await postMail({ source: "zele", id: d, subject: "locale text", at: "10월 24일, 오전 11:00" }, deps);
+		expect([a, b, c, d].map(id => mailByKey(`zele-${id}`)!.at)).toEqual(["2026-10-24T02:00:00.000Z", "2026-10-20T08:30:00.000Z", NOW, NOW]);
+		expect(calls.events.map(e => e.ts)).toEqual(["2026-10-24T02:00:00.000Z", "2026-10-20T08:30:00.000Z", NOW, NOW]);
+	});
+});
+
+describe("mail.keep", () => {
+	test("500 when unset or not a number, the configured count otherwise, held between 50 and 20000", () => {
+		expect(mailKeep({})).toBe(500);
+		expect(mailKeep({ mail: { keep: "2000" } })).toBe(500);
+		expect(mailKeep({ mail: { keep: 2000 } })).toBe(2000);
+		expect(mailKeep({ mail: { keep: 10 } })).toBe(50);
+		expect(mailKeep({ mail: { keep: 1e9 } })).toBe(20000);
 	});
 });
 
