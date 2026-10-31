@@ -30,7 +30,14 @@ test("one watch and one schedule come back in the owner-facing shape", async () 
 	expect(Date.parse(watch.next_run!) - Date.parse(watch.last_run!)).toBe(10 * 60_000);
 
 	const sched = items.find(i => i.kind === "schedule")!;
-	expect(sched).toEqual({ name: "주간 보고 정리", kind: "schedule", channel: "ch:7", next_run: s.at, every: "2시간마다" });
+	expect(sched).toEqual({ name: "주간 보고 정리", schedule: s.id, kind: "schedule", channel: "ch:7", next_run: s.at, every: "2시간마다" });
+});
+
+test("a schedule carries its id, so the web can pause, resume and delete it (PATCH / DELETE /api/schedules/<id>)", () => {
+	const s = addSchedule({ text: "메일 연결 확인", in_minutes: 30 });
+	expect(listMonitors()).toEqual([{ name: "메일 연결 확인", schedule: s.id, kind: "schedule", next_run: s.at }]);
+	patchSchedule(s.id, { paused: true });
+	expect(listMonitors()).toEqual([{ name: "메일 연결 확인", schedule: s.id, kind: "schedule", paused: true }]);
 });
 
 test("a watch carries its own connection, a short last line and a paused flag", async () => {
