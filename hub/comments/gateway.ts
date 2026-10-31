@@ -31,4 +31,12 @@ export const commentDraftFacts = {
 		return c ? engine.unreplied(c) : undefined;
 	},
 };
+// The send approval's gateway path (hub/approval-wire.ts): which source a pending draft goes to, and the owner's own edit of its text.
+export const commentDraftOf = (code: string) => engine.store.drafts().find(d => d.code === code && d.status === "pending");
+/** The app a comment source belongs to in the app list ("youtube", "instagram"; a website source is "site"). */
+export const commentSourceApp = (source: string): string | undefined => {
+	const k = engine.store.config().sources[source]?.kind;
+	return k === "website" ? "site" : k;
+};
+export const setCommentDraftText = (code: string, text: string): void => engine.store.patchDraft(code, { text, clean: false });
 export const commentFlags = (): string[] => (Object.values(engine.store.config().sources).some(s => s.kind === "website") && engine.store.config().enabled ? ["comments-site"] : []);
