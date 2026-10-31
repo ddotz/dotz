@@ -45,7 +45,7 @@ function parseChoices(text) {
 const isChoiceMsg = pc => pc.blocks.some(b => b.options.length > 1);
 const isHeadedChoice = pc => pc.blocks.some(b => b.headed && b.options.length > 1);
 const choiceAsks = (e, tone, pc) => tone === "ask" || isHeadedChoice(pc) || (e.kind === "out" && e.source === "gateway" && e.target === "alert" && isChoiceMsg(pc));
-const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, note: {} };
+const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, note: {}, files: {}, fbusy: {} };   // files: uploads picked in 직접 수정 (sent as the answer's `files`), fbusy: one is going up
 // A draft waiting for send approval (hub/draft-approval.ts): the notice carries it, the sheet shows it above 보내기 / 고치기 / 보내지 않기.
 const DRAFT_EDIT = "고치기", DRAFT_OWN = "어떻게 보낼지 직접 입력";
 // The draft options that carry the owner's text: 고치기 (what to change) and the send mode 직접 입력 (how to send). Mirrors hub draftNeedsText.
@@ -86,14 +86,15 @@ function decisionOf(t) {
 }
 async function answerDecision(dc, text, opt, note) {
   const t = dc.t, lane = isLaneT(t) ? laneOf(t) : "";   // the card's own conversation: the notice sheet may answer for one that is not on screen
+  const files = DC.files[dc.key] || []; delete DC.files[dc.key];
   DC.st[dc.key] = "sending"; paintDecision();
   try {
     // A card with one block whose question is a decision notice answers through the notice path (30-notices.js), so both stay in step.
     const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
-    if (nd) await ntPost(nd, opt.n, note);
+    if (nd) await ntPost(nd, opt.n, note, files);
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label, ...(pk[i].note && !dc.draft ? { note: pk[i].note } : {}) }] : []));
-    const r = nd ? null : await api("/api/message", "POST", { text, ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
+    const r = nd ? null : await api("/api/message", "POST", { text, ...(files.length ? { files } : {}), ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
     if (r && r.queued) { QUEUE = QUEUE.filter(i => i.id !== r.queued.id).concat(r.queued); renderQueue(); }
     DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; delete DC.note[dc.key];
     if (t === target) { chatStick = true; scrollChat(true); }
@@ -122,7 +123,7 @@ function pickOption(dc, bi, opt, note) {
 // app's 첨부 파일 폴더, x = take one off. The live list (DRF.st) replaces the one written in the message. o.t = the draft's conversation
 // (a peer's draft is changed on its own computer), o.edit false = read only, o.warn = a box the warning is drawn into instead of under the files.
 const DR_IMG = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
-const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {} };
+const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, add: {} };
 const DRF_WIRE_MAX = 10 * 1024 * 1024;
 const drfPath = (ref, tail) => `/api/drafts/${enc(ref)}/${tail}`;
 const drfNone = { files: [], canAttach: false, library: false, editable: false, failed: true };
@@ -137,11 +138,15 @@ async function drfUpload(ref, f) {
     if (f.size > DRF_WIRE_MAX) throw new Error("다른 컴퓨터의 초안에는 10MB 이하 파일만 붙일 수 있어요");
     return drfWrite(ref, { name: f.name, data: await drfBase64(f) });
   }
+  return drfWrite(ref, { upload: await uploadFile(f) });
+}
+// One file to this gateway's uploads (hub/files.ts): the record that a draft's 첨부 or a message's `files` names.
+async function uploadFile(f) {
   const form = new FormData();
   form.append("file", f, f.name);
   const r = await fetch("/api/upload", { method: "POST", body: form }), d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || `올리지 못했어요 (HTTP ${r.status})`);
-  return drfWrite(ref, { upload: d.files[0] });
+  return d.files[0];
 }
 // 보내기 on a draft whose mail account cannot send files: the owner is asked once more (resolves true to go on).
 async function drfSure(d, t) {
@@ -161,7 +166,9 @@ function draftFilesNode(d, o = {}) {
     try { await job(); } catch (e) { toast(e instanceof TypeError ? "연결이 끊겨 처리하지 못했어요" : e.message, true); }
     DRF.busy[ref] = false; paint();
   };
-  pickers.onchange = () => { const list = [...pickers.files]; pickers.value = ""; run(async () => { for (const f of list) await drfUpload(ref, f); DRF.menu[ref] = ""; }); };
+  const addAll = list => run(async () => { for (const f of list) await drfUpload(ref, f); DRF.menu[ref] = ""; });
+  if (ref) DRF.add[ref] = addAll;   // 직접 수정 of the same card (editNode) stages its files through the newest list of this draft
+  pickers.onchange = () => { const list = [...pickers.files]; pickers.value = ""; addAll(list); };
   const openLib = async () => {
     DRF.menu[ref] = DRF.menu[ref] === "lib" ? "" : "lib"; paint();
     if (DRF.menu[ref] !== "lib" || DRF.lib[ref]) return;
@@ -317,14 +324,35 @@ const noteGoLabel = (opt, drf, man) => (man ? "이 내용으로 고치기" : drf
 // What the text box of a draft option asks: 고치기 = the change, 직접 입력 = how to send it.
 const OWN_HINT = "메일 먼저 보내고 답글은 내일 올려 줘";
 const draftNoteText = opt => (opt.label === DRAFT_OWN ? { hint: OWN_HINT, aria: "보내는 방법", ask: "어떻게 보낼까요?" } : { hint: DRAFT_HINT, aria: "고칠 내용", ask: "어떻게 고칠까요?" });
+// 직접 수정 with files: the bot is told to attach them (the hub appends one [attachment] line per file with its path).
+const manualNote = (text, files) => (files.length ? `첨부할 파일 ${files.length}개(${files.map(f => f.name).join(", ")})를 이 초안에 붙여 주세요. ` : "") + MANUAL_LEAD + text;
 function editNode(dc, ed, st) {
   const opt = ed.opt, drf = !!dc.draft, man = !!ed.manual;
   const dt = draftNoteText(opt);
   const ta = el("textarea", { class: "dc-note", rows: man ? "7" : "2", maxlength: man ? "6000" : "500", placeholder: drf ? (man ? "보낼 내용을 직접 고쳐 주세요" : dt.hint) : "이유나 내용을 적어 주세요", "aria-label": man ? "직접 수정" : drf ? dt.aria : "자세한 내용", disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
   ta.value = DC.note[dc.key] ?? (man ? dc.draft.body : "");
-  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, man ? MANUAL_LEAD + note : note); } }, noteGoLabel(opt, drf, man));
-  const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; paintDecision(); } }, "돌아가기");
-  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: man ? "직접 수정" : drf ? dt.ask : opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
+  const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, man ? manualNote(note, DC.files[dc.key] || []) : note); } }, noteGoLabel(opt, drf, man));
+  const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; delete DC.files[dc.key]; paintDecision(); } }, "돌아가기");
+  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: man ? "직접 수정" : drf ? dt.ask : opt.label })), ta, man ? editFilesNode(dc, st) : null, el("div", { class: "dc-eb" }, back, go));
+}
+// 파일 첨부 in 직접 수정. A draft dotz tracks and can change (a reply-drafts mail draft) takes the file onto its 첨부 rows at once (the same
+// drfUpload as 파일 추가); any other draft uploads it here and shows it as a chip, and the 고치기 answer goes out with it as the message's `files`.
+function editFilesNode(dc, st) {
+  const key = dc.key, ref = dc.draft.ref, files = DC.files[key] || [], busy = !!DC.fbusy[key];
+  const pk = el("input", { type: "file", multiple: true, hidden: true, "aria-label": "파일 고르기" });
+  pk.onchange = async () => {
+    const list = [...pk.files]; pk.value = "";
+    const s = ref ? DRF.st[ref] : null;
+    if (!list.length || DC.st[key]) return;
+    if (s && !s.failed && s.tracked !== false && s.editable && s.canAttach && DRF.add[ref]) { if (!DRF.busy[ref]) DRF.add[ref](list); return; }
+    if (dc.t && pqPc(dc.t)) { toast("다른 컴퓨터의 이 초안에는 파일을 붙일 수 없어요", true); return; }
+    DC.fbusy[key] = true; paintDecision();
+    try { for (const f of list) { if ((DC.files[key] || []).length >= 10) break; DC.files[key] = (DC.files[key] || []).concat(await uploadFile(f)); } }
+    catch (e) { toast(e instanceof TypeError ? "연결이 끊겨 올리지 못했어요" : e.message, true); }
+    delete DC.fbusy[key]; paintDecision();
+  };
+  const chips = files.map(f => fileChip(f.name, [extOf(f.name), fsize(f.size)].filter(Boolean).join(" · "), { x: el("button", { class: "ax", type: "button", disabled: !!st, "aria-label": `${f.name} 빼기`, onclick: () => { DC.files[key] = (DC.files[key] || []).filter(x => x !== f); paintDecision(); } }, icon("close")) }));
+  return el("div", { class: "dc-fl" }, el("button", { class: "dr-add", type: "button", disabled: !!st || busy, onclick: () => pk.click() }, icon("clip"), el("span", { text: busy ? "올리는 중…" : "파일 첨부" })), ...chips, pk);
 }
 // A decision in the full-screen overlay (30-notices.js dkOpen, 38-overlay.js): header = what it is, body = the draft or the question, sticky footer = the choices.
 // A draft waiting for send approval shows who and what in the header and 보내기 / 고치기 / 보내지 않기 in the footer. Only the body scrolls.
@@ -486,5 +514,5 @@ function paintDecision() {
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
-  return JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr]);
+  return JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr, (DC.files[dc.key] || []).length, !!DC.fbusy[dc.key]]);
 }
