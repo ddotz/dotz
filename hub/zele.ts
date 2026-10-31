@@ -165,7 +165,15 @@ const zeleRead = async (id: string, account: string): Promise<string> => {
 };
 
 // zele lists a thread with the count and the date of its newest message; together they name that message (a new answer raises the count).
-const stampOf = (m: Item): string => `${m.messages ?? ""}|${m.date ?? ""}`;
+// A recent message's date is its age ("just now", "5m ago", "6h ago", "2d ago"), which changes while the message stays the same, so an
+// age is left out of the stamp and the count alone names the message; a stamp noted with an age compares the same way.
+const AGE = /^(?:just now|\d+\s*[smhdw] ago|방금(?:\s*전)?|\d+\s*(?:초|분|시간|일|주)\s*전)$/i;
+const stamp = (messages: unknown, date: unknown): string => `${messages ?? ""}|${AGE.test(String(date ?? "").trim()) ? "" : (date ?? "")}`;
+const stampOf = (m: Item): string => stamp(m.messages, m.date);
+const sameStamp = (noted: string, m: Item): boolean => {
+	const bar = noted.indexOf("|");
+	return (bar < 0 ? noted : stamp(noted.slice(0, bar), noted.slice(bar + 1))) === stampOf(m);
+};
 const THREADS_MAX = 2000;
 const newMail = (m: Item): NewMail => ({ id: String(m.id), message: stampOf(m), account: String(m.account ?? ""), from: String(m.from ?? ""), to: String(m.to ?? ""), ...(m.cc ? { cc: String(m.cc) } : {}), subject: String(m.subject ?? ""), snippet: String(m.snippet ?? "").slice(0, 400) });
 
@@ -185,7 +193,7 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 	for (const m of [...mail, ...sent]) {
 		if (!isOwnAddress(String(m.from ?? ""), own)) continue;
 		const before = s.threads[String(m.id)];
-		if (before?.own && before.n === stampOf(m)) continue;
+		if (before?.own && sameStamp(before.n, m)) continue;
 		// His older message, still listed (the sent folder) after the other side wrote a newer one, is not an answer to it.
 		if (before && Number.parseInt(before.n, 10) > Number(m.messages)) continue;
 		note(m, true);
@@ -196,7 +204,7 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 		if (isOwnAddress(String(m.from ?? ""), own)) continue;
 		const before = s.threads[key];
 		const older = !before && s.mail.includes(key);
-		if (before && !before.own && before.n === stampOf(m)) continue;
+		if (before && !before.own && sameStamp(before.n, m)) continue;
 		note(m, false);
 		// Never seen before: only an unread thread is new mail (a read one is old news). Seen before: its newest message is new, read or not.
 		if (older || (!before && m.flags !== undefined && !/unread/i.test(String(m.flags)))) continue;
