@@ -99,7 +99,7 @@ for (const width of [1440, 390]) {
 	test(`a mail never opened shows its start, not the bottom, at ${width}px; the original is laid out`, async () => {
 		read = ""; unread = 0;
 		const v = await open(width);
-		await v.evaluate(until(`CV.seen`, "the opening did not settle"));
+		await v.evaluate(`new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))`);   // the opening placed (open() waits for it) and laid out
 		const p = await place(v);
 		expect(p.max).toBeGreaterThan(300);
 		expect(p.top).toBe(0);
@@ -136,7 +136,7 @@ test("a mail with unread replies opens at the first unread one, and sending stil
 	read = replies[9]!.ts; unread = 14;
 	const v = await open(390);
 	await v.evaluate(until(`document.querySelector("#tl .cv-new")`, "divider not drawn"));
-	await v.evaluate(until(`CV.seen`, "the opening did not settle"));
+	await v.evaluate(`new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))`);   // the opening placed (open() waits for it) and laid out
 	const p = await place(v);
 	expect(p.top).toBeGreaterThan(0);
 	expect(p.top).toBeLessThan(p.max);

@@ -145,7 +145,7 @@ function chatJump(node) {
   chatPin("at");
 }
 function chatPin(kind) { CV.pin = kind; chatPlace(); }
-function chatUnpin() { CV.pin = ""; clearTimeout(CV.dwellT); }
+function chatUnpin() { CV.pin = ""; }
 // Put the view where the pin says. Runs right after the draw and again whenever the timeline or its content changes size (images,
 // code blocks, the todo strip, the composer growing) - a ResizeObserver runs after layout and before paint, so no shift is ever shown.
 function chatPlace() {
@@ -162,14 +162,7 @@ function chatPlace() {
   if (Math.abs(timeline.scrollTop - want) > 1) timeline.scrollTop = want;
   chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
   $("#chat-jump").hidden = chatStick;
-  if (isMailT(CV.key)) convMaybeRead();   // a mail is read as it is shown, not after holding at its bottom; the dwell still records that it settled (CV.seen)
-  convDwell();
-}
-// Anchored views count as read only after they held still for a moment (the owner can see them), never on the draw itself.
-function convDwell() {
-  clearTimeout(CV.dwellT);
-  CV.seen = false;
-  CV.dwellT = setTimeout(() => { CV.seen = true; convMaybeRead(); }, 700);
+  convMaybeRead();   // what this placement put on screen is read now
 }
 new ResizeObserver(chatPlace).observe(timeline);
 // The timeline's own box changes when the composer grows a line, the todo strip or the keyboard resizes the page. A view that sat at the
@@ -184,19 +177,25 @@ new ResizeObserver(chatPlace).observe(tl);
 // The owner takes over by touching the timeline: the anchor lets go, the normal stick-to-bottom rules apply from there.
 for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) timeline.addEventListener(ev, chatUnpin, { passive: true });
 
-// The open conversation counts as read (page visible): a chat once the owner is at its bottom, a mail as soon as it is on screen. A mail opens at
-// its top and reads top-down (chatOpen), so waiting for the bottom left a long mail unread however it was read (owner 2026-10-27); its unread is
-// dotz's own read position (hub/reads.ts), never the real mailbox's flag, so a newer message of that mail still makes it unread again.
+// The open conversation counts as read (page visible): a chat up to the last message whose bottom edge is on screen (owner 2026-10-31: "들어가서
+// 해당 메시지 하단까지 내 화면에 보이면 숫자 사라지게"), a mail as soon as it is on screen. It runs whenever what is on screen can change - the opening's
+// placement, a scroll, the timeline or its content changing size (a new message, an image or card loading, a resize), the page showing again -
+// so no scroll is ever needed, and nothing waits for the view to hold still. A mail opens at its top and reads top-down (chatOpen), so waiting
+// for the bottom left a long mail unread however it was read (owner 2026-10-27); its unread is dotz's own read position (hub/reads.ts), never
+// the real mailbox's flag, so a newer message of that mail still makes it unread again.
 function convMaybeRead() {
   const t = CV.key;
   if (!t || t !== target || !CV.placed || document.visibilityState !== "visible") return;
   const mail = isMailT(t);
-  if (!mail && (!CV.captured || !chatStick || (CV.pin && !CV.seen))) return;
+  if (!mail && !CV.captured) return;
   const s = ts(t), last = s.hLoaded && s.msgs.findLast(convReal);
   if (!last) return;
   if (READ[t] && READ[t] >= last.ts) { if (s.unread) { s.unread = 0; renderBars(); if (mail) mailReadPainted(); } return; }
-  READ[t] = last.ts; s.unread = 0;
-  convPend.set(t, last.ts);
+  const at = mail ? last.ts : convSeenTs(last.ts);
+  if (!at || (READ[t] && READ[t] >= at)) return;
+  READ[t] = at;
+  s.unread = at >= last.ts ? 0 : Math.min(s.unread, s.msgs.filter(e => e.ts > at && convIncoming(e)).length);   // the hub recounts it on the next load
+  convPend.set(t, at);
   if (!convPendT) convPendT = setTimeout(convFlush, 150);
   renderBars();
   if (mail) mailReadPainted();
@@ -210,7 +209,23 @@ function convFlush() {
   for (const [t, at] of convPend) api("/api/read", "POST", { target: t, ts: at }).then(() => { if (isMailT(t)) mailReadSynced(t); }, () => { if (READ[t] === at) READ[t] = null; convLoad(); });
   convPend.clear();
 }
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { if (CV.pin) convDwell(); convMaybeRead(); convLoad(); } });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { convMaybeRead(); convLoad(); } });
+// The newest drawn message whose bottom edge is inside the timeline's visible box (never past `newest`), "" when none is. Walks from the end, so
+// it measures only the few messages at the bottom of the view.
+function convSeenTs(newest) {
+  if (!timeline.clientHeight) return "";
+  const bottom = timeline.getBoundingClientRect().bottom + 1, nodes = tl.querySelectorAll("[data-ts]");
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const r = nodes[i].getBoundingClientRect();
+    if (r.height && r.bottom <= bottom) return nodes[i].dataset.ts > newest ? newest : nodes[i].dataset.ts;
+  }
+  return "";
+}
+// A layout change can bring a message's bottom on screen without a scroll (content settling after the pin let go, the window growing): one
+// check per frame, after layout.
+function convReadSoon() { if (!convReadF) convReadF = requestAnimationFrame(() => { convReadF = 0; convMaybeRead(); }); }
+const convReadRO = new ResizeObserver(convReadSoon);
+convReadRO.observe(timeline); convReadRO.observe(tl);
 
 // Which conversation this page shows ("" = hidden or not a chat), so the hub keeps that conversation's answers out of the notices (POST /api/viewing).
 // Sent when it changes and every 20 s while it stays (the hub counts a report older than 60 s as gone).
