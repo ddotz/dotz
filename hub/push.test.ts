@@ -27,8 +27,8 @@ test("a project's answers notify like the main chat's and open that project's ch
 	expect(classify(ev({ target: "th:42", text: "[done] 끝" }))).toBeUndefined(); // a thread of no known project stays on Discord
 });
 
-test("a lane's worklog entry notifies once as a start; its later edits do not", () => {
-	expect(classify(ev({ target: "worklog", update_key: "lane:custom-ui", text: "[run] 맞춤 화면 레인 시작했어요." }))).toMatchObject({ kind: "lane", title: "custom-ui · 시작" });
+test("a lane's worklog entry never notifies from the event: its start is routine progress, its [done]/[fail] comes as a bell notice", () => {
+	expect(classify(ev({ target: "worklog", update_key: "lane:custom-ui", text: "[run] 맞춤 화면 레인 시작했어요." }))).toBeUndefined();
 	expect(classify(ev({ target: "worklog", update_key: "lane:custom-ui", text: "[run] 테스트 돌리는 중" }))).toBeUndefined();
 	expect(classify(ev({ target: "worklog", update_key: "lane:custom-ui", text: "[done] 끝났어요" }))).toBeUndefined();
 	expect(classify(ev({ target: "web", update_key: "progress", text: "[run] 시작했어요" }))).toBeUndefined();
