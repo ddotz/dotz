@@ -9,7 +9,7 @@ export type Monitor = {
 	name: string;
 	// A watch's own [a-z0-9-] name when `name` is its label: the web matches the watch's notices by it and shows it as small text.
 	watch?: string;
-	// A schedule's id: the web pauses, resumes and deletes it through PATCH / DELETE /api/schedules/<id> (it has no watch to run or configure).
+	// A schedule's id: its ⋯ settings screen reads and edits it through /api/schedules/<id>/settings and deletes it with DELETE /api/schedules/<id>.
 	schedule?: string;
 	kind: "watch" | "schedule";
 	channel?: string;

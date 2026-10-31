@@ -14,6 +14,7 @@ import { answerMovesToLane, lanePlace } from "./threads.ts";
 import { addSchedule, listSchedules, patchSchedule, removeSchedule } from "./schedule.ts";
 import { clearChannel, listSetups, setupChannel } from "./workchannels.ts";
 import { readWatchSettings, writeWatchSettings } from "./watch-settings.ts";
+import { readScheduleSettings, writeScheduleSettings } from "./schedule-settings.ts";
 import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchScript, removeWatch, runWatch, watchScript } from "./watch.ts";
 import { queue, out } from "./outbound.ts";
 import { json, body } from "./routes-util.ts";
@@ -118,6 +119,11 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 	}
 	if (parts[0] === "api" && parts[1] === "schedules") {
 		try {
+			// A schedule's settings screen (hub/schedule-settings.ts): the same GET / PATCH shape as a monitor's.
+			if (parts[2] && parts[3] === "settings" && parts.length === 4 && (req.method === "GET" || req.method === "PATCH")) {
+				if (!listSchedules().some(s => s.id === parts[2])) return json({ error: `no schedule ${parts[2]}` }, 404);
+				return json({ key: `s:${parts[2]}`, fields: req.method === "GET" ? readScheduleSettings(parts[2]) : writeScheduleSettings(parts[2], (await body(req)).values) });
+			}
 			if (req.method === "GET") return json(listSchedules());
 			if (req.method === "POST") return json({ ok: true, schedule: addSchedule(await body(req)) });
 			if (req.method === "PATCH" && parts[2]) return json(patchSchedule(parts[2], await body(req)));

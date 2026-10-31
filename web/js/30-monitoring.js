@@ -785,8 +785,6 @@ function monTopNodes(it) {
   if (it.mon) out.push(monProgNode(it.mon, { tag: !banner }));
   if (banner) out.push(banner);
   if (it.mon && it.mon.watch && !banner) out.push(el("div", { class: "mon-actions" }, monRunBtn(it.mon)));
-  const sched = monSchedBtns(it);
-  if (sched.length) out.push(el("div", { class: "mon-actions" }, ...sched));
   return out;
 }
 // 감시 소식 opens with every plain monitor at a glance: how far its wait has come, how it last ended, and the last line it said. Down and failed
@@ -817,16 +815,18 @@ function monTimeline(it) {
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
   return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? `${monRunLine(it.mon)}${next}` : "아직 소식이 없어요" })];
 }
-// The settings conversation an item has: a local app's, a watch's (local or a peer's, forwarded by pqAct); none for a peer's app, a schedule or an unreachable computer.
+// The settings an item has: a local app's, a watch's (local or a peer's, forwarded by pqAct), a local schedule's (s:<id>, the screen only, no
+// conversation: 32-app-settings.js asEntry); none for a peer's app or schedule or an unreachable computer.
 // The title of a settings conversation: the monitor's or the app's own name (a peer's monitor too), not "설정".
 function monSettingsName(t) {
   const a = settingsApp(t);
+  if (a.startsWith("s:")) { const m = NM.items.find(x => x.schedule === a.slice(2)); return m ? monTitle(m) : "예약"; }
   if (!a.startsWith("w:")) { const pe = PQ.of.get(t), it = pe && pe.app ? { label: pe.label } : INTG.items.find(x => x.key === a); return it ? it.label : "설정"; }
   const pe = PQ.of.get(t), m = pe ? pe.mon : NM.items.find(x => x.watch === a.slice(2));
   return m ? monTitle(m) : "설정";
 }
 // The status block of a settings panel: the monitor itself, or each watch the app owns. Same facts as the status card of the monitor's detail (monRunNode).
-const monStatMons = app => (app.startsWith("w:") ? [asMon(app)] : (monItems().find(i => i.app && monSettingsApp(i) === app) || {}).owned || []).filter(Boolean);
+const monStatMons = app => (asOwn(app) ? [asMon(app)] : (monItems().find(i => i.app && monSettingsApp(i) === app) || {}).owned || []).filter(Boolean);
 function monStatNode(m) {
   const st = monStatus(m);
   const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m.last_output ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
@@ -835,7 +835,7 @@ function monStatNode(m) {
     st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
 }
 // A peer's app is `<its key>~<computer hash>`: the same key may exist on this computer too (34-peer-monitoring.js pqApp).
-const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? it.key.slice(2) : it.app && it.pc ? pqApp(it.inst, it.pc) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : "";
+const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? it.key.slice(2) : it.app && it.pc ? pqApp(it.inst, it.pc) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : it.mon && it.mon.kind === "schedule" && it.mon.schedule && !it.pc ? `s:${it.mon.schedule}` : "";
 // A connection that is down says so at the top of the conversation, whether or not an alert went out, with the way to check again.
 // Two states, two banners: kind "down" (the connection is gone: err tone, 연결이 끊겼어요) and "fail" (connected, the last check failed: err tone too,
 // 확인 실패). The head is passed in, never guessed from the detail text.
@@ -846,19 +846,6 @@ function monBannerNode(kind, detail, btn) {
 // The app hint the hub writes for a down app starts with the row word ("연결 끊김 · ..."); the banner has its own head, so only the why is kept.
 const monHintWhy = h => String(h || "").replace(/^\s*연결\s*(끊김|이 끊겼어요)\s*(·\s*)?/, "");
 const monRunBtn = (m, text) => el("button", { class: "btn tonal sm mon-run", type: "button", "data-run": m.watch, text: text || "지금 확인", onclick: ev => monRunNow(ev.currentTarget, m) });
-// A schedule row (일반 모니터링, kind "schedule") has no watch to run and no settings conversation; its controls are the schedule routes
-// (hub/routes-lanes.ts PATCH / DELETE /api/schedules/<id>, `schedule` = its id from GET /api/monitors): 일시정지 / 다시 시작 and 삭제.
-// A peer's schedule has no forwarded action, so it gets none. [text, method, path, body] per control.
-const monSchedActs = (m, pc) => !m || m.kind !== "schedule" || !m.schedule || pc ? [] : [
-  [m.paused ? "다시 시작" : "일시정지", "PATCH", `/api/schedules/${encodeURIComponent(m.schedule)}`, { paused: !m.paused }],
-  ["삭제", "DELETE", `/api/schedules/${encodeURIComponent(m.schedule)}`, undefined],
-];
-// 삭제 asks once more on the button itself ("한 번 더 눌러 삭제") before it removes the schedule.
-const monSchedBtns = it => monSchedActs(it.mon, it.pc).map(([text, method, path, body]) => el("button", { class: "btn tonal sm mon-sched", type: "button", "data-sched": method, text, onclick: ev => {
-  const btn = ev.currentTarget;
-  if (method === "DELETE" && !btn.dataset.armed) { btn.dataset.armed = "1"; btn.textContent = "한 번 더 눌러 삭제"; return; }
-  busy(btn, async () => { await api(path, method, body); await loadMonitors(); MON.sig = ""; monSchedule(); toast(method === "DELETE" ? "예약을 삭제했어요" : body.paused ? "예약을 멈췄어요" : "예약을 다시 시작했어요"); });
-} }));
 const monRecheckBtn = (watch, onclick, text = "지금 다시 확인") => el("button", { class: "btn tonal sm mon-recheck", type: "button", "data-watch": watch, text, onclick });
 // One re-check control per conversation: a down or failing monitor, and a down app, get the banner and its button; a healthy one gets 지금 확인
 // in the head (a phone at the top of the timeline). The latest-run card never repeats it.
@@ -879,7 +866,7 @@ const monHead = it => {
   const banner = monBannerOf(it), st = monState(it);
   // An app with reply drafts waiting opens the one 답장 확인 queue on its own drafts (30-replies.js).
   const rqBtn = it.app && it.drafts ? el("button", { class: "btn tonal sm rq-go", type: "button", "data-k": "replies", text: `답장 확인 ${it.drafts}`, onclick: () => rqOpen(it.inst, it.pc) }) : null;
-  const row = [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st ? el("span", { class: "cv-p", text: st }) : null), rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, ...monSchedBtns(it), it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+  const row = [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st ? el("span", { class: "cv-p", text: st }) : null), rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);

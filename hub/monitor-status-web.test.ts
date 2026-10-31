@@ -50,19 +50,15 @@ describe("monNeedLine: drafts > 미답장 > 안 읽음 > sent today, at most two
 	});
 });
 
-describe("monSchedActs: a schedule row is controlled through its own routes", () => {
-	const monSchedActs = new Function(`${between(monitoring, "const monSchedActs", "// 삭제 asks once more")}; return monSchedActs;`)() as (m: object, pc?: object) => [string, string, string, unknown][];
-	test("a local schedule pauses, resumes and deletes by its id", () => {
-		expect(monSchedActs({ kind: "schedule", schedule: "s1", name: "메일 연결 확인" })).toEqual([
-			["일시정지", "PATCH", "/api/schedules/s1", { paused: true }],
-			["삭제", "DELETE", "/api/schedules/s1", undefined],
-		]);
-		expect(monSchedActs({ kind: "schedule", schedule: "s1", paused: true })[0]).toEqual(["다시 시작", "PATCH", "/api/schedules/s1", { paused: false }]);
+describe("monSettingsApp: a schedule row opens its own settings screen like a watch row", () => {
+	const monSettingsApp = new Function("pqApp", `${between(monitoring, "const monSettingsApp", "// A connection that is down")}; return monSettingsApp;`)(() => "peer") as (it: object) => string;
+	test("a local schedule is s:<id>, a watch w:<name>", () => {
+		expect(monSettingsApp({ key: "m:보고", mon: { kind: "schedule", schedule: "s1", name: "보고" } })).toBe("s:s1");
+		expect(monSettingsApp({ key: "m:w", mon: { kind: "watch", watch: "w" } })).toBe("w:w");
 	});
-	test("a watch, a schedule without an id (an older hub) and a peer's schedule get none", () => {
-		expect(monSchedActs({ kind: "watch", watch: "w" })).toEqual([]);
-		expect(monSchedActs({ kind: "schedule" })).toEqual([]);
-		expect(monSchedActs({ kind: "schedule", schedule: "s1" }, { name: "pc", url: "https://pc" })).toEqual([]);
+	test("a schedule without an id (an older hub) and a peer's schedule get none", () => {
+		expect(monSettingsApp({ key: "m:x", mon: { kind: "schedule" } })).toBe("");
+		expect(monSettingsApp({ key: "m:x", mon: { kind: "schedule", schedule: "s1" }, pc: { name: "pc", url: "https://pc" } })).toBe("");
 	});
 });
 
