@@ -169,7 +169,7 @@ const onOwner = (m: discord.Incoming) => {
 	if (m.id) discord.ack(m.ackChannelId, m.id);
 	const target = typeof m.channel === "string" ? m.channel : "lane" in m.channel ? `lane:${m.channel.lane}` : "work" in m.channel ? `ch:${m.channel.work}` : `th:${m.channel.thread}`;
 	if (m.id) lastOwner.set(target, m.id);
-	const event = { ts: now(), source: "discord", channel: target, message_id: m.id, author: m.author, text: m.content, attachments: m.attachments, reply: m.replyTo };
+	const event = { ts: now(), source: "discord", channel: target, message_id: m.id, author: m.author, text: m.content, attachments: m.attachments, reply: m.replyTo, ...(m.picks?.length ? { picks: m.picks } : {}) };
 	if (parseCommand(m.content)) {
 		emit("inbox", { ...event, kind: "message" });
 		void answerCommand(target, m.content, m.id);
@@ -216,10 +216,10 @@ const onOwner = (m: discord.Incoming) => {
 discord.setClaimHandler(pluginClaim);
 discord.connect(onOwner);
 // A click on a decision button (hub/askbuttons.ts) is the owner typing the answer in that channel: the same inbound path.
-setAskAnswer((target, content) => {
+setAskAnswer((target, content, picks) => {
 	const id = target.slice(target.indexOf(":") + 1);
 	const channel = target.startsWith("lane:") ? { lane: id } : target.startsWith("ch:") ? { work: id, name: discord.channels.work[id] ?? id, first: false } : target.startsWith("th:") ? { thread: id, name: discord.channels.threads[id]?.name ?? id } : (target as "chat");
-	onOwner({ id: "", channelId: "", ackChannelId: "", channel, author: "owner", content, attachments: [] });
+	onOwner({ id: "", channelId: "", ackChannelId: "", channel, author: "owner", content, attachments: [], picks });
 });
 await discord.ensureChannels().catch(e => {
 	discord.status.error = String(e);

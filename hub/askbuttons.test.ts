@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { ASK_PREFIX, askComponents, askComponentsFor, askInteraction, parseAskId } from "./askbuttons.ts";
 import type { Interaction } from "./discord.ts";
+import { buildPayloads } from "./discord-format.ts";
 
 const ASK = "[ask] 시작 설정\n\n**1) 지금 고치기** ← 추천\n재부팅 뒤에도 켜져요\n**2) 그대로 두기**\n다음 재부팅까지는 괜찮아요";
 
@@ -29,6 +30,8 @@ test("no buttons without [ask], without a choice block, or when the id would be 
 test("buttons only on a part that still holds every option", () => {
 	expect(askComponentsFor("chat", ASK, "**2) 그대로 두기**")).toEqual([]);
 	expect(askComponentsFor("chat", ASK, ASK)).not.toEqual([]);
+	expect(askComponentsFor("chat", ASK, buildPayloads(ASK)[0]!.content)).not.toEqual([]);
+	expect(askComponentsFor("chat", ASK, ASK.slice(ASK.indexOf("**1)")))).toEqual([]);
 });
 
 test("custom_id round trip keeps targets with colons", () => {
