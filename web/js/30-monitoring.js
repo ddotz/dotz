@@ -783,6 +783,8 @@ function monTopNodes(it) {
   if (it.mon) out.push(monProgNode(it.mon, { tag: !banner }));
   if (banner) out.push(banner);
   if (it.mon && it.mon.watch && !banner) out.push(el("div", { class: "mon-actions" }, monRunBtn(it.mon)));
+  const sched = monSchedBtns(it);
+  if (sched.length) out.push(el("div", { class: "mon-actions" }, ...sched));
   return out;
 }
 // 감시 소식 opens with every plain monitor at a glance: how far its wait has come, how it last ended, and the last line it said. Down and failed
@@ -842,6 +844,19 @@ function monBannerNode(kind, detail, btn) {
 // The app hint the hub writes for a down app starts with the row word ("연결 끊김 · ..."); the banner has its own head, so only the why is kept.
 const monHintWhy = h => String(h || "").replace(/^\s*연결\s*(끊김|이 끊겼어요)\s*(·\s*)?/, "");
 const monRunBtn = (m, text) => el("button", { class: "btn tonal sm mon-run", type: "button", "data-run": m.watch, text: text || "지금 확인", onclick: ev => monRunNow(ev.currentTarget, m) });
+// A schedule row (일반 모니터링, kind "schedule") has no watch to run and no settings conversation; its controls are the schedule routes
+// (hub/routes-lanes.ts PATCH / DELETE /api/schedules/<id>, `schedule` = its id from GET /api/monitors): 일시정지 / 다시 시작 and 삭제.
+// A peer's schedule has no forwarded action, so it gets none. [text, method, path, body] per control.
+const monSchedActs = (m, pc) => !m || m.kind !== "schedule" || !m.schedule || pc ? [] : [
+  [m.paused ? "다시 시작" : "일시정지", "PATCH", `/api/schedules/${encodeURIComponent(m.schedule)}`, { paused: !m.paused }],
+  ["삭제", "DELETE", `/api/schedules/${encodeURIComponent(m.schedule)}`, undefined],
+];
+// 삭제 asks once more on the button itself ("한 번 더 눌러 삭제") before it removes the schedule.
+const monSchedBtns = it => monSchedActs(it.mon, it.pc).map(([text, method, path, body]) => el("button", { class: "btn tonal sm mon-sched", type: "button", "data-sched": method, text, onclick: ev => {
+  const btn = ev.currentTarget;
+  if (method === "DELETE" && !btn.dataset.armed) { btn.dataset.armed = "1"; btn.textContent = "한 번 더 눌러 삭제"; return; }
+  busy(btn, async () => { await api(path, method, body); await loadMonitors(); MON.sig = ""; monSchedule(); toast(method === "DELETE" ? "예약을 삭제했어요" : body.paused ? "예약을 멈췄어요" : "예약을 다시 시작했어요"); });
+} }));
 const monRecheckBtn = (watch, onclick, text = "지금 다시 확인") => el("button", { class: "btn tonal sm mon-recheck", type: "button", "data-watch": watch, text, onclick });
 // One re-check control per conversation: a down or failing monitor, and a down app, get the banner and its button; a healthy one gets 지금 확인
 // in the head (a phone at the top of the timeline). The latest-run card never repeats it.
@@ -862,7 +877,7 @@ const monHead = it => {
   const banner = monBannerOf(it), st = monState(it);
   // An app with reply drafts waiting opens the one 답장 확인 queue on its own drafts (30-replies.js).
   const rqBtn = it.app && it.drafts ? el("button", { class: "btn tonal sm rq-go", type: "button", "data-k": "replies", text: `답장 확인 ${it.drafts}`, onclick: () => rqOpen(it.inst, it.pc) }) : null;
-  const row = [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st ? el("span", { class: "cv-p", text: st }) : null), rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+  const row = [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st ? el("span", { class: "cv-p", text: st }) : null), rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, ...monSchedBtns(it), it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);
