@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkPeer } from "./peer-auth.ts";
 import { createPeerMonitor } from "./peer-monitor.ts";
-import { acceptedTokens, createPairer, handlePair, outToken, PAIR_PATH, REASON } from "./peer-pair.ts";
+import { acceptedTokens, boundPeer, createPairer, handlePair, outToken, PAIR_PATH, REASON } from "./peer-pair.ts";
 import { loginOf, sameUserNodes } from "./peers.ts";
 
 // Gateway A asks gateway B in one process: B's handler is the pair door, the peer gate and the peer routes; the network is an injected fetch
@@ -85,6 +85,19 @@ test("same tailscale login: the first act pairs by itself and writes", async () 
 	expect(outToken(URL_B, r.dirA)).toBe(acceptedTokens(r.dirB)[0]!);
 	expect((await r.act()).status).toBe(200);
 	expect(r.seen.pair).toBe(1);
+});
+
+test("pairing binds each side to the other's URL (0600) and a refused pairing binds nothing", async () => {
+	const r = rig();
+	await r.act();
+	expect(boundPeer("b.example.test", r.dirA)?.url).toBe(URL_B);
+	expect(boundPeer("a.example.test", r.dirB)?.url).toBe(URL_A);
+	expect(mode(join(r.dirA, "bound.json"))).toBe(0o600);
+	expect(mode(join(r.dirB, "bound.json"))).toBe(0o600);
+	const refused = rig({ aLogin: "stranger@example.test" });
+	await refused.act();
+	expect(boundPeer("b.example.test", refused.dirA)).toBeUndefined();
+	expect(boundPeer("a.example.test", refused.dirB)).toBeUndefined();
 });
 
 test("discovery alone pairs and the peer reads online", async () => {
