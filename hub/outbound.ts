@@ -8,7 +8,7 @@ import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { isNote, msg } from "./i18n.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
-import { answeredIds, answeredSince, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages } from "./events.ts";
+import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages } from "./events.ts";
 import { settleWaiting, type Waiting } from "./awaiting.ts";
 import { outEvent } from "./projectchat.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
@@ -204,7 +204,11 @@ export const approvals = createApprovalQueue({
 		const id = card.ids?.length === 1 ? card.ids[0] : undefined;
 		if (id && !isLocal(card.target) && discordPosts(card.target) && !/^\s*\[file\]\s/m.test(text)) void discord.edit(card.target, id, text).catch(e => log(`approval card ${card.ref} not edited on Discord: ${e}`));
 	},
-	persist: held => writeAtomic(HELD, `${JSON.stringify(held, null, 2)}\n`),
+	// The web's 빠른 처리 banner counts held cards too (web/js/30-triage.js): it refetches on this.
+	persist: held => {
+		writeAtomic(HELD, `${JSON.stringify(held, null, 2)}\n`);
+		broadcast({ ts: now(), kind: "approvals", source: "gateway", held: held.length });
+	},
 	log,
 	load: () => loadHeld(HELD),
 });

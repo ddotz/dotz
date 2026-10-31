@@ -74,7 +74,13 @@ export function discordGatewayAnswer(target: string, conv: string, text: string,
 	return true;
 }
 
-export type WaitingCard = BatchCard & { to: string; sendable: boolean; group: string };
+export type WaitingCard = BatchCard & { to: string; sendable: boolean; group: string; info: string[] };
+
+// The lines a card carries above its draft (원댓글, 메일 대조, 확인 필요, a note of the bot): what the owner reads before he decides.
+export const cardInfo = (text: string): string[] => {
+	const lines = text.split("\n"), stop = lines.findIndex(l => l.startsWith(">") || l.startsWith("결정"));
+	return (stop < 0 ? [] : lines.slice(0, stop)).map(l => l.trim().replace(/^\[[^\]]+\][ \t]*/, "")).filter(l => l && !/^-# /.test(l)).slice(0, 8).map(l => l.slice(0, 300));
+};
 export type CardGroup = { key: string; label: string; count: number; cards: WaitingCard[] };
 
 // The app instance a draft belongs to (owner 2026-10-31: one mailbox split into categories by filter.source, each its own queue): the comment
@@ -102,9 +108,9 @@ function groupOf(ref: string, to: string, entries = appEntries(DATA_DIR)): { key
 /** Every waiting send-approval card: the open ones, then the held ones, each with its conversation and app-instance group. */
 export function waitingCards(): WaitingCard[] {
 	const entries = appEntries(DATA_DIR);
-	const open = openDraftCards().map(c => ({ ref: c.ref, to: c.to, question: c.title, text: "", draft: c.draft, notice: c.id }));
+	const open = openDraftCards().map(c => ({ ref: c.ref, to: c.to, question: c.title, text: c.text, draft: c.draft, notice: c.id }));
 	const held = approvals.held().map(h => ({ ...batchCard(h.ref, h.text), to: convOfTarget(h.target) })).filter(h => !open.some(o => o.ref === h.ref && o.to === h.to));
-	return [...open, ...held].map(c => ({ ...c, sendable: sender.can(c.ref, "send"), group: groupOf(c.ref, c.to, entries).key }));
+	return [...open, ...held].map(c => ({ ...c, sendable: sender.can(c.ref, "send"), group: groupOf(c.ref, c.to, entries).key, info: cardInfo(c.text) }));
 }
 
 /** The waiting cards by app instance, largest group first; one category never mixes into another. */
