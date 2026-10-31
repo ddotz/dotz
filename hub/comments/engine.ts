@@ -5,6 +5,8 @@ import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUn
 import { fileSizeText } from "../draft-approval.ts";
 import { createStore, type Draft, type MailOutcome, type Reply, type Tokens } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
+import type { MailQuery } from "./mail-match.ts";
+import { pastContext, pastPairs, SEEDED_NOTE, similarPairs } from "./past.ts";
 
 // The mail that rides on a comment reply (hub/comments/mail-link.ts is the real one): written with the draft, shown in the same card, sent right
 // after the reply is posted, revised or dropped with it.
@@ -37,7 +39,10 @@ export type EngineDeps = {
 	featureOn?: (app: string, id: string) => boolean;
 	/** The mail that can ride on a reply. Missing = a draft with a mail is refused. */
 	mail?: MailLink;
+	/** Comment <-> mail matching for sources with `mailMatch` on (hub/comments/mail-match.ts): card lines `메일 대조:` / `근거:` / `초안 메모:`. Missing = no matching. */
+	mailMatch?: (q: MailQuery) => Promise<string[]>;
 };
+const MATCH_NOTE = /^(메일 대조|근거|초안 메모):/;
 
 export const appOf = (src: Pick<SourceConfig, "kind">): string => (src.kind === "website" ? "site" : src.kind);
 export const OFF_REASON = "댓글 답글이 꺼져 있어요. 앱 설정에서 켜 주세요";
@@ -115,14 +120,25 @@ export function createEngine(deps: EngineDeps) {
 			tokens.outChars += r.text.length;
 			return r.text;
 		};
-		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: contextOf(c) };
+		const seeds = src.pastSeed ? similarPairs(c.text, pastPairs(store.comments(), store.replies(), src.key), 3, c.thread) : [];
+		// The mail check runs once per comment (a revision keeps the lines of the draft it revises); a failure is a line on the card, not a lost draft.
+		const matched = previous
+			? previous.notes.filter(n => MATCH_NOTE.test(n))
+			: src.mailMatch && deps.mailMatch
+				? await deps.mailMatch({ author: c.author, postTitle: c.postTitle, text: c.text, at: c.at }).catch(e => [`메일 대조: 확인 실패 - ${e instanceof Error ? clip(e.message, 160) : "알 수 없는 이유"}`])
+				: [];
+		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: [contextOf(c), ...pastContext(seeds), ...matched].join("\n") };
 		const style = styleOf(src);
 		const r = previous && change !== undefined ? await reviseReply(item, style, { to: `${c.author} 댓글`, body: previous.text }, change, call) : await generateReply(item, style, call);
-		if (r.action === "skip") return { ok: false, reason: r.reason || "답할 내용이 없어서 초안을 만들지 않았어요" };
+		// pastSeed: no empty card. An empty or skipped reply takes the closest past answer of the owner, marked 확인 필요.
+		const seed = (r.action === "skip" || !r.draft.body.trim()) && !previous ? seeds[0] : undefined;
+		if (r.action === "skip" && !seed) return { ok: false, reason: r.reason || "답할 내용이 없어서 초안을 만들지 않았어요" };
+		if (r.action === "draft" && !r.draft.body.trim() && !seed) return { ok: false, reason: "모델이 빈 답글을 돌려줘서 초안을 만들지 않았어요" };
 		const measured: Tokens = tokens.reported ? { in: tokens.in, out: tokens.out } : { in: estimate(tokens.chars), out: estimate(tokens.outChars), estimated: true };
-		const notes = [...r.warnings.map(w => `확인: ${w}`), ...r.questions.map(q => `정해 주세요: ${q}`)];
+		const notes = [...(r.action === "draft" ? [...r.warnings.map(w => `확인: ${w}`), ...r.questions.map(q => `정해 주세요: ${q}`)] : []), ...(seed ? [SEEDED_NOTE] : []), ...matched];
+		const body = seed ? seed.reply : r.action === "draft" ? r.draft.body : "";
 		for (const d of store.drafts()) if (d.commentId === c.id && d.status === "pending") store.setDraftStatus(d.code, "stale");
-		const draft: Draft = { code: code(), commentId: c.id, source: src.key, thread: c.thread, text: r.draft.body, status: "pending", created: deps.now(), changes: previous ? [...previous.changes, change ?? ""] : [], clean: !notes.length && !previous?.mail, notes, tokens: measured, ...(previous?.mail ? { mail: previous.mail, ...(previous.mailAt ? { mailAt: previous.mailAt } : {}) } : {}) };
+		const draft: Draft = { code: code(), commentId: c.id, source: src.key, thread: c.thread, text: body, status: "pending", created: deps.now(), changes: previous ? [...previous.changes, change ?? ""] : [], clean: !notes.length && !previous?.mail, notes, tokens: measured, ...(previous?.mail ? { mail: previous.mail, ...(previous.mailAt ? { mailAt: previous.mailAt } : {}) } : {}) };
 		store.putDraft(draft);
 		emit({ kind: "comment_draft", source: src.key, thread: c.thread });
 		return { ok: true, draft };
@@ -158,8 +174,10 @@ export function createEngine(deps: EngineDeps) {
 
 	// The reply goes through the gate (contract.ts); only when it was posted does the mail of the same card go out, so a refused or failed reply
 	// sends no mail. A failed mail leaves the reply posted and says so in the send record (Reply.mail) and the event.
-	function send(codeOrId: string, opts: { text?: string; by: "owner" | "rule" }): GateResult {
-		const mailId = opts.by === "owner" ? store.drafts().find(d => d.code === codeOrId)?.mail : undefined;
+	// `only: "reply"` posts the reply and leaves the mail draft on its own (no longer linked once the reply draft is sent, so it is asked and sent
+	// by itself: hub/mail-cli.ts ask/send).
+	function send(codeOrId: string, opts: { text?: string; by: "owner" | "rule"; only?: "reply" }): GateResult {
+		const mailId = opts.by === "owner" && opts.only !== "reply" ? store.drafts().find(d => d.code === codeOrId)?.mail : undefined;
 		const r = dispatchReply({ code: codeOrId, approval: { by: opts.by }, ...(opts.text !== undefined ? { text: opts.text } : {}) }, gate);
 		if (!r.ok) return r;
 		const done = mailId ? r.done.then(rep => sendMail(rep, mailId)) : r.done;
@@ -183,6 +201,20 @@ export function createEngine(deps: EngineDeps) {
 		return final;
 	}
 
+	// 메일만 보내기 (owner only): the mail of a reply + mail card goes out now; the reply draft stays pending alone and is asked again.
+	async function sendMailOnly(draftCode: string): Promise<{ ok: boolean; text: string }> {
+		const d = store.drafts().find(x => x.code === draftCode);
+		if (!d || d.status !== "pending") return { ok: false, text: "그 초안을 찾지 못했거나 이미 처리됐어요" };
+		if (!d.mail || !deps.mail) return { ok: false, text: "이 초안에는 함께 보낼 메일이 없어요" };
+		const m = await deps.mail.send(d.mail).catch(e => ({ ok: false, text: e instanceof Error && e.message ? clip(e.message, 160) : "메일을 보내는 중 오류가 났어요" }));
+		if (m.ok) {
+			const { mail: _mail, mailAt: _mailAt, ...rest } = d;
+			store.putDraft({ ...rest, clean: !rest.notes.length });
+			emit({ kind: "comment_draft", source: d.source, thread: d.thread });
+		}
+		return m;
+	}
+
 	const mailView = (d: Draft): MailView | undefined => (d.mail ? deps.mail?.view(d.mail) : undefined);
 
 	// The script part of the watch: reads new comments of every source the owner chose, stores the new ids, then (only for sources with
@@ -200,7 +232,8 @@ export function createEngine(deps: EngineDeps) {
 			try {
 				const res = await adapter.list(src, prior.cursor);
 				fresh = store.addComments(res.comments.filter(r => watches(src, r.thread)).map(r => toComment(src, r, deps.collector)));
-				store.setCursor(src.key, { cursor: res.cursor ?? prior.cursor, ranAt: deps.now() });
+				store.setCursor(src.key, { cursor: res.cursor ?? prior.cursor, ranAt: deps.now(), ...(res.error ? { error: clip(res.error, 160) } : {}) });
+				if (res.error) out.errors[src.key] = clip(res.error, 160);
 			} catch (e) {
 				const reason = e instanceof Error ? clip(e.message, 160) : "읽지 못했어요";
 				out.errors[src.key] = reason;
@@ -423,6 +456,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, ownerOf, collect, makeDraft, revise, drop, restore, retrySend, dismissSend, pendingDrafts, send, update, threads, threadView, markRead, addDraft, mailView, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
+	return { store, ownerOf, collect, makeDraft, revise, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, mailView, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

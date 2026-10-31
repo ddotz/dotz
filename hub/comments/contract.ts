@@ -11,9 +11,11 @@ export type SiteConfig = {
 	read: { kind: "rss" | "json" | "script"; url?: string; command?: string[] };
 	post: { kind: "webhook" | "script"; url?: string; command?: string[]; secret?: string };
 	owner?: string; // the owner's display name on the site: comments by it are his own
+	// The site's private messages (DM inbox), optional: read like comments (thread `dm:<room>`), answered through the same draft and send gate.
+	dm?: { read: { kind: "json" | "script"; url?: string; command?: string[] }; post: { kind: "webhook" | "script"; url?: string; command?: string[]; secret?: string } };
 };
 // One chosen source = one account/channel/site. `watch` lists the post ids to follow ("*" = all); empty = nothing is read (costs nothing).
-export type SourceConfig = { key: string; kind: SourceKind; label: string; watch: string[]; autoDraft: boolean; everyMin?: number; autoSince?: number; autoSend?: AutoSend; site?: SiteConfig };
+export type SourceConfig = { key: string; kind: SourceKind; label: string; watch: string[]; autoDraft: boolean; everyMin?: number; autoSince?: number; autoSend?: AutoSend; site?: SiteConfig; mailMatch?: boolean; pastSeed?: boolean };
 export type CommentsConfig = { enabled: boolean; sources: Record<string, SourceConfig> };
 
 export type RawComment = { native: string; thread: string; parent?: string; author: string; text: string; postTitle: string; postLink?: string; thumb?: string; at: number; mine?: boolean };
@@ -28,7 +30,8 @@ export type ReplyOutcome = { ok: true; ref?: string } | { ok: false; reason: str
 export type CommentAdapter = {
 	kind: SourceKind;
 	// Comments newer than `cursor` (the adapter's own opaque string) and the next cursor. Throws on an API failure.
-	list(src: SourceConfig, cursor: string | undefined): Promise<{ comments: RawComment[]; cursor?: string }>;
+	// `error`: a part that could not be read (e.g. the DM inbox) while the rest was; kept as the source's error, the comments still count.
+	list(src: SourceConfig, cursor: string | undefined): Promise<{ comments: RawComment[]; cursor?: string; error?: string }>;
 	reply(src: SourceConfig, c: Comment, text: string, sendId: string): Promise<ReplyOutcome>;
 	// The posts the owner can choose to follow, and his own past replies (tone examples).
 	posts?(src: SourceConfig): Promise<Post[]>;
@@ -41,7 +44,8 @@ export type CommentAdapter = {
 
 export const commentId = (source: string, native: string): string => `cm:${source}:${native}`;
 export const threadKey = (source: string, thread: string): string => `${source}/${thread}`;
-export const watches = (src: SourceConfig, thread: string): boolean => src.watch.includes("*") || src.watch.includes(thread);
+export const DM_THREAD = "dm:";
+export const watches = (src: SourceConfig, thread: string): boolean => src.watch.includes("*") || src.watch.includes(thread) || (thread.startsWith(DM_THREAD) && !!src.site?.dm && src.watch.length > 0);
 
 // Union by id, idempotent: the same id twice is one comment (the first collector is kept). Oldest first.
 export function mergeComments(...lists: Comment[][]): Comment[] {
