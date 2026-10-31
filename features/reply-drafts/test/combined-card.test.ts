@@ -75,6 +75,20 @@ describe("compose --with-comment", () => {
 		expect(t.engine.mailView(t.engine.store.drafts()[0]!)).toMatchObject({ id: mailId, to: "fan@example.com" });
 	});
 
+	test("a mail that answers the comment (--origin comment:<id>) rides on its waiting reply draft even without --with-comment", async () => {
+		const t = setup();
+		const code = await draftReply(t);
+		const out = await runMailCli(["compose", "--app", "mail", "--to", "fan@example.com", "--subject", "악보 보내드립니다", "--attach", score, "--origin", `comment:${t.id}`], BODY, t.deps);
+		expect(out.code).toBe(0);
+		const card = parseDraftApproval(out.lines.join("\n"));
+		expect(card).toMatchObject({ toLabel: "대상", ref: code });
+		expect(card?.mail).toMatchObject({ to: "fan@example.com", subject: "악보 보내드립니다" });
+		expect(t.engine.store.drafts()[0]).toMatchObject({ code, mail: listDrafts()[0]!.id });
+		// A second mail for the same comment is a mail of its own: the reply already carries one.
+		const again = await runMailCli(["compose", "--app", "mail", "--to", "fan@example.com", "--subject", "하나 더", "--origin", `comment:${t.id}`], BODY, t.deps);
+		expect(parseDraftApproval(again.lines.join("\n"))).toMatchObject({ toLabel: "받는이", to: "fan@example.com" });
+	});
+
 	test("the mail cannot be sent on its own, and a missing or handled comment draft is refused before a mail is recorded", async () => {
 		const t = setup();
 		const code = await draftReply(t);
