@@ -29,7 +29,12 @@ import { issueBlock, parseDecisions } from "./choices.ts";
 export const DRAFT_SEND = "보내기";
 export const DRAFT_EDIT = "고치기";
 export const DRAFT_DROP = "보내지 않기";
-export type DraftAction = "send" | "edit" | "drop";
+// Send modes a card may add after the three (`sendModes`): send one part of a reply + mail card, or say in your own words how to send it.
+// The numbers 1-3 never move; these come after, and the free-text one is marked ` …` so the web and Discord ask for the text.
+export const DRAFT_ONLY_MAIN = "답글만 보내기";
+export const DRAFT_ONLY_MAIL = "메일만 보내기";
+export const DRAFT_OWN = "어떻게 보낼지 직접 입력";
+export type DraftAction = "send" | "edit" | "drop" | "send-main" | "send-mail" | "own";
 export type DraftToLabel = "받는이" | "대상" | "대화방";
 export const DRAFT_BODY_MAX = 6000;
 
@@ -48,7 +53,7 @@ export type DraftApproval = { toLabel: string; to: string; cc?: string[]; mode?:
 // One part of a card: the reply (or the mail) with its recipient line, files and body.
 export type DraftPart = { /** The mail draft id its files are staged under: the "함께 보낼 메일 (<id>)" line, so the card can open them. */ id?: string; origin?: DraftOrigin; rule?: string; to: string; toLabel?: DraftToLabel; cc?: string[]; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[] };
 // `mail`: the mail that goes out right after this comment reply, shown below it in the same card (hub/comments).
-export type DraftInput = DraftPart & { ref: string; question?: string; sendResult?: string; mail?: DraftPart };
+export type DraftInput = DraftPart & { ref: string; question?: string; sendResult?: string; mail?: DraftPart; sendModes?: boolean };
 export const MAIL_MARK = "함께 보낼 메일";
 const MAIL_ID = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
 const MAIL_LINE = /^함께 보낼 메일(?: \(([A-Za-z0-9][A-Za-z0-9_.-]{1,63})\))?$/;
@@ -92,6 +97,13 @@ export function draftApprovalBlock(d: DraftInput): string {
 		{ name: DRAFT_SEND, result: d.sendResult ?? `${d.to.replace(/\s+/g, " ").trim()}에 이 글을 그대로 보내요` },
 		{ name: `${DRAFT_EDIT} …`, result: d.mail ? "답글과 메일 중 어느 쪽을 어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" : "어떻게 고칠지 알려 주면 고쳐서 다시 물어봐요" },
 		{ name: DRAFT_DROP, result: d.mail ? "답글과 메일을 모두 버려요" : "이 초안은 버려요" },
+		...(d.sendModes && d.mail
+			? [
+					{ name: DRAFT_ONLY_MAIN, result: "답글만 올리고 메일은 보내지 않아요" },
+					{ name: DRAFT_ONLY_MAIL, result: "메일만 보내고 답글은 나중에 올려요" },
+				]
+			: []),
+		...(d.sendModes ? [{ name: `${DRAFT_OWN} …`, result: "어떻게 보낼지 적어 주면 그대로 해요" }] : []),
 	];
 	const mail = d.mail ? [">", `> ${MAIL_MARK}${d.mail.id && MAIL_ID.test(d.mail.id) ? ` (${d.mail.id})` : ""}`, ...partLines({ ...d.mail, toLabel: "받는이" })] : [];
 	return [...partLines(d), ...mail, issueBlock(`${d.question ?? "보낼까요?"} (${d.ref})`, options)].join("\n");
@@ -144,12 +156,14 @@ const NONE_NOTE = /^없음\s*\((.+)\)$/;
 const FILE_SIZE = /^(.*\S)\s+\((\d+(?:\.\d+)?(?:B|KB|MB|GB))(?:\s*[,·][^()]*)?\)$/;
 const REF = /\(([A-Za-z0-9][A-Za-z0-9_.:-]{1,63})\)\s*$/;
 
-// The draft a message asks approval for; undefined when the message is not a draft-approval decision (one block whose options are exactly
-// 보내기 / 고치기 / 보내지 않기, with a quoted draft above it).
+const DRAFT_MODES = new Set([DRAFT_ONLY_MAIN, DRAFT_ONLY_MAIL, DRAFT_OWN]);
+// The draft a message asks approval for; undefined when the message is not a draft-approval decision (one block whose options are
+// 보내기 / 고치기 / 보내지 않기, then only send modes, with a quoted draft above it).
 export function parseDraftApproval(text: string): DraftApproval | undefined {
 	const pc = parseDecisions(text);
 	const block = pc.blocks.length === 1 ? pc.blocks[0]! : undefined;
-	if (!block || block.options.map(o => o.label).join("|") !== [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP].join("|")) return undefined;
+	const labels = block?.options.map(o => o.label) ?? [];
+	if (!block || labels.slice(0, 3).join("|") !== [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP].join("|") || !labels.slice(3).every(l => DRAFT_MODES.has(l))) return undefined;
 	const draft = parseQuotedDraft(text);
 	const ref = REF.exec(block.title)?.[1];
 	return draft && ref ? { ...draft, ref } : draft;
@@ -243,10 +257,16 @@ export function quotedDraft(text: string): string | undefined {
 	return out?.join("\n").replace(/(?:\n>)+$/, "");
 }
 
-// What a picked label means; anything else (a label outside the three) is not a draft answer.
+const ACTIONS: Record<string, DraftAction> = { [DRAFT_SEND]: "send", [DRAFT_EDIT]: "edit", [DRAFT_DROP]: "drop", [DRAFT_ONLY_MAIN]: "send-main", [DRAFT_ONLY_MAIL]: "send-mail", [DRAFT_OWN]: "own" };
+// What a picked label means; anything else (a label outside the three and the send modes) is not a draft answer.
 export function draftActionOf(label: string): DraftAction | undefined {
-	return label === DRAFT_SEND ? "send" : label === DRAFT_EDIT ? "edit" : label === DRAFT_DROP ? "drop" : undefined;
+	return Object.hasOwn(ACTIONS, label) ? ACTIONS[label] : undefined;
 }
+// The draft answers that carry the owner's text: 2) 고치기 - <change>, 어떻게 보낼지 직접 입력 - <how>.
+export const draftNeedsText = (label: string): boolean => {
+	const a = draftActionOf(label);
+	return a === "edit" || a === "own";
+};
 
 export type DraftVerdict = { verdict: DraftAction | "none"; detail?: string };
 const OWNER_SOURCES = new Set(["web", "discord", "terminal"]);
@@ -271,7 +291,7 @@ export function textVerdict(text: string): "send" | "drop" | undefined {
 // What the owner decided for the draft `ref` (the id in the question's trailing "(<ref>)") after `sinceMs`, read from the inbox log.
 // Only the owner's own messages count (web, discord, terminal; not a session's lane_message) and the latest word wins: a pick on the card,
 // or a typed reply (textVerdict) in the conversation the draft was asked in (`conv`, or the one a pick for this ref came from). For 고치기 the
-// detail is the change the owner typed ("2) 고치기 - <change>").
+// detail is the change the owner typed ("2) 고치기 - <change>"), for 직접 입력 how to send it.
 export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, opts: { conv?: string } = {}): DraftVerdict {
 	if (!existsSync(inboxPath)) return { verdict: "none" };
 	const size = statSync(inboxPath).size;
@@ -306,7 +326,7 @@ export function draftVerdict(inboxPath: string, ref: string, sinceMs: number, op
 		const picks = picksOf(e);
 		for (const p of picks) {
 			const verdict = draftActionOf(p.label as string)!;
-			const detail = verdict === "edit" && typeof e.text === "string" ? e.text.split(" - ").slice(1).join(" - ").trim() : "";
+			const detail = draftNeedsText(p.label as string) && typeof e.text === "string" ? e.text.split(" - ").slice(1).join(" - ").trim() : "";
 			out = { verdict, ...(detail ? { detail } : {}) };
 		}
 		// A typed reply: a message without picks, in the draft's own conversation.
