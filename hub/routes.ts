@@ -530,7 +530,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const login = req.headers.get("tailscale-user-login") ?? "local";
 			const answer = await body(req);
 			const via = viaOf(answer.via);
-			const r = await answerDecision(decodeURIComponent(decide[1]!), answer, async a => {
+			let files: ReturnType<typeof ownerFiles>;
+			try {
+				files = ownerFiles(answer.files);
+			} catch (error) {
+				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
+			}
+			const r = await answerDecision(decodeURIComponent(decide[1]!), { ...answer, files }, async a => {
 				if (a.to.startsWith("auth:")) {
 					const path = `/api/auth/${a.to.slice(5)}`;
 					const res = await authRoute(new Request(`http://local${path}`, { method: "POST", body: JSON.stringify({ action: a.action }) }), new URL(`http://local${path}`));
@@ -542,7 +548,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				const conv = a.to === "alert" || a.to === "worklog" ? a.to : undefined;
 				const mail = a.to.startsWith("mail:") ? mailByKey(a.to.slice(5)) : undefined;
 				if (a.to.startsWith("mail:") && !mail) throw new Error("이 메일 대화를 찾을 수 없어요");
-				await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice, picks: a.picks, via });
+				await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login, replyTo: a.replyTo, decision: a.notice, picks: a.picks, files: a.files, via });
 			});
 			// 보내지 않기 on a mail reply draft drops it in the reply-drafts store at once (not only when the bot gets to it), so every count and
 			// list, here and on the other computer, sees it gone.

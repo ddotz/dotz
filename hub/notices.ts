@@ -7,6 +7,7 @@ import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, draftNeedsText, pars
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { broadcast, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
+import type { Upload } from "./files.ts";
 import { readOf } from "./reads.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { shortTitle } from "./notice-title.ts";
@@ -643,10 +644,10 @@ function ownerReplied(e: HubEvent): void {
 	for (const i of items) if (isOpenDecision(i) && !i.decision!.to.startsWith("auth:") && (id ? i.id === id : i.decision!.to === to)) settleDecision(i, text, e.ts);
 }
 
-export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; picks?: { q: string; n: number; label: string; note?: string }[] }) => Promise<void>;
+export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; files?: Upload[]; picks?: { q: string; n: number; label: string; note?: string }[] }) => Promise<void>;
 // A button of a decision: `n` is the option's number. The answer goes to the asking chat / session (or the login request) through `send`; only
 // when that worked is the notice answered.
-export async function answerDecision(id: unknown, body: { n?: unknown; note?: unknown }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
+export async function answerDecision(id: unknown, body: { n?: unknown; note?: unknown; files?: Upload[] }, send: DecisionSend): Promise<{ status: number; body: Record<string, unknown> }> {
 	const item = items.find(i => i.id === String(id));
 	const d = item?.decision;
 	if (!item || !d) return { status: 404, body: { error: "unknown decision" } };
@@ -667,7 +668,7 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	sending.set(item.id, label);
 	try {
 		// `picks` carries the question with the chosen option, so the agent gets the context even from another conversation (intake.ts decisionLines).
-		await send({ to: d.to, text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}) }] }), ...(d.reply_to ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}) });
+		await send({ to: d.to, text, notice: item.id, ...(d.to.startsWith("auth:") ? {} : { picks: [{ q: item.title, n: o.n, label: o.label, ...(asksDetail ? { note } : {}) }] }), ...(d.reply_to ? { replyTo: d.reply_to } : {}), ...(o.action ? { action: o.action } : {}), ...(draftEdit && body.files?.length ? { files: body.files } : {}) });   // files: what 직접 수정 attached, for the bot to put on the draft
 		settleDecision(item, label);
 	} catch (err) {
 		return { status: 409, body: { error: (err as Error).message } };
