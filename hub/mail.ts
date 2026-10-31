@@ -590,7 +590,8 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps, r
 	const event = { ts: at, kind: "mail", source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), ...(html ? { html: true } : {}), text: mailText(m) };
 	deps.emit(event);
 	if (m.wake) deps.wake(event, thread ? `th:${thread}` : target);
-	try {
+	// A reply draft is offered only for a mail that needs a reply (the same `needs`); his own 초안 만들기 (requestDraft) is not gated.
+	if (needs) try {
 		deps.offerDraft?.({ key, target, ...(thread ? { thread } : {}), ...(m.messageId ? { messageId: m.messageId } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}), ...(realFiles(attachments).length ? { attachments: realFiles(attachments) } : {}) });
 	} catch (error) {
 		log(`mail ${key}: reply draft offer failed: ${(error as Error).message}`);

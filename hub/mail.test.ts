@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test";
 import "./conversations.ts"; // listens to the event bus: the first message of a mail conversation gives the mail its summary
 import { emit, eventTarget, type HubEvent } from "./events.ts";
 import { MailError, mailKeep, answeredBy, attachmentList, mailBriefOf, settleMailDrafts, mailByKey, mailByThread, mailCard, mailKey, mailTarget, mailTargets, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
+import { setOwnAddresses } from "./mail-state.ts";
 import { outEvent } from "./projectchat.ts";
 
 function fakes(discordOn: boolean, channel: string | undefined = "1561565203714408448", threadOn: MailDeps["threadOn"] = () => true) {
@@ -182,6 +183,23 @@ describe("postMail", () => {
 		expect(calls.events).toHaveLength(2);
 	});
 
+	test("offerDraft: only a mail that needs a reply gets a draft offered; a CC copy, list mail or a notice gets none", async () => {
+		const { deps } = fakes(false);
+		const offers: string[] = [];
+		deps.offerDraft = m => void offers.push(m.subject);
+		setOwnAddresses("test", ["owner@example.com"]);
+		try {
+			const ask = { source: "zele", from: "kim@example.com", body: "검토 부탁드립니다" };
+			await postMail({ ...ask, id: uid("g"), subject: "to", to: "owner@example.com" }, deps);
+			await postMail({ ...ask, id: uid("g"), subject: "cc", to: "lee@example.com", cc: "owner@example.com" }, deps);
+			await postMail({ ...ask, id: uid("g"), subject: "list", to: "team@example.com" }, deps);
+			await postMail({ ...ask, id: uid("g"), subject: "[공지] 일정", to: "owner@example.com" }, deps);
+			expect(offers).toEqual(["to"]);
+		} finally {
+			setOwnAddresses("test", []);
+		}
+	});
+
 	test("a suggested reply draft is kept on the mail record and can be cleared; an unknown mail takes none", async () => {
 		const { deps } = fakes(false);
 		const r = await postMail({ source: "zele", id: uid("sg"), subject: "회의 일정 문의", from: "kim@example.com" }, deps);
@@ -322,7 +340,7 @@ describe("a repeat post completes the record", () => {
 		let offered: { attachments?: { name: string }[] } | undefined;
 		deps.offerDraft = m => void (offered = m);
 		const id = uid("pic");
-		await postMail({ source: "zele", id, subject: "그림", from: "a@example.com", html: "<img src=\"cid:p2\">", attachments: [{ name: "logo.png", data: PNG, cid: "p2" }, { name: "자료.xlsx", data: PNG }, { name: "unused.png", data: PNG, cid: "not-in-body" }] }, deps);
+		await postMail({ source: "zele", id, subject: "그림", from: "a@example.com", body: "자료 검토 부탁드립니다", html: "<img src=\"cid:p2\">", attachments: [{ name: "logo.png", data: PNG, cid: "p2" }, { name: "자료.xlsx", data: PNG }, { name: "unused.png", data: PNG, cid: "not-in-body" }] }, deps);
 		expect(attachmentList(mailByKey(mailKey("zele", id))!).map(a => [a.name, !!a.inline])).toEqual([["logo.png", true], ["자료.xlsx", false], ["unused.png", false]]);
 		expect(offered?.attachments?.map(a => a.name)).toEqual(["자료.xlsx", "unused.png"]);
 	});
