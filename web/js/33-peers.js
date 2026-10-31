@@ -3,7 +3,10 @@
 // and appears only with 2 or more, with a dot on its chevron while another computer has something unread (the counts live in the sheet rows); the sheet lists them; choosing one opens that computer's own address (its own PWA, login and push).
 // The last list that arrived is kept in localStorage and drawn at once: coming back from the other computer the page starts from the service worker's
 // cached shell before the phone's network is up, and a first /api/peers that failed left the chip hidden until the next minute. A failed fetch is retried within seconds.
-const prCached = () => { const l = lsJson("dotz-peers", []); return Array.isArray(l) ? l.filter(p => p && typeof p.name === "string" && typeof p.url === "string") : []; };
+// One order on every computer: each gateway lists itself first, so "the one after me" from its own list sent A to B and B back to A
+// with three or more (owner 2026-10-31). The list is ordered by address (unique and the same everywhere), for the sheet and Ctrl+` alike.
+function prOrder(list) { return [...list].sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0)); }
+const prCached = () => { const l = lsJson("dotz-peers", []); return Array.isArray(l) ? prOrder(l.filter(p => p && typeof p.name === "string" && typeof p.url === "string")) : []; };
 const PR = { list: prCached(), node: null, ov: null, opener: null, tries: 0, timer: 0, fresh: false };
 const PR_RETRY_MS = [2000, 5000, 15000];
 const prSelf = () => PR.list.find(p => p.self);
@@ -12,7 +15,7 @@ const prText = p => [p.need > 0 ? `답변 필요 ${p.need}` : "", p.unread > 0 ?
 
 async function prLoad() {
   try {
-    const r = await api("/api/peers"); PR.list = Array.isArray(r) ? r : []; PR.tries = 0; PR.fresh = true;
+    const r = await api("/api/peers"); PR.list = Array.isArray(r) ? prOrder(r) : []; PR.tries = 0; PR.fresh = true;
     try { localStorage.setItem("dotz-peers", JSON.stringify(PR.list.map(({ name, url, self, online }) => ({ name, url, self, online })))); } catch {}
   } catch {
     clearTimeout(PR.timer);
@@ -222,20 +225,20 @@ const mnRow = () => MN.info && el("button", { class: "li tap", type: "button", o
 mnLoad();
 
 $("#pchip").onclick = prOpen;
-// ⌘` (Ctrl+` elsewhere) goes straight to the next computer in the sheet's order, wrapping round, skipping ones that are offline, with no sheet.
-// macOS keeps ⌘` for cycling an app's windows, so Ctrl+` also works on a Mac.
+// ⌘` (Ctrl+` elsewhere) goes straight to the next computer in the sheet's order, wrapping round, skipping ones that are offline, with no sheet;
+// with Shift it goes the other way. macOS keeps ⌘` for cycling an app's windows, so Ctrl+` also works on a Mac.
 const prKeyHint = isMac ? "⌘` · Ctrl+`" : "Ctrl+`";
-function prNext() {
-  const n = PR.list.length, at = PR.list.findIndex(p => p.self);
+function prNext(step = 1) {
+  const l = prOrder(PR.list), n = l.length, at = l.findIndex(p => p.self);
   if (n < 2 || at < 0) return false;
-  const next = Array.from({ length: n - 1 }, (_, i) => PR.list[(at + 1 + i) % n]).find(p => p.online || selfDown);
+  const next = Array.from({ length: n - 1 }, (_, i) => l[(((at + step * (1 + i)) % n) + n) % n]).find(p => p.online || selfDown);
   if (next) prPick(next); else toast("다른 컴퓨터에 연결할 수 없어요", true);
   return true;
 }
 document.addEventListener("keydown", ev => {
-  if (ev.isComposing || ev.altKey || ev.shiftKey || !(ev.ctrlKey || (isMac && ev.metaKey)) || (ev.code !== "Backquote" && ev.key !== "`")) return;
+  if (ev.isComposing || ev.altKey || !(ev.ctrlKey || (isMac && ev.metaKey)) || (ev.code !== "Backquote" && ev.key !== "`" && ev.key !== "~")) return;
   if (document.querySelector("dialog[open]")) return;
-  if (prNext()) ev.preventDefault();
+  if (prNext(ev.shiftKey ? -1 : 1)) ev.preventDefault();
 });
 // Tapping 홈 again while on 홈 opens the computer sheet (like the 채팅 tab's re-tap, 04-state.js chatTabTap) and the next tap closes it; with one gateway the tab behaves as before.
 const homeTabTap = () => { if (PR.node) prClose(); else if (current === "home" && PR.list.length >= 2) prOpen(); else go("home"); };
