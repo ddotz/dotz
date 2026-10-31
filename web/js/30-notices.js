@@ -380,7 +380,7 @@ async function ntAskSheet(n) {
 // A draft waiting for send approval (hub/draft-approval.ts): the same sheet, built from the notice itself, with the draft above the three choices.
 function ntDraftSheet(n) {
   const d = n.decision;
-  dkOpen({ key: `dk:${n.id}`, t: d.to, sig: `dk:${n.id}`, at: d.reply_to || n.at || "", question: "", blocks: [{ title: n.title, options: d.options }] }, d.draft, String(n.id), n);
+  dkOpen({ key: `dk:${n.id}`, t: d.to, sig: `dk:${n.id}`, at: d.reply_to || n.at || "", question: "", blocks: [{ title: n.title, options: d.options }], left: draftLeft(n.text) }, d.draft, String(n.id), n);
 }
 // An entry that comes from a session names its parent project and status, in the words of sessionRow.
 function ntLaneNote(n) {
