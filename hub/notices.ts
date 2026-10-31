@@ -729,7 +729,7 @@ export function authRequested(a: { id: string; kind: "secret" | "otp" | "approve
 	const first: DecisionOpt = a.kind === "approve" ? { n: 1, label: "승인", desc: "", rec: true, action: "approve" } : { n: 1, label: "입력하기", desc: "", rec: true, action: "form" };
 	putDecision({ key: `auth:${a.id}`, title: a.title, detail: `${a.purpose}\n사이트: ${a.site}`.slice(0, TEXT_MAX), to: `auth:${a.id}`, open: "main", options: [first, { n: 2, label: "취소", desc: "", rec: false, action: "cancel" }], group: 1 }, now());
 }
-const AUTH_DONE_WORDS: Record<string, string> = { approved: "승인했어요", entered: "입력했어요", cancelled: "취소했어요", timeout: "시간이 지나 닫혔어요" };
+const AUTH_DONE_WORDS: Record<string, string> = { approved: "승인했어요", entered: "입력했어요", cancelled: "취소했어요", timeout: "시간이 지나 닫혔어요", failed: "저장하지 못했어요" };
 export function authSettled(id: string, status: string): void {
 	const item = items.find(i => i.key === `auth:${id}`);
 	if (item) settleDecision(item, AUTH_DONE_WORDS[status] ?? "끝났어요");

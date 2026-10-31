@@ -1,11 +1,16 @@
 // A password or other personal value the owner gives through dotz_auth never lies on disk as plain text (owner 2026-10-28: "로컬에 패스워드
 // 두는거는 암호화해서 둬야해"). The file under <data dir>/secrets holds `dotzenc1:` + base64(iv | tag | ciphertext), AES-256-GCM with the
-// file's own name as associated data (a file copied under another name does not open). The 32-byte key lives only in the macOS login
-// Keychain (service dotz.secrets, account key), made on first use and written through `security -i` stdin, never argv. Reading goes
+// file's own name as associated data (a file copied under another name does not open). On macOS the 32-byte key lives only in the login
+// Keychain (service dotz.secrets, account key), made on first use and written through `security -i` stdin, never argv. Where there is no
+// `security` (Linux, WSL) the key file $XDG_CONFIG_HOME/dotz/secret.key (default ~/.config, dir 0700, file 0600) decides, outside the
+// data dir so the key never travels with a copy of it: it holds the key itself, or the word `secret-tool` when the key went into the
+// desktop keyring (libsecret, used when it stores and reads back at first use). The file is made once and never replaced, so values
+// sealed with one key never meet another. Reading goes
 // through readSecretFile (the gateway) or `bun hub/secrets-cli.ts get <name>` (the bot's scripts), which also read an older plain file.
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, join } from "node:path";
 
 const SERVICE = "dotz.secrets";
 const ACCOUNT = "key";
@@ -14,12 +19,72 @@ const PREFIX = "dotzenc1:";
 let key: Buffer | undefined;
 // Under bun test (hub/runtime/test-setup.ts) a throwaway key, so a test run never reads or makes the machine's Keychain item.
 const testKey = process.env.DOTZ_TEST_DIR && /^[0-9a-f]{64}$/.test(process.env.SECRETBOX_TEST_KEY ?? "") ? Buffer.from(process.env.SECRETBOX_TEST_KEY!, "hex") : undefined;
-let keySource = (create: boolean): Buffer => testKey ?? keychainKey(create);
-/** Tests give their own key; production reads (and on first need makes) the Keychain one. */
-export const setSecretKey = (k: Buffer | undefined): void => {
+let keySource = (create: boolean): Buffer => testKey ?? systemKey(create);
+/** Tests give their own key (or key source); production reads (and on first need makes) the Keychain or key-file one. */
+export const setSecretKey = (k: Buffer | ((create: boolean) => Buffer) | undefined): void => {
 	key = undefined;
-	keySource = k ? () => k : keychainKey;
+	keySource = typeof k === "function" ? k : k ? () => k : create => systemKey(create);
 };
+
+/** The libsecret keyring through `secret-tool`; lookup gives the stored hex or undefined, store reports whether it took the value. */
+export type Keyring = { lookup: () => string | undefined; store: (hex: string) => boolean };
+export type KeyEnv = { platform: string; which: (bin: string) => string | null; keyFile: string; keyring?: Keyring };
+const HEX = /^[0-9a-f]{64}$/;
+const MARK = "secret-tool";
+const run = (argv: string[], stdin?: string) => {
+	try {
+		return Bun.spawnSync(argv, { stdin: stdin === undefined ? "ignore" : Buffer.from(stdin), timeout: 10_000 });
+	} catch {
+		return undefined;
+	}
+};
+const secretTool: Keyring = {
+	lookup: () => {
+		const r = run(["secret-tool", "lookup", "service", SERVICE, "account", ACCOUNT]);
+		const hex = r?.exitCode === 0 ? r.stdout.toString().trim() : "";
+		return HEX.test(hex) ? hex : undefined;
+	},
+	store: hex => run(["secret-tool", "store", "--label=dotz secrets", "service", SERVICE, "account", ACCOUNT], hex)?.exitCode === 0,
+};
+const hostEnv = (): KeyEnv => ({
+	platform: process.platform,
+	which: bin => Bun.which(bin),
+	keyFile: join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "dotz", "secret.key"),
+	keyring: Bun.which("secret-tool") ? secretTool : undefined,
+});
+/** The macOS Keychain when `security` is there (unchanged macOS behaviour), otherwise what the key file says. */
+export function systemKey(create: boolean, env: KeyEnv = hostEnv()): Buffer {
+	return env.platform === "darwin" && env.which("security") ? keychainKey(create) : fileKey(env, create);
+}
+
+function fileKey({ keyFile: file, keyring }: KeyEnv, create: boolean): Buffer {
+	const read = (): Buffer | undefined => {
+		if (!existsSync(file)) return undefined;
+		const text = readFileSync(file, "utf8").trim();
+		if (HEX.test(text)) return Buffer.from(text, "hex");
+		if (text !== MARK) throw new Error(`the secrets key file ${file} is damaged (not a key)`);
+		const hex = keyring?.lookup();
+		if (!hex) throw new Error(`the secrets key is not readable from the keyring (secret-tool, service ${SERVICE}); ${file} points there`);
+		return Buffer.from(hex, "hex");
+	};
+	const have = read();
+	if (have) return have;
+	if (!create) throw new Error(`the secrets key file ${file} is missing`);
+	mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+	chmodSync(dirname(file), 0o700);
+	const hex = randomBytes(32).toString("hex");
+	const inKeyring = !!keyring && keyring.store(hex) && keyring.lookup() === hex;
+	try {
+		// wx: two processes making the key at once keep the first file; both then read it back, so neither seals with a lost key.
+		writeFileSync(file, `${inKeyring ? MARK : hex}\n`, { mode: 0o600, flag: "wx" });
+		chmodSync(file, 0o600);
+	} catch (e) {
+		if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
+	}
+	const made = read();
+	if (!made) throw new Error(`could not store the secrets key in ${file}`);
+	return made;
+}
 
 function keychainKey(create: boolean): Buffer {
 	const read = () => {

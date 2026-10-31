@@ -154,7 +154,7 @@ function authTool(pi: any, lane?: string): void {
 			};
 			for (;;) {
 				if (signal?.aborted) return cancel();
-				let r: { status: string; path?: string; take?: string; keys?: string[]; once?: boolean };
+				let r: { status: string; path?: string; take?: string; keys?: string[]; once?: boolean; error?: string };
 				try {
 					r = await call(`/api/auth/${id}?wait=50`, { signal });
 				} catch (e: unknown) {
@@ -174,6 +174,7 @@ function authTool(pi: any, lane?: string): void {
 					const h = hub();
 					return text(`The owner entered the ${p.site} OTP code. Take it once, within 5 minutes, and pipe it straight into the consumer without printing it: curl -s -H "x-dotz-token: $(cat ${join(DATA, "secrets", "hub-token")})" ${h?.url ?? ""}${r.take ?? `/api/auth/${id}/take`}`);
 				}
+				if (r.status === "failed") return text(`The owner answered the ${p.site} request, but the gateway could not store it (${r.error ?? "store failed"}). Nothing was saved; tell the owner, and ask again once that is fixed.`);
 				return text(`Auth request for ${p.site}: ${r.status}.`);
 			}
 		},
