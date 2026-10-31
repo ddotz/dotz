@@ -50,7 +50,7 @@ import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
 import { mailByKey, mailByThread, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailSuggest, type MailDeps } from "./mail.ts";
-import { ownAddresses } from "./mail-state.ts";
+import { ownAddresses, replyExpected } from "./mail-state.ts";
 import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/offer.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
 import { readMailBody } from "../features/reply-drafts/lib/senders.ts";
@@ -264,8 +264,12 @@ classifyStoredMails();
 
 void startZele({
 	alert,
+	// Only a mail that needs his reply (hub/mail-state.ts replyExpected: his address in To, no notice, a request) wakes the orchestrator;
+	// a copy (CC / BCC), list mail or a notice is listed in the mail app and nothing more.
 	mail: async m => {
-		await postMail({ source: "zele", id: m.id, messageId: m.message, from: m.from, to: m.to, ...(m.cc ? { cc: m.cc } : {}), subject: m.subject.trim() || "(제목 없음)", summary: m.snippet, wake: true }, mailDeps()).catch(e => log(`zele: mail ${m.id} not posted: ${(e as Error).message}`));
+		const subject = m.subject.trim() || "(제목 없음)";
+		const wake = replyExpected({ from: m.from, to: m.to, cc: m.cc, subject, text: m.snippet });
+		await postMail({ source: "zele", id: m.id, messageId: m.message, from: m.from, to: m.to, ...(m.cc ? { cc: m.cc } : {}), subject, summary: m.snippet, wake }, mailDeps()).catch(e => log(`zele: mail ${m.id} not posted: ${(e as Error).message}`));
 	},
 	// The owner's own mail: listed as 내가 보냄, never new; a thread he answered becomes 답장함 (hub/mail-state.ts).
 	sent: async m => {

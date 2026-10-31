@@ -184,6 +184,15 @@ describe("does an incoming mail expect a reply", () => {
 		expect(m("검토 요청", "검토 부탁드립니다", { to: "Lee <lee@example.com>", cc: "Owner <owner@example.com>" })).toBe(false);
 		expect(m("검토 요청", "검토 부탁드립니다", { to: "Owner <owner@example.com>" })).toBe(true);
 	});
+	test("only a mail with his address in To needs a reply: CC only, a group / list mail or a notice does not", () => {
+		const ask = (to: string, cc = "", subject = "검토 요청") => m(subject, "검토 부탁드립니다", { to, ...(cc ? { cc } : {}) });
+		expect(ask("Owner <owner@example.com>, Lee <lee@example.com>")).toBe(true);
+		expect(ask("Lee <lee@example.com>", "Owner <owner@example.com>")).toBe(false);
+		expect(ask("Team <team@example.com>")).toBe(false);
+		expect(ask("Team <team@example.com>", "Lee <lee@example.com>")).toBe(false);
+		expect(ask("Owner <owner@example.com>", "", "[공지] 일정 변경")).toBe(false);
+		expect(ask("Owner <owner@example.com>", "", "Notice: maintenance window")).toBe(false);
+	});
 	test("the stored mails get it once, only within 30 days, and a second pass changes nothing", () => {
 		const base = { from: "Kim <kim@example.com>", subject: "견적 요청", summary: "**할 일** • 견적서 회신" };
 		const recs: StoredMail[] = [{ ...base, key: "a", at: "2026-10-24T00:00:00Z" }, { ...base, key: "old", at: "2026-08-01T00:00:00Z" }, { ...base, key: "fyi", at: "2026-10-24T00:00:00Z", reply: "fyi" }];

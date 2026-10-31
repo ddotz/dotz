@@ -49,10 +49,11 @@ export function nextReply(cur: MailReply | undefined, ev: MailReplyEvent): MailR
 // ---- does this incoming mail expect a reply? ----
 // The poster may say so (`needsReply`); otherwise the gateway reads the mail itself, so 답장 필요 does not depend on a watcher or a bot
 // remembering to mark it (owner 2026-10-27: every mail of the company webmail sat at no state). Conservative on purpose: a sender that
-// is a machine or a mailing list, a bulk subject, an unsubscribe footer, or a copy where the owner is only in CC never expects one; else
+// is a machine or a mailing list, a bulk subject, an announcement or automated notice, an unsubscribe footer, or a mail whose To does not
+// name one of the owner's addresses (he is only in CC / BCC, or it went to a group / distribution list) never expects one; else
 // a request in the subject or the text does (asks, questions, deadlines), and a mail that only delivers an answer does not.
 const MACHINE_SENDER = /no-?reply|do-?not-?reply|mailer-daemon|postmaster|administrator|notification|newsletter|news@|marketing|알림|공지/i;
-const BULK_SUBJECT = /^\s*[[(]?\s*(?:광고|ad|advertisement)\s*[\])]|스팸\s*리포트|spam report|뉴스레터|newsletter|시황|일일\s*(?:보고|리포트)|weekly digest|webinar|웨비나|unsubscribe|수신\s*거부/i;
+const BULK_SUBJECT = /^\s*[[(]?\s*(?:광고|ad|advertisement)\s*[\])]|스팸\s*리포트|spam report|뉴스레터|newsletter|시황|일일\s*(?:보고|리포트)|weekly digest|webinar|웨비나|unsubscribe|수신\s*거부|공지|공고|announcement|notice|out of office|부재\s*중|자동\s*(?:응답|발송)|auto-?reply/i;
 const BULK_TEXT = /수신\s*거부|unsubscribe|더 이상 받지 않|광고성 정보|this email was sent to/i;
 const ASKS = /요청|부탁|회신\s*(?:바랍|부탁|주|요망|해)|답변\s*(?:바랍|부탁|주|요망|해)|답장\s*(?:바랍|부탁|주)|문의|검토\s*(?:해|부탁|요청|후|바랍)|확인\s*(?:부탁|요청|해\s*주|바랍|하시고)|의견\s*(?:을|주|부탁|바랍)|제출\s*(?:해|부탁|바랍|요망)|견적|주시기\s*바랍|주시면|주세요|해\s*주실|해\s*주시|가능(?:하신지|할까요|한지|하실까요)|어떻게\s*생각|까지\s*(?:회신|제출|송부|보내)|[?？]|please|could you|can you|would you|let me know|request|kindly|asap/i;
 const TODO = /할\s*일[\s\S]*/;
@@ -66,8 +67,8 @@ export function replyExpected(m: ReplyCue, own: ReadonlySet<string> = ownAddress
 	const text = (m.text ?? "").slice(0, 4000);
 	if (BULK_TEXT.test(text)) return false;
 	const inTo = (m.to ?? "").split(",").some(t => own.has(addressKey(t)));
-	const inCc = (m.cc ?? "").split(",").some(t => own.has(addressKey(t)));
-	if (own.size && m.to && !inTo && inCc) return false;
+	// Only a mail addressed to him (his address in To) expects his reply; without a To or before his addresses are known, the text decides.
+	if (own.size && m.to && !inTo) return false;
 	// The mail summary ends with what the owner has to do ("할 일"): when it is there, it decides. A reply is owed when one of those
 	// things goes back to the sender (회신, 제출, 작성해 보내기, 참석 여부...); "없음" or only reading and checking owes none.
 	const todo = TODO.exec(text)?.[0];
