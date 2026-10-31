@@ -871,7 +871,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (laneResponse) return laneResponse;
 		return new Response("not found", { status: 404 });
 	};
-	const peers = createPeerMonitor({ name: () => resolveName(cfg.web?.machine_name, machineHost()), local: route, localHeaders: { "x-dotz-token": HUB_TOKEN }, orchestrator: () => ({ status: orch.status, pauseKind: orch.pauseKind }), runs: () => Object.fromEntries(Object.entries(stateRuns()).filter(([k]) => k.startsWith("mail:"))) });
+	const peers = createPeerMonitor({ name: () => resolveName(cfg.web?.machine_name, machineHost()), bot: () => NAME, local: route, localHeaders: { "x-dotz-token": HUB_TOKEN }, orchestrator: () => ({ status: orch.status, pauseKind: orch.pauseKind }), runs: () => Object.fromEntries(Object.entries(stateRuns()).filter(([k]) => k.startsWith("mail:"))) });
 	activatePeerMonitor(peers);
 	return route;
 }

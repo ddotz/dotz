@@ -12,6 +12,9 @@ const pqSelf = () => (prSelf() || {}).name || (MN.info || {}).name || "";
 const pqLabel = it => { const n = it && it.pc ? it.pc.name : pqSelf(); return n ? el("span", { class: "mon-pc", text: n }) : null; };
 const pqSig = sel => [pqSelf(), sel.pc ? sel.pc.name : ""];
 // Function declarations (hoisted): api() calls pqRoute before this file's top level has run.
+// The computer an item of the snapshot `p` came from, as every peer item carries it: its machine name, address and its own bot's name
+// (the snapshot's `bot`, hub/peer-monitor.ts; the machine name for an older gateway without it), never this computer's bot.
+function pqPcOf(p) { return { name: p.name, url: p.url, bot: (p.items && p.items.bot) || p.name }; }
 function pqPc(t) { return (PQ.of.get(String(t)) || {}).pc || null; }
 function pqProxy(pc, path) { return `/api/peer/proxy?pc=${enc(pc.url)}&p=${enc(path)}`; }
 // An app of another computer is named `<key>~<hash of that computer>` here (its key may also be an app of this one); the computer gets the plain key.
@@ -201,7 +204,7 @@ function pqMerge(items) {
   if (!peers.length) return items;
   const apps = [], plain = [], off = [], news = [];
   for (const p of peers) {
-    const pc = { name: p.name, url: p.url }, s = p.items, key = k => `p:${p.url}|${k}`;
+    const pc = pqPcOf(p), s = p.items, key = k => `p:${p.url}|${k}`;
     if (!s) { off.push({ key: key("off"), group: MON_GROUP.plain, name: `${p.name} · 연결 안 됨`, ic: "activity", notices: [], mails: [], unread: 0, hint: "", at: "", pc, off: true }); continue; }
     const chips = [[p.name, ""], ...(p.online ? [] : [["연결 안 됨", "warn"]])], sn = (s.notices || []).map(n => ({ ...n, pc })), shown = new Set();
     const owned = monOwnedBy(s.integrations || [], s.monitors || []), ownedNames = new Set([...owned.values()].flat());

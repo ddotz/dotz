@@ -20,11 +20,13 @@ export type Computer = { name: string; url: string; self: boolean };
 export type OrchestratorPause = { status: string; pauseKind: string };
 // `runs`: the run state of that gateway's mail conversations (`mail:<key>`), so a mail opened here shows what its bot is doing there.
 // `replies`: the reply drafts its apps keep in their own stores (GET /api/replies: KakaoTalk rooms, comment sources), for the 답장 확인 queue here.
-export type Snapshot = { name: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause; runs?: Record<string, unknown>; replies?: unknown[] };
+// `bot`: that gateway's own bot name, so its items name their main chat after it on the computer that shows them (never that computer's bot).
+export type Snapshot = { name: string; bot?: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause; runs?: Record<string, unknown>; replies?: unknown[] };
 export type PeerView = { name: string; url: string; online: boolean; stale: boolean; items: Snapshot | null };
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 export type MonitorDeps = {
 	name: () => string;                                       // this gateway's machine name
+	bot?: () => string;                                       // this gateway's bot name (config NAME)
 	local: (req: Request) => Promise<Response>;               // this gateway's own handler chain (the same one the web app talks to)
 	localHeaders?: Record<string, string>;                    // what makes a local request pass the owner check
 	orchestrator?: () => OrchestratorPause;                   // this gateway's orchestrator status, read when the snapshot is built
@@ -108,13 +110,13 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 	const read = async (path: string): Promise<any> => (await ask("GET", path)).json();
 
 	const PARTS = ["/api/monitors", "/api/notices?limit=100", "/api/integrations", "/api/conversations"];
-	const build = (name: string, [m, n, i, c]: any[], replies?: unknown[]): Snapshot => {
-		const part = { name, monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv), ...(deps.orchestrator ? { orchestrator: deps.orchestrator() } : {}), ...(deps.runs ? { runs: deps.runs() } : {}), ...(replies ? { replies } : {}) };
+	const build = (name: string, [m, n, i, c]: any[], replies?: unknown[], bot?: string): Snapshot => {
+		const part = { name, ...(bot ? { bot } : {}), monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv), ...(deps.orchestrator ? { orchestrator: deps.orchestrator() } : {}), ...(deps.runs ? { runs: deps.runs() } : {}), ...(replies ? { replies } : {}) };
 		return { ...part, rev: createHash("sha1").update(JSON.stringify(part)).digest("hex").slice(0, 12) };
 	};
 	// The reply drafts are optional: a handler without /api/replies (or one that fails) leaves them out instead of failing the snapshot.
 	const replies = async (): Promise<unknown[] | undefined> => { try { const r = await ask("GET", "/api/replies"); return r.ok ? ((await r.json()) as { items?: unknown[] }).items ?? [] : undefined; } catch { return undefined; } };
-	const snapshot = async (): Promise<Snapshot> => { const [parts, rs] = await Promise.all([Promise.all(PARTS.map(read)), replies()]); return build(deps.name(), parts, rs); };
+	const snapshot = async (): Promise<Snapshot> => { const [parts, rs] = await Promise.all([Promise.all(PARTS.map(read)), replies()]); return build(deps.name(), parts, rs, deps.bot?.()); };
 
 	// An older peer (404 on /api/peer/monitoring) or no shared token here: the four plain reads, which the peer allows through the owner's
 	// tailnet identity like the computer switcher's reads. Read-only: forwarded actions always need the token.
