@@ -12,8 +12,9 @@
 // only with --open. An interactive run with web logins also runs tailscale serve. Re-running keeps every answer as the default.
 //   bun setup.ts [--answers answers.json] [--load] [--tailscale] [--open] [--no-discord-auto] [--dir ~/.dotz]
 // Onboarding ends with the macOS permissions step (onboard/permissions.ts): bun is what launchd runs, so the prompts and
-// the Settings entries are for bun. Interactive runs ask for them; --answers runs only print their state. Standalone, safe to rerun:
-//   bun setup.ts permissions [--check]     (--check only prints the state, never raises a dialog)
+// the Settings entries are for bun. Interactive runs and `permissions` turn what they can on themselves (prompts, panes, switches);
+// only a step macOS keeps for a person is printed, once. --answers runs only print the state. Standalone, safe to rerun:
+//   bun setup.ts permissions [--check]     (--check only prints the state, never raises a dialog; exit 3 = an owner step is left)
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { homedir, hostname } from "node:os";
@@ -415,7 +416,8 @@ ${id.avatar ? `- Avatar: ${id.avatar}\n` : ""}
 if (args[0] === "permissions") {
 	const probeBun = process.execPath;
 	if (flag("--check")) printPermissions(probeBun, await checkPermissions(probeBun));
-	else await requestPermissions(probeBun, q => ask(q, "", false));
+	// Exit 3: a step macOS keeps for a person is left; its one exact step was printed (the bot asks it once).
+	else if ((await requestPermissions(probeBun, q => ask(q, "", false))).length) process.exit(3);
 	process.exit(0);
 }
 
@@ -517,7 +519,7 @@ if (tsNow?.running) {
 if (MAC && answersFile) {
 	console.log("macOS 권한 상태 (bun 이 launchd 로 도는 프로그램이라 bun 앞으로 묻고 허용돼요):");
 	printPermissions(bun, await checkPermissions(bun));
-	console.log("권한을 허용하려면 터미널에서 bun setup.ts permissions 를 실행하세요.");
+	console.log("빠진 권한은 bun setup.ts permissions 로 켜요: 창을 열고 스위치와 허용까지 직접 눌러요 (종료 코드 3이면 사람이 할 한 단계만 남은 거예요).");
 } else if (MAC) {
 	console.log("\nmacOS 권한. 게이트웨이가 쓰는 권한을 지금 한 번에 허용해요 (나중에 bun setup.ts permissions 로 다시 할 수 있어요).");
 	await requestPermissions(bun, q => ask(q, "", false));

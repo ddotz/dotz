@@ -10,6 +10,7 @@
 // - The KakaoTalk id and password live only in the macOS Keychain; no plaintext copy is kept. They never
 //   appear in argv, logs, prompts or messages.
 import { join } from "node:path";
+import { refuseRealUi } from "../../onboard/selfserve.ts";
 
 export type RunResult = { code: number; stdout: string; stderr: string };
 export type RunOpts = { stdin?: string; timeoutMs?: number; env?: Record<string, string> };
@@ -17,6 +18,7 @@ export type RunOpts = { stdin?: string; timeoutMs?: number; env?: Record<string,
 export type Runner = (argv: string[], opts?: RunOpts) => Promise<RunResult>;
 
 export const defaultRunner: Runner = async (argv, opts = {}) => {
+	refuseRealUi(argv);
 	const proc = Bun.spawn(argv, {
 		stdin: opts.stdin === undefined ? "ignore" : new Blob([opts.stdin]),
 		stdout: "pipe",

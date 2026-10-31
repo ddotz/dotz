@@ -83,7 +83,7 @@ function machine(bins: Record<string, string>) {
 		const file = join(root, "answers.json");
 		writeFileSync(file, JSON.stringify(answers));
 		const p = Bun.spawn([process.execPath, SETUP, "--answers", file], {
-			env: { HOME: home, PATH: `${bin}:/usr/bin:/bin`, LANG: "C" },
+			env: { HOME: home, PATH: `${bin}:/usr/bin:/bin`, LANG: "C", DOTZ_NO_REAL_UI: "1" },
 			stdin: "ignore",
 			stdout: "pipe",
 			stderr: "pipe",
