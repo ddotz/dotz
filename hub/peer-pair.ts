@@ -5,6 +5,8 @@
 //   issued here  : <data dir>/secrets/peer-pairs/in/<hash of the asker's origin>   (tokens this gateway accepts)
 //   received     : <data dir>/secrets/peer-pairs/out/<hash of the peer's origin>   (the token this gateway sends to that peer)
 // Both files are 0600. A new pairing request from the same origin replaces its token, so a lost or stale token heals itself.
+// Pairing also binds the two gateways to each other: <pairDir>/bound.json maps the peer's host name to the dotz URL it paired from/with,
+// so discovery (hub/peers.ts) asks that URL first instead of guessing ports (the same port can be another app on another computer).
 import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,6 +15,7 @@ import { DATA_DIR } from "./config.ts";
 export const pairDir = (dataDir: string = DATA_DIR) => join(dataDir, "secrets", "peer-pairs");
 export const PAIR_PATH = "/api/peer/pair";
 const MAX_ISSUED = 32;
+const MAX_BOUND = 32;
 const MIN_TOKEN = 16;
 const FAIL_COOLDOWN_MS = 60_000;
 const FORCE_COOLDOWN_MS = 10_000;
@@ -43,11 +46,48 @@ function readToken(path: string): string | undefined {
 	}
 }
 
-function save(path: string, token: string): void {
+function save(path: string, data: string): void {
 	mkdirSync(join(path, ".."), { recursive: true, mode: 0o700 });
 	const tmp = `${path}.${process.pid}.tmp`;
-	writeFileSync(tmp, token, { mode: 0o600 });
+	writeFileSync(tmp, data, { mode: 0o600 });
 	renameSync(tmp, path);
+}
+
+export type Bound = { url: string; name?: string; at: number };
+const hostKey = (h: string) => h.trim().toLowerCase().replace(/\.$/, "");
+
+// Peers this gateway is bound to, by host name (lowercase, no trailing dot).
+export function boundPeers(dir: string = pairDir()): Record<string, Bound> {
+	try {
+		const raw = JSON.parse(readFileSync(join(dir, "bound.json"), "utf8")) as Record<string, Partial<Bound>>;
+		const out: Record<string, Bound> = {};
+		for (const [h, b] of Object.entries(raw)) {
+			const url = typeof b?.url === "string" ? originOf(b.url) : undefined;
+			if (url) out[h] = { url, at: typeof b.at === "number" ? b.at : 0, ...(typeof b.name === "string" && b.name ? { name: b.name } : {}) };
+		}
+		return out;
+	} catch {
+		return {};
+	}
+}
+
+export const boundPeer = (host: string, dir: string = pairDir()): Bound | undefined => boundPeers(dir)[hostKey(host)];
+
+// Remembers that `host` is the dotz gateway at `url`. A missing name keeps the one on record; an unchanged record is not rewritten.
+// Best effort: a failed write never breaks pairing or discovery (the next scan binds again).
+export function bindPeer(host: string, url: string, name?: string, dir: string = pairDir(), now: number = Date.now()): void {
+	const origin = originOf(url);
+	const key = hostKey(host);
+	if (!origin || !key) return;
+	try {
+		const all = boundPeers(dir);
+		const prev = all[key];
+		const nextName = name || prev?.name;
+		if (prev && prev.url === origin && prev.name === nextName) return;
+		all[key] = { url: origin, at: now, ...(nextName ? { name: nextName } : {}) };
+		const keep = Object.entries(all).sort((a, b) => b[1].at - a[1].at).slice(0, MAX_BOUND);
+		save(join(dir, "bound.json"), JSON.stringify(Object.fromEntries(keep)));
+	} catch {}
 }
 
 // Tokens this gateway issued to its paired peers.
@@ -87,7 +127,10 @@ export async function handlePair(req: Request, o: { ownLogin: () => Promise<stri
 	const b = (await req.json().catch(() => ({}))) as { origin?: unknown };
 	const origin = typeof b.origin === "string" ? originOf(b.origin) : undefined;
 	if (!origin) return Response.json({ error: "origin required" }, { status: 400 });
-	return Response.json({ token: issueToken(origin, o.dir ?? pairDir()) });
+	const dir = o.dir ?? pairDir();
+	const token = issueToken(origin, dir);
+	bindPeer(new URL(origin).hostname, origin, undefined, dir); // the asker sent its own dotz URL
+	return Response.json({ token });
 }
 
 export type PairResult = { ok: true } | { ok: false; reason?: string };
@@ -106,6 +149,7 @@ export function createPairer(o: { fetch: Fetcher; selfUrl: () => Promise<string 
 			const body = (await res.json().catch(() => null)) as { token?: unknown; reason?: unknown } | null;
 			if (res.ok && typeof body?.token === "string" && body.token.length >= MIN_TOKEN) {
 				save(join(o.dir ?? pairDir(), "out", keyOf(origin)), body.token);
+				bindPeer(new URL(origin).hostname, origin, undefined, o.dir ?? pairDir());
 				return { ok: true };
 			}
 			return { ok: false, reason: typeof body?.reason === "string" ? body.reason : REASON.unsupported };

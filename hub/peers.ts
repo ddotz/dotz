@@ -3,11 +3,14 @@
 // only when it answers as dotz (its manifest says so). The requests go through the other node's `tailscale serve`, which
 // takes this node's tailnet identity as the login, so the allow-list check passes. Config: web.peers (extra URLs),
 // web.peer_discovery (default true), web.peer_ports (extra ports to try on every node; default 8443, 8445 and 8444).
+// A peer that paired with this gateway (hub/peer-pair.ts) is bound to its dotz URL: that URL is asked first and the ports are scanned only
+// when it no longer answers as dotz (the new port is then bound). A bound peer tailscale reports offline stays listed, shown as not connected.
 // Each gateway names itself (web.machine_name, hub/machine-name.ts) and tells its peers through the public GET /api/peer-info; an older
 // peer without it keeps the hostname-derived name. Pure parts (names, filtering, counting, cache) are exported for tests; only listPeers() touches the network.
 import { peerFetch } from "./tailnet-fetch.ts";
 import { cfg, log } from "./config.ts";
 import { friendlyName, label, peerInfoName, resolveName } from "./machine-name.ts";
+import { bindPeer, boundPeer, type Bound } from "./peer-pair.ts";
 
 export { friendlyName };
 
@@ -31,10 +34,11 @@ export function uniqueNames<T extends { name: string; host: string }>(items: T[]
 }
 
 // Online nodes of the same user as `self`, other than self, with a DNS name. Other users' machines, tagged nodes, the phone off the network and self never pass.
-export function sameUserNodes(st: TsStatus): TsNode[] {
+// With `withOffline`, nodes tailscale reports offline pass too (discovery keeps the bound ones among them).
+export function sameUserNodes(st: TsStatus, withOffline = false): TsNode[] {
 	const me = st.Self;
 	if (!me || me.UserID == null) return [];
-	return Object.values(st.Peer ?? {}).filter(p => p.Online === true && p.UserID === me.UserID && !p.Tags?.length && !!p.DNSName && p.DNSName !== me.DNSName);
+	return Object.values(st.Peer ?? {}).filter(p => (withOffline || p.Online === true) && p.UserID === me.UserID && !p.Tags?.length && !!p.DNSName && p.DNSName !== me.DNSName);
 }
 
 export function baseUrl(dns: string, port: number): string {
@@ -148,6 +152,26 @@ export const ownLogin = cached(60_000, async () => loginOf(await tailscaleStatus
 
 export type Found = { name: string; host: string; url: string; self: boolean };
 
+type Resolve = { isDotz: (url: string) => Promise<boolean>; peerName: (url: string) => Promise<string | undefined>; bound: (host: string) => Bound | undefined; bind: (host: string, url: string, name?: string) => void };
+
+// One same-user node to its dotz URL. Offline: only a bound node, with its record and no probe. Online: the bound URL first (no scan while it
+// answers as dotz), else the candidate ports in order; a hit is bound so the record follows a moved port. Every URL passes isDotz.
+export async function resolveNode(n: TsNode, ports: number[], o: Resolve): Promise<{ host: string; url: string; name?: string } | undefined> {
+	const host = n.DNSName!;
+	const rec = o.bound(host);
+	if (n.Online !== true) return rec ? { host, url: rec.url, name: rec.name } : undefined;
+	let url = rec && (await o.isDotz(rec.url)) ? rec.url : undefined;
+	if (!url) {
+		const ok = await Promise.all(ports.map(p => o.isDotz(baseUrl(host, p))));
+		const i = ok.indexOf(true);
+		if (i < 0) return undefined;
+		url = baseUrl(host, ports[i]!);
+	}
+	const name = (await o.peerName(url)) ?? (url === rec?.url ? rec.name : undefined);
+	o.bind(host, url, name);
+	return { host, url, name };
+}
+
 // Which gateways exist (slow part: tailscale status and the probes). Self comes first.
 export async function discover(): Promise<Found[]> {
 	const w = cfg.web as { machine_name?: string; tailscale_https_port?: number; peers?: string[]; peer_discovery?: boolean; peer_ports?: number[] } | undefined;
@@ -163,15 +187,9 @@ export async function discover(): Promise<Found[]> {
 	if (st?.Self?.DNSName && own) add(st.Self.DNSName, baseUrl(st.Self.DNSName, own), true, resolveName(w?.machine_name, st.Self.DNSName));
 	if (st && own && w?.peer_discovery !== false) {
 		const ports = candidatePorts(own, w?.peer_ports);
-		const nodes = sameUserNodes(st);
-		const hits = await pool(nodes, PROBE_PARALLEL, async n => {
-			const base = n.DNSName!;
-			const ok = await Promise.all(ports.map(p => isDotz(baseUrl(base, p))));
-			const i = ok.indexOf(true);
-			if (i < 0) return undefined;
-			const url = baseUrl(base, ports[i]!);
-			return { host: base, url, name: await peerName(url) };
-		});
+		const nodes = sameUserNodes(st, true);
+		const r: Resolve = { isDotz: u => isDotz(u), peerName: u => peerName(u), bound: h => boundPeer(h), bind: (h, u, nm) => bindPeer(h, u, nm) };
+		const hits = await pool(nodes, PROBE_PARALLEL, n => resolveNode(n, ports, r));
 		for (const h of hits) if (h) add(h.host, h.url, false, h.name);
 	}
 	const manual = extraUrls(w?.peers).filter(u => !urls.has(u));
