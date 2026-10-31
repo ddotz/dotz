@@ -16,6 +16,9 @@ gateway that owns the item. That gateway executes it and records it.
   (a tagged node, a different user or a request outside the tailnet is refused with a Korean reason). Tokens are 0600 files in
   `secrets/peer-pairs/in` (accepted) and `out` (sent). The pairing starts on discovery or the first action and renews itself on a 403.
   The manual `peer-token` keeps working.
+- Binding: pairing also binds both gateways to each other in `secrets/peer-pairs/bound.json` (0600; peer host name -> dotz URL, at most 32).
+  Discovery asks the bound URL first and scans ports only when it no longer answers as dotz (the new port is bound then), so one port
+  number can be another app on another computer. A bound peer that tailscale reports offline stays in the list as '연결 안 됨'; an unbound one does not.
   A request that carries `x-dotz-peer` can reach only the read-only GET list and two POSTs: `/api/peer/act` and
   `/api/peer/lease`.
 - Setup (`setup.ts`) makes the key on the first computer. On another computer, setup asks for that key (or takes

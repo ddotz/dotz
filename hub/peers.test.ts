@@ -1,5 +1,28 @@
-import { expect, test } from "bun:test";
-import { baseUrl, cached, candidatePorts, countsFrom, extraUrls, friendlyName, isDotz, pool, sameUserNodes, uniqueNames } from "./peers.ts";
+import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { bindPeer, boundPeer } from "./peer-pair.ts";
+import { baseUrl, cached, candidatePorts, countsFrom, extraUrls, friendlyName, isDotz, pool, resolveNode, sameUserNodes, uniqueNames } from "./peers.ts";
+
+const roots: string[] = [];
+afterAll(() => roots.forEach(d => rmSync(d, { recursive: true, force: true })));
+
+// resolveNode with a temp binding dir and a fake network: `dotz` lists the URLs that answer as dotz; `probed` records every isDotz call.
+function rigResolve(dotz: string[], names: Record<string, string> = {}) {
+	const dir = mkdtempSync(join(tmpdir(), "peers-bind-"));
+	roots.push(dir);
+	const probed: string[] = [];
+	const o = {
+		isDotz: async (u: string) => { probed.push(u); return dotz.includes(u); },
+		peerName: async (u: string) => names[u],
+		bound: (h: string) => boundPeer(h, dir),
+		bind: (h: string, u: string, n?: string) => bindPeer(h, u, n, dir),
+	};
+	return { dir, probed, o };
+}
+const MINI = "mini.ts.net.";
+const PORTS = [8443, 8445, 8444];
 
 test("friendlyName maps known Mac hostnames and keeps others", () => {
 	expect(friendlyName("hyuns-macbookpro")).toBe("맥북");
@@ -28,6 +51,56 @@ test("sameUserNodes keeps online nodes of this user, not self, not other users",
 	};
 	expect(sameUserNodes(st).map(n => n.DNSName)).toEqual(["mini.ts.net."]);
 	expect(sameUserNodes({ Peer: st.Peer })).toEqual([]);
+});
+
+test("sameUserNodes can also keep offline nodes of this user", () => {
+	const st = { Self: { DNSName: "me.ts.net.", UserID: 1 }, Peer: { a: { DNSName: "mini.ts.net.", UserID: 1, Online: false }, b: { DNSName: "x.ts.net.", UserID: 2, Online: false }, c: { DNSName: "t.ts.net.", UserID: 1, Tags: ["tag:s"] } } };
+	expect(sameUserNodes(st)).toEqual([]);
+	expect(sameUserNodes(st, true).map(n => n.DNSName)).toEqual(["mini.ts.net."]);
+});
+
+test("resolveNode uses the bound URL and scans no ports while it answers as dotz", async () => {
+	const r = rigResolve(["https://mini.ts.net:8445"], { "https://mini.ts.net:8445": "맥미니" });
+	bindPeer(MINI, "https://mini.ts.net:8445", undefined, r.dir);
+	const got = await resolveNode({ DNSName: MINI, Online: true }, PORTS, r.o);
+	expect(got).toEqual({ host: MINI, url: "https://mini.ts.net:8445", name: "맥미니" });
+	expect(r.probed).toEqual(["https://mini.ts.net:8445"]);
+	expect(boundPeer(MINI, r.dir)?.name).toBe("맥미니");
+});
+
+test("resolveNode rescans when the bound URL is no longer dotz and the record follows the new port", async () => {
+	const r = rigResolve(["https://mini.ts.net:8444"]);
+	bindPeer(MINI, "https://mini.ts.net:8445", "맥미니", r.dir);
+	const got = await resolveNode({ DNSName: MINI, Online: true }, PORTS, r.o);
+	expect(got?.url).toBe("https://mini.ts.net:8444");
+	expect(r.probed).toContain("https://mini.ts.net:8443");
+	expect(boundPeer("MINI.ts.net", r.dir)?.url).toBe("https://mini.ts.net:8444");
+	expect(boundPeer(MINI, r.dir)?.name).toBe("맥미니");
+});
+
+test("resolveNode scan skips a non-dotz service on 8443 and binds dotz on 8445", async () => {
+	const r = rigResolve(["https://mini.ts.net:8445"]);
+	const got = await resolveNode({ DNSName: MINI, Online: true }, PORTS, r.o);
+	expect(got?.url).toBe("https://mini.ts.net:8445");
+	expect(boundPeer(MINI, r.dir)?.url).toBe("https://mini.ts.net:8445");
+	expect(await resolveNode({ DNSName: "other.ts.net.", Online: true }, PORTS, r.o)).toBeUndefined();
+	expect(boundPeer("other.ts.net", r.dir)).toBeUndefined();
+});
+
+test("resolveNode lists an offline bound node with its record and probes nothing; an unbound one is dropped", async () => {
+	const r = rigResolve([]);
+	bindPeer(MINI, "https://mini.ts.net:8445", "맥미니", r.dir);
+	expect(await resolveNode({ DNSName: MINI, Online: false }, PORTS, r.o)).toEqual({ host: MINI, url: "https://mini.ts.net:8445", name: "맥미니" });
+	expect(await resolveNode({ DNSName: "nas.ts.net.", Online: false }, PORTS, r.o)).toBeUndefined();
+	expect(r.probed).toEqual([]);
+});
+
+test("bindPeer keeps at most 32 peers, dropping the oldest", () => {
+	const r = rigResolve([]);
+	for (let i = 0; i < 34; i++) bindPeer(`h${i}.ts.net`, `https://h${i}.ts.net`, undefined, r.dir, i);
+	expect(boundPeer("h0.ts.net", r.dir)).toBeUndefined();
+	expect(boundPeer("h1.ts.net", r.dir)).toBeUndefined();
+	expect(boundPeer("h33.ts.net", r.dir)?.url).toBe("https://h33.ts.net");
 });
 
 test("baseUrl and candidatePorts build probe targets", () => {
