@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { DATA_DIR } from "../config.ts";
 import { readCards } from "../custom.ts";
 import { loadFeatureDirs } from "../featuredirs.ts";
@@ -155,9 +155,10 @@ test("happy path: installs only what is missing, batches the ask, opens one pane
 	expect(asks("secret")).toHaveLength(1);
 	expect(asks("secret")[0]!.body).toMatchObject({ site: "kakao", fields: ["username", "password"], target: "chat", timeout_minutes: 30 });
 
-	const combined = sends().find(c => c.body.text.includes(EXEC))!;
-	expect(combined.fdaGranted).toBe(false);
-	for (const part of [EXEC, "[ask]"]) expect(combined.body.text).toContain(part);
+	// The bot turned both permissions on itself (pane + switch), so the one ask carries the credentials only, no permission step.
+	expect(w.runs.filter(a => a[0] === "osascript" && a[5] === basename(EXEC))).toHaveLength(2);
+	const combined = sends().find(c => c.body.text.includes("[ask]"))!;
+	expect(combined.body.text).not.toContain(EXEC);
 
 	for (const c of sends()) expect(c.body).toMatchObject({ target: "chat", update_key: "kakao-setup" });
 	const texts = sends().map(c => c.body.text as string);
@@ -238,6 +239,11 @@ test("a permission timeout stops there; the re-run resumes at that step without 
 	expect(first.state!.stoppedAt).toMatchObject({ step: "permissions" });
 	expect(first.state!.steps).toMatchObject({ deps: "done", app: "done", ask: "done" });
 	expect(asks("secret")).toHaveLength(1);
+	// macOS refused the automated switch: the owner gets the one exact step, after the bot tried it and asked the gateway to restart.
+	const toggles = w.runs.filter(a => a[0] === "osascript" && a[5] === basename(EXEC));
+	expect(toggles.map(a => a[6])).toEqual([EXEC, EXEC]);
+	expect(first.state!.stoppedAt!.action).toContain("자동 클릭을 막아서");
+	expect(w.calls.some(c => c.path === "/api/gateway/restart")).toBe(true);
 	const texts = sends().map(c => c.body.text as string);
 	texts.forEach((t, i) => expect(t).not.toBe(texts[i - 1]));
 	expect(readState(w.paths)!.status).toBe("stopped");

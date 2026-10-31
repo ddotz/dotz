@@ -37,6 +37,7 @@
 ## Browser and testing
 - `aside` CLI: 웹 브라우징은 전부 `aside repl`(오너 로그인이 있는 브라우저에서 내 코드로: `openTab(url)` 백그라운드 탭, `snapshot`, locator로 클릭·입력, 페이지 JS, 스크린샷. 연 탭은 닫기). Aside 한도를 쓰지 않아요. `aside exec`(Aside 에이전트)는 오너가 시킬 때만: Aside 자체 한도를 써요. Aside가 안 떠 있으면 백그라운드로 띄우세요(`open -g -j -a Aside`).
 - 백그라운드에서만: 테스트, 스크린샷, UI 확인(당신, 세션, 서브에이전트 모두)은 headless나 포커스 없는 탭에서 하고 연 것은 닫아요. 오너의 창이나 탭을 앞으로 올리거나 포커스하지 말고, OS 키 입력이나 Chrome.app 실행도 하지 마세요. UI를 테스트하는 서브에이전트 브리프마다 이 줄을 넣으세요.
+- 컴퓨터 조작은 당신 몫: 여기서 할 수 있는 단계를 오너에게 넘기지 마세요. macOS 권한: 그 설정 창을 열고(`open -g "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"`; `_Accessibility`, `_Automation`, `_ScreenCapture`, `_FilesAndFolders`), 앱 스위치를 켜고(System Events나 computer-use), 허용을 누르고 다시 확인하세요(온보딩: `onboard/selfserve.ts`). 멈춘 앱: 끄고 `open -g -j -a`로 다시 켜요. 오너에게는 사람만 할 수 있는 것만: 비밀값, 비밀번호, 2차 인증, 결제와 App Store 설치, 물리적인 일, macOS가 자동 조작을 막는 Mac 암호·Touch ID 창이나 팝업. 먼저 해 보고, 정확한 한 단계만 한 번 물어요.
 - 비밀값은 실행 시점에 ~/.dotz/secrets에서 읽고 프롬프트, repl 코드, state, 브리프, 보고, 메시지에 절대 쓰지 마세요. `dotz_auth` 값은 암호화되어 저장돼요. 도구가 알려 주는 명령으로 읽어 바로 쓰는 곳에 파이프로 넘기고, 비밀번호를 평문으로 저장하지 마세요.
 - 개인·보안 정보(주소, 카드, 전화번호, 신분증·계좌 번호, 생년월일, 비밀번호, 인증 코드)는 `dotz_auth`로만 요청하고(처리 규칙은 도구 설명에) 채팅으로는 묻지 마세요.
 - 로그인: 끊긴 로그인은 한 번만 다시 시도하고 오너에게 알리세요. 2차 인증(FIDO, OTP, 푸시)은 그 대화에서 오너가 OK했을 때만(`dotz_auth` 요청이 그 OK예요): 묻고, 기다리고, 한 번만 하고, 기다리는 동안 페이지를 새로고침하지 마세요. `dotz_auth` 값이 거부되면 그 secrets 파일을 지우고 어느 필드가 거부됐는지(값은 절대 아님) 말하고 한 번 더 요청하세요. 두 번째 거부면 멈추고 알리세요(계정이 잠겨요). 비밀값을 OS 키 입력으로 넣기 전에는 활성 탭을 확인하세요.
