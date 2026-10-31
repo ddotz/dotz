@@ -1,7 +1,7 @@
 // A thank-you after the owner's reply is not a new mail (hub/zele.ts parseThread / isAck / tick): the `zele mail read` parser on a synthetic
 // thread, the quote-stripping acknowledgement check, and the watch skipping an ack but not a question.
 import { beforeEach, describe, expect, test } from "bun:test";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
 import { resetOwnAddresses, setOwnAddresses } from "./mail-state.ts";
@@ -82,6 +82,32 @@ describe("the watch", () => {
 		await tick({ alert: () => {}, brief: () => {}, mail: async m => void got.push(m) }, new Date(), list(1), async () => "");
 		await tick({ alert: () => {}, brief: () => {}, mail: async m => void got.push(m) }, new Date(), list(2), async () => "");
 		expect(got.map(m => [m.id, m.to, m.cc])).toEqual([["thr-cc-1", ME, "Lee <lee@example.com>"]]);
+	});
+
+	test("a thread whose age moves on (5h ago -> 6h ago) is no new mail, a newer message still is", async () => {
+		const posted: string[] = [];
+		const list = (n: number, date: string) => async (args: string[]) => (args[0] === "cal" ? [] : args.includes("sent") ? [] : [{ ...row(KIM, n), date }]);
+		const hooks = { alert: () => {}, brief: () => {}, mail: async (m: NewMail) => void posted.push(m.message) };
+		await tick(hooks, new Date(), list(1, "4h ago"), async () => "");
+		await tick(hooks, new Date(), list(2, "just now"), async () => "");
+		await tick(hooks, new Date(), list(2, "5m ago"), async () => "");
+		await tick(hooks, new Date(), list(2, "1h ago"), async () => "");
+		await tick(hooks, new Date(), list(2, "2시간 전"), async () => "");
+		await tick(hooks, new Date(), list(3, "just now"), async () => "");
+		expect(posted).toEqual(["2|", "3|"]);
+	});
+
+	test("a stamp noted with an age before this fix matches the same thread without one", async () => {
+		const posted: string[] = [];
+		const list = (n: number, date: string) => async (args: string[]) => (args[0] === "cal" ? [] : args.includes("sent") ? [] : [{ ...row(KIM, n), date }]);
+		const hooks = { alert: () => {}, brief: () => {}, mail: async (m: NewMail) => void posted.push(m.message) };
+		await tick(hooks, new Date(), list(1, "10월 21일, 오전 10:00"), async () => "");
+		const file = join(DATA_DIR, "zele-state.json");
+		const s = JSON.parse(readFileSync(file, "utf8"));
+		s.threads["thr-ack-1"].n = "1|6h ago";
+		writeFileSync(file, JSON.stringify(s));
+		await tick(hooks, new Date(), list(1, "7h ago"), async () => "");
+		expect(posted).toEqual([]);
 	});
 
 	test("a thank-you after the owner's reply is not posted, a later question is", async () => {
