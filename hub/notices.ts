@@ -633,6 +633,28 @@ function settleDecision(item: Notice, answer: string, at = now(), resolved = fal
 	if (replaying) return;
 	save();
 	broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
+	for (const fn of closedHooks) fn(d.to, d.draft?.ref);
+}
+
+// The send-approval queue of a conversation (hub/approval-queue.ts) reads which draft cards are open there and hears when a decision closes
+// (answered, resolved, ignored), so it can show the next held card.
+const closedHooks: Array<(to: string, ref: string | undefined) => void> = [];
+export const onDecisionClosed = (fn: (to: string, ref: string | undefined) => void): void => void closedHooks.push(fn);
+export const openDraftRefs = (to: string): string[] => items.flatMap(i => (isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref ? [i.decision!.draft.ref] : []));
+// The bot posted the open card of draft `ref` again with changes (or the queue changed its "남은 N건" line): the open card shows the new text in place.
+export function rewriteOpenDraft(to: string, ref: string, text: string): number {
+	const hit = items.filter(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref);
+	if (!hit.length) return 0;
+	const body = parseTone(stripHandoff(text)).text.trim();
+	const draft = parseDraftApproval(body);
+	const at = now();
+	for (const n of hit) {
+		n.text = body.slice(0, TEXT_MAX);
+		if (draft) n.decision!.draft = draft;
+		n.updated = at;
+	}
+	announce(hit, at);
+	return hit.length;
 }
 
 // The owner wrote in a chat or session: every open decision there is answered by it, unless the message names its decision
@@ -1231,6 +1253,7 @@ export function ignoreNotice(id: unknown): { status: number; body: Record<string
 		if (n.decision?.state === "open") n.decision.state = "ignored";
 	}
 	announce(group, at);
+	for (const n of group) if (n.decision?.state === "ignored") for (const fn of closedHooks) fn(n.decision.to, n.decision.draft?.ref);
 	return { status: 200, body: { ok: true, item, ids: group.map(n => n.id), unread: unreadCount() } };
 }
 

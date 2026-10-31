@@ -8,7 +8,7 @@ import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { isNote, msg } from "./i18n.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
-import { answeredIds, answeredSince, emit, emitDelivery, ownerMessage, recentOwnerMessages } from "./events.ts";
+import { answeredIds, answeredSince, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages } from "./events.ts";
 import { settleWaiting, type Waiting } from "./awaiting.ts";
 import { outEvent } from "./projectchat.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
@@ -26,7 +26,8 @@ import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
 import { splitTone, stripHandoff } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
-import { orchestratorAnswered } from "./notices.ts";
+import { onDecisionClosed, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
+import { createApprovalQueue, loadHeld } from "./approval-queue.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
 import { discordPosts } from "./discord-post.ts";
 import { repeatAlert } from "./alert-gate.ts";
@@ -148,10 +149,9 @@ const lateRequest = (target: string) => {
 	const q = convs.forTarget(target)?.queue ?? queue;
 	return lateRequestId(target, q.current(), q.deferredOpen(), lastOwner.get(target), askedAtMs);
 };
-// Everything after the text is final: the delivery states, then the web is done or the send ledger (kept on disk) takes over.
-function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason?: string }> {
-	// An answer (not a progress note, not a gateway notice) settles the owner messages waiting in this conversation.
-	if ((j.extra.source === undefined || j.extra.source === "orchestrator") && !j.extra.update_key) {
+// An answer (not a progress note, not a gateway notice, not a held approval card shown later) settles the owner messages waiting in this conversation.
+function settleAnswer(j: OutJob): void {
+	if ((j.extra.source === undefined || j.extra.source === "orchestrator") && !j.extra.update_key && !j.extra.queued) {
 		const { done, keep } = settleWaiting(awaiting.get(j.target) ?? [], j.replyTo, isLocal(j.target));
 		awaiting.set(j.target, keep);
 		// One truth: a message shown as answered is answered for the prompt queue too (deferred wait, pending.json, restart replay).
@@ -163,6 +163,10 @@ function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason
 		}
 		recheckAnswered(j.target);
 	}
+}
+// Everything after the text is final: the delivery states, then the web is done or the send ledger (kept on disk) takes over.
+function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
+	settleAnswer(j);
 	// Web only: a web conversation, a kind the owner switched off for Discord (hub/discord-post.ts), or a gateway alert that repeats one Discord already has.
 	if (isLocal(j.target) || j.extra.repeat === true || !discordPosts(j.target, j.replyTo)) {
 		convs.markAnsweredAll(jobAnswers(j));
@@ -182,12 +186,33 @@ export const replies = createInflight<OutJob>(j => {
 	void handOver(j, j.text).catch(e => log(`reply to ${j.target} failed at shutdown: ${e}`));
 	log(`reply to ${j.target} landed untranslated at shutdown (${j.text.length} chars)`);
 });
+// One send-approval card at a time per conversation, and no second post of an open card (hub/approval-queue.ts).
+const HELD = join(DATA_DIR, "approval-queue.json");
+const convOfTarget = (target: string) => eventTarget(outEvent({ ts: "", kind: "out", source: "orchestrator", target, text: "" } as HubEvent, threadHome, threadMail)) ?? "main";
+export const approvals = createApprovalQueue({
+	convOf: convOfTarget,
+	openRefs: openDraftRefs,
+	post: (target, text, extra) => void out(target, text, undefined, { ...extra, queued: true }).catch(e => log(`held approval card to ${target} failed: ${e}`)),
+	// A card that went to Discord as one message is edited there too (a [file] line would show raw in an edit, so such a card keeps its first text).
+	rewrite: (conv, card, text) => {
+		rewriteOpenDraft(conv, card.ref, text);
+		const id = card.ids?.length === 1 ? card.ids[0] : undefined;
+		if (id && !isLocal(card.target) && discordPosts(card.target) && !/^\s*\[file\]\s/m.test(text)) void discord.edit(card.target, id, text).catch(e => log(`approval card ${card.ref} not edited on Discord: ${e}`));
+	},
+	persist: held => writeAtomic(HELD, `${JSON.stringify(held, null, 2)}\n`),
+	log,
+	load: () => loadHeld(HELD),
+});
+onDecisionClosed((to, ref) => approvals.closed(to, ref));
 export async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
 	const answersOwner = extra.source === undefined || extra.source === "orchestrator";
 	// A gateway post to the alert conversation (a failing watch) is gated like alert() below.
 	if (target === "alert" && extra.source === "gateway" && !extra.update_key && repeatAlert(text)) extra = { ...extra, repeat: true };
-	const job: OutJob = { target, text: stripHandoff(text), replyTo: replyTo ?? (answersOwner && !extra.update_key ? lateRequest(target) : undefined), extra };
+	const job: OutJob = { target, text: stripHandoff(text), replyTo: replyTo ?? (answersOwner && !extra.update_key && !extra.queued ? lateRequest(target) : undefined), extra };
+	// The assistant's send-approval card waits its turn in its conversation (a held card is posted later by the queue, marked `queued`).
+	const routed = answersOwner && !extra.update_key && !extra.queued;
+	const routing: { card?: ReturnType<typeof approvals.route> } = {};
 	let landed = false;
 	replies.begin(job);
 	let sent: string;
@@ -198,16 +223,25 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 				log(`personal-data ask in chat to ${target}: the form (dotz_auth) is the only way to ask`);
 				steerOrchestrator(msg().personalAskNote);
 			}
+			const card = routed ? approvals.route(target, t, extra) : undefined;
+			routing.card = card;
 			// False: shutdown already landed this post with the original text.
 			landed = replies.end(job);
-			if (landed) emitOut(job, t);
+			if (landed && (!card || card.action === "post")) emitOut(job, t);
 			return t;
 		});
 	} finally {
 		replies.end(job);
 	}
 	if (!landed) return { delivered: true };
-	return handOver(job, sent);
+	const card = routing.card;
+	if (card && card.action !== "post") {
+		settleAnswer(job);
+		return { delivered: true };
+	}
+	const r = await handOver(job, sent);
+	if (card || extra.queued) approvals.posted(target, sent, r.ids);
+	return r;
 }
 
 // While an owner message waits for its answer the owner sees 👀, typing and, for long work, one progress message edited in

@@ -59,7 +59,7 @@ import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
 import { setFollowupWake } from "./followup.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { compressResponse } from "./compress.ts";
-import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, replies, bgWork } from "./outbound.ts";
+import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, replies, bgWork, approvals } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
 import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
@@ -318,6 +318,8 @@ if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 	replayed = replayPending();
 }
 sends.resume();
+// Send-approval cards held before the restart: a conversation with no open card shows its next one (hub/approval-queue.ts).
+approvals.releaseAll();
 const resumedLanes = restoreLanes();
 discord.recordLaneChannels();
 for (const name of resumedLanes) void send(`lane:${name}`, "게이트웨이가 재시작돼서 멈췄던 작업을 이어서 하고 있어요.").catch(e => log(`lane resume notice failed: ${e}`));
