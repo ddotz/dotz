@@ -5,6 +5,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run as runComments } from "../../features/comments/bin/comments.ts";
+import { parseDecisions } from "../choices.ts";
 import { parseDraftApproval } from "../draft-approval.ts";
 import { commentAsk } from "./ask.ts";
 import { type Comment, type CommentAdapter, commentId, type RawComment, type SourceConfig } from "./contract.ts";
@@ -102,6 +103,8 @@ describe("the combined card", () => {
 		expect(card?.mail).toMatchObject({ toLabel: "받는이", to: "fan@example.com", subject: "악보 보내드립니다", body: "안녕하세요.\n요청하신 악보를 보내드립니다.", attachments: [{ name: "score.pdf", size: "2KB" }] });
 		expect(card?.mail?.warning).toBeUndefined();
 		expect(card?.mail?.ref).toBe("M1");   // the mail draft id its files are staged under: the card opens them at /api/drafts/M1/files/<n>
+		// The split send of `comments.ts send --only` is on the card itself: 4) 답글만 보내기, 5) 메일만 보내기, 6) 직접 입력 after the three.
+		expect(parseDecisions(text).blocks[0]!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기", "답글만 보내기", "메일만 보내기", "어떻게 보낼지 직접 입력"]);
 	});
 
 	test("a reply without a mail keeps the single-part block", async () => {
@@ -111,6 +114,7 @@ describe("the combined card", () => {
 		if (!s.ok) throw new Error(s.reason);
 		const text = commentAsk(source, t.engine.store.comments()[0]!, s.draft);
 		expect(parseDraftApproval(text)?.mail).toBeUndefined();
+		expect(parseDecisions(text).blocks[0]!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기"]);
 	});
 
 	test("보내기 posts the reply and then sends the mail, once", async () => {
