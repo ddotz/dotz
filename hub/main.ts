@@ -8,6 +8,7 @@ import { parseCommand, setGatewayRestart } from "./control.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { setAskAnswer } from "./askbuttons.ts";
+import { discordGatewayAnswer } from "./approval-wire.ts";
 import { startPeerStreams } from "./peer-stream.ts";
 import { notify as pushNotify, startPush } from "./push.ts";
 import { msg, textsToReport } from "./i18n.ts";
@@ -59,7 +60,7 @@ import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
 import { setFollowupWake } from "./followup.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { compressResponse } from "./compress.ts";
-import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, replies, bgWork, approvals } from "./outbound.ts";
+import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, replies, bgWork, approvals, convOfTarget } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
 import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
@@ -217,6 +218,8 @@ discord.setClaimHandler(pluginClaim);
 discord.connect(onOwner);
 // A click on a decision button (hub/askbuttons.ts) is the owner typing the answer in that channel: the same inbound path.
 setAskAnswer((target, content, picks) => {
+	// 보내기 on a draft the gateway sends itself: no model turn, the next card shows at once (hub/approval-wire.ts).
+	if (discordGatewayAnswer(target, convOfTarget(target), content, picks)) return;
 	const id = target.slice(target.indexOf(":") + 1);
 	const channel = target.startsWith("lane:") ? { lane: id } : target.startsWith("ch:") ? { work: id, name: discord.channels.work[id] ?? id, first: false } : target.startsWith("th:") ? { thread: id, name: discord.channels.threads[id]?.name ?? id } : (target as "chat");
 	onOwner({ id: "", channelId: "", ackChannelId: "", channel, author: "owner", content, attachments: [], picks });

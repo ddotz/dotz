@@ -133,7 +133,24 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		for (const conv of new Set(held.map(h => deps.convOf(h.target)))) release(conv);
 	};
 
-	return { route, posted, closed, releaseAll, held: () => held.slice() };
+	/** Answered without being shown (the web's batch review, hub/approval-batch.ts): these held cards leave the queue, and the open card's count follows. */
+	function take(conv: string, refs: string[]): void {
+		const before = held.length;
+		held = held.filter(h => !(refs.includes(h.ref) && deps.convOf(h.target) === conv));
+		if (held.length === before) return;
+		save();
+		deps.log(`approval cards ${refs.join(", ")} in ${conv} answered from the batch review`);
+		recount(conv);
+		release(conv);
+	}
+
+	/** The target the card of `ref` in `conv` was (or will be) posted to. */
+	const targetOf = (conv: string, ref: string): string | undefined => {
+		const s = shown.get(conv);
+		return s?.ref === ref ? s.target : heldIn(conv).find(h => h.ref === ref)?.target ?? s?.target;
+	};
+
+	return { route, posted, closed, releaseAll, take, targetOf, held: () => held.slice(), heldIn };
 }
 
 /** The held cards a previous process wrote. */
