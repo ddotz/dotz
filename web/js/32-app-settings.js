@@ -6,8 +6,10 @@ const AS_KEY = "dotz.settings.cards";
 const AS = { by: {}, none: {}, load: {}, busy: {}, rm: {}, feat: {}, done: (() => { try { return JSON.parse(localStorage.getItem(AS_KEY)) || {}; } catch { return {}; } })() };
 const asSave = () => { try { localStorage.setItem(AS_KEY, JSON.stringify(AS.done)); } catch { /* storage full or blocked: the card state lasts until reload */ } };
 
-// An app is "mail", "kakao"...; a monitor is "w:<watch name>" (hub/watch-settings.ts): same schema, same card, a different URL.
-const asUrl = app => app.startsWith("w:") ? `/api/watches/${enc(app.slice(2))}/settings` : `/api/integrations/${enc(app)}/settings`;
+// An app is "mail", "kakao"...; a monitor is "w:<watch name>" (hub/watch-settings.ts), a schedule "s:<id>" (hub/schedule-settings.ts): same schema,
+// same screen, a different URL. asOwn: the settings of one monitor or schedule (its own status row and 삭제, no app features).
+const asOwn = app => /^[ws]:/.test(app);
+const asUrl = app => app.startsWith("w:") ? `/api/watches/${enc(app.slice(2))}/settings` : app.startsWith("s:") ? `/api/schedules/${enc(app.slice(2))}/settings` : `/api/integrations/${enc(app)}/settings`;
 
 function asLoad(app, again) {
   if (AS.load[app] && !again) return AS.load[app];
@@ -82,7 +84,8 @@ function asStatRow(app, m, i) {
   const line = i
     ? [i.status, i.last_run ? `마지막 확인 ${monTime(i.last_run)}` : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ")
     : [st && st.text, m ? ntMonRun(m) : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ");
-  const facts = [m && m.fails ? `연속 실패 ${m.fails}번` : "", m && m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m && m.last_output ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
+  const facts = [m && m.fails ? `연속 실패 ${m.fails}번` : "", m && m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m && m.last_output ? `마지막 결과: ${m.last_output}` : "",
+    m && m.kind === "schedule" && m.every ? `반복 ${m.every}` : "", m && m.kind === "schedule" && m.channel ? `보낼 곳: ${targetName(m.channel)}` : ""].filter(Boolean);
   return el("div", { class: `as-row as-stat${i ? " as-int" : " as-conn"}`, "data-watch": m ? m.watch || m.name : i.id, ...(i ? { "data-internal": i.id, "data-kind": i.kind } : { "data-conn": dot === "fail" ? "disconnected" : dot === "ok" ? "connected" : "unknown" }) },
     el("span", { class: `as-dot ${dot}`, "aria-hidden": "true" }),
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: name }),
@@ -108,19 +111,21 @@ async function asPatch(app, values) {
   AS.by[app] = r.fields || [];
   asPaint();
   MON.sig = ""; monSchedule();
-  if (app.includes("~") || pqPc(`settings:${app}`)) pqSoon(); else if (app.startsWith("w:")) loadMonitors(); else loadIntegrations();   // a peer's app or monitor is read back from that computer
+  if (app.includes("~") || pqPc(`settings:${app}`)) pqSoon(); else if (asOwn(app)) loadMonitors(); else loadIntegrations();   // a peer's app or monitor is read back from that computer
   // The Kakao room list draws the same watch and draft lists: read it again so its switches and the screen never disagree.
   if (pqBare(app) === "kakao" && typeof KK !== "undefined" && KK.loaded) kkLoadRooms().catch(() => {});
   return r;
 }
 
-/* ---- 감시 삭제: a monitor's settings screen deletes the watch for good (DELETE /api/watches/<name>, on the computer that owns it) ---- */
+/* ---- 감시 삭제: a monitor's settings screen deletes the watch for good (DELETE /api/watches/<name>, on the computer that owns it); a schedule's
+   the same way through DELETE /api/schedules/<id> (예약 삭제) ---- */
+const asSched = app => app.startsWith("s:");
 async function asWatchRmGo(app) {
   if (AS.busy[app]) return;
   AS.busy[app] = true;
   const name = monSettingsName(`settings:${app}`), peer = !!pqPc(`settings:${app}`);
   try {
-    await api(`/api/watches/${enc(app.slice(2))}`, "DELETE");
+    await api(`/api/${asSched(app) ? "schedules" : "watches"}/${enc(app.slice(2))}`, "DELETE");
     toast(`${name}을(를) 삭제했어요`);
     AS.rm[app] = null; AS.load[app] = null;
     if (peer) await pqLoad(); else await loadMonitors();
@@ -133,9 +138,11 @@ async function asWatchRmGo(app) {
   AS.busy[app] = false; asPaint();
 }
 function asWatchRmNode(app) {
-  if (!AS.rm[app]) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "감시 삭제" }), el("span", { class: "as-h", text: "이 감시를 완전히 지워요" })), el("button", { class: "btn tonal", type: "button", "data-as-rm": "ask", onclick: () => { AS.rm[app] = { watch: true }; asPaint(); } }, "삭제"));
+  const what = asSched(app) ? "예약" : "감시";
+  if (!AS.rm[app]) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: `${what} 삭제` }), el("span", { class: "as-h", text: `이 ${what}을 완전히 지워요` })), el("button", { class: "btn tonal", type: "button", "data-as-rm": "ask", onclick: () => { AS.rm[app] = { watch: true }; asPaint(); } }, "삭제"));
   const pc = pqPc(`settings:${app}`), name = monSettingsName(`settings:${app}`);
-  const lines = [`${pc ? `${pc.name}에서 ` : ""}확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요`, "지금까지 온 감시 소식은 그대로 남아요", "잠깐 멈추려면 삭제 대신 감시 켜기를 끄세요"];
+  const lines = asSched(app) ? ["다시 실행하지 않고 목록에서 빼요. 되돌릴 수 없어요", "잠깐 멈추려면 삭제 대신 예약 켜기를 끄세요"]
+    : [`${pc ? `${pc.name}에서 ` : ""}확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요`, "지금까지 온 감시 소식은 그대로 남아요", "잠깐 멈추려면 삭제 대신 감시 켜기를 끄세요"];
   return el("div", { class: "as-rm" },
     el("div", { class: "as-n", text: `${name}을(를) 삭제할까요?` }),
     el("ul", { class: "as-rml" }, ...lines.map(t => el("li", { text: t }))),
@@ -388,7 +395,7 @@ function asConnItem(app) {
   return { pc, it: pc ? ((peer && peer.items && peer.items.integrations) || []).find(x => x.key === app.split("~")[0]) : INTG.items.find(x => x.key === app) };
 }
 function asConnNode(app) {
-  if (app.startsWith("w:")) return null;
+  if (asOwn(app)) return null;
   const { pc, it } = asConnItem(app);
   const off = !!(it && it.state === "disconnected");
   const last = pc ? "" : monStatMons(app).map(m => m && (m.last_ok || m.last_run)).filter(Boolean).sort().pop();
@@ -420,9 +427,9 @@ function asPaint() {
     if (box.dataset.sig !== sig) { box.dataset.sig = sig; clear(box).append(el("div", { class: "as-row" }, el("span", { class: "as-h", text: AS.none[app] ? "설정을 불러오지 못했어요" : "불러오는 중…" }))); }
     return;
   }
-  const feat = app.startsWith("w:") ? null : AS.feat[app] || null;
+  const feat = asOwn(app) ? null : AS.feat[app] || null;
   // The watch status rows and the connection row are drawn from the monitor and integration data, so their changes repaint too.
-  const statSig = app.startsWith("w:") ? [asMon(app)] : [monStatMons(app), (({ it }) => it ? [it.state, it.since, it.hint] : null)(asConnItem(app))];
+  const statSig = asOwn(app) ? [asMon(app)] : [monStatMons(app), (({ it }) => it ? [it.state, it.since, it.hint] : null)(asConnItem(app))];
   const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], feat, statSig, AR.edit[app] ? AR.edit[app].id || "new" : null]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
@@ -440,7 +447,7 @@ function asPaint() {
   }
   // Every watch the app owns gets one status row, whether or not the features route answers (an older hub has none); its kind, reason and period
   // ride on that row when it does.
-  const internals = feat ? feat.internal : [], statMons = app.startsWith("w:") ? [] : monStatMons(app);
+  const internals = feat ? feat.internal : [], statMons = asOwn(app) ? [] : monStatMons(app);
   const byWatch = new Map(statMons.map(m => [m.watch || m.name, m])), drawn = new Set();
   for (const i of internals) { const m = byWatch.get(i.id); if (m) drawn.add(m); put("watch", 5, asStatRow(app, m || null, i)); }
   for (const m of statMons) if (!drawn.has(m)) put("watch", 5, asStatRow(app, m, null));
@@ -449,9 +456,9 @@ function asPaint() {
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: "기억해 둔 것" }),
       el("span", { class: "as-h", text: "대화에서 알려 주면 봇이 기억하고 참고해요. 바꾸려면 대화에서 말해 주세요" }),
       ...mem.map(f => el("span", { class: "as-h", text: `${f.label}: ${f.value === "" || f.value == null ? "아직 없어요" : asFmt(f, f.value)}` })))));
-  put("advanced", 7, app.startsWith("w:") ? asWatchRmNode(app) : asRemoveNode(app));
-  const wmon = app.startsWith("w:") ? asMon(app) : null;
-  const conn = app.startsWith("w:") ? (wmon ? asStatRow(app, wmon, null) : null) : asConnNode(app);
+  put("advanced", 7, asOwn(app) ? asWatchRmNode(app) : asRemoveNode(app));
+  const wmon = asOwn(app) ? asMon(app) : null;
+  const conn = asOwn(app) ? (wmon ? asStatRow(app, wmon, null) : null) : asConnNode(app);
   clear(box).append(
     ...(conn ? [conn] : []),
     ...AS_SECTIONS.flatMap(([k, title]) => {
@@ -467,7 +474,7 @@ function asScreen(app) {
   asLoad(app);
   const h = ASC.h = fsOpen({ labelledby: "as-scr-t", cls: "tall as-screen", onClose: () => { if (ASC.h === h) { ASC.h = null; ASC.app = ""; } } });
   ASC.app = app;
-  if (!app.startsWith("w:")) asFeatLoad(app);
+  if (!asOwn(app)) asFeatLoad(app);
   clear(h.box).append(
     el("div", { class: "fs-hd" }, el("button", { class: "ib fs-x as-back", type: "button", "aria-label": "뒤로", "data-k": "as-back", onclick: () => h.close() }, icon("back")),
       el("div", { class: "fs-tt" }, el("span", { class: "fs-ey", text: "설정" }), el("h2", { class: "fs-t", id: "as-scr-t", text: monSettingsName(`settings:${app}`) }))),
@@ -482,7 +489,7 @@ function asSync() {
 }
 
 /* ---- a failing monitor's quick actions: chips that only fill the composer of its conversation (the owner reads and sends) ---- */
-const asMon = app => { const pe = PQ.of.get(`settings:${app}`); return pe ? pe.mon : NM.items.find(x => x.watch === app.slice(2)); };
+const asMon = app => { const pe = PQ.of.get(`settings:${app}`); return pe ? pe.mon : NM.items.find(x => app.startsWith("s:") ? x.schedule === app.slice(2) : x.watch === app.slice(2)); };
 const asChipTexts = m => m && m.last_result === "fail" ? [...(m.keeper ? ["다시 로그인해 줘"] : []), "원인 찾아 줘", "일시정지"] : [];
 // Every monitor and app has its own settings conversation, also a monitor a project created (it is not the project's).
 const asConv = app => `settings:${app}`;
@@ -515,10 +522,11 @@ function asChipPaint() {
 function asOpen(ev) { go("monitoring", `c:${asConv(ev.currentTarget.dataset.asOpen)}`); }
 const asBtn = app => el("button", { class: "ib as-hd", type: "button", "aria-label": "대화", title: "대화", "data-as-open": app, onclick: asOpen }, icon("chat"));
 // The two buttons of `app` ("mail", "w:<watch>"): 대화 and ⋯; none while its settings are not loaded (an app without any shows no button).
+// A schedule ("s:<id>") has no settings conversation: only ⋯.
 function asEntry(app) {
   if (!app) return [];
   if (!AS.load[app]) asLoad(app);
-  return AS.by[app] ? [asBtn(app), asMoreBtn(app)] : [];
+  return !AS.by[app] ? [] : asSched(app) ? [asMoreBtn(app)] : [asBtn(app), asMoreBtn(app)];
 }
 // The phone has no head: the same button sits in the app bar beside the title and follows the open detail.
 var asBar = asBtn("");   // var: the app bar is drawn (31-conversations.js convTitle) before this file runs
@@ -534,7 +542,7 @@ function asMoreSync(app) {
   if (app) asMoreBar.dataset.asMore = app;
 }
 function asBarSync(app) {
-  const on = !!app && !!asEntry(app).length;
+  const on = !!app && !asSched(app) && !!asEntry(app).length;
   asBar.hidden = !on;
   if (on) asBar.dataset.asOpen = app;
 }

@@ -59,11 +59,11 @@ export function addSchedule(input: { text?: string; at?: string; in_minutes?: nu
 }
 
 // The owner's edit from the project page (PATCH /api/schedules/<id>): persisted and re-armed. `paused` keeps the entry but
-// nothing fires; a recurring one resumes at its next slot after now, a one-shot whose time passed fires at once.
+// nothing fires; a recurring one resumes at its next slot after now, a one-shot whose time passed fires at once. `every_minutes: null` makes it one-shot.
 export function patchSchedule(id: string, input: { every_minutes?: unknown; at?: unknown; text?: unknown; paused?: unknown }): Schedule {
 	const s = items.find(x => x.id === id);
 	if (!s) throw new Error(`no schedule ${id}`);
-	const every = input.every_minutes === undefined ? s.every_minutes : everyMinutes(input.every_minutes);
+	const every = input.every_minutes === undefined ? s.every_minutes : input.every_minutes === null ? undefined : everyMinutes(input.every_minutes);
 	const text = input.text === undefined ? s.text : typeof input.text === "string" ? input.text.trim() : "";
 	if (!text) throw new Error("text must be a non-empty string");
 	const at = input.at === undefined ? Date.parse(s.at) : typeof input.at === "string" ? Date.parse(input.at) : Number.NaN;
@@ -72,6 +72,7 @@ export function patchSchedule(id: string, input: { every_minutes?: unknown; at?:
 	s.text = text;
 	s.at = new Date(at).toISOString();
 	if (every) s.every_minutes = every;
+	else delete s.every_minutes;
 	if (input.paused !== undefined) {
 		if (input.paused) s.paused = true;
 		else delete s.paused;
