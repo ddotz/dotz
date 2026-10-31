@@ -33,7 +33,7 @@ import { askedFile, draftAttachRoute } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
 import { draftRecipientsRoute } from "./draft-recipients.ts";
-import { composeMail, deleteMail, MailError, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { composeMail, deleteMail, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { holdDrafts, listDrafts, restoreDrafts } from "../features/reply-drafts/lib/store.ts";
 import { attachmentLines, canvasRoute, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
 import { ownerElements, pickedLines } from "./picked.ts";
@@ -240,6 +240,27 @@ async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: string; v
 	if (a.to.startsWith("mail:") && !mail) throw new Error("이 메일 대화를 찾을 수 없어요");
 	await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login: a.login, replyTo: a.replyTo, decision: a.notice, picks: a.picks, files: a.files, via: a.via });
 }
+
+/** A mailbox's read / replied state of its mails (POST /api/mail/state, the zele poll in hub/main.ts): read in dotz once read there (its bell items
+ *  too, as when he opens it here), 답장함 once answered there; every device redraws the mails that changed. Returns how many changed. */
+export function applyMailStates(source: string, items: readonly MailSourceState[]): number {
+	const changed = syncMailStates(source, items, (target, ts) => {
+		const r = markRead({ target, ts });
+		if (r.ok) readConversationNotices(r.target, r.ts);
+		return r.ok && r.moved;
+	});
+	for (const target of changed) broadcast({ kind: "mail_unreplied", target });
+	return changed.length;
+}
+const parseMailStates = (raw: unknown): { source: string; items: MailSourceState[] } | undefined => {
+	const b = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+	if (typeof b.source !== "string" || !b.source.trim() || !Array.isArray(b.items)) return undefined;
+	const items = b.items.slice(0, 2000).flatMap(x => {
+		const i = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
+		return typeof i.id === "string" && i.id ? [{ id: i.id.slice(0, 200), ...(i.read === true ? { read: true } : {}), ...(i.replied === true ? { replied: true } : {}) }] : [];
+	});
+	return { source: b.source.trim().slice(0, 60), items };
+};
 
 export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
 	const route = async (req: Request, srv?: Server<unknown>): Promise<Response> => {
@@ -570,6 +591,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const r = markRead(await body(req));
 			// Reading a conversation also reads its bell items up to there (whether or not the position moved), so the two never disagree.
 			if (r.ok) readConversationNotices(r.target, r.ts);
+			// A mail he opened here is read in its mailbox too, where that is one cheap call (hub/mail.ts mailOpened).
+			if (r.ok && r.moved) mailOpened(r.target);
 			return json(r, r.ok ? 200 : 400);
 		}
 		if (req.method === "GET" && url.pathname === "/api/conversations") {
@@ -658,6 +681,10 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			} catch (error) {
 				return json({ error: (error as Error).message }, error instanceof MailError ? error.status : 500);
 			}
+		}
+		if (req.method === "POST" && url.pathname === "/api/mail/state") {
+			const input = parseMailStates(await body(req));
+			return input ? json({ ok: true, changed: applyMailStates(input.source, input.items) }) : json({ error: "source and items [{id, read?, replied?}] required" }, 400);
 		}
 		if (req.method === "POST" && url.pathname === "/api/mail") {
 			if (!mailDeps) return json({ error: "mail is not wired in this process" }, 503);

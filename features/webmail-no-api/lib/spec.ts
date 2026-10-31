@@ -10,7 +10,8 @@ export type FieldMap = {
 	from?: string;
 	subject?: string;
 	time?: string;
-	read?: string; // truthy = already read
+	read?: string; // truthy = already read (a field named like "unread" is read the other way round)
+	answered?: string; // truthy = the owner replied to it (the site's own replied / answered flag)
 };
 
 export type Endpoint = {

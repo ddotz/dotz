@@ -9,7 +9,7 @@ import { loadConfig, loadSpec, liveCtx, paths, writeJson } from "../lib/config.t
 import { cookieHeaderFromAside } from "../lib/cookies.ts";
 import { endpointUrl } from "../lib/spec.ts";
 import { liveGateway } from "../lib/gateway.ts";
-import { initialState, pollOnce, postToGateway, type WatchState } from "../lib/watchkit.ts";
+import { initialState, pollOnce, postStates, postToGateway, type WatchState } from "../lib/watchkit.ts";
 import { describeMail } from "../lib/adapter.ts";
 import { loginViaRepl } from "../lib/login.ts";
 import { loadOnboard } from "../lib/onboard.ts";
@@ -71,6 +71,7 @@ async function main(): Promise<number> {
 	const newCount = res.mails.length;
 	writeJson(paths.status(SITE), { lastRun: new Date(ctx.now()).toISOString(), lastOk: res.state.lastOk, loggedOut: res.state.loggedOut, failing: res.fail ?? null, ...(newCount ? { lastNewAt: new Date(ctx.now()).toISOString(), lastNewCount: newCount } : {}) }, 0o644);
 	for (const line of await postToGateway(liveGateway, SITE, res, ctx.log, (m) => describeMail(ctx, spec, m.id))) console.log(line);
+	await postStates(liveGateway, SITE, res, ctx.log);
 	ctx.log(`watch ${SITE}: ${res.note} (${endpointUrl(spec.origin, spec.list, { mailbox: spec.list.mailbox })})`);
 	if (res.fail) {
 		console.log(res.fail);
