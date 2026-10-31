@@ -247,12 +247,12 @@ const monTag = tone => { const t = MON_TONE[tone]; return t ? el("span", { class
 // the subject in bold, the body in paragraphs - with its state as a badge with the time. 보내기 sends, 고치기 asks "어떻게 고칠까요?" (the bot rewrites it),
 // 보내지 않기 is the quiet way out. The whole answer path is the notice's (answerInline / ntPost), so the chat card and this one stay in step.
 const DR = { edit: new Set(), manual: new Set(), note: {} };
-const DR_STATE = { open: ["승인 대기", "warn"], send: ["보냄", "ok"], edit: ["고침", "pri"], revising: ["고치는 중…", "pri"], drop: ["보내지 않음", ""], expired: ["만료", ""], ignored: ["무시함", ""] };
+const DR_STATE = { open: ["승인 대기", "warn"], send: ["보냄", "ok"], edit: ["고침", "pri"], revising: ["고치는 중…", "pri"], drop: ["보내지 않음", ""], own: ["보낼 방법 전함", "pri"], expired: ["만료", ""], ignored: ["무시함", ""] };
 function drState(d) {
   if (d.state === "open" || d.state === "ignored") return d.state;
   if (d.draft && ntRevising({ kind: "decision", decision: d })) return "revising";   // 고치기 answered, the new draft has not landed
   const m = /^\s*(\d+)\)/.exec(String(d.answer || "")), o = m && d.options.find(x => x.n === Number(m[1]));
-  return d.resolved || !o ? "expired" : { 보내기: "send", 고치기: "edit", "보내지 않기": "drop" }[o.label] || "expired";
+  return d.resolved || !o ? "expired" : { 보내기: "send", 고치기: "edit", "보내지 않기": "drop", "답글만 보내기": "send", "메일만 보내기": "send", [DRAFT_OWN]: "own" }[o.label] || "expired";
 }
 const drParas = body => String(body ?? "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().split(/\n\n/);
 function drOriginal(t) {

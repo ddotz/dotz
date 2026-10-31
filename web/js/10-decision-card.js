@@ -47,7 +47,9 @@ const isHeadedChoice = pc => pc.blocks.some(b => b.headed && b.options.length > 
 const choiceAsks = (e, tone, pc) => tone === "ask" || isHeadedChoice(pc) || (e.kind === "out" && e.source === "gateway" && e.target === "alert" && isChoiceMsg(pc));
 const DC = { cur: null, picks: {}, step: {}, fold: {}, st: {}, edit: {}, note: {} };
 // A draft waiting for send approval (hub/draft-approval.ts): the notice carries it, the sheet shows it above 보내기 / 고치기 / 보내지 않기.
-const DRAFT_EDIT = "고치기";
+const DRAFT_EDIT = "고치기", DRAFT_OWN = "어떻게 보낼지 직접 입력";
+// The draft options that carry the owner's text: 고치기 (what to change) and the send mode 직접 입력 (how to send). Mirrors hub draftNeedsText.
+const draftAsksText = o => o.label === DRAFT_EDIT || o.label === DRAFT_OWN;
 const hashOf = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36); };
 // What the target waits on: a session's pendingAsk, else its last bot message when that is an [ask] with a choice block and no
 // owner message came after it. Null when nothing waits (so the card goes away once the answer lands).
@@ -99,7 +101,7 @@ async function answerDecision(dc, text, opt, note) {
   paintDecision();
 }
 // A draft asks for text on 고치기 only; any other decision on an option that needs detail (안 됨 …): what to change / why is typed first, nothing is sent before.
-const needsNote = (dc, opt) => (dc.draft ? opt.label === DRAFT_EDIT : detailOf(opt));
+const needsNote = (dc, opt) => (dc.draft ? draftAsksText(opt) : detailOf(opt));
 const pickSay = o => `${o.n}) ${o.label}${o.note ? ` - ${o.note}` : ""}`;
 function pickOption(dc, bi, opt, note) {
   if (DC.st[dc.key]) return;
@@ -311,14 +313,18 @@ const dcStText = (dc, st) => (dc.draft && ((DC.picks[dc.key] || [])[0] || {}).la
 const DRAFT_HINT = "더 짧게, 존댓말로, 견적서도 첨부한다고 써 줘", MANUAL_LEAD = "이 내용으로 고쳐 주세요: ";
 // The button under the typed text names what it does with the choice made, never a bare "보내기": after 고치기 on a draft a 내용 보내기 read as if
 // the mail would go out (owner 2026-10-28). One rule for the chat card and the notice sheet.
-const noteGoLabel = (opt, drf, man) => (man ? "이 내용으로 고치기" : drf ? "고쳐 달라고 하기" : `${opt.label}(으)로 답하기`);
+const noteGoLabel = (opt, drf, man) => (man ? "이 내용으로 고치기" : drf && opt.label === DRAFT_OWN ? "이렇게 보내 달라고 하기" : drf ? "고쳐 달라고 하기" : `${opt.label}(으)로 답하기`);
+// What the text box of a draft option asks: 고치기 = the change, 직접 입력 = how to send it.
+const OWN_HINT = "메일 먼저 보내고 답글은 내일 올려 줘";
+const draftNoteText = opt => (opt.label === DRAFT_OWN ? { hint: OWN_HINT, aria: "보내는 방법", ask: "어떻게 보낼까요?" } : { hint: DRAFT_HINT, aria: "고칠 내용", ask: "어떻게 고칠까요?" });
 function editNode(dc, ed, st) {
   const opt = ed.opt, drf = !!dc.draft, man = !!ed.manual;
-  const ta = el("textarea", { class: "dc-note", rows: man ? "7" : "2", maxlength: man ? "6000" : "500", placeholder: drf ? (man ? "보낼 내용을 직접 고쳐 주세요" : DRAFT_HINT) : "이유나 내용을 적어 주세요", "aria-label": man ? "직접 수정" : drf ? "고칠 내용" : "자세한 내용", disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
+  const dt = draftNoteText(opt);
+  const ta = el("textarea", { class: "dc-note", rows: man ? "7" : "2", maxlength: man ? "6000" : "500", placeholder: drf ? (man ? "보낼 내용을 직접 고쳐 주세요" : dt.hint) : "이유나 내용을 적어 주세요", "aria-label": man ? "직접 수정" : drf ? dt.aria : "자세한 내용", disabled: !!st, oninput: () => { DC.note[dc.key] = ta.value; go.disabled = !ta.value.trim(); } });
   ta.value = DC.note[dc.key] ?? (man ? dc.draft.body : "");
   const go = el("button", { class: "dc-go", type: "button", disabled: !!st || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) pickOption(dc, ed.bi, opt, man ? MANUAL_LEAD + note : note); } }, noteGoLabel(opt, drf, man));
   const back = el("button", { class: "dc-back", type: "button", disabled: !!st, onclick: () => { delete DC.edit[dc.key]; paintDecision(); } }, "돌아가기");
-  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: man ? "직접 수정" : drf ? "어떻게 고칠까요?" : opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
+  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(opt.n) }), el("span", { class: "dc-lb", text: man ? "직접 수정" : drf ? dt.ask : opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
 // A decision in the full-screen overlay (30-notices.js dkOpen, 38-overlay.js): header = what it is, body = the draft or the question, sticky footer = the choices.
 // A draft waiting for send approval shows who and what in the header and 보내기 / 고치기 / 보내지 않기 in the footer. Only the body scrolls.
