@@ -85,12 +85,15 @@ Onboarding also asks for the macOS permissions (`onboard/permissions.ts`). The g
 macOS attributes every protected access by the gateway and everything it spawns (agent processes, osascript, aside,
 git) to `bun`:
 the prompts and the Settings entries are for the bun binary, not your terminal. Setup asks for them once, up front:
-Full Disk Access (no prompt, you switch it on in Settings; it also covers Desktop/Documents/Downloads and removable and
+Full Disk Access (no prompt, switched on in Settings; it also covers Desktop/Documents/Downloads and removable and
 network volumes), Files and Folders for Desktop, Documents and Downloads (prompts), Automation for System Events (prompt),
 and Accessibility (Settings). The probes run as a short launchd job (`dev.dotz.permprobe`) so the answers are for bun
-too. `bun setup.ts permissions` runs the same step any time and is safe to rerun (granted items are skipped);
+too. Setup and the bot do these steps themselves (`onboard/selfserve.ts`): open the exact Settings pane, turn bun's switch
+on (adding it when missing), press Allow on the prompts and re-check; you are asked only for what macOS keeps for a person
+(a Mac password or Touch ID sheet, a prompt that ignores automation), once. `bun setup.ts permissions` runs the same step any
+time and is safe to rerun (granted items are skipped; exit 3 = a person's step is left);
 `bun setup.ts permissions --check` only prints the state and never raises a dialog. New grants apply to the running
-gateway after `launchctl kickstart -k gui/$(id -u)/dev.dotz.gateway`.
+gateway after a restart (`/restart gateway`).
 
 Discord: create a dedicated bot in the Developer Portal, enable the MESSAGE CONTENT intent, give its token to setup,
 and invite it with the printed link. The gateway creates two categories named after the bot, e.g. "땃쥐" (the main
@@ -348,7 +351,8 @@ page quiets its device's push on every gateway (`/api/push/presence` is forwarde
 ## Integrations (off until you ask)
 
 Shipped integrations are off after install. Ask the orchestrator ("카톡 연결해줘", "유튜브·인스타 연결해줘") and it runs the
-feature's setup, keeps one progress message updated, asks you only for what you must do (logins, permissions, device codes)
+feature's setup, keeps one progress message updated, does the computer steps itself (permission panes, switches, Allow prompts, app restarts), asks you only for what a person
+must do (passwords, 2FA and device codes, a Mac password or Touch ID sheet)
 and resumes where it stopped if run again. Nothing is posted or sent without your approval.
 
 - *KakaoTalk* (`hub/kakao/`, `docs/kakao.md`): drafts replies in your tone for new messages. Reads the app's database

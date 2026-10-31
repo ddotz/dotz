@@ -8,6 +8,7 @@ import { dlopen, FFIType, ptr } from "bun:ffi";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { allowWhile, grantPermission, type Host, openPane, type PermKey, realHost, realUiBlocked } from "./selfserve.ts";
 
 const HOME = homedir();
 const PROBE_LABEL = "dev.dotz.permprobe";
@@ -143,6 +144,8 @@ async function runProbe(mode: string, outFile: string, keys: string[]): Promise<
 
 // Runs the probe as a launchd job and returns its JSON, or undefined when it did not answer within timeoutMs.
 async function launch(bun: string, mode: "check" | "request", keys: string[], timeoutMs: number): Promise<Details | undefined> {
+	// Under test no launchd job and no TCC prompt: every permission reads as unknown.
+	if (realUiBlocked()) return undefined;
 	const uid = process.getuid?.() ?? 501;
 	const domain = `gui/${uid}/${PROBE_LABEL}`;
 	const dir = mkdtempSync(join(tmpdir(), "dotz-permprobe-"));
@@ -202,42 +205,52 @@ export function printPermissions(bun: string, status: Record<string, Status>): v
 	}
 }
 
-/** Interactive flow: prompts for what can prompt, then walks the Settings panes for the rest, re-checking after each Enter. */
-export async function requestPermissions(bun: string, ask: (q: string) => string): Promise<void> {
+const SELF_KEY: Record<string, PermKey> = { fda: "fda", desktop: "files", documents: "files", downloads: "files", automation: "automation", accessibility: "accessibility" };
+
+/**
+ * The bot does every step it can itself: raises the prompts and presses Allow on them, opens each Settings pane and turns bun's
+ * switch on (onboard/selfserve.ts), re-checking after each. Only what macOS keeps for a person (a protected prompt, a Mac password
+ * or Touch ID sheet) is printed as one exact step; in a terminal it then waits for Enter, elsewhere it returns the missing keys.
+ */
+export async function requestPermissions(bun: string, ask: (q: string) => string, host: Host = realHost, tty = Boolean(process.stdin.isTTY)): Promise<string[]> {
 	bun = realBun(bun);
 	console.log("권한을 확인하는 중...");
 	const before = await detail(bun);
 	let now = before;
 	printPermissions(bun, toStatus(before));
-	if (!process.stdin.isTTY) return void console.log("터미널이 아니라서 권한 요청은 건너뛰어요. 터미널에서 bun setup.ts permissions 를 실행하세요.");
 
 	const askable = PERMISSIONS.filter(p => p.how === "prompt" && now[p.key] === "notasked");
 	if (askable.length) {
-		console.log(`곧 팝업이 떠요. '허용'을 눌러 주세요: ${askable.map(p => p.label).join(", ")}`);
-		await launch(bun, "request", askable.map(p => p.key), 180_000);
+		console.log(`팝업을 띄우고 '허용'을 직접 눌러요: ${askable.map(p => p.label).join(", ")}`);
+		await allowWhile(host, launch(bun, "request", askable.map(p => p.key), 180_000));
 		now = await detail(bun);
 	}
 
 	// Full Disk Access comes first: once it is granted the folder entries resolve with it. Volumes only ever resolve through it.
+	const left: string[] = [];
 	for (const p of PERMISSIONS.filter(p => !(p.viaFda && p.how === "pane"))) {
+		if (now[p.key] === "granted") continue;
+		const g = await grantPermission(host, { key: SELF_KEY[p.key]!, row: "bun", path: bun, tries: 3, check: async () => (now = await detail(bun))[p.key] === "granted" });
+		if (g.status !== "needs-owner") continue;
+		const step = p.ae ? `${p.label}: 시스템 설정 > 개인정보 보호 및 보안 > 자동화 창을 열어 두었어요. bun 아래의 System Events 만 켜 주세요 (${bun})` : `${p.label}: ${g.step}`;
+		console.log(step);
+		if (!tty) {
+			left.push(p.key);
+			continue;
+		}
 		while (now[p.key] !== "granted") {
-			await Bun.$`open ${p.pane}`.nothrow().quiet();
-			console.log(
-				p.ae
-					? `${p.label}: 시스템 설정 창이 열렸어요. bun 아래의 System Events 를 켜 주세요 (${bun})`
-					: `${p.label}: 시스템 설정 창이 열렸어요. 목록에서 bun 을 켜 주세요. 없으면 + 로 추가: ${bun} (파일 선택 창에서 Cmd+Shift+G 를 누르고 숨김 폴더 ~/.bun 경로를 붙여넣어요)`,
-			);
 			if (ask("켠 다음 Enter, 건너뛰려면 s").toLowerCase() === "s") break;
 			now = await detail(bun);
+			if (now[p.key] !== "granted") await openPane(host, SELF_KEY[p.key]!);
 		}
+		if (now[p.key] !== "granted") left.push(p.key);
 	}
 
 	console.log("\n최종 상태:");
 	printPermissions(bun, toStatus(now));
 	const changed = PERMISSIONS.some(p => before[p.key] !== "granted" && now[p.key] === "granted");
-	if (changed && existsSync(GATEWAY_PLIST)) {
-		console.log(`새 권한은 게이트웨이를 다시 시작해야 적용돼요: launchctl kickstart -k gui/${process.getuid?.() ?? 501}/${GATEWAY_LABEL}`);
-	}
+	if (changed && existsSync(GATEWAY_PLIST)) console.log("새 권한은 게이트웨이를 다시 시작해야 적용돼요: /restart gateway (POST /api/gateway/restart, 모두 쉴 때 다시 시작해요)");
+	return left;
 }
 
 const probeArgs = process.argv.slice(2);

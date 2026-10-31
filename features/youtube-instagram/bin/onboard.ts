@@ -9,6 +9,7 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { asideReason } from "../../../hub/aside-errors.ts";
+import { grantPermission, type Host, restartApp } from "../../../onboard/selfserve.ts";
 import { legacyGate } from "../lib/legacy.ts";
 import { type Config, type Ctx, loadConfig, paths, readJson, realCtx, secretsDir, snsDir, validateConfig, writeJson } from "../lib/config.ts";
 import { PERMISSION_LINE, syncDms } from "../lib/ig-dm.ts";
@@ -25,7 +26,8 @@ import { defaultLoopback, gateway, type Loopback, run as setupRun } from "./setu
 export type Result = { lines: string[]; code: number };
 export type Aside = { repl: (body: string) => Promise<unknown> };
 export type OtpSource = { probe: () => void; wait: (service: OtpService, since: Date) => Promise<string | undefined> };
-export type Deps = { ctx: Ctx; aside: Aside; otp: OtpSource; loopback?: () => Loopback };
+// host: the computer steps the bot does itself (onboard/selfserve.ts); defaults to ctx.exec / ctx.sleep.
+export type Deps = { ctx: Ctx; aside: Aside; otp: OtpSource; loopback?: () => Loopback; host?: Host };
 
 type Platform = "youtube" | "instagram";
 type StepId = "deps" | "gcp-project" | "gcp-api" | "gcp-consent" | "gcp-publish" | "youtube-client" | "youtube-auth" | "instagram-account" | "meta-app" | "instagram-token" | "instagram-dm" | "detect" | "apply" | "test-read" | "done";
@@ -143,10 +145,13 @@ async function stepDeps(r: Run): Promise<Out> {
 	const { ctx, aside, otp } = r.d;
 	const ok = async (argv: string[]) => (await ctx.exec(argv)).code === 0;
 	if (!(await ok(["bun", "--version"]))) return { status: "failed", note: "bun을 찾지 못했어요" };
+	const host: Host = r.d.host ?? { exec: ctx.exec, sleep: ctx.sleep };
 	try {
 		await aside.repl("return 1");
 	} catch {
-		return { status: "failed", note: "Aside가 답하지 않아요. Aside 앱에 브라우저 창이 하나 열려 있어야 해요" };
+		// A stuck Aside is restarted here, in the background, before anyone is told.
+		const back = (await restartApp(host, "Aside")) && (await aside.repl("return 1").then(() => true, () => false));
+		if (!back) return { status: "failed", note: "Aside를 다시 켰는데도 답하지 않아요. Aside 앱에 브라우저 창이 하나 열려 있어야 해요" };
 	}
 	const need = [(await ok(["ffprobe", "-version"])) ? "" : "ffmpeg", r.platforms.includes("instagram") && !(await ok(["cloudflared", "--version"])) ? "cloudflared" : ""].filter(Boolean);
 	if (need.length) {
@@ -154,6 +159,18 @@ async function stepDeps(r: Run): Promise<Out> {
 		const inst = await ctx.exec(["brew", "install", ...need], { timeoutMs: 15 * 60_000 });
 		if (inst.code !== 0) return { status: "failed", note: `${need.join(", ")} 설치에 실패했어요` };
 	}
+	const readable = async () => {
+		try {
+			otp.probe();
+			return true;
+		} catch (e) {
+			if (e instanceof MessagesAccessError) return false;
+			throw e;
+		}
+	};
+	const fda = (await readable()) ? undefined : await grantPermission(host, { key: "fda", row: "bun", path: process.execPath, tries: 3, check: readable });
+	if (fda?.status === "needs-owner")
+		return { status: "needs-owner", soft: true, note: need.length ? `${need.join(", ")}를 설치했어요. 문자 읽기 권한은 아직이에요` : "문자 읽기 권한이 아직 없어요", ask: fda.step! };
 	try {
 		otp.probe();
 	} catch (e) {

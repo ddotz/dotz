@@ -2,7 +2,7 @@
 //   on --app youtube|instagram|site [--name <site>] [--import-from <file-or-dir> (repeatable)] [--import-yt <file>] [--import-ig <file>] [--import-legacy | --no-import-legacy] [--label <text>] [--read-kind rss|json|script --read <url|command>]
 //      [--post-kind webhook|script --post <url|command> [--secret <file in ~/.dotz/secrets>]] [--owner <name on the site>] [--to <target>]
 //   off --app <key>   |   status
-// Steps: connection check (the only owner-only step: exit 3 with everything he must do, in one batch) -> source config -> personal
+// Steps: connection check (exit 3 with the command the bot runs next to connect; only secrets and 2FA reach the owner) -> source config -> personal
 // feature switch -> tone from his past replies -> the `comments` watch (and the old per-platform comment watch paused) -> first read.
 // A site also becomes its own app instance (POST /api/apps {app:"site", id:"site-<name>", filter:{source:<name>}}): its own row, comment view and settings.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -118,7 +118,7 @@ export async function runOnboard(args: string[], deps: { engine?: Engine; gatewa
 			const to = flag(args, "--to");
 			const legacy = legacyGate(args);
 			if (legacy.ask) return { lines: legacy.lines, code: 3 };
-			return { lines: [...legacy.lines, `${WORD[app]}이(가) 아직 연결되지 않았어요. 연결에는 사용자가 직접 할 일이 있어요: bun ${join(FEATURE, "..", "youtube-instagram", "bin", "onboard.ts")} run --${app}${to ? ` --target ${to}` : ""}`, `연결이 끝나면 같은 명령(onboard.ts on --app ${app})을 다시 실행해요`, IMPORT_HINT], code: 3 };
+			return { lines: [...legacy.lines, `${WORD[app]}이(가) 아직 연결되지 않았어요. 연결은 이 명령을 실행해 직접 진행해요(비밀번호·2차 인증 같은 것만 사용자에게 한 번 물어요): bun ${join(FEATURE, "..", "youtube-instagram", "bin", "onboard.ts")} run --${app}${to ? ` --target ${to}` : ""}`, `연결이 끝나면 같은 명령(onboard.ts on --app ${app})을 다시 실행해요`, IMPORT_HINT], code: 3 };
 		}
 		[key, label] = [app, `${WORD[app]} 댓글`];
 	}

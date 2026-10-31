@@ -70,7 +70,7 @@ export async function runOnboard(args: string[], run: Runner = realRunner, zeleO
 			const platform = app as Platform;
 			if (!sns.connected(platform)) {
 				const to = flag(args, "--to");
-				return { lines: [`${SNS[app]}이(가) 아직 연결되지 않았어요. 먼저 연결해 주세요: bun ${SNS_ONBOARD} run --${app}${to ? ` --target ${to}` : ""}`, `연결이 끝나면 같은 명령(onboard.ts on --app ${app})을 다시 실행해요`], code: 3 };
+				return { lines: [`${SNS[app]}이(가) 아직 연결되지 않았어요. 이 명령을 실행해 먼저 직접 연결해요(비밀번호·2차 인증 같은 것만 사용자에게 한 번 물어요): bun ${SNS_ONBOARD} run --${app}${to ? ` --target ${to}` : ""}`, `연결이 끝나면 같은 명령(onboard.ts on --app ${app})을 다시 실행해요`], code: 3 };
 			}
 			setApp(app, true);
 			writeSwitch();

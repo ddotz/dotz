@@ -4,7 +4,8 @@
 // hub/kakao/cli.ts wires the real ones. The login id, password and database key never pass through here.
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { grantPermission, type PermKey } from "../../onboard/selfserve.ts";
 import { KAKAO_BUNDLE, type HubFull, type KakaoConfig, type KakaoPaths, kakaoPaths, type LoginStatus, type Runner } from "./types.ts";
 
 export const PROGRESS_KEY = "kakao-setup";
@@ -74,6 +75,8 @@ export type Deps = {
 	pid: number;
 	isAlive: (pid: number) => boolean;
 	log?: (line: string) => void;
+	// darwin unless a test says otherwise (onboard/selfserve.ts skips permission steps elsewhere).
+	platform?: NodeJS.Platform;
 	// Login-only run (`cli login`): same asks, no progress message, no saved state.
 	solo?: boolean;
 };
@@ -91,11 +94,8 @@ const BREW_INSTALL = '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.c
 const AGAIN = "'카톡 연결해줘'라고 다시 말해 주세요";
 
 type Perm = "fda" | "ax";
-const PERM_PANE: Record<Perm, string> = {
-	fda: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
-	ax: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-};
 const PERM_NAME: Record<Perm, string> = { fda: "전체 디스크 접근", ax: "손쉬운 사용" };
+const PERM_KEY: Record<Perm, PermKey> = { fda: "fda", ax: "accessibility" };
 
 class Stop extends Error {
 	constructor(
@@ -152,6 +152,7 @@ class Machine {
 	todo = new Map<string, string>();
 	lastText = "";
 	asked = false;
+	tried = new Map<Perm, string | undefined>();
 	resumeAt?: StepId;
 	private mode: "run" | "fail" | "done" = "run";
 
@@ -248,6 +249,18 @@ class Machine {
 		return out;
 	}
 
+	// The bot turns the permission on itself (pane, switch, Allow); what macOS keeps for the owner comes back as one exact step.
+	private async selfGrant(p: Perm): Promise<string | undefined> {
+		if (this.tried.has(p)) return this.tried.get(p);
+		const r = await grantPermission(
+			{ exec: (argv, o) => this.exec(argv, o), sleep: this.d.sleep, platform: this.d.platform ?? "darwin" },
+			{ key: PERM_KEY[p], row: basename(this.d.execPath), path: this.d.execPath, check: async () => !(await this.missingPerms()).includes(p), tries: 3, waitMs: POLL_MS },
+		);
+		const step = r.status === "needs-owner" ? r.step : undefined;
+		this.tried.set(p, step);
+		return step;
+	}
+
 	private async ensureAsk(purpose: string) {
 		if (this.st.authId) {
 			const r = await this.hubGet(`/api/auth/${this.st.authId}`);
@@ -267,8 +280,12 @@ class Machine {
 	private async batchAsk() {
 		if (this.asked) return;
 		this.asked = true;
-		for (const p of await this.missingPerms()) this.todo.set(p, this.permTodo(p));
+		// The credentials ask goes out first so the owner is never kept waiting behind the bot's own permission attempts.
 		if (!(await this.d.ports.hasCredentials())) await this.ensureAsk(CRED_PURPOSE);
+		for (const p of await this.missingPerms()) {
+			const step = await this.selfGrant(p);
+			if (step) this.todo.set(p, step);
+		}
 		this.st.steps.ask = "done";
 		this.view.set("ask", "끝");
 		this.save();
@@ -340,18 +357,22 @@ class Machine {
 			const first = missing[0]!;
 			if (!opened.has(first)) {
 				opened.add(first);
-				await this.exec(["open", "-g", PERM_PANE[first]]);
+				await this.selfGrant(first);
+				missing = await this.missingPerms();
+				if (!missing.length) break;
 			}
 			for (const p of ["fda", "ax"] as const) {
-				if (missing.includes(p)) this.todo.set(p, this.permTodo(p));
+				if (missing.includes(p)) this.todo.set(p, this.tried.get(p) ?? this.permTodo(p));
 				else this.todo.delete(p);
 			}
 			if (!hinted && missing.includes("fda") && this.d.now() - start >= FDA_HINT_MS) {
 				hinted = true;
-				this.todo.set("restart", "전체 디스크 접근을 이미 켰는데도 이 안내가 계속되면 게이트웨이를 한 번 다시 시작해 주세요");
+				// A grant made while the gateway runs reaches it only after a restart; the setup process is detached and resumes.
+				const r = await this.d.hub.post("/api/gateway/restart", {}).catch(() => ({ status: 0 }));
+				if (r.status >= 300 || r.status === 0) this.todo.set("restart", "전체 디스크 접근을 이미 켰는데도 이 안내가 계속되면 게이트웨이를 한 번 다시 시작해 주세요");
 			}
 			await this.wait("permissions", PERM_NAME[first]);
-			if (this.d.now() - start >= PERM_WAIT_MS) throw new Stop("permissions", `${PERM_NAME[first]} 권한이 켜지지 않았어요`, `${this.permTodo(first)}. 그런 다음 ${AGAIN}`);
+			if (this.d.now() - start >= PERM_WAIT_MS) throw new Stop("permissions", `${PERM_NAME[first]} 권한이 켜지지 않았어요`, `${this.tried.get(first) ?? this.permTodo(first)}. 그런 다음 ${AGAIN}`);
 			await this.d.sleep(POLL_MS);
 			missing = await this.missingPerms();
 		}

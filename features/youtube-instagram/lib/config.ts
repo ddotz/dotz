@@ -3,6 +3,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { refuseRealUi } from "../../../onboard/selfserve.ts";
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 export const snsDir = () => join(dataDir(), "custom", "sns");
@@ -156,6 +157,7 @@ export function realCtx(): Ctx {
 		now: () => new Date(),
 		sleep: ms => new Promise(r => setTimeout(r, ms)),
 		exec: async (argv, opts) => {
+			refuseRealUi(argv);
 			const p = Bun.spawn(argv, { cwd: opts?.cwd, stdout: "pipe", stderr: "pipe" });
 			const t = setTimeout(() => p.kill("SIGKILL"), opts?.timeoutMs ?? 60_000);
 			const [stdout, stderr] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);

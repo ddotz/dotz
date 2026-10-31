@@ -1,6 +1,7 @@
 // bin/onboard.ts: the whole flow, an owner batch, an interruption with resume, codes and reset, against injected runners
 // (aside.repl, exec, fetch, otp source, loopback driver), a temp DOTZ_DIR and the real receiver on loopback. Every wizard
 // step goes through aside.repl (never the Aside agent). No real network, no real aside, no timers.
+import type { Host } from "../../../onboard/selfserve.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -100,10 +101,24 @@ function harness() {
 			return hooks.codes.shift();
 		},
 	};
-	const deps: Deps = { ctx: f.ctx, aside, otp, loopback };
+	// The bot's own computer steps (pane, switch, Allow): recorded, never real. grantSwitch = the switch press works.
+	const self = { runs: [] as string[][], grantSwitch: false };
+	const host: Host = {
+		exec: async argv => {
+			self.runs.push(argv);
+			if (argv[0] === "osascript" && argv[5] === "bun") {
+				if (self.grantSwitch) hooks.messagesBlocked = false;
+				return { code: 0, stdout: self.grantSwitch ? "toggled" : "error", stderr: "" };
+			}
+			return { code: 0, stdout: "", stderr: "" };
+		},
+		sleep: async () => {},
+		platform: "darwin",
+	};
+	const deps: Deps = { ctx: f.ctx, aside, otp, loopback, host };
 	const sends = () => f.gateway().filter(c => c.method === "POST" && c.url.endsWith("/api/send"));
 	const everything = (r: { lines: string[] }) => [...log.repls, ...r.lines, ...sends().map(s => s.body.text)].join("\n");
-	return { f, deps, hooks, execs, loopbacks, log, sends, everything };
+	return { f, deps, hooks, execs, loopbacks, log, sends, everything, self };
 }
 
 const ok = (lines: string[]) => lines.every(l => l.startsWith("✅"));
@@ -171,6 +186,10 @@ test("two steps that need the owner produce ONE ask block and exit 3; the indepe
 	expect(first.code).toBe(3);
 	const asks = first.lines.filter(l => /^\d+\. /.test(l));
 	expect(asks).toHaveLength(2);
+	// The bot opened the Full Disk Access pane and tried bun's switch itself; macOS refused, so the ask is that one exact step.
+	expect(h.self.runs.some(a => a[0] === "open" && a.at(-1)!.endsWith("Privacy_AllFiles"))).toBe(true);
+	expect(h.self.runs.some(a => a[0] === "osascript" && a[5] === "bun")).toBe(true);
+	expect(asks[0]).toContain("자동 클릭을 막아서");
 	expect(asks[1]).toContain("인스타에 로그인이 안 돼 있어요");
 	expect(first.lines.find(l => l.includes("유튜브 로그인"))!.startsWith("✅")).toBe(true);
 	expect(first.lines.find(l => l.includes("인스타 계정 종류"))!.startsWith("❓")).toBe(true);
@@ -187,6 +206,37 @@ test("two steps that need the owner produce ONE ask block and exit 3; the indepe
 	expect(h.loopbacks).toHaveLength(1);
 	expect(h.execs.filter(a => a[0] === "brew" && a[1] === "install")).toHaveLength(1);
 	expect(h.f.watches.filter(w => w.name)).toHaveLength(7);
+});
+
+test("blocked Messages access the bot can switch on itself never reaches the owner", async () => {
+	const h = harness();
+	h.hooks.messagesBlocked = true;
+	h.self.grantSwitch = true;
+	const r = await run(h.deps, ["run"]);
+	expect(r.code).toBe(0);
+	expect(r.lines.some(l => /^\d+\. /.test(l))).toBe(false);
+	expect(h.self.runs.filter(a => a[0] === "osascript" && a[5] === "bun")).toHaveLength(1);
+});
+
+test("a stuck Aside is restarted in the background and the step goes on", async () => {
+	const h = harness();
+	const repl = h.deps.aside.repl;
+	let stuck = true;
+	h.deps.aside = { repl: async body => {
+		if (body === "return 1" && stuck) throw new Error("no answer");
+		return repl(body);
+	} };
+	const exec = h.deps.host!.exec;
+	let up = true;
+	h.deps.host!.exec = async argv => {
+		if (argv[0] === "osascript" && argv[2] === 'quit app "Aside"') up = false;
+		if (argv[0] === "open" && argv.at(-1) === "Aside") [up, stuck] = [true, false];
+		if (argv[0] === "pgrep") return { code: up ? 0 : 1, stdout: "", stderr: "" };
+		return exec(argv);
+	};
+	const r = await run(h.deps, ["run"]);
+	expect(r.code).toBe(0);
+	expect(h.self.runs.filter(a => a[0] === "open").map(a => a.join(" "))).toContain("open -g -j -a Aside");
 });
 
 test("interrupted after youtube-auth (the runner throws), the next run resumes at instagram-account without redoing done steps", async () => {
