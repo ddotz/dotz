@@ -84,6 +84,15 @@ async function zele(args: string[]): Promise<Item[]> {
 	return ((Bun.YAML.parse(out) as { items?: Item[] } | null)?.items ?? []) as Item[];
 }
 
+// An IMAP/SMTP-only account has no calendar and zele refuses every `cal` command for it; that is an empty calendar, not a failed tick,
+// so the mail part still seeds, saves and posts.
+const NO_CALENDAR = /Calendar is not available for IMAP\/SMTP accounts/i;
+const calendar = (list: (args: string[]) => Promise<Item[]>, args: string[]): Promise<Item[]> =>
+	list(args).catch(error => {
+		if (NO_CALENDAR.test(String((error as Error)?.message ?? error))) return [] as Item[];
+		throw error;
+	});
+
 export async function zeleAccounts(): Promise<string[]> {
 	if (!Bun.which("zele")) return [];
 	const r = await Bun.$`zele whoami`.nothrow().quiet();
@@ -203,7 +212,7 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 		await h.mail(newMail(m));
 	}
 
-	const upcoming = (await list(["cal", "events", "--days", "14", "--all", "--limit", "100"])).filter(ev => !isHoliday(ev));
+	const upcoming = (await calendar(list, ["cal", "events", "--days", "14", "--all", "--limit", "100"])).filter(ev => !isHoliday(ev));
 	const current = new Map(upcoming.map(ev => [String(ev.id), seen(ev)]));
 	for (const [id, e] of Object.entries(s.events)) if (!current.has(id) && !e.summary) delete s.events[id];
 	const vanished = Object.entries(s.events).filter(([id]) => !current.has(id));
@@ -229,7 +238,7 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 		delete s.events[id];
 	}
 
-	const soon = await list(["cal", "events", "--from", now.toISOString(), "--to", "+45m", "--all"]);
+	const soon = await calendar(list, ["cal", "events", "--from", now.toISOString(), "--to", "+45m", "--all"]);
 	for (const ev of soon) {
 		const key = `${ev.id}:${ev.start}`;
 		if (s.soon.includes(key)) continue;
