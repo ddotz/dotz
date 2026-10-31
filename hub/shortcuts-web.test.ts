@@ -7,13 +7,14 @@ import { join } from "node:path";
 const web = (f: string) => readFileSync(join(import.meta.dir, "..", "web", "js", f), "utf8");
 const state = web("04-state.js"), peers = web("33-peers.js");
 const tabSrc = state.slice(state.indexOf("const isMac ="), state.indexOf("for (const [id, label] of navTabs())"));
-const gwSrc = peers.slice(peers.indexOf("const prKeyHint"), peers.indexOf("// Tapping 홈 again"));
+const prOrderSrc = peers.slice(peers.indexOf("function prOrder"), peers.indexOf("const prCached"));
+const gwSrc = prOrderSrc + peers.slice(peers.indexOf("const prKeyHint"), peers.indexOf("// Tapping 홈 again"));
 const navStart = state.indexOf("const NAV =");
 const NAV = new Function(`${state.slice(navStart, state.indexOf(";\n", navStart) + 1)} return NAV;`)() as [string, string][];
 
 type Handler = (ev: unknown) => void;
 type Key = Partial<{ key: string; code: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean; isComposing: boolean }>;
-type Peer = { name: string; self?: boolean; online: boolean };
+type Peer = { name: string; url: string; self?: boolean; online: boolean };
 
 function fire(handlers: Handler[], k: Key) {
 	let prevented = false;
@@ -85,7 +86,32 @@ describe("Cmd/Ctrl+1..6 tab shortcuts", () => {
 });
 
 describe("Cmd/Ctrl+` next computer", () => {
-	const three: Peer[] = [{ name: "맥북", self: true, online: true }, { name: "맥미니", online: true }, { name: "서버", online: true }];
+	const three: Peer[] = [{ name: "맥북", url: "https://a", self: true, online: true }, { name: "맥미니", url: "https://b", online: true }, { name: "서버", url: "https://c", online: true }];
+	// What the gateway named `name` sends: itself first, then the others in its own discovery order (each computer differs).
+	const seenFrom = (name: string, reverse = false) => {
+		const me = three.find(p => p.name === name)!, rest = three.filter(p => p.name !== name).map(p => ({ ...p, self: false }));
+		return [{ ...me, self: true }, ...(reverse ? rest.reverse() : rest)];
+	};
+	const hop = (from: string, k: Key, reverse = false) => {
+		const g = gateways("MacIntel", seenFrom(from, reverse));
+		fire(g.handlers, k);
+		return g.log[0]!.replace("pick:", "");
+	};
+
+	test("three computers that each list themselves first cycle A -> B -> C -> A from every start, and Shift goes back", () => {
+		const fwd = { key: "`", code: "Backquote", ctrlKey: true }, back = { key: "~", code: "Backquote", ctrlKey: true, shiftKey: true };
+		for (const reverse of [false, true]) {
+			for (const start of ["맥북", "맥미니", "서버"]) {
+				const path = [start];
+				for (let i = 0; i < 3; i++) path.push(hop(path.at(-1)!, fwd, reverse));
+				const back3 = [start];
+				for (let i = 0; i < 3; i++) back3.push(hop(back3.at(-1)!, back, reverse));
+				const ring = ["맥북", "맥미니", "서버"], s = ring.indexOf(start);
+				expect(path).toEqual([0, 1, 2, 3].map(i => ring[(s + i) % 3]));
+				expect(back3).toEqual([0, 2, 1, 0].map(i => ring[(s + i) % 3]));
+			}
+		}
+	});
 
 	test("goes to the next computer in list order and wraps round", () => {
 		const a = gateways("MacIntel", three);
@@ -112,12 +138,12 @@ describe("Cmd/Ctrl+` next computer", () => {
 		expect(win.log).toEqual([]);
 	});
 
-	test("with one computer, a plain backtick, shift or an open dialog the key is not taken", () => {
+	test("with one computer, a plain backtick, alt or an open dialog the key is not taken", () => {
 		const one = gateways("MacIntel", [three[0]!]);
 		expect(fire(one.handlers, { key: "`", code: "Backquote", metaKey: true })).toBe(false);
 		const g = gateways("MacIntel", three);
 		expect(fire(g.handlers, { key: "`", code: "Backquote" })).toBe(false);
-		expect(fire(g.handlers, { key: "~", code: "Backquote", metaKey: true, shiftKey: true })).toBe(false);
+		expect(fire(g.handlers, { key: "`", code: "Backquote", metaKey: true, altKey: true })).toBe(false);
 		const d = gateways("MacIntel", three, { dialog: true });
 		expect(fire(d.handlers, { key: "`", code: "Backquote", metaKey: true })).toBe(false);
 		expect([one.log, g.log, d.log]).toEqual([[], [], []]);
