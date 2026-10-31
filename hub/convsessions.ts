@@ -1,4 +1,4 @@
-// One agent session per conversation (config `conversations.sessions`, off by default; read once, at boot). The owner's message in
+// One agent session per conversation (config `conversations.sessions`, on unless false; read once, at boot). The owner's message in
 // a conversation goes to that conversation's own orchestrator instance (hub/orchestrator.ts createOrchestrator), started on the
 // first such message and parked after it sat idle; everything the gateway starts itself stays on `main`, the session that also
 // oversees the others. This module is the registry and the only one that knows the flag: with it off, every key is `main` and

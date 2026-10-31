@@ -24,7 +24,7 @@ export type Config = {
 	api_budget?: { monthly_usd?: number };
 	// Days the account switch history (bottom of the usage screen) is kept; older entries are pruned.
 	accounts?: { history_days?: number };
-	// One agent session per conversation (hub/convsessions.ts): `sessions` turns it on (read at boot), `kinds` the conversation kinds that
+	// One agent session per conversation (hub/convsessions.ts): `sessions: false` turns it off (on by default, read at boot), `kinds` the conversation kinds that
 	// get one (hub/session-key.ts CONV_KINDS), `idle_stop_min` parks an idle one, `max_live` fixes how many run at once (main and lanes not counted; unset: sized from the
 	// computer's free memory and load, hub/convcapacity.ts).
 	conversations?: { sessions?: boolean; kinds?: string[]; idle_stop_min?: number; max_live?: number };
@@ -209,7 +209,11 @@ const count = (v: unknown, d: number, min: number) => (typeof v === "number" && 
 const cap = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 1 ? Math.floor(v) : undefined);
 export const lanesMaxActive = () => cap(cfg.lanes?.max_active);
 export const lanesMaxWorkers = () => cap(cfg.lanes?.max_workers);
-export const convSessionsOn = () => cfg.conversations?.sessions === true;
+// On unless set to false (2026-11-01): with one shared session, an owner message that came while that session ran another
+// conversation's turn or one the gateway started (watch, schedule, lane report) waited for the turn to end; its own session
+// steers it into its conversation's running turn at once, as on the owner's Mac mini.
+export const convSessionsIn = (c: { conversations?: { sessions?: boolean } }): boolean => c.conversations?.sessions !== false;
+export const convSessionsOn = () => convSessionsIn(cfg);
 export const convKinds = (): string[] | undefined => (Array.isArray(cfg.conversations?.kinds) ? cfg.conversations.kinds.filter(k => typeof k === "string") : undefined);
 export const convIdleStopMin = () => count(cfg.conversations?.idle_stop_min, DEFAULTS.conv_idle_stop_min, 0);
 export const convMaxLive = (): number | undefined => cap(cfg.conversations?.max_live);
