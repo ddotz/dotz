@@ -3,9 +3,10 @@
 // /api/state carries it under `runs` for the main conversation and every lane; the web chat shows it as one line above the
 // composer (web/js/41-runstate.js). The derivation is pure so every case is tested without a gateway.
 export type RunKind = "working" | "waiting" | "idle" | "limited" | "error" | "stopped" | "done";
-// waiting: ask | work | child | later | capacity · idle: unfinished | unknown · limited: rate | owner (a billing/auth block) · stopped: owner
-export type RunReason = "ask" | "work" | "child" | "later" | "capacity" | "unfinished" | "unknown" | "rate" | "owner";
-export type RunState = { kind: RunKind; reason?: RunReason; since?: string; detail?: string; todos?: number };
+// waiting: ask | work | recover (a failed worker the agent is taking up itself) | child | later | capacity · idle: unfinished | unknown · limited: rate | owner (a billing/auth block) · stopped: owner
+export type RunReason = "ask" | "work" | "recover" | "child" | "later" | "capacity" | "unfinished" | "unknown" | "rate" | "owner";
+// work: the background worker the line is about (중단 while it runs, 다시 맡기기 after it failed); cancelled: the owner stopped it.
+export type RunState = { kind: RunKind; reason?: RunReason; since?: string; detail?: string; todos?: number; work?: string; cancelled?: boolean };
 
 export type RunInput = {
 	status: string;
@@ -16,12 +17,18 @@ export type RunInput = {
 	stoppedBy?: "owner";
 	error?: { text?: string; since?: string };
 	ask?: { text?: string; at?: string };
-	work?: { description?: string; started_at?: number; model?: string }[];
+	work?: { id?: string; description?: string; started_at?: number; model?: string }[];
+	/** The conversation's latest finished background worker when it failed (or was stopped): shown until a turn ends after it. */
+	failed?: WorkLike;
 	children?: { name?: string; description?: string }[];
 	later?: number;
 	capacity?: string;
 	lastTurnEnd?: string;
 	todos?: { open: number; current?: string };
+	/** A watch the last turn started that has not come back (hub/todo.ts openMonitor): the session waits on its own background job. */
+	watching?: string;
+	/** The session is folding its context (queued or running): it is busy with its own housekeeping, not resting. */
+	compacting?: boolean;
 	now: number;
 };
 
@@ -35,15 +42,22 @@ const iso = (ms: number | undefined): string | undefined => (ms ? new Date(ms).t
 export function runState(i: RunInput): RunState {
 	const open = Math.max(0, Math.floor(i.todos?.open || 0)), todos = open ? { todos: open } : {};
 	if (i.status === "rate-limited") return { kind: "limited", reason: i.pauseKind === "owner" ? "owner" : "rate", since: i.since, detail: i.rateLimitedUntil, ...todos };
-	if (i.status === "working" || i.status === "starting") return { kind: "working", since: i.since, ...(short(i.intent) ? { detail: short(i.intent) } : {}), ...todos };
+	// what it is doing now: its latest tool-call intent, else the plan task it is on (owner 2026-10-29: "상태표시줄에서 지금 뭘 하고있는지")
+	if (i.status === "working" || i.status === "starting") return { kind: "working", since: i.since, ...(short(i.intent) || short(i.todos?.current) ? { detail: short(i.intent) || short(i.todos?.current) } : {}), ...todos };
 	if (i.error) return { kind: "error", since: i.error.since, detail: short(i.error.text || "모델 오류"), ...todos };
 	if (i.status === "stopped") return { kind: "stopped", ...(i.stoppedBy === "owner" ? { reason: "owner" as const } : {}), since: i.since, ...todos };
 	if (i.status === "exited") return { kind: "done", since: i.since, ...todos };
+	// A compaction after a turn reads as work, not as 쉬는 중 with tasks left (Mac mini 2026-10-29 01:46: "어 뭐지?").
+	if (i.compacting) return { kind: "working", detail: "대화 정리 중", ...todos };
 	if (short(i.ask?.text)) return { kind: "waiting", reason: "ask", since: i.ask?.at, detail: short(i.ask?.text), ...todos };
 	const w = (i.work || [])[0];
-	if (w) return { kind: "waiting", reason: "work", since: iso(w.started_at), detail: workDetail(w), ...todos };
+	if (w) return { kind: "waiting", reason: "work", since: iso(w.started_at), detail: workDetail(w), ...(w.id ? { work: w.id } : {}), ...todos };
 	const c = (i.children || [])[0];
 	if (c) return { kind: "waiting", reason: "child", detail: short(c.description || c.name || "서브에이전트"), ...todos };
+	if (short(i.watching)) return { kind: "waiting", reason: "work", detail: short(i.watching), ...todos };
+	// A worker that failed after the last turn ended is what this conversation is stuck on, until a turn answers after it.
+	const f = i.failed;
+	if (f && f.status === "failed" && (f.ended_at ?? 0) > (Date.parse(i.lastTurnEnd ?? "") || 0)) return { ...failedRun(f, false), ...todos };
 	if (i.later) return { kind: "waiting", reason: "later", since: i.lastTurnEnd, ...todos };
 	if (i.capacity) return { kind: "waiting", reason: "capacity", detail: short(i.capacity), ...todos };
 	if (open) return { kind: "idle", reason: i.lastTurnEnd ? "unfinished" : "unknown", since: i.lastTurnEnd, ...(short(i.todos?.current) ? { detail: short(i.todos?.current) } : {}), ...todos };
@@ -61,7 +75,7 @@ export function openTodos(t: TodoLike): { open: number; current?: string } {
 	return { open: live.length, ...(cur?.content ? { current: cur.content } : {}) };
 }
 
-export type WorkLike = { id?: string; description?: string; status: "running" | "done" | "failed"; started_at?: number; ended_at?: number; target?: string; error?: string; model?: string };
+export type WorkLike = { id?: string; description?: string; status: "running" | "done" | "failed"; started_at?: number; ended_at?: number; target?: string; error?: string; model?: string; reason?: string; cancelled?: boolean; handled?: boolean };
 /** A running worker's line: what it does, then the model it runs on, so the owner sees which model works for him ("<설명> · Opus 5.5 medium"). */
 export const workDetail = (w: { description?: string; model?: string }): string => [short(w.description || "백그라운드 작업"), short(w.model, 40)].filter(Boolean).join(" · ");
 
@@ -85,7 +99,15 @@ export function failureText(error: string | undefined): string {
 	}
 	return short(e) || "이유가 기록되지 않았어요";
 }
-const failureReason = (w: WorkLike) => failureText(w.error);
+const failureReason = (w: WorkLike) => w.reason || failureText(w.error);
+// A failed worker is the agent's to fix and finish, never a request to the owner (owner 2026-10-29: "왜 재요청을 나에게 물어보지?
+// 알아서 수정해서 목표 달성해야지"): until a turn takes it up the line says it is being taken up (blue, no button), and then it is gone.
+// Only work the owner stopped himself (중단) stays as a neutral line with 다시 맡기기.
+const failedRun = (w: WorkLike, retried: boolean): RunState => ({
+	kind: w.cancelled ? "error" : "waiting", reason: w.cancelled ? "work" : "recover", since: iso(w.ended_at),
+	detail: [short(w.description || "백그라운드 작업"), failureReason(w), retried ? "다시 맡긴 작업도 실패했어요" : ""].filter(Boolean).join(" · "),
+	...(w.id ? { work: w.id } : {}), ...(w.cancelled ? { cancelled: true } : {}),
+});
 
 /**
  * The run state of every mail conversation a background worker serves, keyed by the conversation (`mail:<key>`). A worker's own
@@ -105,16 +127,16 @@ export function workConversationRuns(works: readonly WorkLike[], conversationOf:
 	for (const [conv, list] of byConv) {
 		const running = list.filter(w => w.status === "running").sort((a, b) => (a.started_at ?? 0) - (b.started_at ?? 0)).at(-1);
 		if (running) {
-			out[conv] = { kind: "working", since: iso(running.started_at), detail: workDetail(running) };
+			out[conv] = { kind: "working", since: iso(running.started_at), detail: workDetail(running), ...(running.id ? { work: running.id } : {}) };
 			continue;
 		}
 		const last = list.filter(w => w.status !== "running").sort((a, b) => (a.ended_at ?? 0) - (b.ended_at ?? 0)).at(-1);
-		if (!last) continue;
+		if (!last || (last.status === "failed" && last.handled)) continue;
 		if (last.status === "failed") {
 			// Whether this failing attempt was itself a retry (st_01a17c03 failed at spawn and st_01a17c04 took it over): an earlier
 			// worker of the same conversation says so, while a retry that is still running is the line above it.
 			const retried = list.some(w => w !== last && (w.started_at ?? 0) < (last.started_at ?? 0));
-			out[conv] = { kind: "error", since: iso(last.ended_at), detail: `${failureReason(last)} · ${retried ? "다시 맡긴 작업도 실패했어요" : "다시 맡기지 않았어요"}` };
+			out[conv] = failedRun(last, retried);
 		} else {
 			out[conv] = { kind: "done", since: iso(last.ended_at), detail: short(last.description) };
 		}
@@ -139,4 +161,15 @@ export function runIntent(items: Act[]): string | undefined {
 export function lastTurnEnd(items: Act[]): string | undefined {
 	for (let i = items.length - 1; i >= 0; i--) if (items[i]!.type === "turn_end") return items[i]!.ts;
 	return undefined;
+}
+
+// The stall rule (owner 2026-10-29: "할일이 남아있는데 쉬는중 뜨다가 ... 바로 작업 진행되도록"): a session resting with plan tasks left and
+// nothing to wait for is told to go on after STALL_MS, once per resting spell, and at most STALL_MAX times an hour so a plan it cannot
+// finish does not loop. hub/routes.ts startStallSweep applies it to the main conversation and every conversation session.
+export const STALL_MS = 90_000;
+export const STALL_MAX = 3;
+export function stallNudge(r: RunState, now: number, told: readonly number[], lastSince?: string): boolean {
+	if (r.kind !== "idle" || r.reason !== "unfinished" || !r.since || r.since === lastSince) return false;
+	if (now - Date.parse(r.since) < STALL_MS) return false;
+	return told.filter(at => now - at < 3_600_000).length < STALL_MAX;
 }

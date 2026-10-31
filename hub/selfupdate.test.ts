@@ -96,28 +96,27 @@ describe("against temp git repos", () => {
 		expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("1\n");
 	});
 
-	test("uncommitted changes refuse the update, name the file and keep it", async () => {
-		const before = head(work);
+	// Owner 2026-10-29: a local edit never stops a shipped update ("로컬에서 수정해서 사용하는거때문에 내가 배포한 업뎃이 실패하면 안됨").
+	test("uncommitted changes do not stop the update: saved, moved on, untracked files kept", async () => {
 		r.push("a.txt", "2\n", "second");
 		writeFileSync(join(work, "a.txt"), "my edit\n");
 		writeFileSync(join(work, "notes.txt"), "untracked\n");
 		const j = await apply(opts());
-		expect(j.status).toBe("refused");
-		expect(j.message).toContain("a.txt");
-		expect(j.message).toContain("notes.txt");
-		expect(head(work)).toBe(before);
-		expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("my edit\n");
+		expect(j.status).toBe("updated");
+		expect(head(work)).toBe(head(pusher));
+		expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("2\n");
 		expect(existsSync(join(work, "notes.txt"))).toBe(true);
 	});
 
-	test("local commits that conflict with the new version refuse the update and are listed, never dropped", async () => {
+	test("local commits that conflict with the new version do not stop the update and are kept on a branch, never dropped", async () => {
 		commit(work, "a.txt", "local\n", "my local work");
 		const mine = head(work);
 		r.push("a.txt", "2\n", "second");
 		const j = await apply(opts());
-		expect(j.status).toBe("refused");
-		expect(j.message).toContain("my local work");
-		expect(head(work)).toBe(mine);
+		expect(j.status).toBe("updated");
+		expect(j.note).toContain("dotz-local/");
+		expect(sh(work, "log", "-1", "--format=%s", j.note!.match(/dotz-local\/[\w-]+/)![0])).toBe("my local work");
+		expect(sh(work, "rev-parse", j.note!.match(/dotz-local\/[\w-]+/)![0])).toBe(mine);
 	});
 
 	test("a clean checkout fast-forwards to origin, tests pass, every step is logged", async () => {
@@ -248,33 +247,29 @@ describe("against temp git repos", () => {
 			expect(h.alerts).toEqual([]);
 		});
 
-		test("refuses a dirty checkout: alert with a choice block, once, nothing changes, no restart", async () => {
+		test("a dirty checkout still updates on its own: no alert, one restart, the edit kept in the backup", async () => {
 			setSelfUpdateCfg({ auto_apply: true });
-			const before = head(work);
 			r.push("a.txt", "2\n", "second");
 			writeFileSync(join(work, "a.txt"), "my edit\n");
+			// the first changed file keeps its two-column status, so the screen does not read "M .txt" (Mac mini 2026-10-29: "ub/laneops.ts")
+			expect((await check(opts())).dirty).toEqual([" M a.txt"]);
 			const { h, api } = autoHooks();
 			await autoCheck(opts(), api);
-			await autoCheck(opts(), api);
-			expect(head(work)).toBe(before);
-			expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("my edit\n");
-			expect(h.alerts).toHaveLength(1);
-			expect(h.alerts[0]).toContain("결정:");
-			expect(h.alerts[0]).toContain("1) ");
-			expect(h.restarts).toBe(0);
-			expect(h.worklog).toEqual([]);
+			expect(head(work)).toBe(head(pusher));
+			expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("2\n");
+			expect(h.alerts).toEqual([]);
+			expect(h.restarts).toBe(1);
 		});
 
-		test("refuses when local commits conflict and the checkout is a developer checkout", async () => {
+		test("a developer checkout whose local commits conflict still updates; the commits are kept on a branch", async () => {
 			setSelfUpdateCfg({ auto_apply: true });
 			commit(work, "a.txt", "local\n", "my local work");
-			const mine = head(work);
 			r.push("a.txt", "2\n", "second");
 			const { h, api } = autoHooks();
 			await autoCheck(opts(), api);
-			expect(head(work)).toBe(mine);
-			expect(h.alerts).toHaveLength(1);
-			expect(h.restarts).toBe(0);
+			expect(head(work)).toBe(head(pusher));
+			expect(h.alerts).toEqual([]);
+			expect(h.restarts).toBe(1);
 		});
 
 		test("reverts on a test failure, alerts with a choice block, does not retry that commit and does not restart", async () => {

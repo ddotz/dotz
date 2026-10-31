@@ -5,6 +5,7 @@
 // web.peer_discovery (default true), web.peer_ports (extra ports to try on every node; default 8443, 8445 and 8444).
 // Each gateway names itself (web.machine_name, hub/machine-name.ts) and tells its peers through the public GET /api/peer-info; an older
 // peer without it keeps the hostname-derived name. Pure parts (names, filtering, counting, cache) are exported for tests; only listPeers() touches the network.
+import { peerFetch } from "./tailnet-fetch.ts";
 import { cfg, log } from "./config.ts";
 import { friendlyName, label, peerInfoName, resolveName } from "./machine-name.ts";
 
@@ -96,7 +97,7 @@ export async function pool<T, R>(items: T[], limit: number, fn: (item: T) => Pro
 
 type Fetcher = (url: string) => Promise<unknown>;
 const getJson: Fetcher = async url => {
-	const r = await fetch(url, { signal: AbortSignal.timeout(PROBE_MS), redirect: "manual" });
+	const r = await peerFetch(url, { signal: AbortSignal.timeout(PROBE_MS), redirect: "manual" });
 	if (!r.ok) throw new Error(`HTTP ${r.status}`);
 	return r.json();
 };
@@ -104,7 +105,9 @@ const getJson: Fetcher = async url => {
 // A URL is a dotz gateway when its manifest is dotz's. /manifest.webmanifest is public and exists on every hub version.
 export async function isDotz(url: string, get: Fetcher = getJson): Promise<boolean> {
 	try {
-		return (await get(`${url}/manifest.webmanifest`) as { name?: unknown } | null)?.name === "dotz";
+		// `gateway` since the manifest carries the owner's assistant name; `name` for a gateway from before that.
+		const m = (await get(`${url}/manifest.webmanifest`)) as { name?: unknown; gateway?: unknown } | null;
+		return m?.gateway === "dotz" || m?.name === "dotz";
 	} catch {
 		return false;
 	}

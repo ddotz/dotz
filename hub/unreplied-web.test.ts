@@ -1,21 +1,19 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { sseResponse } from "./events.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
 // 미답장 in the web app: an orange pill on the item rows and an orange count next to the unread count on the app rows, the app header and the home
 // 답변 필요 list, apart from the read/unread badge. Headless (Bun.WebView) against a fake hub. UNREPLIED_SHOTS=<dir> keeps the screenshots.
 const SHOTS = process.env.UNREPLIED_SHOTS ?? "";
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
-const json = (v: unknown, status = 200) => Response.json(v, { status });
 const at = (d: number, h: number, m: number) => Date.UTC(2026, 9, d, h, m);
 const iso = (d: number) => new Date(Date.UTC(2026, 9, d, 1, 0)).toISOString();
 
 const YOUTUBE = { key: "youtube", label: "유튜브", icon: "youtube", kind: "app", conv: [], notices: [], unread: 2, unreplied: 2, needs: { drafts: 0, unread: 2, sentToday: 0, unreplied: 2 } };
 const MAIL = { key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: [], unread: 3, unreplied: 1, needs: { drafts: 0, unread: 3, sentToday: 0, unreplied: 1 } };
 const KAKAO = { key: "kakao", label: "카카오톡", icon: "kakao", kind: "app", conv: [], notices: [], unread: 0, unreplied: 1, needs: { drafts: 0, unread: 0, sentToday: 0, unreplied: 1 } };
-const mailCard = (unreplied: boolean) => ({ subject: "견적 문의드립니다", from: "민수 <m@example.com>", source: "mail", at: iso(22), summary: "다음 주 견적을 받을 수 있을까요?", suggest: { kind: "reply-draft", label: "답장 초안", ref: "d1", state: "draft" }, ...(unreplied ? { unreplied: true } : {}) });
+const mailCard = (unreplied: boolean) => ({ subject: "견적 문의드립니다", from: "민수 <m@example.com>", source: "mail", at: iso(22), summary: "다음 주 견적을 받을 수 있을까요?", suggest: { kind: "reply-draft", label: "답장 초안", ref: "d1", state: "draft" }, ...(unreplied ? { reply: "draft", unreplied: true } : {}) });
 const COMMENTS = [
 	{ id: "cm:youtube:c1", parent: null, author: "가나", text: "영상 잘 봤어요! 자막은 언제 나와요?", at: at(22, 1, 0), mine: false, needsReply: true, unreplied: true },
 	{ id: "cm:youtube:c2", parent: null, author: "다라", text: "다음 영상도 기대할게요", at: at(22, 1, 30), mine: false, needsReply: true, unreplied: true },
@@ -43,20 +41,12 @@ const expectReq = (pred: (r: Req) => boolean, ms = 4000): Promise<Req> => {
 		waiters.push({ pred, res: r => { clearTimeout(t); res(r); } });
 	});
 };
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url), p = url.pathname;
-		if (p === "/") return indexPage(req);
-		const asset = appAsset(req, p);
-		if (asset) return asset;
-		if (p === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+const hub = fakeHub({
+	api: async (req, url) => {
+		const p = url.pathname;
 		if (p === "/api/notices") return json({ items: [], unread: 0 });
 		if (p === "/api/monitors") return json({ items: [] });
-		if (p === "/api/peers") return json([{ name: "맥북", url: `http://127.0.0.1:${server.port}`, self: true, online: true }, { name: PEER.name, url: PEER.url, self: false, online: true }]);
+		if (p === "/api/peers") return json([{ name: "맥북", url: `${hub.origin}`, self: true, online: true }, { name: PEER.name, url: PEER.url, self: false, online: true }]);
 		if (p === "/api/machine") return json({ name: "맥북", custom: "", default: "맥북" });
 		if (p === "/api/monitoring/peers") return json([PEER]);
 		if (p === "/api/integrations") return json({ items: [YOUTUBE, MAIL, KAKAO], available: [] });
@@ -66,21 +56,15 @@ const server = Bun.serve({
 		if (p === "/api/comments/threads") return json({ threads: [{ source: "youtube", thread: "v1", title: "첫 번째 영상", link: "https://video.example/v1", lastAt: at(22, 2, 0), lastText: "다음 주에 올릴게요", lastAuthor: "나", unread: 2, drafts: 0, unreplied: 2 }] });
 		if (p === "/api/comments/thread/youtube/v1") return json({ source: { key: "youtube", kind: "youtube", label: "유튜브 댓글" }, thread: { id: "v1", title: "첫 번째 영상", link: "https://video.example/v1" }, comments: COMMENTS, read: null, drafts: [], sends: [] });
 		if (req.method !== "GET") { record({ method: req.method, path: p, ...(p === "/api/peer/proxy" ? { body: await req.json().catch(() => null) } : {}) }); return json({ ok: true }); }
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-const open = (width: number, height: number): View => { const v = new Bun.WebView({ width, height }); views.push(v); return v; };
-afterAll(() => { for (const v of views) v.close(); server.stop(true); });
-const waitFor = (v: View, expr: string, ms = 4000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
+const open = (width: number, height: number): Promise<View> => hub.view({ width, height });
+afterAll(() => hub.stop());
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
 const boot = async (v: View, theme: "light" | "dark", hash: string) => {
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	await v.navigate(`${hub.origin}/`);
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S`);
 	await run(v, `if (dotzTheme.get() !== ${JSON.stringify(theme)}) dotzTheme.toggle()`);
 	await waitFor(v, `typeof INTG !== "undefined" && INTG.items.length === 3 && typeof PQ !== "undefined"`);
@@ -89,8 +73,8 @@ const boot = async (v: View, theme: "light" | "dark", hash: string) => {
 const bg = (v: View, sel: string) => q<string>(v, `return getComputedStyle(document.querySelector(${JSON.stringify(sel)})).backgroundColor`);
 
 for (const [width, height] of [[390, 844], [1280, 800]] as const) {
-	describe(`app list at ${width}px`, () => {
-		const v = open(width, height);
+	describe(`app list at ${width}px`, async () => {
+		const v = await open(width, height);
 		test("each app row shows the unread count and the orange 미답장 count apart; an app with only 미답장 has no unread badge", async () => {
 			await boot(v, "light", `go("monitoring")`);
 			await waitFor(v, `current === "monitoring" && document.querySelector('#mon-side .cv-row[data-k="i:youtube"]') && document.querySelector('#mon-side .cv-row[data-k^="p:"]')`);
@@ -112,8 +96,8 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 		});
 	});
 
-	describe(`comments list at ${width}px`, () => {
-		const v = open(width, height);
+	describe(`comments list at ${width}px`, async () => {
+		const v = await open(width, height);
 		test("the post row has the unread count and 미답장; the app header and the comment bubbles show the pill and 답장 안 함", async () => {
 			await boot(v, "light", `go("monitoring", "i:youtube")`);
 			await waitFor(v, `!$("#cm").hidden && CM.loaded && document.querySelector("#cm .kk-row")`);
@@ -135,8 +119,8 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 	});
 }
 
-describe("home and the peer's mail", () => {
-	const v = open(390, 844);
+describe("home and the peer's mail", async () => {
+	const v = await open(390, 844);
 	test("the home 답변 필요 list counts 미답장 apart from unread", async () => {
 		await boot(v, "light", `go("home")`);
 		await waitFor(v, `current === "home" && PQ.loaded && document.querySelectorAll("#home-now .hr .hs.unreplied").length === 4`);
@@ -145,16 +129,19 @@ describe("home and the peer's mail", () => {
 		expect(t.rows).toEqual(["미답장 2", "미답장 1", "미답장 1", "미답장 2"]);
 		await shot(v, "home-390-light.png");
 	});
-	test("a peer's mail card carries the pill, and 답장 안 해도 돼요 goes to that computer", async () => {
+	test("a peer's mail card carries the pill, and 답장 안 함 goes to that computer", async () => {
 		await boot(v, "light", `go("monitoring")`);
 		await waitFor(v, `document.querySelector('#mon-side .cv-row[data-k^="p:"][data-k$="i:mail"]')`);
 		await run(v, `document.querySelector('#mon-side .cv-row[data-k^="p:"][data-k$="i:mail"]').click()`);
 		await waitFor(v, `document.querySelector("#mon-tl .mr .tag.unreplied")`);
-		// 초안 작성 sits beside 답장 안 해도 돼요 and asks the computer that holds the mail for the draft
+		// 초안 작성 sits beside 답장 안 함: it asks first what the reply should say, then the computer that holds the mail makes the draft with it
 		await run(v, `document.querySelector("#mon-tl .mr .mr-draft").click()`);
+		await waitFor(v, `document.querySelector('dialog[open] [data-k="draft-instruction"]')`);
+		await run(v, `const ta = document.querySelector('dialog[open] [data-k="draft-instruction"]'); ta.value = "금요일까지 보낸다고"; document.querySelector("dialog[open] .dact .btn:last-child").click()`);
 		const asked = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "mail-draft");
-		expect(asked.body).toMatchObject({ action: "mail-draft", args: { key: "peer-1" } });
-		await run(v, `document.querySelector("#mon-tl .mr .mr-fyi").click()`);
+		expect(asked.body).toMatchObject({ action: "mail-draft", args: { key: "peer-1", instruction: "금요일까지 보낸다고" } });
+		await waitFor(v, `!document.querySelector("dialog[open]")`);
+		await run(v, `document.querySelector('#mon-tl .mr [data-k="mail-no"]').click()`);
 		const sent = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "fyi");
 		expect(sent.body).toMatchObject({ action: "fyi", args: { key: "peer-1", on: true } });
 	});

@@ -1,12 +1,13 @@
 // HTTP routes of models, runtimes, accounts, providers, activity and commands (the middle part of the route chain). Split out of main.ts.
-import { log } from "./config.ts";
-import { compactTarget, ControlError, contextView, ForceRequired, modelsView, providersView, runCommand, setFallback, setModel } from "./control.ts";
+import { ContextLimitError, log } from "./config.ts";
+import { compactTarget, ControlError, contextView, setContextModel, ForceRequired, modelsView, providersView, runCommand, setFallback, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
 import { activityItems } from "./events.ts";
 import { lanes } from "./lanes.ts";
 import { checkNow as checkAccountNow } from "./account-rules.ts";
 import { accountsRoute } from "./accounts-api.ts";
-import { abort as abortOrchestrator, orch, restart as restartOrchestrator, resumeNow } from "./orchestrator.ts";
+import { cancelByOwner, orch, restart as restartOrchestrator, resumeNow } from "./orchestrator.ts";
+import { convs } from "./convsessions.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
 import { featureCatalog } from "./features.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
@@ -41,6 +42,8 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		// One body for the whole target: model and/or thinking, and/or its ordered fallback chain (`fallback`).
 		try {
 			const target = String(b.target ?? "");
+			// 답장 기본값 (hub/reply-model-choices.ts): the global reply-drafts model, not a process.
+			if (target === "replies") return json(await (await import("./reply-model-choices.ts")).setReplyDefault(String(b.model ?? "")));
 			const changed = b.model || b.thinking ? await setModel(target, b.model ? String(b.model) : undefined, b.thinking ? String(b.thinking) : undefined, b.force === true) : undefined;
 			const fb = Array.isArray(b.fallback) ? await setFallback(target, b.fallback) : undefined;
 			if (!changed && !fb) return fail(new ControlError("model, thinking or fallback required"));
@@ -83,6 +86,17 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		}
 	}
 	if (req.method === "GET" && url.pathname === "/api/context") return json(contextView());
+	if (req.method === "PUT" && url.pathname === "/api/context/model") {
+		const b = await body(req);
+		const val = (v: unknown) => (v === null || v === undefined || v === "" ? null : (v as number));
+		try {
+			const saved = setContextModel(String(b.model ?? ""), { window: val(b.window), compact_at: val(b.compact_at) });
+			return json({ ok: true, saved, ...contextView() });
+		} catch (error) {
+			if (error instanceof ContextLimitError) return json({ error: error.message }, 400);
+			throw error;
+		}
+	}
 	if (req.method === "POST" && url.pathname === "/api/compact") {
 		try {
 			const r = compactTarget(String((await body(req)).target ?? ""));
@@ -103,7 +117,10 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 	}
 	if (req.method === "GET" && url.pathname === "/api/subagents") return json({ sources: subagentLists() });
 	if (req.method === "GET" && parts[0] === "api" && parts[1] === "subagents" && parts.length === 3) {
-		const detail = await subagentDetail(url.searchParams.get("source") ?? "orchestrator", decodeURIComponent(parts[2]));
+		const source = url.searchParams.get("source") ?? "orchestrator";
+		// An OmO process's workers are read from its task store, which its session file locates.
+		const sessionFile = source === "orchestrator" ? orch.sessionFile : source.startsWith("lane:") ? lanes.get(source.slice(5))?.sessionFile : undefined;
+		const detail = await subagentDetail(source, decodeURIComponent(parts[2]), sessionFile);
 		return detail ? json(detail) : json({ error: "no such subagent (finished ones are kept 10 minutes)" }, 404);
 	}
 	if (req.method === "GET" && url.pathname === "/api/activity") {
@@ -195,9 +212,14 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 	if (req.method === "POST" && parts[0] === "api" && parts[1] === "orchestrator" && (parts[2] === "restart" || parts[2] === "abort" || parts[2] === "resume")) {
 		try {
 			// resume: the owner's 재개 on a stopped or paused orchestrator (orchestrator.ts resumeNow); restart: a plain process restart
+			// 중단 names the conversation the button was in: with one session per conversation that session's turn ends, not main's.
 			if (parts[2] === "resume") resumeNow();
 			else if (parts[2] === "restart") restartOrchestrator();
-			else abortOrchestrator();
+			else {
+				const t = String(((await body(req).catch(() => ({}))) as { target?: unknown }).target ?? "").trim();
+				if (t) convs.cancelFor(t);
+				else cancelByOwner();
+			}
 			return json({ ok: true });
 		} catch (error) {
 			return fail(error);

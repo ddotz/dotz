@@ -6,7 +6,7 @@ import { now, paths, writeAtomic } from "./config.ts";
 import { addWatch, allWatches, relabelWatches, removeWatch, setWatchChannels, type Watch } from "./watch.ts";
 import { deriveLabel, humanLabel, isKeyLabel } from "./watchtext.ts";
 
-export type Login = { session_url: string; expect?: string; host?: string; profile?: string };
+export type Login = { session_url: string; expect?: string; login_url?: string; secret?: string; host?: string; profile?: string };
 export type Monitor = { command: string; every_minutes?: number; on?: "change" | "match" | "fail"; pattern?: string; label?: string };
 export type Setup = { channel: string; name: string; purpose: string; standing?: string; basis?: string; logins: string[]; monitors: string[]; updated: string };
 
@@ -27,11 +27,13 @@ function claimLogin(channel: string, l: Login, rulesText: string): Watch {
 	const existing = allWatches().find(same);
 	if (existing) {
 		setWatchChannels(existing.id, [...new Set([...(existing.channels ?? []), channel])]);
+		// a later setup may name how to sign in (the login form, the dotz_auth secret) for a login already kept
+		if (existing.session && (l.login_url || l.secret)) Object.assign(existing.session, { ...(l.login_url ? { login_url: l.login_url } : {}), ...(l.secret ? { secret: l.secret } : {}) });
 		return existing;
 	}
 	const where = slug([l.host, l.profile].filter(Boolean).join("-")).slice(0, 8);
 	const host = new URL(l.session_url).hostname.replace(/^www\./, "");
-	return addWatch({ name: `login-${slug(host)}${l.host || l.profile ? `-${where}` : ""}`, session_url: l.session_url, expect: l.expect, host: l.host, profile: l.profile, to: "orchestrator", channels: [channel] }, rulesText);
+	return addWatch({ name: `login-${slug(host)}${l.host || l.profile ? `-${where}` : ""}`, session_url: l.session_url, expect: l.expect, login_url: l.login_url, secret: l.secret, host: l.host, profile: l.profile, to: "orchestrator", channels: [channel] }, rulesText);
 }
 
 export function setupChannel(input: Record<string, any>, channelName: string, rulesText: string): Setup {

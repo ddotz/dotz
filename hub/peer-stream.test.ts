@@ -86,7 +86,7 @@ test("a new notice on A reaches B's stream once, named for A, then A's counts fo
 	await until(() => ofKind("peer_counts").some(c => c.unread === 2));
 	const notices = ofKind("peer_notice");
 	expect(notices).toHaveLength(1);
-	expect(notices[0]).toMatchObject({ peer: { name: "맥미니", url: A.url }, id: "d1", key: "at-d1", notice: "decision", tone: "ask", title: "배포할까요?" });
+	expect(notices[0]).toMatchObject({ peer: { name: "맥미니", url: A.url }, id: "d1", key: "at-d1", notice: "decision", tone: "ask", title: "배포할까요?", to: "" });
 	expect(ofKind("peer_counts").at(-1)).toMatchObject({ url: A.url, name: "맥미니", online: true, unread: 2, need: 1 });
 
 	// answered on A: read + closed; B's numbers follow without a new toast
@@ -95,11 +95,29 @@ test("a new notice on A reaches B's stream once, named for A, then A's counts fo
 	await until(() => ofKind("peer_counts").some(c => c.unread === 0 && c.need === 0));
 	expect(ofKind("peer_notice")).toHaveLength(1);
 
+	// what A answered or read takes its toast away here: one done frame per change, with the ids
+	expect(ofKind("peer_notice_done").at(-1)).toMatchObject({ url: A.url, ids: ["d1", "t1"] });
+	sendA({ kind: "notice", item: { ...open("d1", { read: true }), decision: { state: "answered", to: "mail:k1" } }, unread: 0 });
+	await until(() => ofKind("peer_notice_done").some(f => f.ids.length === 1 && f.ids[0] === "d1"));
+
 	// a progress line and an already-read notice never toast
 	sendA({ kind: "notice", item: { id: "w1", kind: "worklog", tone: "run", title: "시작", read: false }, unread: 1 });
 	sendA({ kind: "notice", item: open("d2", { read: true }), unread: 0 });
 	await settle();
 	expect(ofKind("peer_notice")).toHaveLength(1);
+});
+
+test("a state change on A (a mail answered, a draft sent, a room read) makes B read A again: its counts and the merged monitoring follow at once", async () => {
+	await until(() => aStreams.size === 1);
+	for (const kind of ["mail_unreplied", "comment_send", "kakao_draft", "read"]) {
+		const before = ofKind("peer_counts").length;
+		sendA({ kind, target: "mail:k1" });
+		await until(() => ofKind("peer_counts").length > before);
+	}
+	const before = ofKind("peer_counts").length;
+	sendA({ kind: "activity", source: "orchestrator", type: "tool" });
+	await settle();
+	expect(ofKind("peer_counts").length).toBe(before);
 });
 
 test("a peer's own peer_* frames and a lost connection: nothing is forwarded as a notice, the stream reconnects and the chip goes offline then back", async () => {

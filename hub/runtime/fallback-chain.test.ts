@@ -9,6 +9,7 @@ import type * as Lanes from "../lanes.ts";
 import type * as Orchestrator from "../orchestrator.ts";
 import { cfg } from "../config.ts";
 import { resetFallbackState } from "../fallback.ts";
+import { limitAlertsFile } from "../limit-alert.ts";
 import { adapters } from "./index.ts";
 import { omp } from "./omp.ts";
 import { advance, clock, flush } from "./test-clock.ts";
@@ -101,6 +102,8 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+	// A blocked episode another test file left on disk would make the exhausted pause a quiet second alert of that episode.
+	rmSync(limitAlertsFile(), { force: true });
 	started.length = 0;
 	notices.length = 0;
 	alerts.length = 0;

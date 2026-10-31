@@ -6,11 +6,14 @@ import * as livestatus from "./livestatus.ts";
 import { msg } from "./i18n.ts";
 import { askedText, emit, emitDelivery } from "./events.ts";
 import { attachmentLines, type Upload } from "./files.ts";
+import { pickedLines, type Picked } from "./picked.ts";
 import { abortLane, approvesBudget, lanes, ownerNotes, sendToLane } from "./lanes.ts";
 import { accountView, readPool } from "./account-sticky.ts";
 import { readAliases } from "./account-alias.ts";
 import { accountAnswer, accountAsk } from "./accounts-api.ts";
-import { abort as abortOrchestrator, orch, resumeNow } from "./orchestrator.ts";
+import { orch, type Orchestrator } from "./orchestrator.ts";
+import { convs } from "./convsessions.ts";
+import { digest } from "./convdigest.ts";
 import { legacyAnswer } from "./migrations.ts";
 import { errorAnswer } from "./orch-error.ts";
 import { drain, restore } from "./queue.ts";
@@ -90,6 +93,7 @@ function inboxBody(e: Record<string, any>): string {
 		if (p.reply) lines.push(m.replyingTo(p.reply.author, p.reply.content));
 		for (const a of p.attachments ?? []) lines.push(`[attachment] ${a.name}${a.type ? ` (${a.type})` : ""} ${a.url}`);
 		lines.push(p.text);
+		if (p.elements?.length) lines.push(pickedLines(p.elements));
 		lines.push(...decisionLines(p));
 	}
 	if (e.plugin_note) lines.push(e.plugin_note);
@@ -120,13 +124,28 @@ export function intake(event: Record<string, any>, target: string, replyTo?: str
 	b.timer = setTimeout(() => flush(target), Math.max(0, Math.min(COALESCE_MS, b.first + COALESCE_MAX_MS - Date.now())));
 }
 
+/** The owner's 중단 of `target`: what was sent there and not yet delivered (a burst still gathering, the web queue) is dropped. */
+export function dropPending(target: string): number {
+	const b = bursts.get(target);
+	if (b) {
+		clearTimeout(b.timer);
+		bursts.delete(target);
+	}
+	const n = (b?.events.length ?? 0) + drain(target).length;
+	if (n) log(`${n} message(s) for ${target} not delivered: the owner cancelled`);
+	return n;
+}
+convs.everyInstance(c => c.o.onOwnerCancel(target => void dropPending(target)));
+
 export function flush(target: string): void {
 	const b = bursts.get(target);
 	if (!b) return;
 	bursts.delete(target);
 	const head = b.events[0];
-	const errAnswer = orch.error && b.events.length === 1 ? errorAnswer(String(head.text ?? "")) : undefined;
-	if (errAnswer) return void answerOrchError(target, errAnswer, b.replyTo);
+	// The session that answers this conversation (main with conversation sessions off); one not started yet has no error.
+	const session = convs.forTarget(target)?.o;
+	const errAnswer = session?.orch.error && b.events.length === 1 ? errorAnswer(String(head.text ?? "")) : undefined;
+	if (errAnswer) return void answerOrchError(target, errAnswer, session!, b.replyTo);
 	const legacy = b.events.length === 1 ? legacyAnswer(DATA_DIR, String(head.text ?? "")) : undefined;
 	if (legacy) return void out(target, legacy, b.replyTo, { source: "gateway" }).catch(e => log(`legacy import reply failed: ${e}`));
 	if (b.events.length === 1 && LIMITS_ASK.test(String(head.text)) && !head.attachments?.length) return void limitsAnswer(target, b.replyTo);
@@ -134,8 +153,13 @@ export function flush(target: string): void {
 	if (ask) return void accountChatAnswer(target, ask, b.replyTo);
 	rateLimitNotice(target, b.replyTo);
 	const merged = b.events.length > 1 ? { ...head, message_id: refOf(b.events.at(-1)!), parts: b.events } : head;
-	const how = orch.status === "working" ? "steered" : orch.status === "rate-limited" ? "held" : "received";
-	deliver(inboxText(merged), { target, replyTo: b.replyTo, owner: true });
+	const was = convs.stateOf(target);
+	digest.note(convs.keyOf(target), "owner", String(merged.text ?? ""));
+	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, owner: true });
+	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver); a parked
+	// conversation session was started again for it.
+	const status = convs.forTarget(target)?.o.orch.status;
+	const how = steered ? "steered" : status === "rate-limited" ? "held" : status === "working" ? "queued" : was === "parked" ? "resumed" : "received";
 	expectReply(target);
 	const refs = b.events.flatMap(e => refOf(e) ?? []);
 	for (const ref of refs) emitDelivery(target, ref, how);
@@ -154,9 +178,9 @@ export async function answerCommand(target: string, text: string, replyTo?: stri
 
 // The owner's answer to the orchestrator-error ask (orch-error.ts): handled here because the orchestrator cannot read it.
 // Restart is the same call as `/restart orchestrator`; waiting leaves the one automatic resume to the health probe.
-async function answerOrchError(target: string, answer: "restart" | "wait", replyTo?: string): Promise<void> {
-	if (answer === "restart") resumeNow();
-	else if (orch.error) orch.error.waiting = true;
+async function answerOrchError(target: string, answer: "restart" | "wait", session: Orchestrator, replyTo?: string): Promise<void> {
+	if (answer === "restart") session.resumeNow();
+	else if (session.orch.error) session.orch.error.waiting = true;
 	const text = answer === "restart" ? "오케스트레이터만 다시 시작하고 답하지 못한 요청을 다시 처리해요." : "연결이 돌아오면 한 번 자동으로 다시 시도해요.";
 	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`orchestrator error reply failed: ${e}`));
 }
@@ -183,11 +207,11 @@ async function accountChatAnswer(target: string, ask: Parameters<typeof accountA
 // `project` (projectchat.ts) sends to a project's orchestrator: the message arrives as one in that work channel would.
 // `mail` (hub/mail.ts): the message reaches the orchestrator as one in that mail's Discord thread does (main.ts onOwner), plugin
 // thread hook included; a mail with no thread the hub knows answers in its web conversation `mail:<key>`.
-type WebSend = { settings?: string; lane?: string; project?: { target: string; name: string }; mail?: MailRecord; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; reply?: Reply; decision?: string; picks?: Pick[]; via?: string };
+type WebSend = { settings?: string; lane?: string; project?: { target: string; name: string }; mail?: MailRecord; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; reply?: Reply; decision?: string; picks?: Pick[]; elements?: Picked[]; via?: string };
 export async function sendWeb(s: WebSend): Promise<void> {
 	const mid = newMid();
 	// replyTo: the asking message of a decision answer; decision: its notice, which that answer settles alone (notices.ts ownerReplied).
-	const extra = { mid, ...(s.via ? { via: s.via } : {}), ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}), ...(s.replyTo ? { reply_to: s.replyTo } : {}), ...(s.reply ? { reply: s.reply } : {}), ...(s.decision ? { decision: s.decision } : {}), ...(s.picks?.length ? { picks: s.picks } : {}) };
+	const extra = { mid, ...(s.via ? { via: s.via } : {}), ...(s.mode === "default" ? {} : { mode: s.mode }), ...(s.files?.length ? { files: s.files } : {}), ...(s.replyTo ? { reply_to: s.replyTo } : {}), ...(s.reply ? { reply: s.reply } : {}), ...(s.decision ? { decision: s.decision } : {}), ...(s.picks?.length ? { picks: s.picks } : {}), ...(s.elements?.length ? { elements: s.elements } : {}) };
 	if (s.lane) {
 		const name = s.lane;
 		const channel = `lane:${name}`;
@@ -201,7 +225,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 		// gateway message in the session's chat, not only as the request's error.
 		try {
 			if (approvesBudget(name, s.text)) sendToLane(name, "/budget-ok");
-			const how = sendToLane(name, [`[owner via web] ${s.text}`, s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : ""].filter(Boolean).join("\n"), mid);
+			const how = sendToLane(name, [`[owner via web] ${s.text}`, s.reply ? replyLine(s.reply) : "", s.files?.length ? attachmentLines(s.files) : "", s.elements?.length ? pickedLines(s.elements) : ""].filter(Boolean).join("\n"), mid);
 			emitDelivery(channel, mid, how);
 			// The web shows the receipt as the message's delivery state only (no canned receipt message, owner 2026-10-17).
 			livestatus.begin(channel, channel, true);
@@ -224,17 +248,19 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	const mem = s.mail && !hook?.note ? memoryNote(DATA_DIR, instanceOf(appEntries(DATA_DIR), "mail", `mail:${s.mail.key}`)) : "";
 	const note = s.settings ? settingsNote(s.settings, to) : s.mail ? (hook?.note ?? `${msg().mailNote(s.mail.source, s.mail.id, s.mail.subject)}${mem ? `\n${mem}` : ""}`) : undefined;
 	const turn = note ? { ...event, plugin_note: note } : event;
+	// The session that answers `to` (main with conversation sessions off): steer and interrupt act on its turn only.
+	const session = convs.forTarget(to)?.o;
 	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(to, event.text);
-	else if (s.mode === "steer" && orch.status === "working") {
+	else if (s.mode === "steer" && session?.orch.status === "working") {
 		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
-		deliver(inboxText(turn), { target: to, replyTo: mid, owner: true });
+		const steered = deliver(inboxText(turn), { target: to, replyTo: mid, owner: true });
 		expectReply(to);
-		emitDelivery(to, mid, "steered");
+		emitDelivery(to, mid, steered ? "steered" : "queued");
 		awaiting.set(to, [...(awaiting.get(to) ?? []), { ref: mid, by: mid }]);
 		lastOwner.set(to, mid);
 	} else {
-		if (s.mode === "interrupt" && orch.status === "working") abortOrchestrator();
+		if (s.mode === "interrupt" && session?.orch.status === "working") session.abort();
 		intake(turn, to, mid);
 	}
 }

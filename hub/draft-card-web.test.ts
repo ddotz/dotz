@@ -1,8 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { parseQuotedDraft } from "./draft-approval.ts";
-import { sseResponse } from "./events.ts";
 import { decisionsOf } from "./notices.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json } from "./test-web.ts";
 
 // The send-approval card (web/js/30-monitoring.js draftCardNode) and what feeds it (hub/notices.ts decisionsOf): a mail question that quotes its
 // draft always carries the draft and the draft-approval options, the card shows the question once, and the thread row is one tap target.
@@ -28,34 +27,18 @@ test("a question that quotes nothing keeps the plain yes / no, and the quoted dr
 	expect(body.split("\n\n")).toEqual(["안녕하세요, Alex님.", "보내 주신 보고서는 잘 받았습니다.", "감사합니다."]);
 });
 
-const json = (v: unknown) => Response.json(v);
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
-		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
+const hub = fakeHub({
+	api: (_req, url) => {
 		if (url.pathname === "/api/notices") return json({ items: [], unread: 0 });
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
-const views: InstanceType<typeof Bun.WebView>[] = [];
-afterAll(() => {
-	for (const v of views) v.close();
-	server.stop(true);
-});
+afterAll(() => hub.stop());
 
 async function open(width: number) {
-	const v = new Bun.WebView({ width, height: 1200 });
-	views.push(v);
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const v = await hub.view({ width, height: 1200 });
+	await v.navigate(`${hub.origin}/`);
 	await v.evaluate(`(localStorage.setItem("dotz-theme", "light"), true)`);
-	await v.navigate(`http://127.0.0.1:${server.port}/?light#monitoring/notice`);
+	await v.navigate(`${hub.origin}/?light#monitoring/notice`);
 	await v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("page not ready")), 10000); const done = () => { if (typeof go === "function" && current !== "monitoring") go("monitoring", "notice"); if (document.querySelector("#mon-tl") && typeof draftCardNode === "function") { clearTimeout(t); res(true); } else setTimeout(done, 50); }; done(); })`);
 	return v;
 }
@@ -73,6 +56,8 @@ const draw = `(() => {
 	window.go = (...a) => { window.__opened.push(a.join(":")); };
 	window.api = async (p, m, b) => { window.__posts.push([p, b]); return { item: ${JSON.stringify(note("a", "answered", { answer: "1) 보내기", answered_at: now }))}, unread: 0 }; };
 	MAILS.set("mail:fx-9", { subject: "월간 점검 보고서 확인 요청", from: "Alex Sender <sender@example.com>", source: "fx", at: ${JSON.stringify(now)}, summary: "이번 달 점검이 끝났어요." });
+	// A mail row stands for a recorded mail (a conversation without one is not drawn as a mail row, 30-monitoring.js monConvNode).
+	MAILS.set("mail:fx-8", { subject: "지난달 점검 보고서", from: "Alex Sender <sender@example.com>", source: "fx", at: ${JSON.stringify(now)}, summary: "지난달 점검 결과예요." });
 	CONV.set("mail:fx-8", { ts: ${JSON.stringify(now)}, text: "[ask] ${Q}", from: "bot" }); ts("mail:fx-8").unread = 0;
 	const items = ${JSON.stringify(NOTES)};
 	NT.items = items; NT.loaded = true; DR.edit.clear(); DR.manual.clear();
@@ -91,9 +76,9 @@ for (const width of [1440, 390]) {
 			return { n: cards.length, states: cards.map(x => x.querySelector(".dr-st").dataset.state), badge: cards.map(x => txt(x.querySelector(".dr-st"))),
 				questions: cards.map(x => x.textContent.split(${JSON.stringify(Q)}).length - 1), chip: txt(c.querySelector(".dr-chip")), subject: txt(c.querySelector(".dr-sub")),
 				subjectWeight: Number(getComputedStyle(c.querySelector(".dr-sub")).fontWeight), paras: [...c.querySelectorAll(".dr-body p")].map(txt),
-				orig: !!c.querySelector(".dr-orig"), buttons: cards.map(x => [...x.querySelectorAll("button:not(.dr-rm)")].map(txt)), rm: cards.map(x => x.querySelectorAll(".dr-rm").length), rowCount: document.querySelectorAll("#mon-tl > .bm.dr .dcm-row").length,
+				orig: !!c.querySelector(".dr-orig"), buttons: cards.map(x => [...x.querySelectorAll("button:not(.dr-rm):not(.rq-more)")].map(txt)), more: cards.map(x => x.querySelectorAll(".rq-more").length), rm: cards.map(x => x.querySelectorAll(".dr-rm").length), rowCount: document.querySelectorAll("#mon-tl > .bm.dr .dcm-row").length,
 				over: document.documentElement.scrollWidth > innerWidth, w: c.getBoundingClientRect().width,
-				rowRole: [row.getAttribute("role"), row.tabIndex], rowButtons: row.querySelectorAll("button").length };
+				rowRole: [row.getAttribute("role"), row.tabIndex], rowButtons: [...row.querySelectorAll("button")].map(b => b.dataset.k) };
 		})()))`)) as string) as any;
 		expect(got.n).toBe(5);
 		expect(got.states).toEqual(["open", "send", "revising", "drop", "expired"]);
@@ -106,11 +91,13 @@ for (const width of [1440, 390]) {
 		expect(got.orig).toBe(true);
 		expect(got.buttons[0]).toEqual(["보내기", "고치기", "보내지 않기"]);
 		for (const b of got.buttons.slice(1)) expect(b).toEqual([]);
+		// The body is clamped to about six lines (10-reply-card.js), so a narrow card offers 펼치기; the actions are still exactly three.
+		expect(got.more).toEqual([1, 1, 1, 1, 1]);
 		expect(got.rm).toEqual([1, 0, 0, 0, 0]);   // 지우기 (x) only on the draft that waits
 		expect(got.rowCount).toBe(0);
 		expect(got.over).toBe(false);
 		expect(got.rowRole).toEqual(["button", 0]);
-		expect(got.rowButtons).toBe(0);
+		expect(got.rowButtons).toEqual(["mail-menu", "mail-draft"]);   // the row itself is the link; its buttons are the ⋯ every mail row has and 초안 작성 of an incoming mail
 
 		const edit = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .btn.tonal").click(), JSON.stringify((() => {
 			const c = document.querySelector("#mon-tl > .bm.dr"), ta = c.querySelector("textarea.dr-edit");

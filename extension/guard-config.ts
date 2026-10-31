@@ -42,6 +42,8 @@ export interface GuardConfig {
 	defer_to_installed: boolean;
 	// false leaves out /doctor, /handover, /token-audit and their tools (harness-tools.ts).
 	harness_tools: boolean;
+	// Cumulative tokens (input + cache read/write + output) an OmO task worker may use before its tools are disabled (task-cap.ts); 0 = no cap.
+	task_token_cap: number;
 }
 
 // A subagent's compactions: the first steers it to wrap up, the second disables its tools (guard.ts).
@@ -66,6 +68,7 @@ export const GUARD_DEFAULTS: GuardConfig = {
 	expensive_models: [],
 	defer_to_installed: true,
 	harness_tools: true,
+	task_token_cap: 8_000_000,
 };
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
@@ -96,6 +99,7 @@ export function guardConfigFrom(raw: unknown): GuardConfig {
 		expensive_models: strings(g.expensive_models),
 		defer_to_installed: flag(g.defer_to_installed, D.defer_to_installed),
 		harness_tools: flag(g.harness_tools, D.harness_tools),
+		task_token_cap: g.task_token_cap === 0 ? 0 : positive(g.task_token_cap, D.task_token_cap),
 	};
 }
 

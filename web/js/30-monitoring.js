@@ -63,7 +63,14 @@ const monRel = (ms, past) => {
   const t = min < 60 ? `${min}분` : min < 1440 ? `${Math.floor(min / 60)}시간` : `${Math.floor(min / 1440)}일`;
   return past ? `${t} 전` : `${t} 후`;
 };
-const MON_PTAG = { ok: ["정상", "ok"], changed: ["바뀜", "warn"], fail: ["실패", "err"], disconnected: ["연결 끊김", "err"], need: ["확인 필요", "warn"], off: ["꺼짐", ""], late: ["늦어짐", "warn"], run: ["확인 중", "warn"] };
+const MON_PTAG = { ok: ["정상", "ok"], changed: ["바뀜", "warn"], fail: ["실패", "err"], disconnected: ["연결 끊김", "err"], need: ["확인 필요", "warn"], off: ["꺼짐", ""], late: ["늦어짐", "warn"], run: ["확인 중", "pri"] };
+// A monitor's one status, read the same on every screen (the list row's badge, the detail's state line and tag, the home card, the app settings):
+// connection > paused > fail > late > changed > ok > not run yet. key is a MON_PTAG key; text and tone are its words and colour.
+function monStatus(m, now = Date.now()) {
+  const key = m.connection === "disconnected" ? "disconnected" : m.paused ? "off" : m.last_result === "fail" ? "fail" : (Date.parse(m.next_run) || Infinity) <= now ? "late" : m.last_result === "changed" ? "changed" : m.last_run ? "ok" : "need";
+  const [text, tone] = MON_PTAG[key];
+  return { key, text, tone };
+}
 // Wording (one pair): a row, a tag or a badge says "연결 끊김"; the banner at the top of the conversation says "연결이 끊겼어요" plus why.
 const monConnWhy = m => [m.since ? `${monTime(m.since)}부터` : "", m.conn_reason === "login" ? "다시 로그인 필요" : m.conn_reason ? "확인이 계속 실패해요" : ""].filter(Boolean).join(" · ");
 const monConnLine = m => ["연결 끊김", monConnWhy(m)].filter(Boolean).join(" · ");
@@ -79,13 +86,14 @@ const monProgLine = (from, to, now, m, short) => {
 // kind drives the fill: "" (accent, moving), warn (overdue, full), err (disconnected), off (paused, grey), run (indeterminate shimmer).
 function monProgState(m, now) {
   if (m.watch && MON.running.has(m.watch)) return { kind: "run", pct: 0, tag: "run" };
-  if (m.paused) return { kind: "off", pct: 100, tag: "off" };
-  if (m.connection === "disconnected") return { kind: "err", pct: 100, tag: "disconnected" };
+  const tag = monStatus(m, now).key;
+  if (tag === "disconnected") return { kind: "err", pct: 100, tag };
+  if (tag === "off") return { kind: "off", pct: 100, tag };
   const from = Date.parse(m.last_run), to = Date.parse(m.next_run);
-  if (!(to > 0)) return { kind: "none", pct: 0, tag: m.last_result === "fail" ? "fail" : m.last_run ? "" : "need" };
-  if (now >= to) return { kind: "warn", pct: 100, tag: m.last_result === "fail" ? "fail" : "late" };
+  if (!(to > 0)) return { kind: "none", pct: 0, tag };
+  if (now >= to) return { kind: "warn", pct: 100, tag };
   const pct = from > 0 ? Math.max(0, Math.min(100, ((now - from) / (to - from)) * 100)) : 0;
-  return { kind: "", pct, tag: m.last_result === "changed" ? "changed" : m.last_result === "fail" ? "fail" : from > 0 ? "ok" : "need" };
+  return { kind: "", pct, tag };
 }
 const monPTagOf = k => MON_PTAG[k] || ["", ""];
 // The bar's colour is the result (owner 2026-10-27): green normal, yellow needs a look (changed, late, not run yet), red error or disconnected.
@@ -132,14 +140,16 @@ const monUnread = list => list.reduce((c, n) => c + (n.read ? 0 : 1), 0);
 // What is watched, in list order: 감시 소식 (reports no row below owns), then the 앱 group (the integrations), then the 일반 모니터링 group (the monitors). Each item carries what
 // its row and its conversation show.
 const MON_FEED = "감시 소식";
-// An app's row says what waits on the owner, never the latest item's title. `needs` = {drafts, unread, sentToday} from GET /api/integrations (hub/integrations.ts):
-// at most two parts, the most important first; the badge is the count that waits on him (drafts first, else unread).
-function monNeedLine(n) {
+// An app's row says what waits on the owner, never the latest item's title. `needs` = {drafts, unread, sentToday, unreplied} from GET /api/integrations (hub/integrations.ts):
+// at most two parts, the most important first (drafts, 미답장, 안 읽음, sent today); the badge is the count that waits on him (drafts first, else unread).
+// "확인할 것 없어요" only for a connected app with every count 0; `down` (the app is disconnected) says 연결 끊김 instead.
+function monNeedLine(n, down) {
   const parts = [];
   if (n.drafts) parts.push(`답장 확인 ${n.drafts}건`);
+  if (n.unreplied) parts.push(`미답장 ${n.unreplied}건`);
   if (n.unread) parts.push(`안 읽음 ${n.unread}`);
   if (n.sentToday) parts.push(`오늘 자동 답장 ${n.sentToday}건 보냄`);
-  return parts.slice(0, 2).join(" · ") || "확인할 것 없어요";
+  return parts.slice(0, 2).join(" · ") || (down ? "연결 끊김" : "확인할 것 없어요");
 }
 // A watch an app owns (it.watches / it.watchesNot of GET /api/integrations, hub/integrations.ts) belongs to that app: no row of its own in 일반 모니터링,
 // its status is in the app's panel and a failing one marks the app's row.
@@ -152,11 +162,11 @@ function monItems() {
   intgWatch();
   const mons = ntMons(), shown = new Set(), items = [], owned = monOwnedBy(INTG.items, mons);
   for (const it of INTG.items) {
-    const notices = (it.notices || []).map(ntById).filter(n => n && monMine(n, it)), mails = [...CONV.keys()].filter(t => !PQ.of.has(t) && intgHas(it, t));
+    const notices = (it.notices || []).map(ntById).filter(n => n && monMine(n, it)), mails = [...CONV.keys()].filter(t => !PQ.of.has(t) && intgHas(it, t) && (!isMailT(t) || MAILS.has(t)));   // a mail conversation without its mail (deleted) is no mail row
     for (const n of notices) shown.add(n.id);
     const cands = [...notices.map(n => ({ at: monNoticeAt(n), text: monLine(n) })), ...mails.filter(t => CONV.get(t)).map(t => ({ at: CONV.get(t).ts, text: (MAILS.get(t) || {}).subject || CONV.get(t).text }))].sort((a, b) => b.at.localeCompare(a.at));
-    const needs = it.needs || { drafts: 0, unread: monUnread(notices) + mails.reduce((c, t) => c + (ts(t).unread | 0), 0), sentToday: 0 }, conn = it.state === "disconnected", own = owned.get(it.key) || [], bad = own.some(m => m.last_result === "fail");
-    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, conn, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: conn && it.hint ? it.hint : bad ? "확인이 실패했어요" : monNeedLine(needs), at: cands[0] ? cands[0].at : "", owned: own, msig: conn ? "conn" : bad ? "fail" : "",
+    const needs = it.needs || { drafts: 0, unread: monUnread(notices.filter(n => !mails.includes(n.open) && !mails.includes(n.src))) + mails.filter(t => (ts(t).unread | 0) > 0).length, sentToday: 0 }, conn = it.state === "disconnected", own = owned.get(it.key) || [], bad = own.some(m => m.last_result === "fail");
+    items.push({ key: `i:${it.key}`, group: MON_GROUP[it.kind || "app"] || MON_GROUP.app, name: it.label, ic: it.icon, notices, mails, app: true, conn, inst: it.key, drafts: needs.drafts | 0, unread: needs.drafts || needs.unread, unreplied: needs.unreplied | 0, hint: conn && it.hint ? it.hint : bad ? "확인이 실패했어요" : monNeedLine(needs, conn), at: cands[0] ? cands[0].at : "", owned: own, msig: conn ? "conn" : bad ? "fail" : "",
       badge: conn ? ["연결 끊김", "err"] : monFail(owned.get(it.key) || []) });
   }
   const ownedNames = new Set([...owned.values()].flat());
@@ -170,13 +180,29 @@ function monItems() {
     items.push({ key: `m:${m.name}`, group: MON_GROUP.plain, name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices), need, chips: monNeedChips(need),
       hint: conn ? monConnShort(m) : running ? "지금 확인하고 있어요" : fresh ? monStrip(monLine(last), names) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
       msig: [m.last_run, m.next_run, m.last_result, m.paused, m.connection, running].join("|"),
-      badge: conn ? ["연결 끊김", "err"] : m.paused ? ["꺼짐", ""] : m.last_result === "fail" ? ["실패", "err"] : (Date.parse(m.next_run) || Infinity) < Date.now() ? ["늦어짐", "warn"] : m.last_result === "changed" ? ["바뀜", "warn"] : m.last_run ? ["정상", "ok"] : ["확인 필요", "warn"] });
+      badge: (st => [st.text, st.tone])(monStatus(m)) });
   }
   // A report the hub marked as an app's (n.app, hub/notices.ts) is never here, even before the app list below has loaded.
-  const feed = NT.items.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), last = monNewest(feed), need = feed.filter(monNeed).length;
-  // The feed's row: what waits on the owner as its chip (counted apart from the plain reports, like an app row), the newest line under the name.
-  items.unshift({ key: "notice", group: "", name: MON_FEED, ic: "list", notices: feed, mails: [], unread: monUnread(feed), need, chips: monNeedChips(need), hint: last ? monLine(last) : "새 감시 소식이 없어요", at: last ? monNoticeAt(last) : "" });
+  const feed = NT.items.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), need = feed.filter(monNeed).length;
+  // The feed's row: what waits on the owner as its chip (counted apart from the plain reports, like an app row), the head line under the name (monFeedHead).
+  items.unshift({ key: "notice", group: "", name: MON_FEED, ic: "list", notices: feed, mails: [], unread: monUnread(feed), need, chips: monNeedChips(need), ...monFeedHead(feed) });
+  // 답장 확인 (30-replies.js): every waiting reply draft of every app and computer, right under 감시 소식.
+  const rq = rqMonItem();
+  if (rq) items.splice(1, 0, rq);
   return pqMerge(items);
+}
+// The 감시 소식 row's line never passes an old report off as the current state: the newest UNREAD report (another computer's with its name),
+// else only when the last one came ("마지막 소식 10월 26일"). A report of a watch that no longer exists (on the computer that wrote it) is skipped.
+const monGone = n => {
+  if (!n.watch) return false;
+  const mons = n.pc ? ((((PQ.list.find(p => p && p.url === n.pc.url) || {}).items) || {}).monitors || null) : NM.loaded ? NM.items : null;
+  return !!mons && !mons.some(m => m.watch === n.watch);
+};
+const monFeedDay = t => kstDay(t) === kstDay(Date.now()) ? `오늘 ${kstHM(t)}` : new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric" });
+function monFeedHead(list) {
+  const live = list.filter(n => !monGone(n)), fresh = monNewest(live.filter(n => !n.read)), last = monNewest(live);
+  if (fresh) return { hint: `${fresh.pc ? `${fresh.pc.name} · ` : ""}${monLine(fresh)}`, at: monNoticeAt(fresh) };
+  return last ? { hint: `마지막 소식 ${monFeedDay(ntAt(last))}`, at: monNoticeAt(last) } : { hint: "새 감시 소식이 없어요", at: "" };
 }
 // 답 필요: waits on the owner and is answered from here (an open decision, an [ask] report), never read by looking; 실패: a report that could not check.
 // A peer's open decision is answered here too (ntPost through the peer); a peer's loose [ask] waits in that computer's conversation.
@@ -189,7 +215,8 @@ const monName = () => { const it = monItems().find(i => i.key === MON.sel); retu
 function monState(it) {
   if (it.off) return "연결 안 됨";
   // The progress block under the name already carries the two runs in words, so the state line says only where it stands.
-  if (it.mon) { if (it.mon.connection === "disconnected") return ""; if (it.mon.paused) return "꺼짐"; const res = it.mon.last_result ? NT_RESULT[it.mon.last_result] : null; return res ? res[0] : "확인 전"; }
+  if (it.mon) { const st = monStatus(it.mon); return st.key === "disconnected" ? "" : st.text; }
+  if (it.rq) return it.hint;
   if (it.key === "notice") return [it.need ? `답 필요 ${it.need}건` : "", it.unread ? `안 읽음 ${it.unread}개` : ""].filter(Boolean).join(" · ") || "감시와 예약 결과";
   return it.app ? it.hint : it.unread ? `안 읽음 ${it.unread}개` : "연결돼 있어요";
 }
@@ -220,12 +247,12 @@ const monTag = tone => { const t = MON_TONE[tone]; return t ? el("span", { class
 // the subject in bold, the body in paragraphs - with its state as a badge with the time. 보내기 sends, 고치기 asks "어떻게 고칠까요?" (the bot rewrites it),
 // 보내지 않기 is the quiet way out. The whole answer path is the notice's (answerInline / ntPost), so the chat card and this one stay in step.
 const DR = { edit: new Set(), manual: new Set(), note: {} };
-const DR_STATE = { open: ["승인 대기", "warn"], send: ["보냄", "ok"], edit: ["고침", "pri"], revising: ["고치는 중…", "pri"], drop: ["보내지 않음", ""], expired: ["만료", ""], ignored: ["무시함", ""] };
+const DR_STATE = { open: ["승인 대기", "warn"], send: ["보냄", "ok"], edit: ["고침", "pri"], revising: ["고치는 중…", "pri"], drop: ["보내지 않음", ""], own: ["보낼 방법 전함", "pri"], expired: ["만료", ""], ignored: ["무시함", ""] };
 function drState(d) {
   if (d.state === "open" || d.state === "ignored") return d.state;
   if (d.draft && ntRevising({ kind: "decision", decision: d })) return "revising";   // 고치기 answered, the new draft has not landed
   const m = /^\s*(\d+)\)/.exec(String(d.answer || "")), o = m && d.options.find(x => x.n === Number(m[1]));
-  return d.resolved || !o ? "expired" : { 보내기: "send", 고치기: "edit", "보내지 않기": "drop" }[o.label] || "expired";
+  return d.resolved || !o ? "expired" : { 보내기: "send", 고치기: "edit", "보내지 않기": "drop", "답글만 보내기": "send", "메일만 보내기": "send", [DRAFT_OWN]: "own" }[o.label] || "expired";
 }
 const drParas = body => String(body ?? "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().split(/\n\n/);
 function drOriginal(t) {
@@ -234,6 +261,11 @@ function drOriginal(t) {
   const brief = mailBrief(m, t);
   return el("div", { class: "dr-orig" }, el("div", { class: "dr-ok", text: "답장할 메일" }), el("div", { class: "dr-os" }, el("b", { text: mailSender(m.from) }), m.subject ? ` · ${m.subject}` : ""), brief ? el("div", { class: "dr-ob", text: brief }) : null);
 }
+// The app instance that holds a conversation target, for the card's head (a peer's row first: PQ.of).
+const monInstLabel = t => { const pe = PQ.of.get(t); if (pe) return pe.label || ""; const it = INTG.items.find(x => intgHas(x, t)); return it ? it.label : ""; };
+// The send approval as the one reply card (web/js/10-reply-card.js): same head (앱 · 계정 · 컴퓨터 · 모델), same 첨부 줄, clamped body, and the same
+// three actions as the 답장 확인 queue, the KakaoTalk room and a comment thread. The answer path is the notice's (answerInline / ntPost), so this
+// card and the chat card stay in step.
 // o.bare: only the mail it sends (a handled draft unfolded inside its mail's conversation, 30-mail-sent.js).
 function draftCardNode(n, o = {}) {
   const d = n.decision, dr = d.draft, st = drState(d), open = st === "open", [stText, stTone] = DR_STATE[st], busy = dcSending.has(n.id);
@@ -246,19 +278,17 @@ function draftCardNode(n, o = {}) {
   const ta = editing ? el("textarea", { class: man ? "dr-edit" : "dr-edit ask", rows: man ? "8" : "2", maxlength: man ? "6000" : "500", placeholder: man ? "" : DRAFT_HINT, "aria-label": man ? "직접 수정" : "고칠 내용", disabled: busy, oninput: () => { DR.note[n.id] = ta.value; if (go2) go2.disabled = !ta.value.trim(); } }) : null;
   if (ta) ta.value = DR.note[n.id] ?? (man ? drParas(dr.body).join("\n\n") : "");
   const leave = () => { DR.edit.delete(n.id); DR.manual.delete(n.id); delete DR.note[n.id]; };
-  const mailBox = el("div", { class: "dr-mail" },
-    el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || "받는이" }), el("span", { class: "dr-chip", text: dr.to || "-" })),
+  // The 받는이·참조 rows of a mail draft are its own (10-decision-card.js draftToNode): 답장 | 전체 답장, the chips, editable while it waits.
+  const recv = dr.toLabel === "받는이" || !dr.toLabel ? draftToNode(dr, { t: d.to, edit: open }) : el("div", { class: "dr-to" }, el("span", { class: "dr-k", text: dr.toLabel || "받는이" }), el("span", { class: "dr-chip", text: dr.to || "-" }));
+  if (o.bare) return el("div", { class: "dr-mail" }, recv,
     dr.subject ? el("div", { class: "dr-sub", text: dr.subject }) : null,
     draftOriginNode(dr),
     man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
     draftFilesNode(dr, { t: d.to, edit: open }), draftMailNode(dr.mail));
-  if (o.bare) return mailBox;
-  if (editing && !man) mailBox.append(el("div", { class: "dr-q2", text: "어떻게 고칠까요?" }), ta);
-  const kids = [
-    el("div", { class: "rc-hd" }, el("span", { class: "dr-ic" }, icon(mail ? "mail" : "send")), el("span", { class: "rc-src", text: mail ? "메일" : (targetName(d.to) || "초안") }), el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
+  const head = { app: mail ? "mail" : d.to, label: mail ? monInstLabel(d.to) : targetName(d.to), pc: mail && pqPc(d.to) ? pqPc(d.to).name : pqSelf(), model: dr.model || "", at: d.answered_at || n.updated || n.ts,
+    tail: [dr.rule ? draftRuleTag(dr.rule, "dr-rule") : null, el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
       // 지우기 on a waiting draft is 보내지 않기: the same answer path, so the owning computer drops it once and nothing is sent
-      open && !editing && oDrop ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => { if (!busy) answerInline(n, oDrop); } }, icon("close")) : null),
-    q ? el("div", { class: "rc-title dr-q", text: q }) : null, mail ? drOriginal(d.to) : null, mailBox];
+      open && !editing && oDrop ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => { if (!busy) answerInline(n, oDrop); } }, icon("close")) : null] };
   if (editing) {
     go2 = el("button", { class: "btn", type: "button", disabled: busy || !ta.value.trim(), text: man ? "이 내용으로 고치기" : "고쳐 달라고 하기", onclick: async () => {
       const text = ta.value.trim();
@@ -267,16 +297,25 @@ function draftCardNode(n, o = {}) {
       try { await ntPost(n, oEdit.n, man ? MANUAL_LEAD + text : text); leave(); } catch (e) { toast(e.message, true); }
       dcSending.delete(n.id); syncInlineChoices();
     } });
-    kids.push(el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: "취소", onclick: () => { leave(); redraw(); } }),
-      man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: "직접 수정" }))));
-  } else if (open) {
-    const go = o => () => { if (!o || busy) return; if (o === oSend && (dr.warning || (dr.attachments || []).length)) drfSure(dr, d.to).then(ok => ok && answerInline(n, o)); else answerInline(n, o); };
-    kids.push(el("div", { class: "dr-act dr-row" },
-      el("button", { class: "btn dr-send", type: "button", disabled: busy || !oSend, text: "보내기", onclick: go(oSend) }),
-      el("button", { class: "btn tonal", type: "button", disabled: busy || !oEdit, text: "고치기", onclick: () => { DR.edit.add(n.id); redraw(); } }),
-      el("button", { class: "btn text dr-drop", type: "button", disabled: busy || !oDrop, text: "보내지 않기", onclick: go(oDrop) })));
   }
-  const card = el("div", { class: `bm alert rc dr ${st}`, "data-nid": n.id }, ...kids.filter(Boolean));
+  const acts = editing ? null : open ? {
+    send: () => { if (!oSend || busy) return; if (dr.warning || (dr.attachments || []).length) drfSure(dr, d.to).then(ok => ok && answerInline(n, oSend)); else answerInline(n, oSend); },
+    edit: oEdit ? () => { DR.edit.add(n.id); redraw(); } : null,
+    drop: oDrop ? () => { if (!busy) answerInline(n, oDrop); } : null,
+    busy,
+  } : null;
+  // 직접 수정 (man) types the mail itself: the field stands where the body was, with only the two buttons below it.
+  const revise = editing ? el("div", { class: "rq-edit" }, man ? null : el("div", { class: "dr-q2", text: "어떻게 고칠까요?" }), man ? null : ta,
+    el("div", { class: "dr-act dr-row" }, go2, el("button", { class: "btn text", type: "button", disabled: busy, text: "취소", onclick: () => { leave(); redraw(); } }),
+      man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: "직접 수정" })))) : null;
+  const card = rqCard({ key: `dr:${n.id}`, cls: `bm alert rc dr ${st}`, attrs: { "data-nid": n.id }, head,
+    label: q || null, labelCls: "rc-title dr-q",
+    recv, subject: dr.subject,
+    body: { text: dr.body, node: man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))), cls: "dr-body" },
+    // A mail draft always shows its 첨부 줄 (files, or 첨부: 없음) right before 보내기; the files are editable while the draft waits.
+    attach: draftFilesNode(dr, { t: d.to, edit: open }),
+    extra: [mail ? drOriginal(d.to) : null, draftOriginNode(dr), draftMailNode(dr.mail)],
+    ...(revise ? { revise } : acts ? { acts } : {}) });
   return card;
 }
 // A decision: the question and the same choice rows a chat message has; an open one is answered here, an answered one shows what was chosen.
@@ -352,8 +391,12 @@ const mailSize = b => b >= 1048576 ? `${(b / 1048576).toFixed(1)}MB` : b >= 1024
 const mailFileUrl = (key, i, dl) => pqLink(`/api/mail/${enc(key)}/files/${i}${dl ? "?dl=1" : ""}`);
 // The attachments of a mail in its original view: one row per file (name, size); the row itself is the download link, so it also saves
 // in an installed app / on a phone, where a new tab would not.
+// A mail's files without the pictures its body shows (hub/mail.ts inline: drawn in the original, not files); each keeps its own index.
+const mailRealFiles = files => (files || []).map((f, i) => ({ f, i })).filter(x => !x.f.inline);
 function mailFilesNode(key, files) {
-  return el("div", { class: "mr-files" }, el("div", { class: "mr-fh", text: `첨부파일 ${files.length}개` }), ...files.map((f, i) =>
+  const real = mailRealFiles(files);
+  if (!real.length) return null;
+  return el("div", { class: "mr-files" }, el("div", { class: "mr-fh", text: `첨부파일 ${real.length}개` }), ...real.map(({ f, i }) =>
     el("a", { class: "mr-file", href: mailFileUrl(key, i, true), download: f.name, title: `${f.name} 내려받기`, "aria-label": `${f.name} 내려받기${f.size ? ` (${mailSize(f.size)})` : ""}` },
       icon("file"), el("span", { class: "mr-fname", text: f.name }), f.size ? el("span", { class: "mr-fsize", text: mailSize(f.size) }) : null, icon("download"))));
 }
@@ -361,21 +404,23 @@ function mailFilesNode(key, files) {
 // reply-draft option is off or nothing was offered): { kind: "reply-draft", label, ref, state? }, `ref` = the draft id and `state` =
 // "draft" (default: a draft waits for approval) | "sent" (the reply went out by itself) | "waiting" (a reply is expected, no draft yet).
 // Without suggest nothing is drawn.
-const MAIL_REPLY = { draft: ["답장 초안 있음", "pri"], sent: ["자동 답장 보냄", "ok"], waiting: ["답장 대기", ""] };
+const MAIL_REPLY = { draft: ["답장 초안 있음", "warn"], sent: ["자동 답장 보냄", "ok"], waiting: ["답장 대기", ""] };
 const mailReplyChip = sg => {
   if (!sg || typeof sg !== "object" || (sg.kind && sg.kind !== "reply-draft")) return null;
   const [text, tone] = MAIL_REPLY[sg.state || "draft"] || [];
   return text ? el("span", { class: `tag mr-reply${tone ? ` ${tone}` : ""}`, "data-slot": "suggest", text }) : null;
 };
-// The state label of a mail row (hub/mail-state.ts mailLabel): outgoing = 내가 보냄; incoming = its reply state (m.reply: needs | draft | replied | skipped | fyi),
-// else 읽음 / 새 메일. Reading never changes the reply state; the unread count stays beside it as its own tag.
-const MAIL_STATE = { needs: ["답장 필요", "warn"], draft: ["초안 있음", "pri"], replied: ["답장함", "ok"], skipped: ["답장 안 함", ""], fyi: ["답장 불필요", ""] };
-const mailStateOf = (m, unread) => m.dir === "out" ? ["내가 보냄", ""] : MAIL_STATE[m.reply] || (unread ? ["새 메일", "warn"] : ["읽음", ""]);
+// The reply-state tag of a mail (hub/mail-state.ts mailLabel): an incoming mail's reply state (m.reply: needs | draft | replied | skipped | fyi),
+// else none. Read / unread is never a state (a row has its own 안 읽음 N pill), and skipped / fyi are the same mark to the owner: 답장 안 함.
+// An outgoing mail is 내가 보냄 in the thread list of a mail (30-mail-thread.js), where both directions sit together; a list row has no tag for it.
+const MAIL_STATE = { needs: ["답장 필요", "warn"], draft: ["초안 있음", "warn"], replied: ["답장함", "ok"], skipped: ["답장 안 함", ""], fyi: ["답장 안 함", ""] };
+const mailStateOf = m => m.dir === "out" ? ["내가 보냄", ""] : MAIL_STATE[m.reply] || ["", ""];
 // An app whose conversation is a list of mails (메일 and its instances): newest on top, opened at the top.
 const monMailList = it => !!(it && it.app && !it.mon && it.mails.some(t => MAILS.has(t)));
 // The filter of the mail list: 전체 / 안 읽음 / 답장 필요 / 확인 대기 / 답장함 / 보낸 메일. A filter gets the mail and its conversation target.
 // 확인 대기 holds no mail rows: it is the reply drafts waiting on the owner (owner 2026-10-27), and those approval cards show only there.
-const MAIL_FILTERS = [["all", "전체", () => true], ["unread", "안 읽음", (m, t) => m.dir !== "out" && (ts(t).unread | 0) > 0], ["owed", "답장 필요", m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft")], ["pending", "확인 대기", () => false], ["replied", "답장함", m => m.dir !== "out" && m.reply === "replied"], ["sent", "보낸 메일", m => m.dir === "out"]];
+// 전체 is the received mail; what was sent is only under 보낸 메일 (owner 2026-10-28).
+const MAIL_FILTERS = [["all", "전체", m => m.dir !== "out"], ["unread", "안 읽음", (m, t) => m.dir !== "out" && (ts(t).unread | 0) > 0], ["owed", "답장 필요", m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft")], ["pending", "확인 대기", () => false], ["replied", "답장함", m => m.dir !== "out" && m.reply === "replied"], ["sent", "보낸 메일", m => m.dir === "out"]];
 const mailFilterOf = () => MAIL_FILTERS.find(f => f[0] === MON.mailFilter) || MAIL_FILTERS[0];
 // A reply draft still in the owner's hands: waiting for 보내기 / 고치기 / 보내지 않기, or being rewritten after 고치기 (a peer's too, as its plain report).
 const mailDraftOpen = n => !!(n.decision && n.decision.draft) && drState(n.decision) === "open";
@@ -396,6 +441,15 @@ function mailDraftLive(notices) {
 // folded inside its mail's conversation (30-mail-sent.js).
 const mailDraftDone = n => !!(n.decision && n.decision.draft) && String(n.decision.to || "").startsWith("mail:") && !mailDraftHeld(n);
 const mailDraftGone = (n, newest) => !!(n.decision && n.decision.draft) && String(n.decision.to || "").startsWith("mail:") && (drState(n.decision) === "drop" || newest.get(mailDraftKey(n)) !== n);
+// Opening a mail app while reply drafts wait lands on 확인 대기 (once per opening, so a filter the owner picks stays); with none waiting a
+// left-over 확인 대기 goes back to 전체. It waits for the notices, so a draft that loads late still decides the landing.
+function mailLand(sel) {
+  if (!monMailList(sel)) { MON.land = ""; return; }
+  if (MON.land === sel.key || !NT.loaded) return;
+  MON.land = sel.key;
+  const waiting = [...mailDraftLive(sel.notices).values()].some(mailDraftOpen);
+  if (waiting) MON.mailFilter = "pending"; else if (MON.mailFilter === "pending") MON.mailFilter = "all";
+}
 function mailFilterBar(mails, notices) {
   const cur = mailFilterOf()[0];
   return el("div", { class: "mr-filter", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.map(([k, label, ok]) => {
@@ -406,22 +460,28 @@ function mailFilterBar(mails, notices) {
 // A mail or chat of an integration is its own conversation in 채팅. A mail is a compact result-card row: sender and time on one line (with
 // a paperclip and the file count when it has files), the subject, a summary of up to 3 lines and, at the bottom, the reply state. The
 // whole card is the way in: it opens the mail's conversation, where the original and its files are (11-todo-strip.js "mail").
+// Every mail row has one layout: sender · reply-state tag (only when there is a reply state; the orange 미답장 pill while one is owed) · 안 읽음 N ·
+// paperclip · time · ⋯. A mail conversation whose mail is gone (deleted) is no row at all.
 function monConvNode(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), n = ts(t).unread, open = () => go("monitoring", `c:${t}`);
-  const owed = !!(m && m.unreplied), [stateText, stateTone] = m ? mailStateOf(m, n) : ["", ""];
-  // A mail's tags: the unread count only beside a reply state (alone, "새 메일" says it); the state label is the orange 미답장 pill while a reply is owed.
-  const tag = m ? (n && m.dir !== "out" && m.reply ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : null) : n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : ntHasDecision(t) ? el("span", { class: "tag warn", text: "답변 필요" }) : null;
-  const stateTag = m ? (owed ? unrepPill(stateText) : el("span", { class: `tag mr-state${stateTone ? ` ${stateTone}` : ""}`, "data-state": stateText, text: stateText })) : null;
-  const files = m ? m.attachments || [] : [], brief = m ? mailBrief(m, t) : "", when = rcWhen(last ? last.ts : m && m.at), chip = m && (m.dir === "out" || !m.reply || (m.suggest && m.suggest.state === "sent")) ? mailReplyChip(m.suggest) : null;
+  if (!m && isMailT(t)) return null;
+  const [stateText, stateTone] = m && m.dir !== "out" ? mailStateOf(m) : ["", ""];
+  // A mail is one item: unread is one mark, however many messages (the mail, the bot's note on it) its conversation holds unread.
+  const tag = m ? (n && m.dir !== "out" ? el("span", { class: "tag warn mr-unread", text: "안 읽음" }) : null) : n ? el("span", { class: "tag warn", text: `안 읽음 ${n}` }) : ntHasDecision(t) ? el("span", { class: "tag warn", text: "답변 필요" }) : null;
+  const stateTag = stateText ? (m.unreplied ? unrepPill(stateText) : el("span", { class: `tag mr-state${stateTone ? ` ${stateTone}` : ""}`, "data-state": stateText, text: stateText })) : null;
+  // The 자동 초안 규칙 that drafted this mail (hub/mail.ts MailRecord.rule): its name, as a plain tag beside the reply state.
+  const ruleTag = m && m.rule && m.dir !== "out" ? draftRuleTag(m.rule, "mr-rule") : null;
+  const inline = m ? mailRowActs(m).map(a => mailActButton(t, a)) : [];
+  const files = m ? mailRealFiles(m.attachments).map(x => x.f) : [], brief = m ? mailBrief(m, t) : "", when = rcWhen(last ? last.ts : m && m.at), chip = m && (m.dir === "out" || !m.reply || (m.suggest && m.suggest.state === "sent")) ? mailReplyChip(m.suggest) : null;
   const title = m ? m.subject || "(제목 없음)" : rcPlain(String(last ? last.text : "").split("\n").find(l => l.trim() && !/^\s*>/.test(l)) || "") || label;
   const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
   return el("div", { class: "bm alert rc mr", role: "button", tabindex: "0", "aria-label": `${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
-    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label }), stateTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m ? mailMenuBtn(t) : null),
+    el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label }), stateTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m ? mailMenuBtn(t) : null),
     el("div", { class: "rc-title", text: title }),
     m && m.to ? el("div", { class: "mr-to", text: mailToText(m) }) : null,
     ...mailSumNodes(m, t, brief),
-    chip || owed ? el("div", { class: "mr-slot" }, chip, owed && m.reply !== "draft" ? mailDraftButton(t) : null, owed ? mailFyiButton(t) : null) : null);
+    chip || inline.length ? el("div", { class: "mr-slot" }, chip, ...inline) : null);
 }
 // The summary lines of a mail row: a bulleted 요약 as a two-point list, else the brief as one clamped text; then the first 할 일.
 function mailSumNodes(m, t, brief) {
@@ -433,28 +493,70 @@ function mailSumNodes(m, t, brief) {
 }
 // 초안 작성: the owner asks for a reply draft of this mail (POST /api/mail/<key>/draft, made behind the request); the draft arrives as the send-approval
 // card in the mail's conversation. In a row and in the open mail's head.
-const mailDraftAsk = async (t, btn) => {
-  await api(`/api/mail/${t.slice(5)}/draft`, "POST", {});
+const mailDraftAsk = async (t, btn, instruction = "") => {
+  await api(`/api/mail/${t.slice(5)}/draft`, "POST", instruction ? { instruction } : {});
   toast("답장 초안을 만들고 있어요. 다 되면 이 메일에 승인 카드가 떠요");
   if (btn) { btn.disabled = true; btn.textContent = "만드는 중…"; }
 };
-const mailDraftButton = (t, cls = "cchip mr-draft") => el("button", { class: cls, type: "button", "data-k": "mail-draft", text: "초안 작성", onclick: ev => { ev.stopPropagation(); const b = ev.currentTarget; busy(b, () => mailDraftAsk(t, b).catch(e => toast(e.message || "초안을 요청하지 못했어요", true))); } });
-// 답장 안 해도 돼요 / 답장 필요로 되돌리기 (POST / DELETE /api/mail/<key>/fyi, a peer's mail on the computer that holds it: 34-peer-monitoring.js pqRoute).
-// The row, its 답장 불필요 label, the filter counts and the app badges change at once; the hub drops the mail's waiting reply draft (확인 대기).
-const MAIL_FYI = { on: "답장 안 해도 돼요", off: "답장 필요로 되돌리기" };
+// The sample in the 초안 작성 box, made from the summary the mail already has (hub/mail.ts MailRecord.summary: 요약, 할 일), no model call:
+// the first 할 일, else the first point of 요약, quoted in one example instruction that fits it. "" without a summary (the fixed hint then).
+const mailDraftCut = s => { const one = s.split(/(?<=[.!?])\s+/)[0].replace(/[.!?。]+$/, "").trim(); return one.length > 28 ? `${one.slice(0, 27).trim()}…` : one; };
+function mailDraftSample(m) {
+  if (!m || !m.summary) return "";
+  const skip = mailSkip(m), p = mailParts(m.summary, skip), lead = p.todo || p.points[0] || mailLines(m.summary, skip)[0] || "";
+  if (!lead) return "";
+  const cut = mailDraftCut(lead), x = `‘${cut}’`;
+  if (p.todo) return `예: ${x} 건은 이번 주 안에 처리하겠다고 써 줘`;
+  // a point is a sentence: quoted with 라는 / 이라는 by the last syllable (a final consonant takes 이라는)
+  const h = [...cut].reverse().find(c => c >= "가" && c <= "힣"), said = `${x}${h && (h.charCodeAt(0) - 0xac00) % 28 ? "이라는" : "라는"}`;
+  if (/일정|회의|미팅|약속|방문|참석/.test(lead)) return `예: ${said} 제안에 그 시간 괜찮다고, 장소만 다시 알려 달라고 써 줘`;
+  if (/요청|문의|부탁|검토|확인|회신|답변|제안/.test(lead)) return `예: ${said} 내용은 확인하고 금요일까지 답드린다고 써 줘`;
+  return `예: ${said} 내용 잘 받았다고, 감사 인사와 함께 짧게 써 줘`;
+}
+// 초안 작성 asks first what the reply should say (owner 2026-10-28); an empty box makes the draft on its own, as before. Above the box: the mail
+// it answers (sender, subject, the row's summary lines), so the owner writes the instruction without going back to the mail.
+function mailDraftDialog(t, btn) {
+  const m = MAILS.get(t), sample = mailDraftSample(m);
+  const ta = el("textarea", { class: "fi", rows: "3", maxlength: "500", "data-k": "draft-instruction", "aria-label": "초안에 넣을 내용",
+    placeholder: sample || "비워 두면 메일을 읽고 알아서 써요.\n예: 금요일까지 보내 드린다고, 견적서도 첨부한다고 써 줘" });
+  const ctx = m ? el("div", { class: "md-ctx", "data-k": "draft-mail" },
+    el("div", { class: "md-from" }, icon("mail"), el("span", { text: mailSender(m.from) || m.from || "보낸 사람 없음" })),
+    el("div", { class: "md-subj", text: m.subject || "(제목 없음)" }),
+    ...mailSumNodes(m, t, mailBrief(m, t))) : null;
+  const go = (close, b) => busy(b, async () => { close(); await mailDraftAsk(t, btn, ta.value.trim()).catch(e => toast(e.message || "초안을 요청하지 못했어요", true)); });
+  const d = dialog({ title: "답장 초안 만들기", body: el("div", { class: "col md-dlg" }, ctx,
+      el("div", { class: "md-ask" }, el("div", { class: "md-lbl", text: "어떻게 답할까요?" }), ta, el("div", { class: "sup", text: sample ? "적은 내용을 그대로 반영해요. 비워 두면 메일을 읽고 알아서 써요." : "적은 내용을 그대로 반영해요." }))),
+    actions: [{ label: "초안 만들기", kind: "pri", onclick: (close, b) => go(close, b) }] });
+  ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
+  ta.focus();
+}
+const mailDraftRun = (t, b) => mailDraftDialog(t, b);
+const mailDraftButton = (t, cls = "cchip mr-act mr-draft") => el("button", { class: cls, type: "button", "data-k": "mail-draft", onclick: ev => { ev.stopPropagation(); mailDraftDialog(t, ev.currentTarget); } }, icon("pencil"), "초안 작성");
+// 답장 안 함 / 답장 필요로 표시: the owner's own mark (POST / DELETE /api/mail/<key>/fyi, recorded as his with the time; a peer's mail on the computer
+// that holds it: 34-peer-monitoring.js pqRoute). The row, its tag, the filter counts and the app badges change at once; 답장 안 함 drops the mail's
+// waiting reply draft (확인 대기). 답장 필요로 표시 works from no state, from 답장 안 함 and from 답장함 (it needs another answer).
 async function mailSetFyi(t, on) {
   const pc = pqPc(t);
   await api(`/api/mail/${t.slice(5)}/fyi`, on ? "POST" : "DELETE", on ? {} : undefined);
   const m = MAILS.get(t);
-  if (m) { m.reply = on ? "fyi" : "needs"; m.unreplied = !on; }
+  if (m) { m.reply = on ? "fyi" : m.reply === "draft" ? "draft" : "needs"; m.unreplied = !on; }
   MON.sig = ""; MON.side = ""; monSchedule();
-  toast(on ? "답장 안 해도 되는 메일로 표시했어요" : "답장 필요로 되돌렸어요", false, on ? { label: "되돌리기", onclick: () => busy(null, () => mailSetFyi(t, false)) } : undefined);
+  toast(on ? "답장 안 함으로 표시했어요" : "답장 필요로 표시했어요", false, on ? { label: "되돌리기", onclick: () => busy(null, () => mailSetFyi(t, false)) } : undefined);
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
-const mailFyiButton = t => el("button", { class: "cchip unrep-no mr-fyi", type: "button", "data-k": "mail-fyi", text: MAIL_FYI.on, onclick: ev => { ev.stopPropagation(); busy(ev.currentTarget, () => mailSetFyi(t, true)); } });   // busy: a second tap while it posts does nothing
+// The actions of a mail, one list for the ⋯ of every mail card and for the buttons of every row. Incoming: 초안 작성, then 답장 안 함 while a reply
+// is owed (답장 필요 / 초안 있음) or 답장 필요로 표시 in any other state, then 삭제. Outgoing: 삭제. The one rule for a row's buttons: every incoming row
+// shows 초안 작성 under its summary, without a tap on the ⋯ (owner 2026-10-29); a row whose reply is owed adds 답장 안 함. The rest stays in the ⋯.
+const MAIL_ACT = { draft: "초안 작성", no: "답장 안 함", need: "답장 필요로 표시", delete: "삭제" };
+const mailOwed = m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft");
+const mailActs = m => m.dir === "out" ? ["delete"] : ["draft", mailOwed(m) ? "no" : "need", "delete"];
+const mailRowActs = m => m.dir === "out" ? [] : mailOwed(m) ? ["draft", "no"] : ["draft"];
+const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "delete" ? mailDelete(t) : mailSetFyi(t, a === "no");
+// busy: a second tap while it posts does nothing
+const mailActButton = (t, a) => a === "draft" ? mailDraftButton(t) : el("button", { class: "cchip mr-act unrep-no", type: "button", "data-k": `mail-${a}`, text: MAIL_ACT[a], onclick: ev => { ev.stopPropagation(); busy(ev.currentTarget, () => mailActRun(t, a, null)); } });
 // 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it. A newer message of the thread brings it back.
 async function mailDelete(t) {
-  if (!await ask("메일 삭제", "이 메일을 dotz에서 지울까요? 실제 메일함의 메일은 그대로 있어요", "삭제", true)) return;
+  if (!await ask("메일 삭제", "이 메일을 목록에서 지울까요? 실제 메일함의 메일은 그대로 있어요", "삭제", true)) return;
   const pc = pqPc(t);
   await api(`/api/mail/${t.slice(5)}`, "DELETE");
   MAILS.delete(t); CONV.delete(t);
@@ -463,19 +565,16 @@ async function mailDelete(t) {
   if (monCtx === t && current === "chat") go("monitoring", MON.sel);   // deleted from its open conversation: back to the list
   PQ.of.delete(t);
   MON.sig = ""; MON.side = ""; monSchedule();
-  toast("메일을 dotz에서 지웠어요");
+  toast("메일을 목록에서 지웠어요");
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
-// The ⋯ at the top right of a mail card (a row of the list and the card at the top of the mail's conversation): the reply mark and 삭제,
-// built from the mail's state at the tap. An outgoing mail has only 삭제.
+// The ⋯ at the top right of a mail card (every row of the list and the card at the top of the mail's conversation): mailActs, built from the
+// mail's state at the tap.
 function mailMenuBtn(t) {
   return el("button", { class: "ib mr-more", type: "button", "aria-label": "메일 메뉴", title: "메일 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", "data-k": "mail-menu", onclick: ev => {
     ev.stopPropagation();
-    const b = ev.currentTarget, m = MAILS.get(t) || {}, acts = [];
-    if (m.dir !== "out" && (m.reply === "fyi" || m.reply === "skipped")) acts.push({ value: "off", label: MAIL_FYI.off });
-    else if (m.dir !== "out" && m.reply !== "replied") acts.push({ value: "on", label: MAIL_FYI.on });
-    acts.push({ value: "delete", label: "삭제" });
-    showMenu(b, acts, { onPick: v => busy(null, () => v === "delete" ? mailDelete(t) : mailSetFyi(t, v === "on")) });
+    const b = ev.currentTarget, m = MAILS.get(t) || {};
+    showMenu(b, mailActs(m).map(a => ({ value: a, label: MAIL_ACT[a] })), { onPick: v => busy(null, () => mailActRun(t, v, null)) });
   }, onkeydown: ev => ev.stopPropagation() }, icon("more"));
 }
 // A monitor's latest run, as the newest message of its conversation: the result in words, when it checks next, and its project chat.
@@ -644,7 +743,10 @@ function monChronoNodes(it, names) {
   // a mail list keeps the reply drafts awaiting the owner under 확인 대기 alone; every other view drops them. A draft answered 보내지 않기, and one a
   // newer draft of the same mail replaced, is gone from every view.
   const newestDraft = mailDraftLive(it.notices);
-  const notices = it.notices.filter(n => ok(n) && (!mf || (mailDraftHeld(n) === held && !mailDraftDone(n))) && !mailDraftGone(n, newestDraft));
+  // A message about one mail (the bot's note in its conversation, src/open = that mail) is read inside that mail, not as a card of its own between
+  // the mail rows: every row of a mail list is a mail. Reply drafts keep their own place (확인 대기).
+  const rowMail = n => !!mf && !(n.decision && n.decision.draft) && MAILS.has(n.src || n.open) && it.mails.includes(n.src || n.open);
+  const notices = it.notices.filter(n => ok(n) && !rowMail(n) && (!mf || (mailDraftHeld(n) === held && !mailDraftDone(n))) && !mailDraftGone(n, newestDraft));
   const runs = [];
   for (const n of notices.sort((a, b) => ntAt(a) - ntAt(b))) {
     const last = runs[runs.length - 1], k = monNeed(n) || ntIsDec(n) ? "" : monFoldKey(n, names);
@@ -655,7 +757,7 @@ function monChronoNodes(it, names) {
     if (r.all.length < MON_FOLD_MIN) return r.all.map(n => ({ at: ntAt(n), node: () => monNoticeNode(n, names) }));
     return [{ at: ntAt(r.n), node: () => { const x = monNoticeNode(r.n, names); if (!x) return null; x.dataset.nids = r.all.map(n => n.id).join(","); x.querySelector(".rc-hd").after(el("div", { class: "mon-rep", text: `같은 결과 ${r.all.length}번 · 처음 ${monWhen(r.all[0])}` })); return x; } }];
   };
-  const msgs = [...runs.slice(cut).flatMap(rep), ...(held ? [] : mf ? it.mails.filter(t => !MAILS.has(t) || mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, node: () => monConvNode(t, it.name) })),
+  const msgs = [...runs.slice(cut).flatMap(rep), ...(held ? [] : mf ? it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, node: () => monConvNode(t, it.name) })),
     ...(it.mon && !held ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])];
   // A mail app reads like a mailbox, newest on top (owner 2026-10-27); a monitor stays a chat, oldest to newest. Equal times keep their order.
   const newestTop = monMailList(it);
@@ -722,16 +824,16 @@ function monSettingsName(t) {
 // The status block of a settings panel: the monitor itself, or each watch the app owns. Same facts as the status card of the monitor's detail (monRunNode).
 const monStatMons = app => (app.startsWith("w:") ? [asMon(app)] : (monItems().find(i => i.app && monSettingsApp(i) === app) || {}).owned || []).filter(Boolean);
 function monStatNode(m) {
-  const res = m.last_result ? NT_RESULT[m.last_result] : null;
+  const st = monStatus(m);
   const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m.last_output ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
   return el("div", { class: "as-row as-stat", "data-watch": m.watch || m.name },
-    el("span", { class: "as-b" }, el("span", { class: "as-n", text: monTitle(m) }), el("span", { class: "as-h", text: [res && res[0], ntMonRun(m), ntMonNext(m)].filter(Boolean).join(" · ") }), ...facts.map(t => el("span", { class: "as-h", text: t }))),
-    m.last_result === "fail" ? el("span", { class: "tag err", text: "실패" }) : null);
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: monTitle(m) }), el("span", { class: "as-h", text: [st.text, ntMonRun(m), ntMonNext(m)].filter(Boolean).join(" · ") }), ...facts.map(t => el("span", { class: "as-h", text: t }))),
+    st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
 }
 // A peer's app is `<its key>~<computer hash>`: the same key may exist on this computer too (34-peer-monitoring.js pqApp).
 const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? it.key.slice(2) : it.app && it.pc ? pqApp(it.inst, it.pc) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : "";
 // A connection that is down says so at the top of the conversation, whether or not an alert went out, with the way to check again.
-// Two states, two banners: kind "down" (the connection is gone: err tone, 연결이 끊겼어요) and "fail" (connected, the last check failed: warn tone,
+// Two states, two banners: kind "down" (the connection is gone: err tone, 연결이 끊겼어요) and "fail" (connected, the last check failed: err tone too,
 // 확인 실패). The head is passed in, never guessed from the detail text.
 function monBannerNode(kind, detail, btn) {
   const head = kind === "down" ? "연결이 끊겼어요" : "확인 실패", t = String(detail || "").trim();
@@ -758,7 +860,9 @@ function monBannerOf(it) {
 // A monitor adds its own progress block and 지금 확인 under the name, so the conversation always says how far the wait has come.
 const monHead = it => {
   const banner = monBannerOf(it), st = monState(it);
-  const row = [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st ? el("span", { class: "cv-p", text: st }) : null), it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+  // An app with reply drafts waiting opens the one 답장 확인 queue on its own drafts (30-replies.js).
+  const rqBtn = it.app && it.drafts ? el("button", { class: "btn tonal sm rq-go", type: "button", "data-k": "replies", text: `답장 확인 ${it.drafts}`, onclick: () => rqOpen(it.inst, it.pc) }) : null;
+  const row = [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st ? el("span", { class: "cv-p", text: st }) : null), rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);
@@ -799,7 +903,7 @@ function monSeen() {
 }
 
 let monRaf = 0;
-const monSchedule = () => { if (!monRaf) monRaf = requestAnimationFrame(renderMonitoring); };
+const monSchedule = () => { monAttnSoon(); if (!monRaf) monRaf = requestAnimationFrame(renderMonitoring); };   // the nav badge reads the same data (09-needs-you.js)
 function renderMonitoring() {
   monRaf = 0;
   if (current !== "monitoring") { if (monCtx && current === "chat") convSchedule(); return; }
@@ -816,16 +920,30 @@ function renderMonitoring() {
   const kakao = kkItem(sel);
   const cm = !kakao && sel ? cmAppOf(sel.key) : "";
   kkMode(kakao, kakao && !(narrowChat() && MON.list), kakao ? sel.pc : null);
-  cmMode(cm, !!cm && !(narrowChat() && MON.list));
+  cmMode(cm, !!cm && !(narrowChat() && MON.list), cm ? sel.pc : null);
+  mailLand(sel);
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
-    const head = JSON.stringify([sel.name, monState(sel), sel.unreplied | 0, !!AS.by[monSettingsApp(sel)], !!KK.open]);
+    const head = JSON.stringify([sel.name, monState(sel), sel.unreplied | 0, sel.drafts | 0, !!AS.by[monSettingsApp(sel)], !!KK.open, pqSig(sel)]);
     if (head !== MON.kkHead) { MON.kkHead = head; clear($("#mon-head")).append(...monHead(sel)); }
     MON.sig = ""; MON.shown = sel.key;
     convTitle();
     return;
   }
   MON.kkHead = "";
+  if (sel.rq) {   // 답장 확인: the cards of 30-replies.js, redrawn only when a draft or the queue's own state changes
+    const sig = rqSig();
+    if (sig !== MON.sig) {
+      const keep = MON.shown === sel.key ? box.scrollTop : 0;
+      MON.sig = sig; MON.shown = sel.key;
+      clear($("#mon-head")).append(...monHead(sel));
+      clear(tl).append(...rqNodes());
+      box.scrollTop = keep;
+      edgeFade(box);
+    }
+    convTitle();
+    return;
+  }
   const sig = JSON.stringify([sel.key, sel.name, monState(sel), sel.unreplied | 0, sel.conn | 0, sel.mon && !!sel.mon.watch && MON.running.has(sel.mon.watch), sel.notices.map(n => [n.id, n.updated, n.read, n.text, n.decision, n.tone, n.item, n.item && n.item.key ? MAILS.get(`mail:${n.item.key}`) : null]), sel.mails.map(t => [t, (CONV.get(t) || {}).ts, ts(t).unread, MAILS.get(t), MAILS.has(t) ? mailBrief(MAILS.get(t), t) : ""]), sel.mon, NM.loaded, NT.loaded, MON.mailFilter || "all", pqSig(sel)]);
   if (sig !== MON.sig) {
     MON.sig = sig;

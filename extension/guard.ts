@@ -206,10 +206,15 @@ export function checkOmoTaskInput(input: any, isolate = true, roots: string[] = 
 // `model` only beside `subagent_type` and refuses it beside `category` (category_with_model), so a subagent_type worker is
 // pinned here and a category worker's model is dropped: its category runs on the same model through the
 // dotz-orchestrator-workers profile (hub/runtime/omo.ts). Edited in place, as checkOmoTaskInput.
+// Lookups run lighter (owner 2026-10-27): explore and librarian take Sonnet 5.5 medium on the subscription login (hub/runtime/omo.ts
+// LOOKUP_MODEL in OmO's provider names; the quick category gets it through the profile). On an API-key session they follow the pin.
+export const LOOKUP_PIN = "anthropic-subscription/claude-sonnet-5-5:medium";
+const LOOKUP_AGENTS = /^(explore|librarian)$/;
 export function pinOmoTaskModel(input: any, pin: string): void {
 	for (const item of Array.isArray(input?.tasks) ? input.tasks : [input]) {
 		if (!item || typeof item !== "object") continue;
-		if (typeof item.subagent_type === "string" && item.subagent_type.trim()) item.model = pin;
+		const agent = typeof item.subagent_type === "string" ? item.subagent_type.trim() : "";
+		if (agent) item.model = LOOKUP_AGENTS.test(agent) && pin.startsWith("anthropic-subscription/") ? LOOKUP_PIN : pin;
 		else delete item.model;
 	}
 	if (Array.isArray(input?.tasks)) delete input.model;
@@ -320,13 +325,41 @@ function contextTokens(ctx: any): number {
 }
 
 // Worker state is per project folder and, for dotz lanes (several omp sessions in one folder), per lane, so one lane's
-// workers are never reported in another lane's channel.
+// workers are never reported in another lane's channel. A conversation's own session (DOTZ_CONV) shares the data dir with
+// the main one, so it keys its state the same way.
+export const stateOwner = (): string | undefined => process.env.DOTZ_LANE || process.env.DOTZ_CONV || undefined;
+
+// The files every session reads at start and only the main session writes (state.json, owner rules, lessons, owner memory):
+// a conversation's session hands a change to them to main, so two sessions never write one at once.
+const SHARED_FILES = ["state.json", "RULES.md", "LESSONS.md"];
+const WRITE_TOOLS = new Set(["write", "edit", "multiedit", "apply_patch", "ast_edit", "notebook_edit"]);
+const SHELL_WRITES = /\b(write(File|FileSync)?|appendFile(Sync)?|Bun\.write|writeAtomic|rename(Sync)?|unlink(Sync)?|rm|mv|cp|tee|sed\s+-i|truncate)\b|>{1,2}/;
+export function sharedWriteBlock(tool: string, input: any, data = dataDir(), conv = process.env.DOTZ_CONV): string | undefined {
+	if (!conv) return undefined;
+	const shared = [...SHARED_FILES.map(f => join(data, f)), join(data, "memory") + "/"];
+	const hits = (p: string) => {
+		const abs = p.startsWith("~/") ? join(homedir(), p.slice(2)) : resolve(data, p);
+		return shared.some(s => (s.endsWith("/") ? abs.startsWith(s) : abs === s));
+	};
+	const reason = `orchestrator-guard: this session answers only its own conversation (${conv}); state.json, RULES.md, LESSONS.md and owner memory are written by the main session. Hand the change over with dotz_conv send main.`;
+	if (WRITE_TOOLS.has(tool)) {
+		const paths = [input?.path, input?.file_path, ...(Array.isArray(input?.paths) ? input.paths : [])].filter((p): p is string => typeof p === "string");
+		if (paths.some(hits)) return reason;
+		if (tool === "apply_patch" && typeof input?.input === "string" && shared.some(s => input.input.includes(s))) return reason;
+		return undefined;
+	}
+	if (tool !== "bash" && tool !== "eval") return undefined;
+	const text = shellText(input);
+	const named = shared.some(s => text.includes(s)) || SHARED_FILES.some(f => text.includes(`.dotz/${f}`)) || text.includes(".dotz/memory/");
+	return named && SHELL_WRITES.test(text) ? reason : undefined;
+}
+
 function statePath(cwd: string, lane?: string): string {
 	return stateFile(stateDir(host), cwd, lane);
 }
 
 function loadState(cwd: string): ProjectState {
-	const lane = process.env.DOTZ_LANE || undefined;
+	const lane = stateOwner();
 	try {
 		return { ...JSON.parse(readFileSync(statePath(cwd, lane), "utf8")), cwd, lane };
 	} catch {
@@ -1071,6 +1104,11 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 				debug({ phase: "sub-external-block", agent: ctx.agent.id, kind });
 				return { block: true, reason: `orchestrator-guard: workers do not run external-impact commands (${kind}). Finish the rest of the task, and list the exact command under "External actions needed" in your final answer; the orchestrator decides whether to run it.` };
 			}
+		}
+		const shared = sharedWriteBlock(tool, event?.input);
+		if (shared) {
+			debug({ phase: "shared-write-block", tool });
+			return { block: true, reason: shared };
 		}
 		if (!isMain(ctx)) return;
 		// A message to a finished worker revives it with its whole history, and it tends to redo its earlier steps.

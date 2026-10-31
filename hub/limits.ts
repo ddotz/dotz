@@ -1,6 +1,8 @@
 // Dynamic limits (owner 2026-10-21: the number of sessions that may run at once follows the machine's resources). One agent
 // (a lane, an orchestrator or a task worker) is a senpi process plus its claude child: ~1 GB, measured. The memory the owner's
-// own apps and the OS need stays free: 25% of RAM or 8 GB, whichever is larger. What is left is `spare` (running agents are
+// own apps and the OS need stays free: 15% of RAM or 2 GB, whichever is larger - the same reserve the conversation sessions keep
+// (hub/convcapacity.ts), so one machine has one rule. The former 25%/8 GB left a 16 GB Mac mini 8 GB short of every second lane
+// ("메모리 여유가 없어 대기 중" with 4.3 GB available, 2026-10-29). What is left is `spare` (running agents are
 // already out of `availableGb`; agents still starting are taken off as `ramping`); a lane takes one spare agent and, with its task workers, up to
 // TYPICAL_WORKERS more. lanes.max_active and lanes.max_workers, when set in config.json, are hard caps on top of this, never
 // fixed numbers. launch() and a lane's spawn call `limitsNow()` each time, so the answer follows the load of that moment.
@@ -8,8 +10,8 @@ import { readFileSync } from "node:fs";
 import { availableParallelism, freemem, totalmem } from "node:os";
 
 export const AGENT_GB = 1;
-export const RESERVE_FRACTION = 0.25;
-export const RESERVE_MIN_GB = 8;
+export const RESERVE_FRACTION = 0.15;
+export const RESERVE_MIN_GB = 2;
 // Workers one lane is planned for when lanes are counted (the former fixed default), and the ceilings with no config value.
 export const TYPICAL_WORKERS = 2;
 export const MAX_LANES = 16;

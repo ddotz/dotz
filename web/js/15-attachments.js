@@ -1,4 +1,5 @@
 /* ---------- attachments: + button, drag-drop, paste -> POST /api/upload; sent as `files` with the message ---------- */
+// The composer's files of the conversation open now; another conversation's wait in its ts(t).att (13-data.js setTarget swaps them).
 let ATT = [];   // [{id, name, type, size, url (local preview), file (server record once uploaded)}]
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
 // pc: the file is an upload of that other computer (a file sent to its conversation), read there through the peer proxy (hub/routes.ts /api/peer/file).
@@ -18,6 +19,7 @@ async function addFiles(list) {
   if (ATT.length + list.length > 10) { toast("한 번에 10개까지 보낼 수 있어요", true); list = list.slice(0, Math.max(0, 10 - ATT.length)); }
   const items = list.map(f => ({ id: Math.random().toString(36).slice(2), name: f.name || "붙여넣은 이미지.png", type: f.type, size: f.size, url: /^image\//.test(f.type) ? URL.createObjectURL(f) : "", raw: f }));
   ATT = ATT.concat(items); renderAtt(); ta.focus();
+  const own = target;
   await Promise.all(items.map(async a => {
     const form = new FormData();
     form.append("file", a.raw, a.name);
@@ -26,7 +28,10 @@ async function addFiles(list) {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || `올리지 못했어요 (HTTP ${r.status})`);
       a.file = d.files[0];
-    } catch (e) { toast(`${a.name}: ${e instanceof TypeError ? "연결이 끊겨 올리지 못했어요" : e.message}`, true); dropAtt(a.id); }
+    } catch (e) {
+      toast(`${a.name}: ${e instanceof TypeError ? "연결이 끊겨 올리지 못했어요" : e.message}`, true);
+      if (target === own) dropAtt(a.id); else { const s = ts(own); s.att = (s.att || []).filter(x => x.id !== a.id); }   // switched away: off its own conversation's files
+    }
     renderAtt();
   }));
 }
@@ -44,6 +49,7 @@ function renderAtt() {
     if (a.url) return el("div", { class: `fatt img${a.file ? "" : " up"}`, title: a.name }, el("img", { src: a.url, alt: a.name }), x);
     return fileChip(a.name, a.file ? [extOf(a.name), fsize(a.size)].filter(Boolean).join(" · ") : "올리는 중…", { cls: a.file ? "" : "up", x });
   }));
+  if (typeof renderPicks === "function") renderPicks();   // the tray holds the picked elements next to the files (15-picker.js)
 }
 ta.addEventListener("paste", ev => {
   const files = [...(ev.clipboardData && ev.clipboardData.files || [])];
@@ -60,7 +66,7 @@ ta.addEventListener("paste", ev => {
   zone.addEventListener("dragleave", ev => { if (hasFiles(ev) && --depth <= 0) { depth = 0; comp.classList.remove("dropping"); } });
   zone.addEventListener("drop", ev => { if (!hasFiles(ev)) return; ev.preventDefault(); depth = 0; comp.classList.remove("dropping"); if (!ta.disabled) addFiles([...ev.dataTransfer.files]); });
 }
-// Files in a message: image thumbnails open the lightbox, other files open the read-only preview in a new tab; each has a
+// Files in a message: image thumbnails open the lightbox, an HTML file of this computer opens in the 캔버스 (30-canvas.js), other files open the read-only preview in a new tab; each has a
 // one-click download (Content-Disposition: attachment, so iOS Safari saves it too). `check` files (an agent's [file] line)
 // are asked with HEAD first: the size fills in, and one /api/file refuses (outside the roots, secret, missing) turns into a
 // disabled chip.
@@ -72,12 +78,12 @@ function fileItem(f) {
   const img = IMG_RE.test(f.name || f.path);
   const main = img
     ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name, f.pc) }, el("img", { src: fileUrl(f.path, false, f.pc), alt: f.name, loading: "lazy" }))
-    : fileChip(f.name, fileMeta(f.name, f.size), VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name, f.pc) } : { href: fileUrl(f.path, false, f.pc) });
+    : fileChip(f.name, fileMeta(f.name, f.size), VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name, f.pc) } : !f.pc && canvasIsHtml(f.name) ? { onclick: () => canvasOpen(f.path, f.name) } : { href: fileUrl(f.path, false, f.pc) });
   const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true, f.pc), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download"))), pathCopy(f.path));
   if (!f.check) return item;
   const off = why => { if (item.isConnected || item.parentNode) item.replaceWith(offChip(f, why)); };
   if (img) main.querySelector("img").onerror = () => off("열 수 없는 파일이에요");
-  fetch(fileUrl(f.path), { method: "HEAD" }).then(r => {
+  fetch(fileUrl(f.path, false, f.pc), { method: "HEAD" }).then(r => {
     if (!r.ok) return off(fileNote(r, r.status === 404 ? "파일이 지워졌어요" : "열 수 없는 파일이에요"));
     const n = Number(r.headers.get("content-length") || 0), m = !img && main.querySelector(".fi-m");
     if (m && n) m.textContent = fileMeta(f.name, n);
@@ -167,18 +173,19 @@ function lightbox(path, name, pc) {
   document.body.append(d); d.showModal(); dialogHist(d);
 }
 // A path an agent writes in a reply (`code.path`) opens as a preview when the gateway allows it; images show inline.
-async function openPath(p) {
-  const r = await fetch(fileUrl(p), { method: "HEAD" }).catch(() => null);
+// pc: the conversation belongs to the other computer, so the path is a file there (read through the peer proxy).
+async function openPath(p, pc) {
+  const r = await fetch(fileUrl(p, false, pc), { method: "HEAD" }).catch(() => null);
   if (!r || !r.ok) { toast(r ? fileNote(r, r.status === 404 ? "파일이 지워졌어요" : "열 수 없는 파일이에요") : "확인하지 못했어요", true); return; }
-  if (IMG_RE.test(p)) lightbox(p, p.split("/").pop()); else window.open(fileUrl(p), "_blank", "noopener");
+  if (IMG_RE.test(p)) lightbox(p, p.split("/").pop(), pc); else window.open(fileUrl(p, false, pc), "_blank", "noopener");
 }
-function pathFiles(md) {
+function pathFiles(md, pc) {
   const imgs = [];
   for (const c of md.querySelectorAll("code.path")) {
     const p = c.textContent.replace(/:\d+(-\d+)?$/, "");
     if (!/^(~\/|\/)[^\s]+\.[A-Za-z0-9]{1,6}$/.test(p)) continue;
-    c.classList.add("fp"); c.title = "미리보기"; c.onclick = () => openPath(p);
-    if (IMG_RE.test(p) && imgs.length < 4 && !imgs.some(f => f.path === p)) imgs.push({ path: p, name: p.split("/").pop() });
+    c.classList.add("fp"); c.title = "미리보기"; c.onclick = () => openPath(p, pc);
+    if (IMG_RE.test(p) && imgs.length < 4 && !imgs.some(f => f.path === p)) imgs.push({ path: p, name: p.split("/").pop(), pc });
   }
   const n = imgs.length ? filesNode(imgs) : null;
   if (n) for (const img of n.querySelectorAll("img")) img.onerror = () => img.closest(".fitem").remove();

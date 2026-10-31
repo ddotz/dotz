@@ -127,10 +127,10 @@ describe("앱 is drawn only while shown", () => {
 		return v;
 	};
 
-	test("until user apps ship, the 앱 tab sits between 모니터링 and 설정 disabled, and no way leads into it", async () => {
+	test("until user apps ship, the 앱 tab is hidden from the nav, and no way leads into it", async () => {
 		const v = await open(1280, 900);
-		const got = JSON.parse(await v.evaluate(`JSON.stringify({ order: [...document.querySelectorAll("#nav .ni")].map(b => b.dataset.view), off: document.querySelector('#nav .ni[data-view="apps"]').disabled, landed: (go("apps"), current) })`) as string);
-		expect(got).toEqual({ order: ["home", "chat", "projects", "monitoring", "apps", "settings"], off: true, landed: "home" });
+		const got = JSON.parse(await v.evaluate(`JSON.stringify({ order: [...document.querySelectorAll("#nav .ni")].map(b => b.dataset.view), tab: !!document.querySelector('#nav .ni[data-view="apps"]'), landed: (go("apps"), current) })`) as string);
+		expect(got).toEqual({ order: ["home", "chat", "projects", "monitoring", "settings"], tab: false, landed: "home" });
 		expect(await v.evaluate(`!!document.querySelector("#apps-pane .apps-frame")`)).toBe(false);
 	}, 25_000);
 

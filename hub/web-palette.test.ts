@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { appAsset, indexPage } from "./webapp.ts";
+import { afterAll, describe, expect, test } from "bun:test";
+import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // The cards /api/command answers with (hub/control.ts CommandCard), one per command the palette lists.
 type Card = { title: string; tone?: string; facts: { label: string; value: string }[]; note?: string; actions?: { label: string; send: string }[]; text: string };
@@ -23,15 +23,8 @@ const CARDS: Record<string, Card> = {
 const HELP = card("명령", [{ label: "상태", value: "/status  봇·세션 상태\n/context  컨텍스트 사용량" }, { label: "세션", value: "/lanes  세션 목록\n/stop  세션 멈추기" }], { note: "인자는 Tab 으로 골라요" });
 const FAIL = card("실패", [], { tone: "err", note: "no such session: nope" });
 
-const SNAP = "/tmp/dotz-palette-test";
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	async fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
+const hub = fakeHub({
+	api: async (req, url) => {
 		if (req.method === "POST" && url.pathname === "/api/command") {
 			const text = String(((await req.json()) as { text?: string }).text ?? "");
 			if (/nope/.test(text)) return Response.json({ error: "no such session: nope", output: FAIL.text, card: FAIL }, { status: 400 });
@@ -41,17 +34,12 @@ const server = Bun.serve({
 		return url.pathname.startsWith("/api/") ? Response.json({}) : new Response("not found", { status: 404 });
 	},
 });
-const base = `http://127.0.0.1:${server.port}/`;
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
+const base = `${hub.origin}/`;
 const open = async (width: number, height: number): Promise<View> => {
-	const v = new Bun.WebView({ width, height });
-	views.push(v);
+	const v = await hub.view({ width, height });
 	await v.navigate(base);
 	return v;
 };
-const waitFor = (v: View, expr: string, ms = 30_000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const done = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); o.disconnect(); res(true); } }; const o = new MutationObserver(done); o.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true }); done(); })`);
 // Opens the palette, types the command, presses Enter in the field (the owner's keyboard path), and waits for the result.
 const runPalette = async (v: View, text: string) => {
 	await v.evaluate(`document.querySelector("dialog.pal")?.close()`);
@@ -68,8 +56,7 @@ const shape = async (v: View) => JSON.parse(await v.evaluate(`JSON.stringify({
 	pre: number; out: boolean; listHidden: boolean; title: string; tag: string; dot: string; rows: string[]; note: string; acts: string[]; mono: string; sw: number; dlgR: number;
 };
 
-beforeAll(() => { Bun.spawnSync(["mkdir", "-p", SNAP]); });
-afterAll(() => { for (const v of views) v.close(); server.stop(true); });
+afterAll(() => hub.stop());
 
 describe("command palette, in a headless browser", () => {
 	test("the search says 도구 또는 명령; the 도구 group comes first and the 명령 group last, and the arrow keys walk in that order", async () => {
@@ -86,7 +73,6 @@ describe("command palette, in a headless browser", () => {
 		expect(m.heads).not.toContain("이동");
 		expect(m).toMatchObject({ firstCmd: false, lastCmd: true, wrapped: true, back: true });
 		expect(m.order).toMatch(/^t+c+$/);   // no command row above a tool row
-		await Bun.write(`${SNAP}/palette-list-1280.png`, await v.screenshot());
 	}, 60_000);
 
 	test("filtering keeps the order: a slash query lists only commands; a word lists tools before commands", async () => {
@@ -148,13 +134,4 @@ describe("command palette, in a headless browser", () => {
 		expect(s.dot).toContain("err");
 	}, 60_000);
 
-	test("screenshots: /status, /model and /lanes at 390px and on a desktop width", async () => {
-		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
-			const v = await open(w, h);
-			for (const [cmd, name] of [["/status", "status"], ["/model", "model"], ["/lanes", "lanes"]] as const) {
-				await runPalette(v, cmd);
-				await Bun.write(`${SNAP}/palette-${name}-${w}.png`, await v.screenshot());
-			}
-		}
-	}, 120_000);
 });

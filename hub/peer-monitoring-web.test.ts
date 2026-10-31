@@ -1,10 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { sseResponse } from "./events.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { advanceTimers, fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // 모니터링 shows this computer's items and every peer's together (web/js/34-peer-monitoring.js): a machine chip on each peer row, '연결 안 됨'
 // on a peer that does not answer, the peer's reports in 감시 소식 and the machine name beside each detail title. Headless; the peers are fixtures.
-const SNAP = "/tmp/tm-shots";
 const MINI = "http://mini.test";
 const at = (min: number) => new Date(Date.UTC(2026, 9, 20, 3, min)).toISOString();
 const localMon = { name: "local-check", watch: "local-check", kind: "watch", last_run: at(10), last_result: "ok", next_run: at(40), every: "30분" };
@@ -35,7 +33,6 @@ const peers = [
 	{ name: "창고", url: "http://store.test", online: false, stale: false, items: null },
 ];
 
-const json = (v: unknown, status = 200) => Response.json(v, { status });
 // What the Mac mini answers behind /api/peer/proxy: the same shapes its own web app reads.
 async function proxy(req: Request, url: URL): Promise<Response> {
 	const p = url.searchParams.get("p") ?? "";
@@ -57,18 +54,11 @@ async function proxy(req: Request, url: URL): Promise<Response> {
 	}
 	return json({});
 }
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	fetch(req) {
-		const url = new URL(req.url);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
+const hub = fakeHub({
+	slowTimers: true,
+	api: (req, url) => {
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 1 });
-		if (url.pathname === "/api/peers") return json([{ name: "맥북", url: `http://127.0.0.1:${server.port}`, self: true, online: true }, ...peers.map(p => ({ name: p.name, url: p.url, self: false, online: p.online }))]);
+		if (url.pathname === "/api/peers") return json([{ name: "맥북", url: `${hub.origin}`, self: true, online: true }, ...peers.map(p => ({ name: p.name, url: p.url, self: false, online: p.online }))]);
 		if (url.pathname === "/api/machine") return json({ name: "맥북", custom: "", default: "맥북" });
 		if (url.pathname === "/api/monitors") return json({ items: [localMon] });
 		if (url.pathname === "/api/notices") return json({ unread: 1, items: [localNote] });
@@ -76,21 +66,15 @@ const server = Bun.serve({
 		if (url.pathname === "/api/conversations") return json({ items: [{ target: "mail:loc", unread: 1, read: null, mail: MAIL, last: LAST }] });
 		if (url.pathname === "/api/monitoring/peers") return json(peers);
 		if (url.pathname === "/api/peer/proxy") return proxy(req, url);
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
 
-type View = InstanceType<typeof Bun.WebView>;
-const views: View[] = [];
-afterAll(() => { for (const v of views) v.close(); server.stop(true); });
+afterAll(() => hub.stop());
 const open = async (width: number, height: number): Promise<View> => {
-	const v = new Bun.WebView({ width, height });
-	views.push(v);
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const v = await hub.view({ width, height });
+	await v.navigate(`${hub.origin}/`);
 	return v;
 };
-const waitFor = (v: View, expr: string, ms = 10_000) =>
-	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const text = (v: View, expr: string) => v.evaluate(expr) as Promise<string>;
 const rowOf = (key: string) => `[...document.querySelectorAll("#mon-side .cv-row")].find(r => r.dataset.k === ${JSON.stringify(key)})`;
 const boot = async (width: number, height: number) => {
@@ -181,11 +165,12 @@ describe("merged 모니터링", () => {
 		const afters = () => hits.filter(h => h.startsWith("/api/kakao/chat/c1?") && h.includes("after=")).length;
 		const h0 = heads();
 		c1More.push({ logId: "102", sentAt: Date.parse(at(26)), fromMe: false, sender: "엄마", authorId: "a1", type: 1, text: "다른 컴퓨터에 저장된 새 메시지" });
-		await waitFor(v, `document.querySelector('#kk-tl [data-log="102"]')`, 6000);
+		await advanceTimers(v, 2000);   // the open peer room asks for its head every 2 s (KK_PEER_MS)
+		await waitFor(v, `document.querySelector('#kk-tl [data-log="102"]')`);
 		expect(heads()).toBeGreaterThan(h0);
 		expect(await text(v, `String(document.querySelectorAll('#kk-tl [data-log="102"]').length)`)).toBe("1");
 		// Nothing moved: the next poll asks for the head only, not for rows.
-		await waitFor(v, `KK.peerHead === "c1:102" && !KK.peerBusy`, 6000);
+		await waitFor(v, `KK.peerHead === "c1:102" && !KK.peerBusy`);
 		const a = afters(), h = heads();
 		await v.evaluate(`kkPeerPoll()`);
 		expect(heads()).toBe(h + 1);
@@ -195,26 +180,14 @@ describe("merged 모니터링", () => {
 		await waitFor(v, `!KK.vis`);
 		await v.evaluate(`kkPeerPoll()`);
 		expect(heads()).toBe(h + 1);
-	}, 20_000);
+	});
 });
 
-for (const [name, w, h] of [["390", 390, 844], ["desktop", 1280, 800]] as const) {
-	describe(`screenshot at ${w}px`, () => {
-		test("모니터링 with a peer item open", async () => {
-			const v = await boot(w, h);
-			await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|m:peer-backup`)}), 0)`);
-			await waitFor(v, `$("#mon-head .mon-pc") && $("#mon-head .mon-pc").textContent === "맥미니" && $("#mon-tl .rc")`);
-			if (w >= 1100) await Bun.write(`${SNAP}/monitor-${name}.png`, await v.screenshot());
-			else {
-				await v.evaluate(`(go("monitoring"), 0)`);
-				await waitFor(v, `$("#mon-side .cv-row")`);
-				await Bun.write(`${SNAP}/monitor-${name}-list.png`, await v.screenshot());
-				await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|m:peer-backup`)}), 0)`);
-				await waitFor(v, `$("#mon-head .mon-pc") && $("#mon-tl .rc")`);
-				expect(await text(v, `$("#title .mon-pc").textContent`)).toBe("맥미니");
-				await Bun.write(`${SNAP}/monitor-${name}.png`, await v.screenshot());
-			}
-			expect(await Bun.file(`${SNAP}/monitor-${name}.png`).exists()).toBe(true);
-		});
+for (const [w, h] of [[390, 844], [1280, 800]] as const) {
+	test(`a peer monitor's detail names its computer at ${w}px`, async () => {
+		const v = await boot(w, h);
+		await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|m:peer-backup`)}), 0)`);
+		await waitFor(v, `$("#mon-head .mon-pc") && $("#mon-head .mon-pc").textContent === "맥미니" && $("#mon-tl .rc")`);
+		if (w < 1100) expect(await text(v, `$("#title .mon-pc").textContent`)).toBe("맥미니");
 	});
 }

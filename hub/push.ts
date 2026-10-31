@@ -1,11 +1,12 @@
 // Web Push to the installed web app: VAPID keys made once in ~/.dotz/secrets/vapid.json (0600, never logged), the
 // subscriptions with their per-kind toggles in ~/.dotz/push.json, and the rule that picks which hub events become a
 // notification. A device whose page reported itself visible and focused in the last minute is skipped (no double alert).
+import { peerFetch } from "./tailnet-fetch.ts";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DATA_DIR, log, writeAtomic } from "./config.ts";
-import { eventTarget, type HubEvent, onEmit } from "./events.ts";
+import { DATA_DIR, log, NAME, writeAtomic } from "./config.ts";
+import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { quietAlert } from "./alert-gate.ts";
 import { answerReply, confirmGroup, conversationTitle, decisionsOf, type Notice, onDecision } from "./notices.ts";
@@ -25,7 +26,8 @@ type Stored = Subscription & { prefs: Prefs; ua?: string; at: string; app?: bool
 // answer through POST /api/notices/<id>/answer.
 type PushAction = { action: string; title: string };
 // `pc`: a notice relayed from another computer (its origin); a tap opens the app, which switches to that computer (web/js/33-peers.js prFollow).
-type PushMessage = { kind: PushKind | "test"; title: string; body: string; url: string; tag?: string; ts?: string; id?: string; actions?: PushAction[]; pc?: string };
+// `withdraw`: tags of notifications already handled; the service worker closes them (a "withdraw" push carries nothing else).
+type PushMessage = { kind: PushKind | "test" | "withdraw"; title: string; body: string; url: string; tag?: string; ts?: string; id?: string; actions?: PushAction[]; pc?: string; withdraw?: string[] };
 
 const KEY_FILE = join(DATA_DIR, "secrets", "vapid.json");
 const SUBS_FILE = join(DATA_DIR, "push.json");
@@ -98,11 +100,11 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 	const lane = typeof e.lane === "string" ? e.lane : src.startsWith("lane:") ? src.slice(5) : undefined;
 	if (lane && tone === "ask" && orchestratorOnlyAsk(rest)) return undefined;
 	if (e.kind === "out" && e.target === "alert") {
-		if (tone === "ask") return { kind: "ask", title: "dotz · 확인 필요", body: plain(rest), url: "/#chat/main", tag: "ask:alert" };
+		if (tone === "ask") return { kind: "ask", title: `${NAME} · 확인 필요`, body: plain(rest), url: "/#chat/main", tag: "ask:alert" };
 		// An all-clear, or the same alert again (hub/alert-gate.ts), was already as good as told.
 		if (e.reply_to || tone === "done" || tone === "run" || ROUTINE_ALERT.test(rest) || e.repeat === true || quietAlert(text)) return undefined;
 		if (tone !== "fail" && src !== "gateway" && !CRITICAL.test(rest)) return undefined;
-		return { kind: "usage", title: "dotz · 경고", body: plain(rest), url: "/#chat/main", tag: "alert" };
+		return { kind: "usage", title: `${NAME} · 경고`, body: plain(rest), url: "/#chat/main", tag: "alert" };
 	}
 	if (lane && (e.kind === "out" || e.kind === "lane_report")) {
 		const url = `/#chat/lane:${encodeURIComponent(lane)}`;
@@ -115,7 +117,7 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 	if (chat) {
 		const url = `/#chat/${chat}`, sfx = chat === "main" ? "" : `:${chat}`;
 		// A monitor's or app's settings conversation is titled with its label, like its notice in the bell.
-		const name = chat.startsWith("settings:") ? conversationTitle(chat) : "dotz";
+		const name = chat.startsWith("settings:") ? conversationTitle(chat) : NAME;
 		if (tone === "ask") return { kind: "ask", title: `${name} · 확인 필요`, body: plain(rest), url, tag: `ask:${chat}` };
 		if (tone === "fail") return { kind: "answer", title: `${name} · 실패`, body: plain(rest), url, tag: `answer${sfx}` };
 		if (tone === "done" || (sinceOwner ?? 0) >= LONG_TURN_MS) return { kind: "answer", title: `${name} · 완료`, body: plain(rest), url, tag: `answer${sfx}` };
@@ -137,9 +139,78 @@ export function decisionPush(n: Notice): PushMessage {
 	return { kind: "ask", title: DECISION_PUSH_TITLE, body: plain(n.title), url, tag: `decision:${n.id}`, ts: n.at, id: n.id, ...(actions.length ? { actions } : {}) };
 }
 
+// Taking back what was handled (owner 2026-10-28: "완료된건데 확인이 필요하다고 막 이러면 좀 헷갈려"): every tag a device was shown is remembered with the
+// endpoints it reached, and once its matter is settled (a decision answered or dismissed, a conversation read) those devices close it. Apple's push
+// service revokes a subscription whose push shows nothing (webkit.org/blog/16535), so an Apple endpoint is never sent a bare withdraw: its owed
+// tags ride on its next real notification and the open app closes them itself (web/js/30-notices.js); other endpoints get a withdraw push now.
+const SHOWN_MS = 3 * 24 * 3600_000;
+const shown = new Map<string, Map<string, number>>();
+const owed = new Map<string, Set<string>>();
+export const isAppleEndpoint = (endpoint: string): boolean => /(^|\.)push\.apple\.com$/.test(origin(endpoint).replace(/^https?:\/\//, ""));
+function noteShown(endpoint: string, tag: string | undefined): void {
+	if (!tag) return;
+	const now = Date.now();
+	for (const [t, eps] of shown) {
+		for (const [ep, at] of eps) if (now - at > SHOWN_MS) eps.delete(ep);
+		if (!eps.size) shown.delete(t);
+	}
+	if (!shown.has(tag)) shown.set(tag, new Map());
+	shown.get(tag)!.set(endpoint, now);
+}
+/** Closes `tags` on every device they were shown on; `relay`: the other computers close their relayed copies too. Returns the endpoints told now. */
+export async function withdraw(tags: readonly string[], relay = true): Promise<number> {
+	const now = new Map<string, Set<string>>();
+	for (const tag of new Set(tags)) {
+		const eps = shown.get(tag);
+		if (!eps) continue;
+		shown.delete(tag);
+		for (const ep of eps.keys()) {
+			const into = isAppleEndpoint(ep) ? owed : now;
+			if (!into.has(ep)) into.set(ep, new Set());
+			into.get(ep)!.add(tag);
+		}
+	}
+	await Promise.all([...now].map(([ep, set]) => {
+		const sub = findSub(ep);
+		return sub ? deliver(sub, { kind: "withdraw", title: "", body: "", url: "/", withdraw: [...set] }) : undefined;
+	}));
+	if (now.size || owed.size) log(`push: took back ${[...new Set(tags)].join(", ")} (${now.size} device(s) now${owed.size ? `, ${owed.size} at their next notification` : ""})`);
+	if (relay) {
+		const { me, peers } = await ownAndPeers();
+		if (me) await Promise.all(peers.map(p => peerJson(p.url, "/api/push/relay", { from: me.url, withdraw: [...new Set(tags)] })));
+	}
+	return now.size;
+}
+/** The notification tags a settled matter makes stale: a decision answered or dismissed, a conversation read. */
+export function staleTags(e: Record<string, unknown>): string[] {
+	if (e.kind === "notice_dismiss" && e.id != null) return [`decision:${e.id}`];
+	if (e.kind === "notice") {
+		const n = e.item as Notice | undefined;
+		if (!n?.decision || (n.decision.state === "open" && !n.dismissed)) return [];
+		// Its app's grouped notification goes too once no approval of that app is open (the group is asked as if this one were still open; it is not counted).
+		const group = n.decision.draft ? confirmGroup({ ...n, decision: { ...n.decision, state: "open" } }) : undefined;
+		return [`decision:${n.id}`, ...(group && group.count === 0 ? [`decision-group:${group.key}`] : [])];
+	}
+	if (e.kind === "read" && typeof e.target === "string") {
+		const t = e.target;
+		if (t === "main") return ["answer", "ask:main"];
+		if (t === "alert") return ["ask:alert", "alert"];
+		if (t.startsWith("lane:")) return [`ask:${t.slice(5)}`, `lane:${t.slice(5)}`, `start:${t.slice(5)}`];
+		if (/^(?:ch|settings):/.test(t)) return [`answer:${t}`, `ask:${t}`];
+	}
+	return [];
+}
+
 async function deliver(sub: Stored, m: PushMessage): Promise<number> {
 	try {
-		const status = await sendPush(sub, m, vapid(), subject());
+		// What this device still owes closing rides on its next real notification.
+		const due = m.kind === "withdraw" ? undefined : owed.get(sub.endpoint);
+		const msg = due?.size ? { ...m, withdraw: [...due] } : m;
+		const status = await sendPush(sub, msg, vapid(), subject());
+		if (status > 0 && status < 300) {
+			if (due) owed.delete(sub.endpoint);
+			if (m.kind !== "withdraw" && m.kind !== "test") noteShown(sub.endpoint, m.tag);
+		}
 		if (status === 404 || status === 410) {
 			subs = subs.filter(s => s.endpoint !== sub.endpoint);
 			save();
@@ -190,6 +261,9 @@ try {
 const saveDevices = () => writeAtomic(DEVICES_FILE, `${JSON.stringify(devices, null, 2)}\n`, 0o600);
 const hasApp = (did?: string) => !!did && (devices[did]?.app === true || subs.some(s => s.did === did && s.app === true));
 const isOff = (did: string) => devices[did]?.off === true;
+// Whether some device of the owner takes this gateway's answer notifications; then Discord does not ping him for the same answer (owner 2026-10-30).
+export const answersReach = (list: Array<Pick<Stored, "prefs" | "did">>, off: (did: string) => boolean): boolean => list.some(s => s.prefs.answer !== false && !(s.did && off(s.did)));
+export const pushReachesOwner = (): boolean => answersReach(subs, isOff);
 function dropBrowsers(did: string): void {
 	const rest = subs.filter(s => s.did !== did || s.app === true);
 	if (rest.length === subs.length) return;
@@ -225,7 +299,7 @@ function cover(list: Stored[], m: PushMessage, done: Set<string>): void {
 // undefined: the peer did not take the relay (down, refused, an error); otherwise the devices it covered.
 async function relayTo(peerUrl: string, body: string): Promise<string[] | undefined> {
 	try {
-		const r = await fetch(`${peerUrl}/api/push/relay`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" });
+		const r = await peerFetch(`${peerUrl}/api/push/relay`, { method: "POST", headers: { "Content-Type": "application/json" }, body, signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" });
 		if (!r.ok) return undefined;
 		const served = ((await r.json()) as { served?: unknown }).served;
 		return Array.isArray(served) ? served.filter((k): k is string => typeof k === "string") : [];
@@ -261,7 +335,7 @@ async function fanOut(m: PushMessage): Promise<void> {
 
 async function peerJson(peerUrl: string, path: string, body?: object): Promise<Record<string, any> | undefined> {
 	try {
-		const r = await fetch(`${peerUrl}${path}`, { method: body ? "POST" : "GET", ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" });
+		const r = await peerFetch(`${peerUrl}${path}`, { method: body ? "POST" : "GET", ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" });
 		return r.ok ? ((await r.json()) as Record<string, any>) : undefined;
 	} catch {
 		return undefined;
@@ -294,7 +368,7 @@ async function gatewayView(did: string): Promise<{ app: boolean; gateways: Array
 
 async function forwardPresence(did: string, active: boolean): Promise<void> {
 	const list = await relayPeers().catch(() => []);
-	await Promise.all(list.filter(f => !f.self).map(f => fetch(`${f.url}/api/push/presence`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ did, active, relayed: true }), signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" }).catch(() => {})));
+	await Promise.all(list.filter(f => !f.self).map(f => peerFetch(`${f.url}/api/push/presence`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ did, active, relayed: true }), signal: AbortSignal.timeout(RELAY_MS), redirect: "manual" }).catch(() => {})));
 }
 
 const RELAY_HASH = /^#[\w:%.\-/]{0,200}$/;
@@ -346,6 +420,10 @@ export function startPush(opts: { subject: () => string }): void {
 		if (m && !decisionsOf(e).length && !answerReply(e)) notify(m);
 	});
 	onDecision(n => notify(decisionPush(n)));
+	onBroadcast(e => {
+		const tags = staleTags(e);
+		if (tags.length) void withdraw(tags).catch(err => log(`push: withdraw failed: ${(err as Error).message}`));
+	});
 }
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
@@ -429,6 +507,12 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 		const from = typeof b.from === "string" ? b.from : "";
 		const peer = (await relayPeers().catch(() => [])).find(f => !f.self && sameOrigin(f.url, from));
 		if (!peer) return json({ error: "not a known computer" }, 403);
+		// The other computer took back notices it relayed here: this computer closes its copies (tagged with that computer's host).
+		if (Array.isArray(b.withdraw)) {
+			const host = new URL(peer.url).host;
+			await withdraw(b.withdraw.filter((t: unknown): t is string => typeof t === "string" && t.length <= 80).slice(0, 50).map((t: string) => `${host}:${t}`), false);
+			return json({ ok: true });
+		}
 		const m = relayedMessage(peer, b);
 		if (!m) return json({ error: "kind, title and body required" }, 400);
 		const skip = new Set<string>(Array.isArray(b.skip) ? b.skip.filter((k: unknown): k is string => typeof k === "string" && k.length <= 80).slice(0, 200) : []);
@@ -467,7 +551,7 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 	if (req.method === "POST" && p === "/api/push/test") {
 		const s = findSub(b.endpoint);
 		if (!s) return json({ error: "not subscribed" }, 404);
-		const status = await deliver(s, { kind: "test", title: "dotz 테스트 알림", body: "알림이 잘 와요. 누르면 대화로 가요.", url: "/#chat/main", tag: "test" });
+		const status = await deliver(s, { kind: "test", title: `${NAME} 테스트 알림`, body: "알림이 잘 와요. 누르면 대화로 가요.", url: "/#chat/main", tag: "test" });
 		return json({ ok: status >= 200 && status < 300, status }, status >= 200 && status < 300 ? 200 : 502);
 	}
 	return json({ error: "unknown push route" }, 404);

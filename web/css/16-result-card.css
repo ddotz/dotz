@@ -84,8 +84,30 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .mr-todo b { flex: none; color: var(--warn); font-weight: 600; }
 .mr-todo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mr-slot { margin-top: 6px; display: flex; gap: 6px; }
+/* the 초안 작성 dialog (30-monitoring.js mailDraftDialog): the mail it answers as a tonal block (sender, subject, summary), then the box.
+   The block is a --bg well in the floating dialog (its --pop equals --layer in dark), and --card on the phone's full-screen --bg (14-overlay.css) */
+.md-dlg { gap: 16px; }
+.md-ctx { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 14px 16px; border-radius: var(--r-ctl); background: var(--bg); }
+@media (max-width: 639px) { .md-ctx { background: var(--card); } }
+.md-from { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.md-from span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-from .ic { width: 14px; height: 14px; }
+.md-subj { color: var(--fg); font-size: 16px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+.md-ctx .mr-sum { margin-top: 2px; font-size: 14px; line-height: 22px; -webkit-line-clamp: 3; }
+.md-ctx ul.mr-pts li { position: relative; padding-left: 12px; }
+.md-ctx ul.mr-pts li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 3px; height: 3px; border-radius: 50%; background: var(--fg-3); }
+.md-ctx .mr-todo { margin-top: 2px; font-size: 13px; line-height: 20px; }
+.md-ask { display: flex; flex-direction: column; gap: 8px; }
+.md-lbl { color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 600; }
+.md-ask textarea.fi { min-height: 88px; font-size: 15px; line-height: 22px; padding: 10px 12px; }
 /* the ⋯ of a mail card (30-monitoring.js mailMenuBtn): the last item of the header, at the top right; the negative margin keeps the 16px header line */
-.rc-hd .mr-more { margin: -6px -8px -6px 0; color: var(--fg-3); }
+/* --fg-2 and a larger icon (owner 2026-10-29): the --fg-3 dots were easy to miss on the card */
+.rc-hd .mr-more { margin: -6px -8px -6px 0; color: var(--fg-2); }
+.rc-hd .mr-more .ic { width: 20px; height: 20px; }
+.rc-hd .mr-more:hover, .rc-hd .mr-more[aria-expanded="true"] { background: var(--active); color: var(--fg); }
+/* 초안 작성 on the open mail's card (11-todo-strip.js): below 1100px, where the conversation head and its 초안 작성 are hidden */
+.mr-conv-act { margin-top: 2px; }
+@media (min-width: 1100px) { .mr-conv-act { display: none; } }
 .rc-hd .rc-src + .mr-more, .rc-hd .tag + .mr-more { margin-left: auto; }
 @media (pointer: coarse), (max-width: 639px) { .rc-hd .mr-more { margin: -10px -10px -10px 0; } }
 .mr-clip { flex: none; display: inline-flex; align-items: center; gap: 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
@@ -113,10 +135,32 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .dr-k { flex: none; color: var(--fg-3); font-size: 13px; line-height: 20px; }
 .dr-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 10px; border-radius: 12px; background: var(--layer); color: var(--fg); font-size: 13px; line-height: 20px; }
 .dr-sub { color: var(--fg); font-size: 16px; line-height: 24px; font-weight: 700; overflow-wrap: anywhere; }
+/* 받는이·참조 of a mail reply draft (10-decision-card.js draftToNode): 답장 | 전체 답장, chips with x, one add field per row */
+.dr-recv { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dr-recv[hidden] { display: none; }
+.dr-seg { align-self: flex-start; flex-wrap: nowrap; }
+.dr-seg button { flex: none; padding: 0 12px; }
+.dr-rcrow { align-items: flex-start; }
+.dr-rc-list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.dr-rc { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; padding-right: 2px; }
+.dr-rc-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }
+.dr-rc-t:disabled { cursor: default; }
+.dr-rc-x { flex: none; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 14px; background: transparent; color: var(--fg-3); cursor: pointer; }
+.dr-rc-x:hover { background: var(--hover); color: var(--fg); }
+.dr-rc-x .ic { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.dr-rc-add { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; padding: 0 10px; border: 1px dashed var(--line-2); border-radius: 14px; background: transparent; color: var(--fg-2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.dr-rc-add:hover { background: var(--hover); }
+.dr-rc-add .ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.dr-rc-edit { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.dr-rc-in { min-width: 0; width: 15em; max-width: 100%; height: 32px; padding: 0 10px; border: 1px solid var(--line-2); border-radius: 16px; background: var(--card); color: var(--fg); font: inherit; font-size: 13px; }
+.dr-rc-in:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.dr-rc-edit .btn { min-height: 32px; padding: 0 10px; }
+@media (pointer: coarse) { .dr-rc-x { width: 36px; height: 36px; } .dr-rc-add, .dr-rc-in, .dr-rc-edit .btn { min-height: 38px; } }
 /* the mail that goes out right after a comment reply, in the same card (10-decision-card.js draftMailNode) */
 .dr-mailpart { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line-2); }
 .dr-mh { display: flex; align-items: center; gap: 6px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
 .dr-mh svg { flex: none; width: 14px; height: 14px; }
+.dr-rulebar { display: flex; margin: 2px 0 4px; }
 .dr-origin { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--fg-3); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
 .dr-origin a { color: inherit; text-decoration: underline; }
 .dr-origin svg { flex: none; width: 14px; height: 14px; }
@@ -182,6 +226,8 @@ a.dr-att:active { background: var(--active); }
 .ms-card.open .ms-ch { transform: rotate(180deg); }
 .ms-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 0 16px 12px; }
 .ms-ft { display: flex; justify-content: flex-end; }
+.ms-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; padding: 0 4px; }
+.ms-hd .ms-n { color: var(--fg-3); font-size: 12px; }
 .ms-rm .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .mr-filter { position: sticky; top: 0; z-index: 2; display: flex; gap: 4px; flex-wrap: wrap; padding: 4px 0 8px; background: var(--bg); }
 .mr-filter .mr-f { height: 28px; padding: 0 10px; font-size: 12.5px; color: var(--fg-2); background: var(--layer); }

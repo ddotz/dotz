@@ -164,7 +164,7 @@ describe.each(MACHINES)("mail drafts of %s", (_label, px, item, side) => {
 		await waitFor(v, `document.querySelector('#tl .ms-card[data-nid="${px}sent"] .ms-body')`);
 		const open1 = await q<{ exp: string | null; sub: string; to: string; body: string; files: string }>(v, `const c = document.querySelector('#tl .ms-card[data-nid="${px}sent"]');
 			return { exp: c.querySelector(".ms-line").getAttribute("aria-expanded"), sub: c.querySelector(".dr-sub").textContent, to: c.querySelector(".dr-chip").textContent, body: c.querySelector(".dr-body").textContent, files: c.querySelector(".dr-files").textContent }`);
-		expect(open1).toEqual({ exp: "true", sub: "Re: 견적 요청", to: "Kim <kim@example.com>", body: "안녕하세요.견적서를 첨부해 보내 드립니다.", files: "첨부 없음" });
+		expect(open1).toEqual({ exp: "true", sub: "Re: 견적 요청", to: "Kim <kim@example.com>", body: "안녕하세요.견적서를 첨부해 보내 드립니다.", files: "첨부: 없음" });
 		expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
 		await run(v, `document.querySelector('#tl .ms-card[data-nid="${px}sent"]').scrollIntoView({ block: "center" })`);
 		await Bun.write(join(SHOTS, `conv-open-${tag}.png`), await v.screenshot());
@@ -183,6 +183,25 @@ describe.each(MACHINES)("mail drafts of %s", (_label, px, item, side) => {
 		await open(v, item);
 		await openConv(v, `mail:${px}a`);
 		expect(await q<number>(v, `return mailSentList(target).length + document.querySelectorAll("#tl .ms-card").length`)).toBe(0);
+		v.close(); views.splice(views.indexOf(v), 1);
+	}, 60_000);
+
+	test("모두 지우기 hides every folded draft of the mail at once, one dismiss each on the computer that holds it", async () => {
+		local = fresh("l-"); peer = fresh("p-");
+		side().decs.push({ id: `${px}sent2`, to: `mail:${px}a`, at: iso(6, 45), subject: "Re: 견적 요청", body: "추가로 보내 드려요.", state: "answered", answer: "1) 보내기" });
+		const v = new Bun.WebView({ width: 390, height: 844 });
+		views.push(v);
+		await open(v, item);
+		await openConv(v, `mail:${px}a`);
+		await waitFor(v, `document.querySelectorAll("#tl .ms-card").length === 2 && document.querySelector("#tl .ms-slot .ms-clear")`);
+		await Bun.write(join(SHOTS, `clear-${px}.png`), await v.screenshot());
+		const before = side().posts.length;
+		await run(v, `document.querySelector("#tl .ms-slot .ms-clear").click()`);
+		await waitFor(v, `!document.querySelector("#tl .ms-slot")`);
+		await waitFor(v, `document.querySelector(".snack") && document.querySelector(".snack").textContent === "초안 2개를 지웠어요"`);
+		const ops = side().posts.slice(before).map(x => (px === "l-" ? x.path : `${x.path}:${(x.body as { op: string; id: string }).op}:${(x.body as { id: string }).id}`)).sort();
+		expect(ops).toEqual(px === "l-" ? [`/api/notices/${px}sent/dismiss`, `/api/notices/${px}sent2/dismiss`] : [`notice:dismiss:${px}sent`, `notice:dismiss:${px}sent2`]);
+		expect(side().decs.filter(d => d.to === `mail:${px}a`).every(d => d.dismissed)).toBe(true);
 		v.close(); views.splice(views.indexOf(v), 1);
 	}, 60_000);
 });

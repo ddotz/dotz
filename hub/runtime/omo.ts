@@ -184,9 +184,15 @@ export function writeWorkerProfile(lane: { workerModel: string; workerFallback?:
 // child gets the parent's extensions, not its --exclude-tools, so the workers keep every tool.
 // (`worker` is the key provider's copy of the worker model, `<provider>-apikey/<id>`, which the child registers itself.)
 export const ORCHESTRATOR_WORKERS = "dotz-orchestrator-workers";
-export function writeOrchestratorProfile(file = omoConfigFile(), worker = selectorOf(orchestratorModel()), chain = fallbackChain("orchestrator")): string | undefined {
+// Lookup work runs lighter (owner 2026-10-27): the `quick` category (and the read-only explore/librarian subagent types,
+// pinned in extension/guard.ts LOOKUP_PIN) runs Sonnet 5.5 medium on the subscription login, then the orchestrator's own
+// models; every other category keeps the orchestrator's model. On an API-key entry (`lookup` null) lookups follow the worker.
+export const LOOKUP_MODEL = "anthropic/claude-sonnet-5-5:medium";
+export const LOOKUP_CATEGORIES = ["quick"];
+export function writeOrchestratorProfile(file = omoConfigFile(), worker = selectorOf(orchestratorModel()), chain = fallbackChain("orchestrator"), lookup: string | null = LOOKUP_MODEL): string | undefined {
 	const models = [worker, ...chainAfter(worker, chain).filter(e => !e.key_file).map(e => e.model)].map(categoryModel);
-	return writeProfile(ORCHESTRATOR_WORKERS, { task: workerTask(), memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models, prompt_append: WORKER_RULE }])) }, file);
+	const lookups = lookup ? [categoryModel(lookup), ...models].filter((m, i, all) => all.findIndex(x => x.model === m.model && x.reasoning === m.reasoning) === i) : models;
+	return writeProfile(ORCHESTRATOR_WORKERS, { task: workerTask(), memory: { enabled: false }, categories: Object.fromEntries(WORKER_CATEGORIES.map(c => [c, { models: LOOKUP_CATEGORIES.includes(c) ? lookups : models, prompt_append: WORKER_RULE }])) }, file);
 }
 
 // OmO names its compaction frames compaction_start/compaction_end (omp: auto_compaction_*). A requested compaction is
@@ -265,7 +271,7 @@ export const omo: RuntimeAdapter = {
 	start(o) {
 		const onKey = keyedWorker(o.env);
 		const key = keyProviderOf(o);
-		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? (onKey ? writeOrchestratorProfile(undefined, onKey, []) : writeOrchestratorProfile(undefined, orchestratorWorkerModel(o))) : undefined;
+		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? (onKey ? writeOrchestratorProfile(undefined, onKey, [], null) : writeOrchestratorProfile(undefined, orchestratorWorkerModel(o))) : undefined;
 		const launcher = senpiLauncher();
 		// stickyEnv() is the account at spawn; a running process follows later switches by itself (the dotz extension re-pins it at each turn).
 		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...PROMPT_SURFACE_ENV, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });

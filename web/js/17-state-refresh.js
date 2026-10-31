@@ -1,10 +1,37 @@
 /* ---------- state refresh ---------- */
 // A short drop (the stream reconnects and replays what it missed) shows nothing; past 2s the header says it is reconnecting.
-let connTimer = 0;
-function setConn(ok) { clearTimeout(connTimer); if (ok) $("#conn").hidden = true; else connTimer = setTimeout(() => { $("#conn").hidden = false; }, 2000); }
+// A gateway that is off (the computer asleep, the process down) often does not refuse: the request just hangs. So a state that has not come
+// within STATE_WAIT_MS counts as a drop too. When that happens before this page ever reached its gateway, the page goes to the other computer
+// by itself, with no notice (owner 2026-10-28: "안오면 그냥
+// 자동 전환 ... 굳이 알리지 말고"); a page that arrived by such a switch (?auto=1) does not switch again, so two computers that are both off
+// do not hand the page back and forth, and its header line stays a button to try the other one. A drop later on (a gateway restart) only shows that line.
+const STATE_WAIT_MS = 4000;
+let connTimer = 0, selfDown = false, everConnected = false;
+function setConn(ok) {
+  clearTimeout(connTimer);
+  if (ok) { selfDown = false; everConnected = true; $("#conn").hidden = true; return; }
+  connTimer = setTimeout(() => { selfDown = true; paintConn(); autoSwitch(); }, 2000);
+}
+const cameByAuto = new URLSearchParams(location.search).has("auto");
+if (cameByAuto) { const u = new URL(location.href); u.searchParams.delete("auto"); history.replaceState(history.state, "", u.pathname + u.search + u.hash); }
+let autoTried = false;
+function autoSwitch() {
+  const other = typeof prOthers === "function" ? prOthers()[0] : null;
+  if (!other || cameByAuto || autoTried || everConnected) return;
+  autoTried = true;
+  prPick(other, { quiet: true, auto: true });
+}
+function paintConn() {
+  const c = $("#conn"), other = typeof prOthers === "function" ? prOthers()[0] : null;
+  c.hidden = !selfDown;
+  c.textContent = other ? `연결 끊김 · ${other.name}(으)로 전환` : "연결 끊김 · 다시 연결 중";
+  c.disabled = !other;
+  c.onclick = other ? () => prPick(other) : null;
+}
 async function refreshState() {
   try {
-    S = await api("/api/state?limit=0");
+    const slow = setTimeout(() => setConn(false), STATE_WAIT_MS - 2000);
+    try { S = await api("/api/state?limit=0"); } finally { clearTimeout(slow); }
     S.work_skew = (S.work_now || Date.now()) - Date.now();
     setConn(true);
     webBuildCheck(S.web_build);

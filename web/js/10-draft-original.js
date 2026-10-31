@@ -10,7 +10,10 @@ const ORG_WIDE = matchMedia("(min-width: 900px)");
 ORG_WIDE.addEventListener("change", () => { for (const k in ORG.st) if (ORG.st[k].sync) ORG.st[k].sync(); });
 
 async function orgLoad(ref, t, paint) {
-  const s = orgSt(ref), go = () => (s.paint || paint)();
+  const s = orgSt(ref), go = () => {
+    (s.paint || paint)();
+    if (s.subs) { for (const f of [...s.subs]) f(); if (s.load !== "busy") s.subs.clear(); }   // inline blocks (orgInline) waiting on the same fetch
+  };
   if (s.load === "busy" || s.load === "ok" || s.load === "missing") return;
   s.load = "busy"; go();
   DRF.pc[ref] = t ? pqPc(t) : null;
@@ -39,12 +42,22 @@ function orgFill(pane, d, t, retry) {
   const m = s.data, pc = t ? pqPc(t) : null;
   if (m.kind === "comment") { orgComment(pane, m); return; }
   if (pc) PQ.of.set(`mail:${m.key}`, { pc, key: m.key });   // its body and files are read from the computer that owns the mail
-  const files = m.attachments || [];
+  const files = mailRealFiles(m.attachments);   // the body's own pictures are drawn in it, not listed as files
   // 보낸 사람 / 받는 사람 / 참조 come from the mail view's own header (30-mail-thread.js), so every place a mail is read names them the same way
   pane.append(...[mailHeadNode(m), orgRow("날짜", kstStamp(m.date)), orgRow("제목", m.subject),
     el("div", { class: "od-body" }, mailBodyNode(m.key, m.html, m.text)),
-    files.length ? el("div", { class: "od-files" }, ...files.map((f, i) => el("a", { class: "dr-att", href: mailFileUrl(m.key, i), target: "_blank", rel: "noopener", title: `${f.name} 열기` },
+    files.length ? el("div", { class: "od-files" }, ...files.map(({ f, i }) => el("a", { class: "dr-att", href: mailFileUrl(m.key, i), target: "_blank", rel: "noopener", title: `${f.name} 열기` },
       icon("clip"), el("span", { class: "dr-fn", text: f.name }), f.size ? el("span", { class: "dr-fs", text: mailSize(f.size) }) : null))) : null].filter(Boolean));
+}
+// The comment a combined card (reply + mail) answers, as a compact block at the top of the card: the side panel has no room beside the mail part, so
+// the same pane content (orgFill) is drawn inline under a 댓글 원문 header. Null unless `d` is a comment reply.
+function orgInline(d, t) {
+  if (!d.ref || d.toLabel !== "대상") return null;
+  const s = orgSt(d.ref), pane = el("div", { class: "od-pane", role: "region", "aria-label": "댓글 원문" });
+  const paint = () => orgFill(pane, d, t, () => { s.load = ""; (s.subs ||= new Set()).add(paint); orgLoad(d.ref, t, paint); });
+  paint();
+  if (s.load === "" || s.load === "busy") { (s.subs ||= new Set()).add(paint); orgLoad(d.ref, t, paint); }
+  return el("div", { class: "od-inline" }, el("div", { class: "dr-mh" }, icon("chat"), el("span", { text: "댓글 원문" })), pane);
 }
 // The bar (desktop: one 원문 보기 button; phone: the 초안 | 원문 toggle) and the original panel for `host`, the box both panels live in; `draftEl` is the draft's own
 // side (it goes inert while the phone shows the original). The caller places bar above, orig and the draft in one stage. Nothing is fetched until the first open.
