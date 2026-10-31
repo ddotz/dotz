@@ -61,7 +61,13 @@ export const MAIL_FILES = join(DATA_DIR, "mail-files");
 const FILE_MAX_BYTES = 1024 * 1024 * 1024;
 const FILES_MAX = 300;
 const PREVIEW_MAX = 240;
-const KEEP = 500;
+// How many mails are kept (the newest win): `mail.keep` in config.json, 500 when unset, held between 50 and 20000 so a big mailbox can be
+// shown whole without the list file growing without bound.
+const KEEP_DEFAULT = 500, KEEP_MIN = 50, KEEP_MAX = 20_000;
+export const mailKeep = (c: unknown = cfg): number => {
+	const v = (c as { mail?: { keep?: unknown } } | undefined)?.mail?.keep;
+	return typeof v === "number" && Number.isFinite(v) ? Math.min(KEEP_MAX, Math.max(KEEP_MIN, Math.floor(v))) : KEEP_DEFAULT;
+};
 const BODY_MAX = 20_000;
 const SUMMARY_MAX = 2000;
 const THREAD_ID = /^\d{15,22}$/;
@@ -194,7 +200,7 @@ export const mailTargets = (): string[] => [...records].sort((a, b) => b.at.loca
 
 export function recordMail(r: MailRecord): void {
 	byKey.set(r.key, r);
-	records = [...records.filter(x => x.key !== r.key), r].sort((a, b) => a.at.localeCompare(b.at)).slice(-KEEP);
+	records = [...records.filter(x => x.key !== r.key), r].sort((a, b) => a.at.localeCompare(b.at)).slice(-mailKeep());
 	for (const k of [...byKey.keys()]) if (!records.some(x => x.key === k)) byKey.delete(k);
 	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
 }
@@ -234,6 +240,9 @@ function parseAttachments(v: unknown): AttachmentInput[] | undefined {
 	});
 }
 
+// A poster's time of the mail (`at`, or `date`): ISO 8601 with a zone, else ignored.
+const isoAt = (v: unknown): v is string => typeof v === "string" && /[zZ]|[+-]\d\d:?\d\d$/.test(v.trim()) && !Number.isNaN(Date.parse(v));
+
 export function parseMail(raw: unknown): MailInput {
 	if (!raw || typeof raw !== "object") throw new MailError("body must be a JSON object");
 	const b = raw as Record<string, unknown>;
@@ -256,7 +265,7 @@ export function parseMail(raw: unknown): MailInput {
 		messageId: str(b.messageId, "messageId", 200, false),
 		wake: b.wake === true,
 		needsReply: b.needsReply === true,
-		...(typeof b.at === "string" && /[zZ]|[+-]\d\d:?\d\d$/.test(b.at.trim()) && !Number.isNaN(Date.parse(b.at)) ? { at: new Date(b.at).toISOString() } : {}),
+		...(isoAt(b.at ?? b.date) ? { at: new Date(String(b.at ?? b.date)).toISOString() } : {}),
 		attachments: parseAttachments(b.attachments),
 		...(b.direction ? { direction: b.direction as "in" | "out" } : {}),
 		folder: str(b.folder, "folder", 100, false),
@@ -568,14 +577,16 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps, r
 			log(`mail ${key}: no Discord thread (${(error as Error).message}); web conversation only`);
 		}
 	}
-	const at = deps.now?.() ?? new Date().toISOString();
+	const now = deps.now?.() ?? new Date().toISOString();
+	// The poster's own time of the mail (a backfill of older mail) orders the list; never later than now, and now without one.
+	const at = m.at && m.at < now ? m.at : now;
 	const attachments = markInline(saveAttachments(key, m.attachments), m.html);
 	const html = await saveHtml(key, m.html, attachments);
 	const summary = m.summary ?? "";
 	const preview = summary ? "" : mailPreview(m.body);
 	// 답장 필요: the poster's word, else the gateway reads the mail (hub/mail-state.ts replyExpected).
 	const needs = m.needsReply || replyExpected({ from: m.from, to: m.to, cc: m.cc, subject: m.subject, text: summary || m.body || "" });
-	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(needs ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(reopened ? { reopenedAt: at } : {}) });
+	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), at, ...(thread ? { thread } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}), ...(needs ? { reply: "needs" as const } : {}), ...(m.messageId ? { msg: m.messageId } : {}), ...(reopened ? { reopenedAt: now } : {}) });
 	const event = { ts: at, kind: "mail", source: m.source, channel: target, conv: target, mail: key, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(thread ? { thread } : {}), ...(parent ? { parent } : {}), ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments: attachmentList({ attachments }) } : {}), ...(html ? { html: true } : {}), text: mailText(m) };
 	deps.emit(event);
 	if (m.wake) deps.wake(event, thread ? `th:${thread}` : target);
