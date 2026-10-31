@@ -15,8 +15,9 @@ const POST: Record<SourceConfig["kind"], string> = { youtube: "영상", instagra
 export function commentAsk(src: SourceConfig, c: Comment, d: Draft, headline = `${WORD[src.kind]} 댓글 답글 초안을 만들었어요`, mail?: DraftPart): string {
 	const open = d.notes.filter(n => n.startsWith(OPEN)).map(n => n.slice(OPEN.length));
 	const note = d.notes.filter(n => !n.startsWith(OPEN)).map(one).join(" / ");
-	// With a mail the one card asks about both: 보내기 posts the reply and then sends the mail.
-	const block = draftApprovalBlock({ to: `${c.author} 댓글`, toLabel: "대상", body: d.text, ref: d.code, question: withOpen(mail ? "이 답글을 올리고 메일도 보낼까요?" : "이 답글 올릴까요?", open), sendResult: mail ? `이 글을 답글로 올리고 ${one(mail.to)}에게 메일을 보내요` : "이 글을 답글로 올려요", ...(mail ? { mail } : {}) });
+	// With a mail the one card asks about both: 보내기 posts the reply and then sends the mail; the send modes (답글만 / 메일만 / 직접 입력) send one part
+	// (features/comments/bin/comments.ts send --only).
+	const block = draftApprovalBlock({ to: `${c.author} 댓글`, toLabel: "대상", body: d.text, ref: d.code, question: withOpen(mail ? "이 답글을 올리고 메일도 보낼까요?" : "이 답글 올릴까요?", open), sendResult: mail ? `이 글을 답글로 올리고 ${one(mail.to)}에게 메일을 보내요` : "이 글을 답글로 올려요", ...(mail ? { mail, sendModes: true } : {}) });
 	const post = isUntitled(c) ? [] : [`> ${POST[src.kind]} ${one(c.postTitle)}`];
 	return [`[ask] ${headline}`, ...(note ? [`-# ${note}`] : []), ...post, `> 원댓글 ${one(c.author)}: ${one(c.text)}`, block].join("\n");
 }
