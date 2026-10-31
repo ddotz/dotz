@@ -16,6 +16,7 @@ const koLeads: Leads = {
 	replayLead: "[dotz gateway] 게이트웨이가 다시 시작돼서 이 요청에 아직 답하지 못했어요",
 	newMessageLead: "[dotz gateway] 작업 중에 새 메시지가 도착했어요",
 	laneReportLead: "[dotz gateway] 작업 중에 세션 보고가 도착했어요",
+	joinLead: "[dotz gateway] 이 대화에서 백그라운드 작업이 이미 돌고 있어요",
 	waitedLead: "[dotz gateway] 오너가 기다리는 중이에요",
 	rateLead: "[dotz gateway] 사용량 한도가 풀렸어요",
 	providerLead: "[dotz gateway] 모델 제공자 문제(결제/인증)가 해결됐을 수 있어요",
@@ -156,6 +157,7 @@ export const ko: Catalog = {
 	noGit: `\n\n이 폴더는 git 저장소가 아니라서 격리(isolated) 서브에이전트가 뜨지 않아요. 서브에이전트는 격리 없이 띄우세요(읽기만 하는 일은 격리가 필요 없어요). 파일을 고치는 서브에이전트라면 다른 서브에이전트와 겹치지 않는 파일만 맡기세요.`,
 
 	replay: `${koLeads.replayLead}. 지금 처리하세요. 이미 일부는 끝났을 수 있으니 같은 동작을 반복하기 전에 확인하세요.`,
+	joinWorker: (id, description) => `${koLeads.joinLead}: "${description.replace(/\s+/g, " ")}" (작업 ${id}). 이 메시지가 같은 일(같은 승인, 같은 게시)에 관한 것이면 새 작업을 띄우지 말고 task_send로 돌고 있는 작업에 전달한 뒤 [later]로 끝내세요. 아니면 평소처럼 처리하세요.`,
 	newMessage: (target, replyTo, text) => `${koLeads.newMessageLead}. 지금 바로 완성된 답을 줄 수 있으면(간단한 질문) dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}로 보내세요. 그러면 그 메시지는 답한 것으로 끝나고 다시 턴으로 오지 않아요. 아니면 아무것도 보내지 마세요. 그때는 지금 턴이 끝나면 이 메시지가 따로 턴으로 와요. 그다음 하던 일을 이어가세요. 최종 답은 처음 시작한 요청으로 가요.\n\n${text}`,
 	nowRunning: "[지금 도는 것]",
 	nowLanes: (n, body) => `세션 ${n}(${body})`,
