@@ -6,6 +6,7 @@ async function loadHomeData() {
     api("/api/quota").then(q => { HQ = q; noteQuota(q); }, () => { HQ = { error: true }; }),
     loadProviderData().catch(() => {}),
     loadMonitors(),
+    // the other computers' snapshot, read ahead for 모니터링 and a peer's item opened by link; 홈 itself draws none of it
     typeof pqLoad === "function" ? pqLoad().catch(() => {}) : null,
   ]);
   if (current === "home") { renderHome(); homeTimer = setTimeout(loadHomeData, 60000); }
@@ -233,7 +234,7 @@ function homeOwedRow(it) {
     el("span", { class: "dot unreplied" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: it.name })), el("span", { class: "ha", text: "답장을 기다리는 것이 있어요" })),
     el("span", { class: "hs unreplied", text: `미답장 ${it.unreplied}` }));
 }
-// 답장 확인: the reply drafts of every app and computer that wait for 보내기, one row that opens the queue (30-replies.js).
+// 답장 확인: the reply drafts of this computer's apps that wait for 보내기, one row that opens the queue (30-replies.js).
 function homeRepliesRow(n) {
   return el("button", { class: "hr", type: "button", "data-k": "replies", onclick: () => rqOpen(), "aria-label": `답장 확인 ${n}건` },
     el("span", { class: "dot att" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: "답장 확인" })), el("span", { class: "ha", text: "보내기 전에 확인할 답장 초안이 있어요" })),
@@ -244,7 +245,8 @@ function renderHomeNow() {
   if (!box) return;
   const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`)];
   const needs = nyList(), crit = needs.filter(x => x.crit).length;   // 09-needs-you.js: what only the owner can do, critical first
-  const owed = monItems().filter(i => i.app && i.unreplied), owedN = owed.reduce((c, i) => c + i.unreplied, 0), drafts = rqCount();
+  // 홈 is this computer's alone (owner 2026-10-31): the other computers' items live in 모니터링, and the computer chip's dot says they want something.
+  const owed = monItems().filter(i => i.app && i.unreplied && !i.pc), owedN = owed.reduce((c, i) => c + i.unreplied, 0), drafts = rqAll().filter(x => !x.pc).length;
   const waiting = needs.length;
   // 지금 진행 중 is only what runs now (a turn, a background worker); a waiting or idle conversation is a row of 대기 중 below it,
   // and background work that ended within the hour is listed last (실패 · 이유 · 다시 맡기기).
@@ -374,6 +376,9 @@ const validTarget = t => t === MAIN || isFixedT(t) || isProjT(t) || (isLaneT(t) 
 const sourceOf = t => t === MAIN || isProjT(t) || isFixedT(t) || isMailT(t) || isSettingsT(t) ? "orchestrator" : t;
 const targetOfSource = s => s === "orchestrator" ? MAIN : s;
 // Owner-facing names: a project by its title (else its channel name), a session by its title (else its key).
+// The name of a target on the computer `pc` it belongs to (an item from another gateway carries pc = {name, url, bot}): there the main chat is
+// that gateway's own bot, never this one's (owner 2026-10-31: 맥북's question read "땃쥐" on 회사). No pc: this computer's targetName.
+const pcTargetName = (t, pc) => !pc ? targetName(t) : t === MAIN || t === "chat" ? pc.bot || pc.name : isLaneT(t) ? t.slice(5) : isProjT(t) ? t : targetName(t);
 const targetName = t => {
   if (t === MAIN) return botName;
   if (isFixedT(t)) return FIXED_NAME[t];

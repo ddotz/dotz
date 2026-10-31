@@ -121,12 +121,12 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 
 describe("home and the peer's mail", async () => {
 	const v = await open(390, 844);
-	test("the home 답변 필요 list counts 미답장 apart from unread", async () => {
+	test("the home 답변 필요 list counts this computer's 미답장 apart from unread (the other computer's stay in 모니터링)", async () => {
 		await boot(v, "light", `go("home")`);
-		await waitFor(v, `current === "home" && PQ.loaded && document.querySelectorAll("#home-now .hr .hs.unreplied").length === 4`);
+		await waitFor(v, `current === "home" && PQ.loaded && document.querySelectorAll("#home-now .hr .hs.unreplied").length === 3`);
 		const t = await q<{ head: string; rows: string[] }>(v, `return { head: document.querySelector("#home-now .hn-h .tag.unreplied").textContent, rows: [...document.querySelectorAll("#home-now .hr .hs.unreplied")].map(n => n.textContent) }`);
-		expect(t.head).toBe("미답장 6");
-		expect(t.rows).toEqual(["미답장 2", "미답장 1", "미답장 1", "미답장 2"]);
+		expect(t.head).toBe("미답장 4");
+		expect(t.rows).toEqual(["미답장 2", "미답장 1", "미답장 1"]);
 		await shot(v, "home-390-light.png");
 	});
 	test("a peer's mail card carries the pill, and 답장 안 함 goes to that computer", async () => {
