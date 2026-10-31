@@ -15,12 +15,12 @@ const draft = (questions: string[], body = "확인해 보고 말씀드릴게요.
 // Owner 2026-10-26: "자동답장 컨펌은 초안 다 잡아놓고 물어보기". The draft settles what it can first, then the owner is asked once, with the
 // complete draft; a fact only he knows is a line inside that one approval card, never a separate note above it.
 describe("a reply draft is resolved before the owner is asked", () => {
-	test("open points go back to the model once; only what it still cannot settle is asked, inside the approval card", async () => {
-		const m = fakeModel([draft(["회의 장소", "회의 날짜"]), draft(["회의 날짜"], "장소는 지난번 회의실로 할게요. 날짜는 확인해서 말씀드릴게요.")]);
+	test("the one draft call settles what it can; what it cannot is asked inside the approval card, an address question never", async () => {
+		const m = fakeModel([draft(["회의 날짜", "받는 사람 메일 주소"], "장소는 지난번 회의실로 할게요. 날짜는 확인해서 말씀드릴게요.")]);
 		const out = await runDraft(mail, MSG, { call: m.call });
 		expect(out.code).toBe(0);
-		expect(m.calls).toHaveLength(2);
-		expect(m.calls[1]!.user).toContain("회의 장소");
+		expect(m.calls).toHaveLength(1);
+		expect(m.calls[0]!.system).toContain("settle it yourself");
 		const text = out.lines.join("\n");
 		expect(text).not.toContain("-# ");
 		expect(text).not.toContain("정해 주세요");
@@ -29,7 +29,7 @@ describe("a reply draft is resolved before the owner is asked", () => {
 		const block = parseDecisions(text).blocks;
 		expect(block).toHaveLength(1);
 		expect(block[0]!.title).toContain("회의 날짜");
-		expect(block[0]!.title).not.toContain("회의 장소");
+		expect(block[0]!.title).not.toContain("주소");
 		expect(block[0]!.title).toEndWith(`(${card!.ref})`);
 	});
 

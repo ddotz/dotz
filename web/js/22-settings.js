@@ -16,12 +16,12 @@ let fbDragging = false;
 function fbTags(e) {
   const t = [];
   if (e.key_file) t.push(el("span", { class: "tag", text: "API 키" }));
-  if (e.enabled === false) t.push(el("span", { class: "tag warn", text: "꺼짐" }));
+  if (e.enabled === false) t.push(el("span", { class: "tag", text: "꺼짐" }));
   if (e.key_file && e.workers) t.push(el("span", { class: "tag", text: "서브에이전트·세션도 사용" }));
   if (e.when) t.push(el("span", { class: "tag", text: FB_WHEN[e.when] }));
   if (e.cap) t.push(el("span", { class: "tag", text: fbCapText(e.cap) }));
   if (e.revert === false) t.push(el("span", { class: "tag", text: "복귀 안 함" }));
-  if (e.down) t.push(el("span", { class: "tag warn", title: e.until ? `풀리는 때: ${new Date(e.until).toLocaleString("ko-KR")}` : "", text: e.down === "cap" ? "상한 도달" : e.down === "quota" ? "한도 소진" : e.down_reason === "api_key_ban" ? "공유 계정 사용 중이라 꺼짐" : "쓸 수 없음" }));
+  if (e.down) t.push(el("span", { class: "tag warn", title: e.until ? `풀리는 때: ${new Date(e.until).toLocaleString("ko-KR")}` : "", text: e.down === "cap" ? "상한 도달" : e.down === "quota" ? "한도 소진" : e.down_reason === "api_key_ban" ? "공유 계정 사용 중이라 꺼짐" : e.down_reason === "api_key_off" ? "API 키 사용 안 함(설정)" : "쓸 수 없음" }));
   return t.length ? el("div", { class: "fb-tags" }, ...t) : null;
 }
 function fbBar(e) {
@@ -78,7 +78,7 @@ function fbEditor(L, F, list, i) {
   return el("li", { class: "fbe", "aria-label": `${nm} 편집` },
     el("div", { class: "fbe-grid" },
       selectField("모델", nm, () => modelItems(`fbe:${L.id}`, base, only), base, v => setModel(fbBase(v), level)),
-      selectField("추론 강도", level || "기본 모델과 같게", [{ value: "", label: "기본 모델과 같게" }, ...(M.thinking_levels || []).map(lv => ({ value: lv, label: lv }))], level, v => setModel(base, v))),
+      selectField("추론 강도", level ? thinkKo(level) : "기본 모델과 같게", [{ value: "", label: "기본 모델과 같게" }, ...(M.thinking_levels || []).map(lv => ({ value: lv, label: thinkKo(lv) }))], level, v => setModel(base, v))),
     seg("사용", [["on", "켜기"], ["off", "끄기"]], d.enabled === false ? "off" : "on", v => { d.enabled = v === "on"; redraw(); }),
     d.key_file && keyable && L.id !== "workers" ? seg("서브에이전트·세션", [["", "API 키 사용 안 함"], ["on", "같은 키 사용"]], d.workers ? "on" : "", v => { d.workers = v === "on" ? true : undefined; redraw(); }) : null,
     keyable ? seg("사용 방식", [["login", "구독 (로그인)"], ["key", "API 키"]], d.key_file ? "key" : "login", v => { if (v === "login") { d.key_file = undefined; redraw(); } else pickKey(); }) : null,
@@ -204,7 +204,7 @@ function fbParts(L) {
   return {
     sub: L.sub,
     tags: F.harness ? [el("span", { class: "tag", title: "이 대상을 돌리는 하네스", text: F.harness.name })] : [],
-    body: [el("div", { class: "mt-fb" }, el("div", { class: "mt-fb-h" }, el("span", { class: "lb", text: "폴백 순서" }), el("span", { class: "sup", text: list.length ? `${list.length}개` : "없음" })), chain, add, addKey, el("div", { class: "note", text: how }))],
+    body: [el("div", { class: "mt-fb" }, el("div", { class: "mt-fb-h" }, el("span", { class: "lb", text: "폴백 순서" }), el("span", { class: "sup", text: list.length ? `기본 포함 ${list.length + 1}단계` : "기본 모델만" })), chain, add, addKey, el("div", { class: "note", text: how }))],
   };
 }
 /* ---------- settings ---------- */

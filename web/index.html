@@ -65,7 +65,7 @@
       <h1 id="title">dotz</h1>
       <button class="pchip" id="pchip" type="button" aria-haspopup="dialog" hidden></button>
       <div class="thead" id="thead" data-mode="chat" hidden></div>
-      <span class="conn" id="conn" hidden>연결 끊김 · 다시 연결 중</span>
+      <button class="conn" id="conn" type="button" hidden>연결 끊김 · 다시 연결 중</button>
       <button class="ib" id="vtog" type="button" hidden></button>
       <button class="ib cmdk" id="cmdk" type="button" aria-label="명령"></button>
       <button class="ustrip" id="ustrip" type="button" hidden></button>
@@ -109,6 +109,7 @@
               <span class="cchip cown" id="c-worker" hidden></span>
               <button class="cchip" type="button" id="ctx-ring" hidden></button>
               <span class="cchip capi" id="c-api" hidden>api사용중</span>
+              <span class="cchip capi" id="c-fb" hidden></span>
               <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-stop">중단</button></div>
             </div>
             <button class="ib pri" type="submit" aria-label="보내기" id="send-btn"></button>
@@ -153,6 +154,5 @@
   <div class="sh-body" id="hs-body"></div>
 </aside>
 <script src="/app.js"></script>
-<script src="/custom.js"></script>
 </body>
 </html>

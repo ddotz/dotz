@@ -29,10 +29,10 @@ function rtReportView(r, report) {
   const core = report.items.filter(i => i.core && (i.result === "fail" || i.result === "unsupported"));
   const changed = report.items.filter(i => i.result === "adapted" || i.result === "disabled").length;
   const stale = !!(r.version && report.version !== r.version);
-  const sum = !r.hasAdapter ? "dotz 어댑터가 없어서 바꿀 수 없어요."
+  const sum = !r.hasAdapter ? "이 하네스용 어댑터가 없어서 바꿀 수 없어요."
     : report.verdict === "blocked" ? `핵심 항목이 통과하지 못해서 바꿀 수 없어요: ${core.map(i => i.label).join(", ")}`
     : stale ? `검사한 뒤 버전이 바뀌었어요 (v${report.version || "?"} → v${r.version}). 다시 검사해 주세요.`
-    : report.verdict === "adjusted" ? `핵심 항목은 모두 통과했어요. ${changed}개 기능은 dotz가 대신 처리하거나 꺼요.` : "모든 항목이 통과했어요.";
+    : report.verdict === "adjusted" ? `핵심 항목은 모두 통과했어요. ${changed}개 기능은 게이트웨이가 대신 처리하거나 꺼요.` : "모든 항목이 통과했어요.";
   const meta = `${new Date(report.at).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" })}${report.version ? ` · v${report.version}` : ""}`;
   return el("div", { class: "rt-rep", style: "display:flex;flex-direction:column;gap:8px" },
     el("p", { text: sum }), el("div", { class: "note", text: `검사 ${meta}` }),
@@ -64,7 +64,7 @@ function rtFlow(r) {
       if (running) box.append(el("div", {}, el("p", { text: `호환성을 검사하는 중이에요${st && st.current ? ` · ${st.current}` : ""}` }), el("div", { class: "bar" }, el("i", { style: `width:${st && st.total ? Math.round((st.done / st.total) * 100) : 4}%` })), el("div", { class: "note", text: st && st.total ? `${st.done}/${st.total} 항목` : "시작하는 중…" })));
       else if (report) box.append(rtReportView(r, report));
       else if (r.id === "omo" && r.hasAdapter) box.append(el("p", { text: "OmO는 기본 하네스라서 검사 없이 돌아갈 수 있어요. 호환성 검사로 항목별 상태도 볼 수 있어요." }));
-      else box.append(el("p", { text: r.hasAdapter ? "바꾸기 전에 호환성을 검사해요. 짧은 실행을 실제로 해 보기 때문에 1~2분쯤 걸릴 수 있어요." : "dotz 어댑터가 없어서 이 하네스로는 바꿀 수 없어요. 호환성 검사를 하면 어떤 항목이 막히는지 볼 수 있어요." }));
+      else box.append(el("p", { text: r.hasAdapter ? "바꾸기 전에 호환성을 검사해요. 짧은 실행을 실제로 해 보기 때문에 1~2분쯤 걸릴 수 있어요." : "이 하네스용 어댑터가 없어서 이 하네스로는 바꿀 수 없어요. 호환성 검사를 하면 어떤 항목이 막히는지 볼 수 있어요." }));
     } else box.append(el("p", { text: "omp는 옵션 하네스예요. 처음 기준이었던 하네스라 검사 없이 바꿀 수 있어요." }));
     if (r.hasAdapter) box.append(roleBar());
     const acts = [{ label: "취소", onclick: c => c() }];

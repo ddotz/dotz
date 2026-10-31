@@ -22,6 +22,18 @@ borderless white cards, one sparing blue accent, big bold titles, short copy. Li
 Rules: one accent per screen; status colors never decorate; no colored stripes on rounded surfaces; selection is a
 fill (`--card` on the canvas, `--fg` chip), not a border.
 
+Status color rule (owner 2026-10-28, the same on every screen). Pick the color by the state shown, never by the class at hand:
+
+- Blue `--accent` (`dot pri`, `tag pri`, `hs pri`): running or progressing normally. A turn working or starting, a background
+  worker or subagent running, a lane working, work handed off and in progress (맡긴 작업 진행 중), sending / processing, a check
+  running, a queued item waiting for its turn (compaction queued, an update deferred).
+- Orange `--warn` (`warn`, `att`): the owner must act or answer. An open question or decision, a reply draft waiting for
+  approval, a login or reconnect only he can do, a billing / auth pause, a usage-limit pause, a monitor flagged as needing him,
+  usage or context running out. A login is orange even when it is ranked 중요.
+- Red `--err` (`err`): an error, a failure, a dead process. A failed run or check is red from the first failure.
+- Green `--ok`: done or healthy (finished, passed, connected).
+- Grey (no tone): neutral. Idle, paused or turned off by the owner, aborted by the owner.
+
 ## Type
 
 Pretendard, then the system Korean face (`Apple SD Gothic Neo`). No Inter/Geist.

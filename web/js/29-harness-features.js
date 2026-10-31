@@ -18,7 +18,7 @@ const FC_STR = { enforced: "강제", advisory: "권고" };
 function fcSplit(c) { if (c && !c.off) { c.off = c.features.filter(f => f.inactive); c.features = c.features.filter(f => !f.inactive); } return c; }
 const fcHarness = () => (FC && FC.harness ? FC.harness.name : "하네스");
 const fcFormLabel = form => (form === "확장" ? `${fcHarness()} 확장` : form);
-const fcNote = form => (form === "확장" && FC && FC.harness ? `${fcHarness()}가 실제로 불러오는 코드예요 (${["dotz/extension", ...FC.harness.dirs].join(", ")}). 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).` : FC_NOTE[form] || "");
+const fcNote = form => (form === "확장" && FC && FC.harness ? `${fcHarness()}가 실제로 불러오는 코드예요 (${["기본 확장", ...FC.harness.dirs].join(", ")}). 훅으로 호출·도구 실행을 막거나 고쳐요 (강제).` : FC_NOTE[form] || "");
 const FC_FILE_NODE = { "RULES.md": "rules", "LESSONS.md": "lessons", "identity/IDENTITY.md": "identity" };
 const fcOf = id => (FC ? FC.features.filter(f => f.stage === id) : []);
 const fcDupText = f => (f.dup && f.dup.length ? `같은 일을 ${f.strength === "advisory" ? "코드(강제)" : "글(권고)"}로도 적어 뒀어요: ${f.dup.map(d => d.name).join(", ")}` : "");
@@ -98,7 +98,7 @@ function fcCard(f) {
     el("div", { class: "fc-tags" },
       f.inactive ? el("span", { class: "tag", title: `${fcHarness()}는 이 확장을 불러오지 않아요`, text: "안 불러옴" }) : el("span", { class: `tag st ${f.strength}`, title: f.strength === "enforced" ? "코드·훅·차단 줄이 막거나 실행해요" : "모델에게 따르라고 부탁한 글이에요", text: FC_STR[f.strength] }),
       el("span", { class: "tag", text: f.trigger }),
-      hOrigin() && f.origin ? el("span", { class: `tag${f.origin === "personal" ? " pri" : ""}`, title: f.origin === "personal" ? "내 파일·설정에만 있는 기능이에요 (~/.dotz, 하네스 확장 폴더)" : "dotz와 함께 배포되는 기능이에요", text: FC_ORIGIN[f.origin] }) : null,
+      hOrigin() && f.origin ? el("span", { class: `tag${f.origin === "personal" ? " pri" : ""}`, title: f.origin === "personal" ? "내 파일·설정에만 있는 기능이에요 (~/.dotz, 하네스 확장 폴더)" : "기본으로 함께 오는 기능이에요", text: FC_ORIGIN[f.origin] }) : null,
       node ? el("span", { class: "tag", text: node.label.replace(/\s*\(.*\)$/, "") }) : null,
       !f.enabled && !f.inactive ? el("span", { class: "tag", text: "꺼짐" }) : null,
       dup ? el("span", { class: "tag warn", title: dup, text: "중복" }) : null),

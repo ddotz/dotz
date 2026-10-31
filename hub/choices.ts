@@ -104,7 +104,7 @@ export const detailOf = (o: { label: string; desc?: string; detail?: boolean }):
 type DecisionBlock = { title: string; options: DecisionOption[]; headed?: true };
 export const hasDecisionHead = (blocks: DecisionBlock[]): boolean => blocks.some(b => b.headed);
 const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
-export const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
+export const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 export function parseDecisions(text: string): { question: string; blocks: DecisionBlock[] } {
 	const lines = text.replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");

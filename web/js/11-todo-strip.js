@@ -180,7 +180,11 @@ function msgNode(e) {
         const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: text.split("\n").slice(1).join("\n").trim(), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw) : undefined });
         // 보낸 사람 / 받는 사람 / 참조 and the same-sender thread (30-mail-thread.js) sit under the summary, above the original
         if (card && key) { const meta = mailMetaNode(`mail:${key}`, e), fold = card.querySelector(".rc-raw"); if (fold) card.insertBefore(meta, fold); else card.append(meta); if (MT_READY) mailThreadSync(); }
-        if (card && key && Array.isArray(e.attachments) && e.attachments.length) card.append(mailFilesNode(key, e.attachments));
+        // 초안 작성 under the summary of an incoming mail, the same button as on its row (30-monitoring.js mailDraftButton): no tap on the ⋯ first.
+        // A wide screen hides it (16-result-card.css): the conversation head there has its own 초안 작성 (31-conversations.js cv-draft).
+        if (card && key && ((MAILS.get(`mail:${key}`) || {}).dir || e.dir) !== "out") { const meta = card.querySelector(".mhd-wrap"); card.insertBefore(el("div", { class: "mr-slot mr-conv-act" }, mailDraftButton(`mail:${key}`)), meta || card.querySelector(".rc-raw")); }
+        const files = card && key && Array.isArray(e.attachments) ? mailFilesNode(key, e.attachments) : null;
+        if (files) card.append(files);
         // the same ⋯ as the mail's row in the list, at the top right (30-monitoring.js mailMenuBtn)
         if (card && key) { const hd = card.querySelector(".rc-hd"); if (hd) hd.append(mailMenuBtn(`mail:${key}`)); }
         return card;
@@ -193,6 +197,8 @@ function msgNode(e) {
     }
     // falls through: a mail without a subject line shows as plain text
     case "schedule": case "watch": {
+      // the gateway's own wake (hub/main.ts wakeOnce: update carry-over, text overrides) is an instruction to the assistant: no card
+      if (e.kind === "schedule" && e.source === "gateway") return null;
       // Same card as any other assistant message: who, when, then the plain line; the raw output folds under 원문.
       const body = e.kind === "watch" ? watchLine(e.label || e.watch, e.reason, text, { prev: e.prev }) : scheduleLine(text);
       return resultCard({ src: e.kind === "watch" ? humanLabel(e.label || e.watch) : SYS_LABEL[e.kind], at: e.ts, text: e.kind === "watch" ? body : body.replace(/^[^\n]*\n?/, ""), title: e.kind === "watch" ? undefined : body.split("\n")[0] });
@@ -222,9 +228,10 @@ function msgNode(e) {
         const line = humanAlert(body);
         return el("div", { class: `bm${card}` }, head, mdNode(line), line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
       }
-      const fl = fileLines(body), md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text), files = pathFiles(md);
+      // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
+      const fl = fileLines(body), host = pqPc(eventTarget(e) || ""), md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text), files = pathFiles(md, host);
       if (e.kind === "out" && !isRestart(e)) streamIn(md, `${e.ts}|${text.length}`, e.ts);
-      return el("div", { class: `bm${card}` }, head, rpQuote(e), md, filesNode(fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc, e.ts) : null);
+      return el("div", { class: `bm${card}` }, head, rpQuote(e), md, filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc, e.ts) : null);
     }
   }
 }

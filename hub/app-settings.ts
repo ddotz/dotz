@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { appEntries, INTEGRATIONS, readAppsFile } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
 
-export type FieldType = "bool" | "enum" | "list" | "text" | "number";
+export type FieldType = "bool" | "enum" | "list" | "text" | "number" | "rules";
 // Where a row belongs on the settings screen, in the order the owner reads it: 알림, 자동 초안과 승인, 감시, 기타 기능, then the rest.
 // The web groups rows by this key (web/js/32-app-settings.js AS_SECTIONS), so a row never sits under a heading its value does not belong to.
 export type SettingSection = "notify" | "draft" | "watch" | "more" | "advanced";
@@ -30,7 +30,9 @@ export type SettingField = {
 	/** Whole-number range (number); the longest text (text, default 500). */
 	min?: number;
 	max?: number;
-	def?: boolean | string | string[];
+	def?: boolean | string | string[] | DraftRule[];
+	/** Greyed text in an empty box that says how the value is used (text, rules). */
+	placeholder?: string;
 	/** A common setting the web draws as a control above the conversation: a switch (bool), a menu (enum) or a box (number, text). */
 	switch?: boolean;
 	/** Dotted paths in the same file that are set true together with this switch turned on. */
@@ -41,7 +43,13 @@ export type SettingField = {
 	 *  only, which the gateway stores at once (applyMemory), and every turn of that app is told the current value. */
 	memory?: true;
 };
-export type SettingValue = boolean | string | string[] | number;
+export type SettingValue = boolean | string | string[] | number | DraftRule[];
+
+// 자동 초안 규칙 of a mail app instance (features/reply-drafts/lib/rules.ts applies them): a mail that meets `when` (plain words, judged by one short
+// model call) is drafted with `how` and gets `files` staged, even while the app's 자동 초안 switch is off; `name` is the badge on the mail and the draft.
+export type DraftRule = { id: string; name: string; when: string; how: string; files: string[]; on: boolean };
+export const RULES_MAX = 20;
+export const RULE_FILES_MAX = 10;
 
 const DRAFTS = "custom/reply-drafts/config.json";
 const SNS = "custom/sns/config.json";
@@ -54,7 +62,7 @@ const deviceSwitch = (app: string): SettingField => ({ key: "use_here", label: "
 // The instance's name (hub/integrations.ts appEntries): shown in the list, the title and the notices; empty = the app's own name.
 const nameField = (app: string): SettingField => ({ key: "label", label: "앱 이름", type: "text", help: "목록과 제목에 보이는 이름이에요. 비우면 기본 이름으로 돌아가요", store: "custom/apps.json", path: `${app}.label`, max: 30, def: INTEGRATIONS.find(e => e.key === app.split("-")[0])?.label ?? "", switch: true, section: "advanced" });
 
-// 답장 모델: the model of the reply drafts of one app or instance (hub/reply-model.ts reads it, then the global model, then the subagent model).
+// 답장 모델: the model of the reply drafts of one app or instance (hub/reply-model.ts reads it, then the global 답장 기본값, then Sonnet 5.5 medium).
 // The options are the runtime's model list, installed by hub/reply-model-choices.ts before a read or write; "" (기본값) is always valid.
 export type ReplyModelChoices = { options: string[]; labels: Record<string, string> };
 let replyChoices: ReplyModelChoices = { options: [""], labels: { "": "기본값" } };
@@ -73,6 +81,9 @@ const discordField = (app: string): SettingField => ({ key: "discord", label: "�
 const attachFolderField = (app: string): SettingField => ({ key: "attach_folder", label: "첨부 파일 폴더", type: "text", help: "오너가 대화에서 알려 준, 자주 보내는 파일을 모아 둔 이 컴퓨터의 폴더예요. 답장에 파일이 필요하면 여기서 맞는 파일을 찾아 붙여 둬요", store: DRAFTS, path: `attachFolders.${app}`, max: 300, section: "advanced", memory: true });
 // 이어서 할 일: free text; after an approved action of this app instance the bot checks it once (hub/followup.ts).
 const followupField = (app: string): SettingField => ({ key: "followup", label: "이어서 할 일", type: "text", section: "advanced", help: "오너가 대화에서 알려 준, 답글·답장·카톡을 보낸 뒤 이어서 할 일이에요. 예: 파일을 달라는 댓글이면 답글 뒤에 적어 준 주소로 그 파일을 붙인 메일 초안을 만들어요. 조건에 맞을 때만 하고, 메일은 보내기를 누를 때만 나가요", store: DRAFTS, path: `followups.${app}`, max: 500 , memory: true });
+// 기본 규칙 (every draft of the instance) and the 자동 초안 규칙 list; both are edited in the settings screen and by bin/rules.ts through writeSettings.
+const draftDefaultField = (app: string): SettingField => ({ key: "draft_default", label: "기본 규칙", type: "text", help: "이 앱의 모든 초안에 함께 적용돼요", store: DRAFTS, path: `draftDefaults.${app}`, max: 1000, def: "", section: "draft", placeholder: "모든 초안에 공통으로 적용할 말투나 내용. 비워 두면 메일만 보고 써요" });
+const draftRulesField = (app: string): SettingField => ({ key: "draft_rules", label: "자동 초안 규칙", type: "rules", help: "조건에 맞는 메일이 오면 자동 초안이 꺼져 있어도 그 규칙대로 초안을 쓰고 파일을 붙여 둬요. 보내기는 직접 눌러야 나가요", store: DRAFTS, path: `draftRules.${app}`, def: [], section: "draft" });
 const REPLY_APPS = new Set(["mail", "kakao", "instagram", "youtube", "site"]);
 const replyModelField = (app: string): SettingField => ({ key: "reply_model", label: "답장 모델", type: "enum", help: "", store: DRAFTS, path: `models.${app}`, options: replyChoices.options, labels: replyChoices.labels, def: "", section: "advanced" });
 
@@ -103,7 +114,7 @@ export class SettingsError extends Error {
 // An app key or an instance id (`mail-2`): the schema is the app's, the switch and the name are the instance's.
 export const fieldsOf = (app: string): SettingField[] => {
 	const base = app.split("-")[0]!;
-	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app), followupField(app)] : []), ...(base === "mail" ? [attachFolderField(app)] : [])] : [];
+	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app), followupField(app)] : []), ...(base === "mail" ? [attachFolderField(app), draftDefaultField(app), draftRulesField(app)] : [])] : [];
 };
 
 const readJson = (file: string): Record<string, any> => {
@@ -139,8 +150,43 @@ function clean(f: SettingField, v: unknown): SettingValue {
 		if (typeof v !== "string" || v.length > (f.max ?? 500)) throw new SettingsError(`${f.key}: ${f.max ?? 500}자 이하 글이어야 해요`);
 		return v.trim();
 	}
+	if (f.type === "rules") return cleanRules(f.key, v);
 	if (!Array.isArray(v) || v.length > 200 || v.some(x => typeof x !== "string" || !x.trim() || x.length > 200)) throw new SettingsError(`${f.key}: 글 목록(200개 이하)이어야 해요`);
 	return [...new Set((v as string[]).map(x => x.trim()))];
+}
+
+// A rule list as a whole: every rule has a name and a condition; a rule without a usable id (a new one) gets the first free r<n>, so the same list
+// always reads back with the same ids.
+function cleanRules(key: string, v: unknown): DraftRule[] {
+	if (!Array.isArray(v) || v.length > RULES_MAX) throw new SettingsError(`${key}: 규칙 목록(${RULES_MAX}개 이하)이어야 해요`);
+	const text = (x: unknown, what: string, max: number, need: boolean): string => {
+		if (x === undefined && !need) return "";
+		if (typeof x !== "string" || x.length > max) throw new SettingsError(`${key}: ${what}은(는) ${max}자 이하 글이어야 해요`);
+		const t = x.trim();
+		if (need && !t) throw new SettingsError(`${key}: ${what}이(가) 비어 있어요`);
+		return t;
+	};
+	const rules = v.map(r => {
+		if (!r || typeof r !== "object" || Array.isArray(r)) throw new SettingsError(`${key}: 규칙마다 이름과 조건이 있어야 해요`);
+		const o = r as Record<string, unknown>;
+		const files = o.files === undefined ? [] : o.files;
+		if (!Array.isArray(files) || files.length > RULE_FILES_MAX || files.some(x => typeof x !== "string" || !x.trim() || x.length > 300)) throw new SettingsError(`${key}: 파일은 ${RULE_FILES_MAX}개까지, 300자 이하 이름이나 경로여야 해요`);
+		if (o.on !== undefined && typeof o.on !== "boolean") throw new SettingsError(`${key}: on은 true 또는 false여야 해요`);
+		return { id: typeof o.id === "string" && /^[A-Za-z0-9_-]{1,24}$/.test(o.id) ? o.id : "", name: text(o.name, "이름", 20, true).replace(/\s+/g, " "), when: text(o.when, "조건", 300, true), how: text(o.how, "어떻게", 1000, false), files: [...new Set((files as string[]).map(x => x.trim()))], on: o.on !== false };
+	});
+	const taken = new Set<string>();
+	for (const r of rules) {
+		if (r.id && !taken.has(r.id)) taken.add(r.id);
+		else r.id = "";
+	}
+	for (const r of rules) {
+		if (r.id) continue;
+		let n = 1;
+		while (taken.has(`r${n}`)) n++;
+		r.id = `r${n}`;
+		taken.add(r.id);
+	}
+	return rules;
 }
 
 /** Validates a whole change set against a schema without writing; the clean values keyed by field key. Unknown key, wrong type or an empty set throws. */
@@ -160,9 +206,9 @@ export function validate(app: string, values: unknown): Record<string, SettingVa
 	return validateFields(fields, values);
 }
 
-export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "section" | "options" | "labels" | "min" | "max" | "switch" | "memory"> & { value: SettingValue };
+export type SettingView = Pick<SettingField, "key" | "label" | "type" | "help" | "section" | "options" | "labels" | "min" | "max" | "switch" | "memory" | "placeholder"> & { value: SettingValue };
 /** A field with its current value, as GET returns it. */
-export const viewOf = (f: SettingField, value: SettingValue): SettingView => ({ key: f.key, label: f.label, type: f.type, help: f.help, ...(f.section ? { section: f.section } : {}), ...(f.options ? { options: f.options } : {}), ...(f.labels ? { labels: f.labels } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}), ...(f.switch ? { switch: true } : {}), ...(f.memory ? { memory: true as const } : {}), value });
+export const viewOf = (f: SettingField, value: SettingValue): SettingView => ({ key: f.key, label: f.label, type: f.type, help: f.help, ...(f.section ? { section: f.section } : {}), ...(f.options ? { options: f.options } : {}), ...(f.labels ? { labels: f.labels } : {}), ...(f.min !== undefined ? { min: f.min } : {}), ...(f.max !== undefined ? { max: f.max } : {}), ...(f.switch ? { switch: true } : {}), ...(f.memory ? { memory: true as const } : {}), ...(f.placeholder ? { placeholder: f.placeholder } : {}), value });
 export function readSettings(dataDir: string, app: string): SettingView[] {
 	const cache = new Map<string, Record<string, any>>();
 	return fieldsOf(app).map(f => {

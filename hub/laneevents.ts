@@ -5,7 +5,7 @@ import { noteEvent, compactDue, requestCompact, flushCompact } from "./context.t
 import { rmSync } from "node:fs";
 import { handleError, laneRecovered, settleRevert, settleChain } from "./lanefailover.ts";
 import { scheduleReport, REPORT_DEBOUNCE_MS } from "./lanereport.ts";
-import { lanesCompactAt, log } from "./config.ts";
+import { compactAtFor, lanesCompactAt, log } from "./config.ts";
 import { recover } from "./lanerun.ts";
 import { prompt } from "./laneprompt.ts";
 import { msg } from "./i18n.ts";
@@ -72,8 +72,9 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				}
 				if (lane.status === "idle") {
 					lane.proc?.refreshUsage();
-					// OmO lanes do not read lanes.compact_at (only the omp overlay does), so the hub compacts an idle lane at it.
-					if (compactDue(lane.ctx, lanesCompactAt())) requestCompact(lane.ctx, portOf(lane));
+					// OmO lanes do not read lanes.compact_at (only the omp overlay does), so the hub compacts an idle lane at it, or at
+					// the running model's own point (config context.models, the 컨텍스트 screen), re-read here at every turn end.
+					if (compactDue(lane.ctx, compactAtFor(lane.activeModel || lane.model, lanesCompactAt()))) requestCompact(lane.ctx, portOf(lane));
 					else flushCompact(lane.ctx, portOf(lane));
 				}
 				if (lane.status === "idle") setTimeout(() => lane.status === "idle" && hooks.idle(lane.name), REPORT_DEBOUNCE_MS + 100);

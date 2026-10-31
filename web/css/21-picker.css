@@ -1,0 +1,20 @@
+/* ---------- element picker (web/js/15-picker.js): the app header's hint, hover box, numbered markers, composer chips ---------- */
+.pk-hint { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
+.apps-hb .pk-hint { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
+.pk-box { position: fixed; z-index: 70; pointer-events: none; border-radius: 4px; outline: 2px solid var(--accent); outline-offset: -1px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.pk-box[hidden] { display: none; }
+.pk-lab { position: absolute; left: -2px; bottom: 100%; margin-bottom: 4px; max-width: min(320px, 80vw); padding: 3px 8px; border-radius: 8px; background: var(--pop); color: var(--fg); font: 500 12px/16px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-shadow: 0 2px 8px rgb(0 0 0 / .18); }
+.pk-box.below .pk-lab { bottom: auto; top: 100%; margin: 4px 0 0; }
+#pick-marks { position: fixed; inset: 0; z-index: 71; pointer-events: none; }
+.pk-mark { position: fixed; display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff; font: 700 11.5px/1 var(--font); box-shadow: 0 1px 4px rgb(0 0 0 / .25); transform: translate(0, -50%); }
+.pk-mark[hidden] { display: none; }
+.atray.has-pick { flex-wrap: wrap; overflow-x: visible; }
+.pk-chip { height: 44px; max-width: min(320px, 100%); padding: 0 32px 0 8px; border-radius: 16px; gap: 8px; }
+.pk-n { flex: none; display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; }
+.pk-chip .fi-t { min-width: 0; }
+.pk-chip .fi-n { max-width: 200px; }
+.pk-chip .fi-m { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-chip .ax { top: 8px; right: 2px; width: 28px; height: 28px; border-radius: 14px; background: transparent; color: var(--fg-3); }
+.pk-chip .ax svg { width: 14px; height: 14px; }
+@media (pointer: coarse) { .pk-chip .ax { top: 6px; width: 32px; height: 32px; border-radius: 16px; } }
+@media (max-width: 639px) { .pk-chip { max-width: 100%; } .pk-chip .fi-n { max-width: 168px; } .pk-chip .fi-m { max-width: 180px; } }

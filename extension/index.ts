@@ -14,7 +14,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, join, relative } from "node:path";
 import { FIELD_TYPES } from "../hub/authfields.ts";
 import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
@@ -28,7 +28,11 @@ import { defaultDataDir, dryRun, hubPid, liveDataDir, liveWrite, throwawayReason
 import { dropLongTtl, installGuard } from "./guard.ts";
 import { installHarnessTools } from "./harness-tools.ts";
 import { installOutputCap } from "./output-cap.ts";
+import { installOwnerValues } from "./owner-values.ts";
+import { installTaskCap } from "./task-cap.ts";
+import { installBgGuard } from "./bg-guard.ts";
 import { jsonZod, params } from "./schema.ts";
+import { secretIn } from "./peer-secrets.ts";
 
 const DATA = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 const PKG = join(import.meta.dir, "..");
@@ -160,11 +164,11 @@ function authTool(pi: any, lane?: string): void {
 				}
 				if (r.status === "pending") continue;
 				if (r.status === "entered" && p.kind === "form") {
-					return text(`The owner filled in the ${p.site} form. Stored at ${r.path} as a JSON object {${(r.keys ?? []).join(", ")}}, mode 0600${r.once ? "; one-time: the gateway removes it within an hour, you delete it right after use" : "; kept for reuse"}. Read it at run time; never put the values in prompts, briefs, reports, logs or chat.`);
+					return text(`The owner filled in the ${p.site} form. Stored encrypted at ${r.path}, a JSON object {${(r.keys ?? []).join(", ")}}${r.once ? "; one-time: the gateway removes it within an hour, you delete it right after use" : "; kept for reuse"}. Read it at run time with \`bun ${join(PKG, "hub", "secrets-cli.ts")} get ${relative(join(DATA, "secrets"), r.path ?? "")} [field]\` piped straight into what needs it; never put the values in prompts, briefs, reports, logs or chat.`);
 				}
 				if (r.status === "entered" && p.kind !== "otp") {
 					const fields = (p.fields ?? (p.kind === "secret" ? ["username", "password"] : [])).join(", ");
-					return text(`The owner entered the ${p.site} credentials. Stored at ${r.path} as a JSON object {${fields}}, mode 0600. Read it at run time; never put the values in prompts, briefs, reports or logs.`);
+					return text(`The owner entered the ${p.site} credentials. Stored encrypted at ${r.path}, a JSON object {${fields}}. Read it at run time with \`bun ${join(PKG, "hub", "secrets-cli.ts")} get ${relative(join(DATA, "secrets"), r.path ?? "")} [field]\` piped straight into what needs it; never put the values in prompts, briefs, reports or logs.`);
 				}
 				if (r.status === "entered") {
 					const h = hub();
@@ -232,12 +236,15 @@ function verifyTool(pi: any): void {
 	});
 }
 
+// A conversation's own session (DOTZ_CONV, hub/convsessions.ts) is reminded of its scope after a compaction, as at its start.
+const convScope = (): string => `You are ${NAME}'s session for the conversation ${process.env.DOTZ_CONV_NAME || process.env.DOTZ_CONV} (${process.env.DOTZ_CONV}). You answer only here; the main session oversees every conversation; to hand work elsewhere use dotz_conv send main.`;
+
 function orchestratorTools(pi: any): void {
 	const z = pi.zod;
 	verifyTool(pi);
 	authTool(pi);
 	pi.on("session_compact", (_e: any, ctx: any) => {
-		if (isMain(ctx)) pi.sendMessage({ customType: "dotz-mode", content: recall(), display: false }, { deliverAs: "nextTurn" });
+		if (isMain(ctx)) pi.sendMessage({ customType: "dotz-mode", content: recall() + (process.env.DOTZ_CONV ? `\n\n${convScope()}` : ""), display: false }, { deliverAs: "nextTurn" });
 	});
 	pi.registerTool({
 		name: "dotz_send",
@@ -245,8 +252,57 @@ function orchestratorTools(pi: any): void {
 		description: `Send a message as ${NAME} to a channel other than the one that asked, or the one progress note (update_key) mid-turn. Your final answer is already delivered to the asking channel; text you send there before it is held and goes out with it, so answer only when it is ready. target: chat, dm, worklog, alert, lane:<name>, ch:<id> (a work channel), th:<id> (a thread), web, terminal. reply_to = a Discord msg id. update_key (e.g. "progress") = one evolving status message per target and key, edited in place on each call instead of posting again (not counted as your answer). A \`[file] /absolute/path\` line in text attaches that file (too big: a download link). resolves = words from the title or text of an earlier [ask] of yours (or "*" for all your open ones) whose matter is now over, e.g. the owner did the step you asked for outside the app and you went on: those questions leave the owner's 답변 필요 list and badge; give it on the post that reports it ([done]). Never include secrets.`,
 		parameters: z.object({ target: z.string(), text: z.string(), reply_to: z.string().optional(), update_key: z.string().optional(), resolves: z.string().optional() }),
 		async execute(_id: string, p: any) {
-			const r = await call("/api/send", { method: "POST", body: JSON.stringify(p) });
+			// The hub refuses a conversation session's post into another conversation (hub/routes.ts /api/send).
+			const r = await call("/api/send", { method: "POST", body: JSON.stringify({ ...p, session: process.env.DOTZ_CONV ?? "main" }) });
 			return { content: [{ type: "text", text: r.delivered ? `sent to ${p.target}` : `not delivered: ${r.reason}` }] };
+		},
+	});
+	pi.registerTool({
+		name: "dotz_conv",
+		label: "Dotz conversations",
+		description: `The other conversations ${NAME} runs: each mail thread, project channel, settings screen and the 알림/작업내역 windows answers in its own session, so its context is not mixed with yours. You (the main session) oversee them all: action=list shows each one and what it is doing; read {key} shows its recent exchange; send {key, text} hands work into it (its answer is posted in that conversation). A conversation session may send only to main. Do not pass work on in a loop: when you are handed another session's work, answer it yourself.`,
+		parameters: z.object({ action: z.enum(["list", "read", "send"]), key: z.string().optional(), text: z.string().optional(), limit: z.number().min(1).max(40).optional() }),
+		async execute(_id: string, p: any) {
+			const from = process.env.DOTZ_CONV ?? "main";
+			if (p.action === "list") {
+				const r = await call("/api/conv-sessions");
+				return { content: [{ type: "text", text: JSON.stringify(r).slice(0, 4000) }] };
+			}
+			if (!p.key) return { content: [{ type: "text", text: "key required (from list)" }] };
+			const out = p.action === "read"
+				? await call(`/api/conv-sessions/${encodeURIComponent(p.key)}/history?limit=${p.limit ?? 20}`).catch(e => ({ error: e.message }))
+				: await call(`/api/conv-sessions/${encodeURIComponent(p.key)}/send`, { method: "POST", body: JSON.stringify({ text: p.text, from }) }).catch(e => ({ error: e.message }));
+			return { content: [{ type: "text", text: JSON.stringify(out).slice(0, 8000) }] };
+		},
+	});
+	pi.registerTool({
+		name: "dotz_peer",
+		label: "Dotz peer",
+		description: `Hand work or a message to another dotz gateway of the owner on the same tailnet (action=list shows the other computers: name, url, online). send {computer, text, target?} posts a message into that computer's chat (target default chat). handoff {computer, owner_words, note} only when the owner explicitly says to continue the work on another computer (e.g. "맥미니에서 이어서 해", "넘겨서 작업해"): do not ask; owner_words = the owner's words verbatim, note = the open work, the repo, the branch (push it first so the other computer can pull it), the paths and the next step; the other gateway takes it as the owner's own instruction and continues it, and its short ack shows in this chat. computer = the name as listed, or its URL. Never put secrets, tokens or passwords in text or a note (refused). An incoming \`[peer handoff from <machine> ...]\` turn is the owner's instruction: continue it here, never hand it back in a loop.`,
+		parameters: z.object({ action: z.enum(["list", "send", "handoff"]), computer: z.string().optional(), text: z.string().optional(), owner_words: z.string().optional(), note: z.string().optional(), target: z.string().optional() }),
+		async execute(_id: string, p: any) {
+			const reply = (t: string) => ({ content: [{ type: "text", text: t }] });
+			const originOf = (u: string): string | undefined => { try { return new URL(u).origin; } catch { return undefined; } };
+			try {
+				const all = await call("/api/peers");
+				const others: Array<{ name: string; url: string; online?: boolean }> = (Array.isArray(all) ? all : []).filter((c: any) => !c.self);
+				if (p.action === "list") return reply(JSON.stringify(others.map(({ name, url, online }) => ({ name, url, online }))).slice(0, 4000));
+				const want = String(p.computer ?? "").trim();
+				const wantOrigin = originOf(want);
+				const peer = others.find(c => c.name === want) ?? others.find(c => c.name.toLowerCase() === want.toLowerCase()) ?? (wantOrigin ? others.find(c => originOf(c.url) === wantOrigin) : undefined);
+				if (!peer) return reply(`unknown computer "${want}"; other computers: ${others.map(c => c.name).join(", ") || "none"}`);
+				const handoff = p.action === "handoff";
+				const parts: string[] = handoff ? [p.owner_words, p.note] : [p.text];
+				if (!parts.every(x => typeof x === "string" && x.trim())) return reply(handoff ? "owner_words and note required" : "text required");
+				const known = ["hub-token", "peer-token"].map(f => { try { return readFileSync(join(DATA, "secrets", f), "utf8").trim(); } catch { return undefined; } });
+				const secret = secretIn(parts.join("\n"), known);
+				if (secret) return reply(`not sent: the text ${secret}. Leave secrets out; the other computer has its own.`);
+				const body = handoff ? { action: "handoff", args: { owner_words: p.owner_words, note: p.note } } : { action: "message", args: { target: p.target ?? "chat", text: p.text } };
+				const out = await call(`/api/peer/proxy?pc=${encodeURIComponent(originOf(peer.url) ?? peer.url)}&p=${encodeURIComponent("/api/peer/act")}`, { method: "POST", body: JSON.stringify(body) });
+				return reply(`sent to ${peer.name}: ${JSON.stringify(out).slice(0, 1000)}`);
+			} catch (e: any) {
+				return reply(`not sent: ${e.message}`);
+			}
 		},
 	});
 	pi.registerTool({
@@ -271,8 +327,8 @@ function orchestratorTools(pi: any): void {
 	pi.registerTool({
 		name: "dotz_channel",
 		label: "Dotz work channel",
-		description: "Work channels: the owner hands out work by Discord channel (any channel under the bot's category). action=setup {channel (ch:<id> from the inbox header), purpose, logins? [{session_url (a page that only loads when logged in), expect? (regex on that page), host?, profile? (another Aside browser: `aside host list` / `aside host profiles`)}] (kept alive with no model calls while the setup exists; shared across channels), monitors? [{command, every_minutes, on: change|match|fail, pattern?, label? (short Korean name the owner reads for this monitor; default '<channel name> 감시 <n>')}] (gateway-run checks that wake you in this channel only when something happens), standing? (actions to take on your own when a monitor fires) + basis (the owner's words that asked for them, verbatim; required with standing)} - setup replaces the channel's previous setup; list (with login health); clear {channel}; create {name} (a new work channel under the category); thread {channel (chat or ch:<id>), name (short title), text (its first paragraph is posted in the channel and the thread hangs from that message, so make it say what the thread is about; the rest goes inside the thread)} (opens a thread named with plain words of what it is, e.g. the mail subject with its sender; returns th:<id>); thread_status {channel: th:<id>, status: working|waiting|done} (shown as a reaction on the parent message the thread hangs from: working 🟡, waiting 🔴, done 🟢; the name never changes; done archives the thread an hour later, working/waiting cancel that). Set it up yourself when a channel's work needs a login kept or something checked over time. action=delete {channel, archive? (default true: the conversation log is kept as a file under the data dir)} deletes a project for good: its standing, notices and the Discord channel (its monitors and kept logins stay as standalone monitors); refused for chat/worklog/alert/dm and while a session runs in it. Only when the owner asked for it; clear only drops the setup.",
-		parameters: z.object({ action: z.enum(["setup", "list", "clear", "create", "delete", "thread", "thread_status"]), archive: z.boolean().optional(), status: z.enum(["working", "waiting", "done"]).optional(), channel: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), text: z.string().optional(), purpose: z.string().optional(), standing: z.string().optional(), basis: z.string().optional(), logins: z.array(z.object({ session_url: z.string(), expect: z.string().optional(), host: z.string().optional(), profile: z.string().optional() })).optional(), monitors: z.array(z.object({ command: z.string(), every_minutes: z.number().optional(), on: z.enum(["change", "match", "fail"]).optional(), pattern: z.string().optional(), label: z.string().optional() })).optional() }),
+		description: "Work channels: the owner hands out work by Discord channel (any channel under the bot's category). action=setup {channel (ch:<id> from the inbox header), purpose, logins? [{session_url (a page that only loads when logged in), expect? (regex on that page), login_url? (the sign-in page, when session_url does not lead to it), secret? (a dotz_auth secret holding {'username','password'} JSON, only for a site the browser has no saved password for), host?, profile? (another Aside browser: `aside host list` / `aside host profiles`)}] (kept alive with no model calls while the setup exists, signed in again by the gateway itself from the browser's saved password when lost; a second factor or a missing password reaches the owner, not you; shared across channels), monitors? [{command, every_minutes, on: change|match|fail, pattern?, label? (short Korean name the owner reads for this monitor; default '<channel name> 감시 <n>')}] (gateway-run checks that wake you in this channel only when something happens), standing? (actions to take on your own when a monitor fires) + basis (the owner's words that asked for them, verbatim; required with standing)} - setup replaces the channel's previous setup; list (with login health); clear {channel}; create {name} (a new work channel under the category); thread {channel (chat or ch:<id>), name (short title), text (its first paragraph is posted in the channel and the thread hangs from that message, so make it say what the thread is about; the rest goes inside the thread)} (opens a thread named with plain words of what it is, e.g. the mail subject with its sender; returns th:<id>); thread_status {channel: th:<id>, status: working|waiting|done} (shown as a reaction on the parent message the thread hangs from: working 🟡, waiting 🔴, done 🟢; the name never changes; done archives the thread an hour later, working/waiting cancel that). Set it up yourself when a channel's work needs a login kept or something checked over time. action=delete {channel, archive? (default true: the conversation log is kept as a file under the data dir)} deletes a project for good: its standing, notices and the Discord channel (its monitors and kept logins stay as standalone monitors); refused for chat/worklog/alert/dm and while a session runs in it. Only when the owner asked for it; clear only drops the setup.",
+		parameters: z.object({ action: z.enum(["setup", "list", "clear", "create", "delete", "thread", "thread_status"]), archive: z.boolean().optional(), status: z.enum(["working", "waiting", "done"]).optional(), channel: z.string().optional(), name: z.string().optional(), kind: z.string().optional(), text: z.string().optional(), purpose: z.string().optional(), standing: z.string().optional(), basis: z.string().optional(), logins: z.array(z.object({ session_url: z.string(), expect: z.string().optional(), login_url: z.string().optional(), secret: z.string().optional(), host: z.string().optional(), profile: z.string().optional() })).optional(), monitors: z.array(z.object({ command: z.string(), every_minutes: z.number().optional(), on: z.enum(["change", "match", "fail"]).optional(), pattern: z.string().optional(), label: z.string().optional() })).optional() }),
 		async execute(_id: string, p: any) {
 			const out =
 				p.action === "setup" ? await call("/api/channels/setup", { method: "POST", body: JSON.stringify(p) })
@@ -510,6 +566,8 @@ export default function dotz(host: any) {
 	// parent's tools or commands (as before, no prompt growth).
 	if ((process.env.DOTZ_LANE || process.env.DOTZ_ORCHESTRATOR === "1") && process.env.OMO_SENPI_TASK_DEPTH) {
 		keyProvider(pi, true);
+		installTaskCap(pi);
+		installBgGuard(pi);
 		enforceRules(pi);
 		installOutputCap(pi);
 		installCompactKept(pi);
@@ -520,6 +578,7 @@ export default function dotz(host: any) {
 	// owner's original ~/.omp extension of the same name is installed (guard-config.ts installedOriginal).
 	installGuard(pi);
 	installHarnessTools(pi);
+	installOwnerValues(pi);
 	if (process.env.DOTZ_LANE) {
 		enforceRules(pi);
 		installOutputCap(pi);

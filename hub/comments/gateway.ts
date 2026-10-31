@@ -22,6 +22,8 @@ export const commentsRoute = web.route;
 export const commentOriginalOf = (code: string) => commentOriginal(engine.store, code);
 // What waits per integration key ("youtube", "instagram", "site") and whether a website source exists; read by GET /api/integrations.
 export const commentNeeds = () => engine.needs();
+// The pending reply drafts of every source (the 답장 확인 queue, GET /api/replies).
+export const commentPending = () => engine.pendingDrafts();
 export const commentDraftFacts = {
 	drafts: () => engine.store.drafts().map(d => ({ code: d.code, commentId: d.commentId, status: d.status, created: d.created })),
 	waiting: (commentId: string): boolean | undefined => {

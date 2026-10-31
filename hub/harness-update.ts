@@ -18,7 +18,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } fro
 import { join } from "node:path";
 import { DATA_DIR, log, OMP, writeAtomic } from "./config.ts";
 import { activeHarness, HARNESS_NAMES } from "./runtime/index.ts";
-import { OMO } from "./runtime/omo-hosts.ts";
+import { BUN_GLOBAL_OMO, OMO } from "./runtime/omo-hosts.ts";
 import { trackTimer } from "./shutdown.ts";
 import { newer } from "./update.ts";
 
@@ -168,7 +168,7 @@ export function installMethodOf(id: string, path: string | undefined, t: Pick<To
 	// The owner's OmO desktop app is a separate copy whose updates belong to the app, never to dotz.
 	if (/\.app\/Contents\//.test(real)) return { installMethod: "app" };
 	if (id === "omo") {
-		const m = /\/install\/global\/node_modules\/(omo-ai)\//.exec(real);
+		const m = BUN_GLOBAL_OMO.exec(real);
 		return m ? { installMethod: "bun-global", pkg: m[1]! } : { installMethod: "unknown" };
 	}
 	return { installMethod: "omp-update" };
@@ -287,7 +287,7 @@ export async function applyHarness(id: string, t: Tools): Promise<Job> {
 		if (!st) return end("failed", "업데이트할 실행 하네스를 찾지 못했어요.");
 		j.from = st.current ?? undefined;
 		if (st.installMethod === "managed") return end("failed", `${st.name}는 ${st.managedBy ?? "다른 프로그램"}이 관리해서 여기서 바꾸지 않아요. 그 프로그램에서 업데이트해 주세요.`);
-		if (st.installMethod === "app") return end("failed", `${st.name}는 앱으로 설치돼 있어서 dotz가 바꾸지 않아요. 앱에서 업데이트해 주세요.`);
+		if (st.installMethod === "app") return end("failed", `${st.name}는 앱으로 설치돼 있어서 여기서 바꾸지 않아요. 앱에서 업데이트해 주세요.`);
 		if (st.error && !st.latest) return end("failed", st.error);
 		if (!st.available || !st.latest) return end("current", st.current ? `이미 최신이에요 (${st.current}).` : (st.error ?? "새 버전을 확인하지 못했어요."));
 		j.to = st.latest;
@@ -355,7 +355,9 @@ const json = (data: unknown, status = 200) => Response.json(data, { status });
 export async function harnessUpdateRoute(req: Request, url: URL, deps: RouteDeps): Promise<Response | undefined> {
 	const p = url.pathname;
 	if (p !== "/api/harness/update" && !p.startsWith("/api/harness/update/")) return undefined;
-	const t = deps.tools ?? tools(deps);
+	// The route is given the gateway's idle-gated restart as restartIdle; the tools call it restart (it was dropped, so a finished install
+	// failed with "t.restart is not a function" and never restarted onto the new binary).
+	const t = deps.tools ?? tools({ busy: deps.busy, restart: deps.restartIdle, dataDir: deps.dataDir });
 	if (req.method === "GET" && p === "/api/harness/update") {
 		const v = viewHarness(t);
 		const stale = v.stale && !isChecking();

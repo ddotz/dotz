@@ -340,3 +340,48 @@ test("only a discovered peer may read or set a device's record on a gateway", as
 	expect((await view("alpha")).gateways.find(g => g.self)!.on).toBe(true);
 	expect(await (await dev("GET", `?did=${PHONE}&from=${GW.beta.url}`)).json()).toEqual({ on: true, app: false });
 });
+
+// Owner 2026-10-28: a notification about something already handled ("확인이 필요" for a finished item) must go away on every device.
+test("a handled notice is taken back on every device it reached: now on a regular endpoint, relayed copies on the other computer too", async () => {
+	const { phoneApp, laptop } = await devices();
+	const m = notice("ask");
+	await send("alpha", m);
+	expect(phoneApp.got().map(x => x.tag)).toEqual([m.tag]);
+	expect(laptop.got().map(x => x.tag)).toEqual([`alpha.ts.net:8443:${m.tag}`]);
+	await inst.alpha.withdraw([m.tag]);
+	expect(phoneApp.got().at(-1)).toMatchObject({ kind: "withdraw", withdraw: [m.tag] });
+	expect(laptop.got().at(-1)).toMatchObject({ kind: "withdraw", withdraw: [`alpha.ts.net:8443:${m.tag}`] });
+	// a tag no device was shown is a no-op
+	const before = pushes.length;
+	await inst.alpha.withdraw(["decision:never-shown"]);
+	expect(pushes.length).toBe(before);
+});
+
+test("an Apple endpoint is never sent a bare withdraw (Safari revokes silent pushes): the tag rides on its next notification", async () => {
+	const ua = createECDH("prime256v1");
+	ua.generateKeys();
+	const auth = Buffer.alloc(16, ++n);
+	const endpoint = `https://web.push.apple.com/apple-${n}`;
+	const url = new URL("http://x/api/push/subscribe");
+	await inst.alpha.pushRoute(new Request(url, { method: "POST", body: JSON.stringify({ subscription: { endpoint, keys: { p256dh: b64u(ua.getPublicKey()), auth: b64u(auth) } }, did: "iphone-device-01", app: true }) }), url);
+	made.push(["alpha", endpoint]);
+	const got = () => pushes.filter(p => p.endpoint === endpoint).map(p => decrypt(Buffer.from(p.body), ua.getPrivateKey(), ua.getPublicKey(), auth));
+	expect(inst.alpha.isAppleEndpoint(endpoint)).toBe(true);
+	const first = notice("ask");
+	await send("alpha", first);
+	await inst.alpha.withdraw([first.tag]);
+	expect(got().map(x => x.kind)).toEqual(["ask"]);
+	const next = notice("ask");
+	await send("alpha", next);
+	expect(got().at(-1)).toMatchObject({ tag: next.tag, withdraw: [first.tag] });
+});
+
+test("what makes a notification stale: a decision answered or dismissed, a conversation read", () => {
+	const { staleTags } = inst.alpha;
+	expect(staleTags({ kind: "notice_dismiss", id: 7 })).toEqual(["decision:7"]);
+	expect(staleTags({ kind: "read", target: "main" })).toEqual(["answer", "ask:main"]);
+	expect(staleTags({ kind: "read", target: "lane:x" })).toEqual(["ask:x", "lane:x", "start:x"]);
+	expect(staleTags({ kind: "read", target: "ch:5" })).toEqual(["answer:ch:5", "ask:ch:5"]);
+	expect(staleTags({ kind: "notice", item: { id: 3, decision: { state: "open", options: [], to: "web" } } })).toEqual([]);
+	expect(staleTags({ kind: "notice", item: { id: 3, decision: { state: "answered", options: [], to: "web" } } })).toEqual(["decision:3"]);
+});

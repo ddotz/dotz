@@ -46,7 +46,7 @@ const stampOf = (name: string, fallback: number): number => {
 	return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5])).getTime() : fallback;
 };
 
-/** The backups that still need a wake (newest first, at most MAX_WAKES). Older, empty or surplus ones are marked handled without a wake. */
+/** The backups that still need a wake (newest first, at most MAX_WAKES). Older, empty, already-present or surplus ones are marked handled without a wake. */
 export async function pendingBackups(exec: Exec, dir: string, logDir: string, dataDir: string, now = new Date()): Promise<Backup[]> {
 	const handled = readHandled(dataDir);
 	const found: { id: string; at: number; make: () => Promise<Backup | undefined> }[] = [];
@@ -60,6 +60,9 @@ export async function pendingBackups(exec: Exec, dir: string, logDir: string, da
 			make: async () => {
 				const base = (await exec(["git", "merge-base", "HEAD", branch], dir, 15_000)).out.trim();
 				if (!base) return undefined;
+				// Every commit of it already upstream (same patch): nothing to carry over.
+				const cherry = await exec(["git", "cherry", "HEAD", branch], dir, 15_000);
+				if (cherry.code === 0 && !cherry.out.split("\n").some(l => l.startsWith("+"))) return undefined;
 				const s = summarize((await exec(["git", "-c", "core.quotepath=off", "diff", "--numstat", base, branch], dir, 30_000)).out);
 				return s && { id: branch, where: `브랜치 ${branch}`, read: `git diff ${base.slice(0, 12)} ${branch}`, ...s };
 			},
@@ -72,6 +75,8 @@ export async function pendingBackups(exec: Exec, dir: string, logDir: string, da
 			id: name,
 			at: stampOf(name, statSync(patch).mtimeMs),
 			make: async () => {
+				// Already in the files (the new version has it, or the update put it back on top as a local patch): nothing to carry over.
+				if ((await exec(["git", "apply", "-R", "--check", patch], dir, 15_000)).code === 0) return undefined;
 				const s = summarize((await exec(["git", "apply", "--numstat", patch], dir, 15_000)).out);
 				return s && { id: name, where: `패치 ${patch}, 사본 폴더 ${join(logDir, name)}`, read: `cat ${patch}`, ...s };
 			},

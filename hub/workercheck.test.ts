@@ -4,7 +4,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { taskProblems, workerCheck, type Subagent, type TranscriptItem } from "./activity.ts";
+import { subagentDetail, taskProblems, workerCheck, type Subagent, type TranscriptItem } from "./activity.ts";
 
 const since = Date.parse("2026-10-19T22:50:00Z");
 const sub = (id: string, status: Subagent["status"]): Subagent => ({ id, status, started_at: since + 1000, updated_at: since + 5000 });
@@ -47,4 +47,42 @@ test("an OmO lane: a grandchild whose spawn was depth-refused (plain text) and a
 		"worker st_3 (quick) failed",
 		"st_2: task spawn failed: Subagent nesting limit reached: this spawn would run at depth 3, beyond max_depth 2.",
 	]);
+});
+
+// The orchestrator's background work opens the subagent sheet (/api/subagents/<id>), but OmO reports no worker live, so its
+// content comes from the task store: the record of that session's worker and the newest part of its transcript.
+test("an OmO worker's sheet shows its record and the tail of its transcript; another session's worker and odd ids show nothing", async () => {
+	const agent = mkdtempSync(join(tmpdir(), "omo-agent-"));
+	const root = "01a16458-6a84-7d5c-aac8-f3466403e960";
+	const orch = join(agent, "sessions", "--x--", `2026-10-28T10-00-00-000Z_${root}.jsonl`);
+	mkdirSync(join(agent, "sessions", "--x--"), { recursive: true });
+	writeFileSync(orch, "");
+	const store = join(agent, "projects", ".dotz-11b62020b284", "senpi-task");
+	mkdirSync(join(store, "tasks"), { recursive: true });
+	const rec = (id: string, rootId: string) => writeFileSync(join(store, "tasks", `${id}.json`), JSON.stringify({ task_id: id, status: "running", root_session_id: rootId, category: "quick", description: "폰 진행 줄 정렬 패치 반영", started_at: "2026-10-28T12:28:58.094Z", updated_at: "2026-10-28T12:29:03.001Z" }));
+	rec("st_01a1827c", root);
+	rec("st_other", "01a00000-0000-7000-8000-000000000000");
+	const dir = join(store, "children", "st_01a1827c", "sessions", "st_01a1827c");
+	mkdirSync(dir, { recursive: true });
+	const msg = (role: string, content: unknown, extra = {}) => JSON.stringify({ type: "message", timestamp: "2026-10-28T12:30:00Z", message: { role, content, ...extra } });
+	// Megabytes of earlier work: the sheet reads only the newest part of the file.
+	const filler = Array.from({ length: 3000 }, (_, i) => msg("toolResult", [{ type: "text", text: `old ${i} ${"x".repeat(400)}` }], { toolName: "read" }));
+	writeFileSync(join(dir, `2026-10-28T12-28-58-874Z_01a1827c-2e7a-7be6-88b3-a2734f896216.jsonl`), [
+		JSON.stringify({ type: "session" }),
+		msg("user", "Task: align the phone progress line"),
+		...filler,
+		msg("assistant", [{ type: "toolCall", name: "bash", intent: "테스트 실행", arguments: { command: "bun test" } }]),
+		// OmO's eval carries its intent as `summary`.
+		msg("assistant", [{ type: "toolCall", name: "eval", arguments: { language: "js", summary: "전체 테스트 실행", code: "await 1" } }]),
+		msg("assistant", [{ type: "text", text: "푸시했어요: abc1234" }]),
+	].join("\n"));
+
+	const d = await subagentDetail("orchestrator", "st_01a1827c", orch);
+	expect(d && { id: d.id, agent: d.agent, description: d.description, status: d.status }).toEqual({ id: "st_01a1827c", agent: "quick", description: "폰 진행 줄 정렬 패치 반영", status: "running" });
+	expect(d!.items.slice(-3).map(i => [i.type, i.text])).toEqual([["tool_call", "bash: 테스트 실행"], ["tool_call", "eval: 전체 테스트 실행"], ["text", "푸시했어요: abc1234"]]);
+	expect(d!.items.length).toBeLessThanOrEqual(200);
+	expect(d!.items.some(i => i.text.startsWith("old 0 "))).toBe(false);
+	expect(await subagentDetail("orchestrator", "st_other", orch)).toBeUndefined();
+	expect(await subagentDetail("orchestrator", "../tasks/st_01a1827c", orch)).toBeUndefined();
+	expect(await subagentDetail("orchestrator", "st_01a1827c", undefined)).toBeUndefined();
 });

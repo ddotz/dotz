@@ -9,7 +9,9 @@ function watchReasonKo(reason) {
   if (r === "recovered") return "다시 정상이에요";
   const fails = (r.match(/^failed (\d+) times in a row/) || [])[1];
   if (fails) return `${fails}번 연속 실패했어요`;
+  if (r.startsWith("stopped after a password")) return "저장된 비밀번호가 없어 다시 로그인하지 못했어요. 맥 암호에 저장하고 다시 연결을 눌러 주세요";
   if (r.startsWith("stopped after")) return "실패가 이어져 멈췄어요. 승인하면 다시 돌아요";
+  if (r.startsWith("needs the owner's approval for a second factor")) return "2차 인증이 필요해요. 다시 연결을 누르면 휴대폰으로 승인 요청을 보내요";
   if (r.startsWith("needs the owner")) return "승인이 필요해요";
   return r;
 }

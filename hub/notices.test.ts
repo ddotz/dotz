@@ -470,7 +470,7 @@ test("a found dotz update creates one notice, a later check reuses it, and apply
 	updateAvailable("dotz 새 버전이 있어요: 커밋 2개 (첫 번째). 설정 → 업데이트에서 적용해요.");
 	const first = stored().filter(n => n.key === UPDATE_NOTICE_KEY);
 	expect(first).toHaveLength(1);
-	expect(first[0]).toMatchObject({ kind: "alert", title: "dotz 새 버전", open: "settings", read: false });
+	expect(first[0]).toMatchObject({ kind: "alert", title: "새 버전", open: "settings", read: false });
 	expect(first[0]!.text).toContain("커밋 2개");
 
 	markNoticesRead({ ids: [first[0]!.id] });
@@ -494,7 +494,8 @@ test("live posts shaped like main.ts out() (gateway worklog, orchestrator alert,
 });
 
 // The backfill runs in a fresh process on a throwaway DOTZ_DIR holding sample persisted history (this process's store is not empty).
-const NOW = "2026-10-21T00:00:00.000Z";
+// Now, to the hour: a restart (module load) prunes old watch items by the wall clock, so the sample history is laid out back from it.
+const NOW = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000).toISOString();
 const hoursAgo = (h: number) => new Date(Date.parse(NOW) - h * 3_600_000).toISOString();
 const jsonl = (rows: Record<string, unknown>[]) => `${rows.map(r => JSON.stringify(r)).join("\n")}\n`;
 const outRow = (h: number, target: string, text: string, extra: Record<string, unknown> = {}) => ({ ts: hoursAgo(h), kind: "out", source: "orchestrator", target, text, reply_to: null, ...extra });
@@ -532,6 +533,8 @@ test("backfill builds the store once from persisted history: last 7 days, one it
 		jsonl([
 			{ ts: hoursAgo(50), kind: "lane_report", source: "lane:bb", lane: "bb", text: "[done] 두 번째 세션 끝" },
 			{ ts: hoursAgo(1), kind: "schedule", source: "schedule", id: "s1", channel: "main", text: "예약 시작" },
+			// the gateway's own wake (update carry-over) is an instruction to the assistant, never an owner notice (Mac mini 2026-10-29)
+			{ ts: hoursAgo(1), kind: "schedule", source: "gateway", id: "self-update-local", channel: "web", text: "[dotz 업데이트] 보관됐어요" },
 			{ ts: hoursAgo(1), kind: "message", source: "web", channel: "web", author: "local", text: "안녕" },
 		]),
 	);

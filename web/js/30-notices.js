@@ -3,7 +3,7 @@
 // (routed here by 99-boot.js, never into the chat timeline or the corner toasts). There is no notice list screen: 알림 and 작업내역 are their own
 // conversations (chat list), 모니터링 is its own screen (30-monitoring.js); what waits on the owner shows on 홈 and in the decision sheet below.
 const ntTabOf = n => n.kind === "worklog" ? "worklog" : n.kind === "watch" ? "watch" : "alert";
-const NT = { items: [], unread: 0, loaded: false, failed: false };
+const NT = { items: [], unread: 0, loaded: false, failed: false, gone: new Set(), mut: 0 };   // gone: event times of 알림 messages whose notice was dismissed (GET /api/notices gone)
 // The 홈 알림 card lists alerts only: a reply in a conversation or a session's report (kind message / result) is not a notice there; it is
 // unread in its own conversation, which the 채팅 tab and the session list lead to (owner 2026-10-23).
 const ntHomeAlert = n => ntTabOf(n) === "alert" && n.kind !== "message" && n.kind !== "result";
@@ -32,14 +32,19 @@ async function loadNotices() {
   try {
     // The hub keeps 300 (hub/notices.ts NOTICE_CAP) and lists open decisions, then unread, then newest: reading only 100 left a busy day's
     // reports out of 감시 소식 and the monitors' counts. The lists page what they draw, so the whole set is cheap to hold.
+    const m = NT.mut;
     const r = await api("/api/notices?limit=300");
+    // A dismiss that landed while this list was on its way makes it stale (it would bring the alert back): read it again.
+    if (NT.mut !== m) return loadNotices();
     NT.items = Array.isArray(r.items) ? r.items : [];
     NT.unread = r.unread | 0; NT.loaded = true; NT.failed = false;
+    if (Array.isArray(r.gone)) NT.gone = new Set(r.gone);
   } catch { NT.failed = !NT.loaded; }
   ntPaint();
   homeSoon();
   syncInlineChoices();
   ntSeenSoon();
+  ntAlertMarks();
 }
 
 // /api/state carries notices_unread: a count that disagrees with ours means a frame was missed, so refetch.
@@ -48,15 +53,35 @@ function ntSync(s) {
   NT.unread = s.notices_unread; ntPaint(); loadNotices();
 }
 
+// A decision answered or dismissed (here, on another device or by the bot): its "답변이 필요해요" toast and this device's notification go at once
+// (owner 2026-10-28: a finished item still saying it needs checking is confusing). The hub also takes the notification back on other devices (hub/push.ts).
+function ntHandled(id) {
+  for (const s of document.querySelectorAll(".snack[data-nid]")) if (s.dataset.nid === String(id)) s.remove();
+  closePushTags([`decision:${id}`]);
+}
+function closePushTags(tags) {
+  if (!("serviceWorker" in navigator) || !tags.length) return;
+  navigator.serviceWorker.ready.then(r => r.getNotifications()).then(ns => { for (const n of ns) if (tags.includes(n.tag)) n.close(); }).catch(e => console.warn(`notifications not closed: ${e.message}`));
+}
 function noticeLive(e) {
   if (e.kind === "notice" && e.item && e.item.id != null) {
     const i = NT.items.findIndex(x => x.id === e.item.id);
     if (e.item.dismissed) { if (i >= 0) NT.items.splice(i, 1); }
     else if (i < 0) NT.items.push(e.item); else NT.items[i] = e.item;
-    if (i < 0 && ntOpenDec(e.item) && NT.loaded) toast("답변이 필요해요", false, { label: "열기", onclick: () => noticeOpenId(e.item.id) }, 8000);
+    if (i < 0 && ntOpenDec(e.item) && NT.loaded) {
+      toast("답변이 필요해요", false, { label: "열기", onclick: () => noticeOpenId(e.item.id) }, 8000);
+      const s = document.querySelector(".snack:last-of-type");
+      if (s) s.dataset.nid = String(e.item.id);
+    }
+    if (!ntOpenDec(e.item) || e.item.dismissed) ntHandled(e.item.id);
     if (e.item.kind === "watch") loadMonitors();
   } else if (e.kind === "notice_dismiss") {
+    ntHandled(e.id);
+    const g = NT.items.find(x => x.id === e.id);
+    if (g && g.at && (g.src || g.open) === "alert") NT.gone.add(g.at);
     NT.items = NT.items.filter(x => x.id !== e.id);
+    NT.mut++;
+    ntAlertMarks();
   } else if (e.kind === "notice_read") {
     const ids = new Set(e.ids || []);
     for (const n of NT.items) if (ids.has(n.id)) n.read = true;   // the hub names the ids it read (never "all"): what waits on the owner stays unread
@@ -259,6 +284,46 @@ timeline.addEventListener("click", ev => {
   noticeOpen(ntOfEvent(e));
 }, true);
 
+/* ---- the 알림 conversation: 모두 읽음 in its head (31-conversations.js convPaintHead), 지우기 on each alert ---- */
+// 모두 읽음 reads the conversation to its newest message and every 알림 notice that needs no answer (a question keeps waiting).
+const ntAlertUnread = () => NT.items.filter(n => n.id && !n.read && !ntNeeds(n) && ntTabOf(n) === "alert");
+const ntAlertReadAll = btn => busy(btn, async () => {
+  const ids = ntAlertUnread().map(n => n.id), last = CONV.get("alert");
+  const jobs = [];
+  if (ids.length) jobs.push(api("/api/notices/read", "POST", { ids }));
+  if (last && last.ts) { READ.alert = last.ts; ts("alert").unread = 0; jobs.push(api("/api/read", "POST", { target: "alert", ts: last.ts })); }
+  for (const n of NT.items) if (ids.includes(n.id)) n.read = true;
+  renderBars(); convSig = ""; convHeadSig = ""; ntPaint();
+  try { await Promise.all(jobs); } finally { loadNotices(); convLoad(); }
+  toast("알림을 모두 읽음으로 표시했어요");
+});
+// 지우기 (x) on an alert in that conversation dismisses its notice on the hub (POST /api/notices/<id>/dismiss): gone from the bell, 홈 and every
+// count, and hidden in the conversation on every page (NT.gone). A question that waits on the owner has no x (the hub refuses it).
+async function ntAlertDismiss(n, row) {
+  row.hidden = true;
+  try {
+    const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
+    if (!r || !r.ok) throw new Error(r && r.held ? "답이 필요한 알림은 지울 수 없어요" : "지우지 못했어요");
+    if (n.at) NT.gone.add(n.at);
+    NT.items = NT.items.filter(x => x.id !== n.id);
+    NT.mut++;
+    if (typeof r.unread === "number") NT.unread = r.unread;
+    ntPaint(); homeSoon();
+    toast("알림을 지웠어요");
+  } catch (e) { row.hidden = false; toast(e.message || "지우지 못했어요", true); }
+}
+function ntAlertMarks() {
+  if (current !== "chat" || target !== "alert") return;
+  for (const row of tl.querySelectorAll(":scope > [data-ts]")) {
+    if (NT.gone.has(row.dataset.ts)) { row.hidden = true; continue; }
+    if (row.querySelector(".al-x")) continue;
+    const e = ts("alert").msgs.find(x => x.ts === row.dataset.ts), n = e && ntOfEvent(e);
+    if (!n || !n.id || ntNeeds(n) || ntOpenDec(n)) continue;
+    row.append(el("button", { class: "ib al-x", type: "button", "aria-label": "이 알림 지우기", title: "지우기", onclick: ev => { ev.stopPropagation(); ntAlertDismiss(n, row); } }, icon("close")));
+  }
+}
+new MutationObserver(ntAlertMarks).observe(tl, { childList: true });
+
 /* ---- decision sheet: the docked decision card (10-decision-card.js) over the current screen ---- */
 // Same card and same answer path as the one above the composer, for the conversation the notice came from; no navigation, no scroll.
 const DK = { h: null, node: null, box: null, dc: null, seq: 0, timer: 0, nid: "", ign: "" };   // ign: the notice its x (무시) ignores
@@ -269,8 +334,9 @@ function dkClose(restore = true) {
 function dkPaint() {
   if (!DK.node) return;
   let dc = DK.dc;
-  if (DK.nid) {   // a draft sheet follows its own notice
+  if (DK.nid) {   // a draft sheet follows its own notice, whose draft (받는이·참조) may have changed since it opened
     const n = ntById(DK.nid), rv = n ? ntRevising(n) : null;
+    if (n && n.decision?.draft) { DK.dc = { ...DK.dc, draft: n.decision.draft }; dc = DK.dc; }
     if (rv) {   // 고치기 was answered: the sheet keeps the old draft with 고치는 중… until the new one lands, then shows that one
       const nx = ntSuccessor(n);
       if (nx && ntOpenDec(nx)) { ntDraftSheet(nx); return; }
@@ -459,7 +525,7 @@ function ntDirect(n) {
   ntJump(n);
 }
 // Same rule as the hub (hub/notices.ts answerDecision): an option that needs detail is answered only with the owner's text.
-const ntNeedsNote = (n, o) => !o.say && !o.action && (n.decision.draft ? o.label === DRAFT_EDIT : detailOf(o));
+const ntNeedsNote = (n, o) => !o.say && !o.action && (n.decision.draft ? draftAsksText(o) : detailOf(o));
 async function ntAnswer(n, opt, note) {
   if (opt.action === "form") { ntDirect(n); return; }
   if (!note && ntNeedsNote(n, opt)) { NS.edit = { id: String(n.id), opt, text: "", fresh: true }; ntSheetPaint(); return; }
@@ -469,11 +535,12 @@ async function ntAnswer(n, opt, note) {
   NS.busy = false; ntSheetPaint();
 }
 function ntEditNode(n, ed) {
-  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: "500", placeholder: "이유나 내용을 적어 주세요", "aria-label": "자세한 내용", disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); } });
+  const drf = !!n.decision.draft, dt = draftNoteText(ed.opt);
+  const ta = el("textarea", { class: "dc-note", rows: "3", maxlength: "500", placeholder: drf ? dt.hint : "이유나 내용을 적어 주세요", "aria-label": drf ? dt.aria : "자세한 내용", disabled: NS.busy, oninput: () => { ed.text = ta.value; go.disabled = !ta.value.trim(); } });
   ta.value = ed.text;
-  const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, "내용 보내기");
+  const go = el("button", { class: "dc-go", type: "button", "data-k": "send", disabled: NS.busy || !ta.value.trim(), onclick: () => { const note = ta.value.trim(); if (note) ntAnswer(n, ed.opt, note); } }, noteGoLabel(ed.opt, drf, false));
   const back = el("button", { class: "dc-back", type: "button", "data-k": "back", disabled: NS.busy, onclick: () => { NS.edit = null; ntSheetPaint(); } }, "돌아가기");
-  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: ed.opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
+  return el("div", { class: "dc-edit" }, el("div", { class: "dc-ctx" }, el("span", { class: "dc-key", text: String(ed.opt.n) }), el("span", { class: "dc-lb", text: drf ? dt.ask : ed.opt.label })), ta, el("div", { class: "dc-eb" }, back, go));
 }
 // A notice sheet's body: the text without its `[file]` lines, then those files as the same image / file chips a chat message shows (15-attachments.js).
 function ntBody(n, text) {
@@ -509,7 +576,7 @@ function ntDetailOpen(n) {
 }
 function ntDetailPaint(n) {
   clear(NS.h.box).append(
-    fsHead([el("span", { class: "fs-ey warn", text: "문제가 생겼어요" })], { close: () => ntSheetClose() }),
+    fsHead([el("span", { class: "fs-ey err", text: "문제가 생겼어요" })], { close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: ntPlain(n.title) || "알림" }),
       el("div", { class: "ds-m", text: ntWhen(n) }),

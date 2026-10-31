@@ -1,8 +1,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { sseResponse } from "./events.ts";
-import { appAsset, indexPage } from "./webapp.ts";
+import { fakeHub, json } from "./test-web.ts";
 
 // A mail conversation opens where it is read top-down (the first unread message, else the start of the mail), and a mail that arrived as plain
 // text is laid out: headings, a two-column list, a table, lists, folded quotes, links. The parser is pure (web/js/11-mailtext.js); the opening
@@ -73,39 +72,24 @@ const replies = Array.from({ length: 24 }, (_, i) => ({ ts: at(i + 1), kind: "ou
 let read = "";
 let unread = 0;
 
-const server = Bun.serve({
-	port: 0,
-	hostname: "127.0.0.1",
-	idleTimeout: 0,
-	async fetch(req) {
-		const url = new URL(req.url);
+const hub = fakeHub({
+	api: (_req, url) => {
 		const json = (v: unknown) => Response.json(v);
-		if (url.pathname === "/") return indexPage(req);
-		const asset = appAsset(req, url.pathname);
-		if (asset) return asset;
-		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
-		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
 		if (url.pathname === "/api/notices") return json({ items: [], unread: 0 });
 		if (url.pathname === "/api/monitors") return json({ items: [] });
 		if (url.pathname === "/api/integrations") return json({ items: [{ key: "mail", label: "메일", icon: "mail", conv: ["mail:"], unread: 0, notices: [] }] });
 		if (url.pathname === "/api/conversations") return json({ items: [{ target: `mail:${MAILKEY}`, unread, read: read || null, last: { ts: replies.at(-1)!.ts, text: "답장", from: "bot" }, mail: MAIL }] });
 		if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: url.searchParams.get("target") === `mail:${MAILKEY}` ? [first, ...replies] : [] });
-		return url.pathname.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
-const views: InstanceType<typeof Bun.WebView>[] = [];
-afterAll(() => {
-	for (const v of views) v.close();
-	server.stop(true);
-});
+afterAll(() => hub.stop());
 const until = (cond: string, what: string) => `new Promise((res, rej) => { const t0 = Date.now(); const tick = () => { let ok = false; try { ok = (${cond}); } catch {} if (ok) res(true); else if (Date.now() - t0 > 10000) rej(new Error(${JSON.stringify(what)})); else requestAnimationFrame(tick); }; tick(); })`;
 const ev = async (v: InstanceType<typeof Bun.WebView>, code: string) => JSON.parse((await v.evaluate(`JSON.stringify(${code})`)) as string);
 async function open(width: number) {
-	const v = new Bun.WebView({ width, height: 900 });
-	views.push(v);
-	await v.navigate(`http://127.0.0.1:${server.port}/`);
+	const v = await hub.view({ width, height: 900 });
+	await v.navigate(`${hub.origin}/`);
 	await v.evaluate(`(localStorage.setItem("dotz-theme", "light"), true)`);
-	await v.navigate(`http://127.0.0.1:${server.port}/?light#monitoring/c:mail%3A${MAILKEY}`);
+	await v.navigate(`${hub.origin}/?light#monitoring/c:mail%3A${MAILKEY}`);
 	await v.evaluate(until(`typeof go === "function" && CV.loaded && current === "chat" && document.querySelector("#tl .mb-txt") && CV.placed`, "mail conversation not drawn"));
 	return v;
 }
