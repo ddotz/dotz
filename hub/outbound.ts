@@ -66,7 +66,12 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		// The deferral acknowledgement is the gateway speaking, not the answer: it must leave the deferred prompt open.
 		announce: (target, text) => void out(target, text, undefined, { source: "gateway" }).catch(e => log(`deferral note to ${target} failed: ${e}`)),
 		// The worker the [later] turn just spawned, as OmO's task store lists it (bgWork is created below and read at call time).
-		workFor: target => bg()?.list().find(w => w.status === "running" && w.target === target)?.description,
+		workFor: target => {
+			const w = bg()?.list().find(w => w.status === "running" && w.target === target);
+			return w && { id: w.id, description: w.description };
+		},
+		joinNote: w => msg().joinWorker(w.id, w.description),
+		hasJoinNote: text => text.split("\n").some(line => isNote(line, "joinLead")),
 		clearProgress: target => void discord.clearProgress(target),
 		persist: open => writeAtomic(pendingFile, `${JSON.stringify(open, null, 2)}\n`),
 		log,

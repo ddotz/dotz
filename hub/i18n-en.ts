@@ -9,6 +9,7 @@ export const enLeads = {
 	replayLead: "[dotz gateway] The gateway restarted before you answered this",
 	newMessageLead: "[dotz gateway] A new message arrived while you are working",
 	laneReportLead: "[dotz gateway] A session report arrived while you are working",
+	joinLead: "[dotz gateway] A background worker is already running for this conversation",
 	waitedLead: "[dotz gateway] The owner has waited",
 	rateLead: "[dotz gateway] The rate limit has passed",
 	providerLead: "[dotz gateway] The provider problem (billing/auth) may have been fixed",
@@ -163,6 +164,7 @@ export const en = {
 	noGit: `\n\nThis folder is not a git repository, so isolated task subagents cannot start here: run subagents without isolation (read-only work needs none), and if a subagent must edit files, keep its slice to files no other subagent touches.`,
 
 	replay: `${enLeads.replayLead}. Handle it now; it may be partly done already, so check before repeating an action.`,
+	joinWorker: (id: string, description: string) => `${enLeads.joinLead}: "${description.replace(/\s+/g, " ")}" (task ${id}). If this message is about the same work (the same approval, the same posting), do not spawn a new worker: pass it to the running one with task_send and end with [later]. Otherwise handle it normally.`,
 	newMessage: (target: string, replyTo: string | undefined, text: string) => `${enLeads.newMessageLead}. If its full answer is ready now (a quick question), send it with dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}: that settles the message, it counts as answered and never comes back as a turn. Otherwise send nothing: it comes back as its own turn when you are idle. Then continue the current work; your final answer still goes to the request you started with.\n\n${text}`,
 	// The one leading line of an owner prompt that says what runs now (workers named by the hub from its own state; no model call).
 	nowRunning: "[running now]",

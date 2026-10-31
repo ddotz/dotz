@@ -308,7 +308,7 @@ test("a turn that defers to a background worker sends nothing; the run the worke
 
 test("a deferred turn posts one short note naming the worker, so its conversation is not silent", () => {
 	const announced: { target: string; text: string }[] = [];
-	const { q, state, startTurn } = setup([], [], { announce: (target, text) => announced.push({ target, text }), workFor: () => "큐피드 연결 스크립트 흐름도 HTML" });
+	const { q, state, startTurn } = setup([], [], { announce: (target, text) => announced.push({ target, text }), workFor: () => ({ id: "w1", description: "큐피드 연결 스크립트 흐름도 HTML" }) });
 	startTurn("이거 파일 전부 흐름도로 재구성해", { target: "th:1564523279849357364" });
 	q.onAnswer("[later]");
 	expect(announced).toEqual([{ target: "th:1564523279849357364", text: "백그라운드 작업으로 맡겼어요: 큐피드 연결 스크립트 흐름도 HTML" }]);
@@ -321,6 +321,95 @@ test("a deferred turn posts one short note naming the worker, so its conversatio
 	bare.q.onAnswer("[later]");
 	expect(announced.at(-1)).toEqual({ target: "mail:k1", text: "백그라운드 작업으로 맡겼어요" });
 	expect(announced.at(-1)?.text.trim()).not.toBe("");
+});
+
+// Join-note wiring as outbound.ts makeQueue does it: one line led by JOIN, found again by a line scan.
+const JOIN = "[join]";
+const joinDeps = (running: { id: string; description: string } | undefined) => ({
+	workFor: () => running,
+	joinNote: (w: { id: string; description: string }) => `${JOIN} ${w.description} (${w.id})`,
+	hasJoinNote: (text: string) => text.split("\n").some(l => l.startsWith(JOIN)),
+});
+const worker = { id: "t1", description: "유튜브 답글 게시" };
+
+test("a new owner turn for a conversation with a running worker starts with a note naming it, and pairs by the delivered text", () => {
+	const { q, state, startTurn } = setup([], [], joinDeps(worker));
+	const th = { target: "th:1", replyTo: "m1", owner: true };
+	q.deliver("그거 2번으로 해줘", th);
+	expect(state.delivered).toEqual(["[join] 유튜브 답글 게시 (t1)\n\n그거 2번으로 해줘"]);
+	// omp starts the delivered text: it pairs with the stored prompt, so the turn's answer still goes to the message.
+	q.onPrompt(state.delivered[0]!);
+	q.onAnswer("됐어요");
+	expect(state.posts).toEqual([{ target: "th:1", text: "됐어요", replyTo: "m1" }]);
+	// Not for a message steered into a running turn, a non-owner delivery, or a conversation without a running worker.
+	startTurn("running", { target: "th:1", replyTo: "m0" });
+	q.deliver("steer me", { target: "th:1", replyTo: "m2", owner: true });
+	expect(state.steered).toEqual(["[note] steer me"]);
+	const mail = setup([], [], joinDeps(worker));
+	mail.q.deliver("mail", { target: "th:1" });
+	expect(mail.state.delivered).toEqual(["mail"]);
+	const idle = setup([], [], joinDeps(undefined));
+	idle.q.deliver("plain", { target: "th:2", replyTo: "m3", owner: true });
+	expect(idle.state.delivered).toEqual(["plain"]);
+});
+
+test("a restart replay does not stack a second join note on a text that already carries it", () => {
+	const { q, state, open } = setup([], [], joinDeps(worker));
+	q.deliver("그거 2번으로 해줘", { target: "th:1", replyTo: "m1", owner: true });
+	const stored = open();
+	expect(stored.map(p => p.text)).toEqual(["[join] 유튜브 답글 게시 (t1)\n\n그거 2번으로 해줘"]);
+	const again = setup([], [], joinDeps(worker));
+	again.q.replay(stored, t => `[replay]\n${t}`);
+	expect(again.state.delivered).toEqual(["[replay]\n[join] 유튜브 답글 게시 (t1)\n\n그거 2번으로 해줘"]);
+	// Even a replayed owner delivery whose text carries the note gets no second one.
+	again.q.deliver(stored[0]!.text, { target: "th:1", replyTo: "m9", owner: true });
+	expect(again.state.delivered.at(-1)).toBe(stored[0]!.text);
+});
+
+test("repeated deferrals announce one receipt per worker, a new worker gets its own, and the plain note is sent once until a real answer", () => {
+	const announced: string[] = [];
+	let running: { id: string; description: string } | undefined = worker;
+	const { q, state, startTurn } = setup([], [], { announce: (_t, text) => announced.push(text), workFor: () => running });
+	const defer = (id: string) => {
+		startTurn(`follow-up ${id}`, { target: "th:1", replyTo: id });
+		q.onAnswer("[later]");
+		state.working = false;
+		q.settleTurn();
+	};
+	defer("m1");
+	defer("m2");
+	defer("m3");
+	expect(announced).toEqual(["백그라운드 작업으로 맡겼어요: 유튜브 답글 게시"]);
+	expect(q.deferredOpen().length).toBe(3);
+	running = { id: "t2", description: "다른 일" };
+	defer("m4");
+	defer("m5");
+	expect(announced.at(-1)).toBe("백그라운드 작업으로 맡겼어요: 다른 일");
+	expect(announced.length).toBe(2);
+	// Another conversation has its own receipt.
+	startTurn("elsewhere", { target: "th:2", replyTo: "m6" });
+	q.onAnswer("[later]");
+	expect(announced.length).toBe(3);
+
+	// No worker listed: the plain note once, again only after a non-deferred answer there (or when a worker shows up).
+	running = undefined;
+	announced.length = 0;
+	const plain = (id: string) => {
+		state.working = false;
+		startTurn(`p ${id}`, { target: "th:3", replyTo: id });
+		q.onAnswer("[later]");
+	};
+	plain("n1");
+	plain("n2");
+	expect(announced).toEqual(["백그라운드 작업으로 맡겼어요"]);
+	running = worker;
+	plain("n3");
+	expect(announced.length).toBe(2);
+	running = undefined;
+	startTurn("quick", { target: "th:3", replyTo: "n4" });
+	q.onAnswer("done");
+	plain("n5");
+	expect(announced.length).toBe(3);
 });
 
 test("a deferred request answered with dotz_send reply_to from another turn is settled", async () => {
