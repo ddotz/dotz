@@ -411,7 +411,11 @@ function feed(e: HubEvent): void {
 		}
 		else {
 			fromInbox(e);
-			for (const d of decisionsOf(e)) putDecision(d, e.ts);
+			const ds = decisionsOf(e);
+			for (const d of ds) putDecision(d, e.ts);
+			// A session's turn-end report goes to its Discord channel as a real message whatever its tone (hub/lanewire.ts): an untagged one
+			// (often the answer to the owner) is the session conversation's message item, as its mid-turn answers are.
+			if (e.kind === "lane_report" && !ds.length && !answerReply(e)) fromAnswer(e);
 		}
 	} catch (err) {
 		log(`notice feed failed: ${err}`);
@@ -484,6 +488,8 @@ function fromAnswer(e: HubEvent): void {
 	if (e.update_key || e.target === "worklog" || e.target === "alert" || (src !== "orchestrator" && !lane)) return;
 	const { tone, text } = clean(e.text);
 	if (!text || /^(?:ok|-)$/i.test(text) || (lane && LOUD.has(tone))) return;
+	// A [run] report only edits the session's progress line on Discord, unless it answers the owner (hub/lanewire.ts `running`).
+	if (e.kind === "lane_report" && tone === "run" && e.answering !== true) return;
 	const conv = eventTarget(e) ?? "main";
 	if (isViewing(conv)) return;
 	const preview = text.replace(/\s+/g, " ");

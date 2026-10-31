@@ -815,6 +815,28 @@ test("an answer to a conversation nobody views is one message item, updated in p
 	expect(stored().find(n => n.key === "msg:lane:x")).toMatchObject({ title: "로그인 고치기", open: "lane:x", read: false });
 });
 
+test("a session's untagged turn-end report (sent to its Discord channel) is that conversation's one message item", () => {
+	const items = () => stored().filter(n => n.key === "msg:lane:x");
+	const report = (text: string, extra: Record<string, unknown> = {}) => emit("inbox", { ts: ts(), kind: "lane_report", source: "lane:x", lane: "x", text, ...extra });
+	report("리포트가 완성됐어요. index.html을 열면 돼요.", { answering: true });
+	expect(items()).toHaveLength(1);
+	expect(items()[0]).toMatchObject({ kind: "message", title: "로그인 고치기", open: "lane:x", read: false });
+	// the mid-turn answer and the next report rewrite that item: one notice per conversation
+	emit("outbox", { ts: ts(), kind: "out", source: "lane:x", target: "lane:x", text: "네, 볼게요" });
+	report("가이드도 고쳤어요.");
+	expect(items()).toHaveLength(1);
+	expect(items()[0]!.text).toBe("가이드도 고쳤어요.");
+	// a [run] report only edits the Discord progress line: nothing, unless it answers the owner
+	report("[run] 아직 돌고 있어요");
+	expect(items()[0]!.text).toBe("가이드도 고쳤어요.");
+	report("[run] 재계산이 돌고 있어요, 끝나면 확인할게요", { answering: true });
+	expect(items()[0]!.text).toBe("재계산이 돌고 있어요, 끝나면 확인할게요");
+	// a [done] report keeps its result item only
+	report("[done] 끝났어요");
+	expect(items()[0]!.text).toBe("재계산이 돌고 있어요, 끝나면 확인할게요");
+	expect(stored().filter(n => n.key === "lane:x")).toHaveLength(1);
+});
+
 test("a viewed conversation makes no message item; looking at one reads its item; a stale or hidden report no longer counts", () => {
 	const items = () => stored().filter(n => n.key === "msg:ch:78");
 	const t0 = Date.now();
