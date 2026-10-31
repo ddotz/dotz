@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { emitDelivery, eventTarget, historyEvents, onEmit, type HubEvent } from "./events.ts";
 import { recordMail } from "./mail.ts";
-import { orch } from "./orchestrator.ts";
+import { convs } from "./convsessions.ts";
 import { rateLimitNotice } from "./outbound.ts";
 import { type Computer, createPeerMonitor, type OrchestratorPause } from "./peer-monitor.ts";
 
@@ -13,6 +13,8 @@ const KEY = `kdb-n${Date.now().toString(36)}`;
 
 test("a gateway notice and the held state of a mail's thread are in the mail conversation, also when the Discord send is dropped", async () => {
 	recordMail({ key: KEY, source: "kdb", id: KEY.slice(4), subject: "견적 요청", from: "Kim <kim@example.com>", at: new Date().toISOString(), thread: THREAD });
+	// The session that answers the thread is the one paused: the mail's own session (conversation sessions are on by default).
+	const orch = convs.ensure(convs.keyOf(`th:${THREAD}`)).o.orch;
 	const was = { status: orch.status, pauseKind: orch.pauseKind };
 	orch.status = "rate-limited";
 	orch.pauseKind = "owner";
