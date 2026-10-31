@@ -110,7 +110,8 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 	/** A decision closed in `conv`: when no card waits there any more, the next held one goes out. */
 	function closed(conv: string, ref?: string): void {
 		const s = shown.get(conv);
-		if (s && (!ref || s.ref === ref) && !s.pending) shown.delete(conv);
+		// The shown card itself closed, even one whose post has not finished yet (the owner can answer as soon as it shows).
+		if (s && (ref ? s.ref === ref : !s.pending)) shown.delete(conv);
 		release(conv);
 	}
 
