@@ -139,8 +139,12 @@ export async function runMailCli(args: string[], stdin: string, deps: MailCliDep
 	if (!app || !subject || !to.length || !body) return { lines: [USAGE], code: 2 };
 	const origin = originOf(one("--origin"));
 	if (origin && "error" in origin) return { lines: [origin.error], code: 2 };
-	const withComment = one("--with-comment");
-	const store = withComment ? createStore(commentsDir(dataDir())) : undefined;
+	// A mail that answers a comment whose reply draft still waits rides on that reply's card even without --with-comment: one item is
+	// one card (owner 2026-10-31: a reply card and a mail card per comment, 28 comments, made her answer twice per item).
+	const pairStore = origin?.kind === "comment" && !one("--with-comment") ? createStore(commentsDir(dataDir())) : undefined;
+	const paired = pairStore?.drafts().find(d => d.status === "pending" && d.commentId === origin!.id && !d.mail)?.code;
+	const withComment = one("--with-comment") ?? paired;
+	const store = withComment ? (pairStore ?? createStore(commentsDir(dataDir()))) : undefined;
 	const reply = withComment ? store!.drafts().find(d => d.code === withComment) : undefined;
 	if (withComment && reply?.status !== "pending") return { lines: [`댓글 답글 초안 ${withComment}이(가) 없거나 이미 처리됐어요`], code: 2 };
 
