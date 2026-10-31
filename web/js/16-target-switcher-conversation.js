@@ -152,6 +152,8 @@ function authCard(a) {
     catch (e) {
       const bad = e && e.data && inputs.find(i => i.name === e.data.field);
       if (bad) { bad.classList.add("bad"); bad.closest(".fld").querySelector(".ferr").textContent = e.data.error === "required" ? "비워 둘 수 없어요" : "형식을 확인해 주세요"; bad.focus(); return; }
+      // A store failure finishes the request on the gateway (the bot is told); say so instead of offering a retry that cannot work.
+      if (e && e.data && typeof e.data.error === "string" && e.data.error.startsWith("store failed")) { AUTH_DONE.add(a.id); paintAuth(); toast(`게이트웨이가 값을 저장하지 못했어요(봇에게도 알렸어요): ${e.data.error.replace(/^store failed: /, "")}`, true); return; }
       toast("전달하지 못했어요. 다시 시도해 주세요"); return;
     }
     AUTH_DONE.add(a.id); paintAuth();

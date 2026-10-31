@@ -17,7 +17,7 @@ import { writeSecretFile } from "./secretbox.ts";
 
 type Kind = "secret" | "otp" | "approve" | "form";
 type Field = "username" | "password" | "code";
-type Status = "pending" | "entered" | "approved" | "cancelled" | "timeout";
+type Status = "pending" | "entered" | "approved" | "cancelled" | "timeout" | "failed";
 type AuthRequest = {
 	id: string;
 	site: string;
@@ -33,6 +33,8 @@ type AuthRequest = {
 	keys?: string[];
 	path?: string;
 	otp?: string;
+	// Why the owner's answer could not be stored (status failed): an error message only, never a value.
+	error?: string;
 	timer?: ReturnType<typeof setTimeout>;
 	waiters: Set<() => void>;
 };
@@ -54,7 +56,7 @@ const ONCE_MS = 60 * 60_000;
 const reqs = new Map<string, AuthRequest>();
 
 // Plain text like every gateway message (MODE "Message layout"): one leading status emoji, no embed.
-const MARKS: Record<Status, string> = { pending: "❓", entered: "✅", approved: "✅", cancelled: "❌", timeout: "❌" };
+const MARKS: Record<Status, string> = { pending: "❓", entered: "✅", approved: "✅", cancelled: "❌", timeout: "❌", failed: "❌" };
 // One-time form files are removed an hour after they are written; a restart loses the timers, so start-up sweeps what is left.
 function sweepOnce(): void {
 	if (!existsSync(ONCE_DIR)) return;
@@ -97,7 +99,19 @@ const view = (r: AuthRequest) => ({
 	...(r.status === "entered" && r.path ? { path: r.path } : {}),
 	...(r.status === "entered" && r.keys ? { keys: r.keys, once: !r.remember } : {}),
 	...(r.otp !== undefined ? { take: `/api/auth/${r.id}/take` } : {}),
+	...(r.status === "failed" && r.error ? { error: r.error } : {}),
 });
+
+// A store that throws (no key, unwritable folder) finishes the request as failed, so the waiting dotz_auth call hears why instead of
+// waiting for a value that never comes. The message is the error's, which carries paths and never a value.
+function storeFailed(r: AuthRequest, e: unknown): string {
+	const why = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+	log(`auth ${r.id} ${r.site} ${r.kind} store failed: ${why}`);
+	r.error = `store failed: ${why}`;
+	settle(r, "failed");
+	refresh(r);
+	return r.error;
+}
 
 // A request is finished once, whoever finishes it: the timer, an owner click, a modal submit or DELETE.
 function settle(r: AuthRequest, status: Status): void {
@@ -208,8 +222,7 @@ async function interaction(d: discord.Interaction): Promise<void> {
 		try {
 			store(r, values);
 		} catch (e) {
-			log(`auth ${r.id} ${r.site} ${r.kind} store failed: ${e}`);
-			return reply(d, 4, ephemeral(m.storeFailed));
+			return reply(d, 4, ephemeral(`${m.storeFailed} (${storeFailed(r, e)})`));
 		}
 		settle(r, "entered");
 		await reply(d, 4, ephemeral(m.received));
@@ -332,8 +345,7 @@ async function answer(req: Request, r: AuthRequest | undefined): Promise<Respons
 		try {
 			store(r, values);
 		} catch (e) {
-			log(`auth ${r.id} ${r.site} ${r.kind} store failed: ${e}`);
-			return err("store failed", 500);
+			return err(storeFailed(r, e), 500);
 		}
 		settle(r, "entered");
 	} else if (action === "submit" && (r.kind === "secret" || r.kind === "otp")) {
@@ -347,8 +359,7 @@ async function answer(req: Request, r: AuthRequest | undefined): Promise<Respons
 		try {
 			store(r, values);
 		} catch (e) {
-			log(`auth ${r.id} ${r.site} ${r.kind} store failed: ${e}`);
-			return err("store failed", 500);
+			return err(storeFailed(r, e), 500);
 		}
 		settle(r, "entered");
 	} else return err("action must be submit, approve or cancel", 400);

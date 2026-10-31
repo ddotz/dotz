@@ -6,7 +6,7 @@ import * as discord from "./discord.ts";
 import { authRoute, pendingAuth, setFormLink } from "./auth.ts";
 import { normalizeValue } from "./authfields.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
-import { readSecretFile } from "./secretbox.ts";
+import { readSecretFile, setSecretKey, systemKey } from "./secretbox.ts";
 
 const call = (path: string, method = "GET", body?: unknown) =>
 	authRoute(new Request(`http://local${path}`, { method, body: body === undefined ? undefined : JSON.stringify(body) }), new URL(`http://local${path}`))!;
@@ -107,6 +107,54 @@ test("one-time form: 0600 file under secrets/once, path and field names only, no
 	// notices.json is rewritten whole (not appended), so it is read whole; the long values still cannot match by chance.
 	const notices = existsSync(paths.notices) ? readFileSync(paths.notices, "utf8") : "";
 	for (const bit of SECRET_BITS) expect(notices).not.toContain(bit);
+});
+
+const TEST_KEY = Buffer.from(process.env.SECRETBOX_TEST_KEY!, "hex");
+const secretAsk = async (site: string) => {
+	const r = await call("/api/auth", "POST", { site, kind: "secret", purpose: "login", target: "chat" });
+	return ((await r.json()) as { id: string }).id;
+};
+
+test("Linux/WSL (no macOS security): a secret answer is stored with the key file, the waiting call gets the path, and it reads back", async () => {
+	const keyFile = join(DATA_DIR, "linux-key", "secretbox.key");
+	setSecretKey(create => systemKey(create, { platform: "linux", which: () => null, keyFile }));
+	try {
+		const id = await secretAsk("naver-linux");
+		const waiting = call(`/api/auth/${id}?wait=5`);
+		const r = await call(`/api/auth/${id}`, "POST", { action: "submit", values: { username: "dummy-user", password: "dummy-pass-1" } });
+		expect(r.status).toBe(200);
+		const view = (await (await waiting).json()) as { status: string; path: string };
+		expect(view.status).toBe("entered");
+		expect(view.path).toBe(join(DATA_DIR, "secrets", "naver-linux"));
+		expect(mode(keyFile)).toBe(0o600);
+		expect(readFileSync(view.path, "utf8")).not.toContain("dummy-pass-1");
+		expect(JSON.parse(readSecretFile(view.path)).password).toBe("dummy-pass-1");
+	} finally {
+		setSecretKey(TEST_KEY);
+	}
+});
+
+test("a failed store answers the form with an error and finishes the waiting call as failed, never as entered", async () => {
+	setSecretKey(() => {
+		throw new Error("the secrets key is not in the Keychain (service dotz.secrets)");
+	});
+	try {
+		const id = await secretAsk("naver-fail");
+		const waiting = call(`/api/auth/${id}?wait=5`);
+		const r = await call(`/api/auth/${id}`, "POST", { action: "submit", values: { username: "dummy-user", password: "dummy-pass-2" } });
+		expect(r.status).toBe(500);
+		const body = (await r.json()) as { error: string };
+		expect(body.error).toStartWith("store failed: ");
+		const view = (await (await waiting).json()) as { status: string; error?: string; path?: string };
+		expect(view.status).toBe("failed");
+		expect(view.error).toContain("Keychain");
+		expect(view.path).toBeUndefined();
+		expect(JSON.stringify([body, view])).not.toContain("dummy-pass-2");
+		expect(existsSync(join(DATA_DIR, "secrets", "naver-fail"))).toBe(false);
+		expect(pendingAuth().some(a => a.id === id)).toBe(false);
+	} finally {
+		setSecretKey(TEST_KEY);
+	}
 });
 
 test("remember keeps the file as secrets/<site>; the owner's choice in the form wins", async () => {
