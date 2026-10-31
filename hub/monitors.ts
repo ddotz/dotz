@@ -9,6 +9,8 @@ export type Monitor = {
 	name: string;
 	// A watch's own [a-z0-9-] name when `name` is its label: the web matches the watch's notices by it and shows it as small text.
 	watch?: string;
+	// A schedule's id: the web pauses, resumes and deletes it through PATCH / DELETE /api/schedules/<id> (it has no watch to run or configure).
+	schedule?: string;
 	kind: "watch" | "schedule";
 	channel?: string;
 	last_run?: string;
@@ -70,6 +72,7 @@ export function listMonitors(): Monitor[] {
 		const name = s.text.replace(/^\s*(?:(?:ch|lane|th):\S+\s*)+/, "").trim().slice(0, 200) || "예약";
 		return {
 			name,
+			schedule: s.id,
 			kind: "schedule",
 			...(channel ? { channel } : {}),
 			...(s.last ? { last_run: s.last, last_result: "ok" as const } : {}),
