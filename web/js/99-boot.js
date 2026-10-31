@@ -26,6 +26,7 @@
   // the first connect and when the gap cannot be replayed (gateway restarted, or too long away): only then refetch.
   es.onopen = () => setConn(true);
   es.addEventListener("reset", () => {
+    trLoad();   // the waiting approvals by app instance: the 빠른 처리 banner (30-triage.js)
     if (opened) { refreshState(); for (const k of Object.keys(TS)) TS[k].hLoaded = TS[k].aLoaded = false; renderAll(); loadTarget(target); loadSubs(); loadQueue(); laneTailsStale(); convLoad(); kkResync(); }
     opened = true;
   });
@@ -36,7 +37,9 @@
     if (e.kind === "activity") { onActivity(e); laneActivity(e); }
     else if (e.kind === "subagents") setSubs(e.source, e.items);
     else if (e.kind === "queue") { QUEUE = e.items || []; renderQueue(); }
-    else if (e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss") noticeLive(e);
+    else if (e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss") { noticeLive(e); if (e.kind === "notice") trSoon(); }
+    else if (e.kind === "approval_send") trLive(e);
+    else if (e.kind === "approvals") trSoon();
     else if (e.kind === "peer_notice" || e.kind === "peer_counts" || e.kind === "peer_notice_done") prLive(e);
     else if (e.kind === "read") convOnRead(e);
     else if (e.kind === "comment" || e.kind === "comment_send" || e.kind === "comment_draft" || e.kind === "comment_sources") cmLive(e);

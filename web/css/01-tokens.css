@@ -54,12 +54,13 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 
 /* layout: from 1100px one top row, below it the phone layout (tabs in a bottom bar). The markup is the same in both: #nav (the five tabs, one component), #pchip (the computer chip), #cmdk (search) and the app bar items.
    Wide: .side, .main and .appbar are display: contents, so each of their children is a cell of the .app grid and sits in the one row. Below 1100px they are the usual flex boxes. The 1100px edge is also where 채팅 puts its list next to the conversation. */
-.app { display: grid; grid-template-columns: 20px auto auto auto auto auto minmax(0, 1fr) auto auto auto auto 12px; grid-template-rows: 48px auto auto minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: env(safe-area-inset-top); }
+.app { display: grid; grid-template-columns: 20px auto auto auto auto auto minmax(0, 1fr) auto auto auto auto 12px; grid-template-rows: 48px auto auto auto minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: env(safe-area-inset-top); }
 .side, .main, .appbar { display: contents; }
 .brand, .rail, .pchip, #back, .appbar h1, .thead, .conn, .cmdk, #vtog, .ustrip { grid-row: 1; align-self: center; }
 .gban { grid-row: 2; grid-column: 1 / -1; }
-.oerr { grid-row: 3; grid-column: 1 / -1; }
-.views { grid-row: 4; grid-column: 1 / -1; }
+.trban { grid-row: 3; grid-column: 1 / -1; }
+.oerr { grid-row: 4; grid-column: 1 / -1; }
+.views { grid-row: 5; grid-column: 1 / -1; }
 .brand { grid-column: 2; }
 .brand { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; letter-spacing: -.01em; text-align: left; cursor: pointer; }
 .brand:hover { background: var(--card); }
@@ -122,7 +123,7 @@ button.conn:disabled { cursor: default; }
   .appbar h1, .appbar:not(.back) h1 { display: block; flex: 1; max-width: none; margin: 0; }
   #back, .conn { margin: 0; }
   #vtog, .ustrip { margin: 0; }
-  .gban, .oerr, .views { grid-row: auto; grid-column: auto; }
+  .gban, .trban, .oerr, .views { grid-row: auto; grid-column: auto; }
   .views { flex: 1; }
   /* compact tab bar: a 46px row; the home-indicator inset is trimmed (labels end ~18px above the screen edge, clear of the indicator) */
   .side { order: 2; display: flex; min-width: 0; min-height: 0; padding: 0 0 max(2px, calc(env(safe-area-inset-bottom) - 16px)); border-top: 1px solid var(--line); background: var(--card); }

@@ -13,6 +13,7 @@ setup: bun {repo}/features/reply-drafts/bin/onboard.ts on --to <asking target>
 - `결정 답: ... → 1) 보내기`: `bun {repo}/features/reply-drafts/bin/draft.ts send <id>`. 메일이 그 사이 새 답을 받았으면 보내지 못하고 초안이 낡았다고 알려요. 그러면 `draft.ts new`로 다시 초안을 만들어요.
 - `결정 답: ... → 2) 고치기 - <내용>`: `bun {repo}/features/reply-drafts/bin/draft.ts revise <id> --change "<내용>"`. 찍힌 `[ask]` 블록을 고치지 말고 그대로 같은 스레드에 다시 올려요. 고친 내용은 그 초안의 말투 프로필(대화방이 있으면 그 방, 아니면 앱)의 `## 고친 점`에 기록돼서 다음 초안부터 따라가요.
 - `결정 답: ... → 3) 보내지 않기`: `bun {repo}/features/reply-drafts/bin/draft.ts drop <id>`
+- 게이트웨이가 아는 초안(질문 끝 괄호가 이 초안 id인 카드)에 고른 `1) 보내기`는 게이트웨이가 직접 `draft.ts send`로 보내고 턴으로 오지 않아요. 초안이 여러 건이면 카드를 모두 한 번에 올리고 턴을 끝내요(게이트웨이가 한 장씩 보여 주고 웹은 많으면 빠른 처리 화면을 열어요).
 - `send`는 사용자의 `1) 보내기` 선택이 그 초안 id에 없으면 거부해요. 거부 이유를 그대로 알리고 다시 시도하지 않아요. 이 메일 계정으로 보낼 수 없는 경우(`직접 보내야 해요`)는 초안 글을 알려 주기만 해요.
 
 사용자가 이미 있는 메일에 답장 초안을 부탁하면(`이 메일 답장 써줘`): 메일 본문을 stdin으로 넘겨 `bun {repo}/features/reply-drafts/bin/draft.ts new --mail <메일 키> --from <보낸 사람 주소> --subject "<제목>" [--app mail] [--source zele|webmail:<사이트> --id <메일 id>]`를 실행하고, 찍힌 `[ask]` 블록을 그대로 올려요.
