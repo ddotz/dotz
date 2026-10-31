@@ -24,6 +24,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 
 ## Channels and notices
 
+- send approvals: `hub/approval-queue.ts` (one card at a time per conversation), `hub/approval-send.ts` (the gateway sends an approved draft itself, in order per place), `hub/approval-batch.ts` + `hub/approval-wire.ts` (batch / triage answers, `/api/approvals`, grouped by app instance)
 - Discord: `hub/discord.ts`, `hub/discord-format.ts`, `hub/threads.ts`, `hub/workchannels.ts`, `hub/livestatus.ts`, `hub/askbuttons.ts`, `hub/choices.ts`
 - web state: `hub/notices.ts`, `hub/conversations.ts`, `hub/reads.ts`, `hub/projectchat.ts`, `hub/projects.ts`, `hub/todo.ts`, `hub/activity.ts`, `hub/custom.ts`
 - push: `hub/push.ts`, `hub/webpush.ts`

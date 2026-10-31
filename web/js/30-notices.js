@@ -379,6 +379,9 @@ async function ntAskSheet(n) {
 }
 // A draft waiting for send approval (hub/draft-approval.ts): the same sheet, built from the notice itself, with the draft above the three choices.
 function ntDraftSheet(n) {
+  // Many waiting cards of this one's kind: it opens in 빠른 처리 (30-triage.js), unless a row asked for its 고치기 field.
+  const tg = n.decision.draft && n.decision.draft.ref && !DC.edit[`dk:${n.id}`] ? trGroupFor(n.decision.draft.ref) : null;
+  if (tg) { trOpen(tg.key, n.decision.draft.ref); return; }
   const d = n.decision;
   dkOpen({ key: `dk:${n.id}`, t: d.to, sig: `dk:${n.id}`, at: d.reply_to || n.at || "", question: "", blocks: [{ title: n.title, options: d.options }], left: draftLeft(n.text) }, d.draft, String(n.id), n);
 }
