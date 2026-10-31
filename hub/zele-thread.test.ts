@@ -89,6 +89,26 @@ describe("the watch", () => {
 		expect(posted).toEqual(["thr-ack-1#1", "thr-ack-1#4"]);
 	});
 
+	test("an IMAP/SMTP account's calendar refusal is an empty calendar: mail is still seeded and posted", async () => {
+		const posted: string[] = [];
+		const list = (n: number) => async (args: string[]) => {
+			if (args[0] === "cal") throw new Error(`zele ${args.join(" ")}: error: Calendar is not available for IMAP/SMTP accounts. Calendar requires a Google account.`);
+			return args.includes("sent") ? [] : [row(KIM, n)];
+		};
+		const hooks = { alert: () => {}, brief: () => {}, mail: async (m: NewMail) => void posted.push(m.message) };
+		await tick(hooks, new Date(), list(1), async () => "");
+		await tick(hooks, new Date(), list(2), async () => "");
+		expect(posted).toEqual([`2|${row(KIM, 2).date}`]);
+	});
+
+	test("another calendar error still fails the tick", async () => {
+		const list = async (args: string[]) => {
+			if (args[0] === "cal") throw new Error("zele cal events: network down");
+			return [];
+		};
+		await expect(tick({ alert: () => {}, brief: () => {}, mail: async () => {} }, new Date(), list, async () => "")).rejects.toThrow("network down");
+	});
+
 	test("a thread that cannot be read is posted: a failure only makes the watch louder", async () => {
 		const { posted, reading } = await run({}, [[KIM, 0], [KIM, 1], [ME, 2], [KIM, 3]]);
 		expect(reading).toEqual(["thr-ack-1"]);
