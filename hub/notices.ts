@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
-import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, parseDraftApproval, quotedDraft, refreshDraft, rewriteDraftTo } from "./draft-approval.ts";
+import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, draftNeedsText, parseDraftApproval, quotedDraft, refreshDraft, rewriteDraftTo } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { broadcast, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
@@ -658,10 +658,10 @@ export async function answerDecision(id: unknown, body: { n?: unknown; note?: un
 	const label = `${o.n}) ${o.label}`;
 	// 고치기 on a draft carries what to change and needs it. Elsewhere an option that needs detail (choices.ts detailOf: 안 됨 …) needs the owner's written reason too;
 	// a button with its own `say` / `action` (login request, fixed yes / no) never does.
-	const draftEdit = !!d.draft && draftActionOf(o.label) === "edit";
+	const draftEdit = !!d.draft && draftNeedsText(o.label);
 	const asksDetail = !d.draft && !o.say && !o.action && detailOf(o);
 	const note = draftEdit || asksDetail ? String(body.note ?? "").replace(/\s+/g, " ").trim().slice(0, draftEdit ? DRAFT_BODY_MAX : 500) : "";
-	if (draftEdit && !note) return { status: 400, body: { error: "무엇을 고칠지 적어 주세요" } };
+	if (draftEdit && !note) return { status: 400, body: { error: draftActionOf(o.label) === "own" ? "어떻게 보낼지 적어 주세요" : "무엇을 고칠지 적어 주세요" } };
 	if (asksDetail && !note) return { status: 400, body: { error: "내용을 적어 주세요" } };
 	const text = (o.say ?? (d.group > 1 ? `${item.title}: ${label}` : label)) + (note ? ` - ${note}` : "");
 	sending.set(item.id, label);
