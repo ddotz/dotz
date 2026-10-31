@@ -68,7 +68,8 @@ export async function getSecret(name: SecretName, deps: CredDeps): Promise<strin
 
 // Throws (without the value) when the Keychain does not take it; nothing is written to disk instead.
 export async function setSecret(name: SecretName, value: string, deps: CredDeps): Promise<void> {
-	if (!(await keychainSet(name, value, deps))) throw new Error("키체인에 저장하지 못했어요");
+	// KakaoTalk runs on macOS only; say so instead of a bare failure where there is no Keychain CLI (Linux, WSL).
+	if (!(await keychainSet(name, value, deps))) throw new Error(Bun.which("security") ? "키체인에 저장하지 못했어요" : "이 컴퓨터에는 macOS 키체인(security)이 없어 카카오톡 계정을 저장할 수 없어요 (카카오톡 연동은 macOS 전용)");
 }
 
 // Moves what the secret flow wrote (<dataDir>/secrets/kakao) into the Keychain and deletes the file in every case, so no plaintext
