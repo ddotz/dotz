@@ -471,13 +471,14 @@ async function applyTarball(o: Options, c: CheckResult, v: Tarball, j: Job, step
 	const gate = gateIn(fresh, testCmd);
 	step("테스트", `${gate.cmd.join(" ")} 실행 중 (새 폴더)`);
 	const t = await exec(gate.cmd, fresh, gate.ms);
-	const summary = t.out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b/.test(l)).map(l => l.trim()).join(", ");
+	const summary = testSummary(t.out);
+	if (summary) record(logDir, `update #${j.id}: tests: ${summary}`);
 	if (t.code !== 0) {
 		const blocks = failureBlocks(t.out);
 		if (blocks) record(logDir, `update #${j.id}: failed tests\n${blocks}`);
 		record(logDir, `update #${j.id}: test output (tail)\n${t.out.split("\n").slice(-40).join("\n")}`);
 		const names = failedTestNames(t.out);
-		return fail(`테스트 실패${summary ? ` (${summary})` : ` (exit ${t.code})`}${names.length ? `: ${names.join(" / ")}` : ""}`);
+		return fail(testFailure(t.code, names));
 	}
 
 	step("교체", `${dir} 폴더를 새 버전으로 바꾸고 이전 폴더는 ${prev}에 남겨요`);
@@ -495,7 +496,7 @@ async function applyTarball(o: Options, c: CheckResult, v: Tarball, j: Job, step
 	}
 	rmSync(stage, { recursive: true, force: true });
 	markPending(o, { kind: "tarball", dir, from: v.commit.sha, to, prev }, step);
-	return end("updated", `${v.commit.short} → ${to.slice(0, 7)} 받았어요${summary ? ` (테스트 ${summary})` : ""}. 이전 폴더는 ${prev}에 있어요. 재시작하면 적용돼요.`);
+	return end("updated", `${v.commit.short} → ${to.slice(0, 7)} 받았어요. 이전 폴더는 ${prev}에 있어요. 재시작하면 적용돼요.`);
 }
 
 // Fetch the tracked branch and compare. Never changes the working tree.
@@ -567,6 +568,12 @@ export async function check(o: Options): Promise<CheckResult> {
 	return r;
 }
 
+// bun's closing counts ("12 pass", "0 fail"): the update log keeps them; owner-facing text never carries them (owner 2026-11-01:
+// "1pass 이거 뜨는거 불필요"). A failure names the failing tests, or the exit code when bun named none.
+export const testSummary = (out: string): string =>
+	out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b/.test(l)).map(l => l.trim()).join(", ");
+const testFailure = (code: number, names: string[]): string => `테스트 실패${names.length ? `: ${names.join(" / ")}` : ` (exit ${code})`}`;
+
 // The names of the failing tests (at most `max`, once each: bun prints every `(fail)` line again in its closing summary), for the
 // owner-facing message; the counts alone do not say what broke.
 export function failedTestNames(out: string, max = 3): string[] {
@@ -625,20 +632,21 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 		const gate = gateIn(cwd, testCmd);
 		step("테스트", `${gate.cmd.join(" ")} 실행 중${where}`);
 		const t = await exec(gate.cmd, cwd, gate.ms);
-		const summary = t.out.split("\n").filter(l => /^\s*\d+ (pass|fail)\b/.test(l)).map(l => l.trim()).join(", ");
-		if (t.code === 0) return { ok: true as const, summary, why: "" };
+		const summary = testSummary(t.out);
+		if (summary) record(logDir, `update #${j.id}: tests${where}: ${summary}`);
+		if (t.code === 0) return { ok: true as const, why: "" };
 		const blocks = failureBlocks(t.out);
 		if (blocks) record(logDir, `update #${j.id}: failed tests\n${blocks}`);
 		record(logDir, `update #${j.id}: test output (tail)\n${t.out.split("\n").slice(-40).join("\n")}`);
 		const names = failedTestNames(t.out);
-		return { ok: false as const, summary, why: `테스트 실패${summary ? ` (${summary})` : ` (exit ${t.code})`}${names.length ? `: ${names.join(" / ")}` : ""}` };
+		return { ok: false as const, why: testFailure(t.code, names) };
 	};
 
 	// Local work: commits upstream already has are skipped; the rest is re-applied on the new version in a temporary worktree with the
 	// same checks (bun install, tests) and only a clean, green result moves the live checkout. Anything else is saved first and moved
 	// aside: a local edit never stops a shipped update (owner 2026-10-29: "개별 사용자가 로컬에서 수정해서 사용하는거때문에 내가 배포한
 	// 업뎃이 실패하면 안됨"). Uncommitted changes come back on top below as a local patch; the rest is carried to the custom layer.
-	let target = to, hard = false, failed: string | undefined, saved: Saved | undefined, note = "", testSummary = "";
+	let target = to, hard = false, failed: string | undefined, saved: Saved | undefined, note = "";
 	let lost: Commit[] = [];
 	if (c.dropped.length) step("확인", `이미 새 버전에 있는 로컬 커밋 ${c.dropped.length}개는 건너뛰어요: ${c.dropped.slice(0, 3).map(d => d.subject.slice(0, 40)).join(" / ")}`);
 	if (c.ahead.length) {
@@ -653,7 +661,7 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 					if (deps.code !== 0) failed = `bun install 실패: ${lastLine(deps.out)}`;
 					else {
 						const r = await runTests(t.wt, " (임시 작업 폴더)");
-						if (r.ok) [target, testSummary] = [t.sha, r.summary];
+						if (r.ok) target = t.sha;
 						else failed = r.why;
 					}
 				} finally {
@@ -714,7 +722,6 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 	if (!rebased) {
 		const t = await runTests(dir, "");
 		if (!t.ok) return back(t.why, deps);
-		testSummary = t.summary;
 	}
 	// The uncommitted changes go back on top as a local patch when they still apply and the tests still pass with them; otherwise the
 	// new version stays clean and the patch stays in the backup for the carry-over (docs/customization.md, Surviving updates).
@@ -732,7 +739,6 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 				const t = await runTests(dir, " (로컬 수정 포함)");
 				if (t.ok) {
 					note += " 로컬 수정은 새 버전 위에 다시 얹었어요.";
-					testSummary = t.summary;
 				} else {
 					await exec(["git", "apply", "-R", patch], dir, 60_000);
 					note += ` 로컬 수정을 얹으면 ${t.why}여서 빼고 보관만 했어요(${patch}).`;
@@ -743,7 +749,17 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 	}
 	markPending(o, { kind: "git", dir, from, to: target, deps }, step);
 	const extra = `${rebased ? ` 로컬 커밋 ${c.ahead.length}개는 새 버전 위에 얹었어요.` : ""}${c.dropped.length ? ` 이미 새 버전에 있는 로컬 커밋 ${c.dropped.length}개는 건너뛰었어요.` : ""}${note}`;
-	return end("updated", `${v.commit.short} → ${target.slice(0, 7)} 받았어요${testSummary ? ` (테스트 ${testSummary})` : ""}. 재시작하면 적용돼요.${extra}`);
+	return end("updated", `${v.commit.short} → ${target.slice(0, 7)} 받았어요. 재시작하면 적용돼요.${extra}`);
+}
+
+// The commit of the checkout this gateway runs from.
+export const diskCommit = (): Promise<string | undefined> => version({ dir: REPO_DIR }).then(v => ("commit" in v ? v.commit.sha : undefined));
+
+// apply with the check it made saved as the last one (what the settings page and the update bar read).
+export async function applyAndSave(o: Options = { dir: REPO_DIR }): Promise<Job> {
+	const j = await apply(o);
+	if (j.check) saveState({ ...readState(), lastCheck: j.check });
+	return j;
 }
 
 type State = { lastCheck?: CheckResult; notified?: string; autoFailed?: string; autoRefused?: string };
@@ -908,7 +924,8 @@ function setSettings(values: { auto_check?: unknown; auto_apply?: unknown; at?: 
 	return settings();
 }
 
-type RouteDeps = { boot: string; busy: () => string[]; restartIdle: () => string; restartNow: () => string; options?: Options };
+// `now`: the top update bar's tap (hub/update-now.ts): download, test and apply at the idle restart in one go.
+type RouteDeps = { boot: string; busy: () => string[]; restartIdle: () => string; restartNow: () => string; options?: Options; now?: { start: () => { phase: string }; flow: () => unknown } };
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 
 // /api/update*: settings → 업데이트. Same tailnet auth as every other /api route (checked by main.ts).
@@ -919,7 +936,7 @@ export async function updateRoute(req: Request, url: URL, deps: RouteDeps): Prom
 	if (req.method === "GET" && p === "/api/update") {
 		const disk = await version(o);
 		running ??= disk;
-		return json({ boot: deps.boot, running, disk, lastCheck: readState().lastCheck ?? null, job: job ?? null, busy: deps.busy(), settings: settings() });
+		return json({ boot: deps.boot, running, disk, lastCheck: readState().lastCheck ?? null, job: job ?? null, flow: deps.now?.flow() ?? null, busy: deps.busy(), settings: settings() });
 	}
 	if (req.method === "POST" && p === "/api/update/check") {
 		const c = await check(o);
@@ -932,6 +949,12 @@ export async function updateRoute(req: Request, url: URL, deps: RouteDeps): Prom
 		const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
 		void apply(o, { keep: b.keep === true }).then(j => j.check && saveState({ ...readState(), lastCheck: j.check }), e => log(`self-update failed: ${e}`));
 		return json({ job }, 202);
+	}
+	if (req.method === "POST" && p === "/api/update/now" && deps.now) {
+		const f = deps.now.flow() as { phase?: string } | undefined;
+		const active = f && ["download", "waiting", "restarting"].includes(f.phase ?? "");
+		if (job?.status === "running" && !active) return json({ error: "업데이트가 이미 진행 중이에요", job }, 409);
+		return json({ flow: deps.now.start() }, 202);
 	}
 	if (req.method === "POST" && p === "/api/update/restart") {
 		if (job?.status === "running") return json({ error: "업데이트가 아직 진행 중이에요" }, 409);

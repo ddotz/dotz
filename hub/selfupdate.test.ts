@@ -210,6 +210,25 @@ describe("against temp git repos", () => {
 		expect(logged()).toContain("error: expect(received).toBe(expected)\n(fail) the broken one [1ms]");
 	});
 
+	// Owner 2026-11-01: "1pass 이거 뜨는거 불필요" - bun's counts stay in the update log, never in the owner-facing text.
+	test("the test counts are logged but never shown to the owner, on success and on failure", async () => {
+		r.push("a.txt", "2\n", "second");
+		const ok: Exec = async (cmd, cwd, ms) => (cmd.join(" ") === testCmd.join(" ") ? { code: 0, out: "(pass) one [1ms]\n 1 pass\n 0 fail\n" } : defaultExec(cmd, cwd, ms));
+		const j = await apply(opts(ok));
+		expect(j.status).toBe("updated");
+		expect(j.message).toMatch(/받았어요\. 재시작하면 적용돼요/);
+		expect(j.message).not.toMatch(/\d+ (pass|fail)|테스트/);
+		expect(logged()).toContain("1 pass, 0 fail");
+
+		r.push("FAIL", "boom\n", "breaks the tests");
+		const bad: Exec = async (cmd, cwd, ms) => (cmd.join(" ") === testCmd.join(" ") ? { code: 1, out: "(fail) the broken one [1ms]\n 3 pass\n 1 fail\n" } : defaultExec(cmd, cwd, ms));
+		const f = await apply(opts(bad));
+		expect(f.status).toBe("failed");
+		expect(f.message).toContain("테스트 실패: the broken one");
+		expect(f.message).not.toMatch(/\d+ (pass|fail)/);
+		expect(logged()).toContain("3 pass, 1 fail");
+	});
+
 	test("nothing new is reported as current and does not run the tests", async () => {
 		const { seen, exec } = spy();
 		const j = await apply(opts(exec));

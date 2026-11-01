@@ -20,6 +20,7 @@ import { drain, restore } from "./queue.ts";
 import { anthropicUsage } from "./providers.ts";
 import { withTurnLanguage } from "./outlang.ts";
 import { channelContext, listSetups } from "./workchannels.ts";
+import { updateNow } from "./update-now.ts";
 import { deliver, awaiting, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice, turnSource } from "./outbound.ts";
 import { mailTarget, type MailRecord } from "./mail.ts";
 import { memoryNote, settingsTarget } from "./app-settings.ts";
@@ -124,6 +125,13 @@ export function intake(event: Record<string, any>, target: string, replyTo?: str
 	b.timer = setTimeout(() => flush(target), Math.max(0, Math.min(COALESCE_MS, b.first + COALESCE_MAX_MS - Date.now())));
 }
 
+export const UPDATE_RECEIPT = "📨 받았어요. 업데이트를 적용하고 다시 켜지면 바로 전달할게요.";
+function heldForUpdate(target: string, refs: string[], replyTo?: string): void {
+	for (const ref of refs) emitDelivery(target, ref, "update");
+	const local = /^(web|terminal|mail:|settings:)/.test(target);
+	if (!local && discord.status.enabled) void discord.progress(target, "progress", UPDATE_RECEIPT, replyTo).catch(e => log(`update hold receipt failed: ${e}`));
+}
+
 /** The owner's 중단 of `target`: what was sent there and not yet delivered (a burst still gathering, the web queue) is dropped. */
 export function dropPending(target: string): number {
 	const b = bursts.get(target);
@@ -155,6 +163,9 @@ export function flush(target: string): void {
 	const merged = b.events.length > 1 ? { ...head, message_id: refOf(b.events.at(-1)!), parts: b.events } : head;
 	const was = convs.stateOf(target);
 	digest.note(convs.keyOf(target), "owner", String(merged.text ?? ""));
+	// After a tap on the update bar: kept for the restart, acknowledged on the message (and in a Discord channel's progress line).
+	const heldRefs = b.events.flatMap(e => refOf(e) ?? []);
+	if (updateNow()?.hold(inboxText(merged), { target, replyTo: b.replyTo, owner: true }, heldRefs)) return heldForUpdate(target, heldRefs, b.replyTo);
 	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, owner: true });
 	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver); a parked
 	// conversation session was started again for it.
@@ -251,7 +262,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	// The session that answers `to` (main with conversation sessions off): steer and interrupt act on its turn only.
 	const session = convs.forTarget(to)?.o;
 	if (parseCommand(event.text) || looksLikeCommand(event.text)) void answerCommand(to, event.text);
-	else if (s.mode === "steer" && session?.orch.status === "working") {
+	else if (s.mode === "steer" && session?.orch.status === "working" && !updateNow()?.holding()) {
 		// Through the prompt queue, which steers it in as a note now: raw inbox text admitted mid-turn read as a new prompt
 		// and unpaired the running turn, so its answer went nowhere (2026-10-20 19:43 KST, the 19:36 and 19:38 web messages).
 		const steered = deliver(inboxText(turn), { target: to, replyTo: mid, owner: true });

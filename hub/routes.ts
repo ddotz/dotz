@@ -50,6 +50,7 @@ import { openMonitor, readTodo } from "./todo.ts";
 import { customRoute } from "./custom.ts";
 import { deleteKey, importOmoKey, keysView, saveKey } from "./apikey-store.ts";
 import { updateRoute } from "./selfupdate.ts";
+import { updateNow } from "./update-now.ts";
 import { harnessUpdateRoute } from "./harness-update.ts";
 import { appAsset, committedText, indexPage, setAppName, webBuild } from "./webapp.ts";
 import { listPeers, ownLogin } from "./peers.ts";
@@ -310,7 +311,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		const pushResponse = await pushRoute(req, url);
 		if (pushResponse) return pushResponse;
-		const updateResponse = await updateRoute(req, url, { boot: BOOT_ID, busy: busyNow, restartIdle: restartGateway, restartNow: restartGatewayNow });
+		const updateResponse = await updateRoute(req, url, { boot: BOOT_ID, busy: busyNow, restartIdle: restartGateway, restartNow: restartGatewayNow, now: updateNow() });
 		if (updateResponse) return updateResponse;
 		// Settings → 업데이트 → 실행 하네스 (hub/harness-update.ts): the harness binary itself, from the package registry.
 		const harnessUpdateResponse = await harnessUpdateRoute(req, url, { busy: busyNow, restartIdle: restartGateway });
