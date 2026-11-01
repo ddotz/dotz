@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { CONFIG_FILE, NAME, paths } from "./config.ts";
 import { decisionsOf, resetNoticesForTest } from "./notices.ts";
 import { shortTitle } from "./notice-title.ts";
+import { draftApprovalBlock } from "./draft-approval.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
@@ -675,6 +676,16 @@ test("a failed send leaves the decision open", async () => {
 	expect(stored().find(x => x.id === n.id)!.decision!.state).toBe("open");
 	expect(n.decision!.group).toBe(1);
 	owner("1");
+});
+
+test("a typed message does not close a waiting send-approval card; its button still answers it", async () => {
+	post("web", `[ask] 댓글 답글 초안이에요 (19/28)\n${draftApprovalBlock({ to: "A 댓글", toLabel: "대상", body: "감사합니다", ref: "cm-typed", question: "이 답글 올릴까요?" })}`);
+	const n = decisions("main").find(x => x.decision!.draft?.ref === "cm-typed")!;
+	owner("19번 카드는 위에 있어");
+	owner("마지막 카드 어디?");
+	expect(stored().find(x => x.id === n.id)!.decision!.state).toBe("open");
+	await answerDecision(n.id, { n: 1 }, async x => void owner(x.text, { reply_to: x.replyTo, decision: x.notice }));
+	expect(stored().find(x => x.id === n.id)!.decision!.state).toBe("answered");
 });
 
 test("a session [ask] makes one decision for that session, a repeated copy adds none, and only a reply in that session settles it", () => {

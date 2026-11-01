@@ -693,7 +693,9 @@ function ownerReplied(e: HubEvent): void {
 	const to = eventTarget(e) ?? "main";
 	const id = typeof e.decision === "string" ? e.decision : "";
 	const text = String(e.text ?? "").trim();
-	for (const i of items) if (isOpenDecision(i) && !i.decision!.to.startsWith("auth:") && (id ? i.id === id : i.decision!.to === to)) settleDecision(i, text, e.ts);
+	// A typed message is not the answer to a waiting send-approval card (2026-10-31: "19번 카드는 위에 있어", "마지막 카드 어디?" closed it):
+	// the card stays open until its buttons answer it or the draft is handled elsewhere (settleHandledDrafts).
+	for (const i of items) if (isOpenDecision(i) && !i.decision!.to.startsWith("auth:") && (id ? i.id === id : i.decision!.to === to && !i.decision!.draft)) settleDecision(i, text, e.ts);
 }
 
 export type DecisionSend = (a: { to: string; text: string; replyTo?: string; notice: string; action?: string; files?: Upload[]; picks?: { q: string; n: number; label: string; note?: string }[] }) => Promise<void>;

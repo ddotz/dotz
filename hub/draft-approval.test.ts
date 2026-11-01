@@ -223,3 +223,29 @@ test("a card with both 참조 and 규칙 lines reads back with each", () => {
 	const text = draftApprovalBlock({ to: "kim@example.com, lee@example.com", toLabel: "받는이", cc: ["park@example.com"], rule: "문서 요청", subject: "Re: 문서", body: "보내 드립니다.", ref: "RABCDEF", question: "이 답장 보낼까요?" });
 	expect(parseDraftApproval(text)).toMatchObject({ to: "kim@example.com, lee@example.com", cc: ["park@example.com"], rule: "문서 요청", subject: "Re: 문서", body: "보내 드립니다." });
 });
+
+import { domainTypo, draftApprovalBlock as block, recipientCheck, RECIPIENT_MARK, withRecipientMark } from "./draft-approval.ts";
+
+test("a recipient copied with the comment's typo is flagged with the likely address, never changed", () => {
+	const src = "문서 받을 수 있을까요? thanever2@hannail.net 으로 부탁드려요";
+	expect(domainTypo("hannail.net")).toBe("hanmail.net");
+	expect(domainTypo("gmial.com")).toBe("gmail.com");
+	expect(domainTypo("navr.co")).toBe("naver.com");
+	expect(recipientCheck("thanever2@hannail.net", src)).toContain("thanever2@hannail.net → thanever2@hanmail.net");
+	const card = `[ask] 메일 답장 초안이에요\n> 원문: ${src}\n${block({ to: "thanever2@hannail.net", toLabel: "받는이", body: "보내 드립니다.", ref: "RABCDEF", question: "이 답장 보낼까요?" })}`;
+	const marked = withRecipientMark(card);
+	expect(marked.split("\n")[1]).toStartWith(RECIPIENT_MARK);
+	expect(marked.split("\n")[1]).toContain("thanever2@hanmail.net");
+	expect(parseDraftApproval(marked)?.to).toBe("thanever2@hannail.net");
+	expect(withRecipientMark(marked)).toBe(marked);
+});
+
+test("a correct address from the source raises nothing; one the source does not have is named", () => {
+	expect(domainTypo("hanmail.net")).toBeUndefined();
+	expect(domainTypo("example.com")).toBeUndefined();
+	expect(recipientCheck("kim@hanmail.net", "kim@hanmail.net 로 보내 주세요")).toBeUndefined();
+	expect(recipientCheck("kim@naver.com", "보내 주세요")).toBeUndefined();
+	expect(recipientCheck("lee@naver.com", "kim@naver.com 로 보내 주세요")).toContain("lee@naver.com");
+	const card = `[ask] 메일 답장 초안이에요\n> 원문: kim@gmail.com 로 부탁해요\n${block({ to: "kim@gmail.com", toLabel: "받는이", body: "네", ref: "RABCDEF", question: "이 답장 보낼까요?" })}`;
+	expect(withRecipientMark(card)).toBe(card);
+});

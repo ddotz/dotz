@@ -52,6 +52,10 @@ export type PromptDeps = {
 	joinNote?: (worker: { id: string; description: string }) => string;
 	/** Does this text already carry that note (a restart replay stored it with the prompt)? */
 	hasJoinNote?: (text: string) => boolean;
+	/** The note naming the send-approval cards that wait in this conversation (hub/approval-queue.ts pendingCardsNote), if any. */
+	cardsNote?: (target: string) => string | undefined;
+	/** Does this text already carry that note (a restart replay stored it with the prompt)? */
+	hasCardsNote?: (text: string) => boolean;
 	clearProgress: (target: string) => void;
 	/** Writes the open prompts to disk. */
 	persist: (open: Pending[]) => void;
@@ -143,6 +147,8 @@ export function createPrompts(deps: PromptDeps) {
 		// four follow-ups to one posting job). The Prompt keeps the text as delivered: onPrompt pairs by it and a replay re-sends it.
 		const worker = !steered && reply?.owner ? deps.workFor?.(reply.target) : undefined;
 		if (worker && deps.joinNote && !deps.hasJoinNote?.(text)) text = `${deps.joinNote(worker)}\n\n${text}`;
+		const cards = reply?.owner && !deps.hasCardsNote?.(text) ? deps.cardsNote?.(reply.target) : undefined;
+		if (cards) text = `${cards}\n\n${text}`;
 		const prompt: Prompt = { key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered };
 		prompts.push(prompt);
 		if (prompts.length > MAX_PROMPTS) prompts.splice(0, prompts.length - MAX_PROMPTS);
