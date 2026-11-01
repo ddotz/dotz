@@ -157,8 +157,8 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 			return fail(error);
 		}
 	}
-	// Which conversations also go to Discord (hub/discord-post.ts); the web always gets everything.
-	if (url.pathname === "/api/discord/post" && (req.method === "GET" || req.method === "PUT")) {
+	// Which conversations also go to Discord (hub/discord-post.ts); the web always gets everything. PUT and PATCH both merge the given booleans.
+	if (url.pathname === "/api/discord/post" && (req.method === "GET" || req.method === "PUT" || req.method === "PATCH")) {
 		if (req.method === "GET") return json(postSettings());
 		try {
 			return json(savePostSettings((await body(req)) as Record<string, unknown>));

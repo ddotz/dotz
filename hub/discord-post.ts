@@ -1,16 +1,32 @@
 // Which conversations also go to Discord. The web app always gets every message; Discord gets a kind only while its switch is on, so
 // the owner who reads on the web is not sent everything twice. Kept in <DATA_DIR>/discord-post.json: the owner's own setting in the data
-// folder, never in the code. A missing or broken file is every kind on (Discord got everything before this switch existed).
-import { readFileSync, statSync } from "node:fs";
+// folder, never in the code. A missing or broken file is every kind on (Discord got everything before this switch existed) except
+// web_lanes; migratePostSettings writes the first file so an install without Discord starts all off (web only).
+// web_lanes: a session started from the web or terminal also gets a Discord channel/thread and posts there (off: it lives in the web).
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
 
-export const POST_KINDS = ["chat", "lanes", "alert", "worklog"] as const;
+export const POST_KINDS = ["chat", "lanes", "alert", "worklog", "web_lanes"] as const;
 export type PostKind = (typeof POST_KINDS)[number];
 export type PostSettings = Record<PostKind, boolean>;
 
 const file = () => join(DATA_DIR, "discord-post.json");
-const ALL_ON: PostSettings = { chat: true, lanes: true, alert: true, worklog: true };
+const ALL_ON: PostSettings = { chat: true, lanes: true, alert: true, worklog: true, web_lanes: false };
+const ALL_OFF: PostSettings = { chat: false, lanes: false, alert: false, worklog: false, web_lanes: false };
+
+// Gateway start: the first file is today's routing where Discord is connected (nothing changes for that owner), all off where it
+// is not, so connecting Discord later sends nothing until the owner turns kinds on. An existing file is never touched.
+export function migratePostSettings(discordOn: boolean): void {
+	if (existsSync(file())) return;
+	writeAtomic(file(), `${JSON.stringify(discordOn ? ALL_ON : ALL_OFF)}\n`);
+}
+
+// A lane with no Discord place (started from the web, hub/threads.ts lanePlace); main.ts installs the lane-record reader.
+let webLane: (name: string) => boolean = () => false;
+export function setWebLane(fn: (name: string) => boolean): void {
+	webLane = fn;
+}
 
 // alert / worklog are the gateway's own conversations, lane:<name> a session; everything else (main, work channels, threads) is chat.
 export function postKind(target: string): PostKind {
@@ -54,4 +70,6 @@ export function savePostSettings(patch: Record<string, unknown>): PostSettings {
 
 // Whether a post to `target` goes to Discord. An answer to a message the owner wrote on Discord (a Discord message id) always does:
 // he asked there, so the answer has to be there.
-export const discordPosts = (target: string, replyTo?: string): boolean => postSettings()[postKind(target)] || (!!replyTo && /^\d{17,20}$/.test(replyTo));
+// A web lane never does: it has no Discord place.
+export const discordPosts = (target: string, replyTo?: string): boolean =>
+	!(target.startsWith("lane:") && webLane(target.slice(5))) && (postSettings()[postKind(target)] || (!!replyTo && /^\d{17,20}$/.test(replyTo)));
