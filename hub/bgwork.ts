@@ -11,6 +11,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { scrub } from "./activity.ts";
 import { failureText } from "./runstate.ts";
+import { previewSource } from "./tone.ts";
 
 type BgWork = {
 	id: string;
@@ -97,6 +98,8 @@ type Rec = {
 	error_message?: string;
 	terminal_reason?: string;
 	error?: string;
+	/** The worker's last message (its report): OmO says "completed" for a worker that ended on its token cap and reported [fail]. */
+	final_response?: string;
 	model?: string;
 	requested_model?: RecModel;
 	resolved_model?: RecModel;
@@ -113,6 +116,13 @@ const RUNNING = new Set(["running", "queued", "pending"]);
 const DONE = new Set(["completed", "done", "succeeded"]);
 
 const stamp = (s?: string) => (s ? Date.parse(s) || 0 : 0);
+// A report whose status line is [fail] (after an optional "Ask: ..." handoff block, as custom.ts reportHead reads it): that line, unmarked.
+const MARK_LINE = /^\s*(?:[-*]\s*)?\**\s*\[(done|run|ask|fail|later|완료)\]\**\s*/i;
+function failLine(text: string | undefined): string | undefined {
+	const line = previewSource(String(text ?? "")).split("\n").find(l => MARK_LINE.test(l));
+	const m = line ? MARK_LINE.exec(line) : null;
+	return m && m[1]!.toLowerCase() === "fail" ? line!.slice(m[0].length).replace(/\*\*/g, "").trim() || "[fail]" : undefined;
+}
 // The folder a worker works for: orchestrator briefs open with "Repo: <absolute path>"; an isolated copy's own cwd says nothing.
 function folderOf(r: Rec): string | undefined {
 	const s = r.spawn_spec;
@@ -207,6 +217,9 @@ export function createBgWork(deps: BgWorkDeps) {
 		const raw = (r.status ?? "").toLowerCase();
 		let status: BgWork["status"] = RUNNING.has(raw) ? "running" : DONE.has(raw) ? "done" : "failed";
 		let ended = stamp(r.terminal_at) || stamp(r.updated_at);
+		// OmO's "completed" only says the process ended; a worker that stopped on its token cap or an error reports [fail] (st_01a19616).
+		const reported = status === "done" ? failLine(r.final_response) : undefined;
+		if (reported) status = "failed";
 		// A worker the owner stopped is listed as stopped from then on, whatever OmO's record says; the workers die with the
 		// gateway's process tree, and the record of one that died mid-run is never closed by anyone.
 		const stoppedAt = cancelled.get(r.task_id!);
@@ -223,7 +236,7 @@ export function createBgWork(deps: BgWorkDeps) {
 		const description = scrub(String(r.description || r.task_summary || r.category || r.task_id)).replace(/\s+/g, " ").trim().slice(0, 120);
 		const folder = folderOf(r);
 		const stopped = stoppedAt !== undefined && status === "failed";
-		const why = status === "failed" && !stopped ? [r.error_message, r.terminal_reason, r.error].find(v => typeof v === "string" && v.trim()) : undefined;
+		const why = status === "failed" && !stopped ? [r.error_message, r.terminal_reason, r.error, reported].find(v => typeof v === "string" && v.trim()) : undefined;
 		const error = why ? scrub(why).replace(/\s+/g, " ").trim().slice(0, 200) : "";
 		const model = workModel(r);
 		const reason = stopped ? "직접 중단했어요" : status === "failed" ? failureText(error) : "";

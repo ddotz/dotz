@@ -86,13 +86,28 @@ test("홈: 지금 진행 중 is only what runs; waiting rows say their state in 
 	const p__api_workers_st_stop_retry = posted("/api/workers/st_stop/retry");
 	await v.evaluate(`(document.querySelector('#home-now [data-work="st_stop"] [data-act="retry"]').click(), 0)`);
 	await p__api_workers_st_stop_retry;
-	// 중단 on the running row asks first, then ends that worker.
-	await v.evaluate(`(setTimeout(() => document.querySelector('#home-now [data-work="st_run"] [data-act="cancel"]').click()), 0)`);
-	await waitFor(v, `document.querySelector("dialog[open] .dact .danger")`);
-	const p__api_workers_st_run_cancel = posted("/api/workers/st_run/cancel");
-	await v.evaluate(`(setTimeout(() => document.querySelector("dialog[open] .dact .danger").click()), 0)`);
-	await p__api_workers_st_run_cancel;
+	// A running row shows only its state (owner 2026-11-01): no 중단 on the list, the conversation's send button stops it.
+	expect(await v.evaluate(`document.querySelectorAll('#home-now [data-work="st_run"] button').length`)).toBe(1);
+	expect(s.running![0]).not.toContain("중단");
 }, 30_000);
+
+test("홈: a session the run line calls 진행 중 (waiting on its own worker) is listed under 지금 진행 중, not 대기 중", async () => {
+	LANES.push({ name: "bgw", title: "알림 분류 업데이트 마무리", status: "idle", startedAt: agoIso(30), lastText: "", model: "anthropic/claude-opus-5-5" });
+	WORK = [];
+	RUNS = { main: { kind: "idle" }, "lane:bgw": { kind: "waiting", reason: "work", since: agoIso(2), detail: "빌드 · Opus 5.5 medium" } };
+	try {
+		const v = await boot("#home");
+		await waitFor(v, `current === "home" && document.querySelector('#home-now .hn[data-k="running"] [data-t="lane:bgw"]')`);
+		const s = await sections(v);
+		expect(s.running).toHaveLength(1);
+		expect(s.running![0]).toContain("알림 분류 업데이트 마무리");
+		expect(s.running![0]).toContain("진행 중");
+		expect(s.waiting!.join("|")).not.toContain("알림 분류 업데이트 마무리");
+		expect(await v.evaluate(`document.querySelector('#home-now .hn-h .sup').textContent`)).toBe("1개 작업 중");
+	} finally {
+		LANES.pop();
+	}
+}, 20_000);
 
 test("홈: nothing running says so instead of listing idle conversations under 지금 진행 중", async () => {
 	WORK = [];
