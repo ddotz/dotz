@@ -71,7 +71,8 @@ const incoming = new Map<string, Map<string, string>>();
 const cleanRestart = (e: HubEvent) => e.kind === "out" && e.source === "gateway" && /^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(e.text ?? "")) && /끊긴 작업은 없어요/.test(String(e.text ?? ""));
 
 function countIncoming(target: string, e: HubEvent, last: ConversationLast): void {
-	if (last.from === "owner" || cleanRestart(e)) return;
+	// A gateway system line (`system`, e.g. a deferral receipt) is a status, not a message to read.
+	if (last.from === "owner" || cleanRestart(e) || e.system) return;
 	let bucket = incoming.get(target);
 	if (!bucket) incoming.set(target, (bucket = new Map()));
 	// An edited post counts once, at its newest version.
