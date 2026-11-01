@@ -8,7 +8,7 @@ import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { isNote, msg } from "./i18n.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
-import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages } from "./events.ts";
+import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages, tailEvents } from "./events.ts";
 import { settleWaiting, type Waiting } from "./awaiting.ts";
 import { outEvent } from "./projectchat.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
@@ -159,6 +159,8 @@ const lateRequest = (target: string) => {
 // An answer (not a progress note, not a gateway notice, not a held approval card shown later) settles the owner messages waiting in this conversation.
 function settleAnswer(j: OutJob): void {
 	if ((j.extra.source === undefined || j.extra.source === "orchestrator") && !j.extra.update_key && !j.extra.queued) {
+		// The answer ends the turn's progress reports here, the web chat's included: none may post after it.
+		void livestatus.stop(j.target);
 		const { done, keep } = settleWaiting(awaiting.get(j.target) ?? [], j.replyTo, isLocal(j.target));
 		awaiting.set(j.target, keep);
 		// One truth: a message shown as answered is answered for the prompt queue too (deferred wait, pending.json, restart replay).
@@ -275,7 +277,22 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 // 안됨"), so the gateway no longer steers the orchestrator into posting a note after 60 s.
 export function expectReply(target: string): void {
 	if (isLocal(target)) return;
-	livestatus.begin(target, "orchestrator");
+	livestatus.begin(target, turnSource(target));
+}
+// The activity source of the session that answers `target` (a conversation session's own, main's with sessions off): its turn_end
+// is the end of the wait (2026-11-01: a work channel's session answered at 1:40, main's turn never ended, "5분째 작업 중" at 5:00).
+export const turnSource = (target: string): string => convs.forTarget(target)?.o.source ?? "orchestrator";
+// At gateway start no turn reports progress yet: a web progress line still shown from before (posted after its answer, or the
+// gateway stopped mid-turn) is finalized with an empty note, which the page drops.
+export function clearLeftWebProgress(): void {
+	const open = new Set<string>();
+	for (const e of tailEvents(paths.outbox)) {
+		if (e.kind !== "out" || typeof e.target !== "string") continue;
+		if (e.update_key === "progress" && e.source === "gateway") String(e.text ?? "").trim() ? open.add(e.target) : open.delete(e.target);
+		else if (!e.update_key) open.delete(e.target);
+	}
+	for (const target of open) webNote(target, "");
+	if (open.size) log(`cleared ${open.size} progress line(s) left from turns no longer running: ${[...open].join(", ")}`);
 }
 
 // The same alert again (hub/alert-gate.ts) is marked on its event (the bell rewrites the first one, no push) and not posted to Discord again.

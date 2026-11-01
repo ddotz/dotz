@@ -60,7 +60,7 @@ import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
 import { setFollowupWake } from "./followup.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { compressResponse } from "./compress.ts";
-import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, replies, bgWork, approvals, convOfTarget } from "./outbound.ts";
+import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, approvals, convOfTarget } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
 import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
@@ -90,6 +90,8 @@ onEmit(e => {
 });
 
 installDelivery();
+// Progress lines left from turns that ran before this start (web and Discord): nothing reports or clears them any more.
+clearLeftWebProgress();
 // The orchestrator's retries gave up: one [ask] per episode (sent again after a Discord reconnect by the send ledger, pushed
 // as an ask); after any restart its open prompts replay; once the model host answers again, one automatic resume.
 setErrorHandler(e => alert(errorAsk(NAME, e)));
@@ -216,6 +218,7 @@ const onOwner = (m: discord.Incoming) => {
 };
 discord.setClaimHandler(pluginClaim);
 discord.connect(onOwner);
+void discord.clearLeftProgress().catch(e => log(`left progress messages not cleared: ${e}`));
 // A click on a decision button (hub/askbuttons.ts) is the owner typing the answer in that channel: the same inbound path.
 setAskAnswer((target, content, picks) => {
 	// 보내기 on a draft the gateway sends itself: no model turn, the next card shows at once (hub/approval-wire.ts).

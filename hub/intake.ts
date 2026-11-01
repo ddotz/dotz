@@ -20,7 +20,7 @@ import { drain, restore } from "./queue.ts";
 import { anthropicUsage } from "./providers.ts";
 import { withTurnLanguage } from "./outlang.ts";
 import { channelContext, listSetups } from "./workchannels.ts";
-import { deliver, awaiting, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice } from "./outbound.ts";
+import { deliver, awaiting, lastOwner, refOf, newMid, laneFailed, out, expectReply, rateLimitNotice, turnSource } from "./outbound.ts";
 import { mailTarget, type MailRecord } from "./mail.ts";
 import { memoryNote, settingsTarget } from "./app-settings.ts";
 import { appEntries } from "./integrations.ts";
@@ -166,7 +166,7 @@ export function flush(target: string): void {
 	if (refs.length) awaiting.set(target, [...(awaiting.get(target) ?? []), ...refs.map(ref => ({ ref, by: b.replyTo }))]);
 	// A project's web chat gets the same receipt and progress line as its Discord channel.
 	if (b.events.some(e => e.source === "web") && target.startsWith("ch:")) {
-		livestatus.begin(target, "orchestrator", true);
+		livestatus.begin(target, turnSource(target), true);
 	}
 }
 
