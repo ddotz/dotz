@@ -96,7 +96,15 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .hs-sw[aria-checked="true"] { background: var(--accent); }
 .hs-sw[aria-checked="true"]::after { transform: translateX(16px); }
 /* settings: a class's "디스코드로도 보내기" switch under its phone-push row text */
-.dc { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.dcs-form { flex-direction: column; align-items: stretch; gap: 12px; }
+.dcs-trail { display: inline-flex; align-items: center; gap: 8px; }
+.dcs-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.dcs-err { color: var(--err); font-size: 13px; line-height: 20px; }
+.dcs-saved { align-self: flex-start; }
+.dcs-res { display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; }
+.dcs-res.err { color: var(--err); }
+.dcs-ok { color: var(--ok); font-weight: 600; }
+.dcs-res .btn { align-self: flex-start; margin-top: 6px; }
 /* settings: 업데이트 */
 .sec .upd-new { margin-left: 8px; vertical-align: middle; }
 /* a section heading with its own action (실행 하네스 · 확인): the button sits at the right end, apart from the title */
