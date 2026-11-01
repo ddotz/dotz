@@ -97,8 +97,17 @@ export function fileLinePaths(text: string): string[] {
 
 // Inside the data dir only uploads, the lanes' report folders, qa/ (QA shots and findings) and projects/ (work-channel result files) may leave through a listed file.
 const listedDataDirs = () => [UPLOADS, FILES, join(DATA_DIR, "lanes"), join(DATA_DIR, "qa"), join(DATA_DIR, "projects")].map(d => real(d) ?? d);
+// Elsewhere in the data dir a listed file may leave when it is a result-type file (an image, a document, a page, media) in a sub folder that
+// holds no account, session or state data (owner 2026-11-01: a lane's shots in logs/notify-update-shots/ showed "열 수 없는 파일이에요").
+// Config, records (.json/.jsonl) and the top-level files stay shut.
+const ARTIFACT = /\.(png|jpe?g|gif|webp|avif|heic|svg|pdf|md|markdown|txt|html?|csv|tsv|xlsx?|docx?|pptx?|hwpx?|numbers|pages|mp4|mov|webm|mp3|m4a|wav|zip)$/i;
+const PRIVATE_DATA = new Set(["accounts", "approvals", "conv-sessions", "identity", "kakao", "kdb", "memory", "secrets", "state"]);
+const dataArtifact = (r: string, data: string): boolean => {
+	const parts = r.slice(data.length + 1).split(sep);
+	return parts.length > 1 && !PRIVATE_DATA.has(parts[0]!) && ARTIFACT.test(r);
+};
 
-export const LOST = "파일이 지워졌어요";
+export const LOST = "원본이 지워졌어요";
 
 // Where an unlisted file may still be served from (old messages, files an agent only named in text): the owner's home and the temp dirs.
 const looseRoots = () => [...new Set([HOME, "/tmp", tmpdir()].map(d => real(d) ?? d))];
@@ -135,7 +144,7 @@ function resolveLive(input: string, roots: string[], listed: ReadonlySet<string>
 	if (!roots.some(root => r === root || under(r, root))) {
 		const data = real(DATA_DIR) ?? DATA_DIR;
 		const inData = r === data || under(r, data);
-		const inStore = listedDataDirs().some(d => under(r, d));
+		const inStore = listedDataDirs().some(d => under(r, d)) || (inData && dataArtifact(r, data));
 		const fine = (isListed && (!inData || inStore)) || (looseRoots().some(root => under(r, root)) && (!inData || under(r, real(FILES) ?? FILES)));
 		if (!fine) throw new FileError("열 수 없는 파일이에요", 403);
 	}
@@ -145,14 +154,15 @@ function resolveLive(input: string, roots: string[], listed: ReadonlySet<string>
 }
 
 // Copies the files named in the [file] lines of a message just sent into the data dir's files/ (filesnap.ts), in the background.
+const kept = () => [UPLOADS, FILES].map(d => real(d) ?? d);
 export function snapshotSent(text: string): void {
 	const paths = fileLinePaths(text).map(expand).filter(p => p.startsWith("/"));
 	if (!paths.length) return;
-	const kept = [UPLOADS, FILES].map(d => real(d) ?? d);
+	const store = kept();
 	queueSnapshots(paths, p => {
 		try {
 			const r = resolveLive(p, allowedRoots(), new Set([p]));
-			return kept.some(d => under(r, d)) ? undefined : r;
+			return store.some(d => under(r, d)) ? undefined : r;
 		} catch {
 			return undefined;
 		}
@@ -198,7 +208,10 @@ export function serveFile(path: string, req: Request, dl = false): Response {
 // GET/HEAD /api/file?path=...[&download=1]: the whole route (main.ts adds the web auth in front). `listed` = events.ts sentFiles.
 export function fileRoute(req: Request, url: URL, roots: string[], listed: ReadonlySet<string>): Response {
 	try {
-		const res = serveFile(resolveAllowed(url.searchParams.get("path") ?? "", roots, listed), req, url.searchParams.get("dl") === "1" || url.searchParams.get("download") === "1");
+		const input = url.searchParams.get("path") ?? "", path = resolveAllowed(input, roots, listed);
+		// An original served live (an old message, sent before its copy was made) is copied now, so it still opens once it is deleted.
+		if (expand(input).startsWith("/") && !kept().some(d => under(path, d))) queueSnapshots([expand(input)], () => path);
+		const res = serveFile(path, req, url.searchParams.get("dl") === "1" || url.searchParams.get("download") === "1");
 		return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
 	} catch (error) {
 		const message = (error as Error).message;
