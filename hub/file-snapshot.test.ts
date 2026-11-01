@@ -101,6 +101,33 @@ test("a refused secret is never copied into files/", async () => {
 	expect(stored.some(f => /cert\.pem|id_ed25519|t\.txt|innocent/.test(f))).toBe(false);
 });
 
+// 2026-11-01: a lane's shots in <data dir>/logs/notify-update-shots/ showed "열 수 없는 파일이에요" (the data dir was shut outside a few folders).
+test("a result file a lane names in the data dir's logs/ is copied at send time and opens after it is deleted; records and private folders do not", async () => {
+	const dir = join(DATA, "logs", "lane-shots");
+	mkdirSync(dir, { recursive: true });
+	mkdirSync(join(DATA, "accounts"), { recursive: true });
+	const shot = join(dir, "bell-390.png"), rec = join(dir, "state.json"), acct = join(DATA, "accounts", "me.png"), top = join(DATA, "top.png");
+	for (const p of [shot, rec, acct, top]) writeFileSync(p, "DATAPNG");
+	for (const p of [shot, rec, acct, top]) sendLaneReport(p);
+	await snapshotsIdle();
+	rmSync(shot);
+	const res = get(shot);
+	expect([res.status, await res.text()]).toEqual([200, "DATAPNG"]);
+	for (const p of [rec, acct, top]) expect([p, get(p).status]).toEqual([p, 403]);
+	const stored = new Bun.Glob("**/*").scanSync({ cwd: FILES }).toArray();
+	expect(stored.some(f => /state\.json|me\.png|top\.png/.test(f))).toBe(false);
+});
+
+test("an old message's file nobody copied is copied the first time it is opened, and still opens after the original is deleted", async () => {
+	const old = join(work, "before-snapshots.png");
+	writeFileSync(old, "OLDPNG");
+	expect(get(old, "HEAD").status).toBe(200);
+	await snapshotsIdle();
+	rmSync(old);
+	const res = get(old);
+	expect([res.status, await res.text()]).toEqual([200, "OLDPNG"]);
+});
+
 // Retention: a copy's last use is its file's mtime; the sweep drops copies unused for keep_days, then the least recently used while over the cap.
 const DAY = 86_400_000;
 const copyDirs = () => readdirSync(FILES, { withFileTypes: true }).filter(d => d.isDirectory() && /^[0-9a-f]{24}$/.test(d.name)).map(d => d.name).sort();

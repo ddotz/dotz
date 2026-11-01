@@ -71,6 +71,7 @@ ta.addEventListener("paste", ev => {
 // are asked with HEAD first: the size fills in, and one /api/file refuses (outside the roots, secret, missing) turns into a
 // disabled chip.
 const fileNote = (r, fallback) => { try { return decodeURIComponent(r.headers.get("x-file-note") || "") || fallback; } catch { return fallback; } };
+const refusedNote = r => fileNote(r, r.status === 404 ? "원본이 지워졌어요" : "열 수 없는 파일이에요");
 const fileMeta = (name, size) => [extOf(name), size ? fsize(size) : ""].filter(Boolean).join(" · ");
 const VIEW_RE = /\.(md|markdown|txt|log|json|ya?ml|csv|tsv)$/i;   // opens in the reader below, the rest in a tab (pdf) or as a download
 const offChip = (f, why) => fileChip(f.name, why, { cls: "off" });
@@ -82,9 +83,11 @@ function fileItem(f) {
   const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true, f.pc), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download"))), pathCopy(f.path));
   if (!f.check) return item;
   const off = why => { if (item.isConnected || item.parentNode) item.replaceWith(offChip(f, why)); };
-  if (img) main.querySelector("img").onerror = () => off("열 수 없는 파일이에요");
-  fetch(fileUrl(f.path, false, f.pc), { method: "HEAD" }).then(r => {
-    if (!r.ok) return off(fileNote(r, r.status === 404 ? "파일이 지워졌어요" : "열 수 없는 파일이에요"));
+  // A broken thumbnail waits for the HEAD answer, so the chip says why (원본이 지워졌어요) rather than a generic refusal.
+  const head = fetch(fileUrl(f.path, false, f.pc), { method: "HEAD" });
+  if (img) main.querySelector("img").onerror = () => head.then(r => off(r.ok ? "열 수 없는 파일이에요" : refusedNote(r)), () => off("확인하지 못했어요"));
+  head.then(r => {
+    if (!r.ok) return off(refusedNote(r));
     const n = Number(r.headers.get("content-length") || 0), m = !img && main.querySelector(".fi-m");
     if (m && n) m.textContent = fileMeta(f.name, n);
   }, () => off("확인하지 못했어요"));
@@ -152,7 +155,7 @@ async function viewer(path, name, pc) {
   document.body.append(d); d.showModal(); dialogHist(d);
   try {
     const r = await fetch(fileUrl(path, false, pc));
-    if (!r.ok) throw fileNote(r, r.status === 404 ? "파일이 지워졌어요" : "열 수 없는 파일이에요");
+    if (!r.ok) throw refusedNote(r);
     let t = await r.text();
     const cut = t.length > 200000;
     if (cut) t = t.slice(0, 200000);
@@ -176,7 +179,7 @@ function lightbox(path, name, pc) {
 // pc: the conversation belongs to the other computer, so the path is a file there (read through the peer proxy).
 async function openPath(p, pc) {
   const r = await fetch(fileUrl(p, false, pc), { method: "HEAD" }).catch(() => null);
-  if (!r || !r.ok) { toast(r ? fileNote(r, r.status === 404 ? "파일이 지워졌어요" : "열 수 없는 파일이에요") : "확인하지 못했어요", true); return; }
+  if (!r || !r.ok) { toast(r ? refusedNote(r) : "확인하지 못했어요", true); return; }
   if (IMG_RE.test(p)) lightbox(p, p.split("/").pop(), pc); else window.open(fileUrl(p, false, pc), "_blank", "noopener");
 }
 function pathFiles(md, pc) {
