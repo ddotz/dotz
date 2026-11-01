@@ -250,7 +250,8 @@ function renderHomeNow() {
   const waiting = needs.length;
   // 지금 진행 중 is only what runs now (a turn, a background worker); a waiting or idle conversation is a row of 대기 중 below it,
   // and background work that ended within the hour is listed last (실패 · 이유 · 다시 맡기기).
-  const live = t => { const s = targetInfo(t).status; return s === "working" || s === "starting"; };
+  // A session the run line calls busy (41-runstate.js runBusy: waiting on its own worker) runs too, so its 진행 중 label sits in this section.
+  const live = t => { const s = targetInfo(t).status; return s === "working" || s === "starting" || (runBusy(t) && !(isLaneT(t) && (S.lanes.find(l => l.name === laneOf(t)) || {}).pendingAsk)); };
   const runT = all.filter(live), restT = all.filter(t => !live(t));
   const bg = workRunning(), ended = workEnded(), working = runT.length + bg.length;
   const restRow = t => homeNowRow(t, !targetInfo(t).alive ? "종료됨" : runBusy(t) ? "진행 중" : statusKo(targetInfo(t).status), "");
@@ -418,17 +419,18 @@ async function workGo(w) {
   if (!asked) return openSub("orchestrator", w.id, null, w.description);
   ntJump({ src: t, at: asked.ts });
 }
-// A running one offers 중단, one the owner stopped 다시 맡기기 (06-subagents.js workCancel / workRetry); a failed one is the agent's to take
-// up (blue 이어서 처리 중, no button); the rest of the row goes to the conversation.
+// A running one shows only its state (owner 2026-11-01: no 중단 on the list; the conversation's send button stops it, 14-slash-commands.js),
+// one the owner stopped offers 다시 맡기기 (06-subagents.js workRetry); a failed one is the agent's to take up (blue 이어서 처리 중, no button);
+// the rest of the row goes to the conversation.
 function workRow(w) {
   const run = w.status === "running", done = w.status === "done", rec = workRecovering(w);
   const state = run ? "작업 중" : done ? "완료" : w.cancelled ? "중단됨" : rec ? "이어서 처리 중" : "실패";
   const line = run ? [workElapsed(w), w.model].filter(Boolean).join(" · ") : done ? `끝남 · ${workAgo(w)}` : `${workFailText(w)} · ${workAgo(w)}`;
-  const act = run ? ["중단", b => workCancel(w.id, b)] : w.cancelled ? ["다시 맡기기", b => workRetry(w.id, b)] : null;
+  const act = w.cancelled ? ["다시 맡기기", b => workRetry(w.id, b)] : null;
   return el("div", { class: "hr hrx", "data-work": w.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => workGo(w), "aria-label": `${w.description} · ${state} · 대화로 가기` },
       el("span", { class: `dot ${run || rec ? "pri" : done ? "ok" : w.cancelled ? "" : "err"}` }),
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: line })),
       el("span", { class: `hs ${run || rec ? "pri" : done || w.cancelled ? "" : "err"}`, text: state })),
-    act ? el("button", { class: "btn text", type: "button", style: "flex:none;margin-right:8px", "data-act": run ? "cancel" : "retry", onclick: ev => act[1](ev.currentTarget), text: act[0] }) : null);
+    act ? el("button", { class: "btn text", type: "button", style: "flex:none;margin-right:8px", "data-act": "retry", onclick: ev => act[1](ev.currentTarget), text: act[0] }) : null);
 }
