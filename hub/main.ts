@@ -457,13 +457,13 @@ startWatches((w, reason, output, prev) => {
 		emit("inbox", event);
 		if (!w.channels?.length) return deliver(inboxText(event));
 		const [first, ...others] = w.channels;
-		for (const c of others) void out(`ch:${c}`, watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev }).slice(0, 1900), undefined, { source: "gateway" }).catch(() => undefined);
+		for (const c of others) void out(`ch:${c}`, watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev }).slice(0, 1900), undefined, { source: "gateway", news: true }).catch(() => undefined);
 		return deliver(inboxText(event), { target: `ch:${first}` });
 	}
 	// A failing, stopped or unapproved check is an issue: it goes to alert with a choice block, whatever `to` the watch has.
 	const issue = isWatchIssue(reason);
 	const label = watchLabel(w.name);
-	void out(issue ? "alert" : w.to, watchLine(label, reason, output, { prev }).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label)}` : ""), undefined, { source: "gateway" }).catch(e => log(`watch ${w.name} send failed: ${e}`));
+	void out(issue ? "alert" : w.to, watchLine(label, reason, output, { prev }).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label)}` : ""), undefined, { source: "gateway", news: true }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 syncFeatureWatches();
 startKakaoLive();

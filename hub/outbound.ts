@@ -30,7 +30,7 @@ import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime,
 import { onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
 import { cardPointer, cardTitle, CARDS_LEAD, createApprovalQueue, loadHeld, pendingCardsNote } from "./approval-queue.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
-import { discordPosts } from "./discord-post.ts";
+import { discordPosts, postClass } from "./discord-post.ts";
 import { repeatAlert } from "./alert-gate.ts";
 
 // Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
@@ -183,7 +183,7 @@ function settleAnswer(j: OutJob): void {
 function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	settleAnswer(j);
 	// Web only: a web conversation, a kind the owner switched off for Discord (hub/discord-post.ts), or a gateway alert that repeats one Discord already has.
-	if (isLocal(j.target) || j.extra.repeat === true || !discordPosts(j.target, j.replyTo)) {
+	if (isLocal(j.target) || j.extra.repeat === true || !discordPosts(j.target, j.replyTo, postClass(j.target, j.text, { ...j.extra, ...(threadMail(j.target) ? { mail: true } : {}) }))) {
 		convs.markAnsweredAll(jobAnswers(j));
 		return Promise.resolve({ delivered: true });
 	}
@@ -308,7 +308,7 @@ export function clearLeftWebProgress(): void {
 export function alert(text: string): void {
 	const repeat = repeatAlert(text);
 	emit("outbox", { ts: now(), kind: "out", source: "gateway", target: "alert", text, ...(repeat ? { repeat: true } : {}) });
-	if (discordPosts("alert") && !repeat) void send("alert", text).catch(e => log(`alert send failed: ${e}`));
+	if (discordPosts("alert", undefined, postClass("alert", text)) && !repeat) void send("alert", text).catch(e => log(`alert send failed: ${e}`));
 }
 
 // Said once per conversation per pause (a pause is known by when it began being announced): the owner's 2nd and 3rd message
@@ -348,7 +348,7 @@ export async function progress(target: string, key: string, text: string, replyT
 		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key }, threadHome, threadMail));
 		return t;
 	});
-	if (isLocal(target) || !discordPosts(target, replyTo)) return { delivered: true };
+	if (isLocal(target) || !discordPosts(target, replyTo, postClass(target, sent, { update_key: key }))) return { delivered: true };
 	// One evolving status per asking channel: every progress key there edits the same message the gateway's live report
 	// uses (worklog and alert keep their per-key entries, e.g. one per lane).
 	return discord.progress(target, target === "worklog" || target === "alert" ? key : "progress", sent, replyTo);
