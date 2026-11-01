@@ -5,7 +5,9 @@
 // (a lane or task worker started or finished) and otherwise at most every EVERY_MS, and only when it would say something
 // new (owner 2026-10-20: "답변은 준비되고 해야해. 먼저하면 안됨": while working, only 👀, typing and one edited progress
 // message; it replaces the 2026-10-19 "every 5 minutes a new message"). It costs no model tokens and is never localized.
-// The answer deletes it (clearProgress hook); it also stops at the turn's end and after MAX_MS.
+// The answer deletes it (clearProgress hook), the Discord channel's and the web chat's alike; it also stops at the turn's end
+// and after MAX_MS. `source` is the session that runs the turn (a conversation session's own source, not main's), so its
+// turn_end is the one that ends the wait. A web line that was posted is finalized with an empty progress note (the page drops it).
 import { subagentLists } from "./activity.ts";
 import { log } from "./config.ts";
 import * as discord from "./discord.ts";
@@ -88,14 +90,17 @@ function end(_target: string, live: Live): void {
 	clearInterval(live.typing);
 }
 
+// The wait is over on its own (not by the answer, which clears through stop): a turn that ended with no answer here ("-", or
+// its answer went elsewhere) leaves no stale progress message behind, on Discord or on the web.
+function finish(target: string, live: Live): void {
+	end(target, live);
+	if (live.posted && live.web) webPost(target, "");
+	else if (live.posted) void discord.clearProgress(target).catch(e => log(`progress clear in ${target} failed: ${e}`));
+}
+
 async function tick(target: string, live: Live): Promise<void> {
 	if (active.get(live.key) !== live) return;
-	if (over(target, live)) {
-		end(target, live);
-		// A turn that ended with no answer here ("-", or its answer went elsewhere) leaves no stale progress message behind.
-		if (live.posted && !live.web) void discord.clearProgress(target).catch(e => log(`progress clear in ${target} failed: ${e}`));
-		return;
-	}
+	if (over(target, live)) return finish(target, live);
 	const { state, running, moved, text } = liveReport(live);
 	const first = !live.posted;
 	const milestone = !first && running !== live.lastRunning;
@@ -128,16 +133,28 @@ export function begin(target: string, source: string, web = false): void {
 	}
 	const live: Live = { web, key, source, since, turnFrom: since, lastAt: since, inflight: Promise.resolve() };
 	live.timer = setTimeout(() => void tick(target, live), FIRST_AFTER_MS);
-	live.typing = setInterval(() => (active.get(key) !== live || over(target, live) ? end(target, live) : live.web || discord.typing(target)), TYPING_MS);
+	live.typing = setInterval(() => (active.get(key) !== live ? end(target, live) : over(target, live) ? finish(target, live) : live.web || discord.typing(target)), TYPING_MS);
 	active.set(key, live);
 }
 
-// Stops the reporter of a target and waits for a report still in flight, so the answer lands after it.
+// The answer to a target ends its wait: stops the Discord channel's reporter and the web chat's (both wait on the same turn)
+// and waits for a report still in flight, so the answer lands after it; a web line already shown is finalized. A second stop
+// (the answer's clearProgress after outbound's settle) waits for the first one's report in flight too, so the clearing sees it.
+const draining = new Map<string, Promise<void>>();
 export function stop(target: string): Promise<void> {
-	const live = active.get(target);
-	if (!live) return Promise.resolve();
-	end(target, live);
-	return live.inflight;
+	const lives = [active.get(target), active.get(`web|${target}`)].filter((l): l is Live => !!l);
+	if (!lives.length) return draining.get(target) ?? Promise.resolve();
+	const done = Promise.all([
+		draining.get(target),
+		...lives.map(async live => {
+			end(target, live);
+			await live.inflight;
+			if (live.web && live.posted) webPost(target, "");
+		}),
+	]).then(() => undefined);
+	draining.set(target, done);
+	void done.then(() => draining.get(target) === done && draining.delete(target));
+	return done;
 }
 
 discord.setBeforeClearHook(stop);

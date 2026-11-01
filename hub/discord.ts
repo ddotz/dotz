@@ -593,7 +593,10 @@ async function deleteMessage(target: string, messageId: string): Promise<void> {
 
 // One evolving status per (target, key) is a single message edited in place (Dori: grow one message only when it is one
 // evolving answer). A progress note is not the answer: clearProgress removes it once the turn's answer is posted.
+// Kept on disk (PROGRESS_FILE) so a gateway start can delete the ones left by turns that ran before it (clearLeftProgress).
 const progressIds = new Map<string, Map<string, string>>();
+const PROGRESS_FILE = join(DATA_DIR, "discord-progress.json");
+const saveProgress = () => writeAtomic(PROGRESS_FILE, `${JSON.stringify(Object.fromEntries([...progressIds].map(([t, m]) => [t, Object.fromEntries(m)])))}\n`);
 export async function progress(target: string, key: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
 	const prev = progressIds.get(target)?.get(key);
 	if (prev) return { ...(await edit(target, prev, text)), edited: true };
@@ -603,6 +606,7 @@ export async function progress(target: string, key: string, text: string, replyT
 	const mid = await post(id, { ...buildSingle(text), allowed_mentions: mentionsOff, ...reference(replyTo) });
 	if (!progressIds.has(target)) progressIds.set(target, new Map());
 	progressIds.get(target)!.set(key, mid);
+	saveProgress();
 	return { delivered: true, ids: [mid] };
 }
 
@@ -618,7 +622,27 @@ export async function clearProgress(target: string): Promise<void> {
 	const tracked = progressIds.get(target);
 	if (!tracked) return;
 	progressIds.delete(target);
+	saveProgress();
 	for (const mid of tracked.values()) await deleteMessage(target, mid).catch(e => log(`progress message ${mid} in ${target} not deleted: ${e}`));
+}
+
+// At gateway start no turn reports progress yet, so every progress message recorded by the gateway before it belongs to a turn
+// that is no longer reported (and would stay on the owner's screen: "5분째 작업 중" with nothing running): it is deleted.
+export async function clearLeftProgress(): Promise<void> {
+	if (!status.enabled || !existsSync(PROGRESS_FILE)) return;
+	let left: Record<string, Record<string, string>> = {};
+	try {
+		left = JSON.parse(readFileSync(PROGRESS_FILE, "utf8"));
+	} catch (e) {
+		log(`${PROGRESS_FILE} unreadable, left progress messages not cleared: ${e}`);
+	}
+	for (const [target, keys] of Object.entries(left))
+		for (const [key, mid] of Object.entries(keys)) {
+			// One this run posted already (same target and key) is live; only the earlier one is left over.
+			if (progressIds.get(target)?.get(key) === mid) continue;
+			await deleteMessage(target, mid).catch(e => log(`left progress message ${mid} in ${target} not deleted: ${e}`));
+		}
+	saveProgress();
 }
 
 // Thread status as in Dori, shown as the traffic-light reaction above; done archives it an hour later, other states
