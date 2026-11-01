@@ -6,25 +6,42 @@ import { answerMovesToLane, lanePlace, replyRef, threadForReply, THREAD_NAME_MAX
 
 const work = (id: string) => id === "500";
 const parents: Record<string, string> = { "700": "500" };
-const place = (a: { home?: string; asking?: string; askingMessage?: string }) => lanePlace({ ...a, isWork: work, threadParent: id => parents[id] });
+const place = (a: { home?: string; asking?: string; askingMessage?: string; discordForWeb?: boolean }) => lanePlace({ ...a, isWork: work, threadParent: id => parents[id] });
+// Discord message ids (the owner wrote on Discord); a web message id is not one.
+const m1 = "1559940386452152351";
+const m2 = "1559940386452152352";
+const m3 = "1559940386452152353";
 
 test("the launching turn's answer moves into the lane thread only for an ask from that Discord channel or thread", () => {
-	expect(answerMovesToLane(place({ asking: "ch:500", askingMessage: "m1" }), "ch:500")).toBe(true);
+	expect(answerMovesToLane(place({ asking: "ch:500", askingMessage: m1 }), "ch:500")).toBe(true);
 	expect(answerMovesToLane(place({ asking: "th:700" }), "th:700")).toBe(true);
 	for (const asking of ["web", "terminal", "chat", "dm"]) expect(answerMovesToLane(place({ home: "ch:500", asking }), asking)).toBe(false);
 	expect(answerMovesToLane(place({ asking: "chat" }), "chat")).toBe(false);
 });
 
 test("lane place: from a work channel a thread on the owner's message, from a thread that thread, from chat a channel", () => {
-	expect(place({ asking: "ch:500", askingMessage: "m1" })).toEqual({ kind: "thread", parent: "500", fromMessage: "m1" });
-	expect(place({ asking: "th:700", askingMessage: "m2" })).toEqual({ kind: "adopt", thread: "700", parent: "500" });
-	expect(place({ asking: "chat", askingMessage: "m3" })).toEqual({ kind: "channel" });
+	expect(place({ asking: "ch:500", askingMessage: m1 })).toEqual({ kind: "thread", parent: "500", fromMessage: m1 });
+	expect(place({ asking: "th:700", askingMessage: m2 })).toEqual({ kind: "adopt", thread: "700", parent: "500" });
+	expect(place({ asking: "chat", askingMessage: m3 })).toEqual({ kind: "channel" });
 	expect(place({ asking: "th:999" })).toEqual({ kind: "channel" }); // unknown thread: nothing to adopt
 });
 
 test("lane place: an explicit home wins; it hangs from the owner's message only when asked in that channel", () => {
-	expect(place({ home: "ch:500", asking: "chat", askingMessage: "m1" })).toEqual({ kind: "thread", parent: "500" });
-	expect(place({ home: "ch:500", asking: "ch:500", askingMessage: "m1" })).toEqual({ kind: "thread", parent: "500", fromMessage: "m1" });
+	expect(place({ home: "ch:500", asking: "chat", askingMessage: m1 })).toEqual({ kind: "thread", parent: "500" });
+	expect(place({ home: "ch:500", asking: "ch:500", askingMessage: m1 })).toEqual({ kind: "thread", parent: "500", fromMessage: m1 });
+	expect(place({ home: "ch:500", asking: "web", askingMessage: "a1b2c3d4" })).toEqual({ kind: "thread", parent: "500" });
+});
+
+test("lane place: a session asked for on the web or terminal lives in the web, no Discord channel, its answer stays", () => {
+	for (const asking of ["web", "terminal", undefined]) {
+		const p = place({ asking, askingMessage: "a1b2c3d4" });
+		expect(p).toEqual({ kind: "web" });
+		expect(answerMovesToLane(p, asking)).toBe(false);
+	}
+	// The web view of a work channel: the owner wrote on the web, not on Discord.
+	expect(place({ asking: "ch:500", askingMessage: "a1b2c3d4" })).toEqual({ kind: "web" });
+	// The owner's switch (discord-post.json web_lanes) gives it today's Discord place.
+	expect(place({ asking: "web", askingMessage: "a1b2c3d4", discordForWeb: true })).toEqual({ kind: "channel" });
 });
 
 test("reply reference: always at top level, in a thread only when the owner wrote something newer", () => {

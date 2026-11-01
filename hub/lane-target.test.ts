@@ -5,7 +5,7 @@ import * as discord from "./discord.ts";
 
 const posts: { channel: string; content: string }[] = [];
 let server: ReturnType<typeof Bun.serve>;
-const records = new Map<string, { channel?: string; home?: string; title?: string }>();
+const records = new Map<string, { channel?: string; home?: string; title?: string; web?: boolean }>();
 
 beforeAll(() => {
 	server = Bun.serve({
@@ -56,6 +56,17 @@ test("a lane with nothing recorded falls back to the worklog with its title", as
 	expect(posts).toEqual([{ channel: "worklog", content: "**유령 작업**: 내용" }]);
 	await discord.send("lane:unknown", "또 내용");
 	expect(posts[1]).toEqual({ channel: "worklog", content: "**unknown**: 또 내용" });
+});
+
+test("a lane started from the web has no Discord place: no worklog fallback, no channel or thread", async () => {
+	records.set("webby", { title: "웹 작업", web: true });
+	expect((await discord.send("lane:webby", "[run] 진행 중")).delivered).toBe(false);
+	const category = discord.channels.category;
+	discord.channels.category = "cat";
+	expect(await discord.laneChannel("webby", "웹 작업", { kind: "web" })).toBeUndefined();
+	discord.channels.category = category;
+	expect(posts).toEqual([]);
+	expect(discord.channels.lanes.webby).toBeUndefined();
 });
 
 test("a lane stop keeps the thread in the record, and recordLaneChannels fills old lanes", async () => {

@@ -17,7 +17,7 @@ type Claim = { state: "reported" | "verified"; at: string; evidence?: string; pr
 // The full text also sits in pending-ask.md (dir(name)) while pending, because report.md is overwritten by gateway notices.
 type Ask = { text: string; at: string };
 // `runtime`: the runtime that wrote sessionFile (omo, omp, claude); a session is only ever resumed by that runtime.
-export type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; parked?: boolean; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask; waiting?: string; home?: string; homeName?: string; channel?: string };
+export type Record_ = { name: string; title?: string; cwd: string; model: string; workerModel?: string; fableOk?: boolean; status: LaneStatus; startedAt: string; sessionFile?: string; runtime?: string; reports: number; lastReportAt?: string; parked?: boolean; held?: string[]; worktree?: Worktree; claim?: Claim; pendingAsk?: Ask; waiting?: string; home?: string; homeName?: string; channel?: string; web?: boolean };
 export type Lane = Record_ & {
 	ctx: Ctx;
 	// The orchestrator sent work (launch, dotz_lane send) that no relayed report answered yet; an owner-only exchange in
@@ -131,11 +131,12 @@ export function keepHome(lane: Lane | undefined, parent: { home: string; homeNam
 
 export const dir = (name: string) => join(paths.lanes, name);
 // Where the lane lives in Discord (its own channel, or the thread under `home`), read for lane:<name> when the channel map has no entry.
-export function laneSpot(name: string): { channel?: string; home?: string; title?: string } | undefined {
+// `web`: started from the web with no Discord place (threads.ts lanePlace); nothing of it goes to Discord.
+export function laneSpot(name: string): { channel?: string; home?: string; title?: string; web?: boolean } | undefined {
 	const l = lanes.get(name);
-	if (l) return { channel: l.channel, home: l.home, title: l.title };
+	if (l) return { channel: l.channel, home: l.home, title: l.title, web: l.web };
 	try {
-		return JSON.parse(readFileSync(join(dir(name), "lane.json"), "utf8")) as { channel?: string; home?: string; title?: string };
+		return JSON.parse(readFileSync(join(dir(name), "lane.json"), "utf8")) as { channel?: string; home?: string; title?: string; web?: boolean };
 	} catch {
 		return undefined;
 	}
