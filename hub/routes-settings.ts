@@ -15,6 +15,7 @@ import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRunt
 import { json, body, terminals } from "./routes-util.ts";
 import { budgetSettings, deleteAdminKey, monthlyLimitOf, saveAdminKey, saveMonthlyLimit } from "./api-budget.ts";
 import { postSettings, savePostSettings } from "./discord-post.ts";
+import { discordConnectionRoute } from "./discord-connection.ts";
 
 export async function routeSettings(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
 	const fail = (error: unknown) =>
@@ -165,6 +166,11 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		} catch (error) {
 			return json({ error: String((error as Error).message ?? error) }, 400);
 		}
+	}
+	// The bot connection (token, server, owner): hub/discord-connection.ts. The UI restarts the gateway with POST /api/update/restart.
+	if (url.pathname.startsWith("/api/discord/connection")) {
+		const r = await discordConnectionRoute(req, url);
+		if (r) return r;
 	}
 	if (req.method === "POST" && url.pathname === "/api/command") {
 		const text = String((await body(req)).text ?? "").trim();
