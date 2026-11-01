@@ -8,16 +8,21 @@
 //   long work (a lane) from a work channel   -> a thread on the owner's own message in that channel
 //   long work (a lane) from a thread         -> that thread becomes the lane's thread
 //   long work (a lane) from chat             -> a new work channel (chat gets one pointer line)
+//   long work (a lane) from the web/terminal -> no Discord place: it lives in the web (discord-post.json web_lanes turns this off)
 
 import { splitTone } from "./tone.ts";
 
-type LanePlace = { kind: "channel" } | { kind: "thread"; parent: string; fromMessage?: string } | { kind: "adopt"; thread: string; parent: string };
+type LanePlace = { kind: "web" } | { kind: "channel" } | { kind: "thread"; parent: string; fromMessage?: string } | { kind: "adopt"; thread: string; parent: string };
 
 /**
  * Where a new lane works. `home` is the orchestrator's explicit ch:<id>; `asking` / `askingMessage` are the channel and
  * message of the owner request the launching turn answers; `threadParent` maps a known sub-topic thread to its parent.
+ * A request that did not come from Discord (the web, the terminal, no asking turn, or a web message in a work channel's
+ * web view) gets no Discord place unless `discordForWeb` (the owner's switch) or an explicit home says so.
  */
-export function lanePlace(a: { home?: string; asking?: string; askingMessage?: string; isWork: (id: string) => boolean; threadParent: (id: string) => string | undefined }): LanePlace {
+export function lanePlace(a: { home?: string; asking?: string; askingMessage?: string; isWork: (id: string) => boolean; threadParent: (id: string) => string | undefined; discordForWeb?: boolean }): LanePlace {
+	const fromDiscord = Boolean(a.asking && !LOCAL.test(a.asking) && (!a.askingMessage || isSnowflake(a.askingMessage)));
+	if (!a.home && !fromDiscord && !a.discordForWeb) return { kind: "web" };
 	if (a.home?.startsWith("ch:")) {
 		const parent = a.home.slice(3);
 		return { kind: "thread", parent, ...(a.asking === a.home && a.askingMessage ? { fromMessage: a.askingMessage } : {}) };
@@ -37,8 +42,11 @@ export function lanePlace(a: { home?: string; asking?: string; askingMessage?: s
  * the lane still gets its thread, but the answer stays (2026-10-21: two web answers went only to Discord lane threads).
  */
 export function answerMovesToLane(place: LanePlace, asking: string | undefined): boolean {
-	return place.kind !== "channel" && Boolean(asking && (asking.startsWith("ch:") || asking.startsWith("th:")));
+	return place.kind !== "channel" && place.kind !== "web" && Boolean(asking && (asking.startsWith("ch:") || asking.startsWith("th:")));
 }
+
+// Conversations that exist only in the web app (outbound.ts isLocal).
+const LOCAL = /^(web|terminal|web:.*|mail:.*|settings:.*)$/;
 
 /** A Discord message id. A web message id (8 hex chars) is not one: Discord rejects it as a message_reference. */
 export const isSnowflake = (id: string): boolean => /^\d{15,22}$/.test(id);

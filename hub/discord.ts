@@ -310,7 +310,7 @@ export async function syncProfile(): Promise<void> {
 
 // Where a lane lives is recorded in its lane.json (hub/lanestate.ts: channel, home); main.ts installs the reader and writer.
 // lane:<name> falls back to that record when channels.json has no entry (a thread home dropped on stop, a resumed lane).
-type LaneRecords = { read: (lane: string) => { channel?: string; home?: string; title?: string } | undefined; remember: (lane: string, channel: string | undefined, home?: string) => void };
+type LaneRecords = { read: (lane: string) => { channel?: string; home?: string; title?: string; web?: boolean } | undefined; remember: (lane: string, channel: string | undefined, home?: string) => void };
 let laneRecords: LaneRecords = { read: () => undefined, remember: () => {} };
 export function setLaneRecords(r: LaneRecords): void {
 	laneRecords = r;
@@ -332,9 +332,9 @@ export function recordLaneChannels(): void {
 // `title` is the owner-facing channel name (their language, plain words); the lane name stays the internal key. `place`
 // (threads.ts lanePlace) says where it works: a new channel, a thread in a work channel (hanging from the owner's own
 // message when it came from there), or an existing sub-topic thread the lane takes over.
-type LaneSpot = { kind: "channel" } | { kind: "thread"; parent: string; fromMessage?: string } | { kind: "adopt"; thread: string; parent: string };
+type LaneSpot = { kind: "web" } | { kind: "channel" } | { kind: "thread"; parent: string; fromMessage?: string } | { kind: "adopt"; thread: string; parent: string };
 export async function laneChannel(lane: string, title: string | undefined, place: LaneSpot, starter?: string, goal?: string): Promise<string | undefined> {
-	if (!status.enabled || !channels.category) return undefined;
+	if (!status.enabled || !channels.category || place.kind === "web") return undefined;
 	if (!channels.lanes[lane]) {
 		if (place.kind === "adopt") {
 			channels.lanes[lane] = place.thread;
@@ -536,8 +536,9 @@ export async function send(
 ): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
 	let id = resolve(target);
-	// Nothing recorded for the lane: its message goes to the worklog with the lane title in front, never dropped.
-	if (!id && target.startsWith("lane:") && channels.worklog) {
+	// Nothing recorded for the lane: its message goes to the worklog with the lane title in front, never dropped. A web lane
+	// (started from the web, threads.ts lanePlace) has no Discord place on purpose, so nothing of it goes to Discord.
+	if (!id && target.startsWith("lane:") && channels.worklog && !laneRecords.read(target.slice(5))?.web) {
 		const lane = target.slice(5);
 		if (!unplaced.has(lane)) {
 			unplaced.add(lane);

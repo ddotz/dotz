@@ -18,6 +18,7 @@ import { startLaneIdleStop } from "./laneidle.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { setTrashChannels } from "./lanetrash.ts";
 import { laneSpot, rememberSpot } from "./lanestate.ts";
+import { migratePostSettings, setWebLane } from "./discord-post.ts";
 import { resolveAllowed } from "./files.ts";
 import { approvesBudget, laneBusy, lanes, restoreLanes, sendToLane, setIdleHandler as setLaneIdleHandler, shutdownLanes, startLaneQueue } from "./lanes.ts";
 import { setUsageSource, tick as accountTick } from "./account-rules.ts";
@@ -160,6 +161,8 @@ startPush({ subject: () => webBase ?? "mailto:dotz@example.com" });
 startPeerStreams();
 
 discord.setLaneRecords({ read: laneSpot, remember: rememberSpot });
+migratePostSettings(discord.status.enabled);
+setWebLane(name => laneSpot(name)?.web === true);
 setTrashChannels({ take: discord.takeLaneChannel, put: discord.putLaneChannel, remove: discord.deleteChannel });
 discord.setLaneReleaseHandler((id, deleted) => void dropChannelNotices(`ch:${id}`, !deleted));
 discord.setChannelGoneHandler(id => {

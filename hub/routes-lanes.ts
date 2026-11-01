@@ -17,6 +17,7 @@ import { readWatchSettings, writeWatchSettings } from "./watch-settings.ts";
 import { readScheduleSettings, writeScheduleSettings } from "./schedule-settings.ts";
 import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchScript, removeWatch, runWatch, watchScript } from "./watch.ts";
 import { queue, out } from "./outbound.ts";
+import { postSettings } from "./discord-post.ts";
 import { json, body } from "./routes-util.ts";
 
 // Lanes are the expensive work, and the omp budget gate only sees task-tool workers, so lane launches check the quota here.
@@ -171,8 +172,13 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				const home = b.home ? String(b.home) : undefined;
 				if (home && discord.status.enabled) discord.homeChannel(home);
 				const asking = queue.current();
-				const place = lanePlace({ home, asking: asking?.target, askingMessage: asking?.replyTo, isWork: id => Boolean(discord.channels.work[id]), threadParent: id => discord.channels.threads[id]?.parent });
+				const place = lanePlace({ home, asking: asking?.target, askingMessage: asking?.replyTo, isWork: id => Boolean(discord.channels.work[id]), threadParent: id => discord.channels.threads[id]?.parent, discordForWeb: postSettings().web_lanes });
 				const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked, String(b.title).trim());
+				// Started from the web: it lives in the web (its session conversation, notices and push), with no Discord channel.
+				if (place.kind === "web") {
+					lane.web = true;
+					persist(lane);
+				}
 				// The goal line of the brief ("목표...: ...") is the thread's starter message in the home channel.
 				const goal = /^(?:목표|Goal)[^:：]*[:：]\s*(.+)$/im.exec(String(b.brief ?? ""))?.[1]?.slice(0, 300);
 				const starter = goal ? `[run] ${b.title ? String(b.title) : lane.name}: ${goal}` : undefined;
