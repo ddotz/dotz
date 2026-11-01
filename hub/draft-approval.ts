@@ -49,7 +49,71 @@ const NOTE_ASKED = "받은 메일이 파일을 요청했어요";
 export type DraftFileIn = { name: string; size?: number };
 export type DraftFile = { name: string; size?: string };
 export type DraftOrigin = { text: string; link?: string };
-export type DraftApproval = { toLabel: string; to: string; cc?: string[]; mode?: "reply" | "all"; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin; rule?: string; mail?: DraftApproval };
+export type DraftApproval = { toLabel: string; to: string; cc?: string[]; mode?: "reply" | "all"; subject?: string; body: string; ref?: string; attachments?: DraftFile[]; noAttachments?: true; warning?: string; note?: string; origin?: DraftOrigin; rule?: string; mail?: DraftApproval; /** recipientCheck's finding against the quoted source above the draft. */ recipientWarning?: string };
+
+// The recipient of a reply is the address the source wrote, copied as is (2026-10-31: a comment's "thanever2@hannail.net" and the owner
+// having to say "hanmail.net 으로 주소 고쳐서 다시 보내"). recipientCheck compares a draft's recipient with the addresses in the source text
+// (the comment or mail it answers): an address the source does not have is a mismatch; one copied as is whose domain is one letter away
+// (edit distance 1-2) from a common mail domain is named as a likely typo with the corrected address, so the owner decides before 보내기.
+// The address is never changed here. Undefined when nothing is off.
+const ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+export const addressesIn = (text: string): string[] => [...new Set((text.match(ADDRESS) ?? []).map(a => a.toLowerCase()))];
+const MAIL_DOMAINS = ["hanmail.net", "naver.com", "gmail.com", "daum.net", "kakao.com", "nate.com"];
+// Levenshtein distance with adjacent swaps counted as one edit, stopping early past 2.
+function distance(a: string, b: string): number {
+	if (Math.abs(a.length - b.length) > 2) return 3;
+	const d = Array.from({ length: a.length + 1 }, (_, i) => Array.from({ length: b.length + 1 }, (_, j) => (i ? (j ? 0 : i) : j)));
+	for (let i = 1; i <= a.length; i++)
+		for (let j = 1; j <= b.length; j++) {
+			d[i]![j] = Math.min(d[i - 1]![j]! + 1, d[i]![j - 1]! + 1, d[i - 1]![j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+			if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i]![j] = Math.min(d[i]![j]!, d[i - 2]![j - 2]! + 1);
+		}
+	return d[a.length]![b.length]!;
+}
+/** The common mail domain `domain` is likely a typo of (1-2 edits away, not itself), if any. */
+export function domainTypo(domain: string): string | undefined {
+	const d = domain.toLowerCase();
+	if (MAIL_DOMAINS.includes(d)) return undefined;
+	let best: string | undefined, min = 3;
+	for (const k of MAIL_DOMAINS) {
+		const n = distance(d, k);
+		if (n < min) (best = k), (min = n);
+	}
+	return best;
+}
+export function recipientCheck(to: string, source: string): string | undefined {
+	const have = addressesIn(source), want = addressesIn(to);
+	if (!want.length) return undefined;
+	const missing = have.length ? want.filter(a => !have.includes(a)) : [];
+	const typo = want.flatMap(a => {
+		const [user, d] = a.split("@") as [string, string], near = domainTypo(d);
+		return near ? [`${a} → ${user}@${near}?`] : [];
+	});
+	const out = [
+		...(missing.length ? [`${missing.join(", ")}는 원문에 적힌 주소(${have.join(", ")})에 없어요`] : []),
+		...(typo.length ? [`도메인 오타 같아요: ${typo.join(", ")}`] : []),
+	];
+	return out.length ? out.join(" · ") : undefined;
+}
+// Every mail recipient a card names (each "받는이:" / "참조:" line, quoted or not: a bot-written comment + mail card may carry the mail's
+// 받는이 inside the quoted reply) checked against its source: the "원문:" lines it quotes and the quote above the draft (`above`).
+const SOURCE_LINE = /^\s*>?\s*(?:[①-⑳]\s*)?(?:댓글\s*|메일\s*)?원문[^:：\n]{0,20}[:：]\s*(.*)$/;
+const TO_LINE = /^\s*>?\s*(?:받는이|받는 사람|참조)\s*[:：]\s*(.+)$/;
+export function cardRecipientCheck(text: string, above = ""): string | undefined {
+	const lines = text.split("\n");
+	const to = lines.flatMap(l => TO_LINE.exec(l)?.[1] ?? []).join(", ");
+	const source = [above, ...lines.flatMap(l => SOURCE_LINE.exec(l)?.[1] ?? [])].join("\n");
+	return recipientCheck(to, source);
+}
+/** The line a card shows its recipient finding on, right under its first line (Discord and the notice show the card's text). */
+export const RECIPIENT_MARK = "-# ⚠️ 받는이 확인: ";
+/** A send-approval card with its recipient finding as one line under the first line (none when nothing is off). */
+export function withRecipientMark(text: string): string {
+	const lines = text.split("\n").filter(l => !l.trim().startsWith(RECIPIENT_MARK.trim()));
+	const w = parseDraftApproval(lines.join("\n"))?.recipientWarning;
+	if (w) lines.splice(1, 0, `${RECIPIENT_MARK}${w}`);
+	return lines.join("\n");
+}
 // One part of a card: the reply (or the mail) with its recipient line, files and body.
 export type DraftPart = { /** The mail draft id its files are staged under: the "함께 보낼 메일 (<id>)" line, so the card can open them. */ id?: string; origin?: DraftOrigin; rule?: string; to: string; toLabel?: DraftToLabel; cc?: string[]; subject?: string; body: string; attachments?: DraftFileIn[]; attachmentsNone?: boolean; asksFile?: boolean; libraryMiss?: boolean; /** The source cannot send files: the names of the files staged for it (they do not go out), [] when none. */ cannotAttach?: string[] };
 // `mail`: the mail that goes out right after this comment reply, shown below it in the same card (hub/comments).
@@ -111,7 +175,7 @@ export function draftApprovalBlock(d: DraftInput): string {
 
 // A card made before a change to how drafts are read (the always-shown 첨부 row, 2026-10-26) re-read from its own text with the current
 // rules: the head (recipient, subject, files, warning, origin) is replaced, the body and ref stay (the stored text may be cut shorter).
-const HEAD_KEYS = ["toLabel", "to", "cc", "subject", "attachments", "noAttachments", "warning", "note", "origin", "rule"] as const;
+const HEAD_KEYS = ["toLabel", "to", "cc", "subject", "attachments", "noAttachments", "warning", "note", "origin", "rule", "recipientWarning"] as const;
 export function refreshDraft(old: DraftApproval, text: string): DraftApproval {
 	const fresh = parseQuotedDraft(text);
 	if (!fresh) return old;
@@ -181,12 +245,17 @@ export function parseQuotedDraft(text: string): DraftApproval | undefined {
 	}
 	if (!quoted.length) return undefined;
 	const first = quoted.findIndex(l => HEADER.test(l));
-	if (first > 0) quoted.splice(0, first); // a quote above the draft (the comment being answered) is not part of it
+	// A quote above the draft (the comment being answered) is not part of it; it is the source its recipient is checked against.
+	const above = first > 0 ? quoted.splice(0, first) : [];
+	const checked = (d: DraftApproval | undefined): DraftApproval | undefined => {
+		const w = d ? cardRecipientCheck(text, above.join("\n")) : undefined;
+		return d && w ? { ...d, recipientWarning: w } : d;
+	};
 	const cut = quoted.findIndex(l => MAIL_LINE.test(l));
-	if (cut < 0) return parseDraftLines(quoted);
+	if (cut < 0) return checked(parseDraftLines(quoted));
 	const id = MAIL_LINE.exec(quoted[cut]!)?.[1];
 	const mail = parseDraftLines(quoted.slice(cut + 1));
-	const main = parseDraftLines(quoted.slice(0, cut));
+	const main = checked(parseDraftLines(quoted.slice(0, cut)));
 	return main && mail ? { ...main, mail: id ? { ...mail, ref: id } : mail } : main;
 }
 

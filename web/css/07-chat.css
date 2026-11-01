@@ -1,6 +1,12 @@
 /* ---------- chat: decision card above the composer, todo strip above the timeline ---------- */
 .dcard { display: flex; flex-direction: column; max-height: max(60dvh, 240px); margin: 0 0 8px; border-radius: var(--r-card); background: color-mix(in srgb, var(--accent) 6%, var(--card)); overflow: hidden; }
 .dcard[hidden] { display: none; }
+/* a waiting send-approval card that later posts pushed up: one row in the dock that opens it (10-decision-card.js dcPointer) */
+.dc-wait { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 10px 14px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dc-wait-k { flex: none; font-weight: 600; color: var(--accent); }
+.dc-wait-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dc-wait-n { flex: none; opacity: .7; font-size: .9em; }
+.dc-wait-go { flex: none; font-weight: 600; }
 .dc-hd { flex: none; display: flex; align-items: flex-start; gap: 8px; padding: 12px 8px 8px 16px; }
 .dc-tt { flex: 1; min-width: 0; }
 .dc-ey { display: block; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }

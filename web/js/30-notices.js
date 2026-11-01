@@ -68,12 +68,16 @@ function noticeLive(e) {
     const i = NT.items.findIndex(x => x.id === e.item.id);
     if (e.item.dismissed) { if (i >= 0) NT.items.splice(i, 1); }
     else if (i < 0) NT.items.push(e.item); else NT.items[i] = e.item;
-    if (i < 0 && ntOpenDec(e.item) && NT.loaded) {
+    if (i < 0 && ntOpenDec(e.item) && NT.loaded && dkFollowOn(e.item)) { /* opened as the next card */ }
+    else if (i < 0 && ntOpenDec(e.item) && NT.loaded) {
       toast("답변이 필요해요", false, { label: "열기", onclick: () => noticeOpenId(e.item.id) }, 8000);
       const s = document.querySelector(".snack:last-of-type");
       if (s) s.dataset.nid = String(e.item.id);
     }
     if (!ntOpenDec(e.item) || e.item.dismissed) ntHandled(e.item.id);
+    // The dock's row for a card pushed up this conversation (10-decision-card.js dcPointer) follows it; an open sheet is left alone, since a
+    // repaint would drop the change it is making (its 받는이 edit) and the sheet's own update path repaints it.
+    if (ntIsDec(e.item) && e.item.decision.draft && e.item.decision.to === target && !DK.h) paintDecision();
     if (e.item.kind === "watch") loadMonitors();
   } else if (e.kind === "notice_dismiss") {
     ntHandled(e.id);
@@ -342,7 +346,7 @@ function dkPaint() {
       if (nx && ntOpenDec(nx)) { ntDraftSheet(nx); return; }
       if (nx) { dkClose(false); return; }
       if (!DC.picks[dc.key]) { DC.picks[dc.key] = [rv]; DC.st[dc.key] = "sent"; delete DC.edit[dc.key]; }
-    } else if (!n || !ntOpenDec(n)) { const answered = !!n && ntIsDec(n) && !ntIgnoredDec(n); dkClose(false); if (answered) toast("답을 보냈어요"); return; }
+    } else if (!n || !ntOpenDec(n)) { const answered = !!n && ntIsDec(n) && !ntIgnoredDec(n); dkClose(false); if (answered) dkNext(n); return; }
   } else {
     dc = decisionOf(DK.dc.t);
     if (!dc || dc.sig !== DK.dc.sig) { dkClose(false); return; }   // answered, here or elsewhere
@@ -352,6 +356,25 @@ function dkPaint() {
   const sig = dcSig(dc, picks, step);
   if (DK.box.dataset.sig !== sig) { DK.box.dataset.key = dc.key; renderDecision(DK.box, DK.dc, picks, step); DK.box.dataset.sig = sig; }
   if (DC.st[dc.key] === "sent" && !DK.timer && !(dc.draft && dcStText(dc, "sent") === "고치는 중…")) DK.timer = setTimeout(() => { dkClose(false); toast("답을 보냈어요"); }, 900);
+}
+// Several cards in one conversation are answered one after another (2026-10-31: "차례로 보여줘야지", "마지막 카드 어디?"): once a draft card
+// is answered, the next open draft card of the same conversation opens in its place, at once when it is already there, else when it
+// arrives within DK_FOLLOW_MS (the bot posts it in its answer turn, or the hub's queue posts the next held one).
+const DK_FOLLOW_MS = 3 * 60000;
+let dkFollow = null;   // { to, until }
+function dkNext(n) {
+  const nx = ntDecisions().filter(x => x.id !== n.id && x.decision.draft && x.decision.to === n.decision.to).sort((a, b) => ntAt(a) - ntAt(b))[0];
+  if (nx) { toast("답을 보냈어요 · 다음 카드예요"); ntDraftSheet(nx); return; }
+  dkFollow = { to: n.decision.to, until: Date.now() + DK_FOLLOW_MS };
+  toast(draftIsLast(n.text) ? "답을 보냈어요 · 마지막 카드였어요" : "답을 보냈어요");
+}
+// A new open draft card in the conversation whose card was just answered: it opens unless another sheet is up. True when it opened.
+function dkFollowOn(item) {
+  const f = dkFollow;
+  if (!f || Date.now() > f.until || !item.decision.draft || item.decision.to !== f.to || DK.h || NS.h) return false;
+  dkFollow = null;
+  ntDraftSheet(item);
+  return true;
 }
 function dkOpen(dc, draft, nid, ign) {
   dkClose(false);
@@ -383,7 +406,7 @@ function ntDraftSheet(n) {
   const tg = n.decision.draft && n.decision.draft.ref && !DC.edit[`dk:${n.id}`] ? trGroupFor(n.decision.draft.ref) : null;
   if (tg) { trOpen(tg.key, n.decision.draft.ref); return; }
   const d = n.decision;
-  dkOpen({ key: `dk:${n.id}`, t: d.to, sig: `dk:${n.id}`, at: d.reply_to || n.at || "", question: "", blocks: [{ title: n.title, options: d.options }], left: draftLeft(n.text) }, d.draft, String(n.id), n);
+  dkOpen({ key: `dk:${n.id}`, t: d.to, sig: `dk:${n.id}`, at: d.reply_to || n.at || "", question: "", blocks: [{ title: n.title, options: d.options }], left: draftProgress(n.text) }, d.draft, String(n.id), n);
 }
 // An entry that comes from a session names its parent project and status, in the words of sessionRow.
 function ntLaneNote(n) {

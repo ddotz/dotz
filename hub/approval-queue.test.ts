@@ -1,7 +1,7 @@
 // One send-approval card at a time per conversation: the rest wait behind it ("남은 N건") and come one by one as each closes; the same
 // card again updates the open one instead of a second post.
 import { describe, expect, test } from "bun:test";
-import { cardRef, createApprovalQueue, type Held, withLeft } from "./approval-queue.ts";
+import { cardRef, CARDS_LEAD, createApprovalQueue, type Held, pendingCardsNote, withLeft } from "./approval-queue.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 
 // Draft refs are 2+ characters (draft-approval.ts REF): "A" stands for the draft "cm-A".
@@ -41,9 +41,9 @@ describe("approval queue", () => {
 		expect(t.q.route("ch:1", card("B"), { session: "s1" })).toEqual({ action: "hold", left: 1 });
 		t.show("ch:1", card("A"));
 		expect(t.rewrites.at(-1)).toMatchObject({ conv: "ch:1", ref: "cm-A", ids: ["m1"] });
-		expect(t.rewrites.at(-1)!.text.split("\n")[1]).toBe("-# 남은 1건");
+		expect(t.rewrites.at(-1)!.text.split("\n")[1]).toBe("-# 남은 1건 (1/2)");
 		for (const r of ["C", "D"]) expect(t.q.route("ch:1", card(r)).action).toBe("hold");
-		expect(t.rewrites.at(-1)!.text.split("\n")[1]).toBe("-# 남은 3건");
+		expect(t.rewrites.at(-1)!.text.split("\n")[1]).toBe("-# 남은 3건 (1/4)");
 		expect(t.posts).toEqual([]);
 		expect(t.disk().map(h => h.ref)).toEqual(["cm-B", "cm-C", "cm-D"]);
 	});
@@ -58,7 +58,7 @@ describe("approval queue", () => {
 		expect(t.posts).toHaveLength(1);
 		expect(t.posts[0]).toMatchObject({ target: "ch:1", extra: { session: "s1" } });
 		expect(cardRef(t.posts[0]!.text)).toBe("cm-B");
-		expect(t.posts[0]!.text.split("\n")[1]).toBe("-# 남은 1건");
+		expect(t.posts[0]!.text.split("\n")[1]).toBe("-# 남은 1건 (2/3)");
 		// Nothing more until B is out and closed.
 		t.q.closed("ch:1", "cm-A");
 		expect(t.posts).toHaveLength(1);
@@ -66,6 +66,7 @@ describe("approval queue", () => {
 		t.close("ch:1", "cm-B");
 		expect(t.posts.map(p => cardRef(p.text))).toEqual(["cm-B", "cm-C"]);
 		expect(t.posts[1]!.text).not.toContain("남은");
+		expect(t.posts[1]!.text.split("\n")[1]).toBe("-# 마지막 카드예요 (3/3)");
 		expect(t.disk()).toEqual([]);
 	});
 
@@ -109,7 +110,34 @@ describe("approval queue", () => {
 		]);
 		t.q.releaseAll();
 		expect(t.posts.map(p => cardRef(p.text))).toEqual(["cm-B"]);
-		expect(t.posts[0]!.text.split("\n")[1]).toBe("-# 남은 1건");
+		expect(t.posts[0]!.text.split("\n")[1]).toBe("-# 남은 1건 (1/2)");
+	});
+
+	test("cards the bot numbers and posts one per turn count the rest of its batch, and the last says so", () => {
+		const t = setup();
+		const bot = (ref: string, k: number) => card(ref).replace("댓글 답글 초안이에요", `댓글 답글 초안이에요 (${k}/28)`);
+		const r = t.q.route("ch:1", bot("S", 19));
+		expect(r.action).toBe("post");
+		expect(r.action === "post" && r.text!.split("\n")[1]).toBe("-# 남은 9건 (19/28)");
+		t.show("ch:1", (r as { text: string }).text);
+		// A card held behind the open one is counted too, and the bot's turn sees where the open one stands.
+		expect(t.q.route("ch:1", card("X"))).toEqual({ action: "hold", left: 1 });
+		expect(t.q.openCard("ch:1")).toMatchObject({ ref: "cm-S", progress: "남은 9건 (19/28)", held: 1, ids: ["m1"] });
+		t.close("ch:1", "cm-S");
+		t.show("ch:1", t.posts.at(-1)!.text);
+		t.close("ch:1", "cm-X");
+		const last = t.q.route("ch:1", bot("T", 28));
+		expect(last.action === "post" && last.text!.split("\n")[1]).toBe("-# 마지막 카드예요 (28/28)");
+	});
+
+	test("the bot's turn note lists the waiting cards with where they are", () => {
+		expect(pendingCardsNote([], 0)).toBeUndefined();
+		const n = pendingCardsNote([{ ref: "cm-S", title: "댓글 답글 (19/28)", notice: "n1", progress: "남은 9건 (19/28)", link: "https://discord.com/channels/1/2/3" }], 2)!;
+		expect(n.startsWith(CARDS_LEAD)).toBe(true);
+		expect(n).toContain("cm-S");
+		expect(n).toContain("남은 9건 (19/28)");
+		expect(n).toContain("https://discord.com/channels/1/2/3");
+		expect(n).toContain("2 more held");
 	});
 
 	test("withLeft keeps one count line under the first line", () => {

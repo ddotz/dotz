@@ -356,8 +356,11 @@ function editFilesNode(dc, st) {
 }
 // A decision in the full-screen overlay (30-notices.js dkOpen, 38-overlay.js): header = what it is, body = the draft or the question, sticky footer = the choices.
 // A draft waiting for send approval shows who and what in the header and 보내기 / 고치기 / 보내지 않기 in the footer. Only the body scrolls.
-// How many send-approval cards wait behind this one in its conversation: the "-# 남은 N건" line the hub keeps on the open card (hub/approval-queue.ts).
-const draftLeft = text => Number((/^-# 남은 (\d+)건$/m.exec(text || "") || [])[1] || 0);
+// Where this send-approval card stands in its conversation: the progress line the hub keeps on the open card (hub/approval-queue.ts withLeft),
+// "남은 N건 (k/T)" or "마지막 카드예요 (T/T)"; "" for a lone card.
+const DRAFT_PROGRESS = /^-# ((?:남은 \d+건|마지막 카드예요)(?: \(\d+\/\d+\))?)$/m;
+const draftProgress = text => (DRAFT_PROGRESS.exec(text || "") || [])[1] || "";
+const draftIsLast = text => draftProgress(text).startsWith("마지막");
 function renderSheet(box, dc, picks, step) {
   const st = DC.st[dc.key] || "", d = dc.draft, edit = DC.edit[dc.key] && !st.startsWith("sent") ? DC.edit[dc.key] : null;
   const old = $(".fs-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
@@ -365,9 +368,11 @@ function renderSheet(box, dc, picks, step) {
   const qText = d ? ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "") : dc.question;
   // A mail draft's 받는이·참조 live in its own rows at the top of the body and change in place, so the head does not repeat them.
   const head = fsHead(d ? [
-    el("span", { class: "fs-ey" }, qText || "보내기 전에 확인해요", dc.left ? el("span", { class: "fs-left", text: ` · 남은 ${dc.left}건` }) : null),
+    el("span", { class: "fs-ey" }, qText || "보내기 전에 확인해요", dc.left ? el("span", { class: "fs-left", text: ` · ${dc.left}` }) : null),
     !d.toLabel || d.toLabel !== "받는이" ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: d.toLabel }), el("span", { class: "dc-dr-v", text: d.to || "-" })) : null,
-    d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null]
+    d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null,
+    // hub/draft-approval.ts recipientCheck: a likely typo or an address the source does not have; the address itself is never changed.
+    d.recipientWarning ? el("div", { class: "dr-warn dc-rw", role: "alert" }, el("span", { text: `⚠️ 받는이 확인: ${d.recipientWarning}` })) : null]
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
   const both = !!d && !!d.mail && d.toLabel === "대상";   // a comment reply + mail: the original sits inline at the top (no room for the side panel beside the mail part)
@@ -501,7 +506,9 @@ function paintDecision() {
   // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
   const dc = isFixedT(target) ? null : decisionOf(target), had = !!DC.cur;
   DC.cur = dc;
-  if (!dc) { box.hidden = true; delete box.dataset.sig; delete box.dataset.key; clear(box); }
+  const waiting = dc || isFixedT(target) ? null : dcWaitingCard(target);
+  if (waiting) dcPointer(box, waiting);
+  else if (!dc) { box.hidden = true; delete box.dataset.sig; delete box.dataset.key; clear(box); }
   else {
     const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
     const sig = dcSig(dc, picks, step);
@@ -511,6 +518,17 @@ function paintDecision() {
   syncInlineChoices();
   dkPaint();
   if (had !== !!dc) updateComposerMeta();
+}
+// A send-approval card still open in this conversation although later posts pushed it up (decisionOf only docks the newest message's
+// question): the dock keeps one row naming it, and a tap opens it as the sheet (2026-10-31: "19번 카드는 위에 있어" -> "어디에있음?").
+const dcWaitingCard = t => (typeof ntDecisions === "function" ? ntDecisions().filter(n => n.decision.draft && n.decision.to === t).sort((a, b) => ntAt(a) - ntAt(b))[0] : null) || null;
+function dcPointer(box, n) {
+  const sig = `wait:${n.id}:${draftProgress(n.text)}`;
+  box.hidden = false;
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig; box.dataset.key = sig;
+  const title = String(n.title || "").replace(/\s*\([^()]*\)\s*$/, ""), left = draftProgress(n.text);
+  clear(box).append(el("button", { class: "dc-wait", type: "button", onclick: () => noticeSheetOpen(n.id) }, el("span", { class: "dc-wait-k", text: "답을 기다리는 카드" }), el("span", { class: "dc-wait-t", text: title || "보내기 확인" }), left ? el("span", { class: "dc-wait-n", text: left }) : null, el("span", { class: "dc-wait-go", text: "열기" })));
 }
 // What a decision card shows; the card (docked or in the sheet) is redrawn only when this changes. A redraw replaces the reason field, and on
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
