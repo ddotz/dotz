@@ -1,11 +1,11 @@
 // Cleanup after work (ux3 T4): an ended session keeps its unread and 답변 필요 marks in the folded 끝난 세션 group, the 알림 conversation has
 // 모두 읽음 in its head and 지우기 on each alert (the hub dismiss route), and a pulled update that waits for its restart keeps the badge as
-// 재시작 필요 while the toast's 보기 lands on the 업데이트 section. Headless (Bun.WebView) against a fake hub.
+// 재시작 필요 in the nav and the 업데이트 section (the update bar itself: update-bar-web.test.ts). Headless (Bun.WebView) against a fake hub.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { broadcast, sseResponse } from "./events.ts";
+import { sseResponse } from "./events.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
 const SHOTS = process.env.CLEANUP_SHOTS ?? join(tmpdir(), "dotz-cleanup-web");
@@ -130,16 +130,13 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 		expect(await q<boolean>(w, `return document.querySelector('#tl > [data-ts="${A1}"]').hidden`)).toBe(true);
 	}, 30_000);
 
-	test("a pulled update waiting for its restart keeps the badge as 재시작 필요; the toast's 보기 opens the 업데이트 section in view", async () => {
+	test("a pulled update waiting for its restart keeps the badge as 재시작 필요, in the nav and the 업데이트 section", async () => {
 		reset();
 		const v = await boot(width, height);
 		await waitFor(v, `UPD.info && !$("#nav-upd").hidden`);
 		expect(await q<string>(v, `return $("#nav-upd").textContent`)).toBe("재시작 필요");
-		broadcast({ ts: new Date().toISOString(), kind: "update_available", source: "gateway", text: "새 버전이 있어요" });
-		await waitFor(v, `[...document.querySelectorAll("button")].some(b => b.textContent === "보기" && b.matches(".snack .sa"))`);
-		await run(v, `[...document.querySelectorAll("button")].find(b => b.textContent === "보기" && b.matches(".snack .sa")).click()`);
-		await waitFor(v, `current === "settings" && $("#upd-sec")`);
-		await waitFor(v, `(() => { const r = $("#upd-sec").getBoundingClientRect(); return $("#views").scrollTop > 0 && r.top >= 0 && r.top < innerHeight - 80; })()`);
+		await run(v, `go("settings")`);
+		await waitFor(v, `current === "settings" && $("#upd-sec .upd-new")`);
 		expect(await q<string>(v, `return $("#upd-sec .upd-new").textContent`)).toBe("재시작 필요");
 		await Bun.write(join(SHOTS, `update-${width}.png`), await v.screenshot());
 	}, 30_000);

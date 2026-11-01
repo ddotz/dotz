@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { DATA_DIR, log, NAME, now, paths, TZ, writeAtomic } from "./config.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
+import { updateNow } from "./update-now.ts";
 import { isNote, msg } from "./i18n.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
 import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages, tailEvents } from "./events.ts";
@@ -98,7 +99,12 @@ const mainConv = convs.setMain({ key: MAIN, o: main, queue, bg: bgWork });
 // `owner` marks the owner's own message (it leads with the what-runs-now line); schedules, watches and mail carry a target but are not.
 // True when the message was steered into the running turn (only one of the same conversation is, prompts.ts deliver).
 // An owner message goes to its conversation's session (main with conversation sessions off); everything else to main.
+// From a tap on the update bar until the restart, a new turn is held and goes in after it (hub/update-now.ts).
 export function deliver(text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): boolean {
+	if (updateNow()?.hold(text, reply)) return false;
+	return deliverNow(text, reply);
+}
+export function deliverNow(text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): boolean {
 	if (reply) discord.typing(reply.target);
 	return convs.deliverTo(reply?.owner ? convs.keyOf(reply.target) : MAIN, text, reply);
 }

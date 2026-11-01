@@ -153,6 +153,15 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 /* A new shell waits for a tap: a bar across the top that pushes the app down (body:has), so it never covers a screen's own controls */
 .shell-chip { position: fixed; z-index: 1999; inset: 0 0 auto 0; padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 8px; border: 0; border-radius: 0; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 13px; line-height: 18px; font-weight: 600; text-align: center; cursor: pointer; }
 body:has(.shell-chip) .app { padding-top: 0; margin-top: calc(34px + env(safe-area-inset-top, 0px)); height: calc(100dvh - 34px - env(safe-area-inset-top, 0px)); }
+.upd-bar { position: fixed; z-index: 1998; inset: 0 0 auto 0; display: flex; align-items: center; justify-content: center; gap: 8px; padding: calc(6px + env(safe-area-inset-top, 0px)) 40px 6px; background: var(--accent); color: var(--on-accent); font-size: 13px; line-height: 20px; text-align: center; }
+.upd-bar .ub-tx { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; overflow-wrap: anywhere; }
+.upd-bar span.ub-tx { cursor: default; }
+.upd-bar.download .ub-tx::after, .upd-bar.waiting .ub-tx::after, .upd-bar.restarting .ub-tx::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 8px; border-radius: 50%; background: currentColor; vertical-align: 2px; animation: ub-pulse 1.2s ease-in-out infinite; }
+.upd-bar.failed { background: var(--fg); color: var(--bg); }
+.upd-bar .x { position: absolute; right: 8px; bottom: 4px; padding: 0 6px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 16px; cursor: pointer; }
+@keyframes ub-pulse { 50% { opacity: .25; } }
+body:has(.upd-bar) { --ubh: var(--upd-h, calc(32px + env(safe-area-inset-top, 0px))); }
+body:has(.upd-bar) .app { padding-top: 0; margin-top: var(--ubh); height: calc(100dvh - var(--ubh)); }
 .snack.bad::before { content: ""; display: inline-block; flex: none; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: var(--err); vertical-align: 1px; }
 .snack.act { display: flex; align-items: center; gap: 12px; }
 .snack .sa { flex: none; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; }

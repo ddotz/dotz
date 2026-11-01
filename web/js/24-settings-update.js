@@ -40,13 +40,66 @@ function paintUpdBadge() {
   b.hidden = !n && !restart;
   b.textContent = restart ? "재시작 필요" : n > 1 ? `업데이트 ${n}` : "새 버전";
   b.title = restart ? "재시작하면 새 버전이 적용돼요" : "새 버전이 있어요";
+  paintUpdBar();
 }
-// The update toast's 보기 (99-boot.js): 설정, scrolled to the 업데이트 section once it is drawn.
-function updOpen() {
-  go("settings");
-  let tries = 0;
-  const seek = () => { const s = $("#upd-sec"); if (s) s.scrollIntoView({ block: "start" }); else if (++tries < 120) requestAnimationFrame(seek); };
-  requestAnimationFrame(seek);
+// The top update bar (hub/update-now.ts, owner 2026-11-01: "상단 알림바 누르고 나서 설정가서 다시 업뎃하는게 번거롭네"): a new version offers
+// itself here and one tap runs the whole update: 받는 중 → 진행 중인 작업이 끝나면 적용 → 다시 켜는 중 → 완료 or 실패 with the reason.
+// A dismissed offer (its remote head) or a seen result (its flow id) stays away (localStorage).
+const UB = { tapped: false, down: false, busy: false, timer: 0, doneTimer: 0 };
+const UB_KEY = "dotz-upd-bar", UB_ACTIVE = ["download", "waiting", "restarting"], UB_RESULT_MS = 60 * 60_000;
+const ubSeen = () => { try { return localStorage.getItem(UB_KEY) || ""; } catch { return ""; } };
+const ubSee = k => { try { localStorage.setItem(UB_KEY, k); } catch {} paintUpdBar(); };
+function updBarState() {
+  const i = UPD.info, f = i && !i.error ? i.flow : null;
+  if (UB.down && (UB.tapped || (f && UB_ACTIVE.includes(f.phase)))) return { phase: "restarting", text: "다시 켜는 중이에요" };
+  if (f && UB_ACTIVE.includes(f.phase)) return f;
+  if (f && (f.phase === "done" || f.phase === "failed") && ubSeen() !== f.id && Date.now() - Date.parse(f.at) < UB_RESULT_MS) return f;
+  if (updAvailable() && i.lastCheck.remoteHead && ubSeen() !== i.lastCheck.remoteHead) return { phase: "new", text: "새 버전이 있어요 · 눌러서 업데이트", id: i.lastCheck.remoteHead };
+  return null;
+}
+// The bar wraps to two lines on a phone: the app below it starts at the bar's real height (03-base.css --upd-h).
+function ubFit() {
+  const b = $("#upd-bar"), root = document.documentElement.style;
+  if (b) root.setProperty("--upd-h", `${b.offsetHeight}px`); else root.removeProperty("--upd-h");
+}
+addEventListener("resize", ubFit);
+function paintUpdBar() {
+  const s = updBarState();
+  let b = $("#upd-bar");
+  if (!s) { if (b) b.remove(); ubFit(); return; }
+  if (!b) { b = el("div", { id: "upd-bar", role: "status", "aria-live": "polite" }); document.body.append(b); }
+  b.className = `upd-bar ${s.phase}`;
+  const tap = s.phase === "new" || s.phase === "failed";
+  const run = UPD.info && UPD.info.running && UPD.info.running.commit;
+  const text = s.phase === "failed" ? `업데이트하지 못했어요: ${s.text}${tap ? " · 눌러서 다시 시도" : ""}` : s.phase === "done" && run ? `${s.text} · 지금 버전 ${run.short}` : s.text;
+  b.replaceChildren(
+    el(tap ? "button" : "span", { class: "ub-tx", ...(tap ? { type: "button", onclick: updNow } : {}), text }),
+    ...(UB_ACTIVE.includes(s.phase) ? [] : [el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: () => ubSee(s.id) })]));
+  ubFit();
+  if (s.phase === "done" && !UB.doneTimer) UB.doneTimer = setTimeout(() => { UB.doneTimer = 0; ubSee(s.id); }, 8000);
+}
+// The tap: the hub downloads, tests and restarts when idle; the page follows it until the restarted gateway answers.
+async function updNow() {
+  if (UB.busy) return;
+  UB.busy = true;
+  try {
+    const r = await api("/api/update/now", "POST");
+    UPD.info = { ...(UPD.info || {}), flow: r.flow };
+    UB.tapped = true;
+    paintUpdBar();
+    updBarTick();
+  } catch (e) { toast(e.message, true); } finally { UB.busy = false; }
+}
+async function updBarTick() {
+  clearTimeout(UB.timer);
+  UB.timer = 0;
+  const r = await fetch("/api/update", { cache: "no-store" }).then(x => (x.ok ? x.json() : null), () => null);
+  UB.down = !r;
+  if (r) { UPD.info = r; paintUpdBadge(); if (current === "settings") renderSettings(); }
+  paintUpdBar();
+  const f = UPD.info && UPD.info.flow;
+  if (UB.down || (f && UB_ACTIVE.includes(f.phase))) UB.timer = setTimeout(updBarTick, 2000);
+  else UB.tapped = false;
 }
 async function loadUpdate() {
   clearTimeout(UPD.timer);
@@ -55,6 +108,7 @@ async function loadUpdate() {
   UPD.info = dotz;
   HV.info = hv;
   paintUpdBadge();
+  if (UPD.info.flow && UB_ACTIVE.includes(UPD.info.flow.phase) && !UB.timer) updBarTick();
   if (UPD.info.job && UPD.info.job.status === "running") UPD.timer = setTimeout(loadUpdate, 1500);
   else if (HV.info && (HV.info.checking || hvJob())) HV.timer = setTimeout(loadUpdate, 2000);
   if (current === "settings") renderSettings();
@@ -80,10 +134,6 @@ async function updCheck(btn) {
     if (c.ok) toast(c.incomingTotal ? `새 커밋 ${c.incomingTotal}개가 있어요` : "최신 버전이에요");
   });
   renderSettings();
-}
-async function updApply(btn) {
-  await busy(btn, async () => { UPD.info.job = (await api("/api/update/apply", "POST")).job; });
-  loadUpdate();
 }
 // Local work the update carries as a local patch (hub/selfupdate.ts apply): one Korean line and what was saved; the update itself goes on.
 function updKeepBox(k) {
@@ -200,7 +250,7 @@ function updateSection() {
       c.blocked.length ? el("div", { class: "upd-block" }, ...c.blocked.map(b => el("div", { text: b }))) : null,
       c.keep ? updKeepBox(c.keep) : null,
       c.ahead.length && !c.keep ? el("div", { class: "sup", text: `로컬 커밋 ${c.ahead.length}개는 새 버전 위에 자동으로 얹어요. 테스트가 실패하면 그대로 두고 알려요.` }) : null,
-      el("div", { class: "upd-act" }, el("button", { class: "btn", type: "button", ...(c.blocked.length || pending ? { disabled: true } : off), onclick: ev => updApply(ev.currentTarget) }, "지금 업데이트"), el("span", { class: "sup", text: disk && disk.kind === "tarball" ? "새로 받기 → 테스트 → 폴더 교체 → 재시작. 테스트가 실패하면 그대로 있어요." : "fast-forward → 테스트 → 재시작. 테스트가 실패하면 그대로 있어요." }))));
+      el("div", { class: "upd-act" }, el("button", { class: "btn", type: "button", ...(c.blocked.length || pending ? { disabled: true } : off), onclick: () => updNow() }, "지금 업데이트"), el("span", { class: "sup", text: disk && disk.kind === "tarball" ? "새로 받기 → 테스트 → 폴더 교체 → 재시작. 테스트가 실패하면 그대로 있어요." : "fast-forward → 테스트 → 재시작. 테스트가 실패하면 그대로 있어요." }))));
   }
   if (jobRunning) rows.push(li(`업데이트 중 · ${job.phase}`, job.message, el("span", { class: "dot pri", "aria-hidden": "true" })));
   else if (job && job.status !== "current" && !(job.status === "updated" && !pending)) rows.push(el("div", { class: `upd-box ${job.status === "updated" ? "ok" : "err"}` }, el("div", { class: "upd-msg", text: job.keep && !(c && c.keep) ? job.keep.line : job.message }), job.keep && !(c && c.keep) ? updKeepBox(job.keep) : null));
