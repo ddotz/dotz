@@ -45,7 +45,7 @@ export type PromptDeps = {
 	/** Posts a turn's final answer to the channel that asked. */
 	post: (target: string, text: string, replyTo?: string) => Promise<{ delivered: boolean }>;
 	/** A gateway note in a conversation that answers nothing (the deferral acknowledgement must not settle the open prompt). */
-	announce?: (target: string, text: string) => void;
+	announce?: (target: string, text: string, worker?: string) => void;
 	/** The background worker now running for a conversation (the oldest one), when it is already listed. */
 	workFor?: (target: string) => { id: string; description: string } | undefined;
 	/** The gateway note (one line) that points a new owner message at the worker already running for its conversation. */
@@ -437,7 +437,7 @@ export function createPrompts(deps: PromptDeps) {
 				receipted.add(rk);
 				if (receipted.size > MAX_ANSWERED) receipted.delete(receipted.values().next().value!);
 				deps.log(`the answer to ${p.target} is deferred to a background worker`);
-				deps.announce?.(p.target, note);
+				deps.announce?.(p.target, note, w?.id);
 			}
 			save();
 			return;

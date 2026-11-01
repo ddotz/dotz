@@ -307,11 +307,12 @@ test("a turn that defers to a background worker sends nothing; the run the worke
 });
 
 test("a deferred turn posts one short note naming the worker, so its conversation is not silent", () => {
-	const announced: { target: string; text: string }[] = [];
-	const { q, state, startTurn } = setup([], [], { announce: (target, text) => announced.push({ target, text }), workFor: () => ({ id: "w1", description: "redacted 연결 스크립트 흐름도 HTML" }) });
+	const announced: { target: string; text: string; worker?: string }[] = [];
+	const { q, state, startTurn } = setup([], [], { announce: (target, text, worker) => announced.push({ target, text, ...(worker ? { worker } : {}) }), workFor: () => ({ id: "w1", description: "redacted 연결 스크립트 흐름도 HTML" }) });
 	startTurn("이거 파일 전부 흐름도로 재구성해", { target: "th:000000000000000000" });
 	q.onAnswer("[later]");
-	expect(announced).toEqual([{ target: "th:000000000000000000", text: "백그라운드 작업으로 맡겼어요: redacted 연결 스크립트 흐름도 HTML" }]);
+	// The worker's id rides along: the web's system line opens that worker and shows its state.
+	expect(announced).toEqual([{ target: "th:000000000000000000", text: "백그라운드 작업으로 맡겼어요: redacted 연결 스크립트 흐름도 HTML", worker: "w1" }]);
 	// The note is not the answer: nothing was posted to the request and it still waits for the worker.
 	expect(state.posts).toEqual([]);
 	expect(q.deferredOpen().map(d => d.target)).toEqual(["th:000000000000000000"]);
