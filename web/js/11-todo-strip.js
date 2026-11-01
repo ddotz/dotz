@@ -116,8 +116,8 @@ function streamIn(root, key, ts) {
 // Delivery state of an owner message (hub/events.ts emitDelivery), shown in its meta line: received (steered into the running step /
 // received by an idle session / waited in the queue / resumed a stopped session / held on a limit), answered, or not delivered.
 const DELIV = { nodes: new Map(), state: new Map() };
-const DELIV_RANK = { steered: 1, received: 1, queued: 1, held: 1, resumed: 1, answered: 2, failed: 2 };
-const DELIV_LABEL = { steered: "받음 · 지금 작업에 전달", received: "받음 · 바로 전달", queued: "받음 · 기다렸다 전달", held: "받음 · 한도가 풀리면 전달", resumed: "다시 시작해서 전달", answered: "답함" };
+const DELIV_RANK = { steered: 1, received: 1, queued: 1, held: 1, update: 1, resumed: 1, answered: 2, failed: 2 };
+const DELIV_LABEL = { steered: "받음 · 지금 작업에 전달", received: "받음 · 바로 전달", queued: "받음 · 기다렸다 전달", held: "받음 · 한도가 풀리면 전달", update: "받음 · 업데이트 뒤 전달", resumed: "다시 시작해서 전달", answered: "답함" };
 const delivLabel = d => d.state === "failed" ? `전달하지 못했어요${d.text ? ` · ${d.text}` : ""}` : DELIV_LABEL[d.state] || "";
 function paintDelivery(mid) {
   const n = DELIV.nodes.get(mid), d = DELIV.state.get(mid);

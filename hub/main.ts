@@ -38,7 +38,8 @@ import { startSchedules, stopSchedules } from "./schedule.ts";
 import { syncRoutineSchedules } from "./custom.ts";
 import { startHarnessUpdate } from "./update.ts";
 import { runMigrations } from "./migrations.ts";
-import { defaultExec, onUpdateResolved, startSelfUpdate, updateBoot } from "./selfupdate.ts";
+import { applyAndSave, defaultExec, onUpdateResolved, startSelfUpdate, updateBoot, diskCommit } from "./selfupdate.ts";
+import { createUpdateNow, setUpdateNow, updateNow } from "./update-now.ts";
 import { pendingBackups } from "./carryover.ts";
 import { clearChannel, nameWatches, setupChannel, watchLabel, watchWakeEvent } from "./workchannels.ts";
 import { watchLine } from "./watchtext.ts";
@@ -61,7 +62,7 @@ import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
 import { setFollowupWake } from "./followup.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { compressResponse } from "./compress.ts";
-import { sends, send, queue, deliver, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, approvals, convOfTarget } from "./outbound.ts";
+import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, approvals, convOfTarget } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
 import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
@@ -329,10 +330,23 @@ const server = Bun.serve({
 	},
 });
 
+// The top update bar's tap (hub/update-now.ts): download and test, then the idle restart; new turns wait for it and go in right after.
+setUpdateNow(createUpdateNow({
+	dataDir: DATA_DIR,
+	apply: () => applyAndSave(),
+	restartIdle: () => restartGateway(),
+	busy: () => busyNow(),
+	deliver: deliverNow,
+	delivered: (target, ref, steered) => emitDelivery(target, ref, steered ? "steered" : "received"),
+	current: diskCommit,
+	log,
+}));
 let replayed = 0;
 if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 	startOrchestrator();
 	replayed = replayPending();
+	// Messages held for an update go in after the open prompts, in arrival order.
+	void updateNow()?.boot().catch(e => log(`held messages not delivered: ${e}`));
 }
 sends.resume();
 // Send-approval cards held before the restart: a conversation with no open card shows its next one (hub/approval-queue.ts).
@@ -531,7 +545,10 @@ const restartGate = createRestartGate({
 	noticeAfterMs: RESTART_NOTICE_MS,
 	notice: text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`restart wait notice failed: ${e}`)),
 	log,
-	exit: () => void shutdown(),
+	exit: () => {
+		updateNow()?.restarting();
+		void shutdown();
+	},
 });
 function restartGateway(): string {
 	return restartGate.request();
