@@ -154,6 +154,7 @@ function go(name, tgt) {
   if (name === "providers") loadProviders();
   if (name === "usage") loadQuota();
   if (name === "context") loadContext();
+  if (name === "discord") loadDiscord();
   window.dotzCustom && dotzCustom.view(name, tgt);
 }
 // Entries the app made are handled by popstate; this is for a hash typed into the address bar or an old foreign entry.

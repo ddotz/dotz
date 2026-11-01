@@ -271,6 +271,7 @@ function renderSettings() {
   const connected = P ? P.providers.filter(isConnected).length : null;
   const row = (ic, title, sub, onclick, trail) => el("button", { class: "li tap", type: "button", onclick: ev => onclick(ev.currentTarget) }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), sub ? el("span", { class: "sup", text: sub }) : null, trail === undefined ? icon("chev", "lead") : trail);
   const d = S && S.discord;
+  const [dcTag, dcTone] = d && d.enabled ? (d.connected ? ["연결됨", "ok"] : d.error ? ["연결 안 됨", "err"] : ["연결 중", "warn"]) : ["설정 안 됨", "warn"];
   clear(box).append(el("div", { class: "list" },
     row("model", "모델 · 폴백", om ? `${modelName(om.model)} · ${thinkKo(om.thinking)}` : "", () => openModels("orchestrator")),
     row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
@@ -281,6 +282,6 @@ function renderSettings() {
     mnRow(),
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     row("chat", "대화 탭", chatTabMode() === "main" ? "메인 대화" : "마지막으로 보던 대화", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, null),
-    d && d.enabled ? el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord" })), el("span", { class: `tag ${d.connected ? "ok" : d.error ? "err" : "warn"}`, text: d.connected ? "연결됨" : d.error ? "연결 안 됨" : "연결 중", title: d.error || "" })) : null),
+    row("discord", "Discord", "", () => go("discord"), el("span", { class: "dcs-trail" }, el("span", { class: `tag ${dcTone}`, text: dcTag, title: (d && d.error) || "" }), icon("chev", "lead")))),
     ...pushSection(), ...updateSection(), ...accountSection());
 }
