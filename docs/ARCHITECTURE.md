@@ -28,6 +28,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 - Discord: `hub/discord.ts`, `hub/discord-format.ts`, `hub/threads.ts`, `hub/workchannels.ts`, `hub/livestatus.ts`, `hub/askbuttons.ts`, `hub/choices.ts`
 - web state: `hub/notices.ts`, `hub/conversations.ts`, `hub/reads.ts`, `hub/projectchat.ts`, `hub/projects.ts`, `hub/todo.ts`, `hub/activity.ts`, `hub/custom.ts`
 - notice classes: `hub/notice-class.ts` (`noticeClass`: 답변 필요 / 경고 / 결과 / 새 소식 / 대화 / 기록, with push, badge and pin), read by the bell tabs (`web/js/31-conversations.js`), web push and Discord's ping
+- Discord routing: `hub/discord-post.ts` (`<DATA_DIR>/discord-post.json`; kind and per-notice-class switches, `postClass` names a post's class, `/api/discord/post`; the web app always gets everything, 설정 → 앱 · 알림 adds "디스코드로도 보내기" per class)
 - push: `hub/push.ts` (per-class switches in config `notify.push`, `/api/push/classes`; news also per app, `custom/apps.json <app>.push`), `hub/webpush.ts`
 - per-install custom code (not part of the product): `hub/custom.ts` (cards, pins, routines), `hub/plugins.ts` (plugin hooks, see `docs/custom-plugins.md`; loaded from `<DATA_DIR>/custom/plugins/`)
 

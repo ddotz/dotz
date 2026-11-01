@@ -251,10 +251,16 @@ function pushSection() {
   else if (Notification.permission === "denied") rows.push(li("bell", "알림 권한이 막혀 있어요"));
   else if (!subscribed) rows.push(li("bell", "알림", el("button", { class: "btn", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, "알림 켜기")));
   if (!PCLS.v && !PCLS.asked) pclsLoad();
+  // Each notice class can also go to Discord (the same GET/PUT /api/discord/post as the section below; alert is the one key both rows write).
+  const dcOn = !!(S && S.discord && S.discord.enabled);
+  if (dcOn && !DP.v && !DP.asked) dpLoad();
   if (PCLS.v) {
-    for (const [k, label, desc] of PUSH_CLASSES) rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: label }), el("div", { class: "sup", text: desc })),
+    for (const [k, label, desc] of PUSH_CLASSES) rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: label }), el("div", { class: "sup", text: desc }),
+      dcOn && DP.v ? el("div", { class: "dc" }, el("span", { class: "sup", text: "디스코드로도 보내기" }), el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(DP.v[k] !== false), "aria-label": `${label} 디스코드로도 보내기`, "data-dc": k, onclick: () => dpSet(k, DP.v[k] === false) })) : null),
       el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(PCLS.v[k] !== false), "aria-label": `${label} 알림`, "data-k": k, onclick: () => pushClass(k, PCLS.v[k] === false) })));
     rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "이 설정은 모든 기기에 같이 적용돼요." }))));
+    // No Discord connected: alerts live in the web app; one row says how to get them on Discord too.
+    if (!dcOn) rows.push(el("div", { class: "li", "data-dc-hint": "1" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "디스코드로도 받으려면" }), el("div", { class: "sup", text: "디스코드를 연결하면 분류마다 디스코드로도 보낼 수 있어요. 설치 마법사(bun setup.ts)에서 디스코드를 연결해 주세요." }))));
   }
   if (subscribed) {
     rows.push(li("bell", "알림 확인", el("button", { class: "btn tonal", type: "button", onclick: ev => pushTest(ev.currentTarget) }, "테스트 알림 보내기"), el("button", { class: "btn text", type: "button", onclick: ev => pushDisable(ev.currentTarget) }, "끄기")));

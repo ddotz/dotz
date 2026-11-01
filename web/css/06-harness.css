@@ -95,6 +95,8 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .hs-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: transform .15s; }
 .hs-sw[aria-checked="true"] { background: var(--accent); }
 .hs-sw[aria-checked="true"]::after { transform: translateX(16px); }
+/* settings: a class's "디스코드로도 보내기" switch under its phone-push row text */
+.dc { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 /* settings: 업데이트 */
 .sec .upd-new { margin-left: 8px; vertical-align: middle; }
 /* a section heading with its own action (실행 하네스 · 확인): the button sits at the right end, apart from the title */
