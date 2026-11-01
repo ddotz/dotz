@@ -1,6 +1,9 @@
 // The live progress message against a fake Discord REST server (DOTZ_DISCORD_API) and the fake clock: typing while the
 // answer is pending, ONE progress message from 5 min on, edited in place when there is news, deleted by the answer.
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { DATA_DIR } from "./config.ts";
 import { emitEventActivity } from "./activity.ts";
 import * as discord from "./discord.ts";
 import { emitActivity } from "./events.ts";
@@ -143,5 +146,56 @@ test("web: the progress line is one note per conversation through the web hook, 
 	expect(requests).toEqual([]);
 	emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "lane:live-test", type: "turn_end", text: "" });
 	await run(12);
-	expect(posts).toHaveLength(1);
+	// No report after the end; the line shown is finalized with an empty note (the page drops it).
+	expect(posts.map(p => p.text)).toEqual([posts[0]!.text, ""]);
+});
+
+// A work channel answered by its own conversation session (2026-11-01, ch:1564971207911284746): the web message's progress line
+// waited on main's turn and on a Discord send, so the session's answer at 1:40 (web only) left "5분째 작업 중" posted at 5:00.
+test("a conversation session's answer at 1:40 ends the web wait too: nothing is posted at 5:00", async () => {
+	requests.length = 0;
+	const posts: { target: string; text: string }[] = [];
+	livestatus.setWebProgress((target, text) => void posts.push({ target, text }));
+	livestatus.begin("ch:111", "conv:work", true);
+	await run(1);
+	await advance(40_000);
+	// What the answer's delivery does (prompts.ts onAnswer, outbound.ts settleAnswer), on the web as on Discord.
+	await discord.clearProgress("ch:111");
+	await run(12);
+	expect(posts).toEqual([]);
+	expect(visible().filter(r => r.method !== "DELETE")).toEqual([]);
+});
+
+test("web: a line already posted is finalized when the session's turn ends or its answer comes, and none follows", async () => {
+	const posts: { target: string; text: string }[] = [];
+	livestatus.setWebProgress((target, text) => void posts.push({ target, text }));
+	const sessionTool = (intent: string) => emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "conv:work", type: "tool_call", text: intent, intent });
+	livestatus.begin("ch:111", "conv:work", true);
+	await run(6, m => m === 1 && sessionTool("문서 정리하는 중"));
+	expect(posts.map(p => p.text.length > 0)).toEqual([true]);
+	emitActivity({ ts: new Date(Date.now()).toISOString(), kind: "activity", source: "conv:work", type: "turn_end", text: "" });
+	await run(12);
+	expect(posts.map(p => p.text)).toEqual([posts[0]!.text, ""]);
+
+	posts.length = 0;
+	livestatus.begin("ch:111", "conv:work", true);
+	await run(6, m => m === 1 && sessionTool("다시 정리하는 중"));
+	await discord.clearProgress("ch:111");
+	await run(12);
+	expect(posts.map(p => p.text.length > 0)).toEqual([true, false]);
+});
+
+test("gateway start: a progress message a turn before the start left on Discord is deleted, a live one is kept", async () => {
+	requests.length = 0;
+	await discord.progress("ch:111", "progress", "⏳ live");
+	const file = join(DATA_DIR, "discord-progress.json");
+	const live = JSON.parse(readFileSync(file, "utf8"))["ch:111"].progress as string;
+	writeFileSync(file, JSON.stringify({ "ch:111": { progress: live, other: "left1" }, "ch:222": { progress: "left2" } }));
+	discord.channels.work["222"] = "proj2";
+	await discord.clearLeftProgress();
+	const deleted = requests.filter(r => r.method === "DELETE").map(r => r.path.split("/channels/")[1]);
+	expect(deleted).toEqual(["111/messages/left1", "222/messages/left2"]);
+	expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ "ch:111": { progress: live } });
+	await discord.clearProgress("ch:111");
+	expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({});
 });
