@@ -3,17 +3,22 @@
 // folder, never in the code. A missing or broken file is every kind on (Discord got everything before this switch existed) except
 // web_lanes; migratePostSettings writes the first file so an install without Discord starts all off (web only).
 // web_lanes: a session started from the web or terminal also gets a Discord channel/thread and posts there (off: it lives in the web).
+// ask / result / news / conv are the notice classes (hub/notice-class.ts) as the owner's per-class "디스코드로도 보내기" switches (alert is the
+// alert key above). A file written before they existed lacks them: each then follows today's kind (ask, news, conv: chat; result: lanes).
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
+import { splitTone } from "./tone.ts";
 
-export const POST_KINDS = ["chat", "lanes", "alert", "worklog", "web_lanes"] as const;
+export const POST_KINDS = ["chat", "lanes", "alert", "worklog", "web_lanes", "ask", "result", "news", "conv"] as const;
 export type PostKind = (typeof POST_KINDS)[number];
 export type PostSettings = Record<PostKind, boolean>;
 
 const file = () => join(DATA_DIR, "discord-post.json");
-const ALL_ON: PostSettings = { chat: true, lanes: true, alert: true, worklog: true, web_lanes: false };
-const ALL_OFF: PostSettings = { chat: false, lanes: false, alert: false, worklog: false, web_lanes: false };
+const ALL_ON: PostSettings = { chat: true, lanes: true, alert: true, worklog: true, web_lanes: false, ask: true, result: true, news: true, conv: true };
+const ALL_OFF: PostSettings = { chat: false, lanes: false, alert: false, worklog: false, web_lanes: false, ask: false, result: false, news: false, conv: false };
+// A class key the file does not hold yet follows the kind it was part of.
+const CLASS_FALLBACK = { ask: "chat", result: "lanes", news: "chat", conv: "chat" } as const;
 
 // Gateway start: the first file is today's routing where Discord is connected (nothing changes for that owner), all off where it
 // is not, so connecting Discord later sends nothing until the owner turns kinds on. An existing file is never touched.
@@ -36,6 +41,19 @@ export function postKind(target: string): PostKind {
 	return "chat";
 }
 
+// The notice class of an outgoing post (hub/notice-class.ts), or undefined when none of the class switches decides it (progress, work log,
+// anything else): then the target's kind does. `extra` is the post's event fields (source, update_key, system, mail; news = a monitor's post, hub/main.ts).
+export function postClass(target: string, text: string, extra: Record<string, unknown> = {}): PostKind | undefined {
+	const { tone } = splitTone(text);
+	if (tone === "run" || target === "worklog" || typeof extra.update_key === "string") return undefined;
+	if (tone === "ask") return "ask";
+	if (target === "alert") return "alert";
+	if (target.startsWith("lane:")) return tone === "done" || tone === "fail" || extra.lane_report === true ? "result" : undefined;
+	if (extra.mail === true || extra.news === true) return "news";
+	const bot = extra.source === undefined || extra.source === "orchestrator";
+	return bot && !extra.system && /^(?:main|ch:|th:|settings:)/.test(target) ? "conv" : undefined;
+}
+
 let cache: { stamp: string; v: PostSettings } | undefined;
 export function postSettings(): PostSettings {
 	let stamp: string;
@@ -50,6 +68,7 @@ export function postSettings(): PostSettings {
 	try {
 		const raw = JSON.parse(readFileSync(file(), "utf8")) as Record<string, unknown>;
 		for (const k of POST_KINDS) if (typeof raw?.[k] === "boolean") v[k] = raw[k] as boolean;
+		for (const [k, from] of Object.entries(CLASS_FALLBACK)) if (typeof raw?.[k] !== "boolean") v[k as PostKind] = v[from];
 	} catch {
 		v = { ...ALL_ON };
 	}
@@ -71,5 +90,6 @@ export function savePostSettings(patch: Record<string, unknown>): PostSettings {
 // Whether a post to `target` goes to Discord. An answer to a message the owner wrote on Discord (a Discord message id) always does:
 // he asked there, so the answer has to be there.
 // A web lane never does: it has no Discord place.
-export const discordPosts = (target: string, replyTo?: string): boolean =>
-	!(target.startsWith("lane:") && webLane(target.slice(5))) && (postSettings()[postKind(target)] || (!!replyTo && /^\d{17,20}$/.test(replyTo)));
+// `cls` (postClass): when given, its switch decides; without it the target's kind does.
+export const discordPosts = (target: string, replyTo?: string, cls?: PostKind): boolean =>
+	!(target.startsWith("lane:") && webLane(target.slice(5))) && (postSettings()[cls ?? postKind(target)] || (!!replyTo && /^\d{17,20}$/.test(replyTo)));
