@@ -325,11 +325,15 @@ computer (default derived from its hostname; peers learn it from `GET /api/peer-
 identity against its own allow-list, so each machine must allow your login.
 
 **File snapshot retention.** A `[file]` attachment is copied into `~/.dotz/files/<sha256>/` when the message is sent, so the chip opens
-after the original is gone. Copies are not kept forever: a copy nobody opened or sent again for `web.snapshot_keep_days` days (default 30)
+after the original is gone, whoever sent it (the orchestrator, a lane, a conversation session, a worker) and wherever it lives (a
+worktree, `/tmp`, or a result-type file such as an image, document or page in a data-dir sub folder like `logs/`; config, `.json`/`.jsonl`
+records and the accounts, sessions, state and secrets folders stay shut). The same copy rides along as the Discord attachment. An older
+message's file is copied the first time it is opened while the original still exists. Copies are not kept forever: a copy nobody
+opened or sent again for `web.snapshot_keep_days` days (default 90)
 is deleted, and while `files/` is over `web.snapshot_max_total_mb` (default 1024) the least recently used copies go first (the newest
 one stays). Opening a chip refreshes the copy's last use (its file mtime). `web.snapshot_max_mb` (default 200) still skips larger files.
 The sweep is one async directory scan at the first data cleanup after the start, then every hour, and right after a write that passes
-the cap. It touches only `files/<sha>/` folders (never `uploads/`). A chip whose copy and original are both gone says "파일이 지워졌어요".
+the cap. It touches only `files/<sha>/` folders (never `uploads/`). A chip whose copy and original are both gone says "원본이 지워졌어요".
 Changing these keys needs a gateway restart.
 
 *Push with several gateways.* Each device (a phone, a laptop: one browser or one installed app) gets each notice once, whichever gateway

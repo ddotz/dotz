@@ -12,7 +12,7 @@ const INDEX = join(FILES, "index.jsonl");
 export const SNAP_MAX_BYTES = Math.max(1, Number((cfg as any).web?.snapshot_max_mb ?? 200)) * 1024 * 1024;
 // Retention (see sweepSnapshots): a copy's last use is the mtime of its file, refreshed when it is served or sent again.
 const DAY_MS = 86_400_000;
-const KEEP_DAYS = () => Math.max(1, Number((cfg as any).web?.snapshot_keep_days ?? 30));
+const KEEP_DAYS = () => Math.max(1, Number((cfg as any).web?.snapshot_keep_days ?? 90));
 const TOTAL_BYTES = () => Math.max(1, Number((cfg as any).web?.snapshot_max_total_mb ?? 1024)) * 1024 * 1024;
 const TOUCH_AFTER_MS = 3600_000; // the last use is only rewritten when older than this, so a page full of chips costs no writes
 const touch = (path: string, now = Date.now()) => {
