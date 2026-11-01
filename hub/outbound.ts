@@ -64,7 +64,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		isNote: text => isNote(text, "newMessageLead") || isNote(text, "waitedLead") || isNote(text, "laneReportLead"),
 		post: (target, text, replyTo) => out(target, text, replyTo, { auto: true, session: key }),
 		// The deferral acknowledgement is the gateway speaking, not the answer: it must leave the deferred prompt open.
-		announce: (target, text) => void out(target, text, undefined, { source: "gateway" }).catch(e => log(`deferral note to ${target} failed: ${e}`)),
+		announce: (target, text, worker) => void systemNote(target, text, "deferred", worker).catch(e => log(`deferral note to ${target} failed: ${e}`)),
 		// The worker the [later] turn just spawned, as OmO's task store lists it (bgWork is created below and read at call time).
 		workFor: target => {
 			const w = bg()?.list().find(w => w.status === "running" && w.target === target);
@@ -186,7 +186,7 @@ function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason
 	const answers = jobAnswers(j);
 	const late = answers !== undefined && lateFor(j.target, answers);
 	const original = late && answers && !isSnowflake(answers) ? ownerMessage(answers) : undefined;
-	const text = original ? withQuote(sent, lateQuote(original, TZ)) : sent;
+	const text = original ? withQuote(sent, lateQuote(original, TZ)) : j.extra.system ? `-# ${sent}` : sent;
 	return sends.submit(j.target, text, replyRef(j.target, j.replyTo, lastOwner.get(j.target), late), answers, late);
 }
 // Posts still in the output-language rewrite: the restart gate waits for them, shutdown lands what is left with the original text.
@@ -231,6 +231,9 @@ const cardsNoteFor = (target: string): string | undefined => {
 	const cards = openDraftCards(conv).map(c => ({ ref: c.ref, title: cardTitle(c.text) || c.title, notice: c.id, ...(shown?.ref === c.ref ? { progress: shown.progress, link: cardLink(shown) } : {}) }));
 	return pendingCardsNote(cards, approvals.heldIn(conv).length);
 };
+// A gateway status line (a deferral receipt): `system` on its event makes the web draw a compact system line (opening `worker` with its
+// live state) and Discord a small `-# ` line; it is never unread and never pushed (push.ts classify only pushes orchestrator answers).
+export const systemNote = (target: string, text: string, system: string, worker?: string) => out(target, text, undefined, { source: "gateway", system, ...(worker ? { worker } : {}) });
 export async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
 	const answersOwner = extra.source === undefined || extra.source === "orchestrator";

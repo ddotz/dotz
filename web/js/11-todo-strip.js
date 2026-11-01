@@ -145,10 +145,32 @@ function cardNode(c) {
     rows.length ? el("dl", { class: "cc-facts" }, ...rows) : null, c.note ? el("div", { class: "cc-note", text: c.note }) : null,
     acts.length ? el("div", { class: "btns cc-act" }, ...acts) : null);
 }
+// A gateway system line (hub/outbound.ts `system`, e.g. "백그라운드 작업으로 맡겼어요: …"): one small muted line in the style of the
+// 여기까지 읽음 divider, no bubble or author. With a `worker` it opens that worker, and its state (S.work) is painted in place on each refresh.
+const SYS_NODES = new Map();   // worker id -> its line's status node (the newest drawing)
+const SYS_ST = { running: ["pri", "진행 중"], done: ["ok", "끝남"], failed: ["err", "실패"] };
+function paintSysLines() {
+  for (const [id, st] of SYS_NODES) {
+    if (!st.isConnected) { SYS_NODES.delete(id); continue; }
+    const w = ((S && S.work) || []).find(x => x.id === id), s = w && (w.cancelled ? ["", "중단됨"] : SYS_ST[w.status]);
+    st.hidden = !s;
+    if (s) { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; }
+  }
+}
+function sysLine(e, text, hm) {
+  const id = typeof e.worker === "string" ? e.worker : "", st = el("span", { class: "cv-sys-st", hidden: true }, el("span", { class: "dot" }), el("span"));
+  const kids = [icon("lanes"), el("span", { class: "cv-sys-tx", text }), st, hm ? el("span", { class: "cv-sys-mt", text: hm }) : null];
+  if (!id) return el("div", { class: "cv-sys", role: "note" }, ...kids);
+  SYS_NODES.set(id, st);
+  const n = el("button", { class: "cv-sys", type: "button", title: "작업 열기", onclick: () => openSub("orchestrator", id, null, text.replace(/^[^:]*:\s*/, "")) }, ...kids);
+  queueMicrotask(paintSysLines);
+  return n;
+}
 function msgNode(e) {
   const text = String(e.text ?? ""), hm = kstHM(e.ts);
   // Nothing to read: an outbox record with no text and no card is not a bubble (a deferral note must never look like an empty one).
   if (!text.trim() && !e.card && !(Array.isArray(e.files) && e.files.length) && e.kind !== "result" && e.kind !== "lane_start") return null;
+  if (e.kind === "out" && e.system) return sysLine(e, text.trim(), hm);
   switch (e.kind) {
     case "message": case "lane_message": case "_cmd": {
       const via = e.kind === "_cmd" ? "명령" : e.source === "discord" ? "Discord" : e.source === "terminal" ? "터미널" : "";
@@ -278,7 +300,7 @@ function chatPush(en, bulk) {
     // One progress note per target+key (newest text at the newest position; a session keeps only its newest note);
     // the answer to that target (or its lane report) drops them.
     if (pkey) { dropProgress(pkey); if (laneT) for (const [k, v] of CS.prog) if (v.target === laneT) dropProgress(k); }
-    else if (!isFixedT(target) && (e.kind === "lane_report" || e.kind === "out")) {
+    else if (!isFixedT(target) && (e.kind === "lane_report" || (e.kind === "out" && !e.system))) {
       const t = e.kind === "lane_report" || laneT ? et : String(e.target ?? "");
       for (const [k, v] of CS.prog) if (v.target === t) dropProgress(k);
     }

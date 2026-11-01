@@ -9,7 +9,8 @@ const CONV_KINDS = new Set(["message", "lane_message", "out", "lane_report", "re
 // A post edited in place (update_key) is a message only in 알림 / 작업 기록; elsewhere it is a progress note.
 const convKeyedOk = e => e.update_key !== "progress" && isFixedT(eventTarget(e) || "");
 const convReal = e => CONV_KINDS.has(e.kind) && !(e.kind === "out" && e.update_key && !convKeyedOk(e));
-const convIncoming = e => convReal(e) && !OWNER.has(e.kind) && !cleanRestart(e);
+// A gateway system line (`system`, 11-todo-strip.js sysLine) is a status, never unread (hub/conversations.ts countIncoming).
+const convIncoming = e => convReal(e) && !OWNER.has(e.kind) && !cleanRestart(e) && !e.system;
 
 // Same rule as hub/conversations.ts previewOf: first meaningful line, plain text, 120 chars.
 function convPreview(raw) {
