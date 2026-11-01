@@ -185,6 +185,7 @@ let ntJumpSeq = 0;
 async function ntJump(n) {
   const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, t = ntGo(n.src || n.open || "main");
   if (!t) return;
+  if (t === "alert" && BELL.tab !== "all") bellTab("all");   // the message is in the timeline, which the other 알림 tabs hide
   chatUnpin();
   CV.jump = at;   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
   try {
@@ -502,14 +503,15 @@ function ntIgnoreBtn(n) {
 }
 
 // One row of the home card 답변 필요 (same markup as 08-home.js homeNowRow): tap = the detail sheet, x = ignore.
-function ntHomeRow(n) {
+// `label` "" is a row that no longer waits (the 알림 tabs, 31-conversations.js bellPaint): no 답변 필요, no x.
+function ntHomeRow(n, label = "답변 필요") {
   const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open;   // a loose [ask] notice has no decision: its conversation names where it waits
   return el("div", { class: "hr hrx" },
-    el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": `${title} · 답변 필요` },
-      el("span", { class: "dot att" }),
+    el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": label ? `${title} · ${label}` : title },
+      el("span", { class: label ? "dot att" : `dot${n.read ? "" : n.cls === "alert" ? " err" : " un"}` }),
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha", text: [n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), ntWhen(n)].filter(Boolean).join(" · ") })),
-      el("span", { class: "hs warn", text: "답변 필요" })),
-    ntIgnoreBtn(n));
+      label ? el("span", { class: "hs warn", text: label }) : null),
+    label ? ntIgnoreBtn(n) : null);
 }
 
 // Send approvals (draft decisions) of one monitoring app instance are one row: "메일 답장 확인 3건". A tap unfolds the items, each one a normal row that opens its sheet.
@@ -528,7 +530,7 @@ function ntGroupRow(key, list) {
     el("span", { class: "dot att" }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: label })), el("span", { class: "ha", text: who ? `${who}${list.length > 2 ? " 외" : ""}` : "하나씩 확인해 주세요" })),
     el("span", { class: "hs warn", text: open ? "접기" : "펼치기" }));
-  return el("div", { class: `ntg${open ? " open" : ""}`, "data-group": key }, el("div", { class: "hr hrx" }, head), open ? el("div", { class: "ntg-l" }, ...list.map(ntHomeRow)) : null);
+  return el("div", { class: `ntg${open ? " open" : ""}`, "data-group": key }, el("div", { class: "hr hrx" }, head), open ? el("div", { class: "ntg-l" }, ...list.map(n => ntHomeRow(n))) : null);
 }
 function ntHomeRows(list) {
   const by = new Map();

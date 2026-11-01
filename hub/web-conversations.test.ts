@@ -90,8 +90,8 @@ describe("buttons for an [ask] message or any message with a 결정: choice bloc
 	const reply = (text: string, extra: Record<string, unknown> = {}) => ({ ts: at(1), kind: "out", source: "orchestrator", target: "web", text, ...extra });
 
 	test("a plain reply with a 1) list stays text", () => {
-		expect(page().parseChoices(list).blocks).toHaveLength(1);   // the parser sees the list...
-		expect(shown(reply(list))).toBe(false);   // ...but a message without the marker gets no buttons
+		expect(page().parseChoices(list).blocks).toHaveLength(0);   // the parser reads only blocks a 결정: line opened: a bare list is no decision
+		expect(shown(reply(list))).toBe(false);   // a message without the marker gets no buttons
 		expect(shown(reply(`**1) 가**\n설명\n**2) 나**\n설명`))).toBe(false);
 		expect(shown(reply(`[done] ${list}`))).toBe(false);
 	});

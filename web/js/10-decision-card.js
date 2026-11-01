@@ -38,7 +38,8 @@ function parseChoices(text) {
     const raw = m[2].replace(/^\*+|\*+$/g, "").trim();
     cur.options.push({ n, label: raw.replace(DETAIL_MARK, "").trim(), desc, rec: !!m[3], ...(DETAIL_MARK.test(raw) ? { detail: true } : {}) });
   }
-  return { question, blocks: blocks.filter(b => b.options.length) };
+  // Only a block a "결정:" line opened holds options (mirrors hub/choices.ts parseDecisions): a numbered or bold list in the body is text.
+  return { question, blocks: blocks.filter(b => b.headed && b.options.length) };
 }
 // Buttons for a message with the [ask] marker, or with any other marker (or none) when it holds a "결정:" choice block of 2+ options
 // (same rule as hub/notices.ts decisionsOf): a plain reply with a bare "1)" list stays text. The gateway's own alert keeps its looser rule.
@@ -112,9 +113,20 @@ function pickOption(dc, bi, opt, note) {
   DC.picks[dc.key] = p;
   p[bi] = note ? { ...opt, note } : opt;
   delete DC.edit[dc.key]; delete DC.note[dc.key];
-  const next = dc.blocks.findIndex((_, i) => !p[i]);
-  if (next >= 0) { DC.step[dc.key] = next; paintDecision(); return; }
-  answerDecision(dc, dc.blocks.length === 1 ? pickSay(p[0]) : `결정 답: ${dc.blocks.map((_, i) => pickSay(p[i])).join(" · ")}`, dc.blocks.length === 1 ? p[0] : undefined, dc.blocks.length === 1 ? note : undefined);
+  // Several decisions (owner 2026-11-01): a pick only marks that decision (and can be changed); nothing goes out until 보내기 (dcSendAll).
+  if (dc.blocks.length > 1) { paintDecision(); return; }
+  answerDecision(dc, pickSay(p[0]), p[0], note);
+}
+function dcSendAll(dc) {
+  const p = DC.picks[dc.key] || [];
+  if (DC.st[dc.key] || dc.blocks.some((_, i) => !p[i])) return;
+  answerDecision(dc, `결정 답: ${dc.blocks.map((_, i) => pickSay(p[i])).join(" · ")}`);
+}
+// Every decision of a several-decision card at once, each with its title and options, then one 보내기 that is on once each has a pick.
+function multiNodes(dc, picks, st) {
+  const got = dc.blocks.filter((_, i) => picks[i]).length, all = got === dc.blocks.length;
+  return [...dc.blocks.flatMap((b, i) => [el("div", { class: "dc-sub", text: `${picks[i] ? "✓ " : ""}${b.title || `결정 ${i + 1}`}` }), ...b.options.map(o => choiceRow(dc, i, o, picks, st))]),
+    el("button", { class: "btn dc-send", type: "button", disabled: !!st || !all, onclick: () => dcSendAll(dc) }, all ? "보내기" : `보내기 (${got}/${dc.blocks.length} 선택)`)];
 }
 // The files a draft sends along (hub/draft-approval.ts `> 첨부:` lines): one row per file, the row opens the file that will go out
 // (GET /api/drafts/<ref>/files/<n>, hub/draft-files.ts; through the peer proxy for a peer's draft). `첨부 없음` = the mail it answers had
@@ -391,9 +403,8 @@ function renderSheet(box, dc, picks, step) {
     const btns = opts.map((o, i) => el("button", { class: `dc-act${i === 0 ? " main" : o.label === DRAFT_EDIT ? " alt" : ""}${picks[0] && picks[0].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, 0, o) }, o.label));
     const man = oe && !st ? el("button", { class: "dc-manual", type: "button", title: "직접 수정", "aria-label": "직접 수정", onclick: () => { delete DC.note[dc.key]; DC.edit[dc.key] = { bi: 0, opt: oe, manual: true }; paintDecision(); } }, icon("pencil"), el("span", { text: "직접 수정" })) : null;
     foot.append(el("div", { class: "dc-acts" }, ...btns, ...(man ? [man] : [])));
-  } else {
-    if (dc.blocks.length > 1) foot.append(el("div", { class: "dc-steps", role: "group", "aria-label": "결정 단계" }, ...dc.blocks.map((b, i) =>
-      el("button", { class: `dc-chip${i === step ? " on" : ""}${picks[i] ? " got" : ""}`, type: "button", disabled: !!st, "aria-pressed": String(i === step), onclick: () => { DC.step[dc.key] = i; paintDecision(); } }, `${picks[i] ? "✓ " : ""}${b.title || `결정 ${i + 1}`}`))));
+  } else if (dc.blocks.length > 1) foot.append(...multiNodes(dc, picks, st));
+  else {
     const blk = dc.blocks[step];
     if (blk) {
       if (blk.title && dc.blocks.length > 1) foot.append(el("div", { class: "dc-sub", text: blk.title }));
@@ -428,9 +439,8 @@ function renderDecision(box, dc, picks, step) {
     const body = el("div", { class: "dc-body" });
     if (dc.draft) body.append(draftNode(dc.draft, { t: dc.t, edit: !st }));
     if (DC.edit[dc.key] && !st.startsWith("sent")) { body.append(editNode(dc, DC.edit[dc.key], st)); kids.push(body); }
+    else if (dc.blocks.length > 1) { body.append(...multiNodes(dc, picks, st)); kids.push(body); }
     else {
-    if (dc.blocks.length > 1) body.append(el("div", { class: "dc-steps", role: "group", "aria-label": "결정 단계" }, ...dc.blocks.map((b, i) =>
-      el("button", { class: `dc-chip${i === step ? " on" : ""}${picks[i] ? " got" : ""}`, type: "button", disabled: !!st, "aria-pressed": String(i === step), onclick: () => { DC.step[dc.key] = i; paintDecision(); } }, `${picks[i] ? "✓ " : ""}${b.title || `결정 ${i + 1}`}`))));
     const blk = dc.blocks[step];
     if (blk) {
       if (blk.title && dc.blocks.length > 1) body.append(el("div", { class: "dc-sub", text: blk.title }));

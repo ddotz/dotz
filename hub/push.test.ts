@@ -12,7 +12,7 @@ const ev = (e: Record<string, unknown>) => ({ ts: "2026-10-20T00:00:00Z", kind: 
 
 test("a web answer notifies only when it finishes work or needs the owner; a quick reply does not", () => {
 	expect(classify(ev({ target: "web", text: "네, 맞아요" }), 5_000)).toBeUndefined();
-	expect(classify(ev({ target: "web", text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: `${NAME} · 완료`, url: "/#chat/main", body: "다 했어요" });
+	expect(classify(ev({ target: "web", text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: `${NAME} · 완료`, url: "/#chat/main", body: "다 했어요" });
 	expect(classify(ev({ target: "web", text: "[done] 배포 끝" }), 5_000)).toMatchObject({ title: `${NAME} · 완료` });
 	expect(classify(ev({ target: "web", text: "[ask] 어느 쪽?" }))).toMatchObject({ kind: "ask", body: "어느 쪽?" });
 });
@@ -20,7 +20,7 @@ test("a web answer notifies only when it finishes work or needs the owner; a qui
 test("a project's answers notify like the main chat's and open that project's chat; a thread of it does too", () => {
 	const CH = "ch:000000000000000000";
 	expect(classify(ev({ target: CH, text: "네, 맞아요" }), 5_000)).toBeUndefined();
-	expect(classify(ev({ target: CH, text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: `${NAME} · 완료`, url: `/#chat/${CH}`, tag: `answer:${CH}` });
+	expect(classify(ev({ target: CH, text: "다 했어요" }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: `${NAME} · 완료`, url: `/#chat/${CH}`, tag: `answer:${CH}` });
 	expect(classify(ev({ target: CH, text: "[ask] 어느 쪽?" }))).toMatchObject({ kind: "ask", url: `/#chat/${CH}` });
 	expect(classify(ev({ target: "th:42", channel: CH, text: "[done] 끝" }))).toMatchObject({ title: `${NAME} · 완료`, url: `/#chat/${CH}` });
 	expect(classify(ev({ target: CH, source: "gateway", text: "[done] 끝" }))).toBeUndefined();
@@ -35,25 +35,25 @@ test("a lane's worklog entry never notifies from the event: its start is routine
 });
 
 test("alerts notify only when critical or when the owner is needed", () => {
-	expect(classify(ev({ source: "gateway", target: "alert", text: "뙃쥐: 사용량 한도(429)로 멈춤." }))).toMatchObject({ kind: "usage", title: `${NAME} · 경고` });
+	expect(classify(ev({ source: "gateway", target: "alert", text: "뙃쥐: 사용량 한도(429)로 멈춤." }))).toMatchObject({ kind: "alert", title: `${NAME} · 경고` });
 	expect(classify(ev({ source: "gateway", target: "alert", text: "토큰 누수 점검 (10-19): 경고 3건" }))).toBeUndefined();
 	expect(classify(ev({ target: "alert", reply_to: "1", text: "ㅇㅋ 형, 바로 할게요." }))).toBeUndefined();
 	expect(classify(ev({ target: "alert", text: "어제 영어 답변이 또 나왔어요. 고칠 곳을 정리했어요." }))).toBeUndefined();
-	expect(classify(ev({ target: "alert", text: "형, 주간 사용량이 2%만 남아서 레인 실행이 막혔어요." }))).toMatchObject({ kind: "usage" });
+	expect(classify(ev({ target: "alert", text: "형, 주간 사용량이 2%만 남아서 레인 실행이 막혔어요." }))).toMatchObject({ kind: "alert" });
 	expect(classify(ev({ target: "alert", text: "[ask] 전달 경로를 고칠까요?" }))).toMatchObject({ kind: "ask" });
 });
 
 test("lane [ask]/[done]/[fail] lines notify and open that lane; progress does not", () => {
 	expect(classify(ev({ source: "lane:ui-pwa", target: "lane:ui-pwa", text: "[ask] 머지할까?" }))).toMatchObject({ kind: "ask", url: "/#chat/lane:ui-pwa" });
-	expect(classify(ev({ kind: "lane_report", source: "lane:x", lane: "x", text: "[done] 끝" }))).toMatchObject({ kind: "lane", title: "x · 완료" });
-	expect(classify(ev({ source: "lane:x", target: "lane:x", text: "[fail] 테스트 실패" }))).toMatchObject({ kind: "lane", title: "x · 실패" });
+	expect(classify(ev({ kind: "lane_report", source: "lane:x", lane: "x", text: "[done] 끝" }))).toMatchObject({ kind: "result", title: "x · 완료" });
+	expect(classify(ev({ source: "lane:x", target: "lane:x", text: "[fail] 테스트 실패" }))).toMatchObject({ kind: "result", title: "x · 실패" });
 	expect(classify(ev({ source: "lane:x", target: "lane:x", text: "[run] 빌드 중", update_key: "progress" }))).toBeUndefined();
 	expect(classify(ev({ source: "lane:x", target: "lane:x", text: "그냥 메모" }))).toBeUndefined();
 });
 
 test("a session's untagged report that answers the owner after a long turn notifies as its answer", () => {
 	const report = (extra: Record<string, unknown>) => ev({ kind: "lane_report", source: "lane:x", lane: "x", text: "리포트가 완성됐어요", ...extra });
-	expect(classify(report({ answering: true }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: "x · 완료", url: "/#chat/lane:x", tag: "lane:x", body: "리포트가 완성됐어요" });
+	expect(classify(report({ answering: true }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: "x · 완료", url: "/#chat/lane:x", tag: "lane:x", body: "리포트가 완성됐어요" });
 	expect(classify(report({ answering: true }), LONG_TURN_MS - 1)).toBeUndefined();
 	expect(classify(report({}), LONG_TURN_MS)).toBeUndefined();
 	expect(classify(report({ answering: true, text: "[run] 아직 하는 중" }), LONG_TURN_MS)).toBeUndefined();
@@ -77,14 +77,14 @@ test("a subscription the push service reports gone (410) is dropped", async () =
 	expect(await (await call(q, "GET"))!.json()).toMatchObject({ subscribed: false });
 });
 
-test("Discord pings the owner only when no device takes this gateway's answer notifications", () => {
-	const on = { prefs: { answer: true }, did: "dev-aaaaaaaa" };
+test("Discord pings the owner only when no device takes this gateway's conversation (대화) notifications", () => {
+	const on = { did: "dev-aaaaaaaa" };
 	const never = () => false;
 	expect(answersReach([], never)).toBe(false);
 	expect(answersReach([on], never)).toBe(true);
-	expect(answersReach([{ ...on, prefs: { answer: false } }], never)).toBe(false);
+	expect(answersReach([on], never, false)).toBe(false);
 	expect(answersReach([on], did => did === "dev-aaaaaaaa")).toBe(false);
-	expect(answersReach([{ prefs: {} }], never)).toBe(true);
+	expect(answersReach([{}], never)).toBe(true);
 });
 
 test("a notification carries the id (ts) of the event it is about", () => {
@@ -118,7 +118,7 @@ test("the push for an out message leaves only after the message is persisted and
 });
 
 test("gateway alerts notify as usage; Discord-bound answers and inbox messages do not", () => {
-	expect(classify(ev({ source: "gateway", target: "alert", text: "5h 한도 90%" }))).toMatchObject({ kind: "usage" });
+	expect(classify(ev({ source: "gateway", target: "alert", text: "5h 한도 90%" }))).toMatchObject({ kind: "alert" });
 	expect(classify(ev({ target: "chat", text: "디코 답변" }))).toBeUndefined();
 	expect(classify(ev({ kind: "message", source: "web", text: "안녕" }))).toBeUndefined();
 });
@@ -144,8 +144,8 @@ test("an answer in a monitor's or app's settings conversation notifies like any 
 	setWatchLabelResolver(name => (name === "login-private-project-com" ? "까르띠에 로그인 유지" : name));
 	const conv = "settings:w:login-private-project-com";
 	expect(classify(ev({ target: conv, text: "원인을 찾았어요. 로그인이 풀렸어요." }), 5_000)).toBeUndefined();
-	expect(classify(ev({ target: conv, text: "원인을 찾았어요. 로그인이 풀렸어요." }), LONG_TURN_MS)).toMatchObject({ kind: "answer", title: "까르띠에 로그인 유지 · 완료", url: `/#chat/${conv}`, tag: `answer:${conv}` });
-	expect(classify(ev({ target: conv, text: "[fail] 다시 로그인하지 못했어요" }), 5_000)).toMatchObject({ kind: "answer", title: "까르띠에 로그인 유지 · 실패" });
+	expect(classify(ev({ target: conv, text: "원인을 찾았어요. 로그인이 풀렸어요." }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: "까르띠에 로그인 유지 · 완료", url: `/#chat/${conv}`, tag: `answer:${conv}` });
+	expect(classify(ev({ target: conv, text: "[fail] 다시 로그인하지 못했어요" }), 5_000)).toMatchObject({ kind: "result", title: "까르띠에 로그인 유지 · 실패" });
 	expect(classify(ev({ target: conv, text: "[ask] 다시 로그인할까요?" }))).toMatchObject({ kind: "ask", title: "까르띠에 로그인 유지 · 확인 필요" });
 	expect(classify(ev({ source: "gateway", target: conv, text: "받았어요" }), LONG_TURN_MS)).toBeUndefined();
 	setWatchLabelResolver(name => name);
@@ -155,6 +155,6 @@ test("an all-clear or a repeated gateway alert does not notify; a new failure an
 	for (const text of ["땃쥐: 모델 제공자가 다시 연결됐어요. 멈춰 있던 일을 이어서 처리해요.", "땃쥐: API 키 사용 끝: 오케스트레이터가 x(구독)으로 돌아왔어요.", "땃쥐: 원래 모델(claude-opus-5-5)로 되돌렸어요", "[kakao-new] 다시 정상이에요"])
 		expect(classify(ev({ source: "gateway", target: "alert", text }))).toBeUndefined();
 	expect(classify(ev({ source: "gateway", target: "alert", text: "땃쥐: 모델 제공자 오류(timeout)", repeat: true }))).toBeUndefined();
-	expect(classify(ev({ source: "gateway", target: "alert", text: "땃쥐: 모델 제공자 오류(timeout)" }))).toMatchObject({ kind: "usage" });
+	expect(classify(ev({ source: "gateway", target: "alert", text: "땃쥐: 모델 제공자 오류(timeout)" }))).toMatchObject({ kind: "alert" });
 	expect(classify(ev({ source: "gateway", target: "alert", text: "[ask] 땃쥐: 모델 오류가 계속돼요.", repeat: true }))).toMatchObject({ kind: "ask" });
 });

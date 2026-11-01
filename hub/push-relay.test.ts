@@ -103,7 +103,7 @@ afterEach(async () => {
 
 const PHONE = "phone-device-0001", LAPTOP = "laptop-device-0001";
 let seq = 0;
-const notice = (kind: "lane" | "ask" = "lane") => ({ kind, title: "custom-ui · 완료", body: `notice-${++seq}`, url: "/#chat/lane:custom-ui", tag: `lane:custom-ui-${seq}`, ts: "2026-10-22T01:02:03.004Z" });
+const notice = (kind: "result" | "ask" = "result") => ({ kind, title: "custom-ui · 완료", body: `notice-${++seq}`, url: "/#chat/lane:custom-ui", tag: `lane:custom-ui-${seq}`, ts: "2026-10-22T01:02:03.004Z" });
 const send = (gw: Id, m = notice()) => inst[gw].notify(m);
 // phone: app on alpha, browser on beta; laptop: browser on gamma
 async function devices() {
@@ -173,14 +173,18 @@ test("a subscription without a device id is a device of its own and is never sil
 	expect(loose.got()).toHaveLength(1);
 });
 
-test("a device that switched the kind off in its app is not woken by a browser either", async () => {
-	const app = await sub("alpha", PHONE, true, { lane: false }), browser = await sub("beta", PHONE, false);
-	expect(browser.status).toBe(409);
-	await send("gamma");
-	expect(app.got()).toHaveLength(0);
-	expect(browser.got()).toHaveLength(0);
-	await send("gamma", notice("ask"));
-	expect(app.got()).toHaveLength(1);
+test("a class the owner switched off (config notify.push) reaches no device; the other classes still do", async () => {
+	const app = await sub("alpha", PHONE, true);
+	const classes = (body?: unknown) => { const url = new URL("http://x/api/push/classes"); return inst.gamma.pushRoute(new Request(url, body ? { method: "PUT", body: JSON.stringify(body) } : {}), url).then(r => r!.json()); };
+	expect((await classes({ classes: { result: false } })).classes).toMatchObject({ result: false, ask: true, log: false });
+	try {
+		await send("gamma");
+		expect(app.got()).toHaveLength(0);
+		await send("gamma", notice("ask"));
+		expect(app.got()).toHaveLength(1);
+	} finally {
+		await classes({ classes: { result: true } });
+	}
 });
 
 test("no loop: only the gateway that made the notice relays, each peer at most twice, and a relay delivered by a peer is never sent on", async () => {
@@ -217,7 +221,7 @@ test("a relay without kind, title or body is refused", async () => {
 	const url = new URL("http://x/api/push/relay");
 	const post = (b: object) => inst.alpha.pushRoute(new Request(url, { method: "POST", body: JSON.stringify({ from: GW.gamma.url, ...b }) }), url)!;
 	expect((await post({ kind: "nope", title: "t", body: "b" })).status).toBe(400);
-	expect((await post({ kind: "lane", body: "b" })).status).toBe(400);
+	expect((await post({ kind: "result", body: "b" })).status).toBe(400);
 });
 
 test("a lone gateway keeps the old behavior, and a test notification goes to every subscription", async () => {
@@ -235,7 +239,7 @@ test("a lone gateway keeps the old behavior, and a test notification goes to eve
 
 test("the relayed message names the gateway, tags per gateway, opens with ?pc= and the item, has no option buttons, and cannot be steered by the sender", () => {
 	const m = inst.alpha.relayedMessage(GW.beta, { ...notice(), id: "n-7", actions: [{ action: "opt:1", title: "1) x" }] })!;
-	expect(m).toMatchObject({ kind: "lane", title: "베타 · custom-ui · 완료", pc: GW.beta.url, id: "n-7" });
+	expect(m).toMatchObject({ kind: "result", title: "베타 · custom-ui · 완료", pc: GW.beta.url, id: "n-7" });
 	expect(m.url).toBe("/?pc=https%3A%2F%2Fbeta.ts.net%3A8445&n=n-7#chat/lane:custom-ui");
 	expect(m.actions).toBeUndefined();
 	expect(inst.alpha.relayedMessage(GW.beta, notice())!.url).toStartWith("/?pc=https%3A%2F%2Fbeta.ts.net%3A8445&m=");

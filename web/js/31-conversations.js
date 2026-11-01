@@ -364,6 +364,44 @@ cvAppMenu.before(pjAppMenu);
 const cvAlertN = () => ts("alert").unread + ntAlertUnread().length;
 const cvReadAllBar = el("button", { class: "btn text sm cv-readall", id: "cvreadall", type: "button", hidden: true, "data-k": "read-all", title: "답이 필요한 알림은 그대로 둬요", onclick: ev => ntAlertReadAll(ev.currentTarget), text: "모두 읽음" });
 pjAppMenu.before(cvReadAllBar);
+/* ---- the tabs of the 알림 conversation (owner 2026-11-01; classes: hub/notice-class.ts, n.cls) ---- */
+// 전체 is the timeline as it was; the other tabs list that class of NT.items instead. A "log" notice is in no tab and in no count.
+const BELL = { tab: "all", sig: "", lsig: "" };
+const BELL_TABS = [["all", "전체"], ["ask", "답변 필요"], ["result", "결과"], ["news", "새 소식"], ["alert", "경고"]];
+const bellUnread = tab => NT.items.reduce((c, n) => c + (!n.read && n.cls !== "log" && (tab === "all" || n.cls === tab) ? 1 : 0), 0);
+function bellTab(tab) { BELL.tab = tab; bellPaint(); }
+// 새 소식 by app (the app's own name, else the monitor, else the title); the groups follow their newest item.
+function bellGroups(list) {
+  const by = new Map();
+  for (const n of list) { const k = ntPlain(n.app || n.watch || n.title) || "기타"; by.set(k, [...(by.get(k) || []), n]); }
+  return [...by];
+}
+function bellRows(tab) {
+  const list = NT.items.filter(n => n.id && n.cls === tab).sort((a, b) => (tab === "ask" ? Number(ntNeeds(b)) - Number(ntNeeds(a)) : 0) || ntAt(b) - ntAt(a)).slice(0, 100);
+  const row = n => ntHomeRow(n, ntNeeds(n) ? undefined : "");
+  if (!list.length) return [el("div", { class: "bell-none", text: "아직 없어요" })];
+  if (tab !== "news") return [el("div", { class: "hn" }, ...list.map(row))];
+  return bellGroups(list).flatMap(([name, items]) => [el("div", { class: "bell-gh", role: "presentation", text: name }), el("div", { class: "hn" }, ...items.map(row))]);
+}
+function bellPaint() {
+  const on = current === "chat" && target === "alert" && !monCtx, box = $("#bell-tabs"), list = $("#bell-list"), tab = BELL.tab, listed = on && tab !== "all";
+  box.hidden = !on; list.hidden = !listed;
+  $("#v-chat").classList.toggle("bell-on", listed);
+  if (!on) return;
+  const counts = BELL_TABS.map(([k]) => NT.loaded ? bellUnread(k) : 0), sig = JSON.stringify([tab, counts]);
+  if (sig !== BELL.sig) {
+    BELL.sig = sig;
+    clear(box).append(...BELL_TABS.map(([k, label], i) => el("button", { class: `chip${k === tab ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === tab), "data-k": k, onclick: () => bellTab(k) },
+      el("span", { class: "tx", text: label }), counts[i] ? el("span", { class: `nb${k === "ask" ? " warn" : k === "alert" ? " err" : ""}`, "aria-label": `안 읽은 알림 ${counts[i]}개`, text: counts[i] > 99 ? "99+" : String(counts[i]) }) : null)));
+  }
+  if (!listed) { BELL.lsig = ""; return; }
+  const lsig = JSON.stringify([tab, NT.items.filter(n => n.cls === tab).map(n => [n.id, n.read, n.ignored, n.updated || n.ts])]);
+  if (lsig === BELL.lsig) return;
+  BELL.lsig = lsig;
+  const top = list.scrollTop;
+  clear(list).append(...bellRows(tab));
+  list.scrollTop = top;
+}
 function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
@@ -377,6 +415,7 @@ function convPaint() {
     clear(convSide).append(...rows.map(convRow));
     convSide.scrollTop = top;
   }
+  bellPaint();
   convPaintHead();
 }
 function convSchedule() { if (!convRaf) convRaf = requestAnimationFrame(convPaint); }
