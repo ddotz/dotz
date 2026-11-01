@@ -97,7 +97,7 @@ test("a question waiting on the owner: 답을 기다려요 with 질문으로 가
 // A question docked above the composer with no notice of its own (a session's [ask] makes none, hub/notices.ts laneTone): 질문으로 가기
 // opens that card, never "질문을 찾지 못했어요" under a question the owner can see.
 test("질문으로 가기 with no notice opens the docked question card, folded or not", async () => {
-	HIST = [LAST, { ts: ts(2), kind: "out", source: "orchestrator", text: "[ask] 어느 화면으로 할까요?\n1) 캔버스\n2) 앱 화면" }];
+	HIST = [LAST, { ts: ts(2), kind: "out", source: "orchestrator", text: "[ask] 어느 화면으로 할까요?\n결정: 어느 화면으로 할까요?\n1) 캔버스\n2) 앱 화면" }];
 	const v = await boot(1280, 900);
 	await waitFor(v, `!document.querySelector("#dcard").hidden && document.querySelectorAll("#dcard .dc-row").length === 2`);
 	await show(v, { kind: "waiting", reason: "ask", since: ts(2), detail: "어느 화면으로 할까요?" });

@@ -113,7 +113,7 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 
 	test("연결 상태 first, then one control per concept in sections: 자동 초안과 승인, 감시, 기타 기능, 고급; 숨긴 기능 are not drawn", async () => {
 		await openScreen(v);
-		expect(await q(v, `return { conn: document.querySelector("#app-sw").firstElementChild.dataset.conn, secs: [...document.querySelectorAll("#app-sw [data-sec]")].map(e => e.dataset.sec) }`)).toEqual({ conn: "connected", secs: ["draft", "watch", "more", "advanced"] });
+		expect(await q(v, `return { conn: document.querySelector("#app-sw").firstElementChild.dataset.conn, secs: [...document.querySelectorAll("#app-sw [data-sec]")].map(e => e.dataset.sec) }`)).toEqual({ conn: "connected", secs: ["notify", "draft", "watch", "more", "advanced"] });
 		// comment_reply's switch IS the auto_draft setting: the screen draws the setting row once and no second feature row.
 		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-feature]")].map(e => e.dataset.feature)`)).toEqual(["reels_approval", "dm_read"]);
 		expect(await q(v, `return [...document.querySelectorAll('#app-sw [data-setting="auto_draft"]')].length`)).toBe(1);
@@ -196,7 +196,8 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		await run(v, `${more}.click()`);
 		await waitFor(v, `document.querySelector("#app-sw [data-setting='auto_draft']") && document.querySelector("#app-sw [data-feature]")`);
 		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-feature]")].map(e => e.querySelector(".as-n").textContent)`)).toEqual(["새 메일"]);
-		expect(await q(v, `return document.querySelector('#app-sw [data-sec="notify"]').nextElementSibling.dataset.feature`)).toBe("new_mail");
+		expect(await q(v, `return document.querySelector('#app-sw [data-sec="notify"]').nextElementSibling.dataset.setting`)).toBe("push");   // 휴대폰 알림 opens 알림, 새 메일 follows it
+		expect(await q(v, `return document.querySelector('#app-sw [data-sec="notify"]').nextElementSibling.nextElementSibling.dataset.feature`)).toBe("new_mail");
 		expect(await q<string>(v, `return document.querySelector("#app-sw").textContent`)).not.toMatch(RAW);
 		await shot(v, `${tag}-mail-settings.png`);
 	});

@@ -26,7 +26,7 @@ const box = async (v: View, sel: string): Promise<Box | null> =>
 const stored = () => listNotices(300).items;
 const MAIL = Array.from({ length: 28 }, (_, i) => `${i + 1}번째 줄이에요. 지난 회의에서 정한 일정과 담당을 다시 정리해서 보내 드립니다. 확인 부탁드립니다.`).join("\n");
 const draft = (ref: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${draftApprovalBlock({ to: "kim@example.com", subject: "다음 주 일정 정리와 담당자 확인 요청", body: MAIL, ref })}` });
-const plain = (title: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}\n**1) 예**\n**2) 아니요**` });
+const plain = (title: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}\n결정: ${title}\n**1) 예**\n**2) 아니요**` });
 const find = (pred: (n: Notice) => boolean) => stored().find(n => n.kind === "decision" && n.decision?.state === "open" && pred(n))! as Notice;
 
 afterAll(() => hub.stop());

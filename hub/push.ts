@@ -5,7 +5,8 @@ import { peerFetch } from "./tailnet-fetch.ts";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { DATA_DIR, log, NAME, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, log, NAME, updateNotifyPush, writeAtomic } from "./config.ts";
+import { CLASS_PUSH_DEFAULTS, classOfNotice, NOTICE_CLASSES, type NoticeClass, noticeClass } from "./notice-class.ts";
 import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { quietAlert } from "./alert-gate.ts";
@@ -14,9 +15,22 @@ import { type Found, knownComputers } from "./peers.ts";
 import { isLater, parseTone, previewSource, stripMarkers } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
 
-export const PUSH_KINDS = ["answer", "ask", "lane", "usage", "update", "watch"] as const;
-type PushKind = (typeof PUSH_KINDS)[number];
-type Prefs = Record<PushKind, boolean>;
+// A notification's kind is its notice class (hub/notice-class.ts); whether it goes out is the owner's switch for that class (config.json notify.push)
+// and, for news, the app's own switch (custom/apps.json <app>.push). `prefs` on a subscription are the per-device toggles of before; kept, not read.
+export const PUSH_KINDS = NOTICE_CLASSES;
+type PushKind = NoticeClass;
+type Prefs = Record<string, boolean>;
+// The kinds a computer that runs an older gateway relays, as classes.
+const LEGACY_KINDS: Record<string, PushKind> = { answer: "conv", ask: "ask", lane: "result", usage: "alert", update: "news", watch: "news" };
+export const classPushes = (): Record<PushKind, boolean> => ({ ...CLASS_PUSH_DEFAULTS, ...Object.fromEntries(Object.entries(cfg.notify?.push ?? {}).filter(([k, v]) => k in CLASS_PUSH_DEFAULTS && typeof v === "boolean")) });
+const appPushes = (app: string): boolean => {
+	try {
+		return (JSON.parse(readFileSync(join(DATA_DIR, "custom", "apps.json"), "utf8")) as Record<string, { push?: unknown }>)[app]?.push !== false;
+	} catch {
+		return true;
+	}
+};
+export const classPushOn = (cls: PushKind, app?: string): boolean => classPushes()[cls] && (cls !== "news" || !app || appPushes(app));
 // `app`: made by the installed app (the page runs standalone), the subscription a device is reached through when it has one.
 // `did`: the device's id, shared by all its subscriptions on every computer (see fanOut).
 type Stored = Subscription & { prefs: Prefs; ua?: string; at: string; app?: boolean; did?: string };
@@ -27,13 +41,13 @@ type Stored = Subscription & { prefs: Prefs; ua?: string; at: string; app?: bool
 type PushAction = { action: string; title: string };
 // `pc`: a notice relayed from another computer (its origin); a tap opens the app, which switches to that computer (web/js/33-peers.js prFollow).
 // `withdraw`: tags of notifications already handled; the service worker closes them (a "withdraw" push carries nothing else).
-type PushMessage = { kind: PushKind | "test" | "withdraw"; title: string; body: string; url: string; tag?: string; ts?: string; id?: string; actions?: PushAction[]; pc?: string; withdraw?: string[] };
+type PushMessage = { kind: PushKind | "test" | "withdraw"; title: string; body: string; url: string; tag?: string; app?: string; ts?: string; id?: string; actions?: PushAction[]; pc?: string; withdraw?: string[] };
 
 const KEY_FILE = join(DATA_DIR, "secrets", "vapid.json");
 const SUBS_FILE = join(DATA_DIR, "push.json");
 const PRESENCE_MS = 60_000;
 const DEDUPE_MS = 10 * 60_000;
-const defaults = (): Prefs => ({ answer: true, ask: true, lane: true, usage: true, update: true, watch: true });
+const defaults = (): Prefs => ({});
 
 let keys: VapidKeys | undefined;
 function vapid(): VapidKeys {
@@ -84,7 +98,6 @@ const plain = (t: string, max = 180) => {
 // turn-end report), the caller dedupes.
 export const LONG_TURN_MS = 2 * 60_000;
 const CRITICAL = /멈췄|멈춤|막혔|실패|오류|끊겼|한도|위험|소진|확인이 필요|failed|error|stopped|limit/i;
-const ROUTINE_ALERT = /^토큰 누수 점검/;
 export function classify(e: HubEvent, sinceOwner?: number): PushMessage | undefined {
 	const m = classifyEvent(e, sinceOwner);
 	return m ? { ...m, ts: e.ts } : undefined;
@@ -100,19 +113,19 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 	const lane = typeof e.lane === "string" ? e.lane : src.startsWith("lane:") ? src.slice(5) : undefined;
 	if (lane && tone === "ask" && orchestratorOnlyAsk(rest)) return undefined;
 	if (e.kind === "out" && e.target === "alert") {
-		if (tone === "ask") return { kind: "ask", title: `${NAME} · 확인 필요`, body: plain(rest), url: "/#chat/main", tag: "ask:alert" };
-		// An all-clear, or the same alert again (hub/alert-gate.ts), was already as good as told.
-		if (e.reply_to || tone === "done" || tone === "run" || ROUTINE_ALERT.test(rest) || e.repeat === true || quietAlert(text)) return undefined;
-		if (tone !== "fail" && src !== "gateway" && !CRITICAL.test(rest)) return undefined;
-		return { kind: "usage", title: `${NAME} · 경고`, body: plain(rest), url: "/#chat/main", tag: "alert" };
+		// An all-clear, or the same alert again (hub/alert-gate.ts), was already as good as told: a record, not a warning.
+		const quiet = !!e.reply_to || tone === "done" || e.repeat === true || quietAlert(text) || (tone !== "fail" && src !== "gateway" && !CRITICAL.test(rest));
+		const c = noticeClass({ kind: "alert", tone, text: rest, quiet });
+		if (c.cls === "ask") return { kind: "ask", title: `${NAME} · 확인 필요`, body: plain(rest), url: "/#chat/main", tag: "ask:alert" };
+		return c.cls === "alert" ? { kind: "alert", title: `${NAME} · 경고`, body: plain(rest), url: "/#chat/main", tag: "alert" } : undefined;
 	}
 	if (lane && (e.kind === "out" || e.kind === "lane_report")) {
 		const url = `/#chat/lane:${encodeURIComponent(lane)}`;
-		if (tone === "ask") return { kind: "ask", title: `${lane} · 질문`, body: plain(rest), url, tag: `ask:${lane}` };
-		if (tone === "done" || tone === "fail") return { kind: "lane", title: `${lane} · ${tone === "done" ? "완료" : "실패"}`, body: plain(rest), url, tag: `lane:${lane}` };
-		// An untagged turn-end report that answers the owner, after a long turn: the session's answer, like the main chat's below.
-		if (e.kind === "lane_report" && e.answering === true && !tone && (sinceOwner ?? 0) >= LONG_TURN_MS) return { kind: "answer", title: `${lane} · 완료`, body: plain(rest), url, tag: `lane:${lane}` };
-		return undefined;
+		// An untagged turn-end report that answers the owner, after a long turn, is the session's finished work, like the main chat's below.
+		const long = e.kind === "lane_report" && e.answering === true && !tone && (sinceOwner ?? 0) >= LONG_TURN_MS;
+		const c = noticeClass({ kind: "result", tone: long ? "done" : tone });
+		if (c.cls === "ask") return { kind: "ask", title: `${lane} · 질문`, body: plain(rest), url, tag: `ask:${lane}` };
+		return c.cls === "result" ? { kind: "result", title: `${lane} · ${tone === "fail" ? "실패" : "완료"}`, body: plain(rest), url, tag: `lane:${lane}` } : undefined;
 	}
 	// The main chat's answers and a project's (work channel or one of its threads) are the same kind of message: one rule, each opening its own chat.
 	const chat = e.kind === "out" && e.source === "orchestrator" ? (e.target === "web" ? "main" : /^(?:ch:|settings:)/.test(eventTarget(e) ?? "") ? eventTarget(e) : undefined) : undefined;
@@ -120,10 +133,10 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 		const url = `/#chat/${chat}`, sfx = chat === "main" ? "" : `:${chat}`;
 		// A monitor's or app's settings conversation is titled with its label, like its notice in the bell.
 		const name = chat.startsWith("settings:") ? conversationTitle(chat) : NAME;
-		if (tone === "ask") return { kind: "ask", title: `${name} · 확인 필요`, body: plain(rest), url, tag: `ask:${chat}` };
-		if (tone === "fail") return { kind: "answer", title: `${name} · 실패`, body: plain(rest), url, tag: `answer${sfx}` };
-		if (tone === "done" || (sinceOwner ?? 0) >= LONG_TURN_MS) return { kind: "answer", title: `${name} · 완료`, body: plain(rest), url, tag: `answer${sfx}` };
-		return undefined;
+		// A quick reply is not finished work: it reaches the owner as the conversation's unread answer (noticePush, class conv) when he is elsewhere.
+		const c = noticeClass({ kind: "result", tone: tone || ((sinceOwner ?? 0) >= LONG_TURN_MS ? "done" : "") });
+		if (c.cls === "ask") return { kind: "ask", title: `${name} · 확인 필요`, body: plain(rest), url, tag: `ask:${chat}` };
+		return c.cls === "result" ? { kind: "result", title: `${name} · ${tone === "fail" ? "실패" : "완료"}`, body: plain(rest), url, tag: `answer${sfx}` } : undefined;
 	}
 	return undefined;
 }
@@ -145,23 +158,23 @@ const answerTag = (conv: string) => (conv === "main" ? "answer" : conv.startsWit
 // A bell notice that just became unread (hub/notices.ts onNoticeUnread) as a notification: results, monitoring news, alerts, unread answers.
 // Decisions push through decisionPush (onDecision), so an [ask] twin here stays quiet; [run] progress and the gateway's routine records never notify.
 export function noticePush(n: Notice): PushMessage | undefined {
-	if (n.decision || n.kind === "decision" || n.tone === "ask" || n.tone === "run" || n.read || n.dismissed) return undefined;
+	if (n.read || n.dismissed) return undefined;
+	const { cls, push } = classOfNotice(n);
+	if (cls === "ask" || !push) return undefined;
 	const conv = n.open || "main";
-	const base = { body: plain(n.text) || plain(n.title), url: convUrl(conv), ...(n.at ? { ts: n.at } : {}) };
-	const word = n.tone === "fail" ? "실패" : "완료";
-	switch (n.kind) {
-		case "result":
-			return n.tone === "done" || n.tone === "fail" ? { ...base, kind: "lane", title: `${n.title} · ${word}`, tag: conv.startsWith("lane:") ? conv : `result:${n.key ?? n.id}` } : undefined;
-		case "worklog":
-			return n.tone === "fail" ? { ...base, kind: "usage", title: `${n.title} · 실패`, tag: `worklog:${n.key ?? n.id}` } : undefined;
-		case "watch":
-			return { ...base, kind: "watch", title: `${n.title} · 새 소식`, tag: `watch:${n.key ?? n.watch ?? n.id}` };
+	const base = { kind: cls, body: plain(n.text) || plain(n.title), url: convUrl(conv), ...(n.at ? { ts: n.at } : {}) };
+	switch (cls) {
+		case "result": {
+			const title = `${n.title} · ${n.tone === "fail" ? "실패" : "완료"}`;
+			return n.kind === "worklog" ? { ...base, title, tag: `worklog:${n.key ?? n.id}` } : { ...base, title, tag: conv.startsWith("lane:") ? conv : `result:${n.key ?? n.id}` };
+		}
+		case "news":
+			if (n.key === "self-update") return { ...base, title: `${NAME} · ${n.title}`, tag: "update" };
+			return { ...base, title: `${n.title} · 새 소식`, tag: `watch:${n.key ?? n.watch ?? n.id}`, ...(n.app ? { app: n.app } : {}) };
 		case "alert":
-			if (n.key === "self-update") return { ...base, kind: "update", title: `${NAME} · ${n.title}`, tag: "update" };
-			if (ROUTINE_ALERT.test(n.text)) return undefined;
-			return { ...base, kind: "usage", title: `${NAME} · ${n.tone === "fail" || CRITICAL.test(n.text) ? "경고" : n.title}`, tag: "alert" };
-		case "message":
-			return { ...base, kind: conv.startsWith("lane:") ? "lane" : "answer", title: `${n.title} · 새 메시지`, tag: answerTag(conv) };
+			return { ...base, title: `${NAME} · ${n.tone === "fail" || CRITICAL.test(n.text) ? "경고" : n.title}`, tag: "alert" };
+		case "conv":
+			return { ...base, title: `${n.title} · 새 메시지`, tag: answerTag(conv) };
 	}
 	return undefined;
 }
@@ -310,7 +323,7 @@ const saveDevices = () => writeAtomic(DEVICES_FILE, `${JSON.stringify(devices, n
 const hasApp = (did?: string) => !!did && (devices[did]?.app === true || subs.some(s => s.did === did && s.app === true));
 const isOff = (did: string) => devices[did]?.off === true;
 // Whether some device of the owner takes this gateway's answer notifications; then Discord does not ping him for the same answer (owner 2026-10-30).
-export const answersReach = (list: Array<Pick<Stored, "prefs" | "did">>, off: (did: string) => boolean): boolean => list.some(s => s.prefs.answer !== false && !(s.did && off(s.did)));
+export const answersReach = (list: Array<Pick<Stored, "did">>, off: (did: string) => boolean, on = classPushOn("conv")): boolean => on && list.some(s => !(s.did && off(s.did)));
 export const pushReachesOwner = (): boolean => answersReach(subs, isOff);
 function dropBrowsers(did: string): void {
 	const rest = subs.filter(s => s.did !== did || s.app === true);
@@ -334,7 +347,7 @@ export function presenceQuiets(p: { at: number; conv?: string } | undefined, url
 	if (!p || p.at <= t - PRESENCE_MS) return false;
 	return p.conv === undefined || p.conv === convOfUrl(url);
 }
-const wants = (s: Stored, m: PushMessage, t: number) => (m.kind === "test" || s.prefs[m.kind] !== false) && (m.kind === "test" || !presenceQuiets(presence.get(s.endpoint), m.url, t));
+const wants = (s: Stored, m: PushMessage, t: number) => m.kind === "test" || !presenceQuiets(presence.get(s.endpoint), m.url, t);
 
 // Deliver through one subscription for each device not in `done` (an app's before a browser's) and mark the device done. A device whose chosen
 // subscription has the kind switched off (or whose page is open) stays quiet: that is its owner's choice there, and no other subscription fires.
@@ -429,7 +442,7 @@ const RELAY_HASH = /^#[\w:%.\-/]{0,200}$/;
 // (and the item: ?n= for a decision, ?m= for a message) so the app switches to that computer's view. The sender's id/ts name items on ITS
 // hub, so no option buttons (they would post the answer to this hub) and the tag is per computer.
 export function relayedMessage(peer: { name: string; url: string }, p: Record<string, unknown>): PushMessage | undefined {
-	const kind = (PUSH_KINDS as readonly string[]).includes(String(p.kind)) ? (p.kind as PushKind) : undefined;
+	const kind = (PUSH_KINDS as readonly string[]).includes(String(p.kind)) ? (p.kind as PushKind) : LEGACY_KINDS[String(p.kind)];
 	if (!kind || typeof p.title !== "string" || typeof p.body !== "string" || !p.title) return undefined;
 	const id = typeof p.id === "string" && /^[\w.:-]{1,80}$/.test(p.id) ? p.id : "";
 	const ts = typeof p.ts === "string" && /^[\w.:+-]{1,40}$/.test(p.ts) ? p.ts : "";
@@ -450,8 +463,9 @@ const recent = new Map<string, number>();
 const TAG_MS = 2 * 60_000;
 const recentTags = new Map<string, number>();
 /** Whether `m` goes out: not the same tag+body within DEDUPE_MS, not the same tag within TAG_MS, not a conversation someone has on screen. */
-export function shouldNotify(m: Pick<PushMessage, "kind" | "tag" | "body" | "url">, t = Date.now(), viewing: (conv: string) => boolean = isViewing): boolean {
+export function shouldNotify(m: Pick<PushMessage, "kind" | "tag" | "body" | "url" | "app">, t = Date.now(), viewing: (conv: string) => boolean = isViewing, on: (cls: PushKind, app?: string) => boolean = classPushOn): boolean {
 	if (m.kind === "test") return true;
+	if (m.kind !== "withdraw" && !on(m.kind, m.app)) return false;
 	const conv = convOfUrl(m.url);
 	if (conv && viewing(conv)) return false;
 	const key = `${m.tag}|${m.body}`;
@@ -605,6 +619,15 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 			await tellPeers({ did: gone.did, app: false });
 		}
 		return json({ ok: true });
+	}
+	// The owner's push switch per notice class (config.json notify.push): one setting for every device, unknown keys and non-booleans are a 400.
+	if (p === "/api/push/classes" && (req.method === "GET" || req.method === "PUT")) {
+		if (req.method === "PUT") {
+			const v = b.classes as Record<string, unknown> | undefined;
+			if (!v || typeof v !== "object" || Object.entries(v).some(([k, x]) => !(PUSH_KINDS as readonly string[]).includes(k) || typeof x !== "boolean")) return json({ error: "classes: { <class>: boolean }" }, 400);
+			updateNotifyPush(v as Record<string, boolean>);
+		}
+		return json({ classes: classPushes() });
 	}
 	if (req.method === "PUT" && p === "/api/push/prefs") {
 		const s = findSub(b.endpoint);

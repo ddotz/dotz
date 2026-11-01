@@ -60,6 +60,8 @@ const approval: SettingField = { key: "approval", label: "승인 방식", type: 
 const deviceSwitch = (app: string): SettingField => ({ key: "use_here", label: "이 기기에서 쓰기", type: "bool", help: "끄면 이 컴퓨터의 앱 목록에서 빠지고 감시와 알림이 멈춰요. 데이터는 그대로 남아요", store: "custom/apps.json", path: `${app}.off`, def: true, switch: true, section: "advanced", invert: true });
 
 // The instance's name (hub/integrations.ts appEntries): shown in the list, the title and the notices; empty = the app's own name.
+// The app's news on the phone (hub/push.ts classPushOn, class news): off keeps it in the bell only. Default on.
+const pushField = (app: string): SettingField => ({ key: "push", label: "휴대폰 알림", type: "bool", help: "이 앱에 새 소식(메일·메시지·댓글)이 오면 휴대폰에 알려요. 끄면 알림 센터에만 남아요", store: "custom/apps.json", path: `${app}.push`, def: true, switch: true, section: "notify" });
 const nameField = (app: string): SettingField => ({ key: "label", label: "앱 이름", type: "text", help: "목록과 제목에 보이는 이름이에요. 비우면 기본 이름으로 돌아가요", store: "custom/apps.json", path: `${app}.label`, max: 30, def: INTEGRATIONS.find(e => e.key === app.split("-")[0])?.label ?? "", switch: true, section: "advanced" });
 
 // 답장 모델: the model of the reply drafts of one app or instance (hub/reply-model.ts reads it, then the global 답장 기본값, then Sonnet 5.5 medium).
@@ -114,7 +116,7 @@ export class SettingsError extends Error {
 // An app key or an instance id (`mail-2`): the schema is the app's, the switch and the name are the instance's.
 export const fieldsOf = (app: string): SettingField[] => {
 	const base = app.split("-")[0]!;
-	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app), followupField(app)] : []), ...(base === "mail" ? [attachFolderField(app), draftDefaultField(app), draftRulesField(app)] : [])] : [];
+	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), pushField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app), followupField(app)] : []), ...(base === "mail" ? [attachFolderField(app), draftDefaultField(app), draftRulesField(app)] : [])] : [];
 };
 
 const readJson = (file: string): Record<string, any> => {

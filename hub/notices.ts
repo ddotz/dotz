@@ -6,7 +6,8 @@ import { type DecisionOption, detailOf, hasDecisionHead, parseDecisions } from "
 import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, draftNeedsText, parseDraftApproval, quotedDraft, refreshDraft, rewriteDraftTo } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
-import { broadcast, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
+import { broadcast as broadcastRaw, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
+import { classOfNotice } from "./notice-class.ts";
 import type { Upload } from "./files.ts";
 import { readOf } from "./reads.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
@@ -233,6 +234,9 @@ function retitleStored(): void {
 retitleStored();
 
 const isOpenDecision = (i: Notice) => i.decision?.state === "open";
+// Every notice the pages get carries its class (hub/notice-class.ts), computed as it goes out: the bell's tabs and badge read it, nothing stored changes.
+const withClass = (n: Notice): Notice & { cls: string } => ({ ...n, cls: classOfNotice(n).cls });
+const broadcast = (e: Record<string, unknown>): void => broadcastRaw(e.kind === "notice" && e.item && typeof e.item === "object" ? { ...e, item: withClass(e.item as Notice) } : e);
 // A notice that waits on the owner's action: an open decision, or an [ask] item (the alert / message twin of one). Looking at it, anywhere, never
 // reads it; only an answer, a resolving signal (resolveAsks) or the owner's x (ignoreNotice) takes it off. Every other notice clears on view.
 export const needsAnswer = (i: Notice) => !i.read && !i.dismissed && !i.ignored && (isOpenDecision(i) || i.tone === "ask");
@@ -1209,7 +1213,7 @@ export function listNotices(limit = 100): { items: Notice[]; unread: number } {
 	const shown = items.filter(i => !i.dismissed && !appBlocked(i));
 	const order = new Map(shown.map((i, idx) => [i, idx]));
 	const sorted = [...shown].sort((a, b) => Number(isOpenDecision(b)) - Number(isOpenDecision(a)) || Number(a.read) - Number(b.read) || b.updated.localeCompare(a.updated) || order.get(b)! - order.get(a)!);
-	return { items: sorted.slice(0, n).map(readable), unread: unreadCount() };
+	return { items: sorted.slice(0, n).map(i => withClass(readable(i))), unread: unreadCount() };
 }
 
 // The 알림 conversation's messages whose notice was dismissed (지우기 on it, web/js/30-notices.js): their event times, so every page hides them there.

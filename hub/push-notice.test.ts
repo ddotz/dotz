@@ -12,18 +12,20 @@ import { b64u } from "./webpush.ts";
 const notice = (n: Partial<Notice>): Notice => ({ id: "n1", ts: "2026-11-01T00:00:00Z", updated: "2026-11-01T00:00:00Z", kind: "message", tone: "", title: "제목", text: "본문", open: "main", at: "2026-11-01T00:00:00Z", read: false, ...n });
 
 test("results, monitoring news, alerts and unread answers notify; progress, questions (decisionPush) and read items do not", () => {
-	expect(noticePush(notice({ kind: "result", tone: "done", title: "ui-pwa", open: "lane:ui-pwa", key: "lane:ui-pwa", text: "[done] 배포 끝" }))).toMatchObject({ kind: "lane", title: "ui-pwa · 완료", url: "/#chat/lane:ui-pwa", tag: "lane:ui-pwa", ts: "2026-11-01T00:00:00Z" });
+	expect(noticePush(notice({ kind: "result", tone: "done", title: "ui-pwa", open: "lane:ui-pwa", key: "lane:ui-pwa", text: "[done] 배포 끝" }))).toMatchObject({ kind: "result", title: "ui-pwa · 완료", url: "/#chat/lane:ui-pwa", tag: "lane:ui-pwa", ts: "2026-11-01T00:00:00Z" });
 	expect(noticePush(notice({ kind: "result", tone: "fail", title: "ui-pwa", open: "lane:ui-pwa" }))).toMatchObject({ title: "ui-pwa · 실패" });
-	expect(noticePush(notice({ kind: "watch", title: "메일", open: "alert", watch: "mail-new", text: "새 메일 2통" }))).toMatchObject({ kind: "watch", title: "메일 · 새 소식", body: "새 메일 2통", url: "/#chat/alert", tag: "watch:mail-new" });
-	expect(noticePush(notice({ kind: "watch", title: "예약", open: "ch:123", text: "3시 회의" }))).toMatchObject({ kind: "watch", url: "/#chat/ch:123", tag: "watch:n1" });
-	expect(noticePush(notice({ kind: "message", title: NAME, open: "main", text: "보고서 정리했어요" }))).toMatchObject({ kind: "answer", title: `${NAME} · 새 메시지`, url: "/#chat/main", tag: "answer" });
+	expect(noticePush(notice({ kind: "watch", title: "메일", open: "alert", watch: "mail-new", text: "새 메일 2통" }))).toMatchObject({ kind: "news", title: "메일 · 새 소식", body: "새 메일 2통", url: "/#chat/alert", tag: "watch:mail-new" });
+	expect(noticePush(notice({ kind: "watch", title: "예약", open: "ch:123", text: "3시 회의" }))).toMatchObject({ kind: "news", url: "/#chat/ch:123", tag: "watch:n1" });
+	expect(noticePush(notice({ kind: "message", title: NAME, open: "main", text: "보고서 정리했어요" }))).toMatchObject({ kind: "conv", title: `${NAME} · 새 메시지`, url: "/#chat/main", tag: "answer" });
 	expect(noticePush(notice({ kind: "message", title: "프로젝트", open: "ch:9" }))).toMatchObject({ tag: "answer:ch:9", url: "/#chat/ch:9" });
-	expect(noticePush(notice({ kind: "alert", tone: "", title: "알림", open: "alert", text: "모델 제공자 오류(timeout)" }))).toMatchObject({ kind: "usage", title: `${NAME} · 경고`, tag: "alert" });
-	expect(noticePush(notice({ kind: "alert", tone: "", title: "새 버전", open: "settings", key: "self-update" }))).toMatchObject({ kind: "update", url: "/#settings", tag: "update" });
-	expect(noticePush(notice({ kind: "worklog", tone: "fail", title: "작업 기록", open: "worklog" }))).toMatchObject({ kind: "usage", title: "작업 기록 · 실패" });
+	expect(noticePush(notice({ kind: "alert", tone: "", title: "알림", open: "alert", text: "모델 제공자 오류(timeout)" }))).toMatchObject({ kind: "alert", title: `${NAME} · 경고`, tag: "alert" });
+	expect(noticePush(notice({ kind: "alert", tone: "", title: "새 버전", open: "settings", key: "self-update" }))).toMatchObject({ kind: "news", url: "/#settings", tag: "update" });
+	expect(noticePush(notice({ kind: "worklog", tone: "fail", title: "작업 기록", open: "worklog" }))).toMatchObject({ kind: "result", title: "작업 기록 · 실패" });
+	// a finished work log entry is a result too (notice class result)
+	expect(noticePush(notice({ kind: "worklog", tone: "done", title: "작업 기록", open: "worklog" }))).toMatchObject({ kind: "result", title: "작업 기록 · 완료" });
 	// no notification
 	expect(noticePush(notice({ kind: "result", tone: "run", open: "lane:x" }))).toBeUndefined();
-	expect(noticePush(notice({ kind: "worklog", tone: "done" }))).toBeUndefined();
+	expect(noticePush(notice({ kind: "worklog", tone: "run" }))).toBeUndefined();
 	expect(noticePush(notice({ kind: "alert", text: "토큰 누수 점검 (10-19): 경고 3건" }))).toBeUndefined();
 	expect(noticePush(notice({ kind: "result", tone: "ask", open: "lane:x" }))).toBeUndefined();
 	expect(noticePush(notice({ kind: "decision", tone: "ask", decision: { options: [], to: "main", group: 1, state: "open" } }))).toBeUndefined();
@@ -34,7 +36,7 @@ test("results, monitoring news, alerts and unread answers notify; progress, ques
 test("one matter is one notification: the same tag again within the window, or a conversation on screen, is not sent", () => {
 	resetPushDedupeForTest();
 	const t = Date.parse("2026-11-01T00:00:00Z"), none = () => false;
-	const m = { kind: "lane" as const, tag: "lane:x", body: "끝", url: "/#chat/lane:x" };
+	const m = { kind: "result" as const, tag: "lane:x", body: "끝", url: "/#chat/lane:x" };
 	expect(shouldNotify(m, t, none)).toBe(true);
 	expect(shouldNotify({ ...m, body: "다른 말로 끝" }, t + 1000, none)).toBe(false);   // the event and its bell notice
 	expect(shouldNotify({ ...m, tag: "lane:y", url: "/#chat/lane:y" }, t + 1000, none)).toBe(true);
@@ -65,7 +67,7 @@ test("a notice notifies when it becomes unread, not again while it stays unread"
 	emit("inbox", { ts: new Date(Date.now() + 2).toISOString(), kind: "lane_report", source: `lane:${lane}`, lane, text: "[run] 진행 중" });
 	const mine = fired.filter(n => n.open === `lane:${lane}`);
 	expect(mine).toHaveLength(1);
-	expect(noticePush(mine[0]!)).toMatchObject({ kind: "lane", tag: `lane:${lane}` });
+	expect(noticePush(mine[0]!)).toMatchObject({ kind: "result", tag: `lane:${lane}` });
 });
 
 test("a dead app subscription (410) also ends the app's role, so the device's browser may subscribe again", async () => {

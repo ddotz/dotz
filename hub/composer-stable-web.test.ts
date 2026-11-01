@@ -108,7 +108,7 @@ describe("typing on the phone composer while the page updates", () => {
 		const markNote = () => view.evaluate(`(() => { window.__note = document.activeElement; })()`);
 		const noteFocused = `document.activeElement && document.activeElement.classList.contains("dc-note")`;
 		// the dock sheet: an [ask] in the main conversation, opened over the screen, option 2 (안 됨) asks for the reason
-		send({ kind: "out", target: "main", source: "orchestrator", text: "[ask] 폰에서 확인해 주세요\n1) 확인됨\n2) 안 됨", ts: now() });
+		send({ kind: "out", target: "main", source: "orchestrator", text: "[ask] 폰에서 확인해 주세요\n결정: 폰에서 확인해 주세요\n1) 확인됨\n2) 안 됨", ts: now() });
 		await waitFor(`decisionOf("main")`);
 		await view.evaluate(`(() => { dkOpen(decisionOf("main")); pickOption(DK.dc, 0, DK.dc.blocks[0].options.find(o => o.n === 2)); })()`);
 		await waitFor(noteFocused);

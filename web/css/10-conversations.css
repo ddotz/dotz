@@ -68,6 +68,8 @@
   :is(#v-chat, #v-monitoring) > .cv-head { grid-row: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 4px 12px; }
   #v-chat > .subs { grid-row: 2; }
   #v-chat > .todo { grid-row: 3; }
+  #v-chat > .bell { grid-row: 2; }
+  #v-chat > .bell-list { grid-row: 4; }
   :is(#v-chat, #v-monitoring) > .chatbox { grid-row: 4; }
   #v-chat > .composer { grid-row: 5; }
   .cv-row.pv { padding-block: 6px; }
@@ -86,3 +88,17 @@
   .views.pp > #v-project { grid-column: 2; grid-row: 1; max-width: none; }
   .cv-head .cv-av { width: 36px; height: 36px; font-size: 15px; }
 }
+
+/* The tabs of the 알림 conversation (31-conversations.js bellPaint): a chip row over the timeline; every tab but 전체 swaps the timeline for a list of that class.
+   Badges: 답변 필요 orange (--warn), 경고 red (--err), the rest the plain accent. */
+.bell[hidden], .bell-list[hidden] { display: none; }
+.bell { flex: none; display: flex; gap: 6px; margin: 0 0 8px; padding: 2px 0; overflow-x: auto; scrollbar-width: none; }
+.bell::-webkit-scrollbar { display: none; }
+.bell .chip { height: 32px; padding: 0 8px; gap: 4px; font-size: 12.5px; }
+.nb.err { background: var(--err); }
+#v-chat.bell-on > .chatbox { display: none; }
+.bell-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }
+.bell-gh { padding: 12px 4px 6px; color: var(--fg-2); font: 600 13px/18px var(--font); }
+.bell-gh:first-child { padding-top: 4px; }
+.bell-none { padding: 32px 16px; color: var(--fg-3); text-align: center; font: 400 14px/20px var(--font); }
+.hr .dot.un { background: var(--accent); }

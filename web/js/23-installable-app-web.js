@@ -1,6 +1,9 @@
 /* ---------- installable app + web push (web/sw.js, /api/push in hub/push.ts) ---------- */
 const PWA = { reg: null, sub: null, info: null, gw: null, claimed: false };
-const PUSH_KINDS = [["answer", "웹에서 맡긴 작업 완료 (짧은 답은 안 울려요)"], ["ask", "확인 필요 (질문 · 승인)"], ["lane", "세션 완료 · 실패"], ["usage", "중요한 경고 (한도 · 오류 · 멈춤)"], ["watch", "모니터링 새 소식 (메일 · 감시 · 예약)"], ["update", "앱 새 버전"]];
+// The owner's push switch per notice class (hub/notice-class.ts; GET/PUT /api/push/classes, one setting for every device).
+const PUSH_CLASSES = [["ask", "답변 필요", "질문 · 승인 · 로그인"], ["alert", "경고", "게이트웨이 오류 · 로그인 끊김 · 감시 반복 실패"], ["result", "결과", "세션 · 작업 완료 · 실패"], ["news", "새 소식", "메일 · 카톡 · 댓글 · 감시 · 예약 (앱별 끄기는 앱 설정)"], ["conv", "대화", "보고 있지 않은 대화의 새 답"]];
+const PCLS = { v: null, asked: false };
+async function pclsLoad() { PCLS.asked = true; try { PCLS.v = (await api("/api/push/classes")).classes; } catch { PCLS.v = null; } if (current === "settings") renderSettings(); }
 // Set when the owner turns notifications on here, cleared when he turns them off: a subscription the push service dropped (404/410) is then made again quietly.
 const PUSH_ON = "dotz-push-on";
 const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
@@ -171,8 +174,10 @@ async function pushDisable(btn) {
   });
   await pushLoad();
 }
-async function pushPref(kind, on) {
-  try { PWA.info.prefs = (await api("/api/push/prefs", "PUT", { endpoint: PWA.sub.endpoint, prefs: { [kind]: on } })).prefs; } catch (e) { toast(e.message, true); }
+async function pushClass(k, on) {
+  const was = PCLS.v[k];
+  PCLS.v = { ...PCLS.v, [k]: on }; renderSettings();
+  try { PCLS.v = (await api("/api/push/classes", "PUT", { classes: { [k]: on } })).classes; } catch (e) { PCLS.v = { ...PCLS.v, [k]: was }; toast(e.message, true); }
   renderSettings();
 }
 const pushTest = btn => busy(btn, async () => { await api("/api/push/test", "POST", { endpoint: PWA.sub.endpoint }); toast("테스트 알림을 보냈어요"); });
@@ -245,11 +250,13 @@ function pushSection() {
   } else if (!pushCapable()) rows.push(li("bell", ios && !standalone ? "iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요" : "이 브라우저는 알림을 지원하지 않아요"));
   else if (Notification.permission === "denied") rows.push(li("bell", "알림 권한이 막혀 있어요"));
   else if (!subscribed) rows.push(li("bell", "알림", el("button", { class: "btn", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, "알림 켜기")));
+  if (!PCLS.v && !PCLS.asked) pclsLoad();
+  if (PCLS.v) {
+    for (const [k, label, desc] of PUSH_CLASSES) rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: label }), el("div", { class: "sup", text: desc })),
+      el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(PCLS.v[k] !== false), "aria-label": `${label} 알림`, "data-k": k, onclick: () => pushClass(k, PCLS.v[k] === false) })));
+    rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "이 설정은 모든 기기에 같이 적용돼요." }))));
+  }
   if (subscribed) {
-    for (const [k, label] of PUSH_KINDS) {
-      const on = PWA.info.prefs[k] !== false;
-      rows.push(li("bell", label, el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on), "aria-label": label, onclick: () => pushPref(k, !on) })));
-    }
     rows.push(li("bell", "알림 확인", el("button", { class: "btn tonal", type: "button", onclick: ev => pushTest(ev.currentTarget) }, "테스트 알림 보내기"), el("button", { class: "btn text", type: "button", onclick: ev => pushDisable(ev.currentTarget) }, "끄기")));
   }
   return [el("div", { class: "sec", text: "앱 · 알림" }), el("div", { class: "list" }, ...rows), ...discordPostSection()];
