@@ -9,12 +9,13 @@
 // When the visible card closes (answered, resolved, ignored: notices.ts onDecisionClosed), the next held card is posted with its own
 // "남은 N건". Held cards are kept on disk, so a restart shows them later instead of losing them.
 import { existsSync, readFileSync } from "node:fs";
-import { parseDraftApproval } from "./draft-approval.ts";
+import { parseDraftApproval, withRecipientMark } from "./draft-approval.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 
 export type Held = { ref: string; target: string; text: string; extra: Record<string, unknown> };
 type Shown = { ref: string; target: string; text: string; ids?: string[]; pending?: boolean };
-export type Route = { action: "post" } | { action: "hold"; left: number } | { action: "same" } | { action: "update" };
+// `text`: the card as it goes out, with its progress line ("남은 N건 (k/T)" / "마지막 카드예요"), when that differs from what was routed.
+export type Route = { action: "post"; text?: string } | { action: "hold"; left: number } | { action: "same" } | { action: "update" };
 
 export type ApprovalQueueDeps = {
 	/** The conversation a target's posts belong to (notices.ts decision.to). */
@@ -36,17 +37,50 @@ export function cardRef(text: string): string | undefined {
 	return parseDraftApproval(parseTone(stripHandoff(text)).text.trim())?.ref;
 }
 
-const LEFT = /^-# 남은 \d+건$/;
-/** The card text with its "남은 N건" line (right under the first line, where a card's notes go), or without it for 0. */
-export function withLeft(text: string, left: number): string {
+const LEFT = /^-# (?:남은 \d+건(?: \(\d+\/\d+\))?|마지막 카드예요(?: \(\d+\/\d+\))?)$/;
+export type CardPos = { k: number; total: number };
+/**
+ * The card text with its progress line right under the first line (where a card's notes go): "남은 N건 (k/T)" while cards wait behind it,
+ * "마지막 카드예요 (T/T)" on the last one of a run of several, nothing for a lone card. Without `pos` only the count: "남은 N건", none for 0.
+ */
+export function withLeft(text: string, left: number, pos?: CardPos): string {
 	const lines = text.split("\n").filter(l => !LEFT.test(l.trim()));
-	if (left > 0) lines.splice(1, 0, `-# 남은 ${left}건`);
+	const line = pos && pos.total > 1 ? (left > 0 ? `-# 남은 ${left}건 (${pos.k}/${pos.total})` : `-# 마지막 카드예요 (${pos.total}/${pos.total})`) : left > 0 ? `-# 남은 ${left}건` : "";
+	if (line) lines.splice(1, 0, line);
 	return lines.join("\n");
 }
+
+// "(19/28)": the bot numbering the cards of one batch it asks one by one in its first line (2026-10-31: a user's 28 comment cards were
+// posted one per turn, so none was ever held and the queue alone could not count them).
+const NUMBERED = /\((\d{1,4})\s*\/\s*(\d{1,4})\)/;
+export function numberedOf(text: string): CardPos | undefined {
+	const m = NUMBERED.exec(text.split("\n", 1)[0] ?? "");
+	const k = Number(m?.[1]), total = Number(m?.[2]);
+	return m && k >= 1 && k <= total ? { k, total } : undefined;
+}
+
+/** The card's first line without its tone tag: what a pointer to it or the bot's list of waiting cards names it by. */
+export const cardTitle = (text: string): string => (parseTone(stripHandoff(text)).text.trim().split("\n", 1)[0] ?? "").replace(/\s+/g, " ").slice(0, 120);
 
 export function createApprovalQueue(deps: ApprovalQueueDeps) {
 	let held: Held[] = deps.load?.() ?? [];
 	const shown = new Map<string, Shown>();
+	// The place of the shown card in its conversation's current run of cards (1 = the first shown since nothing waited there).
+	const place = new Map<string, number>();
+	// Where a card stands: the bot's own numbering when it gives one (never fewer than what the queue holds), else the queue's run.
+	const progress = (conv: string, text: string): { left: number; pos: CardPos } => {
+		const h = heldIn(conv).length, n = numberedOf(text);
+		if (n) {
+			const total = Math.max(n.total, n.k + h);
+			return { left: total - n.k, pos: { k: n.k, total } };
+		}
+		const k = place.get(conv) ?? 1;
+		return { left: h, pos: { k, total: k + h } };
+	};
+	const marked = (conv: string, text: string) => {
+		const p = progress(conv, text);
+		return withRecipientMark(withLeft(text, p.left, p.pos));
+	};
 	const save = () => deps.persist(held.slice());
 	const heldIn = (conv: string) => held.filter(h => deps.convOf(h.target) === conv);
 	// The visible card still waits: posted and open, or on its way out (a post being localized has no notice yet).
@@ -58,7 +92,7 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 	const recount = (conv: string) => {
 		const s = shown.get(conv);
 		if (!s || s.pending || !deps.openRefs(conv).includes(s.ref)) return;
-		const next = withLeft(s.text, heldIn(conv).length);
+		const next = marked(conv, s.text);
 		if (next === s.text) return;
 		s.text = next;
 		deps.rewrite(conv, s, next);
@@ -77,7 +111,7 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		}
 		const s = shown.get(conv);
 		if ((s && s.ref === ref && waiting(conv)) || deps.openRefs(conv).includes(ref)) {
-			const now = withLeft(text, heldIn(conv).length);
+			const now = marked(conv, text);
 			if (s && s.ref === ref && withLeft(s.text, 0) === withLeft(text, 0)) return { action: "same" };
 			const at = s && s.ref === ref ? s : { ref, target };
 			if (s && s.ref === ref) s.text = now;
@@ -93,8 +127,11 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 			recount(conv);
 			return { action: "hold", left };
 		}
-		shown.set(conv, { ref, target, text, pending: true });
-		return { action: "post" };
+		// Nothing waits here: a new run of cards starts with this one.
+		place.set(conv, 1);
+		const out = marked(conv, text);
+		shown.set(conv, { ref, target, text: out, pending: true });
+		return out === text ? { action: "post" } : { action: "post", text: out };
 	}
 
 	/** The card route() let through is out (with its Discord message ids when it went there). */
@@ -122,7 +159,9 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		held = held.filter(h => h !== next);
 		save();
 		const left = heldIn(conv).length;
-		const text = withLeft(next.text, left);
+		// After a restart the first card shown is the first of its run.
+		place.set(conv, place.has(conv) ? place.get(conv)! + 1 : 1);
+		const text = marked(conv, next.text);
 		shown.set(conv, { ref: next.ref, target: next.target, text, pending: true });
 		deps.log(`approval card ${next.ref} in ${conv} shown from the queue (${left} left)`);
 		deps.post(next.target, text, next.extra);
@@ -150,7 +189,41 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		return s?.ref === ref ? s.target : heldIn(conv).find(h => h.ref === ref)?.target ?? s?.target;
 	};
 
-	return { route, posted, closed, releaseAll, take, targetOf, held: () => held.slice(), heldIn };
+	/**
+	 * The card that waits for the owner in `conv`, as the bot's turn and a later post name it: title, progress line, where it is (Discord
+	 * message ids) and how many wait behind it; undefined when none is open there.
+	 */
+	function openCard(conv: string): { ref: string; target: string; title: string; progress: string; ids?: string[]; held: number } | undefined {
+		const s = shown.get(conv);
+		if (!s || s.pending || !deps.openRefs(conv).includes(s.ref)) return undefined;
+		const p = progress(conv, s.text);
+		const line = withLeft("x", p.left, p.pos).split("\n")[1]?.replace(/^-# /, "") ?? "";
+		return { ref: s.ref, target: s.target, title: cardTitle(s.text), progress: line, ...(s.ids ? { ids: s.ids } : {}), held: heldIn(conv).length };
+	}
+
+	return { route, posted, closed, releaseAll, take, targetOf, openCard, held: () => held.slice(), heldIn };
+}
+
+/** The line a later post in the conversation ends with while a card waits above it. */
+export function cardPointer(c: { title: string; progress: string }, link?: string): string {
+	return `-# ↑ 답을 기다리는 카드: ${c.title.replace(/^\[\w+\]\s*/, "")}${c.progress ? ` · ${c.progress}` : ""}${link ? ` · [카드로 가기](${link})` : ""}`;
+}
+
+export const CARDS_LEAD = "[pending cards]";
+export type PendingCard = { ref: string; title: string; notice: string; progress?: string; link?: string };
+/**
+ * The note an owner message to the bot starts with while send-approval cards wait in its conversation: each open card with where it is,
+ * and how many are held behind it. Undefined when none waits.
+ */
+export function pendingCardsNote(cards: PendingCard[], held: number): string | undefined {
+	if (!cards.length && !held) return undefined;
+	const rows = cards.map(c => `- ${c.title} (${c.ref})${c.progress ? ` · ${c.progress}` : ""} · ${c.link ? `Discord: ${c.link}` : `web: /?n=${c.notice}`}`);
+	return [
+		`${CARDS_LEAD} Send-approval cards waiting for the owner's answer in this conversation (the gateway's list, current as of this message):`,
+		...rows,
+		...(held ? [`- ${held} more held by the gateway; each is posted by itself as soon as the open card is answered.`] : []),
+		"If the owner asks where a card is, answer with this list and its link instead of posting the card again. When you ask a numbered batch one card at a time, post the next card in the same turn the previous one is answered.",
+	].join("\n");
 }
 
 /** The held cards a previous process wrote. */

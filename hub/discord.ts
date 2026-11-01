@@ -576,6 +576,12 @@ export async function edit(target: string, messageId: string, text: string): Pro
 	return { delivered: true, ids: [messageId] };
 }
 
+/** The Discord link of a message the bot posted to `target` (a pending card the bot's turn names), or undefined off Discord. */
+export function messageLink(target: string, messageId: string): string | undefined {
+	const id = resolve(target);
+	return GUILD && id && /^\d{5,25}$/.test(messageId) ? `https://discord.com/channels/${GUILD}/${id}/${messageId}` : undefined;
+}
+
 // A message that is already gone (404 / Unknown Message) is the state the caller wanted.
 async function deleteMessage(target: string, messageId: string): Promise<void> {
 	const id = resolve(target);

@@ -26,8 +26,8 @@ import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
 import { splitTone, stripHandoff } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
-import { onDecisionClosed, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
-import { createApprovalQueue, loadHeld } from "./approval-queue.ts";
+import { onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
+import { cardPointer, cardTitle, CARDS_LEAD, createApprovalQueue, loadHeld, pendingCardsNote } from "./approval-queue.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
 import { discordPosts } from "./discord-post.ts";
 import { repeatAlert } from "./alert-gate.ts";
@@ -72,6 +72,8 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		},
 		joinNote: w => msg().joinWorker(w.id, w.description),
 		hasJoinNote: text => text.split("\n").some(line => isNote(line, "joinLead")),
+		cardsNote: target => cardsNoteFor(target),
+		hasCardsNote: text => text.startsWith(CARDS_LEAD) || text.includes(`\n${CARDS_LEAD}`),
 		clearProgress: target => void discord.clearProgress(target),
 		persist: open => writeAtomic(pendingFile, `${JSON.stringify(open, null, 2)}\n`),
 		log,
@@ -213,6 +215,20 @@ export const approvals = createApprovalQueue({
 	load: () => loadHeld(HELD),
 });
 onDecisionClosed((to, ref) => approvals.closed(to, ref));
+// Where the open card of `conv` is: its Discord message, when it went there.
+const cardLink = (c: { target: string; ids?: string[] }) => (c.ids?.[0] && !isLocal(c.target) && discordPosts(c.target) ? discord.messageLink(c.target, c.ids[0]) : undefined);
+// A later post in a conversation whose card still waits pushes the card up out of sight (2026-10-31: "19번 카드는 위에 있어", then
+// "어디에있음?", "마지막 카드 어디?"): such a post ends with one line naming the waiting card and linking to it.
+function withCardPointer(target: string, text: string): string {
+	const c = approvals.openCard(convOfTarget(target));
+	return c && c.target === target ? `${text.replace(/\s+$/, "")}\n${cardPointer(c, cardLink(c))}` : text;
+}
+// The bot's turn for an owner message names the cards waiting in that conversation ("마지막 카드 어디?" is answerable from it).
+const cardsNoteFor = (target: string): string | undefined => {
+	const conv = convOfTarget(target), shown = approvals.openCard(conv);
+	const cards = openDraftCards(conv).map(c => ({ ref: c.ref, title: cardTitle(c.text) || c.title, notice: c.id, ...(shown?.ref === c.ref ? { progress: shown.progress, link: cardLink(shown) } : {}) }));
+	return pendingCardsNote(cards, approvals.heldIn(conv).length);
+};
 export async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
 	const answersOwner = extra.source === undefined || extra.source === "orchestrator";
@@ -227,13 +243,14 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	let sent: string;
 	try {
 		sent = await inOrder(target, async () => {
-			const t = await localize(job.text, target, typeof extra.source === "string" ? extra.source : "orchestrator");
+			let t = await localize(job.text, target, typeof extra.source === "string" ? extra.source : "orchestrator");
 			if (asksPersonalInChat(t)) {
 				log(`personal-data ask in chat to ${target}: the form (dotz_auth) is the only way to ask`);
 				steerOrchestrator(msg().personalAskNote);
 			}
 			const card = routed ? approvals.route(target, t, extra) : undefined;
 			routing.card = card;
+			if (card?.action === "post") t = card.text ?? withCardPointer(target, t);
 			// False: shutdown already landed this post with the original text.
 			landed = replies.end(job);
 			if (landed && (!card || card.action === "post")) emitOut(job, t);

@@ -2,7 +2,7 @@
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
 import { generateReply, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
-import { fileSizeText } from "../draft-approval.ts";
+import { fileSizeText, recipientCheck } from "../draft-approval.ts";
 import { createStore, type Draft, type MailOutcome, type Reply, type Tokens } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
@@ -164,7 +164,9 @@ export function createEngine(deps: EngineDeps) {
 		if (mail && !deps.mail) return { ok: false, reason: "메일 초안을 쓸 수 없어요" };
 		const made = mail ? await deps.mail!.compose(mail).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "메일 초안을 만들지 못했어요" })) : undefined;
 		if (made && !made.ok) return { ok: false, reason: made.reason };
-		const notes = extra ? [`함께 할 일: ${extra}`] : [];
+		// The mail goes to the address the comment wrote, as written: one that differs (or looks like the writer's typo) is a line on the card.
+		const toCheck = mail ? recipientCheck(mail.to, c.text) : undefined;
+		const notes = [...(extra ? [`함께 할 일: ${extra}`] : []), ...(toCheck ? [`확인: ${toCheck}`] : [])];
 		for (const d of store.drafts()) if (d.commentId === c.id && d.status === "pending") store.setDraftStatus(d.code, "stale");
 		const draft: Draft = { code: code(), commentId: c.id, source: src.key, thread: c.thread, text, status: "pending", created: deps.now(), changes: [], clean: !notes.length && !made, notes, ...(made ? { mail: made.id, mailAt: deps.now() } : {}) };
 		store.putDraft(draft);
