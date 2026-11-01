@@ -47,7 +47,7 @@ afterEach(async () => {
 });
 
 let seq = 0;
-const notice = () => ({ kind: "lane" as const, title: "dotz · 완료", body: `notice-${++seq}`, url: "/#chat/main", tag: `lane:dotz-${seq}` });
+const notice = () => ({ kind: "result" as const, title: "dotz · 완료", body: `notice-${++seq}`, url: "/#chat/main", tag: `lane:dotz-${seq}` });
 const phone = () => pushes.filter(p => p === ENDPOINT).length;
 
 test("a notice made by the app's gateway reaches the phone once, though another gateway holds the same endpoint without a device id", async () => {

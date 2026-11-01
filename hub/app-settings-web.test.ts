@@ -213,7 +213,7 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 		await waitFor(v, `target === "settings:mail"`);
 		await openScreen(v);
 		await waitFor(v, `document.querySelector('#app-sw [data-k="auto_draft"]')`);
-		expect(await q(v, `return { conn: document.querySelector("#app-sw").firstElementChild.dataset.conn, secs: [...document.querySelectorAll("#app-sw [data-sec]")].map(e => e.dataset.sec) }`)).toEqual({ conn: "connected", secs: ["draft", "advanced"] });
+		expect(await q(v, `return { conn: document.querySelector("#app-sw").firstElementChild.dataset.conn, secs: [...document.querySelectorAll("#app-sw [data-sec]")].map(e => e.dataset.sec) }`)).toEqual({ conn: "connected", secs: ["notify", "draft", "advanced"] });
 		expect(await q(v, `return document.querySelector('#app-sw [data-k="use_here"]').getAttribute("aria-checked")`)).toBe("true");
 		expect((await rows("#app-sw .as-row .as-n"))[0]).toBeTruthy();
 		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-sec='draft'] ~ [data-setting]")].map(e => e.dataset.setting)`)).toEqual(["auto_draft", "skip_senders", "only_senders", "draft_rules", "draft_default", "use_here", "label", "reply_model", "memory"]);

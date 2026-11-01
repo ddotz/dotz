@@ -33,6 +33,8 @@ export type Config = {
 	models?: ModelsConfig;
 	// Per-model context window and auto-compaction point, keyed by model id without the thinking level (the 컨텍스트 screen edits this).
 	context?: { models?: Record<string, ContextLimits> };
+	// Web push per notice class (hub/notice-class.ts); a missing class takes CLASS_PUSH_DEFAULTS. The 앱 · 알림 settings edit it.
+	notify?: { push?: Record<string, boolean> };
 };
 export type ContextLimits = { window?: number; compact_at?: number };
 // One target's model, thinking level and ordered fallback chain: the orchestrator, the lanes (default of every lane) and the
@@ -128,6 +130,16 @@ export function updateModels(target: FallbackTarget, values: TargetModels): void
 	disk.models = { ...disk.models, [target]: { ...disk.models?.[target], ...values } };
 	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
 	cfg.models = { ...cfg.models, [target]: { ...cfg.models?.[target], ...values } };
+}
+// Edits config.json's notify.push (re-read from disk) and mirrors it into `cfg`.
+export function updateNotifyPush(values: Record<string, boolean>): void {
+	let disk: Record<string, any> = {};
+	try {
+		disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
+	} catch {}
+	disk.notify = { ...disk.notify, push: { ...disk.notify?.push, ...values } };
+	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
+	cfg.notify = { ...cfg.notify, push: { ...cfg.notify?.push, ...values } };
 }
 // Lane context management: omp compacts a lane's session at `compact_at` tokens keeping the last `keep_recent`; each night
 // at `nightly_at` (local time, "off" disables) idle lanes past `rotate_mb` of session file start a fresh session with a

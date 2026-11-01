@@ -136,10 +136,10 @@ const inventory = (v: View) => q<Inv>(v, `
 const SECTION_ORDER = ["notify", "draft", "watch", "more", "advanced"];
 const EXPECTED_SECS: Record<string, string[]> = {
 	mail: ["notify", "draft", "watch", "advanced"],
-	kakao: ["draft", "watch", "advanced"],
-	instagram: ["draft", "watch", "more", "advanced"],
-	youtube: ["draft", "watch", "advanced"],
-	site: ["draft", "advanced"],
+	kakao: ["notify", "draft", "watch", "advanced"],
+	instagram: ["notify", "draft", "watch", "more", "advanced"],
+	youtube: ["notify", "draft", "watch", "advanced"],
+	site: ["notify", "draft", "advanced"],
 	"w:disk-check": ["notify", "watch", "advanced"],
 };
 const RAW = /[a-z]+-[0-9]|_|\b(?:sns|ig|yt|webmail|each|batch|comments|login|disk-check)\b/;
@@ -166,9 +166,9 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 	test("mail: 연결됨 first, then 알림 (새 메일), 자동 초안과 승인, 감시, 고급; no second 자동 초안 switch", async () => {
 		const inv = await appInventory("mail");
 		expect(inv.secs).toEqual(EXPECTED_SECS.mail!);
-		expect(inv.settings).toEqual(["auto_draft", "skip_senders", "only_senders", "draft_rules", "draft_default", "use_here", "label", "reply_model", "memory"]);
+		expect(inv.settings).toEqual(["push", "auto_draft", "skip_senders", "only_senders", "draft_rules", "draft_default", "use_here", "label", "reply_model", "memory"]);
 		expect(inv.features).toEqual(["new_mail"]);
-		expect(inv.labels[0]).toBe("자동 초안");
+		expect(inv.labels.slice(0, 2)).toEqual(["휴대폰 알림", "자동 초안"]);
 		expect(inv.stats).toEqual(["webmail-inbox"]);
 		expect(inv.internals).toEqual(["webmail-inbox"]);
 	});
@@ -178,7 +178,7 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		expect(inv.secs).toEqual(EXPECTED_SECS.kakao!);
 		// 방 감시 was the same control as 카카오톡 감시: only the setting row remains.
 		expect(inv.features).toEqual(["reply_draft"]);
-		expect(inv.settings).toEqual(["auto_draft_chats", "exclude_chats", "enabled", "open_chats", "watch_chats", "use_here", "label", "reply_model", "memory"]);
+		expect(inv.settings).toEqual(["push", "auto_draft_chats", "exclude_chats", "enabled", "open_chats", "watch_chats", "use_here", "label", "reply_model", "memory"]);
 		expect(inv.labels).toContain("감시할 방");
 		expect(inv.labels).toContain("초안을 만들 방");
 	});

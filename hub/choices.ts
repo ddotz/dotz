@@ -145,5 +145,6 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 		const marked = DETAIL_MARK.test(raw);
 		cur.options.push({ n, label: raw.replace(DETAIL_MARK, "").trim(), desc, rec: Boolean(m[3]), ...(marked ? { detail: true as const } : {}) });
 	}
-	return { question, blocks: blocks.filter(b => b.options.length >= 2) };
+	// Only a block a "결정:" line opened is a decision (owner 2026-11-01): a numbered or bold list in the body ("**1) 답변 필요:** ...") is text, never an option.
+	return { question, blocks: blocks.filter(b => b.headed && b.options.length >= 2) };
 }

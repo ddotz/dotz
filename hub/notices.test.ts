@@ -333,7 +333,7 @@ const stat = (id: string) => stored().find(n => n.id === id)!;
 const FAR = "9999-12-31T00:00:00.000Z";
 
 test("viewing a question that waits never reads it, on any path; a plain notice still clears on view", () => {
-	orchAsk("[ask] 보기만 해서는 남아야 해요\n**1) 예**\n**2) 아니요**");
+	orchAsk("[ask] 보기만 해서는 남아야 해요\n결정: 보기만 해서는 남아야 해요\n**1) 예**\n**2) 아니요**");
 	const { id } = waiting("보기만 해서는 남아야 해요");
 	post("worklog", "[done] 보면 읽히는 기록이에요");
 	const info = byText("보면 읽히는 기록이에요")[0]!;
@@ -349,7 +349,7 @@ test("viewing a question that waits never reads it, on any path; a plain notice 
 });
 
 test("answering a question that waits removes it from the unread count", async () => {
-	orchAsk("[ask] 답하면 사라져요\n**1) 예**\n**2) 아니요**");
+	orchAsk("[ask] 답하면 사라져요\n결정: 답하면 사라져요\n**1) 예**\n**2) 아니요**");
 	const { id } = waiting("답하면 사라져요");
 	const before = unreadCount();
 	const r = await answerDecision(id, { n: 1 }, async () => {});
@@ -359,7 +359,7 @@ test("answering a question that waits removes it from the unread count", async (
 });
 
 test("a signal that the matter is over still clears a question that waits", () => {
-	orchAsk("[ask] 해결되면 사라져요\n**1) 예**\n**2) 아니요**");
+	orchAsk("[ask] 해결되면 사라져요\n결정: 해결되면 사라져요\n**1) 예**\n**2) 아니요**");
 	const { id } = waiting("해결되면 사라져요");
 	resolveNotices({ ids: [id] });
 	expect(stat(id)).toMatchObject({ read: true, decision: { state: "answered", resolved: true } });
@@ -368,7 +368,7 @@ test("a signal that the matter is over still clears a question that waits", () =
 test("ignoring takes a question off the count, keeps it in the history, answers nothing, and tells every page; undo brings it back", async () => {
 	post("worklog", "[done] 무시할 수 없는 기록이에요");
 	const plain = byText("무시할 수 없는 기록이에요")[0]!.id;
-	orchAsk("[ask] 무시해 볼게요\n**1) 예**\n**2) 아니요**");
+	orchAsk("[ask] 무시해 볼게요\n결정: 무시해 볼게요\n**1) 예**\n**2) 아니요**");
 	const { id } = waiting("무시해 볼게요");
 	let since = lastEventId();
 	const frames = () => (replayAfter(since) ?? []).map(f => JSON.parse(/data: (.*)\n/.exec(f)![1]!) as HubEvent).filter(e => e.kind === "notice");
@@ -387,7 +387,7 @@ test("ignoring takes a question off the count, keeps it in the history, answers 
 	expect(stat(id).decision).toMatchObject({ state: "ignored" });
 	expect(stat(id).decision!.answer).toBeUndefined();
 	// the same ask arriving again soon does not bring it back
-	orchAsk("[ask] 무시해 볼게요\n**1) 예**\n**2) 아니요**");
+	orchAsk("[ask] 무시해 볼게요\n결정: 무시해 볼게요\n**1) 예**\n**2) 아니요**");
 	expect(stat(id).decision!.state).toBe("ignored");
 	expect(unreadCount()).toBe(before - 1);   // the repeat makes no item of its own
 	// ignoring twice is harmless; an answered or plain notice cannot be ignored
@@ -667,7 +667,7 @@ test("a button answers one decision as a reply to the asking message; a plain ow
 });
 
 test("a failed send leaves the decision open", async () => {
-	post("web", "[ask] 하나만 골라 주세요\n**1) 예**\n**2) 아니요**");
+	post("web", "[ask] 하나만 골라 주세요\n결정: 하나만 골라 주세요\n**1) 예**\n**2) 아니요**");
 	const n = decisions("main").find(x => x.title === "하나만 골라 주세요")!;
 	const r = await answerDecision(n.id, { n: 1 }, async () => {
 		throw new Error("세션이 끝났어요");
