@@ -53,7 +53,7 @@ import { clearChannel, nameWatches, setupChannel, watchLabel, watchWakeEvent } f
 import { watchLine } from "./watchtext.ts";
 import { createWatchSummarizer } from "./watchsummary.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
-import { addWatch, allWatches, approveWatch, isWatchIssue, setWatchGate, startWatches, stopWatches, watchChoice } from "./watch.ts";
+import { addWatch, allWatches, approveWatch, isWatchIssue, setWatchGate, startWatches, stopWatches, type Watch, watchChoice } from "./watch.ts";
 import { watchOwner } from "./app-features.ts";
 import { blockedByOff, newsMuted, watchOff } from "./app-off.ts";
 import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.ts";
@@ -112,8 +112,11 @@ setRestartedHandler(replayOpen);
 startErrorWatch({ error: () => orch.error, resume: resumeAfterError, log });
 setLaneTitleResolver(name => lanes.get(name)?.title);
 setWatchLabelResolver(watchLabel);
-setAppResolver(n => (n.kind === "watch" && n.watch ? watchOwner(appEntries(DATA_DIR), { name: n.watch, session: allWatches().find(w => w.name === n.watch)?.session }) : undefined) ?? appKeyOf(n, integrationContext(DATA_DIR, cfg.zele?.enabled !== false && Bun.which("zele") ? ["zele"] : [])));
-setWatchGate(name => watchOff(DATA_DIR, name, allWatches().find(w => w.name === name)?.session));
+setAppResolver(n => (n.kind === "watch" && n.watch ? watchOwner(appEntries(DATA_DIR), allWatches().find(w => w.name === n.watch) ?? { name: n.watch }) : undefined) ?? appKeyOf(n, integrationContext(DATA_DIR, cfg.zele?.enabled !== false && Bun.which("zele") ? ["zele"] : [])));
+setWatchGate(name => {
+	const w = allWatches().find(x => x.name === name);
+	return watchOff(DATA_DIR, name, w?.session, w);
+});
 // An off app hides all its notices; a 새 소식 알림 switch that is off (an app instance's or a monitor's) keeps its news out of the bell and the phone.
 const watchByName = (name: string) => allWatches().find(w => w.name === name);
 setAppBlocker(n => blockedByOff(DATA_DIR, n) || newsMuted(DATA_DIR, n, name => watchByName(name)?.notify === false));
@@ -500,9 +503,9 @@ setWatchSummarizer(createWatchSummarizer());
 nameWatches();
 // A monitor's own 디스코드에도 보내기 (hub/watch-settings.ts), or for an app's watch the app's (hub/app-settings.ts appDiscordField; a mail instance's
 // switch is about its mail threads, not its watches), decides its report posts while Discord is connected; unset, the 새 소식 class switch does.
-const watchRoute = (w: { name: string; session?: string; discord?: boolean }) => {
+const watchRoute = (w: Watch) => {
 	if (!discord.status.enabled) return {};
-	const app = watchOwner(appEntries(DATA_DIR), { name: w.name, session: w.session });
+	const app = watchOwner(appEntries(DATA_DIR), w);
 	const own = app ? (app.split("-")[0] === "mail" ? undefined : readAppsFile(DATA_DIR)[app]?.discord) : w.discord;
 	return typeof own === "boolean" ? { discord_route: own } : {};
 };
