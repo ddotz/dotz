@@ -890,7 +890,7 @@ function readChannelMap(): ChannelMap | null {
 		if (!c?.chat) return null;
 		const lanes = new Map<string, string>(Object.entries<string>(c.lanes ?? {}).map(([lane, id]) => [`ch:${id}`, lane]));
 		const fixed = [c.chat, c.worklog, c.alert, c.brief, c.dm, c.category, c.workCategory, ...Object.values<string>(c.homes ?? {})];
-		const ids = [...fixed, ...Object.keys(c.work ?? {}), ...Object.keys(c.threads ?? {}), ...lanes.keys()].filter(Boolean).map(String);
+		const ids = [...fixed, ...Object.keys(c.work ?? {}), ...(c.local ?? []), ...Object.keys(c.threads ?? {}), ...lanes.keys()].filter(Boolean).map(String);
 		return { known: new Set(ids.map(id => id.replace(/^ch:/, ""))), lanes };
 	} catch {
 		return null;
