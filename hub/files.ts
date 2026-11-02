@@ -220,9 +220,10 @@ export function fileRoute(req: Request, url: URL, roots: string[], listed: Reado
 }
 
 // GET/HEAD /api/canvas?path=<file>.html: an HTML file the bot made, rendered as a page for the 캔버스 panel (web/js/30-canvas.js) under the
-// same roots and rules as /api/file. Same origin, so the element picker reaches the frame's document; the CSP sandbox keeps that origin
-// (allow-same-origin) but runs none of the page's own script, so a page can never call /api as the owner. Styles, images and fonts load.
-const CANVAS_CSP = "sandbox allow-same-origin; default-src 'none'; img-src 'self' data: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:";
+// same roots and rules as /api/file. The page's own script runs (a page built by its script is not blank) only inside an opaque-origin
+// sandbox (allow-scripts, never allow-same-origin) with no network (connect-src 'none'): it cannot read the hub's cookies or token or call
+// /api as the owner. Styles, images and fonts load. The canvas panel's picker frame is built from the fetched text instead (30-canvas.js).
+const CANVAS_CSP = "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:";
 export function canvasRoute(req: Request, url: URL, roots: string[], listed: ReadonlySet<string>): Response {
 	try {
 		const path = resolveAllowed(url.searchParams.get("path") ?? "", roots, listed);

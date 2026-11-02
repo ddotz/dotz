@@ -1,6 +1,7 @@
 // The 캔버스 (web/js/30-canvas.js) in a headless Bun.WebView against the real /api/canvas route (hub/files.ts canvasRoute): an HTML
-// result file in the chat opens beside the conversation (a full-screen sheet on a phone) under the 앱 screen's header, the page's own
-// script does not run, and Cmd+click picks its elements into the composer like the 앱 frame (15-picker.js).
+// result file in the chat opens beside the conversation (a full-screen sheet on a phone) under the 앱 screen's header, a script-free page's
+// handlers do not run and Cmd+click picks its elements into the composer like the 앱 frame (15-picker.js), and a page with its own script
+// runs it in an opaque-origin frame.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -13,8 +14,15 @@ mkdirSync(SHOTS, { recursive: true });
 const ROOT = realpathSync(mkdtempSync(join(tmpdir(), "canvas-web-")));
 const PAGE = join(ROOT, "report.html");
 writeFileSync(PAGE, `<!doctype html><html><head><title>주간 보고서</title><style>body{font:15px/1.6 sans-serif;margin:28px;color:#191f28}h1{font-size:24px}button{padding:10px 16px;border:0;border-radius:10px;background:#3182f6;color:#fff;font-size:15px}</style></head><body>
-<h1>주간 보고서</h1><p id="intro">이번 주 처리한 일을 정리했어요.</p><button id="save" onclick="window.saved=(window.saved||0)+1">저장</button>
-<script>window.ran = 1; document.body.dataset.ran = "1";</script></body></html>`);
+<h1>주간 보고서</h1><p id="intro">이번 주 처리한 일을 정리했어요.</p><button id="save" onclick="window.saved=(window.saved||0)+1;document.body.dataset.ran='1'">저장</button>
+<img src="x" onerror="document.body.dataset.ran='1'"></body></html>`);
+// A page whose body only its script builds: it runs in an opaque frame and reports what it built, and that it cannot reach the hub.
+const FLOW = join(ROOT, "flow.html");
+writeFileSync(FLOW, `<!doctype html><html><body><h1>흐름도</h1><div id="app"></div><script>
+for (let i = 0; i < 40; i++) app.append(Object.assign(document.createElement("div"), { className: "node", textContent: "단계 " + i }));
+let cookie = "", api = ""; try { cookie = document.cookie; } catch { cookie = "blocked"; }
+fetch("/api/state").then(() => { api = "reached"; }, () => { api = "blocked"; }).finally(() => parent.postMessage({ nodes: document.querySelectorAll(".node").length, cookie, api, origin: String(self.origin) }, "*"));
+</script></body></html>`);
 writeFileSync(join(ROOT, "notes.txt"), "not html");
 const json = (v: unknown) => Response.json(v);
 const HIST = [{ ts: new Date(Date.now() - 60_000).toISOString(), kind: "out", source: "orchestrator", text: `[done] 보고서를 만들었어요\n[file] ${PAGE}` }];
@@ -99,6 +107,17 @@ describe("캔버스 at 1280px", () => {
 });
 
 describe("캔버스 at 390px", () => {
+	test("a page built by its own script renders in an opaque-origin frame without the picker", async () => {
+		const v = new Bun.WebView({ width: 1280, height: 900 });
+		views.push(v);
+		await v.navigate(`http://127.0.0.1:${server.port}/#chat`);
+		await waitOn(v, `typeof canvasOpen === "function"`);
+		const got = await v.evaluate(`new Promise(res => { addEventListener("message", e => res(JSON.stringify(e.data)), { once: true }); canvasOpen(${JSON.stringify(FLOW)}, "flow.html"); })`);
+		expect(JSON.parse(got as string)).toEqual({ nodes: 40, cookie: "blocked", api: "blocked", origin: "null" });
+		const f = await get(v, `const f = document.querySelector("#canvas .apps-frame"); return { sandbox: f.getAttribute("sandbox"), hint: !!document.querySelector("#canvas .pk-hint") };`);
+		expect(f).toEqual({ sandbox: "allow-scripts", hint: false });
+	}, 30_000);
+
 	for (const theme of ["light", "dark"] as const) test(`a full-screen sheet with the 앱 header and a back button (${theme})`, async () => {
 		const v = await open(390, 844, theme);
 		const h = await head(v);
@@ -112,14 +131,15 @@ describe("캔버스 at 390px", () => {
 	}, 30_000);
 });
 
-test("/api/canvas serves only HTML inside the roots, sandboxed with no script", async () => {
+test("/api/canvas serves only HTML inside the roots, its script sandboxed to an opaque origin with no network", async () => {
 	const at = (p: string) => fetch(`http://127.0.0.1:${server.port}/api/canvas?path=${encodeURIComponent(p)}`);
 	const ok = await at(PAGE);
 	expect(ok.status).toBe(200);
 	expect(ok.headers.get("content-type")).toBe("text/html; charset=utf-8");
 	const csp = ok.headers.get("content-security-policy") ?? "";
-	expect(csp.startsWith("sandbox allow-same-origin;")).toBe(true);
-	expect(csp).not.toContain("allow-scripts");
+	expect(csp.startsWith("sandbox allow-scripts;")).toBe(true);
+	expect(csp).not.toContain("allow-same-origin");
+	expect(csp).toContain("connect-src 'none'");
 	expect((await at(join(ROOT, "notes.txt"))).status).toBe(415);
 	expect((await at("/etc/hosts")).status).toBeGreaterThanOrEqual(400);
 });
