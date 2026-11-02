@@ -55,8 +55,9 @@ export const sends = createSendLedger({
 });
 // A web lane's lane:<name> is its web conversation, which the caller's outbox/inbox event already fed (hub/lanewire.ts): there
 // is no Discord place to send to, so the post is done there instead of failing in the ledger as an unknown Discord target.
+// A web-only install (no bot token, discord.status.enabled false) has no Discord at all: every post is done in the web the same way.
 export const send = (target: string, text: string, ref?: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> =>
-	target.startsWith("lane:") && isWebLane(target.slice(5)) ? Promise.resolve({ delivered: true }) : sends.submit(target, text, ref);
+	!discord.status.enabled || (target.startsWith("lane:") && isWebLane(target.slice(5))) ? Promise.resolve({ delivered: true }) : sends.submit(target, text, ref);
 // One prompt queue per session (hub/convsessions.ts): main's, and with conversation sessions on, one per conversation. Each delivers into
 // its own orchestrator instance; `recent` keeps only that session's conversations, so an answer that arrives without a prompt can
 // only go to a message of its own conversation (prompts.ts orphanTarget).
@@ -201,7 +202,7 @@ function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason
 	// Web only: a web conversation, a kind the owner switched off for Discord (hub/discord-post.ts), or a gateway alert that repeats one Discord already has.
 	// `discord_route`: the post's own app or monitor decided it (a monitor's 디스코드에도 보내기 switch, hub/watch-settings.ts), over the class switch.
 	const toDiscord = typeof j.extra.discord_route === "boolean" ? j.extra.discord_route : route({ target: j.target, text: j.text, extra: { ...j.extra, ...(threadMail(j.target) ? { mail: true } : {}) }, replyTo: j.replyTo }).messengers.discord;
-	if (isLocal(j.target) || j.extra.repeat === true || !toDiscord) {
+	if (isLocal(j.target) || j.extra.repeat === true || !toDiscord || !discord.status.enabled) {
 		convs.markAnsweredAll(jobAnswers(j));
 		return Promise.resolve({ delivered: true });
 	}
@@ -366,7 +367,7 @@ export async function progress(target: string, key: string, text: string, replyT
 		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key }, threadHome, threadMail));
 		return t;
 	});
-	if (isLocal(target) || !route({ target, text: sent, extra: { update_key: key }, replyTo }).messengers.discord) return { delivered: true };
+	if (isLocal(target) || !discord.status.enabled || !route({ target, text: sent, extra: { update_key: key }, replyTo }).messengers.discord) return { delivered: true };
 	// One evolving status per asking channel: every progress key there edits the same message the gateway's live report
 	// uses (worklog and alert keep their per-key entries, e.g. one per lane).
 	return discord.progress(target, target === "worklog" || target === "alert" ? key : "progress", sent, replyTo);
