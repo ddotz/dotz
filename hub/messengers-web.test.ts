@@ -1,202 +1,246 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
-import { ev, fakeHub, json, run, waitFor, type View } from "./test-web.ts";
+import { ev, fakeHub, inbox, json, run, waitFor, type View } from "./test-web.ts";
 
-// 설정 → 메신저: the list with state dots, the JANDI detail (rooms mirrored read-only, no 방 추가) and the save calls, against a stub gateway (headless Bun.WebView).
-// The stub never returns a secret, only set flags. Screenshots go to SHOTS.
-const SHOTS = process.env.MESSENGER_SHOTS ?? "/tmp/dotz-messenger-shots";
+// 설정의 메신저: four rows from the index, one screen per messenger (status + one action + onboarding + 알림 + read-only rooms),
+// and manual fields only in the closed "직접 입력" disclosure. Headless Bun.WebView against a stub gateway.
+const SHOTS = "/tmp/messenger-onboarding";
 mkdirSync(SHOTS, { recursive: true });
 
-type Room = { id: string; name: string; kind: string; project?: string; secrets: Record<string, string> };
-let enabled = true;
-let fallbackSet = false;
-let notify: Record<string, boolean> = { ask: true, alert: true, result: true, news: true, conv: true, log: true };
-let rooms: Room[] = [
-	{ id: "m1", name: "메인", kind: "main", secrets: { outgoing_token: "tok-1", incoming_url: "http://in/1" } },
-	{ id: "p1", name: "결제 프로젝트", kind: "project", project: "ch:7", secrets: { outgoing_token: "tok-2" } },
-];
-const puts: any[] = [];
-let hold: Promise<void> | undefined;   // set: the JANDI detail answers only when it settles (a slow detail)
 const PROJECTS = [{ target: "ch:7", name: "결제" }, { target: "ch:8", name: "정산" }];
+const baseItems = () => [
+	{ id: "discord", label: "Discord", enabled: true, state: "ok", configured: true },
+	{ id: "jandi", label: "JANDI", enabled: false, state: "off", configured: true },
+	{ id: "slack", label: "Slack", enabled: false, state: "off", configured: false },
+	{ id: "telegram", label: "Telegram", enabled: true, state: "error", configured: true, error: "토큰이 거절됐어요" },
+];
 const jandi = () => ({
-	enabled,
-	help: ["JANDI 방마다 수신 웹훅을 만들고 URL을 붙여 넣어요", "발신 웹훅의 토큰을 맞춰 넣어요"],
-	fields: [{ key: "host", label: "받는 주소", type: "text", value: "0.0.0.0", hint: "바꾸면 연결이 다시 시작돼요" }, { key: "port", label: "받는 포트", type: "number", value: 8765 }, { key: "incoming_url", label: "기본 수신 웹훅 URL", type: "secret", set: fallbackSet, hint: "방마다 따로 정하지 않은 방의 메시지가 모두 이 JANDI 방으로 가요" }],
-	allow: { label: "말을 걸 수 있는 사람", hint: "이메일이나 JANDI 이름", items: ["boss@corp.test"] },
+	enabled: items.find(i => i.id === "jandi")!.enabled,
+	help: ["JANDI 방마다 수신 웹훅을 만들고 URL을 붙여 넣어요"],
+	fields: [{ key: "host", label: "받는 주소", type: "text", value: "0.0.0.0" }, { key: "port", label: "받는 포트", type: "number", value: 8765 },
+		{ key: "incoming_url", label: "기본 수신 웹훅 URL", type: "secret", set: secretSet, hint: "방마다 따로 정하지 않은 방의 메시지가 모두 이 JANDI 방으로 가요" }],
+	allow: { label: "말을 걸 수 있는 사람", hint: "이메일이나 JANDI 이름", items: allow },
 	rooms: {
-		label: "방",
-		editable: true,
-		hint: fallbackSet ? undefined : "남은 일: JANDI는 웹훅을 API로 만들 수 없어서, 수신 웹훅 URL 하나를 '기본 수신 웹훅 URL'에 한 번 붙여 넣어요",
-		fields: [{ key: "webhook", label: "발신 웹훅 URL", type: "copy" }, { key: "outgoing_token", label: "발신 토큰", type: "secret" }, { key: "incoming_url", label: "수신 웹훅 URL", type: "secret" }],
-		items: rooms.map(r => ({
-			id: r.id, name: r.name, kind: r.kind,
-			...(r.project ? { project: { target: r.project, name: PROJECTS.find(p => p.target === r.project)?.name ?? r.project } } : {}),
-			values: { webhook: `http://192.168.0.5:8765/jandi/${r.id}` },
-			set: { outgoing_token: !!r.secrets.outgoing_token, incoming_url: !!r.secrets.incoming_url },
-			...(r.id === "m1" ? { last_in: Date.now() - 120_000, last_out: Date.now() - 30_000 } : {}),
-			...(r.id === "p1" ? { last_error: "HTTP 500" } : {}),
-		})),
+		label: "방", editable: true, hint: "JANDI는 웹훅을 API로 만들 수 없어요",
+		fields: [{ key: "webhook", label: "발신 웹훅 URL", type: "copy" }],
+		items: [
+			{ id: "m1", name: "메인", kind: "main", values: { webhook: "http://192.168.0.5:8765/jandi/m1" }, set: { outgoing_token: true, incoming_url: true }, last_in: Date.now() - 120_000, last_out: Date.now() - 30_000 },
+			{ id: "p1", name: "결제 프로젝트", kind: "project", project: { target: "ch:7", name: "결제" }, values: {}, set: {}, last_error: "HTTP 500" },
+		],
 	},
 	projects: PROJECTS,
-	notify,
+	notify: { ask: true, alert: true, result: true, news: true, conv: true, log: true },
 });
-const DISCORD = { enabled: false, help: ["Discord 연결은 설정 → Discord에서 바꿔요."], fields: [{ key: "state", label: "상태", type: "readonly", value: "연결 중" }], projects: [], link: { label: "Discord 설정 열기", view: "discord" } };
+const slack = () => ({
+	enabled: false,
+	help: ["Slack 앱을 만들고 봇 토큰을 저장해요"],
+	fields: [{ key: "token", label: "봇 토큰", type: "secret", set: false }],
+	allow: { label: "말을 걸 수 있는 사람", hint: "Slack 사용자 ID", items: [] },
+	rooms: { label: "채널", editable: true, hint: "연결하면 채널을 읽어요", fields: [], items: [] },
+	projects: PROJECTS,
+	notify: { ask: true, alert: true, result: true, news: true, conv: true, log: true },
+});
+const telegram = () => ({
+	enabled: true,
+	help: ["BotFather에서 봇을 만들어요"],
+	fields: [{ key: "token", label: "봇 토큰", type: "secret", set: true }],
+	allow: { label: "말을 걸 수 있는 사람", hint: "Telegram 사용자 ID", items: [] },
+	rooms: { label: "대화", editable: true, fields: [], items: [{ id: "c1", name: "나", kind: "main", values: {}, set: {} }] },
+	projects: PROJECTS,
+	notify: { ask: true, alert: true, result: true, news: true, conv: true, log: true },
+});
+let items: any[];
+let secretSet = false;
+let allow: string[];
+let onboard: string[] = [];
+const puts = inbox<any>();
+let ob: Record<string, any>;
+const idle = key => ({ key, state: "idle", step: null, owner: null, error: null, url: null, updated_at: new Date(0).toISOString() });
+const waiting = (key, label, hint) => ({ key, state: "waiting", step: { id: "owner", title: "로그인", detail: "브라우저에서 로그인해 주세요" }, owner: { label, hint }, error: null, url: null, updated_at: new Date(0).toISOString() });
+const done = (key, url = null) => ({ key, state: "done", step: { id: "done", title: "완료", detail: "연결했어요" }, owner: null, error: null, url, updated_at: new Date(0).toISOString() });
+function reset() {
+	items = baseItems();
+	secretSet = false;
+	allow = ["boss@corp.test"];
+	puts.length = 0;
+	onboard = [];
+	ob = Object.fromEntries(["discord", "jandi", "slack", "telegram"].map(k => [k, idle(k)]));
+}
+reset();
+const settingsFor = (id: string) => id === "jandi" ? jandi() : id === "slack" ? slack() : telegram();
 
 const hub = fakeHub({
+	slowTimers: true,
 	api: async (req, url) => {
 		const p = url.pathname;
-		if (p === "/api/messengers") return json({ items: [{ id: "jandi", label: "JANDI", enabled, state: "ok" }, { id: "discord", label: "Discord", enabled: false, state: "connecting" }] });
-		if (p === "/api/messengers/discord") return json(DISCORD);
+		if (p === "/api/messengers" && req.method === "GET") return json({ items });
+		const m = p.match(/^\/api\/messengers\/([^/]+)$/);
+		if (m && req.method === "GET") return json(settingsFor(decodeURIComponent(m[1])));
+		if (m && req.method === "PUT") {
+			const b = (await req.json()) as any;
+			puts.push(b);
+			const id = decodeURIComponent(m[1]), s = settingsFor(id);
+			if (b.notify) s.notify = { ...s.notify, ...b.notify };
+			if (b.enabled !== undefined) {
+				s.enabled = b.enabled;
+				const it = items.find(i => i.id === id)!;
+				it.enabled = b.enabled;
+				it.state = b.enabled ? "ok" : "off";
+			}
+			if (b.values) for (const [k, v] of Object.entries(b.values)) {
+				const f = s.fields.find(x => x.key === k);
+				if (f && f.type === "secret") { f.set = true; secretSet = true; } else if (f) f.value = v;
+			}
+			if (b.allow) allow = b.allow;
+			return json(s);
+		}
+		const o = p.match(/^\/api\/onboarding\/([^/]+)(?:\/(start|continue|cancel))?$/);
+		if (o) {
+			const key = o[1]!, action = o[2];
+			if (!action) return json(ob[key]);
+			onboard.push(`${key}/${action}`);
+			if (action === "start") ob[key] = waiting(key, key === "discord" ? "Discord 열기" : "관리자로 로그인", key === "telegram" ? "Telegram에서 시작을 눌러 주세요." : "브라우저에서 남은 한 가지를 마쳐 주세요.");
+			else if (action === "continue") ob[key] = done(key, key === "telegram" ? "https://t.me/example" : null);
+			else ob[key] = idle(key);
+			return json(ob[key]);
+		}
 		if (p === "/api/update") {
 			const at = { sha: "a".repeat(40), short: "a".repeat(7), date: new Date(0).toISOString() };
 			return json({ running: { kind: "git", branch: "main", commit: at }, disk: { kind: "git", branch: "main", commit: at }, settings: { auto_check: false, auto_apply: false, at: "09:00" }, busy: [] });
 		}
-		if (p === "/api/messengers/jandi" && req.method === "GET") { await hold; return json(jandi()); }
-		if (p === "/api/messengers/jandi" && req.method === "PUT") {
-			const b = (await req.json()) as any;
-			puts.push(b);
-			if (b.enabled !== undefined) enabled = b.enabled;
-			if (b.values?.incoming_url) fallbackSet = true;
-			if (b.notify) notify = { ...notify, ...b.notify };
-			return json(jandi());
-		}
+		if (p === "/api/web-access") return json({ mode: "tailscale", hostname: "", team: "", aud: "", token_set: false, tunnel: { state: "off" }, devices: 0, cloudflared_found: true });
+		if (p === "/api/devices") return json([]);
+		if (p === "/api/accounts") return json({ error: "no accounts here" }, 404);
 	},
 });
 afterAll(() => hub.stop());
 
-const open = async (width: number, height: number, theme: "light" | "dark" = "light"): Promise<View> => {
+const open = async (width: number, height: number, theme: "light" | "dark" = "light", view = "settings"): Promise<View> => {
 	const v = await hub.view({ width, height }, "/");
 	await waitFor(v, `typeof go === "function" && typeof S !== "undefined" && S`);
-	await run(v, `document.documentElement.dataset.theme = ${JSON.stringify(theme)}; go("messengers")`);
-	await waitFor(v, `document.querySelectorAll("#messengers [data-ms]").length === 2 && document.querySelector('#messengers [data-ms="discord"] .sup')`);
+	await run(v, `document.documentElement.dataset.theme = ${JSON.stringify(theme)}; go(${JSON.stringify(view)})`);
+	if (view === "settings") await waitFor(v, `document.querySelectorAll("#settings [data-ms-row]").length === 4 && document.querySelector('#settings [data-ms-row="telegram"] .tag')`);
+	else await waitFor(v, `document.querySelector("#${view} [data-ms-connect]") && document.querySelector("#${view} [data-ms-status]")`);
 	return v;
 };
 const click = (v: View, sel: string) => run(v, `document.querySelector(${JSON.stringify(sel)}).click()`);
 const type = (v: View, sel: string, text: string) => run(v, `const i = document.querySelector(${JSON.stringify(sel)}); i.value = ${JSON.stringify(text)}; i.dispatchEvent(new Event("input", { bubbles: true }))`);
+const noOverflow = (v: View, sel: string) => ev<boolean>(v, `document.documentElement.scrollWidth <= document.documentElement.clientWidth && [...document.querySelectorAll(${JSON.stringify(sel)})].every(l => l.scrollWidth <= l.clientWidth)`);
 
-describe("메신저 설정 화면", () => {
-	test("the list shows each connection with its state and room count", async () => {
+describe("메신저 설정", () => {
+	beforeEach(reset);
+
+	test("settings has exactly one Discord/JANDI/Slack/Telegram row, no 메신저, and each opens its view", async () => {
 		const v = await open(1280, 800);
-		const rows = await ev<{ id: string; name: string; tag: string; sup: string; dot: string }[]>(v, `[...document.querySelectorAll("#messengers [data-ms]")].map(r => ({ id: r.dataset.ms, name: r.querySelector(".hd").textContent, tag: r.querySelector(".tag").textContent, sup: r.querySelector(".sup").textContent, dot: r.querySelector(".dot").className }))`);
+		const rows = await ev<{ id: string; name: string; tag: string }[]>(v, `[...document.querySelectorAll("#settings [data-ms-row]")].map(r => ({ id: r.dataset.msRow, name: r.querySelector(".hd").textContent, tag: r.querySelector(".tag")?.textContent }))`);
 		expect(rows).toEqual([
-			{ id: "jandi", name: "JANDI", tag: "연결됨", sup: "방 2개", dot: "dot ok" },
-			{ id: "discord", name: "Discord", tag: "연결 중", sup: "", dot: "dot warn" },
+			{ id: "discord", name: "Discord", tag: "연결됨" },
+			{ id: "jandi", name: "JANDI", tag: "연결됨" },
+			{ id: "slack", name: "Slack", tag: "설정 안 됨" },
+			{ id: "telegram", name: "Telegram", tag: "연결 안 됨" },
 		]);
-	});
-
-	test("the list shows while a detail is still loading", async () => {
-		let release = () => {};
-		hold = new Promise(r => { release = r; });
-		try {
-			const v = await hub.view({ width: 1280, height: 800 }, "/");
-			await waitFor(v, `typeof go === "function" && typeof S !== "undefined" && S`);
-			await run(v, `go("messengers")`);
-			await waitFor(v, `document.querySelectorAll("#messengers [data-ms]").length === 2`);
-			expect(await ev<string>(v, `document.querySelector('#messengers [data-ms="jandi"] .sup').textContent`)).toBe("");
-			release();
-			await waitFor(v, `document.querySelector('#messengers [data-ms="jandi"] .sup').textContent === "방 2개"`);
-		} finally {
-			release();
-			hold = undefined;
+		expect(await ev<string[]>(v, `[...document.querySelectorAll("#settings .li.tap .hd")].map(h => h.textContent)`)).not.toContain("메신저");
+		expect(await ev<number>(v, `[...document.querySelectorAll("#settings .li.tap .hd")].filter(h => ["Discord","JANDI","Slack","Telegram"].includes(h.textContent)).length`)).toBe(4);
+		for (const id of ["discord", "jandi", "slack", "telegram"]) {
+			await run(v, `go("settings")`);
+			await waitFor(v, `document.querySelector("#settings [data-ms-row=\\"${id}\\"] .tag")`);
+			await click(v, `#settings [data-ms-row="${id}"]`);
+			await waitFor(v, `current === "${id}"`);
 		}
-	});
+		await run(v, `go("messengers")`);
+		await waitFor(v, `current === "settings"`);
+	}, 30_000);
 
-	test("the settings list links to it", async () => {
-		const v = await hub.view({ width: 1280, height: 800 }, "/");
-		await waitFor(v, `typeof go === "function" && S`);
-		await run(v, `go("settings")`);
-		await waitFor(v, `(() => { const r = [...document.querySelectorAll("#settings .li")].find(x => x.querySelector(".hd")?.textContent === "메신저"); if (r) r.click(); return !!r; })()`);
-		await waitFor(v, `current === "messengers"`);
-	});
-
-	test("JANDI opens to its fields, allowlist and the rooms it mirrors; secrets show only 저장됨", async () => {
+	test("every screen has one action, a closed 직접 입력, and no input outside it", async () => {
 		const v = await open(1280, 800);
-		await click(v, '#messengers [data-ms="jandi"]');
-		await waitFor(v, `document.querySelectorAll("dialog [data-room]").length === 2`);
-		const d = await ev<{ inputs: string[]; allow: string[]; rooms: string[]; mirrors: string[]; html: string }>(v, `({ inputs: [...document.querySelectorAll("dialog input.fi")].map(i => i.name + "=" + i.value).filter(s => s.startsWith("ms-host") || s.startsWith("ms-port")), allow: [...document.querySelectorAll("dialog [data-allow]")].map(x => x.dataset.allow), rooms: [...document.querySelectorAll("dialog [data-room] .hd")].map(h => h.textContent), mirrors: [...document.querySelectorAll("dialog [data-room] .sup")].map(h => h.textContent.replace(/ · (받음|보냄) .*$/, "")), html: document.querySelector("dialog").innerHTML })`);
-		expect(d.inputs).toEqual(["ms-host=0.0.0.0", "ms-port=8765"]);
-		expect(d.allow).toEqual(["boss@corp.test"]);
-		expect(d.rooms).toEqual(["메인", "결제 프로젝트"]);
-		expect(d.mirrors).toEqual(["→ 메인 대화", "→ 프로젝트 · 결제"]);
-		expect(await ev(v, `document.querySelector('dialog [data-room="p1"] .dcs-err').textContent`)).toBe("HTTP 500");
-		expect(d.html).not.toContain("tok-");
-	});
+		const want = { discord: "연결", jandi: "켜기", slack: "연결", telegram: "연결" } as const;
+		for (const [id, text] of Object.entries(want)) {
+			await run(v, `go("${id}")`);
+			await waitFor(v, `document.querySelector("#${id} [data-ms-connect]") && document.querySelector("#${id} [data-ms-status]")`);
+			expect(await ev<number>(v, `document.querySelectorAll("#${id} [data-ms-connect]").length`)).toBe(1);
+			expect(await ev<string>(v, `document.querySelector("#${id} [data-ms-connect]").textContent`)).toBe(text);
+			expect(await ev<boolean>(v, `document.querySelector("#${id} details[data-ms-advanced]").open`)).toBe(false);
+			expect(await ev<string>(v, `document.querySelector("#${id} details[data-ms-advanced] summary").textContent`)).toContain("직접 입력");
+			expect(await ev<number>(v, `document.querySelectorAll("#${id} input").length`)).toBe(0);
+			await click(v, `#${id} details[data-ms-advanced] summary`);
+			await waitFor(v, `document.querySelectorAll("#${id} details[data-ms-advanced] input").length > 0`);
+			expect(await ev<boolean>(v, `[...document.querySelectorAll("#${id} input")].every(i => i.closest("details[data-ms-advanced]"))`)).toBe(true);
+			expect(await ev<boolean>(v, `!!document.querySelector("#${id} details[data-ms-advanced] [data-ms-save]")`)).toBe(true);
+		}
+	}, 30_000);
 
-	test("there is no 방 추가 and a room cannot be opened or edited", async () => {
-		const v = await open(390, 844);
-		expect(await ev(v, `document.querySelector("[data-ms-add]")`)).toBeNull();
-		await click(v, '#messengers [data-ms="jandi"]');
-		await waitFor(v, `document.querySelectorAll("dialog [data-room]").length === 2`);
-		expect(await ev(v, `[document.querySelector("dialog [data-ms-add]"), document.querySelector("dialog button[data-room]"), document.querySelector('dialog input[name="ms-room-name"]')]`)).toEqual([null, null, null]);
-		expect(await ev(v, `document.querySelector("dialog").textContent.includes("방 추가")`)).toBe(false);
-	});
-
-	test("what is left to do shows as one line, and the default webhook is the only thing to paste", async () => {
-		fallbackSet = false;
-		const v = await open(1280, 800);
-		await click(v, '#messengers [data-ms="jandi"]');
-		await waitFor(v, `document.querySelector("dialog [data-ms-hint]")`);
-		expect(await ev(v, `document.querySelectorAll("dialog [data-ms-hint]").length`)).toBe(1);
-		expect(await ev(v, `document.querySelector("dialog [data-ms-hint]").textContent`)).toContain("남은 일");
-		expect(await ev(v, `document.querySelector('dialog [data-set="incoming_url"]')`)).toBeNull();
-		await type(v, 'dialog input[name="ms-incoming_url"]', "http://in/default");
-		await waitFor(v, `!document.querySelector("dialog [data-ms-save]").disabled`);
+	test("알림: a flip sends only that class", async () => {
+		const v = await open(1280, 800, "light", "jandi");
+		await waitFor(v, `document.querySelectorAll("#jandi [data-notify]").length === 6`);
 		puts.length = 0;
-		await click(v, "dialog [data-ms-save]");
-		await waitFor(v, `MD && document.querySelector('dialog [data-set="incoming_url"]') && !document.querySelector("dialog [data-ms-hint]")`);
-		expect(puts).toEqual([{ values: { incoming_url: "http://in/default" } }]);
-		expect(await ev(v, `document.querySelector('dialog [data-set="incoming_url"]').textContent`)).toBe("저장됨");
-		expect(await ev(v, `document.querySelector('dialog input[name="ms-incoming_url"]').value`)).toBe("");
-		fallbackSet = false;
-	});
-
-	test("저장 sends only what changed", async () => {
-		const v = await open(1280, 800);
-		await click(v, '#messengers [data-ms="jandi"]');
-		await waitFor(v, `document.querySelector("dialog [data-ms-save]")`);
-		expect(await ev(v, `document.querySelector("dialog [data-ms-save]").disabled`)).toBe(true);
-		await click(v, "dialog [data-ms-enabled]");
-		await type(v, 'dialog input[name="ms-port"]', "9000");
-		await waitFor(v, `!document.querySelector("dialog [data-ms-save]").disabled`);
-		puts.length = 0;
-		await click(v, "dialog [data-ms-save]");
-		await waitFor(v, `MD && MD.s.enabled === false && document.querySelector("dialog [data-ms-save]").disabled`);
-		expect(puts).toEqual([{ enabled: false, values: { port: 9000 } }]);
-		enabled = true;
-	});
-
-	test("알림: one switch per class in the sheet; a flip saves at once with only that class", async () => {
-		const v = await open(1280, 800);
-		await click(v, '#messengers [data-ms="jandi"]');
-		await waitFor(v, `document.querySelectorAll("dialog [data-notify]").length === 6`);
-		expect(await ev(v, `[...document.querySelectorAll("dialog [data-notify] .hd")].map(h => h.textContent)`)).toEqual(["답변 필요", "경고", "결과", "새 소식", "대화", "진행"]);
-		puts.length = 0;
-		await click(v, 'dialog [data-notify="news"] .hs-sw');
-		await waitFor(v, `document.querySelector('dialog [data-notify="news"] .hs-sw').getAttribute("aria-checked") === "false"`);
+		await click(v, '#jandi [data-notify="news"] .hs-sw');
+		await waitFor(v, `document.querySelector('#jandi [data-notify="news"] .hs-sw').getAttribute("aria-checked") === "false"`);
+		await puts.until(x => x.length === 1);
 		expect(puts).toEqual([{ notify: { news: false } }]);
-		expect(await ev(v, `document.querySelector("dialog [data-ms-save]").disabled`)).toBe(true);
-		notify = { ...notify, news: true };
-	});
+	}, 30_000);
 
-	test("Discord is read-only here and links to its own screen", async () => {
-		const v = await open(1280, 800);
-		await click(v, '#messengers [data-ms="discord"]');
-		await waitFor(v, `document.querySelector('dialog [data-ms-link="discord"]')`);
-		expect(await ev(v, `[document.querySelector("dialog [data-ms-save]"), document.querySelector("dialog [data-ms-enabled]")]`)).toEqual([null, null]);
-		await click(v, 'dialog [data-ms-link="discord"]');
-		await waitFor(v, `current === "discord"`);
-	});
+	test("켜기 sends enabled=true and reloads the row", async () => {
+		const v = await open(1280, 800, "light", "jandi");
+		puts.length = 0;
+		await click(v, "#jandi [data-ms-connect]");
+		await waitFor(v, `document.querySelector("#jandi [data-ms-connect]").textContent === "연결"`);
+		expect(puts).toEqual([{ enabled: true }]);
+	}, 30_000);
 
-	test("screenshots: list and detail, desktop and phone, light and dark", async () => {
-		for (const [name, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]] as const) {
-			for (const theme of ["light", "dark"] as const) {
-				const v = await open(w, h, theme);
-				await Bun.write(`${SHOTS}/list-${name}-${theme}.png`, await v.screenshot());
-				await click(v, '#messengers [data-ms="jandi"]');
-				await waitFor(v, `document.querySelectorAll("dialog [data-room]").length === 2`);
-				await Bun.write(`${SHOTS}/detail-${name}-${theme}.png`, await v.screenshot());
-			}
+	test("연결 starts onboarding; waiting shows one owner line and continue posts /continue", async () => {
+		const v = await open(1280, 800, "light", "telegram");
+		onboard = [];
+		await click(v, "#telegram [data-ms-connect]");
+		await waitFor(v, `document.querySelector('#telegram [data-onb-state="waiting"]')`);
+		expect(onboard).toEqual(["telegram/start"]);
+		expect(await ev<number>(v, `document.querySelectorAll("#telegram [data-onb-owner]").length`)).toBe(1);
+		expect(await ev<string>(v, `document.querySelector("#telegram [data-onb-owner]").textContent`)).toContain("Telegram에서 시작을 눌러 주세요.");
+		expect(await ev<number>(v, `document.querySelectorAll("#telegram [data-onb-continue]").length`)).toBe(1);
+		expect(await ev<number>(v, `document.querySelectorAll("#telegram [data-onb-cancel]").length`)).toBe(1);
+		await click(v, "#telegram [data-onb-continue]");
+		await waitFor(v, `document.querySelector('#telegram [data-onb-state="done"]')`);
+		expect(onboard.filter(x => x === "telegram/continue").length).toBe(1);
+		expect(await ev<string>(v, `document.querySelector("#telegram [data-onb-url]").textContent`)).toBe("https://t.me/example");
+	}, 30_000);
+
+	test("JANDI rooms stay read-only and 저장 sends only what changed", async () => {
+		const v = await open(1280, 800, "light", "jandi");
+		await waitFor(v, `document.querySelectorAll("#jandi [data-room]").length === 2`);
+		expect(await ev<string[]>(v, `[...document.querySelectorAll("#jandi [data-room] .hd")].map(h => h.textContent)`)).toEqual(["메인", "결제 프로젝트"]);
+		expect(await ev<string>(v, `document.querySelector('#jandi [data-room="p1"] .dcs-err').textContent`)).toBe("HTTP 500");
+		expect(await ev<boolean>(v, `document.querySelector("[data-ms-test]") && document.querySelector("[data-ms-add]") === null`)).toBe(true);
+		await click(v, "#jandi details[data-ms-advanced] summary");
+		await waitFor(v, `document.querySelector('#jandi input[name="ms-port"]')`);
+		puts.length = 0;
+		await type(v, '#jandi input[name="ms-port"]', "9000");
+		await click(v, "#jandi [data-ms-save]");
+		await puts.until(x => x.length === 1);
+		expect(puts).toEqual([{ values: { port: 9000 } }]);
+		await waitFor(v, `document.querySelector('#jandi input[name="ms-port"]').value === "9000"`);
+		puts.length = 0;
+		await type(v, '#jandi input[name="ms-incoming_url"]', "http://in/SECRET");
+		await click(v, "#jandi [data-ms-save]");
+		await puts.until(x => x.length === 1);
+		expect(puts).toEqual([{ values: { incoming_url: "http://in/SECRET" } }]);
+		await waitFor(v, `document.querySelector('#jandi input[name="ms-incoming_url"]').value === "" && document.querySelectorAll('#jandi [data-set=incoming_url]').length === 1`);
+		expect(await ev<boolean>(v, `document.documentElement.outerHTML.includes("http://in/SECRET")`)).toBe(false);
+		expect(await ev<number>(v, `document.querySelectorAll("#jandi [data-set=incoming_url]").length`)).toBe(1);
+	}, 30_000);
+
+	test("screenshots: settings 1280 light, 390 dark, and each messenger screen", async () => {
+		const desk = await open(1280, 800, "light");
+		await Bun.write(`${SHOTS}/after-1280.png`, await desk.screenshot());
+		expect(await noOverflow(desk, "#settings .list")).toBe(true);
+		const phone = await open(390, 844, "dark");
+		await run(phone, `document.querySelector("#settings [data-ms-row=telegram]").scrollIntoView({ block: "center" })`);
+		await Bun.write(`${SHOTS}/after-390.png`, await phone.screenshot());
+		expect(await noOverflow(phone, "#settings .list")).toBe(true);
+		for (const id of ["discord", "jandi", "slack", "telegram"]) {
+			const v = await open(1280, 800, "light", id);
+			await waitFor(v, `document.querySelector("#${id} [data-onb]")`);
+			await Bun.write(`${SHOTS}/messenger-${id}.png`, await v.screenshot());
+			expect(await noOverflow(v, `#${id} .list`)).toBe(true);
 		}
-		for (const n of ["list", "detail"]) for (const d of ["desktop", "phone"]) for (const t of ["light", "dark"]) expect(await Bun.file(`${SHOTS}/${n}-${d}-${t}.png`).exists()).toBe(true);
+		for (const f of ["after-1280.png", "after-390.png", "messenger-discord.png", "messenger-jandi.png", "messenger-slack.png", "messenger-telegram.png"]) expect(await Bun.file(`${SHOTS}/${f}`).exists()).toBe(true);
 	}, 60_000);
 });
