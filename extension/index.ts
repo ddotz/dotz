@@ -19,6 +19,7 @@ import { FIELD_TYPES } from "../hub/authfields.ts";
 import { baseLanguage, detectLanguage, languageName } from "../hub/language.ts";
 import { blockedByFeatures, featurePrompt } from "../hub/featuredirs.ts";
 import { runWithReceipt, summarize } from "../hub/receipts.ts";
+import { mergeGate, recordReview, Refusal } from "../hub/mergegate.ts";
 import { systemDeny } from "../hub/systemdeny.ts";
 import { codeLockReason } from "../hub/codeguard.ts";
 import { lockedCodeDir } from "../hub/selfupdate-local.ts";
@@ -245,12 +246,34 @@ function verifyTool(pi: any): void {
 	});
 }
 
+// Landing reviewed work (hub/mergegate.ts): the verdict is pinned to the commit it read, the merge to that commit and green CI.
+function mergeTool(pi: any): void {
+	const z = pi.zod;
+	pi.registerTool({
+		name: "dotz_merge",
+		label: "Dotz merge",
+		description: "Land reviewed work. action=review {cwd, verdict CLEAR|BLOCK, pr?, sha?}: record the verdict for the commit the reviewer read (sha, default the current head). action=merge {cwd, pr?, into?}: with pr (number or URL) squash-merge it via gh only if its head is still the CLEAR-reviewed commit and every CI check passed; without pr fast-forward the branch checked out in cwd into `into` (default the main checkout's branch) only if its head is the CLEAR-reviewed commit. A commit after the review, BLOCK or red/empty CI refuses with the reason: review again.",
+		parameters: z.object({ action: z.enum(["review", "merge"]), cwd: z.string(), verdict: z.enum(["CLEAR", "BLOCK"]).optional(), pr: z.string().optional(), sha: z.string().optional(), into: z.string().optional() }),
+		async execute(_id: string, p: { action: "review" | "merge"; cwd: string; verdict?: "CLEAR" | "BLOCK"; pr?: string; sha?: string; into?: string }) {
+			try {
+				if (p.action === "review" && !p.verdict) throw new Refusal("action=review needs verdict");
+				const text = p.action === "review" ? await recordReview({ cwd: p.cwd, verdict: p.verdict!, pr: p.pr, sha: p.sha }) : await mergeGate({ cwd: p.cwd, pr: p.pr, into: p.into });
+				return { content: [{ type: "text", text }] };
+			} catch (e) {
+				if (e instanceof Refusal) return { content: [{ type: "text", text: `MERGE_REFUSED ${e.message}` }] };
+				throw e;
+			}
+		},
+	});
+}
+
 // A conversation's own session (DOTZ_CONV, hub/convsessions.ts) is reminded of its scope after a compaction, as at its start.
 const convScope = (): string => `You are ${NAME}'s session for the conversation ${process.env.DOTZ_CONV_NAME || process.env.DOTZ_CONV} (${process.env.DOTZ_CONV}). You answer only here; the main session oversees every conversation; to hand work elsewhere use dotz_conv send main.`;
 
 function orchestratorTools(pi: any): void {
 	const z = pi.zod;
 	verifyTool(pi);
+	mergeTool(pi);
 	authTool(pi);
 	pi.on("session_compact", (_e: any, ctx: any) => {
 		if (isMain(ctx)) pi.sendMessage({ customType: "dotz-mode", content: recall() + (process.env.DOTZ_CONV ? `\n\n${convScope()}` : ""), display: false }, { deliverAs: "nextTurn" });
@@ -390,6 +413,7 @@ function shortCache(pi: any): void {
 
 function laneSession(pi: any): void {
 	verifyTool(pi);
+	mergeTool(pi);
 	authTool(pi, process.env.DOTZ_LANE);
 	shortCache(pi);
 }
