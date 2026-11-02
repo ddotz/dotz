@@ -8,6 +8,9 @@
 //   - a card for the same ref is already open (or held): nothing new is posted; a changed text replaces the open card in place.
 // When the visible card closes (answered, resolved, ignored: notices.ts onDecisionClosed), the next held card is posted with its own
 // "남은 N건". Held cards are kept on disk, so a restart shows them later instead of losing them.
+// One item, one card (2026-11-02): a card is keyed by the item it is about (deps.itemOf: the bot's `mail:<id>` card and the app's reply draft of that
+// mail are one item). A newer card of an item that has an open or held card replaces it in place, and a held card whose item was handled meanwhile
+// (deps.handled) or already has an open card is dropped instead of being shown.
 import { existsSync, readFileSync } from "node:fs";
 import { parseDraftApproval, withRecipientMark } from "./draft-approval.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
@@ -30,7 +33,18 @@ export type ApprovalQueueDeps = {
 	log: (line: string) => void;
 	/** What a previous process left held. */
 	load?: () => Held[];
+	/** The item a card is about (default: its ref): cards of one item never wait behind each other. */
+	itemOf?: (conv: string, ref: string) => string;
+	/** Whether the item behind a ref was handled elsewhere (sent, dropped, answered by the owner himself): such a held card is dropped, never shown. */
+	handled?: (ref: string, conv: string) => boolean | Promise<boolean>;
 };
+
+/** The closed form of a send-approval card on Discord: its first line kept, then how it ended (the buttons are removed by the caller). */
+export function closedCardText(text: string, how: "answered" | "resolved" | "ignored", label = ""): string {
+	const first = (parseTone(stripHandoff(text)).text.trim().split("\n", 1)[0] ?? "").trim();
+	const note = how === "resolved" ? "-# 다른 곳에서 처리됐어요" : `-# 처리됨: ${label.replace(/\s+/g, " ").trim().slice(0, 80) || (how === "ignored" ? "무시" : "답변")}`;
+	return first ? `${first}\n${note}` : note;
+}
 
 /** The draft ref a post asks approval for, or undefined when it is no send-approval card. */
 export function cardRef(text: string): string | undefined {
@@ -63,6 +77,7 @@ export function numberedOf(text: string): CardPos | undefined {
 export const cardTitle = (text: string): string => (parseTone(stripHandoff(text)).text.trim().split("\n", 1)[0] ?? "").replace(/\s+/g, " ").slice(0, 120);
 
 export function createApprovalQueue(deps: ApprovalQueueDeps) {
+	const itemOf = (conv: string, ref: string) => deps.itemOf?.(conv, ref) ?? ref;
 	let held: Held[] = deps.load?.() ?? [];
 	const shown = new Map<string, Shown>();
 	// The place of the shown card in its conversation's current run of cards (1 = the first shown since nothing waited there).
@@ -102,21 +117,27 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		const ref = cardRef(text);
 		if (!ref) return { action: "post" };
 		const conv = deps.convOf(target);
-		const h = held.find(x => x.ref === ref && deps.convOf(x.target) === conv);
+		const item = itemOf(conv, ref);
+		const h = held.find(x => itemOf(conv, x.ref) === item && deps.convOf(x.target) === conv);
 		if (h) {
+			if (h.ref !== ref) Object.assign(h, { ref, target, extra });
 			h.text = text;
 			save();
-			deps.log(`approval card ${ref} in ${conv} is already held; its text is replaced`);
+			deps.log(`approval card ${ref} in ${conv} is already held (as one item); its text is replaced`);
 			return { action: "same" };
 		}
 		const s = shown.get(conv);
-		if ((s && s.ref === ref && waiting(conv)) || deps.openRefs(conv).includes(ref)) {
+		// A card still on its way (no notice yet) cannot be rewritten into another ref: that newer card waits like any other.
+		const sameShown = !!s && itemOf(conv, s.ref) === item && waiting(conv) && !(s.pending && s.ref !== ref);
+		const openRef = deps.openRefs(conv).find(r => itemOf(conv, r) === item);
+		if (sameShown || openRef !== undefined) {
 			const now = marked(conv, text);
-			if (s && s.ref === ref && withLeft(s.text, 0) === withLeft(text, 0)) return { action: "same" };
-			const at = s && s.ref === ref ? s : { ref, target };
-			if (s && s.ref === ref) s.text = now;
+			if (sameShown && s!.ref === ref && withLeft(s!.text, 0) === withLeft(text, 0)) return { action: "same" };
+			// The card as it was out (its old ref finds the open notice), then the shown card follows the newer ref.
+			const at = sameShown ? { ...s! } : { ref: openRef!, target };
+			if (sameShown) Object.assign(s!, { ref, text: now });
 			deps.rewrite(conv, at, now);
-			deps.log(`approval card ${ref} in ${conv} is open; the new text replaces it instead of a second post`);
+			deps.log(`approval card ${ref} in ${conv} is open (${at.ref}); the new text replaces it instead of a second post`);
 			return { action: "update" };
 		}
 		if (waiting(conv) || deps.openRefs(conv).length) {
@@ -149,13 +170,63 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		const s = shown.get(conv);
 		// The shown card itself closed, even one whose post has not finished yet (the owner can answer as soon as it shows).
 		if (s && (ref ? s.ref === ref : !s.pending)) shown.delete(conv);
-		release(conv);
+		const r = release(conv);
+		if (r instanceof Promise) r.catch(e => deps.log(`approval queue release in ${conv} failed: ${e}`));
 	}
 
-	function release(conv: string): void {
+	// Held cards drop out of the queue with a log line each; the open card's count follows.
+	function drop(conv: string, cards: Held[], why: string): void {
+		if (!cards.length) return;
+		held = held.filter(h => !cards.includes(h));
+		save();
+		for (const c of cards) deps.log(`approval card ${c.ref} in ${conv} dropped from the queue: ${why}`);
+		recount(conv);
+	}
+	const heldConvs = () => [...new Set(held.map(h => deps.convOf(h.target)))];
+	/** Held cards whose item already has an open card, and all but the newest held card of one item. */
+	function dropRedundant(): void {
+		for (const conv of heldConvs()) {
+			const open = new Set(deps.openRefs(conv).map(r => itemOf(conv, r)));
+			const s = shown.get(conv);
+			if (s && waiting(conv)) open.add(itemOf(conv, s.ref));
+			const list = heldIn(conv);
+			drop(conv, list.filter(h => open.has(itemOf(conv, h.ref))), "its item has an open card");
+			const rest = heldIn(conv);
+			drop(conv, rest.filter((h, i) => rest.some((o, j) => j > i && itemOf(conv, o.ref) === itemOf(conv, h.ref))), "a newer card of the same item is held");
+		}
+	}
+	/** Held cards whose item was handled elsewhere meanwhile. */
+	async function dropHandled(): Promise<void> {
+		for (const conv of heldConvs()) {
+			const gone: Held[] = [];
+			for (const h of heldIn(conv)) if (await Promise.resolve(deps.handled?.(h.ref, conv)).catch(() => false)) gone.push(h);
+			drop(conv, gone, "its item was handled elsewhere");
+		}
+	}
+	/** Drops what no longer needs asking: duplicates and handled items. Running it twice changes nothing the second time. */
+	const purge = async (): Promise<void> => {
+		dropRedundant();
+		await dropHandled();
+	};
+
+	// Async only when `handled` is (a Kakao room is read from its database); without it the release is as synchronous as it was.
+	function release(conv: string): void | Promise<void> {
 		if (waiting(conv) || deps.openRefs(conv).length) return;
 		const next = heldIn(conv)[0];
 		if (!next) return;
+		const h = deps.handled?.(next.ref, conv);
+		if (h instanceof Promise) return h.catch(() => false).then(v => show(conv, next, v));
+		return show(conv, next, h === true);
+	}
+
+	function show(conv: string, next: Held, handled: boolean): void | Promise<void> {
+		// The queue moved while the answer was awaited: look again.
+		if (!held.includes(next)) return release(conv);
+		if (waiting(conv) || deps.openRefs(conv).length) return;
+		if (handled) {
+			drop(conv, [next], "its item was handled elsewhere");
+			return release(conv);
+		}
 		held = held.filter(h => h !== next);
 		save();
 		const left = heldIn(conv).length;
@@ -168,8 +239,14 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 	}
 
 	/** Every conversation with held cards and nothing open (after a restart). */
-	const releaseAll = () => {
-		for (const conv of new Set(held.map(h => deps.convOf(h.target)))) release(conv);
+	const releaseAll = (): void | Promise<void> => {
+		const go = () => {
+			const rest = heldConvs().map(release).filter((r): r is Promise<void> => !!r);
+			return rest.length ? Promise.all(rest).then(() => undefined) : undefined;
+		};
+		if (deps.handled) return purge().then(go);
+		dropRedundant();
+		return go();
 	};
 
 	/** Answered without being shown (the web's batch review, hub/approval-batch.ts): these held cards leave the queue, and the open card's count follows. */
@@ -201,7 +278,10 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		return { ref: s.ref, target: s.target, title: cardTitle(s.text), progress: line, ...(s.ids ? { ids: s.ids } : {}), held: heldIn(conv).length };
 	}
 
-	return { route, posted, closed, releaseAll, take, targetOf, openCard, held: () => held.slice(), heldIn };
+	/** The Discord message ids of the visible card `ref` in `conv`, while this process knows them. */
+	const idsOf = (conv: string, ref: string): string[] | undefined => (shown.get(conv)?.ref === ref ? shown.get(conv)!.ids : undefined);
+
+	return { route, posted, closed, releaseAll, purge, take, targetOf, openCard, idsOf, held: () => held.slice(), heldIn };
 }
 
 /** The line a later post in the conversation ends with while a card waits above it. */

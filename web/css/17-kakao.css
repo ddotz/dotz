@@ -257,3 +257,15 @@
 .cm-pl { display: inline-block; margin-top: 2px; color: var(--accent, var(--fg-2)); font: 500 12px/16px var(--font); }
 /* a room row's second line on the right: 미답장 then the unread count, side by side (30-kakao.js kkRow) */
 .kk-row .kk-rmeta { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; }
+
+/* comment thread, reply style (web/js/30-monitoring-comments.js cmThreadNodes): replies indented under their comment, a draft under the comment it answers */
+.cm-th { display: flex; flex-direction: column; min-width: 0; margin-top: 10px; }
+.cm-th > .kk-m.first { margin-top: 0; }
+.cm-replies { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin: 6px 0 0 18px; padding-left: 12px; border-left: 2px solid var(--line-2); }
+.cm-replies > .kk-m.first { margin-top: 8px; }
+.cm-mine { margin: 0 4px 2px 0; color: var(--kk-time); font: 600 11px/16px var(--font); }
+.cm-dq { margin: 8px 0 4px; padding: 8px 12px; border-left: 3px solid var(--accent); border-radius: 8px; background: var(--card); min-width: 0; }
+.cm-dqh { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; color: var(--fg-3); font: 400 12px/18px var(--font); }
+.cm-dqh b { color: var(--fg-2); font-weight: 600; }
+.cm-dqt { color: var(--fg); font: 400 13px/20px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.cm-replies .od-cwrap { margin: 2px 0 6px; }

@@ -9,10 +9,11 @@ export const stagedRoot = () => join(dataDir(), "draft-files");
 const REF = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,63}$/;
 export type StagedFile = { name: string; size: number; path: string };
 
-// Same rule as hub/files.ts safeName (letters of any script, digits, . - _ and spaces; never a dotfile); kept here because that module reads the gateway config.
+// The name the receiver sees is the file's own name (parentheses, brackets and the like stay: "(마크추가)….pdf" is sent as it is); only what is unsafe in a path changes:
+// a slash or backslash (the last path part is kept), control characters and NUL, and leading dots (never a dotfile).
 export function stagedName(name: string): string {
 	const base = basename(String(name || "").replace(/\\/g, "/")).normalize("NFC");
-	const clean = base.replace(/[^\p{L}\p{N}._ -]+/gu, "_").replace(/\s+/g, " ").replace(/^[.\s]+/, "").trim();
+	const clean = base.replace(/[\u0000-\u001f\u007f]+/g, "_").replace(/\s+/g, " ").replace(/^[.\s]+/, "").trim();
 	const ext = extname(clean).slice(0, 16);
 	return `${clean.slice(0, clean.length - extname(clean).length).slice(0, 100) || "file"}${ext}`;
 }
@@ -40,7 +41,12 @@ function slot(ref: string, name: string, root: string): string {
 	if (files.length >= STAGED_MAX) throw new Error(`첨부파일은 ${STAGED_MAX}개까지 붙일 수 있어요`);
 	const dir = join(dirOf(ref, root), String(files.length));
 	mkdirSync(dir, { recursive: true });
-	return join(dir, stagedName(name));
+	// A second file of the same name gets " (2)", " (3)"... so the receiver can tell them apart.
+	const taken = new Set(files.map(f => f.name));
+	const wanted = stagedName(name), ext = extname(wanted), stem = wanted.slice(0, wanted.length - ext.length);
+	let unique = wanted;
+	for (let n = 2; taken.has(unique); n++) unique = `${stem} (${n})${ext}`;
+	return join(dir, unique);
 }
 
 // macOS iCloud Drive keeps a file it evicted as a placeholder of the same size: reading it fails with EDEADLK (cp gets 0 bytes) until

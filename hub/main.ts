@@ -57,8 +57,9 @@ import { watchOwner } from "./app-features.ts";
 import { blockedByOff, newsMuted, watchOff } from "./app-off.ts";
 import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.ts";
 import { startTokenAudit } from "./token-audit.ts";
-import { startZele } from "./zele.ts";
-import { mailByKey, mailByThread, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailReadOut, setMailSuggest, type MailDeps } from "./mail.ts";
+import { startZele, zeleAccounts, zeleRead } from "./zele.ts";
+import { createReconciler } from "./mail-reconcile.ts";
+import { mailByKey, mailByThread, mailRecords, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailReadOut, setMailReply, setMailSuggest, type MailDeps } from "./mail.ts";
 import { ownAddresses, replyExpected } from "./mail-state.ts";
 import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/offer.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
@@ -69,7 +70,7 @@ import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
 import { setFollowupWake } from "./followup.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { compressResponse } from "./compress.ts";
-import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, approvals, convOfTarget } from "./outbound.ts";
+import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, approvals, convOfTarget, setRefHandled } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
 import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
@@ -86,7 +87,7 @@ import { kakaoDraftFacts, startKakaoLive, stopKakaoLive } from "./kakao/gateway.
 import { commentDraftFacts } from "./comments/gateway.ts";
 import { draftHandled } from "./draft-handled.ts";
 import { syncCardFiles } from "./draft-attach.ts";
-import { listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
+import { answerDrafts, listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
 
 // 앱 기억 (hub/app-settings.ts applyMemory): a bot answer that keeps an app's attach folder or follow-up rule is stored at once, in whatever
 // conversation the owner said it; other setting changes stay a card the owner applies.
@@ -134,11 +135,35 @@ tagStoredApps();
 	if (n) log(`notices: ${n} draft card(s) now show their staged files`);
 }
 setAppLabelResolver(key => appEntries(DATA_DIR).find(e => e.key === key)?.label ?? key);
-setDraftHandled(d => draftHandled(d.draft!.ref!, { mail: { drafts: listMailDrafts, record: mailByKey }, comment: commentDraftFacts, kakao: kakaoDraftFacts }));
-const sweepHandledDrafts = () => void settleHandledDrafts().then(n => n && log(`notices: ${n} send approvals closed, their drafts were handled elsewhere`), e => log(`handled-draft sweep failed: ${(e as Error).message}`));
-sweepHandledDrafts();
+// One answer for the notices and the approval queue: is the item behind this send-approval ref (in this conversation) already handled?
+const refHandled = (ref: string, conv: string) => draftHandled(ref, { mail: { drafts: listMailDrafts, record: mailByKey }, comment: commentDraftFacts, kakao: kakaoDraftFacts }, conv);
+setDraftHandled(d => refHandled(d.draft!.ref!, d.to));
+setRefHandled(refHandled);
+// Mails that wait are checked against their real thread (zele, read-only): an answer sent from Gmail or another script makes the mail 답장함 and closes its cards
+// and drafts. At most MAIL_RECONCILE_PER_RUN threads per 10 minutes on the sweep timer below; a larger pass at start.
+const MAIL_RECONCILE_PER_RUN = 20, MAIL_RECONCILE_EVERY_MS = 10 * 60_000, MAIL_RECONCILE_AT_START = 100;
+const mailReconciler = createReconciler({
+	mails: mailRecords,
+	draftRefs: () => new Set(listMailDrafts().filter(d => d.status === "pending" || d.status === "held").map(d => d.ref)),
+	accounts: zeleAccounts,
+	read: zeleRead,
+	own: accounts => ownAddresses(accounts),
+	markReplied: (key, at) => {
+		const ok = setMailReply(key, "sent", at);
+		if (ok) broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
+		return ok;
+	},
+	answerDrafts,
+}, { perRun: MAIL_RECONCILE_PER_RUN, everyMs: MAIL_RECONCILE_EVERY_MS });
+const reconcileLog = (r: { checked: number; replied: number; notChecked: number } | undefined) => void (r && (r.checked || r.notChecked) && log(`mail reconcile: ${r.checked} threads checked, ${r.replied} answered elsewhere, ${r.notChecked} not checked`));
+const reconcileMails = (limit: number) => mailReconciler.run(limit).then(r => (reconcileLog(r), r));
+const settleSweep = () => settleHandledDrafts().then(n => void (n && log(`notices: ${n} send approvals closed, their drafts were handled elsewhere`)), e => log(`handled-draft sweep failed: ${(e as Error).message}`));
+// Settle first; then the queue drops held cards that are handled or duplicated, then shows the next one (releaseAll does both, and is a no-op the second time).
+const startupSettled = settleSweep();
 const HANDLED_SWEEP_MS = 30_000;
-setInterval(sweepHandledDrafts, HANDLED_SWEEP_MS);
+setInterval(() => void mailReconciler.tick().then(reconcileLog).catch(e => log(`mail reconcile failed: ${(e as Error).message}`)).then(settleSweep).then(() => approvals.releaseAll()).catch(e => log(`approval queue sweep failed: ${(e as Error).message}`)), HANDLED_SWEEP_MS);
+// Start: once, after the sweep above settled what it can (the migration of replies sent from outside dotz).
+void startupSettled.then(() => reconcileMails(MAIL_RECONCILE_AT_START)).catch(e => log(`mail reconcile failed: ${(e as Error).message}`));
 installLaneHandlers();
 
 // Result files ([file] lines, discord.ts) go out only when GET /api/file would serve them (inside the roots, or named in a [file] line of a sent message); a file too big to attach goes
@@ -269,8 +294,8 @@ const mailDeps = (): MailDeps => ({
 	emit: event => emit("inbox", event as Parameters<typeof emit>[1]),
 	wake: (event, target) => deliver(inboxText(event), { target }),
 	offerDraft: m =>
-		void offerMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id) => readMailBody(source, id, realRunner), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
-	requestDraft: m => requestMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id) => readMailBody(source, id, realRunner), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }),
+		void offerMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
+	requestDraft: m => requestMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }),
 });
 
 function classifyStoredMails(): void {
@@ -329,7 +354,7 @@ setLaneIdleHandler(name => flushQueue(`lane:${name}`));
 // Safety net for what the idle hooks miss: items kept over a gateway restart, a lane that went idle without a turn end.
 setInterval(() => queuedTargets().forEach(flushQueue), QUEUE_SWEEP_MS);
 
-const route = makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps });
+const route = makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps, mailReconcile: reconcileMails });
 // Page, script, styles and JSON answers go out gzipped (hub/compress.ts); /api/file keeps its exact bytes and Content-Length.
 const server = Bun.serve({
 	hostname: HOST,
@@ -364,7 +389,7 @@ if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 }
 sends.resume();
 // Send-approval cards held before the restart: a conversation with no open card shows its next one (hub/approval-queue.ts).
-approvals.releaseAll();
+void startupSettled.then(() => approvals.releaseAll()).catch(e => log(`approval queue release failed: ${(e as Error).message}`));
 const resumedLanes = restoreLanes();
 discord.recordLaneChannels();
 for (const name of resumedLanes) void send(`lane:${name}`, "게이트웨이가 재시작돼서 멈췄던 작업을 이어서 하고 있어요.").catch(e => log(`lane resume notice failed: ${e}`));

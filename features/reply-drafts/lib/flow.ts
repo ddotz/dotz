@@ -7,8 +7,9 @@ import { asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type D
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { addressesOf, generateChatReply, lintReply, NO_RECIPIENT, reviseReply, withSenderAddress, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
 import { matchLibrary, type LibraryFile } from "./library.ts";
+import { basename } from "node:path";
 import { canAttach, sendWith, webmailSite, type SendOutcome } from "./senders.ts";
-import { carryStagedFiles, stagedFiles, stageLibraryFile, type StageOpts } from "./staged.ts";
+import { carryStagedFiles, stagedFiles, stagedName, stageLibraryFile, type StageOpts } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
 import { maybeRefine } from "./persona.ts";
 import { addDraft, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
@@ -25,7 +26,7 @@ export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promi
 
 // The tone profile an item or draft belongs to: its room when it has one, else its app (mail unless the item says otherwise).
 export const toneKey = (x: { app?: string; room?: string }): ToneKey => ({ app: x.app ?? "mail", ...(x.room !== undefined ? { room: x.room } : {}) });
-export type Meta = { source: string; mailId: string; ref: string; origAttachments?: number };
+export type Meta = { source: string; mailId: string; ref: string; origAttachments?: number; /** The zele account the mail belongs to (its record's `account`); every zele call of the draft passes it. */ account?: string };
 // "ask" (chat only): the message needs a decision only the user can make; `choices` are 2-4 short answers.
 export type Built = { action: "skip"; reason: string } | { action: "draft"; rec: DraftRec; warnings: string[] } | { action: "ask"; question: string; choices: string[] };
 
@@ -116,6 +117,15 @@ export function withRecipient(rec: DraftRec): DraftRec {
 }
 const ADDRESS_ASK = /e-?mail address|recipient|address|주소|받는\s*(?:사람|분|이)|수신자/i;
 
+// A question the model wrote because it could not see any file to attach ("첨부 폴더를 볼 수 없어 파일을 붙이지 못했습니다"). Once files are on the draft it is false and only confuses the card.
+const FILE_WORD = /파일|첨부|악보|attach|file/i;
+const CANNOT = /못|없|불가|can'?not|can'?t|unable|not able|no access|don'?t have|do not have/i;
+export const claimsNoFile = (q: string): boolean => FILE_WORD.test(q) && CANNOT.test(q);
+const withoutNoFileClaims = (rec: DraftRec): string[] => {
+	const all = rec.questions ?? [];
+	return stagedFiles(rec.id).length ? all.filter(q => !claimsNoFile(q)) : all;
+};
+
 // The lint's findings as the owner reads them on the card (the model gets them in English, hub/reply-draft.ts lintReply).
 export function ownerWarning(w: string): string {
 	if (w === NO_RECIPIENT) return "받는 사람의 메일 주소를 찾지 못했어요. 보내기 전에 주소를 알려 주세요";
@@ -141,7 +151,7 @@ export function askText(draft: DraftRec, warnings: string[], headline = draft.co
 	const noFiles = rec.kind === "mail" && !!webmailSite(rec.source);
 	const attachments = noFiles ? [] : staged;
 	const keptBack = noFiles && staged.length ? { sendResult: "파일이 붙어 있어 보내지 않아요. 파일을 빼면 본문만 보내요" } : {};
-	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", decide: rec.questions ?? [], ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}), ...(rec.rule ? { rule: rec.rule.name } : {}) });
+	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", decide: withoutNoFileClaims(rec), ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}), ...(rec.rule ? { rule: rec.rule.name } : {}) });
 	return [`[ask] ${headline}`, ...(notes ? [`-# ${notes}`] : []), block].join("\n");
 }
 
@@ -188,6 +198,33 @@ export async function stageForReply(rec: DraftRec, deps: FlowDeps, files?: Promi
 	const failed: string[] = [];
 	// Together, not one by one: each evicted iCloud file may wait up to 30 s for its download, and the offer queue waits on this draft.
 	await Promise.all(found.map(f => stageLibraryFile(rec.id, f.path, deps.stage).catch(e => void failed.push((e as Error).message))));
+	// Files are on the draft now: a model question that says no file can be attached is false.
+	if (stagedFiles(rec.id).length) rec.questions = withoutNoFileClaims(rec);
+	return failed;
+}
+
+// A revised draft looks for files again with the same library pick (the first one ran before the words existed): when the owner's change names a file,
+// those matches are added; else when the draft asks for a file or promises one and none is staged, the mail's own pick runs. Files already on the draft
+// (the owner's own, or an earlier pick) stay. Returns why a matched file is not on the draft.
+async function restageForRevision(rec: DraftRec, change: string, deps: FlowDeps): Promise<string[]> {
+	if (rec.kind !== "mail" || !canAttach(rec.source)) return [];
+	const folder = await attachFolder(rec.ref);
+	if (!folder) return [];
+	const have = () => new Set(stagedFiles(rec.id).map(f => f.name));
+	const named = await matchLibrary(folder, { subject: change, text: change });
+	let found = named.filter(f => !have().has(stagedName(basename(f.path))));
+	const wants = asksForFile(rec.item.text) || claimsAttachment(`${rec.subject ?? ""}\n${rec.body}`);
+	let missed = false;
+	if (!named.length && !have().size && wants) {
+		found = (await libraryFor(rec.item, rec, deps)) ?? [];
+		missed = !found.length;
+	}
+	const failed: string[] = [];
+	for (const f of found) await stageLibraryFile(rec.id, f.path, deps.stage).catch(e => failed.push((e as Error).message));
+	if (stagedFiles(rec.id).length) {
+		delete rec.libraryMiss;
+		rec.questions = withoutNoFileClaims(rec);
+	} else if (missed) rec.libraryMiss = true;
 	return failed;
 }
 
@@ -202,9 +239,12 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	if (!change.trim()) return { ok: false, text: "무엇을 고칠지 적어 주세요 (--change)" };
 	recordCorrection(toneKey(old), change, nowOf(deps));
 	await refineAfterCorrection(toneKey(old), deps);
-	const r = await reviseReply(old.item, loadStyle(toneKey(old)), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
+	// The words are rewritten knowing which files ride on the draft now.
+	const held = stagedFiles(old.id).map(f => f.name);
+	const item = held.length ? { ...old.item, files: held } : old.item;
+	const r = await reviseReply(item, loadStyle(toneKey(old)), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
-	const rec = toRec(old.item, { source: old.source, mailId: old.mailId, ref: old.ref, ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
+	const rec = toRec(old.item, { source: old.source, mailId: old.mailId, ref: old.ref, ...(old.account ? { account: old.account } : {}), ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
 	// The recipients the owner set on the card stay: a rewrite of the words is not a reason to send it to somebody else.
 	rec.to = old.to;
 	if (old.cc?.length) rec.cc = old.cc;
@@ -216,8 +256,9 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	if (old.origin) rec.origin = old.origin;
 	if (old.rule) rec.rule = old.rule;
 	carryStagedFiles(old.id, rec.id);
+	const notStaged = await restageForRevision(rec, change, deps).catch(e => [(e as Error).message]);
 	addDraft(rec);
-	return { ok: true, text: askText(rec, r.warnings, "답장 초안을 고쳤어요"), id: rec.id };
+	return { ok: true, text: askText(rec, [...r.warnings, ...notStaged], "답장 초안을 고쳤어요"), id: rec.id };
 }
 
 export function dropDraft(id: string): Step {

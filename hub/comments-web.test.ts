@@ -102,7 +102,7 @@ describe("댓글 on a phone (390x844)", async () => {
 				draft: document.querySelector("#cm .kk-dt").textContent, buttons: [...document.querySelectorAll("#cm .kk-draft .btn")].map(b => b.textContent), overflow: document.documentElement.scrollWidth > 390 }`);
 		expect(s.names).toEqual(["가나", "다라"]);
 		expect(s.bubbles).toBe(3);
-		expect(s.texts[1]).toContain("<b>굵게</b>");
+		expect(s.texts[2]).toContain("<b>굵게</b>");
 		expect(s.xss).toBe(false);
 		expect(s.draft).toBe("고마워요! 자막은 이번 주 안에 올릴게요.");
 		expect(s.buttons).toEqual(["보내기", "고치기", "보내지 않기"]);   // the one reply card's words (10-reply-card.js)
@@ -114,6 +114,23 @@ describe("댓글 on a phone (390x844)", async () => {
 		await waitFor(v, `!document.querySelector("#cm .kk-draft") && document.querySelector("#cm .kk-m.me.pend.sent")`);
 		expect(reqs.filter(r => r.path.endsWith("/send"))).toHaveLength(1);
 		await shot(v, "comments-sent-390.png");
+	});
+
+	test("replies stand under the comment they answer (his own marked), and the draft sits under its comment with the quote, not pinned below", async () => {
+		await boot(v);
+		await run(v, `document.querySelector("#cm .kk-row").click()`);
+		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .kk-draft")`);
+		const s = await q<{ roots: string[]; replies: string[]; mine: string; draftIn: string; quote: string; pinned: boolean }>(v, `
+			const th = id => document.querySelector('#cm .cm-th[data-root="cm:youtube:' + id + '"]');
+			return { roots: [...document.querySelectorAll("#cm .cm-th")].map(t => t.dataset.root), replies: [...th("c1").querySelectorAll(".cm-replies .kk-bub")].map(b => b.textContent),
+				mine: th("c1").querySelector(".cm-mine").textContent, draftIn: th("c1").querySelector(".kk-draft") ? "c1" : "", quote: th("c1").querySelector(".cm-dq").textContent, pinned: !document.querySelector("#cm-foot").hidden }`);
+		expect(s.roots).toEqual(["cm:youtube:c1", "cm:youtube:c2"]);
+		expect(s.replies).toEqual(["다음 주에 올릴게요"]);
+		expect(s.mine).toBe("나 · 내 답글");
+		expect(s.draftIn).toBe("c1");
+		expect(s.quote).toContain("가나");
+		expect(s.quote).toContain("영상 잘 봤어요! 자막은 언제 나와요?");
+		expect(s.pinned).toBe(false);
 	});
 
 	test("고치기 asks what to change and shows the rewritten draft; 보내지 않기 removes it", async () => {

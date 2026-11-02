@@ -31,7 +31,9 @@ export class InstagramError extends Error {
 
 export type IgMedia = { id: string; caption?: string; comments_count: number; timestamp: string; permalink?: string; thumb?: string };
 export type IgReply = { id?: string; username: string; text: string; fromId?: string; timestamp?: string };
-export type IgComment = { id: string; text: string; username: string; timestamp: string; fromId?: string; replies: IgReply[] };
+export type IgAuthor = { username?: string; fromId?: string };
+// `parentId`: set when the comments edge listed a reply as an item of its own (Graph API `parent_id`).
+export type IgComment = { id: string; text: string; username: string; timestamp: string; fromId?: string; parentId?: string; replies: IgReply[] };
 
 // The token has no instagram_business_content_publish (API code 10): the Reel cannot go out until the owner makes the token again.
 export class PublishPermissionError extends Error {
@@ -123,21 +125,64 @@ export async function conversationMessages(ctx: Ctx, conversationId: string): Pr
 	}));
 }
 
-export async function commentsFor(ctx: Ctx, mediaId: string): Promise<IgComment[]> {
+type Paged<T> = { data?: T[]; paging?: { next?: string; cursors?: { after?: string } } };
+const MAX_COMMENT_PAGES = 10;
+
+// Follows `paging` of one edge (by its `after` cursor, so the token never rides in a URL). complete = every page was read (the cap was not hit).
+async function allPages<T>(ctx: Ctx, path: string, params: Record<string, string>, maxPages = MAX_COMMENT_PAGES): Promise<{ items: T[]; complete: boolean }> {
+	const items: T[] = [];
+	let after: string | undefined;
+	for (let i = 0; i < maxPages; i++) {
+		const d = await graph<Paged<T>>(ctx, `${BASE}/${path}?${new URLSearchParams(after ? { ...params, after } : params)}`, secret().access_token);
+		items.push(...(d.data ?? []));
+		if (!d.paging?.next) return { items, complete: true };
+		after = d.paging.cursors?.after;
+		if (!after) return { items, complete: false };
+	}
+	return { items, complete: false };
+}
+
+export type IgCommentRead = { comments: IgComment[]; complete: boolean };
+
+// Every top-level comment of a media (up to MAX_COMMENT_PAGES pages of 50) with its replies. `complete` false = more pages exist than were read, so a
+// comment missing from the result is not known to be deleted. A comment with more replies than the nested list holds gets them from its /replies edge.
+export async function commentsRead(ctx: Ctx, mediaId: string): Promise<IgCommentRead> {
 	type Raw = { id?: string; username?: string; from?: IgFrom; text?: string; timestamp?: string };
-	const d = await graph<{ data?: (Raw & { id: string; timestamp: string; replies?: { data?: Raw[] } })[] }>(
-		ctx,
-		`${BASE}/${encodeURIComponent(mediaId)}/comments?${new URLSearchParams({ fields: "id,text,username,from{id,username},timestamp,replies{id,username,from{id,username},text,timestamp}", limit: "50" })}`,
-		secret().access_token,
-	);
-	return (d.data ?? []).map(c => ({
-		id: c.id,
-		text: c.text ?? "",
-		username: authorOf(c),
-		timestamp: c.timestamp,
-		fromId: c.from?.id,
-		replies: (c.replies?.data ?? []).map(r => ({ id: r.id, username: authorOf(r), text: r.text ?? "", fromId: r.from?.id, timestamp: r.timestamp })),
-	}));
+	// `parent_id`: the media's comments edge also lists replies as items of their own; this says which comment such an item answers.
+	type Top = Raw & { id: string; timestamp: string; parent_id?: string; replies?: Paged<Raw> };
+	const replyFields = "id,username,from{id,username},text,timestamp";
+	const top = await allPages<Top>(ctx, `${encodeURIComponent(mediaId)}/comments`, { fields: `id,text,username,from{id,username},timestamp,parent_id,replies{${replyFields}}`, limit: "50" });
+	const comments: IgComment[] = [];
+	let complete = top.complete;
+	for (const c of top.items) {
+		let nested = c.replies?.data ?? [];
+		if (c.replies?.paging?.next) {
+			const all = await allPages<Raw>(ctx, `${encodeURIComponent(c.id)}/replies`, { fields: replyFields, limit: "50" });
+			nested = all.items;
+			complete &&= all.complete;
+		}
+		comments.push({
+			id: c.id,
+			text: c.text ?? "",
+			username: authorOf(c),
+			timestamp: c.timestamp,
+			fromId: c.from?.id,
+			...(c.parent_id ? { parentId: c.parent_id } : {}),
+			replies: nested.map(r => ({ id: r.id, username: authorOf(r), text: r.text ?? "", fromId: r.from?.id, timestamp: r.timestamp })),
+		});
+	}
+	return { comments, complete };
+}
+
+export async function commentsFor(ctx: Ctx, mediaId: string): Promise<IgComment[]> {
+	return (await commentsRead(ctx, mediaId)).comments;
+}
+
+// Who wrote one reply. The nested `replies{}` and the /replies edge leave out `username` and `from`, but a single-object GET returns both.
+export async function replyAuthor(ctx: Ctx, replyId: string): Promise<IgAuthor> {
+	const d = await graph<{ username?: string; from?: IgFrom }>(ctx, `${BASE}/${encodeURIComponent(replyId)}?${new URLSearchParams({ fields: "username,from" })}`, secret().access_token);
+	const username = d.username ?? d.from?.username;
+	return { ...(username ? { username } : {}), ...(d.from?.id ? { fromId: d.from.id } : {}) };
 }
 
 export async function reply(ctx: Ctx, commentId: string, text: string): Promise<string> {

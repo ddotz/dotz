@@ -9,7 +9,7 @@ import { broadcast, emit } from "./events.ts";
 import { approvals, convOfTarget, newMid, out } from "./outbound.ts";
 import { answerDecision, type DecisionSend, listNotices, markDraftSend, NOTICE_CAP, openDraftCards, settleOpenDecision } from "./notices.ts";
 import type { Upload } from "./files.ts";
-import { commentDraftOf, commentSourceApp, setCommentDraftText } from "./comments/gateway.ts";
+import { commentContextOf, commentDraftOf, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
 import { appEntries, commentOwner } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
 import { DATA_DIR } from "./config.ts";
@@ -106,6 +106,8 @@ function groupOf(ref: string, to: string, entries = appEntries(DATA_DIR)): { key
 	return { key, label: entries.find(e => e.key === key)?.label };
 }
 
+const isMailRef = (ref: string) => /^R[A-Z2-7]{6}$/.test(ref) && getDraft(ref)?.status === "pending";
+
 /** Every waiting send-approval card: the open ones, then the held ones, each with its conversation and app-instance group. */
 export function waitingCards(): WaitingCard[] {
 	const entries = appEntries(DATA_DIR);
@@ -139,7 +141,7 @@ const json = (body: unknown, status = 200) => Response.json(body, { status });
  */
 export async function approvalRoute(req: Request, url: URL, deps: { login: string; triageMin: number; deliver: (to: string, text: string, picks: BatchPick[], decision?: string) => Promise<void> }): Promise<Response | undefined> {
 	if (url.pathname === "/api/approvals" && req.method === "GET") {
-		const groups = cardGroups().map(g => ({ ...g, cards: g.cards.map(({ text: _text, ...c }) => c) }));
+		const groups = cardGroups().map(g => ({ ...g, cards: g.cards.map(({ text: _text, ...c }) => ({ ...c, kind: commentDraftOf(c.ref) ? "comment" : "mail", ...(commentDraftOf(c.ref) ? { comment: commentContextOf(c.ref) } : {}) })) }));
 		return json({ groups, results: sender.results(), triageMin: deps.triageMin });
 	}
 	if (url.pathname === "/api/approvals" && req.method === "POST") {
@@ -172,6 +174,17 @@ export async function approvalRoute(req: Request, url: URL, deps: { login: strin
 			settle: settleOpenDecision,
 			canSend: ref => sender.can(ref, "send"),
 			enqueue: j => void sender.enqueue(j),
+			canDrop: ref => !!commentDraftOf(ref) || isMailRef(ref),
+			dropDraft: async ref => {
+				if (commentDraftOf(ref)) {
+					const r = dropCommentDraft(ref);
+					if (!r.ok) log(`draft ${ref}: 보내지 않기 not applied: ${r.reason}`);
+					return;
+				}
+				const { dropDraft } = await import("../features/reply-drafts/lib/flow.ts");
+				const r = dropDraft(ref);
+				if (!r.ok) log(`draft ${ref}: 보내지 않기 not applied to the store: ${r.text}`);
+			},
 		});
 	}
 	const body = req.method === "POST" ? /^\/api\/drafts\/([A-Za-z0-9_.-]{2,64})\/body$/.exec(url.pathname) : null;

@@ -158,7 +158,7 @@ export function onlyAcksAfterOwner(messages: ThreadMessage[], own: ReadonlySet<s
 	return reply >= 0 && reply < messages.length - 1 && messages.slice(reply + 1).every(m => isAck(m.body));
 }
 
-const zeleRead = async (id: string, account: string): Promise<string> => {
+export const zeleRead = async (id: string, account: string): Promise<string> => {
 	const r = await Bun.$`zele mail read ${id} ${account ? ["--account", account] : []}`.nothrow().quiet();
 	if (r.exitCode !== 0) throw new Error(r.stderr.toString().trim().slice(0, 200));
 	return r.stdout.toString();

@@ -7,7 +7,7 @@
 //   - the sends the gateway runs itself (hub/approval-send.ts): recorded only, no model turn, then queued in the order of the list;
 //   - the rest (고치기, and 보내기 on a card the gateway cannot send): one message to the bot, so it revises or sends them in one turn.
 import { parseDecisions } from "./choices.ts";
-import { DRAFT_EDIT, DRAFT_SEND, parseDraftApproval, type DraftApproval } from "./draft-approval.ts";
+import { DRAFT_DROP, DRAFT_EDIT, DRAFT_SEND, parseDraftApproval, type DraftApproval } from "./draft-approval.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import type { SendJob } from "./approval-send.ts";
 
@@ -26,6 +26,9 @@ export type BatchDeps = {
 	settle: (notice: string, label: string) => void;
 	canSend: (ref: string) => boolean;
 	enqueue: (job: SendJob) => void;
+	/** 보내지 않기 (n 3) on a draft the gateway can drop itself (a comment reply, a reply-drafts mail): `dropDraft` does the store step. Without it the pick goes to the bot. */
+	canDrop?: (ref: string) => boolean;
+	dropDraft?: (ref: string) => Promise<void> | void;
 };
 
 const MAX_NOTE = 2000;
@@ -50,10 +53,11 @@ export async function answerBatch(conv: string, items: BatchItem[], deps: BatchD
 		else if (it.n === 2) {
 			if (!note) return { status: 400, body: { error: "고칠 카드마다 무엇을 고칠지 적어 주세요", ref: it.ref } };
 			chosen.push({ card, pick: { q: card.question, n: 2, label: DRAFT_EDIT, note } });
-		} else return { status: 400, body: { error: "unknown option" } };
+		} else if (it.n === 3) chosen.push({ card, pick: { q: card.question, n: 3, label: DRAFT_DROP } });
+		else return { status: 400, body: { error: "unknown option" } };
 	}
 	if (!chosen.length) return { status: 400, body: { error: "고른 카드가 없어요" } };
-	const gw = chosen.filter(c => c.pick.n === 1 && deps.canSend(c.card.ref));
+	const gw = chosen.filter(c => (c.pick.n === 1 && deps.canSend(c.card.ref)) || (c.pick.n === 3 && deps.canDrop?.(c.card.ref)));
 	const bot = chosen.filter(c => !gw.includes(c));
 	const open = chosen.find(c => c.card.notice);
 	const line = (c: (typeof chosen)[number]) => `${c.card.question}: ${c.pick.n}) ${c.pick.label}${c.pick.note ? ` - ${c.pick.note}` : ""}`;
@@ -62,6 +66,9 @@ export async function answerBatch(conv: string, items: BatchItem[], deps: BatchD
 	if (gw.length) await deps.record(conv, `결정 답: ${gw.map(line).join(" · ")}`, gw.map(c => c.pick), false, gw.find(c => c.card.notice)?.card.notice);
 	if (bot.length) await deps.record(conv, `결정 답 ${bot.length}건:\n${bot.map(c => `- ${line(c)}`).join("\n")}`, bot.map(c => c.pick), true, bot.find(c => c.card.notice)?.card.notice);
 	if (open) deps.settle(open.card.notice!, `${open.pick.n}) ${open.pick.label}`);
-	for (const c of gw) deps.enqueue({ ref: c.card.ref, conv, action: "send", title: c.card.question });
+	for (const c of gw) {
+		if (c.pick.n === 3) await deps.dropDraft?.(c.card.ref);
+		else deps.enqueue({ ref: c.card.ref, conv, action: "send", title: c.card.question });
+	}
 	return { status: 200, body: { ok: true, sending: gw.length, toBot: bot.length } };
 }

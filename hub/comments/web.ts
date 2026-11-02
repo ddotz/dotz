@@ -1,5 +1,6 @@
 // Web routes of the comment feature (contract: docs/comments-api.md): /api/comments/*. Only the sources the owner chose are listed, readable
 // or sendable. Events carry ids only, never a body. A reply goes out only through engine.send -> dispatchReply (contract.ts).
+import { instanceIdOf } from "../integrations.ts";
 import type { Engine } from "./engine.ts";
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
@@ -36,12 +37,28 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 			for (const s of Array.isArray(b.threads) ? b.threads.slice(0, 50) : []) if (typeof s?.source === "string") broadcast({ kind: "comment", source: s.source, thread: String(s.thread ?? "") });
 			return json({ ok: true });
 		}
+		// Backfill: re-read the open comments on the platforms and close what is answered or deleted (idempotent; posts nothing). Answers the counts.
+		if (area === "reconcile" && parts.length === 3 && method === "POST") {
+			if (!cfg.enabled) return json(OFF, 409);
+			const r = await engine.reconcile({ recheck: true });
+			for (const src of Object.values(cfg.sources)) broadcast({ kind: "comment", source: src.key, thread: "" });
+			return json(r);
+		}
+		// Backfill: puts a linked mail (hub/comments/engine.ts linkMail) on an existing pending reply draft; idempotent. Posts and sends nothing.
+		if (area === "link-mail" && parts.length === 3 && method === "POST") {
+			if (!cfg.enabled) return json(OFF, 409);
+			const code = (await body()).code;
+			if (typeof code !== "string" || !code) return json({ error: "code (초안 코드)가 필요해요" }, 400);
+			if (!engine.store.drafts().some(d => d.code === code)) return json({ error: "그 초안을 찾지 못했어요" }, 404);
+			const r = await engine.linkMail(code);
+			return json(r.ok ? { ok: true, mail: r.mail, ...(r.existing ? { existing: true } : {}) } : { ok: false, skipped: r.reason });
+		}
 		if (area === "sources" && parts.length === 3 && method === "GET") {
 			if (!cfg.enabled) return json({ on: false, sources: [] });
 			const cursors = engine.store.cursors();
 			return json({
 				on: true,
-				sources: Object.values(cfg.sources).map(s => ({ key: s.key, kind: s.kind, app: engine.ownerOf(s), label: s.label, watch: s.watch, autoDraft: s.autoDraft, autoSend: s.autoSend?.on === true, error: cursors[s.key]?.error ?? null, ranAt: cursors[s.key]?.ranAt ?? null })),
+				sources: Object.values(cfg.sources).map(s => ({ key: s.key, kind: s.kind, app: engine.ownerOf(s), label: s.label, watch: s.watch, autoDraft: s.autoDraft, autoSend: s.autoSend?.on === true, autoMail: s.autoMail === true, mailApp: s.mailApp ?? null, error: cursors[s.key]?.error ?? null, ranAt: cursors[s.key]?.ranAt ?? null })),
 			});
 		}
 		if (area === "sources" && parts.length >= 4) {
@@ -60,8 +77,10 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 				const b = await body();
 				const okList = b.watch === undefined || (Array.isArray(b.watch) && b.watch.every((x: unknown) => typeof x === "string" && x.length <= 200) && b.watch.length <= 500);
 				if (!okList || (b.autoDraft !== undefined && typeof b.autoDraft !== "boolean")) return json({ error: "watch (글 id 목록) / autoDraft (true/false) 형식이 아니에요" }, 400);
-				const next = engine.update(key, { ...(b.watch !== undefined ? { watch: b.watch } : {}), ...(b.autoDraft !== undefined ? { autoDraft: b.autoDraft } : {}) });
-				return json({ ok: true, watch: next?.watch ?? [], autoDraft: next?.autoDraft === true });
+				// autoMail (true/false) and mailApp (a mail app instance id, "" = none): see docs/comments-api.md.
+				if ((b.autoMail !== undefined && typeof b.autoMail !== "boolean") || (b.mailApp !== undefined && (typeof b.mailApp !== "string" || (b.mailApp !== "" && !instanceIdOf("mail", b.mailApp))))) return json({ error: "autoMail (true/false) / mailApp (메일 앱 이름) 형식이 아니에요" }, 400);
+				const next = engine.update(key, { ...(b.watch !== undefined ? { watch: b.watch } : {}), ...(b.autoDraft !== undefined ? { autoDraft: b.autoDraft } : {}), ...(b.autoMail !== undefined ? { autoMail: b.autoMail } : {}), ...(b.mailApp !== undefined ? { mailApp: b.mailApp } : {}) });
+				return json({ ok: true, watch: next?.watch ?? [], autoDraft: next?.autoDraft === true, autoMail: next?.autoMail === true, mailApp: next?.mailApp ?? null });
 			}
 			return undefined;
 		}

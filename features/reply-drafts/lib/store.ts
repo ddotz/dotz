@@ -6,7 +6,8 @@ import type { ReplyItem, ReplyKind } from "../../../hub/reply-draft.ts";
 import { paths, writeAtomic } from "./settings.ts";
 
 // held = set aside by 답장 안 해도 돼요 on its mail (holdDrafts); 되돌리기 makes it pending again (restoreDrafts).
-export type DraftStatus = "pending" | "sent" | "dropped" | "stale" | "held";
+// answered = the owner replied to the mail outside dotz (hub/mail-reconcile.ts); the draft is closed like a sent one, never sent.
+export type DraftStatus = "pending" | "sent" | "dropped" | "stale" | "held" | "answered";
 export type DraftRec = {
 	id: string;
 	kind: ReplyKind;
@@ -15,6 +16,7 @@ export type DraftRec = {
 	source: string; // "zele" | "webmail:<site>" | anything else (cannot be sent from here)
 	mailId: string; // the id the source knows the mail by
 	ref: string; // the gateway's mail key
+	account?: string; // the zele account the mail belongs to: every zele read / reply of this draft passes `--account` with it
 	origAttachments?: number; // files the mail it answers has; the senders carry none of them along, which the approval says
 	asksFile?: boolean; // the mail it answers asks for a file (hub/draft-approval.ts asksForFile)
 	libraryMiss?: boolean; // the 첨부 파일 폴더 is set and held no file that fits
@@ -95,6 +97,14 @@ export function restoreDrafts(ref: string): string | undefined {
 	if (!top) return undefined;
 	write({ ...f, drafts: f.drafts.map(d => (d === top ? { ...d, status: "pending" as const } : held.includes(d) ? { ...d, status: "stale" as const } : d)) });
 	return top.id;
+}
+
+// The mail was answered outside dotz: its waiting drafts (pending or held) are closed as answered. Returns their ids.
+export function answerDrafts(ref: string): string[] {
+	const f = read();
+	const hit = f.drafts.filter(d => d.ref === ref && (d.status === "pending" || d.status === "held"));
+	if (hit.length) write({ ...f, drafts: f.drafts.map(d => (hit.includes(d) ? { ...d, status: "answered" as const } : d)) });
+	return hit.map(d => d.id);
 }
 
 export function setStatus(id: string, status: DraftStatus): void {

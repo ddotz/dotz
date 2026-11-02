@@ -240,7 +240,7 @@ const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefi
 const runningChildren = (source: string) =>
 	(subagentLists()[source] || []).filter(s => s.status === "running").map(s => ({ name: s.id, description: s.description || s.agent }));
 
-type RestartHooks = { busyNow: () => string[]; restartGateway: () => string; restartGatewayNow: () => string; mailDeps?: () => MailDeps };
+type RestartHooks = { busyNow: () => string[]; restartGateway: () => string; restartGatewayNow: () => string; mailDeps?: () => MailDeps; /** One mail reconcile round of at most `limit` mails (hub/mail-reconcile.ts); absent = not wired in this process. */ mailReconcile?: (limit: number) => Promise<{ checked: number; replied: number; notChecked: number }> };
 const isMailTarget = (t: string) => /^mail:[a-z0-9._-]+$/.test(t);
 // Where a forwarded action came from (a machine name), as one short line; the event it makes carries it as `via`.
 const viaOf = (v: unknown): string | undefined => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 40) || undefined : undefined);
@@ -281,7 +281,7 @@ const parseMailStates = (raw: unknown): { source: string; items: MailSourceState
 	return { source: b.source.trim().slice(0, 60), items };
 };
 
-export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
+export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps, mailReconcile }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
 	const route = async (req: Request, srv?: Server<unknown>): Promise<Response> => {
 		const url = new URL(req.url);
 		// The install files (manifest, service worker, icons) are public and secret-free, like any app store listing: a browser
@@ -687,7 +687,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const target = mailTarget(key);
 			// What the owner typed in the 초안 작성 box (empty: the draft is made on its own).
 			const instruction = String((await body(req).catch(() => ({})) as { instruction?: unknown }).instruction ?? "").trim().slice(0, 500);
-			void deps.requestDraft({ key, ...(instruction ? { instruction } : {}), target, ...(r.thread ? { thread: r.thread } : {}), ...(r.msg ? { messageId: r.msg } : {}), source: r.source, id: r.id, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.cc ? { cc: r.cc } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.attachments?.some(a => !a.inline) ? { attachments: r.attachments.filter(a => !a.inline).map(a => ({ name: a.name, size: a.size })) } : {}) })
+			void deps.requestDraft({ ...(r.account ? { account: r.account } : {}), key, ...(instruction ? { instruction } : {}), target, ...(r.thread ? { thread: r.thread } : {}), ...(r.msg ? { messageId: r.msg } : {}), source: r.source, id: r.id, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.cc ? { cc: r.cc } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.attachments?.some(a => !a.inline) ? { attachments: r.attachments.filter(a => !a.inline).map(a => ({ name: a.name, size: a.size })) } : {}) })
 				.then(res => { if (res !== "offered") return deps.send(target, "답장 초안을 만들지 못했어요. 잠시 뒤 다시 눌러 주세요"); })
 				.catch(e => log(`mail ${key}: requested draft failed: ${(e as Error).message}`));
 			return json({ ok: true, started: true }, 202);
@@ -709,6 +709,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			} catch (error) {
 				return json({ error: (error as Error).message }, error instanceof MailError ? error.status : 500);
 			}
+		}
+		// Mails that still wait are checked against their real thread; the ones the owner answered elsewhere become 답장함 (idempotent, read-only in zele).
+		if (req.method === "POST" && url.pathname === "/api/mail/reconcile") {
+			if (!mailReconcile) return json({ error: "mail is not wired in this process" }, 503);
+			const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit")) || 200));
+			return json(await mailReconcile(limit).catch(error => ({ error: (error as Error).message })));
 		}
 		if (req.method === "POST" && url.pathname === "/api/mail/state") {
 			const input = parseMailStates(await body(req));

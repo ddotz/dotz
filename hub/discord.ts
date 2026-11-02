@@ -596,11 +596,11 @@ export async function send(
 	return { delivered: true, ids };
 }
 
-export async function edit(target: string, messageId: string, text: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
+export async function edit(target: string, messageId: string, text: string, opts?: { clearComponents?: boolean }): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	const id = resolve(target);
 	if (!status.enabled || !id) return { delivered: false, reason: `unknown target ${target}` };
 	// `embeds: []` clears the embed of a legacy message (sent before messages became plain text) when it is edited in place.
-	await rest("PATCH", `/channels/${id}/messages/${messageId}`, { ...buildSingle(text), embeds: [] });
+	await rest("PATCH", `/channels/${id}/messages/${messageId}`, { ...buildSingle(text), embeds: [], ...(opts?.clearComponents ? { components: [] } : {}) });
 	return { delivered: true, ids: [messageId] };
 }
 

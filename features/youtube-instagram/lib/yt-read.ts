@@ -9,7 +9,8 @@ import { commentThreadsSince, type YtComment } from "./youtube.ts";
 
 export type CommentRead = { comments: YtComment[]; newest?: string; overflow: boolean };
 export const hooks: { read?: typeof innertubeComments } = {};
-export type ReadOpts = { scope: string; allowApi: boolean; read?: typeof innertubeComments };
+// `answered`: the Data API fallback also lists threads the channel already replied to, with the channel's replies (the comment hub stores them).
+export type ReadOpts = { scope: string; allowApi: boolean; read?: typeof innertubeComments; answered?: boolean };
 
 const SEEN_CAP = 3000;
 type Seen = Record<string, string[]>;
@@ -43,7 +44,7 @@ export async function readCommentsSince(ctx: Ctx, channelId: string, since: stri
 	} catch (e) {
 		if (!(e instanceof InnerTubeError)) throw e;
 		if (!o.allowApi) return undefined;
-		const r = await commentThreadsSince(ctx, channelId, since, maxPages);
+		const r = await commentThreadsSince(ctx, channelId, since, maxPages, o.answered === true);
 		if (r.comments.length && Object.keys(loadSeen()).length) remember(o.scope, r.comments.map(c => c.id));
 		return r;
 	}
