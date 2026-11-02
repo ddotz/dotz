@@ -169,3 +169,8 @@ test("no subscription accounts: no pin in the spawn env, nothing written", () =>
 	expect(stickyEnv(T0)).toEqual({});
 	expect(existsSync(switchesFile())).toBe(false);
 });
+
+test("a Claude CLI login (no token in auth.json) is in the pool", () => {
+	writeFileSync(authFile(), JSON.stringify({ "anthropic-subscription": { accounts: [{ name: "default", source: "login", store: "claude-cli", dirId: "a".repeat(32) }] } }));
+	expect(readPool(authFile(), T0)?.names).toEqual(["default"]);
+});

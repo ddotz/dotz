@@ -106,7 +106,7 @@ const readJson = (file: string): any => {
 // OmO's pool for Anthropic models, names and states only (tokens are never read into it).
 export function readPool(file = authFile(), now = Date.now()): Pool | undefined {
 	const sub = readJson(file)?.["anthropic-subscription"];
-	const entries: any[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: any) => typeof a?.name === "string" && a.access) : [];
+	const entries: any[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: any) => typeof a?.name === "string" && (a.access || a.store === "claude-cli")) : [];
 	const names: string[] = entries.map(a => a.name);
 	if (!names.length) return undefined;
 	const slots = readJson(join(dirname(file), "credential-pool-state.json"))?.providers?.["anthropic-subscription"]?.lanes?.stored?.slots ?? {};

@@ -90,7 +90,8 @@ function blockedAt(account: Json, slot: Json | undefined, usage: Json | undefine
 // account that is neither blocked nor spent. Nothing usable: the earliest reset time, so the owner knows when to try again.
 export function subscriptionHealth(now = Date.now(), file = authPath()): { account?: string; resetAt?: number; reason?: string } {
 	const sub = readJson(file)?.["anthropic-subscription"];
-	const accounts: Json[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: Json) => typeof a?.name === "string" && typeof a?.access === "string" && a.access) : [];
+	// OmO 2026.10.31+ logins hold no token in auth.json: the Claude CLI keeps it in the account's own dir (store "claude-cli")
+	const accounts: Json[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: Json) => typeof a?.name === "string" && ((typeof a?.access === "string" && a.access) || a.store === "claude-cli")) : [];
 	if (!accounts.length) return { reason: "구독 로그인이 없어요 · OmO에서 Claude 구독으로 로그인해 주세요" };
 	const slots: Json = readJson(join(agentDir(), "credential-pool-state.json"))?.providers?.["anthropic-subscription"]?.lanes?.stored?.slots ?? {};
 	const usage: Json = readJson(join(agentDir(), "subscription-usage.json"))?.accounts ?? {};
