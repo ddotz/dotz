@@ -5,8 +5,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { resetStickyForTest } from "./account-sticky.ts";
 import { setManual } from "./account-rules.ts";
-import { anthropicUsage, forgetAccountUsage, quota } from "./providers.ts";
-import { AccountUsage, limitsOf, limitsText, MIN_REFRESH_MS, resetCliTokensForTest, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
+import { anthropicUsage, forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, quota, refreshQuota, resetQuotaForTest } from "./providers.ts";
+import { AccountUsage, cliTokensSettled, limitsOf, limitsText, MIN_REFRESH_MS, resetCliTokensForTest, setKeychainReaderForTest, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
 
 const agentDir = process.env.OMO_CODING_AGENT_DIR!;
 const auth = (sub: Record<string, unknown>) => writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ "anthropic-subscription": { type: "oauth", ...sub } }));
@@ -18,6 +18,7 @@ const realFetch = globalThis.fetch;
 // A read held from an earlier test (or the sticky pick it left) would answer from cache instead of the fake fetch.
 beforeEach(() => {
 	resetStickyForTest();
+	resetQuotaForTest();
 	for (const a of accounts) forgetAccountUsage(a.name);
 });
 afterEach(() => {
@@ -53,7 +54,8 @@ test("after an account switch the quota is the new account's, not the pinned or 
 		return Response.json(token === "Bearer tok-host" ? body(37, 11) : body(fiveOfDefault, 22));
 	}) as typeof fetch;
 	const fiveOf = async () => {
-		const q = await quota();
+		// a switch refreshes the usage in the background (main.ts onAccountSwitch)
+		const q = await refreshQuota();
 		const p = q.providers.find(x => x.provider === "anthropic");
 		return { account: p?.account, five: p?.limits.find(l => l.id === "anthropic:5h")?.used };
 	};
@@ -123,4 +125,56 @@ test("a Claude CLI login is read with the token the CLI keeps for its account di
 	auth({ accounts: [{ name: "default", source: "login", store: "claude-cli", dirId }, { name: "gone", store: "claude-cli", dirId: "c".repeat(32) }] });
 	expect(subscriptionAccount()).toMatchObject({ name: "default", token: "tok-cli", expiresAt: FAR });
 	expect(subscriptionAccounts().map(a => a.name)).toEqual(["default"]);
+});
+
+test("GET /api/quota answers from the last read without asking again; an old one starts one background read whose change is pushed", async () => {
+	auth({ pinned: "host-shared", accounts });
+	let five = 40;
+	let calls = 0;
+	globalThis.fetch = (async () => (calls++, Response.json(body(five, 11)))) as typeof fetch;
+	const fiveOf = (q: Awaited<ReturnType<typeof quota>>) => q.providers.find(p => p.provider === "anthropic")?.limits.find(l => l.id === "anthropic:5h")?.used;
+	const first = await quota();
+	expect([fiveOf(first), calls]).toEqual([40, 1]);
+	expect(await quota(first.fetched_at + QUOTA_REFRESH_MS - 1)).toBe(first);
+	expect(calls).toBe(1);
+	const pushed = new Promise<Awaited<ReturnType<typeof quota>>>(resolve => onQuota(resolve));
+	five = 55;
+	forgetAccountUsage("host-shared");
+	// past the refresh time the old answer still comes at once; the read runs behind it
+	expect(await quota(first.fetched_at + QUOTA_REFRESH_MS)).toBe(first);
+	expect(fiveOf(await pushed)).toBe(55);
+	expect(fiveOf(await quota())).toBe(55);
+	expect(calls).toBe(2);
+});
+
+test.if(process.platform === "darwin")("a keychain-only Claude CLI token is read off the caller's path, once per dir, and an expired one is not re-read on every call", async () => {
+	const dirId = "d".repeat(32);
+	auth({ accounts: [{ name: "cli", store: "claude-cli", dirId }] });
+	resetCliTokensForTest();
+	let reads = 0;
+	let expires = FAR;
+	setKeychainReaderForTest(async () => (reads++, JSON.stringify({ claudeAiOauth: { accessToken: "tok-kc", expiresAt: expires } })));
+	try {
+		expect(subscriptionAccounts()).toEqual([]);
+		expect(subscriptionAccounts()).toEqual([]);
+		expect(reads).toBe(1);
+		await cliTokensSettled();
+		expect(subscriptionAccounts().map(a => a.token)).toEqual(["tok-kc"]);
+		expect(reads).toBe(1);
+		// expired: the cached token answers; the keychain is asked again only after the recheck time, in the background
+		resetCliTokensForTest();
+		reads = 0;
+		expires = Date.now() - 1;
+		setKeychainReaderForTest(async () => (reads++, JSON.stringify({ claudeAiOauth: { accessToken: "tok-old", expiresAt: expires } })));
+		subscriptionAccounts();
+		await cliTokensSettled();
+		const now = Date.now();
+		for (let i = 0; i < 5; i++) expect(subscriptionAccount(undefined, now)?.token).toBe("tok-old");
+		expect(reads).toBe(1);
+		expect(subscriptionAccount(undefined, now + 20_000)?.token).toBe("tok-old");
+		await cliTokensSettled();
+		expect(reads).toBe(2);
+	} finally {
+		resetCliTokensForTest();
+	}
 });

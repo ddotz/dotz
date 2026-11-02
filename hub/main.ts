@@ -12,7 +12,7 @@ import { discordGatewayAnswer } from "./approval-wire.ts";
 import { startPeerStreams } from "./peer-stream.ts";
 import { notify as pushNotify, startPush } from "./push.ts";
 import { msg, textsToReport } from "./i18n.ts";
-import { broadcast, emit, emitDelivery, onEmit, sentFiles } from "./events.ts";
+import { broadcast, emit, emitDelivery, onEmit, sentFiles, subscriberCount } from "./events.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startLaneIdleStop } from "./laneidle.ts";
 import { startMemoryGuard } from "./memguard.ts";
@@ -30,7 +30,7 @@ import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch,
 import { errorAsk, startErrorWatch } from "./orch-error.ts";
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
-import { forgetAccountUsage, usageSnapshot } from "./providers.ts";
+import { forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, refreshQuota, usageSnapshot } from "./providers.ts";
 import { sealPlainSecrets } from "./secretbox.ts";
 import { backfillNotices, dropChannelNotices, setAppLabelResolver, setDraftHandled, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
 import { startReflection } from "./reflect.ts";
@@ -386,6 +386,7 @@ if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 // without waiting for a turn.
 onAccountSwitch(s => {
 	forgetAccountUsage(s.to);
+	void refreshQuota().catch(e => log(`usage refresh failed: ${(e as Error).message}`));
 	if (runtimeFor("orchestrator").id === "omo") {
 		holdOrchestratorKeepalive();
 		log(`account switch ${s.from ?? "-"} -> ${s.to}: orchestrator ${applyAccountPin()}`);
@@ -397,6 +398,9 @@ announceUsedChanges();
 setUsageSource(usageSnapshot);
 void accountTick().catch(e => log(`account check failed: ${(e as Error).message}`));
 setInterval(() => void accountTick().catch(e => log(`account check failed: ${(e as Error).message}`)), 60_000);
+// The usage the pages show (top bar, 사용량, 홈): read in the background while a page is connected and pushed when it changes.
+onQuota(q => broadcast({ kind: "quota", quota: q }));
+setInterval(() => void (subscriberCount() > 0 && refreshQuota().catch(e => log(`usage refresh failed: ${(e as Error).message}`))), QUOTA_REFRESH_MS);
 startLaneHygiene();
 startWorktreeCleanup();
 startDataCleanup();
