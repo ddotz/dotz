@@ -81,6 +81,8 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			const r = await sendDraft(pos[0], deps);
 			// An approved mail reply went out: tell the gateway, which wakes the bot once if the mail app has a 이어서 할 일 rule (hub/followup.ts).
 			if (r.ok && rec?.kind === "mail" && !rec.compose) await notifyGateway({ path: "/api/followup", body: { app: mailInstance(rec.ref), kind: "mail", key: rec.id, ids: { draft: rec.id, mail: rec.ref } } }, deps.hub);
+			// A new mail he wrote went out: the mail app lists it under 보낸 메일 from here, with its text and files.
+			if (r.ok && rec?.kind === "mail" && rec.compose) await notifyGateway({ path: "/api/mail/compose", body: { ref: rec.id, source: rec.source, state: "sent" } }, deps.hub);
 			return done(r);
 		}
 		// A change request of a draft that is not stored here (a KakaoTalk reply): recorded in that room's (else that app's) profile.
