@@ -76,6 +76,20 @@ describe("fan-out", () => {
 		expect(sync.status).toEqual({ state: "error", error: "Error: boom" });
 		expect(good.got.map(m => m.text)).toEqual(["after failure"]);
 	});
+
+	test("a failed delivery does not mute the adapter; the next one that works sets it back to ok", async () => {
+		let down = true;
+		const flaky = fake("flaky", { deliver: async () => (down ? Promise.reject(new Error("lan")) : { delivered: true }) });
+		register(flaky);
+		installFanout();
+		post("main", "first");
+		await flush();
+		expect(flaky.status.state).toBe("error");
+		down = false;
+		post("main", "second");
+		await flush();
+		expect(flaky.status).toEqual({ state: "ok" });
+	});
 });
 
 describe("parseAskNumber", () => {
