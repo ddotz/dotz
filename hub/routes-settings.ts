@@ -16,6 +16,7 @@ import { json, body, terminals } from "./routes-util.ts";
 import { budgetSettings, deleteAdminKey, monthlyLimitOf, saveAdminKey, saveMonthlyLimit } from "./api-budget.ts";
 import { postSettings, savePostSettings } from "./discord-post.ts";
 import { discordConnectionRoute } from "./discord-connection.ts";
+import { messengersRoute } from "./messengers-api.ts";
 
 export async function routeSettings(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
 	const fail = (error: unknown) =>
@@ -37,6 +38,8 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 			return fail(error);
 		}
 	}
+	const messengers = await messengersRoute(req, url, parts);
+	if (messengers) return messengers;
 	if (req.method === "GET" && url.pathname === "/api/models") return json(await modelsView());
 	if (req.method === "PUT" && url.pathname === "/api/models") {
 		const b = await body(req);
