@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type * as Lanes from "./lanes.ts";
 import { cfg } from "./config.ts";
 import { msg } from "./i18n.ts";
+import { createLaneRelay } from "./lanerelay.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
@@ -170,4 +171,24 @@ test("a session that exits with an owner message open reports it lost", async ()
 	await advance(300);
 	await flush();
 	expect(lost).toEqual([{ lane: "note-lost", refs: ["m6"] }]);
+});
+
+// 2026-11-01: a session waiting hours on a video got a stall nudge every few minutes; each untagged "still waiting" reply to it
+// counted as an answer to the orchestrator and woke it. A gateway nudge is not the orchestrator asking.
+test("a gateway nudge does not make the session's next untagged reply a report for the orchestrator; an orchestrator message does", async () => {
+	const { lane, agent } = await working("note-nudge");
+	const sent: string[] = [];
+	const relay = createLaneRelay({ busy: () => false, deliver: t => void sent.push(t), lead: n => `[lane reports ${n}]` });
+	lane.orchAsked = false;
+	l.sendToLane("note-nudge", msg().stallNudge(3, ""), undefined, true);
+	expect(agent.sent.at(-1)!.text).toContain(msg().stallNudge(3, ""));
+	expect(lane.orchAsked).toBe(false);
+	expect(relay.report("note-nudge", "still waiting for the video, nothing to do", "/f", lane.orchAsked === false)).toBe("owner");
+	expect(relay.report("note-nudge", "[done] all five courses passed", "/f", lane.orchAsked === false)).toBe("relayed");
+	l.sendToLane("note-nudge", "which course is left?");
+	expect(lane.orchAsked).toBe(true);
+	expect(relay.report("note-nudge", "only the safety course is left", "/f", lane.orchAsked === false)).toBe("relayed");
+	expect(sent).toHaveLength(2);
+	l.stopLane("note-nudge");
+	await advance(300);
 });
