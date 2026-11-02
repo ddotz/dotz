@@ -8,7 +8,9 @@ import { readSecretFile, writeSecretFile } from "./secretbox.ts";
 // the keyword reach dotz. Replies still go out through the room's Incoming Webhook. This uses the JANDI web client's API, which JANDI does
 // not document: a JANDI change can break it, and the adapter then shows the error instead of guessing.
 
-export type SelfChatConfig = { enabled: boolean; team_id: number; room_id: number; member_id: number; bot_id: number; keyword: string; reply_prefix: string; session_secret: string; interval_ms: number };
+/** Another computer reached only through this room: it listens for `keyword` and answers with lines that start with `reply_prefix` (shown by hub/jandi-peers.ts). */
+export type SelfChatPeer = { name: string; keyword: string; reply_prefix: string };
+export type SelfChatConfig = { enabled: boolean; team_id: number; room_id: number; member_id: number; bot_id: number; keyword: string; reply_prefix: string; session_secret: string; interval_ms: number; peers?: SelfChatPeer[] };
 export type SelfChatDeps = {
 	dataDir: string;
 	fetch?: typeof fetch;
@@ -24,14 +26,33 @@ const PAGE = 50;
 const MAX_BACKOFF = 5 * 60_000;
 const TOKEN_MARGIN_MS = 5 * 60_000;
 
+const MAX_PEERS = 8;
+
 const int = (v: unknown) => (Number.isSafeInteger(v) && (v as number) > 0 ? (v as number) : 0);
 
+/** The valid peers, in order: a keyword of 1-30 non-space characters that is neither this gateway's own nor a repeat, a reply prefix of 1-30 characters; at most 8. */
+function normalizePeers(raw: unknown, own: string): SelfChatPeer[] {
+	const out: SelfChatPeer[] = [];
+	const seen = new Set([own.toLowerCase()]);
+	for (const p of Array.isArray(raw) ? raw : []) {
+		if (!p || typeof p !== "object") continue;
+		const o = p as Record<string, unknown>;
+		const kw = typeof o.keyword === "string" && /^\S{1,30}$/.test(o.keyword.trim()) ? o.keyword.trim().replace(/^\//, "") : "";
+		const prefix = typeof o.reply_prefix === "string" ? o.reply_prefix.trim() : "";
+		if (!kw || seen.has(kw.toLowerCase()) || prefix.length < 1 || prefix.length > 30) continue;
+		seen.add(kw.toLowerCase());
+		out.push({ name: (typeof o.name === "string" ? o.name.trim().slice(0, 30) : "") || kw, keyword: kw, reply_prefix: prefix });
+		if (out.length >= MAX_PEERS) break;
+	}
+	return out;
+}
 export function normalizeSelfChat(raw: unknown): SelfChatConfig | undefined {
 	if (!raw || typeof raw !== "object") return undefined;
 	const o = raw as Record<string, unknown>;
 	const keyword = typeof o.keyword === "string" && /^\S{1,30}$/.test(o.keyword.trim()) ? o.keyword.trim().replace(/^\//, "") : "dotz";
 	const secret = typeof o.session_secret === "string" && /^[A-Za-z0-9._-]{1,64}$/.test(o.session_secret) ? o.session_secret : "jandi-session";
 	const ms = Number(o.interval_ms);
+	const peers = normalizePeers(o.peers, keyword);
 	return {
 		enabled: o.enabled === true,
 		team_id: int(o.team_id),
@@ -42,6 +63,7 @@ export function normalizeSelfChat(raw: unknown): SelfChatConfig | undefined {
 		reply_prefix: typeof o.reply_prefix === "string" ? o.reply_prefix.trim().slice(0, 30) : "",
 		session_secret: secret,
 		interval_ms: Number.isInteger(ms) && ms >= 1000 ? ms : 3000,
+		...(peers.length ? { peers } : {}),
 	};
 }
 
@@ -107,10 +129,11 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 		return access.token;
 	}
 
-	async function get(path: string, version: number): Promise<any> {
+	async function request(path: string, version: number, init: RequestInit = {}): Promise<Response> {
 		for (let attempt = 0; ; attempt++) {
 			const res = await f(api + path, {
-				headers: { Authorization: `bearer ${await token()}`, Accept: `application/vnd.tosslab.jandi-v${version}+json` },
+				...init,
+				headers: { ...init.headers, Authorization: `bearer ${await token()}`, Accept: `application/vnd.tosslab.jandi-v${version}+json` },
 				signal: AbortSignal.timeout(20_000),
 			});
 			if (res.status === 401 && attempt === 0) {
@@ -122,8 +145,16 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 				void res.body?.cancel();
 				throw new SelfChatError(`JANDI ${path.split("?")[0]} HTTP ${res.status}`);
 			}
-			return res.json();
+			return res;
 		}
+	}
+
+	const get = async (path: string, version: number): Promise<any> => (await request(path, version)).json();
+
+	/** A JSON POST as the owner; the answer is not read. */
+	async function post(path: string, version: number, body: unknown): Promise<void> {
+		const res = await request(path, version, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+		void res.body?.cancel();
 	}
 
 	/** The room must be the member's own chat with the JANDI bot; anything else is refused before a message is read. */
@@ -188,6 +219,9 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 	}
 
 	return {
+		get,
+		post,
+		checkRoom,
 		tick,
 		run,
 		stop() {

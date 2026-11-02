@@ -14,7 +14,8 @@ import { bindPeer, boundPeer, type Bound } from "./peer-pair.ts";
 
 export { friendlyName };
 
-export type Peer = { name: string; url: string; self: boolean; online: boolean; unread?: number; need?: number };
+// `via: "jandi"`: a computer reached only through the owner's JANDI self chat (hub/jandi-peers.ts); its url is a path on this gateway.
+export type Peer = { name: string; url: string; self: boolean; online: boolean; unread?: number; need?: number; via?: "jandi" };
 export type TsNode = { DNSName?: string; HostName?: string; UserID?: number; Online?: boolean; Tags?: string[] };
 export type TsStatus = { Self?: TsNode; Peer?: Record<string, TsNode>; User?: Record<string, { LoginName?: string }> };
 

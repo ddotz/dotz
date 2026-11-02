@@ -69,6 +69,8 @@ self.addEventListener("fetch", ev => {
   if (req.method !== "GET" || url.origin !== location.origin || url.pathname.startsWith("/api/")) return;
   // the manifest is never answered from the cache: a stale one would decide the install (name, start_url, display)
   if (url.pathname === "/manifest.webmanifest") return;
+  // a JANDI-only computer's chat page (hub/jandi-peers.ts) is its own page from the gateway, not the app shell
+  if (url.pathname.startsWith("/jandi-peer/")) return;
   if (req.mode === "navigate" || FRESH.includes(url.pathname)) {
     const key = req.mode === "navigate" ? "/" : url.pathname;
     if (req.mode === "navigate") ev.waitUntil(refreshShell());
