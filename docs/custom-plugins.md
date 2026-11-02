@@ -84,6 +84,21 @@ repliesWithFiles(source) { return source === "work"; },     // true only when re
 - zele sends them with `zele mail reply <id> --attach <path>` (one flag per file). A webmail-no-api site cannot send files: its adapter only saves a text draft.
 - A throw in `reply` is a failed send (logged, the owner sees why); returning `undefined` means the source is not this plugin's.
 
+## Syncing what the owner does in dotz to the mailbox
+
+읽음, 안읽음, 보관, 별표 and 휴지통 in the mail app change dotz at once and then ask the mailbox (`hub/mail-sync.ts` has the whole contract). zele does all of them; a webmail-no-api site none. For any other source the plugins are asked, in file-name order:
+
+```ts
+mailAction(a) { // a: { source, id, action: "read" | "unread" | "archive" | "unarchive" | "trash" | "star" | "unstar" }
+	if (a.source !== "work") return undefined; // not mine
+	// do it in the real mailbox; true = done, false = refused, a throw = failed
+},
+mailActions(source) { return source === "work" ? ["read", "unread", "trash"] : undefined; }, // the card's `can`
+```
+
+- Without `mailActions` the source counts as read-only toward its mailbox: every action still works in dotz and the screen says in one line that the mailbox did not follow.
+- The other way, post what the mailbox shows on every poll: `POST /api/mail/state` items may carry `read`/`unread`, `archived`, `starred` and `trashed` besides `replied`. Only a change from the last report is applied, so a poll that has not seen a dotz action yet never undoes it; `trashed` removes the mail from dotz.
+
 ## Registering a mail reader as a mail instance
 
 A mail reader of one install (a company webmail with no API, read by a plugin) is another instance of the 메일 app: it gets its own row in 모니터링, settings panel, name, off/제거/삭제, its own watches and only its own source's mails, with the same reply-draft and summary options. Once the plugin posts mails with a fixed `source`, register the instance once (same auth as `POST /api/mail`):
