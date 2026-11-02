@@ -1,0 +1,14 @@
+// `bunx wrangler deploy` from this folder publishes https://<name>.<account>.workers.dev (docs/web-access-cloudflare.ko.md).
+{
+	"name": "dotz",
+	"main": "worker.ts",
+	"compatibility_date": "2026-10-01",
+	"workers_dev": true,
+	"vpc_services": [
+		{
+			"binding": "DOTZ",
+			// The VPC Service ID (Workers VPC dashboard or `bunx wrangler vpc service list`) that points at http://127.0.0.1:<web.port>.
+			"service_id": "<VPC_SERVICE_ID>"
+		}
+	]
+}
