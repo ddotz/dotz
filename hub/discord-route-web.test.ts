@@ -113,7 +113,7 @@ async function settings(h: Hub, width: number, height: number) {
 	await v.navigate(`http://127.0.0.1:${h.server.port}/`);
 	await waitFor(v, `typeof S !== "undefined" && S && S.discord !== undefined`);
 	await run(v, `go("settings")`);
-	await waitFor(v, `document.querySelectorAll(".hs-sw[data-k]").length === 5`);
+	await waitFor(v, `document.querySelectorAll(".hs-sw[data-k]").length === 6`);
 	return v;
 }
 const openScreen = async (v: View) => {
@@ -137,18 +137,20 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 			await shot(v, "settings-390.png");
 		}
 		await openScreen(v);
-		await waitFor(v, `document.querySelectorAll("#discord .hs-sw[data-dc]").length === 9`);
+		await waitFor(v, `document.querySelectorAll("#discord .hs-sw[data-k]").length === 5 && document.querySelectorAll("#discord .hs-sw[data-dc]").length === 4`);
 		expect(await q<string>(v, `return document.querySelector("#discord .li .tag").textContent + "|" + document.querySelector("#discord .li .sup").textContent`)).toBe("연결됨|dotz-bot 봇으로 연결돼 있어요.");
 		expect(await q<string[]>(v, `return [DCS.guild.value, DCS.owner.value, DCS.tok.value, document.querySelector("#discord .dcs-saved").textContent]`)).toEqual(["111111111111111111", "222222222222222222", "", "저장됨"]);
+		expect(await q<string[][]>(v, `return [...document.querySelectorAll("#discord .hs-sw[data-k]")].map(b => [b.dataset.k, b.getAttribute("aria-checked")])`)).toEqual([
+			["ask", "true"], ["alert", "true"], ["result", "false"], ["news", "true"], ["conv", "true"]]);
 		expect(await q<string[][]>(v, `return [...document.querySelectorAll("#discord .hs-sw[data-dc]")].map(b => [b.dataset.dc, b.getAttribute("aria-checked")])`)).toEqual([
-			["ask", "true"], ["alert", "true"], ["result", "false"], ["news", "true"], ["conv", "true"], ["chat", "true"], ["lanes", "true"], ["worklog", "true"], ["web_lanes", "false"]]);
-		expect(await q<number>(v, `return document.querySelectorAll("#discord [data-dc=alert]").length`)).toBe(1);
+			["chat", "true"], ["lanes", "true"], ["worklog", "true"], ["web_lanes", "false"]]);
+		expect(await q<number>(v, `return document.querySelectorAll("#discord [data-k=alert], #discord [data-dc=alert]").length`)).toBe(1);
 		expect(await q<boolean>(v, `return !document.documentElement.outerHTML.includes(${JSON.stringify(STORED_TOKEN)})`)).toBe(true);
 
-		await click(v, `#discord .hs-sw[data-dc="result"]`);
+		await click(v, `#discord .hs-sw[data-k="result"]`);
 		await hubState(() => on.puts.length === 1);
 		expect(on.puts).toEqual([{ result: true }]);
-		await waitFor(v, `document.querySelector('#discord .hs-sw[data-dc="result"]').getAttribute("aria-checked") === "true"`);
+		await waitFor(v, `document.querySelector('#discord .hs-sw[data-k="result"]').getAttribute("aria-checked") === "true"`);
 		await click(v, `#discord .hs-sw[data-dc="web_lanes"]`);
 		await hubState(() => on.puts.length === 2);
 		expect(on.puts[1]).toEqual({ web_lanes: true });
@@ -175,7 +177,7 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 		expect(await q<boolean>(v, `return !document.documentElement.outerHTML.includes(${JSON.stringify(NEW_TOKEN)})`)).toBe(true);
 		await shot(v, `discord-on-${width}.png`);
 		if (width === 390) {
-			await run(v, `document.querySelector("#discord .hs-sw[data-dc=ask]").scrollIntoView({ block: "start" })`);
+			await run(v, `document.querySelector("#discord .hs-sw[data-k=ask]").scrollIntoView({ block: "start" })`);
 			await shot(v, "discord-on-390-switches.png");
 		}
 		expect(await noOverflow(v)).toBe(true);
