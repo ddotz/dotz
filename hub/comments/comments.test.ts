@@ -3,6 +3,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFile
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run as runComments } from "../../features/comments/bin/comments.ts";
+import { channelOf, run as runWatch } from "../../features/comments/bin/watch.ts";
 import { type Comment, type CommentAdapter, commentId, mergeComments, type RawComment, type SourceConfig } from "./contract.ts";
 import { createEngine, type DraftModel } from "./engine.ts";
 import { instagramAdapter } from "./adapters/google-meta.ts";
@@ -136,6 +137,24 @@ describe("drafts only on request", () => {
 		const r = await t.engine.collect({ force: true });
 		expect(r.drafted.map(d => d.commentId)).toEqual([commentId("youtube", "c1")]);
 		expect(t.prompts).toHaveLength(1);
+	});
+
+	test("an auto-draft of an app with a Discord channel is posted there as its card; without one, or when the post fails, it is printed", async () => {
+		const t = setup([src({ autoDraft: true, autoSince: NOW - 5000 })]);
+		t.state.pages = [[raw("c1"), raw("c2")]];
+		const data = join(dir, "data");
+		mkdirSync(join(data, "custom"), { recursive: true });
+		writeFileSync(join(data, "custom", "apps.json"), JSON.stringify({ youtube: { discord_channel: "123456789012345678" }, "site-a": { app: "site", filter: { source: "a" }, discord_channel: "876543210987654321" }, "site-b": { app: "site", filter: { source: "b" }, discord_channel: "not an id" } }));
+		const posts: string[] = [];
+		const lines = await runWatch(data, t.engine, async () => {}, async (target, text) => (posts.push(`${target} ${text.split("\n")[0]}`), posts.length === 1));
+		const [d1, d2] = t.engine.store.drafts();
+		expect(posts).toEqual(["ch:123456789012345678 [ask] 유튜브 댓글 답글 초안을 만들었어요", "ch:123456789012345678 [ask] 유튜브 댓글 답글 초안을 만들었어요"]);
+		expect(lines).toHaveLength(1);
+		expect(lines[0]).toContain(d2!.code);
+		expect(lines[0]).not.toContain(d1!.code);
+		expect(channelOf(data, "site-a", "website")).toBe("876543210987654321");
+		expect(channelOf(data, "site-b", "website")).toBeUndefined();
+		expect(channelOf(data, "instagram", "instagram")).toBeUndefined();
 	});
 
 	test("a skip from the model makes no draft", async () => {

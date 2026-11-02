@@ -96,6 +96,10 @@ const followupField = (app: string): SettingField => ({ key: "followup", label: 
 const draftDefaultField = (app: string): SettingField => ({ key: "draft_default", label: "기본 규칙", type: "text", help: "이 앱의 모든 초안에 함께 적용돼요", store: DRAFTS, path: `draftDefaults.${app}`, max: 1000, def: "", section: "draft", placeholder: "모든 초안에 공통으로 적용할 말투나 내용. 비워 두면 메일만 보고 써요" });
 const draftRulesField = (app: string): SettingField => ({ key: "draft_rules", label: "자동 초안 규칙", type: "rules", help: "조건에 맞는 메일이 오면 자동 초안이 꺼져 있어도 그 규칙대로 초안을 쓰고 파일을 붙여 둬요. 보내기는 직접 눌러야 나가요", store: DRAFTS, path: `draftRules.${app}`, def: [], section: "draft" });
 const REPLY_APPS = new Set(["mail", "kakao", "instagram", "youtube", "site"]);
+// 디스코드 채널 (comment apps): the work channel an auto-draft's [ask] goes to (features/comments/bin/watch.ts), the one card with the same draft id;
+// empty = the card stays in the web app only.
+const COMMENT_APPS = new Set(["instagram", "youtube", "site"]);
+const commentChannelField = (app: string): SettingField => ({ key: "discord_channel", label: "디스코드 채널", type: "text", help: "새 댓글 답글 초안 카드를 이 디스코드 작업 채널(채널 id)에도 올려요. 비우면 웹앱에만 와요", store: "custom/apps.json", path: `${app}.discord_channel`, max: 30, def: "", section: "notify" });
 const replyModelField = (app: string): SettingField => ({ key: "reply_model", label: "답장 모델", type: "enum", help: "", store: DRAFTS, path: `models.${app}`, options: replyChoices.options, labels: replyChoices.labels, def: "", section: "advanced" });
 
 export const APP_SETTINGS: Record<string, SettingField[]> = {
@@ -125,7 +129,7 @@ export class SettingsError extends Error {
 // An app key or an instance id (`mail-2`): the schema is the app's, the switch and the name are the instance's.
 export const fieldsOf = (app: string): SettingField[] => {
 	const base = app.split("-")[0]!;
-	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), notifyField(app), pushField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(NEWS_APPS.has(base) && discordConnected() ? [appDiscordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app), followupField(app)] : []), ...(base === "mail" ? [attachFolderField(app), draftDefaultField(app), draftRulesField(app)] : [])] : [];
+	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), notifyField(app), pushField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(NEWS_APPS.has(base) && discordConnected() ? [appDiscordField(app)] : []), ...(COMMENT_APPS.has(base) && discordConnected() ? [commentChannelField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app), followupField(app)] : []), ...(base === "mail" ? [attachFolderField(app), draftDefaultField(app), draftRulesField(app)] : [])] : [];
 };
 
 const readJson = (file: string): Record<string, any> => {
