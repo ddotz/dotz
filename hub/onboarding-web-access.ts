@@ -101,6 +101,7 @@ export const webAccessFlow: OnboardFlow = {
 			owner: LOGIN_OWNER,
 			run: async ctx => {
 				if (hasCert(ctx)) return { done: true };
+				if (ctx.attempt > 0) return { waiting: LOGIN_OWNER };
 				let url = "";
 				const lines = ctx.deps.execLines;
 				if (lines) {

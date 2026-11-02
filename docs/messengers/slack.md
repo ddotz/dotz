@@ -22,6 +22,7 @@
 
 | 무엇 | 어디 | 권한 |
 | --- | --- | --- |
+| 봇 토큰 | `~/.dotz/secrets/slack-bot-token` | 0600 |
 | 봇 토큰, 채널 매핑, 허용 사용자 | `~/.dotz/messengers/slack.json` | 0600 |
 | 온보딩 진행 상태(비밀 없음) | `~/.dotz/onboarding/slack.json` | 0600 |
 
