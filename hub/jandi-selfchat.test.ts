@@ -46,7 +46,7 @@ const jandi = Bun.serve({
 afterAll(() => jandi.stop(true));
 
 let dir: string;
-const cfg: SelfChatConfig = { enabled: true, team_id: TEAM, room_id: ROOM, member_id: ME, bot_id: BOT, keyword: "dotz", session_secret: "jandi-session", interval_ms: 1000 };
+const cfg: SelfChatConfig = { enabled: true, team_id: TEAM, room_id: ROOM, member_id: ME, bot_id: BOT, keyword: "dotz", reply_prefix: "", session_secret: "jandi-session", interval_ms: 1000 };
 function make(received: string[], errors: (string | undefined)[] = []) {
 	return createSelfChat(cfg, { dataDir: dir, api: `http://127.0.0.1:${jandi.port}/`, receive: t => received.push(t), log: () => {}, onError: e => errors.push(e) });
 }
