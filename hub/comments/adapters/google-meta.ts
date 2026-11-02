@@ -1,10 +1,10 @@
 // YouTube (Data API) and Instagram (Graph API) adapters of the comment contract. Both reuse the connection of features/youtube-instagram
 // (tokens in ~/.dotz/secrets, quota accounting); there is no second login. The API access is injected so tests use stubs.
 import type { Config, Ctx } from "../../../features/youtube-instagram/lib/config.ts";
-import { mentions, ownerView } from "../../../features/youtube-instagram/lib/ig-owner.ts";
+import { mentions, ownerView, UNKNOWN_USER } from "../../../features/youtube-instagram/lib/ig-owner.ts";
 import type { IgComment, IgMedia } from "../../../features/youtube-instagram/lib/instagram.ts";
 import type { YtComment } from "../../../features/youtube-instagram/lib/youtube.ts";
-import { type CommentAdapter, FALLBACK_TITLE, type PostInfo, type RawComment } from "../contract.ts";
+import { type Comment, type CommentAdapter, FALLBACK_TITLE, type PostInfo, type RawComment } from "../contract.ts";
 
 export type YoutubeApi = {
 	channelId: () => string;
@@ -67,7 +67,8 @@ export type InstagramApi = {
 	reply: (commentId: string, text: string) => Promise<string>;
 };
 
-const igAuthor = (username: string | undefined): string => username || "알 수 없는 사용자";
+const igAuthor = (username: string | undefined): string => username || UNKNOWN_USER;
+const known = (username: string | undefined): string | undefined => (username && username !== UNKNOWN_USER ? username : undefined);
 const igTitle = (m: IgMedia): string => (m.caption ?? "").replace(/\s+/g, " ").trim().slice(0, 80) || FALLBACK_TITLE.instagram;
 const igThumb = (m: IgMedia): string | undefined => m.thumb;
 
@@ -95,12 +96,21 @@ export function instagramAdapter(api: () => InstagramApi): CommentAdapter {
 				const list = await a.comments(m.id);
 				// Replies carry no author: the owner's are found by id and by his @mentions (lib/ig-owner.ts).
 				const view = ownerView(list, owner);
+				// The owner's and pinned replies come twice: nested under their parent (which knows the parent, but often not the author) and as an
+				// entry of the top-level list under the same real id. Keep the nested one (stored once, with its parent) and borrow the author from the other.
+				const topById = new Map(list.map(c => [c.id, c]));
+				const nested = new Set(list.flatMap(c => (c.replies ?? []).flatMap(r => (r.id ? [r.id] : []))));
 				for (const c of list) {
 					// One malformed comment must not fail the whole read.
 					try {
 						const at = Date.parse(c.timestamp) || 0;
-						raw.push({ native: c.id, thread: m.id, author: igAuthor(c.username), text: c.text ?? "", ...shown, at, mine: view.isOwner(c) });
-						(c.replies ?? []).forEach((r, i) => raw.push({ native: `${c.id}.${i}`, thread: m.id, parent: c.id, author: igAuthor(r.username), text: r.text ?? "", ...shown, at: Math.max(at + 1 + i, Date.parse(r.timestamp ?? "") || 0), mine: view.isOwner(r) }));
+						if (!nested.has(c.id)) raw.push({ native: c.id, thread: m.id, author: igAuthor(c.username), text: c.text ?? "", ...shown, at, mine: view.isOwner(c) });
+						// A reply is stored under its real id, author and time; only a reply the API gave no id gets a position-based id.
+						(c.replies ?? []).forEach((r, i) => {
+							const twin = r.id ? topById.get(r.id) : undefined;
+							const when = Date.parse(r.timestamp ?? twin?.timestamp ?? "");
+							raw.push({ native: r.id ?? `${c.id}.${i}`, thread: m.id, parent: c.id, author: igAuthor(known(r.username) ?? known(twin?.username)), text: r.text || (twin?.text ?? ""), ...shown, at: when || at + 1 + i, mine: view.isOwner(r) });
+						});
 					} catch {}
 				}
 			}
@@ -108,6 +118,28 @@ export function instagramAdapter(api: () => InstagramApi): CommentAdapter {
 			return { comments: raw, cursor: JSON.stringify({ t, counts }) };
 		},
 		answered: (c, mine) => mine.some(x => x.at >= c.at && mentions(x.text, c.author)),
+		// Older versions stored each reply a second time under a synthetic `<parent>.<n>` id (author unknown, the parent's time) next to the reply's
+		// real record, which had no parent. One pass over what is stored: the real record takes the parent, the synthetic copy goes. A synthetic
+		// reply without a real twin stays (it is all there is). Matching is by post and text, the twin must not predate the parent.
+		tidy(src, stored) {
+			const key = (c: Comment) => `${c.thread}\n${c.text}`;
+			const synthetic = (c: Comment) => c.parent !== undefined && c.native.startsWith(`${c.parent}.`) && /^\d+$/.test(c.native.slice(c.parent.length + 1));
+			const own = stored.filter(c => c.source === src.key);
+			const at = new Map(own.map(c => [c.native, c.at]));
+			const twins = new Map<string, Comment[]>();
+			for (const c of own) if (!c.parent) twins.get(key(c))?.push(c) ?? twins.set(key(c), [c]);
+			const parentOf = new Map<string, string>();
+			const gone = new Set<string>();
+			for (const c of own) {
+				if (!synthetic(c)) continue;
+				const from = at.get(c.parent!) ?? 0;
+				const twin = twins.get(key(c))?.find(r => !parentOf.has(r.id) && r.native !== c.parent && r.at >= from && (c.author === UNKNOWN_USER || r.author === c.author));
+				if (!twin) continue;
+				parentOf.set(twin.id, c.parent!);
+				gone.add(c.id);
+			}
+			return gone.size ? stored.filter(c => !gone.has(c.id)).map(c => (parentOf.has(c.id) ? { ...c, parent: parentOf.get(c.id)! } : c)) : undefined;
+		},
 		// The target is always a comment id (a reply goes to its top-level comment), never a username.
 		async reply(_src, c, text) {
 			try {
