@@ -28,6 +28,10 @@ describe("cloudflare web base", () => {
 		expect(cfBase("a b")).toBeUndefined();
 		expect(cfBase(undefined)).toBeUndefined();
 	});
+	test("a workers.dev host (no domain, extras/cf-worker) is a hostname like any other", () => {
+		setWebBase(cfBase("dotz.owner.workers.dev"));
+		expect(webLink("/#chat/main")).toBe("https://dotz.owner.workers.dev/#chat/main");
+	});
 	test("without a base there is no link", () => {
 		expect(webLink("/")).toBeUndefined();
 	});

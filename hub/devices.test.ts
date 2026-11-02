@@ -326,6 +326,29 @@ describe("the gate", () => {
 		expect([f.status, f.headers.get("x-dotz-pair")]).toEqual([403, "1"]);
 	});
 
+	test("on a workers.dev host the gate is the same: a passkey for that host pairs, one for another host does not, unpaired is sent to /pair", async () => {
+		const host = "dotz.owner.workers.dev";
+		const origin = `https://${host}`;
+		const sent: string[] = [];
+		const d = createDevices({ dir: mkdtempSync(join(tmpdir(), "dotz-devices-")), hostname: host, notify: t => void sent.push(t) });
+		const post = async (path: string, body: unknown = {}): Promise<Response> => {
+			const url = new URL(`${origin}${path}`);
+			return (await d.pairRoute(new Request(url, { method: "POST", headers: { "Content-Type": "application/json", Origin: origin }, body: JSON.stringify(body) }), url))!;
+		};
+		const begin = async (): Promise<string> => {
+			expect((await post("/api/pair/code")).status).toBe(200);
+			return ((await (await post("/api/pair/begin", { code: /\d{6}/.exec(sent.at(-1)!)![0] })).json()) as { challenge: string }).challenge;
+		};
+		const page = new URL(`${origin}/`);
+		expect(d.denied(new Request(page, { headers: { accept: "text/html" } }), page).headers.get("location")).toBe("/pair");
+		const a = await Authenticator.make(-7);
+		expect((await post("/api/pair/register", await a.create(await begin()))).status).toBe(403);
+		const res = await post("/api/pair/register", await a.create(await begin(), { origin, rpId: host }));
+		expect(res.status).toBe(200);
+		const token = /dotz_dev=([A-Za-z0-9_-]+)/.exec(res.headers.get("set-cookie") ?? "")![1]!;
+		expect(await d.verifySession(new Request(page, { headers: { cookie: `dotz_dev=${token}` } }))).toBe(true);
+	});
+
 	test("only the pairing paths are public", async () => {
 		const t = fresh();
 		for (const [method, path] of [["GET", "/api/state"], ["POST", "/api/devices"], ["POST", "/api/pair/other"], ["GET", "/api/pair/code"]] as const) {

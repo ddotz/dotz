@@ -35,6 +35,42 @@ Tailscale을 쓸 수 없는 환경(회사 PC, 휴대폰 등)에서는 웹앱을 
    ```
 8. 게이트웨이를 다시 시작합니다. 로그에 `cloudflared`가 시작되었다는 기록이 남고, 브라우저에서 `https://dotz.example.com`을 열면 Cloudflare 로그인 후 웹앱이 열립니다.
 
+## 도메인 없이 workers.dev로
+
+도메인이 없으면 Public Hostname 대신 Cloudflare Worker가 `https://<이름>.<계정>.workers.dev`에서 요청을 받아, Workers VPC(VPC Service 바인딩)로 같은 터널을 거쳐 이 Mac의 게이트웨이에 그대로 넘깁니다. Worker 코드는 `extras/cf-worker/`에 있습니다. Worker는 요청을 고치거나 검사하지 않으며, 기기 연결(패스키) 또는 `x-dotz-token` 확인은 게이트웨이가 위와 똑같이 합니다.
+
+Workers VPC는 아직 베타입니다. 베타 기간에는 Free 플랜에서도 무료이지만 기능과 API가 바뀔 수 있습니다.
+
+1. cloudflared를 설치하고 터널을 만든 뒤 토큰을 `~/.dotz/secrets/cloudflared-tunnel-token`에 저장합니다(위 1, 2, 4단계와 같음). **Public Hostname은 추가하지 않습니다.** 대시보드에서 터널 ID(UUID)를 확인해 둡니다.
+2. VPC Service를 만듭니다. 대시보드의 Workers VPC에서 만들거나, 명령으로 만듭니다. 대상은 `127.0.0.1`, HTTP 포트는 `web.port`(기본 7420)입니다.
+   ```
+   bunx wrangler login
+   bunx wrangler vpc service create dotz --type http --tunnel-id <터널 ID> --ipv4 127.0.0.1 --http-port 7420
+   ```
+   출력된 서비스 ID를 `extras/cf-worker/wrangler.jsonc`의 `service_id`에 넣습니다. VPC Service를 만들려면 계정에 Connectivity Directory Admin 권한이 필요합니다(계정 소유자는 이미 있습니다).
+3. Worker를 배포합니다. 이름을 바꾸려면 `wrangler.jsonc`의 `name`을 고칩니다.
+   ```
+   cd extras/cf-worker && bunx wrangler deploy
+   ```
+   배포가 끝나면 `https://dotz.<계정>.workers.dev` 주소가 출력됩니다.
+4. `~/.dotz/config.json`의 `web`에 그 주소를 넣습니다. `team`과 `aud`는 비워 둡니다.
+   ```json
+   "web": {
+     "access": "cloudflare",
+     "cloudflare": { "hostname": "dotz.<계정>.workers.dev" }
+   }
+   ```
+   파일 링크, `dotz_auth` 입력 링크, 푸시 알림 주소가 모두 이 주소를 씁니다.
+5. 게이트웨이를 다시 시작하고, 브라우저에서 주소를 열어 아래 "기기 연결" 순서대로 기기를 연결합니다.
+
+선택 사항: Workers 대시보드에서 이 Worker의 Settings → Domains & Routes → workers.dev 항목의 Cloudflare Access를 켜면 Access 로그인이 추가 계층으로 붙습니다. 그때 표시되는 AUD 태그와 팀 이름을 `web.cloudflare.aud`, `web.cloudflare.team`에 넣고 `allow_logins`에 이메일을 적으면, 게이트웨이가 기기 연결에 더해 Access 토큰도 요구합니다. 비워 두면 기기 연결만으로 들어갑니다.
+
+알아 둘 점:
+
+- 웹앱의 실시간 갱신은 SSE(`/api/events`)라서 Worker를 거쳐도 그대로 스트리밍됩니다. 웹앱 자체는 WebSocket을 쓰지 않습니다.
+- Workers VPC 문서는 VPC Service 바인딩에서 HTTP `fetch()`만 설명하고 WebSocket 업그레이드는 언급하지 않습니다. 그래서 웹소켓을 쓰는 사용자 앱(`/apps/<id>/`)의 웹소켓 연결은 이 경로에서 동작하지 않을 수 있습니다. 나머지 화면은 영향이 없습니다.
+- 업로드 요청 본문은 Cloudflare 한도(Free 100 MB)를 넘을 수 없습니다.
+
 ## 문제 해결
 
 - cloudflared가 설치되어 있지 않으면 설정 화면에 설치 안내가 표시되고, 게이트웨이와 메신저는 그대로 실행됩니다. 설치 위치가 PATH에 없으면 `DOTZ_CLOUDFLARED_BIN`에 실행 파일 경로를 지정합니다.
