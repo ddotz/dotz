@@ -217,6 +217,19 @@ describe("a backfill keeps each mail's own time", () => {
 		expect([a, b, c, d].map(id => mailByKey(`zele-${id}`)!.at)).toEqual(["2026-10-24T02:00:00.000Z", "2026-10-20T08:30:00.000Z", NOW, NOW]);
 		expect(calls.events.map(e => e.ts)).toEqual(["2026-10-24T02:00:00.000Z", "2026-10-20T08:30:00.000Z", NOW, NOW]);
 	});
+	test("a repeat with an `at` gives a mail stamped at the post time its real date, as a duplicate with no event; a future `at` changes nothing", async () => {
+		const { deps, calls } = fakes(false);
+		deps.now = () => NOW;
+		const id = uid("at");
+		await postMail({ source: "zele", id, messageId: "1|Jul 30", subject: "old" }, deps);
+		expect(mailByKey(`zele-${id}`)!.at).toBe(NOW);
+		const r = await postMail({ source: "zele", id, messageId: "1|Jul 30", subject: "old", at: "2026-07-30T09:15:00+09:00" }, deps);
+		expect(r.duplicate).toBe(true);
+		expect(mailByKey(`zele-${id}`)!.at).toBe("2026-07-30T00:15:00.000Z");
+		await postMail({ source: "zele", id, messageId: "1|Jul 30", subject: "old", at: "2099-01-01T00:00:00Z" }, deps);
+		expect(mailByKey(`zele-${id}`)!.at).toBe("2026-07-30T00:15:00.000Z");
+		expect(calls.events.length).toBe(1);
+	});
 });
 
 describe("mail.keep", () => {
