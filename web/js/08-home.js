@@ -228,6 +228,18 @@ function homeNowRow(t, label, tone) {
     subs.length ? el("span", { class: "hp", title: "서브에이전트 끝난 수 / 전체", text: `서브에이전트 ${done}/${subs.length}` }) : null,
     el("span", { class: `hs ${tone === "att" ? "warn" : runBusy(t) ? "pri" : statusTone(i.status)}`, text: label }));
 }
+// An app conversation with a session of its own (a mail, a project channel, an app's settings: /api/state `convs`) runs apart from the
+// assistant, so while its turn or its worker runs it is a row here: its title (the mail's subject, the app or project name), what it
+// does now (its run line: the tool-call intent or plan task, elapsed), one tap to that conversation in its app view (go: a mail opens in 모니터링).
+const convWebT = t => t === "web:alert" ? "alert" : t === "web:worklog" ? "worklog" : t;
+const convRunning = c => { const r = runOf(c.target); return !!r && (r.kind === "working" || runBusy(c.target)); };
+function homeConvRow(c) {
+  const t = convWebT(c.target), r = runOf(c.target), name = c.name || targetName(t), state = r.kind === "working" ? "작업 중" : "진행 중";
+  return el("button", { class: "hr", type: "button", "data-t": t, onclick: () => go("chat", t), "aria-label": `${name} · ${state} · 대화 열기` },
+    el("span", { class: "dot pri" }),
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: name })), el("span", { class: "ha", text: runText(r) })),
+    el("span", { class: "hs pri", text: state }));
+}
 // 미답장 (hub/unreplied.ts): the apps whose items still wait for the owner's reply, each one row, apart from the read/unread counts.
 function homeOwedRow(it) {
   return el("button", { class: "hr", type: "button", onclick: () => go("monitoring", it.key), "aria-label": `${it.name} · 미답장 ${it.unreplied}건` },
@@ -253,7 +265,11 @@ function renderHomeNow() {
   // A session the run line calls busy (41-runstate.js runBusy: waiting on its own worker) runs too, so its 진행 중 label sits in this section.
   const live = t => { const s = targetInfo(t).status; return s === "working" || s === "starting" || (runBusy(t) && !(isLaneT(t) && (S.lanes.find(l => l.name === laneOf(t)) || {}).pendingAsk)); };
   const runT = all.filter(live), restT = all.filter(t => !live(t));
-  const bg = workRunning(), ended = workEnded(), working = runT.length + bg.length;
+  // A conversation's own workers are listed under its row; a mail with no session whose worker is the assistant's (S.work) is that worker's row alone.
+  const mainBg = new Set(workRunning().map(w => w.id));
+  const convT = ((S && S.convs) || []).filter(c => validTarget(convWebT(c.target)) && convRunning(c) && !(runOf(c.target).work && mainBg.has(runOf(c.target).work)));
+  const convWork = convT.flatMap(c => [c, ...(c.work || []).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
+  const bg = workRunning(), ended = workEnded(), working = runT.length + convWork.length + bg.length;
   const restRow = t => homeNowRow(t, !targetInfo(t).alive ? "종료됨" : runBusy(t) ? "진행 중" : statusKo(targetInfo(t).status), "");
   clear(box).append(
     // Three kinds, three places: 답변 필요 (a decision only the owner can make), 답장 대기 (replies he owes, per app), 지금 진행 중; plain news is the 알림 card.
@@ -261,7 +277,7 @@ function renderHomeNow() {
     nyListNode(needs),
     ...(owed.length || drafts ? [el("div", { class: "hn-h" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null), el("div", { class: "hn" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : []),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), working ? el("span", { class: "sup", text: `${working}개 작업 중` }) : null),
-    el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...bg.map(workRow), ...(working ? [] : [el("div", { class: "empty", text: "진행 중인 작업이 없어요" })])),
+    el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...(working ? [] : [el("div", { class: "empty", text: "진행 중인 작업이 없어요" })])),
     ...(restT.length ? [el("div", { class: "hn-h" }, el("h2", { text: "대기 중" })), el("div", { class: "hn", "data-k": "waiting" }, ...restT.map(restRow))] : []),
     ...(ended.length ? [el("div", { class: "hn-h" }, el("h2", { text: "최근 끝난 작업" })), el("div", { class: "hn", "data-k": "ended-work" }, ...ended.map(workRow))] : []),
     endedGroup() || "");
@@ -413,10 +429,12 @@ const isWorking = t => { const i = targetInfo(t); return i.alive && (i.status ==
 // The main assistant's background work (S.work) as a row on Home: tap goes to the message that asked for it, flashed (its own detail when that message is unknown).
 async function workGo(w) {
   const t = w.target && validTarget(w.target) ? w.target : MAIN;
-  if (!w.reply_to) return openSub("orchestrator", w.id, null, w.description);
+  // A conversation session's worker (homeConvRow) is not the assistant's: its detail sheet would read the wrong session, so it opens the conversation.
+  const fallback = () => w.conv ? go("chat", t) : openSub("orchestrator", w.id, null, w.description);
+  if (!w.reply_to) return fallback();
   if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t).catch(() => {});
   const asked = ts(t).msgs.find(e => e.mid === w.reply_to);
-  if (!asked) return openSub("orchestrator", w.id, null, w.description);
+  if (!asked) return fallback();
   ntJump({ src: t, at: asked.ts });
 }
 // A running one shows only its state (owner 2026-11-01: no 중단 on the list; the conversation's send button stops it, 14-slash-commands.js),

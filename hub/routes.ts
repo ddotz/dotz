@@ -214,6 +214,14 @@ function stateRuns(): Record<string, RunState> {
 	const mailRuns = workConversationRuns(works, t => mailConversation(t, thread => mailByThread(thread)?.key));
 	return { main, ...lanesOut, ...mailRuns, ...convOut };
 }
+// The app conversations whose own session runs (/api/state `convs`, 홈 지금 진행 중 in 08-home.js): the mail's subject as its title
+// (the page may not have loaded the mail list) and the background workers that session runs now, listed under its row.
+function stateConvs(): { target: string; name?: string; work: ReturnType<typeof bgWork.list> }[] {
+	return convs.conversations().filter(c => convs.live(c)).map(c => {
+		const mail = c.primary.startsWith("mail:") ? mailByKey(c.primary.slice(5)) : undefined;
+		return { target: c.primary, ...(mail?.subject ? { name: mail.subject } : {}), work: c.bg.list().filter(w => w.status === "running").map(w => ({ ...w, target: c.primary })) };
+	});
+}
 const mainWork = (t: string | undefined) => t === "web" || t === "terminal" || !t;
 const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefined => {
 	for (let i = items.length - 1; i >= 0; i--) if (items[i]!.type === "turn_start") return items[i]!.ts;
@@ -395,7 +403,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), work_now: Date.now(), web_build: webBuild() });
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), work_now: Date.now(), web_build: webBuild() });
 		if (req.method === "GET" && url.pathname === "/api/notices") return json({ ...listNotices(Number(url.searchParams.get("limit") ?? 100)), gone: dismissedAlertAts() });
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		// Run one watch now (the web's 지금 확인 / 지금 다시 확인): the same runner the timer uses, awaited so the answer carries the new result.
