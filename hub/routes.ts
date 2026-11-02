@@ -235,7 +235,7 @@ const isMailTarget = (t: string) => /^mail:[a-z0-9._-]+$/.test(t);
 // Where a forwarded action came from (a machine name), as one short line; the event it makes carries it as `via`.
 const viaOf = (v: unknown): string | undefined => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, 40) || undefined : undefined);
 // A card's answer to where its question came from (chat, session, project chat, mail or login request): the bot's turn.
-async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: string; via?: ReturnType<typeof viaOf> }): Promise<void> {
+export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: string; via?: ReturnType<typeof viaOf> }): Promise<void> {
 	if (a.to.startsWith("auth:")) {
 		const path = `/api/auth/${a.to.slice(5)}`;
 		const res = await authRoute(new Request(`http://local${path}`, { method: "POST", body: JSON.stringify({ action: a.action }) }), new URL(`http://local${path}`));

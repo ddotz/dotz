@@ -8,7 +8,10 @@ import { parseCommand, setGatewayRestart } from "./control.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { setAskAnswer } from "./askbuttons.ts";
-import { discordGatewayAnswer } from "./approval-wire.ts";
+import { discordGatewayAnswer, webAnswer } from "./approval-wire.ts";
+import { installFanout, makeCtx, register, setAskApplier, startAll } from "./messenger.ts";
+import { discordAdapter } from "./messenger-discord.ts";
+import { projectTarget } from "./projectchat.ts";
 import { startPeerStreams } from "./peer-stream.ts";
 import { notify as pushNotify, setWatchPushOff, startPush } from "./push.ts";
 import { msg, textsToReport } from "./i18n.ts";
@@ -67,9 +70,9 @@ import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFa
 import { runningOmoWorkers } from "./bgwork.ts";
 import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
-import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue } from "./intake.ts";
+import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue, sendWeb } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
-import { applyMailStates, makeRoute, startStallSweep } from "./routes.ts";
+import { applyMailStates, deliverAnswer, makeRoute, startStallSweep } from "./routes.ts";
 import { appProxySocket } from "./app-proxy.ts";
 import { appEntries, appKeyOf, integrationContext, readAppsFile } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
@@ -235,6 +238,20 @@ setAskAnswer((target, content, picks) => {
 	const channel = target.startsWith("lane:") ? { lane: id } : target.startsWith("ch:") ? { work: id, name: discord.channels.work[id] ?? id, first: false } : target.startsWith("th:") ? { thread: id, name: discord.channels.threads[id]?.name ?? id } : (target as "chat");
 	onOwner({ id: "", channelId: "", ackChannelId: "", channel, author: "owner", content, attachments: [], picks });
 });
+// Other messengers (hub/messenger.ts): Discord is registered native, so the fan-out leaves its sends to hub/outbound.ts.
+register(discordAdapter);
+setAskApplier((id, body, login) => webAnswer(id, body, login, a => deliverAnswer({ ...a, login })));
+installFanout();
+void startAll(
+	makeCtx(async m => {
+		const id = m.target.slice(m.target.indexOf(":") + 1);
+		const thread = m.target.startsWith("th:") ? mailByThread(id) : undefined;
+		const mail = m.target.startsWith("mail:") ? mailByKey(id) : thread;
+		const conv = m.target === "alert" || m.target === "worklog" ? m.target : undefined;
+		await sendWeb({ source: m.adapter, channel: "web", text: m.text, mode: "default", login: m.author, ...(m.target.startsWith("lane:") ? { lane: id } : {}), ...(m.target.startsWith("ch:") ? { project: projectTarget(m.target, discord.channels.work) } : {}), ...(mail ? { mail } : {}), ...(conv ? { conv } : {}), ...(m.replyTo ? { replyTo: m.replyTo } : {}) });
+	}),
+).catch(e => log(`messengers failed to start: ${e}`));
+
 await discord.ensureChannels().catch(e => {
 	discord.status.error = String(e);
 	log(`ensureChannels failed: ${e}`);
