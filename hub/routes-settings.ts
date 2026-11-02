@@ -17,8 +17,11 @@ import { budgetSettings, deleteAdminKey, monthlyLimitOf, saveAdminKey, saveMonth
 import { postSettings, savePostSettings } from "./discord-post.ts";
 import { discordConnectionRoute } from "./discord-connection.ts";
 import { messengersRoute } from "./messengers-api.ts";
+import { onboardingRoute } from "./onboarding.ts";
 
 export async function routeSettings(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
+	const onboarding = await onboardingRoute(req, url);
+	if (onboarding) return onboarding;
 	const fail = (error: unknown) =>
 		error instanceof ForceRequired
 			? json({ error: error.message, requires_force: true, context_tokens: error.contextTokens }, error.status)

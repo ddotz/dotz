@@ -15,6 +15,8 @@ const realFetch: DiscordFetch = (url, init) => fetch(url, init);
 
 const API = "https://discord.com/api/v10";
 const SNOWFLAKE = /^\d{17,20}$/;
+// Application ids the developer portal issues and onboard/discord.ts reads (15-25 digits).
+const APP_ID = /^\d{15,25}$/;
 // Three dot-separated parts, as Discord issues bot tokens (same shape onboard/discord.ts reads from the developer portal).
 const TOKEN_SHAPE = /^[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{25,}$/;
 const INTENT_NOTE = "개발자 포털 > Bot > Privileged Gateway Intents > MESSAGE CONTENT를 켜 주세요";
@@ -56,22 +58,48 @@ function updateDiscord(values: Record<string, string>): void {
 	cfg.discord = { ...cfg.discord, ...values };
 }
 
-function writeToken(token: string): void {
-	const file = tokenFile();
-	mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-	writeAtomic(file, `${token}\n`, 0o600);
-	chmodSync(file, 0o600);
-	if (!cfg.discord?.token_file) updateDiscord({ token_file: file });
-}
-
 class Bad extends Error {}
 
-function save(b: Record<string, unknown>) {
+export type DiscordConfig = { token_file: string; guild: string; owner_id: string; app_id: string };
+/** The bot connection of one data dir: the live install (no dir) or a test/temporary one. A secret only ever leaves through `storeToken`. */
+export type DiscordStore = {
+	config(): DiscordConfig;
+	token(): string;
+	storeToken(token: string): void;
+	save(b: Record<string, unknown>): { changed: boolean };
+};
+
+function readDiscordConfig(dir: string | undefined): Record<string, any> {
+	try {
+		const disk = dir ? (JSON.parse(readFileSync(join(dir, "config.json"), "utf8")) as Record<string, any>) : (JSON.parse(readFileSync(CONFIG_FILE, "utf8")) as Record<string, any>);
+		return disk.discord && typeof disk.discord === "object" ? disk.discord : {};
+	} catch {
+		return {};
+	}
+}
+
+function writeDiscordConfig(dir: string | undefined, values: Record<string, string>): void {
+	if (!dir) {
+		updateDiscord(values);
+		return;
+	}
+	const file = join(dir, "config.json");
+	const disk = JSON.parse(readFileSync(file, "utf8")) as Record<string, any>;
+	disk.discord = { ...disk.discord, ...values };
+	writeAtomic(file, `${JSON.stringify(disk, null, 2)}\n`);
+}
+
+/** Validates a whole connection body before anything is written; the route and the onboarding flow share it. */
+function validate(b: Record<string, unknown>): { values: Record<string, string>; token: string | undefined } {
 	const values: Record<string, string> = {};
-	for (const [key, label] of [["guild", "서버 ID"], ["owner_id", "내 사용자 ID"]] as const) {
+	for (const [key, label, shape, note] of [
+		["guild", "서버 ID", SNOWFLAKE, "17~20자리"],
+		["owner_id", "내 사용자 ID", SNOWFLAKE, "17~20자리"],
+		["app_id", "앱 ID", APP_ID, "15~25자리"],
+	] as const) {
 		if (!(key in b)) continue;
 		const v = b[key];
-		if (typeof v !== "string" || !SNOWFLAKE.test(v.trim())) throw new Bad(`${label}는 17~20자리 숫자여야 해요`);
+		if (typeof v !== "string" || !shape.test(v.trim())) throw new Bad(`${label}는 ${note} 숫자여야 해요`);
 		values[key] = v.trim();
 	}
 	let token: string | undefined;
@@ -79,12 +107,57 @@ function save(b: Record<string, unknown>) {
 		token = typeof b.token === "string" ? b.token.trim() : "";
 		if (!TOKEN_SHAPE.test(token)) throw new Bad("봇 토큰 형식이 올바르지 않아요");
 	}
-	if (token === undefined && !Object.keys(values).length) throw new Bad("바꿀 값이 없어요: token, guild, owner_id 중 하나를 보내 주세요");
-	// Validated as a whole above; the writes follow.
-	if (token !== undefined) writeToken(token);
-	if (Object.keys(values).length) updateDiscord(values);
-	restartNeeded = true;
-	log(`discord connection saved (${[...(token !== undefined ? ["token"] : []), ...Object.keys(values)].join(", ")})`);
+	if (token === undefined && !Object.keys(values).length) throw new Bad("바꿀 값이 없어요: token, guild, owner_id, app_id 중 하나를 보내 주세요");
+	return { values, token };
+}
+
+/** The token path of a config block: its configured token_file, else DATA_DIR/secrets/discord-bot-token. */
+function tokenPathOf(dir: string | undefined, discord: Record<string, any>): string {
+	const configured = expand(String(discord?.token_file ?? ""));
+	if (configured) return configured;
+	return dir ? join(dir, "secrets", "discord-bot-token") : DEFAULT_TOKEN_FILE;
+}
+
+/** A store over one data dir. Without a dir it is the live install: writes mirror `cfg` and mark the restart. */
+export function createDiscordStore(dir?: string): DiscordStore {
+	const config = (): DiscordConfig => {
+		const d = readDiscordConfig(dir);
+		return { token_file: String(d.token_file ?? ""), guild: String(d.guild ?? ""), owner_id: String(d.owner_id ?? ""), app_id: String(d.app_id ?? "") };
+	};
+	const token = (): string => {
+		try {
+			return readFileSync(tokenPathOf(dir, readDiscordConfig(dir)), "utf8").trim();
+		} catch {
+			return "";
+		}
+	};
+	const storeToken = (value: string): void => {
+		if (!TOKEN_SHAPE.test(value)) throw new Bad("봇 토큰 형식이 올바르지 않아요");
+		const discord = readDiscordConfig(dir);
+		const file = tokenPathOf(dir, discord);
+		mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+		writeAtomic(file, `${value}\n`, 0o600);
+		chmodSync(file, 0o600);
+		if (!discord.token_file) writeDiscordConfig(dir, { token_file: file });
+		if (!dir) restartNeeded = true;
+	};
+	const save = (b: Record<string, unknown>): { changed: boolean } => {
+		const { values, token: given } = validate(b);
+		const before = config();
+		const changed = given !== undefined || Object.entries(values).some(([k, v]) => (before as Record<string, string>)[k] !== v);
+		// Validated as a whole above; the writes follow.
+		if (given !== undefined) storeToken(given);
+		if (Object.keys(values).length) writeDiscordConfig(dir, values);
+		if (changed && !dir) restartNeeded = true;
+		log(`discord connection saved (${[...(given !== undefined ? ["token"] : []), ...Object.keys(values)].join(", ")})`);
+		return { changed };
+	};
+	return { config, token, storeToken, save };
+}
+
+/** Writes a connection body through the validated path (the HTTP route of the live install). */
+export function saveDiscordConnection(b: Record<string, unknown>): { changed: boolean } {
+	return createDiscordStore().save(b);
 }
 
 // isAdmin of onboard/discord.ts over an injectable fetch: does one of the bot's roles in the server carry Administrator?
@@ -124,7 +197,7 @@ export async function discordConnectionRoute(req: Request, url: URL, doFetch: Di
 		if (req.method === "GET") return json(view());
 		if (req.method === "PUT") {
 			try {
-				save(await body(req));
+				saveDiscordConnection(await body(req));
 			} catch (error) {
 				if (error instanceof Bad) return json({ error: error.message }, 400);
 				throw error;
