@@ -75,10 +75,11 @@ Outgoing Webhook 사용 방법은 JANDI 안내를 참고합니다: https://suppo
 - 본인이 쓴 글 중 `dotz <내용>` 또는 `/dotz <내용>`(키워드는 `keyword`)으로 시작하는 것만 메인 대화로 전달됩니다. 메모, 웹훅 글, 다른 사람 글은 무시합니다.
 - 켤 때의 마지막 메시지부터 읽고, 읽은 위치를 `<DATA_DIR>/messengers/jandi-selfchat.json`에 남겨 다시 시작해도 같은 명령을 두 번 처리하지 않습니다.
 - 답은 그 방의 Incoming Webhook으로 올라옵니다. `rooms`에 `kind: "main"` 방을 하나 두고 `incoming_url`에 나와의 대화의 Incoming Webhook URL을 넣습니다(`outgoing_token`은 비워 둡니다).
+- 한 계정의 나와의 대화를 컴퓨터 여러 대가 함께 쓸 때는 컴퓨터마다 `keyword`를 다르게 하고(예: 집 `dotz`, 회사 `work`), `reply_prefix`(예: `[work]`)를 적으면 그 컴퓨터의 답이 그 머리말로 시작해 서로 구분됩니다.
 - 세션은 dotz 비밀 `jandi-session`(`{"refresh_token": "..."}`, 암호화 저장)에서 읽습니다. 비밀번호는 저장하지 않습니다. 토큰이 바뀌면 새 값으로 다시 암호화해 저장합니다.
 
 ```json
-"self_chat": { "enabled": true, "team_id": 123, "room_id": 456, "member_id": 789, "bot_id": 321, "keyword": "dotz", "interval_ms": 3000 }
+"self_chat": { "enabled": true, "team_id": 123, "room_id": 456, "member_id": 789, "bot_id": 321, "keyword": "dotz", "reply_prefix": "", "interval_ms": 3000 }
 ```
 
 **주의**: JANDI가 공개하지 않은 웹 클라이언트 API를 씁니다. JANDI가 바뀌면 동작이 멈출 수 있고, 그때는 게이트웨이 로그에 `jandi self-chat:` 오류가 남고, 다시 시도하는 간격이 최대 5분까지 늘어납니다. 지금은 설정 파일로만 켤 수 있습니다.
