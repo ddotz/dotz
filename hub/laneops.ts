@@ -3,7 +3,7 @@ import { type Lane, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus,
 import { featurePrompt } from "./featuredirs.ts";
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { withReplyLine, msg, modeFile, lang } from "./i18n.ts";
-import { worktreeNote, laneWorktree, dropWorktree, withWorktree } from "./lanetree.ts";
+import { worktreeNote, laneWorktree, dropWorktree, withWorktree, unlanded } from "./lanetree.ts";
 import { checkBrief } from "./lanegates.ts";
 import { newCtx, type Compaction, requestCompact } from "./context.ts";
 import { join } from "node:path";
@@ -144,12 +144,16 @@ function known(name: string): Lane {
 
 // A lane's "done" report is only its own claim (OMH evidence labels: reported vs verified); "verified" is set here, by the
 // orchestrator, after it checked the Done-when itself, and any later report that is not [done] withdraws the claim.
-export function verifyLane(name: string, evidence: string): void {
+// A lane whose lane/<name> branch is not in its base yet is refused (dori done-flow.ts:54): "done" must mean landed. `force`
+// is for work that stays unmerged on purpose (a PR awaiting review); the evidence then says why.
+export function verifyLane(name: string, evidence: string, force = false): void {
 	const lane = known(name);
 	if (lane.claim?.state !== "reported") throw new Error(`lane ${name} has no reported-done claim to verify${lane.claim ? " (already verified)" : ""}`);
 	const text = evidence.trim();
 	if (!text) throw new Error("verify needs evidence: what was run and its result");
 	if (lane.claim.problems?.length) throw new Error(`task metadata contradicts lane ${name}'s [done] (${lane.claim.problems.join("; ")}); have the lane redo or explain it, then verify its next [done]`);
+	const open = lane.worktree && !force ? unlanded(lane.worktree) : undefined;
+	if (open) throw new Error(`lane ${name} is not landed: ${open}. Have it land first (rebase + ff-merge into ${lane.worktree!.base}), or verify with force=true and say in text why it stays unmerged`);
 	lane.claim = { state: "verified", at: now(), evidence: text.slice(0, 1000) };
 	persist(lane);
 }

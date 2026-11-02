@@ -4,7 +4,8 @@ import { log, now, paths } from "./config.ts";
 import * as discord from "./discord.ts";
 import { msg } from "./i18n.ts";
 import { emit, emitDelivery } from "./events.ts";
-import { setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler } from "./lanes.ts";
+import { setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler, setVerifiedHandler } from "./lanes.ts";
+import { laneVerified } from "./notices.ts";
 import { orch, steer as steerOrchestrator } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { createLaneRelay } from "./lanerelay.ts";
@@ -16,6 +17,7 @@ import { dropForLine } from "./forline.ts";
 export const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n), steer: text => steerOrchestrator(msg().laneReportSteer(text)) });
 
 export function installLaneHandlers(): void {
+	setVerifiedHandler((name, text) => laneVerified(name, text));
 	setReportHandler((lane, raw, answering) => {
 		noteHandoffLeak(`lane:${lane.name}`, raw);
 		const text = stripHandoff(raw);
