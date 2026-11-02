@@ -78,7 +78,7 @@ function fbEditor(L, F, list, i) {
   return el("li", { class: "fbe", "aria-label": `${nm} 편집` },
     el("div", { class: "fbe-grid" },
       selectField("모델", nm, () => modelItems(`fbe:${L.id}`, base, only), base, v => setModel(fbBase(v), level)),
-      selectField("추론 강도", level ? thinkKo(level) : "기본 모델과 같게", [{ value: "", label: "기본 모델과 같게" }, ...(M.thinking_levels || []).map(lv => ({ value: lv, label: thinkKo(lv) }))], level, v => setModel(base, v))),
+      selectField("추론 강도", level ? thinkKo(level) : "기본 모델과 같게", [{ value: "", label: "기본 모델과 같게" }, ...effortItems(base, level)], level, v => setModel(base, v))),
     seg("사용", [["on", "켜기"], ["off", "끄기"]], d.enabled === false ? "off" : "on", v => { d.enabled = v === "on"; redraw(); }),
     d.key_file && keyable && L.id !== "workers" ? seg("서브에이전트·세션", [["", "API 키 사용 안 함"], ["on", "같은 키 사용"]], d.workers ? "on" : "", v => { d.workers = v === "on" ? true : undefined; redraw(); }) : null,
     keyable ? seg("사용 방식", [["login", "구독 (로그인)"], ["key", "API 키"]], d.key_file ? "key" : "login", v => { if (v === "login") { d.key_file = undefined; redraw(); } else pickKey(); }) : null,
