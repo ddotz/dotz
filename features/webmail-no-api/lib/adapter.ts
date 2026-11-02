@@ -4,6 +4,7 @@
 import { endpointUrl, getPath, parseJson, requestInit, type Endpoint, type SiteSpec } from "./spec.ts";
 import { headers, fetchList, type LoginState } from "./session.ts";
 import { type Ctx } from "./config.ts";
+import { type DraftFile } from "./upload.ts";
 
 export type Mail = { id: string; from: string; subject: string; time: string; read: boolean; /** the site says he replied (spec field `answered`); missing = the site does not say */ replied?: boolean };
 export type Detail = { id: string; body: string; html?: string; raw: unknown };
@@ -157,14 +158,14 @@ export async function search(ctx: Ctx, spec: SiteSpec, q: string): Promise<Mail[
 	return mapMails({ ...spec, list: { ...spec.list, listPath } }, raw);
 }
 
-export type Draft = { id: string; to: string; cc?: string; subject: string; body: string; created: string };
+export type Draft = { id: string; to: string; cc?: string; subject: string; body: string; created: string; files?: DraftFile[] };
 
 // Build a draft record only. This function never contacts the server; sending is a separate, owner-approved step
 // (bin/mail.ts send, guarded) so nothing leaves the account without an explicit OK.
-export function makeDraft(now: number, input: { to: string; cc?: string; subject: string; body: string }): Draft {
+export function makeDraft(now: number, input: { to: string; cc?: string; subject: string; body: string; files?: DraftFile[] }): Draft {
 	const stamp = new Date(now).toISOString().replace(/[-:T]/g, "").slice(0, 12);
 	const rand = crypto.getRandomValues(new Uint16Array(1))[0].toString(16).padStart(4, "0");
-	return { id: `d-${stamp}-${rand}`, to: input.to.trim(), ...(input.cc ? { cc: input.cc.trim() } : {}), subject: input.subject, body: input.body, created: new Date(now).toISOString() };
+	return { id: `d-${stamp}-${rand}`, to: input.to.trim(), ...(input.cc ? { cc: input.cc.trim() } : {}), subject: input.subject, body: input.body, created: new Date(now).toISOString(), ...(input.files?.length ? { files: input.files } : {}) };
 }
 
 // Minimal, dependency-free HTML -> readable text: drop script/style, turn block tags into newlines, strip remaining tags,

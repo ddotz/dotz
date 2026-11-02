@@ -4,10 +4,17 @@
 import type { SiteSpec } from "../lib/spec.ts";
 
 export type FakeMail = { id: number; from: string; subject: string; date: string; read: boolean; html: string };
+// One file as the fake site received it: parts arrive under one upload id and are hashed as they come in.
+export type FakeUpload = { name: string; bytes: number; parts: number; sha: string; big: boolean; contentLengths: (string | null)[]; maxPart: number };
 
 export function startFakeServer(initial: FakeMail[] = [], opts: { xssi?: boolean } = {}) {
 	let mails = [...initial];
 	let loggedOut = false;
+	let failPart: number | undefined;
+	let status = "done";
+	const pending = new Map<string, { hasher: Bun.CryptoHasher; up: FakeUpload }>();
+	const uploads: FakeUpload[] = [];
+	const sent: any[] = [];
 	const etag = () => `W/"${mails.length}-${Math.max(0, ...mails.map((m) => m.id))}"`;
 
 	const authed = (req: Request): boolean => !loggedOut && (req.headers.get("cookie") ?? "").includes("session=good");
@@ -39,7 +46,30 @@ export function startFakeServer(initial: FakeMail[] = [], opts: { xssi?: boolean
 				const m = mails.find((x) => x.id === id);
 				return m ? Response.json({ data: { content: m.html } }) : new Response("not found", { status: 404 });
 			}
-			if (url.pathname.endsWith("/send") && req.method === "POST") return Response.json({ ok: true });
+			if (url.pathname.startsWith("/mail/upload") && req.method === "POST") {
+				const contentLength = req.headers.get("content-length");
+				const form = await req.formData();
+				const index = Number(form.get("index"));
+				if (index === failPart) return new Response("part refused", { status: 500 });
+				const part = form.get("file") as File;
+				const uploadId = String(form.get("upload") || `u${pending.size + uploads.length + 1}`);
+				const cur = pending.get(uploadId) ?? { hasher: new Bun.CryptoHasher("sha256"), up: { name: part.name, bytes: 0, parts: 0, sha: "", big: form.get("big") === "1", contentLengths: [], maxPart: 0 } };
+				pending.set(uploadId, cur);
+				const bytes = new Uint8Array(await part.arrayBuffer());
+				cur.hasher.update(bytes);
+				Object.assign(cur.up, { bytes: cur.up.bytes + bytes.length, parts: cur.up.parts + 1, maxPart: Math.max(cur.up.maxPart, bytes.length) });
+				cur.up.contentLengths.push(contentLength);
+				if (index < Number(form.get("count")) - 1) return Response.json({ uploadId });
+				pending.delete(uploadId);
+				cur.up.sha = cur.hasher.digest("hex");
+				uploads.push(cur.up);
+				const id = `f${uploads.length}`;
+				return Response.json({ uploadId, file: { id, status, size: cur.up.bytes, ...(cur.up.big ? { link: `${url.origin}/dl/${id}` } : {}) } });
+			}
+			if (url.pathname.endsWith("/send") && req.method === "POST") {
+				sent.push(await req.json());
+				return Response.json({ ok: true });
+			}
 			return new Response("not found", { status: 404 });
 		},
 	});
@@ -54,7 +84,14 @@ export function startFakeServer(initial: FakeMail[] = [], opts: { xssi?: boolean
 		list: { path: "/mail/mboxes/{mailbox}/mails", mailbox: "100", listPath: "mails", fields: { id: "id", from: "from", subject: "subject", time: "date", read: "read" } },
 		read: { path: "/mail/mails/{id}", bodyPath: "html", bodyIsHtml: true },
 		search: { path: "/mail/search", queryParam: "q" },
-		send: { path: "/mail/send", method: "POST", draftOnly: true },
+		send: {
+			path: "/mail/send", method: "POST", draftOnly: true,
+			upload: {
+				path: "/mail/upload", form: { index: "{index}", count: "{count}", upload: "{upload}" }, chunkBytes: 1 << 20, uploadIdPath: "uploadId",
+				idPath: "file.id", statusPath: "file.status", okStatus: "^done$",
+				large: { minBytes: 4 << 20, path: "/mail/upload/big", form: { big: "1" }, linkPath: "file.link" },
+			},
+		},
 	};
 
 	return {
@@ -66,6 +103,14 @@ export function startFakeServer(initial: FakeMail[] = [], opts: { xssi?: boolean
 			loggedOut = v;
 		},
 		addMail: (m: FakeMail) => mails.unshift(m),
+		uploads,
+		sent,
+		failPart: (i: number | undefined) => {
+			failPart = i;
+		},
+		setUploadStatus: (s: string) => {
+			status = s;
+		},
 		setMails: (m: FakeMail[]) => {
 			mails = [...m];
 		},

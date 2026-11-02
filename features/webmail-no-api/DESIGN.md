@@ -64,7 +64,7 @@ Like the owner's company mail on the Mac mini, a site is a mail reader of one in
 - 연결 끊김: the watches are the instance's own, and a logged-out poll always fails (`DOTZ_FAIL webmail-login`, the session watch fails its
   `expect`), so after two failing runs that row (never the default 메일 row) shows "연결 끊김 · <since> · 다시 로그인 필요"
   (hub/watch-status.ts) until a poll passes. A check that alerts by itself and exits 0 prints `DOTZ_DISCONNECTED since=<ISO>` instead.
-- Files: the adapter saves a text draft only, so a site cannot attach. A reply that promises a file, or a draft with staged files, gets
+- Files: the reply-drafts card treats a site as unable to attach (bin/mail.ts can send files only through a spec's `send.upload`, below). A reply that promises a file, or a draft with staged files, gets
   `> 첨부: 없음 (이 메일은 파일을 붙여 보낼 수 없어요 · 빠진 파일: …)` and a draft that holds files is not sent. A site whose replies must carry
   files (the Mac mini's company mail: reply or forward with files taken from other mails, a pre-send attachment check) needs a site plugin with
   `reply` + `repliesWithFiles` instead of this feature.
@@ -86,6 +86,7 @@ features/webmail-no-api/
   lib/config.ts     paths (custom/webmail/<site>), per-site config, injected Ctx
   lib/session.ts    logged-in/out classification, conditional keep-alive request
   lib/adapter.ts    generic list/read/search + makeDraft (never sends), html->text
+  lib/upload.ts     a draft's files streamed to send.upload in parts, accepted-status check
   lib/capture.ts    the adapter generator: a recording -> a SiteSpec proposal
   lib/cookies.ts    live cookie header from the Aside store (live scripts only; tests inject a fake)
   lib/gateway.ts    local gateway API (watches, the evolving progress message), hub token read at call time
@@ -120,6 +121,23 @@ The orchestrator writes that marker only after the owner says OK (ㅇㅇ/보내)
 marker and the draft are removed after a send. An install that wants a hard, hook-enforced gate can add a `deny` in a
 custom plugin that blocks the raw send command until an OK token appears in the thread; the shipped default is the in-code
 TTL guard plus the approval convention.
+
+## Large attachments (lib/upload.ts, spec `send.upload`)
+
+Learned from a hand-built sender on the owner's Mac mini: putting file bytes into a command line fails past ~1MB (E2BIG, a
+106MB send), and the site turned large files into download links and needed every file finished before send. Generalized:
+
+- `draft --file <path>` stores path, name and size only. After the approval gate, `send` streams each file from disk
+  (`Bun.file().slice().stream()`) into a multipart body with an exact Content-Length, one request per `chunkBytes` part
+  (or one part), carrying `form` fields with `{name} {size} {index} {count} {offset} {chunk} {upload}` tokens; the site's
+  upload id (`uploadIdPath`) links the parts.
+- A file is accepted only if its last response has `idPath` and a `statusPath` value matching `okStatus`. A refused part,
+  a bad status, a changed file size or a spec without `send.upload` stops before the send call: nothing leaves half-attached,
+  and the draft and approval stay for a retry.
+- `large: {minBytes, path?, form?, linkPath?}`: files at or over `minBytes` go to the site's big-attachment upload and are
+  sent as `{link: true, url?}`; a `linkPath` value in any response also marks a link.
+- The send body lists `{name, size, id, link?, url?}` under `sendField` (default `attachments`).
+- reply-drafts still treats webmail sites as unable to attach (`senders.ts canAttach`); that card path is unchanged.
 
 ## Unusual sites handled
 
