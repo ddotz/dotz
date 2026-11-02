@@ -17,6 +17,7 @@ const DONE: Work = { id: "st_done", description: "요약 쓰기", status: "done"
 let WORK: Work[] = [RUNNING, FAILED, DONE];
 let RUNS: Record<string, Record<string, unknown>> = {};
 let ORCH = "idle";
+let CONVS: Record<string, unknown>[] = [];
 const LANES = [{ name: "fix", title: "기술부채 정리", status: "idle", startedAt: agoIso(60), lastText: "The WebView worker is done", model: "anthropic/claude-opus-5-5" }];
 const posts: string[] = [];
 // A POST the page sends, awaited by path: subscribed before the click, resolved by the fixture server when it arrives.
@@ -34,7 +35,7 @@ const server = Bun.serve({
 		if (asset) return asset;
 		if (req.method === "POST" && /^\/api\/(workers|lanes|orchestrator)\//.test(p)) { posts.push(p); for (const [w, res] of waiters) if (w === p) res(); return json({ ok: true }); }
 		if (p === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: ORCH, lastText: "ok" }, lanes: LANES, terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0, work: WORK, work_now: Date.now(), runs: RUNS });
+		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: ORCH, lastText: "ok" }, lanes: LANES, terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0, work: WORK, convs: CONVS, work_now: Date.now(), runs: RUNS });
 		if (p === "/api/notices") return json({ unread: 0, items: [] });
 		if (p === "/api/monitors") return json({ items: [] });
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: [] });
@@ -106,6 +107,40 @@ test("홈: a session the run line calls 진행 중 (waiting on its own worker) i
 		expect(await v.evaluate(`document.querySelector('#home-now .hn-h .sup').textContent`)).toBe("1개 작업 중");
 	} finally {
 		LANES.pop();
+	}
+}, 20_000);
+
+test("홈: an app conversation whose own session runs is a row of 지금 진행 중 with its title, run line and worker, opens in its app view, and leaves when idle", async () => {
+	WORK = [];
+	CONVS = [
+		{ target: "mail:company-67180972", name: "회의록 흐름도 요청", work: [{ id: "st_conv", description: "흐름도 HTML 만들기", status: "running", started_at: ago(4), model: "Opus 5.5 medium" }] },
+		{ target: "settings:youtube", work: [] },
+	];
+	RUNS = { main: { kind: "idle" }, "mail:company-67180972": { kind: "working", since: agoIso(6), detail: "흐름도 그리기" }, "settings:youtube": { kind: "done", since: agoIso(30) } };
+	try {
+		const v = await boot("#home");
+		await waitFor(v, `current === "home" && document.querySelector('#home-now .hn[data-k="running"] [data-t="mail:company-67180972"]')`);
+		const s = await sections(v);
+		expect(s.running).toHaveLength(2);
+		expect(s.running![0]).toContain("회의록 흐름도 요청");
+		expect(s.running![0]).toContain("작업 중 · 흐름도 그리기 · 6분");
+		expect(s.running![0]).not.toContain("company-67180972");
+		expect(s.running![1]).toContain("흐름도 HTML 만들기");
+		expect(s.running![1]).toContain("Opus 5.5 medium");
+		expect(s.running!.join("|")).not.toContain("settings:youtube");
+		// same row shape as the others: no 중단 on the list
+		expect(await v.evaluate(`document.querySelectorAll('#home-now .hn[data-k="running"] button').length`)).toBe(2);
+		await v.evaluate(`(document.querySelector('#home-now [data-t="mail:company-67180972"]').click(), 0)`);
+		await waitFor(v, `current === "chat" && target === "mail:company-67180972"`);
+		expect(await v.evaluate(`location.hash`)).toBe("#monitoring/c:mail%3Aacme-67180972");
+		// the turn ended: the row is gone on the next state refresh
+		RUNS = { main: { kind: "idle" }, "mail:company-67180972": { kind: "done", since: agoIso(0) } };
+		CONVS = [{ target: "mail:company-67180972", name: "회의록 흐름도 요청", work: [] }];
+		await v.evaluate(`(go("home"), refreshState().then(() => true))`);
+		await waitFor(v, `current === "home" && !document.querySelector('#home-now [data-t="mail:company-67180972"]')`);
+		expect((await sections(v)).running).toEqual(["진행 중인 작업이 없어요"]);
+	} finally {
+		CONVS = [];
 	}
 }, 20_000);
 
