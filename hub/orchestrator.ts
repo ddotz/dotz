@@ -171,6 +171,11 @@ export function createOrchestrator(opts: OrchOpts) {
 	function setTurnHeader(fn: () => string): void {
 		turnHeader = fn;
 	}
+	// What the usage-limit resume note adds: the background workers that stalled meanwhile (outbound.ts, bgwork.ts takeStalled).
+	let resumeExtra: () => string = () => "";
+	function setResumeExtra(fn: () => string): void {
+		resumeExtra = fn;
+	}
 	function sendOwner(text: string, header = false): void {
 		settleRevert(false);
 		const nudge = retainNext ? `\n\n${msg().retainNudge}` : "";
@@ -621,7 +626,8 @@ export function createOrchestrator(opts: OrchOpts) {
 			// retry that hits the limit again loses nothing.
 			const m = msg();
 			settleRevert(false);
-			proc?.send(owner ? m.orchProvider(held.length) : m.orchRate(held.length), "followUp");
+			const stalled = owner ? "" : resumeExtra();
+			proc?.send(owner ? m.orchProvider(held.length) : `${m.orchRate(held.length)}${stalled ? `\n\n${stalled}` : ""}`, "followUp");
 			armWatchdog();
 		};
 		const mine = (resumeTimer = setTimeout(fire, retry));
@@ -1056,7 +1062,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		return true;
 	}
 
-	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, heldCount: () => held.length + unstarted.length, turnFailed: () => turnFailed };
+	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setResumeExtra, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, heldCount: () => held.length + unstarted.length, turnFailed: () => turnFailed };
 }
 export type Orchestrator = ReturnType<typeof createOrchestrator>;
 

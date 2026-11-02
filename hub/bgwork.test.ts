@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createBgWork, FINISHED_KEEP_MS, HANDOVER_AFTER_MS, type OpenDeferred, retryText, runningOmoWork, workConversation, workModel } from "./bgwork.ts";
+import { createBgWork, FINISHED_KEEP_MS, HANDOVER_AFTER_MS, STALL_ERROR_MS, type OpenDeferred, retryText, runningOmoWork, workConversation, workModel } from "./bgwork.ts";
 
 const ROOT = "01a159d6-b330-71dd-b28a-301dd01d6031";
 const T0 = Date.parse("2026-10-21T06:00:00.000Z");
@@ -211,4 +211,67 @@ test("a failure a later turn took up is handled; one no turn took up is handed b
 	expect(handed).toEqual(["st_fail"]);
 	ended = T0 + 10_001 + HANDOVER_AFTER_MS;
 	expect(work.list()[0]).toMatchObject({ id: "st_fail", status: "failed", handled: true });
+});
+
+// OmO's task log (logs/<id>.jsonl) and a worker transcript, each stamped with the time it was last written.
+const activity = (id: string, events: string[], logAt: number, transcriptAt: number) => {
+	const store = join(dir, "projects", "p1", "senpi-task");
+	const logs = join(store, "logs");
+	const sessions = join(store, "children", id, "sessions", id);
+	mkdirSync(logs, { recursive: true });
+	mkdirSync(sessions, { recursive: true });
+	const log = join(logs, `${id}.jsonl`);
+	writeFileSync(log, events.map(type => JSON.stringify({ type, payload: type === "child_error" ? { message: "The anthropic-subscription account usage limit has been reached (resets 5:20pm (Asia/Seoul) (rate_limit))." } : {} })).join("\n") + "\n");
+	utimesSync(log, logAt / 1000, logAt / 1000);
+	const transcript = join(sessions, "2026-10-21T06-00-00-000Z_x.jsonl");
+	writeFileSync(transcript, "{}\n");
+	utimesSync(transcript, transcriptAt / 1000, transcriptAt / 1000);
+};
+
+test("a worker whose run ended on a usage limit but stays running (st_01a19af7) is stalled: not counted, its session woken once", () => {
+	record("st_lim", { spawn_spec: { cwd: "/tmp/wt-x", isolation: true } });
+	activity("st_lim", ["tool_execution", "assistant_message", "child_error"], T0 + 70_000, T0 + 60_000);
+	let t = T0 + 70_000 + STALL_ERROR_MS - 1;
+	let busy = true;
+	const woke: string[] = [];
+	const lines: string[] = [];
+	const work = createBgWork({ sessionFile: () => session, deferred: () => [], now: () => t, log: m => lines.push(m), busy: () => busy, stalled: w => woke.push(w.id) });
+	// A retry or fallback may still follow the error for a moment.
+	expect(work.running()).toBe(1);
+	t += 2;
+	expect(work.running()).toBe(0);
+	expect(work.list()[0]).toMatchObject({ id: "st_lim", status: "stalled", ended_at: T0 + 70_000, workdir: "/tmp/wt-x", error: expect.stringContaining("usage limit") });
+	expect(woke).toEqual([]);
+	busy = false;
+	for (let i = 0; i < 3; i++) (work.list(), work.running());
+	expect(woke).toEqual(["st_lim"]);
+	expect(lines.filter(l => l.includes("st_lim stalled"))).toHaveLength(1);
+	expect(work.takeStalled()).toEqual([]);
+});
+
+test("an active worker is running; one silent for the idle limit is stalled", () => {
+	record("st_act");
+	record("st_idle");
+	const t = T0 + 30 * 60_000;
+	activity("st_act", ["child_error", "retry_fallback_applied", "tool_execution"], t - 60_000, t - 30_000);
+	activity("st_idle", ["tool_execution"], t - 16 * 60_000, t - 20 * 60_000);
+	const woke: string[] = [];
+	const work = createBgWork({ sessionFile: () => session, deferred: () => [], now: () => t, stallMs: 15 * 60_000, stalled: w => woke.push(w.id) });
+	expect(work.list().map(w => [w.id, w.status, w.reason])).toEqual([["st_act", "running", undefined], ["st_idle", "stalled", "16분째 활동이 없어요"]]);
+	expect(work.running()).toBe(1);
+	expect(woke).toEqual(["st_idle"]);
+});
+
+test("while the session is paused on a usage limit no wake goes out; its resume note takes the stalled worker once", () => {
+	record("st_lim");
+	activity("st_lim", ["child_error"], T0, T0);
+	let paused = true;
+	const woke: string[] = [];
+	const work = createBgWork({ sessionFile: () => session, deferred: () => [], now: () => T0 + STALL_ERROR_MS, paused: () => paused, stalled: w => woke.push(w.id) });
+	expect(work.running()).toBe(0);
+	expect(work.takeStalled().map(w => w.id)).toEqual(["st_lim"]);
+	paused = false;
+	work.list();
+	expect(woke).toEqual([]);
+	expect(work.takeStalled()).toEqual([]);
 });
