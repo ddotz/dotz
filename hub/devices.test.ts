@@ -303,7 +303,64 @@ describe("sessions and storage", () => {
 		const url = new URL(`${ORIGIN}/api/devices`);
 		const list = (await (await t.d.apiRoute(new Request(url), url))!.json()) as Record<string, unknown>[];
 		expect(list).toHaveLength(1);
-		expect(Object.keys(list[0]!).sort()).toEqual(["created", "id", "last_used", "name"]);
+		expect(Object.keys(list[0]!).sort()).toEqual(["created", "current", "id", "last_used", "name"]);
+	});
+});
+
+describe("the settings screen's calls", () => {
+	const call = async (t: ReturnType<typeof fresh>, method: string, path: string, opts: { token?: string; body?: unknown } = {}): Promise<Response> => {
+		const url = new URL(`${ORIGIN}${path}`);
+		const headers: Record<string, string> = { "Content-Type": "application/json", ...(opts.token ? { cookie: `dotz_dev=${opts.token}` } : {}) };
+		const req = new Request(url, { method, headers, ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}) });
+		// The routes.ts order: pairing paths first, then the gate (a device session in cloudflare mode), then these calls.
+		const open = await t.d.pairRoute(req.clone(), url);
+		if (open) return open;
+		if (!cloudflareGate({ device: await t.d.verifySession(req), accessConfigured: false, access: false })) return t.d.denied(req, url);
+		return (await t.d.apiRoute(req, url)) ?? new Response("not found", { status: 404 });
+	};
+
+	test("the list marks the caller's own device", async () => {
+		const t = fresh();
+		const a = await Authenticator.make(-7), b = await Authenticator.make(-7);
+		const ta = await t.pair(a);
+		await t.pair(b);
+		const list = (await (await call(t, "GET", "/api/devices", { token: ta })).json()) as { id: string; current: boolean }[];
+		expect(list.map(d => [d.id, d.current])).toEqual([[b64u(a.credId), true], [b64u(b.credId), false]]);
+	});
+
+	test("rename and unpair work for a paired device and are refused to an unpaired request", async () => {
+		const t = fresh();
+		const a = await Authenticator.make(-7), b = await Authenticator.make(-7);
+		const ta = await t.pair(a);
+		const tb = await t.pair(b);
+		const bid = encodeURIComponent(b64u(b.credId));
+		for (const [method, path, body] of [["PATCH", `/api/devices/${bid}`, { name: "훔친 이름" }], ["DELETE", `/api/devices/${bid}`, undefined], ["POST", "/api/devices/code", {}], ["GET", "/api/devices", undefined]] as const) {
+			const r = await call(t, method, path, { body, token: "A".repeat(43) });
+			expect([method, r.status, r.headers.get("x-dotz-pair")]).toEqual([method, 403, "1"]);
+		}
+		expect(t.d.list().map(d => d.name)).toEqual(["Test phone", "Test phone"]);
+		const renamed = await call(t, "PATCH", `/api/devices/${bid}`, { token: ta, body: { name: "  회사 노트북\n" } });
+		expect(((await renamed.json()) as { name: string }).name).toBe("회사 노트북");
+		expect(t.make().list().find(d => d.id === b64u(b.credId))!.name).toBe("회사 노트북");
+		expect((await call(t, "PATCH", `/api/devices/${bid}`, { token: ta, body: { name: " " } })).status).toBe(400);
+		expect((await call(t, "DELETE", `/api/devices/${bid}`, { token: ta })).status).toBe(200);
+		expect((await call(t, "GET", "/api/devices", { token: tb })).status).toBe(403);
+	});
+
+	test("a code issued on screen pairs a new device once and shares the hourly limit with /pair", async () => {
+		const t = fresh();
+		const ta = await t.pair(await Authenticator.make(-7));
+		const sentBefore = t.sent.length;
+		const r = await call(t, "POST", "/api/devices/code", { token: ta });
+		const o = (await r.json()) as { code: string; minutes: number; url: string };
+		expect([r.status, o.minutes, o.url, /^\d{6}$/.test(o.code)]).toEqual([200, 10, `${ORIGIN}/pair`, true]);
+		expect(t.sent.length).toBe(sentBefore);
+		expect((await t.post("/api/pair/begin", { code: o.code })).status).toBe(200);
+		expect((await t.post("/api/pair/begin", { code: o.code })).status).toBe(403);
+		// pair() used one code; this is the third this hour
+		expect((await call(t, "POST", "/api/devices/code", { token: ta })).status).toBe(200);
+		expect((await call(t, "POST", "/api/devices/code", { token: ta })).status).toBe(429);
+		expect((await t.post("/api/pair/code")).status).toBe(429);
 	});
 });
 
@@ -351,7 +408,7 @@ describe("the gate", () => {
 
 	test("only the pairing paths are public", async () => {
 		const t = fresh();
-		for (const [method, path] of [["GET", "/api/state"], ["POST", "/api/devices"], ["POST", "/api/pair/other"], ["GET", "/api/pair/code"]] as const) {
+		for (const [method, path] of [["GET", "/api/state"], ["POST", "/api/devices"], ["POST", "/api/pair/other"], ["GET", "/api/pair/code"], ["GET", "/api/devices"], ["POST", "/api/devices/code"], ["PATCH", "/api/devices/x"], ["DELETE", "/api/devices/x"]] as const) {
 			const url = new URL(`${ORIGIN}${path}`);
 			expect(await t.d.pairRoute(new Request(url, { method }), url)).toBeUndefined();
 		}
