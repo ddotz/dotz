@@ -4,9 +4,9 @@ dotz는 웹앱의 대화와 같은 대화를 메신저로도 주고받습니다.
 
 ## 어디서 설정하는가
 
-웹앱의 **설정 -> 메신저** 화면에서 메신저마다 연결 상태, 말을 걸 수 있는 사람(허용 목록), 방(채팅), 연결 테스트를 다룹니다.
+웹앱의 **설정**에 메신저마다 자기 줄이 있습니다(Discord, JANDI, Slack, Telegram). 줄을 열면 연결 상태, 알림, 방(채팅), 연결 테스트를 다루고, **연결**을 누르면 온보딩이 토큰·웹훅·채널을 준비합니다.
 
-- 토큰과 웹훅 URL 같은 비밀값은 화면에 다시 나타나지 않고 "설정됨" 여부만 보입니다. 비워 두고 저장하면 기존 값이 유지됩니다.
+- 토큰과 웹훅 URL 같은 비밀값은 화면에 다시 나타나지 않고 "설정됨" 여부만 보입니다. 직접 고칠 때는 화면의 **직접 입력**을 엽니다.
 - 잘못된 값이 하나라도 있으면 저장 전체가 거부되고 아무것도 바뀌지 않습니다.
 - 설정 파일은 `<DATA_DIR>/messengers/` 아래에 권한 0600으로 저장됩니다.
 
@@ -14,9 +14,12 @@ dotz는 웹앱의 대화와 같은 대화를 메신저로도 주고받습니다.
 
 | 메신저 | 받는 방식 | 안내 |
 |---|---|---|
-| Discord | 봇이 Discord에 접속 | 아래 "Discord" 절 |
-| JANDI (사내 설치형) | 사내망 웹훅 | [jandi.ko.md](jandi.ko.md) |
-| Slack, Telegram | agent-messenger 패키지 | [agent-messenger.ko.md](agent-messenger.ko.md) |
+| Discord | 봇이 Discord에 접속 | [discord.md](discord.md) |
+| JANDI (사내 설치형) | 사내망 웹훅 | [jandi.md](jandi.md) |
+| Slack | 봇 토큰으로 보내기 | [slack.md](slack.md) |
+| Telegram | 봇 토큰 + getUpdates | [telegram.md](telegram.md) |
+
+다른 서비스는 agent-messenger 패키지로 붙일 수 있습니다: [agent-messenger.ko.md](agent-messenger.ko.md).
 
 ### Discord
 
@@ -24,13 +27,13 @@ dotz는 웹앱의 대화와 같은 대화를 메신저로도 주고받습니다.
 2. 봇 토큰을 설치 과정(`setup`)에 넣고, 출력된 초대 링크로 서버에 봇을 초대합니다.
 3. 게이트웨이가 봇 이름으로 카테고리 두 개(메인 채널용, 프로젝트 채널용)를 만듭니다. 설정한 소유자 ID만 명령할 수 있습니다.
 
-Discord의 토큰과 서버 설정은 **설정 -> Discord** 화면에서 바꿉니다. 메신저 화면에서는 상태만 보여 줍니다. Discord를 쓰지 않으면 프로젝트에는 `ch:<번호>` 형태의 로컬 번호가 붙고, 다른 메신저와 웹앱은 그대로 동작합니다.
+Discord의 토큰과 서버 설정은 **설정 -> Discord** 화면에서 바꿉니다. 화면의 **연결**을 누르면 온보딩이 앱과 토큰, 서버 초대를 준비합니다. Discord를 쓰지 않으면 프로젝트에는 `ch:<번호>` 형태의 로컬 번호가 붙고, 다른 메신저와 웹앱은 그대로 동작합니다.
 
 ## Tailscale 없이 쓰기
 
 메신저는 Tailscale이 없어도 동작합니다. Discord와 Slack, Telegram은 dotz가 바깥으로 접속하고, JANDI는 사내망 웹훅으로 들어옵니다.
 
-웹앱을 Tailscale 없이 밖에서 열려면 `web.access`를 `"cloudflare"`로 바꾸고 Cloudflare 터널을 씁니다. 이 모드에서는 패스키로 연결한 기기만 웹앱에 들어올 수 있고, 연결 코드는 메신저 알림으로 옵니다. 메신저 메시지에는 웹앱의 해당 대화로 가는 "웹에서 보기" 링크가 붙습니다(현재는 JANDI). 자세한 순서는 [../web-access-cloudflare.ko.md](../web-access-cloudflare.ko.md)에 있습니다.
+웹앱을 Tailscale 없이 밖에서 열려면 설정 → 웹 접속에서 Cloudflare를 고릅니다. 온보딩이 cloudflared 설치, 로그인, 터널과 DNS, 토큰 저장을 준비하고 최종 주소를 보여 줍니다([../web-access.ko.md](../web-access.ko.md)). 수동 설정과 workers.dev 방식은 [../web-access-cloudflare.ko.md](../web-access-cloudflare.ko.md)에 있습니다.
 
 | `web.access` | 웹앱 접속 | 기본값 |
 |---|---|---|

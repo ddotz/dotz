@@ -39,7 +39,7 @@ dotz가 오너에게 알리는 것은 모두 같은 길을 지나요. 이벤트�
 - 앱 알림: 설정 → 앱 · 알림에 분류마다 스위치 하나씩(답변 필요, 경고, 결과, 새 소식, 대화, 진행). 웹앱과 휴대폰은 같은 앱이라
   스위치도 하나예요. 끄면 그 분류는 알림(푸시)이 없고 알림 목록(종)에만 남아요. API는 `GET/PUT /api/push/classes`.
 - 메신저 알림: 메신저마다 자기 연결 화면 안 '알림' 묶음에서 분류별로 켜고 꺼요.
-  JANDI·Slack·Telegram은 설정 → 메신저 → 그 연결(`PUT /api/messengers/<id>` `{notify: {<분류>: bool}}`, 바로 저장되고 재시작 없음),
+  JANDI·Slack·Telegram은 설정 → JANDI/Slack/Telegram 화면의 알림 묶음(`PUT /api/messengers/<id>` `{notify: {<분류>: bool}}`, 바로 저장되고 재시작 없음),
   Discord는 설정 → Discord('알림' 묶음, `PUT /api/discord/post`). 어느 쪽이든 어디로 갈지는 `route()`가 정해요.
 - 저장 위치(기존 키 그대로 읽어요):
   - 휴대폰: `config.json` `notify.push.<분류>` (없으면 위 기본값)

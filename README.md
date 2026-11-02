@@ -127,8 +127,9 @@ channels 대화, 알림, 작업로그) and "땃쥐 작업" (one channel per proj
 is a work channel; threads in them are sub-items. It listens to nothing else, and only the configured owner id can
 command it.
 
-Other messengers (JANDI on a LAN, Slack and Telegram through agent-messenger) and the Tailscale-free web access over
-Cloudflare are set up on 설정 -> 메신저; admin guides in Korean: `docs/messengers/README.ko.md`.
+Other messengers (JANDI on a LAN, Slack and Telegram) sit next to Discord on 설정, each with its own row and connection screen;
+press 연결 and onboarding prepares the bot, channels and webhooks. Admin guides in Korean:
+`docs/messengers/discord.md`, `jandi.md`, `slack.md`, `telegram.md`; web access: `docs/web-access.ko.md`.
 
 ## Use
 
