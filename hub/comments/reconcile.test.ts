@@ -432,3 +432,15 @@ describe("issue #32: YouTube replies", () => {
 		expect(out.errors.youtube).toBeUndefined();
 	});
 });
+
+describe("needs() badge", () => {
+	test("a pending draft on a comment already answered, deleted or dismissed is not counted, even before reconcile closes it", () => {
+		config([source("youtube", "youtube")]);
+		const store = createStore(dir);
+		const row = (native: string, o: Partial<Comment> = {}): Comment => ({ id: `cm:youtube:${native}`, source: "youtube", native, thread: "v1", author: "@fan", text: "질문", postTitle: "post", at: NOW - DAY, mine: false, collector: "t", ...o });
+		store.addComments([row("a"), row("a.r", { parent: "a", mine: true, author: "@me", at: NOW - DAY + 60_000 }), row("g", { gone: NOW }), row("o")]);
+		for (const [code, n] of [["Da", "a"], ["Dg", "g"], ["Do", "o"]] as const) store.putDraft(draft({ code, commentId: `cm:youtube:${n}`, source: "youtube", thread: "v1" }));
+		const { engine } = engineWith({});
+		expect(engine.needs().youtube!.drafts).toBe(1);
+	});
+});

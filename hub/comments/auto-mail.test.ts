@@ -85,6 +85,13 @@ describe("autoMail", () => {
 		const text = commentAsk(t.source, t.engine.store.comments()[0]!, d, undefined, t.engine.mailView(d));
 		expect(text).toContain("메일 초안 작성됨");
 		expect(text).toContain("> 첨부: score.pdf");
+		expect(t.mail.specs[0]!.library).toBeUndefined();
+	});
+
+	test("a writer who says he bought it gets the MR only (library: mr)", async () => {
+		const t = setup({ source: { autoMail: true, mailApp: "mail" }, text: "악보 구매했는데 MR도 보내주세요 Fan@Example.com" });
+		await t.engine.collect({ force: true });
+		expect(t.mail.specs[0]).toMatchObject({ library: "mr" });
 	});
 
 	test("library miss: the card gets a 확인 line", async () => {

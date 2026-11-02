@@ -69,7 +69,9 @@ function originOf(spec: string | undefined): DraftRec["origin"] | { error: strin
 	return { kind, id, text: kind === "mail" ? "메일 답장에 이어서" : "카카오톡 메시지에 이어서" };
 }
 
-export type ComposeInput = { app: string; to: string[]; subject: string; body: string; attach?: string[]; fromLibrary?: string; origin?: DraftRec["origin"]; /** false = not listed in the web mail app (the mail rides on a comment reply's card). */ notify?: boolean };
+const AUDIO = /\.(mp3|wav|m4a|aac|flac|ogg)$/i;
+const SALE_ONLY = /총보|score|피아노\s*(반주\s*)?악보|반주\s*악보/i;
+export type ComposeInput = { app: string; to: string[]; subject: string; body: string; attach?: string[]; fromLibrary?: string; /** "mr": only audio files of one song, else nothing and a 확인 필요 note (a buyer's request). */ library?: "mr"; origin?: DraftRec["origin"]; /** false = not listed in the web mail app (the mail rides on a comment reply's card). */ notify?: boolean };
 export type Composed = { ok: true; rec: DraftRec; notes: string[] } | { ok: false; error: string; code: number };
 
 // A new mail draft: stages the files, lints, records it as pending and (unless `notify` is false) tells the gateway. Sends nothing.
@@ -89,11 +91,21 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 	if (keywords) {
 		const folder = loadSettings().attachFolders?.[app];
 		if (!folder) return fail(`${app}에 첨부 파일 폴더가 정해져 있지 않아요 (설정 > 첨부 파일 폴더)`);
-		const found = rankLibrary(listLibrary(folder), { subject: keywords, text: keywords }).filter(r => r.score > 0).slice(0, LIBRARY_PICK_MAX);
+		// Sale-only sheets (총보, Score, 피아노 반주 악보) are never picked by keywords: they go to buyers only, attached by hand. Audio is fine.
+		const ranked = rankLibrary(listLibrary(folder), { subject: keywords, text: keywords }).filter(r => r.score > 0 && (AUDIO.test(r.file.rel) || !SALE_ONLY.test(r.file.rel)));
+		let found = ranked.slice(0, LIBRARY_PICK_MAX);
+		if (i.library === "mr") {
+			// A buyer gets the MR of the one song he names; a weak match or MR files of several songs is a guess, so nothing is attached.
+			const mr = ranked.filter(r => AUDIO.test(r.file.rel));
+			const top = mr[0]?.score ?? 0;
+			const best = mr.filter(r => r.score === top);
+			found = top >= 2 && new Set(best.map(r => r.file.rel.split("/")[0])).size === 1 ? best.slice(0, LIBRARY_PICK_MAX) : [];
+			if (!found.length) notes.push("확인 필요: 구매하셨다는 요청이라 MR만 붙이는데, 맞는 MR을 확실히 찾지 못했어요. 첨부는 비워 뒀어요");
+		}
 		for (const r of found) if (!paths.includes(r.file.path)) paths.push(r.file.path);
 		if (!found.length) {
 			libraryMiss = true;
-			notes.push(`확인: 첨부 파일 폴더에서 '${keywords}'에 맞는 파일을 찾지 못했어요`);
+			if (i.library !== "mr") notes.push(`확인: 첨부 파일 폴더에서 '${keywords}'에 맞는 파일을 찾지 못했어요`);
 		}
 	}
 	if (paths.length > STAGED_MAX) return fail(`첨부파일은 ${STAGED_MAX}개까지 붙일 수 있어요`);
