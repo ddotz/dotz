@@ -11,7 +11,8 @@ import { pastContext, pastPairs, SEEDED_NOTE, similarPairs } from "./past.ts";
 
 // The mail that rides on a comment reply (hub/comments/mail-link.ts is the real one): written with the draft, shown in the same card, sent right
 // after the reply is posted, revised or dropped with it.
-export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string };
+// `library: "mr"`: only audio (MR) files of one song are taken from the library (a narrowed request); see hub/mail-cli.ts composeMail.
+export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string; library?: "mr" };
 export type MailView = { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: number }[]; asksFile?: boolean; libraryMiss?: boolean };
 export type MailLink = {
 	/** `notes` (owner-facing "확인: ..." lines) and `libraryMiss` (no file of the library fits) are what composing said besides the id. */
@@ -57,6 +58,7 @@ const RECHECK_EVERY_MS = 30 * 60_000;
 export const MAIL_KEPT_NOTE = "확인: 댓글은 이미 답했어요. 메일은 따로 확인해 주세요";
 export const MAIL_NO_APP_NOTE = "확인: 메일 앱이 정해지지 않아 메일 초안은 만들지 않았어요";
 const LIBRARY_MISS_NOTE = "확인: 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요";
+const ASKED = /요청함/;
 const ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/;
 /** The linked mail of a comment as the item shows it: 메일 초안 작성됨 / 메일 보냄 / 메일 실패: <이유>. */
 export type MailMark = { state: "drafted" | "sent" | "failed"; label: string };
@@ -206,6 +208,8 @@ export function createEngine(deps: EngineDeps) {
 				subject: title ? `${title} 자료 보내드립니다` : "요청하신 자료 보내드립니다",
 				body: `안녕하세요, ${c.author}님.\n\n댓글로 요청하신 자료를 보내드립니다. 확인 후 부족한 점이 있으면 편하게 말씀해 주세요.\n\n감사합니다.`,
 				fromLibrary: clip(`${title} ${c.text.replace(to, " ")}`, 200),
+				// A writer who says he asked the score already has it: only the MR is attached (the owner's rule; 전체본 goes by hand only).
+				...(ASKED.test(c.text) ? { library: "mr" as const } : {}),
 			}).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "메일 초안을 만들지 못했어요" }));
 			if (!made.ok) {
 				addNote(`확인: 메일 초안을 만들지 못했어요 - ${made.reason}`);
@@ -351,8 +355,12 @@ export function createEngine(deps: EngineDeps) {
 	// adapter's own sign (Instagram: he @mentioned the author).
 	const answeredBy = (c: Comment, replies: Reply[]): boolean => stream(c).some(x => x.mine && x.at >= c.at) || answeredOnPlatform(c) || replies.some(r => r.commentId === c.id && r.state === "sent");
 
+	// Why a pending draft of comment `c` no longer waits (settle closes it; needs never counts it), or undefined while it still waits.
+	const closing = (c: Comment, replies: Reply[], dismissed: Record<string, unknown>): ClosedReason | undefined => (c.gone ? "deleted" : dismissed[c.id] ? "dismissed" : answeredBy(c, replies) ? "answered-on-platform" : undefined);
+
 	// A pending draft whose comment stopped waiting (answered on the platform, deleted, 답장 안 함) is closed as "answered" with the reason. A mail that rode
 	// on it is detached, as 메일만 보내기 does: it stays a pending mail draft of its own, and the closed draft says so. Closed drafts are never reopened.
+
 	function settle(): number {
 		const replies = store.replies(), dismissed = store.dismissed();
 		let closed = 0;
@@ -360,7 +368,7 @@ export function createEngine(deps: EngineDeps) {
 			if (d.status !== "pending") continue;
 			const c = find(d.commentId);
 			if (!c || replies.some(r => r.commentId === c.id && r.state === "sending")) continue;
-			const reason: ClosedReason | undefined = c.gone ? "deleted" : dismissed[c.id] ? "dismissed" : answeredBy(c, replies) ? "answered-on-platform" : undefined;
+			const reason = closing(c, replies, dismissed);
 			if (!reason) continue;
 			const { mail, mailAt: _mailAt, ...rest } = d;
 			store.putDraft({ ...rest, status: "answered", closedReason: reason, ...(mail ? { notes: [...rest.notes, MAIL_KEPT_NOTE], mailKept: mail } : {}) });
@@ -692,11 +700,16 @@ export function createEngine(deps: EngineDeps) {
 		if (!cfg.enabled) return out;
 		const reads = store.reads(), replies = store.replies(), dismissed = store.dismissed();
 		for (const src of Object.values(cfg.sources)) out[ownerOf(src)] ??= { drafts: 0, unread: 0, unreplied: 0 };
+		// The badge counts drafts by the comment's state as it is now: a pending draft on an answered, deleted or dismissed comment is not one (settle closes it).
+		const all = store.comments();
+		// One read of comments.json for every draft's lookup (needs runs on each status refresh).
+		const byId = new Map(all.map(c => [c.id, c]));
 		for (const d of store.drafts()) {
 			const s = cfg.sources[d.source];
-			if (s && d.status === "pending") out[ownerOf(s)]!.drafts++;
+			const c = s && d.status === "pending" ? byId.get(d.commentId) : undefined;
+			if (s && c && !closing(c, replies, dismissed)) out[ownerOf(s)]!.drafts++;
 		}
-		for (const c of store.comments()) {
+		for (const c of all) {
 			const s = cfg.sources[c.source];
 			if (s && watches(s, c.thread) && unreadOf(c, reads)) out[ownerOf(s)]!.unread++;
 			if (s && watches(s, c.thread) && unrepliedWith(c, replies, dismissed)) out[ownerOf(s)]!.unreplied++;

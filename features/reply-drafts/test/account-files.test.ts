@@ -169,6 +169,29 @@ describe("mail ridden on a comment reply", () => {
 		expect(r.notes.join(" ")).toContain("찾지 못했어요");
 		expect(link.view(r.id)?.notes?.join(" ")).toContain("찾지 못했어요");
 	});
+
+	test("a held sheet is never picked; a narrowed request gets only the MR of the one song, or nothing and 확인 필요", async () => {
+		const songs = mkdtempSync(join(tmpdir(), "rd-acct-songs-"));
+		for (const [dir, name] of [["comet 혜성 정기회의/문서", "Golden 공유용.pdf"], ["comet 혜성 정기회의/문서", "Golden 전체본.pdf"], ["comet 혜성 정기회의/문서", "Golden 보조 자료.pdf"], ["comet 혜성 정기회의/MR", "혜성comet_MR.mp3"], ["봄날 정기회의/MR", "봄날_MR.mp3"]]) {
+			mkdirSync(join(songs, dir!), { recursive: true });
+			writeFileSync(join(songs, dir!, name!), "bytes");
+		}
+		enable(env, { attachFolders: { mail: songs } });
+		const link = realMailLink({});
+		const names = (id: string) => stagedFiles(id).map(f => f.name).sort();
+		const spec = { app: "mail", to: "kim@example.com", subject: "문서 보내드려요", body: "안녕하세요. 문서 보내드립니다." };
+		const any = await link.compose({ ...spec, fromLibrary: "comet 혜성 전체본 요약 문서" });
+		if (!any.ok) throw new Error(any.reason);
+		expect(names(any.id)).toEqual(["Golden 공유용.pdf", "혜성comet_MR.mp3"]);
+		const held = await link.compose({ ...spec, fromLibrary: "comet 혜성 요청했어요 MR", library: "mr" });
+		if (!held.ok) throw new Error(held.reason);
+		expect(names(held.id)).toEqual(["혜성comet_MR.mp3"]);
+		const unsure = await link.compose({ ...spec, fromLibrary: "요청했어요 정기회의 MR", library: "mr" });
+		if (!unsure.ok) throw new Error(unsure.reason);
+		expect(names(unsure.id)).toEqual([]);
+		expect(unsure.notes.join(" ")).toContain("확인 필요");
+		rmSync(songs, { recursive: true, force: true });
+	});
 });
 
 describe("answered drafts", () => {

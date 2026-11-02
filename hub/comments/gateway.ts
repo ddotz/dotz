@@ -18,7 +18,7 @@ const engine = realEngine(DATA_DIR, {
 const web = createCommentsWeb({ engine, broadcast });
 // Once at start (also the migration of an install that has stale open comments / pending drafts): re-read the open comments, close what is answered or deleted.
 void engine.reconcile({ recheck: true }).then(
-	r => log(`comments reconcile: ${JSON.stringify({ answered: r.answered, gone: r.gone, draftsClosed: r.draftsClosed })}${r.errors ? ` errors=${JSON.stringify(r.errors)}` : ""}`),
+	r => log(`comments reconcile: ${JSON.stringify({ answered: r.answered, gone: r.gone, draftsClosed: r.draftsClosed, ...(r.merged ? { merged: r.merged } : {}) })}${r.errors ? ` errors=${JSON.stringify(r.errors)}` : ""}`),
 	e => log(`comments reconcile failed: ${e instanceof Error ? e.message : String(e)}`),
 );
 
