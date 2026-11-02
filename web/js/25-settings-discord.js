@@ -4,7 +4,7 @@
 // waits for a restart (restart_needed).
 const DP_KINDS = [["chat", "대화 답장", "내가 디스코드에서 묻지 않은 대화의 답"], ["lanes", "세션 보고", "세션이 올리는 진행·완료 보고"], ["worklog", "작업내역", "작업 기록 메시지"], ["web_lanes", "웹에서 시작한 세션", "웹이나 터미널에서 시작한 세션도 디스코드에 채널을 만들어요"]];
 const DP = { v: null };
-const DCS = { v: null, fail: "", err: "", chk: null, asked: false,
+const DCS = { v: null, fail: "", err: "", chk: null, asked: false, advOpen: false,
   guild: input({ inputmode: "numeric", placeholder: "예: 123456789012345678", name: "discord-guild" }),
   owner: input({ inputmode: "numeric", placeholder: "예: 123456789012345678", name: "discord-owner" }),
   tok: input({ type: "password", autocomplete: "new-password", name: "discord-token", placeholder: "봇 토큰" }) };
@@ -93,25 +93,34 @@ function dcChecked() {
     c.admin === true ? el("div", { class: "dcs-ok", text: "관리자 권한 확인됨" }) : c.invite_url ? el("div", {}, el("div", { text: "관리자 권한이 없어요." }), el("a", { class: "btn tonal", href: c.invite_url, target: "_blank", rel: "noopener noreferrer", text: "봇 권한 다시 승인" })) : el("div", { class: "sup", text: "서버 ID를 저장하면 관리자 권한도 확인해요" }),
     c.intent_note ? el("div", { class: "sup", text: c.intent_note }) : null);
 }
+function dcConnect(btn) {
+  return obStart("discord", btn);
+}
+function dcAdvanced(v) {
+  const rows = [el("div", { class: "li dcs-form" }, textField("서버 ID", DCS.guild), textField("내 사용자 ID", DCS.owner),
+    textField(v.has_token ? "봇 토큰 (저장됨 · 바꾸려면 새로 붙여 넣기)" : "봇 토큰", DCS.tok),
+    v.has_token ? el("div", { class: "tag ok dcs-saved", text: "저장됨" }) : null,
+    DCS.err ? el("div", { class: "dcs-err", role: "alert", text: DCS.err }) : null,
+    el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn", "data-ms-save": "1", onclick: ev => dcSave(ev.currentTarget), text: "저장" }), el("button", { type: "button", class: "btn tonal", onclick: ev => dcCheck(ev.currentTarget), text: "연결 확인" }),
+      v.has_token ? el("button", { type: "button", class: "btn text", onclick: ev => dcClear(ev.currentTarget), text: "토큰 지우기" }) : null),
+    dcChecked())];
+  if (v.restart_needed) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "게이트웨이를 다시 시작하면 적용돼요" })), el("button", { type: "button", class: "btn", onclick: ev => dcRestart(ev.currentTarget), text: "다시 시작" })));
+  return el("div", { class: "list" }, ...rows);
+}
 function renderDiscord() {
   const box = $("#discord");
   if (!DCS.v) { clear(box).append(DCS.asked && DCS.fail ? emptyNode("디스코드 설정을 불러오지 못했어요") : emptyNode("불러오는 중")); return; }
-  const v = DCS.v, [tag, tone, line] = dcStatus();
-  const conn = [
-    el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })), el("span", { class: `tag ${tone}`, text: tag })),
-    el("div", { class: "li dcs-form" }, textField("서버 ID", DCS.guild), textField("내 사용자 ID", DCS.owner),
-      textField(v.has_token ? "봇 토큰 (저장됨 · 바꾸려면 새로 붙여 넣기)" : "봇 토큰", DCS.tok),
-      v.has_token ? el("div", { class: "tag ok dcs-saved", text: "저장됨" }) : null,
-      DCS.err ? el("div", { class: "dcs-err", role: "alert", text: DCS.err }) : null,
-      el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn", onclick: ev => dcSave(ev.currentTarget), text: "저장" }), el("button", { type: "button", class: "btn tonal", onclick: ev => dcCheck(ev.currentTarget), text: "연결 확인" }),
-        v.has_token ? el("button", { type: "button", class: "btn text", onclick: ev => dcClear(ev.currentTarget), text: "토큰 지우기" }) : null),
-      dcChecked()),
-  ];
-  if (v.restart_needed) conn.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "게이트웨이를 다시 시작하면 적용돼요" })), el("button", { type: "button", class: "btn", onclick: ev => dcRestart(ev.currentTarget), text: "다시 시작" })));
+  const v = DCS.v, m = msItem("discord"), [, , line] = dcStatus();
+  const [tag, tone] = m ? msTag(m) : v.enabled ? (v.connected ? ["연결됨", "ok"] : v.error ? ["연결 안 됨", "err"] : ["연결됨", "ok"]) : ["설정 안 됨", "warn"];
   const guide = v.enabled ? [] : [el("div", { class: "sec", text: "연결하는 방법" }), el("div", { class: "list" }, el("div", { class: "li", "data-dc-guide": "1" }, el("ol", { class: "steps" },
     el("li", { text: "디스코드 개발자 포털(discord.com/developers)에서 새 앱을 만들고 Bot 탭에서 MESSAGE CONTENT를 켠 뒤 봇 토큰을 복사해요" }),
     el("li", { text: "OAuth2 초대 링크로 내 서버에 봇을 초대해요 (위에서 저장한 뒤 연결 확인을 누르면 초대 링크가 나와요)" }),
-    el("li", { text: "봇 토큰, 서버 ID, 내 사용자 ID를 위에 붙여 넣고 저장해요" }),
+    el("li", { text: "봇 토큰, 서버 ID, 내 사용자 ID를 ‘직접 입력’에 붙여 넣고 저장해요" }),
     el("li", { text: "터미널에서는 bun setup.ts로도 같은 설정을 할 수 있어요" }))))];
-  clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" }, ...conn), ...guide, ...dcSwitches());
+  const det = msAdvanced("data-ms-advanced", DCS.advOpen, () => dcAdvanced(v));
+  det.addEventListener("toggle", () => { DCS.advOpen = det.open; });
+  clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" },
+    el("div", { class: "li", "data-ms-status": "discord" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })), el("span", { class: `tag ${tone}`, text: tag })),
+    el("div", { class: "li ms-act" }, el("button", { type: "button", class: "btn", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m)))),
+  el("div", { class: "sec", text: "자동 연결" }), onboardingPanel("discord"), ...dcSwitches(), ...guide, det);
 }
