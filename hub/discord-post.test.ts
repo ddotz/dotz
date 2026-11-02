@@ -2,7 +2,11 @@ import { afterEach, expect, test } from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
-import { discordPosts, migratePostSettings, postClass, postKind, postSettings, savePostSettings, setWebLane } from "./discord-post.ts";
+import { migratePostSettings, postKind, postSettings, savePostSettings, setWebLane } from "./discord-post.ts";
+import type { NoticeClass } from "./notice-class.ts";
+import { postClass, route } from "./notify-route.ts";
+
+const discordPosts = (target: string, replyTo?: string, cls?: NoticeClass): boolean => route({ target, ...(replyTo ? { replyTo } : {}), ...(cls ? { cls } : {}) }).messengers.discord;
 
 // Which conversations also go to Discord: the owner's switches in <DATA_DIR>/discord-post.json.
 const FILE = join(DATA_DIR, "discord-post.json");

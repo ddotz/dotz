@@ -5,10 +5,10 @@
 // web_lanes: a session started from the web or terminal also gets a Discord channel/thread and posts there (off: it lives in the web).
 // ask / result / news / conv are the notice classes (hub/notice-class.ts) as the owner's per-class "디스코드로도 보내기" switches (alert is the
 // alert key above). A file written before they existed lacks them: each then follows today's kind (ask, news, conv: chat; result: lanes).
+// This file only stores the switches; whether a post goes to Discord is decided in hub/notify-route.ts.
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
-import { splitTone } from "./tone.ts";
 
 export const POST_KINDS = ["chat", "lanes", "alert", "worklog", "web_lanes", "ask", "result", "news", "conv"] as const;
 export type PostKind = (typeof POST_KINDS)[number];
@@ -32,6 +32,7 @@ let webLane: (name: string) => boolean = () => false;
 export function setWebLane(fn: (name: string) => boolean): void {
 	webLane = fn;
 }
+export const isWebLane = (name: string): boolean => webLane(name);
 
 // alert / worklog are the gateway's own conversations, lane:<name> a session; everything else (main, work channels, threads) is chat.
 export function postKind(target: string): PostKind {
@@ -39,19 +40,6 @@ export function postKind(target: string): PostKind {
 	if (target === "worklog") return "worklog";
 	if (target.startsWith("lane:")) return "lanes";
 	return "chat";
-}
-
-// The notice class of an outgoing post (hub/notice-class.ts), or undefined when none of the class switches decides it (progress, work log,
-// anything else): then the target's kind does. `extra` is the post's event fields (source, update_key, system, mail; news = a monitor's post, hub/main.ts).
-export function postClass(target: string, text: string, extra: Record<string, unknown> = {}): PostKind | undefined {
-	const { tone } = splitTone(text);
-	if (tone === "run" || target === "worklog" || typeof extra.update_key === "string") return undefined;
-	if (tone === "ask") return "ask";
-	if (target === "alert") return "alert";
-	if (target.startsWith("lane:")) return tone === "done" || tone === "fail" || extra.lane_report === true ? "result" : undefined;
-	if (extra.mail === true || extra.news === true) return "news";
-	const bot = extra.source === undefined || extra.source === "orchestrator";
-	return bot && !extra.system && /^(?:main|ch:|th:|settings:)/.test(target) ? "conv" : undefined;
 }
 
 let cache: { stamp: string; v: PostSettings } | undefined;
@@ -86,10 +74,3 @@ export function savePostSettings(patch: Record<string, unknown>): PostSettings {
 	writeAtomic(file(), `${JSON.stringify(next)}\n`);
 	return next;
 }
-
-// Whether a post to `target` goes to Discord. An answer to a message the owner wrote on Discord (a Discord message id) always does:
-// he asked there, so the answer has to be there.
-// A web lane never does: it has no Discord place.
-// `cls` (postClass): when given, its switch decides; without it the target's kind does.
-export const discordPosts = (target: string, replyTo?: string, cls?: PostKind): boolean =>
-	!(target.startsWith("lane:") && webLane(target.slice(5))) && (postSettings()[cls ?? postKind(target)] || (!!replyTo && /^\d{17,20}$/.test(replyTo)));

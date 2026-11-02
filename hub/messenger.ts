@@ -2,11 +2,12 @@ import { parseChoices } from "./choices.ts";
 import { log } from "./config.ts";
 import { postKind } from "./discord-post.ts";
 import { type HubEvent, onEmit } from "./events.ts";
+import { route } from "./notify-route.ts";
 import { listNotices, NOTICE_CAP } from "./notices.ts";
 import { convPath, webLink } from "./weblink.ts";
 
-// A generic messenger layer: any chat service (Telegram, JANDI, ...) is an Adapter. Outgoing posts reach every non-native adapter
-// through one outbox subscription (installFanout); incoming owner messages enter through ctx.receive, like a web message.
+// A generic messenger layer: any chat service (Telegram, JANDI, ...) is an Adapter. Outgoing posts reach the non-native adapters whose
+// class switch is on (hub/notify-route.ts) through one outbox subscription (installFanout); incoming owner messages enter through ctx.receive, like a web message.
 // Discord keeps its own send path (hub/outbound.ts) and is registered as a native adapter, so the fan-out skips it.
 
 export type Kind = "main" | "project" | "lane" | "alert" | "worklog";
@@ -143,7 +144,7 @@ function fail(a: Adapter, e: unknown): void {
 }
 
 let fanout = false;
-/** One outbox subscription: every "out" event goes to each enabled, non-native adapter that is up. A failing adapter never reaches emit. */
+/** One outbox subscription: every "out" event goes to each enabled, non-native adapter that is up and whose switch for the post's class is on. A failing adapter never reaches emit. */
 export function installFanout(): void {
 	if (fanout) return;
 	fanout = true;
@@ -151,8 +152,10 @@ export function installFanout(): void {
 		if (e.kind !== "out") return;
 		const msg = outMsg(e);
 		if (!msg) return;
-		for (const a of registry.values()) {
-			if (a.native || (a.status.state !== "ok" && !deliveryFailed.has(a.id)) || !a.enabled()) continue;
+		const live = [...registry.values()].filter(a => !a.native && (a.status.state === "ok" || deliveryFailed.has(a.id)) && a.enabled());
+		const wants = route({ target: msg.target, text: msg.text, extra: e, messengers: live.map(a => a.id) }).messengers;
+		for (const a of live) {
+			if (!wants[a.id]) continue;
 			try {
 				void a
 					.deliver(msg)

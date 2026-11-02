@@ -1,5 +1,5 @@
 // 설정 → Discord: the bot connection (token, server id, owner id; GET/PUT/DELETE /api/discord/connection, POST .../check, hub/discord-connection.ts)
-// and what also goes to Discord (GET/PUT /api/discord/post, hub/discord-post.ts). The web app always gets everything; a switch that is off
+// and what also goes to Discord by conversation (GET/PUT /api/discord/post, hub/discord-post.ts; the per-class switches are in 설정 → 앱 · 알림). The web app always gets everything; a switch that is off
 // keeps that kind on the web only. The switches show once Discord is enabled; the gateway reads the connection only at start, so a change
 // waits for a restart (restart_needed).
 const DP_KINDS = [["chat", "대화 답장", "내가 디스코드에서 묻지 않은 대화의 답"], ["lanes", "세션 보고", "세션이 올리는 진행·완료 보고"], ["worklog", "작업내역", "작업 기록 메시지"], ["web_lanes", "웹에서 시작한 세션", "웹이나 터미널에서 시작한 세션도 디스코드에 채널을 만들어요"]];
@@ -75,9 +75,6 @@ function dcSwitches() {
   const hint = () => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결하면 고를 수 있어요" })));
   const on = DCS.v.enabled && DP.v;
   return [
-    el("div", { class: "sec", text: "알림 분류별로 디스코드에도 보내기" }),
-    el("div", { class: "list" }, ...(on ? [...PUSH_CLASSES.map(([k, label, desc]) => li(label, desc, k, DP.v[k] !== false)),
-      el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 그 분류는 웹앱 알림으로만 와요." })))] : [hint()])),
     el("div", { class: "sec", text: "대화별로 디스코드에도 보내기" }),
     el("div", { class: "list" }, ...(on ? [...DP_KINDS.map(([k, label, desc]) => li(label, desc, k, k === "web_lanes" ? DP.v[k] === true : DP.v[k] !== false)),
       el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 웹에만 와요. 디스코드에서 직접 물은 것의 답은 디스코드에도 가요." })))] : [hint()])),
