@@ -249,7 +249,7 @@ function updateSection() {
   else if (c) {
     const more = c.incomingTotal - c.incoming.slice(0, 8).length;
     rows.push(el("div", { class: "upd-box" },
-      el("div", { class: "hd", text: c.available ? `새 버전 ${c.version && c.version.release ? c.version.release : "설치본"} → ${c.available} · ${c.upstream}` : `새 커밋 ${c.incomingTotal}개 · ${c.upstream}`),
+      el("div", { class: "hd", text: c.available ? `새 버전 ${c.version && c.version.release ? c.version.release : "설치본"} → ${c.available} · ${c.upstream}` : `새 커밋 ${c.incomingTotal}개 · ${c.upstream}` }),
       el("ul", { class: "upd-log" }, ...c.incoming.slice(0, 8).map(x => el("li", {}, el("code", { text: x.short }), el("span", { text: x.subject, title: x.subject }))), more > 0 ? el("li", { class: "dim" }, el("span", { text: `외 ${more}개` })) : null),
       c.blocked.length ? el("div", { class: "upd-block" }, ...c.blocked.map(b => el("div", { text: b }))) : null,
       c.keep ? updKeepBox(c.keep) : null,
