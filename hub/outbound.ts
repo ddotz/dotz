@@ -30,7 +30,7 @@ import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime,
 import { onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
 import { cardPointer, cardTitle, CARDS_LEAD, createApprovalQueue, loadHeld, pendingCardsNote } from "./approval-queue.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
-import { discordPosts, postClass } from "./discord-post.ts";
+import { route } from "./notify-route.ts";
 import { repeatAlert } from "./alert-gate.ts";
 
 // Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
@@ -196,7 +196,7 @@ function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason
 	settleAnswer(j);
 	// Web only: a web conversation, a kind the owner switched off for Discord (hub/discord-post.ts), or a gateway alert that repeats one Discord already has.
 	// `discord_route`: the post's own app or monitor decided it (a monitor's 디스코드에도 보내기 switch, hub/watch-settings.ts), over the class switch.
-	const toDiscord = typeof j.extra.discord_route === "boolean" ? j.extra.discord_route : discordPosts(j.target, j.replyTo, postClass(j.target, j.text, { ...j.extra, ...(threadMail(j.target) ? { mail: true } : {}) }));
+	const toDiscord = typeof j.extra.discord_route === "boolean" ? j.extra.discord_route : route({ target: j.target, text: j.text, extra: { ...j.extra, ...(threadMail(j.target) ? { mail: true } : {}) }, replyTo: j.replyTo }).messengers.discord;
 	if (isLocal(j.target) || j.extra.repeat === true || !toDiscord) {
 		convs.markAnsweredAll(jobAnswers(j));
 		return Promise.resolve({ delivered: true });
@@ -226,7 +226,7 @@ export const approvals = createApprovalQueue({
 	rewrite: (conv, card, text) => {
 		rewriteOpenDraft(conv, card.ref, text);
 		const id = card.ids?.length === 1 ? card.ids[0] : undefined;
-		if (id && !isLocal(card.target) && discordPosts(card.target) && !/^\s*\[file\]\s/m.test(text)) void discord.edit(card.target, id, text).catch(e => log(`approval card ${card.ref} not edited on Discord: ${e}`));
+		if (id && !isLocal(card.target) && route({ target: card.target }).messengers.discord && !/^\s*\[file\]\s/m.test(text)) void discord.edit(card.target, id, text).catch(e => log(`approval card ${card.ref} not edited on Discord: ${e}`));
 	},
 	// The web's 빠른 처리 banner counts held cards too (web/js/30-triage.js): it refetches on this.
 	persist: held => {
@@ -238,7 +238,7 @@ export const approvals = createApprovalQueue({
 });
 onDecisionClosed((to, ref) => approvals.closed(to, ref));
 // Where the open card of `conv` is: its Discord message, when it went there.
-const cardLink = (c: { target: string; ids?: string[] }) => (c.ids?.[0] && !isLocal(c.target) && discordPosts(c.target) ? discord.messageLink(c.target, c.ids[0]) : undefined);
+const cardLink = (c: { target: string; ids?: string[] }) => (c.ids?.[0] && !isLocal(c.target) && route({ target: c.target }).messengers.discord ? discord.messageLink(c.target, c.ids[0]) : undefined);
 // A later post in a conversation whose card still waits pushes the card up out of sight (2026-10-31: "19번 카드는 위에 있어", then
 // "어디에있음?", "마지막 카드 어디?"): such a post ends with one line naming the waiting card and linking to it.
 function withCardPointer(target: string, text: string): string {
@@ -322,7 +322,7 @@ export function clearLeftWebProgress(): void {
 export function alert(text: string): void {
 	const repeat = repeatAlert(text);
 	emit("outbox", { ts: now(), kind: "out", source: "gateway", target: "alert", text, ...(repeat ? { repeat: true } : {}) });
-	if (discordPosts("alert", undefined, postClass("alert", text)) && !repeat) void send("alert", text).catch(e => log(`alert send failed: ${e}`));
+	if (route({ target: "alert", text }).messengers.discord && !repeat) void send("alert", text).catch(e => log(`alert send failed: ${e}`));
 }
 
 // Said once per conversation per pause (a pause is known by when it began being announced): the owner's 2nd and 3rd message
@@ -362,7 +362,7 @@ export async function progress(target: string, key: string, text: string, replyT
 		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key }, threadHome, threadMail));
 		return t;
 	});
-	if (isLocal(target) || !discordPosts(target, replyTo, postClass(target, sent, { update_key: key }))) return { delivered: true };
+	if (isLocal(target) || !route({ target, text: sent, extra: { update_key: key }, replyTo }).messengers.discord) return { delivered: true };
 	// One evolving status per asking channel: every progress key there edits the same message the gateway's live report
 	// uses (worklog and alert keep their per-key entries, e.g. one per lane).
 	return discord.progress(target, target === "worklog" || target === "alert" ? key : "progress", sent, replyTo);
