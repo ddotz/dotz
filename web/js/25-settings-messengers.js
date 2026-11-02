@@ -8,10 +8,13 @@ const msKind = k => (MS_KINDS.find(x => x[0] === k) || [k, k])[1];
 const msState = m => m.state === "ok" ? ["연결됨", "ok"] : m.state === "error" ? ["연결 안 됨", "err"] : m.state === "connecting" ? ["연결 중", "warn"] : [m.enabled ? "꺼짐" : "사용 안 함", ""];
 const msAgo = t => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? "방금" : s < 3600 ? `${Math.floor(s / 60)}분 전` : s < 86400 ? `${Math.floor(s / 3600)}시간 전` : `${Math.floor(s / 86400)}일 전`; };
 
+// The list is drawn as soon as it arrives and again when the details (room counts, 방 추가) are in: a slow or stuck detail never leaves the screen blank.
 async function loadMessengers() {
-  MSN.asked = true;
+  MSN.asked = true; MSN.fail = "";
+  if (current === "messengers") renderMessengers();
   try {
     MSN.items = (await api("/api/messengers")).items; MSN.fail = "";
+    if (current === "messengers") renderMessengers();
     await Promise.all(MSN.items.map(async m => { try { MSN.detail[m.id] = await api(`/api/messengers/${enc(m.id)}`); } catch { delete MSN.detail[m.id]; } }));
   } catch (e) { MSN.items = null; MSN.fail = e.message; }
   if (current === "messengers") renderMessengers();

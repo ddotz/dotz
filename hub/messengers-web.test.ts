@@ -14,6 +14,7 @@ let rooms: Room[] = [
 	{ id: "p1", name: "결제 프로젝트", kind: "project", project: "ch:7", secrets: { outgoing_token: "tok-2" } },
 ];
 const puts: any[] = [];
+let hold: Promise<void> | undefined;   // set: the JANDI detail answers only when it settles (a slow detail)
 const PROJECTS = [{ target: "ch:7", name: "결제" }, { target: "ch:8", name: "정산" }];
 const jandi = () => ({
 	enabled,
@@ -46,7 +47,7 @@ const hub = fakeHub({
 			const at = { sha: "a".repeat(40), short: "a".repeat(7), date: new Date(0).toISOString() };
 			return json({ running: { kind: "git", branch: "main", commit: at }, disk: { kind: "git", branch: "main", commit: at }, settings: { auto_check: false, auto_apply: false, at: "09:00" }, busy: [] });
 		}
-		if (p === "/api/messengers/jandi" && req.method === "GET") return json(jandi());
+		if (p === "/api/messengers/jandi" && req.method === "GET") { await hold; return json(jandi()); }
 		if (p === "/api/messengers/jandi" && req.method === "PUT") {
 			const b = (await req.json()) as any;
 			puts.push(b);
@@ -81,6 +82,23 @@ describe("메신저 설정 화면", () => {
 			{ id: "jandi", name: "JANDI", tag: "연결됨", sup: "방 2개", dot: "dot ok" },
 			{ id: "discord", name: "Discord", tag: "연결 중", sup: "", dot: "dot warn" },
 		]);
+	});
+
+	test("the list shows while a detail is still loading", async () => {
+		let release = () => {};
+		hold = new Promise(r => { release = r; });
+		try {
+			const v = await hub.view({ width: 1280, height: 800 }, "/");
+			await waitFor(v, `typeof go === "function" && typeof S !== "undefined" && S`);
+			await run(v, `go("messengers")`);
+			await waitFor(v, `document.querySelectorAll("#messengers [data-ms]").length === 2`);
+			expect(await ev<string>(v, `document.querySelector('#messengers [data-ms="jandi"] .sup').textContent`)).toBe("");
+			release();
+			await waitFor(v, `document.querySelector('#messengers [data-ms="jandi"] .sup').textContent === "방 2개"`);
+		} finally {
+			release();
+			hold = undefined;
+		}
 	});
 
 	test("the settings list links to it", async () => {
