@@ -104,7 +104,9 @@ function begin(lane: Lane, brief: string): void {
 /** How an owner message reached a lane: "steered" into its running step, "received" by an idle process, "held" (paused on a limit, goes in with the resume), "resumed" (stopped session started again). */
 export type LaneDelivery = "steered" | "received" | "held" | "resumed";
 
-export function sendToLane(name: string, text: string, ref?: string): LaneDelivery {
+/** `gateway`: the gateway's own prompt (a stall nudge), not the orchestrator asking: the lane's answer to it stays an untagged
+ * report the orchestrator did not ask for. */
+export function sendToLane(name: string, text: string, ref?: string, gateway = false): LaneDelivery {
 	checkAccountSoon();
 	const lane = lanes.get(name);
 	if (!lane) throw new Error(`lane ${name} does not exist`);
@@ -128,7 +130,9 @@ export function sendToLane(name: string, text: string, ref?: string): LaneDelive
 		clearAsk(lane);
 		persist(lane);
 	}
-	if (!/^\[owner via /.test(text) && text !== "/budget-ok") lane.orchAsked = true;
+	// 2026-11-01: a stall nudge every few minutes to a lane waiting hours on a video made each "still waiting" reply a relayed
+	// report, so every one woke the orchestrator.
+	if (!gateway && !/^\[owner via /.test(text) && text !== "/budget-ok") lane.orchAsked = true;
 	const how: LaneDelivery = !lane.proc ? "resumed" : lane.status === "working" ? "steered" : lane.status === "rate-limited" ? "held" : "received";
 	if (lane.proc) prompt(lane, text);
 	else resumeLane(lane, text);

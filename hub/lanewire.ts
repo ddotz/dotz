@@ -26,7 +26,8 @@ export function installLaneHandlers(): void {
 		const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), lane.orchAsked === false);
 		if (how === "relayed" || how === "held" || how === "steered") lane.orchAsked = false;
 		if (how === "steered") log(`lane ${lane.name} report steered into the orchestrator's turn`);
-		else log(`lane ${lane.name} report ${how === "disk" ? "kept on disk (routine progress)" : how === "owner" ? "kept on disk (answer to the owner in the lane channel)" : "dropped (same as the last one)"}`);
+		else if (how === "relayed") log(`lane ${lane.name} report relayed to the orchestrator`);
+		else if (how !== "held") log(`lane ${lane.name} report ${how === "disk" ? "kept on disk (routine progress)" : how === "owner" ? "kept on disk (answer to the owner in the lane channel)" : "dropped (same as the last one)"}`);
 		if (how === "held") log(`lane ${lane.name} report held for the orchestrator's next idle point`);
 		const channel = `lane:${lane.name}`;
 		// A [run] report is progress: it edits the lane's one progress message. Results, questions and failures are real messages.
