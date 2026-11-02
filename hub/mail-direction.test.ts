@@ -99,6 +99,7 @@ describe("the watch", () => {
 			],
 			[],
 			deps,
+			true,
 		);
 		expect(seen.sent).toEqual([a]);
 		expect(seen.mail).toEqual([b]);
@@ -275,9 +276,9 @@ describe("a newer message in a thread decides its state again", () => {
 		await pass([], [], deps);
 		const id = uid("twice");
 		const key = `zele-${id}`;
-		await pass([kim(id, 1)], [], deps);
-		await pass([kim(id, 2), kim(id, 2)], [], deps);
-		await pass([kim(id, 2)], [], deps);
+		await pass([kim(id, 1)], [], deps, true);
+		await pass([kim(id, 2), kim(id, 2)], [], deps, true);
+		await pass([kim(id, 2)], [], deps, true);
 		expect(calls.wakes).toBe(2);
 		expect(calls.offers).toBe(2);
 		const post = { source: "zele", id, messageId: mailByKey(key)!.msg, subject: "일정 공유", from: KIM, wake: true };

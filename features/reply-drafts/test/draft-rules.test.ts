@@ -141,6 +141,15 @@ describe("an offer drafted by a rule", () => {
 		expect(listDrafts()[0]!.rule).toBeUndefined();
 		expect(parseDraftApproval(out.sent[0]!.text)?.rule).toBeUndefined();
 	});
+	test("a mail the gateway judged needs no reply (needs: false) is not auto-drafted, but a rule on still looks at it", async () => {
+		enable(env, { apps: { mail: { auto: true } } });
+		const m = fakeModel([j(reply)]);
+		expect(await offerMailDraft({ ...askMail, key: "r-8", needs: false }, { send: () => {}, call: m.call })).toBe("off");
+		expect(m.calls).toHaveLength(0);
+		rulesOff([RULE]);
+		const r = fakeModel(["1", j(reply)]);
+		expect(await offerMailDraft({ ...askMail, key: "r-9", needs: false }, { send: sink().send, call: r.call })).toBe("offered");
+	});
 	test("a rule file that is not there is named on the card", async () => {
 		rulesOff([{ ...RULE, files: ["없는 파일.pdf"] }]);
 		const out = sink();

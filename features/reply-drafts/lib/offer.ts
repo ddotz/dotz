@@ -9,7 +9,7 @@ import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
 
-export type OfferMail = { key: string; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
+export type OfferMail = { key: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
 export type OfferDeps = {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
@@ -76,6 +76,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		const own = rulesAllowed(settings) ? await rulesOf(await mailInstanceOf(m.key)) : undefined;
 		const rules = own?.rules.filter(r => r.on) ?? [];
 		if (!requested && !auto && !rules.length) return "off";
+		if (!requested && m.needs === false && !rules.length) return "off";
 		// One look per message: a newer message of the same thread (messageId) is looked at again, a repeat of the same one is not.
 		const looked = m.messageId ? `${m.key}#${m.messageId}` : m.key;
 		if (!requested && isDrafted(looked)) return "skipped";
