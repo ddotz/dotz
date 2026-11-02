@@ -1,8 +1,9 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
-import type { Adapter, AdapterStatus, DeliverResult, MessengerCtx, OutMsg } from "./messenger.ts";
+import { type Adapter, type AdapterStatus, type DeliverResult, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 
 // JANDI (on-prem, LAN) as a built-in messenger. Inbound: a JANDI Team Outgoing Webhook POSTs to /jandi/<room id> on our own listener
 // (no Tailscale needed). Outbound: each room has a JANDI Incoming Webhook URL. JANDI cannot edit a posted message, so progress edits are skipped.
@@ -108,6 +109,28 @@ export function splitText(text: string, max = MAX_PART): string[] {
 
 const errText = (e: unknown) => String((e as { code?: unknown })?.code ?? (e as Error)?.name ?? "error");
 
+/** This computer's first non-internal IPv4 address: what JANDI's server must call. */
+export function lanIp(): string {
+	for (const list of Object.values(networkInterfaces())) for (const i of list ?? []) if (i.family === "IPv4" && !i.internal) return i.address;
+	return "127.0.0.1";
+}
+
+const HELP = [
+	"JANDI 방마다 커넥트에서 '수신 웹훅(Incoming Webhook)'을 만들고 그 URL을 방 설정의 '수신 웹훅 URL'에 붙여 넣어요 (dotz가 이 방으로 보낼 때 써요)",
+	"같은 방에 '발신 웹훅(Outgoing Webhook)'을 만들고 URL에 방 설정의 '발신 웹훅 URL'을, 토큰에 아래 '발신 토큰'을 맞춰 넣어요 (이 방에서 말하면 dotz가 받아요)",
+	"허용 목록에 말을 걸 수 있는 사람의 이메일이나 이름을 넣어요. 목록에 없는 사람의 말은 무시해요",
+	"방 종류: 메인은 대화, 프로젝트는 한 프로젝트, 알림·작업내역은 그 분류 메시지를 받아요",
+];
+const LISTEN_HINT = "바꾸면 JANDI 연결이 다시 시작돼요. 0.0.0.0은 같은 네트워크의 다른 기기도 접근할 수 있어요";
+const roomErr = (id: string, msg: string) => new SettingsError(`${id}: ${msg}`);
+const newRoomId = (taken: Set<string>): string => {
+	for (;;) {
+		const id = `r${randomBytes(4).toString("hex")}`;
+		if (!taken.has(id)) return id;
+	}
+};
+const isHttpUrl = (s: string) => /^https?:\/\/\S+$/i.test(s);
+
 export type JandiAdapter = Adapter & { port(): number | undefined };
 
 export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
@@ -145,7 +168,145 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 			a.status = { state: "off" };
 		},
 		deliver: msg => deliver(msg),
+		settings: () => settings(),
+		saveSettings: body => {
+			apply(body);
+			return settings();
+		},
+		test: () => test(),
 	};
+
+	/** The screen's view of the config: secrets only as set/unset, each room with the webhook URL JANDI's server must call. */
+	function settings(): Settings {
+		const cfg = loadJandiConfig(dataDir);
+		const base = `http://${lanIp()}:${server?.port ?? cfg.listen.port}`;
+		const status = roomStatus();
+		return {
+			enabled: cfg.enabled,
+			help: HELP,
+			fields: [
+				{ key: "host", label: "받는 주소", type: "text", value: cfg.listen.host, hint: LISTEN_HINT },
+				{ key: "port", label: "받는 포트", type: "number", value: cfg.listen.port, hint: "0이면 빈 포트를 골라요" },
+			],
+			allow: { label: "말을 걸 수 있는 사람", hint: "이메일이나 JANDI 이름", items: [...cfg.allow_emails, ...(cfg.allow_names ?? [])] },
+			rooms: {
+				label: "방",
+				editable: true,
+				fields: [
+					{ key: "webhook", label: "발신 웹훅 URL", type: "copy", hint: "JANDI 발신 웹훅의 URL에 넣어요" },
+					{ key: "outgoing_token", label: "발신 토큰", type: "secret", hint: "JANDI 발신 웹훅의 토큰과 같게" },
+					{ key: "incoming_url", label: "수신 웹훅 URL", type: "secret", hint: "JANDI 수신 웹훅의 URL" },
+				],
+				items: cfg.rooms.map(r => ({
+					id: r.id,
+					name: r.name,
+					kind: r.kind,
+					...(r.project ? { project: { target: r.project, name: r.project } } : {}),
+					values: { webhook: `${base}/jandi/${r.id}` },
+					set: { outgoing_token: r.outgoing_token !== "", incoming_url: r.incoming_url !== "" },
+					...status[r.id],
+				})),
+			},
+			projects: [],
+		};
+	}
+
+	/** Validates the whole body first, then writes once: a refused body changes nothing. */
+	function apply(body: SettingsPut): void {
+		const cfg = loadJandiConfig(dataDir);
+		const next: JandiConfig = { ...cfg, listen: { ...cfg.listen }, rooms: cfg.rooms.map(r => ({ ...r })) };
+		if (body.enabled !== undefined) {
+			if (typeof body.enabled !== "boolean") throw new SettingsError("enabled must be true or false");
+			next.enabled = body.enabled;
+		}
+		const v = body.values;
+		if (v?.host !== undefined) {
+			if (typeof v.host !== "string" || !v.host.trim()) throw new SettingsError("host must be a non-empty string");
+			next.listen.host = v.host.trim();
+		}
+		if (v?.port !== undefined) {
+			const port = typeof v.port === "string" && v.port.trim() !== "" ? Number(v.port) : v.port;
+			if (typeof port !== "number" || !Number.isInteger(port) || port < 0 || port > 65535) throw new SettingsError("port must be a whole number from 0 to 65535");
+			next.listen.port = port;
+		}
+		if (body.allow !== undefined) {
+			if (!Array.isArray(body.allow) || body.allow.some(x => typeof x !== "string")) throw new SettingsError("allow must be a list of strings");
+			const items = strings(body.allow);
+			next.allow_emails = items.filter(s => s.includes("@")).map(s => s.toLowerCase());
+			const names = items.filter(s => !s.includes("@"));
+			if (names.length) next.allow_names = names;
+			else delete next.allow_names;
+		}
+		if (body.rooms !== undefined) {
+			if (!Array.isArray(body.rooms)) throw new SettingsError("rooms must be a list");
+			const old = new Map(cfg.rooms.map(r => [r.id, r]));
+			const taken = new Set<string>([...old.keys(), ...body.rooms.map(r => r?.id).filter((x): x is string => typeof x === "string")]);
+			const seen = new Set<string>();
+			const rooms: JandiRoom[] = [];
+			for (const r of body.rooms) {
+				if (!r || typeof r !== "object") throw new SettingsError("each room must be an object");
+				if (r.id !== undefined && (typeof r.id !== "string" || !ROOM_ID.test(r.id))) throw new SettingsError("room id must be letters, digits, _ or -");
+				const id = r.id ?? newRoomId(taken);
+				taken.add(id);
+				if (seen.has(id)) throw roomErr(id, "duplicate room id");
+				seen.add(id);
+				const was = old.get(id);
+				const kind = r.kind ?? was?.kind;
+				if (typeof kind !== "string" || !KINDS.includes(kind)) throw roomErr(id, "kind must be main, project, alert or worklog");
+				if (r.name !== undefined && typeof r.name !== "string") throw roomErr(id, "name must be a string");
+				const project = kind === "project" ? (r.project !== undefined ? r.project : was?.project) : undefined;
+				if (kind === "project" && (typeof project !== "string" || !project.trim())) throw roomErr(id, "a project room needs a project");
+				const secret = (key: "outgoing_token" | "incoming_url"): string => {
+					const given = r.values?.[key];
+					if (given === undefined) return was?.[key] ?? "";
+					if (typeof given !== "string") throw roomErr(id, `${key} must be a string`);
+					return given.trim();
+				};
+				const incoming_url = secret("incoming_url");
+				if (incoming_url && !isHttpUrl(incoming_url)) throw roomErr(id, "incoming_url must be an http(s) URL");
+				rooms.push({
+					id,
+					name: (r.name ?? was?.name ?? "").trim() || id,
+					kind: kind as RoomKind,
+					...(typeof project === "string" && project.trim() ? { project: project.trim() } : {}),
+					outgoing_token: secret("outgoing_token"),
+					incoming_url,
+				});
+			}
+			next.rooms = rooms;
+		}
+		saveJandiConfig(next, dataDir);
+	}
+
+	/** One short post to every room's incoming URL; the result never carries the URL itself. */
+	async function test(): Promise<TestResult> {
+		const rooms = loadJandiConfig(dataDir).rooms;
+		const results = await Promise.all(
+			rooms.map(async room => {
+				const head = { id: room.id, name: room.name };
+				if (!room.incoming_url) return { ...head, ok: false, error: "no incoming url" };
+				try {
+					const res = await fetch(room.incoming_url, {
+						method: "POST",
+						headers: { Accept: "application/vnd.tosslab.jandi-v2+json", "Content-Type": "application/json" },
+						body: JSON.stringify({ body: "dotz 연결 테스트예요" }),
+						signal: AbortSignal.timeout(10_000),
+					});
+					void res.body?.cancel();
+					if (!res.ok) {
+						mark(room.id, { last_error: `HTTP ${res.status}` });
+						return { ...head, ok: false, status: res.status, error: `HTTP ${res.status}` };
+					}
+					mark(room.id, { last_out: Date.now() });
+					return { ...head, ok: true, status: res.status };
+				} catch (e) {
+					mark(room.id, { last_error: errText(e) });
+					return { ...head, ok: false, error: errText(e) };
+				}
+			}),
+		);
+		return { results };
+	}
 
 	async function handle(req: Request): Promise<Response> {
 		const m = /^\/jandi\/([^/]+)$/.exec(new URL(req.url).pathname);

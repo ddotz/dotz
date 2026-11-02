@@ -15,6 +15,35 @@ export type OutMsg = { target: string; kind: Kind; text: string; replyTo?: strin
 export type DeliverResult = { delivered: boolean; reason?: string; ids?: string[] };
 export type Incoming = { adapter: string; target: string; text: string; author: string; replyTo?: string; messageId?: string; quoted?: string };
 export type MessengerCtx = { receive(m: Incoming): void; log(s: string): void };
+// The generic settings schema every adapter describes itself with (served by hub/messengers-api.ts, drawn by web/js/25-settings-messengers.js).
+// Secrets are write-only: a GET never carries a secret value, only `set`; a PUT that omits a secret keeps it, "" clears it.
+export type SettingsField = { key: string; label: string; type: "text" | "secret" | "number" | "readonly" | "copy"; value?: string | number; set?: boolean; hint?: string; as_user?: boolean };
+export type SettingsRoom = {
+	id: string;
+	name: string;
+	kind: string;
+	project?: { target: string; name: string };
+	values: Record<string, string | number>;
+	set: Record<string, boolean>;
+	last_in?: number;
+	last_out?: number;
+	last_error?: string;
+};
+export type Settings = {
+	enabled: boolean;
+	help: string[];
+	fields: SettingsField[];
+	allow?: { label: string; hint?: string; items: string[] };
+	rooms?: { label: string; fields: SettingsField[]; items: SettingsRoom[]; editable: boolean };
+	projects: { target: string; name: string }[];
+	/** Another settings screen that owns the real controls (Discord). */
+	link?: { label: string; view: string };
+};
+export type SettingsPut = { enabled?: boolean; values?: Record<string, unknown>; allow?: string[]; rooms?: { id?: string; name?: string; kind?: string; project?: string; values?: Record<string, unknown> }[] };
+export type TestResult = { results: { id: string; name: string; ok: boolean; status?: number; error?: string }[] };
+/** A settings body the adapter refuses; the route answers 400 with the message. */
+export class SettingsError extends Error {}
+
 export type Adapter = {
 	id: string;
 	label: string;
@@ -28,6 +57,11 @@ export type Adapter = {
 	canButtons: boolean;
 	// Has its own send path (Discord): the fan-out never delivers to it.
 	native?: boolean;
+	settings?(): Settings;
+	saveSettings?(body: SettingsPut): Settings;
+	test?(): Promise<TestResult>;
+	/** Left out of the settings list (an adapter another module owns while it is unfinished). */
+	hidden?(): boolean;
 };
 
 /** The kind of conversation a target belongs to, or undefined for targets that live in the web only (mail:, settings:). */
@@ -45,7 +79,9 @@ export const register = (a: Adapter): void => void registry.set(a.id, a);
 export const adapters = (): Adapter[] => [...registry.values()];
 export const get = (id: string): Adapter | undefined => registry.get(id);
 
+let startCtx: MessengerCtx | undefined;
 export async function startAll(ctx: MessengerCtx): Promise<void> {
+	startCtx = ctx;
 	for (const a of registry.values()) {
 		if (!a.enabled()) continue;
 		try {
@@ -54,6 +90,17 @@ export async function startAll(ctx: MessengerCtx): Promise<void> {
 			a.status = { state: "error", error: String(e) };
 			log(`messenger ${a.id} failed to start: ${e}`);
 		}
+	}
+}
+/** Stop and start one adapter again (its settings changed); it stays off when disabled. */
+export async function restart(a: Adapter): Promise<void> {
+	await a.stop();
+	if (!startCtx || !a.enabled()) return;
+	try {
+		await a.start(startCtx);
+	} catch (e) {
+		a.status = { state: "error", error: String(e) };
+		log(`messenger ${a.id} failed to start: ${e}`);
 	}
 }
 export async function stopAll(): Promise<void> {

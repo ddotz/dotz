@@ -101,6 +101,10 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .dcs-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .dcs-err { color: var(--err); font-size: 13px; line-height: 20px; }
 .dcs-saved { align-self: flex-start; }
+.ms-copy { display: flex; gap: 8px; }
+.ms-copy .fi { flex: 1; min-width: 0; }
+.ms-addrow .tx { min-width: 0; }
+.ms-add { margin-top: 12px; }
 .dcs-res { display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; }
 .dcs-res.err { color: var(--err); }
 .dcs-ok { color: var(--ok); font-weight: 600; }
