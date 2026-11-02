@@ -6,6 +6,9 @@ import { pendingAskFile } from "./asks.ts";
 import { join } from "node:path";
 import { workerCheck } from "./activity.ts";
 import { msg } from "./i18n.ts";
+import { checkDone, doneChecks, type Check } from "./donesignals.ts";
+import { unlanded } from "./lanetree.ts";
+import { prompt } from "./laneprompt.ts";
 
 export const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 
@@ -41,7 +44,7 @@ export function report(lane: Lane, text: string, notice = false): void {
 	void workerCheck(`lane:${lane.name}`, lane.workingSince ?? 0, lane.sessionFile)
 		.catch(e => [`task metadata unreadable: ${e}`])
 		.then(problems => {
-			if (!problems.length) return hooks.report(lane, text, answering);
+			if (!problems.length) return gatewayCheck(lane, text, answering);
 			if (lane.claim === claim && claim) {
 				claim.problems = problems.slice(0, 10);
 				persist(lane);
@@ -50,6 +53,45 @@ export function report(lane: Lane, text: string, notice = false): void {
 			hooks.report(lane, `${text}\n\n[gateway check] task metadata contradicts this ${what}; do not take it as verified:\n- ${problems.slice(0, 10).join("\n- ")}`, answering);
 		});
 }
+// The gateway reads a machine-checkable Done-when back itself (donesignals.ts, dori done-flow.ts settle) instead of spending
+// an orchestrator turn on it: every check passes and the branch is landed -> the claim is verified and the report goes on
+// with the results; a failure goes straight back to the lane (DONE_BOUNCES times in a row, then to the orchestrator). A
+// plain-text Done-when (owner-asked lanes) is relayed as before and verified by the orchestrator.
+export const DONE_BOUNCES = 2;
+async function gatewayCheck(lane: Lane, text: string, answering: boolean): Promise<void> {
+	const claim = lane.claim;
+	const brief = join(dir(lane.name), "brief.md");
+	const signals = claim && existsSync(brief) ? doneChecks(readFileSync(brief, "utf8")) : undefined;
+	if (!claim || !signals) return hooks.report(lane, text, answering);
+	const checks: Check[] = await checkDone(signals, lane.cwd).catch(e => [{ signal: "Done when", ok: false, detail: `check failed: ${e}` }]);
+	const open = lane.worktree ? unlanded(lane.worktree) : undefined;
+	if (lane.worktree) checks.push({ signal: `landed ${lane.worktree.branch} in ${lane.worktree.base}`, ok: !open, detail: open ?? "merged" });
+	// A newer report replaced this claim while the checks ran: that report has its own check.
+	if (lane.claim !== claim) return log(`lane ${lane.name} Done-when check dropped (a newer report replaced the claim)`);
+	const lines = checks.map(c => `${c.ok ? "ok" : "NOT"} ${c.signal} -> ${c.detail}`);
+	if (checks.every(c => c.ok)) {
+		lane.claim = { state: "verified", at: now(), evidence: `gateway Done-when check: ${lines.join("; ")}`.slice(0, 1000) };
+		lane.doneBounces = 0;
+		persist(lane);
+		log(`lane ${lane.name} [done] verified by the gateway: ${lines.join("; ")}`);
+		hooks.report(lane, `${text}\n\n[gateway check] verified, every Done-when check passed:\n- ${lines.join("\n- ")}`, answering);
+		return hooks.verified(lane.name, text);
+	}
+	const failed = lines.filter(l => l.startsWith("NOT"));
+	claim.problems = failed.slice(0, 10);
+	lane.doneBounces = (lane.doneBounces ?? 0) + 1;
+	persist(lane);
+	log(`lane ${lane.name} [done] not verified by the gateway (${lane.doneBounces}): ${failed.join("; ")}`);
+	if (lane.proc && lane.doneBounces <= DONE_BOUNCES) {
+		hooks.notice(lane, `[gateway check] [done] not accepted yet, sent back to the session:\n- ${failed.join("\n- ")}`);
+		lane.claim = undefined;
+		persist(lane);
+		return prompt(lane, `[gateway check] Your [done] is not verified: these Done-when checks fail now:\n- ${failed.join("\n- ")}\nFix them (land the branch if that is what fails) and report [done] again, or report [fail] / [ask] saying why they cannot pass.`);
+	}
+	lane.doneBounces = 0;
+	hooks.report(lane, `${text}\n\n[gateway check] Done-when checks fail; do not take this [done] as verified:\n- ${failed.join("\n- ")}`, answering);
+}
+
 // Drops the pending ask; the caller persists.
 export function clearAsk(lane: Lane): void {
 	if (!lane.pendingAsk) return;

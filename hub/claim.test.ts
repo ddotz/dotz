@@ -1,7 +1,8 @@
 // A lane's [done] report is only a claim ("reported"); the orchestrator's verify makes it "verified"; the next report that
 // is not [done] withdraws it. Lanes run on a minimal fake runtime adapter (the same approach as runtime/fake-adapter.test.ts).
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type * as Lanes from "./lanes.ts";
 import { cfg } from "./config.ts";
@@ -161,3 +162,86 @@ test("claim: a report without a tone marker is checked against OmO task metadata
 	await advance(300);
 });
 
+
+// Proposal #1 (dori signals.ts / done-flow.ts): a machine-checkable Done-when is read back by the gateway itself on [done]:
+// a failure goes back to the lane (no report reaches the orchestrator), a pass marks the claim verified with no verify call.
+test("claim: the gateway checks a machine-checkable Done-when on [done], sends failures back to the lane, verifies a pass", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "dotz-claim-gw-"));
+	rmSync(join(DATA, "lanes", "gw"), { recursive: true, force: true });
+	const reports: string[] = [];
+	let relayed = Promise.withResolvers<string>();
+	let noticed = Promise.withResolvers<string>();
+	const verified = Promise.withResolvers<string>();
+	l.setReportHandler((_lane, text) => (reports.push(text), relayed.resolve(text)));
+	l.setNoticeHandler((_lane, text) => noticed.resolve(text));
+	l.setVerifiedHandler(name => verified.resolve(name));
+	l.setIdleHandler(() => {});
+	const lane = l.launch("gw", cwd, "Write the result.\nDone when: file result.md; command `test -s result.md`");
+	const agent = agents.at(-1)!;
+	const sent: string[] = [];
+	agent.send = (text: string) => void sent.push(text);
+	await advance(3000);
+
+	await turn(agent, "[done] result written");
+	const back = await noticed.promise;
+	expect(back).toContain("NOT file result.md -> missing");
+	expect(back).toContain("NOT command `test -s result.md` -> exit 1");
+	expect(sent.at(-1)).toContain("[gateway check] Your [done] is not verified");
+	expect(lane.claim).toBeUndefined();
+	expect(reports).toEqual([]);
+
+	writeFileSync(join(cwd, "result.md"), "done\n");
+	await turn(agent, "[done] now it is there");
+	const text = await relayed.promise;
+	expect(text).toContain("[gateway check] verified, every Done-when check passed");
+	expect(await verified.promise).toBe("gw");
+	expect(lane.claim).toMatchObject({ state: "verified" });
+	expect(JSON.parse(readFileSync(join(DATA, "lanes", "gw", "lane.json"), "utf8")).claim).toMatchObject({ state: "verified" });
+	expect(() => l.verifyLane("gw", "again")).toThrow("already verified");
+	l.stopLane("gw");
+	await advance(300);
+});
+
+const git = (cwd: string, ...args: string[]) => {
+	const r = Bun.spawnSync(["git", ...args], { cwd, env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@x", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@x" } });
+	if (r.exitCode !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr.toString()}`);
+};
+
+// Proposal #4 (dori done-flow.ts:54): a lane whose lane/<name> branch is not merged into its base is not "verified".
+test("claim: verify refuses a lane whose branch is not merged into its base, unless forced; merged passes", async () => {
+	const repo = mkdtempSync(join(tmpdir(), "dotz-claim-land-"));
+	git(repo, "init", "-q", "-b", "main");
+	writeFileSync(join(repo, "a.txt"), "1\n");
+	git(repo, "add", "-A");
+	git(repo, "commit", "-qm", "one");
+	for (const n of ["ld", "lf"]) rmSync(join(DATA, "lanes", n), { recursive: true, force: true });
+	l.setReportHandler(() => {});
+	l.setNoticeHandler(() => {});
+	l.setIdleHandler(() => {});
+	const lane = l.launch("ld", repo, "Change a.\nDone when: owner approves");
+	const agent = agents.at(-1)!;
+	await advance(3000);
+	const wt = lane.worktree!.path;
+	writeFileSync(join(wt, "a.txt"), "2\n");
+	git(wt, "commit", "-qam", "two");
+	await turn(agent, "[done] changed");
+	expect(() => l.verifyLane("ld", "looked at it")).toThrow("lane ld is not landed: its HEAD has commits not in main");
+	expect(lane.claim?.state).toBe("reported");
+	git(repo, "merge", "-q", "--ff-only", "lane/ld");
+	l.verifyLane("ld", "merged, a.txt is 2");
+	expect(lane.claim?.state).toBe("verified");
+	l.stopLane("ld");
+	await advance(300);
+
+	// Work that stays unmerged on purpose (a PR under review) is verified only with force, the reason in the evidence.
+	const forced = l.launch("lf", repo, "Change b.\nDone when: owner approves");
+	const fa = agents.at(-1)!;
+	await advance(3000);
+	writeFileSync(join(forced.worktree!.path, "b.txt"), "1\n");
+	await turn(fa, "[done] b added");
+	expect(() => l.verifyLane("lf", "b added")).toThrow("uncommitted changes");
+	l.verifyLane("lf", "kept unmerged: PR under review", true);
+	expect(forced.claim?.state).toBe("verified");
+	l.stopLane("lf");
+	await advance(300);
+});

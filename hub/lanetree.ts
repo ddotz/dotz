@@ -47,14 +47,8 @@ export function laneWorktree(name: string, cwd: string): { cwd: string; worktree
 export function dropWorktree(lane: Lane): string {
 	const w = lane.worktree;
 	if (!w || !existsSync(w.path)) return "";
-	if (git(w.path, "status", "--porcelain").out) return `worktree kept: uncommitted changes in ${w.path}`;
-	// A rebase, merge or cherry-pick stopped half way leaves the branch at its old tip (already merged) and the new commits on a detached HEAD:
-	// removing then lost a session's rebased work (2026-10-28). So is any HEAD with commits the base does not have.
-	const gitDir = git(w.path, "rev-parse", "--absolute-git-dir").out;
-	if (gitDir && ["rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD"].some(f => existsSync(join(gitDir, f)))) return `worktree kept: a rebase or merge is in progress in ${w.path}`;
-	const head = git(w.path, "rev-parse", "HEAD").out;
-	if (head && !git(w.repo, "merge-base", "--is-ancestor", head, w.base).ok) return `worktree kept: its HEAD has commits not in ${w.base}`;
-	if (!git(w.repo, "merge-base", "--is-ancestor", w.branch, w.base).ok) return `worktree kept: ${w.branch} is not merged into ${w.base}`;
+	const why = unlanded(w);
+	if (why) return `worktree kept: ${why}`;
 	const rm = git(w.repo, "worktree", "remove", w.path);
 	if (!rm.ok) return `worktree kept: ${rm.err}`;
 	git(w.repo, "branch", "-d", w.branch);
@@ -62,4 +56,18 @@ export function dropWorktree(lane: Lane): string {
 	lane.worktree = undefined;
 	persist(lane);
 	return `worktree removed (${w.branch} merged into ${w.base})`;
+}
+
+// Why the lane's work is not landed in its base branch yet (dori done-flow.ts unpushedWork), or undefined when it is: also
+// the verify gate, so a lane is never "verified" while its branch sits unmerged (laneops.ts verifyLane, lanereport.ts).
+export function unlanded(w: Worktree): string | undefined {
+	if (existsSync(w.path) && git(w.path, "status", "--porcelain").out) return `uncommitted changes in ${w.path}`;
+	// A rebase, merge or cherry-pick stopped half way leaves the branch at its old tip (already merged) and the new commits on a detached HEAD:
+	// removing then lost a session's rebased work (2026-10-28). So is any HEAD with commits the base does not have.
+	const gitDir = existsSync(w.path) ? git(w.path, "rev-parse", "--absolute-git-dir").out : "";
+	if (gitDir && ["rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD"].some(f => existsSync(join(gitDir, f)))) return `a rebase or merge is in progress in ${w.path}`;
+	const head = existsSync(w.path) ? git(w.path, "rev-parse", "HEAD").out : "";
+	if (head && !git(w.repo, "merge-base", "--is-ancestor", head, w.base).ok) return `its HEAD has commits not in ${w.base}`;
+	if (!git(w.repo, "merge-base", "--is-ancestor", w.branch, w.base).ok) return `${w.branch} is not merged into ${w.base}`;
+	return undefined;
 }
