@@ -1,16 +1,20 @@
-// Versioned delivery (docs/releases.md): tag v<YYMMDD.N> on main plus VERSION, KST day, at most three a day.
+// Versioned delivery (docs/releases.md): tag v<YYMMDD.N> scheduled or v<YYMMDD.N.M> forced on main plus VERSION, KST day.
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export type Release = { readonly date: string; readonly n: number; readonly text: string };
+export type Release = { readonly date: string; readonly n: number; readonly hotfix: number | null; readonly text: string };
 
 export type Plan =
 	| { ok: true; version: Release; previous: Release | null }
 	| { ok: false; code: "limit" | "future"; reason: string };
 
+export type ForcedPlan =
+	| { ok: true; version: Release; previous: Release }
+	| { ok: false; code: "no-base"; reason: string };
+
 const MAX_PER_DAY = 3;
 const KST = "Asia/Seoul";
-const VERSION_RE = /^v?(\d{2})(\d{2})(\d{2})\.(\d{1,2})$/;
+export const TAG_RE = /^v(\d{2})(\d{2})(\d{2})\.([1-3])(?:\.(\d+))?$/;
 
 function kstParts(now: Date): { y: number; m: number; d: number } {
 	const parts = new Intl.DateTimeFormat("en-US", { timeZone: KST, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
@@ -33,20 +37,24 @@ export function shiftDay(date: string, delta: number): string {
 }
 
 export function parseVersion(text: string): Release | null {
-	const m = VERSION_RE.exec(text.trim());
+	const trimmed = text.trim();
+	const m = TAG_RE.exec(trimmed.startsWith("v") ? trimmed : `v${trimmed}`);
 	if (!m) return null;
-	const year = Number(m[1]);
 	const month = Number(m[2]);
 	const day = Number(m[3]);
-	const n = Number(m[4]);
-	if (month < 1 || month > 12 || day < 1 || day > 31 || n < 1) return null;
+	if (month < 1 || month > 12 || day < 1 || day > 31) return null;
 	const date = `${m[1]}${m[2]}${m[3]}`;
-	return { date, n, text: `${date}.${n}` };
+	const n = Number(m[4]);
+	const hotfix = m[5] === undefined ? null : Number(m[5]);
+	if (hotfix !== null && hotfix < 1) return null;
+	return { date, n, hotfix, text: `${date}.${n}${hotfix === null ? "" : `.${hotfix}`}` };
 }
 
 export function compareVersions(a: Release, b: Release): number {
 	const date = Number(a.date) - Number(b.date);
-	return date !== 0 ? date : a.n - b.n;
+	if (date !== 0) return date;
+	if (a.n !== b.n) return a.n - b.n;
+	return (a.hotfix ?? 0) - (b.hotfix ?? 0);
 }
 
 export function newestVersion(tags: readonly string[]): Release | null {
@@ -61,14 +69,11 @@ export function newestVersion(tags: readonly string[]): Release | null {
 export function planNext(tags: readonly string[], today: string): Plan {
 	const versions = tags.map(parseVersion).filter((v): v is Release => v !== null);
 	const newest = newestVersion(tags);
-	if (!newest) return { ok: true, version: parseVersion(`${today}.1`)!, previous: null };
-	if (newest.date > today) {
+	if (newest && newest.date > today) {
 		return { ok: false, code: "future", reason: `${newest.text} 태그가 오늘(${today})보다 뒤 날짜예요. 태그나 기기 시계를 확인해 주세요.` };
 	}
-	if (newest.date < today) return { ok: true, version: parseVersion(`${today}.1`)!, previous: newest };
-
-	const todayNs = new Set(versions.filter(v => v.date === today).map(v => v.n));
-	if (todayNs.size >= MAX_PER_DAY || Math.max(...todayNs) >= MAX_PER_DAY) {
+	const todayNs = new Set(versions.filter(v => v.date === today && v.hotfix === null).map(v => v.n));
+	if (todayNs.size >= MAX_PER_DAY || Math.max(0, ...todayNs) >= MAX_PER_DAY) {
 		return {
 			ok: false,
 			code: "limit",
@@ -77,7 +82,20 @@ export function planNext(tags: readonly string[], today: string): Plan {
 	}
 	let n = todayNs.size + 1;
 	if (todayNs.has(n)) n = [1, 2, 3].find(candidate => !todayNs.has(candidate))!;
-	return { ok: true, version: parseVersion(`${today}.${n}`)!, previous: newest };
+	return { ok: true, version: { date: today, n, hotfix: null, text: `${today}.${n}` }, previous: newest };
+}
+
+export function planForcedNext(tags: readonly string[]): ForcedPlan {
+	const newest = newestVersion(tags);
+	if (!newest) {
+		return { ok: false, code: "no-base", reason: "강제 릴리스는 마지막 정기 버전에 .M으로 붙어요. 먼저 정기 버전을 하나 내주세요." };
+	}
+	const hotfix = (newest.hotfix ?? 0) + 1;
+	return {
+		ok: true,
+		version: { date: newest.date, n: newest.n, hotfix, text: `${newest.date}.${newest.n}.${hotfix}` },
+		previous: newest,
+	};
 }
 
 export function summarizeChanges(oneline: readonly string[], previous: Release | null): string {
@@ -102,7 +120,7 @@ export async function gitOutput(args: readonly string[], cwd: string): Promise<{
 export async function localTags(root: string): Promise<string[]> {
 	const r = await gitOutput(["tag", "--list", "v*"], root);
 	if (r.code !== 0) throw new Error(`태그를 읽지 못했어요: ${r.out}`);
-	return r.out.split("\n").map(s => s.trim()).filter(Boolean);
+	return r.out.split("\n").map(s => s.trim()).filter(t => TAG_RE.test(t));
 }
 
 export async function dirtyTracked(root: string): Promise<string[]> {
@@ -120,6 +138,7 @@ export async function hasCommitsSince(root: string, since: string | null): Promi
 
 export type PublishOptions = {
 	auto: boolean;
+	force: boolean;
 	dryRun: boolean;
 	cwd: string;
 	now?: Date;
@@ -151,9 +170,10 @@ export async function publishVersion(opts: PublishOptions): Promise<number> {
 
 	const dirty = await dirtyTracked(root);
 	const today = todayKst(now);
-	const plan = planNext(await localTags(root), today);
+	const tags = await localTags(root);
+	const plan = opts.force ? planForcedNext(tags) : planNext(tags, today);
 	if (!plan.ok) {
-		print("다음 버전을 낼 수 없어요.");
+		print(opts.force ? "강제 릴리스를 낼 수 없어요." : "다음 버전을 낼 수 없어요.");
 		print(plan.reason);
 		return 1;
 	}
@@ -164,7 +184,7 @@ export async function publishVersion(opts: PublishOptions): Promise<number> {
 	const log = await gitOutput(["log", "--oneline", "--max-count=20", ...(base ? [`${base}..HEAD`] : ["HEAD"])], root);
 	const summary = summarizeChanges(log.out.split("\n").filter(Boolean), previous);
 
-	print(`다음 버전: ${tag}${previous ? ` (이전 ${base})` : " (첫 버전)"}`);
+	print(`다음 ${opts.force ? "강제 " : ""}버전: ${tag}${previous ? ` (이전 ${base})` : " (첫 버전)"}`);
 	print(`변경 요약: ${summary}`);
 
 	if (opts.dryRun) {
@@ -249,10 +269,10 @@ export async function publishVersion(opts: PublishOptions): Promise<number> {
 
 if (import.meta.main) {
 	const args = process.argv.slice(2);
-	const unknown = args.filter(a => a !== "--auto" && a !== "--dry-run");
-	if (unknown.length) {
-		console.log("usage: bun hub/release.ts [--auto] [--dry-run]");
+	const unknown = args.filter(a => a !== "--auto" && a !== "--force" && a !== "--dry-run");
+	if (unknown.length || (args.includes("--auto") && args.includes("--force"))) {
+		console.log("usage: bun hub/release.ts [--auto] [--force] [--dry-run]");
 		process.exit(2);
 	}
-	process.exit(await publishVersion({ auto: args.includes("--auto"), dryRun: args.includes("--dry-run"), cwd: process.cwd() }));
+	process.exit(await publishVersion({ auto: args.includes("--auto"), force: args.includes("--force"), dryRun: args.includes("--dry-run"), cwd: process.cwd() }));
 }
