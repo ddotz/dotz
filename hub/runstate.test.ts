@@ -35,7 +35,7 @@ test("a question waiting on the owner wins over background work and the plan", (
 	const ask = { text: "어느 쪽으로 할까요?", at: iso(120_000) };
 	expect(runState({ ...base, ask, work: [{ description: "빌드", started_at: now - 60_000 }], todos: todos(3, "테스트") }))
 		.toEqual({ kind: "waiting", reason: "ask", since: ask.at, detail: "어느 쪽으로 할까요?", todos: 3 });
-	expect(runState({ ...base, ask: { text: "   " }, todos: todos(1) })).toEqual({ kind: "idle", reason: "unknown", since: undefined, todos: 1 });
+	expect(runState({ ...base, ask: { text: "   " }, todos: todos(1) })).toEqual({ kind: "idle", reason: "interrupted", since: undefined, todos: 1 });
 });
 
 test("running background work, a child and a deferred answer are named waits", () => {
@@ -49,7 +49,7 @@ test("running background work, a child and a deferred answer are named waits", (
 test("idle with open todos gives the reason: the turn ended with work left, or it is unknown", () => {
 	expect(runState({ ...base, todos: todos(2, "테스트"), lastTurnEnd: iso(400_000) }))
 		.toEqual({ kind: "idle", reason: "unfinished", since: iso(400_000), detail: "테스트", todos: 2 });
-	expect(runState({ ...base, todos: todos(1) })).toEqual({ kind: "idle", reason: "unknown", todos: 1 });
+	expect(runState({ ...base, todos: todos(1) })).toEqual({ kind: "idle", reason: "interrupted", todos: 1 });
 });
 
 test("idle with nothing left is done after a turn, and idle before any turn", () => {
