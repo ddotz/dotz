@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Incoming, Settings } from "./messenger.ts";
 import { createTelegramAdapter, loadTelegramConfig, saveTelegramConfig, telegramConfigPath } from "./messenger-telegram.ts";
 
-const TOKEN = "123456789:AAHsecretSecretSecretSecretSecret";
+const TOKEN = "123456789:test-token-not-real";
 const dirs: string[] = [];
 
 const tempDir = (): string => {
