@@ -101,6 +101,20 @@ describe("shell update", () => {
 		handlers.message!({ data: { type: "other" }, waitUntil: () => { throw new Error("not a refresh"); } });
 	});
 
+	test("a navigation to a JANDI peer's chat page goes to the network, while other navigations get the cached shell", () => {
+		const handlers: Record<string, (ev: unknown) => void> = {};
+		const self = { addEventListener: (t: string, h: (ev: unknown) => void) => { handlers[t] = h; }, clients: { matchAll: async () => [] } };
+		new Function("self", "caches", "location", "Response", "URL", "fetch", web("sw.js"))(self, fakeCaches(), { origin: "https://dotz.test" }, Response, URL, async () => new Response(""));
+		const claimed = (path: string) => {
+			let hit = false;
+			handlers.fetch!({ request: { method: "GET", mode: "navigate", url: `https://dotz.test${path}` }, respondWith: () => { hit = true; }, waitUntil: () => {} });
+			return hit;
+		};
+		expect(claimed("/jandi-peer/work")).toBe(false);
+		expect(claimed("/jandi-peer/%EC%A7%91/")).toBe(false);
+		expect(claimed("/")).toBe(true);
+	});
+
 	test("every cached icon is fetched again in the background refresh, so a changed icon reaches the phone without a CACHE bump and without a reload", async () => {
 		const sw = web("sw.js");
 		const icons = [...new Set([...sw.matchAll(/"(\/icons\/[^"]+)"/g)].map(m => m[1]!))];

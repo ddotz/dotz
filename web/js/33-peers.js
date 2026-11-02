@@ -1,5 +1,5 @@
 /* ---------- computers: switch between this owner's gateways (맥북, 맥미니) ---------- */
-// Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?}]. The chip next to the title shows this computer
+// Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?, via?}]. A row with via "jandi" is a computer reached only through the owner's JANDI self chat (hub/jandi-peers.ts): its url is a chat page on this gateway, opened in this app. The chip next to the title shows this computer
 // and appears only with 2 or more, with a dot on its chevron while another computer has something unread (the counts live in the sheet rows); the sheet lists them; choosing one opens that computer's own address (its own PWA, login and push).
 // The last list that arrived is kept in localStorage and drawn at once: coming back from the other computer the page starts from the service worker's
 // cached shell before the phone's network is up, and a first /api/peers that failed left the chip hidden until the next minute. A failed fetch is retried within seconds.
@@ -16,7 +16,7 @@ const prText = p => [p.need > 0 ? `답변 필요 ${p.need}` : "", p.unread > 0 ?
 async function prLoad() {
   try {
     const r = await api("/api/peers"); PR.list = Array.isArray(r) ? prOrder(r) : []; PR.tries = 0; PR.fresh = true;
-    try { localStorage.setItem("dotz-peers", JSON.stringify(PR.list.map(({ name, url, self, online }) => ({ name, url, self, online })))); } catch {}
+    try { localStorage.setItem("dotz-peers", JSON.stringify(PR.list.map(({ name, url, self, online, via }) => ({ name, url, self, online, via })))); } catch {}
   } catch {
     clearTimeout(PR.timer);
     if (PR.tries < PR_RETRY_MS.length) PR.timer = setTimeout(prLoad, PR_RETRY_MS[PR.tries++]);
@@ -92,7 +92,7 @@ function prPaint() {
   chip.hidden = !on;
   if (!on) { prClose(false); return; }
   // The TLS handshake to the other computer is paid now, not when the owner taps it.
-  for (const p of prOthers()) if (p.online && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
+  for (const p of prOthers()) if (p.online && !p.via && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
   const others = prOthers(), more = others.some(p => p.unread > 0 || p.need > 0), need = others.some(p => p.need > 0);
   // el() skips a null child; Node.append() would write it as the text "null" (the chip once read "맥북 null"), so the chip is built with el().
   clear(chip).append(el("span", { class: "pc-n", text: me.name }), el("span", { class: "pc-c" }, icon("chev", "pc-i"), more ? el("span", { class: `pc-d${need ? " need" : ""}`, role: "img", "aria-label": "다른 컴퓨터에 새 알림" }) : null));
@@ -141,6 +141,8 @@ window.addEventListener("message", ev => {
 });
 
 function prPick(p, o = {}) {
+  // a JANDI-only computer has no gateway of its own: its chat page is on this origin, so the app stays where it is
+  if (p.via === "jandi" && !p.self) { prClose(false); location.href = p.url; return; }
   // inside another computer's app frame: the app around it does the switch (back to itself, or to a third computer)
   if (prEmbedded && !p.self) { prClose(false); window.parent.postMessage({ dotz: "peer-pick", url: p.url }, "*"); return; }
   if (p.self) { prClose(); return; }
@@ -158,7 +160,7 @@ function prSheet() {
     // Connection state is the pill on the right (not a second dot next to the accent dot of the computer being viewed), so the subtitle only says "지금 보고 있어요".
     const note = prText(p);
     return el("button", { type: "button", class: `pr-row${p.self ? " on" : ""}`, "aria-current": p.self ? "true" : null, onclick: () => prPick(p) },
-      el("span", { class: "pr-b" }, el("span", { class: "pr-t", text: p.name }), p.self ? el("span", { class: "pr-s", text: "지금 보고 있어요" }) : null),
+      el("span", { class: "pr-b" }, el("span", { class: "pr-t", text: p.name }), p.self ? el("span", { class: "pr-s", text: "지금 보고 있어요" }) : null, p.via === "jandi" ? el("span", { class: "pr-s", text: "잔디" }) : null),
       note ? el("span", { class: `pr-bd${p.need > 0 ? " need" : ""}`, text: note }) : null,
       el("span", { class: `pr-st${!p.self && selfDown ? "" : p.online ? " ok" : ""}`, text: p.self && selfDown ? "연결 안 됨" : !p.self && selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨" }));
   });
