@@ -3,8 +3,8 @@
 // /api/state carries it under `runs` for the main conversation and every lane; the web chat shows it as one line above the
 // composer (web/js/41-runstate.js). The derivation is pure so every case is tested without a gateway.
 export type RunKind = "working" | "waiting" | "idle" | "limited" | "error" | "stopped" | "done";
-// waiting: ask | work | recover (a failed worker the agent is taking up itself) | child | later | capacity · idle: unfinished | unknown · limited: rate | owner (a billing/auth block) · stopped: owner
-export type RunReason = "ask" | "work" | "recover" | "child" | "later" | "capacity" | "unfinished" | "unknown" | "rate" | "owner";
+// waiting: ask | work | recover (a failed worker the agent is taking up itself) | child | later | capacity · idle: unfinished | interrupted · limited: rate | owner (a billing/auth block) · stopped: owner
+export type RunReason = "ask" | "work" | "recover" | "child" | "later" | "capacity" | "unfinished" | "interrupted" | "unknown" | "rate" | "owner";
 // work: the background worker the line is about (중단 while it runs, 다시 맡기기 after it failed); cancelled: the owner stopped it.
 export type RunState = { kind: RunKind; reason?: RunReason; since?: string; detail?: string; todos?: number; work?: string; cancelled?: boolean };
 
@@ -60,7 +60,7 @@ export function runState(i: RunInput): RunState {
 	if (f && f.status === "failed" && (f.ended_at ?? 0) > (Date.parse(i.lastTurnEnd ?? "") || 0)) return { ...failedRun(f, false), ...todos };
 	if (i.later) return { kind: "waiting", reason: "later", since: i.lastTurnEnd, ...todos };
 	if (i.capacity) return { kind: "waiting", reason: "capacity", detail: short(i.capacity), ...todos };
-	if (open) return { kind: "idle", reason: i.lastTurnEnd ? "unfinished" : "unknown", since: i.lastTurnEnd, ...(short(i.todos?.current) ? { detail: short(i.todos?.current) } : {}), ...todos };
+	if (open) return { kind: "idle", reason: i.lastTurnEnd ? "unfinished" : "interrupted", since: i.lastTurnEnd, ...(short(i.todos?.current) ? { detail: short(i.todos?.current) } : {}), ...todos };
 	if (i.lastTurnEnd) return { kind: "done", since: i.lastTurnEnd };
 	return { kind: "idle" };
 }

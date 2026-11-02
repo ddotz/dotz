@@ -35,7 +35,7 @@ function runText(r) {
     case "working": return [label, r.detail, r.since ? runSince(r.since) : ""].filter(Boolean).join(" · ");
     case "waiting": return [waitLabel(r), r.reason === "later" ? "" : r.reason === "recover" && r.detail ? `${r.detail.split(" · ")[0]} 실패` : r.detail, r.reason === "work" && r.since ? runSince(r.since) : "", left].filter(Boolean).join(" · ");
     case "idle": {
-      const why = r.reason === "unfinished" ? "이번 턴이 끝났는데 할 일이 남아 있어요" : r.reason === "unknown" ? "이유를 알 수 없어요" : "";
+      const why = r.reason === "unfinished" ? "이번 턴이 끝났는데 할 일이 남아 있어요" : r.reason === "interrupted" || r.reason === "unknown" ? "마지막 턴이 끝나기 전에 멈췄어요" : "";
       return [label, left, why].filter(Boolean).join(" · ");
     }
     case "limited": return [label, r.detail ? `${kstTime(r.detail)}까지` : "잠시 쉬어요"].join(" · ");

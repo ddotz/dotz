@@ -134,10 +134,10 @@ test("idle at 1280px with tasks left", async () => {
 	await shot(v, "run-idle-todos-1280.png");
 }, 20_000);
 
-test("idle with tasks left and no known turn: 이유를 알 수 없어요, and no button", async () => {
+test("idle with tasks left and no known turn: the turn was interrupted, and no button", async () => {
 	const v = await boot();
-	const r = await show(v, { kind: "idle", reason: "unknown", todos: 1 });
-	expect(r.text).toBe("쉬는 중 · 할 일 1개 남음 · 이유를 알 수 없어요");
+	const r = await show(v, { kind: "idle", reason: "interrupted", todos: 1 });
+	expect(r.text).toBe("쉬는 중 · 할 일 1개 남음 · 마지막 턴이 끝나기 전에 멈췄어요");
 	expect(await v.evaluate(`$("#runstate-act").hidden`)).toBe(true);
 }, 20_000);
 
