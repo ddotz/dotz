@@ -12,7 +12,7 @@
 //   config key `guard`, see README. Each skips itself when the owner's original ~/.omp extension of that name is installed.
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, relative } from "node:path";
 import { FIELD_TYPES } from "../hub/authfields.ts";
@@ -72,7 +72,15 @@ const throwaway = () => throwawayReason({ hubPid: hubPid(DATA) });
 
 function enforceRules(pi: any): void {
 	let ready = false;
-	const loading = loadPlugins(DATA).then(() => void (ready = true));
+	// Plugin load and reload lines (a failed reload keeps the old guard) go to hub.log, where the owner reads the gateway's.
+	const pluginLog = (line: string) => {
+		try {
+			appendFileSync(join(DATA, "hub.log"), `${new Date().toISOString()} agent ${process.pid}: ${line}\n`);
+		} catch (error) {
+			console.error(`dotz: ${line} (hub.log not written: ${error})`);
+		}
+	};
+	const loading = loadPlugins(DATA, pluginLog).then(() => void (ready = true));
 	const check = (event: any) => {
 		const copy = throwaway();
 		const live = copy ? liveWrite(event, [...new Set([liveDataDir(DATA), defaultDataDir()].filter((d): d is string => Boolean(d)))]) : undefined;
