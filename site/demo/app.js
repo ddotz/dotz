@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "eaf0cc3aaac2";
+const WEB_BUILD = "71a23317fb62";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -4530,12 +4530,35 @@ async function takeBack(i) {
   ta.value = r.text; autosize(); renderWorking(); ta.focus();
 }
 const kfmt = n => n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n);
+// A model id as the composer chip shows it (owner 2026-11-03: a long id was cut in the bar on a phone): the vendor word is dropped
+// when the id repeats it, a version pair becomes 5.5, and the remaining words are kept only while the label stays in MODEL_CHIP_MAX
+// characters. A catalog name (M.pickable/available) is shown as it is; the full id stays in the chip's title and the picker.
+const MODEL_CHIP_MAX = 20;
+const chipCut = s => (s.length > MODEL_CHIP_MAX ? `${s.slice(0, MODEL_CHIP_MAX - 1)}…` : s);
+function modelShort(sel) {
+  const seg = String(sel || "").split("/"), model = seg.pop() || "", prov = (seg.pop() || "").toLowerCase();
+  const words = model.replace(/^claude[-_]?/i, "").split(/[-_]/).filter(w => w && w.toLowerCase() !== prov);
+  const label = [];
+  for (const w of words) {
+    const next = [...label, w].join(" ");
+    if (label.length && next.length > MODEL_CHIP_MAX) break;
+    label.push(w);
+  }
+  const joined = chipCut((label.length ? label.join(" ") : model).replace(/(\d+) (\d+)$/, "$1.$2"));
+  return /^[a-z]/.test(joined) ? joined.replace(/^./, c => c.toUpperCase()) : joined;
+}
+// The chip's label: the models list's own name when it is a name, and the id-derived short form when that "name" is just the id
+// (the deepseek entry in the catalog names itself after its selector) or there is no entry at all.
+function modelLabel(base, a) {
+  const named = a && a.name ? String(a.name).replace(/^Claude\s+/i, "") : "";
+  return named && !named.includes("/") ? chipCut(named) : modelShort(base);
+}
 // "anthropic/claude-opus-5-5:medium" -> "Opus 5.5 · medium" (the models list name when it is loaded).
 function modelChipText(sel) {
   const [base, level] = String(sel || "").split(":");
   if (!base) return "";
   const a = [...((M && M.pickable) || []), ...((M && M.available) || [])].find(x => x.selector === base || x.selector === sel);
-  const nm = a && a.name ? a.name.replace(/^Claude\s+/i, "") : base.split("/").pop().replace(/^claude-/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/-(\d+)$/, " $1").replace(/^./, c => c.toUpperCase());
+  const nm = modelLabel(base, a);
   return level ? `${nm} · ${thinkKo(level)}` : nm;
 }
 function renderCtxRing() {
@@ -4554,7 +4577,7 @@ function renderCtxRing() {
   const [base, level] = String(sel || "").split(":"), eb = $("#c-effort");
   mb.hidden = !sel; eb.hidden = !level;
   if (sel) prefetchTV();
-  if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `${owner} 모델 · ${t}`; }
+  if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `${owner} 모델 · ${t}${base && base !== t ? ` (${base})` : ""}`; }
   if (level) { eb.textContent = thinkKo(level); eb.title = `${owner} 추론 강도 · ${thinkKo(level)}`; }
   const keyed = !!(orchT ? S && S.orchestrator && S.orchestrator.key_fallback : lane && lane.key_fallback);
   $("#c-api").hidden = !keyed;
@@ -7096,7 +7119,10 @@ const UPD = { info: null, wait: null, timer: 0 };
 // 실행 하네스 (hub/harness-update.ts, /api/harness/update): the harness binary itself, checked beside dotz's own version.
 const HV = { info: null, timer: 0 };
 const updWhen = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }); };
-const updVer = v => !v ? "알 수 없음" : v.kind === "git" ? `${v.commit.short} · ${updWhen(v.commit.date)}${v.branch !== "main" ? ` · ${v.branch}` : ""}` : v.kind === "tarball" ? `설치본 ${v.commit.short} · ${updWhen(v.installed)}${v.ref && v.ref !== "main" ? ` · ${v.ref}` : ""}` : v.kind === "install" ? `설치본 · ${updWhen(v.installed)}` : "알 수 없음";
+const updVer = v => !v ? "알 수 없음" : v.kind === "git" ? `${v.release ? `v${v.release} · ` : ""}${v.commit.short} · ${updWhen(v.commit.date)}${v.branch !== "main" ? ` · ${v.branch}` : ""}` : v.kind === "tarball" ? `${v.release ? `v${v.release} · ` : ""}설치본 ${v.commit.short} · ${updWhen(v.installed)}${v.ref && v.ref !== "main" ? ` · ${v.ref}` : ""}` : v.kind === "install" ? `설치본 · ${updWhen(v.installed)}` : "알 수 없음";
+// Released versions (hub/selfupdate.ts compareReleases): numeric on date, N, then the forced part; missing sorts below any version.
+const updRel = s => { const m = /^(\d{6})\.([1-3])(?:\.(\d+))?$/.exec(String(s || "").replace(/^v/, "")); return m ? [Number(m[1]), Number(m[2]), Number(m[3] || 0)] : null; };
+const updRelNewer = (disk, available) => { const a = updRel(disk), b = updRel(available); if (!b) return false; if (!a) return true; for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] < b[i]; return false; };
 // `cmd` spans in server hints become <code>.
 const updCode = s => String(s || "").split("`").map((p, i) => i % 2 ? el("code", { text: p }) : p);
 // A pulled-but-not-restarted update (running != disk), and the last check when it still describes the checkout. A check made
@@ -7112,7 +7138,8 @@ function updAvailable() {
   const i = UPD.info;
   if (!i || i.error) return false;
   const { pending, c } = updState(i);
-  return !!(c && c.ok && c.incomingTotal > 0 && !pending);
+  if (!c || !c.ok || pending) return false;
+  return c.available ? updRelNewer(c.version && c.version.release, c.available) : c.incomingTotal > 0;
 }
 const hvList = () => (HV.info && Array.isArray(HV.info.harnesses) ? HV.info.harnesses : []);
 const hvNew = () => hvList().filter(h => h.available).length;
@@ -7222,7 +7249,7 @@ async function updCheck(btn) {
     const c = await api("/api/update/check", "POST");
     UPD.info = { ...UPD.info, lastCheck: c };
     paintUpdBadge();
-    if (c.ok) toast(c.incomingTotal ? `새 커밋 ${c.incomingTotal}개가 있어요` : "최신 버전이에요");
+    if (c.ok) toast(c.available && updRelNewer(c.version && c.version.release, c.available) ? `새 버전 ${c.available}이 있어요` : c.incomingTotal ? `새 커밋 ${c.incomingTotal}개가 있어요` : "최신 버전이에요");
   });
   renderSettings();
 }
@@ -7332,11 +7359,11 @@ function updateSection() {
   const off = jobRunning || UPD.wait ? { disabled: true } : {};
   const rows = [li("앱 버전", `실행 중 ${updVer(run)}`, el("button", { class: "btn tonal", type: "button", ...off, onclick: ev => updCheck(ev.currentTarget) }, "확인"))];
   if (c && !c.ok) rows.push(el("div", { class: "upd-box err" }, el("div", { class: "hd", text: c.error.reason }), el("div", { class: "sup" }, ...updCode(c.error.fix)), c.error.detail ? el("div", { class: "upd-detail", text: c.error.detail }) : null));
-  else if (c && !c.incomingTotal) rows.push(li("최신 버전이에요", `${c.upstream} · 확인 ${updWhen(c.at)}${c.ahead.length ? ` · ${c.upstream}에 없는 로컬 커밋 ${c.ahead.length}개 (아직 올리지 않음)` : ""}${c.dirty.length ? ` · 커밋 안 한 변경 ${c.dirty.length}개` : ""}`));
+  else if (c && !updAvailable()) rows.push(li("최신 버전이에요", `${c.version && c.version.release ? `v${c.version.release} · ` : ""}${c.upstream} · 확인 ${updWhen(c.at)}${c.ahead.length ? ` · ${c.upstream}에 없는 로컬 커밋 ${c.ahead.length}개 (아직 올리지 않음)` : ""}${c.dirty.length ? ` · 커밋 안 한 변경 ${c.dirty.length}개` : ""}`));
   else if (c) {
     const more = c.incomingTotal - c.incoming.slice(0, 8).length;
     rows.push(el("div", { class: "upd-box" },
-      el("div", { class: "hd", text: `새 커밋 ${c.incomingTotal}개 · ${c.upstream}` }),
+      el("div", { class: "hd", text: c.available ? `새 버전 ${c.version && c.version.release ? c.version.release : "설치본"} → ${c.available} · ${c.upstream}` : `새 커밋 ${c.incomingTotal}개 · ${c.upstream}` }),
       el("ul", { class: "upd-log" }, ...c.incoming.slice(0, 8).map(x => el("li", {}, el("code", { text: x.short }), el("span", { text: x.subject, title: x.subject }))), more > 0 ? el("li", { class: "dim" }, el("span", { text: `외 ${more}개` })) : null),
       c.blocked.length ? el("div", { class: "upd-block" }, ...c.blocked.map(b => el("div", { text: b }))) : null,
       c.keep ? updKeepBox(c.keep) : null,
@@ -7348,7 +7375,7 @@ function updateSection() {
   if (UPD.wait) rows.push(li("재시작 대기 중", UPD.wait.when === "now" ? "곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요." : `작업이 끝나면 다시 켜져요${i.busy.length ? ` (${i.busy.join(", ")})` : ""}. 이 화면은 자동으로 다시 연결돼요.`, el("span", { class: "dot pri", "aria-hidden": "true" })));
   else if (pending) rows.push(li(`새 버전 ${disk.commit.short} 받음`, "재시작하면 적용돼요", el("button", { class: "btn", type: "button", onclick: () => updRestart() }, "재시작")));
   const prefs = [el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "매일 자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알리고, 아래 자동 적용으로 바로 적용해요." : "새 버전이 있으면 알림만 보내요. 적용은 직접 해요." })),
-    s.auto_check ? el("input", { class: "upd-at", type: "time", value: s.at, "aria-label": "확인 시각", onchange: ev => updSet({ at: ev.currentTarget.value }) }) : null,
+    s.auto_check ? (/,\s*/.test(s.at) ? el("input", { class: "upd-at", type: "text", value: s.at, "aria-label": "확인 시각 (쉼표로 여러 번, 24:00은 자정)", onchange: ev => updSet({ at: ev.currentTarget.value }) }) : el("input", { class: "upd-at", type: "time", value: s.at, "aria-label": "확인 시각", onchange: ev => updSet({ at: ev.currentTarget.value }) })) : null,
     el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "매일 자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) })),
     el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요. 테스트가 실패하면 지금 버전을 그대로 두고 알려요. 이 컴퓨터에서 고친 코드는 새 버전 위에 다시 얹고, 안 되면 따로 보관해요." })),
     el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!s.auto_apply), "aria-label": "새 버전 자동 적용", onclick: () => updSet({ auto_apply: !s.auto_apply }) }))];
