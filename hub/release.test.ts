@@ -10,6 +10,7 @@ import {
 	localTags,
 	newestVersion,
 	parseVersion,
+	planForcedNext,
 	planNext,
 	shiftDay,
 	summarizeChanges,
@@ -94,7 +95,7 @@ describe("ordering", () => {
 	test("date and number compare numerically", () => {
 		const a = parseVersion("261103.2")!;
 		const b = parseVersion("261103.1")!;
-		const c = parseVersion("261102.9")!;
+		const c = parseVersion("261102.3")!;
 		const d = parseVersion("261031.3")!;
 		expect(compareVersions(a, b)).toBeGreaterThan(0);
 		expect(compareVersions(b, c)).toBeGreaterThan(0);
@@ -102,28 +103,58 @@ describe("ordering", () => {
 		expect(compareVersions(a, a)).toBe(0);
 	});
 
-	test("double-digit number is not string-compared", () => {
-		expect(compareVersions(parseVersion("261103.10")!, parseVersion("261103.9")!)).toBeGreaterThan(0);
+	test("hotfix parts order after the scheduled version", () => {
+		expect(compareVersions(parseVersion("261103.1.2")!, parseVersion("261103.1.1")!)).toBeGreaterThan(0);
+		expect(compareVersions(parseVersion("261103.1.1")!, parseVersion("261103.1")!)).toBeGreaterThan(0);
+		expect(compareVersions(parseVersion("261103.2")!, parseVersion("261103.1.9")!)).toBeGreaterThan(0);
 	});
 
 	test("newestVersion picks the greatest tag", () => {
-		expect(newestVersion(["v261102.9", "v261103.1", "v261031.3"])?.text).toBe("261103.1");
+		expect(newestVersion(["v261102.3", "v261103.1", "v261031.3"])?.text).toBe("261103.1");
 		expect(newestVersion(["junk", "v261103.1"])?.text).toBe("261103.1");
 		expect(newestVersion(["junk"])).toBeNull();
 	});
 });
 
 describe("parseVersion", () => {
-	test("parses with and without the v prefix", () => {
+	test("parses scheduled and forced versions", () => {
 		expect(parseVersion("v261103.1")?.text).toBe("261103.1");
 		expect(parseVersion("261103.1")?.text).toBe("261103.1");
 		expect(parseVersion(" v261103.2 ")?.text).toBe("261103.2");
+		expect(parseVersion("v261103.1.1")?.text).toBe("261103.1.1");
+		expect(parseVersion("v261103.1.12")?.text).toBe("261103.1.12");
 	});
 
 	test("bad tags yield null instead of throwing", () => {
-		for (const bad of ["", "v261103", "v26110.1", "v261133.1", "v261103.0", "release-2026", "v261103.x"]) {
+		for (const bad of ["", "v261103", "v26110.1", "v261133.1", "v261103.0", "v261103.4", "v261103.1.0", "release-2026", "v261103.x"]) {
 			expect(parseVersion(bad)).toBeNull();
 		}
+	});
+});
+
+describe("planForcedNext", () => {
+	test("appends the hotfix part to the newest scheduled version", () => {
+		expect(planForcedNext(["v261103.1"])).toMatchObject({ ok: true, version: { text: "261103.1.1" } });
+		expect(planForcedNext(["v261103.1.1"])).toMatchObject({ ok: true, version: { text: "261103.1.2" } });
+		expect(planForcedNext(["v261103.2"])).toMatchObject({ ok: true, version: { text: "261103.2.1" } });
+		expect(planForcedNext(["v261103.1.2", "v261103.2"])).toMatchObject({ ok: true, version: { text: "261103.2.1" } });
+	});
+
+	test("keeps the base day even when it is not today", () => {
+		const plan = planForcedNext(["v261102.3"]);
+		expect(plan.ok && plan.version.text).toBe("261102.3.1");
+	});
+
+	test("ignores the three-a-day cap", () => {
+		expect(planNext(["v261103.1", "v261103.2", "v261103.3"], "261103").ok).toBe(false);
+		expect(planForcedNext(["v261103.1", "v261103.2", "v261103.3"])).toMatchObject({ ok: true, version: { text: "261103.3.1" } });
+	});
+
+	test("needs a base version first", () => {
+		const plan = planForcedNext([]);
+		expect(plan.ok).toBe(false);
+		if (plan.ok) return;
+		expect(plan.reason).toContain("정기 버전");
 	});
 });
 
@@ -167,7 +198,9 @@ describe("git in a temporary repo", () => {
 		commit(root, "first");
 		git(root, "tag", "v261103.1");
 		git(root, "tag", "not-a-version");
-		expect(await localTags(root)).toEqual(["v261103.1"]);
+		git(root, "tag", "v261103.1.1");
+		git(root, "tag", "v261104.4");
+		expect(await localTags(root)).toEqual(["v261103.1", "v261103.1.1"]);
 	});
 
 	test("sees changed tracked files and ignores untracked ones", async () => {
