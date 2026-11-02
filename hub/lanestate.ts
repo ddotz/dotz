@@ -24,6 +24,8 @@ export type Lane = Record_ & {
 	// the lane channel leaves it false, so that reply is not relayed (lanerelay.ts); unknown (a restored lane) relays.
 	orchAsked?: boolean;
 	lastText: string;
+	// [done] reports the gateway's Done-when check sent back in a row (lanereport.ts); past DONE_BOUNCES the orchestrator gets it.
+	doneBounces?: number;
 	// lastText was written by a turn and no report has carried it yet: a turn that ends without new text (aborted, empty)
 	// must not report the previous answer again (mail-reply-drafts 2026-10-23 00:45:11, the same answer twice).
 	unreported?: boolean;
@@ -81,7 +83,7 @@ export type Lane = Record_ & {
 
 export const lanes = new Map<string, Lane>();
 type ReportFn = (lane: Lane, text: string, answeringOwner?: boolean) => void;
-export const hooks: { report: ReportFn; progress: ReportFn; notice: ReportFn; idle: (name: string) => void } = { report: () => {}, progress: () => {}, notice: () => {}, idle: () => {} };
+export const hooks: { report: ReportFn; progress: ReportFn; notice: ReportFn; idle: (name: string) => void; verified: (name: string, text: string) => void } = { report: () => {}, progress: () => {}, notice: () => {}, idle: () => {}, verified: () => {} };
 // Owner messages sent to a lane and not answered yet (lanerelay.ts createOwnerNotes): the lane's short answer note at its next
 // tool boundary reaches the owner at once, and the delivery state of each message follows (hub/events.ts emitDelivery).
 export type OwnerNoteHandlers = { note: (lane: string, text: string, refs: string[]) => void; answered: (lane: string, refs: string[]) => void; lost: (lane: string, refs: string[]) => void };
@@ -109,6 +111,10 @@ export function setNoticeHandler(fn: ReportFn): void {
 export function setIdleHandler(fn: (name: string) => void): void {
 	hooks.idle = fn;
 }
+// Called when the gateway itself verified a lane's [done] (every Done-when check passed): the worklog entry turns verified.
+export function setVerifiedHandler(fn: (name: string, text: string) => void): void {
+	hooks.verified = fn;
+}
 
 // Tests: bring every piece of module state back to its import-time value (a lane or handler left by one test file must not leak into the next).
 export function resetLaneStateForTest(): void {
@@ -117,6 +123,7 @@ export function resetLaneStateForTest(): void {
 	hooks.progress = () => {};
 	hooks.notice = () => {};
 	hooks.idle = () => {};
+	hooks.verified = () => {};
 	ownerHandlers = noopOwnerHandlers();
 	ownerNotes = newOwnerNotes();
 }

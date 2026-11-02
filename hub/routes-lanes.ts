@@ -9,6 +9,7 @@ import { abortLane, BUDGET_WINDOW_HOURS, budgetLine, budgetVerdict, estimateOf, 
 import { anthropicUsage } from "./providers.ts";
 import { keepHome, persist } from "./lanestate.ts";
 import { laneVerified } from "./notices.ts";
+import { doneProblem } from "./donesignals.ts";
 import { stripHandoff } from "./tone.ts";
 import { answerMovesToLane, lanePlace } from "./threads.ts";
 import { addSchedule, listSchedules, patchSchedule, removeSchedule } from "./schedule.ts";
@@ -161,6 +162,11 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 					log(`lane ${String(b.name)} refused: ${unjustified}`);
 					return json({ error: unjustified }, 409);
 				}
+				const unchecked = doneProblem(String(b.brief ?? ""), Boolean(b.owner_asked_for_lane));
+				if (unchecked) {
+					log(`lane ${String(b.name)} refused: ${unchecked}`);
+					return json({ error: unchecked }, 409);
+				}
 				const unnamed = titleProblem(b.title, { key: String(b.name), cwd: String(b.cwd ?? "") });
 				if (unnamed) {
 					log(`lane ${String(b.name)} refused: ${unnamed}`);
@@ -219,7 +225,8 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				return json({ ok: true });
 			}
 			if (req.method === "POST" && parts[3] === "verify") {
-				verifyLane(parts[2], String((await body(req)).text ?? ""));
+				const b = await body(req);
+				verifyLane(parts[2], String(b.text ?? ""), b.force === true);
 				laneVerified(parts[2], readLastReport(parts[2]));
 				return json({ ok: true });
 			}
