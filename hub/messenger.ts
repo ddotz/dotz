@@ -17,7 +17,7 @@ export type Incoming = { adapter: string; target: string; text: string; author: 
 export type MessengerCtx = { receive(m: Incoming): void; log(s: string): void };
 // The generic settings schema every adapter describes itself with (served by hub/messengers-api.ts, drawn by web/js/25-settings-messengers.js).
 // Secrets are write-only: a GET never carries a secret value, only `set`; a PUT that omits a secret keeps it, "" clears it.
-export type SettingsField = { key: string; label: string; type: "text" | "secret" | "number" | "readonly" | "copy"; value?: string | number; set?: boolean; hint?: string; as_user?: boolean };
+export type SettingsField = { key: string; label: string; type: "text" | "secret" | "number" | "readonly" | "copy" | "select"; value?: string | number; set?: boolean; hint?: string; as_user?: boolean; /** The choices of a "select" field (a room field; its value is the room's `values[key]`). */ options?: { value: string; label: string }[] };
 export type SettingsRoom = {
 	id: string;
 	name: string;

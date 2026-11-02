@@ -113,18 +113,23 @@ async function msRoomSheet(msId, room) {
   const fetchPlat = async id => { try { return MSN.detail[id] = await api(`/api/messengers/${enc(id)}`); } catch (e) { toast(e.message, true); return null; } };
   let s = await fetchPlat(plat);
   if (!s || !s.rooms) return;
-  const F = { name: input({ value: room ? room.name : "", placeholder: "예: 개발팀 알림", name: "ms-room-name" }), kind: room ? room.kind : "main", project: room && room.project ? room.project.target : "", secrets: {} };
+  const F = { name: input({ value: room ? room.name : "", placeholder: "예: 개발팀 알림", name: "ms-room-name" }), kind: room ? room.kind : "main", project: room && room.project ? room.project.target : "", secrets: {}, vals: {} };
+  /* the room's own text/select fields (an agent chat's connection type and channel id); a select starts on its first choice */
+  const initVals = () => { F.vals = {}; for (const f of s.rooms.fields) if (f.type === "text" || f.type === "select") F.vals[f.key] = room && room.values[f.key] != null ? String(room.values[f.key]) : f.type === "select" ? f.options[0].value : ""; };
+  initVals();
   const box = el("div", { class: "col" });
   const label = id => ((MSN.items || []).find(m => m.id === id) || { label: id }).label;
   const seg = (lb, opts, val, pick) => el("div", { class: "tf" }, el("span", { class: "lb", text: lb }), el("div", { class: "seg", role: "radiogroup", "aria-label": lb },
     ...opts.map(([v, t]) => el("button", { type: "button", role: "radio", "aria-checked": String(v === val), class: v === val ? "on" : "", "data-v": v, onclick: () => pick(v) }, t))));
   const draw = () => {
-    const secretFields = s.rooms.fields.filter(f => f.type === "secret"), copyFields = s.rooms.fields.filter(f => f.type === "copy");
+    const secretFields = s.rooms.fields.filter(f => f.type === "secret"), copyFields = s.rooms.fields.filter(f => f.type === "copy"), valFields = s.rooms.fields.filter(f => f.type === "text" || f.type === "select");
     const projects = s.projects || [];
     clear(box).append(...[
-      !room && addable.length > 1 ? selectField("메신저", label(plat), addable.map(m => ({ value: m.id, label: m.label })), plat, async v => { const d = await fetchPlat(v); if (d) { plat = v; s = d; F.secrets = {}; F.project = ""; draw(); } }) : null,
+      !room && addable.length > 1 ? selectField("메신저", label(plat), addable.map(m => ({ value: m.id, label: m.label })), plat, async v => { const d = await fetchPlat(v); if (d) { plat = v; s = d; F.secrets = {}; F.project = ""; initVals(); draw(); } }) : null,
       !room && addable.length <= 1 ? el("div", { class: "tf" }, el("span", { class: "lb", text: "메신저" }), el("div", { class: "sup", text: label(plat) })) : null,
       textField("방 이름", F.name),
+      ...valFields.filter(f => f.type === "select").map(f => selectField(f.label, (f.options.find(o => o.value === F.vals[f.key]) || {}).label || "고르기", f.options, F.vals[f.key], v => { F.vals[f.key] = v; draw(); })),
+      ...valFields.filter(f => f.type === "text").map(f => el("div", {}, textField(f.label, input({ value: F.vals[f.key], name: `ms-${f.key}`, oninput: ev => { F.vals[f.key] = ev.target.value; } })), f.hint ? el("div", { class: "sup", text: f.hint }) : null)),
       seg("종류", MS_KINDS, F.kind, v => { F.kind = v; draw(); }),
       F.kind === "project" ? (projects.length ? selectField("프로젝트", (projects.find(p => p.target === F.project) || {}).name || "고르기", projects.map(p => ({ value: p.target, label: p.name })), F.project, v => { F.project = v; draw(); }) : el("div", { class: "sup", text: "고를 수 있는 프로젝트가 없어요" })) : null,
       ...copyFields.map(f => {
@@ -149,6 +154,7 @@ async function msRoomSheet(msId, room) {
   const plain = r => ({ id: r.id, name: r.name, kind: r.kind, ...(r.project ? { project: r.project.target } : {}) });
   const entry = () => {
     const values = {};
+    for (const [k, v] of Object.entries(F.vals)) if (v.trim()) values[k] = v.trim();
     for (const [k, v] of Object.entries(F.secrets)) if (v.trim()) values[k] = v.trim();
     return { name: F.name.value.trim(), kind: F.kind, ...(F.kind === "project" ? { project: F.project } : {}), ...(Object.keys(values).length ? { values } : {}) };
   };
