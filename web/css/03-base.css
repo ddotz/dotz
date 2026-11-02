@@ -302,7 +302,7 @@ details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); backgr
 .chatbox::before, .termbox::before { top: 0; height: 28px; background: linear-gradient(var(--bg), transparent); }
 .chatbox::after, .termbox::after { bottom: 0; height: 40px; background: linear-gradient(transparent, var(--bg)); }
 .chatbox.fade-t::before, .termbox.fade-t::before, .chatbox.fade-b::after, .termbox.fade-b::after { opacity: 1; }
-.chatbox > .jump, .termbox > .jump { position: absolute; left: 50%; right: auto; bottom: 14px; z-index: 2; transform: translateX(-50%); display: grid; place-items: center; width: 36px; height: 36px; min-width: 0; padding: 0; border: 1px solid var(--line-2); border-radius: 50%; background: var(--card); color: var(--fg); font-size: 0; line-height: 0; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); }
+.chatbox > .jump, .termbox > .jump { position: absolute; left: 50%; right: auto; bottom: 14px; z-index: 2; transform: translateX(-50%); display: grid; place-items: center; width: 36px; height: 36px; min-height: 36px; min-width: 0; padding: 0; border: 1px solid var(--line-2); border-radius: 50%; background: var(--card); color: var(--fg); font-size: 0; line-height: 0; box-shadow: 0 2px 8px rgba(0, 0, 0, .08); }
 .chatbox > .jump svg, .termbox > .jump svg { display: block; width: 18px; height: 18px; margin: 0; }
 .chatbox > .jump[hidden], .termbox > .jump[hidden] { display: none; }
 /* Track B: attachments (composer tray, message files, lightbox), ended-lanes fold, target popovers */
