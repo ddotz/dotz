@@ -72,7 +72,8 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 				comments: id => commentsFor(realCtx(), id),
 				reply: (id, text) => igReply(realCtx(), id, text),
 			})),
-			website: websiteAdapter({ exec: bunExec, fetch, secretsDir, siteDir: join(dir, "sites") }),
+			// A site's JSON/RSS read or webhook post gets 30 s (a script gets 60 s in bunExec), so a hung site cannot hold the watch.
+			website: websiteAdapter({ exec: bunExec, fetch: ((url, init) => fetch(url, { ...init, signal: init?.signal ?? AbortSignal.timeout(30_000) })) as typeof fetch, secretsDir, siteDir: join(dir, "sites") }),
 		},
 	});
 }
