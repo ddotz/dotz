@@ -64,6 +64,7 @@ import { updateNow } from "./update-now.ts";
 import { harnessUpdateRoute } from "./harness-update.ts";
 import { appAsset, committedText, indexPage, setAppName, webBuild } from "./webapp.ts";
 import { listPeers, ownLogin } from "./peers.ts";
+import { jandiPeerChats } from "./jandi-peers.ts";
 import { handlePair, PAIR_PATH } from "./peer-pair.ts";
 import { checkPeer } from "./peer-auth.ts";
 import { activatePeerMonitor, createPeerMonitor } from "./peer-monitor.ts";
@@ -426,6 +427,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		const peerResponse = await peers.route(req, url);
 		if (peerResponse) return peerResponse;
+		// A computer reached only through the owner's JANDI self chat: its chat page and JSON, behind the same gate (hub/jandi-peers.ts).
+		const jandiPeer = peer === "none" ? await jandiPeerChats.route(req, url) : undefined;
+		if (jandiPeer) return jandiPeer;
 		// A user app's own web UI (hub/user-apps.ts, hub/app-proxy.ts): /apps/<id>/… -> its loopback server, same gate as the API.
 		const proxied = proxyMatch(url.pathname);
 		if (proxied) {
@@ -499,7 +503,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			}
 		}
 		if (url.pathname === "/api/health") return json({ ok: true });
-		if (req.method === "GET" && url.pathname === "/api/peers") return json(await listPeers());
+		if (req.method === "GET" && url.pathname === "/api/peers") return json(await jandiPeerChats.append(await listPeers()));
 		// Send lease of another gateway (hub/send-lease.ts): claim, release or record a sent id before an app message goes out.
 		if (req.method === "POST" && url.pathname === "/api/peer/lease") return json(handleLease((await body(req)) as LeaseReq, Date.now()));
 		// This computer's name for the settings screen: the one in use, the one the owner set (empty = none), and the hostname default.
