@@ -11,6 +11,7 @@ import { setAskAnswer } from "./askbuttons.ts";
 import { discordGatewayAnswer, webAnswer } from "./approval-wire.ts";
 import { installFanout, makeCtx, register, setAskApplier, startAll } from "./messenger.ts";
 import { discordAdapter } from "./messenger-discord.ts";
+import { jandiAdapter } from "./messenger-jandi.ts";
 import { projectTarget } from "./projectchat.ts";
 import { startPeerStreams } from "./peer-stream.ts";
 import { notify as pushNotify, setWatchPushOff, startPush } from "./push.ts";
@@ -242,6 +243,7 @@ setAskAnswer((target, content, picks) => {
 });
 // Other messengers (hub/messenger.ts): Discord is registered native, so the fan-out leaves its sends to hub/outbound.ts.
 register(discordAdapter);
+register(jandiAdapter);
 setAskApplier((id, body, login) => webAnswer(id, body, login, a => deliverAnswer({ ...a, login })));
 installFanout();
 void startAll(

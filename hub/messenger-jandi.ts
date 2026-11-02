@@ -1,0 +1,229 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+import { mkdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { DATA_DIR, writeAtomic } from "./config.ts";
+import type { Adapter, AdapterStatus, DeliverResult, MessengerCtx, OutMsg } from "./messenger.ts";
+
+// JANDI (on-prem, LAN) as a built-in messenger. Inbound: a JANDI Team Outgoing Webhook POSTs to /jandi/<room id> on our own listener
+// (no Tailscale needed). Outbound: each room has a JANDI Incoming Webhook URL. JANDI cannot edit a posted message, so progress edits are skipped.
+
+export type RoomKind = "main" | "project" | "alert" | "worklog";
+export type JandiRoom = { id: string; name: string; kind: RoomKind; project?: string; outgoing_token: string; incoming_url: string };
+export type JandiConfig = { enabled: boolean; listen: { host: string; port: number }; allow_emails: string[]; allow_names?: string[]; rooms: JandiRoom[] };
+export type RoomStatus = { last_in?: number; last_out?: number; last_error?: string };
+
+const KINDS: readonly string[] = ["main", "project", "alert", "worklog"];
+const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const MAX_PART = 4000;
+const RECEIPT = { body: "받았어요", connectColor: "#FAC11B" };
+const ASK_HINT = "번호로 답해 주세요";
+
+export const jandiConfigPath = (dataDir: string = DATA_DIR) => join(dataDir, "messengers", "jandi.json");
+
+const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "").map(x => x.trim()) : []);
+
+function normalize(raw: unknown): JandiConfig {
+	const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, any>;
+	const port = Number(o.listen?.port);
+	const rooms: JandiRoom[] = [];
+	const seen = new Set<string>();
+	for (const r of Array.isArray(o.rooms) ? o.rooms : []) {
+		if (!r || typeof r.id !== "string" || !ROOM_ID.test(r.id) || seen.has(r.id) || !KINDS.includes(r.kind)) continue;
+		seen.add(r.id);
+		rooms.push({
+			id: r.id,
+			name: typeof r.name === "string" ? r.name : r.id,
+			kind: r.kind,
+			...(typeof r.project === "string" && r.project ? { project: r.project } : {}),
+			outgoing_token: typeof r.outgoing_token === "string" ? r.outgoing_token : "",
+			incoming_url: typeof r.incoming_url === "string" ? r.incoming_url : "",
+		});
+	}
+	const names = strings(o.allow_names);
+	return {
+		enabled: o.enabled === true,
+		listen: { host: typeof o.listen?.host === "string" && o.listen.host ? o.listen.host : "0.0.0.0", port: Number.isInteger(port) && port >= 0 && port < 65536 ? port : 0 },
+		allow_emails: strings(o.allow_emails).map(s => s.toLowerCase()),
+		...(names.length ? { allow_names: names } : {}),
+		rooms,
+	};
+}
+
+const cache = new Map<string, { stamp: string; v: JandiConfig }>();
+/** The config, re-read only when the file's mtime/size changes; a missing or broken file is a disabled config. */
+export function loadJandiConfig(dataDir: string = DATA_DIR): JandiConfig {
+	const file = jandiConfigPath(dataDir);
+	let stamp: string;
+	try {
+		const st = statSync(file);
+		stamp = `${st.mtimeMs}:${st.size}`;
+	} catch {
+		return normalize(undefined);
+	}
+	const hit = cache.get(file);
+	if (hit?.stamp === stamp) return hit.v;
+	let v: JandiConfig;
+	try {
+		v = normalize(JSON.parse(readFileSync(file, "utf8")));
+	} catch {
+		v = normalize(undefined);
+	}
+	cache.set(file, { stamp, v });
+	return v;
+}
+
+/** Writes the config (tokens and webhook URLs are secrets) with mode 0600. */
+export function saveJandiConfig(cfg: JandiConfig, dataDir: string = DATA_DIR): JandiConfig {
+	const next = normalize(cfg);
+	mkdirSync(join(dataDir, "messengers"), { recursive: true });
+	writeAtomic(jandiConfigPath(dataDir), `${JSON.stringify(next, null, 2)}\n`, 0o600);
+	return next;
+}
+
+const digest = (s: string) => createHash("sha256").update(s).digest();
+const sameToken = (given: unknown, want: string) => typeof given === "string" && want !== "" && timingSafeEqual(digest(given), digest(want));
+
+const roomStatus_ = new Map<string, RoomStatus>();
+/** Per-room last_in / last_out / last_error (epoch ms, in memory) for the settings screen. */
+export const roomStatus = (): Record<string, RoomStatus> => Object.fromEntries([...roomStatus_].map(([k, v]) => [k, { ...v }]));
+const mark = (id: string, patch: RoomStatus) => void roomStatus_.set(id, { ...roomStatus_.get(id), ...patch });
+
+const targetOf = (r: JandiRoom): string | undefined => (r.kind === "main" ? "main" : r.kind === "project" ? r.project : r.kind);
+
+// Progress edits (update_key) cannot be edited in place on JANDI; only a lane's final [ask]/[done]/[fail] line or a decision with options goes through.
+const isFinal = (m: OutMsg) => !!m.options?.length || /^\s*\[(ask|done|fail)\]/m.test(m.text);
+
+export function splitText(text: string, max = MAX_PART): string[] {
+	const parts: string[] = [];
+	let rest = text;
+	while (rest.length > max) {
+		let cut = rest.lastIndexOf("\n", max);
+		if (cut < max / 2) cut = max;
+		parts.push(rest.slice(0, cut));
+		rest = rest.slice(cut).replace(/^\n/, "");
+	}
+	parts.push(rest);
+	return parts;
+}
+
+const errText = (e: unknown) => String((e as { code?: unknown })?.code ?? (e as Error)?.name ?? "error");
+
+export type JandiAdapter = Adapter & { port(): number | undefined };
+
+export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
+	let server: ReturnType<typeof Bun.serve> | undefined;
+	let ctx: MessengerCtx | undefined;
+	const a: JandiAdapter = {
+		id: "jandi",
+		label: "JANDI",
+		canEdit: false,
+		canButtons: false,
+		status: { state: "off" } as AdapterStatus,
+		enabled: () => {
+			const c = loadJandiConfig(dataDir);
+			return c.enabled && c.rooms.length > 0;
+		},
+		port: () => server?.port,
+		start(c) {
+			ctx = c;
+			const cfg = loadJandiConfig(dataDir);
+			if (!a.enabled()) {
+				a.status = { state: "off" };
+				return;
+			}
+			try {
+				server = Bun.serve({ hostname: cfg.listen.host, port: cfg.listen.port, maxRequestBodySize: 256 * 1024, fetch: req => handle(req) });
+				a.status = { state: "ok" };
+				c.log(`jandi listening on ${cfg.listen.host}:${server.port}`);
+			} catch (e) {
+				a.status = { state: "error", error: `${cfg.listen.host}:${cfg.listen.port} ${(e as Error).message}` };
+			}
+		},
+		stop() {
+			server?.stop(true);
+			server = undefined;
+			a.status = { state: "off" };
+		},
+		deliver: msg => deliver(msg),
+	};
+
+	async function handle(req: Request): Promise<Response> {
+		const m = /^\/jandi\/([^/]+)$/.exec(new URL(req.url).pathname);
+		if (!m) return new Response(null, { status: 404 });
+		if (req.method !== "POST") return new Response(null, { status: 405 });
+		const cfg = loadJandiConfig(dataDir);
+		const room = cfg.rooms.find(r => r.id === m[1]);
+		if (!room) return new Response(null, { status: 404 });
+		let p: Record<string, any>;
+		try {
+			const j = await req.json();
+			if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("not an object");
+			p = j;
+		} catch {
+			return new Response(null, { status: 400 });
+		}
+		if (!sameToken(p.token, room.outgoing_token)) {
+			mark(room.id, { last_error: "401 token" });
+			return new Response(null, { status: 401 });
+		}
+		const email = String(p.writerEmail ?? p.writer?.email ?? "").trim().toLowerCase();
+		const name = String(p.writerName ?? p.writer?.name ?? "").trim();
+		const allowed = email ? cfg.allow_emails.includes(email) : !!name && !!cfg.allow_names?.includes(name);
+		if (!allowed) {
+			mark(room.id, { last_error: "403 sender" });
+			return new Response(null, { status: 403 });
+		}
+		const text = String(p.data ?? p.text ?? "").trim();
+		const target = targetOf(room);
+		mark(room.id, { last_in: Date.now() });
+		if (text && target) ctx?.receive({ adapter: "jandi", target, text, author: email || name });
+		return Response.json(RECEIPT);
+	}
+
+	async function post(room: JandiRoom, payload: unknown): Promise<void> {
+		try {
+			const res = await fetch(room.incoming_url, {
+				method: "POST",
+				headers: { Accept: "application/vnd.tosslab.jandi-v2+json", "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+				signal: AbortSignal.timeout(15_000),
+			});
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			void res.body?.cancel();
+			mark(room.id, { last_out: Date.now() });
+		} catch (e) {
+			// Never the message itself: a fetch error can carry the incoming URL.
+			const err = (e as Error).message?.startsWith("HTTP ") ? (e as Error).message : errText(e);
+			mark(room.id, { last_error: err });
+			throw new Error(`${room.id}: ${err}`);
+		}
+	}
+
+	async function deliver(msg: OutMsg): Promise<DeliverResult> {
+		if (msg.updateKey && !isFinal(msg)) return { delivered: false, reason: "edit" };
+		const rooms = loadJandiConfig(dataDir).rooms.filter(r => r.incoming_url && r.kind === msg.kind && (msg.kind !== "project" || r.project === msg.target));
+		if (!rooms.length) return { delivered: false, reason: "no room" };
+		const parts = splitText(msg.text);
+		const ask = msg.options?.length ? { title: "선택지", description: msg.options.map(o => `${o.n}) ${o.label}`).join("\n") } : undefined;
+		const color = ask ? "#FAC11B" : msg.kind === "alert" ? "#E5484D" : undefined;
+		let failed: unknown;
+		let ok = 0;
+		for (const room of rooms) {
+			try {
+				for (const [i, part] of parts.entries()) {
+					const last = i === parts.length - 1;
+					await post(room, { body: last && ask ? `${part}\n\n${ASK_HINT}` : part, ...(color ? { connectColor: color } : {}), ...(last && ask ? { connectInfo: [ask] } : {}) });
+				}
+				ok++;
+			} catch (e) {
+				failed = e;
+			}
+		}
+		if (!ok) throw failed;
+		return { delivered: true };
+	}
+
+	return a;
+}
+
+export const jandiAdapter = createJandiAdapter();
