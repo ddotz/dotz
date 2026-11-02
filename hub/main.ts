@@ -14,6 +14,8 @@ import { setProjectSource, syncAllRooms } from "./messenger-rooms.ts";
 import { discordAdapter } from "./messenger-discord.ts";
 import { agentAdapter } from "./messenger-agent.ts";
 import { jandiAdapter } from "./messenger-jandi.ts";
+import { createSlackAdapter } from "./messenger-slack.ts";
+import { createTelegramAdapter } from "./messenger-telegram.ts";
 import { projectTarget } from "./projectchat.ts";
 import { startPeerStreams } from "./peer-stream.ts";
 import { notify as pushNotify, setWatchPushOff, startPush } from "./push.ts";
@@ -257,6 +259,9 @@ setAskAnswer((target, content, picks) => {
 // Other messengers (hub/messenger.ts): Discord is registered native, so the fan-out leaves its sends to hub/outbound.ts.
 register(discordAdapter);
 register(jandiAdapter);
+// Registered unconditionally so their settings rows exist before a token is entered.
+register(createSlackAdapter());
+register(createTelegramAdapter());
 register(agentAdapter);
 setAskApplier((id, body, login) => webAnswer(id, body, login, a => deliverAnswer({ ...a, login })));
 installFanout();

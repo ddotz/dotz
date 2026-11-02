@@ -126,7 +126,15 @@ describe("onboarding engine", () => {
 		const fake = browser({ "discord-token": [{ ok: true, value: TOKEN }] });
 		const network = discordFetch();
 		const { svc, restarts } = service(dir, fake, network);
-		const view = await runStart(svc);
+		const waiting = await runStart(svc);
+		expect(waiting.state).toBe("waiting");
+		expect(waiting.step?.id).toBe("token");
+		expect(waiting.owner?.label).toBe("Discord 로그인 확인");
+		expect(fake.calls).toEqual([]);
+		expect(existsSync(join(dir, "secrets", "discord-bot-token"))).toBe(false);
+		svc.continue("discord");
+		await svc.idle("discord");
+		const view = svc.view("discord");
 		expect(view.state).toBe("done");
 		expect(restarts()).toBe(1);
 		const tokenFile = join(dir, "secrets", "discord-bot-token");
@@ -136,6 +144,7 @@ describe("onboarding engine", () => {
 		const stateFile = join(dir, "onboarding", "discord.json");
 		expect(statSync(stateFile).mode & 0o777).toBe(0o600);
 		expect(readFileSync(stateFile, "utf8")).not.toContain(TOKEN);
+		expect(JSON.parse(readFileSync(stateFile, "utf8")).attempt).toBe(1);
 		expect(JSON.stringify(view)).not.toContain(TOKEN);
 		for (const file of walk(dir)) {
 			if (file === tokenFile) continue;
@@ -172,7 +181,7 @@ describe("onboarding engine", () => {
 		expect(JSON.stringify(view)).not.toContain(TOKEN);
 	});
 
-	test("continue re-runs the waiting step and finishes", async () => {
+	test("start waits without opening the browser, and each continue runs the token step again", async () => {
 		const dir = dataDir({ discord: { guild: GUILD, owner_id: OWNER, app_id: APP } });
 		const fake = browser({ "discord-token": [{ ok: true, waiting: "login" }, { ok: true, value: TOKEN }] });
 		const network = discordFetch();
@@ -181,7 +190,14 @@ describe("onboarding engine", () => {
 		expect(waiting.state).toBe("waiting");
 		expect(waiting.step?.id).toBe("token");
 		expect(waiting.owner?.label).toBe("Discord 로그인 확인");
+		expect(fake.calls).toEqual([]);
 		expect(JSON.parse(readFileSync(join(dir, "onboarding", "discord.json"), "utf8")).index).toBe(1);
+		svc.continue("discord");
+		await svc.idle("discord");
+		const again = svc.view("discord");
+		expect(again.state).toBe("waiting");
+		expect(fake.calls.map(c => c.action)).toEqual(["discord-token"]);
+		expect(JSON.parse(readFileSync(join(dir, "onboarding", "discord.json"), "utf8")).attempt).toBe(1);
 		svc.continue("discord");
 		await svc.idle("discord");
 		const done = svc.view("discord");
