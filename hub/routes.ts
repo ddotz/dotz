@@ -6,7 +6,7 @@ import { approvalRoute, TRIAGE_MIN_DEFAULT, webAnswer } from "./approval-wire.ts
 import { droppedDraftRefs, restoreReopenedDrafts } from "./draft-restore.ts";
 import { join } from "node:path";
 import { cloudflareGate } from "./devices.ts";
-import { createWebAccess, webAccessRoute } from "./web-access.ts";
+import { createWebAccess, WebAccessError, webAccessRoute } from "./web-access.ts";
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
 import { limitWaits } from "./limitwait.ts";
@@ -83,6 +83,8 @@ import { appHealth, loadUserApps, PROXY_ROOT, removeUserApp, setUserAppOff, user
 import { proxyMatch, proxyRequest } from "./app-proxy.ts";
 import { igDmRoute } from "./ig-dm-gateway.ts";
 import { kakaoPendingCount, kakaoPendingDrafts, kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
+import { defaultOnboardDeps, onboardingService, setOnboardDeps } from "./onboarding.ts";
+import { saveWebAccessInput } from "./onboarding-web-access.ts";
 
 const BOOT_ID = Date.now().toString(36);
 setAppName(NAME);
@@ -364,6 +366,17 @@ const parseMailStates = (raw: unknown): { source: string; items: MailSourceState
 };
 
 export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps, mailReconcile }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
+	// Before any onboarding route can run: the real browser/exec, a gateway restart only after a flow changed config, and the live web-access switch.
+	setOnboardDeps(
+		defaultOnboardDeps(DATA_DIR, {
+			restart: async () => {
+				restartGateway();
+			},
+			applyWebAccess: async input => {
+				await webAccess.change(input);
+			},
+		}),
+	);
 	const route = async (req: Request, srv?: Server<unknown>): Promise<Response> => {
 		const url = new URL(req.url);
 		// The install files (manifest, service worker, icons) are public and secret-free, like any app store listing: a browser
@@ -393,6 +406,24 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (deviceApi) return deviceApi;
 		const accessApi = peer === "none" ? await webAccessRoute(req, url, webAccess) : undefined;
 		if (accessApi) return accessApi;
+		// 설정 → 웹 접속: Cloudflare starts the onboarding flow, 이 컴퓨터만 records the mode and is done at once. Neither answer carries a secret.
+		if (peer === "none" && url.pathname === "/api/web-access/onboard") {
+			if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+			const b = await body(req);
+			if (b.mode === "local") {
+				try {
+					await webAccess.change({ mode: "local" });
+				} catch (error) {
+					if (error instanceof WebAccessError) return json({ error: error.message }, 400);
+					throw error;
+				}
+				return json(onboardingService().markDone("web-access"));
+			}
+			if (b.mode !== "cloudflare") return json({ error: "mode must be cloudflare or local" }, 400);
+			const hostname = typeof b.hostname === "string" ? b.hostname.trim() : "";
+			if (hostname) saveWebAccessInput(DATA_DIR, { hostname });
+			return json(onboardingService().start("web-access"));
+		}
 		const peerResponse = await peers.route(req, url);
 		if (peerResponse) return peerResponse;
 		// A user app's own web UI (hub/user-apps.ts, hub/app-proxy.ts): /apps/<id>/… -> its loopback server, same gate as the API.
