@@ -26,6 +26,7 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number } = {}) 
 	let clock = 1_000_000;
 	const fakes = new Map<string, Fake>();
 	const created: string[] = [];
+	const makes = new Map<string, OrchOpts>();
 	const delivered: { key: string; text: string; target?: string }[] = [];
 	const open = new Map<string, { text: string; replyTo?: string; done?: boolean; cancelled?: boolean }[]>();
 
@@ -85,6 +86,7 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number } = {}) 
 		mailOf: thread => (thread === "777" ? "k1" : undefined),
 		make: (o: OrchOpts) => {
 			created.push(o.key);
+			makes.set(o.key, o);
 			return fake(o.key).o;
 		},
 		wire: (c: Conv) => ({ queue: queue(c.key), bg: { list: () => [], running: () => 0 } as unknown as BgWork }),
@@ -99,7 +101,7 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number } = {}) 
 		const f = fake(MAIN);
 		registry.setMain({ key: MAIN, o: f.o, queue: queue(MAIN), bg: { list: () => [], running: () => 0 } as unknown as BgWork } as unknown as Parameters<typeof registry.setMain>[0]);
 	}
-	return { registry, delivered, created, dir, tick: (ms: number) => (clock += ms), now: () => clock, fakes, open };
+	return { registry, delivered, created, makes, dir, tick: (ms: number) => (clock += ms), now: () => clock, fakes, open };
 }
 
 test("an owner message in a mail conversation goes to that conversation's own session, never into main", () => {
@@ -117,6 +119,14 @@ test("a mail's Discord thread answers in the mail's session, and main keeps the 
 	expect(registry.keyOf("web")).toBe(MAIN);
 	expect(registry.keyOf("chat")).toBe(MAIN);
 	expect(registry.keyOf("ch:5")).toBe("ch:5");
+});
+
+// Owner 2026-11-03: a conversation window answered out of another one's context. What main may be handed (the lane questions
+// waiting elsewhere) stays out of a conversation's session, which answers here and nowhere else.
+test("a conversation's session is built without the lane questions main carries", () => {
+	const { registry, makes } = setup();
+	registry.deliverTo("mail:k1", "메일 질문", { target: "mail:k1", replyTo: "m1", owner: true });
+	expect(makes.get("mail:k1")!.asks).toBe(false);
 });
 
 test("with the feature off every conversation stays on main and nothing is created", () => {

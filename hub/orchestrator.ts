@@ -98,10 +98,14 @@ export function orchBusy(o: Pick<typeof orch, "status" | "ctx"> = orch): string 
 // (hub/convsessions.ts). key: "main" or the conversation key; stateFile: where its Saved state lives; source: its activity
 // source ("orchestrator" for main, "conv:<key>"); keepalive: whether it pings to keep the 1h prompt cache; env: extra
 // environment for its process (DOTZ_CONV); scope: a paragraph its start prompt ends with; seed: what a brand-new session is
-// handed with its first prompt (the conversation's recent history), in the steer slot a handover uses.
-export type OrchOpts = { key: string; stateFile: string; source: string; keepalive: boolean; env?: Record<string, string>; scope?: () => string; seed?: () => string };
+// handed with its first prompt (the conversation's recent history), in the steer slot a handover uses; asks: whether the
+// lane questions still waiting for the owner ride along (main only: a conversation answers here and nothing else).
+export type OrchOpts = { key: string; stateFile: string; source: string; keepalive: boolean; env?: Record<string, string>; scope?: () => string; seed?: () => string; asks?: boolean };
 export function createOrchestrator(opts: OrchOpts) {
 	const who = opts.key === "main" ? "orchestrator" : `conversation session ${opts.key}`;
+	// A conversation's session is handed its own prompts only: another conversation's pending question in it is what made a
+	// window answer out of someone else's context (owner 2026-11-03: "대화창 간에 서로 답변 꼬임").
+	const carriesAsks = opts.asks !== false;
 	// This session's compaction point, from the model it is running now (config context.models or orchestrator.rotate_tokens).
 	const compactAt = () => compactAtFor(orch.activeModel || selectorOf(orchestratorModel()), cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens);
 	const orch = {
@@ -179,7 +183,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	function sendOwner(text: string, header = false): void {
 		settleRevert(false);
 		const nudge = retainNext ? `\n\n${msg().retainNudge}` : "";
-		const asks = asksNext ? pendingAsksBlock() : "";
+		const asks = asksNext && carriesAsks ? pendingAsksBlock() : "";
 		retainNext = false;
 		asksNext = false;
 		const line = header ? turnHeader() : "";
@@ -803,7 +807,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		if (!resume) {
 			retainNext = false; // a fresh session's start prompt (and handover) already carries it
 			asksNext = false;
-			const asks = pendingAsksBlock();
+			const asks = carriesAsks ? pendingAsksBlock() : "";
 			// The runtime keeps this first message through every compaction, so it carries only what must stay: the handover tail
 			// and the pending asks would be re-sent on every request after each compaction. They go in a second message, as "steer":
 			// a steer queued before the turn starts is drained at the start of the agent loop, so it joins the first model call
