@@ -1,5 +1,5 @@
 // One classification of everything the owner is told, by what he must do (owner 2026-11-01, "1) 이대로 진행"). The bell's tabs and badge
-// (web/js/30-notices.js), the web push (hub/push.ts) and Discord's ping (hub/discord.ts via pushReachesOwner) all read it; a notice gets its
+// (web/js/30-notices.js), the web push (hub/push.ts) and Discord's ping (hub/discord.ts via pushReachesOwner) all read it, and hub/notify-route.ts routes by it; a notice gets its
 // class when it is read or broadcast (hub/notices.ts withClass), so nothing stored changes.
 //   ask    답변 필요  [ask] questions, send approvals, login / 2FA requests: push at once, pinned on top until answered, orange badge.
 //   alert  경고       gateway failures, lost logins, monitors failing again and again: push, red badge.
@@ -12,11 +12,11 @@ import type { Notice, NoticeKind, NoticeTone } from "./notices.ts";
 export const NOTICE_CLASSES = ["ask", "alert", "result", "news", "conv", "log"] as const;
 export type NoticeClass = (typeof NOTICE_CLASSES)[number];
 export const CLASS_LABELS: Record<NoticeClass, string> = { ask: "답변 필요", alert: "경고", result: "결과", news: "새 소식", conv: "대화", log: "기록" };
-// The owner's push switches start from these (config.json notify.push overrides them).
+// The owner's push switches start from these (config.json notify.push overrides them; hub/notify-route.ts reads both).
 export const CLASS_PUSH_DEFAULTS: Record<NoticeClass, boolean> = { ask: true, alert: true, result: true, news: true, conv: true, log: false };
 export type Badge = "orange" | "red" | "plain" | "none";
 const BADGE: Record<NoticeClass, Badge> = { ask: "orange", alert: "red", result: "plain", news: "plain", conv: "plain", log: "none" };
-export type ClassOf = { cls: NoticeClass; push: boolean; badge: Badge; pin: boolean };
+export type ClassOf = { cls: NoticeClass; badge: Badge; pin: boolean };
 
 // The gateway's routine reports in the alert channel: kept as a record, never a warning.
 export const ROUTINE_ALERT = /^토큰 누수 점검/;
@@ -47,7 +47,7 @@ export function noticeClass(n: ClassInput): ClassOf {
 	const cls = clsOf(n);
 	// Pinned while it still waits: an open decision, or an [ask] the owner has neither answered nor ignored.
 	const pin = cls === "ask" && (n.decision !== undefined ? n.decision === "open" : !n.read && !n.ignored);
-	return { cls, push: CLASS_PUSH_DEFAULTS[cls], badge: BADGE[cls], pin };
+	return { cls, badge: BADGE[cls], pin };
 }
 export const classOfNotice = (n: Notice): ClassOf =>
 	noticeClass({ kind: n.kind, tone: n.tone, ...(n.decision ? { decision: n.decision.state } : {}), ...(n.key ? { key: n.key } : {}), text: n.text, read: n.read, ignored: !!n.ignored });

@@ -6,7 +6,8 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, log, NAME, updateNotifyPush, writeAtomic } from "./config.ts";
-import { CLASS_PUSH_DEFAULTS, classOfNotice, NOTICE_CLASSES, type NoticeClass, noticeClass } from "./notice-class.ts";
+import { classOfNotice, NOTICE_CLASSES, type NoticeClass, noticeClass } from "./notice-class.ts";
+import { pushClasses, route } from "./notify-route.ts";
 import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { quietAlert } from "./alert-gate.ts";
@@ -22,18 +23,10 @@ type PushKind = NoticeClass;
 type Prefs = Record<string, boolean>;
 // The kinds a computer that runs an older gateway relays, as classes.
 const LEGACY_KINDS: Record<string, PushKind> = { answer: "conv", ask: "ask", lane: "result", usage: "alert", update: "news", watch: "news" };
-export const classPushes = (): Record<PushKind, boolean> => ({ ...CLASS_PUSH_DEFAULTS, ...Object.fromEntries(Object.entries(cfg.notify?.push ?? {}).filter(([k, v]) => k in CLASS_PUSH_DEFAULTS && typeof v === "boolean")) });
-const appPushes = (app: string): boolean => {
-	try {
-		return (JSON.parse(readFileSync(join(DATA_DIR, "custom", "apps.json"), "utf8")) as Record<string, { push?: unknown }>)[app]?.push !== false;
-	} catch {
-		return true;
-	}
-};
 // A general monitor's own 휴대폰 알림 switch (watches.json <watch>.push, hub/watch-settings.ts): main.ts installs the reader.
 let watchPushOff: (name: string) => boolean = () => false;
 export const setWatchPushOff = (fn: typeof watchPushOff): void => void (watchPushOff = fn);
-export const classPushOn = (cls: PushKind, app?: string): boolean => classPushes()[cls] && (cls !== "news" || !app || appPushes(app));
+export const classPushOn = (cls: PushKind, app?: string): boolean => route({ cls, ...(app ? { app } : {}) }).push;
 // `app`: made by the installed app (the page runs standalone), the subscription a device is reached through when it has one.
 // `did`: the device's id, shared by all its subscriptions on every computer (see fanOut).
 type Stored = Subscription & { prefs: Prefs; ua?: string; at: string; app?: boolean; did?: string };
@@ -162,8 +155,8 @@ const answerTag = (conv: string) => (conv === "main" ? "answer" : conv.startsWit
 // Decisions push through decisionPush (onDecision), so an [ask] twin here stays quiet; [run] progress and the gateway's routine records never notify.
 export function noticePush(n: Notice): PushMessage | undefined {
 	if (n.read || n.dismissed) return undefined;
-	const { cls, push } = classOfNotice(n);
-	if (cls === "ask" || !push) return undefined;
+	const { cls } = classOfNotice(n);
+	if (cls === "ask") return undefined;
 	const conv = n.open || "main";
 	const base = { kind: cls, body: plain(n.text) || plain(n.title), url: convUrl(conv), ...(n.at ? { ts: n.at } : {}) };
 	switch (cls) {
@@ -632,7 +625,7 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 			if (!v || typeof v !== "object" || Object.entries(v).some(([k, x]) => !(PUSH_KINDS as readonly string[]).includes(k) || typeof x !== "boolean")) return json({ error: "classes: { <class>: boolean }" }, 400);
 			updateNotifyPush(v as Record<string, boolean>);
 		}
-		return json({ classes: classPushes() });
+		return json({ classes: pushClasses() });
 	}
 	if (req.method === "PUT" && p === "/api/push/prefs") {
 		const s = findSub(b.endpoint);

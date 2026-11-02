@@ -15,6 +15,9 @@ import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRunt
 import { json, body, terminals } from "./routes-util.ts";
 import { budgetSettings, deleteAdminKey, monthlyLimitOf, saveAdminKey, saveMonthlyLimit } from "./api-budget.ts";
 import { postSettings, savePostSettings } from "./discord-post.ts";
+import { discordConnectedNow } from "./app-settings.ts";
+import { adapters } from "./messenger.ts";
+import { matrix, setCell } from "./notify-route.ts";
 import { discordConnectionRoute } from "./discord-connection.ts";
 import { messengersRoute } from "./messengers-api.ts";
 
@@ -169,6 +172,19 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		} catch (error) {
 			return json({ error: String((error as Error).message ?? error) }, 400);
 		}
+	}
+	// Where each notice class goes (hub/notify-route.ts): GET the matrix (rows = classes, columns = web app / phone / Discord / each enabled messenger), PUT { cls, column, on } sets one cell.
+	if (url.pathname === "/api/notify/route" && (req.method === "GET" || req.method === "PUT")) {
+		const columns = adapters().filter(a => !a.native && !a.hidden?.() && a.enabled()).map(a => ({ id: a.id, label: a.label }));
+		if (req.method === "PUT") {
+			const b = (await body(req)) as Record<string, unknown>;
+			try {
+				setCell(String(b.cls), String(b.column), b.on, columns.map(c => c.id));
+			} catch (error) {
+				return json({ error: String((error as Error).message ?? error) }, 400);
+			}
+		}
+		return json(matrix(columns, discordConnectedNow()));
 	}
 	// The bot connection (token, server, owner): hub/discord-connection.ts. The UI restarts the gateway with POST /api/update/restart.
 	if (url.pathname.startsWith("/api/discord/connection")) {
