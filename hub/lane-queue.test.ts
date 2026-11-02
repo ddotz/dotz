@@ -6,6 +6,7 @@ import { cfg } from "./config.ts";
 import { activeCount } from "./lanelimits.ts";
 import { QUEUE_TELL_MS } from "./laneops.ts";
 import { setMachineProbe } from "./limits.ts";
+import { setDiskReader } from "./diskguard.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
 import { advance } from "./runtime/test-clock.ts";
@@ -80,6 +81,22 @@ test("short on memory a launch waits with its reason in the lane summary and /ap
 	expect(spawns.length).toBe(before + 1);
 	l.stopLane("q-first");
 	l.stopLane("q-second");
+	await advance(300);
+});
+
+test("a lane whose working volume is short of disk space waits with the reason, then starts once space is back", async () => {
+	setMachineProbe(rich);
+	const cwd = join(DATA, "queue-work");
+	const plenty = { freeBytes: 500 * 2 ** 30, totalBytes: 1000 * 2 ** 30 };
+	setDiskReader(p => (p === cwd ? { freeBytes: 3 * 2 ** 30, totalBytes: 1000 * 2 ** 30 } : plenty));
+	const lane = launch("disk-full");
+	expect(lane.waiting).toBe("디스크 여유 공간이 부족해 대기 중(3.0GB 남음, 기준 10GB)");
+	expect(lane.proc).toBeUndefined();
+	expect(l.startQueuedLanes()).toEqual([]);
+	setDiskReader(() => plenty);
+	expect(l.startQueuedLanes()).toEqual(["disk-full"]);
+	expect(lane.proc).toBeDefined();
+	l.stopLane("disk-full");
 	await advance(300);
 });
 

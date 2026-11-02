@@ -17,6 +17,7 @@ import { runtimeFor } from "./runtime/index.ts";
 import { statusActivity, runningSubagents } from "./activity.ts";
 import { activeCount, laneLimits, launchWait, waitingLanes } from "./lanelimits.ts";
 import { trackTimer } from "./shutdown.ts";
+import { diskGuardTick } from "./diskguard.ts";
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,31}$/;
 
@@ -30,7 +31,7 @@ export const QUEUE_TELL_MS = 30 * 60_000;
 export function startQueuedLanes(): string[] {
 	const started: string[] = [];
 	for (const lane of waitingLanes()) {
-		const why = launchWait();
+		const why = launchWait(0, lane.cwd);
 		if (why) {
 			if (lane.waiting !== why) {
 				lane.waiting = why;
@@ -56,7 +57,10 @@ export function startQueuedLanes(): string[] {
 	return started;
 }
 export function startLaneQueue(): void {
-	const timer = setInterval(() => startQueuedLanes(), 5000);
+	const timer = setInterval(() => {
+		diskGuardTick([DATA_DIR, ...[...lanes.values()].map(l => l.cwd)]);
+		startQueuedLanes();
+	}, 5000);
 	timer.unref();
 	trackTimer("lane queue", timer);
 }
@@ -76,7 +80,7 @@ export function launch(name: string, cwd: string, brief: string, model?: string,
 	if (prior?.proc) throw new Error(`lane ${name} is already running; use send`);
 	const problem = checkBrief(brief);
 	if (problem) throw new Error(problem);
-	const why = launchWait() ?? waitingLanes()[0]?.waiting;
+	const why = launchWait(0, cwd) ?? waitingLanes()[0]?.waiting;
 	const selector = model ?? selectorOf(lanesModel());
 	mkdirSync(dir(name), { recursive: true });
 	const place = laneWorktree(name, cwd);

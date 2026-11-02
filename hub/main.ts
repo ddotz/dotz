@@ -20,6 +20,7 @@ import { setTrashChannels } from "./lanetrash.ts";
 import { laneSpot, rememberSpot } from "./lanestate.ts";
 import { migratePostSettings, setWebLane } from "./discord-post.ts";
 import { resolveAllowed } from "./files.ts";
+import { setDiskNotify } from "./diskguard.ts";
 import { approvesBudget, laneBusy, lanes, restoreLanes, sendToLane, setIdleHandler as setLaneIdleHandler, shutdownLanes, startLaneQueue } from "./lanes.ts";
 import { setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
@@ -407,6 +408,7 @@ startMemoryGuard((key, text) => {
 });
 startLaneIdleStop();
 convs.startIdleSweep();
+setDiskNotify(alert);
 startLaneQueue();
 startStallSweep((conversation, r) => {
 	const text = msg().stallNudge(r.todos ?? 0, r.detail ?? "");

@@ -1,7 +1,8 @@
 // How many lanes may work at once and how many task workers one lane may run (hub/limits.ts follows this machine's free
 // memory and cores at the moment of asking; lanes.max_active / lanes.max_workers, when set, only cap them). Moved out of lanes.ts.
 import { runningSubagents } from "./activity.ts";
-import { lanesMaxActive, lanesMaxWorkers } from "./config.ts";
+import { DATA_DIR, lanesMaxActive, lanesMaxWorkers } from "./config.ts";
+import { diskShort, diskWaitText } from "./diskguard.ts";
 import { type Lane, lanes } from "./lanestate.ts";
 import { limitsNow, type Running, waitText } from "./limits.ts";
 
@@ -19,8 +20,11 @@ const runningNow = (except?: Lane): Running => ({
 });
 const caps = () => ({ lanes: lanesMaxActive(), workers: lanesMaxWorkers() });
 export const laneLimits = (maxAgeMs = 0, except?: Lane) => limitsNow(runningNow(except), caps(), maxAgeMs);
-// Why a lane launched now has to wait (undefined = it may start). Lanes already waiting go first.
-export function launchWait(maxAgeMs = 0): string | undefined {
+// Why a lane launched now has to wait (undefined = it may start). Lanes already waiting go first. `cwd`: the lane's working
+// directory, whose volume must have room as well as the data dir's.
+export function launchWait(maxAgeMs = 0, cwd?: string): string | undefined {
+	const disk = diskShort(cwd ? [DATA_DIR, cwd] : [DATA_DIR]);
+	if (disk) return diskWaitText(disk);
 	const l = laneLimits(maxAgeMs);
 	return activeCount() < l.lanes ? undefined : waitText(l.reason ?? "memory", caps());
 }
