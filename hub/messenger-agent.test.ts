@@ -216,7 +216,7 @@ describe("poll loop", () => {
 });
 
 describe("deliver", () => {
-	test("routes main, project and alert posts to their own chats", async () => {
+	test("routes main, project and alert posts to their own chats; a project with no chat of its own falls back to main", async () => {
 		const a = await started();
 		await a.deliver(out({ text: "to main" }));
 		await a.deliver(out({ target: "ch:123", kind: "project", text: "to proj" }));
@@ -226,6 +226,7 @@ describe("deliver", () => {
 		expect(fake.sent.map(s => [s.chat, s.text])).toEqual([
 			["CMAIN", "to main"],
 			["CPROJ", "to proj"],
+			["CMAIN", "other proj"],
 			["CALERT", "to alert"],
 			["CWORK", "to work"],
 		]);

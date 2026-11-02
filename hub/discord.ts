@@ -47,6 +47,11 @@ let onGone: (id: string) => void = () => {};
 export function setChannelGoneHandler(fn: (id: string) => void): void {
 	onGone = fn;
 }
+// The project list (channels.work) changed: a project was added, renamed or removed (messengers mirror it, hub/messenger-rooms.ts).
+let onWork: () => void = () => {};
+export function setWorkChangeHandler(fn: () => void): void {
+	onWork = fn;
+}
 // A stopped lane gives up its channel (deleted = true) or parks it; the notices of that channel follow (hub/notices.ts dropChannelNotices).
 let onLaneRelease: (id: string, deleted: boolean) => void = () => {};
 export function setLaneReleaseHandler(fn: (id: string, deleted: boolean) => void): void {
@@ -185,6 +190,7 @@ export async function ensureChannels(): Promise<void> {
 	}
 	for (const [id, t] of Object.entries(channels.threads)) if (!existing.has(t.parent)) delete channels.threads[id];
 	save();
+	onWork();
 	startArchiveTimer();
 	await keepPrivate(all, adopted).catch(e => log(`discord: could not hide channels from other bots (needs administrator): ${e}`));
 }
@@ -278,6 +284,7 @@ async function classify(id: string): Promise<{ work: string } | { thread: string
 	channels.work[id] = String(c.name);
 	save();
 	log(`work channel #${c.name} (${id}) registered`);
+	onWork();
 	return { work: channels.work[id] };
 }
 
@@ -291,6 +298,7 @@ export async function createWorkChannel(name: string): Promise<{ id: string; nam
 		localIds.add(id);
 		channels.work[id] = name.trim() || id;
 		save();
+		onWork();
 		return { id, name: channels.work[id] };
 	}
 	if (!channels.workCategory) throw new Error("discord not configured");
@@ -298,6 +306,7 @@ export async function createWorkChannel(name: string): Promise<{ id: string; nam
 	const c = await rest("POST", `/guilds/${GUILD}/channels`, { name: cleanName(name), type: 0, parent_id: channels.workCategory, ...(me ? { topic: `${TOPIC_TAG}${me.id}` } : {}) });
 	channels.work[c.id] = String(c.name);
 	save();
+	onWork();
 	return { id: c.id, name: c.name };
 }
 
@@ -452,6 +461,7 @@ export async function deleteWorkChannel(id: string): Promise<void> {
 	delete channels.work[id];
 	for (const [tid, t] of Object.entries(channels.threads)) if (t.parent === id) delete channels.threads[tid];
 	save();
+	onWork();
 	if (failed) throw failed;
 }
 
@@ -844,6 +854,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 				delete channels.work[p.d.id];
 				for (const [id, t] of Object.entries(channels.threads)) if (t.parent === p.d.id) delete channels.threads[id];
 				save();
+				onWork();
 				onGone(p.d.id);
 			} else if (p.op === 0 && p.t === "CHANNEL_UPDATE" && channels.work[p.d.id]) {
 				if (!isWorkParent(p.d.parent_id)) {
@@ -851,6 +862,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 					onGone(p.d.id);
 				} else channels.work[p.d.id] = String(p.d.name);
 				save();
+				onWork();
 			}
 		};
 		ws.onclose = ev => {
