@@ -175,6 +175,18 @@ describe("deliver", () => {
 		expect(captured.every(c => c.body.body.length <= 4000)).toBe(true);
 		expect(splitText("x".repeat(9000)).map(p => p.length)).toEqual([4000, 4000, 1000]);
 	});
+	test("a self-chat reply prefix starts every posted part, still under 4000 chars", async () => {
+		const cfg = loadJandiConfig(dir);
+		saveJandiConfig({ ...cfg, self_chat: { enabled: true, team_id: 0, room_id: 0, member_id: 0, bot_id: 0, keyword: "종놈", reply_prefix: "[종놈]", session_secret: "jandi-session", interval_ms: 3000 } }, dir);
+		try {
+			captured.length = 0;
+			await send("main", "main", "x".repeat(5000));
+			expect(captured.map(c => c.body.body.startsWith("[종놈] "))).toEqual([true, true]);
+			expect(captured.every(c => c.body.body.length <= 4000)).toBe(true);
+		} finally {
+			saveJandiConfig(cfg, dir);
+		}
+	});
 	test("a failing incoming URL rejects without leaking the URL", async () => {
 		const cfg = loadJandiConfig(dir);
 		saveJandiConfig({ ...cfg, rooms: cfg.rooms.map(r => (r.id === "m1" ? { ...r, incoming_url: "http://127.0.0.1:1/secret-path" } : r)) }, dir);
