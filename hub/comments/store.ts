@@ -11,7 +11,8 @@ export type Tokens = { in: number; out: number; estimated?: true };
 export type Draft = { code: string; commentId: string; source: string; thread: string; text: string; status: DraftStatus; created: number; changes: string[]; clean: boolean; notes: string[]; tokens?: Tokens; mail?: string; mailAt?: number };
 export type MailOutcome = { state: "sent" | "failed"; text: string };
 export type Reply = { id: string; commentId: string; source: string; thread: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft: string; via: "owner" | "rule"; collector: string; ref?: string; mail?: MailOutcome };
-export type Cursor = { cursor?: string; ranAt?: number; error?: string };
+// `queue`: ids of new comments waiting for an auto-draft (engine.ts collect), left for the next run when one run's cap or budget is reached.
+export type Cursor = { cursor?: string; ranAt?: number; error?: string; queue?: string[] };
 
 const MAX_COMMENTS = 3000;
 const MAX_DRAFTS = 300;

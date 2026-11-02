@@ -17,12 +17,25 @@ import { type CommentAdapter, DM_THREAD, type RawComment, type ReplyOutcome, typ
 export type Exec = (argv: string[], stdin?: string) => Promise<{ code: number; stdout: string; stderr: string }>;
 export type WebsiteDeps = { exec: Exec; fetch: typeof fetch; secretsDir: string; siteDir: string };
 
-export const bunExec: Exec = async (argv, stdin) => {
-	const p = Bun.spawn(argv, { stdin: stdin === undefined ? "ignore" : new TextEncoder().encode(stdin), stdout: "pipe", stderr: "pipe" });
-	const timer = setTimeout(() => p.kill(), 60_000);
-	const [stdout, stderr, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
-	clearTimeout(timer);
-	return { code, stdout, stderr };
+// A site script may start its own helpers (a browser repl, a login keeper) that inherit its pipes: on timeout the whole process group is
+// killed, and the pipes are read for at most a moment after the script exited, so a helper left behind cannot hold the watch open.
+export const bunExec = async (argv: string[], stdin?: string, timeoutMs = 60_000): Promise<{ code: number; stdout: string; stderr: string }> => {
+	const p = Bun.spawn(argv, { stdin: stdin === undefined ? "ignore" : new TextEncoder().encode(stdin), stdout: "pipe", stderr: "pipe", detached: true, timeout: timeoutMs, killSignal: "SIGKILL" });
+	const kill = () => {
+		try {
+			process.kill(-p.pid, "SIGKILL");
+		} catch {}
+	};
+	const out = Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
+	const code = await p.exited;
+	// Helpers still holding the pipes after the script exited are killed with its group; what the script wrote is kept.
+	const within = () => Promise.race([out, Bun.sleep(2_000).then(() => undefined)]);
+	let read = await within();
+	if (!read) {
+		kill();
+		read = await within();
+	}
+	return read ? { code, stdout: read[0], stderr: read[1] } : { code: code || 1, stdout: "", stderr: "스크립트가 끝난 뒤에도 출력이 닫히지 않았어요" };
 };
 
 const atOf = (v: unknown): number => (typeof v === "number" ? v : Date.parse(String(v ?? "")) || 0);
