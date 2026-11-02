@@ -307,7 +307,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		const peer = checkPeer(req);
 		if (peer === "denied") return new Response("forbidden", { status: 403 });
 		if (peer === "none" && !authorized(req, !!cfAccess && (await cfAccess.verifyRequest(req)), !!devices && (await devices.verifySession(req)))) return devices ? devices.denied(req, url) : new Response("forbidden", { status: 403 });
-		const deviceApi = peer === "none" ? devices?.apiRoute(req, url) : undefined;
+		const deviceApi = peer === "none" ? await devices?.apiRoute(req, url) : undefined;
 		if (deviceApi) return deviceApi;
 		const peerResponse = await peers.route(req, url);
 		if (peerResponse) return peerResponse;

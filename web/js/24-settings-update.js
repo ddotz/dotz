@@ -283,6 +283,7 @@ function renderSettings() {
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     row("chat", "대화 탭", chatTabMode() === "main" ? "메인 대화" : "마지막으로 보던 대화", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, null),
     row("discord", "Discord", "", () => go("discord"), el("span", { class: "dcs-trail" }, el("span", { class: `tag ${dcTone}`, text: dcTag, title: (d && d.error) || "" }), icon("chev", "lead"))),
-    row("chat", "메신저", "JANDI 등", () => go("messengers"))),
+    row("chat", "메신저", "JANDI 등", () => go("messengers")),
+    devicesRow(row)),
     ...pushSection(), ...updateSection(), ...accountSection());
 }

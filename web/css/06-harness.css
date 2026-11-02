@@ -109,6 +109,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .dcs-res.err { color: var(--err); }
 .dcs-ok { color: var(--ok); font-weight: 600; }
 .dcs-res .btn { align-self: flex-start; margin-top: 6px; }
+.dv-code { font: 600 32px/40px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 6px; }
 /* settings: 업데이트 */
 .sec .upd-new { margin-left: 8px; vertical-align: middle; }
 /* a section heading with its own action (실행 하네스 · 확인): the button sits at the right end, apart from the title */

@@ -94,6 +94,9 @@ const importKey = (spki: Uint8Array<ArrayBuffer>, alg: number): Promise<CryptoKe
 		? crypto.subtle.importKey("spki", spki, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"])
 		: crypto.subtle.importKey("spki", spki, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
 
+const cleanName = (v: unknown): string => (typeof v === "string" ? v : "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 60);
+const item = (d: Device) => ({ id: d.id, name: d.name, created: d.created, last_used: d.last_used });
+
 export function createDevices(opts: DevicesOpts) {
 	const base = cfBase(opts.hostname?.toLowerCase());
 	const rpId = base?.slice("https://".length);
@@ -151,13 +154,25 @@ export function createDevices(opts: DevicesOpts) {
 	}
 	const cookie = (token: string): string => `${DEVICE_COOKIE}=${token}; Max-Age=34560000; Path=/; HttpOnly; Secure; SameSite=Strict`;
 
-	/** True when the request carries the session cookie of a paired device; the session slides 30 days from each use. */
-	async function verifySession(req: Request): Promise<boolean> {
+	// The stored session behind the request's cookie, if any (not checked for expiry here).
+	async function sessionOf(req: Request): Promise<{ h: string; s: { device: string; exp: number } } | undefined> {
 		const m = /(?:^|;\s*)dotz_dev=([A-Za-z0-9_-]{43})(?:;|$)/.exec(req.headers.get("cookie") ?? "");
-		if (!m) return false;
+		if (!m) return undefined;
 		const h = hex(await sha256(m[1]!));
 		const s = data.sessions[h];
-		if (!s) return false;
+		return s ? { h, s } : undefined;
+	}
+	/** The paired device a request's live session belongs to, if any. */
+	async function currentDevice(req: Request): Promise<string | undefined> {
+		const c = await sessionOf(req);
+		return c && c.s.exp > Date.now() && data.devices.some(d => d.id === c.s.device) ? c.s.device : undefined;
+	}
+
+	/** True when the request carries the session cookie of a paired device; the session slides 30 days from each use. */
+	async function verifySession(req: Request): Promise<boolean> {
+		const c = await sessionOf(req);
+		if (!c) return false;
+		const { h, s } = c;
 		const now = Date.now();
 		if (s.exp <= now || !data.devices.some(d => d.id === s.device)) {
 			delete data.sessions[h];
@@ -205,12 +220,19 @@ export function createDevices(opts: DevicesOpts) {
 		return { bytes, flags, signCount: new DataView(bytes.buffer, bytes.byteOffset).getUint32(33) };
 	}
 
-	async function requestCode(): Promise<Response> {
+	// One code at a time (a new one replaces the last), CODES_PER_HOUR in all, whether /pair or the settings screen asked for it.
+	function nextCode(): Response | undefined {
 		const now = Date.now();
 		while (codeAt.length && now - codeAt[0]! >= 3_600_000) codeAt.shift();
 		if (codeAt.length >= CODES_PER_HOUR) return fail(429, "코드를 너무 자주 요청했습니다. 한 시간 뒤에 다시 시도해 주세요");
 		codeAt.push(now);
 		code = { value: newCode(), exp: now + CODE_TTL_MS, wrong: 0 };
+		return undefined;
+	}
+
+	async function requestCode(): Promise<Response> {
+		const limited = nextCode();
+		if (limited || !code) return limited ?? fail(500, "코드를 만들지 못했습니다");
 		try {
 			await opts.notify(`기기 연결 코드: ${code.value} (10분간 유효). 본인이 요청한 것이 아니면 무시하세요.`);
 		} catch (e) {
@@ -264,7 +286,7 @@ export function createDevices(opts: DevicesOpts) {
 		}
 		if (data.devices.length >= MAX_DEVICES) return fail(409, "연결할 수 있는 기기 수를 넘었습니다");
 		if (data.devices.some(d => d.id === id)) return fail(409, "이미 연결된 기기입니다");
-		const name = (typeof b.name === "string" ? b.name : "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 60) || "기기";
+		const name = cleanName(b.name) || "기기";
 		data.devices.push({ id, spki, alg, signCount: ad.signCount, name, created: iso(), last_used: iso() });
 		const token = await session(id);
 		log(`web: device paired: ${name}`);
@@ -336,16 +358,38 @@ export function createDevices(opts: DevicesOpts) {
 		return login(req);
 	}
 
-	/** GET /api/devices and DELETE /api/devices/<id> (the caller has already checked authorized()). */
-	function apiRoute(req: Request, url: URL): Response | undefined {
-		if (url.pathname === "/api/devices" && req.method === "GET") return json(data.devices.map(d => ({ id: d.id, name: d.name, created: d.created, last_used: d.last_used })));
+	/** For the settings screen (web/js/25-settings-devices.js); the caller has already checked authorized():
+	 * GET /api/devices (each marked `current` when it is the caller's own device), PATCH /api/devices/<id> {name}, DELETE /api/devices/<id>,
+	 * and POST /api/devices/code, a pairing code shown to the already-signed-in caller instead of sent (same slot, limit and life as /api/pair/code). */
+	async function apiRoute(req: Request, url: URL): Promise<Response | undefined> {
+		if (url.pathname === "/api/devices" && req.method === "GET") {
+			const cur = await currentDevice(req);
+			return json(data.devices.map(d => ({ ...item(d), current: d.id === cur })));
+		}
+		if (url.pathname === "/api/devices/code" && req.method === "POST") {
+			if (!base) return fail(503, "web.cloudflare.hostname 설정이 필요합니다");
+			const limited = nextCode();
+			if (limited || !code) return limited ?? fail(500, "코드를 만들지 못했습니다");
+			log("web: a device pairing code was issued from settings");
+			return json({ code: code.value, minutes: CODE_TTL_MS / 60_000, url: `${base}/pair` });
+		}
 		const m = /^\/api\/devices\/([^/]+)$/.exec(url.pathname);
-		if (!m || req.method !== "DELETE") return undefined;
+		if (!m || (req.method !== "DELETE" && req.method !== "PATCH")) return undefined;
 		let id: string;
 		try {
 			id = decodeURIComponent(m[1]!);
 		} catch {
 			return fail(400, "id가 올바르지 않습니다");
+		}
+		if (req.method === "PATCH") {
+			const b = await readBody(req);
+			const name = cleanName(b?.name);
+			if (!name) return fail(400, "이름을 적어 주세요");
+			const dev = data.devices.find(d => d.id === id);
+			if (!dev) return fail(404, "그런 기기가 없습니다");
+			dev.name = name;
+			save();
+			return json(item(dev));
 		}
 		if (!revoke(id)) return fail(404, "그런 기기가 없습니다");
 		return json({ ok: true });
@@ -367,5 +411,5 @@ export function createDevices(opts: DevicesOpts) {
 		return new Response("forbidden", { status: 403, headers: { "X-Dotz-Pair": "1" } });
 	}
 
-	return { pairRoute, apiRoute, verifySession, denied, revoke, list: () => data.devices.map(d => ({ id: d.id, name: d.name, created: d.created, last_used: d.last_used })) };
+	return { pairRoute, apiRoute, verifySession, denied, revoke, list: () => data.devices.map(item) };
 }
