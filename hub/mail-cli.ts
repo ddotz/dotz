@@ -50,7 +50,8 @@ export function sourceOf(app: string): { source: string } | { error: string } {
 	const src = (raw?.filter?.source ?? "").trim().toLowerCase();
 	if (!src || src === "zele") return { source: "zele" };
 	const site = WEBMAIL.exec(src)?.[1] ?? webmailSite(src);
-	return site ? { source: `webmail:${site}` } : { error: `이 메일 앱(${src})은 새 메일 초안을 지원하지 않아요. 직접 보내야 해요` };
+	// Any other source is a category of the one mailbox (mail-score = `score`, posted by a mail watch from zele threads): a new mail goes out through zele.
+	return { source: site ? `webmail:${site}` : "zele" };
 }
 
 function originOf(spec: string | undefined): DraftRec["origin"] | { error: string } | undefined {
