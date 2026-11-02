@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { closeDeadLaneTasks, waitsForOwner, pruneArchives, pruneTempSessions, pruneUploads, removeSessionsFor, rotateFile } from "./cleanup.ts";
+import { closeDeadLaneTasks, LIMIT_WAIT_STALE_MS, waitsForOwner, pruneArchives, pruneTempSessions, pruneUploads, removeSessionsFor, rotateFile } from "./cleanup.ts";
 
 const NOW = Date.parse("2026-10-20T09:00:00Z");
 const DAY = 86_400_000;
@@ -128,4 +128,21 @@ test("closeDeadLaneTasks keeps a task of an ended lane that waits for the owner;
 	expect(closed.map(t => t.id)).toEqual(["plain"]);
 	expect(JSON.parse(readFileSync(state, "utf8")).open_tasks.map((t: { id: string }) => t.id)).toEqual(["pick", "approve", "needs"]);
 	expect(waitsForOwner({ next: "형이 C(범용) 선택함, 머지 SHA 확인" })).toBe(false);
+});
+
+test("a task waiting for the limit reset stays while resume_at is recent; long past, its badge fields go and an ended lane closes it", () => {
+	const dir = tmp();
+	const state = join(dir, "state.json");
+	const history = join(dir, "tasks-closed.jsonl");
+	const iso = (ms: number) => new Date(ms).toISOString();
+	const tasks = [
+		{ id: "soon", what: "곧 재개", lane: "never-started", waiting_for: "limit-reset", resume_at: iso(NOW + 3600_000) },
+		{ id: "stale-gone", what: "[한도 리셋 뒤 재개 01:00] 옛 일", lane: "gone", waiting_for: "limit-reset", resume_at: iso(NOW - LIMIT_WAIT_STALE_MS - 1) },
+		{ id: "stale-plain", what: "레인 없는 일", waiting_for: "limit-reset", resume_at: iso(NOW - LIMIT_WAIT_STALE_MS - 1) },
+	];
+	writeFileSync(state, JSON.stringify({ open_tasks: tasks }));
+	const closed = closeDeadLaneTasks(state, history, () => "lane ended", NOW);
+	expect(closed.map(t => t.id)).toEqual(["stale-gone"]);
+	expect(JSON.parse(readFileSync(history, "utf8").trim())).toMatchObject({ id: "stale-gone", what: "옛 일" });
+	expect(JSON.parse(readFileSync(state, "utf8")).open_tasks).toEqual([tasks[0], { id: "stale-plain", what: "레인 없는 일" }]);
 });
