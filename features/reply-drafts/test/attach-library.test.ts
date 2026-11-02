@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { draftAttachRoute } from "../../../hub/draft-attach.ts";
@@ -9,7 +9,7 @@ import { reviseDraft } from "../lib/flow.ts";
 import { matchLibrary } from "../lib/library.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { canAttach, sendWith } from "../lib/senders.ts";
-import { addStagedFile, removeStagedFile, stagedFiles } from "../lib/staged.ts";
+import { addStagedFile, EVICTED, removeStagedFile, stagedFiles } from "../lib/staged.ts";
 import { paths } from "../lib/settings.ts";
 import { getDraft, listDrafts, setStatus } from "../lib/store.ts";
 import type { Runner } from "../lib/tone.ts";
@@ -113,6 +113,32 @@ describe("drafting a reply that promises a file", () => {
 		expect(d.warning).toBe(NO_ATTACHMENT_WARNING);
 		expect(d.note).toContain(LIBRARY_MISS);
 		expect(listDrafts()[0]!.libraryMiss).toBe(true);
+	});
+	test("an iCloud file that is not downloaded (EDEADLK) is downloaded and staged once it is back", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		const out = sink();
+		const asked: string[] = [];
+		let evicted = 2;
+		const copy = (src: string, to: string) => {
+			if (evicted-- > 0) throw Object.assign(new Error("EDEADLK: resource deadlock avoided, copyfile"), { code: "EDEADLK" });
+			copyFileSync(src, to);
+		};
+		await offerMailDraft(teacherMail, { send: out.send, call: fakeModel([j(teacherReply)]).call, stage: { copy, download: src => void asked.push(src), waitMs: 1 } });
+		expect(asked).toEqual([join(realpathSync(lib), "달빛정원_공유용.pdf")]);
+		expect(parseDraftApproval(out.sent[0]!.text)!.attachments).toEqual([{ name: "달빛정원_공유용.pdf", size: "35B" }]);
+	});
+	test("an iCloud file that stays away is named on the card and leaves no empty slot behind", async () => {
+		enable(env, { attachFolders: { mail: lib } });
+		const out = sink();
+		const copy = () => {
+			throw Object.assign(new Error("EDEADLK"), { code: "EDEADLK" });
+		};
+		await offerMailDraft(teacherMail, { send: out.send, call: fakeModel([j(teacherReply)]).call, stage: { copy, download: () => undefined, tries: 0 } });
+		const rec = listDrafts()[0]!;
+		expect(out.sent[0]!.text).toContain(EVICTED("달빛정원_공유용.pdf"));
+		expect(existsSync(join(env.dir, "draft-files", rec.id, "0"))).toBe(false);
+		expect(() => addStagedFile(rec.id, join(lib, "견적서 양식.xlsx"), undefined, copy, () => undefined)).toThrow(EVICTED("견적서 양식.xlsx"));
+		expect(existsSync(join(env.dir, "draft-files", rec.id, "0"))).toBe(false);
 	});
 	test("no folder set: the warning only, nothing is searched; a plain reply gets neither", async () => {
 		enable(env);

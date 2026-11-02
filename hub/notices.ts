@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
-import { DRAFT_BODY_MAX, type DraftApproval, draftActionOf, draftNeedsText, parseDraftApproval, quotedDraft, refreshDraft, rewriteDraftTo } from "./draft-approval.ts";
+import { DRAFT_BODY_MAX, type DraftApproval, type DraftFileIn, draftActionOf, draftNeedsText, parseDraftApproval, quotedDraft, refreshDraft, rewriteDraftTo, withStagedFiles } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { broadcast as broadcastRaw, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
@@ -126,6 +126,31 @@ export function refreshNoticeDrafts(list: Notice[]): number {
 		save();
 		log(`notices: ${n} draft card(s) re-read with the current rules`);
 	}
+}
+// An open send-approval card shows the files staged for its draft now, not the ones staged when it was posted: a file attached later
+// (첨부 API, draft.ts revise, a rule or the 첨부 파일 폴더) rewrites its `> 첨부:` rows and the "no file" warning goes, without asking again
+// (owner 2026-11-02). `filesOf(id)`: the files staged for a pending draft, undefined when dotz does not stage that draft's files.
+// The reply part is its card ref, the 함께 보낼 메일 part its own id. Returns the cards that changed.
+export function refreshDraftFiles(list: Notice[], filesOf: (id: string) => DraftFileIn[] | undefined): Notice[] {
+	const hit: Notice[] = [];
+	for (const it of list) {
+		const d = it.decision?.draft;
+		if (!d?.ref || !isOpenDecision(it)) continue;
+		const main = filesOf(d.ref);
+		let text = main ? withStagedFiles(it.text, main) : it.text;
+		const mail = d.mail?.ref ? filesOf(d.mail.ref) : undefined;
+		if (mail) text = withStagedFiles(text, mail, "mail");
+		if (text === it.text) continue;
+		it.text = text;
+		it.decision!.draft = refreshDraft(d, text);
+		hit.push(it);
+	}
+	return hit;
+}
+export function syncDraftFiles(filesOf: (id: string) => DraftFileIn[] | undefined): number {
+	const hit = refreshDraftFiles(items, filesOf);
+	if (hit.length) announce(hit, now());
+	return hit.length;
 }
 export const unreadCount = () => items.reduce((n, i) => n + (i.read || i.dismissed || appBlocked(i) ? 0 : 1), 0);
 

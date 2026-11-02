@@ -8,7 +8,7 @@ import { basename, isAbsolute, join } from "node:path";
 import type { DraftRule } from "../../../hub/app-settings.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { libraryFile, listLibrary } from "./library.ts";
-import { addStagedFile } from "./staged.ts";
+import { stageLibraryFile, type StageOpts } from "./staged.ts";
 import { dataDir, loadSettings } from "./settings.ts";
 
 export type InstanceRules = { instance: string; base: string; rules: DraftRule[] };
@@ -77,7 +77,7 @@ export function ruleFilePath(entry: string, folder: string | undefined): string 
 }
 
 /** Stages the rule's files on the draft `ref`; returns the entries that were not found. */
-export function stageRuleFiles(ref: string, rule: DraftRule, folder: string | undefined): string[] {
+export async function stageRuleFiles(ref: string, rule: DraftRule, folder: string | undefined, opts?: StageOpts): Promise<string[]> {
 	const missing: string[] = [];
 	for (const entry of rule.files) {
 		const path = ruleFilePath(entry, folder);
@@ -86,7 +86,7 @@ export function stageRuleFiles(ref: string, rule: DraftRule, folder: string | un
 			continue;
 		}
 		try {
-			addStagedFile(ref, path);
+			await stageLibraryFile(ref, path, opts);
 		} catch {
 			missing.push(entry);
 		}

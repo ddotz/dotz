@@ -1,7 +1,7 @@
 // The files a mail draft sends along, as hub/draft-files.ts staged them: <data dir>/draft-files/<draft id>/<n>/<name>, n = 0.. without gaps.
 // Pure fs (no hub/config.ts import, the CLI send path reads it too); the data dir is read from DOTZ_DIR on every call like settings.ts.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { dataDir } from "./settings.ts";
 
 export const STAGED_MAX = 10;
@@ -43,12 +43,63 @@ function slot(ref: string, name: string, root: string): string {
 	return join(dir, stagedName(name));
 }
 
-// Copies a file that already sits on this computer (an upload of /api/upload, a file of the library folder).
-export function addStagedFile(ref: string, src: string, root: string = stagedRoot()): StagedFile {
+// macOS iCloud Drive keeps a file it evicted as a placeholder of the same size: reading it fails with EDEADLK (cp gets 0 bytes) until
+// `brctl download` brings the bytes back, which happens in the background. A 첨부 파일 폴더 often points into iCloud Drive.
+export const isEvicted = (error: unknown): boolean => (error as NodeJS.ErrnoException)?.code === "EDEADLK";
+export const EVICTED = (name: string) => `${name}은(는) iCloud에만 있고 이 컴퓨터에 내려받지 않은 파일이라 붙이지 못했어요. 내려받기를 시작했으니 잠시 뒤 다시 붙여 주세요`;
+export type CopyFile = (src: string, to: string) => void;
+export type Download = (src: string) => void;
+
+export const requestDownload: Download = src => {
+	if (process.platform !== "darwin") return;
+	try {
+		Bun.spawn(["brctl", "download", src], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+	} catch {
+		// no brctl: the owner downloads the file in Finder
+	}
+};
+
+// A copy that fails takes its slot away again, so no empty <n> folder is left between the files.
+function copyInto(ref: string, src: string, root: string, copy: CopyFile): StagedFile {
 	if (!statSync(src).isFile()) throw new Error(`${src} is not a file`);
 	const to = slot(ref, basename(src), root);
-	copyFileSync(src, to);
+	try {
+		copy(src, to);
+	} catch (error) {
+		rmSync(dirname(to), { recursive: true, force: true });
+		throw error;
+	}
 	return { name: basename(to), size: statSync(to).size, path: to };
+}
+
+// Copies a file that already sits on this computer (an upload of /api/upload, a file of the library folder). An evicted iCloud file
+// starts its download and fails with a message that says so.
+export function addStagedFile(ref: string, src: string, root: string = stagedRoot(), copy: CopyFile = copyFileSync, download: Download = requestDownload): StagedFile {
+	try {
+		return copyInto(ref, src, root, copy);
+	} catch (error) {
+		if (!isEvicted(error)) throw error;
+		download(src);
+		throw new Error(EVICTED(basename(src)));
+	}
+}
+
+export type StageOpts = { root?: string; copy?: CopyFile; download?: Download; tries?: number; waitMs?: number };
+
+// The files a draft gets on its own (a library match, a rule's files): an evicted iCloud file is downloaded and copied once it is back,
+// waiting up to tries x waitMs (default 30 s) without blocking.
+export async function stageLibraryFile(ref: string, src: string, opts: StageOpts = {}): Promise<StagedFile> {
+	const { root = stagedRoot(), copy = copyFileSync, download = requestDownload, tries = 30, waitMs = 1000 } = opts;
+	for (let n = 0; ; n++) {
+		try {
+			return copyInto(ref, src, root, copy);
+		} catch (error) {
+			if (!isEvicted(error)) throw error;
+			if (n === 0) download(src);
+			if (n >= tries) throw new Error(EVICTED(basename(src)));
+			await Bun.sleep(waitMs);
+		}
+	}
 }
 
 // Bytes that came over the wire (a file added to a peer's draft).
