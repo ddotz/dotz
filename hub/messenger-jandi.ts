@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
+import { createSelfChat, normalizeSelfChat, type SelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import { sameRoom } from "./messenger-rooms.ts";
 
@@ -12,7 +13,7 @@ import { sameRoom } from "./messenger-rooms.ts";
 export type RoomKind = "main" | "project" | "alert" | "worklog";
 export type JandiRoom = { id: string; name: string; kind: RoomKind; project?: string; outgoing_token: string; incoming_url: string };
 /** `incoming_url` is the one webhook every room without its own posts to (JANDI cannot make webhooks by API, so one pasted URL is the fallback). */
-export type JandiConfig = { enabled: boolean; listen: { host: string; port: number }; allow_emails: string[]; allow_names?: string[]; incoming_url?: string; rooms: JandiRoom[] };
+export type JandiConfig = { enabled: boolean; listen: { host: string; port: number }; allow_emails: string[]; allow_names?: string[]; incoming_url?: string; rooms: JandiRoom[]; self_chat?: SelfChatConfig };
 export type RoomStatus = { last_in?: number; last_out?: number; last_error?: string };
 
 const KINDS: readonly string[] = ["main", "project", "alert", "worklog"];
@@ -43,6 +44,7 @@ function normalize(raw: unknown): JandiConfig {
 		});
 	}
 	const names = strings(o.allow_names);
+	const selfChat = normalizeSelfChat(o.self_chat);
 	return {
 		enabled: o.enabled === true,
 		listen: { host: typeof o.listen?.host === "string" && o.listen.host ? o.listen.host : "0.0.0.0", port: Number.isInteger(port) && port >= 0 && port < 65536 ? port : 0 },
@@ -50,6 +52,7 @@ function normalize(raw: unknown): JandiConfig {
 		...(names.length ? { allow_names: names } : {}),
 		...(typeof o.incoming_url === "string" && o.incoming_url.trim() ? { incoming_url: o.incoming_url.trim() } : {}),
 		rooms,
+		...(selfChat ? { self_chat: selfChat } : {}),
 	};
 }
 
@@ -138,6 +141,7 @@ export type JandiAdapter = Adapter & { port(): number | undefined };
 
 export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 	let server: ReturnType<typeof Bun.serve> | undefined;
+	let selfChat: SelfChat | undefined;
 	let ctx: MessengerCtx | undefined;
 	const a: JandiAdapter = {
 		id: "jandi",
@@ -164,8 +168,23 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 			} catch (e) {
 				a.status = { state: "error", error: `${cfg.listen.host}:${cfg.listen.port} ${(e as Error).message}` };
 			}
+			const sc = cfg.self_chat;
+			if (sc?.enabled && sc.team_id && sc.room_id && sc.member_id && sc.bot_id) {
+				selfChat = createSelfChat(sc, {
+					dataDir,
+					receive: text => {
+						mark("self_chat", { last_in: Date.now() });
+						ctx?.receive({ adapter: "jandi", target: "main", text, author: `jandi:${sc.member_id}` });
+					},
+					log: c.log,
+					onError: err => mark("self_chat", { last_error: err }),
+				});
+				void selfChat.run();
+			}
 		},
 		stop() {
+			selfChat?.stop();
+			selfChat = undefined;
 			server?.stop(true);
 			server = undefined;
 			a.status = { state: "off" };
