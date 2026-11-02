@@ -1,7 +1,7 @@
 // Dotz hub entry: bun hub/main.ts. Owns Discord, lanes and the event bus; serves the web app + API on
 // 127.0.0.1 only. Tailnet access goes through `tailscale serve`, which adds the Tailscale-User-Login header.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { cfg, DATA_DIR, HOST, log, NAME, now, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
 import { parseCommand, setGatewayRestart } from "./control.ts";
@@ -74,14 +74,13 @@ import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue, sendWeb } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
-import { applyMailStates, deliverAnswer, makeRoute, startStallSweep } from "./routes.ts";
+import { applyMailStates, deliverAnswer, makeRoute, startStallSweep, webAccess } from "./routes.ts";
 import { appProxySocket } from "./app-proxy.ts";
 import { appEntries, appKeyOf, integrationContext, readAppsFile } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
 import { applyMemory, mailDiscordOn, setDiscordProbe } from "./app-settings.ts";
 import { setFormLink } from "./auth.ts";
-import { startTunnel, stopTunnel } from "./cloudflared.ts";
-import { cfBase, setWebBase, webBase as getWebBase, webLink } from "./weblink.ts";
+import { webBase as getWebBase, webLink } from "./weblink.ts";
 import { kakaoDraftFacts, startKakaoLive, stopKakaoLive } from "./kakao/gateway.ts";
 import { commentDraftFacts } from "./comments/gateway.ts";
 import { draftHandled } from "./draft-handled.ts";
@@ -138,44 +137,9 @@ installLaneHandlers();
 // Result files ([file] lines, discord.ts) go out only when GET /api/file would serve them (inside the roots, or named in a [file] line of a sent message); a file too big to attach goes
 // out as that route's download link on the tailnet address (config web.public_url, else tailscale's name + HTTPS port).
 discord.setFileResolver(p => resolveAllowed(p, fileRoots(), sentFiles()));
-// web.access = "cloudflare": the app is reached through a Cloudflare Tunnel on web.cloudflare.hostname (hub/cloudflared.ts); no tailscale lookup at all.
-// "local" keeps the tailscale lookup off too. Anything else (default "tailscale") is the original behavior.
-const access = cfg.web?.access ?? "tailscale";
-const cfUrl = access === "cloudflare" ? cfBase(cfg.web?.cloudflare?.hostname) : undefined;
-if (access === "cloudflare" && !cfUrl) log("web: web.cloudflare.hostname is missing or invalid; links to the web app are left out");
-let webBase: string | undefined = cfUrl ? cfUrl : access === "tailscale" || access === "local" ? (cfg.web as { public_url?: string } | undefined)?.public_url?.replace(/\/+$/, "") : undefined;
-setWebBase(webBase);
-if (access === "cloudflare" && cfg.web?.cloudflare) startTunnel({ tokenFile: resolve(join(DATA_DIR, "secrets"), cfg.web.cloudflare.tunnel_token_file ?? "cloudflared-tunnel-token"), deviceGate: true });
-if (!webBase && access === "tailscale" && cfg.web?.tailscale_https_port) {
-	const port = cfg.web.tailscale_https_port;
-	void (async () => {
-		// DOTZ_TAILSCALE_BIN (colon-separated, empty = none) replaces the lookup list: a test forces "no tailscale" on a host that has the app.
-		const bins = process.env.DOTZ_TAILSCALE_BIN !== undefined ? process.env.DOTZ_TAILSCALE_BIN.split(":").filter(Boolean) : ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"];
-		for (const bin of bins) {
-			const dns = await Bun.$`${bin} status --json`.quiet().json().then(s => String(s?.Self?.DNSName ?? "").replace(/\.$/, ""), () => "");
-			if (!dns) continue;
-			webBase = `https://${dns}${port === 443 ? "" : `:${port}`}`;
-			setWebBase(webBase);
-			if (cfg.web?.allow_logins?.length) await ensureServe(bin, port, cfg.web.port);
-			return;
-		}
-		log("files: no tailnet address found (set web.public_url); files too big to attach are named, not linked");
-	})();
-}
-// The web app is reachable only through `tailscale serve`. Setup sets it up once, but an upgrade, a scripted install or a
-// skipped step left the port with no proxy (2026-10-20, a second Mac). The gateway restores it on start, and never takes
-// over a port another service already serves.
-async function ensureServe(bin: string, httpsPort: number, localPort: number): Promise<void> {
-	const st = await Bun.$`${bin} serve status --json`.quiet().json().catch(() => undefined) as { TCP?: Record<string, unknown>; Web?: Record<string, { Handlers?: Record<string, { Proxy?: string }> }> } | undefined;
-	if (!st) return log("web: tailscale serve status unreadable; not touching the serve config");
-	if (st.TCP?.[String(httpsPort)]) {
-		const proxy = Object.entries(st.Web ?? {}).find(([k]) => k.endsWith(`:${httpsPort}`))?.[1]?.Handlers?.["/"]?.Proxy ?? "";
-		if (!new RegExp(`:${localPort}/?$`).test(proxy)) log(`web: tailnet port ${httpsPort} already serves ${proxy || "something else"}; set web.tailscale_https_port to a free port`);
-		return;
-	}
-	const r = await Bun.$`${bin} serve --bg --https=${httpsPort} http://127.0.0.1:${localPort}`.nothrow().quiet();
-	log(r.exitCode === 0 ? `web: tailscale serve was missing; opened port ${httpsPort} -> ${localPort}` : `web: tailscale serve failed: ${`${r.stdout}${r.stderr}`.trim().slice(0, 300)}`);
-}
+// How the web app is reached (hub/web-access.ts): web.access in config.json until the settings screen saves a choice, then web-access.json. "cloudflare" starts the
+// Cloudflare Tunnel (hub/cloudflared.ts) and the device gate and sets the address; "local" and "tailscale" keep web.public_url or the tailnet lookup.
+void webAccess.start();
 setFormLink(() => getWebBase());
 discord.setFileLink(p => webLink(`/api/file?path=${encodeURIComponent(p)}&dl=1`));
 // Apple's push service rejects a VAPID subject it cannot parse as a contact: the app's own https URL is one.
@@ -552,7 +516,7 @@ function shutdown(): Promise<never> {
 		{ name: "pending replies", run: async () => void (await replies.flush(outlangTimeoutMs() + 1000)) },
 		{ name: "discord connection", run: () => discord.disconnect() },
 		{ name: "watch and schedule timers", run: () => (stopWatches(), stopSchedules(), stopKakaoLive(), clearTrackedTimers()) },
-		{ name: "cloudflare tunnel", run: () => stopTunnel() },
+		{ name: "cloudflare tunnel", run: () => webAccess.stop() },
 		{ name: "others", run: () => void 0 },
 	], 10_000 + (replies.size() ? outlangTimeoutMs() + 2000 : 0));
 }
