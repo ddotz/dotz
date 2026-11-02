@@ -49,3 +49,6 @@ writeFileSync(
 );
 installClock();
 setMachineProbe(() => ({ totalGb: 64, availableGb: 56, cpus: 16 }));
+// Imported late: diskguard.ts reads config.ts, which must see the DOTZ_DIR set above.
+const { setDiskReader } = await import("../diskguard.ts");
+setDiskReader(() => ({ freeBytes: 500 * 2 ** 30, totalBytes: 1000 * 2 ** 30 }));
