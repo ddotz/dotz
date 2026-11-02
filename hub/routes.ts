@@ -26,7 +26,7 @@ import { fieldsOf, isSettingsTarget, readSettings, SettingsError, writeSettings 
 import { refreshReplyModelChoices, replyModelLabel } from "./reply-model-choices.ts";
 import { replyModel } from "./reply-model.ts";
 import { watchOfSubject } from "./watch-settings.ts";
-import { markRead } from "./reads.ts";
+import { markRead, markUnread } from "./reads.ts";
 import { activityItems, broadcast, historyEvents, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { subagentLists } from "./activity.ts";
 import { cancelOmoWorker, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
@@ -36,8 +36,12 @@ import { askedFile, draftAttachRoute, syncCardFiles } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
 import { draftRecipientsRoute } from "./draft-recipients.ts";
-import { composeMail, deleteMail, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
-import { holdDrafts, listDrafts, restoreDrafts } from "../features/reply-drafts/lib/store.ts";
+import { stagedFiles } from "../features/reply-drafts/lib/staged.ts";
+import { composeMail, deleteMail, mailKey, recordSentByDotz, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { applyMailboxFlags, canOf, isMailAction, mailAction, mailActions, type SyncDeps } from "./mail-sync.ts";
+import { pluginMailAction, pluginMailActions } from "./plugins.ts";
+import { webmailSite } from "../features/reply-drafts/lib/senders.ts";
+import { getDraft, holdDrafts, listDrafts, restoreDrafts } from "../features/reply-drafts/lib/store.ts";
 import { attachmentLines, canvasRoute, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
 import { ownerElements, pickedLines } from "./picked.ts";
 import { ownerRefs, refLines } from "./mentions.ts";
@@ -261,23 +265,71 @@ export async function deliverAnswer(a: Parameters<DecisionSend>[0] & { login: st
 	await sendWeb({ lane, project, mail, conv, channel: "web", text: a.text, mode: "default", login: a.login, replyTo: a.replyTo, decision: a.notice, picks: a.picks, files: a.files, via: a.via });
 }
 
+// The pending reply drafts of one mail are dropped (the same store step as 보내지 않기) and their approval cards settled at once.
+const dropMailDrafts = async (key: string) => {
+	const pending = listDrafts().filter(d => d.ref === key && (d.status === "pending" || d.status === "held"));
+	if (pending.length) {
+		const { dropDraft } = await import("../features/reply-drafts/lib/flow.ts");
+		for (const d of pending) { const r = dropDraft(d.id); if (!r.ok) log(`draft ${d.id}: not dropped with its mail: ${r.text}`); }
+	}
+	await settleHandledDrafts().catch(e => log(`mail ${key}: handled-draft settle failed: ${(e as Error).message}`));
+};
+/** 삭제 / 휴지통 on a mail: it leaves dotz (record, list entry, counts, its notices and pending drafts); the real mailbox is not touched here. */
+const removeMailLocal = async (key: string): Promise<boolean> => {
+	if (!deleteMail(key)) return false;
+	await dropMailDrafts(key);
+	readConversationNotices(mailTarget(key), new Date().toISOString());
+	broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
+	return true;
+};
+/** hub/mail-sync.ts wired to the real parts: zele and plugins for the mailbox, the read position, deleting. */
+export const mailSyncDeps: SyncDeps = {
+	exec: async argv => {
+		const p = Bun.spawn(argv, { stdin: "ignore", stdout: "ignore", stderr: "pipe" });
+		const [code, stderr] = await Promise.all([p.exited, new Response(p.stderr).text()]);
+		return { code, stderr };
+	},
+	plugin: pluginMailAction,
+	pluginCan: pluginMailActions,
+	webmail: s => !!webmailSite(s),
+	setRead: (target, ts, direction) => {
+		if (direction === "read") {
+			const x = markRead({ target, ts });
+			if (x.ok) readConversationNotices(x.target, x.ts);
+		} else markUnread({ target, ts });
+		broadcast({ kind: "mail_unreplied", target });
+	},
+	remove: removeMailLocal,
+	changed: key => broadcast({ kind: "mail_unreplied", target: mailTarget(key) }),
+	log,
+};
+const keyOfSource = (source: string, id: string): string | undefined => {
+	try {
+		return mailKey(source, id);
+	} catch {
+		return undefined;
+	}
+};
+
 /** A mailbox's read / replied state of its mails (POST /api/mail/state, the zele poll in hub/main.ts): read in dotz once read there (its bell items
  *  too, as when he opens it here), 답장함 once answered there; every device redraws the mails that changed. Returns how many changed. */
-export function applyMailStates(source: string, items: readonly MailSourceState[]): number {
+export async function applyMailStates(source: string, items: readonly MailSourceState[]): Promise<number> {
 	const changed = syncMailStates(source, items, (target, ts) => {
 		const r = markRead({ target, ts });
 		if (r.ok) readConversationNotices(r.target, r.ts);
 		return r.ok && r.moved;
 	});
-	for (const target of changed) broadcast({ kind: "mail_unreplied", target });
-	return changed.length;
+	// Then what changed in the mailbox since its last report: unread / starred / archived / trashed (hub/mail-sync.ts applyMailboxFlags).
+	const flags = await applyMailboxFlags(source, items, { ...mailSyncDeps, keyOf: keyOfSource });
+	for (const target of new Set([...changed, ...flags])) broadcast({ kind: "mail_unreplied", target });
+	return new Set([...changed, ...flags]).size;
 }
 const parseMailStates = (raw: unknown): { source: string; items: MailSourceState[] } | undefined => {
 	const b = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 	if (typeof b.source !== "string" || !b.source.trim() || !Array.isArray(b.items)) return undefined;
 	const items = b.items.slice(0, 2000).flatMap(x => {
 		const i = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
-		return typeof i.id === "string" && i.id ? [{ id: i.id.slice(0, 200), ...(i.read === true ? { read: true } : {}), ...(i.replied === true ? { replied: true } : {}) }] : [];
+		return typeof i.id === "string" && i.id ? [{ id: i.id.slice(0, 200), ...(typeof i.read === "boolean" ? { read: i.read } : {}), ...(typeof i.unread === "boolean" ? { unread: i.unread } : {}), ...(i.replied === true ? { replied: true } : {}), ...(typeof i.archived === "boolean" ? { archived: i.archived } : {}), ...(i.trashed === true ? { trashed: true } : {}), ...(typeof i.starred === "boolean" ? { starred: i.starred } : {}) }] : [];
 	});
 	return { source: b.source.trim().slice(0, 60), items };
 };
@@ -444,15 +496,6 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return json({ ok: true, ...(item ? { item } : {}) });
 		}
 		const sentMailRefs = () => sentReplyRefs(listDrafts());
-		// The pending reply drafts of one mail are dropped (the same store step as 보내지 않기) and their approval cards settled at once.
-		const dropMailDrafts = async (key: string) => {
-			const pending = listDrafts().filter(d => d.ref === key && (d.status === "pending" || d.status === "held"));
-			if (pending.length) {
-				const { dropDraft } = await import("../features/reply-drafts/lib/flow.ts");
-				for (const d of pending) { const r = dropDraft(d.id); if (!r.ok) log(`draft ${d.id}: not dropped with its mail: ${r.text}`); }
-			}
-			await settleHandledDrafts().catch(e => log(`mail ${key}: handled-draft settle failed: ${(e as Error).message}`));
-		};
 		const unrepliedMailList = () => unrepliedMails(sentMailRefs());
 		// A draft a send-approval notice already shows (its `> 참조:` ref) is that notice's card; the store's own list leaves it out, so nothing counts twice.
 		const noticeDraftRefs = (): Set<string> => new Set(listNotices(NOTICE_CAP).items.flatMap(n => (n.decision?.state === "open" && !n.ignored && typeof n.decision.draft?.ref === "string" ? [n.decision.draft.ref] : [])));
@@ -635,7 +678,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const items = conversationList([...[...lv.live, ...lv.ended].map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).flatMap(c => {
 				if (!c.target.startsWith("mail:")) return [c];
 				const m = mailByKey(c.target.slice(5));
-				return m ? [{ ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key)) }] : [];
+				return m ? [{ ...c, mail: mailCard(m, owed.has(m.key), sent.has(m.key), { read: c.unread === 0, can: canOf(m.source, mailSyncDeps) }) }] : [];
 			});
 			return json({ items });
 		}
@@ -668,14 +711,25 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
 			return json({ ok: true });
 		}
+		// 읽음 / 안 읽음 / 보관 / 별표 / 휴지통 on a mail: dotz changes at once and the real mailbox follows (hub/mail-sync.ts has the contract).
+		if (req.method === "POST" && url.pathname === "/api/mail/actions") {
+			const b = await body(req).catch(() => ({})) as { keys?: unknown; action?: unknown };
+			if (!isMailAction(b.action)) return json({ error: "action must be read, unread, archive, unarchive, trash, star or unstar" }, 400);
+			if (!Array.isArray(b.keys) || b.keys.some(k => typeof k !== "string")) return json({ error: "keys must be an array of mail keys" }, 400);
+			return json({ ok: true, results: await mailActions((b.keys as string[]).slice(0, 200), b.action, mailSyncDeps) });
+		}
+		const mailActOne = req.method === "POST" && /^\/api\/mail\/([a-z0-9._-]+)\/action$/.exec(url.pathname);
+		if (mailActOne) {
+			const b = await body(req).catch(() => ({})) as { action?: unknown };
+			if (!isMailAction(b.action)) return json({ error: "action must be read, unread, archive, unarchive, trash, star or unstar" }, 400);
+			const res = await mailAction(mailActOne[1]!, b.action, mailSyncDeps);
+			return res.ok ? json(res) : json({ error: res.note }, 404);
+		}
 		// 삭제 on a mail card: the mail leaves dotz (record, list entry, counts, its notices and pending drafts); the real mailbox is not touched.
 		const mailDelete = req.method === "DELETE" && /^\/api\/mail\/([a-z0-9._-]+)$/.exec(url.pathname);
 		if (mailDelete) {
 			const key = mailDelete[1]!;
-			if (!deleteMail(key)) return json({ error: "이 메일을 찾지 못했어요" }, 404);
-			await dropMailDrafts(key);
-			readConversationNotices(mailTarget(key), new Date().toISOString());
-			broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
+			if (!(await removeMailLocal(key))) return json({ error: "이 메일을 찾지 못했어요" }, 404);
 			return json({ ok: true });
 		}
 		// 초안 작성 on a mail: the owner asks for a reply draft himself. It is made behind the request (a model call takes a while, and a peer's
@@ -700,13 +754,22 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "POST" && url.pathname === "/api/followup") {
 			const input = parseFollowup(await body(req));
 			// The approved reply went out: the mail is 답장함 (hub/mail-state.ts), whether or not the app has a 이어서 할 일 rule.
-			if (input?.kind === "mail" && input.ids.mail && setMailReply(input.ids.mail, "sent")) broadcast({ kind: "mail_unreplied", target: mailTarget(input.ids.mail) });
+			if (input?.kind === "mail" && input.ids.mail && setMailReply(input.ids.mail, "sent")) {
+				// What he sent is listed as a sent mail now, with its text and files, in the thread of the mail it answered.
+				const d = input.ids.draft ? getDraft(input.ids.draft) : undefined;
+				if (d) await recordSentByDotz({ id: d.id, source: d.source, to: d.to, cc: d.cc, subject: d.subject, body: d.body, files: stagedFiles(d.id) }, { answers: input.ids.mail }).catch(e => log(`mail ${input.ids.mail}: sent reply not listed: ${(e as Error).message}`));
+				broadcast({ kind: "mail_unreplied", target: mailTarget(input.ids.mail) });
+			}
 			return input ? json({ ok: true, result: triggerFollowup(input) }) : json({ error: "app, kind (comment|mail|kakao), key required" }, 400);
 		}
 		if (req.method === "POST" && url.pathname === "/api/mail/compose") {
 			if (!mailDeps) return json({ error: "mail is not wired in this process" }, 503);
 			try {
-				return json(composeMail(await body(req), mailDeps()));
+				const b = await body(req), made = composeMail(b, mailDeps());
+				// The new mail went out: its row becomes the sent mail, with the text and the files it carried.
+				const d = (b as { state?: unknown }).state === "sent" ? getDraft(String((b as { ref?: unknown }).ref)) : undefined;
+				if (d) await recordSentByDotz({ id: d.id, source: d.source, to: d.to, cc: d.cc, subject: d.subject, body: d.body, files: stagedFiles(d.id) }, { compose: made.key });
+				return json(made);
 			} catch (error) {
 				return json({ error: (error as Error).message }, error instanceof MailError ? error.status : 500);
 			}
@@ -719,7 +782,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if (req.method === "POST" && url.pathname === "/api/mail/state") {
 			const input = parseMailStates(await body(req));
-			return input ? json({ ok: true, changed: applyMailStates(input.source, input.items) }) : json({ error: "source and items [{id, read?, replied?}] required" }, 400);
+			return input ? json({ ok: true, changed: await applyMailStates(input.source, input.items) }) : json({ error: "source and items [{id, read?, replied?}] required" }, 400);
 		}
 		if (req.method === "POST" && url.pathname === "/api/mail") {
 			if (!mailDeps) return json({ error: "mail is not wired in this process" }, 503);

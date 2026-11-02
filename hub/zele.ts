@@ -25,7 +25,7 @@ type Hooks = {
 	accounts?: (addresses: string[]) => void;
 	/** Every thread this poll listed (inbox and sent folder, no extra zele call): `read` = no message of it is unread any more (read in Gmail,
 	 *  another client or dotz), `replied` = its newest message is the owner's (he answered it, from dotz or anywhere else). Called once per poll. */
-	states?: (items: { id: string; read?: boolean; replied?: boolean }[]) => void | Promise<void>;
+	states?: (items: { id: string; read?: boolean; unread?: boolean; replied?: boolean; starred?: boolean; trashed?: boolean; archived?: boolean }[]) => void | Promise<void>;
 	brief: (text: string) => void;
 };
 
@@ -228,12 +228,14 @@ export async function tick(h: Hooks, now = new Date(), list: (args: string[]) =>
 		await h.mail(newMail(m));
 	}
 	// The mailbox's own state of every listed thread, on every poll: what dotz shows follows it (hub/mail.ts syncMailStates).
-	const states = new Map<string, { id: string; read?: boolean; replied?: boolean }>();
+	const states = new Map<string, { id: string; read?: boolean; unread?: boolean; replied?: boolean; starred?: boolean; trashed?: boolean; archived?: boolean }>();
 	for (const m of [...mail, ...sent]) {
 		const id = String(m.id ?? "");
 		if (!id || states.has(id)) continue;
 		const read = m.flags === undefined ? undefined : !/unread/i.test(String(m.flags));
-		states.set(id, { id, ...(read !== undefined ? { read } : {}), ...(isOwnAddress(String(m.from ?? ""), own) ? { replied: true } : {}) });
+		// Starred, trashed and in-inbox come from the same list output (flags / labels), no extra call; archived is only ever reported as false (INBOX label present).
+		const marks = `${m.flags ?? ""} ${m.labels ?? ""}`;
+		states.set(id, { id, ...(read !== undefined ? { read } : {}), ...(isOwnAddress(String(m.from ?? ""), own) ? { replied: true } : {}), ...(m.flags !== undefined ? { starred: /star/i.test(marks) } : {}), ...(/\btrash\b/i.test(marks) ? { trashed: true } : {}), ...(/\binbox\b/i.test(String(m.labels ?? "")) ? { archived: false } : {}) });
 	}
 	if (states.size) await h.states?.([...states.values()]);
 
