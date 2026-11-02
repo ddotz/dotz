@@ -28,7 +28,7 @@ export type Config = {
 	// get one (hub/session-key.ts CONV_KINDS), `idle_stop_min` parks an idle one, `max_live` fixes how many run at once (main and lanes not counted; unset: sized from the
 	// computer's free memory and load, hub/convcapacity.ts).
 	conversations?: { sessions?: boolean; kinds?: string[]; idle_stop_min?: number; max_live?: number };
-	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; max_workers?: number; idle_stop_min?: number; worker_idle_min?: number };
+	lanes: { runtime?: string; max_active?: number; compact_at?: number; keep_recent?: number; nightly_at?: string; nightly_compact_at?: number; rotate_mb?: number; max_rss_gb?: number; max_workers?: number; idle_stop_min?: number; worker_idle_min?: number; min_free_disk_gb?: number };
 	// Model choice and fallback order, one block per target (the web 모델 · 폴백 screen edits exactly this).
 	models?: ModelsConfig;
 	// Per-model context window and auto-compaction point, keyed by model id without the thinking level (the 컨텍스트 screen edits this).
@@ -221,6 +221,8 @@ const count = (v: unknown, d: number, min: number) => (typeof v === "number" && 
 const cap = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 1 ? Math.floor(v) : undefined);
 export const lanesMaxActive = () => cap(cfg.lanes?.max_active);
 export const lanesMaxWorkers = () => cap(cfg.lanes?.max_workers);
+// Free space (GB) the data dir and a lane's working volume keep before new lanes wait (hub/diskguard.ts); 0 turns the guard off.
+export const lanesMinFreeDiskGb = () => (typeof cfg.lanes?.min_free_disk_gb === "number" && cfg.lanes.min_free_disk_gb >= 0 ? cfg.lanes.min_free_disk_gb : 10);
 // On unless set to false (2026-11-01): with one shared session, an owner message that came while that session ran another
 // conversation's turn or one the gateway started (watch, schedule, lane report) waited for the turn to end; its own session
 // steers it into its conversation's running turn at once, as on the owner's Mac mini.
