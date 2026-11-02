@@ -86,7 +86,7 @@ export type Decision = {
 export const NOTICE_CAP = 300;
 const TEXT_MAX = 1500;
 const LOUD = new Set<NoticeTone>(["done", "fail", "ask"]);
-const RESTART_PREFIX = /^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/;
+const RESTART_PREFIX = /^게이트웨이(?: 재시작했어요|를 다시 시작했어요|가 다시 시작돼서)/;
 
 const load = (): Notice[] => {
 	if (!existsSync(paths.notices)) return [];
