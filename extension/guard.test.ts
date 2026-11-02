@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GUARD_DEFAULTS, guardConfigFrom, installedOriginal, loadGuardConfig } from "./guard-config.ts";
 import { LOOKUP_MODEL, omoSelector } from "../hub/runtime/omo.ts";
-import { budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, laneMergeBlock, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
+import { addProjectFooter, PROJECT_MARKER, budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, laneMergeBlock, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
 
 let dir: string;
 beforeAll(() => {
@@ -359,5 +359,34 @@ test("the worker state is keyed by DOTZ_CONV, and shared files are written only 
 		expect((await handlers.tool_call[0](call, ctx))?.block).toBeUndefined();
 	} finally {
 		process.env = saved;
+	}
+});
+
+test("project footer: a channel with a project gets its README and RULES.md paths; chat and unknown folders get none", () => {
+	const data = mkdtempSync(join(tmpdir(), "dotz-proj-"));
+	try {
+		mkdirSync(join(data, "projects", "kdb"), { recursive: true });
+		writeFileSync(join(data, "projects", "kdb", "README.md"), "# kdb");
+		writeFileSync(join(data, "RULES.md"), "rules");
+		writeFileSync(join(data, "channel-setups.json"), JSON.stringify([{ channel: "42", purpose: "analysis in projects/kdb (README)" }, { channel: "7", purpose: "projects/none" }]));
+		const readme = join(data, "projects", "kdb", "README.md");
+		const omo = { category: "quick", prompt: "make summary.html\nDone when: file" };
+		addProjectFooter(omo, "ch:42", "/tmp", data);
+		expect(omo.prompt).toContain(`${PROJECT_MARKER} ${readme}, ${join(data, "RULES.md")}`);
+		addProjectFooter(omo, "ch:42", "/tmp", data);
+		expect(omo.prompt.split(PROJECT_MARKER).length).toBe(2);
+		const omp = { tasks: [{ task: `edit ${data}/projects/kdb/a.html\nAcceptance: ok` }] };
+		addProjectFooter(omp, undefined, "/tmp", data);
+		expect(omp.tasks[0].task).toContain(readme);
+		const inCwd = { prompt: "x\nDone when: y" };
+		addProjectFooter(inCwd, "web", join(data, "projects", "kdb", "out"), data);
+		expect(inCwd.prompt).toContain(readme);
+		for (const conv of [undefined, "web", "ch:7", "ch:99"]) {
+			const chat = { prompt: "look up x\nDone when: y" };
+			addProjectFooter(chat, conv, "/tmp", data);
+			expect(chat.prompt).not.toContain(PROJECT_MARKER);
+		}
+	} finally {
+		rmSync(data, { recursive: true, force: true });
 	}
 });
