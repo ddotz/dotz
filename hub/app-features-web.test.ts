@@ -196,8 +196,9 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		await run(v, `${more}.click()`);
 		await waitFor(v, `document.querySelector("#app-sw [data-setting='auto_draft']") && document.querySelector("#app-sw [data-feature]")`);
 		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-feature]")].map(e => e.querySelector(".as-n").textContent)`)).toEqual(["새 메일"]);
-		expect(await q(v, `return document.querySelector('#app-sw [data-sec="notify"]').nextElementSibling.dataset.setting`)).toBe("push");   // 휴대폰 알림 opens 알림, 새 메일 follows it
-		expect(await q(v, `return document.querySelector('#app-sw [data-sec="notify"]').nextElementSibling.nextElementSibling.dataset.feature`)).toBe("new_mail");
+		expect(await q(v, `return document.querySelector('#app-sw [data-sec="notify"]').nextElementSibling.dataset.setting`)).toBe("notify");   // 새 소식 알림 opens 알림, then 휴대폰 알림, then 새 메일
+		expect(await q(v, `return document.querySelector('#app-sw [data-sec="notify"]').nextElementSibling.nextElementSibling.dataset.setting`)).toBe("push");
+		expect(await q(v, `return document.querySelector('#app-sw [data-sec="notify"]').nextElementSibling.nextElementSibling.nextElementSibling.dataset.feature`)).toBe("new_mail");
 		expect(await q<string>(v, `return document.querySelector("#app-sw").textContent`)).not.toMatch(RAW);
 		await shot(v, `${tag}-mail-settings.png`);
 	});

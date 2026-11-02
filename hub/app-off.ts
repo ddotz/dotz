@@ -34,6 +34,18 @@ export function blockedByOff(dataDir: string, n: Blockable): boolean {
 	return appEntries(dataDir).some(e => off.has(e.key) && where.some(w => inConv(e, w)));
 }
 
+/** True when a monitoring notice (kind watch: a new mail, a message, a monitor's report) belongs to an app instance or a general monitor whose
+ *  새 소식 알림 switch is off (custom/apps.json {"<app>":{"notify":false}}, a watch's `notify: false`): it is not kept in the bell, so no phone
+ *  notification either. The item itself stays in the app (its mail list, its room). */
+export function newsMuted(dataDir: string, n: Blockable & { kind?: string; watch?: string }, watchMuted: (name: string) => boolean = () => false): boolean {
+	if (n.kind !== "watch") return false;
+	if (n.watch && watchMuted(n.watch)) return true;
+	const apps = readAppsFile(dataDir);
+	if (n.app) return apps[n.app]?.notify === false;
+	const where = whereOf(n);
+	return appEntries(dataDir).some(e => apps[e.key]?.notify === false && where.some(w => inConv(e, w)));
+}
+
 export type RemovalPlan = { app: string; label: string; watches: string[]; features: string[]; data: string[] };
 const dataPath = (dataDir: string, spec: string) => join(dataDir, spec.split("#")[0]!);
 /** What 제거 will do on this install, in words the owner reads before the confirm. */

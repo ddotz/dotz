@@ -10,7 +10,7 @@ import * as livestatus from "./livestatus.ts";
 import { setAskAnswer } from "./askbuttons.ts";
 import { discordGatewayAnswer } from "./approval-wire.ts";
 import { startPeerStreams } from "./peer-stream.ts";
-import { notify as pushNotify, startPush } from "./push.ts";
+import { notify as pushNotify, setWatchPushOff, startPush } from "./push.ts";
 import { msg, textsToReport } from "./i18n.ts";
 import { broadcast, emit, emitDelivery, onEmit, sentFiles, subscriberCount } from "./events.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
@@ -18,7 +18,7 @@ import { startLaneIdleStop } from "./laneidle.ts";
 import { startMemoryGuard } from "./memguard.ts";
 import { setTrashChannels } from "./lanetrash.ts";
 import { laneSpot, rememberSpot } from "./lanestate.ts";
-import { migratePostSettings, setWebLane } from "./discord-post.ts";
+import { migratePostSettings, postSettings, setWebLane } from "./discord-post.ts";
 import { resolveAllowed } from "./files.ts";
 import { setDiskNotify } from "./diskguard.ts";
 import { approvesBudget, laneBusy, lanes, restoreLanes, sendToLane, setIdleHandler as setLaneIdleHandler, shutdownLanes, startLaneQueue } from "./lanes.ts";
@@ -48,7 +48,7 @@ import { createWatchSummarizer } from "./watchsummary.ts";
 import { clearTrackedTimers, runShutdown } from "./shutdown.ts";
 import { addWatch, allWatches, approveWatch, isWatchIssue, setWatchGate, startWatches, stopWatches, watchChoice } from "./watch.ts";
 import { watchOwner } from "./app-features.ts";
-import { blockedByOff, watchOff } from "./app-off.ts";
+import { blockedByOff, newsMuted, watchOff } from "./app-off.ts";
 import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.ts";
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele } from "./zele.ts";
@@ -71,7 +71,7 @@ import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQ
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { applyMailStates, makeRoute, startStallSweep } from "./routes.ts";
 import { appProxySocket } from "./app-proxy.ts";
-import { appEntries, appKeyOf, integrationContext } from "./integrations.ts";
+import { appEntries, appKeyOf, integrationContext, readAppsFile } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
 import { applyMemory, mailDiscordOn, setDiscordProbe } from "./app-settings.ts";
 import { setFormLink } from "./auth.ts";
@@ -104,7 +104,10 @@ setLaneTitleResolver(name => lanes.get(name)?.title);
 setWatchLabelResolver(watchLabel);
 setAppResolver(n => (n.kind === "watch" && n.watch ? watchOwner(appEntries(DATA_DIR), { name: n.watch, session: allWatches().find(w => w.name === n.watch)?.session }) : undefined) ?? appKeyOf(n, integrationContext(DATA_DIR, cfg.zele?.enabled !== false && Bun.which("zele") ? ["zele"] : [])));
 setWatchGate(name => watchOff(DATA_DIR, name, allWatches().find(w => w.name === name)?.session));
-setAppBlocker(n => blockedByOff(DATA_DIR, n));
+// An off app hides all its notices; a 새 소식 알림 switch that is off (an app instance's or a monitor's) keeps its news out of the bell and the phone.
+const watchByName = (name: string) => allWatches().find(w => w.name === name);
+setAppBlocker(n => blockedByOff(DATA_DIR, n) || newsMuted(DATA_DIR, n, name => watchByName(name)?.notify === false));
+setWatchPushOff(name => watchByName(name)?.push === false);
 setOrchestratorAvailable(() => orch.status !== "stopped" && orch.status !== "rate-limited");
 setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] ?? discord.channels.threads[conv.slice(3)]?.name : conv.startsWith("mail:") ? mailByKey(conv.slice(5))?.subject : conv.startsWith("settings:") ? appEntries(DATA_DIR).find(e => e.key === conv.slice(9))?.label : undefined));
 // An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).
@@ -240,7 +243,7 @@ void discord.syncProfile().catch(e => log(`syncProfile failed: ${e}`));
 
 // Each mail is a conversation (hub/mail.ts): zele here and outside posters through POST /api/mail (hub/routes.ts) share these.
 let mailChannelId: string | undefined;
-setDiscordProbe(() => discord.status.enabled);
+setDiscordProbe(() => discord.status.enabled, () => postSettings().news);
 const mailDeps = (): MailDeps => ({
 	createThread: discord.createThread,
 	send: (target, text) => discord.send(target, text),
@@ -457,19 +460,27 @@ updateBoot({ alert });
 void runMigrations({ dataDir: DATA_DIR, ask: alert, notify: text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`migration notice failed: ${e}`)) }).catch(e => log(`migrations failed: ${e}`));
 setWatchSummarizer(createWatchSummarizer());
 nameWatches();
+// A monitor's own 디스코드에도 보내기 (hub/watch-settings.ts), or for an app's watch the app's (hub/app-settings.ts appDiscordField; a mail instance's
+// switch is about its mail threads, not its watches), decides its report posts while Discord is connected; unset, the 새 소식 class switch does.
+const watchRoute = (w: { name: string; session?: string; discord?: boolean }) => {
+	if (!discord.status.enabled) return {};
+	const app = watchOwner(appEntries(DATA_DIR), { name: w.name, session: w.session });
+	const own = app ? (app.split("-")[0] === "mail" ? undefined : readAppsFile(DATA_DIR)[app]?.discord) : w.discord;
+	return typeof own === "boolean" ? { discord_route: own } : {};
+};
 startWatches((w, reason, output, prev) => {
 	if (w.to === "orchestrator") {
 		const event = watchWakeEvent(w, reason, output, prev);
 		emit("inbox", event);
 		if (!w.channels?.length) return deliver(inboxText(event));
 		const [first, ...others] = w.channels;
-		for (const c of others) void out(`ch:${c}`, watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev }).slice(0, 1900), undefined, { source: "gateway", news: true }).catch(() => undefined);
+		for (const c of others) void out(`ch:${c}`, watchLine(event.label, reason, output, { note: `(처리는 #${discord.channels.work[first] ?? first}에서)`, prev }).slice(0, 1900), undefined, { source: "gateway", news: true, ...watchRoute(w) }).catch(() => undefined);
 		return deliver(inboxText(event), { target: `ch:${first}` });
 	}
 	// A failing, stopped or unapproved check is an issue: it goes to alert with a choice block, whatever `to` the watch has.
 	const issue = isWatchIssue(reason);
 	const label = watchLabel(w.name);
-	void out(issue ? "alert" : w.to, watchLine(label, reason, output, { prev }).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label)}` : ""), undefined, { source: "gateway", news: true }).catch(e => log(`watch ${w.name} send failed: ${e}`));
+	void out(issue ? "alert" : w.to, watchLine(label, reason, output, { prev }).slice(0, issue ? 1500 : 1900) + (issue ? `\n${watchChoice(label)}` : ""), undefined, { source: "gateway", news: true, ...(issue ? {} : watchRoute(w)) }).catch(e => log(`watch ${w.name} send failed: ${e}`));
 });
 syncFeatureWatches();
 startKakaoLive();

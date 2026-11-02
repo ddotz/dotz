@@ -183,7 +183,9 @@ function settleAnswer(j: OutJob): void {
 function handOver(j: OutJob, sent: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	settleAnswer(j);
 	// Web only: a web conversation, a kind the owner switched off for Discord (hub/discord-post.ts), or a gateway alert that repeats one Discord already has.
-	if (isLocal(j.target) || j.extra.repeat === true || !discordPosts(j.target, j.replyTo, postClass(j.target, j.text, { ...j.extra, ...(threadMail(j.target) ? { mail: true } : {}) }))) {
+	// `discord_route`: the post's own app or monitor decided it (a monitor's 디스코드에도 보내기 switch, hub/watch-settings.ts), over the class switch.
+	const toDiscord = typeof j.extra.discord_route === "boolean" ? j.extra.discord_route : discordPosts(j.target, j.replyTo, postClass(j.target, j.text, { ...j.extra, ...(threadMail(j.target) ? { mail: true } : {}) }));
+	if (isLocal(j.target) || j.extra.repeat === true || !toDiscord) {
 		convs.markAnsweredAll(jobAnswers(j));
 		return Promise.resolve({ delivered: true });
 	}

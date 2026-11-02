@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { parseProposal } from "./app-settings.ts";
+import { parseProposal, setDiscordProbe } from "./app-settings.ts";
 import { paths } from "./config.ts";
 import { WATCH_FIELDS, readWatchSettings, watchOfSubject, watchSettingsContext, writeWatchSettings } from "./watch-settings.ts";
 import { addWatch, allWatches, removeWatch, startWatches } from "./watch.ts";
@@ -14,7 +14,7 @@ const val = (name: string) => Object.fromEntries(readWatchSettings(name).map(f =
 
 test("the fields read the watch's own values; the common ones are controls above the conversation", () => {
 	make();
-	expect(val("t-set")).toEqual({ enabled: true, every_minutes: 60, to: "alert", label: "테스트 감시" });
+	expect(val("t-set")).toEqual({ enabled: true, every_minutes: 60, to: "alert", label: "테스트 감시", notify: true, push: true });
 	expect(WATCH_FIELDS.filter(f => f.switch).map(f => f.key)).toEqual(["enabled", "every_minutes", "to", "label"]);
 	// The screen's sections: 알림, 감시, then the rest (the web draws them in this order).
 	expect(WATCH_FIELDS.map(f => [f.key, f.section])).toEqual([["enabled", "watch"], ["every_minutes", "watch"], ["to", "notify"], ["label", "advanced"]]);
@@ -31,6 +31,25 @@ test("PATCH writes through patchWatch: pause, interval, notice route and label",
 	writeWatchSettings("t-set", { enabled: true, every_minutes: 30, to: "chat", label: "  새 이름 " });
 	expect(stored("t-set")).toMatchObject({ every_minutes: 30, to: "chat", label: "새 이름" });
 	expect(stored("t-set").paused).toBeUndefined();
+});
+
+test("알림 switches: 새 소식 알림 and 휴대폰 알림 are stored on the watch only when off; 디스코드에도 보내기 only while Discord is connected", () => {
+	make();
+	expect(readWatchSettings("t-set").filter(f => f.section === "notify").map(f => f.key)).toEqual(["to", "notify", "push"]);
+	writeWatchSettings("t-set", { notify: false, push: false });
+	expect(stored("t-set")).toMatchObject({ notify: false, push: false });
+	writeWatchSettings("t-set", { notify: true });
+	expect(stored("t-set").notify).toBeUndefined();
+	expect(() => writeWatchSettings("t-set", { discord: false })).toThrow();
+	setDiscordProbe(() => true);
+	try {
+		expect(readWatchSettings("t-set").map(f => f.key)).toContain("discord");
+		writeWatchSettings("t-set", { discord: false });
+		expect(stored("t-set").discord).toBe(false);
+		expect(val("t-set").discord).toBe(false);
+	} finally {
+		setDiscordProbe(() => false);
+	}
 });
 
 test("a bad value or an unknown key rejects the whole set and writes nothing", () => {
