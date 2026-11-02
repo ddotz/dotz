@@ -12,6 +12,10 @@
 .dc-ey { display: block; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
 .dc-q { margin-top: 2px; font-size: 15px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
 .dc-q p { margin: 0; }
+.dc-decide { margin: 6px 0 4px; font: 400 14px/21px var(--font); letter-spacing: 0; overflow-wrap: anywhere; }
+.dc-decide-k { font-weight: 600; }
+.dc-decide ul { margin: 2px 0 0; padding-left: 18px; }
+.dc-decide li + li { margin-top: 2px; }
 .dcard.fold .dc-q { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 .dcard.fold .dc-hd { padding-bottom: 12px; }
 .dc-fold { flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--fg-3); }

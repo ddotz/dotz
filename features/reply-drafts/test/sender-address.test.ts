@@ -31,7 +31,7 @@ test("a draft made before the fix shows and sends with the recovered address; th
 	addDraft(stale({ questions: ["The sender's email address is cut off at \"redacted Lee KR - A\". Please enter the recipient address before sending.", "회신 기한"] }));
 	const card = askText(getDraft("ROLD1")!, ["no recipient address in 'to'"]);
 	expect(card).toContain("> 받는이: redacted Lee <someone@example.com>");
-	expect(card).toContain("정할 것: 회신 기한");
+	expect(card).toContain("정할 것:\n- 회신 기한\n");
 	expect(card).not.toContain("cut off");
 	expect(askText(getDraft("ROLD1")!, ["no recipient address in 'to'"])).not.toContain("확인:");
 	pick(env, "ROLD1", 1);

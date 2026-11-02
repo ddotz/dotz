@@ -8,14 +8,14 @@ import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { addressesOf, generateChatReply, lintReply, NO_RECIPIENT, reviseReply, withSenderAddress, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
 import { matchLibrary, type LibraryFile } from "./library.ts";
 import { canAttach, sendWith, webmailSite, type SendOutcome } from "./senders.ts";
-import { addStagedFile, carryStagedFiles, stagedFiles } from "./staged.ts";
+import { carryStagedFiles, stagedFiles, stageLibraryFile, type StageOpts } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
 import { maybeRefine } from "./persona.ts";
 import { addDraft, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
-export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome> };
+export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts };
 
 // After a recorded correction: every few corrections fold into the profile's identity. A failed refinement keeps the old identity.
 export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promise<void> {
@@ -103,8 +103,6 @@ export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): P
 	return { action: "draft", rec: toRec(item, meta, { ...r, questions }, [], deps), warnings: r.warnings };
 }
 
-// The approval question with what only the owner can decide in it, so one card asks everything: "이 답장 보낼까요? 정할 것: 회의 날짜".
-export const askWith = (question: string, open: string[]): string => (open.length ? `${question} 정할 것: ${open.map(q => q.replace(/[()]/g, " ").replace(/\s+/g, " ").trim()).join(", ")}` : question);
 
 // A mail draft whose recipient is a name only (made before the sender's address was recovered, or from a source that shows names): the
 // address the original's own text names, else the draft as it is.
@@ -143,7 +141,7 @@ export function askText(draft: DraftRec, warnings: string[], headline = draft.co
 	const noFiles = rec.kind === "mail" && !!webmailSite(rec.source);
 	const attachments = noFiles ? [] : staged;
 	const keptBack = noFiles && staged.length ? { sendResult: "파일이 붙어 있어 보내지 않아요. 파일을 빼면 본문만 보내요" } : {};
-	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: askWith(rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", rec.questions ?? []), ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}), ...(rec.rule ? { rule: rec.rule.name } : {}) });
+	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", decide: rec.questions ?? [], ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}), ...(rec.rule ? { rule: rec.rule.name } : {}) });
 	return [`[ask] ${headline}`, ...(notes ? [`-# ${notes}`] : []), block].join("\n");
 }
 
@@ -178,15 +176,19 @@ export async function libraryFor(item: ReplyItem, meta: { source: string; ref: s
 
 // A reply that promises a file or answers a mail that asks for one: the best matches of the 첨부 파일 폴더 are staged for the owner to confirm
 // (they go out only with the owner's 보내기). Nothing fits -> the approval carries the warning and says so. A source that cannot send files gets neither.
-// `files`: the match libraryFor started beside the draft call.
-export async function stageForReply(rec: DraftRec, deps: FlowDeps, files?: Promise<LibraryFile[] | undefined>): Promise<void> {
-	if (rec.kind !== "mail") return;
+// `files`: the match libraryFor started beside the draft call. Returns why a matched file is not on the draft (one line each), for the card;
+// one file that cannot be copied never keeps the others off.
+export async function stageForReply(rec: DraftRec, deps: FlowDeps, files?: Promise<LibraryFile[] | undefined>): Promise<string[]> {
+	if (rec.kind !== "mail") return [];
 	rec.asksFile = asksForFile(rec.item.text) || undefined;
-	if (!rec.asksFile && !claimsAttachment(`${rec.subject ?? ""}\n${rec.body}`)) return;
+	if (!rec.asksFile && !claimsAttachment(`${rec.subject ?? ""}\n${rec.body}`)) return [];
 	const found = await (files ?? libraryFor(rec.item, rec, deps));
-	if (!found) return;
-	for (const f of found) addStagedFile(rec.id, f.path);
+	if (!found) return [];
 	if (!found.length) rec.libraryMiss = true;
+	const failed: string[] = [];
+	// Together, not one by one: each evicted iCloud file may wait up to 30 s for its download, and the offer queue waits on this draft.
+	await Promise.all(found.map(f => stageLibraryFile(rec.id, f.path, deps.stage).catch(e => void failed.push((e as Error).message))));
+	return failed;
 }
 
 export type Step = { ok: boolean; text: string; /** The id of the draft a revision made. */ id?: string };

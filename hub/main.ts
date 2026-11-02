@@ -85,6 +85,7 @@ import { webBase as getWebBase, webLink } from "./weblink.ts";
 import { kakaoDraftFacts, startKakaoLive, stopKakaoLive } from "./kakao/gateway.ts";
 import { commentDraftFacts } from "./comments/gateway.ts";
 import { draftHandled } from "./draft-handled.ts";
+import { syncCardFiles } from "./draft-attach.ts";
 import { listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
 
 // 앱 기억 (hub/app-settings.ts applyMemory): a bot answer that keeps an app's attach folder or follow-up rule is stored at once, in whatever
@@ -127,6 +128,11 @@ try {
 	log(`secrets: plain values not encrypted yet: ${String(error).slice(0, 200)}`);
 }
 tagStoredApps();
+// A change to how cards show files reaches the cards already waiting: each is re-checked against its staged files once on start.
+{
+	const n = syncCardFiles();
+	if (n) log(`notices: ${n} draft card(s) now show their staged files`);
+}
 setAppLabelResolver(key => appEntries(DATA_DIR).find(e => e.key === key)?.label ?? key);
 setDraftHandled(d => draftHandled(d.draft!.ref!, { mail: { drafts: listMailDrafts, record: mailByKey }, comment: commentDraftFacts, kakao: kakaoDraftFacts }));
 const sweepHandledDrafts = () => void settleHandledDrafts().then(n => n && log(`notices: ${n} send approvals closed, their drafts were handled elsewhere`), e => log(`handled-draft sweep failed: ${(e as Error).message}`));

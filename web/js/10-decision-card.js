@@ -335,6 +335,10 @@ const DRAFT_HINT = "더 짧게, 존댓말로, 견적서도 첨부한다고 써 �
 const noteGoLabel = (opt, drf, man) => (man ? "이 내용으로 고치기" : drf && opt.label === DRAFT_OWN ? "이렇게 보내 달라고 하기" : drf ? "고쳐 달라고 하기" : `${opt.label}(으)로 답하기`);
 // What the text box of a draft option asks: 고치기 = the change, 직접 입력 = how to send it.
 const OWN_HINT = "메일 먼저 보내고 답글은 내일 올려 줘";
+// A draft card's question without its "(<id>)", and what only the owner can decide (hub/draft-approval.ts decide) as a list of its own.
+// A card made before the list kept the points in the question ("... 정할 것: a., b."); that tail is left out here, the list shows them.
+const draftQ = t => String(t || "").replace(/\s*\([^()]*\)\s*$/, "").replace(/\s*정할 것\s*[:：][\s\S]*$/, "");
+const decideNode = d => (d && d.decide && d.decide.length ? el("div", { class: "dc-decide" }, el("div", { class: "dc-decide-k", text: "정할 것" }), el("ul", {}, ...d.decide.map(q => el("li", { text: q })))) : null);
 const draftNoteText = opt => (opt.label === DRAFT_OWN ? { hint: OWN_HINT, aria: "보내는 방법", ask: "어떻게 보낼까요?" } : { hint: DRAFT_HINT, aria: "고칠 내용", ask: "어떻게 고칠까요?" });
 // 직접 수정 with files: the bot is told to attach them (the hub appends one [attachment] line per file with its path).
 const manualNote = (text, files) => (files.length ? `첨부할 파일 ${files.length}개(${files.map(f => f.name).join(", ")})를 이 초안에 붙여 주세요. ` : "") + MANUAL_LEAD + text;
@@ -377,7 +381,7 @@ function renderSheet(box, dc, picks, step) {
   const st = DC.st[dc.key] || "", d = dc.draft, edit = DC.edit[dc.key] && !st.startsWith("sent") ? DC.edit[dc.key] : null;
   const old = $(".fs-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   const oldNote = $(".dc-note", box), refocus = !!oldNote && document.activeElement === oldNote, caret = refocus ? oldNote.selectionStart : 0;
-  const qText = d ? ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "") : dc.question;
+  const qText = d ? draftQ(dc.blocks[0] && dc.blocks[0].title) : dc.question;
   // A mail draft's 받는이·참조 live in its own rows at the top of the body and change in place, so the head does not repeat them.
   const head = fsHead(d ? [
     el("span", { class: "fs-ey" }, qText || "보내기 전에 확인해요", dc.left ? el("span", { class: "fs-left", text: ` · ${dc.left}` }) : null),
@@ -388,7 +392,7 @@ function renderSheet(box, dc, picks, step) {
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
   const both = !!d && !!d.mail && d.toLabel === "대상";   // a comment reply + mail: the original sits inline at the top (no room for the side panel beside the mail part)
-  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
+  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, decideNode(d), (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   // 원문 보기 (10-draft-original.js): the original is its own panel beside the draft (a toggle on a phone); the draft side (body + footer) is the one that slides.
   box.classList.remove("od-host", "od-on");
@@ -428,10 +432,10 @@ function renderDecision(box, dc, picks, step) {
   const hadNote = !!$(".dc-note", box);
   const st = DC.st[dc.key] || "", fold = !!DC.fold[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   // A draft message starts with its quoted draft, so the question is the block's own title without the draft's id.
-  const qText = dc.draft ? ((dc.blocks[0] && dc.blocks[0].title) || "").replace(/\s*\([^()]*\)\s*$/, "") : dc.question;
+  const qText = dc.draft ? draftQ(dc.blocks[0] && dc.blocks[0].title) : dc.question;
   const head = el("div", { class: "dc-hd" }, el("div", { class: "dc-tt" },
     el("span", { class: "dc-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" }),
-    qText ? mdNode(qText, "md dc-q") : null),
+    qText ? mdNode(qText, "md dc-q") : null, decideNode(dc.draft)),
     el("div", { class: "dc-hb" },
       el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.key] = !fold; paintDecision(); } }, icon("drop"))));
   const kids = [head];
@@ -537,7 +541,7 @@ function dcPointer(box, n) {
   box.hidden = false;
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig; box.dataset.key = sig;
-  const title = String(n.title || "").replace(/\s*\([^()]*\)\s*$/, ""), left = draftProgress(n.text);
+  const title = draftQ(n.title), left = draftProgress(n.text);
   clear(box).append(el("button", { class: "dc-wait", type: "button", onclick: () => noticeSheetOpen(n.id) }, el("span", { class: "dc-wait-k", text: "답을 기다리는 카드" }), el("span", { class: "dc-wait-t", text: title || "보내기 확인" }), left ? el("span", { class: "dc-wait-n", text: left }) : null, el("span", { class: "dc-wait-go", text: "열기" })));
 }
 // What a decision card shows; the card (docked or in the sheet) is redrawn only when this changes. A redraw replaces the reason field, and on

@@ -26,7 +26,11 @@ to be 보내기. Without a pick, with a pick for another id, after 고치기 or 
 
 The owner is asked once, with a complete draft (owner 2026-10-26): a draft that comes back with `questions` goes back to the model
 once (`buildDraft`, mail and comments) to settle them from the message, context and tone; what is still open is a fact only the owner
-knows and is asked in the same card, in its question (`이 답장 보낼까요? 정할 것: 회의 날짜 (<id>)`, `askWith`). Lint warnings stay a `-# 확인:` line.
+knows and is asked in the same card, as a `정할 것:` list (one `- ` line each) right above `결정: 이 답장 보낼까요? (<id>)` (draftApprovalBlock
+`decide`; owner 2026-11-02: joined into the question it read as one run-on line). Lint warnings stay a `-# 확인:` line.
+A change to how a card shows its files or warnings must reach the cards already waiting, not only new ones: every open card is re-read
+on start and re-checked against its staged files on start, after a file changes and when the approvals or the bell are read
+(hub/notices.ts refreshNoticeDrafts, refreshDraftFiles).
 A chat message that needs his own decision still asks first (exit 4), since the reply depends on it.
 
 ## Files (`<DATA_DIR>/custom/reply-drafts/`)

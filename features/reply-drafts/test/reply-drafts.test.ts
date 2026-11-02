@@ -59,7 +59,8 @@ test("a question the draft still cannot settle is asked inside the approval card
 	const out = sink();
 	await offerMailDraft(mailFixture, { send: out.send, call: fakeModel([j({ ...goodReply, questions: ["회의 날짜"] })]).call });
 	expect(out.sent[0]!.text).not.toContain("정해 주세요");
-	expect(out.sent[0]!.text).toMatch(/^결정: 이 답장 보낼까요\? 정할 것: 회의 날짜 \(R[A-Z2-7]{6}\)$/m);
+	expect(out.sent[0]!.text).toMatch(/^정할 것:\n- 회의 날짜\n결정: 이 답장 보낼까요\? \(R[A-Z2-7]{6}\)$/m);
+	expect(parseDraftApproval(out.sent[0]!.text)?.decide).toEqual(["회의 날짜"]);
 	expect(parseDraftApproval(out.sent[0]!.text)?.body).toBe(goodReply.body);
 });
 

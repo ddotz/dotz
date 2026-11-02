@@ -3,6 +3,7 @@
 import { addressesOf, precheck, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { asksForFile } from "../../../hub/draft-approval.ts";
+import type { StageOpts } from "./staged.ts";
 import { askText, attachFolder, buildDraft, callOf, draftTrace, libraryFor, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
 import { anyRuleOn, mailInstanceOf, matchRule, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles } from "./rules.ts";
 import { learnFirst } from "./persona.ts";
@@ -15,6 +16,8 @@ export type OfferDeps = {
 	call?: ModelCall;
 	/** Picks among tied 첨부 파일 폴더 files by name (flow.ts stageForReply); tests inject it. */
 	pick?: (names: string[]) => Promise<string[]>;
+	/** How 첨부 파일 폴더 files are copied onto the draft (staged.ts stageLibraryFile); tests inject it. */
+	stage?: StageOpts;
 	/** The identity sweep: the model call, and the user's sent mail (persona.ts learnFirst), run once before the first draft. */
 	analyze?: ModelCall;
 	sentTexts?: () => Promise<string[]>;
@@ -94,7 +97,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		}
 		// One budget for every model call of this draft: the rule match, the draft call and the file tie-break.
 		trace = draftTrace();
-		const flow = { call: deps.call, pick: deps.pick, trace };
+		const flow = { call: deps.call, pick: deps.pick, trace, stage: deps.stage };
 		const rule = rules.length ? await matchRule({ from: item.from, subject: item.subject, text: item.text }, rules, callOf(flow, item, m.key, "rule")).catch(e => (log(`reply draft: rules for mail ${m.key} not matched: ${(e as Error).message}`), undefined)) : undefined;
 		if (!requested && !auto && !rule) {
 			markDrafted(looked);
@@ -120,9 +123,9 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		const warnings = [...built.warnings];
 		if (rule && ruleFiles) {
 			built.rec.asksFile = asksForFile(item.text) || undefined;
-			const missing = stageRuleFiles(built.rec.id, rule, await attachFolder(m.key));
+			const missing = await stageRuleFiles(built.rec.id, rule, await attachFolder(m.key), flow.stage);
 			if (missing.length) warnings.push(ruleFileMissing(missing));
-		} else await stageForReply(built.rec, flow, files).catch(e => log(`reply draft: files for mail ${m.key} not staged: ${(e as Error).message}`));
+		} else warnings.push(...(await stageForReply(built.rec, flow, files).catch(e => (log(`reply draft: files for mail ${m.key} not staged: ${(e as Error).message}`), []))));
 		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, warnings));
 		addDraft(built.rec);
 		markDrafted(looked);

@@ -28,8 +28,8 @@ describe("a reply draft is resolved before the owner is asked", () => {
 		expect(card?.body).toContain("지난번 회의실");
 		const block = parseDecisions(text).blocks;
 		expect(block).toHaveLength(1);
-		expect(block[0]!.title).toContain("회의 날짜");
-		expect(block[0]!.title).not.toContain("주소");
+		expect(card?.decide?.join(" ")).toContain("회의 날짜");
+		expect(card?.decide?.join(" ")).not.toContain("주소");
 		expect(block[0]!.title).toEndWith(`(${card!.ref})`);
 	});
 
@@ -46,6 +46,7 @@ describe("a reply draft is resolved before the owner is asked", () => {
 		const text = commentAsk(a, { id: "c1", author: "kim", text: "다음 공연 언제예요?", context: "" }, "곧 알려 드릴게요", "J1", ["확인: 길이"], undefined, ["공연 날짜"]);
 		expect(text).toContain("-# 확인: 길이");
 		expect(text).not.toContain("정해 주세요");
-		expect(parseDecisions(text).blocks[0]!.title).toBe("이 답글 올릴까요? 정할 것: 공연 날짜 (J1)");
+		expect(parseDecisions(text).blocks[0]!.title).toBe("이 답글 올릴까요? (J1)");
+		expect(parseDraftApproval(text)?.decide).toEqual(["공연 날짜"]);
 	});
 });
