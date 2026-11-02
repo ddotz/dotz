@@ -42,7 +42,7 @@ function parse(args: string[]): { flags: Record<string, string[]>; rest: string[
 }
 
 // The mail source that sends for an instance: zele (the default, or an instance filtered to it) or a webmail-no-api site.
-function sourceOf(app: string): { source: string } | { error: string } {
+export function sourceOf(app: string): { source: string } | { error: string } {
 	if (!validApp(app) || !instanceIdOf("mail", app)) return { error: `메일 앱 이름이 아니에요: ${app}` };
 	const raw = readAppsFile(dataDir())[app];
 	if (app !== "mail" && (!raw || raw.deleted || !appEntries(dataDir()).some(e => e.key === app))) return { error: `그런 메일 앱이 없어요: ${app}` };
