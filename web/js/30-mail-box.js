@@ -54,7 +54,7 @@ async function mbRun(keys, action, quiet = false) {
       const by = new Map((r && r.results || []).map(x => [String(x.key).startsWith("mail:") ? x.key : `mail:${x.key}`, x]));
       res = todo.map(t => by.get(t) || { key: t, ok: !!(r && r.ok !== false) });
     }
-  } catch (e) { res = todo.map(t => ({ key: t, ok: false, note: e && /^HTTP 404/.test(e.message) ? "서버가 아직 이 작업을 지원하지 않아요" : (e && e.message) || "처리하지 못했어요" })); }
+  } catch (e) { res = todo.map(t => ({ key: t, ok: false, note: (e && e.data && e.data.error) || (e && /^HTTP 404/.test(e.message) ? "서버가 아직 이 작업을 지원하지 않아요" : (e && e.message) || "처리하지 못했어요") })); }
   const done = res.filter(x => x.ok !== false).map(x => x.key);
   for (const x of res) if (x.ok === false && undo.has(x.key)) undo.get(x.key)();
   mbRefresh();
@@ -109,7 +109,7 @@ function mbPaintBar() {
   chk.indeterminate = !all && keys.length > 0;
   if (!keys.length) { clear(bar).append(chk, el("span", { class: "mbox-n", text: MBOX.vis.length ? `메일 ${MBOX.vis.length}개` : "" })); bar.classList.remove("on"); return; }
   const arch = mailFilterOf()[0] === "archived", can = a => keys.every(t => mailCan(t, a));
-  const acts = [["read", "읽음으로 표시", "check"], ["unread", "안읽음으로 표시", "mail"], arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "완료(보관)", "archive"], ["trash", "삭제", "trash"]];
+  const acts = [["read", "읽음으로 표시", "check"], ["unread", "안 읽음으로 표시", "mail"], arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "완료(보관)", "archive"], ["trash", "삭제", "trash"]];
   const off = acts.find(([a]) => !can(a));
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }),
@@ -130,7 +130,7 @@ function mbList(vis) {
 /* ---------- the open mail: the same actions in its head ---------- */
 function mailOpenBar(t) {
   const m = MAILS.get(t) || {}, unread = mailUnread(t, m), arch = !!m.archived;
-  const acts = [m.dir === "out" ? null : unread ? ["read", "읽음으로 표시", "check"] : ["unread", "안읽음으로 표시", "mail"], arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "완료(보관)", "archive"], ["trash", "삭제", "trash"]].filter(Boolean);
+  const acts = [m.dir === "out" ? null : unread ? ["read", "읽음으로 표시", "check"] : ["unread", "안 읽음으로 표시", "mail"], arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "완료(보관)", "archive"], ["trash", "삭제", "trash"]].filter(Boolean);
   const off = acts.find(([a]) => !mailCan(t, a));
   const bar = el("div", { class: "mbox-open", role: "group", "aria-label": "메일 처리" },
     ...acts.map(([a, label, ic]) => mbBtn(label, ic, ev => {
