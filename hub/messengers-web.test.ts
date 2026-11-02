@@ -2,13 +2,14 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { ev, fakeHub, json, run, waitFor, type View } from "./test-web.ts";
 
-// 설정 → 메신저: the list with state dots, the JANDI detail, the room sheet and the save calls, against a stub gateway (headless Bun.WebView).
-// The stub keeps the rooms a PUT sends, like the real route; the secrets it was given never come back, only set flags. Screenshots go to SHOTS.
+// 설정 → 메신저: the list with state dots, the JANDI detail (rooms mirrored read-only, no 방 추가) and the save calls, against a stub gateway (headless Bun.WebView).
+// The stub never returns a secret, only set flags. Screenshots go to SHOTS.
 const SHOTS = process.env.MESSENGER_SHOTS ?? "/tmp/dotz-messenger-shots";
 mkdirSync(SHOTS, { recursive: true });
 
 type Room = { id: string; name: string; kind: string; project?: string; secrets: Record<string, string> };
 let enabled = true;
+let fallbackSet = false;
 let rooms: Room[] = [
 	{ id: "m1", name: "메인", kind: "main", secrets: { outgoing_token: "tok-1", incoming_url: "http://in/1" } },
 	{ id: "p1", name: "결제 프로젝트", kind: "project", project: "ch:7", secrets: { outgoing_token: "tok-2" } },
@@ -19,11 +20,12 @@ const PROJECTS = [{ target: "ch:7", name: "결제" }, { target: "ch:8", name: "�
 const jandi = () => ({
 	enabled,
 	help: ["JANDI 방마다 수신 웹훅을 만들고 URL을 붙여 넣어요", "발신 웹훅의 토큰을 맞춰 넣어요"],
-	fields: [{ key: "host", label: "받는 주소", type: "text", value: "0.0.0.0", hint: "바꾸면 연결이 다시 시작돼요" }, { key: "port", label: "받는 포트", type: "number", value: 8765 }],
+	fields: [{ key: "host", label: "받는 주소", type: "text", value: "0.0.0.0", hint: "바꾸면 연결이 다시 시작돼요" }, { key: "port", label: "받는 포트", type: "number", value: 8765 }, { key: "incoming_url", label: "기본 수신 웹훅 URL", type: "secret", set: fallbackSet, hint: "방마다 따로 정하지 않은 방의 메시지가 모두 이 JANDI 방으로 가요" }],
 	allow: { label: "말을 걸 수 있는 사람", hint: "이메일이나 JANDI 이름", items: ["boss@corp.test"] },
 	rooms: {
 		label: "방",
 		editable: true,
+		hint: fallbackSet ? undefined : "남은 일: JANDI는 웹훅을 API로 만들 수 없어서, 수신 웹훅 URL 하나를 '기본 수신 웹훅 URL'에 한 번 붙여 넣어요",
 		fields: [{ key: "webhook", label: "발신 웹훅 URL", type: "copy" }, { key: "outgoing_token", label: "발신 토큰", type: "secret" }, { key: "incoming_url", label: "수신 웹훅 URL", type: "secret" }],
 		items: rooms.map(r => ({
 			id: r.id, name: r.name, kind: r.kind,
@@ -52,12 +54,7 @@ const hub = fakeHub({
 			const b = (await req.json()) as any;
 			puts.push(b);
 			if (b.enabled !== undefined) enabled = b.enabled;
-			if (b.rooms) {
-				rooms = b.rooms.map((r: any, i: number) => {
-					const was = rooms.find(x => x.id === r.id);
-					return { id: r.id ?? `new${i}`, name: r.name ?? was?.name, kind: r.kind, project: r.project, secrets: { ...was?.secrets, ...r.values } };
-				});
-			}
+			if (b.values?.incoming_url) fallbackSet = true;
 			return json(jandi());
 		}
 	},
@@ -109,37 +106,45 @@ describe("메신저 설정 화면", () => {
 		await waitFor(v, `current === "messengers"`);
 	});
 
-	test("JANDI opens to its fields, allowlist and rooms; secrets show only 저장됨", async () => {
+	test("JANDI opens to its fields, allowlist and the rooms it mirrors; secrets show only 저장됨", async () => {
 		const v = await open(1280, 800);
 		await click(v, '#messengers [data-ms="jandi"]');
 		await waitFor(v, `document.querySelectorAll("dialog [data-room]").length === 2`);
-		const d = await ev<{ inputs: string[]; allow: string[]; rooms: string[]; html: string }>(v, `({ inputs: [...document.querySelectorAll("dialog input.fi")].map(i => i.name + "=" + i.value).filter(s => s.startsWith("ms-host") || s.startsWith("ms-port")), allow: [...document.querySelectorAll("dialog [data-allow]")].map(a => a.dataset.allow), rooms: [...document.querySelectorAll("dialog [data-room] .hd")].map(h => h.textContent), html: document.querySelector("dialog").innerHTML })`);
+		const d = await ev<{ inputs: string[]; allow: string[]; rooms: string[]; mirrors: string[]; html: string }>(v, `({ inputs: [...document.querySelectorAll("dialog input.fi")].map(i => i.name + "=" + i.value).filter(s => s.startsWith("ms-host") || s.startsWith("ms-port")), allow: [...document.querySelectorAll("dialog [data-allow]")].map(x => x.dataset.allow), rooms: [...document.querySelectorAll("dialog [data-room] .hd")].map(h => h.textContent), mirrors: [...document.querySelectorAll("dialog [data-room] .sup")].map(h => h.textContent.replace(/ · (받음|보냄) .*$/, "")), html: document.querySelector("dialog").innerHTML })`);
 		expect(d.inputs).toEqual(["ms-host=0.0.0.0", "ms-port=8765"]);
 		expect(d.allow).toEqual(["boss@corp.test"]);
 		expect(d.rooms).toEqual(["메인", "결제 프로젝트"]);
+		expect(d.mirrors).toEqual(["→ 메인 대화", "→ 프로젝트 · 결제"]);
+		expect(await ev(v, `document.querySelector('dialog [data-room="p1"] .dcs-err').textContent`)).toBe("HTTP 500");
 		expect(d.html).not.toContain("tok-");
-		await click(v, 'dialog [data-room="m1"]');
-		await waitFor(v, `document.querySelector('dialog input[name="ms-outgoing_token"]')`);
-		const sheet = await ev<{ saved: string[]; value: string; url: string }>(v, `({ saved: [...document.querySelectorAll("dialog [data-set]")].map(s => s.dataset.set + ":" + s.textContent), value: document.querySelector('dialog input[name="ms-outgoing_token"]').value, url: document.querySelector('dialog input[name="ms-webhook"]').value })`);
-		expect(sheet).toEqual({ saved: ["outgoing_token:저장됨", "incoming_url:저장됨"], value: "", url: "http://192.168.0.5:8765/jandi/m1" });
 	});
 
-	test("adding a room sends the whole room list; the old rooms keep their secrets by sending none", async () => {
+	test("there is no 방 추가 and a room cannot be opened or edited", async () => {
 		const v = await open(390, 844);
+		expect(await ev(v, `document.querySelector("[data-ms-add]")`)).toBeNull();
 		await click(v, '#messengers [data-ms="jandi"]');
-		await waitFor(v, `document.querySelector("dialog [data-ms-add]")`);
-		await click(v, "dialog [data-ms-add]");
-		await waitFor(v, `document.querySelector('dialog.cl input[name="ms-room-name"]')`);
-		await type(v, 'dialog.cl input[name="ms-room-name"]', "개발 알림");
-		await click(v, 'dialog.cl .seg [data-v="alert"]');
-		await type(v, 'dialog.cl input[name="ms-incoming_url"]', "http://in/new");
+		await waitFor(v, `document.querySelectorAll("dialog [data-room]").length === 2`);
+		expect(await ev(v, `[document.querySelector("dialog [data-ms-add]"), document.querySelector("dialog button[data-room]"), document.querySelector('dialog input[name="ms-room-name"]')]`)).toEqual([null, null, null]);
+		expect(await ev(v, `document.querySelector("dialog").textContent.includes("방 추가")`)).toBe(false);
+	});
+
+	test("what is left to do shows as one line, and the default webhook is the only thing to paste", async () => {
+		fallbackSet = false;
+		const v = await open(1280, 800);
+		await click(v, '#messengers [data-ms="jandi"]');
+		await waitFor(v, `document.querySelector("dialog [data-ms-hint]")`);
+		expect(await ev(v, `document.querySelectorAll("dialog [data-ms-hint]").length`)).toBe(1);
+		expect(await ev(v, `document.querySelector("dialog [data-ms-hint]").textContent`)).toContain("남은 일");
+		expect(await ev(v, `document.querySelector('dialog [data-set="incoming_url"]')`)).toBeNull();
+		await type(v, 'dialog input[name="ms-incoming_url"]', "http://in/default");
+		await waitFor(v, `!document.querySelector("dialog [data-ms-save]").disabled`);
 		puts.length = 0;
-		await run(v, `[...document.querySelectorAll("dialog.cl .dact .btn")].find(b => b.textContent === "추가").click()`);
-		await waitFor(v, `document.querySelectorAll("dialog [data-room]").length === 3`);
-		expect(puts).toEqual([
-			{ rooms: [{ id: "m1", name: "메인", kind: "main" }, { id: "p1", name: "결제 프로젝트", kind: "project", project: "ch:7" }, { name: "개발 알림", kind: "alert", values: { incoming_url: "http://in/new" } }] },
-		]);
-		expect(await ev(v, `[...document.querySelectorAll("dialog [data-room] .hd")].map(h => h.textContent)`)).toEqual(["메인", "결제 프로젝트", "개발 알림"]);
+		await click(v, "dialog [data-ms-save]");
+		await waitFor(v, `MD && document.querySelector('dialog [data-set="incoming_url"]') && !document.querySelector("dialog [data-ms-hint]")`);
+		expect(puts).toEqual([{ values: { incoming_url: "http://in/default" } }]);
+		expect(await ev(v, `document.querySelector('dialog [data-set="incoming_url"]').textContent`)).toBe("저장됨");
+		expect(await ev(v, `document.querySelector('dialog input[name="ms-incoming_url"]').value`)).toBe("");
+		fallbackSet = false;
 	});
 
 	test("저장 sends only what changed", async () => {
@@ -166,21 +171,16 @@ describe("메신저 설정 화면", () => {
 		await waitFor(v, `current === "discord"`);
 	});
 
-	test("screenshots: list and room sheet, desktop and phone, light and dark", async () => {
+	test("screenshots: list and detail, desktop and phone, light and dark", async () => {
 		for (const [name, w, h] of [["desktop", 1280, 800], ["phone", 390, 844]] as const) {
 			for (const theme of ["light", "dark"] as const) {
 				const v = await open(w, h, theme);
 				await Bun.write(`${SHOTS}/list-${name}-${theme}.png`, await v.screenshot());
 				await click(v, '#messengers [data-ms="jandi"]');
-				await waitFor(v, `document.querySelector("dialog [data-ms-add]")`);
-				await click(v, "dialog [data-ms-add]");
-				await waitFor(v, `document.querySelector('dialog.cl input[name="ms-room-name"]')`);
-				await type(v, 'dialog.cl input[name="ms-room-name"]', "결제 알림");
-				await click(v, 'dialog.cl .seg [data-v="project"]');
-				await waitFor(v, `document.querySelector('dialog.cl .seg [data-v="project"].on, dialog.cl .seg [aria-checked="true"][data-v="project"]')`);
-				await Bun.write(`${SHOTS}/room-sheet-${name}-${theme}.png`, await v.screenshot());
+				await waitFor(v, `document.querySelectorAll("dialog [data-room]").length === 2`);
+				await Bun.write(`${SHOTS}/detail-${name}-${theme}.png`, await v.screenshot());
 			}
 		}
-		for (const n of ["list", "room-sheet"]) for (const d of ["desktop", "phone"]) for (const t of ["light", "dark"]) expect(await Bun.file(`${SHOTS}/${n}-${d}-${t}.png`).exists()).toBe(true);
+		for (const n of ["list", "detail"]) for (const d of ["desktop", "phone"]) for (const t of ["light", "dark"]) expect(await Bun.file(`${SHOTS}/${n}-${d}-${t}.png`).exists()).toBe(true);
 	}, 60_000);
 });
