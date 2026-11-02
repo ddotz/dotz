@@ -5,10 +5,9 @@ import { log } from "./config.ts";
 // itself (--token-file): it is never on the command line, in the environment or in a log line.
 
 export type TunnelStatus = { state: "off" | "starting" | "running" | "error"; error?: string };
-// `login`: the Cloudflare Access settings. Without a team, an AUD tag and at least one allowed login the tunnel is not started, so the web app is
-// never on the internet without Access in front of it.
-export type TunnelOpts = { tokenFile: string; login: { team?: string; aud?: string; allow: readonly string[] }; bin?: string; spawn?: typeof Bun.spawn };
-const NO_ACCESS_HINT = "Cloudflare Access 설정이 비어 있어 터널을 열지 않았습니다. web.cloudflare.team, web.cloudflare.aud, web.allow_logins를 채우십시오 (docs/web-access-cloudflare.ko.md)";
+// `deviceGate`: the paired-device gate (hub/devices.ts) is on, so the web app is never on the internet open to everyone; Cloudflare Access is an optional extra layer.
+export type TunnelOpts = { tokenFile: string; deviceGate: boolean; bin?: string; spawn?: typeof Bun.spawn };
+const NO_GATE_HINT = "기기 연결 게이트가 꺼져 있어 터널을 열지 않았습니다 (docs/web-access-cloudflare.ko.md)";
 
 const BACKOFF_MIN_MS = 2_000;
 const BACKOFF_MAX_MS = 60_000;
@@ -27,9 +26,9 @@ const binary = (): string | undefined => process.env.DOTZ_CLOUDFLARED_BIN || Bun
 
 export function startTunnel(opts: TunnelOpts): void {
 	stopTunnelNow();
-	if (!opts.login.team?.trim() || !opts.login.aud?.trim() || !opts.login.allow.some(s => s.trim())) {
-		status = { state: "error", error: NO_ACCESS_HINT };
-		return log(`web: ${NO_ACCESS_HINT}`);
+	if (!opts.deviceGate) {
+		status = { state: "error", error: NO_GATE_HINT };
+		return log(`web: ${NO_GATE_HINT}`);
 	}
 	const bin = opts.bin ?? binary();
 	if (!bin) {
