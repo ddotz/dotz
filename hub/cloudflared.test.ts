@@ -9,7 +9,6 @@ const TOKEN = "tunnel-secret-0123456789";
 const dir = mkdtempSync(join(tmpdir(), "dotz-cf-"));
 const tokenFile = join(dir, "token");
 writeFileSync(tokenFile, `${TOKEN}\n`, { mode: 0o600 });
-const login = { team: "acme", aud: "aud-tag", allow: ["owner@example.com"] };
 
 function fakeSpawn() {
 	const runs: { argv: string[]; env?: Record<string, string | undefined>; exit: (code: number) => void; killed: boolean }[] = [];
@@ -25,18 +24,20 @@ function fakeSpawn() {
 
 afterEach(() => stopTunnel());
 
-test("without Cloudflare Access settings the tunnel is not started", () => {
-	for (const bad of [{ ...login, team: "" }, { ...login, aud: " " }, { ...login, allow: [] }]) {
-		const f = fakeSpawn();
-		startTunnel({ tokenFile, login: bad, bin: "/bin/cloudflared", spawn: f.spawn });
-		expect(f.runs).toEqual([]);
-		expect(tunnelStatus().state).toBe("error");
-	}
+test("without the device gate the tunnel is not started; with it, Cloudflare Access settings are not needed", () => {
+	const off = fakeSpawn();
+	startTunnel({ tokenFile, deviceGate: false, bin: "/bin/cloudflared", spawn: off.spawn });
+	expect(off.runs).toEqual([]);
+	expect(tunnelStatus().state).toBe("error");
+	const on = fakeSpawn();
+	startTunnel({ tokenFile, deviceGate: true, bin: "/bin/cloudflared", spawn: on.spawn });
+	expect(on.runs).toHaveLength(1);
+	expect(tunnelStatus().state).toBe("running");
 });
 
 test("the token is read by cloudflared from its file, never passed on argv or env; an exit restarts it and stop kills it", async () => {
 	const f = fakeSpawn();
-	startTunnel({ tokenFile, login, bin: "/bin/cloudflared", spawn: f.spawn });
+	startTunnel({ tokenFile, deviceGate: true, bin: "/bin/cloudflared", spawn: f.spawn });
 	expect(f.runs).toHaveLength(1);
 	expect(f.runs[0]!.argv).toEqual(["/bin/cloudflared", "tunnel", "--no-autoupdate", "run", "--token-file", tokenFile]);
 	expect(JSON.stringify(f.runs[0])).not.toContain(TOKEN);
