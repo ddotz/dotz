@@ -101,6 +101,9 @@ channels 대화, 알림, 작업로그) and "땃쥐 작업" (one channel per proj
 is a work channel; threads in them are sub-items. It listens to nothing else, and only the configured owner id can
 command it.
 
+Other messengers (JANDI on a LAN, Slack and Telegram through agent-messenger) and the Tailscale-free web access over
+Cloudflare are set up on 설정 -> 메신저; admin guides in Korean: `docs/messengers/README.ko.md`.
+
 ## Use
 
 - Discord: write in 대화 (or DM the bot) for anything; it routes each part to the project channel it belongs to and
