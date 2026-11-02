@@ -1,8 +1,9 @@
 // Several orchestrator instances side by side (createOrchestrator, hub/convsessions.ts): each keeps its own process, status,
 // held prompts and activity source; the module-level exports stay the main session's; only main pings to keep its cache.
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg } from "./config.ts";
+import { cfg, paths } from "./config.ts";
 import { activityItems } from "./events.ts";
 import { msg } from "./i18n.ts";
 import type * as Orchestrator from "./orchestrator.ts";
@@ -70,9 +71,9 @@ afterAll(() => {
 	Object.assign(cfg, savedCfg);
 });
 
-function instance(key: string) {
+function instance(key: string, asks?: boolean) {
 	const conv = key !== "main";
-	return mod.createOrchestrator({ key, stateFile: join(DATA, `inst-${key.replace(/\W/g, "_")}.json`), source: conv ? `conv:${key}` : `inst:${key}`, keepalive: !conv, env: conv ? { DOTZ_CONV: key } : undefined, scope: conv ? () => `scope of ${key}` : undefined });
+	return mod.createOrchestrator({ key, stateFile: join(DATA, `inst-${key.replace(/\W/g, "_")}.json`), source: conv ? `conv:${key}` : `inst:${key}`, keepalive: !conv, env: conv ? { DOTZ_CONV: key } : undefined, scope: conv ? () => `scope of ${key}` : undefined, asks: asks ?? (conv ? false : undefined) });
 }
 const ofKey = (key: string) => started.filter(a => a.opts.env?.DOTZ_CONV === key);
 
@@ -155,4 +156,28 @@ test("only an instance with keepalive pings an idle session", async () => {
 	m.stop();
 	c.stop();
 	await advance(1000);
+});
+
+// Owner 2026-11-03 (his friend's install): a window answered out of another one's context - a conversation's session was handed
+// the lane questions waiting in other conversations. Main oversees the lanes and carries them; a conversation answers only here.
+test("a conversation's session is never handed another conversation's pending question", async () => {
+	const marker = "ASK-MARKER-9c1f 세션 질문 확인";
+	const laneDir = join(paths.lanes, "asks-fixture");
+	mkdirSync(laneDir, { recursive: true });
+	writeFileSync(join(laneDir, "lane.json"), JSON.stringify({ name: "asks-fixture", status: "idle", pendingAsk: { text: marker, at: new Date(0).toISOString() } }));
+	try {
+		const m = instance("main");
+		m.deliver("[dotz inbox] main question", true);
+		const pm = started.filter(a => !a.opts.env?.DOTZ_CONV).at(-1)!;
+		const conv = instance("mail:asks");
+		conv.deliver("[dotz inbox] mail question", true);
+		const pc = ofKey("mail:asks")[0]!;
+		expect(pm.sent.map(s => s.text).join("\n")).toContain(marker);
+		expect(pc.sent.map(s => s.text).join("\n")).not.toContain(marker);
+		m.stop();
+		conv.stop();
+		await advance(1000);
+	} finally {
+		rmSync(laneDir, { recursive: true, force: true });
+	}
 });
