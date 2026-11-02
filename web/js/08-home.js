@@ -441,14 +441,15 @@ async function workGo(w) {
 // one the owner stopped offers 다시 맡기기 (06-subagents.js workRetry); a failed one is the agent's to take up (blue 이어서 처리 중, no button);
 // the rest of the row goes to the conversation.
 function workRow(w) {
-  const run = w.status === "running", done = w.status === "done", rec = workRecovering(w);
-  const state = run ? "작업 중" : done ? "완료" : w.cancelled ? "중단됨" : rec ? "이어서 처리 중" : "실패";
-  const line = run ? [workElapsed(w), w.model].filter(Boolean).join(" · ") : done ? `끝남 · ${workAgo(w)}` : `${workFailText(w)} · ${workAgo(w)}`;
+  // stalled: OmO still says running but the worker stopped working (hub/bgwork.ts); its session was woken to take it over.
+  const run = w.status === "running", done = w.status === "done", rec = workRecovering(w), stall = w.status === "stalled";
+  const state = run ? "작업 중" : stall ? "멈춤" : done ? "완료" : w.cancelled ? "중단됨" : rec ? "이어서 처리 중" : "실패";
+  const line = run ? [workElapsed(w), w.model].filter(Boolean).join(" · ") : stall ? `${w.reason || "활동이 없어요"} · ${workAgo(w)}` : done ? `끝남 · ${workAgo(w)}` : `${workFailText(w)} · ${workAgo(w)}`;
   const act = w.cancelled ? ["다시 맡기기", b => workRetry(w.id, b)] : null;
   return el("div", { class: "hr hrx", "data-work": w.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => workGo(w), "aria-label": `${w.description} · ${state} · 대화로 가기` },
-      el("span", { class: `dot ${run || rec ? "pri" : done ? "ok" : w.cancelled ? "" : "err"}` }),
+      el("span", { class: `dot ${run || rec ? "pri" : stall ? "att" : done ? "ok" : w.cancelled ? "" : "err"}` }),
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: line })),
-      el("span", { class: `hs ${run || rec ? "pri" : done || w.cancelled ? "" : "err"}`, text: state })),
+      el("span", { class: `hs ${run || rec ? "pri" : stall ? "warn" : done || w.cancelled ? "" : "err"}`, text: state })),
     act ? el("button", { class: "btn text", type: "button", style: "flex:none;margin-right:8px", "data-act": "retry", onclick: ev => act[1](ev.currentTarget), text: act[0] }) : null);
 }
