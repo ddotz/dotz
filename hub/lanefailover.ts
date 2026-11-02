@@ -1,7 +1,7 @@
 import { type Lane, setStatus, hooks, pendingFile } from "./lanestate.ts";
 import { type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
 import { TZ, log, parseSelector } from "./config.ts";
-import { pinnedLimitAlert } from "./accounts-api.ts";
+import { pinnedLimitNotice } from "./accounts-api.ts";
 import { authStamp, blockText, limitAccount, limitKind, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
 import { report, withHeld, scheduleReport } from "./lanereport.ts";
 import { prompt } from "./laneprompt.ts";
@@ -32,7 +32,7 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 	if (note.alert) {
 		report(lane, owner
 			? blockText(lk as "auth" | "billing", account, providerOf(lane.model), wait)
-			: pinnedLimitAlert(Date.now() + wait) ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`, true);
+			: (await pinnedLimitNotice(Date.now() + wait)) ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도가 리셋되는 ${at} 직후에` : `${at}쯤부터`} 다시 시도하고, 그동안 온 메시지는 모아뒀다가 이어서 처리해요.`, true);
 	}
 	lane.pauseReported = true;
 	lane.pauseKind = kind;

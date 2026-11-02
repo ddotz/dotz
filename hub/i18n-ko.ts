@@ -29,6 +29,20 @@ const koRetainNudge = "이어가기 전에, 지금까지의 대화에서 나온 
 export const ko: Catalog = {
 	...koLeads,
 
+	// 고정한 계정이 한도에 걸렸을 때 (hub/accounts-api.ts): 한 번만 묻는 질문, 저장한 답, 그리고 선택지 없는 안내.
+	accountLimit: {
+		question: (account, at) => `고정한 계정 ${account} 한도에 걸려서 ${at}까지 멈춰요. 고정했으니 다른 계정으로 넘어가지 않아요.`,
+		questionTitle: "어떻게 할까요?",
+		switchChoice: "자동 전환으로 바꾸기",
+		switchChoiceNote: "한도에 걸리면 다른 계정으로 넘어가 바로 이어서 해요",
+		waitChoice: "그대로 기다리기",
+		waitChoiceNote: (at) => `${at}에 풀리면 이어서 해요`,
+		wait: (account, at) => `한도에 걸린 동안 기다려요. ${account}의 한도는 ${at}에 풀리고, 그때 이어서 해요.`,
+		switched: to => `한도에 걸려서 ${to} 넘어갔어요. 자동 전환으로 이어서 해요.`,
+		anotherAccount: "다른 계정으로",
+		waitAnswer: "한도가 풀릴 때까지 그대로 기다릴게요. 풀리면 이어서 해요.",
+	},
+
 	cmd: {
 		failed: "실행하지 못했어요",
 		applyAnyway: "그래도 적용",

@@ -3,11 +3,12 @@
 // requests the gateway answers itself ("계정 바꿔줘", main.ts). Every account is shown by its alias (hub/account-alias.ts label);
 // the raw id appears only in API fields named `name`/`key` and on "-# " detail lines.
 import { aliasesFile, label, readAliases, resolveAccount, setAlias } from "./account-alias.ts";
-import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, setOrder, validateRules, writeRules } from "./account-rules.ts";
+import { blockedKind, checkNow, DEFAULT_EVERY_MINUTES, DEFAULT_SCRIPT_TIMEOUT_MS, decisionsFile, describeRule, type Decision, getScriptOpinion, getUsage, josa, lastDecision, type Manual, readRules, rulesFile, type ScriptErrorKind, setManual, setOnLimit, setOrder, validateRules, writeRules } from "./account-rules.ts";
 import { type AccountSwitch, accountView, clearSwitches, deleteSwitch, hardPinned, inOrder, MAX_LOG_LINES, onUsedChange, type Pool, quietly, readPool, stickyAccount, type SwitchKind, type UsedChange } from "./account-sticky.ts";
 import { deletePoolAccount, providerGroups, readProviderStore, writeProviderPin } from "./accounts-providers.ts";
 import { issueBlock } from "./choices.ts";
 import { TZ } from "./config.ts";
+import { msg } from "./i18n.ts";
 import { deleteOmoAccount, writeOmoPin } from "./omo-pin.ts";
 import { accountUsedChanged } from "./notices.ts";
 import { type AccountReport, limitsText, usedAccount } from "./usage-account.ts";
@@ -281,7 +282,27 @@ export function pinnedLimitAlert(until: number, now = Date.now()): string | unde
 	if (!id || !readPool(undefined, now)?.blocked[id]) return undefined;
 	const l = label(id);
 	const at = clockText(until, now);
-	return [`고정한 계정 ${l}${josa(l, "이", "가")} 한도에 걸려서 ${at}까지 멈춰요. 고정했으니 다른 계정으로 넘어가지 않아요.`, issueBlock("어떻게 할까요?", [{ name: "자동 전환으로 바꾸기", result: "한도에 걸리면 다른 계정으로 넘어가 바로 이어서 해요" }, { name: "그대로 기다리기", result: `${at}에 풀리면 이어서 해요` }])].join("\n");
+	const t = msg().accountLimit;
+	return [t.question(`${l}${josa(l, "이", "가")}`, at), issueBlock(t.questionTitle, [{ name: t.switchChoice, result: t.switchChoiceNote }, { name: t.waitChoice, result: t.waitChoiceNote(at) }])].join("\n");
+}
+
+// What the owner hears when a 고정 account hits its limit: the one-time question while the answer is unset, else the saved answer
+// carried out silently — "wait" keeps the pin and posts a plain notice, "switch" turns on 자동 전환 and says it moved. Undefined
+// outside 고정 mode, so the orchestrator and the lanes behave the same.
+export async function pinnedLimitNotice(until: number, now = Date.now()): Promise<string | undefined> {
+	if (!hardPinned(now)) return undefined;
+	const id = stickyAccount(now);
+	if (!id || !readPool(undefined, now)?.blocked[id]) return undefined;
+	const pref = readRules().on_limit;
+	if (!pref) return pinnedLimitAlert(until, now);
+	const l = label(id);
+	const at = clockText(until, now);
+	const t = msg().accountLimit;
+	if (pref === "wait") return t.wait(l, at);
+	await useAccount("auto");
+	const next = stickyAccount();
+	const to = next && next !== id ? label(next) : undefined;
+	return t.switched(to ? `${to}${josa(to, "으로", "로")}` : t.anotherAccount);
 }
 
 // One account out: OmO's store first, then everything dotz keeps about it (the manual pick, the order, the alias).
@@ -340,7 +361,7 @@ const readBody = async (req: Request): Promise<Record<string, any>> => {
 // The /api/accounts routes (the caller has already checked the token). Undefined: not one of them.
 export async function accountsRoute(req: Request, url: URL): Promise<Response | undefined> {
 	const p = url.pathname;
-	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/use", "/api/accounts/mode", "/api/accounts/order", "/api/accounts/pin", "/api/accounts/switches"].includes(p)) return undefined;
+	if (p !== "/api/accounts" && !["/api/accounts/alias", "/api/accounts/rules", "/api/accounts/use", "/api/accounts/mode", "/api/accounts/on-limit", "/api/accounts/order", "/api/accounts/pin", "/api/accounts/switches"].includes(p)) return undefined;
 	// the login providers this install offers, for the 계정 추가 picker (one OmO/omp process, then cached by providers.ts)
 	const catalog = async () => (await import("./providers.ts")).loginProviders().catch(() => []);
 	try {
@@ -404,6 +425,13 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 				if (!account) throw new AccountsError("고정할 계정을 골라 주세요", 400);
 				await useAccount(account);
 			} else throw new AccountsError('mode는 "auto" 또는 "pinned"여야 해요', 400);
+			return Response.json(accountsBody(Date.now(), await catalog()));
+		}
+		// 한도에 걸렸을 때의 선택: {on_limit:"switch"|"wait"} — 고정/자동 전환 모드 자체는 그대로 두고 다음부터 조용히 따라요
+		if (req.method === "PUT" && p === "/api/accounts/on-limit") {
+			const v = (await readBody(req)).on_limit;
+			if (v !== "switch" && v !== "wait") throw new AccountsError('on_limit은 "switch" 또는 "wait"여야 해요', 400);
+			setOnLimit(v);
 			return Response.json(accountsBody(Date.now(), await catalog()));
 		}
 		// {order:[id, ...]}: the account order (the fallback order of 자동 전환); every id must be an account in OmO's pool
@@ -487,12 +515,14 @@ export async function accountCommand(rest: string): Promise<string> {
 
 // ---- chat requests answered by the gateway itself ----
 
-type AccountAsk = { kind: "show" } | { kind: "auto" } | { kind: "use"; account: string } | { kind: "other" };
+type AccountAsk = { kind: "show" } | { kind: "auto" } | { kind: "wait" } | { kind: "use"; account: string } | { kind: "other" };
 
 const TAIL = /\s*(?:해\s*줘|해\s*주세요|해\s*줄래요?|해\s*봐|해요|해라|해|줘|주세요|줄래요?|봐|부탁(?:해요|해|드려요)?|할래요?|하자)$/;
 const VERB = "(?:바꿔|바꾸자?|바꿀래|전환|변경|갈아타|옮겨|돌려|써|쓰자|쓸래|사용|고정|선택|골라)";
 const SHOW = [/^(?:(?:지금|현재)\s*)?(?:무슨|어떤|뭔|어느)\s*계정(?:이야|이에요|이지|이니|인가요|인지|써|쓰고\s*있어요?|쓰고\s*있니)?$/, /^(?:지금|현재)\s*계정(?:\s*(?:뭐야|뭐에요|뭐예요|뭐지|알려|보여|확인|상태))?$/, /^계정\s*(?:확인|상태|알려|보여)$/];
-const AUTO = /^(?:자동\s*전환(?:으로)?(?:\s*바꾸기)?|자동\s*계정(?:으로)?|계정(?:을|은)?\s*자동(?:으로)?|계정\s*자동\s*(?:전환|선택)?)(?:\s*(?:바꿔|전환|돌려|돌려놔|설정|맞춰|선택))?$/;
+const AUTO = /^(?:자동\s*전환(?:으로)?(?:\s*바꾸기)?|자동\s*계정(?:으로)?|계정(?:을|은)?\s*자동(?:으로)?|계정\s*자동\s*(?:전환|선택)?|switch\s*to\s*automatic)(?:\s*(?:바꿔|전환|돌려|돌려놔|설정|맞춰|선택))?$/i;
+// The other answer to the pinned-limit question: keep waiting (saved so the question is asked once).
+const WAIT = /^(?:(?:그대로\s*)?기다리기|keep\s+waiting)$/i;
 const OTHER = [new RegExp(`^(?:(?:지금|현재)\\s*)?계정(?:을)?\\s*${VERB}$`), new RegExp(`^(?:다른|딴|반대|다음)\\s*계정(?:으로|로)?(?:\\s*${VERB})?$`)];
 
 // Pure: a short owner message that asks about or changes the account, else undefined (the message goes to the orchestrator).
@@ -504,6 +534,7 @@ export function accountAsk(text: string, names: string[], aliases: Record<string
 	if (!t) return undefined;
 	if (SHOW.some(r => r.test(t))) return { kind: "show" };
 	if (AUTO.test(t)) return { kind: "auto" };
+	if (WAIT.test(t)) return { kind: "wait" };
 	const cands = names.flatMap(n => [{ id: n, text: n }, ...(aliases[n] ? [{ id: n, text: aliases[n] }] : [])]).sort((a, b) => b.text.length - a.text.length);
 	for (const c of cands) {
 		const cand = c.text.trim().split(/\s+/).map(escape).join("\\s*");
@@ -515,7 +546,15 @@ export function accountAsk(text: string, names: string[], aliases: Record<string
 
 // The gateway's answer to an AccountAsk (may change the manual pick).
 export async function accountAnswer(ask: AccountAsk): Promise<string> {
-	if (ask.kind === "auto") return pickedText(await useAccount("auto"));
+	// Answering the pinned-limit question remembers the answer, so it is asked once (both choices).
+	if (ask.kind === "auto") {
+		setOnLimit("switch");
+		return pickedText(await useAccount("auto"));
+	}
+	if (ask.kind === "wait") {
+		setOnLimit("wait");
+		return msg().accountLimit.waitAnswer;
+	}
 	if (ask.kind === "use") return pickedText(await useAccount(ask.account));
 	const b = accountsBody();
 	if (!b.accounts.length) return "쓰는 Claude 구독 계정이 없어요. 다른 공급자 계정은 설정 → 계정에서 봐요.";
