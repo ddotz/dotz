@@ -99,7 +99,7 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			await pick(v, "all");
 			await waitFor(v, `document.querySelectorAll("#mon-tl .mr").length > 0`);
 			const all = await seen(v);
-			expect(all.chips).toEqual(["전체", "안 읽음", "답장 필요2", "확인 대기2", "답장함1", "보낸 메일"]);
+			expect(all.chips).toEqual(["전체", "안 읽음", "답장 필요2", "확인 대기2", "답장함1", "보관함", "보낸 메일"]);
 			expect(all.cards).toEqual([]);   // a sent draft is folded inside its mail's conversation (30-mail-sent.js); nothing waiting shows under 전체
 			expect(all.rows).toEqual(["자료 요청", "회의 일정 문의", "일정 조율"]);
 			expect(all.over).toBe(false);

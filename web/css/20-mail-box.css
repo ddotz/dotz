@@ -1,6 +1,6 @@
 /* The mailbox of the mail app (web/js/30-mail-box.js): row checkbox and star, the bold unread row, the selection bar, the floating 메일 쓰기 and its sheet, the inline reply. */
 .mr-lead { flex: none; display: inline-flex; align-items: center; gap: 2px; margin-left: -4px; }
-.mr-chk, .mb-all { flex: none; width: 16px; height: 16px; margin: 0 6px 0 4px; accent-color: var(--accent); cursor: pointer; }
+.mr-chk, .mbox-all { flex: none; width: 16px; height: 16px; margin: 0 6px 0 4px; accent-color: var(--accent); cursor: pointer; }
 .mr-star { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--fg-3); }
 button.mr-star { cursor: pointer; }
 button.mr-star:hover { background: var(--active); color: var(--fg); }
@@ -9,65 +9,73 @@ button.mr-star:hover { background: var(--active); color: var(--fg); }
 .mr-star.on .ic { fill: currentColor; }
 span.mr-star:not(.on) { opacity: .45; }
 .mr.mr-new .rc-src, .mr.mr-new .rc-title { color: var(--fg); font-weight: 700; }
-.mr:not(.mr-new) .rc-title { color: var(--fg-2); }
-#mon-tl > .bm.rc.mr.sel { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+.mr:not(.mr-new) .rc-title { color: var(--fg-2); font-weight: 400; }
+#mon-tl > .bm.rc.mr.mr-sel { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 
-.mb-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 36px; padding: 2px 14px 6px 14px; color: var(--fg-2); font-size: 12.5px; }
-.mb-bar.on { position: sticky; top: 40px; z-index: 2; margin: 0 0 4px; padding-top: 6px; background: var(--bg); border-bottom: 1px solid var(--line); }
-.mb-n { margin-right: auto; font-variant-numeric: tabular-nums; }
-.mb-bar.on .mb-n { margin-right: 4px; color: var(--fg); font-weight: 600; }
-.mb-b { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border: 0; border-radius: 15px; background: var(--layer); color: var(--fg); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-.mb-b:hover:not(:disabled) { background: var(--hover); }
-.mb-b:disabled { opacity: .45; cursor: not-allowed; }
-.mb-b .ic { width: 16px; height: 16px; }
-.mb-b.mb-x { width: 30px; padding: 0; justify-content: center; margin-left: auto; }
-.mb-note { flex: 1 0 100%; color: var(--fg-3); font-size: 12px; line-height: 16px; }
-.mb-open { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+.mbox-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 36px; padding: 2px 14px 6px 14px; color: var(--fg-2); font-size: 12.5px; }
+.mbox-bar.on { position: sticky; top: 40px; z-index: 2; margin: 0 0 4px; padding-top: 6px; background: var(--bg); border-bottom: 1px solid var(--line); }
+.mbox-n { margin-right: auto; font-variant-numeric: tabular-nums; }
+.mbox-bar.on .mbox-n { margin-right: 4px; color: var(--fg); font-weight: 600; }
+.mbox-b { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border: 0; border-radius: 15px; background: var(--layer); color: var(--fg); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.mbox-b:hover:not(:disabled) { background: var(--hover); }
+.mbox-b:disabled { opacity: .45; cursor: not-allowed; }
+.mbox-b .ic { width: 16px; height: 16px; }
+.mbox-b.mbox-x { width: 30px; padding: 0; justify-content: center; margin-left: auto; }
+.mbox-note { flex: 1 0 100%; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.mbox-open { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
 
-.mb-fab { position: fixed; z-index: 40; right: 24px; bottom: 24px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 56px; height: 56px; padding: 0 20px; border: 0; border-radius: 28px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 700; box-shadow: 0 4px 14px rgba(0, 0, 0, .28); cursor: pointer; }
-.mb-fab:hover { filter: brightness(1.08); }
-.mb-fab .ic { width: 22px; height: 22px; }
-@media (max-width: 639px) { .mb-fab { right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); width: 56px; padding: 0; } .mb-fab-t { display: none; } }
+.mbox-fab { position: fixed; z-index: 40; right: 24px; bottom: 24px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 56px; height: 56px; padding: 0 20px; border: 0; border-radius: 28px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 700; box-shadow: 0 4px 14px rgba(0, 0, 0, .28); cursor: pointer; }
+.mbox-fab:hover { filter: brightness(1.08); }
+.mbox-fab .ic { width: 22px; height: 22px; }
+/* A phone keeps the button clear of the bottom bar (web/css/12-composer-phone.css), not on top of its tabs. */
+@media (max-width: 639px) { .mbox-fab { right: 16px; bottom: calc(72px + env(safe-area-inset-bottom)); width: 56px; height: 56px; padding: 0; } .mbox-fab-t { display: none; } }
 
-.mb-sheet { position: fixed; z-index: 60; right: 24px; bottom: 0; display: flex; flex-direction: column; width: 520px; max-height: min(640px, calc(100vh - 48px)); border-radius: 12px 12px 0 0; background: var(--pop); color: var(--fg); box-shadow: 0 8px 32px rgba(0, 0, 0, .35); border: 1px solid var(--line-2); border-bottom: 0; overflow: hidden; }
-.mb-sheet.min { max-height: 44px; }
-.mb-sheet.min > :not(.mb-sh) { display: none; }
-.mb-sh { display: flex; align-items: center; gap: 2px; flex: none; height: 44px; padding: 0 6px 0 16px; background: var(--layer); }
-.mb-st { flex: 1; font-size: 14px; font-weight: 700; }
-.mb-sb, .mb-rb { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: 4px 16px 0; }
-.mb-f { position: relative; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
-.mb-fk { flex: none; width: 56px; color: var(--fg-3); font-size: 12.5px; }
-.mb-in { flex: 1; min-width: 0; height: 40px; border: 0; outline: 0; background: none; color: var(--fg); font: inherit; font-size: 14px; }
-.mb-cc { flex: none; border: 0; background: none; color: var(--fg-3); font: inherit; font-size: 12.5px; cursor: pointer; }
-.mb-cc:hover { color: var(--fg); }
-.mb-ta { flex: 1; min-height: 120px; margin: 8px 0; padding: 0; border: 0; outline: 0; resize: none; background: none; color: var(--fg); font: inherit; font-size: 14px; line-height: 21px; }
-.mb-fw:empty { display: none; }
-.mb-files { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 8px; }
-.mb-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 4px 0 10px; border: 1px solid var(--line-2); border-radius: 15px; background: var(--layer); color: var(--fg); font-size: 12.5px; }
-.mb-chip.wait { opacity: .6; padding-right: 10px; }
-.mb-chip .ic { flex: none; width: 14px; height: 14px; color: var(--fg-3); }
-.mb-cn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mb-cs { flex: none; color: var(--fg-3); font-variant-numeric: tabular-nums; }
-.mb-cx { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--fg-3); cursor: pointer; }
-.mb-cx:hover { background: var(--active); color: var(--fg); }
-.mb-cx .ic { width: 12px; height: 12px; }
-.mb-sf { display: flex; align-items: center; gap: 8px; flex: none; padding: 10px 16px; }
-.mb-hint { margin-left: auto; color: var(--fg-3); font-size: 12px; }
+.mbox-sheet { position: fixed; z-index: 60; right: 24px; bottom: 0; display: flex; flex-direction: column; width: 520px; max-height: min(640px, calc(100vh - 48px)); border-radius: 12px 12px 0 0; background: var(--pop); color: var(--fg); box-shadow: 0 8px 32px rgba(0, 0, 0, .35); border: 1px solid var(--line-2); border-bottom: 0; overflow: hidden; }
+.mbox-sheet.min { max-height: 44px; }
+.mbox-sheet.min > :not(.mbox-sh) { display: none; }
+.mbox-sh { display: flex; align-items: center; gap: 2px; flex: none; height: 44px; padding: 0 6px 0 16px; background: var(--layer); }
+.mbox-st { flex: 1; font-size: 14px; font-weight: 700; }
+.mbox-sb, .mbox-rb { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: 4px 16px 0; }
+.mbox-f { position: relative; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
+.mbox-fk { flex: none; width: 56px; color: var(--fg-3); font-size: 12.5px; }
+.mbox-in { flex: 1; min-width: 0; height: 40px; border: 0; outline: 0; background: none; color: var(--fg); font: inherit; font-size: 14px; }
+.mbox-cc { flex: none; border: 0; background: none; color: var(--fg-3); font: inherit; font-size: 12.5px; cursor: pointer; }
+.mbox-cc:hover { color: var(--fg); }
+.mbox-ta { flex: 1; min-height: 120px; margin: 8px 0; padding: 0; border: 0; outline: 0; resize: none; background: none; color: var(--fg); font: inherit; font-size: 14px; line-height: 21px; }
+.mbox-fw:empty { display: none; }
+.mbox-files { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 8px; }
+.mbox-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 4px 0 10px; border: 1px solid var(--line-2); border-radius: 15px; background: var(--layer); color: var(--fg); font-size: 12.5px; }
+.mbox-chip.wait { opacity: .6; padding-right: 10px; }
+.mbox-chip .ic { flex: none; width: 14px; height: 14px; color: var(--fg-3); }
+.mbox-cn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mbox-cs { flex: none; color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.mbox-cx { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--fg-3); cursor: pointer; }
+.mbox-cx:hover { background: var(--active); color: var(--fg); }
+.mbox-cx .ic { width: 12px; height: 12px; }
+.mbox-sf { display: flex; align-items: center; gap: 8px; flex: none; padding: 10px 16px; }
+.mbox-hint { margin-left: auto; color: var(--fg-3); font-size: 12px; }
 @media (max-width: 639px) {
-  .mb-sheet { inset: 0; width: auto; max-height: none; border: 0; border-radius: 0; }
-  .mb-sheet.min { inset: auto 0 0 0; max-height: 44px; border-radius: 12px 12px 0 0; }
-  .mb-sb { flex: 1; }
-  .mb-hint { display: none; }
-  .mb-sf { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .mbox-sheet { inset: 0; width: auto; max-height: none; border: 0; border-radius: 0; }
+  .mbox-sheet.min { inset: auto 0 0 0; max-height: 44px; border-radius: 12px 12px 0 0; }
+  .mbox-sb { flex: 1; }
+  .mbox-hint { display: none; }
+  .mbox-sf { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
 }
 
-.mb-reply { margin: 12px 0 20px; padding: 10px 14px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
-.mb-modes { display: flex; flex-wrap: wrap; gap: 6px; }
-.mb-mode { height: 32px; gap: 6px; padding: 0 14px 0 10px; font-size: 13px; font-weight: 600; background: var(--layer); color: var(--fg-2); }
-.mb-mode.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
-.mb-mode .ic { width: 16px; height: 16px; }
-.mb-reply.open .mb-rb { padding: 4px 0 0; overflow: visible; }
-.mb-reply .mb-sf { padding: 6px 0 0; }
-.mb-quote { margin: 4px 0 6px; color: var(--fg-3); font-size: 12.5px; }
-.mb-quote summary { width: fit-content; padding: 2px 10px; border-radius: 10px; background: var(--layer); cursor: pointer; }
-.mb-qt { max-height: 220px; margin: 6px 0 0; padding-left: 10px; overflow: auto; border-left: 3px solid var(--line-2); font: inherit; white-space: pre-wrap; word-break: break-word; }
+.mbox-reply { margin: 12px 0 20px; padding: 10px 14px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.mbox-modes { display: flex; flex-wrap: wrap; gap: 6px; }
+.mbox-mode { height: 32px; gap: 6px; padding: 0 14px 0 10px; font-size: 13px; font-weight: 600; background: var(--layer); color: var(--fg-2); }
+.mbox-mode.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.mbox-mode .ic { width: 16px; height: 16px; }
+.mbox-reply.open .mbox-rb { padding: 4px 0 0; overflow: visible; }
+.mbox-reply .mbox-sf { padding: 6px 0 0; }
+.mbox-quote { margin: 4px 0 6px; color: var(--fg-3); font-size: 12.5px; }
+.mbox-quote summary { width: fit-content; padding: 2px 10px; border-radius: 10px; background: var(--layer); cursor: pointer; }
+.mbox-qt { max-height: 220px; margin: 6px 0 0; padding-left: 10px; overflow: auto; border-left: 3px solid var(--line-2); font: inherit; white-space: pre-wrap; word-break: break-word; }
+
+/* A phone keeps the sender's name whole: the unread tag is the bold row itself (the row's aria-label still says 안 읽음), the paperclip count
+   is in the open mail, and the one tag that stays is small. */
+@media (max-width: 639px) {
+  .mr .tag.mr-unread, .mr .mr-clip { display: none; }
+  .mr .rc-hd .tag { font-size: 10.5px; padding: 0 6px; }
+}
