@@ -46,7 +46,7 @@ test("running background work, a child and a deferred answer are named waits", (
 	expect(runState({ ...base, capacity: "동시 세션 3개를 이미 쓰고 있어요" }).detail).toBe("동시 세션 3개를 이미 쓰고 있어요");
 });
 
-test("idle with open todos gives the reason: the turn ended with work left, or it is unknown", () => {
+test("idle with open todos gives the reason: the turn ended with work left, or it was interrupted", () => {
 	expect(runState({ ...base, todos: todos(2, "테스트"), lastTurnEnd: iso(400_000) }))
 		.toEqual({ kind: "idle", reason: "unfinished", since: iso(400_000), detail: "테스트", todos: 2 });
 	expect(runState({ ...base, todos: todos(1) })).toEqual({ kind: "idle", reason: "interrupted", todos: 1 });
