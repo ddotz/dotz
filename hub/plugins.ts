@@ -1,10 +1,11 @@
 // Custom plugins: <DATA_DIR>/custom/plugins/*.ts|*.js (docs/custom-plugins.md), per-install code that is not part of the
-// product. Loaded once when a process starts (the hub, the agent extension, the Claude deny hook); a plugin that fails to
+// product. Loaded when a process starts (the hub, the agent extension, the Claude deny hook) and reloaded before a hook
+// runs when a plugin file was edited, added or removed (`refresh`); a plugin that fails to
 // load, to start or inside a hook is logged and skipped, never fatal. Six hook points, nothing else: `start` (hub only),
 // `claim` (Discord channels outside the bot's categories), `thread` (an owner message in a thread), `deny` (shell
 // command guard), `reply` and `repliesWithFiles` (sending an approved mail reply with its files). With no plugin installed every call below returns at once. No config.ts import: the command guard
 // loads this too.
-import { readdirSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Claim } from "./discord.ts";
@@ -51,8 +52,13 @@ export type Plugin = {
 	repliesWithFiles?(source: string): boolean;
 };
 
-type Loaded = { name: string; plugin: Plugin };
+type Loaded = { name: string; plugin: Plugin; file: string };
 let loaded: Loaded[] = [];
+let pluginDir = "";
+/** File name -> mtime of its last load attempt, loaded or failed, so an unchanged broken file is not retried on every hook. */
+let seen = new Map<string, number>();
+/** Files whose `start` threw: they stay out until the next loadPlugins, edited or not. */
+let dropped = new Set<string>();
 let note: (line: string) => void = () => undefined;
 let didLoad = false;
 export const pluginsLoaded = (): boolean => didLoad;
@@ -65,17 +71,14 @@ export async function loadPlugins(dataDir: string, log: (line: string) => void =
 	note = log;
 	loaded = [];
 	didLoad = true;
-	let files: string[];
-	try {
-		files = readdirSync(join(dataDir, "custom", "plugins")).filter(isPluginFile).sort();
-	} catch {
-		return;
-	}
-	for (const file of files) {
+	pluginDir = join(dataDir, "custom", "plugins");
+	seen = new Map();
+	dropped = new Set();
+	const files = pluginFiles();
+	for (const [file, mtime] of files) {
+		seen.set(file, mtime);
 		try {
-			const plugin = (await import(pathToFileURL(join(dataDir, "custom", "plugins", file)).href)).default as Plugin | undefined;
-			if (!plugin || typeof plugin !== "object") throw new Error("default export is not a plugin object");
-			loaded.push({ name: plugin.name ?? file.replace(/\.(ts|js)$/, ""), plugin });
+			loaded.push(asLoaded((await import(pathToFileURL(join(pluginDir, file)).href)).default, file));
 		} catch (error) {
 			log(`plugin ${file} not loaded: ${error}`);
 		}
@@ -83,7 +86,60 @@ export async function loadPlugins(dataDir: string, log: (line: string) => void =
 	if (loaded.length) log(`plugins: ${loaded.map(l => l.name).join(", ")}`);
 }
 
+/** The plugin files in pluginDir with their mtimes, in name order; none when the dir is missing. */
+function pluginFiles(): Map<string, number> {
+	const files = new Map<string, number>();
+	let names: string[];
+	try {
+		names = readdirSync(pluginDir).filter(isPluginFile).sort();
+	} catch {
+		return files;
+	}
+	for (const name of names) {
+		try {
+			files.set(name, statSync(join(pluginDir, name)).mtimeMs);
+		} catch {
+			// removed between readdir and stat: treated as gone
+		}
+	}
+	return files;
+}
+
+function asLoaded(plugin: unknown, file: string): Loaded {
+	if (!plugin || typeof plugin !== "object") throw new Error("default export is not a plugin object");
+	return { name: (plugin as Plugin).name ?? file.replace(/\.(ts|js)$/, ""), plugin: plugin as Plugin, file };
+}
+
+/**
+ * Picks up plugin files edited, added or removed since they were loaded: one readdir and a stat per file, no file reads unless
+ * something changed. The hooks are synchronous, so the new code comes in through require() with a `?v=<mtime>` query (Bun keeps
+ * ESM modules cached by URL; the query makes a new module, the plugin's own imports stay cached). A plugin with top-level await
+ * cannot be required and, like any reload that throws, keeps its previous version, logged. `start` is not re-run for a reloaded
+ * or added plugin: it is the hub's one-time setup (watches), so a reloaded plugin keeps module-level state from its new code only.
+ */
+function refresh(): void {
+	if (!pluginDir) return;
+	const files = pluginFiles();
+	if (files.size === seen.size && [...files].every(([file, mtime]) => seen.get(file) === mtime)) return;
+	let next = loaded.filter(l => files.has(l.file));
+	for (const l of loaded) if (!files.has(l.file)) note(`plugin ${l.name} removed`);
+	for (const file of seen.keys()) if (!files.has(file)) seen.delete(file);
+	for (const [file, mtime] of files) {
+		if (seen.get(file) === mtime || dropped.has(file)) continue;
+		seen.set(file, mtime);
+		try {
+			const fresh = asLoaded(require(`${join(pluginDir, file)}?v=${mtime}`).default, file);
+			next = next.filter(l => l.file !== file).concat(fresh);
+			note(`plugin ${fresh.name} reloaded`);
+		} catch (error) {
+			note(`plugin ${file} not reloaded${next.some(l => l.file === file) ? ", keeping the previous version" : ""}: ${error}`);
+		}
+	}
+	loaded = next.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
+}
+
 function each<T>(hook: string, call: (l: Loaded) => T | undefined): { name: string; value: T } | undefined {
+	refresh();
 	for (const l of loaded) {
 		try {
 			const value = call(l);
@@ -103,6 +159,7 @@ export function startPlugins(ctx: PluginContext): void {
 			return true;
 		} catch (error) {
 			note(`plugin ${l.name}: start failed, skipped: ${error}`);
+			dropped.add(l.file);
 			return false;
 		}
 	});
@@ -120,6 +177,7 @@ export function pluginDeny(command: string, dataDir: string): string | undefined
 
 /** The first plugin that takes the reply sends it; a throw is a failed send. `undefined` = no plugin owns the source. */
 export async function pluginReply(draft: MailReply): Promise<MailReplyResult | undefined> {
+	refresh();
 	for (const l of loaded) {
 		try {
 			const result = await l.plugin.reply?.(draft);
