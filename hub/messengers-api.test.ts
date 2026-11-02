@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { register } from "./messenger.ts";
 import { createJandiAdapter, jandiConfigPath, loadJandiConfig, type JandiAdapter } from "./messenger-jandi.ts";
 import { messengersRoute } from "./messengers-api.ts";
+import { route } from "./notify-route.ts";
 
 let dir: string;
 let adapter: JandiAdapter;
@@ -48,6 +49,20 @@ describe("messenger settings api", () => {
 		expect((await call("GET", "/api/messengers")).json.items.some((i: any) => i.id === "jandi")).toBe(false);
 		expect((await call("GET", "/api/messengers/jandi")).status).toBe(404);
 		delete adapter.hidden;
+	});
+
+	test("알림: every class is on by default; PUT { notify } turns one off for this messenger only, and the router follows it", async () => {
+		expect((await call("GET", "/api/messengers/jandi")).json.notify).toEqual({ ask: true, alert: true, result: true, news: true, conv: true, log: true });
+		const before = JSON.stringify(loadJandiConfig(dir));
+		const { status, json } = await call("PUT", "/api/messengers/jandi", { notify: { news: false } });
+		expect(status).toBe(200);
+		expect(json.notify.news).toBe(false);
+		expect(JSON.stringify(loadJandiConfig(dir))).toBe(before);
+		expect(route({ cls: "news", messengers: ["jandi", "agent"] }).messengers).toMatchObject({ jandi: false, agent: true });
+		expect(route({ cls: "ask", messengers: ["jandi"] }).messengers.jandi).toBe(true);
+		for (const bad of [{ notify: { news: "no" } }, { notify: { nope: true } }, { notify: [true] }]) expect((await call("PUT", "/api/messengers/jandi", bad)).status).toBe(400);
+		await call("PUT", "/api/messengers/jandi", { notify: { news: true } });
+		expect(route({ cls: "news", messengers: ["jandi"] }).messengers.jandi).toBe(true);
 	});
 
 	test("unknown id is 404, a bad body is 400 and changes nothing", async () => {

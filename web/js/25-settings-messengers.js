@@ -65,6 +65,14 @@ async function msSave(btn) {
   });
   if (MD) msRenderDetail();
 }
+// 알림 switches save at once (PUT { notify }, hub/messengers-api.ts): they need no restart, so they skip the sheet's 저장.
+async function msNotifySet(k, on) {
+  const id = MD.id;
+  try {
+    const s = await api(`/api/messengers/${enc(id)}`, "PUT", { notify: { [k]: on } });
+    if (MD && MD.id === id) { MD.s = { ...MD.s, notify: s.notify }; msRenderDetail(); }
+  } catch (e) { toast(e.message, true); }
+}
 async function msTest(btn) {
   await busy(btn, async () => { MD.test = (await api(`/api/messengers/${enc(MD.id)}/test`, "POST", {})).results; });
   if (MD) msRenderDetail();
@@ -100,6 +108,8 @@ function msRenderDetail() {
       el("span", { class: "tx" }, el("div", { class: "hd", text: r.name }), el("div", { class: "sup", text: [`→ ${msKind(r.kind)}${r.project ? ` · ${r.project.name}` : ""}`, r.last_in ? `받음 ${msAgo(r.last_in)}` : "", r.last_out ? `보냄 ${msAgo(r.last_out)}` : ""].filter(Boolean).join(" · ") }),
         r.last_error ? el("div", { class: "dcs-err", text: r.last_error }) : null))),
     ...(s.rooms.hint ? [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", "data-ms-hint": "1", text: s.rooms.hint })))] : [])));
+  if (s.notify) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" }, ...notifyRows(k => MD.s.notify[k] !== false, msNotifySet),
+    el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 그 알림은 여기로 보내지 않고 앱에만 와요." })))));
   if (s.help.length) nodes.push(el("div", { class: "sec", text: "연결하는 방법" }), el("div", { class: "list" }, el("div", { class: "li" }, el("ol", { class: "steps" }, ...s.help.map(h => el("li", { text: h }))))));
   if (!ro && s.rooms) nodes.push(el("div", { class: "list" }, el("div", { class: "li dcs-form" },
     el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn tonal", "data-ms-test": "1", onclick: ev => msTest(ev.currentTarget), text: "연결 확인" })),
