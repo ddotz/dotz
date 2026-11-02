@@ -2,7 +2,7 @@
 // 127.0.0.1 only. Tailnet access goes through `tailscale serve`, which adds the Tailscale-User-Login header.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, HOST, log, NAME, now, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
+import { cfg, DATA_DIR, HOST, log, NAME, now, paths, PORT, TZ, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
 import { parseCommand, setGatewayRestart } from "./control.ts";
 import * as discord from "./discord.ts";
@@ -405,8 +405,7 @@ for (const name of resumedLanes) void send(`lane:${name}`, "게이트웨이가 �
 // flooded worklog (owner 2026-10-20). Failures to start go to alert elsewhere.
 if (restarted) {
 	const at = new Date().toLocaleTimeString("ko-KR", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
-	const picked = [replayed ? `답하지 못한 메시지 ${replayed}개를 다시 처리하고 있어요` : "", resumedLanes.length ? `이어서 하는 세션: ${resumedLanes.join(", ")}` : ""].filter(Boolean);
-	if (picked.length) void out(discord.status.enabled ? "worklog" : "web", `게이트웨이를 다시 시작했어요 (${at} ${tzLabel()}).\n- ${picked.join("\n- ")}`, undefined, { source: "gateway" }).catch(e => log(`restart notice failed: ${e}`));
+	if (replayed || resumedLanes.length) void out(discord.status.enabled ? "worklog" : "web", msg().gatewayRestart(replayed, resumedLanes), undefined, { source: "gateway", update_key: "gateway-restart" }).catch(e => log(`restart notice failed: ${e}`));
 	else log(`restart at ${at}: nothing interrupted, worklog notice skipped`);
 }
 // After an update and restart: local changes the updater backed up (dotz-local/<stamp>) and text overrides that no longer fit this version

@@ -50,7 +50,7 @@ export function report(lane: Lane, text: string, notice = false): void {
 				persist(lane);
 			}
 			log(`lane ${lane.name} ${what} contradicted by task metadata: ${problems.join("; ")}`);
-			hooks.report(lane, `${text}\n\n[gateway check] task metadata contradicts this ${what}; do not take it as verified:\n- ${problems.slice(0, 10).join("\n- ")}`, answering);
+			hooks.report(lane, `${text}\n\n${msg().checkContradicted(problems.length)}`, answering);
 		});
 }
 // The gateway reads a machine-checkable Done-when back itself (donesignals.ts, dori done-flow.ts settle) instead of spending
@@ -69,12 +69,13 @@ async function gatewayCheck(lane: Lane, text: string, answering: boolean): Promi
 	// A newer report replaced this claim while the checks ran: that report has its own check.
 	if (lane.claim !== claim) return log(`lane ${lane.name} Done-when check dropped (a newer report replaced the claim)`);
 	const lines = checks.map(c => `${c.ok ? "ok" : "NOT"} ${c.signal} -> ${c.detail}`);
+	const landed = checks.some(c => c.ok && c.signal.startsWith("landed "));
 	if (checks.every(c => c.ok)) {
 		lane.claim = { state: "verified", at: now(), evidence: `gateway Done-when check: ${lines.join("; ")}`.slice(0, 1000) };
 		lane.doneBounces = 0;
 		persist(lane);
 		log(`lane ${lane.name} [done] verified by the gateway: ${lines.join("; ")}`);
-		hooks.report(lane, `${text}\n\n[gateway check] verified, every Done-when check passed:\n- ${lines.join("\n- ")}`, answering);
+		hooks.report(lane, `${text}\n\n${msg().checkPassed(checks.length, landed)}`, answering);
 		return hooks.verified(lane.name, text);
 	}
 	const failed = lines.filter(l => l.startsWith("NOT"));
@@ -83,13 +84,13 @@ async function gatewayCheck(lane: Lane, text: string, answering: boolean): Promi
 	persist(lane);
 	log(`lane ${lane.name} [done] not verified by the gateway (${lane.doneBounces}): ${failed.join("; ")}`);
 	if (lane.proc && lane.doneBounces <= DONE_BOUNCES) {
-		hooks.notice(lane, `[gateway check] [done] not accepted yet, sent back to the session:\n- ${failed.join("\n- ")}`);
+		hooks.notice(lane, msg().checkBounced(checks.length, failed.length));
 		lane.claim = undefined;
 		persist(lane);
 		return prompt(lane, `[gateway check] Your [done] is not verified: these Done-when checks fail now:\n- ${failed.join("\n- ")}\nFix them (land the branch if that is what fails) and report [done] again, or report [fail] / [ask] saying why they cannot pass.`);
 	}
 	lane.doneBounces = 0;
-	hooks.report(lane, `${text}\n\n[gateway check] Done-when checks fail; do not take this [done] as verified:\n- ${failed.join("\n- ")}`, answering);
+	hooks.report(lane, `${text}\n\n${msg().checkFailed(checks.length, failed.length)}`, answering);
 }
 
 // Drops the pending ask; the caller persists.
