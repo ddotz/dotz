@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { allowedRoots, attachmentLines, FileError, messageFiles, resolveAllowed, safeName, saveUpload, ownerFiles, serveFile, UPLOADS, uploadsFrom } from "./files.ts";
+import { allowedRoots, attachmentLines, canvasRoute, FileError, messageFiles, resolveAllowed, safeName, saveUpload, ownerFiles, serveFile, UPLOADS, uploadsFrom } from "./files.ts";
 import { isTempLane } from "./lanes.ts";
 
 const DATA = process.env.DOTZ_DIR!;
@@ -72,6 +72,16 @@ test("serveFile sets type, disposition and answers byte ranges", async () => {
 	const tail = serveFile(p, new Request("http://x", { headers: { range: "bytes=-3" } }));
 	expect(await tail.text()).toBe("789");
 	expect(serveFile(p, new Request("http://x", { headers: { range: "bytes=50-" } })).status).toBe(416);
+});
+
+test("an HTML page runs its own script only in an opaque, offline sandbox; other files stay script-free", () => {
+	writeFileSync(join(ROOT, "flow.html"), "<div id=app></div><script>app.textContent='built'</script>");
+	const csp = canvasRoute(new Request("http://x"), new URL(`http://x/api/canvas?path=${encodeURIComponent(join(ROOT, "flow.html"))}`), allowedRoots([ROOT]), new Set()).headers.get("content-security-policy") ?? "";
+	expect(csp).toStartWith("sandbox allow-scripts;");
+	expect(csp).not.toContain("allow-same-origin");
+	expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+	expect(csp).toContain("connect-src 'none'");
+	expect(serveFile(join(ROOT, "sub", "a.txt"), new Request("http://x")).headers.get("content-security-policy")).toStartWith("sandbox; default-src 'none';");
 });
 
 test("temp-folder lanes never count as live projects", () => {

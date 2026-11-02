@@ -1,10 +1,12 @@
 /* ---------- 캔버스: an HTML page the bot made, opened from its file chip in the chat ---------- */
 // The page is read from GET /api/canvas?path=... (hub/files.ts canvasRoute, the sandboxed page 새 탭 opens) and shown as the frame's srcdoc:
 // same origin, so Cmd+click picks its elements like an app's (15-picker.js, iframe.apps-frame). A sandbox without scripts would also stop
-// the picker's own listeners, so the page's script is taken out instead (canvasDoc) and a script-src 'none' policy blocks what is left. It uses the 앱 screen's header and frame (30-apps.js, 20-apps.css):
+// the picker's own listeners, so the page's script is taken out instead (canvasDoc) and a script-src 'none' policy blocks what is left.
+// A page with its own <script> (its body may be built by it) is loaded from /api/canvas in an opaque-origin frame instead (sandbox
+// allow-scripts, never allow-same-origin, plus the route's CSP): its script runs, it cannot reach the hub, and it has no picker. It uses the 앱 screen's header and frame (30-apps.js, 20-apps.css):
 // file mark, name, path, the pick hint, 새 탭, close. From 1100px it sits beside the conversation, so a pick's chip shows in the composer
 // next to it; below that it is a full-screen sheet with a back button. Picks stay with the conversation when the canvas closes.
-const CVS = { path: "", name: "", narrow: null };
+const CVS = { path: "", name: "", narrow: null, scripted: false };
 const canvasPane = el("section", { id: "canvas", class: "cvs-pane apps-pane", "aria-label": "캔버스", hidden: true });
 $("#v-chat").append(canvasPane);
 const canvasUrl = p => `/api/canvas?path=${enc(p)}`;
@@ -29,8 +31,8 @@ function canvasHeader() {
   return el("header", { class: "apps-hd" },
     narrow ? el("button", { class: "ib", type: "button", "aria-label": "캔버스 닫기", title: "닫기", onclick: canvasClose }, icon("back")) : null,
     el("span", { class: "cv-av app-av", "aria-hidden": "true" }, icon("file")),
-    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: CVS.name }), el("p", { class: "apps-p", title: CVS.path, text: `HTML · ${shortPath(CVS.path)}` }), narrow ? pkHint() : null),
-    narrow ? null : pkHint(),
+    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: CVS.name }), el("p", { class: "apps-p", title: CVS.path, text: `HTML · ${shortPath(CVS.path)}` }), narrow && !CVS.scripted ? pkHint() : null),
+    narrow || CVS.scripted ? null : pkHint(),
     el("a", { class: "ib", href: canvasUrl(CVS.path), target: "_blank", rel: "noopener", "aria-label": "새 탭에서 열기", title: "새 탭에서 열기" }, icon("open")),
     narrow ? null : el("button", { class: "ib", type: "button", "aria-label": "캔버스 닫기", title: "닫기", onclick: canvasClose }, icon("close")));
 }
@@ -44,7 +46,7 @@ function canvasHead() {
 function canvasOpen(path, name) {
   if (typeof current === "string" && current !== "chat") go("chat");
   const same = CVS.path === path && !canvasPane.hidden;
-  CVS.path = path; CVS.name = name || path.split("/").pop() || path;
+  CVS.path = path; CVS.name = name || path.split("/").pop() || path; CVS.scripted = false;
   canvasPane.hidden = false;
   $("#v-chat").classList.add("canvas-open");
   if (same) return;
@@ -55,7 +57,13 @@ function canvasOpen(path, name) {
   fetch(canvasUrl(path)).then(async r => {
     if (!r.ok) throw new Error(fileNote(r, "열 수 없는 파일이에요"));
     const html = await r.text();
-    if (CVS.path === path && frame.isConnected) frame.srcdoc = canvasDoc(html);
+    if (CVS.path !== path || !frame.isConnected) return;
+    if (/<script\b/i.test(html)) {
+      CVS.scripted = true;
+      canvasHead();
+      frame.setAttribute("sandbox", "allow-scripts");
+      frame.src = canvasUrl(path);
+    } else frame.srcdoc = canvasDoc(html);
   }).catch(e => { if (CVS.path === path && frame.isConnected) frame.replaceWith(el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: e instanceof TypeError ? "연결이 끊겨 열지 못했어요" : e.message }))); });
 }
 function canvasClose() {
