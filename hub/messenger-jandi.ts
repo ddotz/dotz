@@ -137,7 +137,7 @@ const newRoomId = (taken: Set<string>): string => {
 };
 const isHttpUrl = (s: string) => /^https?:\/\/\S+$/i.test(s);
 
-export type JandiAdapter = Adapter & { port(): number | undefined };
+export type JandiAdapter = Adapter & { port(): number | undefined; selfChat(): SelfChat | undefined };
 
 export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 	let server: ReturnType<typeof Bun.serve> | undefined;
@@ -155,6 +155,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 		},
 		configured: () => loadJandiConfig(dataDir).rooms.length > 0,
 		port: () => server?.port,
+		selfChat: () => selfChat,
 		start(c) {
 			ctx = c;
 			const cfg = loadJandiConfig(dataDir);

@@ -96,3 +96,32 @@ describe("switching computers in the installed app", () => {
 		expect(s.appended.length).toBe(0);
 	});
 });
+
+describe("a computer reached only through JANDI", () => {
+	const pick = src.slice(src.indexOf("function prPick"), src.indexOf("function prSheet"));
+	function run(p: Record<string, unknown>) {
+		const calls: string[] = [];
+		const env: Record<string, unknown> = {
+			prEmbedded: false,
+			selfDown: false,
+			location: { set href(v: string) { calls.push(`go ${v}`); } },
+			prClose: () => calls.push("close"),
+			toast: (t: string) => calls.push(`toast ${t}`),
+			prGo: (h: string) => calls.push(`prGo ${h}`),
+			prUrl: (q: Record<string, unknown>, extra = "") => `${q.url}/${extra}`,
+			enc: encodeURIComponent,
+			DEVICE_ID: "d1",
+		};
+		new Function(...Object.keys(env), `${pick}\nprPick(${JSON.stringify(p)});`)(...Object.values(env));
+		return calls;
+	}
+	test("opens its chat page on this origin even while it shows as not connected, and never leaves for another address", () => {
+		const row = { name: "종놈", url: "/jandi-peer/%EC%A2%85%EB%86%88", self: false, online: false, via: "jandi" };
+		expect(run(row)).toEqual(["close", "go /jandi-peer/%EC%A2%85%EB%86%88"]);
+		expect(run({ ...row, online: true })).toEqual(["close", "go /jandi-peer/%EC%A2%85%EB%86%88"]);
+	});
+	test("a Tailscale computer still opens at its own address", () => {
+		expect(run({ name: "맥미니", url: "https://mini:8445", self: false, online: true })).toEqual(["toast 맥미니(으)로 넘어가요", "close", "prGo https://mini:8445/?did=d1"]);
+		expect(run({ name: "맥미니", url: "https://mini:8445", self: false, online: false })).toEqual(["toast 맥미니에 연결할 수 없어요"]);
+	});
+});
