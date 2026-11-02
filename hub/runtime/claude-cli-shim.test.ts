@@ -4,7 +4,7 @@ import { afterAll, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { claudeShimEnv, realClaude, successLineSplitter } from "./claude-cli-shim.ts";
+import { claudeShimEnv, isWindowsSide, linuxSidePath, realClaude, successLineSplitter } from "./claude-cli-shim.ts";
 
 const BEFORE_PASTE = "Opening browser to sign in…\nIf the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c&state=s\nPaste code here if prompted > ";
 const AFTER_PASTE = "Login successful.\n";
@@ -83,4 +83,28 @@ test("the real CLI is an explicit override, else claude on PATH, else the newest
 	expect(realClaude({ PATH: bin, CLAUDE_CODE_EXECUTABLE: join(agent, "runtime", "old", rel, "claude") }, agent, shim)).toBe(join(agent, "runtime", "old", rel, "claude"));
 	expect(realClaude({ PATH: bin, CLAUDE_CODE_EXECUTABLE: join(shim, "claude") }, agent, shim)).toBe(join(bin, "claude"));
 	expect(claudeShimEnv({ PATH: "" }, join(dir, "none"), shim)).toEqual({});
+});
+
+test("under WSL a Windows-side claude (the Windows PATH under /mnt/<drive>, a .exe) is never the real CLI", () => {
+	const npm = "/mnt/c/Users/u/AppData/Roaming/npm";
+	expect(isWindowsSide(`${npm}/claude`, "linux")).toBe(true);
+	expect(isWindowsSide(npm, "linux")).toBe(true);
+	expect(isWindowsSide("/mnt/d", "linux")).toBe(true);
+	expect(isWindowsSide("/home/u/.local/bin/claude.exe", "linux")).toBe(true);
+	expect(isWindowsSide("/home/u/.bun/bin/claude", "linux")).toBe(false);
+	expect(isWindowsSide("/mnt/data/bin/claude", "linux")).toBe(false);
+	expect(isWindowsSide(`${npm}/claude`, "darwin")).toBe(false);
+	expect(linuxSidePath(`/home/u/.bun/bin:${npm}:/usr/bin:/mnt/c/WINDOWS/system32`, "linux")).toBe("/home/u/.bun/bin:/usr/bin");
+	expect(linuxSidePath(`/usr/bin:${npm}`, "darwin")).toBe(`/usr/bin:${npm}`);
+});
+
+test("a Windows-side override or PATH entry falls through to the bundled copy", () => {
+	if (process.platform !== "linux") return;
+	const agent = join(dir, "agent3");
+	const rel = join("node_modules", "@anthropic-ai", `claude-agent-sdk-${process.platform}-${process.arch}`);
+	mkdirSync(join(agent, "runtime", "r", rel), { recursive: true });
+	writeFileSync(join(agent, "runtime", "r", rel, "claude"), "");
+	expect(realClaude({ PATH: "/mnt/c/Users/u/AppData/Roaming/npm", CLAUDE_CODE_EXECUTABLE: "/mnt/c/Users/u/AppData/Roaming/npm/claude" }, agent, join(dir, "shim3"))).toBe(
+		join(agent, "runtime", "r", rel, "claude"),
+	);
 });
