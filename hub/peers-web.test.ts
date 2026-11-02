@@ -116,9 +116,9 @@ describe("a computer reached only through JANDI", () => {
 		return calls;
 	}
 	test("opens its chat page on this origin even while it shows as not connected, and never leaves for another address", () => {
-		const row = { name: "종놈", url: "/jandi-peer/%EC%A2%85%EB%86%88", self: false, online: false, via: "jandi" };
-		expect(run(row)).toEqual(["close", "go /jandi-peer/%EC%A2%85%EB%86%88"]);
-		expect(run({ ...row, online: true })).toEqual(["close", "go /jandi-peer/%EC%A2%85%EB%86%88"]);
+		const row = { name: "work", url: "/jandi-peer/work", self: false, online: false, via: "jandi" };
+		expect(run(row)).toEqual(["close", "go /jandi-peer/work"]);
+		expect(run({ ...row, online: true })).toEqual(["close", "go /jandi-peer/work"]);
 	});
 	test("a Tailscale computer still opens at its own address", () => {
 		expect(run({ name: "맥미니", url: "https://mini:8445", self: false, online: true })).toEqual(["toast 맥미니(으)로 넘어가요", "close", "prGo https://mini:8445/?did=d1"]);

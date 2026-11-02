@@ -86,11 +86,11 @@ Outgoing Webhook 사용 방법은 JANDI 안내를 참고합니다: https://suppo
 
 ## 8. 나와의 대화로만 닿는 컴퓨터를 컴퓨터 목록에 올리기
 
-회사 PC처럼 Tailscale에 없고 같은 "나와의 대화" 방을 다른 키워드로 읽는 컴퓨터(자기 게이트웨이의 `self_chat.keyword`가 `종놈` 같은 것)는 `self_chat.peers`에 적으면 웹 앱의 컴퓨터 목록에 Tailscale 컴퓨터와 나란히 `잔디` 표시와 함께 올라옵니다. 고르면 이 게이트웨이가 그 컴퓨터와 주고받는 대화 화면을 엽니다.
+사무실 PC처럼 Tailscale에 없고 같은 "나와의 대화" 방을 다른 키워드로 읽는 컴퓨터(자기 게이트웨이의 `self_chat.keyword`가 `work` 같은 것)는 `self_chat.peers`에 적으면 웹 앱의 컴퓨터 목록에 Tailscale 컴퓨터와 나란히 `잔디` 표시와 함께 올라옵니다. 고르면 이 게이트웨이가 그 컴퓨터와 주고받는 대화 화면을 엽니다.
 
 ```json
 "self_chat": { "enabled": true, "team_id": 123, "room_id": 456, "member_id": 789, "bot_id": 321, "keyword": "dotz",
-  "peers": [ { "name": "종놈", "keyword": "종놈", "reply_prefix": "[종놈]" } ] }
+  "peers": [ { "name": "work", "keyword": "work", "reply_prefix": "[work]" } ] }
 ```
 
 - `name`: 목록에 보일 이름(30자까지, 비우면 `keyword`). `keyword`: 그 컴퓨터가 읽는 키워드(공백 없는 1~30자, 이 게이트웨이의 `keyword`와 같을 수 없고 겹치면 앞의 것만 씁니다). `reply_prefix`: 그 컴퓨터가 답할 때 글 맨 앞에 붙이는 말머리(1~30자). 규칙에 맞지 않는 항목은 버려지고, 최대 8개입니다.

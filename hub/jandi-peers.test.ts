@@ -54,7 +54,7 @@ const cfg: SelfChatConfig = {
 	keyword: "dotz",
 	session_secret: "jandi-session",
 	interval_ms: 1000,
-	peers: [{ name: "종놈", keyword: "종놈", reply_prefix: "[종놈]" }],
+	peers: [{ name: "work", keyword: "work", reply_prefix: "[work]" }],
 };
 
 let dir: string;
@@ -65,10 +65,10 @@ function chats(config: SelfChatConfig | null = cfg, withClient = true) {
 }
 const get = (chat: ReturnType<typeof chats>["chat"], path: string) => chat.route(new Request(`http://x${path}`), new URL(`http://x${path}`));
 const send = (chat: ReturnType<typeof chats>["chat"], text: unknown, headers: Record<string, string> = { "Content-Type": "application/json" }) => {
-	const url = new URL("http://x/api/jandi-peer/%EC%A2%85%EB%86%88/send");
+	const url = new URL("http://x/api/jandi-peer/work/send");
 	return chat.route(new Request(url, { method: "POST", headers, body: JSON.stringify({ text }) }), url);
 };
-const MSGS = "/api/jandi-peer/%EC%A2%85%EB%86%88/messages";
+const MSGS = "/api/jandi-peer/work/messages";
 
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "jandi-peers-"));
@@ -80,9 +80,9 @@ beforeEach(() => {
 	posted = [];
 	messages = [
 		{ id: 1, fromEntity: ME, body: "dotz 내 게이트웨이 명령", time: NOW - 5 * HOUR },
-		{ id: 2, fromEntity: ME, body: "종놈 빌드 돌려", time: NOW - 3 * HOUR },
-		{ id: 3, fromEntity: OTHER, body: "[종놈] 빌드 시작했어요", time: NOW - 2 * HOUR },
-		{ id: 4, fromEntity: OTHER, body: "종놈 남이 쓴 글", time: NOW - HOUR },
+		{ id: 2, fromEntity: ME, body: "work 빌드 돌려", time: NOW - 3 * HOUR },
+		{ id: 3, fromEntity: OTHER, body: "[work] 빌드 시작했어요", time: NOW - 2 * HOUR },
+		{ id: 4, fromEntity: OTHER, body: "work 남이 쓴 글", time: NOW - HOUR },
 		{ id: 5, fromEntity: ME, body: "그냥 메모", time: NOW - HOUR },
 	];
 });
@@ -94,10 +94,10 @@ describe("self_chat.peers config", () => {
 		const peers = normalizeSelfChat({
 			...base,
 			peers: [
-				{ name: "종놈", keyword: "/종놈", reply_prefix: " [종놈] " },
+				{ name: "work", keyword: "/work", reply_prefix: " [work] " },
 				{ keyword: "dotz", reply_prefix: "[x]" },
 				{ keyword: "DOTZ", reply_prefix: "[x]" },
-				{ keyword: "종놈", reply_prefix: "[또]" },
+				{ keyword: "work", reply_prefix: "[또]" },
 				{ keyword: "두 단어", reply_prefix: "[x]" },
 				{ keyword: "a".repeat(31), reply_prefix: "[x]" },
 				{ keyword: "빈접두", reply_prefix: "  " },
@@ -108,7 +108,7 @@ describe("self_chat.peers config", () => {
 			],
 		})?.peers;
 		expect(peers).toEqual([
-			{ name: "종놈", keyword: "종놈", reply_prefix: "[종놈]" },
+			{ name: "work", keyword: "work", reply_prefix: "[work]" },
 			{ name: "집", keyword: "집", reply_prefix: "[집]" },
 		]);
 		const many = Array.from({ length: 12 }, (_, i) => ({ keyword: `pc${i}`, reply_prefix: `[${i}]` }));
@@ -137,9 +137,9 @@ describe("the conversation with one peer", () => {
 
 	test("a word that only starts with the keyword or prefix is not part of it", () => {
 		const recs = [
-			{ id: 1, fromEntity: ME, message: { content: { body: "종놈아 안녕" } } },
-			{ id: 2, fromEntity: OTHER, message: { content: { body: "[종놈]네" } } },
-			{ id: 3, fromEntity: OTHER, message: { content: { body: "[종놈]" } } },
+			{ id: 1, fromEntity: ME, message: { content: { body: "work아 안녕" } } },
+			{ id: 2, fromEntity: OTHER, message: { content: { body: "[work]네" } } },
+			{ id: 3, fromEntity: OTHER, message: { content: { body: "[work]" } } },
 		];
 		expect(linesOf(recs, ME, cfg.peers![0]!)).toEqual([]);
 	});
@@ -163,7 +163,7 @@ describe("the computer list", () => {
 		const list = await chats().chat.append(tailscale);
 		expect(list.slice(0, 2)).toEqual(tailscale);
 		expect(JSON.stringify(tailscale)).toBe(before);
-		expect(list.slice(2)).toEqual([{ name: "종놈", url: "/jandi-peer/%EC%A2%85%EB%86%88", self: false, online: true, via: "jandi" }]);
+		expect(list.slice(2)).toEqual([{ name: "work", url: "/jandi-peer/work", self: false, online: true, via: "jandi" }]);
 	});
 
 	test("offline when the last reply is older than 24 hours, when JANDI fails, and when the room is not the owner's bot chat", async () => {
@@ -194,9 +194,9 @@ describe("the chat routes", () => {
 
 	test("the page is served for a configured peer, and an unknown peer or other path is not", async () => {
 		const { chat } = chats();
-		const page = (await get(chat, "/jandi-peer/%EC%A2%85%EB%86%88"))!;
+		const page = (await get(chat, "/jandi-peer/work"))!;
 		expect([page.status, page.headers.get("content-type")]).toEqual([200, "text/html; charset=utf-8"]);
-		expect(await page.text()).toContain("/api/jandi-peer/%EC%A2%85%EB%86%88");
+		expect(await page.text()).toContain("/api/jandi-peer/work");
 		expect((await get(chat, "/jandi-peer/nobody"))!.status).toBe(404);
 		expect((await get(chat, "/api/jandi-peer/nobody/messages"))!.status).toBe(404);
 		expect(await get(chat, "/api/peers")).toBeUndefined();
@@ -209,8 +209,8 @@ describe("the chat routes", () => {
 		expect(posted[0]!.path).toBe(`/message-api/v3/teams/${TEAM}/rooms/${ROOM}/messages`);
 		expect(posted[0]!.auth).toBe("bearer at-secret");
 		expect(posted[0]!.accept).toContain("jandi-v3");
-		expect(posted[0]!.body).toEqual({ text: "종놈 빌드 상태 알려줘", richText: [{ type: "text_block", elements: [{ type: "text", body: "종놈 빌드 상태 알려줘", style: {} }] }] });
-		expect(posted[0]!.body).toEqual(messageBody("종놈 빌드 상태 알려줘"));
+		expect(posted[0]!.body).toEqual({ text: "work 빌드 상태 알려줘", richText: [{ type: "text_block", elements: [{ type: "text", body: "work 빌드 상태 알려줘", style: {} }] }] });
+		expect(posted[0]!.body).toEqual(messageBody("work 빌드 상태 알려줘"));
 	});
 
 	test("send refuses empty or over-long text, a non-JSON body and the wrong method, and posts nothing", async () => {
@@ -220,7 +220,7 @@ describe("the chat routes", () => {
 		expect((await send(chat, 42))!.status).toBe(400);
 		expect((await send(chat, "가".repeat(4001)))!.status).toBe(400);
 		expect((await send(chat, "x", { "Content-Type": "text/plain" }))!.status).toBe(415);
-		expect((await get(chat, "/api/jandi-peer/%EC%A2%85%EB%86%88/send"))!.status).toBe(405);
+		expect((await get(chat, "/api/jandi-peer/work/send"))!.status).toBe(405);
 		expect(posted).toEqual([]);
 		expect((await send(chat, "가".repeat(4000)))!.status).toBe(200);
 	});
@@ -253,9 +253,9 @@ describe("the owner gate", () => {
 	const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
 	const call = (path: string, init: RequestInit = {}) => route(new Request(`http://mini.tailnet.ts.net${path}`, init));
 	const paths: Array<[string, RequestInit]> = [
-		["/jandi-peer/%EC%A2%85%EB%86%88", {}],
+		["/jandi-peer/work", {}],
 		[MSGS, {}],
-		["/api/jandi-peer/%EC%A2%85%EB%86%88/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "안녕" }) }],
+		["/api/jandi-peer/work/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "안녕" }) }],
 	];
 	test("an unauthenticated request is refused on the page and both endpoints", async () => {
 		for (const [path, init] of paths) expect((await call(path, init)).status).toBe(403);
