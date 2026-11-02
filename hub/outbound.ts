@@ -31,6 +31,7 @@ import { onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, 
 import { cardPointer, cardTitle, CARDS_LEAD, createApprovalQueue, loadHeld, pendingCardsNote } from "./approval-queue.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
 import { route } from "./notify-route.ts";
+import { isWebLane } from "./discord-post.ts";
 import { repeatAlert } from "./alert-gate.ts";
 
 // Prompt queue: see prompts.ts. Unanswered prompts are kept on disk, so a restart mid-turn replays them on boot.
@@ -52,7 +53,10 @@ export const sends = createSendLedger({
 	persist: items => writeAtomic(UNSENT, `${JSON.stringify(items, null, 2)}\n`),
 	log,
 });
-export const send = (target: string, text: string, ref?: string) => sends.submit(target, text, ref);
+// A web lane's lane:<name> is its web conversation, which the caller's outbox/inbox event already fed (hub/lanewire.ts): there
+// is no Discord place to send to, so the post is done there instead of failing in the ledger as an unknown Discord target.
+export const send = (target: string, text: string, ref?: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> =>
+	target.startsWith("lane:") && isWebLane(target.slice(5)) ? Promise.resolve({ delivered: true }) : sends.submit(target, text, ref);
 // One prompt queue per session (hub/convsessions.ts): main's, and with conversation sessions on, one per conversation. Each delivers into
 // its own orchestrator instance; `recent` keeps only that session's conversations, so an answer that arrives without a prompt can
 // only go to a message of its own conversation (prompts.ts orphanTarget).
