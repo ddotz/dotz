@@ -27,6 +27,26 @@ const CMDS = [
 // The command palette lists the same commands.
 const hintList = CMDS.map(x => [x.c, x.d]);
 let SL = { items: [], idx: -1, hide: "" };
+// @ in the same menu: what runs now (홈 지금 진행 중, from S: the assistant's background work, a conversation's session and its workers,
+// live sessions). A pick writes "@<title> " and is kept in MENTIONS; the message sends {kind, id, label} for every token still in the text
+// (hub/mentions.ts turns them into [지칭] lines), so "이거 멈춰" names one id.
+let MENTIONS = [];
+function mnItems() {
+  const work = w => ({ kind: "task", id: w.id, label: w.description || w.id, sub: `백그라운드 작업${w.model ? ` · ${w.model}` : ""}` });
+  const convs = ((S && S.convs) || []).filter(c => convRunning(c));
+  const lanes = ((S && S.lanes) || []).filter(laneAlive).sort((a, b) => (b.status === "working") - (a.status === "working"));
+  return [
+    ...workRunning().map(work),
+    ...convs.flatMap(c => [{ kind: "conv", id: c.target, label: c.name || targetName(convWebT(c.target)), sub: "대화 · 진행 중" }, ...(c.work || []).map(work)]),
+    ...lanes.map(l => ({ kind: "lane", id: l.name, label: l.title || l.name, sub: `세션 · ${statusKo(l.status)}` })),
+  ];
+}
+// The "@query" right before the caret (start of the box or after a space, so an e-mail address opens nothing).
+function mnParse() {
+  const at = ta.selectionStart ?? ta.value.length, m = ta.value.slice(0, at).match(/(^|\s)@([^\s@]*)$/);
+  return m ? { from: at - m[2].length - 1, to: at, q: m[2].toLowerCase() } : null;
+}
+const mnRefs = text => MENTIONS.filter(r => text.includes(`@${r.label}`)).map(({ kind, id, label }) => ({ kind, id, label }));
 // Where the caret is in "/cmd a b c": which command, which args are done, and the partial token being typed.
 function slParse(v) {
   const m = v.match(/^\/(\S*)(\s+([\s\S]*))?$/);
@@ -38,12 +58,17 @@ function slParse(v) {
   return { stage: "arg", cmd, done, q, i: done.length };
 }
 function updateHints() {
-  const box = $("#hints"), v = ta.value, p = slParse(v);
+  const box = $("#hints"), v = ta.value, p = slParse(v) || (() => { const m = mnParse(); return m && { stage: "mn", ...m }; })();
   const off = () => { box.hidden = true; clear(box); SL.items = []; SL.idx = -1; };
   if (!p || v === SL.hide || document.activeElement !== ta) return off();
   SL.hide = "";
   let head, items = [], chips = null, idx = 0;
-  if (p.stage === "cmd") {
+  if (p.stage === "mn") {
+    const all = mnItems(), hit = it => it.label.toLowerCase().includes(p.q) || it.id.toLowerCase().includes(p.q);
+    items = all.filter(hit).sort((x, y) => (y.label.toLowerCase().startsWith(p.q) ? 1 : 0) - (x.label.toLowerCase().startsWith(p.q) ? 1 : 0)).slice(0, 40)
+      .map(it => { const tok = `@${it.label} `; return { kind: "mn", it, fill: `${v.slice(0, p.from)}${tok}${v.slice(p.to)}`, caret: p.from + tok.length }; });
+    head = el("div", { class: "sl-hd" }, el("span", { class: "tx", text: "지금 진행 중 · 골라서 지칭하기" }));
+  } else if (p.stage === "cmd") {
     const pre = CMDS.filter(x => x.c.startsWith(p.q)), sub = CMDS.filter(x => !x.c.startsWith(p.q) && x.c.includes(p.q.slice(1)));
     items = [...pre, ...sub].map(x => ({ kind: "cmd", x, fill: `${x.c} ` }));
     head = el("div", { class: "sl-hd" }, el("span", { class: "logo" }), el("span", { class: "nm", text: botName }), el("span", { class: "tx", text: "명령" }));
@@ -66,6 +91,7 @@ function updateHints() {
     const b = el("button", { type: "button", role: "option", class: "sl-i", id: `sl-${i}`, tabindex: "-1" },
       it.kind === "cmd"
         ? [el("span", { class: "c", text: it.x.c }), (it.x.args || []).length ? el("span", { class: "ar", text: it.x.args.map(x => x.opt ? `[${x.n}]` : `<${x.n}>`).join(" ") }) : null, el("span", { class: "d", text: it.x.d })]
+        : it.kind === "mn" ? [el("span", { class: "c", text: `@${it.it.label}` }), el("span", { class: "d", text: it.it.sub })]
         : [el("span", { class: "c", text: it.val }), it.lab ? el("span", { class: "d", text: it.lab }) : null]);
     // Taps and clicks must not take focus from the textarea (the phone keyboard stays up).
     b.addEventListener("pointerdown", ev => ev.preventDefault());
@@ -88,7 +114,9 @@ function slMark() {
 function slPick(i) {
   const it = SL.items[i];
   if (!it) return;
-  ta.value = it.fill; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  if (it.kind === "mn") MENTIONS = MENTIONS.filter(r => !(r.kind === it.it.kind && r.id === it.it.id)).concat(it.it);
+  const at = it.caret ?? it.fill.length;
+  ta.value = it.fill; ta.focus(); ta.setSelectionRange(at, at);
   autosize(); saveDraft(); updateHints();
 }
 const ta = $("#text");
@@ -199,7 +227,8 @@ async function sendChat(how) {
   if ((!text && !files.length && !picks.length) || ta.disabled) return;
   if (files.length && text.startsWith("/")) { toast("명령에는 파일을 붙일 수 없어요", true); return; }
   if (picks.length && text.startsWith("/")) { toast("명령에는 요소를 붙일 수 없어요", true); return; }
-  const sentAtt = ATT, sentPicks = PICK; ATT = []; renderAtt(); pkClear();
+  const refs = text.startsWith("/") ? [] : mnRefs(text), sentMentions = MENTIONS;
+  const sentAtt = ATT, sentPicks = PICK; ATT = []; renderAtt(); pkClear(); MENTIONS = [];
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
   if (typeof asTplEnd === "function") asTplEnd();
@@ -208,7 +237,7 @@ async function sendChat(how) {
   const mode = how || (isWorking(t) ? "steer" : undefined), reply = rpTake();
   if (isSettingsT(t) && !TURN.has(t)) TURN.set(t, Date.now() - 5000);
   try {
-    const body = { text, ...(reply ? { reply } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}), ...(picks.length ? { elements: picks } : {}) };
+    const body = { text, ...(reply ? { reply } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}), ...(picks.length ? { elements: picks } : {}), ...(refs.length ? { refs } : {}) };
     // A conversation of another computer gets the files uploaded there first (34-peer-monitoring.js pqUpload); a failed upload sends nothing.
     const owner = pqAct("/api/message", body);
     if (owner && owner.pc && files.length) body.files = await pqUpload(owner.pc, sentAtt);
@@ -223,7 +252,7 @@ async function sendChat(how) {
   catch (e) {
     // a failed send goes back to the conversation it came from, even when the owner has moved to another one meanwhile
     if (t !== target) { ts(t).draft = text; ts(t).pick = sentPicks.concat(ts(t).pick || []); try { localStorage.setItem(DRAFT_KEY(t), text); } catch {} toast(`${e.message} · 보내지 못한 글은 원래 대화에 남겨 뒀어요${sentAtt.length ? " (파일은 다시 붙여 주세요)" : ""}`, true); return; }
-    toast(e.message, true); ta.value = text; autosize(); ATT = sentAtt.concat(ATT); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
+    toast(e.message, true); ta.value = text; MENTIONS = sentMentions.concat(MENTIONS); autosize(); ATT = sentAtt.concat(ATT); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
   }
 }
 // The composer follows the selected target and the view mode.

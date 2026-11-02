@@ -39,6 +39,7 @@ import { composeMail, deleteMail, mailOpened, MailError, syncMailStates, type Ma
 import { holdDrafts, listDrafts, restoreDrafts } from "../features/reply-drafts/lib/store.ts";
 import { attachmentLines, canvasRoute, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
 import { ownerElements, pickedLines } from "./picked.ts";
+import { ownerRefs, refLines } from "./mentions.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
 import { orch } from "./orchestrator.ts";
@@ -775,6 +776,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
 			}
 			const elements = ownerElements(b.elements);
+			// What the owner named with @ (hub/mentions.ts), resolved against what runs now: one [지칭] line each in the turn.
+			const refs = refLines(ownerRefs(b.refs), {
+				task: id => [...bgWork.list(), ...convs.conversations().flatMap(c => c.bg.list())].find(w => w.id === id),
+				lane: name => lanes.get(name),
+				conv: key => { const c = convs.conversations().find(x => x.primary === key); return c && { name: c.meta.name, live: convs.live(c) }; },
+			});
 			if (!b.text && !files.length && !elements.length) return json({ error: "text required" }, 400);
 			const text = String(b.text ?? "");
 			const login = req.headers.get("tailscale-user-login") ?? "local";
@@ -801,13 +808,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			}
 			// The queue sends to the main conversation when the turn ends; a project message goes in now (intake merges a burst).
 			if (mode === "queue" && !project && !mail && !conv && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
-				const item = enqueue(lane ? `lane:${lane}` : "main", [reply ? replyLine(reply) : "", text, files.length ? attachmentLines(files) : "", elements.length ? pickedLines(elements) : ""].filter(Boolean).join("\n"), login);
+				const item = enqueue(lane ? `lane:${lane}` : "main", [reply ? replyLine(reply) : "", text, files.length ? attachmentLines(files) : "", elements.length ? pickedLines(elements) : "", ...refs].filter(Boolean).join("\n"), login);
 				return json({ ok: true, queued: item });
 			}
 			try {
 				// A decision answer from the chat card: the asking message (its ts) and the chosen option per block (intake.ts decisionLines).
 				const picks = Array.isArray(b.picks) ? b.picks.slice(0, 10).flatMap((p: any) => (p && Number.isFinite(Number(p.n)) ? [{ q: String(p.q ?? "").slice(0, 200), n: Number(p.n), label: String(p.label ?? "").slice(0, 120), ...(typeof p.note === "string" && p.note.trim() ? { note: p.note.replace(/\s+/g, " ").trim().slice(0, 500) } : {}) }] : [])) : [];
-				await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(elements.length ? { elements } : {}), ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(picks.length ? { picks } : {}), via: viaOf(b.via) });
+				await sendWeb({ lane, project, mail, settings, conv: lane || project || mail || settings ? undefined : conv, channel, text, mode: mode === "queue" ? "default" : mode, login, files, ...(elements.length ? { elements } : {}), ...(refs.length ? { refs } : {}), ...(typeof b.reply_to === "string" && b.reply_to ? { replyTo: b.reply_to.slice(0, 40) } : {}), ...(reply ? { reply } : {}), ...(picks.length ? { picks } : {}), via: viaOf(b.via) });
 			} catch (error) {
 				return json({ error: (error as Error).message }, 409);
 			}
