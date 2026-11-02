@@ -536,7 +536,7 @@ export async function postMail(raw: unknown, deps: MailDeps): Promise<MailResult
 	// message and it is a new mail again, whatever state it was in (answered, 답장 안 함, 답장 불필요).
 	const again = known && known.dir !== "out" && !!m.messageId && m.messageId !== known.msg ? known : undefined;
 	if (known && known.dir !== "out" && !again) {
-		await completeKnown(known, m);
+		await completeKnown(known, m, deps.now?.() ?? new Date().toISOString());
 		return { ok: true, key, target, ...(known.thread ? { thread: known.thread } : {}), duplicate: true };
 	}
 	// A mail the owner deleted stays gone for the message it stood for. A record kept before message ids has none on file: the first id seen
@@ -565,9 +565,11 @@ export async function postMail(raw: unknown, deps: MailDeps): Promise<MailResult
 
 // A repeat of a known mail completes what its first post left out, and changes nothing else (no event, no wake, no draft): the 받는 사람 /
 // 참조 it had none of, a sender that was a name only and now comes with an address, and the body's pictures (cid:) when none were kept.
-// A poster that learned to send them can so post its earlier mails again to fill them in.
-async function completeKnown(known: MailRecord, m: MailInput): Promise<void> {
+// A poster that learned to send them can so post its earlier mails again to fill them in. Its `at` (not in the future) is the mail's time:
+// a mail first posted without one (stamped with the post time) gets its real date that way.
+async function completeKnown(known: MailRecord, m: MailInput, now: string): Promise<void> {
 	const next: MailRecord = { ...known };
+	if (m.at && m.at < now && m.at !== known.at) next.at = m.at;
 	if (m.to && !known.to) next.to = m.to;
 	if (m.cc && !known.cc) next.cc = m.cc;
 	if (m.from && m.from.includes("@") && !known.from.includes("@")) next.from = m.from;
@@ -582,7 +584,7 @@ async function completeKnown(known: MailRecord, m: MailInput): Promise<void> {
 	}
 	if (JSON.stringify(next) !== JSON.stringify(known)) {
 		recordMail(next);
-		log(`mail ${known.key}: completed from a repeat post (${[next.to !== known.to && "to", next.cc !== known.cc && "cc", next.from !== known.from && "from", next.attachments !== known.attachments && "pictures"].filter(Boolean).join(", ")})`);
+		log(`mail ${known.key}: completed from a repeat post (${[next.at !== known.at && "at", next.to !== known.to && "to", next.cc !== known.cc && "cc", next.from !== known.from && "from", next.attachments !== known.attachments && "pictures"].filter(Boolean).join(", ")})`);
 	}
 }
 
