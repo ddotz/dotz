@@ -8,7 +8,7 @@ import { appEntries } from "./integrations.ts";
 import { sourceOf } from "./mail-cli.ts";
 import { mailByKey, type MailRecord } from "./mail.ts";
 import { instanceOf } from "./reply-model.ts";
-import { addStagedBytes, stagedFiles, type StagedFile } from "../features/reply-drafts/lib/staged.ts";
+import { addStagedBytes, removeStagedFile, stagedFiles, type StagedFile } from "../features/reply-drafts/lib/staged.ts";
 import { addDraft, newId, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { DATA_DIR } from "./config.ts";
 
@@ -59,9 +59,15 @@ export function manualDraft(i: ManualIn): Manual {
 	}
 	const id = newId();
 	// The files are staged under the draft's own id, so the approval card, the draft sheet and the send all see the same list; each keeps
-	// the name he picked (an upload is stored with a timestamp in front of it).
+	// the name he picked (an upload is stored with a timestamp in front of it). A file that cannot be copied takes the copied ones away again,
+	// so nothing is left behind for a draft that was never made.
 	const staged: StagedFile[] = [];
-	for (const f of files) staged.push(addStagedBytes(id, f.name || basename(f.path), readFileSync(f.path)));
+	try {
+		for (const f of files) staged.push(addStagedBytes(id, f.name || basename(f.path), readFileSync(f.path)));
+	} catch (error) {
+		for (let n = 0; n < staged.length; n++) removeStagedFile(id, 0);
+		return { ok: false, error: `첨부파일을 붙이지 못했어요: ${(error as Error).message}`, code: 400 };
+	}
 	const subject = text(i.subject, 300) || (mail ? `Re: ${mail.subject}` : "");
 	const cc = text(i.cc, 500);
 	const rec: DraftRec = {

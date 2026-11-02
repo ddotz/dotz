@@ -94,7 +94,7 @@ const attach = (v: View, scope: string, name: string, text: string) => run(v, `c
 const shot = async (v: View, name: string) => { if (!SHOTS) return; mkdirSync(SHOTS, { recursive: true }); await Bun.write(`${SHOTS}/${name}.png`, await v.screenshot()); };
 
 describe("the list", () => {
-	test("six folders, a checkbox and a star on every row, the unread rows bold, the summary under the subject", async () => {
+	test("seven folders, a checkbox and a star on every row, the unread rows bold, the summary under the subject", async () => {
 		const v = await openList(1280, 800);
 		expect(await chips(v)).toEqual(["전체", "안 읽음4", "답장 필요1", "확인 대기", "답장함1", "보관함1", "보낸 메일1"]);
 		expect(await titles(v)).toEqual(["월간 점검 보고서 확인 요청", "회의 일정 변경", "처리가 안 되는 메일", "회사 메일", "읽음 표시를 못 하는 메일함", "견적서 보내드립니다"]);
@@ -128,7 +128,7 @@ describe("actions on a selection", () => {
 		expect(posts[0]).toEqual({ path: "/api/mail/actions", body: { keys: ["fx-a", "fx-b"], action: "read" } });
 		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr.mr-new").length === 2`);
 		expect(await chips(v)).toContain("안 읽음2");
-		await run(v, `${bar(v, "안읽음으로 표시")}.click()`);
+		await run(v, `${bar(v, "안 읽음으로 표시")}.click()`);
 		await posted(2);
 		expect(posts[1].body.action).toBe("unread");
 		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr.mr-new").length === 4`);
