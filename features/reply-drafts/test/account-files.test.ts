@@ -70,6 +70,19 @@ describe("zele argv with several accounts", () => {
 		expect(f.calls).toEqual([["zele", "mail", "send", "--account", A2, "--to", "kim@example.com", "--subject", "Re: 회의", "--body", "네, 확인했습니다."]]);
 	});
 
+	test("a category instance (filter.source score) composes a new mail through zele, on its account", async () => {
+		mkdirSync(join(env.dir, "custom"), { recursive: true });
+		writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify({ "mail-orders": { app: "mail", label: "문서·MR 요청", filter: { source: "score", account: A1 } } }));
+		enable(env, {});
+		const r = await realMailLink({}).compose({ app: "mail-orders", to: "kim@example.com", subject: "문서 보내드려요", body: "안녕하세요. 문서 보내드립니다." });
+		if (!r.ok) throw new Error(r.reason);
+		const made = getDraft(r.id)!;
+		expect(made).toMatchObject({ app: "mail-orders", source: "zele", compose: true });
+		const f = fake();
+		await sendWith(made, f.run);
+		expect(f.calls[0]!.slice(0, 5)).toEqual(["zele", "mail", "send", "--account", A1]);
+	});
+
 	test("the body read at offer time uses the mail's account", async () => {
 		const f = fake();
 		await readMailBody("zele", "T42", f.run, A2);
