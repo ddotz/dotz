@@ -179,6 +179,21 @@ describe("메신저 설정", () => {
 		expect(puts).toEqual([{ notify: { news: false } }]);
 	}, 30_000);
 
+	test("typing a token in 직접 입력 sends only that value, and the field is emptied after the save", async () => {
+		const v = await open(390, 844, "light", "slack");
+		await waitFor(v, `document.querySelector("#slack details[data-ms-advanced] summary")`);
+		await click(v, "#slack details[data-ms-advanced] summary");
+		const sel = '#slack details[data-ms-advanced] input[name="ms-token"]';
+		await waitFor(v, `document.querySelector('${sel}')`);
+		await type(v, sel, "xoxb-typed");
+		await waitFor(v, `!document.querySelector("#slack [data-ms-save]").disabled`);
+		puts.length = 0;
+		await click(v, "#slack [data-ms-save]");
+		await waitFor(v, `document.querySelector('#slack [data-set="token"]')`);
+		expect(puts).toEqual([{ values: { token: "xoxb-typed" } }]);
+		expect(await ev<string>(v, `document.querySelector('${sel}').value`)).toBe("");
+	}, 30_000);
+
 	test("켜기 sends enabled=true and reloads the row", async () => {
 		const v = await open(1280, 800, "light", "jandi");
 		puts.length = 0;
