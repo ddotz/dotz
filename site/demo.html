@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="dotz 웹 앱을 만들어 낸 데이터로 직접 써 보는 데모입니다. 실제 서버에 연결하지 않습니다.">
+<title>dotz — 데모</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="demo/app.css">
+<style>
+:root { --demobar-h: 44px; }
+.demo-bar { position: fixed; inset: 0 0 auto 0; z-index: 3000; display: flex; align-items: center; gap: 10px; height: var(--demobar-h); padding: 0 12px 0 16px; border-bottom: 1px solid var(--line); background: var(--card); color: var(--fg); font-family: var(--font); }
+.demo-brand { flex: none; font: 700 15px/20px var(--font); letter-spacing: -.02em; color: var(--fg); text-decoration: none; }
+.demo-tag { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-size: 12px; line-height: 18px; }
+.demo-back { flex: none; display: inline-flex; align-items: center; height: 32px; padding: 0 10px; border-radius: 8px; color: var(--accent); font-size: 12px; font-weight: 600; text-decoration: none; }
+.demo-back:hover { background: var(--hover); }
+.demo-brand:focus-visible, .demo-back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app { height: calc(100dvh - var(--demobar-h)); margin-top: var(--demobar-h); }
+@media (max-width: 640px) {
+  .demo-bar { gap: 8px; padding: 0 8px 0 14px; }
+  .demo-tag { font-size: 11px; }
+  .demo-back { padding: 0 8px; }
+}
+</style>
+<script>
+(() => {
+  const mq = matchMedia("(prefers-color-scheme: dark)");
+  const saved = () => { const v = localStorage.getItem("dotz-theme"); return v === "light" || v === "dark" ? v : null; };
+  const get = () => saved() || (mq.matches ? "dark" : "light");
+  const apply = () => { document.documentElement.dataset.theme = get() === "dark" ? "dark" : "light"; };
+  mq.addEventListener("change", apply);
+  window.dotzTheme = { get, toggle: () => { localStorage.setItem("dotz-theme", get() === "dark" ? "light" : "dark"); apply(); return get(); } };
+  apply();
+})();
+</script>
+<script>
+window.__demoLog = { errors: [], warnings: [] };
+addEventListener("error", e => __demoLog.errors.push(`${e.message} @ ${String(e.filename || "").split("/").pop()}:${e.lineno}:${e.colno} ${e.error && e.error.stack ? e.error.stack : ""}`));
+addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reason && e.reason.message || e.reason)));
+{ const e = console.error; console.error = (...a) => { __demoLog.errors.push(a.map(String).join(" ")); e(...a); }; const w = console.warn; console.warn = (...a) => { __demoLog.warnings.push(a.map(String).join(" ")); w(...a); }; }
+</script>
+<script src="demo/fixtures.js"></script>
+<script src="demo/demo-api.js"></script>
+</head>
+<body>
+<header class="demo-bar">
+  <a class="demo-brand" href="index.html" aria-label="dotz 랜딩으로">dotz</a>
+  <span class="demo-tag">데모 · 실제 서버에 연결하지 않아요</span>
+  <a class="demo-back" href="index.html">랜딩으로</a>
+</header>
+
+<div class="app" id="app">
+  <aside class="side">
+    <button class="brand" id="brand" type="button" aria-label="홈으로"><span class="logo"></span><span id="brand-name">dotz</span></button>
+    <nav class="rail" id="nav" aria-label="메뉴"></nav>
+  </aside>
+  <div class="main">
+    <header class="appbar" id="appbar">
+      <button class="ib" id="back" type="button" aria-label="뒤로" hidden></button>
+      <h1 id="title">dotz</h1>
+      <button class="pchip" id="pchip" type="button" aria-haspopup="dialog" hidden></button>
+      <div class="thead" id="thead" data-mode="chat" hidden></div>
+      <button class="conn" id="conn" type="button" hidden>연결 끊김 · 다시 연결 중</button>
+      <button class="ib" id="vtog" type="button" hidden></button>
+      <button class="ib cmdk" id="cmdk" type="button" aria-label="명령"></button>
+      <button class="ustrip" id="ustrip" type="button" hidden></button>
+    </header>
+    <div class="gban" id="gban" role="status" hidden><span class="dot" id="gban-dot"></span><span class="tx" id="gban-tx"></span><button class="x" id="gban-x" type="button" aria-label="재시작 알림 닫기">×</button></div>
+    <button class="trban" id="trban" type="button" hidden></button>
+    <div class="oerr" id="oerr" role="alert" hidden><span class="dot warn"></span><span class="tx" id="oerr-tx"></span><button class="btn" id="oerr-btn" type="button">오케스트레이터 다시 시작</button></div>
+    <div class="views" id="views">
+      <section class="view" id="v-home" hidden><div id="home-now"></div><div class="sec" id="home-sec">상태</div><div id="home-cards"></div><div id="home-custom"></div></section>
+      <section class="view" id="v-project" hidden></section>
+      <section class="view" id="v-projects" hidden></section>
+      <section class="view fill" id="v-monitoring" hidden>
+        <aside class="cv-side" id="mon-side" aria-label="모니터링 목록"></aside>
+        <div class="cv-head" id="mon-head"></div>
+        <div class="chatbox"><div class="timeline" id="mon-timeline"><div class="tl-in" id="mon-tl"></div></div></div>
+      </section>
+      <section class="view fill" id="v-chat" hidden>
+        <div class="subs" hidden></div>
+        <div class="todo" id="todo" hidden></div>
+        <div class="bell" id="bell-tabs" role="tablist" aria-label="알림 종류" hidden></div>
+        <div class="bell-list" id="bell-list" hidden></div>
+        <div class="chatbox">
+          <div class="timeline" id="timeline"><div class="tl-in" id="tl"><div class="tl-top" id="tl-top" hidden><button class="btn text tl-more" id="tl-more" type="button" hidden>이전 메시지 더 보기</button></div></div></div>
+          <button class="btn tonal jump" id="chat-jump" type="button" aria-label="맨 아래로" title="맨 아래로" hidden></button>
+        </div>
+        <div class="composer" id="composer">
+          <section class="dcard" id="dcard" aria-label="답변 필요" hidden></section>
+          <div class="qlist" id="queue" hidden></div>
+          <div class="hintrow" id="hints" hidden></div>
+          <div class="runstate" id="runstate" role="status" hidden><span class="dot" id="runstate-dot"></span><span class="rs-tx" id="runstate-tx"></span><button class="btn text rs-go" id="runstate-act" type="button" hidden></button></div>
+          <div class="pausenote" id="pausenote" role="status" hidden></div>
+          <div class="runline" id="runline" hidden><span class="dot pri"></span><span id="runline-tx"></span></div>
+          <form class="sendrow" id="send">
+            <div class="atray" id="atray" hidden></div>
+            <input type="file" id="c-file" multiple hidden>
+            <input type="file" id="c-photo" accept="image/*" multiple hidden>
+            <span class="prompt" aria-hidden="true">&gt;</span>
+            <textarea id="text" rows="1" autocomplete="off" placeholder="메시지 또는 /명령" aria-label="메시지"></textarea>
+            <div class="cbar" id="cbar">
+              <button class="cchip" type="button" id="c-attach" aria-label="파일 첨부" title="파일 첨부 · 끌어다 놓거나 붙여넣기도 돼요"></button>
+              <span class="cchip cown" id="c-own" hidden></span>
+              <button class="cchip" type="button" id="c-model" aria-haspopup="listbox" hidden></button>
+              <button class="cchip" type="button" id="c-effort" aria-haspopup="listbox" hidden></button>
+              <span class="cchip cown" id="c-worker" hidden></span>
+              <button class="cchip" type="button" id="ctx-ring" hidden></button>
+              <span class="cchip capi" id="c-api" hidden>api사용중</span>
+              <span class="cchip capi" id="c-fb" hidden></span>
+              <div class="working" id="working" hidden><span class="dot pri"></span><span id="working-tx"></span><span class="sp"></span><button class="btn text" type="button" id="working-stop">중단</button></div>
+            </div>
+            <button class="ib pri" type="submit" aria-label="보내기" id="send-btn"></button>
+          </form>
+        </div>
+      </section>
+      <section class="view fill" id="v-activity" hidden>
+        <div class="subs" hidden></div>
+        <div class="termbox">
+          <div class="term" id="term"></div>
+          <button class="btn tonal jump" id="act-jump" type="button" aria-label="맨 아래로" title="맨 아래로" hidden></button>
+        </div>
+      </section>
+      <section class="view fill" id="v-apps" hidden>
+        <aside class="cv-side" id="apps-side" aria-label="앱 목록"></aside>
+        <div class="apps-pane" id="apps-pane"></div>
+      </section>
+      <section class="view" id="v-harness" hidden><div id="harness"></div></section>
+      <section class="view" id="v-settings" hidden><div id="settings"></div></section>
+      <section class="view" id="v-models" hidden><div id="models"></div></section>
+      <section class="view" id="v-providers" hidden><div id="providers"></div></section>
+      <section class="view" id="v-usage" hidden><div id="usage"></div></section>
+      <section class="view" id="v-context" hidden><div id="context"></div></section>
+      <section class="view" id="v-discord" hidden><div id="discord"></div></section>
+      <section class="view" id="v-messengers" hidden><div id="messengers"></div></section>
+      <section class="view" id="v-devices" hidden><div id="devices"></div></section>
+      <section class="view" id="v-webaccess" hidden><div id="webaccess"></div></section>
+    </div>
+  </div>
+</div>
+<aside class="sheet" id="sheet" role="dialog" aria-label="서브에이전트" hidden>
+  <div class="sh-head">
+    <button class="ib" id="sh-back" type="button" aria-label="목록으로" hidden></button>
+    <div class="sh-t"><div class="sh-name" id="sh-name"></div><div class="sup" id="sh-sub"></div></div>
+    <span class="tag" id="sh-tag"></span>
+    <button class="ib" id="sh-close" type="button" aria-label="닫기"></button>
+  </div>
+  <div class="sh-body" id="sh-body"></div>
+</aside>
+<aside class="sheet" id="hsheet" role="dialog" aria-label="구성 상세" hidden>
+  <div class="sh-head">
+    <div class="sh-t"><div class="sh-name" id="hs-name"></div><div class="sup" id="hs-sub"></div></div>
+    <span class="tag" id="hs-tag"></span>
+    <button class="ib" id="hs-close" type="button" aria-label="닫기"></button>
+  </div>
+  <div class="sh-body" id="hs-body"></div>
+</aside>
+<script src="demo/app.js"></script>
+</body>
+</html>

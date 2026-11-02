@@ -369,6 +369,14 @@ a:hover {
   margin-top: 24px;
 }
 
+.cta-note {
+  max-width: 52ch;
+  margin-top: 12px;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
