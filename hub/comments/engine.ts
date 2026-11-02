@@ -47,6 +47,7 @@ const MATCH_NOTE = /^(메일 대조|근거|초안 메모):/;
 export const appOf = (src: Pick<SourceConfig, "kind">): string => (src.kind === "website" ? "site" : src.kind);
 export const OFF_REASON = "댓글 답글이 꺼져 있어요. 앱 설정에서 켜 주세요";
 const MAX_AUTO_PER_RUN = 5;
+const MAX_QUEUE = 200;
 const DEFAULT_EVERY_MIN = 5;
 const SAMPLES = 5;
 const CONTEXT_COMMENTS = 6;
@@ -221,20 +222,32 @@ export function createEngine(deps: EngineDeps) {
 
 	// The script part of the watch: reads new comments of every source the owner chose, stores the new ids, then (only for sources with
 	// auto-draft on) drafts, and (only with the owner's rule) sends through the gate. Nothing is read for a source with nothing chosen.
-	async function collect(opts: { force?: boolean } = {}): Promise<{ added: Comment[]; drafted: Draft[]; sent: Reply[]; errors: Record<string, string> }> {
+	// New comments that need an auto-draft go to the source's queue (cursors.json) before any model call; a run drafts at most
+	// MAX_AUTO_PER_RUN of them and starts nothing after `deadline` (the watch's run budget), so the rest waits for the next run. A comment
+	// leaves the queue only after its draft is stored, and one that already has a draft is skipped: a run killed mid-draft loses nothing and
+	// drafts nothing twice.
+	async function collect(opts: { force?: boolean; deadline?: number } = {}): Promise<{ added: Comment[]; drafted: Draft[]; sent: Reply[]; errors: Record<string, string> }> {
 		const out = { added: [] as Comment[], drafted: [] as Draft[], sent: [] as Reply[], errors: {} as Record<string, string> };
 		const cfg = store.config();
 		if (!cfg.enabled) return out;
+		const late = () => opts.deadline !== undefined && deps.now() >= opts.deadline;
 		for (const src of Object.values(cfg.sources)) {
 			const adapter = deps.adapters[src.kind];
 			if (!adapter || !src.watch.length) continue;
+			if (late()) break;
 			const prior = store.cursors()[src.key] ?? {};
-			if (!opts.force && prior.ranAt && deps.now() - prior.ranAt < (src.everyMin ?? DEFAULT_EVERY_MIN) * 60_000) continue;
+			if (!opts.force && prior.ranAt && deps.now() - prior.ranAt < (src.everyMin ?? DEFAULT_EVERY_MIN) * 60_000) {
+				await autoDrafts(src, out, late);
+				continue;
+			}
 			let fresh: Comment[];
 			try {
 				const res = await adapter.list(src, prior.cursor);
 				fresh = store.addComments(res.comments.filter(r => watches(src, r.thread)).map(r => toComment(src, r, deps.collector)));
-				store.setCursor(src.key, { cursor: res.cursor ?? prior.cursor, ranAt: deps.now(), ...(res.error ? { error: clip(res.error, 160) } : {}) });
+				const wanted = src.autoDraft && replyOn(src) ? fresh.filter(c => c.at >= (src.autoSince ?? 0) && needsReply(c)).map(c => c.id) : [];
+				// Bounded (a flood of new comments keeps the newest MAX_QUEUE): cursors.json is read on every run.
+				const queue = [...new Set([...(prior.queue ?? []), ...wanted])].slice(-MAX_QUEUE);
+				store.setCursor(src.key, { cursor: res.cursor ?? prior.cursor, ranAt: deps.now(), ...(res.error ? { error: clip(res.error, 160) } : {}), ...(queue.length ? { queue } : {}) });
 				if (res.error) out.errors[src.key] = clip(res.error, 160);
 			} catch (e) {
 				const reason = e instanceof Error ? clip(e.message, 160) : "읽지 못했어요";
@@ -245,22 +258,37 @@ export function createEngine(deps: EngineDeps) {
 			await retitle(src, adapter);
 			out.added.push(...fresh);
 			for (const t of new Set(fresh.map(c => c.thread))) emit({ kind: "comment", source: src.key, thread: t });
-			if (!src.autoDraft || !replyOn(src)) continue;
-			let made = 0;
-			for (const c of fresh) {
-				if (made >= MAX_AUTO_PER_RUN) break;
-				if (c.at < (src.autoSince ?? 0) || !needsReply(c)) continue;
-				made++;
-				const step = await makeDraft(c.id);
-				if (!step.ok) continue;
-				out.drafted.push(step.draft);
-				if (ruleAllows(src, c.text)) {
-					const r = send(step.draft.code, { by: "rule" });
-					if (r.ok) out.sent.push(await r.done);
-				}
-			}
+			await autoDrafts(src, out, late);
 		}
 		return out;
+	}
+
+	async function autoDrafts(src: SourceConfig, out: { drafted: Draft[]; sent: Reply[] }, late: () => boolean): Promise<void> {
+		if (!src.autoDraft || !replyOn(src)) return;
+		const done = (id: string) => {
+			const cur = store.cursors()[src.key] ?? {};
+			const queue = (cur.queue ?? []).filter(x => x !== id);
+			const { queue: _q, ...rest } = cur;
+			store.setCursor(src.key, { ...rest, ...(queue.length ? { queue } : {}) });
+		};
+		let made = 0;
+		for (const id of store.cursors()[src.key]?.queue ?? []) {
+			if (made >= MAX_AUTO_PER_RUN || late()) break;
+			const c = find(id);
+			if (!c || store.drafts().some(d => d.commentId === id) || !needsReply(c)) {
+				done(id);
+				continue;
+			}
+			made++;
+			const step = await makeDraft(c.id);
+			done(id);
+			if (!step.ok) continue;
+			out.drafted.push(step.draft);
+			if (ruleAllows(src, c.text)) {
+				const r = send(step.draft.code, { by: "rule" });
+				if (r.ok) out.sent.push(await r.done);
+			}
+		}
 	}
 
 	// Stored comments that were collected without a post title (the title was not readable then) get it now; a failure leaves them for the next poll.

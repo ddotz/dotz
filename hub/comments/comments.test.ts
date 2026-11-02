@@ -138,6 +138,39 @@ describe("drafts only on request", () => {
 		expect(t.prompts).toHaveLength(1);
 	});
 
+	test("a run drafts at most 5; the rest waits in the queue for the next run and nothing is drafted twice", async () => {
+		const t = setup([src({ autoDraft: true, autoSince: 0 })]);
+		t.state.pages = [Array.from({ length: 7 }, (_, i) => raw(`c${i}`))];
+		const first = await t.engine.collect({ force: true });
+		expect(first.drafted).toHaveLength(5);
+		const queued = t.engine.store.cursors().youtube!.queue!;
+		expect(queued).toEqual([commentId("youtube", "c5"), commentId("youtube", "c6")]);
+		// A run killed after a draft was stored but before the queue was written: that comment is not drafted again.
+		t.engine.store.setCursor("youtube", { ...t.engine.store.cursors().youtube, queue: [commentId("youtube", "c0"), ...queued] });
+		const second = await t.engine.collect({ force: true });
+		expect(second.drafted.map(d => d.commentId)).toEqual(queued);
+		expect(t.engine.store.cursors().youtube!.queue).toBeUndefined();
+		expect(new Set(t.engine.store.drafts().map(d => d.commentId)).size).toBe(7);
+		expect(t.prompts).toHaveLength(7);
+	});
+
+	test("past the run's deadline nothing is read or drafted, and the queue is kept", async () => {
+		let at = NOW;
+		const t = setup([src({ autoDraft: true, autoSince: 0 })], { clock: () => at });
+		expect((await t.engine.collect({ force: true, deadline: NOW - 1 })).added).toHaveLength(0);
+		expect(t.state.listCalls).toBe(0);
+		// The read itself runs past the deadline: the comment is stored and queued, no draft is started.
+		t.state.pages = { shift: () => ((at = NOW + 10), [raw("c1")]) } as unknown as RawComment[][];
+		const late = await t.engine.collect({ force: true, deadline: NOW + 5 });
+		expect(late.added).toHaveLength(1);
+		expect(late.drafted).toHaveLength(0);
+		expect(t.engine.store.cursors().youtube!.queue).toEqual([commentId("youtube", "c1")]);
+		// The next run drafts it from the queue even before the source is due to be read again.
+		const next = await t.engine.collect({ deadline: NOW + 60_000 });
+		expect(next.drafted.map(d => d.commentId)).toEqual([commentId("youtube", "c1")]);
+		expect(t.state.listCalls).toBe(1);
+	});
+
 	test("a skip from the model makes no draft", async () => {
 		const t = setup([src()], { model: async () => ({ text: `\`\`\`json\n${JSON.stringify({ action: "skip", reason: "spam", to: "", body: "", questions: [] })}\n\`\`\`` }) });
 		t.state.pages = [[raw("c1")]];
@@ -329,6 +362,15 @@ console.log(JSON.stringify({ comments: all.filter(c => Number(c.id) > since), cu
 		return { read, post };
 	};
 	const site = (read: string, post: string): SourceConfig => ({ key: "site-blog", kind: "website", label: "웹사이트 댓글 (blog)", watch: ["*"], autoDraft: false, site: { read: { kind: "script", command: ["bun", read] }, post: { kind: "script", command: ["bun", post] } } });
+
+	test("a script whose helper keeps its output open, or that runs too long, does not hold the run", async () => {
+		const helper = ["sh", "-c", 'sleep 30 & echo \'{"comments":[]}\''];
+		// Both sleep 30 s: a hang would fail this test at its 15 s limit.
+		const r = await bunExec(helper);
+		expect(r).toMatchObject({ code: 0, stdout: '{"comments":[]}\n' });
+		const slow = await bunExec(["sh", "-c", "sleep 30"], undefined, 300);
+		expect(slow.code).not.toBe(0);
+	}, 15_000);
 
 	test("reads through a fixture script with a cursor, drafts, and posts through the post script once", async () => {
 		const { read, post } = fixtureDir();
