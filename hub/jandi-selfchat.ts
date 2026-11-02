@@ -8,7 +8,7 @@ import { readSecretFile, writeSecretFile } from "./secretbox.ts";
 // the keyword reach dotz. Replies still go out through the room's Incoming Webhook. This uses the JANDI web client's API, which JANDI does
 // not document: a JANDI change can break it, and the adapter then shows the error instead of guessing.
 
-export type SelfChatConfig = { enabled: boolean; team_id: number; room_id: number; member_id: number; bot_id: number; keyword: string; session_secret: string; interval_ms: number };
+export type SelfChatConfig = { enabled: boolean; team_id: number; room_id: number; member_id: number; bot_id: number; keyword: string; reply_prefix: string; session_secret: string; interval_ms: number };
 export type SelfChatDeps = {
 	dataDir: string;
 	fetch?: typeof fetch;
@@ -39,6 +39,7 @@ export function normalizeSelfChat(raw: unknown): SelfChatConfig | undefined {
 		member_id: int(o.member_id),
 		bot_id: int(o.bot_id),
 		keyword,
+		reply_prefix: typeof o.reply_prefix === "string" ? o.reply_prefix.trim().slice(0, 30) : "",
 		session_secret: secret,
 		interval_ms: Number.isInteger(ms) && ms >= 1000 ? ms : 3000,
 	};

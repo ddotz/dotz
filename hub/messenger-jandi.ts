@@ -419,7 +419,8 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 		if (!dests.length && msg.kind === "project") dests = ready.filter(r => r.room.kind === "main");
 		dests = dests.filter((d, i) => dests.findIndex(x => x.url === d.url) === i);
 		if (!dests.length) return { delivered: false, reason: "no room" };
-		const parts = splitText(msg.text);
+		const prefix = cfg.self_chat?.enabled && cfg.self_chat.reply_prefix ? `${cfg.self_chat.reply_prefix} ` : "";
+		const parts = splitText(msg.text, MAX_PART - prefix.length).map(p => prefix + p);
 		const ask = msg.options?.length ? { title: "선택지", description: msg.options.map(o => `${o.n}) ${o.label}`).join("\n") } : undefined;
 		const color = ask ? "#FAC11B" : msg.kind === "alert" ? "#E5484D" : undefined;
 		let failed: unknown;
