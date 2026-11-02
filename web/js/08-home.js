@@ -252,6 +252,15 @@ function homeRepliesRow(n) {
     el("span", { class: "dot att" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: "답장 확인" })), el("span", { class: "ha", text: "보내기 전에 확인할 답장 초안이 있어요" })),
     el("span", { class: "hs warn", text: `${n}건` }));
 }
+// Work deferred to the usage-limit reset (hub/limitwait.ts, /api/state `deferred`): a row of 지금 진행 중 with the badge drawn from resume_at.
+const limitBadge = t => { const d = new Date(t || NaN); return isNaN(d) ? "한도 리셋되면 재개" : `한도 리셋되면 재개 (${d.toLocaleTimeString("en-GB", { ...KST, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })})`; };
+function homeLimitRow(d) {
+  const what = String(d.what || d.id).replace(/^\s*\[한도 리셋 뒤 재개 \d{1,2}:\d{2}\]\s*/, "");
+  return el("div", { class: "hr st", "data-wait": d.id },
+    el("span", { class: "dot" }),
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: what })), d.next ? el("span", { class: "ha", text: d.next }) : null),
+    el("span", { class: "hs", text: limitBadge(d.resume_at) }));
+}
 function renderHomeNow() {
   const box = $("#home-now");
   if (!box) return;
@@ -269,7 +278,7 @@ function renderHomeNow() {
   const mainBg = new Set(workRunning().map(w => w.id));
   const convT = ((S && S.convs) || []).filter(c => validTarget(convWebT(c.target)) && convRunning(c) && !(runOf(c.target).work && mainBg.has(runOf(c.target).work)));
   const convWork = convT.flatMap(c => [c, ...(c.work || []).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
-  const bg = workRunning(), ended = workEnded(), working = runT.length + convWork.length + bg.length;
+  const bg = workRunning(), ended = workEnded(), working = runT.length + convWork.length + bg.length, deferred = (S && S.deferred) || [];
   const restRow = t => homeNowRow(t, !targetInfo(t).alive ? "종료됨" : runBusy(t) ? "진행 중" : statusKo(targetInfo(t).status), "");
   clear(box).append(
     // Three kinds, three places: 답변 필요 (a decision only the owner can make), 답장 대기 (replies he owes, per app), 지금 진행 중; plain news is the 알림 card.
@@ -277,7 +286,7 @@ function renderHomeNow() {
     nyListNode(needs),
     ...(owed.length || drafts ? [el("div", { class: "hn-h" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null), el("div", { class: "hn" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : []),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), working ? el("span", { class: "sup", text: `${working}개 작업 중` }) : null),
-    el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...(working ? [] : [el("div", { class: "empty", text: "진행 중인 작업이 없어요" })])),
+    el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow), ...(working || deferred.length ? [] : [el("div", { class: "empty", text: "진행 중인 작업이 없어요" })])),
     ...(restT.length ? [el("div", { class: "hn-h" }, el("h2", { text: "대기 중" })), el("div", { class: "hn", "data-k": "waiting" }, ...restT.map(restRow))] : []),
     ...(ended.length ? [el("div", { class: "hn-h" }, el("h2", { text: "최근 끝난 작업" })), el("div", { class: "hn", "data-k": "ended-work" }, ...ended.map(workRow))] : []),
     endedGroup() || "");

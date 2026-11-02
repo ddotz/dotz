@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
 import { writeAtomic } from "./config.ts";
+import { isLimitWait, withoutLimitWait } from "./limitwait.ts";
 import { TEMP_PATH } from "./live-guard.ts";
 
 const DAY = 86_400_000;
@@ -136,6 +137,10 @@ export function waitsForOwner(task: OpenTask): boolean {
 	return [task.next, task.what].some(v => typeof v === "string" && OWNER_WAIT_RE.test(v));
 }
 
+// A task deferred to the usage-limit reset (hub/limitwait.ts) waits for a lane that has not started yet, so it stays while its
+// resume_at is recent; once that is LIMIT_WAIT_STALE_MS past, the wait fields go and it is an ordinary task again.
+export const LIMIT_WAIT_STALE_MS = 12 * 3600_000;
+
 // isDead returns the reason a lane counts as ended, or undefined while it may still come back.
 export function closeDeadLaneTasks(stateFile: string, historyFile: string, isDead: (lane: string) => string | undefined, now = Date.now()): OpenTask[] {
 	if (!existsSync(stateFile)) return [];
@@ -143,7 +148,17 @@ export function closeDeadLaneTasks(stateFile: string, historyFile: string, isDea
 	if (!Array.isArray(state?.open_tasks)) return [];
 	const keep: OpenTask[] = [];
 	const closed: OpenTask[] = [];
-	for (const task of state.open_tasks as OpenTask[]) {
+	let stale = 0;
+	for (const listed of state.open_tasks as OpenTask[]) {
+		let task = listed;
+		if (task && isLimitWait(task)) {
+			if (Date.parse(String(task.resume_at)) > now - LIMIT_WAIT_STALE_MS) {
+				keep.push(task);
+				continue;
+			}
+			task = withoutLimitWait(task) as OpenTask;
+			stale++;
+		}
 		const reason = typeof task?.lane === "string" ? isDead(task.lane) : undefined;
 		if (!reason || waitsForOwner(task)) {
 			keep.push(task);
@@ -152,6 +167,6 @@ export function closeDeadLaneTasks(stateFile: string, historyFile: string, isDea
 		closed.push(task);
 		appendFileSync(historyFile, `${JSON.stringify({ ...task, closed_at: new Date(now).toISOString(), closed_reason: reason })}\n`);
 	}
-	if (closed.length) writeAtomic(stateFile, `${JSON.stringify({ ...state, open_tasks: keep }, null, 2)}\n`);
+	if (closed.length || stale) writeAtomic(stateFile, `${JSON.stringify({ ...state, open_tasks: keep }, null, 2)}\n`);
 	return closed;
 }

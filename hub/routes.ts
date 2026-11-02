@@ -9,6 +9,7 @@ import { cloudflareGate } from "./devices.ts";
 import { createWebAccess, webAccessRoute } from "./web-access.ts";
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
+import { limitWaits } from "./limitwait.ts";
 import { keyedSelector, keyFileOk, spendOnKey } from "./fallback.ts";
 import { changeTarget, ControlError, targetView, ForceRequired, looksLikeCommand, parseCommand } from "./control.ts";
 import * as discord from "./discord.ts";
@@ -421,7 +422,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), work_now: Date.now(), web_build: webBuild() });
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), deferred: limitWaits(join(DATA_DIR, "state.json")), work_now: Date.now(), web_build: webBuild() });
 		if (req.method === "GET" && url.pathname === "/api/notices") syncCardFiles();
 		if (req.method === "GET" && url.pathname === "/api/notices") return json({ ...listNotices(Number(url.searchParams.get("limit") ?? 100)), gone: dismissedAlertAts() });
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
