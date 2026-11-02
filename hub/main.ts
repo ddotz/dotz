@@ -31,7 +31,7 @@ import { approvesBudget, laneBusy, lanes, restoreLanes, sendToLane, setIdleHandl
 import { setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
 import { announceUsedChanges } from "./accounts-api.ts";
-import { runtimeFor } from "./runtime/index.ts";
+import { activeHarness, runtimeFor } from "./runtime/index.ts";
 import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch, orchBusy, resumeAfterError, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator, turnFailed } from "./orchestrator.ts";
 import { errorAsk, startErrorWatch } from "./orch-error.ts";
 import { queuedTargets } from "./queue.ts";
@@ -44,6 +44,7 @@ import { syncFeatureWatches } from "./features.ts";
 import { startSchedules, stopSchedules } from "./schedule.ts";
 import { syncRoutineSchedules } from "./custom.ts";
 import { startHarnessUpdate } from "./update.ts";
+import { startOmoEngineWatch } from "./runtime/omo-engine-watch.ts";
 import { runMigrations } from "./migrations.ts";
 import { applyAndSave, defaultExec, onUpdateResolved, startSelfUpdate, updateBoot, diskCommit } from "./selfupdate.ts";
 import { createUpdateNow, setUpdateNow, updateNow } from "./update-now.ts";
@@ -382,6 +383,8 @@ setUpdateNow(createUpdateNow({
 }));
 let replayed = 0;
 if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
+	// OmO updated on disk under the running gateway: restart at the next idle point (hub/runtime/omo-engine-watch.ts, #26).
+	if (activeHarness().ids.includes("omo")) startOmoEngineWatch(restartGateway);
 	startOrchestrator();
 	replayed = replayPending();
 	// Messages held for an update go in after the open prompts, in arrival order.
