@@ -94,6 +94,9 @@ function cmSourceNode(s) {
       kkSwitch(all, `${s.label} 전부 지켜보기`, "all", v => cmUpdate(s, { watch: v ? ["*"] : [] }))),
     el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "자동 초안" })),
       kkSwitch(!!s.autoDraft, `${s.label} 자동 초안`, "auto", v => cmUpdate(s, { autoDraft: v }), true)),
+    // Config-only: the mail app (`mailApp`) is set in the source config (docs/comments-api.md); without it the card says no mail was made.
+    el("div", { class: "kk-pr" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "파일 요청 메일 초안" })),
+      kkSwitch(!!s.autoMail, `${s.label} 파일 요청 메일 초안`, "mail", v => cmUpdate(s, { autoMail: v }), true)),
     el("button", { class: "btn text", type: "button", "data-k": "posts", text: "지켜볼 글 고르기", onclick: () => cmPosts(s) }));
   if (p) {
     if (p.loading) node.append(el("div", { class: "kk-note", text: "불러오는 중…" }));
@@ -196,14 +199,15 @@ function cmMarkRead() {
   CM.readSent = `${t.source}/${t.thread}/${last}`;
   cmApi(`${cmUrl(t)}/read`, "POST", {}).then(() => { v.read = last; cmIntgSoon(); cmLoad(); }).catch(() => {});
 }
-function cmCommentNode(c, by, first) {
+// `nested`: drawn under the comment it answers (cmThreadNodes), so the bubble does not repeat who it answers; his own are marked 나 / 내 답글.
+function cmCommentNode(c, by, first, nested) {
   const parent = c.parent ? by.get(c.parent) : null;
-  const bub = el("div", { class: "kk-bub" }, parent ? el("div", { class: "kk-reply", text: `↳ ${parent.author}` }) : null, el("span", { text: c.text }));
+  const bub = el("div", { class: "kk-bub" }, parent && !nested ? el("div", { class: "kk-reply", text: `↳ ${parent.author}` }) : null, el("span", { text: c.text }));
   const mark = c.needsReply ? el("button", { class: "cchip kk-dbtn", type: "button", "data-k": "draft", disabled: CM.drafting.has(c.id) || CM.view.drafts.some(d => d.commentId === c.id), onclick: () => cmMakeDraft(c),
     text: CM.drafting.has(c.id) ? "초안 만드는 중…" : "답글 초안" }) : null;
-  if (c.mine) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-id": c.id }, el("div", { class: "kk-line" }, el("span", { class: "kk-time", text: kkTime(c.at) }), bub));
+  if (c.mine) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-id": c.id }, el("span", { class: "cm-mine", text: c.parent ? "나 · 내 답글" : "나" }), el("div", { class: "kk-line" }, el("span", { class: "kk-time", text: kkTime(c.at) }), bub));
   return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-id": c.id }, first ? kkAvatar(c.author) : el("span", { class: "kk-av sp", "aria-hidden": "true" }),
-    el("div", { class: "kk-mb" }, first ? el("div", { class: "kk-name", text: c.author }) : null, el("div", { class: "kk-line" }, bub, el("span", { class: "kk-time", text: kkTime(c.at) })), mark, c.unreplied ? el("div", { class: "kk-line" }, unrepPill(), unrepNo(`/api/comments/comment/${encodeURIComponent(c.id)}/no-reply`)) : null));
+    el("div", { class: "kk-mb" }, first ? el("div", { class: "kk-name", text: c.author }) : null, el("div", { class: "kk-line" }, bub, el("span", { class: "kk-time", text: kkTime(c.at) })), mark, c.unreplied || c.mail ? el("div", { class: "kk-line" }, c.unreplied ? unrepPill() : null, c.mail ? el("span", { class: "tag", "data-mail": c.mail.state, title: c.mail.label, text: c.mail.label }) : null, c.unreplied ? unrepNo(`/api/comments/comment/${encodeURIComponent(c.id)}/no-reply`) : null) : null));
 }
 // A reply that did not go out offers 다시 보내기 (the same text through the same gate) and 지우기 (the record goes, the draft stays), like KakaoTalk.
 const cmSendCall = (s, op) => cmApi(`/api/comments/sends/${enc(s.id)}/${op}`, "POST", {});
@@ -222,7 +226,7 @@ function cmSendNode(s) {
 function cmPaintChat(stick) {
   if (CM.tab === "dm") { dmPaintChat(); return; }
   const open = CM.open, v = CM.view;
-  cmFoot.hidden = !open || CM.loading || !!CM.viewErr || !v;
+  cmFoot.hidden = true;   // drafts sit under the comment they answer (cmThreadNodes), not pinned here
   const sig = open ? `${open.source}/${open.thread}/${open.title}/${v && v.thread.title}/${v && v.thread.thumb}` : "";
   if (sig !== CM.headSig) {
     CM.headSig = sig; clear(cmHead);
@@ -232,19 +236,38 @@ function cmPaintChat(stick) {
   if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: "글을 골라 주세요" })); return; }
   if (CM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
   if (CM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: CM.viewErr })); return; }
-  const by = new Map(v.comments.map(c => [c.id.split(":").slice(2).join(":"), c]));
-  const nodes = [cmPostCard(v.thread, v.source.kind)]; let prev = null;
-  for (const c of v.comments) {
-    if (!prev || kkDay(prev.at) !== kkDay(c.at)) nodes.push(el("div", { class: "kk-date", text: kkDate(c.at) }));
-    nodes.push(cmCommentNode(c, new Map([...by].map(([k, x]) => [k, x])), !prev || prev.author !== c.author || prev.mine !== c.mine || kkDay(prev.at) !== kkDay(c.at)));
-    prev = c;
-  }
-  nodes.push(...v.sends.filter(s => s.state !== "sent" || Date.now() - s.at < 120000).map(cmSendNode));
+  const nodes = [cmPostCard(v.thread, v.source.kind), ...cmThreadNodes(v)];
   const keep = cmTl.scrollTop;
   clear(cmIn).append(...nodes);
   cmTl.scrollTop = stick ? cmTl.scrollHeight : keep;
-  clear(cmDrafts).append(...v.drafts.map(cmDraftCard));
-  cmDrafts.hidden = !cmDrafts.firstChild;
+  clear(cmDrafts);
+  cmDrafts.hidden = true;
+}
+// Reply-style thread: each top-level comment with the replies under it (his own and others', indented), and a draft or a reply on its way
+// right under the comment it answers. A reply whose parent is not in the thread stands as a top-level comment.
+function cmThreadNodes(v) {
+  const native = c => c.id.split(":").slice(2).join(":");
+  const by = new Map(v.comments.map(c => [native(c), c]));
+  const rootOf = c => { let r = c; for (let n = 0; n < 8 && r.parent && by.get(r.parent); n++) r = by.get(r.parent); return r; };
+  const groups = new Map();
+  for (const c of v.comments) {
+    const r = rootOf(c), g = groups.get(r.id) || { root: r, replies: [] };
+    groups.set(r.id, g);
+    if (c !== r) g.replies.push(c);
+  }
+  const ids = new Set(v.comments.map(c => c.id));
+  const sends = v.sends.filter(s => s.state !== "sent" || Date.now() - s.at < 120000);
+  const under = c => [...v.drafts.filter(d => d.commentId === c.id).map(cmDraftCard), ...sends.filter(s => s.commentId === c.id).map(cmSendNode)];
+  const nodes = []; let day = null;
+  for (const { root, replies } of groups.values()) {
+    if (day === null || kkDay(day) !== kkDay(root.at)) nodes.push(el("div", { class: "kk-date", text: kkDate(root.at) }));
+    day = root.at;
+    const kids = [...under(root)]; let prev = null;
+    for (const r of replies) { kids.push(cmCommentNode(r, by, !prev || prev.author !== r.author || prev.mine !== r.mine, true), ...under(r)); prev = r; }
+    nodes.push(el("div", { class: "cm-th", "data-root": root.id }, cmCommentNode(root, by, true, false), kids.length ? el("div", { class: "cm-replies" }, ...kids) : null));
+  }
+  nodes.push(...v.drafts.filter(d => !ids.has(d.commentId)).map(cmDraftCard), ...sends.filter(s => !ids.has(s.commentId)).map(cmSendNode));
+  return nodes;
 }
 function cmPaintAll() {
   cmPane.classList.toggle("chat-open", !!(CM.tab === "dm" ? DM.open : CM.open));
@@ -285,7 +308,9 @@ function cmDraftCard(d) {
         drop: ev => run(ev.currentTarget, async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/drop`, "POST", {}); rqDroppedToast(d.mail ? null : () => cmRestore(d.code)); await cmReload(); }),
       } }) });
   const org = orgNodes({ ref: d.code, toLabel: "대상" }, null, wrap, card);
-  wrap.append(org.bar, el("div", { class: "od-stage" }, org.orig, card));
+  const cm = (CM.view.comments || []).find(c => c.id === d.commentId);
+  const quote = cm ? el("div", { class: "cm-dq" }, el("div", { class: "cm-dqh" }, el("b", { text: `↳ ${cm.author}` }), el("span", { text: new Date(cm.at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }) }), d.mailMark ? el("span", { class: "tag", "data-mail": d.mailMark.state, text: d.mailMark.label }) : null), el("div", { class: "cm-dqt", text: (cm.text ?? "").length > 200 ? `${cm.text.slice(0, 200)}…` : (cm.text ?? "") })) : null;
+  wrap.append(...(quote ? [quote] : []), org.bar, el("div", { class: "od-stage" }, org.orig, card));
   return wrap;
 }
 

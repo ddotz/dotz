@@ -7,7 +7,7 @@ One contract for the comments of every platform, shipped in `hub/comments/`, off
 
 - Comment id: `cm:<source>:<platform's own comment id>`. The same on every machine; `collector` only says who saw it first.
   Merging two lists is a union by id (`mergeComments`), the first copy wins.
-- A source is one account, channel or site: `{key, kind: youtube|instagram|website, label, watch[], autoDraft, autoSend?, everyMin?, site?}`.
+- A source is one account, channel or site: `{key, kind: youtube|instagram|website, label, watch[], autoDraft, autoSend?, everyMin?, site?, autoMail?, mailApp?}`.
   `watch` lists the post ids to follow (`"*"` = all). An empty `watch` reads nothing and costs nothing.
 - An adapter implements `list(src, cursor) -> {comments, cursor}` (comments newer than the adapter's own opaque cursor), `reply(src, comment, text, sendId)`,
   and optionally `posts(src)` (what the owner can choose to follow) and `ownReplies(src, limit)` (tone examples).
@@ -24,11 +24,23 @@ source with auto-draft on made a draft. No model call happens while collecting. 
 the comment stream, the post title and at most 5 of the owner's past replies (`tone/<source>.md`). Token use is stored on every draft
 (`tokens`; `estimated` when the model reports none) and shown by `bin/comments.ts status`.
 
+## Keeping comments true to the platform (reconcile)
+
+A stored comment must show what the platform shows now, on every read. `engine.reconcile()` is idempotent (a second run changes nothing, a closed draft is never reopened) and posts nothing:
+
+- An adapter may implement `recheck(src, open) -> {comments, gone}`: the engine hands it the still-open comments (top-level, waiting for a reply or holding a pending draft; at most 200 per run, oldest first, rotating) and it answers the owner's replies under them (`mine: true`, `parent` = the comment's native) and the natives that no longer exist. A comment found gone gets `gone` (a time, never cleared) and is no longer 미답장.
+- YouTube: `commentThreads.list?id=` (1 unit per 50 ids), `comments.list?parentId=` when a thread has more replies than returned; a thread missing from the answer is deleted. Instagram: the media of open comments are read again (paged); a reply's author comes from one `GET /{reply-id}?fields=username,from` and is kept in `authors.json` for good; replies are keyed by their real id (an old `<comment>.<index>` row is replaced, with its drafts, send record and 답장 안 함 moved along).
+- Website sources: the read output SHOULD include the owner's own replies (`mine: true`, `parent`) of the last 30 days, so answered comments close.
+- Every pending draft whose comment no longer waits (his reply is in the stream, the comment is gone, or 답장 안 함) becomes status `answered` with `closedReason` `answered-on-platform | deleted | dismissed`. A linked mail draft is detached and stays its own pending mail draft; the closed draft gets the note `확인: 댓글은 이미 답했어요. 메일은 따로 확인해 주세요`.
+- `collect()` ends with it (re-checking at most every 30 minutes unless forced), the gateway runs it once at start, and `POST /api/comments/reconcile` runs it now and answers `{answered, gone, draftsClosed, errors?}` (the backfill).
+
 ## Web
 
-`GET /api/comments/sources`, `PUT /api/comments/sources/<key>` `{watch?, autoDraft?}`, `GET /api/comments/sources/<key>/posts`,
+`GET /api/comments/sources`, `PUT /api/comments/sources/<key>` `{watch?, autoDraft?, autoMail?, mailApp?}`, `GET /api/comments/sources/<key>/posts`,
 `GET /api/comments/threads?app=<app instance id>` (youtube, instagram, site, or a site added as its own app: `site-<name>`, custom/apps.json `{"app":"site","filter":{"source":"<name>"}}`; each source lists the instance that owns it as `app`), `GET /api/comments/thread/<source>/<thread>`,
 `POST .../thread/<source>/<thread>/read`, `POST /api/comments/comment/<id>/draft` (no body: the model drafts; `{text, extra?}`: a draft written by a script outside, no model call, answers `{code}`; `extra` is shown to the owner as the note `함께 할 일: ...` so the script knows what else it does once `comment_send` says sent; such a draft is never auto-sent. `extra` may also be `{ note?, mail: { app, to, subject, body, attach?: string[], fromLibrary? } }`: the gateway then records a mail draft (hub/mail-cli.ts compose, not listed in the mail app on its own) and the one approval card shows the reply and then the mail; the owner's 보내기 posts the reply and then sends the mail, and `comment_send` carries `mail: "sent"|"failed"` (+ `mailReason`) once the mail was tried; a failed mail leaves the reply posted. `revise` takes `part: "reply"|"mail"` for such a draft, `drop` drops both, and a reply that carries a mail wakes no 이어서 할 일 rule), `POST /api/comments/drafts/<code>/send|drop|revise`.
+**Linked mail (`autoMail`, off by default).** With `autoMail: true` and `mailApp: "<mail app instance id>"` (e.g. `mail`, `mail-teaching`; config.json or the PUT above) a reply draft for a comment that asks for a file (`asksForFile`: 악보/MR/반주/음원/파일/PDF…) and writes an e-mail address also gets one compose mail draft (to = the address as written, files picked from the 첨부 파일 폴더 by the post title and the comment words), in the same card; the mail goes out only with the owner's 보내기. Without `mailApp` the card gets `확인: 메일 앱이 정해지지 않아 메일 초안은 만들지 않았어요`; a library miss is a `확인:` line. `POST /api/comments/link-mail` `{code}` does the same for an existing pending draft (backfill, idempotent) and answers `{ok:true, mail, existing?}` or `{ok:false, skipped:<reason>}`.
+The thread view marks each comment with its linked mail (`comments[].mail = {state: drafted|sent|failed, label}`; label `메일 초안 작성됨` / `메일 보냄` / `메일 실패: <이유>`), also for a comment answered outside the app whose mail draft stays; `GET /api/comments/drafts` and the thread's `drafts[]` carry `mailMark`.
 Events (ids only): `comment`, `comment_draft`, `comment_send`, `comment_sources`.
 모니터링 > 앱 has one entry per platform (유튜브, 인스타그램, 웹사이트 댓글) with the status line `답장 확인 N건 · 안 읽음 N`.
 

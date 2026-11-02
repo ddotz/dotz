@@ -15,11 +15,14 @@ export type SiteConfig = {
 	dm?: { read: { kind: "json" | "script"; url?: string; command?: string[] }; post: { kind: "webhook" | "script"; url?: string; command?: string[]; secret?: string } };
 };
 // One chosen source = one account/channel/site. `watch` lists the post ids to follow ("*" = all); empty = nothing is read (costs nothing).
-export type SourceConfig = { key: string; kind: SourceKind; label: string; watch: string[]; autoDraft: boolean; everyMin?: number; autoSince?: number; autoSend?: AutoSend; site?: SiteConfig; mailMatch?: boolean; pastSeed?: boolean };
+export type SourceConfig = { key: string; kind: SourceKind; label: string; watch: string[]; autoDraft: boolean; everyMin?: number; autoSince?: number; autoSend?: AutoSend; site?: SiteConfig; mailMatch?: boolean; pastSeed?: boolean;
+	/** A reply draft for a comment that asks for a file and names an e-mail address also gets a linked mail draft (engine.ts linkMail), written by `mailApp` (a mail app instance id, e.g. `mail` or `mail-teaching`). Off by default; without `mailApp` the card says no mail was made. */
+	autoMail?: boolean; mailApp?: string };
 export type CommentsConfig = { enabled: boolean; sources: Record<string, SourceConfig> };
 
 export type RawComment = { native: string; thread: string; parent?: string; author: string; text: string; postTitle: string; postLink?: string; thumb?: string; at: number; mine?: boolean };
-export type Comment = Omit<RawComment, "native" | "mine"> & { id: string; source: string; native: string; mine: boolean; collector: string };
+// `gone`: when a re-check (adapter.recheck) found the comment deleted on the platform; never cleared once set.
+export type Comment = Omit<RawComment, "native" | "mine"> & { id: string; source: string; native: string; mine: boolean; collector: string; gone?: number };
 export type Post = { id: string; title: string; link?: string; thumb?: string };
 // What an adapter shows for a post whose title it could not read yet. A stored comment with one of these gets its real title on a later poll (adapter.retitle).
 export const FALLBACK_TITLE = { youtube: "유튜브 영상", instagram: "인스타 게시물" } as const;
@@ -38,10 +41,12 @@ export type CommentAdapter = {
 	// The title, link and thumbnail of these posts (ids = Comment.thread), for stored comments that were collected without a title. Posts it cannot name are left out.
 	retitle?(src: SourceConfig, threads: string[]): Promise<Record<string, PostInfo>>;
 	ownReplies?(src: SourceConfig, limit: number): Promise<string[]>;
+	// Re-reads still-open comments (the engine hands over top-level comments that wait for a reply or hold a pending draft, plus stored rows an adapter
+	// may need to resolve) and answers with the owner's replies under them (mine: true, parent = the open comment's native) and the natives that no longer
+	// exist on the platform. A native is "gone" only when the platform was read completely. Throws on an API failure; nothing is posted.
+	recheck?(src: SourceConfig, open: Comment[]): Promise<{ comments: RawComment[]; gone: string[] }>;
 	// An answer of the owner that is no comment of his in the same stream (Instagram: he @mentioned the author under the post). `mine` = his stored comments of that thread.
 	answered?(c: Comment, mine: Comment[]): boolean;
-	// One cleanup pass over the stored comments (all sources) for what an older version of this adapter stored badly, no API call. Returns the corrected list, or undefined when nothing changed.
-	tidy?(src: SourceConfig, stored: Comment[]): Comment[] | undefined;
 };
 
 export const commentId = (source: string, native: string): string => `cm:${source}:${native}`;

@@ -4,9 +4,9 @@ import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import { loadStyle, recordCorrection } from "../../features/reply-drafts/lib/settings.ts";
 import { loadConfig, realCtx } from "../../features/youtube-instagram/lib/config.ts";
-import { commentsFor, mediaWithCounts, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
+import { commentsFor, commentsRead, mediaWithCounts, replyAuthor, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
 import { readCommentsSince } from "../../features/youtube-instagram/lib/yt-read.ts";
-import { ownReplies, recentUploads, replyToComment, videoInfos } from "../../features/youtube-instagram/lib/youtube.ts";
+import { ownReplies, recentUploads, replyToComment, threadsByIds, videoInfos } from "../../features/youtube-instagram/lib/youtube.ts";
 import { appBase, appEntries, commentOwner } from "../integrations.ts";
 import { featureEnabled } from "../app-feature-flags.ts";
 import { callReplyModel } from "../reply-model.ts";
@@ -15,7 +15,7 @@ import { realMailLink } from "./mail-link.ts";
 import type { MailQuery } from "./mail-match.ts";
 import { instagramAdapter, youtubeAdapter } from "./adapters/google-meta.ts";
 import { bunExec, websiteAdapter } from "./adapters/website.ts";
-import { commentsDir } from "./store.ts";
+import { commentsDir, createStore } from "./store.ts";
 
 const requireYoutube = () => {
 	const y = loadConfig().youtube;
@@ -35,6 +35,7 @@ export const realModel: DraftModel = async (system, user, app) => {
 
 export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<string, unknown>) => void; collector?: string; model?: DraftModel; sent?: EngineDeps["sent"]; mail?: MailLink } = {}): Engine {
 	const dir = commentsDir(dataDir);
+	const authors = createStore(dir);
 	const secretsDir = join(process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "secrets");
 	return createEngine({
 		dir,
@@ -59,7 +60,8 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		adapters: {
 			youtube: youtubeAdapter(() => ({
 				channelId: () => requireYoutube().channel_id,
-				threadsSince: async (id, since) => (await readCommentsSince(realCtx(), id, since, 3, { scope: "app", allowApi: true }))!,
+				threadsSince: async (id, since) => (await readCommentsSince(realCtx(), id, since, 3, { scope: "app", allowApi: true, answered: true }))!,
+				threadsByIds: (id, ids) => threadsByIds(realCtx(), id, ids),
 				uploads: id => recentUploads(realCtx(), id, 50),
 				videos: ids => videoInfos(realCtx(), ids),
 				reply: (parent, text) => replyToComment(realCtx(), parent, text),
@@ -70,6 +72,9 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 				userId: () => requireInstagram().user_id,
 				media: () => mediaWithCounts(realCtx(), 50),
 				comments: id => commentsFor(realCtx(), id),
+				read: id => commentsRead(realCtx(), id),
+				author: id => replyAuthor(realCtx(), id),
+				authorCache: { get: id => authors.authors()[id], put: e => authors.putAuthors(e) },
 				reply: (id, text) => igReply(realCtx(), id, text),
 			})),
 			// A site's JSON/RSS read or webhook post gets 30 s (a script gets 60 s in bunExec), so a hung site cannot hold the watch.

@@ -3,6 +3,8 @@
 // script lives next to it under ~/.dotz/custom/comments/sites/. Nothing here names a site.
 //
 // Script/JSON read output:  {"comments":[{"id","thread","parent?","author","text","postTitle?","postLink?","at"(ISO or ms),"mine?"}],"cursor?"}
+// The read output SHOULD include the owner's own replies (mine:true, parent) of the last 30 days, so answered comments close (the hub never sees
+// an answer given on the site otherwise).
 // A read script is run as `<command...> --since <cursor>`; a JSON endpoint gets `?since=<cursor>`.
 // Post body (webhook JSON, or stdin of the script): {"sendId","commentId","thread","parent?","text"}; answer {"ok":true,"ref?"} or {"ok":false,"reason"}.
 //

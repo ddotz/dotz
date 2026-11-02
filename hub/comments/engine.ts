@@ -1,9 +1,10 @@
 // The comment engine: collect (script only, no model), draft (a model call only on request or per-source auto-draft), send (only through
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
 import { generateReply, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
-import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
-import { fileSizeText, recipientCheck } from "../draft-approval.ts";
-import { createStore, type Draft, type MailOutcome, type Reply, type Tokens } from "./store.ts";
+import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, type RawComment, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
+import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
+import { asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts";
+import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Tokens } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
 import { pastContext, pastPairs, SEEDED_NOTE, similarPairs } from "./past.ts";
@@ -13,7 +14,10 @@ import { pastContext, pastPairs, SEEDED_NOTE, similarPairs } from "./past.ts";
 export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string };
 export type MailView = { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: number }[]; asksFile?: boolean; libraryMiss?: boolean };
 export type MailLink = {
-	compose: (spec: MailSpec) => Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
+	/** `notes` (owner-facing "확인: ..." lines) and `libraryMiss` (no file of the library fits) are what composing said besides the id. */
+	compose: (spec: MailSpec) => Promise<{ ok: true; id: string; notes?: string[]; libraryMiss?: boolean } | { ok: false; reason: string }>;
+	/** The status of a mail draft whatever it is ("pending", "sent", ...); missing = only pending drafts are known (`view`). */
+	state?: (id: string) => string | undefined;
 	/** Sends the mail draft; the reply was just posted by the owner's pick, so no second pick is asked. */
 	send: (id: string) => Promise<{ ok: boolean; text: string }>;
 	drop: (id: string) => void;
@@ -48,6 +52,16 @@ export const appOf = (src: Pick<SourceConfig, "kind">): string => (src.kind === 
 export const OFF_REASON = "댓글 답글이 꺼져 있어요. 앱 설정에서 켜 주세요";
 const MAX_AUTO_PER_RUN = 5;
 const MAX_QUEUE = 200;
+const RECHECK_CAP = 200;
+const RECHECK_EVERY_MS = 30 * 60_000;
+export const MAIL_KEPT_NOTE = "확인: 댓글은 이미 답했어요. 메일은 따로 확인해 주세요";
+export const MAIL_NO_APP_NOTE = "확인: 메일 앱이 정해지지 않아 메일 초안은 만들지 않았어요";
+const LIBRARY_MISS_NOTE = "확인: 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요";
+const ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/;
+/** The linked mail of a comment as the item shows it: 메일 초안 작성됨 / 메일 보냄 / 메일 실패: <이유>. */
+export type MailMark = { state: "drafted" | "sent" | "failed"; label: string };
+// `merged`: Instagram reply rows stored twice that became one (issue #31); only when there were any.
+export type ReconcileResult = { answered: number; gone: number; draftsClosed: number; merged?: number; errors?: Record<string, string> };
 const DEFAULT_EVERY_MIN = 5;
 const SAMPLES = 5;
 const CONTEXT_COMMENTS = 6;
@@ -60,14 +74,6 @@ export type Step = { ok: true; draft: Draft } | { ok: false; reason: string };
 
 export function createEngine(deps: EngineDeps) {
 	const store = createStore(deps.dir);
-	// Once per start: comments an older adapter stored badly (Instagram replies under synthetic ids) are corrected in one pass over comments.json.
-	let stored = store.comments();
-	let tidied = false;
-	for (const src of Object.values(store.config().sources)) {
-		const next = deps.adapters[src.kind]?.tidy?.(src, stored);
-		if (next) [stored, tidied] = [next, true];
-	}
-	if (tidied) store.replaceComments(stored);
 	const inflight = new Set<string>();
 	const pending = new Set<Promise<unknown>>();
 	const emit = (e: Record<string, unknown>) => deps.broadcast?.(e);
@@ -93,12 +99,12 @@ export function createEngine(deps: EngineDeps) {
 	};
 	// A comment needs the owner's reply when it starts a stream, is not his own, and nobody of his (or a sent reply) answered it yet.
 	const needsReply = (c: Comment): boolean =>
-		!c.mine && !c.parent && !stream(c).some(x => x.mine && x.parent === c.native) && !store.replies().some(r => r.commentId === c.id && r.state !== "failed") && !store.drafts().some(d => d.commentId === c.id && d.status === "pending") && !answeredOnPlatform(c);
+		!c.mine && !c.gone && !c.parent && !stream(c).some(x => x.mine && x.parent === c.native) && !store.replies().some(r => r.commentId === c.id && r.state !== "failed") && !store.drafts().some(d => d.commentId === c.id && d.status === "pending") && !answeredOnPlatform(c);
 
 	// 미답장 (hub/unreplied.ts): someone else's comment stays open until a reply was sent for it, a comment of his own came after it in the same
 	// stream (he answered on the platform), or he tapped 답장 안 함. Reading it changes nothing.
 	const unrepliedWith = (c: Comment, replies: Reply[], dismissed: Record<string, number>): boolean =>
-		!c.mine && unrepliedFresh(c.at, deps.now()) && !dismissed[c.id] && !replies.some(r => r.commentId === c.id && r.state !== "failed") && !stream(c).some(x => x.mine && x.at >= c.at) && !answeredOnPlatform(c);
+		!c.mine && !c.gone && unrepliedFresh(c.at, deps.now()) && !dismissed[c.id] && !replies.some(r => r.commentId === c.id && r.state !== "failed") && !stream(c).some(x => x.mine && x.at >= c.at) && !answeredOnPlatform(c);
 	const unreplied = (c: Comment): boolean => unrepliedWith(c, store.replies(), store.dismissed());
 
 	const contextOf = (c: Comment): string => {
@@ -159,7 +165,68 @@ export function createEngine(deps: EngineDeps) {
 		if (!c || !src) return Promise.resolve({ ok: false, reason: "원댓글을 찾지 못했어요" });
 		if (!replyOn(src)) return Promise.resolve({ ok: false, reason: OFF_REASON });
 		if (c.mine) return Promise.resolve({ ok: false, reason: "내가 쓴 댓글에는 답글 초안을 만들지 않아요" });
-		return run(c, src).catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요" }));
+		return run(c, src).then(async (step): Promise<Step> => {
+			if (!step.ok || !src.autoMail) return step;
+			await linkMail(step.draft.code);
+			return { ok: true, draft: store.drafts().find(d => d.code === step.draft.code) ?? step.draft };
+		}).catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "초안을 만들지 못했어요. 잠시 뒤에 다시 눌러 주세요" }));
+	}
+
+	// Linked mail for a comment that asks for a file and names an address: the pending reply draft `code` gets a compose mail draft (template text, files
+	// chosen from the library by the post title + comment words), shown in the same card and sent only with the owner's 보내기. Idempotent: a draft that
+	// already has its pending mail keeps it. A skip is told back as the reason; a missing mail app or a failed compose is also a "확인:" line on the card.
+	const linking = new Set<string>();
+	async function linkMail(code: string): Promise<{ ok: true; mail: string; existing?: true } | { ok: false; reason: string }> {
+		const d = store.drafts().find(x => x.code === code);
+		const c = d && find(d.commentId);
+		const src = d && sourceOf(d.source);
+		if (!d || !c || !src) return { ok: false, reason: "그 초안을 찾지 못했어요" };
+		if (d.status !== "pending") return { ok: false, reason: "이 초안은 이미 처리됐어요" };
+		if (d.mail && mailView(d)) return { ok: true, mail: d.mail, existing: true };
+		if (!deps.mail) return { ok: false, reason: "메일 초안을 쓸 수 없어요" };
+		if (!asksForFile(c.text)) return { ok: false, reason: "파일을 요청한 댓글이 아니에요" };
+		const to = ADDRESS.exec(c.text)?.[0];
+		if (!to) return { ok: false, reason: "댓글에 메일 주소가 없어요" };
+		if (linking.has(code)) return { ok: false, reason: "메일 초안을 만드는 중이에요" };
+		const addNote = (note: string): void => {
+			const cur = store.drafts().find(x => x.code === code)!;
+			if (!cur.notes.includes(note)) store.putDraft({ ...cur, clean: false, notes: [...cur.notes, note] });
+			emit({ kind: "comment_draft", source: d.source, thread: d.thread });
+		};
+		if (!src.mailApp) {
+			addNote(MAIL_NO_APP_NOTE);
+			return { ok: false, reason: "이 출처에 메일 앱이 정해져 있지 않아요" };
+		}
+		linking.add(code);
+		try {
+			const title = isUntitled(c) ? "" : clip(c.postTitle, 60);
+			const made = await deps.mail.compose({
+				app: src.mailApp,
+				to,
+				subject: title ? `${title} 자료 보내드립니다` : "요청하신 자료 보내드립니다",
+				body: `안녕하세요, ${c.author}님.\n\n댓글로 요청하신 자료를 보내드립니다. 확인 후 부족한 점이 있으면 편하게 말씀해 주세요.\n\n감사합니다.`,
+				fromLibrary: clip(`${title} ${c.text.replace(to, " ")}`, 200),
+			}).catch((e): { ok: false; reason: string } => ({ ok: false, reason: e instanceof Error && e.message ? clip(e.message, 160) : "메일 초안을 만들지 못했어요" }));
+			if (!made.ok) {
+				addNote(`확인: 메일 초안을 만들지 못했어요 - ${made.reason}`);
+				return { ok: false, reason: made.reason };
+			}
+			// The draft may have changed while the mail was written (revised, dropped): the mail rides on the draft as it is now, or is dropped again.
+			const cur = store.drafts().find(x => x.code === code);
+			if (!cur || cur.status !== "pending") {
+				deps.mail.drop(made.id);
+				return { ok: false, reason: "이 초안은 이미 처리됐어요" };
+			}
+			if (cur.mail && cur.mail !== made.id) deps.mail.drop(cur.mail);
+			const check = recipientCheck(to, c.text);
+			const found = [...(made.notes ?? []), ...(made.libraryMiss && !made.notes?.some(n => n.includes("찾지 못했어요")) ? [LIBRARY_MISS_NOTE] : []), ...(check ? [`확인: ${check}`] : [])];
+			const notes = [...cur.notes.filter(n => n !== MAIL_NO_APP_NOTE), ...found.filter((n, i) => !cur.notes.includes(n) && found.indexOf(n) === i)];
+			store.putDraft({ ...cur, mail: made.id, mailAt: deps.now(), clean: false, notes });
+			emit({ kind: "comment_draft", source: d.source, thread: d.thread });
+			return { ok: true, mail: made.id };
+		} finally {
+			linking.delete(code);
+		}
 	}
 
 	// A draft written outside the model (an old script of the owner): same pending draft, same gate. `extra` is what else the script does when it is
@@ -220,13 +287,167 @@ export function createEngine(deps: EngineDeps) {
 		const m = await deps.mail.send(d.mail).catch(e => ({ ok: false, text: e instanceof Error && e.message ? clip(e.message, 160) : "메일을 보내는 중 오류가 났어요" }));
 		if (m.ok) {
 			const { mail: _mail, mailAt: _mailAt, ...rest } = d;
-			store.putDraft({ ...rest, clean: !rest.notes.length });
+			store.putDraft({ ...rest, clean: !rest.notes.length, mailKept: d.mail });
 			emit({ kind: "comment_draft", source: d.source, thread: d.thread });
 		}
 		return m;
 	}
 
 	const mailView = (d: Draft): MailView | undefined => (d.mail ? deps.mail?.view(d.mail) : undefined);
+
+	// The linked mail of a comment, from the send record (the mail went out or failed after the reply) or from its draft: the mail draft that rides on a
+	// pending reply, or one left on its own (reply answered elsewhere, 답글만/메일만 보내기). A mail draft that is gone shows nothing.
+	function mailMarkOf(commentId: string, replies: Reply[] = store.replies(), drafts: Draft[] = store.drafts()): MailMark | undefined {
+		const rep = replies.filter(r => r.commentId === commentId && r.mail).at(-1);
+		if (rep?.mail) return rep.mail.state === "sent" ? { state: "sent", label: "메일 보냄" } : { state: "failed", label: `메일 실패: ${clip(rep.mail.text, 80)}` };
+		for (const d of drafts.filter(x => x.commentId === commentId).reverse()) {
+			const id = d.status === "pending" ? d.mail : d.mailKept ?? (d.status === "sent" ? d.mail : undefined);
+			if (!id) continue;
+			const st = deps.mail?.state?.(id) ?? (deps.mail?.view(id) ? "pending" : undefined);
+			if (st === "pending") return { state: "drafted", label: "메일 초안 작성됨" };
+			if (st === "sent") return { state: "sent", label: "메일 보냄" };
+		}
+		return undefined;
+	}
+
+	// Stores what an adapter read. New ids are added (and returned). A stored reply row keyed by position (Instagram's old `<comment>.<index>`) is replaced by
+	// the same reply under its real id, with everything that pointed at it (drafts, send records, 답장 안 함) moved along; a stored row whose author or
+	// `mine` could not be known then gets it once the adapter can tell. Reading the same thing again changes nothing.
+	function absorb(src: SourceConfig, raws: RawComment[]): Comment[] {
+		const incoming = raws.filter(r => watches(src, r.thread)).map(r => toComment(src, r, deps.collector));
+		if (!incoming.length) return [];
+		const stored = store.comments();
+		const byId = new Map(stored.map(c => [c.id, c]));
+		const matched = new Set<string>();
+		const renames: { from: string; to: Comment }[] = [];
+		const refine: Record<string, Partial<Comment>> = {};
+		const add: Comment[] = [];
+		for (const c of incoming) {
+			const old = byId.get(c.id);
+			if (old) {
+				const patch: Partial<Comment> = {};
+				if (c.mine && !old.mine) patch.mine = true;
+				// A reply first stored as a comment of its own (Instagram listed it top-level) gets its comment once a read names it (issue #31).
+				if (c.parent && !old.parent) patch.parent = c.parent;
+				if (old.author === UNKNOWN_USER && c.author !== UNKNOWN_USER) patch.author = c.author;
+				if (Object.keys(patch).length) refine[old.id] = { ...refine[old.id], ...patch };
+				continue;
+			}
+			const positional = c.parent
+				? stored.find(x => x.source === c.source && x.thread === c.thread && x.parent === c.parent && !matched.has(x.id) && x.text === c.text && x.native.startsWith(`${c.parent}.`) && /^\d+$/.test(x.native.slice(c.parent!.length + 1)))
+				: undefined;
+			if (positional) {
+				matched.add(positional.id);
+				renames.push({ from: positional.id, to: { ...c, collector: positional.collector, ...(positional.gone ? { gone: positional.gone } : {}) } });
+			} else add.push(c);
+			byId.set(c.id, c);
+		}
+		store.replaceComments(renames);
+		store.patchComments(refine);
+		return store.addComments(add);
+	}
+
+	// Whether the owner has answered a comment, whatever the platform or the app was the place: a comment of his under it, a reply sent from here, or the
+	// adapter's own sign (Instagram: he @mentioned the author).
+	const answeredBy = (c: Comment, replies: Reply[]): boolean => stream(c).some(x => x.mine && x.at >= c.at) || answeredOnPlatform(c) || replies.some(r => r.commentId === c.id && r.state === "sent");
+
+	// A pending draft whose comment stopped waiting (answered on the platform, deleted, 답장 안 함) is closed as "answered" with the reason. A mail that rode
+	// on it is detached, as 메일만 보내기 does: it stays a pending mail draft of its own, and the closed draft says so. Closed drafts are never reopened.
+	function settle(): number {
+		const replies = store.replies(), dismissed = store.dismissed();
+		let closed = 0;
+		for (const d of store.drafts()) {
+			if (d.status !== "pending") continue;
+			const c = find(d.commentId);
+			if (!c || replies.some(r => r.commentId === c.id && r.state === "sending")) continue;
+			const reason: ClosedReason | undefined = c.gone ? "deleted" : dismissed[c.id] ? "dismissed" : answeredBy(c, replies) ? "answered-on-platform" : undefined;
+			if (!reason) continue;
+			const { mail, mailAt: _mailAt, ...rest } = d;
+			store.putDraft({ ...rest, status: "answered", closedReason: reason, ...(mail ? { notes: [...rest.notes, MAIL_KEPT_NOTE], mailKept: mail } : {}) });
+			emit({ kind: "comment_draft", source: d.source, thread: d.thread });
+			closed++;
+		}
+		return closed;
+	}
+
+	// The still-open comments of a source, for adapter.recheck: top-level comments that wait for a reply or hold a pending draft, and stored replies whose author
+	// the adapter could not name yet (so it can resolve them). Oldest first, so a capped run rotates through them (cursor `<source>#recheck`).
+	function recheckBatch(src: SourceConfig): Comment[] {
+		const drafted = new Set(store.drafts().filter(d => d.status === "pending").map(d => d.commentId));
+		const all = store.comments().filter(c => c.source === src.key && !c.mine && !c.gone && watches(src, c.thread) && (c.parent ? c.author === UNKNOWN_USER : unreplied(c) || drafted.has(c.id))).sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
+		if (all.length <= RECHECK_CAP) return all;
+		const key = `${src.key}#recheck`;
+		const from = Number(store.cursors()[key]?.cursor) || 0;
+		const start = from < all.length ? from : 0;
+		store.setCursor(key, { cursor: String((start + RECHECK_CAP) % all.length) });
+		return [...all, ...all].slice(start, start + RECHECK_CAP);
+	}
+
+	// Issue #31: older Instagram reads stored each reply twice, as `<comment>.<n>` (no author, not his, the comment's time) and under its real id (often
+	// top-level, without its comment). Each such pair becomes one row: the real one, under its comment, with what pointed at the copy moved to it.
+	// Idempotent: once merged nothing of the pattern is left with a twin.
+	function mergeIgTwins(): number {
+		const ig = new Set(Object.values(store.config().sources).filter(s => s.kind === "instagram").map(s => s.key));
+		if (!ig.size) return 0;
+		const all = store.comments().filter(c => ig.has(c.source));
+		const synthetic = (c: Comment) => !!c.parent && c.native.startsWith(`${c.parent}.`) && /^\d+$/.test(c.native.slice(c.parent.length + 1));
+		const used = new Set<string>();
+		const pairs: { from: string; to: Comment }[] = [];
+		// The same short text (an emoji) can stand under several comments of one post: a twin already under this comment wins, else the earliest unused one
+		// not older than the copy (the copies are taken in order, as the replies came).
+		const order = (a: Comment, b: Comment) => a.at - b.at || (a.native < b.native ? -1 : 1);
+		for (const s of all.filter(synthetic).sort(order)) {
+			const cands = all.filter(t => !used.has(t.id) && t.source === s.source && t.thread === s.thread && !synthetic(t) && t.text === s.text && (!t.parent || t.parent === s.parent)).sort(order);
+			const twin = cands.find(t => t.parent === s.parent) ?? cands.find(t => t.at >= s.at) ?? cands[0];
+			if (!twin) continue;
+			used.add(twin.id);
+			pairs.push({ from: s.id, to: { ...twin, parent: s.parent, ...(twin.author === UNKNOWN_USER && s.author !== UNKNOWN_USER ? { author: s.author } : {}) } });
+		}
+		store.replaceComments(pairs);
+		return pairs.length;
+	}
+
+	// Makes the stored comments match the platforms, and is safe to run again and again: with `recheck` each adapter that can re-reads the still-open comments
+	// (owner's replies found later, deleted comments); then every pending draft whose comment no longer waits is closed (settle). Never posts anything.
+	async function reconcile(opts: { recheck?: boolean } = {}): Promise<ReconcileResult> {
+		const out: ReconcileResult = { answered: 0, gone: 0, draftsClosed: 0 };
+		const cfg = store.config();
+		if (!cfg.enabled) return out;
+		// A reply can have two copies (`k.0` and `k.1` of one reply, read twice with a shifted index): each pass merges one copy per real row, so it runs
+		// until nothing is left to merge.
+		let merged = 0;
+		for (let i = 0, n = mergeIgTwins(); n && i < 5; i++, n = mergeIgTwins()) merged += n;
+		if (merged) out.merged = merged;
+		if (opts.recheck)
+			for (const src of Object.values(cfg.sources)) {
+				const adapter = deps.adapters[src.kind];
+				if (!adapter?.recheck || !src.watch.length) continue;
+				// Once per Instagram source (issue #31): his rows stored top-level although they may be replies are read again so they find their comment.
+				const parentsKey = `${src.key}#parents`;
+				const orphans = src.kind === "instagram" && !store.cursors()[parentsKey] ? store.comments().filter(c => c.source === src.key && c.mine && !c.parent && !c.gone && watches(src, c.thread)) : [];
+				const open = recheckBatch(src);
+				const batch = [...open, ...orphans.filter(o => !open.some(c => c.id === o.id))];
+				if (!batch.length) continue;
+				const replies = store.replies();
+				const waiting = batch.filter(c => !c.parent && !c.mine && !answeredBy(c, replies));
+				try {
+					const res = await adapter.recheck(src, batch);
+					absorb(src, res.comments);
+					const at = deps.now();
+					const gone = new Set(res.gone);
+					if (orphans.length) store.setCursor(parentsKey, { ranAt: at });
+					const marks = Object.fromEntries(batch.filter(c => !c.parent && !c.mine && gone.has(c.native)).map(c => [c.id, { gone: at }]));
+					store.patchComments(marks);
+					out.gone += Object.keys(marks).length;
+					const now = store.replies();
+					out.answered += waiting.filter(c => { const cur = find(c.id); return !!cur && !cur.gone && answeredBy(cur, now); }).length;
+				} catch (e) {
+					(out.errors ??= {})[src.key] = e instanceof Error ? clip(e.message, 160) : "다시 확인하지 못했어요";
+				}
+			}
+		out.draftsClosed = settle();
+		return out;
+	}
 
 	// The script part of the watch: reads new comments of every source the owner chose, stores the new ids, then (only for sources with
 	// auto-draft on) drafts, and (only with the owner's rule) sends through the gate. Nothing is read for a source with nothing chosen.
@@ -254,7 +475,7 @@ export function createEngine(deps: EngineDeps) {
 				// A time after the read (a source's clock or a misparsed stamp, issue #31) is the read time: a comment from the future would sort above
 				// everything that comes later and never age out of the unreplied list.
 				const now = deps.now();
-				fresh = store.addComments(res.comments.filter(r => watches(src, r.thread)).map(r => toComment(src, r.at > now ? { ...r, at: now } : r, deps.collector)));
+				fresh = absorb(src, res.comments.map(r => (r.at > now ? { ...r, at: now } : r)));
 				const wanted = src.autoDraft && replyOn(src) ? fresh.filter(c => c.at >= (src.autoSince ?? 0) && needsReply(c)).map(c => c.id) : [];
 				// Bounded (a flood of new comments keeps the newest MAX_QUEUE): cursors.json is read on every run.
 				const queue = [...new Set([...(prior.queue ?? []), ...wanted])].slice(-MAX_QUEUE);
@@ -271,6 +492,12 @@ export function createEngine(deps: EngineDeps) {
 			for (const t of new Set(fresh.map(c => c.thread))) emit({ kind: "comment", source: src.key, thread: t });
 			await autoDrafts(src, out, late);
 		}
+		// Settle what the reads showed; the slow part (re-reading open comments on the platforms) runs at most every RECHECK_EVERY_MS unless forced.
+		const last = store.cursors().reconcile?.ranAt ?? 0;
+		const due = opts.force === true || deps.now() - last >= RECHECK_EVERY_MS;
+		if (due) store.setCursor("reconcile", { ranAt: deps.now() });
+		const rec = await reconcile({ recheck: due });
+		for (const [k, v] of Object.entries(rec.errors ?? {})) out.errors[`${k}#recheck`] = v;
 		return out;
 	}
 
@@ -362,7 +589,7 @@ export function createEngine(deps: EngineDeps) {
 			// A comment reply goes out as text only, so its card always says so (첨부: 없음 · 파일을 붙일 수 없는 곳): a file goes only with the mail that rides along,
 			// and those files are the mail's own (mailJson).
 			return { code: d.code, app: ownerOf(src), kind: src.kind, source: src.key, sourceLabel: src.label, thread: d.thread, commentId: d.commentId, title: c?.postTitle ?? "", link: c?.postLink ?? null, to: c?.author ?? "", text: d.text, notes: d.notes, created: d.created, attachmentsNone: true, cannotAttach: [],
-				...(c ? { original: { who: c.author, text: clip(c.text, 200), at: c.at } } : {}), ...mailJson(d) };
+				...(c ? { original: { who: c.author, text: clip(c.text, 200), at: c.at } } : {}), ...mailJson(d), ...(d.mail && mailView(d) ? { mailMark: mailMarkOf(d.commentId) } : {}) };
 		});
 	}
 
@@ -388,7 +615,7 @@ export function createEngine(deps: EngineDeps) {
 		return run(c, src, d, change.trim()).catch(e => ({ ok: false as const, reason: e instanceof Error && e.message ? clip(e.message, 160) : "고친 초안을 만들지 못했어요" }));
 	}
 
-	function update(key: string, patch: { watch?: string[]; autoDraft?: boolean; autoSend?: SourceConfig["autoSend"] }): SourceConfig | undefined {
+	function update(key: string, patch: { watch?: string[]; autoDraft?: boolean; autoSend?: SourceConfig["autoSend"]; autoMail?: boolean; mailApp?: string }): SourceConfig | undefined {
 		const src = sourceOf(key);
 		if (!src) return undefined;
 		const next: SourceConfig = { ...src };
@@ -398,13 +625,19 @@ export function createEngine(deps: EngineDeps) {
 			if (patch.autoDraft) next.autoSince = deps.now();
 		}
 		if (patch.autoSend) next.autoSend = patch.autoSend;
+		if (patch.autoMail !== undefined) next.autoMail = patch.autoMail;
+		if (patch.mailApp !== undefined) {
+			if (patch.mailApp) next.mailApp = patch.mailApp;
+			else delete next.mailApp;
+		}
 		if (!next.watch.length) next.autoDraft = false;
 		store.setSource(next);
 		emit({ kind: "comment_sources" });
 		return next;
 	}
 
-	const unreadOf = (c: Comment, reads: Record<string, number>) => !c.mine && c.at > (reads[threadKey(c.source, c.thread)] ?? 0);
+	// A comment he already answered on the platform (his reply came after it) is not unread, even when a read stores it only now.
+	const unreadOf = (c: Comment, reads: Record<string, number>) => !c.mine && !c.gone && c.at > (reads[threadKey(c.source, c.thread)] ?? 0) && !stream(c).some(x => x.mine && x.at >= c.at);
 
 	function threads(app: string) {
 		const cfg = store.config();
@@ -429,13 +662,15 @@ export function createEngine(deps: EngineDeps) {
 		if (!list.length) return undefined;
 		const since = deps.now() - 24 * 3600 * 1000;
 		const first = list[0]!;
+		const replies = store.replies(), allDrafts = store.drafts();
+		const mailMarks = new Map(list.map(c => [c.id, mailMarkOf(c.id, replies, allDrafts)] as const));
 		return {
 			source: { key: src.key, kind: src.kind, label: src.label },
 			thread: { id: thread, title: list[list.length - 1]!.postTitle, link: list[list.length - 1]!.postLink ?? first.postLink ?? null, thumb: list[list.length - 1]!.thumb ?? first.thumb ?? null },
-			comments: list.map(c => ({ id: c.id, parent: c.parent ?? null, author: c.author, text: c.text, at: c.at, mine: c.mine, needsReply: needsReply(c), unreplied: unreplied(c) })),
+			comments: list.map(c => ({ id: c.id, parent: c.parent ?? null, author: c.author, text: c.text, at: c.at, mine: c.mine, ...(c.gone ? { gone: true } : {}), needsReply: needsReply(c), unreplied: unreplied(c), ...(mailMarks.get(c.id) ? { mail: mailMarks.get(c.id) } : {}) })),
 			read: store.reads()[threadKey(source, thread)] ?? null,
-			drafts: store.drafts().filter(d => d.source === source && d.thread === thread && d.status === "pending").map(d => ({ code: d.code, commentId: d.commentId, text: d.text, notes: d.notes, clean: d.clean, created: d.created, ...(d.tokens ? { tokens: d.tokens } : {}), ...mailJson(d) })),
-			sends: store.replies().filter(r => r.source === source && r.thread === thread && r.at >= since).map(({ id, commentId, text, state, reason, at, via }) => ({ id, commentId, text, state, ...(reason ? { reason } : {}), at, via })),
+			drafts: store.drafts().filter(d => d.source === source && d.thread === thread && d.status === "pending").map(d => ({ code: d.code, commentId: d.commentId, text: d.text, notes: d.notes, clean: d.clean, created: d.created, ...(d.tokens ? { tokens: d.tokens } : {}), ...mailJson(d), ...(mailMarks.get(d.commentId) ? { mailMark: mailMarks.get(d.commentId) } : {}) })),
+			sends: replies.filter(r => r.source === source && r.thread === thread && r.at >= since).map(({ id, commentId, text, state, reason, at, via, mail }) => ({ id, commentId, text, state, ...(reason ? { reason } : {}), at, via, ...(mail ? { mail } : {}) })),
 		};
 	}
 
@@ -497,6 +732,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, ownerOf, collect, makeDraft, revise, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, mailView, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
+	return { store, ownerOf, collect, reconcile, makeDraft, revise, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailMarkOf, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

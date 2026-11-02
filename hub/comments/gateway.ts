@@ -1,7 +1,7 @@
 // Real wiring of the comment routes inside the gateway (hub/routes.ts imports this). The watch itself is a dotz_watch script
 // (features/comments/bin/watch.ts), so the gateway holds no timer and a quiet install costs nothing.
 import { hostname } from "node:os";
-import { cfg, DATA_DIR } from "../config.ts";
+import { cfg, DATA_DIR, log } from "../config.ts";
 import { broadcast } from "../events.ts";
 import { resolveName } from "../machine-name.ts";
 import { triggerFollowup } from "../followup.ts";
@@ -16,6 +16,11 @@ const engine = realEngine(DATA_DIR, {
 	sent: (app, r) => triggerFollowup({ app, kind: "comment", key: r.id, ids: { comment: r.commentId, source: r.source, thread: r.thread.replace(/\s+/g, "_"), draft: r.draft } }),
 });
 const web = createCommentsWeb({ engine, broadcast });
+// Once at start (also the migration of an install that has stale open comments / pending drafts): re-read the open comments, close what is answered or deleted.
+void engine.reconcile({ recheck: true }).then(
+	r => log(`comments reconcile: ${JSON.stringify({ answered: r.answered, gone: r.gone, draftsClosed: r.draftsClosed })}${r.errors ? ` errors=${JSON.stringify(r.errors)}` : ""}`),
+	e => log(`comments reconcile failed: ${e instanceof Error ? e.message : String(e)}`),
+);
 
 export const commentsRoute = web.route;
 // The comment a draft of the comment engine answers (hub/draft-attach.ts: GET /api/drafts/<code>/original).
@@ -38,5 +43,12 @@ export const commentSourceApp = (source: string): string | undefined => {
 	const k = engine.store.config().sources[source]?.kind;
 	return k === "website" ? "site" : k;
 };
+/** The comment a pending draft answers, for the send-approval cards and the review queue (GET /api/approvals): the post, the quoted comment (clipped), its time and the mail mark. */
+export const commentContextOf = (code: string) => {
+	const d = engine.pendingDrafts().find(x => x.code === code);
+	return d ? { source: d.sourceLabel, post: d.title, link: d.link, who: d.to, ...(d.original ? { text: d.original.text, at: d.original.at } : {}), ...(d.mailMark ? { mailMark: d.mailMark } : {}) } : undefined;
+};
+/** 보내지 않기 on a comment draft (the same step as the comment card's). */
+export const dropCommentDraft = (code: string) => engine.drop(code);
 export const setCommentDraftText = (code: string, text: string): void => engine.store.patchDraft(code, { text, clean: false });
 export const commentFlags = (): string[] => (Object.values(engine.store.config().sources).some(s => s.kind === "website") && engine.store.config().enabled ? ["comments-site"] : []);

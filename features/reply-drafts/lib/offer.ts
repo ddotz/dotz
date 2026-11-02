@@ -1,5 +1,6 @@
 // The gateway's hook for a new mail: when this install turned the feature on (and auto), a mail that warrants a reply gets a draft in
 // the user's tone, offered as a send-approval [ask] (hub/draft-approval.ts). Never throws; nothing is sent from here.
+import { basename } from "node:path";
 import { addressesOf, precheck, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { asksForFile } from "../../../hub/draft-approval.ts";
@@ -10,7 +11,7 @@ import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
 
-export type OfferMail = { key: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
+export type OfferMail = { account?: string; key: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
 export type OfferDeps = {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
@@ -21,7 +22,7 @@ export type OfferDeps = {
 	/** The identity sweep: the model call, and the user's sent mail (persona.ts learnFirst), run once before the first draft. */
 	analyze?: ModelCall;
 	sentTexts?: () => Promise<string[]>;
-	readBody?: (source: string, id: string) => Promise<string | undefined>;
+	readBody?: (source: string, id: string, account?: string) => Promise<string | undefined>;
 	log?: (line: string) => void;
 	/** Records the suggested action on the mail (hub/mail.ts setMailSuggest), for the web's suggestion slot of that mail. */
 	suggest?: (key: string, s: { kind: "reply-draft"; label: string; ref: string; rule?: string }) => void;
@@ -53,7 +54,7 @@ let chain: Promise<unknown> = Promise.resolve();
  *  the sender filter do not apply, and the model must draft (ReplyItem.requested). The draft arrives like an offered one: the send-approval card
  *  in the mail's conversation and the 답장 초안 chip on its row. */
 export function requestMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offered" | "skipped" | "off" | "failed"> {
-	const body = m.body !== undefined || !deps.readBody ? Promise.resolve(m.body) : deps.readBody(m.source, m.id).catch(() => undefined);
+	const body = m.body !== undefined || !deps.readBody ? Promise.resolve(m.body) : deps.readBody(m.source, m.id, m.account).catch(() => undefined);
 	const queued = Date.now();
 	const next = chain.then(() => offerOne(m, deps, body, queued, true));
 	chain = next.catch(() => undefined);
@@ -61,7 +62,7 @@ export function requestMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offere
 }
 export function offerMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offered" | "skipped" | "off" | "failed"> {
 	// The body read (a mail CLI or webmail round trip) starts now, while an earlier offer may still be in its model call; only the model calls queue.
-	const body = m.body !== undefined || !deps.readBody || !mayDraft(m) ? Promise.resolve(m.body) : deps.readBody(m.source, m.id).catch(e => ((deps.log ?? console.error)(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), undefined));
+	const body = m.body !== undefined || !deps.readBody || !mayDraft(m) ? Promise.resolve(m.body) : deps.readBody(m.source, m.id, m.account).catch(e => ((deps.log ?? console.error)(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), undefined));
 	const queued = Date.now();
 	const next = chain.then(() => offerOne(m, deps, body, queued));
 	chain = next.catch(() => undefined);
@@ -108,10 +109,12 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		const read = Date.now();
 		if (deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
 		const learned = Date.now();
-		// The file match (and its tie-break call, if any) runs beside the draft call; a rule that names its files stages those instead.
+		// The files are picked BEFORE the words are written, so the draft is told which files ride on it (and that none fits) and its text agrees
+		// with the attachments. A rule that names its files stages those instead.
 		const ruleFiles = !!rule?.files.length;
-		const files = ruleFiles ? undefined : libraryFor(item, { source: m.source, ref: m.key }, flow).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined));
-		const built = await buildDraft(item, { source: m.source, mailId: m.id, ref: m.key, ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, flow);
+		const files = ruleFiles ? undefined : await libraryFor(item, { source: m.source, ref: m.key }, flow).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined));
+		if (files && asksForFile(item.text)) item.files = files.map(f => basename(f.path));
+		const built = await buildDraft(item, { source: m.source, mailId: m.id, ref: m.key, ...(m.account ? { account: m.account } : {}), ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, flow);
 		if (built.action !== "draft") {
 			markDrafted(looked);
 			return "skipped";
@@ -125,7 +128,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 			built.rec.asksFile = asksForFile(item.text) || undefined;
 			const missing = await stageRuleFiles(built.rec.id, rule, await attachFolder(m.key), flow.stage);
 			if (missing.length) warnings.push(ruleFileMissing(missing));
-		} else warnings.push(...(await stageForReply(built.rec, flow, files).catch(e => (log(`reply draft: files for mail ${m.key} not staged: ${(e as Error).message}`), []))));
+		} else warnings.push(...(await stageForReply(built.rec, flow, Promise.resolve(files)).catch(e => (log(`reply draft: files for mail ${m.key} not staged: ${(e as Error).message}`), []))));
 		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, warnings));
 		addDraft(built.rec);
 		markDrafted(looked);

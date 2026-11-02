@@ -80,24 +80,6 @@ test("a reply stored earlier as a top-level comment learns its parent when it is
 	expect(open(t.engine)).toBe(0);
 });
 
-test("starting with synthetic <parent>.N records drops them for their real twin, which gets the parent; a second start changes nothing", () => {
-	const c = (native: string, o: Partial<Comment>): Comment => ({ id: `cm:instagram:${native}`, source: "instagram", native, thread: "m1", author: "fan1", text: "q", postTitle: "post", at: Date.parse("2026-10-12T03:00:00Z"), mine: false, collector: "t", ...o });
-	const at = Date.parse("2026-10-12T03:04:05Z");
-	const before = [
-		c("k1", {}),
-		c("k1.0", { parent: "k1", author: "알 수 없는 사용자", text: "thanks" }),
-		c("r1", { author: "owner_ig", text: "thanks", mine: true, at }),
-		c("k2", { text: "q2" }),
-		c("k2.0", { parent: "k2", author: "알 수 없는 사용자", text: "lonely" }),
-	];
-	writeFileSync(join(dir, "comments.json"), JSON.stringify(before));
-	const start = () => setup().engine.store;
-	expect(start().comments().map(x => ({ id: x.native, parent: x.parent }))).toEqual([{ id: "k1", parent: undefined }, { id: "r1", parent: "k1" }, { id: "k2", parent: undefined }, { id: "k2.0", parent: "k2" }]);
-	const once = readFileSync(join(dir, "comments.json"), "utf8");
-	start();
-	expect(readFileSync(join(dir, "comments.json"), "utf8")).toBe(once);
-});
-
 test("a comment stamped after the read is stored at the read time", async () => {
 	const t = setup();
 	t.state.list = [top("k1", "fan1", "2030-07-07T00:00:00+0000", "from the future")];

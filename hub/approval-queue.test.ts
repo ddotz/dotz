@@ -1,13 +1,13 @@
 // One send-approval card at a time per conversation: the rest wait behind it ("남은 N건") and come one by one as each closes; the same
 // card again updates the open one instead of a second post.
 import { describe, expect, test } from "bun:test";
-import { cardRef, CARDS_LEAD, createApprovalQueue, type Held, pendingCardsNote, withLeft } from "./approval-queue.ts";
+import { type ApprovalQueueDeps, cardRef, CARDS_LEAD, closedCardText, createApprovalQueue, type Held, pendingCardsNote, withLeft } from "./approval-queue.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 
 // Draft refs are 2+ characters (draft-approval.ts REF): "A" stands for the draft "cm-A".
 const card = (ref: string, body = `답글 ${ref}`) => `[ask] 댓글 답글 초안이에요\n${draftApprovalBlock({ to: `${ref} 댓글`, toLabel: "대상", body, ref: `cm-${ref}`, question: "이 답글 올릴까요?" })}`;
 
-function setup(load: Held[] = []) {
+function setup(load: Held[] = [], more: Partial<ApprovalQueueDeps> = {}) {
 	const open = new Map<string, string[]>();
 	const posts: { target: string; text: string; extra: Record<string, unknown> }[] = [];
 	const rewrites: { conv: string; ref: string; ids?: string[]; text: string }[] = [];
@@ -20,6 +20,7 @@ function setup(load: Held[] = []) {
 		persist: h => void (disk = h),
 		log: () => {},
 		load: () => load,
+		...more,
 	});
 	// What outbound.out does around route(): a post that goes out becomes an open decision, then posted() records it.
 	const show = (target: string, text: string, ids = ["m1"]) => {
@@ -111,6 +112,74 @@ describe("approval queue", () => {
 		t.q.releaseAll();
 		expect(t.posts.map(p => cardRef(p.text))).toEqual(["cm-B"]);
 		expect(t.posts[0]!.text.split("\n")[1]).toBe("-# 남은 1건 (1/2)");
+	});
+
+	// "cm-X2" is the second card of the item "cm-X" (the bot's mail card and the app's draft of the same mail).
+	const sameItem = { itemOf: (_conv: string, ref: string) => ref.replace(/2$/, "") };
+
+	test("a newer card of an item that is held replaces the held one instead of waiting as a second card", () => {
+		const t = setup([], sameItem);
+		t.q.route("ch:1", card("A"));
+		t.show("ch:1", card("A"));
+		expect(t.q.route("ch:1", card("B"))).toEqual({ action: "hold", left: 1 });
+		expect(t.q.route("ch:1", card("B2"))).toEqual({ action: "same" });
+		expect(t.disk().map(h => h.ref)).toEqual(["cm-B2"]);
+		expect(t.disk()[0]!.text).toContain("B2");
+	});
+
+	test("a newer card of an item that is open rewrites the open card in place, and the shown card follows its ref", () => {
+		const t = setup([], sameItem);
+		t.q.route("ch:1", card("A"));
+		t.show("ch:1", card("A"));
+		expect(t.q.route("ch:1", card("A2")).action).toBe("update");
+		// The open notice is still found by the old ref; nothing is held or posted.
+		expect(t.rewrites.at(-1)).toMatchObject({ conv: "ch:1", ref: "cm-A", ids: ["m1"] });
+		expect(t.rewrites.at(-1)!.text).toContain("(cm-A2)");
+		expect(t.disk()).toEqual([]);
+		expect(t.q.targetOf("ch:1", "cm-A2")).toBe("ch:1");
+		expect(t.posts).toEqual([]);
+	});
+
+	test("closing the shown card skips a held card whose item was handled meanwhile", () => {
+		const handled = new Set(["cm-B"]);
+		const t = setup([], { handled: ref => handled.has(ref) });
+		t.q.route("ch:1", card("A"));
+		t.show("ch:1", card("A"));
+		t.q.route("ch:1", card("B"));
+		t.q.route("ch:1", card("C"));
+		t.close("ch:1", "cm-A");
+		expect(t.posts.map(p => cardRef(p.text))).toEqual(["cm-C"]);
+		expect(t.disk()).toEqual([]);
+	});
+
+	test("after a restart handled and duplicate held cards are dropped, the rest shows, and a second sweep changes nothing", async () => {
+		const handled = new Set(["cm-B"]);
+		const held = ["B", "C", "D", "D2"].map(r => ({ ref: `cm-${r}`, target: "ch:1", text: card(r), extra: {} }));
+		const t = setup(held, { ...sameItem, handled: async ref => handled.has(ref) });
+		await t.q.releaseAll();
+		// B is handled, D is replaced by the newer D2, C is shown.
+		expect(t.posts.map(p => cardRef(p.text))).toEqual(["cm-C"]);
+		expect(t.disk().map(h => h.ref)).toEqual(["cm-D2"]);
+		const posts = t.posts.length, disk = JSON.stringify(t.disk());
+		await t.q.releaseAll();
+		expect(t.posts).toHaveLength(posts);
+		expect(JSON.stringify(t.disk())).toBe(disk);
+	});
+
+	test("a held card whose item already has an open card is dropped instead of waiting for a second ask", async () => {
+		const t = setup([{ ref: "cm-B2", target: "ch:1", text: card("B2"), extra: {} }], sameItem);
+		t.open.set("ch:1", ["cm-B"]);
+		t.q.releaseAll();
+		expect(t.posts).toEqual([]);
+		expect(t.disk()).toEqual([]);
+	});
+
+	test("a closed card is edited to a closed form: first line kept, how it ended under it", () => {
+		const c = card("A");
+		const first = c.replace(/^\[ask\]\s*/, "").split("\n", 1)[0];
+		expect(closedCardText(c, "answered", "1) 보내기")).toBe(`${first}\n-# 처리됨: 1) 보내기`);
+		expect(closedCardText(c, "resolved")).toBe(`${first}\n-# 다른 곳에서 처리됐어요`);
+		expect(closedCardText(c, "ignored")).toBe(`${first}\n-# 처리됨: 무시`);
 	});
 
 	test("cards the bot numbers and posts one per turn count the rest of its batch, and the last says so", () => {

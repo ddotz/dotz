@@ -21,26 +21,30 @@ async function trLoad() {
 }
 const trSoon = () => { clearTimeout(TR.t); TR.t = setTimeout(trLoad, 300); };
 const trBig = () => TR.groups.filter(g => g.count >= TR.min);
+// Key "*" = the review queue: every waiting draft of every comment app and mail app in one walk.
+const trCards = key => (key === "*" ? TR.groups.flatMap(g => g.cards) : (TR.groups.find(x => x.key === key) || { cards: [] }).cards);
+const trTotal = () => TR.groups.reduce((n, g) => n + g.count, 0);
+const trKst = at => new Date(at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" });
 /** The group a waiting card is in, when it is one the triage view takes (big enough). */
 const trGroupFor = ref => trBig().find(g => g.cards.some(c => c.ref === ref));
 
 function trBanner() {
   const b = $("#trban");
   if (!b) return;
-  const big = trBig(), g = big[0];
-  b.hidden = !g || !!TR.h;
-  if (!g) return;
-  clear(b).append(icon("list"), el("span", { class: "tx", text: `${g.label} 대기 ${g.count}건${big.length > 1 ? ` · 외 ${big.length - 1}곳` : ""}` }), el("span", { class: "go", text: "빠르게 처리" }));
-  b.onclick = () => trOpen(g.key);
+  const total = trTotal(), g = TR.groups[0];
+  b.hidden = !g || total < TR.min || !!TR.h;
+  if (b.hidden) return;
+  clear(b).append(icon("list"), el("span", { class: "tx", text: TR.groups.length > 1 ? `답장 대기 ${total}건 · ${TR.groups.length}곳` : `${g.label} 대기 ${g.count}건` }), el("span", { class: "go", text: "빠르게 처리" }));
+  b.onclick = () => trOpen("*");
 }
 
 function trOpen(key, ref) {
-  const g = TR.groups.find(x => x.key === key);
-  if (!g || !g.cards.length) { toast("처리할 카드가 없어요"); return; }
+  const g = TR.groups.find(x => x.key === key), cards = trCards(key);
+  if (!cards.length) { toast("처리할 카드가 없어요"); return; }
   if (TR.h) TR.h.close(false);
-  Object.assign(TR, { key, label: g.label, items: g.cards.slice(), list: false, picks: {}, edits: {}, notes: {}, done: {}, open: {}, noting: false });
+  Object.assign(TR, { key, label: g ? g.label : "전체", items: cards.slice(), list: false, picks: {}, edits: {}, notes: {}, done: {}, open: {}, noting: false });
   TR.i = Math.max(0, ref ? TR.items.findIndex(c => c.ref === ref) : 0);
-  const h = fsOpen({ label: `${g.label} 빠른 처리`, cls: "tall tr", onClose: () => { if (TR.h === h) TR.h = null; document.removeEventListener("keydown", trKey); trBanner(); } });
+  const h = fsOpen({ label: `${TR.label} 빠른 처리`, cls: "tall tr", onClose: () => { if (TR.h === h) TR.h = null; document.removeEventListener("keydown", trKey); trBanner(); } });
   TR.h = h;
   document.addEventListener("keydown", trKey);
   trPaint();
@@ -48,12 +52,19 @@ function trOpen(key, ref) {
   h.box.focus({ preventScroll: true });
 }
 
-// New cards of the group join at the end; a card answered elsewhere (another window, Discord, the bot) is marked so, not dropped.
+// New cards of the group join at the end; a card answered elsewhere (another window, Discord, the bot) leaves the walk (the backend closed it),
+// while one answered here stays with its progress chip.
 function trMerge() {
-  const g = TR.groups.find(x => x.key === TR.key), now = new Set((g ? g.cards : []).map(trK));
+  const cards = trCards(TR.key), now = new Set(cards.map(trK));
   let changed = false;
-  for (const c of g ? g.cards : []) if (!TR.items.some(x => trK(x) === trK(c))) { TR.items.push(c); changed = true; }
-  for (const c of TR.items) if (!now.has(trK(c)) && !TR.done[trK(c)]) { TR.done[trK(c)] = { state: "gone" }; changed = true; }
+  for (const c of cards) if (!TR.items.some(x => trK(x) === trK(c))) { TR.items.push(c); changed = true; }
+  const cur = TR.items[TR.i], kept = TR.items.filter(c => now.has(trK(c)) || TR.done[trK(c)]);
+  if (kept.length !== TR.items.length) {
+    TR.items = kept; changed = true;
+    const j = cur ? kept.indexOf(cur) : -1;
+    TR.i = j >= 0 ? j : Math.min(TR.i, kept.length);
+    TR.noting = false;
+  }
   if (changed) trPaint();
 }
 
@@ -67,7 +78,7 @@ function trState(c) {
   }
   return d;
 }
-const TR_ST = { queued: "보낼 차례를 기다려요", sending: "보내는 중…", sent: "보냈어요", failed: "보내지 못했어요", bot: "봇이 보내요", edit: "봇이 고치는 중이에요", gone: "다른 곳에서 처리됐어요", err: "답을 보내지 못했어요" };
+const TR_ST = { drop: "보내지 않았어요", queued: "보낼 차례를 기다려요", sending: "보내는 중…", sent: "보냈어요", failed: "보내지 못했어요", bot: "봇이 보내요", edit: "봇이 고치는 중이에요", gone: "다른 곳에서 처리됐어요", err: "답을 보내지 못했어요" };
 const trChip = c => {
   const s = trState(c);
   return s ? el("span", { class: `tr-st ${s.state}`, "data-trst": trK(c), title: s.text || null, text: TR_ST[s.state] || s.state }) : el("span", { class: "tr-st", "data-trst": trK(c), hidden: true });
@@ -105,7 +116,7 @@ async function trSaveEdits(c) {
 function trAnswer(c, n, note) {
   const k = trK(c);
   if (TR.done[k] && TR.done[k].state !== "err") return;
-  TR.done[k] = { state: n === 1 ? "send" : "edit", at: Date.now() };
+  TR.done[k] = { state: n === 1 ? "send" : n === 3 ? "drop" : "edit", at: Date.now() };
   trNext();
   (async () => {
     try {
@@ -118,8 +129,9 @@ function trAnswer(c, n, note) {
     }
   })();
 }
-const trSkip = () => { const c = TR.items[TR.i]; if (c) TR.picks[trK(c)] = 3; trNext(); };
-const trPrev = () => { const j = [...TR.items.keys()].reverse().find(i => i < TR.i); if (j != null) { TR.i = j; TR.noting = false; trPaint(); } };
+// ← / →: look at the previous / next card without answering (the last step past the end shows the summary).
+const trStep = d => { const j = TR.i + d; if (j < 0 || j > TR.items.length) return; TR.i = j; TR.noting = false; trPaint(); };
+const trLocked = c => { const s = TR.done[trK(c)]; return !!s && s.state !== "err"; };
 
 function trKey(ev) {
   if (!TR.h || FS[FS.length - 1] !== TR.h || document.querySelector("dialog[open]")) return;
@@ -136,9 +148,12 @@ function trKey(ev) {
   const k = ev.key.toLowerCase();
   if (k === "l") { ev.preventDefault(); TR.list = !TR.list; trPaint(); }
   else if (TR.list) return;
-  else if (k === "e" && c && !TR.done[trK(c)]) { ev.preventDefault(); TR.noting = true; trPaint(); }
-  else if (k === "arrowright" || k === "j") { ev.preventDefault(); trSkip(); }
-  else if (k === "arrowleft" || k === "k") { ev.preventDefault(); trPrev(); }
+  else if (k === "arrowright" || k === "j") { ev.preventDefault(); trStep(1); }
+  else if (k === "arrowleft" || k === "k") { ev.preventDefault(); trStep(-1); }
+  else if (!c || TR.noting || trLocked(c) || (k === "enter" && ev.target instanceof HTMLElement && ev.target.closest("button, a"))) return;
+  else if (k === "enter" || k === "1") { ev.preventDefault(); trAnswer(c, 1); }
+  else if (k === "2" || k === "e") { ev.preventDefault(); TR.noting = true; trPaint(); }
+  else if (k === "3" || k === "x") { ev.preventDefault(); trAnswer(c, 3); }
 }
 
 function trEditSubmit(c) {
@@ -172,7 +187,15 @@ function trOriginal(c) {
   }
   if (!o) return null;
   const who = o.kind === "mail" ? [o.from, o.subject].filter(Boolean).join(" · ") : [o.author, o.post && o.post.title].filter(Boolean).join(" · ");
-  return el("div", { class: "tr-org" }, el("div", { class: "tr-k", text: o.kind === "mail" ? "받은 메일" : "원댓글" }), who ? el("div", { class: "tr-who", text: who }) : null, el("div", { class: "tr-otx", text: String(o.text || "").slice(0, 2000) }));
+  return el("div", { class: "tr-org" }, el("div", { class: "tr-k", text: o.kind === "mail" ? "받은 메일" : "원댓글" }), who ? el("div", { class: "tr-who", text: who }) : null, el("div", { class: "tr-otx", text: String(o.text || "").slice(0, o.kind === "mail" ? 600 : 2000) }));
+}
+// A comment draft: the comment it answers, with the post, who and when (KST) and the linked-mail mark, right above the draft.
+function trCommentCtx(c) {
+  const x = c.comment;
+  return el("div", { class: "tr-org tr-cmt" }, el("div", { class: "tr-k", text: "답하는 댓글" }),
+    x.post ? el("div", { class: "tr-post", text: x.post }) : null,
+    el("div", { class: "tr-who" }, el("b", { text: x.who || "" }), x.at ? el("span", { text: ` · ${trKst(x.at)}` }) : null, x.mailMark ? el("span", { class: "tag", "data-mail": x.mailMark.state, text: x.mailMark.label }) : null),
+    x.text ? el("div", { class: "tr-otx", text: x.text }) : null);
 }
 
 const trFiles = files => (files && files.length ? el("div", { class: "tr-files" }, ...files.map(f => el("span", { class: "tr-file", text: f.size ? `${f.name} (${f.size})` : f.name }))) : null);
@@ -185,7 +208,7 @@ function trOneView(c) {
     el("div", { class: "tr-q" }, el("span", { text: trQ(c) || "이대로 보낼까요?" }), trChip(c)),
     decideNode(d),
     el("div", { class: "tr-meta" }, d.toLabel ? el("span", { class: "tr-to" }, el("b", { text: d.toLabel }), ` ${d.to || ""}`) : null, d.subject ? el("span", { class: "tr-to" }, el("b", { text: "제목" }), ` ${d.subject}`) : null, d.rule ? el("span", { class: "tr-rule", text: `규칙: ${d.rule}` }) : null, !c.sendable ? el("span", { class: "tr-rule", text: "봇이 보내요" }) : null),
-    trOriginal(c),
+    c.comment ? trCommentCtx(c) : trOriginal(c),
     c.info && c.info.length ? el("ul", { class: "tr-info" }, ...c.info.map(l => el("li", { text: l }))) : null,
     d.warning ? el("div", { class: "tr-warn", text: d.warning }) : null,
     el("label", { class: "tr-k", text: d.mail ? "답글" : "보낼 글" }), area("reply", e.reply ?? d.body ?? ""), trFiles(d.attachments),
@@ -197,10 +220,11 @@ function trOneView(c) {
       el("div", { class: "tr-acts" }, el("button", { class: "dc-act alt tr-b", type: "button", onclick: () => { TR.noting = false; trPaint(); } }, "취소"), el("button", { class: "dc-act main tr-b tr-go", type: "button", onclick: () => trEditSubmit(c) }, "고쳐 달라고 하기")));
   } else {
     foot.append(el("div", { class: "tr-acts" },
-      el("button", { class: "dc-act alt tr-b", type: "button", onclick: trSkip }, "건너뛰기"),
+      el("button", { class: "dc-act alt tr-b", type: "button", disabled: locked, onclick: () => trAnswer(c, 3) }, "보내지 않기"),
       el("button", { class: "dc-act alt tr-b", type: "button", disabled: locked, onclick: () => { TR.noting = true; trPaint(); } }, "고치기 …"),
       el("button", { class: "dc-act main tr-b tr-go", type: "button", disabled: locked, onclick: () => trAnswer(c, 1) }, trSendText(c))),
-      el("div", { class: "tr-keys", text: "⌘↵ 보내기 · E 고치기 · → 건너뛰기 · ← 이전 · L 목록" }));
+      el("div", { class: "tr-nav" }, el("button", { class: "btn text sm", type: "button", "aria-label": "이전 카드", disabled: TR.i === 0, onclick: () => trStep(-1) }, "‹ 이전"), el("button", { class: "btn text sm", type: "button", "aria-label": "다음 카드", onclick: () => trStep(1) }, "다음 ›")),
+      el("div", { class: "tr-keys", text: "Enter·1 보내기 · 2·E 고치기 · 3·X 보내지 않기 · ← → 이전·다음 · L 목록" }));
   }
   return [body, foot];
 }
@@ -214,7 +238,7 @@ function trSendLabel(c) { const b = TR.h && $(".tr-go", TR.h.box); if (b) b.text
 function trDoneView() {
   const by = s => TR.items.filter(c => { const x = trState(c); return x && x.state === s; }).length;
   const skipped = TR.items.filter(c => !TR.done[trK(c)]).length;
-  const rows = [["보냈어요", by("sent")], ["보내는 중", by("queued") + by("sending")], ["보내지 못했어요", by("failed") + by("err")], ["봇이 고치거나 보내요", by("edit") + by("bot")], ["건너뛰었어요", skipped]].filter(([, v]) => v);
+  const rows = [["보냈어요", by("sent")], ["보내지 않았어요", by("drop")], ["보내는 중", by("queued") + by("sending")], ["보내지 못했어요", by("failed") + by("err")], ["봇이 고치거나 보내요", by("edit") + by("bot")], ["건너뛰었어요", skipped]].filter(([, v]) => v);
   const body = el("div", { class: "fs-body tr-body tr-empty" }, el("div", { class: "tr-done-t", text: skipped ? "끝까지 봤어요" : "모두 답했어요" }), el("ul", { class: "tr-sumlist" }, ...rows.map(([t, v]) => el("li", {}, el("span", { text: t }), el("b", { text: `${v}건` })))));
   const foot = el("div", { class: "fs-ft tr-ft" }, el("div", { class: "tr-acts" },
     skipped ? el("button", { class: "dc-act alt tr-b", type: "button", onclick: () => { TR.i = TR.items.findIndex(c => !TR.done[trK(c)]); trPaint(); } }, "건너뛴 것 다시 보기") : null,

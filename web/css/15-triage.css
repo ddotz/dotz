@@ -77,3 +77,7 @@
   .tr-q { font-size: 17px; }
 }
 @media (pointer: coarse) { .tr-keys { display: none; } }
+.tr-post { color: var(--fg); font: 600 13px/20px var(--font); }
+.tr-cmt .tr-who { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.tr-cmt .tr-who b { color: var(--fg); font-weight: 600; }
+.tr-nav { display: flex; justify-content: space-between; gap: 8px; }
