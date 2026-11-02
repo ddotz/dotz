@@ -2,9 +2,9 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { aliasesFile, readAliases, setAlias } from "./account-alias.ts";
-import { decisionsFile, readRules, rulesFile, setUsage, writeRules } from "./account-rules.ts";
+import { decisionsFile, readRules, rulesFile, setOnLimit, setUsage, writeRules } from "./account-rules.ts";
 import { type AccountSwitch, FALLBACK_ENV, PIN_ENV, resetStickyForTest, stickyAccount, stickyEnv, switchesFile } from "./account-sticky.ts";
-import { accountAnswer, accountAsk, accountsBody, KIND_TEXT, accountsRoute, accountText, labeledAccountView, pinnedLimitAlert, switchNotice, switchText } from "./accounts-api.ts";
+import { accountAnswer, accountAsk, accountsBody, KIND_TEXT, accountsRoute, accountText, labeledAccountView, pinnedLimitAlert, pinnedLimitNotice, switchNotice, switchText } from "./accounts-api.ts";
 import { authFile } from "./apikey-policy.ts";
 import { DATA_DIR } from "./config.ts";
 import { parseChoices } from "./choices.ts";
@@ -353,14 +353,79 @@ test("고정 account at its limit: the alert says which account and until when, 
 	await call("PUT", "/api/accounts/mode", { mode: "pinned", account: "default" });
 	const text = pinnedLimitAlert(until)!;
 	expect(text).toContain("개인 계정");
-	expect(text).toContain("멈춰요");
+	expect(text).toContain(msg().accountLimit.questionTitle);
 	const labels = parseChoices(text).options.map(o => o.label);
-	expect(labels[0]).toBe("자동 전환으로 바꾸기");
+	expect(labels[0]).toBe(msg().accountLimit.switchChoice);
 	// the clicked option goes out as "1) <label>"; the gateway reads it as 자동
 	expect(accountAsk("1) 자동 전환으로 바꾸기", ["default", "work"], ALIASES)).toEqual({ kind: "auto" });
 	await accountAnswer({ kind: "auto" });
 	expect(readRules().manual).toBeUndefined();
 	expect(pinnedLimitAlert(until)).toBeUndefined();
+});
+
+test("on_limit unset: the pinned limit asks once with both choices; answering 기다리기 remembers it and keeps the pin", async () => {
+	writeAuth(["default", "work"]);
+	for (const [k, v] of Object.entries(ALIASES)) setAlias(k, v);
+	const until = Date.now() + 3_600_000;
+	writeSlots({ default: { blockReason: "rate_limit", blockedUntil: until } });
+	await call("PUT", "/api/accounts/mode", { mode: "pinned", account: "default" });
+
+	const asked = (await pinnedLimitNotice(until))!;
+	expect(parseChoices(asked).options.map(o => o.label)).toEqual([msg().accountLimit.switchChoice, msg().accountLimit.waitChoice]);
+	expect(readRules().on_limit).toBeUndefined();
+
+	// the clicked option goes out as "2) <label>"; the gateway reads it and saves it, so the question is not asked again
+	expect(accountAsk(`2) ${msg().accountLimit.waitChoice}`, ["default", "work"], ALIASES)).toEqual({ kind: "wait" });
+	await accountAnswer({ kind: "wait" });
+	expect(readRules().on_limit).toBe("wait");
+	expect(readRules().manual).toEqual({ account: "default" });
+	const again = (await pinnedLimitNotice(until))!;
+	expect(parseChoices(again).options).toEqual([]);
+	expect(again).not.toContain(msg().accountLimit.questionTitle);
+	expect(again).toContain("개인 계정");
+	expect(accountsBody().mode).toBe("pinned");
+});
+
+test("on_limit wait: no question and no mode change, just one plain notice with the time work resumes", async () => {
+	writeAuth(["default", "work"]);
+	for (const [k, v] of Object.entries(ALIASES)) setAlias(k, v);
+	writeRules({ manual: { account: "default" }, on_limit: "wait" });
+	const until = Date.now() + 3_600_000;
+	writeSlots({ default: { blockReason: "rate_limit", blockedUntil: until } });
+
+	const text = (await pinnedLimitNotice(until))!;
+	expect(parseChoices(text).options).toEqual([]);
+	expect(text).not.toContain(msg().accountLimit.questionTitle);
+	expect(text).toContain("개인 계정");
+	expect(readRules().manual).toEqual({ account: "default" });
+	expect(accountsBody().mode).toBe("pinned");
+});
+
+test("on_limit switch: no question, it turns on 자동 전환 and says it moved to the next account", async () => {
+	writeAuth(["default", "work"]);
+	for (const [k, v] of Object.entries(ALIASES)) setAlias(k, v);
+	writeRules({ manual: { account: "default" }, on_limit: "switch" });
+	const until = Date.now() + 3_600_000;
+	writeSlots({ default: { blockReason: "rate_limit", blockedUntil: until } });
+
+	const text = (await pinnedLimitNotice(until))!;
+	expect(parseChoices(text).options).toEqual([]);
+	expect(text).not.toContain(msg().accountLimit.questionTitle);
+	expect(text).toContain("회사 계정");
+	expect(readRules().manual).toBeUndefined();
+	expect(accountsBody().mode).toBe("auto");
+});
+
+test("PUT /api/accounts/on-limit saves the choice and leaves the mode route and its behaviour intact", async () => {
+	const saved = await call("PUT", "/api/accounts/on-limit", { on_limit: "wait" });
+	expect(saved?.status).toBe(200);
+	expect(((await saved!.json()) as any).rules.on_limit).toBe("wait");
+	expect(readRules().on_limit).toBe("wait");
+	expect((await call("PUT", "/api/accounts/on-limit", { on_limit: "sometimes" }))?.status).toBe(400);
+	expect((await call("PUT", "/api/accounts/mode", { mode: "auto" }))?.status).toBe(200);
+	expect(readRules().on_limit).toBe("wait");
+	setOnLimit(undefined);
+	expect(readRules().on_limit).toBeUndefined();
 });
 
 test("a usage report with no numbers says why: an expired login asks for /login, a blocked read says it retries", () => {

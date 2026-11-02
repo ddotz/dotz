@@ -4,7 +4,8 @@
 //     "rules":  [ { "name"?, "when"?: { days, from, to, five_hour_left_below, seven_day_left_below, rate_limited, auth_error, unavailable },
 //                   "do": { "pin": X } | { "prefer": [X, Y] } | { "auto": true } } ],
 //     "script": { "path", "timeout_ms"?, "every_minutes"? },
-//     "order": [X, Y, Z] }   the owner's account order: the fallback order of 자동 전환 (usableFirst in account-sticky.ts)
+//     "order": [X, Y, Z],
+//     "on_limit": "switch" | "wait" }   the owner's answer for a pinned account at its usage limit; absent = ask once
 // Precedence: manual (not expired) > the script's opinion > the first matching rule > automatic (decide() in account-sticky.ts).
 // The manual pick is the owner's 고정 mode: it holds while blocked (no other account takes over; the work pauses). A layer's
 // account that is blocked (OmO's rate_limit/auth block, not expired) or not in OmO's pool is skipped: script and pin fall
@@ -29,8 +30,10 @@ export type When = { days?: Day[]; from?: string; to?: string; five_hour_left_be
 export type Action = { pin: string } | { prefer: string[] } | { auto: true };
 type Rule = { name?: string; when?: When; do: Action };
 export type Manual = { account: string; until?: string; reason?: string };
+// A pinned account at its usage limit: switch to 자동 전환, or wait until the limit clears (asked once when unset).
+export type OnLimit = "switch" | "wait";
 type ScriptConfig = { path: string; timeout_ms?: number; every_minutes?: number };
-export type Rules = { manual?: Manual; rules?: Rule[]; script?: ScriptConfig; order?: string[] };
+export type Rules = { manual?: Manual; rules?: Rule[]; script?: ScriptConfig; order?: string[]; on_limit?: OnLimit };
 export type Usage = Record<string, { five_hour_left?: number; seven_day_left?: number }>;
 export type ScriptErrorKind = "timeout" | "exit" | "spawn" | "unknown_account";
 type ScriptOpinion = { account?: string; reason?: string; error?: ScriptErrorKind; at: string };
@@ -135,6 +138,10 @@ export function validateRules(raw: unknown): Rules {
 		if (!Array.isArray(r.order)) bad("order", "계정 이름 목록이어야 해요");
 		out.order = [...new Set<string>(r.order.map((x: unknown, n: number) => nonEmpty(`order[${n}]`, x)))];
 	}
+	if (r.on_limit !== undefined) {
+		if (r.on_limit !== "switch" && r.on_limit !== "wait") bad("on_limit", '"switch" 또는 "wait"여야 해요');
+		out.on_limit = r.on_limit;
+	}
 	return out;
 }
 
@@ -169,6 +176,16 @@ export function writeRules(r: unknown, file = rulesFile()): Rules {
 export function setOrder(order: string[]): Rules {
 	return writeRules({ ...readRules(), order });
 }
+
+// The owner's answer for a pinned account at its usage limit, saved once; undefined asks again next time.
+export function setOnLimit(on_limit: OnLimit | undefined): Rules {
+	const next = { ...readRules() };
+	if (on_limit === undefined) delete next.on_limit;
+	else next.on_limit = on_limit;
+	return writeRules(next);
+}
+
+export const readOnLimit = (): OnLimit | undefined => readRules().on_limit;
 
 // The manual pick set, or cleared with undefined; other parts of the file stay as they are.
 export function setManual(account: string | undefined, reason?: string, until?: string): Rules {

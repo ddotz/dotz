@@ -14,7 +14,7 @@ import { dropSection, renderState } from "./recall-parts.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
-import { pinnedLimitAlert } from "./accounts-api.ts";
+import { pinnedLimitNotice } from "./accounts-api.ts";
 import { authStamp, blockText, limitAccount, limitKind, markTold, noteBlock, noteRecovered, ownerRetryMs, providerOf, recoveryText, watchAuth } from "./limit-alert.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { writeOrchestratorProfile } from "./runtime/omo.ts";
@@ -613,8 +613,10 @@ export function createOrchestrator(opts: OrchOpts) {
 		save({ pausedUntil: orch.rateLimitedUntil, pausedKind: owner ? "owner" : undefined, pausedAuth: owner ? authSince : undefined });
 		if (note.alert) {
 			if (owner) onAlert(`${NAME}: ${blockText(lk as "auth" | "billing", account, providerOf(currentModel), retry)}`);
-			else if (pinnedLimitAlert(until.getTime())) onAlert(`${NAME}: ${pinnedLimitAlert(until.getTime())}`);
-			else onAlert(`${NAME}: 사용량 한도에 걸려서 멈췄어요. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리해요.`);
+			else {
+				const pinned = await pinnedLimitNotice(until.getTime());
+				onAlert(`${NAME}: ${pinned ?? `사용량 한도에 걸려서 멈췄어요. ${reset ? `한도 리셋 직후인 ${at}` : `${at}쯤`}부터 다시 시도하고, 그동안 온 메시지는 모아뒀다가 순서대로 처리해요.`}`);
+			}
 		}
 		pauseAlerted = true;
 		armResume(retry, owner, authSince);
