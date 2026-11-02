@@ -177,11 +177,11 @@ describe("deliver", () => {
 	});
 	test("a self-chat reply prefix starts every posted part, still under 4000 chars", async () => {
 		const cfg = loadJandiConfig(dir);
-		saveJandiConfig({ ...cfg, self_chat: { enabled: true, team_id: 0, room_id: 0, member_id: 0, bot_id: 0, keyword: "종놈", reply_prefix: "[종놈]", session_secret: "jandi-session", interval_ms: 3000 } }, dir);
+		saveJandiConfig({ ...cfg, self_chat: { enabled: true, team_id: 0, room_id: 0, member_id: 0, bot_id: 0, keyword: "work", reply_prefix: "[work]", session_secret: "jandi-session", interval_ms: 3000 } }, dir);
 		try {
 			captured.length = 0;
 			await send("main", "main", "x".repeat(5000));
-			expect(captured.map(c => c.body.body.startsWith("[종놈] "))).toEqual([true, true]);
+			expect(captured.map(c => c.body.body.startsWith("[work] "))).toEqual([true, true]);
 			expect(captured.every(c => c.body.body.length <= 4000)).toBe(true);
 		} finally {
 			saveJandiConfig(cfg, dir);
