@@ -35,6 +35,19 @@ export const unreadFrom = (target: string): string | null => readOf(target) ?? r
 type ReadResult = { ok: true; target: string; ts: string; moved: boolean } | { ok: false; error: string };
 
 // POST /api/read {target, ts}: moves the position forward (an older or equal ts changes nothing) and tells every device.
+// POST /api/mail/<key>/action unread (hub/mail-sync.ts): the one way a position moves back, to `ts` (just before the mail), so the mail counts unread again.
+export function markUnread(input: { target: string; ts: string }): ReadResult {
+	if (!READ_TARGET.test(input.target) || !Number.isFinite(Date.parse(input.ts))) return { ok: false, error: "target and ts required" };
+	const ts = new Date(input.ts).toISOString();
+	// No own position yet: the first-run baseline is what counts, so a mail older than it needs its own position to read unread.
+	const prev = unreadFrom(input.target);
+	if (!prev || prev <= ts) return { ok: true, target: input.target, ts: prev ?? ts, moved: false };
+	reads[input.target] = ts;
+	writeAtomic(paths.reads, `${JSON.stringify(reads, null, 1)}\n`);
+	broadcast({ kind: "read", source: "gateway", target: input.target, ts });
+	return { ok: true, target: input.target, ts, moved: true };
+}
+
 export function markRead(input: { target?: unknown; ts?: unknown }): ReadResult {
 	const target = typeof input.target === "string" ? input.target : "";
 	if (!READ_TARGET.test(target)) return { ok: false, error: "target must be main, alert, worklog, ch:<id>, lane:<name>, mail:<key> or settings:<app>" };

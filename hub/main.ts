@@ -60,6 +60,7 @@ import { loadPlugins, pluginClaim, pluginThread, startPlugins } from "./plugins.
 import { startTokenAudit } from "./token-audit.ts";
 import { startZele, zeleAccounts, zeleRead } from "./zele.ts";
 import { createReconciler } from "./mail-reconcile.ts";
+import { backfillMailSummaries, mailSummarizer } from "./mail-summary-live.ts";
 import { mailByKey, mailByThread, mailRecords, mailTarget, migrateStoredMails, postMail, sentReplyRefs, setMailReadOut, setMailReply, setMailSuggest, type MailDeps } from "./mail.ts";
 import { ownAddresses, replyExpected } from "./mail-state.ts";
 import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/offer.ts";
@@ -77,7 +78,8 @@ import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue, sendWeb } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
-import { applyMailStates, deliverAnswer, makeRoute, startStallSweep, webAccess } from "./routes.ts";
+import { mailAction } from "./mail-sync.ts";
+import { applyMailStates, deliverAnswer, mailSyncDeps, makeRoute, startStallSweep, webAccess } from "./routes.ts";
 import { appProxySocket } from "./app-proxy.ts";
 import { appEntries, appKeyOf, integrationContext, readAppsFile } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
@@ -292,6 +294,7 @@ const mailDeps = (): MailDeps => ({
 		return (mailChannelId = id);
 	},
 	discordOn: discord.status.enabled,
+	summarize: (key, hint) => mailSummarizer.request(key, hint),
 	// A Discord thread per mail only when the mail's app instance has 디스코드에도 올리기 on (hub/app-settings.ts); web only otherwise.
 	threadOn: (_source, key) => mailDiscordOn(DATA_DIR, key),
 	newMailOn: (_source, key) => mailFeatureOn(DATA_DIR, key, "new_mail"),
@@ -307,12 +310,10 @@ function classifyStoredMails(): void {
 	if (n) log(`mail: ${n} stored mails classified`);
 }
 classifyStoredMails();
+backfillMailSummaries();
 
-// A zele mail he opened in dotz is read in Gmail too: one `zele mail read-mark` per opening.
-setMailReadOut(r => {
-	if (r.source !== "zele") return;
-	void Bun.$`zele mail read-mark ${r.id} ${r.account ? ["--account", r.account] : []}`.nothrow().quiet().then(x => x.exitCode !== 0 && log(`zele: thread ${r.id} not marked read: ${x.stderr.toString().trim().slice(0, 200)}`));
-});
+// A mail he opened in dotz is read in its mailbox too (zele: `mail read-mark`, a plugin: its mailAction): hub/mail-sync.ts, mailbox side only.
+setMailReadOut(r => void mailAction(r.key, "read", mailSyncDeps, { providerOnly: true }));
 
 void startZele({
 	alert,
