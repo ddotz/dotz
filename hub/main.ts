@@ -1,7 +1,7 @@
 // Dotz hub entry: bun hub/main.ts. Owns Discord, lanes and the event bus; serves the web app + API on
 // 127.0.0.1 only. Tailnet access goes through `tailscale serve`, which adds the Tailscale-User-Login header.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { cfg, DATA_DIR, HOST, log, NAME, now, paths, PORT, TZ, tzLabel, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
 import { parseCommand, setGatewayRestart } from "./control.ts";
@@ -80,6 +80,8 @@ import { appEntries, appKeyOf, integrationContext, readAppsFile } from "./integr
 import { mailFeatureOn } from "./app-feature-flags.ts";
 import { applyMemory, mailDiscordOn, setDiscordProbe } from "./app-settings.ts";
 import { setFormLink } from "./auth.ts";
+import { startTunnel, stopTunnel } from "./cloudflared.ts";
+import { cfBase, setWebBase, webBase as getWebBase, webLink } from "./weblink.ts";
 import { kakaoDraftFacts, startKakaoLive, stopKakaoLive } from "./kakao/gateway.ts";
 import { commentDraftFacts } from "./comments/gateway.ts";
 import { draftHandled } from "./draft-handled.ts";
@@ -136,8 +138,15 @@ installLaneHandlers();
 // Result files ([file] lines, discord.ts) go out only when GET /api/file would serve them (inside the roots, or named in a [file] line of a sent message); a file too big to attach goes
 // out as that route's download link on the tailnet address (config web.public_url, else tailscale's name + HTTPS port).
 discord.setFileResolver(p => resolveAllowed(p, fileRoots(), sentFiles()));
-let webBase: string | undefined = (cfg.web as { public_url?: string } | undefined)?.public_url?.replace(/\/+$/, "");
-if (!webBase && cfg.web?.tailscale_https_port) {
+// web.access = "cloudflare": the app is reached through a Cloudflare Tunnel on web.cloudflare.hostname (hub/cloudflared.ts); no tailscale lookup at all.
+// "local" keeps the tailscale lookup off too. Anything else (default "tailscale") is the original behavior.
+const access = cfg.web?.access ?? "tailscale";
+const cfUrl = access === "cloudflare" ? cfBase(cfg.web?.cloudflare?.hostname) : undefined;
+if (access === "cloudflare" && !cfUrl) log("web: web.cloudflare.hostname is missing or invalid; links to the web app are left out");
+let webBase: string | undefined = cfUrl ? cfUrl : access === "tailscale" || access === "local" ? (cfg.web as { public_url?: string } | undefined)?.public_url?.replace(/\/+$/, "") : undefined;
+setWebBase(webBase);
+if (access === "cloudflare" && cfg.web?.cloudflare) startTunnel({ tokenFile: resolve(join(DATA_DIR, "secrets"), cfg.web.cloudflare.tunnel_token_file ?? "cloudflared-tunnel-token"), login: { team: cfg.web.cloudflare.team, aud: cfg.web.cloudflare.aud, allow: cfg.web.allow_logins ?? [] } });
+if (!webBase && access === "tailscale" && cfg.web?.tailscale_https_port) {
 	const port = cfg.web.tailscale_https_port;
 	void (async () => {
 		// DOTZ_TAILSCALE_BIN (colon-separated, empty = none) replaces the lookup list: a test forces "no tailscale" on a host that has the app.
@@ -146,6 +155,7 @@ if (!webBase && cfg.web?.tailscale_https_port) {
 			const dns = await Bun.$`${bin} status --json`.quiet().json().then(s => String(s?.Self?.DNSName ?? "").replace(/\.$/, ""), () => "");
 			if (!dns) continue;
 			webBase = `https://${dns}${port === 443 ? "" : `:${port}`}`;
+			setWebBase(webBase);
 			if (cfg.web?.allow_logins?.length) await ensureServe(bin, port, cfg.web.port);
 			return;
 		}
@@ -166,10 +176,10 @@ async function ensureServe(bin: string, httpsPort: number, localPort: number): P
 	const r = await Bun.$`${bin} serve --bg --https=${httpsPort} http://127.0.0.1:${localPort}`.nothrow().quiet();
 	log(r.exitCode === 0 ? `web: tailscale serve was missing; opened port ${httpsPort} -> ${localPort}` : `web: tailscale serve failed: ${`${r.stdout}${r.stderr}`.trim().slice(0, 300)}`);
 }
-setFormLink(() => webBase);
-discord.setFileLink(p => (webBase ? `${webBase}/api/file?path=${encodeURIComponent(p)}&dl=1` : undefined));
+setFormLink(() => getWebBase());
+discord.setFileLink(p => webLink(`/api/file?path=${encodeURIComponent(p)}&dl=1`));
 // Apple's push service rejects a VAPID subject it cannot parse as a contact: the app's own https URL is one.
-startPush({ subject: () => webBase ?? "mailto:dotz@example.com" });
+startPush({ subject: () => getWebBase() ?? "mailto:dotz@example.com" });
 startPeerStreams();
 
 discord.setLaneRecords({ read: laneSpot, remember: rememberSpot });
@@ -542,6 +552,7 @@ function shutdown(): Promise<never> {
 		{ name: "pending replies", run: async () => void (await replies.flush(outlangTimeoutMs() + 1000)) },
 		{ name: "discord connection", run: () => discord.disconnect() },
 		{ name: "watch and schedule timers", run: () => (stopWatches(), stopSchedules(), stopKakaoLive(), clearTrackedTimers()) },
+		{ name: "cloudflare tunnel", run: () => stopTunnel() },
 		{ name: "others", run: () => void 0 },
 	], 10_000 + (replies.size() ? outlangTimeoutMs() + 2000 : 0));
 }

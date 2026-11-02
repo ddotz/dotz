@@ -212,7 +212,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 			try {
 				for (const [i, part] of parts.entries()) {
 					const last = i === parts.length - 1;
-					await post(room, { body: last && ask ? `${part}\n\n${ASK_HINT}` : part, ...(color ? { connectColor: color } : {}), ...(last && ask ? { connectInfo: [ask] } : {}) });
+					await post(room, { body: last && ask ? `${part}\n\n${ASK_HINT}` : part, ...(color ? { connectColor: color } : {}), ...(last && (ask || msg.link) ? { connectInfo: [...(ask ? [ask] : []), ...(msg.link ? [{ title: "웹에서 보기", description: msg.link }] : [])] } : {}) });
 				}
 				ok++;
 			} catch (e) {
