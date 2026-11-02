@@ -7,6 +7,8 @@
 // tokens, so a refresh OmO did not make would log OmO out); an expired one is reported as "expired" and OmO refreshes it on
 // its next request. An account is asked at most every FRESH_MS (a forced read at most every MIN_REFRESH_MS), and one that
 // answered 429 is not asked again before its retry-after.
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { authFile } from "./apikey-policy.ts";
@@ -32,6 +34,49 @@ const readJson = (file: string): Json | undefined => {
 		return undefined;
 	}
 };
+
+// OmO 2026.10.31+ logins (store "claude-cli") keep no token in auth.json: the Claude CLI holds it for the account's own dir
+// <agent dir>/anthropic-subscription-claude/<dirId>, in the macOS keychain item "Claude Code-credentials-<first 8 hex of
+// sha256(dir)>" or, elsewhere, <dir>/.credentials.json. Read only, like the rest of this file; cached a minute per dir.
+const CLI_TOKEN_TTL_MS = 60_000;
+const cliTokens = new Map<string, { at: number; cred?: { access: string; expires?: number } }>();
+export const resetCliTokensForTest = () => cliTokens.clear();
+function cliCredential(file: string, dirId: unknown, now: number): { access: string; expires?: number } | undefined {
+	if (typeof dirId !== "string" || !/^[0-9a-f]{32}$/.test(dirId)) return undefined;
+	const dir = join(dirname(file), "anthropic-subscription-claude", dirId);
+	const hit = cliTokens.get(dir);
+	if (hit && now - hit.at < CLI_TOKEN_TTL_MS && (hit.cred?.expires ?? Number.POSITIVE_INFINITY) > now) return hit.cred;
+	let raw: string | undefined;
+	try {
+		raw = readFileSync(join(dir, ".credentials.json"), "utf8");
+	} catch {
+		if (process.platform === "darwin") {
+			const service = `Claude Code-credentials-${createHash("sha256").update(dir).digest("hex").slice(0, 8)}`;
+			try {
+				raw = execFileSync("security", ["find-generic-password", "-s", service, "-w"], { encoding: "utf8", timeout: 5_000, stdio: ["ignore", "pipe", "ignore"] });
+			} catch {}
+		}
+	}
+	let cred: { access: string; expires?: number } | undefined;
+	try {
+		const o = JSON.parse(raw ?? "")?.claudeAiOauth;
+		if (typeof o?.accessToken === "string" && o.accessToken) cred = { access: o.accessToken, ...(typeof o.expiresAt === "number" ? { expires: o.expiresAt } : {}) };
+	} catch {}
+	cliTokens.set(dir, { at: now, cred });
+	return cred;
+}
+// The subscription accounts OmO lists, each with the token its usage is read with (accounts with none are left out).
+function tokenAccounts(file: string, now: number): { sub: Json | undefined; accounts: Json[] } {
+	const sub = readJson(file)?.["anthropic-subscription"];
+	const accounts: Json[] = (Array.isArray(sub?.accounts) ? sub.accounts : []).flatMap((a: Json) => {
+		if (typeof a?.name !== "string") return [];
+		if (typeof a.access === "string" && a.access) return [a];
+		if (a.store !== "claude-cli" || a.signInRequired) return [];
+		const cred = cliCredential(file, a.dirId, now);
+		return cred ? [{ ...a, access: cred.access, expires: cred.expires }] : [];
+	});
+	return { sub, accounts };
+}
 
 // The runtime that runs a role, as hub/runtime/index.ts runtimeFor decides it (unknown names run OmO); kept here so the
 // usage path does not import the adapters (they import providers.ts).
@@ -68,8 +113,7 @@ export function usedAccount(chosen: string | undefined, names: string[], isBlock
 // showing the pinned account's numbers.
 // hard: the owner's 고정 mode, where requests stay on `prefer` even while it is blocked.
 export function subscriptionAccount(file = authFile(), now = Date.now(), prefer?: string, hard = false): SubscriptionAccount | undefined {
-	const sub = readJson(file)?.["anthropic-subscription"];
-	const accounts: Json[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: Json) => typeof a?.name === "string" && typeof a?.access === "string" && a.access) : [];
+	const { sub, accounts } = tokenAccounts(file, now);
 	if (!accounts.length) return undefined;
 	const pin = typeof sub.pinned === "string" ? accounts.find(a => a.name === sub.pinned) : undefined;
 	const slots: Json = readJson(join(dirname(file), "credential-pool-state.json"))?.providers?.["anthropic-subscription"]?.lanes?.stored?.slots ?? {};
@@ -86,9 +130,8 @@ export function subscriptionAccount(file = authFile(), now = Date.now(), prefer?
 
 // Every subscription account OmO holds, for the per-account usage numbers the owner's rules read (hub/account-rules.ts).
 export function subscriptionAccounts(file = authFile()): SubscriptionAccount[] {
-	const sub = readJson(file)?.["anthropic-subscription"];
-	const accounts: Json[] = Array.isArray(sub?.accounts) ? sub.accounts.filter((a: Json) => typeof a?.name === "string" && typeof a?.access === "string" && a.access) : [];
-	return accounts.map(a => ({ name: a.name, pinned: sub.pinned === a.name, token: a.access, expiresAt: typeof a.expires === "number" ? a.expires : null }));
+	const { sub, accounts } = tokenAccounts(file, Date.now());
+	return accounts.map(a => ({ name: a.name, pinned: sub?.pinned === a.name, token: a.access, expiresAt: typeof a.expires === "number" ? a.expires : null }));
 }
 
 const WINDOWS: [key: string, id: string, label: string, windowId: string, durationMs: number][] = [
