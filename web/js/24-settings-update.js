@@ -264,33 +264,26 @@ function updateSection() {
   return [head, el("div", { class: "list" }, ...rows, ...prefs), ...hvSection()];
 }
 
-/* ---------- settings: 앱 · 알림 matrix (hub/notify-route.ts, GET/PUT /api/notify/route) ---------- */
-// One table for every outgoing notice: rows are the notice classes, columns the web app, the phone, Discord (once connected) and each enabled messenger.
-// The web app always gets everything (its switch is fixed on); a push switch applies to every device. 진행 has no Discord switch: the conversation kind decides (설정 → Discord).
-const NR = { v: null, asked: false };
-const NR_DESC = { ask: "질문 · 승인 · 로그인", alert: "게이트웨이 오류 · 로그인 끊김 · 감시 반복 실패", result: "세션 · 작업 완료 · 실패", news: "메일 · 카톡 · 댓글 · 감시 · 예약 (앱별 끄기는 앱 설정)", conv: "보고 있지 않은 대화의 새 답", log: "진행 · 작업 기록" };
-async function nrLoad() { NR.asked = true; try { NR.v = await api("/api/notify/route"); } catch { NR.v = null; } if (current === "settings") renderSettings(); }
-async function nrSet(cls, col, on) {
-  const was = NR.v.cells[cls][col];
-  NR.v.cells[cls][col] = on; renderSettings();
-  try { NR.v = await api("/api/notify/route", "PUT", { cls, column: col, on }); } catch (e) { NR.v.cells[cls][col] = was; toast(e.message, true); }
+/* ---------- settings: 앱 알림 per class (hub/notify-route.ts pushClasses; GET/PUT /api/push/classes) ---------- */
+// The web app and the phone are one place, "앱 알림": one switch per notice class, the same on every device. The bell keeps every notice
+// either way; a switch decides whether that class notifies. Each messenger has its own 알림 switches in its connection sheet (설정 → 메신저).
+const NOTIFY_CLASSES = [["ask", "답변 필요", "질문 · 승인 · 로그인"], ["alert", "경고", "게이트웨이 오류 · 로그인 끊김 · 감시 반복 실패"], ["result", "결과", "세션 · 작업 완료 · 실패"],
+  ["news", "새 소식", "메일 · 카톡 · 댓글 · 감시 · 예약"], ["conv", "대화", "보고 있지 않은 대화의 새 답"], ["log", "진행", "진행 중 보고 · 작업 기록"]];
+// One plain row per class with a switch; `on(k)` reads a class's state, `set(k, on)` changes it, `only` limits the classes shown.
+const notifyRows = (on, set, only) => NOTIFY_CLASSES.filter(([k]) => !only || only.includes(k)).map(([k, label, desc]) => el("div", { class: "li", "data-notify": k }, el("span", { class: "tx" }, el("div", { class: "hd", text: label }), el("div", { class: "sup", text: desc })),
+  el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on(k)), "aria-label": `${label} 알림`, "data-k": k, onclick: () => set(k, !on(k)) })));
+const APPN = { v: null, asked: false };
+async function appNotifyLoad() { APPN.asked = true; try { APPN.v = (await api("/api/push/classes")).classes; } catch { APPN.v = null; } if (current === "settings") renderSettings(); }
+async function appNotifySet(k, on) {
+  const was = APPN.v[k];
+  APPN.v = { ...APPN.v, [k]: on }; renderSettings();
+  try { APPN.v = (await api("/api/push/classes", "PUT", { classes: { [k]: on } })).classes; } catch (e) { APPN.v = { ...APPN.v, [k]: was }; toast(e.message, true); }
   renderSettings();
 }
-function notifyMatrix() {
-  if (!NR.v && !NR.asked) nrLoad();
-  if (!NR.v) return [];
-  const { classes, columns, cells } = NR.v;
-  const grid = el("div", { class: "nm", style: `--n:${columns.length}` }, el("span", {}), ...columns.map(c => el("span", { class: "nm-h", text: c.label })));
-  for (const c of classes) {
-    grid.append(el("span", { class: "nm-r" }, el("div", { class: "hd", text: c.label }), el("div", { class: "sup", text: NR_DESC[c.id] || "" })));
-    for (const col of columns) {
-      const on = cells[c.id][col.id];
-      grid.append(on === null ? el("span", { class: "nm-n", text: "—", title: "대화별 설정을 따라요 (설정 → Discord)" })
-        : el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on), "aria-label": `${c.label} ${col.label}`, "data-k": c.id, "data-col": col.id,
-          ...(col.id === "web" ? { disabled: true, title: "웹앱에는 항상 와요" } : { onclick: () => nrSet(c.id, col.id, !on) }) }));
-    }
-  }
-  return [el("div", { class: "li" }, grid), el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 그 분류는 웹앱 알림으로만 와요. 휴대폰 설정은 모든 기기에 같이 적용돼요." })))];
+function appNotifyRows() {
+  if (!APPN.v && !APPN.asked) appNotifyLoad();
+  if (!APPN.v) return [];
+  return [...notifyRows(k => APPN.v[k] === true, appNotifySet), el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "웹앱과 휴대폰에 같이 적용돼요. 꺼도 알림 목록에는 남아요. 메신저 알림은 설정 → 메신저의 각 연결에서 따로 정해요." })))];
 }
 
 function renderSettings() {

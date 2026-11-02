@@ -221,7 +221,7 @@ function pushSection() {
   } else if (!pushCapable()) rows.push(li("bell", ios && !standalone ? "iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요" : "이 브라우저는 알림을 지원하지 않아요"));
   else if (Notification.permission === "denied") rows.push(li("bell", "알림 권한이 막혀 있어요"));
   else if (!subscribed) rows.push(li("bell", "알림", el("button", { class: "btn", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, "알림 켜기")));
-  rows.push(...notifyMatrix());
+  rows.push(...appNotifyRows());
   if (subscribed) {
     rows.push(li("bell", "알림 확인", el("button", { class: "btn tonal", type: "button", onclick: ev => pushTest(ev.currentTarget) }, "테스트 알림 보내기"), el("button", { class: "btn text", type: "button", onclick: ev => pushDisable(ev.currentTarget) }, "끄기")));
   }

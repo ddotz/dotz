@@ -40,6 +40,8 @@ export type Settings = {
 	projects: { target: string; name: string }[];
 	/** Another settings screen that owns the real controls (Discord). */
 	link?: { label: string; view: string };
+	/** Which notice classes this messenger receives (hub/notify-route.ts); filled in by hub/messengers-api.ts, set with PUT { notify }. */
+	notify?: Record<string, boolean>;
 };
 /** A room the web app's conversation structure calls for (hub/messenger-rooms.ts desiredRooms): main, alert, worklog and one per project. */
 export type DesiredRoom = { kind: "main" | "project" | "alert" | "worklog"; name: string; project?: string };
