@@ -4,36 +4,25 @@ Tailscale을 쓸 수 없는 환경(회사 PC, 휴대폰 등)에서는 웹앱을 
 
 ## 동작 방식
 
-- `web.access`가 `"cloudflare"`이면 게이트웨이가 `cloudflared tunnel run`을 자식 프로세스로 띄워 감시합니다. 종료되면 2초에서 60초까지 간격을 늘리며 다시 시작하고, 게이트웨이를 끌 때 함께 종료합니다.
+- 설정 → 웹 접속에서 Cloudflare를 고르면(`web.access`가 `"cloudflare"`이면) 게이트웨이가 `cloudflared tunnel run`을 자식 프로세스로 띄워 감시합니다. 종료되면 2초에서 60초까지 간격을 늘리며 다시 시작하고, 게이트웨이를 끌 때 함께 종료합니다.
 - 접속 요청은 Cloudflare Access가 로그인을 거친 뒤 `Cf-Access-Jwt-Assertion` 토큰을 붙여 전달합니다. 게이트웨이는 이 토큰의 RS256 서명(팀 공개키), `aud`, 발급자, 만료 시각, 이메일(`web.allow_logins`에 있는 주소)을 모두 확인합니다. 이메일 헤더만 있는 요청은 받지 않습니다.
 - 이 모드에서는 `Tailscale-User-Login` 헤더를 신뢰하지 않습니다. `x-dotz-token`은 그대로 동작합니다.
 - 파일 링크, `dotz_auth` 입력 링크, 푸시 알림 주소는 모두 `https://<hostname>`을 사용합니다. Tailscale 조회는 하지 않습니다.
 
 ## 관리자 설정 순서
 
+Cloudflare 접속은 기본으로 꺼져 있습니다(Tailscale). 필요한 사용자가 설정 → 웹 접속에서 직접 켜며, 설정 파일을 고치거나 게이트웨이를 다시 시작할 필요가 없습니다. 선택은 `~/.dotz/web-access.json`(권한 600)에 저장되고, 이 파일이 없는 설치는 기존처럼 `config.json`의 `web.access`와 `web.cloudflare`를 따릅니다.
+
 1. cloudflared를 설치합니다: `brew install cloudflared`
 2. Cloudflare Zero Trust 대시보드에서 Networks → Tunnels → Create a tunnel로 터널을 만듭니다. 커넥터는 Cloudflared를 고릅니다.
 3. 터널의 Public Hostname을 추가합니다. 호스트 이름은 사용할 주소(예: `dotz.example.com`)로, 서비스는 `HTTP`, `http://127.0.0.1:<web.port>`(기본 7420)로 지정합니다.
-4. 터널 토큰(설치 명령에 나오는 `eyJ...` 문자열)을 `~/.dotz/secrets/cloudflared-tunnel-token` 파일에 한 줄로 저장하고 권한을 제한합니다.
-   ```
-   chmod 600 ~/.dotz/secrets/cloudflared-tunnel-token
-   ```
-   다른 파일명을 쓰면 `web.cloudflare.tunnel_token_file`에 지정합니다. 상대 경로는 `secrets` 폴더 기준입니다.
+4. 터널 토큰(설치 명령에 나오는 `eyJ...` 문자열)을 복사해 둡니다. 설정 화면에 붙여 넣으면 이 컴퓨터의 `~/.dotz/secrets/cloudflared-tunnel-token`(권한 600)에 저장되고, 화면에는 다시 표시되지 않습니다.
 5. Zero Trust → Access → Applications에서 Self-hosted 애플리케이션을 만들어 같은 호스트 이름을 지정하고, 본인 이메일만 허용하는 Allow 정책을 추가합니다.
 6. 만든 애플리케이션의 Application Audience (AUD) Tag와 Zero Trust 팀 이름(`<team>.cloudflareaccess.com`의 `<team>`)을 확인합니다.
-7. `~/.dotz/config.json`의 `web`에 아래 내용을 넣습니다. `allow_logins`에는 5단계에서 허용한 이메일을 소문자로 적습니다.
-   ```json
-   "web": {
-     "access": "cloudflare",
-     "allow_logins": ["owner@example.com"],
-     "cloudflare": {
-       "hostname": "dotz.example.com",
-       "team": "myteam",
-       "aud": "<AUD tag>"
-     }
-   }
-   ```
-8. 게이트웨이를 다시 시작합니다. 로그에 `cloudflared`가 시작되었다는 기록이 남고, 브라우저에서 `https://dotz.example.com`을 열면 Cloudflare 로그인 후 웹앱이 열립니다.
+7. 웹앱에서 **설정 → 웹 접속**을 열고 접속 방식을 Cloudflare로 바꿉니다. 주소(예: `dotz.example.com`)와 터널 토큰을 넣고, Access를 함께 쓰려면 팀 이름과 AUD도 넣은 뒤 저장합니다. 팀 이름과 AUD는 선택이며, 둘 다 넣거나 둘 다 비워야 합니다. Access를 쓰면 `config.json`의 `web.allow_logins`에 5단계에서 허용한 이메일(소문자)도 적어야 합니다.
+8. 저장하면 게이트웨이를 다시 시작하지 않고 바로 터널이 열리고 기기 연결 게이트가 켜집니다. 같은 화면의 상태 줄에서 터널이 연결되었는지 볼 수 있습니다. 브라우저에서 `https://dotz.example.com`을 열어 아래 "기기 연결" 순서대로 기기를 연결합니다.
+
+저장하려면 주소, 터널 토큰, cloudflared 설치가 모두 갖춰져 있어야 하며, 하나라도 없으면 아무것도 바뀌지 않고 이유가 표시됩니다. 저장하면 지금 쓰던 Tailscale 주소로는 더 열리지 않습니다(이 모드에서는 `Tailscale-User-Login`을 신뢰하지 않습니다). 먼저 새 주소에서 기기를 하나 연결해야 설정 화면에 다시 들어올 수 있습니다. 되돌릴 때는 연결한 기기에서 설정 → 웹 접속을 열어 Tailscale 또는 "이 컴퓨터만"을 고르면 터널이 닫히고 이전 동작으로 돌아갑니다. 터널 토큰은 접속 방식을 바꿔도 남아 있고, 토큰 칸을 비우고 저장하면 지워집니다.
 
 ## 도메인 없이 workers.dev로
 
@@ -41,7 +30,7 @@ Tailscale을 쓸 수 없는 환경(회사 PC, 휴대폰 등)에서는 웹앱을 
 
 Workers VPC는 아직 베타입니다. 베타 기간에는 Free 플랜에서도 무료이지만 기능과 API가 바뀔 수 있습니다.
 
-1. cloudflared를 설치하고 터널을 만든 뒤 토큰을 `~/.dotz/secrets/cloudflared-tunnel-token`에 저장합니다(위 1, 2, 4단계와 같음). **Public Hostname은 추가하지 않습니다.** 대시보드에서 터널 ID(UUID)를 확인해 둡니다.
+1. cloudflared를 설치하고 터널을 만든 뒤 토큰을 복사해 둡니다(위 1, 2, 4단계와 같음). **Public Hostname은 추가하지 않습니다.** 대시보드에서 터널 ID(UUID)를 확인해 둡니다.
 2. VPC Service를 만듭니다. 대시보드의 Workers VPC에서 만들거나, 명령으로 만듭니다. 대상은 `127.0.0.1`, HTTP 포트는 `web.port`(기본 7420)입니다.
    ```
    bunx wrangler login
@@ -53,17 +42,10 @@ Workers VPC는 아직 베타입니다. 베타 기간에는 Free 플랜에서도 
    cd extras/cf-worker && bunx wrangler deploy
    ```
    배포가 끝나면 `https://dotz.<계정>.workers.dev` 주소가 출력됩니다.
-4. `~/.dotz/config.json`의 `web`에 그 주소를 넣습니다. `team`과 `aud`는 비워 둡니다.
-   ```json
-   "web": {
-     "access": "cloudflare",
-     "cloudflare": { "hostname": "dotz.<계정>.workers.dev" }
-   }
-   ```
-   파일 링크, `dotz_auth` 입력 링크, 푸시 알림 주소가 모두 이 주소를 씁니다.
-5. 게이트웨이를 다시 시작하고, 브라우저에서 주소를 열어 아래 "기기 연결" 순서대로 기기를 연결합니다.
+4. 설정 → 웹 접속에서 Cloudflare를 고르고 주소에 그 `dotz.<계정>.workers.dev`를 넣습니다. 팀 이름과 AUD는 비워 두고, 터널 토큰은 1단계의 토큰을 붙여 넣은 뒤 저장합니다. 파일 링크, `dotz_auth` 입력 링크, 푸시 알림 주소가 모두 이 주소를 씁니다.
+5. 브라우저에서 주소를 열어 아래 "기기 연결" 순서대로 기기를 연결합니다.
 
-선택 사항: Workers 대시보드에서 이 Worker의 Settings → Domains & Routes → workers.dev 항목의 Cloudflare Access를 켜면 Access 로그인이 추가 계층으로 붙습니다. 그때 표시되는 AUD 태그와 팀 이름을 `web.cloudflare.aud`, `web.cloudflare.team`에 넣고 `allow_logins`에 이메일을 적으면, 게이트웨이가 기기 연결에 더해 Access 토큰도 요구합니다. 비워 두면 기기 연결만으로 들어갑니다.
+선택 사항: Workers 대시보드에서 이 Worker의 Settings → Domains & Routes → workers.dev 항목의 Cloudflare Access를 켜면 Access 로그인이 추가 계층으로 붙습니다. 그때 표시되는 AUD 태그와 팀 이름을 설정 → 웹 접속의 AUD, 팀 이름에 넣고 `allow_logins`에 이메일을 적으면, 게이트웨이가 기기 연결에 더해 Access 토큰도 요구합니다. 비워 두면 기기 연결만으로 들어갑니다.
 
 알아 둘 점:
 
@@ -74,13 +56,14 @@ Workers VPC는 아직 베타입니다. 베타 기간에는 Free 플랜에서도 
 ## 문제 해결
 
 - cloudflared가 설치되어 있지 않으면 설정 화면에 설치 안내가 표시되고, 게이트웨이와 메신저는 그대로 실행됩니다. 설치 위치가 PATH에 없으면 `DOTZ_CLOUDFLARED_BIN`에 실행 파일 경로를 지정합니다.
-- 토큰 파일이 없거나 비어 있으면 터널이 시작되지 않고 오류 상태가 표시됩니다.
+- 터널이 중간에 끊기면 설정 → 웹 접속의 상태 줄에 오류가 표시되고, 게이트웨이가 간격을 늘려 가며 다시 시도합니다. 토큰이 틀렸다면 새 토큰을 붙여 넣고 저장합니다.
 - 로그인 후에도 403이 나오면 `aud`, `team`, `allow_logins`의 이메일(소문자)이 Access 설정과 같은지 확인합니다.
-- `web.access`를 `"tailscale"`(기본값)로 두면 기존 동작이 그대로이고, `"local"`이면 Tailscale 조회와 `tailscale serve` 설정을 하지 않습니다.
+- Tailscale(기본값)은 기존 동작 그대로이고, "이 컴퓨터만"(`"local"`)은 Tailscale 조회와 `tailscale serve` 설정을 하지 않습니다.
+- 기기를 하나도 연결하지 못한 채 화면에 못 들어가면, 이 컴퓨터에서 `x-dotz-token` 헤더로 `PUT /api/web-access` `{"mode": "tailscale"}`를 보내거나 `~/.dotz/web-access.json`을 지우고 게이트웨이를 다시 시작하면 `config.json`의 값으로 돌아갑니다.
 
 ## 기기 연결 (패스키)
 
-`web.access`가 `"cloudflare"`이면 연결된 기기만 웹앱을 쓸 수 있습니다. 주소를 알거나 Cloudflare 로그인을 통과해도, 한 번 연결한 기기가 아니면 `https://<호스트이름>/pair`의 "기기 연결" 화면만 보입니다. 이 방식에서는 `web.cloudflare.team`과 `web.cloudflare.aud`(Cloudflare Access)가 없어도 터널이 열립니다. 두 값을 채우면 기기 연결에 더해 Access 로그인도 함께 요구하는 추가 보안 계층이 됩니다.
+접속 방식이 Cloudflare(`web.access`가 `"cloudflare"`)이면 연결된 기기만 웹앱을 쓸 수 있습니다. 주소를 알거나 Cloudflare 로그인을 통과해도, 한 번 연결한 기기가 아니면 `https://<호스트이름>/pair`의 "기기 연결" 화면만 보입니다. 이 방식에서는 팀 이름과 AUD(Cloudflare Access)가 없어도 터널이 열립니다. 두 값을 채우면 기기 연결에 더해 Access 로그인도 함께 요구하는 추가 보안 계층이 됩니다.
 
 ### 기기를 연결하는 방법
 
@@ -96,6 +79,6 @@ Workers VPC는 아직 베타입니다. 베타 기간에는 Free 플랜에서도 
 
 ### 기기 해제
 
-웹앱의 **설정 → 연결된 기기 (패스키)**에서 연결된 기기를 보고, 이름을 바꾸고, 해제합니다. 지금 쓰고 있는 기기에는 "이 기기" 표시가 붙고, 이 기기를 해제하면 바로 로그아웃됩니다. 같은 화면의 "새 기기 연결"에서 연결 방법을 보고, 메신저 알림을 볼 수 없을 때는 "여기서 코드 만들기"로 코드를 화면에 바로 받을 수 있습니다(10분, 한 번만, 메신저로 받는 코드와 합쳐 한 시간에 3번). 이 항목은 `web.access`가 `"cloudflare"`일 때만 설정에 보입니다.
+웹앱의 **설정 → 연결된 기기 (패스키)**에서 연결된 기기를 보고, 이름을 바꾸고, 해제합니다. 지금 쓰고 있는 기기에는 "이 기기" 표시가 붙고, 이 기기를 해제하면 바로 로그아웃됩니다. 같은 화면의 "새 기기 연결"에서 연결 방법을 보고, 메신저 알림을 볼 수 없을 때는 "여기서 코드 만들기"로 코드를 화면에 바로 받을 수 있습니다(10분, 한 번만, 메신저로 받는 코드와 합쳐 한 시간에 3번). 이 항목은 접속 방식이 Cloudflare일 때만 설정에 보입니다.
 
 같은 일을 API로도 할 수 있습니다(이미 연결된 기기나 `x-dotz-token`으로만 가능): 목록 `GET /api/devices`, 이름 바꾸기 `PATCH /api/devices/<id>` (`{"name": "..."}`), 해제 `DELETE /api/devices/<id>`, 코드 만들기 `POST /api/devices/code`. 해제하면 그 기기의 로그인은 즉시 끊기고, 다시 쓰려면 코드로 새로 연결해야 합니다. 연결된 기기를 모두 잃었다면 `~/.dotz/web-devices.json`을 지우고 게이트웨이를 다시 시작한 뒤 처음부터 연결합니다. 로컬에서는 `x-dotz-token` 헤더로 계속 접근할 수 있습니다.

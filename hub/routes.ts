@@ -5,8 +5,8 @@ import { dropAnsweredMailDraft } from "./draft-drop.ts";
 import { approvalRoute, TRIAGE_MIN_DEFAULT, webAnswer } from "./approval-wire.ts";
 import { droppedDraftRefs, restoreReopenedDrafts } from "./draft-restore.ts";
 import { join } from "node:path";
-import { type CfAccess, createCfAccess } from "./cf-access.ts";
-import { cloudflareGate, createDevices } from "./devices.ts";
+import { cloudflareGate } from "./devices.ts";
+import { createWebAccess, webAccessRoute } from "./web-access.ts";
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
 import { keyedSelector, keyFileOk, spendOnKey } from "./fallback.ts";
@@ -96,22 +96,20 @@ const APP_FILES: Record<string, [string, string]> = {
 	"/vendor/addon-fit.js": ["vendor/addon-fit.js", "text/javascript; charset=utf-8"],
 	"/vendor/xterm.css": ["vendor/xterm.css", "text/css; charset=utf-8"],
 };
-const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
+export const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
 
 
-// web.access = "cloudflare": a valid Cloudflare Access token (hub/cf-access.ts) is checked once at the route entry (it needs the key fetch), then passed in as cfOk.
+// Runtime web access (hub/web-access.ts, 설정 → 웹 접속): web.access = "cloudflare" is switched on and off live, so the gates below are read through it per request.
+// In that mode a valid Cloudflare Access token (hub/cf-access.ts) is checked once at the route entry (it needs the key fetch), then passed in as cfOk,
+// and only paired devices (hub/devices.ts) get in; Access, when set up, is required on top of the device session.
 // The Tailscale-User-Login header is not trusted in that mode: the tunnel delivers whatever header the client wrote.
-const cfw = cfg.web?.access === "cloudflare" ? cfg.web.cloudflare : undefined;
-const cfAccess: CfAccess | undefined = cfw?.team && cfw.aud ? createCfAccess({ team: cfw.team, aud: cfw.aud, allow: ALLOW }) : undefined;
-
-// In that mode only paired devices (hub/devices.ts) get in; Access, when set up, is required on top of the device session.
-const devices = cfg.web?.access === "cloudflare" ? createDevices({ dir: DATA_DIR, hostname: cfw?.hostname, notify: text => out("alert", text, undefined, { source: "gateway" }) }) : undefined;
+export const webAccess = createWebAccess({ dir: DATA_DIR, allow: ALLOW, notify: text => out("alert", text, undefined, { source: "gateway" }) });
 
 function authorized(req: Request, cfOk = false, devOk = false): boolean {
 	if (req.headers.get("x-dotz-token") === HUB_TOKEN) return true;
-	if (devices ? cloudflareGate({ device: devOk, accessConfigured: !!cfAccess, access: cfOk }) : cfOk) return true;
+	if (webAccess.devices() ? cloudflareGate({ device: devOk, accessConfigured: !!webAccess.cfAccess(), access: cfOk }) : cfOk) return true;
 	const login = (req.headers.get("tailscale-user-login") ?? "").toLowerCase();
-	if (login && ALLOW.has(login) && cfg.web?.access !== "cloudflare") return true;
+	if (login && ALLOW.has(login) && webAccess.mode() !== "cloudflare") return true;
 	const seen = [...req.headers.keys()].filter(k => k.startsWith("tailscale-")).map(k => `${k}=${req.headers.get(k)}`).join(" ");
 	log(`denied ${new URL(req.url).pathname} ${seen || "(no tailscale identity headers)"}`);
 	return false;
@@ -302,6 +300,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// Pairing gates itself: only a request from this node's own tailscale login gets a token (hub/peer-pair.ts), so it needs no owner check first.
 		if (req.method === "POST" && url.pathname === PAIR_PATH) return handlePair(req, { ownLogin });
 		// A request with the peer header gets only the peer paths (hub/peer-auth.ts); a good one skips the owner check, a bad one never reaches it.
+		const devices = webAccess.devices();
+		const cfAccess = webAccess.cfAccess();
 		const pairing = await devices?.pairRoute(req, url);
 		if (pairing) return pairing;
 		const peer = checkPeer(req);
@@ -309,6 +309,8 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (peer === "none" && !authorized(req, !!cfAccess && (await cfAccess.verifyRequest(req)), !!devices && (await devices.verifySession(req)))) return devices ? devices.denied(req, url) : new Response("forbidden", { status: 403 });
 		const deviceApi = peer === "none" ? await devices?.apiRoute(req, url) : undefined;
 		if (deviceApi) return deviceApi;
+		const accessApi = peer === "none" ? await webAccessRoute(req, url, webAccess) : undefined;
+		if (accessApi) return accessApi;
 		const peerResponse = await peers.route(req, url);
 		if (peerResponse) return peerResponse;
 		// A user app's own web UI (hub/user-apps.ts, hub/app-proxy.ts): /apps/<id>/… -> its loopback server, same gate as the API.

@@ -31,9 +31,9 @@ const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : 
 // 대화 or 로그 for a target: the main chat and projects share one global choice; a session (lane:<name>) remembers its own and starts in 대화.
 const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const lastChatView = () => viewFor(target);
-const SUB = new Set(["models", "providers", "usage", "context", "harness", "discord", "messengers", "devices"]);
-const views = ["home", "chat", "activity", "harness", "settings", "models", "providers", "usage", "context", "discord", "messengers", "devices", "project", "projects", "monitoring", "apps"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", discord: "Discord", messengers: "메신저", devices: "연결된 기기", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱" };
+const SUB = new Set(["models", "providers", "usage", "context", "harness", "discord", "messengers", "devices", "webaccess"]);
+const views = ["home", "chat", "activity", "harness", "settings", "models", "providers", "usage", "context", "discord", "messengers", "devices", "webaccess", "project", "projects", "monitoring", "apps"];
+const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", discord: "Discord", messengers: "메신저", devices: "연결된 기기", webaccess: "웹 접속", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱" };
 // The gateway's one live-lane rule (lanes.ts laneLive: not exited, process up, not a temp test project) drives every list.
 const laneAlive = l => !!l && (l.live ?? l.status !== "exited");
 const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
