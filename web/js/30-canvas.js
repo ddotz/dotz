@@ -3,7 +3,9 @@
 // same origin, so Cmd+click picks its elements like an app's (15-picker.js, iframe.apps-frame). A sandbox without scripts would also stop
 // the picker's own listeners, so the page's script is taken out instead (canvasDoc) and a script-src 'none' policy blocks what is left.
 // A page with its own <script> (its body may be built by it) is loaded from /api/canvas in an opaque-origin frame instead (sandbox
-// allow-scripts, never allow-same-origin, plus the route's CSP): its script runs, it cannot reach the hub, and it has no picker. It uses the 앱 screen's header and frame (30-apps.js, 20-apps.css):
+// allow-scripts, never allow-same-origin, plus the route's CSP): its script runs, it cannot reach the hub, and the picker is the
+// route's bridge script (?pick=1): it sends a pick over postMessage and draws the badges, since this side cannot read the page.
+// It uses the 앱 screen's header and frame (30-apps.js, 20-apps.css):
 // file mark, name, path, the pick hint, 새 탭, close. From 1100px it sits beside the conversation, so a pick's chip shows in the composer
 // next to it; below that it is a full-screen sheet with a back button. Picks stay with the conversation when the canvas closes.
 const CVS = { path: "", name: "", narrow: null, scripted: false };
@@ -31,8 +33,8 @@ function canvasHeader() {
   return el("header", { class: "apps-hd" },
     narrow ? el("button", { class: "ib", type: "button", "aria-label": "캔버스 닫기", title: "닫기", onclick: canvasClose }, icon("back")) : null,
     el("span", { class: "cv-av app-av", "aria-hidden": "true" }, icon("file")),
-    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: CVS.name }), el("p", { class: "apps-p", title: CVS.path, text: `HTML · ${shortPath(CVS.path)}` }), narrow && !CVS.scripted ? pkHint() : null),
-    narrow || CVS.scripted ? null : pkHint(),
+    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: CVS.name }), el("p", { class: "apps-p", title: CVS.path, text: `HTML · ${shortPath(CVS.path)}` }), narrow ? pkHint() : null),
+    narrow ? null : pkHint(),
     el("a", { class: "ib", href: canvasUrl(CVS.path), target: "_blank", rel: "noopener", "aria-label": "새 탭에서 열기", title: "새 탭에서 열기" }, icon("open")),
     narrow ? null : el("button", { class: "ib", type: "button", "aria-label": "캔버스 닫기", title: "닫기", onclick: canvasClose }, icon("close")));
 }
@@ -62,7 +64,7 @@ function canvasOpen(path, name) {
       CVS.scripted = true;
       canvasHead();
       frame.setAttribute("sandbox", "allow-scripts");
-      frame.src = canvasUrl(path);
+      frame.src = canvasUrl(path) + "&pick=1";
     } else frame.srcdoc = canvasDoc(html);
   }).catch(e => { if (CVS.path === path && frame.isConnected) frame.replaceWith(el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: e instanceof TypeError ? "연결이 끊겨 열지 못했어요" : e.message }))); });
 }
@@ -72,4 +74,27 @@ function canvasClose() {
   $("#v-chat").classList.remove("canvas-open");
   clear(canvasPane);
 }
+// A scripted page's bridge (hub/files.ts PICK_BRIDGE) sends its picks here; the page stays opaque, so only a pick's fields arrive.
+// node/doc/frame are null and remote marks it: 15-picker.js leaves the overlay to the page's own badges.
+function canvasPick(d) {
+  if (!d || typeof d.id !== "string" || !d.id) return;
+  if (PICK.length >= 10) { toast("요소는 한 번에 10개까지 보낼 수 있어요", true); return; }
+  if (PICK.some(p => p.remote && p.id === d.id)) return;
+  const frame = $(".cvs-frame", canvasPane);
+  PICK.push({ id: d.id, n: PICK.length + 1, tag: String(d.tag || "div").toLowerCase(), sel: String(d.sel || ""), text: String(d.text || "").slice(0, 200), html: String(d.html || "").slice(0, 600),
+    view: `canvas:${(frame && frame.title) || "html"}`, title: String(d.title || ""), node: null, doc: null, frame: null, remote: true });
+  renderPicks();
+}
+// The page draws the numbered badges, so every change sends it the remote ids in order (15-picker.js renderPicks calls this).
+function pkRemoteSync() {
+  const f = $(".cvs-frame", canvasPane);
+  if (!CVS.scripted || !f || !f.contentWindow) return;
+  f.contentWindow.postMessage({ source: "dotz-pick", kind: "sync", ids: PICK.filter(p => p.remote).map(p => p.id) }, "*");
+}
+addEventListener("message", ev => {
+  const f = $(".cvs-frame", canvasPane);
+  if (!f || ev.source !== f.contentWindow) return;
+  const d = ev.data || {};
+  if (d.source === "dotz-pick" && d.kind === "pick") canvasPick(d.pick);
+});
 addEventListener("resize", () => { if (CVS.path && CVS.narrow !== narrowChat()) canvasHead(); });

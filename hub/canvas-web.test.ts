@@ -21,7 +21,13 @@ const FLOW = join(ROOT, "flow.html");
 writeFileSync(FLOW, `<!doctype html><html><body><h1>흐름도</h1><div id="app"></div><script>
 for (let i = 0; i < 40; i++) app.append(Object.assign(document.createElement("div"), { className: "node", textContent: "단계 " + i }));
 let cookie = "", api = ""; try { cookie = document.cookie; } catch { cookie = "blocked"; }
-fetch("/api/state").then(() => { api = "reached"; }, () => { api = "blocked"; }).finally(() => parent.postMessage({ nodes: document.querySelectorAll(".node").length, cookie, api, origin: String(self.origin) }, "*"));
+fetch("/api/state").then(() => { api = "reached"; }, () => { api = "blocked"; }).finally(() => parent.postMessage({ test: "stats", nodes: document.querySelectorAll(".node").length, cookie, api, origin: String(self.origin) }, "*"));
+addEventListener("message", ev => {
+  const d = ev.data || {}, n = document.querySelectorAll(".node")[5];
+  if (d.test === "hello") parent.postMessage({ test: "ready" }, "*");
+  else if (d.test === "pick") n.dispatchEvent(new MouseEvent("click", { metaKey: true, bubbles: true, cancelable: true }));
+  else if (d.test === "badges") parent.postMessage({ test: "badges", count: document.querySelectorAll(".dz-pick-badge").length, badge: (document.querySelector(".dz-pick-badge") || {}).textContent || "", text: n.textContent }, "*");
+});
 </script></body></html>`);
 writeFileSync(join(ROOT, "notes.txt"), "not html");
 const json = (v: unknown) => Response.json(v);
@@ -104,18 +110,38 @@ describe("캔버스 at 1280px", () => {
 		await waitOn(v, `document.querySelector("#canvas").hidden && !document.querySelector("#v-chat").classList.contains("canvas-open") && !document.querySelector("#pick-marks .pk-mark:not([hidden])")`);
 		expect(await get(v, `return document.querySelectorAll("#atray .pk-chip").length;`)).toBe(1);
 	}, 30_000);
-});
 
-describe("캔버스 at 390px", () => {
-	test("a page built by its own script renders in an opaque-origin frame without the picker", async () => {
+	test("Cmd+click picks an element of a page built by its own script, with the chip and the page's own badge", async () => {
 		const v = new Bun.WebView({ width: 1280, height: 900 });
 		views.push(v);
 		await v.navigate(`http://127.0.0.1:${server.port}/#chat`);
 		await waitOn(v, `typeof canvasOpen === "function"`);
-		const got = await v.evaluate(`new Promise(res => { addEventListener("message", e => res(JSON.stringify(e.data)), { once: true }); canvasOpen(${JSON.stringify(FLOW)}, "flow.html"); })`);
-		expect(JSON.parse(got as string)).toEqual({ nodes: 40, cookie: "blocked", api: "blocked", origin: "null" });
-		const f = await get(v, `const f = document.querySelector("#canvas .apps-frame"); return { sandbox: f.getAttribute("sandbox"), hint: !!document.querySelector("#canvas .pk-hint") };`);
-		expect(f).toEqual({ sandbox: "allow-scripts", hint: false });
+		await v.evaluate(`(canvasOpen(${JSON.stringify(FLOW)}, "flow.html"), 0)`);
+		await waitOn(v, `(() => { const f = document.querySelector("#canvas .apps-frame"); return !!f && f.getAttribute("sandbox") === "allow-scripts" && /pick=1/.test(f.getAttribute("src") || "") && !!document.querySelector("#canvas .pk-hint"); })()`);
+		// The page's own script and the route's bridge are up when the page answers; it then clicks a node itself (this side cannot).
+		await v.evaluate(`new Promise((res, rej) => { const f = document.querySelector("#canvas .apps-frame"), t = setTimeout(() => rej(new Error("bridge: timeout")), 10000); const on = e => { if (e.source === f.contentWindow && e.data && e.data.test === "ready") { clearTimeout(t); removeEventListener("message", on); res(true); } }; addEventListener("message", on); f.contentWindow.postMessage({ test: "hello" }, "*"); })`);
+		await v.evaluate(`(document.querySelector("#canvas .apps-frame").contentWindow.postMessage({ test: "pick" }, "*"), 0)`);
+		await waitOn(v, `document.querySelector("#atray .pk-chip") && document.querySelector("#atray").getClientRects().length > 0`);
+		expect(await get(v, `return pkItems().map(p => [p.n, p.tag, p.text, p.view]);`)).toEqual([[1, "div", "단계 5", "canvas:flow.html"]]);
+		const badges = await v.evaluate(`new Promise(res => { const f = document.querySelector("#canvas .apps-frame"); const on = e => { if (e.source === f.contentWindow && e.data && e.data.test === "badges") { removeEventListener("message", on); res(JSON.stringify(e.data)); } }; addEventListener("message", on); f.contentWindow.postMessage({ test: "badges" }, "*"); })`);
+		expect(JSON.parse(badges as string)).toMatchObject({ count: 1, badge: "1", text: "단계 5" });
+		mkdirSync("/tmp/canvas-pick-scripted", { recursive: true });
+		await Bun.write("/tmp/canvas-pick-scripted/after-1280.png", await v.screenshot());
+	}, 30_000);
+});
+
+describe("캔버스 at 390px", () => {
+	test("a page built by its own script renders in an opaque-origin frame, with the picker bridge and its hint", async () => {
+		const v = new Bun.WebView({ width: 1280, height: 900 });
+		views.push(v);
+		await v.navigate(`http://127.0.0.1:${server.port}/#chat`);
+		await waitOn(v, `typeof canvasOpen === "function"`);
+		const got = await v.evaluate(`new Promise(res => { addEventListener("message", function on(e) { if (e.data && e.data.test === "stats") { removeEventListener("message", on); res(JSON.stringify(e.data)); } }); canvasOpen(${JSON.stringify(FLOW)}, "flow.html"); })`);
+		expect(JSON.parse(got as string)).toMatchObject({ nodes: 40, cookie: "blocked", api: "blocked", origin: "null" });
+		const f = await get(v, `const f = document.querySelector("#canvas .apps-frame"), h = document.querySelector("#canvas .pk-hint"); return { sandbox: f.getAttribute("sandbox"), src: f.getAttribute("src"), hint: h ? h.textContent : "" };`);
+		expect(f.sandbox).toBe("allow-scripts");
+		expect(f.src).toContain("pick=1");
+		expect(f.hint).toContain("요소 고르기");
 	}, 30_000);
 
 	for (const theme of ["light", "dark"] as const) test(`a full-screen sheet with the 앱 header and a back button (${theme})`, async () => {

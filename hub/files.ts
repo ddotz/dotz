@@ -1,7 +1,7 @@
 // Files the owner hands to the agents (web upload: + button, drag-drop, paste) and files the agents point back at
 // (read-only preview/download). Uploads land under <data dir>/uploads/<day>/; the message carries their absolute paths.
 // Serving is read-only and limited to allowed roots, resolved through realpath so `..` and symlinks cannot leave them.
-import { existsSync, mkdirSync, realpathSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, extname, join, sep } from "node:path";
 import { cfg, DATA_DIR, HOME } from "./config.ts";
@@ -224,13 +224,185 @@ export function fileRoute(req: Request, url: URL, roots: string[], listed: Reado
 // sandbox (allow-scripts, never allow-same-origin) with no network (connect-src 'none'): it cannot read the hub's cookies or token or call
 // /api as the owner. Styles, images and fonts load. The canvas panel's picker frame is built from the fetched text instead (30-canvas.js).
 const CANVAS_CSP = "sandbox allow-scripts; default-src 'none'; script-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:";
+// With ?pick=1 (the 캔버스 panel asked for it) the page gets the picker bridge below: an opaque-origin page cannot be read by the
+// panel, so the Cmd/Ctrl+click, long press, hover outline and numbered badges live inside the page and send one pick over
+// postMessage. It only posts that pick (text, HTML, selector) and draws badges from the panel's ids; it reaches nothing of dotz.
+const PICK_BRIDGE = String.raw`<script>(() => {
+  var F = function (s) { return String(s == null ? "" : s).replace(/\s+/g, " ").trim(); };
+  var MAC = /Mac/i.test(navigator.platform || navigator.userAgent);
+  var FIELD = /^(input|textarea|select)$/;
+  var mod = function (e) { return !!e && (MAC ? e.metaKey : e.ctrlKey); };
+  var modKey = function (k) { return k === (MAC ? "Meta" : "Control"); };
+  var esc = function (s) { return typeof CSS !== "undefined" && CSS.escape ? CSS.escape(s) : String(s).replace(/[^\w-]/g, "\\$&"); };
+  var q = function (c) { try { return document.querySelectorAll(c); } catch (e) { return []; } };
+  var cls = function (c) {
+    if (!/^[A-Za-z][\w-]{0,40}$/.test(c)) return false;
+    if (/^(css|sc|jsx|emotion|svelte)-/.test(c) || c[0] === "_") return false;
+    if (/\d{3,}/.test(c)) return false;
+    return !(/\d/.test(c) && /[A-Z]/.test(c) && c.length > 10);
+  };
+  var byId = function (e) { return e.id && q("#" + esc(e.id)).length === 1 ? "#" + esc(e.id) : ""; };
+  var sel = function (n) {
+    if (byId(n)) return byId(n);
+    var parts = [];
+    for (var cur = n, i = 0; cur && cur.nodeType === 1 && i < 5; cur = cur.parentElement, i++) {
+      if (cur !== n) {
+        if (cur === document.body || cur === document.documentElement) break;
+        var top = byId(cur);
+        if (top) { parts.unshift(top); break; }
+      }
+      var tag = cur.tagName.toLowerCase();
+      var css = Array.prototype.filter.call(cur.classList, cls).slice(0, 2).map(function (c) { return "." + esc(c); }).join("");
+      var seg = tag + css;
+      var sibs = cur.parentElement ? Array.prototype.filter.call(cur.parentElement.children, function (s) { return s.tagName === cur.tagName; }) : [];
+      if (sibs.length > 1) seg += ":nth-of-type(" + (sibs.indexOf(cur) + 1) + ")";
+      parts.unshift(seg);
+    }
+    return parts.join(" > ");
+  };
+  var text = function (n) {
+    if ((n.type || "").toLowerCase() === "password") return "";
+    if (FIELD.test(n.tagName.toLowerCase())) return F(n.getAttribute("placeholder") || n.getAttribute("aria-label") || n.getAttribute("name") || n.type || "");
+    return F(n.innerText || n.textContent || "").slice(0, 200);
+  };
+  var html = function (n) { return F(n.outerHTML || "").replace(/\s(?:value|checked|selected)="[^"]*"/gi, "").slice(0, 600); };
+  var hit = function (e) {
+    var n = e.target && e.target.nodeType === 1 ? e.target : e.target && e.target.parentElement;
+    return n && n.isConnected && n !== document.body && n !== document.documentElement ? n : null;
+  };
+  var at = function (t) { try { var n = document.elementFromPoint(t.clientX, t.clientY); return n && n !== document.body && n !== document.documentElement ? n : null; } catch (e) { return null; } };
+  var style = document.createElement("style");
+  style.textContent = "html.dz-picking,html.dz-picking *{cursor:crosshair!important}" +
+    ".dz-pick-box{position:fixed;z-index:2147483646;display:none;pointer-events:none;border:2px solid #3182f6;border-radius:4px;background:rgba(49,130,246,.12)}" +
+    ".dz-pick-badge{position:fixed;z-index:2147483647;display:none;min-width:20px;height:20px;border-radius:10px;background:#3182f6;color:#fff;font:600 12px/20px -apple-system,system-ui,sans-serif;text-align:center;pointer-events:none;box-shadow:0 1px 4px rgba(0,0,0,.25)}";
+  var box = document.createElement("div");
+  box.className = "dz-pick-box";
+  var picked = {}, marks = {}, armed = false, timer = 0, touchAt = 0, press = null;
+  // A page that rebuilds its body (its own script) keeps the overlay: put it back when it is gone.
+  var ensure = function () {
+    if (!style.isConnected) (document.head || document.documentElement).appendChild(style);
+    if (!box.isConnected) document.body.appendChild(box);
+  };
+  var show = function (n) {
+    var r = n && n.isConnected ? n.getBoundingClientRect() : null;
+    if (!r || r.width <= 0 || r.height <= 0) { box.style.display = "none"; return; }
+    ensure();
+    box.style.display = "block";
+    box.style.left = r.left + "px"; box.style.top = r.top + "px"; box.style.width = r.width + "px"; box.style.height = r.height + "px";
+  };
+  var arm = function (on) {
+    on = !!on;
+    if (on === armed) return;
+    armed = on;
+    document.documentElement.classList.toggle("dz-picking", on);
+    if (!on) box.style.display = "none";
+  };
+  var place = function () {
+    ensure();
+    for (var id in marks) {
+      var n = picked[id], m = marks[id], r = null;
+      try { r = n && n.isConnected ? n.getBoundingClientRect() : null; } catch (e) { r = null; }
+      if (!r || r.width <= 0 || r.height <= 0) { m.style.display = "none"; continue; }
+      if (!m.isConnected) document.body.appendChild(m);
+      m.style.display = "block";
+      m.style.left = (r.left >= 30 ? r.left - 26 : r.left) + "px";
+      m.style.top = r.top + "px";
+    }
+  };
+  var tick = function () {
+    if (!Object.keys(marks).length) { if (timer) { clearInterval(timer); timer = 0; } return; }
+    if (!timer) timer = setInterval(place, 400);
+  };
+  var pick = function (n) {
+    if (!n) return;
+    var id = "dz" + Math.random().toString(36).slice(2, 10);
+    picked[id] = n;
+    parent.postMessage({ source: "dotz-pick", kind: "pick", pick: { id: id, tag: n.tagName.toLowerCase(), sel: sel(n), text: text(n), html: html(n), title: String(document.title || "") } }, "*");
+    if (armed) show(n);
+  };
+  var stop = function (e) { e.preventDefault(); e.stopPropagation(); if (e.stopImmediatePropagation) e.stopImmediatePropagation(); };
+  var end = function () { if (press) clearTimeout(press.t); press = null; };
+  document.addEventListener("pointermove", function (e) {
+    if (e.pointerType === "touch") return;
+    if (mod(e) !== armed) arm(mod(e));
+    if (armed) show(hit(e));
+  }, true);
+  document.documentElement.addEventListener("mouseleave", function () { if (armed) show(null); });
+  ["pointerdown", "mousedown", "pointerup", "mouseup", "auxclick"].forEach(function (t) {
+    document.addEventListener(t, function (e) { if (mod(e) && e.pointerType !== "touch") stop(e); }, { capture: true, passive: false });
+  });
+  document.addEventListener("click", function (e) {
+    if (Date.now() - touchAt < 600) { stop(e); return; }
+    if (!mod(e)) return;
+    stop(e);
+    var n = hit(e);
+    if (n) pick(n);
+  }, true);
+  document.addEventListener("touchstart", function (e) {
+    end();
+    if (e.touches.length !== 1) return;
+    var t = e.touches[0], n = at(t);
+    if (!n) return;
+    var p = { x: t.clientX, y: t.clientY, n: n, done: false, t: 0 };
+    p.t = setTimeout(function () {
+      if (press !== p || !n.isConnected) return;
+      p.done = true;
+      touchAt = Date.now();
+      try { document.getSelection().removeAllRanges(); } catch (err) {}
+      if (navigator.vibrate) try { navigator.vibrate(10); } catch (err) {}
+      pick(n);
+    }, 500);
+    press = p;
+  }, { capture: true, passive: true });
+  document.addEventListener("touchmove", function (e) {
+    var t = e.touches[0];
+    if (press && !press.done && t && Math.hypot(t.clientX - press.x, t.clientY - press.y) > 10) end();
+  }, { capture: true, passive: true });
+  document.addEventListener("touchend", function (e) {
+    var p = press;
+    end();
+    if (p && p.done) { touchAt = Date.now(); stop(e); }
+  }, { capture: true, passive: false });
+  document.addEventListener("touchcancel", end, { capture: true, passive: true });
+  document.addEventListener("contextmenu", function (e) { if (press || Date.now() - touchAt < 800) stop(e); }, true);
+  document.addEventListener("selectstart", function (e) { if (press) stop(e); }, true);
+  addEventListener("keydown", function (e) { if (modKey(e.key)) arm(true); else if (armed && !mod(e)) arm(false); }, true);
+  addEventListener("keyup", function (e) { if (modKey(e.key) || !mod(e)) arm(false); }, true);
+  addEventListener("blur", function () { arm(false); });
+  addEventListener("scroll", place, true);
+  addEventListener("resize", place);
+  addEventListener("message", function (e) {
+    var d = e.data || {};
+    if (e.source !== parent || d.source !== "dotz-pick" || d.kind !== "sync" || !Array.isArray(d.ids)) return;
+    var want = {};
+    d.ids.forEach(function (id) { want[String(id)] = true; });
+    for (var id in marks) if (!want[id]) { marks[id].remove(); delete marks[id]; }
+    d.ids.forEach(function (id, i) {
+      id = String(id);
+      var m = marks[id];
+      if (!m) { m = document.createElement("div"); m.className = "dz-pick-badge"; document.body.appendChild(m); marks[id] = m; }
+      m.textContent = String(i + 1);
+    });
+    place();
+    tick();
+  });
+  ensure();
+})();</script>`;
+const withPick = (html: string): string => {
+	let at = -1;
+	for (const m of html.matchAll(/<\/body\s*>/gi)) at = m.index ?? at;
+	return at < 0 ? html + PICK_BRIDGE : html.slice(0, at) + PICK_BRIDGE + html.slice(at);
+};
 export function canvasRoute(req: Request, url: URL, roots: string[], listed: ReadonlySet<string>): Response {
 	try {
 		const path = resolveAllowed(url.searchParams.get("path") ?? "", roots, listed);
 		if (!/\.html?$/i.test(path)) throw new FileError("HTML 파일만 캔버스에서 열 수 있어요", 415);
 		const f = Bun.file(path);
-		const headers = { "Content-Type": "text/html; charset=utf-8", "Content-Length": String(f.size), "X-Content-Type-Options": "nosniff", "Content-Security-Policy": CANVAS_CSP, "Cache-Control": "private, no-cache" };
-		return new Response(req.method === "HEAD" ? null : f, { headers });
+		const base = { "Content-Type": "text/html; charset=utf-8", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": CANVAS_CSP, "Cache-Control": "private, no-cache" };
+		if (url.searchParams.get("pick") !== "1") return new Response(req.method === "HEAD" ? null : f, { headers: { ...base, "Content-Length": String(f.size) } });
+		const page = withPick(readFileSync(path, "utf8"));
+		const headers = { ...base, "Content-Length": String(Buffer.byteLength(page)) };
+		return new Response(req.method === "HEAD" ? null : page, { headers });
 	} catch (error) {
 		const message = (error as Error).message;
 		return Response.json({ error: message }, { status: error instanceof FileError ? error.status : 400, headers: { "X-File-Note": encodeURIComponent(message) } });
