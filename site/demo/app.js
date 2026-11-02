@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "2c9d49fa0877";
+const WEB_BUILD = "eaf0cc3aaac2";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -16150,7 +16150,7 @@ const runLaneRestart = (name, btn) => busy(btn, async () => {
 (async () => {
   // The owner's custom layer (web/custom.js) comes in after the page has loaded and never holds it: a <script> tag for it kept the document
   // loading while the gateway did not answer, and the load event (the service worker's registration waits on it) never came. It catches up on the open view.
-  const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "demo/custom.js" }));
+  const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "/demo/custom.js" }));
   if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
   const h = parseHash();
   go(h.view || "home", h.t);

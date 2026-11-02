@@ -23,7 +23,7 @@ const joined = (kind: "js" | "css") => files(kind).map(f => source(`${kind}/${f}
 
 // The page names no server asset: /custom.js (appended by 99-boot.js) becomes the demo's own empty layer beside app.js.
 // Absolute /app.css and /app.js never appear in the sources; relative demo/app.* are what demo.html loads.
-const rewrite = (text: string) => text.replaceAll('"/custom.js"', '"demo/custom.js"');
+const rewrite = (text: string) => text.replaceAll('"/custom.js"', '"/demo/custom.js"');
 
 const css = rewrite(joined("css"));
 // The joined text is served by the gateway verbatim, so the demo needs no surgery on it: the same bundles run here.
