@@ -146,6 +146,16 @@ export function workConversationRuns(works: readonly WorkLike[], conversationOf:
 
 type Act = { ts?: string; type?: string; intent?: string; text?: string };
 
+// dotz's own tools said in the owner's language: a bare tool id never reaches a status line (owner 2026-11-03: the running line said
+// "dotz_lane"). A tool without a word here gives no line at all, so no command name is shown.
+const TOOL_KO: Record<string, string> = {
+	dotz_lane: "세션 준비", dotz_send: "메시지 전달", dotz_watch: "감시 설정", dotz_schedule: "예약 설정",
+	dotz_channel: "채널 설정", dotz_conv: "대화 살피기", dotz_peer: "다른 컴퓨터와 연결", dotz_auth: "인증 확인",
+	dotz_verify: "완료 확인", dotz_merge: "변경 반영", dotz_todo: "할 일 정리",
+};
+const bareTool = (t: string) => /^[a-z][a-z0-9_.-]*$/i.test(t);
+const toolWord = (t: string) => TOOL_KO[t.toLowerCase()] || "";
+
 /** The latest tool intent of the turn that is still running (after the last turn_start), if any. */
 export function runIntent(items: Act[]): string | undefined {
 	for (let i = items.length - 1; i >= 0; i--) {
@@ -153,7 +163,13 @@ export function runIntent(items: Act[]): string | undefined {
 		if (a.type === "turn_start") break;
 		if (a.type !== "tool_call") continue;
 		const t = String(a.intent || a.text || "").replace(/\s+/g, " ").trim();
-		if (t) return t;
+		if (!t) continue;
+		// `items` come from the transcript, where a call without an intent is texted as the tool's id: say it in Korean, or drop it.
+		if (bareTool(t)) return toolWord(t);
+		// With a label the transcript texts it as "<tool id>: <label>": keep the label, never the tool's id.
+		const pref = t.match(/^([a-z][a-z0-9_.-]*):\s*(.*)$/i);
+		if (pref) return pref[2]!.trim() || toolWord(pref[1]!);
+		return t;
 	}
 	return undefined;
 }
