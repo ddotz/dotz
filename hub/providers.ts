@@ -12,7 +12,7 @@ import { writeOmoPin } from "./omo-pin.ts";
 import { hardPinned, stickyAccount } from "./account-sticky.ts";
 import { labeledAccountView } from "./accounts-api.ts";
 import { apiBudget } from "./api-budget.ts";
-import { type AccountReport, AccountUsage, fromOmp, runtimeIdOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
+import { type AccountReport, AccountUsage, cliTokensSettled, fromOmp, runtimeIdOf, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
 
 // omp provider id -> the env var omp reads its API key from (omp docs: providers.md, "Environment variables").
 const PROVIDER_ENV: Record<string, string> = {
@@ -663,13 +663,48 @@ export function buildQuota(reports: OmpUsageReport[], credentialed: string[]): {
 	return { providers, unavailable };
 }
 
-export async function quota() {
+async function readQuota() {
+	// a Claude CLI login kept in the keychain: its token is read in the background first, so the usage below has it
+	subscriptionAccounts();
+	await cliTokensSettled();
 	const rows = (await listProviders(new Set())).providers;
 	const anthropic = await anthropicUsage();
 	const reports = [...(anthropic ? [anthropic] : []), ...(await usageReports()).filter(r => r.provider !== "anthropic")];
 	const budget = await apiBudget().catch(() => undefined);
 	return { fetched_at: Date.now(), ...buildQuota(reports, rows.filter(r => r.auth !== "none").map(r => r.id)), ...(budget ? { budget } : {}), ...(runtimeIdOf("orchestrator") === "omo" ? { account: labeledAccountView() } : {}) };
 }
+
+// GET /api/quota answers from the last read, never waiting on a CLI, the keychain or the usage endpoint (only the very first
+// read is waited for). main.ts refreshes it every QUOTA_REFRESH_MS while a page is connected, and a request finding it older
+// starts one refresh; a read whose numbers changed goes to the listeners (main.ts pushes it to the pages as a "quota" event).
+export const QUOTA_REFRESH_MS = 60_000;
+type Quota = Awaited<ReturnType<typeof readQuota>>;
+let quotaSnap: Quota | undefined;
+let quotaRead: Promise<Quota> | undefined;
+const quotaListeners: ((q: Quota) => void)[] = [];
+export const onQuota = (fn: (q: Quota) => void): void => void quotaListeners.push(fn);
+const quotaKey = (q: Quota | undefined): string => JSON.stringify(q ? { ...q, fetched_at: 0 } : null);
+export function refreshQuota(): Promise<Quota> {
+	quotaRead ??= readQuota()
+		.then(q => {
+			const changed = quotaKey(q) !== quotaKey(quotaSnap);
+			quotaSnap = q;
+			if (changed) for (const fn of quotaListeners) fn(q);
+			return q;
+		})
+		.finally(() => (quotaRead = undefined));
+	return quotaRead;
+}
+export async function quota(now = Date.now()): Promise<Quota> {
+	if (!quotaSnap) return refreshQuota();
+	if (now - quotaSnap.fetched_at >= QUOTA_REFRESH_MS) void refreshQuota().catch(e => log(`usage refresh failed: ${(e as Error).message}`));
+	return quotaSnap;
+}
+export const resetQuotaForTest = (): void => {
+	quotaSnap = undefined;
+	quotaRead = undefined;
+	quotaListeners.length = 0;
+};
 
 // How long a 429 pause lasts. The provider's usage report names the window that ran out and when it resets, so the
 // pause ends right after that reset (a spent week waits for the week, not a blind 6h retry). Without a spent window in

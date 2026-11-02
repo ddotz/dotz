@@ -7,7 +7,7 @@
 // tokens, so a refresh OmO did not make would log OmO out); an expired one is reported as "expired" and OmO refreshes it on
 // its next request. An account is asked at most every FRESH_MS (a forced read at most every MIN_REFRESH_MS), and one that
 // answered 429 is not asked again before its retry-after.
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -37,31 +37,56 @@ const readJson = (file: string): Json | undefined => {
 
 // OmO 2026.10.31+ logins (store "claude-cli") keep no token in auth.json: the Claude CLI holds it for the account's own dir
 // <agent dir>/anthropic-subscription-claude/<dirId>, in the macOS keychain item "Claude Code-credentials-<first 8 hex of
-// sha256(dir)>" or, elsewhere, <dir>/.credentials.json. Read only, like the rest of this file; cached a minute per dir.
+// sha256(dir)>" or, elsewhere, <dir>/.credentials.json. Read only, like the rest of this file; cached a minute per dir
+// (an expired token is looked at again after EXPIRED_RECHECK_MS, not on every call). The keychain is read by a `security`
+// child that never runs on the caller's path: a stale entry is answered from the cache while one read per dir runs in the
+// background (a synchronous read blocked the gateway's event loop, and an expired token re-ran it on every call).
 const CLI_TOKEN_TTL_MS = 60_000;
-const cliTokens = new Map<string, { at: number; cred?: { access: string; expires?: number } }>();
-export const resetCliTokensForTest = () => cliTokens.clear();
-function cliCredential(file: string, dirId: unknown, now: number): { access: string; expires?: number } | undefined {
+const EXPIRED_RECHECK_MS = 15_000;
+type CliCred = { access: string; expires?: number };
+const cliTokens = new Map<string, { at: number; cred?: CliCred }>();
+const keychainReads = new Map<string, Promise<void>>();
+const securityRead = (service: string): Promise<string | undefined> =>
+	new Promise(done => execFile("security", ["find-generic-password", "-s", service, "-w"], { encoding: "utf8", timeout: 5_000 }, (err, out) => done(err ? undefined : out)));
+let keychainRead = securityRead;
+export const setKeychainReaderForTest = (fn: (service: string) => Promise<string | undefined>) => void (keychainRead = fn);
+export const resetCliTokensForTest = () => {
+	cliTokens.clear();
+	keychainReads.clear();
+	keychainRead = securityRead;
+};
+// Resolves when the keychain reads started so far are done (the background usage refresh waits for them, never a request).
+export const cliTokensSettled = async (): Promise<void> => void (await Promise.all(keychainReads.values()));
+const parseCred = (raw: string | undefined): CliCred | undefined => {
+	try {
+		const o = JSON.parse(raw ?? "")?.claudeAiOauth;
+		if (typeof o?.accessToken === "string" && o.accessToken) return { access: o.accessToken, ...(typeof o.expiresAt === "number" ? { expires: o.expiresAt } : {}) };
+	} catch {}
+	return undefined;
+};
+function cliCredential(file: string, dirId: unknown, now: number): CliCred | undefined {
 	if (typeof dirId !== "string" || !/^[0-9a-f]{32}$/.test(dirId)) return undefined;
 	const dir = join(dirname(file), "anthropic-subscription-claude", dirId);
 	const hit = cliTokens.get(dir);
-	if (hit && now - hit.at < CLI_TOKEN_TTL_MS && (hit.cred?.expires ?? Number.POSITIVE_INFINITY) > now) return hit.cred;
+	const age = hit ? now - hit.at : Number.POSITIVE_INFINITY;
+	if (hit && age < CLI_TOKEN_TTL_MS && !((hit.cred?.expires ?? Number.POSITIVE_INFINITY) <= now && age >= EXPIRED_RECHECK_MS)) return hit.cred;
 	let raw: string | undefined;
 	try {
 		raw = readFileSync(join(dir, ".credentials.json"), "utf8");
 	} catch {
 		if (process.platform === "darwin") {
-			const service = `Claude Code-credentials-${createHash("sha256").update(dir).digest("hex").slice(0, 8)}`;
-			try {
-				raw = execFileSync("security", ["find-generic-password", "-s", service, "-w"], { encoding: "utf8", timeout: 5_000, stdio: ["ignore", "pipe", "ignore"] });
-			} catch {}
+			if (!keychainReads.has(dir)) {
+				const service = `Claude Code-credentials-${createHash("sha256").update(dir).digest("hex").slice(0, 8)}`;
+				const read = keychainRead(service)
+					.catch(() => undefined)
+					.then(out => void cliTokens.set(dir, { at: Date.now(), cred: parseCred(out) }))
+					.finally(() => keychainReads.delete(dir));
+				keychainReads.set(dir, read);
+			}
+			return hit?.cred;
 		}
 	}
-	let cred: { access: string; expires?: number } | undefined;
-	try {
-		const o = JSON.parse(raw ?? "")?.claudeAiOauth;
-		if (typeof o?.accessToken === "string" && o.accessToken) cred = { access: o.accessToken, ...(typeof o.expiresAt === "number" ? { expires: o.expiresAt } : {}) };
-	} catch {}
+	const cred = parseCred(raw);
 	cliTokens.set(dir, { at: now, cred });
 	return cred;
 }

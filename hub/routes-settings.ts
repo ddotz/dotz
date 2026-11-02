@@ -8,7 +8,7 @@ import { checkNow as checkAccountNow } from "./account-rules.ts";
 import { accountsRoute } from "./accounts-api.ts";
 import { cancelByOwner, orch, restart as restartOrchestrator, resumeNow } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
-import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, saveProviderKey, startLogin } from "./providers.ts";
+import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, refreshQuota, saveProviderKey, startLogin } from "./providers.ts";
 import { featureCatalog } from "./features.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
@@ -141,7 +141,7 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		const page = await transcriptPage(file, limit - live.length, live[0]?.ts);
 		return json({ source, history: page.items.length > 0, items: [...page.items, ...live], more: page.more });
 	}
-	if (req.method === "GET" && url.pathname === "/api/quota") return json(await quota());
+	if (req.method === "GET" && url.pathname === "/api/quota") return json(await (url.searchParams.has("fresh") ? refreshQuota() : quota()));
 	// The monthly API limit and the admin key behind the usage screen's spend figure (hub/api-budget.ts): the key is never returned, only its mask.
 	if (url.pathname === "/api/api-budget" && (req.method === "GET" || req.method === "PUT")) {
 		try {
