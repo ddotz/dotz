@@ -1,6 +1,6 @@
 // Custom plugins (hub/plugins.ts): the loader, the four hooks and the failure policy, with a neutral fixture plugin written to a throwaway data dir.
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadPlugins, pluginClaim, pluginDeny, pluginThread, startPlugins, type PluginContext } from "./plugins.ts";
@@ -82,6 +82,31 @@ test("the thread hook's note reaches the orchestrator's inbox turn; its parent n
 test("the deny hook blocks with the plugin's reason; other commands pass", () => {
 	expect(pluginDeny("run fixture-send now", data)).toBe("Blocked by dotz (custom plugin fixture): fixture-send needs an OK first.");
 	expect(pluginDeny("ls", data)).toBeUndefined();
+});
+
+test("an edited, added or removed plugin file reaches the next hook without loadPlugins; an edit that fails to load keeps the previous version", async () => {
+	const other = mkdtempSync(join(tmpdir(), "dotz-plugins-reload-"));
+	const pdir = join(other, "custom", "plugins");
+	mkdirSync(pdir, { recursive: true });
+	const write = (name: string, source: string, mtime: number) => {
+		writeFileSync(join(pdir, name), source);
+		utimesSync(join(pdir, name), mtime, mtime);
+	};
+	const guard = (word: string) => `export default { deny(c) { if (c.includes("${word}")) return "no ${word}"; } };\n`;
+	write("guard.ts", guard("foo"), 1000);
+	await loadPlugins(other, line => logs.push(line));
+	expect(pluginDeny("foo", other)).toBe("Blocked by dotz (custom plugin guard): no foo.");
+	write("guard.ts", guard("bar"), 2000);
+	expect(pluginDeny("bar", other)).toBe("Blocked by dotz (custom plugin guard): no bar.");
+	expect(pluginDeny("foo", other)).toBeUndefined();
+	write("guard.ts", "export default 42;\n", 3000);
+	expect(pluginDeny("bar", other)).toBe("Blocked by dotz (custom plugin guard): no bar.");
+	expect(logs.some(l => l.includes("guard.ts not reloaded, keeping the previous version"))).toBe(true);
+	write("extra.ts", guard("baz"), 1000);
+	expect(pluginDeny("baz", other)).toBe("Blocked by dotz (custom plugin extra): no baz.");
+	rmSync(join(pdir, "guard.ts"));
+	expect(pluginDeny("bar", other)).toBeUndefined();
+	rmSync(other, { recursive: true, force: true });
 });
 
 test("the Claude deny hook process loads the plugins too", async () => {
