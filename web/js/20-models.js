@@ -78,10 +78,10 @@ function targetCard(key, title, status, cur, confirmText, extra = {}) {
   const p = pending[key] || {};
   const model = p.model ?? cur.model, thinking = p.thinking ?? cur.thinking;
   const dirty = (p.model != null && p.model !== cur.model) || (p.thinking != null && p.thinking !== cur.thinking);
-  const levels = M.thinking_levels || [];
   const modelField = selectField("모델", modelName(model), () => modelItems(key, cur.model), model, v => { (pending[key] ||= {}).model = v; renderModels(); });
-  // Effort is a dropdown next to the model, not a row of eight buttons (owner 2026-10-20: "드랍다운으로 모델이랑 추론정도 각각").
-  const effField = selectField("추론 강도", thinking ? thinkKo(thinking) : "–", levels.map(lv => ({ value: lv, label: thinkKo(lv) })), thinking, v => { (pending[key] ||= {}).thinking = v; renderModels(); });
+  // Effort is a dropdown next to the model, not a row of eight buttons (owner 2026-10-20: "드랍다운으로 모델이랑 추론정도 각각"), and it
+  // lists what this model accepts, so picking another model rebuilds it with that model's levels.
+  const effField = selectField("추론 강도", thinking ? thinkKo(thinking) : "–", effortItems(model, thinking), thinking, v => { (pending[key] ||= {}).thinking = v; renderModels(); });
   const info = (M.available || []).find(a => a.selector === model);
   const apply = el("button", { class: "btn", type: "button", disabled: !dirty, onclick: ev => busy(ev.currentTarget, async () => {
     const change = {};
@@ -140,7 +140,7 @@ function liveModel(t) {
 }
 const fbTagText = f => ["폴백 중", f.reason, f.until ? `${kstStamp(Date.parse(f.until))}에 복귀` : ""].filter(Boolean).join(" · ");
 const selText = sel => { const [b, lv] = String(sel || "").split(":"); return b ? `${modelChipText(b)}${lv ? ` · ${thinkKo(lv)}` : ""}` : "–"; };
-const fbTag = (f, conf) => el("span", { class: "tag warn", title: conf ? `기본 모델 ${selText(conf)} 대신 쓰는 중` : "", text: fbTagText(f) });
+const fbTag = (f, conf) => el("span", { class: "tag warn", title: [fbTagText(f), conf ? `기본 모델 ${selText(conf)} 대신 쓰는 중` : ""].filter(Boolean).join(" · "), text: fbTagText(f) });
 // 실제로 쓰는 모델 (owner 2026-10-27): every place a model runs and the model it runs on now (hub/models-in-use.ts), each row opening
 // where it is changed: a card on this screen, or that app's settings screen.
 function inUseSection() {
@@ -150,11 +150,11 @@ function inUseSection() {
     const ch = r.change || {};
     const open = ch.models ? () => { modelsFocus = ch.models; renderModels(); } : ch.app ? () => asScreen(ch.app) : null;
     const why = r.fallback ? (r.key === "main" ? fbWhy("orchestrator") : r.key.startsWith("lane:") ? fbWhy("lanes") : { reason: "", until: "" }) : null;
+    const model = selText(r.model);
     return el("div", { class: "mt-use-row", "data-use": r.key },
       el("div", { class: "mt-use-tx" }, el("span", { class: "nm", text: r.label }), r.sub || ch.none ? el("span", { class: "sup", text: [r.sub, ch.none].filter(Boolean).join(" · ") }) : null),
-      el("span", { class: "mt-use-m", text: selText(r.model) }),
-      why ? fbTag(why, r.configured) : null,
-      open ? el("button", { class: "btn text", type: "button", "aria-label": `${r.label} 바꾸기`, onclick: open }, "바꾸기") : null);
+      el("div", { class: "mt-use-rest" }, el("span", { class: "mt-use-m", title: model, text: model }), why ? fbTag(why, r.configured) : null),
+      open ? el("button", { class: "mt-use-act", type: "button", title: "바꾸기", "aria-label": `${r.label} 바꾸기`, onclick: open }, icon("pencil")) : null);
   };
   return el("section", { class: "card mt-card mt-use", "data-target": "in-use", "aria-label": "실제로 쓰는 모델" },
     el("div", { class: "mt-head" }, el("span", { class: "t", text: "실제로 쓰는 모델" }), el("span", { class: "sup", text: "지금 돌고 있는 모델이에요" })),

@@ -126,9 +126,17 @@ async function restoreEnded(ids) {
 const statusTone = s => ({ working: "pri", starting: "pri", idle: "", "rate-limited": "warn" })[s] || (/dead|error|fail/.test(s || "") ? "err" : "");
 const statusKo = s => ({ working: "작업 중", idle: "대기", starting: "시작 중", stopped: "멈춤", "rate-limited": "한도 걸림", exited: "종료됨" })[s] || s || "알 수 없음";
 const providerName = id => { const p = ((P && P.providers) || []).find(x => x.id === id); return (p && p.name) || id; };
-// Thinking levels said in Korean (the stored value stays the API id).
-const THINK_KO = { off: "끔", minimal: "최소", low: "낮음", medium: "보통", high: "높음", xhigh: "최고", max: "최고", auto: "자동" };
+// Thinking levels said in Korean (the stored value stays the API id); every level has its own word (xhigh and max used to both say 최고).
+const THINK_KO = { off: "끔", minimal: "최소", low: "낮음", medium: "보통", high: "높음", xhigh: "매우 높음", max: "최고", auto: "자동" };
 const thinkKo = v => THINK_KO[String(v || "").toLowerCase()] || String(v || "");
+// The levels one model accepts, from the hub's model list (`omp models --json` per-model `thinking`); a model the runtime did not describe
+// gets the runtime's whole set. off is dotz's own switch, and a level already saved stays visible until the owner picks another.
+const modelThinkLevels = sel => {
+  const a = [...((M && M.available) || []), ...((M && M.pickable) || [])].find(x => x.selector === sel);
+  return a && Array.isArray(a.thinking) ? a.thinking : ((M && M.thinking_levels) || []);
+};
+const effortLevels = (sel, cur) => [...new Set([...(modelThinkLevels(sel).includes("off") ? [] : ["off"]), ...modelThinkLevels(sel), ...(cur ? [cur] : [])])];
+const effortItems = (sel, cur) => effortLevels(sel, cur).map(v => ({ value: v, label: thinkKo(v) }));
 const modelName = sel => { if (!sel) return "–"; const a = ((M && M.pickable) || []).find(x => x.selector === sel) || ((M && M.available) || []).find(x => x.selector === sel); return a ? a.name || sel : String(sel).split("/").pop(); };
 
 /* ---------- chrome: nav, theme, back ---------- */

@@ -416,14 +416,12 @@ $("#c-model").onclick = ev => busy(null, () => {
     showMenu(anchor, items, { value: T.model, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { model: v }, `${modelName(v)} · ${T.thinking}`)) });
   });
 });
-// Effort only: low / medium / high (plus the current level when it is another one); the model is never touched.
+// Effort only: the levels this target's model accepts (04-state.js effortItems), the model is never touched.
 $("#c-effort").onclick = ev => busy(null, () => {
   const anchor = ev.currentTarget;
   return chipMenu(anchor, T => {
     const name = targetName(target);
-    const levels = ["low", "medium", "high"].filter(v => T.thinking_levels.includes(v));
-    if (T.thinking && !levels.includes(T.thinking)) levels.push(T.thinking);
-    showMenu(anchor, [{ header: "추론 강도" }, ...levels.map(v => ({ value: v, label: thinkKo(v) })), MODELS_LINK], { value: T.thinking, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${thinkKo(v)}`)) });
+    showMenu(anchor, [{ header: "추론 강도" }, ...effortItems(T.model, T.thinking), MODELS_LINK], { value: T.thinking, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${thinkKo(v)}`)) });
   });
 });
 $("#ctx-ring").setAttribute("aria-haspopup", "listbox");

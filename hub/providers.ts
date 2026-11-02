@@ -3,7 +3,7 @@
 // the model catalog and quota. The gateway keeps no credentials of its own; keys are only ever shown masked.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
-import { log, OMP, writeAtomic } from "./config.ts";
+import { log, OMP, THINKING_LEVELS, writeAtomic } from "./config.ts";
 import { label } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
@@ -77,7 +77,7 @@ export function secretValues(): string[] {
 		.filter(v => v.length >= 8);
 }
 
-type OmpModel = { kind?: string; selector: string; id?: string; name?: string; provider: string; reasoning?: boolean };
+type OmpModel = { kind?: string; selector: string; id?: string; name?: string; provider: string; reasoning?: boolean; thinking?: unknown };
 type OmpCredential = { provider: string; credential?: Record<string, unknown> };
 type OmpLimit = { id: string; label?: string; window?: { id?: string; label?: string; resetsAt?: number }; amount?: { used?: number; limit?: number; remaining?: number; unit?: string }; status?: string };
 type OmpUsageReport = { provider: string; limits?: OmpLimit[]; metadata?: { email?: string }; account?: string };
@@ -182,6 +182,14 @@ export function omoAuthInfos(auth: Record<string, unknown> | undefined): AuthInf
 	});
 }
 
+// The thinking levels one model accepts, from `omp models --json` (`.models[].thinking`), in the runtime's own order. undefined means the
+// runtime did not say (a provider-discovered OmO model: `omo --list-models` only says yes/no); an empty list means it said it has none.
+export function modelThinking(levels: unknown): string[] | undefined {
+	if (!Array.isArray(levels)) return undefined;
+	const set = new Set(levels.filter((l): l is string => typeof l === "string"));
+	return THINKING_LEVELS.filter(l => set.has(l));
+}
+
 // Pure: `omo --list-models` (a table: provider, model, context, max-out, thinking, images) cut down to the providers OmO
 // holds credentials for (auth.json keys, or the provider's API-key env var), under dotz's provider names.
 export function omoModels(table: string, auth: Record<string, unknown> | undefined, env: Record<string, string | undefined>): ModelInfo[] {
@@ -192,14 +200,19 @@ export function omoModels(table: string, auth: Record<string, unknown> | undefin
 		const [provider, model, , , thinking] = line.trim().split(/\s+/);
 		if (!provider || !model || provider === "provider" || !ready.has(provider)) return [];
 		const dotz = dotzProvider(provider);
-		return [{ selector: `${dotz}/${model}`, name: model, provider: dotz, reasoning: thinking === "yes" }];
+		return [{ selector: `${dotz}/${model}`, name: model, provider: dotz, reasoning: thinking === "yes", thinking: thinking === "yes" ? undefined : [] }];
 	});
 }
 
-export type ModelInfo = { selector: string; name: string; provider: string; reasoning: boolean };
+export type ModelInfo = { selector: string; name: string; provider: string; reasoning: boolean; thinking?: string[] };
 const ompModels = async (): Promise<ModelInfo[] | undefined> => {
 	const j = await ompJson<{ models?: OmpModel[] }>(["models", "--json"]);
-	return Array.isArray(j?.models) ? j.models.filter(m => m.kind === "chat").map(m => ({ selector: m.selector, name: m.name ?? m.id ?? m.selector, provider: m.provider, reasoning: Boolean(m.reasoning) })) : undefined;
+	return Array.isArray(j?.models)
+		? j.models.filter(m => m.kind === "chat").map(m => {
+				const levels = modelThinking(m.thinking) ?? (m.reasoning ? undefined : []);
+				return { selector: m.selector, name: m.name ?? m.id ?? m.selector, provider: m.provider, reasoning: Boolean(m.reasoning), ...(levels ? { thinking: levels } : {}) };
+			})
+		: undefined;
 };
 export const availableModels = async (): Promise<ModelInfo[]> =>
 	(await cached("models", async () => {
