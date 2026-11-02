@@ -108,7 +108,14 @@ async function startLogin(p) {
     clear(picks); picks.hidden = !(v.options && v.options.length);
     for (const o of v.options || []) picks.append(el("button", { class: "chip", type: "button", text: o, onclick: ev => { code.value = o; submit(ev.currentTarget); } }));
   };
-  const open = el("a", { class: "btn tonal", href: /^https?:\/\//.test(r.url || "") ? r.url : null, target: "_blank", rel: "noopener noreferrer" }, icon("open"), "로그인 페이지 열기");
+  // a sign-in can ask its questions first (Claude: account name, method) and name the page only in a later step
+  const open = el("a", { class: "btn tonal", target: "_blank", rel: "noopener noreferrer" }, icon("open"), "로그인 페이지 열기");
+  const openBox = el("div", {}, open);
+  const paintUrl = url => {
+    const ok = /^https?:\/\//.test(url || "");
+    if (ok) open.href = url; else open.removeAttribute("href");
+    openBox.hidden = !ok;
+  };
   const stop = () => { clearTimeout(timer); };
   const success = async () => {
     finished = true; stop(); dlg.close();
@@ -138,18 +145,18 @@ async function startLogin(p) {
     try {
       const s = await api(`/api/providers/${enc(p.id)}/login/complete`, "POST", { login_id: r.login_id, code: v });
       // a sign-in with more than one step answers with the next question instead of finishing
-      if (s.status === "waiting") { code.value = ""; paintAsk(s); code.focus(); timer = setTimeout(poll, 2000); return; }
+      if (s.status === "waiting") { code.value = ""; paintAsk(s); if (s.url) paintUrl(s.url); code.focus(); timer = setTimeout(poll, 2000); return; }
       await success();
     }
     catch (e) { fail(e.message); if (!finished) timer = setTimeout(poll, 2000); }
   });
   dlg = dialog({
     title: p.can_add_account || p.add_account ? `${name} 계정 추가` : `${name} 로그인`,
-    body: [el("div", {}, open), textField("코드 또는 주소", code), ask, picks, msg],
+    body: [openBox, textField("코드 또는 주소", code), ask, picks, msg],
     onclose: () => { stop(); if (!finished) api(`/api/providers/${enc(p.id)}/login`, "DELETE").catch(() => {}); },
     actions: [{ label: "취소", onclick: c => c() }, { label: "완료", kind: "pri", onclick: (c, btn) => submit(btn) }],
   });
-  paintAsk(r);
+  paintAsk(r); paintUrl(r.url);
   code.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); const b = dlg.node.querySelector(".dact .btn:last-child"); if (b) b.click(); } });
   timer = setTimeout(poll, 2000);
 }

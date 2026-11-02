@@ -31,8 +31,15 @@ for await (const line of console) {
 	else if (c.type === "login_start") {
 		provider = c.provider;
 		out({ id: c.id, type: "response", command: c.type, success: true });
-		out({ type: "auth_login_url", provider, url: "https://claude.ai/oauth/authorize?state=fake" });
-		out({ type: "extension_ui_request", id: "ask-1", method: "input", title: "Complete login in your browser, or paste the authorization code / redirect URL here:" });
+		if (mode === "claude") out({ type: "extension_ui_request", id: "ask-name", method: "input", title: "Name for this account (existing: default, work; press Enter to add account-3, or type an existing name to refresh it)", placeholder: "account-3" });
+		else {
+			out({ type: "auth_login_url", provider, url: "https://claude.ai/oauth/authorize?state=fake" });
+			out({ type: "extension_ui_request", id: "ask-1", method: "input", title: "Complete login in your browser, or paste the authorization code / redirect URL here:" });
+		}
+	} else if (c.type === "extension_ui_response" && c.id === "ask-name") out({ type: "extension_ui_request", id: "ask-method", method: "select", title: "Select Anthropic login method:", options: ["Browser login (default)", "Copy code login (headless)"] });
+	else if (c.type === "extension_ui_response" && c.id === "ask-method") {
+		out({ type: "auth_login_url", provider, url: "https://claude.ai/oauth/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A54545%2Fcallback&state=fake" });
+		out({ type: "extension_ui_request", id: "ask-1", method: "input", title: "Paste the code Anthropic shows after you sign in:", placeholder: "https://claude.ai/oauth/authorize?redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&state=fake" });
 	} else if (c.type === "extension_ui_response" && c.id === "ask-1") {
 		if (mode === "error") { out({ type: "auth_login_end", provider, success: false, error: "Invalid authorization code" }); continue; }
 		const a = JSON.parse(readFileSync(auth, "utf8"));
@@ -97,6 +104,19 @@ test("start -> URL -> pasted code adds a second, then a third account; the old a
 	expect(sub().accounts[0].access).toBe("a");
 	expect(sub().pinned).toBe("work");
 	expect((await listProviders(new Set())).providers.find(p => p.id === "anthropic")).toMatchObject({ accounts: 4, account: "work" });
+});
+
+test("Claude's name and method questions come first; the page to open is the code page from its paste prompt", async () => {
+	process.env.FAKE_OMO_MODE = "claude";
+	const r = await startLogin("anthropic");
+	expect(r).toMatchObject({ url: "", needs_code: true });
+	expect(r.prompt).toContain("Name for this account");
+	const method = await completeLogin("anthropic", r.login_id, "account-3");
+	expect(method).toMatchObject({ status: "waiting", url: "", options: ["Browser login (default)", "Copy code login (headless)"] });
+	const paste = await completeLogin("anthropic", r.login_id, "Browser login (default)");
+	expect(paste).toMatchObject({ status: "waiting", needs_code: true, url: "https://claude.ai/oauth/authorize?redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&state=fake" });
+	expect(await completeLogin("anthropic", r.login_id, "code-1")).toEqual({ provider: "anthropic", status: "done" });
+	expect(sub().accounts.map((x: { name: string }) => x.name)).toEqual(["default", "work", "login-2"]);
 });
 
 test("a login that moves the Claude pin gets the pin put back", async () => {
