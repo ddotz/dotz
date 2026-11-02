@@ -54,13 +54,13 @@ export type SyncDeps = {
 
 const ZELE_CMD: Record<Exclude<MailAction, "unarchive">, string> = { read: "read-mark", unread: "unread-mark", archive: "archive", trash: "trash", star: "star", unstar: "unstar" };
 const NO_SUPPORT: Record<MailAction, string> = {
-	read: "이 메일함은 dotz에서 읽음 표시를 바꿀 수 없어요",
-	unread: "이 메일함은 dotz에서 읽음 표시를 바꿀 수 없어요",
-	archive: "이 메일함은 dotz에서 보관 처리를 바꿀 수 없어요",
-	unarchive: "이 메일함은 dotz에서 보관 처리를 바꿀 수 없어요",
-	trash: "이 메일함의 메일은 dotz에서 지울 수 없어서 dotz에서만 지웠어요",
-	star: "이 메일함은 dotz에서 별표를 바꿀 수 없어요",
-	unstar: "이 메일함은 dotz에서 별표를 바꿀 수 없어요",
+	read: "이 메일함은 실제 메일함의 읽음 표시를 바꿀 수 없어요. dotz에서만 바뀌었어요",
+	unread: "이 메일함은 실제 메일함의 읽음 표시를 바꿀 수 없어요. dotz에서만 바뀌었어요",
+	archive: "이 메일함은 실제 메일함의 보관 처리를 바꿀 수 없어요. dotz에서만 바뀌었어요",
+	unarchive: "이 메일함은 실제 메일함의 보관 처리를 바꿀 수 없어요. dotz에서만 바뀌었어요",
+	trash: "이 메일함의 메일은 실제 메일함에서 지우지 못했어요. dotz에서만 지웠어요",
+	star: "이 메일함은 실제 메일함의 별표를 바꿀 수 없어요. dotz에서만 바뀌었어요",
+	unstar: "이 메일함은 실제 메일함의 별표를 바꿀 수 없어요. dotz에서만 바뀌었어요",
 };
 const FAILED = "메일함에 반영하지 못했어요. dotz에서만 바뀌었어요";
 

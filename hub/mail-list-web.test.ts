@@ -49,7 +49,7 @@ for (const width of [1440, 390]) {
 			return { n: rows.length, h: rows.map(r => r.getBoundingClientRect().height), src: rows.map(r => r.querySelector(".rc-src").textContent), title: rows.map(r => r.querySelector(".rc-title").textContent),
 				time: rows.map(r => !!r.querySelector(".rc-hd .rc-time")?.textContent),
 				sum: rows.map(r => r.querySelector(".mr-sum")?.textContent ?? null), sumH: rows.map(r => r.querySelector(".mr-sum")?.getBoundingClientRect().height ?? 0),
-				buttons: document.querySelectorAll("#mon-tl button:not(.mr-more):not(.mr-draft), #mon-tl .mr-btn").length, drafts: rows.map(r => r.querySelectorAll(".mr-slot > .mr-draft").length), more: rows.map(r => r.querySelectorAll(".rc-hd > .mr-more:last-child").length), role: rows.map(r => [r.getAttribute("role"), r.tabIndex]),
+				buttons: document.querySelectorAll("#mon-tl button:not(.mr-more):not(.mr-draft):not(.mr-star), #mon-tl .mr-btn").length, drafts: rows.map(r => r.querySelectorAll(".mr-slot > .mr-draft").length), more: rows.map(r => r.querySelectorAll(".rc-hd > .mr-more:last-child").length), role: rows.map(r => [r.getAttribute("role"), r.tabIndex]),
 				clip: rows.map(r => r.querySelector(".mr-clip")?.textContent ?? null), clipTag: rows.map(r => r.querySelector(".mr-clip")?.tagName ?? null),
 				chip: rows.map(r => r.querySelector("[data-slot=suggest]")?.textContent ?? null), chipBottom: rows.map(r => { const c = r.querySelector("[data-slot=suggest]"); return c ? box(c).y >= box(r.querySelector(".rc-title")).y + box(r.querySelector(".rc-title")).h : null; }),
 				rowBox: rows.map(box), over: document.documentElement.scrollWidth > innerWidth };
@@ -65,7 +65,8 @@ for (const width of [1440, 390]) {
 		for (const [i, s] of got.sum.entries()) if (s !== null) expect(s).not.toContain(got.title[i]);
 		for (const h of got.sumH) expect(h).toBeLessThanOrEqual(60);
 		for (const r of got.h) expect(r).toBeLessThan(width === 390 ? 190 : 150);
-		// no right-side buttons but the one ⋯ ending each header (owner 2026-10-27); the card is a keyboard-reachable button; the attachment count is information only
+		// no right-side buttons but the one ⋯ ending each header (owner 2026-10-27); the ☐ and ☆ at the head are the row's own controls, and the card
+		// is a keyboard-reachable button; the attachment count is information only
 		expect(got.buttons).toBe(0);
 		// 초안 작성 under the summary of every incoming row, without the ⋯ (owner 2026-10-29)
 		expect(got.drafts).toEqual(got.drafts.map(() => 1));
