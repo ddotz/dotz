@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SettingsError } from "./messenger.ts";
+import { desiredRooms } from "./messenger-rooms.ts";
 import { type AgentConfig, type AgentConn, type AgentTransport, agentConfigPath, createAgentAdapter, loadAgentConfig, saveAgentConfig, USER_TOKEN_NOTE } from "./messenger-agent.ts";
 
 // The agent adapter's generic settings (설정 → 메신저): secrets are write-only, a refused body changes nothing, test() posts through the transport.
@@ -21,10 +22,14 @@ afterAll(() => {
 });
 
 class Fake implements AgentTransport {
+	channels: { id: string; name: string }[] = [];
+	created: string[] = [];
+	canCreate = false;
 	sent: { conn: string; chat: string; text: string }[] = [];
 	polled: string[] = [];
 	failChat?: string;
-	listChats = async () => [];
+	listChats = async () => this.channels;
+	createChat?: AgentTransport["createChat"];
 	async poll(c: AgentConn, cursor?: string) {
 		this.polled.push(c.id);
 		return { messages: [], cursor: cursor ?? "c" };
@@ -68,6 +73,12 @@ beforeEach(() => {
 	dir = tmp("agent-settings-");
 	fake = new Fake();
 });
+const makeCreating = () => {
+	fake.createChat = async (_c, name) => {
+		fake.created.push(name);
+		return { id: `N${fake.created.length}`, name };
+	};
+};
 
 describe("GET", () => {
 	test("describes every chat as a room and never carries a secret", () => {
@@ -209,5 +220,98 @@ describe("running adapter", () => {
 		await a.pollNow();
 		expect(fake.polled).toContain("telegram-bot");
 		await a.stop();
+	});
+});
+
+const PROJECTS = [{ target: "ch:7", name: "결제" }, { target: "ch:8", name: "정산" }];
+const chatsOf = (id: string) => loadAgentConfig(dir).connections.find(c => c.id === id)!.chats.map(c => [c.kind, c.project ?? "", c.id]);
+const slackOnly = (over: Partial<AgentConfig> = {}): AgentConfig => ({ enabled: true, connections: [{ id: "slack-bot", platform: "slack", auth: "bot", token: BOT, allow: ["UOWNER"], chats: [] }], ...over });
+
+describe("rooms from the web structure", () => {
+	test("switching it on creates the missing channels for main, alert, worklog and every project when the transport can", async () => {
+		makeCreating();
+		saveAgentConfig(slackOnly(), dir);
+		const a = createAgentAdapter(dir, { transport: fake });
+		await a.syncRooms!(desiredRooms(PROJECTS));
+		expect(fake.created).toEqual(["dotz", "dotz-알림", "dotz-작업내역", "dotz-결제", "dotz-정산"]);
+		expect(chatsOf("slack-bot")).toEqual([["main", "", "N1"], ["alert", "", "N2"], ["worklog", "", "N3"], ["project", "ch:7", "N4"], ["project", "ch:8", "N5"]]);
+		expect(a.enabled()).toBe(true);
+		expect(a.settings!().rooms!.hint).toBeUndefined();
+		await a.syncRooms!(desiredRooms(PROJECTS));
+		expect(fake.created).toHaveLength(5);
+	});
+
+	test("without channel creation it maps channels of the same name and keeps the owner's chats", async () => {
+		fake.channels = [{ id: "CD", name: "dotz" }, { id: "CP", name: "dotz-결제" }, { id: "COTHER", name: "random" }];
+		saveAgentConfig(slackOnly({ connections: [{ ...slackOnly().connections[0]!, chats: [{ id: "CMINE", name: "내 알림", kind: "alert" }] }] }), dir);
+		const a = createAgentAdapter(dir, { transport: fake });
+		await a.syncRooms!(desiredRooms(PROJECTS));
+		expect(chatsOf("slack-bot")).toEqual([["alert", "", "CMINE"], ["main", "", "CD"], ["project", "ch:7", "CP"]]);
+		expect(fake.created).toEqual([]);
+	});
+
+	test("removing a project drops its mapped chat and leaves the channel alone; a new project is mapped", async () => {
+		makeCreating();
+		saveAgentConfig(slackOnly(), dir);
+		const a = createAgentAdapter(dir, { transport: fake });
+		await a.syncRooms!(desiredRooms(PROJECTS));
+		await a.syncRooms!(desiredRooms([PROJECTS[1]!, { target: "ch:9", name: "신규" }]));
+		expect(chatsOf("slack-bot").filter(c => c[0] === "project")).toEqual([["project", "ch:8", "N5"], ["project", "ch:9", "N6"]]);
+		expect(fake.created.at(-1)).toBe("dotz-신규");
+	});
+
+	test("it does nothing while switched off, and a transport error leaves the rest mapped", async () => {
+		saveAgentConfig(slackOnly({ enabled: false }), dir);
+		makeCreating();
+		const off = createAgentAdapter(dir, { transport: fake });
+		await off.syncRooms!(desiredRooms(PROJECTS));
+		expect(fake.created).toEqual([]);
+		saveAgentConfig(slackOnly(), dir);
+		fake.createChat = async (_c, name) => {
+			if (name === "dotz-알림") throw new Error(`name_taken ${BOT}`);
+			return { id: `X-${name}`, name };
+		};
+		const a = createAgentAdapter(dir, { transport: fake });
+		await a.syncRooms!(desiredRooms(PROJECTS.slice(0, 1)));
+		expect(chatsOf("slack-bot")).toEqual([["main", "", "X-dotz"], ["worklog", "", "X-dotz-작업내역"], ["project", "ch:7", "X-dotz-결제"]]);
+	});
+
+	test("the one thing left is a line in the rooms payload: the token, then Telegram's chat id", () => {
+		const none = createAgentAdapter(tmp("agent-empty-"), { transport: fake });
+		expect(none.settings!().rooms!.hint).toContain("봇 토큰");
+		saveAgentConfig(slackOnly(), dir);
+		expect(createAgentAdapter(dir, { transport: fake }).settings!().rooms!.hint).toContain("dotz 채널");
+		saveAgentConfig({ enabled: true, connections: [{ id: "telegram-bot", platform: "telegram", auth: "bot", token: "123:abc", allow: [], chats: [] }] }, dir);
+		const tg = createAgentAdapter(dir, { transport: fake });
+		expect(tg.settings!().rooms!.hint).toContain("Telegram 채팅 ID");
+		tg.saveSettings!({ values: { telegram_chat: "-1001" } });
+		expect(chatsOf("telegram-bot")).toEqual([["main", "", "-1001"]]);
+		expect(tg.settings!().rooms!.hint).toBeUndefined();
+		expect(tg.settings!().fields.find(f => f.key === "telegram_chat")?.value).toBe("-1001");
+	});
+
+	test("tokens come in as top-level values: omitted keeps, \"\" clears, and no secret is ever returned", () => {
+		const a = createAgentAdapter(dir, { transport: fake });
+		a.saveSettings!({ enabled: true, allow: ["UOWNER"], values: { slack_bot_token: BOT, slack_user_token: USER, slack_cookie: COOKIE } });
+		const cfg = loadAgentConfig(dir);
+		expect(cfg.connections.map(c => [c.id, c.token, c.cookie ?? "", c.allow])).toEqual([["slack-bot", BOT, "", ["UOWNER"]], ["slack-user", USER, COOKIE, ["UOWNER"]]]);
+		expect(a.settings!().fields.filter(f => f.type === "secret").map(f => [f.key, f.set])).toEqual([["slack_bot_token", true], ["slack_user_token", true], ["slack_cookie", true], ["telegram_bot_token", false]]);
+		for (const secret of [BOT, USER, COOKIE]) expect(JSON.stringify(a.settings!())).not.toContain(secret);
+		a.saveSettings!({ values: { slack_cookie: "" } });
+		expect(loadAgentConfig(dir).connections.find(c => c.id === "slack-user")).toMatchObject({ token: USER });
+		expect(loadAgentConfig(dir).connections.find(c => c.id === "slack-user")!.cookie).toBeUndefined();
+		a.saveSettings!({ values: { slack_user_token: "" } });
+		expect(loadAgentConfig(dir).connections.map(c => c.id)).toEqual(["slack-bot"]);
+		expect(() => a.saveSettings!({ values: { port: 1 } })).toThrow(SettingsError);
+		expect(() => a.saveSettings!({ values: { slack_bot_token: 5 } })).toThrow(SettingsError);
+	});
+
+	test("an old config file keeps loading and its chats stay after a sync", async () => {
+		saveAgentConfig(config(), dir);
+		const a = createAgentAdapter(dir, { transport: fake });
+		await a.syncRooms!(desiredRooms([{ target: "ch:7", name: "결제" }]));
+		expect(chatsOf("work")).toEqual([["main", "", "CMAIN"], ["project", "ch:7", "CPROJ"]]);
+		expect(chatsOf("me")).toEqual([["alert", "", "CALERT"]]);
+		expect(loadAgentConfig(dir).connections.map(c => [c.id, c.token])).toEqual([["work", BOT], ["me", USER]]);
 	});
 });

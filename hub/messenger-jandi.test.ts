@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Incoming } from "./messenger.ts";
+import { desiredRooms } from "./messenger-rooms.ts";
 import { createJandiAdapter, type JandiAdapter, jandiConfigPath, loadJandiConfig, roomStatus, saveJandiConfig, splitText } from "./messenger-jandi.ts";
 
 type Captured = { path: string; headers: Headers; body: any };
@@ -138,11 +139,11 @@ describe("deliver", () => {
 		expect(captured[0]!.headers.get("content-type")).toContain("application/json");
 		expect(captured[0]!.body).toEqual({ body: "안녕하세요" });
 	});
-	test("project goes only to the room of that project", async () => {
+	test("project goes to the room of that project; one with no room falls back to the main room", async () => {
 		captured.length = 0;
 		await send("project", "ch:123", "p");
-		expect((await send("project", "ch:999", "q")).delivered).toBe(false);
-		expect(captured.map(c => c.path)).toEqual(["/in/p1"]);
+		expect(await send("project", "ch:999", "q")).toEqual({ delivered: true });
+		expect(captured.map(c => [c.path, c.body.body])).toEqual([["/in/p1", "p"], ["/in/m1", "q"]]);
 	});
 	test("alert goes to the alert room", async () => {
 		captured.length = 0;
@@ -181,5 +182,119 @@ describe("deliver", () => {
 		expect(err).not.toBe("");
 		expect(err).not.toContain("secret-path");
 		expect(roomStatus().m1?.last_error).not.toContain("secret-path");
+	});
+});
+
+describe("rooms from the web structure", () => {
+	const PROJECTS = [{ target: "ch:7", name: "결제" }, { target: "ch:8", name: "정산" }];
+	const fresh = (cfg: object) => {
+		const d = mkdtempSync(join(tmpdir(), "jandi-rooms-"));
+		mkdirSync(join(d, "messengers"), { recursive: true });
+		writeFileSync(jandiConfigPath(d), JSON.stringify(cfg));
+		return { d, a: createJandiAdapter(d), cleanup: () => rmSync(d, { recursive: true, force: true }) };
+	};
+	const shape = (d: string) => loadJandiConfig(d).rooms.map(r => [r.kind, r.project ?? "", r.name]);
+
+	test("switching it on maps main, alert, worklog and every project; nothing is sent and no webhook is invented", async () => {
+		const t = fresh({ enabled: true, listen: { host: "127.0.0.1", port: 0 }, allow_emails: [], rooms: [] });
+		try {
+			await t.a.syncRooms!(desiredRooms(PROJECTS));
+			expect(shape(t.d)).toEqual([["main", "", "메인 대화"], ["alert", "", "알림"], ["worklog", "", "작업내역"], ["project", "ch:7", "결제"], ["project", "ch:8", "정산"]]);
+			const rooms = loadJandiConfig(t.d).rooms;
+			expect(new Set(rooms.map(r => r.id)).size).toBe(5);
+			expect(rooms.every(r => r.incoming_url === "" && r.outgoing_token.length >= 16)).toBe(true);
+			expect(t.a.enabled()).toBe(true);
+			const rs = t.a.settings!().rooms!;
+			expect(rs.hint).toContain("남은 일");
+			expect(rs.items.map(r => [r.kind, r.project?.target ?? ""])).toEqual([["main", ""], ["alert", ""], ["worklog", ""], ["project", "ch:7"], ["project", "ch:8"]]);
+			const before = statSync(jandiConfigPath(t.d)).mtimeMs;
+			await t.a.syncRooms!(desiredRooms(PROJECTS));
+			expect(statSync(jandiConfigPath(t.d)).mtimeMs).toBe(before);
+		} finally {
+			t.cleanup();
+		}
+	});
+
+	test("it does nothing while switched off", async () => {
+		const t = fresh({ enabled: false, rooms: [] });
+		try {
+			await t.a.syncRooms!(desiredRooms(PROJECTS));
+			expect(loadJandiConfig(t.d).rooms).toEqual([]);
+		} finally {
+			t.cleanup();
+		}
+	});
+
+	test("adding a project adds its room; removing it drops the room unless the owner entered a webhook for it", async () => {
+		const t = fresh({ enabled: true, rooms: [] });
+		try {
+			await t.a.syncRooms!(desiredRooms(PROJECTS.slice(0, 1)));
+			expect(shape(t.d).map(r => r[1]).filter(Boolean)).toEqual(["ch:7"]);
+			await t.a.syncRooms!(desiredRooms(PROJECTS));
+			expect(shape(t.d).map(r => r[1]).filter(Boolean)).toEqual(["ch:7", "ch:8"]);
+			const keep = loadJandiConfig(t.d);
+			saveJandiConfig({ ...keep, rooms: keep.rooms.map(r => (r.project === "ch:8" ? { ...r, incoming_url: "http://in/8" } : r)) }, t.d);
+			await t.a.syncRooms!(desiredRooms([]));
+			expect(shape(t.d).map(r => r[1]).filter(Boolean)).toEqual(["ch:8"]);
+			expect(loadJandiConfig(t.d).rooms.map(r => r.kind)).toEqual(["main", "alert", "worklog", "project"]);
+		} finally {
+			t.cleanup();
+		}
+	});
+
+	test("an old config file loads with its keys and rooms, and sync keeps them", async () => {
+		const old = {
+			enabled: true,
+			listen: { host: "127.0.0.1", port: 0 },
+			allow_emails: ["boss@corp.test"],
+			rooms: [
+				{ id: "legacy", name: "예전 메인", kind: "main", outgoing_token: "tok-old", incoming_url: "http://in/legacy" },
+				{ id: "pj", name: "예전 프로젝트", kind: "project", project: "ch:7", outgoing_token: "tok-pj", incoming_url: "" },
+			],
+		};
+		const t = fresh(old);
+		try {
+			const cfg = loadJandiConfig(t.d);
+			expect(cfg.rooms.map(r => [r.id, r.outgoing_token, r.incoming_url])).toEqual([["legacy", "tok-old", "http://in/legacy"], ["pj", "tok-pj", ""]]);
+			expect(cfg.incoming_url).toBeUndefined();
+			await t.a.syncRooms!(desiredRooms(PROJECTS));
+			const after = loadJandiConfig(t.d).rooms;
+			expect(after.slice(0, 2).map(r => [r.id, r.name, r.outgoing_token, r.incoming_url])).toEqual([["legacy", "예전 메인", "tok-old", "http://in/legacy"], ["pj", "예전 프로젝트", "tok-pj", ""]]);
+			expect(after.map(r => r.kind)).toEqual(["main", "project", "alert", "worklog", "project"]);
+		} finally {
+			t.cleanup();
+		}
+	});
+
+	test("one default webhook serves every room that has none, and a project without a room still reaches main; a lane post has no room", async () => {
+		const seen: string[] = [];
+		const hook = Bun.serve({ port: 0, async fetch(req) { seen.push(`${new URL(req.url).pathname} ${(await req.json()).body}`); return new Response("{}"); } });
+		const t = fresh({ enabled: true, rooms: [], incoming_url: `http://127.0.0.1:${hook.port}/in/default` });
+		try {
+			await t.a.syncRooms!(desiredRooms(PROJECTS));
+			expect(t.a.settings!().rooms!.hint).toBeUndefined();
+			expect(await t.a.deliver({ kind: "alert", target: "web:alert", text: "a" })).toEqual({ delivered: true });
+			expect(await t.a.deliver({ kind: "project", target: "ch:999", text: "p" })).toEqual({ delivered: true });
+			expect(await t.a.deliver({ kind: "lane", target: "lane:x", text: "l" })).toEqual({ delivered: false, reason: "no room" });
+			expect(seen).toEqual(["/in/default a", "/in/default p"]);
+			expect(t.a.settings!().fields.find(f => f.key === "incoming_url")).toMatchObject({ type: "secret", set: true });
+			expect(JSON.stringify(t.a.settings!())).not.toContain("/in/default");
+			const cleared = t.a.saveSettings!({ values: { incoming_url: "" } });
+			expect(cleared.fields.find(f => f.key === "incoming_url")?.set).toBe(false);
+			expect(() => t.a.saveSettings!({ values: { incoming_url: "ftp://x" } })).toThrow();
+		} finally {
+			hook.stop(true);
+			t.cleanup();
+		}
+	});
+
+	test("with no webhook anywhere a message is reported undelivered, not lost silently", async () => {
+		const t = fresh({ enabled: true, rooms: [] });
+		try {
+			await t.a.syncRooms!(desiredRooms(PROJECTS));
+			expect(await t.a.deliver({ kind: "main", target: "main", text: "x" })).toEqual({ delivered: false, reason: "no room" });
+		} finally {
+			t.cleanup();
+		}
 	});
 });

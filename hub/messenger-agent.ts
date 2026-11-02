@@ -1,7 +1,8 @@
 import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { DATA_DIR, writeAtomic } from "./config.ts";
-import { type Adapter, type AdapterStatus, type DeliverResult, type MessengerCtx, type OutMsg, type Settings, SettingsError, type SettingsPut, type TestResult } from "./messenger.ts";
+import { DATA_DIR, log, writeAtomic } from "./config.ts";
+import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, SettingsError, type SettingsPut, type TestResult } from "./messenger.ts";
+import { channelName, sameRoom } from "./messenger-rooms.ts";
 import { splitText } from "./messenger-jandi.ts";
 
 // Slack / Telegram (and other chat services) through the optional agent-messenger package (github.com/agent-messenger/agent-messenger).
@@ -22,6 +23,8 @@ export type Emoji = "eyes";
 /** What the adapter needs from agent-messenger; tests inject a fake. `cursor` is opaque to the adapter; the first poll (no cursor) must only return a baseline cursor and no messages. */
 export interface AgentTransport {
 	listChats(conn: AgentConn): Promise<{ id: string; name: string }[]>;
+	/** Makes a channel named `name` (room sync); a transport without it can only map channels that already exist. */
+	createChat?(conn: AgentConn, name: string): Promise<{ id: string; name: string }>;
 	poll(conn: AgentConn, cursor?: string): Promise<{ messages: Polled[]; cursor: string }>;
 	send(conn: AgentConn, chat: string, text: string, threadId?: string): Promise<string>;
 	edit?(conn: AgentConn, chat: string, id: string, text: string): Promise<void>;
@@ -244,6 +247,12 @@ export function createSdkTransport(): AgentTransport {
 			if (conn.platform !== "slack") return [];
 			return ((await (await client(conn)).listChannels()) as { id: string; name: string }[]).map(c => ({ id: c.id, name: c.name }));
 		},
+		async createChat(conn, name) {
+			const c = await client(conn);
+			if (conn.platform !== "slack" || typeof c.createChannel !== "function") throw new Error(`${conn.platform} cannot create channels`);
+			const made = await c.createChannel(name);
+			return { id: String(made.id), name: String(made.name ?? name) };
+		},
 		async poll(conn, cursor) {
 			const c = await client(conn);
 			if (conn.platform === "slack") {
@@ -351,11 +360,25 @@ const roomId = (conn: string, chat: string) => `${conn}:${chat}`;
 const ROOM_VALUES = ["connection", "chat", "bot_token", "user_token", "cookie"];
 const TEST_TEXT = "dotz 연결 테스트예요";
 const HELP = [
-	"Slack은 앱을 만들어 봇 토큰(xoxb-)을 받고, 쓸 채널마다 봇을 초대해요. Telegram은 BotFather에서 봇을 만들어 토큰을 받아요",
-	"채팅 추가에서 연결 종류와 토큰, 채널 ID(Telegram은 채팅 ID)를 넣어요. 같은 연결의 채팅은 토큰을 한 번만 넣으면 돼요",
+	"Slack은 앱을 만들어 봇 토큰(xoxb-)을, Telegram은 BotFather에서 봇 토큰을 받아 한 번만 넣어요",
+	"채팅은 dotz가 웹 앱의 대화(메인, 프로젝트, 알림, 작업내역)대로 알아서 만들거나 같은 이름의 채널에 맞춰 둬요",
 	"허용 목록에 말을 걸 수 있는 사람의 ID를 넣어요. Slack은 U로 시작하는 멤버 ID, Telegram은 숫자 ID예요. 목록에 없는 사람의 말은 무시해요",
-	"채팅 종류: 메인은 대화, 프로젝트는 한 프로젝트, 알림·작업내역은 그 분류 메시지를 받아요",
 ];
+// Top-level values of the settings screen: a connection's token (and cookie), and Telegram's one chat (its bot cannot list chats).
+const TOKEN_KEYS: Record<string, { platform: string; auth: "bot" | "user"; field: "token" | "cookie" }> = {
+	slack_bot_token: { platform: "slack", auth: "bot", field: "token" },
+	slack_user_token: { platform: "slack", auth: "user", field: "token" },
+	slack_cookie: { platform: "slack", auth: "user", field: "cookie" },
+	telegram_bot_token: { platform: "telegram", auth: "bot", field: "token" },
+};
+const VALUE_KEYS = [...Object.keys(TOKEN_KEYS), "telegram_chat"];
+const hintFor = (cfg: AgentConfig): string | undefined => {
+	const live = cfg.connections.filter(c => c.token);
+	if (!live.length) return "남은 일: Slack이나 Telegram 봇 토큰을 위에 한 번만 붙여 넣어요";
+	const bare = live.find(c => !c.chats.some(x => x.kind === "main"));
+	if (!bare) return undefined;
+	return bare.platform === "telegram" ? "남은 일: Telegram 봇에게 말을 건 뒤 그 채팅 ID를 위 'Telegram 채팅 ID'에 한 번 넣어요" : "남은 일: Slack에 dotz 채널을 만들고 봇을 초대해요 (dotz-알림, dotz-작업내역 같은 채널은 있으면 알아서 맞춰요)";
+};
 const fail = (msg: string) => new SettingsError(msg);
 
 // --- the adapter ------------------------------------------------------------------------------------------------------------------
@@ -437,6 +460,7 @@ export function createAgentAdapter(dataDir: string = DATA_DIR, opts: { transport
 			return settings();
 		},
 		test: () => test(),
+		syncRooms: d => syncRooms(d),
 		pollNow: async () => {
 			for (const st of [...loops.values()]) await tick(st);
 		},
@@ -471,11 +495,18 @@ export function createAgentAdapter(dataDir: string = DATA_DIR, opts: { transport
 		return {
 			enabled: cfg.enabled,
 			help: HELP,
-			fields: [],
+			fields: [
+				{ key: "slack_bot_token", label: "Slack 봇 토큰", type: "secret", set: cfg.connections.some(c => c.platform === "slack" && c.auth === "bot" && c.token !== ""), hint: "xoxb- 로 시작해요" },
+				{ key: "slack_user_token", label: "Slack 사용자 토큰", type: "secret", as_user: true, set: cfg.connections.some(c => c.platform === "slack" && c.auth === "user" && c.token !== ""), hint: USER_TOKEN_NOTE },
+				{ key: "slack_cookie", label: "Slack 사용자 쿠키", type: "secret", set: cfg.connections.some(c => c.platform === "slack" && c.auth === "user" && !!c.cookie), hint: "사용자 토큰(xoxc-)을 쓸 때만 필요해요" },
+				{ key: "telegram_bot_token", label: "Telegram 봇 토큰", type: "secret", set: cfg.connections.some(c => c.platform === "telegram" && c.token !== "") },
+				{ key: "telegram_chat", label: "Telegram 채팅 ID", type: "text", value: cfg.connections.find(c => c.platform === "telegram")?.chats.find(x => x.kind === "main")?.id ?? "", hint: "Telegram은 봇이 채팅 목록을 볼 수 없어서 한 번 넣어요" },
+			],
 			allow: { label: "말을 걸 수 있는 사람", hint: "Slack 멤버 ID(U…)나 Telegram 숫자 ID", items: [...new Set(cfg.connections.flatMap(c => c.allow))] },
 			rooms: {
 				label: "채팅",
 				editable: true,
+				...(hintFor(cfg) ? { hint: hintFor(cfg) } : {}),
 				fields: [
 					{ key: "connection", label: "연결 종류", type: "select", options },
 					{ key: "chat", label: "채널 ID", type: "text", hint: "Slack 채널 ID(C…) 또는 Telegram 채팅 ID" },
@@ -507,7 +538,11 @@ export function createAgentAdapter(dataDir: string = DATA_DIR, opts: { transport
 			if (typeof body.enabled !== "boolean") throw fail("enabled must be true or false");
 			next.enabled = body.enabled;
 		}
-		if (body.values !== undefined && (!body.values || typeof body.values !== "object" || Object.keys(body.values).length)) throw fail("this messenger has no top-level values");
+		if (body.values !== undefined && (!body.values || typeof body.values !== "object" || Array.isArray(body.values))) throw fail("values must be an object");
+		const values = body.values ?? {};
+		const badValue = Object.keys(values).find(k => !VALUE_KEYS.includes(k));
+		if (badValue) throw fail(`unknown value ${badValue}`);
+		for (const k of VALUE_KEYS) if (values[k] !== undefined && typeof values[k] !== "string") throw fail(`${k} must be a string`);
 		let allow: string[] | undefined;
 		if (body.allow !== undefined) {
 			if (!Array.isArray(body.allow) || body.allow.some(x => typeof x !== "string")) throw fail("allow must be a list of strings");
@@ -586,7 +621,77 @@ export function createAgentAdapter(dataDir: string = DATA_DIR, opts: { transport
 		}
 		if (allow) for (const c of next.connections) c.allow = allow;
 		if (body.rooms === undefined) for (const c of next.connections) c.chats = cfg.connections.find(x => x.id === c.id)?.chats ?? [];
+		applyValues(next, values as Record<string, string>, allow);
 		saveAgentConfig(next, dataDir);
+		reconcile();
+	}
+
+	/** A connection's token or cookie, or Telegram's chat, from the screen's top-level values; omitted keeps, "" clears. */
+	function applyValues(next: AgentConfig, v: Record<string, string>, allow: string[] | undefined): void {
+		const conn = (platform: string, auth: "bot" | "user"): AgentConn => {
+			let c = next.connections.find(x => x.platform === platform && x.auth === auth);
+			if (!c) {
+				const key = `${platform}-${auth}`;
+				let id = key;
+				for (let n = 2; next.connections.some(x => x.id === id); n++) id = `${key}-${n}`;
+				c = { id, platform, auth, token: "", allow: allow ?? [...new Set(next.connections.flatMap(x => x.allow))], chats: [] };
+				next.connections.push(c);
+			}
+			return c;
+		};
+		for (const [k, spec] of Object.entries(TOKEN_KEYS)) {
+			if (v[k] === undefined) continue;
+			const c = conn(spec.platform, spec.auth);
+			const value = v[k]!.trim();
+			if (spec.field === "token") c.token = value;
+			else if (value) c.cookie = value;
+			else delete c.cookie;
+		}
+		if (v.telegram_chat !== undefined) {
+			const c = conn("telegram", "bot");
+			const id = v.telegram_chat.trim();
+			if (id.length > 128) throw fail("telegram_chat must be 1 to 128 characters");
+			c.chats = c.chats.filter(x => x.kind !== "main" && x.id !== id);
+			if (id) c.chats.unshift({ id, name: "메인 대화", kind: "main" });
+		}
+		next.connections = next.connections.filter(c => c.token || c.cookie || c.chats.length);
+	}
+
+	/** Maps each desired room to a channel of every connection that has none: a channel of the same name (channelName), else one made through the transport when it can. Mapped chats of a removed project go; the channels stay. */
+	async function syncRooms(desired: DesiredRoom[]): Promise<void> {
+		const cfg = loadAgentConfig(dataDir);
+		if (!cfg.enabled || (!opts.transport && !available())) return;
+		const t = tr();
+		const live = new Set(desired.filter(d => d.project).map(d => d.project));
+		let changed = false;
+		const connections: AgentConn[] = [];
+		for (const conn of cfg.connections) {
+			let chats = conn.chats.filter(c => !(c.kind === "project" && c.project && !live.has(c.project)));
+			if (chats.length !== conn.chats.length) changed = true;
+			if (conn.token) {
+				let known: { id: string; name: string }[] | undefined;
+				for (const d of desired) {
+					if (chats.some(c => sameRoom(c, d))) continue;
+					const name = channelName(d);
+					try {
+						known ??= await t.listChats(conn);
+						let hit = known.find(c => c.name === name);
+						if (!hit && t.createChat) {
+							hit = await t.createChat(conn, name);
+							known.push(hit);
+						}
+						if (!hit || chats.some(c => c.id === hit!.id)) continue;
+						chats = [...chats, { id: hit.id, name: d.name, kind: d.kind, ...(d.project ? { project: d.project } : {}) }];
+						changed = true;
+					} catch (e) {
+						log(`agent ${conn.id}: room ${name} not mapped: ${scrub(e, conn)}`);
+					}
+				}
+			}
+			connections.push({ ...conn, chats });
+		}
+		if (!changed) return;
+		saveAgentConfig({ ...cfg, connections }, dataDir);
 		reconcile();
 	}
 
@@ -692,7 +797,10 @@ export function createAgentAdapter(dataDir: string = DATA_DIR, opts: { transport
 		const t = tr();
 		const final = isFinal(msg);
 		if (msg.updateKey && !final && !t.edit) return { delivered: false, reason: "edit" };
-		const dests = loadAgentConfig(dataDir).connections.flatMap(conn => conn.chats.filter(c => c.kind === msg.kind && (msg.kind !== "project" || c.project === msg.target)).map(chat => ({ conn, chat })));
+		const all = loadAgentConfig(dataDir).connections.flatMap(conn => conn.chats.map(chat => ({ conn, chat })));
+		let dests = all.filter(({ chat }) => chat.kind === msg.kind && (msg.kind !== "project" || chat.project === msg.target));
+		// A project with no chat of its own talks in the main chat (the web app shows it under the main conversation too).
+		if (!dests.length && msg.kind === "project") dests = all.filter(({ chat }) => chat.kind === "main");
 		if (!dests.length) return { delivered: false, reason: "no chat" };
 		const ids: string[] = [];
 		let failed: unknown;

@@ -2,6 +2,7 @@
 // Mounted in routes-settings.ts, behind the same owner check as every other /api route. The adapters describe themselves (hub/messenger.ts Settings).
 import { channels } from "./discord.ts";
 import { type Adapter, adapters, get, restart, type Settings, SettingsError } from "./messenger.ts";
+import { syncAdapter } from "./messenger-rooms.ts";
 import { body, json } from "./routes-util.ts";
 
 const projects = (): { target: string; name: string }[] => Object.entries(channels.work).map(([id, name]) => ({ target: `ch:${id}`, name }));
@@ -41,6 +42,7 @@ export async function messengersRoute(req: Request, url: URL, parts: string[]): 
 			if (e instanceof SettingsError) return json({ error: e.message }, 400);
 			throw e;
 		}
+		await syncAdapter(a, projects());
 		if (restartKey(a.settings()) !== before) await restart(a);
 		return json(view(a));
 	}

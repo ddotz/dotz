@@ -10,6 +10,7 @@ import * as livestatus from "./livestatus.ts";
 import { setAskAnswer } from "./askbuttons.ts";
 import { discordGatewayAnswer, webAnswer } from "./approval-wire.ts";
 import { installFanout, makeCtx, register, setAskApplier, startAll } from "./messenger.ts";
+import { setProjectSource, syncAllRooms } from "./messenger-rooms.ts";
 import { discordAdapter } from "./messenger-discord.ts";
 import { agentAdapter } from "./messenger-agent.ts";
 import { jandiAdapter } from "./messenger-jandi.ts";
@@ -222,7 +223,9 @@ register(jandiAdapter);
 register(agentAdapter);
 setAskApplier((id, body, login) => webAnswer(id, body, login, a => deliverAnswer({ ...a, login })));
 installFanout();
-void startAll(
+setProjectSource(() => Object.entries(discord.channels.work).map(([id, name]) => ({ target: `ch:${id}`, name })));
+discord.setWorkChangeHandler(() => void syncAllRooms());
+void syncAllRooms().then(() => startAll(
 	makeCtx(async m => {
 		const id = m.target.slice(m.target.indexOf(":") + 1);
 		const thread = m.target.startsWith("th:") ? mailByThread(id) : undefined;
@@ -230,7 +233,7 @@ void startAll(
 		const conv = m.target === "alert" || m.target === "worklog" ? m.target : undefined;
 		await sendWeb({ source: m.adapter, channel: "web", text: m.text, mode: "default", login: m.author, ...(m.target.startsWith("lane:") ? { lane: id } : {}), ...(m.target.startsWith("ch:") ? { project: projectTarget(m.target, discord.channels.work) } : {}), ...(mail ? { mail } : {}), ...(conv ? { conv } : {}), ...(m.replyTo ? { replyTo: m.replyTo } : {}) });
 	}),
-).catch(e => log(`messengers failed to start: ${e}`));
+)).catch(e => log(`messengers failed to start: ${e}`));
 
 await discord.ensureChannels().catch(e => {
 	discord.status.error = String(e);

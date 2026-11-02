@@ -35,11 +35,14 @@ export type Settings = {
 	help: string[];
 	fields: SettingsField[];
 	allow?: { label: string; hint?: string; items: string[] };
-	rooms?: { label: string; fields: SettingsField[]; items: SettingsRoom[]; editable: boolean };
+	/** `hint` is the one line of setup an adapter cannot do itself (hub/messenger-rooms.ts); the rooms themselves are made and mapped by the gateway. */
+	rooms?: { label: string; fields: SettingsField[]; items: SettingsRoom[]; editable: boolean; hint?: string };
 	projects: { target: string; name: string }[];
 	/** Another settings screen that owns the real controls (Discord). */
 	link?: { label: string; view: string };
 };
+/** A room the web app's conversation structure calls for (hub/messenger-rooms.ts desiredRooms): main, alert, worklog and one per project. */
+export type DesiredRoom = { kind: "main" | "project" | "alert" | "worklog"; name: string; project?: string };
 export type SettingsPut = { enabled?: boolean; values?: Record<string, unknown>; allow?: string[]; rooms?: { id?: string; name?: string; kind?: string; project?: string; values?: Record<string, unknown> }[] };
 export type TestResult = { results: { id: string; name: string; ok: boolean; status?: number; error?: string }[] };
 /** A settings body the adapter refuses; the route answers 400 with the message. */
@@ -61,6 +64,8 @@ export type Adapter = {
 	settings?(): Settings;
 	saveSettings?(body: SettingsPut): Settings;
 	test?(): Promise<TestResult>;
+	/** Creates or maps the rooms of `desired` in this messenger's own config (only when it is switched on); existing rooms and their keys stay. */
+	syncRooms?(desired: DesiredRoom[]): Promise<void>;
 	/** Left out of the settings list (an adapter another module owns while it is unfinished). */
 	hidden?(): boolean;
 };
