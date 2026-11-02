@@ -1,7 +1,8 @@
 // HTTP routes of the work channels, watches, schedules and lanes (the last part of the route chain). Split out of main.ts.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { log, NAME, now, paths } from "./config.ts";
+import { DATA_DIR, log, NAME, now, paths } from "./config.ts";
+import { deferForLimit, limitWaitStarted } from "./limitwait.ts";
 import * as discord from "./discord.ts";
 import { emit } from "./events.ts";
 import { deleteLanes, restoreLanes as restoreTrashedLanes, trashList } from "./lanetrash.ts";
@@ -17,26 +18,30 @@ import { clearChannel, listSetups, setupChannel } from "./workchannels.ts";
 import { readWatchSettings, writeWatchSettings } from "./watch-settings.ts";
 import { readScheduleSettings, writeScheduleSettings } from "./schedule-settings.ts";
 import { addWatch, allWatches, approveWatch, listWatches, patchWatch, putWatchScript, removeWatch, runWatch, watchScript } from "./watch.ts";
-import { queue, out } from "./outbound.ts";
+import { queue, out, progress } from "./outbound.ts";
 import { postSettings } from "./discord-post.ts";
 import { json, body } from "./routes-util.ts";
 
 // Lanes are the expensive work, and the omp budget gate only sees task-tool workers, so lane launches check the quota here.
 // Every decision (go / blocked / forced / unknown) leaves exactly one hub.log line.
-async function budgetProblem(name: string, est: number, force: boolean): Promise<string | undefined> {
+// A refusal carries the 5h window's reset time when the usage report has it (the deferred work's resume_at).
+async function budgetProblem(name: string, est: number, force: boolean): Promise<{ text: string; resetAt?: number } | undefined> {
 	if (force) {
 		log(budgetLine(name, est, undefined, undefined, "forced"));
 		return undefined;
 	}
 	// The account lanes really run on (OmO's pinned account may not be omp's login).
 	const r = await anthropicUsage("lane").catch(() => undefined);
-	const five = r?.limits.find(l => l.id === `anthropic:${BUDGET_WINDOW_HOURS}h`)?.amount.remaining;
+	const fiveLimit = r?.limits.find(l => l.id === `anthropic:${BUDGET_WINDOW_HOURS}h`);
+	const five = fiveLimit?.amount.remaining;
 	const week = r?.limits.find(l => l.id === "anthropic:7d")?.amount.remaining;
 	// The 5h window gates (est % assumed use, default 15, and 10% kept); the week is shown, never gates.
 	const verdict = budgetVerdict(five, week, est);
 	log(`${budgetLine(name, est, five, week, verdict ? "blocked" : typeof five === "number" ? "go" : "unknown")} (account ${r?.account ?? "?"}${r?.problem ? `, ${r.problem}` : ""})`);
-	return verdict && r ? `${verdict} (account ${r.account})` : verdict;
+	if (!verdict) return undefined;
+	return { text: r ? `${verdict} (account ${r.account})` : verdict, resetAt: fiveLimit?.window.resetsAt };
 }
+const STATE_FILE = () => join(DATA_DIR, "state.json");
 
 const readLastReport = (name: string): string => {
 	try {
@@ -174,7 +179,12 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				}
 				const est = estimateOf(b.est, String(b.brief ?? ""));
 				const tight = await budgetProblem(String(b.name), est, Boolean(b.force));
-				if (tight) return json({ error: `budget gate: ${tight}. Ask the owner (now / after reset / smaller); relaunch with force=true only after they say now, or with a smaller est.` }, 409);
+				if (tight) {
+					// Unknown reset: the window is at most BUDGET_WINDOW_HOURS long, so that is the latest it can be.
+					const resumeAt = new Date(tight.resetAt && tight.resetAt > Date.now() ? tight.resetAt : Date.now() + BUDGET_WINDOW_HOURS * 3600_000).toISOString();
+					deferForLimit(STATE_FILE(), String(b.name), String(b.title ?? "").trim(), resumeAt, progress, log);
+					return json({ error: `budget gate: ${tight.text}. Ask the owner (now / after reset / smaller); relaunch with force=true only after they say now, or with a smaller est.`, resume_at: resumeAt }, 409);
+				}
 				const home = b.home ? String(b.home) : undefined;
 				if (home && discord.status.enabled) discord.homeChannel(home);
 				const asking = queue.current();
@@ -203,6 +213,7 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				// Work started from a work channel or a thread is answered in the lane's thread, where its reports will come.
 				if (channel && asking?.target && answerMovesToLane(place, asking.target)) queue.retarget(asking.target, `lane:${lane.name}`);
 				log(`lane ${lane.name} why (${b.owner_asked_for_lane ? "owner asked" : `${Number(b.hours)}h`}): ${String(b.why).trim().slice(0, 300)}`);
+				limitWaitStarted(STATE_FILE(), lane.name, lane.title ?? "", progress, log);
 				emit("outbox", { ts: now(), kind: "lane_start", source: "hub", lane: lane.name, ...(lane.title ? { title: lane.title } : {}), text: `lane ${lane.name} started in ${lane.cwd}` });
 				return json({ ok: true, lane: lane.name, channel, ...(lane.waiting ? { waiting: lane.waiting } : {}) });
 			}
