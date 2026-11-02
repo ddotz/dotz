@@ -27,12 +27,16 @@ export type Thread = { parent: string; name: string };
 // `adopted`: ids of existing channels and categories taken over from another bot, which
 // that bot may still post in: they keep their name, category, position and permission overwrites (ensureChannels).
 // `brief`: the morning brief's channel; without it the brief goes to chat.
-export type Channels = { category?: string; workCategory?: string; chat?: string; worklog?: string; alert?: string; brief?: string; adopted?: string[]; dm?: string; lanes: Record<string, string>; homes: Record<string, string>; work: Record<string, string>; threads: Record<string, Thread>; archiveAt: Record<string, number> };
+export type Channels = { category?: string; workCategory?: string; chat?: string; worklog?: string; alert?: string; brief?: string; adopted?: string[]; dm?: string; lanes: Record<string, string>; homes: Record<string, string>; work: Record<string, string>; local?: string[]; localNext?: number; threads: Record<string, Thread>; archiveAt: Record<string, number> };
 export const channels: Channels = existsSync(paths.channels) ? JSON.parse(readFileSync(paths.channels, "utf8")) : { lanes: {} };
 channels.lanes ??= {};
 // A home lane lives in a thread of an existing work channel: lanes[name] is the thread id, homes[name] the parent channel id.
 channels.homes ??= {};
 channels.work ??= {};
+// Web-only projects made while Discord was off: a small number from channels.localNext (never a 17-20 digit snowflake), named in work like any project.
+// Discord reconcile and sends leave them alone, also after Discord is turned on later.
+const localIds = new Set(channels.local ?? []);
+export const isLocalChannel = (id: string): boolean => localIds.has(id);
 channels.threads ??= {};
 // Done threads stay open (and visible in the sidebar) for ARCHIVE_DELAY_MS so the owner can still track them, then archive.
 channels.archiveAt ??= {};
@@ -172,6 +176,7 @@ export async function ensureChannels(): Promise<void> {
 	const me = await selfInfo().catch(() => undefined);
 	const byId = new Map(all.map(c => [String(c.id), c]));
 	for (const id of Object.keys(channels.work)) {
+		if (localIds.has(id)) continue; // web-only project: Discord never had it
 		// Gone, or another gateway's (an earlier build adopted anything under a shared category): dropped.
 		if (!existing.has(id) || (me && foreign(byId.get(id), me))) {
 			delete channels.work[id];
@@ -277,7 +282,18 @@ async function classify(id: string): Promise<{ work: string } | { thread: string
 }
 
 export async function createWorkChannel(name: string): Promise<{ id: string; name: string }> {
-	if (!status.enabled || !channels.workCategory) throw new Error("discord not configured");
+	if (!status.enabled) {
+		let n = channels.localNext ?? 1;
+		while (channels.work[String(n)]) n++;
+		const id = String(n);
+		channels.localNext = n + 1;
+		channels.local = [...(channels.local ?? []), id];
+		localIds.add(id);
+		channels.work[id] = name.trim() || id;
+		save();
+		return { id, name: channels.work[id] };
+	}
+	if (!channels.workCategory) throw new Error("discord not configured");
 	const me = await selfInfo().catch(() => undefined);
 	const c = await rest("POST", `/guilds/${GUILD}/channels`, { name: cleanName(name), type: 0, parent_id: channels.workCategory, ...(me ? { topic: `${TOPIC_TAG}${me.id}` } : {}) });
 	channels.work[c.id] = String(c.name);
@@ -428,7 +444,8 @@ export async function deleteChannel(id: string): Promise<void> {
 export async function deleteWorkChannel(id: string): Promise<void> {
 	if (!channels.work[id]) throw new Error(`ch:${id} is not a work channel`);
 	let failed: Error | undefined;
-	if (!status.enabled) failed = new Error("discord not configured");
+	if (localIds.delete(id)) channels.local = (channels.local ?? []).filter(x => x !== id);
+	else if (!status.enabled) failed = new Error("discord not configured");
 	else await rest("DELETE", `/channels/${id}`).catch(e => {
 		if (!/: 404 /.test(String(e))) failed = e as Error;
 	});
@@ -440,7 +457,7 @@ export async function deleteWorkChannel(id: string): Promise<void> {
 
 function resolve(target: string): string | undefined {
 	if (target.startsWith("lane:")) return laneId(target.slice(5));
-	if (target.startsWith("ch:")) return channels.work[target.slice(3)] ? target.slice(3) : undefined;
+	if (target.startsWith("ch:")) return channels.work[target.slice(3)] && !localIds.has(target.slice(3)) ? target.slice(3) : undefined;
 	if (target.startsWith("th:")) return channels.threads[target.slice(3)] ? target.slice(3) : undefined;
 	if (target === "chat" || target === "worklog" || target === "alert" || target === "brief" || target === "dm") return channels[target];
 	return undefined;
@@ -850,7 +867,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 	const catchUp = async () => {
 		if (!lastSeen) return;
 		const floor = Date.now() - CATCHUP_MS;
-		const ids = [channels.chat, channels.dm, channels.worklog, channels.alert, channels.brief, ...Object.values(channels.lanes), ...Object.keys(channels.work), ...Object.keys(channels.threads)].filter((x): x is string => !!x);
+		const ids = [channels.chat, channels.dm, channels.worklog, channels.alert, channels.brief, ...Object.values(channels.lanes), ...Object.keys(channels.work).filter(id => !localIds.has(id)), ...Object.keys(channels.threads)].filter((x): x is string => !!x);
 		const missed: any[] = [];
 		for (const id of new Set(ids)) {
 			const list = await rest("GET", `/channels/${id}/messages?after=${lastSeen}&limit=50`).catch(() => []);
