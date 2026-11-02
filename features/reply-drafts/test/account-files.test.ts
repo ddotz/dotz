@@ -169,6 +169,29 @@ describe("mail ridden on a comment reply", () => {
 		expect(r.notes.join(" ")).toContain("찾지 못했어요");
 		expect(link.view(r.id)?.notes?.join(" ")).toContain("찾지 못했어요");
 	});
+
+	test("a sale-only sheet is never picked; a buyer gets only the MR of the one song, or nothing and 확인 필요", async () => {
+		const songs = mkdtempSync(join(tmpdir(), "rd-acct-songs-"));
+		for (const [dir, name] of [["Golden 골든 기악합주/악보", "Golden 공유용.pdf"], ["Golden 골든 기악합주/악보", "Golden 총보.pdf"], ["Golden 골든 기악합주/악보", "Golden 피아노 반주 악보.pdf"], ["Golden 골든 기악합주/MR", "골든Golden_MR.mp3"], ["봄날 기악합주/MR", "봄날_MR.mp3"]]) {
+			mkdirSync(join(songs, dir!), { recursive: true });
+			writeFileSync(join(songs, dir!, name!), "bytes");
+		}
+		enable(env, { attachFolders: { mail: songs } });
+		const link = realMailLink({});
+		const names = (id: string) => stagedFiles(id).map(f => f.name).sort();
+		const spec = { app: "mail", to: "kim@example.com", subject: "악보 보내드려요", body: "안녕하세요. 악보 보내드립니다." };
+		const any = await link.compose({ ...spec, fromLibrary: "Golden 골든 총보 피아노 악보" });
+		if (!any.ok) throw new Error(any.reason);
+		expect(names(any.id)).toEqual(["Golden 공유용.pdf", "골든Golden_MR.mp3"]);
+		const buyer = await link.compose({ ...spec, fromLibrary: "Golden 골든 구매했어요 MR", library: "mr" });
+		if (!buyer.ok) throw new Error(buyer.reason);
+		expect(names(buyer.id)).toEqual(["골든Golden_MR.mp3"]);
+		const unsure = await link.compose({ ...spec, fromLibrary: "구매했어요 기악합주 MR", library: "mr" });
+		if (!unsure.ok) throw new Error(unsure.reason);
+		expect(names(unsure.id)).toEqual([]);
+		expect(unsure.notes.join(" ")).toContain("확인 필요");
+		rmSync(songs, { recursive: true, force: true });
+	});
 });
 
 describe("answered drafts", () => {

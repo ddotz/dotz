@@ -21,7 +21,7 @@ export function realMailLink(deps: FlowDeps = {}): RealMailLink {
 			const to = addressesOf(spec.to);
 			if (!to.length) return { ok: false, reason: "메일 받는이 주소가 없어요" };
 			if (!spec.subject.trim() || !spec.body.trim()) return { ok: false, reason: "메일 제목과 본문이 필요해요" };
-			const r = await composeMail({ app: spec.app, to, subject: spec.subject.trim(), body: spec.body.trim(), ...(spec.attach?.length ? { attach: spec.attach } : {}), ...(spec.fromLibrary ? { fromLibrary: spec.fromLibrary } : {}), notify: false }, deps);
+			const r = await composeMail({ app: spec.app, to, subject: spec.subject.trim(), body: spec.body.trim(), ...(spec.attach?.length ? { attach: spec.attach } : {}), ...(spec.fromLibrary ? { fromLibrary: spec.fromLibrary } : {}), ...(spec.library ? { library: spec.library } : {}), notify: false }, deps);
 			return r.ok ? { ok: true, id: r.rec.id, notes: r.notes, ...(r.rec.libraryMiss ? { libraryMiss: true } : {}) } : { ok: false, reason: r.error };
 		},
 		state: id => getDraft(id)?.status,
