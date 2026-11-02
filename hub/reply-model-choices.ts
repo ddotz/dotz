@@ -17,8 +17,9 @@ const friendly = (selector: string): string => {
 	return one?.name ?? selector.split("/").pop()!;
 };
 const friendlyHaiku = (sel: string): string => `Haiku ${vnum(sel).filter(n => n < 1000).join(".")}`;
-// Effort words in Korean, as the web says them (web/js/04-state.js THINK_KO); the stored value stays the API id.
-export const EFFORT_KO: Record<string, string> = { off: "끔", minimal: "최소", low: "낮음", medium: "보통", high: "높음", xhigh: "최고", max: "최고", auto: "자동" };
+// Effort words in Korean, as the web says them (web/js/04-state.js THINK_KO); the stored value stays the API id. One word per level:
+// xhigh and max used to both read 최고, so a menu could show the same label twice.
+export const EFFORT_KO: Record<string, string> = { off: "끔", minimal: "최소", low: "낮음", medium: "보통", high: "높음", xhigh: "매우 높음", max: "최고", auto: "자동" };
 const effortWord = (thinking?: string): string => (thinking && thinking !== "off" ? ` · ${EFFORT_KO[thinking] ?? thinking}` : "");
 /** "Sonnet 5.5 · 보통" for a selector with its effort. */
 export const replyModelLabel = (selector: string): string => {

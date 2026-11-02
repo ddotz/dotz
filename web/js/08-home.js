@@ -36,7 +36,7 @@ function homeMenu(anchor, id, inChat) {
     const cur = M && (id === MAIN ? M.orchestrator : (M.lanes || []).find(l => `lane:${l.name}` === id));
     if (cur) {
       add("모델 변경…", () => showMenu(anchor, modelItems(key, cur.model, ""), { value: cur.model, onPick: v => busy(null, () => putModel(key, name, { model: v }, restartNote, `${modelName(v)} · ${cur.thinking}`)) }));
-      add("추론 강도…", () => showMenu(anchor, (M.thinking_levels || []).map(v => ({ value: v, label: thinkKo(v) })), { value: cur.thinking, onPick: v => busy(null, () => putModel(key, name, { thinking: v }, restartNote, `${modelName(cur.model)} · ${thinkKo(v)}`)) }));
+      add("추론 강도…", () => showMenu(anchor, effortItems(cur.model, cur.thinking), { value: cur.thinking, onPick: v => busy(null, () => putModel(key, name, { thinking: v }, restartNote, `${modelName(cur.model)} · ${thinkKo(v)}`)) }));
       add("모델 · 폴백 설정", () => openModels(key));
     }
     if (id === MAIN) {
