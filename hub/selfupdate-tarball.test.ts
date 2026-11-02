@@ -10,7 +10,11 @@ import { apply, authOrder, check, defaultExec, type Exec, type Http, type Option
 
 const OLD = "a".repeat(40);
 const NEW = "b".repeat(40);
-const commitJson = (sha: string, msg: string) => ({ sha, commit: { message: `${msg}\n\nbody`, committer: { date: "2026-10-23T00:00:00Z" } } });
+const OLD_VERSION = "261023.1";
+const NEW_VERSION = "261030.2";
+const tagJson = (sha: string, version: string) => ({ name: `v${version}`, commit: { sha } });
+// Newest first is not assumed: the check sorts by version, and a malformed tag is ignored.
+const defaultTags = () => [tagJson(OLD, "261020.4"), tagJson(NEW, NEW_VERSION), tagJson(OLD, OLD_VERSION), { name: "release-old", commit: { sha: OLD } }];
 
 let root: string, app: string, data: string, logDir: string;
 const put = (dir: string, files: Record<string, string>) => {
@@ -19,7 +23,7 @@ const put = (dir: string, files: Record<string, string>) => {
 		writeFileSync(join(dir, f), text);
 	}
 };
-const stamp = (extra: Record<string, string> = {}) => `${Object.entries({ source: "github.com/o/r@main", kind: "github", repo: "o/r", ref: "main", sha: OLD, auth: "public", installed: "2026-10-01T00:00:00Z", ...extra }).map(([k, v]) => `${k}=${v}`).join("\n")}\n`;
+const stamp = (extra: Record<string, string> = {}) => `${Object.entries({ source: "github.com/o/r@main", kind: "github", repo: "o/r", ref: "main", sha: OLD, version: OLD_VERSION, auth: "public", installed: "2026-10-01T00:00:00Z", ...extra }).map(([k, v]) => `${k}=${v}`).join("\n")}\n`;
 // <prefix>/ wrapper like a GitHub tarball
 const tarball = (name: string, files: Record<string, string>): string => {
 	const src = join(root, `src-${name}`);
@@ -33,12 +37,11 @@ const tarball = (name: string, files: Record<string, string>): string => {
 const exec = (extra?: Exec): Exec => async (cmd, cwd, ms) => (extra ? await extra(cmd, cwd, ms) : undefined) ?? (cmd[0] === "bun" ? { code: 0, out: "" } : cmd[0] === "gh" ? { code: 1, out: "gh: not logged in" } : defaultExec(cmd, cwd, ms));
 const opts = (o: Partial<Options> = {}): Options => ({ dir: app, logDir, dataDir: data, env: {}, exec: exec(), testCmd: ["sh", "-c", "test ! -f FAIL"], ...o });
 type Seen = { url: string; auth: string | undefined };
-const github = (tgz: string, seen: Seen[] = [], accept: (auth: string | undefined) => boolean = () => true): Http => async (url, init) => {
+const github = (tgz: string, seen: Seen[] = [], accept: (auth: string | undefined) => boolean = () => true, tags = defaultTags()): Http => async (url, init) => {
 	const auth = init?.headers?.authorization;
 	seen.push({ url, auth });
 	if (!accept(auth)) return new Response(JSON.stringify({ message: auth ? "Bad credentials" : "Not Found" }), { status: auth ? 401 : 404 });
-	if (url.endsWith("/commits/main")) return Response.json(commitJson(NEW, "newest change"));
-	if (url.includes("/compare/")) return Response.json({ status: "ahead", total_commits: 2, commits: [commitJson("c".repeat(40), "older change"), commitJson(NEW, "newest change")] });
+	if (url.includes("/tags?")) return Response.json(tags);
 	if (url.includes("/tar.gz/") || url.includes("/tarball/")) return new Response(Bun.file(tgz));
 	return new Response("not found", { status: 404 });
 };
@@ -56,9 +59,9 @@ afterEach(() => {
 	rmSync(root, { recursive: true, force: true });
 });
 
-test("version reads the stamp: repo, ref, sha, auth; older and foreign stamps degrade", async () => {
+test("version reads the stamp: repo, ref, sha, auth, release; older and foreign stamps degrade", async () => {
 	const v = await version(opts());
-	expect(v).toMatchObject({ kind: "tarball", origin: "github", repo: "o/r", ref: "main", auth: "public", commit: { sha: OLD, short: "aaaaaaa" } });
+	expect(v).toMatchObject({ kind: "tarball", origin: "github", repo: "o/r", ref: "main", auth: "public", release: OLD_VERSION, commit: { sha: OLD, short: "aaaaaaa" } });
 	// install.sh from before the sha was recorded: repo and ref come from `source`, the sha is unknown
 	put(app, { ".dotz-install": "source=github.com/o/r@dev\ninstalled=2026-09-01T00:00:00Z\n" });
 	expect(await version(opts())).toMatchObject({ kind: "tarball", repo: "o/r", ref: "dev", commit: { sha: "", short: "?" } });
@@ -81,31 +84,36 @@ test("auth order: GITHUB_TOKEN, GH_TOKEN, the saved token file, gh, then nobody;
 	expect(authOrder(opts()).map(c => c.how)).toEqual(["gh", "none"]);
 });
 
-test("check against GitHub: latest commit, incoming list newest first, nothing changes on disk", async () => {
+test("check against GitHub: the newest release tag and its commit, nothing changes on disk", async () => {
 	const seen: Seen[] = [];
 	const c = await check(opts({ http: github("", seen) }));
 	expect(c.ok).toBe(true);
-	expect(c.upstream).toBe("o/r@main");
+	expect(c.upstream).toBe("o/r@v261030.2");
+	expect(c.available).toBe(NEW_VERSION);
 	expect(c.remoteHead).toBe(NEW);
-	expect(c.incomingTotal).toBe(2);
-	expect(c.incoming.map(i => i.subject)).toEqual(["newest change", "older change"]);
+	expect(c.summary).toBe(`${OLD_VERSION} → ${NEW_VERSION}`);
+	expect(c.incomingTotal).toBe(1);
+	expect(c.incoming.map(i => i.subject)).toEqual(["릴리스 v261030.2"]);
 	expect(c.blocked).toEqual([]);
 	// public repo: no gh on this PATH is needed, requests carry no credentials
 	expect(seen.every(s => s.auth === undefined)).toBe(true);
-	expect(seen[0].url).toBe("https://api.github.com/repos/o/r/commits/main");
-	expect(seen[1].url).toBe(`https://api.github.com/repos/o/r/compare/${OLD}...${NEW}`);
+	expect(seen[0].url).toBe("https://api.github.com/repos/o/r/tags?per_page=30");
 	expect(readFileSync(join(app, "old-only.txt"), "utf8")).toBe("old\n");
-	expect(logs()).toContain("2 incoming");
+	expect(logs()).toContain(`${OLD_VERSION} → ${NEW_VERSION}`);
 });
 
-test("check says current when the installed sha is the latest commit", async () => {
-	put(app, { ".dotz-install": stamp({ sha: NEW }) });
+test("check says current when the stamp version is the newest release; an old stamp without a version is older", async () => {
+	put(app, { ".dotz-install": stamp({ sha: NEW, version: NEW_VERSION }) });
 	const c = await check(opts({ http: github("") }));
 	expect(c.ok).toBe(true);
 	expect(c.incomingTotal).toBe(0);
-	// the 7-character sha of an API tarball folder name matches too
-	put(app, { ".dotz-install": stamp({ sha: NEW.slice(0, 7) }) });
-	expect((await check(opts({ http: github("") }))).incomingTotal).toBe(0);
+	expect(c.available).toBe(NEW_VERSION);
+	expect(c.summary).toBe(`업데이트 없음 (${NEW_VERSION})`);
+	// install.sh before versioned releases: no version in the stamp, so the install takes the next window's release
+	put(app, { ".dotz-install": stamp({ sha: NEW, version: "" }) });
+	const old = await check(opts({ http: github("") }));
+	expect(old.incomingTotal).toBe(1);
+	expect(old.available).toBe(NEW_VERSION);
 });
 
 test("a refused token falls through to gh, then to no auth; the one that worked goes first afterwards", async () => {
@@ -116,11 +124,10 @@ test("a refused token falls through to gh, then to no auth; the one that worked 
 	expect(c.ok).toBe(true);
 	expect(seen[0].auth).toBe("Bearer ghp_staletoken0000");
 	expect(ghCalls).toHaveLength(1);
-	expect(ghCalls[0].slice(0, 3)).toEqual(["gh", "api", "repos/o/r/commits/main"]);
+	expect(ghCalls[0].slice(0, 3)).toEqual(["gh", "api", "repos/o/r/tags?per_page=30"]);
 	expect(seen[1].auth).toBeUndefined();
-	// compare goes straight to the credential that worked: no second stale-token attempt, no second gh
-	expect(seen).toHaveLength(3);
-	expect(seen[2].auth).toBeUndefined();
+	// the tags request goes straight to the credential that worked: no second stale-token attempt, no second gh
+	expect(seen).toHaveLength(2);
 	expect(ghCalls).toHaveLength(1);
 });
 
@@ -138,12 +145,12 @@ test("private repo: gh api answers when GitHub refuses everyone else", async () 
 	const e = exec(async cmd => {
 		if (cmd[0] !== "gh") return undefined;
 		ghCalls.push(cmd[2]);
-		return { code: 0, out: JSON.stringify(cmd[2].includes("compare") ? { status: "ahead", total_commits: 1, commits: [commitJson(NEW, "private change")] } : commitJson(NEW, "private change")) };
+		return { code: 0, out: JSON.stringify(defaultTags()) };
 	});
 	const c = await check(opts({ exec: e, http: github("", [], () => false) }));
 	expect(c.ok).toBe(true);
-	expect(c.incoming.map(i => i.subject)).toEqual(["private change"]);
-	expect(ghCalls[0]).toBe("repos/o/r/commits/main");
+	expect(c.incoming.map(i => i.subject)).toEqual(["릴리스 v261030.2"]);
+	expect(ghCalls[0]).toBe("repos/o/r/tags?per_page=30");
 });
 
 test("check failures name a distinct reason and what fixes it, without any token", async () => {
@@ -161,18 +168,23 @@ test("check failures name a distinct reason and what fixes it, without any token
 test("apply downloads into staging, installs, tests, swaps the dirs and keeps one rollback copy", async () => {
 	const tgz = tarball("new", { "new-only.txt": "new\n" });
 	const seen: string[] = [];
+	const api: Seen[] = [];
 	const e = exec(async cmd => (seen.push(cmd.join(" ")), undefined));
-	const j = await apply(opts({ http: github(tgz), exec: e }));
+	const j = await apply(opts({ http: github(tgz, api), exec: e }));
 	expect(j.status).toBe("updated");
 	expect(j.from).toBe(OLD);
 	expect(j.to).toBe(NEW);
+	// the release tag itself is the tarball that is downloaded, not the branch head
+	expect(api.map(s => s.url)).toContain(`https://codeload.github.com/o/r/tar.gz/v${NEW_VERSION}`);
+	expect(api.map(s => s.url)[0]).toBe("https://api.github.com/repos/o/r/tags?per_page=30");
 	expect(readFileSync(join(app, "new-only.txt"), "utf8")).toBe("new\n");
 	expect(existsSync(join(app, "old-only.txt"))).toBe(false);
 	expect(readFileSync(join(`${app}.prev`, "old-only.txt"), "utf8")).toBe("old\n");
 	expect(existsSync(`${app}.update`)).toBe(false);
 	expect(seen).toContain("bun install");
 	const v = await version(opts());
-	expect(v).toMatchObject({ kind: "tarball", repo: "o/r", ref: "main", auth: "public", commit: { sha: NEW } });
+	expect(v).toMatchObject({ kind: "tarball", repo: "o/r", ref: "main", auth: "public", release: NEW_VERSION, commit: { sha: NEW } });
+	expect(readFileSync(join(app, ".dotz-install"), "utf8")).toContain(`version=${NEW_VERSION}\n`);
 	expect(j.message).toContain(`${app}.prev`);
 	expect(logs()).toContain("bun install");
 	// a second update replaces the rollback copy: still exactly one
@@ -252,7 +264,7 @@ test("a failing bun install, a bad download and a non-dotz tarball keep the old 
 	const a = await apply(opts({ http: github(tgz), exec: e }));
 	expect(a.status).toBe("failed");
 	expect(a.message).toContain("lockfile had changes");
-	const b = await apply(opts({ http: async url => (url.includes("/commits/") ? Response.json(commitJson(NEW, "x")) : url.includes("/compare/") ? new Response("", { status: 404 }) : new Response("nope", { status: 500 })) }));
+	const b = await apply(opts({ http: async () => new Response("nope", { status: 500 }) }));
 	expect(b.status).toBe("failed");
 	const junk = join(root, "junk.tar.gz");
 	put(join(root, "junk-src", "x"), { "readme.txt": "not dotz\n" });
@@ -265,18 +277,18 @@ test("a failing bun install, a bad download and a non-dotz tarball keep the old 
 });
 
 test("apply with nothing new is 'current' and touches nothing", async () => {
-	put(app, { ".dotz-install": stamp({ sha: NEW }) });
+	put(app, { ".dotz-install": stamp({ sha: NEW, version: NEW_VERSION }) });
 	const j = await apply(opts({ http: github("") }));
 	expect(j.status).toBe("current");
 	expect(existsSync(`${app}.prev`)).toBe(false);
 });
 
-test("apply downloads through gh for a private repo and records the auth", async () => {
+test("apply downloads through gh for a private repo, uses the tag's tarball and records the auth plus version", async () => {
 	const tgz = tarball("ghnew", { "gh-only.txt": "gh\n" });
 	const e = exec(async cmd => {
-		if (cmd[0] === "gh") return { code: 0, out: JSON.stringify(commitJson(NEW, "private change")) };
+		if (cmd[0] === "gh") return { code: 0, out: JSON.stringify(defaultTags()) };
 		if (cmd[0] === "sh" && cmd[2]?.includes("gh api")) {
-			expect(cmd[4]).toBe(`repos/o/r/tarball/${NEW}`);
+			expect(cmd[4]).toBe(`repos/o/r/tarball/v${NEW_VERSION}`);
 			copyFileSync(tgz, cmd[5]);
 			return { code: 0, out: "" };
 		}
@@ -285,7 +297,8 @@ test("apply downloads through gh for a private repo and records the auth", async
 	const j = await apply(opts({ exec: e, http: github("", [], () => false) }));
 	expect(j.status).toBe("updated");
 	expect(readFileSync(join(app, "gh-only.txt"), "utf8")).toBe("gh\n");
-	expect(await version(opts())).toMatchObject({ auth: "gh", commit: { sha: NEW } });
+	expect(await version(opts())).toMatchObject({ auth: "gh", release: NEW_VERSION, commit: { sha: NEW } });
+	expect(readFileSync(join(app, ".dotz-install"), "utf8")).toContain(`version=${NEW_VERSION}\n`);
 });
 
 test("a DOTZ_TARBALL (file://) install updates when the tarball changes, and fails safe on a bad one", async () => {

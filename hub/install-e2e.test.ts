@@ -15,7 +15,7 @@ const run = (cmd: string[], extra: Record<string, string> = {}, cwd = root) => {
 };
 // The release: this checkout's code (tracked or new, not ignored) without tests, web assets, docs and feature folders, copied once. The
 // update flow only needs the files the installer checks for and the code the updater CLI imports.
-const releaseFile = (f: string) => !f.endsWith(".test.ts") && (f.startsWith("hub/") || ["setup.ts", "package.json"].includes(f));
+const releaseFile = (f: string) => !f.endsWith(".test.ts") && (f.startsWith("hub/") || ["setup.ts", "package.json", "VERSION"].includes(f));
 function copyTree(dir: string) {
 	const listed = run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], {}, REPO);
 	// The self-update runs these tests in a tarball install's staging folder, which has no .git: there the folder itself is the release.
@@ -102,7 +102,10 @@ test("--git installs a clone that updates through git, without a stamp", () => {
 	};
 	git("init", "-q", "-b", "main");
 	git("add", "-A");
+	writeFileSync(join(origin, "VERSION"), "261101.1\n");
+	git("add", "VERSION");
 	git("commit", "-q", "-m", "release 1");
+	git("tag", "v261101.1");
 	const app = join(root, "app-git");
 	const i = installer({ DOTZ_HOME: app, DOTZ_GIT_URL: origin, DOTZ_REF: "main" }, "--git");
 	if (i.code !== 0) throw new Error(i.out);
@@ -116,8 +119,10 @@ test("--git installs a clone that updates through git, without a stamp", () => {
 	expect(c.json.incomingTotal).toBe(0);
 
 	writeFileSync(join(origin, "RELEASE_2"), "2\n");
-	git("add", "RELEASE_2");
+	writeFileSync(join(origin, "VERSION"), "261101.2\n");
+	git("add", "RELEASE_2", "VERSION");
 	git("commit", "-q", "-m", "release 2");
+	git("tag", "v261101.2");
 	expect(selfupdate(app, "--check").json.incomingTotal).toBe(1);
 	const up = selfupdate(app, "--apply", "--test-cmd", "test -f RELEASE_2");
 	expect(up.json.status).toBe("updated");

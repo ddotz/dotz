@@ -1,5 +1,7 @@
-// Self-update of the dotz checkout the gateway runs from (settings → 업데이트). The check fetches the tracked branch
-// (origin/main by default) and lists what is new. Local commits upstream already has are dropped, the rest are re-applied on the new
+// Self-update of the dotz checkout the gateway runs from (settings → 업데이트). Only released versions are installed: the newest
+// tag v<YYMMDD.N>[.<M>] of the remote (docs/releases.md, hub/release.ts), never a bare commit on main. The check reads the disk VERSION
+// and lists the commits between it and that release tag (origin/main by default); a checkout already at the newest release says
+// 업데이트 없음 even when main moved ahead. Local commits upstream already has are dropped, the rest are re-applied on the new
 // version in a temporary worktree (hub/selfupdate-local.ts) with the same checks; what cannot be carried over (conflict, failing checks,
 // uncommitted changes) is saved first (branch dotz-local/<stamp> + patch files in the logs dir) and waits for the owner's button, or is
 // moved aside automatically by auto_apply on a non-developer install. The update then fast-forwards, runs `bun install`
@@ -7,13 +9,13 @@
 // and goes back to the old commit if it fails. An applied update leaves <data>/update-pending.json and, from the gateway, a detached
 // watchdog (hub/update-watchdog.ts) that rolls it back when the restarted gateway never comes up healthy (updateBoot clears it). The
 // restart itself is main.ts's restart gate (waits for running turns) or, on the owner's word, an immediate restart.
-// A daily check (self_update.auto_check / self_update.at in config.json) only notifies, unless self_update.auto_apply is on
-// (default off): then a new upstream commit on a clean checkout with nothing ahead of origin goes through the same apply()
+// The checks run at self_update.at in config.json, three KST windows by default (12:00,18:00,24:00; one timer per window, no polling);
+// a window with nothing new only logs. self_update.auto_apply (default on) sends a new release through the same apply()
 // (ff-only, bun install, tests, revert on failure) and the idle restart gate; a refusal or failure goes to alert with a choice block.
 // Every check and update leaves lines in ~/.dotz/logs/update-YYYYMMDD.log.
 // A tarball install (install.sh without --git: no .git, a .dotz-install stamp with repo, ref, commit sha, source kind and
-// auth) updates the same way: the check asks GitHub for the latest commit of repo@ref (for DOTZ_TARBALL installs it compares
-// the tarball's sha256) and lists the incoming commits; apply downloads the new tarball into a staging dir next to the install,
+// auth) updates the same way: the check asks GitHub for the newest release tag of the stamped repo (an install with no version, or an
+// old stamp without one, is older than any tag) and apply downloads that tag's tarball, records its version in the stamp,
 // runs bun install and the tests there, then swaps the dirs (the old one stays as <dir>.prev, one copy) and leaves the restart to
 // the same gate. A failed step removes the staging dir and keeps the old code. GitHub auth order: GITHUB_TOKEN/GH_TOKEN,
 // <data dir>/secrets/github-token (0600, saved by install.sh), `gh api` when gh is signed in, then none (public repos).
@@ -28,9 +30,9 @@ import type { Pending } from "./update-watchdog.ts";
 export type Exec = (cmd: string[], cwd: string, timeoutMs: number) => Promise<{ code: number; out: string }>;
 export type Commit = { sha: string; short: string; date: string; subject: string };
 export type Version =
-	| { kind: "git"; commit: Commit; branch: string }
-	| { kind: "tarball"; commit: Commit; origin: "github" | "url"; repo: string; ref: string; auth: string; source: string; installed: string }
-	| { kind: "install"; source: string; installed: string }
+	| { kind: "git"; commit: Commit; branch: string; release?: string }
+	| { kind: "tarball"; commit: Commit; origin: "github" | "url"; repo: string; ref: string; auth: string; source: string; installed: string; release?: string }
+	| { kind: "install"; source: string; installed: string; release?: string }
 	| { kind: "unknown"; detail: string };
 type CheckError = { reason: string; fix: string; detail: string };
 export type CheckResult = {
@@ -40,6 +42,10 @@ export type CheckResult = {
 	error?: CheckError;
 	upstream: string;
 	remoteHead?: string;
+	// The newest released version the remote offers (tag v<version>) and a one-line check text the screen prints:
+	// "업데이트 없음 (261103.1)" or "261103.1 → 261103.2". Commits alone no longer make an update.
+	available?: string;
+	summary?: string;
 	incoming: Commit[];
 	incomingTotal: number;
 	ahead: Commit[];
@@ -114,6 +120,101 @@ export const defaultExec: Exec = async (cmd, cwd, timeoutMs) => {
 export const scrub = (s: string) => s.replace(/(https?:\/\/)[^/@\s]+@/g, "$1***@").replace(/\b(gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,})\b/g, "***");
 const lastLine = (s: string) => scrub(s.split("\n").map(l => l.trim()).filter(Boolean).pop() ?? "").slice(0, 300);
 
+// ---- released versions (docs/releases.md, hub/release.ts): tag v<YYMMDD.N>[.<M>] on main plus VERSION, KST, at most three a day ----
+// A new commit on main is not an update any more; only a new release tag is. Ordering is numeric on (date, N, M), so
+// 261103.1 < 261103.1.1 < 261103.1.2 < 261103.2 (a third part is the forced/emergency track).
+export type Release = { date: string; parts: number[]; text: string };
+const RELEASE_TAG = /^v(\d{6})\.([1-3])(?:\.(\d+))?$/;
+// "261103.2" (VERSION / stamp), "261103.1.1" (forced) and "v261103.2" (tag / refs/tags/...); anything else is not a release.
+export function parseRelease(text: string): Release | undefined {
+	const t = text.trim().replace(/^refs\/tags\//, "");
+	const m = RELEASE_TAG.exec(t.startsWith("v") ? t : `v${t}`);
+	if (!m) return undefined;
+	const parts = [Number(m[2]), ...(m[3] === undefined ? [] : [Number(m[3])])];
+	return { date: m[1]!, parts, text: `${m[1]}.${parts.join(".")}` };
+}
+// Numeric: the date first, then N, then the forced part (missing = 0). Unreadable versions sort below everything (a
+// never-released install is older than any tag).
+export function compareReleases(a: string | undefined, b: string | undefined): number {
+	const x = a ? parseRelease(a) : undefined;
+	const y = b ? parseRelease(b) : undefined;
+	if (!x || !y) return x ? 1 : y ? -1 : 0;
+	const date = Number(x.date) - Number(y.date);
+	if (date) return date;
+	for (let i = 0; i < Math.max(x.parts.length, y.parts.length); i++) {
+		const d = (x.parts[i] ?? 0) - (y.parts[i] ?? 0);
+		if (d) return d;
+	}
+	return 0;
+}
+
+// The release tags of `git ls-remote --tags` output, newest first. Annotated tags carry a peeled "^{}" line, whose sha is the commit.
+export function releaseTags(lsRemote: string): { tag: string; version: string; sha: string }[] {
+	const byTag = new Map<string, { tag: string; version: string; sha: string; peeled?: string }>();
+	for (const line of lsRemote.split("\n")) {
+		const m = /^(\S+)\s+refs\/tags\/(\S+)$/.exec(line.trim());
+		if (!m) continue;
+		const sha = m[1]!, ref = m[2]!;
+		const peeled = ref.endsWith("^{}");
+		const tag = peeled ? ref.slice(0, -3) : ref;
+		const version = parseRelease(tag);
+		if (!version) continue;
+		const entry = byTag.get(tag) ?? { tag, version: version.text, sha };
+		if (peeled) entry.peeled = sha;
+		byTag.set(tag, entry);
+	}
+	return [...byTag.values()]
+		.map(e => ({ tag: e.tag, version: e.version, sha: e.peeled ?? e.sha }))
+		.sort((a, b) => compareReleases(b.version, a.version));
+}
+
+// The release version on disk: VERSION at the install root, or an old tarball stamp's `version` (absent before versioned releases).
+export function diskRelease(dir: string): string | undefined {
+	try {
+		return parseRelease(readFileSync(join(dir, "VERSION"), "utf8"))?.text;
+	} catch {
+		return undefined;
+	}
+}
+
+// Does this check mean an install should move? Releases decide by version; a DOTZ_TARBALL install (no tags) still decides by bytes.
+export function updateAvailable(c: CheckResult): boolean {
+	if (!c.ok) return false;
+	if (c.available) return !("release" in c.version) || !c.version.release || compareReleases(c.version.release, c.available) < 0;
+	return c.incomingTotal > 0;
+}
+
+// The check line: "업데이트 없음 (261103.1)" or "261103.1 → 261103.2". Commits stay beside it.
+// self_update.at: one window or a comma list; 24:00 means midnight (the end of that KST day).
+export const DEFAULT_AT = "12:00,18:00,24:00";
+const atItem = (s: string) => /^([01]?\d|2[0-3]):[0-5]\d$/.test(s) || s === "24:00";
+export function parseAt(raw: unknown): string {
+	if (typeof raw !== "string") return DEFAULT_AT;
+	const parts = raw.split(",").map(s => s.trim()).filter(atItem);
+	return [...new Set(parts)].join(",") || DEFAULT_AT;
+}
+// Minutes after KST midnight; 24:00 is 1440, i.e. the next day's 00:00.
+export function windows(at: string): number[] {
+	return at.split(",").filter(atItem).map(s => {
+		const [h, m] = s.split(":").map(Number);
+		return h! * 60 + m!;
+	});
+}
+// KST is UTC+9 all year: the next occurrence of every window after `now`, oldest first (no polling, one timer each).
+const KST_MS = 9 * 60 * 60_000;
+export function nextRuns(at: string, now: Date = new Date()): Date[] {
+	const t = now.getTime();
+	const k = new Date(t + KST_MS);
+	const y = k.getUTCFullYear(), m = k.getUTCMonth(), d = k.getUTCDate();
+	return windows(at)
+		.map(min => {
+			let run = Date.UTC(y, m, d) + min * 60_000 - KST_MS;
+			if (run <= t) run = Date.UTC(y, m, d + 1) + min * 60_000 - KST_MS;
+			return new Date(run);
+		})
+		.sort((a, b) => a.getTime() - b.getTime());
+}
+
 // Why a fetch failed, in the owner's words, and what fixes it.
 export function fetchError(out: string, remote: string): CheckError {
 	const detail = lastLine(out);
@@ -132,11 +233,10 @@ export function fetchError(out: string, remote: string): CheckError {
 function settings() {
 	const raw: unknown = "self_update" in cfg ? (cfg as Record<string, unknown>).self_update : undefined;
 	const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-	const at = typeof o.at === "string" && /^\d{1,2}:\d{2}$/.test(o.at) ? o.at : "10:00";
 	return {
 		auto_check: o.auto_check !== false,
-		auto_apply: o.auto_apply === true,
-		at,
+		auto_apply: o.auto_apply !== false,
+		at: parseAt(o.at),
 		remote: typeof o.remote === "string" && o.remote ? o.remote : "origin",
 		branch: typeof o.branch === "string" && o.branch ? o.branch : "main",
 		keep_local: typeof o.keep_local === "boolean" ? o.keep_local : undefined,
@@ -231,8 +331,9 @@ function tarballVersion(kv: Stamp): Tarball | undefined {
 	}
 	const installed = kv.installed ?? "?";
 	const sha = kv.sha ?? "";
+	const release = parseRelease(kv.version ?? "")?.text;
 	const commit: Commit = { sha, short: sha.slice(0, 7) || "?", date: installed, subject: "" };
-	const common = { kind: "tarball" as const, commit, auth: kv.auth ?? "?", source: scrub(kv.source ?? "?"), installed };
+	const common = { kind: "tarball" as const, commit, auth: kv.auth ?? "?", source: scrub(kv.source ?? "?"), installed, ...(release ? { release } : {}) };
 	if (origin === "github" && repo && ref) return { ...common, origin, repo, ref };
 	if (origin === "url" && kv.tarball) return { ...common, origin, repo: "", ref: "" };
 	return undefined;
@@ -244,12 +345,14 @@ export async function version(o: Options): Promise<Version> {
 	if (!existsSync(join(dir, ".git"))) {
 		const kv = readStamp(dir);
 		if (!kv) return { kind: "unknown", detail: "git 저장소도 install.sh 설치본도 아니에요" };
-		return tarballVersion(kv) ?? { kind: "install", source: scrub(kv.source ?? "?"), installed: kv.installed ?? "?" };
+		const release = parseRelease(kv.version ?? "")?.text;
+		return tarballVersion(kv) ?? { kind: "install", source: scrub(kv.source ?? "?"), installed: kv.installed ?? "?", ...(release ? { release } : {}) };
 	}
 	const [c, b] = await Promise.all([exec(["git", "log", "-1", FORMAT], dir, 15_000), exec(["git", "rev-parse", "--abbrev-ref", "HEAD"], dir, 15_000)]);
 	const commit = parseCommits(c.out)[0];
 	if (c.code !== 0 || !commit) return { kind: "unknown", detail: lastLine(c.out) };
-	return { kind: "git", commit, branch: b.code === 0 ? b.out.trim() : "?" };
+	const release = diskRelease(dir);
+	return { kind: "git", commit, branch: b.code === 0 ? b.out.trim() : "?", ...(release ? { release } : {}) };
 }
 
 // ---- tarball installs (install.sh without --git) ----
@@ -274,8 +377,7 @@ export function authOrder(o: Options): Cred[] {
 	return out;
 }
 
-type GhCommit = { sha: string; commit?: { message?: string; committer?: { date?: string } } };
-const toCommit = (x: GhCommit): Commit => ({ sha: x.sha, short: x.sha.slice(0, 7), date: x.commit?.committer?.date ?? "", subject: (x.commit?.message ?? "").split("\n")[0].slice(0, 200) });
+type GhTag = { name?: string; commit?: { sha?: string } };
 const sameSha = (a: string, b: string) => a.length >= 7 && b.length >= 7 && (a.startsWith(b) || b.startsWith(a));
 const sha256 = (b: Uint8Array) => new Bun.CryptoHasher("sha256").update(b).digest("hex");
 
@@ -362,34 +464,41 @@ async function checkTarball(o: Options, v: Tarball, base: CheckResult): Promise<
 			return fail(upstream, { reason: "설치할 때 쓴 tarball을 다시 받지 못했어요.", fix: "DOTZ_TARBALL 경로나 주소가 아직 있는지 확인하고, 없으면 install.sh를 다시 실행해 주세요.", detail: lastLine(String(e)) });
 		}
 		const r: CheckResult = { ...base, ok: true, upstream, remoteHead: digest };
-		if (sameSha(digest, v.commit.sha)) return r;
+		if (sameSha(digest, v.commit.sha)) {
+			r.summary = "업데이트 없음 (tarball)";
+			return r;
+		}
 		r.incoming = [{ sha: digest, short: digest.slice(0, 7), date: new Date().toISOString(), subject: `${upstream}의 tarball이 바뀌었어요` }];
 		r.incomingTotal = 1;
+		r.summary = "tarball이 바뀌었어요";
 		record(logDir, `check: ${v.commit.short} vs tarball ${digest.slice(0, 7)}: changed`);
 		return r;
 	}
-	const upstream = `${v.repo}@${v.ref}`;
 	const gh = github(o, v.repo);
-	const latest = await gh.json<GhCommit>(`/repos/${v.repo}/commits/${encodeURI(v.ref)}`);
-	if (!latest.ok) return fail(upstream, latest.error);
-	const head = toCommit(latest.value);
-	const r: CheckResult = { ...base, ok: true, upstream, remoteHead: head.sha };
-	const cur = v.commit.sha;
-	if (cur && sameSha(cur, head.sha)) {
-		record(logDir, `check: ${v.commit.short} is ${upstream} (${latest.cred.how})`);
+	// Only released versions: the newest tag v<YYMMDD.N>[.<M>] of the repo, not the head of its branch. A handful is enough to find it; a
+	// repo that interleaves other tags still finds its releases among the newest by date, and anything malformed is ignored.
+	const tagsRes = await gh.json<GhTag[]>(`/repos/${v.repo}/tags?per_page=30`);
+	if (!tagsRes.ok) return fail(`${v.repo}@${v.ref}`, tagsRes.error);
+	const newest = (tagsRes.value ?? [])
+		.map(t => ({ tag: t.name ?? "", sha: t.commit?.sha ?? "", release: parseRelease(t.name ?? "") }))
+		.filter((t): t is { tag: string; sha: string; release: Release } => !!t.release)
+		.sort((a, b) => compareReleases(b.release.text, a.release.text))[0];
+	if (!newest) {
+		const r: CheckResult = { ...base, ok: true, upstream: v.repo, summary: `업데이트 없음 (릴리스 없음)` };
+		record(logDir, `check: ${v.repo} has no release tag; nothing to do`);
 		return r;
 	}
-	r.incoming = [head];
-	r.incomingTotal = 1;
-	if (cur) {
-		const cmp = await gh.json<{ status?: string; total_commits?: number; commits?: GhCommit[] }>(`/repos/${v.repo}/compare/${cur}...${head.sha}`);
-		const list = cmp.ok && cmp.value.status === "ahead" ? cmp.value.commits ?? [] : [];
-		if (list.length) {
-			r.incoming = list.map(toCommit).reverse().slice(0, LIST_MAX);
-			r.incomingTotal = cmp.ok ? cmp.value.total_commits ?? list.length : list.length;
-		}
+	const upstream = `${v.repo}@${newest.tag}`;
+	const r: CheckResult = { ...base, ok: true, upstream, available: newest.release.text, remoteHead: newest.sha };
+	if (v.release && compareReleases(v.release, newest.release.text) >= 0) {
+		r.summary = `업데이트 없음 (${v.release})`;
+		record(logDir, `check: ${v.release} is at or past ${newest.tag}; no update`);
+		return r;
 	}
-	record(logDir, `check: ${v.commit.short || "?"} vs ${upstream} ${head.short}: ${r.incomingTotal} incoming (${latest.cred.how})`);
+	r.summary = `${v.release ?? "설치본"} → ${newest.release.text}`;
+	r.incoming = [{ sha: newest.sha, short: newest.sha.slice(0, 7), date: "", subject: `릴리스 ${newest.tag}` }];
+	r.incomingTotal = 1;
+	record(logDir, `check: ${v.release ?? "?"} → ${newest.release.text} (${newest.tag}), ${newest.sha.slice(0, 7)} (${tagsRes.cred.how})`);
 	return r;
 }
 
@@ -436,12 +545,14 @@ async function applyTarball(o: Options, c: CheckResult, v: Tarball, j: Job, step
 	};
 	let to = c.remoteHead as string;
 	let auth = v.auth;
+	// The tarball of the released tag itself (never a branch head): its contents are the released version.
+	const ref = c.available ? `v${c.available}` : to;
 	rmSync(stage, { recursive: true, force: true });
 	mkdirSync(join(stage, "x"), { recursive: true });
 	const tgz = join(stage, "src.tgz");
-	step("내려받기", `${v.origin === "url" ? scrub(oldStamp.tarball ?? "") : `${v.repo}@${v.ref}`} 새 버전을 내려받아요`);
+	step("내려받기", `${v.origin === "url" ? scrub(oldStamp.tarball ?? "") : `${v.repo}@${ref}`} 새 버전을 내려받아요`);
 	if (v.origin === "github") {
-		const d = await github(o, v.repo).download(to, tgz);
+		const d = await github(o, v.repo).download(ref, tgz);
 		if (!d.ok) return fail(`내려받지 못했어요: ${d.error.reason} ${d.error.detail}`);
 		auth = authLabel(d.cred);
 	} else {
@@ -462,7 +573,7 @@ async function applyTarball(o: Options, c: CheckResult, v: Tarball, j: Job, step
 	const top = tops.length === 1 && statSync(join(stage, "x", tops[0])).isDirectory() ? join(stage, "x", tops[0]) : join(stage, "x");
 	if (!existsSync(join(top, "setup.ts")) || !existsSync(join(top, "hub", "main.ts"))) return fail("받은 파일이 dotz가 아니에요 (setup.ts, hub/main.ts가 없어요)");
 	renameSync(top, fresh);
-	writeFileSync(join(fresh, ".dotz-install"), stampText({ ...oldStamp, sha: to, auth, installed: new Date().toISOString().replace(/\.\d+Z$/, "Z") }));
+	writeFileSync(join(fresh, ".dotz-install"), stampText({ ...oldStamp, ...(c.available ? { version: c.available } : {}), sha: to, auth, installed: new Date().toISOString().replace(/\.\d+Z$/, "Z") }));
 
 	step("의존성", "새 폴더에서 bun install을 실행해요");
 	const i = await exec(["bun", "install"], fresh, 10 * 60_000);
@@ -496,7 +607,8 @@ async function applyTarball(o: Options, c: CheckResult, v: Tarball, j: Job, step
 	}
 	rmSync(stage, { recursive: true, force: true });
 	markPending(o, { kind: "tarball", dir, from: v.commit.sha, to, prev }, step);
-	return end("updated", `${v.commit.short} → ${to.slice(0, 7)} 받았어요. 이전 폴더는 ${prev}에 있어요. 재시작하면 적용돼요.`);
+	const arrow = c.available && v.release ? `${v.release} → ${c.available}` : `${v.commit.short} → ${to.slice(0, 7)}`;
+	return end("updated", `${arrow} 받았어요. 이전 폴더는 ${prev}에 있어요. 재시작하면 적용돼요.`);
 }
 
 // Fetch the tracked branch and compare. Never changes the working tree.
@@ -518,23 +630,43 @@ export async function check(o: Options): Promise<CheckResult> {
 		record(logDir, `check: not a git checkout (${r.error.detail})`);
 		return r;
 	}
-	const f = await exec(["git", "fetch", "--quiet", "--no-tags", remote, `+refs/heads/${branch}:refs/remotes/${upstream}`], dir, 90_000);
-	if (f.code !== 0) {
-		const error = fetchError(f.out, remote);
-		record(logDir, `check: fetch ${upstream} failed: ${error.reason} (${error.detail})`);
+	// Released versions only: the newest tag v<YYMMDD.N>[.<M>] of the remote, not the branch head. A new commit on main with no tag is not
+	// an update; an install already at that version (or newer) stays put even when main moved ahead.
+	const ls = await exec(["git", "ls-remote", "--tags", remote], dir, 60_000);
+	if (ls.code !== 0) {
+		const error = fetchError(ls.out, remote);
+		record(logDir, `check: ls-remote --tags ${remote} failed: ${error.reason} (${error.detail})`);
 		return { ...base, error };
 	}
-	const [head, inc, count, ahead, dirty] = await Promise.all([
-		exec(["git", "rev-parse", upstream], dir, 15_000),
-		exec(["git", "log", FORMAT, "-n", String(LIST_MAX), `HEAD..${upstream}`], dir, 15_000),
-		exec(["git", "rev-list", "--count", `HEAD..${upstream}`], dir, 15_000),
+	const newest = releaseTags(ls.out)[0];
+	if (!newest) {
+		record(logDir, `check: ${remote} has no release tag; no update`);
+		return { ...base, ok: true, upstream, summary: "업데이트 없음 (릴리스 없음)" };
+	}
+	if (v.release && compareReleases(v.release, newest.version) >= 0) {
+		record(logDir, `check: 업데이트 없음 (${v.release} is at or past ${newest.tag}; main may be ahead)`);
+		return { ...base, ok: true, available: newest.version, summary: `업데이트 없음 (${v.release})` };
+	}
+	const tagRef = `refs/dotz/tags/${newest.tag}`;
+	const f = await exec(["git", "fetch", "--quiet", "--no-tags", remote, `+refs/heads/${branch}:refs/remotes/${upstream}`, `+refs/tags/${newest.tag}:${tagRef}`], dir, 90_000);
+	if (f.code !== 0) {
+		const error = fetchError(f.out, remote);
+		record(logDir, `check: fetch ${upstream} and ${newest.tag} failed: ${error.reason} (${error.detail})`);
+		return { ...base, error };
+	}
+	const [rev, inc, count, ahead, dirty] = await Promise.all([
+		exec(["git", "rev-parse", "--verify", `${tagRef}^{commit}`], dir, 15_000),
+		exec(["git", "log", FORMAT, "-n", String(LIST_MAX), `HEAD..${tagRef}`], dir, 15_000),
+		exec(["git", "rev-list", "--count", `HEAD..${tagRef}`], dir, 15_000),
 		exec(["git", "log", FORMAT, "-n", String(LIST_MAX), `${upstream}..HEAD`], dir, 15_000),
 		exec(["git", "status", "--porcelain"], dir, 15_000),
 	]);
 	const r: CheckResult = {
 		...base,
 		ok: true,
-		remoteHead: head.out.trim(),
+		available: newest.version,
+		summary: `${v.release ?? "설치본"} → ${newest.version}`,
+		remoteHead: rev.code === 0 ? rev.out.trim() : newest.sha,
 		incoming: parseCommits(inc.out),
 		incomingTotal: Number(count.out.trim()) || 0,
 		ahead: parseCommits(ahead.out),
@@ -543,7 +675,7 @@ export async function check(o: Options): Promise<CheckResult> {
 		dirty: dirty.out.split("\n").filter(Boolean).map(l => (/^\S /.test(l) ? ` ${l}` : l)).slice(0, 40),
 	};
 	if (v.branch !== branch) r.blocked.push(`지금 브랜치가 ${v.branch}이에요. ${branch}에서만 업데이트해요.`);
-	if (r.incomingTotal > 0 && r.remoteHead && (r.ahead.length || r.dirty.length)) {
+	if (r.remoteHead && (r.ahead.length || r.dirty.length)) {
 		let why: string | undefined;
 		if (r.ahead.length) {
 			const split = await splitEquivalent(exec, dir, upstream);
@@ -564,7 +696,7 @@ export async function check(o: Options): Promise<CheckResult> {
 			r.keep.saved = await saveLocal(exec, dir, logDir, commits, r.dirty.length > 0).catch(e => (record(logDir, `check: save failed: ${e}`), undefined));
 		}
 	}
-	record(logDir, `check: ${v.commit.short} vs ${upstream} ${r.remoteHead?.slice(0, 7)}: ${r.incomingTotal} incoming, ${r.ahead.length} local-only, ${r.dropped.length} already upstream, ${r.dirty.length} dirty${r.keep ? ", needs keep" : ""}`);
+	record(logDir, `check: ${r.summary} (${newest.tag}, ${r.incomingTotal} commits, ${r.ahead.length} local-only, ${r.dropped.length} already upstream, ${r.dirty.length} dirty${r.keep ? ", needs keep" : ""})`);
 	return r;
 }
 
@@ -620,11 +752,11 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 	const from = v.commit.sha;
 	j.from = from;
 	if (v.kind === "tarball") {
-		if (!c.incomingTotal || !c.remoteHead) return end("current", `이미 최신이에요 (${v.commit.short}).`);
+		if (!updateAvailable(c) || !c.remoteHead) return end("current", `이미 최신이에요 (${v.commit.short}).`);
 		return applyTarball(o, c, v, j, step, end);
 	}
 	if (c.blocked.length) return end("refused", `업데이트하지 않았어요. ${c.blocked.join(" ")}`);
-	if (!c.incomingTotal || !c.remoteHead) return end("current", `이미 최신이에요 (${v.commit.short}).`);
+	if (!updateAvailable(c) || !c.remoteHead) return end("current", `이미 최신이에요 (${v.commit.short}).`);
 	const to = c.remoteHead;
 	j.to = to;
 
@@ -694,8 +826,11 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 	}
 
 	const rebased = target !== to;
-	step("병합", rebased ? `${v.commit.short} → ${target.slice(0, 7)} 새 버전 위에 얹은 로컬 커밋 ${c.ahead.length}개와 함께 옮겨요` : `${v.commit.short} → ${to.slice(0, 7)} ${hard || c.dropped.length ? "새 버전으로 옮겨요" : "fast-forward"} (${c.incomingTotal}개 커밋)`);
-	const m = rebased || hard || c.dropped.length ? await exec(["git", "reset", hard ? "--hard" : "--keep", target], dir, 60_000) : await exec(["git", "merge", "--ff-only", to], dir, 60_000);
+	// A release can sit behind a local main head (main moved past the tag): the install moves to the release itself.
+	const ff = (await exec(["git", "merge-base", "--is-ancestor", from, to], dir, 15_000)).code === 0;
+	const verArrow = c.available ? `${v.release ?? "설치본"} → ${c.available} ` : "";
+	step("병합", rebased ? `${verArrow}${v.commit.short} → ${target.slice(0, 7)} 새 버전 위에 얹은 로컬 커밋 ${c.ahead.length}개와 함께 옮겨요` : `${verArrow}${v.commit.short} → ${to.slice(0, 7)} ${hard || c.dropped.length || !ff ? "새 버전으로 옮겨요" : "fast-forward"} (${c.incomingTotal}개 커밋)`);
+	const m = rebased || hard || c.dropped.length || !ff ? await exec(["git", "reset", hard ? "--hard" : "--keep", target], dir, 60_000) : await exec(["git", "merge", "--ff-only", to], dir, 60_000);
 	if (m.code !== 0) return end("failed", `새 버전으로 합칠 수 없어요: ${lastLine(m.out)}`);
 
 	const back = async (why: string, deps: boolean) => {
@@ -749,7 +884,8 @@ export async function apply(o: Options, how: { keep?: boolean; auto?: boolean } 
 	}
 	markPending(o, { kind: "git", dir, from, to: target, deps }, step);
 	const extra = `${rebased ? ` 로컬 커밋 ${c.ahead.length}개는 새 버전 위에 얹었어요.` : ""}${c.dropped.length ? ` 이미 새 버전에 있는 로컬 커밋 ${c.dropped.length}개는 건너뛰었어요.` : ""}${note}`;
-	return end("updated", `${v.commit.short} → ${target.slice(0, 7)} 받았어요. 재시작하면 적용돼요.${extra}`);
+	const arrow = c.available ? `${v.release ?? "설치본"} → ${c.available} (${v.commit.short} → ${target.slice(0, 7)})` : `${v.commit.short} → ${target.slice(0, 7)}`;
+	return end("updated", `${arrow} 받았어요. 재시작하면 적용돼요.${extra}`);
 }
 
 // The commit of the checkout this gateway runs from.
@@ -774,7 +910,6 @@ const saveState = (s: State) => writeAtomic(STATE_FILE, `${JSON.stringify(s)}\n`
 
 // The version this process runs (captured at start), so a pulled-but-not-restarted update shows as such.
 let running: Version | undefined;
-let autoTimer: Timer | undefined;
 let notifyFn: ((text: string, count: number) => void) | undefined;
 let resolvedFn: (() => void) | undefined;
 // Called when a check finds the checkout current or an update was applied: the "new version" notice is no longer true.
@@ -783,7 +918,7 @@ export const onUpdateResolved = (fn: () => void) => void (resolvedFn = fn);
 let localSavedFn: ((s: { file: string; text: string; turn: string }) => void) | undefined;
 export const onLocalSaved = (fn: (s: { file: string; text: string; turn: string }) => void) => void (localSavedFn = fn);
 const settled = (c: CheckResult) => {
-	if (c.ok && c.incomingTotal === 0) resolvedFn?.();
+	if (c.ok && !updateAvailable(c)) resolvedFn?.();
 };
 
 // What auto_apply needs from main.ts: a worklog post, an alert, and the idle restart gate (never launchctl).
@@ -802,28 +937,29 @@ async function autoApply(o: Options, c: CheckResult, s: State, hooks: AutoHooks)
 	const remoteHead = c.remoteHead as string;
 	const { logDir } = resolve(o);
 	const short = remoteHead.slice(0, 7);
+	const rel = c.available && "release" in c.version && c.version.release ? `${c.version.release} → ${c.available}` : c.available ?? short;
 	if (s.autoFailed === remoteHead) return;
 	if (c.blocked.length) {
-		record(logDir, `auto-apply: refused ${short}: ${c.blocked.join(" ")}`);
+		record(logDir, `auto-apply: refused ${rel} (${short}): ${c.blocked.join(" ")}`);
 		if (s.autoRefused === remoteHead) return;
 		s.autoRefused = remoteHead;
-		hooks.alert(`dotz 자동 업데이트를 하지 않았어요 (새 커밋 ${c.incomingTotal}개, ${short}). ${c.blocked.join(" ")}\n${autoChoice()}`);
+		hooks.alert(`dotz 자동 업데이트를 하지 않았어요 (${rel}, ${short}). ${c.blocked.join(" ")}\n${autoChoice()}`);
 		return;
 	}
-	record(logDir, `auto-apply: applying ${short}`);
+	record(logDir, `auto-apply: applying ${rel} (${short})`);
 	const j = await apply(o, { auto: true });
 	if (j.status === "running") return;
 	if (j.status === "updated") {
 		delete s.autoRefused;
 		delete s.autoFailed;
-		hooks.worklog(`dotz를 새 버전으로 자동 업데이트했어요 (${"commit" in c.version ? c.version.commit.short : "?"} → ${short}, 커밋 ${c.incomingTotal}개, 테스트 통과).${j.note ? ` ${j.note}` : ""} 하던 일이 모두 끝나면 다시 시작해요.`);
+		hooks.worklog(`dotz를 새 버전으로 자동 업데이트했어요 (${rel}, 커밋 ${c.incomingTotal}개, 테스트 통과).${j.note ? ` ${j.note}` : ""} 하던 일이 모두 끝나면 다시 시작해요.`);
 		hooks.restartIdle();
 		return;
 	}
 	if (j.status === "failed") s.autoFailed = remoteHead;
 	if (j.status === "refused") s.autoRefused = remoteHead;
 	if (j.status === "current") return;
-	hooks.alert(`dotz 자동 업데이트를 하지 못했어요 (${short}): ${j.message}\n${autoChoice()}`);
+	hooks.alert(`dotz 자동 업데이트를 하지 못했어요 (${rel}): ${j.message}\n${autoChoice()}`);
 }
 
 export async function autoCheck(o: Options, hooks: AutoHooks | undefined = autoHooks): Promise<void> {
@@ -831,34 +967,38 @@ export async function autoCheck(o: Options, hooks: AutoHooks | undefined = autoH
 	const s = readState();
 	s.lastCheck = c;
 	settled(c);
-	if (settings().auto_apply && hooks && c.ok && c.incomingTotal > 0 && c.remoteHead) {
+	if (settings().auto_apply && hooks && updateAvailable(c) && c.remoteHead) {
 		await autoApply(o, c, s, hooks);
 		saveState(s);
 		return;
 	}
-	if (c.ok && c.incomingTotal > 0 && c.remoteHead && s.notified !== c.remoteHead) {
+	if (updateAvailable(c) && c.remoteHead && s.notified !== c.remoteHead) {
 		s.notified = c.remoteHead;
-		const text = `새 버전이 있어요: 커밋 ${c.incomingTotal}개 (${c.incoming[0]?.subject.slice(0, 60) ?? ""}). 설정 → 업데이트에서 적용해요.${c.keep ? ` ${c.keep.line}` : ""}`;
+		const rel = c.available && "release" in c.version && c.version.release ? `${c.version.release} → ${c.available}` : c.available ?? "";
+		const text = `새 버전이 있어요: ${rel ? `${rel} ` : ""}커밋 ${c.incomingTotal}개 (${c.incoming[0]?.subject.slice(0, 60) ?? ""}). 설정 → 업데이트에서 적용해요.${c.keep ? ` ${c.keep.line}` : ""}`;
 		record(resolve(o).logDir, `auto-check: notified ${c.remoteHead.slice(0, 7)}`);
 		notifyFn?.(text, c.incomingTotal);
 	}
 	saveState(s);
 }
 
+// One timer per window (self_update.at); each run reschedules every window. No polling: a window with nothing new writes its
+// check line to the log and says nothing to the owner.
+let autoTimers: Timer[] = [];
 function schedule(o: Options): void {
-	if (autoTimer) clearTimeout(autoTimer);
-	autoTimer = undefined;
+	for (const t of autoTimers) clearTimeout(t);
+	autoTimers = [];
 	const s = settings();
 	if (!s.auto_check) return;
-	const [h, m] = s.at.split(":").map(Number);
-	const d = new Date();
-	d.setHours(h, m, 0, 0);
-	if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
-	autoTimer = setTimeout(async () => {
-		await autoCheck(o).catch(e => log(`self-update auto-check failed: ${e}`));
-		schedule(o);
-	}, d.getTime() - Date.now());
-	trackTimer("self update check", autoTimer);
+	const now = new Date();
+	for (const run of nextRuns(s.at, now)) {
+		const t = setTimeout(async () => {
+			await autoCheck(o).catch(e => log(`self-update auto-check failed: ${e}`));
+			schedule(o);
+		}, Math.max(0, run.getTime() - now.getTime()));
+		autoTimers.push(t);
+		trackTimer(`self update check ${s.at}`, t);
+	}
 }
 
 // The gateway's start (main.ts, once it listens): a pending update of this code is marked healthy (the marker deleted) after a quiet
@@ -913,8 +1053,9 @@ function setSettings(values: { auto_check?: unknown; auto_apply?: unknown; at?: 
 	if (typeof values.auto_check === "boolean") next.auto_check = values.auto_check;
 	if (typeof values.auto_apply === "boolean") next.auto_apply = values.auto_apply;
 	if (values.at !== undefined) {
-		if (typeof values.at !== "string" || !/^([01]?\d|2[0-3]):[0-5]\d$/.test(values.at)) throw new Error("시간은 HH:MM으로 적어 주세요");
-		next.at = values.at;
+		const parts = typeof values.at === "string" ? values.at.split(",").map(s => s.trim()).filter(Boolean) : [];
+		if (!parts.length || parts.some(p => !atItem(p))) throw new Error("시간은 HH:MM 여러 개를 쉼표로 적어 주세요 (24:00은 자정)");
+		next.at = [...new Set(parts)].join(",");
 	}
 	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
 	disk.self_update = { ...disk.self_update, ...next };
@@ -979,6 +1120,10 @@ if (import.meta.main) {
 	const t = process.argv.indexOf("--test-cmd");
 	const o: Options = { dir: i > 0 ? process.argv[i + 1] : REPO_DIR, ...(t > 0 ? { testCmd: ["sh", "-c", process.argv[t + 1]] } : {}) };
 	if (process.argv.includes("--apply")) console.log(JSON.stringify(await apply(o, { keep: process.argv.includes("--keep") }), null, 2));
-	else if (process.argv.includes("--check")) console.log(JSON.stringify(await check(o), null, 2));
-	else console.log("usage: bun hub/selfupdate.ts --check|--apply [--keep] [--dir PATH] [--test-cmd SHELL]");
+	else if (process.argv.includes("--check")) {
+		const c = await check(o);
+		// The first line is the owner-facing check line; the JSON below keeps every field for scripts.
+		if (c.summary) console.log(c.summary);
+		console.log(JSON.stringify(c, null, 2));
+	} else console.log("usage: bun hub/selfupdate.ts --check|--apply [--keep] [--dir PATH] [--test-cmd SHELL]");
 }

@@ -8,7 +8,7 @@ import { apply, autoCheck, check, onLocalSaved } from "./selfupdate.ts";
 
 let r: Repos;
 let root: string, work: string, pusher: string, logDir: string;
-const push = (file: string, text: string, msg: string) => r.push(file, text, msg);
+const push = (file: string, text: string, msg: string) => r.release(file, text, msg);
 const branches = () => sh(work, "branch", "--list", "dotz-local/*").split("\n").filter(Boolean);
 const logFiles = () => (existsSync(logDir) ? readdirSync(logDir) : []);
 const opts = () => ({ dir: work, remote: "origin", branch: "main", testCmd: failFileTestCmd, logDir, dataDir: root });
@@ -38,12 +38,15 @@ afterEach(() => {
 test("local commits whose patch or content upstream already has are dropped, not saved", async () => {
 	commit(work, "same.txt", "x\n", "same patch locally");
 	commit(work, "inside.txt", "y\n", "inside a bigger upstream commit");
-	push("same.txt", "x\n", "same patch upstream");
+	// one release that carries both upstream: the tagged commit, not a later branch head, is what the update installs
+	writeFileSync(join(pusher, "same.txt"), "x\n");
 	writeFileSync(join(pusher, "inside.txt"), "y\n");
 	writeFileSync(join(pusher, "other.txt"), "z\n");
-	sh(pusher, "add", ".");
+	writeFileSync(join(pusher, "VERSION"), "261101.2\n");
+	sh(pusher, "add", "-A");
 	sh(pusher, "commit", "-q", "-m", "bigger upstream commit");
-	sh(pusher, "push", "-q", "origin", "HEAD:main");
+	sh(pusher, "tag", "v261101.2");
+	sh(pusher, "push", "-q", "origin", "HEAD:main", "refs/tags/v261101.2");
 	const c = await check(opts());
 	expect(c.ahead).toEqual([]);
 	expect(c.dropped.map(d => d.subject).sort()).toEqual(["inside a bigger upstream commit", "same patch locally"]);

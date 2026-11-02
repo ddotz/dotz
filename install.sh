@@ -232,10 +232,14 @@ mv "$APP.new" "$APP"
 rm -rf "$APP.old"
 # A git clone needs no stamp (git knows its commit; an untracked file would also make it look dirty).
 if [ -z "$GIT" ]; then
+	# The release version of these files (VERSION at the root), so a tarball install checks tags, not commits.
+	VERSION_STR=
+	[ -f "$APP/VERSION" ] && VERSION_STR=$(head -n 1 "$APP/VERSION" | tr -d '[:space:]')
 	{
 		printf 'source=%s\nkind=%s\n' "$SRC" "$KIND"
 		[ "$KIND" = github ] && printf 'repo=%s\nref=%s\n' "$REPO" "$REF"
 		[ -n "$TARBALL_URL" ] && printf 'tarball=%s\n' "$TARBALL_URL"
+		[ -n "$VERSION_STR" ] && printf 'version=%s\n' "$VERSION_STR"
 		printf 'sha=%s\nauth=%s\ninstalled=%s\n' "$SHA" "$AUTH" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	} >"$APP/.dotz-install"
 else

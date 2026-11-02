@@ -1,10 +1,10 @@
 // Settings → 업데이트 against real git repos in a temp dir: a bare "origin", a clone the updater works on, and a second
 // clone that pushes newer commits. The test command is a shell check so a commit can make "the tests" fail on purpose.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { autoHooks, commit, failFileTestCmd as testCmd, git as sh, head, makeRepos, type Repos, setSelfUpdateCfg } from "./selfupdate-fixture.ts";
-import { apply, autoCheck, check, defaultExec, type Exec, failedTestNames, failureBlocks, fetchError, scrub } from "./selfupdate.ts";
+import { apply, autoCheck, check, defaultExec, type Exec, failedTestNames, failureBlocks, fetchError, nextRuns, parseRelease, releaseTags, scrub, updateAvailable } from "./selfupdate.ts";
 
 test("failureBlocks keeps the error block bun prints before each (fail) line, and nothing from passing tests", () => {
 	const out = [
@@ -60,6 +60,47 @@ test("fetchError names the fix for a missing login, and scrub hides tokens", () 
 	expect(scrub("https://x-access-token:ghp_abcdefghijklmnop@github.com/o/r")).not.toContain("ghp_");
 });
 
+test("release tags: the newest by numeric (date, N, forced) order, peeled tag shas and malformed tags ignored", () => {
+	const out = [
+		"1111111111111111111111111111111111111111\trefs/tags/v261103.2",
+		"2222222222222222222222222222222222222222\trefs/tags/v261103.1",
+		"3333333333333333333333333333333333333333\trefs/tags/v261103.1.2",
+		"4444444444444444444444444444444444444444\trefs/tags/v261103.1.2^{}",
+		"5555555555555555555555555555555555555555\trefs/tags/v261103.4",
+		"6666666666666666666666666666666666666666\trefs/tags/v26113.1",
+		"7777777777777777777777777777777777777777\trefs/tags/release-1",
+		"8888888888888888888888888888888888888888\trefs/tags/v261102.3.9",
+	].join("\n");
+	const tags = releaseTags(out);
+	expect(tags.map(t => t.tag)).toEqual(["v261103.2", "v261103.1.2", "v261103.1", "v261102.3.9"]);
+	// the peeled line is the commit an annotated tag points at
+	expect(tags.find(t => t.tag === "v261103.1.2")?.sha).toBe("4".repeat(40));
+	expect(parseRelease("v261103.4")).toBeUndefined();
+	expect(parseRelease("v261103.1.2")?.text).toBe("261103.1.2");
+});
+
+test("hotfix track: a forced version is newer than its base and older than the next N", () => {
+	const c = (release: string, available: string) =>
+		updateAvailable({ at: "", version: { kind: "git", branch: "main", commit: { sha: "a", short: "a", date: "", subject: "" }, release }, ok: true, upstream: "origin/main", available, incoming: [], incomingTotal: 0, ahead: [], dropped: [], dirty: [], blocked: [] });
+	expect(c("261103.1", "261103.1.1")).toBe(true);
+	expect(c("261103.1.1", "261103.1")).toBe(false);
+	expect(c("261103.1.2", "261103.2")).toBe(true);
+	expect(c("261103.1", "261103.1.2")).toBe(true);
+});
+
+test("three windows a day in KST: next runs at 11:00, then across 18:00, 24:00 and the next day", () => {
+	const at = "12:00,18:00,24:00";
+	const runs = (iso: string) => nextRuns(at, new Date(iso)).map(d => d.toISOString());
+	// 11:00 KST
+	expect(runs("2026-11-03T02:00:00Z")).toEqual(["2026-11-03T03:00:00.000Z", "2026-11-03T09:00:00.000Z", "2026-11-03T15:00:00.000Z"]);
+	// 18:30 KST: midnight, then tomorrow's 12:00 and 18:00
+	expect(runs("2026-11-03T09:30:00Z")).toEqual(["2026-11-03T15:00:00.000Z", "2026-11-04T03:00:00.000Z", "2026-11-04T09:00:00.000Z"]);
+	// 00:05 KST: the 24:00 window is tonight's midnight, not the one just past
+	expect(runs("2026-11-03T15:05:00Z")).toEqual(["2026-11-04T03:00:00.000Z", "2026-11-04T09:00:00.000Z", "2026-11-04T15:00:00.000Z"]);
+	// a single window still works
+	expect(nextRuns("10:00", new Date("2026-11-03T02:00:00Z"))).toHaveLength(1);
+});
+
 describe("against temp git repos", () => {
 	let r: Repos;
 	let work: string, pusher: string, logDir: string;
@@ -82,23 +123,47 @@ describe("against temp git repos", () => {
 		r.remove();
 	});
 
-	test("check lists the incoming commits and changes nothing in the checkout", async () => {
+	test("check lists the incoming commits to the newest release and changes nothing in the checkout", async () => {
 		const before = head(work);
 		commit(pusher, "a.txt", "2\n", "second change");
 		commit(pusher, "b.txt", "x\n", "third change");
-		sh(pusher, "push", "-q", "origin", "HEAD:main");
+		const version = r.release("c.txt", "y\n", "release change");
 		const c = await check(opts());
 		expect(c.ok).toBe(true);
-		expect(c.incomingTotal).toBe(2);
-		expect(c.incoming.map(i => i.subject)).toEqual(["third change", "second change"]);
+		expect(c.available).toBe(version);
+		expect(c.version.kind === "git" && c.version.release).toBe("261101.1");
+		expect(c.summary).toBe(`261101.1 → ${version}`);
+		expect(c.incomingTotal).toBe(3);
+		expect(c.incoming.map(i => i.subject).slice(1)).toEqual(["third change", "second change"]);
 		expect(c.blocked).toEqual([]);
 		expect(head(work)).toBe(before);
 		expect(readFileSync(join(work, "a.txt"), "utf8")).toBe("1\n");
 	});
 
+	test("a new commit on main is not an update: the disk version is at the newest tag", async () => {
+		r.push("a.txt", "2\n", "unreleased change");
+		const c = await check(opts());
+		expect(c.ok).toBe(true);
+		expect(c.incomingTotal).toBe(0);
+		expect(c.available).toBe("261101.1");
+		expect(c.remoteHead).toBeUndefined();
+		expect(c.summary).toBe("업데이트 없음 (261101.1)");
+		expect(updateAvailable(c)).toBe(false);
+		expect(logged()).toContain("업데이트 없음");
+	});
+
+	test("an install with no VERSION on disk (never released) is older than any tag", async () => {
+		rmSync(join(work, "VERSION"));
+		const c = await check(opts());
+		expect(c.ok).toBe(true);
+		expect(c.available).toBe("261101.1");
+		expect(updateAvailable(c)).toBe(true);
+		expect(c.summary).toBe("설치본 → 261101.1");
+	});
+
 	// Owner 2026-10-29: a local edit never stops a shipped update ("로컬에서 수정해서 사용하는거때문에 내가 배포한 업뎃이 실패하면 안됨").
 	test("uncommitted changes do not stop the update: saved, moved on, untracked files kept", async () => {
-		r.push("a.txt", "2\n", "second");
+		r.release("a.txt", "2\n", "second");
 		writeFileSync(join(work, "a.txt"), "my edit\n");
 		writeFileSync(join(work, "notes.txt"), "untracked\n");
 		const j = await apply(opts());
@@ -111,7 +176,7 @@ describe("against temp git repos", () => {
 	test("local commits that conflict with the new version do not stop the update and are kept on a branch, never dropped", async () => {
 		commit(work, "a.txt", "local\n", "my local work");
 		const mine = head(work);
-		r.push("a.txt", "2\n", "second");
+		r.release("a.txt", "2\n", "second");
 		const j = await apply(opts());
 		expect(j.status).toBe("updated");
 		expect(j.note).toContain("dotz-local/");
@@ -121,7 +186,7 @@ describe("against temp git repos", () => {
 
 	test("a clean checkout fast-forwards to origin, tests pass, every step is logged", async () => {
 		const before = head(work);
-		r.push("a.txt", "2\n", "second");
+		r.release("a.txt", "2\n", "second");
 		const target = head(pusher);
 		const { seen, exec } = spy();
 		const j = await apply(opts(exec));
@@ -135,7 +200,7 @@ describe("against temp git repos", () => {
 	});
 
 	test("a changed package.json runs bun install before the tests", async () => {
-		r.push("package.json", "{}\n", "deps");
+		r.release("package.json", "{}\n", "deps");
 		const seen: string[] = [];
 		const exec: Exec = async (cmd, cwd, ms) => {
 			seen.push(cmd.join(" "));
@@ -149,7 +214,7 @@ describe("against temp git repos", () => {
 
 	test("the gate the incoming commit defines in hub/update-gate.json is the one that runs, on the same update", async () => {
 		mkdirSync(join(pusher, "hub"), { recursive: true });
-		r.push("hub/update-gate.json", JSON.stringify({ cmd: ["bun", "test", "--new-gate"], timeoutMinutes: 30 }), "new gate");
+		r.release("hub/update-gate.json", JSON.stringify({ cmd: ["bun", "test", "--new-gate"], timeoutMinutes: 30 }), "new gate");
 		const seen: { cmd: string; ms: number }[] = [];
 		const exec: Exec = async (cmd, cwd, ms) => (seen.push({ cmd: cmd.join(" "), ms }), cmd[0] === "bun" ? { code: 0, out: "" } : defaultExec(cmd, cwd, ms));
 		const j = await apply({ ...opts(exec), testCmd: undefined });
@@ -158,7 +223,7 @@ describe("against temp git repos", () => {
 	});
 
 	test("an incoming commit without a gate file runs the running version's gate, not nothing", async () => {
-		r.push("x.txt", "x", "no gate file");
+		r.release("x.txt", "x", "no gate file");
 		const seen: { cmd: string; ms: number }[] = [];
 		const exec: Exec = async (cmd, cwd, ms) => (seen.push({ cmd: cmd.join(" "), ms }), cmd[0] === "bun" ? { code: 0, out: "" } : defaultExec(cmd, cwd, ms));
 		const j = await apply({ ...opts(exec), testCmd: undefined });
@@ -169,7 +234,7 @@ describe("against temp git repos", () => {
 	test("an applied update leaves update-pending.json and starts the rollback watchdog from a copy in the data dir", async () => {
 		const before = head(work);
 		const data = join(r.root, "data");
-		r.push("x.txt", "x", "new version");
+		r.release("x.txt", "x", "new version");
 		const spawned: string[][] = [];
 		const j = await apply({ ...opts(), dataDir: data, watch: { pid: 4242, port: 47111, spawn: c => void spawned.push(c) } });
 		expect(j.status).toBe("updated");
@@ -181,7 +246,7 @@ describe("against temp git repos", () => {
 
 	test("a failed update leaves no pending marker and starts no watchdog", async () => {
 		const data = join(r.root, "data");
-		r.push("FAIL", "boom\n", "breaks the tests");
+		r.release("FAIL", "boom\n", "breaks the tests");
 		const spawned: string[][] = [];
 		const j = await apply({ ...opts(), dataDir: data, watch: { pid: 4242, port: 47111, spawn: c => void spawned.push(c) } });
 		expect(j.status).toBe("failed");
@@ -191,7 +256,7 @@ describe("against temp git repos", () => {
 
 	test("failing tests put the checkout back on the old commit", async () => {
 		const before = head(work);
-		r.push("FAIL", "boom\n", "breaks the tests");
+		r.release("FAIL", "boom\n", "breaks the tests");
 		const j = await apply(opts());
 		expect(j.status).toBe("failed");
 		expect(head(work)).toBe(before);
@@ -200,7 +265,7 @@ describe("against temp git repos", () => {
 	});
 
 	test("a failing apply logs the failing test block, not only the tail", async () => {
-		r.push("FAIL", "boom\n", "breaks the tests");
+		r.release("FAIL", "boom\n", "breaks the tests");
 		const exec: Exec = async (cmd, cwd, ms) =>
 			cmd.join(" ") === testCmd.join(" ") ? { code: 1, out: `${"noise\n".repeat(100)}error: expect(received).toBe(expected)\n(fail) the broken one [1ms]\n 1 fail\n` } : defaultExec(cmd, cwd, ms);
 		const j = await apply(opts(exec));
@@ -212,7 +277,7 @@ describe("against temp git repos", () => {
 
 	// Owner 2026-11-01: "1pass 이거 뜨는거 불필요" - bun's counts stay in the update log, never in the owner-facing text.
 	test("the test counts are logged but never shown to the owner, on success and on failure", async () => {
-		r.push("a.txt", "2\n", "second");
+		r.release("a.txt", "2\n", "second");
 		const ok: Exec = async (cmd, cwd, ms) => (cmd.join(" ") === testCmd.join(" ") ? { code: 0, out: "(pass) one [1ms]\n 1 pass\n 0 fail\n" } : defaultExec(cmd, cwd, ms));
 		const j = await apply(opts(ok));
 		expect(j.status).toBe("updated");
@@ -220,7 +285,7 @@ describe("against temp git repos", () => {
 		expect(j.message).not.toMatch(/\d+ (pass|fail)|테스트/);
 		expect(logged()).toContain("1 pass, 0 fail");
 
-		r.push("FAIL", "boom\n", "breaks the tests");
+		r.release("FAIL", "boom\n", "breaks the tests");
 		const bad: Exec = async (cmd, cwd, ms) => (cmd.join(" ") === testCmd.join(" ") ? { code: 1, out: "(fail) the broken one [1ms]\n 3 pass\n 1 fail\n" } : defaultExec(cmd, cwd, ms));
 		const f = await apply(opts(bad));
 		expect(f.status).toBe("failed");
@@ -243,12 +308,25 @@ describe("against temp git repos", () => {
 		expect(c.error?.reason).toBeTruthy();
 	});
 
-	// auto_apply: the daily check applies by itself. Local repos only, no network; hooks record what main.ts would do.
+	// auto_apply: the check applies a new release by itself unless the owner turns it off (default on). Local repos only, no network;
+	// hooks record what main.ts would do.
 	describe("auto_apply", () => {
-		test("off (default): a new commit only notifies, nothing is applied or restarted", async () => {
+		test("on by default: a new release applies on its own and restarts through the idle gate", async () => {
 			setSelfUpdateCfg(undefined);
+			r.release("a.txt", "2\n", "second");
+			const { h, api } = autoHooks();
+			await autoCheck(opts(), api);
+			expect(head(work)).toBe(head(pusher));
+			expect(h.worklog).toHaveLength(1);
+			expect(h.worklog[0]).toContain("261101.1 → 261101.2");
+			expect(h.restarts).toBe(1);
+			expect(h.alerts).toEqual([]);
+		});
+
+		test("off: a new release only notifies, nothing is applied or restarted", async () => {
+			setSelfUpdateCfg({ auto_apply: false });
 			const before = head(work);
-			r.push("a.txt", "2\n", "second");
+			r.release("a.txt", "2\n", "second");
 			const { h, api } = autoHooks();
 			await autoCheck(opts(), api);
 			expect(head(work)).toBe(before);
@@ -257,7 +335,7 @@ describe("against temp git repos", () => {
 
 		test("applies a clean, not-ahead checkout, says so in worklog and restarts through the idle gate", async () => {
 			setSelfUpdateCfg({ auto_apply: true });
-			r.push("a.txt", "2\n", "second");
+			r.release("a.txt", "2\n", "second");
 			const { h, api } = autoHooks();
 			await autoCheck(opts(), api);
 			expect(head(work)).toBe(head(pusher));
@@ -268,7 +346,7 @@ describe("against temp git repos", () => {
 
 		test("a dirty checkout still updates on its own: no alert, one restart, the edit kept in the backup", async () => {
 			setSelfUpdateCfg({ auto_apply: true });
-			r.push("a.txt", "2\n", "second");
+			r.release("a.txt", "2\n", "second");
 			writeFileSync(join(work, "a.txt"), "my edit\n");
 			// the first changed file keeps its two-column status, so the screen does not read "M .txt" (Mac mini 2026-10-29: "ub/laneops.ts")
 			expect((await check(opts())).dirty).toEqual([" M a.txt"]);
@@ -283,7 +361,7 @@ describe("against temp git repos", () => {
 		test("a developer checkout whose local commits conflict still updates; the commits are kept on a branch", async () => {
 			setSelfUpdateCfg({ auto_apply: true });
 			commit(work, "a.txt", "local\n", "my local work");
-			r.push("a.txt", "2\n", "second");
+			r.release("a.txt", "2\n", "second");
 			const { h, api } = autoHooks();
 			await autoCheck(opts(), api);
 			expect(head(work)).toBe(head(pusher));
@@ -294,7 +372,7 @@ describe("against temp git repos", () => {
 		test("reverts on a test failure, alerts with a choice block, does not retry that commit and does not restart", async () => {
 			setSelfUpdateCfg({ auto_apply: true });
 			const before = head(work);
-			r.push("FAIL", "boom\n", "breaks the tests");
+			r.release("FAIL", "boom\n", "breaks the tests");
 			const { seen, exec } = spy();
 			const { h, api } = autoHooks();
 			await autoCheck(opts(exec), api);
