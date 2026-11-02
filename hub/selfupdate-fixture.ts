@@ -41,12 +41,26 @@ function buildTemplate(): string {
 	git(t, "init", "-q", "--bare", "origin.git");
 	git(t, "clone", "-q", "origin.git", "pusher");
 	commit(join(t, "pusher"), "a.txt", "1\n", "first");
-	git(join(t, "pusher"), "push", "-q", "origin", "HEAD:main");
+	// The first release (VERSION + tag) is what both clones start at: checks compare tags, never bare commits.
+	commit(join(t, "pusher"), "VERSION", "261101.1\n", "release 261101.1");
+	git(join(t, "pusher"), "tag", "v261101.1");
+	git(join(t, "pusher"), "push", "-q", "origin", "HEAD:main", "refs/tags/v261101.1");
 	git(t, "clone", "-q", "origin.git", "work");
 	return t;
 }
 
-export type Repos = { root: string; origin: string; work: string; pusher: string; logDir: string; push: (file: string, text: string, msg: string) => void; remove: () => void };
+export type Repos = {
+	root: string;
+	origin: string;
+	work: string;
+	pusher: string;
+	logDir: string;
+	// A plain commit on main with no tag: main moves, but no new release.
+	push: (file: string, text: string, msg: string) => void;
+	// A released commit: file + VERSION in one commit, tag v<version>, main and tag pushed; returns the version.
+	release: (file: string, text: string, msg: string) => string;
+	remove: () => void;
+};
 
 // A fresh root holding origin.git, work and pusher, both clones pointing at this root's origin, and a logs folder path (not created).
 export function makeRepos(): Repos {
@@ -57,6 +71,11 @@ export function makeRepos(): Repos {
 	const work = join(root, "work");
 	const pusher = join(root, "pusher");
 	for (const d of [work, pusher]) git(d, "remote", "set-url", "origin", origin);
+	let n = 1;
+	const nextVersion = () => {
+		n++;
+		return n <= 3 ? `261101.${n}` : `261102.${n - 3}`;
+	};
 	return {
 		root,
 		origin,
@@ -66,6 +85,16 @@ export function makeRepos(): Repos {
 		push: (file, text, msg) => {
 			commit(pusher, file, text, msg);
 			git(pusher, "push", "-q", "origin", "HEAD:main");
+		},
+		release: (file, text, msg) => {
+			const version = nextVersion();
+			writeFileSync(join(pusher, file), text);
+			writeFileSync(join(pusher, "VERSION"), `${version}\n`);
+			git(pusher, "add", file, "VERSION");
+			git(pusher, "commit", "-q", "-m", msg);
+			git(pusher, "tag", `v${version}`);
+			git(pusher, "push", "-q", "origin", "HEAD:main", `refs/tags/v${version}`);
+			return version;
 		},
 		remove: () => rmSync(root, { recursive: true, force: true }),
 	};
