@@ -25,19 +25,19 @@ test("one watch and one schedule come back in the owner-facing shape", async () 
 	const items = listMonitors();
 	expect(items).toHaveLength(2);
 	const watch = items.find(i => i.kind === "watch")!;
-	expect(watch).toMatchObject({ name: "demo watch", watch: "demo-watch", kind: "watch", channel: "ch:7", last_result: "ok", every: "10분마다" });
+	expect(watch).toMatchObject({ name: "demo watch", watch: "demo-watch", kind: "watch", channel: "ch:7", last_result: "ok", every: "10분마다", scope: "project", project: "ch:7", project_title: "프로젝트" });
 	expect(Date.parse(watch.last_run!)).toBeGreaterThan(0);
 	expect(Date.parse(watch.next_run!) - Date.parse(watch.last_run!)).toBe(10 * 60_000);
 
 	const sched = items.find(i => i.kind === "schedule")!;
-	expect(sched).toEqual({ name: "주간 보고 정리", schedule: s.id, kind: "schedule", channel: "ch:7", next_run: s.at, every: "2시간마다" });
+	expect(sched).toEqual({ name: "주간 보고 정리", schedule: s.id, kind: "schedule", channel: "ch:7", scope: "project", project: "ch:7", project_title: "프로젝트", next_run: s.at, every: "2시간마다" });
 });
 
 test("a schedule carries its id, so the web can pause, resume and delete it (PATCH / DELETE /api/schedules/<id>)", () => {
 	const s = addSchedule({ text: "메일 연결 확인", in_minutes: 30 });
-	expect(listMonitors()).toEqual([{ name: "메일 연결 확인", schedule: s.id, kind: "schedule", next_run: s.at }]);
+	expect(listMonitors()).toEqual([{ name: "메일 연결 확인", schedule: s.id, kind: "schedule", scope: "plain", next_run: s.at }]);
 	patchSchedule(s.id, { paused: true });
-	expect(listMonitors()).toEqual([{ name: "메일 연결 확인", schedule: s.id, kind: "schedule", paused: true }]);
+	expect(listMonitors()).toEqual([{ name: "메일 연결 확인", schedule: s.id, kind: "schedule", scope: "plain", paused: true }]);
 });
 
 test("a watch carries its own connection, a short last line and a paused flag", async () => {
@@ -52,6 +52,20 @@ test("a watch carries its own connection, a short last line and a paused flag", 
 	m = listMonitors().find(i => i.watch === "line-watch")!;
 	expect(m).toMatchObject({ paused: true, connection: "connected" });
 	expect(m.next_run).toBeUndefined();
+});
+
+// Where a monitor is listed (hub/watch-scope.ts): its owner's app, its project, internal housekeeping, else plain.
+test("a monitor carries its scope: the app it serves, its project, internal, or plain", async () => {
+	addWatch({ name: "reply-library-icloud", label: "첨부 폴더 iCloud 내려받기", command: "echo ok", every_minutes: 10 }, "");
+	addWatch({ name: "ch-1-1", command: "echo ok", every_minutes: 10, channels: ["1"] }, "");
+	addWatch({ name: "omonyang-housekeeping", command: "echo ok", every_minutes: 10 }, "");
+	addWatch({ name: "disk-check", command: "echo ok", every_minutes: 10 }, "");
+	const by = (n: string) => listMonitors().find(m => m.watch === n)!;
+	expect(by("reply-library-icloud")).toMatchObject({ scope: "app", app: "mail" });
+	expect(by("ch-1-1")).toMatchObject({ scope: "project", project: "ch:1", project_title: "프로젝트" });
+	expect(by("omonyang-housekeeping")).toMatchObject({ scope: "internal" });
+	expect(by("disk-check")).toMatchObject({ scope: "plain" });
+	expect(by("disk-check").app).toBeUndefined();
 });
 
 // A watch that failed twice is disconnected on its own (hub/watch-status.ts), whatever was alerted; the list says since when and why.

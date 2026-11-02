@@ -22,6 +22,7 @@ import { DATA_DIR, log, now, paths, writeAtomic } from "./config.ts";
 import { blockedByFeatures } from "./featuredirs.ts";
 import { deriveLabel, isKeyLabel } from "./watchtext.ts";
 
+export type WatchOwner = { app?: string; project?: string; internal?: true };
 export type Watch = {
 	id: string;
 	name: string;
@@ -34,6 +35,8 @@ export type Watch = {
 	pattern?: string;
 	session?: { url: string; expect?: string; refresh_hours: number; host?: string; profile?: string; login_url?: string; secret?: string };
 	channels?: string[];
+	// Who the watch serves (hub/watch-scope.ts): an app instance key, a project (ch:<id> or a project folder) or the gateway's own housekeeping; none = a standalone monitor.
+	owner?: WatchOwner;
 	to: string;
 	created: string;
 	timeout_seconds?: number;
@@ -424,6 +427,23 @@ export function relabelWatches(projectOf: (w: Watch) => string | undefined): num
 	return n;
 }
 
+// The owner an add request names: `owner: {...}` or the flat app / project / internal fields (dotz_watch passes flat); a key is [a-z0-9._:~-], up to 60 chars.
+const OWNER_KEY = /^[a-z0-9._:~-]{1,60}$/;
+function ownerOf(input: Record<string, any>): WatchOwner | undefined {
+	const given = input.owner && typeof input.owner === "object" ? input.owner : {};
+	const out: WatchOwner = {};
+	for (const k of ["app", "project"] as const) {
+		const v = input[k] ?? given[k];
+		if (v === undefined || v === null || v === "") continue;
+		if (typeof v !== "string" || !OWNER_KEY.test(v)) throw new Error(`${k} must be [a-z0-9._:~-], up to 60 chars`);
+		out[k] = v;
+	}
+	const internal = input.internal ?? given.internal;
+	if (internal === true) out.internal = true;
+	else if (internal !== undefined && internal !== false) throw new Error("internal must be true or false");
+	return Object.keys(out).length ? out : undefined;
+}
+
 export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 	const name = String(input.name ?? "").trim();
 	if (!/^[a-z0-9-]{1,40}$/.test(name)) throw new Error("name must be [a-z0-9-], up to 40 chars");
@@ -463,11 +483,12 @@ export function addWatch(input: Record<string, any>, rulesText: string): Watch {
 		if (!/^[a-z0-9-]{1,20}$/.test(kind)) throw new Error(`retry kind ${kind} must be [a-z0-9-], up to 20 chars`);
 		if (!Array.isArray(wait) || !wait.every(m => typeof m === "number" && m >= 1)) throw new Error(`retry.${kind} must be a list of minutes (>= 1 each; [] stops the watch until the owner approves)`);
 	}
+	const owner = ownerOf(input);
 	const old = items.findIndex(w => w.name === name);
 	if (old >= 0) removeWatch(items[old].id);
 	const site = session ? new URL(session.url).hostname.replace(/^www\./, "") : undefined;
 	const label = String(input.label ?? "").trim().slice(0, 60) || deriveLabel({ name, header: scriptHeader(script), site });
-	const w: Watch = { id: randomBytes(3).toString("hex"), name, ...(label ? { label } : {}), command, ...(script ? { script } : {}), ...(input.cwd ? { cwd: String(input.cwd) } : script ? { cwd: dirname(script) } : {}), every_minutes: every, on, ...(on === "match" ? { pattern: String(input.pattern) } : {}), ...(session ? { session } : {}), ...(Array.isArray(input.channels) && input.channels.length ? { channels: input.channels.map(String) } : {}), to: String(input.to ?? "orchestrator"), created: now(), ...(timeout ? { timeout_seconds: timeout } : {}), ...(retry ? { retry: retry as Record<string, number[]> } : {}), ...(approval ? { approval_minutes: approval } : {}), ...(input.once === true ? { once: true } : {}), state: { fails: 0 } };
+	const w: Watch = { id: randomBytes(3).toString("hex"), name, ...(label ? { label } : {}), command, ...(script ? { script } : {}), ...(input.cwd ? { cwd: String(input.cwd) } : script ? { cwd: dirname(script) } : {}), every_minutes: every, on, ...(on === "match" ? { pattern: String(input.pattern) } : {}), ...(session ? { session } : {}), ...(Array.isArray(input.channels) && input.channels.length ? { channels: input.channels.map(String) } : {}), ...(owner ? { owner } : {}), to: String(input.to ?? "orchestrator"), created: now(), ...(timeout ? { timeout_seconds: timeout } : {}), ...(retry ? { retry: retry as Record<string, number[]> } : {}), ...(approval ? { approval_minutes: approval } : {}), ...(input.once === true ? { once: true } : {}), state: { fails: 0 } };
 	loginGate(w);
 	items.push(w);
 	save();

@@ -155,12 +155,19 @@ function monNeedLine(n, down) {
 // its status is in the app's panel and a failing one marks the app's row.
 const monNamed = (list, w) => (list || []).some(x => x.endsWith("-") ? w.startsWith(x) : w === x);
 // `own` = the watch names the hub resolved for the app (names, instance filters and the site a login keeper keeps, hub/app-features.ts); the name rules answer for an older hub.
-const monOwner = (apps, m) => m.kind === "watch" && m.watch ? apps.find(a => Array.isArray(a.own) ? a.own.includes(m.watch) : monNamed(a.watches, m.watch) && !monNamed(a.watchesNot, m.watch)) : undefined;
+const monOwner = (apps, m) => m.kind === "watch" && m.watch ? apps.find(a => Array.isArray(a.own) ? a.own.includes(m.watch) : monNamed(a.watches, m.watch) && !monNamed(a.watchesNot, m.watch)) || (m.scope === "app" ? apps.find(a => a.key === m.app) : undefined) : undefined;
+// The rest of the monitors by the hub's `scope` (hub/watch-scope.ts): a project's own go in a 프로젝트 · <이름> group between 앱 and 일반 모니터링, the gateway's own
+// housekeeping stays out of sight while it is fine (a failing or disconnected one is listed in 일반 모니터링). A hub that sends no `scope` lists every monitor as plain.
+const monProject = m => m.scope === "project" && m.project;
+const monGroupOf = m => (monProject(m) ? `프로젝트 · ${m.project_title || "프로젝트"}` : MON_GROUP.plain);
+const monHidden = m => m.scope === "internal" && m.last_result !== "fail" && m.connection !== "disconnected";
+// Project items first (grouped by project, first seen first), then the plain ones.
+const monGrouped = (proj, plain) => { const order = [...new Set(proj.map(i => i.group))]; return [...order.flatMap(g => proj.filter(i => i.group === g)), ...plain]; };
 const monOwnedBy = (apps, mons) => { const by = new Map(); for (const m of mons) { const o = monOwner(apps, m); if (o) by.set(o.key, [...(by.get(o.key) || []), m]); } return by; };
 const monFail = owned => owned.some(m => m.last_result === "fail") ? ["실패", "err"] : null;
 function monItems() {
   intgWatch();
-  const mons = ntMons(), shown = new Set(), items = [], owned = monOwnedBy(INTG.items, mons);
+  const mons = ntMons(), shown = new Set(), items = [], proj = [], plain = [], owned = monOwnedBy(INTG.items, mons);
   for (const it of INTG.items) {
     const notices = (it.notices || []).map(ntById).filter(n => n && monMine(n, it)), mails = [...CONV.keys()].filter(t => !PQ.of.has(t) && intgHas(it, t) && (!isMailT(t) || MAILS.has(t)));   // a mail conversation without its mail (deleted) is no mail row
     for (const n of notices) shown.add(n.id);
@@ -171,17 +178,19 @@ function monItems() {
   }
   const ownedNames = new Set([...owned.values()].flat());
   for (const m of mons) {
+    if (monHidden(m)) continue;
     const notices = NT.items.filter(n => monHas(m, n)), last = monNewest(notices), names = monNames(m);
     for (const n of notices) shown.add(n.id);
     if (ownedNames.has(m)) continue;
     // The row says the newest result in words: the newest report, unless a later run said nothing (an "ok" run posts no report).
     const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
     const need = notices.filter(monNeed).length, conn = m.connection === "disconnected", running = !!m.watch && MON.running.has(m.watch);
-    items.push({ key: `m:${m.name}`, group: MON_GROUP.plain, name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices), need, chips: monNeedChips(need),
+    (monProject(m) ? proj : plain).push({ key: `m:${m.name}`, group: monGroupOf(m), ...(monProject(m) ? { proj: true } : {}), name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices), need, chips: monNeedChips(need),
       hint: conn ? monConnShort(m) : running ? "지금 확인하고 있어요" : fresh ? monStrip(monLine(last), names) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
       msig: [m.last_run, m.next_run, m.last_result, m.paused, m.connection, running].join("|"),
       badge: (st => [st.text, st.tone])(monStatus(m)) });
   }
+  items.push(...monGrouped(proj, plain));
   // A report the hub marked as an app's (n.app, hub/notices.ts) is never here, even before the app list below has loaded.
   const feed = NT.items.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), need = feed.filter(monNeed).length;
   // The feed's row: what waits on the owner as its chip (counted apart from the plain reports, like an app row), the head line under the name (monFeedHead).
@@ -229,7 +238,7 @@ function monRows(items, sel) {
   const addRow = () => { added = true; rows.push({ k: "add-app", name: "앱 관리", av: monIcon("add"), hint: asAddHint(), sel: false, open: () => asAddSheet() }); };
   for (const it of items) {
     if (group === MON_GROUP.app && it.group !== group && !added) addRow();
-    if (it.group === MON_GROUP.plain && !added) { rows.push({ header: MON_GROUP.app }); addRow(); }
+    if ((it.group === MON_GROUP.plain || it.proj) && !added) { rows.push({ header: MON_GROUP.app }); addRow(); }
     if (it.group && it.group !== group) rows.push({ header: it.group });
     group = it.group;
     rows.push({ k: it.key, name: it.name, av: monIcon(it.ic), hint: it.hint, unread: it.unread, unreplied: it.unreplied | 0, badge: it.badge || null, chips: it.chips, sel: !!sel && it.key === sel.key && !MON.list, open: () => go("monitoring", it.key) });

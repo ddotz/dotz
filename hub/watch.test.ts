@@ -350,3 +350,12 @@ test("a login's learned life sets its next check and renewal at half of it, neve
 	st.lifeMs = 8 * min;
 	expect(sessionGapMs({ every_minutes: 30, session: { url: "https://x", refresh_hours: 6 }, state: st }).check).toBe(10 * min);
 });
+
+test("a watch keeps the owner its add request names (nested or flat), and a bad key is refused", () => {
+	expect(addWatch({ name: "owned-flat", command: "true", every_minutes: 60, app: "mail", internal: true }, "").owner).toEqual({ app: "mail", internal: true });
+	expect(addWatch({ name: "owned-nested", command: "true", every_minutes: 60, owner: { project: "ch:42" } }, "").owner).toEqual({ project: "ch:42" });
+	expect(addWatch({ name: "owner-none", command: "true", every_minutes: 60 }, "").owner).toBeUndefined();
+	expect(() => addWatch({ name: "owner-bad", command: "true", every_minutes: 60, app: "Mail App" }, "")).toThrow("app must be");
+	expect(() => addWatch({ name: "owner-bad", command: "true", every_minutes: 60, project: "x".repeat(61) }, "")).toThrow("project must be");
+	expect(allWatches().some(w => w.name === "owner-bad")).toBe(false);
+});
