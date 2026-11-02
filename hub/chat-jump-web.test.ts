@@ -152,4 +152,14 @@ describe("jump from a notice at 390px", () => {
 		expect(m.divOff!).toBeGreaterThanOrEqual(0);
 		expect(m.divOff!).toBeLessThanOrEqual(60);
 	});
+
+	// Owner 2026-11-03: on a phone the button came out as an ellipse - the phone rule's .btn min-height (44px, --btn-hit, the tap
+	// target) stretched it while its width stayed 36px. It stays a 36px circle at phone width.
+	test("the 맨 아래로 button stays a circle at phone width", async () => {
+		await boot();
+		await view.evaluate(`(go("chat", "main"), 0)`);
+		await waitFor(`CV.placed`);
+		const box = JSON.parse((await view.evaluate(`JSON.stringify((() => { const b = $("#chat-jump"); b.hidden = false; const r = b.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; })())`)) as string);
+		expect(box).toEqual({ w: 36, h: 36 });
+	});
 });
