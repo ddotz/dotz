@@ -138,7 +138,9 @@ let webBase: string | undefined = (cfg.web as { public_url?: string } | undefine
 if (!webBase && cfg.web?.tailscale_https_port) {
 	const port = cfg.web.tailscale_https_port;
 	void (async () => {
-		for (const bin of ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]) {
+		// DOTZ_TAILSCALE_BIN (colon-separated, empty = none) replaces the lookup list: a test forces "no tailscale" on a host that has the app.
+		const bins = process.env.DOTZ_TAILSCALE_BIN !== undefined ? process.env.DOTZ_TAILSCALE_BIN.split(":").filter(Boolean) : ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"];
+		for (const bin of bins) {
 			const dns = await Bun.$`${bin} status --json`.quiet().json().then(s => String(s?.Self?.DNSName ?? "").replace(/\.$/, ""), () => "");
 			if (!dns) continue;
 			webBase = `https://${dns}${port === 443 ? "" : `:${port}`}`;
