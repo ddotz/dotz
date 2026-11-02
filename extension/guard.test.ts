@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GUARD_DEFAULTS, guardConfigFrom, installedOriginal, loadGuardConfig } from "./guard-config.ts";
 import { LOOKUP_MODEL, omoSelector } from "../hub/runtime/omo.ts";
-import { budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
+import { budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, laneMergeBlock, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
 
 let dir: string;
 beforeAll(() => {
@@ -88,6 +88,9 @@ test("worker output trimming follows max_output_chars", () => {
 test("external actions: built-in list plus configured patterns, no owner-specific default", () => {
 	expect(externalAction("git push origin main")).toBe("git push");
 	expect(externalAction("gh pr merge 3")).toBe("gh write");
+	expect(laneMergeBlock("gh pr merge 3 --squash", "l1")).toContain("dotz_merge");
+	expect(laneMergeBlock("gh pr merge 3", "")).toBeUndefined();
+	expect(laneMergeBlock("gh pr checks 3", "l1")).toBeUndefined();
 	expect(externalAction("ssh host ls")).toBe("remote host");
 	expect(externalAction("curl -X POST https://x.test")).toBe("outbound HTTP write");
 	expect(externalAction("curl -X POST http://localhost:1/a")).toBeUndefined();

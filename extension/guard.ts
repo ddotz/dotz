@@ -63,6 +63,12 @@ export function externalAction(command: string, extra: readonly string[] = G.ext
 	return undefined;
 }
 
+// A lane lands a PR through dotz_merge, which checks the reviewed commit and CI; a direct `gh pr merge` would skip both.
+export function laneMergeBlock(command: string, lane = process.env.DOTZ_LANE): string | undefined {
+	if (!lane || !/\bgh\s+pr\s+merge\b/.test(command)) return undefined;
+	return "orchestrator-guard: a lane merges a PR only through dotz_merge (action=review records the verdict for the head you read, then action=merge checks that head and CI).";
+}
+
 const DONE_MARKER = /acceptance|done when|done-condition|end state|success criteria|완료 조건|완료 기준|끝 조건/i;
 // Shared with the owner's original extension and the harness doctor, so a brief marked by either copy is never marked twice.
 const BUDGET_MARKER = "[orchestrator-guard]";
@@ -1105,6 +1111,8 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 				return { block: true, reason: `orchestrator-guard: workers do not run external-impact commands (${kind}). Finish the rest of the task, and list the exact command under "External actions needed" in your final answer; the orchestrator decides whether to run it.` };
 			}
 		}
+		const laneMerge = tool === "bash" ? laneMergeBlock(expandShellVars(String(event?.input?.command ?? ""))) : undefined;
+		if (laneMerge) return { block: true, reason: laneMerge };
 		const shared = sharedWriteBlock(tool, event?.input);
 		if (shared) {
 			debug({ phase: "shared-write-block", tool });
