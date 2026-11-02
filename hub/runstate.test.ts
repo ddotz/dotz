@@ -143,6 +143,14 @@ test("runIntent reads only the current turn; lastTurnEnd is the newest turn's en
 	expect(lastTurnEnd(items)).toBe(iso(700_000));
 });
 
+// Owner 2026-11-03: the running line showed "dotz_lane" — a call without an intent is texted as the tool's id there.
+test("a tool call without an intent is said in the owner's language, never as its id", () => {
+	expect(runIntent([{ type: "tool_call", text: "dotz_lane" }])).toBe("세션 준비");
+	expect(runIntent([{ type: "tool_call", text: "dotz_lane: 세션 목록 확인" }])).toBe("세션 목록 확인");
+	expect(runIntent([{ type: "tool_call", intent: "세션 목록 확인", text: "dotz_lane: 세션 목록 확인" }])).toBe("세션 목록 확인");
+	expect(runIntent([{ type: "tool_call", text: "some_unknown_tool" }])).toBe("");
+});
+
 // Mac mini 2026-10-29 01:46: the orchestrator folded its context after a turn and the line said 쉬는 중 with tasks left until it went on.
 test("a session folding its context is working (대화 정리 중), never resting with tasks left", () => {
 	expect(runState({ ...base, compacting: true, todos: todos(2), lastTurnEnd: iso(30_000) })).toEqual({ kind: "working", detail: "대화 정리 중", todos: 2 });
