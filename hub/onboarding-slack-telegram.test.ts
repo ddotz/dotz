@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createOnboarding, type OnboardDeps, type OnboardView } from "./onboarding.ts";
 
 const SLACK = "xoxb-not-a-real-token";
-const TELEGRAM = "123456789:AAHsecretSecretSecretSecretSecret";
+const TELEGRAM = "123456789:test-token-not-real";
 
 type BrowserCall = { action: string; arg?: Record<string, unknown> };
 type BrowserResult = { ok: boolean; value?: string; waiting?: string };
