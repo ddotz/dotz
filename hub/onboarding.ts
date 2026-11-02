@@ -10,6 +10,7 @@ import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { createDiscordStore, type DiscordStore } from "./discord-connection.ts";
 import { discordFlow } from "./onboarding-discord.ts";
 import { createJandiStore, jandiFlow, type JandiStore } from "./onboarding-jandi.ts";
+import { webAccessFlow } from "./onboarding-web-access.ts";
 import { json } from "./routes-util.ts";
 
 export const ONBOARD_KEYS = ["discord", "jandi", "slack", "telegram", "web-access"] as const;
@@ -37,7 +38,13 @@ export type OnboardDeps = {
 	fetch: typeof fetch;
 	browser: BrowserLike;
 	exec: (argv: string[]) => Promise<{ code: number; out: string }>;
+	/** A command that may stay alive (cloudflared tunnel login): each output line reaches `onLine` as it arrives. */
+	execLines?: (argv: string[], onLine: (line: string) => void) => Promise<{ code: number; out: string }>;
 	restart: () => Promise<void>;
+	/** Makes the web access mode live (hub/web-access.ts change); the web-access flow needs it. */
+	applyWebAccess?: (input: { mode: string; hostname?: string; token?: string }) => Promise<void>;
+	/** Overrides ~ for ~/.cloudflared (tests). */
+	home?: string;
 	now?: () => number;
 	// Injectable stores for tests; the defaults read the real data dir (the DISCORD one is the live config).
 	discord?: DiscordStore;
@@ -45,12 +52,16 @@ export type OnboardDeps = {
 };
 
 export type OnboardInventory = { secrets: string[]; config: boolean; messengers: string[]; accounts: boolean };
-export type OnboardStepOutcome = { done: true } | { waiting: OnboardOwnerStep };
+export type OnboardStepOutcome = { done: true; url?: string } | { waiting: OnboardOwnerStep };
 
 export type OnboardFlowContext = {
 	deps: OnboardDeps;
 	dir: string;
 	inventory: OnboardInventory;
+	/** How many times continue ran this flow since the last start (0 on start): a browser step that waits for the owner skips its first pass. */
+	attempt: number;
+	/** Per-run scratch for a value one step computes for a later one (never persisted, never a secret). */
+	memo: Map<string, string>;
 	/** Remembers a secret so any later error text is scrubbed, and returns it unchanged. */
 	seen(value: string): string;
 	scrub(text: string): string;
@@ -75,7 +86,7 @@ export type OnboardFlowStep = {
 };
 export type OnboardFlow = { key: OnboardKey; steps: OnboardFlowStep[] };
 
-type Saved = { version: 1; index: number; view: OnboardView };
+type Saved = { version: 1; index: number; attempt: number; view: OnboardView };
 const DEFAULT_OWNER: OnboardOwnerStep = { label: "연결 다시 시작", hint: "연결을 다시 시작하고 화면에 남은 안내를 따라 주세요." };
 const TOKEN_LIKE = /[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{25,}/g;
 
@@ -111,12 +122,15 @@ export function registerFlow(flow: OnboardFlow): void {
 }
 registerFlow(discordFlow);
 registerFlow(jandiFlow);
+registerFlow(webAccessFlow);
 
 export type OnboardingService = {
 	view(key: OnboardKey): OnboardView;
 	start(key: OnboardKey): OnboardView;
 	continue(key: OnboardKey): OnboardView;
 	cancel(key: OnboardKey): OnboardView;
+	/** Done without running the steps (a mode that needs none); the web-access local choice uses it. */
+	markDone(key: OnboardKey): OnboardView;
 	inventory(): OnboardInventory;
 	idle(key: OnboardKey): Promise<void>;
 };
@@ -139,7 +153,7 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 	const runs = new Map<OnboardKey, Promise<void>>();
 	const generations = new Map<OnboardKey, number>();
 
-	const blank = (key: OnboardKey): Saved => ({ version: 1, index: 0, view: { key, state: "idle", step: null, owner: null, error: null, url: null, updated_at: stamp() } });
+	const blank = (key: OnboardKey): Saved => ({ version: 1, index: 0, attempt: 0, view: { key, state: "idle", step: null, owner: null, error: null, url: null, updated_at: stamp() } });
 
 	const load = (key: OnboardKey): Saved => {
 		const hit = saved.get(key);
@@ -149,7 +163,7 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 			const raw = JSON.parse(readFileSync(statePath(deps.dir, key), "utf8")) as Partial<Saved>;
 			const view = raw.view;
 			if (view && view.key === key && (ONBOARD_KEYS as readonly string[]).includes(view.key)) {
-				value = { version: 1, index: Math.max(0, Number(raw.index) || 0), view: { ...value.view, ...view, key } };
+				value = { version: 1, index: Math.max(0, Number(raw.index) || 0), attempt: Math.max(0, Number(raw.attempt) || 0), view: { ...value.view, ...view, key } };
 			}
 		} catch {}
 		saved.set(key, value);
@@ -190,7 +204,7 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 		return out;
 	};
 
-	const context = (): OnboardFlowContext => {
+	const context = (attempt: number): OnboardFlowContext => {
 		const secrets = secretsOf();
 		let changed = false;
 		const seen = (value: string): string => {
@@ -201,6 +215,8 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 			deps,
 			dir: deps.dir,
 			inventory: inventoryOf(deps.dir),
+			attempt,
+			memo: new Map<string, string>(),
 			seen,
 			scrub: text => scrubText(text, secrets),
 			changed: () => {
@@ -245,7 +261,7 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 	const run = async (key: OnboardKey, value: Saved, from: number, generation: number): Promise<void> => {
 		const flow = flows.get(key);
 		if (!flow) return;
-		const ctx = context();
+		const ctx = context(value.attempt);
 		let current: OnboardFlowStep | undefined = flow.steps[from];
 		try {
 			for (let i = from; i < flow.steps.length; i++) {
@@ -267,6 +283,7 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 					store(key, value);
 					return;
 				}
+				if (outcome.url !== undefined) value.view = { ...value.view, url: outcome.url };
 			}
 			if (generations.get(key) !== generation) return;
 			if (ctx.hasChanged()) await deps.restart();
@@ -286,14 +303,15 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 		}
 	};
 
-	const begin = (key: OnboardKey, from: number): OnboardView => {
+	const begin = (key: OnboardKey, from: number, attempt: number): OnboardView => {
 		const value = load(key);
 		const generation = (generations.get(key) ?? 0) + 1;
 		generations.set(key, generation);
 		running.add(key);
 		const flow = flows.get(key);
 		value.index = from;
-		value.view = { ...value.view, state: "running", step: flow?.steps[from] ? stepOf(flow.steps[from]!) : null, owner: null, error: null, updated_at: stamp() };
+		value.attempt = Math.max(0, attempt);
+		value.view = { ...value.view, state: "running", step: flow?.steps[from] ? stepOf(flow.steps[from]!) : null, owner: null, error: null, ...(from === 0 ? { url: null } : {}), updated_at: stamp() };
 		store(key, value);
 		const view = { ...value.view };
 		const promise = run(key, value, from, generation).finally(() => {
@@ -314,7 +332,7 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 		const value = load(key);
 		const resume = value.view.state === "waiting" || value.view.state === "failed";
 		const from = resume ? Math.min(Math.max(0, value.index), flow.steps.length - 1) : 0;
-		return begin(key, from);
+		return begin(key, from, 0);
 	};
 
 	const cont = (key: OnboardKey): OnboardView => {
@@ -324,7 +342,7 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 		const value = load(key);
 		if (value.view.state !== "waiting" && value.view.state !== "failed") return value.view;
 		const from = Math.min(Math.max(0, value.index), flow.steps.length - 1);
-		return begin(key, from);
+		return begin(key, from, (value.attempt ?? 0) + 1);
 	};
 
 	const cancel = (key: OnboardKey): OnboardView => {
@@ -333,7 +351,22 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 		runs.delete(key);
 		const value = load(key);
 		value.index = 0;
+		value.attempt = 0;
 		value.view = { ...value.view, state: "idle", step: null, owner: null, error: null, url: null, updated_at: stamp() };
+		store(key, value);
+		return { ...value.view };
+	};
+
+	/** Records a flow that finished outside its steps (web access local mode needs no tunnel): done at once, no secret. */
+	const markDone = (key: OnboardKey): OnboardView => {
+		generations.set(key, (generations.get(key) ?? 0) + 1);
+		running.delete(key);
+		runs.delete(key);
+		const value = load(key);
+		const flow = flows.get(key);
+		const last = flow && flow.steps.length ? flow.steps[flow.steps.length - 1] : undefined;
+		value.index = flow?.steps.length ?? 0;
+		value.view = { ...value.view, state: "done", step: last ? stepOf(last) : null, owner: null, error: null, url: null, updated_at: stamp() };
 		store(key, value);
 		return { ...value.view };
 	};
@@ -343,6 +376,7 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 		start,
 		continue: cont,
 		cancel,
+		markDone,
 		inventory: () => inventoryOf(deps.dir),
 		idle: key => runs.get(key) ?? Promise.resolve(),
 	};
@@ -393,6 +427,21 @@ function jandiScript(url: string): string {
 	].join(" ");
 }
 
+function cloudflareLoginScript(url: string): string {
+	// The tab stays open: the owner approves the login in it, and cloudflared writes ~/.cloudflared/cert.pem when they do.
+	return [`await openTab(${JSON.stringify(url)});`, tick(2000), `console.log('RESULT ' + JSON.stringify({ ok: true }));`].join(" ");
+}
+
+function cloudflareZoneScript(): string {
+	return [
+		`await openTab('https://dash.cloudflare.com/');`,
+		tick(5000),
+		`const zone = await page.evaluate(() => { const near = [...document.querySelectorAll('a,button,[role="button"],h3,h4,span')].map(e => (e.innerText || '').trim()).filter(t => /^[a-z0-9][a-z0-9-]*(\.[a-z0-9-]+)+$/i.test(t) && !/cloudflare\.com$/i.test(t)); if (near.length) return near[0]; const m = (document.body.innerText || '').match(/\b([a-z0-9][a-z0-9-]*\.(?:com|net|org|io|dev|co|kr|xyz|app|me))\b/i); return m ? m[1] : ''; });`,
+		`console.log('RESULT ' + JSON.stringify(zone ? { ok: true, value: zone } : { ok: false, waiting: 'login' }));`,
+		`await page.close();`,
+	].join(" ");
+}
+
 function createAsideBrowser(): BrowserLike {
 	let repl: AsideRepl | undefined;
 	const ensure = async (): Promise<AsideRepl> => {
@@ -428,6 +477,10 @@ function createAsideBrowser(): BrowserLike {
 					return script(inviteScript(String(arg.url ?? "")));
 				case "jandi-webhooks":
 					return script(jandiScript(String(arg.url ?? "https://www.jandi.com")));
+				case "cloudflare-login":
+					return script(cloudflareLoginScript(String(arg.url ?? "")));
+				case "cloudflare-zone":
+					return script(cloudflareZoneScript());
 				case "discord-token": {
 					const r = await ensure();
 					try {
@@ -452,18 +505,41 @@ function defaultExec(argv: string[]): Promise<{ code: number; out: string }> {
 	return Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]).then(([out, err, code]) => ({ code, out: out + err }));
 }
 
-export function defaultOnboardDeps(dir: string = DATA_DIR): OnboardDeps {
+function defaultExecLines(argv: string[], onLine: (line: string) => void): Promise<{ code: number; out: string }> {
+	const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
+	let out = "";
+	const pump = async (stream: ReadableStream<Uint8Array>) => {
+		const decoder = new TextDecoder();
+		let rest = "";
+		for await (const chunk of stream) {
+			const text = decoder.decode(chunk, { stream: true });
+			out += text;
+			rest += text;
+			for (let i = rest.indexOf("\n"); i >= 0; i = rest.indexOf("\n")) {
+				onLine(rest.slice(0, i));
+				rest = rest.slice(i + 1);
+			}
+		}
+		if (rest) onLine(rest);
+	};
+	return Promise.all([pump(proc.stdout), pump(proc.stderr), proc.exited]).then(([, , code]) => ({ code, out }));
+}
+
+export function defaultOnboardDeps(dir: string = DATA_DIR, overrides: Partial<OnboardDeps> = {}): OnboardDeps {
 	return {
 		dir,
 		fetch,
 		browser: createAsideBrowser(),
 		exec: defaultExec,
+		execLines: defaultExecLines,
 		restart: async () => {
 			const { adapters, restart } = await import("./messenger.ts");
 			for (const adapter of adapters()) if (adapter.enabled()) await restart(adapter);
 		},
 		discord: createDiscordStore(dir === DATA_DIR ? undefined : dir),
 		jandi: createJandiStore(dir),
+		...overrides,
+		dir,
 	};
 }
 

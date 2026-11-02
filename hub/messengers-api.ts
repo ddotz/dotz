@@ -28,7 +28,7 @@ export async function messengersRoute(req: Request, url: URL, parts: string[]): 
 	if (parts[0] !== "api" || parts[1] !== "messengers") return undefined;
 	if (parts.length === 2) {
 		if (req.method !== "GET") return json({ error: "method not allowed" }, 405);
-		return json({ items: adapters().filter(a => !a.hidden?.()).map(a => ({ id: a.id, label: a.label, enabled: a.enabled(), state: a.status.state, ...(a.status.error ? { error: a.status.error } : {}) })) });
+		return json({ items: adapters().filter(a => !a.hidden?.()).map(a => ({ id: a.id, label: a.label, enabled: a.enabled(), state: a.status.state, configured: a.configured ? a.configured() : a.enabled(), ...(a.status.error ? { error: a.status.error } : {}) })) });
 	}
 	const a = get(decodeURIComponent(parts[2]!));
 	if (!a || a.hidden?.()) return json({ error: `unknown messenger ${parts[2]}` }, 404);

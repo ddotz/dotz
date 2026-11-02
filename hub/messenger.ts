@@ -54,6 +54,8 @@ export type Adapter = {
 	id: string;
 	label: string;
 	enabled(): boolean;
+	/** Has what it needs to connect (a token, a room); the list shows 설정 안 됨 until then, even while switched off. */
+	configured?: () => boolean;
 	status: AdapterStatus;
 	start(ctx: MessengerCtx): void | Promise<void>;
 	stop(): void | Promise<void>;

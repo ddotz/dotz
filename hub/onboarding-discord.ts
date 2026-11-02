@@ -68,6 +68,8 @@ export const discordFlow: OnboardFlow = {
 				let cfg = ctx.discord.config();
 				let token = ctx.discord.token();
 				if (token) ctx.seen(token);
+				// The first pass only names the owner's login step; continue opens the developer portal (resetting a token blocks ~5 minutes).
+				if (!token && ctx.attempt === 0) return { waiting: TOKEN_OWNER };
 				let appId = cfg.app_id;
 				if (token && !APP_ID.test(appId)) {
 					const app = (await get(ctx, token, "/oauth2/applications/@me")) as { id?: string } | undefined;

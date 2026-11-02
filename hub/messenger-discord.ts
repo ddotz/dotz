@@ -9,6 +9,8 @@ export const discordAdapter: Adapter = {
 	canEdit: true,
 	canButtons: true,
 	enabled: () => discord.status.enabled,
+	// The bot token, server and owner id are all there.
+	configured: () => discord.status.enabled,
 	get status(): AdapterStatus {
 		const { enabled, connected, error } = discord.status;
 		if (!enabled) return { state: "off", ...(error ? { error } : {}) };

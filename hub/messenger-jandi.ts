@@ -153,6 +153,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 			const c = loadJandiConfig(dataDir);
 			return c.enabled && c.rooms.length > 0;
 		},
+		configured: () => loadJandiConfig(dataDir).rooms.length > 0,
 		port: () => server?.port,
 		start(c) {
 			ctx = c;

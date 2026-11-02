@@ -44,7 +44,7 @@ describe("messenger settings api", () => {
 	test("lists the adapters, hidden ones left out", async () => {
 		const { status, json } = await call("GET", "/api/messengers");
 		expect(status).toBe(200);
-		expect(json.items.find((i: any) => i.id === "jandi")).toEqual({ id: "jandi", label: "JANDI", enabled: false, state: "off" });
+		expect(json.items.find((i: any) => i.id === "jandi")).toEqual({ id: "jandi", label: "JANDI", enabled: false, state: "off", configured: false });
 		adapter.hidden = () => true;
 		expect((await call("GET", "/api/messengers")).json.items.some((i: any) => i.id === "jandi")).toBe(false);
 		expect((await call("GET", "/api/messengers/jandi")).status).toBe(404);
@@ -152,5 +152,19 @@ describe("messenger settings api", () => {
 		expect(got.json.link).toEqual({ label: "Discord 설정 열기", view: "discord" });
 		expect(got.json.fields.every((f: any) => f.type === "readonly")).toBe(true);
 		expect((await call("PUT", "/api/messengers/discord", { enabled: true })).status).toBe(400);
+	});
+
+	test("the list always has the four messenger ids, with configured apart from enabled", async () => {
+		const { createSlackAdapter } = await import("./messenger-slack.ts");
+		const { createTelegramAdapter } = await import("./messenger-telegram.ts");
+		register(createSlackAdapter(dir));
+		register(createTelegramAdapter(dir));
+		const { json } = await call("GET", "/api/messengers");
+		const items = json.items as any[];
+		expect(items.map(i => i.id).sort()).toEqual(["discord", "jandi", "slack", "telegram"]);
+		expect(items.find(i => i.id === "jandi").configured).toBe(true);
+		expect(items.find(i => i.id === "slack")).toMatchObject({ enabled: false, configured: false });
+		expect(items.find(i => i.id === "telegram")).toMatchObject({ enabled: false, configured: false });
+		expect(items.every(i => typeof i.configured === "boolean")).toBe(true);
 	});
 });
