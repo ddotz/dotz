@@ -5,6 +5,7 @@ import { dropAnsweredMailDraft } from "./draft-drop.ts";
 import { approvalRoute, TRIAGE_MIN_DEFAULT, webAnswer } from "./approval-wire.ts";
 import { droppedDraftRefs, restoreReopenedDrafts } from "./draft-restore.ts";
 import { join } from "node:path";
+import { type CfAccess, createCfAccess } from "./cf-access.ts";
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
 import { keyedSelector, keyFileOk, spendOnKey } from "./fallback.ts";
@@ -96,10 +97,16 @@ const APP_FILES: Record<string, [string, string]> = {
 const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
 
 
-function authorized(req: Request): boolean {
+// web.access = "cloudflare": a valid Cloudflare Access token (hub/cf-access.ts) is checked once at the route entry (it needs the key fetch), then passed in as cfOk.
+// The Tailscale-User-Login header is not trusted in that mode: the tunnel delivers whatever header the client wrote.
+const cfw = cfg.web?.access === "cloudflare" ? cfg.web.cloudflare : undefined;
+const cfAccess: CfAccess | undefined = cfw?.team && cfw.aud ? createCfAccess({ team: cfw.team, aud: cfw.aud, allow: ALLOW }) : undefined;
+
+function authorized(req: Request, cfOk = false): boolean {
 	if (req.headers.get("x-dotz-token") === HUB_TOKEN) return true;
+	if (cfOk) return true;
 	const login = (req.headers.get("tailscale-user-login") ?? "").toLowerCase();
-	if (login && ALLOW.has(login)) return true;
+	if (login && ALLOW.has(login) && cfg.web?.access !== "cloudflare") return true;
 	const seen = [...req.headers.keys()].filter(k => k.startsWith("tailscale-")).map(k => `${k}=${req.headers.get(k)}`).join(" ");
 	log(`denied ${new URL(req.url).pathname} ${seen || "(no tailscale identity headers)"}`);
 	return false;
@@ -292,7 +299,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// A request with the peer header gets only the peer paths (hub/peer-auth.ts); a good one skips the owner check, a bad one never reaches it.
 		const peer = checkPeer(req);
 		if (peer === "denied") return new Response("forbidden", { status: 403 });
-		if (peer === "none" && !authorized(req)) return new Response("forbidden", { status: 403 });
+		if (peer === "none" && !authorized(req, !!cfAccess && (await cfAccess.verifyRequest(req)))) return new Response("forbidden", { status: 403 });
 		const peerResponse = await peers.route(req, url);
 		if (peerResponse) return peerResponse;
 		// A user app's own web UI (hub/user-apps.ts, hub/app-proxy.ts): /apps/<id>/… -> its loopback server, same gate as the API.
