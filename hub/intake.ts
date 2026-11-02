@@ -218,7 +218,7 @@ async function accountChatAnswer(target: string, ask: Parameters<typeof accountA
 // `project` (projectchat.ts) sends to a project's orchestrator: the message arrives as one in that work channel would.
 // `mail` (hub/mail.ts): the message reaches the orchestrator as one in that mail's Discord thread does (main.ts onOwner), plugin
 // thread hook included; a mail with no thread the hub knows answers in its web conversation `mail:<key>`.
-type WebSend = { settings?: string; lane?: string; project?: { target: string; name: string }; mail?: MailRecord; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; reply?: Reply; decision?: string; picks?: Pick[]; elements?: Picked[]; via?: string };
+type WebSend = { source?: string; settings?: string; lane?: string; project?: { target: string; name: string }; mail?: MailRecord; channel: "web" | "terminal"; conv?: "alert" | "worklog"; text: string; mode: "default" | "steer" | "interrupt"; login: string; files?: Upload[]; replyTo?: string; reply?: Reply; decision?: string; picks?: Pick[]; elements?: Picked[]; via?: string };
 export async function sendWeb(s: WebSend): Promise<void> {
 	const mid = newMid();
 	// replyTo: the asking message of a decision answer; decision: its notice, which that answer settles alone (notices.ts ownerReplied).
@@ -226,7 +226,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	if (s.lane) {
 		const name = s.lane;
 		const channel = `lane:${name}`;
-		emit("inbox", { ts: now(), kind: "lane_message", source: "web", author: s.login, lane: name, text: s.text, ...extra });
+		emit("inbox", { ts: now(), kind: "lane_message", source: s.source ?? "web", author: s.login, lane: name, text: s.text, ...extra });
 		if (s.mode === "interrupt" && lanes.get(name)?.status === "working") {
 			abortLane(name);
 			// Let the aborted turn end first, or the message would be steered into it.
@@ -253,7 +253,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	const info = thread ? discord.threadInfo(thread) : undefined;
 	// A web-only mail has no thread: its turn names the conversation (the mail note carries the subject), not a thread.
 	const where = s.mail ? { conv: mailTarget(s.mail.key), ...(thread ? { thread_name: s.mail.subject, ...(info ? { parent: info.parentTarget } : {}), parent_name: hook?.parentName ?? info?.parentName ?? msg().channelNames.mail } : {}) } : s.project ? { channel_name: s.project.name } : {};
-	const event = { ts: now(), kind: "message", source: s.channel, channel: to, ...where, author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path })) } : {}) };
+	const event = { ts: now(), kind: "message", source: s.source ?? s.channel, channel: to, ...where, author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path })) } : {}) };
 	emit("inbox", event);
 	if (s.settings) watchAsked(to, s.settings);
 	const mem = s.mail && !hook?.note ? memoryNote(DATA_DIR, instanceOf(appEntries(DATA_DIR), "mail", `mail:${s.mail.key}`)) : "";
