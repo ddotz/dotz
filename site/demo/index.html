@@ -6,8 +6,8 @@
 <meta name="color-scheme" content="light dark">
 <meta name="description" content="dotz 웹 앱을 만들어 낸 데이터로 직접 써 보는 데모입니다. 실제 서버에 연결하지 않습니다.">
 <title>dotz — 데모</title>
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="demo/app.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/demo/app.css">
 <style>
 :root { --demobar-h: 44px; }
 .demo-bar { position: fixed; inset: 0 0 auto 0; z-index: 3000; display: flex; align-items: center; gap: 10px; height: var(--demobar-h); padding: 0 12px 0 16px; border-bottom: 1px solid var(--line); background: var(--card); color: var(--fg); font-family: var(--font); }
@@ -40,14 +40,14 @@ addEventListener("error", e => __demoLog.errors.push(`${e.message} @ ${String(e.
 addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reason && e.reason.message || e.reason)));
 { const e = console.error; console.error = (...a) => { __demoLog.errors.push(a.map(String).join(" ")); e(...a); }; const w = console.warn; console.warn = (...a) => { __demoLog.warnings.push(a.map(String).join(" ")); w(...a); }; }
 </script>
-<script src="demo/fixtures.js"></script>
-<script src="demo/demo-api.js"></script>
+<script src="/demo/fixtures.js"></script>
+<script src="/demo/demo-api.js"></script>
 </head>
 <body>
 <header class="demo-bar">
-  <a class="demo-brand" href="index.html" aria-label="dotz 랜딩으로">dotz</a>
+  <a class="demo-brand" href="/" aria-label="dotz 랜딩으로">dotz</a>
   <span class="demo-tag">데모 · 실제 서버에 연결하지 않아요</span>
-  <a class="demo-back" href="index.html">랜딩으로</a>
+  <a class="demo-back" href="/">랜딩으로</a>
 </header>
 
 <div class="app" id="app">
@@ -156,6 +156,6 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
   </div>
   <div class="sh-body" id="hs-body"></div>
 </aside>
-<script src="demo/app.js"></script>
+<script src="/demo/app.js"></script>
 </body>
 </html>
