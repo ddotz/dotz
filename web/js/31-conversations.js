@@ -203,7 +203,7 @@ function convMaybeRead() {
 }
 // A mail read on the page moves its row, the app's badge and the 안 읽음 filter now; once the hub holds the position its app counts raise
 // (needs.unread, GET /api/integrations), and a peer's mail has its snapshot read again (34-peer-monitoring.js).
-function mailReadPainted() { MON.sig = ""; monSchedule(); }
+function mailReadPainted() { const m = MAILS.get(CV.key); if (m && m.read === false) m.read = true; MON.sig = ""; monSchedule(); }
 function mailReadSynced(t) { if (typeof pqPc === "function" && pqPc(t)) pqSoon(); else loadIntegrations(); }
 function convFlush() {
   convPendT = 0;
@@ -407,6 +407,7 @@ function convPaint() {
   if (current !== "chat") return;
   convTitle();
   mailSentPaint();
+  mbReplyPaint();
   const items = monCtx ? monItems() : null, rows = items ? monRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, rows.some(r => r.bar) ? [CVF.view, convListed().map(t => [ts(t).unread > 0, convNeeds(t)])] : 0]);
   if (sig !== convSig) {
     convSig = sig;

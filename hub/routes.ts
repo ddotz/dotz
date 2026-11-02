@@ -37,8 +37,10 @@ import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
 import { draftRecipientsRoute } from "./draft-recipients.ts";
 import { stagedFiles } from "../features/reply-drafts/lib/staged.ts";
-import { composeMail, deleteMail, mailKey, recordSentByDotz, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { composeMail, deleteMail, mailKey, recordSentByDotz, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, setMailSuggest, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { applyMailboxFlags, canOf, isMailAction, mailAction, mailActions, type SyncDeps } from "./mail-sync.ts";
+import { manualDraft } from "./mail-manual.ts";
+import { askText } from "../features/reply-drafts/lib/flow.ts";
 import { pluginMailAction, pluginMailActions } from "./plugins.ts";
 import { webmailSite } from "../features/reply-drafts/lib/senders.ts";
 import { getDraft, holdDrafts, listDrafts, restoreDrafts } from "../features/reply-drafts/lib/store.ts";
@@ -310,6 +312,33 @@ const keyOfSource = (source: string, id: string): string | undefined => {
 		return undefined;
 	}
 };
+
+// POST /api/mail/compose without a ref: the draft he wrote in the mail app (web/js/30-mail-box.js), its uploads staged for it, and the
+// send-approval card posted to the conversation of the mail it answers (or the new mail's own row gains one). Nothing is sent here.
+async function draftFromApp(b: Record<string, unknown>, deps: MailDeps): Promise<Response> {
+	let files: { path: string; name: string }[];
+	try {
+		files = ownerFiles(b.attachments).map(f => ({ path: f.path, name: f.name }));
+	} catch (error) {
+		return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
+	}
+	const made = manualDraft({
+		body: b.body as string | undefined,
+		to: b.to as string | undefined,
+		cc: b.cc as string | undefined,
+		subject: b.subject as string | undefined,
+		replyTo: b.reply_to as string | undefined,
+		app: b.app as string | undefined,
+		files,
+	});
+	if (!made.ok) return json({ error: made.error }, made.code);
+	const { rec } = made;
+	// A new mail is listed like any other draft of the app (hub/mail.ts composeMail); a reply rides on the mail it answers.
+	const key = rec.compose ? composeMail({ ref: rec.id, source: rec.source, app: made.app, to: rec.to, subject: rec.subject ?? "" }, deps).key : rec.ref;
+	if (!rec.compose) setMailSuggest(rec.ref, { kind: "reply-draft", label: "메일 초안", ref: rec.id });
+	await out(mailTarget(key), askText(rec, []));
+	return json({ ok: true, key, ref: rec.id, files: made.attachments.map(f => ({ name: f.name, size: f.size })) });
+}
 
 /** A mailbox's read / replied state of its mails (POST /api/mail/state, the zele poll in hub/main.ts): read in dotz once read there (its bell items
  *  too, as when he opens it here), 답장함 once answered there; every device redraws the mails that changed. Returns how many changed. */
@@ -765,7 +794,10 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "POST" && url.pathname === "/api/mail/compose") {
 			if (!mailDeps) return json({ error: "mail is not wired in this process" }, 503);
 			try {
-				const b = await body(req), made = composeMail(b, mailDeps());
+				const b = await body(req) as Record<string, unknown>;
+				// The owner wrote this himself in the mail app (메일 쓰기 / the reply box): a draft with his text and files, then its send-approval card.
+				if (b.ref === undefined) return await draftFromApp(b, mailDeps());
+				const made = composeMail(b, mailDeps());
 				// The new mail went out: its row becomes the sent mail, with the text and the files it carried.
 				const d = (b as { state?: unknown }).state === "sent" ? getDraft(String((b as { ref?: unknown }).ref)) : undefined;
 				if (d) await recordSentByDotz({ id: d.id, source: d.source, to: d.to, cc: d.cc, subject: d.subject, body: d.body, files: stagedFiles(d.id) }, { compose: made.key });

@@ -208,7 +208,7 @@ function msgNode(e) {
         const files = card && key && Array.isArray(e.attachments) ? mailFilesNode(key, e.attachments) : null;
         if (files) card.append(files);
         // the same ⋯ as the mail's row in the list, at the top right (30-monitoring.js mailMenuBtn)
-        if (card && key) { const hd = card.querySelector(".rc-hd"); if (hd) hd.append(mailMenuBtn(`mail:${key}`)); }
+        if (card && key) { const hd = card.querySelector(".rc-hd"); if (hd) { hd.append(mailMenuBtn(`mail:${key}`)); hd.after(mailOpenBar(`mail:${key}`)); } }
         return card;
       }
       const f = k => (text.match(new RegExp(`^${k}: ?(.*)$`, "m")) || [])[1] || "";
