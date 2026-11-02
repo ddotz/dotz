@@ -1,12 +1,12 @@
 // "한도", the lane budget gate and the 429 resume time read the limits of the account dotz's agents really run on: under
 // OmO that is OmO's pinned subscription account (e.g. miseol-shared), not omp's login (the owner's default).
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { resetStickyForTest } from "./account-sticky.ts";
 import { setManual } from "./account-rules.ts";
 import { anthropicUsage, forgetAccountUsage, quota } from "./providers.ts";
-import { AccountUsage, limitsOf, limitsText, MIN_REFRESH_MS, subscriptionAccount } from "./usage-account.ts";
+import { AccountUsage, limitsOf, limitsText, MIN_REFRESH_MS, resetCliTokensForTest, subscriptionAccount, subscriptionAccounts } from "./usage-account.ts";
 
 const agentDir = process.env.OMO_CODING_AGENT_DIR!;
 const auth = (sub: Record<string, unknown>) => writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ "anthropic-subscription": { type: "oauth", ...sub } }));
@@ -112,4 +112,15 @@ test("read only: an expired token is reported, never used; a 429 holds the accou
 
 test("limitsOf skips windows the answer leaves null", () => {
 	expect(limitsOf({ five_hour: { utilization: 12.34, resets_at: null }, seven_day: null }).map(l => [l.id, l.amount.used])).toEqual([["anthropic:5h", 12.3]]);
+});
+
+test("a Claude CLI login is read with the token the CLI keeps for its account dir", () => {
+	const dirId = "b".repeat(32);
+	const dir = join(agentDir, "anthropic-subscription-claude", dirId);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(join(dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "tok-cli", expiresAt: FAR } }));
+	resetCliTokensForTest();
+	auth({ accounts: [{ name: "default", source: "login", store: "claude-cli", dirId }, { name: "gone", store: "claude-cli", dirId: "c".repeat(32) }] });
+	expect(subscriptionAccount()).toMatchObject({ name: "default", token: "tok-cli", expiresAt: FAR });
+	expect(subscriptionAccounts().map(a => a.name)).toEqual(["default"]);
 });
