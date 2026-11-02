@@ -6,6 +6,7 @@ import { approvalRoute, TRIAGE_MIN_DEFAULT, webAnswer } from "./approval-wire.ts
 import { droppedDraftRefs, restoreReopenedDrafts } from "./draft-restore.ts";
 import { join } from "node:path";
 import { type CfAccess, createCfAccess } from "./cf-access.ts";
+import { cloudflareGate, createDevices } from "./devices.ts";
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
 import { keyedSelector, keyFileOk, spendOnKey } from "./fallback.ts";
@@ -102,9 +103,12 @@ const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCase()));
 const cfw = cfg.web?.access === "cloudflare" ? cfg.web.cloudflare : undefined;
 const cfAccess: CfAccess | undefined = cfw?.team && cfw.aud ? createCfAccess({ team: cfw.team, aud: cfw.aud, allow: ALLOW }) : undefined;
 
-function authorized(req: Request, cfOk = false): boolean {
+// In that mode only paired devices (hub/devices.ts) get in; Access, when set up, is required on top of the device session.
+const devices = cfg.web?.access === "cloudflare" ? createDevices({ dir: DATA_DIR, hostname: cfw?.hostname, notify: text => out("alert", text, undefined, { source: "gateway" }) }) : undefined;
+
+function authorized(req: Request, cfOk = false, devOk = false): boolean {
 	if (req.headers.get("x-dotz-token") === HUB_TOKEN) return true;
-	if (cfOk) return true;
+	if (devices ? cloudflareGate({ device: devOk, accessConfigured: !!cfAccess, access: cfOk }) : cfOk) return true;
 	const login = (req.headers.get("tailscale-user-login") ?? "").toLowerCase();
 	if (login && ALLOW.has(login) && cfg.web?.access !== "cloudflare") return true;
 	const seen = [...req.headers.keys()].filter(k => k.startsWith("tailscale-")).map(k => `${k}=${req.headers.get(k)}`).join(" ");
@@ -297,9 +301,13 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		// Pairing gates itself: only a request from this node's own tailscale login gets a token (hub/peer-pair.ts), so it needs no owner check first.
 		if (req.method === "POST" && url.pathname === PAIR_PATH) return handlePair(req, { ownLogin });
 		// A request with the peer header gets only the peer paths (hub/peer-auth.ts); a good one skips the owner check, a bad one never reaches it.
+		const pairing = await devices?.pairRoute(req, url);
+		if (pairing) return pairing;
 		const peer = checkPeer(req);
 		if (peer === "denied") return new Response("forbidden", { status: 403 });
-		if (peer === "none" && !authorized(req, !!cfAccess && (await cfAccess.verifyRequest(req)))) return new Response("forbidden", { status: 403 });
+		if (peer === "none" && !authorized(req, !!cfAccess && (await cfAccess.verifyRequest(req)), !!devices && (await devices.verifySession(req)))) return devices ? devices.denied(req, url) : new Response("forbidden", { status: 403 });
+		const deviceApi = peer === "none" ? devices?.apiRoute(req, url) : undefined;
+		if (deviceApi) return deviceApi;
 		const peerResponse = await peers.route(req, url);
 		if (peerResponse) return peerResponse;
 		// A user app's own web UI (hub/user-apps.ts, hub/app-proxy.ts): /apps/<id>/… -> its loopback server, same gate as the API.

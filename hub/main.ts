@@ -145,7 +145,7 @@ const cfUrl = access === "cloudflare" ? cfBase(cfg.web?.cloudflare?.hostname) : 
 if (access === "cloudflare" && !cfUrl) log("web: web.cloudflare.hostname is missing or invalid; links to the web app are left out");
 let webBase: string | undefined = cfUrl ? cfUrl : access === "tailscale" || access === "local" ? (cfg.web as { public_url?: string } | undefined)?.public_url?.replace(/\/+$/, "") : undefined;
 setWebBase(webBase);
-if (access === "cloudflare" && cfg.web?.cloudflare) startTunnel({ tokenFile: resolve(join(DATA_DIR, "secrets"), cfg.web.cloudflare.tunnel_token_file ?? "cloudflared-tunnel-token"), login: { team: cfg.web.cloudflare.team, aud: cfg.web.cloudflare.aud, allow: cfg.web.allow_logins ?? [] } });
+if (access === "cloudflare" && cfg.web?.cloudflare) startTunnel({ tokenFile: resolve(join(DATA_DIR, "secrets"), cfg.web.cloudflare.tunnel_token_file ?? "cloudflared-tunnel-token"), deviceGate: true });
 if (!webBase && access === "tailscale" && cfg.web?.tailscale_https_port) {
 	const port = cfg.web.tailscale_https_port;
 	void (async () => {
