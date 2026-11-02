@@ -1,8 +1,8 @@
 // Custom plugins (hub/plugins.ts): the loader, the four hooks and the failure policy, with a neutral fixture plugin written to a throwaway data dir.
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { loadPlugins, pluginClaim, pluginDeny, pluginThread, startPlugins, type PluginContext } from "./plugins.ts";
 import { inboxText } from "./intake.ts";
 
@@ -106,6 +106,38 @@ test("an edited, added or removed plugin file reaches the next hook without load
 	expect(pluginDeny("baz", other)).toBe("Blocked by dotz (custom plugin extra): no baz.");
 	rmSync(join(pdir, "guard.ts"));
 	expect(pluginDeny("bar", other)).toBeUndefined();
+	rmSync(other, { recursive: true, force: true });
+});
+
+// senpi's own extension module loader (its bundled cli.js or the unbundled dist), the way the agent extension loads plugins.ts.
+const senpiImporter = (() => {
+	const bin = Bun.which("senpi");
+	if (!bin) return undefined;
+	const dir = dirname(realpathSync(bin));
+	const chunks = join(dir, "chunks");
+	const bundled = existsSync(chunks) ? readdirSync(chunks).find(f => /^bun-extension-importer-\w+\.js$/.test(f)) : undefined;
+	const file = bundled ? join(chunks, bundled) : join(dir, "core", "extensions", "bun-extension-importer.js");
+	return existsSync(file) ? file : undefined;
+})();
+
+test.skipIf(!senpiImporter)("an edited plugin reaches the next hook inside senpi's extension host too, and the reload is logged", async () => {
+	const { createBunExtensionImporter } = await import(senpiImporter!);
+	const hosted = await createBunExtensionImporter({}, {}, {}).importNamespace(join(import.meta.dir, "plugins.ts"));
+	const other = mkdtempSync(join(tmpdir(), "dotz-plugins-host-"));
+	const file = join(other, "custom", "plugins", "guard.ts");
+	mkdirSync(dirname(file), { recursive: true });
+	const write = (reason: string, mtime: number) => {
+		writeFileSync(file, `export default { deny(c) { if (c.includes("zz")) return "${reason}"; } };\n`);
+		utimesSync(file, mtime, mtime);
+	};
+	const hostLogs: string[] = [];
+	write("old reason", 1000);
+	await hosted.loadPlugins(other, (line: string) => hostLogs.push(line));
+	expect(hosted.pluginDeny("zz", other)).toBe("Blocked by dotz (custom plugin guard): old reason.");
+	write("new reason", 2000);
+	expect(hosted.pluginDeny("zz", other)).toBe("Blocked by dotz (custom plugin guard): new reason.");
+	expect(hostLogs).toContain("plugin guard reloaded");
+	await hosted.loadPlugins(join(other, "none"));
 	rmSync(other, { recursive: true, force: true });
 });
 

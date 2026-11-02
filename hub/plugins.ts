@@ -6,6 +6,7 @@
 // command guard), `reply` and `repliesWithFiles` (sending an approved mail reply with its files). With no plugin installed every call below returns at once. No config.ts import: the command guard
 // loads this too.
 import { readdirSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Claim } from "./discord.ts";
@@ -113,10 +114,14 @@ function asLoaded(plugin: unknown, file: string): Loaded {
 /**
  * Picks up plugin files edited, added or removed since they were loaded: one readdir and a stat per file, no file reads unless
  * something changed. The hooks are synchronous, so the new code comes in through require() with a `?v=<mtime>` query (Bun keeps
- * ESM modules cached by URL; the query makes a new module, the plugin's own imports stay cached). A plugin with top-level await
+ * ESM modules cached by URL; the query makes a new module, the plugin's own imports stay cached). It is node:module's require, Bun's
+ * own loader: inside senpi's extension host the bare `require` is the host's module graph, which resolves the query as part of the
+ * file name (ENOENT) and caches modules by file name, so an edit would never come in there. A plugin with top-level await
  * cannot be required and, like any reload that throws, keeps its previous version, logged. `start` is not re-run for a reloaded
  * or added plugin: it is the hub's one-time setup (watches), so a reloaded plugin keeps module-level state from its new code only.
  */
+const nativeRequire = createRequire(import.meta.url);
+
 function refresh(): void {
 	if (!pluginDir) return;
 	const files = pluginFiles();
@@ -128,7 +133,7 @@ function refresh(): void {
 		if (seen.get(file) === mtime || dropped.has(file)) continue;
 		seen.set(file, mtime);
 		try {
-			const fresh = asLoaded(require(`${join(pluginDir, file)}?v=${mtime}`).default, file);
+			const fresh = asLoaded(nativeRequire(`${join(pluginDir, file)}?v=${mtime}`).default, file);
 			next = next.filter(l => l.file !== file).concat(fresh);
 			note(`plugin ${fresh.name} reloaded`);
 		} catch (error) {
