@@ -332,12 +332,35 @@ async function takeBack(i) {
   ta.value = r.text; autosize(); renderWorking(); ta.focus();
 }
 const kfmt = n => n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n);
+// A model id as the composer chip shows it (owner 2026-11-03: a long id was cut in the bar on a phone): the vendor word is dropped
+// when the id repeats it, a version pair becomes 5.5, and the remaining words are kept only while the label stays in MODEL_CHIP_MAX
+// characters. A catalog name (M.pickable/available) is shown as it is; the full id stays in the chip's title and the picker.
+const MODEL_CHIP_MAX = 20;
+const chipCut = s => (s.length > MODEL_CHIP_MAX ? `${s.slice(0, MODEL_CHIP_MAX - 1)}…` : s);
+function modelShort(sel) {
+  const seg = String(sel || "").split("/"), model = seg.pop() || "", prov = (seg.pop() || "").toLowerCase();
+  const words = model.replace(/^claude[-_]?/i, "").split(/[-_]/).filter(w => w && w.toLowerCase() !== prov);
+  const label = [];
+  for (const w of words) {
+    const next = [...label, w].join(" ");
+    if (label.length && next.length > MODEL_CHIP_MAX) break;
+    label.push(w);
+  }
+  const joined = chipCut((label.length ? label.join(" ") : model).replace(/(\d+) (\d+)$/, "$1.$2"));
+  return /^[a-z]/.test(joined) ? joined.replace(/^./, c => c.toUpperCase()) : joined;
+}
+// The chip's label: the models list's own name when it is a name, and the id-derived short form when that "name" is just the id
+// (the deepseek entry in the catalog names itself after its selector) or there is no entry at all.
+function modelLabel(base, a) {
+  const named = a && a.name ? String(a.name).replace(/^Claude\s+/i, "") : "";
+  return named && !named.includes("/") ? chipCut(named) : modelShort(base);
+}
 // "anthropic/claude-opus-5-5:medium" -> "Opus 5.5 · medium" (the models list name when it is loaded).
 function modelChipText(sel) {
   const [base, level] = String(sel || "").split(":");
   if (!base) return "";
   const a = [...((M && M.pickable) || []), ...((M && M.available) || [])].find(x => x.selector === base || x.selector === sel);
-  const nm = a && a.name ? a.name.replace(/^Claude\s+/i, "") : base.split("/").pop().replace(/^claude-/, "").replace(/-(\d+)-(\d+)$/, " $1.$2").replace(/-(\d+)$/, " $1").replace(/^./, c => c.toUpperCase());
+  const nm = modelLabel(base, a);
   return level ? `${nm} · ${thinkKo(level)}` : nm;
 }
 function renderCtxRing() {
