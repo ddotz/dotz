@@ -84,6 +84,26 @@ test("an HTML page runs its own script only in an opaque, offline sandbox; other
 	expect(serveFile(join(ROOT, "sub", "a.txt"), new Request("http://x")).headers.get("content-security-policy")).toStartWith("sandbox; default-src 'none';");
 });
 
+test("a canvas page gets the picker bridge only with pick=1, and never loses its length", async () => {
+	writeFileSync(join(ROOT, "bridge.html"), "<!doctype html><html><body><p>hi</p></body></html>");
+	writeFileSync(join(ROOT, "bare.html"), "<p>hi</p>");
+	const at = (name: string, q: string) => canvasRoute(new Request("http://x"), new URL(`http://x/api/canvas?path=${encodeURIComponent(join(ROOT, name))}${q}`), allowedRoots([ROOT]), new Set());
+	const plain = await at("bridge.html", "").text();
+	expect(plain).toBe("<!doctype html><html><body><p>hi</p></body></html>");
+	const res = at("bridge.html", "&pick=1");
+	const page = await res.text();
+	expect(page).toContain("<p>hi</p>");
+	expect(page).toContain("dotz-pick");
+	expect(page.indexOf("dotz-pick")).toBeGreaterThan(page.indexOf("<p>hi</p>"));
+	expect(page.endsWith("</body></html>")).toBe(true);
+	expect(res.headers.get("content-length")).toBe(String(new TextEncoder().encode(page).byteLength));
+	expect(res.headers.get("content-security-policy")).toContain("connect-src 'none'");
+	expect(res.headers.get("content-security-policy")).not.toContain("allow-same-origin");
+	const bare = await at("bare.html", "&pick=1").text();
+	expect(bare.startsWith("<p>hi</p>")).toBe(true);
+	expect(bare).toContain("dotz-pick");
+});
+
 test("temp-folder lanes never count as live projects", () => {
 	expect(isTempLane({ cwd: "/tmp/dotz-fix5-block" })).toBe(true);
 	expect(isTempLane({ cwd: "/private/tmp/dotz-latprobe" })).toBe(true);

@@ -5,7 +5,10 @@
 // Outside the frame Cmd+click is the browser's. The app header says how (pkHint).
 // Picks belong to the conversation open now; another conversation's wait in its ts(t).pick, like its files (13-data.js setTarget).
 // A pick never calls the element's own handler: every pointer event of the pick is taken in the capture phase and cancelled.
-let PICK = [];   // [{id, n, tag, sel, text, html, view, title, node, doc, frame}]
+let PICK = [];   // [{id, n, tag, sel, text, html, view, title, node, doc, frame, remote?}]
+// A scripted canvas page is opaque-origin: its pick comes from the route's bridge (30-canvas.js canvasPick) with node/doc/frame null
+// and remote true, so it has no overlay of its own here; the page draws its numbered badges from the ids renderPicks syncs.
+const pkRemote = p => !!p.remote;
 const PK_FRAME = "iframe.apps-frame";
 const PK_FIELD = /^(input|textarea|select)$/;
 const PK_HOLD = 500;
@@ -89,6 +92,7 @@ function pkSyncMarks() {
   const ids = new Set(PICK.map(p => p.id));
   for (const [id, m] of PK_MARKS) if (!ids.has(id)) { m.remove(); PK_MARKS.delete(id); }
   for (const p of PICK) {
+    if (pkRemote(p)) continue;
     let m = PK_MARKS.get(p.id);
     if (!m) { m = el("span", { class: "pk-mark", hidden: true }); pkMarks.append(m); PK_MARKS.set(p.id, m); }
     m.textContent = String(p.n);
@@ -96,6 +100,7 @@ function pkSyncMarks() {
 }
 function pkPlace() {
   for (const p of PICK) {
+    if (pkRemote(p)) continue;
     const m = PK_MARKS.get(p.id);
     if (!m) continue;
     let r = null;
@@ -145,6 +150,7 @@ function renderPicks() {
   pkPlace();
   pkKick();
   pkTick();
+  if (typeof pkRemoteSync === "function") pkRemoteSync();   // 30-canvas.js: a scripted page's badges follow the same list
 }
 function pkDrop(id) {
   PICK = PICK.filter(p => p.id !== id);
