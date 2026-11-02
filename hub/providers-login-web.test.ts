@@ -13,6 +13,9 @@ let accounts = ["default", "work"];
 const calls: string[] = [];
 let onAccounts: (() => void) | undefined;
 const PROMPT = "Complete login in your browser, or paste the authorization code / redirect URL here:";
+// OmO's Claude sign-in asks questions first and names the page in a later step (stepped = true)
+let stepped = false, step = 0;
+const MANUAL = "https://claude.ai/oauth/authorize?redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&state=stub";
 const providers = () => ({
 	providers: [
 		{ id: "anthropic", name: "Anthropic Subscription (Claude Pro/Max)", auth: "oauth", account: "work", accounts: accounts.length, models: 3, in_use: true, can_login: true, can_add_account: true, can_logout: true },
@@ -66,11 +69,14 @@ const server = Bun.serve({
 		}
 		if (p === "/api/providers/anthropic/login" && req.method === "POST") {
 			calls.push("POST login");
+			step = 0;
+			if (stepped) return json({ ok: true, login_id: "L1", url: "", needs_code: true, prompt: "Name for this account (press Enter to add account-3)" });
 			return json({ ok: true, login_id: "L1", url: "https://claude.ai/oauth/authorize?state=stub", needs_code: true, prompt: PROMPT });
 		}
 		if (p === "/api/providers/anthropic/login/complete" && req.method === "POST") {
 			const b = (await req.json()) as { login_id: string; code: string };
 			calls.push(`complete ${b.login_id} ${b.code}`);
+			if (stepped && step++ === 0) return json({ ok: true, provider: "anthropic", status: "waiting", url: MANUAL, needs_code: true, prompt: "Paste the code Anthropic shows after you sign in:" });
 			accounts = [...accounts, `login-${accounts.length + 1}`];
 			return json({ ok: true, provider: "anthropic", status: "done" });
 		}
@@ -147,5 +153,29 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as con
 		const s = await overflow(v);
 		expect(s.doc).toBeLessThanOrEqual(s.vw);
 		await shot(v, `settings-accounts-${w}.png`);
+	}, 20_000);
+
+	test(`${label} ${w}px: a Claude sign-in that asks its questions first shows 로그인 페이지 열기 once the page is known`, async () => {
+		accounts = ["default", "work"];
+		stepped = true;
+		try {
+			const v = open(w, h);
+			await boot(v);
+			const link = `[...document.querySelectorAll("dialog[open] a.btn")].find(a => a.textContent.includes("로그인 페이지 열기"))`;
+			const state = `const a = ${link}; return a ? [a.getAttribute("href"), a.offsetParent !== null] : null`;
+			await run(v, `${button(anthropicRow, "계정 추가")}.click()`);
+			await waitFor(v, `[...document.querySelectorAll("dialog[open] .sup")].some(s => s.textContent.includes("Name for this account"))`);
+			expect(await q(v, state)).toEqual([null, false]);
+			await run(v, `const i = [...document.querySelectorAll("input")].find(x => x.type === "text" && x.offsetParent); i.value = "account-3"; ${button("document.querySelector('dialog[open]')", "완료")}.click()`);
+			await waitFor(v, `[...document.querySelectorAll("dialog[open] .sup")].some(s => s.textContent.includes("Paste the code"))`);
+			expect(await q(v, state)).toEqual([MANUAL, true]);
+			const o = await overflow(v);
+			expect(o.doc).toBeLessThanOrEqual(o.vw);
+			await shot(v, `providers-login-stepped-${w}.png`);
+			await run(v, `const i = [...document.querySelectorAll("input")].find(x => x.type === "text" && x.offsetParent); i.value = "code-xyz"; ${button("document.querySelector('dialog[open]')", "완료")}.click()`);
+			await waitFor(v, `(${anthropicRow})?.textContent.includes("계정 3개")`);
+		} finally {
+			stepped = false;
+		}
 	}, 20_000);
 }
