@@ -28,7 +28,7 @@ describe("schema validation", () => {
 	});
 	test("an app without a schema has no settings", () => {
 		expect(fieldsOf("nope")).toEqual([]);
-		expect(fieldsOf("site").map(f => f.key)).toEqual(["use_here", "label", "push", "reply_model", "followup"]);
+		expect(fieldsOf("site").map(f => f.key)).toEqual(["use_here", "label", "notify", "push", "reply_model", "followup"]);
 		expect(() => validate("nope", { a: 1 })).toThrow(SettingsError);
 		expect(() => validate("__proto__", { a: 1 })).toThrow(SettingsError);
 	});
@@ -43,7 +43,9 @@ describe("디스코드에도 올리기 (mail)", () => {
 		setDiscordProbe(() => true);
 		expect(has("mail")).toBe(true);
 		expect(has("mail-2")).toBe(true);
-		expect(has("kakao")).toBe(false);
+		// a monitoring app's own reports: 디스코드에도 보내기 (unset = the 새 소식 class switch); a site has none
+		expect(fieldsOf("kakao").find(f => f.key === "discord")).toMatchObject({ label: "디스코드에도 보내기", section: "notify" });
+		expect(has("site")).toBe(false);
 		const f = readSettings(dir, "mail").find(x => x.key === "discord")!;
 		expect(f).toMatchObject({ label: "디스코드에도 올리기", type: "bool", help: "새 메일마다 디스코드 메일 채널에 스레드를 만들어요", value: false });
 		expect(() => validate("mail", { discord: true })).not.toThrow();

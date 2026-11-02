@@ -41,6 +41,11 @@ export type Watch = {
 	approval_minutes?: number;
 	once?: boolean; // one-shot: removed after its first change/match report (a recurring watch has no flag and stays)
 	paused?: boolean;
+	// The owner's notification switches of this monitor (hub/watch-settings.ts): `notify: false` keeps its reports out of the bell (hub/app-off.ts newsMuted),
+	// `push: false` off the phone (hub/push.ts setWatchPushOff); `discord` decides whether its own posts also go to Discord (missing: the 새 소식 class switch).
+	notify?: false;
+	push?: false;
+	discord?: boolean;
 	state: {
 		hash?: string; last?: string; fails: number; failAlertAt?: number; failSince?: number; recoveredAt?: number; lastRun?: string; lastOk?: string; lastChanged?: boolean; refreshedAt?: number;
 		kind?: string; kindFails?: number; nextAt?: number; paused?: string; approvalAskedAt?: number;
@@ -538,6 +543,12 @@ export function patchWatch(idOrName: string, input: Record<string, unknown>): Re
 	if (input.paused !== undefined && typeof input.paused !== "boolean") throw new Error("paused must be true or false");
 	if (input.label !== undefined && (typeof input.label !== "string" || !input.label.trim() || input.label.length > 60)) throw new Error("label must be 1-60 chars");
 	if (input.to !== undefined && (typeof input.to !== "string" || !/^[a-z0-9:-]{1,40}$/.test(input.to))) throw new Error("to must be orchestrator, alert or chat");
+	for (const k of ["notify", "push", "discord"] as const) if (input[k] !== undefined && typeof input[k] !== "boolean") throw new Error(`${k} must be true or false`);
+	if (input.notify === true) delete w.notify;
+	else if (input.notify === false) w.notify = false;
+	if (input.push === true) delete w.push;
+	else if (input.push === false) w.push = false;
+	if (input.discord !== undefined) w.discord = input.discord as boolean;
 	w.every_minutes = every;
 	if (input.label !== undefined) w.label = (input.label as string).trim();
 	if (input.to !== undefined) w.to = input.to as string;

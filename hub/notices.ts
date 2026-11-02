@@ -167,7 +167,7 @@ export const setWatchLabelResolver = (fn: (name: string) => string) => void (wat
 let appOf: (n: Notice) => string | undefined = () => undefined;
 export const setAppResolver = (fn: (n: Notice) => string | undefined) => void (appOf = fn);
 // A notice of an app the owner switched off on this install (hub/app-off.ts): not kept when new, not listed and not counted when old.
-let appBlocked: (n: { app?: string; src?: string; open?: string }) => boolean = () => false;
+let appBlocked: (n: { kind?: NoticeKind; app?: string; watch?: string; src?: string; open?: string }) => boolean = () => false;
 export const setAppBlocker = (fn: typeof appBlocked) => void (appBlocked = fn);
 function stampApp(n: Notice): boolean {
 	const app = n.item ? undefined : appOf(n);
@@ -256,7 +256,7 @@ function trim(): void {
 	}
 }
 
-type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; key?: string; by?: string; ref?: string; item?: WatchItem; read?: boolean; unread?: boolean; src?: string; at?: string };
+type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; key?: string; watch?: string; by?: string; ref?: string; item?: WatchItem; read?: boolean; unread?: boolean; src?: string; at?: string };
 
 // A notice that just became unread (new, or a read one reopened): the phone notification for it (hub/push.ts noticePush). Decisions have onDecision.
 const unreadHooks: Array<(n: Notice) => void> = [];
@@ -266,7 +266,7 @@ function upsert(i: Input): Notice {
 	const at = i.at ?? now();
 	const old = i.key ? items.find(n => n.key === i.key) : undefined;
 	const wasUnread = old ? !old.read && !old.dismissed : false;
-	const quiet = appBlocked({ app: i.kind === "watch" ? appOf(i as unknown as Notice) : undefined, src: i.src ?? i.open, open: i.open });
+	const quiet = appBlocked({ kind: i.kind, app: i.kind === "watch" ? appOf(i as unknown as Notice) : undefined, ...(i.watch ? { watch: i.watch } : {}), src: i.src ?? i.open, open: i.open });
 	if (quiet && old) return old;
 	let item: Notice;
 	if (old) {
@@ -281,6 +281,7 @@ function upsert(i: Input): Notice {
 		old.updated = at;
 		if (i.by) old.by = i.by;
 		if (i.ref) old.ref = i.ref;
+		if (i.watch) old.watch = i.watch;
 		if (i.item) old.item = i.item;
 		if (i.read) old.read = true;
 		else if (reopened) {
@@ -290,7 +291,7 @@ function upsert(i: Input): Notice {
 		}
 		item = old;
 	} else {
-		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: i.kind, tone: i.tone, title: i.title, text: i.text, open: i.open, src: i.src ?? i.open, at, ...(i.key ? { key: i.key } : {}), ...(i.by ? { by: i.by } : {}), ...(i.ref ? { ref: i.ref } : {}), ...(i.item ? { item: i.item } : {}), read: i.read === true };
+		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: i.kind, tone: i.tone, title: i.title, text: i.text, open: i.open, src: i.src ?? i.open, at, ...(i.key ? { key: i.key } : {}), ...(i.watch ? { watch: i.watch } : {}), ...(i.by ? { by: i.by } : {}), ...(i.ref ? { ref: i.ref } : {}), ...(i.item ? { item: i.item } : {}), read: i.read === true };
 		if (!quiet) {
 			items.push(item);
 			trim();
@@ -396,6 +397,15 @@ function fromInbox(e: HubEvent): void {
 		if (summarizeWatch && !isIssue(reason) && !recovered && !describeOutput(output, { prev }).readable)
 			void summarizeWatch(output).then(summary => summary && retextWatch(item.id, clean(watchLine(head, reason, output, { prev, summary })).text));
 		return;
+	}
+	// A mail that came in (hub/mail.ts post) is the mail app's 새 소식, whether or not it also got a Discord thread: one item per mail thread,
+	// opening its conversation (opening it reads the item, routes.ts), and unread again when the thread gets a newer message. The app
+	// instance's 새 소식 알림 switch (appBlocked) keeps it out of the bell, its 휴대폰 알림 switch out of the phone (hub/push.ts).
+	if (e.kind === "mail" && e.incoming === true && typeof e.mail === "string") {
+		const from = String(e.from ?? "");
+		const name = from.replace(/\s*<[^>]*>\s*$/, "").replace(/^"(.*)"$/, "$1").trim() || from;
+		const open = typeof e.conv === "string" ? e.conv : `mail:${e.mail}`;
+		return void upsert({ kind: "watch", tone: "", title: name || "새 메일", text: String(e.subject ?? "") || "(제목 없음)", open, key: open, unread: true, at: e.ts });
 	}
 	// the gateway's own wakes (update carry-over, text overrides: main.ts wakeOnce) are instructions to the assistant, not the owner's schedules
 	if (e.kind === "schedule" && e.source !== "gateway") {

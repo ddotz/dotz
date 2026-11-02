@@ -30,6 +30,9 @@ const appPushes = (app: string): boolean => {
 		return true;
 	}
 };
+// A general monitor's own 휴대폰 알림 switch (watches.json <watch>.push, hub/watch-settings.ts): main.ts installs the reader.
+let watchPushOff: (name: string) => boolean = () => false;
+export const setWatchPushOff = (fn: typeof watchPushOff): void => void (watchPushOff = fn);
 export const classPushOn = (cls: PushKind, app?: string): boolean => classPushes()[cls] && (cls !== "news" || !app || appPushes(app));
 // `app`: made by the installed app (the page runs standalone), the subscription a device is reached through when it has one.
 // `did`: the device's id, shared by all its subscriptions on every computer (see fanOut).
@@ -170,6 +173,8 @@ export function noticePush(n: Notice): PushMessage | undefined {
 		}
 		case "news":
 			if (n.key === "self-update") return { ...base, title: `${NAME} · ${n.title}`, tag: "update" };
+			if (n.watch && watchPushOff(n.watch)) return undefined;
+			if (conv.startsWith("mail:")) return { ...base, title: `${n.title} · 새 메일`, tag: `watch:${conv}`, ...(n.app ? { app: n.app } : {}) };
 			return { ...base, title: `${n.title} · 새 소식`, tag: `watch:${n.key ?? n.watch ?? n.id}`, ...(n.app ? { app: n.app } : {}) };
 		case "alert":
 			return { ...base, title: `${NAME} · ${n.tone === "fail" || CRITICAL.test(n.text) ? "경고" : n.title}`, tag: "alert" };
