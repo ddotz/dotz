@@ -128,7 +128,7 @@ describe.each([[390, 844], [1280, 900]] as const)("reading a mail at %ipx", (wid
 		const v = await boot(width, height, "i:mail");
 		await waitFor(v, `document.querySelectorAll("#mon-tl .mr").length === 2`);
 		const before = await seen(v);
-		expect(before.chips).toEqual(["전체", "안 읽음1", "답장 필요", "확인 대기", "답장함", "보낸 메일"]);
+		expect(before.chips).toEqual(["전체", "안 읽음1", "답장 필요", "확인 대기", "답장함", "보관함", "보낸 메일"]);
 		expect(before.states["견적 요청"]).toBe("안 읽음");
 		await Bun.write(join(SHOTS, `list-before-${width}.png`), await v.screenshot());
 
@@ -142,7 +142,7 @@ describe.each([[390, 844], [1280, 900]] as const)("reading a mail at %ipx", (wid
 		await backToList(v, "i:mail");
 		const after = await seen(v);
 		expect(after.states["견적 요청"]).toBe("");
-		expect(after.chips).toEqual(["전체", "안 읽음", "답장 필요", "확인 대기", "답장함", "보낸 메일"]);
+		expect(after.chips).toEqual(["전체", "안 읽음", "답장 필요", "확인 대기", "답장함", "보관함", "보낸 메일"]);
 		expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
 		await pick(v, "unread");
 		expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr .rc-title")].map(t => t.textContent)`)).toEqual([]);

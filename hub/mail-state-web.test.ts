@@ -90,12 +90,12 @@ for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 			});
 			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr .tag.unreplied")].map(t => t.textContent)`)).toEqual(["답장 필요", "초안 있음"]);
 			// one order on every row: sender · state · unread · clip · time · ⋯ (each only when it has something to say, the ⋯ always)
-			const order = await q<string[][]>(v, `return [...document.querySelectorAll("#mon-tl .mr")].map(r => [...r.querySelector(".rc-hd").children].map(c => c.matches(".rc-src") ? "src" : c.matches(".mr-state, .tag.unreplied") ? "state" : c.matches(".mr-unread") ? "unread" : c.matches(".mr-clip") ? "clip" : c.matches(".rc-time") ? "time" : c.matches(".mr-more") ? "more" : c.className))`);
-			const RANK = ["src", "state", "unread", "clip", "time", "more"];
+			const order = await q<string[][]>(v, `return [...document.querySelectorAll("#mon-tl .mr")].map(r => [...r.querySelector(".rc-hd").children].map(c => c.matches(".mr-lead") ? "lead" : c.matches(".rc-src") ? "src" : c.matches(".mr-state, .tag.unreplied") ? "state" : c.matches(".mr-unread") ? "unread" : c.matches(".mr-clip") ? "clip" : c.matches(".rc-time") ? "time" : c.matches(".mr-more") ? "more" : c.className))`);
+			const RANK = ["lead", "src", "state", "unread", "clip", "time", "more"];
 			for (const o of order) {
 				expect(o.every(k => RANK.includes(k))).toBe(true);
 				expect(o.map(k => RANK.indexOf(k))).toEqual([...o.map(k => RANK.indexOf(k))].sort((a, b) => a - b));
-				expect([o[0], o.at(-1)]).toEqual(["src", "more"]);
+				expect([o[0], o.at(-1)]).toEqual(["lead", "more"]);
 			}
 			expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
 			await shot(v, `mail-states-${width}-light.png`);
@@ -103,7 +103,7 @@ for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 
 		test("the filter shows 답장 필요, 답장함 or 보낸 메일 only, with counts, and 전체 brings back the received mail (the sent one stays under 보낸 메일)", async () => {
 			const v = await boot(width, height);
-			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "안 읽음2", "답장 필요2", "확인 대기", "답장함1", "보낸 메일1"]);
+			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "안 읽음2", "답장 필요2", "확인 대기", "답장함1", "보관함", "보낸 메일1"]);
 			await pick(v, "unread");
 			expect((await titles(v)).length).toBe(2);
 			await pick(v, "owed");
