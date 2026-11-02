@@ -61,7 +61,9 @@ const deviceSwitch = (app: string): SettingField => ({ key: "use_here", label: "
 
 // The instance's name (hub/integrations.ts appEntries): shown in the list, the title and the notices; empty = the app's own name.
 // The app's news on the phone (hub/push.ts classPushOn, class news): off keeps it in the bell only. Default on.
-const pushField = (app: string): SettingField => ({ key: "push", label: "휴대폰 알림", type: "bool", help: "이 앱에 새 소식(메일·메시지·댓글)이 오면 휴대폰에 알려요. 끄면 알림 센터에만 남아요", store: "custom/apps.json", path: `${app}.push`, def: true, switch: true, section: "notify" });
+// 새 소식 알림: the app's news in the web app's bell at all (hub/app-off.ts newsMuted, read by the notice store). Default on.
+const notifyField = (app: string): SettingField => ({ key: "notify", label: "새 소식 알림", type: "bool", help: "새 메일·메시지·댓글이 오면 웹앱 알림 센터에 알려요. 끄면 앱 목록에만 들어오고 알림은 없어요", store: "custom/apps.json", path: `${app}.notify`, def: true, switch: true, section: "notify" });
+const pushField = (app: string): SettingField => ({ key: "push", label: "휴대폰 알림", type: "bool", help: "새 소식을 휴대폰에도 바로 알려요. 끄면 웹앱 알림 센터에만 남아요", store: "custom/apps.json", path: `${app}.push`, def: true, switch: true, section: "notify" });
 const nameField = (app: string): SettingField => ({ key: "label", label: "앱 이름", type: "text", help: "목록과 제목에 보이는 이름이에요. 비우면 기본 이름으로 돌아가요", store: "custom/apps.json", path: `${app}.label`, max: 30, def: INTEGRATIONS.find(e => e.key === app.split("-")[0])?.label ?? "", switch: true, section: "advanced" });
 
 // 답장 모델: the model of the reply drafts of one app or instance (hub/reply-model.ts reads it, then the global 답장 기본값, then Sonnet 5.5 medium).
@@ -73,12 +75,19 @@ export const setReplyModelChoices = (c: ReplyModelChoices): void => {
 };
 // 디스코드에도 올리기: custom/apps.json {"<mail instance>":{"discord":true}} (off when missing). Drawn only while Discord is connected; main.ts installs the probe.
 let discordConnected = (): boolean => false;
-export const setDiscordProbe = (probe: () => boolean): void => {
+// The 새 소식 class switch of 설정 → Discord (hub/discord-post.ts postSettings().news): what a non-mail app's 디스코드에도 보내기 shows while unset.
+let discordNews = (): boolean => true;
+export const setDiscordProbe = (probe: () => boolean, news?: () => boolean): void => {
 	discordConnected = probe;
+	if (news) discordNews = news;
 };
+export const discordConnectedNow = (): boolean => discordConnected();
 /** Whether the mail app instance that owns mail `<key>` (matched by its source like the other instance filters) has 디스코드에도 올리기 on. */
 export const mailDiscordOn = (dataDir: string, key: string): boolean => readAppsFile(dataDir)[instanceOf(appEntries(dataDir), "mail", `mail:${key}`)]?.discord === true;
 const discordField = (app: string): SettingField => ({ key: "discord", label: "디스코드에도 올리기", type: "bool", help: "새 메일마다 디스코드 메일 채널에 스레드를 만들어요", store: "custom/apps.json", path: `${app}.discord`, def: false, switch: true, section: "notify" });
+// A monitoring app's own reports (kakao, instagram, youtube: its watches' posts, main.ts watchRoute) on Discord too; unset = the 새 소식 class switch.
+const NEWS_APPS = new Set(["kakao", "instagram", "youtube"]);
+const appDiscordField = (app: string): SettingField => ({ key: "discord", label: "디스코드에도 보내기", type: "bool", help: "새 소식을 디스코드에도 올려요. 끄면 웹앱에만 와요", store: "custom/apps.json", path: `${app}.discord`, def: discordNews(), switch: true, section: "notify" });
 // 첨부 파일 폴더: where a mail instance looks for the file a reply promises or a mail asks for (features/reply-drafts/lib/library.ts); empty = none.
 const attachFolderField = (app: string): SettingField => ({ key: "attach_folder", label: "첨부 파일 폴더", type: "text", help: "오너가 대화에서 알려 준, 자주 보내는 파일을 모아 둔 이 컴퓨터의 폴더예요. 답장에 파일이 필요하면 여기서 맞는 파일을 찾아 붙여 둬요", store: DRAFTS, path: `attachFolders.${app}`, max: 300, section: "advanced", memory: true });
 // 이어서 할 일: free text; after an approved action of this app instance the bot checks it once (hub/followup.ts).
@@ -116,7 +125,7 @@ export class SettingsError extends Error {
 // An app key or an instance id (`mail-2`): the schema is the app's, the switch and the name are the instance's.
 export const fieldsOf = (app: string): SettingField[] => {
 	const base = app.split("-")[0]!;
-	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), pushField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app), followupField(app)] : []), ...(base === "mail" ? [attachFolderField(app), draftDefaultField(app), draftRulesField(app)] : [])] : [];
+	return Object.hasOwn(APP_SETTINGS, base) && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(app) ? [deviceSwitch(app), nameField(app), notifyField(app), pushField(app), ...APP_SETTINGS[base]!, ...(base === "mail" && discordConnected() ? [discordField(app)] : []), ...(NEWS_APPS.has(base) && discordConnected() ? [appDiscordField(app)] : []), ...(REPLY_APPS.has(base) ? [replyModelField(app), followupField(app)] : []), ...(base === "mail" ? [attachFolderField(app), draftDefaultField(app), draftRulesField(app)] : [])] : [];
 };
 
 const readJson = (file: string): Record<string, any> => {

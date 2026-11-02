@@ -26,7 +26,7 @@ export type AppDecl = { features: FeatureDecl[]; /** Hosts whose login this app 
 export const APP_FEATURES: Record<string, AppDecl> = {
 	mail: {
 		features: [
-			{ id: "new_mail", name: "새 메일", hint: "새 메일이 오면 알려 줘요", section: "notify" },
+			{ id: "new_mail", name: "새 메일", hint: "새 메일을 받아 목록에 넣어요. 끄면 메일을 가져오지 않아요", section: "notify" },
 			{ id: "reply_draft", name: "자동 초안", hint: "답할 메일에 초안을 만들고 보내기 전에 물어요", setting: "auto_draft", section: "draft", approves: ["."] },
 		],
 		sites: ["mail.naver.com", "mail.google.com", "outlook.live.com", "outlook.office.com"],

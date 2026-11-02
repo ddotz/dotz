@@ -61,7 +61,7 @@ const open = (width: number, height: number): Promise<View> => hub.view({ width,
 afterAll(() => { hub.stop(); rmSync(data, { recursive: true, force: true }); for (const w of allWatches()) removeWatch(w.id); });
 
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const shot = async (v: View, name: string) => { if (SHOTS) await Bun.write(join(SHOTS, name), await v.screenshot()); };
+const shot = async (v: View, name: string) => { if (!SHOTS) return; await waitFor(v, `document.getAnimations().every(a => a.playState !== "running")`); await Bun.write(join(SHOTS, name), await v.screenshot()); };
 const boot = async (v: View, route: string) => {
 	const opened = hub.nextStream();
 	await v.navigate(`${hub.origin}/`);
@@ -133,7 +133,8 @@ describe("monitor settings at desktop width", async () => {
 		await openScreen(v);
 		await waitFor(v, `document.querySelector('#app-sw [data-k="enabled"]')`);
 		const names = await q<string[]>(v, `return [...document.querySelectorAll("#app-sw .as-row:not(.as-stat) .as-n")].map(n => n.textContent)`);
-		expect(names).toEqual(["알림 방식", "감시 켜기", "감시 주기(분)", "이름", "감시 삭제"]);
+		expect(names).toEqual(["알림 방식", "새 소식 알림", "휴대폰 알림", "감시 켜기", "감시 주기(분)", "이름", "감시 삭제"]);
+		await shot(v, "monitor-controls-desktop.png");
 	});
 
 	test("the switch and the boxes PATCH the one watch settings route with no message to the bot", async () => {
