@@ -56,19 +56,27 @@ export function createStore(dir: string) {
 		saveConfig: (c: CommentsConfig) => writeAtomic(f("config.json"), c),
 		setSource: (src: SourceConfig) => writeAtomic(f("config.json"), { ...config(), sources: { ...config().sources, [src.key]: src } }),
 		comments,
-		// Adds the comments whose id is not stored yet (the stored copy of an id is never replaced); returns the new ones.
+		// Adds the comments whose id is not stored yet; returns the new ones. A stored copy is never replaced, except that it learns its parent
+		// when it was stored as a top-level comment and is now seen as a reply (Instagram shows a reply both ways).
 		addComments: (list: Comment[]): Comment[] => {
 			const have = comments();
-			const known = new Set(have.map(c => c.id));
+			const known = new Map(have.map(c => [c.id, c]));
 			const fresh: Comment[] = [];
-			for (const c of list)
-				if (!known.has(c.id)) {
-					known.add(c.id);
+			let linked = false;
+			for (const c of list) {
+				const old = known.get(c.id);
+				if (!old) {
+					known.set(c.id, c);
 					fresh.push(c);
+				} else if (c.parent && !old.parent) {
+					old.parent = c.parent;
+					linked = true;
 				}
-			if (fresh.length) writeAtomic(f("comments.json"), [...have, ...fresh].sort((a, b) => a.at - b.at).slice(-MAX_COMMENTS));
+			}
+			if (fresh.length || linked) writeAtomic(f("comments.json"), [...have, ...fresh].sort((a, b) => a.at - b.at).slice(-MAX_COMMENTS));
 			return fresh;
 		},
+		replaceComments: (list: Comment[]) => writeAtomic(f("comments.json"), list),
 		// Gives the stored comments of one post their title / link / thumbnail (the only change ever made to a stored comment).
 		retitle: (source: string, thread: string, p: { postTitle: string; postLink?: string; thumb?: string }) => {
 			const have = comments();
