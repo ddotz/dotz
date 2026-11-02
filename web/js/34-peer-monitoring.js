@@ -202,7 +202,7 @@ function pqMail(c, pc, itemKey) {
 function pqMerge(items) {
   const peers = PQ.list.filter(p => p && p.url);
   if (!peers.length) return items;
-  const apps = [], plain = [], off = [], news = [];
+  const apps = [], proj = [], plain = [], off = [], news = [];
   for (const p of peers) {
     const pc = pqPcOf(p), s = p.items, key = k => `p:${p.url}|${k}`;
     if (!s) { off.push({ key: key("off"), group: MON_GROUP.plain, name: `${p.name} · 연결 안 됨`, ic: "activity", notices: [], mails: [], unread: 0, hint: "", at: "", pc, off: true }); continue; }
@@ -220,13 +220,14 @@ function pqMerge(items) {
     }
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
     for (const m of mons) {
+      if (monHidden(m)) continue;
       const notices = sn.filter(n => monHas(m, n)), last = monNewest(notices);
       for (const n of notices) shown.add(n.id);
       if (ownedNames.has(m)) continue;
       // A peer's watch has the same settings conversation as a local one; it lives on that computer (a watch name this computer has itself stays local).
       if (m.kind === "watch" && m.watch && !NM.items.some(x => x.watch === m.watch)) PQ.of.set(`settings:w:${m.watch}`, { pc, key: key(`m:${m.name}`), mon: m });
       const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
-      plain.push({ key: key(`m:${m.name}`), group: MON_GROUP.plain, name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: 0,
+      (monProject(m) ? proj : plain).push({ key: key(`m:${m.name}`), group: monGroupOf(m), ...(monProject(m) ? { proj: true } : {}), name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: 0,
         hint: fresh ? monStrip(monLine(last), monNames(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
         badge: m.connection === "disconnected" ? ["연결 끊김", "err"] : m.paused ? ["꺼짐", ""] : m.last_result === "fail" ? ["실패", "err"] : m.kind === "schedule" ? [MON_KIND.schedule, ""] : null, pc, chips });
     }
@@ -238,5 +239,6 @@ function pqMerge(items) {
     Object.assign(feed, monFeedHead(feed.notices));
   }
   const grp = g => items.filter(i => i.group === g);
-  return [...grp(""), ...grp(MON_GROUP.app), ...apps, ...grp(MON_GROUP.plain), ...plain, ...off];
+  const withProj = monGrouped([...items.filter(i => i.proj), ...proj], []);
+  return [...grp(""), ...grp(MON_GROUP.app), ...apps, ...withProj, ...grp(MON_GROUP.plain), ...plain, ...off];
 }

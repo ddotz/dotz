@@ -64,7 +64,7 @@ function asApprovalNode(app, a) {
     el("span", { class: "as-btns" }, ...opts.map(o => el("button", { class: "btn tonal", type: "button", "data-k": `appr:${o.label}`, onclick: () => asApprove(app, a, o) }, o.label)),
       el("button", { class: "btn text", type: "button", "data-k": "appr:open", onclick: () => { if (ASC.h) ASC.h.close(false); go("monitoring", asAppItemKey(app)); } }, "자세히")));
 }
-// One watch the app owns (로그인 유지 / 동기화): its status, when it last ran, and its period. The period is editable when the watch lives on this
+// One watch the app owns (로그인 유지 / 동기화 / 파일 점검): its status, when it last ran, and its period. The period is editable when the watch lives on this
 // computer; a peer's period is read only (its settings are written through that computer's own act routes). 다시 시도 only on a row that is not ok.
 async function asEvery(app, i, v) {
   const n = Math.round(Number(v));

@@ -14,11 +14,12 @@ import { readSettings, SettingsError, writeSettings, type SettingSection } from 
 import { APP_FEATURES, declOf, type FeatureDecl, featureOn, readApps } from "./app-feature-flags.ts";
 import { APPS_FILE, appBase, appEntries, belongsTo, type IntegrationEntry } from "./integrations.ts";
 import { watchFacts } from "./monitors.ts";
-import type { Watch } from "./watch.ts";
+import type { Watch, WatchOwner } from "./watch.ts";
 import { watchConnection } from "./watch-status.ts";
 
 const named = (list: readonly string[], watch: string): boolean => list.some(w => (w.endsWith("-") ? watch.startsWith(w) : watch === w));
-type WatchLike = { name: string; session?: { url: string }; approval_minutes?: number };
+/** What ownership needs of a watch: its name and the words a derivation reads, the owner it names, and the site a login keeper keeps. */
+export type WatchLike = { name: string; label?: string; command?: string; script?: string; owner?: WatchOwner; session?: { url: string }; approval_minutes?: number };
 const hostOf = (url: string): string => {
 	try {
 		return new URL(url).hostname.replace(/^www\./, "");
@@ -31,12 +32,28 @@ const siteOf = (e: IntegrationEntry, w: WatchLike): boolean => {
 	return !!host && (APP_FEATURES[appBase(e.key)]?.sites ?? []).some(s => host === s || host.endsWith(`.${s}`));
 };
 
-/** The instance (entry key) a watch belongs to, or undefined: by name first (registry, instance filter), then a login keeper by its site (default instance only). */
+// A watch that names no app but serves one by what it does (the words of its name, label, command and script): the app, default instance only. A mail plugin's
+// library check created ad hoc, a comments sync - found on any install without an edit of custom/apps.json. First match wins.
+const DERIVED: [string, RegExp][] = [
+	["site", /comments?|댓글|features\/comments/i],
+	["kakao", /kakao|카카오/i],
+	// `library` only as a word of its own: a check that reads macOS's ~/Library (Messages, Mail caches) is not a library check.
+	["mail", /webmail|reply-drafts|(?<![\/\\\w])library|icloud|첨부\s*(?:파일\s*)?폴더|mail|메일/i],
+	["instagram", /instagram|인스타|sns-ig/i],
+	["youtube", /youtube|유튜브|sns-yt/i],
+];
+
+/** The instance (entry key) a watch belongs to, or undefined: the owner it names (when that instance is live), by name (registry, instance filter), a login keeper by its site, then by what it does (default instance only). */
 export function watchOwner(entries: readonly IntegrationEntry[], w: WatchLike): string | undefined {
-	const live = entries.filter(e => !e.gone);
+	const live = entries.filter(e => !e.gone), claimed = w.owner?.app;
+	if (claimed && live.some(e => e.key === claimed)) return claimed;
 	const byName = live.find(e => named(e.watches ?? [], w.name) && !named(e.not?.watches ?? [], w.name));
 	if (byName) return byName.key;
-	return live.find(e => !e.created && siteOf(e, w) && !named(e.not?.watches ?? [], w.name))?.key;
+	const bySite = live.find(e => !e.created && siteOf(e, w) && !named(e.not?.watches ?? [], w.name));
+	if (bySite || w.owner?.project || w.owner?.internal) return bySite?.key;
+	const words = [w.name, w.label, w.command, w.script].filter(Boolean).join(" ");
+	const app = DERIVED.find(([, re]) => re.test(words))?.[0];
+	return app ? live.find(e => !e.created && appBase(e.key) === app && !named(e.not?.watches ?? [], w.name))?.key : undefined;
 }
 /** Instance key -> the names of the watches it owns (every watch, whatever the app's switch says). */
 export function ownedWatches(dataDir: string, watches: readonly WatchLike[]): Map<string, string[]> {
@@ -54,13 +71,15 @@ export { APP_FEATURES, type AppDecl, type FeatureDecl, featureEnabled } from "./
 // under 기능 (자동 초안, 감시). The screen groups every row by its section key.
 export type FeatureView = { id: string; name: string; status: string; on: boolean; setting?: string; section?: SettingSection };
 export type ApprovalOption = { n: number; label: string };
-export type InternalView = { id: string; kind: "login" | "sync"; name: string; dot: "ok" | "fail" | "idle"; status: string; last_run?: string; reason?: string; every_minutes?: number; down?: boolean };
+export type InternalView = { id: string; kind: "login" | "sync" | "files"; name: string; dot: "ok" | "fail" | "idle"; status: string; last_run?: string; reason?: string; every_minutes?: number; down?: boolean };
 /** An approval row: `title` is the item (post title or the start of the caption), `kind` what is approved, `options` the answers the owner can give from the row (고치기 needs a text, so it stays in the sheet). */
 export type ApprovalView = { id: string; title: string; kind?: string; feature?: string; state: string; at?: string; note?: string; options: ApprovalOption[] };
 export type FeaturesView = { app: string; features: FeatureView[]; internal: InternalView[]; approvals: ApprovalView[] };
 type NoticeLike = { id: string; title?: string; text?: string; src?: string; open?: string; ts?: string; updated?: string; dismissed?: boolean; ignored?: string; decision?: { to?: string; state?: string; draft?: { subject?: string; body?: string } | unknown; options?: { n: number; label: string }[] } };
 
-const KIND_KO = { login: "로그인 유지", sync: "동기화" } as const;
+const KIND_KO = { login: "로그인 유지", sync: "동기화", files: "파일 점검" } as const;
+// A watch that checks an app's files (a downloaded attachment library, an iCloud folder) is a 파일 점검, not a 동기화.
+const FILES_WATCH = /library|icloud|첨부|파일\s*폴더/i;
 const HANGUL = /[가-힣]/;
 const oneLine = (s: unknown, max: number): string => {
 	const t = String(s ?? "").replace(/\s+/g, " ").trim();
@@ -91,7 +110,7 @@ function approvalTitle(n: NoticeLike): string {
 const PROGRESS_WATCH = /bulk/;
 /** One internal row of a watch the app owns. The reason is the words the watch's own failure carries (hub/watchtext.ts), never the raw output. */
 export function internalOf(w: Watch, appLabel = "앱"): InternalView {
-	const f = watchFacts(w), kind = w.session ? "login" : "sync", last = w.state.lastRun;
+	const f = watchFacts(w), kind = w.session ? "login" : FILES_WATCH.test(`${w.name} ${w.label ?? ""} ${w.command}`) ? "files" : "sync", last = w.state.lastRun;
 	// A watch whose check exits 0 but says it is logged out (DOTZ_DISCONNECTED, hub/watch-status.ts) is down too, so its row offers 다시 연결.
 	const conn = watchConnection(w), down = conn.state === "disconnected" && !f.fails;
 	const dot = f.fails || down ? "fail" : !last || w.paused || w.state.paused ? "idle" : "ok";

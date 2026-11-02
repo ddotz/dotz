@@ -33,7 +33,7 @@ function claimLogin(channel: string, l: Login, rulesText: string): Watch {
 	}
 	const where = slug([l.host, l.profile].filter(Boolean).join("-")).slice(0, 8);
 	const host = new URL(l.session_url).hostname.replace(/^www\./, "");
-	return addWatch({ name: `login-${slug(host)}${l.host || l.profile ? `-${where}` : ""}`, session_url: l.session_url, expect: l.expect, login_url: l.login_url, secret: l.secret, host: l.host, profile: l.profile, to: "orchestrator", channels: [channel] }, rulesText);
+	return addWatch({ name: `login-${slug(host)}${l.host || l.profile ? `-${where}` : ""}`, session_url: l.session_url, expect: l.expect, login_url: l.login_url, secret: l.secret, host: l.host, profile: l.profile, to: "orchestrator", channels: [channel], project: `ch:${channel}` }, rulesText);
 }
 
 export function setupChannel(input: Record<string, any>, channelName: string, rulesText: string): Setup {
@@ -50,7 +50,7 @@ export function setupChannel(input: Record<string, any>, channelName: string, ru
 	// The name is only a key ([a-z0-9-]); the channel id keeps it unique where a Korean channel name slugs to nothing.
 	const monitors = ((input.monitors ?? []) as Monitor[]).map((m, i) => {
 		const name = `ch-${channel}-${i + 1}`;
-		const w = addWatch({ ...m, name, label: m.label?.trim() || deriveLabel({ name, project: channelName, index: i + 1 }), to: "orchestrator", channels: [channel] }, rulesText);
+		const w = addWatch({ ...m, name, label: m.label?.trim() || deriveLabel({ name, project: channelName, index: i + 1 }), to: "orchestrator", channels: [channel], project: `ch:${channel}` }, rulesText);
 		claimed.add(w.id);
 		return w.name;
 	});
