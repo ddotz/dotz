@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { aliasesFile, setAlias } from "./account-alias.ts";
-import { checkNow, decisionsFile, evaluate, lastDecision, readRules, rulesFile, runScript, type Rules, type ScriptInput, setManual, setUsage, writeRules } from "./account-rules.ts";
+import { checkNow, decisionsFile, evaluate, lastDecision, readOnLimit, readRules, rulesFile, runScript, type Rules, type ScriptInput, setManual, setOnLimit, setUsage, writeRules } from "./account-rules.ts";
 import { type AccountSwitch, MAX_LOG_LINES, onSwitch, type Pool, resetStickyForTest, stickyAccount, switchesFile } from "./account-sticky.ts";
 import { authFile } from "./apikey-policy.ts";
 import { DATA_DIR } from "./config.ts";
@@ -228,9 +228,13 @@ test("stickyAccount follows the usage numbers once they are known", () => {
 });
 
 test("the rules file: round trip, a manual pick set and cleared, and bad input rejected with the field named", () => {
-	const rules: Rules = { manual: { account: "work", reason: "r" }, rules: officeRule.rules, script: { path: "~/pick.sh", every_minutes: 10 } };
+	const rules: Rules = { manual: { account: "work", reason: "r" }, rules: officeRule.rules, script: { path: "~/pick.sh", every_minutes: 10 }, on_limit: "wait" };
 	expect(writeRules(rules)).toEqual(rules);
 	expect(readRules()).toEqual(rules);
+	expect(setOnLimit("switch").on_limit).toBe("switch");
+	expect(readOnLimit()).toBe("switch");
+	expect(setOnLimit(undefined).on_limit).toBeUndefined();
+	expect(() => writeRules({ on_limit: "sometimes" })).toThrow("on_limit");
 	expect(setManual(undefined).manual).toBeUndefined();
 	expect(readRules().rules).toEqual(officeRule.rules);
 	expect(setManual("spare", "x", "2030-01-01T00:00:00Z").manual).toEqual({ account: "spare", reason: "x", until: "2030-01-01T00:00:00Z" });
