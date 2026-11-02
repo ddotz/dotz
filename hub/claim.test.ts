@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type * as Lanes from "./lanes.ts";
 import { cfg } from "./config.ts";
+import { msg } from "./i18n.ts";
 import { adapters } from "./runtime/index.ts";
 import { omp } from "./runtime/omp.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
@@ -156,8 +157,8 @@ test("claim: a report without a tone marker is checked against OmO task metadata
 	await advance(3000);
 	await turn(agent, "Ask: relay the nested answer.\nFor you: [done] DEEP-OK");
 	const text = await relayed.promise;
-	expect(text).toContain("[gateway check] task metadata contradicts this report");
-	expect(text).toContain("st_9: task spawn failed: Subagent nesting limit reached");
+	expect(text).toContain(msg().checkContradicted(1));
+	expect(text).not.toContain("st_9: task spawn failed");
 	l.stopLane("cb");
 	await advance(300);
 });
@@ -184,8 +185,8 @@ test("claim: the gateway checks a machine-checkable Done-when on [done], sends f
 
 	await turn(agent, "[done] result written");
 	const back = await noticed.promise;
-	expect(back).toContain("NOT file result.md -> missing");
-	expect(back).toContain("NOT command `test -s result.md` -> exit 1");
+	expect(back).toContain(msg().checkBounced(2, 2));
+	expect(back).not.toContain("NOT file result.md -> missing");
 	expect(sent.at(-1)).toContain("[gateway check] Your [done] is not verified");
 	expect(lane.claim).toBeUndefined();
 	expect(reports).toEqual([]);
@@ -193,12 +194,35 @@ test("claim: the gateway checks a machine-checkable Done-when on [done], sends f
 	writeFileSync(join(cwd, "result.md"), "done\n");
 	await turn(agent, "[done] now it is there");
 	const text = await relayed.promise;
-	expect(text).toContain("[gateway check] verified, every Done-when check passed");
+	expect(text).toContain(msg().checkPassed(2, false));
 	expect(await verified.promise).toBe("gw");
 	expect(lane.claim).toMatchObject({ state: "verified" });
 	expect(JSON.parse(readFileSync(join(DATA, "lanes", "gw", "lane.json"), "utf8")).claim).toMatchObject({ state: "verified" });
 	expect(() => l.verifyLane("gw", "again")).toThrow("already verified");
 	l.stopLane("gw");
+	await advance(300);
+});
+
+// The owner reads the gateway's verdict without the raw check lines (they stay in hub.log and the claim's evidence).
+test("claim: a verified report's owner-facing text carries no shell syntax", async () => {
+	const cwd = mkdtempSync(join(tmpdir(), "dotz-claim-gw-quiet-"));
+	rmSync(join(DATA, "lanes", "wq"), { recursive: true, force: true });
+	const relayed = Promise.withResolvers<string>();
+	const verified = Promise.withResolvers<string>();
+	l.setReportHandler((_lane, text) => relayed.resolve(text));
+	l.setVerifiedHandler(name => verified.resolve(name));
+	l.setIdleHandler(() => {});
+	l.launch("wq", cwd, "Write it.\nDone when: command `printf 'stdout~\\n'`");
+	const agent = agents.at(-1)!;
+	await advance(3000);
+
+	await turn(agent, "[done] written");
+	const text = await relayed.promise;
+	expect(await verified.promise).toBe("wq");
+	expect(text).not.toContain("stdout~");
+	expect(text).not.toContain("exit 0");
+	expect(text).not.toContain("[gateway check]");
+	l.stopLane("wq");
 	await advance(300);
 });
 
