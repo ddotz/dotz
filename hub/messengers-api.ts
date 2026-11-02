@@ -3,6 +3,7 @@
 import { channels } from "./discord.ts";
 import { type Adapter, adapters, get, restart, type Settings, SettingsError } from "./messenger.ts";
 import { syncAdapter } from "./messenger-rooms.ts";
+import { messengerClasses, saveMessengerClasses } from "./notify-route.ts";
 import { body, json } from "./routes-util.ts";
 
 const projects = (): { target: string; name: string }[] => Object.entries(channels.work).map(([id, name]) => ({ target: `ch:${id}`, name }));
@@ -15,6 +16,7 @@ function view(a: Adapter): Settings {
 	return {
 		...s,
 		projects: list,
+		...(a.native ? {} : { notify: messengerClasses(a.id) }),
 		...(s.rooms ? { rooms: { ...s.rooms, items: s.rooms.items.map(r => (r.project ? { ...r, project: { target: r.project.target, name: nameOf(r.project.target) } } : r)) } } : {}),
 	};
 }
@@ -34,8 +36,18 @@ export async function messengersRoute(req: Request, url: URL, parts: string[]): 
 		if (req.method === "GET") return a.settings ? json(view(a)) : json({ error: "no settings" }, 400);
 		if (req.method !== "PUT") return json({ error: "method not allowed" }, 405);
 		if (!a.settings || !a.saveSettings) return json({ error: `${a.label} settings are read-only here` }, 400);
-		const b = await body(req);
+		const { notify, ...b } = (await body(req)) as Record<string, unknown>;
 		const before = restartKey(a.settings());
+		// The 알림 switches are the router's, not the adapter's: they need no restart and no room sync.
+		if (notify !== undefined) {
+			if (a.native) return json({ error: `${a.label} notifications are set in its own screen` }, 400);
+			try {
+				saveMessengerClasses(a.id, notify);
+			} catch (e) {
+				return json({ error: (e as Error).message }, 400);
+			}
+			if (!Object.keys(b).length) return json(view(a));
+		}
 		try {
 			a.saveSettings(b);
 		} catch (e) {

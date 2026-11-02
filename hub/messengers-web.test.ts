@@ -10,6 +10,7 @@ mkdirSync(SHOTS, { recursive: true });
 type Room = { id: string; name: string; kind: string; project?: string; secrets: Record<string, string> };
 let enabled = true;
 let fallbackSet = false;
+let notify: Record<string, boolean> = { ask: true, alert: true, result: true, news: true, conv: true, log: true };
 let rooms: Room[] = [
 	{ id: "m1", name: "메인", kind: "main", secrets: { outgoing_token: "tok-1", incoming_url: "http://in/1" } },
 	{ id: "p1", name: "결제 프로젝트", kind: "project", project: "ch:7", secrets: { outgoing_token: "tok-2" } },
@@ -37,6 +38,7 @@ const jandi = () => ({
 		})),
 	},
 	projects: PROJECTS,
+	notify,
 });
 const DISCORD = { enabled: false, help: ["Discord 연결은 설정 → Discord에서 바꿔요."], fields: [{ key: "state", label: "상태", type: "readonly", value: "연결 중" }], projects: [], link: { label: "Discord 설정 열기", view: "discord" } };
 
@@ -55,6 +57,7 @@ const hub = fakeHub({
 			puts.push(b);
 			if (b.enabled !== undefined) enabled = b.enabled;
 			if (b.values?.incoming_url) fallbackSet = true;
+			if (b.notify) notify = { ...notify, ...b.notify };
 			return json(jandi());
 		}
 	},
@@ -160,6 +163,19 @@ describe("메신저 설정 화면", () => {
 		await waitFor(v, `MD && MD.s.enabled === false && document.querySelector("dialog [data-ms-save]").disabled`);
 		expect(puts).toEqual([{ enabled: false, values: { port: 9000 } }]);
 		enabled = true;
+	});
+
+	test("알림: one switch per class in the sheet; a flip saves at once with only that class", async () => {
+		const v = await open(1280, 800);
+		await click(v, '#messengers [data-ms="jandi"]');
+		await waitFor(v, `document.querySelectorAll("dialog [data-notify]").length === 6`);
+		expect(await ev(v, `[...document.querySelectorAll("dialog [data-notify] .hd")].map(h => h.textContent)`)).toEqual(["답변 필요", "경고", "결과", "새 소식", "대화", "진행"]);
+		puts.length = 0;
+		await click(v, 'dialog [data-notify="news"] .hs-sw');
+		await waitFor(v, `document.querySelector('dialog [data-notify="news"] .hs-sw').getAttribute("aria-checked") === "false"`);
+		expect(puts).toEqual([{ notify: { news: false } }]);
+		expect(await ev(v, `document.querySelector("dialog [data-ms-save]").disabled`)).toBe(true);
+		notify = { ...notify, news: true };
 	});
 
 	test("Discord is read-only here and links to its own screen", async () => {

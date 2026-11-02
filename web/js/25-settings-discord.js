@@ -75,6 +75,10 @@ function dcSwitches() {
   const hint = () => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결하면 고를 수 있어요" })));
   const on = DCS.v.enabled && DP.v;
   return [
+    // Which notice classes Discord gets (discord-post.json ask/alert/result/news/conv; 진행 follows the conversation switches below).
+    el("div", { class: "sec", text: "알림" }),
+    el("div", { class: "list" }, ...(on ? [...notifyRows(k => DP.v[k] !== false, dpSet, ["ask", "alert", "result", "news", "conv"]),
+      el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 그 알림은 디스코드로 가지 않고 앱에만 와요. 디스코드에서 직접 물은 것의 답은 디스코드에도 가요." })))] : [hint()])),
     el("div", { class: "sec", text: "대화별로 디스코드에도 보내기" }),
     el("div", { class: "list" }, ...(on ? [...DP_KINDS.map(([k, label, desc]) => li(label, desc, k, k === "web_lanes" ? DP.v[k] === true : DP.v[k] !== false)),
       el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 웹에만 와요. 디스코드에서 직접 물은 것의 답은 디스코드에도 가요." })))] : [hint()])),

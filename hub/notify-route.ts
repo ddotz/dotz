@@ -5,14 +5,14 @@
 //   hub/messenger.ts  which non-native adapters get an "out" event (route().messengers[adapterId])
 // The switches stay where they were, so an existing install routes as before:
 //   web        always on: hub/notices.ts keeps everything (its per-app switches, hub/app-off.ts, are applied by the notice store).
-//   push       config.json notify.push per class (CLASS_PUSH_DEFAULTS when unset); a news notice also follows its app's own switch (custom/apps.json <app>.push).
+//   push       앱 알림 (web app + phone, one switch per class, 설정 → 앱 · 알림): config.json notify.push per class (CLASS_PUSH_DEFAULTS when unset); a news notice also follows its app's own switch (custom/apps.json <app>.push).
 //   discord    <DATA_DIR>/discord-post.json: the class key for a class, the conversation kind (chat/lanes/worklog) for a post with no class (progress, work log).
 //   messenger  <DATA_DIR>/notify-route.json { messengers: { <adapterId>: { <class>: boolean } } }; a missing entry is on (these messengers got everything before).
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, DATA_DIR, updateNotifyPush, writeAtomic } from "./config.ts";
-import { isWebLane, postKind, postSettings, savePostSettings } from "./discord-post.ts";
-import { CLASS_LABELS, CLASS_PUSH_DEFAULTS, NOTICE_CLASSES, type NoticeClass } from "./notice-class.ts";
+import { cfg, DATA_DIR, writeAtomic } from "./config.ts";
+import { isWebLane, postKind, postSettings } from "./discord-post.ts";
+import { CLASS_PUSH_DEFAULTS, NOTICE_CLASSES, type NoticeClass } from "./notice-class.ts";
 import { splitTone } from "./tone.ts";
 
 export type RouteInput = {
@@ -99,30 +99,16 @@ export function route(input: RouteInput): Route {
 	};
 }
 
-// The settings matrix: one row per class, one column per place. `null`: no switch (Discord's 기록 follows the conversation kind, 설정 → Discord).
-export type Column = { id: string; label: string };
-export type Matrix = { classes: { id: NoticeClass; label: string }[]; columns: Column[]; cells: Record<NoticeClass, Record<string, boolean | null>> };
+// A messenger's own 알림 switches (its connection sheet, 설정 → 메신저): which classes it receives. Discord keeps its switches in discord-post.json.
+export const messengerClasses = (id: string): Record<NoticeClass, boolean> =>
+	Object.fromEntries(NOTICE_CLASSES.map(c => [c, messengerOn(id, c)])) as Record<NoticeClass, boolean>;
 
-export function matrix(messengers: readonly Column[], discordConnected: boolean): Matrix {
-	const columns: Column[] = [{ id: "web", label: "웹앱" }, { id: "push", label: "휴대폰" }, ...(discordConnected ? [{ id: "discord", label: "디스코드" }] : []), ...messengers];
-	const post = postSettings(), push = pushClasses();
-	const cells = Object.fromEntries(NOTICE_CLASSES.map(c => [c, Object.fromEntries(columns.map(col => [col.id, col.id === "web" ? true : col.id === "push" ? push[c] : col.id === "discord" ? (c === "log" ? null : post[c]) : messengerOn(col.id, c)]))])) as Matrix["cells"];
-	return { classes: NOTICE_CLASSES.map(id => ({ id, label: CLASS_LABELS[id] })), columns, cells };
-}
-
-/** Sets one cell of the matrix; `messengers` are the adapter ids that have a column. A cell that cannot change throws (the route answers 400). */
-export function setCell(cls: string, column: string, on: unknown, messengers: readonly string[]): void {
-	if (!(NOTICE_CLASSES as readonly string[]).includes(cls)) throw new Error(`알 수 없는 분류예요: ${cls}`);
-	if (typeof on !== "boolean") throw new Error("on은 true나 false여야 해요");
-	const c = cls as NoticeClass;
-	if (column === "web") {
-		if (!on) throw new Error("웹앱 알림은 끌 수 없어요");
-	} else if (column === "push") updateNotifyPush({ [c]: on });
-	else if (column === "discord") {
-		if (c === "log") throw new Error("기록은 대화별 설정을 따라요");
-		savePostSettings({ [c]: on });
-	} else if (messengers.includes(column)) {
-		const next: Stored = { ...stored(), [column]: { ...stored()[column], [c]: on } };
-		writeAtomic(file(), `${JSON.stringify({ messengers: next }, null, 2)}\n`);
-	} else throw new Error(`알 수 없는 항목이에요: ${column}`);
+/** Merges `{ <class>: boolean }` into the messenger's switches; anything else throws (the route answers 400) and changes nothing. */
+export function saveMessengerClasses(id: string, patch: unknown): Record<NoticeClass, boolean> {
+	if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("notify must be { <class>: boolean }");
+	const bad = Object.entries(patch).find(([k, v]) => !(NOTICE_CLASSES as readonly string[]).includes(k) || typeof v !== "boolean");
+	if (bad) throw new Error(`알 수 없는 알림 항목이에요: ${bad[0]}`);
+	const next: Stored = { ...stored(), [id]: { ...stored()[id], ...(patch as Partial<Record<NoticeClass, boolean>>) } };
+	writeAtomic(file(), `${JSON.stringify({ messengers: next }, null, 2)}\n`);
+	return messengerClasses(id);
 }
