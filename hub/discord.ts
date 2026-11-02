@@ -797,7 +797,7 @@ export function connect(onMessage: (m: Incoming) => void): void {
 	let heartbeat: ReturnType<typeof setInterval> | undefined;
 	const open = () => {
 		if (closing) return;
-		const ws = new WebSocket(resumeUrl || "wss://gateway.discord.gg/?v=10&encoding=json");
+		const ws = new WebSocket(resumeUrl || process.env.DOTZ_DISCORD_GATEWAY || "wss://gateway.discord.gg/?v=10&encoding=json");
 		socket = ws;
 		let acked = true;
 		ws.onmessage = ev => {
