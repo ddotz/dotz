@@ -4,7 +4,7 @@
 const OB = {};
 const OB_POLL_MS = 1500;
 const OB_AUTO_MS = 4000;
-const OB_AUTO_MAX = 15;
+const OB_AUTO_MAX = 1;
 const obKeyOk = key => key === "web-access" || key === "discord" || key === "jandi" || key === "slack" || key === "telegram";
 const obVisible = key => key === "web-access" ? current === "webaccess" : current === key;
 const obLine = v => v.state === "waiting" ? "내가 할 일이 하나 남았어요." : v.state === "running" ? "자동으로 연결하는 중이에요." : v.state === "done" ? "연결했어요." : v.state === "failed" ? "연결하지 못했어요." : "아직 시작하지 않았어요.";
@@ -15,8 +15,8 @@ function obPaint(key) {
 }
 function obStop(o) { if (o && o.timer) clearTimeout(o.timer); if (o) o.timer = 0; }
 function obAutoStop(o) { if (o && o.autoTimer) clearTimeout(o.autoTimer); if (o) o.autoTimer = 0; }
-// Waiting is an owner action the flow can finish by itself once done: continue every 4 s, at most 15 times, and never
-// after the panel left the screen or the flow moved on.
+// Waiting is an owner action the flow can finish by itself once done: continue once after 4 s, and never
+// after the panel left the screen or the flow moved on. A step that is still waiting after that keeps its button.
 function obAuto(key) {
   const o = OB[key];
   if (!o || o.state !== "waiting" || !obVisible(key)) { obAutoStop(o); return; }

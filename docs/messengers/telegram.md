@@ -23,6 +23,7 @@
 
 | 무엇 | 어디 | 권한 |
 | --- | --- | --- |
+| 봇 토큰 | `~/.dotz/secrets/telegram-bot-token` | 0600 |
 | 봇 토큰, 대화 매핑, 허용 사용자, 읽은 위치 | `~/.dotz/messengers/telegram.json` | 0600 |
 | 온보딩 진행 상태(비밀 없음) | `~/.dotz/onboarding/telegram.json` | 0600 |
 
