@@ -86,12 +86,24 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 	});
 }
 // A failed worker no turn took up is handed back to its own session, answering in the conversation it served (bgwork.ts handover).
-const sessionBg = (o: Orchestrator, q: ReturnType<typeof createPrompts>) => createBgWork({
-	sessionFile: () => o.orch.sessionFile, deferred: q.deferredOpen, turn: q.turnAt, log,
-	turnEndedAt: () => o.lastTurnEndAt(),
-	busy: () => o.orch.status === "working" || o.orch.status === "starting",
-	handover: w => void q.deliver(msg().workFailed(w.description, w.id, w.reason || w.error || "이유가 기록되지 않았어요"), w.target ? { target: w.target, ...(w.reply_to ? { replyTo: w.reply_to } : {}) } : undefined),
-});
+// A stalled worker (still "running" in OmO's store, no longer working) wakes its session once the same way, and is named in
+// the session's usage-limit resume note when the limit held that wake back.
+const sessionBg = (o: Orchestrator, q: ReturnType<typeof createPrompts>) => {
+	const to = (w: { target?: string; reply_to?: string }) => (w.target ? { target: w.target, ...(w.reply_to ? { replyTo: w.reply_to } : {}) } : undefined);
+	const bg = createBgWork({
+		sessionFile: () => o.orch.sessionFile, deferred: q.deferredOpen, turn: q.turnAt, log,
+		turnEndedAt: () => o.lastTurnEndAt(),
+		busy: () => o.orch.status === "working" || o.orch.status === "starting",
+		paused: () => o.orch.status === "rate-limited",
+		handover: w => void q.deliver(msg().workFailed(w.description, w.id, w.reason || w.error || "이유가 기록되지 않았어요"), to(w)),
+		stalled: w => void q.deliver(msg().workStalled([w]), to(w)),
+	});
+	o.setResumeExtra(() => {
+		const stalled = bg.takeStalled();
+		return stalled.length ? msg().workStalled(stalled) : "";
+	});
+	return bg;
+};
 export const queue = makeQueue(MAIN, main, PENDING, () => bgWork);
 // The orchestrator's background task workers (what a `[later]` turn waits for), read from OmO's task store: /api/workers, /api/state `work`.
 export const bgWork = sessionBg(main, queue);

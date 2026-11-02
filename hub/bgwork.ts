@@ -7,7 +7,7 @@
 // A worker belongs to the owner message of the turn that spawned it (prompts.ts turnAt); one spawned by no turn of ours (a
 // run a worker's result woke, a restart) belongs to the latest still-open deferred message delivered before its spawn.
 // Finished workers keep no such message, nothing waits for them.
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { scrub } from "./activity.ts";
 import { failureText } from "./runstate.ts";
@@ -17,7 +17,8 @@ type BgWork = {
 	id: string;
 	/** The short description written at the spawn (Korean, as the orchestrator wrote it). */
 	description: string;
-	status: "running" | "done" | "failed";
+	/** stalled: OmO still says running, but the worker no longer works (its last event an error, or no activity for a while). */
+	status: "running" | "stalled" | "done" | "failed";
 	started_at: number;
 	ended_at?: number;
 	/** The channel of the open owner message this work serves, when known. */
@@ -31,6 +32,8 @@ type BgWork = {
 	model?: string;
 	/** A failed worker's reason as the owner reads it (runstate.ts failureText), so every screen says the same words. */
 	reason?: string;
+	/** A stalled worker's own working folder (its worktree), for the session to finish or relaunch it there. */
+	workdir?: string;
 	/** The owner stopped it (중단), so it is no failure of its own. */
 	cancelled?: boolean;
 	/** A failure the session already took up: one of its turns ended after the worker failed (it read OmO's failure notice, or the
@@ -113,6 +116,15 @@ const SPAWN_SLACK_MS = 5_000;
 // A running record with no pid and no update for this long is a leftover, not a worker (seen: records from 2026-10-19 still "running").
 const NO_PID_STALE_MS = 3 * 3600_000;
 const RUNNING = new Set(["running", "queued", "pending"]);
+// A running worker with no transcript or task-log activity for this long is stalled (DOTZ_WORKER_STALL_MIN, default 15).
+export const STALL_IDLE_MS = Number(process.env.DOTZ_WORKER_STALL_MIN ?? 15) * 60_000;
+// A worker whose task log ends on an error is stalled once no retry or fallback followed it for this long (OmO retries in seconds).
+export const STALL_ERROR_MS = 2 * 60_000;
+// OmO's task-log events that end a worker's run while its record stays "running" (st_01a19af7, 2026-11-02: a usage limit, then
+// 1.5 h idle and still running, holding the gateway restart and "지금 진행 중").
+const ERROR_EVENTS = new Set(["child_error", "retry_fallback_exhausted"]);
+// Only the end of a task log is read.
+const LOG_TAIL_BYTES = 8 * 1024;
 const DONE = new Set(["completed", "done", "succeeded"]);
 
 const stamp = (s?: string) => (s ? Date.parse(s) || 0 : 0);
@@ -156,6 +168,12 @@ type BgWorkDeps = {
 	/** The safety net for a failure the session never took up: hand it to the session to fix and finish (owner 2026-10-29: "왜
 	 * 재요청을 나에게 물어보지? 알아서 수정해서 목표 달성해야지"). Called once per worker. */
 	handover?: (w: BgWork) => void;
+	/** Is the session paused on a usage limit? A stalled worker is then named in its resume note instead of a wake of its own. */
+	paused?: () => boolean;
+	/** Wakes the session once per stalled worker, so it finishes or relaunches the work; the worker itself is never killed. */
+	stalled?: (w: BgWork) => void;
+	/** No activity for this long makes a running worker stalled (default STALL_IDLE_MS). */
+	stallMs?: number;
 	/** Sends a signal to a worker process (default process.kill); 중단 ends the worker with it. */
 	kill?: (pid: number, signal: NodeJS.Signals) => void;
 };
@@ -177,6 +195,14 @@ export function createBgWork(deps: BgWorkDeps) {
 	const handed = new Set<string>();
 	// Workers the owner stopped (중단), with when: OmO's record still says running for a while after its process ended.
 	const cancelled = new Map<string, number>();
+	// The OmO store (<project>/senpi-task) each record was read from: its task log and transcripts live there.
+	const storeOf = new Map<string, string>();
+	// The last event of each task log, read again only when the log changed.
+	const lastEvent = new Map<string, { stamp: string; type?: string; message?: string }>();
+	// Stalled workers already logged, and already woken for (by a wake or a resume note).
+	const stallTold = new Set<string>();
+	const woken = new Set<string>();
+	const stallMs = deps.stallMs ?? STALL_IDLE_MS;
 	const kill = deps.kill ?? ((pid: number, signal: NodeJS.Signals) => process.kill(pid, signal));
 
 	function records(sessionFile: string): Rec[] {
@@ -206,10 +232,73 @@ export function createBgWork(deps: BgWorkDeps) {
 					}
 					cache.set(file, (hit = { stamp: changed, rec }));
 				}
-				if (hit.rec?.root_session_id === root && hit.rec.task_id) out.push(hit.rec);
+				if (hit.rec?.root_session_id === root && hit.rec.task_id) {
+					out.push(hit.rec);
+					storeOf.set(hit.rec.task_id, join(projects, project, "senpi-task"));
+				}
 			}
 		}
 		return out;
+	}
+
+	// Why a worker OmO still lists as running no longer works, and since when; undefined while it works or nothing shows either
+	// way (no task log, no transcript). Reads the task log's tail and the newest transcript's time only, never a whole file.
+	function stallOf(id: string): { reason: string; error?: string; since: number } | undefined {
+		const store = storeOf.get(id);
+		if (!store) return undefined;
+		const mtime = (file: string) => {
+			try {
+				return statSync(file).mtimeMs;
+			} catch {
+				return 0;
+			}
+		};
+		const log = join(store, "logs", `${id}.jsonl`);
+		const logAt = mtime(log);
+		const dir = join(store, "children", id, "sessions", id);
+		let seen = logAt;
+		try {
+			for (const n of readdirSync(dir)) if (n.endsWith(".jsonl")) seen = Math.max(seen, mtime(join(dir, n)));
+		} catch {}
+		if (!seen) return undefined;
+		const t = now();
+		const last = logAt ? lastLogEvent(log) : undefined;
+		if (last?.type && ERROR_EVENTS.has(last.type) && t - logAt >= STALL_ERROR_MS) {
+			const error = scrub(last.message || last.type).replace(/\s+/g, " ").trim().slice(0, 200);
+			return { reason: failureText(error), error, since: logAt };
+		}
+		if (t - seen >= stallMs) return { reason: `${Math.round((t - seen) / 60_000)}분째 활동이 없어요`, since: seen };
+		return undefined;
+	}
+	function lastLogEvent(file: string): { type?: string; message?: string } | undefined {
+		let size: number, changed: string;
+		try {
+			const s = statSync(file);
+			size = s.size;
+			changed = `${s.mtimeMs}:${s.size}`;
+		} catch {
+			return undefined;
+		}
+		const hit = lastEvent.get(file);
+		if (hit?.stamp === changed) return hit;
+		const len = Math.min(size, LOG_TAIL_BYTES);
+		const buf = Buffer.alloc(len);
+		const fd = openSync(file, "r");
+		try {
+			readSync(fd, buf, 0, len, size - len);
+		} finally {
+			closeSync(fd);
+		}
+		let found: { stamp: string; type?: string; message?: string } = { stamp: changed };
+		for (const line of buf.toString("utf8").split("\n").reverse()) {
+			try {
+				const e = JSON.parse(line) as { type?: string; payload?: { message?: unknown } };
+				found = { stamp: changed, type: e.type, ...(typeof e.payload?.message === "string" ? { message: e.payload.message } : {}) };
+				break;
+			} catch {}
+		}
+		lastEvent.set(file, found);
+		return found;
 	}
 
 	function toWork(r: Rec): BgWork {
@@ -233,8 +322,18 @@ export function createBgWork(deps: BgWorkDeps) {
 			status = "failed";
 			ended = stamp(r.updated_at) || started;
 		}
+		const stall = status === "running" ? stallOf(r.task_id!) : undefined;
+		if (stall) {
+			status = "stalled";
+			ended = stall.since;
+		}
 		const description = scrub(String(r.description || r.task_summary || r.category || r.task_id)).replace(/\s+/g, " ").trim().slice(0, 120);
 		const folder = folderOf(r);
+		if (stall) {
+			const model = workModel(r);
+			const workdir = r.spawn_spec?.cwd;
+			return { id: r.task_id!, description, status, started_at: started, ended_at: stall.since, ...(folder ? { folder } : {}), ...(workdir ? { workdir } : {}), ...(stall.error ? { error: stall.error } : {}), ...(model ? { model } : {}), reason: stall.reason };
+		}
 		const stopped = stoppedAt !== undefined && status === "failed";
 		const why = status === "failed" && !stopped ? [r.error_message, r.terminal_reason, r.error, reported].find(v => typeof v === "string" && v.trim()) : undefined;
 		const error = why ? scrub(why).replace(/\s+/g, " ").trim().slice(0, 200) : "";
@@ -249,7 +348,7 @@ export function createBgWork(deps: BgWorkDeps) {
 		if (!file) return [];
 		const t = now();
 		const open = deps.deferred().sort((a, b) => a.at - b.at);
-		const works = records(file).map(toWork).filter(w => w.status === "running" || t - (w.ended_at ?? 0) <= FINISHED_KEEP_MS);
+		const works = records(file).map(toWork).filter(w => w.status === "running" || w.status === "stalled" || t - (w.ended_at ?? 0) <= FINISHED_KEEP_MS);
 		for (const w of works) {
 			// The turn that spawned the worker is its message; only a worker no turn of ours spawned falls back to the latest
 			// deferred message before it (an answered or newer message is no reason to move it: owner 2026-10-23). A worker that
@@ -285,9 +384,32 @@ export function createBgWork(deps: BgWorkDeps) {
 			deps.log?.(`background work ${w.id} failed and no turn took it up: handed to the session to fix and finish`);
 			deps.handover(w);
 		}
+		wake(works);
 		const running = works.filter(w => w.status === "running").sort((a, b) => a.started_at - b.started_at);
 		const finished = works.filter(w => w.status !== "running").sort((a, b) => (b.ended_at ?? 0) - (a.ended_at ?? 0));
 		return [...running, ...finished];
+	}
+
+	// A stalled worker is logged once and its session woken once, while it is idle and not paused on a usage limit (the resume
+	// note names it then, takeStalled). It is never stopped from here: the session decides.
+	function wake(works: BgWork[]): void {
+		for (const w of works) {
+			if (w.status !== "stalled") continue;
+			if (!stallTold.has(w.id)) {
+				stallTold.add(w.id);
+				deps.log?.(`background work ${w.id} stalled (still running in OmO's store): ${w.error || w.reason}`);
+			}
+			if (!deps.stalled || woken.has(w.id) || deps.busy?.() || deps.paused?.()) continue;
+			woken.add(w.id);
+			deps.stalled(w);
+		}
+	}
+
+	/** The stalled workers no wake named yet, marked as named: what the usage-limit resume note lists. */
+	function takeStalled(file = deps.sessionFile()): BgWork[] {
+		const out = file ? records(file).map(toWork).filter(w => w.status === "stalled" && !woken.has(w.id)) : [];
+		for (const w of out) woken.add(w.id);
+		return out;
 	}
 
 	/**
@@ -301,7 +423,11 @@ export function createBgWork(deps: BgWorkDeps) {
 
 	/** The running workers of one OmO session (default: the orchestrator's), oldest first: what a lane's run line names. */
 	function runningWork(file = deps.sessionFile()): BgWork[] {
-		return file ? records(file).map(toWork).filter(w => w.status === "running").sort((a, b) => a.started_at - b.started_at) : [];
+		if (!file) return [];
+		const works = records(file).map(toWork);
+		// The restart gate polls this while it waits: a stalled worker it no longer waits for is handed to its session from here too.
+		wake(works);
+		return works.filter(w => w.status === "running").sort((a, b) => a.started_at - b.started_at);
 	}
 
 	/**
@@ -311,7 +437,8 @@ export function createBgWork(deps: BgWorkDeps) {
 	async function cancel(id: string, file = deps.sessionFile()): Promise<CancelResult> {
 		const rec = file ? records(file).find(r => r.task_id === id) : undefined;
 		if (!rec) return { ok: false, status: 404, error: "이 작업을 찾을 수 없어요" };
-		if (toWork(rec).status !== "running") return { ok: false, status: 409, error: "이미 끝난 작업이에요" };
+		const st = toWork(rec).status;
+		if (st !== "running" && st !== "stalled") return { ok: false, status: 409, error: "이미 끝난 작업이에요" };
 		const pid = rec.pid;
 		if (typeof pid !== "number") return { ok: false, status: 409, error: "이 작업은 프로세스를 알 수 없어 여기서 멈출 수 없어요" };
 		const gone = async (ms: number) => {
@@ -335,7 +462,7 @@ export function createBgWork(deps: BgWorkDeps) {
 		return { ok: true };
 	}
 
-	return { list, running, runningWork, cancel };
+	return { list, running, runningWork, takeStalled, cancel };
 }
 
 const anySession = createBgWork({ sessionFile: () => undefined, deferred: () => [] });

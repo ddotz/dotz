@@ -375,10 +375,10 @@ function pmRoutine(x) {
 const pmSessionRow = r => sessionRow({ name: r.name, title: r.title, status: r.status, live: r.live, pendingAsk: r.waiting }, { project: r.project, line: r.line });
 // A background job of the main assistant that belongs to the project (asked in its chat, or briefed for its folder): tap lands on the asking message.
 const pmWorkRow = w => {
-  const run = w.status === "running";
+  const run = w.status === "running", stall = w.status === "stalled";
   return el("button", { class: "li tap", type: "button", onclick: () => workGo(w) },
-    el("span", { class: `dot ${run || workRecovering(w) ? "pri" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err"}` }),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : workRecovering(w) ? "이어서 처리 중" : "실패 · 이어서 처리함"} · ${workAgo(w)}` })),
+    el("span", { class: `dot ${run || workRecovering(w) ? "pri" : stall ? "att" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err"}` }),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${stall ? `멈춤 · ${w.reason || "활동이 없어요"}` : w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : workRecovering(w) ? "이어서 처리 중" : "실패 · 이어서 처리함"} · ${workAgo(w)}` })),
     icon("chev", "lead"));
 };
 // 진행 중: sessions that are alive and background jobs that are running. 최근 세션: the ended ones, newest first.
