@@ -18,6 +18,7 @@ const fresh = (): Mail[] => [
 	{ key: "fx-d", subject: "배송 안내", from: "Shop <shop@example.com>", at: ago(50), summary: "주문하신 상품이 출발했어요.", read: true, archived: true, can: CAN },
 	{ key: "fx-e", subject: "Re: 견적서 보내드립니다", from: "me@example.com", to: "Lee <lee@example.com>", at: ago(25), summary: "확인했어요. 금요일까지 답드릴게요.", read: true, dir: "out", can: CAN },
 	{ key: "fx-fail", subject: "처리가 안 되는 메일", from: "Oh <oh@example.com>", at: ago(5), summary: "서버가 거절하는 메일이에요.", read: false, can: CAN },
+	{ key: "fx-company", subject: "회사 메일", from: "Work <work@example.com>", at: ago(6), summary: "회사 메일함은 can이 비어 있어요.", read: false, can: [] },
 	{ key: "fx-old", subject: "읽음 표시를 못 하는 메일함", from: "Old <old@example.com>", at: ago(7), summary: "이 메일함은 can 정보가 없어요.", read: true },
 ];
 let mails: Mail[] = fresh();
@@ -48,11 +49,14 @@ const hub = fakeHub({
 			const body = (await req.json()) as { action: string }; posts.push({ path: p, body });
 			if (one[1] === "fx-fail") return json({ ok: false, synced: false, note: "Gmail에 반영하지 못했어요" });
 			const m = mails.find(x => x.key === one[1]); if (m) APPLY[body.action](m);
+			if (m && Array.isArray(m.can) && !m.can.length) return json({ ok: true, synced: false, note: `이 메일함은 실제 메일함의 ${body.action === "archive" || body.action === "unarchive" ? "보관 처리를" : "읽음 표시를"} 바꿀 수 없어요. dotz에서만 바뀌었어요` });
 			return json({ ok: true, synced: true });
 		}
 		if (p === "/api/mail/actions" && req.method === "POST") {
 			const body = (await req.json()) as { keys: string[]; action: string }; posts.push({ path: p, body });
-			return json({ ok: true, results: body.keys.map(k => { const m = mails.find(x => x.key === k); if (m) APPLY[body.action](m); return { key: k, ok: true, synced: true }; }) });
+			// The real hub: the action always lands in dotz; a mailbox with no capability list of its own answers synced:false and one line.
+			const line = `이 메일함은 실제 메일함의 ${body.action === "archive" || body.action === "unarchive" ? "보관 처리를" : "읽음 표시를"} 바꿀 수 없어요. dotz에서만 바뀌었어요`;
+			return json({ ok: true, results: body.keys.map(k => { const m = mails.find(x => x.key === k); if (m) APPLY[body.action](m); return { key: k, ok: true, synced: !!(m && m.can && m.can.length), ...(m && !(m.can && m.can.length) ? { note: line } : {}) }; }) });
 		}
 		const del = /^\/api\/mail\/([^/]+)$/.exec(p);
 		if (del && req.method === "DELETE") { posts.push({ path: p, body: null }); mails = mails.filter(x => x.key !== del[1]); return json({ ok: true }); }
@@ -92,8 +96,8 @@ const shot = async (v: View, name: string) => { if (!SHOTS) return; mkdirSync(SH
 describe("the list", () => {
 	test("six folders, a checkbox and a star on every row, the unread rows bold, the summary under the subject", async () => {
 		const v = await openList(1280, 800);
-		expect(await chips(v)).toEqual(["전체", "안 읽음3", "답장 필요1", "확인 대기", "답장함1", "보관함1", "보낸 메일1"]);
-		expect(await titles(v)).toEqual(["월간 점검 보고서 확인 요청", "회의 일정 변경", "처리가 안 되는 메일", "읽음 표시를 못 하는 메일함", "견적서 보내드립니다"]);
+		expect(await chips(v)).toEqual(["전체", "안 읽음4", "답장 필요1", "확인 대기", "답장함1", "보관함1", "보낸 메일1"]);
+		expect(await titles(v)).toEqual(["월간 점검 보고서 확인 요청", "회의 일정 변경", "처리가 안 되는 메일", "회사 메일", "읽음 표시를 못 하는 메일함", "견적서 보내드립니다"]);
 		const got = await ev<any>(v, `(() => { const rows = [...document.querySelectorAll("#mon-tl > .mr")]; return rows.map(r => ({ w: parseInt(getComputedStyle(r.querySelector(".rc-title")).fontWeight), label: r.getAttribute("aria-label"), chk: !!r.querySelector("input.mr-chk"), star: !!r.querySelector(".mr-star"), sum: [...r.children].find(c => c.matches(".mr-sum, ul.mr-sum"))?.textContent || "" })); })()`);
 		expect(got[0].w).toBeGreaterThanOrEqual(700);
 		expect(got[4].w).toBeLessThan(600);
@@ -122,16 +126,16 @@ describe("actions on a selection", () => {
 		await run(v, `${bar(v, "읽음으로 표시")}.click()`);
 		await posted(1);
 		expect(posts[0]).toEqual({ path: "/api/mail/actions", body: { keys: ["fx-a", "fx-b"], action: "read" } });
-		await waitFor(v, `!document.querySelector("#mon-tl > .mr.mr-new") === false && document.querySelectorAll("#mon-tl > .mr.mr-new").length === 1`);
-		expect(await chips(v)).toContain("안 읽음1");
+		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr.mr-new").length === 2`);
+		expect(await chips(v)).toContain("안 읽음2");
 		await run(v, `${bar(v, "안읽음으로 표시")}.click()`);
 		await posted(2);
 		expect(posts[1].body.action).toBe("unread");
-		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr.mr-new").length === 3`);
+		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr.mr-new").length === 4`);
 		await run(v, `${bar(v, "완료(보관)")}.click()`);
 		await posted(3);
 		expect(posts[2].body).toEqual({ keys: ["fx-a", "fx-b"], action: "archive" });
-		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr").length === 3`);
+		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr").length === 4`);
 		await folder(v, "archived");
 		expect(await titles(v)).toEqual(["월간 점검 보고서 확인 요청", "회의 일정 변경", "배송 안내"]);
 	}, 30_000);
@@ -147,14 +151,17 @@ describe("actions on a selection", () => {
 		expect(await ev<boolean>(v, `${rowJs("처리가 안 되는 메일")}.classList.contains("mr-new")`)).toBe(true);
 	}, 30_000);
 
-	test("a mailbox without the capability gets a disabled button and one short line", async () => {
+	test("a mailbox that will not follow still changes in dotz, and says so in one line", async () => {
 		const v = await openList(1280, 800);
-		await tick(v, "읽음 표시를 못 하는 메일함");
-		expect(await ev<boolean>(v, `${bar(v, "읽음으로 표시")}.disabled`)).toBe(true);
-		expect(await ev<boolean>(v, `${bar(v, "완료(보관)")}.disabled`)).toBe(true);
-		expect(await ev<boolean>(v, `${bar(v, "삭제")}.disabled`)).toBe(false);
-		expect(await ev<string>(v, `document.querySelector("#mbox-bar .mbox-note").textContent`)).toBe("이 메일함은 읽음 표시를 지원하지 않아요");
-		expect(posts).toEqual([]);
+		await tick(v, "회사 메일");
+		// company, a webmail site: the card says can: [], so the hub cannot follow, but the action still happens here. The action still lands in dotz and the hub's one line says the mailbox did not follow.
+		expect(await ev<boolean>(v, `${bar(v, "읽음으로 표시")}.disabled`)).toBe(false);
+		expect(await ev<boolean>(v, `${bar(v, "완료(보관)")}.disabled`)).toBe(false);
+		await run(v, `${bar(v, "완료(보관)")}.click()`);
+		await posted(1);
+		expect(posts[0]).toEqual({ path: "/api/mail/fx-company/action", body: { action: "archive" } });
+		await waitFor(v, `!${rowJs("회사 메일")}`);
+		expect(await ev<number>(v, `[...document.querySelectorAll("body *")].filter(e => e.children.length === 0 && e.textContent.includes("실제 메일함의 보관 처리를 바꿀 수 없어요")).length`)).toBe(1);
 	}, 30_000);
 
 	test("삭제 asks first, then uses the old route for a mailbox with no capability list", async () => {

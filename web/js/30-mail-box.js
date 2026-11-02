@@ -12,9 +12,11 @@ ICONS.inbox = "M4 13l2.2-7h11.6L20 13v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 13h4.5l
 ICONS.forward = "M15 7l5 5-5 5M20 12h-9a7 7 0 0 0-7 7";
 const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null };
 const mbKey = t => t.slice(5);
-const MB_NOTE = { read: "이 메일함은 읽음 표시를 지원하지 않아요", unread: "이 메일함은 읽음 표시를 지원하지 않아요", archive: "이 메일함은 보관을 지원하지 않아요", unarchive: "이 메일함은 보관을 지원하지 않아요", trash: "이 메일함은 삭제를 지원하지 않아요", star: "이 메일함은 별표를 지원하지 않아요", unstar: "이 메일함은 별표를 지원하지 않아요" };
-// What the mail's mailbox can do. `can` lists it; without the field only 삭제 works (the old route).
-const mailCan = (t, a) => { const m = MAILS.get(t); return !!m && (Array.isArray(m.can) ? m.can.includes(a) : a === "trash"); };
+const MB_NOTE = { read: "이 메일함은 실제 메일함의 읽음 표시를 바꿀 수 없어요", unread: "이 메일함은 실제 메일함의 읽음 표시를 바꿀 수 없어요", archive: "이 메일함은 실제 메일함의 보관 처리를 바꿀 수 없어요", unarchive: "이 메일함은 실제 메일함의 보관 처리를 바꿀 수 없어요", trash: "이 메일함의 메일은 실제 메일함에서 지우지 못해요", star: "이 메일함은 실제 메일함의 별표를 바꿀 수 없어요", unstar: "이 메일함은 실제 메일함의 별표를 바꿀 수 없어요" };
+// Whether the mail's mailbox will follow an action. Every action still works in dotz either way: `can` only says what the hub can repeat in the
+// real mailbox (owner 2026-11-02: read/unread must always be there). A card with no `can` at all is an older hub, which knows only the delete route.
+const mailCan = (t, a) => { const m = MAILS.get(t); return !!m && Array.isArray(m.can) && m.can.includes(a); };
+const mailOldHub = t => { const m = MAILS.get(t); return !!m && !Array.isArray(m.can); };
 // Unread: the hub's read flag when the card has one (the real mailbox's, two-way); else dotz's own read position (ts(t).unread). A sent mail is never unread.
 const mailUnread = (t, m = MAILS.get(t)) => !!m && m.dir !== "out" && (typeof m.read === "boolean" ? !m.read : (ts(t).unread | 0) > 0);
 const mbRefresh = () => { MON.sig = ""; MON.side = ""; monSchedule(); mbPaintBar(); };
@@ -35,21 +37,24 @@ const MB_DONE = { read: "읽음으로 표시했어요", unread: "안 읽음으�
 const MB_BACK = { archive: "unarchive", unarchive: "archive", read: "unread", unread: "read", star: "unstar", unstar: "star" };
 // Runs one action on `keys` (mail targets). Resolves the keys that went through.
 async function mbRun(keys, action, quiet = false) {
-  keys = keys.filter(t => mailCan(t, action));
+  keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
-  const legacy = action === "trash" && keys.some(t => !Array.isArray(MAILS.get(t).can));
-  const undo = new Map(keys.map(t => [t, mbApply(t, action)]));
+  // An older hub (no `can` on the card) has no action route: there only 삭제 works, through the old DELETE.
+  const legacy = action === "trash" && keys.some(mailOldHub);
+  const todo = legacy ? keys : keys.filter(t => !mailOldHub(t));
+  if (!todo.length) return [];
+  const undo = new Map(todo.map(t => [t, mbApply(t, action)]));
   mbRefresh();
   let res;
   try {
-    if (legacy) { res = []; for (const t of keys) { await api(`/api/mail/${mbKey(t)}`, "DELETE"); res.push({ key: t, ok: true, synced: false }); } }
-    else if (keys.length === 1) { const r = await api(`/api/mail/${mbKey(keys[0])}/action`, "POST", { action }); res = [{ ...r, key: keys[0] }]; }
+    if (legacy) { res = []; for (const t of todo) { await api(`/api/mail/${mbKey(t)}`, "DELETE"); res.push({ key: t, ok: true, synced: false }); } }
+    else if (todo.length === 1) { const r = await api(`/api/mail/${mbKey(todo[0])}/action`, "POST", { action }); res = [{ ...r, key: todo[0] }]; }
     else {
-      const r = await api("/api/mail/actions", "POST", { keys: keys.map(mbKey), action });
+      const r = await api("/api/mail/actions", "POST", { keys: todo.map(mbKey), action });
       const by = new Map((r && r.results || []).map(x => [String(x.key).startsWith("mail:") ? x.key : `mail:${x.key}`, x]));
-      res = keys.map(t => by.get(t) || { key: t, ok: !!(r && r.ok !== false) });
+      res = todo.map(t => by.get(t) || { key: t, ok: !!(r && r.ok !== false) });
     }
-  } catch (e) { res = keys.map(t => ({ key: t, ok: false, note: e && /^HTTP 404/.test(e.message) ? "서버가 아직 이 작업을 지원하지 않아요" : (e && e.message) || "처리하지 못했어요" })); }
+  } catch (e) { res = todo.map(t => ({ key: t, ok: false, note: e && /^HTTP 404/.test(e.message) ? "서버가 아직 이 작업을 지원하지 않아요" : (e && e.message) || "처리하지 못했어요" })); }
   const done = res.filter(x => x.ok !== false).map(x => x.key);
   for (const x of res) if (x.ok === false && undo.has(x.key)) undo.get(x.key)();
   mbRefresh();
@@ -61,12 +66,12 @@ async function mbRun(keys, action, quiet = false) {
   Promise.allSettled([convLoad(), loadIntegrations()]);
   return done;
 }
-// 삭제 asks first. A mail whose mailbox lists no `can` is only dropped from dotz (the real mailbox keeps it), as before.
+// 삭제 asks first, once. A mailbox that will not follow keeps its mail and the ask says so; an older hub only drops the row from dotz.
 async function mbTrash(keys) {
-  keys = keys.filter(t => mailCan(t, "trash"));
+  keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
-  const real = keys.every(t => Array.isArray(MAILS.get(t).can));
-  if (!await ask("메일 삭제", real ? `메일 ${keys.length}개를 삭제할까요? 실제 메일함에서도 휴지통으로 가요` : `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 실제 메일함의 메일은 그대로 있어요`, "삭제", true)) return [];
+  const real = keys.every(t => mailCan(t, "trash"));
+  if (!await ask("메일 삭제", real ? `메일 ${keys.length}개를 삭제할까요? 실제 메일함에서도 휴지통으로 가요` : `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 실제 메일함의 메일은 그대로 있거나, 옮기지 못할 수 있어요`, "삭제", true)) return [];
   const done = await mbRun(keys, "trash");
   mbLeave(keys);
   return done;
@@ -75,12 +80,11 @@ async function mbTrash(keys) {
 const mbLeave = keys => { if (monCtx && keys.includes(monCtx) && current === "chat" && !MAILS.has(monCtx)) go("monitoring", MON.sel); };
 
 /* ---------- the row: checkbox, star, the bold of an unread mail ---------- */
-const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}`, type: "button", "data-k": o.k, title: label, "aria-label": label, disabled: !!o.off, onclick }, icon(ic), el("span", { class: "mbox-bt", text: label }));
-// Star: a button while the mailbox has stars, else a quiet mark that only shows the state.
+const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}`, type: "button", "data-k": o.k, title: label, "aria-label": label, onclick }, icon(ic), el("span", { class: "mbox-bt", text: label }));
+// Star: always a button (a star works in dotz whatever the mailbox does); the mailbox's refusal comes back as the hub's one line.
 function mbStar(t) {
-  const m = MAILS.get(t) || {}, on = !!m.starred, can = mailCan(t, on ? "unstar" : "star");
+  const m = MAILS.get(t) || {}, on = !!m.starred;
   const mark = icon("star", on ? "on" : "");
-  if (!can) return el("span", { class: `mr-star${on ? " on" : ""}`, "data-k": "mail-star", role: "img", "aria-label": on ? "별표 있음" : "별표 없음" }, mark);
   return el("button", { class: `mr-star${on ? " on" : ""}`, type: "button", "data-k": "mail-star", "aria-pressed": String(on), "aria-label": on ? "별표 빼기" : "별표 달기", title: on ? "별표 빼기" : "별표 달기",
     onclick: ev => { ev.stopPropagation(); mbRun([t], on ? "unstar" : "star", true).then(() => {}); }, onkeydown: ev => ev.stopPropagation() }, mark);
 }
@@ -109,9 +113,9 @@ function mbPaintBar() {
   const off = acts.find(([a]) => !can(a));
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }),
-    ...acts.map(([a, label, ic]) => mbBtn(label, ic, () => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar()), { off: !can(a), k: `mail-${a}` })),
+    ...acts.map(([a, label, ic]) => mbBtn(label, ic, () => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar()), { k: `mail-${a}` })),
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
-  // A null child on append would print the word "null"; the note is added only when one mailbox cannot do the action.
+  // A null child on append would print the word "null"; the note is added only when the mailbox will not follow the action.
   if (off) bar.append(el("div", { class: "mbox-note", role: "status", text: MB_NOTE[off[0]] }));
 }
 // The visible mails of the list (select all) and the bar itself, at the head of the rows.
@@ -135,7 +139,7 @@ function mailOpenBar(t) {
         const done = a === "trash" ? await mbTrash([t]) : await mbRun([t], a);
         if (done.length && a !== "trash" && a !== "read") { MBOX.sel.delete(t); if (monCtx === t && current === "chat") go("monitoring", MON.sel); }
       });
-    }, { off: !mailCan(t, a), k: `mail-open-${a}` })));
+    }, { k: `mail-open-${a}` })));
   if (off) bar.append(el("div", { class: "mbox-note", role: "status", text: MB_NOTE[off[0]] }));
   return bar;
 }
