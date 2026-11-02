@@ -95,8 +95,8 @@ describe("zele poll", () => {
 		await tick(hooks, new Date(), rows("unread", "Kim <kim@example.com>"), async () => (reads++, ""));
 		await tick(hooks, new Date(), rows("", "Kim <kim@example.com>"), async () => (reads++, ""));
 		expect(got).toEqual([
-			[{ id: "t-1", read: false }, { id: "t-2", replied: true }],
-			[{ id: "t-1", read: true }, { id: "t-2", replied: true }],
+			[{ id: "t-1", read: false, starred: false }, { id: "t-2", replied: true }],
+			[{ id: "t-1", read: true, starred: false }, { id: "t-2", replied: true }],
 		]);
 		expect(reads).toBe(0);
 	});

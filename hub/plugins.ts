@@ -51,7 +51,12 @@ export type Plugin = {
 	reply?(draft: MailReply): MailReplyResult | undefined | Promise<MailReplyResult | undefined>;
 	/** True when `reply` sends `attachments` for this source. Without it the approval sheet says the files cannot go and asks once more. */
 	repliesWithFiles?(source: string): boolean;
+	/** The owner did `action` on a mail this plugin posted (hub/mail-sync.ts): do it in the real mailbox. true = done, false = refused; `undefined` = this plugin cannot (not its source, or no such action); a throw = failed. */
+	mailAction?(a: MailActionRequest): boolean | undefined | Promise<boolean | undefined>;
+	/** The actions `mailAction` can do for this source, e.g. ["read", "unread", "trash"]; without it dotz treats the source as read-only toward its mailbox. */
+	mailActions?(source: string): string[] | undefined;
 };
+export type MailActionRequest = { source: string; id: string; action: "read" | "unread" | "archive" | "unarchive" | "trash" | "star" | "unstar" };
 
 type Loaded = { name: string; plugin: Plugin; file: string };
 let loaded: Loaded[] = [];
@@ -194,5 +199,23 @@ export async function pluginReply(draft: MailReply): Promise<MailReplyResult | u
 	}
 	return undefined;
 }
+
+/** The first plugin that takes the action does it; a throw is a failure (rethrown to hub/mail-sync.ts). `undefined` = no plugin does it. */
+export async function pluginMailAction(a: MailActionRequest): Promise<boolean | undefined> {
+	refresh();
+	for (const l of loaded) {
+		try {
+			const done = await l.plugin.mailAction?.(a);
+			if (done !== undefined) return done;
+		} catch (error) {
+			note(`plugin ${l.name}: mailAction failed: ${error}`);
+			throw error;
+		}
+	}
+	return undefined;
+}
+
+/** What the plugin of a source can do in its mailbox (the `can` of the mail card). */
+export const pluginMailActions = (source: string): string[] => each("mailActions", l => l.plugin.mailActions?.(source))?.value ?? [];
 
 export const pluginRepliesWithFiles = (source: string): boolean => each("repliesWithFiles", l => l.plugin.repliesWithFiles?.(source) || undefined) !== undefined;
