@@ -12,13 +12,15 @@ import type { Peer } from "./peers.ts";
 export type Line = { id: number; at: number; me: boolean; text: string };
 type Rec = { id: number; time?: unknown; createdAt?: unknown; fromEntity: number; message?: { content?: { body?: unknown } } };
 type Client = Pick<SelfChat, "get" | "post" | "checkRoom">;
-export type PeerChatDeps = { config: () => SelfChatConfig | undefined; client: () => Client | undefined; now?: () => number; log?: (msg: string) => void };
+export type PeerChatDeps = { config: () => SelfChatConfig | undefined; client: () => Client | undefined; now?: () => number; log?: (msg: string) => void; listWaitMs?: number };
 
 const MAX_TEXT = 4000;
 const MAX_BODY = 64 * 1024;
 const PAGE = 100;
 const CACHE_MS = 2000;
 export const ONLINE_MS = 24 * 3600_000;
+/** How long the computer list waits on JANDI before it answers with the last known messages (the read goes on and fills them in). */
+export const LIST_WAIT_MS = 1500;
 
 const stamp = (r: Rec): number => {
 	const v = r.time ?? r.createdAt;
@@ -94,6 +96,8 @@ export function createPeerChats(deps: PeerChatDeps) {
 	const say = deps.log ?? (() => {});
 	let cache: { key: string; at: number; records: Rec[] } | undefined;
 	let checked = "";
+	let listed: Rec[] | undefined;   // the last messages the computer list read, for when JANDI is slow
+	let reading: Promise<Rec[]> | undefined;
 
 	/** The configured peers, only while the room is fully configured and polling is on. */
 	const active = () => {
@@ -117,14 +121,22 @@ export function createPeerChats(deps: PeerChatDeps) {
 	}
 
 	return {
-		/** One row per configured peer for the computer list; a JANDI failure leaves the row, offline. */
+		/** One row per configured peer for the computer list; a JANDI failure leaves the row, offline. JANDI gets at most `listWaitMs`:
+		 *  past that the rows use the last known messages (none yet: offline), so a slow JANDI never holds up the list. */
 		async rows(): Promise<Peer[]> {
 			const a = active();
 			if (!a) return [];
-			let recs: Rec[] | undefined;
-			try {
-				recs = await records(a.c);
-			} catch {}
+			const fresh = (reading ??= records(a.c)
+				.then(r => (listed = r))
+				.finally(() => {
+					reading = undefined;
+				}));
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			const late = new Promise<Rec[] | undefined>(res => {
+				timer = setTimeout(() => res(listed), deps.listWaitMs ?? LIST_WAIT_MS);
+			});
+			const recs = await Promise.race([fresh.catch(() => undefined), late]);
+			clearTimeout(timer);
 			return a.peers.map(p => ({ name: p.name, url: pagePath(p), self: false, online: !!recs && isOnline(linesOf(recs, a.c.member_id, p), now()), via: "jandi" as const }));
 		},
 

@@ -8,6 +8,7 @@ import { createSelfChat, normalizeSelfChat, type SelfChatConfig } from "./jandi-
 import { loadJandiConfig, saveJandiConfig } from "./messenger-jandi.ts";
 import type { Peer } from "./peers.ts";
 import { makeRoute } from "./routes.ts";
+import { advance } from "./runtime/test-clock.ts";
 import { setSecretKey } from "./secretbox.ts";
 
 const TEAM = 7;
@@ -52,6 +53,7 @@ const cfg: SelfChatConfig = {
 	member_id: ME,
 	bot_id: BOT,
 	keyword: "dotz",
+	reply_prefix: "",
 	session_secret: "jandi-session",
 	interval_ms: 1000,
 	peers: [{ name: "work", keyword: "work", reply_prefix: "[work]" }],
@@ -182,6 +184,23 @@ describe("the computer list", () => {
 		expect(await chats({ ...cfg, enabled: false }).chat.rows()).toEqual([]);
 		expect(await chats({ ...cfg, room_id: 0 }).chat.rows()).toEqual([]);
 		expect(await chats(null).chat.rows()).toEqual([]);
+	});
+
+	test("a slow JANDI does not hold up the list: the rows come after the short wait, from the last known messages", async () => {
+		let t = NOW;
+		let answer: ((v: unknown) => void) | undefined;
+		const client = { checkRoom: async () => {}, post: async () => ({}), get: () => new Promise(res => { answer = res; }) };
+		const chat = createPeerChats({ config: () => cfg, client: () => client as never, now: () => t, listWaitMs: 20 });
+		const afterWait = async () => {
+			const rows = chat.rows();
+			await advance(20);   // the test clock: only the short wait passes, JANDI never answers within it
+			return rows;
+		};
+		expect(await afterWait()).toEqual([{ name: "work", url: "/jandi-peer/work", self: false, online: false, via: "jandi" }]);   // nothing known yet
+		answer!({ records: [{ id: 1, fromEntity: OTHER, time: NOW - HOUR, message: { content: { body: "[work] 끝났어요" } } }] });
+		expect((await chat.rows())[0]!.online).toBe(true);   // the read that outlived the wait lands
+		t += 10_000;   // past the 2 s message cache: the next read goes to JANDI, which is slow again
+		expect((await afterWait())[0]!.online).toBe(true);
 	});
 });
 
