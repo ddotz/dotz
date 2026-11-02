@@ -1,4 +1,5 @@
 import * as discord from "./discord.ts";
+import { createDiscordStore } from "./discord-connection.ts";
 import type { Adapter, AdapterStatus } from "./messenger.ts";
 
 // Discord stays on its own send path (hub/outbound.ts); this adapter only shows it in the messenger list, so the fan-out skips it.
@@ -9,8 +10,12 @@ export const discordAdapter: Adapter = {
 	canEdit: true,
 	canButtons: true,
 	enabled: () => discord.status.enabled,
-	// The bot token, server and owner id are all there.
-	configured: () => discord.status.enabled,
+	// The bot token, server and owner id are all there (a saved connection still counts before the gateway restarts).
+	configured: () => {
+		const store = createDiscordStore();
+		const cfg = store.config();
+		return store.token() !== "" && cfg.guild !== "" && cfg.owner_id !== "";
+	},
 	get status(): AdapterStatus {
 		const { enabled, connected, error } = discord.status;
 		if (!enabled) return { state: "off", ...(error ? { error } : {}) };

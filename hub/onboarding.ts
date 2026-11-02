@@ -10,6 +10,8 @@ import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { createDiscordStore, type DiscordStore } from "./discord-connection.ts";
 import { discordFlow } from "./onboarding-discord.ts";
 import { createJandiStore, jandiFlow, type JandiStore } from "./onboarding-jandi.ts";
+import { slackFlow } from "./onboarding-slack.ts";
+import { telegramFlow } from "./onboarding-telegram.ts";
 import { webAccessFlow } from "./onboarding-web-access.ts";
 import { json } from "./routes-util.ts";
 
@@ -122,6 +124,8 @@ export function registerFlow(flow: OnboardFlow): void {
 }
 registerFlow(discordFlow);
 registerFlow(jandiFlow);
+registerFlow(slackFlow);
+registerFlow(telegramFlow);
 registerFlow(webAccessFlow);
 
 export type OnboardingService = {
@@ -432,6 +436,29 @@ function cloudflareLoginScript(url: string): string {
 	return [`await openTab(${JSON.stringify(url)});`, tick(2000), `console.log('RESULT ' + JSON.stringify({ ok: true }));`].join(" ");
 }
 
+function slackAppScript(name: string): string {
+	const manifest = { display_information: { name }, features: { bot_user: { display_name: name, always_online: true } }, oauth_config: { scopes: { bot: ["chat:write", "channels:read", "users:read"] } }, settings: { org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false } };
+	return [
+		`await openTab('https://api.slack.com/apps?new_app=1');`,
+		tick(3500),
+		`await page.evaluate(async m => { const byText = t => [...document.querySelectorAll('button,a,[role="button"]')].find(b => (b.innerText || '').trim() === t); const from = byText('From a manifest') || byText('매니페스트에서'); if (from) { from.click(); await new Promise(r => setTimeout(r, 1200)); } const next = byText('Next') || byText('다음'); if (next) { next.click(); await new Promise(r => setTimeout(r, 1200)); } const area = document.querySelector('textarea'); if (area) { const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(area, JSON.stringify(m, null, 2)); area.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 800)); } const create = byText('Create') || byText('만들기'); if (create) { create.click(); await new Promise(r => setTimeout(r, 2500)); } const install = [...document.querySelectorAll('button,a,[role="button"]')].find(b => /Install to Workspace|워크스페이스에 설치/i.test(b.innerText || '')); if (install) { install.click(); await new Promise(r => setTimeout(r, 2000)); } const allow = [...document.querySelectorAll('button,a,[role="button"]')].find(b => /^(Allow|허용)$/.test((b.innerText || '').trim())); if (allow) { allow.click(); await new Promise(r => setTimeout(r, 4000)); } }, ${JSON.stringify(manifest)});`,
+		`const token = await page.evaluate(() => ((document.body.innerText || '') + ' ' + [...document.querySelectorAll('input,textarea')].map(x => x.value || '').join(' ')).match(/xox[baprs]-[A-Za-z0-9-]{10,}/));`,
+		`console.log('RESULT ' + JSON.stringify(token ? { ok: true, value: token[0] } : { ok: false, waiting: 'login' }));`,
+		`await page.close();`,
+	].join(" ");
+}
+
+function telegramBotScript(): string {
+	return [
+		`await openTab('https://web.telegram.org/k/#@BotFather');`,
+		tick(4000),
+		`await page.evaluate(async () => { const box = document.querySelector('.input-message-input[contenteditable="true"], .input-message-input'); if (!box) return; box.focus(); document.execCommand('insertText', false, '/newbot'); await new Promise(r => setTimeout(r, 500)); box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true })); await new Promise(r => setTimeout(r, 2500)); });`,
+		`const token = await page.evaluate(() => ((document.body.innerText || '') + ' ' + [...document.querySelectorAll('input,textarea')].map(x => x.value || '').join(' ')).match(/(?:^|[^0-9])(\d{5,}:[A-Za-z0-9_-]{10,})/));`,
+		`console.log('RESULT ' + JSON.stringify(token ? { ok: true, value: token[1] } : { ok: false, waiting: 'login' }));`,
+		`await page.close();`,
+	].join(" ");
+}
+
 function cloudflareZoneScript(): string {
 	return [
 		`await openTab('https://dash.cloudflare.com/');`,
@@ -481,6 +508,10 @@ function createAsideBrowser(): BrowserLike {
 					return script(cloudflareLoginScript(String(arg.url ?? "")));
 				case "cloudflare-zone":
 					return script(cloudflareZoneScript());
+				case "slack-app":
+					return script(slackAppScript(String(arg.name ?? "dotz")));
+				case "telegram-bot":
+					return script(telegramBotScript());
 				case "discord-token": {
 					const r = await ensure();
 					try {
