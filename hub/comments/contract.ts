@@ -40,6 +40,8 @@ export type CommentAdapter = {
 	ownReplies?(src: SourceConfig, limit: number): Promise<string[]>;
 	// An answer of the owner that is no comment of his in the same stream (Instagram: he @mentioned the author under the post). `mine` = his stored comments of that thread.
 	answered?(c: Comment, mine: Comment[]): boolean;
+	// One cleanup pass over the stored comments (all sources) for what an older version of this adapter stored badly, no API call. Returns the corrected list, or undefined when nothing changed.
+	tidy?(src: SourceConfig, stored: Comment[]): Comment[] | undefined;
 };
 
 export const commentId = (source: string, native: string): string => `cm:${source}:${native}`;

@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { IgComment, IgMedia } from "../../features/youtube-instagram/lib/instagram.ts";
 import { type InstagramApi, instagramAdapter } from "./adapters/google-meta.ts";
-import type { SourceConfig } from "./contract.ts";
+import type { Comment, SourceConfig } from "./contract.ts";
 import { createEngine } from "./engine.ts";
 
 const NOW = Date.parse("2030-06-16T00:00:00.000Z");
@@ -43,8 +43,66 @@ test("a reply id that is the owner's own comment clears the unreplied badge of t
 	await t.engine.collect({ force: true });
 	const view = t.engine.threadView("instagram", "m1")!;
 	expect(view.comments.filter(c => c.unreplied).map(c => c.id)).toEqual(["cm:instagram:k2"]);
-	expect(view.comments.find(c => c.id === "cm:instagram:k1.0")!.mine).toBe(true);
+	expect(view.comments.find(c => c.id === "cm:instagram:r1")!.mine).toBe(true);
 	expect(open(t.engine)).toBe(1);
+});
+
+test("a reply seen nested and at top level is stored once under its real id, with the owner as author, its parent and its API time", async () => {
+	const t = setup();
+	t.state.list = [
+		top("k1", "fan1", "2026-10-12T03:00:00+0000", "q1", { replies: [{ id: "r1", username: "알 수 없는 사용자", text: "thanks", timestamp: "2026-10-12T03:04:05+0000" }] }),
+		top("r1", "owner_ig", "2026-10-12T03:04:05+0000", "thanks", { fromId: "17841" }),
+	];
+	await t.engine.collect({ force: true });
+	const stored = t.engine.store.comments();
+	expect(stored.map(c => c.id)).toEqual(["cm:instagram:k1", "cm:instagram:r1"]);
+	const reply = stored.find(c => c.native === "r1")!;
+	expect({ author: reply.author, mine: reply.mine, parent: reply.parent, at: reply.at }).toEqual({ author: "owner_ig", mine: true, parent: "k1", at: Date.parse("2026-10-12T03:04:05Z") });
+	expect(t.engine.needsReply(stored.find(c => c.native === "k1")!)).toBe(false);
+	expect(open(t.engine)).toBe(0);
+});
+
+test("someone else's reply is stored once, with its real username, instead of as a second top-level comment", async () => {
+	const t = setup();
+	t.state.list = [top("k1", "fan1", "2026-10-12T03:00:00+0000", "q1", { replies: [{ id: "r2", username: "알 수 없는 사용자", text: "me too", timestamp: "2026-10-12T03:10:00+0000" }] }), top("r2", "fan2", "2026-10-12T03:10:00+0000", "me too")];
+	await t.engine.collect({ force: true });
+	expect(t.engine.store.comments().map(c => ({ id: c.id, author: c.author, parent: c.parent }))).toEqual([{ id: "cm:instagram:k1", author: "fan1", parent: undefined }, { id: "cm:instagram:r2", author: "fan2", parent: "k1" }]);
+});
+
+test("a reply stored earlier as a top-level comment learns its parent when it is read again nested", async () => {
+	const t = setup();
+	t.state.list = [top("k1", "fan1", "2026-10-12T03:00:00+0000", "q1"), top("r1", "owner_ig", "2026-10-12T03:04:05+0000", "thanks", { fromId: "17841" })];
+	await t.engine.collect({ force: true });
+	expect(t.engine.store.comments().find(c => c.native === "r1")!.parent).toBeUndefined();
+	t.state.list = [top("k1", "fan1", "2026-10-12T03:00:00+0000", "q1", { replies: [{ id: "r1", username: "알 수 없는 사용자", text: "thanks", timestamp: "2026-10-12T03:04:05+0000" }] }), t.state.list[1]!, top("k3", "fan3", "2026-10-12T04:00:00+0000", "q3")];
+	await t.engine.collect({ force: true });
+	expect(t.engine.store.comments().filter(c => c.native === "r1").map(c => c.parent)).toEqual(["k1"]);
+	expect(open(t.engine)).toBe(0);
+});
+
+test("starting with synthetic <parent>.N records drops them for their real twin, which gets the parent; a second start changes nothing", () => {
+	const c = (native: string, o: Partial<Comment>): Comment => ({ id: `cm:instagram:${native}`, source: "instagram", native, thread: "m1", author: "fan1", text: "q", postTitle: "post", at: Date.parse("2026-10-12T03:00:00Z"), mine: false, collector: "t", ...o });
+	const at = Date.parse("2026-10-12T03:04:05Z");
+	const before = [
+		c("k1", {}),
+		c("k1.0", { parent: "k1", author: "알 수 없는 사용자", text: "thanks" }),
+		c("r1", { author: "owner_ig", text: "thanks", mine: true, at }),
+		c("k2", { text: "q2" }),
+		c("k2.0", { parent: "k2", author: "알 수 없는 사용자", text: "lonely" }),
+	];
+	writeFileSync(join(dir, "comments.json"), JSON.stringify(before));
+	const start = () => setup().engine.store;
+	expect(start().comments().map(x => ({ id: x.native, parent: x.parent }))).toEqual([{ id: "k1", parent: undefined }, { id: "r1", parent: "k1" }, { id: "k2", parent: undefined }, { id: "k2.0", parent: "k2" }]);
+	const once = readFileSync(join(dir, "comments.json"), "utf8");
+	start();
+	expect(readFileSync(join(dir, "comments.json"), "utf8")).toBe(once);
+});
+
+test("a comment stamped after the read is stored at the read time", async () => {
+	const t = setup();
+	t.state.list = [top("k1", "fan1", "2030-07-07T00:00:00+0000", "from the future")];
+	await t.engine.collect({ force: true });
+	expect(t.engine.store.comments().map(c => c.at)).toEqual([NOW]);
 });
 
 test("the owner @mentioning the commenter under the same media clears the badge, also when the mention comes in a later read", async () => {
@@ -66,7 +124,7 @@ test("a reply goes to the comment id, even for a comment without a username", as
 	t.state.list = [top("k9", "알 수 없는 사용자", "2030-06-15T12:10:00Z", "who am i?", { replies: [{ id: "r5", username: "알 수 없는 사용자", text: "me too" }] })];
 	await t.engine.collect({ force: true });
 	const ids = t.engine.store.comments().map(c => c.id);
-	expect(ids).toEqual(["cm:instagram:k9", "cm:instagram:k9.0"]);
+	expect(ids).toEqual(["cm:instagram:k9", "cm:instagram:r5"]);
 	for (const id of ids) {
 		const c = t.engine.store.comments().find(x => x.id === id)!;
 		const out = await instagramAdapter(() => ({ username: () => "owner_ig", media: async () => [], comments: async () => [], reply: async target => (t.state.replied.push(target), "ref") })).reply(SRC, c, "hello", "s1");

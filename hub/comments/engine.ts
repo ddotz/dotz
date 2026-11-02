@@ -60,6 +60,14 @@ export type Step = { ok: true; draft: Draft } | { ok: false; reason: string };
 
 export function createEngine(deps: EngineDeps) {
 	const store = createStore(deps.dir);
+	// Once per start: comments an older adapter stored badly (Instagram replies under synthetic ids) are corrected in one pass over comments.json.
+	let stored = store.comments();
+	let tidied = false;
+	for (const src of Object.values(store.config().sources)) {
+		const next = deps.adapters[src.kind]?.tidy?.(src, stored);
+		if (next) [stored, tidied] = [next, true];
+	}
+	if (tidied) store.replaceComments(stored);
 	const inflight = new Set<string>();
 	const pending = new Set<Promise<unknown>>();
 	const emit = (e: Record<string, unknown>) => deps.broadcast?.(e);
@@ -243,7 +251,10 @@ export function createEngine(deps: EngineDeps) {
 			let fresh: Comment[];
 			try {
 				const res = await adapter.list(src, prior.cursor);
-				fresh = store.addComments(res.comments.filter(r => watches(src, r.thread)).map(r => toComment(src, r, deps.collector)));
+				// A time after the read (a source's clock or a misparsed stamp, issue #31) is the read time: a comment from the future would sort above
+				// everything that comes later and never age out of the unreplied list.
+				const now = deps.now();
+				fresh = store.addComments(res.comments.filter(r => watches(src, r.thread)).map(r => toComment(src, r.at > now ? { ...r, at: now } : r, deps.collector)));
 				const wanted = src.autoDraft && replyOn(src) ? fresh.filter(c => c.at >= (src.autoSince ?? 0) && needsReply(c)).map(c => c.id) : [];
 				// Bounded (a flood of new comments keeps the newest MAX_QUEUE): cursors.json is read on every run.
 				const queue = [...new Set([...(prior.queue ?? []), ...wanted])].slice(-MAX_QUEUE);
