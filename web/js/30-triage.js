@@ -7,7 +7,7 @@
 // and a pick per card; 확인한 것 보내기 answers the picked ones together. Nothing is sent that was not picked one by one.
 const TR = { groups: [], min: 3, results: {}, t: 0, h: null, key: "", label: "", items: [], i: 0, list: false, picks: {}, edits: {}, notes: {}, done: {}, org: {}, open: {}, noting: false };
 const trK = c => `${c.to}|${c.ref}`;
-const trQ = c => String(c.question || "").replace(/\s*\([^()]*\)\s*$/, "");
+const trQ = c => draftQ(c.question);
 
 async function trLoad() {
   let r;
@@ -183,6 +183,7 @@ function trOneView(c) {
   const area = (part, value) => el("textarea", { class: "tr-ta", rows: "6", "aria-label": part === "mail" ? "함께 보낼 메일 본문" : "보낼 글", disabled: locked, oninput: ev => { e[part] = ev.target.value; trSendLabel(c); } }, value);
   const body = el("div", { class: "fs-body tr-body", tabindex: "-1" },
     el("div", { class: "tr-q" }, el("span", { text: trQ(c) || "이대로 보낼까요?" }), trChip(c)),
+    decideNode(d),
     el("div", { class: "tr-meta" }, d.toLabel ? el("span", { class: "tr-to" }, el("b", { text: d.toLabel }), ` ${d.to || ""}`) : null, d.subject ? el("span", { class: "tr-to" }, el("b", { text: "제목" }), ` ${d.subject}`) : null, d.rule ? el("span", { class: "tr-rule", text: `규칙: ${d.rule}` }) : null, !c.sendable ? el("span", { class: "tr-rule", text: "봇이 보내요" }) : null),
     trOriginal(c),
     c.info && c.info.length ? el("ul", { class: "tr-info" }, ...c.info.map(l => el("li", { text: l }))) : null,
@@ -193,7 +194,7 @@ function trOneView(c) {
   const foot = el("div", { class: "fs-ft tr-ft" });
   if (TR.noting && !locked) {
     foot.append(el("textarea", { class: "dc-note tr-note", rows: "3", placeholder: "어떻게 고칠까요? 봇이 고쳐서 다시 물어봐요", "aria-label": "어떻게 고칠지", oninput: ev => { TR.notes[k] = ev.target.value; } }, TR.notes[k] || ""),
-      el("div", { class: "tr-acts" }, el("button", { class: "dc-act alt tr-b", type: "button", onclick: () => { TR.noting = false; trPaint(); } }, "취소"), el("button", { class: "dc-act main tr-b tr-go", type: "button", onclick: () => trEditSubmit(c) }, "고치기 보내기")));
+      el("div", { class: "tr-acts" }, el("button", { class: "dc-act alt tr-b", type: "button", onclick: () => { TR.noting = false; trPaint(); } }, "취소"), el("button", { class: "dc-act main tr-b tr-go", type: "button", onclick: () => trEditSubmit(c) }, "고쳐 달라고 하기")));
   } else {
     foot.append(el("div", { class: "tr-acts" },
       el("button", { class: "dc-act alt tr-b", type: "button", onclick: trSkip }, "건너뛰기"),

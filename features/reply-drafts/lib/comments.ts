@@ -4,7 +4,7 @@
 // Nothing is posted here: the adapter only stages a pending reply, and the source's own approve command checks the user's pick.
 import { draftApprovalBlock } from "../../../hub/draft-approval.ts";
 import { precheck, reviseReply, type ReplyItem } from "../../../hub/reply-draft.ts";
-import { askWith, buildDraft, type FlowDeps, refineAfterCorrection, replyCall, toneKey } from "./flow.ts";
+import { buildDraft, type FlowDeps, refineAfterCorrection, replyCall, toneKey } from "./flow.ts";
 import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings, loadStyle, recordCorrection } from "./settings.ts";
 import { addDraft, getDraft, isDrafted, markDrafted, setStatus } from "./store.ts";
@@ -27,7 +27,7 @@ const one = (s: string) => s.replace(/\s+/g, " ").trim();
 
 export function commentAsk(a: CommentAdapter, c: CommentInput, reply: string, ref: string, notes: string[], headline = `${a.label} 댓글 답글 초안을 만들었어요`, open: string[] = []): string {
 	const note = notes.map(one).join(" / ");
-	const block = draftApprovalBlock({ to: `${c.author} 댓글`, toLabel: "대상", body: reply, ref, question: askWith("이 답글 올릴까요?", open), sendResult: "이 글을 답글로 올려요" });
+	const block = draftApprovalBlock({ to: `${c.author} 댓글`, toLabel: "대상", body: reply, ref, question: "이 답글 올릴까요?", decide: open, sendResult: "이 글을 답글로 올려요" });
 	const post = c.post ? [`> ${a.postLabel ?? "글"} ${one(c.post)}`] : [];
 	return [`[ask] ${headline}`, ...(note ? [`-# ${note}`] : []), ...post, `> 원댓글 ${one(c.author)}: ${one(c.text)}`, block].join("\n");
 }

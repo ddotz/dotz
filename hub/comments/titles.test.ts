@@ -88,12 +88,12 @@ test("an Instagram post shows the caption start and its picture, and a post with
 	expect(await adapter.retitle!(IG, ["m1", "m2"])).toEqual({ m1: { title: m1.postTitle, link: "https://www.instagram.com/p/abc/", thumb: "https://img.example/m1.jpg" } });
 });
 
-test("what only the owner can decide is asked once inside the card's question, not as a line above it (owner 2026-10-26)", () => {
+test("what only the owner can decide is asked once in the card's 정할 것 list, not as a note line (owner 2026-10-26, 2026-11-02)", () => {
 	const c = { id: "c1", source: "website", thread: "t", author: "가나", text: "언제 만나요?", postTitle: "모임 안내", at: NOW } as any;
 	const d = { code: "R1", commentId: "c1", text: "다음 주에 봬요", notes: ["확인: 날짜를 적지 않았어요", "정해 주세요: 모임 날짜 (요일)"] } as any;
 	const ask = commentAsk({ ...YT, kind: "website", key: "website" }, c, d);
 	expect(ask).not.toContain("정해 주세요");
 	expect(ask).toContain("-# 확인: 날짜를 적지 않았어요");
-	expect(ask).toContain("이 답글 올릴까요? 정할 것: 모임 날짜 요일");
+	expect(ask).toContain("정할 것:\n- 모임 날짜 요일\n결정: 이 답글 올릴까요? (R1)");
 });
 

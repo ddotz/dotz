@@ -16,7 +16,8 @@ import { libraryFile, listLibrary, rankLibrary } from "../features/reply-drafts/
 import { canAttach } from "../features/reply-drafts/lib/senders.ts";
 import { addStagedBytes, addStagedFile, removeStagedFile, stagedFiles } from "../features/reply-drafts/lib/staged.ts";
 import { getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
-import { fileSizeText, parseDraftApproval } from "./draft-approval.ts";
+import { type DraftFileIn, fileSizeText, parseDraftApproval } from "./draft-approval.ts";
+import { syncDraftFiles } from "./notices.ts";
 import { fileLinePaths, messageFiles, resolveAllowed } from "./files.ts";
 import { commentOriginalOf } from "./comments/gateway.ts";
 import type { CommentOriginal } from "./comments/original.ts";
@@ -54,6 +55,14 @@ export function askedFiles(ref: string): { name: string; size: string; path: str
 	}
 	return undefined;
 }
+// The files staged for a pending mail draft that can carry files; undefined for any other draft, whose card is left as posted.
+export function pendingDraftFiles(id: string): DraftFileIn[] | undefined {
+	const rec = getDraft(id);
+	return rec && rec.kind === "mail" && rec.status === "pending" && canAttach(rec.source) ? stagedFiles(rec.id).map(f => ({ name: f.name, size: f.size })) : undefined;
+}
+// Every open card re-checked against its staged files (hub/notices.ts refreshDraftFiles): on start, after a file changes here, and when the
+// approvals or the bell are read, so a file staged by another process (draft.ts revise, a rule) shows too.
+export const syncCardFiles = (): number => syncDraftFiles(pendingDraftFiles);
 export const askedFile = (ref: string, n: number): { path: string; name: string } | undefined => (getDraft(ref) ? undefined : askedFiles(ref)?.[n]);
 
 async function view(rec: DraftRec | undefined, ref: string) {
@@ -127,6 +136,7 @@ export async function draftAttachRoute(req: Request, url: URL, ref: string, tail
 				if (!bytes.length || bytes.length > FILE_MAX) return json({ error: "파일은 25MB 이하여야 해요" }, 413);
 				addStagedBytes(rec.id, b.name, bytes);
 			} else return json({ error: "upload, library, or name and data required" }, 400);
+			syncCardFiles();
 			return json({ ok: true, ...(await view(rec, ref)) });
 		}
 		return json({ error: "not found" }, 404);
