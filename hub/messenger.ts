@@ -82,7 +82,11 @@ function outMsg(e: HubEvent): OutMsg | undefined {
 	};
 }
 
+// A delivery failure shows as an error but does not take the adapter out of the fan-out (a LAN hiccup must not mute it until restart);
+// the next delivery that works sets it back to ok. A start failure (startAll) stays out.
+const deliveryFailed = new Set<string>();
 function fail(a: Adapter, e: unknown): void {
+	deliveryFailed.add(a.id);
 	a.status = { state: "error", error: String(e) };
 	log(`messenger ${a.id} delivery failed: ${e}`);
 }
@@ -97,9 +101,14 @@ export function installFanout(): void {
 		const msg = outMsg(e);
 		if (!msg) return;
 		for (const a of registry.values()) {
-			if (a.native || a.status.state !== "ok" || !a.enabled()) continue;
+			if (a.native || (a.status.state !== "ok" && !deliveryFailed.has(a.id)) || !a.enabled()) continue;
 			try {
-				void a.deliver(msg).catch(err => fail(a, err));
+				void a
+					.deliver(msg)
+					.then(r => {
+						if (r.delivered && deliveryFailed.delete(a.id)) a.status = { state: "ok" };
+					})
+					.catch(err => fail(a, err));
 			} catch (err) {
 				fail(a, err);
 			}
