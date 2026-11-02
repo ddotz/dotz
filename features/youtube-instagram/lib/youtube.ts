@@ -30,7 +30,9 @@ export class YoutubeError extends Error {
 
 export type YtLoc = { title: string; description: string };
 export type YtVideo = { id: string; title: string; description: string; categoryId: string; tags?: string[]; defaultLanguage?: string; publishedAt?: string; localizations: Record<Lang, YtLoc> };
-export type YtComment = { id: string; videoId: string; videoTitle?: string; author: string; authorChannelId?: string; text: string; publishedAt: string; replied: boolean };
+// `ownerReplies`: the channel's own replies under the thread, set only when the read asked for them (commentThreadsSince `answered`).
+export type YtReply = { id: string; parentId: string; author: string; text: string; publishedAt: string };
+export type YtComment = { id: string; videoId: string; videoTitle?: string; author: string; authorChannelId?: string; text: string; publishedAt: string; replied: boolean; ownerReplies?: YtReply[] };
 export type VideoSource = { size: number; body: () => BodyInit };
 export type VideoReader = (path: string) => VideoSource;
 
@@ -118,11 +120,16 @@ export async function channelStats(ctx: Ctx, channelId: string): Promise<{ title
 	return { title: c.snippet.title, subscribers: Number(c.statistics.subscriberCount) || 0, views: Number(c.statistics.viewCount) || 0, videos: Number(c.statistics.videoCount) || 0 };
 }
 
+type ThreadReply = { id?: string; snippet: { parentId?: string; authorDisplayName?: string; authorChannelId?: { value: string }; textDisplay?: string; textOriginal?: string; publishedAt?: string } };
 type Thread = {
-	snippet: { videoId?: string; topLevelComment: { id: string; snippet: { authorDisplayName: string; authorChannelId?: { value: string }; textDisplay?: string; textOriginal?: string; publishedAt: string } } };
-	replies?: { comments: { snippet: { authorChannelId?: { value: string }; textDisplay?: string; textOriginal?: string } }[] };
+	snippet: { videoId?: string; totalReplyCount?: number; topLevelComment: { id: string; snippet: { authorDisplayName: string; authorChannelId?: { value: string }; textDisplay?: string; textOriginal?: string; publishedAt: string } } };
+	replies?: { comments: ThreadReply[] };
 };
 type ThreadPage = { items?: Thread[]; nextPageToken?: string };
+
+const ownerReplyOf = (r: ThreadReply, channelId: string, parentId: string): YtReply | undefined =>
+	r.id && r.snippet.authorChannelId?.value === channelId ? { id: r.id, parentId: r.snippet.parentId ?? parentId, author: r.snippet.authorDisplayName ?? "", text: r.snippet.textDisplay ?? r.snippet.textOriginal ?? "", publishedAt: r.snippet.publishedAt ?? "" } : undefined;
+const ownerRepliesOf = (t: Thread, channelId: string): YtReply[] => (t.replies?.comments ?? []).flatMap(r => ownerReplyOf(r, channelId, t.snippet.topLevelComment.id) ?? []);
 
 async function* threadPages(ctx: Ctx, token: string, channelId: string, maxPages: number): AsyncGenerator<{ items: Thread[]; more: boolean }> {
 	let pageToken: string | undefined;
@@ -138,8 +145,9 @@ async function* threadPages(ctx: Ctx, token: string, channelId: string, maxPages
 
 // New = top-level comment newer than `since`, not by the channel, with no reply by the channel. Without `since` (first run)
 // it reads one page only to learn `newest`, the value the baseline moves to. `overflow` = the page cap was hit with the
-// baseline still ahead, so older new comments exist that are not listed.
-export async function commentThreadsSince(ctx: Ctx, channelId: string, since: string | undefined, maxPages = 3): Promise<{ comments: YtComment[]; newest?: string; overflow: boolean }> {
+// baseline still ahead, so older new comments exist that are not listed. `answered` (comment hub): a thread the channel already replied to is listed too,
+// carrying the channel's replies, so the owner's answer is stored next to the comment it answers.
+export async function commentThreadsSince(ctx: Ctx, channelId: string, since: string | undefined, maxPages = 3, answered = false): Promise<{ comments: YtComment[]; newest?: string; overflow: boolean }> {
 	const token = await accessToken(ctx);
 	const sinceMs = since === undefined ? undefined : Date.parse(since);
 	const comments: YtComment[] = [];
@@ -159,8 +167,9 @@ export async function commentThreadsSince(ctx: Ctx, channelId: string, since: st
 			}
 			const authorId = top.snippet.authorChannelId?.value;
 			const replied = (t.replies?.comments ?? []).some(r => r.snippet.authorChannelId?.value === channelId);
-			if (authorId === channelId || replied) continue;
-			comments.push({ id: top.id, videoId: t.snippet.videoId ?? "", author: top.snippet.authorDisplayName, authorChannelId: authorId, text: top.snippet.textDisplay ?? top.snippet.textOriginal ?? "", publishedAt: at, replied });
+			if (authorId === channelId || (replied && !answered)) continue;
+			const ownerReplies = answered ? ownerRepliesOf(t, channelId) : [];
+			comments.push({ id: top.id, videoId: t.snippet.videoId ?? "", author: top.snippet.authorDisplayName, authorChannelId: authorId, text: top.snippet.textDisplay ?? top.snippet.textOriginal ?? "", publishedAt: at, replied, ...(ownerReplies.length ? { ownerReplies } : {}) });
 		}
 		if (reachedBaseline) {
 			overflow = false;
@@ -168,6 +177,41 @@ export async function commentThreadsSince(ctx: Ctx, channelId: string, since: st
 		}
 	}
 	return { comments, newest, overflow };
+}
+
+// The channel's replies under one top-level comment, all pages (comments.list?parentId, 1 unit per page of 100).
+async function repliesUnder(ctx: Ctx, token: string, channelId: string, parentId: string, maxPages = 5): Promise<YtReply[]> {
+	const out: YtReply[] = [];
+	let pageToken: string | undefined;
+	for (let i = 0; i < maxPages; i++) {
+		const params: Record<string, string> = { part: "snippet", parentId, maxResults: "100", textFormat: "plainText" };
+		if (pageToken) params.pageToken = pageToken;
+		const d = await api<{ items?: ThreadReply[]; nextPageToken?: string }>(ctx, token, "GET", "comments", params, COSTS.list);
+		for (const r of d.items ?? []) {
+			const own = ownerReplyOf(r, channelId, parentId);
+			if (own) out.push(own);
+		}
+		pageToken = d.nextPageToken;
+		if (!pageToken) break;
+	}
+	return out;
+}
+
+// Re-reads known top-level comments by id (commentThreads.list?id=, up to 50 per call, 1 unit): for each one still there, the video it sits on and the
+// channel's replies under it (a thread with more replies than the call returned is read through comments.list). An id missing from the answer is deleted.
+export async function threadsByIds(ctx: Ctx, channelId: string, ids: string[]): Promise<Record<string, { videoId: string; replies: YtReply[] }>> {
+	const token = await accessToken(ctx);
+	const out: Record<string, { videoId: string; replies: YtReply[] }> = {};
+	const want = [...new Set(ids.filter(Boolean))];
+	for (let i = 0; i < want.length; i += BATCH) {
+		const d = await api<ThreadPage>(ctx, token, "GET", "commentThreads", { part: "snippet,replies", id: want.slice(i, i + BATCH).join(","), textFormat: "plainText" }, COSTS.list);
+		for (const t of d.items ?? []) {
+			const id = t.snippet.topLevelComment.id;
+			const shown = t.replies?.comments.length ?? 0;
+			out[id] = { videoId: t.snippet.videoId ?? "", replies: (t.snippet.totalReplyCount ?? 0) > shown ? await repliesUnder(ctx, token, channelId, id) : ownerRepliesOf(t, channelId) };
+		}
+	}
+	return out;
 }
 
 export type VideoInfo = { title: string; thumb?: string };

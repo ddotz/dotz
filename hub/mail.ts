@@ -45,9 +45,9 @@ export type MailDeps = {
 	/** One orchestrator turn for the mail event, its answer going to `target`. */
 	wake: (event: Record<string, any>, target: string) => void;
 	/** Offered every new mail (never a duplicate), fire-and-forget: a throw is logged and never breaks postMail. features/reply-drafts offers an [ask] reply draft here. */
-	offerDraft?: (m: { key: string; target: string; needs?: boolean; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size: number }[] }) => void;
+	offerDraft?: (m: { account?: string; key: string; target: string; needs?: boolean; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size: number }[] }) => void;
 	/** 초안 작성: a reply draft the owner asked for on a recorded mail (features/reply-drafts requestMailDraft); resolves with how it went. */
-	requestDraft?: (m: { key: string; instruction?: string; target: string; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; attachments?: { name: string; size: number }[] }) => Promise<string>;
+	requestDraft?: (m: { account?: string; key: string; instruction?: string; target: string; thread?: string; messageId?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; attachments?: { name: string; size: number }[] }) => Promise<string>;
 	now?: () => string;
 };
 
@@ -153,6 +153,7 @@ export function settleMailDrafts(drafts: ReadonlyArray<{ id: string; ref: string
 export function sentReplyRefs(drafts: ReadonlyArray<{ ref: string; status: string; created: string }>): Set<string> {
 	return new Set(drafts.filter(d => d.status === "sent" && !(d.created < (byKey.get(d.ref)?.reopenedAt ?? ""))).map(d => d.ref));
 }
+export const mailRecords = (): readonly MailRecord[] => records;
 export const mailByThread = (thread: string): MailRecord | undefined => records.find(r => r.thread === thread);
 // 미답장 (hub/unreplied.ts): the mails still waiting for a reply, given the keys whose reply draft was sent. 답장 안 함 (`noReply`) is the owner's own mark.
 export const unrepliedMails = (sentRefs: ReadonlySet<string>, now = Date.now()): MailRecord[] => records.filter(r => mailUnreplied(r, sentRefs, now));
@@ -660,7 +661,7 @@ async function post(m: MailInput, key: string, target: string, deps: MailDeps, r
 	if (m.wake) deps.wake(event, thread ? `th:${thread}` : target);
 	// `needs`: a mail that does not need a reply gets no automatic draft unless one of its app's draft rules is on (features/reply-drafts/lib/offer.ts).
 	try {
-		deps.offerDraft?.({ key, target, needs, ...(thread ? { thread } : {}), ...(m.messageId ? { messageId: m.messageId } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}), ...(realFiles(attachments).length ? { attachments: realFiles(attachments) } : {}) });
+		deps.offerDraft?.({ ...(m.account ? { account: m.account } : {}), key, target, needs, ...(thread ? { thread } : {}), ...(m.messageId ? { messageId: m.messageId } : {}), source: m.source, id: m.id, subject: m.subject, ...(m.from ? { from: m.from } : {}), ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.summary ? { summary: m.summary } : {}), ...(m.body ? { body: m.body } : {}), ...(realFiles(attachments).length ? { attachments: realFiles(attachments) } : {}) });
 	} catch (error) {
 		log(`mail ${key}: reply draft offer failed: ${(error as Error).message}`);
 	}

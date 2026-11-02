@@ -1,14 +1,20 @@
 // Files of the comment feature, all under <dataDir>/custom/comments/ (per install, never in the repo): config.json (the owner's choices),
-// comments.json, drafts.json, replies.json (send records), cursors.json, reads.json, dismissed.json (comment id -> time of 답장 안 함). Every write is atomic and private (0600).
+// comments.json, drafts.json, replies.json (send records), cursors.json, reads.json, dismissed.json (comment id -> time of 답장 안 함), authors.json (Instagram
+// reply id -> who wrote it; an author never changes, so an entry is kept for good). Every write is atomic and private (0600).
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Comment, CommentsConfig, SourceConfig } from "./contract.ts";
 
-export type DraftStatus = "pending" | "sent" | "dropped" | "stale";
+// "answered": the comment stopped waiting without this draft (the owner answered on the platform, it was deleted, 답장 안 함); see closedReason.
+export type DraftStatus = "pending" | "sent" | "dropped" | "stale" | "answered";
+export type ClosedReason = "answered-on-platform" | "deleted" | "dismissed";
+export type Author = { username?: string; fromId?: string };
 export type Tokens = { in: number; out: number; estimated?: true };
 // `mail`: the id of the mail draft (features/reply-drafts, hub/mail-cli.ts compose) that goes out right after this reply, approved by the same pick;
 // `mailAt`: when it was attached, so a pick made on a card that did not show the mail does not approve it. Such a draft is never clean (no rule sends it).
-export type Draft = { code: string; commentId: string; source: string; thread: string; text: string; status: DraftStatus; created: number; changes: string[]; clean: boolean; notes: string[]; tokens?: Tokens; mail?: string; mailAt?: number };
+export type Draft = { code: string; commentId: string; source: string; thread: string; text: string; status: DraftStatus; created: number; changes: string[]; clean: boolean; notes: string[]; tokens?: Tokens; mail?: string; mailAt?: number; closedReason?: ClosedReason;
+	/** The mail draft that was linked to this draft and left on its own (the reply was answered elsewhere, or 메일만 보내기 sent it): the comment keeps showing its state. */
+	mailKept?: string };
 export type MailOutcome = { state: "sent" | "failed"; text: string };
 export type Reply = { id: string; commentId: string; source: string; thread: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft: string; via: "owner" | "rule"; collector: string; ref?: string; mail?: MailOutcome };
 // `queue`: ids of new comments waiting for an auto-draft (engine.ts collect), left for the next run when one run's cap or budget is reached.
@@ -49,6 +55,7 @@ export function createStore(dir: string) {
 	const cursors = (): Record<string, Cursor> => readJson<Record<string, Cursor>>(f("cursors.json"), {});
 	const reads = (): Record<string, number> => readJson<Record<string, number>>(f("reads.json"), {});
 	const dismissed = (): Record<string, number> => readJson<Record<string, number>>(f("dismissed.json"), {});
+	const authors = (): Record<string, Author> => readJson<Record<string, Author>>(f("authors.json"), {});
 	const upsert = <T extends { [k: string]: any }>(list: T[], item: T, key: keyof T, cap: number): T[] => [...list.filter(x => x[key] !== item[key]), item].slice(-cap);
 	return {
 		dir,
@@ -76,7 +83,37 @@ export function createStore(dir: string) {
 			if (fresh.length || linked) writeAtomic(f("comments.json"), [...have, ...fresh].sort((a, b) => a.at - b.at).slice(-MAX_COMMENTS));
 			return fresh;
 		},
-		replaceComments: (list: Comment[]) => writeAtomic(f("comments.json"), list),
+		// Changes fields of stored comments by id (the owner's reply resolved later, `gone`); writes only when something differs.
+		patchComments: (patch: Record<string, Partial<Comment>>) => {
+			const have = comments();
+			let changed = false;
+			const next = have.map(c => {
+				const p = patch[c.id];
+				if (!p || !Object.entries(p).some(([k, v]) => (c as Record<string, unknown>)[k] !== v)) return c;
+				changed = true;
+				return { ...c, ...p };
+			});
+			if (changed) writeAtomic(f("comments.json"), next);
+		},
+		// Replaces stored comments by re-keyed copies (Instagram replies were keyed `<comment>.<index>`, now by their real id) and moves everything that points
+		// at the old id: drafts, send records (`send:<id>`) and 답장 안 함. A stored comment that already has the new id is dropped as the duplicate.
+		replaceComments: (pairs: { from: string; to: Comment }[]) => {
+			if (!pairs.length) return;
+			const moved = new Map(pairs.map(p => [p.from, p.to.id]));
+			const copy = new Map(pairs.map(p => [p.from, p.to]));
+			const targets = new Set(moved.values());
+			writeAtomic(f("comments.json"), comments().filter(c => copy.has(c.id) || !targets.has(c.id)).map(c => copy.get(c.id) ?? c).sort((a, b) => a.at - b.at));
+			const d = drafts();
+			if (d.some(x => moved.has(x.commentId))) writeAtomic(f("drafts.json"), d.map(x => (moved.has(x.commentId) ? { ...x, commentId: moved.get(x.commentId)! } : x)));
+			const r = replies();
+			if (r.some(x => moved.has(x.commentId))) writeAtomic(f("replies.json"), r.map(x => (moved.has(x.commentId) ? { ...x, commentId: moved.get(x.commentId)!, id: x.id === `send:${x.commentId}` ? `send:${moved.get(x.commentId)}` : x.id } : x)));
+			const dis = dismissed();
+			if (Object.keys(dis).some(k => moved.has(k))) writeAtomic(f("dismissed.json"), Object.fromEntries(Object.entries(dis).map(([k, v]) => [moved.get(k) ?? k, v])));
+		},
+		authors,
+		putAuthors: (entries: Record<string, Author>) => {
+			if (Object.keys(entries).length) writeAtomic(f("authors.json"), { ...authors(), ...entries });
+		},
 		// Gives the stored comments of one post their title / link / thumbnail (the only change ever made to a stored comment).
 		retitle: (source: string, thread: string, p: { postTitle: string; postLink?: string; thumb?: string }) => {
 			const have = comments();

@@ -79,6 +79,8 @@ export type Decision = {
 	assumed?: true;
 	// An approved draft the gateway sends itself (hub/approval-send.ts): how that send went, shown on the answered card.
 	send?: { state: "queued" | "sending" | "sent" | "failed"; text?: string; at: string };
+	// Where the send-approval card went on Discord (outbound.ts markDraftPosted): kept so the message is closed when the card is, also after a restart.
+	card?: { target: string; ids: string[] };
 };
 
 export const NOTICE_CAP = 300;
@@ -686,13 +688,26 @@ function settleDecision(item: Notice, answer: string, at = now(), resolved = fal
 	if (replaying) return;
 	save();
 	broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
-	for (const fn of closedHooks) fn(d.to, d.draft?.ref);
+	for (const fn of closedHooks) fn(d.to, d.draft?.ref, closedInfo(item, resolved ? "resolved" : "answered"));
 }
 
 // The send-approval queue of a conversation (hub/approval-queue.ts) reads which draft cards are open there and hears when a decision closes
 // (answered, resolved, ignored), so it can show the next held card.
-const closedHooks: Array<(to: string, ref: string | undefined) => void> = [];
-export const onDecisionClosed = (fn: (to: string, ref: string | undefined) => void): void => void closedHooks.push(fn);
+// `card`: of a send-approval card, what closes its Discord message (text, how it ended, and where it was posted when known).
+export type ClosedCard = { text: string; how: "answered" | "resolved" | "ignored"; label: string; target?: string; ids?: string[] };
+const closedInfo = (n: Notice, how: ClosedCard["how"]): ClosedCard | undefined => {
+	const d = n.decision;
+	return d?.draft ? { text: n.text, how, label: d.answer ?? "", ...(d.card ?? {}) } : undefined;
+};
+const closedHooks: Array<(to: string, ref: string | undefined, card?: ClosedCard) => void> = [];
+export const onDecisionClosed = (fn: (to: string, ref: string | undefined, card?: ClosedCard) => void): void => void closedHooks.push(fn);
+/** The newest open card of draft `ref` in `to` went to Discord as these messages. */
+export function markDraftPosted(to: string, ref: string, target: string, ids: string[]): void {
+	const n = items.findLast(i => isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref === ref);
+	if (!n || !ids.length) return;
+	n.decision!.card = { target, ids };
+	save();
+}
 export const openDraftRefs = (to: string): string[] => items.flatMap(i => (isOpenDecision(i) && i.decision!.to === to && i.decision!.draft?.ref ? [i.decision!.draft.ref] : []));
 /** The open send-approval cards (of one conversation, or all): notice id, conversation, draft ref, question and draft (hub/approval-wire.ts). */
 export const openDraftCards = (to?: string): { id: string; to: string; ref: string; title: string; draft: DraftApproval; at: string; text: string }[] =>
@@ -1324,7 +1339,7 @@ export function ignoreNotice(id: unknown): { status: number; body: Record<string
 		if (n.decision?.state === "open") n.decision.state = "ignored";
 	}
 	announce(group, at);
-	for (const n of group) if (n.decision?.state === "ignored") for (const fn of closedHooks) fn(n.decision.to, n.decision.draft?.ref);
+	for (const n of group) if (n.decision?.state === "ignored") for (const fn of closedHooks) fn(n.decision.to, n.decision.draft?.ref, closedInfo(n, "ignored"));
 	return { status: 200, body: { ok: true, item, ids: group.map(n => n.id), unread: unreadCount() } };
 }
 

@@ -97,7 +97,8 @@ export const APPS_FILE = "custom/apps.json";
 // What custom/apps.json holds per instance id: {"mail":{"off":true}} (the old shape: one default instance per app, read as it is), a label the owner
 // set, an added instance's `app` and `filter`, and `deleted` on a default instance that was deleted (it stays off). A missing or unreadable file = {}.
 // `source` = a mail item's source key (POST /api/mail source): the instance owns `mail:<source>-…`, the same as the conv prefix `mail:<source>-`.
-export type AppFilter = { source?: string; conv?: string[]; watches?: string[]; text?: string[]; data?: string[] };
+// `account` (mail instances): the zele account this instance sends and reads through (`--account`); needed when zele holds several accounts.
+export type AppFilter = { account?: string; source?: string; conv?: string[]; watches?: string[]; text?: string[]; data?: string[] };
 // `watches` at the instance level = extra watch names (or prefixes ending in "-") that are this instance's own, beside the registry's (a custom plugin's login keeper).
 // `discord` (mail instances): a Discord thread per new mail too (hub/app-settings.ts 디스코드에도 올리기); missing = web only.
 export type AppRaw = { app?: string; label?: string; off?: boolean; discord?: boolean; notify?: boolean; push?: boolean; deleted?: boolean; filter?: AppFilter; watches?: string[] };

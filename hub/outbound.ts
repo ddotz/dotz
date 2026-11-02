@@ -27,8 +27,10 @@ import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
 import { splitTone, stripHandoff } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
-import { onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
-import { cardPointer, cardTitle, CARDS_LEAD, createApprovalQueue, loadHeld, pendingCardsNote } from "./approval-queue.ts";
+import { markDraftPosted, onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
+import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote } from "./approval-queue.ts";
+import { mailItemKey } from "./draft-handled.ts";
+import { listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
 import { route } from "./notify-route.ts";
 import { isWebLane } from "./discord-post.ts";
@@ -223,9 +225,15 @@ export const replies = createInflight<OutJob>(j => {
 // One send-approval card at a time per conversation, and no second post of an open card (hub/approval-queue.ts).
 const HELD = join(DATA_DIR, "approval-queue.json");
 export const convOfTarget = (target: string) => eventTarget(outEvent({ ts: "", kind: "out", source: "orchestrator", target, text: "" } as HubEvent, threadHome, threadMail)) ?? "main";
+// Whether the item behind a card was handled elsewhere (hub/main.ts wires the apps' facts, as it does for notices.ts settleHandledDrafts).
+let refHandled: (ref: string, conv: string) => boolean | Promise<boolean> = () => false;
+export const setRefHandled = (fn: typeof refHandled): void => void (refHandled = fn);
 export const approvals = createApprovalQueue({
 	convOf: convOfTarget,
 	openRefs: openDraftRefs,
+	// The bot's `mail:<id>` card and the app's reply draft of that mail are one item.
+	itemOf: (conv, ref) => mailItemKey(ref, conv, listMailDrafts),
+	handled: (ref, conv) => refHandled(ref, conv),
 	post: (target, text, extra) => void out(target, text, undefined, { ...extra, queued: true }).catch(e => log(`held approval card to ${target} failed: ${e}`)),
 	// A card that went to Discord as one message is edited there too (a [file] line would show raw in an edit, so such a card keeps its first text).
 	rewrite: (conv, card, text) => {
@@ -241,7 +249,19 @@ export const approvals = createApprovalQueue({
 	log,
 	load: () => loadHeld(HELD),
 });
-onDecisionClosed((to, ref) => approvals.closed(to, ref));
+// The card of a closed decision shows it on Discord too: first line kept, buttons removed, how it ended (a [file] line would show raw in an edit, so such a text is left).
+function closeDiscordCard(to: string, ref: string | undefined, c: { text: string; how: "answered" | "resolved" | "ignored"; label: string; target?: string; ids?: string[] }): void {
+	const target = c.target ?? (ref ? approvals.targetOf(to, ref) : undefined);
+	const ids = c.ids?.length ? c.ids : ref ? approvals.idsOf(to, ref) : undefined;
+	if (!target || !ids?.length || isLocal(target) || !discordPosts(target)) return;
+	const text = closedCardText(c.text, c.how, c.label);
+	if (/^\s*\[file\]\s/m.test(text)) return;
+	ids.forEach((id, i) => void discord.edit(target, id, i === 0 ? text : text.split("\n").slice(1).join("\n"), { clearComponents: true }).catch(e => log(`approval card ${ref} not closed on Discord: ${e}`)));
+}
+onDecisionClosed((to, ref, card) => {
+	if (card) closeDiscordCard(to, ref, card);
+	approvals.closed(to, ref);
+});
 // Where the open card of `conv` is: its Discord message, when it went there.
 const cardLink = (c: { target: string; ids?: string[] }) => (c.ids?.[0] && !isLocal(c.target) && route({ target: c.target }).messengers.discord ? discord.messageLink(c.target, c.ids[0]) : undefined);
 // A later post in a conversation whose card still waits pushes the card up out of sight (2026-10-31: "19번 카드는 위에 있어", then
@@ -297,6 +317,8 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	}
 	const r = await handOver(job, sent);
 	if (card || extra.queued) approvals.posted(target, sent, r.ids);
+	const cardOf = r.ids?.length ? cardRef(sent) : undefined;
+	if (cardOf && r.ids) markDraftPosted(convOfTarget(target), cardOf, target, r.ids);
 	return r;
 }
 

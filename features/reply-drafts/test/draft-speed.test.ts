@@ -71,23 +71,21 @@ describe("one model call for the common mail draft", () => {
 	});
 });
 
-describe("file picking never waits for the draft", () => {
-	test("a tie among library files is broken by the model while the draft call is still running", async () => {
+describe("files are picked before the draft is written", () => {
+	test("a tie among library files is broken by the model first, and the draft is told which file rides on it", async () => {
 		enable(env, { attachFolders: { mail: lib } });
-		let pickStarted!: () => void;
-		const started = new Promise<void>(r => (pickStarted = r));
 		const order: string[] = [];
-		// The draft call does not answer until the pick has started: a pick that ran after the draft would never start, and the bound fails the test.
-		const call: ModelCall = async () => {
-			order.push("draft start");
-			await Promise.race([started, new Promise((_, no) => setTimeout(() => no(new Error("pick did not start beside the draft")), 3000))]);
-			order.push("draft end");
+		const prompts: string[] = [];
+		const call: ModelCall = async (_system, user) => {
+			order.push("draft");
+			prompts.push(user);
 			return j({ action: "draft", reason: "asks for a score", to: "kim@example.com", subject: "Re: 캐논 문서 부탁드립니다", body: "캐논 문서 보내드립니다.", questions: [] });
 		};
-		const pick = async (names: string[]) => (order.push(`pick ${names.length}`), pickStarted(), ["캐논_d.pdf"]);
+		const pick = async (names: string[]) => (order.push(`pick ${names.length}`), ["캐논_d.pdf"]);
 		const out = sink(), l = logs();
 		expect(await offerMailDraft({ ...mailFixture, key: "f-1", subject: "캐논 문서 부탁드립니다", body: "캐논 문서 보내주세요." }, { send: out.send, call, pick, log: l.log })).toBe("offered");
-		expect(order).toEqual(["draft start", "pick 5", "draft end"]);
+		expect(order).toEqual(["pick 5", "draft"]);
+		expect(prompts[0]).toContain('"캐논_d.pdf"');
 		expect(parseDraftApproval(out.sent[0]!)?.attachments?.map(a => a.name)).toEqual(["캐논_d.pdf"]);
 		expect(stagedFiles(listDrafts()[0]!.id).map(f => f.name)).toEqual(["캐논_d.pdf"]);
 	});
