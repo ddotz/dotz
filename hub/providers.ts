@@ -342,7 +342,7 @@ type OmoLogin = {
 	rpcId: string;
 	rpc: OmoRpc;
 	url: string;
-	ask?: { id: string; title?: string; options?: string[] };
+	ask?: { id: string; title?: string; options?: string[]; url?: string };
 	exited: boolean;
 	status: "waiting" | "done" | "failed";
 	error?: string;
@@ -532,7 +532,10 @@ function onOmoFrame(l: OmoLogin, f: RpcFrame): void {
 	if (f.type === "auth_login_url" && f.provider === l.rpcId && typeof f.url === "string") l.url = f.url;
 	else if (f.type === "extension_ui_request" && typeof f.id === "string" && ANSWERED.has(String(f.method))) {
 		const options = Array.isArray(f.options) ? f.options.filter((o): o is string => typeof o === "string") : undefined;
-		l.ask = { id: f.id, ...(typeof f.title === "string" ? { title: f.title } : {}), ...(options?.length ? { options } : {}) };
+		// The Claude sign-in asks for an account name and a method before its URL, and its paste prompt carries the manual sign-in URL
+		// (the code page) as the placeholder: that URL works from any device, unlike the browser-mode URL that calls back to the hub's localhost.
+		const url = typeof f.placeholder === "string" && /^https?:\/\/\S+$/.test(f.placeholder) ? f.placeholder : undefined;
+		l.ask = { id: f.id, ...(typeof f.title === "string" ? { title: f.title } : {}), ...(options?.length ? { options } : {}), ...(url ? { url } : {}) };
 	} else if (f.type === "response" && f.command === "login_start" && f.success === false) finishOmo(l, false, `로그인을 시작하지 못했어요 (${String(f.error ?? "알 수 없는 오류")})`);
 	else if (f.type === "auth_login_end" && f.provider === l.rpcId) finishOmo(l, f.success === true, `로그인에 실패했어요 (${String(f.error ?? "알 수 없는 오류")})`);
 	for (const w of l.waiters) w();
@@ -555,7 +558,7 @@ function settleOmo(l: OmoLogin, done: () => boolean, maxMs: number): Promise<voi
 	return promise;
 }
 
-const omoView = (l: OmoLogin): LoginView => ({ url: l.url, needs_code: Boolean(l.ask), ...(l.ask?.title ? { prompt: l.ask.title } : {}), ...(l.ask?.options ? { options: l.ask.options } : {}) });
+const omoView = (l: OmoLogin): LoginView => ({ url: l.ask?.url || l.url, needs_code: Boolean(l.ask), ...(l.ask?.title ? { prompt: l.ask.title } : {}), ...(l.ask?.options ? { options: l.ask.options } : {}) });
 
 async function startOmoLogin(provider: string): Promise<{ login_id: string } & LoginView> {
 	const rpcId = provider === "anthropic" ? SUBSCRIPTION : provider;
