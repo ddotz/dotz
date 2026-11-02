@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { acquireHeavySlot } from "./heavyslot.ts";
 
 const TAIL_BYTES = 4096;
 // A pass is reused only this long: long enough for a lane's check and the orchestrator's re-run of it, short enough that
@@ -16,7 +17,7 @@ const KEEP_MS = 24 * 3600_000;
 const RUN_TIMEOUT_MS = 15 * 60_000;
 
 type Receipt = { key: string; command: string; cwd: string; head: string; exitCode: number; stdout: string; stderr: string; ranAt: number; durationMs: number };
-type ReceiptResult = Receipt & { reused: boolean };
+type ReceiptResult = Receipt & { reused: boolean; slotNote?: string };
 type ReceiptRequest = { command: string; cwd: string; env?: string[]; dir?: string };
 
 const sha256 = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
@@ -98,26 +99,29 @@ function run(command: string, cwd: string): Promise<{ exitCode: number; stdout: 
 
 export async function runWithReceipt(req: ReceiptRequest): Promise<ReceiptResult> {
 	const { key, cwd, head, cacheable } = receiptKey(req.command, req.cwd, req.env);
-	const dir = join(req.dir ?? process.env.DOTZ_DIR ?? join(homedir(), ".dotz"), "receipts");
+	const base = req.dir ?? process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
+	const dir = join(base, "receipts");
 	const file = join(dir, `${key}.json`);
 	// A failure is never cached as truth: only a recent stored pass on a known checkout state is reused.
 	const stored = cacheable ? load(file, key) : undefined;
 	if (stored?.exitCode === 0) return { ...stored, reused: true };
+	// Only a real run takes the machine-wide slot (hub/heavyslot.ts); a reused receipt costs nothing.
+	const slot = await acquireHeavySlot({ dir: join(base, "heavy"), label: `${cwd}: ${req.command}` });
 	const started = performance.now();
-	const out = await run(req.command, cwd);
+	const out = await run(req.command, cwd).finally(slot.release);
 	const receipt: Receipt = { key, command: req.command, cwd, head, ...out, ranAt: Date.now(), durationMs: Math.round(performance.now() - started) };
-	if (!cacheable) return { ...receipt, reused: false };
+	if (!cacheable) return { ...receipt, reused: false, slotNote: slot.note };
 	mkdirSync(dir, { recursive: true });
 	const tmp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
 	writeFileSync(tmp, JSON.stringify(receipt));
 	renameSync(tmp, file);
 	prune(dir);
-	return { ...receipt, reused: false };
+	return { ...receipt, reused: false, slotNote: slot.note };
 }
 
 export function summarize(r: ReceiptResult): string {
 	const out = [r.stdout, r.stderr].filter(Boolean).join("\n").trim();
-	return `receipt ${r.key.slice(0, 12)} ${r.reused ? "reused" : "ran"} exit=${r.exitCode} head=${r.head.slice(0, 7)}${out ? `\n${out}` : ""}`;
+	return `receipt ${r.key.slice(0, 12)} ${r.reused ? "reused" : "ran"} exit=${r.exitCode} head=${r.head.slice(0, 7)}${r.slotNote ? `\n${r.slotNote}` : ""}${out ? `\n${out}` : ""}`;
 }
 
 if (import.meta.main) {

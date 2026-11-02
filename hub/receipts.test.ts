@@ -103,6 +103,18 @@ test("stored output is capped to a tail", async () => {
 	expect(r.stdout.endsWith("END\n")).toBe(true);
 });
 
+test("two concurrent real runs take turns on one heavy slot", async () => {
+	process.env.DOTZ_HEAVY_SLOTS = "1";
+	const log = join(root, "order");
+	const step = (n: number) => `echo start${n} >> ${log}; echo end${n} >> ${log}`;
+	const [a, b] = await Promise.all([go(step(1)), go(step(2))]);
+	delete process.env.DOTZ_HEAVY_SLOTS;
+	expect(readFileSync(log, "utf8").split("\n").filter(Boolean)).toEqual(["start1", "end1", "start2", "end2"]);
+	expect(a.slotNote).toBeUndefined();
+	expect(b.slotNote).toContain("waited");
+	expect(readdirSync(join(dir, "heavy"))).toEqual([]);
+});
+
 test("receipts older than 7 days are pruned on write", async () => {
 	mkdirSync(join(dir, "receipts"), { recursive: true });
 	const old = join(dir, "receipts", "old.json");
