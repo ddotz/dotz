@@ -157,6 +157,11 @@ describe("deliver", () => {
 		expect(b.body.endsWith("번호로 답해 주세요")).toBe(true);
 		expect(b.connectInfo).toEqual([{ title: "선택지", description: "1) 고치기\n2) 미루기" }]);
 	});
+	test("a web link becomes a connectInfo line", async () => {
+		captured.length = 0;
+		await send("main", "main", "끝났어요", { link: "https://dotz.example.com/#chat/main" });
+		expect(captured[0]!.body.connectInfo).toEqual([{ title: "웹에서 보기", description: "https://dotz.example.com/#chat/main" }]);
+	});
 	test("progress edits are skipped", async () => {
 		captured.length = 0;
 		expect(await send("main", "main", "작업 중…", { updateKey: "progress" })).toEqual({ delivered: false, reason: "edit" });

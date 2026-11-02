@@ -3,6 +3,7 @@ import { log } from "./config.ts";
 import { postKind } from "./discord-post.ts";
 import { type HubEvent, onEmit } from "./events.ts";
 import { listNotices, NOTICE_CAP } from "./notices.ts";
+import { convPath, webLink } from "./weblink.ts";
 
 // A generic messenger layer: any chat service (Telegram, JANDI, ...) is an Adapter. Outgoing posts reach every non-native adapter
 // through one outbox subscription (installFanout); incoming owner messages enter through ctx.receive, like a web message.
@@ -10,7 +11,7 @@ import { listNotices, NOTICE_CAP } from "./notices.ts";
 
 export type Kind = "main" | "project" | "lane" | "alert" | "worklog";
 export type AdapterStatus = { state: "off" | "connecting" | "ok" | "error"; error?: string };
-export type OutMsg = { target: string; kind: Kind; text: string; replyTo?: string; updateKey?: string; options?: { n: number; label: string }[]; files?: string[] };
+export type OutMsg = { target: string; kind: Kind; text: string; replyTo?: string; updateKey?: string; options?: { n: number; label: string }[]; files?: string[]; /** The conversation's address in the web app, when there is one. */ link?: string };
 export type DeliverResult = { delivered: boolean; reason?: string; ids?: string[] };
 export type Incoming = { adapter: string; target: string; text: string; author: string; replyTo?: string; messageId?: string; quoted?: string };
 export type MessengerCtx = { receive(m: Incoming): void; log(s: string): void };
@@ -71,6 +72,8 @@ function outMsg(e: HubEvent): OutMsg | undefined {
 	if (!kind || typeof e.text !== "string" || !e.text) return undefined;
 	const files = [...e.text.matchAll(FILE_LINE)].map(m => m[1]!);
 	const options = parseChoices(e.text).options.map(o => ({ n: o.n, label: o.label }));
+	const path = convPath(kind, e.target as string);
+	const link = path ? webLink(path) : undefined;
 	return {
 		target: e.target as string,
 		kind,
@@ -79,6 +82,7 @@ function outMsg(e: HubEvent): OutMsg | undefined {
 		...(typeof e.update_key === "string" ? { updateKey: e.update_key } : {}),
 		...(options.length ? { options } : {}),
 		...(files.length ? { files } : {}),
+		...(link ? { link } : {}),
 	};
 }
 
