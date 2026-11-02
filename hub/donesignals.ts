@@ -167,7 +167,8 @@ export async function checkSignal(raw: string, cwd: string, io: SignalIo = {}): 
 			const r = await runWithReceipt({ command: sig.command, cwd, ...(io.receiptsDir ? { dir: io.receiptsDir } : {}) });
 			const out = `${r.stdout}\n${r.stderr}`;
 			if (r.exitCode !== 0) return { signal, ok: false, detail: `exit ${r.exitCode}: ${short(out.slice(-600)) || "no output"}` };
-			if (sig.stdout && !sig.stdout.test(r.stdout)) return { signal, ok: false, detail: `exit 0 but stdout does not match ${sig.stdout}: ${short(r.stdout.slice(-300)) || "(empty)"}` };
+			// The pattern reads both streams: test runners (bun test) print their summary ("0 fail") on stderr.
+			if (sig.stdout && !sig.stdout.test(out)) return { signal, ok: false, detail: `exit 0 but output does not match ${sig.stdout}: ${short(out.slice(-300)) || "(empty)"}` };
 			return { signal, ok: true, detail: `exit 0${r.reused ? " (receipt reused)" : ""}` };
 		}
 		if (sig.kind === "file") {
