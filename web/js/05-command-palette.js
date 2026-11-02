@@ -100,7 +100,7 @@ function parseHash(hash = location.hash) {
   return { view: i < 0 ? h : h.slice(0, i), t };
 }
 // The 세션 tab is gone: an old #lanes address opens the chat (its list on a phone), where running sessions sit under 진행 중.
-const routeAlias = (name, tgt) => (name === "lanes" ? ["chat", "list"] : [name, tgt]);
+const routeAlias = (name, tgt) => (name === "lanes" ? ["chat", "list"] : name === "messengers" ? ["settings", ""] : [name, tgt]);
 function go(name, tgt) {
   closeMenu(false);
   [name, tgt] = routeAlias(name, tgt);
@@ -149,15 +149,16 @@ function go(name, tgt) {
   if (name === "projects" || pp) { renderProjects(); prjLoad(); }
   if (name === "monitoring" || mc) { renderMonitoring(); loadMonitors(); loadNotices(); loadIntegrations(); }
   if (name === "project") pmOpen(tgt);
-  if (name === "settings") { loadUpdate(); loadAccounts(); renderSettings(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
+  if (name === "settings") { loadUpdate(); loadAccounts(); renderSettings(); loadMessengerIndex(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
   if (name === "providers") loadProviders();
   if (name === "usage") loadQuota();
   if (name === "context") loadContext();
-  if (name === "discord") loadDiscord();
-  if (name === "messengers") loadMessengers();
+  if (name === "discord") { loadMessengerIndex(); loadDiscord(); loadOnboarding("discord"); }
+  if (name === "jandi" || name === "slack" || name === "telegram") { loadMessengerIndex(); loadMessengerSettings(name); loadOnboarding(name); }
   if (name === "devices" || name === "settings") loadDevices();
   if (name === "webaccess" || name === "settings") loadWebAccess();
+  if (name === "webaccess") loadOnboarding("web-access");
   window.dotzCustom && dotzCustom.view(name, tgt);
 }
 // Entries the app made are handled by popstate; this is for a hash typed into the address bar or an old foreign entry.
