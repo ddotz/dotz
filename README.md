@@ -1,9 +1,40 @@
 # dotz (땃쥐모드)
 
-An always-on, Dori-style global orchestrator. A gateway process (launchd `dev.dotz.gateway`) hosts the orchestrator
-as a headless OmO process, so no terminal has to stay open. You talk to it from Discord or a tailnet-only web app.
-Project work runs in sessions: one headless OmO process per project folder, each with its own Discord channel. The bot's
-name is chosen in setup; 땃쥐 is the default and is used in the examples below.
+dotz is a personal assistant that stays on, on your own machine. It runs a headless OmO orchestrator behind a gateway
+(launchd `dev.dotz.gateway`), so nothing has to stay open on your desktop. You talk to it in Discord or in a tailnet-only
+web app, and it does the work in project sessions.
+
+- Always on. Reach it from your phone in Discord, or from the web app on your tailnet.
+- One session per project. Every project folder gets its own session and its own channel.
+- It asks first. Anything that leaves the machine waits for your approval.
+- It watches. Mail, calendar and comments are checked and reported back to you.
+- Your machine, your accounts. Your logins and files stay where they are; secrets sit in `~/.dotz/secrets` (0600).
+- One command to install, and it updates itself from this repo.
+
+The bot's name is chosen in setup; 땃쥐 is the default and is used in the examples below.
+
+## Quick start
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh                 # install, then the wizard
+curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh -s -- --service  # also start the gateway
+```
+
+The wizard asks for the bot's name and tone, the Discord bot token (with the MESSAGE CONTENT intent enabled), whether to
+use Tailscale for the web app, and on macOS the permissions dotz needs. Then:
+
+1. Install. The command puts bun, OmO and dotz in place (`~/.local/share/dotz`) and creates `~/.dotz`.
+2. Run the wizard. It writes `~/.dotz/config.json` and the identity, and starts the gateway.
+3. Open the web app address it prints, or invite the bot to Discord and say hello.
+
+## Use this repo, not a fork
+
+The install is not a fork. Your settings, secrets, memory, rules and customizations live in `~/.dotz`, never in the code
+folder, and updates arrive from `ddotz/dotz` by themselves (settings -> 업데이트), so this repo is the normal thing to
+install. The code folder is replaced on update: local edits are re-applied on top or backed up first
+(`hub/selfupdate.ts`), which is why your own settings don't belong there (`docs/customization.md`: "The repo is never
+forked"). Fork only if you want to change dotz's own code, then install with
+`--git https://github.com/<you>/dotz.git`.
 
 **Runtime.** Every role (orchestrator, sessions and their task subagents) runs on OmO (`omo`, package `omo-ai`) unless
 `config.json` names another runtime (`runtime`, `orchestrator.runtime`, `lanes.runtime`). Setup writes `"omo"` for both
@@ -11,11 +42,6 @@ roles, an unknown name falls back to OmO, and the gateway's small model calls (t
 too. omp (oh-my-pi) and Claude Code are explicit opt-ins; what changes then is in "Runtime differences".
 
 ## Install and onboard
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/dotz/main/install.sh | sh                 # install, then the wizard
-curl -fsSL https://raw.githubusercontent.com/<owner>/dotz/main/install.sh | sh -s -- --service  # also start the gateway service
-```
 
 `install.sh` (POSIX sh, macOS and Linux) installs bun when missing (bun.sh installer), installs OmO (`bun add -g --trust
 omo-ai`) unless `DOTZ_HARNESS` says otherwise or another harness is already there, downloads the code to
