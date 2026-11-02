@@ -30,6 +30,25 @@ export type Endpoint = {
 // from its own `url` (same origin only) or from `SiteSpec.download` with {id} = the mail and {att} = this file's `id`.
 export type AttachmentMap = { listPath: string; name: string; id?: string; url?: string; size?: string; type?: string };
 
+// How a draft's files reach the site before send (lib/upload.ts). Each file is read from disk as a stream and posted as
+// multipart/form-data, whole or in parts of `chunkBytes`; the bytes never pass through a command line or one in-memory
+// string. Tokens in `path` and `form` values: {name} {size} {index} {count} {offset} {chunk} (this part's bytes) and
+// {upload} (the site's upload id from an earlier part, via `uploadIdPath`).
+export type UploadSpec = {
+	path: string; // multipart POST endpoint (same origin)
+	field?: string; // multipart field that carries the bytes (default "file")
+	form?: Record<string, string>; // other multipart fields the site's client sends with each part
+	chunkBytes?: number; // send each file in parts of this many bytes; unset = one streamed part per file
+	uploadIdPath?: string; // JSON path to the site's upload id in a part's response, sent back as {upload}
+	idPath: string; // JSON path, in a file's last response, to the id the send body refers to
+	statusPath?: string; // JSON path to the site's per-file status in that response
+	okStatus?: string; // regex the status must match for the file to count as accepted (default: any non-empty status)
+	// Sites that turn a large file into a download link (a "big attachment"): files of at least `minBytes` go to `path`
+	// (default the normal one) with `form` added, and are marked as links; `linkPath` reads the link from the response.
+	large?: { minBytes: number; path?: string; form?: Record<string, string>; linkPath?: string };
+	sendField?: string; // key of the send body that lists the accepted files (default "attachments")
+};
+
 export type SiteSpec = {
 	version: 1;
 	site: string; // slug, [a-z0-9][a-z0-9-]{0,39}
@@ -53,7 +72,7 @@ export type SiteSpec = {
 	};
 	// Draft/send endpoint. The adapter NEVER calls this on its own: it only prepares a draft. Sending is a separate,
 	// owner-approved step (see feature.md and the send guard).
-	send?: Endpoint & { draftOnly: true };
+	send?: Endpoint & { draftOnly: true; upload?: UploadSpec };
 };
 
 export const SITE_ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -109,7 +128,7 @@ export function endpointUrl(origin: string, ep: Endpoint, tokens: Record<string,
 	return u.toString();
 }
 
-const fillRaw = (s: string, tokens: Record<string, string | number | undefined>) => s.replace(/\{(\w+)\}/g, (m, k) => (tokens[k] === undefined ? m : String(tokens[k])));
+export const fillRaw = (s: string, tokens: Record<string, string | number | undefined>) => s.replace(/\{(\w+)\}/g, (m, k) => (tokens[k] === undefined ? m : String(tokens[k])));
 
 // fetch() init pieces for one endpoint call: method, filled body and its content type.
 export function requestInit(ep: Endpoint, tokens: Record<string, string | number | undefined> = {}): { method: string; body?: string; contentType?: string } {
@@ -142,5 +161,31 @@ export function validateSpec(s: any): string | undefined {
 	if (at && at.id && !(s.download && typeof s.download.path === "string")) return "read.attachments가 id만 쓰면 download.path도 필요해요";
 	if (s.search && (typeof s.search.path !== "string" || typeof s.search.queryParam !== "string")) return "search에는 path와 queryParam이 필요해요";
 	if (s.send && !s.send.draftOnly) return "send에는 draftOnly: true가 있어야 해요 (전송은 승인 단계에서만)";
+	if (s.send?.upload) return uploadProblem(s.send.upload, origin.origin);
+	return undefined;
+}
+
+const isRegex = (r: unknown) => {
+	try {
+		return typeof r === "string" && !!new RegExp(r);
+	} catch {
+		return false;
+	}
+};
+const isPath = (p: unknown) => typeof p === "string" && !!p;
+const isForm = (f: unknown) => f === undefined || (!!f && typeof f === "object" && Object.values(f).every((v) => typeof v === "string"));
+// An upload path that names a full URL must stay on the site's origin: the session cookie and the files go nowhere else.
+const sameOrigin = (p: string, origin: string) => !/^https?:\/\//i.test(p) || new URL(p.replace(/\{\w+\}/g, "x")).origin === origin;
+
+function uploadProblem(u: any, origin: string): string | undefined {
+	if (!u || typeof u !== "object" || !isPath(u.path) || !isPath(u.idPath)) return "send.upload에는 path와 idPath가 필요해요";
+	if (!sameOrigin(u.path, origin) || (u.large?.path && !sameOrigin(u.large.path, origin))) return "send.upload 주소는 origin과 같은 사이트여야 해요";
+	if (u.field !== undefined && !isPath(u.field)) return "send.upload.field가 비어 있어요";
+	if (!isForm(u.form)) return "send.upload.form 값은 문자열이어야 해요";
+	if (u.chunkBytes !== undefined && !(Number.isInteger(u.chunkBytes) && u.chunkBytes >= 1024)) return "send.upload.chunkBytes는 1024 이상의 정수여야 해요";
+	if (u.okStatus !== undefined && !isRegex(u.okStatus)) return "send.upload.okStatus가 올바른 정규식이 아니에요";
+	if (u.okStatus !== undefined && !isPath(u.statusPath)) return "send.upload.okStatus를 쓰려면 statusPath도 필요해요";
+	const l = u.large;
+	if (l !== undefined && (!l || typeof l !== "object" || !(Number.isInteger(l.minBytes) && l.minBytes > 0) || (l.path !== undefined && !isPath(l.path)) || !isForm(l.form) || (l.linkPath !== undefined && !isPath(l.linkPath)))) return "send.upload.large에는 양의 정수 minBytes가 필요하고 path·form·linkPath는 문자열이어야 해요";
 	return undefined;
 }
