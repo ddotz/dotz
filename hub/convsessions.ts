@@ -96,6 +96,7 @@ export function createConvSessions(d: ConvDeps) {
 			stateFile: join(dir, "state.json"),
 			source: `conv:${key}`,
 			keepalive: false,
+			asks: false,
 			env: { DOTZ_CONV: key, ...(meta.name ? { DOTZ_CONV_NAME: meta.name } : {}) },
 			scope: () => scopeText(c.meta),
 			seed: () => seedText(c.primary, d.history(key, SEED_EVENTS)),
