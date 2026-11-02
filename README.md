@@ -592,6 +592,9 @@ chooses it with `<data dir>/accounts/rules.json` (manual pick, time-window and u
 
 ## Updating a running gateway
 
+Releases are cut from batches of commits at 12:00, 18:00 and 24:00 KST (at most three a day, `YYMMDD.N`): a commit on `main`
+reaches users only through a `v<version>` tag, made by `.github/workflows/release.yml` or `bun hub/release.ts` (`docs/releases.md`).
+
 **dotz self-update** (settings → 업데이트, `hub/selfupdate.ts`). A daily check (`self_update.auto_check`, `self_update.at`)
 fetches the tracked branch and announces a new version. Local commits that upstream already has (same patch, or nothing left to
 apply) are dropped; the others are re-applied on the new version in a temporary worktree with the same checks (`bun install`,
@@ -646,6 +649,7 @@ short "received, answering when the current step ends" notice from the gateway.
   see events. `verify.ts` detects the installed harnesses and runs the compatibility check before a switch (see API additions). `bun test` replays recorded omp frames and two state-machine scenarios against goldens captured before the
   adapter existed (`hub/runtime/fixtures`).
 - Audit against earlier setups: `docs/audit-2026-10-16.md`.
+- `VERSION` the version of this commit (`YYMMDD.N`, `docs/releases.md`); installs see only the tag `v<version>`.
 - `hub/kakao/` KakaoTalk integration, off by default (one-sentence onboarding and the CLI in `cli.ts`): `docs/kakao.md`.
 - `extension/index.ts` dotz extension (loaded by OmO and omp processes): orchestrator tools, terminal thin client (omp), the subagent guard and harness commands (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `token-audit.ts`).
 - `web/index.html` web app shell; its script and styles are modules in `web/js/*.js` and `web/css/*.css` (one topic per file, served joined in file-name order as `/app.js` and `/app.css` by `hub/webapp.ts`). `MODE.md` the behaviour contract (`MODE.ko.md` the same in Korean). `hub/threads.ts` the Discord thread rules (table in MODE "Threads"). `setup.ts` onboarding.
