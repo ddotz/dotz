@@ -163,18 +163,18 @@ async function startLogin(p) {
 
 /* ---------- usage ---------- */
 let quotaTimer;
-async function loadQuota() {
+async function loadQuota(fresh) {
   clearTimeout(quotaTimer);
   const box = $("#usage");
   let q;
   // the cards are titled by provider name (providerName reads P), so a direct open of 사용량 loads the providers too
-  try { [q] = await Promise.all([api("/api/quota"), P ? null : loadProviderData().catch(() => null)]); }
+  try { [q] = await Promise.all([api(fresh === true ? "/api/quota?fresh=1" : "/api/quota"), P ? null : loadProviderData().catch(() => null)]); }
   catch (e) { clear(box).append(emptyNode("사용량을 불러오지 못했어요")); return; }
   noteQuota(q);
   if (current === "usage") quotaTimer = setTimeout(loadQuota, 60000);
   clear(box);
   box.append(el("div", { class: "tools-bar" }, el("span", { class: "sup", text: q.fetched_at ? kstStamp(q.fetched_at) : "" }),
-    el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, loadQuota) }, icon("refresh"), "새로고침")));
+    el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, () => loadQuota(true)) }, icon("refresh"), "새로고침")));
   const grid = el("div", { class: "grid" });
   for (const p of q.providers || []) {
     const card = el("div", { class: "card" }, el("div", { class: "ch" }, el("h3", { text: providerName(p.provider) })));

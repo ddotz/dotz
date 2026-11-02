@@ -240,6 +240,14 @@ function paintStrip() {
   clear(b).append(el("span", { class: "ulab", text: `${word} ${pct}% 남음` }), el("span", { class: "ubar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "uring" }), el("span", { class: "upct", text: `${word} ${pct}%` }));
 }
 function noteQuota(q) { SQ = q; stripAt = Date.now(); paintStrip(); }
+// A pushed usage read: the strip, and the 사용량 / 홈 view on screen, show it without asking again.
+function quotaLive(q) {
+  if (!q) return;
+  noteQuota(q);
+  HQ = q;
+  if (current === "usage") loadQuota();
+  else if (current === "home") renderHome();
+}
 // At most one fetch per 3 minutes, and only while the page is visible (the home and usage views feed it through noteQuota too).
 async function loadStrip() {
   if (document.visibilityState !== "visible" || Date.now() - stripAt < 180000) return;
