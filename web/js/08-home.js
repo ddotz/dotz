@@ -263,6 +263,32 @@ function homeLimitRow(d) {
 }
 // Rows of 홈 already shown: only a row that newly appears rises in (not the first paint, nor before the lists have loaded).
 const HOME_ROWS = new Set();
+// A background task that finishes while 홈 is open stays in its row of 지금 진행 중 for a few seconds, and that same row changes to 완료 in place
+// (motionSwap) before it moves to 최근 끝난 작업: no new card appears. HC_WST: work id -> the status last seen; HC_SETTLE: id -> { at, swapped }.
+const HC_WST = new Map(), HC_SETTLE = new Map(), HC_KEEP = 6000;
+function hcSettled() {
+  const work = (S && S.work) || [];
+  for (const w of work) {
+    if (HC_WST.get(w.id) === "running" && w.status === "done" && workNow() - (w.ended_at || 0) < HC_KEEP) {
+      HC_SETTLE.set(w.id, { at: Date.now(), swapped: false });
+      setTimeout(() => { if (current === "home") renderHomeNow(); }, HC_KEEP + 100);
+    }
+    HC_WST.set(w.id, w.status);
+  }
+  const out = [];
+  for (const [id, s] of HC_SETTLE) {
+    const w = work.find(x => x.id === id);
+    if (!w || w.status !== "done") HC_SETTLE.delete(id);
+    else if (Date.now() - s.at >= HC_KEEP) { HC_SETTLE.delete(id); HOME_ROWS.add(`ended-work|${id}`); }   // it moves down without rising in again
+    else out.push(w);
+  }
+  return out;
+}
+// The result file of a finished task, one chip under its row (name + kind and size); a text file opens in the reader, another opens in a tab.
+function hcWorkFiles(w) {
+  const fs = w.status === "done" && Array.isArray(w.files) ? w.files.filter(f => f && f.path) : [];
+  return fs.length ? el("div", { class: "hrx-f" }, ...fs.map(f => { const name = f.name || String(f.path).split("/").pop(); return fileChip(name, fileMeta(name, f.size), VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : { href: fileUrl(f.path, false, f.pc) }); })) : null;
+}
 function renderHomeNow() {
   const box = $("#home-now");
   if (!box) return;
@@ -280,7 +306,7 @@ function renderHomeNow() {
   const mainBg = new Set(workRunning().map(w => w.id));
   const convT = ((S && S.convs) || []).filter(c => validTarget(convWebT(c.target)) && convRunning(c) && !(runOf(c.target).work && mainBg.has(runOf(c.target).work)));
   const convWork = convT.flatMap(c => [c, ...(c.work || []).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
-  const bg = workRunning(), ended = workEnded(), working = runT.length + convWork.length + bg.length, deferred = (S && S.deferred) || [];
+  const runW = workRunning(), settled = hcSettled(), bg = [...runW, ...settled], ended = workEnded().filter(w => !settled.includes(w)), working = runT.length + convWork.length + runW.length, deferred = (S && S.deferred) || [];
   const restRow = t => homeNowRow(t, !targetInfo(t).alive ? "종료됨" : runBusy(t) ? "진행 중" : statusKo(targetInfo(t).status), "");
   clear(box).append(
     // Three kinds, three places: 답변 필요 (a decision only the owner can make), 답장 대기 (replies he owes, per app), 지금 진행 중; plain news is the 알림 card.
@@ -288,12 +314,13 @@ function renderHomeNow() {
     nyListNode(needs),
     ...(owed.length || drafts ? [el("div", { class: "hn-h" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null), el("div", { class: "hn" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : []),
     el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), working ? el("span", { class: "sup", text: `${working}개 작업 중` }) : null),
-    el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow), ...(working || deferred.length ? [] : [el("div", { class: "empty", text: "진행 중인 작업이 없어요" })])),
+    el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow), ...(working || bg.length || deferred.length ? [] : [el("div", { class: "empty", text: "진행 중인 작업이 없어요" })])),
     ...(restT.length ? [el("div", { class: "hn-h" }, el("h2", { text: "대기 중" })), el("div", { class: "hn", "data-k": "waiting" }, ...restT.map(restRow))] : []),
     ...(ended.length ? [el("div", { class: "hn-h" }, el("h2", { text: "최근 끝난 작업" })), el("div", { class: "hn", "data-k": "ended-work" }, ...ended.map(workRow))] : []),
     endedGroup() || "");
+  for (const w of settled) { const s = HC_SETTLE.get(w.id), row = s && !s.swapped ? box.querySelector(`[data-work="${CSS.escape(w.id)}"]`) : null; if (row) { s.swapped = true; motionSwap(row, () => {}); } }
   if (!S || !NT.loaded) return;
-  const rows = [...box.querySelectorAll(".hr, .ntg")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.mon || r.dataset.group || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
+  const rows = [...box.querySelectorAll(".hr, .ntg")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.work || r.dataset.mon || r.dataset.group || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
   const fresh = freshKeys(HOME_ROWS, keys);
   rows.forEach((r, i) => { if (fresh.has(keys[i])) motionIn(r); });
 }
@@ -466,5 +493,6 @@ function workRow(w) {
       el("span", { class: `dot ${run || rec ? "pri" : stall ? "att" : done ? "ok" : w.cancelled ? "" : "err"}` }),
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: line })),
       el("span", { class: `hs ${run || rec ? "pri" : stall ? "warn" : done || w.cancelled ? "" : "err"}`, text: state })),
+    hcWorkFiles(w),
     act ? el("button", { class: "btn text", type: "button", style: "flex:none;margin-right:8px", "data-act": "retry", onclick: ev => act[1](ev.currentTarget), text: act[0] }) : null);
 }
