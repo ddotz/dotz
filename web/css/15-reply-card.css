@@ -50,4 +50,4 @@
 .rq.cm .rq-acts { margin-top: 10px; }
 .rq-acts .btn.sm { height: var(--btn-h-sm); min-height: 0; padding: 0 12px; font-size: 13px; }
 .rq-acts .btn.text.sm { padding: 0 8px; }
-.rq-acts .dr-send { flex: none; }
+.rq-acts.dr-row .dr-send { flex: none; }
