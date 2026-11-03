@@ -44,7 +44,13 @@ html, body { height: 100%; margin: 0; }
 /* manipulation: a double tap does not zoom the page (iPhone web app, owner 2026-10-26); pinch zoom still works. On every element, because a
    scrolling container (the chat timeline) starts its own touch-action chain; rules that set their own (pan-y, none) are more specific and stay. */
 *, *::before, *::after { touch-action: manipulation; }
-body { font: 400 14px/22px var(--font); font-variant-numeric: tabular-nums; font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow: hidden; -webkit-text-size-adjust: 100%; word-break: keep-all; overflow-wrap: break-word; }
+body { font: 400 14px/22px var(--font); font-variant-numeric: tabular-nums; font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow: hidden; -webkit-text-size-adjust: 100%; word-break: keep-all; overflow-wrap: break-word; line-break: strict; }
+/* Korean line breaks like Netflix subtitles (web/DESIGN.md Type): whole words, balanced titles, no one-word last line in body text;
+   only code and paths may break inside a token. .phr keeps a fixed phrase ("무엇이 어디에") on one line when it fits. */
+h1, h2, h3, h4, .ttl, figcaption { text-wrap: balance; }
+p, li, blockquote, dd { text-wrap: pretty; }
+code, pre, kbd, samp { word-break: normal; overflow-wrap: anywhere; }
+.phr { display: inline-block; max-width: 100%; }
 .m-dg { display: inline-block; }
 button, input, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
 button { cursor: pointer; }
