@@ -8,6 +8,7 @@ import { dropForLine, forLines } from "./forline.ts";
 import { createSelfChat, normalizeSelfChat, type SelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import { sameRoom } from "./messenger-rooms.ts";
+import { postClass } from "./notify-route.ts";
 import { parseTone, plainChoice, stripHandoff, TONE_EMOJI } from "./tone.ts";
 
 // JANDI (on-prem, LAN) as a built-in messenger. Inbound: a JANDI Team Outgoing Webhook POSTs to /jandi/<room id> on our own listener
@@ -452,6 +453,8 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 		let dests = ready.filter(r => r.room.kind === msg.kind && (msg.kind !== "project" || r.room.project === msg.target));
 		// A project with no room of its own talks in the main room.
 		if (!dests.length && msg.kind === "project") dests = ready.filter(r => r.room.kind === "main");
+		// JANDI has no lane room: a lane's result or question ([done]/[fail]/[ask]) reaches the owner in the main room; its progress stays in the web.
+		if (!dests.length && msg.kind === "lane" && ["result", "ask"].includes(postClass(msg.target, msg.text) ?? "")) dests = ready.filter(r => r.room.kind === "main");
 		dests = dests.filter((d, i) => dests.findIndex(x => x.url === d.url) === i);
 		if (!dests.length) return { delivered: false, reason: "no room" };
 		const prefix = cfg.self_chat?.enabled && cfg.self_chat.reply_prefix ? `${cfg.self_chat.reply_prefix} ` : "";
