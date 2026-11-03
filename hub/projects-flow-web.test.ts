@@ -141,7 +141,7 @@ test("the list pages 12 projects at a time, filters by need/running/done and sea
 	await run(v, `document.querySelector('.pl-chips [data-view="done"]').click()`);
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 10`);
 	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .pl-s")].map(n => n.textContent)`).then(s => s.every(t => t.includes("끝남")))).toBe(true);
-	expect(await q(v, `return getComputedStyle(document.querySelector("#pl-list .pl-bar.done i")).backgroundColor`)).toBe("rgb(10, 135, 84)");
+	expect(await q(v, `return document.querySelector("#pl-list .pl-row .li-end .tag").textContent`)).toBe("끝남");
 	await run(v, `document.querySelector('.pl-chips [data-view="all"]').click()`);
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 12`);
 	// search narrows to the typed name

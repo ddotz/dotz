@@ -23,20 +23,22 @@
 .pl-list > .empty { background: transparent; }
 .pl-empty-a { margin-top: 12px; }
 .pl-list .cv-more { border-top: 1px solid var(--line); }
-.pl-row { display: flex; gap: 12px; width: 100%; min-width: 0; min-height: var(--row-h); padding: var(--row-py) var(--row-px); border: 0; background: transparent; color: inherit; text-align: left; }
+.pl-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 48px; padding: 8px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
 .pl-row + .pl-row { border-top: 1px solid var(--line); }
 .pl-row:hover { background: var(--card-hover); }
 /* the open project: the same selected fill as the chat list (.cv-row.on) */
 .pl-row.on, .pl-row.on:hover, .pl-row:active { background: var(--row-sel); }
-.pl-row > .dot { margin-top: 7px; }
-.pl-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.pl-1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.pl-n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 15px/22px var(--font); }
+.pl-row > .dot { margin-top: 0; }
+.pl-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pl-1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pl-n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--fs-row)/var(--lh-row) var(--font); }
 .pl-row.unread .pl-n { font-weight: 600; }
 .pl-nb { flex: none; height: 18px; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--on-accent); font: 600 11px/18px var(--font); text-align: center; }
-.pl-at { flex: none; color: var(--fg-3); font-size: 12px; line-height: 18px; }
-.pl-s { display: flex; align-items: center; min-width: 0; color: var(--fg-2); font-size: 12px; line-height: 16px; }
+.pl-at { flex: none; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.pl-s { display: flex; align-items: center; min-width: 0; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .pl-sw { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-row > .li-end { flex: none; display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.pl-row > .li-end > .chev { width: 14px; height: 14px; color: var(--fg-3); }
 .pl-p { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
 /* one progress rule everywhere: accent while it runs, success green once every milestone is done */
 .pl-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
@@ -48,14 +50,14 @@
 .pl-row.sub .pl-n { font-weight: 500; }
 
 /* ---- level 2: the overview ---- */
-.pm-o { display: flex; flex-direction: column; gap: 12px; max-width: 640px; margin-top: 16px; }
+.pm-o { display: flex; flex-direction: column; gap: 12px; max-width: 760px; margin-top: 16px; }
 .pm-need, .pm-calm { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .pm-need-k, .pm-calm-k { display: flex; align-items: center; margin-bottom: 4px; }
 .pm-need-t, .pm-calm-t { font: 600 16px/22px var(--font); overflow-wrap: anywhere; }
 .pm-need-s { color: var(--fg-2); font-size: 12px; line-height: 16px; }
 .pm-calm-t.sup { color: var(--fg-3); font-weight: 400; font-size: 14px; }
 .pm-rows { display: flex; flex-direction: column; background: var(--card); border-radius: var(--r-card); overflow: hidden; }
-.pm-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 10px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
+.pm-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
 .pm-row + .pm-row { border-top: 1px solid var(--line); }
 .pm-row:hover { background: var(--card-hover); }
 .pm-row-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -68,7 +70,7 @@
 .pm-row .lead { width: 16px; height: 16px; color: var(--fg-3); }
 .pm-o-foot { padding: 0 4px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 
-/* the page menu (⋯) beside 프로젝트 채팅: the same 40px round button the app's other ⋯ menus use on a page header */
+/* the page menu (⋯) beside 프로젝트 채팅: the app's 40px page-header icon button */
 .pmv-hact .ib.pmv-more { width: 40px; height: 40px; border-radius: 50%; background: var(--card); color: var(--fg-2); }
 .pmv-hrow .btn.tonal { background: var(--card); }
 .pmv-hrow .btn.tonal:hover { background: var(--card-hover); }
@@ -99,9 +101,9 @@
   .views.pp > #v-projects { padding: 0 8px 0 4px; }
   /* the chip row is wider than the column most of the time: the fade shows there is more to scroll */
   .pl-chips { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); }
-  .pl-row { padding: 10px 12px; }
+  .pl-row { padding: 8px 12px; }
   .pl-n { font-size: 14px; line-height: 20px; }
   .pl-at { font-size: 11.5px; }
   .pl-gh { padding: 10px 12px 2px; }
-  .pm-o { max-width: 680px; }
+  .pm-o { max-width: 760px; }
 }
