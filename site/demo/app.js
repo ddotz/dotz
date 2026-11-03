@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "a3351f42f6ba";
+const WEB_BUILD = "19eba8c811d7";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -208,11 +208,12 @@ const phraseChunks = text => (phraseTree(text) || []).map(([s]) => s.map(([c]) =
 const WPH_COPY = [".sup", ".note", ".empty", ".hc-none", ".cv-empty", ".bell-none", ".dr-none", ".dc-q", ".dc-ds", ".fs-body", ".md p", ".md li", ".md blockquote",
   "dialog p", "[class$='-note']", "[class*='-note ']", "[class$='-sub']", "[class*='-sub ']", "[class$='-hint']", "[class*='-hint ']", "[class$='-desc']",
   "[class*='-desc ']", "[class$='-msg']", "[class$='-body']", "[class*='-body ']"].join(", ");
+// the chat window (#tl: answers, cards, notes) keeps normal line breaks (owner, 11-03);
 // code, inputs, links (an underline does not reach into an inline-block), mail bodies, the file viewer, and boxes that clamp or
 // ellipsize their text (an inline-block there would hide whole phrases instead of trimming the last line)
 const WPH_SKIP = ["pre", "code", "kbd", "samp", "textarea", "input", "select", "svg", "a", "[contenteditable]", ".btn", ".chip", ".tag", ".mb", ".mb-txt", ".tv-body",
   ".clamp", "[class*='clamp']", ".ntf .bd2", ".pn .pt", ".ml-snip", ".qt", ".lg-q", ".lb", ".pj-sc .tx", ".hm-n .s", ".hm-sh .s", ".wh", ".rq-orig",
-  ".tr-rb", ".mr-sum", "#tl .bm", ".dr-ob", ".kk-lp-t", ".kk-lp-d", ".fr-sum", ".rc-title", ".mt-head .sup", ".ended .sup", ".sh-t .sup", ".wph"].join(", ");
+  ".tr-rb", ".mr-sum", ".dr-ob", ".kk-lp-t", ".kk-lp-d", ".fr-sum", ".rc-title", ".mt-head .sup", ".ended .sup", ".sh-t .sup", ".wph", "#tl"].join(", ");
 
 function phraseFrag(tree) {
   const box = (into, text) => { const b = document.createElement("span"); b.className = "wph"; if (text) b.append(text); into.append(b); return b; };
@@ -2321,7 +2322,7 @@ function scrollChat(force, top) {
   requestAnimationFrame(() => {
     if (CV.pin && CV.pin !== "bottom") return;   // a place chosen after this call (the divider, a jump target) wins; the owner letting go clears the pin first
     if (!force && !chatStick) return;   // an earlier message of this frame already put the view at its top
-    if (!force && top && top.isConnected && fullHeight(top) > timeline.clientHeight - 24) {
+    if (!force && top && top.isConnected && top.offsetHeight > timeline.clientHeight - 24) {
       chatUnpin();
       timeline.scrollTop += top.getBoundingClientRect().top - timeline.getBoundingClientRect().top - 12;
       chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
@@ -2803,7 +2804,8 @@ function renderDecision(box, dc, picks, step) {
     const blk = dc.blocks[step];
     if (blk) {
       if (blk.title && dc.blocks.length > 1) body.append(el("div", { class: "dc-sub", text: blk.title }));
-      for (const o of blk.options) body.append(el("button", { class: `dc-row${o.rec ? " rec" : ""}${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
+      // Once the answer goes out the card keeps only the chosen row (the others leave), so 보냈어요 reads in the same place.
+      for (const o of st && !dc.draft && picks[step] ? blk.options.filter(x => x.n === picks[step].n) : blk.options) body.append(el("button", { class: `dc-row${o.rec ? " rec" : ""}${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
         el("span", { class: "dc-key", text: String(o.n) }),
         el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
     }
@@ -3567,6 +3569,50 @@ function resultCard(opts) {
   return el("div", { class: "bm alert rc" }, ...kids);
 }
 
+// A bot answer shaped like a morning briefing (a run of "- 10:00 title" lines, then counts and a mail line) is drawn as rows and chips;
+// the words are the bot's own and stay as written. Any other text returns null and is drawn as plain markdown.
+const HCB_ROW = /^\s*[-*\u2022]\s*(\d{1,2}:\d{2})\s+(\S.*?)\s*$/;
+const HCB_MAIL = /메일\s*\d+통/;
+const HCB_COUNT = /\d+\s*(?:개|통|건|명)/;
+const hcbNums = s => { const out = []; String(s).split(/(\d+)/).forEach((p, i) => out.push(i % 2 ? el("span", { class: "hcb-n", text: p }) : p)); return out; };
+function hcBriefParse(text) {
+  const lines = String(text ?? "").replace(/\r/g, "").split("\n");
+  let a = -1, b = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (!HCB_ROW.test(lines[i])) continue;
+    let j = i;
+    while (j + 1 < lines.length && HCB_ROW.test(lines[j + 1])) j++;
+    if (j > i) { a = i; b = j; break; }
+    i = j;
+  }
+  if (a < 0) return null;
+  let h = a - 1;
+  while (h >= 0 && !lines[h].trim()) h--;
+  const head = h >= 0 && lines[h].trim().length <= 24 && !/[.!?요]$/.test(lines[h].trim()) ? lines[h].trim() : "";
+  const pre = lines.slice(0, head ? h : a).join("\n").trim();
+  return { pre, head, rows: lines.slice(a, b + 1).map(l => HCB_ROW.exec(l).slice(1, 3)), post: lines.slice(b + 1) };
+}
+function hcBriefNode(text) {
+  const p = hcBriefParse(text);
+  if (!p) return null;
+  const kids = [];
+  if (p.pre) kids.push(mdNode(p.pre));
+  const tag = /브리핑|아침/.test(text) ? el("span", { class: "tag pri", text: "아침 점검" }) : null;
+  kids.push(el("div", { class: "hcb-card" },
+    tag || p.head ? el("div", { class: "hcb-hd" }, tag, p.head ? el("span", { class: "hcb-h" }, ...hcbNums(p.head)) : null) : null,
+    el("div", { class: "hcb-rows" }, ...p.rows.map(([t, title]) => el("div", { class: "hcb-r" }, el("span", { class: "hcb-t", text: t }), el("span", { class: "hcb-ti", text: title }))))));
+  let plain = [];
+  const flush = () => { const s = plain.join("\n").trim(); plain = []; if (s) kids.push(mdNode(s)); };
+  for (const l of p.post) {
+    if (!l.trim()) { plain.push(l); continue; }
+    if (HCB_MAIL.test(l)) { flush(); kids.push(el("div", { class: "hcb-chip" }, icon("mail"), el("span", {}, ...hcbNums(l.trim())))); }
+    else if (HCB_COUNT.test(l) && l.trim().length <= 40) { flush(); kids.push(el("div", { class: "hcb-ln" }, ...hcbNums(l.trim()))); }
+    else plain.push(l);
+  }
+  flush();
+  return el("div", { class: "hcb" }, ...kids);
+}
+
 /* ---------- todo strip: the target's plan (GET /api/todo), one line above the timeline ---------- */
 const TD = { by: {}, open: {}, timer: 0, calls: new Set() };
 async function loadTodo(t = target) {
@@ -3581,11 +3627,13 @@ function paintTodo() {
   const box = $("#todo");
   if (!box) return;
   const phases = TD.by[target] || [], all = phases.flatMap(p => p.tasks || []);
-  if (!all.length || all.every(x => todoState(x) === "done" || todoState(x) === "drop")) { box.hidden = true; delete box.dataset.sig; clear(box); return; }
+  if (!all.length || all.every(x => todoState(x) === "done" || todoState(x) === "drop")) { box.hidden = true; delete box.dataset.sig; delete box.dataset.ph; clear(box); return; }
   const open = !!TD.open[target], sig = JSON.stringify([phases, open]);
   box.hidden = false;
   if (box.dataset.sig === sig) return;
-  box.dataset.sig = sig;
+  // A step finishing changes the strip in place (the new look fades up); opening the list or the first paint just draws.
+  const ph = JSON.stringify(phases), swap = box.dataset.ph !== undefined && box.dataset.ph !== ph;
+  box.dataset.sig = sig; box.dataset.ph = ph;
   const live = all.filter(x => todoState(x) !== "drop"), done = live.filter(x => todoState(x) === "done").length;
   const cur = all.find(x => todoState(x) === "act") || all.find(x => todoState(x) === "pend"), g = x => el("span", { class: `td-g tg-${todoState(x)}`, "aria-hidden": "true" });
   const bar = el("button", { class: "td-bar", type: "button", "aria-expanded": String(open), onclick: () => { TD.open[target] = !open; paintTodo(); } },
@@ -3595,8 +3643,8 @@ function paintTodo() {
     p.name ? el("div", { class: "td-ph", text: p.name }) : null,
     ...(p.tasks || []).map(x => el("div", { class: `td-r tr-${todoState(x)}` }, g(x), el("span", { class: "td-tx", text: x.content })))])));
   const keep = $(".td-list", box), top = keep ? keep.scrollTop : 0;
-  clear(box).append(...kids);
-  const nl = $(".td-list", box); if (nl) nl.scrollTop = top;
+  const draw = () => { clear(box).append(...kids); const nl = $(".td-list", box); if (nl) nl.scrollTop = top; };
+  if (swap) motionSwap(box, draw); else draw();
 }
 // A todo tool call finishing means the plan changed: refetch (debounced) when it belongs to the open target.
 function todoActivity(a) {
@@ -3655,32 +3703,13 @@ function humanAlert(text) {
   }
   return text.split("\n")[0].replace(/\s*\([^()]*[A-Za-z]{4,}[^()]*\)/g, "").trim() || text;
 }
-// A reply that just arrived types itself out (the harness sends only finished messages, no token deltas): its text
-// nodes fill in order at a pace that ends within ~1.2 s. History, re-renders and reduced motion show it at once.
-const STREAMED = new Set(), STREAMING = new Map();   // STREAMING: text root -> its [text node, full text] pairs while it types out
-// A message's height with its text fully in, measured in one synchronous step (no paint between): scrollChat judges "taller than the view"
-// by it. While the text is still typing out the message is held at that height (min-height, released when typed) so the room to scroll is there.
-function fullHeight(node) {
-  const blank = [];
-  for (const [root, nodes] of STREAMING) if (node.contains(root)) for (const [n, t] of nodes) { blank.push([n, n.data]); n.data = t; }
-  const h = node.offsetHeight;
-  for (const [n, d] of blank) n.data = d;
-  if (blank.length) node.style.minHeight = `${h}px`;
-  return h;
-}
+// A reply that just arrived fades in as one piece (the harness sends only finished messages, no token deltas): no text is hidden or
+// retyped, so nothing reflows and the height is final from the first frame. History, re-renders and reduced motion show it at once.
+const STREAMED = new Set();
 function streamIn(root, key, ts) {
-  if (STREAMED.has(key) || Date.now() - Date.parse(ts) > 15000 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (STREAMED.has(key) || Date.now() - Date.parse(ts) > 15000) return;
   STREAMED.add(key);
-  const nodes = [], walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let n = walk.nextNode(); n; n = walk.nextNode()) { nodes.push([n, n.data]); n.data = ""; }
-  STREAMING.set(root, nodes);
-  const total = nodes.reduce((s, [, t]) => s + t.length, 0), t0 = performance.now(), dur = Math.min(1200, 250 + total * 6);
-  const step = now => {
-    let left = Math.ceil(total * Math.min(1, (now - t0) / dur));
-    for (const [n, t] of nodes) { const k = Math.min(t.length, left); if (n.data.length !== k) n.data = t.slice(0, k); left -= k; }
-    if (now - t0 < dur) requestAnimationFrame(step); else { STREAMING.delete(root); const bm = root.closest(".bm"); if (bm) bm.style.minHeight = ""; }
-  };
-  requestAnimationFrame(step);
+  motionIn(root, "fade", 300);
 }
 // Delivery state of an owner message (hub/events.ts emitDelivery), shown in its meta line: received (steered into the running step /
 // received by an idle session / waited in the queue / resumed a stopped session / held on a limit), answered, or not delivered.
@@ -3835,8 +3864,10 @@ function msgNode(e) {
       }
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       const fl = fileLines(body), host = pqPc(eventTarget(e) || ""), md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text), files = pathFiles(md, host);
-      if (e.kind === "out" && !isRestart(e)) streamIn(md, `${e.ts}|${text.length}`, e.ts);
-      return el("div", { class: `bm${card}` }, head, rpQuote(e), md, filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc, e.ts) : null);
+      // A briefing-shaped answer (schedule rows, a mail line, counts) is drawn as a card of rows and chips (11-resultcard.js hcBriefNode).
+      const brief = e.kind === "out" && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
+      if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);
+      return el("div", { class: `bm${card}` }, head, rpQuote(e), brief || md, filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc, e.ts) : null);
     }
   }
 }
