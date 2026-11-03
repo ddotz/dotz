@@ -605,7 +605,7 @@ details.work.bad:not(.live) .wdot { display: block; background: var(--err); anim
 .tl-in > .bm.rep, .tl-in > .bm.alert { max-width: none; padding: 14px 18px 16px; border-radius: var(--r-card); background: var(--card); }
 .bm .more pre { background: var(--layer) !important; }
 details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); background: var(--card); }
-.sendrow { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ta ta" "bar send"; align-items: center; gap: 6px 8px; padding: 14px 12px 10px 18px !important; border: 1px solid var(--line) !important; border-radius: 22px !important; background: var(--card) !important; box-shadow: var(--shadow-panel); }
+.sendrow { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ta ta" "bar send"; align-items: center; gap: 6px 8px; padding: 14px 12px 10px 18px !important; border: 1px solid var(--line) !important; border-radius: 22px !important; background: var(--card) !important; }
 .sendrow:focus-within { border-color: var(--line-2) !important; }
 /* "ulw" in the message (14-slash-commands.js autosize): a 2px blue → violet → pink edge, padding 1px less so nothing inside moves */
 /* the keyword itself: the backdrop (14-slash-commands.js paintUlw) sits in the textarea's grid cell under it; its text is invisible, only the
@@ -830,7 +830,7 @@ details.work.live .wdot { display: block; }
 #working-tx { min-width: 0; }
 .working .btn { flex: none; height: 24px; padding: 0 8px; font-size: 12px; }
 /* running state: a softly fading line above the composer, a quiet dot on the model chip, and the send button turns into stop */
-.runline { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: 0 0 8px 6px; color: var(--accent); font-size: 13px; font-weight: 600; line-height: 20px; animation: runpulse 2.4s ease-in-out infinite; }
+.runline { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: 0 0 8px 6px; color: var(--fg-2); font-size: 13px; font-weight: 500; line-height: 20px; }
 .runline[hidden] { display: none; }
 .pausenote { margin: 0 0 6px 6px; color: var(--warn); font-size: 12.5px; line-height: 18px; }
 .pausenote[hidden] { display: none; }
@@ -862,22 +862,21 @@ details.work.live .wdot { display: block; }
 .runstate .rs-go, .pausenote .pn-go, .tl-top .tl-more { position: relative; min-height: 0; }
 .runstate .rs-go::after, .pausenote .pn-go::after, .tl-top .tl-more::after { content: ""; position: absolute; inset: -8px -4px; }
 .runline.warn { color: var(--warn); }
-@keyframes runpulse { 0%, 100% { opacity: 1; } 50% { opacity: .6; } }
 #working > .dot, #working-tx, #working > .sp, #working-stop { display: none !important; }
 #c-model.run::after { content: ""; flex: none; width: 6px; height: 6px; margin-left: 4px; border-radius: 50%; background: currentColor; animation: pulse 2.4s ease-in-out infinite; }
 #send-btn.stop { background: var(--fg); color: var(--bg); }
 #send-btn.stop > svg { display: none; }
 #send-btn.stop::before { content: ""; width: 12px; height: 12px; border: 2px solid currentColor; border-radius: 3px; }
-@media (prefers-reduced-motion: reduce) { .runline, #c-model.run::after { animation: none; } }
+@media (prefers-reduced-motion: reduce) { #c-model.run::after { animation: none; } }
 @media (pointer: coarse) { .working .btn { height: 36px; padding: 0 10px; } }
 .qlist { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .qitem { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border: 0; border-radius: 12px; background: var(--layer); min-width: 0; }
 .qitem .qb { flex: 1; min-width: 0; }
-.qitem .qt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; font-size: 13px; line-height: 18px; font-weight: 500; }
+.qitem .qt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; font-size: 13px; line-height: 18px; font-weight: 400; }
 .qitem .qm { margin-top: 2px; color: var(--fg-3); font-size: 11px; line-height: 16px; }
 .qitem .btn { flex: none; }
 @media (max-width: 639px) { .qitem { flex-wrap: wrap; } .qitem .qb { flex-basis: 100%; } .qitem .qa { margin-left: auto; } }
-.qitem .qa { display: flex; gap: 4px; flex: none; }
+.qitem .qa { display: flex; gap: 8px; flex: none; }
 .composer.tmode .qitem { background: var(--tb); border-color: var(--tl2); color: var(--tf); }
 .composer.tmode .qitem .qm { color: var(--td); }
 /* phone working actions: no row of their own - stop is the send button (with text typed it sends into the running turn)
@@ -1777,7 +1776,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 
 /* 채팅 (web/js/31-conversations.js): the chat list (a row = icon, title, one-line preview, status; never a time) and the "새 메시지" divider.
    Below 1100px the list and a conversation are two screens (#v-chat.cv-listing = the list); from 1100px they sit side by side. */
-.cv-side, .cv-list { background: var(--card); border-radius: var(--r-card); box-shadow: var(--shadow-panel); overflow: hidden auto; }
+.cv-side, .cv-list { background: var(--card); border-radius: var(--r-card); overflow: hidden auto; }
 .cv-side { display: none; }
 .cv-head { display: none; }
 #v-chat.cv-listing > .cv-side, #v-monitoring.cv-listing > .cv-side { display: block; }
@@ -1799,10 +1798,12 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .cv-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cv-n, .cv-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv-n { font: 500 15px/22px var(--font); }
-.cv-p { color: var(--fg-3); font: 400 14px/20px var(--font); }
+.cv-p { color: var(--fg-2); font: 400 13px/18px var(--font); }
 .mon-pc { margin-left: 8px; white-space: nowrap; color: var(--fg-3); font: 400 11px/16px var(--font); }
 .cv-id { margin-left: 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
-.cv-row.unread .cv-n { font-weight: 700; }
+.cv-row.unread .cv-n { font-weight: 600; }
+/* the unread count: 11px, one step up from the tab bar's 10.5 (docs/ui-spec.md 배지·점) */
+.cv-row .nb { min-width: 18px; height: 18px; border-radius: 9px; font-size: 11px; line-height: 18px; }
 /* a session under its project: indented, smaller avatar; the group label for sessions started from chat */
 .cv-row.sub { min-height: 44px; padding-left: 32px; }
 .cv-row.sub .cv-av { width: 28px; height: 28px; }
@@ -1823,6 +1824,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .appbar.cvconv h1 { flex: 1 1 0; min-width: 0; margin-right: 0; }
 .appbar.cvconv .thead { flex: 0 0 auto; margin: 0; }
 
+.tl-in > .a-div { color: var(--fg-3); }
 .tl-in > .cv-new { display: flex; align-items: center; gap: 12px; margin: 8px 0 0; color: var(--accent); font: 600 12px/16px var(--font); }
 .tl-in > .cv-new::before, .tl-in > .cv-new::after { content: ""; flex: 1; height: 1px; background: var(--line-2); }
 /* a gateway system line (11-todo-strip.js sysLine): small, muted and centered like the divider above, no bubble */
@@ -2956,7 +2958,7 @@ textarea.as-in.as-ta { padding-top: 6px; padding-bottom: 6px; }
 .cv-bar .cv-read { flex: none; margin-left: auto; height: 32px; padding: 0 8px; font-size: 13px; }
 .cv-more { display: flex; justify-content: center; padding: 8px 0; }
 .cv-more .btn { min-height: 44px; padding: 0 16px; font-size: 14px; }
-.cv-empty { padding: 24px 16px; color: var(--fg-3); font-size: 14px; line-height: 20px; text-align: center; }
+.cv-empty { padding: 32px 16px; color: var(--fg-3); font-size: 12px; line-height: 16px; text-align: center; }
 @media (min-width: 1100px) {
   .cv-bar { flex-wrap: wrap; margin: -8px -8px 4px; padding: 8px; border-radius: var(--r-card) var(--r-card) 0 0; }
   .cv-bar .cv-tabs { flex: 1 0 100%; }
