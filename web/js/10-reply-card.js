@@ -10,17 +10,16 @@ const RQ_OPEN = new Set();   // card keys whose long body was unfolded (펼치�
 const rqBase = app => String(app || "").split("~")[0].split("-")[0];
 const rqAppName = app => (RQ_APPS[rqBase(app)] || [""])[0];
 // h: { app (instance id), label (the instance's own name), pc (computer name), model, at (ms or ISO), tail (nodes at the end) }
+// ONE tight line (owner 2026-11-03): who the draft answers and where it came from, the state at the right. The author's initial is a small
+// 20px mark, so the head never takes a second line and the original below it is the only thing that reads as a quote.
 function rqHeadNode(h) {
   const [name, ic] = RQ_APPS[rqBase(h.app)] || [h.appName || "답장", "send"];
-  // The computer is its own .mon-pc span, like every other row's machine chip (a peer's card then differs only by that chip).
-  const meta = [name, h.label && h.label !== name ? h.label : "", h.model || ""].filter(Boolean).join(" · ");
   const at = h.at ? new Date(h.at) : null, when = at && !isNaN(at) ? rcWhen(at.toISOString()) : "";
-  // A comment: the landing card's head, a round avatar with the author's initial, the author's name, and where it came from in grey.
-  if (h.who) return el("div", { class: "rq-hd rq-who" }, el("span", { class: "rq-av", "aria-hidden": "true", text: [...h.who][0] || "?" }),
-    el("span", { class: "rq-meta", title: h.who }, el("b", { text: h.who }), el("span", { class: "rq-src", text: ` · ${h.src || name}` }), h.pc ? el("span", { class: "mon-pc", text: ` · ${h.pc}` }) : null),
-    when ? el("span", { class: "rc-time", text: when }) : null, ...(h.tail || []));
-  return el("div", { class: "rq-hd" }, el("span", { class: "dr-ic" }, icon(ICONS[ic] ? ic : "send")),
-    el("span", { class: "rq-meta", title: meta }, meta, h.pc ? el("span", { class: "mon-pc", text: ` · ${h.pc}` }) : null),
+  const to = h.who ? `${h.who}님께 답장` : name, src = h.who ? h.src || name : [h.label && h.label !== name ? h.label : "", h.model || ""].filter(Boolean).join(" · ");
+  return el("div", { class: `rq-hd${h.who ? " rq-who" : ""}` },
+    h.who ? el("span", { class: "rq-av", "aria-hidden": "true", text: [...h.who][0] || "?" }) : el("span", { class: "dr-ic" }, icon(ICONS[ic] ? ic : "send")),
+    el("span", { class: "rq-meta", title: [to, src].filter(Boolean).join(" · ") }, el("b", { class: "rq-wt", text: to }),
+      src ? el("span", { class: "rq-src", text: ` · ${src}` }) : null, h.pc ? el("span", { class: "mon-pc", text: ` · ${h.pc}` }) : null),
     when ? el("span", { class: "rc-time", text: when }) : null, ...(h.tail || []));
 }
 // A body is long when it would take more than RQ_LINES lines at a phone's width (about 36 Korean characters a line).
@@ -67,6 +66,22 @@ function rqAttachNode(d = {}) {
     el("span", { text: left ? "첨부: 없음 · 파일을 붙일 수 없는 곳이에요" : "첨부: 없음" }),
     left && left.length ? el("span", { class: "dr-wn", text: `남는 파일: ${left.join(", ")}` }) : null));
 }
+// The original a draft answers, as a quiet quote (owner 2026-11-03): muted, behind one 2px left rule, two lines by default with a
+// 원문 보기 toggle. It reads as someone else's words, plainly separate from the draft under it (원칙 5). Open state is kept per card key.
+const RQ_OG = new Set();
+function rqOrigNode(key, o) {
+  const text = String(o.text || ""), long = [...text].length > 84 || text.includes("\n"), open = RQ_OG.has(key);
+  const box = el("div", { class: `rq-orig${long && !open ? " clamp" : ""}`, title: text },
+    el("div", { class: "rq-oh" }, el("span", { class: "rq-ow", text: o.who || "원문" })),
+    el("span", { class: "rq-ot", text }));
+  if (!long) return el("div", { class: "rq-og-wrap" }, box);
+  const btn = el("button", { class: "btn text rq-og", type: "button", "aria-expanded": String(open), text: open ? "원문 접기" : "원문 보기", onclick: ev => {
+    ev.stopPropagation();
+    const on = !RQ_OG.has(key); if (on) RQ_OG.add(key); else RQ_OG.delete(key);
+    box.classList.toggle("clamp", !on); btn.setAttribute("aria-expanded", String(on)); btn.textContent = on ? "원문 접기" : "원문 보기";
+  } });
+  return el("div", { class: "rq-og-wrap" }, box, btn);
+}
 // The card. c: { key, cls, attrs, head (rqHeadNode), label + labelCls (a sub-head such as "답장 초안 · 메시지 2개"), to: [label, value],
 // recv (a mail draft's own 받는이·참조 rows, 10-decision-card.js draftToNode; given instead of `to`), subject,
 // original: {who, text} (what the draft answers), body, attach (a draft's attachments / attachmentsNone / cannotAttach, or the caller's own files node),
@@ -75,14 +90,13 @@ function rqAttachNode(d = {}) {
 function rqCard(c) {
   const foot = c.sent ? rqSentNode(c.sentAt) : c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
   const att = c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach || {});
-  const cm = !!c.head.who;   // a comment card: its text plain under the head, the post title a grey hint, the draft in one grey box
+  const cm = !!c.head.who;   // a comment card: its text quoted under the head, the post title a grey hint, the draft as the body
   return el("div", { class: `rq${cm ? " cm" : ""}${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
     rqHeadNode(c.head),
+    c.original && c.original.text ? rqOrigNode(c.key, c.original) : null,
     c.label ? el("div", { class: c.labelCls || "rq-lb", text: c.label }) : null,
-    cm && c.original && c.original.text ? el("div", { class: "rq-ct", title: c.original.text, text: c.original.text }) : null,
     c.to ? (cm ? null : el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" }))) : c.recv || null,   // a mail keeps its 받는이 rows
     c.subject ? el("div", { class: "dr-sub rq-sub", text: c.subject }) : null,
-    !cm && c.original && c.original.text ? el("div", { class: "rq-orig", title: c.original.text }, c.original.who ? el("b", { class: "rq-ow", text: c.original.who }) : null, el("span", { class: "rq-ot", text: c.original.text })) : null,
     rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean), foot);
 }
 // 보냈어요 in the card's own foot: the action row's place, so nothing below moves (the landing demo card's 보냈어요 · 방금).

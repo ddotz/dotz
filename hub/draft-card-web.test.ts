@@ -76,7 +76,7 @@ for (const width of [1440, 390]) {
 			return { n: cards.length, states: cards.map(x => x.querySelector(".dr-st, .rq-sent").dataset.state), badge: cards.map(x => txt(x.querySelector(".dr-st, .rq-sent"))),   // a sent draft says 보냈어요 in its foot
 				questions: cards.map(x => x.textContent.split(${JSON.stringify(Q)}).length - 1), chip: txt(c.querySelector(".dr-chip")), subject: txt(c.querySelector(".dr-sub")),
 				subjectWeight: Number(getComputedStyle(c.querySelector(".dr-sub")).fontWeight), paras: [...c.querySelectorAll(".dr-body p")].map(txt),
-				orig: !!c.querySelector(".dr-orig"), buttons: cards.map(x => [...x.querySelectorAll("button:not(.dr-rm):not(.rq-more)")].map(txt)), more: cards.map(x => x.querySelectorAll(".rq-more").length), rm: cards.map(x => x.querySelectorAll(".dr-rm").length), rowCount: document.querySelectorAll("#mon-tl > .bm.dr .dcm-row").length,
+				orig: !!c.querySelector(".rq-orig"), buttons: cards.map(x => [...x.querySelectorAll("button:not(.dr-rm):not(.rq-more)")].map(txt)), more: cards.map(x => x.querySelectorAll(".rq-more").length), rm: cards.map(x => x.querySelectorAll(".dr-rm").length), rowCount: document.querySelectorAll("#mon-tl > .bm.dr .dcm-row").length,
 				over: document.documentElement.scrollWidth > innerWidth, w: c.getBoundingClientRect().width,
 				rowRole: [row.getAttribute("role"), row.tabIndex], rowButtons: [...row.querySelectorAll("button")].map(b => b.dataset.k) };
 		})()))`)) as string) as any;
@@ -97,7 +97,7 @@ for (const width of [1440, 390]) {
 		expect(got.rowCount).toBe(0);
 		expect(got.over).toBe(false);
 		expect(got.rowRole).toEqual(["button", 0]);
-		expect(got.rowButtons).toEqual(["mail-star", "mail-menu", "mail-draft"]);   // the row itself is the link; its buttons are the ☆ every row has, the ⋯ every mail row has and 초안 작성 of an incoming mail
+		expect(got.rowButtons).toEqual(["mail-star", "mail-draft", "mail-menu"]);   // the row itself is the link; its buttons are the ☆ every row has, 초안 작성 of an incoming mail and the ⋯ menu last in the header
 
 		const edit = JSON.parse((await v.evaluate(`(${draw}, document.querySelector("#mon-tl > .bm.dr .btn.tonal").click(), JSON.stringify((() => {
 			const c = document.querySelector("#mon-tl > .bm.dr"), ta = c.querySelector("textarea.dr-edit");

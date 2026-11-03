@@ -117,7 +117,7 @@ describe.each([[390, 844], [1280, 900]])("the same app on this computer and on t
 	test("the mail reply-draft card is the same structured card with the same buttons", async () => {
 		const parts = async (v: View) => q<{ card: string; buttons: string[]; orig: boolean; chip: string }>(v, `${NORMALIZE}
 			const c = document.querySelector("#mon-tl .bm.dr");
-			return { card: clean(c), buttons: [...c.querySelectorAll("button:not(.dr-rm)")].map(b => b.textContent.trim()), orig: !!c.querySelector(".dr-orig"), chip: c.querySelector(".dr-chip").textContent };`);
+			return { card: clean(c), buttons: [...c.querySelectorAll("button:not(.dr-rm)")].map(b => b.textContent.trim()), orig: !!c.querySelector(".rq-orig"), chip: c.querySelector(".dr-chip").textContent };`);
 		const lv = await boot(width, height, KEYS.mail.local, DRAFT_READY, "pending");
 		const local = await parts(lv);
 		await Bun.write(join(SHOTS, `local-mail-draft-${width}.png`), await lv.screenshot());
