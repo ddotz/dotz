@@ -53,6 +53,10 @@ h1, h2, h3, h4, .ttl, figcaption { text-wrap: balance; }
 p, li, blockquote, dd { text-wrap: pretty; }
 code, pre, kbd, samp { word-break: normal; overflow-wrap: anywhere; }
 .phr { display: inline-block; max-width: 100%; }
+/* a sentence / clause / phrase chunk of copy text (01-phrase-wrap.js): the line breaks between chunks, inside one only when it is
+   wider than the line; a box that clamps its lines keeps plain inline text so its ellipsis still trims the last line */
+.wph { display: inline-block; max-width: 100%; }
+.dcard.fold .wph { display: inline; }
 .m-dg { display: inline-block; }
 button, input, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
 button { cursor: pointer; }
@@ -63,11 +67,11 @@ button:disabled { opacity: .4; cursor: default; pointer-events: none; }
 kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--layer); color: var(--fg-3); font: 500 11px/16px var(--font); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
-/* layout: from 1100px one top row, below it the phone layout (tabs in a bottom bar). The markup is the same in both: #nav (the five tabs, one component), #pchip (the computer chip), #cmdk (search) and the app bar items.
+/* layout: from 1100px one top row, below it the phone layout (tabs in a bottom bar). The markup is the same in both: #nav (the five tabs, one component), #cmdk (search) and the app bar items.
    Wide: .side, .main and .appbar are display: contents, so each of their children is a cell of the .app grid and sits in the one row. Below 1100px they are the usual flex boxes. The 1100px edge is also where 채팅 puts its list next to the conversation. */
 .app { display: grid; grid-template-columns: 20px auto auto auto auto auto minmax(0, 1fr) auto auto auto auto 12px; grid-template-rows: 48px auto auto auto minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: env(safe-area-inset-top); }
 .side, .main, .appbar { display: contents; }
-.brand, .rail, .pchip, #back, .appbar h1, .thead, .conn, .cmdk, #vtog, .ustrip { grid-row: 1; align-self: center; }
+.brand, .rail, #back, .appbar h1, .thead, .conn, .cmdk, #vtog, .ustrip { grid-row: 1; align-self: center; }
 .gban { grid-row: 2; grid-column: 1 / -1; }
 .trban { grid-row: 3; grid-column: 1 / -1; }
 .oerr { grid-row: 4; grid-column: 1 / -1; }
@@ -102,7 +106,6 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .conn { grid-column: 8; margin-left: 8px; }
 #vtog { grid-column: 10; margin-left: 4px; }
 .ustrip { grid-column: 11; margin-left: 4px; }
-.pchip { grid-column: 3; }
 .conn { flex: none; height: 20px; padding: 0 8px; border-radius: 10px; background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); font-size: 12px; line-height: 20px; font-weight: 500; white-space: nowrap; }
 button.conn { border: 0; font-family: inherit; cursor: pointer; }
 button.conn:disabled { cursor: default; }
@@ -1859,39 +1862,33 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 /* In the 알림 timeline every message carried a red dot; it is a quiet grey now, the new one arrives by moving in, not by colour. */
 #v-chat:has(#bell-tabs:not([hidden])) #tl > .bm.alert .mn::before { background: var(--fg-3); opacity: .6; }
 
-/* Computers (33-peers.js): the chip next to the title, the switch sheet (uses the .ds-* sheet of 09-notices.css) and the bell's other-computer lines. */
-.pchip { position: relative; display: none; flex: none; align-items: center; gap: 6px; height: 32px; max-width: 168px; margin: 0 auto 0 8px; padding: 0 8px 0 12px; border: 0; border-radius: 16px; background: var(--card); color: var(--fg); font: 600 14px/18px var(--font); }
-.pchip:hover { background: var(--card-hover); }
-.pchip:active { background: var(--active); }
-.appbar.hasp .pchip { display: inline-flex; }
-.appbar.hasp h1 { flex: 0 1 auto; }
-.pchip[hidden] { display: none; }
-.pc-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pc-c { flex: none; display: inline-flex; }
-/* the unread dot sits on the chip's top-right corner, outside the chevron */
-.pc-d { position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); border: 2px solid var(--card); box-sizing: content-box; }
-.pc-d.need { background: var(--warn); }
-.pc-i { flex: none; width: 14px; height: 14px; transform: rotate(90deg); color: var(--fg-3); }
-.pr-ey { color: var(--fg-2); }
-.pr-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }
-.pr-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 10px 16px; border: 0; border-radius: var(--r-ctl); background: var(--bg); color: var(--fg); font: inherit; text-align: left; }
+/* Computers (33-peers.js): the bot name as the switcher (its unread dot), the switch sheet (on the .ds-* sheet of 09-notices.css) and the bell's other-computer lines. */
+/* the trigger: the brand name (wide) and the page title (phone, a page without a back arrow); the dot sits at the name's bottom right, inside its padding so the ellipsis clip keeps it */
+.appbar.hasp:not(.back) h1 { cursor: pointer; }
+@media (max-width: 1099px) { .appbar.hasp:not(.back) h1 { flex: 0 1 auto; margin-right: auto; } }
+#brand-name.pdot, .appbar:not(.back) h1.pdot { position: relative; padding-right: 10px; }
+#brand-name.pdot::after, .appbar:not(.back) h1.pdot::after { content: ""; position: absolute; right: 0; bottom: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.appbar:not(.back) h1.pdot::after { bottom: 6px; }
+#brand-name.pneed::after, .appbar:not(.back) h1.pneed::after { background: var(--warn); }
+/* the sheet: one quiet row per computer, no shadow; a compact centered dialog from 700px */
+.ds-sheet.pr-sheet { box-shadow: none; animation: none; }
+@media (min-width: 700px) { .ds-sheet.pr-sheet { max-width: 340px; } }
+.pr-hd { padding: 16px 20px 6px; color: var(--fg-3); font: 600 12px/16px var(--font); }
+.pr-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 10px; }
+.pr-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; transition: background-color .2s; }
 .pr-row:hover { background: var(--hover); }
 .pr-row:active { background: var(--active); }
-.pr-row.on .pr-s { color: var(--fg-2); }
-/* the computer being viewed: a small accent dot in a left slot every row reserves (14px extra padding); connection state is the pill on the right, never a second dot */
-.pr-row { position: relative; padding-left: 30px; }
-.pr-row.on::before { content: ""; position: absolute; top: 50%; left: 14px; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); }
-.pr-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.pr-t { font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
-.pr-s { color: var(--fg-3); font: 400 12px/16px var(--font); }
-.pr-bd { flex: none; padding: 0 8px; border-radius: 12px; background: var(--card); color: var(--fg-2); font: 600 12px/22px var(--font); white-space: nowrap; }
-.pr-bd.need { color: var(--warn); }
-.pr-st { flex: none; padding: 0 8px; border-radius: 12px; background: var(--card); color: var(--fg-3); font: 600 12px/22px var(--font); white-space: nowrap; }
-.pr-st.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+.pr-row.on { background: var(--card); }
+.pr-row.off { color: var(--fg-3); cursor: default; }
+.pr-row.off:hover, .pr-row.off:active { background: transparent; }
+.pr-t { min-width: 0; font: 500 15px/22px var(--font); word-break: keep-all; overflow-wrap: anywhere; }
+.pr-row.on .pr-t { font-weight: 600; }
+.pr-d { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.pr-d.need { background: var(--warn); }
+.pr-st { flex: none; margin-left: auto; color: var(--fg-3); font: 400 13px/18px var(--font); white-space: nowrap; }
+.pr-ck { flex: none; width: 18px; height: 18px; margin-left: auto; color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .pr-row { transition: none; } }
 .pr-line .chev { flex: none; align-self: center; color: var(--fg-3); }
-@media (max-width: 699px) {
-  .pchip { max-width: 132px; margin-left: 6px; }
-}
 
 /* another computer opened inside the installed app (33-peers.js prGo): the whole screen, the safe areas kept by this frame because a page in an iframe reads them as 0 */
 .pr-frame { position: fixed; inset: 0; z-index: 2000; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--bg); }
