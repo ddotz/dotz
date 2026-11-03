@@ -120,7 +120,7 @@ self.addEventListener("push", ev => {
     tag: m.tag || undefined,
     renotify: Boolean(m.tag),
     icon: "/icons/icon-192.png",
-    badge: "/icons/badge-96.png",   // Android draws it as a white mask: the dotz dot on a transparent background
+    badge: "/icons/badge-96.png",   // Android draws it as a white mask: the dotz mark on a transparent background
     ...(actions.length ? { actions } : {}),
     data: { url: m.url || "/", ts: m.id ? "" : m.ts || "", id: m.id || "", pc: m.pc || "" },
   });
