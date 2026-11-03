@@ -17,6 +17,8 @@
 .demo-back:hover { background: var(--hover); }
 .demo-brand:focus-visible, .demo-back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .app { height: calc(100dvh - var(--demobar-h)); margin-top: var(--demobar-h); }
+/* full-screen sheets start under the demo bar too (the keyboard case sets its own top) */
+.fs-bd:not(.kb) { top: var(--demobar-h); }
 @media (max-width: 640px) {
   .demo-bar { gap: 8px; padding: 0 8px 0 14px; }
   .demo-tag { font-size: 11px; }
