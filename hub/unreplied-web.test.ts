@@ -143,7 +143,7 @@ describe("home and the peer's mail", async () => {
 		expect(asked.body).toMatchObject({ action: "mail-draft", args: { key: "peer-1", instruction: "금요일까지 보낸다고" } });
 		await waitFor(v, `!document.querySelector("dialog[open]")`);
 		// 답장 안 함 is in the row's ⋯ (the row keeps only the 초안 작성 pencil)
-		// the draft request's answer repaints the list (closing a menu opened before it), so the ⋯ is tapped again until its menu stays
+		// the draft request's answer redraws the row (the menu of the old ⋯ closes with it), so the ⋯ is tapped again until its menu stays
 		await waitFor(v, `[...document.querySelectorAll(".menu .mi")].some(m => m.textContent.trim() === "답장 안 함") || (document.querySelector(".menu") || document.querySelector("#mon-tl .mr .mr-more").click(), false)`);
 		await run(v, `[...document.querySelectorAll(".menu .mi")].find(m => m.textContent.trim() === "답장 안 함").click()`);
 		const sent = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "fyi");
