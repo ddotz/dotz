@@ -432,9 +432,13 @@ function convPaint() {
     convSig = sig;
     convSide.setAttribute("aria-label", monCtx ? "모니터링 목록" : "채팅 목록");
     const top = convSide.scrollTop;
-    clear(convSide).append(...rows.map(convRow));
+    // A conversation opened from 모니터링 keeps 모니터링's own panel (sections, cards, bars: 30-monitoring.js), never the chat list's rows.
+    clear(convSide).append(...(monCtx ? monSideNodes(rows) : rows.map(convRow)));
+    if (monCtx) monDecorateRows(convSide, items);
     convSide.scrollTop = top;
   }
+  convSide.classList.toggle("mon-side", !!monCtx);
+  $("#v-chat").classList.toggle("mon-ctx", !!monCtx);
   bellPaint();
   convPaintHead();
 }
