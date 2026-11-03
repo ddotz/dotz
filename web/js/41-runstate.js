@@ -75,6 +75,10 @@ function paintRunState() {
   const sig = JSON.stringify([target, r]), act = runAction(r);
   if (RUN_MEMO.sig !== sig) {
     RUN_MEMO.sig = sig;
+    // The same conversation changing what it is doing (작업 중 -> 끝났어요) changes in place; opening another conversation just draws.
+    const state = `${r.kind}|${r.reason || ""}`, swap = RUN_MEMO.t === target && !!RUN_MEMO.state && RUN_MEMO.state !== state;
+    RUN_MEMO.t = target; RUN_MEMO.state = state;
+    const paint = () => {
     const mine = r.kind === "error" && r.cancelled;   // work the owner stopped himself is neutral, not a failure
     $("#runstate-dot").className = `dot ${r.kind === "waiting" && !waitsOnOwner(r) ? "pri" : mine ? "" : RUN_DOT[r.kind] || ""}`.trim();
     box.classList.toggle("warn", waitsOnOwner(r) || r.kind === "limited");
@@ -83,6 +87,9 @@ function paintRunState() {
     b.hidden = !act;
     b.dataset.kind = r.kind;
     if (act) { b.textContent = act.label; b.onclick = act.run; }
+    $("#runstate-tx").textContent = runText(r);
+    };
+    if (swap) motionSwap(box, paint); else paint();
   }
   $("#runstate-tx").textContent = runText(r);
 }

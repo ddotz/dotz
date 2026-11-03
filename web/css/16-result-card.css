@@ -156,7 +156,7 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .dr-rc-edit .btn { min-height: 32px; padding: 0 10px; }
 @media (pointer: coarse) { .dr-rc-x { width: 36px; height: 36px; } .dr-rc-add, .dr-rc-in, .dr-rc-edit .btn { min-height: 38px; } }
 /* the mail that goes out right after a comment reply, in the same card (10-decision-card.js draftMailNode) */
-.dr-mailpart { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line-2); }
+.dr-mailpart { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin-top: 14px; }
 .dr-mh { display: flex; align-items: center; gap: 6px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
 .dr-mh svg { flex: none; width: 14px; height: 14px; }
 .dr-rulebar { display: flex; margin: 2px 0 4px; }
@@ -166,7 +166,7 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .dr-body { display: flex; flex-direction: column; gap: 10px; color: var(--fg); font-size: 15px; line-height: 24px; overflow-wrap: anywhere; }
 .dr-body p { margin: 0; white-space: pre-wrap; }
 /* the files a draft sends along, and what is missing (10-decision-card.js draftFilesNode); the send sheet and the card share it */
-.dr-files { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line-2); }
+.dr-files { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin-top: 12px; }
 .dr-fh { color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
 .dr-att { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 48px; padding: 8px 12px; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); text-decoration: none; }
 a.dr-att:hover { background: var(--hover); }
@@ -178,7 +178,7 @@ a.dr-att:active { background: var(--active); }
 .dr-fm { flex: none; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .dr-none, .dr-warn { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--r-ctl); background: color-mix(in srgb, var(--warn) 12%, var(--card)); color: var(--fg); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
 .dr-none .ic { color: var(--warn); }
-.dr-warn { font-weight: 600; border: 1px solid color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 18%, var(--card)); }
+.dr-warn { font-weight: 600; background: color-mix(in srgb, var(--warn) 18%, var(--card)); }
 .dr-warn > .ic { flex: none; width: 18px; height: 18px; fill: none; stroke: var(--warn); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .dr-wt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .dr-wn { font-weight: 500; color: var(--fg-2); font-size: 12px; line-height: 18px; }

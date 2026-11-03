@@ -86,32 +86,13 @@ function humanAlert(text) {
   }
   return text.split("\n")[0].replace(/\s*\([^()]*[A-Za-z]{4,}[^()]*\)/g, "").trim() || text;
 }
-// A reply that just arrived types itself out (the harness sends only finished messages, no token deltas): its text
-// nodes fill in order at a pace that ends within ~1.2 s. History, re-renders and reduced motion show it at once.
-const STREAMED = new Set(), STREAMING = new Map();   // STREAMING: text root -> its [text node, full text] pairs while it types out
-// A message's height with its text fully in, measured in one synchronous step (no paint between): scrollChat judges "taller than the view"
-// by it. While the text is still typing out the message is held at that height (min-height, released when typed) so the room to scroll is there.
-function fullHeight(node) {
-  const blank = [];
-  for (const [root, nodes] of STREAMING) if (node.contains(root)) for (const [n, t] of nodes) { blank.push([n, n.data]); n.data = t; }
-  const h = node.offsetHeight;
-  for (const [n, d] of blank) n.data = d;
-  if (blank.length) node.style.minHeight = `${h}px`;
-  return h;
-}
+// A reply that just arrived fades in as one piece (the harness sends only finished messages, no token deltas): no text is hidden or
+// retyped, so nothing reflows and the height is final from the first frame. History, re-renders and reduced motion show it at once.
+const STREAMED = new Set();
 function streamIn(root, key, ts) {
-  if (STREAMED.has(key) || Date.now() - Date.parse(ts) > 15000 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (STREAMED.has(key) || Date.now() - Date.parse(ts) > 15000) return;
   STREAMED.add(key);
-  const nodes = [], walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let n = walk.nextNode(); n; n = walk.nextNode()) { nodes.push([n, n.data]); n.data = ""; }
-  STREAMING.set(root, nodes);
-  const total = nodes.reduce((s, [, t]) => s + t.length, 0), t0 = performance.now(), dur = Math.min(1200, 250 + total * 6);
-  const step = now => {
-    let left = Math.ceil(total * Math.min(1, (now - t0) / dur));
-    for (const [n, t] of nodes) { const k = Math.min(t.length, left); if (n.data.length !== k) n.data = t.slice(0, k); left -= k; }
-    if (now - t0 < dur) requestAnimationFrame(step); else { STREAMING.delete(root); const bm = root.closest(".bm"); if (bm) bm.style.minHeight = ""; }
-  };
-  requestAnimationFrame(step);
+  motionIn(root, "fade", 300);
 }
 // Delivery state of an owner message (hub/events.ts emitDelivery), shown in its meta line: received (steered into the running step /
 // received by an idle session / waited in the queue / resumed a stopped session / held on a limit), answered, or not delivered.
@@ -154,7 +135,10 @@ function paintSysLines() {
     if (!st.isConnected) { SYS_NODES.delete(id); continue; }
     const w = ((S && S.work) || []).find(x => x.id === id), s = w && (w.cancelled ? ["", "중단됨"] : SYS_ST[w.status]);
     st.hidden = !s;
-    if (s) { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; }
+    if (!s || st.dataset.s === s[1]) continue;
+    const was = st.dataset.s, paint = () => { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; };
+    st.dataset.s = s[1];
+    if (was) motionSwap(st, paint); else paint();   // running -> 끝남 changes in place; the first paint just draws
   }
 }
 function sysLine(e, text, hm) {
@@ -293,7 +277,7 @@ function chatPush(en, bulk) {
   if (en.m) {
     if (cleanRestart(en.m)) return;
     dayDiv(en.m.ts);
-    if (CS.group) { CS.group.live = false; CS.group.node.classList.remove("live"); CS.group.update(); }
+    if (CS.group) workDone(CS.group);
     CS.group = null;
     const e = en.m;
     if (isSettingsT(target) && eventTarget(e) === target) { if (e.kind === "message") TURN.set(target, Date.parse(e.ts) || Date.now()); else if (e.kind === "out" && !e.update_key) TURN.delete(target); }
@@ -327,9 +311,15 @@ function chatPush(en, bulk) {
   markLive();
   if (!bulk) scrollChat(false, fresh);
 }
+// A work group that stops running: its summary line changes from 작업 중 to the finished count in place, once.
+function workDone(g) {
+  const end = () => { g.live = false; g.node.classList.remove("live"); g.update(); };
+  if (g.live) motionSwap(g.node.firstElementChild, end); else end();
+}
 function markLive() {
   const g = CS.group;
   if (!g) return;
   const live = isWorking(target) && tl.lastElementChild === g.node;
-  if (g.live !== live) { g.live = live; g.node.classList.toggle("live", live); g.update(); }
+  if (g.live === live) return;
+  if (live) { g.live = true; g.node.classList.add("live"); g.update(); } else workDone(g);
 }

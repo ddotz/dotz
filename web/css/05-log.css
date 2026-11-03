@@ -11,7 +11,7 @@
 .lg-x .md code { padding: 1px 5px; border-radius: 5px; background: var(--layer); font-size: .86em; }
 .lg-x .md pre { margin: 6px 0; padding: 10px 12px; border-radius: 10px; background: var(--layer); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; font-size: 12.5px; line-height: 19px; }
 .lg-n { color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
-.lg-q { padding: 8px 12px; border-radius: 10px; background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.lg-q { padding: 8px 12px; border-radius: 10px; background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .lg.dim { padding: 8px 18px; background: transparent; }
 .lg.dim .lg-t { font-weight: 500; font-size: 13px; color: var(--fg-3); }
 .lg.dim .lg-b { display: none; }
@@ -41,7 +41,7 @@
 .tu, .th, .tt, .tk, .tr, .te { display: flex; gap: 8px; min-width: 0; }
 .tu { margin: 14px -8px 6px; padding: 4px 8px; border-radius: 4px; background: rgb(255 255 255 / .07); }
 .tu .tg { color: var(--tac); }
-.tu .tx { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.tu .tx { min-width: 0; white-space: pre-wrap; }
 .tl { margin: 6px 0; border-radius: 4px; cursor: pointer; }
 .tl:focus-visible, .tk:focus-visible { outline-offset: 3px; }
 .tl.ok > .th > .tg { color: var(--tok); }
@@ -59,7 +59,7 @@
 .tl:not(.open) .full, .tl:not(.open) .targs { display: none; }
 .tl.open .short { display: none; }
 .tt { margin: 10px 0; }
-.tt .md { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tt .md { flex: 1; min-width: 0; }
 .tk { margin: 4px 0; color: var(--td); font-style: italic; cursor: pointer; }
 .tk .tkt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tk .tkf { display: none; min-width: 0; flex: 1; }
@@ -92,13 +92,13 @@ details.box .cl.err { color: var(--err); }
 details.think > summary .tname { font-family: var(--font); color: var(--fg-2); }
 details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12px; }
 .subline { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 4px 8px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); font-size: 12px; line-height: 16px; cursor: pointer; }
-.subs { flex: none; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); overflow: hidden; }
+.subs { flex: none; margin-bottom: 12px; border: 0; border-radius: 8px; background: var(--card); overflow: hidden; }
 .subsum { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 10px; border: 0; background: transparent; color: var(--fg-2); font-size: 12.5px; line-height: 20px; text-align: left; }
 .subsum:hover { background: var(--hover); color: var(--fg); }
 .subsum .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .subsum .chev { width: 14px; height: 14px; color: var(--fg-3); transition: transform .15s; }
 .subsum[aria-expanded="true"] .chev { transform: rotate(180deg); }
-.sublist { max-height: 196px; overflow-y: auto; padding: 4px; border-top: 1px solid var(--line); }
+.sublist { max-height: 196px; overflow-y: auto; padding: 4px; }
 .subrow { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; font-size: 13px; line-height: 20px; text-align: left; }
 .subrow:hover { background: var(--hover); }
 .subrow .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -123,7 +123,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hn + .hn-h { margin-top: 24px; }
 .hn { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .hr { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
-.hr + .hr { box-shadow: inset 0 1px 0 var(--line); }
+
 .hr.st:hover { background: transparent; }
 .hr:hover { background: var(--card-hover); }
 .hr .dot { width: 10px; height: 10px; }
@@ -144,7 +144,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .srows .hr + .li, .srows .li + .hr { box-shadow: inset 0 1px 0 var(--line); }
 /* 답변 필요 (09-needs-you.js): a critical row's dot is the error ink; 더 보기 is the list's last row, full width */
 .hr .dot.att.err { background: var(--err); }
-.hn .ny-more { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin: 0; padding: 0 16px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--fg-2); font: 500 13px/18px var(--font); cursor: pointer; }
+.hn .ny-more { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin: 0; padding: 0 16px; border: 0; border-top: 0; border-radius: 0; background: transparent; color: var(--fg-2); font: 500 13px/18px var(--font); cursor: pointer; }
 .hn .ny-more:hover { background: var(--hover); color: var(--fg); }
 .hn .empty { padding: 18px 16px; text-align: left; font-size: 13px; color: var(--fg-3); }
 #home-sec { margin-top: 28px; }
