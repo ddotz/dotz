@@ -2,7 +2,8 @@
 // The quoted message travels with the new one (hub/intake.ts parseReply) and reaches the model like a Discord reply, as the context of
 // the new message. Message ids: an owner message's mid, an assistant message's ts.
 ICONS.reply = "M9 7L4 12l5 5M4 12h9a7 7 0 0 1 7 7";
-const RP = { cur: null, bar: null, drag: null, src: new WeakMap() };
+ICONS.quote = "M7 7h4v5a4 4 0 0 1-4 4M15 7h4v5a4 4 0 0 1-4 4";   // the quote mark of the hover button and of the bar above the composer (prototype)
+const RP = { cur: null, bar: null, drag: null, src: new WeakMap(), tone: "" };
 const RP_PULL = 60, RP_MAX = 92, RP_EDGE = 24, RP_QUOTE = 300;
 const rpOwnerKind = e => e.kind === "message" || e.kind === "lane_message";
 function rpText(e) {
@@ -14,12 +15,16 @@ function rpMark(n, e) {
   if (!n.matches(".um, .bm") || e.card || !/^(message|lane_message|out|lane_report)$/.test(e.kind) || !rpText(e)) return;
   n.dataset.rid = e.mid || e.message_id || e.ts;
   RP.src.set(n, e);
-  n.append(el("button", { class: "rp-btn", type: "button", "aria-label": "답글", title: "답글", onclick: () => rpStart(n) }, icon("reply")));
+  // A small quote button next to the meta line (name · time), shown while the row is hovered; a row without a meta line keeps it at its corner.
+  const btn = el("button", { class: "rp-btn", type: "button", "aria-label": "인용", title: "인용", onclick: () => rpStart(n) }, icon("quote"));
+  const mt = n.querySelector(":scope > .mt");
+  if (mt) mt.append(btn); else { btn.classList.add("out"); n.append(btn); }
 }
 function rpStart(n) {
   const e = RP.src.get(n);
   if (!e) return;
-  RP.cur = { t: target, id: n.dataset.rid, author: rpOwnerKind(e) ? "" : ($(".mn", n)?.textContent || botName), content: rpText(e).slice(0, RP_QUOTE) };
+  // tone: the status tag of the quoted bot message, shown in the bar like in the message (not sent; the server only gets id, author, content)
+  RP.cur = { t: target, id: n.dataset.rid, author: rpOwnerKind(e) ? "" : ($(".mn", n)?.textContent || botName), content: rpText(e).slice(0, RP_QUOTE), tone: rpOwnerKind(e) ? "" : parseTone(noHandoff(String(e.text ?? ""))).tone };
   rpPaint();
   const ta = $("#text");
   if (!ta.disabled) ta.focus({ preventScroll: true });
@@ -28,22 +33,22 @@ function rpPaint() {
   const r = RP.cur && RP.cur.t === target ? RP.cur : null;
   if (!RP.bar) {
     if (!r) return;
-    const tx = el("button", { class: "rp-tx", type: "button", "aria-label": "인용한 메시지로 이동", onclick: () => rpJump(RP.cur && RP.cur.id) }, el("span", { class: "rp-au" }), el("span", { class: "rp-ct" }));
-    RP.bar = el("div", { class: "rpbar", id: "replybar", role: "group", "aria-label": "답글 대상", onpointerdown: ev => ev.preventDefault() }, icon("reply", "rp-ic"), tx, el("button", { class: "ib rp-x", type: "button", "aria-label": "답글 취소", title: "답글 취소", onclick: rpClear }, icon("close")));
+    const tx = el("button", { class: "rp-tx", type: "button", "aria-label": "인용한 메시지로 이동", onclick: () => rpJump(RP.cur && RP.cur.id) }, el("span", { class: "rp-tg" }), el("span", { class: "rp-ct" }));
+    RP.bar = el("div", { class: "rpbar", id: "replybar", role: "group", "aria-label": "인용할 메시지", onpointerdown: ev => ev.preventDefault() }, icon("quote", "rp-ic"), tx, el("button", { class: "ib rp-x", type: "button", "aria-label": "인용 취소", title: "인용 취소", onclick: rpClear }, icon("close")));
     $("#composer").insertBefore(RP.bar, $("#send"));
   }
   RP.bar.hidden = !r;
-  if (r) { $(".rp-au", RP.bar).textContent = r.author || "나"; $(".rp-ct", RP.bar).textContent = r.content; }
+  if (r) { clear($(".rp-tg", RP.bar)).append(toneTag(r.tone) || ""); $(".rp-ct", RP.bar).textContent = r.content; }
 }
 function rpClear() { RP.cur = null; rpPaint(); }
 // The pending reply for the message being sent (cleared); sendChat puts it back when the send fails.
 function rpTake() {
   const r = RP.cur && RP.cur.t === target ? RP.cur : null;
   if (!r) return null;
-  RP.cur = null; rpPaint();
+  RP.cur = null; RP.tone = r.tone || ""; rpPaint();
   return { id: r.id, author: r.author, content: r.content };
 }
-function rpRestore(reply) { if (reply) { RP.cur = { t: target, ...reply }; rpPaint(); } }
+function rpRestore(reply) { if (reply) { RP.cur = { t: target, ...reply, tone: RP.tone }; rpPaint(); } }
 function rpJump(id) {
   const n = id && $("#tl [data-rid=\"" + CSS.escape(id) + "\"]");
   if (!n) return;

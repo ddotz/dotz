@@ -69,7 +69,7 @@ const drag = (rid: string, moves: [number, number][], opts: { end?: "up" | "canc
 		if (endKind) fire(endKind, x0 + window.__end[2][0], y0 + window.__end[2][1]);
 	})()`);
 const endDrag = () => view.evaluate(`window.__fire("up", window.__end[0] + window.__end[2][0], window.__end[1] + window.__end[2][1])`);
-const bar = () => ev<{ hidden: boolean; au: string; ct: string } | null>(`(() => { const b = document.querySelector("#replybar"); return b ? { hidden: b.hidden, au: b.querySelector(".rp-au").textContent, ct: b.querySelector(".rp-ct").textContent } : null; })()`);
+const bar = () => ev<{ hidden: boolean; tag: string; ct: string } | null>(`(() => { const b = document.querySelector("#replybar"); return b ? { hidden: b.hidden, tag: b.querySelector(".rp-tg").textContent, ct: b.querySelector(".rp-ct").textContent } : null; })()`);
 
 describe("swipe to reply on a phone", () => {
 	test("a swipe past the threshold shows the quoted bar above the composer; the row follows the finger and snaps back", async () => {
@@ -77,9 +77,9 @@ describe("swipe to reply on a phone", () => {
 		expect(await ev(`(() => { const r = window.__row; return { pull: r.classList.contains("rp-pull"), hit: r.classList.contains("rp-hit"), x: r.style.getPropertyValue("--rp-x"), ind: !!r.querySelector(".rp-ind") }; })()`)).toMatchObject({ pull: true, hit: true, ind: true });
 		await endDrag();
 		expect(await ev(`(() => { const r = window.__row; return { pull: r.classList.contains("rp-pull"), snap: r.classList.contains("rp-snap"), x: r.style.getPropertyValue("--rp-x"), ind: !!r.querySelector(".rp-ind") }; })()`)).toEqual({ pull: false, snap: true, x: "", ind: false });
-		expect(await bar()).toEqual({ hidden: false, au: "dotz", ct: "내일 오전에 배포할게요" });
+		expect(await bar()).toEqual({ hidden: false, tag: "", ct: "내일 오전에 배포할게요" });
 		expect(await ev(`document.activeElement === document.querySelector("#text")`)).toBe(true);
-		expect(await ev(`(() => { const b = document.querySelector("#replybar").getBoundingClientRect(), s = document.querySelector("#send").getBoundingClientRect(); return b.bottom <= s.top + 1 && b.width > 200; })()`)).toBe(true);
+		expect(await ev(`(() => { const b = document.querySelector("#replybar").getBoundingClientRect(), s = document.querySelector("#send").getBoundingClientRect(); return b.bottom <= s.top + 1 && b.width > 80; })()`)).toBe(true);
 	});
 
 	test("under 60px, a vertical scroll, an edge start and a cancelled touch do not start a reply", async () => {
@@ -107,7 +107,7 @@ describe("swipe to reply on a phone", () => {
 		await drag(OWNER.mid, [[-40, 2], [-90, 2]], { end: "up", startX: 380 });
 		expect(await bar()).toBeNull();
 		await drag(OWNER.mid, [[-40, 2], [-90, 2]], { end: "up", startX: 360 });
-		expect(await bar()).toEqual({ hidden: false, au: "나", ct: "배포는 언제 해요?" });
+		expect(await bar()).toEqual({ hidden: false, tag: "", ct: "배포는 언제 해요?" });
 	});
 
 	test("touch events: a right-to-left drag is cancelled once horizontal, moves the row left, shows the icon on the right and opens the bar", async () => {
@@ -116,7 +116,7 @@ describe("swipe to reply on a phone", () => {
 		expect(await ev(`(() => { const r = window.__row, ind = r.querySelector(".rp-ind"); return { hit: r.classList.contains("rp-hit"), indRight: ind.getBoundingClientRect().left > r.getBoundingClientRect().left + r.getBoundingClientRect().width / 2 }; })()`)).toEqual({ hit: true, indRight: true });
 		expect(await ev(`new DOMMatrix(getComputedStyle(window.__row).transform).m41 < 0`)).toBe(true);
 		await endDrag();
-		expect(await bar()).toEqual({ hidden: false, au: "dotz", ct: "내일 오전에 배포할게요" });
+		expect(await bar()).toEqual({ hidden: false, tag: "", ct: "내일 오전에 배포할게요" });
 	});
 
 	test("touch events: a vertical scroll is not cancelled and a short drag does not start a reply", async () => {
@@ -136,12 +136,12 @@ describe("swipe to reply on a phone", () => {
 			te("touchmove", x0 - 30); pe("pointermove", x0 - 30); te("touchmove", x0 - 80); pe("pointercancel", x0 - 80);
 			te("touchend", x0 - 80, true);
 		})()`);
-		expect(await bar()).toEqual({ hidden: false, au: "나", ct: "배포는 언제 해요?" });
+		expect(await bar()).toEqual({ hidden: false, tag: "", ct: "배포는 언제 해요?" });
 	});
 
 	test("the x cancels the reply and the bar goes away", async () => {
 		await drag(OWNER.mid, [[-30, 1], [-80, 2]], { end: "up" });
-		expect(await bar()).toEqual({ hidden: false, au: "나", ct: "배포는 언제 해요?" });
+		expect(await bar()).toEqual({ hidden: false, tag: "", ct: "배포는 언제 해요?" });
 		await view.click("#replybar .rp-x");
 		expect((await bar())?.hidden).toBe(true);
 		await view.type("그냥 보낼게요");
@@ -171,16 +171,29 @@ describe("swipe to reply on a phone", () => {
 describe("reply button on desktop", () => {
 	test("the hover button on a message starts the same reply, and the bar follows the page layout", async () => {
 		await view.resize(1280, 800);
-		expect(await ev(`document.querySelectorAll("#tl [data-rid] > .rp-btn").length`)).toBe(2);
-		await view.evaluate(`document.querySelector('#tl [data-rid="m-owner-1"] > .rp-btn').click()`);
-		expect(await bar()).toEqual({ hidden: false, au: "나", ct: "배포는 언제 해요?" });
+		expect(await ev(`document.querySelectorAll("#tl [data-rid] .rp-btn").length`)).toBe(2);
+		await view.evaluate(`document.querySelector('#tl [data-rid="m-owner-1"] .rp-btn').click()`);
+		expect(await bar()).toEqual({ hidden: false, tag: "", ct: "배포는 언제 해요?" });
 		await view.type("네 알겠어요");
 		await view.evaluate(`document.querySelector("#send-btn").click()`);
 		await posted.until(p => p.length > 0);
 		expect(posted[0]).toMatchObject({ text: "네 알겠어요", reply: { id: "m-owner-1", author: "", content: "배포는 언제 해요?" } });
 	});
 
-	// The button of an own (right-aligned) message sits left of the bubble, past a gap. It only shows on hover, so the pointer must be able to
+	test("quoting a bot message with a status marker shows its tag in the bar; the server gets only id, author and text", async () => {
+		await view.resize(1280, 800);
+		const ts = "2026-10-22T01:00:09.000Z";
+		send({ ...BOT, text: "[done] 배포했어요", ts });
+		await waitFor(`document.querySelector('#tl [data-rid="${ts}"] .rp-btn')`);
+		await view.evaluate(`document.querySelector('#tl [data-rid="${ts}"] .rp-btn').click()`);
+		expect(await bar()).toEqual({ hidden: false, tag: "완료", ct: "배포했어요" });
+		await view.type("확인했어요");
+		await view.evaluate(`document.querySelector("#send-btn").click()`);
+		await posted.until(p => p.length > 0);
+		expect(posted[0].reply).toEqual({ id: ts, author: "dotz", content: "배포했어요" });
+	});
+
+	// The button of an own (right-aligned) message sits in its meta line, left of the time, past a gap. It only shows on hover, so the pointer must be able to
 	// reach it from the bubble without leaving the row: every point of the way hits the row, its gap bridge or the button, and a real click at
 	// the (still hidden) button or at the gap opens the reply bar. (The WebKit view has no mouse-move input, so hover itself is a CSS rule.)
 	// The page settles after a resize (scroll anchoring moves rows a frame later): measure only once two frames agree.
@@ -193,31 +206,31 @@ describe("reply button on desktop", () => {
 
 	test("no point between an own message and its button leaves the row, and a real click on the hidden button or the gap opens the reply bar", async () => {
 		await view.resize(1280, 800);
-		const row = '#tl [data-rid="m-owner-1"]', btn = row + " > .rp-btn";
-		const b = await rectOf(row), p = await rectOf(btn);
+		const row = '#tl [data-rid="m-owner-1"]', btn = row + " .rp-btn", mt = row + " > .mt";
+		const b = await rectOf(mt), p = await rectOf(btn);
 		const y = (p.t + p.b) / 2;
 		expect(p.r).toBeLessThan(b.l);
 		for (let x = Math.ceil(p.l); x <= b.l + 4; x++) expect(await hitsRow("m-owner-1", x, y)).toBe(true);
 		expect(await ev(`getComputedStyle(document.querySelector(${JSON.stringify(btn)})).opacity`)).toBe("0");
 		await view.click((p.l + p.r) / 2, y);
-		expect(await bar()).toEqual({ hidden: false, au: "나", ct: "배포는 언제 해요?" });
+		expect(await bar()).toEqual({ hidden: false, tag: "", ct: "배포는 언제 해요?" });
 		await view.evaluate(`rpClear()`);
 		await view.click(p.r + 3, y);
-		expect(await bar()).toEqual({ hidden: false, au: "나", ct: "배포는 언제 해요?" });
+		expect(await bar()).toEqual({ hidden: false, tag: "", ct: "배포는 언제 해요?" });
 	});
 
 	test("an assistant message's button is reachable from its text", async () => {
 		await view.resize(1280, 800);
-		const row = `#tl [data-rid="${BOT_TS}"]`, btn = row + " > .rp-btn";
+		const row = `#tl [data-rid="${BOT_TS}"]`, btn = row + " .rp-btn";
 		const p = await rectOf(btn);
 		expect(await hitsRow(BOT_TS, (p.l + p.r) / 2, (p.t + p.b) / 2)).toBe(true);
 		await view.click((p.l + p.r) / 2, (p.t + p.b) / 2);
-		expect(await bar()).toEqual({ hidden: false, au: "dotz", ct: "내일 오전에 배포할게요" });
+		expect(await bar()).toEqual({ hidden: false, tag: "", ct: "내일 오전에 배포할게요" });
 	});
 
 	test("a button reached with the keyboard is shown", async () => {
 		await view.resize(1280, 800);
-		await view.evaluate(`document.querySelector('#tl [data-rid="m-owner-1"] > .rp-btn').focus()`);
+		await view.evaluate(`document.querySelector('#tl [data-rid="m-owner-1"] .rp-btn').focus()`);
 		await view.press("Tab");
 		await waitFor(`document.activeElement.matches(".rp-btn:focus-visible") && getComputedStyle(document.activeElement).opacity === "1"`);
 	});
