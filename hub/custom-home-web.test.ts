@@ -95,11 +95,11 @@ describe("custom cards on 홈", () => {
 		expect(resized.w).toBeGreaterThan(before.w);
 		expect(await width()).toBeGreaterThan(w0 + 50);
 		const title = (await view.evaluate(`(() => { const t = document.querySelector('.bi[data-id="custom:kakao"] .ch h3').getBoundingClientRect(); return [t.left + t.width / 2, t.top + t.height / 2]; })()`)) as [number, number];
-		await drag('.bi[data-id="custom:kakao"] .ch h3', [[title[0] + 5, title[1] - 120], [title[0] + 5, title[1] - 300]]);
+		await drag('.bi[data-id="custom:kakao"] .ch h3', [[title[0] + 250, title[1] + 20], [title[0] + 250, title[1]]]);
 		await frames();
 		const moved = (await saved())!;
 		expect(moved.w).toBe(resized.w);
-		expect(moved.y).toBeLessThan(resized.y);
+		expect(moved.x).toBeGreaterThan(resized.x);
 		const w1 = await width();
 		await boot();
 		expect(await saved()).toEqual(moved);
