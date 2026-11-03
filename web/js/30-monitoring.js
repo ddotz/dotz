@@ -326,7 +326,8 @@ function draftCardNode(n, o = {}) {
     body: { text: dr.body, node: man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))), cls: "dr-body" },
     // A mail draft always shows its 첨부 줄 (files, or 첨부: 없음) right before 보내기; the files are editable while the draft waits.
     attach: draftFilesNode(dr, { t: d.to, edit: open }),
-    extra: [mail ? drOriginal(d.to) : null, draftOriginNode(dr), draftMailNode(dr.mail)],
+    extra: [mail && !who ? drOriginal(d.to) : null,   // the head already says who wrote and what
+      draftOriginNode(dr), draftMailNode(dr.mail)],
     ...(revise ? { revise } : acts ? { acts } : {}) });
   return card;
 }
