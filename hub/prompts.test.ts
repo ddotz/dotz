@@ -1104,3 +1104,18 @@ test("the task tool's results and OmO's wake frame name the workers", () => {
 	expect(wake('task completion name:recent-done-jump id:st_01a1a45c category:deep-low status:completed result:"x"\ntask completion name:b id:st_01a1a45d status:failed').at(-1)).toEqual({ type: "workers_done", ids: ["st_01a1a45c", "st_01a1a45d"] });
 	expect(wake([{ type: "text", text: "task completion name:a id:st_01a1a459 status:completed" }]).at(-1)).toEqual({ type: "workers_done", ids: ["st_01a1a459"] });
 });
+
+test("a no-op answer wrapped in a short note posts nothing, with or without a prompt, and is logged", async () => {
+	const logs: string[] = [];
+	const { q, state, startTurn } = setup([], [{ target: "web", at: Date.now() }], { log: l => logs.push(l) });
+	q.onAnswer("Already posted. -");
+	startTurn("first", chat("m1"));
+	q.onAnswer("Already posted.\n-");
+	await Promise.resolve();
+	expect(state.posts).toEqual([]);
+	expect(logs.filter(l => l.includes("no-op answer"))).toHaveLength(2);
+	startTurn("second", chat("m2"));
+	q.onAnswer("- first item\n- second item");
+	await Promise.resolve();
+	expect(state.posts.map(p => p.text)).toEqual(["- first item\n- second item"]);
+});
