@@ -4,7 +4,7 @@ import { mailByKey, mailCard, postMail, recordMail, setMailSummary, type MailDep
 import { createMailSummarizer, isFailedSummary, tidySummary } from "./mail-summary.ts";
 
 const PLACEHOLDER = "(요약 실패 — 스레드에서 원문 확인)";
-const GOOD = "**요약**\n• 견적서를 보냈어요\n\n**할 일**\n• 금요일까지 회신";
+const GOOD = "견적서를 보냈다는 메일이에요.\n**금요일까지 견적 검토 후 회신**해 주세요.";
 let seq = 0;
 const uid = (p: string) => `${p}${Date.now().toString(36)}${++seq}`;
 
@@ -98,13 +98,16 @@ describe("hub-made mail summaries", () => {
 		expect(mailByKey(noBody)!.summary).toBe(PLACEHOLDER);
 	});
 
-	test("the placeholder test is conservative and a long reply is cut to 500 characters", () => {
+	test("the placeholder test is conservative, the reply is kept to two lines and a long one is cut to 500 characters with the bold marks paired", () => {
 		expect(isFailedSummary(PLACEHOLDER)).toBe(true);
 		expect(isFailedSummary("**요약**\n• 지난번 요약 실패 건은 해결됐어요 " + "가".repeat(200))).toBe(false);
 		expect(isFailedSummary(GOOD)).toBe(false);
-		const long = `**요약**\n${Array.from({ length: 60 }, (_, i) => `• 항목 ${i}`).join("\n")}`;
-		expect(tidySummary(long).length).toBeLessThanOrEqual(500);
-		expect(tidySummary("• 한 줄")).toBe("**요약**\n• 한 줄");
+		const long = tidySummary(`${"가".repeat(300)}\n**${"나".repeat(300)}**`);
+		expect(long.length).toBeLessThanOrEqual(500);
+		expect((long.match(/\*\*/g) ?? []).length % 2).toBe(0);
+		expect(tidySummary(GOOD)).toBe(GOOD);
+		expect(tidySummary("**요약**\n• 첫째예요\n• 둘째예요\n• 셋째예요")).toBe("첫째예요\n둘째예요");
+		expect(tidySummary("• 한 줄")).toBe("한 줄");
 		expect(tidySummary(PLACEHOLDER)).toBe("");
 	});
 });

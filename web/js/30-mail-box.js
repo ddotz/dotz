@@ -192,6 +192,7 @@ function mailOpenBar(t, card) {
   const acts = [arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "보관", "archive"], ["trash", "삭제", "trash"], out ? null : unread ? ["read", "읽음으로 표시", "mailopen"] : ["unread", "안 읽음으로 표시", "mail"]].filter(Boolean);
   const back = monCtx && MON.sel ? MON.sel : "i:mail";
   const raw = () => card && card.querySelector(":scope > .rc-raw");
+  if (card) mailOpenSummary(t, card);
   return el("div", { class: "mtop", role: "toolbar", "aria-label": "메일 처리" },
     mbIco("목록으로", "back", () => go("monitoring", back), "mail-top-back"),
     ...acts.map(([a, label, ic]) => mbIco(label, ic, ev => busy(ev.currentTarget, async () => {

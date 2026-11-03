@@ -68,7 +68,7 @@ async function openPage(width: number, hash: string) {
 	const v = new Bun.WebView({ width, height: 900 });
 	views.push(v);
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
-	await v.evaluate(`(localStorage.setItem("dotz-theme", "light"), true)`);
+	await v.evaluate(`(localStorage.setItem("dotz-theme", "light"), localStorage.removeItem("dz-mth-open"), true)`);
 	await v.navigate(`http://127.0.0.1:${server.port}/?light#${hash}`);
 	await v.evaluate(until(`typeof go === "function" && typeof INTG !== "undefined" && CV.loaded && MAILS.size >= 5`, "page not ready"));
 	return v;
@@ -82,6 +82,11 @@ const openMail = async (v: InstanceType<typeof Bun.WebView>, key: string) => {
 test("at 1280px the original is the page's own scroll, the header names everyone, and the thread panel sits beside it", async () => {
 	const v = await openPage(1280, "monitoring/i:mail");
 	await openMail(v, "fx-4");
+
+	// the panel is folded at the start (the mail body keeps the room); the chip at the end of the recipients line opens it
+	expect(await ev(v, `({ hidden: document.querySelector("#mail-thread").hidden, chip: document.querySelector("#tl .mth-mb").getAttribute("aria-expanded") })`)).toEqual({ hidden: true, chip: "false" });
+	await v.evaluate(`document.querySelector("#tl .mth-mb").click()`);
+	await v.evaluate(until(`!document.querySelector("#mail-thread").hidden`, "the chip did not open the panel"));
 
 	const page = await ev(v, `(() => {
 		const frame = document.querySelector("#tl iframe.mb-frame");
@@ -130,7 +135,8 @@ test("at 1280px the original is the page's own scroll, the header names everyone
 	expect(page.thrSubj).toEqual(["월간 점검 보고서", "3주 차 점검", "2주 차 점검", "1주 차 점검", "점검 결과 회신"]);
 	expect(page.thrOn).toEqual([true, false, false, false, false]);
 	expect(page.thrSum).toEqual([true, true, true, true, true]);
-	expect(page.mobileShown).toBe(false);
+	// the chip stays in the recipients line at this width and follows the panel; the phone's inline list stays folded
+	expect(await ev(v, `({ chip: document.querySelector("#tl .mth-mb").getAttribute("aria-expanded"), list: document.querySelector("#tl .mth-m .mth-list").hidden })`)).toEqual({ chip: "true", list: true });
 
 	// the header's 외 1명 opens the rest
 	await v.evaluate(`document.querySelector("#tl .mhd-more").click()`);
@@ -142,6 +148,12 @@ test("at 1280px the original is the page's own scroll, the header names everyone
 		mkdirSync(SHOTS, { recursive: true });
 		await Bun.write(`${SHOTS}/mail-thread-1280.png`, await v.screenshot());
 	}
+
+	// the panel's own × folds it again, the chip opens it again
+	await v.evaluate(`document.querySelector("#mail-thread .mth-x").click()`);
+	expect(await ev(v, `({ hidden: document.querySelector("#mail-thread").hidden, chip: document.querySelector("#tl .mth-mb").getAttribute("aria-expanded") })`)).toEqual({ hidden: true, chip: "false" });
+	await v.evaluate(`document.querySelector("#tl .mth-mb").click()`);
+	await v.evaluate(until(`!document.querySelector("#mail-thread").hidden`, "the chip did not reopen the panel"));
 
 	// a row of the panel opens that mail
 	await v.evaluate(`document.querySelectorAll("#mail-thread .mth-row")[1].click()`);
@@ -216,6 +228,8 @@ for (const width of [1280, 390]) {
 test("the thread panel starts at 1024px, the panel and the conversation side by side", async () => {
 	const v = await openPage(1024, "monitoring/i:mail");
 	await openMail(v, "fx-4");
+	await v.evaluate(`document.querySelector("#tl .mth-mb").click()`);
+	await v.evaluate(until(`!document.querySelector("#mail-thread").hidden`, "the chip did not open the panel"));
 	const got = await ev(v, `(() => { const t = document.querySelector("#timeline").getBoundingClientRect(), p = document.querySelector("#mail-thread"), b = p.getBoundingClientRect(); return { display: getComputedStyle(p).display, beside: b.left >= t.right - 1, w: Math.round(t.width), over: document.documentElement.scrollWidth > innerWidth }; })()`);
 	expect(got.display).toBe("flex");
 	expect(got.beside).toBe(true);

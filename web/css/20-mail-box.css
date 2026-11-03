@@ -28,19 +28,29 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-b .ic { width: 16px; height: 16px; }
 .mbox-b.mbox-x { width: 32px; padding: 0; justify-content: center; margin-left: auto; }
 .mbox-note { flex: 1 0 100%; color: var(--fg-3); font-size: 12px; line-height: 16px; }
-/* the open mail's top bar (30-mail-box.js mailOpenBar): one row of icons, sticky while the mail scrolls */
-.mtop { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 0; height: 44px; margin: -4px -6px 4px; padding: 0 2px; background: var(--card); }
-.tl-in > .bm.rc.mopen { gap: 4px; }
-.mtop .mtop-b, .mtop .mr-more { flex: 0 1 36px; min-width: 32px; width: 36px; height: 36px; border-radius: var(--r-ctl); color: var(--fg-2); }
+/* the open mail's top bar (30-mail-box.js mailOpenBar): one row of icons on its own tinted strip across the card (prototype #mail/1) that separates
+   it from the mail header, sticky while the mail scrolls. The card's padding is a variable so the strip can run edge to edge. */
+.tl-in > .bm.rc.mopen { --mpx: 18px; gap: 4px; padding: 0 var(--mpx) 16px; }
+@media (max-width: 639px) { .tl-in > .bm.rc.mopen { --mpx: 16px; padding-bottom: 14px; } }
+.mtop { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 0; height: 40px; margin: 0 calc(var(--mpx) * -1) 10px; padding: 0 calc(var(--mpx) - 8px); border-radius: var(--r-ctl); background: var(--layer); }
+.mtop .mtop-b, .mtop .mr-more { flex: 0 1 36px; min-width: 32px; width: 36px; height: 32px; border-radius: var(--r-ctl); color: var(--fg-2); }
 .mtop .mtop-b .ic, .mtop .mr-more .ic { width: 16px; height: 16px; }
-.mtop .mtop-b:hover, .mtop .mr-more[aria-expanded="true"] { background: var(--hover); color: var(--fg); }
+.mtop .mtop-b:hover, .mtop .mr-more[aria-expanded="true"] { background: var(--active); color: var(--fg); }
 .mtop .mr-more { margin: 0; }
-.mopen > .rc-title { font-size: 15px; line-height: 21px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.mopen > .rc-hd { margin-top: 2px; font-size: 13px; }
+/* the day / 지난 기록 lines above an open mail only push it down: the mail's own time is in its header */
+#tl > .a-div:has(~ .bm.mopen) { display: none; }
+.mopen > .rc-title { margin-top: 4px; font-size: 15px; line-height: 21px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mopen > .rc-hd { margin-top: 0; font-size: 13px; }
+/* the summary (11-mailtext.js mailSumBlock): a tinted block, the lightning mark, 요약 ·, two short sentences with the to-do in bold */
+.msum { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; padding: 8px 12px; border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: 14px; line-height: 21px; }
+.msum > .ic { flex: none; width: 16px; height: 16px; margin-top: 2.5px; color: var(--accent); }
+.msum-t { min-width: 0; overflow-wrap: anywhere; word-break: keep-all; }
+.msum-k { color: var(--fg-3); }
+.msum b { color: var(--fg); font-weight: 700; }
 .mopen > .rc-hd .rc-src { color: var(--fg-2); font-weight: 500; }
 .mopen > .rc-hd .rc-time { font-size: 12px; }
 /* the original: a quiet grey well, no border (principles 5, 9); the HTML frame stays a white page */
-.mopen .mb-txt { border: 0; background: var(--layer); }
+.mopen .mb-txt { padding: 0; border: 0; background: none; }
 .mopen .mb-frame { border: 0; }
 /* the files: chips with the name and the size, one download each (principle 3); the head is a grey word, not a bold line */
 .mopen > .mr-files { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 0; padding-top: 0; border-top: 0; }
