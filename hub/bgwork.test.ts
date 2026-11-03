@@ -46,6 +46,19 @@ test("a worker OmO calls completed but whose report is [fail] (token cap, st_01a
 	expect(w.find(x => x.id === "st_ok")!.status).toBe("done");
 });
 
+test("a finished worker's [file] lines and backticked document paths that name an existing file become its result files, once each; a missing one, code or a failed worker's are left out", () => {
+	const out = join(dir, "out");
+	mkdirSync(out);
+	writeFileSync(join(out, "비교.md"), "# 비교\n");
+	writeFileSync(join(out, "표.csv"), "a,b\n");
+	writeFileSync(join(out, "a.ts"), "x\n");
+	record("st_files", { status: "completed", terminal_at: iso(T0 + 10_000), final_response: `[done] 정리했어요\n[file] ${join(out, "비교.md")}\n[file] ${join(out, "없음.md")}\n[file] ${out}\n표는 \`${join(out, "표.csv")}\`, 같은 파일 \`${join(out, "비교.md")}\`, 코드는 \`${join(out, "a.ts")}\`` });
+	record("st_fail", { status: "failed", terminal_at: iso(T0 + 20_000), final_response: `[file] ${join(out, "비교.md")}` });
+	const w = make(() => T0 + 60_000).list();
+	expect(w.find(x => x.id === "st_files")!.files).toEqual([{ path: join(out, "비교.md"), name: "비교.md", size: 9 }, { path: join(out, "표.csv"), name: "표.csv", size: 4 }]);
+	expect(w.find(x => x.id === "st_fail")!.files).toBeUndefined();
+});
+
 test("a failed worker is listed as failed, and finished work leaves the list after an hour", () => {
 	record("st_2", { status: "failed", terminal_at: iso(T0 + 30_000) });
 	record("st_3", { status: "completed", terminal_at: iso(T0 + 10_000) });

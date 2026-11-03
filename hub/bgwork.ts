@@ -8,8 +8,10 @@
 // run a worker's result woke, a restart) belongs to the latest still-open deferred message delivered before its spawn.
 // Finished workers keep no such message, nothing waits for them.
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { scrub } from "./activity.ts";
+import { expand } from "./config.ts";
+import { fileLinePaths } from "./files.ts";
 import { failureText } from "./runstate.ts";
 import { previewSource } from "./tone.ts";
 
@@ -36,6 +38,8 @@ type BgWork = {
 	workdir?: string;
 	/** The owner stopped it (중단), so it is no failure of its own. */
 	cancelled?: boolean;
+	/** A finished worker's result files: the `[file]` lines of its report that name an existing file (the web shows them as file chips). */
+	files?: WorkFile[];
 	/** A failure the session already took up: one of its turns ended after the worker failed (it read OmO's failure notice, or the
 	 * gateway's handover below). Nothing is asked of the owner about it. */
 	handled?: boolean;
@@ -108,6 +112,23 @@ type Rec = {
 	resolved_model?: RecModel;
 	effective_model?: RecModel;
 };
+
+type WorkFile = { path: string; name: string; size: number };
+const RESULT_FILES_MAX = 6;
+// A report names its outputs in `[file]` lines, or as a backticked absolute path to a document, page, sheet or image it made.
+const RESULT_EXT = /\.(md|markdown|txt|pdf|html?|csv|tsv|xlsx?|docx?|pptx?|hwpx?|png|jpe?g|gif|webp|svg|json|zip)$/i;
+const backtickPaths = (text: string) => [...text.matchAll(/`((?:~|\/)[^`\n]+?)`/g)].map(m => m[1]!).filter(p => RESULT_EXT.test(p));
+function resultFiles(report: string | undefined): WorkFile[] {
+	const out: WorkFile[] = [];
+	for (const line of report ? new Set([...fileLinePaths(report), ...backtickPaths(report)]) : []) {
+		const path = expand(line);
+		if (!path.startsWith("/") || !existsSync(path) || out.some(f => f.path === path)) continue;
+		const st = statSync(path);
+		if (st.isFile()) out.push({ path, name: basename(path), size: st.size });
+		if (out.length === RESULT_FILES_MAX) break;
+	}
+	return out;
+}
 
 // Finished work stays listed this long.
 export const FINISHED_KEEP_MS = 3600_000;
@@ -339,7 +360,8 @@ export function createBgWork(deps: BgWorkDeps) {
 		const error = why ? scrub(why).replace(/\s+/g, " ").trim().slice(0, 200) : "";
 		const model = workModel(r);
 		const reason = stopped ? "직접 중단했어요" : status === "failed" ? failureText(error) : "";
-		return { id: r.task_id!, description, status, started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}), ...(error ? { error } : {}), ...(model ? { model } : {}), ...(reason ? { reason } : {}), ...(stopped ? { cancelled: true } : {}) };
+		const files = status === "done" ? resultFiles(r.final_response) : [];
+		return { id: r.task_id!, description, status, started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}), ...(error ? { error } : {}), ...(model ? { model } : {}), ...(reason ? { reason } : {}), ...(stopped ? { cancelled: true } : {}), ...(files.length ? { files } : {}) };
 	}
 
 	/** Running work (oldest first), then what finished within the last hour (newest first). */
