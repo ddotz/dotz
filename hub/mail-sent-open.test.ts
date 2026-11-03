@@ -50,4 +50,14 @@ describe("opening a sent mail", () => {
 		expect(sentMailEvent(first.key)).toMatchObject({ html: true });
 		expect(await mailBodyRoute(first.key).text()).toContain("첨부와 같이 자료 송부드립니다.");
 	});
+
+	// A poster marks a sent mail done only on `html` in the answer: a body-less record must not answer it, one that holds its body must.
+	test("a repost answers html only when the body is kept", async () => {
+		const { deps: d } = deps();
+		const bare = { source: "company", id: uid(), from: "Owner <owner@example.com>", to: "Park <park@example.com>", subject: "검토의견", direction: "out" as const };
+		await postMail(bare, d);
+		expect((await postMail(bare, d)).html).toBeUndefined();
+		await postMail({ ...bare, body: "검토의견 송부드립니다." }, d);
+		expect(await postMail({ ...bare, body: "검토의견 송부드립니다." }, d)).toMatchObject({ duplicate: true, html: true });
+	});
 });
