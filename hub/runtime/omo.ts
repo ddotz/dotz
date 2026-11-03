@@ -12,7 +12,7 @@ import { chainAfter, fallbackChain, lanesMaxWorkers, log, orchestratorModel, par
 import { keyedWorker } from "../fallback.ts";
 import { classifyProviderError } from "../providers.ts";
 import { detectBinary } from "./detect.ts";
-import { closeHostsOf, OMO, recordStarted } from "./omo-hosts.ts";
+import { closeHostsOf, OMO, recordStarted, TELEMETRY_OFF_ENV } from "./omo-hosts.ts";
 import { makeOmoProbes } from "./omo-probes.ts";
 import { senpiLauncher } from "./senpi-bin.ts";
 import { EXTENSION, type Frame, OmpProcess, recentExchanges } from "./omp.ts";
@@ -126,7 +126,9 @@ function member(t: string, toks: Tok[], open: number, key: string): { value?: nu
 }
 const indentAt = (t: string, at: number) => /^[ \t]*/.exec(t.slice(t.lastIndexOf("\n", at - 1) + 1))![0];
 /** `text` with `profiles.<name>` set to `value`, everything else (comments included) as it was. */
-export function setJsoncProfile(text: string, name: string, value: unknown): string {
+export const setJsoncProfile = (text: string, name: string, value: unknown): string => setJsoncPath(text, ["profiles", name], value);
+/** `text` with the member at `path` (e.g. ["telemetry", "enabled"]) set to `value`, everything else as it was. */
+export function setJsoncPath(text: string, path: string[], value: unknown): string {
 	const src = text.trim() ? text : "{}\n";
 	const toks = jsoncTokens(src);
 	if (toks[0]?.k !== "{") throw new Error("the config is not an object");
@@ -144,10 +146,43 @@ export function setJsoncProfile(text: string, name: string, value: unknown): str
 		const at = toks[open]!.e;
 		return `${src.slice(0, at)}\n${pad}${JSON.stringify(key)}: ${json}${m.empty ? `\n${indentAt(src, toks[open]!.s)}` : ","}${src.slice(at)}`;
 	};
-	const profiles = member(src, toks, 0, "profiles");
-	if (profiles.value === undefined) return put(0, "profiles", { [name]: value });
-	if (toks[profiles.value]!.k !== "{") throw new Error("profiles is not an object");
-	return put(profiles.value, name, value);
+	let open = 0;
+	for (let i = 0; i < path.length - 1; i++) {
+		const m = member(src, toks, open, path[i]!);
+		if (m.value === undefined) return put(open, path[i]!, path.slice(i + 1).reduceRight<unknown>((v, k) => ({ [k]: v }), value));
+		if (toks[m.value]!.k !== "{") throw new Error(`${path.slice(0, i + 1).join(".")} is not an object`);
+		open = m.value;
+	}
+	return put(open, path.at(-1)!, value);
+}
+
+// OmO's anonymous usage telemetry (session, turn, tool and model events with an install hash, sent to PostHog through the
+// t.omo.dev relay, plus an OTLP exporter) and senpi's install ping (pi.dev/api/report-install) are switched off: nothing
+// of it is needed and it is data leaving the machine. Three official switches, all set: the env vars on every OmO process
+// dotz spawns, `telemetry.enabled: false` in the config OmO reads (covers omo started anywhere else, Dori lanes included),
+// and senpi's `enableInstallTelemetry: false` in the agent settings. Re-applied at gateway start, at every OmO spawn and
+// after every harness update, since an update or a reinstall may bring the defaults back.
+const agentSettingsFile = (env: Record<string, string | undefined>) => join(env.OMO_CODING_AGENT_DIR ?? env.PI_AGENT_DIR ?? join(env.HOME ?? homedir(), ".omo", "agent"), "settings.json");
+/** Idempotent: writes only what is not already off. Returns one line per file. */
+export function telemetryOff(env: Record<string, string | undefined> = process.env, file = omoConfigFile(env), settings = agentSettingsFile(env)): string[] {
+	const step = (f: string, key: string, isOff: (text: string) => boolean, write: (text: string) => string): string => {
+		try {
+			const text = existsSync(f) ? readFileSync(f, "utf8") : "";
+			if (text.trim() && isOff(text)) return `telemetry off: ${f} ${key}=false (already)`;
+			mkdirSync(dirname(f), { recursive: true });
+			writeAtomic(f, write(text));
+			return `telemetry off: ${f} ${key}=false (written)`;
+		} catch (e) {
+			const line = `telemetry off: ${f} cannot be edited (${(e as Error).message}); ${key} is not written`;
+			log(line);
+			return line;
+		}
+	};
+	const asObj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+	return [
+		step(file, "telemetry.enabled", t => asObj(asObj(parseJsonc(t)).telemetry).enabled === false, t => setJsoncPath(t, ["telemetry", "enabled"], false)),
+		step(settings, "enableInstallTelemetry", t => asObj(JSON.parse(t)).enableInstallTelemetry === false, t => `${JSON.stringify({ ...asObj(t.trim() ? JSON.parse(t) : {}), enableInstallTelemetry: false }, null, 2)}\n`),
+	];
 }
 
 // Returns the profile name, or undefined when the file cannot be edited (not readable JSONC, or `profiles` is not an object):
@@ -272,9 +307,10 @@ export const omo: RuntimeAdapter = {
 		const onKey = keyedWorker(o.env);
 		const key = keyProviderOf(o);
 		const profile = o.lane ? writeWorkerProfile(o.lane) : o.role === "orchestrator" ? (onKey ? writeOrchestratorProfile(undefined, onKey, [], null) : writeOrchestratorProfile(undefined, orchestratorWorkerModel(o))) : undefined;
+		telemetryOff();
 		const launcher = senpiLauncher();
 		// stickyEnv() is the account at spawn; a running process follows later switches by itself (the dotz extension re-pins it at each turn).
-		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...PROMPT_SURFACE_ENV, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
+		const proc = Bun.spawn(omoArgs(o), { cwd: o.cwd, stdin: "pipe", stdout: "pipe", stderr: "pipe", env: withoutApiKeys({ PI_CACHE_RETENTION: "long", ...(process.env.SENPI_BIN || !launcher ? {} : { SENPI_BIN: launcher }), ...process.env, ...stickyEnv(), ...o.env, ...TELEMETRY_OFF_ENV, ...PROMPT_SURFACE_ENV, ...(profile ? { OMO_PROFILE: profile } : {}), DOTZ_RUNTIME: "omo" }) });
 		recordStarted(proc.pid);
 		void proc.exited.then(() => closeHostsOf(proc.pid));
 		const agent = new OmoProcess(proc, o.role === "orchestrator" ? "o" : "h", translateFrame);

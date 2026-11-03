@@ -12,7 +12,7 @@
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { claudeShimEnv } from "./claude-cli-shim.ts";
-import { OMO } from "./omo-hosts.ts";
+import { OMO, TELEMETRY_OFF_ENV } from "./omo-hosts.ts";
 
 export type RpcFrame = { type?: string; id?: string; [k: string]: unknown };
 
@@ -29,7 +29,7 @@ export class OmoRpc {
 		// BROWSER=true: nothing opens a browser on the gateway's computer; the owner opens the URL on their own device.
 		// The Claude CLI it runs for a sign-in goes through hub/runtime/claude-cli-shim.ts, so a pasted code is not judged a failure.
 		const agentDir = process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent");
-		this.proc = Bun.spawn(omoRpcCommand.argv(), { cwd: tmpdir(), stdin: "pipe", stdout: "pipe", stderr: "ignore", env: { ...process.env, BROWSER: "true", ...claudeShimEnv(process.env, agentDir) } });
+		this.proc = Bun.spawn(omoRpcCommand.argv(), { cwd: tmpdir(), stdin: "pipe", stdout: "pipe", stderr: "ignore", env: { ...process.env, ...TELEMETRY_OFF_ENV, BROWSER: "true", ...claudeShimEnv(process.env, agentDir) } });
 		this.exited = this.proc.exited;
 		void this.read();
 	}
