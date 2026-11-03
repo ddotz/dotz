@@ -48,7 +48,7 @@ Pretendard, then the system Korean face (`Apple SD Gothic Neo`). No Inter/Geist.
 | Chat body | 15/24 | 400 |
 | Meta | 12/16 | 400, `--fg-3` |
 
-Korean wraps at phrase boundaries (`word-break: keep-all` on body, long tokens still break), like Netflix subtitles.
+Korean wraps at phrase boundaries (`word-break: keep-all` on body, long tokens still break), like Netflix subtitles. Copy text (settings descriptions, notes, empty states, cards, dialogs, chat paragraphs) is also cut by meaning (`01-phrase-wrap.js`): a line breaks at a sentence end or ` · ` first, then after a comma, then after a connective (…고, …면, …지만), and never inside brackets, quotes, or a one-syllable word and the word after it.
 
 ## Motion
 
