@@ -121,13 +121,13 @@ describe.each([[390, 844], [1280, 900]])("답장 확인 at %ipx", (width, height
 			const cards = [...document.querySelectorAll("#mon-tl .rq-q > .rq")];
 			const txt = e => e ? e.textContent.trim() : "";
 			return { kinds: cards.map(c => c.dataset.kind), meta: cards.map(c => txt(c.querySelector(".rq-meta"))), to: cards.map(c => txt(c.querySelector(".dr-chip"))),
-				orig: cards.map(c => txt(c.querySelector(".rq-orig .rq-ot"))), attach: cards.map(c => txt(c.querySelector(".rq-att") || c.querySelector(".dr-files"))),
+				orig: cards.map(c => txt(c.querySelector(".rq-orig .rq-ot") || c.querySelector(".rq-ct"))), attach: cards.map(c => txt(c.querySelector(".rq-att") || c.querySelector(".dr-files"))),
 				acts: cards.map(c => [...c.querySelectorAll(".rq-acts button")].map(txt)), long: cards.filter(c => c.querySelector(".rq-more")).length,
 				over: document.documentElement.scrollWidth > innerWidth };`);
 		// newest first: the Mac mini's mail draft, its KakaoTalk draft, this computer's KakaoTalk draft, its mail draft, its comment draft
 		expect(got.kinds).toEqual(["notice", "kakao", "kakao", "notice", "comment"]);
-		expect(got.meta).toEqual(["메일 · 회사 메일 · 맥미니", "카카오톡 · Sonnet 5.5 · 보통 · 맥미니", "카카오톡 · Sonnet 5.5 · 보통 · 맥북", "메일 · 회사 메일 · 맥북", "유튜브 · 맥북"]);
-		expect(got.to).toEqual(["Kim <kim@example.com>", "공부 모임", "가나다 모임", "Kim <kim@example.com>", "가나"]);
+		expect(got.meta).toEqual(["메일 · 회사 메일 · 맥미니", "카카오톡 · Sonnet 5.5 · 보통 · 맥미니", "카카오톡 · Sonnet 5.5 · 보통 · 맥북", "메일 · 회사 메일 · 맥북", "가나 · 유튜브 댓글 · 맥북"]);
+		expect(got.to).toEqual(["Kim <kim@example.com>", "공부 모임", "가나다 모임", "Kim <kim@example.com>", ""]);
 		expect(got.orig).toEqual(["견적 요청", "내일 점심 어때요?", "내일 점심 어때요?", "견적 요청", "자막 언제 나와요?"]);
 		// the attachment line always shows what goes: the mail's files with name and size, 첨부: 없음 for a text-only app, and the files that stay behind
 		expect(got.attach[0]).toBe("첨부: 없음");

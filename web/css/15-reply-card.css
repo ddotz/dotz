@@ -25,8 +25,9 @@
 .rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) { margin-top: 8px; padding: 0; background: none; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) .ic { width: 14px; height: 14px; color: inherit; stroke-width: 2; }
 /* 보냈어요: 버튼 행과 같은 높이, 그 자리에서 바뀝니다(원칙 6) */
-.rq-sent { display: flex; align-items: center; gap: 6px; height: var(--btn-h); margin-top: 12px; color: var(--fg-2); font: 500 14px/20px var(--font); }
-.rq-sent .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--accent); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.rq-sent { display: flex; align-items: center; gap: 6px; height: var(--btn-h-sm); margin-top: 12px; color: var(--fg); font: 500 14px/20px var(--font); }
+.rq-sent .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--ok); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.kk-st > .rq-sent { height: auto; margin-top: 0; }
 .rq-sent-at { color: var(--fg-3); font: 400 12px/16px var(--font); }
 
 /* the queue: one list, newest first, an app filter on top */
@@ -35,4 +36,18 @@
 .rq-q > .rq.busy { opacity: .6; }
 .rq-filter { display: flex; flex-wrap: wrap; gap: 6px; }
 .rq-open { margin-left: auto; height: 28px; padding: 0 8px; font-size: 12px; }
-@media (pointer: coarse), (max-width: 639px) { .rq-q > .rq { padding: 12px; } .rq-acts .dr-send { flex: 1; } }
+@media (pointer: coarse), (max-width: 639px) { .rq-q > .rq { padding: 12px; } }
+
+/* 댓글 답글 카드 (소개 페이지 댓글 카드): 둥근 아바타 + 이름 500 + 회색 출처, 댓글 글은 14px 그대로, 초안은 회색 상자 하나, 버튼은 작은 단계(원칙 1·5·9) */
+.rq-who { gap: 10px; }
+.rq-av { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 600 12px/16px var(--font); text-transform: uppercase; }
+.rq-who .rq-meta { color: var(--fg-3); font-weight: 400; font-size: 13px; line-height: 20px; }
+.rq-who .rq-meta b { color: var(--fg); font-weight: 500; }
+.rq-ct { margin-top: 8px; font: 400 14px/21px var(--font); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.rq.cm .rq-sub { margin-top: 4px; color: var(--fg-3); font: 400 12px/16px var(--font); }
+.rq.cm .rq-body, .rq.cm .rq-bodywrap { margin-top: 10px; }
+.rq.cm .rq-body, .rq.cm .rq-bodywrap > .rq-body { padding: 10px 12px; border-radius: 8px; background: var(--layer); }
+.rq.cm .rq-acts { margin-top: 10px; }
+.rq-acts .btn.sm { height: var(--btn-h-sm); min-height: 0; padding: 0 12px; font-size: 13px; }
+.rq-acts .btn.text.sm { padding: 0 8px; }
+.rq-acts .dr-send { flex: none; }
