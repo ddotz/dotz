@@ -1240,6 +1240,15 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hm-stack { display: flex; flex-direction: column; gap: 8px; }
 .hm-down { display: flex; align-items: center; justify-content: center; gap: 6px; margin: 12px 0 0; color: var(--fg-3); font-size: 11.5px; line-height: 16px; }
 .hm-down .ic { width: 14px; height: 14px; }
+
+/* a task row stays quiet while it runs (no pulsing dot) and, once finished, carries its result file as a chip under the row (08-home.js workRow) */
+.hr .dot.pri { animation: none; }
+.hr.hrx { flex-wrap: wrap; }
+.hrx-m:has(+ .hrx-f) { padding-right: 16px; }
+.hrx-f { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; padding: 0 16px 14px 38px; }
+.hrx-f .fatt { height: 44px; max-width: 100%; text-decoration: none; cursor: pointer; }
+.hrx-f .fatt:hover { background: var(--hover); }
+
 /* 구성: simple map = the main line as a responsive flow of stage cards (3 columns from 1200px, 2 from 700px, one stacked
    column below). Each card: an optional "<previous>에서 · <label>" line, a header (step number, title, count) and one inner list
    that scrolls by itself past --hm-list-h, so the page never scrolls sideways. The chevron connector sits in the grid gap:
@@ -1861,6 +1870,12 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .bell-list .hr:hover, .bell-list .hr:has(.dot:is(.un, .err, .att)) { background: var(--card); }
 /* In the 알림 timeline every message carried a red dot; it is a quiet grey now, the new one arrives by moving in, not by colour. */
 #v-chat:has(#bell-tabs:not([hidden])) #tl > .bm.alert .mn::before { background: var(--fg-3); opacity: .6; }
+
+/* the result file of a finished worker under its system line (11-todo-strip.js hcSysFiles); a running line does not pulse */
+.cv-sys .dot.pri { animation: none; }
+.tl-in > .cv-sys-f { display: flex; flex-wrap: wrap; justify-content: center; align-self: center; gap: 6px; max-width: 100%; margin: 6px auto 0; }
+.cv-sys-f .fatt { height: 44px; max-width: 100%; background: var(--card); text-decoration: none; cursor: pointer; }
+.cv-sys-f .fatt:hover { background: var(--hover); }
 
 /* Computers (33-peers.js): the bot name as the switcher (its unread dot), the switch sheet (on the .ds-* sheet of 09-notices.css) and the bell's other-computer lines. */
 /* the trigger: the brand name (wide) and the page title (phone, a page without a back arrow); the dot sits at the name's bottom right, inside its padding so the ellipsis clip keeps it */
@@ -2508,6 +2523,24 @@ a.dr-att:active { background: var(--active); }
 .mr-filter .mr-f { height: 28px; padding: 0 10px; font-size: 12.5px; color: var(--fg-2); background: var(--layer); }
 .mr-filter .mr-f.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
 .mr-filter .mr-fn { font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
+
+/* a briefing-shaped answer in chat (11-resultcard.js hcBriefNode): schedule rows with a muted time column, the mail line as a chip, counts as numbers */
+.hcb { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; min-width: 0; font-size: 15.5px; line-height: 28px; }
+.hcb > .md { align-self: stretch; }
+.hcb-card { align-self: stretch; max-width: 440px; padding: 12px 16px 4px; border-radius: var(--r-card); background: var(--card); }
+.hcb-hd { display: flex; align-items: center; gap: 8px; min-height: 24px; margin-bottom: 4px; }
+.hcb-hd .tag { height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.hcb-h { min-width: 0; color: var(--fg-2); font: 500 13px/20px var(--font); }
+.hcb-rows { display: grid; }
+.hcb-r { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: baseline; min-height: 44px; padding: 10px 0; font-size: 15px; line-height: 24px; }
+.hcb-r + .hcb-r { border-top: 1px solid var(--line); }
+.hcb-t { color: var(--fg-3); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.hcb-ti { min-width: 0; overflow-wrap: anywhere; }
+.hcb-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 32px; padding: 4px 14px 4px 12px; border-radius: 999px; background: var(--card); color: var(--fg-2); font-size: 14px; line-height: 22px; }
+.hcb-chip .ic { color: var(--accent); }
+.hcb-ln { color: var(--fg-2); font-size: 14px; line-height: 22px; }
+.hcb-n { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.hcb-h .hcb-n { color: var(--fg-2); }
 
 /* 모니터링 > 앱 > 카카오톡 (web/js/30-kakao.js): the room column (rooms to watch + the watched ones) and a KakaoTalk-style chat.
    From 1100px the column sits beside the chat; below it they are two screens (.kk.chat-open = the chat). Colors are the --kk-* tokens (01-tokens.css). */
