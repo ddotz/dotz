@@ -171,7 +171,7 @@ details.work.live .wdot { display: block; }
 #working-tx { min-width: 0; }
 .working .btn { flex: none; height: 24px; padding: 0 8px; font-size: 12px; }
 /* running state: a softly fading line above the composer, a quiet dot on the model chip, and the send button turns into stop */
-.runline { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: 0 0 8px 6px; color: var(--accent); font-size: 13px; font-weight: 600; line-height: 20px; animation: runpulse 2.4s ease-in-out infinite; }
+.runline { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: 0 0 8px 6px; color: var(--fg-2); font-size: 13px; font-weight: 500; line-height: 20px; }
 .runline[hidden] { display: none; }
 .pausenote { margin: 0 0 6px 6px; color: var(--warn); font-size: 12.5px; line-height: 18px; }
 .pausenote[hidden] { display: none; }
@@ -203,22 +203,21 @@ details.work.live .wdot { display: block; }
 .runstate .rs-go, .pausenote .pn-go, .tl-top .tl-more { position: relative; min-height: 0; }
 .runstate .rs-go::after, .pausenote .pn-go::after, .tl-top .tl-more::after { content: ""; position: absolute; inset: -8px -4px; }
 .runline.warn { color: var(--warn); }
-@keyframes runpulse { 0%, 100% { opacity: 1; } 50% { opacity: .6; } }
 #working > .dot, #working-tx, #working > .sp, #working-stop { display: none !important; }
 #c-model.run::after { content: ""; flex: none; width: 6px; height: 6px; margin-left: 4px; border-radius: 50%; background: currentColor; animation: pulse 2.4s ease-in-out infinite; }
 #send-btn.stop { background: var(--fg); color: var(--bg); }
 #send-btn.stop > svg { display: none; }
 #send-btn.stop::before { content: ""; width: 12px; height: 12px; border: 2px solid currentColor; border-radius: 3px; }
-@media (prefers-reduced-motion: reduce) { .runline, #c-model.run::after { animation: none; } }
+@media (prefers-reduced-motion: reduce) { #c-model.run::after { animation: none; } }
 @media (pointer: coarse) { .working .btn { height: 36px; padding: 0 10px; } }
 .qlist { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .qitem { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border: 0; border-radius: 12px; background: var(--layer); min-width: 0; }
 .qitem .qb { flex: 1; min-width: 0; }
-.qitem .qt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; font-size: 13px; line-height: 18px; font-weight: 500; }
+.qitem .qt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; font-size: 13px; line-height: 18px; font-weight: 400; }
 .qitem .qm { margin-top: 2px; color: var(--fg-3); font-size: 11px; line-height: 16px; }
 .qitem .btn { flex: none; }
 @media (max-width: 639px) { .qitem { flex-wrap: wrap; } .qitem .qb { flex-basis: 100%; } .qitem .qa { margin-left: auto; } }
-.qitem .qa { display: flex; gap: 4px; flex: none; }
+.qitem .qa { display: flex; gap: 8px; flex: none; }
 .composer.tmode .qitem { background: var(--tb); border-color: var(--tl2); color: var(--tf); }
 .composer.tmode .qitem .qm { color: var(--td); }
 /* phone working actions: no row of their own - stop is the send button (with text typed it sends into the running turn)

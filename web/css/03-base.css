@@ -290,7 +290,7 @@ details.work.bad:not(.live) .wdot { display: block; background: var(--err); anim
 .tl-in > .bm.rep, .tl-in > .bm.alert { max-width: none; padding: 14px 18px 16px; border-radius: var(--r-card); background: var(--card); }
 .bm .more pre { background: var(--layer) !important; }
 details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); background: var(--card); }
-.sendrow { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ta ta" "bar send"; align-items: center; gap: 6px 8px; padding: 14px 12px 10px 18px !important; border: 1px solid var(--line) !important; border-radius: 22px !important; background: var(--card) !important; box-shadow: var(--shadow-panel); }
+.sendrow { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ta ta" "bar send"; align-items: center; gap: 6px 8px; padding: 14px 12px 10px 18px !important; border: 1px solid var(--line) !important; border-radius: 22px !important; background: var(--card) !important; }
 .sendrow:focus-within { border-color: var(--line-2) !important; }
 /* "ulw" in the message (14-slash-commands.js autosize): a 2px blue → violet → pink edge, padding 1px less so nothing inside moves */
 /* the keyword itself: the backdrop (14-slash-commands.js paintUlw) sits in the textarea's grid cell under it; its text is invisible, only the

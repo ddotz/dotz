@@ -1,6 +1,6 @@
 /* 채팅 (web/js/31-conversations.js): the chat list (a row = icon, title, one-line preview, status; never a time) and the "새 메시지" divider.
    Below 1100px the list and a conversation are two screens (#v-chat.cv-listing = the list); from 1100px they sit side by side. */
-.cv-side, .cv-list { background: var(--card); border-radius: var(--r-card); box-shadow: var(--shadow-panel); overflow: hidden auto; }
+.cv-side, .cv-list { background: var(--card); border-radius: var(--r-card); overflow: hidden auto; }
 .cv-side { display: none; }
 .cv-head { display: none; }
 #v-chat.cv-listing > .cv-side, #v-monitoring.cv-listing > .cv-side { display: block; }
@@ -22,10 +22,12 @@
 .cv-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cv-n, .cv-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cv-n { font: 500 15px/22px var(--font); }
-.cv-p { color: var(--fg-3); font: 400 14px/20px var(--font); }
+.cv-p { color: var(--fg-2); font: 400 13px/18px var(--font); }
 .mon-pc { margin-left: 8px; white-space: nowrap; color: var(--fg-3); font: 400 11px/16px var(--font); }
 .cv-id { margin-left: 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
-.cv-row.unread .cv-n { font-weight: 700; }
+.cv-row.unread .cv-n { font-weight: 600; }
+/* the unread count: 11px, one step up from the tab bar's 10.5 (docs/ui-spec.md 배지·점) */
+.cv-row .nb { min-width: 18px; height: 18px; border-radius: 9px; font-size: 11px; line-height: 18px; }
 /* a session under its project: indented, smaller avatar; the group label for sessions started from chat */
 .cv-row.sub { min-height: 44px; padding-left: 32px; }
 .cv-row.sub .cv-av { width: 28px; height: 28px; }
@@ -46,6 +48,7 @@
 .appbar.cvconv h1 { flex: 1 1 0; min-width: 0; margin-right: 0; }
 .appbar.cvconv .thead { flex: 0 0 auto; margin: 0; }
 
+.tl-in > .a-div { color: var(--fg-3); }
 .tl-in > .cv-new { display: flex; align-items: center; gap: 12px; margin: 8px 0 0; color: var(--accent); font: 600 12px/16px var(--font); }
 .tl-in > .cv-new::before, .tl-in > .cv-new::after { content: ""; flex: 1; height: 1px; background: var(--line-2); }
 /* a gateway system line (11-todo-strip.js sysLine): small, muted and centered like the divider above, no bubble */
