@@ -133,8 +133,11 @@ describe("a watch row", () => {
 		const sel = m.monSel(items)!;
 		expect(sel.key).toBe("m:node security updates");
 		const nodes = m.monTimeline(sel);
-		expect(nodes.length).toBe(3);
-		for (const n of nodes) {
+		// the prototype's detail: a section label (확인 기록) above the reports and the latest run
+		expect(nodes.length).toBe(4);
+		expect(nodes[0]!.cls.split(" ")).toContain("mon-sec");
+		expect(words(nodes[0])).toBe("확인 기록");
+		for (const n of nodes.slice(1)) {
 			expect(n.cls.split(" ")).toContain("bm");
 			expect(words(n.querySelector(".rc-src"))).toBe("node security updates");
 		}
