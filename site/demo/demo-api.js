@@ -718,12 +718,44 @@
     return json({});
   }
 
+  // 카카오톡: the room toggles and the draft flow (a request writes or rewrites the draft, 보내기 puts its parts in the room as separate messages) without any real send.
+  function kakaoPost(p, body) {
+    const chats = F.kakaoChat;
+    let m = p.match(/^\/api\/kakao\/rooms\/([^/]+)$/);
+    if (m) { const r = F.kakaoRooms.find(x => x.chatId === m[1]); if (r) Object.assign(r, body); return json({ ok: true }); }
+    m = p.match(/^\/api\/kakao\/chat\/([^/]+)\/draft$/);
+    if (m && chats[m[1]]) {
+      const c = chats[m[1]], old = body.revise && c.drafts.find(d => d.code === body.revise.code), change = String((body.revise && body.revise.change) || body.intent || "").trim();
+      const parts = old ? (/짧/.test(change) ? [old.parts[0]] : [...old.parts.slice(0, 1), `${change}, 반영했어요`]) : [`알겠어, ${change}`, "곧 다시 얘기하자"];
+      const draft = { code: `dk${Date.now()}`, text: parts.join("\n"), parts, basisLogId: old ? old.basisLogId : "", created: Date.now(), ...(old ? {} : { intent: change }) };
+      c.drafts = c.drafts.filter(d => !old || d.code !== old.code).concat(draft);
+      setTimeout(() => { if (typeof window.kkLive === "function") window.kkLive({ kind: "kakao_draft", chatId: m[1] }); }, 700);
+      return json({ ok: true });
+    }
+    m = p.match(/^\/api\/kakao\/drafts\/([^/]+)\/(send|drop|restore)$/);
+    if (m) {
+      for (const c of Object.values(chats)) {
+        const d = c.drafts.find(x => x.code === m[1]);
+        if (!d) continue;
+        if (m[2] === "restore") return json({ ok: true });
+        c.drafts = c.drafts.filter(x => x !== d);
+        if (m[2] === "drop") return json({ ok: true });
+        const last = Math.max(...c.messages.map(x => Number(x.logId)));
+        (d.parts || [d.text]).forEach((text, i) => c.messages.push({ id: last + i + 1, logId: String(last + i + 1), authorId: "u1", sender: "나", text, type: 1, sentAt: Date.now() + i, fromMe: true, unread: 1 }));
+        return json({ id: `s${Date.now()}`, state: "sent" }, 202);
+      }
+    }
+    return null;
+  }
+
   function postApi(u, body) {
     const p = u.pathname;
     log.posts.push(p);
     if (/^\/api\/comments\/drafts\/[^/]+\/send$/.test(p)) return json({ ok: true });
     if (/^\/api\/comments\/thread\/[^/]+\/[^/]+\/read$/.test(p) || p === "/api/ig-dm/refresh") return json({ ok: true });
     if (/^\/api\/comments\/comment\/[^/]+\/draft$/.test(p)) return json({ state: "drafting" }, 202);
+    const kk = kakaoPost(p, body);
+    if (kk) return kk;
     if (p === "/api/message") return json(answer(body));
     if (p === "/api/command") return json({ output: "데모에서는 명령을 실행하지 않아요." });
     if (p === "/api/read") { const c = conv(body.target); if (c) c.unread = 0; return json({}); }
