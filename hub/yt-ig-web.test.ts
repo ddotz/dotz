@@ -132,10 +132,12 @@ describe("인스타 DM on a phone (390x844)", async () => {
 		await shot(v, "instagram-dm-list-390.png");
 
 		await run(v, `document.querySelector('#cm .kk-row[data-conv="c1"]').click()`);
-		await waitFor(v, `DM.open && !DM.loading && document.querySelector("#cm .kk-bub")`);
-		const chat = await q<{ bubbles: string[]; mine: number; xss: boolean; composer: boolean; overflow: boolean }>(v, `return { bubbles: [...document.querySelectorAll("#cm .kk-bub")].map(b => b.textContent), mine: document.querySelectorAll("#cm .kk-m.me").length, xss: !!document.querySelector("#cm .kk-bub b"), composer: !document.querySelector("#cm-foot").hidden, overflow: document.documentElement.scrollWidth > 390 }`);
+		await waitFor(v, `DM.open && !DM.loading && document.querySelector("#cm .dm-m")`);
+		const chat = await q<{ bubbles: string[]; mine: number; xss: boolean; composer: boolean; overflow: boolean; heads: string[] }>(v, `return { bubbles: [...document.querySelectorAll("#cm .dm-mb")].map(b => b.textContent), mine: document.querySelectorAll("#cm .dm-m.mine").length, xss: !!document.querySelector("#cm .dm-mb b"), composer: !document.querySelector("#cm-foot").hidden, overflow: document.documentElement.scrollWidth > 390, heads: [...document.querySelectorAll("#cm .dm-mh")].map(h => h.textContent) }`);
 		expect(chat.bubbles).toEqual(["안녕하세요 <b>협찬</b> 문의드려요", "메일로 자세히 알려 주세요", "(사진)"]);
 		expect(chat.mine).toBe(1);
+		expect(chat.heads).toHaveLength(3);
+		expect(chat.heads.some(h => h.includes("나"))).toBe(true);
 		expect(chat.xss).toBe(false);
 		expect(chat.composer).toBe(false);
 		expect(chat.overflow).toBe(false);

@@ -882,7 +882,11 @@ const monHead = it => {
   const banner = monBannerOf(it), st = monState(it);
   // An app with reply drafts waiting opens the one 답장 확인 queue on its own drafts (30-replies.js).
   const rqBtn = it.app && it.drafts ? el("button", { class: "btn tonal sm rq-go", type: "button", "data-k": "replies", text: `답장 확인 ${it.drafts}`, onclick: () => rqOpen(it.inst, it.pc) }) : null;
-  const row = [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st ? el("span", { class: "cv-p", text: st }) : null), rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+  // 대화로 이어가기 (owner 2026-11-03): every item continues in its own chat - the conversation its settings talk in (asOpen's own go()).
+  // A mail or KakaoTalk item is already a conversation, so the way in is its row and this button stays out of the way there.
+  const asApp = monSettingsApp(it), convBtn = asApp && !monMailList(it) && !kkItem(it)
+    ? el("button", { class: "btn tonal sm mon-continue", type: "button", "data-k": "continue", title: "이 항목으로 대화를 이어가요", text: "대화로 이어가기", onclick: () => go("monitoring", `c:${asConv(asApp)}`) }) : null;
+  const row = [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st ? el("span", { class: "cv-p", text: st }) : null), convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);

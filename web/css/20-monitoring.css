@@ -60,3 +60,16 @@
 
 /* the top of an older page: the reports above load when this reaches the view (the button under it stays as a fallback) */
 .mon-sentinel { width: 100%; height: 1px; }
+
+/* 모니터링 > 인스타그램 DM (web/js/30-monitoring-comments-dm.js): 읽기만 하는 스레드 (owner 2026-11-03).
+   말풍선을 쌓지 않고 한 메시지 한 줄 - 보낸 사람·시각 줄, 아래 본문, 메시지 사이는 얇은 선. 겹치거나 둥근 회색 알약이 생기지 않아요. */
+.dm-m { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px 2px; }
+.dm-m + .dm-m { border-top: 1px solid var(--line); }
+.dm-mh { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.dm-mn { min-width: 0; color: var(--fg); font: 600 13px/20px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dm-mt { flex: none; color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); font-variant-numeric: tabular-nums; }
+.dm-mb { color: var(--fg); font: 400 var(--fs-body)/var(--lh-body) var(--font); overflow-wrap: anywhere; }
+.dm-m.mine .dm-mn { color: var(--fg-2); }
+.dm-m.mine .dm-mb { color: var(--fg-2); }
+/* 대화로 이어가기 (30-monitoring.js monHead): the item's own settings conversation, one small tonal button in the head */
+.mon-continue { flex: none; }
