@@ -124,8 +124,8 @@
     discord: {},
     notices_unread: 3,
     work: [
-      { id: "st_demo", description: "배포 공지 초안 다듬기", status: "done", started_at: ago(23) },
-      { id: "st_night", description: "밤 사이 메일 분류", status: "done", started_at: ago(320) },
+      { id: "st_demo", description: "배포 공지 초안 다듬기", status: "done", started_at: now - 23 * 60_000, ended_at: now - 9 * 60_000 },
+      { id: "st_night", description: "밤 사이 메일 분류", status: "done", started_at: now - 320 * 60_000, ended_at: now - 290 * 60_000 },
     ],
     runs: {},
     work_now: now,
