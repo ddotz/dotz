@@ -496,7 +496,7 @@ function sidebarPick() {
 }
 const gwpick = $("#gwpick");
 if (gwpick) {
-  gwpick.prepend(icon("term"));
+  gwpick.prepend(icon("desktop"));
   gwpick.append(icon("drop", "gw-c"));
   gwpick.onclick = () => $("#brand").click();
   new MutationObserver(sidebarPick).observe($("#brand"), { attributes: true, subtree: true, childList: true, characterData: true });
