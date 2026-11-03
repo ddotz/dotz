@@ -9,3 +9,6 @@
   #v-chat.canvas-open { grid-template-columns: var(--cv-w) minmax(360px, 1fr) minmax(0, 1.25fr); }
   #v-chat.canvas-open > #canvas { grid-column: 3; grid-row: 1 / -1; min-height: 0; margin-bottom: 16px; }
 }
+
+/* the header's file mark sits on a surface of its own: the pane is on the page (--bg), where a --layer circle would vanish */
+.cvs-pane .apps-hd .cv-av, .apps-pane .apps-hd .cv-av { background: var(--card); color: var(--fg-2); }
