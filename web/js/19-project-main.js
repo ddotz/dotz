@@ -37,7 +37,7 @@ function pmProject() {
   const found = ((PRJ && PRJ.projects) || []).find(x => x.key === PM.key || x.recordKey === PM.key);
   if (found) return found;
   const D = PM.D;
-  return D ? { key: PM.key, name: (D.record && D.record.title) || PM.key, lanes: D.lanes || [], record: D.record } : null;
+  return D ? { key: PM.key, name: (D.record && D.record.title) || (PM.key === "builtin:custom" ? "커스텀" : PM.key), lanes: D.lanes || [], record: D.record } : null;
 }
 function pmSessionRows(p, D) {
   const dl = (D && D.lanes) || [], all = (S && S.lanes) || [], names = new Set([...dl.map(l => l.name), ...(p.lanes || []).map(l => l.name)]);
@@ -69,24 +69,17 @@ function pmSheetsPaint() {
   for (const s of PM.sheets) if (!(s.h.box.contains(document.activeElement) && document.activeElement.matches("input, textarea"))) s.paint();
 }
 // What needs the owner now, or what runs now: one card, one action. A quiet line when there is nothing to do.
+// The prototype's 확인 필요 card (s-work.js project ask): a card header with the tag, the question, then one filled action.
 function pmPrimary(rows, live, working, workRun) {
   const wait = rows.filter(r => r.waiting), ask = wait[0];
   if (ask) return el("div", { class: "card pm-need" },
-    el("div", { class: "pm-need-k" }, el("span", { class: "tag warn", text: "확인 필요" })),
+    el("div", { class: "ch" }, el("h3", { text: "확인 필요" }), el("span", { class: "tag warn", text: "답 기다림" })),
     el("div", { class: "pm-need-t", text: ask.title }),
     el("div", { class: "pm-need-s", text: `답을 기다려요${wait.length > 1 ? ` · 외 ${wait.length - 1}개` : ""}` }),
     el("div", { class: "cf" }, el("button", { class: "btn pm-need-a", type: "button", "data-k": "answer", onclick: () => openTarget(`lane:${ask.name}`, lastChatView()) }, "답하기")));
-  const run = working[0] || live[0];
-  if (run) return el("div", { class: "card pm-calm" },
-    el("div", { class: "pm-calm-k" }, el("span", { class: `tag${run.status === "working" || run.status === "starting" ? " pri" : ""}`, text: run.status === "working" || run.status === "starting" ? "지금 작업 중" : "세션이 열려 있어요" })),
-    el("div", { class: "pm-calm-t", text: run.title }),
-    el("div", { class: "cf" }, el("button", { class: "btn tonal", type: "button", onclick: () => openTarget(`lane:${run.name}`, lastChatView()) }, "채팅 열기")));
-  if (workRun.length) return el("div", { class: "card pm-calm" },
-    el("div", { class: "pm-calm-k" }, el("span", { class: "tag pri", text: "지금 작업 중" })),
-    el("div", { class: "pm-calm-t", text: workRun[0].description }),
-    el("div", { class: "cf" }, el("button", { class: "btn tonal", type: "button", onclick: () => workGo(workRun[0]) }, "열기")));
-  return el("div", { class: "card pm-calm calm" }, el("div", { class: "pm-calm-k" }, el("span", { class: "tag", text: "확인할 것 없어요" })),
-    el("div", { class: "pm-calm-t sup", text: "지금 답을 기다리는 세션이 없어요" }));
+  // A running session or job is already a row of the 세션 · 작업 lists below (site/prototype/s-work.js project shows no second card);
+  // only a question needs a card of its own.
+  return null;
 }
 // One summary row: label, one value line, one quiet line under it; the whole row opens the section's page.
 function pmSummaryRow({ k, label, value, sub, bar, onclick }) {
@@ -100,20 +93,27 @@ function pmOverview(q, D, rows) {
   const live = rows.filter(r => r.live), working = live.filter(r => r.status === "working" || r.status === "starting");
   const work = (D && D.work) || [], workRun = work.filter(w => w.status === "running"), results = (D && D.results) || [], items = pmRoutineItems(D);
   const goal = (q.record && q.record.goal) || "", newest = results[0], newestSess = [...rows].sort((a, b) => b.at - a.at)[0];
-  const monN = items.filter(x => x.kind === "monitor").length, routN = items.length - monN, bad = items.filter(x => !x.paused && ((x.fails || 0) > 0 || x.lastOk === false)).length;
+  const monN = items.filter(x => x.kind === "monitor").length, routN = items.length - monN;
   return el("div", { class: "pm-o" },
     pmPrimary(rows, live, working, workRun),
     el("div", { class: "pm-rows" },
       pmSummaryRow({ k: "goal", label: "목표와 진행", value: goal ? oneLine(goal) : "아직 목표가 없어요", onclick: () => pmSheet("goal"),
         bar: ms.length ? el("span", { class: `pl-bar${done === ms.length ? " done" : ""}`, role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })) : null,
         sub: ms.length ? `${done}/${ms.length} 단계 · ${pct}%` : "눌러서 목표와 단계를 정해요" }),
-      pmSummaryRow({ k: "sessions", label: "세션", value: `세션 ${rows.length}개${working.length ? ` · 작업 중 ${working.length}` : ""}`, onclick: () => pmSheet("sessions"),
-        sub: newestSess ? `${newestSess.title} · ${newestSess.live ? "지금 열림" : prjAgo(newestSess.at)}` : "아직 세션이 없어요" }),
-      pmSummaryRow({ k: "results", label: "최근 결과", value: newest ? oneLine(newest.title || PM_RES[newest.kind] || "결과") : "아직 결과가 없어요", onclick: () => pmSheet("results"),
-        sub: newest ? `${PM_RES[newest.kind] || newest.kind} · ${pmDay(newest.at)}` : "세션이 보고를 남기면 여기에 쌓여요" }),
-      pmSummaryRow({ k: "routines", label: "루틴과 모니터링", value: items.length ? [monN ? `모니터링 ${monN}` : "", routN ? `루틴 ${routN}` : ""].filter(Boolean).join(" · ") : "아직 없어요", onclick: () => pmSheet("routines"),
-        sub: !items.length ? "눌러서 둘러봐요" : bad ? `확인이 필요해요 · ${bad}개` : "잘 돌고 있어요" })),
+      pmSummaryRow({ k: "sessions", label: "세션", value: rows.length ? `세션 ${rows.length}개${working.length ? ` · 작업 중 ${working.length}` : newestSess && newestSess.live ? " · 지금 열림" : ""}` : "아직 세션이 없어요", onclick: () => pmSheet("sessions") }),
+      pmSummaryRow({ k: "results", label: "최근 결과", value: newest ? oneLine(newest.title || PM_RES[newest.kind] || "결과") : "아직 결과가 없어요", onclick: () => pmSheet("results") }),
+      pmSummaryRow({ k: "routines", label: "루틴과 모니터링", value: items.length ? [monN ? `모니터링 ${monN}` : "", routN ? `루틴 ${routN}` : ""].filter(Boolean).join(" · ") : "아직 없어요", onclick: () => pmSheet("routines") })),
+    // The prototype's own detail shows the sessions and results on the page; the summary rows above stay the way into each full page.
+    rows.length ? pmSection({ kind: "sessions", label: "세션", count: rows.length, nodes: rows.slice(0, 5).map(pmLaneRow), more: true }) : null,
+    results.length ? pmSection({ kind: "results", label: "결과", count: results.length, nodes: results.slice(0, 4).map(pmResultRow), more: true }) : null,
     D && D.summary && D.summary.lastActivity ? el("div", { class: "pm-o-foot", text: `마지막 활동 ${prjAgo(Date.parse(D.summary.lastActivity))}` }) : null);
+}
+// The prototype's section header + list (s-work.js project detail: 단계 · 세션 · 작업 · 결과 · 감시).
+function pmSection({ kind, label, count, nodes, more }) {
+  return el("div", { class: "pm-block" },
+    el("div", { class: "sec sec-act pm-sec" }, el("span", { text: `${label} ${count}` }),
+      more ? el("button", { class: "btn text sm", type: "button", "data-k": kind, onclick: () => pmSheet(kind), text: "전체" }) : null),
+    el("div", { class: "list pm-sec-list" }, ...nodes));
 }
 // Level 3: one section page over the overview. It is an overlay, so 32-history-nav gives it its own history entry: the back arrow
 // (or the browser's back) returns to the overview. Every function of the old one-page layout lives here, unchanged.
@@ -169,16 +169,25 @@ function pmEditable({ value, placeholder = "비어 있어요", label, multiline,
   return wrap;
 }
 
+// The prototype's project header card: name + state tag + last activity, the purpose under it, then the milestone bar and count.
 function pmHead(q) {
-  const chat = prjChat(q), can = !!chat && validTarget(chat);
+  const chat = prjChat(q), can = !!chat && validTarget(chat), st = prjState(q), tone = st.tone === "att" ? "warn" : st.tone, at = prjLastAt(q);
+  const ms = prjMiles(q), done = ms.filter(m => m.done).length, pct = ms.length ? Math.round(done / ms.length * 100) : 0;
   return el("div", { class: "pmv-head" },
     el("div", { class: "pmv-hmain" },
-      pmEditable({ value: prjTitle(q), label: "프로젝트 이름", required: true, cls: "pmv-title", save: v => pmWrite({ title: v }) }),
+      el("div", { class: "pmv-htop" },
+        pmEditable({ value: prjTitle(q), label: "프로젝트 이름", required: true, cls: "pmv-title", save: v => pmWrite({ title: v }) }),
+        el("span", { class: `tag ${tone}`, text: st.word }),
+        at ? el("span", { class: "pmv-upd", text: prjAgo(at) }) : null),
       pmEditable({ value: prjPurpose(q), label: "프로젝트 설명", placeholder: "무엇을 하는 프로젝트인지 적어 주세요", multiline: true, cls: "pmv-purpose", save: v => pmWrite({ purpose: v }) })),
     // No work channel, nothing to chat with: the button is left out instead of showing a dead one.
     chat ? el("div", { class: "pmv-hact" }, el("div", { class: "pmv-hrow" },
       can ? el("button", { class: "btn tonal", type: "button", title: "이 프로젝트 전용 채팅을 열어요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" }) : null,
-      pmMenuButton(q))) : null);
+      pmMenuButton(q))) : null,
+    // The bar runs the card's full width under the title and the buttons, as the prototype's header card.
+    ms.length ? el("div", { class: "pmv-hprog" },
+      el("div", { class: "bar", role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })),
+      el("span", { class: "pmv-hprog-t", text: `${done}/${ms.length} 단계 끝났어요` })) : null);
 }
 // The project a chat target (ch:<id>) belongs to, from the list the 프로젝트 tab shows (null until it has loaded or once it is gone).
 const pmOfTarget = t => ((PRJ && PRJ.projects) || []).find(x => !x.builtin && prjChat(x) === t) || null;
@@ -373,13 +382,23 @@ function pmRoutine(x) {
 
 // The same session row as home (sessionRow, 18-lanes.js).
 const pmSessionRow = r => sessionRow({ name: r.name, title: r.title, status: r.status, live: r.live, pendingAsk: r.waiting }, { project: r.project, line: r.line });
+// The prototype's session row (s-work.js project 세션): a state dot, the title, the lane name, and the state tag at the right.
+function pmLaneRow(r) {
+  const [dotTone, tagTone, word] = r.live && r.waiting ? ["att", "warn", "답을 기다려요"] : r.live && (r.status === "working" || r.status === "starting") ? ["pri", "pri", "작업 중"] : r.live ? ["", "", "열려 있음"] : ["", "", "끝남"];
+  return el("button", { class: "li tap", type: "button", onclick: () => openTarget(`lane:${r.name}`, lastChatView()), "aria-label": `${r.title} · ${word} · 대화 열기` },
+    el("span", { class: "lead" }, el("span", { class: `dot ${dotTone}` })),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: r.title }), el("div", { class: "sup", text: r.name })),
+    el("span", { class: "li-end" }, el("span", { class: `tag ${tagTone}`, text: word })));
+}
 // A background job of the main assistant that belongs to the project (asked in its chat, or briefed for its folder): tap lands on the asking message.
 const pmWorkRow = w => {
-  const run = w.status === "running", stall = w.status === "stalled";
+  const run = w.status === "running", stall = w.status === "stalled", rec = workRecovering(w);
+  const word = run ? "진행 중" : stall ? "멈춤" : w.status === "done" ? "완료" : w.cancelled ? "중단됨" : rec ? "이어서" : "실패";
+  const tag = run || rec ? "pri" : stall ? "warn" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err";
   return el("button", { class: "li tap", type: "button", onclick: () => workGo(w) },
-    el("span", { class: `dot ${run || workRecovering(w) ? "pri" : stall ? "att" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err"}` }),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${stall ? `멈춤 · ${w.reason || "활동이 없어요"}` : w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : workRecovering(w) ? "이어서 처리 중" : "실패 · 이어서 처리함"} · ${workAgo(w)}` })),
-    icon("chev", "lead"));
+    el("span", { class: "lead" }, el("span", { class: `dot ${run || rec ? "pri" : stall ? "att" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err"}` })),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${stall ? `멈춤 · ${w.reason || "활동이 없어요"}` : w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : rec ? "이어서 처리 중" : "실패 · 이어서 처리함"} · ${workAgo(w)}` })),
+    el("span", { class: "li-end" }, el("span", { class: `tag ${tag}`, text: word })));
 };
 // 진행 중: sessions that are alive and background jobs that are running. 최근 세션: the ended ones, newest first.
 function pmDoing(live, running) {
@@ -393,23 +412,26 @@ function pmRecent(past, done) {
 
 const PM_RES = { report: "보고", verify: "확인", commit: "커밋" };
 const pmDay = at => { const d = kstDay(at), n = Date.now(); return d === kstDay(n) ? "오늘" : d === kstDay(n - 864e5) ? "어제" : d; };
+const pmLaneTitle = n => (((S && S.lanes) || []).find(l => l.name === n) || {}).title || n;
+// The prototype's result row (s-work.js project 결과): the title, the kind · hash · session · time line, and its state tag.
+function pmResultRow(r) {
+  const tap = r.kind === "report" && r.lane;
+  const tag = r.kind === "report" ? (r.tone === "fail" ? ["err", "안 됨"] : r.verified ? ["ok", "확인됨"] : ["", "보고만 함"]) : r.kind === "verify" ? (r.ok ? ["ok", "통과"] : ["err", "안 됨"]) : ["", "커밋"];
+  return el(tap ? "button" : "div", { class: `li${tap ? " tap" : ""}`, type: tap ? "button" : null, onclick: tap ? () => openTarget(`lane:${r.lane}`, lastChatView()) : null },
+    el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: r.title || PM_RES[r.kind] || "결과" }),
+      el("div", { class: "sup", text: [PM_RES[r.kind] || r.kind, r.kind === "commit" ? r.hash : "", r.lane ? pmLaneTitle(r.lane) : "", kstHM(r.at)].filter(Boolean).join(" · ") })),
+    tag ? el("span", { class: `tag ${tag[0]}`, text: tag[1] }) : null);
+}
 function pmResults(D) {
   if (!D || !D.results) return emptyNode(PM.fail ? "불러오지 못했어요" : "불러오는 중…");
   if (!D.results.length) return emptyNode("아직 결과가 없어요");
-  const groups = [], titleOf = n => (((S && S.lanes) || []).find(l => l.name === n) || {}).title || n;
+  const groups = [];
   for (const r of D.results) {
     const day = pmDay(r.at);
     if (!groups.length || groups[groups.length - 1].day !== day) groups.push({ day, rows: [] });
     groups[groups.length - 1].rows.push(r);
   }
-  return el("div", {}, ...groups.flatMap(g => [el("div", { class: "pmv-day", text: g.day }), el("div", { class: "list" }, ...g.rows.map(r => {
-    const tap = r.kind === "report" && r.lane;
-    const tag = r.kind === "report" ? (r.tone === "fail" ? ["err", "안 됨"] : r.verified ? ["ok", "확인됨"] : ["", "보고만 함"]) : r.kind === "verify" ? (r.ok ? ["ok", "통과"] : ["err", "안 됨"]) : null;
-    return el(tap ? "button" : "div", { class: `li${tap ? " tap" : ""}`, type: tap ? "button" : null, onclick: tap ? () => openTarget(`lane:${r.lane}`, lastChatView()) : null },
-      el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: r.title || PM_RES[r.kind] || "결과" }),
-        el("div", { class: "sup", text: [PM_RES[r.kind] || r.kind, r.kind === "commit" ? r.hash : "", r.lane ? titleOf(r.lane) : "", kstHM(r.at)].filter(Boolean).join(" · ") })),
-      tag ? el("span", { class: `tag ${tag[0]}`, text: tag[1] }) : null);
-  }))]));
+  return el("div", {}, ...groups.flatMap(g => [el("div", { class: "pmv-day", text: g.day }), el("div", { class: "list" }, ...g.rows.map(pmResultRow))]));
 }
 // The built-in 커스텀 project (hub/custom.ts builtinDetail): what the owner has customized, each item with a plain line and a
 // way to ask for a change. Asking opens the main chat with a draft tagged [프로젝트 커스텀 ...]; the orchestrator keeps those
@@ -447,7 +469,9 @@ function cmPaint(root, p, D) {
       el("span", { class: "li-end" }, ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `)))),
       g.more ? el("div", { class: "sup", style: "padding:10px 16px", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));
   clear(root).append(
-    el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" }, el("div", { class: "pmv-title", text: p.name }), el("div", { class: "pmv-purpose", text: p.note || "" }))),
+    el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" },
+      el("div", { class: "pmv-htop" }, el("div", { class: "pmv-title", text: p.name }), el("span", { class: "pmv-upd", text: "내 설정" })),
+      el("div", { class: "pmv-purpose", text: p.note || "" }))),
     D && D.groups ? el("div", { class: "pmv-cols" }, el("div", { class: "pmv-col" }, ...D.groups.slice(0, 3).map(group)), el("div", { class: "pmv-col" }, ...D.groups.slice(3).map(group))) : emptyNode(PM.fail ? "불러오지 못했어요" : "불러오는 중…"));
 }
 

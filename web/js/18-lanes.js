@@ -197,19 +197,22 @@ function pjFiltered() {
   const q = PJ.q.trim().toLowerCase(), rows = projRows((PRJ && PRJ.projects) || []);
   return rows.filter(r => (PJ.view === "all" || r.st.k === PJ.view) && (!q || `${prjTitle(r.p)} ${prjPurpose(r.p)}`.toLowerCase().includes(q)));
 }
-// One row: name + the one status line (with milestone count and last activity), the state tag at the right. A waiting row names its session.
+// One row, the prototype's list row (s-work.js 프로젝트): a folder tile, the name with one quiet line under it, then the state tag at the right.
 function prjRow(r) {
   const { p, st } = r, ms = prjMiles(p), done = ms.filter(m => m.done).length;
   const chat = prjChat(p), unread = chat ? ts(chat).unread : 0, at = prjLastAt(p), sel = current === "project" && ppCur === p.key;
-  const line = [st.lane ? (st.lane.title || st.lane.name) : prjPurpose(p), ms.length ? `${done}/${ms.length} 단계` : "", prjAgo(at)].filter(Boolean).join(" · ");
+  const line = prjPurpose(p) || (st.lane ? (st.lane.title || st.lane.name) : ""), full = [line, ms.length ? `${done}/${ms.length} 단계` : "", prjAgo(at)].filter(Boolean).join(" · ");
   const tone = st.tone === "att" ? "warn" : st.tone;
-  return el("button", { class: `pl-row${sel ? " on" : ""}${unread ? " unread" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${line} · 열기`, onclick: () => go("project", p.key) },
-    el("span", { class: `dot ${st.tone}` }),
+  return el("button", { class: `pl-row${sel ? " on" : ""}${unread ? " unread" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${full} · 열기`, onclick: () => go("project", p.key) },
+    el("span", { class: "ico" }, icon("projects")),
     el("span", { class: "pl-b" },
-      el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) }), unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null),
+      el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) })),
       el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: line }))),
-    el("span", { class: "li-end" }, el("span", { class: `tag ${tone}`, text: st.word }), icon("chev", "chev")));
+    el("span", { class: "li-end" }, unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null,
+      el("span", { class: `tag ${tone}`, text: st.word })));
 }
+// The prototype's section headers: 고정 first, then 전체, the same rows sorted by what needs the owner (projRows).
+const prjGroups = rows => [["고정", rows.filter(r => r.p.pinned)], ["전체", rows.filter(r => !r.p.pinned)]].filter(g => g[1].length);
 function pjSearch() {
   return el("label", { class: "pl-search" }, icon("search"),
     el("input", { id: "pl-q", type: "search", placeholder: "프로젝트 검색", "aria-label": "프로젝트 검색", autocomplete: "off", value: PJ.q, oninput: ev => { PJ.q = ev.target.value; pjPaintRows(); } }));
@@ -220,7 +223,7 @@ function pjChips(counts) {
       label, counts[k] ? el("span", { class: "mr-fn", text: String(counts[k]) }) : el("span", { class: "mr-fn", hidden: true }))));
 }
 function pjShell() {
-  return el("div", { class: "pl", id: "pl-shell" }, el("div", { class: "pl-top" }, pjSearch(), el("div", { id: "pl-chips" })), el("div", { class: "pl-list", id: "pl-list" }));
+  return el("div", { class: "pl", id: "pl-shell" }, el("div", { class: "pl-top" }, pjSearch(), el("div", { id: "pl-chips" })), el("div", { class: "pl-groups", id: "pl-list" }));
 }
 function pjPaintChips() {
   const box = $("#pl-chips");
@@ -243,15 +246,22 @@ function pjPaintRows() {
   const sig = JSON.stringify([rows.map(r => [r.p.key, r.st.k, r.st.word, r.st.lane && r.st.lane.name, prjLastAt(r.p), prjMiles(r.p).map(m => m.done), prjChat(r.p) ? ts(prjChat(r.p)).unread : 0]), PJ.more, PJ.view, PJ.q, current === "project" ? ppCur : "", showBuiltin]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
-  const nodes = page.map(prjRow);
+  // Section headers and one card per group, as the prototype's 프로젝트 list; a group with no row after the filter is left out.
+  const nodes = [];
+  for (const [label, group] of prjGroups(page)) {
+    nodes.push(el("div", { class: "sec pl-sec", text: label }));
+    nodes.push(el("div", { class: "pl-list" }, ...group.map(prjRow)));
+  }
   if (rest > 0) nodes.push(el("div", { class: "cv-more" }, el("button", { class: "btn text sm", type: "button", "data-k": "more", onclick: () => { PJ.more += PJ_PAGE; pjPaintRows(); }, text: `프로젝트 ${rest}개 더 보기` })));
-  if (!rows.length) nodes.push(el("div", { class: "cv-empty", text: searching ? "찾는 프로젝트가 없어요" : PJ.view === "need" ? "확인할 프로젝트가 없어요" : PJ.view === "run" ? "지금 진행 중인 프로젝트가 없어요" : PJ.view === "done" ? "끝낸 프로젝트가 없어요" : "아직 프로젝트가 없어요" }));
+  if (!rows.length) nodes.push(el("div", { class: "empty pl-empty", text: searching ? "찾는 프로젝트가 없어요" : PJ.view === "need" ? "확인할 프로젝트가 없어요" : PJ.view === "run" ? "지금 진행 중인 프로젝트가 없어요" : PJ.view === "done" ? "끝낸 프로젝트가 없어요" : "아직 프로젝트가 없어요" }));
   // The built-in 커스텀 page is the owner's settings list: always reachable, never part of the filters.
   if (showBuiltin) {
-    nodes.push(el("div", { class: "pl-gh", role: "presentation", text: "내 설정" }));
-    nodes.push(el("button", { class: `pl-row sub${current === "project" && ppCur === builtin.key ? " on" : ""}`, type: "button", "data-key": builtin.key, onclick: () => go("project", builtin.key) },
-      el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: "내가 바꾼 것을 봐요" }))),
-      el("span", { class: "li-end" }, icon("chev", "chev"))));
+    nodes.push(el("div", { class: "sec pl-sec pl-gh", role: "presentation", text: "내 설정" }));
+    nodes.push(el("div", { class: "pl-list" },
+      el("button", { class: `pl-row sub${current === "project" && ppCur === builtin.key ? " on" : ""}`, type: "button", "data-key": builtin.key, onclick: () => go("project", builtin.key) },
+        el("span", { class: "ico" }, icon("projects")),
+        el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: "내가 바꾼 것을 봐요" }))),
+        el("span", { class: "li-end" }, icon("chev", "chev")))));
   }
   clear(box).append(...nodes);
 }
