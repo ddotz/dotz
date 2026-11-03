@@ -69,10 +69,11 @@ export function normalizeSelfChat(raw: unknown): SelfChatConfig | undefined {
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** The command in an owner message, or undefined: `dotz <text>` or `/dotz <text>` (case-insensitive), the rest trimmed. */
+/** The command in an owner message, or undefined: `dotz <text>` or `/dotz <text>` (case-insensitive), the rest trimmed. The keyword may carry a
+ * Korean call particle and punctuation (`종놈아 <text>`, `종놈, <text>`) or be followed directly by a slash command (`종놈/login`). */
 export function commandOf(body: string, keyword: string): string | undefined {
-	const m = new RegExp(`^\\s*/?${escapeRe(keyword)}(?:\\s+([\\s\\S]*))?$`, "i").exec(body);
-	const text = m?.[1]?.trim();
+	const m = new RegExp(`^\\s*/?${escapeRe(keyword)}(?:아|야)?[,.:!~]*(?:\\s+([\\s\\S]*)|(/[\\s\\S]*))?$`, "i").exec(body);
+	const text = (m?.[1] ?? m?.[2])?.trim();
 	return text || undefined;
 }
 

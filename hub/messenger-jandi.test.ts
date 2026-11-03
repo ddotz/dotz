@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Incoming } from "./messenger.ts";
+import { commandOf } from "./jandi-selfchat.ts";
 import { desiredRooms } from "./messenger-rooms.ts";
 import { createJandiAdapter, type JandiAdapter, jandiConfigPath, loadJandiConfig, roomStatus, saveJandiConfig, splitText } from "./messenger-jandi.ts";
 
@@ -308,5 +309,22 @@ describe("rooms from the web structure", () => {
 		} finally {
 			t.cleanup();
 		}
+	});
+});
+
+describe("self-chat keyword", () => {
+	// The owner's real messages that never reached dotz: a Korean call ("종놈아 ...") and a command glued to the keyword ("종놈/login ...").
+	test("a call form or a slash command right after the keyword is still a command", () => {
+		expect(commandOf("종놈아 근데 휴넷 체크해줘", "종놈")).toBe("근데 휴넷 체크해줘");
+		expect(commandOf("종놈야, 휴넷 체크해줘", "종놈")).toBe("휴넷 체크해줘");
+		expect(commandOf("종놈, 휴넷 체크해줘", "종놈")).toBe("휴넷 체크해줘");
+		expect(commandOf("종놈/login anthropic", "종놈")).toBe("/login anthropic");
+		expect(commandOf("종놈 휴넷 체크해줘", "종놈")).toBe("휴넷 체크해줘");
+	});
+	test("a message without the keyword, or a longer word that starts with it, is not", () => {
+		expect(commandOf("휴넷 수강 다 했는지 확인해줘", "종놈")).toBeUndefined();
+		expect(commandOf("종놈들 다 어디 갔어", "종놈")).toBeUndefined();
+		expect(commandOf("종놈아", "종놈")).toBeUndefined();
+		expect(commandOf("dotzz 안녕", "dotz")).toBeUndefined();
 	});
 });
