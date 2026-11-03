@@ -207,7 +207,8 @@ function prOpen() {
   PR.ov = ovOpen(() => prClose(false));
   document.addEventListener("keydown", prKey, true);
   prSheet();
-  motionIn(PR.node.firstElementChild, "rise");
+  // the sidebar popover fades in 8px under its row (150ms); the phone sheet and the centered dialog use the sheet motion
+  if (PR.node.classList.contains("anch")) motionIn(PR.node.firstElementChild, "top", M_MS.fast); else motionSheet(PR.node.firstElementChild, PR.node);
   const cur = PR.node.querySelector(".pr-row.on") || PR.node.querySelector(".pr-row");
   if (cur) cur.focus({ preventScroll: true });
   prLoad();
@@ -215,7 +216,8 @@ function prOpen() {
 
 function prClose(restore = true) {
   if (!PR.node) return;
-  PR.node.remove(); PR.node = null;
+  const gone = PR.node; PR.node = null;
+  gone.style.pointerEvents = "none"; motionSheetOut(gone).then(() => gone.remove());
   ovDone(PR.ov); PR.ov = null;
   document.removeEventListener("keydown", prKey, true);
   if (restore && PR.opener && PR.opener.isConnected) PR.opener.focus({ preventScroll: true });

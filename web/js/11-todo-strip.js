@@ -350,7 +350,8 @@ function chatPush(en, bulk) {
       if (who && who === CS.who && t - CS.whoT < 600000) n.classList.add("cont");
       CS.who = who; CS.whoT = t;
       if (convIncoming(e)) fresh = n;
-      tl.append(n); if (pkey) CS.prog.set(pkey, { node: n, target: laneT || String(e.target ?? "") });
+      tl.append(n); if (!bulk) motionIn(n, "rise", M_MS.fast);   // a message that arrives live rises in (150ms); the drawn history never moves
+      if (pkey) CS.prog.set(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {
     if (!WORK.has(en.a.type) || isMailT(target) || (isSettingsT(target) && !(TURN.get(target) <= (Date.parse(en.a.ts) || 0)))) return;

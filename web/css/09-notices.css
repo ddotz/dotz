@@ -29,7 +29,6 @@
 }
 @keyframes nt-hl-still { 0% { opacity: 1; } 100% { opacity: 0; } }
 
-@keyframes nt-in { from { opacity: 0; } to { opacity: 1; } }
 
 .mon-sum { padding: 4px 4px 12px; color: var(--fg-2); font: 500 14px/20px var(--font); }
 .mon-list { padding: 4px; }
@@ -74,8 +73,8 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 
 /* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option (recommended first). */
 /* Computer switch sheet (33-peers.js): the bottom sheet on the phone and a centered dialog from 700px. Decisions and notices use the full-screen overlay (14-overlay.css), not this. */
-.ds-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .42); animation: nt-in var(--m-fast) var(--m-ease); }
-.ds-sheet { --fs-fill: var(--layer); display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: 90dvh; border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--pop); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); box-shadow: var(--float); animation: ds-up var(--m-base) var(--m-ease); }
+.ds-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .42); }
+.ds-sheet { --fs-fill: var(--layer); display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: 90dvh; border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--pop); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); box-shadow: var(--float); }
 .ds-hd { flex: none; display: flex; align-items: center; gap: 8px; padding: 14px 12px 0 20px; }
 .ds-ey { flex: 1; color: var(--warn); font: 600 13px/20px var(--font); }
 .ds-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 20px 12px; }
@@ -83,7 +82,6 @@ div.nt-mon .nt-dot { margin-top: 7px; }
   .ds-bd { align-items: center; }
   .ds-sheet { border-radius: var(--r-sheet); max-height: min(80vh, 760px); padding-bottom: 0; }
 }
-@media (prefers-reduced-motion: reduce) { .ds-bd, .ds-sheet { animation: none; } }
 .ds-t { margin: 4px 0 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
 .ds-m { margin: 2px 0 12px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .ds-md { color: var(--fg-2); font: 400 14px/22px var(--font); overflow-wrap: anywhere; }
@@ -105,7 +103,6 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .ds-res { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-radius: var(--r-ctl); background: var(--fs-fill); }
 .ds-rl { color: var(--ok); font: 600 12px/16px var(--font); }
 .ds-ra { font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
-@keyframes ds-up { from { transform: translateY(24px); opacity: .6; } to { transform: none; opacity: 1; } }
 
 /* Decision overlay (30-notices.js dkOpen, 10-decision-card.js renderSheet) and draft approval (hub/draft-approval.ts): content only; the frame is 14-overlay.css. */
 .dc-dh { display: flex; align-items: baseline; gap: 8px; font-size: 14px; line-height: 22px; }

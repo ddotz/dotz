@@ -55,6 +55,7 @@
 @media (max-width: 560px) { .fbe-grid, .fbe-cap { grid-template-columns: 1fr; } }
 .fb-item.off .nm, .fb-item.off .fb-n { opacity: .5; }
 .fb-sw { min-width: 44px; height: 28px; padding: 0 10px; border-radius: 14px; border: 0; font-size: 12px; background: var(--hover); color: var(--fg-3); cursor: pointer; }
+.fb-sw { transition: background-color var(--m-fast) var(--m-ease), color var(--m-fast) var(--m-ease); }
 .fb-sw[aria-checked="true"] { background: var(--accent); color: var(--on-accent); }
 .fb-item.in-use { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 .fb-item.drag { position: relative; z-index: 5; cursor: grabbing; box-shadow: var(--float); opacity: .94; }
@@ -115,6 +116,7 @@
 /* segmented control: the track takes the small radius, the chosen cell one step smaller (outer = inner + 2) */
 .seg { display: flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: var(--r-seg); background: var(--layer); }
 .seg button { flex: 1 1 52px; min-width: 0; height: 26px; padding: 0 6px; border: 0; border-radius: var(--r-seg-in); background: transparent; color: var(--fg-2); font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.seg button { transition: background-color var(--m-base) var(--m-ease), color var(--m-base) var(--m-ease); }
 .seg button:hover { color: var(--fg); }
 .seg button.on { background: var(--card); color: var(--fg); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
 @media (pointer: coarse) { .seg button { height: 34px; } }
@@ -171,7 +173,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .pal-res .cc-note { margin-top: 0; }
 .pal-res .cc-act { margin-top: 2px; }
 @media (max-width: 420px) { .pal-f:not(.multi) { display: block; } .pal-f:not(.multi) .pal-v { max-width: none; margin-top: 2px; text-align: left; } }
-.snack { position: fixed; z-index: 2000; left: 50%; bottom: 16px; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 24px); padding: 8px 12px; border-radius: 8px; background: var(--fg); color: var(--bg); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+.snack { position: fixed; z-index: 2000; left: 0; right: 0; margin: 0 auto; bottom: 16px; width: max-content; max-width: calc(100vw - 24px); padding: 8px 12px; border-radius: 8px; background: var(--fg); color: var(--bg); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
 /* a refusal or failure stays calm (owner 2026-10-20: "빨간색 글자 나오면 놀란다 사람들"): the usual snackbar with a small amber dot */
 /* A new shell waits for a tap: a bar across the top that pushes the app down (body:has), so it never covers a screen's own controls */
 .shell-chip { position: fixed; z-index: 1999; inset: 0 0 auto 0; padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 8px; border: 0; border-radius: 0; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 13px; line-height: 18px; font-weight: 600; text-align: center; cursor: pointer; }
@@ -197,7 +199,7 @@ body:has(.upd-bar) .app { padding-top: 0; margin-top: var(--ubh); height: calc(1
 .ntf + .ntf { transform: scale(.985); opacity: .97; }
 .ntf + .ntf + .ntf { transform: scale(.97); opacity: .94; }
 .ntf.in { animation: ntf-in var(--m-base) var(--m-ease); }
-.ntf.out { opacity: 0; transform: translateX(12px) scale(.98); pointer-events: none; }
+.ntf.out { opacity: 0; transform: translateX(12px) scale(.98); pointer-events: none; transition-duration: var(--m-fast); }
 .ntf:hover { background: var(--card-hover); }
 :root[data-theme="dark"] .ntf:hover { background: #303037; }
 .ntf > .dot { flex: none; margin-top: 7px; }
