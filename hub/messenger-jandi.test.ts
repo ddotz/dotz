@@ -278,7 +278,7 @@ describe("rooms from the web structure", () => {
 		}
 	});
 
-	test("one default webhook serves every room that has none, and a project without a room still reaches main; a lane post has no room", async () => {
+	test("one default webhook serves every room that has none, and a project without a room still reaches main; a lane's progress has no room but its result and question reach main", async () => {
 		const seen: string[] = [];
 		const hook = Bun.serve({ port: 0, async fetch(req) { seen.push(`${new URL(req.url).pathname} ${(await req.json()).body}`); return new Response("{}"); } });
 		const t = fresh({ enabled: true, rooms: [], incoming_url: `http://127.0.0.1:${hook.port}/in/default` });
@@ -288,7 +288,9 @@ describe("rooms from the web structure", () => {
 			expect(await t.a.deliver({ kind: "alert", target: "web:alert", text: "a" })).toEqual({ delivered: true });
 			expect(await t.a.deliver({ kind: "project", target: "ch:999", text: "p" })).toEqual({ delivered: true });
 			expect(await t.a.deliver({ kind: "lane", target: "lane:x", text: "l" })).toEqual({ delivered: false, reason: "no room" });
-			expect(seen).toEqual(["/in/default a", "/in/default p"]);
+			expect(await t.a.deliver({ kind: "lane", target: "lane:x", text: "[fail] 못 했어요" })).toEqual({ delivered: true });
+			expect(await t.a.deliver({ kind: "lane", target: "lane:x", text: "[ask] 어느 쪽?" })).toEqual({ delivered: true });
+			expect(seen).toEqual(["/in/default a", "/in/default p", "/in/default [fail] 못 했어요", "/in/default [ask] 어느 쪽?"]);
 			expect(t.a.settings!().fields.find(f => f.key === "incoming_url")).toMatchObject({ type: "secret", set: true });
 			expect(JSON.stringify(t.a.settings!())).not.toContain("/in/default");
 			const cleared = t.a.saveSettings!({ values: { incoming_url: "" } });
