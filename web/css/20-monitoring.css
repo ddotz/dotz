@@ -34,7 +34,7 @@
 #mon-head .mon-hdrow { display: flex; align-items: center; gap: 12px; min-width: 0; }
 #mon-head .mon-hdrow .cv-b { flex: 1; }
 #mon-head .mon-prog-wrap { width: 100%; }
-.mon-actions { display: flex; justify-content: center; }
+.mon-actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; }
 
 /* a connection that is down: said at the top of the conversation, with 지금 다시 확인; the row says the same in its status line */
 .mon-banner { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--err) 10%, transparent); font-size: 13px; line-height: 18px; }
