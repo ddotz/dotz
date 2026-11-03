@@ -147,6 +147,8 @@ async function busy(btn, fn) {
 }
 
 /* ---------- snackbar ---------- */
+// How notification text names things (01-notice-ko.js): a session by its title, never its code name.
+const NK = { lane: name => { try { const l = S && S.lanes.find(x => x.name === name); return (l && l.title) || undefined; } catch { return undefined; } } };
 let toastTimer;
 // A toast that times out or whose 되돌리기 was pressed fades out (150ms) and is then removed; a new toast replaces the old one at once.
 function toastGone(n) {
@@ -156,7 +158,7 @@ function toastGone(n) {
 }
 function toast(msg, bad, action, ms) {
   document.querySelectorAll(".snack").forEach(n => n.remove());
-  const n = el("div", { class: `snack${bad ? " bad" : ""}${action ? " act" : ""}`, role: "status" }, el("span", { text: stripMarkers(msg) }), action ? el("button", { type: "button", class: "sa", text: action.label, onclick: () => { toastGone(n); action.onclick(); } }) : null);
+  const n = el("div", { class: `snack${bad ? " bad" : ""}${action ? " act" : ""}`, role: "status" }, el("span", { text: noticeKo(msg, { ...NK, error: !!bad }) }), action ? el("button", { type: "button", class: "sa", text: action.label, onclick: () => { toastGone(n); action.onclick(); } }) : null);
   (document.querySelector("dialog[open]:not([data-leaving])") || document.body).append(n);
   clearTimeout(toastTimer);
   motionIn(n, "rise");
@@ -184,10 +186,10 @@ function notify(e) {
   const alertish = e.kind === "out" && e.target === "alert";
   const box = document.querySelector(".ntf-box") || document.body.appendChild(el("div", { class: "ntf-box", "aria-live": "polite" }));
   const lane = e.kind === "lane_report" ? String(e.lane || "") : "";
-  const title = e.title || (lane ? `세션 ${lane}` : alertish ? "알림" : `${botName} 작업 기록`);
+  const title = noticeKo(e.title || (lane ? NK.lane(lane) || "세션" : alertish ? "알림" : `${botName} 작업 기록`), NK);
   const at = e.ts ? new Date(e.ts) : null;
   const tm = at && !isNaN(at) ? at.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }) : "";
-  const first = stripMarkers(text).split("\n").find(l => l.trim()) || "";
+  const first = noticeKo(text, NK).split("\n").find(l => l.trim()) || "";
   const n = el("div", { class: "ntf in", role: alertish ? "alert" : "status" },
     el("span", { class: `dot ${e.tone || (alertish ? "err" : lane ? "ok" : "")}` }),
     el("div", { class: "tx" }, el("div", { class: "hd" }, el("span", { class: "nm", text: title }), tm ? el("span", { class: "tm", text: tm }) : null), el("div", { class: "bd2", text: first.slice(0, 240) })));
