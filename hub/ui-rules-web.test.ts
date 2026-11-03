@@ -115,3 +115,31 @@ for (const width of [390, 1280])
 		}
 		expect(found).toEqual([]);
 	}, 60_000);
+
+// docs/ui-spec.md 목록 행 선택: a selected or pressed row inside a card has its own fill, never the page's grey, so the first or last row
+// does not look cut out of the card; the card clips it to its rounded corners.
+for (const theme of ["light", "dark"])
+	test(`${theme}: a selected row in a card differs from the page and from the card, and the card clips it`, async () => {
+		const v = new Bun.WebView({ width: 390, height: 844 });
+		views.push(v);
+		await v.navigate(`http://127.0.0.1:${server.port}/`);
+		await waitFor(v, `typeof go === "function" && S`);
+		const r = JSON.parse((await v.evaluate(`(() => {
+			document.documentElement.dataset.theme = ${JSON.stringify(theme)};
+			const bg = c => getComputedStyle(c).backgroundColor;
+			const out = [];
+			for (const [box, row] of [["list", "li"], ["pl-list", "pl-row"], ["list", "mth-row"]]) {
+				const list = document.createElement("div"); list.className = box;
+				for (let i = 0; i < 3; i++) { const li = document.createElement("button"); li.className = row + (i === 0 ? " on" : ""); li.textContent = "행"; list.append(li); }
+				document.body.append(list);
+				out.push({ row, sel: bg(list.firstChild), page: bg(document.body), card: bg(list), clip: getComputedStyle(list).overflow, radius: parseFloat(getComputedStyle(list).borderTopLeftRadius) });
+				list.remove();
+			}
+			return JSON.stringify(out);
+		})()`)) as string);
+		for (const x of r as Array<{ row: string; sel: string; page: string; card: string; clip: string; radius: number }>) {
+			expect(`${x.row} ${x.sel}`).not.toBe(`${x.row} ${x.page}`);
+			expect(`${x.row} ${x.sel}`).not.toBe(`${x.row} ${x.card}`);
+			expect(`${x.row} ${x.clip} ${x.radius > 0}`).toBe(`${x.row} hidden true`);
+		}
+	});

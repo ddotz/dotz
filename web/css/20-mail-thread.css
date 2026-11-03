@@ -30,7 +30,7 @@
 .mth-m > .mth-list { margin-top: 4px; padding: 4px; border-radius: var(--r-ctl); background: var(--layer); }
 .mth-row { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .mth-row:hover { background: var(--card-hover); }
-.mth-row.on { background: var(--layer); cursor: default; }   /* the selected fill of every list (.cv-row.on) */
+.mth-row.on { background: var(--row-sel); cursor: default; }   /* the selected fill of every list (.cv-row.on) */
 .mth-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .mth-when { flex: 1; min-width: 0; color: var(--fg-3); font-size: 12px; line-height: 16px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mth-subj { font-size: 14px; line-height: 20px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
