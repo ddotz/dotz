@@ -12,7 +12,7 @@ import { createLaneRelay } from "./lanerelay.ts";
 import { inOrder, localize, noteHandoffLeak } from "./outlang.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { send, deliver, out } from "./outbound.ts";
-import { dropForLine } from "./forline.ts";
+import { dropForLine, forLines } from "./forline.ts";
 
 export const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n), steer: text => steerOrchestrator(msg().laneReportSteer(text)) });
 
@@ -21,8 +21,6 @@ export function installLaneHandlers(): void {
 	setReportHandler((lane, raw, answering) => {
 		noteHandoffLeak(`lane:${lane.name}`, raw);
 		const text = stripHandoff(raw);
-		// `answering`: the report answers an owner message (the bell and push treat it as the session's answer, hub/notices.ts, hub/push.ts).
-		emit("inbox", { ts: now(), kind: "lane_report", source: `lane:${lane.name}`, lane: lane.name, text, ...(answering ? { answering: true } : {}) });
 		const how = laneRelay.report(lane.name, raw, join(paths.lanes, lane.name, "report.md"), lane.orchAsked === false);
 		if (how === "relayed" || how === "held" || how === "steered") lane.orchAsked = false;
 		if (how === "steered") log(`lane ${lane.name} report steered into the orchestrator's turn`);
@@ -33,7 +31,17 @@ export function installLaneHandlers(): void {
 		// A [run] report is progress: it edits the lane's one progress message. Results, questions and failures are real messages.
 		// A [run] text that is the answer to an owner message is that answer, not progress to edit away.
 		const running = parseTone(text).tone === "run" && !answering;
-		void inOrder(channel, () => localize(dropForLine(text).slice(0, 1800), channel, "lane"))
+		// The owner-visible part is localized once, before it is recorded: the web chat, the bell, push and Discord all show that
+		// text (the web showed a lane's English report while only Discord got the rewrite). The orchestrator and report.md keep
+		// the raw report, and the "For <bot>:" line stays as written (notices.ts reads it).
+		const body = dropForLine(text);
+		void inOrder(channel, async () => {
+			const local = await localize(body, channel, "lane");
+			const kept = local === body ? text : [local, forLines(text)].filter(Boolean).join("\n\n");
+			// `answering`: the report answers an owner message (the bell and push treat it as the session's answer, hub/notices.ts, hub/push.ts).
+			emit("inbox", { ts: now(), kind: "lane_report", source: channel, lane: lane.name, text: kept, ...(answering ? { answering: true } : {}) });
+			return local.slice(0, 1800);
+		})
 			.then(async shown => {
 				if (running) return void (await discord.progress(channel, "progress", shown));
 				if ((await send(channel, shown)).delivered) await discord.clearProgress(channel);

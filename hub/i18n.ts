@@ -13,7 +13,7 @@ import { en, enLeads, type Catalog, type Leads } from "./i18n-en.ts";
 import { ko } from "./i18n-ko.ts";
 import { applyTexts, reportTexts } from "./texts.ts";
 
-export type LaneFooterArgs = { lane: string; mode: string; workerModel: string; slots: number; worktree: string };
+export type LaneFooterArgs = { lane: string; language: string; mode: string; workerModel: string; slots: number; worktree: string };
 export type WorktreeArgs = { path: string; repo: string; branch: string; base: string };
 export type RecallArgs = { mode: string; identity: string; rules: string; lessons: string; memory: string; setups: string; state: string };
 export type SettingText = { label: string; hint?: string; unit?: string; options?: Record<string, string> };

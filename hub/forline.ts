@@ -24,6 +24,15 @@ export function dropForLine(text: string): string {
 	return out || text;
 }
 
+// The "For <bot>:" lines dropForLine removes (outside code fences), joined; "" when there are none.
+export function forLines(text: string): string {
+	let fence = false;
+	return text
+		.split("\n")
+		.filter(line => (FENCE.test(line) ? ((fence = !fence), false) : !fence && FOR_LINE.test(line)))
+		.join("\n");
+}
+
 // A session's [ask] whose only request is its "For <bot>:" line (a real hand-off, no choice block, no question mark elsewhere, not a
 // budget question) is a question for the orchestrator, not the owner: it makes no decision, badge or push (2026-10-23).
 const NO_REQUEST = /^[\s\-–—.]*(?:없음|none|n\/a)?[\s.]*$/i;
