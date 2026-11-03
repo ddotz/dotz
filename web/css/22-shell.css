@@ -3,6 +3,9 @@
    usage row at the bottom; the main column holds the top bar (page title, search, bell, connection and usage chips) and the views.
    Narrow: the sidebar becomes the bottom tab bar (the same #nav, one component), the brand/picker/footer step aside, and the top
    bar keeps back + title + search + bell. Everything below only restates the frame; colors and sizes come from 01-tokens.css. */
+/* the page never scrolls: a bar above the app (the update bar, the demo bar) gives .app a top margin, which would otherwise collapse through
+   <body> and push the document 44px past the screen; any focus or scrollIntoView then slides the top bar away and lifts the tab bar */
+body { display: flow-root; }
 @media (min-width: 1024px) {
   :root { --side-w: 232px; }
   .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: 0; }
