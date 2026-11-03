@@ -85,8 +85,8 @@ test("at 1280px the original is the page's own scroll, the header names everyone
 
 	// the panel is folded at the start (the mail body keeps the room); the chip at the end of the recipients line opens it
 	expect(await ev(v, `({ hidden: document.querySelector("#mail-thread").hidden, chip: document.querySelector("#tl .mth-mb").getAttribute("aria-expanded") })`)).toEqual({ hidden: true, chip: "false" });
-	await v.evaluate(`document.querySelector("#tl .mth-mb").click()`);
-	await v.evaluate(until(`!document.querySelector("#mail-thread").hidden`, "the chip did not open the panel"));
+	// the screen's entrance motion (a rise) moves the whole view by a pixel or two while it runs: measure once it ended
+	await v.evaluate(until(`document.getAnimations().length === 0`, "the entrance motion did not end"));
 
 	const page = await ev(v, `(() => {
 		const frame = document.querySelector("#tl iframe.mb-frame");
@@ -98,13 +98,7 @@ test("at 1280px the original is the page's own scroll, the header names everyone
 		}).map(e => e.className || e.tagName);
 		const rows = [...document.querySelectorAll("#tl .mhd .mhd-r")].map(r => r.textContent);
 		const more = [...document.querySelectorAll("#tl .mhd .mhd-more")].map(b => b.textContent);
-		const thr = document.querySelector("#mail-thread");
-		const tlBox = document.querySelector("#timeline").getBoundingClientRect(), thBox = thr && thr.getBoundingClientRect();
-		const thrRows = [...document.querySelectorAll("#mail-thread .mth-row")];
-		return { frameH: parseFloat(frame.style.height), frameW: Math.round(frame.getBoundingClientRect().width), rows, more, scrollers,
-			thr: thr ? !thr.hidden : false, thrDisplay: thr ? getComputedStyle(thr).display : "none", beside: !!thBox && thBox.left >= tlBox.right - 1 && thBox.width > 200, thrHead: thr && thr.querySelector(".mth-ht") && thr.querySelector(".mth-ht").textContent, thrN: thr && thr.querySelector(".mth-n") && thr.querySelector(".mth-n").textContent,
-			thrSubj: thrRows.map(r => r.querySelector(".mth-subj").textContent), thrOn: thrRows.map(r => r.className.includes("on")), thrSum: thrRows.map(r => !!r.querySelector(".mth-sum")),
-			mobileRow: !!document.querySelector("#tl .mth-m"), mobileShown: !!document.querySelector("#tl .mth-m") && getComputedStyle(document.querySelector("#tl .mth-m")).display !== "none" };
+		return { frameH: parseFloat(frame.style.height), frameW: Math.round(frame.getBoundingClientRect().width), rows, more, scrollers };
 	})()`);
 
 	// only the conversation itself scrolls; nothing inside the mail (the frame included) has a scrollbar of its own
@@ -127,14 +121,22 @@ test("at 1280px the original is the page's own scroll, the header names everyone
 	// three recipients: two shown, the rest behind 외 1명
 	expect(page.more).toEqual(["외 1명"]);
 
-	expect(page.thr).toBe(true);
-	expect(page.thrDisplay).toBe("flex");
-	expect(page.beside).toBe(true);
-	expect(page.thrHead).toBe("이 사람과 주고받은 메일");
-	expect(page.thrN).toBe("5");
-	expect(page.thrSubj).toEqual(["월간 점검 보고서", "3주 차 점검", "2주 차 점검", "1주 차 점검", "점검 결과 회신"]);
-	expect(page.thrOn).toEqual([true, false, false, false, false]);
-	expect(page.thrSum).toEqual([true, true, true, true, true]);
+	// the chip opens the panel beside the mail
+	await v.evaluate(`document.querySelector("#tl .mth-mb").click()`);
+	await v.evaluate(until(`!document.querySelector("#mail-thread").hidden`, "the chip did not open the panel"));
+	const pan = await ev(v, `(() => {
+		const thr = document.querySelector("#mail-thread"), tlBox = document.querySelector("#timeline").getBoundingClientRect(), thBox = thr.getBoundingClientRect(), thrRows = [...document.querySelectorAll("#mail-thread .mth-row")];
+		return { thr: !thr.hidden, thrDisplay: getComputedStyle(thr).display, beside: thBox.left >= tlBox.right - 1 && thBox.width > 200, thrHead: thr.querySelector(".mth-ht") && thr.querySelector(".mth-ht").textContent, thrN: thr.querySelector(".mth-n") && thr.querySelector(".mth-n").textContent,
+			thrSubj: thrRows.map(r => r.querySelector(".mth-subj").textContent), thrOn: thrRows.map(r => r.className.includes("on")), thrSum: thrRows.map(r => !!r.querySelector(".mth-sum")) };
+	})()`);
+	expect(pan.thr).toBe(true);
+	expect(pan.thrDisplay).toBe("flex");
+	expect(pan.beside).toBe(true);
+	expect(pan.thrHead).toBe("이 사람과 주고받은 메일");
+	expect(pan.thrN).toBe("5");
+	expect(pan.thrSubj).toEqual(["월간 점검 보고서", "3주 차 점검", "2주 차 점검", "1주 차 점검", "점검 결과 회신"]);
+	expect(pan.thrOn).toEqual([true, false, false, false, false]);
+	expect(pan.thrSum).toEqual([true, true, true, true, true]);
 	// the chip stays in the recipients line at this width and follows the panel; the phone's inline list stays folded
 	expect(await ev(v, `({ chip: document.querySelector("#tl .mth-mb").getAttribute("aria-expanded"), list: document.querySelector("#tl .mth-m .mth-list").hidden })`)).toEqual({ chip: "true", list: true });
 
@@ -251,4 +253,26 @@ test("a sender or recipient given by name only is shown by name, and the body's 
 	expect(got.files[1]).toStartWith("견적서.pdf");
 	expect(got.files[1]).toContain("/api/mail/fx-1/files/1");
 	expect(got.none).toBe(null);
+}, 30_000);
+
+test("the opened mail's summary: two sentences with the to-do in bold, an older one-line or sectioned summary still draws, and a mail's text is never parsed as HTML", async () => {
+	const v = await openPage(1280, "monitoring/i:mail");
+	const got = await ev(v, `(() => {
+		const split = t => mailSumSplit(t);
+		const n = mailSumBlock("<img src=x onerror=alert(1)>예요.\\n**<u>금요일까지 회신</u>**해 주세요.");
+		return {
+			one: split("견적서를 보냈다는 메일이에요."),
+			two: split("메일이에요.\\n**금요일까지 회신**해 주세요."),
+			old: split("**요약**\\n• 첫째예요\\n• 둘째예요\\n\\n**첨부**\\n• a.pdf\\n\\n**할 일**\\n• 금요일까지 회신\\n"),
+			none: split("**요약**\\n• 첫째예요\\n\\n**할 일**\\n• 없음\\n"),
+			bold: [...n.querySelectorAll("b")].map(b => b.textContent), children: n.querySelectorAll("img, u").length, text: n.textContent,
+		};
+	})()`);
+	expect(got.one).toEqual({ about: "견적서를 보냈다는 메일이에요.", todo: "" });
+	expect(got.two).toEqual({ about: "메일이에요.", todo: "**금요일까지 회신**해 주세요." });
+	expect(got.old).toEqual({ about: "첫째예요 둘째예요", todo: "**금요일까지 회신**" });
+	expect(got.none).toEqual({ about: "첫째예요", todo: "" });
+	expect(got.bold).toEqual(["<u>금요일까지 회신</u>"]);
+	expect(got.children).toBe(0);
+	expect(got.text).toBe("요약 · <img src=x onerror=alert(1)>예요. <u>금요일까지 회신</u>해 주세요.");
 }, 30_000);

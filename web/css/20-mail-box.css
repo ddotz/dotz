@@ -42,7 +42,7 @@ span.mr-star:not(.on) { opacity: .45; }
 .mopen > .rc-title { margin-top: 4px; font-size: 15px; line-height: 21px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .mopen > .rc-hd { margin-top: 0; font-size: 13px; }
 /* the summary (11-mailtext.js mailSumBlock): a tinted block, the lightning mark, 요약 ·, two short sentences with the to-do in bold */
-.msum { display: flex; align-items: flex-start; gap: 8px; margin-top: 6px; padding: 8px 12px; border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: 14px; line-height: 21px; }
+.msum { display: flex; align-items: flex-start; gap: 8px; margin: 6px 0 4px; padding: 8px 12px; border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: 14px; line-height: 21px; }
 .msum > .ic { flex: none; width: 16px; height: 16px; margin-top: 2.5px; color: var(--accent); }
 .msum-t { min-width: 0; overflow-wrap: anywhere; word-break: keep-all; }
 .msum-k { color: var(--fg-3); }
