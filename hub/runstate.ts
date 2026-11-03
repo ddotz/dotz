@@ -2,6 +2,7 @@
 // still has open tasks.
 // /api/state carries it under `runs` for the main conversation and every lane; the web chat shows it as one line above the
 // composer (web/js/41-runstate.js). The derivation is pure so every case is tested without a gateway.
+import { parseTone } from "./tone.ts";
 export type RunKind = "working" | "waiting" | "idle" | "limited" | "error" | "stopped" | "done";
 // waiting: ask | work | recover (a failed worker the agent is taking up itself) | child | later | capacity · idle: unfinished | interrupted · limited: rate | owner (a billing/auth block) · stopped: owner
 export type RunReason = "ask" | "work" | "recover" | "child" | "later" | "capacity" | "unfinished" | "interrupted" | "unknown" | "rate" | "owner";
@@ -24,6 +25,8 @@ export type RunInput = {
 	later?: number;
 	capacity?: string;
 	lastTurnEnd?: string;
+	/** The last turn's final answer text: a promise in it ("바로 할게") that nothing is running for is unfinished work. */
+	lastAnswer?: string;
 	todos?: { open: number; current?: string };
 	/** A watch the last turn started that has not come back (hub/todo.ts openMonitor): the session waits on its own background job. */
 	watching?: string;
@@ -61,11 +64,50 @@ export function runState(i: RunInput): RunState {
 	if (i.later) return { kind: "waiting", reason: "later", since: i.lastTurnEnd, ...todos };
 	if (i.capacity) return { kind: "waiting", reason: "capacity", detail: short(i.capacity), ...todos };
 	if (open) return { kind: "idle", reason: i.lastTurnEnd ? "unfinished" : "interrupted", since: i.lastTurnEnd, ...(short(i.todos?.current) ? { detail: short(i.todos?.current) } : {}), ...todos };
+	// A turn that ended promising work it did not start (2026-11-01 15:20Z) is unfinished even with no plan: the session rested 25
+	// minutes and answered "아직 시작 안 했어".
+	if (i.lastTurnEnd && promisesWork(i.lastAnswer)) return { kind: "idle", reason: "unfinished", since: i.lastTurnEnd, detail: "말한 일을 아직 안 했어요" };
 	if (i.lastTurnEnd) return { kind: "done", since: i.lastTurnEnd };
 	return { kind: "idle" };
 }
 
 export type TodoLike = { phases?: { tasks?: { content?: string; status?: string }[] }[] };
+
+// The last answer promised to do the work itself ("바로 할게") and then the session rested with nothing running. Pure and
+// conservative: the verdict decides one nudge, so a false positive costs a nudge while a miss costs a resting session day-long.
+// Done/ask/fail reports, a closing question and a promise the owner must unlock first ("알려 주면 할게") are not promises.
+export function promisesWork(text: string | undefined): boolean {
+	if (!text) return false;
+	const { tone, text: bare } = parseTone(String(text));
+	if (tone === "done" || tone === "ask" || tone === "fail") return false;
+	const body = bare.trim();
+	if (!body) return false;
+	// A closing question to the owner is a wait on him, not a promise to go on.
+	if (/[?？]\s*$/u.test(body)) return false;
+	return body.split(/\n+|(?<=[.!?！？。…])\s+/u).some(piece => {
+		const sentence = piece.trim();
+		const end = promiseEnd(sentence);
+		if (!end) return false;
+		const before = sentence.slice(0, sentence.length - end.length);
+		// "말해 주면 할게", "올리면 그때 할게": a -면 clause before the promise makes it wait on the owner or outside work.
+		return !/[가-힣]면(?=$|[\s,、.!?~…'"’”)\]}])/u.test(before);
+	});
+}
+
+// A Hangul syllable whose final consonant is ㄹ (할, 볼, 시작할): the stem of the "-ㄹ게(요)" future ending. 에게 같은 말이 걸리지 않도록.
+const finalRieul = (s: string | undefined): boolean => {
+	const code = s ? s.codePointAt(s.length - 1) : undefined;
+	return code !== undefined && code >= 0xac00 && code <= 0xd7a3 && (code - 0xac00) % 28 === 8;
+};
+// The sentence's own promise ending, with its trailing punctuation ignored: "-ㄹ게(요)" (할게, 볼게, 시작할게, 진행할게) or
+// "-겠습니다/겠어요" (하겠습니다, 하겠어요). 알겠습니다 is "understood", and 좋겠네요/되겠지요/좋겠다 are guesses, not a promise to work.
+function promiseEnd(sentence: string): string | undefined {
+	const t = sentence.replace(/[\s.!?~…、,:;'"”’)\]}>·ㅋㅎㅠㅜ♥]+$/u, "");
+	const future = /(?:겠습니다|겠어요|겠어)$/u.exec(t);
+	if (future) return /(?:알|모르)겠(?:습니다|어요|어)$/u.test(t) ? undefined : future[0];
+	const will = /(.)게(?:요)?$/u.exec(t);
+	return will && finalRieul(will[1]) ? will[0] : undefined;
+}
 
 /** Open = not completed and not abandoned; current = the in_progress task, else the first pending one. */
 export function openTodos(t: TodoLike): { open: number; current?: string } {

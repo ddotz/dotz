@@ -140,7 +140,7 @@ export function startStallSweep(nudge: (conversation: string, r: RunState) => vo
 				const r = runs[k], seen = told.get(k) ?? { at: [] };
 				if (!r || !stallNudge(r, now, seen.at, seen.since)) continue;
 				told.set(k, { at: [...seen.at.filter(at => now - at < 3_600_000), now], since: r.since });
-				log(`stall: ${k} rested with ${r.todos ?? 0} task(s) left since ${r.since}; told to go on`);
+				log(`stall: ${k} rested (${r.todos ? `${r.todos} task(s) left` : "promised work not done"}) since ${r.since}; told to go on`);
 				nudge(k, r);
 			}
 		} catch (e) {
@@ -179,6 +179,7 @@ function stateRuns(): Record<string, RunState> {
 		children: runningChildren("orchestrator"),
 		later: deferred.filter(d => d.target === "web" || d.target === "terminal").length,
 		lastTurnEnd: lastTurnEnd(mainItems),
+		lastAnswer: orch.lastText,
 		compacting: compactingNow(orch.ctx),
 		watching: openMonitor(orch.sessionFile),
 		todos: openTodos(readTodo(orch.sessionFile)),
@@ -197,6 +198,7 @@ function stateRuns(): Record<string, RunState> {
 			later: deferred.filter(d => d.target === source).length,
 			capacity: lane.waiting,
 			lastTurnEnd: lastTurnEnd(items),
+			lastAnswer: lane.lastText,
 			compacting: compactingNow(lane.ctx),
 			watching: openMonitor(lane.sessionFile),
 			todos: openTodos(readTodo(lane.sessionFile)),
@@ -223,6 +225,7 @@ function stateRuns(): Record<string, RunState> {
 			children: runningChildren(source),
 			later: c.queue.deferredOpen().length,
 			lastTurnEnd: lastTurnEnd(items),
+			lastAnswer: c.o.orch.lastText,
 			compacting: compactingNow(c.o.orch.ctx),
 			watching: openMonitor(c.o.orch.sessionFile),
 			todos: openTodos(readTodo(c.o.orch.sessionFile)),
