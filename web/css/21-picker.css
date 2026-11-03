@@ -14,7 +14,7 @@
 .pk-chip .fi-t { min-width: 0; }
 .pk-chip .fi-n { max-width: 200px; }
 .pk-chip .fi-m { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pk-chip .ax { top: 8px; right: 2px; width: 28px; height: 28px; border-radius: 14px; background: transparent; color: var(--fg-3); }
+.pk-chip .ax { top: 8px; right: 2px; width: 28px; height: 28px; border-radius: var(--r-ctl); background: transparent; color: var(--fg-3); }
 .pk-chip .ax svg { width: 14px; height: 14px; }
-@media (pointer: coarse) { .pk-chip .ax { top: 6px; width: 32px; height: 32px; border-radius: 16px; } }
+@media (pointer: coarse) { .pk-chip .ax { top: 6px; width: 32px; height: 32px; border-radius: var(--r-ctl); } }
 @media (max-width: 639px) { .pk-chip { max-width: 100%; } .pk-chip .fi-n { max-width: 168px; } .pk-chip .fi-m { max-width: 180px; } }
