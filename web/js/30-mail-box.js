@@ -10,6 +10,8 @@ ICONS.archive = "M4 6.5h16V10H4zM5.5 10v8a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-8M10 1
 ICONS.minus = "M6 12h12";
 ICONS.inbox = "M4 13l2.2-7h11.6L20 13v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 13h4.5l1 2h5l1-2H20";
 ICONS.forward = "M15 7l5 5-5 5M20 12h-9a7 7 0 0 0-7 7";
+ICONS.replyall = "M8 7l-5 5 5 5M13 7l-5 5 5 5M8 12h5a8 8 0 0 1 8 7";
+ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
 const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null };
 const mbKey = t => t.slice(5);
 const MB_SYNC_OFF = "dotz에서만 바뀌어요";
@@ -37,7 +39,8 @@ function mbApply(t, a) {
 const MB_DONE = { read: "읽음으로 표시했어요", unread: "안 읽음으로 표시했어요", archive: "보관했어요", unarchive: "받은편지함으로 옮겼어요", trash: "삭제했어요", star: "별표를 달았어요", unstar: "별표를 뺐어요" };
 const MB_BACK = { archive: "unarchive", unarchive: "archive", read: "unread", unread: "read", star: "unstar", unstar: "star" };
 // Runs one action on `keys` (mail targets). Resolves the keys that went through.
-async function mbRun(keys, action, quiet = false) {
+// `note`: a word added to the done toast (the open mail's "dotz에서만 바뀌어요" when the mailbox will not follow).
+async function mbRun(keys, action, quiet = false, note = "") {
   keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
   // An older hub (no `can` on the card) has no action route: there only 삭제 works, through the old DELETE.
@@ -59,10 +62,10 @@ async function mbRun(keys, action, quiet = false) {
   const done = res.filter(x => x.ok !== false).map(x => x.key);
   for (const x of res) if (x.ok === false && undo.has(x.key)) undo.get(x.key)();
   mbRefresh();
-  const note = (res.find(x => x.ok === false && x.note) || res.find(x => x.note) || {}).note;
-  if (!quiet && note) toast(note, res.some(x => x.ok === false));
+  const said = (res.find(x => x.ok === false && x.note) || res.find(x => x.note) || {}).note;
+  if (!quiet && said) toast(said, res.some(x => x.ok === false));
   else if (!quiet && res.some(x => x.ok === false)) toast("처리하지 못했어요", true);
-  else if (!quiet && done.length && MB_DONE[action]) toast(done.length > 1 ? `${done.length}개를 ${MB_DONE[action]}` : MB_DONE[action], false, MB_BACK[action] && action !== "trash" && !/star$/.test(action) ? { label: "되돌리기", onclick: () => mbRun(done, MB_BACK[action]) } : undefined);
+  else if (!quiet && done.length && MB_DONE[action]) toast(`${done.length > 1 ? `${done.length}개를 ${MB_DONE[action]}` : MB_DONE[action]}${note ? ` · ${note}` : ""}`, false, MB_BACK[action] && action !== "trash" && !/star$/.test(action) ? { label: "되돌리기", onclick: () => mbRun(done, MB_BACK[action]) } : undefined);
   if (legacy) for (const t of done) PQ.of.delete(t);
   Promise.allSettled([convLoad(), loadIntegrations()]);
   return done;
@@ -130,21 +133,24 @@ function mbList(vis) {
   return bar;
 }
 
-/* ---------- the open mail: the same actions in its head ---------- */
-function mailOpenBar(t) {
-  const m = MAILS.get(t) || {}, unread = mailUnread(t, m), arch = !!m.archived;
-  const acts = [m.dir === "out" ? null : unread ? ["read", "읽음으로 표시", "check"] : ["unread", "안 읽음으로 표시", "mail"], arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "완료(보관)", "archive"], ["trash", "삭제", "trash"]].filter(Boolean);
-  const off = acts.find(([a]) => !mailCan(t, a));
-  const bar = el("div", { class: "mbox-open", role: "group", "aria-label": "메일 처리" },
-    ...acts.map(([a, label, ic]) => mbBtn(label, ic, ev => {
-      const b = ev.currentTarget;
-      busy(b, async () => {
-        const done = a === "trash" ? await mbTrash([t]) : await mbRun([t], a);
-        if (done.length && a !== "trash" && a !== "read") { MBOX.sel.delete(t); if (monCtx === t && current === "chat") go("monitoring", MON.sel); }
-      });
-    }, { k: `mail-open-${a}`, short: MB_SHORT[a] })));
-  if (off) bar.append(el("div", { class: "mbox-note", role: "status", text: MB_NOTE[off[0]] }));
-  return bar;
+/* ---------- the open mail: one slim bar of icons at its top, like Gmail ---------- */
+// Back, 보관, 삭제, 읽음 / 안 읽음, 답장, 전체답장, 전달, 초안 작성, then the ⋯ (its own list plus 원문 접기). Icons only: the name is the aria-label and
+// the title. The bar sticks while the mail scrolls. A mailbox that will not follow an action says so in the action's toast, not in a standing line.
+const mbIco = (label, ic, onclick, k) => el("button", { class: "ib mtop-b", type: "button", "data-k": k, title: label, "aria-label": label, onclick }, icon(ic));
+function mailOpenBar(t, card) {
+  const m = MAILS.get(t) || {}, unread = mailUnread(t, m), arch = !!m.archived, out = m.dir === "out";
+  const acts = [arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "보관", "archive"], ["trash", "삭제", "trash"], out ? null : unread ? ["read", "읽음으로 표시", "mailopen"] : ["unread", "안 읽음으로 표시", "mail"]].filter(Boolean);
+  const back = monCtx && MON.sel ? MON.sel : "i:mail";
+  const raw = () => card && card.querySelector(":scope > .rc-raw");
+  return el("div", { class: "mtop", role: "toolbar", "aria-label": "메일 처리" },
+    mbIco("목록으로", "back", () => go("monitoring", back), "mail-top-back"),
+    ...acts.map(([a, label, ic]) => mbIco(label, ic, ev => busy(ev.currentTarget, async () => {
+      const done = a === "trash" ? await mbTrash([t]) : await mbRun([t], a, false, mailCan(t, a) ? "" : MB_NOTE[a]);
+      if (done.length && a !== "trash" && a !== "read") { MBOX.sel.delete(t); if (monCtx === t && current === "chat") go("monitoring", MON.sel); }
+    }), `mail-open-${a}`)),
+    ...MB_MODES.map(([k, label, ic]) => el("button", { class: "ib mtop-b mbox-mode", type: "button", "data-mode": k, title: label, "aria-label": label, onclick: () => { mbOpenReply(t, k); const s = tl.querySelector(":scope > .mbox-reply"); if (s) s.scrollIntoView({ block: "nearest" }); } }, icon(ic))),
+    out ? null : mailDraftButton(t, "ib mtop-b mr-draft"),
+    mailMenuBtn(t, () => { const d = raw(); return d ? [{ value: "raw", label: d.open ? "원문 접기" : "원문 보기", run: () => { d.open = !d.open; } }] : []; }));
 }
 
 /* ---------- 메일 쓰기: the floating button and its sheet ---------- */
@@ -222,7 +228,7 @@ function mbCompose(init = {}) {
 }
 
 /* ---------- the inline reply at the bottom of the open mail ---------- */
-const MB_MODES = [["reply", "답장", "reply"], ["all", "전체답장", "reply"], ["forward", "전달", "forward"]];
+const MB_MODES = [["reply", "답장", "reply"], ["all", "전체답장", "replyall"], ["forward", "전달", "forward"]];
 const mbRe = (p, s) => (new RegExp(`^\\s*${p}\\s*:`, "i").test(s) ? s : `${p}: ${s}`);
 const mbAddrs = v => mailAddrList(v).map(a => a.addr || a.name);
 // To / Cc / subject of a mode, from the mail's card.
@@ -261,9 +267,8 @@ function mbReplyPaint(force) {
   if (slot && slot.dataset.sig === sig && !force && slot.isConnected && slot === tl.lastElementChild) return;
   if (slot) slot.remove();
   slot = el("section", { class: `mbox-reply${b.open ? " open" : ""}`, "aria-label": "답장 쓰기", "data-sig": sig });
-  if (!b.open) {
-    slot.append(el("div", { class: "mbox-modes" }, ...MB_MODES.map(([k, label, ic]) => el("button", { class: "cchip mbox-mode", type: "button", "data-mode": k, onclick: () => mbOpenReply(t, k) }, icon(ic), label))));
-  } else {
+  // closed, the slot stays empty (and hidden): 답장 / 전체답장 / 전달 are icons in the mail's top bar
+  if (b.open) {
     const host = el("div", { class: "mbox-rb" }), quote = mbQuoteText(t);
     const q = quote ? el("details", { class: "mbox-quote" }, el("summary", { text: "이전 메일" }), el("pre", { class: "mbox-qt", text: quote })) : null;
     const form = mbForm(b.st, host, { rows: "6", placeholder: "답장 내용", quote: q });
