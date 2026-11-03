@@ -159,6 +159,19 @@ describe("screens", () => {
 		expect(label).toBe("모니터링, 확인할 것 1개");
 	});
 
+	test("with nothing to count, an unread watch report puts the small dot on 모니터링 at the label's bottom-right corner, and reading it clears the dot", async () => {
+		const v = await open();
+		await v.evaluate(`(NM.items.forEach(m => { m.last_result = "ok"; m.connection = "connected"; }), INTG.items.forEach(i => { i.state = "connected"; i.needs = { drafts: 0, unread: 0, unreplied: 0, sentToday: 0 }; }), NT.items.push({ id: "w-news", kind: "watch", read: false, at: new Date().toISOString(), title: "새 소식" }), monSchedule(), 0)`);
+		await v.evaluate(until(`(b => b && !b.hidden && b.classList.contains("nub"))(document.querySelector("#nav-mon"))`, "dot not shown"));
+		const g = await q<{ text: string; dotRight: number; dotBottom: number; labelRight: number; labelBottom: number }>(v, `const b = document.querySelector("#nav-mon"), l = b.parentElement.querySelector(".nl").getBoundingClientRect(), d = b.getBoundingClientRect();
+			return { text: b.textContent, dotRight: d.right, dotBottom: d.bottom, labelRight: l.right, labelBottom: l.bottom };`);
+		expect(g.text).toBe("");
+		expect(g.dotRight).toBeGreaterThan(g.labelRight);
+		expect(Math.abs(g.dotBottom - g.labelBottom)).toBeLessThanOrEqual(4);
+		await v.evaluate(`(NT.items.find(n => n.id === "w-news").read = true, monSchedule(), 0)`);
+		await v.evaluate(until(`document.querySelector("#nav-mon").hidden`, "dot did not clear"));
+	});
+
 	test("홈 is this computer's only: 답변 필요 lists its monitors failing 3+ times (not a paused one), never another computer's ask, decision or monitor", async () => {
 		const v = await open();
 		// even with the other computer's snapshot in hand (모니터링 read it), 홈 draws nothing of it

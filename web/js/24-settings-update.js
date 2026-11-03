@@ -67,10 +67,19 @@ function ubFit() {
   if (b) root.setProperty("--upd-h", `${b.offsetHeight}px`); else root.removeProperty("--upd-h");
 }
 addEventListener("resize", ubFit);
+// A bar with nothing more to say leaves the way it came: it fades while its height folds (250 ms), then the app moves up; reduced motion = at once.
+const UB_DONE_MS = 2400;
+function ubOut(b) {
+  b.removeAttribute("id");
+  const gone = () => { b.remove(); ubFit(); };
+  if (reducedMotion() || !b.animate) return gone();
+  b.style.overflow = "hidden";
+  b.animate([{ opacity: 1, height: `${b.offsetHeight}px` }, { opacity: 0, height: "0px", paddingTop: "0px", paddingBottom: "0px" }], { duration: 250, easing: "ease", fill: "forwards" }).finished.then(gone, gone);
+}
 function paintUpdBar() {
   const s = updBarState();
   let b = $("#upd-bar");
-  if (!s) { if (b) b.remove(); ubFit(); return; }
+  if (!s) { if (b) ubOut(b); else ubFit(); return; }
   if (!b) { b = el("div", { id: "upd-bar", role: "status", "aria-live": "polite" }); document.body.append(b); }
   b.className = `upd-bar ${s.phase}`;
   const tap = s.phase === "new" || s.phase === "failed";
@@ -78,9 +87,10 @@ function paintUpdBar() {
   const text = s.phase === "failed" ? `업데이트하지 못했어요: ${s.text}${tap ? " · 눌러서 다시 시도" : ""}` : s.phase === "done" && run ? `${s.text} · 지금 버전 ${run.short}` : s.text;
   b.replaceChildren(
     el(tap ? "button" : "span", { class: "ub-tx", ...(tap ? { type: "button", onclick: updNow } : {}), text }),
-    ...(UB_ACTIVE.includes(s.phase) ? [] : [el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: () => ubSee(s.id) })]));
+    ...(UB_ACTIVE.includes(s.phase) || s.phase === "done" ? [] : [el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: () => ubSee(s.id) })]));
   ubFit();
-  if (s.phase === "done" && !UB.doneTimer) UB.doneTimer = setTimeout(() => { UB.doneTimer = 0; ubSee(s.id); }, 8000);
+  // A finished update says 완료 for a moment and then goes by itself (owner 2026-11-03: no × to press); before that the bar stays as it is.
+  if (s.phase === "done" && !UB.doneTimer) UB.doneTimer = setTimeout(() => { UB.doneTimer = 0; ubSee(s.id); }, UB_DONE_MS);
 }
 // The tap: the hub downloads, tests and restarts when idle; the page follows it until the restarted gateway answers.
 async function updNow() {

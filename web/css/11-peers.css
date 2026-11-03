@@ -5,6 +5,14 @@
 #brand-name.pdot, .appbar:not(.back) h1.pdot { position: relative; padding-right: 10px; }
 #brand-name.pdot::after, .appbar:not(.back) h1.pdot::after { content: ""; position: absolute; right: 0; bottom: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .appbar:not(.back) h1.pdot::after { bottom: 6px; }
+/* A computer switcher is there: a small chevron after the name says the name opens it (owner 2026-11-03). On the phone's page title the chevron
+   sits at the title's right end and the computer dot keeps the name's bottom-right corner just before it. */
+.appbar.hasp #brand::after, .appbar.hasp:not(.back) h1::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(45deg); }
+.appbar.hasp #brand::after { margin: 0 2px 4px 2px; }
+.appbar.hasp:not(.back) h1 { position: relative; padding-right: 16px; }
+.appbar.hasp:not(.back) h1::before { position: absolute; right: 2px; top: 50%; margin-top: -6px; }
+.appbar.hasp:not(.back) h1.pdot { padding-right: 26px; }
+.appbar.hasp:not(.back) h1.pdot::after { right: 14px; }
 #brand-name.pneed::after, .appbar:not(.back) h1.pneed::after { background: var(--warn); }
 /* the sheet: one quiet row per computer, no shadow; a compact centered dialog from 700px */
 .ds-sheet.pr-sheet { box-shadow: none; animation: none; }

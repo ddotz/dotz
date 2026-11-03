@@ -23,6 +23,7 @@ const ntPlain = s => stripMarkers(s)
 
 // Phone: the count is part of the chat tab badge.
 function ntPaint() {
+  monAttnSoon();
   convSchedule();
   paintAttn();
   if (current === "monitoring") monSchedule();
