@@ -30,6 +30,8 @@
 // gets its own receipt line, and the answer of the run its result woke goes to exactly that request, whatever order workers finish
 // in. The guess in orphanTarget is only for an answer no link explains (2026-11-04: three requests open, the answers crossed).
 
+import { isSilent } from "./tone.ts";
+
 export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean };
 /** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
 export type OwnerMessage = { target: string; replyTo?: string; at: number; prompt?: Prompt };
@@ -561,6 +563,7 @@ export function createPrompts(deps: PromptDeps) {
 		const t = text.trim();
 		// Keepalive "ok" and "-" have no prompt by design.
 		if (t.length <= 3) return;
+		if (isSilent(t)) return void deps.log(`a no-op answer without a prompt was not posted: ${t.slice(0, 160)}`);
 		// Woken before the worker's result was in: the deferred prompt keeps waiting.
 		if (t === LATER) return void deps.log(`a run without a prompt said ${LATER}; ${openDeferred().length} deferred prompt(s) keep waiting`);
 		const result = nextResult();
@@ -638,9 +641,11 @@ export function createPrompts(deps: PromptDeps) {
 		}
 		if (t === LATER) return;
 		p.done = true;
-		if (p.target && t !== "-") receipted.delete(receiptKey(p.target));
-		if (t !== "-") closeResults(p.replyTo);
-		if (p.target && t !== "-" && deps.covers?.(p.target)) coverSteered(p.target);
+		const silent = isSilent(t);
+		if (silent && t !== "-") deps.log(`a no-op answer for ${p.target ?? "-"} was not posted: ${t.slice(0, 160)}`);
+		if (p.target && !silent) receipted.delete(receiptKey(p.target));
+		if (!silent) closeResults(p.replyTo);
+		if (p.target && !silent && deps.covers?.(p.target)) coverSteered(p.target);
 		save();
 		if (!p.target) return;
 		const target = p.target;
@@ -651,7 +656,7 @@ export function createPrompts(deps: PromptDeps) {
 		// (a schedule text said "tell web" while its final answer goes to "chat", both the main web conversation).
 		const key = head(t);
 		const prior = [...p.sent.filter(s => sameConv(s.target, target)).map(s => s.text), ...held];
-		const repeat = t === "-" || prior.some(h => h.includes(t) || (key.length >= NEAR_MIN && head(h) === key));
+		const repeat = silent || prior.some(h => h.includes(t) || (key.length >= NEAR_MIN && head(h) === key));
 		if (repeat && !held.length) {
 			if (sentHere) deps.clearProgress(target);
 			return;
