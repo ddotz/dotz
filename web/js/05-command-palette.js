@@ -16,7 +16,7 @@ function palResult(c, run) {
   return el("div", { class: `pal-res${tone === "err" ? " err" : ""}`, role: "status" }, head,
     facts.length ? el("div", { class: "list pal-facts" }, ...facts.map(palFact)) : null,
     c.note ? el("div", { class: "cc-note", text: c.note }) : null,
-    acts.length ? el("div", { class: "btns cc-act" }, ...acts.map(a => el("button", { type: "button", class: "btn tonal", title: a.send, text: a.label, onclick: () => run(a.send) }))) : null);
+    acts.length ? el("div", { class: "btns cc-act" }, ...acts.map(a => el("button", { type: "button", class: "btn tonal sm", title: a.send, text: a.label, onclick: () => run(a.send) }))) : null);
 }
 function openPalette() {
   if (document.querySelector("dialog.pal")) return;
