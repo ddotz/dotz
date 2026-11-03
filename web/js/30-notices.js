@@ -509,14 +509,22 @@ function ntIgnoreBtn(n) {
     onclick: ev => { ev.stopPropagation(); ntIgnore(n); }, onkeydown: ev => ev.stopPropagation() }, icon("close"));
 }
 
+// A watch alert's "<what> 89,000원 → 72,000원" line drawn like the 가격 알림 card of the landing page: the old value grey and struck, the new one bold.
+// The characters stay exactly as the watch wrote them (only wrapped in <s> / <em>); a line of another shape is not matched and renders as before.
+const NW_CHANGE = /^(.*?)(\d[\d,.]*\s?[^\d\s→>-]{0,3}) → (\d[\d,.]*\s?[^\d\s→>-]{0,3})$/;
+const nwChangeLine = text => String(text || "").split("\n").map(l => l.replace(/^\s*[-*•]\s+/, "").trim()).find(l => NW_CHANGE.test(l)) || "";
+function nwChangeNode(line) {
+  const m = NW_CHANGE.exec(String(line || "").trim());
+  return m ? el("span", { class: "nw-chg" }, m[1], el("s", { text: m[2] }), " → ", el("em", { text: m[3] })) : null;
+}
 // One row of the home card 답변 필요 (same markup as 08-home.js homeNowRow): tap = the detail sheet, x = ignore.
 // `label` "" is a row that no longer waits (the 알림 tabs, 31-conversations.js bellPaint): no 답변 필요, no x.
 function ntHomeRow(n, label = "답변 필요") {
-  const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open;   // a loose [ask] notice has no decision: its conversation names where it waits
+  const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open, chg = n.kind === "watch" ? nwChangeNode(nwChangeLine(n.text)) : null;   // a loose [ask] notice has no decision: its conversation names where it waits
   return el("div", { class: "hr hrx", "data-nid": n.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": label ? `${title} · ${label}` : title },
       el("span", { class: label ? "dot att" : `dot${n.read ? "" : n.cls === "alert" ? " err" : " un"}` }),
-      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha", text: [n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), ntWhen(n)].filter(Boolean).join(" · ") })),
+      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha" }, ...(chg ? [chg, ` · ${ntWhen(n)}`] : [[n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), ntWhen(n)].filter(Boolean).join(" · ")]))),
       label ? el("span", { class: "hs warn", text: label }) : null),
     label ? ntIgnoreBtn(n) : null);
 }

@@ -104,13 +104,21 @@
 .bell-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }
 .bell-gh { padding: 12px 4px 6px; color: var(--fg-2); font: 600 13px/18px var(--font); }
 .bell-gh:first-child { padding-top: 4px; }
-.bell-none { padding: 32px 16px; color: var(--fg-3); text-align: center; font: 400 14px/20px var(--font); }
+.bell-none { padding: 32px 16px; color: var(--fg-3); text-align: center; font: 400 12px/16px var(--font); }
 .hr .dot.un { background: var(--accent); }
 /* The bell's tab lists: no dividers. What waits for you or is unread sits on the full card, the rest on a faint fill; a 2px gap keeps the rows apart. */
 .bell-list .hn { display: flex; flex-direction: column; gap: 2px; border-radius: 0; background: none; overflow: visible; }
 .bell-list .hr { border-radius: var(--r-ctl); background: color-mix(in srgb, var(--card) 55%, transparent); }
 .bell-list .hr + .hr { box-shadow: none; }
 .bell-list .hr:hover, .bell-list .hr:has(.dot:is(.un, .err, .att)) { background: var(--card); }
+/* One bold line per row (principle 1): only what is unread or waits for you is 600, a read row is 500 with its grey dot; the dot is the spec's 8px and the sub line 12/16 (ui-spec 목록 행). */
+.bell-list .hr .dot { width: 8px; height: 8px; }
+.bell-list .hr .hb { gap: 4px; }
+.bell-list .hr .ha { font-size: 12px; line-height: 16px; }
+.bell-list .hr:not(:has(.dot:is(.un, .err, .att))) .hn1 { font-weight: 500; }
+/* A watch change in a row's sub line or a card (nwChangeNode): the old value grey and struck, the new one the only emphasis (the landing page's 가격 알림 card). */
+.nw-chg s { color: var(--fg-3); }
+.nw-chg em { font-style: normal; font-weight: 600; color: var(--accent); }
 /* In the 알림 timeline every message carried a red dot; it is a quiet grey now, the new one arrives by moving in, not by colour. */
 #v-chat:has(#bell-tabs:not([hidden])) #tl > .bm.alert .mn::before { background: var(--fg-3); opacity: .6; }
 
