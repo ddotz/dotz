@@ -21,18 +21,16 @@ function renderDevices() {
   const box = $("#devices");
   if (!DEV.items) { clear(box).append(DEV.asked && DEV.fail ? emptyNode("연결된 기기를 불러오지 못했어요") : emptyNode("불러오는 중")); return; }
   const row = d => el("button", { type: "button", class: "li tap", "data-dev": d.id, onclick: () => dvOpen(d) },
-    el("span", { class: "lead" }, icon("key")),
+    el("span", { class: "lead" }, el("span", { class: `dot ${d.last_used && Date.now() - Date.parse(d.last_used) < 864e5 ? "ok" : ""}`, "aria-hidden": "true" })),
     el("span", { class: "tx" }, el("div", { class: "hd", text: d.name }), el("div", { class: "sup", text: `${dvDate(d.created)} 연결 · ${dvUsed(d)}` })),
     el("span", { class: "dcs-trail" }, d.current ? el("span", { class: "tag ok", "data-current": "1", text: "이 기기" }) : null, icon("chev", "lead")));
   const self = DEV.items.some(d => d.current);
-  const action = (key, title, sub, onclick) => el("button", { type: "button", class: "li tap", [key]: "1", onclick },
-    el("span", { class: "lead" }, icon("add")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null));
+  // the add action lives in the section header (docs/ui-spec.md 설정 행); a browser without a passkey gets one more row in the list
+  const addSelf = el("button", { type: "button", class: "li tap", "data-dev-self": "1", onclick: () => dvNew(true) },
+    el("span", { class: "lead" }, icon("add")), el("span", { class: "tx" }, el("div", { class: "hd", text: "이 기기에 패스키 추가" }), el("div", { class: "sup", text: "이 브라우저는 패스키 없이 들어왔어요" })));
   clear(box).append(
-    el("div", { class: "sec", text: "이 웹앱을 쓸 수 있는 기기" }),
-    el("div", { class: "list" }, ...(DEV.items.length ? DEV.items.map(row) : [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결된 기기가 없어요" })))])),
-    el("div", { class: "list ms-add" },
-      action("data-dev-new", "새 기기 연결", "휴대폰이나 다른 컴퓨터에서 쓰려면", () => dvNew(false)),
-      self ? null : action("data-dev-self", "이 기기에 패스키 추가", "이 브라우저는 패스키 없이 들어왔어요", () => dvNew(true))));
+    el("div", { class: "sec sec-act" }, el("span", { text: "이 웹앱을 쓸 수 있는 기기" }), el("button", { type: "button", class: "btn tonal sm", "data-dev-new": "1", onclick: () => dvNew(false), text: "새 기기 연결" })),
+    el("div", { class: "list" }, ...(DEV.items.length ? DEV.items.map(row) : [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결된 기기가 없어요" })))]), self ? null : addSelf));
 }
 
 /* ---------- one device: rename, unpair ---------- */
