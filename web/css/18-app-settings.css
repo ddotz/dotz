@@ -5,7 +5,9 @@
 .li-end > .tag { flex: none; }
 .sec.sec-act > .tag { margin-left: 0; }
 .sec.sec-act > .tag + .btn { margin-left: auto; }
-#settings > .sec + .list, #settings > .list + .sec { margin-top: var(--sp-6); }
+/* a section label sits 8px above its card and 24px below the card before it (proto.css .sec) */
+#settings > .list + .sec { margin-top: var(--sp-6); }
+#settings > .sec { margin-bottom: var(--sp-2); }
 #settings > .sec:first-child { margin-top: var(--sp-2); }
 #settings .list + .list { margin-top: var(--sp-3); }
 #settings .sec .tag { height: var(--tag-h); }
