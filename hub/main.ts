@@ -75,7 +75,7 @@ import { setFollowupWake } from "./followup.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { telemetryOff } from "./runtime/omo.ts";
 import { compressResponse } from "./compress.ts";
-import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, approvals, convOfTarget, setRefHandled } from "./outbound.ts";
+import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, approvals, convOfTarget, setRefHandled, reconcileMailCards } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
 import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
@@ -401,8 +401,13 @@ if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 	void updateNow()?.boot().catch(e => log(`held messages not delivered: ${e}`));
 }
 sends.resume();
-// Send-approval cards held before the restart: a conversation with no open card shows its next one (hub/approval-queue.ts).
-void startupSettled.then(() => approvals.releaseAll()).catch(e => log(`approval queue release failed: ${(e as Error).message}`));
+// Cards from before a restart: a bot-written mail card gives way to the app draft of the same mail that waits under it (older installs), then a
+// conversation with no open card shows its next held one (hub/approval-queue.ts). Both passes change nothing the second time.
+void startupSettled
+	.then(() => reconcileMailCards().catch(e => (log(`mail card reconcile failed: ${(e as Error).message}`), 0)))
+	.then(n => void (n && log(`approval cards: ${n} bot mail card(s) replaced by their waiting draft`)))
+	.then(() => approvals.releaseAll())
+	.catch(e => log(`approval queue release failed: ${(e as Error).message}`));
 const resumedLanes = restoreLanes();
 discord.recordLaneChannels();
 for (const name of resumedLanes) void send(`lane:${name}`, "게이트웨이가 재시작돼서 멈췄던 작업을 이어서 하고 있어요.").catch(e => log(`lane resume notice failed: ${e}`));
