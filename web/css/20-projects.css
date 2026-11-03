@@ -71,7 +71,7 @@
 .pm-o-foot { padding: 0 4px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 
 /* the page menu (⋯) beside 프로젝트 채팅: the app's 40px page-header icon button */
-.pmv-hact .ib.pmv-more { width: 40px; height: 40px; border-radius: 50%; background: var(--card); color: var(--fg-2); }
+.pmv-hact .ib.pmv-more { width: 40px; height: 40px; border-radius: 50%; background: var(--layer); color: var(--fg-2); }
 .pmv-hrow .btn.tonal { background: var(--card); }
 .pmv-hrow .btn.tonal:hover { background: var(--card-hover); }
 .pmv-hact .ib.pmv-more:hover { background: var(--card-hover); color: var(--fg); }
