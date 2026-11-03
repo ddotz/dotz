@@ -165,7 +165,9 @@ async function pqLoad() {
   monSchedule();
 }
 const pqSoon = () => { clearTimeout(PQ.t); PQ.t = setTimeout(pqLoad, 1000); };
-const pqOpen = () => { if (Date.now() - PQ.at > 5000) pqLoad(); };
+// A function declaration, not a const: go("monitoring") calls it from 30-monitoring.js while the boot still runs, and this file's
+// top-level consts are not initialized yet (a const here threw "Cannot access 'pqOpen' before initialization" on a #monitoring start).
+function pqOpen() { if (Date.now() - PQ.at > 5000) pqLoad(); }
 setInterval(() => { if ((current === "monitoring" || monCtx) && !document.hidden) pqLoad(); }, 60_000);
 
 // What a peer writes into its conversations (the answer to a message sent to its monitor, a mail's gateway notice such as "the bot is paused", the held
