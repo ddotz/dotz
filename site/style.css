@@ -126,6 +126,11 @@ figcaption {
   max-width: 100%;
 }
 
+/* 한 줄에 한 문장·한 생각: 다른 내용의 절을 같은 줄에 잇지 않아요. */
+.ln {
+  display: block;
+}
+
 ul,
 ol {
   margin: 0;
