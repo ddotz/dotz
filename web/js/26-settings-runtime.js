@@ -5,7 +5,7 @@ const RT_ROLE = { orchestrator: "어시스턴트", lanes: "세션" };
 const RT_RESULT = { ok: ["통과", "ok"], adapted: ["대체", "pri"], disabled: ["끔", ""], unsupported: ["미지원", "warn"], fail: ["실패", "err"] };
 async function loadRuntimes(refresh) {
   try { RT = await api(`/api/runtimes${refresh ? "?refresh=1" : ""}`); } catch { return; }
-  if (inSettings()) renderSettings();
+  if (current === "settings" || current === "runtime") renderSettings();
 }
 function rtSection() {
   if (!RT) return [];

@@ -46,13 +46,13 @@ test("a device with the app sees one switch per gateway; flipping the other gate
 	await waitFor(`typeof pushLoad === "function" && typeof renderSettings === "function"`);
 	await view.evaluate(`pushLoad()`);
 	await waitFor(`PWA.gw && PWA.gw.gateways.length === 2`);
-	await view.evaluate(`go("settings")`);
+	await view.evaluate(`go("notifications")`);
 	// The class switches (답변 필요 알림 ... , data-k) share the section; the gateway rows are the other 알림 switches.
 	const rows = `[...document.querySelectorAll('[role=switch][aria-label$="알림"]:not([data-k])')]`;
 	await waitFor(`${rows}.length === 2`);
 	expect(await view.evaluate(`${rows}.map(b => b.getAttribute("aria-label") + ":" + b.getAttribute("aria-checked")).join("|")`)).toBe("맥미니 알림:true|맥북 알림:true");
 	// no description lines under the gateway rows, and no button that would subscribe this browser
-	expect(await view.evaluate(`(() => { const s = [...document.querySelectorAll(".sec")].find(x => x.textContent === "앱과 알림"); const l = s.nextElementSibling; return [[...l.querySelectorAll(".li")].filter(li => li.querySelector('[role=switch]:not([data-k])')).reduce((n, li) => n + li.querySelectorAll(".sup").length, 0), s.parentElement.querySelectorAll(".note").length, l.textContent.includes("알림 켜기")].join("/"); })()`)).toBe("0/0/false");
+	expect(await view.evaluate(`(() => { const s = [...document.querySelectorAll(".sec")].find(x => x.textContent === "이 기기"); const l = s.nextElementSibling; return [[...l.querySelectorAll(".li")].filter(li => li.querySelector('[role=switch]:not([data-k])')).reduce((n, li) => n + li.querySelectorAll(".sup").length, 0), s.parentElement.querySelectorAll(".note").length, l.textContent.includes("알림 켜기")].join("/"); })()`)).toBe("0/0/false");
 	expect(await view.evaluate(`document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
 	await view.evaluate(`document.querySelector('[role=switch][aria-label$="알림"]:not([data-k])').closest(".list").scrollIntoView({ block: "center" })`);
 

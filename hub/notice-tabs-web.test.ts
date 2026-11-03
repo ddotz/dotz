@@ -151,7 +151,7 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 		puts = [];
 		classes = { ask: true, alert: true, result: true, news: true, conv: true, log: false };
 		const v = await boot(width, height);
-		await run(v, `go("settings")`);
+		await run(v, `go("notifications")`);
 		await waitFor(v, `document.querySelectorAll(".hs-sw[data-k]").length === 6`);
 		expect(await q<string[][]>(v, `return [...document.querySelectorAll(".hs-sw[data-k]")].map(b => [b.dataset.k, b.getAttribute("aria-checked"), b.closest(".li").querySelector(".hd").textContent])`)).toEqual([
 			["ask", "true", "답변 필요"], ["alert", "true", "경고"], ["result", "true", "결과"], ["news", "true", "새 소식"], ["conv", "true", "대화"], ["log", "false", "진행"]]);
