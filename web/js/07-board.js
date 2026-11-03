@@ -104,9 +104,11 @@ function makeBoard(container, key, opts = {}) {
     for (const c of bOrder([...list], first)) bPush(list, c);
     bCompact(list, first, ghost);
   }
+  const shown = new Set();   // card ids already drawn: only a card that newly arrives rises in
   function set(items, keep = () => false) {
     if (act) { pending = [items, keep]; return; }
     cur = items;
+    const fresh = freshKeys(shown, items.map(i => i.id));
     const ids = new Set(items.map(i => i.id));
     const placed = [];
     for (const it of items) if (saved[it.id]) placed.push({ id: it.id, ...bFit(saved[it.id], it) });
@@ -126,7 +128,7 @@ function makeBoard(container, key, opts = {}) {
       // A card whose markup did not change keeps its node, so scroll positions and hover survive a re-render.
       if (old !== it.node && !(old && old.outerHTML === it.node.outerHTML)) {
         const top = old ? old.scrollTop : 0, oh = old && old.querySelector(it.head), refocus = !!oh && document.activeElement === oh;
-        if (old) old.replaceWith(it.node); else w.prepend(it.node);
+        if (old) old.replaceWith(it.node); else { w.prepend(it.node); if (fresh.has(it.id)) motionIn(it.node); }
         if (top) it.node.scrollTop = top;
         if (refocus && h0) h0.focus({ preventScroll: true });
       }

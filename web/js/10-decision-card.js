@@ -514,20 +514,47 @@ function choicesNode(sig, pc, at) {
   });
   return box;
 }
+// Decision cards already docked: only one that really arrives rises in (not on the first paint, nor when another conversation opens).
+const DC_SEEN = new Set(); let dcShownT = "", dcLast = null, dcLeaveT = 0, dcOut = null;
+// An answered card does not vanish the instant the answer lands: it says 보냈어요 for a beat, then fades out (no new request, only the state it already has).
+function dcLeave(box, dc) {
+  const picks = DC.picks[dc.key] || [], st = DC.st[dc.key];
+  if (box.dataset.st !== st) { motionSwap(box, () => renderDecision(box, dc, picks, DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i])))); box.dataset.st = st; }
+  clearTimeout(dcLeaveT);
+  if (st !== "sent") return;
+  dcLeaveT = setTimeout(async () => {
+    if (DC.cur) return;
+    dcOut = await motionOut(box);
+    if (DC.cur) return;
+    if (dcOut && dcOut.cancel) dcOut.cancel();
+    dcOut = null; dcLast = null; box.hidden = true; delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; clear(box);
+  }, 1200);
+}
 function paintDecision() {
   const box = $("#dcard");
   if (!box) return;
   // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
   const dc = isFixedT(target) ? null : decisionOf(target), had = !!DC.cur;
   DC.cur = dc;
+  if (dc) { dcLast = dc; clearTimeout(dcLeaveT); if (dcOut && dcOut.cancel) dcOut.cancel(); dcOut = null; }
+  const arrived = S && freshKeys(DC_SEEN, dc ? [...DC_SEEN, dc.key] : [...DC_SEEN]).has(dc && dc.key) && dcShownT === target;
+  if (S) dcShownT = target;
   const waiting = dc || isFixedT(target) ? null : dcWaitingCard(target);
   if (waiting) dcPointer(box, waiting);
-  else if (!dc) { box.hidden = true; delete box.dataset.sig; delete box.dataset.key; clear(box); }
+  else if (!dc && dcLast && !box.hidden && box.dataset.key === dcLast.key && DC.st[dcLast.key]) dcLeave(box, dcLast);
+  else if (!dc) { box.hidden = true; delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; clear(box); }
   else {
     const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
     const sig = dcSig(dc, picks, step);
     box.hidden = false;
-    if (box.dataset.sig !== sig) { renderDecision(box, dc, picks, step); box.dataset.sig = sig; box.dataset.key = dc.key; }
+    if (box.dataset.sig !== sig) {
+      // The answer goes out: this same card turns into 보내는 중 / 보냈어요 in place instead of being replaced.
+      const st = DC.st[dc.key] || "", swap = box.dataset.key === dc.key && (box.dataset.st || "") !== st;
+      const draw = () => renderDecision(box, dc, picks, step);
+      if (swap) motionSwap(box, draw); else draw();
+      box.dataset.sig = sig; box.dataset.key = dc.key; box.dataset.st = st;
+      if (arrived) motionIn(box);
+    }
   }
   syncInlineChoices();
   dkPaint();

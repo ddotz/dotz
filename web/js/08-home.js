@@ -261,6 +261,8 @@ function homeLimitRow(d) {
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: what })), d.next ? el("span", { class: "ha", text: d.next }) : null),
     el("span", { class: "hs", text: limitBadge(d.resume_at) }));
 }
+// Rows of 홈 already shown: only a row that newly appears rises in (not the first paint, nor before the lists have loaded).
+const HOME_ROWS = new Set();
 function renderHomeNow() {
   const box = $("#home-now");
   if (!box) return;
@@ -290,6 +292,10 @@ function renderHomeNow() {
     ...(restT.length ? [el("div", { class: "hn-h" }, el("h2", { text: "대기 중" })), el("div", { class: "hn", "data-k": "waiting" }, ...restT.map(restRow))] : []),
     ...(ended.length ? [el("div", { class: "hn-h" }, el("h2", { text: "최근 끝난 작업" })), el("div", { class: "hn", "data-k": "ended-work" }, ...ended.map(workRow))] : []),
     endedGroup() || "");
+  if (!S || !NT.loaded) return;
+  const rows = [...box.querySelectorAll(".hr, .ntg")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.mon || r.dataset.group || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
+  const fresh = freshKeys(HOME_ROWS, keys);
+  rows.forEach((r, i) => { if (fresh.has(keys[i])) motionIn(r); });
 }
 // The home screen always opens at its top: on load, on the tab, and when the installed app comes back to the front (23-installable-app-web.js, 99-boot.js).
 const homeTop = () => { if (current === "home") { $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled"); } };
