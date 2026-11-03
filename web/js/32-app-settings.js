@@ -176,10 +176,9 @@ function asRemoveNode(app) {
     el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-as-rm": "go", onclick: () => asRemoveGo(app) }, "제거 확인"), el("button", { class: "btn tonal", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
 }
 // 앱 추가: the last row of the 앱 group opens a sheet. It lists only the apps this computer (and each other computer, labeled with its name) had and
-// the owner switched off or removed, each with 다시 켜기, then one 새로 추가하기: the chat box opens on the main orchestrator with one plain question
-// (어떤 앱을 연결할까요?) and no template list; the bot reads the matching request in docs/app-templates when the owner names the app
-// (owner 2026-10-26). 다시 켜기 of an app that needs reconnecting still fills that one app's request (GET /api/app-templates, hub/app-templates.ts).
-const AT = { items: [], key: "", h: null };
+// the owner switched off or removed, each with 다시 켜기, under one box on top: what he types there is sent to the main orchestrator at once and
+// the bot reads the matching request in docs/app-templates (owner 2026-10-26; the box instead of a button, owner 11-03). 다시 켜기 of an app that needs reconnecting still fills that one app's request (GET /api/app-templates, hub/app-templates.ts).
+const AT = { items: [], key: "", h: null, draft: "" };
 const asOffApps = () => {
   const peers = PQ.list.filter(p => p && p.url), me = peers.length ? pqSelf() : "";
   return [...INTG.available.map(a => ({ ...a, pc: null, machine: me })),
@@ -222,39 +221,48 @@ const asAddHint = () => { const off = asOffApps().map(a => a.label); return off.
 async function asTplLoad() {
   try { AT.items = (await api("/api/app-templates")).items || []; } catch { AT.items = []; }
 }
+// A middle sheet, not full screen (docs/ui-spec.md 시트·대화창): PC a centered box, phone a sheet from the bottom. The box on top takes the request.
 async function asAddSheet() {
   if (AT.h) return;
-  const h = AT.h = fsOpen({ labelledby: "as-add-t", onClose: () => { if (AT.h === h) AT.h = null; } });
+  const h = AT.h = fsOpen({ labelledby: "as-add-t", cls: "mid", onClose: () => { if (AT.h === h) AT.h = null; } });
   asAddPaint();
+  const box = h.box.querySelector("[data-k='new-app-text']");
+  if (box) box.focus({ preventScroll: true });
 }
 function asAddPaint() {
   const h = AT.h;
   if (!h) return;
   const off = asOffApps();
   for (const a of off) if (a.iconPath && !ICONS[a.icon]) ICONS[a.icon] = a.iconPath;
+  const box = el("textarea", { class: "as-new-in", rows: "3", "data-k": "new-app-text", placeholder: "어떤 앱을 연결하거나 만들까요?", "aria-label": "연결하거나 만들 앱",
+    oninput: ev => { AT.draft = ev.currentTarget.value; },
+    onkeydown: ev => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); asNewSend(); } } });
+  box.value = AT.draft || "";
   clear(h.box).append(
     fsHead([el("h2", { class: "fs-t", id: "as-add-t", text: "앱 관리" })], { close: () => h.close() }),
-    el("div", { class: "fs-body" },
+    el("div", { class: "fs-body" }, box,
       ...(off.length ? [el("div", { class: "as-sec", text: "꺼 둔 앱" }), ...off.flatMap(a => [el("div", { class: "as-row", "data-app": a.key },
         el("span", { class: "as-ic", "aria-hidden": "true" }, icon(a.icon)),
         el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.label }), el("span", { class: "as-h", text: a.machine ? `${a.machine} · 꺼져 있어요` : "꺼져 있어요" })),
         el("span", { class: "as-btns" },
-          el("button", { class: "btn tonal", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기"),
-          el("button", { class: "btn tonal", type: "button", "data-k": `del:${a.key}`, "aria-expanded": String(asDelOpen(a)), onclick: () => asDelOpen(a) ? (AD.del = null, asAddPaint()) : asDelAsk(a) }, "삭제"))),
-        ...(asDelOpen(a) ? [asDelNode(a)] : [])])] : []),
-      el("div", { class: "as-sec", text: "새로 추가" }),
-      el("div", { class: "as-tpls" }, el("button", { class: "btn", type: "button", "data-k": "new-app", onclick: asNewAsk }, "새로 추가하기"))));
+          el("button", { class: "btn tonal inrow", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기"),
+          el("button", { class: "btn text inrow", type: "button", "data-k": `del:${a.key}`, "aria-expanded": String(asDelOpen(a)), onclick: () => asDelOpen(a) ? (AD.del = null, asAddPaint()) : asDelAsk(a) }, "삭제"))),
+        ...(asDelOpen(a) ? [asDelNode(a)] : [])])] : [])),
+    el("div", { class: "fs-ft" }, el("button", { class: "btn", type: "button", "data-k": "new-app", onclick: asNewSend }, "보내기")));
 }
-// 새로 추가하기: the main chat with the start of the request in the box and the question above it; the owner names the app and sends.
-const NEW_ASK = "어떤 앱을 연결할까요?", NEW_DRAFT = "연결할 앱: ";
-function asNewAsk() {
+// 보내기: the request goes to the main orchestrator as the owner's message ("연결할 앱: <what he typed>", docs/app-templates) through the chat's
+// own send, and the main chat opens on it, so the work that starts is right there.
+const NEW_DRAFT = "연결할 앱: ";
+async function asNewSend() {
+  const text = (AT.draft || "").trim();
+  if (!text) { const box = AT.h && AT.h.box.querySelector("[data-k='new-app-text']"); if (box) box.focus(); return; }
+  AT.draft = "";
   if (AT.h) AT.h.close(false);
-  ts("main").draft = NEW_DRAFT;
+  asTplEnd();
+  ts("main").draft = NEW_DRAFT + text;
   go("chat", "main");
-  AT.key = "ask";
-  ta.value = NEW_DRAFT; saveDraft(); autosize(); updateHints();
-  asTplPaint();
-  ta.focus({ preventScroll: true }); ta.setSelectionRange(NEW_DRAFT.length, NEW_DRAFT.length);
+  ta.value = NEW_DRAFT + text;
+  await sendChat();
 }
 async function asNewApp(key) {
   if (!AT.items.length) await asTplLoad();
@@ -283,7 +291,7 @@ function asTplPaint() {
   }
   row.hidden = false; note.hidden = false;
   // The {{ }} fields are the owner's own details: the bot asks for them in the secure form after the message is sent, so they can stay as they are.
-  note.textContent = AT.key === "ask" ? NEW_ASK : "{{ }} 칸은 그대로 보내도 돼요. 보내면 보안 입력 양식으로 물어봐요";
+  note.textContent = "{{ }} 칸은 그대로 보내도 돼요. 보내면 보안 입력 양식으로 물어봐요";
 }
 function asTplEnd() { AT.key = ""; asTplPaint(); }
 function asTplSync() { if (AT.key && (target !== "main" || current !== "chat")) asTplEnd(); }
