@@ -182,6 +182,9 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 900]] as con
 		await shot(v, `accounts-login-claude-${w}.png`);
 		await run(v, `[...document.querySelectorAll('dialog[open] button')].find(b => b.textContent.trim() === "취소").click()`);
 		await waitFor(v, `!document.querySelector("dialog[open]")`);
+		// 취소 cancels the login; its call can land after the dialog's close fade, so wait for it here, not in the next test
+		for (let i = 0; i < 100 && !calls.some(c => c[0] === "cancel"); i++) await Bun.sleep(20);
+		expect(calls).toContainEqual(["cancel", "anthropic"]);
 	});
 
 	test(`${label} ${w}px: tapping another provider's account offers its pin, which is saved per provider`, async () => {

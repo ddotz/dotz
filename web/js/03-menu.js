@@ -85,7 +85,9 @@ function showMenu(anchor, items, { value, onPick, sheet }) {
     }
   };
   const outside = ev => { if (!node.contains(ev.target) && !anchor.contains(ev.target)) closeMenu(false); };
-  const onScroll = ev => { if (!node.contains(ev.target)) closeMenu(false); };
+  // only a scroll that moves the anchor closes it: a late scroll event from before the menu opened, or a list scrolling elsewhere, leaves it open
+  const at0 = anchor.getBoundingClientRect();
+  const onScroll = ev => { if (node.contains(ev.target)) return; const r = anchor.getBoundingClientRect(); if (Math.abs(r.top - at0.top) > 2 || Math.abs(r.left - at0.left) > 2) closeMenu(false); };
   const onResize = () => closeMenu(false);
   const L = [[document, { type: "keydown", fn: keydown }, true], [document, { type: "pointerdown", fn: outside }, true], [window, { type: "scroll", fn: onScroll }, true], [window, { type: "resize", fn: onResize }, false]];
   for (const [t, f, o] of L) t.addEventListener(f.type, f.fn, o);
