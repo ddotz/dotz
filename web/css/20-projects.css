@@ -15,7 +15,7 @@
 /* one line at every width: the chips scroll sideways instead of wrapping */
 .pl-chips { display: flex; flex-wrap: nowrap; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .pl-chips::-webkit-scrollbar { display: none; }
-.pl-chips .mr-f { flex: none; height: 28px; padding: 0 12px; border-radius: 16px; background: var(--card); color: var(--fg-2); font: 500 13px/20px var(--font); }
+.pl-chips .mr-f { flex: none; height: 28px; padding: 0 12px; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font: 500 13px/20px var(--font); }
 .pl-chips .mr-f:hover { background: var(--card-hover); }
 .pl-chips .mr-f.on, .pl-chips .mr-f.on:hover { background: var(--fg); color: var(--bg); }
 .pl-chips .mr-fn { margin-left: 4px; font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
@@ -23,7 +23,7 @@
 .pl-list > .empty { background: transparent; }
 .pl-empty-a { margin-top: 12px; }
 .pl-list .cv-more { border-top: 1px solid var(--line); }
-.pl-row { display: flex; gap: 12px; width: 100%; min-width: 0; min-height: 48px; padding: 10px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
+.pl-row { display: flex; gap: 12px; width: 100%; min-width: 0; min-height: var(--row-h); padding: var(--row-py) var(--row-px); border: 0; background: transparent; color: inherit; text-align: left; }
 .pl-row + .pl-row { border-top: 1px solid var(--line); }
 .pl-row:hover { background: var(--card-hover); }
 /* the open project: the same selected fill as the chat list (.cv-row.on) */
@@ -44,7 +44,7 @@
 .pl-bar.done i { background: var(--ok); }
 .pl-pn { flex: none; color: var(--fg-3); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
 .pl-gh { padding: 12px 16px 4px; color: var(--fg-3); font: 500 12px/16px var(--font); }
-.pl-row.sub { min-height: 48px; padding: 10px 16px; }
+.pl-row.sub { min-height: var(--row-h); padding: var(--row-py) var(--row-px); }
 .pl-row.sub .pl-n { font-weight: 500; }
 
 /* ---- level 2: the overview ---- */
@@ -55,7 +55,7 @@
 .pm-need-s { color: var(--fg-2); font-size: 12px; line-height: 16px; }
 .pm-calm-t.sup { color: var(--fg-3); font-weight: 400; font-size: 14px; }
 .pm-rows { display: flex; flex-direction: column; background: var(--card); border-radius: var(--r-card); overflow: hidden; }
-.pm-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 12px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
+.pm-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 10px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
 .pm-row + .pm-row { border-top: 1px solid var(--line); }
 .pm-row:hover { background: var(--card-hover); }
 .pm-row-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }

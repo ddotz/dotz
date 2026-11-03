@@ -11,7 +11,7 @@
 .od-sg { min-height: 36px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--fg-3); font: 600 14px/20px var(--font); }
 .od-sg[aria-pressed="true"] { background: var(--card); color: var(--fg); box-shadow: 0 1px 3px rgb(0 0 0 / .14); }
 .od-stage, .od-draftcol { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
-.od-orig { display: flex; flex-direction: column; min-width: 0; color: var(--fg); transition: opacity .25s ease, transform .25s ease, visibility 0s; }
+.od-orig { display: flex; flex-direction: column; min-width: 0; color: var(--fg); transition: opacity var(--m-slow) var(--m-ease), transform var(--m-slow) var(--m-ease), visibility 0s; }
 .od-orig[inert] { visibility: hidden; transition-delay: 0s, 0s, .25s; }
 .od-oh { flex: none; display: flex; align-items: center; gap: 8px; padding: 16px 8px 8px 24px; }
 .od-ot { flex: 1; min-width: 0; font: 700 18px/26px var(--font); letter-spacing: -.02em; }
@@ -46,12 +46,12 @@
 .kk-drafts:has(.od-on) { max-height: min(62dvh, 520px); }
 
 @media (min-width: 900px) {
-  .fs-card.tall.od-host { --od-p: clamp(300px, calc(100vw - 784px), 480px); position: relative; overflow: visible; transition: transform .25s ease, width .25s ease; }
+  .fs-card.tall.od-host { --od-p: clamp(300px, calc(100vw - 784px), 480px); position: relative; overflow: visible; transition: transform var(--m-slow) var(--m-ease), width var(--m-slow) var(--m-ease); }
   .fs-card.tall.od-host.od-on { width: min(720px, calc(100vw - 64px - var(--od-p))); transform: translateX(calc((var(--od-p) + 16px) / 2)); }
   .fs-card .od-orig { position: absolute; top: 0; bottom: 0; right: calc(100% + 16px); width: var(--od-p); background: var(--card); border-radius: 20px; box-shadow: var(--float); overflow: hidden; opacity: 0; transform: translateX(24px); }
   .od-on > .od-stage > .od-orig { opacity: 1; transform: none; }
   .od-cwrap .od-stage { flex-direction: row; align-items: stretch; }
-  .od-cwrap .od-orig { flex: 0 0 0; opacity: 0; transform: translateX(-16px); overflow: hidden; transition: flex-basis .25s ease, margin .25s ease, opacity .25s ease, transform .25s ease, visibility 0s; }
+  .od-cwrap .od-orig { flex: 0 0 0; opacity: 0; transform: translateX(-16px); overflow: hidden; transition: flex-basis var(--m-slow) var(--m-ease), margin var(--m-slow) var(--m-ease), opacity var(--m-slow) var(--m-ease), transform var(--m-slow) var(--m-ease), visibility 0s; }
   .od-cwrap.od-on .od-orig { flex-basis: 45%; margin-right: 12px; opacity: 1; transform: none; }
   .od-cwrap .od-orig[inert] { transition-delay: 0s, 0s, 0s, 0s, .25s; }
   .od-cwrap .kk-draft { flex: 1 1 0; min-width: 0; }
@@ -63,7 +63,7 @@
   .od-seg { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 3px; border-radius: 11px; background: var(--layer); }
   .od-stage { position: relative; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); overflow: hidden; }
   .od-draftcol, .od-orig, .od-cwrap .kk-draft { grid-area: 1 / 1; min-width: 0; min-height: 0; }
-  .od-draftcol, .od-cwrap .kk-draft { transition: transform .25s ease, visibility 0s; }
+  .od-draftcol, .od-cwrap .kk-draft { transition: transform var(--m-slow) var(--m-ease), visibility 0s; }
   .od-draftcol[inert], .od-cwrap .kk-draft[inert] { visibility: hidden; transition-delay: 0s, .25s; }
   .od-on > .od-stage > .od-draftcol, .od-on > .od-stage > .kk-draft { transform: translateX(-100%); }
   .od-orig { align-self: stretch; transform: translateX(100%); }

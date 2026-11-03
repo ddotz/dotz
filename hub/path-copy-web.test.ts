@@ -142,7 +142,7 @@ for (const [name, width] of [["390", 390], ["1280", 1280]] as const) {
 		expect(got.result.map(b => b.label)).toEqual(["열기", "나중에", "무시"]);
 		for (const b of [...got.draft, ...got.result]) {
 			expect(b.radius).toBe("10px");
-			expect(b.h).toBe(width === 390 ? 44 : 40);
+			expect(b.h).toBe(width === 390 ? 44 : 36);
 		}
 		expect(got.draft[0]!.bg).not.toBe(got.draft[1]!.bg);
 		expect(got.draft[2]!.bg).toBe("rgba(0, 0, 0, 0)");

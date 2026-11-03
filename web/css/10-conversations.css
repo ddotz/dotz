@@ -6,7 +6,7 @@
 #v-chat.cv-listing > .cv-side, #v-monitoring.cv-listing > .cv-side { display: block; }
 #v-chat.cv-listing > :not(.cv-side), #v-monitoring.cv-listing > :not(.cv-side) { display: none; }
 
-.cv-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 48px; padding: 6px 16px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
+.cv-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: var(--row-h); padding: var(--row-py) 16px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
 .cv-row + .cv-row { margin-top: 2px; }
 .cv-side .cv-bar { border-bottom: 0; }
 /* the open conversation: a small accent dot in the row's left padding (the slot every row already has, so text never shifts); phone only — the wide layout already highlights the row */
@@ -29,7 +29,7 @@
 /* the unread count: 11px, one step up from the tab bar's 10.5 (docs/ui-spec.md 배지·점) */
 .cv-row .nb { min-width: 18px; height: 18px; border-radius: 9px; font-size: 11px; line-height: 18px; }
 /* a session under its project: indented, smaller avatar; the group label for sessions started from chat */
-.cv-row.sub { min-height: 44px; padding-left: 32px; }
+.cv-row.sub { min-height: 40px; padding-left: 32px; }
 .cv-row.sub .cv-av { width: 28px; height: 28px; }
 .cv-row.sub .cv-n { font-size: 14px; }
 .cv-gh { padding: 12px 16px 4px; color: var(--fg-3); font: 500 12px/16px var(--font); }
@@ -52,7 +52,7 @@
 .tl-in > .cv-new { display: flex; align-items: center; gap: 12px; margin: 8px 0 0; color: var(--accent); font: 600 12px/16px var(--font); }
 .tl-in > .cv-new::before, .tl-in > .cv-new::after { content: ""; flex: 1; height: 1px; background: var(--line-2); }
 /* a gateway system line (11-todo-strip.js sysLine): small, muted and centered like the divider above, no bubble */
-.tl-in > .cv-sys { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 6px; align-self: center; width: fit-content; max-width: 100%; margin: 8px auto 0; padding: 2px 10px; border: 0; border-radius: 999px; background: none; color: var(--fg-3); font: 500 12px/16px var(--font); text-align: center; overflow-wrap: anywhere; }
+.tl-in > .cv-sys { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 6px; align-self: center; width: fit-content; max-width: 100%; margin: 8px auto 0; padding: 2px 10px; border: 0; border-radius: var(--r-ctl); background: none; color: var(--fg-3); font: 500 12px/16px var(--font); text-align: center; overflow-wrap: anywhere; }
 .tl-in > button.cv-sys { cursor: pointer; }
 .tl-in > button.cv-sys:hover { background: var(--line-2); color: var(--fg-2); }
 .cv-sys .ic { width: 14px; height: 14px; flex: none; }

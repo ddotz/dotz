@@ -20,12 +20,12 @@
 .dcard.fold .dc-hd { padding-bottom: 12px; }
 .dc-fold { flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--fg-3); }
 .dc-fold:hover { background: var(--hover); }
-.dc-fold .ic { width: 18px; height: 18px; transition: transform .15s; }
+.dc-fold .ic { width: 18px; height: 18px; transition: transform var(--m-fast) var(--m-ease); }
 .dcard.fold .dc-fold .ic { transform: rotate(180deg); }
 .dc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 0 8px 8px; overflow-y: auto; overscroll-behavior: contain; }
 .dc-steps { flex: none; display: flex; gap: 6px; padding-bottom: 2px; overflow-x: auto; scrollbar-width: none; }
 .dc-steps::-webkit-scrollbar { display: none; }
-.dc-chip { flex: none; max-width: 70%; height: var(--btn-h-sm); padding: 0 12px; border: 0; border-radius: 999px; background: var(--card); color: var(--fg-2); font: inherit; font-size: 13px; line-height: var(--btn-h-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dc-chip { flex: none; max-width: 70%; height: var(--btn-h-sm); padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font: inherit; font-size: 13px; line-height: var(--btn-h-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dc-chip.got { color: var(--fg); }
 .dc-chip.on { background: var(--fg); color: var(--bg); }
 .dc-sub, .dcm-sub { padding: 2px 4px 0; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 600; }
@@ -69,7 +69,7 @@
 .td-bar .td-g { margin-top: 0; }
 .td-cur { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .td-n { flex: none; color: var(--fg-3); font-size: 12.5px; font-variant-numeric: tabular-nums; }
-.td-ch { flex: none; width: 16px; height: 16px; color: var(--fg-3); transition: transform .15s; }
+.td-ch { flex: none; width: 16px; height: 16px; color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
 .td-bar[aria-expanded="true"] .td-ch { transform: rotate(180deg); }
 .td-list { max-height: min(40dvh, 320px); padding: 0 12px 10px; overflow-y: auto; overscroll-behavior: contain; }
 .td-ph { margin: 10px 0 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 400; }

@@ -53,20 +53,38 @@ Korean wraps at phrase boundaries (`word-break: keep-all` on body, long tokens s
 ## Motion
 
 Quiet screen: nothing moves without a cause, nothing loops or decorates. Causes and their one motion, helpers in
-`web/js/01-motion.js` (Web Animations, transform/opacity only, 150-300ms, `--m-ease` ease-out):
+`web/js/01-motion.js` (Web Animations, transform/opacity only, tokens below, `--m-ease` ease-out):
+
+| Token | Value | For |
+|---|---|---|
+| `--m-fast` | 150ms | press / hover / leave, small transitions |
+| `--m-base` | 220ms | arrive, change in place, sheet opens |
+| `--m-slow` | 300ms | large surfaces, progress bar width |
+| `--m-ease` | `cubic-bezier(.2, .7, .2, 1)` | every transition and animation; `EASE` in 01-motion.js |
 
 - something arrives (decision card, answer, sheet): `motionIn(el)` rise 8px + fade; new row at the top of a list: `motionIn(el, "top")`, picked with `freshKeys(store, keys)` so a first paint never animates
 - the same thing changes state in place (보내기 -> 보냈어요, a task finishing): `motionSwap(el, change)`
 - something leaves (sheet, dismissed row): `await motionOut(el)`, then remove it
 - a count changes: `rollCount(el, n)` rolls only the changed digit
 
-`prefers-reduced-motion: reduce` makes every one of them an instant change.
+`prefers-reduced-motion: reduce` turns every transition and animation off (pseudo-elements included) and makes each helper an
+instant change. The product has no motion on/off setting: the system setting is the only switch.
 
 ## Per-form spec
 
-Heights, padding, gaps, type steps and don'ts for each display form (list row, card, settings row, sheet, button, badge, empty, toast, chips, field, progress) live in `docs/ui-spec.md`. Button size tiers: `--btn-h` 40 (`.btn`), `--btn-h-sm` 36 (`.btn.sm`), `--btn-h-row` 32 (`.btn.inrow`); settings row = `.li` + `.li-end`; row-level add action = `.sec.sec-act` > `.btn.tonal.sm`. Screens use these; no one-off heights.
+Heights, padding, gaps, type steps and don'ts for each display form (list row, card, settings row, sheet, button, badge, empty, toast, chips, field, progress) live in `docs/ui-spec.md`. Height tokens: `--row-h` 44 (rows), `--menu-h` 30 / `--menu-h-sheet` 44 (menu items), `--sheet-h` 44 (sheet items), `--btn-h` 36 (`.btn`), `--btn-h-sm` 32 (`.btn.sm`), `--btn-h-row` 28 (`.btn.inrow`, 40px touch target via padding); settings row = `.li` + `.li-end`; row-level add action = `.sec.sec-act` > `.btn.tonal.sm`. Screens use these; no one-off heights.
 
 ## Shape and space
 
-`--r-card` 18px (cards, lists, dialogs 20px), `--r-ctl` 10px (buttons, fields), chips 16px (pill). Card padding 20px,
-list rows 10/16px, min row height 48px. No shadows on cards; menus and dialogs keep one soft float shadow.
+| Token | Value | For |
+|---|---|---|
+| `--r-card` | 18px | cards and lists |
+| `--r-sheet` | 20px | sheets and dialogs |
+| `--r-menu` | 14px | popover menus, floating notices |
+| `--r-ctl` | 10px | buttons, fields, chips, tabs, bubbles, menu items |
+| `--r-seg` / `--r-seg-in` | 8px / 6px | segmented control track / chosen cell |
+| `--r-pill` | 999px | only a small status tag (`.tag`) and the two-value toggle (`.chip.tgl`) |
+
+Cards keep 20px padding, list rows 8/16px with a 44px minimum height. No shadows on cards; menus and dialogs keep one soft
+float shadow (`--float`, `--shadow-menu`, `--shadow-dialog`, `--shadow-sheet`). Type and space use the scale tokens
+(`--fs-*`, `--lh-*`, `--sp-1`..`--sp-8`) in `web/css/01-tokens.css`; the pill-sparingly rule is in `docs/ui-spec.md`.
