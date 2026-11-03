@@ -1,10 +1,10 @@
 import { afterAll, expect, test } from "bun:test";
 import { fakeHub, idleState, inbox, json, waitFor, ev, run, type View } from "./test-web.ts";
 
-// 고치기 on a reply draft's own message row in its conversation (web/js/10-decision-card.js answerInline). When a plain bot message
-// came after the draft, the draft is no longer the docked card, so its row answers through the notice; 고치기 must still open the
-// "어떻게 고칠까요?" field first and send nothing, since the hub refuses a draft 고치기 without the change (notices.ts answerDecision).
-// Shapes from the live channel of 2026-10-30 (names and texts are placeholders).
+// 고치기 of a reply draft that a later message pushed out of the docked card (owner 2026-11-03: the options live only in the card, so the
+// dock keeps one 답 대기 row that opens the notice sheet). 고치기 there must still open the "어떻게 고칠까요?" field first and send nothing,
+// since the hub refuses a draft 고치기 without the change (notices.ts answerDecision). Shapes from the live channel of 2026-10-30
+// (names and texts are placeholders).
 const CH = "ch:7001";
 const AT = "2026-10-30T12:19:13.516Z";
 const CARD = [
@@ -50,20 +50,24 @@ const hub = fakeHub({
 });
 afterAll(() => hub.stop());
 
-test("a draft's 고치기 row opens the change field and sends nothing", async () => {
+test("a draft that left the dock answers through its 답 대기 row, and 고치기 opens the change field and sends nothing", async () => {
 	const v: View = await hub.view({ width: 390, height: 844 });
 	const opened = hub.nextStream();
 	await v.navigate(`${hub.origin}/`);
 	await opened;
 	await waitFor(v, `typeof S !== "undefined" && S && NT.items.length`);
 	await run(v, `go("chat", ${JSON.stringify(CH)})`);
-	await waitFor(v, `target === ${JSON.stringify(CH)} && document.querySelector('.dcm-row[data-n="2"]:not([disabled])')`);
-	expect(await ev(v, `!!DC.cur`)).toBe(false);   // the [done] after the draft: its row answers through the notice
-	await run(v, `document.querySelector('.dcm-row[data-n="2"]').click()`);
+	await waitFor(v, `target === ${JSON.stringify(CH)} && document.querySelector("#dcard .dc-wait")`);
+	expect(await ev(v, `!!DC.cur`)).toBe(false);   // the [done] after the draft: no docked question, no option rows in the body
+	expect(await ev(v, `document.querySelectorAll("#tl .dcm-row").length`)).toBe(0);
+	await run(v, `document.querySelector("#dcard .dc-wait").click()`);
+	await waitFor(v, `document.querySelectorAll(".fs-ft .dc-act").length === 3`);
+	await run(v, `[...document.querySelectorAll(".fs-ft .dc-act")].find(b => b.textContent === "고치기").click()`);
 	await waitFor(v, `document.querySelector(".fs-ft .dc-note")`);
 	expect(answers).toEqual([]);
 	await run(v, `const ta = document.querySelector(".fs-ft .dc-note"); ta.value = "더 짧게"; ta.dispatchEvent(new Event("input"))`);
 	await run(v, `document.querySelector(".fs-ft .dc-go").click()`);
 	const got = await answers.until(a => a.length > 0, 10_000, "the 고치기 answer");
+	expect(got[0]!.path).toBe("/api/notices/n1/answer");
 	expect(got[0]!.body).toMatchObject({ n: 2, note: "더 짧게" });
 }, 30_000);
