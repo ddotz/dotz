@@ -248,7 +248,7 @@ function asAddPaint() {
           el("button", { class: "btn tonal inrow", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기"),
           el("button", { class: "btn text inrow", type: "button", "data-k": `del:${a.key}`, "aria-expanded": String(asDelOpen(a)), onclick: () => asDelOpen(a) ? (AD.del = null, asAddPaint()) : asDelAsk(a) }, "삭제"))),
         ...(asDelOpen(a) ? [asDelNode(a)] : [])])] : [])),
-    el("div", { class: "fs-ft" }, el("button", { class: "btn", type: "button", "data-k": "new-app", onclick: asNewSend }, "보내기")));
+    el("div", { class: "fs-ft row" }, el("button", { class: "btn", type: "button", "data-k": "new-app", onclick: asNewSend }, "보내기")));
 }
 // 보내기: the request goes to the main orchestrator as the owner's message ("연결할 앱: <what he typed>", docs/app-templates) through the chat's
 // own send, and the main chat opens on it, so the work that starts is right there.
