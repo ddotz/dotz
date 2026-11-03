@@ -1,3 +1,14 @@
+/* menus: they open where they are anchored, fading in from the edge they came from (150ms, --m-ease); a phone sheet rises 16px (220ms).
+   The global reduced-motion rule (03-base.css) turns both off. */
+.menu { animation: menu-in var(--m-fast) var(--m-ease); }
+@keyframes menu-in { from { opacity: 0; transform: translateY(-6px); } }
+.menu.msheet { animation: menu-sheet-in var(--m-base) var(--m-ease); }
+@keyframes menu-sheet-in { from { opacity: .5; transform: translateY(16px); } }
+
+/* command palette (05-command-palette.js): the chosen row is the selected-row fill (docs/ui-spec.md 목록 행) and the input keeps the 52px head. */
+dialog.pal .pal-i.on, dialog.pal .pal-i:focus-visible { background: var(--row-sel); }
+dialog.pal .pal-head { border-bottom: 1px solid var(--line); }
+
 /* Full-screen overlay: the one frame for every pop-up over the app (38-overlay.js fsOpen; 02-basic-markdown.js dialog() wears the same classes on a native <dialog>).
    Phone: covers the whole screen, tab bar included: header (title, 무시, close) and footer (actions) stay put, only the body scrolls, safe-area padded,
    kept above the keyboard (.kb, set by fsOpen). Desktop: a centered dialog (.tall = the large one, for a draft). Menus, toasts and tooltips are not overlays. */

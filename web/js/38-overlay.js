@@ -41,7 +41,7 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
     },
   };
   document.body.append(node);
-  motionIn(node, "fade", 160); motionIn(box, "rise");
+  motionIn(node, "fade", 150); motionIn(box, "rise");
   ov = ovOpen(() => h.close(false));
   FS.push(h);
   document.addEventListener("keydown", key, true);
