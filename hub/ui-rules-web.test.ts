@@ -97,7 +97,7 @@ const MEASURE = `(() => {
 const SCREENS: Array<[string, string]> = [
 	["settings", `document.querySelector("#settings [data-ms-hub]")`],
 	["update", `document.querySelector("#update [aria-label='자동 확인']")`],
-	["runtime", `document.querySelector("#runtime .li")`],
+	["runtime", `document.querySelector("#runtime .card.empty, #runtime .li")`],
 	["messengers", `document.querySelectorAll("#messengers [data-ms-row]").length === 4`],
 	["provider/anthropic", `document.querySelector("#provider [aria-label='자동 전환']") && document.querySelector("#provider .sec-act")`],
 	["providers", `document.querySelectorAll("#providers .prow").length === 4`],

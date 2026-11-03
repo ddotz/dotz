@@ -6,7 +6,7 @@ const SET_PAGE = {
   notifications: { title: "앱과 알림", ic: "bell", build: () => pushSection() },
   display: { title: "표시", ic: "settings", build: () => displayPage() },
   update: { title: "업데이트", ic: "download", build: () => updateSection() },
-  runtime: { title: "실행 하네스", ic: "term", build: () => hvSection() },
+  runtime: { title: "실행 하네스", ic: "term", build: () => { const s = hvSection(); return s.length ? s : [emptyNode("실행 하네스를 확인하는 중이에요")]; } },
 };
 for (const [id, p] of Object.entries(SET_PAGE)) {
   views.push(id); SUB.add(id); titles[id] = p.title; VIEW_ICON[id] = p.ic;
