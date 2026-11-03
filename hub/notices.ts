@@ -1187,10 +1187,12 @@ function reconcileStored(): void {
 				i.read = true;
 				read++;
 			}
-		if (stale.length || read || retitled || twins.length || redrawn || expiring) {
+		// An expiry given on load is kept in memory like the option defaults: the file is written by the next real change (the sweep's settle).
+		if (stale.length || read || retitled || twins.length || redrawn) {
 			save();
-			log(`notices reconciled on load: ${redrawn} waiting items redrawn by the current rules, ${stale.length} of gone sessions retired, ${read} read by position, ${twins.length} duplicate alert items folded, ${expiring} questions given an expiry`);
+			log(`notices reconciled on load: ${redrawn} waiting items redrawn by the current rules, ${stale.length} of gone sessions retired, ${read} read by position, ${twins.length} duplicate alert items folded`);
 		}
+		if (expiring) log(`notices on load: ${expiring} open questions given an expiry from their own time`);
 	} finally {
 		replaying = false;
 	}

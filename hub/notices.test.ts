@@ -800,7 +800,7 @@ test("a gateway alert question waits 24 hours, not 72", () => {
 	expect(stored().find(x => x.id === n.id)).toMatchObject({ read: true, decision: { state: "answered", resolved: true, expired: true } });
 });
 
-test("on load, a stored open question without an expiry gets one from its own time; a login request stays without", () => {
+test("on load, a stored open question without an expiry gets one from its own time in memory, the file untouched; a login request stays without", () => {
 	const dir = mkdtempSync(join(tmpdir(), "dotz-expiry-"));
 	copyFileSync(CONFIG_FILE, join(dir, "config.json"));
 	const at = new Date(Date.parse(ts()) - 5 * 3_600_000).toISOString();
@@ -812,11 +812,13 @@ test("on load, a stored open question without an expiry gets one from its own ti
 			{ ...base, id: "aaaaaaa2", key: "dec:main:auth", decision: { options: [{ n: 1, label: "승인", action: "approve" }], to: "auth:z", group: 1, state: "open" } },
 		]),
 	);
-	const run = Bun.spawnSync([process.execPath, "-e", `import "./hub/notices.ts"; process.exit(0);`], { cwd: join(import.meta.dir, ".."), env: { ...process.env, DOTZ_DIR: dir } });
+	const file = readFileSync(join(dir, "notices.json"), "utf8");
+	const run = Bun.spawnSync([process.execPath, "-e", `const m = await import("./hub/notices.ts"); console.log(JSON.stringify(m.listNotices().items.map(n => [n.id, n.decision?.expires_at ?? null]))); process.exit(0);`], { cwd: join(import.meta.dir, ".."), env: { ...process.env, DOTZ_DIR: dir } });
 	expect(run.exitCode).toBe(0);
-	const after: Notice[] = JSON.parse(readFileSync(join(dir, "notices.json"), "utf8"));
-	expect(after[0]!.decision!.expires_at).toBe(new Date(Date.parse(at) + ANSWER_WINDOW_MS).toISOString());
-	expect(after[1]!.decision!.expires_at).toBeUndefined();
+	const after = new Map<string, string | null>(JSON.parse(run.stdout.toString().trim().split("\n").at(-1)!));
+	expect(after.get("aaaaaaa1")).toBe(new Date(Date.parse(at) + ANSWER_WINDOW_MS).toISOString());
+	expect(after.get("aaaaaaa2")).toBeNull();
+	expect(readFileSync(join(dir, "notices.json"), "utf8")).toBe(file);
 	rmSync(dir, { recursive: true, force: true });
 });
 
