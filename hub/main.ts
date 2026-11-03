@@ -40,7 +40,7 @@ import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
 import { forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, refreshQuota, usageSnapshot } from "./providers.ts";
 import { sealPlainSecrets } from "./secretbox.ts";
-import { backfillNotices, dropChannelNotices, setAppLabelResolver, setDraftHandled, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
+import { backfillNotices, dropChannelNotices, setAppLabelResolver, setDraftHandled, settleExpiredQuestions, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
 import { startReflection } from "./reflect.ts";
 import { syncFeatureWatches } from "./features.ts";
 import { startSchedules, stopSchedules } from "./schedule.ts";
@@ -166,7 +166,12 @@ const mailReconciler = createReconciler({
 }, { perRun: MAIL_RECONCILE_PER_RUN, everyMs: MAIL_RECONCILE_EVERY_MS });
 const reconcileLog = (r: { checked: number; replied: number; notChecked: number } | undefined) => void (r && (r.checked || r.notChecked) && log(`mail reconcile: ${r.checked} threads checked, ${r.replied} answered elsewhere, ${r.notChecked} not checked`));
 const reconcileMails = (limit: number) => mailReconciler.run(limit).then(r => (reconcileLog(r), r));
-const settleSweep = () => settleHandledDrafts().then(n => void (n && log(`notices: ${n} send approvals closed, their drafts were handled elsewhere`)), e => log(`handled-draft sweep failed: ${(e as Error).message}`));
+const settleSweep = () => {
+	// Questions past their answer time close here, in the pass that already settles handled drafts: no timer of their own.
+	const expired = settleExpiredQuestions();
+	if (expired) log(`notices: ${expired} questions past their answer time closed`);
+	return settleHandledDrafts().then(n => void (n && log(`notices: ${n} send approvals closed, their drafts were handled elsewhere`)), e => log(`handled-draft sweep failed: ${(e as Error).message}`));
+};
 // Settle first; then the queue drops held cards that are handled or duplicated, then shows the next one (releaseAll does both, and is a no-op the second time).
 const startupSettled = settleSweep();
 const HANDLED_SWEEP_MS = 30_000;
