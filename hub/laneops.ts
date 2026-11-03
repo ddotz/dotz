@@ -12,7 +12,7 @@ import { spawn, runtimeMismatch, resumeLane, harnessName, sessionRuntime } from 
 import { prompt } from "./laneprompt.ts";
 import { checkSoon as checkAccountSoon } from "./account-rules.ts";
 import { clearAsk, withHeld, report } from "./lanereport.ts";
-import { baseLanguage } from "./language.ts";
+import { baseLanguage, languageName } from "./language.ts";
 import { hubChain, Chain, Reverter } from "./fallback.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { statusActivity, runningSubagents } from "./activity.ts";
@@ -71,7 +71,7 @@ function footer(lane: Lane): string {
 	// The owner's verbatim don'ts (memory/boundaries.md) bind a lane too; the empty template adds nothing.
 	const boundaries = existsSync(paths.boundaries) ? readFileSync(paths.boundaries, "utf8").trim() : "";
 	const donts = boundaries.includes("\n- [") ? `\n\n${boundaries.slice(0, 2000)}` : "";
-	return withReplyLine(msg().footer({ lane: lane.name, mode: modeFile(), workerModel: laneWorkerModel(lane), slots: lane.workerSlots ?? laneLimits(0, lane).workers, worktree: worktreeNote(lane.worktree) })) + donts + (features ? `\n\n${features}` : "");
+	return withReplyLine(msg().footer({ lane: lane.name, language: languageName(lang()), mode: modeFile(), workerModel: laneWorkerModel(lane), slots: lane.workerSlots ?? laneLimits(0, lane).workers, worktree: worktreeNote(lane.worktree) })) + donts + (features ? `\n\n${features}` : "");
 }
 
 export function launch(name: string, cwd: string, brief: string, model?: string, worker?: string, fableOk?: boolean, title?: string): Lane {
