@@ -19,7 +19,7 @@
 .rc-rawbody.own { padding: 0; max-height: none; overflow: visible; background: none; }
 .mb { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .mb-bar { display: flex; align-items: center; gap: 8px; min-height: 28px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
-.mopen .mb-bar .btn { min-height: 28px; height: 28px; padding: 0 8px; font-size: 12px; }
+.mopen .mb-bar .btn { min-height: 32px; height: 32px; padding: 0 12px; font-size: 13px; }
 .mb-bar .mb-note { min-width: 0; flex: 1; }
 .mb-frame { display: block; width: 100%; height: 120px; border: 1px solid var(--line); border-radius: var(--r-ctl); background: #fff; }
 .mb-fail { padding: 12px 14px; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-3); }
@@ -110,7 +110,7 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .rc-hd .rc-src + .mr-more, .rc-hd .tag + .mr-more { margin-left: auto; }
 @media (pointer: coarse), (max-width: 639px) { .rc-hd .mr-more { margin: -10px -10px -10px 0; } }
 .mr-clip { flex: none; display: inline-flex; align-items: center; gap: 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
-.mr-clip .ic { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mr-clip .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .mr-files { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line); }
 .mr-fh { color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
 .mr-file { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 44px; padding: 0 8px; border-radius: var(--r-ctl); color: var(--fg); font-size: 14px; line-height: 20px; text-decoration: none; }
