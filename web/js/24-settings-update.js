@@ -200,11 +200,11 @@ function hvSwitcher(h) {
   const rt = hvRt().find(r => r.id === h.id);
   const others = hvRt().filter(r => r.installed && r.id !== h.id).map(r => ({ value: r.id, label: r.label, sub: [r.version ? `v${r.version}` : "", hvRoles(r)].filter(Boolean).join(" · ") || undefined }));
   if (!rt || !others.length) return null;
-  return el("button", { class: "btn tonal", type: "button", "aria-label": `${h.name} 바꾸기`, "aria-haspopup": "listbox", "aria-expanded": "false", title: "실행 하네스 바꾸기", onclick: ev => showMenu(ev.currentTarget, others, { onPick: id => rtFlow(hvRt().find(x => x.id === id)) }) }, icon("drop"));
+  return el("button", { class: "btn tonal inrow", type: "button", "aria-label": `${h.name} 바꾸기`, "aria-haspopup": "listbox", "aria-expanded": "false", title: "실행 하네스 바꾸기", onclick: ev => showMenu(ev.currentTarget, others, { onPick: id => rtFlow(hvRt().find(x => x.id === id)) }) }, icon("drop"));
 }
 const hvNote = text => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text })));
 function hvJobLine(j) {
-  if (j.status === "running" || j.status === "deferred") return el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: j.status === "deferred" ? "작업이 끝나면 업데이트해요" : `업데이트 중 · ${j.phase}` }), el("div", { class: "sup", text: j.message })), el("span", { class: "dot pri", "aria-hidden": "true" }));
+  if (j.status === "running" || j.status === "deferred") return el("div", { class: "li" }, el("span", { class: "lead" }, el("span", { class: "dot pri", "aria-hidden": "true" })), el("span", { class: "tx" }, el("div", { class: "hd", text: j.status === "deferred" ? "작업이 끝나면 업데이트해요" : `업데이트 중 · ${j.phase}` }), el("div", { class: "sup", text: j.message })));
   return el("div", { class: `upd-box ${j.status === "updated" ? "ok" : j.status === "failed" ? "err" : ""}` }, el("div", { class: "upd-msg", text: j.message }),
     j.steps.length ? el("ul", { class: "upd-log" }, ...j.steps.slice(-4).map(s => el("li", { class: "dim" }, el("span", { text: s.text })))) : null);
 }
@@ -223,9 +223,9 @@ function hvSection() {
     const mine = job && (job.status === "running" || job.status === "deferred");
     const state = mine
       ? el("span", { class: "tag pri", "aria-live": "polite" }, el("span", { class: "dot pri", "aria-hidden": "true" }), job.status === "deferred" ? "대기 중" : "진행 중")
-      : h.available && h.installMethod !== "managed" && h.installMethod !== "app" ? el("button", { class: "btn", type: "button", disabled: !hvCanUpd(h) || !!pending, onclick: ev => hvApply(ev.currentTarget, h.id) }, "업데이트") : null;
+      : h.available && h.installMethod !== "managed" && h.installMethod !== "app" ? el("button", { class: "btn inrow", type: "button", disabled: !hvCanUpd(h) || !!pending, onclick: ev => hvApply(ev.currentTarget, h.id) }, "업데이트") : null;
     return el("div", { class: "li" }, el("span", { class: "lead" }, icon("harness")), el("span", { class: "tx" }, el("div", { class: "hd", text: h.name }), el("div", { class: "sup", text: hvSub(h) })),
-      h.available && !mine ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null, state, hvSwitcher(h));
+      liEnd(h.available && !mine ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null, state, hvSwitcher(h)));
   });
   if (pending) list.push(hvJobLine(pending));
   else for (const h of hs) if (h.job && h.job.status !== "current") list.push(hvJobLine(h.job));
@@ -236,6 +236,7 @@ function hvSection() {
 }
 function updateSection() {
   const i = UPD.info;
+  const liDot = (title, sub) => el("div", { class: "li" }, el("span", { class: "lead" }, el("span", { class: "dot pri", "aria-hidden": "true" })), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null));
   const li = (title, sub, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), trail.length ? liEnd(...trail) : null);
   const head = el("div", { class: "sec", id: "upd-sec" }, "업데이트", updRestartPending() ? el("span", { class: "tag warn upd-new", text: "재시작 필요" }) : updAvailable() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null);
   if (!i || i.error) return [head, el("div", { class: "list" }, li("앱 버전", i ? i.error : "불러오는 중…")), ...hvSection()];
@@ -256,9 +257,9 @@ function updateSection() {
       c.ahead.length && !c.keep ? el("div", { class: "sup", text: `로컬 커밋 ${c.ahead.length}개는 새 버전 위에 자동으로 얹어요. 테스트가 실패하면 그대로 두고 알려요.` }) : null,
       el("div", { class: "upd-act" }, el("button", { class: "btn", type: "button", ...(c.blocked.length || pending ? { disabled: true } : off), onclick: () => updNow() }, "지금 업데이트"), el("span", { class: "sup", text: disk && disk.kind === "tarball" ? "새로 받기 → 테스트 → 폴더 교체 → 재시작. 테스트가 실패하면 그대로 있어요." : "fast-forward → 테스트 → 재시작. 테스트가 실패하면 그대로 있어요." }))));
   }
-  if (jobRunning) rows.push(li(`업데이트 중 · ${job.phase}`, job.message, el("span", { class: "dot pri", "aria-hidden": "true" })));
+  if (jobRunning) rows.push(liDot(`업데이트 중 · ${job.phase}`, job.message));
   else if (job && job.status !== "current" && !(job.status === "updated" && !pending)) rows.push(el("div", { class: `upd-box ${job.status === "updated" ? "ok" : "err"}` }, el("div", { class: "upd-msg", text: job.keep && !(c && c.keep) ? job.keep.line : job.message }), job.keep && !(c && c.keep) ? updKeepBox(job.keep) : null));
-  if (UPD.wait) rows.push(li("재시작 대기 중", UPD.wait.when === "now" ? "곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요." : `작업이 끝나면 다시 켜져요${i.busy.length ? ` (${i.busy.join(", ")})` : ""}. 이 화면은 자동으로 다시 연결돼요.`, el("span", { class: "dot pri", "aria-hidden": "true" })));
+  if (UPD.wait) rows.push(liDot("재시작 대기 중", UPD.wait.when === "now" ? "곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요." : `작업이 끝나면 다시 켜져요${i.busy.length ? ` (${i.busy.join(", ")})` : ""}. 이 화면은 자동으로 다시 연결돼요.`));
   else if (pending) rows.push(li(`새 버전 ${disk.commit.short} 받음`, "재시작하면 적용돼요", el("button", { class: "btn inrow", type: "button", onclick: () => updRestart() }, "재시작")));
   const prefs = [el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알리고, 아래 자동 적용으로 바로 적용해요." : "새 버전이 있으면 알림만 보내요. 적용은 직접 해요." })),
     liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) }))),

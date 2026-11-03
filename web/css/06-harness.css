@@ -103,7 +103,13 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .ms-copy { display: flex; gap: 8px; }
 .ms-copy .fi { flex: 1; min-width: 0; }
 .ms-addrow .tx { min-width: 0; }
-.ms-add { margin-top: 12px; }
+/* a status dot as a row's lead takes the 16px icon column (dot 8 + 4 + 4) */
+.li .lead > .dot { margin: 0 4px; }
+.ms-link { color: var(--accent); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
+/* a save button keeps its width while its label swaps to the longest one (저장 -> 저장했어요) */
+:is([data-ms-save], [data-wa-save]) { min-width: 104px; }
+/* a row whose control is wider than half the screen puts it under the text on a phone */
+@media (max-width: 639px) { .li.li-wrap { flex-wrap: wrap; } .li.li-wrap > .li-end { margin-left: 0; flex-basis: 100%; } }
 #webaccess .dcs-form > div > :is(.sup, .dcs-saved) { margin-top: 6px; }
 .dcs-res { display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; }
 .dcs-res.err { color: var(--err); }

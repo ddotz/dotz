@@ -33,16 +33,18 @@ async function dcSave(btn) {
   if (guild && guild !== DCS.v.guild) body.guild = guild;
   if (owner && owner !== DCS.v.owner_id) body.owner_id = owner;
   if (!Object.keys(body).length) { DCS.err = "바꾼 값이 없어요"; return renderDiscord(); }
+  let saved = false;
   await busy(btn, async () => {
     try {
       DCS.v = await api("/api/discord/connection", "PUT", body);
       DCS.err = ""; DCS.chk = null; DCS.tok.value = "";
       delete DCS.guild.dataset.dirty; delete DCS.owner.dataset.dirty;
       dcFill();
-      toast("저장했어요");
+      saved = true;
     } catch (e) { DCS.err = e.message; }
   });
   renderDiscord();
+  if (saved) stFlash("#discord [data-ms-save]");
 }
 async function dcCheck(btn) {
   await busy(btn, async () => {
@@ -71,7 +73,7 @@ function dcSwitch(label, on, key, onclick) {
   return el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on), "aria-label": `${label} 디스코드로도 보내기`, "data-dc": key, onclick });
 }
 function dcSwitches() {
-  const li = (title, desc, k, on) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "sup", text: desc }), ), liEnd(dcSwitch(title, on, k, () => dpSet(k, !on))));
+  const li = (title, desc, k, on) => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "sup", text: desc })), liEnd(dcSwitch(title, on, k, () => dpSet(k, !on))));
   const hint = () => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결하면 고를 수 있어요" })));
   const on = DCS.v.enabled && DP.v;
   return [
@@ -121,6 +123,6 @@ function renderDiscord() {
   det.addEventListener("toggle", () => { DCS.advOpen = det.open; });
   clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" },
     el("div", { class: "li", "data-ms-status": "discord" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })),
-      liEnd(el("span", { class: `tag ${tone}`, text: tag }), el("button", { type: "button", class: "btn inrow", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m))))),
+      liEnd(el("span", { class: `tag ${tone}`, text: tag }), el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m))))),
   el("div", { class: "sec", text: "자동 연결" }), onboardingPanel("discord"), ...dcSwitches(), ...guide, det);
 }

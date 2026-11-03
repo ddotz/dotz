@@ -104,7 +104,7 @@ function accountSection() {
   const onLimitSub = onLimit === "switch" ? "한도에 걸리면 자동 전환으로 넘어가요" : onLimit === "wait" ? "한도에 걸린 동안 기다려요" : "아직 안 정했어요 · 한도에 걸리면 한 번 물어봐요";
   const setOnLimit = (btn, value) => accMut(btn, () => api("/api/accounts/on-limit", "PUT", { on_limit: value }), value === "wait" ? "한도에 걸렸을 때 기다리기로 정했어요" : "한도에 걸렸을 때 자동 전환으로 넘어가기로 정했어요");
   const onLimitChoice = (value, label) => el("button", { type: "button", class: `chip${onLimit === value ? " on" : ""}`, "aria-pressed": String(onLimit === value), text: label, onclick: ev => setOnLimit(ev.currentTarget, value) });
-  rows.splice(1, 0, el("div", { class: "li" }, tx("한도에 걸렸을 때", onLimitSub), onLimitChoice("wait", "기다리기"), onLimitChoice("switch", "자동 전환으로 넘어가기")));
+  rows.splice(1, 0, el("div", { class: "li li-wrap" }, tx("한도에 걸렸을 때", onLimitSub), liEnd(el("div", { class: "chips" }, onLimitChoice("wait", "기다리기"), onLimitChoice("switch", "자동 전환으로 넘어가기")))));
   if (!pinned) {
     rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => rulesDialog() }, "편집"))));
     for (const [i, r] of lines.entries()) rows.push(el("div", { class: "li" }, el("span", { class: "lead", text: String(i + 1) }), tx(r.text)));

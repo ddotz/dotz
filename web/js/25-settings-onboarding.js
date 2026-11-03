@@ -7,6 +7,7 @@ const OB_AUTO_MS = 4000;
 const OB_AUTO_MAX = 1;
 const obKeyOk = key => key === "web-access" || key === "discord" || key === "jandi" || key === "slack" || key === "telegram";
 const obVisible = key => key === "web-access" ? current === "webaccess" : current === key;
+const OB_TONE = { running: "pri", waiting: "warn", done: "ok", failed: "err" };
 const obLine = v => v.state === "waiting" ? "내가 할 일이 하나 남았어요." : v.state === "running" ? "자동으로 연결하는 중이에요." : v.state === "done" ? "연결했어요." : v.state === "failed" ? "연결하지 못했어요." : "아직 시작하지 않았어요.";
 function obPaint(key) {
   if (key === "web-access") { if (current === "webaccess") renderWebAccess(); return; }
@@ -42,7 +43,7 @@ function obApply(key, next) {
   const sameWait = next.state === "waiting" && was === "waiting";
   obStop(before);
   if (!sameWait) obAutoStop(before);
-  OB[key] = { ...before, ...next, timer: 0, ...(sameWait ? { autoTimer: before.autoTimer || 0 } : { autoTimer: 0 }) };
+  OB[key] = { ...before, ...next, timer: 0, swap: was != null && was !== next.state, ...(sameWait ? { autoTimer: before.autoTimer || 0 } : { autoTimer: 0 }) };
   if (next.state === "waiting" && !sameWait) { OB[key].autoTries = 0; OB[key].autoBusy = false; }
   obPaint(key);
   obPoll(key);
@@ -88,20 +89,31 @@ function obPoll(key) {
 function onboardingPanel(key) {
   const v = OB[key] || { state: "idle", step: null, owner: null, error: null, url: null };
   const waiting = v.state === "waiting", failed = v.state === "failed", running = v.state === "running";
-  const rows = [el("div", { class: "li" }, el("span", { class: "lead" }, icon("spark")), el("span", { class: "tx" },
-    el("div", { class: "hd", text: "자동 연결" }), el("div", { class: "sup", "data-onb-line": "1", text: obLine(v) })))];
+  // One state row: the dot (blue running, orange waiting, green done, red failed; never pulsing), the line, and the actions in .li-end.
+  // A state change swaps in this same row.
+  const acts = [
+    ...(waiting || failed ? [el("button", { type: "button", class: "btn inrow", "data-onb-continue": "1", onclick: ev => obAct(key, "continue", ev.currentTarget) }, "계속")] : []),
+    ...(failed ? [el("button", { type: "button", class: "btn tonal inrow", "data-onb-start": "1", onclick: ev => obStart(key, ev.currentTarget) }, "다시 시작")] : []),
+    ...(running || waiting ? [el("button", { type: "button", class: "btn text inrow", "data-onb-cancel": "1", onclick: ev => obAct(key, "cancel", ev.currentTarget) }, "취소")] : []),
+  ];
+  const head = el("div", { class: "li" }, el("span", { class: "lead" }, el("span", { class: `dot ${OB_TONE[v.state] || ""}`, "aria-hidden": "true" })), el("span", { class: "tx" },
+    el("div", { class: "hd", text: "자동 연결" }), el("div", { class: "sup", "data-onb-line": "1", text: obLine(v) })), acts.length ? liEnd(...acts) : null);
+  const rows = [head];
+  if (v.swap) requestAnimationFrame(() => motionSwap(head, () => {}));
   if (v.step) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: v.step.title }), el("div", { class: "sup", text: v.step.detail }))));
   if (v.error) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "dcs-err", role: "alert", "data-onb-error": "1", text: v.error }))));
   if ((waiting || failed) && v.owner) rows.push(el("div", { class: "li", "data-onb-owner": v.owner.label },
     el("span", { class: "tx" }, el("div", { class: "hd", text: v.owner.label }), el("div", { class: "sup", text: v.owner.hint }))));
-  if (v.url) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("a", { class: "btn tonal", href: v.url, target: "_blank", rel: "noopener noreferrer", "data-onb-url": "1", text: v.url }))));
-  const acts = [
-    ...(waiting || failed ? [el("button", { type: "button", class: "btn", "data-onb-continue": "1", onclick: ev => obAct(key, "continue", ev.currentTarget) }, "계속")] : []),
-    ...(running || waiting ? [el("button", { type: "button", class: "btn text", "data-onb-cancel": "1", onclick: ev => obAct(key, "cancel", ev.currentTarget) }, "취소")] : []),
-    ...(failed ? [el("button", { type: "button", class: "btn tonal", "data-onb-start": "1", onclick: ev => obStart(key, ev.currentTarget) }, "다시 시작")] : []),
-  ];
-  if (acts.length) rows.push(el("div", { class: "li ms-onb-acts" }, ...acts));
+  if (v.url) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("a", { class: "ms-link", href: v.url, target: "_blank", rel: "noopener noreferrer", "data-onb-url": "1", text: v.url }))));
   return el("div", { class: "list ms-onb", "data-onb": key, "data-onb-state": v.state }, ...rows);
+}
+// A save ends in the button it was pressed on: the label swaps to "저장했어요" for a moment (the button keeps its width), with no toast.
+function stFlash(sel, label = "저장했어요") {
+  const b = document.querySelector(sel);
+  if (!b) return;
+  const was = b.textContent;
+  motionSwap(b, () => { b.textContent = label; });
+  setTimeout(() => { if (b.isConnected && b.textContent === label) motionSwap(b, () => { b.textContent = was; }); }, 1800);
 }
 // The closed disclosure that keeps manual fields out of the default view: its body is built only when opened.
 function msAdvanced(attr, open, body) {
