@@ -254,12 +254,21 @@ export function staleTags(e: Record<string, unknown>): string[] {
 	return [];
 }
 
+// One send, tried a second time when the push service's connection broke (a reused socket reset: ECONNRESET, 2026-11-03) or it answered 5xx.
+async function sendOnce(sub: Stored, msg: PushMessage): Promise<number> {
+	try {
+		const status = await sendPush(sub, msg, vapid(), subject());
+		if (status < 500) return status;
+	} catch {}
+	return sendPush(sub, msg, vapid(), subject());
+}
+
 async function deliver(sub: Stored, m: PushMessage): Promise<number> {
 	try {
 		// What this device still owes closing rides on its next real notification.
 		const due = m.kind === "withdraw" ? undefined : owed.get(sub.endpoint);
 		const msg = due?.size ? { ...m, withdraw: [...due] } : m;
-		const status = await sendPush(sub, msg, vapid(), subject());
+		const status = await sendOnce(sub, msg);
 		if (status > 0 && status < 300) {
 			if (due) owed.delete(sub.endpoint);
 			if (m.kind !== "withdraw" && m.kind !== "test") noteShown(sub.endpoint, m.tag);
@@ -528,12 +537,15 @@ export async function pushRoute(req: Request, url: URL): Promise<Response | unde
 	if (req.method === "POST" && p === "/api/push/subscribe") {
 		const sub = b.subscription as Subscription | undefined;
 		if (!sub?.endpoint || !/^https:\/\//.test(sub.endpoint) || !sub.keys?.p256dh || !sub.keys?.auth) return json({ error: "subscription with https endpoint and keys required" }, 400);
-		const old = findSub(sub.endpoint);
+		// `replaces`: the endpoint the push service swapped for this one (the service worker's pushsubscriptionchange, web/sw.js), which knows no device id:
+		// the new subscription takes the old one's device, app role and switches, and the old one goes.
+		const prev = typeof b.replaces === "string" && b.replaces !== sub.endpoint ? findSub(b.replaces) : undefined;
+		const old = findSub(sub.endpoint) ?? prev;
 		const prefs = { ...defaults(), ...(old?.prefs ?? {}), ...(b.prefs ?? {}) };
 		const did = typeof b.did === "string" && DID.test(b.did) ? b.did : old?.did;
 		const app = b.app === true || old?.app === true;
 		if (!app && hasApp(did)) return json({ error: "this device gets its notifications through its app" }, 409);
-		subs = [...subs.filter(s => s.endpoint !== sub.endpoint), { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }, prefs, ...(b.app === true || old?.app === true ? { app: true } : {}), ...(did ? { did } : {}), ua: String(req.headers.get("user-agent") ?? "").slice(0, 160), at: new Date().toISOString() }];
+		subs = [...subs.filter(s => s.endpoint !== sub.endpoint && s !== prev), { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }, prefs, ...(app ? { app: true } : {}), ...(did ? { did } : {}), ua: String(req.headers.get("user-agent") ?? "").slice(0, 160), at: new Date().toISOString() }];
 		save();
 		log(`push: subscribed at ${origin(sub.endpoint)} (${subs.length} total)`);
 		if (app && did) {
