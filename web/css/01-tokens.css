@@ -11,6 +11,8 @@
   /* 미답장 (waiting for the owner's reply): orange fill + its text colour, 5.2:1 on white (light), 8:1 on the dark card (dark) */
   --unreplied: #c2410c; --on-unreplied: #ffffff;
   --r-card: 18px; --r-ctl: 10px; --edge: 28px;
+  /* motion (web/DESIGN.md Motion): every move has a cause, ease-out, transform/opacity only */
+  --m-fast: 150ms; --m-base: 220ms; --m-slow: 300ms; --m-ease: cubic-bezier(.2, .7, .2, 1);
   /* KakaoTalk chat (30-kakao.js): the room's backdrop, incoming / own bubbles, time and date chip */
   --kk-bg: #dbe5ee; --kk-in: #ffffff; --kk-in-fg: #191f28; --kk-own: #fee500; --kk-own-fg: #191919; --kk-time: #5b6877; --kk-chip: rgb(25 31 40 / .38); --kk-chip-fg: #ffffff;
   --scrim: rgb(0 0 0 / .4);
@@ -42,7 +44,8 @@ html, body { height: 100%; margin: 0; }
 /* manipulation: a double tap does not zoom the page (iPhone web app, owner 2026-10-26); pinch zoom still works. On every element, because a
    scrolling container (the chat timeline) starts its own touch-action chain; rules that set their own (pan-y, none) are more specific and stay. */
 *, *::before, *::after { touch-action: manipulation; }
-body { font: 400 14px/22px var(--font); font-variant-numeric: tabular-nums; font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow: hidden; -webkit-text-size-adjust: 100%; }
+body { font: 400 14px/22px var(--font); font-variant-numeric: tabular-nums; font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow: hidden; -webkit-text-size-adjust: 100%; word-break: keep-all; overflow-wrap: break-word; }
+.m-dg { display: inline-block; }
 button, input, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
 button { cursor: pointer; }
 code, pre { font-family: var(--mono); }
