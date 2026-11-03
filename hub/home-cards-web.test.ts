@@ -131,10 +131,12 @@ describe("홈 cards at 1100px", () => {
 		const same = JSON.parse((await view.evaluate(`JSON.stringify((() => {
 			const s = sel => getComputedStyle(document.querySelector(sel));
 			const pick = c => [c.paddingTop, c.paddingLeft, c.borderRadius, c.fontSize, c.color];
-			return [pick(s('.bi[data-id="custom:todo"] .hc-none')), pick(s('.bi[data-id="notices:worklog"] .hc-none')), pick(s('.bi[data-id="custom:memo"] .card')), pick(s('.bi[data-id="main"] .card'))];
+			return [pick(s('.bi[data-id="custom:memo"] .card')), pick(s('.bi[data-id="main"] .card')), pick(s('.bi[data-id="notices:worklog"] .card'))];
 		})())`)) as string) as string[][];
 		expect(same[0]).toEqual(same[1]);
-		expect(same[2]).toEqual(same[3]);
+		expect(same[0]).toEqual(same[2]);
+		// a status card with nothing to list folds to its head (one line), not an empty body
+		expect(await view.evaluate(`document.querySelector('.bi[data-id="notices:worklog"] .card').classList.contains("fold") && !document.querySelector('.bi[data-id="notices:worklog"] .hc-list')`)).toBe(true);
 	});
 
 	test("Esc during a mouse drag puts the card back and saves nothing", async () => {

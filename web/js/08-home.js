@@ -31,6 +31,12 @@ function homeMenu(anchor, id, inChat) {
     homeMoveActs(id, inChat, add);
     return showMenu(anchor, acts, { onPick: i => acts[i].run() });
   }
+  if (id.startsWith("notices:")) {
+    const [label, to] = { alert: ["알림", () => openTarget("alert", "chat")], worklog: ["작업내역", () => openTarget("worklog", "chat")], watch: ["모니터링", () => go("monitoring")] }[id.slice(8)];
+    add(`${label} 열기`, to);
+    homeMoveActs(id, inChat, add);
+    return showMenu(anchor, acts, { onPick: i => acts[i].run() });
+  }
   if (id === MAIN || isLaneT(id)) {
     const key = id === MAIN ? "orchestrator" : id, name = targetName(id), restartNote = id === MAIN ? "어시스턴트가 다시 시작돼요." : "";
     const cur = M && (id === MAIN ? M.orchestrator : (M.lanes || []).find(l => `lane:${l.name}` === id));
@@ -137,32 +143,36 @@ const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: �
 // Only what is news: a question that waits is a row of 답변 필요 above, so it is not counted or listed here a second time; a gateway question it
 // handles itself is not asked there (09-needs-you.js nyHandled), so it is news here.
 const hcFyi = n => !n.read && ntHomeAlert(n) && (!ntNeeds(n) || nyHandled(n));
+const hcUnread = () => NT.items.filter(hcFyi).length;
+// One head for every home card: [status dot] title, an optional count, an optional grey note (an empty card says why in it and folds to this one line).
+const hcHead = (title, o = {}) => el("div", { class: "ch" }, o.dot ? el("span", { class: `dot ${o.dot}` }) : null, el("h3", { text: title }),
+  o.n ? el("span", { class: "hc-n" }, ...[].concat(o.n)) : null, o.note ? el("span", { class: "hc-n", text: o.note }) : null, o.menu ? menuBtn(o.menu) : null);
+const hcFold = (card, fold) => { if (fold) card.classList.add("fold"); return card; };
 function homeAlertCard() {
-  const unread = NT.items.filter(hcFyi).length, fresh = hcRecent(hcFyi), state = hcState();
-  return hcCard(() => openTarget("alert", "chat"), el("div", { class: "ch" }, el("h3", { text: "알림" })),
-    el("div", { class: "big", text: state ? "…" : `${unread}개` }), el("div", { class: "sup", text: "안 읽은 알림" }),
-    state || !fresh.length ? el("div", { class: "hc-none", text: state || "새 알림이 없어요" }) : hcNotices(fresh));
+  const unread = hcUnread(), fresh = hcRecent(hcFyi), state = hcState(), none = !!state || !fresh.length;
+  return hcFold(hcCard(() => openTarget("alert", "chat"), hcHead("알림", { menu: "notices:alert", n: !state && unread ? String(unread) : null, note: none ? state || "새 알림이 없어요" : "" }),
+    none ? null : hcNotices(fresh)), none);
 }
 function homeWorklogCard() {
-  const recent = hcRecent(n => n.kind === "worklog" || n.kind === "result"), state = hcState();
-  return hcCard(() => openTarget("worklog", "chat"), el("div", { class: "ch" }, el("h3", { text: "작업내역" })),
-    state || !recent.length ? el("div", { class: "hc-none", text: state || "아직 작업내역이 없어요" }) : hcNotices(recent));
+  const recent = hcRecent(n => n.kind === "worklog" || n.kind === "result"), state = hcState(), none = !!state || !recent.length;
+  return hcFold(hcCard(() => openTarget("worklog", "chat"), hcHead("작업내역", { menu: "notices:worklog", note: none ? state || "아직 작업내역이 없어요" : "" }), none ? null : hcNotices(recent)), none);
 }
 function homeMonitorCard() {
   const list = ntMons(), shown = list.slice(0, 4), bad = list.filter(m => monStatus(m).key === "fail").length;
-  const state = NM.loaded ? "" : NM.failed ? "불러오지 못했어요" : "불러오는 중…";
-  return hcCard(() => go("monitoring"), el("div", { class: "ch" }, el("h3", { text: "모니터링" }), bad ? el("span", { class: "tag err", text: `실패 ${bad}` }) : null),
-    state || !list.length ? el("div", { class: "hc-none", text: state || "모니터링 중인 항목이 없어요" }) : el("div", { class: "hc-list" }, ...shown.map(m => {
+  const state = NM.loaded ? "" : NM.failed ? "불러오지 못했어요" : "불러오는 중…", none = !!state || !list.length;
+  return hcFold(hcCard(() => go("monitoring"), hcHead("모니터링", { menu: "notices:watch", n: bad ? [el("span", { class: "dot err" }), `실패 ${bad}`] : null, note: none ? state || "모니터링 중인 항목이 없어요" : "" }),
+    none ? null : el("div", { class: "hc-list" }, ...shown.map(m => {
       // The same status the 모니터링 row shows (30-monitoring.js monStatus); the dot's colour classes are the notice tones.
       const st = monStatus(m);
       return el("div", { class: "hc-mon", "data-status": st.key }, hcDot({ ok: "done", warn: "ask", err: "fail" }[st.tone]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "모니터링" }),
         el("span", { class: "s", text: [ntMonRun(m), st.text, ntMonNext(m)].filter(Boolean).join(" · ") })));
     })),
-    list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null);
+    list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null), none);
 }
 
 let homeBoard = null;
-const HOME_BIG = { min: { w: 3, h: 3 }, max: { w: 12, h: 10 } }, HOME_SMALL = { min: { w: 2, h: 2 }, max: { w: 12, h: 6 } }, HOME_GROUP = { min: { w: 3, h: 2 }, max: { w: 12, h: 14 } };
+// Every card is as tall as its content (07-board.js fit): only the width is sized, 4 of 12 columns by default so six cards make two full rows; the summary strip spans the row.
+const HOME_FIT = { fit: true, min: { w: 3, h: 1 }, max: { w: 12, h: 1 } }, HOME_STRIP = { fit: true, min: { w: 6, h: 1 }, max: { w: 12, h: 1 } };
 // Kinds of home items that can be bundled into one card (title, view the card opens); the bundled kinds are kept per browser.
 const HOME_KINDS = { ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["공급자", "providers"] };
 const HOME_GROUPS_KEY = "dotz-home-groups";
@@ -173,15 +183,21 @@ function setHomeGroup(kind, on) {
   try { localStorage.setItem(HOME_GROUPS_KEY, JSON.stringify([...homeGroups])); } catch {}
   setTimeout(renderHome, 0);
 }
-const toneCls = t => t ? ` att${t === "err" ? " err" : ""}` : "";
+// The one accent of a home card is a status dot: orange when it needs the owner, red when it failed.
+const hcTone = t => t === "err" ? "err" : t ? "att" : "";
+const hcKDot = t => t ? el("span", { class: `dot ${hcTone(t)}` }) : null;
 // One item inside a bundle card: clicking it opens the item, its own ⋯ menu keeps the item's actions.
 function homeRow(e) {
-  const r = el("div", { class: `grow${toneCls(e.tone)}`, role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); e.open(); }, onkeydown: ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === r) { ev.preventDefault(); ev.stopPropagation(); e.open(); } } },
+  const r = el("div", { class: "grow", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); e.open(); }, onkeydown: ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === r) { ev.preventDefault(); ev.stopPropagation(); e.open(); } } },
     el("div", { class: "gm" }, ...e.row()), menuBtn(e.id));
   return r;
 }
-// Every item is its own floating card (the assistant, each running lane, each context process, each usage limit, each provider),
-// except kinds the owner bundled: those share one card with a row per item.
+// Every item is its own card (each context process, each usage limit, each provider), except kinds the owner bundled (the default):
+// those share one card with a row per item. The assistant is the summary strip on top.
+// 5시간 / 7일: the first limit of that kind (not a model's own, "7 Day (Opus)"), its share left as a percent.
+const hsumLimit = re => { for (const p of (HQ && HQ.providers) || []) for (const l of p.limits || []) { const s = String(l.label || l.id); if (!/\(/.test(s) && re.test(s)) return l; } return null; };
+const hsumStat = (k, v, tone) => el("div", { class: "hsum-s" }, el("span", { class: "k", text: k }), el("span", { class: "v" }, hcKDot(tone), v));
+const hsumPct = l => { const f = limitFrac(l); return f == null ? "–" : `${Math.round(f * 100)}%`; };
 // The newest meaningful line of what a target is doing: its loaded activity, else the lane's last fetched line, else its last text.
 function nowLine(t) {
   const acts = ts(t).acts;
@@ -332,21 +348,23 @@ function renderHome() {
   renderHomeNow();
   if (openMenu && box.contains(openMenu.anchor)) return;   // a ⋯ menu is open: repaint after it closes
   $("#title").textContent = botName;
-  if (!homeBoard) homeBoard = makeBoard(box, "home", { actions: [{ label: "카드 추가", run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
+  if (!homeBoard) homeBoard = makeBoard(box, "home", { px: true, actions: [{ label: "카드 추가", run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
   const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, live = liveModel(MAIN), [liveBase, liveLevel] = String(live.sel || "").split(":"), items = [], seen = new Set();
   const add = (id, node, def, size) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def, ...size }); } };
 
   // assistant
   const stText = o.status === "rate-limited" && o.rateLimitedUntil ? `${statusKo(o.status)} · ${kstTime(o.rateLimitedUntil)}까지` : statusKo(o.status);
   const mainAttn = attnKind(MAIN);
-  add(MAIN, itemCard(() => openTarget(MAIN, lastChatView()), mainAttn || o.status === "rate-limited" ? "warn" : "",
-    el("div", { class: "ch" }, el("span", { class: `dot ${mainAttn ? "att" : statusTone(o.status)}` }), el("h3", { text: botName }), mainAttn ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), menuBtn(MAIN)),
-    el("div", { class: "big", text: om && liveBase ? (modelName(liveBase).includes("-") ? modelChipText(liveBase) : modelName(liveBase)) : "…" }),
-    el("div", { class: "sup sub" }, liveLevel ? `추론 강도 ${thinkKo(liveLevel)}` : "\u00a0", live.fallback ? fbTag(live.fallback, live.conf) : null),
-    subLine("orchestrator")), { w: 4, h: 4 }, HOME_BIG);
-  add("notices:alert", homeAlertCard(), { w: 4, h: 4 }, HOME_NOTICE);
-  add("notices:worklog", homeWorklogCard(), { w: 4, h: 4 }, HOME_NOTICE);
-  add("notices:watch", homeMonitorCard(), { w: 4, h: 4 }, HOME_NOTICE);
+  // The summary strip: model, state and the numbers worth a glance (what is left of 5시간 / 7일, the unread notices); the dot is its one accent.
+  const l5 = hsumLimit(/\b5\s*hours?\b|5\s*시간/i), l7 = hsumLimit(/\b7\s*days?\b|7\s*일/i), modelText = om && liveBase ? (modelName(liveBase).includes("-") ? modelChipText(liveBase) : modelName(liveBase)) : "…";
+  add(MAIN, itemCard(() => openTarget(MAIN, lastChatView()), "",
+    hcHead(botName, { dot: mainAttn || o.status === "rate-limited" ? "att" : statusTone(o.status), note: mainAttn ? "확인 필요" : S ? stText : "연결 중", menu: MAIN }),
+    el("div", { class: "hsum" }, hsumStat("모델", modelText), liveLevel ? hsumStat("추론 강도", thinkKo(liveLevel)) : null, l5 ? hsumStat("5시간 남음", hsumPct(l5), limitTone(l5)) : null, l7 ? hsumStat("7일 남음", hsumPct(l7), limitTone(l7)) : null, NT.loaded ? hsumStat("안 읽은 알림", `${hcUnread()}개`) : null),
+    live.fallback ? el("div", { class: "sup hsum-fb", text: fbTagText(live.fallback) }) : null,
+    subLine("orchestrator")), { w: 12, h: 1 }, HOME_STRIP);
+  add("notices:alert", homeAlertCard(), { w: 4, h: 1 }, HOME_FIT);
+  add("notices:worklog", homeWorklogCard(), { w: 4, h: 1 }, HOME_FIT);
+  add("notices:watch", homeMonitorCard(), { w: 4, h: 1 }, HOME_FIT);
 
   // entries per kind: {id, tone, open, card() (own floating card), row() (contents of its row in a bundle)}. A session is a row of
   // 지금 진행 중 / 대기 중 above, so it has no card here as well.
@@ -354,38 +372,36 @@ function renderHome() {
   for (const p of ((C && C.processes) || []).filter(x => x.running)) {
     const id = `ctx:${p.name}`, pct = p.percent, who = p.kind === "lane" ? targetName(`lane:${p.name}`) : botName, v = pct != null ? `${pct}%` : `${num(p.tokens)} 토큰`;
     const bar = () => el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` }));
-    E.ctx.push({ id, tone: pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 4, h: 2 }, HOME_SMALL],
-      card: () => [el("div", { class: "ch" }, el("h3", { text: `컨텍스트 · ${who}` }), el("span", { class: "sup", text: v }), menuBtn(id)), bar()],
-      row: () => [el("div", { class: "kv" }, el("span", { class: "k", text: who }), el("span", { class: "v", text: v })), bar()] });
+    E.ctx.push({ id, tone: pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 4, h: 1 }, HOME_FIT],
+      card: () => [hcHead(`컨텍스트 · ${who}`, { dot: hcTone(pct >= 80 ? "warn" : ""), note: v, menu: id }), bar()],
+      row: () => [el("div", { class: "kv" }, el("span", { class: "k" }, hcKDot(pct >= 80 ? "warn" : ""), who), el("span", { class: "v", text: v })), bar()] });
   }
   if (HQ && !HQ.error) {
     const provs = (HQ.providers || []).filter(p => (p.limits || []).length), multi = provs.length > 1;
     for (const pr of provs) for (const l of pr.limits) {
       const id = `limit:${pr.provider}:${l.id}`, f = limitFrac(l), name = limitLabel(pr, l, multi);
-      E.limit.push({ id, tone: limitHit(l) || (f != null && f <= .2) ? "warn" : "", open: () => go("usage"), size: [{ w: 4, h: 2 }, HOME_SMALL],
-        card: () => [el("div", { class: "ch" }, el("h3", { text: name }), el("span", { class: "sup", text: pctText(l) }), menuBtn(id)), bar(l)],
-        row: () => [el("div", { class: "kv" }, el("span", { class: "k", text: name }), el("span", { class: "v", text: pctText(l) })), bar(l)] });
+      const tone = limitHit(l) || (f != null && f <= .2) ? "warn" : "";
+      E.limit.push({ id, tone, open: () => go("usage"), size: [{ w: 4, h: 1 }, HOME_FIT],
+        card: () => [hcHead(name, { dot: hcTone(tone), note: pctText(l), menu: id }), bar(l)],
+        row: () => [el("div", { class: "kv" }, el("span", { class: "k" }, hcKDot(tone), name), el("span", { class: "v", text: pctText(l) })), bar(l)] });
     }
   }
   for (const p of (P && P.providers) || []) {
     if (!isConnected(p) && !needsAttention(p)) continue;
     const id = `prov:${p.id}`, bad = needsAttention(p), st = bad ? "로그인 필요" : p.auth === "api_key" ? "API 키" : "로그인됨";
-    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("provider", p.id), size: [{ w: 4, h: 2 }, HOME_SMALL],
-      card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${bad ? "att" : "ok"}` }), el("h3", { text: p.name || p.id }), el("span", { class: `tag ${bad ? "warn" : ""}`, text: st }), menuBtn(id)),
+    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("provider", p.id), size: [{ w: 4, h: 1 }, HOME_FIT],
+      card: () => [hcHead(p.name || p.id, { dot: bad ? "att" : "ok", note: st, menu: id }),
         p.account ? el("div", { class: "sup", text: p.account }) : null],
       row: () => [el("div", { class: "row" }, el("span", { class: `dot ${bad ? "att" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: bad ? st : p.account || st }))] });
   }
   const loaded = { ctx: !!C, limit: !!HQ, prov: !!P };
   for (const [kind, list] of Object.entries(E)) {
-    if (!homeGroups.has(kind)) { for (const e of list) add(e.id, itemCard(e.open, e.tone, ...e.card()), ...e.size); continue; }
-    // never shorter than its rows: header ~52px, bar rows ~44px, plain rows ~30px
-    const need = Math.min(HOME_GROUP.max.h, Math.max(2, Math.ceil((52 + Math.max(1, list.length) * (kind === "limit" || kind === "ctx" ? 44 : 30) + BGAP) / BSTEP)));
-    const [title, view] = HOME_KINDS[kind], nAtt = list.filter(e => e.tone).length;
-    const tone = list.some(e => e.tone === "err") ? "err" : nAtt ? "warn" : "";
+    if (!homeGroups.has(kind)) { for (const e of list) add(e.id, itemCard(e.open, "", ...e.card()), ...e.size); continue; }
+    const [title, view] = HOME_KINDS[kind], nAtt = list.filter(e => e.tone).length, none = !list.length;
     const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : "없어요";
-    add(`group:${kind}`, itemCard(view, tone,
-      el("div", { class: "ch" }, el("h3", { text: title }), nAtt ? el("span", { class: "tag warn", text: `확인 필요 ${nAtt}` }) : null, list.length ? el("span", { class: "tag", text: String(list.length) }) : null, menuBtn(`group:${kind}`)),
-      list.length ? el("div", { class: "glist" }, ...list.map(homeRow)) : el("div", { class: "sup", text: empty })), { w: 4, h: need }, { min: { w: 3, h: need }, max: HOME_GROUP.max });
+    add(`group:${kind}`, hcFold(itemCard(view, "",
+      hcHead(title, { dot: nAtt ? hcTone(list.some(e => e.tone === "err") ? "err" : "warn") : "", n: none ? null : String(list.length), note: none ? empty : "", menu: `group:${kind}` }),
+      none ? null : el("div", { class: "glist" }, ...list.map(homeRow))), none), { w: 4, h: 1 }, HOME_FIT);
   }
 
   // the owner's custom cards (web/custom.js) are board items like the rest

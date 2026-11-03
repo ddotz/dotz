@@ -40,10 +40,10 @@ button.nt-mon .chev { flex: none; align-self: center; color: var(--fg-3); }
 div.nt-mon:hover, div.nt-mon:active { background: transparent; }
 div.nt-mon .nt-dot { margin-top: 7px; }
 
-/* Home cards: 알림 / 작업내역 / 모니터링 (fixed height on the board). No overflow here: the board's own rule (.bi > .card, 05-log.css) lets a card shorter than its rows scroll instead of cutting the last ones off. */
+/* Home cards: 알림 / 작업내역 / 모니터링 (as tall as their content on the board, 07-board.js fit). */
 .card.hc { display: flex; flex-direction: column; }
 .hc .ch .tag { flex: none; }
-.hc-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin-top: 8px; }
+.hc-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .hc-row { display: flex; align-items: center; gap: 8px; min-width: 0; font: 400 14px/20px var(--font); }
 .hc-row { cursor: pointer; border-radius: var(--r-ctl); margin-inline: -6px; padding: 4px 6px; }
 .hc-row:hover { background: var(--card-hover); }
@@ -61,6 +61,16 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .hc-mon .s { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .hc-more { margin-top: 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .hc-none { margin-top: 8px; color: var(--fg-3); font: 400 14px/22px var(--font); }
+/* head note and count: plain grey text, a dot is the only colour; an empty card is just this head (fold) */
+.hc-n { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--fg-3); font: 400 13px/18px var(--font); }
+.card.fold .ch { margin-bottom: 0; }
+/* the summary strip (the assistant card): label over number, wrapping as columns */
+.hsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 12px 16px; }
+.hsum-s { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hsum-s .k { color: var(--fg-3); font: 400 12px/16px var(--font); }
+.hsum-s .v { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 20px/28px var(--font); letter-spacing: -.01em; }
+.hsum-fb { margin-top: 8px; }
+.bi[data-id="main"] .subline { margin-top: 12px; padding: 0; background: none; color: var(--fg-2); }
 
 /* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option (recommended first). */
 /* Computer switch sheet (33-peers.js): the bottom sheet on the phone and a centered dialog from 700px. Decisions and notices use the full-screen overlay (14-overlay.css), not this. */

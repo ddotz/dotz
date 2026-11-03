@@ -161,6 +161,9 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .bi { position: absolute; border-radius: 8px; transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease, box-shadow .15s; }
 .bi > .card { overflow: hidden auto; }
 .bi:hover, .bi.bdrag { box-shadow: var(--float); }
+.bi.fit > .card { height: auto; overflow: visible; }
+.bi.fit .brz.s, .bi.fit .brz.se { display: none; }
+.board.bnt .bi { transition: none; }
 .bi.bdrag { z-index: 6; transition: box-shadow .15s; }
 /* a finger resting on a card before the long press: no text selection or callout while it waits; the lifted card shows at once */
 .bi.bpress, .bi.bpress * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -206,11 +209,13 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .grow:hover { background: var(--hover); }
 .grow .gm { flex: 1; min-width: 0; }
 .grow .gm .bar { margin-top: 6px; }
+.grow .kv .k { font: 400 14px/20px var(--font); }
+.grow .kv .v { max-width: none; color: var(--fg); font: 500 14px/20px var(--font); }
+.kv .k .dot { display: inline-block; margin-right: 6px; vertical-align: 1px; }
+.board .bar, .board .bar.warn, .board .bar.err { --bar: var(--fg-2); }
 .grow > .ib { flex: none; width: 24px; height: 24px; opacity: 0; }
 .grow:hover > .ib, .grow:focus-within > .ib, .grow > .ib[aria-expanded="true"] { opacity: 1; }
 @media (hover: none) { .grow > .ib { opacity: 1; } }
-.grow.att { background: color-mix(in srgb, var(--warn) 12%, transparent); }
-.grow.att.err { background: color-mix(in srgb, var(--err) 12%, transparent); }
 @media (pointer: coarse) { .brz.e, .brz.s { display: none; } .brz.se { width: 24px; height: 24px; } .brz.se::after { right: 6px; bottom: 6px; } }
 /* markdown has block children (lists, code), so a line clamp would cut through a line: cap the height and fade a long report */
 .lstat { flex: none; padding: 6px 12px; border-top: 1px solid var(--line); color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
