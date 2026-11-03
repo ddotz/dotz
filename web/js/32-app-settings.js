@@ -248,7 +248,7 @@ function asAddPaint() {
           el("button", { class: "btn tonal inrow", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기"),
           el("button", { class: "btn text inrow", type: "button", "data-k": `del:${a.key}`, "aria-expanded": String(asDelOpen(a)), onclick: () => asDelOpen(a) ? (AD.del = null, asAddPaint()) : asDelAsk(a) }, "삭제"))),
         ...(asDelOpen(a) ? [asDelNode(a)] : [])])] : [])),
-    el("div", { class: "fs-ft row" }, el("button", { class: "btn", type: "button", "data-k": "new-app", onclick: asNewSend }, "보내기")));
+    el("div", { class: "fs-ft row" }, el("button", { class: "btn text", type: "button", "data-k": "new-app-cancel", onclick: () => h.close() }, "취소"), el("button", { class: "btn", type: "button", "data-k": "new-app", onclick: asNewSend }, "보내기")));
 }
 // 보내기: the request goes to the main orchestrator as the owner's message ("연결할 앱: <what he typed>", docs/app-templates) through the chat's
 // own send, and the main chat opens on it, so the work that starts is right there.
@@ -575,7 +575,7 @@ function settingsCardHtml(src) {
   const memOnly = fields.length && Object.keys(ch).every(k => (fields.find(x => x.key === k) || {}).memory);
   if (memOnly) return `<div class="as-card applied"><div class="as-ct">기억해 뒀어요</div>${Object.entries(ch).map(([k, v]) => { const f = fields.find(x => x.key === k); return `<div class="as-cr"><span class="as-cn">${esc(f.label)}</span><span class="as-cv">${esc(asFmt(f, v))}</span></div>`; }).join("")}</div>`;
   const foot = state ? `<div class="as-done ${state}">${state === "applied" ? "적용했어요" : "취소했어요"}</div>`
-    : `<div class="as-act"><button class="btn sm" type="button" data-as="apply">적용</button><button class="btn tonal sm" type="button" data-as="cancel">취소</button></div>`;
+    : `<div class="as-act"><button class="btn sm" type="button" data-as="apply">적용</button><button class="btn text sm" type="button" data-as="cancel">취소</button></div>`;
   return `<div class="as-card${state ? ` ${state}` : ""}" data-as-id="${id}" data-as-app="${esc(app)}" data-as-src="${esc(String(src).trim())}"><div class="as-ct">설정 바꾸기 제안</div>${rows}${foot}</div>`;
 }
 document.addEventListener("click", async ev => {
