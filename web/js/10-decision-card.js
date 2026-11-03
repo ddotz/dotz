@@ -506,31 +506,22 @@ async function dcReopen(nd) {
     toast("초안을 되돌렸어요");
   } catch (e) { toast(e.message, true); }
 }
-function choicesNode(sig, pc, at) {
-  const box = el("div", { class: isFixedT(target) ? "dcm fx" : "dcm", "data-sig": sig, "data-at": at || null });
-  pc.blocks.forEach((b, bi) => {
-    if (b.title && pc.blocks.length > 1) box.append(el("div", { class: "dcm-sub", text: b.title }));
-    for (const o of b.options) box.append(el("button", { class: `dcm-row${o.rec ? " rec" : ""}`, type: "button", disabled: true, "data-b": bi, "data-n": o.n, onclick: () => { const dc = DC.cur; if (dc && dc.sig === sig) pickOption(dc, bi, o); else { const nd = pc.blocks.length === 1 ? dcNoticeAt(at) : null; if (nd && nd.decision.state === "open" && !dcSending.has(nd.id)) answerInline(nd, o); } } },
-      el("span", { class: "dc-key", text: String(o.n) }),
-      el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
-  });
-  return box;
-}
 // Decision cards already docked: only one that really arrives rises in (not on the first paint, nor when another conversation opens).
-const DC_SEEN = new Set(); let dcShownT = "", dcLast = null, dcLeaveT = 0, dcOut = null;
-// An answered card does not vanish the instant the answer lands: it says 보냈어요 for a beat, then fades out (no new request, only the state it already has).
+const DC_SEEN = new Set(); let dcShownT = "", dcLast = null, dcOut = null;
+// An answered card folds away at once: its record is already in the conversation (dcRecordNode), so nothing has to wait for the card to
+// say 보냈어요 (owner 2026-11-03: no fixed 1.2s beat). motionOut ends it, and a question that arrives meanwhile cancels the leave.
 function dcLeave(box, dc) {
   const picks = DC.picks[dc.key] || [], st = DC.st[dc.key];
   if (box.dataset.st !== st) { motionSwap(box, () => renderDecision(box, dc, picks, DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i])))); box.dataset.st = st; }
-  clearTimeout(dcLeaveT);
-  if (st !== "sent") return;
-  dcLeaveT = setTimeout(async () => {
-    if (DC.cur) return;
+  if (st !== "sent" || box.dataset.out) return;
+  box.dataset.out = "1";
+  void (async () => {
+    if (DC.cur) { delete box.dataset.out; return; }
     dcOut = await motionOut(box);
-    if (DC.cur) return;
+    if (DC.cur) { if (dcOut && dcOut.cancel) dcOut.cancel(); dcOut = null; delete box.dataset.out; return; }
     if (dcOut && dcOut.cancel) dcOut.cancel();
-    dcOut = null; dcLast = null; box.hidden = true; delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; clear(box);
-  }, 1200);
+    dcOut = null; dcLast = null; box.hidden = true; delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; delete box.dataset.out; clear(box);
+  })();
 }
 function paintDecision() {
   const box = $("#dcard");
@@ -538,7 +529,7 @@ function paintDecision() {
   // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
   const dc = isFixedT(target) ? null : decisionOf(target), had = !!DC.cur;
   DC.cur = dc;
-  if (dc) { dcLast = dc; clearTimeout(dcLeaveT); if (dcOut && dcOut.cancel) dcOut.cancel(); dcOut = null; }
+  if (dc) { dcLast = dc; delete box.dataset.out; if (dcOut && dcOut.cancel) dcOut.cancel(); dcOut = null; }
   const arrived = S && freshKeys(DC_SEEN, dc ? [...DC_SEEN, dc.key] : [...DC_SEEN]).has(dc && dc.key) && dcShownT === target;
   if (S) dcShownT = target;
   const waiting = dc || isFixedT(target) ? null : dcWaitingCard(target);
@@ -578,4 +569,18 @@ function dcPointer(box, n) {
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
   return JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr, (DC.files[dc.key] || []).length, !!DC.fbusy[dc.key]]);
+}
+// What was decided stays in the conversation once the card is gone (owner 2026-11-03): the owner's answer message already carries the
+// question and the chosen option (hub/intake.ts decisionLines, `picks`), so the record is drawn from it here and from history after a
+// reload — the agent's message itself is unchanged. One row per block: 질문 <title> · 답: <n) label>. `files` = what a 직접 수정 answer
+// attached, `mt` = the message's own meta line (the delivery state paints into it).
+function dcRecordNode(e, files, mt) {
+  const picks = (Array.isArray(e.picks) ? e.picks : []).filter(p => p && Number.isFinite(Number(p.n)));
+  if (!picks.length) return null;
+  const q = p => String(p.q ?? "").trim();
+  return el("div", { class: "dc-rec", role: "note", "aria-label": "결정 기록" },
+    picks.map(p => el("div", { class: "dc-rec-r" },
+      q(p) ? el("span", { class: "dc-rec-k", text: "질문" }) : null, q(p) ? el("span", { class: "dc-rec-q", text: q(p) }) : null,
+      el("span", { class: "dc-rec-k", text: "· 답:" }), el("span", { class: "dc-rec-a", text: `${p.n}) ${p.label}${p.note ? ` - ${p.note}` : ""}` }))),
+    files || null, mt || null);
 }

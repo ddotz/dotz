@@ -4,8 +4,8 @@ import { mailText } from "./mail.ts";
 import { fakeHub, json, on } from "./test-web.ts";
 
 // A new mail's offered reply draft in its mail conversation, in a headless browser against a fixture history (nothing is sent):
-// the mail card first, then the bot's "[ask] 답장 초안을 만들었어요" with the quoted draft and 보내기 / 고치기 / 보내지 않기.
-// The desktop view is tall enough for the whole conversation.
+// the mail card first, then the bot's "[ask] 답장 초안을 만들었어요" with the quoted draft and 보내기 / 고치기 / 보내지 않기를 in the decision
+// card above the composer (owner 2026-11-03: the options live only there, never in the message body).
 const KEY = "zele-abc123";
 const TARGET = `mail:${KEY}`;
 const DRAFT_BODY = "안녕하세요.\n목요일 오후 3시 괜찮습니다.\n감사합니다.";
@@ -35,15 +35,17 @@ for (const [width, height] of [[390, 844], [1280, 1700]] as const) {
 		await waitFor(`typeof openTarget === "function" && S`);
 		await view.evaluate(`(openTarget(${JSON.stringify(TARGET)}, "chat"), 0)`);
 		await waitFor(`document.body.textContent.includes("목요일 오후 3시 괜찮습니다.") && document.body.textContent.includes("회의 일정 문의")`);
-		await waitFor(`document.querySelectorAll(".dcm-row").length === 3`);
+		await waitFor(`document.querySelectorAll("#dcard .dc-row").length === 3`);
 		const seen = JSON.parse(
 			await view.evaluate(`JSON.stringify({
-				options: [...document.querySelectorAll(".dcm-row")].map(b => b.querySelector(".dc-lb").textContent.replace("추천", "").trim()),
+				options: [...document.querySelectorAll("#dcard .dc-row")].map(b => b.querySelector(".dc-lb").textContent.replace("추천", "").trim()),
+				rows: document.querySelectorAll("#tl .dcm-row").length,
 				text: document.body.innerText,
 				over: document.documentElement.scrollWidth > innerWidth,
 			})`),
-		) as { options: string[]; text: string; over: boolean };
+		) as { options: string[]; rows: number; text: string; over: boolean };
 		expect(seen.options).toEqual(["보내기", "고치기", "보내지 않기"]);
+		expect(seen.rows).toBe(0);
 		for (const part of ["kim@example.com", "Re: 회의 일정 문의", "안녕하세요.", "목요일 오후 3시 괜찮습니다.", "감사합니다."]) expect(seen.text).toContain(part);
 		expect(seen.over).toBe(false);
 	});

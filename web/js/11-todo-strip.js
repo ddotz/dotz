@@ -204,6 +204,9 @@ function msgNode(e) {
       if (mid) { DELIV.nodes.set(mid, { mt, base }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
       // The owner's files are uploads of the computer that holds the conversation: a peer's open there (15-attachments.js fileUrl).
       const pc = Array.isArray(e.files) && e.files.length ? pqPc(eventTarget(e) || "") : null;
+      // An answered decision is a quiet record of what was decided, not a "1) …" bubble (10-decision-card.js dcRecordNode); the options
+      // themselves stay only in the card/sheet that asked (owner 2026-11-03).
+      if (e.kind !== "_cmd" && Array.isArray(e.picks) && e.picks.length) return dcRecordNode(e, filesNode(pc ? e.files.map(f => ({ ...f, pc })) : e.files), mt);
       return el("div", { class: "um" }, filesNode(pc ? e.files.map(f => ({ ...f, pc })) : e.files), rpQuote(e), text ? ub : null, more, mt);
     }
     case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, e.card ? cardNode(e.card) : el("pre", { text }), el("div", { class: "mt", text: hm }));
@@ -273,7 +276,8 @@ function msgNode(e) {
       const lt = laneMsg && tone ? LANE_TONE[tone] : null;
       const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null, lt ? el("span", { class: `tag ${lt[0]}`, text: lt[1] }) : null);
       const pc0 = e.kind === "out" || e.kind === "lane_report" ? parseChoices(parsed) : null, pc = pc0 && choiceAsks(e, tone, pc0) ? pc0 : null;
-      // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, with its buttons.
+      // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, and a tap on it opens
+      // the decision sheet (30-notices.js) — the options themselves live there, never in the message body.
       if (e.target === "alert" && !(pc && pc.blocks.length)) {
         if (/```원문\n/.test(body)) return el("div", { class: `bm${card}` }, head, mdNode(body));
         const line = humanAlert(body);
@@ -286,7 +290,7 @@ function msgNode(e) {
       // A briefing-shaped answer (schedule rows, a mail line, counts) is drawn as a card of rows and chips (11-resultcard.js hcBriefNode).
       const brief = e.kind === "out" && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
       if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);
-      return el("div", { class: `bm${card}` }, head, rpQuote(e), brief || md, filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc, e.ts) : null);
+      return el("div", { class: `bm${card}` }, head, rpQuote(e), brief || md, filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files);
     }
   }
 }
