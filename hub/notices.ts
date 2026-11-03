@@ -8,6 +8,7 @@ import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { broadcast as broadcastRaw, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
 import { classOfNotice } from "./notice-class.ts";
+import { noticeKo } from "./notice-ko.ts";
 import type { Upload } from "./files.ts";
 import { readOf } from "./reads.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
@@ -241,6 +242,7 @@ const noteLaunch = (e: HubEvent) => {
 	if (typeof e.lane === "string" && typeof e.title === "string" && e.title.trim()) launchTitles.set(e.lane, e.title.trim());
 };
 const laneTitle = (name: string) => laneTitleOf(name)?.trim() || recordedTitle(name) || "세션";
+export const laneNameKo = laneTitle;
 
 // On load: items that were stored as "세션" (the title was not known when they were made) get their lane's real title when one
 // can be found, without touching anything else.
@@ -273,8 +275,8 @@ retitleStored();
 
 const isOpenDecision = (i: Notice) => i.decision?.state === "open" && !hasExpired(i.decision);
 // Every notice the pages get carries its class (hub/notice-class.ts), computed as it goes out: the bell's tabs and badge read it, nothing stored changes.
-const withClass = (n: Notice): Notice & { cls: string } => ({ ...n, cls: classOfNotice(n).cls });
-const broadcast = (e: Record<string, unknown>): void => broadcastRaw(e.kind === "notice" && e.item && typeof e.item === "object" ? { ...e, item: withClass(e.item as Notice) } : e);
+const withClass = (n: Notice, shown: Notice = n): Notice & { cls: string } => ({ ...shown, cls: classOfNotice(n).cls });
+const broadcast = (e: Record<string, unknown>): void => broadcastRaw(e.kind === "notice" && e.item && typeof e.item === "object" ? { ...e, item: withClass(e.item as Notice, readable(e.item as Notice)) } : e);
 // A notice that waits on the owner's action: an open decision, or an [ask] item (the alert / message twin of one). Looking at it, anywhere, never
 // reads it; only an answer, a resolving signal (resolveAsks) or the owner's x (ignoreNotice) takes it off. Every other notice clears on view.
 export const needsAnswer = (i: Notice) => !i.read && !i.dismissed && !i.ignored && !hasExpired(i.decision) && (isOpenDecision(i) || i.tone === "ask");
@@ -1291,8 +1293,15 @@ function retextWatch(id: string, text: string): void {
 	broadcast({ ts: now(), kind: "notice", source: "gateway", item: n, unread: unreadCount() });
 }
 
-// A watch notice stored before labels and Korean reasons: its title is the watch name and its text starts with the raw reason.
+// A notice as the owner reads it (the stored one keeps what the bot wrote): everyday Korean, no tool names, commands, ids or paths (hub/notice-ko.ts).
+const say = (s: string): string => noticeKo(s, { lane: name => laneTitleOf(name)?.trim() || recordedTitle(name), keepFiles: true });
 function readable(n: Notice): Notice {
+	const r = readableStored(n);
+	const title = say(r.title), text = r.decision?.draft ? r.text : say(r.text);
+	return title === r.title && text === r.text ? r : { ...r, title, text };
+}
+// A watch notice stored before labels and Korean reasons: its title is the watch name and its text starts with the raw reason.
+function readableStored(n: Notice): Notice {
 	if (n.kind === "message" && n.key?.startsWith("msg:settings:")) {   // stored before settings conversations had a name: titled "대화"
 		const title = channelTitle(n.key.slice(4));
 		return title === n.title ? n : { ...n, title };
@@ -1310,7 +1319,7 @@ export function listNotices(limit = 100): { items: Notice[]; unread: number } {
 	const shown = items.filter(i => !i.dismissed && !appBlocked(i));
 	const order = new Map(shown.map((i, idx) => [i, idx]));
 	const sorted = [...shown].sort((a, b) => Number(isOpenDecision(b)) - Number(isOpenDecision(a)) || Number(a.read) - Number(b.read) || b.updated.localeCompare(a.updated) || order.get(b)! - order.get(a)!);
-	return { items: sorted.slice(0, n).map(i => withClass(readable(i))), unread: unreadCount() };
+	return { items: sorted.slice(0, n).map(i => withClass(i, readable(i))), unread: unreadCount() };
 }
 
 // The 알림 conversation's messages whose notice was dismissed (지우기 on it, web/js/30-notices.js): their event times, so every page hides them there.

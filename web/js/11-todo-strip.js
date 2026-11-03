@@ -279,8 +279,9 @@ function msgNode(e) {
       // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, and a tap on it opens
       // the decision sheet (30-notices.js) — the options themselves live there, never in the message body.
       if (e.target === "alert" && !(pc && pc.blocks.length)) {
-        if (/```원문\n/.test(body)) return el("div", { class: `bm${card}` }, head, mdNode(body));
-        const line = humanAlert(body);
+        const shown = noticeKo(body, NK);
+        if (/```원문\n/.test(body)) return el("div", { class: `bm${card}` }, head, mdNode(shown));
+        const line = humanAlert(shown);
         // A watch's change line (89,000원 → 72,000원) stands under the sentence with the old value struck, not only folded in the raw text.
         const chg = nwChangeNode(nwChangeLine(body));
         return el("div", { class: `bm${card}` }, head, mdNode(line), chg ? el("div", { class: "nw-line" }, chg) : null, line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
