@@ -165,6 +165,10 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
 #mon-tl > .mr > .mr-pts li + li::before { content: " · "; position: static; width: auto; height: auto; background: none; color: var(--fg-3); }
 #mon-tl > .mr > :is(.mr-to, .mr-todo) { display: none; }
 @media (min-width: 1100px) {
+  /* the list uses the whole content area right of the app list (owner 2026-11-03, like KakaoTalk or Instagram): the folder chips, the 메일 N개 row and the rows
+     start at one left line (the row's 16px, the select-all box on the row checkbox's x) and the extra width goes to the subject and the preview */
+  #mon-tl:has(> .mr-filter.mr-mail) { max-width: none; margin: 0; }
+  .mbox-bar { padding-left: 12px; }
   #mon-tl > .bm.rc.mr { flex-wrap: nowrap; column-gap: 8px; height: 48px; padding: 0 12px 0 16px; }
   #mon-tl > .mr > .mr-dot { top: 50%; margin-top: -4px; }
   #mon-tl > .mr > .rc-hd { display: contents; }

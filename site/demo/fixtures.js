@@ -53,9 +53,17 @@
       summary: "견적 범위를 정리해서 보냈어요.",
       text: "지훈님, 견적 범위를 정리해 보내드려요.\n수정할 부분이 있으면 말씀해 주세요.",
     },
+    {
+      // a sent mail the collector stored with its html body: no summary, the row and the event carry only the start of the body (hub/mail.ts sentMailEvent)
+      key: "s-3", at: ago(1000), dir: "out", read: true, html: true,
+      from: "나 <me@example.com>", to: "서하은 <haeun.seo@example.com>", name: "서하은", short: "하은님",
+      subject: "견적 일정 안내드려요",
+      text: "하은님, 안녕하세요.\n요청하신 견적은 이번 주 금요일까지 정리해서 보내드릴게요.\n먼저 범위와 일정부터 맞춰 보면 좋겠어요.\n\n- 1차 범위 확정: 수요일\n- 견적서 전달: 금요일\n\n궁금한 점은 편하게 말씀해 주세요.",
+    },
   ];
-  const mailCard = m => ({ subject: m.subject, from: m.from, to: m.to, at: m.at, summary: m.summary, preview: m.text.split("\n").find(l => l.trim()) || "", dir: m.dir, read: m.read, ...(m.reply ? { reply: m.reply } : {}), can: CAN, attachments: m.attachments || [] });
-  const mailEvent = m => ({ ts: m.at, kind: "mail", source: "mail", target: `mail:${m.key}`, mail: m.key, conv: `mail:${m.key}`, subject: m.subject, from: m.from, to: m.to, summary: m.summary, preview: mailCard(m).preview, attachments: m.attachments || [], text: `${m.subject}\n${m.summary}\n\n\`\`\`원문\n${m.text}\n\`\`\`` });
+  const mailBody = m => m.html ? "<!doctype html><meta charset=utf-8><body style=\"font:15px/1.6 sans-serif;margin:16px\">" + m.text.split("\n").map(l => l.trim() ? "<p>" + l + "</p>" : "").join("") + "</body>" : "";
+  const mailCard = m => ({ subject: m.subject, from: m.from, to: m.to, at: m.at, summary: m.summary, preview: m.html ? m.text.split("\n").filter(l => l.trim()).slice(0, 3).join("\n") : m.text.split("\n").find(l => l.trim()) || "", dir: m.dir, read: m.read, ...(m.html ? { html: true } : {}), ...(m.reply ? { reply: m.reply } : {}), can: CAN, attachments: m.attachments || [] });
+  const mailEvent = m => m.dir === "out" && m.html ? ({ ts: m.at, kind: "mail", dir: "out", source: "mail", target: `mail:${m.key}`, mail: m.key, conv: `mail:${m.key}`, subject: m.subject, from: m.from, to: m.to, preview: mailCard(m).preview, html: true, attachments: [], text: `${m.from} · ${m.subject}\n\n${m.text.split("\n").filter(l => l.trim()).slice(0, 3).join("\n")}` }) : ({ ts: m.at, kind: "mail", source: "mail", target: `mail:${m.key}`, mail: m.key, conv: `mail:${m.key}`, subject: m.subject, from: m.from, to: m.to, summary: m.summary, preview: mailCard(m).preview, attachments: m.attachments || [], text: `${m.subject}\n${m.summary}\n\n\`\`\`원문\n${m.text}\n\`\`\`` });
 
   // 오늘·내일 일정 (아침 브리핑과 일정 질문이 읽어요)
   const calendar = {
@@ -281,7 +289,7 @@
   const files = { "reports/주간-보고서.md": "# 주간 보고서\n\n- 이번 주 한 일: 메일 정리, 댓글 답글, 감시 설정\n- 다음 주 할 일: 견적 확정, 배포 공지\n" };
 
   window.DEMO_FIXTURES = {
-    now, ago, MODEL, model, la, mails, mailCard, mailEvent, calendar, comments, histories, state, conversations,
+    now, ago, MODEL, model, la, mails, mailBody, mailCard, mailEvent, calendar, comments, histories, state, conversations,
     integrations, kakaoRooms, kakaoChat, appFields, appFeatures, apps, monitors, projects, todo, subagents, queue, notices, canvases, files,
   };
 })();
