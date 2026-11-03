@@ -615,6 +615,7 @@
     if (p === "/api/conversations") return json({ items: F.conversations });
     if (p === "/api/integrations") return json({ items: F.integrations.map(i => ({ ...i, needs: { drafts: 0, unread: F.mails.filter(m => m.dir === "in" && !m.read).length, unreplied: 0, sentToday: 0 } })), available: [{ key: "youtube", label: "유튜브", icon: "image" }] });
     if (p === "/api/apps") return json({ items: F.apps, errors: [] });
+    if (/^\/api\/mail\/[^/]+\/body$/.test(p)) { const m = mail(p.split("/")[3]); return m && m.html ? new Response(F.mailBody(m), { headers: { "Content-Type": "text/html; charset=utf-8" } }) : new Response("", { status: 404 }); }
     if (p === "/api/kakao/rooms") return json({ on: true, rooms: F.kakaoRooms });
     if (/^\/api\/kakao\/chat\/[^/]+$/.test(p)) { const c = F.kakaoChat[p.split("/")[4]]; return c ? json(c) : new Response(JSON.stringify({ error: "대화방을 찾지 못했어요" }), { status: 404, headers: { "Content-Type": "application/json" } }); }
     if (/^\/api\/integrations\/[^/]+\/settings$/.test(p)) return json({ fields: F.appFields });
