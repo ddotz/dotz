@@ -30,7 +30,7 @@ code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom
 .tag.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
 .tag.err { background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); }
 .tag.pri { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-.tag.unreplied, .nb.unreplied { background: var(--unreplied); color: var(--on-unreplied); font-weight: 600; }
+.tag.unreplied, .nb.unreplied { background: color-mix(in srgb, var(--unreplied) 14%, transparent); color: var(--unreplied); font-weight: 600; }
 .dot.unreplied { background: var(--unreplied); }
 button.cchip.unrep-no { height: 22px; padding: 0 8px; font-size: 11.5px; color: var(--unreplied); }
 /* 초안 작성 beside 답장 안 함: the one action that moves the mail forward, so it carries the accent (30-monitoring.js mailDraftButton).

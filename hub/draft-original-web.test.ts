@@ -444,7 +444,7 @@ describe("원문 보기 for a comment reply draft", () => {
 		expect(await text(v, ".od-ct")).toBe(CTEXT);
 	});
 
-	test("the comment view's own draft card has the same panel and toggle, and keeps its three buttons", async () => {
+	test("the comment view's own draft card sits under its comment with no 원문 bar, keeps its three buttons and fetches no original", async () => {
 		const ref = code.card!;
 		for (const [w, h] of [[390, 844], [1280, 800]] as const) {
 			const v = await open(w, h);
@@ -454,28 +454,11 @@ describe("원문 보기 for a comment reply draft", () => {
 			delete hits[ref];
 			expect(hits[ref] ?? 0).toBe(0);
 			expect(await v.evaluate(`document.querySelectorAll("#t-box .kk-draft .rq-acts .btn").length`)).toBe(3);
-			await Bun.write(`${SNAP}/comment-card-closed-${w}-light.png`, await v.screenshot());
-			await showOrig(v, "#t-box");
-			await waitFor(v, `document.querySelector("#t-box .od-pane .od-ct")`);
-			await settled(v);
-			expect(hits[ref]).toBe(1);
-			expect(await text(v, "#t-box .od-ct")).toBe(CTEXT);
-			const o = (await box(v, "#t-box .od-orig"))!, d = (await box(v, "#t-box .kk-draft"))!;
-			if (w >= 900) {
-				expect(o.w).toBeGreaterThan(200);
-				expect(d.w).toBeGreaterThan(300);
-				expect(o.r).toBeLessThanOrEqual(d.l);
-			} else {
-				expect(o.l).toBeGreaterThanOrEqual(0);
-				expect(o.r).toBeLessThanOrEqual(w);
-				expect(d.r).toBeLessThanOrEqual((await box(v, "#t-box"))!.l);
-			}
+			expect(await v.evaluate(`document.querySelectorAll("#t-box .od-tg, #t-box .od-orig").length`)).toBe(0);
 			expect(await text(v, "#t-box .kk-draft")).toContain("봐 주셔서 감사합니다");
-			expect(await v.evaluate(`document.querySelectorAll("#t-box .od-orig .btn.main, #t-box .od-orig [data-k=send]").length`)).toBe(0);
-			await Bun.write(`${SNAP}/comment-card-open-${w}-light.png`, await v.screenshot());
-			await showDraft(v, "#t-box");
 			await settled(v);
-			expect(await v.evaluate(`document.querySelector("#t-box .od-tg").getAttribute("aria-expanded")`)).toBe("false");
+			expect(hits[ref] ?? 0).toBe(0);
+			await Bun.write(`${SNAP}/comment-card-${w}-light.png`, await v.screenshot());
 			v.close();
 		}
 	});
