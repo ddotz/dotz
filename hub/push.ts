@@ -11,7 +11,8 @@ import { pushClasses, route } from "./notify-route.ts";
 import { eventTarget, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { quietAlert } from "./alert-gate.ts";
-import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, type Notice, onDecision, onNoticeUnread } from "./notices.ts";
+import { answerReply, confirmGroup, conversationTitle, decisionsOf, isViewing, laneNameKo, type Notice, onDecision, onNoticeUnread } from "./notices.ts";
+import { noticeKo } from "./notice-ko.ts";
 import { type Found, knownComputers } from "./peers.ts";
 import { isLater, parseTone, previewSource, stripMarkers } from "./tone.ts";
 import { generateVapidKeys, sendPush, type Subscription, type VapidKeys } from "./webpush.ts";
@@ -78,7 +79,7 @@ const origin = (endpoint: string) => {
 let subject = () => "mailto:dotz@example.com";
 
 const plain = (t: string, max = 180) => {
-	const s = stripMarkers(previewSource(t)).replace(/```[\s\S]*?```/g, " ").replace(/[*_`#>|]/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\s+/g, " ").trim();
+	const s = noticeKo(stripMarkers(previewSource(t)), { lane: laneNameKo }).replace(/```[\s\S]*?```/g, " ").replace(/[*_`#>|]/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\s+/g, " ").trim();
 	return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 };
 
@@ -120,8 +121,8 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 		// An untagged turn-end report that answers the owner, after a long turn, is the session's finished work, like the main chat's below.
 		const long = e.kind === "lane_report" && e.answering === true && !tone && (sinceOwner ?? 0) >= LONG_TURN_MS;
 		const c = noticeClass({ kind: "result", tone: long ? "done" : tone });
-		if (c.cls === "ask") return { kind: "ask", title: `${lane} · 질문`, body: plain(rest), url, tag: `ask:${lane}` };
-		return c.cls === "result" ? { kind: "result", title: `${lane} · ${tone === "fail" ? "실패" : "완료"}`, body: plain(rest), url, tag: `lane:${lane}` } : undefined;
+		if (c.cls === "ask") return { kind: "ask", title: `${laneNameKo(lane)} · 질문`, body: plain(rest), url, tag: `ask:${lane}` };
+		return c.cls === "result" ? { kind: "result", title: `${laneNameKo(lane)} · ${tone === "fail" ? "실패" : "완료"}`, body: plain(rest), url, tag: `lane:${lane}` } : undefined;
 	}
 	// The main chat's answers and a project's (work channel or one of its threads) are the same kind of message: one rule, each opening its own chat.
 	const chat = e.kind === "out" && e.source === "orchestrator" ? (e.target === "web" ? "main" : /^(?:ch:|settings:)/.test(eventTarget(e) ?? "") ? eventTarget(e) : undefined) : undefined;
@@ -488,7 +489,8 @@ export const resetPushDedupeForTest = (): void => {
 	recentTags.clear();
 };
 // Resolves once every device has been decided (sent, covered by a peer, or quiet by its own setting).
-export function notify(m: PushMessage): Promise<void> {
+export function notify(raw: PushMessage): Promise<void> {
+	const m = raw.kind === "withdraw" ? raw : { ...raw, title: noticeKo(raw.title, { lane: laneNameKo }), body: noticeKo(raw.body, { lane: laneNameKo }) };
 	const t = Date.now();
 	if (!shouldNotify(m, t)) return Promise.resolve();
 	if (m.kind === "test") {

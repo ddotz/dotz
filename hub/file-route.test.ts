@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { emit, sentFiles } from "./events.ts";
 import { HUB_TOKEN } from "./config.ts";
 import { allowedRoots, fileLinePaths, fileRoute } from "./files.ts";
+import { noticeKo } from "./notice-ko.ts";
 import { makeRoute } from "./routes.ts";
 import { bundle } from "./webapp.ts";
 
@@ -99,7 +100,7 @@ test("a peer gateway's sent [file] image is served through the whole route, and 
 test("a notice sheet keeps the files of its [file] lines as chips next to the text", () => {
 	const js = bundle("js").text;
 	const grab = (re: RegExp) => re.exec(js)?.[0] ?? "";
-	const fn = new Function("mdNode", "filesNode", `${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/function ntBody\(n, text\) \{[\s\S]*?\n\}\n/)}\n${grab(/function ntCode\(text\) \{[\s\S]*?\n\}\n/)}\nreturn ntBody;`)((t: string) => ({ md: t }), (f: { path: string }[]) => (f.length ? { files: f.map(x => x.path) } : null));
+	const fn = new Function("mdNode", "filesNode", "noticeKo", "NK", `${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/function ntBody\(n, text\) \{[\s\S]*?\n\}\n/)}\n${grab(/function ntCode\(text\) \{[\s\S]*?\n\}\n/)}\nreturn ntBody;`)((t: string) => ({ md: t }), (f: { path: string }[]) => (f.length ? { files: f.map(x => x.path) } : null), noticeKo, {});
 	expect(fn({ text: "맥미니 결과\n[file] /Users/x/shot.png\n[file] /Users/x/report.pdf" })).toEqual([{ md: "맥미니 결과" }, { files: ["/Users/x/shot.png", "/Users/x/report.pdf"] }]);
 	expect(fn({ text: "파일 없음" })).toEqual([{ md: "파일 없음" }, null]);
 });
@@ -107,7 +108,7 @@ test("a notice sheet keeps the files of its [file] lines as chips next to the te
 test("the web turns [file] lines into chips, keeps them out of notice text and has the reader", () => {
 	const js = bundle("js").text;
 	const grab = (re: RegExp) => re.exec(js)?.[0] ?? "";
-	const fn = new Function(`${grab(/const MK_BODY[\s\S]*?\nfunction stripMarkers[\s\S]*?\n\}\n/)}\n${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/const ntPlain = [\s\S]*?\.trim\(\);/)}\nreturn { fileLines, ntPlain };`)();
+	const fn = new Function("noticeKo", "NK", `${grab(/const MK_BODY[\s\S]*?\nfunction stripMarkers[\s\S]*?\n\}\n/)}\n${grab(/function fileLines\(text\) \{[\s\S]*?\n\}\n/)}\n${grab(/const ntPlain = [\s\S]*?\.trim\(\);/)}\nreturn { fileLines, ntPlain };`)(noticeKo, {});
 	const r = fn.fileLines("결과\n[file] /a/b/notice-arch.png\n[file] qa/findings.md\n```\n[file] /in/fence\n```");
 	expect(r.files.map((x: { name: string }) => x.name)).toEqual(["notice-arch.png", "findings.md"]);
 	expect(r.text).toContain("[file] /in/fence");
