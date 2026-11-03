@@ -74,8 +74,8 @@ function settingsList(go) {
   const connected = P ? P.providers.filter(isConnected).length : null;
   const nodes = [
     stSec("모델"), stList(
-      stRow("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
-      stRow("model", "모델 · 폴백", om ? `${modelName(om.model)} · ${thinkKo(om.thinking)}` : "", () => openModels("orchestrator")),
+      stRow("spark", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
+      stRow("model", "모델 · 폴백", om ? [modelName(om.model), thinkKo(om.thinking)].filter(Boolean).join(" · ") : "", () => openModels("orchestrator")),
       ACC && ACC.accounts && ACC.accounts.length ? stRow("key", "계정", stAccountSub(), () => go("provider", "anthropic")) : null,
       stRow("usage", "사용량과 월 한도", stUsageSub(), () => go("usage")),
       stRow("context", "컨텍스트", "", () => go("context"))),

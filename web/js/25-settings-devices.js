@@ -14,7 +14,7 @@ async function loadDevices() {
 /* the 설정 row: only where the gateway keeps paired devices */
 function devicesRow(row) {
   if (!DEV.items) return null;
-  return row("key", "연결된 기기", `${DEV.items.length}대`, () => go("devices"));
+  return row("desktop", "연결된 기기", `${DEV.items.length}대`, () => go("devices"));
 }
 
 function renderDevices() {
