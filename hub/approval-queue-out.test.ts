@@ -1,10 +1,13 @@
 // The approval queue on the real outbound path (outbound.out -> events -> notices): cards the assistant posts in one conversation are
 // shown one at a time, the same card again is not a second post, and closing the shown card brings the next one.
 import { afterAll, expect, test } from "bun:test";
+import { rmSync } from "node:fs";
 import { type HubEvent, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { answerDecision, ignoreNotice, listNotices } from "./notices.ts";
-import { out } from "./outbound.ts";
+import { out, reconcileMailCards } from "./outbound.ts";
+import { addDraft, listDrafts, type DraftRec } from "../features/reply-drafts/lib/store.ts";
+import { paths } from "../features/reply-drafts/lib/settings.ts";
 
 const card = (ref: string, body = `${ref} 님 답글이에요`) => `[ask] 댓글 답글 초안이에요\n${draftApprovalBlock({ to: `${ref} 댓글`, toLabel: "대상", body, ref, question: "이 답글 올릴까요?" })}`;
 // A conversation of its own (a web-only mail conversation): other test files leave open cards in the main one.
@@ -23,6 +26,33 @@ const nextCard = (ref: string) =>
 		});
 	});
 const openCards = () => listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === CONV);
+
+// The bot's own card for a mail (`mail:<mailId>`, the way the model writes it once it has the mail) and the app's reply draft of that same mail.
+const RECONV = "mail:aq-start-1a1a";
+const botMailCard = `[ask] 이 메일에 답장할까요\n${draftApprovalBlock({ to: "owner@example.test", body: "악보 첨부해 드립니다.", ref: "mail:1a1a", question: "이 답장 보낼까요?" })}`;
+const appDraft = {
+	id: "RAAAAAA", kind: "mail", app: "mail", source: "zele", mailId: "1a1a", ref: "aq-start-1a1a",
+	to: "owner@example.test", subject: "악보 요청", body: "악보 첨부해 드립니다.", status: "pending",
+	created: "2026-11-02T01:00:00.000Z", changes: [], questions: [],
+	item: { kind: "mail", subject: "악보 요청", text: "악보 보내 주세요", from: "sender@example.test" },
+} as unknown as DraftRec;
+
+test("a bot mail card whose mail has a waiting app draft is replaced by the app card on the start-up pass, once", async () => {
+	await out(RECONV, botMailCard);
+	addDraft(appDraft);
+	expect(await reconcileMailCards()).toBe(1);
+	const open = listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === RECONV);
+	// One card for the mail, and it is the app draft's: its staged files are what the owner confirms.
+	expect(open).toHaveLength(1);
+	expect(open[0]!.decision!.draft!.ref).toBe("RAAAAAA");
+	expect(open[0]!.text).toContain("(RAAAAAA)");
+	expect(listDrafts().some(d => d.id === "RAAAAAA")).toBe(true);
+	// The second start-up pass has nothing left to replace.
+	expect(await reconcileMailCards()).toBe(0);
+	for (const n of open) ignoreNotice(n.id);
+	rmSync(paths.drafts(), { force: true });
+	expect(listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === RECONV)).toEqual([]);
+});
 
 test("three cards at once: one shows, the others wait; the same card again changes nothing; answering it shows the next", async () => {
 	await out(CONV, card("aq-one"));

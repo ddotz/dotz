@@ -29,8 +29,9 @@ import { splitTone, stripHandoff } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { markDraftPosted, onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote } from "./approval-queue.ts";
-import { mailItemKey } from "./draft-handled.ts";
+import { mailItemKey, mailKeyOfRef } from "./draft-handled.ts";
 import { listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
+import { askText } from "../features/reply-drafts/lib/flow.ts";
 import { recheckAnswered } from "./watch-recheck.ts";
 import { route } from "./notify-route.ts";
 import { isWebLane } from "./discord-post.ts";
@@ -249,6 +250,35 @@ export const approvals = createApprovalQueue({
 	log,
 	load: () => loadHeld(HELD),
 });
+/**
+ * Start-up reconcile for installs where the bot's own mail card (`mail:<mailId>`) took the item and the app's reply draft of that mail lost its card
+ * (2026-11-02: a held draft card was dropped as redundant, so the bot card stayed open with no staged files and the draft waited with no card).
+ * The app draft's card goes back through out(), so route() finds the open bot card as the same item and rewrites it in place to the draft's ref and
+ * its staged files. Idempotent: the rewritten card's ref is the draft code (not `mail:`), so a second pass has nothing to replace.
+ */
+export async function reconcileMailCards(): Promise<number> {
+	const waiting = new Map<string, ReturnType<typeof listMailDrafts>[number]>();
+	for (const d of listMailDrafts()) {
+		if (d.status !== "pending") continue;
+		// 고치기 keeps the older pending draft as handled; the newest pending one of a mail is the card to rescue.
+		const seen = waiting.get(d.ref);
+		if (!seen || seen.created < d.created) waiting.set(d.ref, d);
+	}
+	let replaced = 0;
+	for (const c of openDraftCards()) {
+		if (!c.ref.startsWith("mail:")) continue;
+		const key = mailKeyOfRef(c.ref, c.to);
+		const draft = key ? waiting.get(key) : undefined;
+		if (!key || !draft) continue;
+		try {
+			await out(mailTarget(key), askText(draft, []));
+			replaced++;
+		} catch (e) {
+			log(`approval card ${c.ref} in ${c.to} not replaced by its draft ${draft.id}: ${(e as Error).message}`);
+		}
+	}
+	return replaced;
+}
 // The card of a closed decision shows it on Discord too: first line kept, buttons removed, how it ended (a [file] line would show raw in an edit, so such a text is left).
 function closeDiscordCard(to: string, ref: string | undefined, c: { text: string; how: "answered" | "resolved" | "ignored"; label: string; target?: string; ids?: string[] }): void {
 	const target = c.target ?? (ref ? approvals.targetOf(to, ref) : undefined);
