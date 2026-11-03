@@ -94,11 +94,11 @@ function accountSection() {
   // one more login for any provider OmO can hold accounts for: the picker offers the install's login providers, a login there
   // adds an account to that provider's pool and keeps the others and the pin (21-providers.js startLogin)
   rows.push(el("div", { class: "li" }, tx("계정 추가", "구독 계정이나 API 키를 하나 더 넣어요. 지금 쓰는 계정은 바뀌지 않아요."),
-    el("button", { class: "btn tonal", type: "button", onclick: () => accAddProviderDialog() }, icon("add"), "추가")));
+    liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => accAddProviderDialog() }, icon("add"), "추가"))));
   const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : `${ch ? ch.label : "고른 계정"}만 써요. 한도에 걸리면 다른 계정으로 넘어가지 않고, 폴백 순서에 다른 단계(API 키 포함)가 있으면 그 단계로 이어 가요. 답장 초안은 API 키로 넘어가지 않아 한도가 풀릴 때까지 멈춰요.`) : "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가고, 모두 막히면 폴백 순서(API 키 포함)를 따라요. 답장 초안은 API 키로 넘어가지 않아요.";
   // on = 자동 전환, off = 고정 (the account to fix is the row tapped below)
   rows.unshift(el("div", { class: "li" }, tx("자동 전환", caption),
-    el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!pinned), "aria-label": "자동 전환", onclick: ev => setMode(ev.currentTarget, { mode: pinned ? "auto" : "pinned" }, pinned ? "자동 전환으로 바꿨어요" : "고정했어요") })));
+    liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!pinned), "aria-label": "자동 전환", onclick: ev => setMode(ev.currentTarget, { mode: pinned ? "auto" : "pinned" }, pinned ? "자동 전환으로 바꿨어요" : "고정했어요") }))));
   // What a 고정 account at its limit does next: unset asks once (the alert's question), then this is followed quietly.
   const onLimit = (ACC.rules && ACC.rules.on_limit) || "";
   const onLimitSub = onLimit === "switch" ? "한도에 걸리면 자동 전환으로 넘어가요" : onLimit === "wait" ? "한도에 걸린 동안 기다려요" : "아직 안 정했어요 · 한도에 걸리면 한 번 물어봐요";
@@ -106,7 +106,7 @@ function accountSection() {
   const onLimitChoice = (value, label) => el("button", { type: "button", class: `chip${onLimit === value ? " on" : ""}`, "aria-pressed": String(onLimit === value), text: label, onclick: ev => setOnLimit(ev.currentTarget, value) });
   rows.splice(1, 0, el("div", { class: "li" }, tx("한도에 걸렸을 때", onLimitSub), onLimitChoice("wait", "기다리기"), onLimitChoice("switch", "자동 전환으로 넘어가기")));
   if (!pinned) {
-    rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), el("button", { class: "btn tonal", type: "button", onclick: () => rulesDialog() }, "편집")));
+    rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => rulesDialog() }, "편집"))));
     for (const [i, r] of lines.entries()) rows.push(el("div", { class: "li" }, el("span", { class: "lead", text: String(i + 1) }), tx(r.text)));
   }
   const run = sc && [sc.timeout_ms ? `${Math.round(sc.timeout_ms / 1000)}초 안에 끝나요` : "", sc.every_minutes ? `${sc.every_minutes}분마다` : ""].filter(Boolean).join(" · ");
@@ -125,7 +125,7 @@ function accProviderSections(groups) {
   for (const g of groups) {
     const rows = [];
     if (!g.accounts.length) rows.push(el("div", { class: "li" }, accTx(`${g.name} 계정이 없어요`, g.can_add ? "계정을 하나 넣으면 여기 보여요." : "공급자 화면에서 키를 넣어 주세요."),
-      g.can_add ? el("button", { class: "btn tonal", type: "button", onclick: () => startLogin({ id: g.id, name: g.name, add_account: true }) }, icon("add"), "추가") : null));
+      g.can_add ? liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => startLogin({ id: g.id, name: g.name, add_account: true }) }, icon("add"), "추가")) : null));
     for (const a of g.accounts) {
       const sub = (a.windows || []).map(w => `${w.label} ${Math.round(w.left)}% 남음`).join(" · ");
       const tags = [];

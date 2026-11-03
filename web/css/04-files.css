@@ -216,9 +216,8 @@ details.work.live .wdot { display: block; }
 .qitem .qb { flex: 1; min-width: 0; }
 .qitem .qt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; font-size: 13px; line-height: 18px; font-weight: 500; }
 .qitem .qm { margin-top: 2px; color: var(--fg-3); font-size: 11px; line-height: 16px; }
-.qitem .btn { flex: none; height: 28px; padding: 0 8px; font-size: 12px; }
+.qitem .btn { flex: none; }
 @media (max-width: 639px) { .qitem { flex-wrap: wrap; } .qitem .qb { flex-basis: 100%; } .qitem .qa { margin-left: auto; } }
-@media (pointer: coarse) { .qitem .btn { height: 36px; padding: 0 10px; } }
 .qitem .qa { display: flex; gap: 4px; flex: none; }
 .composer.tmode .qitem { background: var(--tb); border-color: var(--tl2); color: var(--tf); }
 .composer.tmode .qitem .qm { color: var(--td); }

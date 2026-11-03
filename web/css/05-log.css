@@ -156,8 +156,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 /* lanes board */
 /* board: free-form 12-column card grid shared by 홈 and 레인 (positions are calc() of the container width, so no JS layout pass is needed) */
 .bbar { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 8px; }
-.bbar .btn { height: 24px; font-size: 12px; }
-@media (pointer: coarse) { .bbar { margin-bottom: 4px; } .bbar .btn { height: 36px; font-size: 13px; padding: 0 12px; } }
+@media (pointer: coarse) { .bbar { margin-bottom: 4px; } }
 .board { position: relative; }
 .bi { position: absolute; border-radius: 8px; transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease, box-shadow .15s; }
 .bi > .card { overflow: hidden auto; }

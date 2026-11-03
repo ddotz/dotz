@@ -127,7 +127,7 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as con
 		expect(o.doc).toBeLessThanOrEqual(o.vw);
 		await shot(v, `providers-${w}.png`);
 
-		await run(v, `${button("document.querySelector('#providers .tools-bar')", "추가")}.click()`);
+		await run(v, `${button("document.querySelector('#providers .sec-act')", "추가")}.click()`);
 		await waitFor(v, `document.querySelector(".pickbox")`);
 		expect(await q(v, `const secs = [...document.querySelectorAll(".pickbox .sec")].map(s => s.textContent); const login = document.querySelector(".pickbox .list").textContent; return [secs, login.includes("GitHub Copilot"), login.includes("xAI")]`)).toEqual([["로그인", "API 키"], true, true]);
 		await shot(v, `providers-add-${w}.png`);

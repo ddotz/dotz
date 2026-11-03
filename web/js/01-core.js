@@ -17,6 +17,8 @@ function el(tag, props, ...kids) {
 }
 const clear = n => { while (n.firstChild) n.removeChild(n.firstChild); return n; };
 const enc = encodeURIComponent;
+// The one right-hand slot of a settings row (.li > .li-end, docs/ui-spec.md 설정 행): a 행 안 button, a switch, a field or a value.
+const liEnd = (...kids) => el("span", { class: "li-end" }, ...kids);
 
 /* ---------- icons (24px stroke set) ---------- */
 const ICONS = {
