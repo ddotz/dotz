@@ -214,10 +214,12 @@ export async function publishVersion(opts: PublishOptions): Promise<number> {
 		print(`VERSION을 스테이징하지 못했어요: ${added.out}`);
 		return 1;
 	}
-	const identity = (await gitOutput(["config", "user.email"], root)).code === 0
-		? []
-		: ["-c", "user.name=dotz-release", "-c", "user.email=dotz-release@users.noreply.github.com"];
-	const committed = await gitOutput(["commit", ...identity, "-m", `release: ${tag}\n\n${summary}`], root);
+	// CI has no git identity: set one in this checkout so the commit and the later pull --rebase both have a committer.
+	if ((await gitOutput(["config", "user.email"], root)).code !== 0) {
+		await gitOutput(["config", "user.name", "dotz-release"], root);
+		await gitOutput(["config", "user.email", "dotz-release@users.noreply.github.com"], root);
+	}
+	const committed = await gitOutput(["commit", "-m", `release: ${tag}\n\n${summary}`], root);
 	if (committed.code !== 0) {
 		print(`커밋하지 못했어요: ${committed.out}`);
 		print("VERSION 파일만 바뀐 상태로 남아 있어요.");
