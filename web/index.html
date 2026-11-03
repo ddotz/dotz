@@ -4,8 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#f2f4f6">
-<link rel="manifest" href="/manifest.webmanifest?v=3">
+<meta name="theme-color" content="#f2f4f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121214" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="/manifest.webmanifest?v=4">
 <script>
 // The first answers are asked for here, before the script is downloaded and parsed: api() (02-basic-markdown.js) takes over the request with the same path.
 // The conversation that boot opens is worked out like 08-home.js / 05-command-palette.js do (saved target, or the one in the address); a path nobody asks for is dropped.
@@ -42,8 +43,9 @@
   const apply = () => {
     const dark = get() === "dark";
     document.documentElement.dataset.theme = dark ? "dark" : "light";
-    const m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.content = dark ? "#121214" : "#f2f4f6";
+    // both metas take the chosen theme's color, so a manual light/dark choice wins over the system preference
+    const tc = dark ? "#121214" : "#f2f4f6";
+    for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = tc;
     window.dispatchEvent(new Event("dotz-theme"));
   };
   mq.addEventListener("change", apply);

@@ -29,7 +29,7 @@ describe("web share target", () => {
 		const st = JSON.parse(web("manifest.webmanifest")).share_target;
 		expect(st).toMatchObject({ action: "/share-target", method: "POST", enctype: "multipart/form-data" });
 		expect(st.params.files).toEqual([{ name: "files", accept: ["image/*", "video/*"] }]);
-		expect(web("index.html")).toContain("/manifest.webmanifest?v=3");
+		expect(web("index.html")).toContain("/manifest.webmanifest?v=4");
 	});
 
 	test("a share POST is stashed by the service worker, redirected 303 to the chat, and taken into the composer by the page", async () => {

@@ -94,7 +94,7 @@ function decodeRgba(file: Buffer): { w: number; h: number; px: Uint8Array } {
 	return { w, h, px };
 }
 
-test("the push badge is a white-on-transparent alpha mask of the dotz dot, served by the hub", async () => {
+test("the push badge is a white-on-transparent alpha mask of the dotz mark, served by the hub", async () => {
 	const file = readFileSync(join(WEB, "icons", "badge-96.png"));
 	const { w, h, px } = decodeRgba(file);
 	expect([w, h]).toEqual([96, 96]);
@@ -111,11 +111,17 @@ test("the push badge is a white-on-transparent alpha mask of the dotz dot, serve
 	expect(clear / total).toBeGreaterThan(0.4); // not an opaque square
 	expect(solid / total).toBeGreaterThan(0.15);
 	expect([at(0, 0), at(95, 0), at(0, 95), at(95, 95)]).toEqual([0, 0, 0, 0]); // corners clear
-	expect(at(48, 48)).toBe(255); // dot
-	expect(at(48, 36)).toBe(255); // inside the dot
-	expect(at(48, 21)).toBe(0); // clear gap between the dot and the outline
-	expect(at(48, 7)).toBe(255); // rounded-square outline
-	expect(at(70, 70)).toBe(0); // no small dot, lower right
+	expect([at(24, 24), at(72, 72)]).toEqual([255, 255]); // the two big dots
+	expect([at(24, 72), at(72, 24)]).toEqual([255, 255]); // the two small dots
+	expect(at(48, 48)).toBe(0); // the four dots never touch
+	expect(at(48, 24)).toBe(0); // gap between a big and a small dot
+	const monoPng = decodeRgba(readFileSync(join(WEB, "icons", "monochrome-192.png")));
+	expect([monoPng.w, monoPng.h]).toEqual([192, 192]);
+	for (let i = 0; i < monoPng.px.length; i += 4) {
+		const a = monoPng.px[i + 3]!;
+		if (a > 0) expect([monoPng.px[i], monoPng.px[i + 1], monoPng.px[i + 2]]).toEqual([255, 255, 255]); // one color only
+	}
+	expect(monoPng.px[3]).toBe(0); // no background: a themed launcher paints the mark
 	const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
 	const res = await route(new Request("http://x/icons/badge-96.png"));
 	expect([res.status, res.headers.get("content-type")]).toEqual([200, "image/png"]);
