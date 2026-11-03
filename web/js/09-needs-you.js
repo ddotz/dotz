@@ -58,6 +58,7 @@ function paintAttn() {
   if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";   // the digit that changed rolls; a hidden badge forgets, so it appears whole
   b.parentElement.setAttribute("aria-label", n ? `채팅, ${say}` : "채팅");
   document.title = n ? `(${n}) ${botName}` : botName;
+  paintBell();
   toastAttn();
   monAttnSoon();
 }
@@ -236,15 +237,33 @@ function tightLimit(q) {
   return best;
 }
 function paintStrip() {
-  const b = $("#ustrip"), t = SQ && tightLimit(SQ);
+  const b = $("#ustrip"), t = SQ && tightLimit(SQ), side = $("#sf-usage");
   b.hidden = !t;
+  if (side) side.hidden = !t;
   if (!t) return;
   const pct = Math.round(t.f * 100), word = limitWord(t.l);
   b.className = `ustrip${pct <= 40 ? " warn" : ""}`;
   b.style.setProperty("--p", pct);
   b.title = `사용량 · ${word} ${pct}% 남음`; b.setAttribute("aria-label", b.title);
   clear(b).append(el("span", { class: "ulab", text: `${word} ${pct}% 남음` }), el("span", { class: "ubar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "uring" }), el("span", { class: "upct", text: `${word} ${pct}%` }));
+  // the sidebar's lower area says the same in a row (22-shell.css): the tightest limit, its bar, and the share left
+  if (side) {
+    side.classList.toggle("warn", pct <= 40);
+    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: "사용량" }), el("span", { class: "sf-bar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "sf-v", text: `${word} ${pct}%` }));
+    side.title = `사용량 · ${word} ${pct}% 남음`; side.setAttribute("aria-label", side.title);
+  }
 }
+// 헤더의 종: the unread notice count, kept current by every notice change (30-notices.js ntPaint -> paintAttn).
+function paintBell() {
+  const n0 = $("#bell-n");
+  if (!n0) return;
+  let n = 0;
+  try { n = NT.unread | 0; } catch { /* 30-notices.js has not run yet */ }
+  n0.hidden = !n; n0.textContent = n > 99 ? "99+" : String(n);
+  const b = $("#bell");
+  if (b) b.setAttribute("aria-label", n ? `알림, 안 읽은 알림 ${n}개` : "알림");
+}
+$("#sf-usage").onclick = () => go("usage");
 function noteQuota(q) { SQ = q; stripAt = Date.now(); paintStrip(); }
 // A pushed usage read: the strip, and the 사용량 / 홈 view on screen, show it without asking again.
 function quotaLive(q) {
