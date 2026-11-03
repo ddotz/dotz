@@ -168,11 +168,28 @@ describe("actions on a selection", () => {
 		const v = await openList(1280, 800);
 		await tick(v, "읽음 표시를 못 하는 메일함");
 		await run(v, `${bar(v, "삭제")}.click()`);
-		await waitFor(v, `document.querySelector("dialog[open] .btn.danger")`);
+		await waitFor(v, `document.querySelector("dialog.cf[open] .btn.danger")`);
 		await run(v, `document.querySelector("dialog[open] .btn.danger").click()`);
 		await posted(1);
 		expect(posts[0]).toEqual({ path: "/api/mail/fx-old", body: null });
 		await waitFor(v, `!${rowJs("읽음 표시를 못 하는 메일함")}`);
+	}, 30_000);
+
+	test("삭제 into the mailbox trash asks nothing: 실행 취소 brings the row back and sends nothing, otherwise the trash is sent", async () => {
+		const v = await openList(1280, 800);
+		await tick(v, "회의 일정 변경");
+		await run(v, `${bar(v, "삭제")}.click()`);
+		await waitFor(v, `!${rowJs("회의 일정 변경")} && document.querySelector(".snack .sa")`);
+		expect(await ev<boolean>(v, `!!document.querySelector("dialog[open]")`)).toBe(false);
+		await run(v, `document.querySelector(".snack .sa").click()`);
+		await waitFor(v, `${rowJs("회의 일정 변경")}`);
+		expect(posts).toEqual([]);
+		await tick(v, "회의 일정 변경");
+		await run(v, `${bar(v, "삭제")}.click()`);
+		await waitFor(v, `!${rowJs("회의 일정 변경")} && document.querySelector(".snack .sa")`);
+		await run(v, `dispatchEvent(new Event("pagehide"))`);
+		await posted(1);
+		expect(posts[0]).toEqual({ path: "/api/mail/fx-b/action", body: { action: "trash" } });
 	}, 30_000);
 });
 
