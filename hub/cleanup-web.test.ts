@@ -136,8 +136,8 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 		await waitFor(v, `UPD.info && !$("#nav-upd").hidden`);
 		expect(await q<string>(v, `return $("#nav-upd").textContent`)).toBe("재시작 필요");
 		await run(v, `go("settings")`);
-		await waitFor(v, `current === "settings" && $("#upd-sec .upd-new")`);
-		expect(await q<string>(v, `return $("#upd-sec .upd-new").textContent`)).toBe("재시작 필요");
+		await waitFor(v, `current === "settings" && $("#settings .upd-new")`);
+		expect(await q<string>(v, `return $("#settings .upd-new").textContent`)).toBe("재시작 필요");
 		await Bun.write(join(SHOTS, `update-${width}.png`), await v.screenshot());
 	}, 30_000);
 });

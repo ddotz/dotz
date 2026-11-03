@@ -73,7 +73,7 @@ const open = async (width = 1280, height = 800, theme: "light" | "dark" = "light
 	const v = await hub.view({ width, height }, "/");
 	await waitFor(v, `typeof go === "function" && typeof S !== "undefined" && S`);
 	await run(v, `document.documentElement.dataset.theme = ${JSON.stringify(theme)}; WA.draft = null; go("webaccess")`);
-	await waitFor(v, `document.querySelector("#webaccess .seg") && document.querySelector("#webaccess [data-onb]")`);
+	await waitFor(v, `document.querySelector("#webaccess [role=radiogroup]") && document.querySelector("#webaccess [data-onb]")`);
 	return v;
 };
 const click = (v: View, sel: string) => run(v, `document.querySelector(${JSON.stringify(sel)}).click()`);
@@ -90,14 +90,14 @@ describe("웹 접속 화면", () => {
 		await run(v, `go("settings")`);
 		await waitFor(v, `[...document.querySelectorAll("#settings .li")].some(x => x.querySelector(".hd")?.textContent === "웹 접속" && x.querySelector(".sup")?.textContent === "Tailscale")`);
 		await run(v, `[...document.querySelectorAll("#settings .li")].find(x => x.querySelector(".hd")?.textContent === "웹 접속").click()`);
-		await waitFor(v, `current === "webaccess" && document.querySelector("#webaccess .seg")`);
+		await waitFor(v, `current === "webaccess" && document.querySelector("#webaccess [role=radiogroup]")`);
 		expect(puts).toEqual([]);
 		expect(onboards).toEqual([]);
 	}, 30_000);
 
 	test("Tailscale is the default, no fields outside directly 입력, and no POST", async () => {
 		const v = await open();
-		expect(await ev<{ on: string; fields: string[]; open: boolean; summary: string; help: string }>(v, `({ on: document.querySelector("#webaccess .seg .on").dataset.v, fields: [...document.querySelectorAll("#webaccess input")].map(i => i.name), open: document.querySelector("#webaccess details[data-wa-advanced]").open, summary: document.querySelector("#webaccess details[data-wa-advanced] summary").textContent, help: document.querySelector("[data-wa-help]").textContent })`)).toMatchObject({ on: "tailscale", fields: [], open: false });
+		expect(await ev<{ on: string; fields: string[]; open: boolean; summary: string; help: string }>(v, `({ on: document.querySelector("#webaccess [role=radiogroup] [aria-checked=true]").dataset.v, fields: [...document.querySelectorAll("#webaccess input")].map(i => i.name), open: document.querySelector("#webaccess details[data-wa-advanced]").open, summary: document.querySelector("#webaccess details[data-wa-advanced] summary").textContent, help: document.querySelector("[data-wa-help]").textContent })`)).toMatchObject({ on: "tailscale", fields: [], open: false });
 		expect(await ev<string>(v, `document.querySelector("#webaccess details[data-wa-advanced] summary").textContent`)).toContain("직접 입력");
 		expect(await text(v, "[data-wa-help]")).toContain("기본값");
 		expect(puts).toEqual([]);
@@ -110,18 +110,18 @@ describe("웹 접속 화면", () => {
 
 	test("Cloudflare posts /api/web-access/onboard once and shows the panel and URL", async () => {
 		const v = await open();
-		await click(v, '#webaccess .seg [data-v="cloudflare"]');
+		await click(v, '#webaccess [role=radiogroup] [data-v="cloudflare"]');
 		await waitFor(v, `document.querySelector('#webaccess [data-onb-state="done"]') && document.querySelector("#webaccess [data-onb-url]")`);
 		expect(onboards).toEqual([{ mode: "cloudflare" }]);
 		expect(await text(v, "#webaccess [data-onb-url]")).toBe("https://dotz.example.com");
-		expect(await ev<string>(v, `document.querySelector("#webaccess .seg .on").dataset.v`)).toBe("cloudflare");
+		expect(await ev<string>(v, `document.querySelector("#webaccess [role=radiogroup] [aria-checked=true]").dataset.v`)).toBe("cloudflare");
 		expect(await ev<number>(v, `document.querySelectorAll("#webaccess input").length`)).toBe(0);
 		expect(puts).toEqual([]);
 	}, 30_000);
 
 	test("이 컴퓨터만 posts {mode:local} and needs no address", async () => {
 		const v = await open();
-		await click(v, '#webaccess .seg [data-v="local"]');
+		await click(v, '#webaccess [role=radiogroup] [data-v="local"]');
 		await waitFor(v, `document.querySelector('#webaccess [data-onb-state="done"]')`);
 		expect(onboards).toEqual([{ mode: "local" }]);
 		expect(await ev<boolean>(v, `!!document.querySelector("#webaccess [data-onb-url]")`)).toBe(false);
@@ -130,7 +130,7 @@ describe("웹 접속 화면", () => {
 
 	test("manual fields save inside 직접 입력 and the token never reaches the HTML", async () => {
 		const v = await open();
-		await click(v, '#webaccess .seg [data-v="cloudflare"]');
+		await click(v, '#webaccess [role=radiogroup] [data-v="cloudflare"]');
 		await waitFor(v, `document.querySelector('#webaccess [data-onb-state="done"]')`);
 		await click(v, "#webaccess details[data-wa-advanced] summary");
 		await waitFor(v, `document.querySelector('#webaccess input[name="wa-token"]')`);
@@ -152,7 +152,7 @@ describe("웹 접속 화면", () => {
 	test("switching back to Tailscale sends only the mode, with no confirm", async () => {
 		wa = { ...wa, mode: "cloudflare", hostname: "dotz.example.com", token_set: true, tunnel: { state: "running" } };
 		const v = await open();
-		await click(v, '#webaccess .seg [data-v="tailscale"]');
+		await click(v, '#webaccess [role=radiogroup] [data-v="tailscale"]');
 		await waitFor(v, `WA.data.mode === "tailscale"`);
 		expect(puts).toEqual([{ mode: "tailscale" }]);
 		expect(onboards).toEqual([]);
