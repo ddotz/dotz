@@ -1,6 +1,7 @@
 import { eventTarget, onEmit, tailEvents, type HubEvent } from "./events.ts";
 import { paths } from "./config.ts";
 import { briefMail, mailByKey } from "./mail.ts";
+import { laneLive, lanes } from "./lanestate.ts";
 import { readOf, unreadFrom } from "./reads.ts";
 import { parseTone, previewSource } from "./tone.ts";
 
@@ -83,7 +84,11 @@ function countIncoming(target: string, e: HubEvent, last: ConversationLast): voi
 
 export function unreadOf(target: string): number {
 	if (target.startsWith("mail:") && mailByKey(target.slice(5))?.dir === "out") return 0;
-	const read = unreadFrom(target);
+	// An ended session has nothing unread (owner 2026-11-03: "끝난 세션에 있는 안읽음 표시는 무시"), and once it runs again only what came
+	// after its end counts. Every surface (session rows, sidebar counts, the other computer's snapshot) reads this count.
+	const lane = target.startsWith("lane:") ? lanes.get(target.slice(5)) : undefined;
+	if (lane && !laneLive(lane)) return 0;
+	const read = [unreadFrom(target), lane?.endedAt].reduce<string | null>((a, b) => (b && (!a || b > a) ? b : a), null);
 	let n = 0;
 	for (const ts of incoming.get(target)?.values() ?? []) if (!read || ts > read) n++;
 	return n;

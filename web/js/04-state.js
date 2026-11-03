@@ -45,7 +45,7 @@ const UNDO_MS = 8000;
 function refreshEnded() {
   document.querySelectorAll("details.ended").forEach(d => d.replaceWith(endedGroup() || ""));
 }
-// An ended session keeps its marks: its unread count (the hub lists ended lanes in /api/conversations too) and 답변 필요 while a question waits there.
+// An ended session keeps 답변 필요 while a question waits there; its unread count is always 0 (hub/conversations.ts unreadOf), so it shows no dot.
 const endedMark = l => { const t = `lane:${l.name}`; return { unread: ts(t).unread | 0, need: convNeeds(t) }; };
 function endedGroup() {
   const list = endedLanes();
