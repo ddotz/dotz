@@ -269,8 +269,6 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .li .lead { flex: none; display: inline-flex; color: var(--fg-3); }
 .li .tx { flex: 1; min-width: 0; }
 .li .hd { font-size: 15px; line-height: 22px; font-weight: 500; }
-.li.prow { flex-wrap: wrap; }
-.li.prow .tx { flex: 1 1 140px; }
 .avatar { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--layer); border: 1px solid var(--line); color: var(--fg-2); font: 600 11px/16px var(--font); text-transform: uppercase; }
 .heads { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .heads .t { min-width: 0; font: 600 13px/20px var(--font); }
@@ -867,9 +865,8 @@ details.work.live .wdot { display: block; }
 .qitem .qb { flex: 1; min-width: 0; }
 .qitem .qt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; font-size: 13px; line-height: 18px; font-weight: 500; }
 .qitem .qm { margin-top: 2px; color: var(--fg-3); font-size: 11px; line-height: 16px; }
-.qitem .btn { flex: none; height: 28px; padding: 0 8px; font-size: 12px; }
+.qitem .btn { flex: none; }
 @media (max-width: 639px) { .qitem { flex-wrap: wrap; } .qitem .qb { flex-basis: 100%; } .qitem .qa { margin-left: auto; } }
-@media (pointer: coarse) { .qitem .btn { height: 36px; padding: 0 10px; } }
 .qitem .qa { display: flex; gap: 4px; flex: none; }
 .composer.tmode .qitem { background: var(--tb); border-color: var(--tl2); color: var(--tf); }
 .composer.tmode .qitem .qm { color: var(--td); }
@@ -1113,8 +1110,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 /* lanes board */
 /* board: free-form 12-column card grid shared by 홈 and 레인 (positions are calc() of the container width, so no JS layout pass is needed) */
 .bbar { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 8px; }
-.bbar .btn { height: 24px; font-size: 12px; }
-@media (pointer: coarse) { .bbar { margin-bottom: 4px; } .bbar .btn { height: 36px; font-size: 13px; padding: 0 12px; } }
+@media (pointer: coarse) { .bbar { margin-bottom: 4px; } }
 .board { position: relative; }
 .bi { position: absolute; border-radius: 8px; transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease, box-shadow .15s; }
 .bi > .card { overflow: hidden auto; }
@@ -1559,8 +1555,6 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 @media (pointer: coarse) { .dc-fold { width: 44px; height: 44px; margin: -6px -4px 0 0; } .td-bar { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .dc-fold .ic, .td-ch { transition: none; } }
 /* 메신저 화면: the primary action row, the shared onboarding panel, and the closed "직접 입력" disclosure. */
-.ms-act { justify-content: flex-end; padding-top: 12px; padding-bottom: 12px; }
-.ms-act .btn { min-width: 96px; }
 .ms-onb { margin-top: 10px; }
 .ms-onb .li .hd { font-size: 14px; line-height: 20px; }
 .ms-onb-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding-top: 12px; padding-bottom: 12px; }
@@ -2191,14 +2185,10 @@ dialog.fs-card::backdrop { background: var(--scrim); }
   #models .fbe .seg button { flex: 1 0 auto; padding: 0 12px; }
   /* update: commit subjects and paths wrap; the time field and switch drop under the text instead of squeezing it */
   #settings .upd-log span { white-space: normal; overflow-wrap: anywhere; }
-  #settings .li:has(> .upd-at) { flex-wrap: wrap; row-gap: 8px; }
-  #settings .li:has(> .upd-at) > .tx { flex: 1 1 calc(100% - 48px); }
-  #settings .upd-at { margin-left: auto; }
-  /* provider rows: login and logout buttons are one row under the name, aligned with it */
-  #providers .li.prow .btns { flex: 1 0 100%; padding-left: 36px; }
+  #settings .li:has(.upd-at) { flex-wrap: wrap; row-gap: 8px; }
+  #settings .li:has(.upd-at) > .tx { flex: 1 1 calc(100% - 48px); }
 }
 @media (max-width: 639px), (pointer: coarse) {
-  :is(#settings, #models, #providers, #usage, #context, #harness) .btn { min-height: 40px; }
   #harness .hm-row { height: 40px; }
   #harness .hm-chip { min-height: 36px; }
   :is(#settings, #models, #providers, #usage, #context) .ib { width: 40px; height: 40px; }
