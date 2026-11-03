@@ -165,4 +165,4 @@ $("#sh-close").append(icon("close"));
 $("#sh-close").onclick = closeSheet;
 $("#sh-back").append(icon("back"));
 $("#sh-back").onclick = () => { if (SUBD && SUBD.from) openSubs(SUBD.from); };
-document.addEventListener("keydown", ev => { if (ev.key === "Escape" && SUBD && !openMenu && !document.querySelector("dialog[open]")) closeSheet(); });
+document.addEventListener("keydown", ev => { if (ev.key === "Escape" && SUBD && !openMenu && !document.querySelector("dialog[open]:not([data-leaving])")) closeSheet(); });
