@@ -29,6 +29,8 @@ export type Prompt = { key: string; text: string; at: number; target?: string; r
 /** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
 export type OwnerMessage = { target: string; replyTo?: string; at: number; prompt?: Prompt };
 export type Pending = { text: string; at?: number; target?: string; replyTo?: string };
+/** One of this session's background workers, as hub/bgwork.ts lists it (running oldest first, then recently finished newest first). */
+export type WorkRow = { id: string; description?: string; status: "running" | "stalled" | "done" | "failed"; target?: string; replyTo?: string; startedAt: number; endedAt?: number };
 export type Reply = { target: string; replyTo?: string; owner?: boolean };
 
 export type PromptDeps = {
@@ -52,6 +54,14 @@ export type PromptDeps = {
 	joinNote?: (worker: { id: string; description: string }) => string;
 	/** Does this text already carry that note (a restart replay stored it with the prompt)? */
 	hasJoinNote?: (text: string) => boolean;
+	/** This session's background workers; read only at delivery and at turn end (bgwork.ts caches the store). */
+	work?: () => WorkRow[];
+	/** The note that keeps another conversation's running worker answer out of this prompt's conversation. */
+	foreignNote?: (worker: WorkRow, target: string) => string;
+	/** Does this text already carry that note (a restart replay stored it with the prompt)? */
+	hasForeignNote?: (text: string) => boolean;
+	/** The note that asks a conversation again because its worker's result was read in a turn for another conversation. */
+	readElsewhereNote?: (worker: WorkRow, readIn: string) => string;
 	/** The note naming the send-approval cards that wait in this conversation (hub/approval-queue.ts pendingCardsNote), if any. */
 	cardsNote?: (target: string) => string | undefined;
 	/** Does this text already carry that note (a restart replay stored it with the prompt)? */
@@ -110,6 +120,8 @@ export function createPrompts(deps: PromptDeps) {
 	// worker was listed. The plain one is dropped when a non-deferred answer goes out there, a worker receipt stays while its worker runs.
 	const receipted = new Set<string>();
 	const receiptKey = (target: string, id = "") => `${target}\u0000${id}`;
+	// Workers whose result was read in another conversation's turn and whose request was asked again (once per worker).
+	const askedBack = new Set<string>();
 	// Every turn that ran (omp started it from a delivered prompt), oldest first: a worker belongs to the turn it was spawned in.
 	const turns: { prompt: Prompt; start: number; end?: number }[] = [];
 	const closeTurn = () => {
@@ -117,6 +129,12 @@ export function createPrompts(deps: PromptDeps) {
 		if (t && t.end === undefined) t.end = Date.now();
 	};
 	const openDeferred = () => deferred.filter(p => !p.done && !isAnswered(p.replyTo) && Date.now() - p.at <= DEFER_MAX_AGE_MS);
+
+	/** A worker still running in another conversation whose request is still waiting: its answer may arrive while this turn runs. */
+	function otherConversation(target: string): WorkRow | undefined {
+		const waiting = new Set(openDeferred().map(p => p.target));
+		return (deps.work?.() ?? []).find(w => (w.status === "running" || w.status === "stalled") && w.target !== undefined && waiting.has(w.target) && !sameConv(w.target, target));
+	}
 
 	const save = () => {
 		const open = [...openDeferred().filter(p => p !== current), ...(current && !current.done ? [current] : []), ...prompts.filter(p => !p.cancelled)].filter(p => !isAnswered(p.replyTo)).map(({ text, at, target, replyTo }) => ({ text, at, target, replyTo }));
@@ -147,6 +165,10 @@ export function createPrompts(deps: PromptDeps) {
 		// four follow-ups to one posting job). The Prompt keeps the text as delivered: onPrompt pairs by it and a replay re-sends it.
 		const worker = !steered && reply?.owner ? deps.workFor?.(reply.target) : undefined;
 		if (worker && deps.joinNote && !deps.hasJoinNote?.(text)) text = `${deps.joinNote(worker)}\n\n${text}`;
+		// A worker of another conversation may report during this turn (OmO injects its completion into the running run): its answer
+		// belongs to its own conversation, not to this prompt's (2026-10-31 06:36 UTC, A's answer was posted into B).
+		const elsewhere = reply?.owner && deps.foreignNote && !deps.hasForeignNote?.(text) ? otherConversation(reply.target) : undefined;
+		if (elsewhere?.target) text = `${text}\n\n${deps.foreignNote!(elsewhere, elsewhere.target)}`;
 		const cards = reply?.owner && !deps.hasCardsNote?.(text) ? deps.cardsNote?.(reply.target) : undefined;
 		if (cards) text = `${cards}\n\n${text}`;
 		const prompt: Prompt = { key: text.slice(0, 300), text, at: Date.now(), target: reply?.target, replyTo: reply?.replyTo, sent: [], steered };
@@ -347,7 +369,32 @@ export function createPrompts(deps: PromptDeps) {
 		}
 		closeTurn();
 		current = undefined;
+		askBack(p.target);
 		save();
+	}
+
+	/**
+	 * A turn for one conversation ended while a worker of another finished during it: OmO read that result here, but the request it
+	 * answers still waits in its own conversation. Ask that one again with its own text, once per worker, and leave it open.
+	 */
+	function askBack(target: string | undefined): void {
+		const work = deps.work?.();
+		const note = deps.readElsewhereNote;
+		if (!target || !note || !work?.length) return;
+		const turn = turns.at(-1);
+		const from = turn?.start ?? 0;
+		const to = Date.now();
+		for (const w of work) {
+			if (w.status === "running" || w.status === "stalled" || w.endedAt === undefined || w.endedAt < from || w.endedAt > to) continue;
+			if (!w.target || sameConv(w.target, target) || askedBack.has(w.id)) continue;
+			const open = openDeferred().filter(p => p.target === w.target);
+			const d = open.find(p => w.replyTo !== undefined && p.replyTo === w.replyTo) ?? open.at(-1);
+			if (!d) continue;
+			askedBack.add(w.id);
+			if (askedBack.size > MAX_ANSWERED) askedBack.delete(askedBack.values().next().value!);
+			deps.log(`the result of ${w.id} for ${w.target} was read in a turn for ${target}; ${w.target} is asked again`);
+			deliver(`${note(w, target)}\n\n${d.text}`, { target: w.target, replyTo: d.replyTo });
+		}
 	}
 
 	/**
@@ -368,7 +415,17 @@ export function createPrompts(deps: PromptDeps) {
 	 * (2026-10-28 21:44 KST, a KTX answer went to a mail thread's newer question).
 	 */
 	function orphanTarget(): OwnerMessage | undefined {
-		const d = openDeferred()[0];
+		const open = openDeferred();
+		// The request whose worker finished last takes the answer, not the oldest one open (2026-10-31 06:36 UTC: B's finished worker's
+		// result went to A's older request).
+		const finished = (deps.work?.() ?? [])
+			.filter(w => (w.status === "done" || w.status === "failed") && w.endedAt !== undefined && w.target)
+			.sort((a, b) => b.endedAt! - a.endedAt!);
+		for (const w of finished) {
+			const d = open.find(p => w.target && p.target === w.target && (w.replyTo === undefined || p.replyTo === w.replyTo)) ?? open.find(p => p.target === w.target);
+			if (d?.target) return { target: d.target, replyTo: d.replyTo, at: d.at, prompt: d };
+		}
+		const d = open[0];
 		if (d?.target) return { target: d.target, replyTo: d.replyTo, at: d.at, prompt: d };
 		const last = turns.at(-1);
 		const conv = last?.prompt.target && Date.now() - (last.end ?? Date.now()) <= ORPHAN_MAX_AGE_MS ? last.prompt.target : undefined;
