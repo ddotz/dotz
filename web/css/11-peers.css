@@ -19,7 +19,7 @@ body:has(#appbar.hasp) #brand::after { margin: 0 2px 4px 2px; }
 @media (min-width: 700px) { .ds-sheet.pr-sheet { max-width: 340px; } }
 .pr-hd { padding: 16px 20px 6px; color: var(--fg-3); font: 600 12px/16px var(--font); }
 .pr-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 10px; }
-.pr-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; transition: background-color .2s; }
+.pr-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--row-h); padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; transition: background-color var(--m-base) var(--m-ease); }
 .pr-row:hover { background: var(--hover); }
 .pr-row:active { background: var(--active); }
 .pr-row.on { background: var(--card); }

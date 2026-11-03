@@ -1,8 +1,8 @@
-/* cards, lists, tags, bars */
-.col { display: flex; flex-direction: column; gap: 12px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 12px; }
-.card { position: relative; min-width: 0; border: 0; border-radius: var(--r-card); background: var(--card); padding: 20px; }
-.card.tap { cursor: pointer; transition: background .15s; }
+/* cards, lists, tags, bars: the base every screen draws on (tokens in 01-tokens.css) */
+.col { display: flex; flex-direction: column; gap: var(--sp-3); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: var(--sp-3); }
+.card { position: relative; min-width: 0; border: 0; border-radius: var(--r-card); background: var(--card); padding: var(--sp-5); }
+.card.tap { cursor: pointer; transition: background var(--m-fast) var(--m-ease); }
 .card.tap:hover { background: var(--card-hover); }
 .card.tap:focus-visible { outline-offset: 0; }
 .card.foot { display: flex; flex-direction: column; }
@@ -11,11 +11,11 @@
 /* a path shown inside a row's text (25-settings-accounts.js): one short line, the full path in the row's title */
 code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ch { display: flex; align-items: center; gap: 8px; min-height: 20px; margin-bottom: 12px; }
-.ch h3 { flex: 1; min-width: 0; margin: 0; font: 600 16px/22px var(--font); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch h3 { flex: 1; min-width: 0; margin: 0; font: 600 var(--fs-card)/var(--lh-card) var(--font); letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ch .chev { width: 14px; height: 14px; color: var(--fg-3); }
 .card.tap:hover .chev { color: var(--fg); }
-.big { font: 700 20px/28px var(--font); letter-spacing: -.01em; }
-.sup { color: var(--fg-2); font-size: 12px; line-height: 16px; }
+.big { font: 700 var(--fs-big)/var(--lh-big) var(--font); letter-spacing: -.01em; }
+.sup { color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .err-t { color: var(--err); }
 .muted { color: var(--fg-2); }
 .empty { padding: 32px 16px; text-align: center; color: var(--fg-3); font-size: 12px; }
@@ -24,7 +24,8 @@ code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom
 .dot.pri { background: var(--accent); }
 .dot.att { background: var(--warn); }
 @keyframes pulse { 50% { opacity: .5; } }
-.tag { display: inline-flex; align-items: center; flex: none; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--layer); color: var(--fg-2); font-size: 11px; line-height: 16px; font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* a small status tag is the one pill besides the two-value toggle (docs/ui-spec.md 알약 규칙) */
+.tag { display: inline-flex; align-items: center; flex: none; height: var(--tag-h); padding: 0 var(--tag-px); border-radius: var(--r-pill); background: var(--layer); color: var(--fg-2); font-size: var(--fs-tag); line-height: var(--lh-tag); font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .tag.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
 .tag.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
 .tag.err { background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); }
@@ -49,19 +50,19 @@ button.cchip.mr-draft .ic { width: 14px; height: 14px; stroke-width: 2; }
 .kv + .kv { margin-top: 8px; }
 .kv .v { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-size: 12px; }
 .bar { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; margin-top: 8px; }
-.bar i { display: block; height: 100%; border-radius: 2px; background: var(--bar, var(--accent)); transition: width .3s; }
+.bar i { display: block; height: 100%; border-radius: 2px; background: var(--bar, var(--accent)); transition: width var(--m-slow) var(--m-ease); }
 .bar.warn { --bar: var(--warn); } .bar.err { --bar: var(--err); }
 .lim + .lim { margin-top: 12px; }
 .more { margin-top: 12px; color: var(--fg-3); font-size: 12px; }
-.sec { margin: 28px 4px 10px; color: var(--fg-2); font: 600 14px/20px var(--font); }
+.sec { margin: 28px 4px 10px; color: var(--fg-2); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); }
 .sec:first-child { margin-top: 0; }
 .list { border: 0; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .list > * + * { border-top: 1px solid var(--line); }
-.li { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 48px; padding: 10px 16px; color: inherit; text-align: left; width: 100%; border: 0; background: transparent; }
+.li { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; min-height: var(--row-h); padding: var(--row-py) var(--row-px); color: inherit; text-align: left; width: 100%; border: 0; background: transparent; }
 button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .li .lead { flex: none; display: inline-flex; color: var(--fg-3); }
 .li .tx { flex: 1; min-width: 0; }
-.li .hd { font-size: 15px; line-height: 22px; font-weight: 500; }
+.li .hd { font-size: var(--fs-row); line-height: var(--lh-row); font-weight: 500; }
 .avatar { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--layer); border: 1px solid var(--line); color: var(--fg-2); font: 600 11px/16px var(--font); text-transform: uppercase; }
 .heads { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .li.prow .heads { flex-wrap: wrap; row-gap: 2px; }
@@ -84,7 +85,7 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .acc-grip:hover { background: var(--card-hover); color: var(--fg-2); }
 .acc-mv { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-2); font-size: 16px; }
 .acc-mv:hover:not(:disabled) { background: var(--card-hover); color: var(--fg); }
-.acc-dragging .li.acc { transition: transform .15s; }
+.acc-dragging .li.acc { transition: transform var(--m-fast) var(--m-ease); }
 .acc-dragging .li.acc.drag { position: relative; z-index: 2; transition: none; background: var(--card); box-shadow: 0 6px 20px rgb(0 0 0 / .18); cursor: grabbing; }
 .rt-roles { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .rt-roles .seg { flex: none; flex-wrap: nowrap; }
@@ -100,13 +101,14 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .mt8 { margin-top: 8px; } .mt12 { margin-top: 12px; }
 
 /* tabs */
-.chips { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding: 0 0 12px; min-width: 0; flex: none; }
+.chips { display: flex; gap: var(--sp-1); overflow-x: auto; scrollbar-width: none; padding: 0 0 var(--sp-3); min-width: 0; flex: none; }
 .chips::-webkit-scrollbar { display: none; }
-.chip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; padding: 0 12px; border: 0; border-radius: 16px; background: var(--card); color: var(--fg-2); font-size: 13px; font-weight: 500; max-width: 100%; }
+/* filter chips and tabs are small boxes, not pills: only a status tag and the two-value toggle are fully rounded */
+.chip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: var(--chip-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font-size: 13px; font-weight: 500; max-width: 100%; }
 .chip:hover { background: var(--hover); color: var(--fg); }
 .chip.on { background: var(--fg); color: var(--bg); }
 /* 두 값 설정 (rowToggle): the current value in one pill on the row's card; the small mark says a tap swaps it */
-.chip.tgl { background: var(--layer); color: var(--fg); font-weight: 500; }
+.chip.tgl { border-radius: var(--r-pill); background: var(--layer); color: var(--fg); font-weight: 500; }
 .chip.tgl::after { content: "⇄"; color: var(--fg-3); font-size: 11px; }
 .chip.tgl.unset { color: var(--fg-2); }
 .chip.tgl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
