@@ -119,7 +119,7 @@ const open = async (width: number, height: number, theme: "light" | "dark" = "li
 	const v = await hub.view({ width, height }, "/");
 	await waitFor(v, `typeof go === "function" && typeof S !== "undefined" && S`);
 	await run(v, `document.documentElement.dataset.theme = ${JSON.stringify(theme)}; go(${JSON.stringify(view)})`);
-	if (view === "messengers") await waitFor(v, `document.querySelectorAll("#messengers [data-ms-row]").length === 4 && document.querySelector('#messengers [data-ms-row="telegram"] .tag')`);
+	if (view === "messengers") await waitFor(v, `document.querySelectorAll("#messengers [data-ms-row]").length === 4 && document.querySelector('#messengers [data-ms-row="telegram"] .dot')`);
 	else if (view === "settings") await waitFor(v, `document.querySelector("#settings [data-ms-hub] .sup")`);
 	else await waitFor(v, `document.querySelector("#${view} [data-ms-connect]") && document.querySelector("#${view} [data-ms-status]")`);
 	return v;
@@ -142,7 +142,7 @@ describe("메신저 설정", () => {
 		expect(sum).toContain("1");
 		await click(v, "#settings [data-ms-hub]");
 		await waitFor(v, `current === "messengers" && document.querySelectorAll("#messengers [data-ms-row]").length === 4`);
-		const rows = await ev<{ id: string; name: string; tag: string }[]>(v, `[...document.querySelectorAll("#messengers [data-ms-row]")].map(r => ({ id: r.dataset.msRow, name: r.querySelector(".hd").textContent, tag: r.querySelector(".tag")?.textContent }))`);
+		const rows = await ev<{ id: string; name: string; tag: string }[]>(v, `[...document.querySelectorAll("#messengers [data-ms-row]")].map(r => ({ id: r.dataset.msRow, name: r.querySelector(".hd").textContent, tag: r.querySelector(".dot")?.title }))`);
 		expect(rows).toEqual([
 			{ id: "discord", name: "Discord", tag: "연결됨" },
 			{ id: "jandi", name: "JANDI", tag: "연결됨" },
@@ -151,7 +151,7 @@ describe("메신저 설정", () => {
 		]);
 		for (const id of ["discord", "jandi", "slack", "telegram"]) {
 			await run(v, `go("messengers")`);
-			await waitFor(v, `document.querySelector("#messengers [data-ms-row=\\"${id}\\"] .tag")`);
+			await waitFor(v, `document.querySelector("#messengers [data-ms-row=\\"${id}\\"] .dot")`);
 			await click(v, `#messengers [data-ms-row="${id}"]`);
 			await waitFor(v, `current === "${id}"`);
 		}

@@ -78,7 +78,7 @@ describe("연결된 기기 설정 화면", () => {
 	});
 
 	test("설정 links to it only where the gateway keeps paired devices", async () => {
-		const row = `[...document.querySelectorAll("#settings .li")].find(x => x.querySelector(".hd")?.textContent === "연결된 기기 (패스키)")`;
+		const row = `[...document.querySelectorAll("#settings .li")].find(x => x.querySelector(".hd")?.textContent === "연결된 기기")`;
 		const v = await hub.view({ width: 1280, height: 800 }, "/");
 		await waitFor(v, `typeof go === "function" && S`);
 		await run(v, `go("settings")`);
