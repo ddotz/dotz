@@ -100,14 +100,34 @@ async function mbRun(keys, action, quiet = false, note = "") {
   Promise.allSettled([convLoad(), loadIntegrations()]);
   return done;
 }
-// 삭제 asks first, once. A mailbox that will not follow keeps its mail and the ask says so; an older hub only drops the row from dotz.
+// 삭제 into the mailbox's trash can be undone: the mail leaves at once and 실행 취소 brings it back; the trash is sent when the toast's
+// time is up or the page goes away (Gmail's way, owner 11-03). A mailbox that will not follow, or an older hub, only drops the row from
+// dotz and cannot bring it back, so that asks first in the small confirm box.
+const MB_UNDO_MS = 6000;
 async function mbTrash(keys) {
   keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
-  const real = keys.every(t => mailCan(t, "trash"));
-  if (!await ask("메일 삭제", real ? `메일 ${keys.length}개를 휴지통으로 옮길까요?` : `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 메일함엔 남을 수 있어요`, "삭제", true)) return [];
-  const done = await mbRun(keys, "trash");
+  if (!keys.every(t => mailCan(t, "trash"))) {
+    if (!await ask("메일 삭제", `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 메일함엔 남을 수 있어요`, "삭제", true)) return [];
+    const done = await mbRun(keys, "trash");
+    mbLeave(keys);
+    return done;
+  }
+  const back = keys.map(t => mbApply(t, "trash"));
+  const leaving = mbRowsOut(keys);
+  if (leaving) leaving.then(mbRefresh); else mbRefresh();
+  mbPaintBar();
   mbLeave(keys);
+  const undone = await new Promise(res => {
+    const end = v => { clearTimeout(timer); removeEventListener("pagehide", send); res(v); };
+    const send = () => end(false), timer = setTimeout(send, MB_UNDO_MS);
+    addEventListener("pagehide", send);
+    toast(keys.length > 1 ? `${keys.length}개를 삭제했어요` : "삭제했어요", false, { label: "실행 취소", onclick: () => end(true) }, MB_UNDO_MS);
+  });
+  for (const f of back) f();
+  if (undone) { mbRefresh(); mbPaintBar(); return []; }
+  const done = await mbRun(keys, "trash", true);
+  if (done.length < keys.length) toast("처리하지 못했어요", true);
   return done;
 }
 // An action on the open mail takes the owner back to the list (like the mailbox does) when the mail left it.

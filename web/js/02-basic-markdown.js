@@ -219,12 +219,15 @@ function notify(e) {
 
 /* ---------- dialog ---------- */
 // classic: the small centered box with its own header, not the full-screen frame (the settings tab's dialogs, 03-base.css dialog.dlg.cl).
-function dialog({ title, body, actions = [], onclose, wide, classic }) {
-  const d = el("dialog", { class: `dlg${wide ? " wide" : ""}${classic ? " cl" : " fs-card"}` });
-  const bodyBox = el("div", { class: classic ? "dbody" : "dbody fs-body" }, body);
-  const actBox = el("div", { class: classic ? "dact" : "dact fs-ft row" });
+// confirm: a short confirm (a title, a sentence or two, two buttons): a small centered box, a low bottom sheet on a phone (docs/ui-spec.md 확인 상자).
+function dialog({ title, body, actions = [], onclose, wide, classic, confirm }) {
+  const small = classic || confirm;
+  const d = el("dialog", { class: `dlg${wide ? " wide" : ""}${confirm ? " cf" : classic ? " cl" : " fs-card"}` });
+  const bodyBox = el("div", { class: small ? "dbody" : "dbody fs-body" }, body);
+  const actBox = el("div", { class: small ? "dact" : "dact fs-ft row" });
   // The ✕ and a tap outside the box both close it and drop the edit, like Esc and the Android back gesture (dialogHist) already do.
-  const head = classic
+  const head = confirm ? el("h2", { class: "dtitle", text: title })
+    : classic
     ? el("div", { class: "dhd" }, el("h2", { class: "dtitle", text: title }), el("button", { type: "button", class: "ib dx", "aria-label": "닫기", onclick: () => d.close() }, icon("close")))
     : fsHead([el("h2", { class: "dtitle", text: title })], { close: () => d.close() });
   d.append(head, bodyBox, actBox);
@@ -246,7 +249,7 @@ function dialog({ title, body, actions = [], onclose, wide, classic }) {
 function ask(title, text, ok = "확인", danger = false) {
   return new Promise(res => {
     let v = false;
-    dialog({ title, body: text ? el("p", { text }) : null, onclose: () => res(v), actions: [
+    dialog({ confirm: true, title, body: text ? el("p", { text }) : null, onclose: () => res(v), actions: [
       { label: "취소", onclick: c => c() },
       { label: ok, kind: danger ? "danger fill" : "pri", onclick: c => { v = true; c(); } }] });
   });

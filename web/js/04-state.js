@@ -86,7 +86,7 @@ async function deleteEnded(names) {
   const one = names.length === 1;
   const sure = await new Promise(res => {
     let v = false;
-    dialog({ title: one ? `${names[0]} 삭제` : `세션 ${names.length}개 삭제`, onclose: () => res(v),
+    dialog({ confirm: true, title: one ? `${names[0]} 삭제` : `세션 ${names.length}개 삭제`, onclose: () => res(v),
       body: el("div", { class: "dl-body" }, el("p", { text: "휴지통으로 옮겨요. 7일 안에는 되돌릴 수 있어요." }),
         el("ul", { class: "dl-list" }, ...names.map(n => el("li", { text: n })))),
       actions: [{ label: "취소", onclick: c => c() }, { label: one ? "삭제" : `${names.length}개 삭제`, kind: "danger fill", onclick: c => { v = true; c(); } }] });
