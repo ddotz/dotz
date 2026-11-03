@@ -73,7 +73,7 @@ for (const width of [1440, 390]) {
 			const cards = [...document.querySelectorAll("#mon-tl > .bm.dr")];
 			const c = cards[0], txt = e => e.textContent.trim();
 			const row = document.querySelector("#mon-tl > .bm.mr");
-			return { n: cards.length, states: cards.map(x => x.querySelector(".dr-st").dataset.state), badge: cards.map(x => txt(x.querySelector(".dr-st"))),
+			return { n: cards.length, states: cards.map(x => x.querySelector(".dr-st, .rq-sent").dataset.state), badge: cards.map(x => txt(x.querySelector(".dr-st, .rq-sent"))),   // a sent draft says 보냈어요 in its foot
 				questions: cards.map(x => x.textContent.split(${JSON.stringify(Q)}).length - 1), chip: txt(c.querySelector(".dr-chip")), subject: txt(c.querySelector(".dr-sub")),
 				subjectWeight: Number(getComputedStyle(c.querySelector(".dr-sub")).fontWeight), paras: [...c.querySelectorAll(".dr-body p")].map(txt),
 				orig: !!c.querySelector(".dr-orig"), buttons: cards.map(x => [...x.querySelectorAll("button:not(.dr-rm):not(.rq-more)")].map(txt)), more: cards.map(x => x.querySelectorAll(".rq-more").length), rm: cards.map(x => x.querySelectorAll(".dr-rm").length), rowCount: document.querySelectorAll("#mon-tl > .bm.dr .dcm-row").length,

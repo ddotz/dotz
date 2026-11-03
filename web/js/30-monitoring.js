@@ -294,8 +294,11 @@ function draftCardNode(n, o = {}) {
     draftOriginNode(dr),
     man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
     draftFilesNode(dr, { t: d.to, edit: open }), draftMailNode(dr.mail));
+  // A mail answered by this draft reads like the landing page's comment card: who wrote, where it came from, what they wrote, then the draft in a grey box.
+  const om = mail ? MAILS.get(d.to) || {} : {}, who = mail ? mailSender(om.from) : "", sent = st === "send";
   const head = { app: mail ? "mail" : d.to, label: mail ? monInstLabel(d.to) : pcTargetName(d.to, n.pc), pc: mail && pqPc(d.to) ? pqPc(d.to).name : pqSelf(), model: dr.model || "", at: null,   // the state tag carries the time once
-    tail: [dr.rule ? draftRuleTag(dr.rule, "dr-rule") : null, el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
+    ...(who ? { who, src: monInstLabel(d.to) || "메일" } : {}),
+    tail: [dr.rule ? draftRuleTag(dr.rule, "dr-rule") : null, sent ? null : el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
       // 지우기 on a waiting draft is 보내지 않기: the same answer path, so the owning computer drops it once and nothing is sent
       open && !editing && oDrop ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => { if (!busy) answerInline(n, oDrop); } }, icon("close")) : null] };
   if (editing) {
@@ -319,7 +322,7 @@ function draftCardNode(n, o = {}) {
       man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: "직접 수정" })))) : null;
   const card = rqCard({ key: `dr:${n.id}`, cls: `bm alert rc dr ${st}`, attrs: { "data-nid": n.id }, head,
     label: q || null, labelCls: "rc-title dr-q",
-    recv, subject: dr.subject,
+    recv, subject: dr.subject, ...(who && (om.summary || om.preview) ? { original: { text: String(om.summary || om.preview).split("\n")[0] } } : {}), sent, sentAt: when,
     body: { text: dr.body, node: man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))), cls: "dr-body" },
     // A mail draft always shows its 첨부 줄 (files, or 첨부: 없음) right before 보내기; the files are editable while the draft waits.
     attach: draftFilesNode(dr, { t: d.to, edit: open }),
