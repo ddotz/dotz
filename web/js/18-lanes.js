@@ -197,17 +197,18 @@ function pjFiltered() {
   const q = PJ.q.trim().toLowerCase(), rows = projRows((PRJ && PRJ.projects) || []);
   return rows.filter(r => (PJ.view === "all" || r.st.k === PJ.view) && (!q || `${prjTitle(r.p)} ${prjPurpose(r.p)}`.toLowerCase().includes(q)));
 }
-// One row: name + last activity, the one status line, the milestone bar. A waiting row leads with the question's session.
+// One row: name + the one status line (with milestone count and last activity), the state tag at the right. A waiting row names its session.
 function prjRow(r) {
-  const { p, st } = r, ms = prjMiles(p), done = ms.filter(m => m.done).length, pct = ms.length ? Math.round(done / ms.length * 100) : 0;
+  const { p, st } = r, ms = prjMiles(p), done = ms.filter(m => m.done).length;
   const chat = prjChat(p), unread = chat ? ts(chat).unread : 0, at = prjLastAt(p), sel = current === "project" && ppCur === p.key;
-  const line = st.lane ? `${st.word} · ${st.lane.title || st.lane.name}` : st.k === "done" ? `끝남 · 목표를 모두 마쳤어요` : st.word;
+  const line = [st.lane ? `${st.word} · ${st.lane.title || st.lane.name}` : st.k === "done" ? `끝남 · 목표를 모두 마쳤어요` : st.word, ms.length ? `${done}/${ms.length} 단계` : "", prjAgo(at)].filter(Boolean).join(" · ");
+  const tone = st.tone === "att" ? "warn" : st.tone;
   return el("button", { class: `pl-row${sel ? " on" : ""}${unread ? " unread" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${line} · 열기`, onclick: () => go("project", p.key) },
     el("span", { class: `dot ${st.tone}` }),
     el("span", { class: "pl-b" },
-      el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) }), unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "pl-at", text: prjAgo(at) })),
-      el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: line })),
-      ms.length ? el("span", { class: "pl-p" }, el("span", { class: `pl-bar${done === ms.length ? " done" : ""}`, role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })), el("span", { class: "pl-pn", text: `${done}/${ms.length}` })) : null));
+      el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) }), unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null),
+      el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: line }))),
+    el("span", { class: "li-end" }, el("span", { class: `tag ${tone}`, text: st.word }), icon("chev", "chev")));
 }
 function pjSearch() {
   return el("label", { class: "pl-search" }, icon("search"),
@@ -249,7 +250,8 @@ function pjPaintRows() {
   if (showBuiltin) {
     nodes.push(el("div", { class: "pl-gh", role: "presentation", text: "내 설정" }));
     nodes.push(el("button", { class: `pl-row sub${current === "project" && ppCur === builtin.key ? " on" : ""}`, type: "button", "data-key": builtin.key, onclick: () => go("project", builtin.key) },
-      el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: "내가 바꾼 것을 봐요" })))));
+      el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: "내가 바꾼 것을 봐요" }))),
+      el("span", { class: "li-end" }, icon("chev", "chev"))));
   }
   clear(box).append(...nodes);
 }
