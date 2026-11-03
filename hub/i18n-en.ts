@@ -10,6 +10,7 @@ export const enLeads = {
 	newMessageLead: "[dotz gateway] A new message arrived while you are working",
 	laneReportLead: "[dotz gateway] A session report arrived while you are working",
 	joinLead: "[dotz gateway] A background worker is already running for this conversation",
+	otherConvLead: "[dotz gateway] A background worker of another conversation may report during this turn",
 	waitedLead: "[dotz gateway] The owner has waited",
 	rateLead: "[dotz gateway] The rate limit has passed",
 	providerLead: "[dotz gateway] The provider problem (billing/auth) may have been fixed",
@@ -185,6 +186,8 @@ export const en = {
 
 	replay: `${enLeads.replayLead}. Handle it now; it may be partly done already, so check before repeating an action.`,
 	joinWorker: (id: string, description: string) => `${enLeads.joinLead}: "${description.replace(/\s+/g, " ")}" (task ${id}). If this message is about the same work (the same approval, the same posting), do not spawn a new worker: pass it to the running one with task_send and end with [later]. Otherwise handle it normally.`,
+	otherWorker: (id: string, conversation: string, replyTo?: string) => `${enLeads.otherConvLead}. This turn's final answer goes to this conversation only. If the result of task ${id} (${conversation}) arrives during this turn, send that answer with dotz_send target "${conversation}"${replyTo ? ` reply_to "${replyTo}"` : " reply_to <that conversation's message id>"}, never here.`,
+	workReadElsewhere: (id: string, conversation: string, readIn: string) => `${enLeads.otherConvLead}. The result of task ${id} (${conversation}) was read in a turn for ${readIn}. It is the answer to the request in ${conversation}: answer it here.`,
 	newMessage: (target: string, replyTo: string | undefined, text: string) => `${enLeads.newMessageLead}. If its full answer is ready now (a quick question), send it with dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}: that settles the message, it counts as answered and never comes back as a turn. Otherwise send nothing: it comes back as its own turn when you are idle. Then continue the current work; your final answer still goes to the request you started with.\n\n${text}`,
 	// The one leading line of an owner prompt that says what runs now (workers named by the hub from its own state; no model call).
 	nowRunning: "[running now]",

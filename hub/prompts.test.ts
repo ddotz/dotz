@@ -770,3 +770,110 @@ test("a turn stopped by a provider error before writing anything keeps its reque
 	plain.q.settleTurn();
 	expect(plain.open()).toEqual([]);
 });
+
+// 2026-10-31 06:36 UTC: a channel-A worker was still running when the owner's channel-B message started a turn. OmO injected the
+// worker's completion into that turn and B posted A's answer. The prompt for B must say where another conversation's answer goes.
+test("a prompt for one conversation is told that another conversation's worker is still running", () => {
+	const works = [{ id: "wA", description: "발표 자료", status: "running", target: "ch:A", replyTo: "a1", startedAt: 0 }];
+	const FOREIGN = "[foreign]";
+	const { q, state, startTurn } = setup([], [], {
+		work: () => works,
+		foreignNote: (w: { id: string }, target: string) => `${FOREIGN} ${w.id} ${target}`,
+		hasForeignNote: (text: string) => text.includes(FOREIGN),
+	});
+	startTurn("A 요청", { target: "ch:A", replyTo: "a1" });
+	q.onAnswer("[later]");
+	state.working = false;
+	q.settleTurn();
+	expect(q.deferredOpen().map(d => d.target)).toEqual(["ch:A"]);
+
+	// B's owner message becomes its own prompt: the note names A's worker and A's target.
+	q.deliver("B 요청", { target: "ch:B", replyTo: "b1", owner: true });
+	expect(state.delivered.at(-1)).toBe("B 요청\n\n[foreign] wA ch:A");
+	q.onPrompt(state.delivered.at(-1)!);
+	state.working = true;
+	// A message steered into B's running turn carries the note too.
+	q.deliver("B 후속", { target: "ch:B", replyTo: "b2", owner: true });
+	expect(state.steered).toEqual(["[note] B 후속\n\n[foreign] wA ch:A"]);
+	state.working = false;
+	// A's own message carries none, a text that already has it gets no second line, and a finished worker warns about nothing.
+	q.deliver("A 후속", { target: "ch:A", replyTo: "a2", owner: true });
+	expect(state.delivered.at(-1)).toBe("A 후속");
+	q.deliver("[foreign] wA ch:A\n\nB 요청", { target: "ch:B", replyTo: "b9", owner: true });
+	expect(state.delivered.at(-1)).toBe("[foreign] wA ch:A\n\nB 요청");
+	works[0] = { ...works[0]!, status: "done", endedAt: Date.now() };
+	q.deliver("B 또", { target: "ch:B", replyTo: "b3", owner: true });
+	expect(state.delivered.at(-1)).toBe("B 또");
+});
+
+// 2026-10-31: the worker of A finished while B's turn ran and its result was read there. A's request still waited, so A must be asked
+// again with its own request text instead of staying silently open behind B's answer.
+test("a worker of another conversation finishing during a turn asks that conversation again", () => {
+	const works = [{ id: "wA", description: "PPT", status: "running", target: "ch:A", replyTo: "a1", startedAt: 0 }];
+	const logs: string[] = [];
+	const { q, state, startTurn } = setup([], [], {
+		work: () => works,
+		readElsewhereNote: (w: { id: string }, readIn: string) => `[elsewhere] ${w.id} ${readIn}`,
+		log: m => logs.push(m),
+	});
+	startTurn("A 요청", { target: "ch:A", replyTo: "a1" });
+	q.onAnswer("[later]");
+	state.working = false;
+	q.settleTurn();
+
+	startTurn("B 요청", { target: "ch:B", replyTo: "b1" });
+	works[0] = { ...works[0]!, status: "done", endedAt: Date.now() };
+	q.onText("A의 작업 결과를 B 턴에서 읽었어요");
+	q.onAnswer("B 요청 처리했어요");
+	state.working = false;
+	q.settleTurn();
+	expect(state.posts).toEqual([{ target: "ch:B", text: "B 요청 처리했어요", replyTo: "b1" }]);
+	expect(state.delivered.at(-1)).toBe("[elsewhere] wA ch:B\n\nA 요청");
+	expect(q.deferredOpen().map(d => d.target)).toEqual(["ch:A"]);
+	expect(logs.some(l => l === "the result of wA for ch:A was read in a turn for ch:B; ch:A is asked again")).toBe(true);
+
+	// Once per worker: a later turn of B asks nothing again.
+	startTurn("B2 요청", { target: "ch:B", replyTo: "b2" });
+	q.onAnswer("B2 답");
+	state.working = false;
+	q.settleTurn();
+	expect(state.delivered.filter(t => t.includes("[elsewhere]"))).toHaveLength(1);
+});
+
+// 2026-10-31 06:36: a worker's result woke a run with no prompt of ours while two deferred requests were open; the answer went to the
+// oldest one (channel A) though the worker of channel B was the one that just finished.
+test("an answer with no prompt goes to the conversation whose worker finished last", async () => {
+	const now = Date.now();
+	const works = [
+		{ id: "wA", description: "A", status: "done", target: "ch:A", replyTo: "a1", startedAt: now - 100_000, endedAt: now - 50_000 },
+		{ id: "wB", description: "B", status: "done", target: "ch:B", replyTo: "b1", startedAt: now - 40_000, endedAt: now - 10_000 },
+	];
+	const { q, state, startTurn } = setup([], [], { work: () => works });
+	startTurn("A 요청", { target: "ch:A", replyTo: "a1" });
+	q.onAnswer("[later]");
+	state.working = false;
+	q.settleTurn();
+	startTurn("B 요청", { target: "ch:B", replyTo: "b1" });
+	q.onAnswer("[later]");
+	state.working = false;
+	q.settleTurn();
+	expect(q.deferredOpen().map(d => d.target)).toEqual(["ch:A", "ch:B"]);
+
+	q.onAnswer("작업 결과예요");
+	await Promise.resolve();
+	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([["ch:B", "b1"]]);
+
+	// With no finished worker to name, the oldest open request still goes first.
+	const plain = setup();
+	plain.startTurn("A 요청", { target: "ch:A", replyTo: "a1" });
+	plain.q.onAnswer("[later]");
+	plain.state.working = false;
+	plain.q.settleTurn();
+	plain.startTurn("B 요청", { target: "ch:B", replyTo: "b1" });
+	plain.q.onAnswer("[later]");
+	plain.state.working = false;
+	plain.q.settleTurn();
+	plain.q.onAnswer("작업 결과예요");
+	await Promise.resolve();
+	expect(plain.state.posts.map(p => [p.target, p.replyTo])).toEqual([["ch:A", "a1"]]);
+});
