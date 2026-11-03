@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "0f91790d687e";
+const WEB_BUILD = "175c8cee1c65";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -850,7 +850,7 @@ function palResult(c, run) {
   return el("div", { class: `pal-res${tone === "err" ? " err" : ""}`, role: "status" }, head,
     facts.length ? el("div", { class: "list pal-facts" }, ...facts.map(palFact)) : null,
     c.note ? el("div", { class: "cc-note", text: c.note }) : null,
-    acts.length ? el("div", { class: "btns cc-act" }, ...acts.map(a => el("button", { type: "button", class: "btn tonal", title: a.send, text: a.label, onclick: () => run(a.send) }))) : null);
+    acts.length ? el("div", { class: "btns cc-act" }, ...acts.map(a => el("button", { type: "button", class: "btn tonal sm", title: a.send, text: a.label, onclick: () => run(a.send) }))) : null);
 }
 function openPalette() {
   if (document.querySelector("dialog.pal")) return;
@@ -5930,10 +5930,11 @@ function prjRow(r) {
   const { p, st } = r, ms = prjMiles(p), done = ms.filter(m => m.done).length, pct = ms.length ? Math.round(done / ms.length * 100) : 0;
   const chat = prjChat(p), unread = chat ? ts(chat).unread : 0, at = prjLastAt(p), sel = current === "project" && ppCur === p.key;
   const line = st.lane ? `${st.word} · ${st.lane.title || st.lane.name}` : st.k === "done" ? `끝남 · 목표를 모두 마쳤어요` : st.word;
-  return el("button", { class: `pl-row${sel ? " on" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${line} · 열기`, onclick: () => go("project", p.key) },
+  return el("button", { class: `pl-row${sel ? " on" : ""}${unread ? " unread" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${line} · 열기`, onclick: () => go("project", p.key) },
+    el("span", { class: `dot ${st.tone}` }),
     el("span", { class: "pl-b" },
       el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) }), unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "pl-at", text: prjAgo(at) })),
-      el("span", { class: "pl-s" }, el("span", { class: `dot ${st.tone}` }), el("span", { class: "pl-sw", text: line })),
+      el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: line })),
       ms.length ? el("span", { class: "pl-p" }, el("span", { class: `pl-bar${done === ms.length ? " done" : ""}`, role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })), el("span", { class: "pl-pn", text: `${done}/${ms.length}` })) : null));
 }
 function pjSearch() {
@@ -5970,7 +5971,7 @@ function pjPaintRows() {
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   const nodes = page.map(prjRow);
-  if (rest > 0) nodes.push(el("div", { class: "cv-more" }, el("button", { class: "btn text", type: "button", "data-k": "more", onclick: () => { PJ.more += PJ_PAGE; pjPaintRows(); }, text: `프로젝트 ${rest}개 더 보기` })));
+  if (rest > 0) nodes.push(el("div", { class: "cv-more" }, el("button", { class: "btn text sm", type: "button", "data-k": "more", onclick: () => { PJ.more += PJ_PAGE; pjPaintRows(); }, text: `프로젝트 ${rest}개 더 보기` })));
   if (!rows.length) nodes.push(el("div", { class: "cv-empty", text: searching ? "찾는 프로젝트가 없어요" : PJ.view === "need" ? "확인할 프로젝트가 없어요" : PJ.view === "run" ? "지금 진행 중인 프로젝트가 없어요" : PJ.view === "done" ? "끝낸 프로젝트가 없어요" : "아직 프로젝트가 없어요" }));
   // The built-in 커스텀 page is the owner's settings list: always reachable, never part of the filters.
   if (showBuiltin) {
@@ -5984,7 +5985,13 @@ function renderProjects() {
   const box = $("#v-projects");
   if (!PRJ) { delete box.dataset.sig; clear(box).append(emptyNode(PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…")); return; }
   const list = PRJ.projects || [];
-  if (!list.length) { delete box.dataset.sig; clear(box).append(emptyNode("아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요")); return; }
+  if (!list.length) {
+    delete box.dataset.sig;
+    const none = emptyNode("아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요");
+    none.append(el("div", { class: "pl-empty-a" }, el("button", { class: "btn tonal sm", type: "button", "data-k": "chat", onclick: () => openTarget(MAIN, lastChatView()) }, "채팅 열기")));
+    clear(box).append(none);
+    return;
+  }
   // The shell (search box, chip and list slots) is built once: rebuilding it on a data refresh would drop the search box's focus and caret.
   // The chips and rows below follow the data on their own.
   if (!box.querySelector("#pl-shell")) clear(box).append(pjShell());
@@ -6066,20 +6073,20 @@ function pmSheetsPaint() {
 function pmPrimary(rows, live, working, workRun) {
   const wait = rows.filter(r => r.waiting), ask = wait[0];
   if (ask) return el("div", { class: "card pm-need" },
-    el("div", { class: "pm-need-k" }, el("span", { class: "dot att" }), el("span", { text: "확인 필요" })),
+    el("div", { class: "pm-need-k" }, el("span", { class: "tag warn", text: "확인 필요" })),
     el("div", { class: "pm-need-t", text: ask.title }),
     el("div", { class: "pm-need-s", text: `답을 기다려요${wait.length > 1 ? ` · 외 ${wait.length - 1}개` : ""}` }),
-    el("button", { class: "btn pm-need-a", type: "button", "data-k": "answer", onclick: () => openTarget(`lane:${ask.name}`, lastChatView()) }, "답하기"));
+    el("div", { class: "cf" }, el("button", { class: "btn pm-need-a", type: "button", "data-k": "answer", onclick: () => openTarget(`lane:${ask.name}`, lastChatView()) }, "답하기")));
   const run = working[0] || live[0];
   if (run) return el("div", { class: "card pm-calm" },
-    el("div", { class: "pm-calm-k" }, el("span", { class: `dot${run.status === "working" || run.status === "starting" ? " pri" : ""}` }), el("span", { text: run.status === "working" || run.status === "starting" ? "지금 작업 중" : "세션이 열려 있어요" })),
+    el("div", { class: "pm-calm-k" }, el("span", { class: `tag${run.status === "working" || run.status === "starting" ? " pri" : ""}`, text: run.status === "working" || run.status === "starting" ? "지금 작업 중" : "세션이 열려 있어요" })),
     el("div", { class: "pm-calm-t", text: run.title }),
-    el("button", { class: "btn tonal", type: "button", onclick: () => openTarget(`lane:${run.name}`, lastChatView()) }, "채팅 열기"));
+    el("div", { class: "cf" }, el("button", { class: "btn tonal", type: "button", onclick: () => openTarget(`lane:${run.name}`, lastChatView()) }, "채팅 열기")));
   if (workRun.length) return el("div", { class: "card pm-calm" },
-    el("div", { class: "pm-calm-k" }, el("span", { class: "dot pri" }), el("span", { text: "지금 작업 중" })),
+    el("div", { class: "pm-calm-k" }, el("span", { class: "tag pri", text: "지금 작업 중" })),
     el("div", { class: "pm-calm-t", text: workRun[0].description }),
-    el("button", { class: "btn tonal", type: "button", onclick: () => workGo(workRun[0]) }, "열기"));
-  return el("div", { class: "card pm-calm calm" }, el("div", { class: "pm-calm-k" }, el("span", { class: "dot" }), el("span", { text: "확인할 것 없어요" })),
+    el("div", { class: "cf" }, el("button", { class: "btn tonal", type: "button", onclick: () => workGo(workRun[0]) }, "열기")));
+  return el("div", { class: "card pm-calm calm" }, el("div", { class: "pm-calm-k" }, el("span", { class: "tag", text: "확인할 것 없어요" })),
     el("div", { class: "pm-calm-t sup", text: "지금 답을 기다리는 세션이 없어요" }));
 }
 // One summary row: label, one value line, one quiet line under it; the whole row opens the section's page.
@@ -6141,7 +6148,7 @@ function pmEditable({ value, placeholder = "비어 있어요", label, multiline,
     f.value = value || "";
     const err = el("div", { class: "note err" });
     const close = () => { PM.open = Math.max(0, PM.open - 1); show(); };
-    const ok = el("button", { class: "btn", type: "button", text: "저장" });
+    const ok = el("button", { class: "btn sm", type: "button", text: "저장" });
     const commit = async () => {
       const v = f.value.trim();
       if (v === (value || "")) return close();
@@ -6156,7 +6163,7 @@ function pmEditable({ value, placeholder = "비어 있어요", label, multiline,
       if (ev.key === "Escape") { ev.stopPropagation(); close(); }
       else if (ev.key === "Enter" && (!multiline || ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); commit(); }
     });
-    clear(wrap).append(el("div", { class: "pmv-form" }, f, err, el("div", { class: "pmv-acts" }, el("button", { class: "btn text", type: "button", text: "취소", onclick: close }), ok)));
+    clear(wrap).append(el("div", { class: "pmv-form" }, f, err, el("div", { class: "pmv-acts" }, el("button", { class: "btn text sm", type: "button", text: "취소", onclick: close }), ok)));
     f.focus();
   };
   show();
@@ -6171,7 +6178,7 @@ function pmHead(q) {
       pmEditable({ value: prjPurpose(q), label: "프로젝트 설명", placeholder: "무엇을 하는 프로젝트인지 적어 주세요", multiline: true, cls: "pmv-purpose", save: v => pmWrite({ purpose: v }) })),
     // No work channel, nothing to chat with: the button is left out instead of showing a dead one.
     chat ? el("div", { class: "pmv-hact" }, el("div", { class: "pmv-hrow" },
-      can ? el("button", { class: "btn", type: "button", title: "이 프로젝트 전용 채팅을 열어요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" }) : null,
+      can ? el("button", { class: "btn tonal", type: "button", title: "이 프로젝트 전용 채팅을 열어요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" }) : null,
       pmMenuButton(q))) : null);
 }
 // The project a chat target (ch:<id>) belongs to, from the list the 프로젝트 tab shows (null until it has loaded or once it is gone).
@@ -6247,7 +6254,7 @@ function pmGoalBody(q) {
     return el("div", { class: `pmv-ms${m.done ? " done" : ""}` }, ck,
       el("div", { class: "pmv-mtx" }, pmEditable({ value: m.text, label: "마일스톤", required: true, save: v => pmWrite({ milestones: ms.map((x, j) => j === i ? { ...x, text: v } : x) }) })), del);
   });
-  const addBtn = el("button", { class: "btn tonal", type: "button", disabled: true, text: "추가" });
+  const addBtn = el("button", { class: "btn tonal sm", type: "button", disabled: true, text: "추가" });
   const addIn = input({ placeholder: "마일스톤 추가", "aria-label": "마일스톤 추가", maxlength: "200", oninput: ev => { PM.draft = ev.target.value; addBtn.disabled = !ev.target.value.trim(); } });
   const doAdd = async () => {
     const t = addIn.value.trim(), keep = PM.draft;
@@ -6309,11 +6316,11 @@ function pmRoutine(x) {
     PM.open = Math.max(0, PM.open - (box.dataset.editing ? 1 : 0)); delete box.dataset.editing;
     const acts = el("div", { class: "pmv-rt-acts" });
     if (url) {
-      const pause = el("button", { class: "btn tonal", type: "button", text: x.paused ? "다시 시작" : "일시정지", onclick: () => { pause.disabled = true; patch({ paused: !x.paused }).then(ok => { if (!ok) pause.disabled = false; }); } });
-      acts.append(mins || (x.kind === "monitor" && x.on === "match") ? el("button", { class: "btn text", type: "button", text: "수정", onclick: form }) : "",
-        x.script ? el("button", { class: "btn text", type: "button", text: "스크립트", onclick: scriptEdit }) : "", pause);
+      const pause = el("button", { class: "btn tonal inrow", type: "button", text: x.paused ? "다시 시작" : "일시정지", onclick: () => { pause.disabled = true; patch({ paused: !x.paused }).then(ok => { if (!ok) pause.disabled = false; }); } });
+      acts.append(mins || (x.kind === "monitor" && x.on === "match") ? el("button", { class: "btn text inrow", type: "button", text: "수정", onclick: form }) : "",
+        x.script ? el("button", { class: "btn text inrow", type: "button", text: "스크립트", onclick: scriptEdit }) : "", pause);
     } else if (x.kind === "routine") {
-      const run = el("button", { class: "btn tonal", type: "button", text: "지금 실행", onclick: () => { run.disabled = true; pmDo(note, () => api("/api/custom/routine", "POST", { id: x.id })).then(() => { run.disabled = false; }); } });
+      const run = el("button", { class: "btn tonal inrow", type: "button", text: "지금 실행", onclick: () => { run.disabled = true; pmDo(note, () => api("/api/custom/routine", "POST", { id: x.id })).then(() => { run.disabled = false; }); } });
       acts.append(run);
     }
     clear(box).append(
@@ -6330,9 +6337,9 @@ function pmRoutine(x) {
   const scriptEdit = async () => {
     PM.open++; box.dataset.editing = "1";
     const ta = el("textarea", { class: "fi pmv-ta pmv-code", rows: 12, spellcheck: "false", "aria-label": `${name} 스크립트` });
-    const err = el("div", { class: "note err" }), ok = el("button", { class: "btn", type: "button", text: "저장", disabled: true });
+    const err = el("div", { class: "note err" }), ok = el("button", { class: "btn sm", type: "button", text: "저장", disabled: true });
     clear(box).append(el("div", { class: "pmv-rt-top" }, el("span", { class: "pmv-rt-name", text: name })), el("div", { class: "pmv-rt-meta" }, el("span", { text: x.script })), ta, err,
-      el("div", { class: "pmv-acts" }, el("button", { class: "btn text", type: "button", text: "취소", onclick: view }), ok));
+      el("div", { class: "pmv-acts" }, el("button", { class: "btn text sm", type: "button", text: "취소", onclick: view }), ok));
     try { ta.value = (await api(`/api/watches/${enc(x.id)}/script`)).text; ok.disabled = false; ta.focus(); }
     catch (e) { err.textContent = `스크립트를 읽지 못했어요 · ${e.message}`; }
     ok.onclick = async () => {
@@ -6345,7 +6352,7 @@ function pmRoutine(x) {
     PM.open++; box.dataset.editing = "1";
     const iv = mins ? input({ type: "number", min: "1", step: "1", inputmode: "numeric", value: String(mins), "aria-label": "간격(분)" }) : null;
     const pt = x.kind === "monitor" && x.on === "match" ? input({ value: x.pattern || "", placeholder: "패턴", "aria-label": "패턴" }) : null;
-    const err = el("div", { class: "note err" }), ok = el("button", { class: "btn", type: "button", text: "저장" });
+    const err = el("div", { class: "note err" }), ok = el("button", { class: "btn sm", type: "button", text: "저장" });
     ok.onclick = async () => {
       const body = {};
       if (iv) { const n = Number(iv.value); if (!Number.isInteger(n) || n < 1) { err.textContent = "간격은 1분 이상의 정수로 적어 주세요"; return; } if (n !== mins) body.every_minutes = n; }
@@ -6358,7 +6365,7 @@ function pmRoutine(x) {
     const field = (label, node, unit) => [el("span", { class: "sup", text: label }), el("span", { class: "pmv-fld" }, node, unit ? el("span", { class: "sup", text: unit }) : null)];
     clear(box).append(el("div", { class: "pmv-rt-top" }, el("span", { class: "pmv-rt-name", text: name })),
       el("div", { class: "pmv-rt-form" }, ...(iv ? field("간격", iv, "분마다") : []), ...(pt ? field("패턴", pt) : [])),
-      err, el("div", { class: "pmv-acts" }, el("button", { class: "btn text", type: "button", text: "취소", onclick: view }), ok));
+      err, el("div", { class: "pmv-acts" }, el("button", { class: "btn text sm", type: "button", text: "취소", onclick: view }), ok));
     (iv || pt).focus();
   };
   view();
@@ -6432,13 +6439,13 @@ function cmPaint(root, p, D) {
   if (root.dataset.sig === sig) return;
   root.dataset.sig = sig;
   $("#title").textContent = "프로젝트";
-  const ask = (label, text) => el("button", { class: "btn tonal", type: "button", "aria-label": `${label} 수정`, onclick: () => cmAsk(text), text: "수정" });
+  const ask = (label, text) => el("button", { class: "btn tonal inrow", type: "button", "aria-label": `${label} 수정`, onclick: () => cmAsk(text), text: "수정" });
   const group = g => el("section", { class: "pmv-sec" },
-    el("div", { class: "pv-sh" }, el("div", { class: "sec", text: g.label }), el("button", { class: "btn text", type: "button", onclick: () => cmAsk(`${CM_TAG} ${g.label}: `), text: "추가" })),
+    el("div", { class: "sec sec-act" }, el("span", { text: g.label }), el("button", { class: "btn text sm", type: "button", onclick: () => cmAsk(`${CM_TAG} ${g.label}: `), text: "추가" })),
     g.items.length ? el("div", { class: "list" }, ...g.items.map(i => el("div", { class: "li" },
       cmText(i),
       i.bad ? el("span", { class: "tag warn", text: "확인 필요" }) : null,
-      ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `))),
+      el("span", { class: "li-end" }, ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `)))),
       g.more ? el("div", { class: "sup", style: "padding:10px 16px", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));
   clear(root).append(
     el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" }, el("div", { class: "pmv-title", text: p.name }), el("div", { class: "pmv-purpose", text: p.note || "" }))),
@@ -7607,11 +7614,11 @@ function hvSwitcher(h) {
   const rt = hvRt().find(r => r.id === h.id);
   const others = hvRt().filter(r => r.installed && r.id !== h.id).map(r => ({ value: r.id, label: r.label, sub: [r.version ? `v${r.version}` : "", hvRoles(r)].filter(Boolean).join(" · ") || undefined }));
   if (!rt || !others.length) return null;
-  return el("button", { class: "btn tonal", type: "button", "aria-label": `${h.name} 바꾸기`, "aria-haspopup": "listbox", "aria-expanded": "false", title: "실행 하네스 바꾸기", onclick: ev => showMenu(ev.currentTarget, others, { onPick: id => rtFlow(hvRt().find(x => x.id === id)) }) }, icon("drop"));
+  return el("button", { class: "btn tonal inrow", type: "button", "aria-label": `${h.name} 바꾸기`, "aria-haspopup": "listbox", "aria-expanded": "false", title: "실행 하네스 바꾸기", onclick: ev => showMenu(ev.currentTarget, others, { onPick: id => rtFlow(hvRt().find(x => x.id === id)) }) }, icon("drop"));
 }
 const hvNote = text => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text })));
 function hvJobLine(j) {
-  if (j.status === "running" || j.status === "deferred") return el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: j.status === "deferred" ? "작업이 끝나면 업데이트해요" : `업데이트 중 · ${j.phase}` }), el("div", { class: "sup", text: j.message })), el("span", { class: "dot pri", "aria-hidden": "true" }));
+  if (j.status === "running" || j.status === "deferred") return el("div", { class: "li" }, el("span", { class: "lead" }, el("span", { class: "dot pri", "aria-hidden": "true" })), el("span", { class: "tx" }, el("div", { class: "hd", text: j.status === "deferred" ? "작업이 끝나면 업데이트해요" : `업데이트 중 · ${j.phase}` }), el("div", { class: "sup", text: j.message })));
   return el("div", { class: `upd-box ${j.status === "updated" ? "ok" : j.status === "failed" ? "err" : ""}` }, el("div", { class: "upd-msg", text: j.message }),
     j.steps.length ? el("ul", { class: "upd-log" }, ...j.steps.slice(-4).map(s => el("li", { class: "dim" }, el("span", { text: s.text })))) : null);
 }
@@ -7630,9 +7637,9 @@ function hvSection() {
     const mine = job && (job.status === "running" || job.status === "deferred");
     const state = mine
       ? el("span", { class: "tag pri", "aria-live": "polite" }, el("span", { class: "dot pri", "aria-hidden": "true" }), job.status === "deferred" ? "대기 중" : "진행 중")
-      : h.available && h.installMethod !== "managed" && h.installMethod !== "app" ? el("button", { class: "btn", type: "button", disabled: !hvCanUpd(h) || !!pending, onclick: ev => hvApply(ev.currentTarget, h.id) }, "업데이트") : null;
+      : h.available && h.installMethod !== "managed" && h.installMethod !== "app" ? el("button", { class: "btn inrow", type: "button", disabled: !hvCanUpd(h) || !!pending, onclick: ev => hvApply(ev.currentTarget, h.id) }, "업데이트") : null;
     return el("div", { class: "li" }, el("span", { class: "lead" }, icon("harness")), el("span", { class: "tx" }, el("div", { class: "hd", text: h.name }), el("div", { class: "sup", text: hvSub(h) })),
-      h.available && !mine ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null, state, hvSwitcher(h));
+      liEnd(h.available && !mine ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null, state, hvSwitcher(h)));
   });
   if (pending) list.push(hvJobLine(pending));
   else for (const h of hs) if (h.job && h.job.status !== "current") list.push(hvJobLine(h.job));
@@ -7643,6 +7650,7 @@ function hvSection() {
 }
 function updateSection() {
   const i = UPD.info;
+  const liDot = (title, sub) => el("div", { class: "li" }, el("span", { class: "lead" }, el("span", { class: "dot pri", "aria-hidden": "true" })), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null));
   const li = (title, sub, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), trail.length ? liEnd(...trail) : null);
   const head = el("div", { class: "sec", id: "upd-sec" }, "업데이트", updRestartPending() ? el("span", { class: "tag warn upd-new", text: "재시작 필요" }) : updAvailable() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null);
   if (!i || i.error) return [head, el("div", { class: "list" }, li("앱 버전", i ? i.error : "불러오는 중…")), ...hvSection()];
@@ -7663,13 +7671,12 @@ function updateSection() {
       c.ahead.length && !c.keep ? el("div", { class: "sup", text: `로컬 커밋 ${c.ahead.length}개는 새 버전 위에 자동으로 얹어요. 테스트가 실패하면 그대로 두고 알려요.` }) : null,
       el("div", { class: "upd-act" }, el("button", { class: "btn", type: "button", ...(c.blocked.length || pending ? { disabled: true } : off), onclick: () => updNow() }, "지금 업데이트"), el("span", { class: "sup", text: disk && disk.kind === "tarball" ? "새로 받기 → 테스트 → 폴더 교체 → 재시작. 테스트가 실패하면 그대로 있어요." : "fast-forward → 테스트 → 재시작. 테스트가 실패하면 그대로 있어요." }))));
   }
-  if (jobRunning) rows.push(li(`업데이트 중 · ${job.phase}`, job.message, el("span", { class: "dot pri", "aria-hidden": "true" })));
+  if (jobRunning) rows.push(liDot(`업데이트 중 · ${job.phase}`, job.message));
   else if (job && job.status !== "current" && !(job.status === "updated" && !pending)) rows.push(el("div", { class: `upd-box ${job.status === "updated" ? "ok" : "err"}` }, el("div", { class: "upd-msg", text: job.keep && !(c && c.keep) ? job.keep.line : job.message }), job.keep && !(c && c.keep) ? updKeepBox(job.keep) : null));
-  if (UPD.wait) rows.push(li("재시작 대기 중", UPD.wait.when === "now" ? "곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요." : `작업이 끝나면 다시 켜져요${i.busy.length ? ` (${i.busy.join(", ")})` : ""}. 이 화면은 자동으로 다시 연결돼요.`, el("span", { class: "dot pri", "aria-hidden": "true" })));
+  if (UPD.wait) rows.push(liDot("재시작 대기 중", UPD.wait.when === "now" ? "곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요." : `작업이 끝나면 다시 켜져요${i.busy.length ? ` (${i.busy.join(", ")})` : ""}. 이 화면은 자동으로 다시 연결돼요.`));
   else if (pending) rows.push(li(`새 버전 ${disk.commit.short} 받음`, "재시작하면 적용돼요", el("button", { class: "btn inrow", type: "button", onclick: () => updRestart() }, "재시작")));
-  const prefs = [el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "매일 자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알리고, 아래 자동 적용으로 바로 적용해요." : "새 버전이 있으면 알림만 보내요. 적용은 직접 해요." })),
-    liEnd(s.auto_check ? (/,\s*/.test(s.at) ? el("input", { class: "upd-at", type: "text", value: s.at, "aria-label": "확인 시각 (쉼표로 여러 번, 24:00은 자정)", onchange: ev => updSet({ at: ev.currentTarget.value }) }) : el("input", { class: "upd-at", type: "time", value: s.at, "aria-label": "확인 시각", onchange: ev => updSet({ at: ev.currentTarget.value }) })) : null,
-      el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "매일 자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) }))),
+  const prefs = [el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알리고, 아래 자동 적용으로 바로 적용해요." : "새 버전이 있으면 알림만 보내요. 적용은 직접 해요." })),
+    liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) }))),
     el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요. 테스트가 실패하면 지금 버전을 그대로 두고 알려요. 이 컴퓨터에서 고친 코드는 새 버전 위에 다시 얹고, 안 되면 따로 보관해요." })),
     liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!s.auto_apply), "aria-label": "새 버전 자동 적용", onclick: () => updSet({ auto_apply: !s.auto_apply }) })))];
   return [head, el("div", { class: "list" }, ...rows, ...prefs), ...hvSection()];
@@ -7826,7 +7833,7 @@ function accountSection() {
   const onLimitSub = onLimit === "switch" ? "한도에 걸리면 자동 전환으로 넘어가요" : onLimit === "wait" ? "한도에 걸린 동안 기다려요" : "아직 안 정했어요 · 한도에 걸리면 한 번 물어봐요";
   const setOnLimit = (btn, value) => accMut(btn, () => api("/api/accounts/on-limit", "PUT", { on_limit: value }), value === "wait" ? "한도에 걸렸을 때 기다리기로 정했어요" : "한도에 걸렸을 때 자동 전환으로 넘어가기로 정했어요");
   const onLimitChoice = (value, label) => el("button", { type: "button", class: `chip${onLimit === value ? " on" : ""}`, "aria-pressed": String(onLimit === value), text: label, onclick: ev => setOnLimit(ev.currentTarget, value) });
-  rows.splice(1, 0, el("div", { class: "li" }, tx("한도에 걸렸을 때", onLimitSub), onLimitChoice("wait", "기다리기"), onLimitChoice("switch", "자동 전환으로 넘어가기")));
+  rows.splice(1, 0, el("div", { class: "li li-wrap" }, tx("한도에 걸렸을 때", onLimitSub), liEnd(el("div", { class: "chips" }, onLimitChoice("wait", "기다리기"), onLimitChoice("switch", "자동 전환으로 넘어가기")))));
   if (!pinned) {
     rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => rulesDialog() }, "편집"))));
     for (const [i, r] of lines.entries()) rows.push(el("div", { class: "li" }, el("span", { class: "lead", text: String(i + 1) }), tx(r.text)));
@@ -7997,18 +8004,16 @@ function renderDevices() {
   const box = $("#devices");
   if (!DEV.items) { clear(box).append(DEV.asked && DEV.fail ? emptyNode("연결된 기기를 불러오지 못했어요") : emptyNode("불러오는 중")); return; }
   const row = d => el("button", { type: "button", class: "li tap", "data-dev": d.id, onclick: () => dvOpen(d) },
-    el("span", { class: "lead" }, icon("key")),
+    el("span", { class: "lead" }, el("span", { class: `dot ${d.last_used && Date.now() - Date.parse(d.last_used) < 864e5 ? "ok" : ""}`, "aria-hidden": "true" })),
     el("span", { class: "tx" }, el("div", { class: "hd", text: d.name }), el("div", { class: "sup", text: `${dvDate(d.created)} 연결 · ${dvUsed(d)}` })),
     el("span", { class: "dcs-trail" }, d.current ? el("span", { class: "tag ok", "data-current": "1", text: "이 기기" }) : null, icon("chev", "lead")));
   const self = DEV.items.some(d => d.current);
-  const action = (key, title, sub, onclick) => el("button", { type: "button", class: "li tap", [key]: "1", onclick },
-    el("span", { class: "lead" }, icon("add")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null));
+  // the add action lives in the section header (docs/ui-spec.md 설정 행); a browser without a passkey gets one more row in the list
+  const addSelf = el("button", { type: "button", class: "li tap", "data-dev-self": "1", onclick: () => dvNew(true) },
+    el("span", { class: "lead" }, icon("add")), el("span", { class: "tx" }, el("div", { class: "hd", text: "이 기기에 패스키 추가" }), el("div", { class: "sup", text: "이 브라우저는 패스키 없이 들어왔어요" })));
   clear(box).append(
-    el("div", { class: "sec", text: "이 웹앱을 쓸 수 있는 기기" }),
-    el("div", { class: "list" }, ...(DEV.items.length ? DEV.items.map(row) : [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결된 기기가 없어요" })))])),
-    el("div", { class: "list ms-add" },
-      action("data-dev-new", "새 기기 연결", "휴대폰이나 다른 컴퓨터에서 쓰려면", () => dvNew(false)),
-      self ? null : action("data-dev-self", "이 기기에 패스키 추가", "이 브라우저는 패스키 없이 들어왔어요", () => dvNew(true))));
+    el("div", { class: "sec sec-act" }, el("span", { text: "이 웹앱을 쓸 수 있는 기기" }), el("button", { type: "button", class: "btn tonal sm", "data-dev-new": "1", onclick: () => dvNew(false), text: "새 기기 연결" })),
+    el("div", { class: "list" }, ...(DEV.items.length ? DEV.items.map(row) : [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결된 기기가 없어요" })))]), self ? null : addSelf));
 }
 
 /* ---------- one device: rename, unpair ---------- */
@@ -8099,16 +8104,18 @@ async function dcSave(btn) {
   if (guild && guild !== DCS.v.guild) body.guild = guild;
   if (owner && owner !== DCS.v.owner_id) body.owner_id = owner;
   if (!Object.keys(body).length) { DCS.err = "바꾼 값이 없어요"; return renderDiscord(); }
+  let saved = false;
   await busy(btn, async () => {
     try {
       DCS.v = await api("/api/discord/connection", "PUT", body);
       DCS.err = ""; DCS.chk = null; DCS.tok.value = "";
       delete DCS.guild.dataset.dirty; delete DCS.owner.dataset.dirty;
       dcFill();
-      toast("저장했어요");
+      saved = true;
     } catch (e) { DCS.err = e.message; }
   });
   renderDiscord();
+  if (saved) stFlash("#discord [data-ms-save]");
 }
 async function dcCheck(btn) {
   await busy(btn, async () => {
@@ -8137,7 +8144,7 @@ function dcSwitch(label, on, key, onclick) {
   return el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on), "aria-label": `${label} 디스코드로도 보내기`, "data-dc": key, onclick });
 }
 function dcSwitches() {
-  const li = (title, desc, k, on) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "sup", text: desc }), ), liEnd(dcSwitch(title, on, k, () => dpSet(k, !on))));
+  const li = (title, desc, k, on) => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "sup", text: desc })), liEnd(dcSwitch(title, on, k, () => dpSet(k, !on))));
   const hint = () => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결하면 고를 수 있어요" })));
   const on = DCS.v.enabled && DP.v;
   return [
@@ -8187,7 +8194,7 @@ function renderDiscord() {
   det.addEventListener("toggle", () => { DCS.advOpen = det.open; });
   clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" },
     el("div", { class: "li", "data-ms-status": "discord" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })),
-      liEnd(el("span", { class: `tag ${tone}`, text: tag }), el("button", { type: "button", class: "btn inrow", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m))))),
+      liEnd(el("span", { class: `tag ${tone}`, text: tag }), el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m))))),
   el("div", { class: "sec", text: "자동 연결" }), onboardingPanel("discord"), ...dcSwitches(), ...guide, det);
 }
 
@@ -8299,14 +8306,16 @@ async function msSave(btn) {
   if (dirty.vals.length) put.values = Object.fromEntries(dirty.vals.map(k => [k, p.vals[k]]));
   if (dirty.allow) put.allow = p.allow;
   if (!Object.keys(put).length) return;
+  let saved = false;
   await busy(btn, async () => {
     p.s = await api(`/api/messengers/${enc(p.id)}`, "PUT", put);
     p.enabled = !!p.s.enabled; p.vals = {}; p.add = "";
     p.allow = p.s.allow ? p.s.allow.items.slice() : null;
-    toast("저장했어요");
+    saved = true;
     await loadMessengerIndex();
   });
   if (current === p.id) renderMessenger(p.id);
+  if (saved) stFlash(`#${p.id} [data-ms-save]`);
 }
 async function msTest(btn) {
   const p = MSS.page;
@@ -8361,21 +8370,23 @@ function renderMessenger(id) {
     el("div", { class: "list" },
       el("div", { class: "li", "data-ms-status": id }, el("span", { class: "lead" }, icon("chat")),
         el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), el("div", { class: "sup", text: msLine(id, m, s) })),
-        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, el("button", { type: "button", class: "btn inrow", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m))))),
+        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m))))),
     el("div", { class: "sec", text: "자동 연결" }), onboardingPanel(id)];
   if (s.notify) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" },
     ...notifyRows(k => s.notify[k] !== false, (k, on) => msNotifySet(id, k, on)),
     el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 그 알림은 여기로 보내지 않고 앱에만 와요." })))));
   if (s.rooms) nodes.push(el("div", { class: "sec", text: s.rooms.label }), el("div", { class: "list" },
     ...s.rooms.items.map(r => el("div", { class: "li", "data-room": r.id },
+      el("span", { class: "lead" }, el("span", { class: `dot ${r.last_error ? "err" : r.last_in || r.last_out ? "ok" : ""}`, "aria-hidden": "true" })),
       el("span", { class: "tx" }, el("div", { class: "hd", text: r.name }), el("div", { class: "sup", text: [`→ ${msKind(r.kind)}${r.project ? ` · ${r.project.name}` : ""}`, r.last_in ? `받음 ${msAgo(r.last_in)}` : "", r.last_out ? `보냄 ${msAgo(r.last_out)}` : ""].filter(Boolean).join(" · ") }),
         r.last_error ? el("div", { class: "dcs-err", text: r.last_error }) : null))),
     ...(s.rooms.hint ? [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", "data-ms-hint": "1", text: s.rooms.hint })))] : [])));
   if (s.allow) nodes.push(el("div", { class: "sec", text: s.allow.label }), el("div", { class: "list" },
     ...p.allow.map(a => el("div", { class: "li", "data-allow": a }, el("span", { class: "tx" }, el("div", { class: "hd", text: a }))))));
-  nodes.push(el("div", { class: "list" }, el("div", { class: "li dcs-form" }, el("div", { class: "dcs-acts" },
-    el("button", { type: "button", class: "btn tonal", "data-ms-test": "1", onclick: ev => msTest(ev.currentTarget), text: "연결 확인" })),
-  p.test ? el("div", { class: "dcs-res" }, ...(p.test.length ? p.test.map(t => el("div", { class: t.ok ? "dcs-ok" : "dcs-err", text: t.ok ? `${t.name}: 보냈어요` : `${t.name}: ${t.error || "보내지 못했어요"}` })) : [el("div", { class: "sup", text: "방이 없어요" })])) : null)));
+  // 연결 확인 is one row: the result shows in this row (under the title), the action sits in .li-end.
+  nodes.push(el("div", { class: "list" }, el("div", { class: "li", "data-ms-test-row": "1" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "연결 확인" }),
+    p.test ? el("div", { class: "dcs-res" }, ...(p.test.length ? p.test.map(t => el("div", { class: t.ok ? "dcs-ok" : "dcs-err", text: t.ok ? `${t.name}: 보냈어요` : `${t.name}: ${t.error || "보내지 못했어요"}` })) : [el("div", { class: "sup", text: "방이 없어요" })])) : null),
+  liEnd(el("button", { type: "button", class: "btn tonal inrow", "data-ms-test": "1", onclick: ev => msTest(ev.currentTarget), text: "확인" })))));
   nodes.push(msAdvanced("data-ms-advanced", p.advOpen, () => msAdvancedBody(p, s)));
   const det = nodes[nodes.length - 1];
   det.addEventListener("toggle", () => { p.advOpen = det.open; });
@@ -8391,6 +8402,7 @@ const OB_AUTO_MS = 4000;
 const OB_AUTO_MAX = 1;
 const obKeyOk = key => key === "web-access" || key === "discord" || key === "jandi" || key === "slack" || key === "telegram";
 const obVisible = key => key === "web-access" ? current === "webaccess" : current === key;
+const OB_TONE = { running: "pri", waiting: "warn", done: "ok", failed: "err" };
 const obLine = v => v.state === "waiting" ? "내가 할 일이 하나 남았어요." : v.state === "running" ? "자동으로 연결하는 중이에요." : v.state === "done" ? "연결했어요." : v.state === "failed" ? "연결하지 못했어요." : "아직 시작하지 않았어요.";
 function obPaint(key) {
   if (key === "web-access") { if (current === "webaccess") renderWebAccess(); return; }
@@ -8426,7 +8438,7 @@ function obApply(key, next) {
   const sameWait = next.state === "waiting" && was === "waiting";
   obStop(before);
   if (!sameWait) obAutoStop(before);
-  OB[key] = { ...before, ...next, timer: 0, ...(sameWait ? { autoTimer: before.autoTimer || 0 } : { autoTimer: 0 }) };
+  OB[key] = { ...before, ...next, timer: 0, swap: was != null && was !== next.state, ...(sameWait ? { autoTimer: before.autoTimer || 0 } : { autoTimer: 0 }) };
   if (next.state === "waiting" && !sameWait) { OB[key].autoTries = 0; OB[key].autoBusy = false; }
   obPaint(key);
   obPoll(key);
@@ -8472,20 +8484,31 @@ function obPoll(key) {
 function onboardingPanel(key) {
   const v = OB[key] || { state: "idle", step: null, owner: null, error: null, url: null };
   const waiting = v.state === "waiting", failed = v.state === "failed", running = v.state === "running";
-  const rows = [el("div", { class: "li" }, el("span", { class: "lead" }, icon("spark")), el("span", { class: "tx" },
-    el("div", { class: "hd", text: "자동 연결" }), el("div", { class: "sup", "data-onb-line": "1", text: obLine(v) })))];
+  // One state row: the dot (blue running, orange waiting, green done, red failed; never pulsing), the line, and the actions in .li-end.
+  // A state change swaps in this same row.
+  const acts = [
+    ...(waiting || failed ? [el("button", { type: "button", class: "btn inrow", "data-onb-continue": "1", onclick: ev => obAct(key, "continue", ev.currentTarget) }, "계속")] : []),
+    ...(failed ? [el("button", { type: "button", class: "btn tonal inrow", "data-onb-start": "1", onclick: ev => obStart(key, ev.currentTarget) }, "다시 시작")] : []),
+    ...(running || waiting ? [el("button", { type: "button", class: "btn text inrow", "data-onb-cancel": "1", onclick: ev => obAct(key, "cancel", ev.currentTarget) }, "취소")] : []),
+  ];
+  const head = el("div", { class: "li" }, el("span", { class: "lead" }, el("span", { class: `dot ${OB_TONE[v.state] || ""}`, "aria-hidden": "true" })), el("span", { class: "tx" },
+    el("div", { class: "hd", text: "자동 연결" }), el("div", { class: "sup", "data-onb-line": "1", text: obLine(v) })), acts.length ? liEnd(...acts) : null);
+  const rows = [head];
+  if (v.swap) requestAnimationFrame(() => motionSwap(head, () => {}));
   if (v.step) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: v.step.title }), el("div", { class: "sup", text: v.step.detail }))));
   if (v.error) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "dcs-err", role: "alert", "data-onb-error": "1", text: v.error }))));
   if ((waiting || failed) && v.owner) rows.push(el("div", { class: "li", "data-onb-owner": v.owner.label },
     el("span", { class: "tx" }, el("div", { class: "hd", text: v.owner.label }), el("div", { class: "sup", text: v.owner.hint }))));
-  if (v.url) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("a", { class: "btn tonal", href: v.url, target: "_blank", rel: "noopener noreferrer", "data-onb-url": "1", text: v.url }))));
-  const acts = [
-    ...(waiting || failed ? [el("button", { type: "button", class: "btn", "data-onb-continue": "1", onclick: ev => obAct(key, "continue", ev.currentTarget) }, "계속")] : []),
-    ...(running || waiting ? [el("button", { type: "button", class: "btn text", "data-onb-cancel": "1", onclick: ev => obAct(key, "cancel", ev.currentTarget) }, "취소")] : []),
-    ...(failed ? [el("button", { type: "button", class: "btn tonal", "data-onb-start": "1", onclick: ev => obStart(key, ev.currentTarget) }, "다시 시작")] : []),
-  ];
-  if (acts.length) rows.push(el("div", { class: "li ms-onb-acts" }, ...acts));
+  if (v.url) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("a", { class: "ms-link", href: v.url, target: "_blank", rel: "noopener noreferrer", "data-onb-url": "1", text: v.url }))));
   return el("div", { class: "list ms-onb", "data-onb": key, "data-onb-state": v.state }, ...rows);
+}
+// A save ends in the button it was pressed on: the label swaps to "저장했어요" for a moment (the button keeps its width), with no toast.
+function stFlash(sel, label = "저장했어요") {
+  const b = document.querySelector(sel);
+  if (!b) return;
+  const was = b.textContent;
+  motionSwap(b, () => { b.textContent = label; });
+  setTimeout(() => { if (b.isConnected && b.textContent === label) motionSwap(b, () => { b.textContent = was; }); }, 1800);
 }
 // The closed disclosure that keeps manual fields out of the default view: its body is built only when opened.
 function msAdvanced(attr, open, body) {
@@ -8536,8 +8559,9 @@ function waTunnel(d) {
   const hint = !d.cloudflared_found ? "cloudflared가 없어요. 터미널에서 brew install cloudflared 를 실행해 주세요."
     : t.error || (t.state === "running" ? "터널이 열려 있어요" : "");
   return el("div", { class: "li", "data-wa-tunnel": t.state },
+    el("span", { class: "lead" }, el("span", { class: `dot ${tone}`, "aria-hidden": "true" })),
     el("span", { class: "tx" }, el("div", { class: "hd", text: "터널" }), hint ? el("div", { class: tone === "err" || !d.cloudflared_found ? "sup dcs-err" : "sup", text: hint }) : null),
-    el("span", { class: "dcs-trail" }, el("span", { class: `dot ${tone}`, "aria-hidden": "true" }), el("span", { class: `tag ${tone}`, text: text })));
+    liEnd(el("span", { class: `tag ${tone}`, text })));
 }
 
 // Choosing Cloudflare or 이 컴퓨터만 starts the auto path at once; the flow itself asks for the one owner action.
@@ -8554,7 +8578,6 @@ async function waPickTailscale(btn) {
   await busy(btn, async () => {
     WA.data = await api("/api/web-access", "PUT", { mode: "tailscale" });
     waReset();
-    toast("저장했어요");
     if (current === "webaccess") renderWebAccess();
     if (current === "settings") renderSettings();
     loadDevices();
@@ -8607,13 +8630,15 @@ async function waSave(btn) {
   if (f.team.trim() !== d.team) put.team = f.team.trim();
   if (f.aud.trim() !== d.aud) put.aud = f.aud.trim();
   if (f.token.trim()) put.token = f.token.trim();
+  let saved = false;
   await busy(btn, async () => {
     WA.data = await api("/api/web-access", "PUT", put);
     waReset();
-    toast("저장했어요");
+    saved = true;
     if (current === "webaccess") renderWebAccess();
     loadDevices();
   });
+  if (saved) stFlash("#webaccess [data-wa-save]");
 }
 
 /* ---------- settings: 실행 하네스 (runtime menu + compatibility check; data from /api/runtimes) ---------- */
@@ -8735,6 +8760,14 @@ function hMark(ids, full) {
   const title = `내가 바꾼 것: ${parts.join(" · ") || "내 확장"}`;
   if (!full) return el("span", { class: "bd m", title, text: "내 설정" });
   return el("span", { class: "hm-mine", title }, el("span", { class: "bd m", text: "내 설정" }), parts.length ? el("span", { class: "mt", text: parts.join(" · ") }) : null);
+}
+// A result lands on the button that was pressed: its label swaps for a moment and swaps back (width kept), no toast.
+function hFlash(b, label) {
+  if (!b || !b.isConnected) return;
+  const was = b.textContent;
+  b.style.minWidth = `${b.offsetWidth}px`;
+  motionSwap(b, () => { b.textContent = label; });
+  setTimeout(() => { if (b.isConnected && b.textContent === label) motionSwap(b, () => { b.textContent = was; b.style.minWidth = ""; }); }, 1800);
 }
 const H_MQ = matchMedia("(max-width: 639px)");
 const H_COLS = ["들어오는 곳", "게이트웨이", "어시스턴트", "세션", "서브에이전트"];
@@ -8874,9 +8907,9 @@ function renderHarness() {
     pj ? hProjHead(pj) : null,
     el("div", { class: "sup", text: pj ? `이 프로젝트만의 지도예요. 카드를 누르면 값과 설명이 열리고, 고칠 때는 프로젝트 범위를 붙여 ${botName}에게 요청이 가요. 전역 값과 다른 설정에는 '바꿈' 표시가 붙어요.` : hDetail ? "카드를 누르면 설명과 설정이 열려요. 점선 카드는 곁에서 돕는 시스템이에요." : `큰 카드가 메시지가 흐르는 길이에요. 카드 안의 작은 칩은 함께 실행되는 시스템·파일이고, ${mobile ? "눌러서" : "칩에 마우스를 올리거나 눌러서"} 이어진 곳과 설정을 봐요. 고칠 때는 ${botName}에게 요청이 가요.` }),
     onlySeg,
-    FC && !pj ? el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hFeat), title: "각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요", onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, "기능 보기") : null,
-    el("button", { class: "btn tonal", type: "button", "aria-pressed": String(hDetail), title: "모든 시스템과 연결선을 한 화면에 그려요", onclick: () => { hDetail = !hDetail; try { localStorage.setItem("dotz-hdetail", hDetail ? "1" : "0"); } catch {} renderHarness(); } }, "자세히"),
-    el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await loadHarness(); toast("새로 불러왔어요"); }) }, icon("refresh"), "새로고침"),
+    FC && !pj ? el("button", { class: "btn tonal sm", type: "button", "aria-pressed": String(hFeat), title: "각 카드에 강제(실선)·권고(점선) 기능 수를 붙여요", onclick: () => { hFeat = !hFeat; try { localStorage.setItem("dotz-hfeat", hFeat ? "1" : "0"); } catch {} renderHarness(); } }, "기능 보기") : null,
+    el("button", { class: "btn tonal sm", type: "button", "aria-pressed": String(hDetail), title: "모든 시스템과 연결선을 한 화면에 그려요", onclick: () => { hDetail = !hDetail; try { localStorage.setItem("dotz-hdetail", hDetail ? "1" : "0"); } catch {} renderHarness(); } }, "자세히"),
+    el("button", { class: "btn tonal sm", type: "button", "data-hm-refresh": "", onclick: ev => busy(ev.currentTarget, async () => { await loadHarness(); hFlash($("#harness [data-hm-refresh]"), "새로 불러왔어요"); }) }, "새로고침"),
     hOrigin() ? el("div", { class: "sup hm-legend" }, el("span", { class: "bd m", text: "내 설정" }), `내가 바꾼 값·파일·기능이에요. 표시가 없는 것은 기본값이에요 (${shortPath(hData())}).`) : null);
   const parts = [bar];
   const keep = box.querySelector(".hm-scroll");
@@ -8937,7 +8970,7 @@ function hProjBand() {
 }
 
 function hProjHead(p) {
-  const back = el("button", { class: "btn tonal", type: "button", onclick: () => hOpenProject("") }, icon("back"), "전체 구성");
+  const back = el("button", { class: "btn tonal sm", type: "button", onclick: () => hOpenProject("") }, icon("back"), "전체 구성");
   return el("div", { class: "pj-bk" }, back,
     el("span", { class: "pj-title" }, el("span", { class: `dot ${statusTone(p.status)}` }), p.name, ...p.channels.filter(c => c.kind !== "thread").map(c => el("span", { class: "pj-tg" }, `#${c.name}`, el("span", { class: "kd", text: c.kind_text })))),
     hScopeTag("project", hProjWhere(p), false, hProjWhere(p, true)));
@@ -8957,12 +8990,12 @@ async function hOpenProject(id) {
 function hProjAsk(p, n, drafts) {
   const where = hProjWhere(p, true);
   const ta = el("textarea", { class: "fi hs-ta", rows: 3, spellcheck: "false", placeholder: "이 프로젝트에 바라는 변경을 적어 주세요", "aria-label": "프로젝트 수정 요청" });
-  const send = el("button", { class: "btn", type: "button", disabled: true }, `${botName}에게 수정 요청`);
+  const send = el("button", { class: "btn tonal sm", type: "button", disabled: true }, `${botName}에게 수정 요청`);
   const note = el("div", { class: "note" });
   ta.addEventListener("input", () => { send.disabled = !ta.value.trim(); });
   send.onclick = async () => {
     send.disabled = true;
-    try { const at = await hRequest(`${n.label}: ${ta.value.trim()}`, hScope("project", where)); note.className = "note ok"; note.textContent = `요청 보냄 · ${at}`; ta.value = ""; }
+    try { const at = await hRequest(`${n.label}: ${ta.value.trim()}`, hScope("project", where)); note.className = "note ok"; note.textContent = `요청 보냄 · ${at}`; ta.value = ""; hFlash(send, "요청했어요"); }
     catch (e) { note.className = "note err"; note.textContent = e.message; toast(e.message, true); send.disabled = false; }
   };
   drafts.push(() => ta.value.trim() !== "");
@@ -9077,7 +9110,7 @@ function hStageCard(s, i, stages) {
   if (one) { hNodeEls.set(one.id, card); hGeo.set(one.id, head); }
   else list.append(el("div", { class: "hm-rows" }, ...s.main.map(n => {
     const r = el("button", { type: "button", class: "hm-row", "data-id": n.id, title: `${n.label}: ${n.summary}`, "aria-label": `${n.label}: ${n.summary}` },
-      el("span", { class: `dot ${H_TONE[n.status] || ""}` }), el("span", { class: "l", text: n.label }), el("span", { class: "s", text: n.summary }), hMark(n.id));
+      el("span", { class: `dot ${H_TONE[n.status] || ""}` }), el("span", { class: "tx" }, el("span", { class: "l", text: n.label }), el("span", { class: "s", text: n.summary })), hMark(n.id));
     hNodeEls.set(n.id, r); hGeo.set(n.id, r);
     return r;
   })));
@@ -9272,7 +9305,6 @@ function hModelItems(cur) {
 const hNow = () => new Date().toLocaleTimeString("ko-KR", { ...KST, hour: "2-digit", minute: "2-digit" });
 async function hRequest(text, scope) {
   await api("/api/message", "POST", { text: `[구성 탭 수정 요청] ${scope ? `${scope}\n` : ""}${text}` });
-  toast(`${botName}에게 요청했어요`, false, { label: "채팅 열기", onclick: () => openTarget(MAIN, lastChatView()) });
   return hNow();
 }
 // Which side a node is on, shown at the top of its sheet (only with ui.origin_view).
@@ -9298,7 +9330,7 @@ function hSetting(s, drafts) {
   const mkey = !pj && (s.type === "model" || s.type === "effort") && H_MODEL_TARGET[s.key];
   if (mkey) {
     box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), el("span", { class: `tag ${applyTone}`, text: applyText })),
-      el("div", { class: "ctl" }, el("span", { class: "hs-ro", text: s.type === "model" ? modelName(s.value) : String(s.value) }), el("button", { class: "btn tonal", type: "button", onclick: () => openModels(mkey) }, "모델 · 폴백에서 바꾸기")));
+      el("div", { class: "ctl" }, el("span", { class: "hs-ro", text: s.type === "model" ? modelName(s.value) : String(s.value) }), el("button", { class: "btn tonal sm", type: "button", onclick: () => openModels(mkey) }, "모델 · 폴백에서 바꾸기")));
     return box;
   }
   if (!s.editable) {
@@ -9308,8 +9340,8 @@ function hSetting(s, drafts) {
   const cur = s.value;
   let draft = s.value, sent;
   const ctl = el("div", { class: "ctl" });
-  const send = el("button", { class: "btn", type: "button", disabled: true }, `${botName}에게 수정 요청`);
-  const reset = el("button", { class: "btn text", type: "button", hidden: true }, "기본값");
+  const send = el("button", { class: "btn tonal sm", type: "button", disabled: true }, `${botName}에게 수정 요청`);
+  const reset = el("button", { class: "btn text sm", type: "button", hidden: true }, "기본값");
   const dirty = () => draft !== cur && !(typeof draft === "number" && Number.isNaN(draft));
   const asked = () => sent !== undefined && Object.is(sent, draft);
   const mark = () => {
@@ -9321,7 +9353,7 @@ function hSetting(s, drafts) {
     clear(ctl);
     if (s.type === "bool") {
       const sw = el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!draft), "aria-label": s.label });
-      sw.onclick = () => { draft = !draft; paint(); };
+      sw.onclick = () => { draft = !draft; paint(); motionSwap(ctl.lastElementChild, () => {}); };
       ctl.append(sw, el("span", { class: "sup", text: draft ? "켜짐" : "꺼짐" }));
     } else if (s.type === "select" || s.type === "effort" || s.type === "model") {
       const opts = s.type === "model" ? null : s.options || [];
@@ -9349,7 +9381,7 @@ function hSetting(s, drafts) {
     send.disabled = true;
     try {
       const at = await hRequest(`${s.label} (${s.source}): ${hVal(cur)} -> ${hVal(draft)}. 적용 시점: ${applyText}.${s.hint ? ` ${s.hint}` : ""}`, hScope(sk, sw));
-      sent = draft; note.className = "note ok"; note.textContent = `요청 보냄 · ${at}`;
+      sent = draft; note.className = "note ok"; note.textContent = `요청 보냄 · ${at}`; hFlash(send, "요청했어요");
     } catch (e) { note.className = "note err"; note.textContent = e.message; toast(e.message, true); }
     finally { mark(); }
   };
@@ -9429,8 +9461,8 @@ function hFileEditor(n, drafts, line) {
   ta.readOnly = !n.fileEditable;
   const note = n.fileEditable ? el("input", { class: "fi", type: "text", autocomplete: "off", maxlength: 500, placeholder: "무엇을 왜 바꾸는지 (선택) · 글은 두고 메모만 보내도 돼요", "aria-label": "수정 요청 메모" }) : null;
   const info = el("div", { class: "note" }), stat = el("div", { class: "note" });
-  const send = el("button", { class: "btn", type: "button", disabled: true }, `${botName}에게 수정 요청`);
-  const undo = el("button", { class: "btn text", type: "button", disabled: true }, "되돌리기");
+  const send = el("button", { class: "btn sm", type: "button", disabled: true }, `${botName}에게 수정 요청`);
+  const undo = el("button", { class: "btn text sm", type: "button", disabled: true }, "되돌리기");
   let file = null, orig = "", sentKey = "", dt = 0;
   const key = () => `${ta.value}\u0000${note ? note.value.trim() : ""}`;
   const dirty = () => ta.value !== orig;
@@ -9452,7 +9484,7 @@ function hFileEditor(n, drafts, line) {
     send.disabled = true;
     try {
       const at = await hRequest(hFileRequest(file, orig, ta.value, note.value.trim()), hScope("personal", `${hData()}/${file.name}`));
-      sentKey = key(); stat.className = "note ok"; stat.textContent = `요청 보냄 · ${at}`;
+      sentKey = key(); stat.className = "note ok"; stat.textContent = `요청 보냄 · ${at}`; hFlash(send, "요청했어요");
     } catch (e) { stat.className = "note err"; stat.textContent = e.message; toast(e.message, true); }
     finally { mark(); }
   };
@@ -9543,7 +9575,7 @@ function fcSwitch(f) {
     }
     const at = await hRequest(text, hScope(kind, where));
     fcAsked.set(f.id, { to: !f.enabled, at });
-    sent.textContent = `요청 보냄 · ${at}`; sent.hidden = false;
+    motionSwap(sent, () => { sent.textContent = `요청 보냄 · ${at}`; sent.hidden = false; });
   };
   sw.addEventListener("click", ev => {
     ev.stopPropagation();
@@ -9726,7 +9758,7 @@ function appsRows() {
   rows.push({ header: "사용자 앱" });
   if (!tools.length) rows.push({ k: "empty-apps", name: "아직 내 앱이 없어요", av: appsAv("add", ""), hint: "채팅에서 앱을 추가해 달라고 하면 돼요", open: () => go("chat") });
   for (const a of tools) {
-    rows.push({ k: a.id, name: a.label, av: appsAv(a.icon, a.off ? "off" : a.status), hint: appsStatusLine(a), badge: a.off ? ["꺼짐", ""] : a.status === "unreachable" ? ["응답 없음", "err"] : a.kind === "tool" ? ["열기", "pri"] : null, sel: APP_STATE_ON() && a.id === APPS.sel && !APPS.list, open: () => go("apps", a.id) });
+    rows.push({ k: a.id, name: a.label, av: appsAv(a.icon, a.off ? "off" : a.status), hint: appsStatusLine(a), badge: a.off ? ["꺼짐", ""] : a.status === "unreachable" ? ["응답 없음", "err"] : null, sel: APP_STATE_ON() && a.id === APPS.sel && !APPS.list, open: () => go("apps", a.id) });
   }
   const reg = APPS.items.filter(a => a.source === "registry");
   if (reg.length) {
@@ -9809,14 +9841,14 @@ function appsBody(a) {
   if (!appsTool(a)) {
     return el("div", { class: "apps-card" },
       el("p", { class: "apps-note", text: a.kind === "monitor" ? "이 앱은 모니터링에서 소식을 모아 보여 줘요." : "이 앱은 자체 화면이 없어요." }),
-      a.source === "registry" ? el("button", { class: "btn tonal", type: "button", text: "모니터링에서 열기", onclick: () => go("monitoring", `i:${a.id}`) }) : null);
+      a.source === "registry" ? el("button", { class: "btn tonal sm", type: "button", text: "모니터링에서 열기", onclick: () => go("monitoring", `i:${a.id}`) }) : null);
   }
-  if (a.off) return el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: "꺼 둔 앱이에요. 켜면 화면이 다시 열려요." }), el("button", { class: "btn tonal", type: "button", text: "켜기", onclick: () => appsToggle(a) }));
+  if (a.off) return el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: "꺼 둔 앱이에요. 켜면 화면이 다시 열려요." }), el("button", { class: "btn tonal sm", type: "button", text: "켜기", onclick: () => appsToggle(a) }));
   if (a.status === "unreachable") {
     return el("div", { class: "apps-card" },
       el("p", { class: "apps-note", text: `${a.label}이(가) 응답하지 않아요${a.reason ? ` (${a.reason})` : ""}.` }),
       a.start ? el("p", { class: "apps-note", text: "앱이 떠 있는지 확인해 주세요." }) : null,
-      el("button", { class: "btn tonal", type: "button", text: "다시 확인", onclick: () => loadApps().then(() => { APPS.sig = ""; appsSchedule(); }) }));
+      el("button", { class: "btn tonal sm", type: "button", text: "다시 확인", onclick: () => loadApps().then(() => { APPS.sig = ""; appsSchedule(); }) }));
   }
   const frame = el("iframe", { class: "apps-frame", src: a.web.href, title: a.label, referrerpolicy: "same-origin" });
   return frame;
@@ -10197,7 +10229,7 @@ function kkFileNode(m, md) {
   return el("div", { class: `kk-bub card file${md.local ? "" : " off"}` },
     icon("file", "kk-fi"),
     el("span", { class: "kk-fb" }, el("span", { class: "kk-fn", title: md.name, text: md.name }), sub ? el("span", { class: "kk-sub", text: sub }) : null),
-    md.local ? el("a", { class: "btn tonal kk-open", href: kkFileUrl(m), target: "_blank", rel: "noopener", download: md.name, text: "열기" }) : el("span", { class: "kk-sub kk-nopc", text: "PC에 없음" }));
+    md.local ? el("a", { class: "btn tonal inrow kk-open", href: kkFileUrl(m), target: "_blank", rel: "noopener", download: md.name, text: "열기" }) : el("span", { class: "kk-sub kk-nopc", text: "PC에 없음" }));
 }
 // Like KakaoTalk: "<author of the original>에게 답장" over the quoted original, then the reply's own text. The quote is a button that jumps to
 // the original (kkJump), when the attachment names its logId.
@@ -10595,7 +10627,7 @@ function kkPaintChat() {
   const readOnly = open && !KK.loading && !KK.roomErr && !watching;
   kkFoot.hidden = kkFoot.hidden || !watching;
   kkRo.hidden = !readOnly;
-  if (readOnly) clear(kkRo).append(el("span", { class: "kk-ro-t", text: "감시하지 않는 방이에요. 읽기만 할 수 있어요" }), room ? el("button", { class: "btn tonal", type: "button", "data-k": "watch", text: "감시 시작", onclick: () => kkSetRoom(room, { watched: true }) }) : null);
+  if (readOnly) clear(kkRo).append(el("span", { class: "kk-ro-t", text: "감시하지 않는 방이에요. 읽기만 할 수 있어요" }), room ? el("button", { class: "btn tonal sm", type: "button", "data-k": "watch", text: "감시 시작", onclick: () => kkSetRoom(room, { watched: true }) }) : null);
   if (sig !== KK.headSig) {
     KK.headSig = sig;
     clear(kkHead);
@@ -11489,7 +11521,7 @@ function mbReplyPaint(force) {
       el("div", { class: "mbox-sf" },
         el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-reply-save", onclick: ev => mbSave(b.st, { reply_to: mbKey(t), mode: b.mode }, ev.currentTarget).then(r => { if (r) { MBOX.boxes.delete(t); mbReplyPaint(true); } }) }, "초안 만들기"),
         el("button", { class: "ib mbox-attach", type: "button", "aria-label": "파일 붙이기", title: "파일 붙이기", onclick: () => form.pick() }, icon("clip")),
-        el("button", { class: "btn text sm mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, "접기")));
+        el("button", { class: "btn text mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, "접기")));
   }
   tl.append(slot);
 }
@@ -12547,6 +12579,7 @@ function monItemNode(n) {
   const card = n.item ? monItemNode(n) : null;
   if (card) { card.dataset.nid = n.id; return card; }
   if (!node) return null;
+  for (const li of node.querySelectorAll(".rc-sec li")) { const c = nwChangeNode(li.textContent); if (c) li.replaceChildren(c); }   // 89,000원 → 72,000원: the old value struck, the new one bold
   node.dataset.nid = n.id;
   if (ntNeeds(n) && !n.pc) node.append(el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: () => noticeOpen(n), text: "답하러 가기" })));
   return node;
@@ -12647,7 +12680,7 @@ function mailLand(sel) {
 }
 function mailFilterBar(mails, notices) {
   const cur = mailFilterOf()[0];
-  return el("div", { class: "mr-filter", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.map(([k, label, ok]) => {
+  return el("div", { class: "mr-filter mr-mail", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.map(([k, label, ok]) => {
     const n = k === "all" ? 0 : k === "pending" ? [...mailDraftLive(notices).values()].filter(mailDraftOpen).length : mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length;
     return el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); } }, label, cntSpan(`mail-filter:${k}`, "mr-fn", n));
   }));
@@ -12675,6 +12708,7 @@ function monConvNode(t, label) {
   const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
   return el("div", { class: `bm alert rc mr${m && n ? " mr-new" : ""}${m && MBOX.sel.has(t) ? " mr-sel" : ""}`, role: "button", tabindex: "0", "data-t": m ? t : null, "aria-label": `${m && n ? "안 읽음, " : ""}${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
+    m && n ? el("span", { class: "dot pri mr-dot", "aria-hidden": "true" }) : null,
     el("div", { class: "rc-hd" }, m ? mbLead(t, title) : null, el("span", { class: "rc-src", text: m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label }), stateTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m && m.dir !== "out" ? mailDraftButton(t, "ib mr-draft") : null, m ? mailMenuBtn(t) : null),
     el("div", { class: "rc-title", text: title }), chip,
     m && m.to ? el("div", { class: "mr-to", text: mailToText(m) }) : null,
@@ -13752,14 +13786,22 @@ function ntIgnoreBtn(n) {
     onclick: ev => { ev.stopPropagation(); ntIgnore(n); }, onkeydown: ev => ev.stopPropagation() }, icon("close"));
 }
 
+// A watch alert's "<what> 89,000원 → 72,000원" line drawn like the 가격 알림 card of the landing page: the old value grey and struck, the new one bold.
+// The characters stay exactly as the watch wrote them (only wrapped in <s> / <em>); a line of another shape is not matched and renders as before.
+const NW_CHANGE = /^(.*?)(\d[\d,.]*\s?[^\d\s→>-]{0,3}) → (\d[\d,.]*\s?[^\d\s→>-]{0,3})$/;
+const nwChangeLine = text => String(text || "").split("\n").map(l => l.replace(/^\s*[-*•]\s+/, "").trim()).find(l => NW_CHANGE.test(l)) || "";
+function nwChangeNode(line) {
+  const m = NW_CHANGE.exec(String(line || "").trim());
+  return m ? el("span", { class: "nw-chg" }, m[1], el("s", { text: m[2] }), " → ", el("em", { text: m[3] })) : null;
+}
 // One row of the home card 답변 필요 (same markup as 08-home.js homeNowRow): tap = the detail sheet, x = ignore.
 // `label` "" is a row that no longer waits (the 알림 tabs, 31-conversations.js bellPaint): no 답변 필요, no x.
 function ntHomeRow(n, label = "답변 필요") {
-  const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open;   // a loose [ask] notice has no decision: its conversation names where it waits
+  const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open, chg = n.kind === "watch" ? nwChangeNode(nwChangeLine(n.text)) : null;   // a loose [ask] notice has no decision: its conversation names where it waits
   return el("div", { class: "hr hrx", "data-nid": n.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": label ? `${title} · ${label}` : title },
       el("span", { class: label ? "dot att" : `dot${n.read ? "" : n.cls === "alert" ? " err" : " un"}` }),
-      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha", text: [n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), ntWhen(n)].filter(Boolean).join(" · ") })),
+      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha" }, ...(chg ? [chg, ` · ${ntWhen(n)}`] : [[n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), ntWhen(n)].filter(Boolean).join(" · ")]))),
       label ? el("span", { class: "hs warn", text: label }) : null),
     label ? ntIgnoreBtn(n) : null);
 }
@@ -14933,8 +14975,8 @@ function asApprovalNode(app, a) {
   const opts = a.options || [], when = a.at ? `승인 대기 · ${monTime(a.at)}` : "승인 대기";
   return el("div", { class: "as-row as-appr", "data-approval": a.id },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.title || "승인 요청" }), el("span", { class: "as-h", text: a.kind ? `${a.kind} · ${when}` : when }), ...(a.note ? [el("span", { class: "as-h as-warn", "data-note": "blocked", text: a.note })] : [])),
-    el("span", { class: "as-btns" }, ...opts.map(o => el("button", { class: "btn tonal", type: "button", "data-k": `appr:${o.label}`, onclick: () => asApprove(app, a, o) }, o.label)),
-      el("button", { class: "btn text", type: "button", "data-k": "appr:open", onclick: () => { if (ASC.h) ASC.h.close(false); go("monitoring", asAppItemKey(app)); } }, "자세히")));
+    el("span", { class: "as-btns" }, ...opts.map(o => el("button", { class: "btn tonal inrow", type: "button", "data-k": `appr:${o.label}`, onclick: () => asApprove(app, a, o) }, o.label)),
+      el("button", { class: "btn text inrow", type: "button", "data-k": "appr:open", onclick: () => { if (ASC.h) ASC.h.close(false); go("monitoring", asAppItemKey(app)); } }, "자세히")));
 }
 // One watch the app owns (로그인 유지 / 동기화 / 파일 점검): its status, when it last ran, and its period. The period is editable when the watch lives on this
 // computer; a peer's period is read only (its settings are written through that computer's own act routes). 다시 시도 only on a row that is not ok.
@@ -14970,7 +15012,7 @@ function asStatRow(app, m, i) {
       : el("span", { class: "as-every-wrap" },
         el("input", { class: "as-in as-every", type: "number", min: 1, max: 10080, inputmode: "numeric", "aria-label": `${i.name} 감시 주기(분)`, title: "감시 주기(분)", "data-k": `every:${i.id}`, value: String(i.every_minutes), onchange: ev => asEvery(app, i, ev.target.value) }),
         el("span", { class: "as-unit", text: "분" }))) : null,
-    i && i.dot !== "ok" ? el("button", { class: "btn tonal", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id, i.down) }, i.down ? "다시 연결" : "다시 시도") : null,
+    i && i.dot !== "ok" ? el("button", { class: "btn tonal inrow", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id, i.down) }, i.down ? "다시 연결" : "다시 시도") : null,
     !i && st && st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
 }
 function asFeatRow(app, f) {
@@ -15011,14 +15053,14 @@ async function asWatchRmGo(app) {
 }
 function asWatchRmNode(app) {
   const what = asSched(app) ? "예약" : "감시";
-  if (!AS.rm[app]) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: `${what} 삭제` }), el("span", { class: "as-h", text: `이 ${what}을 완전히 지워요` })), el("button", { class: "btn tonal", type: "button", "data-as-rm": "ask", onclick: () => { AS.rm[app] = { watch: true }; asPaint(); } }, "삭제"));
+  if (!AS.rm[app]) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: `${what} 삭제` }), el("span", { class: "as-h", text: `이 ${what}을 완전히 지워요` })), el("button", { class: "btn tonal inrow", type: "button", "data-as-rm": "ask", onclick: () => { AS.rm[app] = { watch: true }; asPaint(); } }, "삭제"));
   const pc = pqPc(`settings:${app}`), name = monSettingsName(`settings:${app}`);
   const lines = asSched(app) ? ["다시 실행하지 않고 목록에서 빼요. 되돌릴 수 없어요", "잠깐 멈추려면 삭제 대신 예약 켜기를 끄세요"]
     : [`${pc ? `${pc.name}에서 ` : ""}확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요`, "지금까지 온 감시 소식은 그대로 남아요", "잠깐 멈추려면 삭제 대신 감시 켜기를 끄세요"];
   return el("div", { class: "as-rm" },
     el("div", { class: "as-n", text: `${name}을(를) 삭제할까요?` }),
     el("ul", { class: "as-rml" }, ...lines.map(t => el("li", { text: t }))),
-    el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-as-rm": "go", disabled: !!AS.busy[app], onclick: () => asWatchRmGo(app) }, "삭제 확인"), el("button", { class: "btn tonal", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
+    el("div", { class: "as-act" }, el("button", { class: "btn sm", type: "button", "data-as-rm": "go", disabled: !!AS.busy[app], onclick: () => asWatchRmGo(app) }, "삭제 확인"), el("button", { class: "btn tonal sm", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
 }
 
 /* ---- 제거 (this install only) and 앱 추가 ---- */
@@ -15037,7 +15079,7 @@ async function asRemoveGo(app) {
 }
 function asRemoveNode(app) {
   const rm = AS.rm[app];
-  if (!rm) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "앱 제거" }), el("span", { class: "as-h", text: "이 기기에서만 지워요. 다른 컴퓨터는 그대로예요" })), el("button", { class: "btn tonal", type: "button", "data-as-rm": "ask", onclick: () => asRemoveAsk(app) }, "제거"));
+  if (!rm) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "앱 제거" }), el("span", { class: "as-h", text: "이 기기에서만 지워요. 다른 컴퓨터는 그대로예요" })), el("button", { class: "btn tonal inrow", type: "button", "data-as-rm": "ask", onclick: () => asRemoveAsk(app) }, "제거"));
   const p = rm.plan, cb = el("input", { type: "checkbox", "data-k": "delete-data", onchange: () => { rm.del = cb.checked; } });
   const lines = p ? ["이 기기의 앱 목록에서 빼고, 알림과 푸시를 멈춰요", p.watches.length ? `감시 ${p.watches.length}개를 지워요: ${p.watches.join(", ")}` : "지울 감시는 없어요", p.features.length ? `기능을 이 기기에서 꺼요: ${p.features.join(", ")}` : "끌 기능은 없어요", "다른 컴퓨터의 같은 앱은 그대로예요"]
     : ["그 컴퓨터의 앱 목록에서 빼고, 알림과 푸시를 멈춰요", "이 앱의 감시도 함께 꺼요", "이 컴퓨터와 다른 컴퓨터의 같은 앱은 그대로예요"];
@@ -15045,13 +15087,12 @@ function asRemoveNode(app) {
     el("div", { class: "as-n", text: p ? `${p.label}을(를) 이 기기에서 제거할까요?` : "이 앱을 그 컴퓨터에서 제거할까요?" }),
     el("ul", { class: "as-rml" }, ...lines.map(t => el("li", { text: t }))),
     !p || p.data.length ? el("label", { class: "as-del" }, cb, el("span", { text: p ? `저장된 데이터(${p.data.join(", ")})도 지우기. 체크하지 않으면 남겨요` : "저장된 데이터도 지우기. 체크하지 않으면 남겨요" })) : null,
-    el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-as-rm": "go", onclick: () => asRemoveGo(app) }, "제거 확인"), el("button", { class: "btn tonal", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
+    el("div", { class: "as-act" }, el("button", { class: "btn sm", type: "button", "data-as-rm": "go", onclick: () => asRemoveGo(app) }, "제거 확인"), el("button", { class: "btn tonal sm", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
 }
 // 앱 추가: the last row of the 앱 group opens a sheet. It lists only the apps this computer (and each other computer, labeled with its name) had and
-// the owner switched off or removed, each with 다시 켜기, then one 새로 추가하기: the chat box opens on the main orchestrator with one plain question
-// (어떤 앱을 연결할까요?) and no template list; the bot reads the matching request in docs/app-templates when the owner names the app
-// (owner 2026-10-26). 다시 켜기 of an app that needs reconnecting still fills that one app's request (GET /api/app-templates, hub/app-templates.ts).
-const AT = { items: [], key: "", h: null };
+// the owner switched off or removed, each with 다시 켜기, under one box on top: what he types there is sent to the main orchestrator at once and
+// the bot reads the matching request in docs/app-templates (owner 2026-10-26; the box instead of a button, owner 11-03). 다시 켜기 of an app that needs reconnecting still fills that one app's request (GET /api/app-templates, hub/app-templates.ts).
+const AT = { items: [], key: "", h: null, draft: "" };
 const asOffApps = () => {
   const peers = PQ.list.filter(p => p && p.url), me = peers.length ? pqSelf() : "";
   return [...INTG.available.map(a => ({ ...a, pc: null, machine: me })),
@@ -15094,39 +15135,48 @@ const asAddHint = () => { const off = asOffApps().map(a => a.label); return off.
 async function asTplLoad() {
   try { AT.items = (await api("/api/app-templates")).items || []; } catch { AT.items = []; }
 }
+// A middle sheet, not full screen (docs/ui-spec.md 시트·대화창): PC a centered box, phone a sheet from the bottom. The box on top takes the request.
 async function asAddSheet() {
   if (AT.h) return;
-  const h = AT.h = fsOpen({ labelledby: "as-add-t", onClose: () => { if (AT.h === h) AT.h = null; } });
+  const h = AT.h = fsOpen({ labelledby: "as-add-t", cls: "mid", onClose: () => { if (AT.h === h) AT.h = null; } });
   asAddPaint();
+  const box = h.box.querySelector("[data-k='new-app-text']");
+  if (box) box.focus({ preventScroll: true });
 }
 function asAddPaint() {
   const h = AT.h;
   if (!h) return;
   const off = asOffApps();
   for (const a of off) if (a.iconPath && !ICONS[a.icon]) ICONS[a.icon] = a.iconPath;
+  const box = el("textarea", { class: "as-new-in", rows: "3", "data-k": "new-app-text", placeholder: "어떤 앱을 연결하거나 만들까요?", "aria-label": "연결하거나 만들 앱",
+    oninput: ev => { AT.draft = ev.currentTarget.value; },
+    onkeydown: ev => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); asNewSend(); } } });
+  box.value = AT.draft || "";
   clear(h.box).append(
     fsHead([el("h2", { class: "fs-t", id: "as-add-t", text: "앱 관리" })], { close: () => h.close() }),
-    el("div", { class: "fs-body" },
+    el("div", { class: "fs-body" }, box,
       ...(off.length ? [el("div", { class: "as-sec", text: "꺼 둔 앱" }), ...off.flatMap(a => [el("div", { class: "as-row", "data-app": a.key },
         el("span", { class: "as-ic", "aria-hidden": "true" }, icon(a.icon)),
         el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.label }), el("span", { class: "as-h", text: a.machine ? `${a.machine} · 꺼져 있어요` : "꺼져 있어요" })),
         el("span", { class: "as-btns" },
-          el("button", { class: "btn tonal", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기"),
-          el("button", { class: "btn tonal", type: "button", "data-k": `del:${a.key}`, "aria-expanded": String(asDelOpen(a)), onclick: () => asDelOpen(a) ? (AD.del = null, asAddPaint()) : asDelAsk(a) }, "삭제"))),
-        ...(asDelOpen(a) ? [asDelNode(a)] : [])])] : []),
-      el("div", { class: "as-sec", text: "새로 추가" }),
-      el("div", { class: "as-tpls" }, el("button", { class: "btn", type: "button", "data-k": "new-app", onclick: asNewAsk }, "새로 추가하기"))));
+          el("button", { class: "btn tonal inrow", type: "button", "data-k": `on:${a.key}`, onclick: () => asAdd(a.key, a.pc) }, "다시 켜기"),
+          el("button", { class: "btn text inrow", type: "button", "data-k": `del:${a.key}`, "aria-expanded": String(asDelOpen(a)), onclick: () => asDelOpen(a) ? (AD.del = null, asAddPaint()) : asDelAsk(a) }, "삭제"))),
+        ...(asDelOpen(a) ? [asDelNode(a)] : [])])] : [])),
+    el("div", { class: "fs-ft row" }, el("button", { class: "btn", type: "button", "data-k": "new-app", onclick: asNewSend }, "보내기")));
 }
-// 새로 추가하기: the main chat with the start of the request in the box and the question above it; the owner names the app and sends.
-const NEW_ASK = "어떤 앱을 연결할까요?", NEW_DRAFT = "연결할 앱: ";
-function asNewAsk() {
+// 보내기: the request goes to the main orchestrator as the owner's message ("연결할 앱: <what he typed>", docs/app-templates) through the chat's
+// own send, and the main chat opens on it, so the work that starts is right there.
+const NEW_DRAFT = "연결할 앱: ";
+async function asNewSend() {
+  const text = (AT.draft || "").trim();
+  if (!text) { const box = AT.h && AT.h.box.querySelector("[data-k='new-app-text']"); if (box) box.focus(); return; }
+  AT.draft = "";
   if (AT.h) AT.h.close(false);
-  ts("main").draft = NEW_DRAFT;
+  asTplEnd();
+  ts("main").draft = NEW_DRAFT + text;
   go("chat", "main");
-  AT.key = "ask";
-  ta.value = NEW_DRAFT; saveDraft(); autosize(); updateHints();
-  asTplPaint();
-  ta.focus({ preventScroll: true }); ta.setSelectionRange(NEW_DRAFT.length, NEW_DRAFT.length);
+  ta.value = NEW_DRAFT + text;
+  await sendChat();
 }
 async function asNewApp(key) {
   if (!AT.items.length) await asTplLoad();
@@ -15155,7 +15205,7 @@ function asTplPaint() {
   }
   row.hidden = false; note.hidden = false;
   // The {{ }} fields are the owner's own details: the bot asks for them in the secure form after the message is sent, so they can stay as they are.
-  note.textContent = AT.key === "ask" ? NEW_ASK : "{{ }} 칸은 그대로 보내도 돼요. 보내면 보안 입력 양식으로 물어봐요";
+  note.textContent = "{{ }} 칸은 그대로 보내도 돼요. 보내면 보안 입력 양식으로 물어봐요";
 }
 function asTplEnd() { AT.key = ""; asTplPaint(); }
 function asTplSync() { if (AT.key && (target !== "main" || current !== "chat")) asTplEnd(); }
@@ -15230,8 +15280,8 @@ function arForm(app, rules, ed) {
   };
   return el("div", { class: "as-row as-col as-rform", "data-rule-form": ed.id || "new" },
     box("name", "input", { type: "text", maxlength: 20 }), box("when", "textarea", { rows: 2, maxlength: 300 }), box("how", "textarea", { rows: 3, maxlength: 1000 }), box("files", "input", { type: "text" }),
-    el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-k": "rule-save", disabled: !!AS.busy[app], onclick: save }, "저장"),
-      el("button", { class: "btn tonal", type: "button", "data-k": "rule-cancel", onclick: () => { delete AR.edit[app]; asPaint(); } }, "취소")));
+    el("div", { class: "as-act" }, el("button", { class: "btn sm", type: "button", "data-k": "rule-save", disabled: !!AS.busy[app], onclick: save }, "저장"),
+      el("button", { class: "btn tonal sm", type: "button", "data-k": "rule-cancel", onclick: () => { delete AR.edit[app]; asPaint(); } }, "취소")));
 }
 function arRow(app, rules, r) {
   const files = (r.files || []).length ? `붙일 파일: ${r.files.join(", ")}` : "";
@@ -15240,8 +15290,8 @@ function arRow(app, rules, r) {
       r.how ? el("span", { class: "as-h", text: `어떻게: ${r.how}` }) : null, files ? el("span", { class: "as-h", text: files }) : null),
     el("span", { class: "as-btns" },
       kkSwitch(r.on, r.name, `rule:${r.id}`, on => arSave(app, rules.map(x => x.id === r.id ? { ...x, on } : x))),
-      el("button", { class: "btn text", type: "button", "data-k": `rule-edit:${r.id}`, onclick: () => { AR.edit[app] = { id: r.id, v: { name: r.name, when: r.when, how: r.how, files: (r.files || []).join(", ") } }; asPaint(); } }, "고치기"),
-      el("button", { class: "btn text", type: "button", "data-k": `rule-del:${r.id}`, onclick: () => arSave(app, rules.filter(x => x.id !== r.id), () => toast(`규칙 ${r.name}을(를) 지웠어요`)) }, "지우기")));
+      el("button", { class: "btn text inrow", type: "button", "data-k": `rule-edit:${r.id}`, onclick: () => { AR.edit[app] = { id: r.id, v: { name: r.name, when: r.when, how: r.how, files: (r.files || []).join(", ") } }; asPaint(); } }, "고치기"),
+      el("button", { class: "btn text inrow", type: "button", "data-k": `rule-del:${r.id}`, onclick: () => arSave(app, rules.filter(x => x.id !== r.id), () => toast(`규칙 ${r.name}을(를) 지웠어요`)) }, "지우기")));
 }
 // The rows of the section, in order: heading, what rules do, the 기본 규칙 box, each rule (or its form), then 규칙 추가 (or the new rule's form).
 function arNodes(app, fRules, fDef) {
@@ -15254,7 +15304,7 @@ function arNodes(app, fRules, fDef) {
     el("div", { class: "as-row", "data-setting": "draft_rules" }, el("span", { class: "as-b" }, el("span", { class: "as-h", text: fRules.help }))),
     el("div", { class: "as-row as-col", "data-setting": "draft_default" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: fDef.label }), el("span", { class: "as-h", text: fDef.help })), def),
     ...rules.map(r => ed && ed.id === r.id ? arForm(app, rules, ed) : arRow(app, rules, r)),
-    ed && !ed.id ? arForm(app, rules, ed) : el("div", { class: "as-row" }, el("button", { class: "btn tonal", type: "button", "data-k": "rule-add", disabled: rules.length >= 20, onclick: () => { AR.edit[app] = { id: "", v: {} }; asPaint(); } }, "규칙 추가")),
+    ed && !ed.id ? arForm(app, rules, ed) : el("div", { class: "as-row" }, el("button", { class: "btn tonal inrow", type: "button", "data-k": "rule-add", disabled: rules.length >= 20, onclick: () => { AR.edit[app] = { id: "", v: {} }; asPaint(); } }, "규칙 추가")),
   ];
 }
 // The sections of the settings screen in the order the owner reads them (hub/app-settings.ts SettingSection); a row is drawn once, under one heading.
@@ -15431,13 +15481,15 @@ function settingsCardHtml(src) {
   const rows = Object.entries(ch).map(([k, v]) => {
     const f = fields.find(x => x.key === k);
     const text = !f ? JSON.stringify(v) : state === "applied" ? asFmt(f, v) : asChange(f, f.value, v);
-    return `<div class="as-cr"><span class="as-cn">${esc(f ? f.label : k)}</span><span class="as-cv">${esc(text)}</span></div>`;
+    // a value that changes (not a list): the old one grey and struck through, the new one the only bold thing (docs/ui-principles.md 2)
+    const shown = f && state !== "applied" && f.type !== "list" ? `<s class="as-old">${esc(asFmt(f, f.value))}</s> → <span class="as-now">${esc(asFmt(f, v))}</span>` : esc(text);
+    return `<div class="as-cr"><span class="as-cn">${esc(f ? f.label : k)}</span><span class="as-cv">${shown}</span></div>`;
   }).join("");
   // only memory keys: the gateway kept them already (hub/app-settings.ts applyMemory), so there is nothing to apply
   const memOnly = fields.length && Object.keys(ch).every(k => (fields.find(x => x.key === k) || {}).memory);
   if (memOnly) return `<div class="as-card applied"><div class="as-ct">기억해 뒀어요</div>${Object.entries(ch).map(([k, v]) => { const f = fields.find(x => x.key === k); return `<div class="as-cr"><span class="as-cn">${esc(f.label)}</span><span class="as-cv">${esc(asFmt(f, v))}</span></div>`; }).join("")}</div>`;
   const foot = state ? `<div class="as-done ${state}">${state === "applied" ? "적용했어요" : "취소했어요"}</div>`
-    : `<div class="as-act"><button class="btn" type="button" data-as="apply">적용</button><button class="btn tonal" type="button" data-as="cancel">취소</button></div>`;
+    : `<div class="as-act"><button class="btn sm" type="button" data-as="apply">적용</button><button class="btn tonal sm" type="button" data-as="cancel">취소</button></div>`;
   return `<div class="as-card${state ? ` ${state}` : ""}" data-as-id="${id}" data-as-app="${esc(app)}" data-as-src="${esc(String(src).trim())}"><div class="as-ct">설정 바꾸기 제안</div>${rows}${foot}</div>`;
 }
 document.addEventListener("click", async ev => {
@@ -15445,7 +15497,8 @@ document.addEventListener("click", async ev => {
   const card = btn && btn.closest(".as-card");
   if (!card) return;
   const id = card.dataset.asId, app = card.dataset.asApp, src = card.dataset.asSrc;
-  const redraw = () => { card.outerHTML = settingsCardHtml(src); };
+  // 적용 -> 적용했어요 happens in the same place: the new card replaces the old one and fades up (docs/ui-principles.md 6)
+  const redraw = () => { card.insertAdjacentHTML("afterend", settingsCardHtml(src)); const next = card.nextElementSibling; card.remove(); motionSwap(next, () => {}); };
   if (btn.dataset.as === "cancel") { AS.done[id] = "cancelled"; asSave(); redraw(); return; }
   btn.disabled = true;
   try { await asPatch(app, JSON.parse(src).changes); AS.done[id] = "applied"; asSave(); redraw(); }
@@ -16458,8 +16511,11 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
     close(restore = true) {
       if (closed) return;
       closed = true;
-      // goes at once: the next card often opens in the same moment (approval cards one after another), and a fading copy would sit over it
-      node.remove(); ovDone(ov); FS.splice(FS.indexOf(h), 1);
+      // State is released at once. Only the owner's own close (X, Esc, backdrop; restore) leaves the sheet and fades it out; the next card opens
+      // later in the DOM, so it sits over the leaving one. A programmatic close (restore false) goes at once.
+      ovDone(ov); FS.splice(FS.indexOf(h), 1);
+      if (restore && !reducedMotion()) { node.style.pointerEvents = "none"; node.removeAttribute("aria-modal"); Promise.all([motionOut(box, "rise"), motionOut(node)]).then(() => node.remove()); }
+      else node.remove();
       document.removeEventListener("keydown", key, true);
       if (vv) { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); }
       if (restore && opener && opener.isConnected) opener.focus({ preventScroll: true });
