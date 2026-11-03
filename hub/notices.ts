@@ -70,6 +70,11 @@ export type Decision = {
 	state: "open" | "answered" | "ignored";
 	// True when no answer came but the matter was resolved by other means (resolveAsks): the bot finished it, the owner acted outside the app.
 	resolved?: boolean;
+	// When the question stops waiting on the owner (ANSWER_WINDOW_MS / ALERT_ANSWER_WINDOW_MS): set when it opens or re-opens. Absent on a
+	// send-approval card and a login request, whose own state closes them.
+	expires_at?: string;
+	// The question's time was up (settleExpiredQuestions): closed as resolved, with no answer. The web shows it as 기한 지남.
+	expired?: true;
 	answer?: string;
 	answered_at?: string;
 	// A draft waiting for send approval (hub/draft-approval.ts): the sheet shows it above the options.
@@ -154,7 +159,13 @@ export function syncDraftFiles(filesOf: (id: string) => DraftFileIn[] | undefine
 	if (hit.length) announce(hit, now());
 	return hit.length;
 }
-export const unreadCount = () => items.reduce((n, i) => n + (i.read || i.dismissed || appBlocked(i) ? 0 : 1), 0);
+// A question whose time is up is no longer open on any surface, even before the sweep reaches it (settleExpiredQuestions): the badge,
+// 답변 필요, push re-asks and the approval queue all read this one check. Stored times are the hub's clock (now()), compared as ISO strings.
+const hasExpired = (d: Decision | undefined, nowIso = now()): boolean => !!d?.expires_at && d.expires_at <= nowIso;
+export const unreadCount = () => {
+	const at = now();
+	return items.reduce((n, i) => n + (i.read || i.dismissed || appBlocked(i) || (i.decision?.state === "open" && hasExpired(i.decision, at)) ? 0 : 1), 0);
+};
 
 // The 감시 소식 feed stays small: each watch keeps its newest WATCH_KEEP reports and none older than WATCH_DAYS, dropped when a report is written and
 // when the file loads, so notices.json and the payload never grow with the age of the install. An open decision is never dropped.
@@ -260,13 +271,13 @@ function retitleStored(): void {
 }
 retitleStored();
 
-const isOpenDecision = (i: Notice) => i.decision?.state === "open";
+const isOpenDecision = (i: Notice) => i.decision?.state === "open" && !hasExpired(i.decision);
 // Every notice the pages get carries its class (hub/notice-class.ts), computed as it goes out: the bell's tabs and badge read it, nothing stored changes.
 const withClass = (n: Notice): Notice & { cls: string } => ({ ...n, cls: classOfNotice(n).cls });
 const broadcast = (e: Record<string, unknown>): void => broadcastRaw(e.kind === "notice" && e.item && typeof e.item === "object" ? { ...e, item: withClass(e.item as Notice) } : e);
 // A notice that waits on the owner's action: an open decision, or an [ask] item (the alert / message twin of one). Looking at it, anywhere, never
 // reads it; only an answer, a resolving signal (resolveAsks) or the owner's x (ignoreNotice) takes it off. Every other notice clears on view.
-export const needsAnswer = (i: Notice) => !i.read && !i.dismissed && !i.ignored && (isOpenDecision(i) || i.tone === "ask");
+export const needsAnswer = (i: Notice) => !i.read && !i.dismissed && !i.ignored && !hasExpired(i.decision) && (isOpenDecision(i) || i.tone === "ask");
 // The alert / message twin of a decision: an [ask] item made by the same asking event, or by a repeat of the same text (a session's mid-turn line and its
 // turn-end report both post it), so it ends with the decision.
 const twinOf = (d: Notice, n: Notice) => !n.decision && n.tone === "ask" && (n.at === d.decision?.reply_to || n.text === d.text);
@@ -644,15 +655,26 @@ function closeRepeat(old: Notice, at: string): void {
 	}
 }
 
+// How long a question waits on the owner before its own state closes it (settleExpiredQuestions): a plain or choice question 72 h, the
+// gateway's alert question 24 h. A send-approval card (its draft being handled) and a login request (the request finishing) carry no expiry.
+export const ANSWER_WINDOW_MS = 72 * 3_600_000;
+export const ALERT_ANSWER_WINDOW_MS = 24 * 3_600_000;
+const expiresAtOf = (d: { to: string; by?: string; draft?: DraftApproval }, at: string): string | undefined => {
+	if (d.draft || d.to.startsWith("auth:")) return undefined;
+	const from = Date.parse(at);
+	return new Date((Number.isNaN(from) ? Date.parse(now()) : from) + (d.by === "gateway" || d.to === "alert" ? ALERT_ANSWER_WINDOW_MS : ANSWER_WINDOW_MS)).toISOString();
+};
+
 function putDecision(d: { key: string; title: string; detail: string; to: string; open?: string; options: DecisionOpt[]; group: number; replyTo?: string; draft?: DraftApproval; by?: string; ref?: string; assumed?: true }, at: string): void {
 	const old = items.find(n => n.key === d.key);
 	if (old?.decision) {
 		// The same ask can arrive twice (a session's mid-turn line and its turn-end report): one notice, and an answered one stays answered.
-		if (old.decision.state === "open") return;
+		if (isOpenDecision(old)) return;
 		if (Date.parse(at) - Date.parse(old.ignored ?? old.decision.answered_at ?? "") < REASK_MS) return void closeRepeat(old, at);
 	}
 	const open = d.open ?? d.to;
-	const decision: Decision = { options: d.options, to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}) };
+	const expires_at = expiresAtOf(d, at);
+	const decision: Decision = { options: d.options, to: d.to, ...(d.replyTo ? { reply_to: d.replyTo } : {}), group: d.group, state: "open", ...(expires_at ? { expires_at } : {}), ...(d.draft ? { draft: d.draft } : {}), ...(d.assumed ? { assumed: true as const } : {}) };
 	let item: Notice;
 	if (old) {
 		Object.assign(old, { kind: "decision", tone: "ask", title: d.title, text: d.detail, open, src: open, at, updated: at, read: false, decision, ...(d.by ? { by: d.by } : {}), ...(d.ref ? { ref: d.ref } : {}) });
@@ -689,6 +711,18 @@ function settleDecision(item: Notice, answer: string, at = now(), resolved = fal
 	save();
 	broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
 	for (const fn of closedHooks) fn(d.to, d.draft?.ref, closedInfo(item, resolved ? "resolved" : "answered"));
+}
+
+// A question whose time is up stops waiting on the owner: it is closed as resolved (no answer), marked `expired` so the card reads 기한 지남, read, saved
+// and broadcast like any other settle so every open page updates live. This runs in the hub's existing periodic pass (main.ts settleSweep); idempotent.
+export function settleExpiredQuestions(at = now()): number {
+	const stamp = Number.isNaN(Date.parse(at)) ? now() : at;
+	const hit = items.filter(i => i.decision?.state === "open" && i.decision.expires_at !== undefined && i.decision.expires_at <= stamp);
+	for (const i of hit) {
+		i.decision!.expired = true;
+		settleDecision(i, "", at, true);
+	}
+	return hit.length;
 }
 
 // The send-approval queue of a conversation (hub/approval-queue.ts) reads which draft cards are open there and hears when a decision closes
@@ -954,7 +988,7 @@ function stoppedSince(name: string): number | undefined {
 function retire(list: Notice[], at = now()): void {
 	if (!list.length) return;
 	for (const i of list) {
-		if (isOpenDecision(i)) settleDecision(i, "", at, true);
+		if (i.decision?.state === "open") settleDecision(i, "", at, true);
 		i.read = true;
 		i.dismissed = true;
 	}
@@ -1099,10 +1133,21 @@ function reconcileStored(): void {
 		// An open question stored without options (made before ask-options.ts) gets them by the same rule, in memory only: the file keeps what
 		// was stored until the item changes for another reason.
 		for (const i of items)
-			if (isOpenDecision(i) && !i.decision!.options.length && !i.decision!.to.startsWith("auth:")) {
-				i.decision!.options = askDefaults(i.text, i.decision!.to.startsWith("mail:"));
-				if (i.decision!.options.length) i.decision!.assumed = true;
+			if (i.decision?.state === "open" && !i.decision.options.length && !i.decision.to.startsWith("auth:")) {
+				i.decision.options = askDefaults(i.text, i.decision.to.startsWith("mail:"));
+				if (i.decision.options.length) i.decision.assumed = true;
 			}
+		// An open question stored before questions carried their expiry gets one from its own time, so the first sweep after an update
+		// closes the ones whose time has passed (a send-approval card and a login request stay without one).
+		let expiring = 0;
+		for (const i of items) {
+			const d = i.decision;
+			if (d?.state !== "open" || d.expires_at !== undefined) continue;
+			const exp = expiresAtOf(d, i.at ?? i.ts);
+			if (!exp) continue;
+			d.expires_at = exp;
+			expiring++;
+		}
 		const gone = new Map<string, boolean>();
 		const isGone = (name: string) => gone.get(name) ?? (gone.set(name, !laneExists(name)), gone.get(name)!);
 		const map = readChannelMap();
@@ -1142,9 +1187,9 @@ function reconcileStored(): void {
 				i.read = true;
 				read++;
 			}
-		if (stale.length || read || retitled || twins.length || redrawn) {
+		if (stale.length || read || retitled || twins.length || redrawn || expiring) {
 			save();
-			log(`notices reconciled on load: ${redrawn} waiting items redrawn by the current rules, ${stale.length} of gone sessions retired, ${read} read by position, ${twins.length} duplicate alert items folded`);
+			log(`notices reconciled on load: ${redrawn} waiting items redrawn by the current rules, ${stale.length} of gone sessions retired, ${read} read by position, ${twins.length} duplicate alert items folded, ${expiring} questions given an expiry`);
 		}
 	} finally {
 		replaying = false;
@@ -1352,7 +1397,13 @@ export function unignoreNotice(id: unknown): { status: number; body: Record<stri
 	for (const n of group) {
 		delete n.ignored;
 		n.read = false;
-		if (n.decision?.state === "ignored") n.decision.state = "open";
+		if (n.decision?.state === "ignored") {
+			n.decision.state = "open";
+			// A question that waits again gets a full window from now, not the one it had before it was waved off.
+			delete n.decision.expired;
+			const exp = expiresAtOf(n.decision, at);
+			if (exp) n.decision.expires_at = exp;
+		}
 	}
 	announce(group, at);
 	return { status: 200, body: { ok: true, item, ids: group.map(n => n.id), unread: unreadCount() } };
@@ -1373,8 +1424,11 @@ export function reopenNotices(ids: unknown): { reopened: string[]; unread: numbe
 		if (!d) continue;
 		d.state = "open";
 		delete d.resolved;
+		delete d.expired;
 		delete d.answer;
 		delete d.answered_at;
+		const exp = expiresAtOf(d, at);
+		if (exp) d.expires_at = exp;
 	}
 	if (hit.length) announce(hit, at);
 	return { reopened: hit.map(i => i.id), unread: unreadCount() };
