@@ -382,8 +382,11 @@ function bellRows(tab) {
   const list = NT.items.filter(n => n.id && n.cls === tab).sort((a, b) => (tab === "ask" ? Number(ntNeeds(b)) - Number(ntNeeds(a)) : 0) || ntAt(b) - ntAt(a)).slice(0, 100);
   const row = n => ntHomeRow(n, ntNeeds(n) ? undefined : "");
   if (!list.length) return [el("div", { class: "bell-none", text: "아직 없어요" })];
-  if (tab !== "news") return [el("div", { class: "hn" }, ...list.map(row))];
-  return bellGroups(list).flatMap(([name, items]) => [el("div", { class: "bell-gh", role: "presentation", text: name }), el("div", { class: "hn" }, ...items.map(row))]);
+  // The prototype's notices screen (30-notices.js ntHomeRow): one meta line, a card of rows (새 소식: a label and a card per app), one quiet note.
+  const card = items => el("div", { class: "bell-card" }, el("div", { class: "hn" }, ...items.map(row)));
+  const meta = el("div", { class: "bell-meta" }, "안 읽은 알림 ", el("b", { text: String(bellUnread(tab)) }), "개"), note = el("div", { class: "bell-note", text: "모두 읽음은 답이 필요한 알림을 그대로 둬요." });
+  if (tab !== "news") return [meta, card(list), note];
+  return [meta, ...bellGroups(list).flatMap(([name, items]) => [el("div", { class: "bell-gh", role: "presentation", text: name }), card(items)]), note];
 }
 function bellPaint() {
   const on = current === "chat" && target === "alert" && !monCtx, box = $("#bell-tabs"), list = $("#bell-list"), tab = BELL.tab, listed = on && tab !== "all";
