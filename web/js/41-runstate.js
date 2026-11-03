@@ -15,7 +15,7 @@ const runOf = t => (S && S.runs && S.runs[t === MAIN ? "main" : t]) || null;
 const runBusy = t => { const r = runOf(t); return !!r && r.kind === "waiting" && !waitsOnOwner(r); };
 const RUN_MEMO = { sig: "" };
 const runStateOf = () => {
-  if (isFixedT(target) || isSettingsT(target)) return null;
+  if (isFixedT(target) || isSettingsT(target) || isJandiT(target)) return null;
   const runs = (S && S.runs) || {};
   // A mail conversation's run state is the background worker its request was deferred to (hub/routes.ts stateRuns): this
   // computer's under /api/state `runs`, the other computer's in its monitoring snapshot (34-peer-monitoring.js pqRuns).

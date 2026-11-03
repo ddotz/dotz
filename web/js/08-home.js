@@ -446,9 +446,13 @@ const PQ = { list: [], loaded: false, busy: false, again: false, at: 0, t: 0, of
 // An app's settings conversation (hub/app-settings.ts, 32-app-settings.js): target settings:<app>, answered by the orchestrator.
 const isSettingsT = t => t.startsWith("settings:");
 const settingsApp = t => t.slice(9);
+// A computer reached only through the owner's JANDI self chat (hub/jandi-peers.ts): target jandi:<keyword>, the normal chat view over another transport (42-jandi-chat.js).
+// JP.name: target -> the computer's name, kept from the computer list (33-peers.js) so the title and the chip name it before that list is drawn; JP.back: the target to return to.
+const isJandiT = t => t.startsWith("jandi:");
+const JP = { name: {}, back: MAIN, on: false };
 const mailSender = f => String(f || "").replace(/<[^>]*>/g, "").replace(/["']/g, "").trim() || String(f || "");
-const validTarget = t => t === MAIN || isFixedT(t) || isProjT(t) || (isLaneT(t) && t.length > 5) || (isMailT(t) && t.length > 5) || (isSettingsT(t) && t.length > 9);
-const sourceOf = t => t === MAIN || isProjT(t) || isFixedT(t) || isMailT(t) || isSettingsT(t) ? "orchestrator" : t;
+const validTarget = t => t === MAIN || isFixedT(t) || isProjT(t) || (isLaneT(t) && t.length > 5) || (isMailT(t) && t.length > 5) || (isSettingsT(t) && t.length > 9) || (isJandiT(t) && t.length > 6);
+const sourceOf = t => t === MAIN || isProjT(t) || isFixedT(t) || isMailT(t) || isSettingsT(t) || isJandiT(t) ? "orchestrator" : t;
 const targetOfSource = s => s === "orchestrator" ? MAIN : s;
 // Owner-facing names: a project by its title (else its channel name), a session by its title (else its key).
 // The name of a target on the computer `pc` it belongs to (an item from another gateway carries pc = {name, url, bot}): there the main chat is
@@ -458,6 +462,7 @@ const targetName = t => {
   if (t === MAIN) return botName;
   if (isFixedT(t)) return FIXED_NAME[t];
   if (isMailT(t)) return (MAILS.get(t) || {}).subject || "메일";
+  if (isJandiT(t)) return JP.name[t] || t.slice(6);
   if (isSettingsT(t)) return monSettingsName(t);
   if (isProjT(t)) {
     let list = [];
@@ -477,6 +482,7 @@ try { const v = localStorage.getItem(TARGET_KEY); if (v && validTarget(v)) targe
 // was sent, until the answer comes. A peer's monitor is answered on that computer, so this one's status never applies to it.
 const TURN = new Map();
 function targetInfo(t) {
+  if (isJandiT(t)) return { status: "", alive: true, known: true };
   if (isSettingsT(t)) { const o = (S && S.orchestrator) || {}, busy = o.status === "working" || o.status === "starting"; return { status: busy && (!TURN.has(t) || PQ.of.has(t)) ? "idle" : o.status || "", alive: true, known: true }; }
   if (t === MAIN || isFixedT(t) || isMailT(t)) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
   if (isProjT(t)) { const o = (S && S.orchestrator) || {}, known = projTargets().includes(t); return { status: o.status || "", alive: known || !S, known }; }

@@ -222,6 +222,7 @@ async function sendCommand(text) {
 }
 async function sendChat(how) {
   const text = ta.value.trim();
+  if (isJandiT(target)) { if (text && !ta.disabled) jpSend(text); return; }
   if (ATT.some(a => !a.file)) { toast("파일을 올리는 중이에요"); return; }
   const files = ATT.map(a => a.file), picks = pkItems();
   if ((!text && !files.length && !picks.length) || ta.disabled) return;
@@ -266,6 +267,7 @@ function updateComposerMeta() {
   paintPause();
   rpPaint();
   if (typeof asTplSync === "function") asTplSync();
+  jpPaint();
 }
 // The elapsed time ticks every second on its own; events only arrive when a tool runs, so a time drawn only on events
 // froze (owner 2026-10-20: stuck at 18s until the answer came).

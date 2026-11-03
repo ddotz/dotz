@@ -188,7 +188,7 @@ for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) timeline.add
 // the real mailbox's flag, so a newer message of that mail still makes it unread again.
 function convMaybeRead() {
   const t = CV.key;
-  if (!t || t !== target || !CV.placed || document.visibilityState !== "visible") return;
+  if (!t || t !== target || isJandiT(t) || !CV.placed || document.visibilityState !== "visible") return;
   const mail = isMailT(t);
   if (!mail && !CV.captured) return;
   const s = ts(t), last = s.hLoaded && s.msgs.findLast(convReal);
@@ -345,7 +345,7 @@ $("#v-chat").prepend(convSide, convHead);
 function convPaintHead() {
   asSync();
   if (isProjT(target) && !PRJ && !PRJ_FAIL) prjLoad().then(convSchedule);
-  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", alertN = target === "alert" ? cvAlertN() : 0, sig = `${target}|${targetName(target)}|${state}|${alertN}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
+  const i = targetInfo(target), state = isJandiT(target) ? "잔디로 주고받아요" : isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", alertN = target === "alert" ? cvAlertN() : 0, sig = `${target}|${targetName(target)}|${state}|${alertN}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
   // A conversation opened from a 모니터링 list (a mail of the 메일 list): ← goes back to that list inside the page, like the app bar's back on a phone.

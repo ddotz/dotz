@@ -54,6 +54,7 @@ export const messageBody = (text: string) => ({ text, richText: [{ type: "text_b
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 export const pagePath = (p: SelfChatPeer) => `/jandi-peer/${encodeURIComponent(p.keyword)}`;
 
+/** The old stand-alone chat page: kept as a fallback only. The web app's own chat view (web/js/42-jandi-chat.js) uses the JSON endpoints below and no longer links here. */
 export function page(peer: SelfChatPeer): string {
 	const api = JSON.stringify(`/api${pagePath(peer)}`).replace(/</g, "\\u003c");
 	return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

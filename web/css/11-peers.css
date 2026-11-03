@@ -36,3 +36,8 @@ body:has(#appbar.hasp) #brand::after { margin: 0 2px 4px 2px; }
 /* another computer opened inside the installed app (33-peers.js prGo): the whole screen, the safe areas kept by this frame because a page in an iframe reads them as 0 */
 .pr-frame { position: fixed; inset: 0; z-index: 2000; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--bg); }
 .pr-frame iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
+
+/* a JANDI computer's chat (42-jandi-chat.js): the normal chat view; what JANDI cannot carry is not drawn */
+body.jp :is(#c-attach, #c-own, #c-model, #c-effort, #c-worker, #ctx-ring, #c-api, #c-fb, #working, #runline, #runstate, #pausenote, #dcard, #queue, #hints, #atray, #todo, #vtog, #cvmenu, #pjmenu) { display: none !important; }
+.jpnote { margin: 0 0 6px; padding: 0 4px; color: var(--fg-3); font-size: 12px; line-height: 1.4; }
+.jp-pend { opacity: 0.6; }

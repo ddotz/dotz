@@ -58,6 +58,7 @@ function ingestAct(a) {
 }
 // quiet: a repeated read of a peer's conversation (34-peer-monitoring.js) redraws only when it brought something new.
 async function loadTarget(t, quiet) {
+  if (isJandiT(t)) return jpLoad(t, quiet);
   const s = ts(t), before = s.mk.size;
   if (s.loading) return s.loading;
   s.loading = (async () => {
@@ -149,6 +150,7 @@ function renderAll0(keepScroll) {
       if (ownerish(m) && first && m.ts >= first) termPush(ownerAct(m), true);
     } else { const a = A[i++]; if (!isProjT(target) && !isFixedT(target)) chatPush({ a }, true); termPush(a, true); }
   }
+  if (isJandiT(target)) jpTail(s);   // a send still waiting for its line, and the JANDI error, before the "no conversation yet" line is considered
   if (tl.children.length <= 1) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));   // only the top sentinel is there
   if (!term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동이 없어요" }));
   if (!keepScroll) { chatOpen(); scrollTerm(true); } else { CV.snap = null; CV.full = true; }
@@ -170,7 +172,7 @@ function setTarget(t) {
   ts(target).pick = PICK;   // the picked elements stay with it too (15-picker.js)
   closeSheet();
   target = t;
-  try { localStorage.setItem(TARGET_KEY, t); } catch {}
+  if (!isJandiT(t)) try { localStorage.setItem(TARGET_KEY, t); } catch {}   // a JANDI computer is entered by the address (#chat/jandi:<keyword>), never restored from here
   if (current === "chat" || current === "activity") routeReplace(monCtx && current === "chat" ? `monitoring/c:${enc(t)}` : `${current}/${t}`);
   const s = ts(t);
   convSync();

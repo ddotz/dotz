@@ -1,5 +1,5 @@
 /* ---------- computers: switch between this owner's gateways (맥북, 맥미니) ---------- */
-// Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?, via?}]. A row with via "jandi" is a computer reached only through the owner's JANDI self chat (hub/jandi-peers.ts): its url is a chat page on this gateway, opened in this app.
+// Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?, via?}]. A row with via "jandi" is a computer reached only through the owner's JANDI self chat (hub/jandi-peers.ts): picking it keeps this app's chat view and only changes the transport (42-jandi-chat.js); its url only names the keyword.
 // With 2 or more the bot name opens the switch sheet (owner 2026-11-03: no separate chip): the logo + name at the top left on a wide screen, the page title on the phone
 // (there the brand is hidden; on 홈 the title is the bot name). A small dot at the name's bottom right says another computer has something unread (warn: a question waits).
 // The sheet is one row per computer: name, its own dot, and ✓ / 연결됨 / 연결 안 됨. An offline computer stays listed, greyed; choosing it says it cannot connect. Choosing one opens that computer's own address (its own PWA, login and push).
@@ -90,6 +90,7 @@ function prOpenItem(p, id) {
 const prTrig = () => !!prSelf() && PR.list.length >= 2;
 function prPaint() {
   prTryFollow();
+  jpNames();
   const me = prSelf(), on = prTrig(), names = [$("#brand-name"), $("#title")], brand = $("#brand"), title = $("#title");
   $("#appbar").classList.toggle("hasp", on);
   if (!on) {
@@ -102,7 +103,7 @@ function prPaint() {
   for (const p of prOthers()) if (p.online && !p.via && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
   const others = prOthers(), more = others.some(p => p.unread > 0 || p.need > 0), need = others.some(p => p.need > 0);
   for (const n of names) { n.classList.toggle("pdot", more); n.classList.toggle("pneed", need); }
-  const label = `컴퓨터 바꾸기, 지금은 ${me.name}${more ? ", 다른 컴퓨터에 새 알림" : ""}`;
+  const label = `컴퓨터 바꾸기, 지금은 ${jpOn() ? targetName(target) : me.name}${more ? ", 다른 컴퓨터에 새 알림" : ""}`;
   brand.setAttribute("aria-label", label); brand.setAttribute("aria-haspopup", "dialog");
   brand.title = `컴퓨터 바꾸기 (${prKeyHint}, 다음 컴퓨터로)`;
   title.tabIndex = 0; title.setAttribute("aria-haspopup", "dialog");
@@ -149,11 +150,11 @@ window.addEventListener("message", ev => {
 });
 
 function prPick(p, o = {}) {
-  // a JANDI-only computer has no gateway of its own: its chat page is on this origin, so the app stays where it is
-  if (p.via === "jandi" && !p.self) { prClose(false); location.href = p.url; return; }
+  // a JANDI-only computer has no gateway of its own: the chat view of this app stays and talks to it through JANDI (42-jandi-chat.js)
+  if (p.via === "jandi" && !p.self) { prClose(false); jpEnter(p); return; }
   // inside another computer's app frame: the app around it does the switch (back to itself, or to a third computer)
   if (prEmbedded && !p.self) { prClose(false); window.parent.postMessage({ dotz: "peer-pick", url: p.url }, "*"); return; }
-  if (p.self) { prClose(); return; }
+  if (p.self) { prClose(); if (isJandiT(target)) jpLeave(); return; }
   // the online flags come from this computer's gateway: while it is unreachable they are stale, so the switch is tried anyway
   if (!p.online && !selfDown) { toast(`${p.name}에 연결할 수 없어요`, true); return; }
   if (!o.quiet) toast(`${p.name}(으)로 넘어가요`);
@@ -164,10 +165,10 @@ function prPick(p, o = {}) {
 function prSheet() {
   const rows = PR.list.map(p => {
     // while this computer's gateway is unreachable the other rows' flags are stale: "확인 못 함", still selectable (prPick tries anyway)
-    const off = !p.self && !p.online && !selfDown, alert = !p.self && (p.unread > 0 || p.need > 0);
-    const st = p.self ? (selfDown ? "연결 안 됨" : "") : selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨";
-    return el("button", { type: "button", class: `pr-row${p.self ? " on" : ""}${off ? " off" : ""}`, "aria-current": p.self ? "true" : null, "aria-disabled": off ? "true" : null,
-      "aria-label": [p.name, p.self ? "지금 보고 있어요" : "", st, alert ? prText(p) : ""].filter(Boolean).join(", "), onclick: () => prPick(p) },
+    const here = jpOn() ? p.via === "jandi" && target === `jandi:${jpKeyOf(p)}` : p.self, off = !p.self && !p.online && !selfDown, alert = !p.self && (p.unread > 0 || p.need > 0);
+    const st = here ? (p.self && selfDown ? "연결 안 됨" : "") : p.self ? "연결됨" : selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨";
+    return el("button", { type: "button", class: `pr-row${here ? " on" : ""}${off ? " off" : ""}`, "aria-current": here ? "true" : null, "aria-disabled": off ? "true" : null,
+      "aria-label": [p.name, here ? "지금 보고 있어요" : "", st, alert ? prText(p) : ""].filter(Boolean).join(", "), onclick: () => prPick(p) },
       el("span", { class: "pr-t", text: p.name }),
       alert ? el("span", { class: `pr-d${p.need > 0 ? " need" : ""}` }) : null,
       st ? el("span", { class: "pr-st", text: st }) : icon("check", "pr-ck"));
