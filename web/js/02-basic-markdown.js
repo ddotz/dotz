@@ -157,7 +157,7 @@ function toastGone(n) {
 function toast(msg, bad, action, ms) {
   document.querySelectorAll(".snack").forEach(n => n.remove());
   const n = el("div", { class: `snack${bad ? " bad" : ""}${action ? " act" : ""}`, role: "status" }, el("span", { text: stripMarkers(msg) }), action ? el("button", { type: "button", class: "sa", text: action.label, onclick: () => { toastGone(n); action.onclick(); } }) : null);
-  (document.querySelector("dialog[open]") || document.body).append(n);
+  (document.querySelector("dialog[open]:not([data-leaving])") || document.body).append(n);
   clearTimeout(toastTimer);
   motionIn(n, "rise");
   toastTimer = setTimeout(() => toastGone(n), ms || (bad || action ? 6000 : 3500));

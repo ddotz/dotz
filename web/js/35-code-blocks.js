@@ -38,7 +38,7 @@ async function copyText(text) {
   } catch {}
   const ta = el("textarea", { readonly: "", "aria-hidden": "true", tabindex: "-1", style: "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px" });
   ta.value = text;
-  (document.querySelector("dialog[open]") || document.body).append(ta);
+  (document.querySelector("dialog[open]:not([data-leaving])") || document.body).append(ta);
   let ok = false;
   try { ta.focus({ preventScroll: true }); ta.select(); ta.setSelectionRange(0, text.length); ok = document.execCommand("copy"); } catch {}
   ta.remove();

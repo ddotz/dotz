@@ -134,7 +134,7 @@ const trStep = d => { const j = TR.i + d; if (j < 0 || j > TR.items.length) retu
 const trLocked = c => { const s = TR.done[trK(c)]; return !!s && s.state !== "err"; };
 
 function trKey(ev) {
-  if (!TR.h || FS[FS.length - 1] !== TR.h || document.querySelector("dialog[open]")) return;
+  if (!TR.h || FS[FS.length - 1] !== TR.h || document.querySelector("dialog[open]:not([data-leaving])")) return;
   const typing = ev.target instanceof HTMLTextAreaElement || ev.target instanceof HTMLInputElement;
   const c = TR.items[TR.i];
   if ((ev.metaKey || ev.ctrlKey) && ev.key === "Enter") {
