@@ -37,7 +37,7 @@ import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
 import { draftRecipientsRoute } from "./draft-recipients.ts";
 import { stagedFiles } from "../features/reply-drafts/lib/staged.ts";
-import { composeMail, deleteMail, mailKey, recordSentByDotz, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, setMailSuggest, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { composeMail, deleteMail, mailKey, recordSentByDotz, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, setMailSuggest, sentMailEvent, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { applyMailboxFlags, canOf, isMailAction, mailAction, mailActions, type SyncDeps } from "./mail-sync.ts";
 import { manualDraft } from "./mail-manual.ts";
 import { askText } from "../features/reply-drafts/lib/flow.ts";
@@ -865,7 +865,10 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const target = url.searchParams.get("target") ?? "main";
 			if (target !== "main" && target !== "alert" && target !== "worklog" && !target.startsWith("lane:") && !isProjectTarget(target) && !isMailTarget(target) && !isSettingsTarget(target)) return json({ error: "target must be main, alert, worklog, lane:<name>, ch:<id>, mail:<key> or settings:<app>" }, 400);
 			const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 150) || 150, 500));
-			return json({ target, events: historyEvents(target, limit, url.searchParams.get("before") ?? undefined) });
+			const before = url.searchParams.get("before") ?? undefined, events: unknown[] = historyEvents(target, limit, before);
+			// A sent mail has no conversation event of its own: its conversation opens on the mail itself (hub/mail.ts sentMailEvent).
+			const sent = !before && isMailTarget(target) && !events.some(e => (e as { kind?: string }).kind === "mail") ? sentMailEvent(target.slice(5)) : undefined;
+			return json({ target, events: sent ? [sent, ...events] : events });
 		}
 		if (req.method === "POST" && url.pathname === "/api/attach") {
 			const b = await body(req);

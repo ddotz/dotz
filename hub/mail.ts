@@ -29,7 +29,7 @@ export type MailSuggest = { kind: "reply-draft"; label: string; ref: string; sta
 // `list` = the poster saw a List-Id / List-Unsubscribe header; `account` = the mailbox it came to (zele: the account, for marking it read there).
 export type MailRecord = { /** archived in dotz (hub/mail-sync.ts); a newer message of the thread makes a new record and clears it */ archived?: true; starred?: true; /** the last state the mailbox reported (hub/mail-sync.ts applyMailboxFlags): only a change of it is applied */ box?: { read?: boolean; archived?: boolean; starred?: boolean; trashed?: boolean }; list?: true; account?: string; msg?: string; reopenedAt?: string; key: string; source: string; id: string; subject: string; from: string; to?: string; cc?: string; at: string; thread?: string; summary?: string; preview?: string; attachments?: MailAttachment[]; html?: true; suggest?: MailSuggest; rule?: string; dir?: "out"; reply?: MailReply; reply_by?: ReplyBy; reply_at?: string; sentAt?: string; needsReply?: true; noReply?: true };
 export type MailInput = { /** Names this message of the thread; the same id again is a repeat, another id is a newer message and a new mail again. */ messageId?: string; /** when the mail was sent (ISO 8601 with a zone); an outgoing mail is kept at that time */ at?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; html?: string; thread?: string; wake?: boolean; needsReply?: boolean; attachments?: AttachmentInput[]; /** "out" = the owner's own mail; `folder` / `labels` (SENT, 보낸편지함) say the same. */ direction?: "in" | "out"; folder?: string; labels?: string[]; /** a List-Id / List-Unsubscribe header was on the mail (`list: true`, `listId` or `listUnsubscribe`) */ list?: boolean; account?: string };
-export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true; direction?: "out"; replied?: true };
+export type MailResult = { ok: true; key: string; target: string; thread?: string; duplicate?: boolean; skipped?: true; direction?: "out"; replied?: true; /** a sent mail's body is kept (it opens in full) */ html?: true };
 export type MailDeps = {
 	/** Opens a thread under `parent` (a work channel target `ch:<id>`) from a starter message; discord.ts createThread. */
 	createThread: (parent: string, name: string, starter: string) => Promise<{ id: string }>;
@@ -621,6 +621,14 @@ async function completeKnown(known: MailRecord, m: MailInput, now: string): Prom
 async function recordOutgoing(m: MailInput, key: string, target: string, deps: MailDeps): Promise<MailResult> {
 	const known = byKey.get(key);
 	const at = deps.now?.() ?? new Date().toISOString();
+	// A sent mail first reported without its body (a sent-folder poll that only read the list) takes the body when it is posted again with one.
+	if (known?.dir === "out" && !known.html && (m.html || m.body?.trim())) {
+		const attachments = markInline(saveAttachments(key, m.attachments), m.html);
+		if (!(await saveHtml(key, m.html ?? plainAsHtml(m.body), attachments))) return { ok: true, key, target, duplicate: true, direction: "out" };
+		const preview = known.summary ? "" : mailPreview(m.body);
+		recordMail({ ...known, html: true, ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}) });
+		return { ok: true, key, target, duplicate: true, direction: "out", html: true };
+	}
 	if (known) {
 		const replied = known.dir !== "out" && known.reply !== "replied";
 		if (replied) setMailReply(key, "sent", at);
@@ -630,11 +638,24 @@ async function recordOutgoing(m: MailInput, key: string, target: string, deps: M
 	const preview = summary ? "" : mailPreview(m.body);
 	const sentAt = m.at ?? at;
 	// The body the poster sent is kept like an incoming mail's (the sanitized HTML next to the record), so the sent mail can be opened in full.
-	const html = await saveHtml(key, m.html ?? plainAsHtml(m.body), []);
-	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.account ? { account: m.account } : {}), at: sentAt, dir: "out", ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(html ? { html: true as const } : {}) });
+	const attachments = markInline(saveAttachments(key, m.attachments), m.html);
+	const html = await saveHtml(key, m.html ?? plainAsHtml(m.body), attachments);
+	recordMail({ key, source: m.source, id: m.id, subject: m.subject, from: m.from ?? "", ...(m.to ? { to: m.to } : {}), ...(m.cc ? { cc: m.cc } : {}), ...(m.account ? { account: m.account } : {}), at: sentAt, dir: "out", ...(summary ? { summary } : {}), ...(preview ? { preview } : {}), ...(attachments.length ? { attachments } : {}), ...(html ? { html: true as const } : {}) });
 	const answered = answeredBy({ subject: m.subject, to: m.to, cc: m.cc, at: sentAt });
 	for (const k of answered) setMailReply(k, "sent", sentAt);
-	return { ok: true, key, target, direction: "out", ...(answered.length ? { replied: true as const } : {}) };
+	return { ok: true, key, target, direction: "out", ...(answered.length ? { replied: true as const } : {}), ...(html ? { html: true as const } : {}) };
+}
+
+/**
+ * The opening message of a sent mail's conversation (GET /api/history of `mail:<key>`): a sent mail is recorded without a conversation event, so
+ * without this its conversation opened empty. Built from the record, like the mail event an incoming mail gets: subject, recipients, preview and
+ * the kept body (`html`, read from GET /api/mail/<key>/body). Undefined for a key that is no sent mail.
+ */
+export function sentMailEvent(key: string): Record<string, unknown> | undefined {
+	const r = byKey.get(key);
+	if (!r || r.dir !== "out") return undefined;
+	const target = mailTarget(key), brief = r.summary || r.preview || "";
+	return { ts: r.at, kind: "mail", dir: "out", source: r.source, channel: target, conv: target, mail: key, subject: r.subject, from: r.from, ...(r.to ? { to: r.to } : {}), ...(r.cc ? { cc: r.cc } : {}), ...(r.summary ? { summary: r.summary } : {}), ...(r.preview ? { preview: r.preview } : {}), ...(r.attachments?.length ? { attachments: attachmentList({ attachments: r.attachments }) } : {}), ...(r.html ? { html: true } : {}), text: [r.from ? `${r.from} · ${r.subject}` : r.subject, brief].filter(Boolean).join("\n\n") };
 }
 
 /** What dotz sent for the owner (a reply he approved, or a new mail): the draft's text and the files it carried (absolute paths of the staged copies). */
