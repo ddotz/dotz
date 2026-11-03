@@ -25,11 +25,11 @@
 
 /* ---------- 컴포저: 시제품 .cmp — [첨부 · 글 · 원형 전송] 회색 18px 상자와 그 아래 힌트 줄(모델 칩) ---------- */
 #composer .sendrow { grid-template-columns: auto minmax(0, 1fr) auto !important; grid-template-areas: "at at at" "plus ta send" !important; align-items: flex-end; gap: 4px; }
-#composer .sendrow:not(.ulw) { padding: 6px 6px 6px 8px !important; border: 0 !important; border-radius: var(--r-card) !important; background: var(--layer) !important; }
+#composer .sendrow:not(.ulw) { padding: 6px !important; border: 0 !important; border-radius: var(--r-card) !important; background: var(--layer) !important; }
 #composer .sendrow:not(.ulw):focus-within { border-color: transparent !important; }
 #composer .sendrow textarea { grid-area: ta; padding: 7px 4px; font-size: 15px; line-height: 22px; text-overflow: ellipsis; }
 #composer .sendrow textarea::placeholder { white-space: nowrap; text-overflow: ellipsis; }   /* 폰에서 긴 안내 글이 두 줄로 접혀 상자를 키우지 않게 한 줄로 (시제품 .cmp는 한 줄) */
-#c-attach { grid-area: plus; width: var(--btn-h-sm); height: var(--btn-h-sm); padding: 0; justify-content: center; border-radius: 50%; background: transparent; color: var(--fg-2); font-size: 0; }
+#c-attach { grid-area: plus; width: 36px; height: 36px; padding: 0; justify-content: center; border-radius: 50%; background: transparent; color: var(--fg-2); font-size: 0; }
 #c-attach .ic { width: 18px; height: 18px; }
 #c-attach:hover { background: var(--hover); color: var(--fg); }
 #send-btn { grid-area: send; width: 36px; height: 36px; }
@@ -38,6 +38,7 @@
 #cbar::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--fg-3); }
 #cbar:has(#c-model[hidden])::before { display: none; }
 #cbar .cchip { height: 20px; padding: 0 2px; background: transparent; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+#cbar button.cchip { cursor: pointer; }
 #cbar button.cchip:hover { background: transparent; color: var(--fg); }
 #cbar .cchip.cown { opacity: 1; color: var(--fg-3); }
 #cbar .working { display: none !important; }

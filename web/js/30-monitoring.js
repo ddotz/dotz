@@ -897,7 +897,7 @@ function monHeadTime(it) {
   return stamps.length ? ntTime(new Date(Math.max(...stamps)).toISOString()) : "";
 }
 // The open item's header: the prototype's detail card composition - icon, name (and its machine), state, the moment at the right end,
-// then the actions on their own row and the wait / banner under them. A phone has no .cv-head, so monTopNodes draws the same card there.
+// the actions at the end of that row and the state / wait / banner under it. A phone has no .cv-head, so monTopNodes draws the same card there.
 const monHead = it => {
   const banner = monBannerOf(it), st = monState(it);
   // An app with reply drafts waiting opens the one 답장 확인 queue on its own drafts (30-replies.js).
@@ -909,9 +909,11 @@ const monHead = it => {
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);
+  // Compact (owner 2026-11-04): one row of icon, name, place, time and the actions; the state / progress line right under it, same for mail and watch.
   return [el("div", { class: "mon-hdwrap" },
-    el("div", { class: "mon-hdrow" }, monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st && !it.mon ? el("span", { class: "cv-p", text: st }) : null), el("span", { class: "mon-hd-time", text: monHeadTime(it) })),
-    acts.length ? el("div", { class: "mon-hdacts" }, ...acts) : null,
+    el("div", { class: "mon-hdrow" }, monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it))), el("span", { class: "mon-hd-time", text: monHeadTime(it) }),
+      acts.length ? el("div", { class: "mon-hdacts" }, ...acts) : null),
+    st && !it.mon ? el("div", { class: "cv-p", text: st }) : null,
     ...extra)];
 };
 // The settings app of the detail open now (an item, or a conversation sitting under one), for the phone's app bar.

@@ -67,6 +67,7 @@ const ICONS = {
   // three small rings: with the 1.75 stroke each dot is about 3.5 units wide, so the ⋯ reads at a glance (a bare h.01 dot was 1.75 wide and faint)
   more: "M4.15 12a0.85 0.85 0 1 0 1.7 0a0.85 0.85 0 1 0 -1.7 0M11.15 12a0.85 0.85 0 1 0 1.7 0a0.85 0.85 0 1 0 -1.7 0M18.15 12a0.85 0.85 0 1 0 1.7 0a0.85 0.85 0 1 0 -1.7 0",
   term: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM7 10l3 2-3 2M12 15h4",
+  desktop: "M4 4h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zM8 20h8M12 16v4",
   spark: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18 16l.7 1.8L20.5 18.5l-1.8.7L18 21l-.7-1.8-1.8-.7 1.8-.7z",
   code: "M9 8l-4 4 4 4M15 8l4 4-4 4M13.5 6l-3 12",
   braces: "M9 4C7 4 6 5 6 7v3c0 1-1 2-2 2 1 0 2 1 2 2v3c0 2 1 3 3 3M15 4c2 0 3 1 3 3v3c0 1 1 2 2 2-1 0-2 1-2 2v3c0 2-1 3-3 3",
