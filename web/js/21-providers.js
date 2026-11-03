@@ -207,7 +207,8 @@ async function loadQuota(fresh) {
     grid.append(card);
   }
   // The monthly API spend limit the owner set on the platform console, and how much of it is used (hub/api-budget.ts).
-  grid.prepend(q.budget ? budgetCard(q.budget) : budgetRow());
+  if (q.budget) grid.prepend(budgetCard(q.budget));
+  else box.append(el("div", { class: "list" }, budgetRow()));
   if (grid.children.length) box.append(grid);
   // The one Claude account the assistant and its lanes run on, and every switch with its reason (hub/account-sticky.ts).
   if (q.account && q.account.account) {
