@@ -227,7 +227,8 @@ async function sendCommand(text) {
 }
 async function sendChat(how) {
   const text = ta.value.trim();
-  if (ATT.some(a => !a.file)) { toast("파일을 올리는 중이에요"); return; }  const files = ATT.map(a => a.file), picks = pkItems();
+  if (ATT.some(a => !a.file)) { toast("파일을 올리는 중이에요"); return; }
+  const files = ATT.map(a => a.file), picks = pkItems();
   if ((!text && !files.length && !picks.length) || ta.disabled) return;
   if (files.length && text.startsWith("/")) { toast("명령에는 파일을 붙일 수 없어요", true); return; }
   if (picks.length && text.startsWith("/")) { toast("명령에는 요소를 붙일 수 없어요", true); return; }
