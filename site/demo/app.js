@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "b00c3139cb6a";
+const WEB_BUILD = "30670d204480";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -105,27 +105,29 @@ const lsJson = (key, fallback) => { try { return JSON.parse(localStorage.getItem
   };
 }
 
-// Motion with a cause (web/DESIGN.md Motion). Web Animations on transform/opacity only, so nothing is laid out again and nothing
-// is left behind when an animation ends; with prefers-reduced-motion every helper is an instant change.
-const M_EASE = "cubic-bezier(.2, .7, .2, 1)";
+// Motion with a cause (web/DESIGN.md Motion, site/prototype/MOTION.md). Web Animations on transform/opacity only, so nothing is laid out
+// again and nothing is left behind when an animation ends; durations and the curve are the CSS tokens (--m-fast/--m-base/--m-slow,
+// --m-ease), and with prefers-reduced-motion every helper is an instant change.
+const M_EASE = "cubic-bezier(.2, .7, .2, 1)";   // --m-ease
+const M_MS = { fast: 150, base: 220, slow: 300 }; // --m-fast, --m-base, --m-slow
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const M_FROM = { rise: "translateY(8px)", top: "translateY(-8px)", fade: "none", side: "translateX(12px)" };
 
 // An element that just arrived: a card rising in, a new row sliding in at the top of its list, a sheet opening.
-function motionIn(el, from = "rise", ms = 220) {
+function motionIn(el, from = "rise", ms = M_MS.base) {
   if (!el || !el.animate || reducedMotion()) return;
   el.animate([{ opacity: 0, transform: M_FROM[from] || M_FROM.rise }, { opacity: 1, transform: "none" }], { duration: ms, easing: M_EASE });
 }
 
 // An element about to leave: resolves when it is gone from view, so the caller removes or hides it then.
-function motionOut(el, to = "fade", ms = 150) {
+function motionOut(el, to = "fade", ms = M_MS.fast) {
   if (!el || !el.animate || reducedMotion()) return Promise.resolve();
   const a = el.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: M_FROM[to] || "none" }], { duration: ms, easing: M_EASE, fill: "forwards" });
   return a.finished.then(() => a, () => a);
 }
 
 // The same element changes state in place (보내기 -> 보냈어요, a task finishing): change() runs at once, the new look fades up.
-function motionSwap(el, change, ms = 200) {
+function motionSwap(el, change, ms = M_MS.base) {
   change();
   if (!el || !el.animate || reducedMotion()) return;
   el.animate([{ opacity: .35, transform: "scale(.985)" }, { opacity: 1, transform: "none" }], { duration: ms, easing: M_EASE });
@@ -143,7 +145,7 @@ function rollCount(el, next) {
     const d = document.createElement("span");
     d.className = "m-dg"; d.textContent = now[i]; el.append(d);
     if (pad[pad.length - now.length + i] !== now[i] && d.animate)
-      d.animate([{ opacity: 0, transform: `translateY(${up ? "60%" : "-60%"})` }, { opacity: 1, transform: "none" }], { duration: 220, easing: M_EASE });
+      d.animate([{ opacity: 0, transform: `translateY(${up ? "60%" : "-60%"})` }, { opacity: 1, transform: "none" }], { duration: M_MS.base, easing: M_EASE });
   }
 }
 
@@ -2872,8 +2874,9 @@ function renderDecision(box, dc, picks, step) {
   const st = DC.st[dc.key] || "", fold = !!DC.fold[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   // A draft message starts with its quoted draft, so the question is the block's own title without the draft's id.
   const qText = dc.draft ? draftQ(dc.blocks[0] && dc.blocks[0].title) : dc.question;
+  // ONE tight header (owner 2026-11-03): 확인 필요 · 답 기다림 on one line, then the short question; the card asks only what it must.
   const head = el("div", { class: "dc-hd" }, el("div", { class: "dc-tt" },
-    el("span", { class: "dc-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" }),
+    el("div", { class: "dc-meta" }, el("span", { class: "dc-ey", text: "확인 필요" }), el("span", { class: "tag warn dc-wt", text: "답 기다림" })),
     qText ? mdNode(qText, "md dc-q") : null, decideNode(dc.draft)),
     el("div", { class: "dc-hb" },
       el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.key] = !fold; paintDecision(); } }, icon("drop"))));
@@ -3119,17 +3122,16 @@ const RQ_OPEN = new Set();   // card keys whose long body was unfolded (펼치�
 const rqBase = app => String(app || "").split("~")[0].split("-")[0];
 const rqAppName = app => (RQ_APPS[rqBase(app)] || [""])[0];
 // h: { app (instance id), label (the instance's own name), pc (computer name), model, at (ms or ISO), tail (nodes at the end) }
+// ONE tight line (owner 2026-11-03): who the draft answers and where it came from, the state at the right. The author's initial is a small
+// 20px mark, so the head never takes a second line and the original below it is the only thing that reads as a quote.
 function rqHeadNode(h) {
   const [name, ic] = RQ_APPS[rqBase(h.app)] || [h.appName || "답장", "send"];
-  // The computer is its own .mon-pc span, like every other row's machine chip (a peer's card then differs only by that chip).
-  const meta = [name, h.label && h.label !== name ? h.label : "", h.model || ""].filter(Boolean).join(" · ");
   const at = h.at ? new Date(h.at) : null, when = at && !isNaN(at) ? rcWhen(at.toISOString()) : "";
-  // A comment: the landing card's head, a round avatar with the author's initial, the author's name, and where it came from in grey.
-  if (h.who) return el("div", { class: "rq-hd rq-who" }, el("span", { class: "rq-av", "aria-hidden": "true", text: [...h.who][0] || "?" }),
-    el("span", { class: "rq-meta", title: h.who }, el("b", { text: h.who }), el("span", { class: "rq-src", text: ` · ${h.src || name}` }), h.pc ? el("span", { class: "mon-pc", text: ` · ${h.pc}` }) : null),
-    when ? el("span", { class: "rc-time", text: when }) : null, ...(h.tail || []));
-  return el("div", { class: "rq-hd" }, el("span", { class: "dr-ic" }, icon(ICONS[ic] ? ic : "send")),
-    el("span", { class: "rq-meta", title: meta }, meta, h.pc ? el("span", { class: "mon-pc", text: ` · ${h.pc}` }) : null),
+  const to = h.who ? `${h.who}님께 답장` : name, src = h.who ? h.src || name : [h.label && h.label !== name ? h.label : "", h.model || ""].filter(Boolean).join(" · ");
+  return el("div", { class: `rq-hd${h.who ? " rq-who" : ""}` },
+    h.who ? el("span", { class: "rq-av", "aria-hidden": "true", text: [...h.who][0] || "?" }) : el("span", { class: "dr-ic" }, icon(ICONS[ic] ? ic : "send")),
+    el("span", { class: "rq-meta", title: [to, src].filter(Boolean).join(" · ") }, el("b", { class: "rq-wt", text: to }),
+      src ? el("span", { class: "rq-src", text: ` · ${src}` }) : null, h.pc ? el("span", { class: "mon-pc", text: ` · ${h.pc}` }) : null),
     when ? el("span", { class: "rc-time", text: when }) : null, ...(h.tail || []));
 }
 // A body is long when it would take more than RQ_LINES lines at a phone's width (about 36 Korean characters a line).
@@ -3176,6 +3178,22 @@ function rqAttachNode(d = {}) {
     el("span", { text: left ? "첨부: 없음 · 파일을 붙일 수 없는 곳이에요" : "첨부: 없음" }),
     left && left.length ? el("span", { class: "dr-wn", text: `남는 파일: ${left.join(", ")}` }) : null));
 }
+// The original a draft answers, as a quiet quote (owner 2026-11-03): muted, behind one 2px left rule, two lines by default with a
+// 원문 보기 toggle. It reads as someone else's words, plainly separate from the draft under it (원칙 5). Open state is kept per card key.
+const RQ_OG = new Set();
+function rqOrigNode(key, o) {
+  const text = String(o.text || ""), long = [...text].length > 84 || text.includes("\n"), open = RQ_OG.has(key);
+  const box = el("div", { class: `rq-orig${long && !open ? " clamp" : ""}`, title: text },
+    el("div", { class: "rq-oh" }, el("span", { class: "rq-ow", text: o.who || "원문" })),
+    el("span", { class: "rq-ot", text }));
+  if (!long) return el("div", { class: "rq-og-wrap" }, box);
+  const btn = el("button", { class: "btn text rq-og", type: "button", "aria-expanded": String(open), text: open ? "원문 접기" : "원문 보기", onclick: ev => {
+    ev.stopPropagation();
+    const on = !RQ_OG.has(key); if (on) RQ_OG.add(key); else RQ_OG.delete(key);
+    box.classList.toggle("clamp", !on); btn.setAttribute("aria-expanded", String(on)); btn.textContent = on ? "원문 접기" : "원문 보기";
+  } });
+  return el("div", { class: "rq-og-wrap" }, box, btn);
+}
 // The card. c: { key, cls, attrs, head (rqHeadNode), label + labelCls (a sub-head such as "답장 초안 · 메시지 2개"), to: [label, value],
 // recv (a mail draft's own 받는이·참조 rows, 10-decision-card.js draftToNode; given instead of `to`), subject,
 // original: {who, text} (what the draft answers), body, attach (a draft's attachments / attachmentsNone / cannotAttach, or the caller's own files node),
@@ -3184,14 +3202,13 @@ function rqAttachNode(d = {}) {
 function rqCard(c) {
   const foot = c.sent ? rqSentNode(c.sentAt) : c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
   const att = c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach || {});
-  const cm = !!c.head.who;   // a comment card: its text plain under the head, the post title a grey hint, the draft in one grey box
+  const cm = !!c.head.who;   // a comment card: its text quoted under the head, the post title a grey hint, the draft as the body
   return el("div", { class: `rq${cm ? " cm" : ""}${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
     rqHeadNode(c.head),
+    c.original && c.original.text ? rqOrigNode(c.key, c.original) : null,
     c.label ? el("div", { class: c.labelCls || "rq-lb", text: c.label }) : null,
-    cm && c.original && c.original.text ? el("div", { class: "rq-ct", title: c.original.text, text: c.original.text }) : null,
     c.to ? (cm ? null : el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" }))) : c.recv || null,   // a mail keeps its 받는이 rows
     c.subject ? el("div", { class: "dr-sub rq-sub", text: c.subject }) : null,
-    !cm && c.original && c.original.text ? el("div", { class: "rq-orig", title: c.original.text }, c.original.who ? el("b", { class: "rq-ow", text: c.original.who }) : null, el("span", { class: "rq-ot", text: c.original.text })) : null,
     rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean), foot);
 }
 // 보냈어요 in the card's own foot: the action row's place, so nothing below moves (the landing demo card's 보냈어요 · 방금).
@@ -4634,6 +4651,8 @@ const CMDS = [
   { c: "/login", d: "공급자 로그인 (링크가 열려요)", args: [{ n: "공급자", opts: slProviders, opt: true }] },
   { c: "/logout", d: "공급자 로그아웃", args: [{ n: "공급자", opts: slProviders }] },
   { c: "/quota", d: "공급자·모델별 사용 한도" },
+  // 이 컴퓨터의 셸 (owner 2026-11-03): typed here, run in the terminal sheet - the composer's own way to the shell, not a gateway command.
+  { c: "/셸", d: "이 컴퓨터 터미널에서 명령 실행", args: [{ n: "명령", free: true }] },
   { c: "/help", d: "명령 전체 설명" },
 ];
 // The command palette lists the same commands.
@@ -4820,6 +4839,9 @@ async function stopTarget() {
     scheduleState();
   } catch (e) { toast(e.message, true); }
 }
+// 컴포저에서 셸로 (owner 2026-11-03): "/셸 <명령>" is not a gateway command - it opens this computer's terminal sheet with the command in it
+// (36-shell.js openShell). Keep a bare "/셸" in the box and say what is missing instead of sending it anywhere.
+const SH_CMD = /^\/(?:셸|shell)(?:\s+([\s\S]*))?$/;
 // A slash command (typed, or a card button) goes to the gateway for the current target; its answer joins the chat as a card.
 async function sendCommand(text) {
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
@@ -4845,7 +4867,15 @@ async function sendChat(how) {
   ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
   if (typeof asTplEnd === "function") asTplEnd();
   chatStick = true; termStick = true;
-  if (text.startsWith("/")) { sendCommand(text); return; }
+  if (text.startsWith("/")) {
+    const m = SH_CMD.exec(text);
+    if (m) {
+      const command = (m[1] || "").trim();
+      if (!command) { toast("터미널에서 실행할 명령을 /셸 뒤에 적어 주세요", true); ta.value = text; autosize(); return; }
+      openShell({ command }); return;
+    }
+    sendCommand(text); return;
+  }
   const mode = how || (isWorking(t) ? "steer" : undefined), reply = rpTake();
   if (isSettingsT(t) && !TURN.has(t)) TURN.set(t, Date.now() - 5000);
   try {
@@ -6046,17 +6076,18 @@ function pjFiltered() {
   const q = PJ.q.trim().toLowerCase(), rows = projRows((PRJ && PRJ.projects) || []);
   return rows.filter(r => (PJ.view === "all" || r.st.k === PJ.view) && (!q || `${prjTitle(r.p)} ${prjPurpose(r.p)}`.toLowerCase().includes(q)));
 }
-// One row: name + last activity, the one status line, the milestone bar. A waiting row leads with the question's session.
+// One row: name + the one status line (with milestone count and last activity), the state tag at the right. A waiting row names its session.
 function prjRow(r) {
-  const { p, st } = r, ms = prjMiles(p), done = ms.filter(m => m.done).length, pct = ms.length ? Math.round(done / ms.length * 100) : 0;
+  const { p, st } = r, ms = prjMiles(p), done = ms.filter(m => m.done).length;
   const chat = prjChat(p), unread = chat ? ts(chat).unread : 0, at = prjLastAt(p), sel = current === "project" && ppCur === p.key;
-  const line = st.lane ? `${st.word} · ${st.lane.title || st.lane.name}` : st.k === "done" ? `끝남 · 목표를 모두 마쳤어요` : st.word;
+  const line = [st.lane ? (st.lane.title || st.lane.name) : prjPurpose(p), ms.length ? `${done}/${ms.length} 단계` : "", prjAgo(at)].filter(Boolean).join(" · ");
+  const tone = st.tone === "att" ? "warn" : st.tone;
   return el("button", { class: `pl-row${sel ? " on" : ""}${unread ? " unread" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${line} · 열기`, onclick: () => go("project", p.key) },
     el("span", { class: `dot ${st.tone}` }),
     el("span", { class: "pl-b" },
-      el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) }), unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "pl-at", text: prjAgo(at) })),
-      el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: line })),
-      ms.length ? el("span", { class: "pl-p" }, el("span", { class: `pl-bar${done === ms.length ? " done" : ""}`, role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })), el("span", { class: "pl-pn", text: `${done}/${ms.length}` })) : null));
+      el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) }), unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null),
+      el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: line }))),
+    el("span", { class: "li-end" }, el("span", { class: `tag ${tone}`, text: st.word }), icon("chev", "chev")));
 }
 function pjSearch() {
   return el("label", { class: "pl-search" }, icon("search"),
@@ -6098,7 +6129,8 @@ function pjPaintRows() {
   if (showBuiltin) {
     nodes.push(el("div", { class: "pl-gh", role: "presentation", text: "내 설정" }));
     nodes.push(el("button", { class: `pl-row sub${current === "project" && ppCur === builtin.key ? " on" : ""}`, type: "button", "data-key": builtin.key, onclick: () => go("project", builtin.key) },
-      el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: "내가 바꾼 것을 봐요" })))));
+      el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: "내가 바꾼 것을 봐요" }))),
+      el("span", { class: "li-end" }, icon("chev", "chev"))));
   }
   clear(box).append(...nodes);
 }
@@ -6617,7 +6649,7 @@ function renderContext() {
   for (const p of C.processes.filter(x => x.kind !== "lane" || laneAlive(x))) {
     const cs = compactState(p.compaction);
     const inFlight = p.compaction && (p.compaction.state === "queued" || p.compaction.state === "compacting");
-    const btn = el("button", { class: "btn tonal", type: "button", disabled: !p.running || inFlight, onclick: ev => busy(ev.currentTarget, async () => {
+    const btn = el("button", { class: "btn tonal sm", type: "button", disabled: !p.running || inFlight, onclick: ev => busy(ev.currentTarget, async () => {
       const r = await api("/api/compact", "POST", { target: p.name });
       toast(r.state === "queued" ? `${p.name}: 작업 중이라 끝나면 압축해요` : `${p.name}: 압축을 시작했어요`);
       loadContext(true);
@@ -6912,18 +6944,18 @@ function renderProviders() {
   const box = $("#providers");
   const list = P.providers;
   const wrap = el("div", {});
-  wrap.append(el("div", { class: "sec sec-act" }, `${list.filter(isConnected).length}개 연결`,
+  wrap.append(el("div", { class: "sec sec-act" }, el("span", { text: "공급자" }), el("span", { class: "tag", text: `${list.filter(isConnected).length}개 연결` }),
     el("button", { class: "btn tonal sm", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
   if (!list.length) wrap.append(emptyNode("공급자가 없어요"));
   const row = p => {
     const name = p.name || p.id;
-    const sub = [p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
+    const on = isConnected(p), sub = [p.account || p.masked || (on ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
     // each provider opens its own screen: the login or key, and for a subscription its accounts, switch rules and 한도에 걸렸을 때
-    return el("button", { class: "li tap prow", type: "button", "data-prov": p.id, onclick: () => go("provider", p.id) }, el("span", { class: "avatar", text: [...name][0] || "?" }),
-      el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null,
-          el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" })),
+    return el("button", { class: "li tap prow", type: "button", "data-prov": p.id, onclick: () => go("provider", p.id) },
+      el("span", { class: "lead" }, el("span", { class: `dot ${on ? "ok" : needsAttention(p) ? "warn" : ""}` })),
+      el("span", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
         sub ? el("div", { class: "sup", text: sub }) : null),
-      icon("chev", "lead"));
+      el("span", { class: "li-end" }, el("span", { class: `tag ${on ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }), icon("chev", "chev")));
   };
   // Login accounts first, then API keys; an unconfigured provider sits with the way it can be set up.
   const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);
@@ -7543,12 +7575,12 @@ function pushSection() {
     }
   } else if (!pushCapable()) rows.push(li("bell", ios && !standalone ? "iPhone은 홈 화면에 추가한 앱에서 알림을 켤 수 있어요" : "이 브라우저는 알림을 지원하지 않아요"));
   else if (Notification.permission === "denied") rows.push(li("bell", "알림 권한이 막혀 있어요"));
-  else if (!subscribed) rows.push(li("bell", "알림", el("button", { class: "btn", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, "알림 켜기")));
+  else if (!subscribed) rows.push(li("bell", "알림", el("button", { class: "btn inrow", type: "button", onclick: ev => pushEnable(ev.currentTarget) }, "알림 켜기")));
   rows.push(...appNotifyRows());
   if (subscribed) {
-    rows.push(li("bell", "알림 확인", el("button", { class: "btn tonal", type: "button", onclick: ev => pushTest(ev.currentTarget) }, "테스트 알림 보내기"), el("button", { class: "btn text", type: "button", onclick: ev => pushDisable(ev.currentTarget) }, "끄기")));
+    rows.push(li("bell", "알림 확인", el("button", { class: "btn tonal inrow", type: "button", onclick: ev => pushTest(ev.currentTarget) }, "테스트 알림"), el("button", { class: "btn text inrow", type: "button", onclick: ev => pushDisable(ev.currentTarget) }, "끄기")));
   }
-  return [el("div", { class: "sec", text: "앱 · 알림" }), el("div", { class: "list" }, ...rows)];
+  return [el("div", { class: "sec", text: "앱과 알림" }), el("div", { class: "list" }, ...rows)];
 }
 
 /* ---------- settings: 업데이트 (hub/selfupdate.ts, /api/update*) ---------- */
@@ -7858,22 +7890,32 @@ function renderSettings() {
   if (box.contains(document.activeElement) && openMenu) return;
   const om = M && M.orchestrator;
   const connected = P ? P.providers.filter(isConnected).length : null;
-  const row = (ic, title, sub, onclick, trail) => el("button", { class: "li tap", type: "button", onclick: ev => onclick(ev.currentTarget) }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), sub ? el("span", { class: "sup", text: sub }) : null, trail === undefined ? icon("chev", "lead") : trail);
+  // One settings row: lead icon, a title with its one-line description, then the right slot (a value or a status tag) and the chevron.
+  const row = (ic, title, sub, onclick, trail) => el("button", { class: "li tap", type: "button", onclick: ev => onclick(ev.currentTarget) },
+    el("span", { class: "lead" }, icon(ic)),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null),
+    trail === null ? null : el("span", { class: "li-end" }, trail === undefined ? null : trail, icon("chev", "chev")));
+  const sec = title => el("div", { class: "sec", text: title });
+  const list = (...rows) => el("div", { class: "list" }, ...rows.filter(Boolean));
 
-  clear(box).append(el("div", { class: "list" },
-    row("model", "모델 · 폴백", om ? `${modelName(om.model)} · ${thinkKo(om.thinking)}` : "", () => openModels("orchestrator")),
-    row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
-    row("usage", "사용량", "", () => go("usage")),
-    row("key", "API 월 한도", budgetSub(), () => budgetDialog()),
-    row("context", "컨텍스트", "", () => go("context")),
-    row("harness", "구성", "시스템 지도", () => go("harness")),
-    mnRow(),
-    row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
-    row("chat", "대화 탭", chatTabMode() === "main" ? "메인 대화" : "마지막으로 보던 대화", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, null),
-    msHubRow(),
-    webAccessRow(row),
-    devicesRow(row)),
-    ...pushSection(), ...updateSection());
+  clear(box).append(
+    sec("모델"), list(
+      row("model", "모델 · 폴백", om ? `${modelName(om.model)} · ${thinkKo(om.thinking)}` : "", () => openModels("orchestrator")),
+      row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
+      row("usage", "사용량", "", () => go("usage")),
+      row("key", "API 월 한도", budgetSub(), () => budgetDialog()),
+      row("context", "컨텍스트", "", () => go("context"))),
+    sec("연결"), list(
+      msHubRow(),
+      webAccessRow(row),
+      devicesRow(row),
+      mnRow()),
+    sec("표시"), list(
+      row(themeIc(), "화면 모드", "밝게 또는 어둡게", () => toggleTheme(), el("span", { class: "tag", text: themeIs() === "dark" ? "다크" : "라이트" })),
+      row("chat", "대화 탭", chatTabMode() === "main" ? "채팅을 열면 메인 대화부터 시작해요" : "채팅을 열면 마지막으로 보던 대화부터 시작해요", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, el("span", { class: "tag", text: chatTabMode() === "main" ? "메인" : "마지막" }))),
+    ...pushSection(),
+    sec("시스템"), list(row("harness", "구성", "시스템 지도", () => go("harness"))),
+    ...updateSection());
 }
 
 /* ---------- settings: 계정 (/api/accounts: aliases, current account and why, switch rules, script) ---------- */
@@ -8147,7 +8189,7 @@ function renderDevices() {
   const row = d => el("button", { type: "button", class: "li tap", "data-dev": d.id, onclick: () => dvOpen(d) },
     el("span", { class: "lead" }, el("span", { class: `dot ${d.last_used && Date.now() - Date.parse(d.last_used) < 864e5 ? "ok" : ""}`, "aria-hidden": "true" })),
     el("span", { class: "tx" }, el("div", { class: "hd", text: d.name }), el("div", { class: "sup", text: `${dvDate(d.created)} 연결 · ${dvUsed(d)}` })),
-    el("span", { class: "dcs-trail" }, d.current ? el("span", { class: "tag ok", "data-current": "1", text: "이 기기" }) : null, icon("chev", "lead")));
+    el("span", { class: "li-end" }, d.current ? el("span", { class: "tag ok", "data-current": "1", text: "이 기기" }) : null, icon("chev", "chev")));
   const self = DEV.items.some(d => d.current);
   // the add action lives in the section header (docs/ui-spec.md 설정 행); a browser without a passkey gets one more row in the list
   const addSelf = el("button", { type: "button", class: "li tap", "data-dev-self": "1", onclick: () => dvNew(true) },
@@ -8211,7 +8253,7 @@ function dvNew(self) {
 }
 
 // 설정 → Discord: the bot connection (token, server id, owner id; GET/PUT/DELETE /api/discord/connection, POST .../check, hub/discord-connection.ts)
-// and what also goes to Discord by conversation (GET/PUT /api/discord/post, hub/discord-post.ts; the per-class switches are in 설정 → 앱 · 알림). The web app always gets everything; a switch that is off
+// and what also goes to Discord by conversation (GET/PUT /api/discord/post, hub/discord-post.ts; the per-class switches are in 설정 → 앱과 알림). The web app always gets everything; a switch that is off
 // keeps that kind on the web only. The switches show once Discord is enabled; the gateway reads the connection only at start, so a change
 // waits for a restart (restart_needed).
 const DP_KINDS = [["chat", "대화 답장", "내가 디스코드에서 묻지 않은 대화의 답"], ["lanes", "세션 보고", "세션이 올리는 진행·완료 보고"], ["worklog", "작업내역", "작업 기록 메시지"], ["web_lanes", "웹에서 시작한 세션", "웹이나 터미널에서 시작한 세션도 디스코드에 채널을 만들어요"]];
@@ -8364,8 +8406,8 @@ function msSummary() {
   return on.length ? `${on[0]}${on.length > 1 ? ` 외 ${on.length - 1}개` : ""} 연결됨` : "설정 안 됨";
 }
 function msHubRow() {
-  const r = el("button", { class: "li tap", type: "button", onclick: () => go("messengers") }, el("span", { class: "lead" }, icon("chat")), el("span", { class: "tx" }, el("div", { class: "hd", text: "메신저" })),
-    el("span", { class: "sup", text: msSummary() }), icon("chev", "lead"));
+  const r = el("button", { class: "li tap", type: "button", onclick: () => go("messengers") }, el("span", { class: "lead" }, icon("chat")),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: "메신저" }), el("div", { class: "sup", text: msSummary() })), el("span", { class: "li-end" }, icon("chev", "chev")));
   r.dataset.msHub = "";
   return r;
 }
@@ -8374,8 +8416,9 @@ function renderMessengers() {
   if (!MSS.asked) loadMessengerIndex();
   clear($("#messengers")).append(el("div", { class: "list" }, ...MS_IDS.map(id => {
     const m = msItem(id), [tag, tone] = m ? msTag(m) : ["", ""];
-    const r = el("button", { class: "li tap", type: "button", onclick: () => go(id) }, el("span", { class: "lead" }, icon(id === "discord" ? "discord" : "chat")), el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] })),
-      el("span", { class: "dcs-trail" }, ...(tag ? [el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" })] : []), icon("chev", "lead")));
+    const r = el("button", { class: "li tap", type: "button", onclick: () => go(id) }, el("span", { class: "lead" }, icon(id === "discord" ? "discord" : "chat")),
+      el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), el("div", { class: "sup", text: msLine(id, m, null) })),
+      el("span", { class: "li-end" }, ...(tag ? [el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" })] : []), icon("chev", "chev")));
     r.dataset.msRow = id;
     return r;
   })));
@@ -8766,8 +8809,8 @@ function renderWebAccess() {
     el("div", { class: "sec", text: "자동 연결" }), onboardingPanel("web-access")];
   if (cf) nodes.push(el("div", { class: "sec", text: "상태" }), el("div", { class: "list" }, waTunnel(d),
     el("button", { type: "button", class: "li tap", "data-wa-devices": "1", onclick: () => go("devices") },
-      el("span", { class: "lead" }, icon("key")), el("span", { class: "tx" }, el("div", { class: "hd", text: "연결된 기기 (패스키)" })),
-      el("span", { class: "sup", text: `${d.devices}대` }), icon("chev", "lead"))));
+      el("span", { class: "lead" }, icon("key")), el("span", { class: "tx" }, el("div", { class: "hd", text: "연결된 기기 (패스키)" }), el("div", { class: "sup", text: "이 웹앱에 들어올 수 있는 브라우저" })),
+      el("span", { class: "li-end" }, el("span", { class: "tag", text: `${d.devices}대` }), icon("chev", "chev")))));
   if (cf && !d.cloudflared_found) nodes.push(el("div", { class: "list" }, el("div", { class: "li" }, el("span", { class: "tx" },
     el("div", { class: "hd", text: "cloudflared가 없어요" }), el("div", { class: "sup dcs-err", "data-wa-cf-missing": "1", text: "터미널에서 brew install cloudflared 를 실행해 주세요." })))));
   const det = msAdvanced("data-wa-advanced", WA.advOpen, () => waAdvanced(d, f));
@@ -11987,11 +12030,11 @@ async function dmReload(seq = DM.seq, scroll = false) {
 function dmClose() { DM.open = null; DM.view = null; DM.seq++; DM.loading = false; cmPaintAll(); convTitle(); }
 const DM_ATTACH = { image: "(사진)", video: "(동영상)", audio: "(음성 메시지)", file: "(파일)" };
 const dmText = m => m.text || (m.attach && m.attach.length ? DM_ATTACH[m.attach[0]] || "(파일)" : "(내용 없음)");
-function dmMsgNode(m, peer, first) {
-  const bub = el("div", { class: "kk-bub" }, el("span", { text: dmText(m) }));
-  if (m.mine) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-id": m.id }, el("div", { class: "kk-line" }, el("span", { class: "kk-time", text: kkTime(m.at) }), bub));
-  return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-id": m.id }, first ? kkAvatar(peer) : el("span", { class: "kk-av sp", "aria-hidden": "true" }),
-    el("div", { class: "kk-mb" }, first ? el("div", { class: "kk-name", text: peer }) : null, el("div", { class: "kk-line" }, bub, el("span", { class: "kk-time", text: kkTime(m.at) }))));
+function dmMsgNode(m, peer) {
+  // 읽기 전용 스레드 (owner 2026-11-03): 한 메시지 한 줄 - 보낸 사람·시각 줄, 아래 본문, 메시지 사이는 얇은 선. 말풍선을 쌓지 않아 겹치지 않아요.
+  return el("div", { class: `dm-m${m.mine ? " mine" : ""}`, "data-id": m.id },
+    el("div", { class: "dm-mh" }, el("span", { class: "dm-mn", text: m.mine ? "나" : peer }), el("span", { class: "dm-mt", text: kkTime(m.at) })),
+    el("div", { class: "dm-mb", text: dmText(m) }));
 }
 function dmPaintChat(stick) {
   const open = DM.open, v = DM.view;
@@ -12007,7 +12050,7 @@ function dmPaintChat(stick) {
   const nodes = []; let prev = null;
   for (const m of v.messages) {
     if (!prev || kkDay(prev.at) !== kkDay(m.at)) nodes.push(el("div", { class: "kk-date", text: kkDate(m.at) }));
-    nodes.push(dmMsgNode(m, v.peer, !prev || prev.mine !== m.mine || kkDay(prev.at) !== kkDay(m.at)));
+    nodes.push(dmMsgNode(m, v.peer));
     prev = m;
   }
   if (!nodes.length) nodes.push(el("div", { class: "kk-note", text: "메시지가 없어요" }));
@@ -13173,8 +13216,16 @@ function monTopNodes(it) {
   const out = [], banner = monBannerOf(it);
   if (it.mon) out.push(monProgNode(it.mon, { tag: !banner }));
   if (banner) out.push(banner);
-  if (it.mon && it.mon.watch && !banner) out.push(el("div", { class: "mon-actions" }, monRunBtn(it.mon)));
+  const acts = [...(it.mon && it.mon.watch && !banner ? [monRunBtn(it.mon)] : []), monConvBtn(it)].filter(Boolean);
+  if (acts.length) out.push(el("div", { class: "mon-actions" }, ...acts));
   return out;
+}
+// 대화로 이어가기 (owner 2026-11-03): the item's own settings conversation (the same go() as the 대화 icon). A mail or KakaoTalk item is
+// already a conversation, so it has no button of its own here.
+function monConvBtn(it) {
+  const app = monSettingsApp(it);
+  if (!app || monMailList(it) || kkItem(it)) return null;
+  return el("button", { class: "btn tonal sm mon-continue", type: "button", "data-k": "continue", title: "이 항목으로 대화를 이어가요", text: "대화로 이어가기", onclick: () => go("monitoring", `c:${asConv(app)}`) });
 }
 // 감시 소식 opens with every plain monitor at a glance: how far its wait has come, how it last ended, and the last line it said. Down and failed
 // rows come first, so what needs the owner is at the top; a tap opens that monitor.
@@ -13255,7 +13306,10 @@ const monHead = it => {
   const banner = monBannerOf(it), st = monState(it);
   // An app with reply drafts waiting opens the one 답장 확인 queue on its own drafts (30-replies.js).
   const rqBtn = it.app && it.drafts ? el("button", { class: "btn tonal sm rq-go", type: "button", "data-k": "replies", text: `답장 확인 ${it.drafts}`, onclick: () => rqOpen(it.inst, it.pc) }) : null;
-  const row = [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st ? el("span", { class: "cv-p", text: st }) : null), rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+  // 대화로 이어가기 (owner 2026-11-03): every item continues in its own chat - the conversation its settings talk in (asOpen's own go()).
+  // A mail or KakaoTalk item is already a conversation, so the way in is its row and this button stays out of the way there.
+  const convBtn = monConvBtn(it);
+  const row = [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st ? el("span", { class: "cv-p", text: st }) : null), convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);
@@ -13960,7 +14014,7 @@ function ntHomeRow(n, label = "답변 필요") {
   const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open, chg = n.kind === "watch" ? nwChangeNode(nwChangeLine(n.text)) : null;   // a loose [ask] notice has no decision: its conversation names where it waits
   // A watch change is the landing page's 가격 알림 row: a 32px round icon tile, the title, the change line under it, the time at the right.
   const lead = chg ? el("span", { class: `nt-wi${n.read ? "" : " new"}`, "aria-hidden": "true" }, icon("bell")) : el("span", { class: label ? "dot att" : `dot${n.read ? "" : n.cls === "alert" ? " err" : " un"}` });
-  return el("div", { class: `hr hrx${chg ? " nt-w" : ""}`, "data-nid": n.id },
+  return el("div", { class: `hr hrx${chg ? " nt-w" : ""}${n.read ? "" : " un"}`, "data-nid": n.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": label ? `${title} · ${label}` : title },
       lead,
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha" }, ...(chg ? [chg] : [[n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), ntWhen(n)].filter(Boolean).join(" · ")]))),
@@ -15993,7 +16047,7 @@ function prOpen() {
   PR.ov = ovOpen(() => prClose(false));
   document.addEventListener("keydown", prKey, true);
   prSheet();
-  motionIn(PR.node.firstElementChild, "rise", 200);
+  motionIn(PR.node.firstElementChild, "rise");
   const cur = PR.node.querySelector(".pr-row.on") || PR.node.querySelector(".pr-row");
   if (cur) cur.focus({ preventScroll: true });
   prLoad();
@@ -16026,7 +16080,9 @@ function mnDialog() {
   inp.focus();
 }
 const mnRow = () => MN.info && el("button", { class: "li tap", type: "button", onclick: mnDialog },
-  el("span", { class: "lead" }, icon("term")), el("span", { class: "tx" }, el("div", { class: "hd", text: "이 컴퓨터 이름" })), el("span", { class: "sup", text: MN.info.name }), icon("chev", "lead"));
+  el("span", { class: "lead" }, icon("term")),
+  el("span", { class: "tx" }, el("div", { class: "hd", text: "이 컴퓨터 이름" }), el("div", { class: "sup", text: "다른 컴퓨터의 목록에 이 이름으로 보여요" })),
+  el("span", { class: "li-end" }, MN.info.name ? el("span", { class: "tag", text: MN.info.name }) : null, icon("chev", "chev")));
 mnLoad();
 
 $("#brand").onclick = () => (prTrig() ? prOpen() : go("home"));
@@ -16690,7 +16746,7 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
     },
   };
   document.body.append(node);
-  motionIn(node, "fade", 160); motionIn(box, "rise");
+  motionIn(node, "fade", 150); motionIn(box, "rise");
   ov = ovOpen(() => h.close(false));
   FS.push(h);
   document.addEventListener("keydown", key, true);
