@@ -172,7 +172,7 @@ describe("files dotz did not stage", () => {
 		const v = await open(390, 900);
 		await waitFor(v, `typeof draftFilesNode === "function"`);
 		const got = await v.evaluate(`(() => { DRF.st.KX1 = { files: [], canAttach: false, library: false, editable: false, tracked: false }; const b = draftFilesNode({ ref: "KX1", toLabel: "받는이", to: "a@b.c", body: "x", attachments: [{ name: "신청.xlsx" }, { name: "증빙.pdf" }] }, { edit: false }); document.body.append(b); return [b.hidden, b.querySelectorAll(".dr-fn").length, b.querySelector(".dr-warn .dr-wt span")?.textContent].join("|"); })()`);
-		expect(got).toBe("false|2|첨부파일이 실제로 붙었는지 확인하지 못했어요");
+		expect(got).toBe("false|2|첨부가 실제로 붙었는지 몰라요");
 	});
 });
 

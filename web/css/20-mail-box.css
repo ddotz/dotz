@@ -53,12 +53,10 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-cx:hover { background: var(--active); color: var(--fg); }
 .mbox-cx .ic { width: 12px; height: 12px; }
 .mbox-sf { display: flex; align-items: center; gap: 8px; flex: none; padding: 10px 16px; }
-.mbox-hint { margin-left: auto; color: var(--fg-3); font-size: 12px; }
 @media (max-width: 639px) {
   .mbox-sheet { inset: 0; width: auto; max-height: none; border: 0; border-radius: 0; }
   .mbox-sheet.min { inset: auto 0 0 0; max-height: 44px; border-radius: 12px 12px 0 0; }
   .mbox-sb { flex: 1; }
-  .mbox-hint { display: none; }
   .mbox-sf { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
 }
 
@@ -78,4 +76,30 @@ span.mr-star:not(.on) { opacity: .45; }
 @media (max-width: 639px) {
   .mr .tag.mr-unread, .mr .mr-clip { display: none; }
   .mr .rc-hd .tag { font-size: 10.5px; padding: 0 6px; }
+}
+
+/* Phone: one scrolling row of folders, an icon-only selection bar on one line, 44px targets, and rows without the 받는 사람 line
+   (the open mail shows it). The sheet and the reply keep their buttons clear of the home indicator. */
+@media (max-width: 639px) {
+  .mr-filter { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 4px 12px 8px; overscroll-behavior-x: contain; }
+  .mr-filter::-webkit-scrollbar { display: none; }
+  .mr-filter .mr-f { flex: none; height: 44px; padding: 0 14px; border-radius: 22px; font-size: 13.5px; }
+  #mon-tl .mr .mr-to { display: none; }
+  .mr-star { width: 32px; height: 32px; }
+  .mr-chk, .mbox-all { width: 20px; height: 20px; }
+  .mr-slot button.cchip.mr-act { height: 44px; border-radius: 22px; }
+  .mbox-bar { padding: 2px 4px 6px 10px; }
+  .mbox-bar.on { flex-wrap: wrap; gap: 2px; }
+  .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
+  .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
+  .mbox-bar.on .mbox-bt { display: none; }
+  .mbox-open .mbox-b, .mbox-mode { height: 44px; border-radius: 22px; padding: 0 14px; font-size: 13.5px; }
+  .mbox-reply { margin: 12px 0 16px; padding: 10px 12px 12px; }
+  .mbox-save { min-height: 44px; }
+  .mbox-attach, .mbox-sh .ib { width: 44px; height: 44px; }
+  .mbox-cx { width: 32px; height: 32px; }
+  .mbox-chip { height: 36px; border-radius: 18px; }
+  .mbox-in { height: 44px; font-size: 16px; }
+  .mbox-ta { font-size: 16px; line-height: 24px; }
+  .mbox-sh { height: calc(48px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
 }
