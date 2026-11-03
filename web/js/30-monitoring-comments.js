@@ -330,7 +330,7 @@ async function cmMakeDraft(c) {
   catch (e) { CM.drafting.delete(c.id); cmPaintChat(false); toast(e.message, true); }
 }
 // The thread's draft as the one reply card (10-reply-card.js): the same head, body and 보내기 · 고치기 · 보내지 않기 as the 답장 확인 queue;
-// 원문 보기 (web/js/10-draft-original.js) opens the comment it answers as its own panel on the left of the card (a 초안 | 원문 toggle on a phone).
+// The card sits right under the comment it answers, so it has no 원문 보기 bar of its own (the send sheet keeps one: 10-draft-original.js).
 async function cmRestore(code) {
   try { await cmApi(`/api/comments/drafts/${enc(code)}/restore`, "POST", {}); toast("초안을 되돌렸어요"); cmReload(); cmIntgSoon(); } catch (e) { toast(e.message, true); }
 }
@@ -354,8 +354,7 @@ function cmDraftCard(d) {
         edit: () => { CM.revising = d.code; cmPaintChat(false); },
         drop: ev => run(ev.currentTarget, async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/drop`, "POST", {}); rqDroppedToast(d.mail ? null : () => cmRestore(d.code)); await cmReload(); }),
       } }) });
-  const org = orgNodes({ ref: d.code, toLabel: "대상" }, null, wrap, card);
-  wrap.append(org.bar, el("div", { class: "od-stage" }, org.orig, card));
+  wrap.append(card);
   return wrap;
 }
 

@@ -71,6 +71,7 @@ const boot = async (v: View, theme: "light" | "dark", hash: string) => {
 	await run(v, `${hash}`);
 };
 const bg = (v: View, sel: string) => q<string>(v, `return getComputedStyle(document.querySelector(${JSON.stringify(sel)})).backgroundColor`);
+const fg = (v: View, sel: string) => q<string>(v, `return getComputedStyle(document.querySelector(${JSON.stringify(sel)})).color`);
 
 for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 	describe(`app list at ${width}px`, async () => {
@@ -83,15 +84,15 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 			expect(rows["i:mail"]).toEqual({ nb: ["3"], unreplied: ["미답장 1"] });
 			expect(rows["i:kakao"]).toEqual({ nb: [], unreplied: ["미답장 1"] });
 			expect(rows["peer:i:mail"]!.unreplied).toEqual(["미답장 2"]);
-			expect(await bg(v, '#mon-side .nb.unreplied')).toBe("rgb(194, 65, 12)");
+			expect(await fg(v, '#mon-side .nb.unreplied')).toBe("rgb(194, 65, 12)");
 			expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= ${width}`)).toBe(true);
 			await shot(v, `app-list-${width}-light.png`);
 		});
 		test("dark theme keeps both badges apart and readable", async () => {
 			await boot(v, "dark", `go("monitoring")`);
 			await waitFor(v, `document.querySelector('#mon-side .cv-row[data-k="i:youtube"] .nb.unreplied')`);
-			expect(await bg(v, '#mon-side .nb.unreplied')).toBe("rgb(255, 154, 77)");
-			expect(await bg(v, '#mon-side .cv-row[data-k="i:youtube"] .nb:not(.unreplied)')).not.toBe("rgb(255, 154, 77)");
+			expect(await fg(v, '#mon-side .nb.unreplied')).toBe("rgb(255, 154, 77)");
+			expect(await bg(v, '#mon-side .cv-row[data-k="i:youtube"] .nb:not(.unreplied)')).not.toBe(await bg(v, '#mon-side .nb.unreplied'));
 			await shot(v, `app-list-${width}-dark.png`);
 		});
 	});
@@ -107,13 +108,13 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 			await shot(v, `comments-list-${width}-light.png`);
 
 			await run(v, `document.querySelector("#cm .kk-row").click()`);
-			await waitFor(v, `CM.open && !CM.loading && document.querySelectorAll("#cm .kk-m.in .tag.unreplied").length === 2`);
-			expect(await q<string[]>(v, `return [...document.querySelectorAll("#cm .kk-m .unrep-no")].map(b => b.textContent)`)).toEqual(["답장 안 함", "답장 안 함"]);
-			expect(await q<number>(v, `return document.querySelectorAll("#cm .kk-m.me .tag.unreplied").length`)).toBe(0);
+			await waitFor(v, `CM.open && !CM.loading && document.querySelectorAll("#cm .kk-m:not(.mine) .tag.unreplied").length === 2`);
+			expect(await q<string[]>(v, `return [...document.querySelectorAll("#cm .kk-m .cm-no")].map(b => b.textContent)`)).toEqual(["답장 안 함", "답장 안 함"]);
+			expect(await q<number>(v, `return document.querySelectorAll("#cm .kk-m.mine .tag.unreplied").length`)).toBe(0);
 			await shot(v, `comments-thread-${width}-light.png`);
 
 			// the pill and the button leave at the tap, before the request answers
-			expect(await q<boolean>(v, `const b = document.querySelector("#cm .unrep-no"); b.click(); return b.hidden`)).toBe(true);
+			expect(await q<boolean>(v, `const b = document.querySelector("#cm .cm-no"); b.click(); return b.hidden`)).toBe(true);
 			await expectReq(r => r.method === "POST" && decodeURIComponent(r.path) === "/api/comments/comment/cm:youtube:c1/no-reply");
 		});
 	});
@@ -142,8 +143,8 @@ describe("home and the peer's mail", async () => {
 		expect(asked.body).toMatchObject({ action: "mail-draft", args: { key: "peer-1", instruction: "금요일까지 보낸다고" } });
 		await waitFor(v, `!document.querySelector("dialog[open]")`);
 		// 답장 안 함 is in the row's ⋯ (the row keeps only the 초안 작성 pencil)
-		await run(v, `document.querySelector("#mon-tl .mr .mr-more").click()`);
-		await waitFor(v, `[...document.querySelectorAll(".menu .mi")].some(m => m.textContent.trim() === "답장 안 함")`);
+		// the draft request's answer repaints the list (closing a menu opened before it), so the ⋯ is tapped again until its menu stays
+		await waitFor(v, `[...document.querySelectorAll(".menu .mi")].some(m => m.textContent.trim() === "답장 안 함") || (document.querySelector(".menu") || document.querySelector("#mon-tl .mr .mr-more").click(), false)`);
 		await run(v, `[...document.querySelectorAll(".menu .mi")].find(m => m.textContent.trim() === "답장 안 함").click()`);
 		const sent = await expectReq(r => r.method === "POST" && r.path === "/api/peer/proxy" && (r.body as { action?: string })?.action === "fyi");
 		expect(sent.body).toMatchObject({ action: "fyi", args: { key: "peer-1", on: true } });
