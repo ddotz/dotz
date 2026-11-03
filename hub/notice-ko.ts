@@ -37,11 +37,12 @@ const PAIRS: string[][] = [["이", "가"], ["은", "는"], ["을", "를"], ["과
 // A word we put in place of a name takes the particle its last syllable asks for (모니터링 + 로 -> 모니터링으로).
 function josa(t: string): string {
 	const fixed = t.replace(/\u0001([^\u0001\u0002]*)\u0002([ \t]?)(이에요|예요|으로|로|이|가|은|는|을|를|과|와)(?![가-힣])/g, (m, word: string, gap: string, p: string) => {
+		if (gap && p === "이") return m;
 		const code = (word.at(-1) ?? "").charCodeAt(0) - 0xac00;
 		if (code < 0 || code > 11171) return m;
 		const batchim = code % 28, pair = PAIRS.find(x => x.includes(p))!;
 		const pick = pair[0] === "으로" ? (batchim === 0 || batchim === 8 ? "로" : "으로") : batchim > 0 ? pair[0]! : pair[1]!;
-		return `${word}${gap}${pick}`;
+		return `${word}${pick}`;
 	});
 	return fixed.replace(/[\u0001\u0002]/g, "");
 }

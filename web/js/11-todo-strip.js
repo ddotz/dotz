@@ -264,7 +264,8 @@ function msgNode(e) {
       const isNote = e.kind === "out" && !!e.update_key && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:")));
       const { tone, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text), true) : { tone: "", text };
       // The orchestrator keeps its leading status emoji; a session's tone is a short word in the meta line instead.
-      const body = (tone && !laneMsg ? `${TONE_EMOJI[tone]} ` : "") + parsed;
+      const alertRow = e.target === "alert";   // an 알림 row marks its state with the small tag like a session's report, not an emoji in the sentence
+      const body = (tone && !laneMsg && !alertRow ? `${TONE_EMOJI[tone]} ` : "") + parsed;
       if (isNote) {
         const n = el("div", { class: "pn", tabindex: "0", role: "button" }, el("span", { class: "mt", text: hm }), el("span", { class: "pt", text: body.replace(/^진행 중:\s*/, "") }));
         n.onclick = () => { if (!getSelection().toString()) n.classList.toggle("open"); };
@@ -273,7 +274,7 @@ function msgNode(e) {
       const name = e.kind === "lane_report" ? String(e.lane ?? "") : fromLane ? targetName(e.source) : e.target === "alert" ? "알림" : e.target === "worklog" ? "작업내역" : isRestart(e) ? "게이트웨이" : botName;
       if (e.kind === "out" && e.card && Array.isArray(e.card.facts)) return el("div", { class: "bm" }, el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null), rpQuote(e), cardNode(e.card));
       const card = e.kind === "lane_report" && !isLaneT(target) ? " rep" : e.target === "alert" ? " alert" : "";
-      const lt = laneMsg && tone ? LANE_TONE[tone] : null;
+      const lt = (laneMsg || alertRow) && tone ? (alertRow && tone === "ask" ? ["warn", "확인 필요"] : LANE_TONE[tone]) : null;
       const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null, lt ? el("span", { class: `tag ${lt[0]}`, text: lt[1] }) : null);
       const pc0 = e.kind === "out" || e.kind === "lane_report" ? parseChoices(parsed) : null, pc = pc0 && choiceAsks(e, tone, pc0) ? pc0 : null;
       // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, and a tap on it opens
@@ -284,7 +285,7 @@ function msgNode(e) {
         const line = humanAlert(shown);
         // A watch's change line (89,000원 → 72,000원) stands under the sentence with the old value struck, not only folded in the raw text.
         const chg = nwChangeNode(nwChangeLine(body));
-        return el("div", { class: `bm${card}` }, head, mdNode(line), chg ? el("div", { class: "nw-line" }, chg) : null, line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
+        return el("div", { class: `bm${card}` }, head, mdNode(line), chg ? el("div", { class: "nw-line" }, chg) : null, line.trim() === shown.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: shown })));
       }
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       const fl = fileLines(body), host = pqPc(eventTarget(e) || ""), md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text), files = pathFiles(md, host);
