@@ -7,7 +7,8 @@
 #v-chat.cv-listing > :not(.cv-side), #v-monitoring.cv-listing > :not(.cv-side) { display: none; }
 
 .cv-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 48px; padding: 6px 16px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
-.cv-row + .cv-row { border-top: 1px solid var(--line); }
+.cv-row + .cv-row { margin-top: 2px; }
+.cv-side .cv-bar { border-bottom: 0; }
 /* the open conversation: a small accent dot in the row's left padding (the slot every row already has, so text never shifts); phone only — the wide layout already highlights the row */
 .cv-row { position: relative; }
 @media (max-width: 1099px) { .cv-row.on::before { content: ""; position: absolute; top: 50%; left: 5px; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); } }
@@ -102,3 +103,10 @@
 .bell-gh:first-child { padding-top: 4px; }
 .bell-none { padding: 32px 16px; color: var(--fg-3); text-align: center; font: 400 14px/20px var(--font); }
 .hr .dot.un { background: var(--accent); }
+/* The bell's tab lists: no dividers. What waits for you or is unread sits on the full card, the rest on a faint fill; a 2px gap keeps the rows apart. */
+.bell-list .hn { display: flex; flex-direction: column; gap: 2px; border-radius: 0; background: none; overflow: visible; }
+.bell-list .hr { border-radius: var(--r-ctl); background: color-mix(in srgb, var(--card) 55%, transparent); }
+.bell-list .hr + .hr { box-shadow: none; }
+.bell-list .hr:hover, .bell-list .hr:has(.dot:is(.un, .err, .att)) { background: var(--card); }
+/* In the 알림 timeline every message carried a red dot; it is a quiet grey now, the new one arrives by moving in, not by colour. */
+#v-chat:has(#bell-tabs:not([hidden])) #tl > .bm.alert .mn::before { background: var(--fg-3); opacity: .6; }

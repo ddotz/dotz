@@ -296,7 +296,7 @@ function convBar() {
   const views = [["all", "전체", 0], ["need", "답 필요", need], ["unread", "안 읽음", unread]];
   return el("div", { class: "cv-bar" },
     el("div", { class: "cv-tabs", role: "tablist", "aria-label": "대화 보기" }, ...views.map(([k, label, n]) =>
-      el("button", { class: `cchip mr-f${CVF.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(CVF.view === k), "data-view": k, onclick: () => { CVF.view = k; CVF.more = CVF_PAGE; convSig = ""; convSchedule(); convSide.scrollTop = 0; } }, label, n ? el("span", { class: "mr-fn", text: n > 99 ? "99+" : String(n) }) : null))),
+      el("button", { class: `cchip mr-f${CVF.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(CVF.view === k), "data-view": k, onclick: () => { CVF.view = k; CVF.more = CVF_PAGE; convSig = ""; convSchedule(); convSide.scrollTop = 0; } }, label, cntSpan(`cv-filter:${k}`, "mr-fn", n)))),
     el("button", { class: "btn text cv-read", type: "button", "data-k": "read", disabled: !fyi.length, title: "답이 필요한 대화는 그대로 둬요", onclick: ev => convReadAll(ev.currentTarget, fyi), text: fyi.length ? `${fyi.length}개 읽음 처리` : "읽음 처리" }));
 }
 // The listed conversations are read up to their newest message here at once and on the hub (POST /api/read, one per conversation); a failure
@@ -333,7 +333,7 @@ function convRow(r) {
   return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
-    el("span", { class: "cv-m" }, el("span", { class: "cv-m2" }, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null, r.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${r.unreplied}개`, text: `미답장 ${r.unreplied > 99 ? "99+" : r.unreplied}` }) : null)));
+    el("span", { class: "cv-m" }, el("span", { class: "cv-m2" }, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${r.unreplied}개`, text: `미답장 ${r.unreplied > 99 ? "99+" : r.unreplied}` }) : null)));
 }
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
@@ -366,7 +366,7 @@ const cvReadAllBar = el("button", { class: "btn text sm cv-readall", id: "cvread
 pjAppMenu.before(cvReadAllBar);
 /* ---- the tabs of the 알림 conversation (owner 2026-11-01; classes: hub/notice-class.ts, n.cls) ---- */
 // 전체 is the timeline as it was; the other tabs list that class of NT.items instead. A "log" notice is in no tab and in no count.
-const BELL = { tab: "all", sig: "", lsig: "" };
+const BELL = { tab: "all", sig: "", lsig: "" }, BELL_SEEN = new Set();
 const BELL_TABS = [["all", "전체"], ["ask", "답변 필요"], ["result", "결과"], ["news", "새 소식"], ["alert", "경고"]];
 const bellUnread = tab => NT.items.reduce((c, n) => c + (!n.read && n.cls !== "log" && (tab === "all" || n.cls === tab) ? 1 : 0), 0);
 function bellTab(tab) { BELL.tab = tab; bellPaint(); }
@@ -392,15 +392,19 @@ function bellPaint() {
   if (sig !== BELL.sig) {
     BELL.sig = sig;
     clear(box).append(...BELL_TABS.map(([k, label], i) => el("button", { class: `chip${k === tab ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === tab), "data-k": k, onclick: () => bellTab(k) },
-      el("span", { class: "tx", text: label }), counts[i] ? el("span", { class: `nb${k === "ask" ? " warn" : k === "alert" ? " err" : ""}`, "aria-label": `안 읽은 알림 ${counts[i]}개`, text: counts[i] > 99 ? "99+" : String(counts[i]) }) : null)));
+      el("span", { class: "tx", text: label }), cntSpan(`bell:${k}`, `nb${k === "ask" ? " warn" : k === "alert" ? " err" : ""}`, counts[i], { "aria-label": `안 읽은 알림 ${counts[i]}개` }))));
   }
-  if (!listed) { BELL.lsig = ""; return; }
+  if (!listed) { BELL.lsig = ""; BELL_SEEN.clear(); BELL_SEEN.seeded = false; return; }
   const lsig = JSON.stringify([tab, NT.items.filter(n => n.cls === tab).map(n => [n.id, n.read, n.ignored, n.updated || n.ts])]);
   if (lsig === BELL.lsig) return;
   BELL.lsig = lsig;
   const top = list.scrollTop;
   clear(list).append(...bellRows(tab));
   list.scrollTop = top;
+  // a notification that arrives while a tab is open slides in at the top of it; opening a tab or drawing it again moves nothing
+  if (BELL_SEEN.scope !== tab) { BELL_SEEN.clear(); BELL_SEEN.seeded = false; BELL_SEEN.scope = tab; }
+  const rows = [...list.querySelectorAll(".hr[data-nid]")], fresh = rows.length ? freshKeys(BELL_SEEN, rows.map(r => r.dataset.nid)) : new Set();
+  for (const r of rows) if (fresh.has(r.dataset.nid)) motionIn(r, "top");
 }
 function convPaint() {
   convRaf = 0;

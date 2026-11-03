@@ -48,6 +48,8 @@ body { font: 400 14px/22px var(--font); font-variant-numeric: tabular-nums; font
 /* Korean line breaks like Netflix subtitles (web/DESIGN.md Type): whole words, balanced titles, no one-word last line in body text;
    only code and paths may break inside a token. .phr keeps a fixed phrase ("무엇이 어디에") on one line when it fits. */
 h1, h2, h3, h4, .ttl, figcaption { text-wrap: balance; }
+/* short fixed copy (empty states, notes, card questions, meta lines): balanced, so a phrase never leaves one word on the last line */
+.empty, .hc-none, .cv-empty, .bell-none, .note, .cc-note, .dr-none, .od-note, .mb-note, .sup, .dc-q, .dc-ds, .cc-hd { text-wrap: balance; }
 p, li, blockquote, dd { text-wrap: pretty; }
 code, pre, kbd, samp { word-break: normal; overflow-wrap: anywhere; }
 .phr { display: inline-block; max-width: 100%; }
