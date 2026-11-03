@@ -210,7 +210,7 @@ test("from 1100px the list sits beside the overview, and a section page opens ov
 	expect(await q(v, `return !document.querySelector("#v-projects").hidden && document.querySelector(".views").classList.contains("pp")`)).toBe(true);
 	// the open project is the selected row, and the chips stay on one line
 	expect(await q(v, `return document.querySelector("#pl-list .pl-row.on .pl-n").textContent`)).toBe("프로젝트 1");
-	expect(await q(v, `return getComputedStyle(document.querySelector("#pl-list .pl-row.on")).backgroundColor`)).toBe("rgb(242, 244, 246)");
+	expect(await q(v, `return getComputedStyle(document.querySelector("#pl-list .pl-row.on")).backgroundColor`)).toBe("rgb(232, 235, 238)");
 	expect(await q(v, `return document.querySelector(".pl-chips").scrollWidth > document.querySelector(".pl-chips").clientWidth`)).toBe(true);
 	expect(await q<number>(v, `const b = [...document.querySelectorAll(".pl-chips .mr-f")].map(x => Math.round(x.getBoundingClientRect().top)); return new Set(b).size`)).toBe(1);
 	await shot(v, "05-list-overview-1280.png");
