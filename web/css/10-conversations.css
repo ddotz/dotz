@@ -112,7 +112,6 @@
 #v-chat:has(#bell-tabs:not([hidden])) #tl > .bm.alert .mn::before { background: var(--fg-3); opacity: .6; }
 
 /* the result file of a finished worker under its system line (11-todo-strip.js hcSysFiles); a running line does not pulse */
-.cv-sys .dot.pri { animation: none; }
 .tl-in > .cv-sys-f { display: flex; flex-wrap: wrap; justify-content: center; align-self: center; gap: 6px; max-width: 100%; margin: 6px auto 0; }
 .cv-sys-f .fatt { height: 44px; max-width: 100%; background: var(--card); text-decoration: none; cursor: pointer; }
 .cv-sys-f .fatt:hover { background: var(--hover); }

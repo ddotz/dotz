@@ -173,7 +173,8 @@ button.conn:disabled { cursor: default; }
 /* buttons: one system for every page and card. Kind: primary (accent fill, the default), secondary (.tonal), quiet (.text), danger;
    size: md (default, 40px) and .sm (36px). A touch screen gets a 44px target. Card buttons keep their own class names (.dc-act,
    .dc-go, .dc-back, .dc-manual) and are aliased here, so the look is defined once. */
-:root { --btn-h: 40px; --btn-h-sm: 36px; --btn-hit: 44px; }
+/* size tiers (docs/ui-spec.md 버튼): 기본 --btn-h 40, 작은 --btn-h-sm 36 (.sm), 행 안 --btn-h-row 32 (.inrow). --btn-hit is the touch target, not a tier. */
+:root { --btn-h: 40px; --btn-h-sm: 36px; --btn-h-row: 32px; --btn-hit: 44px; }
 .ib { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); padding: 0; }
 .ib:hover { background: var(--hover); color: var(--fg); }
 .ib.pri { background: var(--accent); color: var(--on-accent); border-radius: 50%; }
@@ -192,4 +193,14 @@ button.conn:disabled { cursor: default; }
 .btn.danger:hover { background: color-mix(in srgb, var(--err) 12%, transparent); opacity: 1; }
 .btn.danger.fill { background: var(--err); color: #fff; padding: 0 12px; }
 .btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+/* 행 안 tier (docs/ui-spec.md 버튼, 설정 행): the button or field in the right slot of a row. 32px high, 13px; on a touch screen the box stays 32px and ::after widens the hit area to 44px. */
+.btn.inrow { position: relative; height: var(--btn-h-row); padding: 0 12px; font-size: 13px; }
+.btn.inrow.text, .btn.inrow.danger { padding: 0 10px; }
 @media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back, .dc-manual { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }
+@media (pointer: coarse), (max-width: 639px) { .btn.inrow { height: var(--btn-h-row); min-height: 0; } .btn.inrow::after { content: ""; position: absolute; inset: -6px 0; } }
+/* settings row (docs/ui-spec.md 설정 행): the existing .li (lead icon, .tx = .hd title + .sup one-line description) plus ONE right slot, .li-end,
+   vertically centred by .li's align-items. The slot holds one control: a 행 안 button, a .hs-sw switch, a .sel / .fi at a fixed width, or a value.
+   A row-level add action is not a row: it is a text or tonal .sm button in the section header (.sec.sec-act, 06-harness.css). */
+.li > .li-end { flex: none; display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.li-end .fi, .li-end .sel { width: 160px; height: var(--btn-h-row); }
+@media (pointer: coarse) { .li-end .fi, .li-end .sel { height: var(--btn-h-sm); } }
