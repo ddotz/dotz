@@ -82,6 +82,20 @@ export const leaksHandoff = (text: string): boolean => /\bFor you:[\s\S]*\bNow:[
 export const LATER_LINE = "백그라운드 작업 중";
 export const isLater = (text: string): boolean => /^\s*\[later\]\s*$/i.test(text);
 
+// `-` is the no-op sentinel: a turn with nothing to say answers it alone and the gateway posts nothing. A model sometimes wraps
+// it in a short meta note ("Already posted. -", or the note then "-" on its own line); that is still a no-op. Only a short
+// single-paragraph note counts: one with a status marker, a [file] line, a list, a quote or a numbered choice, or one that asks something, is a real answer.
+const SILENT_NOTE_MAX = 160;
+const NOT_A_NOTE = /^[ \t]*(?:[-*>][ \t]|\*\*\d+\)|\d+[.)][ \t]|\[file\][ \t])/i;
+export function isSilent(text: string): boolean {
+	const t = text.trim();
+	if (t === "-") return true;
+	const m = /^([\s\S]*\S)\s+-$/.exec(t);
+	const note = m?.[1]?.trim();
+	if (!note || note.length > SILENT_NOTE_MAX || /[?？]$/.test(note) || /\n[ \t]*\n/.test(note)) return false;
+	return note.split("\n").every(l => !NOT_A_NOTE.test(l) && !MARKER_LEAD.test(l) && !MARKER.test(l.trim()));
+}
+
 // A one-line preview's source text: the handoff block and an "Ask: " label are dropped, a lone `[later]` becomes LATER_LINE.
 export function previewSource(raw: string): string {
 	const text = stripHandoff(raw).replace(/^\s*Ask:[ \t]*/i, "");
