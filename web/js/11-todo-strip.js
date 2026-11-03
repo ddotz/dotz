@@ -222,7 +222,11 @@ function msgNode(e) {
       // A mail conversation's first message (hub/mail.ts postMail): sender, subject, then the summary and the body (원문).
       if (e.subject) {
         const key = e.mail || (isMailT(e.conv || "") ? mailOf(e.conv) : ""), html = !!(e.html || (MAILS.get(`mail:${key}`) || {}).html);
-        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: text.split("\n").slice(1).join("\n").trim(), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw) : undefined });
+        // The summary slot holds a real summary only: a sent mail has none (the collector gives its body's start, hub/mail.ts sentMailEvent), and a
+        // "summary" that is only the start of the mail's own body is drawn once, as the body.
+        const rec = MAILS.get(`mail:${key}`) || {}, rest = text.split("\n").slice(1).join("\n").trim(), sp = rcSplit(rest);
+        const noSum = e.dir === "out" || rec.dir === "out" || mailSumIsBody(sp.text, e.preview, rec.preview, sp.raw);
+        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: noSum ? "" : rest, ...(noSum ? { raw: sp.raw } : {}), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw) : undefined });
         // Gmail-like, top to bottom: the bar of icons (30-mail-box.js mailOpenBar, 초안 작성 and the ⋯ in it), the subject, the sender and time,
         // one muted line of 받는 사람 / 참조 that opens the full header (30-mail-thread.js), the summary, then the original.
         if (card && key) {
