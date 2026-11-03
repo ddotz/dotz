@@ -3,11 +3,48 @@
    '터미널에서 실행'이 셸 시트로 보내요 (web/js/14-slash-commands.js, 35-code-blocks.js, 36-shell.js). LOG_VIEW가 켜져도 이 버튼은 돌아오지 않습니다. */
 #vtog { display: none !important; }
 
-/* 대화 화면의 모양 (시제품 s-chat.js): 컴포저는 카드와 같은 18px, 인용·답 대기 줄은 10px, 답은 한 페이지처럼 조용히 (원칙 9·5) */
+/* 대화 화면의 모양 (시제품 s-chat.js·proto.css "/* chat *\/"): 컴포저는 카드와 같은 18px, 회색 상자와 그 아래 힌트 줄, 답은 한 페이지처럼 조용히 (원칙 9·5) */
 .sendrow { border-radius: var(--r-card) !important; }
 .sendrow.ulw { border-radius: var(--r-card) !important; }   /* ulw 테두리는 그대로, 모서리만 토큰에서 */
 .ub { border-radius: var(--r-ctl); }
 .dc-wait { border-radius: var(--r-ctl); }
+
+/* ---------- 채팅 대화 카드 안의 차례 (proto .cv: 머리 -> todo -> 타임라인 -> 진행 줄 -> 확인 카드 -> 컴포저) ---------- */
+/* todo 스트립: 대화 카드 안, 타임라인 바로 위, 카드와 같은 회색 면 (proto .todo) */
+#v-chat > .todo { background: var(--layer); }
+/* 서브에이전트 줄: 타임라인 아래 한 줄 (proto .run), 카드가 아니라 조용한 글줄 */
+#v-chat > .subs { flex: none; border-radius: 0; background: transparent; overflow: visible; }
+#v-chat > .subs .subsum { min-height: 28px; padding: 4px 10px; border-radius: var(--r-ctl); color: var(--fg-2); font: 500 12px/16px var(--font); }
+#v-chat > .subs .subsum .dot { width: 6px; height: 6px; }
+#v-chat > .subs .subsum .chev { width: 14px; height: 14px; }
+#v-chat > .subs .sublist { padding: 4px; border-radius: var(--r-ctl); background: var(--layer); }
+/* 타임라인 위아래 페이드는 흰 카드에서 흰색으로 사라져야 해요 (03-base의 --bg 페이드 위에) */
+#v-chat .chatbox::before { background: linear-gradient(var(--card), transparent); }
+#v-chat .chatbox::after { background: linear-gradient(transparent, var(--card)); }
+
+/* ---------- 컴포저: 시제품 .cmp — [첨부 · 글 · 원형 전송] 회색 18px 상자와 그 아래 힌트 줄(모델 칩) ---------- */
+#composer .sendrow { grid-template-columns: auto minmax(0, 1fr) auto !important; grid-template-areas: "at at at" "plus ta send" !important; align-items: flex-end; gap: 4px; }
+#composer .sendrow:not(.ulw) { padding: 6px 6px 6px 8px !important; border: 0 !important; border-radius: var(--r-card) !important; background: var(--layer) !important; }
+#composer .sendrow:not(.ulw):focus-within { border-color: transparent !important; }
+#composer .sendrow textarea { grid-area: ta; padding: 7px 4px; font-size: 15px; line-height: 22px; text-overflow: ellipsis; }
+#composer .sendrow textarea::placeholder { white-space: nowrap; text-overflow: ellipsis; }   /* 폰에서 긴 안내 글이 두 줄로 접혀 상자를 키우지 않게 한 줄로 (시제품 .cmp는 한 줄) */
+#c-attach { grid-area: plus; width: var(--btn-h-sm); height: var(--btn-h-sm); padding: 0; justify-content: center; border-radius: 50%; background: transparent; color: var(--fg-2); font-size: 0; }
+#c-attach .ic { width: 18px; height: 18px; }
+#c-attach:hover { background: var(--hover); color: var(--fg); }
+#send-btn { grid-area: send; width: 36px; height: 36px; }
+#cbar { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; min-height: 20px; margin: 4px 0 0; padding: 0 4px; overflow-x: auto; scrollbar-width: none; }
+#cbar::-webkit-scrollbar { display: none; }
+#cbar::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--fg-3); }
+#cbar:has(#c-model[hidden])::before { display: none; }
+#cbar .cchip { height: 20px; padding: 0 2px; background: transparent; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+#cbar button.cchip:hover { background: transparent; color: var(--fg); }
+#cbar .cchip.cown { opacity: 1; color: var(--fg-3); }
+#cbar .working { display: none !important; }
+@media (pointer: coarse) { #c-attach { width: 36px; height: 36px; } }
+
+/* 확인/질문 카드: 컴포저 바로 위에 붙어 있고, 흰 대화 카드 안에서도 한 면으로 읽히게 회색 위에 놓여요 (얇은 모양·동작은 그대로) */
+#composer > .dcard { background: var(--layer); }
+
 
 /* dotz_auth 입력 요청 (16-target-switcher-conversation.js authCard): 새 토큰의 입력칸과 버튼. 비밀 값은 type=password 그대로, 화면에만 보기/숨기기 */
 .au input:not([type=checkbox]) { height: var(--field-h); padding: 0 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--card); color: var(--fg); font-size: var(--fs-body); }
