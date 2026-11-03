@@ -129,17 +129,26 @@ function cardNode(c) {
 // A gateway system line (hub/outbound.ts `system`, e.g. "백그라운드 작업으로 맡겼어요: …"): one small muted line in the style of the
 // 여기까지 읽음 divider, no bubble or author. With a `worker` it opens that worker, and its state (S.work) is painted in place on each refresh.
 const SYS_NODES = new Map();   // worker id -> its line's status node (the newest drawing)
-const SYS_ST = { running: ["pri", "진행 중"], done: ["ok", "끝남"], failed: ["err", "실패"] };
+const SYS_ST = { running: ["pri", "진행 중"], done: ["ok", "완료"], failed: ["err", "실패"] };
 function paintSysLines() {
   for (const [id, st] of SYS_NODES) {
     if (!st.isConnected) { SYS_NODES.delete(id); continue; }
     const w = ((S && S.work) || []).find(x => x.id === id), s = w && (w.cancelled ? ["", "중단됨"] : SYS_ST[w.status]);
     st.hidden = !s;
     if (!s || st.dataset.s === s[1]) continue;
-    const was = st.dataset.s, paint = () => { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; };
+    const was = st.dataset.s, paint = () => { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; hcSysFiles(st, w); };
     st.dataset.s = s[1];
-    if (was) motionSwap(st, paint); else paint();   // running -> 끝남 changes in place; the first paint just draws
+    if (was) motionSwap(st.closest(".cv-sys") || st, paint); else paint();   // running -> 완료 changes in place (with the result file as a chip under the line); the first paint just draws
   }
+}
+// The result file of a finished worker: one chip row right under its line, replaced when the state is painted again.
+function hcSysFiles(st, w) {
+  const line = st.closest(".cv-sys");
+  if (!line) return;
+  const old = line.nextElementSibling;
+  if (old && old.classList.contains("cv-sys-f")) old.remove();
+  const files = w.status === "done" && !w.cancelled && Array.isArray(w.files) ? w.files.filter(f => f && f.path) : [];
+  if (files.length) line.after(el("div", { class: "cv-sys-f" }, ...files.map(f => { const name = f.name || String(f.path).split("/").pop(); return fileChip(name, fileMeta(name, f.size), VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : { href: fileUrl(f.path, false, f.pc) }); })));
 }
 function sysLine(e, text, hm) {
   const id = typeof e.worker === "string" ? e.worker : "", st = el("span", { class: "cv-sys-st", hidden: true }, el("span", { class: "dot" }), el("span"));
@@ -238,8 +247,10 @@ function msgNode(e) {
       }
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       const fl = fileLines(body), host = pqPc(eventTarget(e) || ""), md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text), files = pathFiles(md, host);
-      if (e.kind === "out" && !isRestart(e)) streamIn(md, `${e.ts}|${text.length}`, e.ts);
-      return el("div", { class: `bm${card}` }, head, rpQuote(e), md, filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc, e.ts) : null);
+      // A briefing-shaped answer (schedule rows, a mail line, counts) is drawn as a card of rows and chips (11-resultcard.js hcBriefNode).
+      const brief = e.kind === "out" && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
+      if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);
+      return el("div", { class: `bm${card}` }, head, rpQuote(e), brief || md, filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc, e.ts) : null);
     }
   }
 }
