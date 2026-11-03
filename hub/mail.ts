@@ -632,7 +632,8 @@ async function recordOutgoing(m: MailInput, key: string, target: string, deps: M
 	if (known) {
 		const replied = known.dir !== "out" && known.reply !== "replied";
 		if (replied) setMailReply(key, "sent", at);
-		return { ok: true, key, target, duplicate: true, direction: "out", ...(replied ? { replied: true as const } : {}) };
+		// `html` = the body is kept: a poster marks the sent mail done on it alone, so a repost answered by an older gateway is tried again.
+		return { ok: true, key, target, duplicate: true, direction: "out", ...(replied ? { replied: true as const } : {}), ...(known.html ? { html: true as const } : {}) };
 	}
 	const summary = m.summary ?? "";
 	const preview = summary ? "" : mailPreview(m.body);
