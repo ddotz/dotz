@@ -24,7 +24,7 @@
 #v-chat .chatbox::after { background: linear-gradient(transparent, var(--card)); }
 
 /* ---------- 컴포저: 시제품 .cmp — [첨부 · 글 · 원형 전송] 회색 18px 상자와 그 아래 힌트 줄(모델 칩) ---------- */
-#composer .sendrow { grid-template-columns: auto minmax(0, 1fr) auto !important; grid-template-areas: "at at at" "plus ta send" !important; align-items: flex-end; gap: 4px; }
+#composer .sendrow { grid-template-columns: auto minmax(0, 1fr) auto !important; grid-template-areas: "at at at" "plus ta send" !important; align-items: flex-end; gap: 0 4px; }   /* no row gap: the empty tray row above would add 4px of padding to the top only */
 #composer .sendrow:not(.ulw) { padding: 6px !important; border: 0 !important; border-radius: var(--r-card) !important; background: var(--layer) !important; }
 #composer .sendrow:not(.ulw):focus-within { border-color: transparent !important; }
 #composer .sendrow textarea { grid-area: ta; padding: 7px 4px; font-size: 15px; line-height: 22px; text-overflow: ellipsis; }
