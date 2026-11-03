@@ -137,6 +137,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hr .hb { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .hr .hn1 { display: flex; align-items: center; gap: 8px; min-width: 0; font: 500 var(--fs-row)/var(--lh-row) var(--font); }
 .hr .hn1 .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr.un .hn1 { font-weight: 600; }
 .hr .ha { min-width: 0; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hr .hp { flex: none; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); font-variant-numeric: tabular-nums; }
 .hr .hs.unreplied { color: var(--unreplied); font-weight: 600; }
@@ -308,6 +309,6 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 /* a task row stays quiet while it runs (no pulsing dot) and, once finished, carries its result file as a chip under the row (08-home.js workRow) */
 .hr.hrx { flex-wrap: wrap; }
 .hrx-m:has(+ .hrx-f) { padding-right: 16px; }
-.hrx-f { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; padding: 0 16px 14px 38px; }
+.hrx-f { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; padding: 0 16px 10px 36px; }
 .hrx-f .fatt { height: 44px; max-width: 100%; text-decoration: none; cursor: pointer; }
 .hrx-f .fatt:hover { background: var(--hover); }
