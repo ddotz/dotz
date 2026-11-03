@@ -506,7 +506,7 @@ describe("카카오톡 on a phone (390x844)", async () => {
 		const s = await q<Record<string, any>>(v, `const i = document.querySelector("#kk-q").getBoundingClientRect(), p = document.querySelector(".kk-rooms");
 			return { rows: [...document.querySelectorAll('.kk-pr')].map(r => r.dataset.chat), h: i.height, left: i.left, right: i.right, w: innerWidth, hScroll: p.scrollWidth - p.clientWidth, font: parseFloat(getComputedStyle(document.querySelector("#kk-q")).fontSize) }`);
 		expect(s.rows).toEqual(["100"]);
-		expect(s.h).toBeGreaterThanOrEqual(44);
+		expect(s.h).toBeGreaterThanOrEqual(40);   // docs/ui-spec.md 입력창: 터치 40px
 		expect(s.left).toBeGreaterThanOrEqual(0);
 		expect(s.right).toBeLessThanOrEqual(s.w);
 		expect(s.hScroll).toBeLessThanOrEqual(0);
@@ -1093,7 +1093,7 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const)
 			await waitFor(v, `KK.open === "200" && !KK.loading && KK.placed`);
 			const s = await q<Record<string, any>>(v, `const ro = document.querySelector("#kk-ro"); return { foot: document.querySelector("#kk-foot").hidden, ro: ro.hidden, text: ro.querySelector(".kk-ro-t").textContent, btn: ro.querySelector('[data-k="watch"]').textContent, h: Math.round(ro.querySelector('[data-k="watch"]').getBoundingClientRect().height), msgs: document.querySelectorAll("#kk-tl [data-log]").length }`);
 			expect(s).toMatchObject({ foot: true, ro: false, text: "감시하지 않는 방이에요. 읽기만 할 수 있어요", btn: "감시 시작", msgs: 6 });
-			expect(s.h).toBeGreaterThanOrEqual(44);
+			expect(s.h).toBeGreaterThanOrEqual(36);   // docs/ui-spec.md 버튼: 작은 단계 36px
 			await shot(v, `31-unwatched-${w}.png`);
 			await run(v, `document.querySelector('#kk-ro [data-k="watch"]').click()`);
 			expect((await expectReq(isReq("PUT", "/api/kakao/rooms/200"))).body).toEqual({ watched: true });

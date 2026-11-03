@@ -193,7 +193,7 @@ function kkFileNode(m, md) {
   return el("div", { class: `kk-bub card file${md.local ? "" : " off"}` },
     icon("file", "kk-fi"),
     el("span", { class: "kk-fb" }, el("span", { class: "kk-fn", title: md.name, text: md.name }), sub ? el("span", { class: "kk-sub", text: sub }) : null),
-    md.local ? el("a", { class: "btn tonal kk-open", href: kkFileUrl(m), target: "_blank", rel: "noopener", download: md.name, text: "열기" }) : el("span", { class: "kk-sub kk-nopc", text: "PC에 없음" }));
+    md.local ? el("a", { class: "btn tonal inrow kk-open", href: kkFileUrl(m), target: "_blank", rel: "noopener", download: md.name, text: "열기" }) : el("span", { class: "kk-sub kk-nopc", text: "PC에 없음" }));
 }
 // Like KakaoTalk: "<author of the original>에게 답장" over the quoted original, then the reply's own text. The quote is a button that jumps to
 // the original (kkJump), when the attachment names its logId.
@@ -591,7 +591,7 @@ function kkPaintChat() {
   const readOnly = open && !KK.loading && !KK.roomErr && !watching;
   kkFoot.hidden = kkFoot.hidden || !watching;
   kkRo.hidden = !readOnly;
-  if (readOnly) clear(kkRo).append(el("span", { class: "kk-ro-t", text: "감시하지 않는 방이에요. 읽기만 할 수 있어요" }), room ? el("button", { class: "btn tonal", type: "button", "data-k": "watch", text: "감시 시작", onclick: () => kkSetRoom(room, { watched: true }) }) : null);
+  if (readOnly) clear(kkRo).append(el("span", { class: "kk-ro-t", text: "감시하지 않는 방이에요. 읽기만 할 수 있어요" }), room ? el("button", { class: "btn tonal sm", type: "button", "data-k": "watch", text: "감시 시작", onclick: () => kkSetRoom(room, { watched: true }) }) : null);
   if (sig !== KK.headSig) {
     KK.headSig = sig;
     clear(kkHead);
