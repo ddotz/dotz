@@ -93,7 +93,7 @@ const SUBJECT: Record<string, string> = { "mail:loc-1": "계약서 확인 부탁
 const row = (t: string) => `[...document.querySelectorAll("#mon-tl .mr")].find(r => r.querySelector(".rc-title").textContent === ${JSON.stringify(SUBJECT[t])})`;
 const stateOf = (v: View, t: string) => q<string>(v, `const r = ${row(t)}; return r ? (r.querySelector(".rc-hd .tag") || {}).textContent || "" : "gone"`);
 const menuOf = async (v: View, t: string) => { await run(v, `${row(t)}.querySelector(".mr-more").click()`); await waitFor(v, `document.querySelector(".menu .mi")`); const l = await menuLabels(v); await run(v, `closeMenu()`); return l; };
-const inlineOf = (v: View, t: string) => q<string[]>(v, `return [...${row(t)}.querySelectorAll(".mr-slot button")].map(b => b.textContent)`);
+const inlineOf = (v: View, t: string) => q<string[]>(v, `return [...${row(t)}.querySelectorAll(".mr-slot button, .rc-hd > .mr-draft")].map(b => b.getAttribute("aria-label") || b.textContent)`);
 async function openList(v: View, peerItem: boolean) {
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S && typeof INTG !== "undefined" && INTG.items.length === 1`);
@@ -143,12 +143,14 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 		test("every incoming mail offers the same actions by its state, an outgoing one only 삭제, and the row buttons follow one rule", async () => {
 			await openList(v, false);
 			expect(await menuOf(v, "mail:loc-2")).toEqual(["초안 작성", "답장 필요로 표시", "삭제"]);
-			expect(await inlineOf(v, "mail:loc-1")).toEqual(["초안 작성", "답장 안 함"]);
-			expect(await inlineOf(v, "mail:loc-2")).toEqual(["초안 작성"]);   // 초안 작성 shows on every incoming row, owed or not
+			// one pencil, 초안 작성, on every incoming row, owed or not; 답장 안 함 is in the ⋯ (owner 2026-11-03: one Gmail-like row)
+			expect(await inlineOf(v, "mail:loc-1")).toEqual(["초안 작성"]);
+			expect(await menuOf(v, "mail:loc-1")).toEqual(["초안 작성", "답장 안 함", "삭제"]);
+			expect(await inlineOf(v, "mail:loc-2")).toEqual(["초안 작성"]);
 			// 답장 필요로 표시 on a mail with no state makes it 답장 필요, with the same buttons as every owed row
 			await pick(v, "mail:loc-2", "답장 필요로 표시");
 			await waitFor(v, `${row("mail:loc-2")}.querySelector(".rc-hd .tag")?.textContent === "답장 필요"`);
-			expect(await inlineOf(v, "mail:loc-2")).toEqual(["초안 작성", "답장 안 함"]);
+			expect(await inlineOf(v, "mail:loc-2")).toEqual(["초안 작성"]);
 			expect(reqs.map(r => [r.method, r.path])).toEqual([["DELETE", "/api/mail/loc-2/fyi"]]);
 			// the sent mail, under 보낸 메일: only 삭제, no row buttons
 			await run(v, `document.querySelector('#mon-tl .mr-f[data-filter="sent"]').click()`);
