@@ -173,3 +173,29 @@ for (const width of [1440, 390]) {
 		}
 	}, 30_000);
 }
+
+// A message about a mail the page does not hold (a deleted mail: its notice stays, its conversation leaves /api/conversations) is no card between the
+// mail rows; every row of the list is a mail with ☐, ☆ and ⋯. A plain report that is not about a mail keeps its card.
+test("a notice of a deleted mail is no control-less card in the mail list", async () => {
+	const v = await open(390);
+	const got = JSON.parse((await v.evaluate(`(() => {
+		cancelAnimationFrame(monRaf); window.renderMonitoring = () => {};
+		MON.filter = "all"; MON.mailFilter = "all";
+		const at = ${JSON.stringify(now)};
+		MAILS.set("mail:fx-1", { subject: "살아 있는 메일", from: "Kim <kim@example.com>", source: "fx", at });
+		MAILS.delete("mail:gone-1");
+		const notices = [
+			{ id: "n-gone", kind: "watch", tone: "", title: "KDB금융공학실", text: "[KDB금융공학실] 일일 환율 및 금리시황", open: "mail:gone-1", src: "mail:gone-1", key: "mail:gone-1", ts: at, at, read: true, app: "mail" },
+			{ id: "n-live", kind: "watch", tone: "", title: "Kim", text: "살아 있는 메일", open: "mail:fx-1", src: "mail:fx-1", ts: at, at, read: true, app: "mail" },
+			{ id: "n-plain", kind: "watch", tone: "", title: "메일", text: "동기화가 끝났어요", ts: at, at, read: true, app: "mail" },
+		];
+		const nodes = monChronoNodes({ key: "mail", name: "메일", app: "mail", mails: ["mail:fx-1", "mail:gone-1"], notices }, []);
+		document.querySelector("#mon-tl").replaceChildren(...nodes);
+		const cards = [...document.querySelectorAll("#mon-tl > .bm")];
+		return JSON.stringify({ nids: cards.map(c => c.dataset.nid || null).filter(Boolean), rows: cards.filter(c => c.classList.contains("mr")).map(c => [c.querySelector(".rc-title").textContent, !!c.querySelector(".mr-chk"), !!c.querySelector(".mr-star"), !!c.querySelector(".mr-more")]),
+			gone: document.querySelector("#mon-tl").textContent.includes("KDB금융공학실") });
+	})()`)) as string) as any;
+	expect(got.gone).toBe(false);
+	expect(got.nids).toEqual(["n-plain"]);
+	expect(got.rows).toEqual([["살아 있는 메일", true, true, true]]);
+}, 30_000);
