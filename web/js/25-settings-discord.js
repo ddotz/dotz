@@ -1,5 +1,5 @@
 // 설정 → Discord: the bot connection (token, server id, owner id; GET/PUT/DELETE /api/discord/connection, POST .../check, hub/discord-connection.ts)
-// and what also goes to Discord by conversation (GET/PUT /api/discord/post, hub/discord-post.ts; the per-class switches are in 설정 → 앱 · 알림). The web app always gets everything; a switch that is off
+// and what also goes to Discord by conversation (GET/PUT /api/discord/post, hub/discord-post.ts; the per-class switches are in 설정 → 앱과 알림). The web app always gets everything; a switch that is off
 // keeps that kind on the web only. The switches show once Discord is enabled; the gateway reads the connection only at start, so a change
 // waits for a restart (restart_needed).
 const DP_KINDS = [["chat", "대화 답장", "내가 디스코드에서 묻지 않은 대화의 답"], ["lanes", "세션 보고", "세션이 올리는 진행·완료 보고"], ["worklog", "작업내역", "작업 기록 메시지"], ["web_lanes", "웹에서 시작한 세션", "웹이나 터미널에서 시작한 세션도 디스코드에 채널을 만들어요"]];
