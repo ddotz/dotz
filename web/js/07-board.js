@@ -8,7 +8,7 @@ const BCOLS = 12, BGAP = 12, BROW = 40, BSTEP = BROW + BGAP;
 const B_EDGE = 56, B_SCROLL = 18, B_PRESS = 450;
 const boards = new Set();
 const narrowMQ = matchMedia("(max-width: 639px), (pointer: coarse) and (max-width: 767px)");
-narrowMQ.addEventListener("change", () => boards.forEach(b => b.paint()));
+narrowMQ.addEventListener("change", () => boards.forEach(b => { b.paint(); b.measure(); }));
 const bClamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const bHit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 const bOrder = (list, first) => list.sort((a, b) => a.y - b.y || (a.id === first ? -1 : b.id === first ? 1 : 0) || a.x - b.x);
@@ -49,13 +49,20 @@ function bLoad(store) {
   if (o && typeof o === "object" && !Array.isArray(o)) for (const [id, r] of Object.entries(o)) if (r && ["x", "y", "w", "h"].every(k => Number.isInteger(r[k]) && r[k] >= 0) && r.w > 0 && r.h > 0) out[id] = { x: r.x, y: r.y, w: r.w, h: r.h };
   return out;
 }
+// A px board (홈) counts rows in pixels, so a card can be exactly as tall as its content: an old layout (rows of BSTEP) is converted once.
+function bLoadPx(store) {
+  const raw = lsJson(store, null), out = bLoad(store);
+  if (!(raw && raw._u === "px")) for (const r of Object.values(out)) { r.y *= BSTEP; r.h *= BSTEP; }
+  return out;
+}
 const B_IGNORE = "button, input, textarea, select, a, summary, [role=button], .lrep, [data-nodrag]";
-// items: [{id, node, head (selector of the drag handle inside node), def {w,h}, min {w,h}, max {w,h}}]. `keep(id)` tells which saved
+// items: [{id, node, head (selector of the drag handle inside node), def {w,h}, min {w,h}, max {w,h}, fit}]. `keep(id)` tells which saved
 // cards that are not in `items` only wait for their data (and so keep their place) instead of being gone.
+// opts.px: heights are pixels (h of an item is still given in rows and converted); an item with `fit` is as tall as its content (measured).
 function makeBoard(container, key, opts = {}) {
-  const store = `dotz-board-${key}`;
-  let saved = bLoad(store), lastJson = JSON.stringify(saved), cur = [], lay = [], ghost = [], act = null, pending = null, swallow = false;
-  const wraps = new Map();
+  const store = `dotz-board-${key}`, px = !!opts.px, U = px ? 1 : BSTEP;
+  let raw0 = [], saved = px ? bLoadPx(store) : bLoad(store), lastJson = JSON.stringify(saved), cur = [], lay = [], ghost = [], act = null, pending = null, swallow = false;
+  const wraps = new Map(), fitH = new Map();
   const ph = el("div", { class: "bph", hidden: true });
   const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text sm", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text sm", type: "button", onclick: () => reset() }, "배치 초기화"));
   container.classList.add("board");
@@ -66,9 +73,12 @@ function makeBoard(container, key, opts = {}) {
   const pos = (n, r) => {
     n.style.left = `calc((100% + ${BGAP}px) * ${r.x} / ${BCOLS})`;
     n.style.width = `calc((100% + ${BGAP}px) * ${r.w} / ${BCOLS} - ${BGAP}px)`;
-    n.style.top = `${r.y * BSTEP}px`;
-    n.style.height = `${r.h * BSTEP - BGAP}px`;
+    n.style.top = `${r.y * U}px`;
+    n.style.height = `${r.h * U - BGAP}px`;
   };
+  const norm = it => !px ? it : it.fit ? { ...it, def: { w: it.def.w, h: fitH.get(it.id) ?? 160 }, min: { w: it.min.w, h: BGAP + 1 }, max: { w: it.max.w, h: 1e5 } }
+    : { ...it, def: { ...it.def, h: it.def.h * BSTEP }, min: { ...it.min, h: it.min.h * BSTEP }, max: { ...it.max, h: it.max.h * BSTEP } };
+  const bodyOf = w => w && [...w.children].find(c => !c.classList.contains("brz"));
   const rows = list => list.reduce((m, r) => Math.max(m, r.y + r.h), 0);
   function paint(list = lay, skip = null) {
     const narrow = narrowMQ.matches;
@@ -78,7 +88,7 @@ function makeBoard(container, key, opts = {}) {
       bOrder(lay.map(r => ({ ...r }))).forEach((r, i) => { const w = wraps.get(r.id); if (w) { w.removeAttribute("style"); w.style.order = i; } });
     } else {
       for (const r of list) { const w = skip === r.id ? ph : wraps.get(r.id); if (w) { pos(w, r); if (w !== ph) w.style.order = ""; } }
-      container.style.height = `${Math.max(0, rows(list) * BSTEP - BGAP)}px`;
+      container.style.height = `${Math.max(0, rows(list) * U - BGAP)}px`;
     }
     if (!skip && opts.onLayout) opts.onLayout();
   }
@@ -86,14 +96,14 @@ function makeBoard(container, key, opts = {}) {
     const o = {};
     for (const r of [...ghost, ...lay]) o[r.id] = { x: r.x, y: r.y, w: r.w, h: r.h };
     saved = o;
-    const j = JSON.stringify(o);
+    const j = JSON.stringify(px ? { ...o, _u: "px" } : o);
     if (j !== lastJson) { lastJson = j; try { localStorage.setItem(store, j); } catch { /* storage full or blocked */ } }
   }
   // Cards that sit side by side (same top row) take one height: the card being resized sets it, otherwise the tallest
   // does; each stays within its own min/max. Growing can overlap the cards below, so they are pushed and compacted again.
   function bEven(list, lead, first) {
     const rows = new Map();
-    for (const c of list) { if (!meta(c.id)) continue; if (!rows.has(c.y)) rows.set(c.y, []); rows.get(c.y).push(c); }
+    for (const c of list) { if (!meta(c.id) || meta(c.id).fit) continue; if (!rows.has(c.y)) rows.set(c.y, []); rows.get(c.y).push(c); }
     let changed = false;
     for (const g of rows.values()) {
       if (g.length < 2) continue;
@@ -105,13 +115,33 @@ function makeBoard(container, key, opts = {}) {
     bCompact(list, first, ghost);
   }
   const shown = new Set();   // card ids already drawn: only a card that newly arrives rises in
-  function set(items, keep = () => false) {
-    if (act) { pending = [items, keep]; return; }
+  // The fit cards' heights are read from the page: each takes its content's height, then the cards below slide up (no transition) and are saved.
+  function measure() {
+    if (!px || act || narrowMQ.matches) return;
+    let changed = false;
+    for (const r of lay) {
+      const it = meta(r.id), n = it && it.fit && bodyOf(wraps.get(r.id));
+      if (!n || !n.offsetHeight) continue;
+      const h = n.offsetHeight + BGAP;
+      fitH.set(r.id, h);
+      if (h !== r.h) { r.h = h; changed = true; }
+    }
+    if (!changed) return;
+    for (const c of bOrder([...lay])) bPush(lay, c);
+    bCompact(lay, null, ghost);
+    persist();
+    container.classList.add("bnt"); paint(); void container.offsetHeight; container.classList.remove("bnt");
+  }
+  const ro = px && typeof ResizeObserver === "function" ? new ResizeObserver(() => measure()) : null;
+  function set(raw, keep = () => false) {
+    if (act) { pending = [raw, keep]; return; }
+    raw0 = raw;
+    const items = raw.map(norm);
     cur = items;
     const fresh = freshKeys(shown, items.map(i => i.id));
     const ids = new Set(items.map(i => i.id));
     const placed = [];
-    for (const it of items) if (saved[it.id]) placed.push({ id: it.id, ...bFit(saved[it.id], it) });
+    for (const it of items) if (saved[it.id]) placed.push({ id: it.id, ...bFit(saved[it.id], it), ...(it.fit ? { h: it.def.h } : {}) });
     ghost = Object.entries(saved).filter(([id]) => !ids.has(id) && keep(id)).map(([id, r]) => ({ id, ...r }));
     bCompact(placed, null, ghost);
     for (const it of items) if (!saved[it.id]) { const d = bFit({ x: 0, y: 0, ...it.def }, it); placed.push({ id: it.id, ...d, ...bFree([...placed, ...ghost], d.w, d.h) }); }
@@ -122,6 +152,7 @@ function makeBoard(container, key, opts = {}) {
     for (const it of items) {
       let w = wraps.get(it.id);
       if (!w) { w = el("div", { class: "bi", "data-id": it.id }, ...["e", "s", "se"].map(d => el("div", { class: `brz ${d}`, "data-dir": d }))); wraps.set(it.id, w); container.append(w); }
+      w.classList.toggle("fit", !!it.fit);
       const h0 = it.node.querySelector(it.head);
       if (h0) { h0.classList.add("bhead"); h0.tabIndex = 0; h0.title = "끌거나 방향키로 옮기고, Shift+방향키로 크기를 바꿔요"; }
       const first = w.firstElementChild, old = first && !first.classList.contains("brz") ? first : null;
@@ -135,12 +166,14 @@ function makeBoard(container, key, opts = {}) {
     }
     bar.hidden = !items.length;
     paint();
+    if (ro) { ro.disconnect(); for (const it of items) { const n = it.fit && bodyOf(wraps.get(it.id)); if (n) ro.observe(n); } }
+    measure();
   }
   function reset() {
     if (opts.onReset) opts.onReset();
     saved = {}; ghost = []; lastJson = "{}";
     try { localStorage.removeItem(store); } catch { /* ignore */ }
-    set(cur);
+    set(raw0);
   }
   function settle() {
     const p = pending; pending = null;
@@ -228,13 +261,13 @@ function makeBoard(container, key, opts = {}) {
     if (mode === "move") {
       const left = act.cx - cr.left - act.ox, top = act.cy - cr.top - act.oy;
       w.style.left = `${left}px`; w.style.top = `${top}px`;
-      preview({ x: bClamp(Math.round(left / step), 0, BCOLS - r.w), y: Math.max(0, Math.round(top / BSTEP)) });
+      preview({ x: bClamp(Math.round(left / step), 0, BCOLS - r.w), y: Math.max(0, Math.round(top / U)) });
     } else {
       const maxW = Math.min(it.max.w, BCOLS - r.x), minW = Math.min(it.min.w, maxW);
       const pw = bClamp(act.w0 + (mode.includes("e") ? dx : 0), minW * step - BGAP, maxW * step - BGAP);
-      const pht = bClamp(act.h0 + (mode.includes("s") ? dy : 0), it.min.h * BSTEP - BGAP, it.max.h * BSTEP - BGAP);
+      const pht = bClamp(act.h0 + (mode.includes("s") ? dy : 0), it.min.h * U - BGAP, it.max.h * U - BGAP);
       w.style.width = `${pw}px`; w.style.height = `${pht}px`;
-      preview({ w: bClamp(Math.round((pw + BGAP) / step), minW, maxW), h: bClamp(Math.round((pht + BGAP) / BSTEP), it.min.h, it.max.h) });
+      preview({ w: bClamp(Math.round((pw + BGAP) / step), minW, maxW), h: bClamp(Math.round((pht + BGAP) / U), it.min.h, it.max.h) });
     }
   }
   function preview(patch) {
@@ -310,7 +343,8 @@ function makeBoard(container, key, opts = {}) {
       return;
     }
     const list = lay.map(x => ({ ...x })), t = list.find(x => x.id === it.id);
-    Object.assign(t, bFit(ev.shiftKey ? { ...r, w: r.w + d[0], h: r.h + d[1] } : { ...r, x: r.x + d[0], y: r.y + d[1] }, it));
+    const ks = px ? BSTEP : 1;
+    Object.assign(t, bFit(ev.shiftKey ? { ...r, w: r.w + d[0], h: r.h + (it.fit ? 0 : d[1] * ks) } : { ...r, x: r.x + d[0], y: r.y + d[1] * ks }, it));
     bPush(list, t); bCompact(list, it.id, ghost); bEven(list, ev.shiftKey ? it.id : null, it.id);
     lay = list; persist(); paint();
   });
@@ -319,7 +353,7 @@ function makeBoard(container, key, opts = {}) {
     const it = meta(id), r = lay.find(x => x.id === id);
     if (!it || !r) return;
     const list = lay.map(x => ({ ...x })), t = list.find(x => x.id === id);
-    Object.assign(t, bFit({ ...r, w, h }, it));
+    Object.assign(t, bFit({ ...r, w, h: it.fit ? r.h : h * U }, it));
     bPush(list, t); bCompact(list, id, ghost); bEven(list, id, id);
     lay = list; persist(); paint();
   }
@@ -330,7 +364,7 @@ function makeBoard(container, key, opts = {}) {
     ids.splice(i < 0 ? ids.length : i, 0, id);
     reorder(ids, id);
   }
-  const board = { set, reset, paint, bar, resize, moveBefore, order: () => bOrder(lay.map(x => ({ ...x }))).map(x => x.id), cancel: () => { if (act) cancel(); } };
+  const board = { set, reset, paint, measure, bar, resize, moveBefore, order: () => bOrder(lay.map(x => ({ ...x }))).map(x => x.id), cancel: () => { if (act) cancel(); } };
   boards.add(board);
   return board;
 }
