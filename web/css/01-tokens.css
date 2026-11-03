@@ -96,7 +96,8 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 /* the current tab: bold with an accent line under it; the unread count is a plain number after the label, the new-version mark a small dot */
 .ni.on::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -4px; height: 2px; border-radius: 1px; background: var(--accent); }
 .ni .nnb { min-width: 0; height: 16px; padding: 0; background: transparent; color: var(--warn); font-size: 12px; line-height: 16px; }
-.ni .nub { width: 6px; min-width: 6px; height: 6px; padding: 0; font-size: 0; line-height: 0; }
+/* a dot on a tab or menu label overlaps the label's bottom-right corner (the bot name's computer dot, docs/ui-spec.md 점 배지) */
+.ni .nub { position: absolute; right: 4px; bottom: 6px; width: 6px; min-width: 6px; height: 6px; padding: 0; font-size: 0; line-height: 0; }
 .ni .nub[hidden] { display: none; }
 .appbar .cmdk { grid-column: 9; display: flex; align-items: center; gap: 6px; width: auto; height: 28px; margin-left: 8px; padding: 0 4px 0 8px; border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); }
 .cmdk:hover { background: var(--card-hover); }

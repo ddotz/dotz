@@ -78,13 +78,17 @@ function monAttnCount(srcs) {
 // Deferred: paintAttn runs while the page's later files (INTG, NM) are still loading, and one paint per frame of changes is enough.
 let monAttnT = 0;
 const monAttnSoon = () => { if (!monAttnT) monAttnT = setTimeout(() => { monAttnT = 0; paintMonAttn(); }, 0); };
+// 모니터링 has news when nothing waits but something new came in there: an unread watch report, or an app with unread items (its row's badge).
+// The tab then carries the small dot, like the other tabs; reading them there clears it.
+const monNews = () => NT.items.some(n => n.kind === "watch" && !n.read && !n.dismissed) || INTG.items.some(it => ((it.needs || {}).unread | 0) > 0);
 function paintMonAttn() {
   const b = $("#nav-mon");
   if (!b) return;
-  const n = monAttnCount([{ apps: INTG.items, mons: NM.items }]), say = n ? `확인할 것 ${n}개` : "";
-  b.hidden = !n; b.title = say;
+  const n = monAttnCount([{ apps: INTG.items, mons: NM.items }]), news = !n && monNews(), say = n ? `확인할 것 ${n}개` : news ? "새 소식" : "";
+  b.hidden = !n && !news; b.title = say;
+  b.classList.toggle("nnb", !!n); b.classList.toggle("nub", news);
   if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";
-  b.parentElement.setAttribute("aria-label", n ? `모니터링, ${say}` : "모니터링");
+  b.parentElement.setAttribute("aria-label", say ? `모니터링, ${say}` : "모니터링");
 }
 // The badge and 답변 필요 read this computer's monitors on every tab: 홈 and 모니터링 refresh them themselves, any other tab here.
 // The other computers' snapshot (pqLoad) is read only by 모니터링.
