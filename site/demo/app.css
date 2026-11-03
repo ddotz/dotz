@@ -444,6 +444,7 @@ dialog.dlg.wide { width: min(640px, calc(100vw - 24px)); }
 dialog.dlg.cl { padding: 20px; overflow: auto; }
 /* a short confirm (dialog({ confirm: true }), ask()): a small centered box, a low sheet from the bottom on a phone */
 dialog.dlg.cf { width: min(360px, calc(100vw - 24px)); padding: 20px; overflow: auto; }
+dialog.dlg.cf[open] { display: flex; flex-direction: column; }
 dialog.dlg.cf .dbody { margin-top: 8px; }
 @media (max-width: 639px) {
   dialog.dlg.cf[open] { width: 100%; max-width: none; margin: auto 0 0; border-radius: 20px 20px 0 0; padding-bottom: max(20px, env(safe-area-inset-bottom)); }

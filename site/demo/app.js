@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "be88419d1f7c";
+const WEB_BUILD = "a7c8a52d6c8d";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
