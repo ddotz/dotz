@@ -119,7 +119,7 @@ async function boot(width: number, height: number): Promise<View> {
 test("the list pages 12 projects at a time, filters by need/running/done and searches", async () => {
 	const v = await boot(390, 844);
 	const rows = `[...document.querySelectorAll("#pl-list .pl-row:not(.sub)")]`;
-	expect(await q<string[]>(v, `return ${rows}.slice(0, 3).map(r => r.querySelector(".pl-s").textContent)`).then(s => s.every(t => t.includes("답을 기다려요")))).toBe(true);
+	expect(await q<string[]>(v, `return ${rows}.slice(0, 3).map(r => r.querySelector(".li-end .tag").textContent)`).then(s => s.every(t => t.includes("답을 기다려요")))).toBe(true);
 	expect(await q<number>(v, `return ${rows}.length`)).toBe(12);
 	expect(await q(v, `return document.querySelector('#pl-list [data-k="more"]').textContent`)).toBe("프로젝트 18개 더 보기");
 	// the list starts right under the app bar (normal section spacing, no stray gap)
@@ -137,10 +137,10 @@ test("the list pages 12 projects at a time, filters by need/running/done and sea
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 4`);
 	await run(v, `document.querySelector('.pl-chips [data-view="run"]').click()`);
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 6`);
-	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .pl-s")].map(n => n.textContent)`).then(s => s.every(t => t.includes("작업 중")))).toBe(true);
+	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .li-end .tag")].map(n => n.textContent)`).then(s => s.every(t => t.includes("작업 중")))).toBe(true);
 	await run(v, `document.querySelector('.pl-chips [data-view="done"]').click()`);
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 10`);
-	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .pl-s")].map(n => n.textContent)`).then(s => s.every(t => t.includes("끝남")))).toBe(true);
+	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .li-end .tag")].map(n => n.textContent)`).then(s => s.every(t => t.includes("끝남")))).toBe(true);
 	expect(await q(v, `return document.querySelector("#pl-list .pl-row .li-end .tag").textContent`)).toBe("끝남");
 	await run(v, `document.querySelector('.pl-chips [data-view="all"]').click()`);
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 12`);
