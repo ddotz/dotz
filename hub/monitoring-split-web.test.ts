@@ -10,13 +10,13 @@ const between = (from: string, to: string) => {
 	return src.slice(a, b);
 };
 
-type Node = { tag: string; cls: string; text: string; kids: unknown[]; dataset: Record<string, string>; append: (...k: unknown[]) => void; querySelector: (s: string) => Node | null };
+type Node = { tag: string; cls: string; text: string; kids: unknown[]; dataset: Record<string, string>; append: (...k: unknown[]) => void; querySelector: (s: string) => Node | null; querySelectorAll: (s: string) => Node[] };
 const isNode = (x: unknown): x is Node => !!x && typeof x === "object" && "kids" in x;
 function el(tag: string, attrs: Record<string, unknown> = {}, ...kids: unknown[]): Node {
 	const n: Node = {
 		tag, cls: String(attrs.class ?? ""), text: String(attrs.text ?? ""), kids: kids.flat().filter(k => k != null && k !== ""), dataset: {},
 		append: (...k) => { n.kids.push(...k.filter(x => x != null)); },
-		querySelector: s => find(n, s.slice(1)),
+		querySelector: s => find(n, s.slice(1)), querySelectorAll: () => [],
 	};
 	Object.defineProperty(n, "textContent", { set: (v: string) => { n.text = v; n.kids = []; } });
 	return n;

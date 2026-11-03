@@ -548,7 +548,11 @@
     ] },
     "/api/quota": {},
     "/api/machine": {},
-    "/api/peers": [],
+    "/api/peers": [
+      { name: "맥북", url: "https://macbook.demo.ts.net", self: true, online: true },
+      { name: "맥미니", url: "https://macmini.demo.ts.net", online: true, unread: 2, need: 1 },
+      { name: "서버", url: "https://server.demo.ts.net", online: false },
+    ],
   };
 
   function get(u) {

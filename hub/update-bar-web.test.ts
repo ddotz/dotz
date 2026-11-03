@@ -117,7 +117,7 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 		expect(posts).toBe(1);
 		let g = await sane(v, "download");
 		expect(g.tag).toBe("SPAN");
-		expect(g.pulse).toBe("ub-pulse");
+		expect(g.pulse).toBe("none");
 		expect(await q<boolean>(v, `return !$("#upd-bar .x")`)).toBe(true);
 		await shot(v, "download", width);
 
@@ -125,14 +125,14 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 		await poll(v);
 		await waitFor(v, `${barText} === ${JSON.stringify(TEXT.waiting)}`);
 		g = await sane(v, "waiting");
-		expect(g.pulse).toBe("ub-pulse");
+		expect(g.pulse).toBe("none");
 		await shot(v, "waiting", width);
 
 		mode = "down";   // the gateway exits: /api/update stops answering
 		await poll(v);
 		await waitFor(v, `${barText} === ${JSON.stringify(TEXT.restarting)}`);
 		g = await sane(v, "restarting");
-		expect(g.pulse).toBe("ub-pulse");
+		expect(g.pulse).toBe("none");
 		await shot(v, "restarting", width);
 
 		mode = "done";   // back, with the new version running
