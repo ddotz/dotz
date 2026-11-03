@@ -175,7 +175,8 @@
     { chatId: "r5", name: "나와의 채팅", kind: "self", watched: false, autoDraft: false, unread: 0, lastAt: now - 5 * 86400_000 },
   ];
   const kakaoChat = {
-    r1: { room: { chatId: "r1", name: "정우", kind: "direct", group: false, watched: true }, read: null, kakaoUnread: 2, drafts: [], sends: [], messages: [
+    r1: { room: { chatId: "r1", name: "정우", kind: "direct", group: false, watched: true }, read: null, kakaoUnread: 2, sends: [],
+      drafts: [{ code: "dk1", text: "가는 길에 마트에 들러서 사자.\n내가 사 갈게!", parts: ["가는 길에 마트에 들러서 사자.", "내가 사 갈게!"], basisLogId: "104", created: now - 5 * 60_000 }], messages: [
       { id: 1, logId: "101", authorId: "u2", sender: "정우", text: "형, 이번 주말에 캠핑 가기로 한 거 기억나?", type: 1, sentAt: now - 52 * 60_000, fromMe: false, unread: 0 },
       { id: 2, logId: "102", authorId: "u1", sender: "나", text: "응, 토요일 아침에 출발하자", type: 1, sentAt: now - 49 * 60_000, fromMe: true, unread: 0 },
       { id: 3, logId: "103", authorId: "u2", sender: "정우", text: "좋아. 의자는 내가 챙길게", type: 1, sentAt: now - 8 * 60_000, fromMe: false, unread: 0 },
