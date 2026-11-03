@@ -82,20 +82,20 @@ const boot = async () => {
 };
 
 describe("REQ1: home cards and the composer chip show the model in use", () => {
-	test("the main card shows the fallback model and 폴백 중 with the reason and return time, not the configured model", async () => {
+	test("the greeting shows the fallback model and 폴백 중 with the reason and return time, not the configured model", async () => {
 		const v = await boot();
 		await run(v, `go("home"); renderHome()`);
-		await waitFor(v, `document.querySelector("#home-cards .hsum-s .v")`);
-		const r = await q<{ big: string; tag: string }>(v, `return { big: document.querySelector("#home-cards .hsum-s .v").textContent, tag: (document.querySelector("#home-cards .hsum-fb") || {}).textContent || "" }`);
-		expect(r.big).toEndWith("Sonnet 5.5");
-		expect(r.big).not.toContain("Opus");
+		await waitFor(v, `document.querySelector("#home-now .hgreet .meta")`);
+		const r = await q<{ meta: string; tag: string }>(v, `const g = document.querySelector("#home-now .hgreet"); return { meta: g.querySelector(".meta").textContent, tag: (g.querySelector(".tag.warn") || {}).textContent || "" }`);
+		expect(r.meta).toContain("Sonnet 5.5");
+		expect(r.meta).not.toContain("Opus");
 		expect(r.tag).toStartWith("폴백 중 · 한도 소진 · ");
 		expect(r.tag).toEndWith("에 복귀");
 		await shot(v, "home.png");
 	});
 	test("a session row on home shows its running model and its fallback", async () => {
 		const v = await boot();
-		const r = await q<{ model: string; tag: string }>(v, `const n = document.querySelector("#home-now .smodel"); return { model: n ? n.firstChild.textContent : "", tag: n ? n.querySelector(".tag.warn").textContent : "" }`);
+		const r = await q<{ model: string; tag: string }>(v, `const n = document.querySelector("#v-home .smodel"); return { model: n ? n.firstChild.textContent : "", tag: n ? n.querySelector(".tag.warn").textContent : "" }`);
 		expect(r.model).toEndWith("Sonnet 5.5 · 높음");
 		expect(r.tag).toStartWith("폴백 중 · 한도 소진");
 	});

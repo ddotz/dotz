@@ -171,8 +171,8 @@ function homeMonitorCard() {
 }
 
 let homeBoard = null;
-// Every card is as tall as its content (07-board.js fit): only the width is sized, 4 of 12 columns by default so six cards make two full rows; the summary strip spans the row.
-const HOME_FIT = { fit: true, min: { w: 3, h: 1 }, max: { w: 12, h: 1 } }, HOME_STRIP = { fit: true, min: { w: 6, h: 1 }, max: { w: 12, h: 1 } };
+// Every card is as tall as its content (07-board.js fit): only the width is sized, half of the 12 columns by default so the cards make the prototype's two-column grid.
+const HOME_FIT = { fit: true, min: { w: 6, h: 1 }, max: { w: 12, h: 1 } };
 // Kinds of home items that can be bundled into one card (title, view the card opens); the bundled kinds are kept per browser.
 const HOME_KINDS = { ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["공급자", "providers"] };
 const HOME_GROUPS_KEY = "dotz-home-groups";
@@ -194,10 +194,6 @@ function homeRow(e) {
 }
 // Every item is its own card (each context process, each usage limit, each provider), except kinds the owner bundled (the default):
 // those share one card with a row per item. The assistant is the summary strip on top.
-// 5시간 / 7일: the first limit of that kind (not a model's own, "7 Day (Opus)"), its share left as a percent.
-const hsumLimit = re => { for (const p of (HQ && HQ.providers) || []) for (const l of p.limits || []) { const s = String(l.label || l.id); if (!/\(/.test(s) && re.test(s)) return l; } return null; };
-const hsumStat = (k, v, tone) => el("div", { class: "hsum-s" }, el("span", { class: "k", text: k }), el("span", { class: "v" }, hcKDot(tone), v));
-const hsumPct = l => { const f = limitFrac(l); return f == null ? "–" : `${Math.round(f * 100)}%`; };
 // The newest meaningful line of what a target is doing: its loaded activity, else the lane's last fetched line, else its last text.
 function nowLine(t) {
   const acts = ts(t).acts;
@@ -305,9 +301,41 @@ function hcWorkFiles(w) {
   const fs = w.status === "done" && Array.isArray(w.files) ? w.files.filter(f => f && f.path) : [];
   return fs.length ? el("div", { class: "hrx-f" }, ...fs.map(f => { const name = f.name || String(f.path).split("/").pop(); return fileChip(name, fileMeta(name, f.size), VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : { href: fileUrl(f.path, false, f.pc) }); })) : null;
 }
+/* The prototype's home (site/prototype/s-work.js): a full-width column of the greeting, the one alert row and 답변 필요, then the
+   two-column card grid. Every card keeps the product's data, links and empty states; the board (07-board.js) still moves and sizes them. */
+const homeGreetWord = () => { const h = new Date().getHours(); return h < 5 ? "편안한 밤이에요" : h < 12 ? "좋은 아침이에요" : h < 18 ? "좋은 오후예요" : "좋은 저녁이에요"; };
+// The greeting names the assistant and says what it does now, on which model, with how many sessions, on which computer and at what time;
+// the fallback tag says why the model changed, and the ⋯ menu keeps the assistant card's actions now that its summary card is gone.
+function homeGreeting() {
+  const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, live = liveModel(MAIN), [base, level] = String(live.sel || "").split(":");
+  const modelText = om && base ? (modelName(base).includes("-") ? modelChipText(base) : modelName(base)) : "";
+  const word = !S ? "연결 중" : o.status === "working" || o.status === "starting" ? "일하는 중" : o.status === "idle" ? "쉬는 중" : statusKo(o.status);
+  const lanes = ((S && S.lanes) || []).filter(laneAlive).length, me = (typeof prSelf === "function" && (prSelf() || {}).name) || "";
+  const line = [`${iGa(botName)} ${word}`, modelText && `${modelText}${level ? ` · ${thinkKo(level)}` : ""}`, lanes ? `세션 ${lanes}개` : "", me, kstHM(Date.now())].filter(Boolean).join(" · ");
+  const more = el("button", { class: "ib hgreet-more", type: "button", "aria-label": "어시스턴트 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => homeMenu(ev.currentTarget, MAIN) }, icon("more"));
+  return el("div", { class: "hgreet" },
+    el("div", { class: "bigrow" }, el("div", { class: "big", text: homeGreetWord() }), more),
+    el("div", { class: "meta", text: line }),
+    live.fallback ? el("div", { class: "hgreet-fb" }, fbTag(live.fallback, live.conf)) : null, subLine("orchestrator"));
+}
+// The one row above the cards: a login that dropped (the prototype's 경고 strip), else the newest unread alert notice.
+function homeStrip() {
+  const down = (typeof INTG !== "undefined" ? INTG.items : []).find(i => i.state === "disconnected");
+  if (down) return homeStripRow(`${down.label || "앱"} 로그인이 풀렸어요`, "경고 · 다시 로그인해야 이어서 볼 수 있어요", "경고", "err", () => go("monitoring", `i:${down.key}`));
+  const n = (typeof NT !== "undefined" ? NT.items : []).filter(x => x.id && !x.read && ntHomeAlert(x) && x.cls === "alert").sort((a, b) => ntAt(b) - ntAt(a))[0];
+  if (!n) return null;
+  const fail = n.tone === "fail";
+  return homeStripRow(hcLine(n), ntWhen(n), fail ? "경고" : "알림", fail ? "err" : "", () => noticeOpen(n));
+}
+function homeStripRow(title, sup, tag, tone, open) {
+  return el("button", { class: "li hstrip", type: "button", onclick: open },
+    el("span", { class: "lead" }, el("span", { class: `dot ${tone}` })),
+    el("span", { class: "tx" }, el("span", { class: "hd", text: title }), el("span", { class: "sup", text: sup })),
+    el("span", { class: "end" }, el("span", { class: `tag ${tone}`, text: tag }), icon("chev", "chev")));
+}
 function renderHomeNow() {
-  const box = $("#home-now");
-  if (!box) return;
+  const now = $("#home-now"), box = $("#home-cards");
+  if (!now || !box) return;
   const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`)];
   const needs = nyList(), crit = needs.filter(x => x.crit).length;   // 09-needs-you.js: what only the owner can do, critical first
   // 홈 is this computer's alone (owner 2026-10-31): the other computers' items live in 모니터링, and the computer chip's dot says they want something.
@@ -324,47 +352,36 @@ function renderHomeNow() {
   const convWork = convT.flatMap(c => [c, ...(c.work || []).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
   const runW = workRunning(), settled = hcSettled(), bg = [...runW, ...settled], ended = workEnded().filter(w => !settled.includes(w)), working = runT.length + convWork.length + runW.length, deferred = (S && S.deferred) || [];
   const restRow = t => homeNowRow(t, !targetInfo(t).alive ? "종료됨" : runBusy(t) ? "진행 중" : statusKo(targetInfo(t).status), "");
-  clear(box).append(
-    // Three kinds, three places: 답변 필요 (a decision only the owner can make), 답장 대기 (replies he owes, per app), 지금 진행 중; plain news is the 알림 card.
-    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), crit ? el("span", { class: "tag warn", text: `중요 ${crit}` }) : null, waiting ? el("span", { class: "sup", text: `${waiting}` }) : null),
-    nyListNode(needs),
-    ...(owed.length || drafts ? [el("div", { class: "hn-h" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null), el("div", { class: "hn" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : []),
-    el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), working ? el("span", { class: "sup", text: `${working}개 작업 중` }) : null),
-    el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow), ...(working || bg.length || deferred.length ? [] : [el("div", { class: "empty", text: "진행 중인 작업이 없어요" })])),
-    ...(restT.length ? [el("div", { class: "hn-h" }, el("h2", { text: "대기 중" })), el("div", { class: "hn", "data-k": "waiting" }, ...restT.map(restRow))] : []),
-    ...(ended.length ? [el("div", { class: "hn-h" }, el("h2", { text: "최근 끝난 작업" })), el("div", { class: "hn", "data-k": "ended-work" }, ...ended.map(workRow))] : []),
-    endedGroup() || "");
-  for (const w of settled) { const s = HC_SETTLE.get(w.id), row = s && !s.swapped ? box.querySelector(`[data-work="${CSS.escape(w.id)}"]`) : null; if (row) { s.swapped = true; motionSwap(row, () => {}); } }
-  if (!S || !NT.loaded) return;
-  const rows = [...box.querySelectorAll(".hr, .ntg")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.work || r.dataset.mon || r.dataset.group || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
-  const fresh = freshKeys(HOME_ROWS, keys);
-  rows.forEach((r, i) => { if (fresh.has(keys[i])) motionIn(r); });
-}
-// The home screen always opens at its top: on load, on the tab, and when the installed app comes back to the front (23-installable-app-web.js, 99-boot.js).
-const homeTop = () => { if (current === "home") { $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled"); } };
-function renderHome() {
-  const box = $("#home-cards");   // not id="home": the address #home would scroll the page down to that element, not to the top
-  if (!box || current !== "home") return;
-  renderHomeNow();
-  if (openMenu && box.contains(openMenu.anchor)) return;   // a ⋯ menu is open: repaint after it closes
-  $("#title").textContent = botName;
-  if (!homeBoard) homeBoard = makeBoard(box, "home", { px: true, actions: [{ label: "카드 추가", run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
-  const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, live = liveModel(MAIN), [liveBase, liveLevel] = String(live.sel || "").split(":"), items = [], seen = new Set();
-  const add = (id, node, def, size) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def, ...size }); } };
-
-  // assistant
-  const stText = o.status === "rate-limited" && o.rateLimitedUntil ? `${statusKo(o.status)} · ${kstTime(o.rateLimitedUntil)}까지` : statusKo(o.status);
-  const mainAttn = attnKind(MAIN);
-  // The summary strip: model, state and the numbers worth a glance (what is left of 5시간 / 7일, the unread notices); the dot is its one accent.
-  const l5 = hsumLimit(/\b5\s*hours?\b|5\s*시간/i), l7 = hsumLimit(/\b7\s*days?\b|7\s*일/i), modelText = om && liveBase ? (modelName(liveBase).includes("-") ? modelChipText(liveBase) : modelName(liveBase)) : "…";
-  add(MAIN, itemCard(() => openTarget(MAIN, lastChatView()), "",
-    hcHead(botName, { dot: mainAttn || o.status === "rate-limited" ? "att" : statusTone(o.status), note: mainAttn ? "확인 필요" : S ? stText : "연결 중", menu: MAIN }),
-    el("div", { class: "hsum" }, hsumStat("모델", modelText), liveLevel ? hsumStat("추론 강도", thinkKo(liveLevel)) : null, l5 ? hsumStat("5시간 남음", hsumPct(l5), limitTone(l5)) : null, l7 ? hsumStat("7일 남음", hsumPct(l7), limitTone(l7)) : null, NT.loaded ? hsumStat("안 읽은 알림", `${hcUnread()}개`) : null),
-    live.fallback ? el("div", { class: "sup hsum-fb", text: fbTagText(live.fallback) }) : null,
-    subLine("orchestrator")), { w: 12, h: 1 }, HOME_STRIP);
-  add("notices:alert", homeAlertCard(), { w: 4, h: 1 }, HOME_FIT);
-  add("notices:worklog", homeWorklogCard(), { w: 4, h: 1 }, HOME_FIT);
-  add("notices:watch", homeMonitorCard(), { w: 4, h: 1 }, HOME_FIT);
+  // Above the grid, the prototype's full-width column: the greeting, the one alert row and 답변 필요. The replies the owner owes stay in
+  // that card under its list, as the prototype's 답변 필요 rows do; each row still opens its own item.
+  const running = el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow),
+    ...(working || bg.length || deferred.length ? [] : [el("div", { class: "empty", text: "진행 중인 작업이 없어요" })]));
+  const owedBlock = owed.length || drafts ? [
+    el("div", { class: "hn-h hsub" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null),
+    el("div", { class: "hn", "data-k": "replies" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : [];
+  clear(now).append(homeGreeting(), ...[homeStrip()].filter(Boolean),
+    el("div", { class: "hneeds" },
+      el("div", { class: "hn-h hneeds-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null, crit ? el("span", { class: "tag warn", text: `중요 ${crit}` }) : null),
+      nyListNode(needs), ...owedBlock));
+  for (const w of settled) { const s = HC_SETTLE.get(w.id), row = s && !s.swapped ? now.querySelector(`[data-work="${CSS.escape(w.id)}"]`) : null; if (row) { s.swapped = true; motionSwap(row, () => {}); } }
+  if (S && NT.loaded) {
+    const rows = [...now.querySelectorAll(".hr, .ntg")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.work || r.dataset.mon || r.dataset.group || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
+    const fresh = freshKeys(HOME_ROWS, keys);
+    rows.forEach((r, i) => { if (fresh.has(keys[i])) motionIn(r); });
+  }
+  const endBox = $("#home-ended");
+  if (endBox) clear(endBox).append(...[endedGroup()].filter(Boolean));
+  // The grid after it, two cards to a row (07-board.js): 알림 · 지금 진행 중 · 대기 중 · 최근 끝난 작업 · 모니터링 · 작업내역 ·
+  // 사용량 · 컨텍스트 · 공급자 · the owner's cards, each half the row and as tall as its content.
+  if (!homeBoard || (openMenu && box.contains(openMenu.anchor))) return;   // a ⋯ menu is open: repaint after it closes
+  const items = [], seen = new Set();
+  const add = (id, node) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def: { w: 6, h: 1 }, ...HOME_FIT }); } };
+  add("notices:alert", homeAlertCard());
+  add("now:running", el("div", { class: "card" }, hcHead("지금 진행 중", { n: working ? `${working}개 작업 중` : null }), running));
+  if (restT.length) add("now:waiting", el("div", { class: "card" }, hcHead("대기 중"), el("div", { class: "hn", "data-k": "waiting" }, ...restT.map(restRow))));
+  if (ended.length) add("now:ended", el("div", { class: "card" }, hcHead("최근 끝난 작업"), el("div", { class: "hn", "data-k": "ended-work" }, ...ended.map(workRow))));
+  add("notices:watch", homeMonitorCard());
+  add("notices:worklog", homeWorklogCard());
 
   // entries per kind: {id, tone, open, card() (own floating card), row() (contents of its row in a bundle)}. A session is a row of
   // 지금 진행 중 / 대기 중 above, so it has no card here as well.
@@ -372,7 +389,7 @@ function renderHome() {
   for (const p of ((C && C.processes) || []).filter(x => x.running)) {
     const id = `ctx:${p.name}`, pct = p.percent, who = p.kind === "lane" ? targetName(`lane:${p.name}`) : botName, v = pct != null ? `${pct}%` : `${num(p.tokens)} 토큰`;
     const bar = () => el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` }));
-    E.ctx.push({ id, tone: pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 4, h: 1 }, HOME_FIT],
+    E.ctx.push({ id, tone: pct >= 80 ? "warn" : "", open: () => go("context"),
       card: () => [hcHead(`컨텍스트 · ${who}`, { dot: hcTone(pct >= 80 ? "warn" : ""), note: v, menu: id }), bar()],
       row: () => [el("div", { class: "kv" }, el("span", { class: "k" }, hcKDot(pct >= 80 ? "warn" : ""), who), el("span", { class: "v", text: v })), bar()] });
   }
@@ -381,7 +398,7 @@ function renderHome() {
     for (const pr of provs) for (const l of pr.limits) {
       const id = `limit:${pr.provider}:${l.id}`, f = limitFrac(l), name = limitLabel(pr, l, multi);
       const tone = limitHit(l) || (f != null && f <= .2) ? "warn" : "";
-      E.limit.push({ id, tone, open: () => go("usage"), size: [{ w: 4, h: 1 }, HOME_FIT],
+      E.limit.push({ id, tone, open: () => go("usage"),
         card: () => [hcHead(name, { dot: hcTone(tone), note: pctText(l), menu: id }), bar(l)],
         row: () => [el("div", { class: "kv" }, el("span", { class: "k" }, hcKDot(tone), name), el("span", { class: "v", text: pctText(l) })), bar(l)] });
     }
@@ -389,25 +406,37 @@ function renderHome() {
   for (const p of (P && P.providers) || []) {
     if (!isConnected(p) && !needsAttention(p)) continue;
     const id = `prov:${p.id}`, bad = needsAttention(p), st = bad ? "로그인 필요" : p.auth === "api_key" ? "API 키" : "로그인됨";
-    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("provider", p.id), size: [{ w: 4, h: 1 }, HOME_FIT],
+    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("provider", p.id),
       card: () => [hcHead(p.name || p.id, { dot: bad ? "att" : "ok", note: st, menu: id }),
         p.account ? el("div", { class: "sup", text: p.account }) : null],
       row: () => [el("div", { class: "row" }, el("span", { class: `dot ${bad ? "att" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: bad ? st : p.account || st }))] });
   }
   const loaded = { ctx: !!C, limit: !!HQ, prov: !!P };
-  for (const [kind, list] of Object.entries(E)) {
-    if (!homeGroups.has(kind)) { for (const e of list) add(e.id, itemCard(e.open, "", ...e.card()), ...e.size); continue; }
+  // 사용량 comes first (the prototype's 사용량 card), then 컨텍스트 and 공급자.
+  for (const kind of ["limit", "ctx", "prov"]) {
+    const list = E[kind];
+    if (!homeGroups.has(kind)) { for (const e of list) add(e.id, itemCard(e.open, "", ...e.card())); continue; }
     const [title, view] = HOME_KINDS[kind], nAtt = list.filter(e => e.tone).length, none = !list.length;
     const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : "없어요";
     add(`group:${kind}`, hcFold(itemCard(view, "",
       hcHead(title, { dot: nAtt ? hcTone(list.some(e => e.tone === "err") ? "err" : "warn") : "", n: none ? null : String(list.length), note: none ? empty : "", menu: `group:${kind}` }),
-      none ? null : el("div", { class: "glist" }, ...list.map(homeRow))), none), { w: 4, h: 1 }, HOME_FIT);
+      none ? null : el("div", { class: "glist" }, ...list.map(homeRow))), none));
   }
 
-  // the owner's custom cards (web/custom.js) are board items like the rest
-  for (const it of window.dotzCustom ? dotzCustom.items() : []) if (!seen.has(it.id)) { seen.add(it.id); items.push(it); }
+  // the owner's custom cards (web/custom.js) are board items like the rest; a half row by default, their own size when changed
+  for (const it of window.dotzCustom ? dotzCustom.items() : []) if (!seen.has(it.id)) { seen.add(it.id); items.push({ ...it, def: { ...it.def, w: 6 }, head: it.head || ".ch" }); }
   // cards of data that has not arrived yet keep their saved place
   homeBoard.set(items, id => id.startsWith("custom:") ? !window.dotzCustom || dotzCustom.keep(id) : id.startsWith("ctx:") ? !C : id.startsWith("limit:") ? !HQ || !!HQ.error : id.startsWith("prov:") ? !P : false);
+}
+
+// The home screen always opens at its top: on load, on the tab, and when the installed app comes back to the front (23-installable-app-web.js, 99-boot.js).
+const homeTop = () => { if (current === "home") { $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled"); } };
+function renderHome() {
+  const box = $("#home-cards");   // not id="home": the address #home would scroll the page down to that element, not to the top
+  if (!box || current !== "home") return;
+  $("#title").textContent = titles.home;
+  if (!homeBoard) homeBoard = makeBoard(box, "home", { px: true, rows: true, actions: [{ label: "카드 추가", run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
+  renderHomeNow();
   window.dotzCustom && dotzCustom.home();
 }
 

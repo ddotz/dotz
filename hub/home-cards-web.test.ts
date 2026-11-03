@@ -131,7 +131,7 @@ describe("홈 cards at 1100px", () => {
 		const same = JSON.parse((await view.evaluate(`JSON.stringify((() => {
 			const s = sel => getComputedStyle(document.querySelector(sel));
 			const pick = c => [c.paddingTop, c.paddingLeft, c.borderRadius, c.fontSize, c.color];
-			return [pick(s('.bi[data-id="custom:memo"] .card')), pick(s('.bi[data-id="main"] .card')), pick(s('.bi[data-id="notices:worklog"] .card'))];
+			return [pick(s('.bi[data-id="custom:memo"] .card')), pick(s('.bi[data-id="notices:alert"] .card')), pick(s('.bi[data-id="notices:worklog"] .card'))];
 		})())`)) as string) as string[][];
 		expect(same[0]).toEqual(same[1]);
 		expect(same[0]).toEqual(same[2]);

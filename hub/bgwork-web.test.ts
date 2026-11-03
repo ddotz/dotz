@@ -59,7 +59,7 @@ const boot = async (hash: string) => {
 	await waitFor(v, `S && S.runs && typeof target === "string"`);
 	return v;
 };
-const sections = (v: View) => q<Record<string, string[]>>(v, `const out = {}; for (const box of document.querySelectorAll("#home-now .hn[data-k]")) out[box.dataset.k] = [...box.children].map(r => r.textContent.replace(/\\s+/g, " ").trim()); return out;`);
+const sections = (v: View) => q<Record<string, string[]>>(v, `const out = {}; for (const box of document.querySelectorAll("#v-home .hn[data-k]")) out[box.dataset.k] = [...box.children].map(r => r.textContent.replace(/\\s+/g, " ").trim()); return out;`);
 
 test("홈: 지금 진행 중 is only what runs; waiting rows say their state in Korean; failed work is taken up, stopped work offers 다시 맡기기, and a lane is drawn once", async () => {
 	WORK = [RUNNING, FAILED, STOPPED, TAKEN, DONE];
@@ -67,7 +67,7 @@ test("홈: 지금 진행 중 is only what runs; waiting rows say their state in 
 	ORCH = "idle";
 	posts.length = 0;
 	const v = await boot("#home");
-	await waitFor(v, `current === "home" && document.querySelector('#home-now .hn[data-k="ended-work"]')`);
+	await waitFor(v, `current === "home" && document.querySelector('#v-home .hn[data-k="ended-work"]')`);
 	const s = await sections(v);
 	expect(s.running).toHaveLength(1);
 	expect(s.running![0]).toContain("흐름도 그리기");
@@ -78,17 +78,17 @@ test("홈: 지금 진행 중 is only what runs; waiting rows say their state in 
 	expect(s["ended-work"]!.find(r => r.includes("빌드 고치기"))).toContain("이어서 처리 중");
 	expect(s["ended-work"]!.find(r => r.includes("빌드 고치기"))).toContain("실패 · 작업 폴더를 git 저장소로 읽지 못해 시작하지 못했어요");
 	expect(s["ended-work"]!.some(r => r.includes("이미 다룬 실패"))).toBe(false);
-	expect(await v.evaluate(`document.querySelector('#home-now [data-work="st_fail"] .dot').className`)).toBe("dot pri");
+	expect(await v.evaluate(`document.querySelector('#v-home [data-work="st_fail"] .dot').className`)).toBe("dot pri");
 	expect(s["ended-work"]!.find(r => r.includes("요약 쓰기"))).toContain("완료");
 	// The session is a row above, not also a card on the board.
-	await waitFor(v, `document.querySelector('#home-cards [data-id="main"]')`);
+	await waitFor(v, `document.querySelector('#home-cards [data-id="notices:alert"]')`);
 	expect(await v.evaluate(`!!document.querySelector('#home-cards [data-id="lane:fix"], #home-cards [data-id="group:lane"]')`)).toBe(false);
-	expect(await v.evaluate(`document.querySelectorAll('#home-now [data-act="retry"]').length`)).toBe(1);
+	expect(await v.evaluate(`document.querySelectorAll('#v-home [data-act="retry"]').length`)).toBe(1);
 	const p__api_workers_st_stop_retry = posted("/api/workers/st_stop/retry");
-	await v.evaluate(`(document.querySelector('#home-now [data-work="st_stop"] [data-act="retry"]').click(), 0)`);
+	await v.evaluate(`(document.querySelector('#v-home [data-work="st_stop"] [data-act="retry"]').click(), 0)`);
 	await p__api_workers_st_stop_retry;
 	// A running row shows only its state (owner 2026-11-01): no 중단 on the list, the conversation's send button stops it.
-	expect(await v.evaluate(`document.querySelectorAll('#home-now [data-work="st_run"] button').length`)).toBe(1);
+	expect(await v.evaluate(`document.querySelectorAll('#v-home [data-work="st_run"] button').length`)).toBe(1);
 	expect(s.running![0]).not.toContain("중단");
 }, 30_000);
 
@@ -98,13 +98,13 @@ test("홈: a session the run line calls 진행 중 (waiting on its own worker) i
 	RUNS = { main: { kind: "idle" }, "lane:bgw": { kind: "waiting", reason: "work", since: agoIso(2), detail: "빌드 · Opus 5.5 medium" } };
 	try {
 		const v = await boot("#home");
-		await waitFor(v, `current === "home" && document.querySelector('#home-now .hn[data-k="running"] [data-t="lane:bgw"]')`);
+		await waitFor(v, `current === "home" && document.querySelector('#v-home .hn[data-k="running"] [data-t="lane:bgw"]')`);
 		const s = await sections(v);
 		expect(s.running).toHaveLength(1);
 		expect(s.running![0]).toContain("알림 분류 업데이트 마무리");
 		expect(s.running![0]).toContain("진행 중");
 		expect(s.waiting!.join("|")).not.toContain("알림 분류 업데이트 마무리");
-		expect(await v.evaluate(`document.querySelector('#home-now .hn-h .sup').textContent`)).toBe("1개 작업 중");
+		expect(await v.evaluate(`document.querySelector('#v-home .card:has([data-k="running"]) .hc-n').textContent`)).toBe("1개 작업 중");
 	} finally {
 		LANES.pop();
 	}
@@ -119,7 +119,7 @@ test("홈: an app conversation whose own session runs is a row of 지금 진행 
 	RUNS = { main: { kind: "idle" }, "mail:company-67180972": { kind: "working", since: agoIso(6), detail: "흐름도 그리기" }, "settings:youtube": { kind: "done", since: agoIso(30) } };
 	try {
 		const v = await boot("#home");
-		await waitFor(v, `current === "home" && document.querySelector('#home-now .hn[data-k="running"] [data-t="mail:company-67180972"]')`);
+		await waitFor(v, `current === "home" && document.querySelector('#v-home .hn[data-k="running"] [data-t="mail:company-67180972"]')`);
 		const s = await sections(v);
 		expect(s.running).toHaveLength(2);
 		expect(s.running![0]).toContain("회의록 흐름도 요청");
@@ -129,15 +129,15 @@ test("홈: an app conversation whose own session runs is a row of 지금 진행 
 		expect(s.running![1]).toContain("Opus 5.5 medium");
 		expect(s.running!.join("|")).not.toContain("settings:youtube");
 		// same row shape as the others: no 중단 on the list
-		expect(await v.evaluate(`document.querySelectorAll('#home-now .hn[data-k="running"] button').length`)).toBe(2);
-		await v.evaluate(`(document.querySelector('#home-now [data-t="mail:company-67180972"]').click(), 0)`);
+		expect(await v.evaluate(`document.querySelectorAll('#v-home .hn[data-k="running"] button').length`)).toBe(2);
+		await v.evaluate(`(document.querySelector('#v-home [data-t="mail:company-67180972"]').click(), 0)`);
 		await waitFor(v, `current === "chat" && target === "mail:company-67180972"`);
 		expect(await v.evaluate(`location.hash`)).toBe("#monitoring/c:mail%3Akdb-67180972");
 		// the turn ended: the row is gone on the next state refresh
 		RUNS = { main: { kind: "idle" }, "mail:company-67180972": { kind: "done", since: agoIso(0) } };
 		CONVS = [{ target: "mail:company-67180972", name: "회의록 흐름도 요청", work: [] }];
 		await v.evaluate(`(go("home"), refreshState().then(() => true))`);
-		await waitFor(v, `current === "home" && !document.querySelector('#home-now [data-t="mail:company-67180972"]')`);
+		await waitFor(v, `current === "home" && !document.querySelector('#v-home [data-t="mail:company-67180972"]')`);
 		expect((await sections(v)).running).toEqual(["진행 중인 작업이 없어요"]);
 	} finally {
 		CONVS = [];
@@ -148,7 +148,7 @@ test("홈: nothing running says so instead of listing idle conversations under �
 	WORK = [];
 	RUNS = { main: { kind: "idle" } };
 	const v = await boot("#home");
-	await waitFor(v, `current === "home" && document.querySelector('#home-now .hn[data-k="running"]')`);
+	await waitFor(v, `current === "home" && document.querySelector('#v-home .hn[data-k="running"]')`);
 	const s = await sections(v);
 	expect(s.running).toEqual(["진행 중인 작업이 없어요"]);
 	expect(s.waiting!.length).toBe(2);
