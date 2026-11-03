@@ -219,7 +219,17 @@ function notify(e) {
 
 /* ---------- dialog ---------- */
 // classic: the small centered box with its own header, not the full-screen frame (the settings tab's dialogs, 03-base.css dialog.dlg.cl).
-// confirm: a short confirm (a title, a sentence or two, two buttons): a small centered box, a low bottom sheet on a phone (docs/ui-spec.md 확인 상자).
+// confirm: a short confirm (a title, a sentence or two, two buttons): on a PC a small box next to the click that opened it (centered when
+// nothing was clicked just before), a low bottom sheet on a phone (docs/ui-spec.md 확인 상자).
+let CF_PT = null;
+document.addEventListener("pointerdown", ev => { CF_PT = { x: ev.clientX, y: ev.clientY, t: Date.now() }; }, true);
+function cfPlace(d) {
+  if (!CF_PT || Date.now() - CF_PT.t > 2000 || matchMedia("(max-width: 639px)").matches) return;
+  const r = d.getBoundingClientRect(), vw = innerWidth, vh = innerHeight, gap = 12;
+  const left = Math.min(Math.max(CF_PT.x - r.width / 2, gap), vw - r.width - gap);
+  const below = CF_PT.y + gap, top = below + r.height <= vh - gap ? below : Math.max(gap, CF_PT.y - r.height - gap);
+  Object.assign(d.style, { margin: "0", right: "auto", bottom: "auto", left: `${Math.round(left)}px`, top: `${Math.round(top)}px` });
+}
 function dialog({ title, body, actions = [], onclose, wide, classic, confirm }) {
   const small = classic || confirm;
   const d = el("dialog", { class: `dlg${wide ? " wide" : ""}${confirm ? " cf" : classic ? " cl" : " fs-card"}` });
@@ -244,6 +254,7 @@ function dialog({ title, body, actions = [], onclose, wide, classic, confirm }) 
   d.addEventListener("cancel", ev => { if (openMenu) ev.preventDefault(); });
   document.body.append(d);
   d.showModal(); dialogHist(d);
+  if (confirm) cfPlace(d);
   return h;
 }
 function ask(title, text, ok = "확인", danger = false) {
