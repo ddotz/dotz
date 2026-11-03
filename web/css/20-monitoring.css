@@ -104,7 +104,7 @@
 /* the open item's header (owner 2026-11-04, compact and the same for a mail and a watch): one row - icon, name, place, the moment, the actions -
    and under it one 20px line indented to the name: a mail's state, or a watch's words, slim 3px bar and result tag. No empty band, no second row of buttons. */
 #mon-head .mon-hdwrap { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; padding: 8px 16px 10px; border-radius: var(--r-card); background: var(--card); }
-#mon-head .mon-hdrow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; min-width: 0; }
+#mon-head .mon-hdrow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; min-width: 0; min-height: 32px; }
 #mon-head .mon-hdrow .cv-av { width: 16px; height: 16px; border-radius: 0; background: none; color: var(--fg-3); font-size: 0; }
 #mon-head .mon-hdrow .cv-av .ic { width: 16px; height: 16px; }
 #mon-head .mon-hdrow .cv-b { flex: 1 1 160px; min-width: 0; }
