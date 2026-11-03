@@ -72,20 +72,20 @@ function pmSheetsPaint() {
 function pmPrimary(rows, live, working, workRun) {
   const wait = rows.filter(r => r.waiting), ask = wait[0];
   if (ask) return el("div", { class: "card pm-need" },
-    el("div", { class: "pm-need-k" }, el("span", { class: "dot att" }), el("span", { text: "확인 필요" })),
+    el("div", { class: "pm-need-k" }, el("span", { class: "tag warn", text: "확인 필요" })),
     el("div", { class: "pm-need-t", text: ask.title }),
     el("div", { class: "pm-need-s", text: `답을 기다려요${wait.length > 1 ? ` · 외 ${wait.length - 1}개` : ""}` }),
-    el("button", { class: "btn pm-need-a", type: "button", "data-k": "answer", onclick: () => openTarget(`lane:${ask.name}`, lastChatView()) }, "답하기"));
+    el("div", { class: "cf" }, el("button", { class: "btn pm-need-a", type: "button", "data-k": "answer", onclick: () => openTarget(`lane:${ask.name}`, lastChatView()) }, "답하기")));
   const run = working[0] || live[0];
   if (run) return el("div", { class: "card pm-calm" },
-    el("div", { class: "pm-calm-k" }, el("span", { class: `dot${run.status === "working" || run.status === "starting" ? " pri" : ""}` }), el("span", { text: run.status === "working" || run.status === "starting" ? "지금 작업 중" : "세션이 열려 있어요" })),
+    el("div", { class: "pm-calm-k" }, el("span", { class: `tag${run.status === "working" || run.status === "starting" ? " pri" : ""}`, text: run.status === "working" || run.status === "starting" ? "지금 작업 중" : "세션이 열려 있어요" })),
     el("div", { class: "pm-calm-t", text: run.title }),
-    el("button", { class: "btn tonal", type: "button", onclick: () => openTarget(`lane:${run.name}`, lastChatView()) }, "채팅 열기"));
+    el("div", { class: "cf" }, el("button", { class: "btn tonal", type: "button", onclick: () => openTarget(`lane:${run.name}`, lastChatView()) }, "채팅 열기")));
   if (workRun.length) return el("div", { class: "card pm-calm" },
-    el("div", { class: "pm-calm-k" }, el("span", { class: "dot pri" }), el("span", { text: "지금 작업 중" })),
+    el("div", { class: "pm-calm-k" }, el("span", { class: "tag pri", text: "지금 작업 중" })),
     el("div", { class: "pm-calm-t", text: workRun[0].description }),
-    el("button", { class: "btn tonal", type: "button", onclick: () => workGo(workRun[0]) }, "열기"));
-  return el("div", { class: "card pm-calm calm" }, el("div", { class: "pm-calm-k" }, el("span", { class: "dot" }), el("span", { text: "확인할 것 없어요" })),
+    el("div", { class: "cf" }, el("button", { class: "btn tonal", type: "button", onclick: () => workGo(workRun[0]) }, "열기")));
+  return el("div", { class: "card pm-calm calm" }, el("div", { class: "pm-calm-k" }, el("span", { class: "tag", text: "확인할 것 없어요" })),
     el("div", { class: "pm-calm-t sup", text: "지금 답을 기다리는 세션이 없어요" }));
 }
 // One summary row: label, one value line, one quiet line under it; the whole row opens the section's page.
@@ -147,7 +147,7 @@ function pmEditable({ value, placeholder = "비어 있어요", label, multiline,
     f.value = value || "";
     const err = el("div", { class: "note err" });
     const close = () => { PM.open = Math.max(0, PM.open - 1); show(); };
-    const ok = el("button", { class: "btn", type: "button", text: "저장" });
+    const ok = el("button", { class: "btn sm", type: "button", text: "저장" });
     const commit = async () => {
       const v = f.value.trim();
       if (v === (value || "")) return close();
@@ -162,7 +162,7 @@ function pmEditable({ value, placeholder = "비어 있어요", label, multiline,
       if (ev.key === "Escape") { ev.stopPropagation(); close(); }
       else if (ev.key === "Enter" && (!multiline || ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); commit(); }
     });
-    clear(wrap).append(el("div", { class: "pmv-form" }, f, err, el("div", { class: "pmv-acts" }, el("button", { class: "btn text", type: "button", text: "취소", onclick: close }), ok)));
+    clear(wrap).append(el("div", { class: "pmv-form" }, f, err, el("div", { class: "pmv-acts" }, el("button", { class: "btn text sm", type: "button", text: "취소", onclick: close }), ok)));
     f.focus();
   };
   show();
@@ -177,7 +177,7 @@ function pmHead(q) {
       pmEditable({ value: prjPurpose(q), label: "프로젝트 설명", placeholder: "무엇을 하는 프로젝트인지 적어 주세요", multiline: true, cls: "pmv-purpose", save: v => pmWrite({ purpose: v }) })),
     // No work channel, nothing to chat with: the button is left out instead of showing a dead one.
     chat ? el("div", { class: "pmv-hact" }, el("div", { class: "pmv-hrow" },
-      can ? el("button", { class: "btn", type: "button", title: "이 프로젝트 전용 채팅을 열어요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" }) : null,
+      can ? el("button", { class: "btn tonal", type: "button", title: "이 프로젝트 전용 채팅을 열어요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" }) : null,
       pmMenuButton(q))) : null);
 }
 // The project a chat target (ch:<id>) belongs to, from the list the 프로젝트 tab shows (null until it has loaded or once it is gone).
@@ -253,7 +253,7 @@ function pmGoalBody(q) {
     return el("div", { class: `pmv-ms${m.done ? " done" : ""}` }, ck,
       el("div", { class: "pmv-mtx" }, pmEditable({ value: m.text, label: "마일스톤", required: true, save: v => pmWrite({ milestones: ms.map((x, j) => j === i ? { ...x, text: v } : x) }) })), del);
   });
-  const addBtn = el("button", { class: "btn tonal", type: "button", disabled: true, text: "추가" });
+  const addBtn = el("button", { class: "btn tonal sm", type: "button", disabled: true, text: "추가" });
   const addIn = input({ placeholder: "마일스톤 추가", "aria-label": "마일스톤 추가", maxlength: "200", oninput: ev => { PM.draft = ev.target.value; addBtn.disabled = !ev.target.value.trim(); } });
   const doAdd = async () => {
     const t = addIn.value.trim(), keep = PM.draft;
@@ -315,11 +315,11 @@ function pmRoutine(x) {
     PM.open = Math.max(0, PM.open - (box.dataset.editing ? 1 : 0)); delete box.dataset.editing;
     const acts = el("div", { class: "pmv-rt-acts" });
     if (url) {
-      const pause = el("button", { class: "btn tonal", type: "button", text: x.paused ? "다시 시작" : "일시정지", onclick: () => { pause.disabled = true; patch({ paused: !x.paused }).then(ok => { if (!ok) pause.disabled = false; }); } });
-      acts.append(mins || (x.kind === "monitor" && x.on === "match") ? el("button", { class: "btn text", type: "button", text: "수정", onclick: form }) : "",
-        x.script ? el("button", { class: "btn text", type: "button", text: "스크립트", onclick: scriptEdit }) : "", pause);
+      const pause = el("button", { class: "btn tonal inrow", type: "button", text: x.paused ? "다시 시작" : "일시정지", onclick: () => { pause.disabled = true; patch({ paused: !x.paused }).then(ok => { if (!ok) pause.disabled = false; }); } });
+      acts.append(mins || (x.kind === "monitor" && x.on === "match") ? el("button", { class: "btn text inrow", type: "button", text: "수정", onclick: form }) : "",
+        x.script ? el("button", { class: "btn text inrow", type: "button", text: "스크립트", onclick: scriptEdit }) : "", pause);
     } else if (x.kind === "routine") {
-      const run = el("button", { class: "btn tonal", type: "button", text: "지금 실행", onclick: () => { run.disabled = true; pmDo(note, () => api("/api/custom/routine", "POST", { id: x.id })).then(() => { run.disabled = false; }); } });
+      const run = el("button", { class: "btn tonal inrow", type: "button", text: "지금 실행", onclick: () => { run.disabled = true; pmDo(note, () => api("/api/custom/routine", "POST", { id: x.id })).then(() => { run.disabled = false; }); } });
       acts.append(run);
     }
     clear(box).append(
@@ -336,9 +336,9 @@ function pmRoutine(x) {
   const scriptEdit = async () => {
     PM.open++; box.dataset.editing = "1";
     const ta = el("textarea", { class: "fi pmv-ta pmv-code", rows: 12, spellcheck: "false", "aria-label": `${name} 스크립트` });
-    const err = el("div", { class: "note err" }), ok = el("button", { class: "btn", type: "button", text: "저장", disabled: true });
+    const err = el("div", { class: "note err" }), ok = el("button", { class: "btn sm", type: "button", text: "저장", disabled: true });
     clear(box).append(el("div", { class: "pmv-rt-top" }, el("span", { class: "pmv-rt-name", text: name })), el("div", { class: "pmv-rt-meta" }, el("span", { text: x.script })), ta, err,
-      el("div", { class: "pmv-acts" }, el("button", { class: "btn text", type: "button", text: "취소", onclick: view }), ok));
+      el("div", { class: "pmv-acts" }, el("button", { class: "btn text sm", type: "button", text: "취소", onclick: view }), ok));
     try { ta.value = (await api(`/api/watches/${enc(x.id)}/script`)).text; ok.disabled = false; ta.focus(); }
     catch (e) { err.textContent = `스크립트를 읽지 못했어요 · ${e.message}`; }
     ok.onclick = async () => {
@@ -351,7 +351,7 @@ function pmRoutine(x) {
     PM.open++; box.dataset.editing = "1";
     const iv = mins ? input({ type: "number", min: "1", step: "1", inputmode: "numeric", value: String(mins), "aria-label": "간격(분)" }) : null;
     const pt = x.kind === "monitor" && x.on === "match" ? input({ value: x.pattern || "", placeholder: "패턴", "aria-label": "패턴" }) : null;
-    const err = el("div", { class: "note err" }), ok = el("button", { class: "btn", type: "button", text: "저장" });
+    const err = el("div", { class: "note err" }), ok = el("button", { class: "btn sm", type: "button", text: "저장" });
     ok.onclick = async () => {
       const body = {};
       if (iv) { const n = Number(iv.value); if (!Number.isInteger(n) || n < 1) { err.textContent = "간격은 1분 이상의 정수로 적어 주세요"; return; } if (n !== mins) body.every_minutes = n; }
@@ -364,7 +364,7 @@ function pmRoutine(x) {
     const field = (label, node, unit) => [el("span", { class: "sup", text: label }), el("span", { class: "pmv-fld" }, node, unit ? el("span", { class: "sup", text: unit }) : null)];
     clear(box).append(el("div", { class: "pmv-rt-top" }, el("span", { class: "pmv-rt-name", text: name })),
       el("div", { class: "pmv-rt-form" }, ...(iv ? field("간격", iv, "분마다") : []), ...(pt ? field("패턴", pt) : [])),
-      err, el("div", { class: "pmv-acts" }, el("button", { class: "btn text", type: "button", text: "취소", onclick: view }), ok));
+      err, el("div", { class: "pmv-acts" }, el("button", { class: "btn text sm", type: "button", text: "취소", onclick: view }), ok));
     (iv || pt).focus();
   };
   view();
@@ -438,13 +438,13 @@ function cmPaint(root, p, D) {
   if (root.dataset.sig === sig) return;
   root.dataset.sig = sig;
   $("#title").textContent = "프로젝트";
-  const ask = (label, text) => el("button", { class: "btn tonal", type: "button", "aria-label": `${label} 수정`, onclick: () => cmAsk(text), text: "수정" });
+  const ask = (label, text) => el("button", { class: "btn tonal inrow", type: "button", "aria-label": `${label} 수정`, onclick: () => cmAsk(text), text: "수정" });
   const group = g => el("section", { class: "pmv-sec" },
-    el("div", { class: "pv-sh" }, el("div", { class: "sec", text: g.label }), el("button", { class: "btn text", type: "button", onclick: () => cmAsk(`${CM_TAG} ${g.label}: `), text: "추가" })),
+    el("div", { class: "sec sec-act" }, el("span", { text: g.label }), el("button", { class: "btn text sm", type: "button", onclick: () => cmAsk(`${CM_TAG} ${g.label}: `), text: "추가" })),
     g.items.length ? el("div", { class: "list" }, ...g.items.map(i => el("div", { class: "li" },
       cmText(i),
       i.bad ? el("span", { class: "tag warn", text: "확인 필요" }) : null,
-      ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `))),
+      el("span", { class: "li-end" }, ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `)))),
       g.more ? el("div", { class: "sup", style: "padding:10px 16px", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));
   clear(root).append(
     el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" }, el("div", { class: "pmv-title", text: p.name }), el("div", { class: "pmv-purpose", text: p.note || "" }))),
