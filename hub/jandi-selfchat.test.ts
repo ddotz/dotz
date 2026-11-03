@@ -104,6 +104,29 @@ test("starts after the newest message, hands on only the owner's keyword message
 	expect(again).toEqual(["재시작 뒤"]);
 });
 
+test("a new reply of a peer is handed on once, prefix taken off, never twice across a restart, and not for a peer with notify: false", async () => {
+	const peers = normalizeSelfChat({ ...cfg, peers: [{ name: "회사", keyword: "work", reply_prefix: "[종놈]" }, { name: "조용", keyword: "quiet", reply_prefix: "[q]", notify: false }] })!.peers;
+	const seen: string[] = [];
+	const mk = () => createSelfChat({ ...cfg, peers }, { dataDir: dir, api: `http://127.0.0.1:${jandi.port}/`, receive: () => {}, peerReply: (p, t, id) => seen.push(`${p.name}|${t}|${id}`), log: () => {}, onError: () => {} });
+	messages.push({ id: 2, fromEntity: WEBHOOK_BOT, body: "[종놈] 시작 전 글" });
+	const sc = mk();
+	await sc.tick();
+	expect(seen).toEqual([]); // posts before the start are not replayed
+	messages.push(
+		{ id: 3, fromEntity: WEBHOOK_BOT, body: "[종놈] [done] 빌드 끝" },
+		{ id: 4, fromEntity: ME, body: "[종놈] 내가 쓴 글" },
+		{ id: 5, fromEntity: WEBHOOK_BOT, body: "[q] 조용한 컴퓨터" },
+		{ id: 6, fromEntity: WEBHOOK_BOT, body: "[종놈]없는 띄어쓰기" },
+		{ id: 7, fromEntity: BOT, body: "아무 글" },
+	);
+	await sc.tick();
+	await sc.tick();
+	expect(seen).toEqual(["회사|[done] 빌드 끝|3"]);
+	messages.push({ id: 8, fromEntity: WEBHOOK_BOT, body: "[종놈] 재시작 뒤" });
+	await mk().tick();
+	expect(seen).toEqual(["회사|[done] 빌드 끝|3", "회사|재시작 뒤|8"]);
+});
+
 test("an expired access token is refreshed once, and a rotated refresh token is stored sealed", async () => {
 	rotate = "rt-2";
 	const got: string[] = [];

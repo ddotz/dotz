@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HUB_TOKEN } from "./config.ts";
-import { createPeerChats, isOnline, linesOf, messageBody, ONLINE_MS } from "./jandi-peers.ts";
+import { createPeerChats, isOnline, linesOf, messageBody, ONLINE_MS, peerReplyPush } from "./jandi-peers.ts";
 import { createSelfChat, normalizeSelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
 import { loadJandiConfig, saveJandiConfig } from "./messenger-jandi.ts";
 import type { Peer } from "./peers.ts";
@@ -152,6 +152,26 @@ describe("the conversation with one peer", () => {
 		expect(isOnline(reply(ONLINE_MS + 1), NOW)).toBe(false);
 		expect(isOnline([{ id: 1, at: NOW - HOUR, me: true, text: "x" }], NOW)).toBe(false);
 		expect(isOnline([{ id: 1, at: 0, me: false, text: "x" }], NOW)).toBe(false);
+	});
+});
+
+describe("a peer's new reply as a phone notification", () => {
+	const peer = { name: "회사", keyword: "work", reply_prefix: "[종놈]" };
+	test("titled with the peer, the reply as the body, a tap opens the peer's conversation, one per reply", () => {
+		expect(peerReplyPush(peer, "빌드  끝났어요\n다음 할 일?", 41)).toEqual({ kind: "conv", title: "회사", body: "빌드 끝났어요 다음 할 일?", url: "/jandi-peer/work", tag: "jandi-peer:work:41" });
+		const long = peerReplyPush(peer, "가".repeat(300), 42)!;
+		expect(long.body.length).toBe(120);
+		expect(long.body.endsWith("…")).toBe(true);
+	});
+	test("its status marker picks the gateway's own class: [ask] asks, [done]/[fail] a result, [run] stays quiet", () => {
+		expect(peerReplyPush(peer, "[ask] 배포할까요?", 1)).toMatchObject({ kind: "ask", body: "배포할까요?" });
+		expect(peerReplyPush(peer, "[done] 배포 끝", 2)).toMatchObject({ kind: "result", body: "배포 끝" });
+		expect(peerReplyPush(peer, "[fail] 빌드 실패", 3)).toMatchObject({ kind: "result", body: "빌드 실패" });
+		expect(peerReplyPush(peer, "[run] 빌드 중", 4)).toBeUndefined();
+	});
+	test("notify: false is kept by the config; any other value notifies (the default)", () => {
+		const peers = normalizeSelfChat({ enabled: true, peers: [{ keyword: "a", reply_prefix: "[a]", notify: false }, { keyword: "b", reply_prefix: "[b]", notify: "no" }] })?.peers;
+		expect(peers?.map(p => p.notify)).toEqual([false, undefined]);
 	});
 });
 

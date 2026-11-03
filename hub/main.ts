@@ -13,7 +13,8 @@ import { installFanout, makeCtx, register, setAskApplier, startAll } from "./mes
 import { setProjectSource, syncAllRooms } from "./messenger-rooms.ts";
 import { discordAdapter } from "./messenger-discord.ts";
 import { agentAdapter } from "./messenger-agent.ts";
-import { jandiAdapter } from "./messenger-jandi.ts";
+import { jandiAdapter, setJandiPeerReply } from "./messenger-jandi.ts";
+import { peerReplyPush } from "./jandi-peers.ts";
 import { createSlackAdapter } from "./messenger-slack.ts";
 import { createTelegramAdapter } from "./messenger-telegram.ts";
 import { projectTarget } from "./projectchat.ts";
@@ -126,6 +127,11 @@ setWatchGate(name => {
 const watchByName = (name: string) => allWatches().find(w => w.name === name);
 setAppBlocker(n => blockedByOff(DATA_DIR, n) || newsMuted(DATA_DIR, n, name => watchByName(name)?.notify === false));
 setWatchPushOff(name => watchByName(name)?.push === false);
+// A JANDI-only computer's new reply in the self chat reaches the phone like this gateway's own answers.
+setJandiPeerReply((peer, text, id) => {
+	const m = peerReplyPush(peer, text, id);
+	if (m) void pushNotify(m);
+});
 setOrchestratorAvailable(() => orch.status !== "stopped" && orch.status !== "rate-limited");
 setConvNameResolver(conv => (conv === "main" ? NAME : conv.startsWith("ch:") ? discord.channels.work[conv.slice(3)] ?? discord.channels.threads[conv.slice(3)]?.name : conv.startsWith("mail:") ? mailByKey(conv.slice(5))?.subject : conv.startsWith("settings:") ? appEntries(DATA_DIR).find(e => e.key === conv.slice(9))?.label : undefined));
 // An empty bell on the first start with the store: fill it once from the persisted outbox / inbox (no-op when notices.json has items).

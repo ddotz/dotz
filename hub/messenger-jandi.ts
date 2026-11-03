@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
-import { createSelfChat, normalizeSelfChat, type SelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
+import { createSelfChat, normalizeSelfChat, type SelfChat, type SelfChatConfig, type SelfChatPeer } from "./jandi-selfchat.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import { sameRoom } from "./messenger-rooms.ts";
 
@@ -137,6 +137,10 @@ const newRoomId = (taken: Set<string>): string => {
 };
 const isHttpUrl = (s: string) => /^https?:\/\/\S+$/i.test(s);
 
+// What a peer's new reply in the self chat does (main.ts installs the phone notification, hub/jandi-peers.ts peerReplyPush).
+let peerReplyHook: (peer: SelfChatPeer, text: string, id: number) => void = () => {};
+export const setJandiPeerReply = (fn: typeof peerReplyHook): void => void (peerReplyHook = fn);
+
 export type JandiAdapter = Adapter & { port(): number | undefined; selfChat(): SelfChat | undefined };
 
 export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
@@ -178,6 +182,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 						mark("self_chat", { last_in: Date.now() });
 						ctx?.receive({ adapter: "jandi", target: "main", text, author: `jandi:${sc.member_id}` });
 					},
+					peerReply: (peer, text, id) => peerReplyHook(peer, text, id),
 					log: c.log,
 					onError: err => mark("self_chat", { last_error: err }),
 				});

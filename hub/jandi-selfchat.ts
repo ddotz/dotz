@@ -8,8 +8,9 @@ import { readSecretFile, writeSecretFile } from "./secretbox.ts";
 // the keyword reach dotz. Replies still go out through the room's Incoming Webhook. This uses the JANDI web client's API, which JANDI does
 // not document: a JANDI change can break it, and the adapter then shows the error instead of guessing.
 
-/** Another computer reached only through this room: it listens for `keyword` and answers with lines that start with `reply_prefix` (shown by hub/jandi-peers.ts). */
-export type SelfChatPeer = { name: string; keyword: string; reply_prefix: string };
+/** Another computer reached only through this room: it listens for `keyword` and answers with lines that start with `reply_prefix` (shown by hub/jandi-peers.ts).
+ *  `notify: false`: its new replies raise no phone notification (the default notifies, hub/jandi-peers.ts peerReplyPush). */
+export type SelfChatPeer = { name: string; keyword: string; reply_prefix: string; notify?: false };
 export type SelfChatConfig = { enabled: boolean; team_id: number; room_id: number; member_id: number; bot_id: number; keyword: string; reply_prefix: string; session_secret: string; interval_ms: number; peers?: SelfChatPeer[] };
 export type SelfChatDeps = {
 	dataDir: string;
@@ -17,6 +18,8 @@ export type SelfChatDeps = {
 	sleep?: (ms: number) => Promise<void>;
 	api?: string;
 	receive: (text: string) => void;
+	/** A new reply of a peer (a post by anyone but the owner that starts with its reply prefix), the prefix taken off; never for a peer with `notify: false`. */
+	peerReply?: (peer: SelfChatPeer, text: string, id: number) => void;
 	log: (msg: string) => void;
 	onError: (err: string | undefined) => void;
 };
@@ -41,7 +44,7 @@ function normalizePeers(raw: unknown, own: string): SelfChatPeer[] {
 		const prefix = typeof o.reply_prefix === "string" ? o.reply_prefix.trim() : "";
 		if (!kw || seen.has(kw.toLowerCase()) || prefix.length < 1 || prefix.length > 30) continue;
 		seen.add(kw.toLowerCase());
-		out.push({ name: (typeof o.name === "string" ? o.name.trim().slice(0, 30) : "") || kw, keyword: kw, reply_prefix: prefix });
+		out.push({ name: (typeof o.name === "string" ? o.name.trim().slice(0, 30) : "") || kw, keyword: kw, reply_prefix: prefix, ...(o.notify === false ? { notify: false as const } : {}) });
 		if (out.length >= MAX_PEERS) break;
 	}
 	return out;
@@ -74,6 +77,19 @@ export function commandOf(body: string, keyword: string): string | undefined {
 	const m = new RegExp(`^\\s*/?${escapeRe(keyword)}(?:\\s+([\\s\\S]*))?$`, "i").exec(body);
 	const text = m?.[1]?.trim();
 	return text || undefined;
+}
+
+const startsWord = (body: string, word: string) => body === word || body.startsWith(`${word} `) || body.startsWith(`${word}\n`);
+
+/** The peer whose reply `body` is (it starts with that peer's reply prefix as a word) and the text after the prefix, or undefined. */
+export function peerReplyOf(body: string, peers: readonly SelfChatPeer[] | undefined): { peer: SelfChatPeer; text: string } | undefined {
+	const b = body.trim();
+	for (const peer of peers ?? []) {
+		if (!startsWord(b, peer.reply_prefix)) continue;
+		const text = b.slice(peer.reply_prefix.length).trim();
+		return text ? { peer, text } : undefined;
+	}
+	return undefined;
 }
 
 type Record_ = { id: number; fromEntity: number; message?: { content?: { body?: unknown } } };
@@ -177,9 +193,13 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 		for (const r of records.sort((a, b) => a.id - b.id)) {
 			if (!int(r.id) || r.id <= last) continue;
 			last = r.id;
-			saveLast(last); // before handing it on: a crash never runs the same command twice
-			if (r.fromEntity !== cfg.member_id) continue;
+			saveLast(last); // before handing it on: a crash never runs the same command twice (nor notifies the same reply twice)
 			const body = r.message?.content?.body;
+			if (r.fromEntity !== cfg.member_id) {
+				const reply = typeof body === "string" ? peerReplyOf(body, cfg.peers) : undefined;
+				if (reply && reply.peer.notify !== false) deps.peerReply?.(reply.peer, reply.text, r.id);
+				continue;
+			}
 			const text = typeof body === "string" ? commandOf(body, cfg.keyword) : undefined;
 			if (text) deps.receive(text);
 		}

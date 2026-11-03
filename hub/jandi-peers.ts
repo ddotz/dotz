@@ -1,7 +1,9 @@
 import { log } from "./config.ts";
 import { commandOf, SelfChatError, type SelfChat, type SelfChatConfig, type SelfChatPeer } from "./jandi-selfchat.ts";
 import { jandiAdapter, loadJandiConfig } from "./messenger-jandi.ts";
+import { noticeClass } from "./notice-class.ts";
 import type { Peer } from "./peers.ts";
+import { parseTone } from "./tone.ts";
 
 // Computers reached only through the owner's JANDI "나와의 대화" (config `self_chat.peers`) listed next to the Tailscale ones, and the chat page that serves them.
 // They have no URL of their own: this gateway reads the one configured room with the owner's session (hub/jandi-selfchat.ts), keeps the owner's
@@ -53,6 +55,20 @@ export const messageBody = (text: string) => ({ text, richText: [{ type: "text_b
 
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 export const pagePath = (p: SelfChatPeer) => `/jandi-peer/${encodeURIComponent(p.keyword)}`;
+
+const PUSH_BODY = 120;
+/** A peer's new reply (hub/jandi-selfchat.ts peerReply) as a phone notification: titled with the peer's name, the reply's first 120 characters
+ *  as the body, a tap opens the peer's conversation. Its status marker picks the class the gateway's own answers get (hub/push.ts classify):
+ *  [ask] needs an answer, [done]/[fail] is a result, an unmarked reply a message; [run] progress never notifies. One notification per reply. */
+export function peerReplyPush(peer: SelfChatPeer, text: string, id: number): { kind: "ask" | "result" | "conv"; title: string; body: string; url: string; tag: string } | undefined {
+	const { tone, text: rest } = parseTone(text.trim());
+	const cls = tone ? noticeClass({ kind: "result", tone }).cls : "conv";
+	if (cls !== "ask" && cls !== "result" && cls !== "conv") return undefined;
+	const flat = rest.replace(/\s+/g, " ").trim();
+	if (!flat) return undefined;
+	const body = flat.length > PUSH_BODY ? `${flat.slice(0, PUSH_BODY - 1)}…` : flat;
+	return { kind: cls, title: peer.name, body, url: pagePath(peer), tag: `jandi-peer:${peer.keyword}:${id}` };
+}
 
 export function page(peer: SelfChatPeer): string {
 	const api = JSON.stringify(`/api${pagePath(peer)}`).replace(/</g, "\\u003c");
