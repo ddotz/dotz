@@ -5,9 +5,23 @@
 .menu.msheet { animation: menu-sheet-in var(--m-base) var(--m-ease); }
 @keyframes menu-sheet-in { from { opacity: .5; transform: translateY(16px); } }
 
-/* command palette (05-command-palette.js): the chosen row is the selected-row fill (docs/ui-spec.md 목록 행) and the input keeps the 52px head. */
-dialog.pal .pal-i.on, dialog.pal .pal-i:focus-visible { background: var(--row-sel); }
+/* command palette (05-command-palette.js): the prototype's floating card (proto.css .pal) - one 52px search field with a line under it,
+   low rows, and a footer that names the keys. The chosen row is the selected-row fill (docs/ui-spec.md 목록 행). */
+dialog.pal { display: flex; flex-direction: column; width: min(560px, calc(100vw - 24px)); max-height: min(560px, calc(100dvh - 24px)); border-radius: var(--r-card); overflow: hidden; }
+dialog.pal .pal-head { flex: none; gap: 0; height: 52px; padding: 0 20px; }
 dialog.pal .pal-head { border-bottom: 1px solid var(--line); }
+dialog.pal .pal-in { font-size: 16px; }
+dialog.pal .pal-list { flex: 1 1 auto; min-height: 0; max-height: min(56dvh, 420px); padding: 6px; }
+dialog.pal .ph { padding: 8px 12px 4px; }
+dialog.pal .pal-i { min-height: var(--row-h); padding: 6px 12px; gap: 12px; }
+dialog.pal .pal-i .pd { flex: 0 1 auto; max-width: 45%; margin-left: auto; text-align: right; }
+dialog.pal .pal-i.on, dialog.pal .pal-i:focus-visible { background: var(--row-sel); }
+dialog.pal .pal-out { flex: 1 1 auto; min-height: 0; }
+dialog.pal .pal-ft { flex: none; display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-top: 1px solid var(--line); color: var(--fg-3); font: 400 12px/16px var(--font); }
+@media (max-width: 639px) {
+  dialog.pal { margin-top: 12vh; }
+  dialog.pal .pal-i { min-height: 44px; }
+}
 
 /* Full-screen overlay: the one frame for every pop-up over the app (38-overlay.js fsOpen; 02-basic-markdown.js dialog() wears the same classes on a native <dialog>).
    Phone: covers the whole screen, tab bar included: header (title, 무시, close) and footer (actions) stay put, only the body scrolls, safe-area padded,

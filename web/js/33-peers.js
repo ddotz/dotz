@@ -166,13 +166,16 @@ function prSheet() {
     // while this computer's gateway is unreachable the other rows' flags are stale: "확인 못 함", still selectable (prPick tries anyway)
     const off = !p.self && !p.online && !selfDown, alert = !p.self && (p.unread > 0 || p.need > 0);
     const st = p.self ? (selfDown ? "연결 안 됨" : "") : selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨";
+    // the prototype's switcher row: a status dot, the name over one quiet line, and at the right the check (this one) or the count of what waits there
+    const sub = p.self ? (st || "이 컴퓨터") : alert ? prText(p) : st;
     return el("button", { type: "button", class: `pr-row${p.self ? " on" : ""}${off ? " off" : ""}`, "aria-current": p.self ? "true" : null, "aria-disabled": off ? "true" : null,
       "aria-label": [p.name, p.self ? "지금 보고 있어요" : "", st, alert ? prText(p) : ""].filter(Boolean).join(", "), onclick: () => prPick(p) },
-      el("span", { class: "pr-t", text: p.name }),
-      alert ? el("span", { class: `pr-d${p.need > 0 ? " need" : ""}` }) : null,
-      st ? el("span", { class: "pr-st", text: st }) : icon("check", "pr-ck"));
+      el("span", { class: `dot${(p.self ? !selfDown : p.online && !selfDown) ? " ok" : ""}` }),
+      el("span", { class: "pr-tx" }, el("span", { class: "pr-t", text: p.name }), sub ? el("span", { class: "pr-sub", text: sub }) : null),
+      alert ? el("span", { class: `pr-n${p.need > 0 ? " need" : ""}`, text: String((p.need || 0) + (p.unread || 0)) }) : p.self ? icon("check", "pr-ck") : null);
   });
-  clear(PR.node.firstElementChild).append(el("div", { class: "pr-hd", id: "pr-t", text: "컴퓨터" }), el("div", { class: "pr-list" }, rows));
+  const manage = el("button", { type: "button", class: "pr-row pr-manage", onclick: () => { prClose(false); go("settings"); } }, icon("settings"), el("span", { class: "pr-t", text: "컴퓨터 관리" }));
+  clear(PR.node.firstElementChild).append(el("div", { class: "pr-hd", id: "pr-t", text: "내 컴퓨터" }), el("div", { class: "pr-list" }, rows, manage));
 }
 
 function prKey(ev) {
@@ -195,6 +198,12 @@ function prOpen() {
   // On the phone the tab bar stays free below the sheet, so tapping 홈 again (homeTabTap) can close it, as the 채팅 tab does with its list.
   const nr = $("#nav").getBoundingClientRect();
   if (nr.top > innerHeight / 2 && nr.height < innerHeight / 4) PR.node.style.bottom = `${Math.max(0, innerHeight - nr.top)}px`;
+  // With the sidebar's computer row on screen the switcher opens under it as a popover (no scrim), as the prototype draws it; the phone keeps its bottom sheet.
+  const gwb = $("#gwpick");
+  if (gwb && gwb.offsetParent) {
+    const r = gwb.getBoundingClientRect(), sh = PR.node.firstElementChild;
+    PR.node.classList.add("anch"); sh.style.left = `${Math.max(12, Math.round(r.left - 8))}px`; sh.style.top = `${Math.round(r.bottom + 6)}px`;
+  }
   PR.ov = ovOpen(() => prClose(false));
   document.addEventListener("keydown", prKey, true);
   prSheet();
