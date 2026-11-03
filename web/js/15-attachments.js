@@ -44,9 +44,14 @@ function renderAtt() {
   const box = $("#atray");
   $("#send").classList.toggle("has-att", ATT.length > 0);
   box.hidden = !ATT.length;
+  // Several images: each carries its number under it ("이미지 1", "이미지 2" ... in send order) so the owner can say which one the text means.
+  const imgN = ATT.filter(a => a.url).length > 1 ? new Map(ATT.filter(a => a.url).map((a, i) => [a.id, i + 1])) : new Map();
   clear(box).append(...ATT.map(a => {
     const x = el("button", { class: "ax", type: "button", "aria-label": `${a.name} 빼기`, onclick: () => dropAtt(a.id) }, icon("close"));
-    if (a.url) return el("div", { class: `fatt img${a.file ? "" : " up"}`, title: a.name }, el("img", { src: a.url, alt: a.name }), x);
+    if (a.url) {
+      const th = el("div", { class: `fatt img${a.file ? "" : " up"}`, title: a.name }, el("img", { src: a.url, alt: a.name }), x);
+      return imgN.has(a.id) ? el("div", { class: "fatt-n" }, th, imgNo(imgN.get(a.id))) : th;
+    }
     return fileChip(a.name, a.file ? [extOf(a.name), fsize(a.size)].filter(Boolean).join(" · ") : "올리는 중…", { cls: a.file ? "" : "up", x });
   }));
   if (typeof renderPicks === "function") renderPicks();   // the tray holds the picked elements next to the files (15-picker.js)
@@ -75,12 +80,13 @@ const refusedNote = r => fileNote(r, r.status === 404 ? "원본이 지워졌어�
 const fileMeta = (name, size) => [extOf(name), size ? fsize(size) : ""].filter(Boolean).join(" · ");
 const VIEW_RE = /\.(md|markdown|txt|log|json|ya?ml|csv|tsv)$/i;   // opens in the reader below, the rest in a tab (pdf) or as a download
 const offChip = (f, why) => fileChip(f.name, why, { cls: "off" });
-function fileItem(f) {
+const imgNo = n => el("span", { class: "tag img-no", text: `이미지 ${n}` });
+function fileItem(f, n = 0) {
   const img = IMG_RE.test(f.name || f.path);
   const main = img
     ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name, f.pc) }, el("img", { src: fileUrl(f.path, false, f.pc), alt: f.name, loading: "lazy" }))
     : fileChip(f.name, fileMeta(f.name, f.size), VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name, f.pc) } : !f.pc && canvasIsHtml(f.name) ? { onclick: () => canvasOpen(f.path, f.name) } : { href: fileUrl(f.path, false, f.pc) });
-  const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true, f.pc), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download"))), pathCopy(f.path));
+  const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true, f.pc), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download"))), n ? imgNo(n) : null, pathCopy(f.path));
   if (!f.check) return item;
   const off = why => { if (item.isConnected || item.parentNode) item.replaceWith(offChip(f, why)); };
   // A broken thumbnail waits for the HEAD answer, so the chip says why (원본이 지워졌어요) rather than a generic refusal.
@@ -119,9 +125,12 @@ function pathCopy(p, cls = "fpath") {
   return el("button", { class: cls, type: "button", title: p, "aria-label": `경로 복사: ${p}`, text: shortPath(p),
     onclick: async ev => { ev.stopPropagation(); const ok = await copyText(p); toast(ok ? "경로를 복사했어요" : "복사하지 못했어요", !ok); } });
 }
-function filesNode(files) {
+// `numbered` (the owner's own message): with two or more images each gets its "이미지 N" in send order; one image, and any other file, none.
+function filesNode(files, numbered = false) {
   if (!files || !files.length) return null;
-  return el("div", { class: "mfiles" }, ...files.map(fileItem));
+  const isImg = f => IMG_RE.test(f.name || f.path), count = numbered ? files.filter(isImg).length : 0;
+  let n = 0;
+  return el("div", { class: "mfiles" }, ...files.map(f => fileItem(f, count > 1 && isImg(f) ? ++n : 0)));
 }
 // `[file] /abs/path` lines (outside a ``` block) leave the text and show as file chips, as they become attachments on
 // Discord (hub/discord.ts fileLines).

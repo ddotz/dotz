@@ -260,7 +260,9 @@ body:has(.upd-bar) .app { padding-top: 0; margin-top: var(--ubh); height: calc(1
 .timeline { height: 100%; overflow-y: auto; overflow-x: hidden; padding-inline: 8px; margin-inline: -8px; }   /* the 8px gutter (padding, given back as margin) is room for the notice highlight's ring and bar: overflow-x hidden would clip them at the column edge (09-notices.css) */
 .tl-in { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto; padding: 8px 0 32px; }
 @media (max-width: 639px) { .tl-in { padding: 0 0 24px; } .tl-in > .bm { padding: 14px 16px; } }
-.ub.clamp { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+/* a clamped text that has a 더 보기 / 펼치기 button fades out over its last two lines instead of a hard cut (owner 2026-11-04); open removes .clamp, so the fade goes with it.
+   .ub.clamp here, .rq-body.clamp and .rq-orig.clamp in 15-reply-card.css use the same gradient with their own --fade (the height the fade covers). */
+.ub.clamp { --fade: calc(2 * var(--lh-chat) + 10px); display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); }
 .ubm { align-self: flex-end; height: 24px; padding: 0 4px; border: 0; background: none; color: var(--fg-2); font-size: 12.5px; font-weight: 500; }
 .ubm:hover { color: var(--fg); }
 .lw-s { display: flex; flex-direction: column; padding: 0 8px 6px 52px; }
@@ -327,6 +329,10 @@ details.work[open] { padding: 6px 10px 8px; border-radius: var(--r-card); backgr
 .fatt .fi-n { font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fatt .fi-m { font-size: 12px; line-height: 16px; color: var(--fg-3); }
 .fatt.up { opacity: .55; }
+/* the number under an image of a message that carries several ("이미지 1"): a small .tag, in the tray and in the sent message alike */
+.fatt-n { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.tag.img-no { flex: none; margin-top: 4px; }
+.fatt-n > .tag.img-no { margin-top: 0; }
 .fatt .ax { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: rgb(0 0 0 / .55); color: #fff; }
 .fatt .ax svg { width: 12px; height: 12px; }
 .fatt:not(.img) .ax { background: transparent; color: var(--fg-3); top: 18px; }

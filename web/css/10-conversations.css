@@ -16,8 +16,7 @@
 .cv-av { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 700 15px/24px var(--font); }
 .cv-av .ic { width: 20px; height: 20px; }
 /* the app's own mark (the top bar's .logo) as the main assistant's icon */
-.cv-av .logo { width: 55%; height: 55%; border-radius: 28%; }
-.cv-av .logo::after { inset: 31%; }
+.cv-av .logo { width: 55%; height: 55%; }
 .cv-av.nt { background: var(--layer); color: var(--fg); }
 .cv-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cv-n, .cv-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
