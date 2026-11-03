@@ -93,6 +93,7 @@
     alert: [
       { ts: ago(35), kind: "out", source: "gateway", target: "alert", text: "댓글 3개에 답글을 달 수 있어요. 채팅에서 \"댓글 답글 써 줘\"라고 해 보세요." },
       { ts: ago(18), kind: "out", source: "gateway", target: "alert", text: "[가격 페이지] 확인했어요. 바뀐 곳은 없어요." },
+      { ts: ago(9), kind: "out", source: "gateway", target: "alert", text: "[캠핑 의자 가격] 가격이 바뀌었어요.\n\n- 캠핑 의자 89,000원 → 72,000원" },
     ],
     worklog: [
       { ts: ago(310), kind: "out", source: "gateway", target: "worklog", text: "밤 사이 정리 기록\n\n- 메일 4통을 분류했어요\n- 답장할 메일 2통을 표시했어요\n- 가격 페이지를 6번 확인했어요" },
@@ -153,6 +154,7 @@
   ];
   const monitors = [
     { name: "가격 페이지", kind: "watch", watch: "price-page", scope: "plain", last_run: ago(18), next_run: new Date(now + 12 * 60_000).toISOString(), last_result: "ok" },
+    { name: "캠핑 의자 가격", kind: "watch", watch: "camp-chair", scope: "plain", last_run: ago(9), next_run: new Date(now + 21 * 60_000).toISOString(), last_result: "changed" },
     { name: "아침 브리핑", kind: "schedule", watch: "", scope: "plain", last_run: ago(61), next_run: new Date(now + 20 * 3600_000).toISOString(), last_result: "ok" },
   ];
 
@@ -196,9 +198,13 @@
       { id: "n-demo-2", kind: "notice", cls: "news", tone: "", src: "ch:2", open: "ch:2", at: ago(20), title: "배포 공지 형태를 정해 주세요", read: false },
       { id: "n-demo-3", kind: "notice", cls: "alert", tone: "", src: "alert", open: "alert", at: ago(35), title: "댓글 3개에 답글을 달 수 있어요", read: false },
       { id: "n-demo-4", kind: "notice", cls: "news", tone: "", src: "worklog", open: "worklog", at: ago(310), title: "밤 사이 정리를 마쳤어요", read: true },
+      { id: "n-demo-5", kind: "watch", cls: "alert", tone: "", src: "alert", open: "alert", at: ago(9), title: "캠핑 의자 가격", text: "[캠핑 의자 가격] 가격이 바뀌었어요.\n\n- 캠핑 의자 89,000원 → 72,000원", read: false },
+      { id: "n-demo-6", kind: "notice", cls: "result", tone: "done", src: "st_report", open: "worklog", at: ago(52), title: "주간 보고서 정리를 마쳤어요", read: false },
+      { id: "n-demo-7", kind: "notice", cls: "result", tone: "done", src: "worklog", open: "worklog", at: ago(180), title: "아침 브리핑을 보냈어요", read: true },
     ],
     gone: [],
   };
+  for (const n of notices.items) n.ts = n.at;   // the web reads a notice's time from ts / updated
 
   const canvases = {
     "notes/release.md": "# 릴리스 노트\n\n- 데모 페이지 추가\n- 모바일 문구 정리\n",
