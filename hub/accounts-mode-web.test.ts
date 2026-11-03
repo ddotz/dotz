@@ -6,6 +6,7 @@ import { join } from "node:path";
 // the 자동 전환 switch row leads (off = 고정, the account is fixed by tapping its row), the 전환 규칙 rows show only in 자동 전환, the switch writes
 // PUT /api/accounts/mode and the move buttons write PUT /api/accounts/order.
 const src = readFileSync(join(import.meta.dir, "..", "web", "js", "25-settings-accounts.js"), "utf8");
+const rowToggleSrc = /^function rowToggle[\s\S]*?\n}\n/m.exec(readFileSync(join(import.meta.dir, "..", "web", "js", "01-core.js"), "utf8"))![0];
 
 type Node = { tag: string; attrs: Record<string, any>; kids: any[]; addEventListener: () => void; focus: () => void };
 const el = (tag: string, attrs: Record<string, any> | null, ...kids: any[]): Node => ({ tag, attrs: attrs ?? {}, kids: kids.flat().filter(k => k != null), addEventListener: () => {}, focus: () => {} });
@@ -47,7 +48,7 @@ function card(acc: object) {
 		current: "settings",
 		loadQuota: () => {},
 	};
-	const mod = new Function(...Object.keys(env), `${src}\nACC = arguments[arguments.length - 1];\nreturn accountSection;`);
+	const mod = new Function(...Object.keys(env), `${rowToggleSrc}\n${src}\nACC = arguments[arguments.length - 1];\nreturn accountSection;`);
 	const section = mod(...Object.values(env), acc) as () => Node[];
 	return { nodes: section(), calls, dialogs };
 }

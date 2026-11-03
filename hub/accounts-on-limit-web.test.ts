@@ -5,6 +5,9 @@ import { join } from "node:path";
 // The 계정 card's 한도에 걸렸을 때 row (web/js/25-settings-accounts.js accountSection): the stored on_limit is marked, the unset
 // state says the alert asks once, and a tap writes PUT /api/accounts/on-limit and re-renders like the other rows.
 const src = readFileSync(join(import.meta.dir, "..", "web", "js", "25-settings-accounts.js"), "utf8");
+// rowToggle, the shared 두 값 설정 pill, comes from 01-core.js.
+const core = readFileSync(join(import.meta.dir, "..", "web", "js", "01-core.js"), "utf8");
+const rowToggleSrc = /^function rowToggle[\s\S]*?\n}\n/m.exec(core)![0];
 
 type Node = { tag: string; attrs: Record<string, any>; kids: any[]; addEventListener: () => void; focus: () => void };
 const el = (tag: string, attrs: Record<string, any> | null, ...kids: any[]): Node => ({ tag, attrs: attrs ?? {}, kids: kids.flat().filter(k => k != null), addEventListener: () => {}, focus: () => {} });
@@ -47,32 +50,38 @@ function card(acc: object) {
 		current: "settings",
 		loadQuota: () => {},
 	};
-	const mod = new Function(...Object.keys(env), `${src}\nACC = arguments[arguments.length - 1];\nreturn accountSection;`);
+	const mod = new Function(...Object.keys(env), `${rowToggleSrc}\n${src}\nACC = arguments[arguments.length - 1];\nreturn accountSection;`);
 	const section = mod(...Object.values(env), acc) as () => Node[];
 	return { nodes: section(), calls, renders: () => renders };
 }
 
-const choiceOf = (nodes: any, label: string) => find(nodes, n => n.attrs.text === label)[0]!;
+const pill = (nodes: any) => find(nodes, n => String(n.attrs.class ?? "").includes("tgl"));
 
-test("한도에 걸렸을 때: the saved choice is marked and both choices are there", () => {
+test("한도에 걸렸을 때: one pill shows the saved value, and it reads as the second value pressed or not", () => {
 	const wait = card(body("wait"));
 	expect(text(wait.nodes)).toContain("한도에 걸렸을 때");
-	expect(choiceOf(wait.nodes, "기다리기").attrs["aria-pressed"]).toBe("true");
-	expect(choiceOf(wait.nodes, "기다리기").attrs.class).toContain("on");
-	expect(choiceOf(wait.nodes, "자동 전환으로 넘어가기").attrs["aria-pressed"]).toBe("false");
-
+	expect(pill(wait.nodes)).toHaveLength(1);
+	expect(pill(wait.nodes)[0]!.attrs["data-v"]).toBe("wait");
+	expect(pill(wait.nodes)[0]!.attrs["aria-pressed"]).toBe("false");
 	const sw = card(body("switch"));
-	expect(choiceOf(sw.nodes, "자동 전환으로 넘어가기").attrs["aria-pressed"]).toBe("true");
-	expect(choiceOf(sw.nodes, "기다리기").attrs["aria-pressed"]).toBe("false");
+	expect(pill(sw.nodes)[0]!.attrs["data-v"]).toBe("switch");
+	expect(pill(sw.nodes)[0]!.attrs["aria-pressed"]).toBe("true");
 });
 
-test("한도에 걸렸을 때: unset says it asks once", () => {
-	expect(text(card(body(null)).nodes)).toContain("아직 안 정했어요 · 한도에 걸리면 한 번 물어봐요");
+test("한도에 걸렸을 때: unset says it asks once, and the first tap picks 기다리기", async () => {
+	const c = card(body(null));
+	expect(text(c.nodes)).toContain("아직 안 정했어요 · 한도에 걸리면 한 번 물어봐요");
+	expect(pill(c.nodes)[0]!.attrs["data-v"]).toBe("");
+	await pill(c.nodes)[0]!.attrs.onclick({ currentTarget: {} });
+	expect(c.calls).toEqual([["/api/accounts/on-limit", "PUT", { on_limit: "wait" }]]);
 });
 
-test("한도에 걸렸을 때: a tap writes PUT /api/accounts/on-limit and re-renders", async () => {
+test("한도에 걸렸을 때: a tap moves to the other value with PUT /api/accounts/on-limit and re-renders", async () => {
 	const c = card(body("wait"));
-	await choiceOf(c.nodes, "자동 전환으로 넘어가기").attrs.onclick({ currentTarget: {} });
+	await pill(c.nodes)[0]!.attrs.onclick({ currentTarget: {} });
 	expect(c.calls).toEqual([["/api/accounts/on-limit", "PUT", { on_limit: "switch" }]]);
 	expect(c.renders()).toBe(1);
+	const back = card(body("switch"));
+	await pill(back.nodes)[0]!.attrs.onclick({ currentTarget: {} });
+	expect(back.calls).toEqual([["/api/accounts/on-limit", "PUT", { on_limit: "wait" }]]);
 });

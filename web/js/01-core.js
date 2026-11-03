@@ -19,6 +19,14 @@ const clear = n => { while (n.firstChild) n.removeChild(n.firstChild); return n;
 const enc = encodeURIComponent;
 // The one right-hand slot of a settings row (.li > .li-end, docs/ui-spec.md 설정 행): a 행 안 button, a switch, a field or a value.
 const liEnd = (...kids) => el("span", { class: "li-end" }, ...kids);
+// A setting with exactly two values (docs/ui-spec.md 두 값 설정): one small pill showing the current value; a tap, Enter or Space moves to the
+// other one. Unset shows `unset` and the first tap picks the first value. An on/off setting uses the switch (.hs-sw); three or more values a menu.
+// aria-pressed is true on the second value, so the state reads like a switch; the label always names the value now in force.
+function rowToggle({ label, opts, value, unset = "정하기", onPick }) {
+  const i = opts.findIndex(([v]) => v === value), next = opts[i < 0 ? 0 : (i + 1) % opts.length];
+  return el("button", { type: "button", class: `chip tgl${i < 0 ? " unset" : ""}`, "data-v": i < 0 ? "" : value, "aria-pressed": String(i === 1),
+    "aria-label": `${label}: ${i < 0 ? unset : opts[i][1]} · 누르면 ${next[1]}`, text: i < 0 ? unset : opts[i][1], onclick: ev => onPick(next[0], ev.currentTarget) });
+}
 
 /* ---------- icons (24px stroke set) ---------- */
 const ICONS = {
