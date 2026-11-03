@@ -235,28 +235,27 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .pj-hd .sup { flex: 1 1 260px; min-width: 0; }
 .pj-lg { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; color: var(--fg-3); font-size: 11.5px; }
 .pj-row { display: flex; align-items: stretch; gap: 12px; overflow-x: auto; padding: 2px 2px 12px; }
-.pj-card { flex: 0 0 340px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--card); color: var(--fg); text-align: left; cursor: pointer; transition: border-color .15s, background .15s; }
-.pj-card:hover { background: var(--hover); border-color: var(--fg-3); }
+.pj-card { flex: 0 0 340px; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px; border-radius: var(--r-card); background: var(--card); color: var(--fg); text-align: left; cursor: pointer; transition: background .15s; }
+.pj-card:hover { background: var(--card-hover); }
 .pj-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.pj-card.diff, .pj-card.diff:hover { border-color: color-mix(in srgb, var(--mine) 55%, var(--line-2)); }
 .pj-top { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
 .pj-nm { flex: 1 1 auto; min-width: 0; font: 600 15px/22px var(--font); letter-spacing: -.01em; overflow-wrap: anywhere; }
 .pj-chs { display: flex; flex-wrap: wrap; gap: 4px; }
-.pj-tg { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-height: 22px; padding: 1px 8px; border: 1px solid var(--line-2); border-radius: 11px; background: var(--bg); color: var(--fg-2); font: 500 11.5px/16px var(--font); overflow-wrap: anywhere; }
+.pj-tg { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-height: 24px; padding: 1px 10px; border-radius: 12px; background: var(--layer); color: var(--fg-2); font: 500 11.5px/16px var(--font); overflow-wrap: anywhere; }
 .pj-tg .kd { color: var(--fg-3); font-weight: 400; }
 /* the project's folder: one short line (pathCopy + shortPath), the full path in the title, a tap copies it */
 .pj-cwd { display: block; max-width: 100%; padding: 0; border: 0; background: none; color: var(--fg-3); font: 400 12px/18px var(--font); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: copy; }
 .pj-cwd:hover { color: var(--fg-2); }
-.pj-fs { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; background: var(--layer); }
+.pj-fs { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: 8px; background: var(--layer); }
 .pj-f { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 12.5px; line-height: 20px; }
 .pj-f .k { flex: none; width: 104px; color: var(--fg-3); font-size: 11.5px; } /* fits 서브에이전트 모델 on one line */
 .pj-f .v { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; overflow-wrap: anywhere; }
 .pj-f .dim, .pj-sc .tx.dim { color: var(--fg-3); }
 .pj-f .was { color: var(--fg-3); text-decoration: line-through; }
 .pj-f .ar { color: var(--mine); }
-.pj-f.diff .v b { color: var(--mine); font-weight: 600; }
+.pj-f.diff .v b { color: var(--mine); font-weight: 500; }
 .pj-f .bd { align-self: center; }
-.pj-g { color: var(--fg-3); font-size: 10.5px; }
+.pj-g { color: var(--fg-3); font-size: 11px; }
 .pj-sc { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .pj-sc .cl { color: var(--fg-3); font: 500 11px/16px var(--font); }
 .pj-sc .tx { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--fg-2); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
