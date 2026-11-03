@@ -53,9 +53,11 @@ const attnLabel = k => ({ ask: "답변 필요", limit: "한도 걸림" })[k] || 
 const chatUnreadCount = (targets, unreadOf) => targets.filter(t => unreadOf(t) > 0).length;
 function paintAttn() {
   const n = S ? chatUnreadCount([MAIN, "alert", "worklog", ...projTargets()], t => ts(t).unread) : 0, b = $("#nav-att");
-  const say = n ? `읽지 않은 대화 ${n}개` : "";
+  const say = n ? `읽지 않은 대화 ${n}개` : "", rise = n && b.hidden && b.dataset.seen;
   b.hidden = !n; b.title = say;
   if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";   // the digit that changed rolls; a hidden badge forgets, so it appears whole
+  if (rise) motionPop(b);   // 0 -> n pops in; the first paint (before the state has loaded) only learns the number
+  if (S) b.dataset.seen = "1";
   b.parentElement.setAttribute("aria-label", n ? `채팅, ${say}` : "채팅");
   document.title = n ? `(${n}) ${botName}` : botName;
   paintBell();
@@ -85,10 +87,12 @@ const monNews = () => NT.items.some(n => n.kind === "watch" && !n.read && !n.dis
 function paintMonAttn() {
   const b = $("#nav-mon");
   if (!b) return;
-  const n = monAttnCount([{ apps: INTG.items, mons: NM.items }]), news = !n && monNews(), say = n ? `확인할 것 ${n}개` : news ? "새 소식" : "";
+  const n = monAttnCount([{ apps: INTG.items, mons: NM.items }]), news = !n && monNews(), say = n ? `확인할 것 ${n}개` : news ? "새 소식" : "", rise = n && b.hidden && b.dataset.seen;
   b.hidden = !n && !news; b.title = say;
   b.classList.toggle("nnb", !!n); b.classList.toggle("nub", news);
   if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";
+  if (rise) motionPop(b);
+  if (NM.loaded && NT.loaded && INTG.loaded) b.dataset.seen = "1";
   b.parentElement.setAttribute("aria-label", say ? `모니터링, ${say}` : "모니터링");
 }
 // The badge and 답변 필요 read this computer's monitors on every tab: 홈 and 모니터링 refresh them themselves, any other tab here.
@@ -259,7 +263,11 @@ function paintBell() {
   if (!n0) return;
   let n = 0;
   try { n = NT.unread | 0; } catch { /* 30-notices.js has not run yet */ }
-  n0.hidden = !n; n0.textContent = n > 99 ? "99+" : String(n);
+  const direct = !n || n0.hidden || !n0.dataset.seen, txt = n > 99 ? "99+" : String(n);
+  n0.hidden = !n;
+  if (direct) n0.textContent = txt; else rollCount(n0, txt);
+  if (n && direct && n0.dataset.seen) motionPop(n0);   // 0 -> n pops; the first draw, before the notices have loaded, only learns the number
+  try { if (NT.loaded) n0.dataset.seen = "1"; } catch {}
   const b = $("#bell");
   if (b) b.setAttribute("aria-label", n ? `알림, 안 읽은 알림 ${n}개` : "알림");
 }

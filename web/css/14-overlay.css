@@ -1,9 +1,15 @@
-/* menus: they open where they are anchored, fading in from the edge they came from (150ms, --m-ease); a phone sheet rises 16px (220ms).
-   The global reduced-motion rule (03-base.css) turns both off. */
+/* menus: they open where they are anchored, fading in from the edge they came from (150ms, 8px, --m-ease); a phone menu sheet rises from the bottom (280ms).
+   The global reduced-motion rule (01-tokens.css) turns both off. */
 .menu { animation: menu-in var(--m-fast) var(--m-ease); }
-@keyframes menu-in { from { opacity: 0; transform: translateY(-6px); } }
-.menu.msheet { animation: menu-sheet-in var(--m-base) var(--m-ease); }
-@keyframes menu-sheet-in { from { opacity: .5; transform: translateY(16px); } }
+@keyframes menu-in { from { opacity: 0; transform: translateY(-8px); } }
+.menu.msheet { animation: menu-sheet-in 280ms var(--m-ease); }
+@keyframes menu-sheet-in { from { transform: translateY(100%); } }
+/* The scrim of a native <dialog> (dialog(), the palette): fades in with it (220ms; the palette 180ms) and out while it leaves (motionDialog sets [data-leaving], 150ms). */
+dialog[open]::backdrop { animation: m-scrim-in var(--m-base) var(--m-ease); }
+dialog.pal[open]::backdrop { animation-duration: 180ms; }
+dialog[data-leaving][open]::backdrop { animation: m-scrim-out var(--m-fast) var(--m-ease) forwards; }
+@keyframes m-scrim-in { from { opacity: 0; } }
+@keyframes m-scrim-out { to { opacity: 0; } }
 
 /* command palette (05-command-palette.js): the prototype's floating card (proto.css .pal) - one 52px search field with a line under it,
    low rows, and a footer that names the keys. The chosen row is the selected-row fill (docs/ui-spec.md 목록 행). */
@@ -28,8 +34,7 @@ dialog.pal .pal-ft { flex: none; display: flex; align-items: center; gap: 12px; 
    kept above the keyboard (.kb, set by fsOpen). Desktop: a centered dialog (.tall = the large one, for a draft). Menus, toasts and tooltips are not overlays. */
 .fs-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: center; justify-content: center; background: var(--scrim); }
 .fs-card { --fs-fill: var(--layer); display: flex; flex-direction: column; width: min(560px, calc(100% - 48px)); max-height: min(86dvh, 820px); margin: 0; border-radius: var(--r-sheet); background: var(--card); color: var(--fg); box-shadow: var(--float); overflow: hidden; }
-/* fsOpen moves its own sheet (38-overlay.js motionIn / motionOut); the native <dialog> of dialog() has no script around it, so it keeps one CSS rise. */
-dialog.fs-card { animation: ds-up var(--m-base) var(--m-ease); }
+/* fsOpen and dialog() move their own sheet (38-overlay.js, 02-basic-markdown.js: motionSheet / motionDialog in 01-motion.js). */
 .fs-card:focus { outline: 0; }
 .fs-card.tall { width: min(720px, calc(100% - 48px)); height: min(86dvh, 820px); }
 dialog.fs-card:not([open]) { display: none; }
@@ -76,4 +81,3 @@ dialog.fs-card::backdrop { background: var(--scrim); }
   .fs-bd:has(> .fs-card.mid) { align-items: flex-end; background: var(--scrim); }
   .fs-card.mid { height: auto; max-height: min(86dvh, 820px); border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--card); padding-top: 0; }
 }
-@media (prefers-reduced-motion: reduce) { dialog.fs-card { animation: none; } }

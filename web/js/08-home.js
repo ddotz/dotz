@@ -1,5 +1,6 @@
 /* ---------- home: every status at a glance, each card navigates ---------- */
 let HQ = null, homeTimer;
+let HOME_READY = false;   // the first loadHomeData has landed: until then rows arriving in pieces are the first paint, and move nothing
 async function loadHomeData() {
   clearTimeout(homeTimer);
   await Promise.all([
@@ -9,6 +10,7 @@ async function loadHomeData() {
     // the other computers' snapshot, read ahead for 모니터링 and a peer's item opened by link; 홈 itself draws none of it
     typeof pqLoad === "function" ? pqLoad().catch(() => {}) : null,
   ]);
+  HOME_READY = true;
   if (current === "home") { renderHome(); homeTimer = setTimeout(loadHomeData, 60000); }
 }
 function tapCard(to, ...kids) {
@@ -364,10 +366,10 @@ function renderHomeNow() {
       el("div", { class: "hn-h hneeds-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null, crit ? el("span", { class: "tag warn", text: `중요 ${crit}` }) : null),
       nyListNode(needs), ...owedBlock));
   for (const w of settled) { const s = HC_SETTLE.get(w.id), row = s && !s.swapped ? now.querySelector(`[data-work="${CSS.escape(w.id)}"]`) : null; if (row) { s.swapped = true; motionSwap(row, () => {}); } }
-  if (S && NT.loaded) {
+  if (S && NT.loaded && HOME_READY) {
     const rows = [...now.querySelectorAll(".hr, .ntg")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.work || r.dataset.mon || r.dataset.group || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
     const fresh = freshKeys(HOME_ROWS, keys);
-    rows.forEach((r, i) => { if (fresh.has(keys[i])) motionIn(r); });
+    rows.forEach((r, i) => { if (fresh.has(keys[i])) motionIn(r, "top"); });
   }
   const endBox = $("#home-ended");
   if (endBox) clear(endBox).append(...[endedGroup()].filter(Boolean));

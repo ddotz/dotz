@@ -148,12 +148,19 @@ async function busy(btn, fn) {
 
 /* ---------- snackbar ---------- */
 let toastTimer;
+// A toast that times out or whose 되돌리기 was pressed fades out (150ms) and is then removed; a new toast replaces the old one at once.
+function toastGone(n) {
+  if (!n.isConnected) return;
+  n.style.pointerEvents = "none";
+  motionOut(n).then(() => n.remove());
+}
 function toast(msg, bad, action, ms) {
   document.querySelectorAll(".snack").forEach(n => n.remove());
-  const n = el("div", { class: `snack${bad ? " bad" : ""}${action ? " act" : ""}`, role: "status" }, el("span", { text: stripMarkers(msg) }), action ? el("button", { type: "button", class: "sa", text: action.label, onclick: () => { n.remove(); action.onclick(); } }) : null);
+  const n = el("div", { class: `snack${bad ? " bad" : ""}${action ? " act" : ""}`, role: "status" }, el("span", { text: stripMarkers(msg) }), action ? el("button", { type: "button", class: "sa", text: action.label, onclick: () => { toastGone(n); action.onclick(); } }) : null);
   (document.querySelector("dialog[open]") || document.body).append(n);
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => n.remove(), ms || (bad || action ? 6000 : 3500));
+  motionIn(n, "rise");
+  toastTimer = setTimeout(() => toastGone(n), ms || (bad || action ? 6000 : 3500));
 }
 
 /* ---------- floating notices: top-right cards that leave ~4s after the owner has seen them ---------- */
@@ -200,7 +207,7 @@ function notify(e) {
     ntfDone.add(key);
     try { localStorage.setItem(NTF_KEY, JSON.stringify([...ntfDone].slice(-300))); } catch {}
     n.classList.add("out");
-    setTimeout(() => n.remove(), 220);
+    setTimeout(() => n.remove(), M_MS.fast);
   }
   n.append(el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: ev => { ev.stopPropagation(); close(); } }));
   // A tap opens the item by its kind, like every other notice entry point (30-notices.js noticeOpen).
@@ -255,6 +262,7 @@ function dialog({ title, body, actions = [], onclose, wide, classic, confirm }) 
   document.body.append(d);
   d.showModal(); dialogHist(d);
   if (confirm) cfPlace(d);
+  motionDialog(d);
   return h;
 }
 function ask(title, text, ok = "확인", danger = false) {

@@ -306,7 +306,7 @@ const ntAlertReadAll = btn => busy(btn, async () => {
 // 지우기 (x) on an alert in that conversation dismisses its notice on the hub (POST /api/notices/<id>/dismiss): gone from the bell, 홈 and every
 // count, and hidden in the conversation on every page (NT.gone). A question that waits on the owner has no x (the hub refuses it).
 async function ntAlertDismiss(n, row) {
-  row.hidden = true;
+  const left = motionOut(row).then(a => { row.hidden = true; if (a && a.cancel) a.cancel(); });   // the row fades out (150ms), then stays hidden
   try {
     const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
     if (!r || !r.ok) throw new Error(r && r.held ? "답이 필요한 알림은 지울 수 없어요" : "지우지 못했어요");
@@ -316,7 +316,7 @@ async function ntAlertDismiss(n, row) {
     if (typeof r.unread === "number") NT.unread = r.unread;
     ntPaint(); homeSoon();
     toast("알림을 지웠어요");
-  } catch (e) { row.hidden = false; toast(e.message || "지우지 못했어요", true); }
+  } catch (e) { await left; row.hidden = false; toast(e.message || "지우지 못했어요", true); }
 }
 // A notification that arrives while this conversation is open eases in. The first draw, a redraw and older messages loaded above move nothing:
 // only a row that was not there and is newer than the newest one drawn before is new.
@@ -485,6 +485,7 @@ async function ntIgnore(n) {
     if (n.pc) await pqNotice(n, "notice", { op: "ignore", id });
     else {
       const r = await api(`/api/notices/${enc(id)}/ignore`, "POST", {});
+      await Promise.all([...document.querySelectorAll(`.hr[data-nid="${CSS.escape(id)}"]`)].map(row => motionOut(row)));   // the ignored row leaves (150ms) before the lists redraw
       ntApply(r.item, r.unread);
       if (r.ids && r.ids.length > 1) loadNotices();   // its alert / message twins changed too; their live frames follow, the refetch makes sure
     }
