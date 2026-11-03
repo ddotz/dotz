@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "19eba8c811d7";
+const WEB_BUILD = "e2c2900ae455";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -18,6 +18,8 @@ function el(tag, props, ...kids) {
 }
 const clear = n => { while (n.firstChild) n.removeChild(n.firstChild); return n; };
 const enc = encodeURIComponent;
+// The one right-hand slot of a settings row (.li > .li-end, docs/ui-spec.md 설정 행): a 행 안 button, a switch, a field or a value.
+const liEnd = (...kids) => el("span", { class: "li-end" }, ...kids);
 
 /* ---------- icons (24px stroke set) ---------- */
 const ICONS = {
@@ -1239,7 +1241,7 @@ function makeBoard(container, key, opts = {}) {
   let saved = bLoad(store), lastJson = JSON.stringify(saved), cur = [], lay = [], ghost = [], act = null, pending = null, swallow = false;
   const wraps = new Map();
   const ph = el("div", { class: "bph", hidden: true });
-  const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text", type: "button", onclick: () => reset() }, "배치 초기화"));
+  const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text sm", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text sm", type: "button", onclick: () => reset() }, "배치 초기화"));
   container.classList.add("board");
   container.before(bar);
   container.append(ph);
@@ -4805,8 +4807,8 @@ function renderQueue() {
   clear(box).append(...mine.map(i => el("div", { class: "qitem" },
     el("div", { class: "qb" }, el("div", { class: "qt", text: i.text }), el("div", { class: "qm", text: "작업이 끝나면 전달" })),
     el("div", { class: "qa" },
-      el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue(); scheduleState(); }) }, "지금 끼워넣기"),
-      el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, () => takeBack(i)) }, "취소")))));
+      el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue(); scheduleState(); }) }, "지금 끼워넣기"),
+      el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, () => takeBack(i)) }, "취소")))));
 }
 // Taking a queued message back puts its text into the box; a box with a draft keeps it and the message stays queued.
 async function takeBack(i) {
@@ -6755,23 +6757,22 @@ function renderProviders() {
   const box = $("#providers");
   const list = P.providers;
   const wrap = el("div", {});
-  wrap.append(el("div", { class: "tools-bar" }, el("span", { class: "sec", text: `${list.filter(isConnected).length}개 연결` }),
-    el("button", { class: "btn tonal", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
+  wrap.append(el("div", { class: "sec sec-act" }, `${list.filter(isConnected).length}개 연결`,
+    el("button", { class: "btn tonal sm", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
   if (!list.length) wrap.append(emptyNode("공급자가 없어요"));
   const row = p => {
     const name = p.name || p.id;
     const canLogout = p.can_logout ?? p.removable;
     const sub = [p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
-    const btns = el("div", { class: "btns" });
     // a signed-in Claude subscription: another login adds an account (hub/providers.ts can_add_account), it never replaces one
-    if (p.can_add_account) btns.append(el("button", { class: "btn tonal", type: "button", onclick: () => startLogin(p) }, icon("add"), "계정 추가"));
-    else if (p.can_login) btns.append(el("button", { class: `btn ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인"));
-    if (canLogout) btns.append(el("button", { class: "btn danger", type: "button", onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, p.auth === "api_key" ? "키 삭제" : "로그아웃"));
+    const act = p.can_add_account ? el("button", { class: "btn tonal inrow", type: "button", onclick: () => startLogin(p) }, icon("add"), "계정 추가")
+      : p.can_login ? el("button", { class: `btn inrow ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인") : null;
+    const out = p.auth === "api_key" ? "키 삭제" : "로그아웃";
+    const rm = canLogout ? el("button", { class: "ib", type: "button", title: out, "aria-label": out, onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, icon("trash")) : null;
     return el("div", { class: "li prow" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
       el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
         sub ? el("div", { class: "sup", text: sub }) : null),
-      el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }),
-      btns.children.length ? btns : null);
+      liEnd(el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }), act, rm));
   };
   // Login accounts first, then API keys; an unconfigured provider sits with the way it can be set up.
   const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);
@@ -6909,7 +6910,7 @@ async function loadQuota(fresh) {
   if (current === "usage") quotaTimer = setTimeout(loadQuota, 60000);
   clear(box);
   box.append(el("div", { class: "tools-bar" }, el("span", { class: "sup", text: q.fetched_at ? kstStamp(q.fetched_at) : "" }),
-    el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, () => loadQuota(true)) }, icon("refresh"), "새로고침")));
+    el("button", { class: "btn text sm", type: "button", onclick: ev => busy(ev.currentTarget, () => loadQuota(true)) }, icon("refresh"), "새로고침")));
   const grid = el("div", { class: "grid" });
   for (const p of q.providers || []) {
     const card = el("div", { class: "card" }, el("div", { class: "ch" }, el("h3", { text: providerName(p.provider) })));
@@ -7377,10 +7378,10 @@ async function installApp() {
   dialog({ classic: true, title: "앱 설치", body: el("div", {}, el("ol", { class: "steps" }, ...steps.map(s => el("li", { text: s }))), el("p", { class: "note", text: `전에 추가한 ${botName} 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요.` })), actions: [{ label: "확인", kind: "pri", onclick: c => c() }] });
 }
 function pushSection() {
-  const li = (ic, title, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), ...trail);
+  const li = (ic, title, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), trail.length ? liEnd(...trail) : null);
   const ios = isIOS(), standalone = isStandalone();
   const rows = [];
-  if (!standalone) rows.push(li("home", "앱 설치", el("button", { class: "btn", type: "button", onclick: () => installApp() }, "앱 설치")));
+  if (!standalone) rows.push(li("home", "앱 설치", el("button", { class: "btn tonal inrow", type: "button", onclick: () => installApp() }, "앱 설치")));
   const subscribed = PWA.sub && PWA.info && PWA.info.subscribed;
   if (PWA.gw && PWA.gw.app) {
     // The device has the app: one row per gateway, whichever gateway's page this is. A gateway that does not answer cannot be switched.
@@ -7636,14 +7637,14 @@ function hvSection() {
 }
 function updateSection() {
   const i = UPD.info;
-  const li = (title, sub, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), ...trail);
+  const li = (title, sub, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), trail.length ? liEnd(...trail) : null);
   const head = el("div", { class: "sec", id: "upd-sec" }, "업데이트", updRestartPending() ? el("span", { class: "tag warn upd-new", text: "재시작 필요" }) : updAvailable() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null);
   if (!i || i.error) return [head, el("div", { class: "list" }, li("앱 버전", i ? i.error : "불러오는 중…")), ...hvSection()];
   const { running: run, disk, job, settings: s } = i;
   const jobRunning = job && job.status === "running";
   const { pending, c } = updState(i);
   const off = jobRunning || UPD.wait ? { disabled: true } : {};
-  const rows = [li("앱 버전", `실행 중 ${updVer(run)}`, el("button", { class: "btn tonal", type: "button", ...off, onclick: ev => updCheck(ev.currentTarget) }, "확인"))];
+  const rows = [li("앱 버전", `실행 중 ${updVer(run)}`, el("button", { class: "btn tonal inrow", type: "button", ...off, onclick: ev => updCheck(ev.currentTarget) }, "확인"))];
   if (c && !c.ok) rows.push(el("div", { class: "upd-box err" }, el("div", { class: "hd", text: c.error.reason }), el("div", { class: "sup" }, ...updCode(c.error.fix)), c.error.detail ? el("div", { class: "upd-detail", text: c.error.detail }) : null));
   else if (c && !updAvailable()) rows.push(li("최신 버전이에요", `${c.version && c.version.release ? `v${c.version.release} · ` : ""}${c.upstream} · 확인 ${updWhen(c.at)}${c.ahead.length ? ` · ${c.upstream}에 없는 로컬 커밋 ${c.ahead.length}개 (아직 올리지 않음)` : ""}${c.dirty.length ? ` · 커밋 안 한 변경 ${c.dirty.length}개` : ""}`));
   else if (c) {
@@ -7659,12 +7660,12 @@ function updateSection() {
   if (jobRunning) rows.push(li(`업데이트 중 · ${job.phase}`, job.message, el("span", { class: "dot pri", "aria-hidden": "true" })));
   else if (job && job.status !== "current" && !(job.status === "updated" && !pending)) rows.push(el("div", { class: `upd-box ${job.status === "updated" ? "ok" : "err"}` }, el("div", { class: "upd-msg", text: job.keep && !(c && c.keep) ? job.keep.line : job.message }), job.keep && !(c && c.keep) ? updKeepBox(job.keep) : null));
   if (UPD.wait) rows.push(li("재시작 대기 중", UPD.wait.when === "now" ? "곧 다시 켜져요. 이 화면은 자동으로 다시 연결돼요." : `작업이 끝나면 다시 켜져요${i.busy.length ? ` (${i.busy.join(", ")})` : ""}. 이 화면은 자동으로 다시 연결돼요.`, el("span", { class: "dot pri", "aria-hidden": "true" })));
-  else if (pending) rows.push(li(`새 버전 ${disk.commit.short} 받음`, "재시작하면 적용돼요", el("button", { class: "btn", type: "button", onclick: () => updRestart() }, "재시작")));
+  else if (pending) rows.push(li(`새 버전 ${disk.commit.short} 받음`, "재시작하면 적용돼요", el("button", { class: "btn inrow", type: "button", onclick: () => updRestart() }, "재시작")));
   const prefs = [el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "매일 자동 확인" }), el("div", { class: "sup", text: s.auto_apply ? "새 버전이 있으면 알리고, 아래 자동 적용으로 바로 적용해요." : "새 버전이 있으면 알림만 보내요. 적용은 직접 해요." })),
-    s.auto_check ? (/,\s*/.test(s.at) ? el("input", { class: "upd-at", type: "text", value: s.at, "aria-label": "확인 시각 (쉼표로 여러 번, 24:00은 자정)", onchange: ev => updSet({ at: ev.currentTarget.value }) }) : el("input", { class: "upd-at", type: "time", value: s.at, "aria-label": "확인 시각", onchange: ev => updSet({ at: ev.currentTarget.value }) })) : null,
-    el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "매일 자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) })),
+    liEnd(s.auto_check ? (/,\s*/.test(s.at) ? el("input", { class: "upd-at", type: "text", value: s.at, "aria-label": "확인 시각 (쉼표로 여러 번, 24:00은 자정)", onchange: ev => updSet({ at: ev.currentTarget.value }) }) : el("input", { class: "upd-at", type: "time", value: s.at, "aria-label": "확인 시각", onchange: ev => updSet({ at: ev.currentTarget.value }) })) : null,
+      el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "매일 자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) }))),
     el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요. 테스트가 실패하면 지금 버전을 그대로 두고 알려요. 이 컴퓨터에서 고친 코드는 새 버전 위에 다시 얹고, 안 되면 따로 보관해요." })),
-    el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!s.auto_apply), "aria-label": "새 버전 자동 적용", onclick: () => updSet({ auto_apply: !s.auto_apply }) }))];
+    liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!s.auto_apply), "aria-label": "새 버전 자동 적용", onclick: () => updSet({ auto_apply: !s.auto_apply }) })))];
   return [head, el("div", { class: "list" }, ...rows, ...prefs), ...hvSection()];
 }
 
@@ -7675,7 +7676,7 @@ const NOTIFY_CLASSES = [["ask", "답변 필요", "질문 · 승인 · 로그인"
   ["news", "새 소식", "메일 · 카톡 · 댓글 · 감시 · 예약"], ["conv", "대화", "보고 있지 않은 대화의 새 답"], ["log", "진행", "진행 중 보고 · 작업 기록"]];
 // One plain row per class with a switch; `on(k)` reads a class's state, `set(k, on)` changes it, `only` limits the classes shown.
 const notifyRows = (on, set, only) => NOTIFY_CLASSES.filter(([k]) => !only || only.includes(k)).map(([k, label, desc]) => el("div", { class: "li", "data-notify": k }, el("span", { class: "tx" }, el("div", { class: "hd", text: label }), el("div", { class: "sup", text: desc })),
-  el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on(k)), "aria-label": `${label} 알림`, "data-k": k, onclick: () => set(k, !on(k)) })));
+  liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on(k)), "aria-label": `${label} 알림`, "data-k": k, onclick: () => set(k, !on(k)) }))));
 const APPN = { v: null, asked: false };
 async function appNotifyLoad() { APPN.asked = true; try { APPN.v = (await api("/api/push/classes")).classes; } catch { APPN.v = null; } if (current === "settings") renderSettings(); }
 async function appNotifySet(k, on) {
@@ -7809,11 +7810,11 @@ function accountSection() {
   // one more login for any provider OmO can hold accounts for: the picker offers the install's login providers, a login there
   // adds an account to that provider's pool and keeps the others and the pin (21-providers.js startLogin)
   rows.push(el("div", { class: "li" }, tx("계정 추가", "구독 계정이나 API 키를 하나 더 넣어요. 지금 쓰는 계정은 바뀌지 않아요."),
-    el("button", { class: "btn tonal", type: "button", onclick: () => accAddProviderDialog() }, icon("add"), "추가")));
+    liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => accAddProviderDialog() }, icon("add"), "추가"))));
   const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : `${ch ? ch.label : "고른 계정"}만 써요. 한도에 걸리면 다른 계정으로 넘어가지 않고, 폴백 순서에 다른 단계(API 키 포함)가 있으면 그 단계로 이어 가요. 답장 초안은 API 키로 넘어가지 않아 한도가 풀릴 때까지 멈춰요.`) : "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가고, 모두 막히면 폴백 순서(API 키 포함)를 따라요. 답장 초안은 API 키로 넘어가지 않아요.";
   // on = 자동 전환, off = 고정 (the account to fix is the row tapped below)
   rows.unshift(el("div", { class: "li" }, tx("자동 전환", caption),
-    el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!pinned), "aria-label": "자동 전환", onclick: ev => setMode(ev.currentTarget, { mode: pinned ? "auto" : "pinned" }, pinned ? "자동 전환으로 바꿨어요" : "고정했어요") })));
+    liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!pinned), "aria-label": "자동 전환", onclick: ev => setMode(ev.currentTarget, { mode: pinned ? "auto" : "pinned" }, pinned ? "자동 전환으로 바꿨어요" : "고정했어요") }))));
   // What a 고정 account at its limit does next: unset asks once (the alert's question), then this is followed quietly.
   const onLimit = (ACC.rules && ACC.rules.on_limit) || "";
   const onLimitSub = onLimit === "switch" ? "한도에 걸리면 자동 전환으로 넘어가요" : onLimit === "wait" ? "한도에 걸린 동안 기다려요" : "아직 안 정했어요 · 한도에 걸리면 한 번 물어봐요";
@@ -7821,7 +7822,7 @@ function accountSection() {
   const onLimitChoice = (value, label) => el("button", { type: "button", class: `chip${onLimit === value ? " on" : ""}`, "aria-pressed": String(onLimit === value), text: label, onclick: ev => setOnLimit(ev.currentTarget, value) });
   rows.splice(1, 0, el("div", { class: "li" }, tx("한도에 걸렸을 때", onLimitSub), onLimitChoice("wait", "기다리기"), onLimitChoice("switch", "자동 전환으로 넘어가기")));
   if (!pinned) {
-    rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), el("button", { class: "btn tonal", type: "button", onclick: () => rulesDialog() }, "편집")));
+    rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => rulesDialog() }, "편집"))));
     for (const [i, r] of lines.entries()) rows.push(el("div", { class: "li" }, el("span", { class: "lead", text: String(i + 1) }), tx(r.text)));
   }
   const run = sc && [sc.timeout_ms ? `${Math.round(sc.timeout_ms / 1000)}초 안에 끝나요` : "", sc.every_minutes ? `${sc.every_minutes}분마다` : ""].filter(Boolean).join(" · ");
@@ -7840,7 +7841,7 @@ function accProviderSections(groups) {
   for (const g of groups) {
     const rows = [];
     if (!g.accounts.length) rows.push(el("div", { class: "li" }, accTx(`${g.name} 계정이 없어요`, g.can_add ? "계정을 하나 넣으면 여기 보여요." : "공급자 화면에서 키를 넣어 주세요."),
-      g.can_add ? el("button", { class: "btn tonal", type: "button", onclick: () => startLogin({ id: g.id, name: g.name, add_account: true }) }, icon("add"), "추가") : null));
+      g.can_add ? liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => startLogin({ id: g.id, name: g.name, add_account: true }) }, icon("add"), "추가")) : null));
     for (const a of g.accounts) {
       const sub = (a.windows || []).map(w => `${w.label} ${Math.round(w.left)}% 남음`).join(" · ");
       const tags = [];
@@ -8130,7 +8131,7 @@ function dcSwitch(label, on, key, onclick) {
   return el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on), "aria-label": `${label} 디스코드로도 보내기`, "data-dc": key, onclick });
 }
 function dcSwitches() {
-  const li = (title, desc, k, on) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "sup", text: desc }), ), dcSwitch(title, on, k, () => dpSet(k, !on)));
+  const li = (title, desc, k, on) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "sup", text: desc }), ), liEnd(dcSwitch(title, on, k, () => dpSet(k, !on))));
   const hint = () => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결하면 고를 수 있어요" })));
   const on = DCS.v.enabled && DP.v;
   return [
@@ -8163,7 +8164,7 @@ function dcAdvanced(v) {
     el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn", "data-ms-save": "1", onclick: ev => dcSave(ev.currentTarget), text: "저장" }), el("button", { type: "button", class: "btn tonal", onclick: ev => dcCheck(ev.currentTarget), text: "연결 확인" }),
       v.has_token ? el("button", { type: "button", class: "btn text", onclick: ev => dcClear(ev.currentTarget), text: "토큰 지우기" }) : null),
     dcChecked())];
-  if (v.restart_needed) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "게이트웨이를 다시 시작하면 적용돼요" })), el("button", { type: "button", class: "btn", onclick: ev => dcRestart(ev.currentTarget), text: "다시 시작" })));
+  if (v.restart_needed) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "게이트웨이를 다시 시작하면 적용돼요" })), liEnd(el("button", { type: "button", class: "btn inrow", onclick: ev => dcRestart(ev.currentTarget), text: "다시 시작" }))));
   return el("div", { class: "list" }, ...rows);
 }
 function renderDiscord() {
@@ -8179,8 +8180,8 @@ function renderDiscord() {
   const det = msAdvanced("data-ms-advanced", DCS.advOpen, () => dcAdvanced(v));
   det.addEventListener("toggle", () => { DCS.advOpen = det.open; });
   clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" },
-    el("div", { class: "li", "data-ms-status": "discord" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })), el("span", { class: `tag ${tone}`, text: tag })),
-    el("div", { class: "li ms-act" }, el("button", { type: "button", class: "btn", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m)))),
+    el("div", { class: "li", "data-ms-status": "discord" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })),
+      liEnd(el("span", { class: `tag ${tone}`, text: tag }), el("button", { type: "button", class: "btn inrow", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m))))),
   el("div", { class: "sec", text: "자동 연결" }), onboardingPanel("discord"), ...dcSwitches(), ...guide, det);
 }
 
@@ -8324,7 +8325,7 @@ function msAllowEditor(p, s) {
     el("button", { type: "button", class: "ib", "aria-label": `${a} 빼기`, onclick: () => { p.allow.splice(i, 1); renderMessenger(p.id); } }, icon("close"))));
   rows.push(el("div", { class: "li ms-addrow" },
     el("span", { class: "tx" }, input({ value: p.add, placeholder: s.allow.hint || "", name: "ms-allow", oninput: ev => { p.add = ev.target.value; } })),
-    el("button", { type: "button", class: "btn tonal", "data-ms-allow-add": "1", onclick: () => { const v = p.add.trim(); if (v && !p.allow.includes(v)) { p.allow.push(v); p.add = ""; renderMessenger(p.id); } }, text: "추가" })));
+    liEnd(el("button", { type: "button", class: "btn tonal inrow", "data-ms-allow-add": "1", onclick: () => { const v = p.add.trim(); if (v && !p.allow.includes(v)) { p.allow.push(v); p.add = ""; renderMessenger(p.id); } }, text: "추가" }))));
   return rows;
 }
 function msAdvancedBody(p, s) {
@@ -8332,8 +8333,8 @@ function msAdvancedBody(p, s) {
   if (s.fields.length) head.append(el("div", { class: "li dcs-form" }, ...s.fields.map(msFieldInput)));
   head.append(el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" },
     el("div", { class: "hd", text: "사용" }), el("div", { class: "sup", text: p.enabled ? "켜져 있어요" : "꺼져 있어요" })),
-  el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(p.enabled), "aria-label": "사용", "data-ms-enabled": "1",
-    onclick: ev => { p.enabled = !p.enabled; ev.currentTarget.setAttribute("aria-checked", String(p.enabled)); msSync(); } })));
+  liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(p.enabled), "aria-label": "사용", "data-ms-enabled": "1",
+    onclick: ev => { p.enabled = !p.enabled; ev.currentTarget.setAttribute("aria-checked", String(p.enabled)); msSync(); } }))));
   head.append(el("div", { class: "li dcs-form" }, el("div", { class: "dcs-acts" },
     el("button", { type: "button", class: "btn", "data-ms-save": "1", disabled: !msDirty(p).any, onclick: ev => msSave(ev.currentTarget), text: "저장" }))));
   const out = el("div", {}, head);
@@ -8354,8 +8355,7 @@ function renderMessenger(id) {
     el("div", { class: "list" },
       el("div", { class: "li", "data-ms-status": id }, el("span", { class: "lead" }, icon("chat")),
         el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), el("div", { class: "sup", text: msLine(id, m, s) })),
-        tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null),
-      el("div", { class: "li ms-act" }, el("button", { type: "button", class: "btn", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m)))),
+        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, el("button", { type: "button", class: "btn inrow", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m))))),
     el("div", { class: "sec", text: "자동 연결" }), onboardingPanel(id)];
   if (s.notify) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" },
     ...notifyRows(k => s.notify[k] !== false, (k, on) => msNotifySet(id, k, on)),
