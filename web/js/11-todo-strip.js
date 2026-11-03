@@ -12,11 +12,13 @@ function paintTodo() {
   const box = $("#todo");
   if (!box) return;
   const phases = TD.by[target] || [], all = phases.flatMap(p => p.tasks || []);
-  if (!all.length || all.every(x => todoState(x) === "done" || todoState(x) === "drop")) { box.hidden = true; delete box.dataset.sig; clear(box); return; }
+  if (!all.length || all.every(x => todoState(x) === "done" || todoState(x) === "drop")) { box.hidden = true; delete box.dataset.sig; delete box.dataset.ph; clear(box); return; }
   const open = !!TD.open[target], sig = JSON.stringify([phases, open]);
   box.hidden = false;
   if (box.dataset.sig === sig) return;
-  box.dataset.sig = sig;
+  // A step finishing changes the strip in place (the new look fades up); opening the list or the first paint just draws.
+  const ph = JSON.stringify(phases), swap = box.dataset.ph !== undefined && box.dataset.ph !== ph;
+  box.dataset.sig = sig; box.dataset.ph = ph;
   const live = all.filter(x => todoState(x) !== "drop"), done = live.filter(x => todoState(x) === "done").length;
   const cur = all.find(x => todoState(x) === "act") || all.find(x => todoState(x) === "pend"), g = x => el("span", { class: `td-g tg-${todoState(x)}`, "aria-hidden": "true" });
   const bar = el("button", { class: "td-bar", type: "button", "aria-expanded": String(open), onclick: () => { TD.open[target] = !open; paintTodo(); } },
@@ -26,8 +28,8 @@ function paintTodo() {
     p.name ? el("div", { class: "td-ph", text: p.name }) : null,
     ...(p.tasks || []).map(x => el("div", { class: `td-r tr-${todoState(x)}` }, g(x), el("span", { class: "td-tx", text: x.content })))])));
   const keep = $(".td-list", box), top = keep ? keep.scrollTop : 0;
-  clear(box).append(...kids);
-  const nl = $(".td-list", box); if (nl) nl.scrollTop = top;
+  const draw = () => { clear(box).append(...kids); const nl = $(".td-list", box); if (nl) nl.scrollTop = top; };
+  if (swap) motionSwap(box, draw); else draw();
 }
 // A todo tool call finishing means the plan changed: refetch (debounced) when it belongs to the open target.
 function todoActivity(a) {
@@ -86,32 +88,13 @@ function humanAlert(text) {
   }
   return text.split("\n")[0].replace(/\s*\([^()]*[A-Za-z]{4,}[^()]*\)/g, "").trim() || text;
 }
-// A reply that just arrived types itself out (the harness sends only finished messages, no token deltas): its text
-// nodes fill in order at a pace that ends within ~1.2 s. History, re-renders and reduced motion show it at once.
-const STREAMED = new Set(), STREAMING = new Map();   // STREAMING: text root -> its [text node, full text] pairs while it types out
-// A message's height with its text fully in, measured in one synchronous step (no paint between): scrollChat judges "taller than the view"
-// by it. While the text is still typing out the message is held at that height (min-height, released when typed) so the room to scroll is there.
-function fullHeight(node) {
-  const blank = [];
-  for (const [root, nodes] of STREAMING) if (node.contains(root)) for (const [n, t] of nodes) { blank.push([n, n.data]); n.data = t; }
-  const h = node.offsetHeight;
-  for (const [n, d] of blank) n.data = d;
-  if (blank.length) node.style.minHeight = `${h}px`;
-  return h;
-}
+// A reply that just arrived fades in as one piece (the harness sends only finished messages, no token deltas): no text is hidden or
+// retyped, so nothing reflows and the height is final from the first frame. History, re-renders and reduced motion show it at once.
+const STREAMED = new Set();
 function streamIn(root, key, ts) {
-  if (STREAMED.has(key) || Date.now() - Date.parse(ts) > 15000 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (STREAMED.has(key) || Date.now() - Date.parse(ts) > 15000) return;
   STREAMED.add(key);
-  const nodes = [], walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let n = walk.nextNode(); n; n = walk.nextNode()) { nodes.push([n, n.data]); n.data = ""; }
-  STREAMING.set(root, nodes);
-  const total = nodes.reduce((s, [, t]) => s + t.length, 0), t0 = performance.now(), dur = Math.min(1200, 250 + total * 6);
-  const step = now => {
-    let left = Math.ceil(total * Math.min(1, (now - t0) / dur));
-    for (const [n, t] of nodes) { const k = Math.min(t.length, left); if (n.data.length !== k) n.data = t.slice(0, k); left -= k; }
-    if (now - t0 < dur) requestAnimationFrame(step); else { STREAMING.delete(root); const bm = root.closest(".bm"); if (bm) bm.style.minHeight = ""; }
-  };
-  requestAnimationFrame(step);
+  motionIn(root, "fade", 300);
 }
 // Delivery state of an owner message (hub/events.ts emitDelivery), shown in its meta line: received (steered into the running step /
 // received by an idle session / waited in the queue / resumed a stopped session / held on a limit), answered, or not delivered.
@@ -266,8 +249,10 @@ function msgNode(e) {
       }
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       const fl = fileLines(body), host = pqPc(eventTarget(e) || ""), md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text), files = pathFiles(md, host);
-      if (e.kind === "out" && !isRestart(e)) streamIn(md, `${e.ts}|${text.length}`, e.ts);
-      return el("div", { class: `bm${card}` }, head, rpQuote(e), md, filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc, e.ts) : null);
+      // A briefing-shaped answer (schedule rows, a mail line, counts) is drawn as a card of rows and chips (11-resultcard.js hcBriefNode).
+      const brief = e.kind === "out" && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
+      if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);
+      return el("div", { class: `bm${card}` }, head, rpQuote(e), brief || md, filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc, e.ts) : null);
     }
   }
 }

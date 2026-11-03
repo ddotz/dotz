@@ -741,9 +741,9 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .bm .md code { padding: 2px 6px; border-radius: 6px; background: var(--layer); color: var(--fg); font-size: .84em; }
 .bm .md code.path { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
 .bm .md b { font-weight: 700; }
-.bm pre { margin: 12px 0 16px; padding: 12px 16px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--layer); color: var(--fg); font-size: 13px; line-height: 20px; white-space: pre; overflow-wrap: normal; overflow: auto; max-height: 360px; }
+.bm pre { margin: 12px 0 16px; padding: 12px 16px; border: 0; border-radius: 12px; background: var(--layer); color: var(--fg); font-size: 13px; line-height: 20px; white-space: pre; overflow-wrap: normal; overflow: auto; max-height: 360px; }
 .bm .md pre code { padding: 0; background: none; font-size: inherit; }
-.md .tbl { max-width: 100%; margin: 4px 0 12px; overflow-x: auto; border: 1px solid var(--line-2); border-radius: 12px; }
+.md .tbl { max-width: 100%; margin: 4px 0 12px; overflow-x: auto; border-radius: 12px; }
 .md table { border-collapse: collapse; min-width: 100%; font-size: 14px; line-height: 22px; }
 .md th, .md td { padding: 8px 12px; text-align: left; vertical-align: top; white-space: nowrap; }
 .md th { background: var(--layer); color: var(--fg-2); font-weight: 600; font-size: 13px; }
@@ -1480,7 +1480,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .dc-wait-go { flex: none; font-weight: 600; }
 .dc-hd { flex: none; display: flex; align-items: flex-start; gap: 8px; padding: 12px 8px 8px 16px; }
 .dc-tt { flex: 1; min-width: 0; }
-.dc-ey { display: block; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
+.dc-ey { display: block; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 400; }
 .dc-q { margin-top: 2px; font-size: 15px; line-height: 22px; font-weight: 600; }
 .dc-q p { margin: 0; }
 .dc-decide { margin: 6px 0 4px; font: 400 14px/21px var(--font); letter-spacing: 0; }
@@ -1500,26 +1500,23 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .dc-chip.got { color: var(--fg); }
 .dc-chip.on { background: var(--fg); color: var(--bg); }
 .dc-sub, .dcm-sub { padding: 2px 4px 0; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 600; }
-.dc-row, .dcm-row { flex: none; display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 48px; padding: 10px 12px; border: 0; border-radius: 12px; background: var(--card); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
-.dcm-row { background: var(--layer); }
-.dc-row:hover:not(:disabled), .dcm-row:hover:not(:disabled) { background: var(--card-hover); }
+.dc-row, .dcm-row { flex: none; display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 44px; padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.dc-row:hover:not(:disabled), .dcm-row:hover:not(:disabled) { background: var(--hover); }
 .dc-row:active:not(:disabled), .dcm-row:active:not(:disabled) { background: var(--active); }
 .dc-row:disabled, .dcm-row:disabled { cursor: default; }
 .dc-row:disabled:not(.on), .dcm-row:disabled:not(.on) { opacity: .6; }
 
-.dc-row.rec, .dcm-row.rec { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent); }
 .dc-row.on, .dcm-row.on { background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
-.dc-key { flex: none; display: grid; place-items: center; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 6px; background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.dcm-row .dc-key { background: var(--card); }
-.dc-row.rec .dc-key, .dcm-row.rec .dc-key { background: var(--accent); color: var(--on-accent); }
+.dc-key { flex: none; display: grid; place-items: center; min-width: 20px; height: 24px; padding: 0; color: var(--fg-3); font-size: 13px; line-height: 24px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.dc-row.rec .dc-key, .dcm-row.rec .dc-key { color: var(--accent); font-weight: 600; }
 .dc-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.dc-lb { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 15px; line-height: 24px; font-weight: 600; }
+.dc-lb { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 15px; line-height: 24px; font-weight: 500; }
 .dc-tag { flex: none; padding: 0 6px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 11px; line-height: 18px; font-weight: 600; }
 .dc-ds { color: var(--fg-3); font-size: 13px; line-height: 20px; }
-.dc-draft { flex: none; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--card); }
+.dc-draft { flex: none; display: flex; flex-direction: column; gap: 4px; margin: 0 0 4px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--fg) 5%, transparent); }
 .dc-dr-h { display: flex; gap: 8px; font-size: 13px; line-height: 20px; }
 .dc-dr-k { flex: none; color: var(--fg-3); }
-.dc-dr-v { min-width: 0; color: var(--fg); font-weight: 600; }
+.dc-dr-v { min-width: 0; color: var(--fg); font-weight: 500; }
 .dc-dr-b { max-height: min(22dvh, 180px); margin-top: 2px; overflow-y: auto; overscroll-behavior: contain; color: var(--fg); font-size: 14px; line-height: 22px; white-space: pre-wrap; }
 .dc-edit { flex: none; display: flex; flex-direction: column; gap: 8px; }
 .dc-ctx { display: flex; align-items: center; gap: 8px; }
@@ -1546,8 +1543,9 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .td-ch { flex: none; width: 16px; height: 16px; color: var(--fg-3); transition: transform .15s; }
 .td-bar[aria-expanded="true"] .td-ch { transform: rotate(180deg); }
 .td-list { max-height: min(40dvh, 320px); padding: 0 12px 10px; overflow-y: auto; overscroll-behavior: contain; }
-.td-ph { margin: 8px 0 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
-.td-r { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; font-size: 13.5px; line-height: 20px; }
+.td-ph { margin: 10px 0 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 400; }
+.td-r { display: flex; align-items: flex-start; gap: 10px; padding: 4px 0; color: var(--fg-2); font-size: 13.5px; line-height: 20px; }
+.tr-act .td-tx { color: var(--fg); font-weight: 500; }
 .td-tx { min-width: 0; }
 .tr-done .td-tx { color: var(--fg-3); }
 .tr-drop .td-tx { color: var(--fg-3); text-decoration: line-through; }
@@ -2537,6 +2535,24 @@ a.dr-att:active { background: var(--active); }
 .mr-filter .mr-f { height: 28px; padding: 0 10px; font-size: 12.5px; color: var(--fg-2); background: var(--layer); }
 .mr-filter .mr-f.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
 .mr-filter .mr-fn { font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
+
+/* a briefing-shaped answer in chat (11-resultcard.js hcBriefNode): schedule rows with a muted time column, the mail line as a chip, counts as numbers */
+.hcb { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; min-width: 0; font-size: 15.5px; line-height: 28px; }
+.hcb > .md { align-self: stretch; }
+.hcb-card { align-self: stretch; max-width: 440px; padding: 12px 16px 4px; border-radius: var(--r-card); background: var(--card); }
+.hcb-hd { display: flex; align-items: center; gap: 8px; min-height: 24px; margin-bottom: 4px; }
+.hcb-hd .tag { height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.hcb-h { min-width: 0; color: var(--fg-2); font: 500 13px/20px var(--font); }
+.hcb-rows { display: grid; }
+.hcb-r { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: baseline; min-height: 44px; padding: 10px 0; font-size: 15px; line-height: 24px; }
+.hcb-r + .hcb-r { border-top: 1px solid var(--line); }
+.hcb-t { color: var(--fg-3); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.hcb-ti { min-width: 0; overflow-wrap: anywhere; }
+.hcb-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 32px; padding: 4px 14px 4px 12px; border-radius: 999px; background: var(--card); color: var(--fg-2); font-size: 14px; line-height: 22px; }
+.hcb-chip .ic { color: var(--accent); }
+.hcb-ln { color: var(--fg-2); font-size: 14px; line-height: 22px; }
+.hcb-n { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.hcb-h .hcb-n { color: var(--fg-2); }
 
 /* 모니터링 > 앱 > 카카오톡 (web/js/30-kakao.js): the room column (rooms to watch + the watched ones) and a KakaoTalk-style chat.
    From 1100px the column sits beside the chat; below it they are two screens (.kk.chat-open = the chat). Colors are the --kk-* tokens (01-tokens.css). */
