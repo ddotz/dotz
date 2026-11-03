@@ -4,7 +4,7 @@ import { startPeerStreams } from "./peer-stream.ts";
 import { advance } from "./runtime/test-clock.ts";
 
 // Two simulated hubs and one page at 390px: the page is served by B (the real web assets and the real event stream); A is a fake gateway whose
-// stream B's hub follows. A new notice on A must toast in B's page once, named for A, update A's numbers on the computer chip, and a tap must hand
+// stream B's hub follows. A new notice on A must toast in B's page once, named for A, update A's dot on the bot name, and a tap must hand
 // the page over to A's origin at the item (?n=).
 const aOpen = inbox<string>();
 const aRoot = inbox<string>();
@@ -47,12 +47,12 @@ const { waitFor } = on(view);
 
 const decision = (id: string) => ({ id, kind: "decision", tone: "ask", title: "배포할까요?", read: false, at: `at-${id}`, decision: { state: "open", reply_to: `at-${id}`, to: "main", options: [] } });
 
-test("in 모니터링 a notice on the other computer toasts once on this page, labeled with it; the chip counts follow; the tap opens the item on that computer", async () => {
+test("in 모니터링 a notice on the other computer toasts once on this page, labeled with it; the bot name's dot follows; the tap opens the item on that computer", async () => {
 	const pageStream = hubB.nextStream();
 	await view.navigate(`${hubB.origin}/`);
-	await waitFor(`!document.querySelector("#pchip").hidden`);
+	await waitFor(`document.querySelector("#appbar").classList.contains("hasp")`);
 	await pageStream;   // the page hears this hub's stream before anything is sent
-	await view.evaluate(`(go("monitoring"), 0)`);   // outside 모니터링 only the chip's dot speaks for the other computer
+	await view.evaluate(`(go("monitoring"), 0)`);   // outside 모니터링 only the bot name's dot speaks for the other computer
 	await aOpen.until(o => o.length >= 1, 10_000, "A stream opened");
 
 	aList = { unread: 1, items: [decision("d1")] };
@@ -60,7 +60,7 @@ test("in 모니터링 a notice on the other computer toasts once on this page, l
 	await waitFor(`document.querySelector(".snack")`);
 	sendA({ kind: "notice", item: decision("d1"), unread: 1 });
 	sendA({ kind: "notice", item: { id: "t1", kind: "alert", tone: "ask", title: "배포할까요?", read: false, at: "at-d1" }, unread: 2 });
-	await waitFor(`PR.list.find(p => !p.self).need === 1 && document.querySelector(".pc-d.need")`);
+	await waitFor(`PR.list.find(p => !p.self).need === 1 && document.querySelector("#title.pneed")`);
 	expect(await view.evaluate(`document.querySelectorAll(".snack").length`)).toBe(1);
 	const text = (await view.evaluate(`document.querySelector(".snack").textContent`)) as string;
 	expect(text).toContain("맥미니");
@@ -79,7 +79,7 @@ test("in 모니터링 a notice on the other computer toasts once on this page, l
 test("answered over there, its toast here goes away; a conversation this page just acted in does not toast (frames as hub/peer-stream.ts forwards them)", async () => {
 	const pageStream = hubB.nextStream();
 	await view.navigate(`${hubB.origin}/`);
-	await waitFor(`!document.querySelector("#pchip").hidden`);
+	await waitFor(`document.querySelector("#appbar").classList.contains("hasp")`);
 	await pageStream;
 	const frame = (id: string, to: string) => JSON.stringify({ kind: "peer_notice", peer: { name: A.name, url: A.url }, id, key: `at-${id}`, notice: "decision", tone: "ask", title: `보낼까요 ${id}`, to });
 	await view.evaluate(`(() => { window.__toasts = []; const real = toast; toast = (m, ...a) => { window.__toasts.push(m); return real(m, ...a); }; })(), 0`);
