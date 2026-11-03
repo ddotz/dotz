@@ -262,7 +262,6 @@ function msgNode(e) {
     default: {
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
       // A session's report or answer is a full message; only the gateway's progress line (update_key) stays one compact note.
-      const laneMsg = e.kind === "lane_report" || (e.kind === "out" && fromLane);
       const isNote = e.kind === "out" && !!e.update_key && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:")));
       const { tone, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text), true) : { tone: "", text };
       // The marker is a status tag in front of the first line (02-basic-markdown.js toneLead), for the orchestrator and a session alike.
