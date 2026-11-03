@@ -304,7 +304,7 @@ function scrollChat(force, top) {
   requestAnimationFrame(() => {
     if (CV.pin && CV.pin !== "bottom") return;   // a place chosen after this call (the divider, a jump target) wins; the owner letting go clears the pin first
     if (!force && !chatStick) return;   // an earlier message of this frame already put the view at its top
-    if (!force && top && top.isConnected && top.offsetHeight > timeline.clientHeight - 24) {
+    if (!force && top && top.isConnected && fullHeight(top) > timeline.clientHeight - 24) {
       chatUnpin();
       timeline.scrollTop += top.getBoundingClientRect().top - timeline.getBoundingClientRect().top - 12;
       chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
