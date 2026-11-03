@@ -9,7 +9,7 @@ import { draftApprovalBlock } from "./draft-approval.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
-import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -686,6 +686,17 @@ test("a typed message does not close a waiting send-approval card; its button st
 	expect(stored().find(x => x.id === n.id)!.decision!.state).toBe("open");
 	await answerDecision(n.id, { n: 1 }, async x => void owner(x.text, { reply_to: x.replyTo, decision: x.notice }));
 	expect(stored().find(x => x.id === n.id)!.decision!.state).toBe("answered");
+});
+
+test("a card rewritten to a newer draft of the same mail switches the open notice to that draft and stays one card", () => {
+	const bot = `[ask] 이 메일에 답장할까요\n${draftApprovalBlock({ to: "owner@example.test", body: "문서 첨부해 드립니다.", ref: "mail:1a1a", question: "이 답장 보낼까요?" })}`;
+	post("mail:acct-1a1a", bot);
+	const app = draftApprovalBlock({ to: "owner@example.test", body: "문서 첨부해 드립니다.", ref: "RAYVKXK", question: "이 답장 보낼까요?", attachments: [{ name: "문서.pdf", size: 2048 }] });
+	expect(rewriteOpenDraft("mail:acct-1a1a", "mail:1a1a", `[ask] 답장 초안을 만들었어요\n${app}`)).toBe(1);
+	const open = stored().filter(n => n.decision?.state === "open" && n.decision.to === "mail:acct-1a1a");
+	expect(open).toHaveLength(1);
+	expect(open[0]!.decision!.draft!.ref).toBe("RAYVKXK");
+	expect(open[0]!.decision!.draft!.attachments?.map(a => a.name)).toEqual(["문서.pdf"]);
 });
 
 test("a session [ask] makes one decision for that session, a repeated copy adds none, and only a reply in that session settles it", () => {

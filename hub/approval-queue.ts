@@ -9,8 +9,8 @@
 // When the visible card closes (answered, resolved, ignored: notices.ts onDecisionClosed), the next held card is posted with its own
 // "남은 N건". Held cards are kept on disk, so a restart shows them later instead of losing them.
 // One item, one card (2026-11-02): a card is keyed by the item it is about (deps.itemOf: the bot's `mail:<id>` card and the app's reply draft of that
-// mail are one item). A newer card of an item that has an open or held card replaces it in place, and a held card whose item was handled meanwhile
-// (deps.handled) or already has an open card is dropped instead of being shown.
+// mail are one item). A newer card of an item that has an open or held card replaces it in place (one that waits behind another card is replaced on the
+// load/sweep path too), and a held card whose item was handled meanwhile (deps.handled) is dropped instead of being shown.
 import { existsSync, readFileSync } from "node:fs";
 import { parseDraftApproval, withRecipientMark } from "./draft-approval.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
@@ -183,16 +183,33 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		recount(conv);
 	}
 	const heldConvs = () => [...new Set(held.map(h => deps.convOf(h.target)))];
-	/** Held cards whose item already has an open card, and all but the newest held card of one item. */
+	/**
+	 * Held cards that no longer need a post of their own: all but the newest of one item, and a card whose item already has an open card, which
+	 * replaces that open card in place with its text (as route() does) so the newest card always wins (2026-11-02: a dropped newer card left the
+	 * bot's `mail:<id>` card open over the app's reply draft of the same mail, and the draft's staged files with it).
+	 */
 	function dropRedundant(): void {
 		for (const conv of heldConvs()) {
-			const open = new Set(deps.openRefs(conv).map(r => itemOf(conv, r)));
-			const s = shown.get(conv);
-			if (s && waiting(conv)) open.add(itemOf(conv, s.ref));
 			const list = heldIn(conv);
-			drop(conv, list.filter(h => open.has(itemOf(conv, h.ref))), "its item has an open card");
-			const rest = heldIn(conv);
-			drop(conv, rest.filter((h, i) => rest.some((o, j) => j > i && itemOf(conv, o.ref) === itemOf(conv, h.ref))), "a newer card of the same item is held");
+			drop(conv, list.filter((h, i) => list.some((o, j) => j > i && itemOf(conv, o.ref) === itemOf(conv, h.ref))), "a newer card of the same item is held");
+			for (const h of heldIn(conv)) {
+				const item = itemOf(conv, h.ref);
+				const s = shown.get(conv);
+				// A card still on its way (no notice yet) cannot be rewritten into another ref: the held card waits, as route() holds it.
+				if (s?.pending && itemOf(conv, s.ref) === item) continue;
+				const sameShown = !!s && waiting(conv) && itemOf(conv, s.ref) === item;
+				const openRef = deps.openRefs(conv).find(r => itemOf(conv, r) === item);
+				if (!sameShown && openRef === undefined) continue;
+				// The held card is newer than the open one: the open card shows its text, and the shown card follows its ref (as in route()).
+				held = held.filter(x => x !== h);
+				save();
+				const now = marked(conv, h.text);
+				const at = sameShown ? { ...s! } : { ref: openRef!, target: h.target };
+				if (sameShown) Object.assign(s!, { ref: h.ref, target: h.target, text: now });
+				deps.rewrite(conv, at, now);
+				deps.log(`approval card ${h.ref} in ${conv} replaces the open card ${at.ref} (same item)`);
+				recount(conv);
+			}
 		}
 	}
 	/** Held cards whose item was handled elsewhere meanwhile. */

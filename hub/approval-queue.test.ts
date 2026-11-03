@@ -16,7 +16,12 @@ function setup(load: Held[] = [], more: Partial<ApprovalQueueDeps> = {}) {
 		convOf: t => t,
 		openRefs: c => open.get(c) ?? [],
 		post: (target, text, extra) => posts.push({ target, text, extra }),
-		rewrite: (conv, s, text) => rewrites.push({ conv, ref: s.ref, ...(s.ids ? { ids: s.ids } : {}), text }),
+		// What notices.ts rewriteOpenDraft does: the open decision of that ref shows the new text, so its ref becomes the new card's.
+		rewrite: (conv, s, text) => {
+			rewrites.push({ conv, ref: s.ref, ...(s.ids ? { ids: s.ids } : {}), text });
+			const ref = cardRef(text), list = open.get(conv) ?? [];
+			if (ref && list.includes(s.ref)) open.set(conv, list.map(r => (r === s.ref ? ref : r)));
+		},
 		persist: h => void (disk = h),
 		log: () => {},
 		load: () => load,
@@ -166,12 +171,25 @@ describe("approval queue", () => {
 		expect(JSON.stringify(t.disk())).toBe(disk);
 	});
 
-	test("a held card whose item already has an open card is dropped instead of waiting for a second ask", async () => {
+	test("a held newer card of an item whose card is open replaces it on the sweep instead of being dropped", () => {
 		const t = setup([{ ref: "cm-B2", target: "ch:1", text: card("B2"), extra: {} }], sameItem);
 		t.open.set("ch:1", ["cm-B"]);
 		t.q.releaseAll();
-		expect(t.posts).toEqual([]);
+		// The open card (found by its old ref) shows the newer card's text, which asks for the newer ref; nothing is held or posted.
+		expect(t.rewrites.map(w => w.ref)).toEqual(["cm-B"]);
+		expect(t.rewrites[0]!.text).toContain("(cm-B2)");
+		expect(t.open.get("ch:1")).toEqual(["cm-B2"]);
 		expect(t.disk()).toEqual([]);
+		expect(t.posts).toEqual([]);
+	});
+
+	test("the sweep run twice changes nothing the second time", () => {
+		const t = setup([{ ref: "cm-B2", target: "ch:1", text: card("B2"), extra: {} }], sameItem);
+		t.open.set("ch:1", ["cm-B"]);
+		t.q.releaseAll();
+		const before = [t.rewrites.length, JSON.stringify(t.disk()), t.posts.length];
+		t.q.releaseAll();
+		expect([t.rewrites.length, JSON.stringify(t.disk()), t.posts.length]).toEqual(before);
 	});
 
 	test("a closed card is edited to a closed form: first line kept, how it ended under it", () => {
