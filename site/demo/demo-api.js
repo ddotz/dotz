@@ -588,7 +588,10 @@
     "/api/push": { subscribed: false },
     "/api/update": { running: { kind: "git", branch: "main", commit: { sha: "a".repeat(40), short: "aaaaaaa", date: new Date(0).toISOString() } }, disk: { kind: "git", branch: "main", commit: { sha: "a".repeat(40), short: "aaaaaaa", date: new Date(0).toISOString() } }, settings: { auto_check: true, auto_apply: false, at: "09:00" }, busy: [] },
     "/api/harness/update": {},
-    "/api/context": { processes: [] },
+    "/api/context": { processes: [
+      { name: "orchestrator", kind: "orchestrator", running: true, percent: 42, tokens: 84000 },
+      { name: "site-check", kind: "lane", running: true, percent: 83, tokens: 166000 },
+    ] },
     "/api/models": models,
     "/api/providers": { providers: [
       { id: "anthropic", name: "Claude 구독", auth: "oauth", account: "개인 계정", accounts: 2, in_use: true, can_add_account: true, can_logout: true },
@@ -596,7 +599,10 @@
       { id: "google", name: "Gemini", auth: "api_key", masked: "AIza…x9Qd", can_login: true, can_logout: true },
       { id: "cursor", name: "Cursor", auth: "none", can_login: true },
     ] },
-    "/api/quota": {},
+    "/api/quota": { providers: [{ provider: "claude", limits: [
+      { id: "five_hour", label: "Claude 5 Hour", limit: 100, remaining: 64, status: "ok" },
+      { id: "seven_day", label: "Claude 7 Day", limit: 100, remaining: 18, status: "warn" },
+    ] }] },
     "/api/machine": {},
     "/api/peers": [
       { name: "맥북", url: "https://macbook.demo.ts.net", self: true, online: true },
