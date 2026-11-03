@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "30670d204480";
+const WEB_BUILD = "041d36e056fe";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -880,7 +880,8 @@ function openPalette() {
   const inp = el("input", { class: "pal-in", type: "text", placeholder: "도구 또는 명령", autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "명령" });
   const list = el("div", { class: "pal-list", role: "listbox" });
   const out = el("div", { class: "pal-out", hidden: true });
-  const d = el("dialog", { class: "pal", "aria-label": "명령" }, el("div", { class: "pal-head" }, icon("search"), inp, el("kbd", { text: "esc" })), list, out);
+  const d = el("dialog", { class: "pal", "aria-label": "명령" }, el("div", { class: "pal-head" }, inp), list, out,
+    el("div", { class: "pal-ft", "aria-hidden": "true" }, el("span", { text: "↑↓ 이동" }), el("span", { text: "↵ 열기" }), el("span", { text: "esc 닫기" })));
   let items = [], idx = 0;
   const mark = () => {
     [...list.querySelectorAll(".pal-i")].forEach((n, i) => { n.classList.toggle("on", i === idx); n.setAttribute("aria-selected", i === idx ? "true" : "false"); if (i === idx) n.scrollIntoView({ block: "nearest" }); });
@@ -1220,7 +1221,7 @@ const BCOLS = 12, BGAP = 12, BROW = 40, BSTEP = BROW + BGAP;
 // Auto-scroll while dragging: within B_EDGE px of the scroller's top or bottom edge, up to B_SCROLL px per frame at the very edge.
 const B_EDGE = 56, B_SCROLL = 18, B_PRESS = 450;
 const boards = new Set();
-const narrowMQ = matchMedia("(max-width: 639px), (pointer: coarse) and (max-width: 767px)");
+const narrowMQ = matchMedia("(max-width: 719px), (pointer: coarse) and (max-width: 767px)");
 narrowMQ.addEventListener("change", () => boards.forEach(b => { b.paint(); b.measure(); }));
 const bClamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const bHit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -1275,10 +1276,18 @@ const B_IGNORE = "button, input, textarea, select, a, summary, [role=button], .l
 function makeBoard(container, key, opts = {}) {
   const store = `dotz-board-${key}`, px = !!opts.px, U = px ? 1 : BSTEP;
   let raw0 = [], saved = px ? bLoadPx(store) : bLoad(store), lastJson = JSON.stringify(saved), cur = [], lay = [], ghost = [], act = null, pending = null, swallow = false;
+  // 홈's row layout (opts.rows) is a new structure: a layout saved before it (4-across cards, a full-width strip) starts over, so
+  // every owner sees the prototype's two-column order once; from then on their own drags are kept.
+  const rawStore = opts.rows ? lsJson(store, null) : null;
+  if (opts.rows && (!rawStore || rawStore._g !== "rows")) { saved = {}; lastJson = "{}"; }
+  // The home grid's reading order: the owner's own order once they moved a card, else the order 홈 builds. Positions alone cannot
+  // carry it across a data change (a card leaving collapses the two columns to one row and x would decide).
+  let userOrder = rawStore && rawStore._g === "rows" && Array.isArray(rawStore._order) ? rawStore._order : null;
   const wraps = new Map(), fitH = new Map();
   const ph = el("div", { class: "bph", hidden: true });
   const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text sm", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text sm", type: "button", onclick: () => reset() }, "배치 초기화"));
   container.classList.add("board");
+  if (opts.rows) container.classList.add("rows");
   container.before(bar);
   container.append(ph);
   const views = $("#views");
@@ -1298,7 +1307,7 @@ function makeBoard(container, key, opts = {}) {
     container.classList.toggle("narrow", narrow);
     if (narrow) {
       container.style.height = ""; ph.hidden = true;
-      bOrder(lay.map(r => ({ ...r }))).forEach((r, i) => { const w = wraps.get(r.id); if (w) { w.removeAttribute("style"); w.style.order = i; } });
+      (opts.rows ? rowOrder() : bOrder(lay.map(r => ({ ...r })))).forEach((r, i) => { const w = wraps.get(r.id); if (w) { w.removeAttribute("style"); w.style.order = i; } });
     } else {
       for (const r of list) { const w = skip === r.id ? ph : wraps.get(r.id); if (w) { pos(w, r); if (w !== ph) w.style.order = ""; } }
       container.style.height = `${Math.max(0, rows(list) * U - BGAP)}px`;
@@ -1309,7 +1318,7 @@ function makeBoard(container, key, opts = {}) {
     const o = {};
     for (const r of [...ghost, ...lay]) o[r.id] = { x: r.x, y: r.y, w: r.w, h: r.h };
     saved = o;
-    const j = JSON.stringify(px ? { ...o, _u: "px" } : o);
+    const j = JSON.stringify(px ? { ...o, _u: "px", ...(opts.rows ? { _g: "rows", ...(userOrder ? { _order: userOrder } : {}) } : {}) } : o);
     if (j !== lastJson) { lastJson = j; try { localStorage.setItem(store, j); } catch { /* storage full or blocked */ } }
   }
   // Cards that sit side by side (same top row) take one height: the card being resized sets it, otherwise the tallest
@@ -1331,6 +1340,7 @@ function makeBoard(container, key, opts = {}) {
   // The fit cards' heights are read from the page: each takes its content's height, then the cards below slide up (no transition) and are saved.
   function measure() {
     if (!px || act || narrowMQ.matches) return;
+    if (opts.rows) return measureRows();
     let changed = false;
     for (const r of lay) {
       const it = meta(r.id), n = it && it.fit && bodyOf(wraps.get(r.id));
@@ -1344,6 +1354,36 @@ function makeBoard(container, key, opts = {}) {
     bCompact(lay, null, ghost);
     persist();
     container.classList.add("bnt"); paint(); void container.offsetHeight; container.classList.remove("bnt");
+  }
+  // The home grid's reading order: the owner's order first, then the order 홈 builds (a new card appends after them).
+  function rowOrder() {
+    const idx = new Map((userOrder || []).map((id, i) => [id, i])), curIdx = new Map(cur.map((it, i) => [it.id, i]));
+    const at = id => idx.has(id) ? idx.get(id) : 1e6 + (curIdx.get(id) ?? 1e6);
+    return [...lay].sort((a, b) => at(a.id) - at(b.id));
+  }
+  // Rows mode (홈): the cards keep the prototype's two per row, the row as tall as its taller card and both cards filling it.
+  function measureRows() {
+    container.classList.add("measuring");
+    const nat = new Map();
+    for (const r of lay) {
+      const it = meta(r.id), n = it && it.fit && bodyOf(wraps.get(r.id));
+      if (!n || !n.offsetHeight) { nat.set(r.id, r.h); continue; }
+      fitH.set(r.id, n.offsetHeight + BGAP);
+      nat.set(r.id, n.offsetHeight + BGAP);
+    }
+    const order = rowOrder();
+    let y = 0;
+    for (let i = 0; i < order.length;) {
+      const a = lay.find(x => x.id === order[i].id), b = i + 1 < order.length ? lay.find(x => x.id === order[i + 1].id) : null;
+      const side = !!b && (a.x + a.w <= b.x || b.x + b.w <= a.x);
+      const h = Math.max(nat.get(a.id) ?? a.h, side ? nat.get(b.id) ?? b.h : 0);
+      a.y = y; a.h = h;
+      // half-row cards pack left (so a card that left the layout earlier does not keep the right column); a wider owner card keeps its x
+      if (side && b) { if (a.w <= 6) a.x = 0; if (b.w <= 6) b.x = a.w; b.y = y; b.h = h; i += 2; } else { if (a.w <= 6) a.x = 0; i += 1; }
+      y += h;
+    }
+    container.classList.remove("measuring");
+    persist(); paint();
   }
   const ro = px && typeof ResizeObserver === "function" ? new ResizeObserver(() => measure()) : null;
   function set(raw, keep = () => false) {
@@ -1384,7 +1424,7 @@ function makeBoard(container, key, opts = {}) {
   }
   function reset() {
     if (opts.onReset) opts.onReset();
-    saved = {}; ghost = []; lastJson = "{}";
+    saved = {}; ghost = []; userOrder = null; lastJson = "{}";
     try { localStorage.removeItem(store); } catch { /* ignore */ }
     set(raw0);
   }
@@ -1422,7 +1462,7 @@ function makeBoard(container, key, opts = {}) {
   }
   // Narrow: the cards in column order with their boxes; the lifted card follows the finger, the ones it passes slide by its height.
   function beginOrder() {
-    const rows = bOrder(lay.map(r => ({ ...r }))).map(r => wraps.get(r.id)).filter(Boolean);
+    const rows = (opts.rows ? rowOrder() : bOrder(lay.map(r => ({ ...r })))).map(r => wraps.get(r.id)).filter(Boolean);
     act.rows = rows; act.from = rows.indexOf(act.w); act.to = act.from;
     act.rects = rows.map(w => w.getBoundingClientRect());
     act.gap = rows.length > 1 ? Math.max(0, act.rects[1].top - act.rects[0].bottom) : BGAP;
@@ -1453,8 +1493,10 @@ function makeBoard(container, key, opts = {}) {
   // The grid rewritten so that its reading order is `ids`: the moved card takes the place of the card now after it (pushing that one
   // down), and when compaction still leaves another order, the cards flow again in `ids` order with their sizes kept.
   function reorder(ids, moved) {
+    if (opts.rows) { userOrder = ids; if (narrowMQ.matches) paint(); else measureRows(); persist(); return; }
     const order = list => bOrder(list.map(r => ({ ...r }))).map(r => r.id).join("\0");
     if (order(lay) === ids.join("\0")) return;
+    userOrder = ids;
     let list = lay.map(r => ({ ...r }));
     const t = list.find(r => r.id === moved), i = ids.indexOf(moved), nxt = list.find(r => r.id === ids[i + 1]), prv = list.find(r => r.id === ids[i - 1]);
     if (!t) return;
@@ -1510,10 +1552,11 @@ function makeBoard(container, key, opts = {}) {
     if (on && act.mode === "order") endOrder(true);
     const a = finish();
     if (on) {
-      if (a.mode !== "order" && a.next) { lay = a.next; persist(); }
+      if (a.mode !== "order" && a.next) { lay = a.next; if (opts.rows) userOrder = bOrder(lay.map(x => ({ ...x }))).map(x => x.id); persist(); }
       swallow = true; setTimeout(() => { swallow = false; }, 60);
     }
     settle();
+    if (on && a.mode !== "order" && opts.rows) measureRows();   // a free drop settles back into the two-column rows
   }
   // The pointer was lost (the browser took it for a scroll) or Esc was pressed: the card goes back where it was.
   function cancel(ev) {
@@ -1568,16 +1611,17 @@ function makeBoard(container, key, opts = {}) {
     const list = lay.map(x => ({ ...x })), t = list.find(x => x.id === id);
     Object.assign(t, bFit({ ...r, w, h: it.fit ? r.h : h * U }, it));
     bPush(list, t); bCompact(list, id, ghost); bEven(list, id, id);
-    lay = list; persist(); paint();
+    lay = list; persist();
+    if (opts.rows) measureRows(); else paint();
   }
   // Move one card before another (or to the end with `before` null), the way a drop on a narrow board does; the ⋯ menu offers it too.
   function moveBefore(id, before) {
-    const ids = bOrder(lay.map(x => ({ ...x }))).map(x => x.id).filter(x => x !== id);
+    const ids = (opts.rows ? rowOrder() : bOrder(lay.map(x => ({ ...x })))).map(x => x.id).filter(x => x !== id);
     const i = before ? ids.indexOf(before) : -1;
     ids.splice(i < 0 ? ids.length : i, 0, id);
     reorder(ids, id);
   }
-  const board = { set, reset, paint, measure, bar, resize, moveBefore, order: () => bOrder(lay.map(x => ({ ...x }))).map(x => x.id), cancel: () => { if (act) cancel(); } };
+  const board = { set, reset, paint, measure, bar, resize, moveBefore, order: () => (opts.rows ? rowOrder() : bOrder(lay.map(x => ({ ...x })))).map(x => x.id), cancel: () => { if (act) cancel(); } };
   boards.add(board);
   return board;
 }
@@ -1755,8 +1799,8 @@ function homeMonitorCard() {
 }
 
 let homeBoard = null;
-// Every card is as tall as its content (07-board.js fit): only the width is sized, 4 of 12 columns by default so six cards make two full rows; the summary strip spans the row.
-const HOME_FIT = { fit: true, min: { w: 3, h: 1 }, max: { w: 12, h: 1 } }, HOME_STRIP = { fit: true, min: { w: 6, h: 1 }, max: { w: 12, h: 1 } };
+// Every card is as tall as its content (07-board.js fit): only the width is sized, half of the 12 columns by default so the cards make the prototype's two-column grid.
+const HOME_FIT = { fit: true, min: { w: 6, h: 1 }, max: { w: 12, h: 1 } };
 // Kinds of home items that can be bundled into one card (title, view the card opens); the bundled kinds are kept per browser.
 const HOME_KINDS = { ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["공급자", "providers"] };
 const HOME_GROUPS_KEY = "dotz-home-groups";
@@ -1778,10 +1822,6 @@ function homeRow(e) {
 }
 // Every item is its own card (each context process, each usage limit, each provider), except kinds the owner bundled (the default):
 // those share one card with a row per item. The assistant is the summary strip on top.
-// 5시간 / 7일: the first limit of that kind (not a model's own, "7 Day (Opus)"), its share left as a percent.
-const hsumLimit = re => { for (const p of (HQ && HQ.providers) || []) for (const l of p.limits || []) { const s = String(l.label || l.id); if (!/\(/.test(s) && re.test(s)) return l; } return null; };
-const hsumStat = (k, v, tone) => el("div", { class: "hsum-s" }, el("span", { class: "k", text: k }), el("span", { class: "v" }, hcKDot(tone), v));
-const hsumPct = l => { const f = limitFrac(l); return f == null ? "–" : `${Math.round(f * 100)}%`; };
 // The newest meaningful line of what a target is doing: its loaded activity, else the lane's last fetched line, else its last text.
 function nowLine(t) {
   const acts = ts(t).acts;
@@ -1889,9 +1929,41 @@ function hcWorkFiles(w) {
   const fs = w.status === "done" && Array.isArray(w.files) ? w.files.filter(f => f && f.path) : [];
   return fs.length ? el("div", { class: "hrx-f" }, ...fs.map(f => { const name = f.name || String(f.path).split("/").pop(); return fileChip(name, fileMeta(name, f.size), VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : { href: fileUrl(f.path, false, f.pc) }); })) : null;
 }
+/* The prototype's home (site/prototype/s-work.js): a full-width column of the greeting, the one alert row and 답변 필요, then the
+   two-column card grid. Every card keeps the product's data, links and empty states; the board (07-board.js) still moves and sizes them. */
+const homeGreetWord = () => { const h = new Date().getHours(); return h < 5 ? "편안한 밤이에요" : h < 12 ? "좋은 아침이에요" : h < 18 ? "좋은 오후예요" : "좋은 저녁이에요"; };
+// The greeting names the assistant and says what it does now, on which model, with how many sessions, on which computer and at what time;
+// the fallback tag says why the model changed, and the ⋯ menu keeps the assistant card's actions now that its summary card is gone.
+function homeGreeting() {
+  const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, live = liveModel(MAIN), [base, level] = String(live.sel || "").split(":");
+  const modelText = om && base ? (modelName(base).includes("-") ? modelChipText(base) : modelName(base)) : "";
+  const word = !S ? "연결 중" : o.status === "working" || o.status === "starting" ? "일하는 중" : o.status === "idle" ? "쉬는 중" : statusKo(o.status);
+  const lanes = ((S && S.lanes) || []).filter(laneAlive).length, me = (typeof prSelf === "function" && (prSelf() || {}).name) || "";
+  const line = [`${iGa(botName)} ${word}`, modelText && `${modelText}${level ? ` · ${thinkKo(level)}` : ""}`, lanes ? `세션 ${lanes}개` : "", me, kstHM(Date.now())].filter(Boolean).join(" · ");
+  const more = el("button", { class: "ib hgreet-more", type: "button", "aria-label": "어시스턴트 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => homeMenu(ev.currentTarget, MAIN) }, icon("more"));
+  return el("div", { class: "hgreet" },
+    el("div", { class: "bigrow" }, el("div", { class: "big", text: homeGreetWord() }), more),
+    el("div", { class: "meta", text: line }),
+    live.fallback ? el("div", { class: "hgreet-fb" }, fbTag(live.fallback, live.conf)) : null, subLine("orchestrator"));
+}
+// The one row above the cards: a login that dropped (the prototype's 경고 strip), else the newest unread alert notice.
+function homeStrip() {
+  const down = (typeof INTG !== "undefined" ? INTG.items : []).find(i => i.state === "disconnected");
+  if (down) return homeStripRow(`${down.label || "앱"} 로그인이 풀렸어요`, "경고 · 다시 로그인해야 이어서 볼 수 있어요", "경고", "err", () => go("monitoring", `i:${down.key}`));
+  const n = (typeof NT !== "undefined" ? NT.items : []).filter(x => x.id && !x.read && ntHomeAlert(x) && x.cls === "alert").sort((a, b) => ntAt(b) - ntAt(a))[0];
+  if (!n) return null;
+  const fail = n.tone === "fail";
+  return homeStripRow(hcLine(n), ntWhen(n), fail ? "경고" : "알림", fail ? "err" : "", () => noticeOpen(n));
+}
+function homeStripRow(title, sup, tag, tone, open) {
+  return el("button", { class: "li hstrip", type: "button", onclick: open },
+    el("span", { class: "lead" }, el("span", { class: `dot ${tone}` })),
+    el("span", { class: "tx" }, el("span", { class: "hd", text: title }), el("span", { class: "sup", text: sup })),
+    el("span", { class: "end" }, el("span", { class: `tag ${tone}`, text: tag }), icon("chev", "chev")));
+}
 function renderHomeNow() {
-  const box = $("#home-now");
-  if (!box) return;
+  const now = $("#home-now"), box = $("#home-cards");
+  if (!now || !box) return;
   const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`)];
   const needs = nyList(), crit = needs.filter(x => x.crit).length;   // 09-needs-you.js: what only the owner can do, critical first
   // 홈 is this computer's alone (owner 2026-10-31): the other computers' items live in 모니터링, and the computer chip's dot says they want something.
@@ -1908,47 +1980,36 @@ function renderHomeNow() {
   const convWork = convT.flatMap(c => [c, ...(c.work || []).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
   const runW = workRunning(), settled = hcSettled(), bg = [...runW, ...settled], ended = workEnded().filter(w => !settled.includes(w)), working = runT.length + convWork.length + runW.length, deferred = (S && S.deferred) || [];
   const restRow = t => homeNowRow(t, !targetInfo(t).alive ? "종료됨" : runBusy(t) ? "진행 중" : statusKo(targetInfo(t).status), "");
-  clear(box).append(
-    // Three kinds, three places: 답변 필요 (a decision only the owner can make), 답장 대기 (replies he owes, per app), 지금 진행 중; plain news is the 알림 card.
-    el("div", { class: "hn-h" }, el("h2", { text: "답변 필요" }), crit ? el("span", { class: "tag warn", text: `중요 ${crit}` }) : null, waiting ? el("span", { class: "sup", text: `${waiting}` }) : null),
-    nyListNode(needs),
-    ...(owed.length || drafts ? [el("div", { class: "hn-h" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null), el("div", { class: "hn" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : []),
-    el("div", { class: "hn-h" }, el("h2", { text: "지금 진행 중" }), working ? el("span", { class: "sup", text: `${working}개 작업 중` }) : null),
-    el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow), ...(working || bg.length || deferred.length ? [] : [el("div", { class: "empty", text: "진행 중인 작업이 없어요" })])),
-    ...(restT.length ? [el("div", { class: "hn-h" }, el("h2", { text: "대기 중" })), el("div", { class: "hn", "data-k": "waiting" }, ...restT.map(restRow))] : []),
-    ...(ended.length ? [el("div", { class: "hn-h" }, el("h2", { text: "최근 끝난 작업" })), el("div", { class: "hn", "data-k": "ended-work" }, ...ended.map(workRow))] : []),
-    endedGroup() || "");
-  for (const w of settled) { const s = HC_SETTLE.get(w.id), row = s && !s.swapped ? box.querySelector(`[data-work="${CSS.escape(w.id)}"]`) : null; if (row) { s.swapped = true; motionSwap(row, () => {}); } }
-  if (!S || !NT.loaded) return;
-  const rows = [...box.querySelectorAll(".hr, .ntg")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.work || r.dataset.mon || r.dataset.group || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
-  const fresh = freshKeys(HOME_ROWS, keys);
-  rows.forEach((r, i) => { if (fresh.has(keys[i])) motionIn(r); });
-}
-// The home screen always opens at its top: on load, on the tab, and when the installed app comes back to the front (23-installable-app-web.js, 99-boot.js).
-const homeTop = () => { if (current === "home") { $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled"); } };
-function renderHome() {
-  const box = $("#home-cards");   // not id="home": the address #home would scroll the page down to that element, not to the top
-  if (!box || current !== "home") return;
-  renderHomeNow();
-  if (openMenu && box.contains(openMenu.anchor)) return;   // a ⋯ menu is open: repaint after it closes
-  $("#title").textContent = botName;
-  if (!homeBoard) homeBoard = makeBoard(box, "home", { px: true, actions: [{ label: "카드 추가", run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
-  const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, live = liveModel(MAIN), [liveBase, liveLevel] = String(live.sel || "").split(":"), items = [], seen = new Set();
-  const add = (id, node, def, size) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def, ...size }); } };
-
-  // assistant
-  const stText = o.status === "rate-limited" && o.rateLimitedUntil ? `${statusKo(o.status)} · ${kstTime(o.rateLimitedUntil)}까지` : statusKo(o.status);
-  const mainAttn = attnKind(MAIN);
-  // The summary strip: model, state and the numbers worth a glance (what is left of 5시간 / 7일, the unread notices); the dot is its one accent.
-  const l5 = hsumLimit(/\b5\s*hours?\b|5\s*시간/i), l7 = hsumLimit(/\b7\s*days?\b|7\s*일/i), modelText = om && liveBase ? (modelName(liveBase).includes("-") ? modelChipText(liveBase) : modelName(liveBase)) : "…";
-  add(MAIN, itemCard(() => openTarget(MAIN, lastChatView()), "",
-    hcHead(botName, { dot: mainAttn || o.status === "rate-limited" ? "att" : statusTone(o.status), note: mainAttn ? "확인 필요" : S ? stText : "연결 중", menu: MAIN }),
-    el("div", { class: "hsum" }, hsumStat("모델", modelText), liveLevel ? hsumStat("추론 강도", thinkKo(liveLevel)) : null, l5 ? hsumStat("5시간 남음", hsumPct(l5), limitTone(l5)) : null, l7 ? hsumStat("7일 남음", hsumPct(l7), limitTone(l7)) : null, NT.loaded ? hsumStat("안 읽은 알림", `${hcUnread()}개`) : null),
-    live.fallback ? el("div", { class: "sup hsum-fb", text: fbTagText(live.fallback) }) : null,
-    subLine("orchestrator")), { w: 12, h: 1 }, HOME_STRIP);
-  add("notices:alert", homeAlertCard(), { w: 4, h: 1 }, HOME_FIT);
-  add("notices:worklog", homeWorklogCard(), { w: 4, h: 1 }, HOME_FIT);
-  add("notices:watch", homeMonitorCard(), { w: 4, h: 1 }, HOME_FIT);
+  // Above the grid, the prototype's full-width column: the greeting, the one alert row and 답변 필요. The replies the owner owes stay in
+  // that card under its list, as the prototype's 답변 필요 rows do; each row still opens its own item.
+  const running = el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow),
+    ...(working || bg.length || deferred.length ? [] : [el("div", { class: "empty", text: "진행 중인 작업이 없어요" })]));
+  const owedBlock = owed.length || drafts ? [
+    el("div", { class: "hn-h hsub" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null),
+    el("div", { class: "hn", "data-k": "replies" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : [];
+  clear(now).append(homeGreeting(), ...[homeStrip()].filter(Boolean),
+    el("div", { class: "hneeds" },
+      el("div", { class: "hn-h hneeds-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null, crit ? el("span", { class: "tag warn", text: `중요 ${crit}` }) : null),
+      nyListNode(needs), ...owedBlock));
+  for (const w of settled) { const s = HC_SETTLE.get(w.id), row = s && !s.swapped ? now.querySelector(`[data-work="${CSS.escape(w.id)}"]`) : null; if (row) { s.swapped = true; motionSwap(row, () => {}); } }
+  if (S && NT.loaded) {
+    const rows = [...now.querySelectorAll(".hr, .ntg")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.work || r.dataset.mon || r.dataset.group || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
+    const fresh = freshKeys(HOME_ROWS, keys);
+    rows.forEach((r, i) => { if (fresh.has(keys[i])) motionIn(r); });
+  }
+  const endBox = $("#home-ended");
+  if (endBox) clear(endBox).append(...[endedGroup()].filter(Boolean));
+  // The grid after it, two cards to a row (07-board.js): 알림 · 지금 진행 중 · 대기 중 · 최근 끝난 작업 · 모니터링 · 작업내역 ·
+  // 사용량 · 컨텍스트 · 공급자 · the owner's cards, each half the row and as tall as its content.
+  if (!homeBoard || (openMenu && box.contains(openMenu.anchor))) return;   // a ⋯ menu is open: repaint after it closes
+  const items = [], seen = new Set();
+  const add = (id, node) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def: { w: 6, h: 1 }, ...HOME_FIT }); } };
+  add("notices:alert", homeAlertCard());
+  add("now:running", el("div", { class: "card" }, hcHead("지금 진행 중", { n: working ? `${working}개 작업 중` : null }), running));
+  if (restT.length) add("now:waiting", el("div", { class: "card" }, hcHead("대기 중"), el("div", { class: "hn", "data-k": "waiting" }, ...restT.map(restRow))));
+  if (ended.length) add("now:ended", el("div", { class: "card" }, hcHead("최근 끝난 작업"), el("div", { class: "hn", "data-k": "ended-work" }, ...ended.map(workRow))));
+  add("notices:watch", homeMonitorCard());
+  add("notices:worklog", homeWorklogCard());
 
   // entries per kind: {id, tone, open, card() (own floating card), row() (contents of its row in a bundle)}. A session is a row of
   // 지금 진행 중 / 대기 중 above, so it has no card here as well.
@@ -1956,7 +2017,7 @@ function renderHome() {
   for (const p of ((C && C.processes) || []).filter(x => x.running)) {
     const id = `ctx:${p.name}`, pct = p.percent, who = p.kind === "lane" ? targetName(`lane:${p.name}`) : botName, v = pct != null ? `${pct}%` : `${num(p.tokens)} 토큰`;
     const bar = () => el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` }));
-    E.ctx.push({ id, tone: pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 4, h: 1 }, HOME_FIT],
+    E.ctx.push({ id, tone: pct >= 80 ? "warn" : "", open: () => go("context"),
       card: () => [hcHead(`컨텍스트 · ${who}`, { dot: hcTone(pct >= 80 ? "warn" : ""), note: v, menu: id }), bar()],
       row: () => [el("div", { class: "kv" }, el("span", { class: "k" }, hcKDot(pct >= 80 ? "warn" : ""), who), el("span", { class: "v", text: v })), bar()] });
   }
@@ -1965,7 +2026,7 @@ function renderHome() {
     for (const pr of provs) for (const l of pr.limits) {
       const id = `limit:${pr.provider}:${l.id}`, f = limitFrac(l), name = limitLabel(pr, l, multi);
       const tone = limitHit(l) || (f != null && f <= .2) ? "warn" : "";
-      E.limit.push({ id, tone, open: () => go("usage"), size: [{ w: 4, h: 1 }, HOME_FIT],
+      E.limit.push({ id, tone, open: () => go("usage"),
         card: () => [hcHead(name, { dot: hcTone(tone), note: pctText(l), menu: id }), bar(l)],
         row: () => [el("div", { class: "kv" }, el("span", { class: "k" }, hcKDot(tone), name), el("span", { class: "v", text: pctText(l) })), bar(l)] });
     }
@@ -1973,25 +2034,37 @@ function renderHome() {
   for (const p of (P && P.providers) || []) {
     if (!isConnected(p) && !needsAttention(p)) continue;
     const id = `prov:${p.id}`, bad = needsAttention(p), st = bad ? "로그인 필요" : p.auth === "api_key" ? "API 키" : "로그인됨";
-    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("provider", p.id), size: [{ w: 4, h: 1 }, HOME_FIT],
+    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("provider", p.id),
       card: () => [hcHead(p.name || p.id, { dot: bad ? "att" : "ok", note: st, menu: id }),
         p.account ? el("div", { class: "sup", text: p.account }) : null],
       row: () => [el("div", { class: "row" }, el("span", { class: `dot ${bad ? "att" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: bad ? st : p.account || st }))] });
   }
   const loaded = { ctx: !!C, limit: !!HQ, prov: !!P };
-  for (const [kind, list] of Object.entries(E)) {
-    if (!homeGroups.has(kind)) { for (const e of list) add(e.id, itemCard(e.open, "", ...e.card()), ...e.size); continue; }
+  // 사용량 comes first (the prototype's 사용량 card), then 컨텍스트 and 공급자.
+  for (const kind of ["limit", "ctx", "prov"]) {
+    const list = E[kind];
+    if (!homeGroups.has(kind)) { for (const e of list) add(e.id, itemCard(e.open, "", ...e.card())); continue; }
     const [title, view] = HOME_KINDS[kind], nAtt = list.filter(e => e.tone).length, none = !list.length;
     const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : "없어요";
     add(`group:${kind}`, hcFold(itemCard(view, "",
       hcHead(title, { dot: nAtt ? hcTone(list.some(e => e.tone === "err") ? "err" : "warn") : "", n: none ? null : String(list.length), note: none ? empty : "", menu: `group:${kind}` }),
-      none ? null : el("div", { class: "glist" }, ...list.map(homeRow))), none), { w: 4, h: 1 }, HOME_FIT);
+      none ? null : el("div", { class: "glist" }, ...list.map(homeRow))), none));
   }
 
-  // the owner's custom cards (web/custom.js) are board items like the rest
-  for (const it of window.dotzCustom ? dotzCustom.items() : []) if (!seen.has(it.id)) { seen.add(it.id); items.push(it); }
+  // the owner's custom cards (web/custom.js) are board items like the rest; a half row by default, their own size when changed
+  for (const it of window.dotzCustom ? dotzCustom.items() : []) if (!seen.has(it.id)) { seen.add(it.id); items.push({ ...it, def: { ...it.def, w: 6 }, head: it.head || ".ch" }); }
   // cards of data that has not arrived yet keep their saved place
   homeBoard.set(items, id => id.startsWith("custom:") ? !window.dotzCustom || dotzCustom.keep(id) : id.startsWith("ctx:") ? !C : id.startsWith("limit:") ? !HQ || !!HQ.error : id.startsWith("prov:") ? !P : false);
+}
+
+// The home screen always opens at its top: on load, on the tab, and when the installed app comes back to the front (23-installable-app-web.js, 99-boot.js).
+const homeTop = () => { if (current === "home") { $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled"); } };
+function renderHome() {
+  const box = $("#home-cards");   // not id="home": the address #home would scroll the page down to that element, not to the top
+  if (!box || current !== "home") return;
+  $("#title").textContent = titles.home;
+  if (!homeBoard) homeBoard = makeBoard(box, "home", { px: true, rows: true, actions: [{ label: "카드 추가", run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
+  renderHomeNow();
   window.dotzCustom && dotzCustom.home();
 }
 
@@ -2157,6 +2230,7 @@ function paintAttn() {
   if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";   // the digit that changed rolls; a hidden badge forgets, so it appears whole
   b.parentElement.setAttribute("aria-label", n ? `채팅, ${say}` : "채팅");
   document.title = n ? `(${n}) ${botName}` : botName;
+  paintBell();
   toastAttn();
   monAttnSoon();
 }
@@ -2335,15 +2409,33 @@ function tightLimit(q) {
   return best;
 }
 function paintStrip() {
-  const b = $("#ustrip"), t = SQ && tightLimit(SQ);
+  const b = $("#ustrip"), t = SQ && tightLimit(SQ), side = $("#sf-usage");
   b.hidden = !t;
+  if (side) side.hidden = !t;
   if (!t) return;
   const pct = Math.round(t.f * 100), word = limitWord(t.l);
   b.className = `ustrip${pct <= 40 ? " warn" : ""}`;
   b.style.setProperty("--p", pct);
   b.title = `사용량 · ${word} ${pct}% 남음`; b.setAttribute("aria-label", b.title);
   clear(b).append(el("span", { class: "ulab", text: `${word} ${pct}% 남음` }), el("span", { class: "ubar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "uring" }), el("span", { class: "upct", text: `${word} ${pct}%` }));
+  // the sidebar's lower area says the same in a row (22-shell.css): the tightest limit, its bar, and the share left
+  if (side) {
+    side.classList.toggle("warn", pct <= 40);
+    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: "사용량" }), el("span", { class: "sf-bar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "sf-v", text: `${word} ${pct}%` }));
+    side.title = `사용량 · ${word} ${pct}% 남음`; side.setAttribute("aria-label", side.title);
+  }
 }
+// 헤더의 종: the unread notice count, kept current by every notice change (30-notices.js ntPaint -> paintAttn).
+function paintBell() {
+  const n0 = $("#bell-n");
+  if (!n0) return;
+  let n = 0;
+  try { n = NT.unread | 0; } catch { /* 30-notices.js has not run yet */ }
+  n0.hidden = !n; n0.textContent = n > 99 ? "99+" : String(n);
+  const b = $("#bell");
+  if (b) b.setAttribute("aria-label", n ? `알림, 안 읽은 알림 ${n}개` : "알림");
+}
+$("#sf-usage").onclick = () => go("usage");
 function noteQuota(q) { SQ = q; stripAt = Date.now(); paintStrip(); }
 // A pushed usage read: the strip, and the 사용량 / 홈 view on screen, show it without asking again.
 function quotaLive(q) {
@@ -2947,31 +3039,22 @@ async function dcReopen(nd) {
     toast("초안을 되돌렸어요");
   } catch (e) { toast(e.message, true); }
 }
-function choicesNode(sig, pc, at) {
-  const box = el("div", { class: isFixedT(target) ? "dcm fx" : "dcm", "data-sig": sig, "data-at": at || null });
-  pc.blocks.forEach((b, bi) => {
-    if (b.title && pc.blocks.length > 1) box.append(el("div", { class: "dcm-sub", text: b.title }));
-    for (const o of b.options) box.append(el("button", { class: `dcm-row${o.rec ? " rec" : ""}`, type: "button", disabled: true, "data-b": bi, "data-n": o.n, onclick: () => { const dc = DC.cur; if (dc && dc.sig === sig) pickOption(dc, bi, o); else { const nd = pc.blocks.length === 1 ? dcNoticeAt(at) : null; if (nd && nd.decision.state === "open" && !dcSending.has(nd.id)) answerInline(nd, o); } } },
-      el("span", { class: "dc-key", text: String(o.n) }),
-      el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
-  });
-  return box;
-}
 // Decision cards already docked: only one that really arrives rises in (not on the first paint, nor when another conversation opens).
-const DC_SEEN = new Set(); let dcShownT = "", dcLast = null, dcLeaveT = 0, dcOut = null;
-// An answered card does not vanish the instant the answer lands: it says 보냈어요 for a beat, then fades out (no new request, only the state it already has).
+const DC_SEEN = new Set(); let dcShownT = "", dcLast = null, dcOut = null;
+// An answered card folds away at once: its record is already in the conversation (dcRecordNode), so nothing has to wait for the card to
+// say 보냈어요 (owner 2026-11-03: no fixed 1.2s beat). motionOut ends it, and a question that arrives meanwhile cancels the leave.
 function dcLeave(box, dc) {
   const picks = DC.picks[dc.key] || [], st = DC.st[dc.key];
   if (box.dataset.st !== st) { motionSwap(box, () => renderDecision(box, dc, picks, DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i])))); box.dataset.st = st; }
-  clearTimeout(dcLeaveT);
-  if (st !== "sent") return;
-  dcLeaveT = setTimeout(async () => {
-    if (DC.cur) return;
+  if (st !== "sent" || box.dataset.out) return;
+  box.dataset.out = "1";
+  void (async () => {
+    if (DC.cur) { delete box.dataset.out; return; }
     dcOut = await motionOut(box);
-    if (DC.cur) return;
+    if (DC.cur) { if (dcOut && dcOut.cancel) dcOut.cancel(); dcOut = null; delete box.dataset.out; return; }
     if (dcOut && dcOut.cancel) dcOut.cancel();
-    dcOut = null; dcLast = null; box.hidden = true; delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; clear(box);
-  }, 1200);
+    dcOut = null; dcLast = null; box.hidden = true; delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; delete box.dataset.out; clear(box);
+  })();
 }
 function paintDecision() {
   const box = $("#dcard");
@@ -2979,7 +3062,7 @@ function paintDecision() {
   // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
   const dc = isFixedT(target) ? null : decisionOf(target), had = !!DC.cur;
   DC.cur = dc;
-  if (dc) { dcLast = dc; clearTimeout(dcLeaveT); if (dcOut && dcOut.cancel) dcOut.cancel(); dcOut = null; }
+  if (dc) { dcLast = dc; delete box.dataset.out; if (dcOut && dcOut.cancel) dcOut.cancel(); dcOut = null; }
   const arrived = S && freshKeys(DC_SEEN, dc ? [...DC_SEEN, dc.key] : [...DC_SEEN]).has(dc && dc.key) && dcShownT === target;
   if (S) dcShownT = target;
   const waiting = dc || isFixedT(target) ? null : dcWaitingCard(target);
@@ -3019,6 +3102,20 @@ function dcPointer(box, n) {
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
   return JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr, (DC.files[dc.key] || []).length, !!DC.fbusy[dc.key]]);
+}
+// What was decided stays in the conversation once the card is gone (owner 2026-11-03): the owner's answer message already carries the
+// question and the chosen option (hub/intake.ts decisionLines, `picks`), so the record is drawn from it here and from history after a
+// reload — the agent's message itself is unchanged. One row per block: 질문 <title> · 답: <n) label>. `files` = what a 직접 수정 answer
+// attached, `mt` = the message's own meta line (the delivery state paints into it).
+function dcRecordNode(e, files, mt) {
+  const picks = (Array.isArray(e.picks) ? e.picks : []).filter(p => p && Number.isFinite(Number(p.n)));
+  if (!picks.length) return null;
+  const q = p => String(p.q ?? "").trim();
+  return el("div", { class: "dc-rec", role: "note", "aria-label": "결정 기록" },
+    picks.map(p => el("div", { class: "dc-rec-r" },
+      q(p) ? el("span", { class: "dc-rec-k", text: "질문" }) : null, q(p) ? el("span", { class: "dc-rec-q", text: q(p) }) : null,
+      el("span", { class: "dc-rec-k", text: "· 답:" }), el("span", { class: "dc-rec-a", text: `${p.n}) ${p.label}${p.note ? ` - ${p.note}` : ""}` }))),
+    files || null, mt || null);
 }
 
 /* ---------- 원문 보기: the mail or comment a reply draft answers, as its own panel next to the draft (the send sheet, the comment view's draft card) ---------- */
@@ -3930,6 +4027,9 @@ function msgNode(e) {
       if (mid) { DELIV.nodes.set(mid, { mt, base }); if (DELIV.nodes.size > 600) DELIV.nodes.delete(DELIV.nodes.keys().next().value); paintDelivery(mid); }
       // The owner's files are uploads of the computer that holds the conversation: a peer's open there (15-attachments.js fileUrl).
       const pc = Array.isArray(e.files) && e.files.length ? pqPc(eventTarget(e) || "") : null;
+      // An answered decision is a quiet record of what was decided, not a "1) …" bubble (10-decision-card.js dcRecordNode); the options
+      // themselves stay only in the card/sheet that asked (owner 2026-11-03).
+      if (e.kind !== "_cmd" && Array.isArray(e.picks) && e.picks.length) return dcRecordNode(e, filesNode(pc ? e.files.map(f => ({ ...f, pc })) : e.files), mt);
       return el("div", { class: "um" }, filesNode(pc ? e.files.map(f => ({ ...f, pc })) : e.files), rpQuote(e), text ? ub : null, more, mt);
     }
     case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, e.card ? cardNode(e.card) : el("pre", { text }), el("div", { class: "mt", text: hm }));
@@ -3999,7 +4099,8 @@ function msgNode(e) {
       const lt = laneMsg && tone ? LANE_TONE[tone] : null;
       const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null, lt ? el("span", { class: `tag ${lt[0]}`, text: lt[1] }) : null);
       const pc0 = e.kind === "out" || e.kind === "lane_report" ? parseChoices(parsed) : null, pc = pc0 && choiceAsks(e, tone, pc0) ? pc0 : null;
-      // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, with its buttons.
+      // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, and a tap on it opens
+      // the decision sheet (30-notices.js) — the options themselves live there, never in the message body.
       if (e.target === "alert" && !(pc && pc.blocks.length)) {
         if (/```원문\n/.test(body)) return el("div", { class: `bm${card}` }, head, mdNode(body));
         const line = humanAlert(body);
@@ -4012,7 +4113,7 @@ function msgNode(e) {
       // A briefing-shaped answer (schedule rows, a mail line, counts) is drawn as a card of rows and chips (11-resultcard.js hcBriefNode).
       const brief = e.kind === "out" && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
       if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);
-      return el("div", { class: `bm${card}` }, head, rpQuote(e), brief || md, filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, pc && pc.blocks.length ? choicesNode(hashOf(parsed.trim()), pc, e.ts) : null);
+      return el("div", { class: `bm${card}` }, head, rpQuote(e), brief || md, filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files);
     }
   }
 }
@@ -5081,6 +5182,12 @@ $("#c-model").onclick = ev => busy(null, () => {
     showMenu(anchor, items, { value: T.model, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { model: v }, `${modelName(v)} · ${T.thinking}`)) });
   });
 });
+// A session's subagent model: the same model list, saved as the lane's worker_model (its effort is kept).
+$("#c-worker").onclick = ev => busy(null, () => {
+  const anchor = ev.currentTarget, lane = S && S.lanes.find(x => x.name === laneOf(target));
+  const [base, level] = String((lane && lane.worker_model) || "").split(":");
+  return chipMenu(anchor, T => showMenu(anchor, modelPickItems(T.models, base), { value: base, onPick: v => busy(null, () => targetChange(targetName(target), { worker_model: level ? `${v}:${level}` : v }, `서브에이전트 ${modelName(v)}`)) }));
+});
 // Effort only: the levels this target's model accepts (04-state.js effortItems), the model is never touched.
 $("#c-effort").onclick = ev => busy(null, () => {
   const anchor = ev.currentTarget;
@@ -5099,6 +5206,10 @@ $("#ctx-ring").onclick = ev => busy(null, async () => {
   items.push({ value: "open", label: "컨텍스트 화면 열기" });
   showMenu(anchor, items, { onPick: v => v === "open" ? go("context") : v === "compact" ? busy(null, () => targetChange(targetName(target), { compact: true }, "")) : null });
 });
+// 시제품 .cmp의 모양 (proto.css "/* composer *\/"): 첨부(+)는 글 상자의 왼쪽, 모델·컨텍스트 칩은 상자 아래 힌트 줄에 서요.
+// 칩을 폼 밖으로 옮겨도 각 칩의 클릭은 그대로예요 (이벤트는 요소에 붙어 있어요).
+$("#send").insertBefore($("#c-attach"), $("#text"));
+$("#send").after($("#cbar"));
 
 /* ---------- attachments: + button, drag-drop, paste -> POST /api/upload; sent as `files` with the message ---------- */
 // The composer's files of the conversation open now; another conversation's wait in its ts(t).att (13-data.js setTarget swaps them).
@@ -6076,19 +6187,22 @@ function pjFiltered() {
   const q = PJ.q.trim().toLowerCase(), rows = projRows((PRJ && PRJ.projects) || []);
   return rows.filter(r => (PJ.view === "all" || r.st.k === PJ.view) && (!q || `${prjTitle(r.p)} ${prjPurpose(r.p)}`.toLowerCase().includes(q)));
 }
-// One row: name + the one status line (with milestone count and last activity), the state tag at the right. A waiting row names its session.
+// One row, the prototype's list row (s-work.js 프로젝트): a folder tile, the name with one quiet line under it, then the state tag at the right.
 function prjRow(r) {
   const { p, st } = r, ms = prjMiles(p), done = ms.filter(m => m.done).length;
   const chat = prjChat(p), unread = chat ? ts(chat).unread : 0, at = prjLastAt(p), sel = current === "project" && ppCur === p.key;
-  const line = [st.lane ? (st.lane.title || st.lane.name) : prjPurpose(p), ms.length ? `${done}/${ms.length} 단계` : "", prjAgo(at)].filter(Boolean).join(" · ");
+  const line = prjPurpose(p) || (st.lane ? (st.lane.title || st.lane.name) : ""), full = [line, ms.length ? `${done}/${ms.length} 단계` : "", prjAgo(at)].filter(Boolean).join(" · ");
   const tone = st.tone === "att" ? "warn" : st.tone;
-  return el("button", { class: `pl-row${sel ? " on" : ""}${unread ? " unread" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${line} · 열기`, onclick: () => go("project", p.key) },
-    el("span", { class: `dot ${st.tone}` }),
+  return el("button", { class: `pl-row${sel ? " on" : ""}${unread ? " unread" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${full} · 열기`, onclick: () => go("project", p.key) },
+    el("span", { class: "ico" }, icon("projects")),
     el("span", { class: "pl-b" },
-      el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) }), unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null),
+      el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) })),
       el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: line }))),
-    el("span", { class: "li-end" }, el("span", { class: `tag ${tone}`, text: st.word }), icon("chev", "chev")));
+    el("span", { class: "li-end" }, unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null,
+      el("span", { class: `tag ${tone}`, text: st.word })));
 }
+// The prototype's section headers: 고정 first, then 전체, the same rows sorted by what needs the owner (projRows).
+const prjGroups = rows => [["고정", rows.filter(r => r.p.pinned)], ["전체", rows.filter(r => !r.p.pinned)]].filter(g => g[1].length);
 function pjSearch() {
   return el("label", { class: "pl-search" }, icon("search"),
     el("input", { id: "pl-q", type: "search", placeholder: "프로젝트 검색", "aria-label": "프로젝트 검색", autocomplete: "off", value: PJ.q, oninput: ev => { PJ.q = ev.target.value; pjPaintRows(); } }));
@@ -6099,7 +6213,7 @@ function pjChips(counts) {
       label, counts[k] ? el("span", { class: "mr-fn", text: String(counts[k]) }) : el("span", { class: "mr-fn", hidden: true }))));
 }
 function pjShell() {
-  return el("div", { class: "pl", id: "pl-shell" }, el("div", { class: "pl-top" }, pjSearch(), el("div", { id: "pl-chips" })), el("div", { class: "pl-list", id: "pl-list" }));
+  return el("div", { class: "pl", id: "pl-shell" }, el("div", { class: "pl-top" }, pjSearch(), el("div", { id: "pl-chips" })), el("div", { class: "pl-groups", id: "pl-list" }));
 }
 function pjPaintChips() {
   const box = $("#pl-chips");
@@ -6122,15 +6236,22 @@ function pjPaintRows() {
   const sig = JSON.stringify([rows.map(r => [r.p.key, r.st.k, r.st.word, r.st.lane && r.st.lane.name, prjLastAt(r.p), prjMiles(r.p).map(m => m.done), prjChat(r.p) ? ts(prjChat(r.p)).unread : 0]), PJ.more, PJ.view, PJ.q, current === "project" ? ppCur : "", showBuiltin]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
-  const nodes = page.map(prjRow);
+  // Section headers and one card per group, as the prototype's 프로젝트 list; a group with no row after the filter is left out.
+  const nodes = [];
+  for (const [label, group] of prjGroups(page)) {
+    nodes.push(el("div", { class: "sec pl-sec", text: label }));
+    nodes.push(el("div", { class: "pl-list" }, ...group.map(prjRow)));
+  }
   if (rest > 0) nodes.push(el("div", { class: "cv-more" }, el("button", { class: "btn text sm", type: "button", "data-k": "more", onclick: () => { PJ.more += PJ_PAGE; pjPaintRows(); }, text: `프로젝트 ${rest}개 더 보기` })));
-  if (!rows.length) nodes.push(el("div", { class: "cv-empty", text: searching ? "찾는 프로젝트가 없어요" : PJ.view === "need" ? "확인할 프로젝트가 없어요" : PJ.view === "run" ? "지금 진행 중인 프로젝트가 없어요" : PJ.view === "done" ? "끝낸 프로젝트가 없어요" : "아직 프로젝트가 없어요" }));
+  if (!rows.length) nodes.push(el("div", { class: "empty pl-empty", text: searching ? "찾는 프로젝트가 없어요" : PJ.view === "need" ? "확인할 프로젝트가 없어요" : PJ.view === "run" ? "지금 진행 중인 프로젝트가 없어요" : PJ.view === "done" ? "끝낸 프로젝트가 없어요" : "아직 프로젝트가 없어요" }));
   // The built-in 커스텀 page is the owner's settings list: always reachable, never part of the filters.
   if (showBuiltin) {
-    nodes.push(el("div", { class: "pl-gh", role: "presentation", text: "내 설정" }));
-    nodes.push(el("button", { class: `pl-row sub${current === "project" && ppCur === builtin.key ? " on" : ""}`, type: "button", "data-key": builtin.key, onclick: () => go("project", builtin.key) },
-      el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: "내가 바꾼 것을 봐요" }))),
-      el("span", { class: "li-end" }, icon("chev", "chev"))));
+    nodes.push(el("div", { class: "sec pl-sec pl-gh", role: "presentation", text: "내 설정" }));
+    nodes.push(el("div", { class: "pl-list" },
+      el("button", { class: `pl-row sub${current === "project" && ppCur === builtin.key ? " on" : ""}`, type: "button", "data-key": builtin.key, onclick: () => go("project", builtin.key) },
+        el("span", { class: "ico" }, icon("projects")),
+        el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: builtin.name })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: "내가 바꾼 것을 봐요" }))),
+        el("span", { class: "li-end" }, icon("chev", "chev")))));
   }
   clear(box).append(...nodes);
 }
@@ -6191,7 +6312,7 @@ function pmProject() {
   const found = ((PRJ && PRJ.projects) || []).find(x => x.key === PM.key || x.recordKey === PM.key);
   if (found) return found;
   const D = PM.D;
-  return D ? { key: PM.key, name: (D.record && D.record.title) || PM.key, lanes: D.lanes || [], record: D.record } : null;
+  return D ? { key: PM.key, name: (D.record && D.record.title) || (PM.key === "builtin:custom" ? "커스텀" : PM.key), lanes: D.lanes || [], record: D.record } : null;
 }
 function pmSessionRows(p, D) {
   const dl = (D && D.lanes) || [], all = (S && S.lanes) || [], names = new Set([...dl.map(l => l.name), ...(p.lanes || []).map(l => l.name)]);
@@ -6223,24 +6344,17 @@ function pmSheetsPaint() {
   for (const s of PM.sheets) if (!(s.h.box.contains(document.activeElement) && document.activeElement.matches("input, textarea"))) s.paint();
 }
 // What needs the owner now, or what runs now: one card, one action. A quiet line when there is nothing to do.
+// The prototype's 확인 필요 card (s-work.js project ask): a card header with the tag, the question, then one filled action.
 function pmPrimary(rows, live, working, workRun) {
   const wait = rows.filter(r => r.waiting), ask = wait[0];
   if (ask) return el("div", { class: "card pm-need" },
-    el("div", { class: "pm-need-k" }, el("span", { class: "tag warn", text: "확인 필요" })),
+    el("div", { class: "ch" }, el("h3", { text: "확인 필요" }), el("span", { class: "tag warn", text: "답 기다림" })),
     el("div", { class: "pm-need-t", text: ask.title }),
     el("div", { class: "pm-need-s", text: `답을 기다려요${wait.length > 1 ? ` · 외 ${wait.length - 1}개` : ""}` }),
     el("div", { class: "cf" }, el("button", { class: "btn pm-need-a", type: "button", "data-k": "answer", onclick: () => openTarget(`lane:${ask.name}`, lastChatView()) }, "답하기")));
-  const run = working[0] || live[0];
-  if (run) return el("div", { class: "card pm-calm" },
-    el("div", { class: "pm-calm-k" }, el("span", { class: `tag${run.status === "working" || run.status === "starting" ? " pri" : ""}`, text: run.status === "working" || run.status === "starting" ? "지금 작업 중" : "세션이 열려 있어요" })),
-    el("div", { class: "pm-calm-t", text: run.title }),
-    el("div", { class: "cf" }, el("button", { class: "btn tonal", type: "button", onclick: () => openTarget(`lane:${run.name}`, lastChatView()) }, "채팅 열기")));
-  if (workRun.length) return el("div", { class: "card pm-calm" },
-    el("div", { class: "pm-calm-k" }, el("span", { class: "tag pri", text: "지금 작업 중" })),
-    el("div", { class: "pm-calm-t", text: workRun[0].description }),
-    el("div", { class: "cf" }, el("button", { class: "btn tonal", type: "button", onclick: () => workGo(workRun[0]) }, "열기")));
-  return el("div", { class: "card pm-calm calm" }, el("div", { class: "pm-calm-k" }, el("span", { class: "tag", text: "확인할 것 없어요" })),
-    el("div", { class: "pm-calm-t sup", text: "지금 답을 기다리는 세션이 없어요" }));
+  // A running session or job is already a row of the 세션 · 작업 lists below (site/prototype/s-work.js project shows no second card);
+  // only a question needs a card of its own.
+  return null;
 }
 // One summary row: label, one value line, one quiet line under it; the whole row opens the section's page.
 function pmSummaryRow({ k, label, value, sub, bar, onclick }) {
@@ -6254,20 +6368,27 @@ function pmOverview(q, D, rows) {
   const live = rows.filter(r => r.live), working = live.filter(r => r.status === "working" || r.status === "starting");
   const work = (D && D.work) || [], workRun = work.filter(w => w.status === "running"), results = (D && D.results) || [], items = pmRoutineItems(D);
   const goal = (q.record && q.record.goal) || "", newest = results[0], newestSess = [...rows].sort((a, b) => b.at - a.at)[0];
-  const monN = items.filter(x => x.kind === "monitor").length, routN = items.length - monN, bad = items.filter(x => !x.paused && ((x.fails || 0) > 0 || x.lastOk === false)).length;
+  const monN = items.filter(x => x.kind === "monitor").length, routN = items.length - monN;
   return el("div", { class: "pm-o" },
     pmPrimary(rows, live, working, workRun),
     el("div", { class: "pm-rows" },
       pmSummaryRow({ k: "goal", label: "목표와 진행", value: goal ? oneLine(goal) : "아직 목표가 없어요", onclick: () => pmSheet("goal"),
         bar: ms.length ? el("span", { class: `pl-bar${done === ms.length ? " done" : ""}`, role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })) : null,
         sub: ms.length ? `${done}/${ms.length} 단계 · ${pct}%` : "눌러서 목표와 단계를 정해요" }),
-      pmSummaryRow({ k: "sessions", label: "세션", value: `세션 ${rows.length}개${working.length ? ` · 작업 중 ${working.length}` : ""}`, onclick: () => pmSheet("sessions"),
-        sub: newestSess ? `${newestSess.title} · ${newestSess.live ? "지금 열림" : prjAgo(newestSess.at)}` : "아직 세션이 없어요" }),
-      pmSummaryRow({ k: "results", label: "최근 결과", value: newest ? oneLine(newest.title || PM_RES[newest.kind] || "결과") : "아직 결과가 없어요", onclick: () => pmSheet("results"),
-        sub: newest ? `${PM_RES[newest.kind] || newest.kind} · ${pmDay(newest.at)}` : "세션이 보고를 남기면 여기에 쌓여요" }),
-      pmSummaryRow({ k: "routines", label: "루틴과 모니터링", value: items.length ? [monN ? `모니터링 ${monN}` : "", routN ? `루틴 ${routN}` : ""].filter(Boolean).join(" · ") : "아직 없어요", onclick: () => pmSheet("routines"),
-        sub: !items.length ? "눌러서 둘러봐요" : bad ? `확인이 필요해요 · ${bad}개` : "잘 돌고 있어요" })),
+      pmSummaryRow({ k: "sessions", label: "세션", value: rows.length ? `세션 ${rows.length}개${working.length ? ` · 작업 중 ${working.length}` : newestSess && newestSess.live ? " · 지금 열림" : ""}` : "아직 세션이 없어요", onclick: () => pmSheet("sessions") }),
+      pmSummaryRow({ k: "results", label: "최근 결과", value: newest ? oneLine(newest.title || PM_RES[newest.kind] || "결과") : "아직 결과가 없어요", onclick: () => pmSheet("results") }),
+      pmSummaryRow({ k: "routines", label: "루틴과 모니터링", value: items.length ? [monN ? `모니터링 ${monN}` : "", routN ? `루틴 ${routN}` : ""].filter(Boolean).join(" · ") : "아직 없어요", onclick: () => pmSheet("routines") })),
+    // The prototype's own detail shows the sessions and results on the page; the summary rows above stay the way into each full page.
+    rows.length ? pmSection({ kind: "sessions", label: "세션", count: rows.length, nodes: rows.slice(0, 5).map(pmLaneRow), more: true }) : null,
+    results.length ? pmSection({ kind: "results", label: "결과", count: results.length, nodes: results.slice(0, 4).map(pmResultRow), more: true }) : null,
     D && D.summary && D.summary.lastActivity ? el("div", { class: "pm-o-foot", text: `마지막 활동 ${prjAgo(Date.parse(D.summary.lastActivity))}` }) : null);
+}
+// The prototype's section header + list (s-work.js project detail: 단계 · 세션 · 작업 · 결과 · 감시).
+function pmSection({ kind, label, count, nodes, more }) {
+  return el("div", { class: "pm-block" },
+    el("div", { class: "sec sec-act pm-sec" }, el("span", { text: `${label} ${count}` }),
+      more ? el("button", { class: "btn text sm", type: "button", "data-k": kind, onclick: () => pmSheet(kind), text: "전체" }) : null),
+    el("div", { class: "list pm-sec-list" }, ...nodes));
 }
 // Level 3: one section page over the overview. It is an overlay, so 32-history-nav gives it its own history entry: the back arrow
 // (or the browser's back) returns to the overview. Every function of the old one-page layout lives here, unchanged.
@@ -6323,16 +6444,25 @@ function pmEditable({ value, placeholder = "비어 있어요", label, multiline,
   return wrap;
 }
 
+// The prototype's project header card: name + state tag + last activity, the purpose under it, then the milestone bar and count.
 function pmHead(q) {
-  const chat = prjChat(q), can = !!chat && validTarget(chat);
+  const chat = prjChat(q), can = !!chat && validTarget(chat), st = prjState(q), tone = st.tone === "att" ? "warn" : st.tone, at = prjLastAt(q);
+  const ms = prjMiles(q), done = ms.filter(m => m.done).length, pct = ms.length ? Math.round(done / ms.length * 100) : 0;
   return el("div", { class: "pmv-head" },
     el("div", { class: "pmv-hmain" },
-      pmEditable({ value: prjTitle(q), label: "프로젝트 이름", required: true, cls: "pmv-title", save: v => pmWrite({ title: v }) }),
+      el("div", { class: "pmv-htop" },
+        pmEditable({ value: prjTitle(q), label: "프로젝트 이름", required: true, cls: "pmv-title", save: v => pmWrite({ title: v }) }),
+        el("span", { class: `tag ${tone}`, text: st.word }),
+        at ? el("span", { class: "pmv-upd", text: prjAgo(at) }) : null),
       pmEditable({ value: prjPurpose(q), label: "프로젝트 설명", placeholder: "무엇을 하는 프로젝트인지 적어 주세요", multiline: true, cls: "pmv-purpose", save: v => pmWrite({ purpose: v }) })),
     // No work channel, nothing to chat with: the button is left out instead of showing a dead one.
     chat ? el("div", { class: "pmv-hact" }, el("div", { class: "pmv-hrow" },
       can ? el("button", { class: "btn tonal", type: "button", title: "이 프로젝트 전용 채팅을 열어요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" }) : null,
-      pmMenuButton(q))) : null);
+      pmMenuButton(q))) : null,
+    // The bar runs the card's full width under the title and the buttons, as the prototype's header card.
+    ms.length ? el("div", { class: "pmv-hprog" },
+      el("div", { class: "bar", role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })),
+      el("span", { class: "pmv-hprog-t", text: `${done}/${ms.length} 단계 끝났어요` })) : null);
 }
 // The project a chat target (ch:<id>) belongs to, from the list the 프로젝트 tab shows (null until it has loaded or once it is gone).
 const pmOfTarget = t => ((PRJ && PRJ.projects) || []).find(x => !x.builtin && prjChat(x) === t) || null;
@@ -6527,13 +6657,23 @@ function pmRoutine(x) {
 
 // The same session row as home (sessionRow, 18-lanes.js).
 const pmSessionRow = r => sessionRow({ name: r.name, title: r.title, status: r.status, live: r.live, pendingAsk: r.waiting }, { project: r.project, line: r.line });
+// The prototype's session row (s-work.js project 세션): a state dot, the title, the lane name, and the state tag at the right.
+function pmLaneRow(r) {
+  const [dotTone, tagTone, word] = r.live && r.waiting ? ["att", "warn", "답을 기다려요"] : r.live && (r.status === "working" || r.status === "starting") ? ["pri", "pri", "작업 중"] : r.live ? ["", "", "열려 있음"] : ["", "", "끝남"];
+  return el("button", { class: "li tap", type: "button", onclick: () => openTarget(`lane:${r.name}`, lastChatView()), "aria-label": `${r.title} · ${word} · 대화 열기` },
+    el("span", { class: "lead" }, el("span", { class: `dot ${dotTone}` })),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: r.title }), el("div", { class: "sup", text: r.name })),
+    el("span", { class: "li-end" }, el("span", { class: `tag ${tagTone}`, text: word })));
+}
 // A background job of the main assistant that belongs to the project (asked in its chat, or briefed for its folder): tap lands on the asking message.
 const pmWorkRow = w => {
-  const run = w.status === "running", stall = w.status === "stalled";
+  const run = w.status === "running", stall = w.status === "stalled", rec = workRecovering(w);
+  const word = run ? "진행 중" : stall ? "멈춤" : w.status === "done" ? "완료" : w.cancelled ? "중단됨" : rec ? "이어서" : "실패";
+  const tag = run || rec ? "pri" : stall ? "warn" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err";
   return el("button", { class: "li tap", type: "button", onclick: () => workGo(w) },
-    el("span", { class: `dot ${run || workRecovering(w) ? "pri" : stall ? "att" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err"}` }),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${stall ? `멈춤 · ${w.reason || "활동이 없어요"}` : w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : workRecovering(w) ? "이어서 처리 중" : "실패 · 이어서 처리함"} · ${workAgo(w)}` })),
-    icon("chev", "lead"));
+    el("span", { class: "lead" }, el("span", { class: `dot ${run || rec ? "pri" : stall ? "att" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err"}` })),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${stall ? `멈춤 · ${w.reason || "활동이 없어요"}` : w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : rec ? "이어서 처리 중" : "실패 · 이어서 처리함"} · ${workAgo(w)}` })),
+    el("span", { class: "li-end" }, el("span", { class: `tag ${tag}`, text: word })));
 };
 // 진행 중: sessions that are alive and background jobs that are running. 최근 세션: the ended ones, newest first.
 function pmDoing(live, running) {
@@ -6547,23 +6687,26 @@ function pmRecent(past, done) {
 
 const PM_RES = { report: "보고", verify: "확인", commit: "커밋" };
 const pmDay = at => { const d = kstDay(at), n = Date.now(); return d === kstDay(n) ? "오늘" : d === kstDay(n - 864e5) ? "어제" : d; };
+const pmLaneTitle = n => (((S && S.lanes) || []).find(l => l.name === n) || {}).title || n;
+// The prototype's result row (s-work.js project 결과): the title, the kind · hash · session · time line, and its state tag.
+function pmResultRow(r) {
+  const tap = r.kind === "report" && r.lane;
+  const tag = r.kind === "report" ? (r.tone === "fail" ? ["err", "안 됨"] : r.verified ? ["ok", "확인됨"] : ["", "보고만 함"]) : r.kind === "verify" ? (r.ok ? ["ok", "통과"] : ["err", "안 됨"]) : ["", "커밋"];
+  return el(tap ? "button" : "div", { class: `li${tap ? " tap" : ""}`, type: tap ? "button" : null, onclick: tap ? () => openTarget(`lane:${r.lane}`, lastChatView()) : null },
+    el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: r.title || PM_RES[r.kind] || "결과" }),
+      el("div", { class: "sup", text: [PM_RES[r.kind] || r.kind, r.kind === "commit" ? r.hash : "", r.lane ? pmLaneTitle(r.lane) : "", kstHM(r.at)].filter(Boolean).join(" · ") })),
+    tag ? el("span", { class: `tag ${tag[0]}`, text: tag[1] }) : null);
+}
 function pmResults(D) {
   if (!D || !D.results) return emptyNode(PM.fail ? "불러오지 못했어요" : "불러오는 중…");
   if (!D.results.length) return emptyNode("아직 결과가 없어요");
-  const groups = [], titleOf = n => (((S && S.lanes) || []).find(l => l.name === n) || {}).title || n;
+  const groups = [];
   for (const r of D.results) {
     const day = pmDay(r.at);
     if (!groups.length || groups[groups.length - 1].day !== day) groups.push({ day, rows: [] });
     groups[groups.length - 1].rows.push(r);
   }
-  return el("div", {}, ...groups.flatMap(g => [el("div", { class: "pmv-day", text: g.day }), el("div", { class: "list" }, ...g.rows.map(r => {
-    const tap = r.kind === "report" && r.lane;
-    const tag = r.kind === "report" ? (r.tone === "fail" ? ["err", "안 됨"] : r.verified ? ["ok", "확인됨"] : ["", "보고만 함"]) : r.kind === "verify" ? (r.ok ? ["ok", "통과"] : ["err", "안 됨"]) : null;
-    return el(tap ? "button" : "div", { class: `li${tap ? " tap" : ""}`, type: tap ? "button" : null, onclick: tap ? () => openTarget(`lane:${r.lane}`, lastChatView()) : null },
-      el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: r.title || PM_RES[r.kind] || "결과" }),
-        el("div", { class: "sup", text: [PM_RES[r.kind] || r.kind, r.kind === "commit" ? r.hash : "", r.lane ? titleOf(r.lane) : "", kstHM(r.at)].filter(Boolean).join(" · ") })),
-      tag ? el("span", { class: `tag ${tag[0]}`, text: tag[1] }) : null);
-  }))]));
+  return el("div", {}, ...groups.flatMap(g => [el("div", { class: "pmv-day", text: g.day }), el("div", { class: "list" }, ...g.rows.map(pmResultRow))]));
 }
 // The built-in 커스텀 project (hub/custom.ts builtinDetail): what the owner has customized, each item with a plain line and a
 // way to ask for a change. Asking opens the main chat with a draft tagged [프로젝트 커스텀 ...]; the orchestrator keeps those
@@ -6601,7 +6744,9 @@ function cmPaint(root, p, D) {
       el("span", { class: "li-end" }, ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `)))),
       g.more ? el("div", { class: "sup", style: "padding:10px 16px", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));
   clear(root).append(
-    el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" }, el("div", { class: "pmv-title", text: p.name }), el("div", { class: "pmv-purpose", text: p.note || "" }))),
+    el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" },
+      el("div", { class: "pmv-htop" }, el("div", { class: "pmv-title", text: p.name }), el("span", { class: "pmv-upd", text: "내 설정" })),
+      el("div", { class: "pmv-purpose", text: p.note || "" }))),
     D && D.groups ? el("div", { class: "pmv-cols" }, el("div", { class: "pmv-col" }, ...D.groups.slice(0, 3).map(group)), el("div", { class: "pmv-col" }, ...D.groups.slice(3).map(group))) : emptyNode(PM.fail ? "불러오지 못했어요" : "불러오는 중…"));
 }
 
@@ -6944,25 +7089,24 @@ function renderProviders() {
   const box = $("#providers");
   const list = P.providers;
   const wrap = el("div", {});
-  wrap.append(el("div", { class: "sec sec-act" }, el("span", { text: "공급자" }), el("span", { class: "tag", text: `${list.filter(isConnected).length}개 연결` }),
+  wrap.append(el("div", { class: "sec sec-act" }, el("span", { text: "공급자" }),
     el("button", { class: "btn tonal sm", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
   if (!list.length) wrap.append(emptyNode("공급자가 없어요"));
   const row = p => {
     const name = p.name || p.id;
-    const on = isConnected(p), sub = [p.account || p.masked || (on ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
+    const on = isConnected(p), sub = [p.account || p.masked || (on ? "" : "연결 안 됨"), p.in_use ? "지금 사용 중" : "", p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
     // each provider opens its own screen: the login or key, and for a subscription its accounts, switch rules and 한도에 걸렸을 때
     return el("button", { class: "li tap prow", type: "button", "data-prov": p.id, onclick: () => go("provider", p.id) },
       el("span", { class: "lead" }, el("span", { class: `dot ${on ? "ok" : needsAttention(p) ? "warn" : ""}` })),
-      el("span", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
+      el("span", { class: "tx" }, el("div", { class: "hd", text: name }),
         sub ? el("div", { class: "sup", text: sub }) : null),
-      el("span", { class: "li-end" }, el("span", { class: `tag ${on ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }), icon("chev", "chev")));
+      el("span", { class: "li-end" }, el("span", { class: `tag ${on ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" })));
   };
-  // Login accounts first, then API keys; an unconfigured provider sits with the way it can be set up.
+  // One list, as the prototype draws it: the way in is its own status on the row (로그인됨 / API 키 / 연결 안 됨), and the screens that
+  // can log in come first, then the API-key ones and the providers not set up yet.
   const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);
-  for (const [title, items] of [["로그인", list.filter(isLogin)], ["API 키", list.filter(p => !isLogin(p))]]) {
-    if (!items.length) continue;
-    wrap.append(el("div", { class: "sec", text: title }), el("div", { class: "list" }, ...items.map(row)));
-  }
+  wrap.append(el("div", { class: "list" }, ...[...list.filter(isLogin), ...list.filter(p => !isLogin(p))].map(row)));
+  wrap.append(el("div", { class: "note", text: "공급자를 누르면 로그인과 API 키, 계정과 한도를 바꿔요. 모델은 어느 경로로 쓰는지 공급자 줄에서 구분해요." }));
   clear(box).append(wrap);
 }
 function addProviderDialog() {
@@ -7357,6 +7501,10 @@ function fbParts(L) {
 const PWA = { reg: null, sub: null, info: null, gw: null, claimed: false };
 // Set when the owner turns notifications on here, cleared when he turns them off: a subscription the push service dropped (404/410) is then made again quietly.
 const PUSH_ON = "dotz-push-on";
+// Set only when the owner turns notifications off here: the installed app otherwise keeps itself subscribed while permission is granted (owner 2026-11-02:
+// no manual step), also when it was subscribed before PUSH_ON existed or the platform dropped the subscription (getSubscription() null, 2026-11-03).
+const PUSH_OFF = "dotz-push-off";
+const pushWanted = () => Boolean(PWA.sub) || localStorage.getItem(PUSH_ON) === "1" || (isStandalone() && localStorage.getItem(PUSH_OFF) !== "1");
 const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const pushCapable = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
@@ -7462,15 +7610,16 @@ async function pwaInit() {
   presence();
 }
 async function pushLoad() {
+  PWA.checked = Date.now();
   try { PWA.info = await api(`/api/push${PWA.sub ? `?endpoint=${enc(PWA.sub.endpoint)}` : ""}`); } catch {}
   // This computer learns which device the subscription is (the id) and whether it is the installed app's (hub/push.ts): once per change.
   if (PWA.sub && PWA.info && PWA.info.subscribed && (PWA.info.did !== DEVICE_ID || (!PWA.info.app && isStandalone()))) {
     try { await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), did: DEVICE_ID, ...(isStandalone() ? { app: true } : {}) }); PWA.info.did = DEVICE_ID; if (isStandalone()) PWA.info.app = true; } catch {}
   }
   // The gateway dropped this device's subscription (the push service answered 404/410, hub/push.ts deliver) while permission is still granted: subscribe
-  // again once per load, with a fresh subscription, so the phone does not go silent until someone opens the settings (2026-10-30).
-  if (!PWA.resub && pushCapable() && Notification.permission === "granted" && PWA.info && PWA.info.publicKey && !PWA.info.subscribed && (PWA.sub || localStorage.getItem(PUSH_ON) === "1")) {
-    PWA.resub = true;
+  // again (at most every 10 minutes), with a fresh subscription, so the phone does not go silent until someone opens the settings (2026-10-30).
+  if (Date.now() - (PWA.resubAt || 0) > 600000 && pushCapable() && Notification.permission === "granted" && PWA.info && PWA.info.publicKey && !PWA.info.subscribed && pushWanted()) {
+    PWA.resubAt = Date.now();
     try {
       if (PWA.sub) await PWA.sub.unsubscribe().catch(() => {});
       PWA.sub = await PWA.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(PWA.info.publicKey) });
@@ -7504,6 +7653,7 @@ async function pushGw(g, on) {
 }
 async function pushEnable(btn) {
   await busy(btn, async () => {
+    localStorage.removeItem(PUSH_OFF);
     if ((await Notification.requestPermission()) !== "granted") throw new Error(`알림 권한이 꺼져 있어요. 기기 설정에서 ${botName} 알림을 허용해 주세요`);
     const reg = PWA.reg || await navigator.serviceWorker.ready;
     const info = PWA.info || await api("/api/push");
@@ -7520,6 +7670,7 @@ async function pushDisable(btn) {
     const sub = PWA.sub;
     PWA.sub = null;
     localStorage.removeItem(PUSH_ON);
+    localStorage.setItem(PUSH_OFF, "1");
     if (sub) { await api("/api/push/unsubscribe", "POST", { endpoint: sub.endpoint }); await sub.unsubscribe().catch(() => {}); }
     toast("알림을 껐어요");
   });
@@ -7537,6 +7688,13 @@ function presence() {
   if (active) presTimer = setTimeout(presence, 25000);
 }
 document.addEventListener("visibilitychange", presence);
+// An installed app is resumed far more often than it is reloaded (iOS keeps it suspended): its subscription is checked again on return, at most every 10 minutes.
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && PWA.reg && pushCapable() && Date.now() - (PWA.checked || 0) > 600000) pwaRecheck(); });
+async function pwaRecheck() {
+  PWA.sub = await PWA.reg.pushManager.getSubscription().catch(() => PWA.sub);
+  await pushLoad();
+  presence();
+}
 ["focus", "blur", "pagehide", "hashchange"].forEach(t => window.addEventListener(t, presence));
 window.addEventListener("load", pwaInit);
 // Install: Chrome/Edge/Samsung hand over beforeinstallprompt (a real app install, never the menu's shortcut);
@@ -7895,6 +8053,11 @@ function renderSettings() {
     el("span", { class: "lead" }, icon(ic)),
     el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null),
     trail === null ? null : el("span", { class: "li-end" }, trail === undefined ? null : trail, icon("chev", "chev")));
+  // A setting with exactly two values keeps its one right-hand control: the two-value pill (docs/ui-spec.md 두 값 설정), not a tag beside a chevron.
+  const toggleRow = (ic, title, sub, label, opts, value, onPick) => el("div", { class: "li" },
+    el("span", { class: "lead" }, icon(ic)),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null),
+    liEnd(rowToggle({ label, opts, value, onPick: (v, btn) => onPick(v, btn) })));
   const sec = title => el("div", { class: "sec", text: title });
   const list = (...rows) => el("div", { class: "list" }, ...rows.filter(Boolean));
 
@@ -7911,8 +8074,8 @@ function renderSettings() {
       devicesRow(row),
       mnRow()),
     sec("표시"), list(
-      row(themeIc(), "화면 모드", "밝게 또는 어둡게", () => toggleTheme(), el("span", { class: "tag", text: themeIs() === "dark" ? "다크" : "라이트" })),
-      row("chat", "대화 탭", chatTabMode() === "main" ? "채팅을 열면 메인 대화부터 시작해요" : "채팅을 열면 마지막으로 보던 대화부터 시작해요", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, el("span", { class: "tag", text: chatTabMode() === "main" ? "메인" : "마지막" }))),
+      toggleRow(themeIc(), "화면 모드", "밝게 또는 어둡게", "화면 모드", [["light", "라이트"], ["dark", "다크"]], themeIs(), v => { if (v !== themeIs()) toggleTheme(); renderSettings(); }),
+      toggleRow("chat", "대화 탭", chatTabMode() === "main" ? "채팅을 열면 메인 대화부터 시작해요" : "채팅을 열면 마지막으로 보던 대화부터 시작해요", "대화 탭", [["main", "메인"], ["last", "마지막"]], chatTabMode(), v => { chatTabModeSet(v); renderSettings(); })),
     ...pushSection(),
     sec("시스템"), list(row("harness", "구성", "시스템 지도", () => go("harness"))),
     ...updateSection());
@@ -13218,7 +13381,8 @@ function monTopNodes(it) {
   if (banner) out.push(banner);
   const acts = [...(it.mon && it.mon.watch && !banner ? [monRunBtn(it.mon)] : []), monConvBtn(it)].filter(Boolean);
   if (acts.length) out.push(el("div", { class: "mon-actions" }, ...acts));
-  return out;
+  // The prototype's detail card opens the conversation on a phone too: the wait, a down banner and the actions in one card (never loose).
+  return out.length ? [el("div", { class: "mon-topcard" }, ...out)] : [];
 }
 // 대화로 이어가기 (owner 2026-11-03): the item's own settings conversation (the same go() as the 대화 icon). A mail or KakaoTalk item is
 // already a conversation, so it has no button of its own here.
@@ -13250,7 +13414,9 @@ function monTimeline(it) {
   const names = it.mon ? monNames(it.mon) : [];
   const bar = monBarWanted(it) ? [monBar(it)] : [], nodes = !monFeed(it) ? monChronoNodes(it, names) : it.notices.length > MON_COMPACT ? monFeedNodes(it, names) : monFeedCards(it, names);
   const ov = monOverview(it), head = [...monTopNodes(it), ...bar, ...(ov ? [ov] : [])];
-  if (nodes.length) return [...head, ...nodes];
+  // A monitor's reports read as its 확인 기록, under a section label like the prototype's detail (its 지금 확인 stays in the head's actions).
+  const sec = it.mon ? [el("div", { class: "mon-sec", role: "heading", "aria-level": "3", text: it.mon.kind === "schedule" ? "실행 기록" : "확인 기록" })] : [];
+  if (nodes.length) return [...head, ...sec, ...nodes];
   if (head.length) return [...head, el("div", { class: "empty", text: "이 보기에 해당하는 소식이 없어요" })];
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
   return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? `${monRunLine(it.mon)}${next}` : "아직 소식이 없어요" })];
@@ -13302,6 +13468,15 @@ function monBannerOf(it) {
 }
 // The title bar of an open item; the kakao pane puts the gear in its room head once a room is open.
 // A monitor adds its own progress block and 지금 확인 under the name, so the conversation always says how far the wait has come.
+// When the item last said anything, for the header's quiet right end (the prototype's .ch .ac): the monitor's last run, else its newest
+// report or mail. "" when nothing has happened yet.
+function monHeadTime(it) {
+  const stamps = [it.mon && it.mon.last_run, ...it.notices.map(n => n.updated || n.ts), ...(it.mails || []).map(t => (CONV.get(t) || {}).ts || (MAILS.get(t) || {}).at)].filter(Boolean)
+    .map(t => Date.parse(t)).filter(Number.isFinite);
+  return stamps.length ? ntTime(new Date(Math.max(...stamps)).toISOString()) : "";
+}
+// The open item's header: the prototype's detail card composition - icon, name (and its machine), state, the moment at the right end,
+// then the actions on their own row and the wait / banner under them. A phone has no .cv-head, so monTopNodes draws the same card there.
 const monHead = it => {
   const banner = monBannerOf(it), st = monState(it);
   // An app with reply drafts waiting opens the one 답장 확인 queue on its own drafts (30-replies.js).
@@ -13309,11 +13484,14 @@ const monHead = it => {
   // 대화로 이어가기 (owner 2026-11-03): every item continues in its own chat - the conversation its settings talk in (asOpen's own go()).
   // A mail or KakaoTalk item is already a conversation, so the way in is its row and this button stays out of the way there.
   const convBtn = monConvBtn(it);
-  const row = [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st ? el("span", { class: "cv-p", text: st }) : null), convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+  const acts = [convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);
-  return extra.length ? [el("div", { class: "mon-hdwrap" }, el("div", { class: "mon-hdrow" }, ...row), ...extra)] : row;
+  return [el("div", { class: "mon-hdwrap" },
+    el("div", { class: "mon-hdrow" }, monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st && !it.mon ? el("span", { class: "cv-p", text: st }) : null), el("span", { class: "mon-hd-time", text: monHeadTime(it) })),
+    acts.length ? el("div", { class: "mon-hdacts" }, ...acts) : null,
+    ...extra)];
 };
 // The settings app of the detail open now (an item, or a conversation sitting under one), for the phone's app bar.
 function monDetailApp() {
@@ -13359,7 +13537,7 @@ function renderMonitoring() {
   if (sideSig !== MON.side) {
     MON.side = sideSig;
     const top = side.scrollTop;
-    clear(side).append(...rows.map(convRow));
+    clear(side).append(...monSideNodes(rows));
     monDecorateRows(side, items);
     side.scrollTop = top;
   }
@@ -13408,6 +13586,18 @@ function renderMonitoring() {
   monObserveOlder();
   convTitle();
   monSeen();
+}
+// The list column as the prototype draws it (#monitoring): section labels sit between one card per section, never inside one long card.
+// The first rows (감시 소식, 답장 확인) have no label and stand as their own cards; 앱 / 일반 모니터링 / 프로젝트·… each open a labeled card.
+function monSideNodes(rows) {
+  const out = [];
+  let list = null;
+  for (const r of rows) {
+    if (r.header) { out.push(el("div", { class: "mon-sec", role: "presentation", text: r.header })); list = null; continue; }
+    if (!list) { list = el("div", { class: "mon-grp" }); out.push(list); }
+    list.append(convRow(r));
+  }
+  return out;
 }
 // A monitor row in the list carries the same bar under its status line; the row itself is the shared convRow, so the block is appended here.
 // A monitor row carries its bar as the last child of the whole row (not of the text column), so the bar and its meta line take the full left-column
@@ -14010,6 +14200,13 @@ function nwChangeNode(line) {
 }
 // One row of the home card 답변 필요 (same markup as 08-home.js homeNowRow): tap = the detail sheet, x = ignore.
 // `label` "" is a row that no longer waits (the 알림 tabs, 31-conversations.js bellPaint): no 답변 필요, no x.
+// An 알림 tab row (`label` "") ends with a tag when the notice has a state worth a tag (a failure, a warning) and its time, as the prototype's notice
+// row does; the tab already names the kind, so a plain notice shows only the time. Its second line is the place only.
+const NT_TONE_TAG = { fail: ["실패", "err"], warn: ["주의", "warn"] };
+function ntEndNode(n) {
+  const k = NT_TONE_TAG[n.tone];
+  return el("span", { class: "nt-end" }, k ? el("span", { class: `tag ${k[1]}`, text: k[0] }) : null, el("span", { class: "nt-time", text: ntWhen(n) }));
+}
 function ntHomeRow(n, label = "답변 필요") {
   const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open, chg = n.kind === "watch" ? nwChangeNode(nwChangeLine(n.text)) : null;   // a loose [ask] notice has no decision: its conversation names where it waits
   // A watch change is the landing page's 가격 알림 row: a 32px round icon tile, the title, the change line under it, the time at the right.
@@ -14017,8 +14214,9 @@ function ntHomeRow(n, label = "답변 필요") {
   return el("div", { class: `hr hrx${chg ? " nt-w" : ""}${n.read ? "" : " un"}`, "data-nid": n.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": label ? `${title} · ${label}` : title },
       lead,
-      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha" }, ...(chg ? [chg] : [[n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), ntWhen(n)].filter(Boolean).join(" · ")]))),
+      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha" }, ...(chg ? [chg] : [[n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), label === "" && !chg ? "" : ntWhen(n)].filter(Boolean).join(" · ")]))),
       chg ? el("span", { class: "nt-wt", text: ntWhen(n) }) : null,
+      label === "" && !chg ? ntEndNode(n) : null,
       label ? el("span", { class: "hs warn", text: label }) : null),
     label ? ntIgnoreBtn(n) : null);
 }
@@ -15000,10 +15198,12 @@ function convRow(r) {
   if (r.more) return el("div", { class: "cv-more" }, el("button", { class: "btn text", type: "button", "data-k": "more", onclick: () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); }, text: `프로젝트 ${r.more}개 더 보기` }));
   if (r.ended) return endedGroup() || "";
   const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";
+  // 채팅 목록은 시제품의 채팅 행 (proto .li): 아이콘, 제목·미리보기, 오른쪽에 시각과 대기 표시. 모니터링 목록은 시각 없이 그대로예요.
+  const when = !monCtx && r.last && r.last.ts ? prjAgo(Date.parse(r.last.ts)) : "";
   return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
-    el("span", { class: "cv-m" }, el("span", { class: "cv-m2" }, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${r.unreplied}개`, text: `미답장 ${r.unreplied > 99 ? "99+" : r.unreplied}` }) : null)));
+    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${r.unreplied}개`, text: `미답장 ${r.unreplied > 99 ? "99+" : r.unreplied}` }) : null)));
 }
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
@@ -15018,7 +15218,13 @@ function convPaintHead() {
   convHeadSig = sig;
   // A conversation opened from a 모니터링 list (a mail of the 메일 list): ← goes back to that list inside the page, like the app bar's back on a phone.
   const up = monCtx && MON.sel && !isSettingsT(target) ? el("button", { class: "ib cv-up", type: "button", "aria-label": "목록으로", title: "목록으로", "data-k": "cv-up", onclick: () => go("monitoring", MON.sel) }, icon("back")) : null;
-  clear(convHead).append(...[up, convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), monCtx ? pqLabel({ pc: pqPc(target) }) : null), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, target === "alert" ? el("button", { class: "btn text sm cv-readall", type: "button", "data-k": "read-all", disabled: !alertN, title: "답이 필요한 알림은 그대로 둬요", onclick: ev => ntAlertReadAll(ev.currentTarget), text: "모두 읽음" }) : null, ...asEntry(app)].filter(Boolean));
+  // 시제품의 대화 머리 (proto .cv-hd): 제목 16/22 600 한 줄, 그 아래 상태 한 줄, 오른쪽에 그 대화의 동작.
+  const acts = [isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, target === "alert" ? el("button", { class: "btn text sm cv-readall", type: "button", "data-k": "read-all", disabled: !alertN, title: "답이 필요한 알림은 그대로 둬요", onclick: ev => ntAlertReadAll(ev.currentTarget), text: "모두 읽음" }) : null, ...asEntry(app)].filter(Boolean);
+  // 모니터링에서 연 대화(메일·설정)는 그 목록의 머리 그대로 아바타와 이름·상태 줄을 둬요.
+  if (monCtx) clear(convHead).append(...[up, convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), pqLabel({ pc: pqPc(target) })), el("span", { class: "cv-p", text: state })), ...acts].filter(Boolean));
+  else clear(convHead).append(...[up,
+    el("span", { class: "cv-hd-b" }, el("span", { class: "cv-hd-t", title: targetName(target) }, targetName(target)), el("span", { class: "cv-hd-s", text: state })),
+    acts.length ? el("span", { class: "cv-hd-a" }, ...acts) : null].filter(Boolean));
 }
 // A project's conversation gets the project page's ⋯ menu (수정 / 삭제, built by pmMenuButton in 19-project-main.js) once the project is known.
 const pjMenuOn = () => isProjT(target) && !!pmOfTarget(target);
@@ -15043,15 +15249,20 @@ function bellTab(tab) { BELL.tab = tab; bellPaint(); }
 // 새 소식 by app (the app's own name, else the monitor, else the title); the groups follow their newest item.
 function bellGroups(list) {
   const by = new Map();
-  for (const n of list) { const k = ntPlain(n.app || n.watch || n.title) || "기타"; by.set(k, [...(by.get(k) || []), n]); }
+  for (const n of list) { const k = ntPlain(n.app || n.watch || ""); by.set(k, [...(by.get(k) || []), n]); }   // no app or monitor: one headerless group, never one per row title
   return [...by];
 }
 function bellRows(tab) {
   const list = NT.items.filter(n => n.id && n.cls === tab).sort((a, b) => (tab === "ask" ? Number(ntNeeds(b)) - Number(ntNeeds(a)) : 0) || ntAt(b) - ntAt(a)).slice(0, 100);
   const row = n => ntHomeRow(n, ntNeeds(n) ? undefined : "");
   if (!list.length) return [el("div", { class: "bell-none", text: "아직 없어요" })];
-  if (tab !== "news") return [el("div", { class: "hn" }, ...list.map(row))];
-  return bellGroups(list).flatMap(([name, items]) => [el("div", { class: "bell-gh", role: "presentation", text: name }), el("div", { class: "hn" }, ...items.map(row))]);
+  // The prototype's notices screen (30-notices.js ntHomeRow): one meta line, a card of rows (새 소식: a label and a card per app), one quiet note.
+  const card = items => el("div", { class: "bell-card" }, el("div", { class: "hn" }, ...items.map(row)));
+  const meta = el("div", { class: "bell-meta" }, "안 읽은 알림 ", el("b", { text: String(bellUnread(tab)) }), "개"), note = el("div", { class: "bell-note", text: "모두 읽음은 답이 필요한 알림을 그대로 둬요." });
+  if (tab !== "news") return [meta, card(list), note];
+  // A header that only repeats the title of its single row says nothing: it is not drawn.
+  const echo = (name, items) => items.length === 1 && [ntPlain(items[0].title), hcLine(items[0])].includes(name);
+  return [meta, ...bellGroups(list).flatMap(([name, items]) => [name && !echo(name, items) ? el("div", { class: "bell-gh", role: "presentation", text: name }) : null, card(items)].filter(Boolean)), note];
 }
 function bellPaint() {
   const on = current === "chat" && target === "alert" && !monCtx, box = $("#bell-tabs"), list = $("#bell-list"), tab = BELL.tab, listed = on && tab !== "all";
@@ -15131,6 +15342,32 @@ matchMedia("(max-width: 1099px)").addEventListener("change", () => {
   renderBars();
 });
 convLoad();
+
+/* ---- shell: the notice bell and the sidebar's computer row (22-shell.css) ---- */
+// The bell opens the 알림 conversation; its count comes from paintBell (09-needs-you.js), fed by every notice change.
+$("#bell").prepend(icon("bell"));
+$("#bell").onclick = () => openTarget("alert", lastChatView());
+// The sidebar's picker row shows the computer this page is on and opens the same switcher as the brand (33-peers.js prOpen);
+// prPaint keeps the brand current, so the row follows its attributes instead of reading that file's state.
+function sidebarPick() {
+  const b = $("#gwpick"), name = $("#gw-name");
+  if (!b || !name) return;
+  let me = null, others = [];
+  try { me = prSelf(); others = prOthers(); } catch { /* 33-peers.js has not run yet */ }
+  name.textContent = (me && me.name) || "이 컴퓨터";
+  const need = others.some(p => p.need > 0), more = others.some(p => p.unread > 0);
+  b.classList.toggle("pneed", need);
+  b.classList.toggle("pdot", !need && more);
+  b.title = me ? `${me.name} · 컴퓨터 바꾸기` : "컴퓨터 바꾸기";
+}
+const gwpick = $("#gwpick");
+if (gwpick) {
+  gwpick.prepend(icon("term"));
+  gwpick.append(icon("drop", "gw-c"));
+  gwpick.onclick = () => $("#brand").click();
+  new MutationObserver(sidebarPick).observe($("#brand"), { attributes: true, subtree: true, childList: true, characterData: true });
+  setTimeout(sidebarPick, 0);
+}
 
 /* ---------- 모니터링 > 앱 > 설정 대화 ---------- */
 // Every app with a settings schema (hub/app-settings.ts) has one pinned "설정" row and one conversation, target settings:<app>. Above the
@@ -16015,13 +16252,16 @@ function prSheet() {
     // while this computer's gateway is unreachable the other rows' flags are stale: "확인 못 함", still selectable (prPick tries anyway)
     const off = !p.self && !p.online && !selfDown, alert = !p.self && (p.unread > 0 || p.need > 0);
     const st = p.self ? (selfDown ? "연결 안 됨" : "") : selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨";
+    // the prototype's switcher row: a status dot, the name over one quiet line, and at the right the check (this one) or the count of what waits there
+    const sub = p.self ? (st || "이 컴퓨터") : alert ? prText(p) : st;
     return el("button", { type: "button", class: `pr-row${p.self ? " on" : ""}${off ? " off" : ""}`, "aria-current": p.self ? "true" : null, "aria-disabled": off ? "true" : null,
       "aria-label": [p.name, p.self ? "지금 보고 있어요" : "", st, alert ? prText(p) : ""].filter(Boolean).join(", "), onclick: () => prPick(p) },
-      el("span", { class: "pr-t", text: p.name }),
-      alert ? el("span", { class: `pr-d${p.need > 0 ? " need" : ""}` }) : null,
-      st ? el("span", { class: "pr-st", text: st }) : icon("check", "pr-ck"));
+      el("span", { class: `dot${(p.self ? !selfDown : p.online && !selfDown) ? " ok" : ""}` }),
+      el("span", { class: "pr-tx" }, el("span", { class: "pr-t", text: p.name }), sub ? el("span", { class: "pr-sub", text: sub }) : null),
+      alert ? el("span", { class: `pr-n${p.need > 0 ? " need" : ""}`, text: String((p.need || 0) + (p.unread || 0)) }) : p.self ? icon("check", "pr-ck") : null);
   });
-  clear(PR.node.firstElementChild).append(el("div", { class: "pr-hd", id: "pr-t", text: "컴퓨터" }), el("div", { class: "pr-list" }, rows));
+  const manage = el("button", { type: "button", class: "pr-row pr-manage", onclick: () => { prClose(false); go("settings"); } }, icon("settings"), el("span", { class: "pr-t", text: "컴퓨터 관리" }));
+  clear(PR.node.firstElementChild).append(el("div", { class: "pr-hd", id: "pr-t", text: "내 컴퓨터" }), el("div", { class: "pr-list" }, rows, manage));
 }
 
 function prKey(ev) {
@@ -16044,6 +16284,12 @@ function prOpen() {
   // On the phone the tab bar stays free below the sheet, so tapping 홈 again (homeTabTap) can close it, as the 채팅 tab does with its list.
   const nr = $("#nav").getBoundingClientRect();
   if (nr.top > innerHeight / 2 && nr.height < innerHeight / 4) PR.node.style.bottom = `${Math.max(0, innerHeight - nr.top)}px`;
+  // With the sidebar's computer row on screen the switcher opens under it as a popover (no scrim), as the prototype draws it; the phone keeps its bottom sheet.
+  const gwb = $("#gwpick");
+  if (gwb && gwb.offsetParent) {
+    const r = gwb.getBoundingClientRect(), sh = PR.node.firstElementChild;
+    PR.node.classList.add("anch"); sh.style.left = `${Math.max(12, Math.round(r.left - 8))}px`; sh.style.top = `${Math.round(r.bottom + 6)}px`;
+  }
   PR.ov = ovOpen(() => prClose(false));
   document.addEventListener("keydown", prKey, true);
   prSheet();
@@ -16302,7 +16548,9 @@ async function pqLoad() {
   monSchedule();
 }
 const pqSoon = () => { clearTimeout(PQ.t); PQ.t = setTimeout(pqLoad, 1000); };
-const pqOpen = () => { if (Date.now() - PQ.at > 5000) pqLoad(); };
+// A function declaration, not a const: go("monitoring") calls it from 30-monitoring.js while the boot still runs, and this file's
+// top-level consts are not initialized yet (a const here threw "Cannot access 'pqOpen' before initialization" on a #monitoring start).
+function pqOpen() { if (Date.now() - PQ.at > 5000) pqLoad(); }
 setInterval(() => { if ((current === "monitoring" || monCtx) && !document.hidden) pqLoad(); }, 60_000);
 
 // What a peer writes into its conversations (the answer to a message sent to its monitor, a mail's gateway notice such as "the bot is paused", the held
