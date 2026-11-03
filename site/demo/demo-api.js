@@ -525,7 +525,11 @@
       { id: "slack", label: "Slack", enabled: false, state: "off", configured: false },
       { id: "telegram", label: "Telegram", enabled: true, state: "ok", configured: true },
     ] },
-    "/api/replies": { items: [] },
+    // 답장 확인: 댓글 답글 초안 둘 (유튜브·인스타그램). 보내기는 아래 postApi에서 그냥 받아 줘요.
+    "/api/replies": { items: [
+      { kind: "comment", app: "youtube", code: "DM1", at: Date.now() - 6 * 6e4, to: "산책하는고양이", title: "책상 정리 브이로그", text: "다음 주 금요일에 올라가요.\n봐 주셔서 고마워요!", original: { who: "산책하는고양이", text: "영상 잘 봤어요! 다음 편은 언제 올라와요?" }, attachmentsNone: true, cannotAttach: [] },
+      { kind: "comment", app: "instagram", code: "DM2", at: Date.now() - 52 * 6e4, to: "달빛고양이", title: "라이브 예고 게시물", text: "이번 주 금요일 저녁 8시에 해요.\n알림 설정해 두시면 바로 알려 드릴게요.", original: { who: "달빛고양이", text: "다음 라이브는 언제 해요?" }, attachmentsNone: true, cannotAttach: [] },
+    ] },
     "/api/features": {},
     "/api/harness": { layers: [], projects: [] },
     "/api/api-budget": {},
@@ -574,6 +578,7 @@
   function postApi(u, body) {
     const p = u.pathname;
     log.posts.push(p);
+    if (/^\/api\/comments\/drafts\/[^/]+\/send$/.test(p)) return json({ ok: true });
     if (p === "/api/message") return json(answer(body));
     if (p === "/api/command") return json({ output: "데모에서는 명령을 실행하지 않아요." });
     if (p === "/api/read") { const c = conv(body.target); if (c) c.unread = 0; return json({}); }

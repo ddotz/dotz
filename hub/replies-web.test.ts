@@ -171,7 +171,9 @@ describe.each([[390, 844], [1280, 900]])("답장 확인 at %ipx", (width, height
 		const reads = peerReads;
 		// two taps: the card is busy after the first, so exactly one act leaves this computer
 		await run(v, `const b = document.querySelector('.rq[data-kind="kakao"][data-rq^="kakao:http://mini.test|PK1"] .dr-send'); b.click(); b.click()`);
-		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-q > .rq").length === 4`);
+		// the sent card stays where it was: 보냈어요 in the action row's place, no toast, nothing below moves
+		await waitFor(v, `document.querySelector('.rq[data-rq^="kakao:http://mini.test|PK1"] .rq-sent')`);
+		expect(await q<number[]>(v, `return [document.querySelectorAll("#mon-tl .rq-q > .rq").length, document.querySelectorAll(".snack").length, document.querySelectorAll('.rq[data-rq^="kakao:http://mini.test|PK1"] .rq-acts').length]`)).toEqual([5, 0, 0]);
 		expect(acts).toEqual([{ action: "kakao", args: { op: "draft-send", code: "PK1" } }]);
 		expect(localPosts).toEqual([]);
 		await waitFor(v, `true`, 200).catch(() => {});

@@ -19,6 +19,16 @@
 .rq-edit .kk-rv { min-height: 40px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line, rgb(128 128 128 / .3)); background: var(--card); color: inherit; font: 400 16px/22px var(--font); }
 .rq-edit .btns { display: flex; flex-wrap: wrap; gap: 6px; }
 
+/* 메시지 답글 카드 (소개 페이지 댓글 답글 데모): 남의 글은 조용한 인용, 초안 글이 주인공(원칙 1·5). 게시물 제목과 첨부 안내는 회색으로 물러나요 */
+.rq[data-kind="comment"] .rq-sub { margin-top: 6px; color: var(--fg-2); font: 500 13px/19px var(--font); }
+.rq-orig .rq-ow { color: var(--fg-2); font-weight: 500; }
+.rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) { margin-top: 8px; padding: 0; background: none; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) .ic { width: 14px; height: 14px; color: inherit; stroke-width: 2; }
+/* 보냈어요: 버튼 행과 같은 높이, 그 자리에서 바뀝니다(원칙 6) */
+.rq-sent { display: flex; align-items: center; gap: 6px; height: var(--btn-h); margin-top: 12px; color: var(--fg-2); font: 500 14px/20px var(--font); }
+.rq-sent .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--accent); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+.rq-sent-at { color: var(--fg-3); font: 400 12px/16px var(--font); }
+
 /* the queue: one list, newest first, an app filter on top */
 .rq-q { display: flex; flex-direction: column; gap: 12px; }
 .rq-q > .rq { padding: 12px 14px; border-radius: var(--r-card); background: var(--card); }
