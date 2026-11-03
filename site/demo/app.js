@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "1a468468a8a8";
+const WEB_BUILD = "cbe6b7bf7a36";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -821,7 +821,6 @@ function toggleTheme() { dotzTheme.toggle(); if (current === "settings") renderS
 window.addEventListener("dotz-theme", () => { if (current === "settings") renderSettings(); });
 $("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
 const setBrand = () => { $("#brand-name").textContent = botName; paintAttn(); };
-$("#brand").onclick = () => go("home");
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
 const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat" && narrowChat()) ? "monitoring" : null;
@@ -15456,10 +15455,12 @@ window.addEventListener("popstate", ev => {
 });
 
 /* ---------- computers: switch between this owner's gateways (맥북, 맥미니) ---------- */
-// Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?, via?}]. A row with via "jandi" is a computer reached only through the owner's JANDI self chat (hub/jandi-peers.ts): its url is a chat page on this gateway, opened in this app. The chip next to the title shows this computer
-// and appears only with 2 or more, with a dot on its chevron while another computer has something unread (the counts live in the sheet rows); the sheet lists them; choosing one opens that computer's own address (its own PWA, login and push).
+// Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?, via?}]. A row with via "jandi" is a computer reached only through the owner's JANDI self chat (hub/jandi-peers.ts): its url is a chat page on this gateway, opened in this app.
+// With 2 or more the bot name opens the switch sheet (owner 2026-11-03: no separate chip): the logo + name at the top left on a wide screen, the page title on the phone
+// (there the brand is hidden; on 홈 the title is the bot name). A small dot at the name's bottom right says another computer has something unread (warn: a question waits).
+// The sheet is one row per computer: name, its own dot, and ✓ / 연결됨 / 연결 안 됨. An offline computer stays listed, greyed; choosing it says it cannot connect. Choosing one opens that computer's own address (its own PWA, login and push).
 // The last list that arrived is kept in localStorage and drawn at once: coming back from the other computer the page starts from the service worker's
-// cached shell before the phone's network is up, and a first /api/peers that failed left the chip hidden until the next minute. A failed fetch is retried within seconds.
+// cached shell before the phone's network is up, and a first /api/peers that failed left the switcher off until the next minute. A failed fetch is retried within seconds.
 // One order on every computer: each gateway lists itself first, so "the one after me" from its own list sent A to B and B back to A
 // with three or more (owner 2026-10-31). The list is ordered by address (unique and the same everywhere), for the sheet and Ctrl+` alike.
 function prOrder(list) { return [...list].sort((a, b) => (a.url < b.url ? -1 : a.url > b.url ? 1 : 0)); }
@@ -15502,7 +15503,7 @@ function prTryFollow() {
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (typeof d.follow === "string") { prFollowHref = d.follow; prTryFollow(); } });
 
 // Frames this gateway forwards from the other computers' event streams (hub/peer-stream.ts), so the page hears them without leaving its own origin:
-// peer_counts updates that computer's chip numbers at once; peer_notice is a new notice there. It toasts (tap = that computer, at the item, like a
+// peer_counts updates that computer's numbers (and the bot name's dot) at once; peer_notice is a new notice there. It toasts (tap = that computer, at the item, like a
 // push tap) only in 모니터링 and while this page is visible: a hidden page gets the push instead, and the hub quiets the push while the page is open (hub/push.ts presence).
 const prSeen = new Set();
 // A conversation of the other computer this page just acted in (a draft sent, fixed or dropped through it): what that computer says about it next is
@@ -15524,7 +15525,7 @@ function prLive(e) {
     prPaint();
     return;
   }
-  // Outside 모니터링 each tab is this computer's alone (owner 2026-10-31): there the chip's dot (peer_counts above) is the only sign.
+  // Outside 모니터링 each tab is this computer's alone (owner 2026-10-31): there the bot name's dot (peer_counts above) is the only sign.
   if (!p || document.hidden || prQuiet(e.to) || (current !== "monitoring" && !monCtx)) return;
   const key = `${p.url}|${e.key || e.id}`;
   if (prSeen.has(key)) return;
@@ -15542,19 +15543,25 @@ function prOpenItem(p, id) {
   prTryFollow();
 }
 
+const prTrig = () => !!prSelf() && PR.list.length >= 2;
 function prPaint() {
   prTryFollow();
-  const chip = $("#pchip"), me = prSelf(), on = !!me && PR.list.length >= 2;
+  const me = prSelf(), on = prTrig(), names = [$("#brand-name"), $("#title")], brand = $("#brand"), title = $("#title");
   $("#appbar").classList.toggle("hasp", on);
-  chip.hidden = !on;
-  if (!on) { prClose(false); return; }
+  if (!on) {
+    for (const n of names) n.classList.remove("pdot", "pneed");
+    brand.setAttribute("aria-label", "홈으로"); brand.removeAttribute("title"); brand.removeAttribute("aria-haspopup");
+    title.removeAttribute("tabindex"); title.removeAttribute("aria-haspopup");
+    prClose(false); return;
+  }
   // The TLS handshake to the other computer is paid now, not when the owner taps it.
   for (const p of prOthers()) if (p.online && !p.via && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
   const others = prOthers(), more = others.some(p => p.unread > 0 || p.need > 0), need = others.some(p => p.need > 0);
-  // el() skips a null child; Node.append() would write it as the text "null" (the chip once read "맥북 null"), so the chip is built with el().
-  clear(chip).append(el("span", { class: "pc-n", text: me.name }), el("span", { class: "pc-c" }, icon("chev", "pc-i"), more ? el("span", { class: `pc-d${need ? " need" : ""}`, role: "img", "aria-label": "다른 컴퓨터에 새 알림" }) : null));
-  chip.setAttribute("aria-label", `컴퓨터 바꾸기, 지금은 ${me.name}`);
-  chip.title = `컴퓨터 바꾸기 (${prKeyHint}, 다음 컴퓨터로)`;
+  for (const n of names) { n.classList.toggle("pdot", more); n.classList.toggle("pneed", need); }
+  const label = `컴퓨터 바꾸기, 지금은 ${me.name}${more ? ", 다른 컴퓨터에 새 알림" : ""}`;
+  brand.setAttribute("aria-label", label); brand.setAttribute("aria-haspopup", "dialog");
+  brand.title = `컴퓨터 바꾸기 (${prKeyHint}, 다음 컴퓨터로)`;
+  title.tabIndex = 0; title.setAttribute("aria-haspopup", "dialog");
   if (PR.node) prSheet();
 }
 
@@ -15611,19 +15618,17 @@ function prPick(p, o = {}) {
 }
 
 function prSheet() {
-  const x = el("button", { type: "button", class: "ib", "aria-label": "닫기", onclick: () => prClose() });
-  x.append(icon("close"));
   const rows = PR.list.map(p => {
-    // Connection state is the pill on the right (not a second dot next to the accent dot of the computer being viewed), so the subtitle only says "지금 보고 있어요".
-    const note = prText(p);
-    return el("button", { type: "button", class: `pr-row${p.self ? " on" : ""}`, "aria-current": p.self ? "true" : null, onclick: () => prPick(p) },
-      el("span", { class: "pr-b" }, el("span", { class: "pr-t", text: p.name }), p.self ? el("span", { class: "pr-s", text: "지금 보고 있어요" }) : null, p.via === "jandi" ? el("span", { class: "pr-s", text: "잔디" }) : null),
-      note ? el("span", { class: `pr-bd${p.need > 0 ? " need" : ""}`, text: note }) : null,
-      el("span", { class: `pr-st${!p.self && selfDown ? "" : p.online ? " ok" : ""}`, text: p.self && selfDown ? "연결 안 됨" : !p.self && selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨" }));
+    // while this computer's gateway is unreachable the other rows' flags are stale: "확인 못 함", still selectable (prPick tries anyway)
+    const off = !p.self && !p.online && !selfDown, alert = !p.self && (p.unread > 0 || p.need > 0);
+    const st = p.self ? (selfDown ? "연결 안 됨" : "") : selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨";
+    return el("button", { type: "button", class: `pr-row${p.self ? " on" : ""}${off ? " off" : ""}`, "aria-current": p.self ? "true" : null, "aria-disabled": off ? "true" : null,
+      "aria-label": [p.name, p.self ? "지금 보고 있어요" : "", st, alert ? prText(p) : ""].filter(Boolean).join(", "), onclick: () => prPick(p) },
+      el("span", { class: "pr-t", text: p.name }),
+      alert ? el("span", { class: `pr-d${p.need > 0 ? " need" : ""}` }) : null,
+      st ? el("span", { class: "pr-st", text: st }) : icon("check", "pr-ck"));
   });
-  clear(PR.node.firstElementChild).append(
-    el("div", { class: "ds-hd" }, el("span", { class: "ds-ey pr-ey", text: "컴퓨터" }), x),
-    el("div", { class: "ds-body" }, el("h2", { class: "ds-t", id: "pr-t", text: "어느 컴퓨터를 볼까요?" }), el("div", { class: "ds-m", text: "고르면 그 컴퓨터의 화면으로 넘어가요" }), el("div", { class: "pr-list" }, rows)));
+  clear(PR.node.firstElementChild).append(el("div", { class: "pr-hd", id: "pr-t", text: "컴퓨터" }), el("div", { class: "pr-list" }, rows));
 }
 
 function prKey(ev) {
@@ -15641,7 +15646,7 @@ function prKey(ev) {
 function prOpen() {
   if (PR.node) return;
   PR.opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  PR.node = el("div", { class: "ds-bd", onpointerdown: ev => { if (ev.target === PR.node) prClose(); } }, el("div", { class: "ds-sheet", role: "dialog", "aria-modal": "true", "aria-labelledby": "pr-t" }));
+  PR.node = el("div", { class: "ds-bd", onpointerdown: ev => { if (ev.target === PR.node) prClose(); } }, el("div", { class: "ds-sheet pr-sheet", role: "dialog", "aria-modal": "true", "aria-labelledby": "pr-t" }));
   document.body.append(PR.node);
   // On the phone the tab bar stays free below the sheet, so tapping 홈 again (homeTabTap) can close it, as the 채팅 tab does with its list.
   const nr = $("#nav").getBoundingClientRect();
@@ -15649,6 +15654,7 @@ function prOpen() {
   PR.ov = ovOpen(() => prClose(false));
   document.addEventListener("keydown", prKey, true);
   prSheet();
+  motionIn(PR.node.firstElementChild, "rise", 200);
   const cur = PR.node.querySelector(".pr-row.on") || PR.node.querySelector(".pr-row");
   if (cur) cur.focus({ preventScroll: true });
   prLoad();
@@ -15684,7 +15690,11 @@ const mnRow = () => MN.info && el("button", { class: "li tap", type: "button", o
   el("span", { class: "lead" }, icon("term")), el("span", { class: "tx" }, el("div", { class: "hd", text: "이 컴퓨터 이름" })), el("span", { class: "sup", text: MN.info.name }), icon("chev", "lead"));
 mnLoad();
 
-$("#pchip").onclick = prOpen;
+$("#brand").onclick = () => (prTrig() ? prOpen() : go("home"));
+// The phone's page title, on a page without a back arrow (there the title names the conversation or sub-page and the arrow leads back).
+const prTitleTap = () => { if (prTrig() && !$("#appbar").classList.contains("back")) prOpen(); };
+$("#title").addEventListener("click", prTitleTap);
+$("#title").addEventListener("keydown", ev => { if ((ev.key === "Enter" || ev.key === " ") && !ev.isComposing) { ev.preventDefault(); prTitleTap(); } });
 // ⌘` (Ctrl+` elsewhere) goes straight to the next computer in the sheet's order, wrapping round, skipping ones that are offline, with no sheet;
 // with Shift it goes the other way. macOS keeps ⌘` for cycling an app's windows, so Ctrl+` also works on a Mac.
 const prKeyHint = isMac ? "⌘` · Ctrl+`" : "Ctrl+`";
