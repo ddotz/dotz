@@ -9,6 +9,7 @@ import { DATA_DIR, OMP, parseSelector, splitThinking } from "../config.ts";
 import { isNote } from "../i18n.ts";
 import { keyedWorker } from "../fallback.ts";
 import { classifyProviderError } from "../providers.ts";
+import { isSilent } from "../tone.ts";
 import { detectBinary } from "./detect.ts";
 import type { ActivityRow, AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts, SubagentUpdate } from "./types.ts";
 
@@ -316,7 +317,7 @@ export function recentExchanges(sessionFile: string): string | undefined {
 			if (!m) continue;
 			if (m.role === "assistant" && m.stopReason !== "stop" && m.stopReason !== "length") continue;
 			const t = (Array.isArray(m.content) ? m.content.filter(b => b?.type === "text").map(b => b.text).join("") : (m.content ?? "")).trim();
-			if (!t || t.startsWith("[keepalive]") || t === "ok" || (m.role === "assistant" && (t === "[later]" || t === "-")) || isNote(t, "youAre") || t.includes("\n[dotz lane ")) continue;
+			if (!t || t.startsWith("[keepalive]") || t === "ok" || (m.role === "assistant" && (t === "[later]" || isSilent(t))) || isNote(t, "youAre") || t.includes("\n[dotz lane ")) continue;
 			turns.push(`${m.role === "user" ? "IN" : "YOU"}: ${t.length > 700 ? `${t.slice(0, 700)}...` : t}`);
 		}
 	} catch {

@@ -12,7 +12,7 @@ import type { Upload } from "./files.ts";
 import { readOf } from "./reads.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { shortTitle } from "./notice-title.ts";
-import { parseTone, stripHandoff } from "./tone.ts";
+import { isSilent, parseTone, stripHandoff } from "./tone.ts";
 import { describeOutput, humanLabel, isIssue, itemRefOf, scheduleLine, watchLine, watchReasonKo } from "./watchtext.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
 
@@ -547,7 +547,7 @@ function fromAnswer(e: HubEvent): void {
 	const lane = src.startsWith("lane:");
 	if (e.update_key || e.target === "worklog" || e.target === "alert" || (src !== "orchestrator" && !lane)) return;
 	const { tone, text } = clean(e.text);
-	if (!text || /^(?:ok|-)$/i.test(text) || (lane && LOUD.has(tone))) return;
+	if (!text || /^(?:ok|-)$/i.test(text) || isSilent(String(e.text ?? "")) || (lane && LOUD.has(tone))) return;
 	// A [run] report only edits the session's progress line on Discord, unless it answers the owner (hub/lanewire.ts `running`).
 	if (e.kind === "lane_report" && tone === "run" && e.answering !== true) return;
 	const conv = eventTarget(e) ?? "main";

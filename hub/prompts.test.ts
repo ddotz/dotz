@@ -877,3 +877,18 @@ test("an answer with no prompt goes to the conversation whose worker finished la
 	await Promise.resolve();
 	expect(plain.state.posts.map(p => [p.target, p.replyTo])).toEqual([["ch:A", "a1"]]);
 });
+
+test("a no-op answer wrapped in a short note posts nothing, with or without a prompt, and is logged", async () => {
+	const logs: string[] = [];
+	const { q, state, startTurn } = setup([], [{ target: "web", at: Date.now() }], { log: l => logs.push(l) });
+	q.onAnswer("Already posted. -");
+	startTurn("first", chat("m1"));
+	q.onAnswer("Already posted.\n-");
+	await Promise.resolve();
+	expect(state.posts).toEqual([]);
+	expect(logs.filter(l => l.includes("no-op answer"))).toHaveLength(2);
+	startTurn("second", chat("m2"));
+	q.onAnswer("- first item\n- second item");
+	await Promise.resolve();
+	expect(state.posts.map(p => p.text)).toEqual(["- first item\n- second item"]);
+});
