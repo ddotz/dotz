@@ -135,7 +135,7 @@ for (const width of [1440, 390]) {
 		const v = await open(width);
 		const got = JSON.parse((await v.evaluate(`(${draw}, JSON.stringify(["mail:fx-1", "mail:fx-4"].map(t => {
 			mailDraftDialog(t, null);
-			const d = document.querySelector("dialog[open]"), r = [d.querySelector(".md-subj")?.textContent ?? null, d.querySelector('[data-k="draft-instruction"]').placeholder];
+			const d = document.querySelector("dialog[open]:not([data-leaving])"), r = [d.querySelector(".md-subj")?.textContent ?? null, d.querySelector('[data-k="draft-instruction"]').placeholder];
 			d.close();
 			return r;
 		})))`)) as string) as [string | null, string][];

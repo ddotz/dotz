@@ -123,30 +123,30 @@ test("the list pages 12 projects at a time, filters by need/running/done and sea
 	expect(await q<number>(v, `return ${rows}.length`)).toBe(12);
 	expect(await q(v, `return document.querySelector('#pl-list [data-k="more"]').textContent`)).toBe("프로젝트 18개 더 보기");
 	// the list starts right under the app bar (normal section spacing, no stray gap)
-	expect(await q<number>(v, `return document.querySelector(".pl").getBoundingClientRect().top - document.querySelector("#appbar").getBoundingClientRect().bottom`)).toBeLessThanOrEqual(20);
+	expect(await q<number>(v, `document.getAnimations().forEach(a => a.finish()); return document.querySelector(".pl").getBoundingClientRect().top - document.querySelector("#appbar").getBoundingClientRect().bottom`)).toBeLessThanOrEqual(20);
 	expect(await q<number>(v, `const b = [...document.querySelectorAll(".pl-chips .mr-f")].map(x => Math.round(x.getBoundingClientRect().top)); return new Set(b).size`)).toBe(1);
 	expect(await q<number>(v, `return Math.round(document.querySelector(".pl-search").getBoundingClientRect().width)`)).toBe(366);
 	await shot(v, "01-list-390.png");
 	await run(v, `document.querySelector('#pl-list [data-k="more"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 24`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 24`);
 	await run(v, `document.querySelector('#pl-list [data-k="more"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 30`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 30`);
 	expect(await q(v, `return !!document.querySelector('#pl-list [data-k="more"]')`)).toBe(false);
 	// chips: need -> running -> done -> all (paging starts again)
 	await run(v, `document.querySelector('.pl-chips [data-view="need"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 4`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 4`);
 	await run(v, `document.querySelector('.pl-chips [data-view="run"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 6`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 6`);
 	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .li-end .tag")].map(n => n.textContent)`).then(s => s.every(t => t.includes("작업 중")))).toBe(true);
 	await run(v, `document.querySelector('.pl-chips [data-view="done"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 10`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 10`);
 	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .li-end .tag")].map(n => n.textContent)`).then(s => s.every(t => t.includes("끝남")))).toBe(true);
 	expect(await q(v, `return document.querySelector("#pl-list .pl-row .li-end .tag").textContent`)).toBe("끝남");
 	await run(v, `document.querySelector('.pl-chips [data-view="all"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 12`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 12`);
 	// search narrows to the typed name
 	await run(v, `const i = document.querySelector("#pl-q"); i.value = "프로젝트 17"; i.dispatchEvent(new Event("input", { bubbles: true }))`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub)").length === 1`);
+	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 1`);
 	expect(await q(v, `return document.querySelector("#pl-list .pl-row .pl-n").textContent`)).toBe("프로젝트 17");
 	// the built-in 커스텀 page stays reachable at the end of 전체
 	await run(v, `const i = document.querySelector("#pl-q"); i.value = ""; i.dispatchEvent(new Event("input", { bubbles: true }))`);

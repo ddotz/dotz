@@ -86,6 +86,7 @@ function rpMove(src, id, x, y, ev) {
     if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { RP.drag = null; return false; }
     if (dx <= 12 || dx <= Math.abs(dy) * 1.6) return false;
     d.lock = true;
+    d.row.getAnimations().forEach(a => a.finish());   // a row still rising in (motionView) would hold its transform over the drag
     d.ind = el("span", { class: "rp-ind" }, icon("reply"));
     d.row.classList.remove("rp-snap");
     d.row.classList.add("rp-pull");

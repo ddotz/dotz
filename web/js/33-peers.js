@@ -264,7 +264,7 @@ function prNext(step = 1) {
 }
 document.addEventListener("keydown", ev => {
   if (ev.isComposing || ev.altKey || !(ev.ctrlKey || (isMac && ev.metaKey)) || (ev.code !== "Backquote" && ev.key !== "`" && ev.key !== "~")) return;
-  if (document.querySelector("dialog[open]")) return;
+  if (document.querySelector("dialog[open]:not([data-leaving])")) return;
   if (prNext(ev.shiftKey ? -1 : 1)) ev.preventDefault();
 });
 // Tapping 홈 again while on 홈 opens the computer sheet (like the 채팅 tab's re-tap, 04-state.js chatTabTap) and the next tap closes it; with one gateway the tab behaves as before.
