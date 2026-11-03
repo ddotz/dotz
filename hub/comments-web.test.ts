@@ -116,20 +116,23 @@ describe("댓글 on a phone (390x844)", async () => {
 		await shot(v, "comments-sent-390.png");
 	});
 
-	test("replies stand under the comment they answer (his own marked), and the draft sits under its comment with the quote, not pinned below", async () => {
+	test("replies stand under the comment they answer (his own marked), the draft sits under its comment, not pinned below, and each comment shows how far its follow-up got", async () => {
 		await boot(v);
 		await run(v, `document.querySelector("#cm .kk-row").click()`);
 		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .kk-draft")`);
-		const s = await q<{ roots: string[]; replies: string[]; mine: string; draftIn: string; quote: string; pinned: boolean }>(v, `
+		const s = await q<{ roots: string[]; replies: string[]; mine: string; draftIn: string; row: string; quote: boolean; steps: string[]; owed: string[]; pinned: boolean }>(v, `
 			const th = id => document.querySelector('#cm .cm-th[data-root="cm:youtube:' + id + '"]');
 			return { roots: [...document.querySelectorAll("#cm .cm-th")].map(t => t.dataset.root), replies: [...th("c1").querySelectorAll(".cm-replies .kk-bub")].map(b => b.textContent),
-				mine: th("c1").querySelector(".cm-mine").textContent, draftIn: th("c1").querySelector(".kk-draft") ? "c1" : "", quote: th("c1").querySelector(".cm-dq").textContent, pinned: !document.querySelector("#cm-foot").hidden }`);
+				mine: th("c1").querySelector(".cm-mine").textContent, draftIn: th("c1").querySelector(".kk-draft") ? "c1" : "", row: th("c1").querySelector(".cm-c").textContent, quote: !!document.querySelector("#cm .cm-dq"),
+				steps: [...th("c1").querySelectorAll(":scope > .cm-c .cm-st")].map(x => x.dataset.s + ":" + x.textContent), owed: [...th("c2").querySelectorAll(":scope > .cm-c .cm-st")].map(x => x.dataset.s + ":" + x.textContent), pinned: !document.querySelector("#cm-foot").hidden }`);
 		expect(s.roots).toEqual(["cm:youtube:c1", "cm:youtube:c2"]);
 		expect(s.replies).toEqual(["다음 주에 올릴게요"]);
 		expect(s.mine).toBe("나 · 내 답글");
 		expect(s.draftIn).toBe("c1");
-		expect(s.quote).toContain("가나");
-		expect(s.quote).toContain("영상 잘 봤어요! 자막은 언제 나와요?");
+		expect(s.row).toContain("영상 잘 봤어요! 자막은 언제 나와요?");   // the comment is the row right above its draft, so the draft repeats no quote of it
+		expect(s.quote).toBe(false);
+		expect(s.steps).toEqual(["done:초안", "ask:확인 대기", "todo:보냄"]);   // a pending draft: written, waits for his OK, not sent yet
+		expect(s.owed).toEqual(["ask:초안 필요", "todo:확인", "todo:보냄"]);   // a comment that wants a reply and has no draft yet
 		expect(s.pinned).toBe(false);
 	});
 
