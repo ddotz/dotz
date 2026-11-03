@@ -99,7 +99,12 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .subsum .chev { width: 14px; height: 14px; color: var(--fg-3); transition: transform .15s; }
 .subsum[aria-expanded="true"] .chev { transform: rotate(180deg); }
 .sublist { max-height: 196px; overflow-y: auto; padding: 4px; }
-.subrow { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; font-size: 13px; line-height: 20px; text-align: left; }
+.subrow { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; font-size: 13px; line-height: 20px; text-align: left; }
+.subrow .dot.pri, .subsum .dot.pri { animation: none; }
+.subrow .nm { display: flex; flex-direction: column; }
+.subrow .nm b { font-size: 14px; line-height: 22px; }
+.subrow .muted { color: var(--fg-3); font-size: 12.5px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; }
+.subrow .cc2-tm { flex: none; align-self: flex-start; margin-top: 3px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
 .subrow:hover { background: var(--hover); }
 .subrow .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .subrow .chev { width: 14px; height: 14px; color: var(--fg-3); }
