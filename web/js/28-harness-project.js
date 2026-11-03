@@ -43,7 +43,7 @@ function hProjBand() {
 }
 
 function hProjHead(p) {
-  const back = el("button", { class: "btn tonal", type: "button", onclick: () => hOpenProject("") }, icon("back"), "전체 구성");
+  const back = el("button", { class: "btn tonal sm", type: "button", onclick: () => hOpenProject("") }, icon("back"), "전체 구성");
   return el("div", { class: "pj-bk" }, back,
     el("span", { class: "pj-title" }, el("span", { class: `dot ${statusTone(p.status)}` }), p.name, ...p.channels.filter(c => c.kind !== "thread").map(c => el("span", { class: "pj-tg" }, `#${c.name}`, el("span", { class: "kd", text: c.kind_text })))),
     hScopeTag("project", hProjWhere(p), false, hProjWhere(p, true)));
@@ -63,12 +63,12 @@ async function hOpenProject(id) {
 function hProjAsk(p, n, drafts) {
   const where = hProjWhere(p, true);
   const ta = el("textarea", { class: "fi hs-ta", rows: 3, spellcheck: "false", placeholder: "이 프로젝트에 바라는 변경을 적어 주세요", "aria-label": "프로젝트 수정 요청" });
-  const send = el("button", { class: "btn", type: "button", disabled: true }, `${botName}에게 수정 요청`);
+  const send = el("button", { class: "btn tonal sm", type: "button", disabled: true }, `${botName}에게 수정 요청`);
   const note = el("div", { class: "note" });
   ta.addEventListener("input", () => { send.disabled = !ta.value.trim(); });
   send.onclick = async () => {
     send.disabled = true;
-    try { const at = await hRequest(`${n.label}: ${ta.value.trim()}`, hScope("project", where)); note.className = "note ok"; note.textContent = `요청 보냄 · ${at}`; ta.value = ""; }
+    try { const at = await hRequest(`${n.label}: ${ta.value.trim()}`, hScope("project", where)); note.className = "note ok"; note.textContent = `요청 보냄 · ${at}`; ta.value = ""; hFlash(send, "요청했어요"); }
     catch (e) { note.className = "note err"; note.textContent = e.message; toast(e.message, true); send.disabled = false; }
   };
   drafts.push(() => ta.value.trim() !== "");
@@ -183,7 +183,7 @@ function hStageCard(s, i, stages) {
   if (one) { hNodeEls.set(one.id, card); hGeo.set(one.id, head); }
   else list.append(el("div", { class: "hm-rows" }, ...s.main.map(n => {
     const r = el("button", { type: "button", class: "hm-row", "data-id": n.id, title: `${n.label}: ${n.summary}`, "aria-label": `${n.label}: ${n.summary}` },
-      el("span", { class: `dot ${H_TONE[n.status] || ""}` }), el("span", { class: "l", text: n.label }), el("span", { class: "s", text: n.summary }), hMark(n.id));
+      el("span", { class: `dot ${H_TONE[n.status] || ""}` }), el("span", { class: "tx" }, el("span", { class: "l", text: n.label }), el("span", { class: "s", text: n.summary })), hMark(n.id));
     hNodeEls.set(n.id, r); hGeo.set(n.id, r);
     return r;
   })));
@@ -378,7 +378,6 @@ function hModelItems(cur) {
 const hNow = () => new Date().toLocaleTimeString("ko-KR", { ...KST, hour: "2-digit", minute: "2-digit" });
 async function hRequest(text, scope) {
   await api("/api/message", "POST", { text: `[구성 탭 수정 요청] ${scope ? `${scope}\n` : ""}${text}` });
-  toast(`${botName}에게 요청했어요`, false, { label: "채팅 열기", onclick: () => openTarget(MAIN, lastChatView()) });
   return hNow();
 }
 // Which side a node is on, shown at the top of its sheet (only with ui.origin_view).
@@ -404,7 +403,7 @@ function hSetting(s, drafts) {
   const mkey = !pj && (s.type === "model" || s.type === "effort") && H_MODEL_TARGET[s.key];
   if (mkey) {
     box.append(el("div", { class: "top" }, el("span", { class: "lb", text: s.label }), el("span", { class: `tag ${applyTone}`, text: applyText })),
-      el("div", { class: "ctl" }, el("span", { class: "hs-ro", text: s.type === "model" ? modelName(s.value) : String(s.value) }), el("button", { class: "btn tonal", type: "button", onclick: () => openModels(mkey) }, "모델 · 폴백에서 바꾸기")));
+      el("div", { class: "ctl" }, el("span", { class: "hs-ro", text: s.type === "model" ? modelName(s.value) : String(s.value) }), el("button", { class: "btn tonal sm", type: "button", onclick: () => openModels(mkey) }, "모델 · 폴백에서 바꾸기")));
     return box;
   }
   if (!s.editable) {
@@ -414,8 +413,8 @@ function hSetting(s, drafts) {
   const cur = s.value;
   let draft = s.value, sent;
   const ctl = el("div", { class: "ctl" });
-  const send = el("button", { class: "btn", type: "button", disabled: true }, `${botName}에게 수정 요청`);
-  const reset = el("button", { class: "btn text", type: "button", hidden: true }, "기본값");
+  const send = el("button", { class: "btn tonal sm", type: "button", disabled: true }, `${botName}에게 수정 요청`);
+  const reset = el("button", { class: "btn text sm", type: "button", hidden: true }, "기본값");
   const dirty = () => draft !== cur && !(typeof draft === "number" && Number.isNaN(draft));
   const asked = () => sent !== undefined && Object.is(sent, draft);
   const mark = () => {
@@ -427,7 +426,7 @@ function hSetting(s, drafts) {
     clear(ctl);
     if (s.type === "bool") {
       const sw = el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!draft), "aria-label": s.label });
-      sw.onclick = () => { draft = !draft; paint(); };
+      sw.onclick = () => { draft = !draft; paint(); motionSwap(ctl.lastElementChild, () => {}); };
       ctl.append(sw, el("span", { class: "sup", text: draft ? "켜짐" : "꺼짐" }));
     } else if (s.type === "select" || s.type === "effort" || s.type === "model") {
       const opts = s.type === "model" ? null : s.options || [];
@@ -455,7 +454,7 @@ function hSetting(s, drafts) {
     send.disabled = true;
     try {
       const at = await hRequest(`${s.label} (${s.source}): ${hVal(cur)} -> ${hVal(draft)}. 적용 시점: ${applyText}.${s.hint ? ` ${s.hint}` : ""}`, hScope(sk, sw));
-      sent = draft; note.className = "note ok"; note.textContent = `요청 보냄 · ${at}`;
+      sent = draft; note.className = "note ok"; note.textContent = `요청 보냄 · ${at}`; hFlash(send, "요청했어요");
     } catch (e) { note.className = "note err"; note.textContent = e.message; toast(e.message, true); }
     finally { mark(); }
   };
@@ -535,8 +534,8 @@ function hFileEditor(n, drafts, line) {
   ta.readOnly = !n.fileEditable;
   const note = n.fileEditable ? el("input", { class: "fi", type: "text", autocomplete: "off", maxlength: 500, placeholder: "무엇을 왜 바꾸는지 (선택) · 글은 두고 메모만 보내도 돼요", "aria-label": "수정 요청 메모" }) : null;
   const info = el("div", { class: "note" }), stat = el("div", { class: "note" });
-  const send = el("button", { class: "btn", type: "button", disabled: true }, `${botName}에게 수정 요청`);
-  const undo = el("button", { class: "btn text", type: "button", disabled: true }, "되돌리기");
+  const send = el("button", { class: "btn sm", type: "button", disabled: true }, `${botName}에게 수정 요청`);
+  const undo = el("button", { class: "btn text sm", type: "button", disabled: true }, "되돌리기");
   let file = null, orig = "", sentKey = "", dt = 0;
   const key = () => `${ta.value}\u0000${note ? note.value.trim() : ""}`;
   const dirty = () => ta.value !== orig;
@@ -558,7 +557,7 @@ function hFileEditor(n, drafts, line) {
     send.disabled = true;
     try {
       const at = await hRequest(hFileRequest(file, orig, ta.value, note.value.trim()), hScope("personal", `${hData()}/${file.name}`));
-      sentKey = key(); stat.className = "note ok"; stat.textContent = `요청 보냄 · ${at}`;
+      sentKey = key(); stat.className = "note ok"; stat.textContent = `요청 보냄 · ${at}`; hFlash(send, "요청했어요");
     } catch (e) { stat.className = "note err"; stat.textContent = e.message; toast(e.message, true); }
     finally { mark(); }
   };
