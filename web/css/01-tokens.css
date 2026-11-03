@@ -67,11 +67,11 @@ button:disabled { opacity: .4; cursor: default; pointer-events: none; }
 kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--layer); color: var(--fg-3); font: 500 11px/16px var(--font); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
-/* layout: from 1100px one top row, below it the phone layout (tabs in a bottom bar). The markup is the same in both: #nav (the five tabs, one component), #pchip (the computer chip), #cmdk (search) and the app bar items.
+/* layout: from 1100px one top row, below it the phone layout (tabs in a bottom bar). The markup is the same in both: #nav (the five tabs, one component), #cmdk (search) and the app bar items.
    Wide: .side, .main and .appbar are display: contents, so each of their children is a cell of the .app grid and sits in the one row. Below 1100px they are the usual flex boxes. The 1100px edge is also where 채팅 puts its list next to the conversation. */
 .app { display: grid; grid-template-columns: 20px auto auto auto auto auto minmax(0, 1fr) auto auto auto auto 12px; grid-template-rows: 48px auto auto auto minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: env(safe-area-inset-top); }
 .side, .main, .appbar { display: contents; }
-.brand, .rail, .pchip, #back, .appbar h1, .thead, .conn, .cmdk, #vtog, .ustrip { grid-row: 1; align-self: center; }
+.brand, .rail, #back, .appbar h1, .thead, .conn, .cmdk, #vtog, .ustrip { grid-row: 1; align-self: center; }
 .gban { grid-row: 2; grid-column: 1 / -1; }
 .trban { grid-row: 3; grid-column: 1 / -1; }
 .oerr { grid-row: 4; grid-column: 1 / -1; }
@@ -106,7 +106,6 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .conn { grid-column: 8; margin-left: 8px; }
 #vtog { grid-column: 10; margin-left: 4px; }
 .ustrip { grid-column: 11; margin-left: 4px; }
-.pchip { grid-column: 3; }
 .conn { flex: none; height: 20px; padding: 0 8px; border-radius: 10px; background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); font-size: 12px; line-height: 20px; font-weight: 500; white-space: nowrap; }
 button.conn { border: 0; font-family: inherit; cursor: pointer; }
 button.conn:disabled { cursor: default; }
