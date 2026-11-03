@@ -2,7 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { pushRoute, setRelayPeers } from "./push.ts";
 import { fakeHub, inbox, json, on } from "./test-web.ts";
 
-// Settings -> 앱 · 알림 for a device that has the app, at 390px: the real page and assets, served by this gateway (B) with its real /api/push routes;
+// Settings -> 앱과 알림 for a device that has the app, at 390px: the real page and assets, served by this gateway (B) with its real /api/push routes;
 // A is a fake gateway that keeps the device's switch the way hub/push.ts does. One row per gateway; the switch for A is set ON A (not by a browser
 // subscription on A's origin); no description lines are drawn; the page never subscribes this origin's browser.
 const aOff = new Set<string>();
@@ -52,7 +52,7 @@ test("a device with the app sees one switch per gateway; flipping the other gate
 	await waitFor(`${rows}.length === 2`);
 	expect(await view.evaluate(`${rows}.map(b => b.getAttribute("aria-label") + ":" + b.getAttribute("aria-checked")).join("|")`)).toBe("맥미니 알림:true|맥북 알림:true");
 	// no description lines under the gateway rows, and no button that would subscribe this browser
-	expect(await view.evaluate(`(() => { const s = [...document.querySelectorAll(".sec")].find(x => x.textContent === "앱 · 알림"); const l = s.nextElementSibling; return [[...l.querySelectorAll(".li")].filter(li => li.querySelector('[role=switch]:not([data-k])')).reduce((n, li) => n + li.querySelectorAll(".sup").length, 0), s.parentElement.querySelectorAll(".note").length, l.textContent.includes("알림 켜기")].join("/"); })()`)).toBe("0/0/false");
+	expect(await view.evaluate(`(() => { const s = [...document.querySelectorAll(".sec")].find(x => x.textContent === "앱과 알림"); const l = s.nextElementSibling; return [[...l.querySelectorAll(".li")].filter(li => li.querySelector('[role=switch]:not([data-k])')).reduce((n, li) => n + li.querySelectorAll(".sup").length, 0), s.parentElement.querySelectorAll(".note").length, l.textContent.includes("알림 켜기")].join("/"); })()`)).toBe("0/0/false");
 	expect(await view.evaluate(`document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
 	await view.evaluate(`document.querySelector('[role=switch][aria-label$="알림"]:not([data-k])').closest(".list").scrollIntoView({ block: "center" })`);
 
