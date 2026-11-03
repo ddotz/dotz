@@ -118,7 +118,7 @@
       if (/^```목록/.test(l)) {
         flush(); let title = ""; const rows = [];
         for (i++; i < L.length && !/^```/.test(L[i]); i++) {
-          if (/^# /.test(L[i])) title = L[i].slice(2); else if (L[i].trim()) rows.push(L[i].split(" | "));
+          if (/^# /.test(L[i])) title = L[i].slice(2); else if (L[i].trim()) rows.push(L[i].split("|").map((c) => c.trim()));
         }
         out += P.listBlock(title, rows);
       } else if (/^```/.test(l)) {

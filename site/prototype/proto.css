@@ -341,7 +341,7 @@ button.chip:hover, a.chip:hover { background: var(--hover); }
 .kk .kb .kt { font-size: 11px; line-height: 14px; color: var(--kk-time); flex: none; }
 .kk .kn { font-size: 12px; color: var(--kk-time); margin: 0 0 2px 4px; }
 /* terminal + app frame */
-.term { border-radius: var(--r-card); background: var(--tb); color: var(--tf); font: 12px/20px var(--mono); padding: 16px; overflow-x: auto; word-break: normal; }
+.term { border-radius: var(--r-card); background: var(--tb); color: var(--tf); font: 12px/20px var(--mono); padding: 16px; overflow-x: auto; word-break: normal; white-space: pre-wrap; }
 .term .c { color: var(--tac); } .term .d { color: var(--td); } .term .o { color: var(--tok); } .term .e { color: var(--terr); }
 .frame { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .frame .fbar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--fg-3); }
