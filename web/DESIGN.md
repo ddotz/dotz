@@ -62,6 +62,10 @@ Quiet screen: nothing moves without a cause, nothing loops or decorates. Causes 
 
 `prefers-reduced-motion: reduce` makes every one of them an instant change.
 
+## Per-form spec
+
+Heights, padding, gaps, type steps and don'ts for each display form (list row, card, settings row, sheet, button, badge, empty, toast, chips, field, progress) live in `docs/ui-spec.md`. Button size tiers: `--btn-h` 40 (`.btn`), `--btn-h-sm` 36 (`.btn.sm`), `--btn-h-row` 32 (`.btn.inrow`); settings row = `.li` + `.li-end`; row-level add action = `.sec.sec-act` > `.btn.tonal.sm`. Screens use these; no one-off heights.
+
 ## Shape and space
 
 `--r-card` 18px (cards, lists, dialogs 20px), `--r-ctl` 10px (buttons, fields), chips 16px (pill). Card padding 20px,
