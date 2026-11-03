@@ -46,6 +46,8 @@ function card(acc: object) {
 		clear: () => {},
 		dialog: (o: { title: string }) => { dialogs.push(o.title); return {}; },
 		current: "settings",
+		P: { providers: [] },
+		startLogin: () => {},
 		loadQuota: () => {},
 	};
 	const mod = new Function(...Object.keys(env), `${rowToggleSrc}\n${src}\nACC = arguments[arguments.length - 1];\nreturn accountSection;`);

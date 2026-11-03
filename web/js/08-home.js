@@ -51,7 +51,7 @@ function homeMenu(anchor, id, inChat) {
     const p = ((P && P.providers) || []).find(x => x.id === id.slice(5));
     if (p && p.can_login) add(isConnected(p) ? "다시 로그인" : "로그인", () => startLogin(p));
     if (p && (p.can_logout ?? p.removable)) add(p.auth === "api_key" ? "키 삭제" : "로그아웃", () => busy(null, () => logoutProvider(p)));
-    add("공급자 열기", () => go("providers"));
+    add("공급자 열기", () => go("provider", p ? p.id : ""));
   } else if (id.startsWith("custom:")) {
     for (const a of window.dotzCustom ? dotzCustom.menuActs(id.slice(7)) : []) add(a.label, a.run);
   } else if (id.startsWith("ctx:")) {
@@ -370,7 +370,7 @@ function renderHome() {
   for (const p of (P && P.providers) || []) {
     if (!isConnected(p) && !needsAttention(p)) continue;
     const id = `prov:${p.id}`, bad = needsAttention(p), st = bad ? "로그인 필요" : p.auth === "api_key" ? "API 키" : "로그인됨";
-    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("providers"), size: [{ w: 4, h: 2 }, HOME_SMALL],
+    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("provider", p.id), size: [{ w: 4, h: 2 }, HOME_SMALL],
       card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${bad ? "att" : "ok"}` }), el("h3", { text: p.name || p.id }), el("span", { class: `tag ${bad ? "warn" : ""}`, text: st }), menuBtn(id)),
         p.account ? el("div", { class: "sup", text: p.account }) : null],
       row: () => [el("div", { class: "row" }, el("span", { class: `dot ${bad ? "att" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: bad ? st : p.account || st }))] });

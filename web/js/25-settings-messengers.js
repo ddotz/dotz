@@ -15,19 +15,33 @@ const msPage = id => {
   if (!MSS.page || MSS.page.id !== id) MSS.page = { id, s: null, fail: "", enabled: false, vals: {}, allow: null, add: "", test: null, advOpen: false };
   return MSS.page;
 };
-// 설정 목록의 네 줄: the index supplies label and status; before it arrives the rows stay with no tag.
-function msSettingsRows(row) {
+// 설정 목록의 한 줄 "메신저": its right side says which messengers are connected; the four messengers sit on their own screen.
+function msSummary() {
   if (!MSS.asked) loadMessengerIndex();
-  return MS_IDS.map(id => {
+  if (!MSS.items) return "";
+  const on = MS_IDS.map(msItem).filter(m => m && msTag(m)[1] === "ok").map(m => m.label || MS_LABELS[m.id]);
+  return on.length ? `${on[0]}${on.length > 1 ? ` 외 ${on.length - 1}개` : ""} 연결됨` : "설정 안 됨";
+}
+function msHubRow() {
+  const r = el("button", { class: "li tap", type: "button", onclick: () => go("messengers") }, el("span", { class: "lead" }, icon("chat")), el("span", { class: "tx" }, el("div", { class: "hd", text: "메신저" })),
+    el("span", { class: "sup", text: msSummary() }), icon("chev", "lead"));
+  r.dataset.msHub = "";
+  return r;
+}
+// The messenger screen: Discord · JANDI · Slack · Telegram, each a row with its status tag that opens that messenger's own screen.
+function renderMessengers() {
+  if (!MSS.asked) loadMessengerIndex();
+  clear($("#messengers")).append(el("div", { class: "list" }, ...MS_IDS.map(id => {
     const m = msItem(id), [tag, tone] = m ? msTag(m) : ["", ""];
-    const r = row(id === "discord" ? "discord" : "chat", (m && m.label) || MS_LABELS[id], "", () => go(id),
+    const r = el("button", { class: "li tap", type: "button", onclick: () => go(id) }, el("span", { class: "lead" }, icon(id === "discord" ? "discord" : "chat")), el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] })),
       el("span", { class: "dcs-trail" }, ...(tag ? [el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" })] : []), icon("chev", "lead")));
     r.dataset.msRow = id;
     return r;
-  });
+  })));
 }
 function msPaint() {
   if (current === "settings") renderSettings();
+  else if (current === "messengers") renderMessengers();
   else if (current === "discord") renderDiscord();
   else if (MS_IDS.includes(current)) renderMessenger(current);
 }

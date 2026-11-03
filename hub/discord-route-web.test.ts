@@ -95,11 +95,13 @@ async function settings(width: number, height: number) {
 	const v = await hub.view({ width, height }, "/");
 	await waitForView(v, `typeof S !== "undefined" && S && S.discord !== undefined`);
 	await run(v, `go("settings")`);
-	await waitForView(v, `document.querySelectorAll(".hs-sw[data-k]").length === 6 && document.querySelectorAll("#settings [data-ms-row]").length === 4 && document.querySelector('#settings [data-ms-row="discord"] .tag')`);
+	await waitForView(v, `document.querySelectorAll(".hs-sw[data-k]").length === 6 && document.querySelector("#settings [data-ms-hub] .sup").textContent !== ""`);
+	await click(v, "#settings [data-ms-hub]");
+	await waitForView(v, `current === "messengers" && document.querySelectorAll("#messengers [data-ms-row]").length === 4 && document.querySelector('#messengers [data-ms-row="discord"] .tag')`);
 	return v;
 }
 const openScreen = async (v: View) => {
-	await click(v, '#settings [data-ms-row="discord"]');
+	await click(v, '#messengers [data-ms-row="discord"]');
 	await waitForView(v, `current === "discord" && DCS.v && document.querySelector("#discord [data-ms-connect]")`);
 };
 const shot = async (v: View, name: string) => Bun.write(join(SHOTS, name), await v.screenshot());
@@ -111,10 +113,9 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 	test("connected: the row opens the screen, switches stay, and manual fields wait in 직접 입력", async () => {
 		const v = await settings(width, height);
 		expect(await q<number>(v, `document.querySelectorAll("#settings [data-dc], #settings [data-dc-hint]").length`)).toBe(0);
-		expect(await q<string>(v, `[...document.querySelectorAll("#settings .li.tap .hd")].map(h => h.textContent).join("|")`)).not.toContain("메신저");
-		expect(await q<string>(v, `document.querySelector('#settings [data-ms-row="discord"] .tag').textContent`)).toBe("연결됨");
+				expect(await q<string>(v, `document.querySelector('#messengers [data-ms-row="discord"] .tag').textContent`)).toBe("연결됨");
 		if (width === 390) {
-			await run(v, `document.querySelector('#settings [data-ms-row="discord"]').scrollIntoView({ block: "center" })`);
+			await run(v, `document.querySelector('#messengers [data-ms-row="discord"]').scrollIntoView({ block: "center" })`);
 			await shot(v, "settings-390.png");
 		}
 		await openScreen(v);
@@ -168,7 +169,7 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 	test("not configured: the row and screen say 설정 안 됨, and 연결 starts onboarding", async () => {
 		reset(false);
 		const v = await settings(width, height);
-		expect(await q<string>(v, `document.querySelector('#settings [data-ms-row="discord"] .tag').textContent`)).toBe("설정 안 됨");
+		expect(await q<string>(v, `document.querySelector('#messengers [data-ms-row="discord"] .tag').textContent`)).toBe("설정 안 됨");
 		await openScreen(v);
 		expect(await q<string>(v, `document.querySelector("#discord .li .tag").textContent`)).toBe("설정 안 됨");
 		expect(await q<string>(v, `document.querySelector("#discord [data-ms-connect]").textContent`)).toBe("연결");
@@ -187,7 +188,7 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 		await shot(v, `discord-off-${width}.png`);
 		expect(await noOverflow(v)).toBe(true);
 		await run(v, `document.querySelector("#back").click()`);
-		await waitForView(v, `current === "settings"`);
+		await waitForView(v, `current === "messengers"`);
 		expect(puts.length + saves.length + restarts.length).toBe(0);
 	}, 60_000);
 });
