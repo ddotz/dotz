@@ -13,7 +13,7 @@ span.mr-star:not(.on) { opacity: .45; }
 #mon-tl > .bm.rc.mr.mr-sel { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 
 .mbox-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 28px; padding: 0 12px 4px 6px; color: var(--fg-2); font-size: 12px; }
-.mbox-bar.on { position: sticky; top: 40px; z-index: 2; margin: 0 0 4px; padding-top: 6px; background: var(--bg); border-bottom: 1px solid var(--line); }
+.mbox-bar.on { position: sticky; top: 40px; z-index: 2; margin: 0 0 4px; padding-top: 6px; background: var(--bg); }
 .mbox-n { margin-right: auto; font-variant-numeric: tabular-nums; }
 .mbox-bar.on .mbox-n { margin-right: 4px; color: var(--fg); font-weight: 600; }
 .mbox-b { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 10px; border: 0; border-radius: 15px; background: var(--layer); color: var(--fg); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap; }
@@ -23,7 +23,7 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-b.mbox-x { width: 30px; padding: 0; justify-content: center; margin-left: auto; }
 .mbox-note { flex: 1 0 100%; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 /* the open mail's top bar (30-mail-box.js mailOpenBar): one row of icons, sticky while the mail scrolls */
-.mtop { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 0; height: 44px; margin: -4px -6px 4px; padding: 0 2px; border-bottom: 1px solid var(--line); background: var(--card); }
+.mtop { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 0; height: 44px; margin: -4px -6px 4px; padding: 0 2px; background: var(--card); }
 .tl-in > .bm.rc.mopen { gap: 4px; }
 .mtop .mtop-b, .mtop .mr-more { flex: 0 1 40px; min-width: 32px; width: 40px; height: 40px; border-radius: 20px; color: var(--fg-2); }
 .mtop .mtop-b .ic, .mtop .mr-more .ic { width: 20px; height: 20px; }
@@ -35,19 +35,19 @@ span.mr-star:not(.on) { opacity: .45; }
 .mopen > .rc-raw { margin-top: 4px; }
 .mopen > .rc-raw > .rc-rawbody { margin-top: 0; }
 
-.mbox-fab { position: fixed; z-index: 40; right: 24px; bottom: 24px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 56px; height: 56px; padding: 0 20px; border: 0; border-radius: 28px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 700; box-shadow: 0 4px 14px rgba(0, 0, 0, .28); cursor: pointer; }
-.mbox-fab:hover { filter: brightness(1.08); }
+.mbox-fab { position: fixed; z-index: 40; right: 24px; bottom: 24px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 56px; height: 56px; padding: 0 20px; border: 0; border-radius: 28px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 700; box-shadow: 0 2px 8px rgba(0, 0, 0, .16); cursor: pointer; }
+.mbox-fab:hover { filter: brightness(1.06); }
 .mbox-fab .ic { width: 22px; height: 22px; }
 /* A phone keeps the button above the compact tab bar (web/css/01-tokens.css .side: a 46px row), not on top of its tabs. */
 @media (max-width: 639px) { .mbox-fab { right: 16px; bottom: calc(72px + env(safe-area-inset-bottom)); width: 56px; height: 56px; padding: 0; } .mbox-fab-t { display: none; } }
 
-.mbox-sheet { position: fixed; z-index: 60; right: 24px; bottom: 0; display: flex; flex-direction: column; width: 520px; max-height: min(640px, calc(100vh - 48px)); border-radius: 12px 12px 0 0; background: var(--pop); color: var(--fg); box-shadow: 0 8px 32px rgba(0, 0, 0, .35); border: 1px solid var(--line-2); border-bottom: 0; overflow: hidden; }
+.mbox-sheet { position: fixed; z-index: 60; right: 24px; bottom: 0; display: flex; flex-direction: column; width: 520px; max-height: min(640px, calc(100vh - 48px)); border-radius: 12px 12px 0 0; background: var(--pop); color: var(--fg); box-shadow: var(--float); overflow: hidden; }
 .mbox-sheet.min { max-height: 44px; }
 .mbox-sheet.min > :not(.mbox-sh) { display: none; }
 .mbox-sh { display: flex; align-items: center; gap: 2px; flex: none; height: 44px; padding: 0 6px 0 16px; background: var(--layer); }
 .mbox-st { flex: 1; font-size: 14px; font-weight: 700; }
 .mbox-sb, .mbox-rb { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: 4px 16px 0; }
-.mbox-f { position: relative; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--line); }
+.mbox-f { position: relative; display: flex; align-items: center; gap: 8px; }
 .mbox-fk { flex: none; width: 56px; color: var(--fg-3); font-size: 12.5px; }
 .mbox-in { flex: 1; min-width: 0; height: 40px; border: 0; outline: 0; background: none; color: var(--fg); font: inherit; font-size: 14px; }
 .mbox-cc { flex: none; border: 0; background: none; color: var(--fg-3); font: inherit; font-size: 12.5px; cursor: pointer; }
@@ -55,7 +55,7 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-ta { flex: 1; min-height: 120px; margin: 8px 0; padding: 0; border: 0; outline: 0; resize: none; background: none; color: var(--fg); font: inherit; font-size: 14px; line-height: 21px; }
 .mbox-fw:empty { display: none; }
 .mbox-files { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 8px; }
-.mbox-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 4px 0 10px; border: 1px solid var(--line-2); border-radius: 15px; background: var(--layer); color: var(--fg); font-size: 12.5px; }
+.mbox-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 4px 0 10px; border-radius: 15px; background: var(--layer); color: var(--fg); font-size: 12.5px; }
 .mbox-chip.wait { opacity: .6; padding-right: 10px; }
 .mbox-chip .ic { flex: none; width: 14px; height: 14px; color: var(--fg-3); }
 .mbox-cn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -71,7 +71,7 @@ span.mr-star:not(.on) { opacity: .45; }
   .mbox-sf { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
 }
 
-.mbox-reply { margin: 12px 0 20px; padding: 10px 14px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.mbox-reply { margin: 12px 0 20px; padding: 10px 14px 12px; border-radius: 12px; background: var(--card); }
 .mbox-modes { display: flex; flex-wrap: wrap; gap: 6px; }
 .mbox-reply:not(.open) { display: none; }
 .mbox-modes .mbox-mode { height: 32px; gap: 6px; padding: 0 14px 0 10px; font-size: 13px; font-weight: 600; background: var(--layer); color: var(--fg-2); }
@@ -81,7 +81,7 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-reply .mbox-sf { padding: 6px 0 0; }
 .mbox-quote { margin: 4px 0 6px; color: var(--fg-3); font-size: 12.5px; }
 .mbox-quote summary { width: fit-content; padding: 2px 10px; border-radius: 10px; background: var(--layer); cursor: pointer; }
-.mbox-qt { max-height: 220px; margin: 6px 0 0; padding-left: 10px; overflow: auto; border-left: 3px solid var(--line-2); font: inherit; white-space: pre-wrap; word-break: break-word; }
+.mbox-qt { max-height: 220px; margin: 6px 0 0; padding-left: 10px; overflow: auto; border-left: 2px solid var(--line-2); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* A phone keeps the sender's name whole: the unread tag is the bold row itself (the row's aria-label still says 안 읽음), the paperclip count
    is in the open mail, and the one tag that stays is small. */
@@ -115,15 +115,20 @@ span.mr-star:not(.on) { opacity: .45; }
   .mbox-sh { height: calc(48px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
 }
 
-/* The list is Gmail's (owner 2026-11-03): flat rows on one sheet with thin dividers, no gap between them. A row is three lines on a phone
+/* The list is Gmail's (owner 2026-11-03): flat rows on one sheet with thin dividers, no gap between them. As in Gmail, a mail you have read
+   sits on a faint fill and an unread one on the full card and in bold. A row is three lines on a phone
    (☐ ☆ sender, tags, time, the 초안 작성 pencil and ⋯ / the subject, its reply-draft tag / a one-line summary) and one line from 1100px.
    The 받는 사람 line and 할 일 stay in the open mail. The list ends clear of the floating 메일 쓰기. */
 #mon-tl:has(> .bm.rc.mr) { gap: 0; padding-bottom: 104px; }
 #mon-tl:has(> .bm.rc.mr) > :not(.mr, .mr-filter, .mbox-bar) { margin: 8px 0; }
 #mon-tl > .mr-filter { padding-bottom: 6px; }
-#mon-tl > .bm.rc.mr { flex-flow: row wrap; align-items: center; column-gap: 6px; row-gap: 1px; padding: 8px 10px; border-radius: 0; border-bottom: 1px solid var(--line); }
+#mon-tl > .bm.rc.mr { flex-flow: row wrap; align-items: center; column-gap: 6px; row-gap: 1px; padding: 8px 10px; border-radius: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--card) 55%, var(--bg)); }
 #mon-tl > :not(.mr) + .bm.rc.mr { border-top-left-radius: 12px; border-top-right-radius: 12px; }
 #mon-tl > .bm.rc.mr:not(:has(+ .bm.rc.mr)) { border-bottom: 0; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+#mon-tl > .bm.rc.mr:hover, #mon-tl > .bm.rc.mr.mr-new { background: var(--card); }
+#mon-tl > .bm.rc.mr.mr-sel { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+/* the reply state of a mail you need not act on is a plain grey word; only what waits for you (답장 필요, 미답장) keeps its colour */
+#mon-tl > .mr .rc-hd .tag:not(.warn, .unreplied) { padding: 0; background: none; color: var(--fg-3); font-weight: 400; }
 #mon-tl > .mr > .rc-hd { flex: 1 0 100%; height: 22px; gap: 6px; }
 #mon-tl > .mr .rc-hd .ib { width: 28px; height: 28px; margin: -3px -4px; color: var(--fg-3); }
 #mon-tl > .mr .rc-hd .ib .ic { width: 18px; height: 18px; }

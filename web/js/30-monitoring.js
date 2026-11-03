@@ -463,7 +463,7 @@ function mailFilterBar(mails, notices) {
   const cur = mailFilterOf()[0];
   return el("div", { class: "mr-filter", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.map(([k, label, ok]) => {
     const n = k === "all" ? 0 : k === "pending" ? [...mailDraftLive(notices).values()].filter(mailDraftOpen).length : mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length;
-    return el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); } }, label, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
+    return el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); } }, label, cntSpan(`mail-filter:${k}`, "mr-fn", n));
   }));
 }
 // A mail or chat of an integration is its own conversation in 채팅. A mail is a Gmail-like flat row: sender and time on one line (with
@@ -487,7 +487,7 @@ function monConvNode(t, label) {
   const files = m ? mailRealFiles(m.attachments).map(x => x.f) : [], brief = m ? mailBrief(m, t) : "", when = (m ? mailRowWhen : rcWhen)(last ? last.ts : m && m.at), chip = m && (m.dir === "out" || !m.reply || (m.suggest && m.suggest.state === "sent")) ? mailReplyChip(m.suggest) : null;
   const title = m ? m.subject || "(제목 없음)" : rcPlain(String(last ? last.text : "").split("\n").find(l => l.trim() && !/^\s*>/.test(l)) || "") || label;
   const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
-  return el("div", { class: `bm alert rc mr${m && n ? " mr-new" : ""}${m && MBOX.sel.has(t) ? " mr-sel" : ""}`, role: "button", tabindex: "0", "aria-label": `${m && n ? "안 읽음, " : ""}${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
+  return el("div", { class: `bm alert rc mr${m && n ? " mr-new" : ""}${m && MBOX.sel.has(t) ? " mr-sel" : ""}`, role: "button", tabindex: "0", "data-t": m ? t : null, "aria-label": `${m && n ? "안 읽음, " : ""}${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
     el("div", { class: "rc-hd" }, m ? mbLead(t, title) : null, el("span", { class: "rc-src", text: m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label }), stateTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m && m.dir !== "out" ? mailDraftButton(t, "ib mr-draft") : null, m ? mailMenuBtn(t) : null),
     el("div", { class: "rc-title", text: title }), chip,
@@ -920,7 +920,7 @@ let monRaf = 0;
 const monSchedule = () => { monAttnSoon(); if (!monRaf) monRaf = requestAnimationFrame(renderMonitoring); };   // the nav badge reads the same data (09-needs-you.js)
 function renderMonitoring() {
   monRaf = 0;
-  if (current !== "monitoring") { if (monCtx && current === "chat") convSchedule(); return; }
+  if (current !== "monitoring") { mbSeenReset(); if (monCtx && current === "chat") convSchedule(); return; }
   const items = monItems(), sel = monSel(items), side = $("#mon-side"), box = $("#mon-timeline"), tl = $("#mon-tl");
   const rows = monRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.unread, r.unreplied, r.badge, r.header, r.sel, r.chips, r.msig])]);
   if (sideSig !== MON.side) {
@@ -965,6 +965,7 @@ function renderMonitoring() {
     MON.shown = sel.key;
     clear($("#mon-head")).append(...monHead(sel));
     clear(tl).append(...monTimeline(sel));
+    if (monMailList(sel)) mbFresh(`${sel.key}|${MON.mailFilter || "all"}`, tl);
     // Older reports added above (이전 소식 보기) keep what was on screen where it is.
     if (MON.grew) { MON.grew = false; box.scrollTop = keep + (box.scrollHeight - was); }
     else box.scrollTop = monFeed(sel) || monMailList(sel) ? (again ? keep : 0) : stick ? box.scrollHeight : keep;

@@ -1,8 +1,10 @@
 /* Full-screen overlay: the one frame for every pop-up over the app (38-overlay.js fsOpen; 02-basic-markdown.js dialog() wears the same classes on a native <dialog>).
    Phone: covers the whole screen, tab bar included: header (title, 무시, close) and footer (actions) stay put, only the body scrolls, safe-area padded,
    kept above the keyboard (.kb, set by fsOpen). Desktop: a centered dialog (.tall = the large one, for a draft). Menus, toasts and tooltips are not overlays. */
-.fs-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: center; justify-content: center; background: var(--scrim); animation: nt-in .14s ease-out; }
-.fs-card { --fs-fill: var(--layer); display: flex; flex-direction: column; width: min(560px, calc(100% - 48px)); max-height: min(86dvh, 820px); margin: 0; border-radius: 20px; background: var(--card); color: var(--fg); box-shadow: var(--float); overflow: hidden; animation: ds-up .18s ease-out; }
+.fs-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: center; justify-content: center; background: var(--scrim); }
+.fs-card { --fs-fill: var(--layer); display: flex; flex-direction: column; width: min(560px, calc(100% - 48px)); max-height: min(86dvh, 820px); margin: 0; border-radius: 20px; background: var(--card); color: var(--fg); box-shadow: var(--float); overflow: hidden; }
+/* fsOpen moves its own sheet (38-overlay.js motionIn / motionOut); the native <dialog> of dialog() has no script around it, so it keeps one CSS rise. */
+dialog.fs-card { animation: ds-up var(--m-base) var(--m-ease); }
 .fs-card:focus { outline: 0; }
 .fs-card.tall { width: min(720px, calc(100% - 48px)); height: min(86dvh, 820px); }
 dialog.fs-card:not([open]) { display: none; }
@@ -44,4 +46,4 @@ dialog.fs-card::backdrop { background: var(--scrim); }
   .fs-ft { padding: 12px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
   .fs-ft.row .btn { flex: 1; min-height: 48px; }
 }
-@media (prefers-reduced-motion: reduce) { .fs-bd, .fs-card { animation: none; } }
+@media (prefers-reduced-motion: reduce) { dialog.fs-card { animation: none; } }

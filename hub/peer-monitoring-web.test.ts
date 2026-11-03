@@ -125,13 +125,15 @@ describe("merged 모니터링", () => {
 		await waitFor(v, `CONV.has("mail:loc") && INTG.items.length`);
 		await v.evaluate(`(go("monitoring", "i:mail"), 0)`);
 		await waitFor(v, `$("#mon-tl .mr")`);
-		const local = await text(v, `$("#mon-tl .mr").outerHTML`);
+		// data-t is the row's own conversation key (it names which mail slides in when it arrives), so it differs by machine
+		const row = async () => (await text(v, `$("#mon-tl .mr").outerHTML`)).replace(/ data-t="[^"]*"/, "");
+		const local = await row();
 		expect(local).toContain("mr-clip");
 		expect(local).toContain("mr-sum");
 		expect(local).toContain("답장 초안 있음");
 		await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|i:mail`)}), 0)`);
 		await waitFor(v, `$("#mon-head .mon-pc") && $("#mon-head .mon-pc").textContent === "맥미니" && $("#mon-tl .mr")`);
-		expect(await text(v, `$("#mon-tl .mr").outerHTML`)).toBe(local);
+		expect(await row()).toBe(local);
 		await v.evaluate(`($("#mon-tl .mr").click(), 0)`);
 		await waitFor(v, `$(".mr-file")`);
 		expect(await text(v, `$(".mr-fname").textContent`)).toBe("안건.pdf");

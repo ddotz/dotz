@@ -317,9 +317,16 @@ async function ntAlertDismiss(n, row) {
     toast("알림을 지웠어요");
   } catch (e) { row.hidden = false; toast(e.message || "지우지 못했어요", true); }
 }
+// A notification that arrives while this conversation is open eases in. The first draw, a redraw and older messages loaded above move nothing:
+// only a row that was not there and is newer than the newest one drawn before is new.
+const NT_SEEN = new Set();
+let ntNewest = "";
 function ntAlertMarks() {
-  if (current !== "chat" || target !== "alert") return;
-  for (const row of tl.querySelectorAll(":scope > [data-ts]")) {
+  if (current !== "chat" || target !== "alert") { NT_SEEN.clear(); NT_SEEN.seeded = false; ntNewest = ""; return; }
+  const rows = [...tl.querySelectorAll(":scope > [data-ts]")], fresh = rows.length ? freshKeys(NT_SEEN, rows.map(r => r.dataset.ts)) : new Set(), was = ntNewest;
+  for (const r of rows) if (r.dataset.ts > ntNewest) ntNewest = r.dataset.ts;
+  for (const row of rows) {
+    if (fresh.has(row.dataset.ts) && row.dataset.ts > was && was) motionIn(row, "rise");
     if (NT.gone.has(row.dataset.ts)) { row.hidden = true; continue; }
     if (row.querySelector(".al-x")) continue;
     const e = ts("alert").msgs.find(x => x.ts === row.dataset.ts), n = e && ntOfEvent(e);
@@ -506,7 +513,7 @@ function ntIgnoreBtn(n) {
 // `label` "" is a row that no longer waits (the 알림 tabs, 31-conversations.js bellPaint): no 답변 필요, no x.
 function ntHomeRow(n, label = "답변 필요") {
   const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open;   // a loose [ask] notice has no decision: its conversation names where it waits
-  return el("div", { class: "hr hrx" },
+  return el("div", { class: "hr hrx", "data-nid": n.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": label ? `${title} · ${label}` : title },
       el("span", { class: label ? "dot att" : `dot${n.read ? "" : n.cls === "alert" ? " err" : " un"}` }),
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha", text: [n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), ntWhen(n)].filter(Boolean).join(" · ") })),
