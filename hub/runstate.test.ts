@@ -14,6 +14,13 @@ test("working carries the current intent and since when the turn started", () =>
 	expect(runState({ ...base, status: "working", since: iso(1_000), intent: "  여러\n줄   의도 " }).detail).toBe("여러 줄 의도");
 });
 
+test("a session holding a prompt no turn started on yet is working, not resting with tasks left", () => {
+	expect(runState({ ...base, queued: 1, todos: todos(2), lastTurnEnd: iso(600_000) }))
+		.toEqual({ kind: "working", detail: "받은 메시지 시작하는 중", todos: 2 });
+	expect(runState({ ...base, queued: 0, todos: todos(2), lastTurnEnd: iso(600_000) }).kind).toBe("idle");
+	expect(runState({ ...base, status: "rate-limited", queued: 1 }).kind).toBe("limited");
+});
+
 test("a usage limit says until when; an owner block is its own reason", () => {
 	expect(runState({ ...base, status: "rate-limited", rateLimitedUntil: iso(-3_600_000), pauseKind: "rate", since: iso(5_000) }))
 		.toEqual({ kind: "limited", reason: "rate", since: iso(5_000), detail: iso(-3_600_000) });

@@ -49,7 +49,7 @@ import { ownerElements, pickedLines } from "./picked.ts";
 import { ownerRefs, refLines } from "./mentions.ts";
 import { laneCapacity, lanes, liveLanes, laneSummary } from "./lanes.ts";
 import { withHomes } from "./laneviews.ts";
-import { orch } from "./orchestrator.ts";
+import { main as mainOrch, orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
 import { type DecisionSend, type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissedAlertAts, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenDraftNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
@@ -181,6 +181,7 @@ function stateRuns(): Record<string, RunState> {
 		lastTurnEnd: lastTurnEnd(mainItems),
 		lastAnswer: orch.lastText,
 		compacting: compactingNow(orch.ctx),
+		queued: mainOrch.heldCount(),
 		watching: openMonitor(orch.sessionFile),
 		todos: openTodos(readTodo(orch.sessionFile)),
 		now: nowMs,
@@ -227,6 +228,7 @@ function stateRuns(): Record<string, RunState> {
 			lastTurnEnd: lastTurnEnd(items),
 			lastAnswer: c.o.orch.lastText,
 			compacting: compactingNow(c.o.orch.ctx),
+			queued: c.o.heldCount(),
 			watching: openMonitor(c.o.orch.sessionFile),
 			todos: openTodos(readTodo(c.o.orch.sessionFile)),
 			now: nowMs,
