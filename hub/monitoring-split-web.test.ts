@@ -41,7 +41,7 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 		cardNode: () => { throw new Error("a fact card is not a conversation message"); },
 		ts: () => ({ unread: 0 }), narrowChat: () => false, go: (...a: string[]) => went.push(a), current: "monitoring", enc: encodeURIComponent,
 		api: async () => ({}), homeSoon: () => {}, titles: { monitoring: "모니터링" }, ntIsDec: (n: N) => n.kind === "decision" && !!n.decision, ntNeeds: () => false,
-		noticeOpen: () => {}, asEntry: () => [], kkItem: () => false, KK: {}, asChipTexts: () => [], asAsk: () => {}, asAddHint: () => "", asAddSheet: () => {}, isSettingsT: () => false, settingsApp: () => "", isProjT: (t: string) => /^ch:\d+$/.test(t), S: null, projTargets: () => [], toast: () => {}, openTarget: () => {},
+		noticeOpen: () => {}, asEntry: () => [], kkItem: () => false, KK: {}, asChipTexts: () => [], asAsk: () => {}, nwChangeNode: () => null, nwChangeLine: () => "", asAddHint: () => "", asAddSheet: () => {}, isSettingsT: () => false, settingsApp: () => "", isProjT: (t: string) => /^ch:\d+$/.test(t), S: null, projTargets: () => [], toast: () => {}, openTarget: () => {},
 	};
 	const body = `${between("const NM =", "async function loadMonitors")}\n${between("// Failed ones first", "// The owner is looking at an open item")}
 NM.items = MONS; NM.loaded = true;
@@ -133,15 +133,16 @@ describe("a watch row", () => {
 		const sel = m.monSel(items)!;
 		expect(sel.key).toBe("m:node security updates");
 		const nodes = m.monTimeline(sel);
-		// the prototype's detail: a section label (확인 기록) above the reports and the latest run
-		expect(nodes.length).toBe(4);
+		// the prototype's detail: a section label (확인 기록) over ONE card of compact rows - the latest run first, then the reports, newest on top
+		expect(nodes.length).toBe(2);
 		expect(nodes[0]!.cls.split(" ")).toContain("mon-sec");
 		expect(words(nodes[0])).toBe("확인 기록");
-		for (const n of nodes.slice(1)) {
-			expect(n.cls.split(" ")).toContain("bm");
-			expect(words(n.querySelector(".rc-src"))).toBe("node security updates");
-		}
-		expect(m.drawn.map(e => String(e.text).split("\n")[0])).toEqual(["결과가 바뀌었어요", "실패했어요", expect.any(String)]);
+		expect(nodes[1]!.cls.split(" ")).toContain("mon-log");
+		const rows = nodes[1]!.kids.filter(isNode);
+		expect(rows.length).toBe(3);
+		for (const r of rows) expect(r.cls.split(" ")).toContain("mon-lr");
+		expect(rows.map(r => words(r.querySelector(".mon-l1")))).toEqual(["마지막 확인이 실패했어요", "실패했어요", "결과가 바뀌었어요"]);
+		expect(m.drawn).toEqual([]);
 	});
 
 	test("a service row opens the same message cards", () => {

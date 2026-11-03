@@ -165,8 +165,11 @@ function rqFilterBar(all) {
 function rqNodes() {
   const all = rqAll(), list = rqShown([...all, ...[...RQ.sent.values()].filter(s => !all.some(x => x.key === s.key))]).sort((a, b) => b.at - a.at);
   if (!all.length && !RQ.sent.size) return [el("div", { class: "empty", text: RQ.loaded || NT.loaded ? "확인할 답장이 없어요" : "불러오는 중…" })];
-  return [rqFilterBar(all), el("div", { class: "rq-q" }, ...list.map(rqCardOf))];
+  // The prototype's #replies: a section label per source (메일 / 카카오톡 / 유튜브 댓글 ...) over its cards; the chips show only while one app is picked (an app row's 답장 확인 button), to get back to 전체.
+  const groups = new Map();
+  for (const x of list) { const g = `${x.label || rqAppName(x.inst) || "답장"}${x.pc ? ` · ${x.pc.name}` : ""}`; groups.set(g, [...(groups.get(g) || []), x]); }
+  return [RQ.app ? rqFilterBar(all) : null, ...[...groups].flatMap(([g, xs]) => [el("div", { class: "mon-sec", role: "heading", "aria-level": "3", text: g }), el("div", { class: "rq-q" }, ...xs.map(rqCardOf))])].filter(Boolean);
 }
 // What the queue shows; it is redrawn only when this changes (typing in 고치기 changes none of it).
-const rqSig = () => JSON.stringify([RQ.app, RQ.edit, [...RQ.busy], [...RQ.sent.keys()], rqAll().map(x => [x.key, x.at, x.label, x.kind === "notice" ? [x.n.decision.state, x.n.decision.draft, dcSending.has(x.n.id)] : x.d])]);
+const rqSig = () => JSON.stringify([RQ.app, RQ.edit, trTotal() >= TR.min, [...RQ.busy], [...RQ.sent.keys()], rqAll().map(x => [x.key, x.at, x.label, x.kind === "notice" ? [x.n.decision.state, x.n.decision.draft, dcSending.has(x.n.id)] : x.d])]);
 rqLoad();

@@ -68,7 +68,7 @@ const boot = async (width: number, height: number, key: string) => {
 	await run(v, `go("monitoring")`);
 	await waitFor(v, `PQ.loaded && PQ.list.length && monItems().some(i => i.key === ${JSON.stringify(key)})`);
 	await run(v, `go("monitoring", ${JSON.stringify(key)})`);
-	await waitFor(v, `document.querySelector("#mon-tl .rc") && document.querySelector("#mon-tl [data-chip]") && document.querySelector("#mon-head .as-hd")`);
+	await waitFor(v, `document.querySelector("#mon-tl .mon-lr") && document.querySelector("#mon-tl [data-chip]") && document.querySelector("#mon-head .as-hd")`);
 	return v;
 };
 const NORMALIZE = `
