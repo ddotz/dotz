@@ -12,7 +12,8 @@ ICONS.inbox = "M4 13l2.2-7h11.6L20 13v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 13h4.5l
 ICONS.forward = "M15 7l5 5-5 5M20 12h-9a7 7 0 0 0-7 7";
 const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null };
 const mbKey = t => t.slice(5);
-const MB_NOTE = { read: "이 메일함은 실제 메일함의 읽음 표시를 바꿀 수 없어요", unread: "이 메일함은 실제 메일함의 읽음 표시를 바꿀 수 없어요", archive: "이 메일함은 실제 메일함의 보관 처리를 바꿀 수 없어요", unarchive: "이 메일함은 실제 메일함의 보관 처리를 바꿀 수 없어요", trash: "이 메일함의 메일은 실제 메일함에서 지우지 못해요", star: "이 메일함은 실제 메일함의 별표를 바꿀 수 없어요", unstar: "이 메일함은 실제 메일함의 별표를 바꿀 수 없어요" };
+const MB_SYNC_OFF = "dotz에서만 바뀌어요";
+const MB_NOTE = { read: MB_SYNC_OFF, unread: MB_SYNC_OFF, archive: MB_SYNC_OFF, unarchive: MB_SYNC_OFF, trash: "메일함에선 지워지지 않아요", star: MB_SYNC_OFF, unstar: MB_SYNC_OFF };
 // Whether the mail's mailbox will follow an action. Every action still works in dotz either way: `can` only says what the hub can repeat in the
 // real mailbox (owner 2026-11-02: read/unread must always be there). A card with no `can` at all is an older hub, which knows only the delete route.
 const mailCan = (t, a) => { const m = MAILS.get(t); return !!m && Array.isArray(m.can) && m.can.includes(a); };
@@ -71,7 +72,7 @@ async function mbTrash(keys) {
   keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
   const real = keys.every(t => mailCan(t, "trash"));
-  if (!await ask("메일 삭제", real ? `메일 ${keys.length}개를 삭제할까요? 실제 메일함에서도 휴지통으로 가요` : `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 실제 메일함의 메일은 그대로 있거나, 옮기지 못할 수 있어요`, "삭제", true)) return [];
+  if (!await ask("메일 삭제", real ? `메일 ${keys.length}개를 휴지통으로 옮길까요?` : `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 메일함엔 남을 수 있어요`, "삭제", true)) return [];
   const done = await mbRun(keys, "trash");
   mbLeave(keys);
   return done;
@@ -80,7 +81,9 @@ async function mbTrash(keys) {
 const mbLeave = keys => { if (monCtx && keys.includes(monCtx) && current === "chat" && !MAILS.has(monCtx)) go("monitoring", MON.sel); };
 
 /* ---------- the row: checkbox, star, the bold of an unread mail ---------- */
-const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}`, type: "button", "data-k": o.k, title: label, "aria-label": label, onclick }, icon(ic), el("span", { class: "mbox-bt", text: label }));
+// `o.short`: the visible word when the full label (kept as aria-label and title) is longer than the button needs.
+const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}`, type: "button", "data-k": o.k, title: label, "aria-label": label, onclick }, icon(ic), el("span", { class: "mbox-bt", text: o.short || label }));
+const MB_SHORT = { read: "읽음", unread: "안 읽음", archive: "보관", unarchive: "받은편지함" };
 // Star: always a button (a star works in dotz whatever the mailbox does); the mailbox's refusal comes back as the hub's one line.
 function mbStar(t) {
   const m = MAILS.get(t) || {}, on = !!m.starred;
@@ -113,7 +116,7 @@ function mbPaintBar() {
   const off = acts.find(([a]) => !can(a));
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }),
-    ...acts.map(([a, label, ic]) => mbBtn(label, ic, () => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar()), { k: `mail-${a}` })),
+    ...acts.map(([a, label, ic]) => mbBtn(label, ic, () => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar()), { k: `mail-${a}`, short: MB_SHORT[a] })),
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
   // A null child on append would print the word "null"; the note is added only when the mailbox will not follow the action.
   if (off) bar.append(el("div", { class: "mbox-note", role: "status", text: MB_NOTE[off[0]] }));
@@ -139,7 +142,7 @@ function mailOpenBar(t) {
         const done = a === "trash" ? await mbTrash([t]) : await mbRun([t], a);
         if (done.length && a !== "trash" && a !== "read") { MBOX.sel.delete(t); if (monCtx === t && current === "chat") go("monitoring", MON.sel); }
       });
-    }, { k: `mail-open-${a}` })));
+    }, { k: `mail-open-${a}`, short: MB_SHORT[a] })));
   if (off) bar.append(el("div", { class: "mbox-note", role: "status", text: MB_NOTE[off[0]] }));
   return bar;
 }
@@ -172,11 +175,11 @@ function mbForm(st, host, o) {
   picker.onchange = () => { const list = [...picker.files]; picker.value = ""; add(list); };
   const body = el("textarea", { class: "mbox-ta fi", rows: o.rows || "7", placeholder: o.placeholder || "내용", "data-k": "mail-body", "aria-label": "내용", oninput: ev => { st.body = ev.target.value; } });
   body.value = st.body;
-  const ccRow = field("cc", "참조", "참조 (쉼표로 나눠요)");
+  const ccRow = field("cc", "참조", "쉼표로 여러 명");
   ccRow.hidden = !st.cc && !st.showCc;
   const ccBtn = el("button", { class: "mbox-cc", type: "button", "aria-label": "참조 추가", onclick: () => { st.showCc = true; ccRow.hidden = false; ccBtn.hidden = true; ccRow.querySelector("input").focus(); } }, "참조");
   ccBtn.hidden = !ccRow.hidden;
-  const to = field("to", "받는 사람", "받는 사람 (쉼표로 나눠요)");
+  const to = field("to", "받는 사람", "쉼표로 여러 명");
   to.append(ccBtn);
   paintFiles();
   // append(null) would print the word "null": the quote block is added only when there is an original
@@ -188,13 +191,13 @@ const mbPayload = (st, extra = {}) => ({ to: st.to.trim(), cc: st.cc.trim(), sub
 const mbEmpty = st => !st.to.trim() && !st.cc.trim() && !st.subject.trim() && !st.body.trim() && !st.files.length;
 async function mbSave(st, extra, btn) {
   if (!st.to.trim()) { toast("받는 사람을 적어 주세요", true); return null; }
-  if (st.up.length) { toast("파일을 올리는 중이에요. 끝나면 다시 눌러 주세요", true); return null; }
+  if (st.up.length) { toast("파일을 올리는 중이에요", true); return null; }
   let r = null;
   await busy(btn, async () => {
     try { r = await api("/api/mail/compose", "POST", mbPayload(st, extra)); }
     catch (e) { toast(e && /^HTTP 404/.test(e.message) ? "서버가 아직 새 메일 초안을 지원하지 않아요" : (e && e.message) || "초안을 만들지 못했어요", true); }
   });
-  if (r) { toast("초안을 만들었어요. 보내기는 승인 카드에서 눌러 주세요"); loadNotices(); }
+  if (r) { toast("초안을 만들었어요 · 승인 카드에서 보내요"); loadNotices(); }
   return r;
 }
 // The floating sheet: docked at the bottom right of a wide screen (minimize / close), the whole screen on a phone. Closing a sheet with text asks first.
@@ -212,8 +215,7 @@ function mbCompose(init = {}) {
       el("button", { class: "ib mbox-close", type: "button", "aria-label": "닫기", title: "닫기", onclick: close }, icon("close"))),
     host,
     el("div", { class: "mbox-sf" }, el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-compose-save", onclick: save }, "초안 만들기"),
-      el("button", { class: "ib mbox-attach", type: "button", "aria-label": "파일 붙이기", title: "파일 붙이기", onclick: () => form.pick() }, icon("clip")),
-      el("span", { class: "mbox-hint", text: "보내기는 승인 카드에서 해요" })));
+      el("button", { class: "ib mbox-attach", type: "button", "aria-label": "파일 붙이기", title: "파일 붙이기", onclick: () => form.pick() }, icon("clip"))));
   document.body.append(node);
   MBOX.cs = { node, st };
   node.querySelector(".mbox-in").focus();
@@ -263,7 +265,7 @@ function mbReplyPaint(force) {
     slot.append(el("div", { class: "mbox-modes" }, ...MB_MODES.map(([k, label, ic]) => el("button", { class: "cchip mbox-mode", type: "button", "data-mode": k, onclick: () => mbOpenReply(t, k) }, icon(ic), label))));
   } else {
     const host = el("div", { class: "mbox-rb" }), quote = mbQuoteText(t);
-    const q = quote ? el("details", { class: "mbox-quote" }, el("summary", { text: "이전 메일 보기" }), el("pre", { class: "mbox-qt", text: quote })) : null;
+    const q = quote ? el("details", { class: "mbox-quote" }, el("summary", { text: "이전 메일" }), el("pre", { class: "mbox-qt", text: quote })) : null;
     const form = mbForm(b.st, host, { rows: "6", placeholder: "답장 내용", quote: q });
     slot.append(
       el("div", { class: "mbox-modes" }, ...MB_MODES.map(([k, label, ic]) => el("button", { class: `cchip mbox-mode${k === b.mode ? " on" : ""}`, type: "button", "data-mode": k, "aria-pressed": String(k === b.mode), onclick: () => mbOpenReply(t, k) }, icon(ic), label))),
@@ -271,8 +273,7 @@ function mbReplyPaint(force) {
       el("div", { class: "mbox-sf" },
         el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-reply-save", onclick: ev => mbSave(b.st, { reply_to: mbKey(t), mode: b.mode }, ev.currentTarget).then(r => { if (r) { MBOX.boxes.delete(t); mbReplyPaint(true); } }) }, "초안 만들기"),
         el("button", { class: "ib mbox-attach", type: "button", "aria-label": "파일 붙이기", title: "파일 붙이기", onclick: () => form.pick() }, icon("clip")),
-        el("button", { class: "btn text sm mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, "접기"),
-        el("span", { class: "mbox-hint", text: "보내기는 승인 카드에서 해요" })));
+        el("button", { class: "btn text sm mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, "접기")));
   }
   tl.append(slot);
 }

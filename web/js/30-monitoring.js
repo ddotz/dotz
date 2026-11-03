@@ -294,7 +294,7 @@ function draftCardNode(n, o = {}) {
     draftOriginNode(dr),
     man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
     draftFilesNode(dr, { t: d.to, edit: open }), draftMailNode(dr.mail));
-  const head = { app: mail ? "mail" : d.to, label: mail ? monInstLabel(d.to) : pcTargetName(d.to, n.pc), pc: mail && pqPc(d.to) ? pqPc(d.to).name : pqSelf(), model: dr.model || "", at: d.answered_at || n.updated || n.ts,
+  const head = { app: mail ? "mail" : d.to, label: mail ? monInstLabel(d.to) : pcTargetName(d.to, n.pc), pc: mail && pqPc(d.to) ? pqPc(d.to).name : pqSelf(), model: dr.model || "", at: null,   // the state tag carries the time once
     tail: [dr.rule ? draftRuleTag(dr.rule, "dr-rule") : null, el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
       // 지우기 on a waiting draft is 보내지 않기: the same answer path, so the owning computer drops it once and nothing is sent
       open && !editing && oDrop ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => { if (!busy) answerInline(n, oDrop); } }, icon("close")) : null] };
@@ -405,7 +405,7 @@ const mailRealFiles = files => (files || []).map((f, i) => ({ f, i })).filter(x 
 function mailFilesNode(key, files) {
   const real = mailRealFiles(files);
   if (!real.length) return null;
-  return el("div", { class: "mr-files" }, el("div", { class: "mr-fh", text: `첨부파일 ${real.length}개` }), ...real.map(({ f, i }) =>
+  return el("div", { class: "mr-files" }, el("div", { class: "mr-fh", text: `첨부 ${real.length}개` }), ...real.map(({ f, i }) =>
     el("a", { class: "mr-file", href: mailFileUrl(key, i, true), download: f.name, title: `${f.name} 내려받기`, "aria-label": `${f.name} 내려받기${f.size ? ` (${mailSize(f.size)})` : ""}` },
       icon("file"), el("span", { class: "mr-fname", text: f.name }), f.size ? el("span", { class: "mr-fsize", text: mailSize(f.size) }) : null, icon("download"))));
 }
@@ -471,6 +471,8 @@ function mailFilterBar(mails, notices) {
 // whole card is the way in: it opens the mail's conversation, where the original and its files are (11-todo-strip.js "mail").
 // Every mail row has one layout: sender · reply-state tag (only when there is a reply state; the orange 미답장 pill while one is owed) · 안 읽음 N ·
 // paperclip · time · ⋯. A mail conversation whose mail is gone (deleted) is no row at all.
+// A mail row's time: today's clock, else the day alone ("1월 15일"); the open mail keeps the full date and time.
+const mailRowWhen = t => !t || !Number.isFinite(Date.parse(t)) ? "" : kstDay(t) === kstDay(Date.now()) ? kstHM(t) : new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric" });
 function monConvNode(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), n = m ? mailUnread(t, m) : ts(t).unread, open = () => go("monitoring", `c:${t}`);
   if (!m && isMailT(t)) return null;
@@ -483,7 +485,7 @@ function monConvNode(t, label) {
   // Why a mail is not 답장 필요: he is not its main recipient (hub/mail-state.ts replyExclusion: 참조로 받음, 단체 메일, 자동 발송, 다른 사람 앞).
   const whyTag = m && m.why && m.dir !== "out" && m.reply !== "replied" ? el("span", { class: "tag mr-why", "data-why": m.why, text: m.why }) : null;
   const inline = m ? mailRowActs(m).map(a => mailActButton(t, a)) : [];
-  const files = m ? mailRealFiles(m.attachments).map(x => x.f) : [], brief = m ? mailBrief(m, t) : "", when = rcWhen(last ? last.ts : m && m.at), chip = m && (m.dir === "out" || !m.reply || (m.suggest && m.suggest.state === "sent")) ? mailReplyChip(m.suggest) : null;
+  const files = m ? mailRealFiles(m.attachments).map(x => x.f) : [], brief = m ? mailBrief(m, t) : "", when = (m ? mailRowWhen : rcWhen)(last ? last.ts : m && m.at), chip = m && (m.dir === "out" || !m.reply || (m.suggest && m.suggest.state === "sent")) ? mailReplyChip(m.suggest) : null;
   const title = m ? m.subject || "(제목 없음)" : rcPlain(String(last ? last.text : "").split("\n").find(l => l.trim() && !/^\s*>/.test(l)) || "") || label;
   const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
   return el("div", { class: `bm alert rc mr${m && n ? " mr-new" : ""}${m && MBOX.sel.has(t) ? " mr-sel" : ""}`, role: "button", tabindex: "0", "aria-label": `${m && n ? "안 읽음, " : ""}${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
@@ -506,7 +508,7 @@ function mailSumNodes(m, t, brief) {
 // card in the mail's conversation. In a row and in the open mail's head.
 const mailDraftAsk = async (t, btn, instruction = "") => {
   await api(`/api/mail/${t.slice(5)}/draft`, "POST", instruction ? { instruction } : {});
-  toast("답장 초안을 만들고 있어요. 다 되면 이 메일에 승인 카드가 떠요");
+  toast("답장 초안을 만드는 중이에요");
   if (btn) { btn.disabled = true; btn.textContent = "만드는 중…"; }
 };
 // The sample in the 초안 작성 box, made from the summary the mail already has (hub/mail.ts MailRecord.summary: 요약, 할 일), no model call:
@@ -529,14 +531,14 @@ function mailDraftSample(m) {
 function mailDraftDialog(t, btn) {
   const m = MAILS.get(t), sample = mailDraftSample(m);
   const ta = el("textarea", { class: "fi", rows: "3", maxlength: "500", "data-k": "draft-instruction", "aria-label": "초안에 넣을 내용",
-    placeholder: sample || "비워 두면 메일을 읽고 알아서 써요.\n예: 금요일까지 보내 드린다고, 견적서도 첨부한다고 써 줘" });
+    placeholder: sample || "예: 금요일까지 보내 드린다고 써 줘" });
   const ctx = m ? el("div", { class: "md-ctx", "data-k": "draft-mail" },
     el("div", { class: "md-from" }, icon("mail"), el("span", { text: mailSender(m.from) || m.from || "보낸 사람 없음" })),
     el("div", { class: "md-subj", text: m.subject || "(제목 없음)" }),
     ...mailSumNodes(m, t, mailBrief(m, t))) : null;
   const go = (close, b) => busy(b, async () => { close(); await mailDraftAsk(t, btn, ta.value.trim()).catch(e => toast(e.message || "초안을 요청하지 못했어요", true)); });
-  const d = dialog({ title: "답장 초안 만들기", body: el("div", { class: "col md-dlg" }, ctx,
-      el("div", { class: "md-ask" }, el("div", { class: "md-lbl", text: "어떻게 답할까요?" }), ta, el("div", { class: "sup", text: sample ? "적은 내용을 그대로 반영해요. 비워 두면 메일을 읽고 알아서 써요." : "적은 내용을 그대로 반영해요." }))),
+  const d = dialog({ title: "답장 초안", body: el("div", { class: "col md-dlg" }, ctx,
+      el("div", { class: "md-ask" }, el("div", { class: "md-lbl", text: "어떻게 답할까요?" }), ta, el("div", { class: "sup", text: "비워 두면 알아서 써요" }))),
     actions: [{ label: "초안 만들기", kind: "pri", onclick: (close, b) => go(close, b) }] });
   ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   ta.focus();
@@ -567,7 +569,7 @@ const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "dele
 const mailActButton = (t, a) => a === "draft" ? mailDraftButton(t) : el("button", { class: "cchip mr-act unrep-no", type: "button", "data-k": `mail-${a}`, text: MAIL_ACT[a], onclick: ev => { ev.stopPropagation(); busy(ev.currentTarget, () => mailActRun(t, a, null)); } });
 // 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it. A newer message of the thread brings it back.
 async function mailDelete(t) {
-  if (!await ask("메일 삭제", "이 메일을 목록에서 지울까요? 실제 메일함의 메일은 그대로 있어요", "삭제", true)) return;
+  if (!await ask("메일 삭제", "목록에서 지울까요? 메일함엔 남아 있어요", "삭제", true)) return;
   const pc = pqPc(t);
   await api(`/api/mail/${t.slice(5)}`, "DELETE");
   MAILS.delete(t); CONV.delete(t);

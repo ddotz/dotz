@@ -81,14 +81,14 @@ describe("dotz action -> mailbox", () => {
 	test("a webmail site and a plugin that cannot say why in one short line; a plugin that can does it; a plugin that throws is a failure", async () => {
 		const web = await incoming("mailsite");
 		const { deps, calls } = fakes();
-		expect(await mailAction(web, "read", deps)).toEqual({ ok: true, synced: false, note: "이 메일함은 실제 메일함의 읽음 표시를 바꿀 수 없어요. dotz에서만 바뀌었어요" });
+		expect(await mailAction(web, "read", deps)).toEqual({ ok: true, synced: false, note: "dotz에서만 읽음 표시가 바뀌었어요" });
 		const other = await incoming("work");
-		expect(await mailAction(other, "star", deps)).toMatchObject({ ok: true, synced: false, note: "이 메일함은 실제 메일함의 별표를 바꿀 수 없어요. dotz에서만 바뀌었어요" });
+		expect(await mailAction(other, "star", deps)).toMatchObject({ ok: true, synced: false, note: "dotz에서만 별표가 바뀌었어요" });
 		expect(calls.plugin).toEqual([{ source: "work", id: mailByKey(other)!.id, action: "star" }]);
 		const yes = fakes({ plugin: async () => true });
 		expect(await mailAction(other, "read", yes.deps)).toEqual({ ok: true, synced: true });
 		const boom = fakes({ plugin: async () => { throw new Error("session gone"); } });
-		expect(await mailAction(other, "unread", boom.deps)).toMatchObject({ ok: true, synced: false, note: "메일함에 반영하지 못했어요. dotz에서만 바뀌었어요" });
+		expect(await mailAction(other, "unread", boom.deps)).toMatchObject({ ok: true, synced: false, note: "메일함에 반영하지 못했어요 · dotz에서만 바뀌었어요" });
 		expect(canOf("zele", deps)).toEqual([...MAIL_ACTIONS]);
 		expect(canOf("mailsite", deps)).toEqual([]);
 		expect(canOf("work", { webmail: () => false, pluginCan: () => ["read", "trash"] })).toEqual(["read", "trash"]);
@@ -149,12 +149,12 @@ describe("the routes", () => {
 		const key = await incoming("fx");
 		const one = await call("POST", `/api/mail/${key}/action`, { action: "star" });
 		expect(one.status).toBe(200);
-		expect(await one.json()).toEqual({ ok: true, synced: false, note: "이 메일함은 실제 메일함의 별표를 바꿀 수 없어요. dotz에서만 바뀌었어요" });
+		expect(await one.json()).toEqual({ ok: true, synced: false, note: "dotz에서만 별표가 바뀌었어요" });
 		expect((await call("POST", `/api/mail/${key}/action`, { action: "explode" })).status).toBe(400);
 		expect((await call("POST", "/api/mail/fx-nope/action", { action: "read" })).status).toBe(404);
 		await call("POST", `/api/mail/${key}/action`, { action: "archive" });
 		const batch = await (await call("POST", "/api/mail/actions", { keys: [key, "fx-nope"], action: "unread" })).json() as { ok: boolean; results: unknown[] };
-		expect(batch.results).toEqual([{ key, ok: true, synced: false, note: "이 메일함은 실제 메일함의 읽음 표시를 바꿀 수 없어요. dotz에서만 바뀌었어요" }, { key: "fx-nope", ok: false, synced: false, note: "이 메일을 찾지 못했어요" }]);
+		expect(batch.results).toEqual([{ key, ok: true, synced: false, note: "dotz에서만 읽음 표시가 바뀌었어요" }, { key: "fx-nope", ok: false, synced: false, note: "이 메일을 찾지 못했어요" }]);
 		const card = ((await (await call("GET", "/api/conversations")).json()) as { items: Array<{ target: string; mail?: Record<string, any> }> }).items.find(i => i.target === `mail:${key}`)!.mail!;
 		expect(card).toMatchObject({ read: false, archived: true, starred: true, can: [] });
 		expect(typeof card.base).toBe("string");
