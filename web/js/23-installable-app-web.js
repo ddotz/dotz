@@ -2,6 +2,10 @@
 const PWA = { reg: null, sub: null, info: null, gw: null, claimed: false };
 // Set when the owner turns notifications on here, cleared when he turns them off: a subscription the push service dropped (404/410) is then made again quietly.
 const PUSH_ON = "dotz-push-on";
+// Set only when the owner turns notifications off here: the installed app otherwise keeps itself subscribed while permission is granted (owner 2026-11-02:
+// no manual step), also when it was subscribed before PUSH_ON existed or the platform dropped the subscription (getSubscription() null, 2026-11-03).
+const PUSH_OFF = "dotz-push-off";
+const pushWanted = () => Boolean(PWA.sub) || localStorage.getItem(PUSH_ON) === "1" || (isStandalone() && localStorage.getItem(PUSH_OFF) !== "1");
 const isStandalone = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 const isIOS = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const pushCapable = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
@@ -107,15 +111,16 @@ async function pwaInit() {
   presence();
 }
 async function pushLoad() {
+  PWA.checked = Date.now();
   try { PWA.info = await api(`/api/push${PWA.sub ? `?endpoint=${enc(PWA.sub.endpoint)}` : ""}`); } catch {}
   // This computer learns which device the subscription is (the id) and whether it is the installed app's (hub/push.ts): once per change.
   if (PWA.sub && PWA.info && PWA.info.subscribed && (PWA.info.did !== DEVICE_ID || (!PWA.info.app && isStandalone()))) {
     try { await api("/api/push/subscribe", "POST", { subscription: PWA.sub.toJSON(), did: DEVICE_ID, ...(isStandalone() ? { app: true } : {}) }); PWA.info.did = DEVICE_ID; if (isStandalone()) PWA.info.app = true; } catch {}
   }
   // The gateway dropped this device's subscription (the push service answered 404/410, hub/push.ts deliver) while permission is still granted: subscribe
-  // again once per load, with a fresh subscription, so the phone does not go silent until someone opens the settings (2026-10-30).
-  if (!PWA.resub && pushCapable() && Notification.permission === "granted" && PWA.info && PWA.info.publicKey && !PWA.info.subscribed && (PWA.sub || localStorage.getItem(PUSH_ON) === "1")) {
-    PWA.resub = true;
+  // again (at most every 10 minutes), with a fresh subscription, so the phone does not go silent until someone opens the settings (2026-10-30).
+  if (Date.now() - (PWA.resubAt || 0) > 600000 && pushCapable() && Notification.permission === "granted" && PWA.info && PWA.info.publicKey && !PWA.info.subscribed && pushWanted()) {
+    PWA.resubAt = Date.now();
     try {
       if (PWA.sub) await PWA.sub.unsubscribe().catch(() => {});
       PWA.sub = await PWA.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uBytes(PWA.info.publicKey) });
@@ -149,6 +154,7 @@ async function pushGw(g, on) {
 }
 async function pushEnable(btn) {
   await busy(btn, async () => {
+    localStorage.removeItem(PUSH_OFF);
     if ((await Notification.requestPermission()) !== "granted") throw new Error(`알림 권한이 꺼져 있어요. 기기 설정에서 ${botName} 알림을 허용해 주세요`);
     const reg = PWA.reg || await navigator.serviceWorker.ready;
     const info = PWA.info || await api("/api/push");
@@ -165,6 +171,7 @@ async function pushDisable(btn) {
     const sub = PWA.sub;
     PWA.sub = null;
     localStorage.removeItem(PUSH_ON);
+    localStorage.setItem(PUSH_OFF, "1");
     if (sub) { await api("/api/push/unsubscribe", "POST", { endpoint: sub.endpoint }); await sub.unsubscribe().catch(() => {}); }
     toast("알림을 껐어요");
   });
@@ -182,6 +189,13 @@ function presence() {
   if (active) presTimer = setTimeout(presence, 25000);
 }
 document.addEventListener("visibilitychange", presence);
+// An installed app is resumed far more often than it is reloaded (iOS keeps it suspended): its subscription is checked again on return, at most every 10 minutes.
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && PWA.reg && pushCapable() && Date.now() - (PWA.checked || 0) > 600000) pwaRecheck(); });
+async function pwaRecheck() {
+  PWA.sub = await PWA.reg.pushManager.getSubscription().catch(() => PWA.sub);
+  await pushLoad();
+  presence();
+}
 ["focus", "blur", "pagehide", "hashchange"].forEach(t => window.addEventListener(t, presence));
 window.addEventListener("load", pwaInit);
 // Install: Chrome/Edge/Samsung hand over beforeinstallprompt (a real app install, never the menu's shortcut);
