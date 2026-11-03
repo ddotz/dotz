@@ -203,3 +203,46 @@ function mailTextNode(raw) {
   out.append(mtNode(mtParse(raw)));
   return out;
 }
+
+/* ---------- the open mail's summary block: lightning, 요약 ·, two short sentences, the to-do in bold ---------- */
+// The hub writes a summary as two lines (hub/mail-summary.ts): what the mail is about, then what the owner has to do with the to-do and its
+// deadline in **bold**. An older mail keeps the one line it came with, or the sectioned 요약 / 첨부 / 할 일 text: its first two points and its
+// first to-do. Bold is drawn from the ** marks as text nodes only: nothing from a mail is ever parsed as HTML.
+const MS_BUL = /^\s*(?:[-*•·]|\d+[.)])\s+/;
+const msLines = s => String(s ?? "").split("\n").map(l => l.replace(MS_BUL, "").trim()).filter(Boolean);
+function mailSumSplit(text) {
+  const secs = rcSections(String(text ?? "")), titled = secs.some(s => s.h === "요약" || /^(?:다음 )?할\s?일$/.test(s.h));
+  const sum = secs.find(s => s.h === "요약") || secs.find(s => !s.h), own = sum ? msLines(sum.body) : [];
+  if (titled) {
+    const todo = secs.find(s => /^(?:다음 )?할\s?일$/.test(s.h)), first = todo ? msLines(todo.body)[0] || "" : "";
+    return { about: own.slice(0, 2).join(" "), todo: !first || /^없음/.test(first) ? "" : `**${first.replace(/\*\*/g, "")}**` };
+  }
+  return { about: own[0] || "", todo: own.slice(1).join(" ") };
+}
+function mailSumInline(parent, s) {
+  String(s ?? "").replace(/`/g, "").split(/\*\*(.+?)\*\*/g).forEach((p, i) => { if (p) parent.append(i % 2 ? el("b", { text: p }) : p.replace(/\*\*/g, "")); });
+}
+// The lightning mark (the icon set has none; the prototype's own path, drawn like the other icons).
+function mailBoltIcon() {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"), p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", "ic"); s.setAttribute("aria-hidden", "true");
+  p.setAttribute("d", "M13 3 5 13h6l-1 8 8-10h-6z"); s.append(p);
+  return s;
+}
+function mailSumBlock(text) {
+  const { about, todo } = mailSumSplit(text);
+  if (!about && !todo) return null;
+  const t = el("span", { class: "msum-t" }, el("span", { class: "msum-k", text: "요약 · " }));
+  mailSumInline(t, about);
+  if (todo) { t.append(" "); mailSumInline(t, todo); }
+  return el("div", { class: "msum", "data-k": "mail-summary" }, mailBoltIcon(), t);
+}
+// In the opened mail's card the summary sections the result card drew give way to the block (the same place, right under the recipient line).
+function mailOpenSummary(t, card) {
+  const secs = [...card.querySelectorAll(":scope > .rc-sec")];
+  if (!secs.length) return;
+  const m = MAILS.get(t) || {}, node = mailSumBlock(m.summary || mailBrief(m, t));
+  if (!node) return;
+  secs[0].replaceWith(node);
+  secs.slice(1).forEach(s => s.remove());
+}

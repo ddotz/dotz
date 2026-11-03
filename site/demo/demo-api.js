@@ -27,6 +27,22 @@
     F.state.channels.homes["private-project-fill"] = "5";
   }
   const NOTE = "데모에서는 실제로 보내지 않아요";
+  /* Mail summaries in the format the hub writes now (hub/mail-summary.ts): two lines, what the mail is about, then what to do with the to-do and its
+     deadline in **bold**. m-4 keeps its one-line summary so the demo also shows an older mail. The history and conversation records are built from
+     the mail when fixtures.js loads, so they are rebuilt here. */
+  const TWO = {
+    "m-1": "한서윤님이 다음 주 미팅 시간을 정하려는 메일이에요.\n**화요일 오후 2시와 수요일 오전 10시 중 편한 시간을 회신**해 주세요.",
+    "m-2": "책상 램프가 오늘 출발해 목요일에 도착한다는 배송 안내예요.\n따로 할 일은 없어요.",
+    "m-3": "오지훈님이 견적서 수정본을 보내 왔다는 메일이에요.\n**금요일까지 견적서 검토 의견을 회신**해 주세요.",
+  };
+  for (const [k, summary] of Object.entries(TWO)) {
+    const m = F.mails.find(x => x.key === k);
+    if (!m) continue;
+    m.summary = summary;
+    F.histories[`mail:${k}`] = [F.mailEvent(m)];
+    const c = F.conversations.find(x => x.target === `mail:${k}`);
+    if (c) c.mail = F.mailCard(m);
+  }
   const log = { unknown: [], posts: [], said: [] };
   window.__demoApi = log;
 
