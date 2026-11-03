@@ -48,6 +48,20 @@ Pretendard, then the system Korean face (`Apple SD Gothic Neo`). No Inter/Geist.
 | Chat body | 15/24 | 400 |
 | Meta | 12/16 | 400, `--fg-3` |
 
+Korean wraps at phrase boundaries (`word-break: keep-all` on body, long tokens still break), like Netflix subtitles.
+
+## Motion
+
+Quiet screen: nothing moves without a cause, nothing loops or decorates. Causes and their one motion, helpers in
+`web/js/01-motion.js` (Web Animations, transform/opacity only, 150-300ms, `--m-ease` ease-out):
+
+- something arrives (decision card, answer, sheet): `motionIn(el)` rise 8px + fade; new row at the top of a list: `motionIn(el, "top")`, picked with `freshKeys(store, keys)` so a first paint never animates
+- the same thing changes state in place (보내기 -> 보냈어요, a task finishing): `motionSwap(el, change)`
+- something leaves (sheet, dismissed row): `await motionOut(el)`, then remove it
+- a count changes: `rollCount(el, n)` rolls only the changed digit
+
+`prefers-reduced-motion: reduce` makes every one of them an instant change.
+
 ## Shape and space
 
 `--r-card` 18px (cards, lists, dialogs 20px), `--r-ctl` 10px (buttons, fields), chips 16px (pill). Card padding 20px,
