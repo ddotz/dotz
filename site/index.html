@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>dotz — 내 맥에서 항상 켜져 있는 개인 비서</title>
-<meta name="description" content="dotz는 내 기기에서 계속 도는 개인 비서입니다. Discord나 tailnet 웹 앱에서 대화하고, 프로젝트마다 세션이 하나씩 돌아갑니다. 기기 밖으로 나가는 일은 승인을 거칩니다.">
+<meta name="description" content="dotz는 내 맥에서 항상 켜져 있는 개인 비서예요. 메일, 일정, 카톡, 댓글을 챙기고 답장 초안을 써 두며, 밖으로 나가는 건 내가 보내기를 눌러야만 나가요.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f4f6f1" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e110f" media="(prefers-color-scheme: dark)">
 <meta property="og:title" content="dotz — 내 맥에서 항상 켜져 있는 개인 비서">
-<meta property="og:description" content="게이트웨이가 내 기기에서 계속 돌고, Discord나 tailnet 웹 앱에서 말을 겁니다. 프로젝트 세션, 모니터링, 승인을 한곳에서.">
+<meta property="og:description" content="메일, 일정, 카톡, 댓글을 챙기는 내 맥의 개인 비서. 쓰던 메신저와 폰에서 말을 걸고, 보내기는 내가 직접 골라요.">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="ko_KR">
 <meta property="og:url" content="https://ddotz.dev/">
@@ -47,7 +47,7 @@
     <div class="wrap">
       <h1 class="wordmark" id="hero-title">dotz</h1>
       <p class="pitch">내 맥에서 항상 켜져 있는 개인 비서.</p>
-      <p class="hero-lede">게이트웨이가 백그라운드에서 OmO 오케스트레이터를 돌립니다. 터미널을 열어 둘 필요 없이 Discord나 tailnet 웹 앱에서 말을 걸면, 프로젝트 세션이 일하고 결과를 가져옵니다.</p>
+      <p class="hero-lede">메일과 일정, 카톡, 댓글을 대신 챙기고 답장 초안까지 써 둬요. 폰이나 쓰던 메신저로 말을 걸면 되고, 밖으로 나가는 건 내가 보내기를 눌러야만 나가요.</p>
 
       <div class="install">
         <div class="install-bar">
@@ -86,64 +86,157 @@
     </div>
   </section>
 
-  <section class="section" id="features" aria-labelledby="features-title">
+  <section class="section" id="security" aria-labelledby="security-title">
     <div class="wrap">
       <div class="section-head">
-        <h2 id="features-title">무엇을 해 주나</h2>
-        <p class="section-lede">게이트웨이는 내 기기에서 계속 돌고, 대화와 작업은 그 위에서 이뤄집니다.</p>
+        <h2 id="security-title">내 정보는 내 맥에 둬요</h2>
+        <p class="section-lede">비서에게 메일과 계정을 맡기는 만큼, 무엇이 어디에 남고 언제 밖으로 나가는지 분명하게 정해 두었어요.</p>
       </div>
 
       <ul class="cards">
         <li class="card">
-          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M12 2.6v8.6"></path>
-            <path d="M17.3 6.7a7.5 7.5 0 1 1-10.6 0"></path>
-          </svg>
-          <h3>항상 켜져 있음</h3>
-          <p><code>dev.dotz.gateway</code>가 게이트웨이를 백그라운드에서 띄웁니다. macOS는 launchd, Linux는 systemd 사용자 서비스를 쓰고, 데스크톱 앱이나 열어 둔 터미널이 필요 없습니다.</p>
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 11 12 4.5 20 11"></path><path d="M6 9.6V19.5h12V9.6"></path></svg>
+          <h3>내 맥에서 돌아가요</h3>
+          <p>비서는 내 컴퓨터에서 백그라운드로 돌아요. 설정, 기억, 규칙, 메일과 카톡 기록은 내 맥의 dotz 폴더에 남고, 따로 가입하는 서버가 없어요.</p>
         </li>
         <li class="card">
-          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M3.5 7.6c0-1 .8-1.8 1.8-1.8h4l2 2.2h7.4c1 0 1.8.8 1.8 1.8v7.4c0 1-.8 1.8-1.8 1.8H5.3c-1 0-1.8-.8-1.8-1.8z"></path>
-            <path d="M3.5 10.6h17"></path>
-          </svg>
-          <h3>프로젝트마다 한 세션</h3>
-          <p>프로젝트 폴더마다 세션과 Discord 채널이 하나씩 생깁니다. 진행 상황은 그 채널로 올라오고, 끝난 결과는 다시 넘겨받습니다.</p>
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.5 3.5 10 14"></path><path d="M20.5 3.5 14 20.5l-4-6.5-6.5-4z"></path></svg>
+          <h3>내가 보내기를 눌러야 나가요</h3>
+          <p>메일 답장, 카톡, 유튜브·인스타 댓글, 메신저 메시지는 먼저 초안으로 보여 줘요. 확인 카드에서 내가 보내기를 골라야만 실제로 나가요.</p>
         </li>
         <li class="card">
-          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M12 3.2 19 6v5.4c0 4.2-2.9 7.4-7 9-4.1-1.6-7-4.8-7-9V6z"></path>
-            <path d="m9 12 2.2 2.2L15.4 10"></path>
-          </svg>
-          <h3>나가기 전에 묻습니다</h3>
-          <p>메시지, 메일, 댓글, 배포처럼 기기 밖으로 나가는 일은 승인 카드에서 멈춥니다. 소유자가 승인해야 실행됩니다.</p>
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="8.2" cy="8.2" r="4.2"></circle><path d="m11.3 11.3 8.7 8.7"></path><path d="m17.4 17.4 1.8-1.8"></path><path d="m19.7 19.7 1.6-1.6"></path></svg>
+          <h3>비밀번호는 대화에 안 남아요</h3>
+          <p>토큰과 비밀번호는 내 맥의 비밀 폴더에 나만 읽을 수 있는 권한(0600)으로 저장해요. 카드 번호나 인증 코드 같은 정보는 채팅이 아니라 따로 마련된 보안 입력으로만 받아요.</p>
         </li>
         <li class="card">
-          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M2.8 12S6.3 5.8 12 5.8 21.2 12 21.2 12 17.7 18.2 12 18.2 2.8 12 2.8 12Z"></path>
-            <circle cx="12" cy="12" r="3.2"></circle>
-          </svg>
-          <h3>지켜보는 일</h3>
-          <p>메일과 캘린더(zele), YouTube·Instagram·웹사이트 댓글, 로그인 유지, 예약 알림을 게이트웨이가 확인합니다. 바뀐 것이 없으면 모델을 부르지 않습니다.</p>
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="9.5" rx="2"></rect><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"></path></svg>
+          <h3>2단계 인증은 허락을 받고</h3>
+          <p>로그인을 다시 하다가 휴대폰 인증 같은 사람 확인이 필요하면, 먼저 나에게 물어보고 허락한 뒤에만 진행해요.</p>
         </li>
         <li class="card">
-          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <circle cx="8.2" cy="8.2" r="4.2"></circle>
-            <path d="m11.3 11.3 8.7 8.7"></path>
-            <path d="m17.4 17.4 1.8-1.8"></path>
-            <path d="m19.7 19.7 1.6-1.6"></path>
-          </svg>
-          <h3>내 계정과 파일에서</h3>
-          <p>소유자의 계정, 파일, 로그인 위에서 동작합니다. 비밀은 <code>~/.dotz/secrets</code>에 0600으로 두고, 설정과 기억, 규칙은 <code>~/.dotz</code>에 남깁니다.</p>
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"></circle><path d="m6 6 12 12"></path></svg>
+          <h3>위험한 명령은 미리 막아요</h3>
+          <p>실행하면 안 되는 명령은 실행 직전에 막아요. 기본 차단 목록이 들어 있고, 내 규칙에 막을 명령을 더 적어 둘 수도 있어요.</p>
         </li>
         <li class="card">
-          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path d="M12 3.5v11"></path>
-            <path d="m7.5 10 4.5 4.5 4.5-4.5"></path>
-            <path d="M4.5 16.5v2.2c0 1 .8 1.8 1.8 1.8h11.4c1 0 1.8-.8 1.8-1.8v-2.2"></path>
-          </svg>
-          <h3>명령 하나로 설치</h3>
-          <p><code>install.sh</code>가 bun, OmO, dotz를 설치하고 마법사를 엽니다. 이후 업데이트는 이 저장소에서 직접 받아 갑니다.</p>
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.8 12S6.3 5.8 12 5.8 21.2 12 21.2 12 17.7 18.2 12 18.2 2.8 12 2.8 12Z"></path><path d="m4 4 16 16"></path></svg>
+          <h3>사용 통계는 보내지 않아요</h3>
+          <p>함께 쓰는 AI 도구의 사용 통계 전송은 시작할 때와 업데이트할 때마다 자동으로 꺼 둬요. 이 사이트도 외부 요청이 하나도 없어요.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section" id="usage" aria-labelledby="usage-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="usage-title">이렇게 써요</h2>
+        <p class="section-lede">평소에 하던 일을 말로 부탁하면 돼요. 몇 가지 예를 모아 봤어요.</p>
+      </div>
+
+      <ul class="cards">
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="5.5" width="17" height="13" rx="2"></rect><path d="m4 7 8 6 8-6"></path></svg>
+          <h3>메일 정리와 답장 초안</h3>
+          <p>새 메일을 세 줄로 요약해 보여 주고, 답장이 필요한 메일엔 내 말투로 초안을 써 둬요. 고쳐 달라고 하거나 보내기를 누르면 그대로 처리해요. API가 없는 웹메일도 브라우저 로그인으로 읽을 수 있어요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="4" y="5.5" width="16" height="14.5" rx="2"></rect><path d="M4 10h16"></path><path d="M8.5 3.5v4"></path><path d="M15.5 3.5v4"></path></svg>
+          <h3>아침 점검 루틴</h3>
+          <p>"매일 아침 9시에 오늘 일정이랑 새 메일 정리해 줘"처럼 부탁하면 루틴으로 저장돼서 정해진 시간마다 알아서 돌아요. 밤 시간에는 알림 없이 모아 두기만 할 수도 있어요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.5 6.5c0-1 .8-1.8 1.8-1.8h11.4c1 0 1.8.8 1.8 1.8v8c0 1-.8 1.8-1.8 1.8H10l-4.2 3.2v-3.2h0c-.7 0-1.3-.8-1.3-1.8z"></path></svg>
+          <h3>카톡 답장 초안</h3>
+          <p>지켜볼 카톡방을 고르면 새 메시지를 모아 보여 주고, 원하는 방엔 내 말투로 답장 초안을 써요. 내가 승인한 것만 보내요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 7.5 4.5 12l5 4.5"></path><path d="M4.5 12h9a6 6 0 0 1 6 6v.5"></path></svg>
+          <h3>유튜브·인스타·웹사이트 댓글</h3>
+          <p>고른 채널과 계정의 새 댓글을 모아 두고, 질문이나 감사 인사엔 답글 초안을 써요. 광고나 스팸은 건너뛰어요. 채널 통계 보기와 영상 예약 게시도 승인을 받고 해요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.8 12S6.3 5.8 12 5.8 21.2 12 21.2 12 17.7 18.2 12 18.2 2.8 12 2.8 12Z"></path><circle cx="12" cy="12" r="3.2"></circle></svg>
+          <h3>지켜보다가 알려 주기</h3>
+          <p>사이트 로그인이 풀리지 않게 유지하고, 바뀐 게 있을 때만 알려 줘요. 폰에 설치한 웹 앱으로 푸시 알림을 받을 수 있어요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 7.6c0-1 .8-1.8 1.8-1.8h4l2 2.2h7.4c1 0 1.8.8 1.8 1.8v7.4c0 1-.8 1.8-1.8 1.8H5.3c-1 0-1.8-.8-1.8-1.8z"></path><path d="M3.5 10.6h17"></path></svg>
+          <h3>프로젝트와 작업 채널</h3>
+          <p>프로젝트마다 대화방이 하나씩 생겨서 일이 섞이지 않아요. 진행 상황은 그 방으로 올라오고, 끝나면 결과를 정리해서 알려 줘요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="7" y="2.8" width="10" height="18.4" rx="2.2"></rect><path d="M11 18h2"></path></svg>
+          <h3>웹 앱과 폰</h3>
+          <p>맥에 띄운 웹 앱을 폰에서 열어 홈 화면에 추가하면 앱처럼 써요. 대화, 알림, 확인 카드, 작업 내역을 한곳에서 봐요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="2.8" y="5" width="11" height="8" rx="1.5"></rect><rect x="10.2" y="11" width="11" height="8" rx="1.5"></rect></svg>
+          <h3>여러 대의 컴퓨터</h3>
+          <p>집 맥과 회사 맥처럼 dotz를 여러 대에 깔면 웹 앱에서 컴퓨터를 바꿔 가며 볼 수 있어요. "저쪽 맥에서 이어서 해"라고 하면 일을 넘겨요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path></svg>
+          <h3>나에게 맞춰 늘리기</h3>
+          <p>자주 보는 앱과 루틴은 홈 카드와 사이드바에 붙여 둬요. 메일, 카톡, 유튜브 같은 앱도 "이런 앱 만들어 줘"라고 부탁해서 추가해요.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section" id="messengers" aria-labelledby="messengers-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="messengers-title">메신저와 앱 연결</h2>
+        <p class="section-lede">쓰던 메신저에서 그대로 말을 걸 수 있어요. 대부분 설치 마법사나 웹 앱의 설정 → 메신저에서 켜요.</p>
+      </div>
+
+      <ul class="cards">
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 4 7.5 20"></path><path d="M16.5 4l-2 16"></path><path d="M4.5 9h16"></path><path d="M3.5 15h16"></path></svg>
+          <h3>Discord</h3>
+          <p>대화, 알림, 프로젝트별 채널을 모두 써요. 연결: 내가 만든 Discord 봇의 토큰을 넣고 봇을 내 서버에 초대해요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="7" y="2.8" width="10" height="18.4" rx="2.2"></rect><path d="M11 18h2"></path></svg>
+          <h3>웹 앱 (폰·PC)</h3>
+          <p>가장 기본이 되는 화면이에요. 연결: Tailscale로 내 기기끼리만 열거나, Cloudflare 터널로 열고 패스키로 한 번 등록한 기기만 들어오게 해요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.5 3.5 10 14"></path><path d="M20.5 3.5 14 20.5l-4-6.5-6.5-4z"></path></svg>
+          <h3>Telegram</h3>
+          <p>대화를 주고받고 알림을 받아요. 연결: BotFather로 만든 텔레그램 봇 토큰을 넣어요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 1.5H5z"></path><path d="M10 20h4"></path></svg>
+          <h3>Slack</h3>
+          <p>알림과 보고를 받는 용도예요. 연결: Slack 봇 토큰과 받을 채널을 정해요. Slack에서 말을 거는 건 아직 안 돼요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.5 6.5c0-1 .8-1.8 1.8-1.8h11.4c1 0 1.8.8 1.8 1.8v8c0 1-.8 1.8-1.8 1.8H10l-4.2 3.2v-3.2h0c-.7 0-1.3-.8-1.3-1.8z"></path></svg>
+          <h3>잔디(JANDI)</h3>
+          <p>대화와 알림을 주고받아요. 연결: 잔디 웹훅(받기·보내기)을 방마다 붙여요. 웹훅을 못 만드는 경우엔 내 잔디 로그인으로 "나와의 대화"를 읽는 방법도 있어요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4.5 6.5c0-1 .8-1.8 1.8-1.8h11.4c1 0 1.8.8 1.8 1.8v8c0 1-.8 1.8-1.8 1.8H10l-4.2 3.2v-3.2h0c-.7 0-1.3-.8-1.3-1.8z"></path></svg>
+          <h3>카카오톡</h3>
+          <p>카톡방 메시지를 읽고 답장 초안을 써요. 연결: 맥의 카카오톡 앱 화면을 자동으로 조작해요. 그래서 맥에서만 되고, 보내기는 승인한 것만 해요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="5.5" width="17" height="13" rx="2"></rect><path d="m4 7 8 6 8-6"></path></svg>
+          <h3>메일·캘린더</h3>
+          <p>메일 요약, 답장 초안, 일정 확인을 해요. 연결: 메일·캘린더 도구(zele)에서 내 계정으로 로그인해요. 그게 안 되는 웹메일은 브라우저 로그인으로 연결해요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="5.5" width="18" height="13" rx="3"></rect><path d="m10.5 9.5 4 2.5-4 2.5z"></path></svg>
+          <h3>유튜브·인스타그램</h3>
+          <p>댓글 답글, 통계, 예약 게시를 해요. 연결: 공식 API로 로그인해요. 유튜브는 구글 계정 동의, 인스타는 프로페셔널 계정과 Meta 앱 토큰이 필요해요.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2.8 12S6.3 5.8 12 5.8 21.2 12 21.2 12 17.7 18.2 12 18.2 2.8 12 2.8 12Z"></path><circle cx="12" cy="12" r="3.2"></circle></svg>
+          <h3>웹사이트 댓글</h3>
+          <p>내 사이트의 새 댓글을 모아 답글 초안을 써요. 연결: 사이트가 주는 API나 RSS, 또는 관리자 페이지 로그인으로 가져와요.</p>
         </li>
       </ul>
     </div>
@@ -153,47 +246,47 @@
     <div class="wrap">
       <div class="section-head">
         <h2 id="flow-title">어떻게 움직이나</h2>
-        <p class="section-lede">Discord나 웹 앱의 대화가 게이트웨이를 거쳐 프로젝트 세션으로 가고, 진행과 승인이 다시 대화로 돌아옵니다.</p>
+        <p class="section-lede">메신저나 웹 앱으로 부탁하면 내 맥의 비서가 일을 나눠 처리하고, 결과와 확인 요청을 다시 대화로 돌려줘요.</p>
       </div>
 
       <figure class="flow">
         <div class="flow-main">
           <div class="tier">
-            <p class="tier-label">입력</p>
+            <p class="tier-label">부탁</p>
             <div class="nodes">
-              <span class="node">Discord 봇</span>
-              <span class="node">tailnet 웹 앱</span>
+              <span class="node">메신저</span>
+              <span class="node">웹 앱</span>
             </div>
           </div>
           <div class="edge"><span>대화</span></div>
           <div class="tier">
-            <p class="tier-label">게이트웨이</p>
+            <p class="tier-label">내 맥</p>
             <div class="nodes">
               <span class="node node-gateway">
-                <code>dev.dotz.gateway</code>
-                <small>headless OmO 오케스트레이터 · 모니터링</small>
+                dotz 비서
+                <small>항상 켜져 있음 · 지켜보기 · 루틴</small>
               </span>
             </div>
           </div>
-          <div class="edge"><span>작업 배분</span></div>
+          <div class="edge"><span>일 나누기</span></div>
           <div class="tier">
-            <p class="tier-label">세션</p>
+            <p class="tier-label">할 일</p>
             <div class="nodes nodes-sessions">
-              <span class="node node-session"><code>site/</code><small>세션 · 채널</small></span>
-              <span class="node node-session"><code>api/</code><small>세션 · 채널</small></span>
-              <span class="node node-session"><code>notes/</code><small>세션 · 채널</small></span>
+              <span class="node node-session">메일<small>요약 · 초안</small></span>
+              <span class="node node-session">카톡<small>모으기 · 초안</small></span>
+              <span class="node node-session">프로젝트<small>작업 · 보고</small></span>
             </div>
           </div>
-          <div class="edge"><span>진행 · 결과</span></div>
+          <div class="edge"><span>결과 · 초안</span></div>
           <div class="tier">
-            <p class="tier-label">보고 · 승인</p>
+            <p class="tier-label">확인</p>
             <div class="nodes">
-              <span class="node">채널에 진행 보고</span>
-              <span class="node">승인 카드</span>
+              <span class="node">진행 보고</span>
+              <span class="node">보내기 확인 카드</span>
             </div>
           </div>
         </div>
-        <figcaption>프로젝트 폴더 하나에 세션과 채널이 하나씩 붙습니다. 기기 밖으로 나가는 일은 마지막 단계에서 승인을 기다립니다.</figcaption>
+        <figcaption>밖으로 나가는 일은 마지막 확인 카드에서 멈추고, 내가 보내기를 고른 것만 나가요.</figcaption>
       </figure>
     </div>
   </section>
@@ -202,7 +295,7 @@
     <div class="wrap">
       <div class="section-head">
         <h2 id="install-title">5분 설치</h2>
-        <p class="section-lede">설치 스크립트가 bun과 OmO를 준비하고, 마법사가 봇과 접속을 설정합니다. 두 명령 중 하나로 시작합니다.</p>
+        <p class="section-lede">터미널에 명령 하나를 붙여 넣으면 필요한 것을 깔고 설정 마법사가 열려요.</p>
       </div>
 
       <ol class="steps">
@@ -210,11 +303,11 @@
           <p class="step-num" aria-hidden="true">01</p>
           <div class="step-body">
             <h3>설치</h3>
-            <p>첫 번째 명령은 설치와 마법사까지, 두 번째는 게이트웨이 서비스를 함께 시작합니다.</p>
+            <p>첫 번째 명령은 설치와 마법사까지, 두 번째는 컴퓨터를 켤 때마다 비서가 저절로 시작되게까지 해 줘요.</p>
             <div class="code-stack">
               <p class="code-caption">설치와 마법사</p>
               <pre><code>curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh</code></pre>
-              <p class="code-caption">게이트웨이 서비스까지 시작</p>
+              <p class="code-caption">항상 켜 두기까지</p>
               <pre><code>curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh -s -- --service</code></pre>
             </div>
           </div>
@@ -223,14 +316,14 @@
           <p class="step-num" aria-hidden="true">02</p>
           <div class="step-body">
             <h3>마법사</h3>
-            <p>봇 이름과 말투, Discord 봇 토큰(MESSAGE CONTENT intent를 켜야 합니다), Tailscale 사용 여부를 묻습니다. macOS에서는 필요한 권한도 이때 정리합니다.</p>
+            <p>비서 이름과 말투, 연결할 메신저, 폰에서 열 방법을 차례로 물어요. 맥에서 필요한 권한도 이때 함께 정리해요.</p>
           </div>
         </li>
         <li class="step">
           <p class="step-num" aria-hidden="true">03</p>
           <div class="step-body">
-            <h3>열기</h3>
-            <p>Tailscale을 켰다면 마법사가 인쇄한 웹 앱 주소를 폰에서 엽니다. Discord에서는 안내된 초대 링크로 봇을 서버에 들이고 말을 걸면 됩니다.</p>
+            <h3>말 걸기</h3>
+            <p>마법사가 알려 준 웹 앱 주소를 폰에서 열거나 메신저에서 말을 걸어요. 메일, 카톡, 유튜브 연결은 "카톡 연결해 줘"처럼 부탁하면 비서가 순서대로 안내해요.</p>
           </div>
         </li>
       </ol>
@@ -240,12 +333,11 @@
   <section class="section section-fork" id="fork" aria-labelledby="fork-title">
     <div class="wrap">
       <div class="fork-grid">
-        <h2 id="fork-title">포크하지 않아도 됩니다</h2>
+        <h2 id="fork-title">업데이트해도 내 설정은 그대로</h2>
         <div class="prose">
-          <p>설정, 비밀, 기억, 규칙은 <code>~/.dotz</code>에 두고, 코드 폴더에는 개인 설정을 남기지 않습니다.</p>
-          <p>업데이트는 이 저장소에서 직접 오고, 코드 폴더는 교체되지만 <code>~/.dotz</code>의 답과 기록은 그대로 남습니다.</p>
-          <p>그래서 포크 없이 설치하는 것이 기본 경로입니다.</p>
-          <p>dotz 자체의 코드를 고치려는 경우에만 포크해 설치하면 됩니다.</p>
+          <p>설정, 비밀, 기억, 규칙은 프로그램 폴더와 떨어진 내 dotz 폴더에 따로 둬요.</p>
+          <p>업데이트는 공개 저장소에서 바로 받아 오고, 프로그램이 바뀌어도 내 기록과 설정은 남아요.</p>
+          <p>그래서 저장소를 복사(포크)할 필요 없이 설치하면 돼요.</p>
         </div>
       </div>
     </div>
