@@ -87,6 +87,7 @@ body {
   text-rendering: optimizeLegibility;
   word-break: keep-all;
   overflow-wrap: break-word;
+  line-break: strict;
 }
 
 ::selection {
@@ -111,6 +112,18 @@ h3 {
 
 p {
   text-wrap: pretty;
+}
+
+.hero-lede,
+.section-lede,
+figcaption {
+  text-wrap: balance;
+}
+
+/* Netflix 자막 줄바꿈 기준: 구·절 단위로 묶어 쉼표나 절 경계에서만 줄을 나눠요. */
+.ph {
+  display: inline-block;
+  max-width: 100%;
 }
 
 ul,
