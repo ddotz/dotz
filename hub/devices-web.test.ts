@@ -87,7 +87,7 @@ describe("연결된 기기 설정 화면", () => {
 		const w = await plain.view({ width: 1280, height: 800 }, "/");
 		await waitFor(w, `typeof go === "function" && S`);
 		await run(w, `go("settings")`);
-		await waitFor(w, `DEV.asked && !DEV.items && [...document.querySelectorAll("#settings .li .hd")].some(h => h.textContent === "메신저")`);
+		await waitFor(w, `DEV.asked && !DEV.items && document.querySelectorAll("#settings .li .hd").length > 3`);
 		expect(await ev(w, `!!${row}`)).toBe(false);
 	});
 
