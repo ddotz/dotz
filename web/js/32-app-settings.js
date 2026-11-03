@@ -61,8 +61,8 @@ function asApprovalNode(app, a) {
   const opts = a.options || [], when = a.at ? `승인 대기 · ${monTime(a.at)}` : "승인 대기";
   return el("div", { class: "as-row as-appr", "data-approval": a.id },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: a.title || "승인 요청" }), el("span", { class: "as-h", text: a.kind ? `${a.kind} · ${when}` : when }), ...(a.note ? [el("span", { class: "as-h as-warn", "data-note": "blocked", text: a.note })] : [])),
-    el("span", { class: "as-btns" }, ...opts.map(o => el("button", { class: "btn tonal", type: "button", "data-k": `appr:${o.label}`, onclick: () => asApprove(app, a, o) }, o.label)),
-      el("button", { class: "btn text", type: "button", "data-k": "appr:open", onclick: () => { if (ASC.h) ASC.h.close(false); go("monitoring", asAppItemKey(app)); } }, "자세히")));
+    el("span", { class: "as-btns" }, ...opts.map(o => el("button", { class: "btn tonal inrow", type: "button", "data-k": `appr:${o.label}`, onclick: () => asApprove(app, a, o) }, o.label)),
+      el("button", { class: "btn text inrow", type: "button", "data-k": "appr:open", onclick: () => { if (ASC.h) ASC.h.close(false); go("monitoring", asAppItemKey(app)); } }, "자세히")));
 }
 // One watch the app owns (로그인 유지 / 동기화 / 파일 점검): its status, when it last ran, and its period. The period is editable when the watch lives on this
 // computer; a peer's period is read only (its settings are written through that computer's own act routes). 다시 시도 only on a row that is not ok.
@@ -98,7 +98,7 @@ function asStatRow(app, m, i) {
       : el("span", { class: "as-every-wrap" },
         el("input", { class: "as-in as-every", type: "number", min: 1, max: 10080, inputmode: "numeric", "aria-label": `${i.name} 감시 주기(분)`, title: "감시 주기(분)", "data-k": `every:${i.id}`, value: String(i.every_minutes), onchange: ev => asEvery(app, i, ev.target.value) }),
         el("span", { class: "as-unit", text: "분" }))) : null,
-    i && i.dot !== "ok" ? el("button", { class: "btn tonal", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id, i.down) }, i.down ? "다시 연결" : "다시 시도") : null,
+    i && i.dot !== "ok" ? el("button", { class: "btn tonal inrow", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id, i.down) }, i.down ? "다시 연결" : "다시 시도") : null,
     !i && st && st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
 }
 function asFeatRow(app, f) {
@@ -139,14 +139,14 @@ async function asWatchRmGo(app) {
 }
 function asWatchRmNode(app) {
   const what = asSched(app) ? "예약" : "감시";
-  if (!AS.rm[app]) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: `${what} 삭제` }), el("span", { class: "as-h", text: `이 ${what}을 완전히 지워요` })), el("button", { class: "btn tonal", type: "button", "data-as-rm": "ask", onclick: () => { AS.rm[app] = { watch: true }; asPaint(); } }, "삭제"));
+  if (!AS.rm[app]) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: `${what} 삭제` }), el("span", { class: "as-h", text: `이 ${what}을 완전히 지워요` })), el("button", { class: "btn tonal inrow", type: "button", "data-as-rm": "ask", onclick: () => { AS.rm[app] = { watch: true }; asPaint(); } }, "삭제"));
   const pc = pqPc(`settings:${app}`), name = monSettingsName(`settings:${app}`);
   const lines = asSched(app) ? ["다시 실행하지 않고 목록에서 빼요. 되돌릴 수 없어요", "잠깐 멈추려면 삭제 대신 예약 켜기를 끄세요"]
     : [`${pc ? `${pc.name}에서 ` : ""}확인을 멈추고 목록에서 빼요. 되돌릴 수 없어요`, "지금까지 온 감시 소식은 그대로 남아요", "잠깐 멈추려면 삭제 대신 감시 켜기를 끄세요"];
   return el("div", { class: "as-rm" },
     el("div", { class: "as-n", text: `${name}을(를) 삭제할까요?` }),
     el("ul", { class: "as-rml" }, ...lines.map(t => el("li", { text: t }))),
-    el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-as-rm": "go", disabled: !!AS.busy[app], onclick: () => asWatchRmGo(app) }, "삭제 확인"), el("button", { class: "btn tonal", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
+    el("div", { class: "as-act" }, el("button", { class: "btn sm", type: "button", "data-as-rm": "go", disabled: !!AS.busy[app], onclick: () => asWatchRmGo(app) }, "삭제 확인"), el("button", { class: "btn tonal sm", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
 }
 
 /* ---- 제거 (this install only) and 앱 추가 ---- */
@@ -165,7 +165,7 @@ async function asRemoveGo(app) {
 }
 function asRemoveNode(app) {
   const rm = AS.rm[app];
-  if (!rm) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "앱 제거" }), el("span", { class: "as-h", text: "이 기기에서만 지워요. 다른 컴퓨터는 그대로예요" })), el("button", { class: "btn tonal", type: "button", "data-as-rm": "ask", onclick: () => asRemoveAsk(app) }, "제거"));
+  if (!rm) return el("div", { class: "as-row" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "앱 제거" }), el("span", { class: "as-h", text: "이 기기에서만 지워요. 다른 컴퓨터는 그대로예요" })), el("button", { class: "btn tonal inrow", type: "button", "data-as-rm": "ask", onclick: () => asRemoveAsk(app) }, "제거"));
   const p = rm.plan, cb = el("input", { type: "checkbox", "data-k": "delete-data", onchange: () => { rm.del = cb.checked; } });
   const lines = p ? ["이 기기의 앱 목록에서 빼고, 알림과 푸시를 멈춰요", p.watches.length ? `감시 ${p.watches.length}개를 지워요: ${p.watches.join(", ")}` : "지울 감시는 없어요", p.features.length ? `기능을 이 기기에서 꺼요: ${p.features.join(", ")}` : "끌 기능은 없어요", "다른 컴퓨터의 같은 앱은 그대로예요"]
     : ["그 컴퓨터의 앱 목록에서 빼고, 알림과 푸시를 멈춰요", "이 앱의 감시도 함께 꺼요", "이 컴퓨터와 다른 컴퓨터의 같은 앱은 그대로예요"];
@@ -173,7 +173,7 @@ function asRemoveNode(app) {
     el("div", { class: "as-n", text: p ? `${p.label}을(를) 이 기기에서 제거할까요?` : "이 앱을 그 컴퓨터에서 제거할까요?" }),
     el("ul", { class: "as-rml" }, ...lines.map(t => el("li", { text: t }))),
     !p || p.data.length ? el("label", { class: "as-del" }, cb, el("span", { text: p ? `저장된 데이터(${p.data.join(", ")})도 지우기. 체크하지 않으면 남겨요` : "저장된 데이터도 지우기. 체크하지 않으면 남겨요" })) : null,
-    el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-as-rm": "go", onclick: () => asRemoveGo(app) }, "제거 확인"), el("button", { class: "btn tonal", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
+    el("div", { class: "as-act" }, el("button", { class: "btn sm", type: "button", "data-as-rm": "go", onclick: () => asRemoveGo(app) }, "제거 확인"), el("button", { class: "btn tonal sm", type: "button", "data-as-rm": "cancel", onclick: () => { AS.rm[app] = null; asPaint(); } }, "취소")));
 }
 // 앱 추가: the last row of the 앱 group opens a sheet. It lists only the apps this computer (and each other computer, labeled with its name) had and
 // the owner switched off or removed, each with 다시 켜기, under one box on top: what he types there is sent to the main orchestrator at once and
@@ -366,8 +366,8 @@ function arForm(app, rules, ed) {
   };
   return el("div", { class: "as-row as-col as-rform", "data-rule-form": ed.id || "new" },
     box("name", "input", { type: "text", maxlength: 20 }), box("when", "textarea", { rows: 2, maxlength: 300 }), box("how", "textarea", { rows: 3, maxlength: 1000 }), box("files", "input", { type: "text" }),
-    el("div", { class: "as-act" }, el("button", { class: "btn", type: "button", "data-k": "rule-save", disabled: !!AS.busy[app], onclick: save }, "저장"),
-      el("button", { class: "btn tonal", type: "button", "data-k": "rule-cancel", onclick: () => { delete AR.edit[app]; asPaint(); } }, "취소")));
+    el("div", { class: "as-act" }, el("button", { class: "btn sm", type: "button", "data-k": "rule-save", disabled: !!AS.busy[app], onclick: save }, "저장"),
+      el("button", { class: "btn tonal sm", type: "button", "data-k": "rule-cancel", onclick: () => { delete AR.edit[app]; asPaint(); } }, "취소")));
 }
 function arRow(app, rules, r) {
   const files = (r.files || []).length ? `붙일 파일: ${r.files.join(", ")}` : "";
@@ -376,8 +376,8 @@ function arRow(app, rules, r) {
       r.how ? el("span", { class: "as-h", text: `어떻게: ${r.how}` }) : null, files ? el("span", { class: "as-h", text: files }) : null),
     el("span", { class: "as-btns" },
       kkSwitch(r.on, r.name, `rule:${r.id}`, on => arSave(app, rules.map(x => x.id === r.id ? { ...x, on } : x))),
-      el("button", { class: "btn text", type: "button", "data-k": `rule-edit:${r.id}`, onclick: () => { AR.edit[app] = { id: r.id, v: { name: r.name, when: r.when, how: r.how, files: (r.files || []).join(", ") } }; asPaint(); } }, "고치기"),
-      el("button", { class: "btn text", type: "button", "data-k": `rule-del:${r.id}`, onclick: () => arSave(app, rules.filter(x => x.id !== r.id), () => toast(`규칙 ${r.name}을(를) 지웠어요`)) }, "지우기")));
+      el("button", { class: "btn text inrow", type: "button", "data-k": `rule-edit:${r.id}`, onclick: () => { AR.edit[app] = { id: r.id, v: { name: r.name, when: r.when, how: r.how, files: (r.files || []).join(", ") } }; asPaint(); } }, "고치기"),
+      el("button", { class: "btn text inrow", type: "button", "data-k": `rule-del:${r.id}`, onclick: () => arSave(app, rules.filter(x => x.id !== r.id), () => toast(`규칙 ${r.name}을(를) 지웠어요`)) }, "지우기")));
 }
 // The rows of the section, in order: heading, what rules do, the 기본 규칙 box, each rule (or its form), then 규칙 추가 (or the new rule's form).
 function arNodes(app, fRules, fDef) {
@@ -390,7 +390,7 @@ function arNodes(app, fRules, fDef) {
     el("div", { class: "as-row", "data-setting": "draft_rules" }, el("span", { class: "as-b" }, el("span", { class: "as-h", text: fRules.help }))),
     el("div", { class: "as-row as-col", "data-setting": "draft_default" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: fDef.label }), el("span", { class: "as-h", text: fDef.help })), def),
     ...rules.map(r => ed && ed.id === r.id ? arForm(app, rules, ed) : arRow(app, rules, r)),
-    ed && !ed.id ? arForm(app, rules, ed) : el("div", { class: "as-row" }, el("button", { class: "btn tonal", type: "button", "data-k": "rule-add", disabled: rules.length >= 20, onclick: () => { AR.edit[app] = { id: "", v: {} }; asPaint(); } }, "규칙 추가")),
+    ed && !ed.id ? arForm(app, rules, ed) : el("div", { class: "as-row" }, el("button", { class: "btn tonal inrow", type: "button", "data-k": "rule-add", disabled: rules.length >= 20, onclick: () => { AR.edit[app] = { id: "", v: {} }; asPaint(); } }, "규칙 추가")),
   ];
 }
 // The sections of the settings screen in the order the owner reads them (hub/app-settings.ts SettingSection); a row is drawn once, under one heading.
@@ -567,13 +567,15 @@ function settingsCardHtml(src) {
   const rows = Object.entries(ch).map(([k, v]) => {
     const f = fields.find(x => x.key === k);
     const text = !f ? JSON.stringify(v) : state === "applied" ? asFmt(f, v) : asChange(f, f.value, v);
-    return `<div class="as-cr"><span class="as-cn">${esc(f ? f.label : k)}</span><span class="as-cv">${esc(text)}</span></div>`;
+    // a value that changes (not a list): the old one grey and struck through, the new one the only bold thing (docs/ui-principles.md 2)
+    const shown = f && state !== "applied" && f.type !== "list" ? `<s class="as-old">${esc(asFmt(f, f.value))}</s> → <span class="as-now">${esc(asFmt(f, v))}</span>` : esc(text);
+    return `<div class="as-cr"><span class="as-cn">${esc(f ? f.label : k)}</span><span class="as-cv">${shown}</span></div>`;
   }).join("");
   // only memory keys: the gateway kept them already (hub/app-settings.ts applyMemory), so there is nothing to apply
   const memOnly = fields.length && Object.keys(ch).every(k => (fields.find(x => x.key === k) || {}).memory);
   if (memOnly) return `<div class="as-card applied"><div class="as-ct">기억해 뒀어요</div>${Object.entries(ch).map(([k, v]) => { const f = fields.find(x => x.key === k); return `<div class="as-cr"><span class="as-cn">${esc(f.label)}</span><span class="as-cv">${esc(asFmt(f, v))}</span></div>`; }).join("")}</div>`;
   const foot = state ? `<div class="as-done ${state}">${state === "applied" ? "적용했어요" : "취소했어요"}</div>`
-    : `<div class="as-act"><button class="btn" type="button" data-as="apply">적용</button><button class="btn tonal" type="button" data-as="cancel">취소</button></div>`;
+    : `<div class="as-act"><button class="btn sm" type="button" data-as="apply">적용</button><button class="btn tonal sm" type="button" data-as="cancel">취소</button></div>`;
   return `<div class="as-card${state ? ` ${state}` : ""}" data-as-id="${id}" data-as-app="${esc(app)}" data-as-src="${esc(String(src).trim())}"><div class="as-ct">설정 바꾸기 제안</div>${rows}${foot}</div>`;
 }
 document.addEventListener("click", async ev => {
@@ -581,7 +583,8 @@ document.addEventListener("click", async ev => {
   const card = btn && btn.closest(".as-card");
   if (!card) return;
   const id = card.dataset.asId, app = card.dataset.asApp, src = card.dataset.asSrc;
-  const redraw = () => { card.outerHTML = settingsCardHtml(src); };
+  // 적용 -> 적용했어요 happens in the same place: the new card replaces the old one and fades up (docs/ui-principles.md 6)
+  const redraw = () => { card.insertAdjacentHTML("afterend", settingsCardHtml(src)); const next = card.nextElementSibling; card.remove(); motionSwap(next, () => {}); };
   if (btn.dataset.as === "cancel") { AS.done[id] = "cancelled"; asSave(); redraw(); return; }
   btn.disabled = true;
   try { await asPatch(app, JSON.parse(src).changes); AS.done[id] = "applied"; asSave(); redraw(); }

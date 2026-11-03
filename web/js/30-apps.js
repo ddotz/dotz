@@ -37,7 +37,7 @@ function appsRows() {
   rows.push({ header: "사용자 앱" });
   if (!tools.length) rows.push({ k: "empty-apps", name: "아직 내 앱이 없어요", av: appsAv("add", ""), hint: "채팅에서 앱을 추가해 달라고 하면 돼요", open: () => go("chat") });
   for (const a of tools) {
-    rows.push({ k: a.id, name: a.label, av: appsAv(a.icon, a.off ? "off" : a.status), hint: appsStatusLine(a), badge: a.off ? ["꺼짐", ""] : a.status === "unreachable" ? ["응답 없음", "err"] : a.kind === "tool" ? ["열기", "pri"] : null, sel: APP_STATE_ON() && a.id === APPS.sel && !APPS.list, open: () => go("apps", a.id) });
+    rows.push({ k: a.id, name: a.label, av: appsAv(a.icon, a.off ? "off" : a.status), hint: appsStatusLine(a), badge: a.off ? ["꺼짐", ""] : a.status === "unreachable" ? ["응답 없음", "err"] : null, sel: APP_STATE_ON() && a.id === APPS.sel && !APPS.list, open: () => go("apps", a.id) });
   }
   const reg = APPS.items.filter(a => a.source === "registry");
   if (reg.length) {
@@ -120,14 +120,14 @@ function appsBody(a) {
   if (!appsTool(a)) {
     return el("div", { class: "apps-card" },
       el("p", { class: "apps-note", text: a.kind === "monitor" ? "이 앱은 모니터링에서 소식을 모아 보여 줘요." : "이 앱은 자체 화면이 없어요." }),
-      a.source === "registry" ? el("button", { class: "btn tonal", type: "button", text: "모니터링에서 열기", onclick: () => go("monitoring", `i:${a.id}`) }) : null);
+      a.source === "registry" ? el("button", { class: "btn tonal sm", type: "button", text: "모니터링에서 열기", onclick: () => go("monitoring", `i:${a.id}`) }) : null);
   }
-  if (a.off) return el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: "꺼 둔 앱이에요. 켜면 화면이 다시 열려요." }), el("button", { class: "btn tonal", type: "button", text: "켜기", onclick: () => appsToggle(a) }));
+  if (a.off) return el("div", { class: "apps-card" }, el("p", { class: "apps-note", text: "꺼 둔 앱이에요. 켜면 화면이 다시 열려요." }), el("button", { class: "btn tonal sm", type: "button", text: "켜기", onclick: () => appsToggle(a) }));
   if (a.status === "unreachable") {
     return el("div", { class: "apps-card" },
       el("p", { class: "apps-note", text: `${a.label}이(가) 응답하지 않아요${a.reason ? ` (${a.reason})` : ""}.` }),
       a.start ? el("p", { class: "apps-note", text: "앱이 떠 있는지 확인해 주세요." }) : null,
-      el("button", { class: "btn tonal", type: "button", text: "다시 확인", onclick: () => loadApps().then(() => { APPS.sig = ""; appsSchedule(); }) }));
+      el("button", { class: "btn tonal sm", type: "button", text: "다시 확인", onclick: () => loadApps().then(() => { APPS.sig = ""; appsSchedule(); }) }));
   }
   const frame = el("iframe", { class: "apps-frame", src: a.web.href, title: a.label, referrerpolicy: "same-origin" });
   return frame;
