@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { NAME, paths } from "./config.ts";
 import { emit, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { type Notice, onDecision, setWatchLabelResolver } from "./notices.ts";
-import { answersReach, classify, decisionPush, LONG_TURN_MS, pushRoute, startPush } from "./push.ts";
+import { answersReach, classify, decisionPush, LONG_TURN_MS, pushRoute, setRelayPeers, startPush } from "./push.ts";
 import { b64u } from "./webpush.ts";
 
 const ev = (e: Record<string, unknown>) => ({ ts: "2026-10-20T00:00:00Z", kind: "out", source: "orchestrator", text: "", ...e });
@@ -75,6 +75,60 @@ test("a subscription the push service reports gone (410) is dropped", async () =
 		globalThis.fetch = real;
 	}
 	expect(await (await call(q, "GET"))!.json()).toMatchObject({ subscribed: false });
+});
+
+test("a send whose connection breaks (ECONNRESET) is tried once more and the subscription stays", async () => {
+	const ua = createECDH("prime256v1");
+	ua.generateKeys();
+	const endpoint = "https://push.example.net/reset";
+	const call = (path: string, method: string, body?: unknown) => pushRoute(new Request(`http://x${path}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) }), new URL(`http://x${path}`));
+	await call("/api/push/subscribe", "POST", { subscription: { endpoint, keys: { p256dh: b64u(ua.getPublicKey()), auth: b64u(Buffer.alloc(16, 4)) } } });
+	const real = globalThis.fetch;
+	let tries = 0;
+	globalThis.fetch = (async () => {
+		if (++tries === 1) throw new Error("ECONNRESET: The socket connection was closed unexpectedly");
+		return new Response(null, { status: 201 });
+	}) as unknown as typeof fetch;
+	try {
+		expect((await call("/api/push/test", "POST", { endpoint }))!.status).toBe(200);
+	} finally {
+		globalThis.fetch = real;
+	}
+	expect(tries).toBe(2);
+	expect(await (await call(`/api/push?endpoint=${encodeURIComponent(endpoint)}`, "GET"))!.json()).toMatchObject({ subscribed: true });
+});
+
+test("a subscription the push service swapped (pushsubscriptionchange) replaces the old one and keeps its device and app role", async () => {
+	const ua = createECDH("prime256v1");
+	ua.generateKeys();
+	const keys = { p256dh: b64u(ua.getPublicKey()), auth: b64u(Buffer.alloc(16, 6)) };
+	const oldEp = "https://fcm.example.net/old", newEp = "https://jmt.example.net/new", did = "dev-swap-0001";
+	const call = (path: string, method: string, body?: unknown) => pushRoute(new Request(`http://x${path}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) }), new URL(`http://x${path}`));
+	setRelayPeers(async () => []);
+	await call("/api/push/subscribe", "POST", { subscription: { endpoint: oldEp, keys }, did, app: true });
+	expect((await call("/api/push/subscribe", "POST", { subscription: { endpoint: newEp, keys }, replaces: oldEp }))!.status).toBe(200);
+	expect(await (await call(`/api/push?endpoint=${encodeURIComponent(newEp)}`, "GET"))!.json()).toMatchObject({ subscribed: true, app: true, did });
+	expect(await (await call(`/api/push?endpoint=${encodeURIComponent(oldEp)}`, "GET"))!.json()).toMatchObject({ subscribed: false });
+	await call("/api/push/unsubscribe", "POST", { endpoint: newEp });
+});
+
+test("the service worker subscribes again on pushsubscriptionchange and names the endpoint it replaces", async () => {
+	const on: Record<string, (ev: unknown) => void> = {};
+	const posts: Array<{ url: string; body: unknown }> = [];
+	const key = new Uint8Array([4, 1, 2]);
+	const self = {
+		addEventListener: (t: string, fn: (ev: unknown) => void) => void (on[t] = fn),
+		registration: { pushManager: { subscribe: async (o: { applicationServerKey: unknown }) => ({ toJSON: () => ({ endpoint: "https://jmt.example.net/fresh", key: o.applicationServerKey === key }) }) } },
+	};
+	const fetchStub = async (url: string, init?: { body?: string }) => {
+		posts.push({ url, body: init?.body ? JSON.parse(init.body) : undefined });
+		return new Response("{}");
+	};
+	new Function("self", "fetch", readFileSync(new URL("../web/sw.js", import.meta.url), "utf8"))(self, fetchStub);
+	let done: Promise<unknown> = Promise.resolve();
+	on.pushsubscriptionchange!({ oldSubscription: { endpoint: "https://fcm.example.net/stale", options: { applicationServerKey: key } }, newSubscription: null, waitUntil: (p: Promise<unknown>) => void (done = p) });
+	await done;
+	expect(posts).toEqual([{ url: "/api/push/subscribe", body: { subscription: { endpoint: "https://jmt.example.net/fresh", key: true }, replaces: "https://fcm.example.net/stale" } }]);
 });
 
 test("Discord pings the owner only when no device takes this gateway's conversation (대화) notifications", () => {

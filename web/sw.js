@@ -136,6 +136,24 @@ self.addEventListener("push", ev => {
   })());
 });
 
+// The push service swapped this app's subscription (Chrome moved fcm.googleapis.com endpoints, a key rotation): the old endpoint answers 410 from now on,
+// so the worker subscribes again and tells the gateway, naming the endpoint it replaces so the new one keeps the device id and app role (hub/push.ts
+// /api/push/subscribe `replaces`). Without this the device went silent until its app was opened (2026-10-30).
+async function resubscribe(ev) {
+  const old = ev.oldSubscription || null;
+  let sub = ev.newSubscription || null;
+  if (!sub) {
+    let key = old && old.options && old.options.applicationServerKey;
+    if (!key) {
+      const s = (await (await fetch("/api/push")).json()).publicKey;
+      key = Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4)), c => c.charCodeAt(0));
+    }
+    sub = await self.registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  }
+  await fetch("/api/push/subscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON(), ...(old ? { replaces: old.endpoint } : {}) }) });
+}
+self.addEventListener("pushsubscriptionchange", ev => ev.waitUntil(resubscribe(ev).catch(() => {})));
+
 self.addEventListener("notificationclick", ev => {
   ev.notification.close();
   const data = ev.notification.data || {};
