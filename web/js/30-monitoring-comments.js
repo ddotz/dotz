@@ -219,7 +219,7 @@ function cmFlow(c, v) {
   let reply = null;
   if (s && s.state === "sending") reply = [step("초안", "done"), step("확인", "done"), step("보내는 중", "busy")];
   else if (d) reply = [step("초안", "done"), step("확인 대기", "ask"), step("보냄", "todo")];
-  else if (s && s.state === "sent") reply = [step("초안", "done"), step("확인", "done"), step("보냄", "done")];
+  else if (s && s.state === "sent") reply = [step("초안", "done"), step("확인", "done"), step(s.via === "rule" ? "보냄 · 자동" : "보냄", "done")];
   else if (s && s.state === "failed") reply = [step("초안", "done"), step("확인", "done"), step(`실패${s.reason ? ` · ${s.reason}` : ""}`, "err")];
   else if (v.comments.some(x => x.mine && x.parent && x.parent === cmNative(c))) reply = [step("답글 보냄", "done")];
   else if (CM.drafting.has(c.id)) reply = [step("초안 만드는 중", "busy"), step("확인", "todo"), step("보냄", "todo")];
