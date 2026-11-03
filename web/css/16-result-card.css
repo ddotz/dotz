@@ -18,7 +18,8 @@
 /* the original of a mail (11-mailbody.js): the HTML frame (white page, auto height, no inner scroll) or the laid-out text */
 .rc-rawbody.own { padding: 0; max-height: none; overflow: visible; background: none; }
 .mb { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.mb-bar { display: flex; align-items: center; gap: 8px; min-height: 32px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.mb-bar { display: flex; align-items: center; gap: 8px; min-height: 28px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.mopen .mb-bar .btn { min-height: 28px; height: 28px; padding: 0 8px; font-size: 12px; }
 .mb-bar .mb-note { min-width: 0; flex: 1; }
 .mb-frame { display: block; width: 100%; height: 120px; border: 1px solid var(--line); border-radius: var(--r-ctl); background: #fff; }
 .mb-fail { padding: 12px 14px; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-3); }
@@ -106,8 +107,6 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .rc-hd .mr-more .ic { width: 20px; height: 20px; }
 .rc-hd .mr-more:hover, .rc-hd .mr-more[aria-expanded="true"] { background: var(--active); color: var(--fg); }
 /* 초안 작성 on the open mail's card (11-todo-strip.js): below 1100px, where the conversation head and its 초안 작성 are hidden */
-.mr-conv-act { margin-top: 2px; }
-@media (min-width: 1100px) { .mr-conv-act { display: none; } }
 .rc-hd .rc-src + .mr-more, .rc-hd .tag + .mr-more { margin-left: auto; }
 @media (pointer: coarse), (max-width: 639px) { .rc-hd .mr-more { margin: -10px -10px -10px 0; } }
 .mr-clip { flex: none; display: inline-flex; align-items: center; gap: 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; }

@@ -112,16 +112,25 @@ function mailThreadMobile(t) {
   const rel = mailRelated(t);
   if (rel.length < 2) return null;
   const list = el("ol", { class: "mth-list", hidden: true }, ...mailThreadRows(t, rel));
-  const b = el("button", { class: "mth-mb", type: "button", "aria-expanded": "false", onclick: () => { const open = list.hidden; list.hidden = !open; b.setAttribute("aria-expanded", String(open)); b.classList.toggle("open", open); } },
-    icon("mail"), el("span", { class: "mth-mt", text: `이 사람과 주고받은 메일 ${rel.length}` }), icon("drop", "mth-ch"));
+  // a small chip (mail icon and the count) at the end of the header's 받는 사람 line; its full name is the aria-label and the title
+  const name = `이 사람과 주고받은 메일 ${rel.length}`;
+  const b = el("button", { class: "mth-mb", type: "button", "aria-expanded": "false", "aria-label": name, title: name, onclick: () => { const open = list.hidden; list.hidden = !open; b.setAttribute("aria-expanded", String(open)); b.classList.toggle("open", open); } },
+    icon("mail"), el("span", { class: "mth-mt", text: String(rel.length) }), icon("drop", "mth-ch"));
   return el("div", { class: "mth-m" }, b, list);
 }
 
-// The mail card's own block: the header plus, under 1024px, the thread row.
+// The mail card's own block, Gmail-like: one muted line (받는 사람, 참조: two names then 외 N명) with a chevron that opens the full header,
+// and under 1024px the thread chip at its end.
 function mailMetaNode(t, e) {
   const base = MAILS.get(t) || {};
   const m = { from: base.from || (e && e.from), to: base.to || (e && e.to), cc: base.cc || (e && e.cc), dir: base.dir || (e && e.dir) };
-  return el("div", { class: "mhd-wrap" }, mailHeadNode(m), mailThreadMobile(t));
+  const head = mailHeadNode(m), to = mailAddrList(m.to), cc = mailAddrList(m.cc);
+  head.hidden = true;
+  const names = list => { const n = list.slice(0, 2).map(a => a.name || a.addr).join(", "); return list.length > 2 ? `${n} 외 ${list.length - 2}명` : n; };
+  const line = [to.length ? `받는 사람 ${names(to)}` : "", cc.length ? `참조 ${names(cc)}` : ""].filter(Boolean).join(" · ") || "보낸 사람과 받는 사람";
+  const tog = el("button", { class: "mhd-tog", type: "button", "aria-expanded": "false", title: "보낸 사람·받는 사람 자세히", onclick: () => { const open = head.hidden; head.hidden = !open; tog.setAttribute("aria-expanded", String(open)); tog.classList.toggle("open", open); } },
+    el("span", { class: "mhd-tl", text: line }), icon("drop", "mhd-ch"));
+  return el("div", { class: "mhd-wrap" }, el("div", { class: "mhd-line" }, tog, mailThreadMobile(t)), head);
 }
 
 // The wide panel, beside the conversation (see the CSS): it sits in the chat box and only shows for a mail with related mail.

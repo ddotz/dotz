@@ -155,15 +155,16 @@ test("at 1280px the original is the page's own scroll, the header names everyone
 	expect(await ev(v, `[...document.querySelectorAll("#tl .mhd .mhd-r")].map(r => r.textContent)`)).toEqual(["보낸 사람Alex Sender <sender@example.com>", "받는 사람나 <me@example.com>, 팀 <team@example.com> 외 1명", "참조Lee <lee@example.com>, Park <park@example.com>"]);
 }, 30_000);
 
-test("at 390px the thread is one row under the header that opens the same list", async () => {
+test("at 390px the thread is a chip at the end of the recipients line that opens the same list", async () => {
 	const v = await openPage(390, "monitoring/i:mail");
 	await openMail(v, "fx-4");
 	const box = await ev(v, `(() => {
 		const m = document.querySelector("#tl .mth-mb"), p = document.querySelector("#mail-thread");
-		return { row: m && m.textContent, panel: p ? getComputedStyle(p).display : "none", expanded: m && m.getAttribute("aria-expanded"), list: [...document.querySelectorAll("#tl .mth-m .mth-row")].length,
+		return { row: m && m.getAttribute("aria-label"), count: m && m.textContent, panel: p ? getComputedStyle(p).display : "none", expanded: m && m.getAttribute("aria-expanded"), list: [...document.querySelectorAll("#tl .mth-m .mth-row")].length,
 			listHidden: document.querySelector("#tl .mth-m .mth-list").hidden, over: document.documentElement.scrollWidth > innerWidth };
 	})()`);
-	expect(box.row).toContain("이 사람과 주고받은 메일 5");
+	expect(box.row).toBe("이 사람과 주고받은 메일 5");
+	expect(box.count).toBe("5");
 	expect(box.panel).toBe("none");
 	expect(box.expanded).toBe("false");
 	expect(box.list).toBe(5);

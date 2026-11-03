@@ -578,12 +578,13 @@ async function mailDelete(t) {
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
 // The ⋯ at the top right of a mail card (every row of the list and the card at the top of the mail's conversation): mailActs, built from the
-// mail's state at the tap.
-function mailMenuBtn(t) {
+// mail's state at the tap. `extra()`: more items ({ value, label, run }) after them, as the open mail's 원문 접기.
+function mailMenuBtn(t, extra = () => []) {
   return el("button", { class: "ib mr-more", type: "button", "aria-label": "메일 메뉴", title: "메일 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", "data-k": "mail-menu", onclick: ev => {
     ev.stopPropagation();
     const b = ev.currentTarget, m = MAILS.get(t) || {};
-    showMenu(b, mailActs(m).map(a => ({ value: a, label: MAIL_ACT[a] })), { onPick: v => busy(null, () => mailActRun(t, v, null)) });
+    const more = extra();
+    showMenu(b, [...mailActs(m).map(a => ({ value: a, label: MAIL_ACT[a] })), ...more.map(x => ({ value: x.value, label: x.label }))], { onPick: v => { const x = more.find(i => i.value === v); if (x) x.run(); else busy(null, () => mailActRun(t, v, null)); } });
   }, onkeydown: ev => ev.stopPropagation() }, icon("more"));
 }
 // A monitor's latest run, as the newest message of its conversation: the result in words, when it checks next, and its project chat.
