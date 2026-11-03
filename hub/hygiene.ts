@@ -15,6 +15,7 @@ import { compactLane, lanes, refreshLaneStats, rotateLane } from "./lanes.ts";
 import { purgeTrash } from "./lanetrash.ts";
 import { nightlyHandover, orchestratorPid } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
+import { activeHarness } from "./runtime/index.ts";
 import { trackTimer } from "./shutdown.ts";
 
 const STATS_WAIT_MS = 3000;
@@ -163,8 +164,24 @@ async function cleanWorktrees(entries?: WorktreeEntry[], root = WORKTREE_ROOT): 
 	return { removed, kb };
 }
 
+// Only omp keeps these worktrees (`omp worktree`); an install whose agents run on OmO or Claude Code has no omp to ask, and
+// spawning it failed every hour. Read per run: config.json can switch the runtime without a restart.
+export const worktreeCleanupApplies = (ids: readonly string[] = activeHarness().ids): boolean => ids.includes("omp");
+
+/** One cleanup pass; "skipped" when no role runs on omp. */
+export async function runWorktreeCleanup(): Promise<"skipped" | "done" | "failed"> {
+	if (!worktreeCleanupApplies()) return "skipped";
+	try {
+		await cleanWorktrees();
+		return "done";
+	} catch (e) {
+		log(`worktree cleanup failed: ${e}`);
+		return "failed";
+	}
+}
+
 export function startWorktreeCleanup(): void {
-	const run = () => void cleanWorktrees().catch(e => log(`worktree cleanup failed: ${e}`));
+	const run = () => void runWorktreeCleanup();
 	trackTimer("worktree cleanup", setTimeout(() => {
 		run();
 		trackTimer("worktree cleanup", setInterval(run, WORKTREE_EVERY_MS));
