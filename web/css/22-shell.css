@@ -1,0 +1,137 @@
+/* ---------- shell: the prototype's frame (site/prototype/proto.css "/* shell *\/") ----------
+   Wide (1024px and up): a 232px sidebar holds the brand, the computer picker row, the five nav items with their counts and the
+   usage row at the bottom; the main column holds the top bar (page title, search, bell, connection and usage chips) and the views.
+   Narrow: the sidebar becomes the bottom tab bar (the same #nav, one component), the brand/picker/footer step aside, and the top
+   bar keeps back + title + search + bell. Everything below only restates the frame; colors and sizes come from 01-tokens.css. */
+@media (min-width: 1024px) {
+  :root { --side-w: 232px; }
+  .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: 0; }
+  .side { display: flex; flex-direction: column; gap: 4px; min-width: 0; min-height: 0; padding: 12px; overflow-y: auto; border-top: 0; background: var(--bg); }
+  .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .gban, .trban, .oerr { flex: none; grid-row: auto; grid-column: auto; }
+  .views { flex: 1; min-height: 0; grid-row: auto; grid-column: auto; }
+  .appbar { display: flex; flex: none; align-items: center; gap: 4px; height: 60px; padding: 0 20px 0 24px; background: transparent; }
+  .appbar .ib { width: 32px; height: 32px; }
+  /* brand: the mark and the assistant's name, 40px like the nav items below it */
+  .brand { display: flex; align-items: center; gap: 8px; width: 100%; height: 40px; padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: inherit; font: 600 15px/20px var(--font); letter-spacing: 0; text-align: left; }
+  .brand:hover { background: var(--hover); }
+  .brand span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brand .logo { width: 18px; height: 18px; border-radius: 6px; }
+  .brand .logo::after { inset: 6px; }
+  /* computer picker row: the current computer, opens the switcher sheet (#brand keeps the same action) */
+  .gw { display: flex; align-items: center; gap: 6px; width: 100%; height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font: 500 12px/16px var(--font); text-align: left; }
+  .gw:hover { background: var(--hover); color: var(--fg); }
+  .gw .ic { color: var(--fg-3); }
+  .gw .gw-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gw .gw-c { margin-left: auto; color: var(--fg-3); }
+  .gw.pneed .gw-n { color: var(--fg); font-weight: 600; }
+  .gw.pdot .gw-c::after { content: ""; display: block; width: 6px; height: 6px; margin: 0 auto; border-radius: 50%; background: var(--warn); }
+  /* nav: one column, 40px rows, the open item a white card */
+  .rail { display: flex; flex: none; flex-direction: column; align-self: stretch; gap: 2px; width: 100%; min-width: 0; margin: 0; margin-top: 8px; }
+  .ni { position: relative; display: flex; flex: none; flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; height: 40px; padding: 0 10px; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 500; text-align: left; }
+  .ni:hover { background: var(--hover); color: var(--fg); }
+  .ni.on { background: var(--card); color: var(--fg); font-weight: 700; }
+  .ni.on::after, .ni.on::before { content: none; }
+  .ni .ic { display: block; width: 16px; height: 16px; }
+  .ni .nl { min-width: 0; }
+  .ni .nnb { position: static; top: auto; left: auto; flex: none; margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: var(--bg); font-size: 11px; line-height: 18px; font-weight: 600; text-align: center; }
+  .ni .nub { position: absolute; top: auto; left: auto; right: 10px; bottom: 8px; }
+  /* lower area: what the limits say now; a tap opens 사용량 */
+  .sfoot { margin-top: auto; padding-top: 8px; }
+  .sf-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 6px 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); text-align: left; }
+  .sf-row:hover { background: var(--hover); color: var(--fg); }
+  .sf-row .ic { color: var(--fg-3); }
+  .sf-row .sf-k { flex: none; font-size: 12px; line-height: 16px; font-weight: 500; }
+  .sf-row .sf-bar { flex: 1; min-width: 0; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+  .sf-row .sf-bar i { display: block; height: 100%; border-radius: 2px; background: var(--fg-2); }
+  .sf-row .sf-v { flex: none; margin-left: auto; color: var(--fg-3); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
+  .sf-row.warn .sf-v { color: var(--warn); }
+  .sf-row.warn .sf-bar i { background: var(--warn); }
+  /* top bar: title always names the page (the sidebar carries the tabs), then search, bell, connection and usage */
+  #back { margin: 0; }
+  .appbar h1, .appbar:not(.back) h1 { display: block; flex: 1; min-width: 0; max-width: none; margin: 0; font: 700 22px/30px var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .appbar.tv h1 { flex: 0 0 auto; max-width: 260px; }
+  .appbar .thead { flex: 1; min-width: 0; margin: 0 4px; }
+  .appbar .cmdk { display: inline-flex; align-items: center; gap: 6px; width: auto; height: 32px; margin: 0; padding: 0 6px 0 10px; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); font-size: 13px; }
+  .appbar .cmdk .tx { display: inline; }
+  .appbar .cmdk kbd { display: inline-block; }
+  .appbar .conn, #vtog, .appbar .ustrip { margin-left: 0; }
+}
+
+/* the notice bell: the count sits on its top-right corner, as the prototype's .ib .bd */
+.bellbtn { position: relative; }
+#bell-n { position: absolute; top: 1px; right: 1px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--warn); color: var(--bg); font-size: 10.5px; line-height: 16px; font-weight: 600; text-align: center; }
+#bell-n[hidden] { display: none; }
+
+@media (max-width: 1023px) {
+  /* phone / tablet: the sidebar is the bottom tab bar (proto .tabbar), the brand, picker and footer step aside */
+  .gw, .sfoot { display: none; }
+  .side { padding-bottom: max(2px, calc(env(safe-area-inset-bottom) - 8px)); }
+  .ni { height: 56px; }
+  .ni.on::before { left: 28%; right: 28%; }
+  .appbar { height: calc(56px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 8px 0 16px; }
+  .appbar.back { padding-left: 4px; }
+  .appbar h1, .appbar:not(.back) h1 { font-size: 20px; line-height: 28px; }
+  .appbar .ib { width: 36px; height: 36px; }
+}
+
+
+/* ---------- 홈: the prototype's layout (site/prototype/s-work.js home, proto.css .view / .col / .grid2 / .card) ----------
+   One full-width column on top (greeting, alert row, 답변 필요) and the card grid below it (two cards to a row from 720px,
+   one below). The grid is the home board (07-board.js), so the cards still drag and resize; the card sizes are the prototype's. */
+#v-home { display: flex; flex-direction: column; gap: 12px; padding: 8px 24px 40px; }
+#home-now { display: flex; flex-direction: column; gap: 12px; order: 1; }
+#home-cards { order: 2; }
+.bbar { order: 3; margin: 0; justify-content: flex-end; }
+#home-ended { order: 4; }
+#home-ended:empty { display: none; }
+#home-ended .ended { margin-top: 0; }
+
+.hgreet { padding: 0 4px; }
+.hgreet .bigrow { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.hgreet .bigrow .big { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hgreet .big { font: 700 20px/28px var(--font); letter-spacing: -.01em; }
+.hgreet .meta { margin-top: 2px; color: var(--fg-3); font: 400 12px/16px var(--font); }
+.hgreet .hgreet-fb, .hgreet .subline { margin-top: 6px; }
+.hgreet-more { flex: none; width: 24px; height: 24px; color: var(--fg-3); }
+
+/* the prototype's alert strip: one card-like row under the greeting */
+.hstrip { min-height: 48px; background: var(--card); border-radius: var(--r-card); }
+.hstrip .tx { display: flex; flex-direction: column; gap: 2px; }
+.hstrip:hover { background: var(--card-hover); }
+.hstrip .sup { color: var(--fg-2); }
+
+/* 답변 필요: the prototype's full-width card, its count an orange badge after the title, 답장 대기 a quieter second list in it */
+.hneeds { display: flex; flex-direction: column; min-width: 0; }
+.hneeds .hn-h { margin-top: 0; padding: 16px 20px 4px; }
+.hneeds .hn-h h2 { order: 0; font: 600 16px/22px var(--font); letter-spacing: -.01em; }
+.hneeds .hn-h .sup { order: 1; margin-left: 0; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
+.hneeds .hn-h .tag { order: 2; }
+.hneeds .hn { border-radius: 0 0 var(--r-card) var(--r-card); }
+.hneeds .hn:has(+ .hn-h) { border-radius: 0; padding-bottom: 4px; }
+.hneeds .hn-h.hsub { padding: 12px 20px 4px; border-top: 1px solid var(--line); border-radius: 0; }
+.hneeds .hn-h.hsub h2 { font: 600 13px/18px var(--font); color: var(--fg-2); }
+.hneeds .hn > .hr, .hneeds .hn > .ntg, .hneeds .hn > .ny-more { padding-left: 20px; padding-right: 20px; }
+
+/* the grid cards keep the prototype's card box: 20px padding, the header 8px above its list, rows to the card's edge; a row is as tall
+   as its taller card and both cards fill it (07-board.js rows mode) */
+#home-cards.rows .bi.fit > .card { height: 100%; overflow: visible; }
+#home-cards.rows.measuring .bi > .card { height: auto !important; }
+#home-cards .card { padding: 20px; }
+#home-cards .card > .hn { margin: 4px -20px -20px; background: transparent; border-radius: 0 0 var(--r-card) var(--r-card); }
+#home-cards .card > .hn > .hr { padding-left: 20px; padding-right: 20px; }
+#home-cards .card > .hn > .empty { padding: 20px 20px 4px; }
+@media (max-width: 1023px) { #v-home { padding: 4px 16px 24px; } }
+
+/* the computer is named once on a wide screen (the sidebar's picker row), so the brand and the page title carry no second dot */
+@media (min-width: 1024px) {
+  #brand-name.pdot { padding-right: 0; }
+  body:has(#appbar.hasp) #brand::after { content: none; }
+  .appbar:not(.back) h1.pdot::after, .appbar:not(.back) h1.pneed::after { content: none; }
+  .appbar.hasp:not(.back) h1.pdot::after, .appbar.hasp:not(.back) h1.pneed::after { content: none; }
+  .appbar.hasp:not(.back) h1::before { content: none; }
+  .appbar.hasp:not(.back) h1.pdot, .appbar.hasp:not(.back) h1.pneed { padding-right: 0; }
+  #brand-name.pdot::after { content: none; }
+  .appbar h1.pdot, .appbar h1.pneed { padding-right: 0; }
+  .appbar h1.pdot::after, .appbar h1.pneed::after { content: none; }
+}
