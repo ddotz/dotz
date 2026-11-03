@@ -73,6 +73,7 @@ import { defaultCall } from "../features/reply-drafts/lib/flow.ts";
 import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
 import { setFollowupWake } from "./followup.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
+import { telemetryOff } from "./runtime/omo.ts";
 import { compressResponse } from "./compress.ts";
 import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, approvals, convOfTarget, setRefHandled } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
@@ -479,6 +480,7 @@ startSchedules(s => {
 });
 syncRoutineSchedules();
 startReflection(text => deliver(text), () => orch.sessionFile);
+for (const l of telemetryOff()) log(l);
 startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`harness update post failed: ${e}`)), restartGateway, alert);
 startTokenAudit(alert);
 // Settings → 업데이트: the daily check announces a new dotz version (push + a toast on open pages + one bell item); with self_update.auto_apply

@@ -11,6 +11,7 @@ import { cfg, DATA_DIR, DEFAULTS, log, writeAtomic } from "./config.ts";
 import { issueBlock } from "./choices.ts";
 import { activeHarness } from "./runtime/index.ts";
 import { BUN_GLOBAL_OMO, OMO } from "./runtime/omo-hosts.ts";
+import { telemetryOff } from "./runtime/omo.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export type Mode = "check" | "install" | "off";
@@ -175,6 +176,7 @@ async function updateOne(id: string, spec: Spec, { mode, post, alert = post, run
 	}
 	const line = `${spec.label} ${c.current} → ${now} 올리고 재시작해요 (하던 일이 끝나면).`;
 	log(`${id} update: ${line}`);
+	for (const l of telemetryOff()) log(l);
 	post(line);
 	return { line, installed: true };
 }
@@ -227,5 +229,8 @@ if (import.meta.main) {
 		for (const id of ids) console.log(describe(await SPECS[id].check(t), SPECS[id].label));
 		if (!ids.length) console.log("업데이트를 확인할 실행 하네스가 없어요.");
 		process.exit(0);
-	} else console.log("usage: bun hub/update.ts --check-now");
+	} else if (process.argv.includes("--telemetry-off")) {
+		for (const l of telemetryOff()) console.log(l);
+		process.exit(0);
+	} else console.log("usage: bun hub/update.ts --check-now | --telemetry-off");
 }
