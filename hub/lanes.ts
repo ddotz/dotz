@@ -10,7 +10,7 @@ export { LANE_MIN_HOURS, laneJustification, checkBrief, isExpensive, DEFAULT_EST
 export type { BudgetOutcome } from "./lanegates.ts";
 export { approvesBudget } from "./lanereport.ts";
 export { RECOVERY_MAX, RECOVERY_WINDOW_MS, sessionRuntime, LaneRuntimeMismatch, runtimeMismatch } from "./lanerun.ts";
-export { launch, startQueuedLanes, startLaneQueue, parkLane, sendToLane, verifyLane, claimPrefix, stopLane, abortLane, resumeByName, restartLane, setLaneModel, compactLane, refreshLaneStats, rotateLane, handoverLane, restoreLanes, laneBusy, shutdownLanes, applyChainChange } from "./laneops.ts";
+export { launch, startQueuedLanes, startLaneQueue, parkLane, sendToLane, verifyLane, claimPrefix, stopLane, abortLane, resumeByName, restartLane, setLaneModel, setLaneWorkerModel, compactLane, refreshLaneStats, rotateLane, handoverLane, restoreLanes, laneBusy, shutdownLanes, applyChainChange } from "./laneops.ts";
 export type { LaneDelivery } from "./laneops.ts";
 export { laneSlotsNow, workerSlotsNow, laneCapacity } from "./lanelimits.ts";
 export { liveLanes, laneModels, laneSummary, laneList, turnHeader } from "./laneviews.ts";

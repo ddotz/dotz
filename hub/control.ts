@@ -13,8 +13,8 @@ import { RESTART_NOTICE_MS } from "./restart.ts";
 import type { AccountSwitch } from "./account-sticky.ts";
 import type { AccountReport } from "./usage-account.ts";
 import * as discord from "./discord.ts";
-import { keepHome } from "./lanestate.ts";
-import { abortLane, applyChainChange as applyLaneChain, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, stopLane } from "./lanes.ts";
+import { keepHome, laneWorkerModel } from "./lanestate.ts";
+import { abortLane, applyChainChange as applyLaneChain, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, setLaneWorkerModel, stopLane } from "./lanes.ts";
 import { cancelByOwner, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
 import { availableModels, cancelLogin, completeLogin, ControlError, listProviders, loginProviders, logoutProvider, type ModelInfo, pendingLogin, quota, startLogin } from "./providers.ts";
 
@@ -22,7 +22,7 @@ export { ControlError };
 
 const ORCHESTRATOR_NOTE =
 	"모델이나 추론 강도를 바꿔도 같은 세션에서 바로 이어가요. 추론 강도만 바꾸면 캐시가 그대로고, 모델을 바꾸면 다음 응답 한 번은 캐시를 새로 써서 비용이 더 들어요.";
-const WORKERS_NOTE = `Model of the task workers each lane delegates implementation, tests, renders and grind work to (models.workers, default ${DEFAULT_WORKER_MODEL}). Applies to lanes launched or resumed from now on; a lane keeps the model of its running process until it restarts.`;
+const WORKERS_NOTE = `Model of the task workers each lane delegates implementation, tests, renders and grind work to (models.workers, default ${DEFAULT_WORKER_MODEL}). Running lanes follow a change too: their next task workers start on it.`;
 const COMPACT_NOTE = "Compaction rewrites the conversation into a summary, so the prompt cache is re-written once on the next turn (about 2x the input cost for the new, shorter prefix).";
 
 const providerOf = (model: string) => model.split("/")[0];
@@ -194,13 +194,28 @@ export async function targetView(target: string) {
 	};
 }
 // Changes the target in place: model and/or effort (setModel's rules: a running lane needs force), or compacts its context.
-export async function changeTarget(target: string, change: { model?: string; thinking?: string; compact?: boolean; force?: boolean }) {
+// `workerModel` changes the model a lane's task workers run on (a lane target) or models.workers ("workers"); `byLane`
+// marks a switch the lane itself made on the owner's word (hub/lane-cli.ts), which the lane is not told about again.
+export async function changeTarget(target: string, change: { model?: string; thinking?: string; compact?: boolean; force?: boolean; workerModel?: string; byLane?: boolean }) {
 	const key = targetKey(target);
 	if (change.compact) {
 		const r = compactTarget(key === "orchestrator" ? key : key.slice(5));
 		return { ok: true, target: key, compaction: r.compaction.state, note: r.message };
 	}
+	if (change.workerModel) return target === "workers" ? setModel(target, change.workerModel) : setLaneWorker(key, change.workerModel, change.byLane === true);
 	return setModel(key, change.model, change.thinking, change.force === true);
+}
+
+async function setLaneWorker(target: string, input: string, byLane: boolean) {
+	const name = target.startsWith("lane:") ? target.slice(5) : "";
+	const lane = lanes.get(name);
+	if (!lane) throw new ControlError(`worker_model needs target "workers" or "lane:<name>" of an existing lane (got "${target}")`);
+	const split = splitThinking(input);
+	const thinking = split.thinking || parseSelector(laneWorkerModel(lane)).thinking;
+	if (!(THINKING_LEVELS as readonly string[]).includes(thinking)) throw new ControlError(`thinking must be one of ${THINKING_LEVELS.join(", ")}`);
+	const selector = selectorOf({ model: resolveModel(split.model, await availableModels()), thinking });
+	const applied = setLaneWorkerModel(name, selector, byLane);
+	return { ok: true as const, target, worker_model: selector, applied, note: applied === "live" ? `Lane ${name} starts its next task workers on ${selector}.` : `Saved. Lane ${name} runs its task workers on ${selector} when it is next resumed.` };
 }
 
 export const providersView = async () => listProviders(providersInUse());
@@ -254,7 +269,8 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 	else throw new ControlError(`target must be "orchestrator", "lanes", "workers" or "lane:<name>" of an existing lane (got "${target}")`);
 	const next = { model: model ? resolveModel(model, await availableModels()) : current.model, thinking: thinking ?? current.thinking };
 	const done = (applied: ModelChange["applied"], note: string): ModelChange => ({ ok: true, target, ...next, applied, note });
-	if (next.model === current.model && next.thinking === current.thinking) return done("live", "unchanged");
+	// models.workers re-picked as it is still pulls running lanes off their launch-time worker value (below).
+	if (next.model === current.model && next.thinking === current.thinking && target !== "workers") return done("live", "unchanged");
 	if (target === "orchestrator") {
 		updateModels("orchestrator", next);
 		const applied = applyModelChange();
@@ -266,7 +282,10 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 	}
 	if (target === "workers") {
 		updateModels("workers", next);
-		return done("next-start", `Saved as models.workers. Lanes launched or resumed from now on run their task workers on ${selectorOf(next)}; a lane already running keeps its workers' model until it restarts.`);
+		// The owner's latest word wins: running lanes drop their launch-time worker value and follow the new default.
+		const running = [...lanes.values()].filter(l => l.proc).map(l => l.name);
+		for (const name of running) setLaneWorkerModel(name, undefined);
+		return done(running.length ? "live" : "next-start", `Saved as models.workers. Lanes run their task workers on ${selectorOf(next)} from now on${running.length ? ` (running: ${running.join(", ")} start their next workers on it)` : ""}.`);
 	}
 	const name = target.slice(5);
 	const cacheKept = next.model === current.model && keepsCacheOnEffort(runtimeFor("lane").id, next.model);

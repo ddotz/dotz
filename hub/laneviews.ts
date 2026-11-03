@@ -21,7 +21,8 @@ export function laneSummary(): Array<Record<string, unknown>> {
 		model: l.model,
 		// the process runs on an API-key fallback entry (the chat bar shows "api사용중")
 		key_fallback: keyedSelector(l.activeModel),
-		worker_model: laneWorkerModel(l),
+		// what its task workers run on: the running process's (a keyed copy, a switch made since launch), else the configured one
+		worker_model: (l.proc && l.activeWorkerModel) || laneWorkerModel(l),
 		status: l.status,
 		...(l.waiting ? { waiting: l.waiting } : {}),
 		live: laneLive(l),

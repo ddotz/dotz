@@ -452,6 +452,12 @@ $("#c-model").onclick = ev => busy(null, () => {
     showMenu(anchor, items, { value: T.model, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { model: v }, `${modelName(v)} · ${T.thinking}`)) });
   });
 });
+// A session's subagent model: the same model list, saved as the lane's worker_model (its effort is kept).
+$("#c-worker").onclick = ev => busy(null, () => {
+  const anchor = ev.currentTarget, lane = S && S.lanes.find(x => x.name === laneOf(target));
+  const [base, level] = String((lane && lane.worker_model) || "").split(":");
+  return chipMenu(anchor, T => showMenu(anchor, modelPickItems(T.models, base), { value: base, onPick: v => busy(null, () => targetChange(targetName(target), { worker_model: level ? `${v}:${level}` : v }, `서브에이전트 ${modelName(v)}`)) }));
+});
 // Effort only: the levels this target's model accepts (04-state.js effortItems), the model is never touched.
 $("#c-effort").onclick = ev => busy(null, () => {
   const anchor = ev.currentTarget;
