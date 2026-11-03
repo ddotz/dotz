@@ -21,8 +21,8 @@ export function prompt(lane: Lane, text: string): void {
 	settleRevert(lane, false);
 	// Every lane turn ends with the reply-language line too: lane progress notes drifted into English ("Now a throwaway
 	// smoke script against a temp DOTZ_DIR.") because the language sat only in the launch footer.
-	const nudge = (lane.retainNext ? `\n${msg().retainNudge}` : "") + (/^\[owner via /.test(text) ? `\n${msg().ownerAnswerNudge}` : "");
-	lane.retainNext = undefined;
+	const nudge = (lane.retainNext ? `\n${msg().retainNudge}` : "") + (lane.workerNext ? `\n${lane.workerNext}` : "") + (/^\[owner via /.test(text) ? `\n${msg().ownerAnswerNudge}` : "");
+	lane.retainNext = lane.workerNext = undefined;
 	lane.proc?.send(`${text}${nudge}\n${msg().replyIn(languageName(lang()), false)}${handoffNote(`lane:${lane.name}`)}`, lane.status === "working" ? "steer" : "prompt");
 	if (lane.status === "working") return;
 	clearTimeout(lane.watchdog);

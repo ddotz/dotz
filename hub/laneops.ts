@@ -1,5 +1,6 @@
 import { DATA_DIR, log, paths, selectorOf, lanesModel, now, chainAfter, fallbackChain, parseSelector } from "./config.ts";
-import { type Lane, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus, portOf, type Record_, pendingFile } from "./lanestate.ts";
+import { type Lane, laneLive, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus, portOf, type Record_, pendingFile } from "./lanestate.ts";
+import { broadcast } from "./events.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { withReplyLine, msg, modeFile, lang } from "./i18n.ts";
@@ -241,6 +242,27 @@ export async function setLaneModel(name: string, selector: string): Promise<"liv
 	if (switchLaneInPlace(lane)) return "live";
 	await restartLane(name);
 	return "restarted";
+}
+// Sets the model a lane's task workers run on; `selector` undefined drops the lane's own value so it follows models.workers.
+// A running process keeps the worker profile it was spawned with (OMO_PROFILE is fixed at spawn), so the lane is told once:
+// steered in now when it is working, otherwise on its next prompt (no extra turn). `byLane`: the lane records a switch it
+// already made on the owner's word, so it is not told. Every view reads the new value at once (the lanes frame).
+export function setLaneWorkerModel(name: string, selector: string | undefined, byLane = false): "live" | "next-start" {
+	const lane = known(name);
+	lane.workerModel = selector;
+	persist(lane);
+	const next = laneWorkerModel(lane), was = lane.activeWorkerModel;
+	if (lane.proc) {
+		lane.activeWorkerModel = next;
+		if (!byLane && was !== next) {
+			const note = msg().workerSwitched(next);
+			if (lane.status === "working") lane.proc.send(note, "steer");
+			else lane.workerNext = note;
+		}
+	}
+	log(`lane ${name} workers -> ${next}${byLane ? " (recorded by the lane)" : ""}`);
+	broadcast({ kind: "lanes", lane: name, status: lane.status, live: laneLive(lane), was_live: laneLive(lane) });
+	return lane.proc ? "live" : "next-start";
 }
 function switchLaneInPlace(lane: Lane): boolean {
 	if (!lane.proc?.setModel || lane.chained || lane.status !== "idle" || (lane.chain && lane.chain.active !== 0)) return false;
