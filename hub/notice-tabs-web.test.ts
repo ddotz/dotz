@@ -104,8 +104,8 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 		expect(t.find(x => x.k === "ask")!.cls).toBe("nb warn");
 		expect(t.find(x => x.k === "alert")!.cls).toBe("nb err");
 		expect(t.find(x => x.k === "news")!.cls).toBe("nb");
-		const colors = await q<{ ask: string; alert: string; warn: string; err: string }>(v, `const bg = e => getComputedStyle(e).backgroundColor, dot = c => { const d = document.createElement("span"); d.className = "dot " + c; document.body.append(d); const x = bg(d); d.remove(); return x; };
-			return { ask: bg(document.querySelector('#bell-tabs .chip[data-k="ask"] .nb')), alert: bg(document.querySelector('#bell-tabs .chip[data-k="alert"] .nb')), warn: dot("att"), err: dot("err") }`);
+		const colors = await q<{ ask: string; alert: string; warn: string; err: string }>(v, `const bg = e => getComputedStyle(e).backgroundColor, ink = e => getComputedStyle(e).color, dot = c => { const d = document.createElement("span"); d.className = "dot " + c; document.body.append(d); const x = bg(d); d.remove(); return x; };
+			return { ask: ink(document.querySelector('#bell-tabs .chip[data-k="ask"] .nb')), alert: ink(document.querySelector('#bell-tabs .chip[data-k="alert"] .nb')), warn: dot("att"), err: dot("err") }`);   // the count is a plain number: the tab's tone is its text colour, not a badge fill
 		expect(colors.ask).toBe(colors.warn);
 		expect(colors.alert).toBe(colors.err);
 		expect(colors.ask).not.toBe(colors.alert);

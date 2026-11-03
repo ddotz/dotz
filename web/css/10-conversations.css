@@ -68,7 +68,7 @@
 .cv-sys .cv-sys-st[hidden] { display: none; }
 .cv-sys .cv-sys-mt { font-variant-numeric: tabular-nums; }
 /* 백그라운드 작업 줄 (소개 페이지 작업 카드): 카드 바탕, 12px 회색 이름표, 500 제목, 오른쪽 상태 알약, 끝나면 결과 파일 칩과 가득 찬 막대. 움직이는 것 없음(원칙 3·6·7·9) */
-.tl-in > .cv-sys.cv-task { display: block; align-self: stretch; width: auto; max-width: 440px; margin: 10px 0 0; padding: 12px 14px; border-radius: var(--r-card); background: var(--card); color: var(--fg); text-align: left; }
+.tl-in > .cv-sys.cv-task { display: block; align-self: stretch; width: auto; max-width: none; margin: 10px 0 0; padding: 12px 14px; border-radius: var(--r-card); background: var(--card); color: var(--fg); text-align: left; }
 .cv-task .ct-hd { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .cv-task .ct-nm { display: grid; gap: 2px; min-width: 0; }
 .cv-task .ct-lb { color: var(--fg-3); font: 400 12px/16px var(--font); }
@@ -164,6 +164,11 @@
 .bell { flex: none; display: flex; gap: 6px; margin: 0 0 8px; padding: 2px 0; overflow-x: auto; scrollbar-width: none; }
 .bell::-webkit-scrollbar { display: none; }
 .bell .chip { height: 32px; padding: 0 8px; gap: 4px; font-size: 12.5px; }
+/* a tab is its name and its count: the count is a plain number after the name, not a pill badge (proto .tabs) */
+.bell .chip .nb { min-width: 0; height: auto; padding: 0; border-radius: 0; background: transparent; color: var(--fg-3); font: 600 12px/16px var(--font); font-variant-numeric: tabular-nums; }
+.bell .chip.on .nb { color: inherit; opacity: .7; }
+.bell .chip .nb.warn { color: var(--warn); }
+.bell .chip .nb.err { color: var(--err); }
 .nb.err { background: var(--err); }
 #v-chat.bell-on .chatbox { display: none; }
 .bell-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }

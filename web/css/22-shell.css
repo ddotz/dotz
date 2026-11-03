@@ -48,14 +48,16 @@
   .sf-row.warn .sf-v { color: var(--warn); }
   .sf-row.warn .sf-bar i { background: var(--warn); }
   /* top bar: title always names the page (the sidebar carries the tabs), then search, bell, connection and usage */
-  #back { margin: 0; }
-  .appbar h1, .appbar:not(.back) h1 { display: block; flex: 1; min-width: 0; max-width: none; margin: 0; font: 700 22px/30px var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .appbar #back { margin: 0; align-self: center; }
+  .appbar h1, .appbar:not(.back) h1 { display: block; align-self: center; flex: 1; min-width: 0; max-width: none; margin: 0; font: 700 22px/30px var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .appbar.tv h1 { flex: 0 0 auto; max-width: 260px; }
   .appbar .thead { flex: 1; min-width: 0; margin: 0 4px; }
   .appbar .cmdk { display: inline-flex; align-items: center; gap: 6px; width: auto; height: 32px; margin: 0; padding: 0 6px 0 10px; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); font-size: 13px; }
   .appbar .cmdk .tx { display: inline; }
   .appbar .cmdk kbd { display: inline-block; }
   .appbar .conn, #vtog, .appbar .ustrip { margin-left: 0; }
+  /* content starts 8px under the bar, like proto .view (the 24px of settings pages and the project list was a second gap) */
+  .view, .views.pp { padding-top: 8px; }
 }
 
 /* the notice bell: the count sits on its top-right corner, as the prototype's .ib .bd */
