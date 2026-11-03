@@ -42,25 +42,24 @@ function renderProviders() {
   const box = $("#providers");
   const list = P.providers;
   const wrap = el("div", {});
-  wrap.append(el("div", { class: "sec sec-act" }, el("span", { text: "공급자" }), el("span", { class: "tag", text: `${list.filter(isConnected).length}개 연결` }),
+  wrap.append(el("div", { class: "sec sec-act" }, el("span", { text: "공급자" }),
     el("button", { class: "btn tonal sm", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
   if (!list.length) wrap.append(emptyNode("공급자가 없어요"));
   const row = p => {
     const name = p.name || p.id;
-    const on = isConnected(p), sub = [p.account || p.masked || (on ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
+    const on = isConnected(p), sub = [p.account || p.masked || (on ? "" : "연결 안 됨"), p.in_use ? "지금 사용 중" : "", p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
     // each provider opens its own screen: the login or key, and for a subscription its accounts, switch rules and 한도에 걸렸을 때
     return el("button", { class: "li tap prow", type: "button", "data-prov": p.id, onclick: () => go("provider", p.id) },
       el("span", { class: "lead" }, el("span", { class: `dot ${on ? "ok" : needsAttention(p) ? "warn" : ""}` })),
-      el("span", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
+      el("span", { class: "tx" }, el("div", { class: "hd", text: name }),
         sub ? el("div", { class: "sup", text: sub }) : null),
-      el("span", { class: "li-end" }, el("span", { class: `tag ${on ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }), icon("chev", "chev")));
+      el("span", { class: "li-end" }, el("span", { class: `tag ${on ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" })));
   };
-  // Login accounts first, then API keys; an unconfigured provider sits with the way it can be set up.
+  // One list, as the prototype draws it: the way in is its own status on the row (로그인됨 / API 키 / 연결 안 됨), and the screens that
+  // can log in come first, then the API-key ones and the providers not set up yet.
   const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);
-  for (const [title, items] of [["로그인", list.filter(isLogin)], ["API 키", list.filter(p => !isLogin(p))]]) {
-    if (!items.length) continue;
-    wrap.append(el("div", { class: "sec", text: title }), el("div", { class: "list" }, ...items.map(row)));
-  }
+  wrap.append(el("div", { class: "list" }, ...[...list.filter(isLogin), ...list.filter(p => !isLogin(p))].map(row)));
+  wrap.append(el("div", { class: "note", text: "공급자를 누르면 로그인과 API 키, 계정과 한도를 바꿔요. 모델은 어느 경로로 쓰는지 공급자 줄에서 구분해요." }));
   clear(box).append(wrap);
 }
 function addProviderDialog() {

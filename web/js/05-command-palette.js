@@ -24,7 +24,8 @@ function openPalette() {
   const inp = el("input", { class: "pal-in", type: "text", placeholder: "도구 또는 명령", autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "명령" });
   const list = el("div", { class: "pal-list", role: "listbox" });
   const out = el("div", { class: "pal-out", hidden: true });
-  const d = el("dialog", { class: "pal", "aria-label": "명령" }, el("div", { class: "pal-head" }, icon("search"), inp, el("kbd", { text: "esc" })), list, out);
+  const d = el("dialog", { class: "pal", "aria-label": "명령" }, el("div", { class: "pal-head" }, inp), list, out,
+    el("div", { class: "pal-ft", "aria-hidden": "true" }, el("span", { text: "↑↓ 이동" }), el("span", { text: "↵ 열기" }), el("span", { text: "esc 닫기" })));
   let items = [], idx = 0;
   const mark = () => {
     [...list.querySelectorAll(".pal-i")].forEach((n, i) => { n.classList.toggle("on", i === idx); n.setAttribute("aria-selected", i === idx ? "true" : "false"); if (i === idx) n.scrollIntoView({ block: "nearest" }); });

@@ -310,6 +310,11 @@ function renderSettings() {
     el("span", { class: "lead" }, icon(ic)),
     el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null),
     trail === null ? null : el("span", { class: "li-end" }, trail === undefined ? null : trail, icon("chev", "chev")));
+  // A setting with exactly two values keeps its one right-hand control: the two-value pill (docs/ui-spec.md 두 값 설정), not a tag beside a chevron.
+  const toggleRow = (ic, title, sub, label, opts, value, onPick) => el("div", { class: "li" },
+    el("span", { class: "lead" }, icon(ic)),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null),
+    liEnd(rowToggle({ label, opts, value, onPick: (v, btn) => onPick(v, btn) })));
   const sec = title => el("div", { class: "sec", text: title });
   const list = (...rows) => el("div", { class: "list" }, ...rows.filter(Boolean));
 
@@ -326,8 +331,8 @@ function renderSettings() {
       devicesRow(row),
       mnRow()),
     sec("표시"), list(
-      row(themeIc(), "화면 모드", "밝게 또는 어둡게", () => toggleTheme(), el("span", { class: "tag", text: themeIs() === "dark" ? "다크" : "라이트" })),
-      row("chat", "대화 탭", chatTabMode() === "main" ? "채팅을 열면 메인 대화부터 시작해요" : "채팅을 열면 마지막으로 보던 대화부터 시작해요", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, el("span", { class: "tag", text: chatTabMode() === "main" ? "메인" : "마지막" }))),
+      toggleRow(themeIc(), "화면 모드", "밝게 또는 어둡게", "화면 모드", [["light", "라이트"], ["dark", "다크"]], themeIs(), v => { if (v !== themeIs()) toggleTheme(); renderSettings(); }),
+      toggleRow("chat", "대화 탭", chatTabMode() === "main" ? "채팅을 열면 메인 대화부터 시작해요" : "채팅을 열면 마지막으로 보던 대화부터 시작해요", "대화 탭", [["main", "메인"], ["last", "마지막"]], chatTabMode(), v => { chatTabModeSet(v); renderSettings(); })),
     ...pushSection(),
     sec("시스템"), list(row("harness", "구성", "시스템 지도", () => go("harness"))),
     ...updateSection());
