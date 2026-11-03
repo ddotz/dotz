@@ -89,14 +89,15 @@ function targetCard(key, title, status, cur, confirmText, extra = {}) {
     if (p.thinking != null && p.thinking !== cur.thinking) change.thinking = p.thinking;
     await putModel(key, title, change, confirmText, `${modelName(model)} · ${thinkKo(thinking)}`);
   }) }, "적용");
-  return el("section", { class: "card mt-card", "data-target": key, "aria-label": title },
+  return el("section", { class: "mt-card", "data-target": key, "aria-label": title },
     el("div", { class: "mt-head" }, status ? el("span", { class: `dot ${statusTone(status)}` }) : null, el("span", { class: "t", text: title }), extra.sub ? el("span", { class: "sup", text: extra.sub }) : null, el("span", { class: "sp" }), ...(extra.tags || [])),
-    el("div", { class: "mt-pick" },
-      el("div", { class: "mt-model" }, modelField),
-      el("div", { class: "mt-eff" }, effField)),
-    info && !info.reasoning && thinking && thinking !== "off" ? el("div", { class: "sup mt8", text: "이 모델은 추론 강도를 쓰지 않아요" }) : null,
-    dirty ? el("div", { class: "btns mt-apply" }, el("button", { class: "btn text", type: "button", onclick: () => { delete pending[key]; renderModels(); } }, "되돌리기"), apply) : null,
-    ...(extra.body || []));
+    el("div", { class: "list mt-list" },
+      el("div", { class: "mt-pick" },
+        el("div", { class: "mt-model" }, modelField),
+        el("div", { class: "mt-eff" }, effField)),
+      info && !info.reasoning && thinking && thinking !== "off" ? el("div", { class: "sup mt-note", text: "이 모델은 추론 강도를 쓰지 않아요" }) : null,
+      dirty ? el("div", { class: "btns mt-apply" }, el("button", { class: "btn text", type: "button", onclick: () => { delete pending[key]; renderModels(); } }, "되돌리기"), apply) : null,
+      ...(extra.body || [])));
 }
 function renderModels() {
   const box = $("#models");
@@ -156,9 +157,9 @@ function inUseSection() {
       el("div", { class: "mt-use-rest" }, el("span", { class: "mt-use-m", title: model, text: model }), why ? fbTag(why, r.configured) : null),
       open ? el("button", { class: "mt-use-act", type: "button", title: "바꾸기", "aria-label": `${r.label} 바꾸기`, onclick: open }, icon("pencil")) : null);
   };
-  return el("section", { class: "card mt-card mt-use", "data-target": "in-use", "aria-label": "실제로 쓰는 모델" },
+  return el("section", { class: "mt-card mt-use", "data-target": "in-use", "aria-label": "실제로 쓰는 모델" },
     el("div", { class: "mt-head" }, el("span", { class: "t", text: "실제로 쓰는 모델" }), el("span", { class: "sup", text: "지금 돌고 있는 모델이에요" })),
-    el("div", { class: "mt-use-list" }, ...rows.map(row)));
+    el("div", { class: "list mt-use-list" }, ...rows.map(row)));
 }
 // 답장 기본값: the reply model of every app that has none of its own (hub/reply-model-choices.ts setReplyDefault).
 function repliesCard() {
@@ -169,8 +170,8 @@ function repliesCard() {
     try { await api("/api/models", "PUT", { target: "replies", model: v }); toast("적용했어요"); await loadModels(true); }
     catch (e) { toast(e.message || "저장하지 못했어요", true); }
   }));
-  return el("section", { class: "card mt-card", "data-target": "replies", "aria-label": "답장 기본값" },
+  return el("section", { class: "mt-card", "data-target": "replies", "aria-label": "답장 기본값" },
     el("div", { class: "mt-head" }, el("span", { class: "t", text: "답장 기본값" }), el("span", { class: "sup", text: "앱마다 따로 고르지 않은 답장 초안" })),
-    el("div", { class: "mt-pick" }, el("div", { class: "mt-model" }, pick)),
+    el("div", { class: "list mt-list" }, el("div", { class: "mt-pick" }, el("div", { class: "mt-model" }, pick))),
     el("div", { class: "note", text: "앱 설정의 답장 모델이 있으면 그 모델이 먼저예요. 답장 초안은 API 키로 넘어가지 않아요." }));
 }

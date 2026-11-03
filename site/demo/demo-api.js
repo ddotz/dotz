@@ -678,7 +678,10 @@
       rooms: { label: "대화", editable: true, hint: "", fields: [], items: [{ id: "c1", name: "나", kind: "main", values: {}, set: {} }] },
       notify: { ask: true, alert: true, result: true, news: true, conv: true, log: true },
     },
-    "/api/runtimes": { runtimes: [] },
+    "/api/runtimes": { runtimes: [
+      { id: "omo", label: "OmO", installed: true, version: "0.14.2", roles: ["orchestrator", "lanes"], hasAdapter: true },
+      { id: "claude", label: "Claude Code", installed: true, version: "2.1.9", roles: [], hasAdapter: true },
+    ] },
     "/api/messengers": { items: [
       { id: "discord", label: "Discord", enabled: true, state: "ok", configured: true },
       { id: "jandi", label: "JANDI", enabled: true, state: "ok", configured: true },
@@ -696,8 +699,11 @@
     "/api/web-access": { mode: "tailscale", hostname: "", team: "", aud: "", token_set: false, tunnel: { state: "off" }, devices: 2, cloudflared_found: true },
     "/api/push/gateways": { items: [] },
     "/api/push": { subscribed: false },
-    "/api/update": { running: { kind: "git", branch: "main", commit: { sha: "a".repeat(40), short: "aaaaaaa", date: new Date(0).toISOString() } }, disk: { kind: "git", branch: "main", commit: { sha: "a".repeat(40), short: "aaaaaaa", date: new Date(0).toISOString() } }, settings: { auto_check: true, auto_apply: false, at: "09:00" }, busy: [] },
-    "/api/harness/update": {},
+    "/api/update": { running: { kind: "git", branch: "main", commit: { sha: "a".repeat(40), short: "aaaaaaa", date: new Date(Date.now() - 3 * 864e5).toISOString() } }, disk: { kind: "git", branch: "main", commit: { sha: "a".repeat(40), short: "aaaaaaa", date: new Date(Date.now() - 3 * 864e5).toISOString() } }, settings: { auto_check: true, auto_apply: false, at: "09:00" }, busy: [] },
+    "/api/harness/update": { checking: false, harnesses: [
+      { id: "omo", name: "OmO", current: "0.14.2", latest: "0.14.2", available: false, installMethod: "bun-global", checkedAt: new Date(Date.now() - 36e5).toISOString() },
+    ] },
+    "/api/push/classes": { classes: { ask: true, alert: true, result: true, news: true, conv: true, log: false } },
     "/api/context": { processes: [
       { name: "orchestrator", kind: "orchestrator", running: true, percent: 42, tokens: 84000 },
       { name: "site-check", kind: "lane", running: true, percent: 83, tokens: 166000 },

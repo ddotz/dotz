@@ -109,7 +109,7 @@ async function updBarTick() {
   UB.timer = 0;
   const r = await fetch("/api/update", { cache: "no-store" }).then(x => (x.ok ? x.json() : null), () => null);
   UB.down = !r;
-  if (r) { UPD.info = r; paintUpdBadge(); if (current === "settings") renderSettings(); }
+  if (r) { UPD.info = r; paintUpdBadge(); if (inSettings()) renderSettings(); }
   paintUpdBar();
   const f = UPD.info && UPD.info.flow;
   if (UB.down || (f && UB_ACTIVE.includes(f.phase))) UB.timer = setTimeout(updBarTick, 2000);
@@ -125,7 +125,7 @@ async function loadUpdate() {
   if (UPD.info.flow && UB_ACTIVE.includes(UPD.info.flow.phase) && !UB.timer) updBarTick();
   if (UPD.info.job && UPD.info.job.status === "running") UPD.timer = setTimeout(loadUpdate, 1500);
   else if (HV.info && (HV.info.checking || hvJob())) HV.timer = setTimeout(loadUpdate, 2000);
-  if (current === "settings") renderSettings();
+  if (inSettings()) renderSettings();
 }
 async function hvCheck(btn) {
   await busy(btn, async () => {
@@ -183,10 +183,10 @@ async function updWaitTick() {
     UPD.info = info;
     paintUpdBadge();
     toast(`다시 시작했어요 · 지금 버전 ${info.running && info.running.commit ? info.running.commit.short : "?"}`);
-    if (current === "settings") renderSettings();
+    if (inSettings()) renderSettings();
     return;
   }
-  if (info) { UPD.info = info; paintUpdBadge(); if (current === "settings") renderSettings(); }
+  if (info) { UPD.info = info; paintUpdBadge(); if (inSettings()) renderSettings(); }
   setTimeout(updWaitTick, 2000);
 }
 const hvCanUpd = h => h.available && (h.installMethod === "bun-global" || h.installMethod === "omp-update");
@@ -212,7 +212,7 @@ function hvSwitcher(h) {
   if (!rt || !others.length) return null;
   return el("button", { class: "btn tonal inrow", type: "button", "aria-label": `${h.name} 바꾸기`, "aria-haspopup": "listbox", "aria-expanded": "false", title: "실행 하네스 바꾸기", onclick: ev => showMenu(ev.currentTarget, others, { onPick: id => rtFlow(hvRt().find(x => x.id === id)) }) }, icon("drop"));
 }
-const hvNote = text => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text })));
+const hvNote = text => el("div", { class: "note", text });
 function hvJobLine(j) {
   if (j.status === "running" || j.status === "deferred") return el("div", { class: "li" }, el("span", { class: "lead" }, el("span", { class: "dot pri", "aria-hidden": "true" })), el("span", { class: "tx" }, el("div", { class: "hd", text: j.status === "deferred" ? "작업이 끝나면 업데이트해요" : `업데이트 중 · ${j.phase}` }), el("div", { class: "sup", text: j.message })));
   return el("div", { class: `upd-box ${j.status === "updated" ? "ok" : j.status === "failed" ? "err" : ""}` }, el("div", { class: "upd-msg", text: j.message }),
@@ -239,17 +239,16 @@ function hvSection() {
   });
   if (pending) list.push(hvJobLine(pending));
   else for (const h of hs) if (h.job && h.job.status !== "current") list.push(hvJobLine(h.job));
-  list.push(hvNote("6시간마다 새 버전을 확인해요. 업데이트는 하던 일이 끝난 뒤에 설치하고, 새 버전으로 다시 시작해요. 설치가 실패하면 지금 버전을 그대로 써요."));
-  if (running.length) list.push(hvNote("바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요."));
-  return [el("div", { class: "sec sec-act" }, el("span", { text: "실행 하네스" }), hvNew() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null,
-    el("button", { class: "btn tonal sm", type: "button", disabled: !!(HV.info && HV.info.checking), onclick: ev => hvCheck(ev.currentTarget) }, "확인")), el("div", { class: "list" }, ...list)];
+  const notes = [hvNote("6시간마다 새 버전을 확인해요. 업데이트는 하던 일이 끝난 뒤에 설치하고, 새 버전으로 다시 시작해요. 설치가 실패하면 지금 버전을 그대로 써요.")];
+  if (running.length) notes.push(hvNote("바꾼 뒤에는 어시스턴트와 세션을 다시 시작해야 적용돼요. 바꾸기 전에 호환성을 검사해요."));
+  return [el("div", { class: "sec sec-act" }, el("span", { text: "하네스 버전" }), hvNew() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null,
+    el("button", { class: "btn tonal sm", type: "button", disabled: !!(HV.info && HV.info.checking), onclick: ev => hvCheck(ev.currentTarget) }, "확인")), el("div", { class: "list" }, ...list), ...notes];
 }
 function updateSection() {
   const i = UPD.info;
   const liDot = (title, sub) => el("div", { class: "li" }, el("span", { class: "lead" }, el("span", { class: "dot pri", "aria-hidden": "true" })), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null));
   const li = (title, sub, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null), trail.length ? liEnd(...trail) : null);
-  const head = el("div", { class: "sec", id: "upd-sec" }, "업데이트", updRestartPending() ? el("span", { class: "tag warn upd-new", text: "재시작 필요" }) : updAvailable() ? el("span", { class: "tag warn upd-new", text: "새 버전" }) : null);
-  if (!i || i.error) return [head, el("div", { class: "list" }, li("앱 버전", i ? i.error : "불러오는 중…")), ...hvSection()];
+  if (!i || i.error) return [el("div", { class: "list", id: "upd-sec" }, li("앱 버전", i ? i.error : "불러오는 중…"))];
   const { running: run, disk, job, settings: s } = i;
   const jobRunning = job && job.status === "running";
   const { pending, c } = updState(i);
@@ -275,7 +274,7 @@ function updateSection() {
     liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(s.auto_check), "aria-label": "자동 확인", onclick: () => updSet({ auto_check: !s.auto_check }) }))),
     el("div", { class: "li" }, el("span", { class: "lead" }, icon("download")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 버전 자동 적용" }), el("div", { class: "sup", text: "새 버전을 받아 테스트하고, 하던 일이 끝나면 다시 시작해요. 테스트가 실패하면 지금 버전을 그대로 두고 알려요. 이 컴퓨터에서 고친 코드는 새 버전 위에 다시 얹고, 안 되면 따로 보관해요." })),
     liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!s.auto_apply), "aria-label": "새 버전 자동 적용", onclick: () => updSet({ auto_apply: !s.auto_apply }) })))];
-  return [head, el("div", { class: "list" }, ...rows, ...prefs), ...hvSection()];
+  return [el("div", { class: "list", id: "upd-sec" }, ...rows, ...prefs)];
 }
 
 /* ---------- settings: 앱 알림 per class (hub/notify-route.ts pushClasses; GET/PUT /api/push/classes) ---------- */
@@ -287,7 +286,7 @@ const NOTIFY_CLASSES = [["ask", "답변 필요", "질문 · 승인 · 로그인"
 const notifyRows = (on, set, only) => NOTIFY_CLASSES.filter(([k]) => !only || only.includes(k)).map(([k, label, desc]) => el("div", { class: "li", "data-notify": k }, el("span", { class: "tx" }, el("div", { class: "hd", text: label }), el("div", { class: "sup", text: desc })),
   liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on(k)), "aria-label": `${label} 알림`, "data-k": k, onclick: () => set(k, !on(k)) }))));
 const APPN = { v: null, asked: false };
-async function appNotifyLoad() { APPN.asked = true; try { APPN.v = (await api("/api/push/classes")).classes; } catch { APPN.v = null; } if (current === "settings") renderSettings(); }
+async function appNotifyLoad() { APPN.asked = true; try { APPN.v = (await api("/api/push/classes")).classes; } catch { APPN.v = null; } if (inSettings()) renderSettings(); }
 async function appNotifySet(k, on) {
   const was = APPN.v[k];
   APPN.v = { ...APPN.v, [k]: on }; renderSettings();
@@ -301,39 +300,8 @@ function appNotifyRows() {
 }
 
 function renderSettings() {
-  const box = $("#settings");
+  const page = Object.hasOwn(SET_PAGE, current) ? SET_PAGE[current] : null;
+  const box = $(page ? `#${current}` : "#settings");
   if (box.contains(document.activeElement) && openMenu) return;
-  const om = M && M.orchestrator;
-  const connected = P ? P.providers.filter(isConnected).length : null;
-  // One settings row: lead icon, a title with its one-line description, then the right slot (a value or a status tag) and the chevron.
-  const row = (ic, title, sub, onclick, trail) => el("button", { class: "li tap", type: "button", onclick: ev => onclick(ev.currentTarget) },
-    el("span", { class: "lead" }, icon(ic)),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null),
-    trail === null ? null : el("span", { class: "li-end" }, trail === undefined ? null : trail, icon("chev", "chev")));
-  // A setting with exactly two values keeps its one right-hand control: the two-value pill (docs/ui-spec.md 두 값 설정), not a tag beside a chevron.
-  const toggleRow = (ic, title, sub, label, opts, value, onPick) => el("div", { class: "li" },
-    el("span", { class: "lead" }, icon(ic)),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null),
-    liEnd(rowToggle({ label, opts, value, onPick: (v, btn) => onPick(v, btn) })));
-  const sec = title => el("div", { class: "sec", text: title });
-  const list = (...rows) => el("div", { class: "list" }, ...rows.filter(Boolean));
-
-  clear(box).append(
-    sec("모델"), list(
-      row("model", "모델 · 폴백", om ? `${modelName(om.model)} · ${thinkKo(om.thinking)}` : "", () => openModels("orchestrator")),
-      row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
-      row("usage", "사용량", "", () => go("usage")),
-      row("key", "API 월 한도", budgetSub(), () => budgetDialog()),
-      row("context", "컨텍스트", "", () => go("context"))),
-    sec("연결"), list(
-      msHubRow(),
-      webAccessRow(row),
-      devicesRow(row),
-      mnRow()),
-    sec("표시"), list(
-      toggleRow(themeIc(), "화면 모드", "밝게 또는 어둡게", "화면 모드", [["light", "라이트"], ["dark", "다크"]], themeIs(), v => { if (v !== themeIs()) toggleTheme(); renderSettings(); }),
-      toggleRow("chat", "대화 탭", chatTabMode() === "main" ? "채팅을 열면 메인 대화부터 시작해요" : "채팅을 열면 마지막으로 보던 대화부터 시작해요", "대화 탭", [["main", "메인"], ["last", "마지막"]], chatTabMode(), v => { chatTabModeSet(v); renderSettings(); })),
-    ...pushSection(),
-    sec("시스템"), list(row("harness", "구성", "시스템 지도", () => go("harness"))),
-    ...updateSection());
+  clear(box).append(...(page ? page.build() : settingsList(go)));
 }
