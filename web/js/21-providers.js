@@ -33,9 +33,10 @@ function renderProviders() {
     const out = p.auth === "api_key" ? "키 삭제" : "로그아웃";
     const rm = canLogout ? el("button", { class: "ib", type: "button", title: out, "aria-label": out, onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, icon("trash")) : null;
     return el("div", { class: "li prow" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
-      el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
+      el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null,
+          el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" })),
         sub ? el("div", { class: "sup", text: sub }) : null),
-      liEnd(el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }), act, rm));
+      liEnd(act, rm));
   };
   // Login accounts first, then API keys; an unconfigured provider sits with the way it can be set up.
   const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);
