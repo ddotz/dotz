@@ -173,7 +173,8 @@ button.conn:disabled { cursor: default; }
 /* buttons: one system for every page and card. Kind: primary (accent fill, the default), secondary (.tonal), quiet (.text), danger;
    size: md (default, 40px) and .sm (36px). A touch screen gets a 44px target. Card buttons keep their own class names (.dc-act,
    .dc-go, .dc-back, .dc-manual) and are aliased here, so the look is defined once. */
-:root { --btn-h: 40px; --btn-h-sm: 36px; --btn-hit: 44px; }
+/* size tiers (docs/ui-spec.md 버튼): 기본 --btn-h 40, 작은 --btn-h-sm 36 (.sm), 행 안 --btn-h-row 32 (.inrow). --btn-hit is the touch target, not a tier. */
+:root { --btn-h: 40px; --btn-h-sm: 36px; --btn-h-row: 32px; --btn-hit: 44px; }
 .ib { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); padding: 0; }
 .ib:hover { background: var(--hover); color: var(--fg); }
 .ib.pri { background: var(--accent); color: var(--on-accent); border-radius: 50%; }
@@ -192,7 +193,17 @@ button.conn:disabled { cursor: default; }
 .btn.danger:hover { background: color-mix(in srgb, var(--err) 12%, transparent); opacity: 1; }
 .btn.danger.fill { background: var(--err); color: #fff; padding: 0 12px; }
 .btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+/* 행 안 tier (docs/ui-spec.md 버튼, 설정 행): the button or field in the right slot of a row. 32px high, 13px; on a touch screen the box stays 32px and ::after widens the hit area to 44px. */
+.btn.inrow { position: relative; height: var(--btn-h-row); padding: 0 12px; font-size: 13px; }
+.btn.inrow.text, .btn.inrow.danger { padding: 0 10px; }
 @media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back, .dc-manual { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }
+@media (pointer: coarse), (max-width: 639px) { .btn.inrow { height: var(--btn-h-row); min-height: 0; } .btn.inrow::after { content: ""; position: absolute; inset: -6px 0; } }
+/* settings row (docs/ui-spec.md 설정 행): the existing .li (lead icon, .tx = .hd title + .sup one-line description) plus ONE right slot, .li-end,
+   vertically centred by .li's align-items. The slot holds one control: a 행 안 button, a .hs-sw switch, a .sel / .fi at a fixed width, or a value.
+   A row-level add action is not a row: it is a text or tonal .sm button in the section header (.sec.sec-act, 06-harness.css). */
+.li > .li-end { flex: none; display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.li-end .fi, .li-end .sel { width: 160px; height: var(--btn-h-row); }
+@media (pointer: coarse) { .li-end .fi, .li-end .sel { height: var(--btn-h-sm); } }
 
 /* cards, lists, tags, bars */
 .col { display: flex; flex-direction: column; gap: 12px; }
@@ -217,7 +228,7 @@ code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom
 .empty { padding: 32px 16px; text-align: center; color: var(--fg-3); font-size: 12px; }
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
 .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
-.dot.pri { background: var(--accent); animation: pulse 2.4s ease-in-out infinite; }
+.dot.pri { background: var(--accent); }
 .dot.att { background: var(--warn); }
 @keyframes pulse { 50% { opacity: .5; } }
 .tag { display: inline-flex; align-items: center; flex: none; height: 20px; padding: 0 6px; border-radius: 4px; background: var(--layer); color: var(--fg-2); font-size: 11px; line-height: 16px; font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
@@ -1046,7 +1057,6 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .subsum[aria-expanded="true"] .chev { transform: rotate(180deg); }
 .sublist { max-height: 196px; overflow-y: auto; padding: 4px; }
 .subrow { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; font-size: 13px; line-height: 20px; text-align: left; }
-.subrow .dot.pri, .subsum .dot.pri { animation: none; }
 .subrow .nm { display: flex; flex-direction: column; }
 .subrow .nm b { font-size: 14px; line-height: 22px; }
 .subrow .muted { color: var(--fg-3); font-size: 12.5px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; }
@@ -1247,7 +1257,6 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hm-down .ic { width: 14px; height: 14px; }
 
 /* a task row stays quiet while it runs (no pulsing dot) and, once finished, carries its result file as a chip under the row (08-home.js workRow) */
-.hr .dot.pri { animation: none; }
 .hr.hrx { flex-wrap: wrap; }
 .hrx-m:has(+ .hrx-f) { padding-right: 16px; }
 .hrx-f { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; padding: 0 16px 14px 38px; }
@@ -1471,7 +1480,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .dc-wait-go { flex: none; font-weight: 600; }
 .dc-hd { flex: none; display: flex; align-items: flex-start; gap: 8px; padding: 12px 8px 8px 16px; }
 .dc-tt { flex: 1; min-width: 0; }
-.dc-ey { display: block; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 400; }
+.dc-ey { display: block; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
 .dc-q { margin-top: 2px; font-size: 15px; line-height: 22px; font-weight: 600; }
 .dc-q p { margin: 0; }
 .dc-decide { margin: 6px 0 4px; font: 400 14px/21px var(--font); letter-spacing: 0; }
@@ -1491,23 +1500,25 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .dc-chip.got { color: var(--fg); }
 .dc-chip.on { background: var(--fg); color: var(--bg); }
 .dc-sub, .dcm-sub { padding: 2px 4px 0; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 600; }
-.dc-row, .dcm-row { flex: none; display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 44px; padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
-.dc-row:hover:not(:disabled), .dcm-row:hover:not(:disabled) { background: var(--hover); }
+.dc-row, .dcm-row { flex: none; display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 48px; padding: 10px 12px; border: 0; border-radius: 12px; background: var(--card); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.dcm-row { background: var(--layer); }
+.dc-row:hover:not(:disabled), .dcm-row:hover:not(:disabled) { background: var(--card-hover); }
 .dc-row:active:not(:disabled), .dcm-row:active:not(:disabled) { background: var(--active); }
 .dc-row:disabled, .dcm-row:disabled { cursor: default; }
 .dc-row:disabled:not(.on), .dcm-row:disabled:not(.on) { opacity: .6; }
 
 .dc-row.on, .dcm-row.on { background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
-.dc-key { flex: none; display: grid; place-items: center; min-width: 20px; height: 24px; padding: 0; color: var(--fg-3); font-size: 13px; line-height: 24px; font-weight: 400; font-variant-numeric: tabular-nums; }
-.dc-row.rec .dc-key, .dcm-row.rec .dc-key { color: var(--accent); font-weight: 600; }
+.dc-key { flex: none; display: grid; place-items: center; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 6px; background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dcm-row .dc-key { background: var(--card); }
+.dc-row.rec .dc-key, .dcm-row.rec .dc-key { background: var(--accent); color: var(--on-accent); }
 .dc-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.dc-lb { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 15px; line-height: 24px; font-weight: 500; }
+.dc-lb { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 15px; line-height: 24px; font-weight: 600; }
 .dc-tag { flex: none; padding: 0 6px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 11px; line-height: 18px; font-weight: 600; }
 .dc-ds { color: var(--fg-3); font-size: 13px; line-height: 20px; }
-.dc-draft { flex: none; display: flex; flex-direction: column; gap: 4px; margin: 0 0 4px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.dc-draft { flex: none; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 12px; background: var(--card); }
 .dc-dr-h { display: flex; gap: 8px; font-size: 13px; line-height: 20px; }
 .dc-dr-k { flex: none; color: var(--fg-3); }
-.dc-dr-v { min-width: 0; color: var(--fg); font-weight: 500; }
+.dc-dr-v { min-width: 0; color: var(--fg); font-weight: 600; }
 .dc-dr-b { max-height: min(22dvh, 180px); margin-top: 2px; overflow-y: auto; overscroll-behavior: contain; color: var(--fg); font-size: 14px; line-height: 22px; white-space: pre-wrap; }
 .dc-edit { flex: none; display: flex; flex-direction: column; gap: 8px; }
 .dc-ctx { display: flex; align-items: center; gap: 8px; }
@@ -1534,9 +1545,8 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .td-ch { flex: none; width: 16px; height: 16px; color: var(--fg-3); transition: transform .15s; }
 .td-bar[aria-expanded="true"] .td-ch { transform: rotate(180deg); }
 .td-list { max-height: min(40dvh, 320px); padding: 0 12px 10px; overflow-y: auto; overscroll-behavior: contain; }
-.td-ph { margin: 10px 0 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 400; }
-.td-r { display: flex; align-items: flex-start; gap: 10px; padding: 4px 0; color: var(--fg-2); font-size: 13.5px; line-height: 20px; }
-.tr-act .td-tx { color: var(--fg); font-weight: 500; }
+.td-ph { margin: 8px 0 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 600; }
+.td-r { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; font-size: 13.5px; line-height: 20px; }
 .td-tx { min-width: 0; }
 .tr-done .td-tx { color: var(--fg-3); }
 .tr-drop .td-tx { color: var(--fg-3); text-decoration: line-through; }
@@ -1876,7 +1886,6 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 #v-chat:has(#bell-tabs:not([hidden])) #tl > .bm.alert .mn::before { background: var(--fg-3); opacity: .6; }
 
 /* the result file of a finished worker under its system line (11-todo-strip.js hcSysFiles); a running line does not pulse */
-.cv-sys .dot.pri { animation: none; }
 .tl-in > .cv-sys-f { display: flex; flex-wrap: wrap; justify-content: center; align-self: center; gap: 6px; max-width: 100%; margin: 6px auto 0; }
 .cv-sys-f .fatt { height: 44px; max-width: 100%; background: var(--card); text-decoration: none; cursor: pointer; }
 .cv-sys-f .fatt:hover { background: var(--hover); }
@@ -2527,24 +2536,6 @@ a.dr-att:active { background: var(--active); }
 .mr-filter .mr-f { height: 28px; padding: 0 10px; font-size: 12.5px; color: var(--fg-2); background: var(--layer); }
 .mr-filter .mr-f.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
 .mr-filter .mr-fn { font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
-
-/* a briefing-shaped answer in chat (11-resultcard.js hcBriefNode): schedule rows with a muted time column, the mail line as a chip, counts as numbers */
-.hcb { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; min-width: 0; font-size: 15.5px; line-height: 28px; }
-.hcb > .md { align-self: stretch; }
-.hcb-card { align-self: stretch; max-width: 440px; padding: 12px 16px 4px; border-radius: var(--r-card); background: var(--card); }
-.hcb-hd { display: flex; align-items: center; gap: 8px; min-height: 24px; margin-bottom: 4px; }
-.hcb-hd .tag { height: 22px; padding: 0 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
-.hcb-h { min-width: 0; color: var(--fg-2); font: 500 13px/20px var(--font); }
-.hcb-rows { display: grid; }
-.hcb-r { display: grid; grid-template-columns: 52px minmax(0, 1fr); align-items: baseline; min-height: 44px; padding: 10px 0; font-size: 15px; line-height: 24px; }
-.hcb-r + .hcb-r { border-top: 1px solid var(--line); }
-.hcb-t { color: var(--fg-3); font-size: 13.5px; font-variant-numeric: tabular-nums; }
-.hcb-ti { min-width: 0; overflow-wrap: anywhere; }
-.hcb-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 32px; padding: 4px 14px 4px 12px; border-radius: 999px; background: var(--card); color: var(--fg-2); font-size: 14px; line-height: 22px; }
-.hcb-chip .ic { color: var(--accent); }
-.hcb-ln { color: var(--fg-2); font-size: 14px; line-height: 22px; }
-.hcb-n { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
-.hcb-h .hcb-n { color: var(--fg-2); }
 
 /* 모니터링 > 앱 > 카카오톡 (web/js/30-kakao.js): the room column (rooms to watch + the watched ones) and a KakaoTalk-style chat.
    From 1100px the column sits beside the chat; below it they are two screens (.kk.chat-open = the chat). Colors are the --kk-* tokens (01-tokens.css). */
