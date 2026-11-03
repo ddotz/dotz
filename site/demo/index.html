@@ -53,7 +53,9 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
 <div class="app" id="app">
   <aside class="side">
     <button class="brand" id="brand" type="button" aria-label="홈으로"><span class="logo"></span><span id="brand-name">dotz</span></button>
+    <button class="gw" id="gwpick" type="button" aria-haspopup="dialog" aria-label="컴퓨터 바꾸기"><span class="gw-n" id="gw-name">이 컴퓨터</span></button>
     <nav class="rail" id="nav" aria-label="메뉴"></nav>
+    <div class="sfoot"><button class="sf-row" id="sf-usage" type="button" hidden></button></div>
   </aside>
   <div class="main">
     <header class="appbar" id="appbar">
@@ -64,13 +66,14 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
       <button class="conn" id="conn" type="button" hidden>연결 끊김 · 다시 연결 중</button>
       <button class="ib" id="vtog" type="button" hidden></button>
       <button class="ib cmdk" id="cmdk" type="button" aria-label="명령"></button>
+      <button class="ib bellbtn" id="bell" type="button" aria-label="알림"><span class="bd" id="bell-n" hidden></span></button>
       <button class="ustrip" id="ustrip" type="button" hidden></button>
     </header>
     <div class="gban" id="gban" role="status" hidden><span class="dot" id="gban-dot"></span><span class="tx" id="gban-tx"></span><button class="x" id="gban-x" type="button" aria-label="재시작 알림 닫기">×</button></div>
     <button class="trban" id="trban" type="button" hidden></button>
     <div class="oerr" id="oerr" role="alert" hidden><span class="dot warn"></span><span class="tx" id="oerr-tx"></span><button class="btn" id="oerr-btn" type="button">오케스트레이터 다시 시작</button></div>
     <div class="views" id="views">
-      <section class="view" id="v-home" hidden><div id="home-now"></div><div class="sec" id="home-sec">상태</div><div id="home-cards"></div><div id="home-custom"></div></section>
+      <section class="view" id="v-home" hidden><div id="home-now"></div><div id="home-cards"></div><div id="home-ended"></div></section>
       <section class="view" id="v-project" hidden></section>
       <section class="view" id="v-projects" hidden></section>
       <section class="view fill" id="v-monitoring" hidden>
