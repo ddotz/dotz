@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "71a23317fb62";
+const WEB_BUILD = "7bba98a50337";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -64,7 +64,7 @@ const ICONS = {
   apps: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
   pick: "M6 3l13 8-5.6 1.6L10 19zM13 13l4 6",
 };
-const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", projects: "projects", project: "projects", lanes: "lanes", monitoring: "activity", apps: "apps", harness: "harness", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context", discord: "discord", messengers: "chat", devices: "key", webaccess: "open" };
+const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", projects: "projects", project: "projects", lanes: "lanes", monitoring: "activity", apps: "apps", harness: "harness", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context", discord: "discord", jandi: "chat", slack: "chat", telegram: "chat", devices: "key", webaccess: "open" };
 const icon = (n, cls = "") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", `ic ${cls}`.trim()); s.setAttribute("aria-hidden", "true"); const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", ICONS[n]); s.append(p); return s; };
 
 /* ---------- formatting ---------- */
@@ -93,6 +93,58 @@ const lsJson = (key, fallback) => { try { return JSON.parse(localStorage.getItem
     if (res.status === 403 && res.headers.get("x-dotz-pair") && location.pathname !== "/pair") location.replace("/pair");
     return res;
   };
+}
+
+// Motion with a cause (web/DESIGN.md Motion). Web Animations on transform/opacity only, so nothing is laid out again and nothing
+// is left behind when an animation ends; with prefers-reduced-motion every helper is an instant change.
+const M_EASE = "cubic-bezier(.2, .7, .2, 1)";
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const M_FROM = { rise: "translateY(8px)", top: "translateY(-8px)", fade: "none", side: "translateX(12px)" };
+
+// An element that just arrived: a card rising in, a new row sliding in at the top of its list, a sheet opening.
+function motionIn(el, from = "rise", ms = 220) {
+  if (!el || !el.animate || reducedMotion()) return;
+  el.animate([{ opacity: 0, transform: M_FROM[from] || M_FROM.rise }, { opacity: 1, transform: "none" }], { duration: ms, easing: M_EASE });
+}
+
+// An element about to leave: resolves when it is gone from view, so the caller removes or hides it then.
+function motionOut(el, to = "fade", ms = 150) {
+  if (!el || !el.animate || reducedMotion()) return Promise.resolve();
+  const a = el.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: M_FROM[to] || "none" }], { duration: ms, easing: M_EASE, fill: "forwards" });
+  return a.finished.then(() => a, () => a);
+}
+
+// The same element changes state in place (보내기 -> 보냈어요, a task finishing): change() runs at once, the new look fades up.
+function motionSwap(el, change, ms = 200) {
+  change();
+  if (!el || !el.animate || reducedMotion()) return;
+  el.animate([{ opacity: .35, transform: "scale(.985)" }, { opacity: 1, transform: "none" }], { duration: ms, easing: M_EASE });
+}
+
+// A count that changed: only the digits that differ roll in. textContent stays the plain number.
+function rollCount(el, next) {
+  if (!el) return;
+  const now = String(next ?? ""), was = el.textContent;
+  if (now === was) return;
+  if (reducedMotion() || !was || !/^\d+$/.test(now) || !/^\d+$/.test(was)) { el.textContent = now; return; }
+  const up = Number(now) > Number(was), pad = was.padStart(now.length, " ");
+  el.textContent = "";
+  for (let i = 0; i < now.length; i++) {
+    const d = document.createElement("span");
+    d.className = "m-dg"; d.textContent = now[i]; el.append(d);
+    if (pad[pad.length - now.length + i] !== now[i] && d.animate)
+      d.animate([{ opacity: 0, transform: `translateY(${up ? "60%" : "-60%"})` }, { opacity: 1, transform: "none" }], { duration: 220, easing: M_EASE });
+  }
+}
+
+// Which of these keys were not there on the last paint of the same list. The first paint returns none, so opening a screen
+// never animates what was already there; only items that really arrive do.
+function freshKeys(store, keys) {
+  const seeded = store.size > 0 || store.seeded, out = new Set();
+  for (const k of keys) if (seeded && !store.has(k)) out.add(k);
+  store.clear(); for (const k of keys) store.add(k);
+  store.seeded = true;
+  return out;
 }
 
 /* ---------- basic markdown (input is escaped before any markup is produced) ---------- */
@@ -488,9 +540,9 @@ const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : 
 // 대화 or 로그 for a target: the main chat and projects share one global choice; a session (lane:<name>) remembers its own and starts in 대화.
 const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const lastChatView = () => viewFor(target);
-const SUB = new Set(["models", "providers", "usage", "context", "harness", "discord", "messengers", "devices", "webaccess"]);
-const views = ["home", "chat", "activity", "harness", "settings", "models", "providers", "usage", "context", "discord", "messengers", "devices", "webaccess", "project", "projects", "monitoring", "apps"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", discord: "Discord", messengers: "메신저", devices: "연결된 기기", webaccess: "웹 접속", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱" };
+const SUB = new Set(["models", "providers", "usage", "context", "harness", "discord", "jandi", "slack", "telegram", "devices", "webaccess"]);
+const views = ["home", "chat", "activity", "harness", "settings", "models", "providers", "usage", "context", "discord", "jandi", "slack", "telegram", "devices", "webaccess", "project", "projects", "monitoring", "apps"];
+const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", devices: "연결된 기기", webaccess: "웹 접속", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱" };
 // The gateway's one live-lane rule (lanes.ts laneLive: not exited, process up, not a temp test project) drives every list.
 const laneAlive = l => !!l && (l.live ?? l.status !== "exited");
 const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
@@ -759,7 +811,7 @@ function parseHash(hash = location.hash) {
   return { view: i < 0 ? h : h.slice(0, i), t };
 }
 // The 세션 tab is gone: an old #lanes address opens the chat (its list on a phone), where running sessions sit under 진행 중.
-const routeAlias = (name, tgt) => (name === "lanes" ? ["chat", "list"] : [name, tgt]);
+const routeAlias = (name, tgt) => (name === "lanes" ? ["chat", "list"] : name === "messengers" ? ["settings", ""] : [name, tgt]);
 function go(name, tgt) {
   closeMenu(false);
   [name, tgt] = routeAlias(name, tgt);
@@ -808,15 +860,16 @@ function go(name, tgt) {
   if (name === "projects" || pp) { renderProjects(); prjLoad(); }
   if (name === "monitoring" || mc) { renderMonitoring(); loadMonitors(); loadNotices(); loadIntegrations(); }
   if (name === "project") pmOpen(tgt);
-  if (name === "settings") { loadUpdate(); loadAccounts(); renderSettings(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
+  if (name === "settings") { loadUpdate(); loadAccounts(); renderSettings(); loadMessengerIndex(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
   if (name === "providers") loadProviders();
   if (name === "usage") loadQuota();
   if (name === "context") loadContext();
-  if (name === "discord") loadDiscord();
-  if (name === "messengers") loadMessengers();
+  if (name === "discord") { loadMessengerIndex(); loadDiscord(); loadOnboarding("discord"); }
+  if (name === "jandi" || name === "slack" || name === "telegram") { loadMessengerIndex(); loadMessengerSettings(name); loadOnboarding(name); }
   if (name === "devices" || name === "settings") loadDevices();
   if (name === "webaccess" || name === "settings") loadWebAccess();
+  if (name === "webaccess") loadOnboarding("web-access");
   window.dotzCustom && dotzCustom.view(name, tgt);
 }
 // Entries the app made are handled by popstate; this is for a hash typed into the address bar or an old foreign entry.
@@ -1115,9 +1168,11 @@ function makeBoard(container, key, opts = {}) {
     for (const c of bOrder([...list], first)) bPush(list, c);
     bCompact(list, first, ghost);
   }
+  const shown = new Set();   // card ids already drawn: only a card that newly arrives rises in
   function set(items, keep = () => false) {
     if (act) { pending = [items, keep]; return; }
     cur = items;
+    const fresh = freshKeys(shown, items.map(i => i.id));
     const ids = new Set(items.map(i => i.id));
     const placed = [];
     for (const it of items) if (saved[it.id]) placed.push({ id: it.id, ...bFit(saved[it.id], it) });
@@ -1137,7 +1192,7 @@ function makeBoard(container, key, opts = {}) {
       // A card whose markup did not change keeps its node, so scroll positions and hover survive a re-render.
       if (old !== it.node && !(old && old.outerHTML === it.node.outerHTML)) {
         const top = old ? old.scrollTop : 0, oh = old && old.querySelector(it.head), refocus = !!oh && document.activeElement === oh;
-        if (old) old.replaceWith(it.node); else w.prepend(it.node);
+        if (old) old.replaceWith(it.node); else { w.prepend(it.node); if (fresh.has(it.id)) motionIn(it.node); }
         if (top) it.node.scrollTop = top;
         if (refocus && h0) h0.focus({ preventScroll: true });
       }
@@ -1607,6 +1662,8 @@ function homeLimitRow(d) {
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: what })), d.next ? el("span", { class: "ha", text: d.next }) : null),
     el("span", { class: "hs", text: limitBadge(d.resume_at) }));
 }
+// Rows of 홈 already shown: only a row that newly appears rises in (not the first paint, nor before the lists have loaded).
+const HOME_ROWS = new Set();
 function renderHomeNow() {
   const box = $("#home-now");
   if (!box) return;
@@ -1636,6 +1693,10 @@ function renderHomeNow() {
     ...(restT.length ? [el("div", { class: "hn-h" }, el("h2", { text: "대기 중" })), el("div", { class: "hn", "data-k": "waiting" }, ...restT.map(restRow))] : []),
     ...(ended.length ? [el("div", { class: "hn-h" }, el("h2", { text: "최근 끝난 작업" })), el("div", { class: "hn", "data-k": "ended-work" }, ...ended.map(workRow))] : []),
     endedGroup() || "");
+  if (!S || !NT.loaded) return;
+  const rows = [...box.querySelectorAll(".hr, .ntg")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.mon || r.dataset.group || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
+  const fresh = freshKeys(HOME_ROWS, keys);
+  rows.forEach((r, i) => { if (fresh.has(keys[i])) motionIn(r); });
 }
 // The home screen always opens at its top: on load, on the tab, and when the installed app comes back to the front (23-installable-app-web.js, 99-boot.js).
 const homeTop = () => { if (current === "home") { $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled"); } };
@@ -1865,7 +1926,8 @@ const chatUnreadCount = (targets, unreadOf) => targets.filter(t => unreadOf(t) >
 function paintAttn() {
   const n = S ? chatUnreadCount([MAIN, "alert", "worklog", ...projTargets()], t => ts(t).unread) : 0, b = $("#nav-att");
   const say = n ? `읽지 않은 대화 ${n}개` : "";
-  b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n); b.title = say;
+  b.hidden = !n; b.title = say;
+  if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";   // the digit that changed rolls; a hidden badge forgets, so it appears whole
   b.parentElement.setAttribute("aria-label", n ? `채팅, ${say}` : "채팅");
   document.title = n ? `(${n}) ${botName}` : botName;
   toastAttn();
@@ -1892,7 +1954,8 @@ function paintMonAttn() {
   const b = $("#nav-mon");
   if (!b) return;
   const n = monAttnCount([{ apps: INTG.items, mons: NM.items }]), say = n ? `확인할 것 ${n}개` : "";
-  b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n); b.title = say;
+  b.hidden = !n; b.title = say;
+  if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";
   b.parentElement.setAttribute("aria-label", n ? `모니터링, ${say}` : "모니터링");
 }
 // The badge and 답변 필요 read this computer's monitors on every tab: 홈 and 모니터링 refresh them themselves, any other tab here.
@@ -2113,7 +2176,7 @@ function scrollChat(force, top) {
   requestAnimationFrame(() => {
     if (CV.pin && CV.pin !== "bottom") return;   // a place chosen after this call (the divider, a jump target) wins; the owner letting go clears the pin first
     if (!force && !chatStick) return;   // an earlier message of this frame already put the view at its top
-    if (!force && top && top.isConnected && fullHeight(top) > timeline.clientHeight - 24) {
+    if (!force && top && top.isConnected && top.offsetHeight > timeline.clientHeight - 24) {
       chatUnpin();
       timeline.scrollTop += top.getBoundingClientRect().top - timeline.getBoundingClientRect().top - 12;
       chatStick = timeline.scrollTop + timeline.clientHeight >= timeline.scrollHeight - 40;
@@ -2313,8 +2376,8 @@ async function drfSure(d, t) {
   if (!ref || d.toLabel !== "받는이") return true;
   if (!DRF.st[ref]) { DRF.pc[ref] = t ? pqPc(t) : null; await drfLoad(ref); }
   const st = DRF.st[ref];
-  if (st.tracked === false && (d.attachments || []).length) return ask("첨부파일을 확인하지 못했어요", `이 초안의 파일은 ${iGa(botName)} 직접 붙인 파일이 아니라서, 실제로 함께 가는지 확인하지 못했어요. 그래도 보낼까요?`, "그래도 보내기");
-  return !(st.editable && !st.canAttach && (st.files.length || d.warning)) || ask("첨부파일 없이 보낼까요?", "이 메일 계정은 첨부파일을 보낼 수 없어요. 본문만 보내져요.", "그래도 보내기");
+  if (st.tracked === false && (d.attachments || []).length) return ask("첨부를 확인하지 못했어요", `${iGa(botName)} 붙인 파일이 아니라서 실제로 가는지 몰라요. 보낼까요?`, "그래도 보내기");
+  return !(st.editable && !st.canAttach && (st.files.length || d.warning)) || ask("첨부 없이 보낼까요?", "이 계정은 파일을 못 보내요. 본문만 가요.", "그래도 보내기");
 }
 function draftFilesNode(d, o = {}) {
   const ref = d.ref, box = el("div", { class: "dr-files" });
@@ -2344,8 +2407,8 @@ function draftFilesNode(d, o = {}) {
     const noSend = live && st.editable && !st.canAttach && (fl.length || d.warning);
     const warns = [
       warn ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: d.warning }), d.note ? el("span", { class: "dr-wn", text: d.note }) : null)) : null,
-      noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "이 메일 계정은 첨부파일을 보낼 수 없어요 · 본문만 보내져요" })) : null,
-      unchecked ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부파일이 실제로 붙었는지 확인하지 못했어요" }), el("span", { class: "dr-wn", text: `${iGa(botName)} 직접 붙인 파일이 아니에요. 보내기 전에 확인해 주세요` }))) : null];
+      noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "이 계정은 파일을 못 보내요 · 본문만 가요" })) : null,
+      unchecked ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부가 실제로 붙었는지 몰라요" }), el("span", { class: "dr-wn", text: "보내기 전에 확인해 주세요" }))) : null];
     const rows = fl.map((f, i) => {
       const ext = (String(f.name).match(/\.([A-Za-z0-9]{1,5})$/) || [0, ""])[1].toUpperCase(), meta = [ext, f.size].filter(Boolean).join(" · ");
       const kids = [el("span", { class: "dr-fi" }, icon(DR_IMG.test(f.name) ? "image" : "file")), el("span", { class: "dr-fn", text: f.name }), meta ? el("span", { class: "dr-fm", text: meta }) : null];
@@ -2661,20 +2724,47 @@ function choicesNode(sig, pc, at) {
   });
   return box;
 }
+// Decision cards already docked: only one that really arrives rises in (not on the first paint, nor when another conversation opens).
+const DC_SEEN = new Set(); let dcShownT = "", dcLast = null, dcLeaveT = 0, dcOut = null;
+// An answered card does not vanish the instant the answer lands: it says 보냈어요 for a beat, then fades out (no new request, only the state it already has).
+function dcLeave(box, dc) {
+  const picks = DC.picks[dc.key] || [], st = DC.st[dc.key];
+  if (box.dataset.st !== st) { motionSwap(box, () => renderDecision(box, dc, picks, DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i])))); box.dataset.st = st; }
+  clearTimeout(dcLeaveT);
+  if (st !== "sent") return;
+  dcLeaveT = setTimeout(async () => {
+    if (DC.cur) return;
+    dcOut = await motionOut(box);
+    if (DC.cur) return;
+    if (dcOut && dcOut.cancel) dcOut.cancel();
+    dcOut = null; dcLast = null; box.hidden = true; delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; clear(box);
+  }, 1200);
+}
 function paintDecision() {
   const box = $("#dcard");
   if (!box) return;
   // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
   const dc = isFixedT(target) ? null : decisionOf(target), had = !!DC.cur;
   DC.cur = dc;
+  if (dc) { dcLast = dc; clearTimeout(dcLeaveT); if (dcOut && dcOut.cancel) dcOut.cancel(); dcOut = null; }
+  const arrived = S && freshKeys(DC_SEEN, dc ? [...DC_SEEN, dc.key] : [...DC_SEEN]).has(dc && dc.key) && dcShownT === target;
+  if (S) dcShownT = target;
   const waiting = dc || isFixedT(target) ? null : dcWaitingCard(target);
   if (waiting) dcPointer(box, waiting);
-  else if (!dc) { box.hidden = true; delete box.dataset.sig; delete box.dataset.key; clear(box); }
+  else if (!dc && dcLast && !box.hidden && box.dataset.key === dcLast.key && DC.st[dcLast.key]) dcLeave(box, dcLast);
+  else if (!dc) { box.hidden = true; delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; clear(box); }
   else {
     const picks = DC.picks[dc.key] || [], step = DC.step[dc.key] ?? Math.max(0, dc.blocks.findIndex((_, i) => !picks[i]));
     const sig = dcSig(dc, picks, step);
     box.hidden = false;
-    if (box.dataset.sig !== sig) { renderDecision(box, dc, picks, step); box.dataset.sig = sig; box.dataset.key = dc.key; }
+    if (box.dataset.sig !== sig) {
+      // The answer goes out: this same card turns into 보내는 중 / 보냈어요 in place instead of being replaced.
+      const st = DC.st[dc.key] || "", swap = box.dataset.key === dc.key && (box.dataset.st || "") !== st;
+      const draw = () => renderDecision(box, dc, picks, step);
+      if (swap) motionSwap(box, draw); else draw();
+      box.dataset.sig = sig; box.dataset.key = dc.key; box.dataset.st = st;
+      if (arrived) motionIn(box);
+    }
   }
   syncInlineChoices();
   dkPaint();
@@ -2689,7 +2779,7 @@ function dcPointer(box, n) {
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig; box.dataset.key = sig;
   const title = draftQ(n.title), left = draftProgress(n.text);
-  clear(box).append(el("button", { class: "dc-wait", type: "button", onclick: () => noticeSheetOpen(n.id) }, el("span", { class: "dc-wait-k", text: "답을 기다리는 카드" }), el("span", { class: "dc-wait-t", text: title || "보내기 확인" }), left ? el("span", { class: "dc-wait-n", text: left }) : null, el("span", { class: "dc-wait-go", text: "열기" })));
+  clear(box).append(el("button", { class: "dc-wait", type: "button", onclick: () => noticeSheetOpen(n.id) }, el("span", { class: "dc-wait-k", text: "답 대기" }), el("span", { class: "dc-wait-t", text: title || "보내기 확인" }), left ? el("span", { class: "dc-wait-n", text: left }) : null, el("span", { class: "dc-wait-go", text: "열기" })));
 }
 // What a decision card shows; the card (docked or in the sheet) is redrawn only when this changes. A redraw replaces the reason field, and on
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
@@ -3420,32 +3510,13 @@ function humanAlert(text) {
   }
   return text.split("\n")[0].replace(/\s*\([^()]*[A-Za-z]{4,}[^()]*\)/g, "").trim() || text;
 }
-// A reply that just arrived types itself out (the harness sends only finished messages, no token deltas): its text
-// nodes fill in order at a pace that ends within ~1.2 s. History, re-renders and reduced motion show it at once.
-const STREAMED = new Set(), STREAMING = new Map();   // STREAMING: text root -> its [text node, full text] pairs while it types out
-// A message's height with its text fully in, measured in one synchronous step (no paint between): scrollChat judges "taller than the view"
-// by it. While the text is still typing out the message is held at that height (min-height, released when typed) so the room to scroll is there.
-function fullHeight(node) {
-  const blank = [];
-  for (const [root, nodes] of STREAMING) if (node.contains(root)) for (const [n, t] of nodes) { blank.push([n, n.data]); n.data = t; }
-  const h = node.offsetHeight;
-  for (const [n, d] of blank) n.data = d;
-  if (blank.length) node.style.minHeight = `${h}px`;
-  return h;
-}
+// A reply that just arrived fades in as one piece (the harness sends only finished messages, no token deltas): no text is hidden or
+// retyped, so nothing reflows and the height is final from the first frame. History, re-renders and reduced motion show it at once.
+const STREAMED = new Set();
 function streamIn(root, key, ts) {
-  if (STREAMED.has(key) || Date.now() - Date.parse(ts) > 15000 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (STREAMED.has(key) || Date.now() - Date.parse(ts) > 15000) return;
   STREAMED.add(key);
-  const nodes = [], walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  for (let n = walk.nextNode(); n; n = walk.nextNode()) { nodes.push([n, n.data]); n.data = ""; }
-  STREAMING.set(root, nodes);
-  const total = nodes.reduce((s, [, t]) => s + t.length, 0), t0 = performance.now(), dur = Math.min(1200, 250 + total * 6);
-  const step = now => {
-    let left = Math.ceil(total * Math.min(1, (now - t0) / dur));
-    for (const [n, t] of nodes) { const k = Math.min(t.length, left); if (n.data.length !== k) n.data = t.slice(0, k); left -= k; }
-    if (now - t0 < dur) requestAnimationFrame(step); else { STREAMING.delete(root); const bm = root.closest(".bm"); if (bm) bm.style.minHeight = ""; }
-  };
-  requestAnimationFrame(step);
+  motionIn(root, "fade", 300);
 }
 // Delivery state of an owner message (hub/events.ts emitDelivery), shown in its meta line: received (steered into the running step /
 // received by an idle session / waited in the queue / resumed a stopped session / held on a limit), answered, or not delivered.
@@ -3488,7 +3559,10 @@ function paintSysLines() {
     if (!st.isConnected) { SYS_NODES.delete(id); continue; }
     const w = ((S && S.work) || []).find(x => x.id === id), s = w && (w.cancelled ? ["", "중단됨"] : SYS_ST[w.status]);
     st.hidden = !s;
-    if (s) { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; }
+    if (!s || st.dataset.s === s[1]) continue;
+    const was = st.dataset.s, paint = () => { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; };
+    st.dataset.s = s[1];
+    if (was) motionSwap(st, paint); else paint();   // running -> 끝남 changes in place; the first paint just draws
   }
 }
 function sysLine(e, text, hm) {
@@ -3534,15 +3608,17 @@ function msgNode(e) {
       if (e.subject) {
         const key = e.mail || (isMailT(e.conv || "") ? mailOf(e.conv) : ""), html = !!(e.html || (MAILS.get(`mail:${key}`) || {}).html);
         const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: text.split("\n").slice(1).join("\n").trim(), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw) : undefined });
-        // 보낸 사람 / 받는 사람 / 참조 and the same-sender thread (30-mail-thread.js) sit under the summary, above the original
-        if (card && key) { const meta = mailMetaNode(`mail:${key}`, e), fold = card.querySelector(".rc-raw"); if (fold) card.insertBefore(meta, fold); else card.append(meta); if (MT_READY) mailThreadSync(); }
-        // 초안 작성 under the summary of an incoming mail, the same button as on its row (30-monitoring.js mailDraftButton): no tap on the ⋯ first.
-        // A wide screen hides it (16-result-card.css): the conversation head there has its own 초안 작성 (31-conversations.js cv-draft).
-        if (card && key && ((MAILS.get(`mail:${key}`) || {}).dir || e.dir) !== "out") { const meta = card.querySelector(".mhd-wrap"); card.insertBefore(el("div", { class: "mr-slot mr-conv-act" }, mailDraftButton(`mail:${key}`)), meta || card.querySelector(".rc-raw")); }
+        // Gmail-like, top to bottom: the bar of icons (30-mail-box.js mailOpenBar, 초안 작성 and the ⋯ in it), the subject, the sender and time,
+        // one muted line of 받는 사람 / 참조 that opens the full header (30-mail-thread.js), the summary, then the original.
+        if (card && key) {
+          const hd = card.querySelector(".rc-hd"), title = card.querySelector(".rc-title"), meta = mailMetaNode(`mail:${key}`, e);
+          card.classList.add("mopen");
+          if (hd) { if (title) hd.before(title); hd.after(meta); } else card.append(meta);
+          card.prepend(mailOpenBar(`mail:${key}`, card));
+          if (MT_READY) mailThreadSync();
+        }
         const files = card && key && Array.isArray(e.attachments) ? mailFilesNode(key, e.attachments) : null;
         if (files) card.append(files);
-        // the same ⋯ as the mail's row in the list, at the top right (30-monitoring.js mailMenuBtn)
-        if (card && key) { const hd = card.querySelector(".rc-hd"); if (hd) { hd.append(mailMenuBtn(`mail:${key}`)); hd.after(mailOpenBar(`mail:${key}`)); } }
         return card;
       }
       const f = k => (text.match(new RegExp(`^${k}: ?(.*)$`, "m")) || [])[1] || "";
@@ -3625,7 +3701,7 @@ function chatPush(en, bulk) {
   if (en.m) {
     if (cleanRestart(en.m)) return;
     dayDiv(en.m.ts);
-    if (CS.group) { CS.group.live = false; CS.group.node.classList.remove("live"); CS.group.update(); }
+    if (CS.group) workDone(CS.group);
     CS.group = null;
     const e = en.m;
     if (isSettingsT(target) && eventTarget(e) === target) { if (e.kind === "message") TURN.set(target, Date.parse(e.ts) || Date.now()); else if (e.kind === "out" && !e.update_key) TURN.delete(target); }
@@ -3659,11 +3735,17 @@ function chatPush(en, bulk) {
   markLive();
   if (!bulk) scrollChat(false, fresh);
 }
+// A work group that stops running: its summary line changes from 작업 중 to the finished count in place, once.
+function workDone(g) {
+  const end = () => { g.live = false; g.node.classList.remove("live"); g.update(); };
+  if (g.live) motionSwap(g.node.firstElementChild, end); else end();
+}
 function markLive() {
   const g = CS.group;
   if (!g) return;
   const live = isWorking(target) && tl.lastElementChild === g.node;
-  if (g.live !== live) { g.live = live; g.node.classList.toggle("live", live); g.update(); }
+  if (g.live === live) return;
+  if (live) { g.live = true; g.node.classList.add("live"); g.update(); } else workDone(g);
 }
 
 // The words the owner reads for a watch event or a schedule fire; mirrors hub/watchtext.ts (the hub composes the same text for the bell, Discord and
@@ -7410,8 +7492,7 @@ function renderSettings() {
   const om = M && M.orchestrator;
   const connected = P ? P.providers.filter(isConnected).length : null;
   const row = (ic, title, sub, onclick, trail) => el("button", { class: "li tap", type: "button", onclick: ev => onclick(ev.currentTarget) }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), sub ? el("span", { class: "sup", text: sub }) : null, trail === undefined ? icon("chev", "lead") : trail);
-  const d = S && S.discord;
-  const [dcTag, dcTone] = d && d.enabled ? (d.connected ? ["연결됨", "ok"] : d.error ? ["연결 안 됨", "err"] : ["연결 중", "warn"]) : ["설정 안 됨", "warn"];
+
   clear(box).append(el("div", { class: "list" },
     row("model", "모델 · 폴백", om ? `${modelName(om.model)} · ${thinkKo(om.thinking)}` : "", () => openModels("orchestrator")),
     row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
@@ -7422,8 +7503,7 @@ function renderSettings() {
     mnRow(),
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     row("chat", "대화 탭", chatTabMode() === "main" ? "메인 대화" : "마지막으로 보던 대화", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, null),
-    row("discord", "Discord", "", () => go("discord"), el("span", { class: "dcs-trail" }, el("span", { class: `tag ${dcTone}`, text: dcTag, title: (d && d.error) || "" }), icon("chev", "lead"))),
-    row("chat", "메신저", "JANDI 등", () => go("messengers")),
+    ...msSettingsRows(row),
     webAccessRow(row),
     devicesRow(row)),
     ...pushSection(), ...updateSection(), ...accountSection());
@@ -7779,7 +7859,7 @@ function dvNew(self) {
 // waits for a restart (restart_needed).
 const DP_KINDS = [["chat", "대화 답장", "내가 디스코드에서 묻지 않은 대화의 답"], ["lanes", "세션 보고", "세션이 올리는 진행·완료 보고"], ["worklog", "작업내역", "작업 기록 메시지"], ["web_lanes", "웹에서 시작한 세션", "웹이나 터미널에서 시작한 세션도 디스코드에 채널을 만들어요"]];
 const DP = { v: null };
-const DCS = { v: null, fail: "", err: "", chk: null, asked: false,
+const DCS = { v: null, fail: "", err: "", chk: null, asked: false, advOpen: false,
   guild: input({ inputmode: "numeric", placeholder: "예: 123456789012345678", name: "discord-guild" }),
   owner: input({ inputmode: "numeric", placeholder: "예: 123456789012345678", name: "discord-owner" }),
   tok: input({ type: "password", autocomplete: "new-password", name: "discord-token", placeholder: "봇 토큰" }) };
@@ -7868,160 +7948,357 @@ function dcChecked() {
     c.admin === true ? el("div", { class: "dcs-ok", text: "관리자 권한 확인됨" }) : c.invite_url ? el("div", {}, el("div", { text: "관리자 권한이 없어요." }), el("a", { class: "btn tonal", href: c.invite_url, target: "_blank", rel: "noopener noreferrer", text: "봇 권한 다시 승인" })) : el("div", { class: "sup", text: "서버 ID를 저장하면 관리자 권한도 확인해요" }),
     c.intent_note ? el("div", { class: "sup", text: c.intent_note }) : null);
 }
+function dcConnect(btn) {
+  return obStart("discord", btn);
+}
+function dcAdvanced(v) {
+  const rows = [el("div", { class: "li dcs-form" }, textField("서버 ID", DCS.guild), textField("내 사용자 ID", DCS.owner),
+    textField(v.has_token ? "봇 토큰 (저장됨 · 바꾸려면 새로 붙여 넣기)" : "봇 토큰", DCS.tok),
+    v.has_token ? el("div", { class: "tag ok dcs-saved", text: "저장됨" }) : null,
+    DCS.err ? el("div", { class: "dcs-err", role: "alert", text: DCS.err }) : null,
+    el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn", "data-ms-save": "1", onclick: ev => dcSave(ev.currentTarget), text: "저장" }), el("button", { type: "button", class: "btn tonal", onclick: ev => dcCheck(ev.currentTarget), text: "연결 확인" }),
+      v.has_token ? el("button", { type: "button", class: "btn text", onclick: ev => dcClear(ev.currentTarget), text: "토큰 지우기" }) : null),
+    dcChecked())];
+  if (v.restart_needed) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "게이트웨이를 다시 시작하면 적용돼요" })), el("button", { type: "button", class: "btn", onclick: ev => dcRestart(ev.currentTarget), text: "다시 시작" })));
+  return el("div", { class: "list" }, ...rows);
+}
 function renderDiscord() {
   const box = $("#discord");
   if (!DCS.v) { clear(box).append(DCS.asked && DCS.fail ? emptyNode("디스코드 설정을 불러오지 못했어요") : emptyNode("불러오는 중")); return; }
-  const v = DCS.v, [tag, tone, line] = dcStatus();
-  const conn = [
-    el("div", { class: "li" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })), el("span", { class: `tag ${tone}`, text: tag })),
-    el("div", { class: "li dcs-form" }, textField("서버 ID", DCS.guild), textField("내 사용자 ID", DCS.owner),
-      textField(v.has_token ? "봇 토큰 (저장됨 · 바꾸려면 새로 붙여 넣기)" : "봇 토큰", DCS.tok),
-      v.has_token ? el("div", { class: "tag ok dcs-saved", text: "저장됨" }) : null,
-      DCS.err ? el("div", { class: "dcs-err", role: "alert", text: DCS.err }) : null,
-      el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn", onclick: ev => dcSave(ev.currentTarget), text: "저장" }), el("button", { type: "button", class: "btn tonal", onclick: ev => dcCheck(ev.currentTarget), text: "연결 확인" }),
-        v.has_token ? el("button", { type: "button", class: "btn text", onclick: ev => dcClear(ev.currentTarget), text: "토큰 지우기" }) : null),
-      dcChecked()),
-  ];
-  if (v.restart_needed) conn.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "게이트웨이를 다시 시작하면 적용돼요" })), el("button", { type: "button", class: "btn", onclick: ev => dcRestart(ev.currentTarget), text: "다시 시작" })));
+  const v = DCS.v, m = msItem("discord"), [, , line] = dcStatus();
+  const [tag, tone] = m ? msTag(m) : v.enabled ? (v.connected ? ["연결됨", "ok"] : v.error ? ["연결 안 됨", "err"] : ["연결됨", "ok"]) : ["설정 안 됨", "warn"];
   const guide = v.enabled ? [] : [el("div", { class: "sec", text: "연결하는 방법" }), el("div", { class: "list" }, el("div", { class: "li", "data-dc-guide": "1" }, el("ol", { class: "steps" },
     el("li", { text: "디스코드 개발자 포털(discord.com/developers)에서 새 앱을 만들고 Bot 탭에서 MESSAGE CONTENT를 켠 뒤 봇 토큰을 복사해요" }),
     el("li", { text: "OAuth2 초대 링크로 내 서버에 봇을 초대해요 (위에서 저장한 뒤 연결 확인을 누르면 초대 링크가 나와요)" }),
-    el("li", { text: "봇 토큰, 서버 ID, 내 사용자 ID를 위에 붙여 넣고 저장해요" }),
+    el("li", { text: "봇 토큰, 서버 ID, 내 사용자 ID를 ‘직접 입력’에 붙여 넣고 저장해요" }),
     el("li", { text: "터미널에서는 bun setup.ts로도 같은 설정을 할 수 있어요" }))))];
-  clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" }, ...conn), ...guide, ...dcSwitches());
+  const det = msAdvanced("data-ms-advanced", DCS.advOpen, () => dcAdvanced(v));
+  det.addEventListener("toggle", () => { DCS.advOpen = det.open; });
+  clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" },
+    el("div", { class: "li", "data-ms-status": "discord" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })), el("span", { class: `tag ${tone}`, text: tag })),
+    el("div", { class: "li ms-act" }, el("button", { type: "button", class: "btn", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m)))),
+  el("div", { class: "sec", text: "자동 연결" }), onboardingPanel("discord"), ...dcSwitches(), ...guide, det);
 }
 
-// 설정 → 메신저: the chat services dotz also talks through (GET /api/messengers, GET/PUT /api/messengers/<id>, POST .../test, hub/messengers-api.ts).
-// Each service describes its own settings (hub/messenger.ts Settings), so this screen draws any of them: a list with a state dot, a detail dialog
-// (switch, fields, allowlist, and the rooms it mirrors from the web app, read-only: the gateway makes and maps them, hub/messenger-rooms.ts). Secrets are write-only: the page only learns whether one is set ("저장됨").
+// 설정의 메신저 화면: Discord · JANDI · Slack · Telegram each has its own view. Every view reads the shared index
+// (GET /api/messengers), one settings view (GET/PUT /api/messengers/<id>, POST .../test, hub/messengers-api.ts), and the
+// onboarding panel. Manual IDs/tokens live only in the closed "직접 입력" disclosure.
+const MS_IDS = ["discord", "jandi", "slack", "telegram"];
+const MS_LABELS = { discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram" };
 const MS_KINDS = [["main", "메인 대화"], ["project", "프로젝트"], ["alert", "알림"], ["worklog", "작업내역"]];
 const MS_AS_USER = "내 계정으로 보냅니다";
-const MSN = { items: null, detail: {}, fail: "", asked: false };
+const MSS = { items: null, fail: "", asked: false, loading: false, page: null };
+const msItem = id => (MSS.items || []).find(x => x.id === id) || null;
+const msTag = m => !m ? ["", ""] : !m.configured ? ["설정 안 됨", "warn"] : m.state === "error" ? ["연결 안 됨", "err"] : ["연결됨", "ok"];
+const msConnectLabel = m => (!m || !m.configured || m.error ? "연결" : !m.enabled ? "켜기" : "연결");
 const msKind = k => (MS_KINDS.find(x => x[0] === k) || [k, k])[1];
-const msState = m => m.state === "ok" ? ["연결됨", "ok"] : m.state === "error" ? ["연결 안 됨", "err"] : m.state === "connecting" ? ["연결 중", "warn"] : [m.enabled ? "꺼짐" : "사용 안 함", ""];
 const msAgo = t => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? "방금" : s < 3600 ? `${Math.floor(s / 60)}분 전` : s < 86400 ? `${Math.floor(s / 3600)}시간 전` : `${Math.floor(s / 86400)}일 전`; };
-
-// The list is drawn as soon as it arrives and again when the details (room counts) are in: a slow or stuck detail never leaves the screen blank.
-async function loadMessengers() {
-  MSN.asked = true; MSN.fail = "";
-  if (current === "messengers") renderMessengers();
-  try {
-    MSN.items = (await api("/api/messengers")).items; MSN.fail = "";
-    if (current === "messengers") renderMessengers();
-    await Promise.all(MSN.items.map(async m => { try { MSN.detail[m.id] = await api(`/api/messengers/${enc(m.id)}`); } catch { delete MSN.detail[m.id]; } }));
-  } catch (e) { MSN.items = null; MSN.fail = e.message; }
-  if (current === "messengers") renderMessengers();
-}
-const msRoomsOf = m => { const d = MSN.detail[m.id]; return d && d.rooms ? d.rooms.items.length : 0; };
-
-function renderMessengers() {
-  const box = $("#messengers");
-  if (!MSN.items) { clear(box).append(MSN.asked && MSN.fail ? emptyNode("메신저 설정을 불러오지 못했어요") : emptyNode("불러오는 중")); return; }
-  const row = m => {
-    const [tag, tone] = msState(m), n = msRoomsOf(m);
-    return el("button", { type: "button", class: "li tap", "data-ms": m.id, onclick: () => msOpen(m.id) },
-      el("span", { class: "lead" }, icon(m.id === "discord" ? "discord" : "chat")),
-      el("span", { class: "tx" }, el("div", { class: "hd", text: m.label }), el("div", { class: "sup", text: m.error || (n ? `방 ${n}개` : "") })),
-      el("span", { class: "dcs-trail" }, el("span", { class: `dot ${tone}`, "aria-hidden": "true" }), el("span", { class: `tag ${tone}`, text: tag }), icon("chev", "lead")));
-  };
-  clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" }, ...MSN.items.map(row)));
-}
-
-/* ---------- detail ---------- */
-let MD = null;
-async function msOpen(id) {
-  let s;
-  try { s = await api(`/api/messengers/${enc(id)}`); } catch (e) { return toast(e.message, true); }
-  const m = (MSN.items || []).find(x => x.id === id) || { id, label: id };
-  const body = el("div", { class: "col" });
-  MD = { id, s, enabled: s.enabled, vals: {}, allow: s.allow ? s.allow.items.slice() : null, test: null, body, inputs: {}, add: input({ placeholder: s.allow && s.allow.hint || "", name: "ms-allow" }) };
-  const d = dialog({ title: m.label, body, onclose: () => { MD = null; }, actions: [] });
-  MD.dlg = d;
-  msRenderDetail();
-}
-const msReadOnly = s => !!s.link || !s.rooms && !s.allow && !s.fields.some(f => f.type === "text" || f.type === "number");
-function msDirty() {
-  const { s } = MD, vals = Object.keys(MD.vals).filter(k => String(MD.vals[k]) !== String((s.fields.find(f => f.key === k) || {}).value));
-  const allow = MD.allow && JSON.stringify(MD.allow) !== JSON.stringify(s.allow.items);
-  return { vals, allow, any: MD.enabled !== s.enabled || vals.length > 0 || allow };
-}
-async function msSave(btn) {
-  const { s } = MD, dirty = msDirty(), put = {};
-  if (MD.enabled !== s.enabled) put.enabled = MD.enabled;
-  if (dirty.vals.length) put.values = Object.fromEntries(dirty.vals.map(k => [k, MD.vals[k]]));
-  if (dirty.allow) put.allow = MD.allow;
-  await busy(btn, async () => {
-    MD.s = await api(`/api/messengers/${enc(MD.id)}`, "PUT", put);
-    MD.enabled = MD.s.enabled; MD.vals = {}; MD.allow = MD.s.allow ? MD.s.allow.items.slice() : null;
-    toast("저장했어요");
-    await loadMessengers();
+const msPage = id => {
+  if (!MSS.page || MSS.page.id !== id) MSS.page = { id, s: null, fail: "", enabled: false, vals: {}, allow: null, add: "", test: null, advOpen: false };
+  return MSS.page;
+};
+// 설정 목록의 네 줄: the index supplies label and status; before it arrives the rows stay with no tag.
+function msSettingsRows(row) {
+  if (!MSS.asked) loadMessengerIndex();
+  return MS_IDS.map(id => {
+    const m = msItem(id), [tag, tone] = m ? msTag(m) : ["", ""];
+    const r = row(id === "discord" ? "discord" : "chat", (m && m.label) || MS_LABELS[id], "", () => go(id),
+      el("span", { class: "dcs-trail" }, ...(tag ? [el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" })] : []), icon("chev", "lead")));
+    r.dataset.msRow = id;
+    return r;
   });
-  if (MD) msRenderDetail();
 }
-// 알림 switches save at once (PUT { notify }, hub/messengers-api.ts): they need no restart, so they skip the sheet's 저장.
-async function msNotifySet(k, on) {
-  const id = MD.id;
+function msPaint() {
+  if (current === "settings") renderSettings();
+  else if (current === "discord") renderDiscord();
+  else if (MS_IDS.includes(current)) renderMessenger(current);
+}
+// The index is fetched when a screen opens, never on every render; the rows stay while it is in flight.
+async function loadMessengerIndex() {
+  MSS.asked = true;
+  if (MSS.loading) return;
+  MSS.loading = true;
+  try { const j = await api("/api/messengers"); MSS.items = Array.isArray(j.items) ? j.items : []; MSS.fail = ""; }
+  catch (e) { MSS.fail = e.message; }
+  finally { MSS.loading = false; }
+  msPaint();
+}
+async function loadMessengerSettings(id) {
+  const p = msPage(id);
+  p.loading = true;
+  try {
+    const s = await api(`/api/messengers/${enc(id)}`);
+    p.s = s; p.fail = ""; p.enabled = !!s.enabled; p.vals = {}; p.add = ""; p.test = null;
+    p.allow = s.allow ? s.allow.items.slice() : null;
+  } catch (e) { p.s = null; p.fail = e.message; }
+  p.loading = false;
+  if (current === id) renderMessenger(id);
+}
+function msLine(id, m, s) {
+  if (m && m.error) return m.error;
+  if (!m) return "";
+  if (!m.configured) return "아직 연결되지 않았어요. 연결을 누르면 자동으로 설정해요.";
+  if (!m.enabled) return "설정은 돼 있어요. 켜기를 누르면 알림을 보내요.";
+  if (id === "jandi" && s && s.rooms) return `연결돼 있어요 · 방 ${s.rooms.items.length}개`;
+  return "연결돼 있어요.";
+}
+function msConnect(id, btn) {
+  const m = msItem(id);
+  if (m && m.configured && !m.enabled && !m.error) {
+    return busy(btn, async () => {
+      const p = msPage(id);
+      p.s = await api(`/api/messengers/${enc(id)}`, "PUT", { enabled: true });
+      p.enabled = !!p.s.enabled;
+      await loadMessengerIndex();
+      if (current === id) renderMessenger(id);
+    });
+  }
+  return obStart(id, btn);
+}
+// 알림 switches save at once (PUT { notify }): they need no restart and no other field.
+async function msNotifySet(id, k, on) {
+  const p = msPage(id);
+  if (p.s && p.s.notify) p.s = { ...p.s, notify: { ...p.s.notify, [k]: on } };
+  if (current === id) renderMessenger(id);
   try {
     const s = await api(`/api/messengers/${enc(id)}`, "PUT", { notify: { [k]: on } });
-    if (MD && MD.id === id) { MD.s = { ...MD.s, notify: s.notify }; msRenderDetail(); }
-  } catch (e) { toast(e.message, true); }
+    if (p.s && s.notify) p.s = { ...p.s, notify: s.notify };
+  } catch (e) {
+    if (p.s && p.s.notify) p.s = { ...p.s, notify: { ...p.s.notify, [k]: !on } };
+    toast(e.message, true);
+  }
+  if (current === id) renderMessenger(id);
+}
+function msDirty(p) {
+  const s = p.s;
+  if (!s) return { vals: [], allow: false, any: false };
+  const vals = Object.keys(p.vals).filter(k => String(p.vals[k]) !== String((s.fields.find(f => f.key === k) || {}).value));
+  const allow = !!p.allow && JSON.stringify(p.allow) !== JSON.stringify(s.allow ? s.allow.items : []);
+  return { vals, allow, any: p.enabled !== s.enabled || vals.length > 0 || allow };
+}
+function msSync() {
+  const b = document.querySelector(`${MSS.page ? `#${MSS.page.id}` : ""} [data-ms-save]`);
+  if (b && MSS.page) b.disabled = !msDirty(MSS.page).any;
+}
+async function msSave(btn) {
+  const p = MSS.page;
+  if (!p || !p.s) return;
+  const dirty = msDirty(p), put = {};
+  if (p.enabled !== p.s.enabled) put.enabled = p.enabled;
+  if (dirty.vals.length) put.values = Object.fromEntries(dirty.vals.map(k => [k, p.vals[k]]));
+  if (dirty.allow) put.allow = p.allow;
+  if (!Object.keys(put).length) return;
+  await busy(btn, async () => {
+    p.s = await api(`/api/messengers/${enc(p.id)}`, "PUT", put);
+    p.enabled = !!p.s.enabled; p.vals = {}; p.add = "";
+    p.allow = p.s.allow ? p.s.allow.items.slice() : null;
+    toast("저장했어요");
+    await loadMessengerIndex();
+  });
+  if (current === p.id) renderMessenger(p.id);
 }
 async function msTest(btn) {
-  await busy(btn, async () => { MD.test = (await api(`/api/messengers/${enc(MD.id)}/test`, "POST", {})).results; });
-  if (MD) msRenderDetail();
+  const p = MSS.page;
+  if (!p || !p.s) return;
+  await busy(btn, async () => { p.test = (await api(`/api/messengers/${enc(p.id)}/test`, "POST", {})).results; });
+  if (current === p.id) renderMessenger(p.id);
 }
 function msFieldInput(f) {
-  const { s } = MD;
+  const p = MSS.page;
   if (f.type === "readonly") return el("div", { class: "tf" }, el("span", { class: "lb", text: f.label }), el("div", { class: "sup", text: String(f.value ?? "") }));
   if (f.type === "secret") {
-    const i = input({ type: "password", autocomplete: "new-password", name: `ms-${f.key}`, placeholder: f.set ? "바꾸려면 새로 붙여 넣기" : f.label, oninput: ev => { const v = ev.target.value.trim(); if (v) MD.vals[f.key] = v; else delete MD.vals[f.key]; msSync(); } });
+    const i = input({ type: "password", autocomplete: "new-password", name: `ms-${f.key}`, placeholder: f.set ? "바꾸려면 새로 붙여 넣기" : f.label, oninput: ev => { const v = ev.target.value.trim(); if (v) p.vals[f.key] = v; else delete p.vals[f.key]; msSync(); } });
     return el("div", {}, textField(f.label, i), f.set ? el("div", { class: "tag ok dcs-saved", "data-set": f.key, text: "저장됨" }) : null,
       f.as_user ? el("div", { class: "tag warn", "data-as-user": f.key, text: MS_AS_USER }) : null, f.hint ? el("div", { class: "sup", text: f.hint }) : null);
   }
-  const cur = MD.vals[f.key] !== undefined ? MD.vals[f.key] : f.value;
-  const i = input({ value: cur == null ? "" : String(cur), ...(f.type === "number" ? { type: "number", inputmode: "numeric", min: "0" } : {}), name: `ms-${f.key}`, oninput: ev => { MD.vals[f.key] = f.type === "number" ? Number(ev.target.value) : ev.target.value; msSync(); } });
+  const cur = p.vals[f.key] !== undefined ? p.vals[f.key] : f.value;
+  const i = input({ value: cur == null ? "" : String(cur), ...(f.type === "number" ? { type: "number", inputmode: "numeric", min: "0" } : {}), name: `ms-${f.key}`, oninput: ev => { p.vals[f.key] = f.type === "number" ? Number(ev.target.value) : ev.target.value; msSync(); } });
   return el("div", {}, textField(f.label, i), f.hint ? el("div", { class: "sup", text: f.hint }) : null);
 }
-function msSync() {
-  const save = MD.dlg.node.querySelector("[data-ms-save]");
-  if (save) save.disabled = !msDirty().any;
+function msAllowEditor(p, s) {
+  const rows = p.allow.map((a, i) => el("div", { class: "li", "data-allow": a }, el("span", { class: "tx" }, el("div", { class: "hd", text: a })),
+    el("button", { type: "button", class: "ib", "aria-label": `${a} 빼기`, onclick: () => { p.allow.splice(i, 1); renderMessenger(p.id); } }, icon("close"))));
+  rows.push(el("div", { class: "li ms-addrow" },
+    el("span", { class: "tx" }, input({ value: p.add, placeholder: s.allow.hint || "", name: "ms-allow", oninput: ev => { p.add = ev.target.value; } })),
+    el("button", { type: "button", class: "btn tonal", "data-ms-allow-add": "1", onclick: () => { const v = p.add.trim(); if (v && !p.allow.includes(v)) { p.allow.push(v); p.add = ""; renderMessenger(p.id); } }, text: "추가" })));
+  return rows;
 }
-function msRenderDetail() {
-  const { s } = MD, ro = msReadOnly(s), dirty = msDirty();
-  const rows = [];
-  if (!ro) rows.push(el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: "사용" }), el("div", { class: "sup", text: MD.enabled ? "켜져 있어요" : "꺼져 있어요" })),
-    el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(MD.enabled), "aria-label": "사용", "data-ms-enabled": "1", onclick: () => { MD.enabled = !MD.enabled; msRenderDetail(); } })));
-  const nodes = [el("div", { class: "sec", text: "연결" }), el("div", { class: "list" }, ...rows,
-    ...(s.fields.length ? [el("div", { class: "li dcs-form" }, ...s.fields.map(msFieldInput))] : []),
-    ...(s.link ? [el("button", { type: "button", class: "li tap", "data-ms-link": s.link.view, onclick: () => { MD.dlg.close(); go(s.link.view); } }, el("span", { class: "tx" }, el("div", { class: "hd", text: s.link.label })), icon("chev", "lead"))] : []))];
-  if (s.allow) nodes.push(el("div", { class: "sec", text: s.allow.label }), el("div", { class: "list" }, ...MD.allow.map((a, i) => el("div", { class: "li", "data-allow": a }, el("span", { class: "tx" }, el("div", { class: "hd", text: a })), el("button", { type: "button", class: "ib", "aria-label": `${a} 빼기`, onclick: () => { MD.allow.splice(i, 1); msRenderDetail(); } }, icon("close")))),
-    el("div", { class: "li ms-addrow" }, el("span", { class: "tx" }, MD.add), el("button", { type: "button", class: "btn tonal", "data-ms-allow-add": "1", onclick: () => { const v = MD.add.value.trim(); if (v && !MD.allow.includes(v)) { MD.allow.push(v); MD.add.value = ""; msRenderDetail(); } }, text: "추가" }))));
+function msAdvancedBody(p, s) {
+  const head = el("div", { class: "list" });
+  if (s.fields.length) head.append(el("div", { class: "li dcs-form" }, ...s.fields.map(msFieldInput)));
+  head.append(el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" },
+    el("div", { class: "hd", text: "사용" }), el("div", { class: "sup", text: p.enabled ? "켜져 있어요" : "꺼져 있어요" })),
+  el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(p.enabled), "aria-label": "사용", "data-ms-enabled": "1",
+    onclick: ev => { p.enabled = !p.enabled; ev.currentTarget.setAttribute("aria-checked", String(p.enabled)); msSync(); } })));
+  head.append(el("div", { class: "li dcs-form" }, el("div", { class: "dcs-acts" },
+    el("button", { type: "button", class: "btn", "data-ms-save": "1", disabled: !msDirty(p).any, onclick: ev => msSave(ev.currentTarget), text: "저장" }))));
+  const out = el("div", {}, head);
+  if (s.allow) out.append(el("div", { class: "sec", text: s.allow.label }), el("div", { class: "list" }, ...msAllowEditor(p, s)));
+  return out;
+}
+function renderMessenger(id) {
+  const box = $(`#${id}`);
+  if (!box) return;
+  const p = msPage(id), m = msItem(id);
+  if (!p.s) {
+    clear(box).append(emptyNode(p.fail ? "메신저 설정을 불러오지 못했어요" : "불러오는 중"));
+    if (!p.fail && !p.loading) loadMessengerSettings(id);
+    return;
+  }
+  const s = p.s, [tag, tone] = m ? msTag(m) : ["", ""];
+  const nodes = [el("div", { class: "sec", text: "연결" }),
+    el("div", { class: "list" },
+      el("div", { class: "li", "data-ms-status": id }, el("span", { class: "lead" }, icon("chat")),
+        el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), el("div", { class: "sup", text: msLine(id, m, s) })),
+        tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null),
+      el("div", { class: "li ms-act" }, el("button", { type: "button", class: "btn", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m)))),
+    el("div", { class: "sec", text: "자동 연결" }), onboardingPanel(id)];
+  if (s.notify) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" },
+    ...notifyRows(k => s.notify[k] !== false, (k, on) => msNotifySet(id, k, on)),
+    el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 그 알림은 여기로 보내지 않고 앱에만 와요." })))));
   if (s.rooms) nodes.push(el("div", { class: "sec", text: s.rooms.label }), el("div", { class: "list" },
     ...s.rooms.items.map(r => el("div", { class: "li", "data-room": r.id },
       el("span", { class: "tx" }, el("div", { class: "hd", text: r.name }), el("div", { class: "sup", text: [`→ ${msKind(r.kind)}${r.project ? ` · ${r.project.name}` : ""}`, r.last_in ? `받음 ${msAgo(r.last_in)}` : "", r.last_out ? `보냄 ${msAgo(r.last_out)}` : ""].filter(Boolean).join(" · ") }),
         r.last_error ? el("div", { class: "dcs-err", text: r.last_error }) : null))),
     ...(s.rooms.hint ? [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", "data-ms-hint": "1", text: s.rooms.hint })))] : [])));
-  if (s.notify) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" }, ...notifyRows(k => MD.s.notify[k] !== false, msNotifySet),
-    el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 그 알림은 여기로 보내지 않고 앱에만 와요." })))));
-  if (s.help.length) nodes.push(el("div", { class: "sec", text: "연결하는 방법" }), el("div", { class: "list" }, el("div", { class: "li" }, el("ol", { class: "steps" }, ...s.help.map(h => el("li", { text: h }))))));
-  if (!ro && s.rooms) nodes.push(el("div", { class: "list" }, el("div", { class: "li dcs-form" },
-    el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn tonal", "data-ms-test": "1", onclick: ev => msTest(ev.currentTarget), text: "연결 확인" })),
-    MD.test ? el("div", { class: "dcs-res" }, ...(MD.test.length ? MD.test.map(t => el("div", { class: t.ok ? "dcs-ok" : "dcs-err", text: t.ok ? `${t.name}: 보냈어요` : `${t.name}: ${t.error || "보내지 못했어요"}` })) : [el("div", { class: "sup", text: "방이 없어요" })])) : null)));
-  clear(MD.body).append(...nodes);
-  MD.dlg.setActions([{ label: "닫기", onclick: c => c() }, ...(ro ? [] : [{ label: "저장", kind: "pri", disabled: !dirty.any, onclick: (c, b) => msSave(b) }])]);
-  const save = MD.dlg.node.querySelector(".dact .btn.pri, .fs-ft .btn.pri");
-  if (save) save.setAttribute("data-ms-save", "1");
+  if (s.allow) nodes.push(el("div", { class: "sec", text: s.allow.label }), el("div", { class: "list" },
+    ...p.allow.map(a => el("div", { class: "li", "data-allow": a }, el("span", { class: "tx" }, el("div", { class: "hd", text: a }))))));
+  nodes.push(el("div", { class: "list" }, el("div", { class: "li dcs-form" }, el("div", { class: "dcs-acts" },
+    el("button", { type: "button", class: "btn tonal", "data-ms-test": "1", onclick: ev => msTest(ev.currentTarget), text: "연결 확인" })),
+  p.test ? el("div", { class: "dcs-res" }, ...(p.test.length ? p.test.map(t => el("div", { class: t.ok ? "dcs-ok" : "dcs-err", text: t.ok ? `${t.name}: 보냈어요` : `${t.name}: ${t.error || "보내지 못했어요"}` })) : [el("div", { class: "sup", text: "방이 없어요" })])) : null)));
+  nodes.push(msAdvanced("data-ms-advanced", p.advOpen, () => msAdvancedBody(p, s)));
+  const det = nodes[nodes.length - 1];
+  det.addEventListener("toggle", () => { p.advOpen = det.open; });
+  clear(box).append(...nodes);
 }
 
-// 설정 → 웹 접속: how the web app is reached (GET/PUT /api/web-access, hub/web-access.ts). Off by default (Tailscale); the owner turns Cloudflare on here and the
-// gateway switches live, no restart and no config file. The tunnel token is write-only: the page only learns whether one is stored ("저장됨").
+// 연결 자동 설정 패널 (hub/onboarding.ts, /api/onboarding/<key>): every messenger screen and 웹 접속 share it. Start runs the
+// automatic steps; the panel names the one owner action while it waits and offers continue/cancel. It polls GET while the
+// flow runs, and only ever draws what the view holds: no token, no error the API did not send.
+const OB = {};
+const OB_POLL_MS = 1500;
+const OB_AUTO_MS = 4000;
+const OB_AUTO_MAX = 1;
+const obKeyOk = key => key === "web-access" || key === "discord" || key === "jandi" || key === "slack" || key === "telegram";
+const obVisible = key => key === "web-access" ? current === "webaccess" : current === key;
+const obLine = v => v.state === "waiting" ? "내가 할 일이 하나 남았어요." : v.state === "running" ? "자동으로 연결하는 중이에요." : v.state === "done" ? "연결했어요." : v.state === "failed" ? "연결하지 못했어요." : "아직 시작하지 않았어요.";
+function obPaint(key) {
+  if (key === "web-access") { if (current === "webaccess") renderWebAccess(); return; }
+  if (current !== key) return;
+  key === "discord" ? renderDiscord() : renderMessenger(key);
+}
+function obStop(o) { if (o && o.timer) clearTimeout(o.timer); if (o) o.timer = 0; }
+function obAutoStop(o) { if (o && o.autoTimer) clearTimeout(o.autoTimer); if (o) o.autoTimer = 0; }
+// Waiting is an owner action the flow can finish by itself once done: continue once after 4 s, and never
+// after the panel left the screen or the flow moved on. A step that is still waiting after that keeps its button.
+function obAuto(key) {
+  const o = OB[key];
+  if (!o || o.state !== "waiting" || !obVisible(key)) { obAutoStop(o); return; }
+  if (o.autoTries >= OB_AUTO_MAX) return;
+  if (o.autoTimer || o.autoBusy) return;
+  o.autoTimer = setTimeout(async () => {
+    const cur = OB[key];
+    if (!cur || cur.state !== "waiting" || !obVisible(key) || cur.autoBusy) { if (cur) cur.autoTimer = 0; return; }
+    cur.autoTimer = 0;
+    cur.autoBusy = true;
+    cur.autoTries++;
+    try { obApply(key, await api(`/api/onboarding/${enc(key)}/continue`, "POST")); }
+    catch { obAutoStop(cur); }
+    finally {
+      const now = OB[key];
+      if (now) { now.autoBusy = false; if (now.state === "waiting" && now.autoTries < OB_AUTO_MAX) obAuto(key); }
+    }
+  }, OB_AUTO_MS);
+}
+function obApply(key, next) {
+  const before = OB[key] || {};
+  const was = before.state;
+  const sameWait = next.state === "waiting" && was === "waiting";
+  obStop(before);
+  if (!sameWait) obAutoStop(before);
+  OB[key] = { ...before, ...next, timer: 0, ...(sameWait ? { autoTimer: before.autoTimer || 0 } : { autoTimer: 0 }) };
+  if (next.state === "waiting" && !sameWait) { OB[key].autoTries = 0; OB[key].autoBusy = false; }
+  obPaint(key);
+  obPoll(key);
+  if (next.state === "waiting" && !sameWait) obAuto(key);
+  if (next.state === "done" && was && was !== "done" && !before.doneHandled) {
+    OB[key].doneHandled = true;
+    obAfterDone(key);
+  }
+}
+// A finished flow reloads the index and the screen it belongs to, so the header and switches show the new state.
+function obAfterDone(key) {
+  loadMessengerIndex();
+  if (key === "web-access") { WA.draft = null; loadWebAccess(); return; }
+  if (key === "discord") { loadDiscord(); return; }
+  loadMessengerSettings(key);
+}
+async function loadOnboarding(key) {
+  if (!obKeyOk(key)) return;
+  try { obApply(key, await api(`/api/onboarding/${enc(key)}`)); }
+  catch { obPaint(key); }
+}
+async function obStart(key, btn) {
+  if (OB[key]) obAutoStop(OB[key]);
+  delete OB[key];
+  await busy(btn, async () => { obApply(key, await api(`/api/onboarding/${enc(key)}/start`, "POST")); });
+}
+async function obAct(key, action, btn) {
+  await busy(btn, async () => { obApply(key, await api(`/api/onboarding/${enc(key)}/${action}`, "POST")); });
+}
+function obPoll(key) {
+  const o = OB[key];
+  if (!o || (o.state !== "running" && o.state !== "waiting")) { obStop(o); return; }
+  if (!obVisible(key)) { obStop(o); obAutoStop(o); return; }
+  if (o.timer) return;
+  o.timer = setTimeout(async () => {
+    o.timer = 0;
+    if (OB[key] !== o || !obVisible(key)) { obStop(o); obAutoStop(o); return; }
+    try { obApply(key, await api(`/api/onboarding/${enc(key)}`)); }
+    catch { obPoll(key); }
+  }, OB_POLL_MS);
+}
+// The panel: state, current step, error (only when the API sent one), the single owner line, and its actions.
+function onboardingPanel(key) {
+  const v = OB[key] || { state: "idle", step: null, owner: null, error: null, url: null };
+  const waiting = v.state === "waiting", failed = v.state === "failed", running = v.state === "running";
+  const rows = [el("div", { class: "li" }, el("span", { class: "lead" }, icon("spark")), el("span", { class: "tx" },
+    el("div", { class: "hd", text: "자동 연결" }), el("div", { class: "sup", "data-onb-line": "1", text: obLine(v) })))];
+  if (v.step) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: v.step.title }), el("div", { class: "sup", text: v.step.detail }))));
+  if (v.error) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "dcs-err", role: "alert", "data-onb-error": "1", text: v.error }))));
+  if ((waiting || failed) && v.owner) rows.push(el("div", { class: "li", "data-onb-owner": v.owner.label },
+    el("span", { class: "tx" }, el("div", { class: "hd", text: v.owner.label }), el("div", { class: "sup", text: v.owner.hint }))));
+  if (v.url) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("a", { class: "btn tonal", href: v.url, target: "_blank", rel: "noopener noreferrer", "data-onb-url": "1", text: v.url }))));
+  const acts = [
+    ...(waiting || failed ? [el("button", { type: "button", class: "btn", "data-onb-continue": "1", onclick: ev => obAct(key, "continue", ev.currentTarget) }, "계속")] : []),
+    ...(running || waiting ? [el("button", { type: "button", class: "btn text", "data-onb-cancel": "1", onclick: ev => obAct(key, "cancel", ev.currentTarget) }, "취소")] : []),
+    ...(failed ? [el("button", { type: "button", class: "btn tonal", "data-onb-start": "1", onclick: ev => obStart(key, ev.currentTarget) }, "다시 시작")] : []),
+  ];
+  if (acts.length) rows.push(el("div", { class: "li ms-onb-acts" }, ...acts));
+  return el("div", { class: "list ms-onb", "data-onb": key, "data-onb-state": v.state }, ...rows);
+}
+// The closed disclosure that keeps manual fields out of the default view: its body is built only when opened.
+function msAdvanced(attr, open, body) {
+  const box = el("div", { class: "ms-adv-body" });
+  const d = el("details", { class: "ms-adv", [attr]: "1", ...(open ? { open: true } : {}) }, el("summary", { class: "ms-adv-sum", text: "직접 입력" }), box);
+  let built = false;
+  const fill = () => { if (!built) { built = true; box.append(body()); } };
+  d.addEventListener("toggle", () => { d.dataset.open = d.open ? "1" : ""; if (d.open) fill(); });
+  d.dataset.open = open ? "1" : "";
+  if (open) fill();
+  return d;
+}
+
+// 설정 → 웹 접속: how the web app is reached (GET/PUT /api/web-access, hub/web-access.ts; POST /api/web-access/onboard,
+// hub/routes.ts). Tailscale is the default and keeps the plain PUT; Cloudflare and 이 컴퓨터만 start the onboarding flow.
+// The manual hostname/team/aud/token and the tunnel status live in the closed "직접 입력" disclosure.
 const WA_MODES = [["tailscale", "Tailscale"], ["cloudflare", "Cloudflare"], ["local", "이 컴퓨터만"]];
 const WA_HELP = {
   tailscale: "Tailscale로 연결한 내 기기에서 열어요. 기본값이에요.",
-  cloudflare: "Cloudflare 터널로 고정 주소를 열어요. 처음 쓰는 기기는 패스키로 연결해야 해요.",
+  cloudflare: "Cloudflare 터널로 고정 주소를 열어요. 연결은 자동으로 진행하고, 필요한 한 가지 동작만 알려드려요.",
   local: "이 컴퓨터에서만 열어요. 다른 기기에서는 열리지 않아요."
 };
-const WA = { data: null, draft: null, fail: "", asked: false };
+const WA = { data: null, draft: null, fail: "", asked: false, advOpen: false };
 const waLabel = m => (WA_MODES.find(x => x[0] === m) || [m, m])[1];
 
 async function loadWebAccess() {
@@ -8037,9 +8314,8 @@ function waReset() {
 }
 function waDirty() {
   const d = WA.data, f = WA.draft;
-  return !!d && !!f && (f.mode !== d.mode || f.hostname.trim() !== d.hostname || f.team.trim() !== d.team || f.aud.trim() !== d.aud || f.token.trim() !== "");
+  return !!d && !!f && (f.hostname.trim() !== d.hostname || f.team.trim() !== d.team || f.aud.trim() !== d.aud || f.token.trim() !== "");
 }
-/* the 설정 row */
 function webAccessRow(row) {
   return row("open", "웹 접속", WA.data ? waLabel(WA.data.mode) : "", () => go("webaccess"));
 }
@@ -8054,42 +8330,70 @@ function waTunnel(d) {
     el("span", { class: "dcs-trail" }, el("span", { class: `dot ${tone}`, "aria-hidden": "true" }), el("span", { class: `tag ${tone}`, text: text })));
 }
 
+// Choosing Cloudflare or 이 컴퓨터만 starts the auto path at once; the flow itself asks for the one owner action.
+async function waOnboard(mode) {
+  if (!WA.draft) return;
+  const hostname = WA.draft.hostname.trim();
+  WA.draft = { ...WA.draft, mode };
+  renderWebAccess();
+  try { obApply("web-access", await api("/api/web-access/onboard", "POST", mode === "cloudflare" && hostname ? { mode, hostname } : { mode })); }
+  catch (e) { toast(e.message, true); }
+}
+async function waPickTailscale(btn) {
+  if (!WA.draft) return;
+  await busy(btn, async () => {
+    WA.data = await api("/api/web-access", "PUT", { mode: "tailscale" });
+    waReset();
+    toast("저장했어요");
+    if (current === "webaccess") renderWebAccess();
+    if (current === "settings") renderSettings();
+    loadDevices();
+  });
+}
+function waAdvanced(d, f) {
+  const field = (label, key, opts, hint) => el("div", {}, textField(label, input({ value: f[key], name: `wa-${key}`, ...opts, oninput: ev => { f[key] = ev.target.value; waSync(); } })), hint ? el("div", { class: "sup", text: hint }) : null);
+  const out = el("div", {}, el("div", { class: "list" }, el("div", { class: "li dcs-form" },
+    field("주소", "hostname", { placeholder: "dotz.example.com", inputmode: "url" }, "터널의 Public Hostname이에요. 주소를 바꾸면 기기를 다시 연결해야 해요."),
+    field("팀 이름 (선택)", "team", { placeholder: "myteam" }, "Cloudflare Access로 한 번 더 확인할 때만 적어요. AUD와 함께 적어요."),
+    field("AUD (선택)", "aud", {}, "Access 애플리케이션의 Audience Tag예요."),
+    el("div", {}, textField("터널 토큰", input({ type: "password", autocomplete: "new-password", name: "wa-token", placeholder: d.token_set ? "바꾸려면 새로 붙여 넣기" : "eyJ…", oninput: ev => { f.token = ev.target.value; waSync(); } })),
+      d.token_set ? el("div", { class: "tag ok dcs-saved", "data-wa-token-set": "1", text: "저장됨" }) : null,
+      el("div", { class: "sup", text: "저장하면 이 컴퓨터에만 보관하고, 화면에는 다시 보여 주지 않아요." })),
+    el("div", { class: "dcs-acts" },
+      el("button", { type: "button", class: "btn", "data-wa-save": "1", disabled: !waDirty(), onclick: ev => waSave(ev.currentTarget), text: "저장" }),
+      waDirty() ? el("button", { type: "button", class: "btn tonal", "data-wa-cancel": "1", onclick: () => { waReset(); renderWebAccess(); }, text: "되돌리기" }) : null))));
+  return out;
+}
+function waSync() { const b = document.querySelector("#webaccess [data-wa-save]"); if (b) b.disabled = !waDirty(); }
+
 function renderWebAccess() {
   const box = $("#webaccess");
   if (!WA.data || !WA.draft) { clear(box).append(WA.asked && WA.fail ? emptyNode("웹 접속 설정을 불러오지 못했어요") : emptyNode("불러오는 중")); return; }
   const d = WA.data, f = WA.draft, cf = f.mode === "cloudflare";
-  const sync = () => { const b = box.querySelector("[data-wa-save]"); if (b) b.disabled = !waDirty(); };
-  const field = (label, key, opts, hint) => el("div", {}, textField(label, input({ value: f[key], name: `wa-${key}`, ...opts, oninput: ev => { f[key] = ev.target.value; sync(); } })), hint ? el("div", { class: "sup", text: hint }) : null);
   const seg = el("div", { class: "tf" }, el("div", { class: "seg", role: "radiogroup", "aria-label": "접속 방식" },
-    ...WA_MODES.map(([v, t]) => el("button", { type: "button", role: "radio", "aria-checked": String(v === f.mode), class: v === f.mode ? "on" : "", "data-v": v, onclick: () => { f.mode = v; renderWebAccess(); } }, t))));
+    ...WA_MODES.map(([v, t]) => el("button", { type: "button", role: "radio", "aria-checked": String(v === f.mode), class: v === f.mode ? "on" : "", "data-v": v,
+      onclick: ev => v === "tailscale" ? waPickTailscale(ev.currentTarget) : waOnboard(v) }, t))));
   const nodes = [el("div", { class: "sec", text: "접속 방식" }),
-    el("div", { class: "list" }, el("div", { class: "li dcs-form" }, seg, el("div", { class: "sup", "data-wa-help": f.mode, text: WA_HELP[f.mode] })))];
-  if (cf) nodes.push(el("div", { class: "sec", text: "Cloudflare" }), el("div", { class: "list" }, el("div", { class: "li dcs-form" },
-    field("주소", "hostname", { placeholder: "dotz.example.com", inputmode: "url" }, "터널의 Public Hostname이에요. 주소를 바꾸면 기기를 다시 연결해야 해요."),
-    field("팀 이름 (선택)", "team", { placeholder: "myteam" }, "Cloudflare Access로 한 번 더 확인할 때만 적어요. AUD와 함께 적어요."),
-    field("AUD (선택)", "aud", {}, "Access 애플리케이션의 Audience Tag예요."),
-    el("div", {}, textField("터널 토큰", input({ type: "password", autocomplete: "new-password", name: "wa-token", placeholder: d.token_set ? "바꾸려면 새로 붙여 넣기" : "eyJ…", oninput: ev => { f.token = ev.target.value; sync(); } })),
-      d.token_set ? el("div", { class: "tag ok dcs-saved", "data-wa-token-set": "1", text: "저장됨" }) : null,
-      el("div", { class: "sup", text: "저장하면 이 컴퓨터에만 보관하고, 화면에는 다시 보여 주지 않아요." })))));
-  if (d.mode === "cloudflare") {
-    nodes.push(el("div", { class: "sec", text: "상태" }), el("div", { class: "list" }, waTunnel(d),
-      el("button", { type: "button", class: "li tap", "data-wa-devices": "1", onclick: () => go("devices") },
-        el("span", { class: "lead" }, icon("key")), el("span", { class: "tx" }, el("div", { class: "hd", text: "연결된 기기 (패스키)" })),
-        el("span", { class: "sup", text: `${d.devices}대` }), icon("chev", "lead"))));
-  }
-  nodes.push(el("div", { class: "list ms-add" }, el("div", { class: "li dcs-form" }, el("div", { class: "dcs-acts" },
-    el("button", { type: "button", class: "btn pri", "data-wa-save": "1", disabled: !waDirty(), onclick: ev => waSave(ev.currentTarget), text: "저장" }),
-    waDirty() ? el("button", { type: "button", class: "btn tonal", "data-wa-cancel": "1", onclick: () => { waReset(); renderWebAccess(); }, text: "되돌리기" }) : null))));
+    el("div", { class: "list" }, el("div", { class: "li dcs-form" }, seg, el("div", { class: "sup", "data-wa-help": f.mode, text: WA_HELP[f.mode] }))),
+    el("div", { class: "sec", text: "자동 연결" }), onboardingPanel("web-access")];
+  if (cf) nodes.push(el("div", { class: "sec", text: "상태" }), el("div", { class: "list" }, waTunnel(d),
+    el("button", { type: "button", class: "li tap", "data-wa-devices": "1", onclick: () => go("devices") },
+      el("span", { class: "lead" }, icon("key")), el("span", { class: "tx" }, el("div", { class: "hd", text: "연결된 기기 (패스키)" })),
+      el("span", { class: "sup", text: `${d.devices}대` }), icon("chev", "lead"))));
+  if (cf && !d.cloudflared_found) nodes.push(el("div", { class: "list" }, el("div", { class: "li" }, el("span", { class: "tx" },
+    el("div", { class: "hd", text: "cloudflared가 없어요" }), el("div", { class: "sup dcs-err", "data-wa-cf-missing": "1", text: "터미널에서 brew install cloudflared 를 실행해 주세요." })))));
+  const det = msAdvanced("data-wa-advanced", WA.advOpen, () => waAdvanced(d, f));
+  det.addEventListener("toggle", () => { WA.advOpen = det.open; });
+  nodes.push(det);
   clear(box).append(...nodes);
 }
 
 async function waSave(btn) {
   const d = WA.data, f = WA.draft;
-  if (f.mode === "cloudflare" && !f.hostname.trim()) return toast("주소를 적어 주세요", true);
-  if (f.mode === "cloudflare" && !d.token_set && !f.token.trim()) return toast("터널 토큰을 붙여 넣어 주세요", true);
-  if (f.mode === "cloudflare" && d.mode !== "cloudflare" && !(await ask("Cloudflare로 바꿀까요?", "저장하면 지금 쓰는 주소(Tailscale)로는 더 열리지 않아요. 새 주소로 들어가 메신저로 받은 코드로 이 기기를 연결해야 해요. 되돌리려면 연결한 기기에서 이 화면을 열어 Tailscale로 바꿔요.", "바꾸기", true))) return;
-  const put = { mode: f.mode };
-  if (f.mode === "cloudflare" || f.hostname.trim() !== d.hostname) put.hostname = f.hostname.trim();
+  if (!d || !f) return;
+  if (d.mode === "cloudflare" && !f.hostname.trim() && f.hostname.trim() !== d.hostname) return toast("주소를 적어 주세요", true);
+  const put = { mode: d.mode };
+  if (f.hostname.trim() !== d.hostname) put.hostname = f.hostname.trim();
   if (f.team.trim() !== d.team) put.team = f.team.trim();
   if (f.aud.trim() !== d.aud) put.aud = f.aud.trim();
   if (f.token.trim()) put.token = f.token.trim();
@@ -8097,7 +8401,7 @@ async function waSave(btn) {
     WA.data = await api("/api/web-access", "PUT", put);
     waReset();
     toast("저장했어요");
-    renderWebAccess();
+    if (current === "webaccess") renderWebAccess();
     loadDevices();
   });
 }
@@ -10653,9 +10957,12 @@ ICONS.archive = "M4 6.5h16V10H4zM5.5 10v8a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-8M10 1
 ICONS.minus = "M6 12h12";
 ICONS.inbox = "M4 13l2.2-7h11.6L20 13v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 13h4.5l1 2h5l1-2H20";
 ICONS.forward = "M15 7l5 5-5 5M20 12h-9a7 7 0 0 0-7 7";
+ICONS.replyall = "M8 7l-5 5 5 5M13 7l-5 5 5 5M8 12h5a8 8 0 0 1 8 7";
+ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
 const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null };
 const mbKey = t => t.slice(5);
-const MB_NOTE = { read: "이 메일함은 실제 메일함의 읽음 표시를 바꿀 수 없어요", unread: "이 메일함은 실제 메일함의 읽음 표시를 바꿀 수 없어요", archive: "이 메일함은 실제 메일함의 보관 처리를 바꿀 수 없어요", unarchive: "이 메일함은 실제 메일함의 보관 처리를 바꿀 수 없어요", trash: "이 메일함의 메일은 실제 메일함에서 지우지 못해요", star: "이 메일함은 실제 메일함의 별표를 바꿀 수 없어요", unstar: "이 메일함은 실제 메일함의 별표를 바꿀 수 없어요" };
+const MB_SYNC_OFF = "dotz에서만 바뀌어요";
+const MB_NOTE = { read: MB_SYNC_OFF, unread: MB_SYNC_OFF, archive: MB_SYNC_OFF, unarchive: MB_SYNC_OFF, trash: "메일함에선 지워지지 않아요", star: MB_SYNC_OFF, unstar: MB_SYNC_OFF };
 // Whether the mail's mailbox will follow an action. Every action still works in dotz either way: `can` only says what the hub can repeat in the
 // real mailbox (owner 2026-11-02: read/unread must always be there). A card with no `can` at all is an older hub, which knows only the delete route.
 const mailCan = (t, a) => { const m = MAILS.get(t); return !!m && Array.isArray(m.can) && m.can.includes(a); };
@@ -10663,6 +10970,35 @@ const mailOldHub = t => { const m = MAILS.get(t); return !!m && !Array.isArray(m
 // Unread: the hub's read flag when the card has one (the real mailbox's, two-way); else dotz's own read position (ts(t).unread). A sent mail is never unread.
 const mailUnread = (t, m = MAILS.get(t)) => !!m && m.dir !== "out" && (typeof m.read === "boolean" ? !m.read : (ts(t).unread | 0) > 0);
 const mbRefresh = () => { MON.sig = ""; MON.side = ""; monSchedule(); mbPaintBar(); };
+
+/* ---------- what moves, and why (web/DESIGN.md Motion) ---------- */
+// A count badge that was drawn again (a list row, a tab) keeps what it last said, so only the digit that changed rolls (rollCount, 01-motion.js).
+// A count of 0 draws no badge at all and forgets, so it appears whole the next time. `key` names the one badge; `attrs` go on the span.
+const CNT_LAST = new Map();
+function cntSpan(key, cls, n, attrs = {}) {
+  if (!n) { CNT_LAST.delete(key); return null; }
+  const now = n > 99 ? "99+" : String(n), was = CNT_LAST.get(key);
+  CNT_LAST.set(key, now);
+  const sp = el("span", { class: cls, ...attrs, text: was && was !== now ? was : now });
+  rollCount(sp, now);
+  return sp;
+}
+// A mail that arrived since the list was last drawn slides in at the top; the first draw of a list, another folder and a plain redraw move nothing.
+const MBOX_SEEN = new Set();
+const mbSeenReset = () => { MBOX_SEEN.clear(); MBOX_SEEN.seeded = false; MBOX_SEEN.scope = ""; };
+function mbFresh(scope, box) {
+  if (scope !== MBOX_SEEN.scope) { mbSeenReset(); MBOX_SEEN.scope = scope; }
+  const rows = [...box.querySelectorAll(":scope > .mr[data-t]")];
+  if (!NT.loaded || !rows.length) return;
+  const fresh = freshKeys(MBOX_SEEN, rows.map(r => r.dataset.t));
+  for (const r of rows) if (fresh.has(r.dataset.t)) motionIn(r, "top");
+}
+// Rows an action takes out of the list (done, deleted, no longer unread in 안 읽음) leave first; the list is drawn again without them after.
+function mbRowsOut(keys) {
+  const keep = mailFilterOf()[2], gone = keys.filter(t => !MAILS.has(t) || !keep(MAILS.get(t), t));
+  const rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => gone.includes(r.dataset.t));
+  return rows.length ? Promise.all(rows.map(r => motionOut(r, "side"))) : null;
+}
 
 // The change an action makes to the page's copy of the mail; the returned function puts it back.
 function mbApply(t, a) {
@@ -10679,7 +11015,8 @@ function mbApply(t, a) {
 const MB_DONE = { read: "읽음으로 표시했어요", unread: "안 읽음으로 표시했어요", archive: "보관했어요", unarchive: "받은편지함으로 옮겼어요", trash: "삭제했어요", star: "별표를 달았어요", unstar: "별표를 뺐어요" };
 const MB_BACK = { archive: "unarchive", unarchive: "archive", read: "unread", unread: "read", star: "unstar", unstar: "star" };
 // Runs one action on `keys` (mail targets). Resolves the keys that went through.
-async function mbRun(keys, action, quiet = false) {
+// `note`: a word added to the done toast (the open mail's "dotz에서만 바뀌어요" when the mailbox will not follow).
+async function mbRun(keys, action, quiet = false, note = "") {
   keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
   // An older hub (no `can` on the card) has no action route: there only 삭제 works, through the old DELETE.
@@ -10687,7 +11024,8 @@ async function mbRun(keys, action, quiet = false) {
   const todo = legacy ? keys : keys.filter(t => !mailOldHub(t));
   if (!todo.length) return [];
   const undo = new Map(todo.map(t => [t, mbApply(t, action)]));
-  mbRefresh();
+  const leaving = mbRowsOut(todo);
+  if (leaving) leaving.then(mbRefresh); else mbRefresh();
   let res;
   try {
     if (legacy) { res = []; for (const t of todo) { await api(`/api/mail/${mbKey(t)}`, "DELETE"); res.push({ key: t, ok: true, synced: false }); } }
@@ -10701,10 +11039,10 @@ async function mbRun(keys, action, quiet = false) {
   const done = res.filter(x => x.ok !== false).map(x => x.key);
   for (const x of res) if (x.ok === false && undo.has(x.key)) undo.get(x.key)();
   mbRefresh();
-  const note = (res.find(x => x.ok === false && x.note) || res.find(x => x.note) || {}).note;
-  if (!quiet && note) toast(note, res.some(x => x.ok === false));
+  const said = (res.find(x => x.ok === false && x.note) || res.find(x => x.note) || {}).note;
+  if (!quiet && said) toast(said, res.some(x => x.ok === false));
   else if (!quiet && res.some(x => x.ok === false)) toast("처리하지 못했어요", true);
-  else if (!quiet && done.length && MB_DONE[action]) toast(done.length > 1 ? `${done.length}개를 ${MB_DONE[action]}` : MB_DONE[action], false, MB_BACK[action] && action !== "trash" && !/star$/.test(action) ? { label: "되돌리기", onclick: () => mbRun(done, MB_BACK[action]) } : undefined);
+  else if (!quiet && done.length && MB_DONE[action]) toast(`${done.length > 1 ? `${done.length}개를 ${MB_DONE[action]}` : MB_DONE[action]}${note ? ` · ${note}` : ""}`, false, MB_BACK[action] && action !== "trash" && !/star$/.test(action) ? { label: "되돌리기", onclick: () => mbRun(done, MB_BACK[action]) } : undefined);
   if (legacy) for (const t of done) PQ.of.delete(t);
   Promise.allSettled([convLoad(), loadIntegrations()]);
   return done;
@@ -10714,7 +11052,7 @@ async function mbTrash(keys) {
   keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
   const real = keys.every(t => mailCan(t, "trash"));
-  if (!await ask("메일 삭제", real ? `메일 ${keys.length}개를 삭제할까요? 실제 메일함에서도 휴지통으로 가요` : `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 실제 메일함의 메일은 그대로 있거나, 옮기지 못할 수 있어요`, "삭제", true)) return [];
+  if (!await ask("메일 삭제", real ? `메일 ${keys.length}개를 휴지통으로 옮길까요?` : `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 메일함엔 남을 수 있어요`, "삭제", true)) return [];
   const done = await mbRun(keys, "trash");
   mbLeave(keys);
   return done;
@@ -10723,7 +11061,9 @@ async function mbTrash(keys) {
 const mbLeave = keys => { if (monCtx && keys.includes(monCtx) && current === "chat" && !MAILS.has(monCtx)) go("monitoring", MON.sel); };
 
 /* ---------- the row: checkbox, star, the bold of an unread mail ---------- */
-const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}`, type: "button", "data-k": o.k, title: label, "aria-label": label, onclick }, icon(ic), el("span", { class: "mbox-bt", text: label }));
+// `o.short`: the visible word when the full label (kept as aria-label and title) is longer than the button needs.
+const mbBtn = (label, ic, onclick, o = {}) => el("button", { class: `mbox-b${o.cls ? ` ${o.cls}` : ""}`, type: "button", "data-k": o.k, title: label, "aria-label": label, onclick }, icon(ic), el("span", { class: "mbox-bt", text: o.short || label }));
+const MB_SHORT = { read: "읽음", unread: "안 읽음", archive: "보관", unarchive: "받은편지함" };
 // Star: always a button (a star works in dotz whatever the mailbox does); the mailbox's refusal comes back as the hub's one line.
 function mbStar(t) {
   const m = MAILS.get(t) || {}, on = !!m.starred;
@@ -10756,7 +11096,7 @@ function mbPaintBar() {
   const off = acts.find(([a]) => !can(a));
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }),
-    ...acts.map(([a, label, ic]) => mbBtn(label, ic, () => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar()), { k: `mail-${a}` })),
+    ...acts.map(([a, label, ic]) => mbBtn(label, ic, () => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar()), { k: `mail-${a}`, short: MB_SHORT[a] })),
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
   // A null child on append would print the word "null"; the note is added only when the mailbox will not follow the action.
   if (off) bar.append(el("div", { class: "mbox-note", role: "status", text: MB_NOTE[off[0]] }));
@@ -10770,21 +11110,24 @@ function mbList(vis) {
   return bar;
 }
 
-/* ---------- the open mail: the same actions in its head ---------- */
-function mailOpenBar(t) {
-  const m = MAILS.get(t) || {}, unread = mailUnread(t, m), arch = !!m.archived;
-  const acts = [m.dir === "out" ? null : unread ? ["read", "읽음으로 표시", "check"] : ["unread", "안 읽음으로 표시", "mail"], arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "완료(보관)", "archive"], ["trash", "삭제", "trash"]].filter(Boolean);
-  const off = acts.find(([a]) => !mailCan(t, a));
-  const bar = el("div", { class: "mbox-open", role: "group", "aria-label": "메일 처리" },
-    ...acts.map(([a, label, ic]) => mbBtn(label, ic, ev => {
-      const b = ev.currentTarget;
-      busy(b, async () => {
-        const done = a === "trash" ? await mbTrash([t]) : await mbRun([t], a);
-        if (done.length && a !== "trash" && a !== "read") { MBOX.sel.delete(t); if (monCtx === t && current === "chat") go("monitoring", MON.sel); }
-      });
-    }, { k: `mail-open-${a}` })));
-  if (off) bar.append(el("div", { class: "mbox-note", role: "status", text: MB_NOTE[off[0]] }));
-  return bar;
+/* ---------- the open mail: one slim bar of icons at its top, like Gmail ---------- */
+// Back, 보관, 삭제, 읽음 / 안 읽음, 답장, 전체답장, 전달, 초안 작성, then the ⋯ (its own list plus 원문 접기). Icons only: the name is the aria-label and
+// the title. The bar sticks while the mail scrolls. A mailbox that will not follow an action says so in the action's toast, not in a standing line.
+const mbIco = (label, ic, onclick, k) => el("button", { class: "ib mtop-b", type: "button", "data-k": k, title: label, "aria-label": label, onclick }, icon(ic));
+function mailOpenBar(t, card) {
+  const m = MAILS.get(t) || {}, unread = mailUnread(t, m), arch = !!m.archived, out = m.dir === "out";
+  const acts = [arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "보관", "archive"], ["trash", "삭제", "trash"], out ? null : unread ? ["read", "읽음으로 표시", "mailopen"] : ["unread", "안 읽음으로 표시", "mail"]].filter(Boolean);
+  const back = monCtx && MON.sel ? MON.sel : "i:mail";
+  const raw = () => card && card.querySelector(":scope > .rc-raw");
+  return el("div", { class: "mtop", role: "toolbar", "aria-label": "메일 처리" },
+    mbIco("목록으로", "back", () => go("monitoring", back), "mail-top-back"),
+    ...acts.map(([a, label, ic]) => mbIco(label, ic, ev => busy(ev.currentTarget, async () => {
+      const done = a === "trash" ? await mbTrash([t]) : await mbRun([t], a, false, mailCan(t, a) ? "" : MB_NOTE[a]);
+      if (done.length && a !== "trash" && a !== "read") { MBOX.sel.delete(t); if (monCtx === t && current === "chat") go("monitoring", MON.sel); }
+    }), `mail-open-${a}`)),
+    ...MB_MODES.map(([k, label, ic]) => el("button", { class: "ib mtop-b mbox-mode", type: "button", "data-mode": k, title: label, "aria-label": label, onclick: () => { mbOpenReply(t, k); const s = tl.querySelector(":scope > .mbox-reply"); if (s) s.scrollIntoView({ block: "nearest" }); } }, icon(ic))),
+    out ? null : mailDraftButton(t, "ib mtop-b mr-draft"),
+    mailMenuBtn(t, () => { const d = raw(); return d ? [{ value: "raw", label: d.open ? "원문 접기" : "원문 보기", run: () => { d.open = !d.open; } }] : []; }));
 }
 
 /* ---------- 메일 쓰기: the floating button and its sheet ---------- */
@@ -10815,11 +11158,11 @@ function mbForm(st, host, o) {
   picker.onchange = () => { const list = [...picker.files]; picker.value = ""; add(list); };
   const body = el("textarea", { class: "mbox-ta fi", rows: o.rows || "7", placeholder: o.placeholder || "내용", "data-k": "mail-body", "aria-label": "내용", oninput: ev => { st.body = ev.target.value; } });
   body.value = st.body;
-  const ccRow = field("cc", "참조", "참조 (쉼표로 나눠요)");
+  const ccRow = field("cc", "참조", "쉼표로 여러 명");
   ccRow.hidden = !st.cc && !st.showCc;
   const ccBtn = el("button", { class: "mbox-cc", type: "button", "aria-label": "참조 추가", onclick: () => { st.showCc = true; ccRow.hidden = false; ccBtn.hidden = true; ccRow.querySelector("input").focus(); } }, "참조");
   ccBtn.hidden = !ccRow.hidden;
-  const to = field("to", "받는 사람", "받는 사람 (쉼표로 나눠요)");
+  const to = field("to", "받는 사람", "쉼표로 여러 명");
   to.append(ccBtn);
   paintFiles();
   // append(null) would print the word "null": the quote block is added only when there is an original
@@ -10831,13 +11174,13 @@ const mbPayload = (st, extra = {}) => ({ to: st.to.trim(), cc: st.cc.trim(), sub
 const mbEmpty = st => !st.to.trim() && !st.cc.trim() && !st.subject.trim() && !st.body.trim() && !st.files.length;
 async function mbSave(st, extra, btn) {
   if (!st.to.trim()) { toast("받는 사람을 적어 주세요", true); return null; }
-  if (st.up.length) { toast("파일을 올리는 중이에요. 끝나면 다시 눌러 주세요", true); return null; }
+  if (st.up.length) { toast("파일을 올리는 중이에요", true); return null; }
   let r = null;
   await busy(btn, async () => {
     try { r = await api("/api/mail/compose", "POST", mbPayload(st, extra)); }
     catch (e) { toast(e && /^HTTP 404/.test(e.message) ? "서버가 아직 새 메일 초안을 지원하지 않아요" : (e && e.message) || "초안을 만들지 못했어요", true); }
   });
-  if (r) { toast("초안을 만들었어요. 보내기는 승인 카드에서 눌러 주세요"); loadNotices(); }
+  if (r) { toast("초안을 만들었어요 · 승인 카드에서 보내요"); loadNotices(); }
   return r;
 }
 // The floating sheet: docked at the bottom right of a wide screen (minimize / close), the whole screen on a phone. Closing a sheet with text asks first.
@@ -10847,23 +11190,25 @@ function mbCompose(init = {}) {
   const host = el("div", { class: "mbox-sb" });
   const form = mbForm(st, host, { rows: "10" });
   const node = el("div", { class: "mbox-sheet", role: "dialog", "aria-label": "새 메일" });
-  const close = async () => { if (!mbEmpty(st) && !await ask("작성 중인 메일", "쓰던 내용을 버릴까요?", "버리기", true)) return; node.remove(); MBOX.cs = null; };
-  const save = ev => mbSave(st, {}, ev.currentTarget).then(r => { if (r) { node.remove(); MBOX.cs = null; } });
+  // The sheet fades down and away before it is removed; it is no longer the open one from the first moment.
+  const leave = async () => { MBOX.cs = null; node.inert = true; await motionOut(node, "rise"); node.remove(); };
+  const close = async () => { if (!mbEmpty(st) && !await ask("작성 중인 메일", "쓰던 내용을 버릴까요?", "버리기", true)) return; leave(); };
+  const save = ev => mbSave(st, {}, ev.currentTarget).then(r => { if (r) leave(); });
   node.append(
     el("div", { class: "mbox-sh" }, el("span", { class: "mbox-st", text: "새 메일" }),
       el("button", { class: "ib mbox-min", type: "button", "aria-label": "최소화", title: "최소화", onclick: () => node.classList.toggle("min") }, icon("minus")),
       el("button", { class: "ib mbox-close", type: "button", "aria-label": "닫기", title: "닫기", onclick: close }, icon("close"))),
     host,
     el("div", { class: "mbox-sf" }, el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-compose-save", onclick: save }, "초안 만들기"),
-      el("button", { class: "ib mbox-attach", type: "button", "aria-label": "파일 붙이기", title: "파일 붙이기", onclick: () => form.pick() }, icon("clip")),
-      el("span", { class: "mbox-hint", text: "보내기는 승인 카드에서 해요" })));
+      el("button", { class: "ib mbox-attach", type: "button", "aria-label": "파일 붙이기", title: "파일 붙이기", onclick: () => form.pick() }, icon("clip"))));
   document.body.append(node);
+  motionIn(node, "rise", 240);
   MBOX.cs = { node, st };
   node.querySelector(".mbox-in").focus();
 }
 
 /* ---------- the inline reply at the bottom of the open mail ---------- */
-const MB_MODES = [["reply", "답장", "reply"], ["all", "전체답장", "reply"], ["forward", "전달", "forward"]];
+const MB_MODES = [["reply", "답장", "reply"], ["all", "전체답장", "replyall"], ["forward", "전달", "forward"]];
 const mbRe = (p, s) => (new RegExp(`^\\s*${p}\\s*:`, "i").test(s) ? s : `${p}: ${s}`);
 const mbAddrs = v => mailAddrList(v).map(a => a.addr || a.name);
 // To / Cc / subject of a mode, from the mail's card.
@@ -10887,11 +11232,12 @@ function mbBox(t) {
 }
 function mbOpenReply(t, mode) {
   const b = mbBox(t), m = MAILS.get(t) || {};
-  const keep = b.st ? { body: b.st.body, files: b.st.files } : { body: "", files: [] };
+  const keep = b.st ? { body: b.st.body, files: b.st.files } : { body: "", files: [] }, opening = !b.open;
   b.open = true; b.mode = mode;
   b.st = { ...mbDefaults(t, mode), showCc: mode === "all", up: [], ...keep };
   if (mode === "forward" && !b.st.body) b.st.body = `\n\n---------- 전달한 메일 ----------\n보낸 사람: ${m.from || ""}\n제목: ${m.subject || ""}\n\n${mbQuoteText(t)}`;
   mbReplyPaint(true);
+  if (opening && typeof tl !== "undefined" && tl) motionIn(tl.querySelector(":scope > .mbox-reply"));   // the reply box opens; a change of mode inside it moves nothing
 }
 function mbReplyPaint(force) {
   if (typeof tl === "undefined" || !tl) return;
@@ -10902,11 +11248,10 @@ function mbReplyPaint(force) {
   if (slot && slot.dataset.sig === sig && !force && slot.isConnected && slot === tl.lastElementChild) return;
   if (slot) slot.remove();
   slot = el("section", { class: `mbox-reply${b.open ? " open" : ""}`, "aria-label": "답장 쓰기", "data-sig": sig });
-  if (!b.open) {
-    slot.append(el("div", { class: "mbox-modes" }, ...MB_MODES.map(([k, label, ic]) => el("button", { class: "cchip mbox-mode", type: "button", "data-mode": k, onclick: () => mbOpenReply(t, k) }, icon(ic), label))));
-  } else {
+  // closed, the slot stays empty (and hidden): 답장 / 전체답장 / 전달 are icons in the mail's top bar
+  if (b.open) {
     const host = el("div", { class: "mbox-rb" }), quote = mbQuoteText(t);
-    const q = quote ? el("details", { class: "mbox-quote" }, el("summary", { text: "이전 메일 보기" }), el("pre", { class: "mbox-qt", text: quote })) : null;
+    const q = quote ? el("details", { class: "mbox-quote" }, el("summary", { text: "이전 메일" }), el("pre", { class: "mbox-qt", text: quote })) : null;
     const form = mbForm(b.st, host, { rows: "6", placeholder: "답장 내용", quote: q });
     slot.append(
       el("div", { class: "mbox-modes" }, ...MB_MODES.map(([k, label, ic]) => el("button", { class: `cchip mbox-mode${k === b.mode ? " on" : ""}`, type: "button", "data-mode": k, "aria-pressed": String(k === b.mode), onclick: () => mbOpenReply(t, k) }, icon(ic), label))),
@@ -10914,8 +11259,7 @@ function mbReplyPaint(force) {
       el("div", { class: "mbox-sf" },
         el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-reply-save", onclick: ev => mbSave(b.st, { reply_to: mbKey(t), mode: b.mode }, ev.currentTarget).then(r => { if (r) { MBOX.boxes.delete(t); mbReplyPaint(true); } }) }, "초안 만들기"),
         el("button", { class: "ib mbox-attach", type: "button", "aria-label": "파일 붙이기", title: "파일 붙이기", onclick: () => form.pick() }, icon("clip")),
-        el("button", { class: "btn text sm mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, "접기"),
-        el("span", { class: "mbox-hint", text: "보내기는 승인 카드에서 해요" })));
+        el("button", { class: "btn text sm mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, "접기")));
   }
   tl.append(slot);
 }
@@ -11118,16 +11462,25 @@ function mailThreadMobile(t) {
   const rel = mailRelated(t);
   if (rel.length < 2) return null;
   const list = el("ol", { class: "mth-list", hidden: true }, ...mailThreadRows(t, rel));
-  const b = el("button", { class: "mth-mb", type: "button", "aria-expanded": "false", onclick: () => { const open = list.hidden; list.hidden = !open; b.setAttribute("aria-expanded", String(open)); b.classList.toggle("open", open); } },
-    icon("mail"), el("span", { class: "mth-mt", text: `이 사람과 주고받은 메일 ${rel.length}` }), icon("drop", "mth-ch"));
+  // a small chip (mail icon and the count) at the end of the header's 받는 사람 line; its full name is the aria-label and the title
+  const name = `이 사람과 주고받은 메일 ${rel.length}`;
+  const b = el("button", { class: "mth-mb", type: "button", "aria-expanded": "false", "aria-label": name, title: name, onclick: () => { const open = list.hidden; list.hidden = !open; b.setAttribute("aria-expanded", String(open)); b.classList.toggle("open", open); } },
+    icon("mail"), el("span", { class: "mth-mt", text: String(rel.length) }), icon("drop", "mth-ch"));
   return el("div", { class: "mth-m" }, b, list);
 }
 
-// The mail card's own block: the header plus, under 1024px, the thread row.
+// The mail card's own block, Gmail-like: one muted line (받는 사람, 참조: two names then 외 N명) with a chevron that opens the full header,
+// and under 1024px the thread chip at its end.
 function mailMetaNode(t, e) {
   const base = MAILS.get(t) || {};
   const m = { from: base.from || (e && e.from), to: base.to || (e && e.to), cc: base.cc || (e && e.cc), dir: base.dir || (e && e.dir) };
-  return el("div", { class: "mhd-wrap" }, mailHeadNode(m), mailThreadMobile(t));
+  const head = mailHeadNode(m), to = mailAddrList(m.to), cc = mailAddrList(m.cc);
+  head.hidden = true;
+  const names = list => { const n = list.slice(0, 2).map(a => a.name || a.addr).join(", "); return list.length > 2 ? `${n} 외 ${list.length - 2}명` : n; };
+  const line = [to.length ? `받는 사람 ${names(to)}` : "", cc.length ? `참조 ${names(cc)}` : ""].filter(Boolean).join(" · ") || "보낸 사람과 받는 사람";
+  const tog = el("button", { class: "mhd-tog", type: "button", "aria-expanded": "false", title: "보낸 사람·받는 사람 자세히", onclick: () => { const open = head.hidden; head.hidden = !open; tog.setAttribute("aria-expanded", String(open)); tog.classList.toggle("open", open); } },
+    el("span", { class: "mhd-tl", text: line }), icon("drop", "mhd-ch"));
+  return el("div", { class: "mhd-wrap" }, el("div", { class: "mhd-line" }, tog, mailThreadMobile(t)), head);
 }
 
 // The wide panel, beside the conversation (see the CSS): it sits in the chat box and only shows for a mail with related mail.
@@ -11897,7 +12250,7 @@ function draftCardNode(n, o = {}) {
     draftOriginNode(dr),
     man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
     draftFilesNode(dr, { t: d.to, edit: open }), draftMailNode(dr.mail));
-  const head = { app: mail ? "mail" : d.to, label: mail ? monInstLabel(d.to) : pcTargetName(d.to, n.pc), pc: mail && pqPc(d.to) ? pqPc(d.to).name : pqSelf(), model: dr.model || "", at: d.answered_at || n.updated || n.ts,
+  const head = { app: mail ? "mail" : d.to, label: mail ? monInstLabel(d.to) : pcTargetName(d.to, n.pc), pc: mail && pqPc(d.to) ? pqPc(d.to).name : pqSelf(), model: dr.model || "", at: null,   // the state tag carries the time once
     tail: [dr.rule ? draftRuleTag(dr.rule, "dr-rule") : null, el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
       // 지우기 on a waiting draft is 보내지 않기: the same answer path, so the owning computer drops it once and nothing is sent
       open && !editing && oDrop ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => { if (!busy) answerInline(n, oDrop); } }, icon("close")) : null] };
@@ -11940,7 +12293,7 @@ function monDecisionNode(n) {
     onclick: () => (d.draft || o.action === "form" ? noticeSheetOpen(n.pc ? n : n.id) : answerInline(n, o)) },
     el("span", { class: "dc-key", text: String(o.n) }),
     el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
-  const end = open ? null : el("div", { class: "mt", text: d.state === "ignored" ? "무시했어요" : d.resolved ? "답 없이 끝났어요" : `답했어요${said ? ` · ${ntPlain(said)}` : ""}` });
+  const end = open ? null : el("div", { class: "mt", text: d.state === "ignored" ? "무시했어요" : d.expired ? "기한 지남" : d.resolved ? "답 없이 끝났어요" : `답했어요${said ? ` · ${ntPlain(said)}` : ""}` });
   return el("div", { class: "bm alert", "data-nid": n.id }, el("div", { class: "mt" }, el("span", { class: "mn", text: ntPlain(n.title) || "답변이 필요해요" }), ` · ${monWhen(n)}`, open ? " " : null, open ? monTag("ask") : null),
     mdNode(fl.text), filesNode(fl.files), el("div", { class: "dcm fx mon-dc" }, ...rows), end);
 }
@@ -12008,7 +12361,7 @@ const mailRealFiles = files => (files || []).map((f, i) => ({ f, i })).filter(x 
 function mailFilesNode(key, files) {
   const real = mailRealFiles(files);
   if (!real.length) return null;
-  return el("div", { class: "mr-files" }, el("div", { class: "mr-fh", text: `첨부파일 ${real.length}개` }), ...real.map(({ f, i }) =>
+  return el("div", { class: "mr-files" }, el("div", { class: "mr-fh", text: `첨부 ${real.length}개` }), ...real.map(({ f, i }) =>
     el("a", { class: "mr-file", href: mailFileUrl(key, i, true), download: f.name, title: `${f.name} 내려받기`, "aria-label": `${f.name} 내려받기${f.size ? ` (${mailSize(f.size)})` : ""}` },
       icon("file"), el("span", { class: "mr-fname", text: f.name }), f.size ? el("span", { class: "mr-fsize", text: mailSize(f.size) }) : null, icon("download"))));
 }
@@ -12066,14 +12419,16 @@ function mailFilterBar(mails, notices) {
   const cur = mailFilterOf()[0];
   return el("div", { class: "mr-filter", role: "tablist", "aria-label": "메일 보기" }, ...MAIL_FILTERS.map(([k, label, ok]) => {
     const n = k === "all" ? 0 : k === "pending" ? [...mailDraftLive(notices).values()].filter(mailDraftOpen).length : mails.filter(t => MAILS.has(t) && ok(MAILS.get(t), t)).length;
-    return el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); } }, label, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
+    return el("button", { class: `cchip mr-f${k === cur ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === cur), "data-filter": k, onclick: () => { MON.mailFilter = k; MON.sig = ""; monSchedule(); } }, label, cntSpan(`mail-filter:${k}`, "mr-fn", n));
   }));
 }
-// A mail or chat of an integration is its own conversation in 채팅. A mail is a compact result-card row: sender and time on one line (with
-// a paperclip and the file count when it has files), the subject, a summary of up to 3 lines and, at the bottom, the reply state. The
+// A mail or chat of an integration is its own conversation in 채팅. A mail is a Gmail-like flat row: sender and time on one line (with
+// a paperclip and the file count when it has files), the subject with the reply-draft state beside it, and a one-line summary. The
 // whole card is the way in: it opens the mail's conversation, where the original and its files are (11-todo-strip.js "mail").
 // Every mail row has one layout: sender · reply-state tag (only when there is a reply state; the orange 미답장 pill while one is owed) · 안 읽음 N ·
 // paperclip · time · ⋯. A mail conversation whose mail is gone (deleted) is no row at all.
+// A mail row's time: today's clock, else the day alone ("1월 15일"); the open mail keeps the full date and time.
+const mailRowWhen = t => !t || !Number.isFinite(Date.parse(t)) ? "" : kstDay(t) === kstDay(Date.now()) ? kstHM(t) : new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric" });
 function monConvNode(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), n = m ? mailUnread(t, m) : ts(t).unread, open = () => go("monitoring", `c:${t}`);
   if (!m && isMailT(t)) return null;
@@ -12085,17 +12440,15 @@ function monConvNode(t, label) {
   const ruleTag = m && m.rule && m.dir !== "out" ? draftRuleTag(m.rule, "mr-rule") : null;
   // Why a mail is not 답장 필요: he is not its main recipient (hub/mail-state.ts replyExclusion: 참조로 받음, 단체 메일, 자동 발송, 다른 사람 앞).
   const whyTag = m && m.why && m.dir !== "out" && m.reply !== "replied" ? el("span", { class: "tag mr-why", "data-why": m.why, text: m.why }) : null;
-  const inline = m ? mailRowActs(m).map(a => mailActButton(t, a)) : [];
-  const files = m ? mailRealFiles(m.attachments).map(x => x.f) : [], brief = m ? mailBrief(m, t) : "", when = rcWhen(last ? last.ts : m && m.at), chip = m && (m.dir === "out" || !m.reply || (m.suggest && m.suggest.state === "sent")) ? mailReplyChip(m.suggest) : null;
+  const files = m ? mailRealFiles(m.attachments).map(x => x.f) : [], brief = m ? mailBrief(m, t) : "", when = (m ? mailRowWhen : rcWhen)(last ? last.ts : m && m.at), chip = m && (m.dir === "out" || !m.reply || (m.suggest && m.suggest.state === "sent")) ? mailReplyChip(m.suggest) : null;
   const title = m ? m.subject || "(제목 없음)" : rcPlain(String(last ? last.text : "").split("\n").find(l => l.trim() && !/^\s*>/.test(l)) || "") || label;
   const clip = files.length ? el("span", { class: "mr-clip", title: `첨부파일 ${files.length}개`, "aria-label": `첨부파일 ${files.length}개` }, icon("clip"), String(files.length)) : null;
-  return el("div", { class: `bm alert rc mr${m && n ? " mr-new" : ""}${m && MBOX.sel.has(t) ? " mr-sel" : ""}`, role: "button", tabindex: "0", "aria-label": `${m && n ? "안 읽음, " : ""}${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
+  return el("div", { class: `bm alert rc mr${m && n ? " mr-new" : ""}${m && MBOX.sel.has(t) ? " mr-sel" : ""}`, role: "button", tabindex: "0", "data-t": m ? t : null, "aria-label": `${m && n ? "안 읽음, " : ""}${title} ${m ? "원문 열기" : "대화 열기"}`, onclick: open,
     onkeydown: e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); open(); } } },
-    el("div", { class: "rc-hd" }, m ? mbLead(t, title) : null, el("span", { class: "rc-src", text: m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label }), stateTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m ? mailMenuBtn(t) : null),
-    el("div", { class: "rc-title", text: title }),
+    el("div", { class: "rc-hd" }, m ? mbLead(t, title) : null, el("span", { class: "rc-src", text: m ? m.dir === "out" ? `나 → ${mailSender(m.to) || "받는 사람"}` : mailSender(m.from) || label : label }), stateTag, whyTag, ruleTag, tag, clip, when ? el("span", { class: "rc-time", text: when }) : null, m && m.dir !== "out" ? mailDraftButton(t, "ib mr-draft") : null, m ? mailMenuBtn(t) : null),
+    el("div", { class: "rc-title", text: title }), chip,
     m && m.to ? el("div", { class: "mr-to", text: mailToText(m) }) : null,
-    ...mailSumNodes(m, t, brief),
-    chip || inline.length ? el("div", { class: "mr-slot" }, chip, ...inline) : null);
+    ...mailSumNodes(m, t, brief));
 }
 // The summary lines of a mail row: a bulleted 요약 as a two-point list, else the brief as one clamped text; then the first 할 일.
 function mailSumNodes(m, t, brief) {
@@ -12109,8 +12462,8 @@ function mailSumNodes(m, t, brief) {
 // card in the mail's conversation. In a row and in the open mail's head.
 const mailDraftAsk = async (t, btn, instruction = "") => {
   await api(`/api/mail/${t.slice(5)}/draft`, "POST", instruction ? { instruction } : {});
-  toast("답장 초안을 만들고 있어요. 다 되면 이 메일에 승인 카드가 떠요");
-  if (btn) { btn.disabled = true; btn.textContent = "만드는 중…"; }
+  toast("답장 초안을 만드는 중이에요");
+  if (btn) { btn.disabled = true; if (!btn.classList.contains("ib")) btn.textContent = "만드는 중…"; }
 };
 // The sample in the 초안 작성 box, made from the summary the mail already has (hub/mail.ts MailRecord.summary: 요약, 할 일), no model call:
 // the first 할 일, else the first point of 요약, quoted in one example instruction that fits it. "" without a summary (the fixed hint then).
@@ -12132,20 +12485,21 @@ function mailDraftSample(m) {
 function mailDraftDialog(t, btn) {
   const m = MAILS.get(t), sample = mailDraftSample(m);
   const ta = el("textarea", { class: "fi", rows: "3", maxlength: "500", "data-k": "draft-instruction", "aria-label": "초안에 넣을 내용",
-    placeholder: sample || "비워 두면 메일을 읽고 알아서 써요.\n예: 금요일까지 보내 드린다고, 견적서도 첨부한다고 써 줘" });
+    placeholder: sample || "예: 금요일까지 보내 드린다고 써 줘" });
   const ctx = m ? el("div", { class: "md-ctx", "data-k": "draft-mail" },
     el("div", { class: "md-from" }, icon("mail"), el("span", { text: mailSender(m.from) || m.from || "보낸 사람 없음" })),
     el("div", { class: "md-subj", text: m.subject || "(제목 없음)" }),
     ...mailSumNodes(m, t, mailBrief(m, t))) : null;
   const go = (close, b) => busy(b, async () => { close(); await mailDraftAsk(t, btn, ta.value.trim()).catch(e => toast(e.message || "초안을 요청하지 못했어요", true)); });
-  const d = dialog({ title: "답장 초안 만들기", body: el("div", { class: "col md-dlg" }, ctx,
-      el("div", { class: "md-ask" }, el("div", { class: "md-lbl", text: "어떻게 답할까요?" }), ta, el("div", { class: "sup", text: sample ? "적은 내용을 그대로 반영해요. 비워 두면 메일을 읽고 알아서 써요." : "적은 내용을 그대로 반영해요." }))),
+  const d = dialog({ title: "답장 초안", body: el("div", { class: "col md-dlg" }, ctx,
+      el("div", { class: "md-ask" }, el("div", { class: "md-lbl", text: "어떻게 답할까요?" }), ta, el("div", { class: "sup", text: "비워 두면 알아서 써요" }))),
     actions: [{ label: "초안 만들기", kind: "pri", onclick: (close, b) => go(close, b) }] });
   ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey) && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   ta.focus();
 }
 const mailDraftRun = (t, b) => mailDraftDialog(t, b);
-const mailDraftButton = (t, cls = "cchip mr-act mr-draft") => el("button", { class: cls, type: "button", "data-k": "mail-draft", onclick: ev => { ev.stopPropagation(); mailDraftDialog(t, ev.currentTarget); } }, icon("pencil"), "초안 작성");
+// A row has the icon alone (cls "ib mr-draft", its name in aria-label and title); the open mail's head keeps the word.
+const mailDraftButton = (t, cls = "cchip mr-act mr-draft") => { const bare = /\bib\b/.test(cls); return el("button", { class: cls, type: "button", "data-k": "mail-draft", "aria-label": "초안 작성", title: "초안 작성", onclick: ev => { ev.stopPropagation(); mailDraftDialog(t, ev.currentTarget); }, onkeydown: ev => ev.stopPropagation() }, icon("pencil"), bare ? null : "초안 작성"); };
 // 답장 안 함 / 답장 필요로 표시: the owner's own mark (POST / DELETE /api/mail/<key>/fyi, recorded as his with the time; a peer's mail on the computer
 // that holds it: 34-peer-monitoring.js pqRoute). The row, its tag, the filter counts and the app badges change at once; 답장 안 함 drops the mail's
 // waiting reply draft (확인 대기). 답장 필요로 표시 works from no state, from 답장 안 함 and from 답장함 (it needs another answer).
@@ -12160,17 +12514,14 @@ async function mailSetFyi(t, on) {
 }
 // The actions of a mail, one list for the ⋯ of every mail card and for the buttons of every row. Incoming: 초안 작성, then 답장 안 함 while a reply
 // is owed (답장 필요 / 초안 있음) or 답장 필요로 표시 in any other state, then 삭제. Outgoing: 삭제. The one rule for a row's buttons: every incoming row
-// shows 초안 작성 under its summary, without a tap on the ⋯ (owner 2026-10-29); a row whose reply is owed adds 답장 안 함. The rest stays in the ⋯.
+// has the 초안 작성 pencil beside its ⋯, without a tap on the ⋯ (owner 2026-10-29); the row stays one Gmail-like row (owner 2026-11-03), so the rest is in the ⋯.
 const MAIL_ACT = { draft: "초안 작성", no: "답장 안 함", need: "답장 필요로 표시", delete: "삭제" };
 const mailOwed = m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft");
 const mailActs = m => m.dir === "out" ? ["delete"] : ["draft", mailOwed(m) ? "no" : "need", "delete"];
-const mailRowActs = m => m.dir === "out" ? [] : mailOwed(m) ? ["draft", "no"] : ["draft"];
 const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "delete" ? mailDelete(t) : mailSetFyi(t, a === "no");
-// busy: a second tap while it posts does nothing
-const mailActButton = (t, a) => a === "draft" ? mailDraftButton(t) : el("button", { class: "cchip mr-act unrep-no", type: "button", "data-k": `mail-${a}`, text: MAIL_ACT[a], onclick: ev => { ev.stopPropagation(); busy(ev.currentTarget, () => mailActRun(t, a, null)); } });
 // 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it. A newer message of the thread brings it back.
 async function mailDelete(t) {
-  if (!await ask("메일 삭제", "이 메일을 목록에서 지울까요? 실제 메일함의 메일은 그대로 있어요", "삭제", true)) return;
+  if (!await ask("메일 삭제", "목록에서 지울까요? 메일함엔 남아 있어요", "삭제", true)) return;
   const pc = pqPc(t);
   await api(`/api/mail/${t.slice(5)}`, "DELETE");
   MAILS.delete(t); CONV.delete(t);
@@ -12183,12 +12534,13 @@ async function mailDelete(t) {
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
 // The ⋯ at the top right of a mail card (every row of the list and the card at the top of the mail's conversation): mailActs, built from the
-// mail's state at the tap.
-function mailMenuBtn(t) {
+// mail's state at the tap. `extra()`: more items ({ value, label, run }) after them, as the open mail's 원문 접기.
+function mailMenuBtn(t, extra = () => []) {
   return el("button", { class: "ib mr-more", type: "button", "aria-label": "메일 메뉴", title: "메일 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", "data-k": "mail-menu", onclick: ev => {
     ev.stopPropagation();
     const b = ev.currentTarget, m = MAILS.get(t) || {};
-    showMenu(b, mailActs(m).map(a => ({ value: a, label: MAIL_ACT[a] })), { onPick: v => busy(null, () => mailActRun(t, v, null)) });
+    const more = extra();
+    showMenu(b, [...mailActs(m).map(a => ({ value: a, label: MAIL_ACT[a] })), ...more.map(x => ({ value: x.value, label: x.label }))], { onPick: v => { const x = more.find(i => i.value === v); if (x) x.run(); else busy(null, () => mailActRun(t, v, null)); } });
   }, onkeydown: ev => ev.stopPropagation() }, icon("more"));
 }
 // A monitor's latest run, as the newest message of its conversation: the result in words, when it checks next, and its project chat.
@@ -12358,8 +12710,10 @@ function monChronoNodes(it, names) {
   // newer draft of the same mail replaced, is gone from every view.
   const newestDraft = mailDraftLive(it.notices);
   // A message about one mail (the bot's note in its conversation, src/open = that mail) is read inside that mail, not as a card of its own between
-  // the mail rows: every row of a mail list is a mail. Reply drafts keep their own place (확인 대기).
-  const rowMail = n => !!mf && !(n.decision && n.decision.draft) && MAILS.has(n.src || n.open) && it.mails.includes(n.src || n.open);
+  // the mail rows: every row of a mail list is a mail. Reply drafts keep their own place (확인 대기). A message about a mail this page does not hold
+  // (a deleted one: mail-deleted.json takes it off /api/conversations, but its message stays in notices.json) is no card either: it would sit between
+  // the rows as a mail without ☐, ☆ or ⋯ that nothing can select or delete. A report carrying its item's card (n.item) still draws that item.
+  const rowMail = n => { const t = n.src || n.open; return !!mf && !(n.decision && n.decision.draft) && !!t && isMailT(t) && (MAILS.has(t) ? it.mails.includes(t) : !n.item); };
   const notices = it.notices.filter(n => ok(n) && !rowMail(n) && (!mf || (mailDraftHeld(n) === held && !mailDraftDone(n))) && !mailDraftGone(n, newestDraft));
   const runs = [];
   for (const n of notices.sort((a, b) => ntAt(a) - ntAt(b))) {
@@ -12522,7 +12876,7 @@ let monRaf = 0;
 const monSchedule = () => { monAttnSoon(); if (!monRaf) monRaf = requestAnimationFrame(renderMonitoring); };   // the nav badge reads the same data (09-needs-you.js)
 function renderMonitoring() {
   monRaf = 0;
-  if (current !== "monitoring") { if (monCtx && current === "chat") convSchedule(); return; }
+  if (current !== "monitoring") { mbSeenReset(); if (monCtx && current === "chat") convSchedule(); return; }
   const items = monItems(), sel = monSel(items), side = $("#mon-side"), box = $("#mon-timeline"), tl = $("#mon-tl");
   const rows = monRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.unread, r.unreplied, r.badge, r.header, r.sel, r.chips, r.msig])]);
   if (sideSig !== MON.side) {
@@ -12567,6 +12921,7 @@ function renderMonitoring() {
     MON.shown = sel.key;
     clear($("#mon-head")).append(...monHead(sel));
     clear(tl).append(...monTimeline(sel));
+    if (monMailList(sel)) mbFresh(`${sel.key}|${MON.mailFilter || "all"}`, tl);
     // Older reports added above (이전 소식 보기) keep what was on screen where it is.
     if (MON.grew) { MON.grew = false; box.scrollTop = keep + (box.scrollHeight - was); }
     else box.scrollTop = monFeed(sel) || monMailList(sel) ? (again ? keep : 0) : stick ? box.scrollHeight : keep;
@@ -12975,9 +13330,16 @@ async function ntAlertDismiss(n, row) {
     toast("알림을 지웠어요");
   } catch (e) { row.hidden = false; toast(e.message || "지우지 못했어요", true); }
 }
+// A notification that arrives while this conversation is open eases in. The first draw, a redraw and older messages loaded above move nothing:
+// only a row that was not there and is newer than the newest one drawn before is new.
+const NT_SEEN = new Set();
+let ntNewest = "";
 function ntAlertMarks() {
-  if (current !== "chat" || target !== "alert") return;
-  for (const row of tl.querySelectorAll(":scope > [data-ts]")) {
+  if (current !== "chat" || target !== "alert") { NT_SEEN.clear(); NT_SEEN.seeded = false; ntNewest = ""; return; }
+  const rows = [...tl.querySelectorAll(":scope > [data-ts]")], fresh = rows.length ? freshKeys(NT_SEEN, rows.map(r => r.dataset.ts)) : new Set(), was = ntNewest;
+  for (const r of rows) if (r.dataset.ts > ntNewest) ntNewest = r.dataset.ts;
+  for (const row of rows) {
+    if (fresh.has(row.dataset.ts) && row.dataset.ts > was && was) motionIn(row, "rise");
     if (NT.gone.has(row.dataset.ts)) { row.hidden = true; continue; }
     if (row.querySelector(".al-x")) continue;
     const e = ts("alert").msgs.find(x => x.ts === row.dataset.ts), n = e && ntOfEvent(e);
@@ -13164,7 +13526,7 @@ function ntIgnoreBtn(n) {
 // `label` "" is a row that no longer waits (the 알림 tabs, 31-conversations.js bellPaint): no 답변 필요, no x.
 function ntHomeRow(n, label = "답변 필요") {
   const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open;   // a loose [ask] notice has no decision: its conversation names where it waits
-  return el("div", { class: "hr hrx" },
+  return el("div", { class: "hr hrx", "data-nid": n.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": label ? `${title} · ${label}` : title },
       el("span", { class: label ? "dot att" : `dot${n.read ? "" : n.cls === "alert" ? " err" : " un"}` }),
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha", text: [n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), ntWhen(n)].filter(Boolean).join(" · ") })),
@@ -13280,7 +13642,7 @@ function ntSheetPaint() {
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
   const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", parts = ntParts(n), keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
   const kids = [
-    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecWhere(d, n.pc)} · ${open ? "답변 필요" : ignd ? "무시함" : d.resolved ? "해결됨" : "답변함"}` })],
+    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecWhere(d, n.pc)} · ${open ? "답변 필요" : ignd ? "무시함" : d.expired ? "기한 지남" : d.resolved ? "해결됨" : "답변함"}` })],
       { ignore: open ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: parts.title || "답변이 필요해요" }),
@@ -13306,7 +13668,7 @@ function ntSheetPaint() {
     if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }));
     foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" }));
   } else {
-    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: d.resolved ? "답 없이 끝났어요" : "이렇게 답했어요" }), el("span", { class: "ds-ra", text: d.resolved ? "일이 끝나서 닫혔어요" : ntPlain(d.answer || "") || "답했어요" })));
+    foot.append(el("div", { class: "ds-res", role: "status" }, el("span", { class: "ds-rl", text: d.expired ? "기한 지남" : d.resolved ? "답 없이 끝났어요" : "이렇게 답했어요" }), el("span", { class: "ds-ra", text: d.expired ? "답할 시간이 지나 닫혔어요" : d.resolved ? "일이 끝나서 닫혔어요" : ntPlain(d.answer || "") || "답했어요" })));
     if (!d.to.startsWith("auth:")) foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "go", onclick: () => { ntSheetClose(false); ntJump(n); }, text: "대화에서 보기" }));
     foot.append(el("button", { type: "button", class: "ds-opt rec c", "data-k": "close", onclick: () => ntSheetClose(), text: "닫기" }));
   }
@@ -14106,7 +14468,7 @@ function convBar() {
   const views = [["all", "전체", 0], ["need", "답 필요", need], ["unread", "안 읽음", unread]];
   return el("div", { class: "cv-bar" },
     el("div", { class: "cv-tabs", role: "tablist", "aria-label": "대화 보기" }, ...views.map(([k, label, n]) =>
-      el("button", { class: `cchip mr-f${CVF.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(CVF.view === k), "data-view": k, onclick: () => { CVF.view = k; CVF.more = CVF_PAGE; convSig = ""; convSchedule(); convSide.scrollTop = 0; } }, label, n ? el("span", { class: "mr-fn", text: n > 99 ? "99+" : String(n) }) : null))),
+      el("button", { class: `cchip mr-f${CVF.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(CVF.view === k), "data-view": k, onclick: () => { CVF.view = k; CVF.more = CVF_PAGE; convSig = ""; convSchedule(); convSide.scrollTop = 0; } }, label, cntSpan(`cv-filter:${k}`, "mr-fn", n)))),
     el("button", { class: "btn text cv-read", type: "button", "data-k": "read", disabled: !fyi.length, title: "답이 필요한 대화는 그대로 둬요", onclick: ev => convReadAll(ev.currentTarget, fyi), text: fyi.length ? `${fyi.length}개 읽음 처리` : "읽음 처리" }));
 }
 // The listed conversations are read up to their newest message here at once and on the hub (POST /api/read, one per conversation); a failure
@@ -14143,7 +14505,7 @@ function convRow(r) {
   return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
-    el("span", { class: "cv-m" }, el("span", { class: "cv-m2" }, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null, r.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${r.unreplied}개`, text: `미답장 ${r.unreplied > 99 ? "99+" : r.unreplied}` }) : null)));
+    el("span", { class: "cv-m" }, el("span", { class: "cv-m2" }, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${r.unreplied}개`, text: `미답장 ${r.unreplied > 99 ? "99+" : r.unreplied}` }) : null)));
 }
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
@@ -14158,7 +14520,7 @@ function convPaintHead() {
   convHeadSig = sig;
   // A conversation opened from a 모니터링 list (a mail of the 메일 list): ← goes back to that list inside the page, like the app bar's back on a phone.
   const up = monCtx && MON.sel && !isSettingsT(target) ? el("button", { class: "ib cv-up", type: "button", "aria-label": "목록으로", title: "목록으로", "data-k": "cv-up", onclick: () => go("monitoring", MON.sel) }, icon("back")) : null;
-  clear(convHead).append(...[up, convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), monCtx ? pqLabel({ pc: pqPc(target) }) : null), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, target === "alert" ? el("button", { class: "btn text sm cv-readall", type: "button", "data-k": "read-all", disabled: !alertN, title: "답이 필요한 알림은 그대로 둬요", onclick: ev => ntAlertReadAll(ev.currentTarget), text: "모두 읽음" }) : null, isMailT(target) && MAILS.get(target) && MAILS.get(target).dir !== "out" ? mailDraftButton(target, "btn tonal sm cv-draft") : null, ...asEntry(app)].filter(Boolean));
+  clear(convHead).append(...[up, convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), monCtx ? pqLabel({ pc: pqPc(target) }) : null), el("span", { class: "cv-p", text: state })), isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, target === "alert" ? el("button", { class: "btn text sm cv-readall", type: "button", "data-k": "read-all", disabled: !alertN, title: "답이 필요한 알림은 그대로 둬요", onclick: ev => ntAlertReadAll(ev.currentTarget), text: "모두 읽음" }) : null, ...asEntry(app)].filter(Boolean));
 }
 // A project's conversation gets the project page's ⋯ menu (수정 / 삭제, built by pmMenuButton in 19-project-main.js) once the project is known.
 const pjMenuOn = () => isProjT(target) && !!pmOfTarget(target);
@@ -14176,7 +14538,7 @@ const cvReadAllBar = el("button", { class: "btn text sm cv-readall", id: "cvread
 pjAppMenu.before(cvReadAllBar);
 /* ---- the tabs of the 알림 conversation (owner 2026-11-01; classes: hub/notice-class.ts, n.cls) ---- */
 // 전체 is the timeline as it was; the other tabs list that class of NT.items instead. A "log" notice is in no tab and in no count.
-const BELL = { tab: "all", sig: "", lsig: "" };
+const BELL = { tab: "all", sig: "", lsig: "" }, BELL_SEEN = new Set();
 const BELL_TABS = [["all", "전체"], ["ask", "답변 필요"], ["result", "결과"], ["news", "새 소식"], ["alert", "경고"]];
 const bellUnread = tab => NT.items.reduce((c, n) => c + (!n.read && n.cls !== "log" && (tab === "all" || n.cls === tab) ? 1 : 0), 0);
 function bellTab(tab) { BELL.tab = tab; bellPaint(); }
@@ -14202,15 +14564,19 @@ function bellPaint() {
   if (sig !== BELL.sig) {
     BELL.sig = sig;
     clear(box).append(...BELL_TABS.map(([k, label], i) => el("button", { class: `chip${k === tab ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === tab), "data-k": k, onclick: () => bellTab(k) },
-      el("span", { class: "tx", text: label }), counts[i] ? el("span", { class: `nb${k === "ask" ? " warn" : k === "alert" ? " err" : ""}`, "aria-label": `안 읽은 알림 ${counts[i]}개`, text: counts[i] > 99 ? "99+" : String(counts[i]) }) : null)));
+      el("span", { class: "tx", text: label }), cntSpan(`bell:${k}`, `nb${k === "ask" ? " warn" : k === "alert" ? " err" : ""}`, counts[i], { "aria-label": `안 읽은 알림 ${counts[i]}개` }))));
   }
-  if (!listed) { BELL.lsig = ""; return; }
+  if (!listed) { BELL.lsig = ""; BELL_SEEN.clear(); BELL_SEEN.seeded = false; return; }
   const lsig = JSON.stringify([tab, NT.items.filter(n => n.cls === tab).map(n => [n.id, n.read, n.ignored, n.updated || n.ts])]);
   if (lsig === BELL.lsig) return;
   BELL.lsig = lsig;
   const top = list.scrollTop;
   clear(list).append(...bellRows(tab));
   list.scrollTop = top;
+  // a notification that arrives while a tab is open slides in at the top of it; opening a tab or drawing it again moves nothing
+  if (BELL_SEEN.scope !== tab) { BELL_SEEN.clear(); BELL_SEEN.seeded = false; BELL_SEEN.scope = tab; }
+  const rows = [...list.querySelectorAll(".hr[data-nid]")], fresh = rows.length ? freshKeys(BELL_SEEN, rows.map(r => r.dataset.nid)) : new Set();
+  for (const r of rows) if (fresh.has(r.dataset.nid)) motionIn(r, "top");
 }
 function convPaint() {
   convRaf = 0;
@@ -14972,7 +15338,7 @@ window.addEventListener("popstate", ev => {
 });
 
 /* ---------- computers: switch between this owner's gateways (맥북, 맥미니) ---------- */
-// Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?}]. The chip next to the title shows this computer
+// Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?, via?}]. A row with via "jandi" is a computer reached only through the owner's JANDI self chat (hub/jandi-peers.ts): its url is a chat page on this gateway, opened in this app. The chip next to the title shows this computer
 // and appears only with 2 or more, with a dot on its chevron while another computer has something unread (the counts live in the sheet rows); the sheet lists them; choosing one opens that computer's own address (its own PWA, login and push).
 // The last list that arrived is kept in localStorage and drawn at once: coming back from the other computer the page starts from the service worker's
 // cached shell before the phone's network is up, and a first /api/peers that failed left the chip hidden until the next minute. A failed fetch is retried within seconds.
@@ -14989,7 +15355,7 @@ const prText = p => [p.need > 0 ? `답변 필요 ${p.need}` : "", p.unread > 0 ?
 async function prLoad() {
   try {
     const r = await api("/api/peers"); PR.list = Array.isArray(r) ? prOrder(r) : []; PR.tries = 0; PR.fresh = true;
-    try { localStorage.setItem("dotz-peers", JSON.stringify(PR.list.map(({ name, url, self, online }) => ({ name, url, self, online })))); } catch {}
+    try { localStorage.setItem("dotz-peers", JSON.stringify(PR.list.map(({ name, url, self, online, via }) => ({ name, url, self, online, via })))); } catch {}
   } catch {
     clearTimeout(PR.timer);
     if (PR.tries < PR_RETRY_MS.length) PR.timer = setTimeout(prLoad, PR_RETRY_MS[PR.tries++]);
@@ -15065,7 +15431,7 @@ function prPaint() {
   chip.hidden = !on;
   if (!on) { prClose(false); return; }
   // The TLS handshake to the other computer is paid now, not when the owner taps it.
-  for (const p of prOthers()) if (p.online && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
+  for (const p of prOthers()) if (p.online && !p.via && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
   const others = prOthers(), more = others.some(p => p.unread > 0 || p.need > 0), need = others.some(p => p.need > 0);
   // el() skips a null child; Node.append() would write it as the text "null" (the chip once read "맥북 null"), so the chip is built with el().
   clear(chip).append(el("span", { class: "pc-n", text: me.name }), el("span", { class: "pc-c" }, icon("chev", "pc-i"), more ? el("span", { class: `pc-d${need ? " need" : ""}`, role: "img", "aria-label": "다른 컴퓨터에 새 알림" }) : null));
@@ -15114,6 +15480,8 @@ window.addEventListener("message", ev => {
 });
 
 function prPick(p, o = {}) {
+  // a JANDI-only computer has no gateway of its own: its chat page is on this origin, so the app stays where it is
+  if (p.via === "jandi" && !p.self) { prClose(false); location.href = p.url; return; }
   // inside another computer's app frame: the app around it does the switch (back to itself, or to a third computer)
   if (prEmbedded && !p.self) { prClose(false); window.parent.postMessage({ dotz: "peer-pick", url: p.url }, "*"); return; }
   if (p.self) { prClose(); return; }
@@ -15131,7 +15499,7 @@ function prSheet() {
     // Connection state is the pill on the right (not a second dot next to the accent dot of the computer being viewed), so the subtitle only says "지금 보고 있어요".
     const note = prText(p);
     return el("button", { type: "button", class: `pr-row${p.self ? " on" : ""}`, "aria-current": p.self ? "true" : null, onclick: () => prPick(p) },
-      el("span", { class: "pr-b" }, el("span", { class: "pr-t", text: p.name }), p.self ? el("span", { class: "pr-s", text: "지금 보고 있어요" }) : null),
+      el("span", { class: "pr-b" }, el("span", { class: "pr-t", text: p.name }), p.self ? el("span", { class: "pr-s", text: "지금 보고 있어요" }) : null, p.via === "jandi" ? el("span", { class: "pr-s", text: "잔디" }) : null),
       note ? el("span", { class: `pr-bd${p.need > 0 ? " need" : ""}`, text: note }) : null,
       el("span", { class: `pr-st${!p.self && selfDown ? "" : p.online ? " ok" : ""}`, text: p.self && selfDown ? "연결 안 됨" : !p.self && selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨" }));
   });
@@ -15843,6 +16211,7 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
     close(restore = true) {
       if (closed) return;
       closed = true;
+      // goes at once: the next card often opens in the same moment (approval cards one after another), and a fading copy would sit over it
       node.remove(); ovDone(ov); FS.splice(FS.indexOf(h), 1);
       document.removeEventListener("keydown", key, true);
       if (vv) { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); }
@@ -15851,6 +16220,7 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
     },
   };
   document.body.append(node);
+  motionIn(node, "fade", 160); motionIn(box, "rise");
   ov = ovOpen(() => h.close(false));
   FS.push(h);
   document.addEventListener("keydown", key, true);
@@ -16085,7 +16455,7 @@ function runText(r) {
     case "working": return [label, r.detail, r.since ? runSince(r.since) : ""].filter(Boolean).join(" · ");
     case "waiting": return [waitLabel(r), r.reason === "later" ? "" : r.reason === "recover" && r.detail ? `${r.detail.split(" · ")[0]} 실패` : r.detail, r.reason === "work" && r.since ? runSince(r.since) : "", left].filter(Boolean).join(" · ");
     case "idle": {
-      const why = r.reason === "unfinished" ? "이번 턴이 끝났는데 할 일이 남아 있어요" : r.reason === "unknown" ? "이유를 알 수 없어요" : "";
+      const why = r.reason === "unfinished" ? "이번 턴이 끝났는데 할 일이 남아 있어요" : r.reason === "interrupted" || r.reason === "unknown" ? "마지막 턴이 끝나기 전에 멈췄어요" : "";
       return [label, left, why].filter(Boolean).join(" · ");
     }
     case "limited": return [label, r.detail ? `${kstTime(r.detail)}까지` : "잠시 쉬어요"].join(" · ");
@@ -16125,6 +16495,10 @@ function paintRunState() {
   const sig = JSON.stringify([target, r]), act = runAction(r);
   if (RUN_MEMO.sig !== sig) {
     RUN_MEMO.sig = sig;
+    // The same conversation changing what it is doing (작업 중 -> 끝났어요) changes in place; opening another conversation just draws.
+    const state = `${r.kind}|${r.reason || ""}`, swap = RUN_MEMO.t === target && !!RUN_MEMO.state && RUN_MEMO.state !== state;
+    RUN_MEMO.t = target; RUN_MEMO.state = state;
+    const paint = () => {
     const mine = r.kind === "error" && r.cancelled;   // work the owner stopped himself is neutral, not a failure
     $("#runstate-dot").className = `dot ${r.kind === "waiting" && !waitsOnOwner(r) ? "pri" : mine ? "" : RUN_DOT[r.kind] || ""}`.trim();
     box.classList.toggle("warn", waitsOnOwner(r) || r.kind === "limited");
@@ -16133,6 +16507,9 @@ function paintRunState() {
     b.hidden = !act;
     b.dataset.kind = r.kind;
     if (act) { b.textContent = act.label; b.onclick = act.run; }
+    $("#runstate-tx").textContent = runText(r);
+    };
+    if (swap) motionSwap(box, paint); else paint();
   }
   $("#runstate-tx").textContent = runText(r);
 }
