@@ -3,8 +3,8 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { appAsset, indexPage } from "./webapp.ts";
 
-// 설정 → 계정 in a headless Bun.WebView against a stub gateway whose account pools hold two subscription providers plus two
-// more: each provider has its own group with its accounts, states and usage windows, 계정 추가 opens a provider picker, and a pick
+// 설정 → 공급자 → one provider's screen in a headless Bun.WebView against a stub gateway whose account pools hold two subscription providers plus two
+// more: each provider's own screen holds its accounts, states and usage windows, 추가 opens a provider picker, and a pick
 // starts that provider's own login (never only Claude's). Screenshots are written only when ACCOUNTS_SHOTS names a folder.
 const SHOTS = process.env.ACCOUNTS_SHOTS;
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
@@ -33,6 +33,12 @@ const providers = () => [
 		id: "cursor", name: "Cursor", auth: "oauth", multi: true, can_add: true, can_pin: false, can_delete: false,
 		accounts: [],
 	},
+];
+const providerList = [
+	{ id: "anthropic", name: "Claude 구독", auth: "oauth", can_login: true, can_add_account: true, in_use: true, accounts: 2 },
+	{ id: "chatgpt-subscription", name: "ChatGPT 구독", auth: "oauth", can_login: true, accounts: 2 },
+	{ id: "google", name: "Gemini", auth: "api_key", masked: "AIza…x9", can_logout: true },
+	{ id: "cursor", name: "Cursor", auth: "none", can_login: true },
 ];
 const loginProviders = () => [
 	{ id: "anthropic", name: "Claude 구독", configured: true },
@@ -81,6 +87,7 @@ const server = Bun.serve({
 		if (p === "/api/kakao/rooms") return json({ on: true, rooms: [] });
 		if (p === "/api/update" || p === "/api/runtimes") return json({ error: "stub" }, 500);
 		if (p === "/api/accounts") return json(body());
+		if (p === "/api/providers") return json({ providers: providerList });
 		if (p === "/api/accounts/pin" && req.method === "PUT") {
 			const b = (await req.json()) as unknown;
 			calls.push(["pin", b]);
@@ -114,16 +121,16 @@ const shot = async (v: View, name: string) => {
 	await waitFor(v, `document.getAnimations().every(a => a.playState !== "running")`);
 	await Bun.write(join(SHOTS, name), await v.screenshot());
 };
-const boot = async (v: View) => {
+const boot = async (v: View, id = "anthropic") => {
 	errors.length = 0;
 	const opened = new Promise<void>(r => streamWaiters.push(r));
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
 	await opened;
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && NM.loaded && S`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
-	await run(v, `go("settings")`);
+	await run(v, `go("provider", ${JSON.stringify(id)})`);
 	try {
-		await waitFor(v, `document.querySelectorAll(".li.acc.gen").length === 3 && document.querySelector(".li.acc.gen")`);
+		await waitFor(v, `current === "provider" && ACC && P && document.querySelector("#provider .list + .sec, #provider .sec") && document.querySelectorAll("#provider .li").length > 1`);
 	} catch (e) {
 		const dbg = await v.evaluate(`(() => { try { return JSON.stringify({ acc: typeof ACC !== "undefined" && !!ACC, prov: typeof ACC !== "undefined" && ACC && ACC.providers && ACC.providers.length, cur: typeof current !== "undefined" ? current : null, secs: typeof accountSection === "function" ? accountSection().length : -1, views: document.querySelectorAll("#views > *").length }); } catch (err) { return "ERR " + err.message; } })()`);
 		throw new Error(`${(e as Error).message}\nDBG ${dbg}\n${errors.join("\n")}`);
@@ -131,49 +138,48 @@ const boot = async (v: View) => {
 	expect(errors).toEqual([]);
 };
 const sectionText = (v: View) => q<string[]>(v, `return [...document.querySelectorAll(".sec")].map(s => s.textContent)`);
-const groupList = (name: string) => `[...document.querySelectorAll(".sec")].find(s => s.textContent === ${JSON.stringify(name)})?.nextElementSibling`;
-const addButton = `[...document.querySelectorAll(".li")].find(r => r.textContent.startsWith("계정 추가"))?.querySelector("button")`;
+const groupList = (name: string) => `[...document.querySelectorAll("#provider .sec")].find(s => s.textContent.startsWith(${JSON.stringify(name)}))?.nextElementSibling`;
+const addButton = `document.querySelector("#provider .sec-act [data-acc-add]")`;
 
 for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 900]] as const) {
-	test(`${label} ${w}px: each provider with accounts has its own group, with states and usage windows, and no sideways scroll`, async () => {
+	test(`${label} ${w}px: each provider's screen holds its login or key and its own accounts, with states and usage windows, and no sideways scroll`, async () => {
 		calls.length = 0;
 		const v = open(w, h);
 		await boot(v);
-		const secs = await sectionText(v);
-		for (const name of ["Claude 구독", "ChatGPT 구독", "Gemini", "Cursor"]) expect(secs).toContain(name);
-		expect(secs).not.toContain("계정");
-		expect(await q(v, `return document.querySelectorAll(".li.acc:not(.gen)").length`)).toBe(2);
-		expect(await q(v, `return ${groupList("ChatGPT 구독")}.querySelectorAll(".li.acc.gen").length`)).toBe(2);
-		const gpt = await q<{ text: string; numbers: string[] }>(v, `const r = ${groupList("ChatGPT 구독")}; return { text: r.textContent, numbers: [...r.querySelectorAll(".acc-no")].map(n => n.textContent) }`);
+		// Claude 구독: the 계정 section with its 추가 as a section action; 자동 전환 and the accounts are rows of it
+		expect(await sectionText(v)).toContain("계정추가");
+		expect(await q(v, `return document.querySelectorAll("#provider .li.acc:not(.gen)").length`)).toBe(2);
+		expect(await q(v, `return document.querySelectorAll("#provider .li.acc.gen").length`)).toBe(0);
+		await shot(v, `accounts-providers-${w}.png`);
+		await run(v, `go("provider", "chatgpt-subscription")`);
+		await waitFor(v, `document.querySelectorAll("#provider .li.acc.gen").length === 2`);
+		const gpt = await q<{ text: string; numbers: string[] }>(v, `const r = ${groupList("계정")}; return { text: r.textContent, numbers: [...r.querySelectorAll(".acc-no")].map(n => n.textContent) }`);
 		expect(gpt.numbers).toEqual(["1", "2"]);
 		for (const part of ["한도 걸림 · 내일 01:20까지", "5시간 62% 남음", "7일 74% 남음", "회사용 GPT", "사용 중", "고정"]) expect(gpt.text).toContain(part);
-		expect(await q(v, `return ${groupList("Gemini")}.textContent.includes("API 키")`)).toBe(true);
-		const empty = await q<{ text: string; btn: boolean }>(v, `const r = ${groupList("Cursor")}; return { text: r.textContent, btn: [...r.querySelectorAll("button")].some(b => b.textContent.trim().endsWith("추가")) }`);
-		expect(empty.text).toContain("Cursor 계정이 없어요");
+		await run(v, `go("provider", "google")`);
+		await waitFor(v, `document.querySelectorAll("#provider .li.acc.gen").length === 1`);
+		expect(await q(v, `return document.querySelector("#provider").textContent.includes("API 키")`)).toBe(true);
+		await run(v, `go("provider", "cursor")`);
+		await waitFor(v, `document.querySelector("#provider .li.acc.gen") === null && document.querySelector("#provider").textContent.includes("Cursor 계정이 없어요")`);
+		const empty = await q<{ btn: boolean }>(v, `const r = ${groupList("계정")}; return { btn: [...r.querySelectorAll("button")].some(b => b.textContent.trim().endsWith("추가")) }`);
 		expect(empty.btn).toBe(true);
+		await run(v, `go("provider", "chatgpt-subscription")`);
+		await waitFor(v, `document.querySelectorAll("#provider .li.acc.gen").length === 2`);
 		const o = await q<{ doc: number; vw: number; wide: string[] }>(v, `const rows = [...document.querySelectorAll(".li.acc.gen")]; return { doc: document.documentElement.scrollWidth, vw: innerWidth, wide: rows.filter(r => r.scrollWidth > r.clientWidth + 1 || r.getBoundingClientRect().right > innerWidth + 1).map(r => r.textContent) }`);
 		expect(o.wide).toEqual([]);
 		expect(o.doc).toBeLessThanOrEqual(o.vw);
-		await run(v, `[...document.querySelectorAll(".sec")].find(s => s.textContent === "Claude 구독")?.scrollIntoView()`);
-		await shot(v, `accounts-providers-${w}.png`);
+		await shot(v, `accounts-providers-gpt-${w}.png`);
 	});
 
-	test(`${label} ${w}px: 계정 추가 opens a provider picker and the pick starts that provider's login`, async () => {
+	test(`${label} ${w}px: 추가 on the Claude screen starts that provider's own login`, async () => {
 		calls.length = 0;
 		const v = open(w, h);
 		await boot(v);
 		await run(v, `(${addButton}).click()`);
-		await waitFor(v, `document.querySelector('dialog[open] .list')`);
-		const picker = await q<string[]>(v, `return [...document.querySelectorAll('dialog[open] .li')].map(r => r.textContent)`);
-		expect(picker.length).toBe(3);
-		expect(picker.find(t => t.includes("ChatGPT 구독"))).toContain("계정 추가");
-		expect(picker.find(t => t.includes("Cursor"))).toContain("로그인");
-		await shot(v, `accounts-picker-${w}.png`);
-		await run(v, `[...document.querySelectorAll('dialog[open] .li')].find(r => r.textContent.includes("ChatGPT 구독")).click()`);
 		await waitFor(v, `document.querySelector('dialog[open] .dtitle')?.textContent.endsWith("계정 추가")`);
-		expect(await q(v, `return document.querySelector('dialog[open] .dtitle').textContent`)).toBe("ChatGPT 구독 계정 추가");
-		expect(calls).toEqual([["login", "chatgpt-subscription"]]);
-		await shot(v, `accounts-login-gpt-${w}.png`);
+		expect(await q(v, `return document.querySelector('dialog[open] .dtitle').textContent`)).toBe("Claude 구독 계정 추가");
+		expect(calls).toEqual([["login", "anthropic"]]);
+		await shot(v, `accounts-login-claude-${w}.png`);
 		await run(v, `[...document.querySelectorAll('dialog[open] button')].find(b => b.textContent.trim() === "취소").click()`);
 		await waitFor(v, `!document.querySelector("dialog[open]")`);
 	});
@@ -181,8 +187,8 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 900]] as con
 	test(`${label} ${w}px: tapping another provider's account offers its pin, which is saved per provider`, async () => {
 		calls.length = 0;
 		const v = open(w, h);
-		await boot(v);
-		const row = `[...${groupList("ChatGPT 구독")}.querySelectorAll(".li.acc.gen")].find(r => r.textContent.includes("default"))`;
+		await boot(v, "chatgpt-subscription");
+		const row = `[...${groupList("계정")}.querySelectorAll(".li.acc.gen")].find(r => r.textContent.includes("default"))`;
 		await run(v, `(${row}).querySelector(".acc-main").click()`);
 		await waitFor(v, `document.querySelector('dialog[open] .dtitle')?.textContent.includes("ChatGPT 구독")`);
 		expect(await q(v, `return document.querySelector('dialog[open] .dtitle').textContent`)).toBe("ChatGPT 구독 · default");

@@ -113,16 +113,20 @@ const boot = async (v: View) => {
 	await waitFor(v, `document.querySelector("#providers .prow")`);
 };
 const anthropicRow = `[...document.querySelectorAll("#providers .prow")].find(r => r.textContent.includes("Claude Pro/Max"))`;
+const openAnthropic = async (v: View) => {
+	await run(v, `${anthropicRow}.click()`);
+	await waitFor(v, `current === "provider" && document.querySelector("#provider [data-acc-add]")`);
+};
 const button = (scope: string, label: string) => `[...${scope}.querySelectorAll("button")].find(b => b.textContent.trim().endsWith(${JSON.stringify(label)}))`;
 const overflow = (v: View) => q<{ vw: number; doc: number }>(v, `return { vw: innerWidth, doc: document.documentElement.scrollWidth }`);
 
 for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as const) {
-	test(`${label} ${w}px: 계정 추가 on the Claude row adds an account; 추가 lists login providers; 설정 → 계정 offers it too`, async () => {
+	test(`${label} ${w}px: the Claude screen's 추가 adds an account; 추가 lists login providers; the account list refreshes`, async () => {
 		accounts = ["default", "work"];
 		calls.length = 0;
 		const v = open(w, h);
 		await boot(v);
-		expect(await q(v, `const r = ${anthropicRow}; return [r.textContent.includes("계정 2개"), !!${button("r", "계정 추가")}, !!${button("r", "다시 로그인")}]`)).toEqual([true, true, false]);
+		expect(await q(v, `const r = ${anthropicRow}; return [r.textContent.includes("계정 2개"), !!${button("r", "계정 추가")}, !!${button("r", "다시 로그인")}]`)).toEqual([true, false, false]);
 		const o = await overflow(v);
 		expect(o.doc).toBeLessThanOrEqual(o.vw);
 		await shot(v, `providers-${w}.png`);
@@ -134,25 +138,22 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as con
 		await run(v, `${button("document.querySelector('dialog[open]')", "취소")}.click()`);
 		await waitFor(v, `!document.querySelector("dialog[open]")`);
 
-		await run(v, `${button(anthropicRow, "계정 추가")}.click()`);
+		await openAnthropic(v);
+		await run(v, `document.querySelector("#provider [data-acc-add]").click()`);
 		await waitFor(v, `[...document.querySelectorAll(".sup")].some(s => s.textContent.includes("authorization code"))`);
 		expect(await q(v, `const t = document.querySelector("dialog[open] .dtitle")?.textContent ?? ""; return t.endsWith("계정 추가")`)).toBe(true);
 		expect(await q(v, `return [...document.querySelectorAll("a.btn")].find(a => a.textContent.includes("로그인 페이지 열기"))?.getAttribute("href")`)).toBe("https://claude.ai/oauth/authorize?state=stub");
 		await shot(v, `providers-login-${w}.png`);
 		const refetched = new Promise<void>((res, rej) => { const t = setTimeout(() => rej(new Error("설정 → 계정 was not read again")), 4000); onAccounts = () => { clearTimeout(t); res(); }; });
 		await run(v, `const i = [...document.querySelectorAll("input")].find(x => x.type === "text" && x.offsetParent); i.value = "code-abc"; ${button("document.querySelector('dialog[open]')", "완료")}.click()`);
-		await waitFor(v, `(${anthropicRow})?.textContent.includes("계정 3개")`);
+		await waitFor(v, `document.querySelectorAll("#provider .li.acc").length === 3`);
 		await refetched;
 		onAccounts = undefined;
-		expect(calls).toEqual(["POST login", "complete L1 code-abc", "GET /api/accounts"]);
-
-		await run(v, `go("settings")`);
-		await waitFor(v, `document.querySelectorAll(".li.acc").length === 3`);
-		expect(await q(v, `const row = [...document.querySelectorAll(".li")].find(r => r.textContent.startsWith("계정 추가")); return !!row && !!${button("row", "추가")}`)).toBe(true);
-		await run(v, `[...document.querySelectorAll(".sec")].find(x => x.textContent === "계정").scrollIntoView()`);
+		expect(calls).toEqual(["GET /api/accounts", "POST login", "complete L1 code-abc", "GET /api/accounts"]);
+		expect(await q(v, `const sec = document.querySelector("#provider .sec-act"); return !!sec && !!${button("sec", "추가")}`)).toBe(true);
 		const s = await overflow(v);
 		expect(s.doc).toBeLessThanOrEqual(s.vw);
-		await shot(v, `settings-accounts-${w}.png`);
+		await shot(v, `provider-accounts-${w}.png`);
 	}, 20_000);
 
 	test(`${label} ${w}px: a Claude sign-in that asks its questions first shows 로그인 페이지 열기 once the page is known`, async () => {
@@ -163,7 +164,8 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as con
 			await boot(v);
 			const link = `[...document.querySelectorAll("dialog[open] a.btn")].find(a => a.textContent.includes("로그인 페이지 열기"))`;
 			const state = `const a = ${link}; return a ? [a.getAttribute("href"), a.offsetParent !== null] : null`;
-			await run(v, `${button(anthropicRow, "계정 추가")}.click()`);
+			await openAnthropic(v);
+			await run(v, `document.querySelector("#provider [data-acc-add]").click()`);
 			await waitFor(v, `[...document.querySelectorAll("dialog[open] .sup")].some(s => s.textContent.includes("Name for this account"))`);
 			expect(await q(v, state)).toEqual([null, false]);
 			await run(v, `const i = [...document.querySelectorAll("input")].find(x => x.type === "text" && x.offsetParent); i.value = "account-3"; ${button("document.querySelector('dialog[open]')", "완료")}.click()`);
@@ -173,7 +175,7 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as con
 			expect(o.doc).toBeLessThanOrEqual(o.vw);
 			await shot(v, `providers-login-stepped-${w}.png`);
 			await run(v, `const i = [...document.querySelectorAll("input")].find(x => x.type === "text" && x.offsetParent); i.value = "code-xyz"; ${button("document.querySelector('dialog[open]')", "완료")}.click()`);
-			await waitFor(v, `(${anthropicRow})?.textContent.includes("계정 3개")`);
+			await waitFor(v, `document.querySelectorAll("#provider .li.acc").length === 3`);
 		} finally {
 			stepped = false;
 		}

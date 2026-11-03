@@ -10,6 +10,28 @@ async function loadProviders() {
   try { await loadProviderData(); }
   catch (e) { clear(box).append(emptyNode("공급자를 불러오지 못했어요")); return; }
   if (current === "providers") renderProviders();
+  else if (current === "provider") renderProvider();
+}
+// The screen of one provider (설정 > 공급자 > it): its login or API key, and for a provider OmO holds accounts for (Claude 구독, ChatGPT 구독 ...)
+// the accounts block (25-settings-accounts.js): 자동 전환, 한도에 걸렸을 때, 계정 추가, 전환 규칙.
+function renderProvider() {
+  const box = $("#provider"), p = ((P && P.providers) || []).find(x => x.id === provCur);
+  if (current === "provider") $("#title").textContent = providerName(provCur);
+  if (!P) { clear(box).append(emptyNode("불러오는 중…")); return; }
+  if (!p) { clear(box).append(emptyNode("공급자를 찾지 못했어요")); return; }
+  const out = p.auth === "api_key" ? "키 삭제" : "로그아웃";
+  const act = p.can_add_account ? null
+    : p.can_login ? el("button", { class: `btn inrow ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인") : null;
+  const rm = (p.can_logout ?? p.removable) ? el("button", { class: "ib", type: "button", title: out, "aria-label": out, onclick: ev => busy(ev.currentTarget, async () => { await logoutProvider(p); if (current === "provider") go("providers"); }) }, icon("trash")) : null;
+  const sub = [p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
+  const key = p.auth === "api_key";
+  const g = p.id === "anthropic" ? null : ((ACC && ACC.providers) || []).find(x => x.id === p.id);
+  clear(box).append(el("div", { class: "list" }, el("div", { class: "li", "data-prov-conn": p.id },
+      el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: key ? "API 키" : "로그인" }),
+          el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : key ? "연결됨" : "연결 안 됨" })),
+        sub ? el("div", { class: "sup", text: sub }) : null),
+      liEnd(act, rm))),
+    ...(p.id === "anthropic" ? accountSection() : g ? accProviderSections([g]) : []));
 }
 // A usage window in plain Korean: the report's "Claude 5 Hour" / "Claude 7 Day Opus" read as 5시간 한도 / 7일 한도 Opus.
 function limitName(l) {
@@ -25,18 +47,13 @@ function renderProviders() {
   if (!list.length) wrap.append(emptyNode("공급자가 없어요"));
   const row = p => {
     const name = p.name || p.id;
-    const canLogout = p.can_logout ?? p.removable;
     const sub = [p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
-    // a signed-in Claude subscription: another login adds an account (hub/providers.ts can_add_account), it never replaces one
-    const act = p.can_add_account ? el("button", { class: "btn tonal inrow", type: "button", onclick: () => startLogin(p) }, icon("add"), "계정 추가")
-      : p.can_login ? el("button", { class: `btn inrow ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인") : null;
-    const out = p.auth === "api_key" ? "키 삭제" : "로그아웃";
-    const rm = canLogout ? el("button", { class: "ib", type: "button", title: out, "aria-label": out, onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, icon("trash")) : null;
-    return el("div", { class: "li prow" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
+    // each provider opens its own screen: the login or key, and for a subscription its accounts, switch rules and 한도에 걸렸을 때
+    return el("button", { class: "li tap prow", type: "button", "data-prov": p.id, onclick: () => go("provider", p.id) }, el("span", { class: "avatar", text: [...name][0] || "?" }),
       el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null,
           el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" })),
         sub ? el("div", { class: "sup", text: sub }) : null),
-      liEnd(act, rm));
+      icon("chev", "lead"));
   };
   // Login accounts first, then API keys; an unconfigured provider sits with the way it can be set up.
   const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);
@@ -122,9 +139,10 @@ async function startLogin(p) {
     toast(p.can_add_account || p.add_account ? "계정을 추가했어요" : `${name} 로그인했어요`);
     try { await loadProviderData(); } catch {}
     if (current === "providers") renderProviders();
+    else if (current === "provider") renderProvider();
     if (current === "home") renderHome();
     loadModels(true);
-    // 설정 → 계정 groups every provider's accounts; a new one shows there at once
+    // 설정 → 공급자 → the provider holds its accounts; a new one shows there at once
     if (p.id === "anthropic" || p.add_account) loadAccounts();
   };
   const fail = text => { msg.textContent = text; msg.hidden = false; };

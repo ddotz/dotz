@@ -317,8 +317,8 @@ function renderSettings() {
     mnRow(),
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     row("chat", "대화 탭", chatTabMode() === "main" ? "메인 대화" : "마지막으로 보던 대화", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, null),
-    ...msSettingsRows(row),
+    msHubRow(),
     webAccessRow(row),
     devicesRow(row)),
-    ...pushSection(), ...updateSection(), ...accountSection());
+    ...pushSection(), ...updateSection());
 }
