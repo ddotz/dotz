@@ -201,7 +201,7 @@ function pjFiltered() {
 function prjRow(r) {
   const { p, st } = r, ms = prjMiles(p), done = ms.filter(m => m.done).length;
   const chat = prjChat(p), unread = chat ? ts(chat).unread : 0, at = prjLastAt(p), sel = current === "project" && ppCur === p.key;
-  const line = [st.lane ? `${st.word} · ${st.lane.title || st.lane.name}` : st.k === "done" ? `끝남 · 목표를 모두 마쳤어요` : st.word, ms.length ? `${done}/${ms.length} 단계` : "", prjAgo(at)].filter(Boolean).join(" · ");
+  const line = [st.lane ? (st.lane.title || st.lane.name) : prjPurpose(p), ms.length ? `${done}/${ms.length} 단계` : "", prjAgo(at)].filter(Boolean).join(" · ");
   const tone = st.tone === "att" ? "warn" : st.tone;
   return el("button", { class: `pl-row${sel ? " on" : ""}${unread ? " unread" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${line} · 열기`, onclick: () => go("project", p.key) },
     el("span", { class: `dot ${st.tone}` }),
