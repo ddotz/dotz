@@ -442,6 +442,13 @@ dialog.dlg::backdrop, dialog.pal::backdrop { background: var(--scrim); }
 dialog.dlg.wide { width: min(640px, calc(100vw - 24px)); }
 /* settings dialogs (dialog({ classic: true })): the small box with its own header and footer, as before the full-screen overlay (14-overlay.css) */
 dialog.dlg.cl { padding: 20px; overflow: auto; }
+/* a short confirm (dialog({ confirm: true }), ask()): a small centered box, a low sheet from the bottom on a phone */
+dialog.dlg.cf { width: min(360px, calc(100vw - 24px)); padding: 20px; overflow: auto; }
+dialog.dlg.cf .dbody { margin-top: 8px; }
+@media (max-width: 639px) {
+  dialog.dlg.cf[open] { width: 100%; max-width: none; margin: auto 0 0; border-radius: 20px 20px 0 0; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+  dialog.dlg.cf .dact .btn { flex: 1; min-height: 44px; }
+}
 .dhd { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 16px; }
 .dhd .dx { margin: -2px -6px 0 auto; }
 dialog.dlg.cl .dtitle { flex: 1; min-width: 0; }
