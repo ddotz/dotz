@@ -33,7 +33,7 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .ended { margin-top: 12px; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .ended > summary { display: flex; align-items: center; gap: 8px; padding: 14px 18px; list-style: none; cursor: pointer; color: var(--fg-2); font-size: 14px; font-weight: 600; }
 .ended > summary::-webkit-details-marker { display: none; }
-.ended > summary svg { width: 16px; height: 16px; transition: transform .15s; }
+.ended > summary svg { width: 16px; height: 16px; transition: transform var(--m-fast) var(--m-ease); }
 .ended[open] > summary svg { transform: rotate(90deg); }
 .ended .er { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 18px; border: 0; background: transparent; color: var(--fg); font-size: 14px; text-align: left; }
 .ended .er:hover { background: var(--card-hover); }
@@ -55,7 +55,7 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .ended .erow .er .en { flex: 0 1 auto; min-width: 3em; }
 .ended .erow .er .sup { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .ended .en { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ended label.er { cursor: pointer; min-height: 48px; }
+.ended label.er { cursor: pointer; min-height: var(--row-h); }
 .ended label.ck-all { color: var(--fg-2); font-weight: 600; }
 .ended .ck { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .dl-list { margin: 0; padding: 8px 12px; max-height: 40vh; overflow-y: auto; list-style: none; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font-size: 14px; line-height: 24px; }
@@ -150,7 +150,7 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 details.work > summary { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; min-height: 28px; margin-left: -4px; padding: 0 8px 0 4px; border-radius: 8px; color: var(--fg-2); font-size: 13px; line-height: 20px; cursor: pointer; list-style: none; }
 details.work > summary:hover { background: var(--hover); color: var(--fg); }
 details.work > summary::-webkit-details-marker { display: none; }
-details.work > summary::before { content: ""; flex: none; width: 5px; height: 5px; border-right: 1.5px solid var(--fg-2); border-bottom: 1.5px solid var(--fg-2); transform: rotate(-45deg); transition: transform .15s; }
+details.work > summary::before { content: ""; flex: none; width: 5px; height: 5px; border-right: 1.5px solid var(--fg-2); border-bottom: 1.5px solid var(--fg-2); transform: rotate(-45deg); transition: transform var(--m-fast) var(--m-ease); }
 details.work[open] > summary::before { transform: rotate(45deg); }
 
 .wdot { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
@@ -253,7 +253,7 @@ details.work.live .wdot { display: block; }
 .sendrow { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 18px; border: 1px solid transparent; border-radius: 24px; background: var(--layer); }
 .sendrow:focus-within { border-color: var(--accent); }
 .cbar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 28px; margin-top: 8px; padding: 0 4px; }
-.cchip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 26px; max-width: 100%; padding: 0 10px; border: 0; border-radius: 13px; background: transparent; color: var(--fg-2); font-size: 12.5px; line-height: 16px; font-weight: 500; white-space: nowrap; }
+.cchip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 26px; max-width: 100%; padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font-size: 12.5px; line-height: 16px; font-weight: 500; white-space: nowrap; }
 button.cchip:hover { background: var(--layer); color: var(--fg); }
 .cchip.warn { color: var(--warn); }
 /* 360-390px: the chips pull together while the api label shares the row, so the bar keeps fitting without scrolling. */

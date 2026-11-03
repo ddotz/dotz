@@ -21,7 +21,7 @@
 .fr.un .rc-src { color: var(--fg); font-weight: 700; }
 .fr.un .rc-src::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 6px 1px 0; border-radius: 50%; background: var(--accent); vertical-align: middle; }
 .fr .fr-n { font-variant-numeric: tabular-nums; }
-.fr-chev { flex: none; display: inline-flex; color: var(--fg-3); transition: transform .15s; }
+.fr-chev { flex: none; display: inline-flex; color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
 .fr-chev .ic { width: 16px; height: 16px; }
 .fr.grp.open .fr-chev { transform: rotate(180deg); }
 .fr.grp.open { background: var(--layer); }

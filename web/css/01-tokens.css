@@ -1,7 +1,12 @@
-/* Toss-tone tokens (see web/DESIGN.md): gray canvas, borderless white cards, one sparing blue accent, big bold titles */
+/* dotz design foundation, ported from site/prototype/proto.css (docs/ui-spec.md, web/DESIGN.md).
+   Two palettes are tuned separately - light on a grey canvas, dark on a near-black canvas with lifted surfaces - and every
+   screen reads its colour, type step, space, radius, height and duration from these names. No screen hard-codes one. */
 :root {
   color-scheme: light;
-  --bg: #f2f4f6; --side: #f2f4f6; --card: #ffffff; --pop: #ffffff;
+
+  /* colour - light: grey canvas, white cards, ink in three steps, one sparing blue accent */
+  --bg: #f2f4f6; --side: #f2f4f6;
+  --card: #ffffff; --pop: #ffffff;
   --layer: #f2f4f6; --hover: #e9ecf0; --active: #e5e8eb; --track: #e5e8eb;
   --card-hover: #f9fafb;
   /* a selected or pressed row inside a card: never the page's own grey (--bg/--layer), so a first or last row keeps the card's edge */
@@ -12,22 +17,59 @@
   --ok: #0a8754; --warn: #b85e00; --err: #e42939;
   /* 미답장 (waiting for the owner's reply): orange fill + its text colour, 5.2:1 on white (light), 8:1 on the dark card (dark) */
   --unreplied: #c2410c; --on-unreplied: #ffffff;
-  --r-card: 18px; --r-ctl: 10px; --edge: 28px;
-  /* motion (web/DESIGN.md Motion): every move has a cause, ease-out, transform/opacity only */
-  --m-fast: 150ms; --m-base: 220ms; --m-slow: 300ms; --m-ease: cubic-bezier(.2, .7, .2, 1);
   /* KakaoTalk chat (30-kakao.js): the room's backdrop, incoming / own bubbles, time and date chip */
   --kk-bg: #dbe5ee; --kk-in: #ffffff; --kk-in-fg: #191f28; --kk-own: #fee500; --kk-own-fg: #191919; --kk-time: #5b6877; --kk-chip: rgb(25 31 40 / .38); --kk-chip-fg: #ffffff;
   --scrim: rgb(0 0 0 / .4);
-  --float: 0 8px 24px rgb(0 0 0 / .10), 0 1px 3px rgb(0 0 0 / .06);
-  --shadow-panel: 0 6px 24px rgba(0, 0, 0, .06);
   /* terminal panel: dark in both themes */
   --tb: #101012; --tf: #e6e6ea; --td: #8d8d96; --tl2: #2b2b30; --tok: #4ade80; --terr: #ff7b7b; --tac: #a9a9ff;
+
+  /* type scale (web/DESIGN.md Type): every screen uses a step, never a one-off size */
+  --fs-page: 22px; --lh-page: 30px;          /* page title in the top bar */
+  --fs-page-sm: 20px; --lh-page-sm: 28px;    /* page title on a phone */
+  --fs-big: 20px; --lh-big: 28px;            /* the one big value in a card */
+  --fs-card: 16px; --lh-card: 22px;          /* card title */
+  --fs-sec: 14px; --lh-sec: 20px;            /* section label */
+  --fs-row: 15px; --lh-row: 22px;            /* list row title */
+  --fs-chat: 15px; --lh-chat: 24px;          /* chat body */
+  --fs-body: 14px; --lh-body: 22px;          /* body copy */
+  --fs-meta: 12px; --lh-meta: 16px;          /* meta, descriptions, captions */
+  --fs-tag: 11px; --lh-tag: 16px;            /* status tag */
+
+  /* space: 4px steps to 24, then 32. Rows breathe by count, not by growing a row */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
+
+  /* shape: soft boxes, one small control radius; only a status tag and the two-value toggle are fully rounded (알약 규칙) */
+  --r-card: 18px; --r-sheet: 20px; --r-menu: 14px; --r-ctl: 10px; --r-seg: 8px; --r-seg-in: 6px; --r-pill: 999px;
+  --edge: 28px;
+
+  /* heights: rows, menu items, controls and every button tier take their height here (docs/ui-spec.md) */
+  --row-h: 44px; --row-py: 8px; --row-px: 16px;
+  --menu-h: 30px; --menu-py: 4px; --menu-px: 8px; --menu-h-sheet: 44px;
+  --sheet-h: 44px;
+  --btn-h: 36px; --btn-h-sm: 32px; --btn-h-row: 28px; --btn-hit: 44px;
+  --ctl-h: 32px;
+  --field-h: 36px; --field-h-touch: 40px;
+  --chip-h: 28px; --tag-h: 20px; --tag-px: 6px;
+
+  /* shadows: cards stay flat; only what floats over the page carries one */
+  --float: 0 8px 24px rgb(0 0 0 / .10), 0 1px 3px rgb(0 0 0 / .06);
+  --shadow-menu: 0 8px 24px rgb(0 0 0 / .14);
+  --shadow-sheet: 0 -4px 28px rgb(0 0 0 / .22);
+  --shadow-dialog: 0 16px 48px rgb(0 0 0 / .22);
+  --shadow-panel: 0 6px 24px rgba(0, 0, 0, .06);
+
+  /* motion (web/DESIGN.md Motion): every move has a cause, ease-out, transform/opacity only */
+  --m-fast: 150ms; --m-base: 220ms; --m-slow: 300ms; --m-ease: cubic-bezier(.2, .7, .2, 1);
+
   --font: Pretendard, "Pretendard Variable", -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", "Geist Mono", SFMono-Regular, Menlo, Consolas, monospace;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #121214; --side: #121214; --card: #1d1d21; --pop: #26262b;
+
+  /* colour - dark: tuned on its own, not derived from light; depth comes from lifted surfaces first, shadows second */
+  --bg: #121214; --side: #121214;
+  --card: #1d1d21; --pop: #26262b;
   --layer: #26262b; --hover: #2b2b31; --active: #303036; --track: #34343b;
   --card-hover: #232328;
   --row-sel: #2b2b31;
@@ -36,9 +78,12 @@
   --accent: #4c94ff; --on-accent: #ffffff;
   --ok: #3ecf8e; --warn: #f5a524; --err: #ff6369;
   --unreplied: #ff9a4d; --on-unreplied: #1b1206;
-  --scrim: rgb(0 0 0 / .6);
   --kk-bg: #161c23; --kk-in: #2b2f36; --kk-in-fg: #ececf0; --kk-own: #d9bd00; --kk-own-fg: #1b1b1b; --kk-time: #8e98a5; --kk-chip: rgb(255 255 255 / .12); --kk-chip-fg: #b0b4bc;
+  --scrim: rgb(0 0 0 / .6);
   --float: 0 8px 24px rgb(0 0 0 / .5), 0 1px 3px rgb(0 0 0 / .4);
+  --shadow-menu: 0 8px 24px rgb(0 0 0 / .5);
+  --shadow-sheet: 0 -4px 28px rgb(0 0 0 / .55);
+  --shadow-dialog: 0 16px 48px rgb(0 0 0 / .6);
   --shadow-panel: 0 6px 24px rgba(0, 0, 0, .35);
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
@@ -47,7 +92,7 @@ html, body { height: 100%; margin: 0; }
 /* manipulation: a double tap does not zoom the page (iPhone web app, owner 2026-10-26); pinch zoom still works. On every element, because a
    scrolling container (the chat timeline) starts its own touch-action chain; rules that set their own (pan-y, none) are more specific and stay. */
 *, *::before, *::after { touch-action: manipulation; }
-body { font: 400 14px/22px var(--font); font-variant-numeric: tabular-nums; font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow: hidden; -webkit-text-size-adjust: 100%; word-break: keep-all; overflow-wrap: break-word; line-break: strict; }
+body { font: 400 var(--fs-body)/var(--lh-body) var(--font); font-variant-numeric: tabular-nums; font-feature-settings: "cv11", "ss01"; -webkit-font-smoothing: antialiased; background: var(--bg); color: var(--fg); overflow: hidden; -webkit-text-size-adjust: 100%; word-break: keep-all; overflow-wrap: break-word; line-break: strict; }
 /* Korean line breaks like Netflix subtitles (web/DESIGN.md Type): whole words, balanced titles, no one-word last line in body text;
    only code and paths may break inside a token. .phr keeps a fixed phrase ("무엇이 어디에") on one line when it fits. */
 h1, h2, h3, h4, .ttl, figcaption { text-wrap: balance; }
@@ -68,7 +113,8 @@ code, pre { font-family: var(--mono); }
 svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 button:disabled { opacity: .4; cursor: default; pointer-events: none; }
 kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--layer); color: var(--fg-3); font: 500 11px/16px var(--font); }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+/* 동작 줄이기: every transition and animation is off, pseudo-elements included (no motion on/off switch in the product) */
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 
 /* layout: from 1100px one top row, below it the phone layout (tabs in a bottom bar). The markup is the same in both: #nav (the five tabs, one component), #cmdk (search) and the app bar items.
    Wide: .side, .main and .appbar are display: contents, so each of their children is a cell of the .app grid and sits in the one row. Below 1100px they are the usual flex boxes. The 1100px edge is also where 채팅 puts its list next to the conversation. */
@@ -103,7 +149,7 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .cmdk:hover { background: var(--card-hover); }
 .cmdk .tx { display: none; }
 #back { grid-column: 5; margin-left: 8px; }
-.appbar h1 { grid-column: 6; min-width: 0; max-width: 320px; margin: 0 0 0 8px; font: 700 22px/30px var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.appbar h1 { grid-column: 6; min-width: 0; max-width: 320px; margin: 0 0 0 8px; font: 700 var(--fs-page)/var(--lh-page) var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* wide: the active tab names the page, so the big title shows only on a page with a back arrow (a project, a settings sub-page) */
 .appbar:not(.back) h1 { display: none; }
 .thead { grid-column: 7; }
@@ -131,7 +177,7 @@ button.conn:disabled { cursor: default; }
 @media (min-width: 1100px) {
   .appbar #back, .appbar h1 { grid-row: 3; grid-column: 1 / -1; align-self: start; justify-self: start; }
   .appbar #back { margin: 16px 0 0 calc(max(0px, (100% - 920px) / 2) + 18px); }
-  .appbar h1 { max-width: min(560px, 100%); margin: 16px 0 0 calc(max(0px, (100% - 920px) / 2) + 52px); font: 700 20px/28px var(--font); }
+  .appbar h1 { max-width: min(560px, 100%); margin: 16px 0 0 calc(max(0px, (100% - 920px) / 2) + 52px); font: 700 var(--fs-page-sm)/var(--lh-page-sm) var(--font); }
 }
 @media (max-width: 1099px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; padding-top: 0; }
@@ -177,9 +223,9 @@ button.conn:disabled { cursor: default; }
 /* buttons: one system for every page and card. Kind: primary (accent fill, the default), secondary (.tonal), quiet (.text), danger;
    size: md (default, 40px) and .sm (36px). A touch screen gets a 44px target. Card buttons keep their own class names (.dc-act,
    .dc-go, .dc-back, .dc-manual) and are aliased here, so the look is defined once. */
-/* size tiers (docs/ui-spec.md 버튼): 기본 --btn-h 40, 작은 --btn-h-sm 36 (.sm), 행 안 --btn-h-row 32 (.inrow). --btn-hit is the touch target, not a tier. */
-:root { --btn-h: 40px; --btn-h-sm: 36px; --btn-h-row: 32px; --btn-hit: 44px; }
-.ib { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); padding: 0; }
+/* size tiers (docs/ui-spec.md 버튼, tokens in the :root above): 기본 --btn-h 36, 작은 --btn-h-sm 32 (.sm), 행 안 --btn-h-row 28 (.inrow).
+   --btn-hit is the touch target, not a tier: a phone raises the box to it, a row button reaches 40px with padding (::after). */
+.ib { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); padding: 0; }
 .ib:hover { background: var(--hover); color: var(--fg); }
 .ib.pri { background: var(--accent); color: var(--on-accent); border-radius: 50%; }
 .ib.pri:hover { background: var(--accent); opacity: .88; }
@@ -206,5 +252,5 @@ button.conn:disabled { cursor: default; }
    vertically centred by .li's align-items. The slot holds one control: a 행 안 button, a .hs-sw switch, a .sel / .fi at a fixed width, or a value.
    A row-level add action is not a row: it is a text or tonal .sm button in the section header (.sec.sec-act, 06-harness.css). */
 .li > .li-end { flex: none; display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.li-end .fi, .li-end .sel { width: 160px; height: var(--btn-h-row); }
-@media (pointer: coarse) { .li-end .fi, .li-end .sel { height: var(--btn-h-sm); } }
+.li-end .fi, .li-end .sel { width: 160px; height: var(--ctl-h); }
+@media (pointer: coarse) { .li-end .fi, .li-end .sel { height: var(--field-h-touch); } }

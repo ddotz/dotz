@@ -253,7 +253,7 @@ describe("원문 보기 in the send sheet", () => {
 		}
 	});
 
-	test("the slide runs ~250ms and halfway the panel is between hidden and shown; reduced motion jumps", async () => {
+	test("the slide uses --m-slow (300ms) and halfway the panel is between hidden and shown; reduced motion jumps", async () => {
 		const v = await open(1280, 800);
 		await openSheet(v, drafts.plain!);
 		await showOrig(v);
@@ -264,8 +264,8 @@ describe("원문 보기 in the send sheet", () => {
 		await showOrig(v);
 		const t = await v.evaluate(`document.getAnimations().map(a => a.effect.getComputedTiming().duration).filter(d => d > 0)`);
 		expect(t.length).toBeGreaterThan(0);
-		for (const d of t as number[]) expect(d).toBe(250);
-		await v.evaluate(`document.getAnimations().forEach(a => { a.pause(); a.currentTime = 125; })`);
+		for (const d of t as number[]) expect(d).toBe(300);
+		await v.evaluate(`document.getAnimations().forEach(a => { a.pause(); a.currentTime = 150; })`);
 		const op = Number(await v.evaluate(`getComputedStyle(document.querySelector(".od-orig")).opacity`));
 		expect(op).toBeGreaterThan(0.05);
 		expect(op).toBeLessThan(0.95);

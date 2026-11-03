@@ -1,24 +1,26 @@
-// Motion with a cause (web/DESIGN.md Motion). Web Animations on transform/opacity only, so nothing is laid out again and nothing
-// is left behind when an animation ends; with prefers-reduced-motion every helper is an instant change.
-const M_EASE = "cubic-bezier(.2, .7, .2, 1)";
+// Motion with a cause (web/DESIGN.md Motion, site/prototype/MOTION.md). Web Animations on transform/opacity only, so nothing is laid out
+// again and nothing is left behind when an animation ends; durations and the curve are the CSS tokens (--m-fast/--m-base/--m-slow,
+// --m-ease), and with prefers-reduced-motion every helper is an instant change.
+const M_EASE = "cubic-bezier(.2, .7, .2, 1)";   // --m-ease
+const M_MS = { fast: 150, base: 220, slow: 300 }; // --m-fast, --m-base, --m-slow
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const M_FROM = { rise: "translateY(8px)", top: "translateY(-8px)", fade: "none", side: "translateX(12px)" };
 
 // An element that just arrived: a card rising in, a new row sliding in at the top of its list, a sheet opening.
-function motionIn(el, from = "rise", ms = 220) {
+function motionIn(el, from = "rise", ms = M_MS.base) {
   if (!el || !el.animate || reducedMotion()) return;
   el.animate([{ opacity: 0, transform: M_FROM[from] || M_FROM.rise }, { opacity: 1, transform: "none" }], { duration: ms, easing: M_EASE });
 }
 
 // An element about to leave: resolves when it is gone from view, so the caller removes or hides it then.
-function motionOut(el, to = "fade", ms = 150) {
+function motionOut(el, to = "fade", ms = M_MS.fast) {
   if (!el || !el.animate || reducedMotion()) return Promise.resolve();
   const a = el.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: M_FROM[to] || "none" }], { duration: ms, easing: M_EASE, fill: "forwards" });
   return a.finished.then(() => a, () => a);
 }
 
 // The same element changes state in place (보내기 -> 보냈어요, a task finishing): change() runs at once, the new look fades up.
-function motionSwap(el, change, ms = 200) {
+function motionSwap(el, change, ms = M_MS.base) {
   change();
   if (!el || !el.animate || reducedMotion()) return;
   el.animate([{ opacity: .35, transform: "scale(.985)" }, { opacity: 1, transform: "none" }], { duration: ms, easing: M_EASE });
@@ -36,7 +38,7 @@ function rollCount(el, next) {
     const d = document.createElement("span");
     d.className = "m-dg"; d.textContent = now[i]; el.append(d);
     if (pad[pad.length - now.length + i] !== now[i] && d.animate)
-      d.animate([{ opacity: 0, transform: `translateY(${up ? "60%" : "-60%"})` }, { opacity: 1, transform: "none" }], { duration: 220, easing: M_EASE });
+      d.animate([{ opacity: 0, transform: `translateY(${up ? "60%" : "-60%"})` }, { opacity: 1, transform: "none" }], { duration: M_MS.base, easing: M_EASE });
   }
 }
 

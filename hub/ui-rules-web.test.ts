@@ -74,7 +74,7 @@ const MEASURE = `(() => {
     for (const c of li.querySelectorAll(".btn, .hs-sw, .sel")) {
       if (!vis(c) || c.closest(".tx") || c.closest(".li") !== li) continue;
       if (c.parentElement.closest(".li-end") === null || c.closest(".li-end").parentElement !== li) { add("slot", c); continue; }
-      if (c.classList.contains("btn") && (!c.classList.contains("inrow") || Math.round(c.getBoundingClientRect().height) !== 32)) add("row-tier", c);
+      if (c.classList.contains("btn") && (!c.classList.contains("inrow") || Math.round(c.getBoundingClientRect().height) !== 28)) add("row-tier", c);
     }
   }
   for (const b of [...document.querySelectorAll(".sec .btn, .tools-bar .btn")].filter(vis))

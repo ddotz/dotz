@@ -7,7 +7,7 @@
 /* toolbar: tonal buttons sit on the gray canvas here, so they take the card fill to stay visible */
 .hm-bar > .btn.tonal { background: var(--card); }
 .hm-bar > .btn.tonal:hover { background: var(--card-hover); }
-.hm-st { position: relative; display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 20px; border-radius: var(--r-card); background: var(--card); transition: background .15s; }
+.hm-st { position: relative; display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 20px; border-radius: var(--r-card); background: var(--card); transition: background var(--m-fast) var(--m-ease); }
 .hm-st.one { cursor: pointer; }
 .hm-st.one:hover { background: var(--card-hover); }
 .hm-st.on { background: var(--active); }
@@ -40,7 +40,7 @@ button.hm-sh { cursor: pointer; }
 .hm-rows + .hm-with { padding-top: 8px; }
 .hm-with .wl { color: var(--fg-3); font: 500 12px/16px var(--font); }
 .hm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.hm-chip { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; min-height: 28px; padding: 2px 10px; border: 0; border-radius: 16px; background: var(--layer); color: var(--fg-2); font: 500 12px/16px var(--font); }
+.hm-chip { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; min-height: 28px; padding: 2px 10px; border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font: 500 12px/16px var(--font); }
 .hm-chip:hover { background: var(--hover); color: var(--fg); }
 .hm-chip.on { background: var(--active); color: var(--fg); }
 .hm-chip.warn { background: color-mix(in srgb, var(--warn) 12%, var(--layer)); color: var(--warn); }
@@ -92,8 +92,8 @@ button.hm-sh { cursor: pointer; }
 .note.err { color: var(--err); }
 textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px; resize: vertical; }
 .hs-mono { font: 12px/18px var(--mono); min-height: 280px; }
-.hs-sw { position: relative; flex: none; width: 36px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: var(--track); transition: background .15s; }
-.hs-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: transform .15s; }
+.hs-sw { position: relative; flex: none; width: 36px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: var(--track); transition: background var(--m-fast) var(--m-ease); }
+.hs-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: transform var(--m-base) var(--m-ease); }
 .hs-sw[aria-checked="true"] { background: var(--accent); }
 .hs-sw[aria-checked="true"]::after { transform: translateX(16px); }
 .dcs-form { flex-direction: column; align-items: stretch; gap: 12px; }
@@ -160,12 +160,12 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .fc-bar .seg button { flex: none; padding: 0 12px; }
 .fc-count { margin: 4px 0 12px; }
 .fc-gh { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; width: 100%; padding: 12px 2px 4px; border: 0; background: transparent; color: var(--fg); text-align: left; font: 600 13px/20px var(--font); }
-.fc-gh .ic { width: 14px; height: 14px; color: var(--fg-3); transition: transform .15s; }
+.fc-gh .ic { width: 14px; height: 14px; color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
 .fc-gh[aria-expanded="false"] .ic { transform: rotate(-90deg); }
 .fc-gh .sup { font-weight: 400; }
 .fc-gh .note { flex-basis: 100%; margin: 0 0 0 24px; }
 .fc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; margin: 10px 0 20px; }
-.fc-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 16px; border-radius: var(--r-ctl); background: var(--card); cursor: pointer; transition: background .15s; }
+.fc-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 16px; border-radius: var(--r-ctl); background: var(--card); cursor: pointer; transition: background var(--m-fast) var(--m-ease); }
 .fc-card:hover { background: var(--card-hover); }
 /* Material 3 card types instead of a colored side stripe: enforced = filled card, advisory = outlined card. */
 .fc-card.enforced, .hs-ft.enforced { background: var(--layer); }
