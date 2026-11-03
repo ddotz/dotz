@@ -59,6 +59,12 @@ export const MAIL_KEPT_NOTE = "확인: 댓글은 이미 답했어요. 메일은 
 export const MAIL_NO_APP_NOTE = "확인: 메일 앱이 정해지지 않아 메일 초안은 만들지 않았어요";
 const LIBRARY_MISS_NOTE = "확인: 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요";
 const BOUGHT = /구매|구입|샀|결제|주문했/;
+// Sale-only sheets (총보, Score, 피아노 반주 악보) go to buyers only (the owner's rule): a reply that names one without saying it is sold or cannot be
+// shared, to a writer who did not say he bought it, is a promise the owner must check.
+const SALE_SHEET = /총보|score|피아노\s*(반주\s*)?악보|반주\s*악보/i;
+const SALE_REFUSAL = /판매|구매|구입|양해|공유.{0,12}(못|불가|어렵|않)/;
+export const SALE_SHEET_NOTE = "확인 필요: 구매 확인 없이 총보·피아노 반주 악보를 보내겠다는 답글이에요. 총보는 구매자에게만 보내요";
+export const promisesSaleSheet = (reply: string, comment: string): boolean => SALE_SHEET.test(reply) && !SALE_REFUSAL.test(reply) && !BOUGHT.test(comment);
 const ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/;
 /** The linked mail of a comment as the item shows it: 메일 초안 작성됨 / 메일 보냄 / 메일 실패: <이유>. */
 export type MailMark = { state: "drafted" | "sent" | "failed"; label: string };
@@ -154,6 +160,7 @@ export function createEngine(deps: EngineDeps) {
 		const measured: Tokens = tokens.reported ? { in: tokens.in, out: tokens.out } : { in: estimate(tokens.chars), out: estimate(tokens.outChars), estimated: true };
 		const notes = [...(r.action === "draft" ? [...r.warnings.map(w => `확인: ${w}`), ...r.questions.map(q => `정해 주세요: ${q}`)] : []), ...(seed ? [SEEDED_NOTE] : []), ...matched];
 		const body = seed ? seed.reply : r.action === "draft" ? r.draft.body : "";
+		if (promisesSaleSheet(body, c.text)) notes.push(SALE_SHEET_NOTE);
 		for (const d of store.drafts()) if (d.commentId === c.id && d.status === "pending") store.setDraftStatus(d.code, "stale");
 		const draft: Draft = { code: code(), commentId: c.id, source: src.key, thread: c.thread, text: body, status: "pending", created: deps.now(), changes: previous ? [...previous.changes, change ?? ""] : [], clean: !notes.length && !previous?.mail, notes, tokens: measured, ...(previous?.mail ? { mail: previous.mail, ...(previous.mailAt ? { mailAt: previous.mailAt } : {}) } : {}) };
 		store.putDraft(draft);

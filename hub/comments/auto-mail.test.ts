@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { commentAsk } from "./ask.ts";
 import { type CommentAdapter, commentId, type RawComment, type SourceConfig } from "./contract.ts";
-import { createEngine, MAIL_NO_APP_NOTE, type MailLink, type MailSpec, type MailView } from "./engine.ts";
+import { createEngine, MAIL_NO_APP_NOTE, type MailLink, type MailSpec, type MailView, promisesSaleSheet } from "./engine.ts";
 import { createCommentsWeb } from "./web.ts";
 
 const NOW = Date.parse("2026-11-02T00:00:00.000Z");
@@ -194,5 +194,15 @@ describe("POST /api/comments/link-mail", () => {
 		expect((await call(web, { code: made.draft.code })).json).toEqual({ ok: false, skipped: "댓글에 메일 주소가 없어요" });
 		expect((await call(web, { code: "Dnone" })).status).toBe(404);
 		expect((await call(web, {})).status).toBe(400);
+	});
+});
+
+describe("sale-only sheets (총보) in a reply", () => {
+	test("a promise of 총보 to a writer who did not say he bought it is flagged; MR only, a refusal or a buyer is not", () => {
+		expect(promisesSaleSheet("남겨주신 메일로 MR과 총보 보내드리겠습니다.", "MR과 총보 받을 수 있을까요? a@b.com")).toBe(true);
+		expect(promisesSaleSheet("피아노 반주 악보도 같이 보내드릴게요", "악보 주세요")).toBe(true);
+		expect(promisesSaleSheet("MR 메일로 보내드렸습니다~!", "MR 받을 수 있을까요?")).toBe(false);
+		expect(promisesSaleSheet("총보는 악보사이트에서 판매하고 있어서 공유해드리지 못하는 점 양해 부탁드립니다.", "총보 주세요")).toBe(false);
+		expect(promisesSaleSheet("총보 보내드릴게요", "총보 구매했는데 파일이 안 열려요")).toBe(false);
 	});
 });
