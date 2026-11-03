@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "b3ec2f3ad30a";
+const WEB_BUILD = "0f91790d687e";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -3100,7 +3100,7 @@ function rqAttachNode(d = {}) {
 // extra (nodes under the body: the mail that goes along), then one of: status (a line such as 고치는 중…), revise (rqReviseNode or the caller's own),
 // acts (rqActsNode) }.
 function rqCard(c) {
-  const foot = c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
+  const foot = c.sent ? rqSentNode() : c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
   const att = c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach || {});
   return el("div", { class: `rq${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
     rqHeadNode(c.head),
@@ -3110,6 +3110,8 @@ function rqCard(c) {
     c.original && c.original.text ? el("div", { class: "rq-orig", title: c.original.text }, c.original.who ? el("b", { class: "rq-ow", text: c.original.who }) : null, el("span", { class: "rq-ot", text: c.original.text })) : null,
     rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean), foot);
 }
+// 보냈어요 in the card's own foot: the action row's place, so nothing below moves (the landing demo card's 보냈어요 · 방금).
+const rqSentNode = () => el("div", { class: "rq-sent", role: "status" }, icon("check"), el("span", { text: "보냈어요" }), el("span", { class: "rq-sent-at", text: "방금" }));
 // What an answer did, in the same words everywhere: 보냈어요, and 보내지 않았어요 with 되돌리기 where the store can bring the draft back.
 const rqSentToast = action => toast("보냈어요", false, action || null);
 const rqDroppedToast = undo => toast("보내지 않았어요", false, undo ? { label: "되돌리기", onclick: undo } : null, undo ? 6000 : undefined);
@@ -13950,7 +13952,7 @@ loadNotices();
 // peer snapshot. Newest first, each drawn as the one reply card (10-reply-card.js). An action runs on the computer that holds the draft, once:
 // a notice through its answer path (answerInline / ntPost, a peer's through /api/peer/act), a store draft through its app's route or the peer act.
 // Reached from 홈 답장 대기, the app rows' 답장 확인 button and the list row itself; the row shows only while something waits (or it is open).
-const RQ = { local: [], loaded: false, app: "", edit: "", note: {}, busy: new Set(), gone: new Set(), t: 0 };
+const RQ = { local: [], loaded: false, app: "", edit: "", note: {}, busy: new Set(), gone: new Set(), sent: new Map(), t: 0 };   // sent: a store draft just sent stays as its card, 보냈어요 in the action row's place, until the queue is opened again
 const RQ_KEY = "replies";
 
 async function rqLoad() {
@@ -14007,7 +14009,7 @@ function rqMonItem() {
     hint: list.length ? `${names.slice(0, 3).join(" · ")} 답장 ${list.length}건` : "확인할 답장이 없어요", at: list[0] ? new Date(list[0].at || Date.now()).toISOString() : "" };
 }
 // Opens the queue, filtered to one app of one computer when given (an app's own 답장 확인 button).
-function rqOpen(inst, pc) { RQ.app = inst ? rqFilterKey(pc || null, inst) : ""; MON.sig = ""; go("monitoring", RQ_KEY); }
+function rqOpen(inst, pc) { RQ.sent.clear(); RQ.app = inst ? rqFilterKey(pc || null, inst) : ""; MON.sig = ""; go("monitoring", RQ_KEY); }
 
 /* ---- one card ---- */
 const rqIsBusy = x => RQ.busy.has(x.key) || (x.kind === "notice" && dcSending.has(x.n.id));
@@ -14038,7 +14040,13 @@ async function rqRestore(x) {
 }
 function rqStoreActs(x) {
   return {
-    send: () => rqRun(x, async () => { await rqStoreCall(x, "send"); rqAfter(x, true); rqSentToast(); }),
+    send: () => rqRun(x, async () => {
+      await rqStoreCall(x, "send");
+      RQ.sent.set(x.key, x);
+      const foot = [...document.querySelectorAll(".rq[data-rq] .rq-acts")].find(f => f.closest(".rq").dataset.rq === x.key), node = rqSentNode();
+      if (foot) motionSwap(node, () => foot.replaceWith(node));
+      rqAfter(x, false);
+    }),
     edit: () => { RQ.edit = x.key; MON.sig = ""; monSchedule(); },
     drop: () => rqRun(x, async () => { await rqStoreCall(x, "drop"); rqAfter(x, true); rqDroppedToast(x.kind === "comment" && x.d.mail ? null : () => rqRestore(x)); }),
   };
@@ -14085,7 +14093,7 @@ function rqCardOf(x) {
     body: { text: d.text, parts: kakao ? d.parts : null, sentParts: d.sentParts },
     attach: d,
     extra: kakao ? [] : [draftMailNode(d.mail), (d.notes || []).length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
-    ...(editing ? { revise: rqRevise(x) } : { acts: { ...rqStoreActs(x), busy } }) });
+    ...(RQ.sent.has(x.key) ? { sent: true } : editing ? { revise: rqRevise(x) } : { acts: { ...rqStoreActs(x), busy } }) });
 }
 // 열기: where the draft lives, on its own screen (the mail's conversation, the app's pane).
 function rqGoTo(x) {
@@ -14102,12 +14110,12 @@ function rqFilterBar(all) {
   return el("div", { class: "mr-filter rq-filter", role: "tablist", "aria-label": "앱별 답장" }, chip("", "전체", all.length), ...[...by].map(([k, v]) => chip(k, v.text, v.n)));
 }
 function rqNodes() {
-  const all = rqAll(), list = rqShown(all);
-  if (!all.length) return [el("div", { class: "empty", text: RQ.loaded || NT.loaded ? "확인할 답장이 없어요" : "불러오는 중…" })];
+  const all = rqAll(), list = rqShown([...all, ...[...RQ.sent.values()].filter(s => !all.some(x => x.key === s.key))]).sort((a, b) => b.at - a.at);
+  if (!all.length && !RQ.sent.size) return [el("div", { class: "empty", text: RQ.loaded || NT.loaded ? "확인할 답장이 없어요" : "불러오는 중…" })];
   return [rqFilterBar(all), el("div", { class: "rq-q" }, ...list.map(rqCardOf))];
 }
 // What the queue shows; it is redrawn only when this changes (typing in 고치기 changes none of it).
-const rqSig = () => JSON.stringify([RQ.app, RQ.edit, [...RQ.busy], rqAll().map(x => [x.key, x.at, x.label, x.kind === "notice" ? [x.n.decision.state, x.n.decision.draft, dcSending.has(x.n.id)] : x.d])]);
+const rqSig = () => JSON.stringify([RQ.app, RQ.edit, [...RQ.busy], [...RQ.sent.keys()], rqAll().map(x => [x.key, x.at, x.label, x.kind === "notice" ? [x.n.decision.state, x.n.decision.draft, dcSending.has(x.n.id)] : x.d])]);
 rqLoad();
 
 /* ---------- 빠른 처리: many waiting send approvals of one app instance, answered fast (hub/approval-wire.ts, docs/layers.md section 5) ---------- */
