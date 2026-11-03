@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { autoHooks, commit, failFileTestCmd as testCmd, git as sh, head, makeRepos, type Repos, setSelfUpdateCfg } from "./selfupdate-fixture.ts";
-import { apply, autoCheck, check, defaultExec, type Exec, failedTestNames, failureBlocks, fetchError, nextRuns, RELEASE_AT, parseRelease, releaseTags, scrub, updateAvailable } from "./selfupdate.ts";
+import { apply, autoCheck, check, defaultExec, type Exec, failedTestNames, failureBlocks, fetchError, parseRelease, releaseTags, scrub, updateAvailable } from "./selfupdate.ts";
 
 test("failureBlocks keeps the error block bun prints before each (fail) line, and nothing from passing tests", () => {
 	const out = [
@@ -86,19 +86,6 @@ test("hotfix track: a forced version is newer than its base and older than the n
 	expect(c("261103.1.1", "261103.1")).toBe(false);
 	expect(c("261103.1.2", "261103.2")).toBe(true);
 	expect(c("261103.1", "261103.1.2")).toBe(true);
-});
-
-test("three windows a day in KST: next runs at 11:00, then across 18:00, 24:00 and the next day", () => {
-	const at = RELEASE_AT;
-	const runs = (iso: string) => nextRuns(at, new Date(iso)).map(d => d.toISOString());
-	// 11:00 KST
-	expect(runs("2026-11-03T02:00:00Z")).toEqual(["2026-11-03T03:00:00.000Z", "2026-11-03T09:00:00.000Z", "2026-11-03T15:00:00.000Z"]);
-	// 18:30 KST: midnight, then tomorrow's 12:00 and 18:00
-	expect(runs("2026-11-03T09:30:00Z")).toEqual(["2026-11-03T15:00:00.000Z", "2026-11-04T03:00:00.000Z", "2026-11-04T09:00:00.000Z"]);
-	// 00:05 KST: the 24:00 window is tonight's midnight, not the one just past
-	expect(runs("2026-11-03T15:05:00Z")).toEqual(["2026-11-04T03:00:00.000Z", "2026-11-04T09:00:00.000Z", "2026-11-04T15:00:00.000Z"]);
-	// a single window still works
-	expect(nextRuns("10:00", new Date("2026-11-03T02:00:00Z"))).toHaveLength(1);
 });
 
 describe("against temp git repos", () => {

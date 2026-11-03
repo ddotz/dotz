@@ -9,8 +9,7 @@
 // and goes back to the old commit if it fails. An applied update leaves <data>/update-pending.json and, from the gateway, a detached
 // watchdog (hub/update-watchdog.ts) that rolls it back when the restarted gateway never comes up healthy (updateBoot clears it). The
 // restart itself is main.ts's restart gate (waits for running turns) or, on the owner's word, an immediate restart.
-// The checks run at the three KST release windows (12:00,18:00,24:00, docs/releases.md; one timer per window, no polling);
-// a window with nothing new only logs. self_update.auto_apply (default on) sends a new release through the same apply()
+// The checks run every 10 minutes (CHECK_EVERY_MS, one timer); a check with nothing new only logs. self_update.auto_apply (default on) sends a new release through the same apply()
 // (ff-only, bun install, tests, revert on failure) and the idle restart gate; a refusal or failure goes to alert with a choice block.
 // Every check and update leaves lines in ~/.dotz/logs/update-YYYYMMDD.log.
 // A tarball install (install.sh without --git: no .git, a .dotz-install stamp with repo, ref, commit sha, source kind and
@@ -185,31 +184,9 @@ export function updateAvailable(c: CheckResult): boolean {
 }
 
 // The check line: "업데이트 없음 (261103.1)" or "261103.1 → 261103.2". Commits stay beside it.
-// The release windows (docs/releases.md): the updater checks right when a tag can appear. Fixed, not a setting; an old
-// self_update.at in config.json is ignored and dropped on the next settings save. 24:00 means midnight (the end of that KST day).
-export const RELEASE_AT = "12:00,18:00,24:00";
-const atItem = (s: string) => /^([01]?\d|2[0-3]):[0-5]\d$/.test(s) || s === "24:00";
-// Minutes after KST midnight; 24:00 is 1440, i.e. the next day's 00:00.
-export function windows(at: string): number[] {
-	return at.split(",").filter(atItem).map(s => {
-		const [h, m] = s.split(":").map(Number);
-		return h! * 60 + m!;
-	});
-}
-// KST is UTC+9 all year: the next occurrence of every window after `now`, oldest first (no polling, one timer each).
-const KST_MS = 9 * 60 * 60_000;
-export function nextRuns(at: string, now: Date = new Date()): Date[] {
-	const t = now.getTime();
-	const k = new Date(t + KST_MS);
-	const y = k.getUTCFullYear(), m = k.getUTCMonth(), d = k.getUTCDate();
-	return windows(at)
-		.map(min => {
-			let run = Date.UTC(y, m, d) + min * 60_000 - KST_MS;
-			if (run <= t) run = Date.UTC(y, m, d + 1) + min * 60_000 - KST_MS;
-			return new Date(run);
-		})
-		.sort((a, b) => a.getTime() - b.getTime());
-}
+// Each install checks every 10 minutes while auto_check is on; the owner cuts releases (docs/releases.md), so a new tag reaches
+// users within 10 minutes. A check with nothing new only logs; a new version is announced once (state.notified).
+export const CHECK_EVERY_MS = 10 * 60_000;
 
 // Why a fetch failed, in the owner's words, and what fixes it.
 export function fetchError(out: string, remote: string): CheckError {
@@ -232,7 +209,6 @@ function settings() {
 	return {
 		auto_check: o.auto_check !== false,
 		auto_apply: o.auto_apply !== false,
-		at: RELEASE_AT,
 		remote: typeof o.remote === "string" && o.remote ? o.remote : "origin",
 		branch: typeof o.branch === "string" && o.branch ? o.branch : "main",
 		keep_local: typeof o.keep_local === "boolean" ? o.keep_local : undefined,
@@ -978,23 +954,17 @@ export async function autoCheck(o: Options, hooks: AutoHooks | undefined = autoH
 	saveState(s);
 }
 
-// One timer per release window; each run reschedules every window. No polling: a window with nothing new writes its
-// check line to the log and says nothing to the owner.
-let autoTimers: Timer[] = [];
+// One timer, rearmed after each check finishes (a slow fetch never overlaps the next one).
+let autoTimer: Timer | undefined;
 function schedule(o: Options): void {
-	for (const t of autoTimers) clearTimeout(t);
-	autoTimers = [];
-	const s = settings();
-	if (!s.auto_check) return;
-	const now = new Date();
-	for (const run of nextRuns(s.at, now)) {
-		const t = setTimeout(async () => {
-			await autoCheck(o).catch(e => log(`self-update auto-check failed: ${e}`));
-			schedule(o);
-		}, Math.max(0, run.getTime() - now.getTime()));
-		autoTimers.push(t);
-		trackTimer(`self update check ${s.at}`, t);
-	}
+	clearTimeout(autoTimer);
+	autoTimer = undefined;
+	if (!settings().auto_check) return;
+	autoTimer = setTimeout(async () => {
+		await autoCheck(o).catch(e => log(`self-update auto-check failed: ${e}`));
+		schedule(o);
+	}, CHECK_EVERY_MS);
+	trackTimer("self update check", autoTimer);
 }
 
 // The gateway's start (main.ts, once it listens): a pending update of this code is marked healthy (the marker deleted) after a quiet
