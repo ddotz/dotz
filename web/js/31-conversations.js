@@ -33,6 +33,8 @@ function convLastOf(e) {
   return { ts: e.ts, text, from };
 }
 
+// An ended session never counts unread (server rule: hub/conversations.ts unreadOf); a lane the state does not list yet is live.
+const convEnded = t => { const l = isLaneT(t) && ((S && S.lanes) || []).find(x => `lane:${x.name}` === t); return !!l && !laneAlive(l); };
 // A live message (called by ingestMsg once per new event): moves the row's preview and, unless the owner is looking at that
 // conversation's bottom right now, adds to its unread count (server rule: hub/conversations.ts).
 function convNote(e, t, was) {
@@ -43,7 +45,7 @@ function convNote(e, t, was) {
   if (!prev || prev.ts <= last.ts) CONV.set(t, last);
   // `was`: the older version of an edited post, still unread = this one is the same unread message (counted once, like the hub does)
   const again = !!was && !(READ[t] && READ[t] >= was.ts);
-  if (convIncoming(e) && !again && !(READ[t] && READ[t] >= e.ts) && !(CV.key === t && chatStick && document.visibilityState === "visible")) { ts(t).unread++; renderBars(); }
+  if (convIncoming(e) && !again && !convEnded(t) && !(READ[t] && READ[t] >= e.ts) && !(CV.key === t && chatStick && document.visibilityState === "visible")) { ts(t).unread++; renderBars(); }
   convSchedule();
 }
 async function convLoad() {
