@@ -27,7 +27,7 @@
 .pl-row + .pl-row { border-top: 1px solid var(--line); }
 .pl-row:hover { background: var(--card-hover); }
 /* the open project: the same selected fill as the chat list (.cv-row.on) */
-.pl-row.on, .pl-row.on:hover { background: var(--layer); }
+.pl-row.on, .pl-row.on:hover, .pl-row:active { background: var(--row-sel); }
 .pl-row > .dot { margin-top: 7px; }
 .pl-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .pl-1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }

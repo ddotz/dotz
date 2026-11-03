@@ -100,7 +100,7 @@
   .cv-row.sub { min-height: 36px; padding-left: 20px; }
   .cv-row .cv-n, .cv-row.sub .cv-n { font-size: 14px; line-height: 20px; }
   .cv-row + .cv-row { margin-top: 2px; border-top: 0; }
-  .cv-row.on { background: var(--layer); }
+  .cv-row.on { background: var(--row-sel); }
   :is(.cv-side, .cv-list) .cv-av, .cv-row.sub .cv-av { width: 24px; height: 24px; font-size: 12px; }
   :is(.cv-side, .cv-list) .cv-av .ic { width: 14px; height: 14px; }
   .cv-list { padding: 8px; }

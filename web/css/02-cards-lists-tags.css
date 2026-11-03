@@ -72,7 +72,7 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .clamp.c4 { -webkit-line-clamp: 4; white-space: pre-line; }
 .pickbox { display: flex; flex-direction: column; gap: 16px; max-height: min(46dvh, 340px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
 .kb:empty { display: none; }
-.li.on { background: var(--active); }
+.li.on, button.li:active, .li.tap:active { background: var(--row-sel); }
 .li.off, .li.off:hover { background: transparent; cursor: default; }
 .li.off .hd, .li.off .lead { color: var(--fg-3); }
 /* 계정 card rows (web/js/25-settings-accounts.js): grip, order number, the tap area; a dragged row lifts and the rows it passes shift */
