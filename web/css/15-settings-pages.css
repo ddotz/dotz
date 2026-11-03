@@ -49,5 +49,5 @@
 #usage .lim .kv b { font-weight: 700; }
 #usage .lim .bar { margin-top: 6px; }
 #usage .lim > .sup { margin-top: 4px; }
-#usage .budget-row { background: var(--card); border-radius: var(--r-card); }
+#usage > .list + :is(.grid, .sec) { margin-top: var(--sp-3); }
 :is(#providers, #messengers, #devices, #webaccess, #usage) > .note { margin: var(--sp-2) 4px 0; }
