@@ -1,6 +1,6 @@
 // The run state derivation (hub/runstate.ts): every kind and every reason an idle conversation can give for leaving todos open.
 import { expect, test } from "bun:test";
-import { failureText, lastTurnEnd, mailConversation, openTodos, runIntent, runState, STALL_MS, stallNudge, workConversationRuns } from "./runstate.ts";
+import { failureText, lastTurnEnd, mailConversation, openTodos, promisesWork, runIntent, runState, STALL_MS, stallNudge, workConversationRuns } from "./runstate.ts";
 
 const now = Date.UTC(2026, 9, 26, 3, 0);
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
@@ -50,6 +50,38 @@ test("idle with open todos gives the reason: the turn ended with work left, or i
 	expect(runState({ ...base, todos: todos(2, "테스트"), lastTurnEnd: iso(400_000) }))
 		.toEqual({ kind: "idle", reason: "unfinished", since: iso(400_000), detail: "테스트", todos: 2 });
 	expect(runState({ ...base, todos: todos(1) })).toEqual({ kind: "idle", reason: "interrupted", todos: 1 });
+});
+
+// 2026-11-01 15:20Z: the final answer promised three things, then the session rested 25 minutes with no plan and nothing running.
+// The owner asked "하고있어?" and got "미안, 아직 시작 안 했어. 말만 하고 멈췄어." — a promise-ending turn is unfinished work.
+test("a turn that ended promising work and rests with nothing running is unfinished, and is told to go on", () => {
+	const answer = "좋아, 세 가지 다 바로 할게. 1. 빈 채널 이름을 work로 바꿔. 2. 지금 상태를 기록해. 3. 로그를 가져와.";
+	const r = runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer: answer });
+	expect(r).toEqual({ kind: "idle", reason: "unfinished", since: iso(1_500_000), detail: "말한 일을 아직 안 했어요" });
+	expect(stallNudge(r, now, [])).toBe(true);
+	// Nothing to wait for: a running worker or an open question wins over the promise, as always.
+	expect(runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer: answer, work: [{ description: "빌드", started_at: now - 300_000 }] }))
+		.toMatchObject({ kind: "waiting", reason: "work" });
+	expect(runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer: answer, ask: { text: "어느 채널로 바꿀까요?", at: iso(1_400_000) } }))
+		.toMatchObject({ kind: "waiting", reason: "ask" });
+});
+
+test("promisesWork reads a first-person future ending and spares reports, questions and owner-conditional promises", () => {
+	expect(promisesWork("좋아, 세 가지 다 바로 할게.")).toBe(true);
+	expect(promisesWork("빈 채널 이름을 바꿔 볼게요")).toBe(true);
+	expect(promisesWork("이제 시작할게")).toBe(true);
+	expect(promisesWork("정리해서 진행하겠습니다")).toBe(true);
+	expect(promisesWork("[run] 확인해 볼게요")).toBe(true);            // a [run] report may still promise
+	expect(promisesWork("[done] 세 가지 다 끝냈어요.")).toBe(false);  // a finished report
+	expect(promisesWork("[ask] 어느 채널로 바꿀까요?")).toBe(false);
+	expect(promisesWork("[fail] 채널 이름을 못 바꿨어요.")).toBe(false);
+	expect(promisesWork("말해 주면 바로 할게.")).toBe(false);          // waits on the owner
+	expect(promisesWork("채널 이름을 올리면 그때 할게요.")).toBe(false);
+	expect(promisesWork("이렇게 하면 될까요?")).toBe(false);          // a question, not a promise
+	expect(promisesWork("알겠습니다.")).toBe(false);                  // an acknowledgement
+	expect(promisesWork("그렇게 되면 좋겠네요.")).toBe(false);        // a guess
+	expect(promisesWork("세 가지 다 끝냈어요.")).toBe(false);
+	expect(promisesWork(undefined)).toBe(false);
 });
 
 test("idle with nothing left is done after a turn, and idle before any turn", () => {

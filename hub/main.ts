@@ -475,7 +475,7 @@ convs.startIdleSweep();
 setDiskNotify(alert);
 startLaneQueue();
 startStallSweep((conversation, r) => {
-	const text = msg().stallNudge(r.todos ?? 0, r.detail ?? "");
+	const text = msg().stallNudge(r.todos ?? 0, r.todos ? r.detail ?? "" : "");
 	if (conversation === "main") deliver(text);
 	else if (conversation.startsWith("lane:")) sendToLane(conversation.slice(5), text, undefined, true);
 	else convs.deliverTo(convs.keyOf(conversation), text, { target: conversation });
