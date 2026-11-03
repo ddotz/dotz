@@ -71,5 +71,8 @@
 .dm-mb { color: var(--fg); font: 400 var(--fs-body)/var(--lh-body) var(--font); overflow-wrap: anywhere; }
 .dm-m.mine .dm-mn { color: var(--fg-2); }
 .dm-m.mine .dm-mb { color: var(--fg-2); }
-/* 대화로 이어가기 (30-monitoring.js monHead): the item's own settings conversation, one small tonal button in the head */
+/* 대화로 이어가기 (30-monitoring.js monHead / monTopNodes): the item's own settings conversation, one small button in the head.
+   It sits on the page (--bg), where a --layer tonal button would vanish, so it takes the card colour like a chip. */
 .mon-continue { flex: none; }
+.mon-continue.btn.tonal { background: var(--card); }
+.mon-continue.btn.tonal:hover { background: var(--hover); }
