@@ -62,7 +62,7 @@ function fcSwitch(f) {
     }
     const at = await hRequest(text, hScope(kind, where));
     fcAsked.set(f.id, { to: !f.enabled, at });
-    sent.textContent = `요청 보냄 · ${at}`; sent.hidden = false;
+    motionSwap(sent, () => { sent.textContent = `요청 보냄 · ${at}`; sent.hidden = false; });
   };
   sw.addEventListener("click", ev => {
     ev.stopPropagation();

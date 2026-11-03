@@ -17,6 +17,56 @@
   const unread = () => F.notices.items.filter(n => !n.read).length;
   const later = (ms, fn) => setTimeout(fn, ms);
 
+  // 구성 탭: 지도(단계 카드)와 기능 목록, 프로젝트 비교 카드를 보여 줄 만큼의 손으로 쓴 데이터예요.
+  const hn = (id, kind, group, label, summary, extra = {}) => ({ id, kind, group, label, summary, desc: summary + " 이 단계가 하는 일을 한 줄로 적었어요.", status: "ok", facts: [], settings: [], ...extra });
+  const hset = (key, label, value, type, extra = {}) => ({ key, label, value, type, editable: true, applies: "live", source: "config.json:" + key, ...extra });
+  const HARNESS_FX = {
+    generated: new Date().toISOString(), data_dir: "~/.dotz", layers: [],
+    nodes: [
+      hn("ch-web", "channel", "flow", "웹 채팅", "브라우저에서 보낸 글", { facts: [{ label: "연결", value: "2개 기기" }] }),
+      hn("ch-discord", "channel", "flow", "Discord", "서버 1곳 · 채널 3개", { status: "warn", facts: [{ label: "연결", value: "재연결 중" }] }),
+      hn("ch-kakao", "channel", "flow", "카카오톡", "나와의 채팅 1개", { status: "off" }),
+      hn("gateway", "gateway", "flow", "게이트웨이", "들어온 글을 모아 어시스턴트에게 넘겨요", { facts: [{ label: "열린 길", value: "8080" }], settings: [hset("gateway.debounce", "글 묶는 시간", 1200, "number", { unit: "ms", default: 800, min: 0, max: 5000 }), hset("gateway.quiet", "조용한 시간 알림 끄기", true, "bool", { default: false })] }),
+      hn("orchestrator", "orchestrator", "flow", "어시스턴트", "받은 글을 읽고 할 일을 나눠요", { status: "busy", facts: [{ label: "모델", value: "Opus 4.8" }], settings: [hset("orchestrator.thinking", "생각 강도", "high", "select", { options: [{ value: "low", label: "낮음" }, { value: "high", label: "높음" }], default: "medium" }), hset("orchestrator.reply_style", "답 말투", "해요체", "text", { default: "해요체" })] }),
+      hn("lanes", "lanes", "flow", "세션", "채널마다 이어지는 작업 줄 4개", { status: "busy", facts: [{ label: "돌아가는 중", value: "2개" }] }),
+      hn("workers", "workers", "flow", "서브에이전트", "나눠 맡은 일을 따로 처리해요"),
+      hn("rules", "file", "files", "RULES.md", "지킬 규칙 12줄", { anchor: "orchestrator", file: "RULES.md", fileEditable: true, order: 1 }),
+      hn("lessons", "file", "files", "LESSONS.md", "배운 것 8줄", { anchor: "orchestrator", file: "LESSONS.md", fileEditable: true, order: 2 }),
+      hn("memory", "system", "support", "기억", "메모 41개", { anchor: "orchestrator", order: 3 }),
+      hn("monitor", "system", "support", "모니터링", "점검 3개", { anchor: "lanes", order: 1 }),
+    ],
+    edges: [
+      { from: "ch-web", to: "gateway", label: "들어온 글" }, { from: "ch-discord", to: "gateway", label: "들어온 글" }, { from: "ch-kakao", to: "gateway", label: "들어온 글" },
+      { from: "gateway", to: "orchestrator", label: "묶은 글" }, { from: "orchestrator", to: "lanes", label: "일 맡기기" }, { from: "lanes", to: "workers", label: "나눈 일" },
+      { from: "rules", to: "orchestrator", label: "규칙" }, { from: "lessons", to: "orchestrator", label: "배운 것" }, { from: "memory", to: "orchestrator", label: "기억" }, { from: "monitor", to: "lanes", label: "변화" },
+    ],
+    projects: [
+      { id: "p-blog", name: "블로그 정리", status: "working", status_text: "작업 중", overrides: 2, cwd: "/home/me/Code/blog", channels: [{ kind: "work", kind_text: "작업 채널", name: "블로그" }],
+        fields: { model: { value: "claude-opus-4-8", global: "claude-opus-4-8", source: "global" }, effort: { value: "xhigh", global: "high", source: "project" }, worker_model: { value: "claude-sonnet-5-5", global: "claude-sonnet-5-5", source: "global" }, worker_effort: { value: "medium", global: "medium", source: "global" }, runtime: { value: "omo", global: "omo", source: "global" }, fallback: { value: [], global: [], source: "global" }, worker_fallback: { value: [], global: [], source: "global" } },
+        files: [{ name: "AGENTS.md", bytes: 2480, modified: new Date(Date.now() - 864e5).toISOString() }], features: [{ name: "글 올리기 전 맞춤법" }], deny: ["rm -rf"], setup: { purpose: "블로그 글을 다듬고 올려요.", logins: [{ name: "티스토리" }], monitors: [1], standing: "" },
+        map: { nodes: [], edges: [] } },
+      { id: "p-home", name: "집안일", status: "idle", status_text: "대기", overrides: 0, cwd: "/home/me/Code/home", channels: [{ kind: "home", kind_text: "홈 채널", name: "집" }],
+        fields: { model: { value: "claude-opus-4-8", global: "claude-opus-4-8", source: "global" }, effort: { value: "high", global: "high", source: "global" }, worker_model: { value: "claude-sonnet-5-5", global: "claude-sonnet-5-5", source: "global" }, worker_effort: { value: "medium", global: "medium", source: "global" }, runtime: { value: "omo", global: "omo", source: "global" }, fallback: { value: [], global: [], source: "global" }, worker_fallback: { value: [], global: [], source: "global" } },
+        files: [], features: [], deny: [], setup: null, map: { nodes: [], edges: [] } },
+    ],
+  };
+  HARNESS_FX.projects.forEach(p => { p.map = { nodes: HARNESS_FX.nodes.filter(n => n.group === "flow" && !n.id.startsWith("ch-")).concat(HARNESS_FX.nodes.filter(n => n.id === "ch-web")), edges: HARNESS_FX.edges.filter(e => !/^ch-(discord|kakao)/.test(e.from) && !["rules", "lessons", "memory", "monitor"].includes(e.from)) }; });
+  const hf = (id, form, name, what, trigger, stage, strength, label, extra = {}) => ({ id, form, name, what, trigger, stage, strength, source: { label }, enabled: true, toggleable: false, origin: "personal", ...extra });
+  const FEATURES_FX = {
+    generated: new Date().toISOString(), harness: { id: "omo", name: "OmO", dirs: [] }, data_dir: "~/.dotz", skipped_dirs: [],
+    forms: ["글 지시", "차단 명령", "기능 폴더", "예약", "모니터링"],
+    triggers: ["메시지 도착", "정해진 시각", "변화 감지", "도구 실행 직전", "항상(프롬프트)"],
+    stages: HARNESS_FX.nodes.map(n => n.id),
+    features: [
+      hf("f1", "글 지시", "답은 해요체로 짧게", "답장은 해요체로, 세 줄 안에 끝내요.", "항상(프롬프트)", "rules", "advisory", "RULES.md:4", { source: { label: "RULES.md:4", file: "RULES.md", line: 4 } }),
+      hf("f2", "차단 명령", "강제 삭제 막기", "rm -rf 가 들어간 명령은 실행 직전에 막아요.", "도구 실행 직전", "rules", "enforced", "RULES.md:9", { source: { label: "RULES.md:9", file: "RULES.md", line: 9 } }),
+      hf("f3", "기능 폴더", "아침 요약", "매일 아침 일정과 메일을 한 번에 요약해요.", "정해진 시각", "lanes", "advisory", "features/morning/feature.md", { toggleable: true, enabled: true }),
+      hf("f4", "기능 폴더", "가격 변화 알림", "관심 상품 가격이 내려가면 알려 줘요.", "변화 감지", "lanes", "enforced", "features/price/feature.md", { toggleable: true, enabled: false }),
+      hf("f5", "예약", "주간 정리", "금요일 저녁에 한 주를 정리해요.", "정해진 시각", "lanes", "advisory", "schedules.json"),
+      hf("f6", "모니터링", "블로그 댓글 확인", "10분마다 새 댓글만 알려요.", "변화 감지", "lanes", "enforced", "watches.json"),
+    ],
+  };
+
   /* ---------- the event stream: the page's EventSource is this stub, and every scripted frame goes through its onmessage ---------- */
   const streams = new Set();
   const ES = function () {
@@ -530,8 +580,8 @@
       { kind: "comment", app: "youtube", code: "DM1", at: Date.now() - 6 * 6e4, to: "산책하는고양이", title: "책상 정리 브이로그", text: "다음 주 금요일에 올라가요.\n봐 주셔서 고마워요!", original: { who: "산책하는고양이", text: "영상 잘 봤어요! 다음 편은 언제 올라와요?" }, attachmentsNone: true, cannotAttach: [] },
       { kind: "comment", app: "instagram", code: "DM2", at: Date.now() - 52 * 6e4, to: "달빛고양이", title: "라이브 예고 게시물", text: "이번 주 금요일 저녁 8시에 해요.\n알림 설정해 두시면 바로 알려 드릴게요.", original: { who: "달빛고양이", text: "다음 라이브는 언제 해요?" }, attachmentsNone: true, cannotAttach: [] },
     ] },
-    "/api/features": {},
-    "/api/harness": { layers: [], projects: [] },
+    "/api/features": FEATURES_FX,
+    "/api/harness": HARNESS_FX,
     "/api/api-budget": {},
     "/api/web-access": { mode: "tailscale", hostname: "", team: "", aud: "", token_set: false, tunnel: { state: "off" }, devices: 2, cloudflared_found: true },
     "/api/push/gateways": { items: [] },
