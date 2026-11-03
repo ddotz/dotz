@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { autoHooks, commit, failFileTestCmd as testCmd, git as sh, head, makeRepos, type Repos, setSelfUpdateCfg } from "./selfupdate-fixture.ts";
-import { apply, autoCheck, check, defaultExec, type Exec, failedTestNames, failureBlocks, fetchError, nextRuns, parseRelease, releaseTags, scrub, updateAvailable } from "./selfupdate.ts";
+import { apply, autoCheck, check, defaultExec, type Exec, failedTestNames, failureBlocks, fetchError, nextRuns, RELEASE_AT, parseRelease, releaseTags, scrub, updateAvailable } from "./selfupdate.ts";
 
 test("failureBlocks keeps the error block bun prints before each (fail) line, and nothing from passing tests", () => {
 	const out = [
@@ -89,7 +89,7 @@ test("hotfix track: a forced version is newer than its base and older than the n
 });
 
 test("three windows a day in KST: next runs at 11:00, then across 18:00, 24:00 and the next day", () => {
-	const at = "12:00,18:00,24:00";
+	const at = RELEASE_AT;
 	const runs = (iso: string) => nextRuns(at, new Date(iso)).map(d => d.toISOString());
 	// 11:00 KST
 	expect(runs("2026-11-03T02:00:00Z")).toEqual(["2026-11-03T03:00:00.000Z", "2026-11-03T09:00:00.000Z", "2026-11-03T15:00:00.000Z"]);
