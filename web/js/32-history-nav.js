@@ -23,6 +23,7 @@ function routeChain(name, hash) {
   if (SUB.has(name)) {
     const bt = backTarget();
     if (bt === "home") return ["home", hash];
+    if (bt === "messengers" || bt === "providers") return ["home", "settings", bt, hash];
     if (bt === "chat" || bt === "activity") return [...conv(bt), hash];
     return ["home", bt === "project" ? "projects" : bt, hash];
   }

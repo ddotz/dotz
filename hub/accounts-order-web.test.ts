@@ -47,6 +47,7 @@ const hub = fakeHub({
 		if (p === "/api/integrations") return json({ items: [] });
 		if (p === "/api/kakao/rooms") return json({ on: true, rooms: [] });
 		if (p === "/api/update" || p === "/api/runtimes") return json({ error: "stub" }, 500);
+		if (p === "/api/providers") return json({ providers: [{ id: "anthropic", name: "Claude 구독", auth: "oauth", can_login: true, can_add_account: true }] });
 		if (p === "/api/accounts") {
 			if (req.method === "PUT") {
 				const b = (await req.json()) as { mode?: "auto" | "pinned"; account?: string; order?: string[] };
@@ -76,7 +77,7 @@ afterAll(() => { hub.stop(); });
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
 const shot = async (v: View, name: string) => {
 	if (!SHOTS) return;
-	await run(v, `[...document.querySelectorAll(".sec")].find(x => x.textContent === "계정").scrollIntoView()`);
+	await run(v, `[...document.querySelectorAll(".sec")].find(x => x.textContent.startsWith("계정")).scrollIntoView()`);
 	await Bun.write(join(SHOTS, name), await v.screenshot());
 };
 const boot = async (v: View) => {
@@ -85,7 +86,7 @@ const boot = async (v: View) => {
 	await opened;
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && NM.loaded && S`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
-	await run(v, `go("settings")`);
+	await run(v, `go("provider", "anthropic")`);
 	await waitFor(v, `document.querySelectorAll(".li.acc").length === 5`);
 };
 const reset = () => { mode = "auto"; pin = "default"; order = [...NAMES]; calls.length = 0; };
@@ -182,3 +183,21 @@ test("touch: a long press on a row lifts it and a drag saves the order; a tap an
 	expect(calls).toHaveLength(n);
 	expect(calls.at(-1)?.[0]).toBe("/api/accounts/order");
 });
+
+// The account block moved inside 공급자: an old address or palette entry for it lands on the Claude 구독 screen there.
+for (const [from, args] of [["#settings/accounts", ["settings", "accounts"]], ["#accounts", ["accounts"]], ["#providers/anthropic", ["providers", "anthropic"]]] as const)
+	test(`${from}: the old account address opens the Claude screen inside 공급자`, async () => {
+		reset();
+		const v = await open(1280, 800);
+		const opened = hub.nextStream();
+		await v.navigate(`${hub.origin}/`);
+		await opened;
+		await waitFor(v, `typeof NT !== "undefined" && NT.loaded && NM.loaded && S`);
+		await run(v, `go("providers")`);
+		await waitFor(v, `current === "providers"`);
+		await run(v, `go(...${JSON.stringify(args)})`);
+		await waitFor(v, `current === "provider" && provCur === "anthropic" && document.querySelectorAll("#provider .li.acc").length === 5`);
+		expect(await q(v, `return [location.hash, document.querySelectorAll("#settings .li.acc").length]`)).toEqual(["#provider/anthropic", 0]);
+		await run(v, `document.querySelector("#back").click()`);
+		await waitFor(v, `current === "providers"`);
+	}, 20_000);

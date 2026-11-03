@@ -115,11 +115,12 @@ const hub = fakeHub({
 });
 afterAll(() => hub.stop());
 
-const open = async (width: number, height: number, theme: "light" | "dark" = "light", view = "settings"): Promise<View> => {
+const open = async (width: number, height: number, theme: "light" | "dark" = "light", view = "messengers"): Promise<View> => {
 	const v = await hub.view({ width, height }, "/");
 	await waitFor(v, `typeof go === "function" && typeof S !== "undefined" && S`);
 	await run(v, `document.documentElement.dataset.theme = ${JSON.stringify(theme)}; go(${JSON.stringify(view)})`);
-	if (view === "settings") await waitFor(v, `document.querySelectorAll("#settings [data-ms-row]").length === 4 && document.querySelector('#settings [data-ms-row="telegram"] .tag')`);
+	if (view === "messengers") await waitFor(v, `document.querySelectorAll("#messengers [data-ms-row]").length === 4 && document.querySelector('#messengers [data-ms-row="telegram"] .tag')`);
+	else if (view === "settings") await waitFor(v, `document.querySelector("#settings [data-ms-hub] .sup")`);
 	else await waitFor(v, `document.querySelector("#${view} [data-ms-connect]") && document.querySelector("#${view} [data-ms-status]")`);
 	return v;
 };
@@ -130,25 +131,33 @@ const noOverflow = (v: View, sel: string) => ev<boolean>(v, `document.documentEl
 describe("메신저 설정", () => {
 	beforeEach(reset);
 
-	test("settings has exactly one Discord/JANDI/Slack/Telegram row, no 메신저, and each opens its view", async () => {
-		const v = await open(1280, 800);
-		const rows = await ev<{ id: string; name: string; tag: string }[]>(v, `[...document.querySelectorAll("#settings [data-ms-row]")].map(r => ({ id: r.dataset.msRow, name: r.querySelector(".hd").textContent, tag: r.querySelector(".tag")?.textContent }))`);
+	test("settings has one 메신저 row that summarizes the connections; its screen lists Discord/JANDI/Slack/Telegram and each opens its view", async () => {
+		const v = await open(1280, 800, "light", "settings");
+		await waitFor(v, `document.querySelector("#settings [data-ms-hub] .sup").textContent !== ""`);
+		expect(await ev<number>(v, `document.querySelectorAll("#settings [data-ms-hub]").length`)).toBe(1);
+		expect(await ev<number>(v, `document.querySelectorAll("#settings [data-ms-row]").length`)).toBe(0);
+		// Discord and JANDI are connected: the summary names the first and counts the other
+		const sum = await ev<string>(v, `document.querySelector("#settings [data-ms-hub] .sup").textContent`);
+		expect(sum).toContain("Discord");
+		expect(sum).toContain("1");
+		await click(v, "#settings [data-ms-hub]");
+		await waitFor(v, `current === "messengers" && document.querySelectorAll("#messengers [data-ms-row]").length === 4`);
+		const rows = await ev<{ id: string; name: string; tag: string }[]>(v, `[...document.querySelectorAll("#messengers [data-ms-row]")].map(r => ({ id: r.dataset.msRow, name: r.querySelector(".hd").textContent, tag: r.querySelector(".tag")?.textContent }))`);
 		expect(rows).toEqual([
 			{ id: "discord", name: "Discord", tag: "연결됨" },
 			{ id: "jandi", name: "JANDI", tag: "연결됨" },
 			{ id: "slack", name: "Slack", tag: "설정 안 됨" },
 			{ id: "telegram", name: "Telegram", tag: "연결 안 됨" },
 		]);
-		expect(await ev<string[]>(v, `[...document.querySelectorAll("#settings .li.tap .hd")].map(h => h.textContent)`)).not.toContain("메신저");
-		expect(await ev<number>(v, `[...document.querySelectorAll("#settings .li.tap .hd")].filter(h => ["Discord","JANDI","Slack","Telegram"].includes(h.textContent)).length`)).toBe(4);
 		for (const id of ["discord", "jandi", "slack", "telegram"]) {
-			await run(v, `go("settings")`);
-			await waitFor(v, `document.querySelector("#settings [data-ms-row=\\"${id}\\"] .tag")`);
-			await click(v, `#settings [data-ms-row="${id}"]`);
+			await run(v, `go("messengers")`);
+			await waitFor(v, `document.querySelector("#messengers [data-ms-row=\\"${id}\\"] .tag")`);
+			await click(v, `#messengers [data-ms-row="${id}"]`);
 			await waitFor(v, `current === "${id}"`);
 		}
-		await run(v, `go("messengers")`);
-		await waitFor(v, `current === "settings"`);
+		// the screen's own back lands on the 메신저 list
+		await click(v, "#back");
+		await waitFor(v, `current === "messengers"`);
 	}, 30_000);
 
 	test("every screen has one action, a closed 직접 입력, and no input outside it", async () => {
@@ -245,11 +254,11 @@ describe("메신저 설정", () => {
 	test("screenshots: settings 1280 light, 390 dark, and each messenger screen", async () => {
 		const desk = await open(1280, 800, "light");
 		await Bun.write(`${SHOTS}/after-1280.png`, await desk.screenshot());
-		expect(await noOverflow(desk, "#settings .list")).toBe(true);
+		expect(await noOverflow(desk, "#messengers .list")).toBe(true);
 		const phone = await open(390, 844, "dark");
-		await run(phone, `document.querySelector("#settings [data-ms-row=telegram]").scrollIntoView({ block: "center" })`);
+		await run(phone, `document.querySelector("#messengers [data-ms-row=telegram]").scrollIntoView({ block: "center" })`);
 		await Bun.write(`${SHOTS}/after-390.png`, await phone.screenshot());
-		expect(await noOverflow(phone, "#settings .list")).toBe(true);
+		expect(await noOverflow(phone, "#messengers .list")).toBe(true);
 		for (const id of ["discord", "jandi", "slack", "telegram"]) {
 			const v = await open(1280, 800, "light", id);
 			await waitFor(v, `document.querySelector("#${id} [data-onb]")`);

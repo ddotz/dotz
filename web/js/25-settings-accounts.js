@@ -6,10 +6,12 @@ const ACC_DO = [["pin", "계정 고정"], ["prefer", "순서대로 우선"], ["a
 const accTx = (hd, ...sup) => el("span", { class: "tx" }, hd ? el("div", { class: "hd", text: hd }) : null, sup.length ? el("div", { class: "sup" }, ...sup) : null);
 async function loadAccounts() {
   try { ACC = await api("/api/accounts"); } catch { ACC = null; }
-  if (current === "settings") renderSettings();
+  accPaint();
 }
+// the accounts block lives on the provider's screen (21-providers.js renderProvider)
+const accPaint = () => { if (current === "provider") renderProvider(); else if (current === "settings") renderSettings(); };
 const accLabel = id => { const a = ACC && ACC.accounts.find(x => x.name === id || x.alias === id); return a ? a.label || a.alias || a.name : id; };
-const accMut = (btn, call, msg, close) => busy(btn, async () => { ACC = await call(); if (close) close(); if (msg) toast(msg); renderSettings(); if (current === "usage") loadQuota(); });
+const accMut = (btn, call, msg, close) => busy(btn, async () => { ACC = await call(); if (close) close(); if (msg) toast(msg); accPaint(); if (current === "usage") loadQuota(); });
 async function accCopy(text) { try { await navigator.clipboard.writeText(text); toast("복사했어요"); } catch { toast("복사하지 못했어요", true); } }
 function accTags(a, pin) {
   const t = [];
@@ -91,10 +93,6 @@ function accountSection() {
         el("span", { class: "lead acc-no", text: String(a.order || i + 1) }), tx(label, sub), ...accTags(a, pin).map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t }))),
       pinned ? el("button", { class: "acc-mv", type: "button", "aria-label": `${label} 이름 바꾸기`, onclick: () => accDialog(a) }, icon("chev", "lead")) : null);
   });
-  // one more login for any provider OmO can hold accounts for: the picker offers the install's login providers, a login there
-  // adds an account to that provider's pool and keeps the others and the pin (21-providers.js startLogin)
-  rows.push(el("div", { class: "li" }, tx("계정 추가", "구독 계정이나 API 키를 하나 더 넣어요. 지금 쓰는 계정은 바뀌지 않아요."),
-    liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => accAddProviderDialog() }, icon("add"), "추가"))));
   const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : `${ch ? ch.label : "고른 계정"}만 써요. 한도에 걸리면 다른 계정으로 넘어가지 않고, 폴백 순서에 다른 단계(API 키 포함)가 있으면 그 단계로 이어 가요. 답장 초안은 API 키로 넘어가지 않아 한도가 풀릴 때까지 멈춰요.`) : "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가고, 모두 막히면 폴백 순서(API 키 포함)를 따라요. 답장 초안은 API 키로 넘어가지 않아요.";
   // on = 자동 전환, off = 고정 (the account to fix is the row tapped below)
   rows.unshift(el("div", { class: "li" }, tx("자동 전환", caption),
@@ -113,12 +111,13 @@ function accountSection() {
   if (!pinned && sc && sc.path) rows.push(el("button", { class: "li tap", type: "button", title: sc.path, onclick: () => accCopy(sc.path) }, tx("스크립트", el("code", { class: "path-short", text: shortPath(sc.path) }), run ? ` · ${run}` : "")));
   const last = sc && sc.last;
   if (!pinned && last) rows.push(el("div", { class: "li" }, tx(last.error || last.error_text ? "마지막 실행이 실패했어요" : `마지막 결과 · ${last.label || (last.account ? accLabel(last.account) : "고르지 않음")}`, [last.error_text || last.reason, last.at ? kstStamp(Date.parse(last.at)) : ""].filter(Boolean).join(" · "))));
-  // with other providers in the card, each group is titled by its product name; alone, the card keeps its one 계정 title
-  const groups = (ACC.providers || []).filter(g => !(g.id === "anthropic" && g.multi));
-  const head = groups.length && ACC.accounts.length ? [el("div", { class: "sec", text: "Claude 구독" })] : [el("div", { class: "sec", text: "계정" })];
-  return [...head, el("div", { class: "list" }, ...rows), ...accProviderSections(groups)];
+  // one more login for this subscription: it adds an account to the pool and keeps the others and the pin (21-providers.js startLogin).
+  // A section action: .sec-act > .btn.tonal.sm
+  const cl = ((P && P.providers) || []).find(x => x.id === "anthropic") || { id: "anthropic", name: "Claude 구독" };
+  const head = el("div", { class: "sec sec-act" }, "계정", el("button", { class: "btn tonal sm", type: "button", "data-acc-add": "", onclick: () => startLogin({ ...cl, add_account: true }) }, icon("add"), "추가"));
+  return [head, el("div", { class: "list" }, ...rows)];
 }
-// Every other provider OmO holds accounts for (Claude 구독 has its own card above): one group per provider, its accounts with
+// The accounts of the providers OmO holds accounts for besides Claude 구독 (its own block above): one group per provider screen, its accounts with
 // their state and usage windows, and an empty state when the pool has none.
 function accProviderSections(groups) {
   const out = [];
@@ -138,16 +137,9 @@ function accProviderSections(groups) {
         el("button", { class: "acc-main", type: "button", onclick: () => accProviderDialog(g, a) },
           el("span", { class: "lead acc-no", text: String(a.order) }), accTx(label, sub), ...tags.map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t })))));
     }
-    out.push(el("div", { class: "sec", text: g.name }), el("div", { class: "list" }, ...rows));
+    out.push(el("div", { class: "sec", text: "계정" }), el("div", { class: "list" }, ...rows));
   }
   return out;
-}
-function accAddProviderDialog() {
-  const list = (ACC && ACC.login_providers) || [];
-  let d;
-  const rows = list.map(p => el("button", { class: "li tap", type: "button", onclick: () => { d.close(); startLogin({ id: p.id, name: p.name, add_account: true }); } },
-    el("span", { class: "avatar", text: [...p.name][0] || "?" }), accTx(p.name, p.configured ? "계정 추가" : "로그인"), icon("chev", "lead")));
-  d = dialog({ title: "계정 추가", body: el("div", { class: "list" }, ...(rows.length ? rows : [el("div", { class: "li" }, accTx("로그인할 수 있는 공급자가 없어요"))])) });
 }
 // One account of another provider: its alias (kept per provider so two pools can hold the same account name), OmO's pin, deletion.
 function accProviderDialog(g, a) {

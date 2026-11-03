@@ -95,7 +95,9 @@ const MEASURE = `(() => {
 
 // Each screen and a row that shows it has finished loading.
 const SCREENS: Array<[string, string]> = [
-	["settings", `document.querySelector("#settings [aria-label='자동 확인']") && document.querySelector("#settings [aria-label='자동 전환']")`],
+	["settings", `document.querySelector("#settings [aria-label='자동 확인']") && document.querySelector("#settings [data-ms-hub]")`],
+	["messengers", `document.querySelectorAll("#messengers [data-ms-row]").length === 4`],
+	["provider/anthropic", `document.querySelector("#provider [aria-label='자동 전환']") && document.querySelector("#provider .sec-act")`],
 	["providers", `document.querySelectorAll("#providers .prow").length === 4`],
 	["discord", `document.querySelector("[data-ms-connect='discord']") && document.querySelector("[data-dc]")`],
 	["jandi", `document.querySelector("[data-ms-connect='jandi']") && document.querySelector("#jandi [data-k]")`],
@@ -109,7 +111,8 @@ for (const width of [390, 1280])
 		await waitFor(v, `typeof go === "function" && S`);
 		const found: string[] = [];
 		for (const [view, ready] of SCREENS) {
-			await v.evaluate(`(go(${JSON.stringify(view)}), 0)`);
+			const [name, tgt] = view.split("/");
+			await v.evaluate(`(go(${JSON.stringify(name)}, ${JSON.stringify(tgt)}), 0)`);
 			await waitFor(v, ready);
 			found.push(...(JSON.parse((await v.evaluate(MEASURE)) as string) as string[]));
 		}
