@@ -144,17 +144,18 @@ dialog.dlg.cl .dtitle { flex: 1; min-width: 0; }
 .dbody { display: flex; flex-direction: column; gap: 12px; color: var(--fg-2); }
 .dbody p { margin: 0; overflow-wrap: anywhere; white-space: pre-line; }
 dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padding: 0; max-height: min(480px, calc(100dvh - 24px)); }
-.pal-head { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 12px; border-bottom: 1px solid var(--line); color: var(--fg-3); }
+.pal-head { display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 16px; color: var(--fg-3); }
+.pal-head kbd { border: 0; }
 .pal-in { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--fg); font-size: 14px; }
 @media (pointer: coarse) { .pal-in { font-size: 16px; } }
-.pal-list { padding: 4px; overflow-y: auto; max-height: 360px; }
-.pal-i { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg); text-align: left; }
-.pal-i.on { background: var(--hover); }
+.pal-list { padding: 0 8px 8px; overflow-y: auto; max-height: 360px; }
+.pal-i { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 12px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); text-align: left; font: 500 15px/22px var(--font); }
+.pal-i.on, .pal-i:focus-visible { background: var(--hover); outline: 0; }
 .pal-i .ic { color: var(--fg-3); }
 .pal-i .nm { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pal-i .pd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-size: 12px; }
-.pal-i.cmd .nm { font-family: var(--mono); font-size: 12px; }
-.pal-out { padding: 12px; max-height: 360px; overflow: auto; }
+.pal-i .pd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font: 400 12px/16px var(--font); }
+.pal-i.cmd .nm { font: 500 13px/20px var(--mono); }
+.pal-out { padding: 4px 16px 16px; max-height: 360px; overflow: auto; }
 .pal-res { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .pal-rh { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .pal-rt { flex: 1; min-width: 0; font: 600 15px/22px var(--font); overflow-wrap: anywhere; }

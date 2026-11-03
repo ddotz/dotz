@@ -44,7 +44,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
   .fs-body { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
   .fs-body.panel { margin: 0 max(8px, env(safe-area-inset-left)); padding: 16px; }
   .fs-ft { padding: 12px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
-  .fs-ft.row .btn { flex: 1; min-height: 48px; }
+  .fs-ft.row .btn:only-child { flex: 1; }
 }
 /* .mid: a middle sheet for one short input with a short list under it (앱 관리). PC the centered card above; phone a sheet from the bottom, not full screen. */
 @media (max-width: 639px) {
