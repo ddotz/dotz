@@ -26,6 +26,8 @@ bun site/build-demo.ts
 bunx serve site
 ```
 
+히어로와 카드의 움직이는 장면(`js/stageshow.js`)은 `site/stageshow-src`를 고친 뒤 `bun site/stageshow-src/build.ts`로 다시 빌드합니다.
+
 ## 배포
 
 Cloudflare Pages에 `site` 폴더를 그대로 올립니다(프로젝트 이름 `dotz`, 사용자 도메인 `ddotz.dev`).

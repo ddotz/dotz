@@ -517,6 +517,27 @@ a:hover {
   font-size: 0.9em;
 }
 
+.cards-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.card-demo {
+  display: none;
+}
+
+.ss .card-demo {
+  display: block;
+  margin: -26px -26px 24px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  border-radius: calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0 0;
+  background: var(--surface-2);
+}
+
+.ss .card-demo:empty {
+  aspect-ratio: 520 / 280;
+}
+
 
 .flow {
   display: grid;
@@ -650,6 +671,22 @@ a:hover {
 
 .shot {
   margin: 56px 0 0;
+}
+
+.ss-slot {
+  display: none;
+}
+
+.ss .shot picture {
+  display: none;
+}
+
+.ss .ss-slot {
+  display: block;
+}
+
+.ss .ss-slot:empty {
+  aspect-ratio: 1000 / 600;
 }
 
 .shot img {
@@ -903,12 +940,21 @@ a:hover {
     margin-bottom: 32px;
   }
 
-  .cards {
+  .cards,
+  .cards-2 {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .card {
     padding: 22px 22px 24px;
+  }
+
+  .ss .card-demo {
+    margin: -22px -22px 22px;
+  }
+
+  .ss .ss-slot:empty {
+    aspect-ratio: 358 / 560;
   }
 
   .flow {
