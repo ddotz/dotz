@@ -6,10 +6,8 @@
   #models .fb-item .fb-acts { flex: 1 0 100%; justify-content: flex-end; }
   /* editor options that do not fit side by side wrap to the next line instead of being cut with an ellipsis */
   #models .fbe .seg button { flex: 1 0 auto; padding: 0 12px; }
-  /* update: commit subjects and paths wrap; the time field and switch drop under the text instead of squeezing it */
+  /* update: commit subjects and paths wrap */
   #settings .upd-log span { white-space: normal; overflow-wrap: anywhere; }
-  #settings .li:has(.upd-at) { flex-wrap: wrap; row-gap: 8px; }
-  #settings .li:has(.upd-at) > .tx { flex: 1 1 calc(100% - 48px); }
 }
 @media (max-width: 639px), (pointer: coarse) {
   #harness .hm-row { height: 40px; }
@@ -20,7 +18,6 @@
   dialog.dlg select.fi { height: 44px; }
   dialog.dlg summary { padding: 14px 0; }
   dialog.dlg.cl .btn { min-height: 40px; }
-  #settings .upd-at { height: 40px; }
   #settings .hs-sw::before { content: ""; position: absolute; inset: -12px -4px; }
   #models .fb-sw { min-width: 48px; height: 40px; }
   #models .fb-acts button { width: 40px; height: 40px; border-radius: 20px; }
