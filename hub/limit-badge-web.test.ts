@@ -31,19 +31,19 @@ afterAll(() => { view.close(); server.stop(true); });
 const waitFor = (expr: string, ms = 10_000) =>
 	view.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(code: string): Promise<T> => JSON.parse((await view.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
-const ROW = `document.querySelector('#home-now [data-k="running"] [data-wait="ui-fix"]')`;
+const ROW = `document.querySelector('#v-home [data-k="running"] [data-wait="ui-fix"]')`;
 
 test("a deferred task is a 지금 진행 중 row with the badge '한도 리셋되면 재개 (HH:MM)', its name without the legacy prefix", async () => {
 	await view.navigate(`http://127.0.0.1:${server.port}/`);
 	await waitFor(`S && current === "home" && ${ROW}`);
 	expect(await q(`return ${ROW}.querySelector(".hs").textContent`)).toBe("한도 리셋되면 재개 (14:30)");
 	expect(await q(`return ${ROW}.querySelector(".nm").textContent`)).toBe("UI 정리");
-	expect(await q(`return !!document.querySelector('#home-now [data-k="running"] .empty')`)).toBe(false);
+	expect(await q(`return !!document.querySelector('#v-home [data-k="running"] .empty')`)).toBe(false);
 }, 15_000);
 
 test("once the work starts (deferred is empty) the row and its badge are gone", async () => {
 	deferred = [];
 	await view.evaluate(`refreshState()`);
 	await waitFor(`!${ROW}`);
-	expect(await q(`return document.querySelector('#home-now [data-k="running"]').textContent`)).not.toContain("한도 리셋되면 재개");
+	expect(await q(`return document.querySelector('#v-home [data-k="running"]').textContent`)).not.toContain("한도 리셋되면 재개");
 }, 15_000);

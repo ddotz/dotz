@@ -7,7 +7,7 @@ const BCOLS = 12, BGAP = 12, BROW = 40, BSTEP = BROW + BGAP;
 // Auto-scroll while dragging: within B_EDGE px of the scroller's top or bottom edge, up to B_SCROLL px per frame at the very edge.
 const B_EDGE = 56, B_SCROLL = 18, B_PRESS = 450;
 const boards = new Set();
-const narrowMQ = matchMedia("(max-width: 639px), (pointer: coarse) and (max-width: 767px)");
+const narrowMQ = matchMedia("(max-width: 719px), (pointer: coarse) and (max-width: 767px)");
 narrowMQ.addEventListener("change", () => boards.forEach(b => { b.paint(); b.measure(); }));
 const bClamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const bHit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -62,10 +62,18 @@ const B_IGNORE = "button, input, textarea, select, a, summary, [role=button], .l
 function makeBoard(container, key, opts = {}) {
   const store = `dotz-board-${key}`, px = !!opts.px, U = px ? 1 : BSTEP;
   let raw0 = [], saved = px ? bLoadPx(store) : bLoad(store), lastJson = JSON.stringify(saved), cur = [], lay = [], ghost = [], act = null, pending = null, swallow = false;
+  // 홈's row layout (opts.rows) is a new structure: a layout saved before it (4-across cards, a full-width strip) starts over, so
+  // every owner sees the prototype's two-column order once; from then on their own drags are kept.
+  const rawStore = opts.rows ? lsJson(store, null) : null;
+  if (opts.rows && (!rawStore || rawStore._g !== "rows")) { saved = {}; lastJson = "{}"; }
+  // The home grid's reading order: the owner's own order once they moved a card, else the order 홈 builds. Positions alone cannot
+  // carry it across a data change (a card leaving collapses the two columns to one row and x would decide).
+  let userOrder = rawStore && rawStore._g === "rows" && Array.isArray(rawStore._order) ? rawStore._order : null;
   const wraps = new Map(), fitH = new Map();
   const ph = el("div", { class: "bph", hidden: true });
   const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text sm", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text sm", type: "button", onclick: () => reset() }, "배치 초기화"));
   container.classList.add("board");
+  if (opts.rows) container.classList.add("rows");
   container.before(bar);
   container.append(ph);
   const views = $("#views");
@@ -85,7 +93,7 @@ function makeBoard(container, key, opts = {}) {
     container.classList.toggle("narrow", narrow);
     if (narrow) {
       container.style.height = ""; ph.hidden = true;
-      bOrder(lay.map(r => ({ ...r }))).forEach((r, i) => { const w = wraps.get(r.id); if (w) { w.removeAttribute("style"); w.style.order = i; } });
+      (opts.rows ? rowOrder() : bOrder(lay.map(r => ({ ...r })))).forEach((r, i) => { const w = wraps.get(r.id); if (w) { w.removeAttribute("style"); w.style.order = i; } });
     } else {
       for (const r of list) { const w = skip === r.id ? ph : wraps.get(r.id); if (w) { pos(w, r); if (w !== ph) w.style.order = ""; } }
       container.style.height = `${Math.max(0, rows(list) * U - BGAP)}px`;
@@ -96,7 +104,7 @@ function makeBoard(container, key, opts = {}) {
     const o = {};
     for (const r of [...ghost, ...lay]) o[r.id] = { x: r.x, y: r.y, w: r.w, h: r.h };
     saved = o;
-    const j = JSON.stringify(px ? { ...o, _u: "px" } : o);
+    const j = JSON.stringify(px ? { ...o, _u: "px", ...(opts.rows ? { _g: "rows", ...(userOrder ? { _order: userOrder } : {}) } : {}) } : o);
     if (j !== lastJson) { lastJson = j; try { localStorage.setItem(store, j); } catch { /* storage full or blocked */ } }
   }
   // Cards that sit side by side (same top row) take one height: the card being resized sets it, otherwise the tallest
@@ -118,6 +126,7 @@ function makeBoard(container, key, opts = {}) {
   // The fit cards' heights are read from the page: each takes its content's height, then the cards below slide up (no transition) and are saved.
   function measure() {
     if (!px || act || narrowMQ.matches) return;
+    if (opts.rows) return measureRows();
     let changed = false;
     for (const r of lay) {
       const it = meta(r.id), n = it && it.fit && bodyOf(wraps.get(r.id));
@@ -131,6 +140,36 @@ function makeBoard(container, key, opts = {}) {
     bCompact(lay, null, ghost);
     persist();
     container.classList.add("bnt"); paint(); void container.offsetHeight; container.classList.remove("bnt");
+  }
+  // The home grid's reading order: the owner's order first, then the order 홈 builds (a new card appends after them).
+  function rowOrder() {
+    const idx = new Map((userOrder || []).map((id, i) => [id, i])), curIdx = new Map(cur.map((it, i) => [it.id, i]));
+    const at = id => idx.has(id) ? idx.get(id) : 1e6 + (curIdx.get(id) ?? 1e6);
+    return [...lay].sort((a, b) => at(a.id) - at(b.id));
+  }
+  // Rows mode (홈): the cards keep the prototype's two per row, the row as tall as its taller card and both cards filling it.
+  function measureRows() {
+    container.classList.add("measuring");
+    const nat = new Map();
+    for (const r of lay) {
+      const it = meta(r.id), n = it && it.fit && bodyOf(wraps.get(r.id));
+      if (!n || !n.offsetHeight) { nat.set(r.id, r.h); continue; }
+      fitH.set(r.id, n.offsetHeight + BGAP);
+      nat.set(r.id, n.offsetHeight + BGAP);
+    }
+    const order = rowOrder();
+    let y = 0;
+    for (let i = 0; i < order.length;) {
+      const a = lay.find(x => x.id === order[i].id), b = i + 1 < order.length ? lay.find(x => x.id === order[i + 1].id) : null;
+      const side = !!b && (a.x + a.w <= b.x || b.x + b.w <= a.x);
+      const h = Math.max(nat.get(a.id) ?? a.h, side ? nat.get(b.id) ?? b.h : 0);
+      a.y = y; a.h = h;
+      // half-row cards pack left (so a card that left the layout earlier does not keep the right column); a wider owner card keeps its x
+      if (side && b) { if (a.w <= 6) a.x = 0; if (b.w <= 6) b.x = a.w; b.y = y; b.h = h; i += 2; } else { if (a.w <= 6) a.x = 0; i += 1; }
+      y += h;
+    }
+    container.classList.remove("measuring");
+    persist(); paint();
   }
   const ro = px && typeof ResizeObserver === "function" ? new ResizeObserver(() => measure()) : null;
   function set(raw, keep = () => false) {
@@ -171,7 +210,7 @@ function makeBoard(container, key, opts = {}) {
   }
   function reset() {
     if (opts.onReset) opts.onReset();
-    saved = {}; ghost = []; lastJson = "{}";
+    saved = {}; ghost = []; userOrder = null; lastJson = "{}";
     try { localStorage.removeItem(store); } catch { /* ignore */ }
     set(raw0);
   }
@@ -209,7 +248,7 @@ function makeBoard(container, key, opts = {}) {
   }
   // Narrow: the cards in column order with their boxes; the lifted card follows the finger, the ones it passes slide by its height.
   function beginOrder() {
-    const rows = bOrder(lay.map(r => ({ ...r }))).map(r => wraps.get(r.id)).filter(Boolean);
+    const rows = (opts.rows ? rowOrder() : bOrder(lay.map(r => ({ ...r })))).map(r => wraps.get(r.id)).filter(Boolean);
     act.rows = rows; act.from = rows.indexOf(act.w); act.to = act.from;
     act.rects = rows.map(w => w.getBoundingClientRect());
     act.gap = rows.length > 1 ? Math.max(0, act.rects[1].top - act.rects[0].bottom) : BGAP;
@@ -240,8 +279,10 @@ function makeBoard(container, key, opts = {}) {
   // The grid rewritten so that its reading order is `ids`: the moved card takes the place of the card now after it (pushing that one
   // down), and when compaction still leaves another order, the cards flow again in `ids` order with their sizes kept.
   function reorder(ids, moved) {
+    if (opts.rows) { userOrder = ids; if (narrowMQ.matches) paint(); else measureRows(); persist(); return; }
     const order = list => bOrder(list.map(r => ({ ...r }))).map(r => r.id).join("\0");
     if (order(lay) === ids.join("\0")) return;
+    userOrder = ids;
     let list = lay.map(r => ({ ...r }));
     const t = list.find(r => r.id === moved), i = ids.indexOf(moved), nxt = list.find(r => r.id === ids[i + 1]), prv = list.find(r => r.id === ids[i - 1]);
     if (!t) return;
@@ -297,10 +338,11 @@ function makeBoard(container, key, opts = {}) {
     if (on && act.mode === "order") endOrder(true);
     const a = finish();
     if (on) {
-      if (a.mode !== "order" && a.next) { lay = a.next; persist(); }
+      if (a.mode !== "order" && a.next) { lay = a.next; if (opts.rows) userOrder = bOrder(lay.map(x => ({ ...x }))).map(x => x.id); persist(); }
       swallow = true; setTimeout(() => { swallow = false; }, 60);
     }
     settle();
+    if (on && a.mode !== "order" && opts.rows) measureRows();   // a free drop settles back into the two-column rows
   }
   // The pointer was lost (the browser took it for a scroll) or Esc was pressed: the card goes back where it was.
   function cancel(ev) {
@@ -355,16 +397,17 @@ function makeBoard(container, key, opts = {}) {
     const list = lay.map(x => ({ ...x })), t = list.find(x => x.id === id);
     Object.assign(t, bFit({ ...r, w, h: it.fit ? r.h : h * U }, it));
     bPush(list, t); bCompact(list, id, ghost); bEven(list, id, id);
-    lay = list; persist(); paint();
+    lay = list; persist();
+    if (opts.rows) measureRows(); else paint();
   }
   // Move one card before another (or to the end with `before` null), the way a drop on a narrow board does; the ⋯ menu offers it too.
   function moveBefore(id, before) {
-    const ids = bOrder(lay.map(x => ({ ...x }))).map(x => x.id).filter(x => x !== id);
+    const ids = (opts.rows ? rowOrder() : bOrder(lay.map(x => ({ ...x })))).map(x => x.id).filter(x => x !== id);
     const i = before ? ids.indexOf(before) : -1;
     ids.splice(i < 0 ? ids.length : i, 0, id);
     reorder(ids, id);
   }
-  const board = { set, reset, paint, measure, bar, resize, moveBefore, order: () => bOrder(lay.map(x => ({ ...x }))).map(x => x.id), cancel: () => { if (act) cancel(); } };
+  const board = { set, reset, paint, measure, bar, resize, moveBefore, order: () => (opts.rows ? rowOrder() : bOrder(lay.map(x => ({ ...x })))).map(x => x.id), cancel: () => { if (act) cancel(); } };
   boards.add(board);
   return board;
 }
