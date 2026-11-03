@@ -35,7 +35,7 @@
   .ni .ic { display: block; width: 16px; height: 16px; }
   .ni .nl { min-width: 0; }
   .ni .nnb { position: static; top: auto; left: auto; flex: none; margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: var(--bg); font-size: 11px; line-height: 18px; font-weight: 600; text-align: center; }
-  .ni .nub { position: absolute; top: auto; left: auto; right: 10px; bottom: 8px; }
+  .ni .nub { position: static; top: auto; left: auto; right: auto; bottom: auto; align-self: flex-end; margin: 0 0 6px 2px; }
   /* lower area: what the limits say now; a tap opens 사용량 */
   .sfoot { margin-top: auto; padding-top: 8px; }
   .sf-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 6px 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); text-align: left; }
@@ -92,7 +92,8 @@
 .hgreet .bigrow .big { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hgreet .big { font: 700 20px/28px var(--font); letter-spacing: -.01em; }
 .hgreet .meta { margin-top: 2px; color: var(--fg-3); font: 400 12px/16px var(--font); }
-.hgreet .hgreet-fb, .hgreet .subline { margin-top: 6px; }
+.hgreet .hgreet-fb { margin-top: 6px; }
+.hgreet .subline { margin-top: 6px; padding: 0; background: none; color: var(--fg-2); }
 .hgreet-more { flex: none; width: 24px; height: 24px; color: var(--fg-3); }
 
 /* the prototype's alert strip: one card-like row under the greeting */
