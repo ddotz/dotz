@@ -9,7 +9,7 @@
 // and goes back to the old commit if it fails. An applied update leaves <data>/update-pending.json and, from the gateway, a detached
 // watchdog (hub/update-watchdog.ts) that rolls it back when the restarted gateway never comes up healthy (updateBoot clears it). The
 // restart itself is main.ts's restart gate (waits for running turns) or, on the owner's word, an immediate restart.
-// The checks run at self_update.at in config.json, three KST windows by default (12:00,18:00,24:00; one timer per window, no polling);
+// The checks run at the three KST release windows (12:00,18:00,24:00, docs/releases.md; one timer per window, no polling);
 // a window with nothing new only logs. self_update.auto_apply (default on) sends a new release through the same apply()
 // (ff-only, bun install, tests, revert on failure) and the idle restart gate; a refusal or failure goes to alert with a choice block.
 // Every check and update leaves lines in ~/.dotz/logs/update-YYYYMMDD.log.
@@ -185,14 +185,10 @@ export function updateAvailable(c: CheckResult): boolean {
 }
 
 // The check line: "업데이트 없음 (261103.1)" or "261103.1 → 261103.2". Commits stay beside it.
-// self_update.at: one window or a comma list; 24:00 means midnight (the end of that KST day).
-export const DEFAULT_AT = "12:00,18:00,24:00";
+// The release windows (docs/releases.md): the updater checks right when a tag can appear. Fixed, not a setting; an old
+// self_update.at in config.json is ignored and dropped on the next settings save. 24:00 means midnight (the end of that KST day).
+export const RELEASE_AT = "12:00,18:00,24:00";
 const atItem = (s: string) => /^([01]?\d|2[0-3]):[0-5]\d$/.test(s) || s === "24:00";
-export function parseAt(raw: unknown): string {
-	if (typeof raw !== "string") return DEFAULT_AT;
-	const parts = raw.split(",").map(s => s.trim()).filter(atItem);
-	return [...new Set(parts)].join(",") || DEFAULT_AT;
-}
 // Minutes after KST midnight; 24:00 is 1440, i.e. the next day's 00:00.
 export function windows(at: string): number[] {
 	return at.split(",").filter(atItem).map(s => {
@@ -236,7 +232,7 @@ function settings() {
 	return {
 		auto_check: o.auto_check !== false,
 		auto_apply: o.auto_apply !== false,
-		at: parseAt(o.at),
+		at: RELEASE_AT,
 		remote: typeof o.remote === "string" && o.remote ? o.remote : "origin",
 		branch: typeof o.branch === "string" && o.branch ? o.branch : "main",
 		keep_local: typeof o.keep_local === "boolean" ? o.keep_local : undefined,
@@ -982,7 +978,7 @@ export async function autoCheck(o: Options, hooks: AutoHooks | undefined = autoH
 	saveState(s);
 }
 
-// One timer per window (self_update.at); each run reschedules every window. No polling: a window with nothing new writes its
+// One timer per release window; each run reschedules every window. No polling: a window with nothing new writes its
 // check line to the log and says nothing to the owner.
 let autoTimers: Timer[] = [];
 function schedule(o: Options): void {
@@ -1048,17 +1044,13 @@ export async function startSelfUpdate(notify: (text: string, count: number) => v
 	schedule(o);
 }
 
-function setSettings(values: { auto_check?: unknown; auto_apply?: unknown; at?: unknown }, o: Options = { dir: REPO_DIR }): ReturnType<typeof settings> {
+function setSettings(values: { auto_check?: unknown; auto_apply?: unknown }, o: Options = { dir: REPO_DIR }): ReturnType<typeof settings> {
 	const next: Record<string, unknown> = {};
 	if (typeof values.auto_check === "boolean") next.auto_check = values.auto_check;
 	if (typeof values.auto_apply === "boolean") next.auto_apply = values.auto_apply;
-	if (values.at !== undefined) {
-		const parts = typeof values.at === "string" ? values.at.split(",").map(s => s.trim()).filter(Boolean) : [];
-		if (!parts.length || parts.some(p => !atItem(p))) throw new Error("시간은 HH:MM 여러 개를 쉼표로 적어 주세요 (24:00은 자정)");
-		next.at = [...new Set(parts)].join(",");
-	}
 	const disk = JSON.parse(readFileSync(CONFIG_FILE, "utf8"));
 	disk.self_update = { ...disk.self_update, ...next };
+	delete disk.self_update.at;
 	writeAtomic(CONFIG_FILE, `${JSON.stringify(disk, null, 2)}\n`);
 	(cfg as Record<string, unknown>).self_update = { ...((cfg as Record<string, unknown>).self_update as object), ...next };
 	schedule(o);

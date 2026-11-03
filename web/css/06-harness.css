@@ -131,7 +131,6 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .upd-block { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--warn); font-size: 13px; line-height: 19px; }
 .upd-act { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 2px; }
 .upd-act .sup { color: var(--fg-3); font-size: 12px; }
-.upd-at { flex: none; height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font: inherit; font-size: 13px; }
 @media (max-width: 600px) { .upd-box { padding-left: 16px; } }
 .hs-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .hs-chips .chip { height: auto; min-height: 28px; padding: 3px 10px; text-align: left; }

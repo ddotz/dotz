@@ -87,7 +87,7 @@ const MEASURE = `(() => {
 
 // Each screen and a row that shows it has finished loading.
 const SCREENS: Array<[string, string]> = [
-	["settings", `document.querySelector("#settings .upd-at") && document.querySelector("#settings [aria-label='자동 전환']")`],
+	["settings", `document.querySelector("#settings [aria-label='매일 자동 확인']") && document.querySelector("#settings [aria-label='자동 전환']")`],
 	["providers", `document.querySelectorAll("#providers .prow").length === 4`],
 	["discord", `document.querySelector("[data-ms-connect='discord']") && document.querySelector("[data-dc]")`],
 	["jandi", `document.querySelector("[data-ms-connect='jandi']") && document.querySelector("#jandi [data-k]")`],

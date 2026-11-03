@@ -596,7 +596,7 @@ chooses it with `<data dir>/accounts/rules.json` (manual pick, time-window and u
 Releases are cut from batches of commits at 12:00, 18:00 and 24:00 KST (at most three a day, `YYMMDD.N`): a commit on `main`
 reaches users only through a `v<version>` tag, made by `.github/workflows/release.yml` or `bun hub/release.ts` (`docs/releases.md`).
 
-**dotz self-update** (settings → 업데이트, `hub/selfupdate.ts`). A daily check (`self_update.auto_check`, `self_update.at`)
+**dotz self-update** (settings → 업데이트, `hub/selfupdate.ts`). A daily check (`self_update.auto_check`, at the 12:00/18:00/24:00 KST release windows)
 fetches the tracked branch and announces a new version. Local commits that upstream already has (same patch, or nothing left to
 apply) are dropped; the others are re-applied on the new version in a temporary worktree with the same checks (`bun install`,
 tests), and only a clean, green result moves the checkout. Local commits that conflict or fail the checks, and uncommitted
