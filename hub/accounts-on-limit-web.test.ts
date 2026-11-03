@@ -34,6 +34,7 @@ function card(acc: object) {
 	let renders = 0;
 	const env: Record<string, unknown> = {
 		el,
+		liEnd: (...kids: any[]) => el("span", { class: "li-end" }, ...kids),
 		icon: () => null,
 		api: async (path: string, method: string, b: unknown) => { calls.push([path, method, b]); return acc; },
 		busy: async (_b: unknown, fn: () => Promise<void>) => fn(),
