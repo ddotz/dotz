@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "175c8cee1c65";
+const WEB_BUILD = "05f386769518";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -489,7 +489,17 @@ function notify(e) {
 
 /* ---------- dialog ---------- */
 // classic: the small centered box with its own header, not the full-screen frame (the settings tab's dialogs, 03-base.css dialog.dlg.cl).
-// confirm: a short confirm (a title, a sentence or two, two buttons): a small centered box, a low bottom sheet on a phone (docs/ui-spec.md 확인 상자).
+// confirm: a short confirm (a title, a sentence or two, two buttons): on a PC a small box next to the click that opened it (centered when
+// nothing was clicked just before), a low bottom sheet on a phone (docs/ui-spec.md 확인 상자).
+let CF_PT = null;
+document.addEventListener("pointerdown", ev => { CF_PT = { x: ev.clientX, y: ev.clientY, t: Date.now() }; }, true);
+function cfPlace(d) {
+  if (!CF_PT || Date.now() - CF_PT.t > 2000 || matchMedia("(max-width: 639px)").matches) return;
+  const r = d.getBoundingClientRect(), vw = innerWidth, vh = innerHeight, gap = 12;
+  const left = Math.min(Math.max(CF_PT.x - r.width / 2, gap), vw - r.width - gap);
+  const below = CF_PT.y + gap, top = below + r.height <= vh - gap ? below : Math.max(gap, CF_PT.y - r.height - gap);
+  Object.assign(d.style, { margin: "0", right: "auto", bottom: "auto", left: `${Math.round(left)}px`, top: `${Math.round(top)}px` });
+}
 function dialog({ title, body, actions = [], onclose, wide, classic, confirm }) {
   const small = classic || confirm;
   const d = el("dialog", { class: `dlg${wide ? " wide" : ""}${confirm ? " cf" : classic ? " cl" : " fs-card"}` });
@@ -514,6 +524,7 @@ function dialog({ title, body, actions = [], onclose, wide, classic, confirm }) 
   d.addEventListener("cancel", ev => { if (openMenu) ev.preventDefault(); });
   document.body.append(d);
   d.showModal(); dialogHist(d);
+  if (confirm) cfPlace(d);
   return h;
 }
 function ask(title, text, ok = "확인", danger = false) {
@@ -3046,6 +3057,10 @@ function rqHeadNode(h) {
   // The computer is its own .mon-pc span, like every other row's machine chip (a peer's card then differs only by that chip).
   const meta = [name, h.label && h.label !== name ? h.label : "", h.model || ""].filter(Boolean).join(" · ");
   const at = h.at ? new Date(h.at) : null, when = at && !isNaN(at) ? rcWhen(at.toISOString()) : "";
+  // A comment: the landing card's head, a round avatar with the author's initial, the author's name, and where it came from in grey.
+  if (h.who) return el("div", { class: "rq-hd rq-who" }, el("span", { class: "rq-av", "aria-hidden": "true", text: [...h.who][0] || "?" }),
+    el("span", { class: "rq-meta", title: h.who }, el("b", { text: h.who }), el("span", { class: "rq-src", text: ` · ${h.src || name}` }), h.pc ? el("span", { class: "mon-pc", text: ` · ${h.pc}` }) : null),
+    when ? el("span", { class: "rc-time", text: when }) : null, ...(h.tail || []));
   return el("div", { class: "rq-hd" }, el("span", { class: "dr-ic" }, icon(ICONS[ic] ? ic : "send")),
     el("span", { class: "rq-meta", title: meta }, meta, h.pc ? el("span", { class: "mon-pc", text: ` · ${h.pc}` }) : null),
     when ? el("span", { class: "rc-time", text: when }) : null, ...(h.tail || []));
@@ -3069,7 +3084,7 @@ function rqBodyNode(key, b) {
 // The three actions, the same words everywhere. A missing handler leaves its button disabled; `busy` disables all three.
 function rqActsNode(a) {
   const b = (cls, k, text, fn) => el("button", { class: cls, type: "button", "data-k": k, disabled: !!a.busy || !fn, text, onclick: fn });
-  return el("div", { class: "dr-act dr-row rq-acts" }, b("btn dr-send", "send", "보내기", a.send), b("btn tonal", "edit", "고치기", a.edit), b("btn text dr-drop", "drop", "보내지 않기", a.drop));
+  return el("div", { class: "dr-act dr-row rq-acts" }, b("btn sm dr-send", "send", "보내기", a.send), b("btn tonal sm", "edit", "고치기", a.edit), b("btn text sm dr-drop", "drop", "보내지 않기", a.drop));
 }
 // 고치기: what to change, typed once; the bot rewrites the draft. o: { go(change), cancel(), manual() (직접 수정, optional), pick (a node before the field, such
 // as which part of a comment reply with a mail to change), value, onInput(text), busy }
@@ -3102,12 +3117,14 @@ function rqAttachNode(d = {}) {
 function rqCard(c) {
   const foot = c.sent ? rqSentNode() : c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
   const att = c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach || {});
-  return el("div", { class: `rq${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
+  const cm = !!c.head.who;   // a comment card: its text plain under the head, the post title a grey hint, the draft in one grey box
+  return el("div", { class: `rq${cm ? " cm" : ""}${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
     rqHeadNode(c.head),
     c.label ? el("div", { class: c.labelCls || "rq-lb", text: c.label }) : null,
-    c.to ? el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" })) : c.recv || null,
+    cm && c.original && c.original.text ? el("div", { class: "rq-ct", title: c.original.text, text: c.original.text }) : null,
+    cm ? null : c.to ? el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" })) : c.recv || null,
     c.subject ? el("div", { class: "dr-sub rq-sub", text: c.subject }) : null,
-    c.original && c.original.text ? el("div", { class: "rq-orig", title: c.original.text }, c.original.who ? el("b", { class: "rq-ow", text: c.original.who }) : null, el("span", { class: "rq-ot", text: c.original.text })) : null,
+    !cm && c.original && c.original.text ? el("div", { class: "rq-orig", title: c.original.text }, c.original.who ? el("b", { class: "rq-ow", text: c.original.who }) : null, el("span", { class: "rq-ot", text: c.original.text })) : null,
     rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean), foot);
 }
 // 보냈어요 in the card's own foot: the action row's place, so nothing below moves (the landing demo card's 보냈어요 · 방금).
@@ -3760,7 +3777,11 @@ function paintSysLines() {
     const w = ((S && S.work) || []).find(x => x.id === id), s = w && (w.cancelled ? ["", "중단됨"] : SYS_ST[w.status]);
     st.hidden = !s;
     if (!s || st.dataset.s === s[1]) continue;
-    const was = st.dataset.s, paint = () => { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; hcSysFiles(st, w); };
+    const was = st.dataset.s, card = st.classList.contains("ct-pill"), paint = () => {
+      if (card) { st.className = `cv-sys-st ct-pill ${s[0]}`; st.replaceChildren(s[0] === "ok" ? icon("check") : el("span", { class: `dot ${s[0]}` }), el("span", { text: s[1] })); }
+      else { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; }
+      hcSysFiles(st, w);
+    };
     st.dataset.s = s[1];
     if (was) motionSwap(st.closest(".cv-sys") || st, paint); else paint();   // running -> 완료 changes in place (with the result file as a chip under the line); the first paint just draws
   }
@@ -3769,13 +3790,37 @@ function paintSysLines() {
 function hcSysFiles(st, w) {
   const line = st.closest(".cv-sys");
   if (!line) return;
+  if (line.classList.contains("cv-task")) { hcTaskBody(line, w); return; }
   const old = line.nextElementSibling;
   if (old && old.classList.contains("cv-sys-f")) old.remove();
   const files = w.status === "done" && !w.cancelled && Array.isArray(w.files) ? w.files.filter(f => f && f.path) : [];
   if (files.length) line.after(el("div", { class: "cv-sys-f" }, ...files.map(f => { const name = f.name || String(f.path).split("/").pop(); return fileChip(name, fileMeta(name, f.size), VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : { href: fileUrl(f.path, false, f.pc) }); })));
 }
+// The same line as the landing page's 작업 card (hcTaskBody fills what is under the title): label, title, state pill, then the result files and a full bar once done.
+const SYS_TASK = /^백그라운드 작업으로 맡겼어요:\s*(\S[\s\S]*)$/;
+function hcTaskBody(line, w) {
+  const old = line.querySelector(":scope > .ct-body");
+  const files = w.status === "done" && !w.cancelled && Array.isArray(w.files) ? w.files.filter(f => f && f.path) : [];
+  const chips = files.map(f => { const name = f.name || String(f.path).split("/").pop(), size = f.size ? fsize(f.size) : "", opt = VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : { href: fileUrl(f.path, false, f.pc) };
+    return el(opt.href ? "a" : "button", { class: "ct-file", ...(opt.href ? { href: opt.href, target: "_blank", rel: "noopener" } : { type: "button", onclick: opt.onclick }), title: `${name} · 열기` },
+      el("span", { class: "ct-fi" }, icon("file")), el("span", { class: "ct-ft" }, el("b", { text: name }), el("span", { text: ["결과 파일", size].filter(Boolean).join(" · ") }))); });
+  const done = w.status === "done" && !w.cancelled;
+  const body = chips.length || done ? el("div", { class: "ct-body" }, ...chips, done ? el("div", { class: "ct-bar" }, el("span")) : null) : null;
+  if (old) old.remove();
+  if (body) line.append(body);
+}
+function sysTaskLine(e, title, hm, id) {
+  const st = el("span", { class: "cv-sys-st ct-pill", hidden: true }, el("span", { class: "dot" }), el("span"));
+  SYS_NODES.set(id, st);
+  const hd = el("button", { class: "ct-hd", type: "button", title: "작업 열기", onclick: () => openSub("orchestrator", id, null, title) },
+    el("span", { class: "ct-nm" }, el("span", { class: "ct-lb", text: ["백그라운드 작업", hm].filter(Boolean).join(" · ") }), el("span", { class: "cv-sys-tx ct-t", text: title })), st);
+  queueMicrotask(paintSysLines);
+  return el("div", { class: "cv-sys cv-task", role: "group" }, hd);
+}
 function sysLine(e, text, hm) {
-  const id = typeof e.worker === "string" ? e.worker : "", st = el("span", { class: "cv-sys-st", hidden: true }, el("span", { class: "dot" }), el("span"));
+  const id = typeof e.worker === "string" ? e.worker : "", task = id && SYS_TASK.exec(text);
+  if (task) return sysTaskLine(e, task[1].trim(), hm, id);
+  const st = el("span", { class: "cv-sys-st", hidden: true }, el("span", { class: "dot" }), el("span"));
   const kids = [icon("lanes"), el("span", { class: "cv-sys-tx", text }), st, hm ? el("span", { class: "cv-sys-mt", text: hm }) : null];
   if (!id) return el("div", { class: "cv-sys", role: "note" }, ...kids);
   SYS_NODES.set(id, st);
@@ -3867,7 +3912,9 @@ function msgNode(e) {
       if (e.target === "alert" && !(pc && pc.blocks.length)) {
         if (/```원문\n/.test(body)) return el("div", { class: `bm${card}` }, head, mdNode(body));
         const line = humanAlert(body);
-        return el("div", { class: `bm${card}` }, head, mdNode(line), line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
+        // A watch's change line (89,000원 → 72,000원) stands under the sentence with the old value struck, not only folded in the raw text.
+        const chg = nwChangeNode(nwChangeLine(body));
+        return el("div", { class: `bm${card}` }, head, mdNode(line), chg ? el("div", { class: "nw-line" }, chg) : null, line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
       }
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       const fl = fileLines(body), host = pqPc(eventTarget(e) || ""), md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text), files = pathFiles(md, host);
@@ -10691,7 +10738,7 @@ function kkSendNode(s) {
   const failed = s.state === "failed", st = failed ? `실패${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? "보냄" : "보내는 중";
   return el("div", { class: `kk-m me pend ${s.state} first`, "data-send": s.id },
     el("div", { class: "kk-line" }, el("div", { class: "kk-bub", text: s.text })),
-    el("div", { class: "kk-st", role: failed ? "alert" : "status" }, el("span", { class: "kk-state", text: st }),
+    el("div", { class: "kk-st", role: failed ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st }),
       failed ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: "다시 보내기", onclick: () => kkRetry(s) }) : null,
       failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: () => kkDeleteSend(s) }) : null));
 }
@@ -12082,7 +12129,7 @@ async function cmSendFix(btn, s, op) {
 function cmSendNode(s) {
   const failed = s.state === "failed", st = failed ? `실패${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? "보냄" : "보내는 중";
   return el("div", { class: `kk-m me pend ${s.state} first`, "data-send": s.id }, el("div", { class: "kk-line" }, el("div", { class: "kk-bub", text: s.text })),
-    el("div", { class: "kk-st", role: failed ? "alert" : "status" }, el("span", { class: "kk-state", text: st }),
+    el("div", { class: "kk-st", role: failed ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st }),
       failed ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: "다시 보내기", onclick: ev => cmSendFix(ev.currentTarget, s, "retry") }) : null,
       failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: ev => cmSendFix(ev.currentTarget, s, "dismiss") }) : null));
 }
@@ -13798,10 +13845,13 @@ function nwChangeNode(line) {
 // `label` "" is a row that no longer waits (the 알림 tabs, 31-conversations.js bellPaint): no 답변 필요, no x.
 function ntHomeRow(n, label = "답변 필요") {
   const title = n.decision ? ntPlain(n.title) : hcLine(n), src = n.src || n.open, chg = n.kind === "watch" ? nwChangeNode(nwChangeLine(n.text)) : null;   // a loose [ask] notice has no decision: its conversation names where it waits
-  return el("div", { class: "hr hrx", "data-nid": n.id },
+  // A watch change is the landing page's 가격 알림 row: a 32px round icon tile, the title, the change line under it, the time at the right.
+  const lead = chg ? el("span", { class: `nt-wi${n.read ? "" : " new"}`, "aria-hidden": "true" }, icon("bell")) : el("span", { class: label ? "dot att" : `dot${n.read ? "" : n.cls === "alert" ? " err" : " un"}` });
+  return el("div", { class: `hr hrx${chg ? " nt-w" : ""}`, "data-nid": n.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": label ? `${title} · ${label}` : title },
-      el("span", { class: label ? "dot att" : `dot${n.read ? "" : n.cls === "alert" ? " err" : " un"}` }),
-      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha" }, ...(chg ? [chg, ` · ${ntWhen(n)}`] : [[n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), ntWhen(n)].filter(Boolean).join(" · ")]))),
+      lead,
+      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha" }, ...(chg ? [chg] : [[n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), ntWhen(n)].filter(Boolean).join(" · ")]))),
+      chg ? el("span", { class: "nt-wt", text: ntWhen(n) }) : null,
       label ? el("span", { class: "hs warn", text: label }) : null),
     label ? ntIgnoreBtn(n) : null);
 }
@@ -14131,6 +14181,7 @@ function rqCardOf(x) {
       ...(editing ? { revise: rqRevise(x) } : { acts: { ...rqNoticeActs(x), busy } }) });
   }
   const d = x.d, kakao = x.kind === "kakao";
+  if (!kakao) { const an = rqAppName(x.inst); head.who = (d.original && d.original.who) || d.to || ""; head.src = an.endsWith("댓글") ? an : `${an || "답장"} 댓글`; }   // a comment draft: the landing card's head
   return rqCard({ ...base, label: kakao && d.intent ? "새 메시지 초안" : "", to: kakao ? ["대화방", d.room] : ["댓글", d.to], subject: kakao ? "" : d.title,
     body: { text: d.text, parts: kakao ? d.parts : null, sentParts: d.sentParts },
     attach: d,
