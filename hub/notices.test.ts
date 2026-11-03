@@ -9,7 +9,7 @@ import { draftApprovalBlock } from "./draft-approval.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
-import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, settleExpiredQuestions, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -440,7 +440,8 @@ test("on load, an alert item stored next to the decision of the same message rea
 	expect(run.exitCode).toBe(0);
 	const out = JSON.parse(run.stdout.toString().trim().split("\n").at(-1)!) as { ids: string[]; unread: number };
 	expect(out.ids.sort()).toEqual(["dec00001", "fail0001", "msg00001"]);
-	expect(out.unread).toBe(3);
+	// The old open question (2026-10-22, alert) is past its 24 hour window: listed, but no longer counted as unread.
+	expect(out.unread).toBe(2);
 	// kept in the file, only folded away
 	const after = JSON.parse(readFileSync(join(dir, "notices.json"), "utf8")) as Notice[];
 	expect(after).toHaveLength(4);
@@ -752,6 +753,71 @@ test("an open decision survives the store's cap and a reload from disk", () => {
 	expect(stored().length).toBeLessThanOrEqual(NOTICE_CAP);
 	expect(stored().find(n => n.id === id)!.decision!.state).toBe("open");
 	owner("1");
+});
+
+test("a plain question waits 72 hours; past them the sweep closes it as expired, read and off the badge", () => {
+	const at = new Date(Date.parse(ts()) - 4 * 86_400_000).toISOString();
+	post("web", "[ask] 누나, 가능해?", { ts: at });
+	const n = decisions("main").find(x => x.text === "누나, 가능해?")!;
+	expect(n.decision!.expires_at).toBe(new Date(Date.parse(at) + ANSWER_WINDOW_MS).toISOString());
+	// The gap before the sweep: already not open, not waiting, not counted by the badge.
+	expect(needsAnswer(n)).toBe(false);
+	expect(unreadCount()).toBe(0);
+	expect(listNotices().items.some(i => i.id === n.id && needsAnswer(i))).toBe(false);
+	expect(settleExpiredQuestions()).toBe(1);
+	const after = stored().find(x => x.id === n.id)!;
+	expect(after).toMatchObject({ read: true, decision: { state: "answered", resolved: true, expired: true } });
+	expect(after.decision!.answer).toBeUndefined();
+	expect(unreadCount()).toBe(0);
+});
+
+test("the expiry sweep is idempotent: a second pass changes nothing", () => {
+	post("web", "[ask] 멈춘 Aside", { ts: new Date(Date.parse(ts()) - 4 * 86_400_000).toISOString() });
+	expect(settleExpiredQuestions()).toBe(1);
+	const file = readFileSync(paths.notices, "utf8");
+	expect(settleExpiredQuestions()).toBe(0);
+	expect(readFileSync(paths.notices, "utf8")).toBe(file);
+});
+
+test("a send-approval card and a login request carry no expiry: their own state closes them", () => {
+	post("web", `[ask] 댓글 답글 초안이에요\n${draftApprovalBlock({ to: "A 댓글", toLabel: "대상", body: "감사합니다", ref: "cm-ttl", question: "이 답글 올릴까요?" })}`);
+	const card = decisions("main").find(x => x.decision!.draft?.ref === "cm-ttl")!;
+	expect(card.decision!.expires_at).toBeUndefined();
+	authRequested({ id: "ttl1", kind: "approve", title: "로그인 승인", site: "example.com", purpose: "결제 페이지에 들어가요" });
+	const login = decisions("auth:ttl1")[0]!;
+	expect(login.decision!.expires_at).toBeUndefined();
+	expect(settleExpiredQuestions(new Date(Date.parse(ts()) + 30 * 86_400_000).toISOString())).toBe(0);
+	expect(stored().find(x => x.id === card.id)!.decision!.state).toBe("open");
+	expect(stored().find(x => x.id === login.id)!.decision!.state).toBe("open");
+});
+
+test("a gateway alert question waits 24 hours, not 72", () => {
+	const at = new Date(Date.parse(ts()) - 2 * 86_400_000).toISOString();
+	emit("outbox", { ts: at, kind: "out", source: "gateway", target: "alert", text: "[ask] 토큰을 다시 확인할까요?" });
+	const n = decisions("alert").find(x => x.text === "토큰을 다시 확인할까요?")!;
+	expect(n.decision!.expires_at).toBe(new Date(Date.parse(at) + ALERT_ANSWER_WINDOW_MS).toISOString());
+	expect(settleExpiredQuestions()).toBe(1);
+	expect(stored().find(x => x.id === n.id)).toMatchObject({ read: true, decision: { state: "answered", resolved: true, expired: true } });
+});
+
+test("on load, a stored open question without an expiry gets one from its own time; a login request stays without", () => {
+	const dir = mkdtempSync(join(tmpdir(), "dotz-expiry-"));
+	copyFileSync(CONFIG_FILE, join(dir, "config.json"));
+	const at = new Date(Date.parse(ts()) - 5 * 3_600_000).toISOString();
+	const base = { ts: at, updated: at, kind: "decision", tone: "ask", title: "이어서 할까요?", text: "[ask] 이어서 할까요?", open: "main", src: "main", at, read: false };
+	writeFileSync(
+		join(dir, "notices.json"),
+		JSON.stringify([
+			{ ...base, id: "aaaaaaa1", key: "dec:main:plain", decision: { options: [{ n: 1, label: "네" }], to: "main", group: 1, state: "open", assumed: true } },
+			{ ...base, id: "aaaaaaa2", key: "dec:main:auth", decision: { options: [{ n: 1, label: "승인", action: "approve" }], to: "auth:z", group: 1, state: "open" } },
+		]),
+	);
+	const run = Bun.spawnSync([process.execPath, "-e", `import "./hub/notices.ts"; process.exit(0);`], { cwd: join(import.meta.dir, ".."), env: { ...process.env, DOTZ_DIR: dir } });
+	expect(run.exitCode).toBe(0);
+	const after: Notice[] = JSON.parse(readFileSync(join(dir, "notices.json"), "utf8"));
+	expect(after[0]!.decision!.expires_at).toBe(new Date(Date.parse(at) + ANSWER_WINDOW_MS).toISOString());
+	expect(after[1]!.decision!.expires_at).toBeUndefined();
+	rmSync(dir, { recursive: true, force: true });
 });
 
 const CHOICE = "결정: 정리 세션 시작 전 쌓인 변경 처리\n**1) 먼저 커밋** ← 추천\n지금 상태를 저장해요\n**2) 그대로 진행**\n설명 줄";
