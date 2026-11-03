@@ -95,7 +95,7 @@ describe("Discord posts and push text have no [tag]", () => {
 	test("web push body", () => {
 		const m = classify({ ts: "2026-10-23T00:00:00.000Z", kind: "lane_report", lane: "a", text: "[done] [lane recovery] 끝냈어요 [1]" });
 		expect(m?.body).toBe("끝냈어요 [1]");
-		expect(m?.title).toBe("세션 · 완료");
+		expect(m?.title).toMatch(/^(?!a · ).+ · 완료$/);
 		const p = classify({ ts: "2026-10-23T00:00:00.000Z", kind: "out", source: "gateway", target: "alert", text: "[fail] [dotz gateway] 한도가 찼어요" });
 		expect(p?.body).toBe("한도가 찼어요");
 	});

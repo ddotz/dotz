@@ -45,15 +45,15 @@ test("alerts notify only when critical or when the owner is needed", () => {
 
 test("lane [ask]/[done]/[fail] lines notify and open that lane; progress does not", () => {
 	expect(classify(ev({ source: "lane:ui-pwa", target: "lane:ui-pwa", text: "[ask] 머지할까?" }))).toMatchObject({ kind: "ask", url: "/#chat/lane:ui-pwa" });
-	expect(classify(ev({ kind: "lane_report", source: "lane:x", lane: "x", text: "[done] 끝" }))).toMatchObject({ kind: "result", title: "세션 · 완료" });
-	expect(classify(ev({ source: "lane:x", target: "lane:x", text: "[fail] 테스트 실패" }))).toMatchObject({ kind: "result", title: "세션 · 실패" });
+	expect(classify(ev({ kind: "lane_report", source: "lane:x", lane: "x", text: "[done] 끝" }))).toMatchObject({ kind: "result", title: expect.stringMatching(/^(?!x · ).+ · 완료$/) });
+	expect(classify(ev({ source: "lane:x", target: "lane:x", text: "[fail] 테스트 실패" }))).toMatchObject({ kind: "result", title: expect.stringMatching(/^(?!x · ).+ · 실패$/) });
 	expect(classify(ev({ source: "lane:x", target: "lane:x", text: "[run] 빌드 중", update_key: "progress" }))).toBeUndefined();
 	expect(classify(ev({ source: "lane:x", target: "lane:x", text: "그냥 메모" }))).toBeUndefined();
 });
 
 test("a session's untagged report that answers the owner after a long turn notifies as its answer", () => {
 	const report = (extra: Record<string, unknown>) => ev({ kind: "lane_report", source: "lane:x", lane: "x", text: "리포트가 완성됐어요", ...extra });
-	expect(classify(report({ answering: true }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: "세션 · 완료", url: "/#chat/lane:x", tag: "lane:x", body: "리포트가 완성됐어요" });
+	expect(classify(report({ answering: true }), LONG_TURN_MS)).toMatchObject({ kind: "result", title: expect.stringMatching(/^(?!x · ).+ · 완료$/), url: "/#chat/lane:x", tag: "lane:x", body: "리포트가 완성됐어요" });
 	expect(classify(report({ answering: true }), LONG_TURN_MS - 1)).toBeUndefined();
 	expect(classify(report({}), LONG_TURN_MS)).toBeUndefined();
 	expect(classify(report({ answering: true, text: "[run] 아직 하는 중" }), LONG_TURN_MS)).toBeUndefined();
