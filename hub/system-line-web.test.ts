@@ -46,11 +46,11 @@ test("a system event is a compact line with its worker's live state, opens the w
 	await v.navigate(`http://127.0.0.1:${server.port}/?sys=1#chat`);
 	await waitFor(v, `S && S.work && document.querySelector("#tl .cv-sys")`);
 	const line = await v.evaluate(`(() => { const n = $("#tl .cv-sys"); return { tag: n.tagName, bubble: !!n.closest(".bm") || !!n.querySelector(".mn"), text: n.querySelector(".cv-sys-tx").textContent, st: n.querySelector(".cv-sys-st").hidden ? "" : n.querySelector(".cv-sys-st").textContent, bms: [...document.querySelectorAll("#tl .bm")].map(b => b.textContent).filter(t => t.includes("맡겼어요")).length }; })()`);
-	expect(line).toEqual({ tag: "BUTTON", bubble: false, text: "백그라운드 작업으로 맡겼어요: 홈 진행 중 목록 다듬기", st: "진행 중", bms: 0 });
+	expect(line).toEqual({ tag: "DIV", bubble: false, text: "홈 진행 중 목록 다듬기", st: "진행 중", bms: 0 });
 	expect(await v.evaluate(`convIncoming(${JSON.stringify(SYS)})`)).toBe(false);
 	WORK = [{ ...WORK[0], status: "done", ended_at: Date.now() }];
 	await v.evaluate(`refreshState().then(() => true)`);
 	await waitFor(v, `$("#tl .cv-sys .cv-sys-st").textContent === "완료"`);
-	await v.evaluate(`($("#tl .cv-sys").click(), 0)`);
+	await v.evaluate(`($("#tl .cv-sys .ct-hd").click(), 0)`);
 	await waitFor(v, `SUBD && SUBD.id === "st_w1"`);
 }, 20_000);
