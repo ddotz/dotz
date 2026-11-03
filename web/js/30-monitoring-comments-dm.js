@@ -64,11 +64,11 @@ async function dmReload(seq = DM.seq, scroll = false) {
 function dmClose() { DM.open = null; DM.view = null; DM.seq++; DM.loading = false; cmPaintAll(); convTitle(); }
 const DM_ATTACH = { image: "(사진)", video: "(동영상)", audio: "(음성 메시지)", file: "(파일)" };
 const dmText = m => m.text || (m.attach && m.attach.length ? DM_ATTACH[m.attach[0]] || "(파일)" : "(내용 없음)");
-function dmMsgNode(m, peer, first) {
-  const bub = el("div", { class: "kk-bub" }, el("span", { text: dmText(m) }));
-  if (m.mine) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-id": m.id }, el("div", { class: "kk-line" }, el("span", { class: "kk-time", text: kkTime(m.at) }), bub));
-  return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-id": m.id }, first ? kkAvatar(peer) : el("span", { class: "kk-av sp", "aria-hidden": "true" }),
-    el("div", { class: "kk-mb" }, first ? el("div", { class: "kk-name", text: peer }) : null, el("div", { class: "kk-line" }, bub, el("span", { class: "kk-time", text: kkTime(m.at) }))));
+function dmMsgNode(m, peer) {
+  // 읽기 전용 스레드 (owner 2026-11-03): 한 메시지 한 줄 - 보낸 사람·시각 줄, 아래 본문, 메시지 사이는 얇은 선. 말풍선을 쌓지 않아 겹치지 않아요.
+  return el("div", { class: `dm-m${m.mine ? " mine" : ""}`, "data-id": m.id },
+    el("div", { class: "dm-mh" }, el("span", { class: "dm-mn", text: m.mine ? "나" : peer }), el("span", { class: "dm-mt", text: kkTime(m.at) })),
+    el("div", { class: "dm-mb", text: dmText(m) }));
 }
 function dmPaintChat(stick) {
   const open = DM.open, v = DM.view;
@@ -84,7 +84,7 @@ function dmPaintChat(stick) {
   const nodes = []; let prev = null;
   for (const m of v.messages) {
     if (!prev || kkDay(prev.at) !== kkDay(m.at)) nodes.push(el("div", { class: "kk-date", text: kkDate(m.at) }));
-    nodes.push(dmMsgNode(m, v.peer, !prev || prev.mine !== m.mine || kkDay(prev.at) !== kkDay(m.at)));
+    nodes.push(dmMsgNode(m, v.peer));
     prev = m;
   }
   if (!nodes.length) nodes.push(el("div", { class: "kk-note", text: "메시지가 없어요" }));
