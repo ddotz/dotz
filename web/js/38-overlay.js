@@ -29,8 +29,11 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
     close(restore = true) {
       if (closed) return;
       closed = true;
-      // goes at once: the next card often opens in the same moment (approval cards one after another), and a fading copy would sit over it
-      node.remove(); ovDone(ov); FS.splice(FS.indexOf(h), 1);
+      // State is released at once. Only the owner's own close (X, Esc, backdrop; restore) leaves the sheet and fades it out; the next card opens
+      // later in the DOM, so it sits over the leaving one. A programmatic close (restore false) goes at once.
+      ovDone(ov); FS.splice(FS.indexOf(h), 1);
+      if (restore && !reducedMotion()) { node.style.pointerEvents = "none"; node.removeAttribute("aria-modal"); Promise.all([motionOut(box, "rise"), motionOut(node)]).then(() => node.remove()); }
+      else node.remove();
       document.removeEventListener("keydown", key, true);
       if (vv) { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); }
       if (restore && opener && opener.isConnected) opener.focus({ preventScroll: true });
