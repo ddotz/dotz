@@ -383,7 +383,7 @@ function bellTab(tab) { BELL.tab = tab; bellPaint(); }
 // 새 소식 by app (the app's own name, else the monitor, else the title); the groups follow their newest item.
 function bellGroups(list) {
   const by = new Map();
-  for (const n of list) { const k = ntPlain(n.app || n.watch || n.title) || "기타"; by.set(k, [...(by.get(k) || []), n]); }
+  for (const n of list) { const k = ntPlain(n.app || n.watch || ""); by.set(k, [...(by.get(k) || []), n]); }   // no app or monitor: one headerless group, never one per row title
   return [...by];
 }
 function bellRows(tab) {
@@ -394,7 +394,9 @@ function bellRows(tab) {
   const card = items => el("div", { class: "bell-card" }, el("div", { class: "hn" }, ...items.map(row)));
   const meta = el("div", { class: "bell-meta" }, "안 읽은 알림 ", el("b", { text: String(bellUnread(tab)) }), "개"), note = el("div", { class: "bell-note", text: "모두 읽음은 답이 필요한 알림을 그대로 둬요." });
   if (tab !== "news") return [meta, card(list), note];
-  return [meta, ...bellGroups(list).flatMap(([name, items]) => [el("div", { class: "bell-gh", role: "presentation", text: name }), card(items)]), note];
+  // A header that only repeats the title of its single row says nothing: it is not drawn.
+  const echo = (name, items) => items.length === 1 && [ntPlain(items[0].title), hcLine(items[0])].includes(name);
+  return [meta, ...bellGroups(list).flatMap(([name, items]) => [name && !echo(name, items) ? el("div", { class: "bell-gh", role: "presentation", text: name }) : null, card(items)].filter(Boolean)), note];
 }
 function bellPaint() {
   const on = current === "chat" && target === "alert" && !monCtx, box = $("#bell-tabs"), list = $("#bell-list"), tab = BELL.tab, listed = on && tab !== "all";
