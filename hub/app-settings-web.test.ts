@@ -169,18 +169,17 @@ describe("설정 대화 at desktop width (1280x800)", async () => {
 		expect(existsSync(cfgFile("custom/kakao/config.json"))).toBe(false);
 		await closeScreen(v);
 	});
-	test("새로 추가하기 at desktop width: one button in the sheet, one plain question over the chat box", async () => {
+	test("앱 관리 at desktop width: a middle box, not full screen, with the request box on top and focused", async () => {
 		await run(v, `go("monitoring"); asAddSheet()`);
-		await waitFor(v, `document.querySelector('.fs-card [data-k="new-app"]')`);
-		expect(await q(v, `return document.querySelectorAll(".fs-card [data-tpl]").length`)).toBe(0);
+		await waitFor(v, `document.querySelector('.fs-card.mid [data-k="new-app-text"]')`);
+		expect(await q(v, `return document.activeElement.dataset.k`)).toBe("new-app-text");
+		const r = await q<{ w: number; h: number; vh: number }>(v, `const b = document.querySelector(".fs-card.mid").getBoundingClientRect(); return { w: b.width, h: b.height, vh: innerHeight }`);
+		expect(r.w).toBeLessThanOrEqual(560);
+		expect(r.h).toBeLessThan(r.vh / 2);
 		await shot(v, "12-desktop-add-sheet.png");
-		await run(v, `document.querySelector('.fs-card [data-k="new-app"]').click()`);
-		await waitFor(v, `!AT.h && target === "main" && current === "chat" && ta.value === "연결할 앱: "`);
-		expect(await q(v, `return document.querySelector("#app-tpl-note").textContent`)).toBe("어떤 앱을 연결할까요?");
-		await shot(v, "13-desktop-new-app-composer.png");
-		await run(v, `document.querySelector("#app-tpl .as-tpl-x").click(); ta.value = ""`);
-		await waitFor(v, `!AT.key`);
+		await run(v, `AT.h.close(false)`);
 	});
+
 });
 
 describe("설정 대화 at phone width (390x844)", async () => {
@@ -265,14 +264,16 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 		await shot(v, "07-phone-add-app-row.png");
 	});
 
-	test("the sheet lists only the apps that are off and one 새로 추가하기, no template list; 다시 켜기 refills that app's request", async () => {
+	test("the sheet is a bottom sheet with the request box on top and only the apps that are off; 다시 켜기 refills that app's request", async () => {
 		await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
-		await waitFor(v, `document.querySelector('.fs-card [data-k="new-app"]')`);
+		await waitFor(v, `document.querySelector('.fs-card [data-k="new-app-text"]')`);
 		expect(await q<string[]>(v, `return [...document.querySelectorAll(".fs-card [data-app]")].map(e => e.dataset.app)`)).toEqual(["kakao"]);
 		expect(await q(v, `return document.querySelectorAll(".fs-card [data-tpl]").length`)).toBe(0);
-		expect(await q(v, `return document.querySelector('.fs-card [data-k="new-app"]').textContent`)).toBe("새로 추가하기");
-		const fit = await q<{ w: number; vw: number }>(v, `return { w: document.querySelector(".fs-card").scrollWidth, vw: innerWidth }`);
+		await waitFor(v, `Math.round(document.querySelector(".fs-card").getBoundingClientRect().bottom) === innerHeight`);
+		const fit = await q<{ w: number; vw: number; top: number; bottom: number; vh: number }>(v, `const b = document.querySelector(".fs-card").getBoundingClientRect(); return { w: document.querySelector(".fs-card").scrollWidth, vw: innerWidth, top: b.top, bottom: b.bottom, vh: innerHeight }`);
 		expect(fit.w).toBeLessThanOrEqual(fit.vw);
+		expect(fit.top).toBeGreaterThan(0);
+		expect(Math.round(fit.bottom)).toBe(fit.vh);
 		await shot(v, "08-phone-add-sheet.png");
 		sent.length = 0;
 		await run(v, `document.querySelector('.fs-card [data-k="on:kakao"]').click()`);
@@ -283,24 +284,22 @@ describe("이 기기에서 쓰기, 제거 and 앱 추가 at phone width (390x844
 		expect(sent).toEqual([]);
 	});
 
-	test("새로 추가하기 opens the main chat with one plain question; the owner names the app and nothing is sent for him", async () => {
+	test("what the owner types on top is sent to the main orchestrator at once and the main chat opens on it; an empty box sends nothing", async () => {
 		await run(v, `ta.value = ""; asTplEnd(); go("monitoring")`);
 		await waitFor(v, `INTG.available.length === 0 && document.querySelector('#mon-side [data-k="add-app"]')`);
 		await run(v, `document.querySelector('#mon-side [data-k="add-app"]').click()`);
-		await waitFor(v, `document.querySelector('.fs-card [data-k="new-app"]')`);
+		await waitFor(v, `document.querySelector('.fs-card [data-k="new-app-text"]')`);
 		expect(await q(v, `return document.querySelectorAll(".fs-card [data-app]").length`)).toBe(0);
 		await shot(v, "08b-phone-add-sheet-empty.png");
+		sent.length = 0;
 		await run(v, `document.querySelector('.fs-card [data-k="new-app"]').click()`);
-		await waitFor(v, `!AT.h && target === "main" && current === "chat" && ta.value`);
-		expect(await q<string>(v, `return ta.value`)).toBe(NEW_DRAFT);
-		expect(await q(v, `return document.querySelector("#app-tpl-note").textContent`)).toBe("어떤 앱을 연결할까요?");
-		expect(await q(v, `return document.querySelectorAll("#app-tpl [data-tpl]").length`)).toBe(0);
-		expect(await q(v, `return [ta.selectionStart, ta.value.length]`)).toEqual([NEW_DRAFT.length, NEW_DRAFT.length]);
-		expect(sent).toEqual([]);
-		await shot(v, "09-phone-new-app-composer.png");
-		await run(v, `document.querySelector("#app-tpl .as-tpl-x").click()`);
-		await waitFor(v, `!AT.key && document.querySelector("#app-tpl-note").hidden`);
-		await run(v, `ta.value = ""`);
+		expect(await q(v, `return !!AT.h && document.activeElement.dataset.k`)).toBe("new-app-text");
+		await run(v, `const b = document.querySelector('[data-k="new-app-text"]'); b.value = "노션 연결해 줘"; b.dispatchEvent(new Event("input"))`);
+		await run(v, `document.querySelector('.fs-card [data-k="new-app"]').click()`);
+		await sent.until(() => sent.length > 0);
+		expect(sent.map(s => s.text)).toEqual([`${NEW_DRAFT}노션 연결해 줘`]);
+		await waitFor(v, `!AT.h && target === "main" && current === "chat" && ta.value === ""`);
+		await shot(v, "09-phone-new-app-sent.png");
 	});
 
 	test("another computer's off apps are listed under its own name", async () => {
