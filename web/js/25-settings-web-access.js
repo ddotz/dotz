@@ -15,7 +15,7 @@ async function loadWebAccess() {
   try { WA.data = await api("/api/web-access"); WA.fail = ""; } catch (e) { WA.data = null; WA.fail = e.message; }
   if (WA.data && !WA.draft) waReset();
   if (current === "webaccess") renderWebAccess();
-  if (current === "settings") renderSettings();
+  if (inSettings()) renderSettings();
 }
 function waReset() {
   const d = WA.data;
@@ -55,7 +55,7 @@ async function waPickTailscale(btn) {
     WA.data = await api("/api/web-access", "PUT", { mode: "tailscale" });
     waReset();
     if (current === "webaccess") renderWebAccess();
-    if (current === "settings") renderSettings();
+    if (inSettings()) renderSettings();
     loadDevices();
   });
 }
@@ -79,11 +79,12 @@ function renderWebAccess() {
   const box = $("#webaccess");
   if (!WA.data || !WA.draft) { clear(box).append(WA.asked && WA.fail ? emptyNode("웹 접속 설정을 불러오지 못했어요") : emptyNode("불러오는 중")); return; }
   const d = WA.data, f = WA.draft, cf = f.mode === "cloudflare";
-  const seg = el("div", { class: "tf" }, el("div", { class: "seg", role: "radiogroup", "aria-label": "접속 방식" },
-    ...WA_MODES.map(([v, t]) => el("button", { type: "button", role: "radio", "aria-checked": String(v === f.mode), class: v === f.mode ? "on" : "", "data-v": v,
-      onclick: ev => v === "tailscale" ? waPickTailscale(ev.currentTarget) : waOnboard(v) }, t))));
-  const nodes = [el("div", { class: "sec", text: "접속 방식" }),
-    el("div", { class: "list" }, el("div", { class: "li dcs-form" }, seg, el("div", { class: "sup", "data-wa-help": f.mode, text: WA_HELP[f.mode] }))),
+  const modes = el("div", { class: "list", role: "radiogroup", "aria-label": "접속 방식" },
+    ...WA_MODES.map(([v, t]) => el("button", { type: "button", role: "radio", "aria-checked": String(v === f.mode), class: "li tap", "data-v": v, onclick: ev => v === "tailscale" ? waPickTailscale(ev.currentTarget) : waOnboard(v) },
+      el("span", { class: "lead" }, el("span", { class: `dot ${v === f.mode ? "pri" : ""}`, "aria-hidden": "true" })),
+      el("span", { class: "tx" }, el("div", { class: "hd", text: t }), el("div", { class: "sup", "data-wa-help": v, text: WA_HELP[v] })),
+      el("span", { class: "li-end" }, v === f.mode ? icon("check") : null))));
+  const nodes = [el("div", { class: "sec", text: "접속 방식" }), modes,
     el("div", { class: "sec", text: "자동 연결" }), onboardingPanel("web-access")];
   if (cf) nodes.push(el("div", { class: "sec", text: "상태" }), el("div", { class: "list" }, waTunnel(d),
     el("button", { type: "button", class: "li tap", "data-wa-devices": "1", onclick: () => go("devices") },

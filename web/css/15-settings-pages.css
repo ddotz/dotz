@@ -1,0 +1,53 @@
+/* 설정 목록과 하위 화면들: one row look. A row's icon sits on its own tile (prototype .ico), a status dot stays a dot. */
+:is(#settings, #notifications, #display, #update, #runtime) > .list + .sec { margin-top: var(--sp-6); }
+:is(#settings, #notifications, #display, #update, #runtime) > .sec { margin-bottom: var(--sp-2); }
+:is(#settings, #notifications, #display, #update, #runtime) > .sec:first-child { margin-top: var(--sp-2); }
+:is(#settings, #notifications, #display, #update, #runtime) > .list + .list { margin-top: var(--sp-3); }
+:is(#settings, #notifications, #display, #update, #runtime) > .list:first-child { margin-top: var(--sp-2); }
+:is(#settings, #notifications, #display, #update, #runtime, #models, #providers, #provider, #usage, #context, #messengers, #discord, #jandi, #slack, #telegram, #devices, #webaccess) .li > .lead:has(> .ic) {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--layer); color: var(--fg-2);
+}
+:is(#settings, #notifications, #display, #update, #runtime, #messengers, #devices, #webaccess) .li > .lead:has(> .ic) .ic { width: 18px; height: 18px; }
+:is(#notifications, #update, #runtime) .hs-sw::before { content: ""; position: absolute; inset: -12px -4px; }
+
+/* 모델 · 폴백: each target is a title and one list: its model and effort as rows with the picker on the right, then the numbered chain */
+#models .mt { gap: 0; }
+#models .mt-top { margin-bottom: 4px; }
+#models .mt-card { display: block; padding: 0; background: none; box-shadow: none; }
+#models .mt-head { margin: var(--sp-6) 4px var(--sp-2); gap: 8px; align-items: baseline; }
+#models .mt-head .t { font: 600 var(--fs-sec)/var(--lh-sec) var(--font); color: var(--fg-2); }
+#models .mt-pick { display: block; }
+#models :is(.mt-model, .mt-eff) { max-width: none; padding: 0 var(--row-px); }
+#models .mt-eff, #models .mt-list > .mt-note, #models .mt-list > .mt-apply, #models .mt-list > .note, #models .mt-list > .mt-fb { border-top: 1px solid var(--line); }
+#models .mt-pick .tf { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--row-h); }
+#models .mt-pick .tf > .lb { font: 500 var(--fs-row)/var(--lh-row) var(--font); color: var(--fg); }
+#models .mt-pick .sel { flex: none; width: min(60%, 220px); border-color: transparent; background: var(--layer); }
+#models .mt-list > .mt-note { margin: 0; padding: 8px var(--row-px); }
+#models .mt-list > .note { margin: 0; padding: 8px var(--row-px); }
+#models .mt-apply { margin: 0; padding: 8px var(--row-px); }
+#models .mt-fb { gap: 0; padding: 0; }
+#models .mt-fb-h { padding: 10px var(--row-px) 6px; }
+#models .fb-list { gap: 0; }
+#models .fb-item { border-radius: 0; background: transparent; padding: 10px var(--row-px); border-top: 1px solid var(--line); }
+#models .fb-item[data-i]:hover { background: var(--card-hover); }
+#models .fb-item.in-use { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
+#models .fb-n { width: 20px; height: auto; border-radius: 0; background: none; color: var(--fg-3); font-size: 13px; }
+#models .fb-item.in-use .fb-n { background: none; color: var(--accent); }
+#models .fb-add { margin: 8px var(--row-px); }
+#models .fb-add + .fb-add { margin-top: 0; }
+#models .mt-fb > .note { margin: 0; padding: 4px var(--row-px) 12px; }
+#models .fbe { margin: 0; border-radius: 0; padding: 14px var(--row-px); }
+#models .mt-use-row { padding: 8px var(--row-px); border-top: 0; }
+#models .mt-use-row + .mt-use-row { border-top: 1px solid var(--line); }
+@media (max-width: 639px) { #models .mt-pick .sel { width: min(58%, 200px); } }
+
+/* 공급자: the usage windows ride under the row, thin */
+#providers .prow-lim { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--fg-2); font-size: 12px; line-height: 16px; }
+#providers .prow-lim .k { flex: none; min-width: 64px; }
+#providers .prow-lim .bar { flex: 1; max-width: 160px; margin-top: 0; }
+/* 사용량과 월 한도 */
+#usage .lim .kv b { font-weight: 700; }
+#usage .lim .bar { margin-top: 6px; }
+#usage .lim > .sup { margin-top: 4px; }
+#usage .budget-row { background: var(--card); border-radius: var(--r-card); }
+:is(#providers, #messengers, #devices, #webaccess, #usage) > .note { margin: var(--sp-2) 4px 0; }

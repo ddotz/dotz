@@ -45,6 +45,7 @@ function renderProviders() {
   wrap.append(el("div", { class: "sec sec-act" }, el("span", { text: "공급자" }),
     el("button", { class: "btn tonal sm", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
   if (!list.length) wrap.append(emptyNode("공급자가 없어요"));
+  const quotaOf = p => { const q = typeof SQ !== "undefined" && SQ ? (SQ.providers || []).find(x => x.provider === p.id || (p.id === "anthropic" && x.provider === "claude")) : null; return q ? (q.limits || []).filter(l => limitFrac(l) != null) : []; };
   const row = p => {
     const name = p.name || p.id;
     const on = isConnected(p), sub = [p.account || p.masked || (on ? "" : "연결 안 됨"), p.in_use ? "지금 사용 중" : "", p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
@@ -52,7 +53,8 @@ function renderProviders() {
     return el("button", { class: "li tap prow", type: "button", "data-prov": p.id, onclick: () => go("provider", p.id) },
       el("span", { class: "lead" }, el("span", { class: `dot ${on ? "ok" : needsAttention(p) ? "warn" : ""}` })),
       el("span", { class: "tx" }, el("div", { class: "hd", text: name }),
-        sub ? el("div", { class: "sup", text: sub }) : null),
+        sub ? el("div", { class: "sup", text: sub }) : null,
+        ...quotaOf(p).map(l => el("div", { class: "prow-lim" }, el("span", { class: "k", text: limitName(l) }), bar(l), el("span", { class: "v", text: pctText(l) })))),
       el("span", { class: "li-end" }, el("span", { class: `tag ${on ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" })));
   };
   // One list, as the prototype draws it: the way in is its own status on the row (로그인됨 / API 키 / 연결 안 됨), and the screens that
@@ -197,15 +199,15 @@ async function loadQuota(fresh) {
     const card = el("div", { class: "card" }, el("div", { class: "ch" }, el("h3", { text: providerName(p.provider) })));
     for (const l of p.limits || []) {
       card.append(el("div", { class: "lim" },
-        el("div", { class: "kv" }, el("span", { class: "k", text: limitName(l) }), el("span", { style: "font-weight:500", text: pctText(l) })),
+        el("div", { class: "kv" }, el("span", { class: "k", text: limitName(l) }), el("b", { text: pctText(l) })),
         bar(l),
-        l.resets_at ? el("div", { class: "kv", style: "margin-top:4px" }, el("span", { class: "v", text: "" }), el("span", { class: "v", text: rel(l.resets_at) })) : null));
+        l.resets_at ? el("div", { class: "sup", text: rel(l.resets_at) }) : null));
     }
     if (!(p.limits || []).length) card.append(el("div", { class: "sup", text: "없어요" }));
     grid.append(card);
   }
   // The monthly API spend limit the owner set on the platform console, and how much of it is used (hub/api-budget.ts).
-  if (q.budget) grid.prepend(budgetCard(q.budget));
+  grid.prepend(q.budget ? budgetCard(q.budget) : budgetRow());
   if (grid.children.length) box.append(grid);
   // The one Claude account the assistant and its lanes run on, and every switch with its reason (hub/account-sticky.ts).
   if (q.account && q.account.account) {
