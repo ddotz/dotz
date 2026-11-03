@@ -12,7 +12,7 @@ span.mr-star:not(.on) { opacity: .45; }
 .mr:not(.mr-new) .rc-title { color: var(--fg-2); font-weight: 400; }
 #mon-tl > .bm.rc.mr.mr-sel { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 
-.mbox-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 36px; padding: 2px 14px 6px 14px; color: var(--fg-2); font-size: 12.5px; }
+.mbox-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 28px; padding: 0 12px 4px 6px; color: var(--fg-2); font-size: 12px; }
 .mbox-bar.on { position: sticky; top: 40px; z-index: 2; margin: 0 0 4px; padding-top: 6px; background: var(--bg); border-bottom: 1px solid var(--line); }
 .mbox-n { margin-right: auto; font-variant-numeric: tabular-nums; }
 .mbox-bar.on .mbox-n { margin-right: 4px; color: var(--fg); font-weight: 600; }
@@ -78,17 +78,16 @@ span.mr-star:not(.on) { opacity: .45; }
   .mr .rc-hd .tag { font-size: 10.5px; padding: 0 6px; }
 }
 
-/* Phone: one scrolling row of folders, an icon-only selection bar on one line, 44px targets, and rows without the 받는 사람 line
-   (the open mail shows it). The sheet and the reply keep their buttons clear of the home indicator. */
+/* Phone: one scrolling row of slim folder chips, an icon-only selection bar on one line, 44px targets in the sheet and the reply. The sheet and the reply keep their buttons clear of the home indicator. */
 @media (max-width: 639px) {
-  .mr-filter { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 4px 12px 8px; overscroll-behavior-x: contain; }
+  .mr-filter { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 2px 12px 6px; overscroll-behavior-x: contain; }
   .mr-filter::-webkit-scrollbar { display: none; }
-  .mr-filter .mr-f { flex: none; height: 44px; padding: 0 14px; border-radius: 22px; font-size: 13.5px; }
-  #mon-tl .mr .mr-to { display: none; }
-  .mr-star { width: 32px; height: 32px; }
-  .mr-chk, .mbox-all { width: 20px; height: 20px; }
+  .mr-filter .mr-f { flex: none; height: 30px; padding: 0 12px; border-radius: 15px; font-size: 13px; }
+  .mr-star { width: 28px; height: 28px; }
+  .mr-chk, .mbox-all { width: 18px; height: 18px; }
+  #back, #as-bar, #as-more-bar { width: 32px; height: 32px; }
   .mr-slot button.cchip.mr-act { height: 44px; border-radius: 22px; }
-  .mbox-bar { padding: 2px 4px 6px 10px; }
+  .mbox-bar { padding: 0 4px 4px 6px; }
   .mbox-bar.on { flex-wrap: wrap; gap: 2px; }
   .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
@@ -102,4 +101,41 @@ span.mr-star:not(.on) { opacity: .45; }
   .mbox-in { height: 44px; font-size: 16px; }
   .mbox-ta { font-size: 16px; line-height: 24px; }
   .mbox-sh { height: calc(48px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
+}
+
+/* The list is Gmail's (owner 2026-11-03): flat rows on one sheet with thin dividers, no gap between them. A row is three lines on a phone
+   (☐ ☆ sender, tags, time, the 초안 작성 pencil and ⋯ / the subject, its reply-draft tag / a one-line summary) and one line from 1100px.
+   The 받는 사람 line and 할 일 stay in the open mail. The list ends clear of the floating 메일 쓰기. */
+#mon-tl:has(> .bm.rc.mr) { gap: 0; padding-bottom: 104px; }
+#mon-tl:has(> .bm.rc.mr) > :not(.mr, .mr-filter, .mbox-bar) { margin: 8px 0; }
+#mon-tl > .mr-filter { padding-bottom: 6px; }
+#mon-tl > .bm.rc.mr { flex-flow: row wrap; align-items: center; column-gap: 6px; row-gap: 1px; padding: 8px 10px; border-radius: 0; border-bottom: 1px solid var(--line); }
+#mon-tl > :not(.mr) + .bm.rc.mr { border-top-left-radius: 12px; border-top-right-radius: 12px; }
+#mon-tl > .bm.rc.mr:not(:has(+ .bm.rc.mr)) { border-bottom: 0; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+#mon-tl > .mr > .rc-hd { flex: 1 0 100%; height: 22px; gap: 6px; }
+#mon-tl > .mr .rc-hd .ib { width: 28px; height: 28px; margin: -3px -4px; color: var(--fg-3); }
+#mon-tl > .mr .rc-hd .ib .ic { width: 18px; height: 18px; }
+#mon-tl > .mr .rc-hd .ib:hover { background: var(--active); color: var(--fg); }
+#mon-tl > .mr > .rc-title { flex: 1 1 0; min-width: 0; font-size: 14px; line-height: 20px; }
+#mon-tl > .mr > .mr-reply { flex: none; }
+#mon-tl > .mr > .mr-sum { flex: 1 0 100%; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; line-height: 18px; }
+#mon-tl > .mr > .mr-pts li { display: inline; padding: 0; }
+#mon-tl > .mr > .mr-pts li::before { content: none; }
+#mon-tl > .mr > .mr-pts li + li::before { content: " · "; position: static; width: auto; height: auto; background: none; color: var(--fg-3); }
+#mon-tl > .mr > :is(.mr-to, .mr-todo) { display: none; }
+@media (min-width: 1100px) {
+  #mon-tl > .bm.rc.mr { flex-wrap: nowrap; column-gap: 8px; height: 40px; padding: 0 8px 0 10px; }
+  #mon-tl > .mr > .rc-hd { display: contents; }
+  #mon-tl > .mr .rc-hd > * { order: 2; }
+  #mon-tl > .mr .rc-hd > .mr-lead { order: 0; }
+  #mon-tl > .mr .rc-hd > .rc-src { order: 1; flex: 0 0 168px; }
+  #mon-tl > .mr > .rc-title { order: 3; flex: 0 1 auto; max-width: 50%; }
+  #mon-tl > .mr > .mr-reply { order: 4; }
+  #mon-tl > .mr > .mr-sum { order: 5; flex: 1 1 0; min-width: 0; color: var(--fg-3); }
+  #mon-tl > .mr > .mr-sum::before { content: "- "; }
+  #mon-tl > .mr .rc-hd > .mr-clip { order: 6; }
+  #mon-tl > .mr .rc-hd > .rc-time { order: 7; margin-left: 0; }
+  #mon-tl > .mr .rc-hd > .mr-draft { order: 8; }
+  #mon-tl > .mr .rc-hd > .mr-more { order: 9; }
+  #mon-tl > .mr .rc-hd > .mr-unread { display: none; }
 }

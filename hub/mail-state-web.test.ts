@@ -89,9 +89,9 @@ for (const [width, height] of [[390, 900], [1280, 900]] as const) {
 				"배송 완료": "답장 안 함",
 			});
 			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr .tag.unreplied")].map(t => t.textContent)`)).toEqual(["답장 필요", "초안 있음"]);
-			// one order on every row: sender · state · unread · clip · time · ⋯ (each only when it has something to say, the ⋯ always)
-			const order = await q<string[][]>(v, `return [...document.querySelectorAll("#mon-tl .mr")].map(r => [...r.querySelector(".rc-hd").children].map(c => c.matches(".mr-lead") ? "lead" : c.matches(".rc-src") ? "src" : c.matches(".mr-state, .tag.unreplied") ? "state" : c.matches(".mr-unread") ? "unread" : c.matches(".mr-clip") ? "clip" : c.matches(".rc-time") ? "time" : c.matches(".mr-more") ? "more" : c.className))`);
-			const RANK = ["lead", "src", "state", "unread", "clip", "time", "more"];
+			// one order on every row: sender · state · unread · clip · time · 초안 작성 pencil · ⋯ (each only when it has something to say, the ⋯ always)
+			const order = await q<string[][]>(v, `return [...document.querySelectorAll("#mon-tl .mr")].map(r => [...r.querySelector(".rc-hd").children].map(c => c.matches(".mr-lead") ? "lead" : c.matches(".rc-src") ? "src" : c.matches(".mr-state, .tag.unreplied") ? "state" : c.matches(".mr-unread") ? "unread" : c.matches(".mr-clip") ? "clip" : c.matches(".rc-time") ? "time" : c.matches(".mr-draft") ? "draft" : c.matches(".mr-more") ? "more" : c.className))`);
+			const RANK = ["lead", "src", "state", "unread", "clip", "time", "draft", "more"];
 			for (const o of order) {
 				expect(o.every(k => RANK.includes(k))).toBe(true);
 				expect(o.map(k => RANK.indexOf(k))).toEqual([...o.map(k => RANK.indexOf(k))].sort((a, b) => a - b));
