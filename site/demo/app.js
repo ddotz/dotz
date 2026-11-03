@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "05f386769518";
+const WEB_BUILD = "b00c3139cb6a";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -20,6 +20,14 @@ const clear = n => { while (n.firstChild) n.removeChild(n.firstChild); return n;
 const enc = encodeURIComponent;
 // The one right-hand slot of a settings row (.li > .li-end, docs/ui-spec.md 설정 행): a 행 안 button, a switch, a field or a value.
 const liEnd = (...kids) => el("span", { class: "li-end" }, ...kids);
+// A setting with exactly two values (docs/ui-spec.md 두 값 설정): one small pill showing the current value; a tap, Enter or Space moves to the
+// other one. Unset shows `unset` and the first tap picks the first value. An on/off setting uses the switch (.hs-sw); three or more values a menu.
+// aria-pressed is true on the second value, so the state reads like a switch; the label always names the value now in force.
+function rowToggle({ label, opts, value, unset = "정하기", onPick }) {
+  const i = opts.findIndex(([v]) => v === value), next = opts[i < 0 ? 0 : (i + 1) % opts.length];
+  return el("button", { type: "button", class: `chip tgl${i < 0 ? " unset" : ""}`, "data-v": i < 0 ? "" : value, "aria-pressed": String(i === 1),
+    "aria-label": `${label}: ${i < 0 ? unset : opts[i][1]} · 누르면 ${next[1]}`, text: i < 0 ? unset : opts[i][1], onclick: ev => onPick(next[0], ev.currentTarget) });
+}
 
 /* ---------- icons (24px stroke set) ---------- */
 const ICONS = {
@@ -66,7 +74,7 @@ const ICONS = {
   apps: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
   pick: "M6 3l13 8-5.6 1.6L10 19zM13 13l4 6",
 };
-const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", projects: "projects", project: "projects", lanes: "lanes", monitoring: "activity", apps: "apps", harness: "harness", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context", discord: "discord", jandi: "chat", slack: "chat", telegram: "chat", devices: "key", webaccess: "open" };
+const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", projects: "projects", project: "projects", lanes: "lanes", monitoring: "activity", apps: "apps", harness: "harness", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context", discord: "discord", jandi: "chat", slack: "chat", telegram: "chat", messengers: "chat", provider: "key", devices: "key", webaccess: "open" };
 const icon = (n, cls = "") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", `ic ${cls}`.trim()); s.setAttribute("aria-hidden", "true"); const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", ICONS[n]); s.append(p); return s; };
 
 /* ---------- formatting ---------- */
@@ -645,6 +653,7 @@ const input = (opts = {}) => el("input", { id: `f${++fieldSeq}`, class: "fi", au
 /* ---------- state ---------- */
 let S = null;          // /api/state (no events)
 let M = null;          // /api/models
+let provCur = "";     // the provider shown on the 공급자 detail screen
 let P = null;          // /api/providers
 // The assistant's own name (config identity.name): the page arrives with it in its title (hub/webapp.ts indexPage), /api/state keeps it current.
 let botName = document.title || "비서";
@@ -675,9 +684,9 @@ const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : 
 // 대화 or 로그 for a target: the main chat and projects share one global choice; a session (lane:<name>) remembers its own and starts in 대화.
 const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const lastChatView = () => viewFor(target);
-const SUB = new Set(["models", "providers", "usage", "context", "harness", "discord", "jandi", "slack", "telegram", "devices", "webaccess"]);
-const views = ["home", "chat", "activity", "harness", "settings", "models", "providers", "usage", "context", "discord", "jandi", "slack", "telegram", "devices", "webaccess", "project", "projects", "monitoring", "apps"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", devices: "연결된 기기", webaccess: "웹 접속", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱" };
+const SUB = new Set(["models", "providers", "usage", "context", "harness", "discord", "jandi", "slack", "telegram", "messengers", "provider", "devices", "webaccess"]);
+const views = ["home", "chat", "activity", "harness", "settings", "models", "providers", "usage", "context", "discord", "jandi", "slack", "telegram", "messengers", "provider", "devices", "webaccess", "project", "projects", "monitoring", "apps"];
+const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", messengers: "메신저", provider: "공급자", devices: "연결된 기기", webaccess: "웹 접속", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱" };
 // The gateway's one live-lane rule (lanes.ts laneLive: not exited, process up, not a temp test project) drives every list.
 const laneAlive = l => !!l && (l.live ?? l.status !== "exited");
 const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
@@ -689,7 +698,7 @@ const UNDO_MS = 8000;
 function refreshEnded() {
   document.querySelectorAll("details.ended").forEach(d => d.replaceWith(endedGroup() || ""));
 }
-// An ended session keeps its marks: its unread count (the hub lists ended lanes in /api/conversations too) and 답변 필요 while a question waits there.
+// An ended session keeps 답변 필요 while a question waits there; its unread count is always 0 (hub/conversations.ts unreadOf), so it shows no dot.
 const endedMark = l => { const t = `lane:${l.name}`; return { unread: ts(t).unread | 0, need: convNeeds(t) }; };
 function endedGroup() {
   const list = endedLanes();
@@ -840,7 +849,7 @@ $("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), e
 const setBrand = () => { $("#brand-name").textContent = botName; paintAttn(); };
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"));
-const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat" && narrowChat()) ? "monitoring" : null;
+const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : current === "provider" ? "providers" : ["discord", "jandi", "slack", "telegram"].includes(current) ? "messengers" : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat" && narrowChat()) ? "monitoring" : null;
 $("#back").onclick = () => (kkBack() || cmBack() ? 0 : monCtx && current === "chat" ? go("monitoring", MON.sel) : convOnPhone() ? openChatList() : go(backTarget() || "home"));
 
 /* ---------- command palette: jump to a view or run a /command ---------- */
@@ -892,7 +901,7 @@ function openPalette() {
       else for (const [c, desc] of hintList) if (c.startsWith(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
     } else {
       for (const [c, desc] of hintList) if (!v || c.includes(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
-      for (const id of views) if (id !== "activity" && id !== "project" && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
+      for (const id of views) if (id !== "activity" && id !== "project" && id !== "provider" && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
       // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
       const ended = endedLanes();
       if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `종료된 세션 ${ended.length}`, act: () => { endedOpen = true; go("chat", "list"); } });
@@ -945,7 +954,7 @@ function parseHash(hash = location.hash) {
   return { view: i < 0 ? h : h.slice(0, i), t };
 }
 // The 세션 tab is gone: an old #lanes address opens the chat (its list on a phone), where running sessions sit under 진행 중.
-const routeAlias = (name, tgt) => (name === "lanes" ? ["chat", "list"] : name === "messengers" ? ["settings", ""] : [name, tgt]);
+const routeAlias = (name, tgt) => (name === "lanes" ? ["chat", "list"] : name === "providers" && tgt ? ["provider", tgt] : name === "accounts" || (name === "settings" && tgt === "accounts") ? ["provider", "anthropic"] : [name, tgt]);
 function go(name, tgt) {
   closeMenu(false);
   [name, tgt] = routeAlias(name, tgt);
@@ -960,12 +969,14 @@ function go(name, tgt) {
   if (!views.includes(name) || navOff(name)) name = "home";
   if (name === "projects" && ppWide()) { name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : "builtin:custom"; }
   if (name === "project" && !tgt) name = "projects";
+  if (name === "provider" && !tgt) name = "providers";
+  if (name === "provider") provCur = tgt;
   if (name === "project") ppCur = tgt;
   if (name === "monitoring") monRoute(tgt);
   // "chat/list" is the phone's chat list; any other way into 채팅 opens a conversation.
   chatList = name === "chat" && tgt === "list" && narrowChat();
   if (name === "chat" && tgt === "list") tgt = undefined;
-  if (tgt && name !== "project" && tgt !== target && validTarget(tgt)) setTarget(tgt);
+  if (tgt && name !== "project" && name !== "provider" && tgt !== target && validTarget(tgt)) setTarget(tgt);
   if (name === "activity" && (!LOG_VIEW || isFixedT(target))) name = "chat";   // 알림 / 작업 기록 have no terminal view; LOG_VIEW off: no log view at all
   if (name !== current) prevView = current;
   current = name;
@@ -973,7 +984,7 @@ function go(name, tgt) {
   if (convSync()) renderAll();
   const tv = name === "chat" || name === "activity";
   if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
-  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "monitoring" ? monHash() : name === "apps" ? appsHash() : name;
+  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "provider" ? `provider/${enc(tgt)}` : name === "monitoring" ? monHash() : name === "apps" ? appsHash() : name;
   navSync(name, hash);
   const pp = name === "project" && ppWide();
   for (const v of views) $(`#v-${v}`).hidden = v !== name && !(pp && v === "projects");
@@ -985,7 +996,7 @@ function go(name, tgt) {
   th.hidden = !tv; $("#vtog").hidden = !tv || !LOG_VIEW;
   if (tv && th.dataset.mode !== mode) { th.dataset.mode = mode; th.dataset.sig = ""; }
   if (MT_READY) mailThreadSync();   // the same-sender mail panel belongs to the mail conversation that is open (30-mail-thread.js)
-  $("#title").textContent = name === "home" ? botName : titles[name];
+  $("#title").textContent = name === "home" ? botName : name === "provider" ? providerName(provCur) : titles[name];
   convChrome();
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
   if (name === "harness") loadHarness(); else closeHSheet();
@@ -994,9 +1005,11 @@ function go(name, tgt) {
   if (name === "projects" || pp) { renderProjects(); prjLoad(); }
   if (name === "monitoring" || mc) { renderMonitoring(); loadMonitors(); loadNotices(); loadIntegrations(); }
   if (name === "project") pmOpen(tgt);
-  if (name === "settings") { loadUpdate(); loadAccounts(); renderSettings(); loadMessengerIndex(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
+  if (name === "settings") { loadUpdate(); renderSettings(); loadMessengerIndex(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
   if (name === "providers") loadProviders();
+  if (name === "provider") { renderProvider(); if (!P) loadProviders(); loadAccounts(); }
+  if (name === "messengers") { renderMessengers(); loadMessengerIndex(); }
   if (name === "usage") loadQuota();
   if (name === "context") loadContext();
   if (name === "discord") { loadMessengerIndex(); loadDiscord(); loadOnboarding("discord"); }
@@ -1206,7 +1219,7 @@ const BCOLS = 12, BGAP = 12, BROW = 40, BSTEP = BROW + BGAP;
 const B_EDGE = 56, B_SCROLL = 18, B_PRESS = 450;
 const boards = new Set();
 const narrowMQ = matchMedia("(max-width: 639px), (pointer: coarse) and (max-width: 767px)");
-narrowMQ.addEventListener("change", () => boards.forEach(b => b.paint()));
+narrowMQ.addEventListener("change", () => boards.forEach(b => { b.paint(); b.measure(); }));
 const bClamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const bHit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 const bOrder = (list, first) => list.sort((a, b) => a.y - b.y || (a.id === first ? -1 : b.id === first ? 1 : 0) || a.x - b.x);
@@ -1247,13 +1260,20 @@ function bLoad(store) {
   if (o && typeof o === "object" && !Array.isArray(o)) for (const [id, r] of Object.entries(o)) if (r && ["x", "y", "w", "h"].every(k => Number.isInteger(r[k]) && r[k] >= 0) && r.w > 0 && r.h > 0) out[id] = { x: r.x, y: r.y, w: r.w, h: r.h };
   return out;
 }
+// A px board (홈) counts rows in pixels, so a card can be exactly as tall as its content: an old layout (rows of BSTEP) is converted once.
+function bLoadPx(store) {
+  const raw = lsJson(store, null), out = bLoad(store);
+  if (!(raw && raw._u === "px")) for (const r of Object.values(out)) { r.y *= BSTEP; r.h *= BSTEP; }
+  return out;
+}
 const B_IGNORE = "button, input, textarea, select, a, summary, [role=button], .lrep, [data-nodrag]";
-// items: [{id, node, head (selector of the drag handle inside node), def {w,h}, min {w,h}, max {w,h}}]. `keep(id)` tells which saved
+// items: [{id, node, head (selector of the drag handle inside node), def {w,h}, min {w,h}, max {w,h}, fit}]. `keep(id)` tells which saved
 // cards that are not in `items` only wait for their data (and so keep their place) instead of being gone.
+// opts.px: heights are pixels (h of an item is still given in rows and converted); an item with `fit` is as tall as its content (measured).
 function makeBoard(container, key, opts = {}) {
-  const store = `dotz-board-${key}`;
-  let saved = bLoad(store), lastJson = JSON.stringify(saved), cur = [], lay = [], ghost = [], act = null, pending = null, swallow = false;
-  const wraps = new Map();
+  const store = `dotz-board-${key}`, px = !!opts.px, U = px ? 1 : BSTEP;
+  let raw0 = [], saved = px ? bLoadPx(store) : bLoad(store), lastJson = JSON.stringify(saved), cur = [], lay = [], ghost = [], act = null, pending = null, swallow = false;
+  const wraps = new Map(), fitH = new Map();
   const ph = el("div", { class: "bph", hidden: true });
   const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text sm", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text sm", type: "button", onclick: () => reset() }, "배치 초기화"));
   container.classList.add("board");
@@ -1264,9 +1284,12 @@ function makeBoard(container, key, opts = {}) {
   const pos = (n, r) => {
     n.style.left = `calc((100% + ${BGAP}px) * ${r.x} / ${BCOLS})`;
     n.style.width = `calc((100% + ${BGAP}px) * ${r.w} / ${BCOLS} - ${BGAP}px)`;
-    n.style.top = `${r.y * BSTEP}px`;
-    n.style.height = `${r.h * BSTEP - BGAP}px`;
+    n.style.top = `${r.y * U}px`;
+    n.style.height = `${r.h * U - BGAP}px`;
   };
+  const norm = it => !px ? it : it.fit ? { ...it, def: { w: it.def.w, h: fitH.get(it.id) ?? 160 }, min: { w: it.min.w, h: BGAP + 1 }, max: { w: it.max.w, h: 1e5 } }
+    : { ...it, def: { ...it.def, h: it.def.h * BSTEP }, min: { ...it.min, h: it.min.h * BSTEP }, max: { ...it.max, h: it.max.h * BSTEP } };
+  const bodyOf = w => w && [...w.children].find(c => !c.classList.contains("brz"));
   const rows = list => list.reduce((m, r) => Math.max(m, r.y + r.h), 0);
   function paint(list = lay, skip = null) {
     const narrow = narrowMQ.matches;
@@ -1276,7 +1299,7 @@ function makeBoard(container, key, opts = {}) {
       bOrder(lay.map(r => ({ ...r }))).forEach((r, i) => { const w = wraps.get(r.id); if (w) { w.removeAttribute("style"); w.style.order = i; } });
     } else {
       for (const r of list) { const w = skip === r.id ? ph : wraps.get(r.id); if (w) { pos(w, r); if (w !== ph) w.style.order = ""; } }
-      container.style.height = `${Math.max(0, rows(list) * BSTEP - BGAP)}px`;
+      container.style.height = `${Math.max(0, rows(list) * U - BGAP)}px`;
     }
     if (!skip && opts.onLayout) opts.onLayout();
   }
@@ -1284,14 +1307,14 @@ function makeBoard(container, key, opts = {}) {
     const o = {};
     for (const r of [...ghost, ...lay]) o[r.id] = { x: r.x, y: r.y, w: r.w, h: r.h };
     saved = o;
-    const j = JSON.stringify(o);
+    const j = JSON.stringify(px ? { ...o, _u: "px" } : o);
     if (j !== lastJson) { lastJson = j; try { localStorage.setItem(store, j); } catch { /* storage full or blocked */ } }
   }
   // Cards that sit side by side (same top row) take one height: the card being resized sets it, otherwise the tallest
   // does; each stays within its own min/max. Growing can overlap the cards below, so they are pushed and compacted again.
   function bEven(list, lead, first) {
     const rows = new Map();
-    for (const c of list) { if (!meta(c.id)) continue; if (!rows.has(c.y)) rows.set(c.y, []); rows.get(c.y).push(c); }
+    for (const c of list) { if (!meta(c.id) || meta(c.id).fit) continue; if (!rows.has(c.y)) rows.set(c.y, []); rows.get(c.y).push(c); }
     let changed = false;
     for (const g of rows.values()) {
       if (g.length < 2) continue;
@@ -1303,13 +1326,33 @@ function makeBoard(container, key, opts = {}) {
     bCompact(list, first, ghost);
   }
   const shown = new Set();   // card ids already drawn: only a card that newly arrives rises in
-  function set(items, keep = () => false) {
-    if (act) { pending = [items, keep]; return; }
+  // The fit cards' heights are read from the page: each takes its content's height, then the cards below slide up (no transition) and are saved.
+  function measure() {
+    if (!px || act || narrowMQ.matches) return;
+    let changed = false;
+    for (const r of lay) {
+      const it = meta(r.id), n = it && it.fit && bodyOf(wraps.get(r.id));
+      if (!n || !n.offsetHeight) continue;
+      const h = n.offsetHeight + BGAP;
+      fitH.set(r.id, h);
+      if (h !== r.h) { r.h = h; changed = true; }
+    }
+    if (!changed) return;
+    for (const c of bOrder([...lay])) bPush(lay, c);
+    bCompact(lay, null, ghost);
+    persist();
+    container.classList.add("bnt"); paint(); void container.offsetHeight; container.classList.remove("bnt");
+  }
+  const ro = px && typeof ResizeObserver === "function" ? new ResizeObserver(() => measure()) : null;
+  function set(raw, keep = () => false) {
+    if (act) { pending = [raw, keep]; return; }
+    raw0 = raw;
+    const items = raw.map(norm);
     cur = items;
     const fresh = freshKeys(shown, items.map(i => i.id));
     const ids = new Set(items.map(i => i.id));
     const placed = [];
-    for (const it of items) if (saved[it.id]) placed.push({ id: it.id, ...bFit(saved[it.id], it) });
+    for (const it of items) if (saved[it.id]) placed.push({ id: it.id, ...bFit(saved[it.id], it), ...(it.fit ? { h: it.def.h } : {}) });
     ghost = Object.entries(saved).filter(([id]) => !ids.has(id) && keep(id)).map(([id, r]) => ({ id, ...r }));
     bCompact(placed, null, ghost);
     for (const it of items) if (!saved[it.id]) { const d = bFit({ x: 0, y: 0, ...it.def }, it); placed.push({ id: it.id, ...d, ...bFree([...placed, ...ghost], d.w, d.h) }); }
@@ -1320,6 +1363,7 @@ function makeBoard(container, key, opts = {}) {
     for (const it of items) {
       let w = wraps.get(it.id);
       if (!w) { w = el("div", { class: "bi", "data-id": it.id }, ...["e", "s", "se"].map(d => el("div", { class: `brz ${d}`, "data-dir": d }))); wraps.set(it.id, w); container.append(w); }
+      w.classList.toggle("fit", !!it.fit);
       const h0 = it.node.querySelector(it.head);
       if (h0) { h0.classList.add("bhead"); h0.tabIndex = 0; h0.title = "끌거나 방향키로 옮기고, Shift+방향키로 크기를 바꿔요"; }
       const first = w.firstElementChild, old = first && !first.classList.contains("brz") ? first : null;
@@ -1333,12 +1377,14 @@ function makeBoard(container, key, opts = {}) {
     }
     bar.hidden = !items.length;
     paint();
+    if (ro) { ro.disconnect(); for (const it of items) { const n = it.fit && bodyOf(wraps.get(it.id)); if (n) ro.observe(n); } }
+    measure();
   }
   function reset() {
     if (opts.onReset) opts.onReset();
     saved = {}; ghost = []; lastJson = "{}";
     try { localStorage.removeItem(store); } catch { /* ignore */ }
-    set(cur);
+    set(raw0);
   }
   function settle() {
     const p = pending; pending = null;
@@ -1426,13 +1472,13 @@ function makeBoard(container, key, opts = {}) {
     if (mode === "move") {
       const left = act.cx - cr.left - act.ox, top = act.cy - cr.top - act.oy;
       w.style.left = `${left}px`; w.style.top = `${top}px`;
-      preview({ x: bClamp(Math.round(left / step), 0, BCOLS - r.w), y: Math.max(0, Math.round(top / BSTEP)) });
+      preview({ x: bClamp(Math.round(left / step), 0, BCOLS - r.w), y: Math.max(0, Math.round(top / U)) });
     } else {
       const maxW = Math.min(it.max.w, BCOLS - r.x), minW = Math.min(it.min.w, maxW);
       const pw = bClamp(act.w0 + (mode.includes("e") ? dx : 0), minW * step - BGAP, maxW * step - BGAP);
-      const pht = bClamp(act.h0 + (mode.includes("s") ? dy : 0), it.min.h * BSTEP - BGAP, it.max.h * BSTEP - BGAP);
+      const pht = bClamp(act.h0 + (mode.includes("s") ? dy : 0), it.min.h * U - BGAP, it.max.h * U - BGAP);
       w.style.width = `${pw}px`; w.style.height = `${pht}px`;
-      preview({ w: bClamp(Math.round((pw + BGAP) / step), minW, maxW), h: bClamp(Math.round((pht + BGAP) / BSTEP), it.min.h, it.max.h) });
+      preview({ w: bClamp(Math.round((pw + BGAP) / step), minW, maxW), h: bClamp(Math.round((pht + BGAP) / U), it.min.h, it.max.h) });
     }
   }
   function preview(patch) {
@@ -1508,7 +1554,8 @@ function makeBoard(container, key, opts = {}) {
       return;
     }
     const list = lay.map(x => ({ ...x })), t = list.find(x => x.id === it.id);
-    Object.assign(t, bFit(ev.shiftKey ? { ...r, w: r.w + d[0], h: r.h + d[1] } : { ...r, x: r.x + d[0], y: r.y + d[1] }, it));
+    const ks = px ? BSTEP : 1;
+    Object.assign(t, bFit(ev.shiftKey ? { ...r, w: r.w + d[0], h: r.h + (it.fit ? 0 : d[1] * ks) } : { ...r, x: r.x + d[0], y: r.y + d[1] * ks }, it));
     bPush(list, t); bCompact(list, it.id, ghost); bEven(list, ev.shiftKey ? it.id : null, it.id);
     lay = list; persist(); paint();
   });
@@ -1517,7 +1564,7 @@ function makeBoard(container, key, opts = {}) {
     const it = meta(id), r = lay.find(x => x.id === id);
     if (!it || !r) return;
     const list = lay.map(x => ({ ...x })), t = list.find(x => x.id === id);
-    Object.assign(t, bFit({ ...r, w, h }, it));
+    Object.assign(t, bFit({ ...r, w, h: it.fit ? r.h : h * U }, it));
     bPush(list, t); bCompact(list, id, ghost); bEven(list, id, id);
     lay = list; persist(); paint();
   }
@@ -1528,7 +1575,7 @@ function makeBoard(container, key, opts = {}) {
     ids.splice(i < 0 ? ids.length : i, 0, id);
     reorder(ids, id);
   }
-  const board = { set, reset, paint, bar, resize, moveBefore, order: () => bOrder(lay.map(x => ({ ...x }))).map(x => x.id), cancel: () => { if (act) cancel(); } };
+  const board = { set, reset, paint, measure, bar, resize, moveBefore, order: () => bOrder(lay.map(x => ({ ...x }))).map(x => x.id), cancel: () => { if (act) cancel(); } };
   boards.add(board);
   return board;
 }
@@ -1566,6 +1613,12 @@ function homeMenu(anchor, id, inChat) {
     homeMoveActs(id, inChat, add);
     return showMenu(anchor, acts, { onPick: i => acts[i].run() });
   }
+  if (id.startsWith("notices:")) {
+    const [label, to] = { alert: ["알림", () => openTarget("alert", "chat")], worklog: ["작업내역", () => openTarget("worklog", "chat")], watch: ["모니터링", () => go("monitoring")] }[id.slice(8)];
+    add(`${label} 열기`, to);
+    homeMoveActs(id, inChat, add);
+    return showMenu(anchor, acts, { onPick: i => acts[i].run() });
+  }
   if (id === MAIN || isLaneT(id)) {
     const key = id === MAIN ? "orchestrator" : id, name = targetName(id), restartNote = id === MAIN ? "어시스턴트가 다시 시작돼요." : "";
     const cur = M && (id === MAIN ? M.orchestrator : (M.lanes || []).find(l => `lane:${l.name}` === id));
@@ -1586,7 +1639,7 @@ function homeMenu(anchor, id, inChat) {
     const p = ((P && P.providers) || []).find(x => x.id === id.slice(5));
     if (p && p.can_login) add(isConnected(p) ? "다시 로그인" : "로그인", () => startLogin(p));
     if (p && (p.can_logout ?? p.removable)) add(p.auth === "api_key" ? "키 삭제" : "로그아웃", () => busy(null, () => logoutProvider(p)));
-    add("공급자 열기", () => go("providers"));
+    add("공급자 열기", () => go("provider", p ? p.id : ""));
   } else if (id.startsWith("custom:")) {
     for (const a of window.dotzCustom ? dotzCustom.menuActs(id.slice(7)) : []) add(a.label, a.run);
   } else if (id.startsWith("ctx:")) {
@@ -1672,32 +1725,36 @@ const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: �
 // Only what is news: a question that waits is a row of 답변 필요 above, so it is not counted or listed here a second time; a gateway question it
 // handles itself is not asked there (09-needs-you.js nyHandled), so it is news here.
 const hcFyi = n => !n.read && ntHomeAlert(n) && (!ntNeeds(n) || nyHandled(n));
+const hcUnread = () => NT.items.filter(hcFyi).length;
+// One head for every home card: [status dot] title, an optional count, an optional grey note (an empty card says why in it and folds to this one line).
+const hcHead = (title, o = {}) => el("div", { class: "ch" }, o.dot ? el("span", { class: `dot ${o.dot}` }) : null, el("h3", { text: title }),
+  o.n ? el("span", { class: "hc-n" }, ...[].concat(o.n)) : null, o.note ? el("span", { class: "hc-n", text: o.note }) : null, o.menu ? menuBtn(o.menu) : null);
+const hcFold = (card, fold) => { if (fold) card.classList.add("fold"); return card; };
 function homeAlertCard() {
-  const unread = NT.items.filter(hcFyi).length, fresh = hcRecent(hcFyi), state = hcState();
-  return hcCard(() => openTarget("alert", "chat"), el("div", { class: "ch" }, el("h3", { text: "알림" })),
-    el("div", { class: "big", text: state ? "…" : `${unread}개` }), el("div", { class: "sup", text: "안 읽은 알림" }),
-    state || !fresh.length ? el("div", { class: "hc-none", text: state || "새 알림이 없어요" }) : hcNotices(fresh));
+  const unread = hcUnread(), fresh = hcRecent(hcFyi), state = hcState(), none = !!state || !fresh.length;
+  return hcFold(hcCard(() => openTarget("alert", "chat"), hcHead("알림", { menu: "notices:alert", n: !state && unread ? String(unread) : null, note: none ? state || "새 알림이 없어요" : "" }),
+    none ? null : hcNotices(fresh)), none);
 }
 function homeWorklogCard() {
-  const recent = hcRecent(n => n.kind === "worklog" || n.kind === "result"), state = hcState();
-  return hcCard(() => openTarget("worklog", "chat"), el("div", { class: "ch" }, el("h3", { text: "작업내역" })),
-    state || !recent.length ? el("div", { class: "hc-none", text: state || "아직 작업내역이 없어요" }) : hcNotices(recent));
+  const recent = hcRecent(n => n.kind === "worklog" || n.kind === "result"), state = hcState(), none = !!state || !recent.length;
+  return hcFold(hcCard(() => openTarget("worklog", "chat"), hcHead("작업내역", { menu: "notices:worklog", note: none ? state || "아직 작업내역이 없어요" : "" }), none ? null : hcNotices(recent)), none);
 }
 function homeMonitorCard() {
   const list = ntMons(), shown = list.slice(0, 4), bad = list.filter(m => monStatus(m).key === "fail").length;
-  const state = NM.loaded ? "" : NM.failed ? "불러오지 못했어요" : "불러오는 중…";
-  return hcCard(() => go("monitoring"), el("div", { class: "ch" }, el("h3", { text: "모니터링" }), bad ? el("span", { class: "tag err", text: `실패 ${bad}` }) : null),
-    state || !list.length ? el("div", { class: "hc-none", text: state || "모니터링 중인 항목이 없어요" }) : el("div", { class: "hc-list" }, ...shown.map(m => {
+  const state = NM.loaded ? "" : NM.failed ? "불러오지 못했어요" : "불러오는 중…", none = !!state || !list.length;
+  return hcFold(hcCard(() => go("monitoring"), hcHead("모니터링", { menu: "notices:watch", n: bad ? [el("span", { class: "dot err" }), `실패 ${bad}`] : null, note: none ? state || "모니터링 중인 항목이 없어요" : "" }),
+    none ? null : el("div", { class: "hc-list" }, ...shown.map(m => {
       // The same status the 모니터링 row shows (30-monitoring.js monStatus); the dot's colour classes are the notice tones.
       const st = monStatus(m);
       return el("div", { class: "hc-mon", "data-status": st.key }, hcDot({ ok: "done", warn: "ask", err: "fail" }[st.tone]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "모니터링" }),
         el("span", { class: "s", text: [ntMonRun(m), st.text, ntMonNext(m)].filter(Boolean).join(" · ") })));
     })),
-    list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null);
+    list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null), none);
 }
 
 let homeBoard = null;
-const HOME_BIG = { min: { w: 3, h: 3 }, max: { w: 12, h: 10 } }, HOME_SMALL = { min: { w: 2, h: 2 }, max: { w: 12, h: 6 } }, HOME_GROUP = { min: { w: 3, h: 2 }, max: { w: 12, h: 14 } };
+// Every card is as tall as its content (07-board.js fit): only the width is sized, 4 of 12 columns by default so six cards make two full rows; the summary strip spans the row.
+const HOME_FIT = { fit: true, min: { w: 3, h: 1 }, max: { w: 12, h: 1 } }, HOME_STRIP = { fit: true, min: { w: 6, h: 1 }, max: { w: 12, h: 1 } };
 // Kinds of home items that can be bundled into one card (title, view the card opens); the bundled kinds are kept per browser.
 const HOME_KINDS = { ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["공급자", "providers"] };
 const HOME_GROUPS_KEY = "dotz-home-groups";
@@ -1708,15 +1765,21 @@ function setHomeGroup(kind, on) {
   try { localStorage.setItem(HOME_GROUPS_KEY, JSON.stringify([...homeGroups])); } catch {}
   setTimeout(renderHome, 0);
 }
-const toneCls = t => t ? ` att${t === "err" ? " err" : ""}` : "";
+// The one accent of a home card is a status dot: orange when it needs the owner, red when it failed.
+const hcTone = t => t === "err" ? "err" : t ? "att" : "";
+const hcKDot = t => t ? el("span", { class: `dot ${hcTone(t)}` }) : null;
 // One item inside a bundle card: clicking it opens the item, its own ⋯ menu keeps the item's actions.
 function homeRow(e) {
-  const r = el("div", { class: `grow${toneCls(e.tone)}`, role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); e.open(); }, onkeydown: ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === r) { ev.preventDefault(); ev.stopPropagation(); e.open(); } } },
+  const r = el("div", { class: "grow", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); e.open(); }, onkeydown: ev => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === r) { ev.preventDefault(); ev.stopPropagation(); e.open(); } } },
     el("div", { class: "gm" }, ...e.row()), menuBtn(e.id));
   return r;
 }
-// Every item is its own floating card (the assistant, each running lane, each context process, each usage limit, each provider),
-// except kinds the owner bundled: those share one card with a row per item.
+// Every item is its own card (each context process, each usage limit, each provider), except kinds the owner bundled (the default):
+// those share one card with a row per item. The assistant is the summary strip on top.
+// 5시간 / 7일: the first limit of that kind (not a model's own, "7 Day (Opus)"), its share left as a percent.
+const hsumLimit = re => { for (const p of (HQ && HQ.providers) || []) for (const l of p.limits || []) { const s = String(l.label || l.id); if (!/\(/.test(s) && re.test(s)) return l; } return null; };
+const hsumStat = (k, v, tone) => el("div", { class: "hsum-s" }, el("span", { class: "k", text: k }), el("span", { class: "v" }, hcKDot(tone), v));
+const hsumPct = l => { const f = limitFrac(l); return f == null ? "–" : `${Math.round(f * 100)}%`; };
 // The newest meaningful line of what a target is doing: its loaded activity, else the lane's last fetched line, else its last text.
 function nowLine(t) {
   const acts = ts(t).acts;
@@ -1867,21 +1930,23 @@ function renderHome() {
   renderHomeNow();
   if (openMenu && box.contains(openMenu.anchor)) return;   // a ⋯ menu is open: repaint after it closes
   $("#title").textContent = botName;
-  if (!homeBoard) homeBoard = makeBoard(box, "home", { actions: [{ label: "카드 추가", run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
+  if (!homeBoard) homeBoard = makeBoard(box, "home", { px: true, actions: [{ label: "카드 추가", run: () => window.dotzCustom && dotzCustom.add() }], onReset: () => { if (window.dotzCustom) dotzCustom.unhide(); setTimeout(renderHome, 0); } });
   const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, live = liveModel(MAIN), [liveBase, liveLevel] = String(live.sel || "").split(":"), items = [], seen = new Set();
   const add = (id, node, def, size) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def, ...size }); } };
 
   // assistant
   const stText = o.status === "rate-limited" && o.rateLimitedUntil ? `${statusKo(o.status)} · ${kstTime(o.rateLimitedUntil)}까지` : statusKo(o.status);
   const mainAttn = attnKind(MAIN);
-  add(MAIN, itemCard(() => openTarget(MAIN, lastChatView()), mainAttn || o.status === "rate-limited" ? "warn" : "",
-    el("div", { class: "ch" }, el("span", { class: `dot ${mainAttn ? "att" : statusTone(o.status)}` }), el("h3", { text: botName }), mainAttn ? el("span", { class: "tag warn", text: "확인 필요" }) : null, el("span", { class: `tag ${statusTone(o.status)}`, text: S ? stText : "연결 중" }), menuBtn(MAIN)),
-    el("div", { class: "big", text: om && liveBase ? (modelName(liveBase).includes("-") ? modelChipText(liveBase) : modelName(liveBase)) : "…" }),
-    el("div", { class: "sup sub" }, liveLevel ? `추론 강도 ${thinkKo(liveLevel)}` : "\u00a0", live.fallback ? fbTag(live.fallback, live.conf) : null),
-    subLine("orchestrator")), { w: 4, h: 4 }, HOME_BIG);
-  add("notices:alert", homeAlertCard(), { w: 4, h: 4 }, HOME_NOTICE);
-  add("notices:worklog", homeWorklogCard(), { w: 4, h: 4 }, HOME_NOTICE);
-  add("notices:watch", homeMonitorCard(), { w: 4, h: 4 }, HOME_NOTICE);
+  // The summary strip: model, state and the numbers worth a glance (what is left of 5시간 / 7일, the unread notices); the dot is its one accent.
+  const l5 = hsumLimit(/\b5\s*hours?\b|5\s*시간/i), l7 = hsumLimit(/\b7\s*days?\b|7\s*일/i), modelText = om && liveBase ? (modelName(liveBase).includes("-") ? modelChipText(liveBase) : modelName(liveBase)) : "…";
+  add(MAIN, itemCard(() => openTarget(MAIN, lastChatView()), "",
+    hcHead(botName, { dot: mainAttn || o.status === "rate-limited" ? "att" : statusTone(o.status), note: mainAttn ? "확인 필요" : S ? stText : "연결 중", menu: MAIN }),
+    el("div", { class: "hsum" }, hsumStat("모델", modelText), liveLevel ? hsumStat("추론 강도", thinkKo(liveLevel)) : null, l5 ? hsumStat("5시간 남음", hsumPct(l5), limitTone(l5)) : null, l7 ? hsumStat("7일 남음", hsumPct(l7), limitTone(l7)) : null, NT.loaded ? hsumStat("안 읽은 알림", `${hcUnread()}개`) : null),
+    live.fallback ? el("div", { class: "sup hsum-fb", text: fbTagText(live.fallback) }) : null,
+    subLine("orchestrator")), { w: 12, h: 1 }, HOME_STRIP);
+  add("notices:alert", homeAlertCard(), { w: 4, h: 1 }, HOME_FIT);
+  add("notices:worklog", homeWorklogCard(), { w: 4, h: 1 }, HOME_FIT);
+  add("notices:watch", homeMonitorCard(), { w: 4, h: 1 }, HOME_FIT);
 
   // entries per kind: {id, tone, open, card() (own floating card), row() (contents of its row in a bundle)}. A session is a row of
   // 지금 진행 중 / 대기 중 above, so it has no card here as well.
@@ -1889,38 +1954,36 @@ function renderHome() {
   for (const p of ((C && C.processes) || []).filter(x => x.running)) {
     const id = `ctx:${p.name}`, pct = p.percent, who = p.kind === "lane" ? targetName(`lane:${p.name}`) : botName, v = pct != null ? `${pct}%` : `${num(p.tokens)} 토큰`;
     const bar = () => el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` }));
-    E.ctx.push({ id, tone: pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 4, h: 2 }, HOME_SMALL],
-      card: () => [el("div", { class: "ch" }, el("h3", { text: `컨텍스트 · ${who}` }), el("span", { class: "sup", text: v }), menuBtn(id)), bar()],
-      row: () => [el("div", { class: "kv" }, el("span", { class: "k", text: who }), el("span", { class: "v", text: v })), bar()] });
+    E.ctx.push({ id, tone: pct >= 80 ? "warn" : "", open: () => go("context"), size: [{ w: 4, h: 1 }, HOME_FIT],
+      card: () => [hcHead(`컨텍스트 · ${who}`, { dot: hcTone(pct >= 80 ? "warn" : ""), note: v, menu: id }), bar()],
+      row: () => [el("div", { class: "kv" }, el("span", { class: "k" }, hcKDot(pct >= 80 ? "warn" : ""), who), el("span", { class: "v", text: v })), bar()] });
   }
   if (HQ && !HQ.error) {
     const provs = (HQ.providers || []).filter(p => (p.limits || []).length), multi = provs.length > 1;
     for (const pr of provs) for (const l of pr.limits) {
       const id = `limit:${pr.provider}:${l.id}`, f = limitFrac(l), name = limitLabel(pr, l, multi);
-      E.limit.push({ id, tone: limitHit(l) || (f != null && f <= .2) ? "warn" : "", open: () => go("usage"), size: [{ w: 4, h: 2 }, HOME_SMALL],
-        card: () => [el("div", { class: "ch" }, el("h3", { text: name }), el("span", { class: "sup", text: pctText(l) }), menuBtn(id)), bar(l)],
-        row: () => [el("div", { class: "kv" }, el("span", { class: "k", text: name }), el("span", { class: "v", text: pctText(l) })), bar(l)] });
+      const tone = limitHit(l) || (f != null && f <= .2) ? "warn" : "";
+      E.limit.push({ id, tone, open: () => go("usage"), size: [{ w: 4, h: 1 }, HOME_FIT],
+        card: () => [hcHead(name, { dot: hcTone(tone), note: pctText(l), menu: id }), bar(l)],
+        row: () => [el("div", { class: "kv" }, el("span", { class: "k" }, hcKDot(tone), name), el("span", { class: "v", text: pctText(l) })), bar(l)] });
     }
   }
   for (const p of (P && P.providers) || []) {
     if (!isConnected(p) && !needsAttention(p)) continue;
     const id = `prov:${p.id}`, bad = needsAttention(p), st = bad ? "로그인 필요" : p.auth === "api_key" ? "API 키" : "로그인됨";
-    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("providers"), size: [{ w: 4, h: 2 }, HOME_SMALL],
-      card: () => [el("div", { class: "ch" }, el("span", { class: `dot ${bad ? "att" : "ok"}` }), el("h3", { text: p.name || p.id }), el("span", { class: `tag ${bad ? "warn" : ""}`, text: st }), menuBtn(id)),
+    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("provider", p.id), size: [{ w: 4, h: 1 }, HOME_FIT],
+      card: () => [hcHead(p.name || p.id, { dot: bad ? "att" : "ok", note: st, menu: id }),
         p.account ? el("div", { class: "sup", text: p.account }) : null],
       row: () => [el("div", { class: "row" }, el("span", { class: `dot ${bad ? "att" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: bad ? st : p.account || st }))] });
   }
   const loaded = { ctx: !!C, limit: !!HQ, prov: !!P };
   for (const [kind, list] of Object.entries(E)) {
-    if (!homeGroups.has(kind)) { for (const e of list) add(e.id, itemCard(e.open, e.tone, ...e.card()), ...e.size); continue; }
-    // never shorter than its rows: header ~52px, bar rows ~44px, plain rows ~30px
-    const need = Math.min(HOME_GROUP.max.h, Math.max(2, Math.ceil((52 + Math.max(1, list.length) * (kind === "limit" || kind === "ctx" ? 44 : 30) + BGAP) / BSTEP)));
-    const [title, view] = HOME_KINDS[kind], nAtt = list.filter(e => e.tone).length;
-    const tone = list.some(e => e.tone === "err") ? "err" : nAtt ? "warn" : "";
+    if (!homeGroups.has(kind)) { for (const e of list) add(e.id, itemCard(e.open, "", ...e.card()), ...e.size); continue; }
+    const [title, view] = HOME_KINDS[kind], nAtt = list.filter(e => e.tone).length, none = !list.length;
     const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : "없어요";
-    add(`group:${kind}`, itemCard(view, tone,
-      el("div", { class: "ch" }, el("h3", { text: title }), nAtt ? el("span", { class: "tag warn", text: `확인 필요 ${nAtt}` }) : null, list.length ? el("span", { class: "tag", text: String(list.length) }) : null, menuBtn(`group:${kind}`)),
-      list.length ? el("div", { class: "glist" }, ...list.map(homeRow)) : el("div", { class: "sup", text: empty })), { w: 4, h: need }, { min: { w: 3, h: need }, max: HOME_GROUP.max });
+    add(`group:${kind}`, hcFold(itemCard(view, "",
+      hcHead(title, { dot: nAtt ? hcTone(list.some(e => e.tone === "err") ? "err" : "warn") : "", n: none ? null : String(list.length), note: none ? empty : "", menu: `group:${kind}` }),
+      none ? null : el("div", { class: "glist" }, ...list.map(homeRow))), none), { w: 4, h: 1 }, HOME_FIT);
   }
 
   // the owner's custom cards (web/custom.js) are board items like the rest
@@ -2112,13 +2175,17 @@ function monAttnCount(srcs) {
 // Deferred: paintAttn runs while the page's later files (INTG, NM) are still loading, and one paint per frame of changes is enough.
 let monAttnT = 0;
 const monAttnSoon = () => { if (!monAttnT) monAttnT = setTimeout(() => { monAttnT = 0; paintMonAttn(); }, 0); };
+// 모니터링 has news when nothing waits but something new came in there: an unread watch report, or an app with unread items (its row's badge).
+// The tab then carries the small dot, like the other tabs; reading them there clears it.
+const monNews = () => NT.items.some(n => n.kind === "watch" && !n.read && !n.dismissed) || INTG.items.some(it => ((it.needs || {}).unread | 0) > 0);
 function paintMonAttn() {
   const b = $("#nav-mon");
   if (!b) return;
-  const n = monAttnCount([{ apps: INTG.items, mons: NM.items }]), say = n ? `확인할 것 ${n}개` : "";
-  b.hidden = !n; b.title = say;
+  const n = monAttnCount([{ apps: INTG.items, mons: NM.items }]), news = !n && monNews(), say = n ? `확인할 것 ${n}개` : news ? "새 소식" : "";
+  b.hidden = !n && !news; b.title = say;
+  b.classList.toggle("nnb", !!n); b.classList.toggle("nub", news);
   if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";
-  b.parentElement.setAttribute("aria-label", n ? `모니터링, ${say}` : "모니터링");
+  b.parentElement.setAttribute("aria-label", say ? `모니터링, ${say}` : "모니터링");
 }
 // The badge and 답변 필요 read this computer's monitors on every tab: 홈 and 모니터링 refresh them themselves, any other tab here.
 // The other computers' snapshot (pqLoad) is read only by 모니터링.
@@ -3115,20 +3182,20 @@ function rqAttachNode(d = {}) {
 // extra (nodes under the body: the mail that goes along), then one of: status (a line such as 고치는 중…), revise (rqReviseNode or the caller's own),
 // acts (rqActsNode) }.
 function rqCard(c) {
-  const foot = c.sent ? rqSentNode() : c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
+  const foot = c.sent ? rqSentNode(c.sentAt) : c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
   const att = c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach || {});
   const cm = !!c.head.who;   // a comment card: its text plain under the head, the post title a grey hint, the draft in one grey box
   return el("div", { class: `rq${cm ? " cm" : ""}${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
     rqHeadNode(c.head),
     c.label ? el("div", { class: c.labelCls || "rq-lb", text: c.label }) : null,
     cm && c.original && c.original.text ? el("div", { class: "rq-ct", title: c.original.text, text: c.original.text }) : null,
-    cm ? null : c.to ? el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" })) : c.recv || null,
+    c.to ? (cm ? null : el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" }))) : c.recv || null,   // a mail keeps its 받는이 rows
     c.subject ? el("div", { class: "dr-sub rq-sub", text: c.subject }) : null,
     !cm && c.original && c.original.text ? el("div", { class: "rq-orig", title: c.original.text }, c.original.who ? el("b", { class: "rq-ow", text: c.original.who }) : null, el("span", { class: "rq-ot", text: c.original.text })) : null,
     rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean), foot);
 }
 // 보냈어요 in the card's own foot: the action row's place, so nothing below moves (the landing demo card's 보냈어요 · 방금).
-const rqSentNode = () => el("div", { class: "rq-sent", role: "status" }, icon("check"), el("span", { text: "보냈어요" }), el("span", { class: "rq-sent-at", text: "방금" }));
+const rqSentNode = (at = "방금") => el("div", { class: "rq-sent", role: "status", "data-state": "send" }, icon("check"), el("span", { text: "보냈어요" }), el("span", { class: "rq-sent-at", text: `· ${at}` }));
 // What an answer did, in the same words everywhere: 보냈어요, and 보내지 않았어요 with 되돌리기 where the store can bring the draft back.
 const rqSentToast = action => toast("보냈어요", false, action || null);
 const rqDroppedToast = undo => toast("보내지 않았어요", false, undo ? { label: "되돌리기", onclick: undo } : null, undo ? 6000 : undefined);
@@ -3302,6 +3369,9 @@ function mailHtmlNode(key) {
   return host;
 }
 
+// True when a mail's "summary" is only text of its own body (the same words once white space is squeezed): the open mail then shows the body alone.
+const mailSumNorm = s => String(s ?? "").replace(/\s+/g, " ").trim();
+const mailSumIsBody = (sum, ...bodies) => { const s = mailSumNorm(sum); return !!s && bodies.some(x => mailSumNorm(x).includes(s)); };
 // The original of one mail: the HTML frame when the hub kept an HTML body, else the text.
 const mailBodyNode = (key, html, raw) => html ? mailHtmlNode(key) : mailTextNode(raw);
 
@@ -3861,7 +3931,11 @@ function msgNode(e) {
       // A mail conversation's first message (hub/mail.ts postMail): sender, subject, then the summary and the body (원문).
       if (e.subject) {
         const key = e.mail || (isMailT(e.conv || "") ? mailOf(e.conv) : ""), html = !!(e.html || (MAILS.get(`mail:${key}`) || {}).html);
-        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: text.split("\n").slice(1).join("\n").trim(), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw) : undefined });
+        // The summary slot holds a real summary only: a sent mail has none (the collector gives its body's start, hub/mail.ts sentMailEvent), and a
+        // "summary" that is only the start of the mail's own body is drawn once, as the body.
+        const rec = MAILS.get(`mail:${key}`) || {}, rest = text.split("\n").slice(1).join("\n").trim(), sp = rcSplit(rest);
+        const noSum = e.dir === "out" || rec.dir === "out" || mailSumIsBody(sp.text, e.preview, rec.preview, sp.raw);
+        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: noSum ? "" : rest, ...(noSum ? { raw: sp.raw } : {}), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw) : undefined });
         // Gmail-like, top to bottom: the bar of icons (30-mail-box.js mailOpenBar, 초안 작성 and the ⋯ in it), the subject, the sender and time,
         // one muted line of 받는 사람 / 참조 that opens the full header (30-mail-thread.js), the summary, then the original.
         if (card && key) {
@@ -6806,6 +6880,28 @@ async function loadProviders() {
   try { await loadProviderData(); }
   catch (e) { clear(box).append(emptyNode("공급자를 불러오지 못했어요")); return; }
   if (current === "providers") renderProviders();
+  else if (current === "provider") renderProvider();
+}
+// The screen of one provider (설정 > 공급자 > it): its login or API key, and for a provider OmO holds accounts for (Claude 구독, ChatGPT 구독 ...)
+// the accounts block (25-settings-accounts.js): 자동 전환, 한도에 걸렸을 때, 계정 추가, 전환 규칙.
+function renderProvider() {
+  const box = $("#provider"), p = ((P && P.providers) || []).find(x => x.id === provCur);
+  if (current === "provider") $("#title").textContent = providerName(provCur);
+  if (!P) { clear(box).append(emptyNode("불러오는 중…")); return; }
+  if (!p) { clear(box).append(emptyNode("공급자를 찾지 못했어요")); return; }
+  const out = p.auth === "api_key" ? "키 삭제" : "로그아웃";
+  const act = p.can_add_account ? null
+    : p.can_login ? el("button", { class: `btn inrow ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인") : null;
+  const rm = (p.can_logout ?? p.removable) ? el("button", { class: "ib", type: "button", title: out, "aria-label": out, onclick: ev => busy(ev.currentTarget, async () => { await logoutProvider(p); if (current === "provider") go("providers"); }) }, icon("trash")) : null;
+  const sub = [p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
+  const key = p.auth === "api_key";
+  const g = p.id === "anthropic" ? null : ((ACC && ACC.providers) || []).find(x => x.id === p.id);
+  clear(box).append(el("div", { class: "list" }, el("div", { class: "li", "data-prov-conn": p.id },
+      el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: key ? "API 키" : "로그인" }),
+          el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : key ? "연결됨" : "연결 안 됨" })),
+        sub ? el("div", { class: "sup", text: sub }) : null),
+      liEnd(act, rm))),
+    ...(p.id === "anthropic" ? accountSection() : g ? accProviderSections([g]) : []));
 }
 // A usage window in plain Korean: the report's "Claude 5 Hour" / "Claude 7 Day Opus" read as 5시간 한도 / 7일 한도 Opus.
 function limitName(l) {
@@ -6821,18 +6917,13 @@ function renderProviders() {
   if (!list.length) wrap.append(emptyNode("공급자가 없어요"));
   const row = p => {
     const name = p.name || p.id;
-    const canLogout = p.can_logout ?? p.removable;
     const sub = [p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
-    // a signed-in Claude subscription: another login adds an account (hub/providers.ts can_add_account), it never replaces one
-    const act = p.can_add_account ? el("button", { class: "btn tonal inrow", type: "button", onclick: () => startLogin(p) }, icon("add"), "계정 추가")
-      : p.can_login ? el("button", { class: `btn inrow ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인") : null;
-    const out = p.auth === "api_key" ? "키 삭제" : "로그아웃";
-    const rm = canLogout ? el("button", { class: "ib", type: "button", title: out, "aria-label": out, onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, icon("trash")) : null;
-    return el("div", { class: "li prow" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
+    // each provider opens its own screen: the login or key, and for a subscription its accounts, switch rules and 한도에 걸렸을 때
+    return el("button", { class: "li tap prow", type: "button", "data-prov": p.id, onclick: () => go("provider", p.id) }, el("span", { class: "avatar", text: [...name][0] || "?" }),
       el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null,
           el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" })),
         sub ? el("div", { class: "sup", text: sub }) : null),
-      liEnd(act, rm));
+      icon("chev", "lead"));
   };
   // Login accounts first, then API keys; an unconfigured provider sits with the way it can be set up.
   const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);
@@ -6918,9 +7009,10 @@ async function startLogin(p) {
     toast(p.can_add_account || p.add_account ? "계정을 추가했어요" : `${name} 로그인했어요`);
     try { await loadProviderData(); } catch {}
     if (current === "providers") renderProviders();
+    else if (current === "provider") renderProvider();
     if (current === "home") renderHome();
     loadModels(true);
-    // 설정 → 계정 groups every provider's accounts; a new one shows there at once
+    // 설정 → 공급자 → the provider holds its accounts; a new one shows there at once
     if (p.id === "anthropic" || p.add_account) loadAccounts();
   };
   const fail = text => { msg.textContent = text; msg.hidden = false; };
@@ -7528,10 +7620,19 @@ function ubFit() {
   if (b) root.setProperty("--upd-h", `${b.offsetHeight}px`); else root.removeProperty("--upd-h");
 }
 addEventListener("resize", ubFit);
+// A bar with nothing more to say leaves the way it came: it fades while its height folds (250 ms), then the app moves up; reduced motion = at once.
+const UB_DONE_MS = 2400;
+function ubOut(b) {
+  b.removeAttribute("id");
+  const gone = () => { b.remove(); ubFit(); };
+  if (reducedMotion() || !b.animate) return gone();
+  b.style.overflow = "hidden";
+  b.animate([{ opacity: 1, height: `${b.offsetHeight}px` }, { opacity: 0, height: "0px", paddingTop: "0px", paddingBottom: "0px" }], { duration: 250, easing: "ease", fill: "forwards" }).finished.then(gone, gone);
+}
 function paintUpdBar() {
   const s = updBarState();
   let b = $("#upd-bar");
-  if (!s) { if (b) b.remove(); ubFit(); return; }
+  if (!s) { if (b) ubOut(b); else ubFit(); return; }
   if (!b) { b = el("div", { id: "upd-bar", role: "status", "aria-live": "polite" }); document.body.append(b); }
   b.className = `upd-bar ${s.phase}`;
   const tap = s.phase === "new" || s.phase === "failed";
@@ -7539,9 +7640,10 @@ function paintUpdBar() {
   const text = s.phase === "failed" ? `업데이트하지 못했어요: ${s.text}${tap ? " · 눌러서 다시 시도" : ""}` : s.phase === "done" && run ? `${s.text} · 지금 버전 ${run.short}` : s.text;
   b.replaceChildren(
     el(tap ? "button" : "span", { class: "ub-tx", ...(tap ? { type: "button", onclick: updNow } : {}), text }),
-    ...(UB_ACTIVE.includes(s.phase) ? [] : [el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: () => ubSee(s.id) })]));
+    ...(UB_ACTIVE.includes(s.phase) || s.phase === "done" ? [] : [el("button", { type: "button", class: "x", "aria-label": "닫기", text: "×", onclick: () => ubSee(s.id) })]));
   ubFit();
-  if (s.phase === "done" && !UB.doneTimer) UB.doneTimer = setTimeout(() => { UB.doneTimer = 0; ubSee(s.id); }, 8000);
+  // A finished update says 완료 for a moment and then goes by itself (owner 2026-11-03: no × to press); before that the bar stays as it is.
+  if (s.phase === "done" && !UB.doneTimer) UB.doneTimer = setTimeout(() => { UB.doneTimer = 0; ubSee(s.id); }, UB_DONE_MS);
 }
 // The tap: the hub downloads, tests and restarts when idle; the page follows it until the restarted gateway answers.
 async function updNow() {
@@ -7768,10 +7870,10 @@ function renderSettings() {
     mnRow(),
     row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
     row("chat", "대화 탭", chatTabMode() === "main" ? "메인 대화" : "마지막으로 보던 대화", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, null),
-    ...msSettingsRows(row),
+    msHubRow(),
     webAccessRow(row),
     devicesRow(row)),
-    ...pushSection(), ...updateSection(), ...accountSection());
+    ...pushSection(), ...updateSection());
 }
 
 /* ---------- settings: 계정 (/api/accounts: aliases, current account and why, switch rules, script) ---------- */
@@ -7782,10 +7884,12 @@ const ACC_DO = [["pin", "계정 고정"], ["prefer", "순서대로 우선"], ["a
 const accTx = (hd, ...sup) => el("span", { class: "tx" }, hd ? el("div", { class: "hd", text: hd }) : null, sup.length ? el("div", { class: "sup" }, ...sup) : null);
 async function loadAccounts() {
   try { ACC = await api("/api/accounts"); } catch { ACC = null; }
-  if (current === "settings") renderSettings();
+  accPaint();
 }
+// the accounts block lives on the provider's screen (21-providers.js renderProvider)
+const accPaint = () => { if (current === "provider") renderProvider(); else if (current === "settings") renderSettings(); };
 const accLabel = id => { const a = ACC && ACC.accounts.find(x => x.name === id || x.alias === id); return a ? a.label || a.alias || a.name : id; };
-const accMut = (btn, call, msg, close) => busy(btn, async () => { ACC = await call(); if (close) close(); if (msg) toast(msg); renderSettings(); if (current === "usage") loadQuota(); });
+const accMut = (btn, call, msg, close) => busy(btn, async () => { ACC = await call(); if (close) close(); if (msg) toast(msg); accPaint(); if (current === "usage") loadQuota(); });
 async function accCopy(text) { try { await navigator.clipboard.writeText(text); toast("복사했어요"); } catch { toast("복사하지 못했어요", true); } }
 function accTags(a, pin) {
   const t = [];
@@ -7867,10 +7971,6 @@ function accountSection() {
         el("span", { class: "lead acc-no", text: String(a.order || i + 1) }), tx(label, sub), ...accTags(a, pin).map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t }))),
       pinned ? el("button", { class: "acc-mv", type: "button", "aria-label": `${label} 이름 바꾸기`, onclick: () => accDialog(a) }, icon("chev", "lead")) : null);
   });
-  // one more login for any provider OmO can hold accounts for: the picker offers the install's login providers, a login there
-  // adds an account to that provider's pool and keeps the others and the pin (21-providers.js startLogin)
-  rows.push(el("div", { class: "li" }, tx("계정 추가", "구독 계정이나 API 키를 하나 더 넣어요. 지금 쓰는 계정은 바뀌지 않아요."),
-    liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => accAddProviderDialog() }, icon("add"), "추가"))));
   const caption = pinned ? (ch && ch.blocked ? `${ch.text}.` : `${ch ? ch.label : "고른 계정"}만 써요. 한도에 걸리면 다른 계정으로 넘어가지 않고, 폴백 순서에 다른 단계(API 키 포함)가 있으면 그 단계로 이어 가요. 답장 초안은 API 키로 넘어가지 않아 한도가 풀릴 때까지 멈춰요.`) : "규칙과 한도에 따라 계정을 골라요. 쓰던 계정이 막히면 다른 계정으로 넘어가고, 모두 막히면 폴백 순서(API 키 포함)를 따라요. 답장 초안은 API 키로 넘어가지 않아요.";
   // on = 자동 전환, off = 고정 (the account to fix is the row tapped below)
   rows.unshift(el("div", { class: "li" }, tx("자동 전환", caption),
@@ -7879,8 +7979,8 @@ function accountSection() {
   const onLimit = (ACC.rules && ACC.rules.on_limit) || "";
   const onLimitSub = onLimit === "switch" ? "한도에 걸리면 자동 전환으로 넘어가요" : onLimit === "wait" ? "한도에 걸린 동안 기다려요" : "아직 안 정했어요 · 한도에 걸리면 한 번 물어봐요";
   const setOnLimit = (btn, value) => accMut(btn, () => api("/api/accounts/on-limit", "PUT", { on_limit: value }), value === "wait" ? "한도에 걸렸을 때 기다리기로 정했어요" : "한도에 걸렸을 때 자동 전환으로 넘어가기로 정했어요");
-  const onLimitChoice = (value, label) => el("button", { type: "button", class: `chip${onLimit === value ? " on" : ""}`, "aria-pressed": String(onLimit === value), text: label, onclick: ev => setOnLimit(ev.currentTarget, value) });
-  rows.splice(1, 0, el("div", { class: "li li-wrap" }, tx("한도에 걸렸을 때", onLimitSub), liEnd(el("div", { class: "chips" }, onLimitChoice("wait", "기다리기"), onLimitChoice("switch", "자동 전환으로 넘어가기")))));
+  rows.splice(1, 0, el("div", { class: "li" }, tx("한도에 걸렸을 때", onLimitSub),
+    liEnd(rowToggle({ label: "한도에 걸렸을 때", opts: [["wait", "기다리기"], ["switch", "자동 전환"]], value: onLimit, onPick: (v, btn) => setOnLimit(btn, v) }))));
   if (!pinned) {
     rows.push(el("div", { class: "li" }, tx("전환 규칙", lines.length ? "" : "규칙이 없어요. 계정이 막힐 때만 자동으로 바꿔요."), liEnd(el("button", { class: "btn tonal inrow", type: "button", onclick: () => rulesDialog() }, "편집"))));
     for (const [i, r] of lines.entries()) rows.push(el("div", { class: "li" }, el("span", { class: "lead", text: String(i + 1) }), tx(r.text)));
@@ -7889,12 +7989,13 @@ function accountSection() {
   if (!pinned && sc && sc.path) rows.push(el("button", { class: "li tap", type: "button", title: sc.path, onclick: () => accCopy(sc.path) }, tx("스크립트", el("code", { class: "path-short", text: shortPath(sc.path) }), run ? ` · ${run}` : "")));
   const last = sc && sc.last;
   if (!pinned && last) rows.push(el("div", { class: "li" }, tx(last.error || last.error_text ? "마지막 실행이 실패했어요" : `마지막 결과 · ${last.label || (last.account ? accLabel(last.account) : "고르지 않음")}`, [last.error_text || last.reason, last.at ? kstStamp(Date.parse(last.at)) : ""].filter(Boolean).join(" · "))));
-  // with other providers in the card, each group is titled by its product name; alone, the card keeps its one 계정 title
-  const groups = (ACC.providers || []).filter(g => !(g.id === "anthropic" && g.multi));
-  const head = groups.length && ACC.accounts.length ? [el("div", { class: "sec", text: "Claude 구독" })] : [el("div", { class: "sec", text: "계정" })];
-  return [...head, el("div", { class: "list" }, ...rows), ...accProviderSections(groups)];
+  // one more login for this subscription: it adds an account to the pool and keeps the others and the pin (21-providers.js startLogin).
+  // A section action: .sec-act > .btn.tonal.sm
+  const cl = ((P && P.providers) || []).find(x => x.id === "anthropic") || { id: "anthropic", name: "Claude 구독" };
+  const head = el("div", { class: "sec sec-act" }, "계정", el("button", { class: "btn tonal sm", type: "button", "data-acc-add": "", onclick: () => startLogin({ ...cl, add_account: true }) }, icon("add"), "추가"));
+  return [head, el("div", { class: "list" }, ...rows)];
 }
-// Every other provider OmO holds accounts for (Claude 구독 has its own card above): one group per provider, its accounts with
+// The accounts of the providers OmO holds accounts for besides Claude 구독 (its own block above): one group per provider screen, its accounts with
 // their state and usage windows, and an empty state when the pool has none.
 function accProviderSections(groups) {
   const out = [];
@@ -7914,16 +8015,9 @@ function accProviderSections(groups) {
         el("button", { class: "acc-main", type: "button", onclick: () => accProviderDialog(g, a) },
           el("span", { class: "lead acc-no", text: String(a.order) }), accTx(label, sub), ...tags.map(([t, tone]) => el("span", { class: `tag ${tone}`, text: t })))));
     }
-    out.push(el("div", { class: "sec", text: g.name }), el("div", { class: "list" }, ...rows));
+    out.push(el("div", { class: "sec", text: "계정" }), el("div", { class: "list" }, ...rows));
   }
   return out;
-}
-function accAddProviderDialog() {
-  const list = (ACC && ACC.login_providers) || [];
-  let d;
-  const rows = list.map(p => el("button", { class: "li tap", type: "button", onclick: () => { d.close(); startLogin({ id: p.id, name: p.name, add_account: true }); } },
-    el("span", { class: "avatar", text: [...p.name][0] || "?" }), accTx(p.name, p.configured ? "계정 추가" : "로그인"), icon("chev", "lead")));
-  d = dialog({ title: "계정 추가", body: el("div", { class: "list" }, ...(rows.length ? rows : [el("div", { class: "li" }, accTx("로그인할 수 있는 공급자가 없어요"))])) });
 }
 // One account of another provider: its alias (kept per provider so two pools can hold the same account name), OmO's pin, deletion.
 function accProviderDialog(g, a) {
@@ -8262,19 +8356,33 @@ const msPage = id => {
   if (!MSS.page || MSS.page.id !== id) MSS.page = { id, s: null, fail: "", enabled: false, vals: {}, allow: null, add: "", test: null, advOpen: false };
   return MSS.page;
 };
-// 설정 목록의 네 줄: the index supplies label and status; before it arrives the rows stay with no tag.
-function msSettingsRows(row) {
+// 설정 목록의 한 줄 "메신저": its right side says which messengers are connected; the four messengers sit on their own screen.
+function msSummary() {
   if (!MSS.asked) loadMessengerIndex();
-  return MS_IDS.map(id => {
+  if (!MSS.items) return "";
+  const on = MS_IDS.map(msItem).filter(m => m && msTag(m)[1] === "ok").map(m => m.label || MS_LABELS[m.id]);
+  return on.length ? `${on[0]}${on.length > 1 ? ` 외 ${on.length - 1}개` : ""} 연결됨` : "설정 안 됨";
+}
+function msHubRow() {
+  const r = el("button", { class: "li tap", type: "button", onclick: () => go("messengers") }, el("span", { class: "lead" }, icon("chat")), el("span", { class: "tx" }, el("div", { class: "hd", text: "메신저" })),
+    el("span", { class: "sup", text: msSummary() }), icon("chev", "lead"));
+  r.dataset.msHub = "";
+  return r;
+}
+// The messenger screen: Discord · JANDI · Slack · Telegram, each a row with its status tag that opens that messenger's own screen.
+function renderMessengers() {
+  if (!MSS.asked) loadMessengerIndex();
+  clear($("#messengers")).append(el("div", { class: "list" }, ...MS_IDS.map(id => {
     const m = msItem(id), [tag, tone] = m ? msTag(m) : ["", ""];
-    const r = row(id === "discord" ? "discord" : "chat", (m && m.label) || MS_LABELS[id], "", () => go(id),
+    const r = el("button", { class: "li tap", type: "button", onclick: () => go(id) }, el("span", { class: "lead" }, icon(id === "discord" ? "discord" : "chat")), el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] })),
       el("span", { class: "dcs-trail" }, ...(tag ? [el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" })] : []), icon("chev", "lead")));
     r.dataset.msRow = id;
     return r;
-  });
+  })));
 }
 function msPaint() {
   if (current === "settings") renderSettings();
+  else if (current === "messengers") renderMessengers();
   else if (current === "discord") renderDiscord();
   else if (MS_IDS.includes(current)) renderMessenger(current);
 }
@@ -12559,8 +12667,11 @@ function draftCardNode(n, o = {}) {
     draftOriginNode(dr),
     man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
     draftFilesNode(dr, { t: d.to, edit: open }), draftMailNode(dr.mail));
+  // A mail answered by this draft reads like the landing page's comment card: who wrote, where it came from, what they wrote, then the draft in a grey box.
+  const om = mail ? MAILS.get(d.to) || {} : {}, who = mail ? mailSender(om.from) : "", sent = st === "send";
   const head = { app: mail ? "mail" : d.to, label: mail ? monInstLabel(d.to) : pcTargetName(d.to, n.pc), pc: mail && pqPc(d.to) ? pqPc(d.to).name : pqSelf(), model: dr.model || "", at: null,   // the state tag carries the time once
-    tail: [dr.rule ? draftRuleTag(dr.rule, "dr-rule") : null, el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
+    ...(who ? { who, src: monInstLabel(d.to) || "메일" } : {}),
+    tail: [dr.rule ? draftRuleTag(dr.rule, "dr-rule") : null, sent ? null : el("span", { class: `tag dr-st${stTone ? ` ${stTone}` : ""}`, "data-state": st, text: `${stText} · ${when}` }),
       // 지우기 on a waiting draft is 보내지 않기: the same answer path, so the owning computer drops it once and nothing is sent
       open && !editing && oDrop ? el("button", { class: "ib dr-rm", type: "button", title: "지우기 (보내지 않아요)", "aria-label": "초안 지우기", disabled: busy, onclick: () => { if (!busy) answerInline(n, oDrop); } }, icon("close")) : null] };
   if (editing) {
@@ -12584,11 +12695,12 @@ function draftCardNode(n, o = {}) {
       man ? null : el("button", { class: "btn text dr-manual", type: "button", disabled: busy, onclick: () => { DR.manual.add(n.id); delete DR.note[n.id]; redraw(); } }, icon("pencil"), el("span", { text: "직접 수정" })))) : null;
   const card = rqCard({ key: `dr:${n.id}`, cls: `bm alert rc dr ${st}`, attrs: { "data-nid": n.id }, head,
     label: q || null, labelCls: "rc-title dr-q",
-    recv, subject: dr.subject,
+    recv, subject: dr.subject, ...(who && (om.summary || om.preview) ? { original: { text: String(om.summary || om.preview).split("\n")[0] } } : {}), sent, sentAt: when,
     body: { text: dr.body, node: man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))), cls: "dr-body" },
     // A mail draft always shows its 첨부 줄 (files, or 첨부: 없음) right before 보내기; the files are editable while the draft waits.
     attach: draftFilesNode(dr, { t: d.to, edit: open }),
-    extra: [mail ? drOriginal(d.to) : null, draftOriginNode(dr), draftMailNode(dr.mail)],
+    extra: [mail && !who ? drOriginal(d.to) : null,   // the head already says who wrote and what
+      draftOriginNode(dr), draftMailNode(dr.mail)],
     ...(revise ? { revise } : acts ? { acts } : {}) });
   return card;
 }
@@ -13347,6 +13459,7 @@ const ntPlain = s => stripMarkers(s)
 
 // Phone: the count is part of the chat tab badge.
 function ntPaint() {
+  monAttnSoon();
   convSchedule();
   paintAttn();
   if (current === "monitoring") monSchedule();
@@ -14534,6 +14647,8 @@ function convLastOf(e) {
   return { ts: e.ts, text, from };
 }
 
+// An ended session never counts unread (server rule: hub/conversations.ts unreadOf); a lane the state does not list yet is live.
+const convEnded = t => { const l = isLaneT(t) && ((S && S.lanes) || []).find(x => `lane:${x.name}` === t); return !!l && !laneAlive(l); };
 // A live message (called by ingestMsg once per new event): moves the row's preview and, unless the owner is looking at that
 // conversation's bottom right now, adds to its unread count (server rule: hub/conversations.ts).
 function convNote(e, t, was) {
@@ -14544,7 +14659,7 @@ function convNote(e, t, was) {
   if (!prev || prev.ts <= last.ts) CONV.set(t, last);
   // `was`: the older version of an edited post, still unread = this one is the same unread message (counted once, like the hub does)
   const again = !!was && !(READ[t] && READ[t] >= was.ts);
-  if (convIncoming(e) && !again && !(READ[t] && READ[t] >= e.ts) && !(CV.key === t && chatStick && document.visibilityState === "visible")) { ts(t).unread++; renderBars(); }
+  if (convIncoming(e) && !again && !convEnded(t) && !(READ[t] && READ[t] >= e.ts) && !(CV.key === t && chatStick && document.visibilityState === "visible")) { ts(t).unread++; renderBars(); }
   convSchedule();
 }
 async function convLoad() {
@@ -15581,6 +15696,7 @@ function routeChain(name, hash) {
   if (SUB.has(name)) {
     const bt = backTarget();
     if (bt === "home") return ["home", hash];
+    if (bt === "messengers" || bt === "providers") return ["home", "settings", bt, hash];
     if (bt === "chat" || bt === "activity") return [...conv(bt), hash];
     return ["home", bt === "project" ? "projects" : bt, hash];
   }
@@ -16953,7 +17069,7 @@ const runLaneRestart = (name, btn) => busy(btn, async () => {
     else if (e.kind === "runtime_check") { if (rtLive) rtLive(); }
     else if (e.kind === "update_available") loadUpdate();   // the top update bar (24-settings-update.js) offers it
     // 구성 (lanes node, 프로젝트) is drawn from /api/harness, not the state: reload it too when a lane starts or ends.
-    else if (e.kind === "lanes") { if (e.was_live && !e.live) refreshState(); else scheduleState(); if (e.was_live !== e.live && current === "harness") loadHarness(true); }
+    else if (e.kind === "lanes") { if (e.was_live && !e.live) refreshState(); else scheduleState(); if (e.was_live !== e.live && current === "harness") loadHarness(true); if (e.was_live !== e.live) convLoad(); }   // an ended lane's unread drops to 0, a resumed one recounts
     else {
       ingestMsg(e); scheduleState();
       // Live notices only (not the replay after a reconnect): alert / worklog posts, the gateway's own notes (sent to the web
