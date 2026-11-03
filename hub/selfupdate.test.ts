@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { autoHooks, commit, failFileTestCmd as testCmd, git as sh, head, makeRepos, type Repos, setSelfUpdateCfg } from "./selfupdate-fixture.ts";
-import { apply, autoCheck, check, defaultExec, type Exec, failedTestNames, failureBlocks, fetchError, parseRelease, releaseTags, scrub, updateAvailable } from "./selfupdate.ts";
+import { advance, flush } from "./runtime/test-clock.ts";
+import { clearTrackedTimers } from "./shutdown.ts";
+import { apply, autoCheck, CHECK_EVERY_MS, check, defaultExec, type Exec, failedTestNames, failureBlocks, fetchError, parseRelease, releaseTags, scrub, startSelfUpdate, updateAvailable } from "./selfupdate.ts";
 
 test("failureBlocks keeps the error block bun prints before each (fail) line, and nothing from passing tests", () => {
 	const out = [
@@ -293,6 +295,37 @@ describe("against temp git repos", () => {
 		const c = await check(opts());
 		expect(c.ok).toBe(false);
 		expect(c.error?.reason).toBeTruthy();
+	});
+
+	// The automatic check runs every CHECK_EVERY_MS on one timer that is armed again only after a check has finished.
+	test("the automatic check runs every CHECK_EVERY_MS on one rearmed timer", async () => {
+		setSelfUpdateCfg({ auto_apply: false });
+		const waiters: Array<() => void> = [];
+		let checks = 0;
+		const exec: Exec = async (cmd, cwd, ms) => {
+			const out = await defaultExec(cmd, cwd, ms);
+			if (cmd[1] === "ls-remote") { checks++; waiters.splice(0).forEach(w => w()); }
+			return out;
+		};
+		const checked = (n: number) => new Promise<void>(res => { const tick = () => (checks >= n ? res() : waiters.push(tick)); tick(); });
+		let noted = () => {};
+		const note = new Promise<void>(res => { noted = res; });
+		try {
+			await startSelfUpdate(() => noted(), { ...opts(exec) });
+			await advance(CHECK_EVERY_MS - 1);
+			expect(checks).toBe(0);
+			r.release("a.txt", "2\n", "second");
+			await advance(1);
+			await checked(1);
+			await note;
+			await flush();
+			await advance(CHECK_EVERY_MS - 1);
+			expect(checks).toBe(1);
+			await advance(1);
+			await checked(2);
+		} finally {
+			clearTrackedTimers();
+		}
 	});
 
 	// auto_apply: the check applies a new release by itself unless the owner turns it off (default on). Local repos only, no network;
