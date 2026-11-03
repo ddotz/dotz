@@ -202,10 +202,11 @@ function prjRow(r) {
   const { p, st } = r, ms = prjMiles(p), done = ms.filter(m => m.done).length, pct = ms.length ? Math.round(done / ms.length * 100) : 0;
   const chat = prjChat(p), unread = chat ? ts(chat).unread : 0, at = prjLastAt(p), sel = current === "project" && ppCur === p.key;
   const line = st.lane ? `${st.word} · ${st.lane.title || st.lane.name}` : st.k === "done" ? `끝남 · 목표를 모두 마쳤어요` : st.word;
-  return el("button", { class: `pl-row${sel ? " on" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${line} · 열기`, onclick: () => go("project", p.key) },
+  return el("button", { class: `pl-row${sel ? " on" : ""}${unread ? " unread" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${line} · 열기`, onclick: () => go("project", p.key) },
+    el("span", { class: `dot ${st.tone}` }),
     el("span", { class: "pl-b" },
       el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: prjTitle(p) }), unread ? el("span", { class: "pl-nb", "aria-label": `읽지 않은 메시지 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "pl-at", text: prjAgo(at) })),
-      el("span", { class: "pl-s" }, el("span", { class: `dot ${st.tone}` }), el("span", { class: "pl-sw", text: line })),
+      el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: line })),
       ms.length ? el("span", { class: "pl-p" }, el("span", { class: `pl-bar${done === ms.length ? " done" : ""}`, role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })), el("span", { class: "pl-pn", text: `${done}/${ms.length}` })) : null));
 }
 function pjSearch() {
@@ -242,7 +243,7 @@ function pjPaintRows() {
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   const nodes = page.map(prjRow);
-  if (rest > 0) nodes.push(el("div", { class: "cv-more" }, el("button", { class: "btn text", type: "button", "data-k": "more", onclick: () => { PJ.more += PJ_PAGE; pjPaintRows(); }, text: `프로젝트 ${rest}개 더 보기` })));
+  if (rest > 0) nodes.push(el("div", { class: "cv-more" }, el("button", { class: "btn text sm", type: "button", "data-k": "more", onclick: () => { PJ.more += PJ_PAGE; pjPaintRows(); }, text: `프로젝트 ${rest}개 더 보기` })));
   if (!rows.length) nodes.push(el("div", { class: "cv-empty", text: searching ? "찾는 프로젝트가 없어요" : PJ.view === "need" ? "확인할 프로젝트가 없어요" : PJ.view === "run" ? "지금 진행 중인 프로젝트가 없어요" : PJ.view === "done" ? "끝낸 프로젝트가 없어요" : "아직 프로젝트가 없어요" }));
   // The built-in 커스텀 page is the owner's settings list: always reachable, never part of the filters.
   if (showBuiltin) {
@@ -256,7 +257,13 @@ function renderProjects() {
   const box = $("#v-projects");
   if (!PRJ) { delete box.dataset.sig; clear(box).append(emptyNode(PRJ_FAIL ? "프로젝트를 불러오지 못했어요" : "불러오는 중…")); return; }
   const list = PRJ.projects || [];
-  if (!list.length) { delete box.dataset.sig; clear(box).append(emptyNode("아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요")); return; }
+  if (!list.length) {
+    delete box.dataset.sig;
+    const none = emptyNode("아직 프로젝트가 없어요. 채팅에서 오래 걸리는 작업을 맡기면 여기에 생겨요");
+    none.append(el("div", { class: "pl-empty-a" }, el("button", { class: "btn tonal sm", type: "button", "data-k": "chat", onclick: () => openTarget(MAIN, lastChatView()) }, "채팅 열기")));
+    clear(box).append(none);
+    return;
+  }
   // The shell (search box, chip and list slots) is built once: rebuilding it on a data refresh would drop the search box's focus and caret.
   // The chips and rows below follow the data on their own.
   if (!box.querySelector("#pl-shell")) clear(box).append(pjShell());
