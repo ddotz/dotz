@@ -215,7 +215,9 @@ describe("the open mail", () => {
 	test("답장 / 전체답장 / 전달 at the bottom: quoted original collapsed, chips survive a failed save, the draft names the mail and the mode", async () => {
 		const v = await openList(1280, 800);
 		await openMail(v, "월간 점검 보고서 확인 요청");
-		expect(await ev<string[]>(v, `[...document.querySelectorAll("#tl .mbox-mode")].map(b => b.textContent)`)).toEqual(["답장", "전체답장", "전달"]);
+		// 답장 / 전체답장 / 전달 are icons in the mail's top bar (the name is the label); nothing waits under the mail
+		expect(await ev<string[]>(v, `[...document.querySelectorAll("#tl .mtop .mbox-mode")].map(b => b.getAttribute("aria-label") + "|" + b.textContent)`)).toEqual(["답장|", "전체답장|", "전달|"]);
+		expect(await ev<boolean>(v, `!!document.querySelector("#tl .mbox-reply:not(.open) button")`)).toBe(false);
 		await run(v, `document.querySelector('#tl .mbox-mode[data-mode="reply"]').click()`);
 		await waitFor(v, `document.querySelector("#tl .mbox-reply.open")`);
 		expect(await ev<string>(v, `document.querySelector('#tl [data-k="mail-to"]').value`)).toBe("alex@example.com");

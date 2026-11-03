@@ -213,16 +213,16 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			await run(v, `${row("mail:loc-1")}.click()`);
 			await waitFor(v, `current === "chat" && monCtx === "mail:loc-1"`);
 			await run(v, `ingestMsg({ ts: "${iso(9)}", kind: "mail", conv: "mail:loc-1", mail: "loc-1", subject: "계약서 확인 부탁드립니다", from: "Kim <kim@example.com>", text: "Kim · 계약서 확인 부탁드립니다\\n\\n금요일까지 회신 부탁드려요." })`);
-			await waitFor(v, `[...document.querySelectorAll(".bm.rc:not(.mr) .rc-hd .mr-more")].find(b => b.offsetParent)`);
+			await waitFor(v, `[...document.querySelectorAll(".bm.rc:not(.mr) .mtop .mr-more")].find(b => b.offsetParent)`);
 			// the conversation finishes loading (its thread panel) before the tap: the ⋯ has kept the same place for 10 frames
-			await waitFor(v, `(() => { const b = [...document.querySelectorAll(".bm.rc:not(.mr) .rc-hd .mr-more")].find(b => b.offsetParent), y = b && b.getBoundingClientRect().top; window.__mm = window.__mm && window.__mm.y === y ? { y, n: window.__mm.n + 1 } : { y, n: 0 }; return window.__mm.n >= 10; })()`);
-			// 초안 작성 is visible without the ⋯: on the card on a phone, in the conversation head (and not again on the card) on a wide screen
-			const draft = await q<{ card: number; head: number; inView: boolean }>(v, `const vis = s => [...document.querySelectorAll(s)].filter(b => b.offsetParent), d = [...vis(".bm.rc:not(.mr) .mr-conv-act .mr-draft"), ...vis(".cv-head .cv-draft")][0], r = d && d.getBoundingClientRect(); return { card: vis(".bm.rc:not(.mr) .mr-conv-act .mr-draft").length, head: vis(".cv-head .cv-draft").length, inView: !!r && r.width > 0 && r.bottom <= innerHeight && r.right <= innerWidth }`);
-			expect(draft).toEqual(width < 1100 ? { card: 1, head: 0, inView: true } : { card: 0, head: 1, inView: true });
+			await waitFor(v, `(() => { const b = [...document.querySelectorAll(".bm.rc:not(.mr) .mtop .mr-more")].find(b => b.offsetParent), y = b && b.getBoundingClientRect().top; window.__mm = window.__mm && window.__mm.y === y ? { y, n: window.__mm.n + 1 } : { y, n: 0 }; return window.__mm.n >= 10; })()`);
+			// 초안 작성 is visible without the ⋯: an icon in the mail's top bar at every width, and not again in the conversation head
+			const draft = await q<{ bar: number; head: number; inView: boolean }>(v, `const vis = s => [...document.querySelectorAll(s)].filter(b => b.offsetParent), d = vis(".bm.rc:not(.mr) .mtop .mr-draft")[0], r = d && d.getBoundingClientRect(); return { bar: vis(".bm.rc:not(.mr) .mtop .mr-draft").length, head: vis(".cv-head .mr-draft").length, inView: !!r && r.width > 0 && r.bottom <= innerHeight && r.right <= innerWidth }`);
+			expect(draft).toEqual({ bar: 1, head: 0, inView: true });
 			await shots(v, `mail-conv-${width}`);
-			await run(v, `[...document.querySelectorAll(".bm.rc:not(.mr) .rc-hd .mr-more")].find(b => b.offsetParent).click()`);
+			await run(v, `[...document.querySelectorAll(".bm.rc:not(.mr) .mtop .mr-more")].find(b => b.offsetParent).click()`);
 			await waitFor(v, `document.querySelector(".menu .mi")`);
-			expect(await menuLabels(v)).toEqual(["초안 작성", "답장 안 함", "삭제"]);
+			expect(await menuLabels(v)).toEqual(["초안 작성", "답장 안 함", "삭제", "원문 접기"]);
 			const at = await q<{ a: DOMRect; m: DOMRect }>(v, `return { a: openMenu.anchor.getBoundingClientRect().toJSON(), m: document.querySelector(".menu").getBoundingClientRect().toJSON() }`);
 			expect(at.a.width).toBeGreaterThan(0);
 			expect(Math.abs(at.m.top - at.a.bottom)).toBeLessThanOrEqual(12);
