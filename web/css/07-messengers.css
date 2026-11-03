@@ -1,7 +1,4 @@
 /* 메신저 화면: the primary action row, the shared onboarding panel, and the closed "직접 입력" disclosure. */
-.ms-onb { margin-top: 10px; }
-.ms-onb .li .hd { font-size: 14px; line-height: 20px; }
-.ms-onb-acts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding-top: 12px; padding-bottom: 12px; }
 .ms-adv { margin: 20px 4px 8px; }
 .ms-adv > summary { display: flex; align-items: center; min-height: 32px; color: var(--fg-2); font: 600 13px/20px var(--font); cursor: pointer; list-style: none; }
 .ms-adv > summary::-webkit-details-marker { display: none; }

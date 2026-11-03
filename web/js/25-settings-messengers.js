@@ -106,14 +106,16 @@ async function msSave(btn) {
   if (dirty.vals.length) put.values = Object.fromEntries(dirty.vals.map(k => [k, p.vals[k]]));
   if (dirty.allow) put.allow = p.allow;
   if (!Object.keys(put).length) return;
+  let saved = false;
   await busy(btn, async () => {
     p.s = await api(`/api/messengers/${enc(p.id)}`, "PUT", put);
     p.enabled = !!p.s.enabled; p.vals = {}; p.add = "";
     p.allow = p.s.allow ? p.s.allow.items.slice() : null;
-    toast("저장했어요");
+    saved = true;
     await loadMessengerIndex();
   });
   if (current === p.id) renderMessenger(p.id);
+  if (saved) stFlash(`#${p.id} [data-ms-save]`);
 }
 async function msTest(btn) {
   const p = MSS.page;
@@ -168,21 +170,23 @@ function renderMessenger(id) {
     el("div", { class: "list" },
       el("div", { class: "li", "data-ms-status": id }, el("span", { class: "lead" }, icon("chat")),
         el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), el("div", { class: "sup", text: msLine(id, m, s) })),
-        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, el("button", { type: "button", class: "btn inrow", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m))))),
+        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m))))),
     el("div", { class: "sec", text: "자동 연결" }), onboardingPanel(id)];
   if (s.notify) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" },
     ...notifyRows(k => s.notify[k] !== false, (k, on) => msNotifySet(id, k, on)),
     el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 그 알림은 여기로 보내지 않고 앱에만 와요." })))));
   if (s.rooms) nodes.push(el("div", { class: "sec", text: s.rooms.label }), el("div", { class: "list" },
     ...s.rooms.items.map(r => el("div", { class: "li", "data-room": r.id },
+      el("span", { class: "lead" }, el("span", { class: `dot ${r.last_error ? "err" : r.last_in || r.last_out ? "ok" : ""}`, "aria-hidden": "true" })),
       el("span", { class: "tx" }, el("div", { class: "hd", text: r.name }), el("div", { class: "sup", text: [`→ ${msKind(r.kind)}${r.project ? ` · ${r.project.name}` : ""}`, r.last_in ? `받음 ${msAgo(r.last_in)}` : "", r.last_out ? `보냄 ${msAgo(r.last_out)}` : ""].filter(Boolean).join(" · ") }),
         r.last_error ? el("div", { class: "dcs-err", text: r.last_error }) : null))),
     ...(s.rooms.hint ? [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", "data-ms-hint": "1", text: s.rooms.hint })))] : [])));
   if (s.allow) nodes.push(el("div", { class: "sec", text: s.allow.label }), el("div", { class: "list" },
     ...p.allow.map(a => el("div", { class: "li", "data-allow": a }, el("span", { class: "tx" }, el("div", { class: "hd", text: a }))))));
-  nodes.push(el("div", { class: "list" }, el("div", { class: "li dcs-form" }, el("div", { class: "dcs-acts" },
-    el("button", { type: "button", class: "btn tonal", "data-ms-test": "1", onclick: ev => msTest(ev.currentTarget), text: "연결 확인" })),
-  p.test ? el("div", { class: "dcs-res" }, ...(p.test.length ? p.test.map(t => el("div", { class: t.ok ? "dcs-ok" : "dcs-err", text: t.ok ? `${t.name}: 보냈어요` : `${t.name}: ${t.error || "보내지 못했어요"}` })) : [el("div", { class: "sup", text: "방이 없어요" })])) : null)));
+  // 연결 확인 is one row: the result shows in this row (under the title), the action sits in .li-end.
+  nodes.push(el("div", { class: "list" }, el("div", { class: "li", "data-ms-test-row": "1" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "연결 확인" }),
+    p.test ? el("div", { class: "dcs-res" }, ...(p.test.length ? p.test.map(t => el("div", { class: t.ok ? "dcs-ok" : "dcs-err", text: t.ok ? `${t.name}: 보냈어요` : `${t.name}: ${t.error || "보내지 못했어요"}` })) : [el("div", { class: "sup", text: "방이 없어요" })])) : null),
+  liEnd(el("button", { type: "button", class: "btn tonal inrow", "data-ms-test": "1", onclick: ev => msTest(ev.currentTarget), text: "확인" })))));
   nodes.push(msAdvanced("data-ms-advanced", p.advOpen, () => msAdvancedBody(p, s)));
   const det = nodes[nodes.length - 1];
   det.addEventListener("toggle", () => { p.advOpen = det.open; });

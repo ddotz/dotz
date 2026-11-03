@@ -35,8 +35,9 @@ function waTunnel(d) {
   const hint = !d.cloudflared_found ? "cloudflared가 없어요. 터미널에서 brew install cloudflared 를 실행해 주세요."
     : t.error || (t.state === "running" ? "터널이 열려 있어요" : "");
   return el("div", { class: "li", "data-wa-tunnel": t.state },
+    el("span", { class: "lead" }, el("span", { class: `dot ${tone}`, "aria-hidden": "true" })),
     el("span", { class: "tx" }, el("div", { class: "hd", text: "터널" }), hint ? el("div", { class: tone === "err" || !d.cloudflared_found ? "sup dcs-err" : "sup", text: hint }) : null),
-    el("span", { class: "dcs-trail" }, el("span", { class: `dot ${tone}`, "aria-hidden": "true" }), el("span", { class: `tag ${tone}`, text: text })));
+    liEnd(el("span", { class: `tag ${tone}`, text })));
 }
 
 // Choosing Cloudflare or 이 컴퓨터만 starts the auto path at once; the flow itself asks for the one owner action.
@@ -53,7 +54,6 @@ async function waPickTailscale(btn) {
   await busy(btn, async () => {
     WA.data = await api("/api/web-access", "PUT", { mode: "tailscale" });
     waReset();
-    toast("저장했어요");
     if (current === "webaccess") renderWebAccess();
     if (current === "settings") renderSettings();
     loadDevices();
@@ -106,11 +106,13 @@ async function waSave(btn) {
   if (f.team.trim() !== d.team) put.team = f.team.trim();
   if (f.aud.trim() !== d.aud) put.aud = f.aud.trim();
   if (f.token.trim()) put.token = f.token.trim();
+  let saved = false;
   await busy(btn, async () => {
     WA.data = await api("/api/web-access", "PUT", put);
     waReset();
-    toast("저장했어요");
+    saved = true;
     if (current === "webaccess") renderWebAccess();
     loadDevices();
   });
+  if (saved) stFlash("#webaccess [data-wa-save]");
 }
