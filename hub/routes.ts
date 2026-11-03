@@ -6,7 +6,7 @@ import { approvalRoute, TRIAGE_MIN_DEFAULT, webAnswer } from "./approval-wire.ts
 import { droppedDraftRefs, restoreReopenedDrafts } from "./draft-restore.ts";
 import { join } from "node:path";
 import { cloudflareGate } from "./devices.ts";
-import { createWebAccess, WebAccessError, webAccessRoute } from "./web-access.ts";
+import { createWebAccess, localBrowser, WebAccessError, webAccessRoute } from "./web-access.ts";
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
 import { limitWaits } from "./limitwait.ts";
@@ -115,8 +115,9 @@ export const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCas
 // The Tailscale-User-Login header is not trusted in that mode: the tunnel delivers whatever header the client wrote.
 export const webAccess = createWebAccess({ dir: DATA_DIR, allow: ALLOW, notify: text => out("alert", text, undefined, { source: "gateway" }) });
 
-function authorized(req: Request, cfOk = false, devOk = false): boolean {
+function authorized(req: Request, cfOk = false, devOk = false, peerIp?: string): boolean {
 	if (req.headers.get("x-dotz-token") === HUB_TOKEN) return true;
+	if (webAccess.mode() === "local" && localBrowser(req, peerIp)) return true;
 	if (webAccess.devices() ? cloudflareGate({ device: devOk, accessConfigured: !!webAccess.cfAccess(), access: cfOk }) : cfOk) return true;
 	const login = (req.headers.get("tailscale-user-login") ?? "").toLowerCase();
 	if (login && ALLOW.has(login) && webAccess.mode() !== "cloudflare") return true;
@@ -405,7 +406,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (pairing) return pairing;
 		const peer = checkPeer(req);
 		if (peer === "denied") return new Response("forbidden", { status: 403 });
-		if (peer === "none" && !authorized(req, !!cfAccess && (await cfAccess.verifyRequest(req)), !!devices && (await devices.verifySession(req)))) return devices ? devices.denied(req, url) : new Response("forbidden", { status: 403 });
+		if (peer === "none" && !authorized(req, !!cfAccess && (await cfAccess.verifyRequest(req)), !!devices && (await devices.verifySession(req)), srv?.requestIP(req)?.address)) return devices ? devices.denied(req, url) : new Response("forbidden", { status: 403 });
 		const deviceApi = peer === "none" ? await devices?.apiRoute(req, url) : undefined;
 		if (deviceApi) return deviceApi;
 		const accessApi = peer === "none" ? await webAccessRoute(req, url, webAccess) : undefined;

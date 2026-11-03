@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import type { Server } from "bun";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -137,5 +138,37 @@ describe("웹 접속", () => {
 	test("the owner check comes first: nobody else can read or change it", async () => {
 		expect((await call("/api/web-access", { method: "PUT", body: { mode: "local" } })).status).toBe(403);
 		expect(await get()).toMatchObject({ mode: "local" });
+	});
+
+	test("in local mode a browser on this computer gets in; a forwarded, foreign-Host, cross-site or remote request does not", async () => {
+		const at = (ip: string) => ({ requestIP: () => ({ address: ip, family: "IPv4", port: 50000 }) }) as unknown as Server<unknown>;
+		const local = (headers: Record<string, string> = {}, base = "http://127.0.0.1:7420", ip = "127.0.0.1", init: RequestInit = {}) =>
+			route(new Request(`${base}/api/state`, { ...init, headers }), at(ip)).then(r => r.status);
+		expect(await get()).toMatchObject({ mode: "local" });
+		expect(await local()).toBe(200);
+		expect(await local({}, "http://localhost:7420")).toBe(200);
+		expect(await local({}, "http://[::1]:7420", "::1")).toBe(200);
+		expect(await local({}, undefined, "::ffff:127.0.0.1")).toBe(200);
+		expect(await local({ origin: "http://127.0.0.1:7420", "sec-fetch-site": "same-origin" })).toBe(200);
+		expect(await local({ "sec-fetch-site": "none" })).toBe(200);
+		const denied: [Record<string, string>, string?, string?][] = [
+			[{}, undefined, "192.168.0.7"],
+			[{}, "http://dotz.test"],
+			[{}, "http://rebind.evil.com:7420"],
+			[{ "x-forwarded-for": "203.0.113.9" }],
+			[{ forwarded: "for=203.0.113.9" }],
+			[{ "cf-connecting-ip": "203.0.113.9" }],
+			[{ "tailscale-user-login": "someone@example.com" }],
+			[{ origin: "https://evil.com" }],
+			[{ origin: "http://localhost:7420" }],
+			[{ "sec-fetch-site": "cross-site" }],
+			[{ "sec-fetch-site": "same-site" }],
+		];
+		for (const [h, base, ip] of denied) expect([h, base, ip, await local(h, base, ip)]).toEqual([h, base, ip, 403]);
+		expect((await route(new Request("http://127.0.0.1:7420/api/state"))).status).toBe(403);
+		expect(await local({ origin: "https://evil.com" }, undefined, undefined, { method: "PUT" })).toBe(403);
+		await mode("tailscale");
+		expect(await local()).toBe(403);
+		await mode("local");
 	});
 });
