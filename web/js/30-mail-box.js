@@ -332,7 +332,7 @@ function mbReplyPaint(force) {
       el("div", { class: "mbox-sf" },
         el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-reply-save", onclick: ev => mbSave(b.st, { reply_to: mbKey(t), mode: b.mode }, ev.currentTarget).then(r => { if (r) { MBOX.boxes.delete(t); mbReplyPaint(true); } }) }, "초안 만들기"),
         el("button", { class: "ib mbox-attach", type: "button", "aria-label": "파일 붙이기", title: "파일 붙이기", onclick: () => form.pick() }, icon("clip")),
-        el("button", { class: "btn text sm mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, "접기")));
+        el("button", { class: "btn text mbox-cancel", type: "button", onclick: () => { b.open = false; mbReplyPaint(true); } }, "접기")));
   }
   tl.append(slot);
 }

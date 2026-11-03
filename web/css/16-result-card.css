@@ -99,7 +99,7 @@ ul.mr-sum.mr-pts { display: block; margin: 0; padding: 0; list-style: none; }
 .md-ctx ul.mr-pts li::before { content: ""; position: absolute; left: 2px; top: 10px; width: 3px; height: 3px; border-radius: 50%; background: var(--fg-3); }
 .md-ctx .mr-todo { margin-top: 2px; font-size: 13px; line-height: 20px; }
 .md-ask { display: flex; flex-direction: column; gap: 8px; }
-.md-lbl { color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 600; }
+.md-lbl { color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 500; }
 .md-ask textarea.fi { min-height: 88px; font-size: 15px; line-height: 22px; padding: 10px 12px; }
 /* the ⋯ of a mail card (30-monitoring.js mailMenuBtn): the last item of the header, at the top right; the negative margin keeps the 16px header line */
 /* --fg-2 and a larger icon (owner 2026-10-29): the --fg-3 dots were easy to miss on the card */
@@ -199,7 +199,7 @@ a.dr-att:active { background: var(--active); }
 .dr-li { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 12px; border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .dr-li:hover { background: var(--hover); }
 .dr-hit { flex: none; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-size: 11px; font-weight: 700; line-height: 18px; }
-.dr-q2 { margin: 12px 0 6px; color: var(--fg-2); font: 600 13px/18px var(--font); }
+.dr-q2 { margin: 12px 0 8px; color: var(--fg-2); font: 500 13px/18px var(--font); }
 .dr-edit.ask { min-height: 64px; }
 .dr-act .dr-manual { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--fg-2); }
 .dr-act .dr-manual .ic { width: 14px; height: 14px; }

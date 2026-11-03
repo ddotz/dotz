@@ -59,46 +59,54 @@ span.mr-star:not(.on) { opacity: .45; }
 /* A phone keeps the button above the compact tab bar (web/css/01-tokens.css .side: a 46px row), not on top of its tabs. */
 @media (max-width: 639px) { .mbox-fab { right: 16px; bottom: calc(72px + env(safe-area-inset-bottom)); width: 56px; height: 56px; padding: 0; } .mbox-fab-t { display: none; } }
 
-.mbox-sheet { position: fixed; z-index: 60; right: 24px; bottom: 0; display: flex; flex-direction: column; width: 520px; max-height: min(640px, calc(100vh - 48px)); border-radius: 12px 12px 0 0; background: var(--pop); color: var(--fg); box-shadow: var(--float); overflow: hidden; }
-.mbox-sheet.min { max-height: 44px; }
+/* 메일 쓰기 is a centered sheet on a wide screen (ui-spec 시트·대화창: 560px, 20px corners, --pop, --float), a full screen on a phone (editing); minimized it docks as a bar at the bottom right */
+.mbox-sheet { position: fixed; z-index: 60; inset: 0; margin: auto; display: flex; flex-direction: column; width: min(560px, calc(100% - 48px)); height: fit-content; max-height: min(86dvh, 820px); border-radius: 20px; background: var(--pop); color: var(--fg); box-shadow: var(--float); overflow: hidden; }
+.mbox-sheet.min { inset: auto 24px 0 auto; margin: 0; width: 360px; max-height: 56px; border-radius: 20px 20px 0 0; }
 .mbox-sheet.min > :not(.mbox-sh) { display: none; }
-.mbox-sh { display: flex; align-items: center; gap: 2px; flex: none; height: 44px; padding: 0 6px 0 16px; background: var(--layer); }
-.mbox-st { flex: 1; font-size: 14px; font-weight: 700; }
-.mbox-sb, .mbox-rb { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: 4px 16px 0; }
-.mbox-f { position: relative; display: flex; align-items: center; gap: 8px; }
-.mbox-fk { flex: none; width: 56px; color: var(--fg-3); font-size: 12.5px; }
-.mbox-in { flex: 1; min-width: 0; height: 40px; border: 0; outline: 0; background: none; color: var(--fg); font: inherit; font-size: 14px; }
-.mbox-cc { flex: none; border: 0; background: none; color: var(--fg-3); font: inherit; font-size: 12.5px; cursor: pointer; }
-.mbox-cc:hover { color: var(--fg); }
-.mbox-ta { flex: 1; min-height: 120px; margin: 8px 0; padding: 0; border: 0; outline: 0; resize: none; background: none; color: var(--fg); font: inherit; font-size: 14px; line-height: 21px; }
+.mbox-sh { display: flex; align-items: center; gap: 2px; flex: none; padding: 16px 8px 8px 24px; }
+.mbox-st { flex: 1; font-size: 20px; line-height: 28px; font-weight: 700; }
+.mbox-sb, .mbox-rb { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: 4px 24px 16px; }
+/* the fields are rows split by one hairline (the label is a grey word, principle 3); the body has none */
+.mbox-f { position: relative; display: flex; align-items: center; gap: 8px; min-height: 48px; border-bottom: 1px solid var(--line); }
+.mbox-fk { flex: none; width: 64px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 500; }
+.mbox-in { flex: 1; min-width: 0; height: 44px; border: 0; outline: 0; background: none; color: var(--fg); font: inherit; font-size: 14px; }
+.mbox-cc { flex: none; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--fg-3); font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }
+.mbox-cc:hover { background: var(--hover); color: var(--fg); }
+textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8px; padding: 0; border: 0; outline: 0; resize: none; background: none; color: var(--fg); font: inherit; font-size: 14px; line-height: 22px; }
 .mbox-fw:empty { display: none; }
-.mbox-files { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 8px; }
-.mbox-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 4px 0 10px; border-radius: 15px; background: var(--layer); color: var(--fg); font-size: 12.5px; }
-.mbox-chip.wait { opacity: .6; padding-right: 10px; }
-.mbox-chip .ic { flex: none; width: 14px; height: 14px; color: var(--fg-3); }
+/* the files are the open mail's chips (name, size, one action): 36px on the grey step */
+.mbox-files { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+.mbox-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 36px; padding: 0 4px 0 12px; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font-size: 13px; line-height: 20px; }
+.mbox-chip.wait { opacity: .6; padding-right: 12px; }
+.mbox-chip .ic { flex: none; width: 16px; height: 16px; color: var(--fg-3); }
 .mbox-cn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mbox-cs { flex: none; color: var(--fg-3); font-variant-numeric: tabular-nums; }
-.mbox-cx { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--fg-3); cursor: pointer; }
+.mbox-cx { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--fg-3); cursor: pointer; }
 .mbox-cx:hover { background: var(--active); color: var(--fg); }
 .mbox-cx .ic { width: 12px; height: 12px; }
-.mbox-sf { display: flex; align-items: center; gap: 8px; flex: none; padding: 10px 16px; }
+/* the send row (ui-spec .fs-ft): the one filled button on the right, the paperclip at the left, 8px between */
+.mbox-sf { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: none; padding: 12px 16px 16px; }
+.mbox-sf .mbox-attach { order: -1; margin-right: auto; }
+.mbox-sf .mbox-save { order: 1; }
 @media (max-width: 639px) {
-  .mbox-sheet { inset: 0; width: auto; max-height: none; border: 0; border-radius: 0; }
-  .mbox-sheet.min { inset: auto 0 0 0; max-height: 44px; border-radius: 12px 12px 0 0; }
-  .mbox-sb { flex: 1; }
-  .mbox-sf { padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .mbox-sheet { inset: 0; width: auto; height: auto; max-height: none; border: 0; border-radius: 0; }
+  .mbox-sheet.min { inset: auto 0 0 0; height: fit-content; max-height: 56px; border-radius: 20px 20px 0 0; }
+  .mbox-sb { flex: 1; padding: 4px 20px 16px; }
+  .mbox-sf { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
 
-.mbox-reply { margin: 12px 0 20px; padding: 10px 14px 12px; border-radius: 12px; background: var(--card); }
-.mbox-modes { display: flex; flex-wrap: wrap; gap: 6px; }
+/* the reply is a card of the thread (ui-spec 카드: 18px corners, 20px inside); the way to answer is a chip row, the chosen one filled with the ink (ui-spec 탭·칩) */
+.mbox-reply { margin: 12px 0 20px; padding: 16px 20px; border-radius: var(--r-card); background: var(--card); }
+.mbox-modes { display: flex; flex-wrap: wrap; gap: 4px; }
 .mbox-reply:not(.open) { display: none; }
-.mbox-modes .mbox-mode { height: 32px; gap: 6px; padding: 0 14px 0 10px; font-size: 13px; font-weight: 600; background: var(--layer); color: var(--fg-2); }
-.mbox-modes .mbox-mode.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.mbox-modes .mbox-mode { position: relative; height: 28px; gap: 6px; padding: 0 12px; border-radius: 16px; font-size: 13px; line-height: 20px; font-weight: 500; background: var(--layer); color: var(--fg-2); }
+.mbox-modes .mbox-mode.on { background: var(--fg); color: var(--bg); }
 .mbox-modes .mbox-mode .ic { width: 16px; height: 16px; }
+.mbox-modes .mbox-mode::after { content: ""; position: absolute; inset: -8px 0; }
 .mbox-reply.open .mbox-rb { padding: 4px 0 0; overflow: visible; }
-.mbox-reply .mbox-sf { padding: 6px 0 0; }
-.mbox-quote { margin: 4px 0 6px; color: var(--fg-3); font-size: 12.5px; }
-.mbox-quote summary { width: fit-content; padding: 2px 10px; border-radius: 10px; background: var(--layer); cursor: pointer; }
+.mbox-reply .mbox-sf { padding: 12px 0 0; }
+.mbox-quote { margin: 8px 0 4px; color: var(--fg-3); font-size: 13px; }
+.mbox-quote summary { display: flex; align-items: center; width: fit-content; height: 28px; padding: 0 12px; border-radius: 14px; background: var(--layer); font-weight: 500; line-height: 20px; cursor: pointer; }
 .mbox-qt { max-height: 220px; margin: 6px 0 0; padding-left: 10px; overflow: auto; border-left: 2px solid var(--line-2); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* A phone keeps the sender's name whole: the unread tag is the bold row itself (the row's aria-label still says 안 읽음), the paperclip count
@@ -122,15 +130,10 @@ span.mr-star:not(.on) { opacity: .45; }
   .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
   .mbox-bar.on .mbox-bt { display: none; }
-  .mbox-modes .mbox-mode { height: 44px; border-radius: 22px; padding: 0 14px; font-size: 13.5px; }
-  .mbox-reply { margin: 12px 0 16px; padding: 10px 12px 12px; }
-  .mbox-save { min-height: 44px; }
-  .mbox-attach, .mbox-sh .ib { width: 44px; height: 44px; }
-  .mbox-cx { width: 32px; height: 32px; }
-  .mbox-chip { height: 36px; border-radius: 18px; }
+  .mbox-reply { margin: 12px 0 16px; padding: 16px; }
   .mbox-in { height: 44px; font-size: 16px; }
-  .mbox-ta { font-size: 16px; line-height: 24px; }
-  .mbox-sh { height: calc(48px + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top); }
+  textarea.mbox-ta { font-size: 16px; line-height: 24px; }
+  .mbox-sh { padding-top: calc(16px + env(safe-area-inset-top)); }
 }
 
 /* The list is Gmail's (owner 2026-11-03): flat rows on one sheet with thin dividers, no gap between them. As in Gmail, a mail you have read
