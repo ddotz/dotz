@@ -32,6 +32,8 @@ export type RunInput = {
 	watching?: string;
 	/** The session is folding its context (queued or running): it is busy with its own housekeeping, not resting. */
 	compacting?: boolean;
+	/** Owner prompts handed to the session that no turn has started on yet (orchestrator heldCount): it is about to work, not resting. */
+	queued?: number;
 	now: number;
 };
 
@@ -52,6 +54,9 @@ export function runState(i: RunInput): RunState {
 	if (i.status === "exited") return { kind: "done", since: i.since, ...todos };
 	// A compaction after a turn reads as work, not as 쉬는 중 with tasks left (Mac mini 2026-10-29 01:46: "어 뭐지?").
 	if (i.compacting) return { kind: "working", detail: "대화 정리 중", ...todos };
+	// A resumed session is idle from its session event until its first turn starts (someone 2026-11-03 08:30-08:33Z: 170 s under load,
+	// the line said 쉬는 중 and she asked "왜 쉬는중이야?"); a message it holds is work about to start.
+	if (i.queued) return { kind: "working", detail: "받은 메시지 시작하는 중", ...todos };
 	if (short(i.ask?.text)) return { kind: "waiting", reason: "ask", since: i.ask?.at, detail: short(i.ask?.text), ...todos };
 	const w = (i.work || [])[0];
 	if (w) return { kind: "waiting", reason: "work", since: iso(w.started_at), detail: workDetail(w), ...(w.id ? { work: w.id } : {}), ...todos };
