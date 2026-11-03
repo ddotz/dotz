@@ -1,4 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#191f28"/>
-  <circle cx="256" cy="256" r="85" fill="#f2f4f6"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="dotz">
+  <!-- the site brand mark (site/favicon.svg): two big dots on one diagonal, two small ones on the other -->
+  <style>
+    .t { fill: #161a17; }
+    .b { fill: #f6f4ee; }
+    .s { fill: #93d9b4; }
+    @media (prefers-color-scheme: light) {
+      .t { fill: #f6f4ee; }
+      .b { fill: #161a17; }
+      .s { fill: #1c5b42; }
+    }
+  </style>
+  <rect class="t" width="32" height="32" rx="7"/>
+  <circle class="b" cx="10.75" cy="10.75" r="3.4"/>
+  <circle class="b" cx="21.25" cy="21.25" r="3.4"/>
+  <circle class="s" cx="21.25" cy="10.75" r="2"/>
+  <circle class="s" cx="10.75" cy="21.25" r="2"/>
 </svg>
