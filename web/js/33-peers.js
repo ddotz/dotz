@@ -198,7 +198,7 @@ function prOpen() {
   PR.ov = ovOpen(() => prClose(false));
   document.addEventListener("keydown", prKey, true);
   prSheet();
-  motionIn(PR.node.firstElementChild, "rise", 200);
+  motionIn(PR.node.firstElementChild, "rise");
   const cur = PR.node.querySelector(".pr-row.on") || PR.node.querySelector(".pr-row");
   if (cur) cur.focus({ preventScroll: true });
   prLoad();
