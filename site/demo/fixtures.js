@@ -55,7 +55,7 @@
     },
   ];
   const mailCard = m => ({ subject: m.subject, from: m.from, to: m.to, at: m.at, summary: m.summary, preview: m.text.split("\n").find(l => l.trim()) || "", dir: m.dir, read: m.read, ...(m.reply ? { reply: m.reply } : {}), can: CAN, attachments: m.attachments || [] });
-  const mailEvent = m => ({ ts: m.at, kind: "mail", source: "mail", target: `mail:${m.key}`, subject: m.subject, from: m.from, to: m.to, summary: m.summary, preview: mailCard(m).preview, attachments: m.attachments || [], text: m.text });
+  const mailEvent = m => ({ ts: m.at, kind: "mail", source: "mail", target: `mail:${m.key}`, mail: m.key, conv: `mail:${m.key}`, subject: m.subject, from: m.from, to: m.to, summary: m.summary, preview: mailCard(m).preview, attachments: m.attachments || [], text: `${m.subject}\n${m.summary}\n\n\`\`\`원문\n${m.text}\n\`\`\`` });
 
   // 오늘·내일 일정 (아침 브리핑과 일정 질문이 읽어요)
   const calendar = {

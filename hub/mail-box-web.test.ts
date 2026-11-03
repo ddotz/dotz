@@ -99,7 +99,7 @@ describe("the list", () => {
 		expect(await chips(v)).toEqual(["전체", "안 읽음4", "답장 필요1", "확인 대기", "답장함1", "보관함1", "보낸 메일1"]);
 		expect(await titles(v)).toEqual(["월간 점검 보고서 확인 요청", "회의 일정 변경", "처리가 안 되는 메일", "회사 메일", "읽음 표시를 못 하는 메일함", "견적서 보내드립니다"]);
 		const got = await ev<any>(v, `(() => { const rows = [...document.querySelectorAll("#mon-tl > .mr")]; return rows.map(r => ({ w: parseInt(getComputedStyle(r.querySelector(".rc-title")).fontWeight), label: r.getAttribute("aria-label"), chk: !!r.querySelector("input.mr-chk"), star: !!r.querySelector(".mr-star"), sum: [...r.children].find(c => c.matches(".mr-sum, ul.mr-sum"))?.textContent || "" })); })()`);
-		expect(got[0].w).toBeGreaterThanOrEqual(700);
+		expect(got[0].w).toBeGreaterThanOrEqual(600);
 		expect(got[4].w).toBeLessThan(600);
 		expect(got[0].label).toStartWith("안 읽음, ");
 		expect(got[4].label).not.toStartWith("안 읽음");

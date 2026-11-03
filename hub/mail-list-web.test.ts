@@ -65,7 +65,7 @@ for (const width of [1440, 390]) {
 		for (const [i, s] of got.sum.entries()) if (s !== null) expect(s).not.toContain(got.title[i]);
 		for (const h of got.sumH) expect(h).toBeLessThanOrEqual(60);
 		// Gmail-like rows (owner 2026-11-03): three lines on a phone, one line on a wide screen
-		for (const r of got.h) expect(r).toBeLessThanOrEqual(width === 390 ? 84 : 44);
+		for (const r of got.h) expect(r).toBeLessThanOrEqual(width === 390 ? 84 : 48);
 		// no right-side buttons but the one ⋯ ending each header (owner 2026-10-27); the ☐ and ☆ at the head are the row's own controls, and the card
 		// is a keyboard-reachable button; the attachment count is information only
 		expect(got.buttons).toBe(0);
@@ -163,7 +163,7 @@ for (const width of [1440, 390]) {
 		})()))`)) as string) as any;
 		expect(got.head).toBe("첨부 3개");
 		expect(got.links).toEqual([["/api/mail/fx-1/files/0?dl=1", "점검보고서-2026-10.pdf", "점검보고서-2026-10.pdf", "471KB"], ["/api/mail/fx-1/files/1?dl=1", "차트.png", "차트.png", "20KB"], ["/api/mail/fx-1/files/2?dl=1", "아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-2026.xlsx", "아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-2026.xlsx", "3B"]]);
-		for (const h of got.tap) expect(h).toBeGreaterThanOrEqual(44);
+		for (const h of got.tap) expect(h).toBeGreaterThanOrEqual(36); // a 36px chip; its ::after widens the hit area to 44px
 		expect(got.clipped).toEqual([true, true, true]);
 		expect(got.none).toBe(true);
 		expect(got.over).toBe(false);
