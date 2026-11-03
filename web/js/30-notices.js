@@ -28,6 +28,14 @@ function ntPaint() {
   if (current === "monitoring") monSchedule();
 }
 
+// A watch's report carries its monitor's name as the title; a schedule whose text is a command line never shows it (30-monitoring.js monHuman / monTitle).
+function ntClean(n) {
+  if (n && n.kind === "watch" && typeof n.title === "string" && MON_CMD.test(n.title)) {
+    const m = NM.items.find(x => monNames(x).includes(n.title));
+    n.title = m ? monTitle(m) : monClean(n.title) || "예약한 일";
+  }
+  return n;
+}
 async function loadNotices() {
   try {
     // The hub keeps 300 (hub/notices.ts NOTICE_CAP) and lists open decisions, then unread, then newest: reading only 100 left a busy day's
@@ -36,7 +44,7 @@ async function loadNotices() {
     const r = await api("/api/notices?limit=300");
     // A dismiss that landed while this list was on its way makes it stale (it would bring the alert back): read it again.
     if (NT.mut !== m) return loadNotices();
-    NT.items = Array.isArray(r.items) ? r.items : [];
+    NT.items = (Array.isArray(r.items) ? r.items : []).map(ntClean);
     NT.unread = r.unread | 0; NT.loaded = true; NT.failed = false;
     if (Array.isArray(r.gone)) NT.gone = new Set(r.gone);
   } catch { NT.failed = !NT.loaded; }
@@ -65,6 +73,7 @@ function closePushTags(tags) {
 }
 function noticeLive(e) {
   if (e.kind === "notice" && e.item && e.item.id != null) {
+    ntClean(e.item);
     const i = NT.items.findIndex(x => x.id === e.item.id);
     if (e.item.dismissed) { if (i >= 0) NT.items.splice(i, 1); }
     else if (i < 0) NT.items.push(e.item); else NT.items[i] = e.item;

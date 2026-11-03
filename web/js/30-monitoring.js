@@ -117,7 +117,19 @@ function monProgNode(m, opts = {}) {
 // is only the small text in the header. A watch's notices carry the label (hub notice) or the raw name (a gateway "[name] ..." post).
 const monWords = s => /^[A-Za-z0-9][\w.-]*$/.test(s) && /[-_]/.test(s) ? s.replace(/[-_]+/g, " ") : s;
 const monRaw = m => String(m.watch || m.name || "");
-const monTitle = m => monWords(ntPlain(m.name)) || MON_KIND[m.kind] || "모니터링";
+// A raw command never reaches the screen (owner 2026-11-04): a schedule's text is what it runs ("someone이 피드백 데일리 보고: ssh -o BatchMode=yes ... python3 - 24 < ~/.dotz/...").
+// monHuman keeps the plain part before the colon and drops the command; a text that is only a command gives "" and the caller names the kind in words.
+const MON_CMD = /\b(?:ssh|scp|rsync|curl|wget|python3?|node|bun|npm|npx|bash|zsh|git|sudo|docker|osascript)\s+(?:-|[\w.-]*@|~|\.{0,2}\/|[\w.-]+\.(?:py|sh|js|ts|mjs)\b)|(?:^|\s)-{1,2}[A-Za-z][\w-]*(?:=|\s|$)|\s[<>|]{1,2}\s|\$\(|~\/|(?:^|\s)\.{0,2}\/[\w.-]+\/|@\d{1,3}(?:\.\d{1,3}){3}/;
+function monHuman(raw) {
+  const s = String(raw ?? "").replace(/\s+/g, " ").trim(), i = s.search(/[:：]\s/);
+  if (i > 0 && MON_CMD.test(s.slice(i + 1))) { const head = s.slice(0, i).trim(); return MON_CMD.test(head) ? "" : head; }
+  return MON_CMD.test(s) ? "" : s;
+}
+const monClean = (s, fb = "") => monHuman(ntPlain(s)) || fb;
+const MON_GENTLE = { watch: "지켜보는 일", schedule: "예약한 일" };
+const monTitle = m => monWords(monHuman(ntPlain(m.name))) || MON_GENTLE[m.kind] || "모니터링";
+// One or two plain sentences under the name, from what the monitor really is (its cadence), never from the command it runs.
+const monDesc = m => m.kind === "schedule" ? (m.every ? `${m.every} 알아서 실행해요.` : "정해 둔 때에 한 번 실행해요.") : `바뀐 곳이 있는지 ${m.every ? `${m.every} ` : "알아서 "}확인해요.`;
 const monNames = m => [...new Set([monTitle(m), String(m.name || ""), monRaw(m), monWords(monRaw(m))].filter(Boolean))];
 const monHas = (m, n) => n.kind === "watch" && monNames(m).includes(String(n.title || ""));
 // 모니터링's own notices: a watch's or a schedule's report (kind "watch"), or a notice living in an integration's own conversation (a mail).
@@ -361,7 +373,7 @@ function monItemNode(n) {
   return node;
 }
   if (ntIsDec(n)) return monDecisionNode(n);   // a peer's question too: the same card, its answer sent to that computer (ntPost)
-  const node = monCard(ntPlain(names[0] || n.title) || "알림", n.updated || n.ts, monStrip(String(n.text || ""), [...names, ntPlain(n.title)]), n.tone);
+  const node = monCard(monClean(names[0] || n.title) || "알림", n.updated || n.ts, monStrip(String(n.text || ""), [...names, ntPlain(n.title)]), n.tone);
   const card = n.item ? monItemNode(n) : null;
   if (card) { card.dataset.nid = n.id; return card; }
   if (!node) return null;
@@ -599,7 +611,7 @@ function monRunNode(it) {
   if (!m.last_run) return null;
   const next = [m.next_run ? `다음 확인 ${monTime(m.next_run)}` : "", m.every || ""].filter(Boolean).join(" · ");
   // The status header: fails in a row, the last good run and the last output in words (hub/monitors.ts watchFacts), then when it runs next.
-  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m.last_output ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
+  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m.last_output && !MON_CMD.test(m.last_output) ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
   const node = monCard(it.name, m.last_run, [...facts, next].filter(Boolean).join("\n\n"), m.kind === "watch" ? m.last_result : "", monRunLine(m));
   const chips = m.kind === "watch" && m.watch ? asChipTexts(m) : [];
   if (node && chips.length) node.append(el("div", { class: "btns cc-act mon-chips" }, ...chips.map(t => el("button", { class: "as-tpl", type: "button", "data-chip": t, onclick: () => asAsk(`w:${m.watch}`, t) }, t))));
@@ -914,6 +926,7 @@ const monHead = it => {
     el("div", { class: "mon-hdrow" }, monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it))), el("span", { class: "mon-hd-time", text: monHeadTime(it) }),
       acts.length ? el("div", { class: "mon-hdacts" }, ...acts) : null),
     st && !it.mon ? el("div", { class: "cv-p", text: st }) : null,
+    it.mon ? el("div", { class: "cv-p mon-desc", text: monDesc(it.mon) }) : null,
     ...extra)];
 };
 // The settings app of the detail open now (an item, or a conversation sitting under one), for the phone's app bar.
