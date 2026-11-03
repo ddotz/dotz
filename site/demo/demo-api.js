@@ -3,6 +3,29 @@
    same event stream frames the gateway sends (kind "message" / "out" / "notice"), so the app draws them as it draws real ones. */
 (() => {
   const F = window.DEMO_FIXTURES;
+  // 한글 문서 자동화: the prototype's first project (site/prototype/data.js), so #project/ch:5 reads like #project/private-project. Its purpose is the raw
+  // text a real project carries (paths, repos, ports, file names) on purpose: the screens must show it as a plain sentence.
+  {
+    const { now, ago } = F;
+    const lane = { name: "private-project-fill", title: "공문 초안 채우기", live: true, status: "working", home: "ch:5", model: F.MODEL, startedAt: ago(35), lastReportAt: ago(5), lastText: "표 서식을 맞추는 중이에요" };
+    F.projects.unshift({
+      key: "ch:5", name: "한글 문서 자동화", pinned: true, recordKey: "ch:5", channel: { id: "5", name: "한글 문서 자동화" },
+      record: { title: "한글 문서 자동화", purpose: "공문 양식에 맞춰 HWPX 문서를 만드는 서비스예요. 저장소 ~/Code/docs/docs-web (github example/docs main), 라이브 ~/Code/docs/docs-web-live (4417, tailnet 8444). 규칙은 RULES.md 프로젝트 규칙(docs).", updated: ago(5), milestones: [{ text: "양식 분석", done: true }, { text: "공문 초안 생성", done: true }, { text: "표 서식 맞추기", done: false }, { text: "검수와 전달", done: false }] },
+      lanes: [lane],
+      work: [
+        { id: "w-h1", status: "running", description: "표 서식 점검", started_at: now - 6 * 60_000 },
+        { id: "w-h2", status: "done", description: "공문 양식 12종 읽기", started_at: now - 70 * 60_000, ended_at: now - 55 * 60_000 },
+      ],
+      results: [
+        { kind: "report", title: "공문 초안 3건을 만들었어요", lane: "private-project-fill", verified: true, at: now - 20 * 60_000 },
+        { kind: "report", title: "양식 12종 분석 보고", lane: "private-project-fill", verified: false, at: now - 26 * 3600_000 },
+      ],
+      monitors: [], summary: { lastActivity: ago(5) },
+    });
+    F.state.lanes.push(lane);
+    F.state.channels.work["5"] = "한글 문서 자동화";
+    F.state.channels.homes["private-project-fill"] = "5";
+  }
   const NOTE = "데모에서는 실제로 보내지 않아요";
   const log = { unknown: [], posts: [], said: [] };
   window.__demoApi = log;
@@ -764,6 +787,11 @@
     if (/^\/api\/mail\/[^/]+\/action$/.test(p)) { const m = mail(p.split("/")[3]); if (m && body.action === "read") m.read = true; if (m && body.action === "unread") m.read = false; return json({ ok: true, synced: true }); }
     if (p === "/api/mail/actions") return json({ ok: true, results: (body.keys || []).map(key => ({ key, ok: true, synced: true })) });
     if (p === "/api/mail/compose") return json({ ok: true, note: NOTE });
+    if (p === "/api/projects" && body.key) {
+      const pj = F.projects.find(x => x.key === body.key || x.recordKey === body.key);
+      if (pj) for (const k of ["title", "purpose", "goal", "milestones"]) if (body[k] !== undefined) pj.record[k] = body[k];
+      return json({ ok: true });
+    }
     if (/^\/api\/notices\/[^/]+\/answer$/.test(p)) return isOutward(body) ? fail(NOTE) : json({});
     if (isOutward(body)) return fail(NOTE);
     return json({});
