@@ -753,8 +753,10 @@ function monChronoNodes(it, names) {
   // newer draft of the same mail replaced, is gone from every view.
   const newestDraft = mailDraftLive(it.notices);
   // A message about one mail (the bot's note in its conversation, src/open = that mail) is read inside that mail, not as a card of its own between
-  // the mail rows: every row of a mail list is a mail. Reply drafts keep their own place (확인 대기).
-  const rowMail = n => !!mf && !(n.decision && n.decision.draft) && MAILS.has(n.src || n.open) && it.mails.includes(n.src || n.open);
+  // the mail rows: every row of a mail list is a mail. Reply drafts keep their own place (확인 대기). A message about a mail this page does not hold
+  // (a deleted one: mail-deleted.json takes it off /api/conversations, but its message stays in notices.json) is no card either: it would sit between
+  // the rows as a mail without ☐, ☆ or ⋯ that nothing can select or delete. A report carrying its item's card (n.item) still draws that item.
+  const rowMail = n => { const t = n.src || n.open; return !!mf && !(n.decision && n.decision.draft) && !!t && isMailT(t) && (MAILS.has(t) ? it.mails.includes(t) : !n.item); };
   const notices = it.notices.filter(n => ok(n) && !rowMail(n) && (!mf || (mailDraftHeld(n) === held && !mailDraftDone(n))) && !mailDraftGone(n, newestDraft));
   const runs = [];
   for (const n of notices.sort((a, b) => ntAt(a) - ntAt(b))) {
