@@ -42,18 +42,18 @@ function renderProviders() {
   const box = $("#providers");
   const list = P.providers;
   const wrap = el("div", {});
-  wrap.append(el("div", { class: "sec sec-act" }, `${list.filter(isConnected).length}개 연결`,
+  wrap.append(el("div", { class: "sec sec-act" }, el("span", { text: "공급자" }), el("span", { class: "tag", text: `${list.filter(isConnected).length}개 연결` }),
     el("button", { class: "btn tonal sm", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
   if (!list.length) wrap.append(emptyNode("공급자가 없어요"));
   const row = p => {
     const name = p.name || p.id;
-    const sub = [p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
+    const on = isConnected(p), sub = [p.account || p.masked || (on ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
     // each provider opens its own screen: the login or key, and for a subscription its accounts, switch rules and 한도에 걸렸을 때
-    return el("button", { class: "li tap prow", type: "button", "data-prov": p.id, onclick: () => go("provider", p.id) }, el("span", { class: "avatar", text: [...name][0] || "?" }),
-      el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null,
-          el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" })),
+    return el("button", { class: "li tap prow", type: "button", "data-prov": p.id, onclick: () => go("provider", p.id) },
+      el("span", { class: "lead" }, el("span", { class: `dot ${on ? "ok" : needsAttention(p) ? "warn" : ""}` })),
+      el("span", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
         sub ? el("div", { class: "sup", text: sub }) : null),
-      icon("chev", "lead"));
+      el("span", { class: "li-end" }, el("span", { class: `tag ${on ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }), icon("chev", "chev")));
   };
   // Login accounts first, then API keys; an unconfigured provider sits with the way it can be set up.
   const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);

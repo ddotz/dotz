@@ -305,20 +305,30 @@ function renderSettings() {
   if (box.contains(document.activeElement) && openMenu) return;
   const om = M && M.orchestrator;
   const connected = P ? P.providers.filter(isConnected).length : null;
-  const row = (ic, title, sub, onclick, trail) => el("button", { class: "li tap", type: "button", onclick: ev => onclick(ev.currentTarget) }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), sub ? el("span", { class: "sup", text: sub }) : null, trail === undefined ? icon("chev", "lead") : trail);
+  // One settings row: lead icon, a title with its one-line description, then the right slot (a value or a status tag) and the chevron.
+  const row = (ic, title, sub, onclick, trail) => el("button", { class: "li tap", type: "button", onclick: ev => onclick(ev.currentTarget) },
+    el("span", { class: "lead" }, icon(ic)),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: title }), sub ? el("div", { class: "sup", text: sub }) : null),
+    trail === null ? null : el("span", { class: "li-end" }, trail === undefined ? null : trail, icon("chev", "chev")));
+  const sec = title => el("div", { class: "sec", text: title });
+  const list = (...rows) => el("div", { class: "list" }, ...rows.filter(Boolean));
 
-  clear(box).append(el("div", { class: "list" },
-    row("model", "모델 · 폴백", om ? `${modelName(om.model)} · ${thinkKo(om.thinking)}` : "", () => openModels("orchestrator")),
-    row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
-    row("usage", "사용량", "", () => go("usage")),
-    row("key", "API 월 한도", budgetSub(), () => budgetDialog()),
-    row("context", "컨텍스트", "", () => go("context")),
-    row("harness", "구성", "시스템 지도", () => go("harness")),
-    mnRow(),
-    row(themeIc(), "화면 모드", themeIs() === "dark" ? "다크" : "라이트", () => toggleTheme(), null),
-    row("chat", "대화 탭", chatTabMode() === "main" ? "메인 대화" : "마지막으로 보던 대화", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, null),
-    msHubRow(),
-    webAccessRow(row),
-    devicesRow(row)),
-    ...pushSection(), ...updateSection());
+  clear(box).append(
+    sec("모델"), list(
+      row("model", "모델 · 폴백", om ? `${modelName(om.model)} · ${thinkKo(om.thinking)}` : "", () => openModels("orchestrator")),
+      row("key", "공급자", connected != null ? `${connected}개 연결` : "", () => go("providers")),
+      row("usage", "사용량", "", () => go("usage")),
+      row("key", "API 월 한도", budgetSub(), () => budgetDialog()),
+      row("context", "컨텍스트", "", () => go("context"))),
+    sec("연결"), list(
+      msHubRow(),
+      webAccessRow(row),
+      devicesRow(row),
+      mnRow()),
+    sec("표시"), list(
+      row(themeIc(), "화면 모드", "밝게 또는 어둡게", () => toggleTheme(), el("span", { class: "tag", text: themeIs() === "dark" ? "다크" : "라이트" })),
+      row("chat", "대화 탭", chatTabMode() === "main" ? "채팅을 열면 메인 대화부터 시작해요" : "채팅을 열면 마지막으로 보던 대화부터 시작해요", () => { chatTabModeSet(chatTabMode() === "main" ? "last" : "main"); renderSettings(); }, el("span", { class: "tag", text: chatTabMode() === "main" ? "메인" : "마지막" }))),
+    ...pushSection(),
+    sec("시스템"), list(row("harness", "구성", "시스템 지도", () => go("harness"))),
+    ...updateSection());
 }
