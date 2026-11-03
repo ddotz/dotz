@@ -164,12 +164,36 @@
       channel: { id: "1", name: "랜딩 페이지" },
       record: { title: "랜딩 페이지", purpose: "첫 화면 문구와 배포 전 점검", updated: ago(29), milestones: [{ text: "문구 확정", done: true }, { text: "링크 점검", done: true }, { text: "모바일 점검", done: false }] },
       lanes: [{ name: "site-check", title: "랜딩 페이지 점검", live: true, status: "idle", home: "ch:1", startedAt: ago(58) }],
+      work: [
+        { id: "w-1", status: "running", description: "모바일 화면 캡처 모으기", started_at: now - 7 * 60_000 },
+        { id: "w-2", status: "done", description: "링크 40개 점검", started_at: now - 95 * 60_000, ended_at: now - 80 * 60_000 },
+      ],
+      results: [
+        { kind: "report", title: "링크 40개 중 38개가 열려요. 2개는 주소를 고쳐야 해요", lane: "site-check", verified: true, at: now - 80 * 60_000 },
+        { kind: "commit", title: "문구 확정본 반영", hash: "a3f9c21", at: now - 26 * 3600_000 },
+      ],
+      monitors: [{ id: "price-page", name: "가격 페이지 변경", on: "change", every_minutes: 30, lastRun: ago(18), lastOk: true, fails: 0, nextAt: new Date(now + 12 * 60_000).toISOString(), script: "watch/price-page.sh" }],
+      summary: { lastActivity: ago(29) },
     },
     {
       key: "ch:2", name: "릴리스 노트", pinned: false, recordKey: "ch:2",
       channel: { id: "2", name: "릴리스 노트" },
       record: { title: "릴리스 노트", purpose: "이번 주 변경 사항 정리", updated: ago(20), milestones: [{ text: "항목 정리", done: true }, { text: "배포 공지", done: false }] },
-      lanes: [],
+      lanes: [{ name: "notes-draft", title: "배포 공지 초안", live: true, status: "idle", waiting: true, home: "ch:2", startedAt: ago(40) }],
+      work: [], results: [], monitors: [], summary: { lastActivity: ago(20) },
+    },
+    {
+      key: "ch:3", name: "가격 조사", pinned: false, recordKey: "ch:3",
+      channel: { id: "3", name: "가격 조사" },
+      record: { title: "가격 조사", purpose: "경쟁 서비스 요금표 비교", updated: ago(3), milestones: [{ text: "요금표 모으기", done: true }, { text: "비교표 정리", done: false }, { text: "추천안 작성", done: false }] },
+      lanes: [{ name: "price-research", title: "경쟁 서비스 가격 조사", live: true, status: "working", home: "ch:3", startedAt: ago(14), lastReportAt: ago(3) }],
+      work: [], results: [], monitors: [], summary: { lastActivity: ago(3) },
+    },
+    {
+      key: "ch:4", name: "주간 보고서", pinned: false, recordKey: "ch:4",
+      channel: { id: "4", name: "주간 보고서" },
+      record: { title: "주간 보고서", purpose: "매주 금요일 정리", updated: ago(1500), milestones: [{ text: "초안", done: true }, { text: "발송", done: true }] },
+      lanes: [], work: [], results: [], monitors: [], summary: { lastActivity: ago(1500) },
     },
   ];
 
