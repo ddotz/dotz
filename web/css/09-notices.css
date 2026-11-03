@@ -74,14 +74,14 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 
 /* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option (recommended first). */
 /* Computer switch sheet (33-peers.js): the bottom sheet on the phone and a centered dialog from 700px. Decisions and notices use the full-screen overlay (14-overlay.css), not this. */
-.ds-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .42); animation: nt-in .14s ease-out; }
-.ds-sheet { display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: 90dvh; border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--pop); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); box-shadow: var(--float); animation: ds-up var(--m-base) var(--m-ease); }
+.ds-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .42); animation: nt-in var(--m-fast) var(--m-ease); }
+.ds-sheet { --fs-fill: var(--layer); display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: 90dvh; border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--pop); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); box-shadow: var(--float); animation: ds-up var(--m-base) var(--m-ease); }
 .ds-hd { flex: none; display: flex; align-items: center; gap: 8px; padding: 14px 12px 0 20px; }
 .ds-ey { flex: 1; color: var(--warn); font: 600 13px/20px var(--font); }
 .ds-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 20px 12px; }
 @media (min-width: 700px) {
   .ds-bd { align-items: center; }
-  .ds-sheet { border-radius: 20px; max-height: min(80vh, 760px); padding-bottom: 0; }
+  .ds-sheet { border-radius: var(--r-sheet); max-height: min(80vh, 760px); padding-bottom: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .ds-bd, .ds-sheet { animation: none; } }
 .ds-t { margin: 4px 0 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
@@ -129,7 +129,7 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 button.nt-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }
 button.nt-x:active { background: var(--active); color: var(--fg); }
 .hr.hrx { gap: 0; padding: 0; }
-.hrx-m { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 4px 12px 16px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.hrx-m { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 4px 8px 16px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
 .hrx-m:last-child { padding-right: 16px; }
 .hrx .nt-x { margin-right: 8px; }
 /* The x keeps its 44px target but takes no row height (it overhangs into the row padding and the list gap), so a row with an x is as tall as one without. */
