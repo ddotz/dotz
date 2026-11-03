@@ -31,6 +31,9 @@ function dmRow(c) {
 function dmPaintRooms() {
   if (!CM.vis) return;
   const top = cmRooms.scrollTop, tabs = cmTabs();
+  const sig = JSON.stringify(["dm", DM.perm, DM.line, DM.error, DM.convs, DM.loaded, DM.busy, DM.open && DM.open.id, !!tabs]);
+  if (sig === CM.roomsSig) return;
+  CM.roomsSig = sig;
   const bar = el("div", { class: "dm-bar" }, el("span", { class: "dm-note", text: "받은 DM을 읽기만 해요. 답장은 보내지 않아요" }),
     el("button", { class: "btn text", type: "button", id: "dm-refresh", disabled: DM.busy, text: DM.busy ? "불러오는 중…" : "새로고침", onclick: dmRefresh }));
   const list = el("section", { class: "kk-watch", "aria-label": "DM 대화" });
@@ -78,6 +81,9 @@ function dmPaintChat(stick) {
     CM.headSig = sig; clear(cmHead);
     if (open) cmHead.append(kkAvatar(open.peer), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: open.peer }), el("span", { class: "cv-p", text: "받은 DM · 읽기만 해요" })));
   }
+  const csig = JSON.stringify(["dm", open, DM.loading, DM.viewErr, v]);
+  if (!stick && csig === CM.chatSig) return;
+  CM.chatSig = csig;
   if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: "대화를 골라 주세요" })); return; }
   if (DM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
   if (DM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: DM.viewErr })); return; }

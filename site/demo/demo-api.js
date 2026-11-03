@@ -17,6 +17,77 @@
   const unread = () => F.notices.items.filter(n => !n.read).length;
   const later = (ms, fn) => setTimeout(fn, ms);
 
+  // 댓글 (유튜브 · 인스타그램 · 웹사이트)와 인스타그램 DM: the shapes of GET /api/comments/{sources,threads,thread/<source>/<thread>} and /api/ig-dm (hub/comments/engine.ts
+  // threads / threadView, docs/comments-api.md). Each comment shows a different step of its follow-up: draft waiting, reply sent, mail drafted / sent / failed, nothing yet.
+  const cmDemo = (() => {
+    const now = F.now;
+    const min = m => now - m * 60_000;
+    const src = (key, kind, app, label) => ({ key, kind, app, label, watch: ["*"], autoDraft: kind !== "website", autoSend: false, autoMail: kind === "youtube", mailApp: kind === "youtube" ? "mail" : null, error: null, ranAt: min(4) });
+    const sources = [src("yt-main", "youtube", "youtube", "dotz 채널"), src("ig-main", "instagram", "instagram", "@dotz.daily"), src("site-main", "website", "site", "dotz 소개 사이트")];
+    const views = {};
+    // c: [native, parent, author, text, minutes ago, flags]; d: [code, native, text, mail?]; s: [native, state, minutes ago, reason?, mail outcome?]
+    const thread = (key, id, title, link, read, c, d = [], s = []) => {
+      const source = sources.find(x => x.key === key), cid = n => `cm:${key}:${n}`;
+      const sent = new Map(s.filter(x => x[2] !== undefined).map(x => [x[0], x]));
+      const mark = n => { const dr = d.find(x => x[1] === n), se = sent.get(n); const mo = se && se[4];
+        return mo ? (mo.state === "sent" ? { state: "sent", label: "메일 보냄" } : { state: "failed", label: `메일 실패: ${mo.text}` }) : dr && dr[3] ? { state: "drafted", label: "메일 초안 작성됨" } : undefined; };
+      const comments = c.map(([n, parent, author, text, m, f = {}]) => ({ id: cid(n), parent, author, text, at: min(m), mine: !!f.mine, needsReply: !!f.needs, unreplied: !!f.unrep, ...(mark(n) ? { mail: mark(n) } : {}) }));
+      views[`${key}/${id}`] = { source: { key, kind: source.kind, label: source.label }, thread: { id, title, link, thumb: null }, comments, read: read === null ? null : min(read),
+        drafts: d.map(([code, n, text, mail]) => ({ code, commentId: cid(n), text, notes: [], clean: !mail, created: min(2), ...(mail ? { mail, mailMark: mark(n) } : {}) })),
+        sends: s.map(([n, state, m, reason, mail]) => ({ id: `send:${cid(n)}`, commentId: cid(n), text: "답글을 보냈어요", state, at: min(m), via: "owner", ...(reason ? { reason } : {}), ...(mail ? { mail } : {}) })) };
+    };
+    thread("yt-main", "v1", "키보드 6개월 사용기", "https://example.com/watch/v1", null, [
+      ["k5", null, "지나가던사람", "영상 잘 봤어요! 다음 편도 기대할게요", 20, { needs: true, unrep: true }],
+      ["k1", null, "구름산책", "영상에 나온 키보드는 어디서 사요?", 12, { unrep: true }],
+      ["k2", null, "별빛독서", "스위치 타건음 샘플 파일 받을 수 있을까요? 메일은 reader@example.com 이에요", 35, { unrep: true }],
+      ["k3", null, "하나", "가격표 파일을 메일로 받고 싶어요. hana@example.net", 190],
+      ["k3r", "k3", "나", "가격표는 메일로도 보냈어요. 봐 주셔서 고마워요!", 98, { mine: true }],
+      ["k4", null, "나무늘보", "자막이 없어서 아쉬워요", 300, { unrep: true }],
+      ["k6", null, "사라", "사용기 PDF를 메일로 부탁드려요. sara@example.org", 1200],
+    ], [["DY1", "k1", "영상 설명란에 구매 링크를 달아 뒀어요.\n봐 주셔서 고마워요!"],
+      ["DY2", "k2", "타건음 샘플은 메일로 보내 드릴게요.\n봐 주셔서 고마워요!", { id: "mail-d1", to: "reader@example.com", subject: "타건음 샘플 파일", body: "안녕하세요. 영상에서 말씀하신 타건음 샘플 파일을 보내 드려요.", attachments: [{ name: "타건음-샘플.zip", size: "4.2MB" }] }]],
+    [["k3", "sent", 100, undefined, { state: "sent", text: "메일을 보냈어요" }], ["k4", "failed", 290, "유튜브가 잠시 거절했어요"], ["k6", "sent", 1190, undefined, { state: "failed", text: "받는 주소가 거절했어요" }]]);
+    thread("yt-main", "v2", "책상 정리 루틴", "https://example.com/watch/v2", 40, [
+      ["r1", null, "오리너구리", "책상 조명은 뭐 쓰세요?", 70, { needs: true, unrep: true }],
+      ["r2", null, "하루한컷", "배경 음악 제목이 궁금해요", 400],
+      ["r2r", "r2", "나", "음악은 설명란 아래쪽에 적어 뒀어요", 380, { mine: true }],
+    ]);
+    thread("ig-main", "p1", "금요일 라이브 공지", "https://example.com/p/p1", null, [
+      ["i1", null, "달빛고양이", "다음 라이브는 언제 해요?", 34, { unrep: true }],
+      ["i2", null, "모카", "알림 설정했어요!", 25, { needs: true, unrep: true }],
+      ["i3", null, "책읽는곰", "응원해요, 오늘도 화이팅", 8, { unrep: true }],
+    ], [["DI1", "i1", "이번 주 금요일 저녁 8시에 해요.\n알림 설정해 두시면 바로 알려 드릴게요."]], [["i3", "sending", 0]]);
+    thread("ig-main", "p2", "신상 노트 입고", "https://example.com/p/p2", 60, [
+      ["i4", null, "종이비행기", "재입고는 언제쯤이에요?", 900],
+      ["i4r", "i4", "나", "다음 주 화요일에 들어와요", 880, { mine: true }],
+    ]);
+    thread("site-main", "contact", "문의하기 페이지", "https://example.com/contact", null, [
+      ["w1", null, "방문자 민트", "환불 문의는 어디로 하면 되나요?", 120, { unrep: true }],
+      ["w2", null, "방문자 도토리", "견적서를 메일로 보내 주세요. buyer@example.com", 600],
+    ], [["DW1", "w1", "문의하기 페이지에 남겨 주시면\n하루 안에 답드릴게요."]], [["w2", "sent", 560, undefined, { state: "sent", text: "메일을 보냈어요" }]]);
+    const clip = (t, n) => ([...t].length > n ? `${[...t].slice(0, n).join("")}…` : t);
+    const threads = app => Object.values(views).filter(v => sources.find(s => s.key === v.source.key).app === app).map(v => {
+      const last = v.comments[v.comments.length - 1], mineLast = last.mine;
+      return { source: v.source.key, thread: v.thread.id, kind: v.source.kind, title: v.thread.title, link: v.thread.link, thumb: null, lastAt: last.at, lastText: clip(last.text, 80), lastAuthor: mineLast ? "나" : last.author,
+        unread: v.comments.filter(c => !c.mine && (v.read === null || c.at > v.read)).length, drafts: v.drafts.length, unreplied: v.comments.filter(c => c.unreplied).length };
+    }).sort((a, b) => b.lastAt - a.lastAt);
+    // 인스타그램 DM (GET /api/ig-dm, /api/ig-dm/<id>): read only.
+    const dmList = { on: true, connected: true, perm: "ok", line: "", convs: [
+      { id: "dm1", peer: "봄이엄마", last: "배송은 언제쯤 시작돼요?", lastAt: min(3) },
+      { id: "dm2", peer: "책읽는곰", last: "후기 영상 잘 봤어요", lastAt: min(1500) },
+    ] };
+    const dm = {
+      dm1: { peer: "봄이엄마", messages: [{ id: "m1", mine: false, at: min(6), text: "안녕하세요, 어제 주문했어요." }, { id: "m2", mine: false, at: min(3), text: "배송은 언제쯤 시작돼요?" }] },
+      dm2: { peer: "책읽는곰", messages: [{ id: "m3", mine: false, at: min(1510), text: "후기 영상 잘 봤어요" }, { id: "m4", mine: true, at: min(1500), text: "봐 주셔서 고마워요!" }] },
+    };
+    return { sources, views, threads, dmList, dm, needs: { youtube: { drafts: 3, unread: 6, unreplied: 5, sentToday: 1 }, instagram: { drafts: 1, unread: 3, unreplied: 3, sentToday: 0 }, site: { drafts: 1, unread: 2, unreplied: 1, sentToday: 0 } } };
+  })();
+  cmDemo.integrations = [
+    { key: "youtube", label: "유튜브", icon: "image", conv: [], notices: [], state: "connected" },
+    { key: "instagram", label: "인스타그램", icon: "image", conv: [], notices: [], state: "connected" },
+    { key: "site", label: "웹사이트", icon: "image", conv: [], notices: [], state: "connected" },
+  ];
+
   // 구성 탭: 지도(단계 카드)와 기능 목록, 프로젝트 비교 카드를 보여 줄 만큼의 손으로 쓴 데이터예요.
   const hn = (id, kind, group, label, summary, extra = {}) => ({ id, kind, group, label, summary, desc: summary + " 이 단계가 하는 일을 한 줄로 적었어요.", status: "ok", facts: [], settings: [], ...extra });
   const hset = (key, label, value, type, extra = {}) => ({ key, label, value, type, editable: true, applies: "live", source: "config.json:" + key, ...extra });
@@ -619,8 +690,14 @@
     if (p === "/api/queue") return json(F.queue);
     if (p === "/api/subagents") return json(F.subagents);
     if (p === "/api/conversations") return json({ items: F.conversations });
-    if (p === "/api/integrations") return json({ items: F.integrations.map(i => ({ ...i, needs: { drafts: 0, unread: F.mails.filter(m => m.dir === "in" && !m.read).length, unreplied: 0, sentToday: 0 } })), available: [{ key: "youtube", label: "유튜브", icon: "image" }] });
+    if (p === "/api/integrations") return json({ items: [...F.integrations, ...cmDemo.integrations].map(i => ({ ...i, needs: cmDemo.needs[i.key] || { drafts: 0, unread: F.mails.filter(m => m.dir === "in" && !m.read).length, unreplied: 0, sentToday: 0 } })), available: [{ key: "naver-blog", label: "네이버 블로그", icon: "image" }] });
     if (p === "/api/apps") return json({ items: F.apps, errors: [] });
+    // 댓글 (유튜브 · 인스타그램 · 웹사이트) and 인스타그램 DM: fixtures.js cmDemo
+    if (p === "/api/comments/sources") return json({ on: true, sources: cmDemo.sources });
+    if (p === "/api/comments/threads") return json({ threads: cmDemo.threads(u.searchParams.get("app") || "") });
+    if (/^\/api\/comments\/thread\/[^/]+\/[^/]+$/.test(p)) { const q = p.split("/"), v = cmDemo.views[`${decodeURIComponent(q[4])}/${decodeURIComponent(q[5])}`]; return v ? json(v) : fail("이 글은 보고 있지 않아요"); }
+    if (p === "/api/ig-dm") return json(cmDemo.dmList);
+    if (/^\/api\/ig-dm\/[^/]+$/.test(p)) { const v = cmDemo.dm[p.split("/")[3]]; return v ? json(v) : fail("대화를 찾지 못했어요"); }
     if (/^\/api\/mail\/[^/]+\/body$/.test(p)) { const m = mail(p.split("/")[3]); return m && m.html ? new Response(F.mailBody(m), { headers: { "Content-Type": "text/html; charset=utf-8" } }) : new Response("", { status: 404 }); }
     if (p === "/api/kakao/rooms") return json({ on: true, rooms: F.kakaoRooms });
     if (/^\/api\/kakao\/chat\/[^/]+$/.test(p)) { const c = F.kakaoChat[p.split("/")[4]]; return c ? json(c) : new Response(JSON.stringify({ error: "대화방을 찾지 못했어요" }), { status: 404, headers: { "Content-Type": "application/json" } }); }
@@ -645,6 +722,8 @@
     const p = u.pathname;
     log.posts.push(p);
     if (/^\/api\/comments\/drafts\/[^/]+\/send$/.test(p)) return json({ ok: true });
+    if (/^\/api\/comments\/thread\/[^/]+\/[^/]+\/read$/.test(p) || p === "/api/ig-dm/refresh") return json({ ok: true });
+    if (/^\/api\/comments\/comment\/[^/]+\/draft$/.test(p)) return json({ state: "drafting" }, 202);
     if (p === "/api/message") return json(answer(body));
     if (p === "/api/command") return json({ output: "데모에서는 명령을 실행하지 않아요." });
     if (p === "/api/read") { const c = conv(body.target); if (c) c.unread = 0; return json({}); }

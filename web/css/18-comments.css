@@ -1,0 +1,85 @@
+/* 모니터링 > 앱 > 유튜브 / 인스타그램 / 웹사이트 댓글 and 인스타그램 DM (web/js/30-monitoring-comments.js, 30-monitoring-comments-dm.js).
+   The pane keeps the KakaoTalk pane's frame (17-kakao.css: .kk, .kk-rooms, .kk-chat) but reads as the prototype's screens: the conversation sits on the same card
+   surface as the post list (no chat backdrop, no bubbles, no dark date pills), a comment is a row, the follow-up of each comment is a short track of steps. */
+
+/* choose what to follow */
+.kk-pick-src { padding: 4px 0 8px; border-top: 1px solid var(--line); }
+.kk-pick-src > .btn { margin: 0 16px; }
+.cm .kk-draft input.kk-ta { flex: 1; min-width: 0; min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--card); color: inherit; font: 400 16px/22px var(--font); }
+.cm-tabs { margin: 8px 16px; }
+.dm-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 16px 8px; }
+.dm-note { color: var(--fg-3); font: 400 12px/16px var(--font); }
+
+/* post list rows: avatar or thumbnail, title, one-line preview, time over the two counts */
+.kk-av.kk-thumb { width: 48px; height: 36px; border-radius: 6px; object-fit: cover; background: var(--layer); }
+.cm .kk-row .nb.unreplied { color: var(--unreplied); }
+
+/* the conversation: the card surface, a hairline under the head */
+.cm .kk-chat { background: var(--card); }
+.cm .kk-head { border-bottom: 1px solid var(--line); }
+.cm .kk-tl { padding: 2px 16px 12px; }
+.cm .kk-in { gap: 0; }
+.cm .kk-in > .kk-note { color: var(--fg-3); }
+@media (max-width: 639px) { .cm .kk-tl { padding: 2px 12px 12px; } }
+/* a day is a quiet label with a hairline, not a dark pill */
+.cm .kk-date { align-self: stretch; display: flex; align-items: center; gap: 10px; margin: 14px 0 2px; padding: 0; border-radius: 0; background: none; color: var(--fg-3); font: 500 12px/16px var(--font); }
+.cm .kk-date::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+/* the post at the top of its conversation: the pane head shows it on a wide screen, so only the phone (head hidden) draws it */
+.cm-post { display: flex; align-items: center; gap: 12px; margin: 0; padding: 8px 0 10px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; }
+.cm-post .kk-av.kk-thumb { width: 64px; height: 48px; }
+.cm-pt { display: block; color: var(--fg); font: 600 14px/20px var(--font); overflow-wrap: anywhere; }
+.cm-pl { display: inline-block; margin-top: 2px; color: var(--accent); font: 500 12px/16px var(--font); }
+@media (min-width: 1100px) { .cm-post { display: none; } }
+
+/* a comment thread: the comment, replies under it behind a rule, a draft or a reply on its way right under the comment it answers */
+.cm-th { display: flex; flex-direction: column; min-width: 0; padding: 10px 0; }
+.cm-th + .cm-th { border-top: 1px solid var(--line); }
+.cm-replies { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 10px 0 0 15px; padding-left: 14px; border-left: 2px solid var(--line-2); }
+.cm-replies .od-cwrap { margin: 0; }
+.cm-c { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.cm-c > .kk-av { width: 32px; height: 32px; font-size: 14px; }
+.cm-c > .kk-av.cm-me { background: color-mix(in srgb, var(--accent) 14%, var(--card)); color: var(--accent); font-size: 12px; }
+.cm-c > .kk-mb { flex: 1; max-width: none; min-width: 0; align-items: stretch; gap: 2px; }
+.cm-hd { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cm-hd .kk-name { min-width: 0; margin: 0; overflow: hidden; color: var(--fg); font: 600 13px/20px var(--font); text-overflow: ellipsis; white-space: nowrap; }
+.cm-hd .kk-time { color: var(--fg-3); font: 400 12px/16px var(--font); }
+.cm-hd .tag.unreplied { margin-left: auto; }
+.cm-mine { color: var(--accent); font: 600 13px/20px var(--font); }
+.cm-c .kk-reply { margin: 0; color: var(--fg-3); font: 400 12px/16px var(--font); }
+.cm-c .kk-bub { padding: 0; border-radius: 0; background: none; color: var(--fg); font: 400 14px/21px var(--font); }
+.cm-c.mine .kk-bub { color: var(--fg-2); }
+.cm-c [hidden] { display: none; }
+.cm-acts { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.cm-acts > .btn.text:first-child { margin-left: -8px; }
+.cm .od-bar { margin: 0 0 6px; }
+.cm .od-tg { min-height: 28px; padding: 0 10px; font-size: 13px; }
+
+/* what the comment set going: a track per follow-up (답글: 초안 · 확인 · 보냄, 메일: 초안 · 보냄); the step it is at carries the color, the later ones stay hollow.
+   done = green, busy (on its way) = blue, ask (waits for him) = orange, err = red (the shared state colors) */
+.cm-pg { display: flex; flex-wrap: wrap; gap: 2px 16px; margin-top: 4px; min-width: 0; }
+.cm-tr { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; color: var(--fg-3); font: 400 12px/18px var(--font); }
+.cm-tn { margin-right: 8px; color: var(--fg-2); font-weight: 600; }
+.cm-st { position: relative; display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.cm-st::before { content: ""; flex: none; width: 8px; height: 8px; box-sizing: border-box; border: 1.5px solid var(--line-2); border-radius: 50%; }
+.cm-st + .cm-st { margin-left: 6px; padding-left: 14px; }
+.cm-st + .cm-st::after { content: ""; position: absolute; left: 0; top: 9px; width: 10px; height: 1px; background: var(--line-2); }
+.cm-st[data-s="done"] { color: var(--fg-2); }
+.cm-st[data-s="done"]::before { border-color: var(--ok); background: var(--ok); }
+.cm-st[data-s="busy"] { color: var(--accent); }
+.cm-st[data-s="busy"]::before { border-color: var(--accent); background: var(--accent); }
+.cm-st[data-s="ask"] { color: var(--warn); font-weight: 600; }
+.cm-st[data-s="ask"]::before { border-color: var(--warn); background: var(--warn); }
+.cm-st[data-s="err"] { color: var(--err); font-weight: 600; }
+.cm-st[data-s="err"]::before { border-color: var(--err); background: var(--err); }
+
+/* a reply of his on its way / sent / failed (cmSendNode): a quiet block, not a yellow bubble */
+.cm .kk-m.me { align-items: stretch; }
+.cm .kk-m.me .kk-line { max-width: 100%; }
+.cm .kk-m.me .kk-bub { background: var(--layer); color: var(--fg); border-radius: var(--r-ctl); }
+.cm .kk-m.pend { margin-top: 0; }
+.cm .kk-st { color: var(--fg-3); }
+.cm .kk-m.pend.failed .kk-st { color: var(--err); }
+
+/* 인스타그램 DM thread: one line per message (20-monitoring.css .dm-m), so nothing overlaps */
+.cm .dm-m { padding: 10px 0; }
