@@ -1,6 +1,6 @@
-// The status pill in a message header (`notify-update · 오후 5:13 [진행 중]`, web/js/11-todo-strip.js LANE_TONE) in a headless Bun.WebView:
-// owner 2026-11-01, the blue 진행 중 box sat lower and taller than the name and time. Each pill (진행 중/완료/질문/실패) is the header's text
-// line exactly (same top and height), and a lane report's image attachment shows as a thumbnail served by the real /api/file route.
+// The status tag of a bot message (`[done]` -> 완료, `[ask]` -> 확인 필요, `[fail]` -> 실패, `[run]` -> 진행 중, web/js/02-basic-markdown.js toneLead) in a
+// headless Bun.WebView: owner 2026-11-04, the marker is not shown raw and no longer sits in the meta line; the tag starts the first line of the
+// message body (prototype .bub .st), and a lane report's image attachment shows as a thumbnail served by the real /api/file route.
 // HEADER_PILL_SHOTS=<dir> keeps the screenshots (default: a temp dir).
 import { afterAll, expect, test } from "bun:test";
 import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
@@ -47,16 +47,17 @@ afterAll(() => { for (const v of views) v.close(); server.stop(true); rmSync(ROO
 const waitOn = (v: InstanceType<typeof Bun.WebView>, expr: string, ms = 10_000) =>
 	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 
-for (const [width, height] of [[390, 844], [1280, 900]] as const) test(`each header pill is the text line exactly, and the image attachment shows (${width}px)`, async () => {
+for (const [width, height] of [[390, 844], [1280, 900]] as const) test(`each status tag starts the first line of its message, the meta line has none, and the image attachment shows (${width}px)`, async () => {
 	const v = new Bun.WebView({ width, height });
 	views.push(v);
 	await v.navigate(`http://127.0.0.1:${server.port}/#chat`);
-	await waitOn(v, `document.querySelectorAll("#timeline .bm > .mt > .tag").length === 4 && [...document.querySelectorAll("#timeline .thumb img")].some(i => i.complete && i.naturalWidth > 0)`);
+	await waitOn(v, `document.querySelectorAll("#timeline .bm > .md .st-tag").length === 4 && [...document.querySelectorAll("#timeline .thumb img")].some(i => i.complete && i.naturalWidth > 0)`);
 	await v.evaluate(`(document.querySelector("#timeline .thumb").scrollIntoView({ block: "center" }), 0)`);
 	await Bun.write(join(SHOTS, `header-pill-${width}.png`), await v.screenshot());
-	const pills = JSON.parse(await v.evaluate(`JSON.stringify([...document.querySelectorAll("#timeline .bm > .mt > .tag")].map(t => {
-		const r = t.getBoundingClientRect(), m = t.parentElement.getBoundingClientRect(), n = t.parentElement.querySelector(".mn").getBoundingClientRect();
-		return { text: t.textContent, top: Math.round(r.top - m.top), height: Math.round(r.height), line: Math.round(m.height), nameMid: Math.round((n.top + n.bottom) / 2 - (r.top + r.bottom) / 2) };
+	const tags = JSON.parse(await v.evaluate(`JSON.stringify([...document.querySelectorAll("#timeline .bm > .md .st-tag")].map(t => {
+		const p = t.parentElement, r = t.getBoundingClientRect(), pr = p.getBoundingClientRect();
+		return { text: t.textContent, lead: p.firstChild === t, firstLine: r.top - pr.top < 12, raw: /^\\[/.test(p.textContent) };
 	}))`) as string);
-	expect(pills).toEqual(["완료", "질문", "실패", "진행 중"].map(text => ({ text, top: 0, height: 16, line: 16, nameMid: 0 })));
+	expect(tags).toEqual(["완료", "확인 필요", "실패", "진행 중"].map(text => ({ text, lead: true, firstLine: true, raw: false })));
+	expect(await v.evaluate(`document.querySelectorAll("#timeline .bm > .mt > .tag").length`)).toBe(0);
 }, 30_000);

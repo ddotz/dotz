@@ -85,8 +85,16 @@ const mdNode = (src, cls = "md") => el("div", { class: cls, safeHtml: mdHtml(src
 
 /* ---------- message status (only an explicit line-1 marker sets it; it becomes one leading emoji) ---------- */
 const TONE_TAGS = new Map(Object.entries({ done: "done", "완료": "done", run: "run", "진행": "run", ask: "ask", "결정": "ask", fail: "fail", "실패": "fail", warn: "fail", "경고": "fail" }));
-const TONE_EMOJI = { done: "✅", run: "⏳", ask: "❓", fail: "❌" };
-const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], ask: ["warn", "질문"], fail: ["err", "실패"] };
+// The marker word is drawn as one status tag at the start of the message's first line (prototype .bub .st), never as the raw marker or an emoji.
+const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], ask: ["warn", "확인 필요"], fail: ["err", "실패"] };
+const toneTag = tone => LANE_TONE[tone] ? el("span", { class: `tag ${LANE_TONE[tone][0]} st-tag`, text: LANE_TONE[tone][1] }) : null;
+// The tag goes in front of the first paragraph's text; a body that opens with a list or a card gets a line of its own.
+function toneLead(root, tone) {
+  const tag = toneTag(tone), f = root.firstElementChild;
+  if (!tag) return root;
+  if (f && /^(P|LI)$/.test(f.tagName)) f.prepend(tag); else root.prepend(el("p", {}, tag));
+  return root;
+}
 // Machine markers never reach the owner as text (owner 2026-10-23). Same shapes as hub/tone.ts stripMarkers (keep in step):
 // known marker shapes at line start (behind an optional list dash, `**` or `**name**: ` lead), outside ``` fences; any
 // other bracket is content. Status words, [lane <word>], [dotz ...], [orchestrator-guard], [지금 도는 것], [attachment],

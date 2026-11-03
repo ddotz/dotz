@@ -94,6 +94,8 @@
       { ts: ago(61), kind: "out", source: "orchestrator", target: "main", text: "좋은 아침이에요. 오늘은 이래요.\n\n- 일정 4개, 첫 일정은 10시 주간 회의예요\n- 안 읽은 메일 2통, 답장할 메일 2통\n- 감시 중인 페이지는 변화 없어요" },
       { ts: ago(31), kind: "message", source: "web", channel: "web", target: "main", text: "오늘 일정이랑 메일 묶어서 브리핑해 줘" },
       { ts: ago(30), kind: "out", source: "orchestrator", target: "main", text: "좋은 아침이에요. 아침 브리핑이에요.\n\n오늘 일정 4개\n- 10:00 팀 주간 회의\n- 13:00 한서윤님과 점심\n- 15:30 견적서 검토\n- 19:00 운동\n\n새 메일 2통, 답장할 메일 2통이에요.\n댓글 3개가 답글을 기다려요.\n\n하나씩 볼까요?" },
+      { ts: ago(22), kind: "out", source: "orchestrator", target: "main", text: "[run] 캠핑 의자 가격이 바뀌었어요.\n\n- 캠핑 의자 89,000원 → 72,000원" },
+      { ts: ago(18), kind: "out", source: "orchestrator", target: "main", text: "[fail] 인스타그램 확인에 실패했어요.\n\n- 원인: 로그인이 풀렸어요\n- 다음: 설정에서 다시 로그인해 주세요" },
       { ts: ago(14), kind: "out", source: "gateway", target: "main", system: true, worker: "st_report", text: "백그라운드 작업으로 맡겼어요: 주간 보고서 정리" },
       { ts: ago(4), kind: "out", source: "gateway", target: "main", system: true, worker: "st_price", text: "백그라운드 작업으로 맡겼어요: 경쟁 서비스 가격 조사" },
       { ts: ago(8), kind: "out", source: "orchestrator", target: "main", text: "dotz 데모예요. 실제로 보내지 않으니\n편하게 말 걸어 보세요.\n\n- 메일 정리해 줘\n- 오늘 일정 알려 줘\n- 댓글 답글 써 줘\n- 가격 페이지 바뀌면 알려 줘\n- 매일 아침 9시에 브리핑해 줘\n- 경쟁 서비스 가격 조사해 줘" },
