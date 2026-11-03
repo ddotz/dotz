@@ -234,7 +234,7 @@ convReadRO.observe(timeline); convReadRO.observe(tl);
 // Sent when it changes and every 20 s while it stays (the hub counts a report older than 60 s as gone).
 const VIEW = { id: Math.random().toString(36).slice(2) + Date.now().toString(36), sent: "", at: 0 };
 function viewReport(unload) {
-  const conv = !unload && document.visibilityState === "visible" && current === "chat" ? target : "";
+  const conv = !unload && document.visibilityState === "visible" && current === "chat" && !isJandiT(target) ? target : "";   // a JANDI computer's chat is not a conversation of this gateway
   if (conv === VIEW.sent && (!conv || Date.now() - VIEW.at < 20000)) return;
   VIEW.sent = conv; VIEW.at = Date.now();
   if (unload) fetch("/api/viewing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: VIEW.id, conv }), keepalive: true }).catch(() => {});
