@@ -1,3 +1,15 @@
+/* 설정 screens (docs/ui-spec.md 설정 행): one row = lead icon, title + one-line description, then the single right slot (.li-end) with a value or
+   status tag and the chevron. Sections are plain .sec labels above one .list card, the same as the prototype's 설정. */
+.li-end > .chev { width: 14px; height: 14px; color: var(--fg-3); }
+.li.tap:hover .li-end > .chev { color: var(--fg); }
+.li-end > .tag { flex: none; }
+.sec.sec-act > .tag { margin-left: 0; }
+.sec.sec-act > .tag + .btn { margin-left: auto; }
+#settings > .sec + .list, #settings > .list + .sec { margin-top: var(--sp-6); }
+#settings > .sec:first-child { margin-top: var(--sp-2); }
+#settings .list + .list { margin-top: var(--sp-3); }
+#settings .sec .tag { height: var(--tag-h); }
+
 /* 모니터링 > 앱 > 설정 대화 (web/js/32-app-settings.js): the switches above the conversation, the 설정 button of a detail's title bar and the change card.
    The switch itself is the kakao one (.kk-sw, 17-kakao.css). */
 .app-sw { display: flex; flex-direction: column; width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto 8px; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
