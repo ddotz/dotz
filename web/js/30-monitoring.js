@@ -802,7 +802,8 @@ function monTopNodes(it) {
   if (banner) out.push(banner);
   const acts = [...(it.mon && it.mon.watch && !banner ? [monRunBtn(it.mon)] : []), monConvBtn(it)].filter(Boolean);
   if (acts.length) out.push(el("div", { class: "mon-actions" }, ...acts));
-  return out;
+  // The prototype's detail card opens the conversation on a phone too: the wait, a down banner and the actions in one card (never loose).
+  return out.length ? [el("div", { class: "mon-topcard" }, ...out)] : [];
 }
 // 대화로 이어가기 (owner 2026-11-03): the item's own settings conversation (the same go() as the 대화 icon). A mail or KakaoTalk item is
 // already a conversation, so it has no button of its own here.
@@ -834,7 +835,9 @@ function monTimeline(it) {
   const names = it.mon ? monNames(it.mon) : [];
   const bar = monBarWanted(it) ? [monBar(it)] : [], nodes = !monFeed(it) ? monChronoNodes(it, names) : it.notices.length > MON_COMPACT ? monFeedNodes(it, names) : monFeedCards(it, names);
   const ov = monOverview(it), head = [...monTopNodes(it), ...bar, ...(ov ? [ov] : [])];
-  if (nodes.length) return [...head, ...nodes];
+  // A monitor's reports read as its 확인 기록, under a section label like the prototype's detail (its 지금 확인 stays in the head's actions).
+  const sec = it.mon ? [el("div", { class: "mon-sec", role: "heading", "aria-level": "3", text: it.mon.kind === "schedule" ? "실행 기록" : "확인 기록" })] : [];
+  if (nodes.length) return [...head, ...sec, ...nodes];
   if (head.length) return [...head, el("div", { class: "empty", text: "이 보기에 해당하는 소식이 없어요" })];
   const next = it.mon && it.mon.next_run ? ` · 다음 확인 ${monTime(it.mon.next_run)}` : "";
   return [el("div", { class: "empty", text: !NT.loaded && !NM.loaded ? "불러오는 중…" : it.mon ? `${monRunLine(it.mon)}${next}` : "아직 소식이 없어요" })];
@@ -886,6 +889,15 @@ function monBannerOf(it) {
 }
 // The title bar of an open item; the kakao pane puts the gear in its room head once a room is open.
 // A monitor adds its own progress block and 지금 확인 under the name, so the conversation always says how far the wait has come.
+// When the item last said anything, for the header's quiet right end (the prototype's .ch .ac): the monitor's last run, else its newest
+// report or mail. "" when nothing has happened yet.
+function monHeadTime(it) {
+  const stamps = [it.mon && it.mon.last_run, ...it.notices.map(n => n.updated || n.ts), ...(it.mails || []).map(t => (CONV.get(t) || {}).ts || (MAILS.get(t) || {}).at)].filter(Boolean)
+    .map(t => Date.parse(t)).filter(Number.isFinite);
+  return stamps.length ? ntTime(new Date(Math.max(...stamps)).toISOString()) : "";
+}
+// The open item's header: the prototype's detail card composition - icon, name (and its machine), state, the moment at the right end,
+// then the actions on their own row and the wait / banner under them. A phone has no .cv-head, so monTopNodes draws the same card there.
 const monHead = it => {
   const banner = monBannerOf(it), st = monState(it);
   // An app with reply drafts waiting opens the one 답장 확인 queue on its own drafts (30-replies.js).
@@ -893,11 +905,14 @@ const monHead = it => {
   // 대화로 이어가기 (owner 2026-11-03): every item continues in its own chat - the conversation its settings talk in (asOpen's own go()).
   // A mail or KakaoTalk item is already a conversation, so the way in is its row and this button stays out of the way there.
   const convBtn = monConvBtn(it);
-  const row = [monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st ? el("span", { class: "cv-p", text: st }) : null), convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+  const acts = [convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);
-  return extra.length ? [el("div", { class: "mon-hdwrap" }, el("div", { class: "mon-hdrow" }, ...row), ...extra)] : row;
+  return [el("div", { class: "mon-hdwrap" },
+    el("div", { class: "mon-hdrow" }, monIcon(it.ic), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, it.name, pqLabel(it)), st && !it.mon ? el("span", { class: "cv-p", text: st }) : null), el("span", { class: "mon-hd-time", text: monHeadTime(it) })),
+    acts.length ? el("div", { class: "mon-hdacts" }, ...acts) : null,
+    ...extra)];
 };
 // The settings app of the detail open now (an item, or a conversation sitting under one), for the phone's app bar.
 function monDetailApp() {
@@ -943,7 +958,7 @@ function renderMonitoring() {
   if (sideSig !== MON.side) {
     MON.side = sideSig;
     const top = side.scrollTop;
-    clear(side).append(...rows.map(convRow));
+    clear(side).append(...monSideNodes(rows));
     monDecorateRows(side, items);
     side.scrollTop = top;
   }
@@ -992,6 +1007,18 @@ function renderMonitoring() {
   monObserveOlder();
   convTitle();
   monSeen();
+}
+// The list column as the prototype draws it (#monitoring): section labels sit between one card per section, never inside one long card.
+// The first rows (감시 소식, 답장 확인) have no label and stand as their own cards; 앱 / 일반 모니터링 / 프로젝트·… each open a labeled card.
+function monSideNodes(rows) {
+  const out = [];
+  let list = null;
+  for (const r of rows) {
+    if (r.header) { out.push(el("div", { class: "mon-sec", role: "presentation", text: r.header })); list = null; continue; }
+    if (!list) { list = el("div", { class: "mon-grp" }); out.push(list); }
+    list.append(convRow(r));
+  }
+  return out;
 }
 // A monitor row in the list carries the same bar under its status line; the row itself is the shared convRow, so the block is appended here.
 // A monitor row carries its bar as the last child of the whole row (not of the text column), so the bar and its meta line take the full left-column

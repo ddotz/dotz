@@ -76,3 +76,53 @@
 .mon-continue { flex: none; }
 .mon-continue.btn.tonal { background: var(--card); }
 .mon-continue.btn.tonal:hover { background: var(--hover); }
+
+
+/* ---------- the monitoring list: the prototype's sections and rows (site/prototype/s-work.js #monitoring, proto.css .sec/.list/.li) ----------
+   The list column is a stack of section labels and one card per section, never one long card: 감시 소식 and 답장 확인 stand alone, then
+   앱 and 일반 모니터링 (and a project's own group) each get a label and a card. A row is the prototype's row: a 16px line icon, the name
+   and its one-line summary, the status tag of the moment, and the chevron that says the row opens. The wait bar stays under the row (its
+   own product feature), aligned with the text. */
+#v-monitoring > #mon-side { padding: 0 0 16px; background: transparent; border-radius: 0; }
+#mon-side .mon-sec { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 16px 4px 6px; color: var(--fg-2); font: 600 13px/18px var(--font); }
+#mon-side .mon-sec:first-child { margin-top: 0; }
+#mon-side .mon-grp { min-width: 0; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+#mon-side .mon-grp > .cv-row { align-items: center; min-height: 56px; padding: 8px 16px; gap: 12px; border-radius: 0; }
+/* the rule between rows is an inset line, not a border: a row is as tall first in its card as anywhere below it */
+#mon-side .mon-grp > .cv-row + .cv-row { margin-top: 0; box-shadow: inset 0 1px 0 var(--line); }
+#mon-side .cv-row:hover { background: var(--card-hover); }
+#mon-side .cv-row.on, #mon-side .cv-row.on:hover { background: var(--row-sel); }
+#mon-side .cv-av { width: 16px; height: 16px; border-radius: 0; background: none; color: var(--fg-3); font-size: 0; }
+#mon-side .cv-av .ic { width: 16px; height: 16px; }
+#mon-side .cv-row .cv-n { font: 500 15px/22px var(--font); }
+#mon-side .cv-row .cv-p { color: var(--fg-2); font: 400 12px/16px var(--font); }
+#mon-side .cv-row .cv-m { gap: 6px; }
+/* the row's way in: a small chevron at the right edge, after its tags (the prototype's .li .end chev) */
+#mon-side .cv-row::after { align-self: center; content: ""; flex: none; width: 6px; height: 6px; margin-left: 2px; border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(-45deg); }
+#mon-side .cv-row.has-mon-prog { row-gap: 4px; }
+#mon-side .cv-row.has-mon-prog > .mon-prog-wrap { flex: 1 0 100%; order: 9; margin-top: 2px; }
+#mon-side .cv-row.has-mon-prog .mon-prog { height: 3px; }
+#mon-side .cv-row.has-mon-prog .mon-prog-tx { font-size: 11px; line-height: 15px; }
+#mon-side .cv-row > .mon-row-status { flex: 1 0 100%; order: 8; color: var(--fg-3); font-size: 11px; line-height: 15px; }
+
+/* the open item's header: the prototype's detail card - the name, its state and the moment on one line, the wait under it, and the
+   actions on the card's own row (대화로 이어가기 · 지금 확인 · 설정), not floating in the page above the timeline */
+#mon-head .mon-hdwrap { display: flex; flex: 1; flex-direction: column; gap: 10px; min-width: 0; padding: 16px 20px; border-radius: var(--r-card); background: var(--card); }
+#mon-head .mon-hdrow { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+#mon-head .mon-hdrow .cv-av { width: 16px; height: 16px; margin-top: 3px; border-radius: 0; background: none; color: var(--fg-3); font-size: 0; }
+#mon-head .mon-hdrow .cv-av .ic { width: 16px; height: 16px; }
+#mon-head .mon-hdrow .cv-b { flex: 1; min-width: 0; }
+#mon-head .mon-hdrow .cv-n { font: 600 16px/22px var(--font); letter-spacing: -.01em; }
+#mon-head .mon-hdrow .cv-p { margin-top: 2px; color: var(--fg-3); font: 400 12px/16px var(--font); }
+#mon-head .mon-hd-time { flex: none; align-self: flex-start; color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
+#mon-head .mon-hdacts { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; min-width: 0; }
+#mon-head .mon-hdacts:empty { display: none; }
+#mon-head .mon-hdwrap .mon-prog-wrap { width: 100%; }
+#mon-head .mon-hdwrap .mon-banner { width: 100%; }
+
+/* the timeline of an open item: the prototype's section label above its rows (확인 기록), and the cards on the page's surface */
+#mon-tl > .mon-sec { margin: 16px 4px 6px; color: var(--fg-2); font: 600 13px/18px var(--font); }
+#mon-tl > .mon-sec:first-child { margin-top: 0; }
+/* a phone opens the conversation with the same card: the wait, a down banner and the actions sit together, not loose on the page */
+#mon-tl > .mon-topcard { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px 20px; border-radius: var(--r-card); background: var(--card); }
+#mon-tl > .mon-topcard .mon-actions { justify-content: flex-end; }
