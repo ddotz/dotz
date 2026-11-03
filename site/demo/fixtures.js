@@ -182,6 +182,13 @@
     ],
   };
 
+  // Running subagents of the main chat and one message waiting for the running task (GET /api/subagents, /api/queue).
+  const subagents = { sources: { orchestrator: [
+    { id: "sa-1", status: "running", agent: "researcher", description: "경쟁 서비스 가격 조사", intent: "가격 페이지 3곳의 요금표를 모으고 있어요", started_at: now - 4 * 60_000 },
+    { id: "sa-2", status: "running", agent: "writer", description: "조사 결과 표 정리", intent: "요금제별 비교표 초안을 만들고 있어요", started_at: now - 90_000 },
+  ] } };
+  const queue = { items: [{ id: "q-demo-1", target: "main", text: "끝나면 요금제별 표로 보여 줘" }] };
+
   const notices = {
     unread: 3,
     items: [
@@ -202,6 +209,6 @@
 
   window.DEMO_FIXTURES = {
     now, ago, MODEL, model, la, mails, mailCard, mailEvent, calendar, comments, histories, state, conversations,
-    integrations, monitors, projects, todo, notices, canvases, files,
+    integrations, monitors, projects, todo, subagents, queue, notices, canvases, files,
   };
 })();

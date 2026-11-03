@@ -12,11 +12,13 @@ function paintTodo() {
   const box = $("#todo");
   if (!box) return;
   const phases = TD.by[target] || [], all = phases.flatMap(p => p.tasks || []);
-  if (!all.length || all.every(x => todoState(x) === "done" || todoState(x) === "drop")) { box.hidden = true; delete box.dataset.sig; clear(box); return; }
+  if (!all.length || all.every(x => todoState(x) === "done" || todoState(x) === "drop")) { box.hidden = true; delete box.dataset.sig; delete box.dataset.ph; clear(box); return; }
   const open = !!TD.open[target], sig = JSON.stringify([phases, open]);
   box.hidden = false;
   if (box.dataset.sig === sig) return;
-  box.dataset.sig = sig;
+  // A step finishing changes the strip in place (the new look fades up); opening the list or the first paint just draws.
+  const ph = JSON.stringify(phases), swap = box.dataset.ph !== undefined && box.dataset.ph !== ph;
+  box.dataset.sig = sig; box.dataset.ph = ph;
   const live = all.filter(x => todoState(x) !== "drop"), done = live.filter(x => todoState(x) === "done").length;
   const cur = all.find(x => todoState(x) === "act") || all.find(x => todoState(x) === "pend"), g = x => el("span", { class: `td-g tg-${todoState(x)}`, "aria-hidden": "true" });
   const bar = el("button", { class: "td-bar", type: "button", "aria-expanded": String(open), onclick: () => { TD.open[target] = !open; paintTodo(); } },
@@ -26,8 +28,8 @@ function paintTodo() {
     p.name ? el("div", { class: "td-ph", text: p.name }) : null,
     ...(p.tasks || []).map(x => el("div", { class: `td-r tr-${todoState(x)}` }, g(x), el("span", { class: "td-tx", text: x.content })))])));
   const keep = $(".td-list", box), top = keep ? keep.scrollTop : 0;
-  clear(box).append(...kids);
-  const nl = $(".td-list", box); if (nl) nl.scrollTop = top;
+  const draw = () => { clear(box).append(...kids); const nl = $(".td-list", box); if (nl) nl.scrollTop = top; };
+  if (swap) motionSwap(box, draw); else draw();
 }
 // A todo tool call finishing means the plan changed: refetch (debounced) when it belongs to the open target.
 function todoActivity(a) {
