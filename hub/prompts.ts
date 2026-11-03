@@ -86,6 +86,17 @@ export type PromptDeps = {
 const NEAR_CHARS = 40;
 const NEAR_MIN = 20;
 const head = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "").slice(0, NEAR_CHARS);
+// "-" posts nothing. A turn re-delivered after a restart sometimes explains itself before the dash (2026-11-02 15:55 UTC,
+// mail:zele-inbox-7742/7749/7750: "The summary has already been posted to the conversation.\n\n-"), and that line reached the owner.
+// Only a short note that says it already answered or has nothing new, ending in a lone "-", counts as "-"; any other text is kept.
+const NOOP_NOTE_MAX = 120;
+const NOOP_NOTE = /\balready\b|\bnothing (?:new|more|else|further|to add)\b|\bno (?:new|further)\b|이미 (?:올렸|올라|게시|요약|답|보냈|전달)|(?:새로운?|더) (?:내용|것|할 말)(?:은|이)? 없/i;
+export const noopAnswer = (t: string): string => {
+	const m = /^([\s\S]*?)\s+-$/.exec(t);
+	if (!m) return t;
+	const note = m[1]!.trim();
+	return note.length <= NOOP_NOTE_MAX && NOOP_NOTE.test(note) ? "-" : t;
+};
 // "chat" and "web" are both the owner's main conversation on the web page (hub/events.ts eventTarget).
 const isMain = (t: string) => t === "chat" || t === "web";
 const sameConv = (a: string, b: string) => a === b || (isMain(a) && isMain(b));
@@ -436,7 +447,7 @@ export function createPrompts(deps: PromptDeps) {
 
 	/** An answer that came without a prompt: the 30-minute rule above, never a repeat of what was already sent there. */
 	function onOrphanAnswer(text: string): void {
-		const t = text.trim();
+		const t = noopAnswer(text.trim());
 		// Keepalive "ok" and "-" have no prompt by design.
 		if (t.length <= 3) return;
 		// Woken before the worker's result was in: the deferred prompt keeps waiting.
@@ -477,7 +488,7 @@ export function createPrompts(deps: PromptDeps) {
 		// A turn omp continues (steered notes) stops again; the prompt it started with was answered at the first stop.
 		if (!p) return onOrphanAnswer(text);
 		if (p.done) return;
-		const t = text.trim();
+		const t = noopAnswer(text.trim());
 		if (t === LATER && p.target && !p.deferred) {
 			// The answer itself waits for the worker, but the conversation must not look silent (owner 2026-10-27: "메일 내 대화에서
 			// 다른 일 시키니까 일 안하네"): one short note names who took it. It is a gateway note, so it settles no prompt.

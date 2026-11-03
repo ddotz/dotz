@@ -262,6 +262,20 @@ test("keepalive replies and very short texts go nowhere, and an answer already s
 	expect(state.posts).toEqual([]);
 });
 
+test("a short 'already posted' note ending in a lone '-' posts nothing; a real answer ending in '-' is still posted", async () => {
+	// 2026-11-02 15:55 UTC: re-delivered mail turns answered like this and the note reached the owner.
+	const noted = ["The summary has already been posted to the conversation.\n\n-", "The summary was already posted; nothing new to add.\n\n-", "Already posted.\n\n-", "Already posted. -", "이미 요약을 올렸어요.\n-"];
+	const real = ["내일 회의 일정을 정리했어요: 10시 주간 회의, 3시 고객 미팅 -", "견적은 이미 받으셨고 납기는 11/10입니다.\n\n-".padStart(140, "가")];
+	const { q, state, startTurn } = setup();
+	for (const [i, t] of [...noted, ...real].entries()) {
+		state.working = false;
+		startTurn(`new mail ${i}`, { target: `mail:zele-inbox-${i}` });
+		q.onAnswer(t);
+	}
+	await Promise.resolve();
+	expect(state.posts.map(p => p.text)).toEqual(real);
+});
+
 // The same cases through OmO's frames: agent_start, a delivered prompt, a message admitted into the run, the answer, agent_end.
 test("OmO frames of a run with a raw mid-run message still deliver the answer", async () => {
 	const { q, state } = setup();
