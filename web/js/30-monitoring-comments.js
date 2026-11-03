@@ -4,7 +4,7 @@
 // comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
 // goes through el({text}), never innerHTML.
 const CM = { apps: new Set(), sources: [], local: { sources: [], apps: new Set() }, pc: null, vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
-  drafting: new Set(), revising: "", pick: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "" };
+  drafting: new Set(), revising: "", pick: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
 // An app item "i:<instance id>" opens the comment pane when one of its sources is followed. A source carries the instance that owns it (`app`: the
 // default instance of its app, or an added one such as site-mapia); an older gateway sends none, then the app of its kind.
 const cmAppOfKind = k => (k === "website" ? "site" : k);
@@ -111,7 +111,7 @@ function cmRow(t) {
   return el("button", { class: `cv-row pv kk-row${n ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-thread": t.thread, "aria-current": on ? "true" : null, onclick: () => cmOpen(t) },
     cmThumb(t.title, t.thumb),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: t.title, text: t.title }), el("span", { class: "cv-p", text: `${t.lastAuthor}: ${t.lastText}` })),
-    el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(t.lastAt) }), n ? el("span", { class: "nb", "aria-label": t.drafts ? `답장 확인 ${t.drafts}건` : `읽지 않은 댓글 ${t.unread}개`, text: t.drafts ? `초안 ${t.drafts}` : String(t.unread > 99 ? "99+" : t.unread) }) : null, t.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${t.unreplied}개`, text: `미답장 ${t.unreplied}` }) : null));
+    el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(t.lastAt) }), n || t.unreplied ? el("span", { class: "kk-rmeta" }, n ? el("span", { class: "nb", "aria-label": t.drafts ? `답장 확인 ${t.drafts}건` : `읽지 않은 댓글 ${t.unread}개`, text: t.drafts ? `초안 ${t.drafts}` : String(t.unread > 99 ? "99+" : t.unread) }) : null, t.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${t.unreplied}개`, text: `미답장 ${t.unreplied}` }) : null) : null));
 }
 // The picture of a post: its thumbnail when the source gave one (it falls back to the title's initial when the picture does not load).
 function cmThumb(title, thumb) {
@@ -128,8 +128,9 @@ function cmPostCard(thread, kind) {
       thread.link ? el("a", { class: "cm-pl", href: thread.link, target: "_blank", rel: "noopener noreferrer", text: cmOpenWord(kind) }) : null));
 }
 const cmOpenWord = kind => (kind === "youtube" ? "영상 열기" : "원본 글 열기");
+const cmHasTabs = () => DM.on && DM.connected && CM.app === DM_APP && cmSources().some(s => (s.watch || []).length);
 function cmTabs() {
-  if (!(DM.on && DM.connected && CM.app === DM_APP && cmSources().some(s => (s.watch || []).length))) return null;
+  if (!cmHasTabs()) return null;
   const b = (id, text) => el("button", { type: "button", class: CM.tab === id ? "on" : "", "data-tab": id, "aria-pressed": CM.tab === id ? "true" : "false", text, onclick: () => cmTab(id) });
   return el("div", { class: "seg cm-tabs", role: "group", "aria-label": "보기" }, b("comments", "댓글"), b("dm", "DM"));
 }
@@ -143,6 +144,12 @@ function cmPaintRooms() {
   if (!CM.vis) return;
   if (CM.tab === "dm") { dmPaintRooms(); return; }
   const top = cmRooms.scrollTop, srcs = cmSources(), expanded = CM.pick === null ? !CM.threads.length : CM.pick;
+  const sig = JSON.stringify([CM.app, CM.threads, srcs, expanded, CM.open && [CM.open.source, CM.open.thread], CM.loaded, CM.error, [...CM.posts], cmHasTabs()]);
+  if (sig === CM.roomsSig) {   // nothing changed: only the relative times move, in place
+    for (const t of CM.threads) { const n = cmRooms.querySelector(`[data-thread="${CSS.escape(t.thread)}"] .kk-t`); if (n && n.textContent !== kkListTime(t.lastAt)) n.textContent = kkListTime(t.lastAt); }
+    return;
+  }
+  CM.roomsSig = sig;
   const pick = el("section", { class: "kk-pick", "aria-label": "지켜볼 글 고르기" },
     el("button", { class: "kk-ph", id: "cm-pick-btn", type: "button", "aria-expanded": expanded ? "true" : "false", onclick: () => { CM.pick = !expanded; cmPaintRooms(); } },
       el("span", { class: "kk-pt", text: "지켜볼 글" }), el("span", { class: "kk-cnt", text: "" }), icon("drop", "kk-chev")));
@@ -199,15 +206,52 @@ function cmMarkRead() {
   CM.readSent = `${t.source}/${t.thread}/${last}`;
   cmApi(`${cmUrl(t)}/read`, "POST", {}).then(() => { v.read = last; cmIntgSoon(); cmLoad(); }).catch(() => {});
 }
-// `nested`: drawn under the comment it answers (cmThreadNodes), so the bubble does not repeat who it answers; his own are marked 나 / 내 답글.
-function cmCommentNode(c, by, first, nested) {
-  const parent = c.parent ? by.get(c.parent) : null;
-  const bub = el("div", { class: "kk-bub" }, parent && !nested ? el("div", { class: "kk-reply", text: `↳ ${parent.author}` }) : null, el("span", { text: c.text }));
-  const mark = c.needsReply ? el("button", { class: "cchip kk-dbtn", type: "button", "data-k": "draft", disabled: CM.drafting.has(c.id) || CM.view.drafts.some(d => d.commentId === c.id), onclick: () => cmMakeDraft(c),
+// A comment is a row (the prototype's list row), not a chat bubble: avatar, name · time, the text, then what the comment set going (cmProgress) and the
+// actions still open. `nested`: drawn under the comment it answers (cmThreadNodes), so the row does not repeat who it answers; his own are marked 나 / 내 답글.
+const cmNative = c => c.id.split(":").slice(2).join(":");
+// The follow-up of one comment as short tracks of steps, from what the hub returns for it (hub/comments/engine.ts threadView): its pending draft (drafts),
+// the send records of the last 24 hours (sends: sending / sent / failed + reason), the mail that rides on the reply (comment.mail, draft.mail) and his own reply in the
+// thread (answered on the platform). Step state: done · busy (on its way) · ask (waits for him) · err · todo (not yet). What the hub does not return stays unshown.
+function cmFlow(c, v) {
+  if (c.mine) return [];
+  const step = (text, st) => ({ text, st }), out = [];
+  const d = v.drafts.find(x => x.commentId === c.id), s = v.sends.filter(x => x.commentId === c.id).sort((p, q) => p.at - q.at).at(-1);
+  let reply = null;
+  if (s && s.state === "sending") reply = [step("초안", "done"), step("확인", "done"), step("보내는 중", "busy")];
+  else if (d) reply = [step("초안", "done"), step("확인 대기", "ask"), step("보냄", "todo")];
+  else if (s && s.state === "sent") reply = [step("초안", "done"), step("확인", "done"), step("보냄", "done")];
+  else if (s && s.state === "failed") reply = [step("초안", "done"), step("확인", "done"), step(`실패${s.reason ? ` · ${s.reason}` : ""}`, "err")];
+  else if (v.comments.some(x => x.mine && x.parent && x.parent === cmNative(c))) reply = [step("답글 보냄", "done")];
+  else if (CM.drafting.has(c.id)) reply = [step("초안 만드는 중", "busy"), step("확인", "todo"), step("보냄", "todo")];
+  else if (c.needsReply) reply = [step("초안 필요", "ask"), step("확인", "todo"), step("보냄", "todo")];
+  if (reply) out.push({ key: "reply", name: "답글", steps: reply });
+  const m = c.mail || (d && d.mail ? { state: "drafted", label: "메일 초안 작성됨" } : null);
+  if (m) out.push({ key: "mail", name: "메일", steps: m.state === "failed" ? [step("초안", "done"), step(m.label, "err")] : m.state === "sent" ? [step("초안", "done"), step("보냄", "done")] : [step("초안", "done"), step("답글과 함께 보내요", "todo")] });
+  return out;
+}
+function cmProgress(c, v) {
+  const tracks = cmFlow(c, v);
+  if (!tracks.length) return null;
+  return el("div", { class: "cm-pg" }, ...tracks.map(t => el("div", { class: "cm-tr", "data-track": t.key, role: "group", "aria-label": `${t.name}: ${t.steps.map(x => x.text).join(" → ")}` },
+    el("span", { class: "cm-tn", text: t.name }), ...t.steps.map(x => el("span", { class: "cm-st", "data-s": x.st, text: x.text })))));
+}
+function cmNoReply(ev, c) {
+  const btn = ev.currentTarget, row = btn.closest(".cm-c"), pill = row && row.querySelector(".tag.unreplied");
+  const hidden = [btn, pill].filter(Boolean);
+  hidden.forEach(n => { n.hidden = true; });
+  cmApi(`/api/comments/comment/${enc(c.id)}/no-reply`, "POST", {}).then(() => { toast("답장 안 함으로 표시했어요"); cmReload(); cmLoad(); cmIntgSoon(); },
+    e => { hidden.forEach(n => { n.hidden = false; }); toast(e.message, true); });
+}
+function cmCommentNode(c, v, by, nested) {
+  const parent = c.parent ? by.get(c.parent) : null, draft = v.drafts.some(d => d.commentId === c.id);
+  const pill = !c.mine && c.unreplied ? unrepPill() : null;
+  const hd = el("div", { class: "cm-hd" }, c.mine ? el("span", { class: "cm-mine", text: c.parent ? "나 · 내 답글" : "나" }) : el("span", { class: "kk-name", text: c.author }), el("span", { class: "kk-time", text: kkTime(c.at) }), pill);
+  const make = !c.mine && c.needsReply && !draft ? el("button", { class: "btn tonal sm", type: "button", "data-k": "draft", disabled: CM.drafting.has(c.id), onclick: () => cmMakeDraft(c),
     text: CM.drafting.has(c.id) ? "초안 만드는 중…" : "답글 초안" }) : null;
-  if (c.mine) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-id": c.id }, el("span", { class: "cm-mine", text: c.parent ? "나 · 내 답글" : "나" }), el("div", { class: "kk-line" }, el("span", { class: "kk-time", text: kkTime(c.at) }), bub));
-  return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-id": c.id }, first ? kkAvatar(c.author) : el("span", { class: "kk-av sp", "aria-hidden": "true" }),
-    el("div", { class: "kk-mb" }, first ? el("div", { class: "kk-name", text: c.author }) : null, el("div", { class: "kk-line" }, bub, el("span", { class: "kk-time", text: kkTime(c.at) })), mark, c.unreplied || c.mail ? el("div", { class: "kk-line" }, c.unreplied ? unrepPill() : null, c.mail ? el("span", { class: "tag", "data-mail": c.mail.state, title: c.mail.label, text: c.mail.label }) : null, c.unreplied ? unrepNo(`/api/comments/comment/${encodeURIComponent(c.id)}/no-reply`) : null) : null));
+  const no = pill ? el("button", { class: "btn text sm cm-no", type: "button", text: "답장 안 함", onclick: ev => cmNoReply(ev, c) }) : null;
+  return el("div", { class: `kk-m cm-c${c.mine ? " mine" : ""}`, "data-id": c.id }, c.mine ? el("span", { class: "kk-av cm-me", "aria-hidden": "true", text: "나" }) : kkAvatar(c.author),
+    el("div", { class: "kk-mb" }, hd, parent && !nested ? el("div", { class: "kk-reply", text: `↳ ${parent.author}` }) : null, el("div", { class: "kk-bub", text: c.text }), cmProgress(c, v),
+      make || no ? el("div", { class: "cm-acts" }, make, no) : null));
 }
 // A reply that did not go out offers 다시 보내기 (the same text through the same gate) and 지우기 (the record goes, the draft stays), like KakaoTalk.
 const cmSendCall = (s, op) => cmApi(`/api/comments/sends/${enc(s.id)}/${op}`, "POST", {});
@@ -233,6 +277,9 @@ function cmPaintChat(stick) {
     if (open) cmHead.append(cmThumb(open.title, v && v.thread.thumb), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: open.title }),
       v && v.thread.link ? el("a", { class: "cv-p", href: v.thread.link, target: "_blank", rel: "noopener noreferrer", text: cmOpenWord(v.source.kind) }) : el("span", { class: "cv-p", text: "댓글" })));
   }
+  const csig = JSON.stringify([open, CM.loading, CM.viewErr, v && { ...v, read: null }, [...CM.drafting], CM.revising, v && v.sends.some(x => x.state === "sent" && Date.now() - x.at < 120000) ? Math.floor(Date.now() / 20000) : 0]);
+  if (!stick && csig === CM.chatSig) return;
+  CM.chatSig = csig;
   if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: "글을 골라 주세요" })); return; }
   if (CM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
   if (CM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: CM.viewErr })); return; }
@@ -262,9 +309,9 @@ function cmThreadNodes(v) {
   for (const { root, replies } of groups.values()) {
     if (day === null || kkDay(day) !== kkDay(root.at)) nodes.push(el("div", { class: "kk-date", text: kkDate(root.at) }));
     day = root.at;
-    const kids = [...under(root)]; let prev = null;
-    for (const r of replies) { kids.push(cmCommentNode(r, by, !prev || prev.author !== r.author || prev.mine !== r.mine, true), ...under(r)); prev = r; }
-    nodes.push(el("div", { class: "cm-th", "data-root": root.id }, cmCommentNode(root, by, true, false), kids.length ? el("div", { class: "cm-replies" }, ...kids) : null));
+    const kids = [...under(root)];
+    for (const r of replies) kids.push(cmCommentNode(r, v, by, true), ...under(r));
+    nodes.push(el("div", { class: "cm-th", "data-root": root.id }, cmCommentNode(root, v, by, false), kids.length ? el("div", { class: "cm-replies" }, ...kids) : null));
   }
   nodes.push(...v.drafts.filter(d => !ids.has(d.commentId)).map(cmDraftCard), ...sends.filter(s => !ids.has(s.commentId)).map(cmSendNode));
   return nodes;
@@ -308,9 +355,7 @@ function cmDraftCard(d) {
         drop: ev => run(ev.currentTarget, async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/drop`, "POST", {}); rqDroppedToast(d.mail ? null : () => cmRestore(d.code)); await cmReload(); }),
       } }) });
   const org = orgNodes({ ref: d.code, toLabel: "대상" }, null, wrap, card);
-  const cm = (CM.view.comments || []).find(c => c.id === d.commentId);
-  const quote = cm ? el("div", { class: "cm-dq" }, el("div", { class: "cm-dqh" }, el("b", { text: `↳ ${cm.author}` }), el("span", { text: new Date(cm.at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }) }), d.mailMark ? el("span", { class: "tag", "data-mail": d.mailMark.state, text: d.mailMark.label }) : null), el("div", { class: "cm-dqt", text: (cm.text ?? "").length > 200 ? `${cm.text.slice(0, 200)}…` : (cm.text ?? "") })) : null;
-  wrap.append(...(quote ? [quote] : []), org.bar, el("div", { class: "od-stage" }, org.orig, card));
+  wrap.append(org.bar, el("div", { class: "od-stage" }, org.orig, card));
   return wrap;
 }
 
@@ -334,13 +379,13 @@ function cmMode(app, shown, pc) {
   if (app) $("#v-monitoring").classList.add("kk-on");
   cmPane.hidden = !app;
   if (swap) {   // another computer's comments: start from an empty pane (this computer's sources stay for its app rows)
-    Object.assign(CM, { vis: false, sources: [], apps: new Set(), threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", error: "" }); CM.seq++; clearInterval(CM.timer);
+    Object.assign(CM, { vis: false, sources: [], apps: new Set(), threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", roomsSig: "", chatSig: "", error: "" }); CM.seq++; clearInterval(CM.timer);
   }
   CM.pc = app ? pc || null : null;
   if (shown && (!CM.vis || CM.app !== app)) {
     // The DM tab is this computer's Instagram app only; another computer's comment app starts on its comments.
     const dm = !CM.pc && DM.on && DM.connected && app === DM_APP && !CM.sources.some(s => cmOwner(s) === app && (s.watch || []).length);
-    Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", tab: dm ? "dm" : "comments" }); CM.seq++;
+    Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", roomsSig: "", chatSig: "", tab: dm ? "dm" : "comments" }); CM.seq++;
     Object.assign(DM, { open: null, view: null }); DM.seq++;
     cmPaintAll(); cmLoad();
     if (CM.tab === "dm") dmRefresh();
