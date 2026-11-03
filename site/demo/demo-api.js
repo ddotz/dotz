@@ -485,8 +485,6 @@
     "/api/push": { subscribed: false },
     "/api/update": {},
     "/api/harness/update": {},
-    "/api/queue": { items: [] },
-    "/api/subagents": { sources: {} },
     "/api/context": { processes: [] },
     "/api/models": models,
     "/api/providers": { providers: [{ id: "dotz", name: "dotz AI" }] },
@@ -500,6 +498,8 @@
     if (p === "/api/state") return json({ ...F.state, work_now: Date.now(), notices_unread: unread() });
     if (p === "/api/history") return json({ target: u.searchParams.get("target") || "main", events: F.histories[u.searchParams.get("target")] || [] });
     if (p === "/api/todo") return json(F.todo);
+    if (p === "/api/queue") return json(F.queue);
+    if (p === "/api/subagents") return json(F.subagents);
     if (p === "/api/conversations") return json({ items: F.conversations });
     if (p === "/api/integrations") return json({ items: F.integrations.map(i => ({ ...i, needs: { drafts: 0, unread: F.mails.filter(m => m.dir === "in" && !m.read).length, unreplied: 0, sentToday: 0 } })), available: [] });
     if (p === "/api/monitors") return json({ items: F.monitors });

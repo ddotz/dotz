@@ -448,7 +448,8 @@ function renderDecision(box, dc, picks, step) {
     const blk = dc.blocks[step];
     if (blk) {
       if (blk.title && dc.blocks.length > 1) body.append(el("div", { class: "dc-sub", text: blk.title }));
-      for (const o of blk.options) body.append(el("button", { class: `dc-row${o.rec ? " rec" : ""}${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
+      // Once the answer goes out the card keeps only the chosen row (the others leave), so 보냈어요 reads in the same place.
+      for (const o of st && !dc.draft && picks[step] ? blk.options.filter(x => x.n === picks[step].n) : blk.options) body.append(el("button", { class: `dc-row${o.rec ? " rec" : ""}${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
         el("span", { class: "dc-key", text: String(o.n) }),
         el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
     }

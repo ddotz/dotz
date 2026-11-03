@@ -214,7 +214,7 @@ details.work.live .wdot { display: block; }
 .qlist { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .qitem { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border: 0; border-radius: 12px; background: var(--layer); min-width: 0; }
 .qitem .qb { flex: 1; min-width: 0; }
-.qitem .qt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; font-size: 13px; line-height: 18px; }
+.qitem .qt { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; font-size: 13px; line-height: 18px; font-weight: 500; }
 .qitem .qm { margin-top: 2px; color: var(--fg-3); font-size: 11px; line-height: 16px; }
 .qitem .btn { flex: none; height: 28px; padding: 0 8px; font-size: 12px; }
 @media (max-width: 639px) { .qitem { flex-wrap: wrap; } .qitem .qb { flex-basis: 100%; } .qitem .qa { margin-left: auto; } }

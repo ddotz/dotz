@@ -133,9 +133,9 @@ function renderSubSheet() {
     if (!rows.length) shBody.append(el("div", { class: "a-div", text: "진행 중인 서브에이전트가 없어요" }));
     for (const [s, x] of rows) shBody.append(el("button", { class: "subrow", type: "button", onclick: () => openSub(s, x.id, d.sources) },
       el("span", { class: "dot pri" }),
-      el("span", { class: "nm" }, el("b", { text: x.description || x.agent || "서브에이전트" }), x.intent || x.tool ? el("span", { class: "muted", text: ` · ${firstLine(x.intent || x.tool)}` }) : null),
+      el("span", { class: "nm" }, el("b", { text: x.description || x.agent || "서브에이전트" }), x.intent || x.tool ? el("span", { class: "muted", text: firstLine(x.intent || x.tool) }) : null),
       d.sources.length > 1 ? el("span", { class: "tag", text: targetName(targetOfSource(s)) }) : null,
-      icon("chev", "chev")));
+      x.started_at ? el("span", { class: "cc2-tm", text: workElapsed(x) }) : null));
     return;
   }
   const l = subNow(d), data = d.data || {};
