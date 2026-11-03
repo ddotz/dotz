@@ -4,10 +4,14 @@
 // and a tap opens the rest.
 //
 // The thread: when the mail has earlier or later mail with the same counterpart (its sender, or a sent mail's recipients), a wide screen
-// (>= 1024px) shows them in a panel beside the conversation, newest first, the open one marked; a phone shows one row "이 사람과 주고받은 메일 N"
-// under the mail's own header that opens the same list. Everything comes from the MAILS map (GET /api/conversations mail cards), so no extra route.
+// (>= 1024px) can show them in a panel beside the conversation, newest first, the open one marked. The panel is folded by default so the mail body
+// keeps the room: the small chip at the end of the recipient line (mail icon, the count) opens and folds it, and the panel's own × folds it too.
+// A phone shows the same chip; it opens the list under the mail's header. Everything comes from the MAILS map (GET /api/conversations mail cards), so no extra route.
 var MT_READY = false;
 const MT_MAX = 20;
+const MTH_WIDE = matchMedia("(min-width: 1024px)");
+let mthOpen = false;   // the wide panel; kept for the session, folded at the start
+try { mthOpen = localStorage.getItem("dz-mth-open") === "1"; } catch {}
 
 // Header lists: split on , or ; outside quotes and <>, then "Name <addr>" | "addr" | "Name".
 function mailAddrList(v) {
@@ -114,9 +118,21 @@ function mailThreadMobile(t) {
   const list = el("ol", { class: "mth-list", hidden: true }, ...mailThreadRows(t, rel));
   // a small chip (mail icon and the count) at the end of the header's 받는 사람 line; its full name is the aria-label and the title
   const name = `이 사람과 주고받은 메일 ${rel.length}`;
-  const b = el("button", { class: "mth-mb", type: "button", "aria-expanded": "false", "aria-label": name, title: name, onclick: () => { const open = list.hidden; list.hidden = !open; b.setAttribute("aria-expanded", String(open)); b.classList.toggle("open", open); } },
+  const b = el("button", { class: "mth-mb", type: "button", "aria-expanded": "false", "aria-label": name, title: name, onclick: () => {
+    // wide: the chip opens the panel beside the mail; narrow: the list under the header
+    if (MTH_WIDE.matches) return mailThreadToggle();
+    const open = list.hidden; list.hidden = !open; b.setAttribute("aria-expanded", String(open)); b.classList.toggle("open", open);
+  } },
     icon("mail"), el("span", { class: "mth-mt", text: String(rel.length) }), icon("drop", "mth-ch"));
+  b.dataset.k = "mail-thread-toggle";
+  if (MTH_WIDE.matches && mthOpen) { b.setAttribute("aria-expanded", "true"); b.classList.add("open"); }
   return el("div", { class: "mth-m" }, b, list);
+}
+// The panel's open state: the chips of the open mail follow it, the panel is shown or folded in place (no redraw).
+function mailThreadToggle(open = !mthOpen) {
+  mthOpen = !!open;
+  try { localStorage.setItem("dz-mth-open", mthOpen ? "1" : "0"); } catch {}
+  mailThreadSync();
 }
 
 // The mail card's own block, Gmail-like: one muted line (받는 사람, 참조: two names then 외 N명) with a chevron that opens the full header,
@@ -141,15 +157,19 @@ function mailThreadSync() {
   if (!mailThrEl) return;
   const on = current === "chat" && isMailT(target);
   const rel = on ? mailRelated(target) : [];
-  const show = on && rel.length > 1;
+  const show = on && rel.length > 1, open = show && mthOpen;
+  // mail-open: the mail has related mail (10-conversations.css keeps the conversation list narrow for the mail's width, panel folded or not); mail-thr: the panel is open
   $("#v-chat").classList.toggle("mail-open", show);
-  mailThrEl.hidden = !show;
+  $("#v-chat").classList.toggle("mail-thr", open);
+  mailThrEl.hidden = !open;
+  document.querySelectorAll("#tl .mth-mb").forEach(b => { const x = MTH_WIDE.matches && mthOpen; b.setAttribute("aria-expanded", String(x)); b.classList.toggle("open", x); });
   if (!show) { mthKey = ""; mthSig = ""; return; }
   const sig = rel.map(r => `${r.t}|${r.m.at}|${r.m.reply || ""}|${r.m.suggest && r.m.suggest.state || ""}|${r.m.subject || ""}`).join("\n");
   if (sig === mthSig && mthKey === target) return;
   mthKey = target; mthSig = sig;
   clear(mailThrEl).append(
-    el("div", { class: "mth-h" }, el("span", { class: "mth-ht", text: "이 사람과 주고받은 메일" }), el("span", { class: "mth-n", text: String(rel.length) })),
+    el("div", { class: "mth-h" }, el("span", { class: "mth-ht", text: "이 사람과 주고받은 메일" }), el("span", { class: "mth-n", text: String(rel.length) }),
+      el("button", { class: "ib mth-x", type: "button", "data-k": "mail-thread-fold", title: "접기", "aria-label": "같은 사람 메일 접기", onclick: () => mailThreadToggle(false) }, icon("close"))),
     el("ol", { class: "mth-list" }, ...mailThreadRows(target, rel)));
 }
 MT_READY = true;
