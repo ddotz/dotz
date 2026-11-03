@@ -1,6 +1,6 @@
 // The top update bar (web/js/24-settings-update.js, hub/update-now.ts flow): a new version offers itself with one tap, the tap runs
 // download -> waiting -> restarting -> done (or failed with the reason and a retry), and the bar never covers the app. Headless
-// (Bun.WebView) against a fake hub. Nothing sleeps: the page's poll timer and the 8 s "done" timer are held by the test and run on demand.
+// (Bun.WebView) against a fake hub. Nothing sleeps: the page's poll timer and the "done" timer are held by the test and run on demand.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -57,9 +57,9 @@ const waitFor = (v: View, expr: string, ms = 10_000) =>
 	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
-// Polls the hub exactly when the test says so: the page's 2 s re-poll and its 8 s done timer are recorded, never started.
+// Polls the hub exactly when the test says so: the page's 2 s re-poll and its done timer (UB_DONE_MS) are recorded, never started.
 const HOLD = `const st = window.setTimeout; window.heldDone = [];
-	window.setTimeout = (f, ms, ...a) => { if (ms === 8000) window.heldDone.push(f); return st(ms === 2000 && f === updBarTick ? () => {} : f, ms, ...a); };`;
+	window.setTimeout = (f, ms, ...a) => { if (ms === UB_DONE_MS && f !== updBarTick) { window.heldDone.push(f); return -1; } return st(ms === 2000 && f === updBarTick ? () => {} : f, ms, ...a); };`;
 async function boot(width: number, height: number, m: Mode) {
 	reset(m);
 	const v = new Bun.WebView({ width, height });
@@ -142,7 +142,8 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 		expect(g.pulse).toBe("none");
 		expect(await q<string>(v, `return $("#upd-bar").className`)).toBe("upd-bar done");
 		await shot(v, "done", width);
-		expect(await q<number>(v, `return window.heldDone.length`)).toBe(1);   // the 8 s timer is armed once
+		expect(await q<number>(v, `return document.querySelectorAll("#upd-bar .x").length`)).toBe(0);   // a finished update has no × to press
+		expect(await q<number>(v, `return window.heldDone.length`)).toBe(1);   // the done timer is armed once
 		expect(await q<string | null>(v, `return localStorage.getItem(${JSON.stringify(KEY)})`)).toBeNull();
 		await run(v, `window.heldDone[0]()`);   // ... and when it fires the result is marked seen and the bar goes
 		await waitFor(v, `!$("#upd-bar")`);
