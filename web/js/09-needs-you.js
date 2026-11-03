@@ -54,7 +54,8 @@ const chatUnreadCount = (targets, unreadOf) => targets.filter(t => unreadOf(t) >
 function paintAttn() {
   const n = S ? chatUnreadCount([MAIN, "alert", "worklog", ...projTargets()], t => ts(t).unread) : 0, b = $("#nav-att");
   const say = n ? `읽지 않은 대화 ${n}개` : "";
-  b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n); b.title = say;
+  b.hidden = !n; b.title = say;
+  if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";   // the digit that changed rolls; a hidden badge forgets, so it appears whole
   b.parentElement.setAttribute("aria-label", n ? `채팅, ${say}` : "채팅");
   document.title = n ? `(${n}) ${botName}` : botName;
   toastAttn();
@@ -81,7 +82,8 @@ function paintMonAttn() {
   const b = $("#nav-mon");
   if (!b) return;
   const n = monAttnCount([{ apps: INTG.items, mons: NM.items }]), say = n ? `확인할 것 ${n}개` : "";
-  b.hidden = !n; b.textContent = n > 99 ? "99+" : String(n); b.title = say;
+  b.hidden = !n; b.title = say;
+  if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";
   b.parentElement.setAttribute("aria-label", n ? `모니터링, ${say}` : "모니터링");
 }
 // The badge and 답변 필요 read this computer's monitors on every tab: 홈 and 모니터링 refresh them themselves, any other tab here.

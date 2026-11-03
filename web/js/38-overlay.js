@@ -29,6 +29,7 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
     close(restore = true) {
       if (closed) return;
       closed = true;
+      // goes at once: the next card often opens in the same moment (approval cards one after another), and a fading copy would sit over it
       node.remove(); ovDone(ov); FS.splice(FS.indexOf(h), 1);
       document.removeEventListener("keydown", key, true);
       if (vv) { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); }
@@ -37,6 +38,7 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
     },
   };
   document.body.append(node);
+  motionIn(node, "fade", 160); motionIn(box, "rise");
   ov = ovOpen(() => h.close(false));
   FS.push(h);
   document.addEventListener("keydown", key, true);

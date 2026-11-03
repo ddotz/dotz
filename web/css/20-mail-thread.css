@@ -13,7 +13,7 @@
 .mhd-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; margin-top: 2px; }
 .mhd-tog { display: flex; align-items: center; gap: 2px; flex: 1 1 0; min-width: 0; min-height: 28px; padding: 0; border: 0; background: none; color: var(--fg-3); font: 400 12.5px/18px var(--font); text-align: left; cursor: pointer; }
 .mhd-tl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mhd-ch { flex: none; width: 16px; height: 16px; transition: transform .15s; }
+.mhd-ch { flex: none; width: 16px; height: 16px; transition: transform var(--m-fast) var(--m-ease); }
 .mhd-tog.open .mhd-ch { transform: rotate(180deg); }
 .mhd-tog:hover { color: var(--fg-2); }
 .mr-to { overflow: hidden; color: var(--fg-3); font-size: 12px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
@@ -24,7 +24,7 @@
 .mth-mb { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font: 500 14px/20px var(--font); text-align: left; }
 .mth-mb .ic { flex: none; width: 16px; height: 16px; }
 .mth-mt { flex: 1; min-width: 0; color: var(--fg); text-align: left; }
-.mth-ch { transition: transform .15s; }
+.mth-ch { transition: transform var(--m-fast) var(--m-ease); }
 .mth-mb.open .mth-ch { transform: rotate(180deg); }
 .mth-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .mth-m > .mth-list { margin-top: 4px; padding: 4px; border-radius: var(--r-ctl); background: var(--layer); }
@@ -53,7 +53,7 @@
   .mth-m { display: none; }
   #v-chat.mail-open .chatbox { display: flex; gap: 16px; align-items: stretch; }
   #v-chat.mail-open .chatbox > .timeline { flex: 1 1 auto; min-width: 0; }
-  #v-chat.mail-open #mail-thread { display: flex; flex-direction: column; flex: 0 0 280px; min-height: 0; margin: 0 0 16px; padding: 10px 6px 10px 10px; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
+  #v-chat.mail-open #mail-thread { display: flex; flex-direction: column; flex: 0 0 280px; min-height: 0; margin: 0 0 16px; padding: 10px 6px 10px 10px; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
   /* The transcript's top fade (.chatbox::before, 03-base.css) spans the whole box; the panel beside it stays clear of it (owner 2026-10-28). */
   #v-chat.mail-open #mail-thread { position: relative; z-index: 2; }
   #mail-thread[hidden] { display: none; }

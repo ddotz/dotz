@@ -24,6 +24,35 @@ const mailOldHub = t => { const m = MAILS.get(t); return !!m && !Array.isArray(m
 const mailUnread = (t, m = MAILS.get(t)) => !!m && m.dir !== "out" && (typeof m.read === "boolean" ? !m.read : (ts(t).unread | 0) > 0);
 const mbRefresh = () => { MON.sig = ""; MON.side = ""; monSchedule(); mbPaintBar(); };
 
+/* ---------- what moves, and why (web/DESIGN.md Motion) ---------- */
+// A count badge that was drawn again (a list row, a tab) keeps what it last said, so only the digit that changed rolls (rollCount, 01-motion.js).
+// A count of 0 draws no badge at all and forgets, so it appears whole the next time. `key` names the one badge; `attrs` go on the span.
+const CNT_LAST = new Map();
+function cntSpan(key, cls, n, attrs = {}) {
+  if (!n) { CNT_LAST.delete(key); return null; }
+  const now = n > 99 ? "99+" : String(n), was = CNT_LAST.get(key);
+  CNT_LAST.set(key, now);
+  const sp = el("span", { class: cls, ...attrs, text: was && was !== now ? was : now });
+  rollCount(sp, now);
+  return sp;
+}
+// A mail that arrived since the list was last drawn slides in at the top; the first draw of a list, another folder and a plain redraw move nothing.
+const MBOX_SEEN = new Set();
+const mbSeenReset = () => { MBOX_SEEN.clear(); MBOX_SEEN.seeded = false; MBOX_SEEN.scope = ""; };
+function mbFresh(scope, box) {
+  if (scope !== MBOX_SEEN.scope) { mbSeenReset(); MBOX_SEEN.scope = scope; }
+  const rows = [...box.querySelectorAll(":scope > .mr[data-t]")];
+  if (!NT.loaded || !rows.length) return;
+  const fresh = freshKeys(MBOX_SEEN, rows.map(r => r.dataset.t));
+  for (const r of rows) if (fresh.has(r.dataset.t)) motionIn(r, "top");
+}
+// Rows an action takes out of the list (done, deleted, no longer unread in 안 읽음) leave first; the list is drawn again without them after.
+function mbRowsOut(keys) {
+  const keep = mailFilterOf()[2], gone = keys.filter(t => !MAILS.has(t) || !keep(MAILS.get(t), t));
+  const rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => gone.includes(r.dataset.t));
+  return rows.length ? Promise.all(rows.map(r => motionOut(r, "side"))) : null;
+}
+
 // The change an action makes to the page's copy of the mail; the returned function puts it back.
 function mbApply(t, a) {
   const m = MAILS.get(t);
@@ -48,7 +77,8 @@ async function mbRun(keys, action, quiet = false, note = "") {
   const todo = legacy ? keys : keys.filter(t => !mailOldHub(t));
   if (!todo.length) return [];
   const undo = new Map(todo.map(t => [t, mbApply(t, action)]));
-  mbRefresh();
+  const leaving = mbRowsOut(todo);
+  if (leaving) leaving.then(mbRefresh); else mbRefresh();
   let res;
   try {
     if (legacy) { res = []; for (const t of todo) { await api(`/api/mail/${mbKey(t)}`, "DELETE"); res.push({ key: t, ok: true, synced: false }); } }
@@ -213,8 +243,10 @@ function mbCompose(init = {}) {
   const host = el("div", { class: "mbox-sb" });
   const form = mbForm(st, host, { rows: "10" });
   const node = el("div", { class: "mbox-sheet", role: "dialog", "aria-label": "새 메일" });
-  const close = async () => { if (!mbEmpty(st) && !await ask("작성 중인 메일", "쓰던 내용을 버릴까요?", "버리기", true)) return; node.remove(); MBOX.cs = null; };
-  const save = ev => mbSave(st, {}, ev.currentTarget).then(r => { if (r) { node.remove(); MBOX.cs = null; } });
+  // The sheet fades down and away before it is removed; it is no longer the open one from the first moment.
+  const leave = async () => { MBOX.cs = null; node.inert = true; await motionOut(node, "rise"); node.remove(); };
+  const close = async () => { if (!mbEmpty(st) && !await ask("작성 중인 메일", "쓰던 내용을 버릴까요?", "버리기", true)) return; leave(); };
+  const save = ev => mbSave(st, {}, ev.currentTarget).then(r => { if (r) leave(); });
   node.append(
     el("div", { class: "mbox-sh" }, el("span", { class: "mbox-st", text: "새 메일" }),
       el("button", { class: "ib mbox-min", type: "button", "aria-label": "최소화", title: "최소화", onclick: () => node.classList.toggle("min") }, icon("minus")),
@@ -223,6 +255,7 @@ function mbCompose(init = {}) {
     el("div", { class: "mbox-sf" }, el("button", { class: "btn pri mbox-save", type: "button", "data-k": "mail-compose-save", onclick: save }, "초안 만들기"),
       el("button", { class: "ib mbox-attach", type: "button", "aria-label": "파일 붙이기", title: "파일 붙이기", onclick: () => form.pick() }, icon("clip"))));
   document.body.append(node);
+  motionIn(node, "rise", 240);
   MBOX.cs = { node, st };
   node.querySelector(".mbox-in").focus();
 }
@@ -252,11 +285,12 @@ function mbBox(t) {
 }
 function mbOpenReply(t, mode) {
   const b = mbBox(t), m = MAILS.get(t) || {};
-  const keep = b.st ? { body: b.st.body, files: b.st.files } : { body: "", files: [] };
+  const keep = b.st ? { body: b.st.body, files: b.st.files } : { body: "", files: [] }, opening = !b.open;
   b.open = true; b.mode = mode;
   b.st = { ...mbDefaults(t, mode), showCc: mode === "all", up: [], ...keep };
   if (mode === "forward" && !b.st.body) b.st.body = `\n\n---------- 전달한 메일 ----------\n보낸 사람: ${m.from || ""}\n제목: ${m.subject || ""}\n\n${mbQuoteText(t)}`;
   mbReplyPaint(true);
+  if (opening && typeof tl !== "undefined" && tl) motionIn(tl.querySelector(":scope > .mbox-reply"));   // the reply box opens; a change of mode inside it moves nothing
 }
 function mbReplyPaint(force) {
   if (typeof tl === "undefined" || !tl) return;
