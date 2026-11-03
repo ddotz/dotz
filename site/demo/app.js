@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "58db9a7620da";
+const WEB_BUILD = "be88419d1f7c";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -489,12 +489,15 @@ function notify(e) {
 
 /* ---------- dialog ---------- */
 // classic: the small centered box with its own header, not the full-screen frame (the settings tab's dialogs, 03-base.css dialog.dlg.cl).
-function dialog({ title, body, actions = [], onclose, wide, classic }) {
-  const d = el("dialog", { class: `dlg${wide ? " wide" : ""}${classic ? " cl" : " fs-card"}` });
-  const bodyBox = el("div", { class: classic ? "dbody" : "dbody fs-body" }, body);
-  const actBox = el("div", { class: classic ? "dact" : "dact fs-ft row" });
+// confirm: a short confirm (a title, a sentence or two, two buttons): a small centered box, a low bottom sheet on a phone (docs/ui-spec.md 확인 상자).
+function dialog({ title, body, actions = [], onclose, wide, classic, confirm }) {
+  const small = classic || confirm;
+  const d = el("dialog", { class: `dlg${wide ? " wide" : ""}${confirm ? " cf" : classic ? " cl" : " fs-card"}` });
+  const bodyBox = el("div", { class: small ? "dbody" : "dbody fs-body" }, body);
+  const actBox = el("div", { class: small ? "dact" : "dact fs-ft row" });
   // The ✕ and a tap outside the box both close it and drop the edit, like Esc and the Android back gesture (dialogHist) already do.
-  const head = classic
+  const head = confirm ? el("h2", { class: "dtitle", text: title })
+    : classic
     ? el("div", { class: "dhd" }, el("h2", { class: "dtitle", text: title }), el("button", { type: "button", class: "ib dx", "aria-label": "닫기", onclick: () => d.close() }, icon("close")))
     : fsHead([el("h2", { class: "dtitle", text: title })], { close: () => d.close() });
   d.append(head, bodyBox, actBox);
@@ -516,7 +519,7 @@ function dialog({ title, body, actions = [], onclose, wide, classic }) {
 function ask(title, text, ok = "확인", danger = false) {
   return new Promise(res => {
     let v = false;
-    dialog({ title, body: text ? el("p", { text }) : null, onclose: () => res(v), actions: [
+    dialog({ confirm: true, title, body: text ? el("p", { text }) : null, onclose: () => res(v), actions: [
       { label: "취소", onclick: c => c() },
       { label: ok, kind: danger ? "danger fill" : "pri", onclick: c => { v = true; c(); } }] });
   });
@@ -716,7 +719,7 @@ async function deleteEnded(names) {
   const one = names.length === 1;
   const sure = await new Promise(res => {
     let v = false;
-    dialog({ title: one ? `${names[0]} 삭제` : `세션 ${names.length}개 삭제`, onclose: () => res(v),
+    dialog({ confirm: true, title: one ? `${names[0]} 삭제` : `세션 ${names.length}개 삭제`, onclose: () => res(v),
       body: el("div", { class: "dl-body" }, el("p", { text: "휴지통으로 옮겨요. 7일 안에는 되돌릴 수 있어요." }),
         el("ul", { class: "dl-list" }, ...names.map(n => el("li", { text: n })))),
       actions: [{ label: "취소", onclick: c => c() }, { label: one ? "삭제" : `${names.length}개 삭제`, kind: "danger fill", onclick: c => { v = true; c(); } }] });
@@ -6951,7 +6954,7 @@ async function loadQuota(fresh) {
       el("div", { class: "li", style: "display:block" }, el("div", { class: "hd", text: A.account_label || A.account }), el("div", { class: "sup", text: `${A.since ? `${kstStamp(Date.parse(A.since))}부터 · ` : ""}${A.pinned ? "고정한 계정이에요. 한도에 걸리면 다른 계정 대신 폴백 순서를 따라요" : "규칙이나 한도로 바뀌기 전까지 이 계정을 계속 써요"}` })),
       ...all.slice(0, SHOWN).map(row), ...older));
     if (more) box.append(more);
-    if (all.length) box.append(el("button", { class: "btn text danger", type: "button", text: "기록 모두 지우기", onclick: () => dialog({ title: "기록을 모두 지울까요?", body: el("div", { class: "sup", text: `계정 전환 기록 ${all.length}개를 지워요. 되돌릴 수 없어요.` }), actions: [{ label: "취소" , onclick: c => c() }, { label: "모두 지우기", kind: "danger", onclick: c => { c(); drop("", "기록을 모두 지웠어요"); } }] }) }));
+    if (all.length) box.append(el("button", { class: "btn text danger", type: "button", text: "기록 모두 지우기", onclick: () => dialog({ confirm: true, title: "기록을 모두 지울까요?", body: el("div", { class: "sup", text: `계정 전환 기록 ${all.length}개를 지워요. 되돌릴 수 없어요.` }), actions: [{ label: "취소" , onclick: c => c() }, { label: "모두 지우기", kind: "danger", onclick: c => { c(); drop("", "기록을 모두 지웠어요"); } }] }) }));
   }
   if ((q.unavailable || []).length) {
     box.append(el("div", { class: "sec", text: "정보가 없어요" }));
@@ -11252,14 +11255,34 @@ async function mbRun(keys, action, quiet = false, note = "") {
   Promise.allSettled([convLoad(), loadIntegrations()]);
   return done;
 }
-// 삭제 asks first, once. A mailbox that will not follow keeps its mail and the ask says so; an older hub only drops the row from dotz.
+// 삭제 into the mailbox's trash can be undone: the mail leaves at once and 실행 취소 brings it back; the trash is sent when the toast's
+// time is up or the page goes away (Gmail's way, owner 11-03). A mailbox that will not follow, or an older hub, only drops the row from
+// dotz and cannot bring it back, so that asks first in the small confirm box.
+const MB_UNDO_MS = 6000;
 async function mbTrash(keys) {
   keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
-  const real = keys.every(t => mailCan(t, "trash"));
-  if (!await ask("메일 삭제", real ? `메일 ${keys.length}개를 휴지통으로 옮길까요?` : `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 메일함엔 남을 수 있어요`, "삭제", true)) return [];
-  const done = await mbRun(keys, "trash");
+  if (!keys.every(t => mailCan(t, "trash"))) {
+    if (!await ask("메일 삭제", `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 메일함엔 남을 수 있어요`, "삭제", true)) return [];
+    const done = await mbRun(keys, "trash");
+    mbLeave(keys);
+    return done;
+  }
+  const back = keys.map(t => mbApply(t, "trash"));
+  const leaving = mbRowsOut(keys);
+  if (leaving) leaving.then(mbRefresh); else mbRefresh();
+  mbPaintBar();
   mbLeave(keys);
+  const undone = await new Promise(res => {
+    const end = v => { clearTimeout(timer); removeEventListener("pagehide", send); res(v); };
+    const send = () => end(false), timer = setTimeout(send, MB_UNDO_MS);
+    addEventListener("pagehide", send);
+    toast(keys.length > 1 ? `${keys.length}개를 삭제했어요` : "삭제했어요", false, { label: "실행 취소", onclick: () => end(true) }, MB_UNDO_MS);
+  });
+  for (const f of back) f();
+  if (undone) { mbRefresh(); mbPaintBar(); return []; }
+  const done = await mbRun(keys, "trash", true);
+  if (done.length < keys.length) toast("처리하지 못했어요", true);
   return done;
 }
 // An action on the open mail takes the owner back to the list (like the mailbox does) when the mail left it.
