@@ -20,10 +20,11 @@ export function prompt(lane: Lane, text: string): void {
 	}
 	settleRevert(lane, false);
 	// Every lane turn ends with the reply-language line too: lane progress notes drifted into English ("Now a throwaway
-	// smoke script against a temp DOTZ_DIR.") because the language sat only in the launch footer.
+	// smoke script against a temp DOTZ_DIR.") because the language sat only in the launch footer. It names every kind of lane text
+	// (report, progress note, todo item, tool intent): "answer the owner in Korean" read as covering replies only.
 	const nudge = (lane.retainNext ? `\n${msg().retainNudge}` : "") + (lane.workerNext ? `\n${lane.workerNext}` : "") + (/^\[owner via /.test(text) ? `\n${msg().ownerAnswerNudge}` : "");
 	lane.retainNext = lane.workerNext = undefined;
-	lane.proc?.send(`${text}${nudge}\n${msg().replyIn(languageName(lang()), false)}${handoffNote(`lane:${lane.name}`)}`, lane.status === "working" ? "steer" : "prompt");
+	lane.proc?.send(`${text}${nudge}\n${msg().laneLanguage(languageName(lang()))}${handoffNote(`lane:${lane.name}`)}`, lane.status === "working" ? "steer" : "prompt");
 	if (lane.status === "working") return;
 	clearTimeout(lane.watchdog);
 	lane.watchdog = setTimeout(() => {
