@@ -58,10 +58,14 @@ function histSeed() {
   history.replaceState(list[0], "", `#${urls[0]}`);
   for (let i = 1; i < list.length; i++) history.pushState(list[i], "", `#${urls[i]}`);
 }
+// A wide screen has no back gesture to serve, and a history traversal (history.go) there is a real browser navigation: the address bar
+// blinks and the page looks reloaded (owner 2026-11-04): so on a wide screen overlays take no entry and moving up or sideways only replaces
+// the current entry. A few back presses may then land on the same view; the phone keeps the exact layer stack.
+const histFlat = () => !narrowChat();
 // Makes the history stack match the open overlays (OV) and the wanted chain (H.want).
 function histSync() {
   if (H.hold || H.moving) return;   // a traversal is in flight (or overlays are closing): its end calls this again
-  const k = OV.length, S = history.state;
+  const flat = histFlat(), k = flat ? 0 : OV.length, S = history.state;
   if (!S || !S.dz) { histSeed(); return; }
   if (S.g) {   // on the exit guard: a view other than 홈 (or an overlay) needs the 홈 entry above it first
     if (H.want.length > 1 || k) { pushChain(H.want, 0); histSync(); }
@@ -74,10 +78,10 @@ function histSync() {
   let p = 0;
   while (p < C.length && p < W.length && C[p] === W[p]) p++;
   if (p === C.length && p === W.length) { H.tries = 0; return; }
-  if (p === W.length) { histMove(C.length - W.length); return; }   // going up: the wanted view is an entry below
+  if (p === W.length) { if (flat) history.replaceState(hstate(W), "", hurl(W)); else histMove(C.length - W.length); return; }   // going up: the wanted view is an entry below
   H.tries = 0;
   if (p === C.length) { pushChain(W, p); return; }                  // going deeper
-  if (m > p) { histMove(m - p); return; }                           // sideways from a deeper level: land on the sibling, then replace it
+  if (m > p && !flat) { histMove(m - p); return; }                           // sideways from a deeper level: land on the sibling, then replace it
   history.replaceState(hstate(W.slice(0, p + 1)), "", `#${W[p]}`);  // sideways at the same level
   pushChain(W, p + 1);
 }
