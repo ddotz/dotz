@@ -476,3 +476,7 @@ $("#ctx-ring").onclick = ev => busy(null, async () => {
   items.push({ value: "open", label: "컨텍스트 화면 열기" });
   showMenu(anchor, items, { onPick: v => v === "open" ? go("context") : v === "compact" ? busy(null, () => targetChange(targetName(target), { compact: true }, "")) : null });
 });
+// 시제품 .cmp의 모양 (proto.css "/* composer *\/"): 첨부(+)는 글 상자의 왼쪽, 모델·컨텍스트 칩은 상자 아래 힌트 줄에 서요.
+// 칩을 폼 밖으로 옮겨도 각 칩의 클릭은 그대로예요 (이벤트는 요소에 붙어 있어요).
+$("#send").insertBefore($("#c-attach"), $("#text"));
+$("#send").after($("#cbar"));
