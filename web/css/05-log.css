@@ -120,24 +120,27 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 @media (max-width: 639px) { .sheet { width: 100vw; border-left: 0; } .sh-body { padding: 12px; } }
 .tl-in > .a-div { margin: 0; }
 
-/* home: '답 필요' and '지금 진행 중' lists (one row per target: dot, name, one-line activity, worker n/m, status) */
-.hn-h { display: flex; align-items: baseline; gap: 8px; margin: 4px 4px 10px; }
-.hn-h h2 { margin: 0; font: 700 18px/26px var(--font); letter-spacing: -.02em; }
-.hn-h .sup { color: var(--fg-3); }
-.hn + .hn-h { margin-top: 24px; }
-.hn { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
-.hr { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
+/* home: '답 필요' and '지금 진행 중' lists as one card per kind (docs/ui-spec.md 홈 상태 카드): the head sits inside the card's top edge,
+   every row is a 48px two-line row, and the count/status word is small grey text, never another tag. */
+.hn-h { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; padding: 14px var(--row-px) 2px; border-radius: var(--r-card) var(--r-card) 0 0; background: var(--card); }
+.hn-h:first-child { margin-top: 0; }
+.hn-h h2 { margin: 0; font: 600 var(--fs-card)/var(--lh-card) var(--font); letter-spacing: -.01em; }
+.hn-h .sup { margin-left: auto; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.hn + .hn-h { margin-top: 12px; }
+.hn { border-radius: 0 0 var(--r-card) var(--r-card); background: var(--card); overflow: hidden; }
+.hr { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 8px var(--row-px); border: 0; background: transparent; color: inherit; text-align: left; }
+.hr + .hr { border-top: 1px solid var(--line); }
 
 .hr.st:hover { background: transparent; }
 .hr:hover { background: var(--card-hover); }
-.hr .dot { width: 10px; height: 10px; }
+.hr .dot { width: 8px; height: 8px; }
 .hr .hb { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.hr .hn1 { display: flex; align-items: center; gap: 8px; min-width: 0; font: 600 15px/22px var(--font); }
+.hr .hn1 { display: flex; align-items: center; gap: 8px; min-width: 0; font: 500 var(--fs-row)/var(--lh-row) var(--font); }
 .hr .hn1 .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hr .ha { min-width: 0; color: var(--fg-2); font-size: 13px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hr .hp { flex: none; color: var(--fg-3); font-size: 12.5px; line-height: 16px; font-variant-numeric: tabular-nums; }
+.hr .ha { min-width: 0; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr .hp { flex: none; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); font-variant-numeric: tabular-nums; }
 .hr .hs.unreplied { color: var(--unreplied); font-weight: 600; }
-.hr .hs { flex: none; min-width: 44px; text-align: right; color: var(--fg-2); font-size: 13px; font-weight: 500; }
+.hr .hs { flex: none; min-width: 44px; text-align: right; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); font-weight: 500; }
 .hr .hs.pri { color: var(--accent); } .hr .hs.warn { color: var(--warn); } .hr .hs.err { color: var(--err); }
 /* a session row (sessionRow in 18-lanes.js): the parent project leads the second line, the activity trails it */
 .hr .ha:has(.sproj) { display: flex; align-items: baseline; gap: 6px; }
