@@ -63,7 +63,7 @@ const WPH_COPY = [".sup", ".note", ".empty", ".hc-none", ".cv-empty", ".bell-non
 // ellipsize their text (an inline-block there would hide whole phrases instead of trimming the last line)
 const WPH_SKIP = ["pre", "code", "kbd", "samp", "textarea", "input", "select", "svg", "a", "[contenteditable]", ".btn", ".chip", ".tag", ".mb", ".mb-txt", ".tv-body",
   ".clamp", "[class*='clamp']", ".ntf .bd2", ".pn .pt", ".ml-snip", ".qt", ".lg-q", ".lb", ".pj-sc .tx", ".hm-n .s", ".hm-sh .s", ".wh", ".rq-orig",
-  ".tr-rb", ".mr-sum", ".dr-ob", ".kk-lp-t", ".kk-lp-d", ".fr-sum", ".rc-title", ".mt-head .sup", ".ended .sup", ".sh-t .sup", ".wph"].join(", ");
+  ".tr-rb", ".mr-sum", "#tl .bm", ".dr-ob", ".kk-lp-t", ".kk-lp-d", ".fr-sum", ".rc-title", ".mt-head .sup", ".ended .sup", ".sh-t .sup", ".wph"].join(", ");
 
 function phraseFrag(tree) {
   const box = (into, text) => { const b = document.createElement("span"); b.className = "wph"; if (text) b.append(text); into.append(b); return b; };
