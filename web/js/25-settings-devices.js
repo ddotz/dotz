@@ -23,7 +23,7 @@ function renderDevices() {
   const row = d => el("button", { type: "button", class: "li tap", "data-dev": d.id, onclick: () => dvOpen(d) },
     el("span", { class: "lead" }, el("span", { class: `dot ${d.last_used && Date.now() - Date.parse(d.last_used) < 864e5 ? "ok" : ""}`, "aria-hidden": "true" })),
     el("span", { class: "tx" }, el("div", { class: "hd", text: d.name }), el("div", { class: "sup", text: `${dvDate(d.created)} 연결 · ${dvUsed(d)}` })),
-    el("span", { class: "dcs-trail" }, d.current ? el("span", { class: "tag ok", "data-current": "1", text: "이 기기" }) : null, icon("chev", "lead")));
+    el("span", { class: "li-end" }, d.current ? el("span", { class: "tag ok", "data-current": "1", text: "이 기기" }) : null, icon("chev", "chev")));
   const self = DEV.items.some(d => d.current);
   // the add action lives in the section header (docs/ui-spec.md 설정 행); a browser without a passkey gets one more row in the list
   const addSelf = el("button", { type: "button", class: "li tap", "data-dev-self": "1", onclick: () => dvNew(true) },

@@ -231,7 +231,9 @@ function mnDialog() {
   inp.focus();
 }
 const mnRow = () => MN.info && el("button", { class: "li tap", type: "button", onclick: mnDialog },
-  el("span", { class: "lead" }, icon("term")), el("span", { class: "tx" }, el("div", { class: "hd", text: "이 컴퓨터 이름" })), el("span", { class: "sup", text: MN.info.name }), icon("chev", "lead"));
+  el("span", { class: "lead" }, icon("term")),
+  el("span", { class: "tx" }, el("div", { class: "hd", text: "이 컴퓨터 이름" }), el("div", { class: "sup", text: "다른 컴퓨터의 목록에 이 이름으로 보여요" })),
+  el("span", { class: "li-end" }, MN.info.name ? el("span", { class: "tag", text: MN.info.name }) : null, icon("chev", "chev")));
 mnLoad();
 
 $("#brand").onclick = () => (prTrig() ? prOpen() : go("home"));

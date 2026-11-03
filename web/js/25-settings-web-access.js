@@ -87,8 +87,8 @@ function renderWebAccess() {
     el("div", { class: "sec", text: "자동 연결" }), onboardingPanel("web-access")];
   if (cf) nodes.push(el("div", { class: "sec", text: "상태" }), el("div", { class: "list" }, waTunnel(d),
     el("button", { type: "button", class: "li tap", "data-wa-devices": "1", onclick: () => go("devices") },
-      el("span", { class: "lead" }, icon("key")), el("span", { class: "tx" }, el("div", { class: "hd", text: "연결된 기기 (패스키)" })),
-      el("span", { class: "sup", text: `${d.devices}대` }), icon("chev", "lead"))));
+      el("span", { class: "lead" }, icon("key")), el("span", { class: "tx" }, el("div", { class: "hd", text: "연결된 기기 (패스키)" }), el("div", { class: "sup", text: "이 웹앱에 들어올 수 있는 브라우저" })),
+      el("span", { class: "li-end" }, el("span", { class: "tag", text: `${d.devices}대` }), icon("chev", "chev")))));
   if (cf && !d.cloudflared_found) nodes.push(el("div", { class: "list" }, el("div", { class: "li" }, el("span", { class: "tx" },
     el("div", { class: "hd", text: "cloudflared가 없어요" }), el("div", { class: "sup dcs-err", "data-wa-cf-missing": "1", text: "터미널에서 brew install cloudflared 를 실행해 주세요." })))));
   const det = msAdvanced("data-wa-advanced", WA.advOpen, () => waAdvanced(d, f));

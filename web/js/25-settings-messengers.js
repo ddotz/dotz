@@ -23,8 +23,8 @@ function msSummary() {
   return on.length ? `${on[0]}${on.length > 1 ? ` 외 ${on.length - 1}개` : ""} 연결됨` : "설정 안 됨";
 }
 function msHubRow() {
-  const r = el("button", { class: "li tap", type: "button", onclick: () => go("messengers") }, el("span", { class: "lead" }, icon("chat")), el("span", { class: "tx" }, el("div", { class: "hd", text: "메신저" })),
-    el("span", { class: "sup", text: msSummary() }), icon("chev", "lead"));
+  const r = el("button", { class: "li tap", type: "button", onclick: () => go("messengers") }, el("span", { class: "lead" }, icon("chat")),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: "메신저" }), el("div", { class: "sup", text: msSummary() })), el("span", { class: "li-end" }, icon("chev", "chev")));
   r.dataset.msHub = "";
   return r;
 }
@@ -33,8 +33,9 @@ function renderMessengers() {
   if (!MSS.asked) loadMessengerIndex();
   clear($("#messengers")).append(el("div", { class: "list" }, ...MS_IDS.map(id => {
     const m = msItem(id), [tag, tone] = m ? msTag(m) : ["", ""];
-    const r = el("button", { class: "li tap", type: "button", onclick: () => go(id) }, el("span", { class: "lead" }, icon(id === "discord" ? "discord" : "chat")), el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] })),
-      el("span", { class: "dcs-trail" }, ...(tag ? [el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" })] : []), icon("chev", "lead")));
+    const r = el("button", { class: "li tap", type: "button", onclick: () => go(id) }, el("span", { class: "lead" }, icon(id === "discord" ? "discord" : "chat")),
+      el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), el("div", { class: "sup", text: msLine(id, m, null) })),
+      el("span", { class: "li-end" }, ...(tag ? [el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" })] : []), icon("chev", "chev")));
     r.dataset.msRow = id;
     return r;
   })));
