@@ -1,0 +1,51 @@
+// Motion with a cause (web/DESIGN.md Motion). Web Animations on transform/opacity only, so nothing is laid out again and nothing
+// is left behind when an animation ends; with prefers-reduced-motion every helper is an instant change.
+const M_EASE = "cubic-bezier(.2, .7, .2, 1)";
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const M_FROM = { rise: "translateY(8px)", top: "translateY(-8px)", fade: "none", side: "translateX(12px)" };
+
+// An element that just arrived: a card rising in, a new row sliding in at the top of its list, a sheet opening.
+function motionIn(el, from = "rise", ms = 220) {
+  if (!el || !el.animate || reducedMotion()) return;
+  el.animate([{ opacity: 0, transform: M_FROM[from] || M_FROM.rise }, { opacity: 1, transform: "none" }], { duration: ms, easing: M_EASE });
+}
+
+// An element about to leave: resolves when it is gone from view, so the caller removes or hides it then.
+function motionOut(el, to = "fade", ms = 150) {
+  if (!el || !el.animate || reducedMotion()) return Promise.resolve();
+  const a = el.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: M_FROM[to] || "none" }], { duration: ms, easing: M_EASE, fill: "forwards" });
+  return a.finished.then(() => a, () => a);
+}
+
+// The same element changes state in place (보내기 -> 보냈어요, a task finishing): change() runs at once, the new look fades up.
+function motionSwap(el, change, ms = 200) {
+  change();
+  if (!el || !el.animate || reducedMotion()) return;
+  el.animate([{ opacity: .35, transform: "scale(.985)" }, { opacity: 1, transform: "none" }], { duration: ms, easing: M_EASE });
+}
+
+// A count that changed: only the digits that differ roll in. textContent stays the plain number.
+function rollCount(el, next) {
+  if (!el) return;
+  const now = String(next ?? ""), was = el.textContent;
+  if (now === was) return;
+  if (reducedMotion() || !was || !/^\d+$/.test(now) || !/^\d+$/.test(was)) { el.textContent = now; return; }
+  const up = Number(now) > Number(was), pad = was.padStart(now.length, " ");
+  el.textContent = "";
+  for (let i = 0; i < now.length; i++) {
+    const d = document.createElement("span");
+    d.className = "m-dg"; d.textContent = now[i]; el.append(d);
+    if (pad[pad.length - now.length + i] !== now[i] && d.animate)
+      d.animate([{ opacity: 0, transform: `translateY(${up ? "60%" : "-60%"})` }, { opacity: 1, transform: "none" }], { duration: 220, easing: M_EASE });
+  }
+}
+
+// Which of these keys were not there on the last paint of the same list. The first paint returns none, so opening a screen
+// never animates what was already there; only items that really arrive do.
+function freshKeys(store, keys) {
+  const seeded = store.size > 0 || store.seeded, out = new Set();
+  for (const k of keys) if (seeded && !store.has(k)) out.add(k);
+  store.clear(); for (const k of keys) store.add(k);
+  store.seeded = true;
+  return out;
+}
