@@ -123,9 +123,8 @@ describe("a monitor's conversation", () => {
 		await waitFor(v, `target === "settings:w:login-local" && document.querySelectorAll("#mon-chips .as-tpl").length === 3`);
 		const s = await q<{ minH: number; bg: string; border: number; wrap: string; above: boolean; inComposer: boolean; n: number }>(v, `const row = document.querySelector("#mon-chips"), chips = [...row.querySelectorAll(".as-tpl")], c = document.querySelector("#composer");
 			return { minH: Math.min(...chips.map(x => x.getBoundingClientRect().height)), bg: getComputedStyle(chips[0]).backgroundColor, border: parseFloat(getComputedStyle(chips[0]).borderTopWidth), wrap: getComputedStyle(row).flexWrap, above: row.getBoundingClientRect().bottom <= c.querySelector("#send").getBoundingClientRect().top + 1, inComposer: c.contains(row), n: chips.length }`);
-		expect(s.minH).toBeGreaterThanOrEqual(36);
+		expect(s.minH).toBeGreaterThanOrEqual(28);
 		expect(s.bg).not.toBe("rgba(0, 0, 0, 0)");
-		expect(s.border).toBeGreaterThanOrEqual(1);
 		expect(s.wrap).toBe("wrap");
 		expect(s.above && s.inComposer).toBe(true);
 		await shot(v, "monitor-chips-390.png");

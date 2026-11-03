@@ -138,7 +138,11 @@ function paintSysLines() {
     const w = ((S && S.work) || []).find(x => x.id === id), s = w && (w.cancelled ? ["", "중단됨"] : SYS_ST[w.status]);
     st.hidden = !s;
     if (!s || st.dataset.s === s[1]) continue;
-    const was = st.dataset.s, paint = () => { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; hcSysFiles(st, w); };
+    const was = st.dataset.s, card = st.classList.contains("ct-pill"), paint = () => {
+      if (card) { st.className = `cv-sys-st ct-pill ${s[0]}`; st.replaceChildren(s[0] === "ok" ? icon("check") : el("span", { class: `dot ${s[0]}` }), el("span", { text: s[1] })); }
+      else { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; }
+      hcSysFiles(st, w);
+    };
     st.dataset.s = s[1];
     if (was) motionSwap(st.closest(".cv-sys") || st, paint); else paint();   // running -> 완료 changes in place (with the result file as a chip under the line); the first paint just draws
   }
@@ -147,13 +151,37 @@ function paintSysLines() {
 function hcSysFiles(st, w) {
   const line = st.closest(".cv-sys");
   if (!line) return;
+  if (line.classList.contains("cv-task")) { hcTaskBody(line, w); return; }
   const old = line.nextElementSibling;
   if (old && old.classList.contains("cv-sys-f")) old.remove();
   const files = w.status === "done" && !w.cancelled && Array.isArray(w.files) ? w.files.filter(f => f && f.path) : [];
   if (files.length) line.after(el("div", { class: "cv-sys-f" }, ...files.map(f => { const name = f.name || String(f.path).split("/").pop(); return fileChip(name, fileMeta(name, f.size), VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : { href: fileUrl(f.path, false, f.pc) }); })));
 }
+// The same line as the landing page's 작업 card (hcTaskBody fills what is under the title): label, title, state pill, then the result files and a full bar once done.
+const SYS_TASK = /^백그라운드 작업으로 맡겼어요:\s*(\S[\s\S]*)$/;
+function hcTaskBody(line, w) {
+  const old = line.querySelector(":scope > .ct-body");
+  const files = w.status === "done" && !w.cancelled && Array.isArray(w.files) ? w.files.filter(f => f && f.path) : [];
+  const chips = files.map(f => { const name = f.name || String(f.path).split("/").pop(), size = f.size ? fsize(f.size) : "", opt = VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : { href: fileUrl(f.path, false, f.pc) };
+    return el(opt.href ? "a" : "button", { class: "ct-file", ...(opt.href ? { href: opt.href, target: "_blank", rel: "noopener" } : { type: "button", onclick: opt.onclick }), title: `${name} · 열기` },
+      el("span", { class: "ct-fi" }, icon("file")), el("span", { class: "ct-ft" }, el("b", { text: name }), el("span", { text: ["결과 파일", size].filter(Boolean).join(" · ") }))); });
+  const done = w.status === "done" && !w.cancelled;
+  const body = chips.length || done ? el("div", { class: "ct-body" }, ...chips, done ? el("div", { class: "ct-bar" }, el("span")) : null) : null;
+  if (old) old.remove();
+  if (body) line.append(body);
+}
+function sysTaskLine(e, title, hm, id) {
+  const st = el("span", { class: "cv-sys-st ct-pill", hidden: true }, el("span", { class: "dot" }), el("span"));
+  SYS_NODES.set(id, st);
+  const hd = el("button", { class: "ct-hd", type: "button", title: "작업 열기", onclick: () => openSub("orchestrator", id, null, title) },
+    el("span", { class: "ct-nm" }, el("span", { class: "ct-lb", text: ["백그라운드 작업", hm].filter(Boolean).join(" · ") }), el("span", { class: "cv-sys-tx ct-t", text: title })), st);
+  queueMicrotask(paintSysLines);
+  return el("div", { class: "cv-sys cv-task", role: "group" }, hd);
+}
 function sysLine(e, text, hm) {
-  const id = typeof e.worker === "string" ? e.worker : "", st = el("span", { class: "cv-sys-st", hidden: true }, el("span", { class: "dot" }), el("span"));
+  const id = typeof e.worker === "string" ? e.worker : "", task = id && SYS_TASK.exec(text);
+  if (task) return sysTaskLine(e, task[1].trim(), hm, id);
+  const st = el("span", { class: "cv-sys-st", hidden: true }, el("span", { class: "dot" }), el("span"));
   const kids = [icon("lanes"), el("span", { class: "cv-sys-tx", text }), st, hm ? el("span", { class: "cv-sys-mt", text: hm }) : null];
   if (!id) return el("div", { class: "cv-sys", role: "note" }, ...kids);
   SYS_NODES.set(id, st);
@@ -245,7 +273,9 @@ function msgNode(e) {
       if (e.target === "alert" && !(pc && pc.blocks.length)) {
         if (/```원문\n/.test(body)) return el("div", { class: `bm${card}` }, head, mdNode(body));
         const line = humanAlert(body);
-        return el("div", { class: `bm${card}` }, head, mdNode(line), line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
+        // A watch's change line (89,000원 → 72,000원) stands under the sentence with the old value struck, not only folded in the raw text.
+        const chg = nwChangeNode(nwChangeLine(body));
+        return el("div", { class: `bm${card}` }, head, mdNode(line), chg ? el("div", { class: "nw-line" }, chg) : null, line.trim() === body.trim() ? null : el("details", { class: "more" }, el("summary", { text: "자세히" }), el("pre", { text: body })));
       }
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       const fl = fileLines(body), host = pqPc(eventTarget(e) || ""), md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text), files = pathFiles(md, host);

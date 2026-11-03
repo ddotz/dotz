@@ -15,6 +15,10 @@ function rqHeadNode(h) {
   // The computer is its own .mon-pc span, like every other row's machine chip (a peer's card then differs only by that chip).
   const meta = [name, h.label && h.label !== name ? h.label : "", h.model || ""].filter(Boolean).join(" · ");
   const at = h.at ? new Date(h.at) : null, when = at && !isNaN(at) ? rcWhen(at.toISOString()) : "";
+  // A comment: the landing card's head, a round avatar with the author's initial, the author's name, and where it came from in grey.
+  if (h.who) return el("div", { class: "rq-hd rq-who" }, el("span", { class: "rq-av", "aria-hidden": "true", text: [...h.who][0] || "?" }),
+    el("span", { class: "rq-meta", title: h.who }, el("b", { text: h.who }), el("span", { class: "rq-src", text: ` · ${h.src || name}` }), h.pc ? el("span", { class: "mon-pc", text: ` · ${h.pc}` }) : null),
+    when ? el("span", { class: "rc-time", text: when }) : null, ...(h.tail || []));
   return el("div", { class: "rq-hd" }, el("span", { class: "dr-ic" }, icon(ICONS[ic] ? ic : "send")),
     el("span", { class: "rq-meta", title: meta }, meta, h.pc ? el("span", { class: "mon-pc", text: ` · ${h.pc}` }) : null),
     when ? el("span", { class: "rc-time", text: when }) : null, ...(h.tail || []));
@@ -38,7 +42,7 @@ function rqBodyNode(key, b) {
 // The three actions, the same words everywhere. A missing handler leaves its button disabled; `busy` disables all three.
 function rqActsNode(a) {
   const b = (cls, k, text, fn) => el("button", { class: cls, type: "button", "data-k": k, disabled: !!a.busy || !fn, text, onclick: fn });
-  return el("div", { class: "dr-act dr-row rq-acts" }, b("btn dr-send", "send", "보내기", a.send), b("btn tonal", "edit", "고치기", a.edit), b("btn text dr-drop", "drop", "보내지 않기", a.drop));
+  return el("div", { class: "dr-act dr-row rq-acts" }, b("btn sm dr-send", "send", "보내기", a.send), b("btn tonal sm", "edit", "고치기", a.edit), b("btn text sm dr-drop", "drop", "보내지 않기", a.drop));
 }
 // 고치기: what to change, typed once; the bot rewrites the draft. o: { go(change), cancel(), manual() (직접 수정, optional), pick (a node before the field, such
 // as which part of a comment reply with a mail to change), value, onInput(text), busy }
@@ -71,12 +75,14 @@ function rqAttachNode(d = {}) {
 function rqCard(c) {
   const foot = c.sent ? rqSentNode() : c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
   const att = c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach || {});
-  return el("div", { class: `rq${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
+  const cm = !!c.head.who;   // a comment card: its text plain under the head, the post title a grey hint, the draft in one grey box
+  return el("div", { class: `rq${cm ? " cm" : ""}${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
     rqHeadNode(c.head),
     c.label ? el("div", { class: c.labelCls || "rq-lb", text: c.label }) : null,
-    c.to ? el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" })) : c.recv || null,
+    cm && c.original && c.original.text ? el("div", { class: "rq-ct", title: c.original.text, text: c.original.text }) : null,
+    cm ? null : c.to ? el("div", { class: "rq-to dr-to" }, el("span", { class: "dr-k", text: c.to[0] }), el("span", { class: "dr-chip", text: c.to[1] || "-" })) : c.recv || null,
     c.subject ? el("div", { class: "dr-sub rq-sub", text: c.subject }) : null,
-    c.original && c.original.text ? el("div", { class: "rq-orig", title: c.original.text }, c.original.who ? el("b", { class: "rq-ow", text: c.original.who }) : null, el("span", { class: "rq-ot", text: c.original.text })) : null,
+    !cm && c.original && c.original.text ? el("div", { class: "rq-orig", title: c.original.text }, c.original.who ? el("b", { class: "rq-ow", text: c.original.who }) : null, el("span", { class: "rq-ot", text: c.original.text })) : null,
     rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean), foot);
 }
 // 보냈어요 in the card's own foot: the action row's place, so nothing below moves (the landing demo card's 보냈어요 · 방금).
