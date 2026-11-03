@@ -69,7 +69,7 @@ function rqAttachNode(d = {}) {
 // extra (nodes under the body: the mail that goes along), then one of: status (a line such as 고치는 중…), revise (rqReviseNode or the caller's own),
 // acts (rqActsNode) }.
 function rqCard(c) {
-  const foot = c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
+  const foot = c.sent ? rqSentNode() : c.status ? el("div", { class: "kk-st", role: "status", text: c.status }) : c.revise ? c.revise : c.acts ? rqActsNode(c.acts) : null;
   const att = c.attach && c.attach.nodeType ? c.attach : rqAttachNode(c.attach || {});
   return el("div", { class: `rq${c.cls ? ` ${c.cls}` : ""}`, ...(c.attrs || {}) },
     rqHeadNode(c.head),
@@ -79,6 +79,8 @@ function rqCard(c) {
     c.original && c.original.text ? el("div", { class: "rq-orig", title: c.original.text }, c.original.who ? el("b", { class: "rq-ow", text: c.original.who }) : null, el("span", { class: "rq-ot", text: c.original.text })) : null,
     rqBodyNode(c.key, c.body), att, ...(c.extra || []).filter(Boolean), foot);
 }
+// 보냈어요 in the card's own foot: the action row's place, so nothing below moves (the landing demo card's 보냈어요 · 방금).
+const rqSentNode = () => el("div", { class: "rq-sent", role: "status" }, icon("check"), el("span", { text: "보냈어요" }), el("span", { class: "rq-sent-at", text: "방금" }));
 // What an answer did, in the same words everywhere: 보냈어요, and 보내지 않았어요 with 되돌리기 where the store can bring the draft back.
 const rqSentToast = action => toast("보냈어요", false, action || null);
 const rqDroppedToast = undo => toast("보내지 않았어요", false, undo ? { label: "되돌리기", onclick: undo } : null, undo ? 6000 : undefined);
