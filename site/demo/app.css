@@ -4,6 +4,8 @@
   --bg: #f2f4f6; --side: #f2f4f6; --card: #ffffff; --pop: #ffffff;
   --layer: #f2f4f6; --hover: #e9ecf0; --active: #e5e8eb; --track: #e5e8eb;
   --card-hover: #f9fafb;
+  /* a selected or pressed row inside a card: never the page's own grey (--bg/--layer), so a first or last row keeps the card's edge */
+  --row-sel: #e8ebee;
   --line: #e5e8eb; --line-2: #d1d6db;
   --fg: #191f28; --fg-2: #4e5968; --fg-3: #6b7684;
   --accent: #3182f6; --on-accent: #ffffff;
@@ -28,6 +30,7 @@
   --bg: #121214; --side: #121214; --card: #1d1d21; --pop: #26262b;
   --layer: #26262b; --hover: #2b2b31; --active: #303036; --track: #34343b;
   --card-hover: #232328;
+  --row-sel: #2b2b31;
   --line: #2b2b31; --line-2: #3d3d45;
   --fg: #ececf0; --fg-2: #b0b4bc; --fg-3: #8e939c;
   --accent: #4c94ff; --on-accent: #ffffff;
@@ -93,7 +96,8 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 /* the current tab: bold with an accent line under it; the unread count is a plain number after the label, the new-version mark a small dot */
 .ni.on::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -4px; height: 2px; border-radius: 1px; background: var(--accent); }
 .ni .nnb { min-width: 0; height: 16px; padding: 0; background: transparent; color: var(--warn); font-size: 12px; line-height: 16px; }
-.ni .nub { width: 6px; min-width: 6px; height: 6px; padding: 0; font-size: 0; line-height: 0; }
+/* a dot on a tab or menu label overlaps the label's bottom-right corner (the bot name's computer dot, docs/ui-spec.md 점 배지) */
+.ni .nub { position: absolute; right: 4px; bottom: 6px; width: 6px; min-width: 6px; height: 6px; padding: 0; font-size: 0; line-height: 0; }
 .ni .nub[hidden] { display: none; }
 .appbar .cmdk { grid-column: 9; display: flex; align-items: center; gap: 6px; width: auto; height: 28px; margin-left: 8px; padding: 0 4px 0 8px; border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); }
 .cmdk:hover { background: var(--card-hover); }
@@ -279,7 +283,7 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .clamp.c4 { -webkit-line-clamp: 4; white-space: pre-line; }
 .pickbox { display: flex; flex-direction: column; gap: 16px; max-height: min(46dvh, 340px); overflow-y: auto; margin: 0 -4px; padding: 0 4px; }
 .kb:empty { display: none; }
-.li.on { background: var(--active); }
+.li.on, button.li:active, .li.tap:active { background: var(--row-sel); }
 .li.off, .li.off:hover { background: transparent; cursor: default; }
 .li.off .hd, .li.off .lead { color: var(--fg-3); }
 /* 계정 card rows (web/js/25-settings-accounts.js): grip, order number, the tap area; a dragged row lifts and the rows it passes shift */
@@ -312,6 +316,11 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .chip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; padding: 0 12px; border: 0; border-radius: 16px; background: var(--card); color: var(--fg-2); font-size: 13px; font-weight: 500; max-width: 100%; }
 .chip:hover { background: var(--hover); color: var(--fg); }
 .chip.on { background: var(--fg); color: var(--bg); }
+/* 두 값 설정 (rowToggle): the current value in one pill on the row's card; the small mark says a tap swaps it */
+.chip.tgl { background: var(--layer); color: var(--fg); font-weight: 500; }
+.chip.tgl::after { content: "⇄"; color: var(--fg-3); font-size: 11px; }
+.chip.tgl.unset { color: var(--fg-2); }
+.chip.tgl:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chip .tx { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 모델 · 폴백: one card per target (model + effort, then the numbered fallback list). Neutral surfaces; the accent marks
    only the model answering now. */
@@ -904,8 +913,7 @@ details.work.live .wdot { display: block; }
 .sl-list { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
 /* every row is one fixed-height line: bold /command, its args, then the gray description right after them (Discord) */
 .sl-i { flex: none; display: flex; align-items: center; gap: 8px; width: 100%; height: 40px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: var(--fg); text-align: left; font: 400 13px/20px var(--font); white-space: nowrap; }
-.sl-i.on { background: var(--layer); }
-:root[data-theme="dark"] .sl-i.on { background: #34343b; }
+.sl-i.on { background: var(--row-sel); }
 .sl-i .c { flex: none; font-weight: 700; font-size: 14px; }
 .sl-i .ar { flex: none; color: var(--fg-3); font-size: 12.5px; }
 .sl-i .d { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; margin-left: 4px; color: var(--fg-3); font-size: 12.5px; }
@@ -1124,6 +1132,9 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .bi { position: absolute; border-radius: 8px; transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease, box-shadow .15s; }
 .bi > .card { overflow: hidden auto; }
 .bi:hover, .bi.bdrag { box-shadow: var(--float); }
+.bi.fit > .card { height: auto; overflow: visible; }
+.bi.fit .brz.s, .bi.fit .brz.se { display: none; }
+.board.bnt .bi { transition: none; }
 .bi.bdrag { z-index: 6; transition: box-shadow .15s; }
 /* a finger resting on a card before the long press: no text selection or callout while it waits; the lifted card shows at once */
 .bi.bpress, .bi.bpress * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -1169,11 +1180,13 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .grow:hover { background: var(--hover); }
 .grow .gm { flex: 1; min-width: 0; }
 .grow .gm .bar { margin-top: 6px; }
+.grow .kv .k { font: 400 14px/20px var(--font); }
+.grow .kv .v { max-width: none; color: var(--fg); font: 500 14px/20px var(--font); }
+.kv .k .dot { display: inline-block; margin-right: 6px; vertical-align: 1px; }
+.board .bar, .board .bar.warn, .board .bar.err { --bar: var(--fg-2); }
 .grow > .ib { flex: none; width: 24px; height: 24px; opacity: 0; }
 .grow:hover > .ib, .grow:focus-within > .ib, .grow > .ib[aria-expanded="true"] { opacity: 1; }
 @media (hover: none) { .grow > .ib { opacity: 1; } }
-.grow.att { background: color-mix(in srgb, var(--warn) 12%, transparent); }
-.grow.att.err { background: color-mix(in srgb, var(--err) 12%, transparent); }
 @media (pointer: coarse) { .brz.e, .brz.s { display: none; } .brz.se { width: 24px; height: 24px; } .brz.se::after { right: 6px; bottom: 6px; } }
 /* markdown has block children (lists, code), so a line clamp would cut through a line: cap the height and fade a long report */
 .lstat { flex: none; padding: 6px 12px; border-top: 1px solid var(--line); color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1678,10 +1691,10 @@ button.nt-mon .chev { flex: none; align-self: center; color: var(--fg-3); }
 div.nt-mon:hover, div.nt-mon:active { background: transparent; }
 div.nt-mon .nt-dot { margin-top: 7px; }
 
-/* Home cards: 알림 / 작업내역 / 모니터링 (fixed height on the board). No overflow here: the board's own rule (.bi > .card, 05-log.css) lets a card shorter than its rows scroll instead of cutting the last ones off. */
+/* Home cards: 알림 / 작업내역 / 모니터링 (as tall as their content on the board, 07-board.js fit). */
 .card.hc { display: flex; flex-direction: column; }
 .hc .ch .tag { flex: none; }
-.hc-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin-top: 8px; }
+.hc-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .hc-row { display: flex; align-items: center; gap: 8px; min-width: 0; font: 400 14px/20px var(--font); }
 .hc-row { cursor: pointer; border-radius: var(--r-ctl); margin-inline: -6px; padding: 4px 6px; }
 .hc-row:hover { background: var(--card-hover); }
@@ -1699,6 +1712,16 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .hc-mon .s { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .hc-more { margin-top: 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .hc-none { margin-top: 8px; color: var(--fg-3); font: 400 14px/22px var(--font); }
+/* head note and count: plain grey text, a dot is the only colour; an empty card is just this head (fold) */
+.hc-n { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--fg-3); font: 400 13px/18px var(--font); }
+.card.fold .ch { margin-bottom: 0; }
+/* the summary strip (the assistant card): label over number, wrapping as columns */
+.hsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 12px 16px; }
+.hsum-s { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hsum-s .k { color: var(--fg-3); font: 400 12px/16px var(--font); }
+.hsum-s .v { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 20px/28px var(--font); letter-spacing: -.01em; }
+.hsum-fb { margin-top: 8px; }
+.bi[data-id="main"] .subline { margin-top: 12px; padding: 0; background: none; color: var(--fg-2); }
 
 /* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option (recommended first). */
 /* Computer switch sheet (33-peers.js): the bottom sheet on the phone and a centered dialog from 700px. Decisions and notices use the full-screen overlay (14-overlay.css), not this. */
@@ -1877,7 +1900,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
   .cv-row.sub { min-height: 36px; padding-left: 20px; }
   .cv-row .cv-n, .cv-row.sub .cv-n { font-size: 14px; line-height: 20px; }
   .cv-row + .cv-row { margin-top: 2px; border-top: 0; }
-  .cv-row.on { background: var(--layer); }
+  .cv-row.on { background: var(--row-sel); }
   :is(.cv-side, .cv-list) .cv-av, .cv-row.sub .cv-av { width: 24px; height: 24px; font-size: 12px; }
   :is(.cv-side, .cv-list) .cv-av .ic { width: 14px; height: 14px; }
   .cv-list { padding: 8px; }
@@ -1940,6 +1963,14 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 #brand-name.pdot, .appbar:not(.back) h1.pdot { position: relative; padding-right: 10px; }
 #brand-name.pdot::after, .appbar:not(.back) h1.pdot::after { content: ""; position: absolute; right: 0; bottom: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .appbar:not(.back) h1.pdot::after { bottom: 6px; }
+/* A computer switcher is there: a small chevron after the name says the name opens it (owner 2026-11-03). On the phone's page title the chevron
+   sits at the title's right end and the computer dot keeps the name's bottom-right corner just before it. */
+body:has(#appbar.hasp) #brand::after, .appbar.hasp:not(.back) h1::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(45deg); }
+body:has(#appbar.hasp) #brand::after { margin: 0 2px 4px 2px; }
+.appbar.hasp:not(.back) h1 { position: relative; padding-right: 16px; }
+.appbar.hasp:not(.back) h1::before { position: absolute; right: 2px; top: 50%; margin-top: -6px; }
+.appbar.hasp:not(.back) h1.pdot { padding-right: 26px; }
+.appbar.hasp:not(.back) h1.pdot::after { right: 14px; }
 #brand-name.pneed::after, .appbar:not(.back) h1.pneed::after { background: var(--warn); }
 /* the sheet: one quiet row per computer, no shadow; a compact centered dialog from 700px */
 .ds-sheet.pr-sheet { box-shadow: none; animation: none; }
@@ -2220,6 +2251,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rq-who .rq-meta b { color: var(--fg); font-weight: 500; }
 .rq-ct { margin-top: 8px; font: 400 14px/21px var(--font); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .rq.cm .rq-sub { margin-top: 4px; color: var(--fg-3); font: 400 12px/16px var(--font); }
+.rq.cm.dr .rq-sub { margin-top: 10px; color: var(--fg); font: 600 14px/20px var(--font); }   /* a mail draft: its reply subject heads the grey box */
 .rq.cm .rq-body, .rq.cm .rq-bodywrap { margin-top: 10px; }
 .rq.cm .rq-body, .rq.cm .rq-bodywrap > .rq-body { padding: 10px 12px; border-radius: 8px; background: var(--layer); }
 .rq.cm .rq-acts { margin-top: 10px; }
@@ -3266,6 +3298,10 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
 #mon-tl > .mr > .mr-pts li + li::before { content: " · "; position: static; width: auto; height: auto; background: none; color: var(--fg-3); }
 #mon-tl > .mr > :is(.mr-to, .mr-todo) { display: none; }
 @media (min-width: 1100px) {
+  /* the list uses the whole content area right of the app list (owner 2026-11-03, like KakaoTalk or Instagram): the folder chips, the 메일 N개 row and the rows
+     start at one left line (the row's 16px, the select-all box on the row checkbox's x) and the extra width goes to the subject and the preview */
+  #mon-tl:has(> .mr-filter.mr-mail) { max-width: none; margin: 0; }
+  .mbox-bar { padding-left: 12px; }
   #mon-tl > .bm.rc.mr { flex-wrap: nowrap; column-gap: 8px; height: 48px; padding: 0 12px 0 16px; }
   #mon-tl > .mr > .mr-dot { top: 50%; margin-top: -4px; }
   #mon-tl > .mr > .rc-hd { display: contents; }
@@ -3314,7 +3350,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
 .mth-m > .mth-list { margin-top: 4px; padding: 4px; border-radius: var(--r-ctl); background: var(--layer); }
 .mth-row { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px; border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .mth-row:hover { background: var(--card-hover); }
-.mth-row.on { background: var(--layer); cursor: default; }   /* the selected fill of every list (.cv-row.on) */
+.mth-row.on { background: var(--row-sel); cursor: default; }   /* the selected fill of every list (.cv-row.on) */
 .mth-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .mth-when { flex: 1; min-width: 0; color: var(--fg-3); font-size: 12px; line-height: 16px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mth-subj { font-size: 14px; line-height: 20px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -3436,7 +3472,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
 .pl-row + .pl-row { border-top: 1px solid var(--line); }
 .pl-row:hover { background: var(--card-hover); }
 /* the open project: the same selected fill as the chat list (.cv-row.on) */
-.pl-row.on, .pl-row.on:hover { background: var(--layer); }
+.pl-row.on, .pl-row.on:hover, .pl-row:active { background: var(--row-sel); }
 .pl-row > .dot { margin-top: 7px; }
 .pl-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .pl-1 { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
