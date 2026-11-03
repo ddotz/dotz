@@ -17,6 +17,7 @@ async function trLoad() {
   TR.min = Number(r.triageMin) > 0 ? Number(r.triageMin) : 3;
   for (const x of r.results || []) TR.results[x.ref] = x;
   trBanner();
+  if (current === "monitoring" && MON.sel === "replies") { MON.sig = ""; monSchedule(); }   // the queue's head offers 빠른 처리 once enough wait
   if (TR.h) trMerge();
 }
 const trSoon = () => { clearTimeout(TR.t); TR.t = setTimeout(trLoad, 300); };
@@ -217,12 +218,14 @@ function trOneView(c) {
   const foot = el("div", { class: "fs-ft tr-ft" });
   if (TR.noting && !locked) {
     foot.append(el("textarea", { class: "dc-note tr-note", rows: "3", placeholder: "어떻게 고칠까요? 봇이 고쳐서 다시 물어봐요", "aria-label": "어떻게 고칠지", oninput: ev => { TR.notes[k] = ev.target.value; } }, TR.notes[k] || ""),
-      el("div", { class: "tr-acts" }, el("button", { class: "dc-act alt tr-b", type: "button", onclick: () => { TR.noting = false; trPaint(); } }, "취소"), el("button", { class: "dc-act main tr-b tr-go", type: "button", onclick: () => trEditSubmit(c) }, "고쳐 달라고 하기")));
+      el("div", { class: "tr-acts" }, el("button", { class: "btn tr-b tr-go", type: "button", onclick: () => trEditSubmit(c) }, "고쳐 달라고 하기"), el("button", { class: "btn text tr-b", type: "button", onclick: () => { TR.noting = false; trPaint(); } }, "취소")));
   } else {
+    // The reply card's three actions in its order (the prototype's #triage): 보내기, 고치기, then the quiet 보내지 않기.
     foot.append(el("div", { class: "tr-acts" },
-      el("button", { class: "dc-act alt tr-b", type: "button", disabled: locked, onclick: () => trAnswer(c, 3) }, "보내지 않기"),
-      el("button", { class: "dc-act alt tr-b", type: "button", disabled: locked, onclick: () => { TR.noting = true; trPaint(); } }, "고치기 …"),
-      el("button", { class: "dc-act main tr-b tr-go", type: "button", disabled: locked, onclick: () => trAnswer(c, 1) }, trSendText(c))),
+      el("button", { class: "btn tr-b tr-go", type: "button", disabled: locked, onclick: () => trAnswer(c, 1) }, trSendText(c)),
+      el("button", { class: "btn tonal tr-b", type: "button", disabled: locked, onclick: () => { TR.noting = true; trPaint(); } }, "고치기 …"),
+      el("button", { class: "btn text tr-b", type: "button", disabled: locked, onclick: () => trAnswer(c, 3) }, "보내지 않기")),
+      el("div", { class: "tr-hint", text: "보내거나 보내지 않으면 다음 초안으로 넘어가요." }),
       el("div", { class: "tr-nav" }, el("button", { class: "btn text sm", type: "button", "aria-label": "이전 카드", disabled: TR.i === 0, onclick: () => trStep(-1) }, "‹ 이전"), el("button", { class: "btn text sm", type: "button", "aria-label": "다음 카드", onclick: () => trStep(1) }, "다음 ›")),
       el("div", { class: "tr-keys", text: "Enter·1 보내기 · 2·E 고치기 · 3·X 보내지 않기 · ← → 이전·다음 · L 목록" }));
   }

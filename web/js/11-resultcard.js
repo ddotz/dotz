@@ -56,6 +56,26 @@ function rcRawFold(raw, opts = {}) {
   if (opts.rawOpen) { d.open = true; fill(); }
   return d;
 }
+// A section that is a list of "<key> <what> · <detail>" lines (a time, 답장, 가격 ...) is the prototype's key-column rows: the key muted, what it is
+// in 500, the detail muted after it, a price change as the old value struck and the new one in the accent. Any other list stays a list.
+const RC_KEY = /^(\d{1,2}:\d{2}|답장|가격|재고|새 글|확인|변경)\s+(\S.*)$/;
+function rcRowsNode(text) {
+  const lines = String(text ?? "").split("\n").map(l => l.trim()).filter(Boolean), out = [];
+  let n = 0;
+  for (const l of lines) {
+    const m = /^[-*\u2022]\s+(.*)$/.exec(l), k = m && RC_KEY.exec(m[1]);
+    if (!m) {   // a short line without punctuation is a small heading over the rows below it (오늘 일정 / 메일 / 감시)
+      if (l.length > 16 || /[.!?,]/.test(l)) return null;
+      out.push(el("div", { class: "rc-sh", text: l }));
+      continue;
+    }
+    if (!k) return null;
+    const chg = NW_CHANGE.exec(k[2]), [what, detail] = chg ? [chg[1].trim(), null] : k[2].split(/\s+·\s+/, 2);
+    out.push(el("div", { class: "rc-row" }, el("span", { class: "rc-k", text: k[1] }), el("span", { class: "rc-w" }, el("b", { text: what }), chg ? el("span", { class: "rc-d nw-chg" }, el("s", { text: chg[2] }), " → ", el("em", { text: chg[3] })) : detail ? el("span", { class: "rc-d", text: detail }) : null)));
+    n++;
+  }
+  return n >= 2 ? el("div", { class: "rc-rows" }, ...out) : null;
+}
 // opts: src (sender or source), at (ISO), title (else the first line of text), text (summary; may carry the original), raw (else taken
 // from text), tag (a node), actions (buttons), rawNode (raw -> node: draws the original itself, as a mail does), rawOpen (the original starts open).
 // null when there is nothing to show.
@@ -72,8 +92,8 @@ function resultCard(opts) {
   if (title) kids.push(el("div", { class: "rc-title", text: title }));
   for (const s of rcSections(body)) {
     // [file] lines become file chips (as in a chat bubble and on Discord), and a path in the text opens like one
-    const fl = fileLines(s.body), md = fl.text.trim() ? mdNode(fl.text) : null;
-    kids.push(el("div", { class: "rc-sec" }, s.h ? el("div", { class: "rc-sh", text: s.h }) : null, md, md ? pathFiles(md) : null, filesNode(fl.files)));
+    const fl = fileLines(s.body), rows = rcRowsNode(fl.text), md = !rows && fl.text.trim() ? mdNode(fl.text) : null;
+    kids.push(el("div", { class: "rc-sec" }, s.h ? el("div", { class: "rc-sh", text: s.h }) : null, rows || md, md ? pathFiles(md) : null, filesNode(fl.files)));
   }
   if (raw || opts.rawNode) kids.push(rcRawFold(raw, opts));
   if (opts.actions && opts.actions.length) kids.push(el("div", { class: "btns cc-act" }, ...opts.actions));

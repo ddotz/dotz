@@ -1,10 +1,21 @@
 /* result card (11-resultcard.js): a mail or a monitoring result - header, title, labelled sections, the original folded */
 .tl-in > .bm.rc, #mon-tl > .bm.rc { display: flex; flex-direction: column; gap: 12px; }
 .rc-hd { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--fg-3); font-size: 12px; line-height: 16px; }
-.rc-src { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-weight: 600; }
+.rc-src { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font-size: 13px; font-weight: 600; }
 .rc-time { flex: none; margin-left: auto; white-space: nowrap; }
-.rc-title { color: var(--fg); font-size: 16px; line-height: 22px; font-weight: 600; overflow-wrap: anywhere; }
+.rc-title { color: var(--fg); font-size: 18px; line-height: 26px; font-weight: 700; letter-spacing: -.01em; overflow-wrap: anywhere; }
 .rc-sec { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+/* key-column rows (11-resultcard.js rcRowsNode): time / 답장 / 가격, what it is, the detail muted */
+.rc-rows { display: flex; flex-direction: column; min-width: 0; }
+.rc-rows > .rc-sh { margin-top: 12px; }
+.rc-rows > .rc-sh:first-child { margin-top: 0; }
+.rc-row { display: flex; align-items: baseline; gap: 12px; min-width: 0; padding: 3px 0; }
+.rc-k { flex: none; width: 48px; color: var(--fg-3); font: 400 13px/22px var(--font); font-variant-numeric: tabular-nums; }
+.rc-w { min-width: 0; font: 400 15px/22px var(--font); overflow-wrap: anywhere; }
+.rc-w b { font-weight: 500; }
+.rc-d { margin-left: 8px; color: var(--fg-3); font-size: 13px; }
+.rc-d.nw-chg s { color: var(--fg-3); }
+.rc-d.nw-chg em { color: var(--fg-2); font-style: normal; font-weight: 500; }
 .rc-sh { color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 600; }
 .bm.rc .rc-sec .md { font-size: 15px; line-height: 24px; }
 .rc-raw > summary { display: flex; align-items: center; gap: 6px; width: fit-content; min-height: 32px; padding: 0 12px; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; cursor: pointer; list-style: none; }

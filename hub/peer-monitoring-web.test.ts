@@ -113,8 +113,8 @@ describe("merged 모니터링", () => {
 		await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|m:peer-backup`)}), 0)`);
 		await waitFor(v, `$("#mon-head .cv-n").firstChild.textContent === "peer backup"`);
 		expect(await text(v, `$("#mon-head .mon-pc").textContent`)).toBe("맥미니");
-		await waitFor(v, `$("#mon-tl .rc")`);
-		expect(await text(v, `$("#mon-tl .rc .rc-title").textContent`)).toBe("백업이 바뀌었어요");
+		await waitFor(v, `$("#mon-tl .mon-lr")`);
+		expect(await text(v, `$("#mon-tl .mon-lr:nth-child(2) .mon-l1").textContent`)).toBe("백업이 바뀌었어요");
 		await v.evaluate(`(go("monitoring", "notice"), 0)`);
 		await waitFor(v, `$("#mon-head .mon-pc")`);
 		expect(await text(v, `$("#mon-head .mon-pc").textContent`)).toBe("맥북");
@@ -192,7 +192,7 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const) {
 	test(`a peer monitor's detail names its computer at ${w}px`, async () => {
 		const v = await boot(w, h);
 		await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|m:peer-backup`)}), 0)`);
-		await waitFor(v, `$("#mon-head .mon-pc") && $("#mon-head .mon-pc").textContent === "맥미니" && $("#mon-tl .rc")`);
+		await waitFor(v, `$("#mon-head .mon-pc") && $("#mon-head .mon-pc").textContent === "맥미니" && $("#mon-tl .mon-lr")`);
 		if (w < 1100) expect(await text(v, `$("#title .mon-pc").textContent`)).toBe("맥미니");
 	});
 }
