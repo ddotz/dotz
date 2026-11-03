@@ -54,6 +54,8 @@ export type Lane = Record_ & {
 	silent?: { lastText: string };
 	// Set when a compaction finished: the next prompt sent to the process carries the retain nudge once (no extra turn).
 	retainNext?: boolean;
+	// Set when the owner changed the workers' model of a running idle lane: its next prompt tells it once (no extra turn).
+	workerNext?: string;
 	// The models the running process answers on now (its own, and its task workers'): the configured ones, or the fallbacks omp moved to. Reset at every spawn.
 	activeModel?: string;
 	activeWorkerModel?: string;

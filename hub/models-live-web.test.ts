@@ -43,7 +43,7 @@ const MODELS = {
 	}),
 	replies: { value: "", model: REPLY_DEFAULT, default: REPLY_DEFAULT, default_label: "기본값 · Sonnet 5.5 · 보통", options: c.options, labels: c.labels },
 };
-const STATE = { name: "dotz", orchestrator: { status: "idle", activeModel: `${SONNET}:high` }, lanes: [{ name: "pay", title: "결제", model: `${OPUS}:high`, status: "idle", live: true, startedAt: UNTIL, reports: [], context: {} }], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 };
+const STATE = { name: "dotz", orchestrator: { status: "idle", activeModel: `${SONNET}:high` }, lanes: [{ name: "pay", title: "결제", model: `${OPUS}:high`, worker_model: `${SONNET}:high`, status: "idle", live: true, startedAt: UNTIL, reports: [], context: {} }], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 };
 
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const server = Bun.serve({
@@ -85,8 +85,8 @@ describe("REQ1: home cards and the composer chip show the model in use", () => {
 	test("the main card shows the fallback model and 폴백 중 with the reason and return time, not the configured model", async () => {
 		const v = await boot();
 		await run(v, `go("home"); renderHome()`);
-		await waitFor(v, `document.querySelector("#home-cards .big")`);
-		const r = await q<{ big: string; tag: string }>(v, `const card = document.querySelector("#home-cards .big").closest(".card") || document.querySelector("#home-cards .big").parentNode; return { big: document.querySelector("#home-cards .big").textContent, tag: (card.querySelector(".sub .tag.warn") || {}).textContent || "" }`);
+		await waitFor(v, `document.querySelector("#home-cards .hsum-s .v")`);
+		const r = await q<{ big: string; tag: string }>(v, `return { big: document.querySelector("#home-cards .hsum-s .v").textContent, tag: (document.querySelector("#home-cards .hsum-fb") || {}).textContent || "" }`);
 		expect(r.big).toEndWith("Sonnet 5.5");
 		expect(r.big).not.toContain("Opus");
 		expect(r.tag).toStartWith("폴백 중 · 한도 소진 · ");
@@ -107,6 +107,13 @@ describe("REQ1: home cards and the composer chip show the model in use", () => {
 		expect(r.hidden).toBe(false);
 		expect(r.fb).toStartWith("폴백 중 · 한도 소진");
 		expect(r.title).toContain("Opus 5.5");
+	});
+	test("the subagent chip of a session reads its worker_model and is clickable", async () => {
+		const v = await boot();
+		await run(v, `target = "lane:pay"; renderCtxRing()`);
+		const r = await q<{ text: string; hidden: boolean; click: boolean }>(v, `const w = document.querySelector("#c-worker"); return { text: w.textContent, hidden: w.hidden, click: typeof w.onclick === "function" }`);
+		expect(r).toEqual({ text: "서브에이전트 Sonnet 5.5 · 높음", hidden: false, click: true });
+		await run(v, `target = MAIN; renderCtxRing()`);
 	});
 });
 
