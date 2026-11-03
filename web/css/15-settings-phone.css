@@ -8,14 +8,10 @@
   #models .fbe .seg button { flex: 1 0 auto; padding: 0 12px; }
   /* update: commit subjects and paths wrap; the time field and switch drop under the text instead of squeezing it */
   #settings .upd-log span { white-space: normal; overflow-wrap: anywhere; }
-  #settings .li:has(> .upd-at) { flex-wrap: wrap; row-gap: 8px; }
-  #settings .li:has(> .upd-at) > .tx { flex: 1 1 calc(100% - 48px); }
-  #settings .upd-at { margin-left: auto; }
-  /* provider rows: login and logout buttons are one row under the name, aligned with it */
-  #providers .li.prow .btns { flex: 1 0 100%; padding-left: 36px; }
+  #settings .li:has(.upd-at) { flex-wrap: wrap; row-gap: 8px; }
+  #settings .li:has(.upd-at) > .tx { flex: 1 1 calc(100% - 48px); }
 }
 @media (max-width: 639px), (pointer: coarse) {
-  :is(#settings, #models, #providers, #usage, #context, #harness) .btn { min-height: 40px; }
   #harness .hm-row { height: 40px; }
   #harness .hm-chip { min-height: 36px; }
   :is(#settings, #models, #providers, #usage, #context) .ib { width: 40px; height: 40px; }

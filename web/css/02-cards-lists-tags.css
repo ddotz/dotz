@@ -62,8 +62,6 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .li .lead { flex: none; display: inline-flex; color: var(--fg-3); }
 .li .tx { flex: 1; min-width: 0; }
 .li .hd { font-size: 15px; line-height: 22px; font-weight: 500; }
-.li.prow { flex-wrap: wrap; }
-.li.prow .tx { flex: 1 1 140px; }
 .avatar { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: var(--layer); border: 1px solid var(--line); color: var(--fg-2); font: 600 11px/16px var(--font); text-transform: uppercase; }
 .heads { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .heads .t { min-width: 0; font: 600 13px/20px var(--font); }

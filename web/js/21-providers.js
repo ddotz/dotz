@@ -20,23 +20,22 @@ function renderProviders() {
   const box = $("#providers");
   const list = P.providers;
   const wrap = el("div", {});
-  wrap.append(el("div", { class: "tools-bar" }, el("span", { class: "sec", text: `${list.filter(isConnected).length}개 연결` }),
-    el("button", { class: "btn tonal", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
+  wrap.append(el("div", { class: "sec sec-act" }, `${list.filter(isConnected).length}개 연결`,
+    el("button", { class: "btn tonal sm", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
   if (!list.length) wrap.append(emptyNode("공급자가 없어요"));
   const row = p => {
     const name = p.name || p.id;
     const canLogout = p.can_logout ?? p.removable;
     const sub = [p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
-    const btns = el("div", { class: "btns" });
     // a signed-in Claude subscription: another login adds an account (hub/providers.ts can_add_account), it never replaces one
-    if (p.can_add_account) btns.append(el("button", { class: "btn tonal", type: "button", onclick: () => startLogin(p) }, icon("add"), "계정 추가"));
-    else if (p.can_login) btns.append(el("button", { class: `btn ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인"));
-    if (canLogout) btns.append(el("button", { class: "btn danger", type: "button", onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, p.auth === "api_key" ? "키 삭제" : "로그아웃"));
+    const act = p.can_add_account ? el("button", { class: "btn tonal inrow", type: "button", onclick: () => startLogin(p) }, icon("add"), "계정 추가")
+      : p.can_login ? el("button", { class: `btn inrow ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인") : null;
+    const out = p.auth === "api_key" ? "키 삭제" : "로그아웃";
+    const rm = canLogout ? el("button", { class: "ib", type: "button", title: out, "aria-label": out, onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, icon("trash")) : null;
     return el("div", { class: "li prow" }, el("span", { class: "avatar", text: [...name][0] || "?" }),
       el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: name }), p.in_use ? el("span", { class: "tag pri", text: "사용 중" }) : null),
         sub ? el("div", { class: "sup", text: sub }) : null),
-      el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }),
-      btns.children.length ? btns : null);
+      liEnd(el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" }), act, rm));
   };
   // Login accounts first, then API keys; an unconfigured provider sits with the way it can be set up.
   const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);
@@ -174,7 +173,7 @@ async function loadQuota(fresh) {
   if (current === "usage") quotaTimer = setTimeout(loadQuota, 60000);
   clear(box);
   box.append(el("div", { class: "tools-bar" }, el("span", { class: "sup", text: q.fetched_at ? kstStamp(q.fetched_at) : "" }),
-    el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, () => loadQuota(true)) }, icon("refresh"), "새로고침")));
+    el("button", { class: "btn text sm", type: "button", onclick: ev => busy(ev.currentTarget, () => loadQuota(true)) }, icon("refresh"), "새로고침")));
   const grid = el("div", { class: "grid" });
   for (const p of q.providers || []) {
     const card = el("div", { class: "card" }, el("div", { class: "ch" }, el("h3", { text: providerName(p.provider) })));

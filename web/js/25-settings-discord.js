@@ -71,7 +71,7 @@ function dcSwitch(label, on, key, onclick) {
   return el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on), "aria-label": `${label} 디스코드로도 보내기`, "data-dc": key, onclick });
 }
 function dcSwitches() {
-  const li = (title, desc, k, on) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "sup", text: desc }), ), dcSwitch(title, on, k, () => dpSet(k, !on)));
+  const li = (title, desc, k, on) => el("div", { class: "li" }, el("span", { class: "lead" }, icon("bell")), el("span", { class: "tx" }, el("div", { class: "hd", text: title }), el("div", { class: "sup", text: desc }), ), liEnd(dcSwitch(title, on, k, () => dpSet(k, !on))));
   const hint = () => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결하면 고를 수 있어요" })));
   const on = DCS.v.enabled && DP.v;
   return [
@@ -104,7 +104,7 @@ function dcAdvanced(v) {
     el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn", "data-ms-save": "1", onclick: ev => dcSave(ev.currentTarget), text: "저장" }), el("button", { type: "button", class: "btn tonal", onclick: ev => dcCheck(ev.currentTarget), text: "연결 확인" }),
       v.has_token ? el("button", { type: "button", class: "btn text", onclick: ev => dcClear(ev.currentTarget), text: "토큰 지우기" }) : null),
     dcChecked())];
-  if (v.restart_needed) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "게이트웨이를 다시 시작하면 적용돼요" })), el("button", { type: "button", class: "btn", onclick: ev => dcRestart(ev.currentTarget), text: "다시 시작" })));
+  if (v.restart_needed) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd", text: "게이트웨이를 다시 시작하면 적용돼요" })), liEnd(el("button", { type: "button", class: "btn inrow", onclick: ev => dcRestart(ev.currentTarget), text: "다시 시작" }))));
   return el("div", { class: "list" }, ...rows);
 }
 function renderDiscord() {
@@ -120,7 +120,7 @@ function renderDiscord() {
   const det = msAdvanced("data-ms-advanced", DCS.advOpen, () => dcAdvanced(v));
   det.addEventListener("toggle", () => { DCS.advOpen = det.open; });
   clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" },
-    el("div", { class: "li", "data-ms-status": "discord" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })), el("span", { class: `tag ${tone}`, text: tag })),
-    el("div", { class: "li ms-act" }, el("button", { type: "button", class: "btn", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m)))),
+    el("div", { class: "li", "data-ms-status": "discord" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })),
+      liEnd(el("span", { class: `tag ${tone}`, text: tag }), el("button", { type: "button", class: "btn inrow", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m))))),
   el("div", { class: "sec", text: "자동 연결" }), onboardingPanel("discord"), ...dcSwitches(), ...guide, det);
 }

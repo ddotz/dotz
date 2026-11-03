@@ -57,7 +57,7 @@ function makeBoard(container, key, opts = {}) {
   let saved = bLoad(store), lastJson = JSON.stringify(saved), cur = [], lay = [], ghost = [], act = null, pending = null, swallow = false;
   const wraps = new Map();
   const ph = el("div", { class: "bph", hidden: true });
-  const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text", type: "button", onclick: () => reset() }, "배치 초기화"));
+  const bar = el("div", { class: "bbar" }, ...(opts.actions || []).map(a => el("button", { class: "btn text sm", type: "button", onclick: () => a.run() }, a.label)), el("button", { class: "btn text sm", type: "button", onclick: () => reset() }, "배치 초기화"));
   container.classList.add("board");
   container.before(bar);
   container.append(ph);
