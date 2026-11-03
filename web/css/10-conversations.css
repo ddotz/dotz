@@ -34,6 +34,14 @@
 .cv-row.sub .cv-n { font-size: 14px; }
 .cv-gh { padding: 12px 16px 4px; color: var(--fg-3); font: 500 12px/16px var(--font); }
 .cv-m { flex: none; display: flex; align-items: center; gap: 6px; }
+/* 오른쪽 시각 (시제품 .li .end): 목록 행에서 제목·미리보기 다음, 상태 표시 앞 */
+.cv-t { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
+/* 대화 머리 (시제품 .cv-hd): 제목 한 줄과 그 아래 상태 한 줄, 오른쪽에 그 대화의 동작 */
+#cv-head .cv-hd-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#cv-head .cv-hd-t { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--fg); font: 600 16px/22px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#cv-head .cv-hd-s { color: var(--fg-3); font: 400 12px/16px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#cv-head .cv-hd-a { flex: none; display: flex; align-items: center; gap: 4px; margin-left: auto; }
+#cv-head .cvmenu { margin-left: 0; }
 /* a row with a preview line (running sessions, 모니터링) */
 .cv-row.pv { align-items: flex-start; padding-block: 10px; }
 .cv-row.pv .cv-p { font-size: 13px; line-height: 18px; }
@@ -81,20 +89,58 @@
 
 @media (max-width: 1099px) {
   .cv-row.on { background: transparent; }
+  /* 폰·태블릿: 대화는 시제품처럼 한 장의 흰 카드 (proto .cv)이고, 목록은 따로 한 화면이에요. */
+  #v-chat { position: relative; height: calc(100% - 8px); margin: 0 12px 8px; padding: 0; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+  #v-chat::before { content: none; }
+  #v-chat > .cv-head { display: none; }
+  #v-chat > .todo { order: 1; margin: 8px 12px 4px; }
+  #v-chat > .bell { order: 2; margin: 8px 4px 4px; }
+  #v-chat > .bell-list { order: 3; }
+  #v-chat > .chatbox { order: 4; }
+  #v-chat > .subs { order: 5; margin: 0 12px 4px; }
+  #v-chat > .composer { order: 6; padding: 8px 12px 12px; }
+  #v-chat.cv-listing { height: 100%; margin: 0; padding: 8px 12px 24px; border-radius: 0; background: transparent; overflow: visible; }
+  #v-chat.cv-listing > .cv-side { border-radius: var(--r-card); }
 }
 
 @media (min-width: 1100px) {
   :root { --cv-w: 240px; }
-  :is(#v-chat, #v-monitoring) { display: grid; max-width: none; column-gap: 16px; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
-  :is(#v-chat, #v-monitoring) > * { grid-column: 2; }
-  :is(#v-chat, #v-monitoring) > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: 16px; padding: 8px; }
-  :is(#v-chat, #v-monitoring) > .cv-head { grid-row: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 4px 12px; }
-  #v-chat > .subs { grid-row: 2; }
-  #v-chat > .todo { grid-row: 3; }
-  #v-chat > .bell { grid-row: 2; }
+  /* 모니터링: 목록 단과 대화 (같은 두 단 구조) */
+  #v-monitoring { display: grid; max-width: none; column-gap: 16px; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+  #v-monitoring > * { grid-column: 2; }
+  #v-monitoring > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: 16px; padding: 8px; }
+  #v-monitoring > .cv-head { grid-row: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 4px 12px; }
+  #v-monitoring > .chatbox { grid-row: 4; }
+  /* 채팅: 시제품의 두 단 (proto .chat2 = 340px 목록 + 대화 카드 하나). 카드는 ::before가 그려 머리·todo·타임라인·컴포저가 한 면 안에 있어요 */
+  #v-chat { --cv-w: 340px; position: relative; display: grid; max-width: none; column-gap: 16px; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
+  #v-chat::before { content: ""; grid-column: 2; grid-row: 1 / -1; border-radius: var(--r-card); background: var(--card); }
+  #v-chat.mail-open { --cv-w: 240px; }   /* 메일 스레드 패널이 대화 옆에 서면 목록 단을 좁혀 메일 원문 폭을 지켜요 */
+  #v-chat > * { grid-column: 2; position: relative; z-index: 1; }
+  #v-chat > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: 16px; padding: 0; }
+  #v-chat > .cv-head { grid-row: 1; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 12px 16px; }
+  #v-chat > .todo { grid-row: 2; margin: 0 12px 4px; }
+  #v-chat > .bell { grid-row: 2; margin: 0 12px 4px; }
   #v-chat > .bell-list { grid-row: 4; }
-  :is(#v-chat, #v-monitoring) > .chatbox { grid-row: 4; }
-  #v-chat > .composer { grid-row: 5; }
+  #v-chat > .chatbox { grid-row: 4; }
+  #v-chat > .subs { grid-row: 5; margin: 0 12px; }
+  #v-chat > .composer { grid-row: 6; width: auto; max-width: none; margin: 0; padding: 8px 12px 12px; }
+  /* 목록 행: 시제품 채팅 목록 (proto .li) — 48px 두 줄, 36px 원형 아이콘, 오른쪽 시각·대기 표시 */
+  #chat-convo { padding: 0; }
+  #chat-convo .cv-bar { padding: 8px 8px 4px; }
+  #chat-convo .cv-gh { padding: 12px 16px 4px; }
+  #chat-convo .cv-row { min-height: 48px; padding: 8px 16px; gap: 12px; border-radius: 0; }
+  #chat-convo .cv-row + .cv-row { margin-top: 0; border-top: 1px solid var(--line); }
+  #chat-convo .cv-row.on { background: var(--row-sel); }
+  #chat-convo .cv-row.sub { min-height: 44px; padding-left: 32px; }
+  #chat-convo .cv-row .cv-n, #chat-convo .cv-row.sub .cv-n { font: 500 15px/22px var(--font); }
+  #chat-convo .cv-row.unread .cv-n { font-weight: 600; }
+  #chat-convo .cv-row .cv-p { color: var(--fg-2); font: 400 12px/16px var(--font); }
+  #chat-convo .cv-row.pv { align-items: center; padding-block: 8px; }
+  #chat-convo .cv-row.pv .cv-m { align-self: center; }
+  #chat-convo .cv-av { width: 36px; height: 36px; }
+  #chat-convo .cv-av .ic { width: 20px; height: 20px; }
+  #chat-convo .cv-row.sub .cv-av { width: 28px; height: 28px; }
+  #chat-convo .cv-m { gap: 8px; }
   .cv-row.pv { padding-block: 6px; }
   .cv-row { min-height: 36px; padding: 4px 10px; gap: 8px; border-radius: var(--r-ctl); }
   .cv-row.sub { min-height: 36px; padding-left: 20px; }
@@ -119,7 +165,7 @@
 .bell::-webkit-scrollbar { display: none; }
 .bell .chip { height: 32px; padding: 0 8px; gap: 4px; font-size: 12.5px; }
 .nb.err { background: var(--err); }
-#v-chat.bell-on > .chatbox { display: none; }
+#v-chat.bell-on .chatbox { display: none; }
 .bell-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }
 .bell-gh { padding: 12px 4px 6px; color: var(--fg-2); font: 600 13px/18px var(--font); }
 .bell-gh:first-child { padding-top: 4px; }
