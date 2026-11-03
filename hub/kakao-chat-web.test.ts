@@ -186,7 +186,7 @@ const boot = async (v: View) => {
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && S`);
 	await light(v);
 	await run(v, `go("monitoring", "i:kakao")`);
-	await waitFor(v, `!$("#kk").hidden && KK.loaded && document.querySelector(".kk-rooms .cv-gh, .kk-rooms .kk-note")`);
+	await waitFor(v, `!$("#kk").hidden && KK.loaded && document.querySelector(".kk-rooms .kk-lh")`);
 };
 const openRoom = async (v: View, id = "100") => {
 	await run(v, `document.querySelector('.kk-row[data-chat="${id}"]').click()`);
@@ -208,32 +208,40 @@ const geo = (v: View) => q<Geo>(v, `const m = document.querySelector(".kk-new"),
 describe("카카오톡 at desktop width (1280x800)", async () => {
 	const v = await open(1280, 800);
 
-	test("the room choice lists every room with a switch; the chosen ones are conversation rows with name, initial, time and unread", async () => {
+	test("only the watched rooms are rows (name, initial, time, unread, an eye); 추가 opens the full list with an eye per room", async () => {
 		await boot(v);
-		const s = await q<{ rows: { name: string; initial: string; time: string; badge: string }[]; sw: string[][]; expanded: string | null }>(v, `
-			const rows = [...document.querySelectorAll(".kk-row")].map(r => ({ name: r.querySelector(".cv-n").textContent, initial: r.querySelector(".kk-av").textContent, time: (r.querySelector(".kk-t") || {}).textContent || "", badge: (r.querySelector(".nb") || {}).textContent || "" }));
-			return { rows, sw: [...document.querySelectorAll(".kk-pr")].map(p => [p.dataset.chat, p.querySelector('[data-k="watch"]').getAttribute("aria-checked")]), expanded: document.querySelector("#kk-pick-btn").getAttribute("aria-expanded") }`);
+		const s = await q<{ rows: { name: string; initial: string; time: string; badge: string; eye: string }[]; switches: number; dialog: boolean }>(v, `
+			const rows = [...document.querySelectorAll(".kk-row")].map(r => ({ name: r.querySelector(".cv-n").textContent, initial: r.querySelector(".kk-av").textContent, time: (r.querySelector(".kk-t") || {}).textContent || "", badge: (r.querySelector(".nb") || {}).textContent || "", eye: r.parentElement.querySelector('[data-k="watch"]').getAttribute("aria-pressed") }));
+			return { rows, switches: document.querySelectorAll('.kk-rooms [role="switch"]').length, dialog: !!document.querySelector("#kk-add") }`);
 		expect(s.rows.map(r => r.name)).toEqual(["가나다 모임", "라마바"]);
-		expect(s.rows[0]).toMatchObject({ initial: "가", badge: "30" });
+		expect(s.rows[0]).toMatchObject({ initial: "가", badge: "30", eye: "true" });
 		expect(s.rows[0]!.time.length).toBeGreaterThan(0);
-		expect(s.expanded).toBe("false");
-		await run(v, `document.querySelector("#kk-pick-btn").click()`);
-		const sw = await q<string[][]>(v, `return [...document.querySelectorAll(".kk-pr")].map(p => [p.dataset.chat, p.querySelector('[data-k="watch"]').getAttribute("aria-checked")])`);
+		expect(s.switches).toBe(0);
+		expect(s.dialog).toBe(false);
+		await run(v, `document.querySelector("#kk-add-btn").click()`);
+		await waitFor(v, `document.querySelector("#kk-add")`);
+		const sw = await q<string[][]>(v, `return [...document.querySelectorAll("#kk-add .kk-pr")].map(p => [p.dataset.chat, p.querySelector('[data-k="watch"]').getAttribute("aria-pressed")])`);
 		expect(sw).toEqual([["100", "true"], ["200", "false"], ["300", "true"]]);
 		await shot(v, "01-desktop-rooms.png");
-		await run(v, `document.querySelector("#kk-pick-btn").click()`);
+		await run(v, `document.querySelector('#kk-add [data-k="close"]').click()`);
+		await waitFor(v, `!document.querySelector("#kk-add")`);
 	});
 
-	test("toggling a room PUTs {watched}; a watched room has an 자동 초안 switch that PUTs {autoDraft}", async () => {
-		await run(v, `document.querySelector("#kk-pick-btn").click()`);
+	test("the eye in the 추가 list PUTs {watched} and the room joins the rows; the eye on a row stops watching; the open room's 자동 초안 switch PUTs {autoDraft}", async () => {
+		await run(v, `document.querySelector("#kk-add-btn").click()`);
 		await run(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="watch"]').click()`);
-		const put = await expectReq(isReq("PUT", "/api/kakao/rooms/200"));
-		expect(put.body).toEqual({ watched: true });
-		await waitFor(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="auto"]')`);
-		expect(await q(v, `return document.querySelector('.kk-pr[data-chat="200"] [data-k="watch"]').getAttribute("aria-checked")`)).toBe("true");
-		await run(v, `document.querySelector('.kk-pr[data-chat="100"] [data-k="auto"]').click()`);
+		expect((await expectReq(isReq("PUT", "/api/kakao/rooms/200"))).body).toEqual({ watched: true });
+		await waitFor(v, `document.querySelector('.kk-row[data-chat="200"]') && document.querySelector('.kk-pr[data-chat="200"] [data-k="watch"]').getAttribute("aria-pressed") === "true"`);
+		await run(v, `document.querySelector('#kk-add [data-k="close"]').click()`);
+		await waitFor(v, `!document.querySelector("#kk-add")`);
+		await openRoom(v);
+		expect(await q(v, `return [document.querySelector('#kk-auto [data-k="auto"]').getAttribute("aria-checked"), document.querySelector("#kk-auto .cv-p").textContent.includes("토큰")]`)).toEqual(["false", true]);
+		await run(v, `document.querySelector('#kk-auto [data-k="auto"]').click()`);
 		expect((await expectReq(isReq("PUT", "/api/kakao/rooms/100"))).body).toEqual({ autoDraft: true });
-		expect(await q(v, `return document.querySelector(".kk-hint").textContent.includes("토큰")`)).toBe(true);
+		await waitFor(v, `document.querySelector('#kk-auto [data-k="auto"]').getAttribute("aria-checked") === "true"`);
+		await run(v, `document.querySelector('.kk-row[data-chat="200"]').parentElement.querySelector('[data-k="watch"]').click()`);
+		expect((await expectReq(r => r.method === "PUT" && r.path === "/api/kakao/rooms/200" && r.body?.watched === false)).body).toEqual({ watched: false });
+		await waitFor(v, `!document.querySelector('.kk-row[data-chat="200"]')`);
 	});
 
 	test("opening a room: bubbles left and right, names and times per run, date dividers, placeholders, escaped text, the unread line", async () => {
@@ -347,31 +355,13 @@ describe("카카오톡 at desktop width (1280x800)", async () => {
 		expect(reqs.filter(r => r.method === "GET" && /^\/api\/kakao\/chat\/100\?/.test(r.path)).length).toBe(bodies);
 	});
 
-	test("a typed message POSTs {text} with a 보내는 중 bubble on the right; sent clears it once the message is read back; failed shows the reason and retries", async () => {
-		await run(v, `const t = document.querySelector("#kk-text"); t.value = "가나다 답장"; t.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector("#kk-send-btn").click()`);
-		expect((await expectReq(isReq("POST", "/api/kakao/chat/100/send"))).body).toEqual({ text: "가나다 답장" });
-		await waitFor(v, `document.querySelector(".kk-m.me.pend .kk-state")`);
-		expect(await q(v, `return !!document.querySelector(".kk-m.pend .kk-rd")`)).toBe(false);
-		const pend = await q<{ state: string; right: number; tr: number; empty: string }>(v, `const b = document.querySelector(".kk-m.me.pend .kk-bub").getBoundingClientRect(); return { state: document.querySelector(".kk-m.me.pend .kk-state").textContent, right: b.right, tr: (tl => tl.getBoundingClientRect().left + tl.clientLeft + tl.clientWidth)(document.querySelector("#kk-tl")), empty: document.querySelector("#kk-text").value }`);
-		expect(pend.state).toBe("보내는 중");
-		expect(pend.right).toBeGreaterThan(pend.tr - 24);
-		expect(pend.empty).toBe("");
-		msgs.push({ ...mk("4033", "me", "가나다 답장", Date.now()) });
-		emit({ kind: "kakao_send", chatId: "100", id: "s1", state: "sent" });
-		await waitFor(v, `document.querySelector('[data-log="4033"]') && !document.querySelector(".kk-m.me.pend")`);
-
-		await run(v, `const t = document.querySelector("#kk-text"); t.value = "두번째 글"; t.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))`);
-		expect((await expectReq(r => r.path === "/api/kakao/chat/100/send" && r.body?.text === "두번째 글")).body).toEqual({ text: "두번째 글" });
-		Object.assign(sends.find(s => s.id === "s2")!, { state: "failed", reason: "전송에 실패했어요" });
-		emit({ kind: "kakao_send", chatId: "100", id: "s2", state: "failed", reason: "전송에 실패했어요" });
-		await waitFor(v, `(document.querySelector(".kk-m.me.pend.failed .kk-state") || {}).textContent === "실패 · 전송에 실패했어요"`);
-		await run(v, `document.querySelector("#kk-tl").scrollTop = 1e9`);
-		await shot(v, "07-desktop-send-failed.png");
-		await run(v, `document.querySelector('.kk-m.pend [data-k="retry"]').click()`);
-		await waitFor(v, `document.querySelectorAll(".kk-m.me.pend").length === 1 && document.querySelector(".kk-m.me.pend .kk-state").textContent === "보내는 중"`);
-		// The retry is the gateway's (it knows a draft's unsent parts); the web never posts the text again itself.
-		expect(reqs.filter(r => r.path === "/api/kakao/chat/100/send/s2/retry")).toHaveLength(1);
-		expect(reqs.filter(r => r.path === "/api/kakao/chat/100/send" && r.body?.text === "두번째 글")).toHaveLength(1);
+	test("the request bar sends the typed words to the assistant: with a draft waiting the newest one is revised ({revise}); nothing goes to the room", async () => {
+		await run(v, `const t = document.querySelector("#kk-text"); t.value = "좀 더 짧게"; t.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector("#kk-send-btn").click()`);
+		expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft" && !!r.body?.revise)).body).toEqual({ revise: { code: "d3", change: "좀 더 짧게" } });
+		expect(await q(v, `const c = document.querySelector('.kk-draft[data-code="d3"]'); return [document.querySelector("#kk-text").value, c.querySelector(".kk-st").textContent, c.querySelectorAll(".btn").length]`)).toEqual(["", "고치는 중…", 0]);
+		emit({ kind: "kakao_draft", chatId: "100" });
+		await waitFor(v, `KK.drafting === "" && document.querySelector('.kk-draft[data-code="d3"] [data-k="send"]')`);
+		expect(reqs.filter(r => r.path === "/api/kakao/chat/100/send")).toHaveLength(0);
 	});
 
 	test("Shift+Enter is a new line and sends nothing", async () => {
@@ -410,6 +400,38 @@ describe("카카오톡 at desktop width (1280x800)", async () => {
 		await run(v, `document.querySelector('.kk-draft[data-code="d5"] [data-k="drop"]').click()`);
 		await expectReq(isReq("POST", "/api/kakao/drafts/d5/drop"));
 		await waitFor(v, `!document.querySelector(".kk-draft")`);
+	});
+
+	test("a request with no draft waiting makes a new draft ({intent}); 보내기 on its card shows a 보내는 중 bubble on the right; sent clears it once read back; failed shows the reason and retries", async () => {
+		const ask = async (text: string) => run(v, `const t = document.querySelector("#kk-text"); t.value = ${JSON.stringify(text)}; t.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))`);
+		await ask("가나다 답장");
+		expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft" && r.body?.intent === "가나다 답장")).body).toEqual({ intent: "가나다 답장" });
+		await waitFor(v, `document.querySelector('.kk-draft[data-code="di"] [data-k="send"]')`);
+		await run(v, `document.querySelector('.kk-draft[data-code="di"] [data-k="send"]').click()`);
+		expect((await expectReq(isReq("POST", "/api/kakao/drafts/di/send"))).body).toEqual({});
+		await waitFor(v, `document.querySelector(".kk-m.me.pend .kk-state")`);
+		expect(await q(v, `return !!document.querySelector(".kk-m.pend .kk-rd")`)).toBe(false);
+		const pend = await q<{ state: string; right: number; tr: number }>(v, `const b = document.querySelector(".kk-m.me.pend .kk-bub").getBoundingClientRect(); return { state: document.querySelector(".kk-m.me.pend .kk-state").textContent, right: b.right, tr: (tl => tl.getBoundingClientRect().left + tl.clientLeft + tl.clientWidth)(document.querySelector("#kk-tl")) }`);
+		expect(pend.state).toBe("보내는 중");
+		expect(pend.right).toBeGreaterThan(pend.tr - 24);
+		msgs.push({ ...mk("4033", "me", "초안", Date.now()) });
+		emit({ kind: "kakao_send", chatId: "100", id: "s1", state: "sent" });
+		await waitFor(v, `document.querySelector('[data-log="4033"]') && !document.querySelector(".kk-m.me.pend")`);
+
+		await ask("두번째 글");
+		await waitFor(v, `document.querySelector('.kk-draft[data-code="di"] [data-k="send"]')`);
+		await run(v, `document.querySelector('.kk-draft[data-code="di"] [data-k="send"]').click()`);
+		await waitFor(v, `document.querySelector(".kk-m.me.pend .kk-state")`);
+		Object.assign(sends.find(s => s.id === "s2")!, { state: "failed", reason: "전송에 실패했어요" });
+		emit({ kind: "kakao_send", chatId: "100", id: "s2", state: "failed", reason: "전송에 실패했어요" });
+		await waitFor(v, `(document.querySelector(".kk-m.me.pend.failed .kk-state") || {}).textContent === "실패 · 전송에 실패했어요"`);
+		await run(v, `document.querySelector("#kk-tl").scrollTop = 1e9`);
+		await shot(v, "07-desktop-send-failed.png");
+		await run(v, `document.querySelector('.kk-m.pend [data-k="retry"]').click()`);
+		await waitFor(v, `document.querySelectorAll(".kk-m.me.pend").length === 1 && document.querySelector(".kk-m.me.pend .kk-state").textContent === "보내는 중"`);
+		// The retry is the gateway's (it knows a draft's unsent parts); the web never posts the text itself, and the bar never posts to the room.
+		expect(reqs.filter(r => r.path === "/api/kakao/chat/100/send/s2/retry")).toHaveLength(1);
+		expect(reqs.filter(r => r.path === "/api/kakao/chat/100/send")).toHaveLength(0);
 	});
 
 	test("답장 초안 POSTs /draft, shows 초안 만드는 중… until the room's kakao_draft arrives, then the new draft card", async () => {
@@ -478,13 +500,13 @@ describe("카카오톡 on a phone (390x844)", async () => {
 		expect(await newestInSight(v, "4030")).toBe(true);
 		await shot(v, "11-mobile-unread.png");
 		await shot(v, "12-mobile-drafts.png");
-		const foot = await q<{ bottom: number; h: number; right: number; w: number }>(v, `const f = document.querySelector("#kk-foot").getBoundingClientRect(); return { bottom: f.bottom, h: innerHeight, right: f.right, w: innerWidth }`);
+		const foot = await q<{ bottom: number; h: number; right: number; w: number }>(v, `const f = document.querySelector("#kk-form").getBoundingClientRect(); return { bottom: f.bottom, h: innerHeight, right: f.right, w: innerWidth }`);
 		expect(foot.bottom).toBeLessThanOrEqual(foot.h);
 		expect(foot.right).toBeLessThanOrEqual(foot.w);
 
 		await v.resize(390, 544);
 		await run(v, `visualViewport.dispatchEvent(new Event("resize"))`);
-		expect(await q<boolean>(v, `const f = document.querySelector("#kk-foot").getBoundingClientRect(); return f.bottom <= innerHeight && f.top >= 0`)).toBe(true);
+		expect(await q<boolean>(v, `const f = document.querySelector("#kk-form").getBoundingClientRect(); return f.bottom <= innerHeight && f.top >= 0`)).toBe(true);
 		await v.resize(390, 844);
 
 		await run(v, `const t = document.querySelector("#kk-text"); t.value = "줄바꿈"; const e = new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }); t.dispatchEvent(e); window.__enterPrevented = e.defaultPrevented`);
@@ -500,7 +522,7 @@ describe("카카오톡 on a phone (390x844)", async () => {
 
 	test("room search at 390px: the input sits on top of the room choice, fits the width, and filters the choice list", async () => {
 		await boot(v);
-		await run(v, `document.querySelector("#kk-pick-btn").click()`);
+		await run(v, `document.querySelector("#kk-add-btn").click()`);
 		await waitFor(v, `document.querySelector("#kk-q")`);
 		await search(v, "모임");
 		const s = await q<Record<string, any>>(v, `const i = document.querySelector("#kk-q").getBoundingClientRect(), p = document.querySelector(".kk-rooms");
@@ -527,12 +549,12 @@ describe("대화방 검색 (room search)", async () => {
 	const v = await open(1280, 800);
 	const rowsOf = (v: View) => q<string[]>(v, `return [...document.querySelectorAll(".kk-pr")].map(r => r.dataset.chat)`);
 
-	test("a search input tops the room choice; it filters by name (substring, case-insensitive, initial consonants) and says so when nothing matches", async () => {
+	test("a search input tops the 대화방 추가 list; it filters by name (substring, case-insensitive, initial consonants) and says so when nothing matches", async () => {
 		reset();
 		await boot(v);
-		await run(v, `document.querySelector("#kk-pick-btn").click()`);
-		const top = await q<Record<string, any>>(v, `const i = document.querySelector("#kk-q"); return { ph: i.placeholder, prev: i.previousElementSibling.id, label: i.getAttribute("aria-label") }`);
-		expect(top).toEqual({ ph: "대화방 검색", prev: "kk-pick-btn", label: "대화방 검색" });
+		await run(v, `document.querySelector("#kk-add-btn").click()`);
+		const top = await q<Record<string, any>>(v, `const i = document.querySelector("#kk-q"); return { ph: i.placeholder, first: i.parentElement.firstElementChild === i && !!i.closest("#kk-add"), label: i.getAttribute("aria-label") }`);
+		expect(top).toEqual({ ph: "대화방 검색", first: true, label: "대화방 검색" });
 		expect(await rowsOf(v)).toEqual(["100", "200", "300"]);
 		await search(v, "라마");
 		expect(await rowsOf(v)).toEqual(["300"]);
@@ -552,17 +574,17 @@ describe("대화방 검색 (room search)", async () => {
 		expect(await q(v, `return [kkMatch("Book Club", "bOOK"), kkMatch("가나다 모임", "나다"), kkMatch("가나다", "ㄴ"), kkMatch("가나다", "ㄹ"), kkMatch("가나다", "가ㄴ")]`)).toEqual([true, true, true, false, false]);
 	});
 
-	test("the switches keep working while filtered, and the query survives the repaint; the watched rows below are not filtered", async () => {
+	test("the eyes keep working while filtered, and the query survives the repaint; the watched rows behind the dialog are not filtered", async () => {
 		await search(v, "라마");
 		await run(v, `document.querySelector('.kk-pr[data-chat="300"] [data-k="watch"]').click()`);
 		expect((await expectReq(isReq("PUT", "/api/kakao/rooms/300"))).body).toEqual({ watched: false });
-		await waitFor(v, `document.querySelector('.kk-pr[data-chat="300"] [data-k="watch"]').getAttribute("aria-checked") === "false"`);
+		await waitFor(v, `document.querySelector('.kk-pr[data-chat="300"] [data-k="watch"]').getAttribute("aria-pressed") === "false"`);
 		expect(await rowsOf(v)).toEqual(["300"]);
 		expect(await q(v, `return [document.querySelector("#kk-q").value, [...document.querySelectorAll(".kk-row")].map(r => r.dataset.chat)]`)).toEqual(["라마", ["100"]]);
 		await search(v, "사아");
 		await run(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="watch"]').click()`);
 		await expectReq(isReq("PUT", "/api/kakao/rooms/200"));
-		await waitFor(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="auto"]')`);
+		await waitFor(v, `document.querySelector('.kk-row[data-chat="200"]')`);
 		expect(await rowsOf(v)).toEqual(["200"]);
 	});
 });
@@ -570,12 +592,13 @@ describe("대화방 검색 (room search)", async () => {
 describe("empty and error states", async () => {
 	const v = await open(1280, 800);
 
-	test("no room chosen: the picker is open and one line asks to choose", async () => {
+	test("no room chosen: one line asks to add one; 추가 lists every room", async () => {
 		reset();
 		for (const r of rooms) r.watched = false;
 		await boot(v);
-		expect(await q(v, `return document.querySelector("#kk-empty").textContent`)).toBe("지켜볼 대화방을 골라 주세요");
-		expect(await q(v, `return document.querySelector("#kk-pick-btn").getAttribute("aria-expanded")`)).toBe("true");
+		expect(await q(v, `return [!!document.querySelector("#kk-empty"), document.querySelectorAll(".kk-row").length, !!document.querySelector("#kk-add")]`)).toEqual([true, 0, false]);
+		await run(v, `document.querySelector("#kk-add-btn").click()`);
+		await waitFor(v, `document.querySelector("#kk-add")`);
 		expect(await q(v, `return document.querySelectorAll(".kk-pr").length`)).toBe(3);
 		await shot(v, "06-desktop-empty.png");
 	});
@@ -764,16 +787,16 @@ describe("카카오톡 방 목록 실시간 갱신", async () => {
 		await openRoom(v, "100");
 		const t0 = performance.now();
 		emit({ kind: "kakao", chatId: "300", logId: "9100" });
-		await waitFor(v, `document.querySelector('.kk-row[data-chat="300"] .cv-p').textContent === "1:1 대화 · 라마바 새 말"`);
+		await waitFor(v, `document.querySelector('.kk-row[data-chat="300"] .cv-p').textContent === "라마바 새 말"`);
 		const latency = performance.now() - t0;
-		expect(await q(v, `const r = document.querySelector('.kk-row[data-chat="300"]'); return { hint: r.querySelector(".cv-p").textContent, badge: r.querySelector(".nb")?.textContent ?? "", time: r.querySelector(".kk-t").textContent }`)).toMatchObject({ hint: "1:1 대화 · 라마바 새 말", badge: "1" });
+		expect(await q(v, `const r = document.querySelector('.kk-row[data-chat="300"]'); return { hint: r.querySelector(".cv-p").textContent, badge: r.querySelector(".nb")?.textContent ?? "", time: r.querySelector(".kk-t").textContent }`)).toMatchObject({ hint: "라마바 새 말", badge: "1" });
 		expect(latency).toBeLessThan(1000);
 
 		msgs.push(mk("9101", "다라", "열린 방 새 말", at(26, 2, 1)));
 		emit({ kind: "kakao", chatId: "100", logId: "9101" });
-		await waitFor(v, `document.querySelector('.kk-row[data-chat="100"] .cv-p').textContent === "단체 대화방 · 열린 방 새 말"`);
+		await waitFor(v, `document.querySelector('.kk-row[data-chat="100"] .cv-p').textContent === "열린 방 새 말"`);
 		await waitFor(v, `document.querySelector('[data-log="9101"]')`);
-		expect(await q(v, `return document.querySelector('.kk-row[data-chat="100"] .cv-p').textContent`)).toBe("단체 대화방 · 열린 방 새 말");
+		expect(await q(v, `return document.querySelector('.kk-row[data-chat="100"] .cv-p').textContent`)).toBe("열린 방 새 말");
 		await shot(v, "19-desktop-live-list.png");
 	});
 });
@@ -857,43 +880,36 @@ describe("카카오톡 link previews at 390px", async () => {
 	});
 });
 
-describe("카카오톡 메시지 만들어 줘", async () => {
+describe("카카오톡 요청 입력창", async () => {
 	const v = await open(1280, 800);
 
-	test("the composer asks what to send; one intent makes a 새 메시지 초안 card through the same draft route, and 취소 closes it", async () => {
+	test("the bar sits under the chat window and the reply card under the bar; with no draft waiting a request makes a 새 메시지 초안 through the same draft route", async () => {
 		reset();
+		drafts = [];
 		await boot(v);
 		await openRoom(v);
-		await run(v, `document.querySelector("#kk-new-btn").click()`);
-		await waitFor(v, `!!document.querySelector("#kk-intent-in")`);
-		const box = await q<Record<string, any>>(v, `const i = document.querySelector("#kk-intent-in"); return { q: document.querySelector("#kk-intent .kk-rq").textContent, ph: i.placeholder, disabled: document.querySelector('[data-k="compose-go"]').disabled, focus: document.activeElement.id }`);
-		expect(box).toEqual({ q: "어떤 메시지를 보낼까요?", ph: "예: 내일 7시로 미루자고 정중하게", disabled: true, focus: "kk-intent-in" });
-		await run(v, `const i = document.querySelector("#kk-intent-in"); i.value = "내일 7시로 미루자고 정중하게"; i.dispatchEvent(new Event("input", { bubbles: true }))`);
-		expect(await q(v, `return document.querySelector('[data-k="compose-go"]').disabled`)).toBe(false);
-		await run(v, `document.querySelector('[data-k="compose-go"]').click()`);
+		const g = await q<{ gap: number; formAfterWindow: boolean }>(v, `const w = document.querySelector(".kk-box").getBoundingClientRect(), f = document.querySelector("#kk-form").getBoundingClientRect(); return { gap: Math.round(f.top - w.bottom), formAfterWindow: f.top >= w.bottom }`);
+		expect(g.formAfterWindow).toBe(true);
+		expect(g.gap).toBeLessThanOrEqual(16);
+		await run(v, `const t = document.querySelector("#kk-text"); t.value = "내일 7시로 미루자고 정중하게"; t.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector("#kk-send-btn").click()`);
 		expect((await expectReq(r => r.method === "POST" && r.path === "/api/kakao/chat/100/draft")).body).toEqual({ intent: "내일 7시로 미루자고 정중하게" });
 		await waitFor(v, `document.querySelector('.kk-draft[data-code="di"] .kk-dp') && !document.querySelector("#kk-draft-btn").disabled`);
-		const card = await q<Record<string, any>>(v, `const c = document.querySelector('.kk-draft[data-code="di"]'); return { head: c.querySelector(".kk-dh").textContent, parts: [...c.querySelectorAll(".kk-dp")].map(p => p.textContent), buttons: [...c.querySelectorAll(".btn")].map(b => b.textContent), intent: !!document.querySelector("#kk-intent-in") }`);
-		expect(card).toEqual({ head: "새 메시지 초안 · 메시지 2개", parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], buttons: ["보내기", "고치기", "보내지 않기"], intent: false });
+		const card = await q<Record<string, any>>(v, `const c = document.querySelector('.kk-draft[data-code="di"]'), f = document.querySelector("#kk-form").getBoundingClientRect(), bs = [...c.querySelectorAll(".rq-acts .btn")]; return { head: c.querySelector(".kk-dh").textContent, parts: [...c.querySelectorAll(".kk-dp")].map(p => p.textContent), buttons: bs.map(b => b.textContent), heights: [...new Set(bs.map(b => b.getBoundingClientRect().height))], pill: bs.some(b => parseFloat(getComputedStyle(b).borderRadius) >= b.getBoundingClientRect().height / 2), below: c.getBoundingClientRect().top >= f.bottom }`);
+		expect(card).toEqual({ head: "새 메시지 초안 · 메시지 2개", parts: ["내일 7시로 미루는 게 어떨까요?", "일정 조정해 주세요"], buttons: ["보내기", "고치기", "보내지 않기"], heights: [32], pill: false, below: true });
 		await shot(v, "17-desktop-compose.png");
-
-		await run(v, `document.querySelector("#kk-new-btn").click()`);
-		await waitFor(v, `!!document.querySelector("#kk-intent-in")`);
-		await run(v, `document.querySelector('[data-k="compose-cancel"]').click()`);
-		await waitFor(v, `!document.querySelector("#kk-intent-in")`);
-		expect(await q(v, `return document.querySelector("#kk-intent").hidden`)).toBe(true);
 	});
 
 	const pv = await open(390, 844);
-	test("on a phone the intent box fits the width above the composer", async () => {
+	test("on a phone the request bar fits the width and the card follows it", async () => {
 		reset();
+		drafts = [];
 		await boot(pv);
 		await openRoom(pv);
-		await run(pv, `document.querySelector("#kk-new-btn").click()`);
-		await waitFor(pv, `!!document.querySelector("#kk-intent-in")`);
-		const s = await q<Record<string, number>>(pv, `const i = document.querySelector("#kk-intent").getBoundingClientRect(), f = document.querySelector("#kk-form").getBoundingClientRect(); return { right: i.right, vw: innerWidth, bottom: i.bottom, formTop: f.top }`);
+		await run(pv, `const t = document.querySelector("#kk-text"); t.value = "내일 7시로 미루자고 정중하게"; t.dispatchEvent(new Event("input", { bubbles: true })); document.querySelector("#kk-send-btn").click()`);
+		await waitFor(pv, `document.querySelector('.kk-draft[data-code="di"] .kk-dp')`);
+		const s = await q<Record<string, number>>(pv, `const c = document.querySelector('.kk-draft[data-code="di"]').getBoundingClientRect(), f = document.querySelector("#kk-form").getBoundingClientRect(); return { right: Math.max(c.right, f.right), vw: innerWidth, cardTop: c.top, formBottom: f.bottom }`);
 		expect(s.right).toBeLessThanOrEqual(s.vw);
-		expect(s.bottom).toBeLessThanOrEqual(s.formTop + 1);
+		expect(s.cardTop).toBeGreaterThanOrEqual(s.formBottom);
 		await shot(pv, "17-mobile-compose.png");
 	});
 });
@@ -1087,7 +1103,7 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const)
 		test("a room that is not watched opens read-only from the room choice: no composer, a 감시 시작 bar that starts watching it", async () => {
 			useOpen();
 			await boot(v);
-			await run(v, `document.querySelector("#kk-pick-btn").click()`);
+			await run(v, `document.querySelector("#kk-add-btn").click()`);
 			await waitFor(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="open"]')`);
 			await run(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="open"]').click()`);
 			await waitFor(v, `KK.open === "200" && !KK.loading && KK.placed`);
@@ -1127,7 +1143,7 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const)
 			});
 	});
 
-// 오픈채팅 rooms and the hint line: a room's kind and its newest message (or member count) under its name, in the choice and in the rows.
+// 오픈채팅 rooms and the hint line: its newest message (or member count) under its name, the kind as a small mark after it, in the choice and in the rows.
 for (const [w, h] of [[390, 844], [1280, 800]] as const)
 	describe(`오픈채팅 and room hints at ${w}px`, async () => {
 		const v = await open(w, h);
@@ -1140,13 +1156,14 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const)
 			];
 			await boot(v);
 			const row = await q<string>(v, `return document.querySelector('.kk-row[data-chat="500"] .cv-p').textContent`);
-			expect(row).toBe("오픈채팅 · 오늘 발성 연습 몇 시에 해요?");
-			await run(v, `document.querySelector("#kk-pick-btn").click()`);
+			expect(row).toBe("오늘 발성 연습 몇 시에 해요?");
+			expect(await q(v, `return document.querySelector('.kk-row[data-chat="500"] .kk-grp').textContent`)).toBe("오픈채팅");
+			await run(v, `document.querySelector("#kk-add-btn").click()`);
 			await waitFor(v, `document.querySelector('.kk-pr[data-chat="601"]')`);
 			const pick = await q<Record<string, any>>(v, `const sub = id => document.querySelector('.kk-pr[data-chat="' + id + '"] .cv-p').textContent;
 				const p = document.querySelector(".kk-rooms"), r = document.querySelector('.kk-pr[data-chat="500"]').getBoundingClientRect();
 				return { open: sub("500"), a: sub("600"), b: sub("601"), hScroll: p.scrollWidth - p.clientWidth, right: r.right, w: innerWidth }`);
-			expect(pick).toMatchObject({ open: "오픈채팅 · 오늘 발성 연습 몇 시에 해요?", a: "단체 대화방 · 회의 자료 올렸어요", b: "단체 대화방 · 6명" });
+			expect(pick).toMatchObject({ open: "오늘 발성 연습 몇 시에 해요?", a: "회의 자료 올렸어요", b: "6명" });
 			expect(pick.hScroll).toBeLessThanOrEqual(0);
 			expect(pick.right).toBeLessThanOrEqual(pick.w);
 			await shot(v, `20-open-hints-${w}.png`);

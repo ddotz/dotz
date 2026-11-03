@@ -144,7 +144,7 @@ describe("merged 모니터링", () => {
 		expect(hits.some(h => h.startsWith("/api/history?target=mail%3Aabc"))).toBe(true);
 	}, 20_000);
 
-	test("a peer KakaoTalk room opens in the bubble view with the composer, and a send goes to /api/peer/act", async () => {
+	test("a peer KakaoTalk room opens in the bubble view with the request bar, and a send goes to /api/peer/act", async () => {
 		const v = await boot(1280, 800);
 		await v.evaluate(`(go("monitoring", ${JSON.stringify(`p:${MINI}|i:kakao`)}), 0)`);
 		await waitFor(v, `$("#kk-rooms .kk-row")`);
@@ -152,7 +152,10 @@ describe("merged 모니터링", () => {
 		await waitFor(v, `$("#kk-in .kk-m.in .kk-bub") && $("#kk-form") && !$("#kk-foot").hidden`);
 		expect(await text(v, `$("#kk-in .kk-m.in .kk-bub").textContent`)).toBe("저녁 뭐 먹을래?");
 		expect(await text(v, `$("#kk-in .kk-m.me .kk-bub").textContent`)).toBe("김치찌개");
-		await v.evaluate(`(kkTa.value = "좋아요", kkSend(), 0)`);
+		// The bar asks the assistant (no draft here, the other computer cannot make a new one: nothing goes out); a send is the card's own 보내기 / 직접 수정.
+		await v.evaluate(`(kkTa.value = "내일 간다고 해줘", kkSend(), 0)`);
+		expect(acts.filter(a => a.args.op === "draft")).toEqual([]);
+		await v.evaluate(`(kkSendText("좋아요"), 0)`);
 		await waitFor(v, `$("#kk-in .kk-m.pend")`);
 		expect(acts.filter(a => a.args.op === "send")).toEqual([{ action: "kakao", args: { op: "send", chatId: "c1", text: "좋아요" } }]);
 	});
