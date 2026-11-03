@@ -222,11 +222,11 @@ describe("a peer monitor in the overview", () => {
 });
 
 describe("older reports", () => {
-  test("reaching the top loads the previous page by itself, anchored, and the button is gone", async () => {
+  test("reaching the bottom loads the older page by itself (a monitor lists newest first), and the button is gone", async () => {
     const v = await boot(1280, 900);
     await run(v, `go("monitoring", "m:많은 감시")`);
     await waitFor(v, `document.querySelector("#mon-tl .mon-sentinel") && document.querySelectorAll("#mon-tl [data-nid]").length === 30`);
-    await run(v, `const b = document.querySelector("#mon-timeline"); b.scrollTop = 0; b.dispatchEvent(new Event("scroll"))`);
+    await run(v, `const b = document.querySelector("#mon-timeline"); b.scrollTop = b.scrollHeight; b.dispatchEvent(new Event("scroll"))`);
     await waitFor(v, `document.querySelectorAll("#mon-tl [data-nid]").length === 45`);
     expect(await q(v, `return document.querySelector("#mon-tl .mon-sentinel")`)).toBe(null);
     expect(await q(v, `return document.querySelector("#mon-tl").textContent.includes("이전 소식")`)).toBe(false);

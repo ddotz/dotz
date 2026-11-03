@@ -237,7 +237,7 @@ function monState(it) {
   if (it.off) return "연결 안 됨";
   // The progress block under the name already carries the two runs in words, so the state line says only where it stands.
   if (it.mon) { const st = monStatus(it.mon); return st.key === "disconnected" ? "" : st.text; }
-  if (it.rq) return it.hint;
+  if (it.rq) return it.unread ? `기다리는 초안 ${it.unread}개` : it.hint;
   if (it.key === "notice") return [it.need ? `답 필요 ${it.need}건` : "", it.unread ? `안 읽음 ${it.unread}개` : ""].filter(Boolean).join(" · ") || "감시와 예약 결과";
   return it.app ? it.hint : it.unread ? `안 읽음 ${it.unread}개` : "연결돼 있어요";
 }
@@ -605,18 +605,6 @@ function mailMenuBtn(t, extra = () => []) {
     showMenu(b, [...mailActs(m).map(a => ({ value: a, label: MAIL_ACT[a] })), ...more.map(x => ({ value: x.value, label: x.label }))], { onPick: v => { const x = more.find(i => i.value === v); if (x) x.run(); else busy(null, () => mailActRun(t, v, null)); } });
   }, onkeydown: ev => ev.stopPropagation() }, icon("more"));
 }
-// A monitor's latest run, as the newest message of its conversation: the result in words, when it checks next, and its project chat.
-function monRunNode(it) {
-  const m = it.mon;
-  if (!m.last_run) return null;
-  const next = [m.next_run ? `다음 확인 ${monTime(m.next_run)}` : "", m.every || ""].filter(Boolean).join(" · ");
-  // The status header: fails in a row, the last good run and the last output in words (hub/monitors.ts watchFacts), then when it runs next.
-  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m.last_output && !MON_CMD.test(m.last_output) ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
-  const node = monCard(it.name, m.last_run, [...facts, next].filter(Boolean).join("\n\n"), m.kind === "watch" ? m.last_result : "", monRunLine(m));
-  const chips = m.kind === "watch" && m.watch ? asChipTexts(m) : [];
-  if (node && chips.length) node.append(el("div", { class: "btns cc-act mon-chips" }, ...chips.map(t => el("button", { class: "as-tpl", type: "button", "data-chip": t, onclick: () => asAsk(`w:${m.watch}`, t) }, t))));
-  return node;
-}
 // Runs the monitor once now, on the computer that owns it (a peer's through /api/peer/act). The route answers after the check with the new
 // row, so the bar's right edge moves at once; a peer has no row to read here, so its list is re-read through pqSoon.
 const monRunNow = (btn, m) => busy(btn, async () => {
@@ -676,7 +664,7 @@ function monToggle(key) { if (MON.open.has(key)) MON.open.delete(key); else MON.
 const monMoreBtn = (key, left, text) => el("button", { class: "btn text mon-more", type: "button", "data-more": key, onclick: () => { MON.more.set(key, (MON.more.get(key) || MON_PAGE) + MON_PAGE); MON.grew = key !== "feed" && !key.startsWith("g:"); MON.sig = ""; monSchedule(); }, text: text || `${left}개 더 보기` });
 // The top of an older page watches for the owner reaching it (monObserveOlder at the bottom): the reports above load themselves, and the button stays
 // for a keyboard or a browser without the observer.
-const monOlderSentinel = (key, left) => el("div", { class: "mon-sentinel", "data-older": key, "data-left": String(left), "aria-hidden": "true" });
+const monOlderSentinel = (key, left, end) => el("div", { class: "mon-sentinel", "data-older": key, "data-left": String(left), "data-end": end || null, "aria-hidden": "true" });
 const monKey = (ev, fn) => { if (ev.target === ev.currentTarget && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); fn(); } };
 // The bar above a long list: the three views with their counts, and 읽음 처리 for the plain reports in the view (what waits on the owner stays unread).
 // It is drawn once the item holds more than a handful of reports, or any that waits or failed unread; a mail list has its own bar instead.
@@ -723,6 +711,44 @@ function monRowNode(n, names) {
     el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: src }), n.pc ? el("span", { class: "tag", text: n.pc.name }) : null, need ? monTag("ask") : monTag(n.tone), el("span", { class: "rc-time", text: monWhen(n) })),
     el("div", { class: "fr-sum", text: monSummary(n, names) }),
     need ? el("div", { class: "btns cc-act" }, el("button", { class: "btn tonal", type: "button", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, text: "답하러 가기" })) : null);
+}
+// A monitor's 확인 기록 is the prototype's detail list (#watch/price): ONE card of compact rows - a dot for the result, the report's first line (a price
+// change as the old value struck, then the new one), a small second line, the time at the right. A tap unfolds the whole report in place (monRowNode's card).
+// What waits on the owner, a decision or a report with an item stays a full card: it is answered or opened there.
+const MON_LR_DOT = { fail: "err", changed: "pri", warn: "warn", ask: "warn", ok: "ok" };
+const monAgo = at => { const ms = Date.now() - Date.parse(at); return ms < 86_400_000 ? monRel(ms, true) : monTime(at); };
+const MON_ROWS = new WeakMap();   // a compact log row -> its small second line (a folded run rewrites it)
+function monLogLine({ tone, main, sub, at, unread, nid, onclick, label }) {
+  const l2 = el("span", { class: "mon-l2", title: typeof sub === "string" ? sub : null, text: sub || "" });
+  const row = el("div", { class: `mon-lr${unread ? " un" : ""}`, "data-nid": nid || null, role: onclick ? "button" : null, tabindex: onclick ? "0" : null, "aria-label": label || null, onclick: onclick || null, onkeydown: onclick ? ev => monKey(ev, onclick) : null },
+    el("span", { class: `dot${MON_LR_DOT[tone] ? ` ${MON_LR_DOT[tone]}` : ""}`, "aria-hidden": "true" }),
+    el("span", { class: "mon-lb" }, el("span", { class: "mon-l1" }, main), l2),
+    el("span", { class: "mon-lt", text: at ? monAgo(at) : "" }));
+  MON_ROWS.set(row, l2);
+  return row;
+}
+function monLogRow(n, names) {
+  const key = `n:${n.id}`;
+  if (ntIsDec(n) || n.item || monNeed(n) || MON.open.has(key)) return monRowNode(n, names);
+  const body = String(n.text || "").split(/\n(?:\`\`\`원문|원문[ \t]*\n)/)[0];
+  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => ntPlain(l)).filter(Boolean);
+  const chg = nwChangeNode(nwChangeLine(n.text)), plain = lines.filter(l => !l.includes("→")).map(l => l.replace(/^\[[^\]]*\]\s*/, ""));
+  const main = chg || plain[0] || ntPlain(n.title) || "알림", sub = chg ? plain[0] || "" : plain[1] || "";
+  const src = ntPlain(names[0] || n.title) || "알림";
+  return monLogLine({ tone: chg ? "changed" : n.tone, main, sub, at: n.updated || n.ts, unread: !n.read, nid: n.id, onclick: () => monToggle(key), label: `${src} 소식 펼치기` });
+}
+// The monitor's own latest run as the newest row: how it last ended and when it checks next (hub/monitors.ts watchFacts).
+function monRunRow(it) {
+  const m = it.mon;
+  if (!m.last_run) return null;
+  const next = [m.next_run ? `다음 확인 ${monTime(m.next_run)}` : "", m.every || ""].filter(Boolean).join(" · ");
+  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m.last_output && !MON_CMD.test(m.last_output) ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
+  return monLogLine({ tone: m.kind === "watch" ? m.last_result : "ok", main: monRunLine(m), sub: [...facts, next].join(" · "), at: m.last_run });
+}
+// The question chips of a watch (asChipTexts): one row of small buttons under its log.
+function monRunChips(it) {
+  const m = it.mon, chips = m.kind === "watch" && m.watch ? asChipTexts(m) : [];
+  return chips.length ? el("div", { class: "btns cc-act mon-chips" }, ...chips.map(c => el("button", { class: "as-tpl", type: "button", "data-chip": c, onclick: () => asAsk(`w:${m.watch}`, c) }, c))) : null;
 }
 // One source folded into one row: its newest line, how many reports and how many unread; a tap lists them, newest first, a page at a time.
 // Folded, the row stands for its newest report (seeing it reads that one); the rest are read as they come into view or by 읽음 처리.
@@ -784,16 +810,34 @@ function monChronoNodes(it, names) {
   }
   const page = MON.more.get(it.key) || MON_PAGE, cut = Math.max(0, runs.length - page);
   const rep = r => {
-    if (r.all.length < MON_FOLD_MIN) return r.all.map(n => ({ at: ntAt(n), node: () => monNoticeNode(n, names) }));
-    return [{ at: ntAt(r.n), node: () => { const x = monNoticeNode(r.n, names); if (!x) return null; x.dataset.nids = r.all.map(n => n.id).join(","); x.querySelector(".rc-hd").after(el("div", { class: "mon-rep", text: `같은 결과 ${r.all.length}번 · 처음 ${monWhen(r.all[0])}` })); return x; } }];
+    const draw = it.mon ? monLogRow : monNoticeNode;
+    if (r.all.length < MON_FOLD_MIN) return r.all.map(n => ({ at: ntAt(n), node: () => draw(n, names) }));
+    return [{ at: ntAt(r.n), node: () => {
+      const x = draw(r.n, names);
+      if (!x) return null;
+      x.dataset.nids = r.all.map(n => n.id).join(",");
+      const rep = `같은 결과 ${r.all.length}번 · 처음 ${monWhen(r.all[0])}`;
+      if (MON_ROWS.has(x)) MON_ROWS.get(x).textContent = rep;
+      else x.querySelector(".rc-hd").after(el("div", { class: "mon-rep", text: rep }));
+      return x;
+    } }];
   };
-  const msgs = [...runs.slice(cut).flatMap(rep), ...(held ? [] : mf ? it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, node: () => monConvNode(t, it.name) })),
-    ...(it.mon && !held ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunNode(it) }] : [])];
+  const msgs = [...(it.mon && !held ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunRow(it) }] : []), ...runs.slice(cut).flatMap(rep), ...(held ? [] : mf ? it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, node: () => monConvNode(t, it.name) }))];
   // A mail app reads like a mailbox, newest on top (owner 2026-10-27); a monitor stays a chat, oldest to newest. Equal times keep their order.
-  const newestTop = monMailList(it);
+  // A monitor's log reads like the prototype's list, newest on top; its latest run leads on a tie.
+  const newestTop = monMailList(it) || !!it.mon;
   msgs.sort((a, b) => newestTop ? b.at - a.at : a.at - b.at);
-  const nodes = msgs.map(x => x.node()).filter(Boolean);
-  if (cut && newestTop) nodes.push(monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
+  let nodes = msgs.map(x => x.node()).filter(Boolean);
+  if (it.mon) {   // the compact rows of one stretch share one card; an opened report or a decision card ends the stretch
+    const out = [];
+    let box = null;
+    for (const x of nodes) {
+      if (MON_ROWS.has(x)) { if (!box) out.push(box = el("div", { class: "mon-log" })); box.append(x); } else { box = null; out.push(x); }
+    }
+    const chips = monRunChips(it);
+    nodes = chips ? [...out, chips] : out;
+  }
+  if (cut && newestTop) nodes.push(...(it.mon ? [monOlderSentinel(it.key, cut, "end")] : []), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
   else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
   if (withMails) return [mailFilterBar(it.mails, it.notices.filter(ok)), mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t))), ...(nodes.length ? nodes : [el("div", { class: "empty", text: held ? "확인할 초안이 없어요" : "이 보기에 해당하는 메일이 없어요" })]), mbFab()];
   return nodes;
@@ -810,7 +854,7 @@ const monFeedCards = (it, names) => it.notices.filter(monFilterOf()[2]).sort((a,
 function monTopNodes(it) {
   if (!narrowChat()) return [];
   const out = [], banner = monBannerOf(it);
-  if (it.mon) out.push(monProgNode(it.mon, { tag: !banner }));
+  if (it.mon) out.push(el("div", { class: "cv-p mon-desc", text: monDesc(it.mon) }), monProgNode(it.mon, { tag: !banner }));
   if (banner) out.push(banner);
   const acts = [...(it.mon && it.mon.watch && !banner ? [monRunBtn(it.mon)] : []), monConvBtn(it)].filter(Boolean);
   if (acts.length) out.push(el("div", { class: "mon-actions" }, ...acts));
@@ -864,7 +908,7 @@ function monSettingsName(t) {
   const pe = PQ.of.get(t), m = pe ? pe.mon : NM.items.find(x => x.watch === a.slice(2));
   return m ? monTitle(m) : "설정";
 }
-// The status block of a settings panel: the monitor itself, or each watch the app owns. Same facts as the status card of the monitor's detail (monRunNode).
+// The status block of a settings panel: the monitor itself, or each watch the app owns. Same facts as the latest-run row of the monitor's detail (monRunRow).
 const monStatMons = app => (asOwn(app) ? [asMon(app)] : (monItems().find(i => i.app && monSettingsApp(i) === app) || {}).owned || []).filter(Boolean);
 function monStatNode(m) {
   const st = monStatus(m);
@@ -917,7 +961,9 @@ const monHead = it => {
   // 대화로 이어가기 (owner 2026-11-03): every item continues in its own chat - the conversation its settings talk in (asOpen's own go()).
   // A mail or KakaoTalk item is already a conversation, so the way in is its row and this button stays out of the way there.
   const convBtn = monConvBtn(it);
-  const acts = [convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+  // 빠른 처리 (30-triage.js): the whole queue answered one card at a time, offered once enough drafts wait.
+  const trBtn = it.rq && trTotal() >= TR.min ? el("button", { class: "btn text sm tr-open", type: "button", "data-k": "triage", onclick: () => trOpen("*") }, icon("spark"), el("span", { text: "빠른 처리" })) : null;
+  const acts = [convBtn, rqBtn, trBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);
@@ -1015,7 +1061,7 @@ function renderMonitoring() {
     if (monMailList(sel)) mbFresh(`${sel.key}|${MON.mailFilter || "all"}`, tl);
     // Older reports added above (이전 소식 보기) keep what was on screen where it is.
     if (MON.grew) { MON.grew = false; box.scrollTop = keep + (box.scrollHeight - was); }
-    else box.scrollTop = monFeed(sel) || monMailList(sel) ? (again ? keep : 0) : stick ? box.scrollHeight : keep;
+    else box.scrollTop = monFeed(sel) || monMailList(sel) || sel.mon ? (again ? keep : 0) : stick ? box.scrollHeight : keep;
     edgeFade(box);
   }
   MON.olderBusy = false;
@@ -1092,14 +1138,14 @@ function monOlderLoad(sentinel) {
   if (!key || !(left > 0)) return;
   MON.olderBusy = true;
   MON.more.set(key, (MON.more.get(key) || MON_PAGE) + MON_PAGE);
-  MON.grew = true;
+  MON.grew = !(sentinel && sentinel.dataset && sentinel.dataset.end);   // older reports below (a monitor lists newest first) grow downward: nothing to anchor
   MON.sig = "";
   monSchedule();
 }
 function monObserveOlder() {
   const box = $("#mon-timeline");
   if (!box) return;
-  if (!monOlderObs && typeof IntersectionObserver === "function") monOlderObs = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) monOlderLoad(e.target); }, { root: box, rootMargin: "48px 0px 0px 0px" });
+  if (!monOlderObs && typeof IntersectionObserver === "function") monOlderObs = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting) monOlderLoad(e.target); }, { root: box, rootMargin: "48px 0px 48px 0px" });
   if (!monOlderObs) return;
   monOlderObs.disconnect();
   for (const s of box.querySelectorAll(".mon-sentinel[data-older]")) monOlderObs.observe(s);
@@ -1109,7 +1155,7 @@ $("#mon-timeline").addEventListener("scroll", () => {
   MON.autoArmed = true;
   edgeFade(box);
   monSeen();
-  if (box.scrollTop <= 0) monOlderLoad(box.querySelector(".mon-sentinel[data-older]"));
+  if (box.scrollTop <= 0) monOlderLoad(box.querySelector(".mon-sentinel[data-older]:not([data-end])"));
 }, { passive: true });
 setInterval(() => { if ((current === "monitoring" || monCtx) && !document.hidden) loadMonitors(); }, 60_000);
 loadMonitors();

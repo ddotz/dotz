@@ -129,7 +129,7 @@ describe("a failing local monitor", () => {
 		expect(sent[1]).toMatchObject({ text: "일시정지", settings: "w:login-local" });
 		expect(await q(v, `return ta.value`)).toBe("쓰던 글");
 		await run(v, `go("monitoring", "m:정상 감시")`);
-		await waitFor(v, `document.querySelector("#mon-tl .rc")`);
+		await waitFor(v, `document.querySelector("#mon-tl .mon-lr")`);
 		expect(await q(v, `return document.querySelectorAll("#mon-tl [data-chip]").length`)).toBe(0);
 	});
 });
