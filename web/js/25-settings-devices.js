@@ -9,19 +9,19 @@ async function loadDevices() {
   DEV.asked = true;
   try { const v = await api("/api/devices"); DEV.items = Array.isArray(v) ? v : null; DEV.fail = ""; } catch (e) { DEV.items = null; DEV.fail = e.message; }
   if (current === "devices") renderDevices();
-  if (current === "settings") renderSettings();
+  if (inSettings()) renderSettings();
 }
 /* the 설정 row: only where the gateway keeps paired devices */
 function devicesRow(row) {
   if (!DEV.items) return null;
-  return row("key", "연결된 기기 (패스키)", `${DEV.items.length}대`, () => go("devices"));
+  return row("key", "연결된 기기", `${DEV.items.length}대`, () => go("devices"));
 }
 
 function renderDevices() {
   const box = $("#devices");
   if (!DEV.items) { clear(box).append(DEV.asked && DEV.fail ? emptyNode("연결된 기기를 불러오지 못했어요") : emptyNode("불러오는 중")); return; }
   const row = d => el("button", { type: "button", class: "li tap", "data-dev": d.id, onclick: () => dvOpen(d) },
-    el("span", { class: "lead" }, el("span", { class: `dot ${d.last_used && Date.now() - Date.parse(d.last_used) < 864e5 ? "ok" : ""}`, "aria-hidden": "true" })),
+    el("span", { class: "lead" }, icon("desktop")),
     el("span", { class: "tx" }, el("div", { class: "hd", text: d.name }), el("div", { class: "sup", text: `${dvDate(d.created)} 연결 · ${dvUsed(d)}` })),
     el("span", { class: "li-end" }, d.current ? el("span", { class: "tag ok", "data-current": "1", text: "이 기기" }) : null, icon("chev", "chev")));
   const self = DEV.items.some(d => d.current);
@@ -29,8 +29,10 @@ function renderDevices() {
   const addSelf = el("button", { type: "button", class: "li tap", "data-dev-self": "1", onclick: () => dvNew(true) },
     el("span", { class: "lead" }, icon("add")), el("span", { class: "tx" }, el("div", { class: "hd", text: "이 기기에 패스키 추가" }), el("div", { class: "sup", text: "이 브라우저는 패스키 없이 들어왔어요" })));
   clear(box).append(
-    el("div", { class: "sec sec-act" }, el("span", { text: "이 웹앱을 쓸 수 있는 기기" }), el("button", { type: "button", class: "btn tonal sm", "data-dev-new": "1", onclick: () => dvNew(false), text: "새 기기 연결" })),
-    el("div", { class: "list" }, ...(DEV.items.length ? DEV.items.map(row) : [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결된 기기가 없어요" })))]), self ? null : addSelf));
+    el("div", { class: "sec", text: "이 웹앱을 쓸 수 있는 기기" }),
+    el("div", { class: "list" }, ...(DEV.items.length ? DEV.items.map(row) : [el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "연결된 기기가 없어요" })))]), self ? null : addSelf,
+      el("button", { type: "button", class: "li tap", "data-dev-new": "1", onclick: () => dvNew(false) },
+        el("span", { class: "lead" }, icon("add")), el("span", { class: "tx" }, el("div", { class: "hd", text: "새 기기 연결" }), el("div", { class: "sup", text: "코드를 만들어 다른 기기를 연결해요" })))));
 }
 
 /* ---------- one device: rename, unpair ---------- */

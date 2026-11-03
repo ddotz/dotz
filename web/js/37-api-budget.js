@@ -20,11 +20,17 @@ function budgetCard(B) {
   if (B.hint) card.append(el("div", { class: "sup", text: B.hint }));
   return card;
 }
+// Without a console limit the usage page still carries the way in: one row that opens the same dialog.
+function budgetRow() {
+  return el("button", { class: "li tap budget-row", type: "button", onclick: () => budgetDialog() },
+    el("span", { class: "tx" }, el("div", { class: "hd", text: "API 월 한도" }), el("div", { class: "sup", text: budgetSub() || "정하지 않았어요" })),
+    el("span", { class: "li-end" }, el("span", { class: "btn tonal inrow", text: "월 한도 바꾸기" })));
+}
 function budgetSub() {
   if (AB === undefined) {
     AB = null;
     // a failed read is tried again on the next render instead of leaving the row blank for the session
-    api("/api/api-budget").then(r => { AB = r; if (current === "settings") renderSettings(); }).catch(() => { AB = undefined; });
+    api("/api/api-budget").then(r => { AB = r; if (inSettings()) renderSettings(); }).catch(() => { AB = undefined; });
   }
   return AB && AB.monthly_usd ? `월 ${abUsd(AB.monthly_usd)}` : "";
 }

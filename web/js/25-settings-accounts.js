@@ -9,7 +9,7 @@ async function loadAccounts() {
   accPaint();
 }
 // the accounts block lives on the provider's screen (21-providers.js renderProvider)
-const accPaint = () => { if (current === "provider") renderProvider(); else if (current === "settings") renderSettings(); };
+const accPaint = () => { if (current === "provider") renderProvider(); else if (inSettings()) renderSettings(); };
 const accLabel = id => { const a = ACC && ACC.accounts.find(x => x.name === id || x.alias === id); return a ? a.label || a.alias || a.name : id; };
 const accMut = (btn, call, msg, close) => busy(btn, async () => { ACC = await call(); if (close) close(); if (msg) toast(msg); accPaint(); if (current === "usage") loadQuota(); });
 async function accCopy(text) { try { await navigator.clipboard.writeText(text); toast("복사했어요"); } catch { toast("복사하지 못했어요", true); } }
