@@ -1,6 +1,8 @@
 /* ---------- chat: decision card above the composer, todo strip above the timeline ---------- */
-/* 확인 카드 (owner 2026-11-03): 머리 한 줄(확인 필요 · 답 기다림), 짧은 질문, 작은 답 버튼, 지금보다 눈에 띄게 낮게 */
-.dcard { display: flex; flex-direction: column; max-height: max(60dvh, 240px); margin: 0 0 8px; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+/* 터미널 보기 토글은 제품에서 없앴어요 (owner 2026-11-03): 대화를 터미널로 바꾸지 않고, 명령은 컴포저의 /셸이나 코드 블록의
+   '터미널에서 실행'이 셸 시트로 보내요 (web/js/14-slash-commands.js, 35-code-blocks.js, 36-shell.js). LOG_VIEW가 켜져도 이 버튼은 돌아오지 않습니다. */
+#vtog { display: none !important; }
+/* 확인 카드 (owner 2026-11-03): 머리 한 줄(확인 필요 · 답 기다림), 짧은 질문, 작은 답 버튼, 지금보다 눈에 띄게 낮게 */.dcard { display: flex; flex-direction: column; max-height: max(60dvh, 240px); margin: 0 0 8px; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .dcard[hidden] { display: none; }
 /* a waiting send-approval card that later posts pushed up: one row in the dock that opens it (10-decision-card.js dcPointer) */
 .dc-wait { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 10px 14px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
