@@ -140,7 +140,7 @@ for (const width of [1440, 390]) {
 		expect(got[0][0]).toBe("월간 점검 보고서 확인 요청");
 		expect(got[0][1]).toMatch(/^예: ‘.+’/);
 		expect(got[0][1]).not.toContain("비워 두면");
-		expect(got[1]).toEqual(["본문이 없는 메일", "비워 두면 메일을 읽고 알아서 써요.\n예: 금요일까지 보내 드린다고, 견적서도 첨부한다고 써 줘"]);
+		expect(got[1]).toEqual(["본문이 없는 메일", "예: 금요일까지 보내 드린다고 써 줘"]);
 	}, 30_000);
 
 	test(`the original view at ${width}px lists the attachments with name and size as download links`, async () => {
@@ -159,7 +159,7 @@ for (const width of [1440, 390]) {
 			return { head: card.querySelector(".mr-fh")?.textContent, links: rows.map(a => [a.getAttribute("href"), a.download, a.querySelector(".mr-fname").textContent, a.querySelector(".mr-fsize")?.textContent ?? null]),
 				tap: rows.map(a => Math.round(a.getBoundingClientRect().height)), clipped: rows.map(a => a.scrollWidth <= a.clientWidth + 1), none: !noKey.querySelector(".mr-files"), over: document.documentElement.scrollWidth > innerWidth };
 		})()))`)) as string) as any;
-		expect(got.head).toBe("첨부파일 3개");
+		expect(got.head).toBe("첨부 3개");
 		expect(got.links).toEqual([["/api/mail/fx-1/files/0?dl=1", "점검보고서-2026-10.pdf", "점검보고서-2026-10.pdf", "471KB"], ["/api/mail/fx-1/files/1?dl=1", "차트.png", "차트.png", "20KB"], ["/api/mail/fx-1/files/2?dl=1", "아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-2026.xlsx", "아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-아주-긴-파일-이름-2026.xlsx", "3B"]]);
 		for (const h of got.tap) expect(h).toBeGreaterThanOrEqual(44);
 		expect(got.clipped).toEqual([true, true, true]);

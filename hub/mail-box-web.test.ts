@@ -49,13 +49,13 @@ const hub = fakeHub({
 			const body = (await req.json()) as { action: string }; posts.push({ path: p, body });
 			if (one[1] === "fx-fail") return json({ ok: false, synced: false, note: "Gmail에 반영하지 못했어요" });
 			const m = mails.find(x => x.key === one[1]); if (m) APPLY[body.action](m);
-			if (m && Array.isArray(m.can) && !m.can.length) return json({ ok: true, synced: false, note: `이 메일함은 실제 메일함의 ${body.action === "archive" || body.action === "unarchive" ? "보관 처리를" : "읽음 표시를"} 바꿀 수 없어요. dotz에서만 바뀌었어요` });
+			if (m && Array.isArray(m.can) && !m.can.length) return json({ ok: true, synced: false, note: `dotz에서만 ${body.action === "archive" || body.action === "unarchive" ? "보관 상태가" : "읽음 표시가"} 바뀌었어요` });
 			return json({ ok: true, synced: true });
 		}
 		if (p === "/api/mail/actions" && req.method === "POST") {
 			const body = (await req.json()) as { keys: string[]; action: string }; posts.push({ path: p, body });
 			// The real hub: the action always lands in dotz; a mailbox with no capability list of its own answers synced:false and one line.
-			const line = `이 메일함은 실제 메일함의 ${body.action === "archive" || body.action === "unarchive" ? "보관 처리를" : "읽음 표시를"} 바꿀 수 없어요. dotz에서만 바뀌었어요`;
+			const line = `dotz에서만 ${body.action === "archive" || body.action === "unarchive" ? "보관 상태가" : "읽음 표시가"} 바뀌었어요`;
 			return json({ ok: true, results: body.keys.map(k => { const m = mails.find(x => x.key === k); if (m) APPLY[body.action](m); return { key: k, ok: true, synced: !!(m && m.can && m.can.length), ...(m && !(m.can && m.can.length) ? { note: line } : {}) }; }) });
 		}
 		const del = /^\/api\/mail\/([^/]+)$/.exec(p);
@@ -161,7 +161,7 @@ describe("actions on a selection", () => {
 		await posted(1);
 		expect(posts[0]).toEqual({ path: "/api/mail/fx-kdb/action", body: { action: "archive" } });
 		await waitFor(v, `!${rowJs("회사 메일")}`);
-		expect(await ev<number>(v, `[...document.querySelectorAll("body *")].filter(e => e.children.length === 0 && e.textContent.includes("실제 메일함의 보관 처리를 바꿀 수 없어요")).length`)).toBe(1);
+		expect(await ev<number>(v, `[...document.querySelectorAll("body *")].filter(e => e.children.length === 0 && e.textContent.includes("dotz에서만 보관 상태가 바뀌었어요")).length`)).toBe(1);
 	}, 30_000);
 
 	test("삭제 asks first, then uses the old route for a mailbox with no capability list", async () => {

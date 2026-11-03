@@ -166,8 +166,8 @@ async function drfSure(d, t) {
   if (!ref || d.toLabel !== "받는이") return true;
   if (!DRF.st[ref]) { DRF.pc[ref] = t ? pqPc(t) : null; await drfLoad(ref); }
   const st = DRF.st[ref];
-  if (st.tracked === false && (d.attachments || []).length) return ask("첨부파일을 확인하지 못했어요", `이 초안의 파일은 ${iGa(botName)} 직접 붙인 파일이 아니라서, 실제로 함께 가는지 확인하지 못했어요. 그래도 보낼까요?`, "그래도 보내기");
-  return !(st.editable && !st.canAttach && (st.files.length || d.warning)) || ask("첨부파일 없이 보낼까요?", "이 메일 계정은 첨부파일을 보낼 수 없어요. 본문만 보내져요.", "그래도 보내기");
+  if (st.tracked === false && (d.attachments || []).length) return ask("첨부를 확인하지 못했어요", `${iGa(botName)} 붙인 파일이 아니라서 실제로 가는지 몰라요. 보낼까요?`, "그래도 보내기");
+  return !(st.editable && !st.canAttach && (st.files.length || d.warning)) || ask("첨부 없이 보낼까요?", "이 계정은 파일을 못 보내요. 본문만 가요.", "그래도 보내기");
 }
 function draftFilesNode(d, o = {}) {
   const ref = d.ref, box = el("div", { class: "dr-files" });
@@ -197,8 +197,8 @@ function draftFilesNode(d, o = {}) {
     const noSend = live && st.editable && !st.canAttach && (fl.length || d.warning);
     const warns = [
       warn ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: d.warning }), d.note ? el("span", { class: "dr-wn", text: d.note }) : null)) : null,
-      noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "이 메일 계정은 첨부파일을 보낼 수 없어요 · 본문만 보내져요" })) : null,
-      unchecked ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부파일이 실제로 붙었는지 확인하지 못했어요" }), el("span", { class: "dr-wn", text: `${iGa(botName)} 직접 붙인 파일이 아니에요. 보내기 전에 확인해 주세요` }))) : null];
+      noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "이 계정은 파일을 못 보내요 · 본문만 가요" })) : null,
+      unchecked ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부가 실제로 붙었는지 몰라요" }), el("span", { class: "dr-wn", text: "보내기 전에 확인해 주세요" }))) : null];
     const rows = fl.map((f, i) => {
       const ext = (String(f.name).match(/\.([A-Za-z0-9]{1,5})$/) || [0, ""])[1].toUpperCase(), meta = [ext, f.size].filter(Boolean).join(" · ");
       const kids = [el("span", { class: "dr-fi" }, icon(DR_IMG.test(f.name) ? "image" : "file")), el("span", { class: "dr-fn", text: f.name }), meta ? el("span", { class: "dr-fm", text: meta }) : null];
@@ -542,7 +542,7 @@ function dcPointer(box, n) {
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig; box.dataset.key = sig;
   const title = draftQ(n.title), left = draftProgress(n.text);
-  clear(box).append(el("button", { class: "dc-wait", type: "button", onclick: () => noticeSheetOpen(n.id) }, el("span", { class: "dc-wait-k", text: "답을 기다리는 카드" }), el("span", { class: "dc-wait-t", text: title || "보내기 확인" }), left ? el("span", { class: "dc-wait-n", text: left }) : null, el("span", { class: "dc-wait-go", text: "열기" })));
+  clear(box).append(el("button", { class: "dc-wait", type: "button", onclick: () => noticeSheetOpen(n.id) }, el("span", { class: "dc-wait-k", text: "답 대기" }), el("span", { class: "dc-wait-t", text: title || "보내기 확인" }), left ? el("span", { class: "dc-wait-n", text: left }) : null, el("span", { class: "dc-wait-go", text: "열기" })));
 }
 // What a decision card shows; the card (docked or in the sheet) is redrawn only when this changes. A redraw replaces the reason field, and on
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.

@@ -135,11 +135,11 @@ describe("files in the send sheet at 390px", () => {
 		const v = await open(390, 844);
 		await openSheet(v, ref);
 		await waitFor(v, `document.querySelector(".fs-ft .dr-none")`);
-		expect(await texts(v, ".fs-ft .dr-none")).toEqual(["이 메일 계정은 첨부파일을 보낼 수 없어요 · 본문만 보내져요"]);
+		expect(await texts(v, ".fs-ft .dr-none")).toEqual(["이 계정은 파일을 못 보내요 · 본문만 가요"]);
 		expect(await v.evaluate(`!!document.querySelector(".fs-body .dr-add")`)).toBe(false);
 		await click(v, ".fs-ft .dc-act.main");
 		await waitFor(v, `document.querySelector("dialog.dlg")`);
-		expect(await texts(v, "dialog.dlg .dtitle")).toEqual(["첨부파일 없이 보낼까요?"]);
+		expect(await texts(v, "dialog.dlg .dtitle")).toEqual(["첨부 없이 보낼까요?"]);
 		expect(await v.evaluate(`!!document.querySelector(".fs-ft .dc-st")`)).toBe(false);
 	});
 });

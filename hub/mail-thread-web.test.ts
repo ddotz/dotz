@@ -232,7 +232,7 @@ test("a sender or recipient given by name only is shown by name, and the body's 
 	})()`);
 	expect(got.rows).toEqual(["보낸 사람Myungwoo Lee (KR - A", "받는 사람김경모", "참조Park <park@example.com>"]);
 	expect(got.quoted).toBe("보낸 사람김경모 <kkmo@example.com>");
-	expect(got.files[0]).toBe("첨부파일 1개");
+	expect(got.files[0]).toBe("첨부 1개");
 	expect(got.files[1]).toStartWith("견적서.pdf");
 	expect(got.files[1]).toContain("/api/mail/fx-1/files/1");
 	expect(got.none).toBe(null);
