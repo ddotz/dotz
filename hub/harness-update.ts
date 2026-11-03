@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { DATA_DIR, log, OMP, writeAtomic } from "./config.ts";
 import { activeHarness, HARNESS_NAMES } from "./runtime/index.ts";
 import { BUN_GLOBAL_OMO, OMO } from "./runtime/omo-hosts.ts";
+import { telemetryOff } from "./runtime/omo.ts";
 import { trackTimer } from "./shutdown.ts";
 import { newer } from "./update.ts";
 
@@ -318,6 +319,7 @@ async function installWhenIdle(id: string, st: HarnessState, j: Job, t: Tools, s
 			const kept = back ? (back.code === 0 ? `이전 버전(${st.current})으로 되돌렸어요` : `이전 버전으로 되돌리지 못했어요 (지금 ${now ?? "?"})`) : `지금 ${now ?? "?"}`;
 			return end("failed", `${st.name}를 설치했지만 새 버전이 확인되지 않아요. ${kept}.`);
 		}
+		for (const l of telemetryOff()) record(t.dataDir, `${id} ${l}`);
 		const cache = readCache(t.dataDir);
 		cache[id] = { current: now, latest: now, checkedAt: new Date().toISOString(), installMethod: st.installMethod, path: st.path, pkg, available: false };
 		writeCache(t.dataDir, cache);
