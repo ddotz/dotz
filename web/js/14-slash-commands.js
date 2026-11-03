@@ -321,8 +321,8 @@ function renderQueue() {
   clear(box).append(...mine.map(i => el("div", { class: "qitem" },
     el("div", { class: "qb" }, el("div", { class: "qt", text: i.text }), el("div", { class: "qm", text: "작업이 끝나면 전달" })),
     el("div", { class: "qa" },
-      el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue(); scheduleState(); }) }, "지금 끼워넣기"),
-      el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, () => takeBack(i)) }, "취소")))));
+      el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue(); scheduleState(); }) }, "지금 끼워넣기"),
+      el("button", { class: "btn text inrow", type: "button", onclick: ev => busy(ev.currentTarget, () => takeBack(i)) }, "취소")))));
 }
 // Taking a queued message back puts its text into the box; a box with a draft keeps it and the message stays queued.
 async function takeBack(i) {

@@ -207,10 +207,10 @@ async function installApp() {
   dialog({ classic: true, title: "앱 설치", body: el("div", {}, el("ol", { class: "steps" }, ...steps.map(s => el("li", { text: s }))), el("p", { class: "note", text: `전에 추가한 ${botName} 아이콘이 브라우저로 열리면 지우고 다시 추가해 주세요.` })), actions: [{ label: "확인", kind: "pri", onclick: c => c() }] });
 }
 function pushSection() {
-  const li = (ic, title, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), ...trail);
+  const li = (ic, title, ...trail) => el("div", { class: "li" }, el("span", { class: "lead" }, icon(ic)), el("span", { class: "tx" }, el("div", { class: "hd", text: title })), trail.length ? liEnd(...trail) : null);
   const ios = isIOS(), standalone = isStandalone();
   const rows = [];
-  if (!standalone) rows.push(li("home", "앱 설치", el("button", { class: "btn", type: "button", onclick: () => installApp() }, "앱 설치")));
+  if (!standalone) rows.push(li("home", "앱 설치", el("button", { class: "btn tonal inrow", type: "button", onclick: () => installApp() }, "앱 설치")));
   const subscribed = PWA.sub && PWA.info && PWA.info.subscribed;
   if (PWA.gw && PWA.gw.app) {
     // The device has the app: one row per gateway, whichever gateway's page this is. A gateway that does not answer cannot be switched.
