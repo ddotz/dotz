@@ -169,7 +169,7 @@ export const ko: Catalog = {
 	gatewayRestart: (replayed, lanes) => `게이트웨이가 다시 시작돼서 이어서 처리하고 있어요${replayed ? ` · 멈췄던 메시지 ${replayed}개` : ""}${lanes.length ? ` · 세션 ${lanes.join(", ")}` : ""}`,
 	workStalled: items => `[dotz gateway] 백그라운드 작업이 아직 running으로 표시되지만 더는 일하지 않아요: ${items.map(w => `"${w.description}"(${w.id}, 이유: ${w.reason || "기록 없음"}${w.workdir ? `, 작업 폴더: ${w.workdir}` : ""})`).join(", ")}. 게이트웨이는 이 작업을 멈추지 않았어요. 그 작업이 이미 만든 것(커밋, 파일)을 확인하고, 직접 마무리하거나 다시 맡기세요(사용량 한도 때문이면 한도가 풀린 뒤에). 넘겨받았으면 멈춘 작업은 task_cancel로 정리하세요.`,
 	workFailed: (desc, id, reason) => `[dotz gateway] 백그라운드 작업 "${desc}"(${id})이 실패했어요: ${reason}. 아직 이 실패를 다룬 턴이 없어요. 끝내는 것은 당신 몫이에요: 그 작업이 이미 만든 것(커밋, 파일, 결과)을 확인하고, 원인을 고치세요(일시적인 오류면 다시 실행, 카테고리·모델·브리프가 틀렸으면 바로잡아 다시 맡기기). 그리고 오너의 요청을 끝까지 마치세요. 다시 할지 오너에게 묻지 말고 결과를 보고하세요. 오너만 줄 수 있는 결정이나 로그인 정보가 필요할 때만 물으세요.`,
-	stallNudge: (open, current) => `[dotz gateway] 할 일이 ${open}개 남은 채로 턴이 끝났고, 기다릴 것도 없어요${current ? `(지금 할 일: ${current})` : ""}. 지금 이어서 하세요. 정말 오너의 답이나 바깥 일을 기다리는 할 일이라면, 한 줄로 그렇다고 말하고 계획에도 그렇게 표시하세요. 열어 둔 채로 두지 마세요.`,
+	stallNudge: (open, current) => `[dotz gateway] ${open ? `할 일이 ${open}개 남은 채로` : "하겠다고 말한 일을 하지 않은 채로"} 턴이 끝났고, 기다릴 것도 없어요${current ? `(지금 할 일: ${current})` : ""}. 남은 일이나 말한 일을 지금 이어서 하세요. 정말 오너의 답이나 바깥 일을 기다리는 일이라면, 한 줄로 그렇다고 말하고 계획에도 그렇게 표시하세요. 열어 둔 채로 두지 마세요.`,
 	laneRotated: (why, cwd, brief, lastReport) => `[dotz gateway] 컨텍스트를 작게 유지하려고 대화 기록을 새로 바꿨어요 (${why}). 폴더(${cwd}), 모델, 목표는 그대로예요. 브리프(${brief})와 마지막 보고(${lastReport})를 읽고, 작업의 현재 상태(git status, 브리프가 가리키는 파일)를 확인한 뒤 거기서 이어가세요. 새 작업을 시작하거나 보고하지 마세요. 열려 있는 일이 없으면 "ready" 한 단어로만 답하세요.`,
 	heldMessages: (text, held) => `${text}\n\n멈춰 있는 동안 오너 메시지 ${held.length}건이 도착했어요. 오래된 순으로 각각 처리하세요:\n\n${held.join("\n\n---\n\n")}`,
 
