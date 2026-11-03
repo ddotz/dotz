@@ -53,6 +53,10 @@ h1, h2, h3, h4, .ttl, figcaption { text-wrap: balance; }
 p, li, blockquote, dd { text-wrap: pretty; }
 code, pre, kbd, samp { word-break: normal; overflow-wrap: anywhere; }
 .phr { display: inline-block; max-width: 100%; }
+/* a sentence / clause / phrase chunk of copy text (01-phrase-wrap.js): the line breaks between chunks, inside one only when it is
+   wider than the line; a box that clamps its lines keeps plain inline text so its ellipsis still trims the last line */
+.wph { display: inline-block; max-width: 100%; }
+.dcard.fold .wph { display: inline; }
 .m-dg { display: inline-block; }
 button, input, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
 button { cursor: pointer; }
