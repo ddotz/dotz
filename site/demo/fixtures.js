@@ -119,6 +119,10 @@
     ],
   };
   for (const m of mails) histories[`mail:${m.key}`] = [mailEvent(m)];
+  histories["settings:kakao"] = [
+    { ts: ago(12), kind: "message", source: "web", channel: "web", target: "settings:kakao", text: "확인 주기를 10분으로 바꾸고 자동 초안은 꺼 줘" },
+    { ts: ago(11), kind: "out", source: "orchestrator", target: "settings:kakao", text: "[done] 이렇게 바꿀까요?\n\n```dotz-settings\n{\"app\":\"kakao\",\"changes\":{\"every_minutes\":10,\"auto_draft\":false}}\n```" },
+  ];
 
   const state = {
     name: "dotz",
@@ -151,6 +155,45 @@
 
   const integrations = [
     { key: "mail", label: "메일", icon: "mail", conv: ["mail:"], notices: ["n-demo-1"], state: "connected" },
+    { key: "kakao", label: "카카오톡", icon: "chat", conv: ["kakao:"], notices: [], state: "connected" },
+  ];
+
+  // 카카오톡: the room list (GET /api/kakao/rooms) and one room's chat (GET /api/kakao/chat/<id>), epoch milliseconds like the real hub.
+  const kakaoRooms = [
+    { chatId: "r1", name: "정우", kind: "direct", watched: true, autoDraft: true, unread: 2, unreplied: true, lastAt: now - 6 * 60_000 },
+    { chatId: "r2", name: "캠핑 모임", kind: "group", watched: true, autoDraft: false, unread: 14, lastAt: now - 38 * 60_000 },
+    { chatId: "r3", name: "엄마", kind: "direct", watched: true, autoDraft: false, unread: 0, lastAt: now - 26 * 3600_000 },
+    { chatId: "r4", name: "동네 이웃", kind: "group", watched: false, autoDraft: false, unread: 0, lastAt: now - 3 * 86400_000 },
+    { chatId: "r5", name: "나와의 채팅", kind: "self", watched: false, autoDraft: false, unread: 0, lastAt: now - 5 * 86400_000 },
+  ];
+  const kakaoChat = {
+    r1: { room: { chatId: "r1", name: "정우", kind: "direct", group: false, watched: true }, read: null, kakaoUnread: 2, drafts: [], sends: [], messages: [
+      { id: 1, logId: "101", authorId: "u2", sender: "정우", text: "형, 이번 주말에 캠핑 가기로 한 거 기억나?", type: 1, sentAt: now - 52 * 60_000, fromMe: false, unread: 0 },
+      { id: 2, logId: "102", authorId: "u1", sender: "나", text: "응, 토요일 아침에 출발하자", type: 1, sentAt: now - 49 * 60_000, fromMe: true, unread: 0 },
+      { id: 3, logId: "103", authorId: "u2", sender: "정우", text: "좋아. 의자는 내가 챙길게", type: 1, sentAt: now - 8 * 60_000, fromMe: false, unread: 0 },
+      { id: 4, logId: "104", authorId: "u2", sender: "정우", text: "그리고 장작은 어디서 살까?", type: 1, sentAt: now - 6 * 60_000, fromMe: false, unread: 0 },
+    ] },
+  };
+  // 설정 화면 (GET /api/integrations/<app>/settings and /features, hub/app-settings.ts, hub/app-features.ts).
+  const appFields = [
+    { key: "notify", label: "새 메시지 알림", type: "bool", help: "지켜보는 방에 새 메시지가 오면 알려 줘요", section: "notify", switch: true, value: true },
+    { key: "auto_draft", label: "자동 초안", type: "bool", help: "답할 거리가 있으면 초안을 만들어요", section: "draft", switch: true, value: true },
+    { key: "tone", label: "말투", type: "enum", help: "초안을 쓸 때 따라 할 말투예요", section: "draft", options: ["mine", "polite"], labels: { mine: "내 말투", polite: "존댓말" }, value: "mine" },
+    { key: "every_minutes", label: "확인 주기", type: "number", help: "새 메시지를 몇 분마다 볼지 정해요", section: "watch", min: 1, max: 60, value: 5 },
+    { key: "use_here", label: "이 기기에서 쓰기", type: "bool", help: "끄면 이 컴퓨터의 앱 목록에서 빠져요", section: "advanced", value: true },
+  ];
+  const appFeatures = {
+    features: [{ id: "kakao-new", name: "새 메시지 확인", status: "켜져 있어요", on: true, section: "watch" }],
+    internal: [{ id: "kakao-keeper", name: "로그인 유지", kind: "keeper", dot: "ok", status: "정상", last_run: ago(4), every_minutes: 10 }],
+    approvals: [{ id: "ap-1", title: "정우 방에 답장 보내기", kind: "카카오톡", at: ago(5), options: [{ label: "보내기", n: 1 }, { label: "버리기", n: 2 }] }],
+  };
+  // 앱 페이지 (GET /api/apps).
+  const apps = [
+    { id: "kakao", label: "카카오톡", kind: "monitor", source: "registry", icon: "chat", status: "running" },
+    { id: "mail", label: "메일", kind: "monitor", source: "registry", icon: "mail", status: "running" },
+    { id: "insta", label: "인스타그램", kind: "monitor", source: "registry", icon: "image", status: "unreachable", hint: "로그인이 풀렸어요" },
+    { id: "memo", label: "메모장", kind: "tool", source: "manifest", icon: "file", status: "running", web: { href: "/apps/memo/", url: "/apps/memo/", path: "/apps/memo/", mode: "frame" } },
+    { id: "timer", label: "집중 타이머", kind: "tool", source: "manifest", icon: "clock", status: "off", off: true, web: { href: "/apps/timer/", url: "/apps/timer/", path: "/apps/timer/", mode: "frame" } },
   ];
   const monitors = [
     { name: "가격 페이지", kind: "watch", watch: "price-page", scope: "plain", last_run: ago(18), next_run: new Date(now + 12 * 60_000).toISOString(), last_result: "ok" },
@@ -239,6 +282,6 @@
 
   window.DEMO_FIXTURES = {
     now, ago, MODEL, model, la, mails, mailCard, mailEvent, calendar, comments, histories, state, conversations,
-    integrations, monitors, projects, todo, subagents, queue, notices, canvases, files,
+    integrations, kakaoRooms, kakaoChat, appFields, appFeatures, apps, monitors, projects, todo, subagents, queue, notices, canvases, files,
   };
 })();
