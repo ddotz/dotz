@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "c505a599a9b8";
+const WEB_BUILD = "9dd85ecfa86f";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -1145,9 +1145,9 @@ function renderSubSheet() {
     if (!rows.length) shBody.append(el("div", { class: "a-div", text: "진행 중인 서브에이전트가 없어요" }));
     for (const [s, x] of rows) shBody.append(el("button", { class: "subrow", type: "button", onclick: () => openSub(s, x.id, d.sources) },
       el("span", { class: "dot pri" }),
-      el("span", { class: "nm" }, el("b", { text: x.description || x.agent || "서브에이전트" }), x.intent || x.tool ? el("span", { class: "muted", text: ` · ${firstLine(x.intent || x.tool)}` }) : null),
+      el("span", { class: "nm" }, el("b", { text: x.description || x.agent || "서브에이전트" }), x.intent || x.tool ? el("span", { class: "muted", text: firstLine(x.intent || x.tool) }) : null),
       d.sources.length > 1 ? el("span", { class: "tag", text: targetName(targetOfSource(s)) }) : null,
-      icon("chev", "chev")));
+      x.started_at ? el("span", { class: "cc2-tm", text: workElapsed(x) }) : null));
     return;
   }
   const l = subNow(d), data = d.data || {};
@@ -2803,7 +2803,8 @@ function renderDecision(box, dc, picks, step) {
     const blk = dc.blocks[step];
     if (blk) {
       if (blk.title && dc.blocks.length > 1) body.append(el("div", { class: "dc-sub", text: blk.title }));
-      for (const o of blk.options) body.append(el("button", { class: `dc-row${o.rec ? " rec" : ""}${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
+      // Once the answer goes out the card keeps only the chosen row (the others leave), so 보냈어요 reads in the same place.
+      for (const o of st && !dc.draft && picks[step] ? blk.options.filter(x => x.n === picks[step].n) : blk.options) body.append(el("button", { class: `dc-row${o.rec ? " rec" : ""}${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
         el("span", { class: "dc-key", text: String(o.n) }),
         el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
     }
@@ -3625,11 +3626,13 @@ function paintTodo() {
   const box = $("#todo");
   if (!box) return;
   const phases = TD.by[target] || [], all = phases.flatMap(p => p.tasks || []);
-  if (!all.length || all.every(x => todoState(x) === "done" || todoState(x) === "drop")) { box.hidden = true; delete box.dataset.sig; clear(box); return; }
+  if (!all.length || all.every(x => todoState(x) === "done" || todoState(x) === "drop")) { box.hidden = true; delete box.dataset.sig; delete box.dataset.ph; clear(box); return; }
   const open = !!TD.open[target], sig = JSON.stringify([phases, open]);
   box.hidden = false;
   if (box.dataset.sig === sig) return;
-  box.dataset.sig = sig;
+  // A step finishing changes the strip in place (the new look fades up); opening the list or the first paint just draws.
+  const ph = JSON.stringify(phases), swap = box.dataset.ph !== undefined && box.dataset.ph !== ph;
+  box.dataset.sig = sig; box.dataset.ph = ph;
   const live = all.filter(x => todoState(x) !== "drop"), done = live.filter(x => todoState(x) === "done").length;
   const cur = all.find(x => todoState(x) === "act") || all.find(x => todoState(x) === "pend"), g = x => el("span", { class: `td-g tg-${todoState(x)}`, "aria-hidden": "true" });
   const bar = el("button", { class: "td-bar", type: "button", "aria-expanded": String(open), onclick: () => { TD.open[target] = !open; paintTodo(); } },
@@ -3639,8 +3642,8 @@ function paintTodo() {
     p.name ? el("div", { class: "td-ph", text: p.name }) : null,
     ...(p.tasks || []).map(x => el("div", { class: `td-r tr-${todoState(x)}` }, g(x), el("span", { class: "td-tx", text: x.content })))])));
   const keep = $(".td-list", box), top = keep ? keep.scrollTop : 0;
-  clear(box).append(...kids);
-  const nl = $(".td-list", box); if (nl) nl.scrollTop = top;
+  const draw = () => { clear(box).append(...kids); const nl = $(".td-list", box); if (nl) nl.scrollTop = top; };
+  if (swap) motionSwap(box, draw); else draw();
 }
 // A todo tool call finishing means the plan changed: refetch (debounced) when it belongs to the open target.
 function todoActivity(a) {
@@ -4801,7 +4804,7 @@ function renderQueue() {
   clear(box).append(...mine.map(i => el("div", { class: "qitem" },
     el("div", { class: "qb" }, el("div", { class: "qt", text: i.text }), el("div", { class: "qm", text: "작업이 끝나면 전달" })),
     el("div", { class: "qa" },
-      el("button", { class: "btn tonal", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue(); scheduleState(); }) }, "지금 끼워넣기"),
+      el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, async () => { await api(`/api/queue/${enc(i.id)}/send`, "POST", {}); QUEUE = QUEUE.filter(x => x.id !== i.id); renderQueue(); scheduleState(); }) }, "지금 끼워넣기"),
       el("button", { class: "btn text", type: "button", onclick: ev => busy(ev.currentTarget, () => takeBack(i)) }, "취소")))));
 }
 // Taking a queued message back puts its text into the box; a box with a draft keeps it and the message stays queued.
