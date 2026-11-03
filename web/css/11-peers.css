@@ -1,36 +1,30 @@
-/* Computers (33-peers.js): the chip next to the title, the switch sheet (uses the .ds-* sheet of 09-notices.css) and the bell's other-computer lines. */
-.pchip { position: relative; display: none; flex: none; align-items: center; gap: 6px; height: 32px; max-width: 168px; margin: 0 auto 0 8px; padding: 0 8px 0 12px; border: 0; border-radius: 16px; background: var(--card); color: var(--fg); font: 600 14px/18px var(--font); }
-.pchip:hover { background: var(--card-hover); }
-.pchip:active { background: var(--active); }
-.appbar.hasp .pchip { display: inline-flex; }
-.appbar.hasp h1 { flex: 0 1 auto; }
-.pchip[hidden] { display: none; }
-.pc-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pc-c { flex: none; display: inline-flex; }
-/* the unread dot sits on the chip's top-right corner, outside the chevron */
-.pc-d { position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); border: 2px solid var(--card); box-sizing: content-box; }
-.pc-d.need { background: var(--warn); }
-.pc-i { flex: none; width: 14px; height: 14px; transform: rotate(90deg); color: var(--fg-3); }
-.pr-ey { color: var(--fg-2); }
-.pr-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }
-.pr-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 10px 16px; border: 0; border-radius: var(--r-ctl); background: var(--bg); color: var(--fg); font: inherit; text-align: left; }
+/* Computers (33-peers.js): the bot name as the switcher (its unread dot), the switch sheet (on the .ds-* sheet of 09-notices.css) and the bell's other-computer lines. */
+/* the trigger: the brand name (wide) and the page title (phone, a page without a back arrow); the dot sits at the name's bottom right, inside its padding so the ellipsis clip keeps it */
+.appbar.hasp:not(.back) h1 { cursor: pointer; }
+@media (max-width: 1099px) { .appbar.hasp:not(.back) h1 { flex: 0 1 auto; margin-right: auto; } }
+#brand-name.pdot, .appbar:not(.back) h1.pdot { position: relative; padding-right: 10px; }
+#brand-name.pdot::after, .appbar:not(.back) h1.pdot::after { content: ""; position: absolute; right: 0; bottom: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.appbar:not(.back) h1.pdot::after { bottom: 6px; }
+#brand-name.pneed::after, .appbar:not(.back) h1.pneed::after { background: var(--warn); }
+/* the sheet: one quiet row per computer, no shadow; a compact centered dialog from 700px */
+.ds-sheet.pr-sheet { box-shadow: none; animation: none; }
+@media (min-width: 700px) { .ds-sheet.pr-sheet { max-width: 340px; } }
+.pr-hd { padding: 16px 20px 6px; color: var(--fg-3); font: 600 12px/16px var(--font); }
+.pr-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 10px; }
+.pr-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; transition: background-color .2s; }
 .pr-row:hover { background: var(--hover); }
 .pr-row:active { background: var(--active); }
-.pr-row.on .pr-s { color: var(--fg-2); }
-/* the computer being viewed: a small accent dot in a left slot every row reserves (14px extra padding); connection state is the pill on the right, never a second dot */
-.pr-row { position: relative; padding-left: 30px; }
-.pr-row.on::before { content: ""; position: absolute; top: 50%; left: 14px; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); }
-.pr-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.pr-t { font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
-.pr-s { color: var(--fg-3); font: 400 12px/16px var(--font); }
-.pr-bd { flex: none; padding: 0 8px; border-radius: 12px; background: var(--card); color: var(--fg-2); font: 600 12px/22px var(--font); white-space: nowrap; }
-.pr-bd.need { color: var(--warn); }
-.pr-st { flex: none; padding: 0 8px; border-radius: 12px; background: var(--card); color: var(--fg-3); font: 600 12px/22px var(--font); white-space: nowrap; }
-.pr-st.ok { background: color-mix(in srgb, var(--ok) 12%, transparent); color: var(--ok); }
+.pr-row.on { background: var(--card); }
+.pr-row.off { color: var(--fg-3); cursor: default; }
+.pr-row.off:hover, .pr-row.off:active { background: transparent; }
+.pr-t { min-width: 0; font: 500 15px/22px var(--font); word-break: keep-all; overflow-wrap: anywhere; }
+.pr-row.on .pr-t { font-weight: 600; }
+.pr-d { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.pr-d.need { background: var(--warn); }
+.pr-st { flex: none; margin-left: auto; color: var(--fg-3); font: 400 13px/18px var(--font); white-space: nowrap; }
+.pr-ck { flex: none; width: 18px; height: 18px; margin-left: auto; color: var(--accent); }
+@media (prefers-reduced-motion: reduce) { .pr-row { transition: none; } }
 .pr-line .chev { flex: none; align-self: center; color: var(--fg-3); }
-@media (max-width: 699px) {
-  .pchip { max-width: 132px; margin-left: 6px; }
-}
 
 /* another computer opened inside the installed app (33-peers.js prGo): the whole screen, the safe areas kept by this frame because a page in an iframe reads them as 0 */
 .pr-frame { position: fixed; inset: 0; z-index: 2000; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--bg); }
