@@ -50,7 +50,7 @@ test("a system event is a compact line with its worker's live state, opens the w
 	expect(await v.evaluate(`convIncoming(${JSON.stringify(SYS)})`)).toBe(false);
 	WORK = [{ ...WORK[0], status: "done", ended_at: Date.now() }];
 	await v.evaluate(`refreshState().then(() => true)`);
-	await waitFor(v, `$("#tl .cv-sys .cv-sys-st").textContent === "끝남"`);
+	await waitFor(v, `$("#tl .cv-sys .cv-sys-st").textContent === "완료"`);
 	await v.evaluate(`($("#tl .cv-sys").click(), 0)`);
 	await waitFor(v, `SUBD && SUBD.id === "st_w1"`);
 }, 20_000);

@@ -84,6 +84,10 @@
       { ts: ago(1441), kind: "out", source: "orchestrator", target: "main", text: "[done] 보냈어요.\n\n- 받는이: 한서윤\n- 제목: Re: 지난 회의 자료" },
       { ts: ago(62), kind: "message", source: "web", channel: "web", target: "main", text: "아침 브리핑 해 줘" },
       { ts: ago(61), kind: "out", source: "orchestrator", target: "main", text: "좋은 아침이에요. 오늘은 이래요.\n\n- 일정 4개, 첫 일정은 10시 주간 회의예요\n- 안 읽은 메일 2통, 답장할 메일 2통\n- 감시 중인 페이지는 변화 없어요" },
+      { ts: ago(31), kind: "message", source: "web", channel: "web", target: "main", text: "오늘 일정이랑 메일 묶어서 브리핑해 줘" },
+      { ts: ago(30), kind: "out", source: "orchestrator", target: "main", text: "좋은 아침이에요. 아침 브리핑이에요.\n\n오늘 일정 4개\n- 10:00 팀 주간 회의\n- 13:00 한서윤님과 점심\n- 15:30 견적서 검토\n- 19:00 운동\n\n새 메일 2통, 답장할 메일 2통이에요.\n댓글 3개가 답글을 기다려요.\n\n하나씩 볼까요?" },
+      { ts: ago(14), kind: "out", source: "gateway", target: "main", system: true, worker: "st_report", text: "백그라운드 작업으로 맡겼어요: 주간 보고서 정리" },
+      { ts: ago(4), kind: "out", source: "gateway", target: "main", system: true, worker: "st_price", text: "백그라운드 작업으로 맡겼어요: 경쟁 서비스 가격 조사" },
       { ts: ago(8), kind: "out", source: "orchestrator", target: "main", text: "dotz 데모예요. 실제로 보내지 않으니\n편하게 말 걸어 보세요.\n\n- 메일 정리해 줘\n- 오늘 일정 알려 줘\n- 댓글 답글 써 줘\n- 가격 페이지 바뀌면 알려 줘\n- 매일 아침 9시에 브리핑해 줘\n- 경쟁 서비스 가격 조사해 줘" },
     ],
     alert: [
@@ -124,6 +128,8 @@
     discord: {},
     notices_unread: 3,
     work: [
+      { id: "st_price", description: "경쟁 서비스 가격 조사", status: "running", started_at: now - 4 * 60_000, model: "dotz AI" },
+      { id: "st_report", description: "주간 보고서 정리", status: "done", started_at: now - 14 * 60_000, ended_at: now - 3 * 60_000, files: [{ path: "reports/주간-보고서.md", name: "주간-보고서.md", size: 2400 }] },
       { id: "st_demo", description: "배포 공지 초안 다듬기", status: "done", started_at: now - 23 * 60_000, ended_at: now - 9 * 60_000 },
       { id: "st_night", description: "밤 사이 메일 분류", status: "done", started_at: now - 320 * 60_000, ended_at: now - 290 * 60_000 },
     ],
@@ -192,7 +198,7 @@
     "notes/landing.md": "# 랜딩 페이지\n\n- 제목: 내 기기에서 계속 도는 비서\n- 설명: 대화로 맡기고, 승인하고, 결과를 받아요\n",
   };
   // [file] lines in scripted replies open these through GET /api/file.
-  const files = {};
+  const files = { "reports/주간-보고서.md": "# 주간 보고서\n\n- 이번 주 한 일: 메일 정리, 댓글 답글, 감시 설정\n- 다음 주 할 일: 견적 확정, 배포 공지\n" };
 
   window.DEMO_FIXTURES = {
     now, ago, MODEL, model, la, mails, mailCard, mailEvent, calendar, comments, histories, state, conversations,

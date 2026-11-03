@@ -299,13 +299,13 @@
   function startTask(t, s) {
     const topic = s.replace(/(?:좀|좀\s*)?(?:해\s*줘|해\s*주세요|해\s*줄래|부탁해|해\s*봐)[.!?]?$/, "").replace(/\s+/g, " ").trim().slice(0, 30) || "요청하신 작업";
     const id = `st_${Date.now()}`;
-    const job = { id, description: topic, status: "running", started_at: new Date().toISOString() };
+    const job = { id, description: topic, status: "running", started_at: Date.now() };
     F.state.work.unshift(job);
     st(t).task = { id, topic, step: 0, done: false };
     later(600, () => { post(t, `백그라운드 작업으로 맡겼어요: ${topic}`, { source: "gateway", system: true, worker: id }); repaint(); });
     later(4500, () => { const k = st(t).task; if (k && k.id === id) k.step = 1; });
     later(9000, () => {
-      job.status = "done";
+      job.status = "done"; job.ended_at = Date.now();
       const k = st(t).task; if (k && k.id === id) k.done = true;
       const file = `reports/${topic.replace(/[^\w가-힣]+/g, "-").replace(/^-|-$/g, "")}.md`;
       F.files[file] = `# ${topic}\n\n데모로 만든 결과예요.\n\n## 요약\n\n- 비교한 곳: 세 곳\n- 가장 싼 곳: 가상의 서비스 B (월 8,900원)\n- 눈여겨볼 점: 연간 결제 할인이 커요\n`;

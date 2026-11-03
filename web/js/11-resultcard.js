@@ -79,3 +79,47 @@ function resultCard(opts) {
   if (opts.actions && opts.actions.length) kids.push(el("div", { class: "btns cc-act" }, ...opts.actions));
   return el("div", { class: "bm alert rc" }, ...kids);
 }
+
+// A bot answer shaped like a morning briefing (a run of "- 10:00 title" lines, then counts and a mail line) is drawn as rows and chips;
+// the words are the bot's own and stay as written. Any other text returns null and is drawn as plain markdown.
+const HCB_ROW = /^\s*[-*\u2022]\s*(\d{1,2}:\d{2})\s+(\S.*?)\s*$/;
+const HCB_MAIL = /메일\s*\d+통/;
+const HCB_COUNT = /\d+\s*(?:개|통|건|명)/;
+const hcbNums = s => { const out = []; String(s).split(/(\d+)/).forEach((p, i) => out.push(i % 2 ? el("span", { class: "hcb-n", text: p }) : p)); return out; };
+function hcBriefParse(text) {
+  const lines = String(text ?? "").replace(/\r/g, "").split("\n");
+  let a = -1, b = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (!HCB_ROW.test(lines[i])) continue;
+    let j = i;
+    while (j + 1 < lines.length && HCB_ROW.test(lines[j + 1])) j++;
+    if (j > i) { a = i; b = j; break; }
+    i = j;
+  }
+  if (a < 0) return null;
+  let h = a - 1;
+  while (h >= 0 && !lines[h].trim()) h--;
+  const head = h >= 0 && lines[h].trim().length <= 24 && !/[.!?요]$/.test(lines[h].trim()) ? lines[h].trim() : "";
+  const pre = lines.slice(0, head ? h : a).join("\n").trim();
+  return { pre, head, rows: lines.slice(a, b + 1).map(l => HCB_ROW.exec(l).slice(1, 3)), post: lines.slice(b + 1) };
+}
+function hcBriefNode(text) {
+  const p = hcBriefParse(text);
+  if (!p) return null;
+  const kids = [];
+  if (p.pre) kids.push(mdNode(p.pre));
+  const tag = /브리핑|아침/.test(text) ? el("span", { class: "tag pri", text: "아침 점검" }) : null;
+  kids.push(el("div", { class: "hcb-card" },
+    tag || p.head ? el("div", { class: "hcb-hd" }, tag, p.head ? el("span", { class: "hcb-h" }, ...hcbNums(p.head)) : null) : null,
+    el("div", { class: "hcb-rows" }, ...p.rows.map(([t, title]) => el("div", { class: "hcb-r" }, el("span", { class: "hcb-t", text: t }), el("span", { class: "hcb-ti", text: title }))))));
+  let plain = [];
+  const flush = () => { const s = plain.join("\n").trim(); plain = []; if (s) kids.push(mdNode(s)); };
+  for (const l of p.post) {
+    if (!l.trim()) { plain.push(l); continue; }
+    if (HCB_MAIL.test(l)) { flush(); kids.push(el("div", { class: "hcb-chip" }, icon("mail"), el("span", {}, ...hcbNums(l.trim())))); }
+    else if (HCB_COUNT.test(l) && l.trim().length <= 40) { flush(); kids.push(el("div", { class: "hcb-ln" }, ...hcbNums(l.trim()))); }
+    else plain.push(l);
+  }
+  flush();
+  return el("div", { class: "hcb" }, ...kids);
+}
