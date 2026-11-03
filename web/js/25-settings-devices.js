@@ -50,6 +50,7 @@ function dvOpen(d) {
         c();
         if (d.current) return location.replace("/pair");
         toast("기기를 해제했어요");
+        await motionOut(document.querySelector(`[data-dev="${CSS.escape(String(d.id))}"]`));   // the unpaired device's row leaves (150ms), then the list is read again
         await loadDevices();
       });
     } },

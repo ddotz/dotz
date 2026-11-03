@@ -23,7 +23,7 @@ const unrepNo = (path, after) => el("button", { class: "cchip unrep-no", type: "
 async function loadIntegrations() {
   try {
     const r = await api("/api/integrations");
-    INTG.items = Array.isArray(r.items) ? r.items : [];
+    INTG.items = Array.isArray(r.items) ? r.items : []; INTG.loaded = true;
     INTG.available = Array.isArray(r.available) ? r.available : [];
     for (const it of INTG.available) if (it.iconPath && !ICONS[it.icon]) ICONS[it.icon] = it.iconPath;
     for (const it of INTG.items) if (it.iconPath && !ICONS[it.icon]) ICONS[it.icon] = it.iconPath;

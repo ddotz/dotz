@@ -50,7 +50,7 @@ function mbFresh(scope, box) {
 function mbRowsOut(keys) {
   const keep = mailFilterOf()[2], gone = keys.filter(t => !MAILS.has(t) || !keep(MAILS.get(t), t));
   const rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => gone.includes(r.dataset.t));
-  return rows.length ? Promise.all(rows.map(r => motionOut(r, "side"))) : null;
+  return rows.length ? Promise.all(rows.map(r => motionOut(r))) : null;
 }
 
 // The change an action makes to the page's copy of the mail; the returned function puts it back.

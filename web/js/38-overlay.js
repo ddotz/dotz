@@ -32,7 +32,7 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
       // State is released at once. Only the owner's own close (X, Esc, backdrop; restore) leaves the sheet and fades it out; the next card opens
       // later in the DOM, so it sits over the leaving one. A programmatic close (restore false) goes at once.
       ovDone(ov); FS.splice(FS.indexOf(h), 1);
-      if (restore && !reducedMotion()) { node.style.pointerEvents = "none"; node.removeAttribute("aria-modal"); Promise.all([motionOut(box, "rise"), motionOut(node)]).then(() => node.remove()); }
+      if (restore && !reducedMotion()) { node.style.pointerEvents = "none"; node.removeAttribute("aria-modal"); motionSheetOut(node).then(() => node.remove()); }
       else node.remove();
       document.removeEventListener("keydown", key, true);
       if (vv) { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); }
@@ -41,7 +41,7 @@ function fsOpen({ label, labelledby, cls = "", onClose }) {
     },
   };
   document.body.append(node);
-  motionIn(node, "fade", 150); motionIn(box, "rise");
+  motionSheet(box, node);
   ov = ovOpen(() => h.close(false));
   FS.push(h);
   document.addEventListener("keydown", key, true);

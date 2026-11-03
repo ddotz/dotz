@@ -27,7 +27,9 @@ function mailSentList(t) {
 async function mailSentRemove(n, btn, quiet = false) {
   const k = msKey(n), id = String(n.id);
   if (btn) btn.disabled = true;
-  MS.gone.add(k); mailSentPaint();
+  const card = tl.querySelector(`.ms-card[data-nid="${CSS.escape(id)}"]`);
+  MS.gone.add(k);
+  if (card) motionOut(card).then(mailSentPaint); else mailSentPaint();   // the draft fades out (150ms), then the folded list redraws without it
   try {
     if (n.pc) {
       await pqNotice(n, "notice", { op: "dismiss", id });
@@ -42,7 +44,7 @@ async function mailSentRemove(n, btn, quiet = false) {
     }
     if (!quiet) toast("초안을 지웠어요");
     return true;
-  } catch (e) { MS.gone.delete(k); mailSentPaint(); if (!quiet) toast(e.message || "지우지 못했어요", true); return false; }
+  } catch (e) { MS.gone.delete(k); if (card) card.getAnimations().forEach(a => a.cancel()); mailSentPaint(); if (!quiet) toast(e.message || "지우지 못했어요", true); return false; }
 }
 // 모두 지우기 at the head of a mail's folded drafts: every one of them is hidden the same way (one dismiss each on the computer that holds it).
 async function mailSentClear(list, btn) {
