@@ -4,7 +4,8 @@ import { appAsset, indexPage } from "./webapp.ts";
 
 // docs/ui-spec.md 검사할 수 있는 규칙, measured in a headless browser on the settings screens that hold rows with controls:
 // a control in a settings row sits in the row's one right-hand slot (.li > .li-end), a button there is the 행 안 tier (.inrow, 32px),
-// a button in a section header is the small tier (.sm), and the right-hand slots of one list share one right edge.
+// a button in a section header is the small tier (.sm), the right-hand slots of one list share one right edge, and a screen, an open
+// sheet or one repeated card holds at most one filled button.
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const commit = { sha: "a".repeat(40), short: "aaaaaaa", date: new Date(0).toISOString() };
 const room = { ask: true, alert: true, result: true, news: true, conv: true, log: true };
@@ -82,6 +83,13 @@ const MEASURE = `(() => {
     const rights = [...list.querySelectorAll(":scope > .li > .li-end")].filter(vis).map(e => Math.round(e.getBoundingClientRect().right));
     if (rights.length > 1 && Math.max(...rights) - Math.min(...rights) > 1) add("column", list);
   }
+  // one filled button per screen, open sheet or repeated card (each 답장 확인 card keeps its own 보내기)
+  const filled = new Map();
+  for (const b of [...document.querySelectorAll(".btn:not(.tonal):not(.outlined):not(.text):not(.danger), .btn.danger.fill")].filter(vis)) {
+    const box = b.closest(".rq, dialog[open], section.view");
+    if (box) filled.set(box, (filled.get(box) || 0) + 1);
+  }
+  for (const [box, n] of filled) if (n > 1) add("one-filled", box);
   return JSON.stringify(out);
 })()`;
 
