@@ -64,6 +64,8 @@ export const send = (target: string, text: string, ref?: string): Promise<{ deli
 // One prompt queue per session (hub/convsessions.ts): main's, and with conversation sessions on, one per conversation. Each delivers into
 // its own orchestrator instance; `recent` keeps only that session's conversations, so an answer that arrives without a prompt can
 // only go to a message of its own conversation (prompts.ts orphanTarget).
+// The name the owner reads for a conversation: its own name when set, else the target it was opened for.
+const convLabel = (target: string) => convs.forTarget(target)?.meta.name || convs.forTarget(target)?.primary || target;
 function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => ReturnType<typeof createBgWork> | undefined) {
 	return createPrompts({
 		deliver: o.deliver,
@@ -81,6 +83,12 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		},
 		joinNote: w => msg().joinWorker(w.id, w.description),
 		hasJoinNote: text => text.split("\n").some(line => isNote(line, "joinLead")),
+		// The session's workers as bgwork lists them (read only at delivery and turn end): another conversation's running worker must
+		// not answer through this conversation's turn, and one that finished elsewhere gets its own request asked again.
+		work: () => (bg()?.list() ?? []).map(w => ({ id: w.id, description: w.description, status: w.status, ...(w.target ? { target: w.target } : {}), ...(w.reply_to ? { replyTo: w.reply_to } : {}), startedAt: w.started_at, ...(w.ended_at !== undefined ? { endedAt: w.ended_at } : {}) })),
+		foreignNote: (w, target) => msg().otherWorker(w.id, convLabel(target), w.replyTo),
+		hasForeignNote: text => text.split("\n").some(line => isNote(line, "otherConvLead")),
+		readElsewhereNote: (w, readIn) => msg().workReadElsewhere(w.id, convLabel(w.target ?? readIn), convLabel(readIn)),
 		cardsNote: target => cardsNoteFor(target),
 		hasCardsNote: text => text.startsWith(CARDS_LEAD) || text.includes(`\n${CARDS_LEAD}`),
 		clearProgress: target => void discord.clearProgress(target),
