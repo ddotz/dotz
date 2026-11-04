@@ -7,7 +7,7 @@
   const model = { provider: "dotz", selector: MODEL, name: "dotz AI", family: "dotz AI", reasoning: true, thinking: [] };
   // The times of the two open questions: the notice's decision.reply_to must equal its asking message's ts.
   const T_ASK2 = ago(20), T_ASKM1 = ago(40);
-  const la = { name: "site-check", title: "랜딩 페이지 점검", status: "idle", live: true, home: "ch:1", model: MODEL, startedAt: ago(58), lastText: "배포 전 점검 목록을 정리했어요" };
+  const la = { name: "랜딩-점검", title: "랜딩 페이지 점검", status: "idle", live: true, home: "ch:1", model: MODEL, startedAt: ago(58), lastText: "배포 전 점검 목록을 정리했어요" };
 
   // 메일: received (dir "in") and sent (dir "out"). Addresses are on the reserved example.* domains.
   const CAN = ["read", "unread", "archive", "unarchive", "star", "unstar", "trash"];
@@ -125,9 +125,9 @@
         text: "[ask] 배포 공지를 어떤 형태로 정리할까요?\n\n결정: 공지 형태\n1) 짧은 공지 ← 추천\n한 문단으로 핵심만 전해요\n2) 목록 공지\n바뀐 항목을 순서대로 적어요\n3) 공지 없이 배포\n릴리스 노트만 남겨요",
       },
     ],
-    "lane:site-check": [
-      { ts: ago(58), kind: "out", source: "lane:site-check", lane: "site-check", target: "lane:site-check", text: "점검을 시작했어요. 문구, 링크, 모바일 세 가지를 봐요." },
-      { ts: ago(57), kind: "lane_report", source: "lane:site-check", lane: "site-check", target: "lane:site-check", text: "[done] 배포 전 점검 목록을 정리했어요.\n\n- 문구: 확인\n- 링크: 확인\n- 모바일: 확인" },
+    "lane:랜딩-점검": [
+      { ts: ago(58), kind: "out", source: "lane:랜딩-점검", lane: "랜딩-점검", target: "lane:랜딩-점검", text: "점검을 시작했어요. 문구, 링크, 모바일 세 가지를 봐요." },
+      { ts: ago(57), kind: "lane_report", source: "lane:랜딩-점검", lane: "랜딩-점검", target: "lane:랜딩-점검", text: "[done] 배포 전 점검 목록을 정리했어요.\n\n- 문구: 확인\n- 링크: 확인\n- 모바일: 확인" },
     ],
   };
   for (const m of mails) histories[`mail:${m.key}`] = [mailEvent(m)];
@@ -141,7 +141,7 @@
     orchestrator: { status: "idle", model: MODEL },
     lanes: [la],
     terminals: {},
-    channels: { work: { "1": "랜딩 페이지", "2": "릴리스 노트" }, homes: { "site-check": "1" }, lanes: {}, threads: {} },
+    channels: { work: { "1": "랜딩 페이지", "2": "릴리스 노트" }, homes: { "랜딩-점검": "1" }, lanes: {}, threads: {} },
     discord: {},
     notices_unread: 3,
     work: [
@@ -161,7 +161,7 @@
     { target: "worklog", last: { ts: ago(61), text: "아침 브리핑을 보냈어요.", from: "bot" }, unread: 0, read: ago(61) },
     { target: "ch:1", last: { ts: ago(29), text: "배포 전 점검 목록이에요", from: "bot" }, unread: 0, read: ago(29) },
     { target: "ch:2", last: { ts: ago(20), text: "배포 공지를 어떤 형태로 정리할까요?", from: "bot" }, unread: 1, read: ago(189) },
-    { target: "lane:site-check", last: { ts: ago(57), text: "배포 전 점검 목록을 정리했어요", from: "session" }, unread: 0, read: ago(57) },
+    { target: "lane:랜딩-점검", last: { ts: ago(57), text: "배포 전 점검 목록을 정리했어요", from: "session" }, unread: 0, read: ago(57) },
     ...mails.map(m => ({ target: `mail:${m.key}`, last: { ts: m.at, text: m.subject, from: m.dir === "out" ? "owner" : "bot" }, unread: m.read ? 0 : 1, read: m.read ? m.at : null, mail: mailCard(m) })),
   ];
 
@@ -219,13 +219,13 @@
       key: "ch:1", name: "랜딩 페이지", pinned: true, recordKey: "ch:1",
       channel: { id: "1", name: "랜딩 페이지" },
       record: { title: "랜딩 페이지", purpose: "첫 화면 문구와 배포 전 점검", updated: ago(29), milestones: [{ text: "문구 확정", done: true }, { text: "링크 점검", done: true }, { text: "모바일 점검", done: false }] },
-      lanes: [{ name: "site-check", title: "랜딩 페이지 점검", live: true, status: "idle", home: "ch:1", startedAt: ago(58) }],
+      lanes: [{ name: "랜딩-점검", title: "랜딩 페이지 점검", live: true, status: "idle", home: "ch:1", startedAt: ago(58) }],
       work: [
         { id: "w-1", status: "running", description: "모바일 화면 캡처 모으기", started_at: now - 7 * 60_000 },
         { id: "w-2", status: "done", description: "링크 40개 점검", started_at: now - 95 * 60_000, ended_at: now - 80 * 60_000 },
       ],
       results: [
-        { kind: "report", title: "링크 40개 중 38개가 열려요. 2개는 주소를 고쳐야 해요", lane: "site-check", verified: true, at: now - 80 * 60_000 },
+        { kind: "report", title: "링크 40개 중 38개가 열려요. 2개는 주소를 고쳐야 해요", lane: "랜딩-점검", verified: true, at: now - 80 * 60_000 },
         { kind: "commit", title: "문구 확정본 반영", hash: "a3f9c21", at: now - 26 * 3600_000 },
       ],
       monitors: [{ id: "price-page", name: "가격 페이지 변경", on: "change", every_minutes: 30, lastRun: ago(18), lastOk: true, fails: 0, nextAt: new Date(now + 12 * 60_000).toISOString(), script: "watch/price-page.sh" }],
@@ -235,21 +235,28 @@
       key: "ch:2", name: "릴리스 노트", pinned: false, recordKey: "ch:2",
       channel: { id: "2", name: "릴리스 노트" },
       record: { title: "릴리스 노트", purpose: "이번 주 변경 사항 정리", updated: ago(20), milestones: [{ text: "항목 정리", done: true }, { text: "배포 공지", done: false }] },
-      lanes: [{ name: "notes-draft", title: "배포 공지 초안", live: true, status: "idle", waiting: true, home: "ch:2", startedAt: ago(40) }],
-      work: [], results: [], monitors: [], summary: { lastActivity: ago(20) },
+      lanes: [{ name: "공지-초안", title: "배포 공지 초안", live: true, status: "idle", waiting: true, home: "ch:2", startedAt: ago(40) }],
+      work: [{ id: "w-n1", status: "done", description: "이번 주 변경 사항 모으기", started_at: now - 200 * 60_000, ended_at: now - 189 * 60_000 }],
+      results: [{ kind: "report", title: "릴리스 노트 초안을 정리했어요", lane: "공지-초안", verified: true, at: now - 189 * 60_000 }],
+      monitors: [{ id: "release-page", name: "릴리스 페이지 변경", on: "change", every_minutes: 60, lastRun: ago(25), lastOk: true, fails: 0, nextAt: new Date(now + 35 * 60_000).toISOString(), script: "watch/release-page.sh" }], summary: { lastActivity: ago(20) },
     },
     {
       key: "ch:3", name: "가격 조사", pinned: false, recordKey: "ch:3",
       channel: { id: "3", name: "가격 조사" },
       record: { title: "가격 조사", purpose: "경쟁 서비스 요금표 비교", updated: ago(3), milestones: [{ text: "요금표 모으기", done: true }, { text: "비교표 정리", done: false }, { text: "추천안 작성", done: false }] },
-      lanes: [{ name: "price-research", title: "경쟁 서비스 가격 조사", live: true, status: "working", home: "ch:3", startedAt: ago(14), lastReportAt: ago(3) }],
-      work: [], results: [], monitors: [], summary: { lastActivity: ago(3) },
+      lanes: [{ name: "가격-조사", title: "경쟁 서비스 가격 조사", live: true, status: "working", home: "ch:3", startedAt: ago(14), lastReportAt: ago(3) }],
+      work: [{ id: "w-p1", status: "running", description: "요금제별 비교표 만들기", started_at: now - 4 * 60_000 }, { id: "w-p2", status: "done", description: "요금표 세 곳 모으기", started_at: now - 14 * 60_000, ended_at: now - 6 * 60_000 }],
+      results: [{ kind: "report", title: "요금표 세 곳을 모았어요", lane: "가격-조사", verified: false, at: now - 6 * 60_000 }],
+      monitors: [{ id: "camp-chair", name: "경쟁 서비스 요금 변경", on: "change", every_minutes: 180, lastRun: ago(40), lastOk: true, fails: 0, nextAt: new Date(now + 140 * 60_000).toISOString(), script: "watch/price.sh" }], summary: { lastActivity: ago(3) },
     },
     {
       key: "ch:4", name: "주간 보고서", pinned: false, recordKey: "ch:4",
       channel: { id: "4", name: "주간 보고서" },
       record: { title: "주간 보고서", purpose: "매주 금요일 정리", updated: ago(1500), milestones: [{ text: "초안", done: true }, { text: "발송", done: true }] },
-      lanes: [], work: [], results: [], monitors: [], summary: { lastActivity: ago(1500) },
+      lanes: [{ name: "주간-정리", title: "이번 주 보고서 정리", live: false, status: "done", home: "ch:4", startedAt: ago(1560), finishedAt: ago(1500) }],
+      work: [{ id: "w-r1", status: "done", description: "이번 주 한 일 모으기", started_at: now - 1560 * 60_000, ended_at: now - 1500 * 60_000 }],
+      results: [{ kind: "report", title: "주간 보고서를 보냈어요", lane: "주간-정리", verified: true, at: now - 1500 * 60_000 }],
+      monitors: [{ id: "weekly", name: "금요일 정리 알림", on: "change", every_minutes: 1440, lastRun: ago(1500), lastOk: true, fails: 0, nextAt: new Date(now + 1200 * 60_000).toISOString(), script: "watch/weekly.sh" }], summary: { lastActivity: ago(1500) },
     },
   ];
 
