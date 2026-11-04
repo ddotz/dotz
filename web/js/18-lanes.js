@@ -17,11 +17,25 @@ function laneToolLabel(a) {
 // A session's last report or answer (not a progress note), from the conversation events this page has seen.
 const isLaneReport = e => e.kind === "lane_report" || (e.kind === "out" && !e.update_key && typeof e.source === "string" && e.source.startsWith("lane:"));
 const laneReport = name => ts(`lane:${name}`).msgs.findLast(isLaneReport) || null;
+// A finished session's result: its report nearest to `at` (a report row's time is the lane's, a moment before the event), else its last one; with none, the end of its conversation and the jump's toast.
+async function laneResultGo(name, at) {
+  pmSheetsClose();
+  const t = `lane:${name}`, want = Date.parse(at || "");
+  if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t).catch(() => {});
+  if (want) await ntReach(t, at);
+  const gap = e => Math.abs(Date.parse(e.ts) - want), reps = ts(t).msgs.filter(isLaneReport);
+  const rep = want ? reps.reduce((best, e) => (!best || gap(e) < gap(best) ? e : best), null) : reps.at(-1);
+  ntJump({ src: t, at: rep ? rep.ts : at || new Date().toISOString() });
+}
 const openLaneChat = name => { setTarget(`lane:${name}`); go("chat"); };
 // The main assistant's background work (S.work): running first, then what ended in the last hour.
-// Tap: the conversation that asked for the work (its waiting message, flashed). Message unknown or not drawn: the work's own detail, never another message.
-async function workGo(w) {
-  const t = w.target && validTarget(w.target) ? w.target : MAIN;
+// Tap on finished work: the message holding its result (hub/bgwork.ts result_at), flashed; with none, the conversation at the time it ended and the jump's short toast.
+// Tap on work still going: the conversation that asked for it (its waiting message, flashed). Message unknown or not drawn: the work's own detail, never another message.
+async function workGo(row) {
+  pmSheetsClose();
+  const w = ((S && S.work) || []).find(x => x.id === row.id) || row, t = w.target && validTarget(w.target) ? w.target : MAIN;   // the row may be older than the answer
+  if (w.result_at) return ntJump({ src: w.result_conv || t, at: w.result_at });
+  if ((w.status === "done" || w.status === "failed") && !workRecovering(w) && w.ended_at) return ntJump({ src: t, at: new Date(w.ended_at).toISOString() });
   // Work for a monitor's / app's settings chat or a project is that conversation's: with the message unknown the row still opens it, never the worker sheet.
   const fallback = () => t === MAIN ? openSub("orchestrator", w.id, null, w.description) : ntGo(t);
   if (!w.reply_to) return fallback();
@@ -156,7 +170,7 @@ function sessionStatus(l) {
 function sessionRow(l, o = {}) {
   const proj = o.project !== undefined ? o.project : laneProject(l), [word, tone] = o.word ? [o.word, o.tone || ""] : sessionStatus(l), name = l.title || l.name, t = `lane:${l.name}`;
   const subs = SUBS[t] || [], done = subs.filter(s => s.status !== "running").length;
-  return el("button", { class: "hr srow", type: "button", "data-t": t, onclick: () => openTarget(t, lastChatView()), "aria-label": `${name} · ${proj ? `프로젝트 ${proj}` : "프로젝트 없음"} · ${word} · 대화 열기` },
+  return el("button", { class: "hr srow", type: "button", "data-t": t, onclick: o.open || (() => openTarget(t, lastChatView())), "aria-label": `${name} · ${proj ? `프로젝트 ${proj}` : "프로젝트 없음"} · ${word} · 대화 열기` },
     el("span", { class: `dot ${tone === "warn" ? "att" : tone === "pri" ? "pri" : statusTone(l.status)}` }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: name })),
       el("span", { class: "ha" }, el("span", { class: `sproj${proj ? "" : " none"}`, text: proj || "프로젝트 없음" }), o.line ? el("span", { class: "sline", text: o.line }) : null, o.extra || null)),
