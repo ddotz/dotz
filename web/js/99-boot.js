@@ -6,15 +6,18 @@
   // loading while the gateway did not answer, and the load event (the service worker's registration waits on it) never came. It catches up on the open view.
   const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "/custom.js" }));
   if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
-  const h = parseHash();
+  let h = parseHash();
+  if (pushOpenTs && !pushOpenNid && h.view === "chat" && h.t === "alert") h = { view: "notices", t: "" };   // an alert push without a notice opens the 알림 screen, drawn first
   go(h.view || "home", h.t);
   if (pushOpenTs && h.view === "chat") CV.jump = pushOpenTs;   // the first draw lands on the tapped message (chatOpen); 30-notices.js pushOpen finishes by its kind
   // The first paint needs the history and the plan, not the state: ask for all of them at once instead of state first (the state
   // is the biggest answer and nothing the conversation draws waits for it; a lane that is gone is switched away from inside refreshState).
   const state = refreshState();
-  snapSeed(target).then(seeded => loadTarget(target, seeded)); loadTodo(target); prjLoad().then(() => renderBars(), () => {});
+  // #notices needs the state and the notices (asked for in index.html), not the main chat: go() loads a conversation when it is first opened.
+  if (h.view !== "notices") { snapSeed(target).then(seeded => loadTarget(target, seeded)); loadTodo(target); }
+  prjLoad().then(() => renderBars(), () => {});
   // 알림 and 작업내역 sit one tap away and their answers are small: read ahead once the page has settled, so their first opening has something to show.
-  setTimeout(() => { for (const t of ["alert", "worklog"]) if (t !== target && !ts(t).hLoaded) loadTarget(t, true).catch(() => {}); }, 1500);
+  if (h.view !== "notices") setTimeout(() => { for (const t of ["worklog"]) if (t !== target && !ts(t).hLoaded) loadTarget(t, true).catch(() => {}); }, 1500);
   await state;
   if (pushOpenTs) { const at = pushOpenTs; pushOpenTs = ""; pushOpen(location.hash, at, pushOpenNid); }   // the app was started by a tap on a push
   loadModels(true);

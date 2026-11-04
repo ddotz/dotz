@@ -103,10 +103,11 @@ const snapTx = (fn) => new Promise((res, rej) => {
   q.onerror = () => rej(q.error);
   q.onsuccess = () => { const tx = q.result.transaction("conv", "readwrite"); fn(tx.objectStore("conv")); tx.oncomplete = () => { q.result.close(); res(); }; tx.onerror = () => rej(tx.error); };
 });
-async function warmConv(url) {
+async function warmConv(url, nid) {
   const hash = new URL(url || "/", location.origin).hash, at = hash.match(/^#chat\/(.+)$/);
   if (!at || typeof indexedDB === "undefined") return;
   const t = decodeURIComponent(at[1]);
+  if (t === "alert" && !nid) return;   // an alert push without a notice opens the 알림 screen, not this conversation
   if (t.startsWith("mail:")) return;   // 13-snapshot.js snapOk: mail stays off the device
   const r = await fetch(`/api/history?target=${encodeURIComponent(t)}&limit=${WARM_MSGS}`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
   if (r.status === 403 && r.headers.get("x-dotz-pair")) return new Promise(res => { const q = indexedDB.deleteDatabase("dotz-snap"); q.onsuccess = q.onerror = q.onblocked = res; });
@@ -146,7 +147,7 @@ self.addEventListener("push", ev => {
     data: { url: m.url || "/", ts: m.id ? "" : m.ts || "", id: m.id || "", nid: m.nid || "", pc: m.pc || "" },
   });
   // The app is usually closed when a push lands: its conversation is read now, so the tap paints the very message without the network (web/js/13-snapshot.js).
-  if (!m.pc && m.kind !== "test") ev.waitUntil(warmConv(m.url).catch(() => {}));
+  if (!m.pc && m.kind !== "test") ev.waitUntil(warmConv(m.url, m.nid).catch(() => {}));
   ev.waitUntil((async () => {
     const wins = m.pc ? [] : await self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => []);
     if (!pushSuppressed(wins, m.url, location.origin)) return show();
