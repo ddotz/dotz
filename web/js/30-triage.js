@@ -25,7 +25,6 @@ const trSoon = () => { clearTimeout(TR.t); TR.t = setTimeout(trLoad, 300); };
 const trBig = () => TR.groups.filter(g => g.count >= TR.min);
 // Key "*" = the review queue: every waiting draft of every comment app and mail app in one walk.
 const trCards = key => (key === "*" ? TR.groups.flatMap(g => g.cards) : (TR.groups.find(x => x.key === key) || { cards: [] }).cards);
-const trTotal = () => TR.groups.reduce((n, g) => n + g.count, 0);
 const trKst = at => new Date(at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" });
 /** The group a waiting card is in, when it is one the triage view takes (big enough). */
 const trGroupFor = ref => trBig().find(g => g.cards.some(c => c.ref === ref));
