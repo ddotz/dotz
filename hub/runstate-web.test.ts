@@ -160,6 +160,14 @@ test("a usage limit says until when and offers 지금 다시 시도", async () =
 	expect(resumed).toBe(1);
 }, 20_000);
 
+test("a pause whose time has passed moves on to work resuming by itself, with no event from the gateway", async () => {
+	const v = await boot();
+	const was = new Date(Date.now() - 1000).toISOString();
+	await show(v, { kind: "limited", reason: "rate", since: ts(1), detail: was }, { status: "rate-limited", pauseKind: "rate", rateLimitedUntil: was });
+	RUN = { kind: "working", detail: "한도가 풀려서 작업을 이어가요" };
+	await waitFor(v, `document.querySelector("#runstate-tx").textContent.startsWith("작업 중 · 한도가 풀려서 작업을 이어가요")`);
+}, 20_000);
+
 test("a stopped turn on an error says the plain reason and offers 다시 시도", async () => {
 	const v = await boot();
 	const r = await show(v, { kind: "error", since: ts(9), detail: "네트워크 연결이 계속 끊겨요" }, { status: "idle", error: { text: "네트워크 연결이 계속 끊겨요", since: ts(9) } });

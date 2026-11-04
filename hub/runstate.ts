@@ -34,6 +34,10 @@ export type RunInput = {
 	compacting?: boolean;
 	/** Owner prompts handed to the session that no turn has started on yet (orchestrator heldCount): it is about to work, not resting. */
 	queued?: number;
+	/** The usage limit lifted and the held work was handed back; no turn has started on it yet. */
+	resuming?: boolean;
+	/** The last turn ended on an error with no answer after it (lastTurnFailed): it did not finish, whatever ended it. */
+	turnFailed?: boolean;
 	now: number;
 };
 
@@ -56,6 +60,7 @@ export function runState(i: RunInput): RunState {
 	if (i.compacting) return { kind: "working", detail: "대화 정리 중", ...todos };
 	// A resumed session is idle from its session event until its first turn starts (someone 2026-11-03 08:30-08:33Z: 170 s under load,
 	// the line said 쉬는 중 and she asked "왜 쉬는중이야?"); a message it holds is work about to start.
+	if (i.resuming) return { kind: "working", detail: "한도가 풀려서 작업을 이어가요", ...todos };
 	if (i.queued) return { kind: "working", detail: "받은 메시지 시작하는 중", ...todos };
 	if (short(i.ask?.text)) return { kind: "waiting", reason: "ask", since: i.ask?.at, detail: short(i.ask?.text), ...todos };
 	const w = (i.work || [])[0];
@@ -72,6 +77,8 @@ export function runState(i: RunInput): RunState {
 	// A turn that ended promising work it did not start (2026-11-01 15:20Z) is unfinished even with no plan: the session rested 25
 	// minutes and answered "아직 시작 안 했어".
 	if (i.lastTurnEnd && promisesWork(i.lastAnswer)) return { kind: "idle", reason: "unfinished", since: i.lastTurnEnd, detail: "말한 일을 아직 안 했어요" };
+	// A turn that died on an error ended, but nothing was finished: 끝났어요 under "오류 4" told the owner the opposite (owner 2026-11-04).
+	if (i.lastTurnEnd && i.turnFailed) return { kind: "error", since: i.lastTurnEnd, detail: "답을 끝내지 못했어요" };
 	if (i.lastTurnEnd) return { kind: "done", since: i.lastTurnEnd };
 	return { kind: "idle" };
 }
@@ -191,7 +198,7 @@ export function workConversationRuns(works: readonly WorkLike[], conversationOf:
 	return out;
 }
 
-type Act = { ts?: string; type?: string; intent?: string; text?: string };
+type Act = { ts?: string; type?: string; intent?: string; text?: string; is_error?: boolean };
 
 // dotz's own tools said in the owner's language: a bare tool id never reaches a status line (owner 2026-11-03: the running line said
 // "dotz_lane"). A tool without a word here gives no line at all, so no command name is shown.
@@ -219,6 +226,17 @@ export function runIntent(items: Act[]): string | undefined {
 		return t;
 	}
 	return undefined;
+}
+
+/** Whether the newest turn stopped on an error: a failed step the agent answered after is an ordinary turn. */
+export function lastTurnFailed(items: Act[]): boolean {
+	for (let i = items.length - 1; i >= 0; i--) {
+		const a = items[i]!;
+		if (a.type === "turn_start") return false;
+		if (a.type === "text" && String(a.text ?? "").trim()) return false;
+		if (a.type === "error" || (a.type === "tool_result" && a.is_error)) return true;
+	}
+	return false;
 }
 
 export function lastTurnEnd(items: Act[]): string | undefined {
