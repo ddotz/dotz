@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { broadcast, emit, emitDelivery, historyEvents, lastEventId, recentEvents, replayAfter, workAnswer } from "./events.ts";
+import { broadcast, emit, emitDelivery, historyEvents, historyPage, lastEventId, recentEvents, replayAfter, workAnswer } from "./events.ts";
 
 test("a reconnect replays exactly the frames after the last seen id", () => {
 	const seen = lastEventId();
@@ -51,4 +51,19 @@ test("a worker's result is the answer to its request, else the first real answer
 	out(6, "ch:9", { reply_to: "m-1" });
 	expect(workAnswer(w)).toEqual({ at: at(6), conv: "ch:9", exact: true });
 	expect(workAnswer({ target: "web", ended_at: base + 1000 })).toEqual({ at: at(4), conv: "main", exact: true });
+});
+
+test("a page around a message is centred on it, tells its neighbours, and a message the history lacks finds nothing", () => {
+	const t = "lane:page-a", at = (i: number) => new Date(Date.UTC(2050, 4, 1, 0, 0, i)).toISOString();
+	for (let i = 0; i < 20; i++) emit("outbox", { ts: at(i), kind: "out", source: "orchestrator", target: t, text: `m${i}`, ...(i === 10 ? { mid: "wanted" } : {}) });
+	const page = historyPage(t, 6, { around: "wanted" });
+	expect(page.at).toBe(at(10));
+	expect(page.events.map(e => e.text)).toEqual(["m7", "m8", "m9", "m10", "m11", "m12"]);
+	expect([page.prev, page.next]).toEqual([at(6), at(13)]);
+	expect(historyPage(t, 6, { around: at(1) }).prev).toBeUndefined();
+	expect(historyPage(t, 6, { around: "gone" })).toEqual({ events: [] });
+	const after = historyPage(t, 3, { after: at(15) });
+	expect(after.events.map(e => e.text)).toEqual(["m16", "m17", "m18"]);
+	expect(after.next).toBe(at(19));
+	expect(historyPage(t, 3, { after: at(19) }).events).toEqual([]);
 });

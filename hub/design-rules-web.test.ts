@@ -50,7 +50,7 @@ const COLOR_ALLOWED = new Set([
 // Literal times with no token to match: highlights of over a second, delays that wait for a close, and two sheet openings between tokens.
 const DURATION_ALLOWED = new Set([
 	"09-notices.css .nt-hl::after", "14-overlay.css .menu.msheet", "14-overlay.css dialog.pal[open]::backdrop", "15-draft-original.css .od-orig[inert]",
-	"15-draft-original.css .od-cwrap .od-orig[inert]", "15-draft-original.css .od-draftcol[inert], .od-cwrap .kk-draft[inert]", "15-reply.css [data-rid].rp-flash",
+	"15-draft-original.css .od-cwrap .od-orig[inert]", "15-draft-original.css .od-draftcol[inert], .od-cwrap .kk-draft[inert]",
 	"17-kakao.css .kk-m.kk-hl .kk-bub, .kk-m.kk-hl .kk-media, .kk-m.kk-hl .kk-sticker",
 ]);
 // [px font-sizes, px radii] per file: a ceiling, too many entries to name one by one.

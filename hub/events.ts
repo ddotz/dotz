@@ -276,8 +276,7 @@ export function sentFiles(): ReadonlySet<string> {
 	return found;
 }
 
-// `before` (an ISO ts) pages backwards: the newest `limit` events older than it.
-export function historyEvents(target: string, limit: number, before?: string): HubEvent[] {
+function conversationEvents(target: string, before?: string): HubEvent[] {
 	let all = [...tailEvents(paths.inbox), ...tailEvents(paths.outbox)].filter(e => typeof e.ts === "string" && eventTarget(e) === target && (!before || e.ts < before));
 	all.sort((a, b) => a.ts.localeCompare(b.ts));
 	// A post edited in place (update_key, e.g. a lane's worklog line) shows once, as its newest version.
@@ -286,7 +285,22 @@ export function historyEvents(target: string, limit: number, before?: string): H
 		for (const e of all) if (e.kind === "out" && typeof e.update_key === "string" && e.update_key) last.set(e.update_key, e);
 		all = all.filter(e => !(e.kind === "out" && typeof e.update_key === "string" && e.update_key) || last.get(e.update_key) === e);
 	}
-	return all.slice(-limit);
+	return all;
+}
+// `before` (an ISO ts) pages backwards: the newest `limit` events older than it.
+export function historyEvents(target: string, limit: number, before?: string): HubEvent[] {
+	return conversationEvents(target, before).slice(-limit);
+}
+// A page that need not touch what the page already has: `around` centres it on one message (its mid, message_id or ts), `after` starts it past a ts.
+// `at` is the ts of the `around` message (no `at`: the window of history does not hold it), `prev` and `next` the ts just outside the page, absent at
+// an end of the conversation, so the web can tell whether the page meets what it has (web/js/13-data.js chatMerge).
+export function historyPage(target: string, limit: number, where: { around: string } | { after: string }): { events: HubEvent[]; at?: string; prev?: string; next?: string } {
+	const all = conversationEvents(target);
+	const hit = "around" in where ? all.findIndex(e => e.mid === where.around || e.message_id === where.around || e.ts === where.around) : -1;
+	if ("around" in where && hit < 0) return { events: [] };
+	const after = "after" in where ? all.findIndex(e => e.ts > where.after) : -1;
+	const lo = "around" in where ? Math.max(0, hit - (limit >> 1)) : after < 0 ? all.length : after;
+	return { events: all.slice(lo, lo + limit), at: all[hit]?.ts, prev: all[lo - 1]?.ts, next: all[lo + limit]?.ts };
 }
 
 export function sseResponse(lastId?: string | null): Response {

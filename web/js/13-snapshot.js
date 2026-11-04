@@ -21,8 +21,8 @@ async function snapSave(t) {
     const db = await snapDb();
     const mru = [t, ...JSON.parse(localStorage.getItem(SNAP_MRU) || "[]").filter(k => k !== t)];
     localStorage.setItem(SNAP_MRU, JSON.stringify(mru.slice(0, SNAP_KEEP)));
-    const os = db.transaction("conv", "readwrite").objectStore("conv");
-    os.put({ v: 1, t, at: Date.now(), msgs: s.msgs.filter(e => e.source !== "local").slice(-SNAP_MSGS), acts: s.acts.slice(-SNAP_ACTS), hmore: s.hmore || s.msgs.length > SNAP_MSGS, amore: s.amore || s.acts.length > SNAP_ACTS, ahist: s.ahist, todo: TD.by[t], read: READ[t] || "" }, t);
+    const os = db.transaction("conv", "readwrite").objectStore("conv"), gap = [...s.gaps].sort().at(-1) || "";   // only the newest stretch: a record has no gaps
+    os.put({ v: 1, t, at: Date.now(), msgs: s.msgs.filter(e => e.source !== "local" && e.ts > gap).slice(-SNAP_MSGS), acts: s.acts.slice(-SNAP_ACTS), hmore: s.hmore || !!gap || s.msgs.length > SNAP_MSGS, amore: s.amore || s.acts.length > SNAP_ACTS, ahist: s.ahist, todo: TD.by[t], read: READ[t] || "" }, t);
     for (const k of await snapDone(os.getAllKeys())) if (!mru.slice(0, SNAP_KEEP).includes(k)) os.delete(k);
     db.close();
   } catch (e) { console.warn("snapshot", e); }
