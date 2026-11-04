@@ -24,6 +24,9 @@ const MAILS = [
 	{ key: "fx-3", subject: "3주 차 점검", at: at(100), summary: "요약\n셋째 주 점검이 끝났어요." },
 	{ key: "fx-4", subject: "월간 점검 보고서", at: at(0), summary: "요약\n이번 달 점검이 끝났어요. 금요일까지 확인이 필요해요." },
 	{ key: "fx-9", subject: "다른 사람의 메일", at: at(50), summary: "요약\n다른 사람이 보냈어요.", from: "Other <other@example.com>", to: "나 <me@example.com>" },
+	// Live shape: the hub summarizes after the mail is posted, so the summary is on the list's record only and the mail event's text has none.
+	{ key: "fx-live", live: true, subject: "견적 회신 요청", at: at(60), summary: "견적서를 보냈다는 메일이에요.\n**금요일까지 회신**해 주세요.", from: "Live <live@example.com>", to: "나 <me@example.com>", body: "안녕하세요. 견적서를 첨부합니다." },
+	{ key: "fx-same", live: true, subject: "본문이 요약인 메일", at: at(70), summary: "본문 첫 줄이에요.", from: "Same <same@example.com>", to: "나 <me@example.com>", body: "본문 첫 줄이에요. 뒤에 더 있어요." },
 	// Sent mail: one to the same person (in the thread), one to someone else with the open mail's subject (not in it: same subject is not same person).
 	{ key: "fx-7", subject: "점검 결과 회신", at: at(400), summary: "요약\n내가 회신했어요.", from: "나 <me@example.com>", to: "Alex Sender <sender@example.com>", dir: "out" },
 	{ key: "fx-8", subject: "월간 점검 보고서", at: at(450), summary: "요약\n다른 사람에게 보냈어요.", from: "나 <me@example.com>", to: "Third <third@example.com>", dir: "out" },
@@ -49,7 +52,7 @@ const server = Bun.serve({
 			const m = MAILS.find(x => `mail:${x.key}` === t);
 			if (!m) return json({ target: t, events: [] });
 			const c = card(m);
-			return json({ target: t, events: [{ ts: m.at, kind: "mail", source: "fx", channel: t, conv: t, mail: m.key, subject: m.subject, from: c.from, to: c.to, cc: c.cc, html: !!c.html, text: `${c.from} · ${m.subject}\n\n${m.summary}\n\n원문\n점검 결과입니다.` }] });
+			return json({ target: t, events: [{ ts: m.at, kind: "mail", source: "fx", channel: t, conv: t, mail: m.key, subject: m.subject, from: c.from, to: c.to, cc: c.cc, html: !!c.html, text: m.live ? `${c.from} · ${m.subject}\n\n원문\n${m.body}` : `${c.from} · ${m.subject}\n\n${m.summary}\n\n원문\n점검 결과입니다.`, ...(m.live ? { preview: m.body } : {}) }] });
 		}
 		const body = /^\/api\/mail\/([a-z0-9._-]+)\/body$/.exec(url.pathname);
 		if (body) return new Response(BODY, { headers: { "content-type": "text/html; charset=utf-8" } });
@@ -253,6 +256,15 @@ test("a sender or recipient given by name only is shown by name, and the body's 
 	expect(got.files[1]).toStartWith("견적서.pdf");
 	expect(got.files[1]).toContain("/api/mail/fx-1/files/1");
 	expect(got.none).toBe(null);
+}, 30_000);
+
+test("an opened mail whose summary is only on its record (the live shape) draws the block under the recipients, and a summary that is its own body does not", async () => {
+	const v = await openPage(1280, "monitoring/i:mail");
+	await openMail(v, "fx-live");
+	const live = await ev(v, `(() => { const b = document.querySelector("#tl .mopen .msum"); return { text: b && b.textContent, bold: b ? [...b.querySelectorAll("b")].map(x => x.textContent) : [], secs: document.querySelectorAll("#tl .mopen > .rc-sec").length, order: b && !!(b.nextElementSibling || {}).matches && b.nextElementSibling.matches(".rc-raw") }; })()`);
+	expect(live).toEqual({ text: "요약 · 견적서를 보냈다는 메일이에요. 금요일까지 회신해 주세요.", bold: ["금요일까지 회신"], secs: 0, order: true });
+	await openMail(v, "fx-same");
+	expect(await ev(v, `({ sum: document.querySelectorAll("#tl .mopen .msum").length, secs: document.querySelectorAll("#tl .mopen > .rc-sec").length })`)).toEqual({ sum: 0, secs: 0 });
 }, 30_000);
 
 test("the opened mail's summary: two sentences with the to-do in bold, an older one-line or sectioned summary still draws, and a mail's text is never parsed as HTML", async () => {
