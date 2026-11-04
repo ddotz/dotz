@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { hasDecisionHead, parseChoices, parseDecisions } from "./choices.ts";
+import { decisionText, hasDecisionHead, parseChoices, parseDecisions } from "./choices.ts";
 
 test("parses the MODE choice block with a recommended option", () => {
 	const text = "[ask] 게이트웨이 시작 설정\n\n결정: 시작 설정\n**1) 지금 고치기** ← 추천\n재부팅 뒤에도 켜져요\n**2) 그대로 두기**\n다음 재부팅까지는 괜찮아요";
@@ -53,4 +53,10 @@ test("numbered decision heads (결정 1: / 결정 2:) are decisions, each its ow
 	]);
 	expect(hasDecisionHead(r.blocks)).toBe(true);
 	expect(parseDecisions("결정 답: 기차 → 1) KTX\n1) a\n2) b").blocks.every(b => !b.headed)).toBe(true);
+});
+
+test("one decision of several keeps the lead text and its own lines, never the other decisions or the option lines", () => {
+	const body = "[ask] 세 가지예요\n결정: 가\n참고 한 줄\n**1) 하나** ← 추천\n설명\n**2) 둘**\n설명\n\n결정: 나\n**1) 셋**\n설명\n**2) 넷**\n설명\n번호로 답해 주세요";
+	expect(decisionText(body, 0)).toBe("세 가지예요\n\n참고 한 줄");
+	expect(decisionText(body, 1)).toBe("세 가지예요");
 });
