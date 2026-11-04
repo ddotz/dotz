@@ -352,7 +352,7 @@
   addEventListener("hashchange", render);
 
   /* index screen */
-  const GROUPS = ["홈", "채팅", "프로젝트", "모니터링", "메일", "알림", "설정", "기타"];
+  const GROUPS = ["온보딩", "홈", "채팅", "프로젝트", "모니터링", "메일", "알림", "설정", "기타"];
   P.reg({ id: "index", title: "화면 목록", tab: "home", back: "home", group: "기타", desc: "프로토타입의 모든 화면",
     render: () => `<div class="hint">디자인 시안이에요. 실제 제품과 연결돼 있지 않고, 보내기나 저장은 모두 화면 안에서만 일어나요. 화면 ${P.order.length}개.</div><div class="idx-grid" style="margin-top:12px">${GROUPS.map((g) => {
       const rs = P.order.map((id) => P.routes[id]).filter((r) => r.group === g);

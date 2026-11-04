@@ -26,6 +26,8 @@ dotz 웹 앱의 화면과 움직임을 눌러 보며 결정하려고 만든 **�
 - `#notices` 알림: 종에서 여는 독립 화면 (필터 · 다 읽은 목록 · 빈 화면 · 긴 제목 · 반복은 `#notices/…`)
 - `#settings` 설정
 - `#queue` 대기함 시안 (앱을 가리지 않는 한 목록, 실패가 맨 위, 같은 이유의 실패는 한 줄. 상태별로 `#queue/ask` · `#queue/failed` · `#queue/sent` · `#queue/one` · `#queue/fails` · `#queue/empty`, 채팅의 한 줄은 `#queue/chat`, 1건 카드는 `#queue/chat/one`)
+- `#onboard` 웹 온보딩 전체 화면 (단계는 `#onboard/harness` · `tools` · `bot` · `discord` · `web` · `review` · `done`, 값은 새로고침해도 남고 툴바의 "온보딩 처음부터"로 지워요. 닫힌 주소는 `#onboard/expired` · `#onboard/closed`)
+- `#intro` 화면 안내 A안(시트), `#intro/spot` B안(진짜 메뉴를 가리키기)
 - `#form` 카드 추가 새 폼 시안 (실시간 미리보기 · 썸네일 보기 · 더 보기, 찬 상태는 `#form/filled`, 연 상태는 `#form/more`, 설정에 입힌 모습은 `#form/settings`)
 
 ## 문서
@@ -46,4 +48,5 @@ dotz 웹 앱의 화면과 움직임을 눌러 보며 결정하려고 만든 **�
 | `s-work.js` | 홈, 프로젝트, 모니터링, 메일, 답장 확인, 앱, 컴퓨터 |
 | `s-settings.js` | 설정 화면들 |
 | `s-form.js` | 새 폼 시안: 카드 추가, 같은 입력칸을 입힌 설정 폼 |
+| `s-onboard.js`, `onboard.css` | 웹 온보딩과 화면 안내 (설계는 `docs/web-onboarding.md`) |
 | `s-queue.js` | 대기함 시안: 멈춘 답장 한 목록, 실패 묶음, 채팅의 한 줄 |
