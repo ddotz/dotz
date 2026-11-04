@@ -78,7 +78,7 @@ const SPACE_ALLOWED: Record<string, [number, number]> = {
 };
 // The same per script file: literal padding / margin / gap px in strings.
 const SPACE_JS_ALLOWED: Record<string, [number, number]> = {
-	"08-home.js": [0, 0], "19-project-main.js": [1, 0], "21-providers.js": [0, 0], "25-settings-accounts.js": [0, 4],
+	"08-home.js": [0, 0], "19-project-main.js": [1, 0], "21-providers.js": [0, 0], "25-settings-accounts.js": [0, 0],
 	"26-settings-runtime.js": [0, 2], "37-api-budget.js": [0, 1], "custom.js": [28, 85],
 };
 const SPACE_NUDGES = 3;
