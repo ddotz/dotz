@@ -10,7 +10,7 @@ function budgetCard(B) {
     card.append(el("div", { class: "lim" },
       el("div", { class: "kv" }, el("span", { class: "k", text: `${abUsd(B.spent_usd)} / ${abUsd(B.limit_usd)}` }), el("span", { style: "font-weight:500", text: `${Math.round(pct)}% 사용` })),
       el("div", { class: `bar ${tone}`, role: "progressbar", "aria-valuenow": Math.round(Math.min(100, pct)), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct).toFixed(1)}%` })),
-      el("div", { class: "kv", style: "margin-top:4px" }, el("span", { class: "v", text: `${kstStamp(B.resets_at)} 초기화 (KST)` }), el("span", { class: "v", text: rel(B.resets_at) }))));
+      el("div", { class: "kv", style: "margin-top:var(--sp-1)" }, el("span", { class: "v", text: `${kstStamp(B.resets_at)} 초기화 (KST)` }), el("span", { class: "v", text: rel(B.resets_at) }))));
   } else {
     card.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: `이번 달 ${abUsd(B.spent_usd)}` }), el("span", { class: "v", text: "월 한도 없음" })),
       el("div", { class: "sup", text: "콘솔에서 정한 월 한도를 설정에 입력하면 사용 비율을 보여줘요." })));
