@@ -12,43 +12,43 @@
 
 /* 모델 · 폴백: each target is a title and one list: its model and effort as rows with the picker on the right, then the numbered chain */
 #models .mt { gap: 0; }
-#models .mt-top { margin-bottom: 4px; }
+#models .mt-top { margin-bottom: var(--sp-1); }
 #models .mt-card { display: block; padding: 0; background: none; box-shadow: none; }
-#models .mt-head { margin: var(--sp-6) 4px var(--sp-2); gap: 8px; align-items: baseline; }
+#models .mt-head { margin: var(--sp-6) var(--sp-1) var(--sp-2); gap: var(--sp-2); align-items: baseline; }
 #models .mt-head .t { font: 600 var(--fs-sec)/var(--lh-sec) var(--font); color: var(--fg-2); }
 #models .mt-pick { display: block; }
 #models :is(.mt-model, .mt-eff) { max-width: none; padding: var(--row-py) var(--row-px); }
 #models .mt-eff, #models .mt-list > .mt-note, #models .mt-list > .mt-apply, #models .mt-list > .note, #models .mt-list > .mt-fb { border-top: 1px solid var(--line); }
-#models .mt-pick .tf { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
+#models .mt-pick .tf { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--sp-3); }
 #models .mt-pick .tf > .lb { font: 500 var(--fs-row)/var(--lh-row) var(--font); color: var(--fg); }
 #models .mt-pick .sel { flex: none; width: min(60%, 220px); height: var(--ctl-h); min-height: 0; background: var(--layer); font-size: var(--fs-row); }
-#models .mt-list > .mt-note { margin: 0; padding: 8px var(--row-px); }
-#models .mt-list > .note { margin: 0; padding: 8px var(--row-px); }
-#models .mt-apply { margin: 0; padding: 8px var(--row-px); }
+#models .mt-list > .mt-note { margin: 0; padding: var(--sp-2) var(--row-px); }
+#models .mt-list > .note { margin: 0; padding: var(--sp-2) var(--row-px); }
+#models .mt-apply { margin: 0; padding: var(--sp-2) var(--row-px); }
 #models .mt-fb { gap: 0; padding: 0; }
-#models .mt-fb-h { padding: 10px var(--row-px) 6px; }
+#models .mt-fb-h { padding: 10px var(--row-px) var(--sp-15); }
 #models .fb-list { gap: 0; }
 #models .fb-item { border-radius: 0; background: transparent; padding: 10px var(--row-px); border-top: 1px solid var(--line); }
 #models .fb-item[data-i]:hover { background: var(--card-hover); }
 #models .fb-item.in-use { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
 #models .fb-n { width: 20px; height: auto; border-radius: 0; background: none; color: var(--fg-3); font-size: 13px; }
 #models .fb-item.in-use .fb-n { background: none; color: var(--accent); }
-#models .fb-add { margin: 8px var(--row-px); }
+#models .fb-add { margin: var(--sp-2) var(--row-px); }
 #models .fb-add + .fb-add { margin-top: 0; }
-#models .mt-fb > .note { margin: 0; padding: 4px var(--row-px) 12px; }
+#models .mt-fb > .note { margin: 0; padding: var(--sp-1) var(--row-px) var(--sp-3); }
 #models .fbe { margin: 0; border-radius: 0; padding: 14px var(--row-px); }
-#models .mt-use-row { padding: 6px var(--row-px); border-top: 0; }
+#models .mt-use-row { padding: var(--sp-15) var(--row-px); border-top: 0; }
 #models .mt-use-row + .mt-use-row { border-top: 1px solid var(--line); }
 @media (max-width: 639px) { #models .mt-pick .sel { width: min(58%, 200px); } }
 @media (pointer: coarse), (max-width: 639px) { #models .mt-pick .sel { height: var(--field-h-touch); } }
 
 /* 공급자: the usage windows ride under the row, thin */
-#providers .prow-lim { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--fg-2); font-size: 12px; line-height: 16px; }
+#providers .prow-lim { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
 #providers .prow-lim .k { flex: none; min-width: 64px; }
 #providers .prow-lim .bar { flex: 1; max-width: 160px; margin-top: 0; }
 /* 사용량과 월 한도 */
 #usage .lim .kv b { font-weight: 700; }
-#usage .lim .bar { margin-top: 6px; }
-#usage .lim > .sup { margin-top: 4px; }
+#usage .lim .bar { margin-top: var(--sp-15); }
+#usage .lim > .sup { margin-top: var(--sp-1); }
 #usage > .list + :is(.grid, .sec) { margin-top: var(--sp-3); }
-:is(#providers, #messengers, #devices, #webaccess, #usage) > .note { margin: var(--sp-2) 4px 0; }
+:is(#providers, #messengers, #devices, #webaccess, #usage) > .note { margin: var(--sp-2) var(--sp-1) 0; }
