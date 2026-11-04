@@ -25,7 +25,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-function fakeSite(o: { dmFails?: boolean; landed?: boolean } = {}) {
+function fakeSite(o: { dmFails?: boolean; landed?: boolean; crlf?: boolean } = {}) {
 	const calls: { argv: string[]; stdin?: string }[] = [];
 	const room: { id: string; author: string; text: string; at: string; mine?: boolean }[] = [{ id: "m1", author: "Buyer", text: "Is the file updated?", at: iso(NOW - 5000) }];
 	const exec: Exec = async (argv, stdin) => {
@@ -38,7 +38,7 @@ function fakeSite(o: { dmFails?: boolean; landed?: boolean } = {}) {
 		}
 		if (argv[0] === "post-dm") {
 			const body = JSON.parse(stdin!) as { room: string; text: string };
-			if (o.landed !== false) room.push({ id: "m2", author: "me", text: body.text, at: iso(NOW), mine: true });
+			if (o.landed !== false) room.push({ id: "m2", author: "me", text: o.crlf ? body.text.replace(/\n/g, "\r\n") : body.text, at: iso(NOW), mine: true });
 			return out({ ok: true });
 		}
 		return out({ ok: true });
@@ -86,6 +86,16 @@ test("a DM reply goes to the DM hook and is sent only when reading the room back
 		expect(s.calls.at(-1)!.argv).toEqual(["read-dm", "--room", "r9"]);
 		expect(done.state).toBe(landed ? "sent" : "failed");
 	}
+});
+
+test("a site that rewrites the line breaks of a sent DM still counts as sent", async () => {
+	const engine = engineWith(fakeSite({ crlf: true }).exec);
+	await engine.collect({ force: true });
+	const step = await engine.addDraft(commentId(SITE.key, "dm:r9:m1"), "Yes.\nIt is updated.");
+	if (!step.ok) throw new Error(step.reason);
+	const sent = engine.send(step.draft.code, { by: "owner" });
+	if (!sent.ok) throw new Error(sent.reason);
+	expect((await sent.done).state).toBe("sent");
 });
 
 test("a room the owner already wrote in after the message needs no reply", async () => {
