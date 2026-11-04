@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "5af2bea99b33";
+const WEB_BUILD = "30f05eb47dbf";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -1370,6 +1370,7 @@ function openPalette() {
       if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `종료된 세션 ${ended.length}`, act: () => { endedOpen = true; go("chat", "list"); } });
       else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || "종료된 세션".startsWith(v))) items.push({ kind: "act", ic: "lanes", label: `종료된 세션 · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
       if (!v || "셸 터미널 명령줄 shell terminal".includes(v)) items.push({ kind: "act", ic: "shell", label: "셸 터미널 열기", act: () => openShell() });
+      if (S && S.desk && (!v || "화면 공유 원격 데스크톱 screen desktop remote".includes(v))) items.push({ kind: "act", ic: "desktop", label: "화면 공유 열기", act: () => openScreen() });
       if (!v || "화면 모드 전환 라이트 다크 theme dark light".includes(v)) items.push({ kind: "act", ic: themeIc(), label: `${themeNext()} 모드로 전환`, act: toggleTheme });
     }
     const rank = { nav: 0, act: 1, cmd: 2 };   // 도구 first, 명령 last; the arrow keys walk the list in this order
@@ -2644,7 +2645,7 @@ function workRow(w) {
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: line })),
       el("span", { class: `hs ${tone}`, text: state })),
     hcWorkFiles(w),
-    act ? el("button", { class: "btn text", type: "button", style: "flex:none;margin-right:8px", "data-act": "retry", onclick: ev => act[1](ev.currentTarget), text: act[0] }) : null);
+    act ? el("button", { class: "btn text", type: "button", style: "flex:none;margin-right:var(--sp-2)", "data-act": "retry", onclick: ev => act[1](ev.currentTarget), text: act[0] }) : null);
 }
 
 /* ---------- needs-you: a target whose last finished turn this browser has not looked at yet ---------- */
@@ -3030,7 +3031,8 @@ const CH_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 // (stripped from the label), or it is guessed from a negative / edit label or a description that asks for text. Mirrors hub/choices.ts detailOf.
 const DETAIL_MARK = /\s*…\s*$/, DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|아니|아냐|고치기|수정|다른)/, DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세요)|내용.*(?:적|알려|써)/;
 const detailOf = o => !!o.detail || DETAIL_LABEL.test(o.label) || DETAIL_DESC.test(o.desc || "");
-const isDescLine = nx => nx !== undefined && !!nx.trim() && !CH_OPT.test(nx) && !CH_HEAD.test(nx) && !CH_CLOSE.test(nx);
+const CH_FENCE = /^\s*```/;
+const isDescLine = nx => nx !== undefined && !!nx.trim() && !CH_OPT.test(nx) && !CH_HEAD.test(nx) && !CH_CLOSE.test(nx) && !CH_FENCE.test(nx);
 // The message text without its option lines (and their description lines): the buttons show them, so the body must not repeat them.
 function stripChoices(text) {
   const lines = String(text ?? "").split("\n"), out = [];
@@ -3047,7 +3049,10 @@ function parseChoices(text) {
   while (i < lines.length && !lines[i].trim()) i++;
   if (i < lines.length && !OPT.test(lines[i]) && !HEAD.test(lines[i])) question = lines[i++].trim();
   const blocks = [];
+  let fence = false;
   for (; i < lines.length; i++) {
+    if (CH_FENCE.test(lines[i])) { fence = !fence; continue; }
+    if (fence) continue;
     const h = HEAD.exec(lines[i]);
     if (h) { cur = { title: h[1].trim(), options: [], headed: true }; blocks.push(cur); continue; }
     const m = OPT.exec(lines[i]);
@@ -3116,7 +3121,7 @@ function decisionOne(t) {
   if (at && s.msgs.some(e => OWNER.has(e.kind) && msOf(e.ts) > msOf(at))) return null;
   const sig = hashOf(body.trim());
   // A status message ([done] ...) that ends in a choice block: its first line is the status, so the block's own title is the question.
-  const question = !info.ask && pt.tone !== "ask" && pc.blocks.length === 1 && pc.blocks[0].title ? pc.blocks[0].title : pc.question;
+  const question = !info.ask && pc.blocks.length === 1 && pc.blocks[0].title ? pc.blocks[0].title : pc.question;
   return { key: `${t}|${sig}`, t, sig, at, question, blocks: pc.blocks };
 }
 async function answerDecision(dc, text, opt, note) {
@@ -5467,10 +5472,12 @@ const CMDS = [
   { c: "/quota", d: "공급자·모델별 사용 한도" },
   // 이 컴퓨터의 셸 (owner 2026-11-03): typed here, run in the terminal sheet - the composer's own way to the shell, not a gateway command.
   { c: "/terminal", d: "이 컴퓨터 터미널에서 명령 실행", args: [{ n: "명령", free: true }] },
+  // 화면 공유 (owner 2026-11-04): opens this computer's screen in a tab, not a gateway command; listed only while S.desk exists, and not in the palette (which has its own item).
+  { c: "/screen", d: "이 컴퓨터 화면 열기", desk: true },
   { c: "/help", d: "명령 전체 설명" },
 ];
 // The command palette lists the same commands.
-const hintList = CMDS.map(x => [x.c, x.d]);
+const hintList = CMDS.filter(x => !x.desk).map(x => [x.c, x.d]);
 let SL = { items: [], idx: -1, hide: "" };
 // @ in the same menu: what runs now (홈 지금 진행 중, from S: the assistant's background work, a conversation's session and its workers,
 // live sessions). A pick writes "@<title> " and is kept in MENTIONS; the message sends {kind, id, label} for every token still in the text
@@ -5514,7 +5521,8 @@ function updateHints() {
       .map(it => { const tok = `@${it.label} `; return { kind: "mn", it, fill: `${v.slice(0, p.from)}${tok}${v.slice(p.to)}`, caret: p.from + tok.length }; });
     head = el("div", { class: "sl-hd" }, el("span", { class: "tx", text: "지금 진행 중 · 골라서 지칭하기" }));
   } else if (p.stage === "cmd") {
-    const pre = CMDS.filter(x => x.c.startsWith(p.q)), sub = CMDS.filter(x => !x.c.startsWith(p.q) && x.c.includes(p.q.slice(1)));
+    const pool = CMDS.filter(x => !x.desk || (S && S.desk));
+    const pre = pool.filter(x => x.c.startsWith(p.q)), sub = pool.filter(x => !x.c.startsWith(p.q) && x.c.includes(p.q.slice(1)));
     items = [...pre, ...sub].map(x => ({ kind: "cmd", x, fill: `${x.c} ` }));
     head = el("div", { class: "sl-hd" }, el("span", { class: "logo" }), el("span", { class: "nm", text: botName }), el("span", { class: "tx", text: "명령" }));
   } else {
@@ -5656,6 +5664,7 @@ async function stopTarget() {
 // 컴포저에서 셸로 (owner 2026-11-03): "/terminal <명령>" is not a gateway command - it opens this computer's terminal sheet with the command in it
 // (36-shell.js openShell). Keep a bare "/terminal" in the box and say what is missing instead of sending it anywhere.
 const SH_CMD = /^\/(?:terminal|셸|shell)(?:\s+([\s\S]*))?$/;
+const SCR_CMD = /^\/(?:screen|화면)\s*$/;
 // A slash command (typed, or a card button) goes to the gateway for the current target; its answer joins the chat as a card.
 async function sendCommand(text) {
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
@@ -5682,6 +5691,10 @@ async function sendChat(how) {
   if (typeof asTplEnd === "function") asTplEnd();
   chatStick = true; termStick = true;
   if (text.startsWith("/")) {
+    if (SCR_CMD.test(text)) {
+      if (!(S && S.desk)) { toast("이 컴퓨터에서는 화면 공유를 쓸 수 없어요", true); ta.value = text; autosize(); return; }
+      openScreen(); return;
+    }
     const m = SH_CMD.exec(text);
     if (m) {
       const command = (m[1] || "").trim();
@@ -5742,7 +5755,7 @@ function renderWorking() {
   const bg = on ? [] : workOfTarget(target), show = on || bg.length > 0;
   workingBg = bg;
   box.hidden = !show;
-  // Only while the gateway reports this target running: status line, model-chip spinner, and stop in place of send
+  // Only while the gateway reports this target running: status line, and stop in place of send
   // (with text typed the button sends it into the running turn instead).
   // The send button is the one stop control (owner 2026-10-28): it stops the running turn, or, with no turn running, this conversation's background worker.
   const line = $("#runline"), stopMode = ((on && st !== "rate-limited") || bg.length > 0) && !ta.value.trim() && !ATT.length && !pkCount();
@@ -6641,7 +6654,7 @@ async function refreshState() {
     if (isLaneT(target) && (!S.lanes.some(l => `lane:${l.name}` === target) || (PREV[target] && PREV[target] !== "exited" && targetInfo(target).status === "exited"))) setTarget(MAIN);
     if (isProjT(target) && !projTargets().includes(target)) setTarget(MAIN);   // its work channel was deleted
     noteStatus(); paintAuth(); paintDecision(); paintOrchError(); paintPause(); paintRunState();
-    renderBars(); renderWorking(); paintSysLines(); updateComposerMeta();
+    renderBars(); renderWorking(); paintSysLines(); updateComposerMeta(); dskPaint();
     if (current === "project") pmPaint();
     if (current === "home") renderHome();
     if (current === "settings") renderSettings();
@@ -7515,7 +7528,7 @@ function cmPaint(root, p, D) {
       cmText(i),
       i.bad ? el("span", { class: "tag warn", text: "확인 필요" }) : null,
       el("span", { class: "li-end" }, ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `)))),
-      g.more ? el("div", { class: "sup", style: "padding:10px 16px", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));
+      g.more ? el("div", { class: "sup", style: "padding:var(--sp-2) var(--sp-4)", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));
   clear(root).append(
     el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" },
       el("div", { class: "pmv-htop" }, el("div", { class: "pmv-title", text: p.name }), el("span", { class: "pmv-upd", text: "내 설정" })),
@@ -7545,7 +7558,7 @@ function ctxBar(p) {
   const pct = p.percent;
   return el("div", {},
     el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-label": `${p.name} 컨텍스트`, "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` })),
-    el("div", { class: "kv", style: "margin-top:4px" }, el("span", { class: "v", text: p.window ? `${num(p.tokens)} / ${num(p.window)} 토큰` : `${num(p.tokens)} 토큰` }), el("span", { class: "v", text: pct != null ? `${pct}%` : "–" })));
+    el("div", { class: "kv", style: "margin-top:var(--sp-1)" }, el("span", { class: "v", text: p.window ? `${num(p.tokens)} / ${num(p.window)} 토큰` : `${num(p.tokens)} 토큰` }), el("span", { class: "v", text: pct != null ? `${pct}%` : "–" })));
 }
 async function loadContext(quiet) {
   clearTimeout(ctxTimer);
@@ -7602,7 +7615,7 @@ function ctxModels() {
     const win = m.window || m.window_default, at = m.compact_at || m.compact_at_default;
     const pct = win ? ` (${Math.round(at / win * 100)}%)` : "";
     return el("div", { class: "card ctx-model" },
-      el("div", { class: "ch" }, el("h3", { text: modelName(m.model) }), el("button", { class: "btn text", type: "button", onclick: () => ctxDialog(m) }, "설정")),
+      el("div", { class: "ch" }, el("h3", { text: modelName(m.model) }), el("button", { class: "btn text inrow", type: "button", onclick: () => ctxDialog(m) }, "설정")),
       el("div", { class: "kv" }, el("span", { class: "k", text: "컨텍스트 크기" }), el("span", { class: "v", text: win ? `${num(win)} 토큰${m.window ? " · 직접 설정" : " · 기본"}` : "아직 모름 (처음 응답 뒤 표시)" })),
       el("div", { class: "kv" }, el("span", { class: "k", text: "자동 압축" }), el("span", { class: "v", text: `${num(at)} 토큰${pct}${m.compact_at ? " · 직접 설정" : " · 기본"}` })),
       el("div", { class: "sup", text: `사용: ${m.used_by.map(ctxUser).join(", ")}` }));
@@ -7890,7 +7903,7 @@ function renderProviders() {
 function addProviderDialog() {
   const addable = P && P.addable;
   let pick = null, keyIn = null, free = null;
-  const body = el("div", { class: "col", style: "gap:16px" });
+  const body = el("div", { class: "col", style: "gap:var(--sp-4)" });
   const keyBox = el("div", { class: "col kb" });
   const rowsByKey = new Map();
   let dlg;
@@ -8152,6 +8165,7 @@ function settingsList(go) {
       webAccessRow(stRow),
       devicesRow(stRow),
       mnRow()),
+    ...dskSettings(),
     stSec("앱"), stList(
       stRow("bell", "앱과 알림", stPushSub(), () => go("notifications")),
       navOff("apps") ? null : stRow("apps", "앱 관리", "", () => go("apps")),
@@ -8186,10 +8200,11 @@ const fbRunId = e => { const m = fbBase(e.model); if (!e.key_file) return m; con
 const fbMoney = n => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
 const fbCapText = c => `${c.period === "day" ? "일" : "월"} ${c.usd ? fbMoney(c.usd) : `${num(c.tokens)} 토큰`}까지`;
 let fbDragging = false;
+// A long model id breaks after its separators, not inside a word; the text itself stays the same.
+const fbNameParts = nm => nm.split(/(?<=[-/])/).flatMap((p, i) => (i ? [el("wbr"), p] : [p]));
 function fbTags(e) {
   const t = [];
   if (e.key_file) t.push(el("span", { class: "tag", text: "API 키" }));
-  if (e.enabled === false) t.push(el("span", { class: "tag", text: "꺼짐" }));
   if (e.key_file && e.workers) t.push(el("span", { class: "tag", text: "서브에이전트·세션도 사용" }));
   if (e.when) t.push(el("span", { class: "tag", text: FB_WHEN[e.when] }));
   if (e.cap) t.push(el("span", { class: "tag", text: fbCapText(e.cap) }));
@@ -8340,16 +8355,17 @@ function fbParts(L) {
     const on = !base && e.enabled !== false;
     const acts = base ? null : el("div", { class: "fb-acts" },
       el("button", { type: "button", class: "fb-sw", role: "switch", "aria-checked": String(on), title: on ? "켜짐 · 눌러서 끄기" : "꺼짐 · 눌러서 켜기", "aria-label": `${nm} ${on ? "끄기" : "켜기"}`, onclick: () => fbSave(L.id, list.map((x, j) => (j === i ? { ...x, enabled: !on } : x))) }, on ? "켜짐" : "꺼짐"),
-      el("button", { type: "button", class: "up", title: "위로", "aria-label": `${nm} 위로`, disabled: i === 0, onclick: () => move(i, i - 1) }, icon("down")),
-      el("button", { type: "button", title: "아래로", "aria-label": `${nm} 아래로`, disabled: i === list.length - 1, onclick: () => move(i, i + 1) }, icon("down")),
-      el("button", { type: "button", title: "편집", "aria-label": `${nm} 편집`, "aria-expanded": String(open(i)), onclick: () => fbOpenStep(L.id, list, i) }, icon("more")),
-      el("button", { type: "button", title: "빼기", "aria-label": `${nm} 빼기`, onclick: () => fbSave(L.id, list.filter((_, j) => j !== i)) }, icon("close")));
+      el("div", { class: "fb-ctl" },
+        el("button", { type: "button", class: "up", title: "위로", "aria-label": `${nm} 위로`, disabled: i === 0, onclick: () => move(i, i - 1) }, icon("down")),
+        el("button", { type: "button", title: "아래로", "aria-label": `${nm} 아래로`, disabled: i === list.length - 1, onclick: () => move(i, i + 1) }, icon("down")),
+        el("button", { type: "button", title: "편집", "aria-label": `${nm} 편집`, "aria-expanded": String(open(i)), onclick: () => fbOpenStep(L.id, list, i) }, icon("more")),
+        el("button", { type: "button", title: "빼기", "aria-label": `${nm} 빼기`, onclick: () => fbSave(L.id, list.filter((_, j) => j !== i)) }, icon("close"))));
     let tags = base ? null : fbTags(e);
     if (!base && !runs(e)) (tags ||= el("div", { class: "fb-tags" })).append(el("span", { class: "tag warn", text: `${F.harness ? F.harness.name : "이 하네스"}에서 못 써요` }));
     const node = el("li", { class: `fb-item${inUse ? " in-use" : ""}${!base && e.enabled === false ? " off" : ""}${base ? " base" : ""}${!base && open(i) ? " open" : ""}`, ...(base ? {} : { "data-i": String(i) }), title: base ? `${fbBase(model)} · 눌러서 모델 바꾸기` : `${fbBase(model)} · 눌러서 편집` },
       el("span", { class: "fb-n", text: String(i + 2) }),
       el("div", { class: "fb-body" },
-        el("div", { class: "fb-top" }, el("span", { class: "nm", text: nm }), base ? el("span", { class: "fb-base", text: "기본" }) : null, inUse ? el("span", { class: "fb-use", text: "사용 중" }) : null),
+        el("div", { class: "fb-top" }, base ? el("span", { class: "nm", text: nm }) : el("span", { class: "nm" }, ...fbNameParts(nm)), base ? el("span", { class: "fb-base", text: "기본" }) : null, inUse ? el("span", { class: "fb-use", text: "사용 중" }) : null),
         tags, base ? null : fbBar(e)),
       acts);
     if (!base) fbDrag(node, L.id, list, i);
@@ -8421,6 +8437,7 @@ window.addEventListener("load", sharedIntake);
 // a tapped notification asks an open window to show its conversation; listened for as the script runs (not after the page's load
 // event) so a tap that lands while the page is still starting is not dropped
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}, h = d.open ? new URL(d.open, location.href).hash : ""; if (!h || d.notice) return;   // a decision push (d.notice) is opened by its id (30-notices.js)
+  ovCloseAll();   // nothing left open covers the landing
   if (d.ts) pushOpen(h, d.ts, d.nid); else if (location.hash !== h) { const p = parseHash(h); go(p.view, p.t); } });
 // A new shell version: sw.js refreshShell posts {type:"shell-updated"} when its background fetch brought a changed page, script or styles.
 // The page reloads onto it only while it is hidden and nothing would be lost (empty composer, no attachment, sheet, dialog, or viewer open): a reload
@@ -8470,7 +8487,7 @@ async function webBuildCheck(b) {
 // Views other than a conversation have no anchor: put their scroll back once they are drawn.
 if (SHELL_RESTORE && !SHELL_RESTORE.key && SHELL_RESTORE.views) for (const ms of [300, 1200]) setTimeout(() => { const v = $("#views"); if (SHELL_RESTORE && current !== "home" && !v.scrollTop) v.scrollTop = SHELL_RESTORE.views; }, ms);
 // A tap that had to start the app carries the message as ?m=<ts>: 99-boot.js opens it once the state is in. A decision carries ?n=<id> (its sheet,
-// 30-notices.js): it stays in the address and never also jumps to a conversation.
+// 30-notices.js), with ?m= only as the place to land when that decision is no longer listed.
 const pushQ = new URLSearchParams(location.search);
 // The device id: every subscription this device makes, on any computer, carries it, so the computers know they are one device (hub/push.ts fanOut).
 // It is minted once here; opening another computer from this app (33-peers.js) hands it on as ?did=, and the page that arrives with one keeps that one.
@@ -8485,7 +8502,8 @@ if (pushQ.has("did")) { pushQ.delete("did"); const rest = pushQ.toString(); hist
 // ?pc=<origin> (a notice relayed from another computer): the page switches to that computer (33-peers.js prFollow), with ?n / ?m as its own item.
 const PUSH_FOLLOW = pushQ.has("pc") ? location.href : "";
 let pushOpenTs = pushQ.has("n") || PUSH_FOLLOW ? "" : pushQ.get("m") || "";
-const pushOpenNid = pushQ.get("i") || "";
+const pushOpenNid = pushQ.get("i") || "", pushDecisionAt = pushQ.has("n") ? pushQ.get("m") || "" : "";
+const PUSH_HASH = location.hash;   // the tapped address: the first go() rewrites it (#chat/alert to #notices, a mail to #monitoring/c:...)
 if (pushQ.has("m") && !PUSH_FOLLOW) { pushQ.delete("m"); pushQ.delete("i"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
 async function pwaInit() {
   if (!("serviceWorker" in navigator)) return;
@@ -9089,7 +9107,7 @@ function accProviderDialog(g, a) {
     g.can_pin ? (a.pinned ? { label: "고정 풀기", kind: "tonal", onclick: (c, b) => accMut(b, () => api("/api/accounts/pin", "PUT", { provider: g.id, account: null }), "고정을 풀었어요", c) } : { label: "이 계정으로 고정", kind: "tonal", onclick: (c, b) => accMut(b, () => api("/api/accounts/pin", "PUT", { provider: g.id, account: a.name }), `${label}로 고정했어요`, c) }) : null,
     { label: "저장", kind: "pri", onclick: (c, b) => alias(inp.value.trim(), inp.value.trim() ? "별칭을 저장했어요" : "별칭을 지웠어요")(b, c) },
   ].filter(Boolean);
-  const d = dialog({ classic: true, title: `${g.name} · ${label}`, body: el("div", { class: "col" }, a.name !== label ? el("div", { class: "sup" }, "계정 ", el("code", { text: a.name })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 6px", text: "별칭" }), inp)), actions });
+  const d = dialog({ classic: true, title: `${g.name} · ${label}`, body: el("div", { class: "col" }, a.name !== label ? el("div", { class: "sup" }, "계정 ", el("code", { text: a.name })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: "별칭" }), inp)), actions });
   inp.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); d.node.querySelector(".dact .btn:last-child").click(); } });
   inp.focus();
 }
@@ -9097,7 +9115,7 @@ function accDialog(a) {
   const label = a.label || a.alias || a.name;
   const inp = el("input", { class: "fi", type: "text", value: a.alias || "", maxlength: "40", autocomplete: "off", placeholder: "별칭 (예: 회사, 개인)", "aria-label": "별칭" });
   const alias = (v, msg) => (btn, close) => accMut(btn, () => api("/api/accounts/alias", "PUT", { key: a.name, alias: v }), msg, close);
-  const d = dialog({ classic: true, title: label, body: el("div", { class: "col" }, a.name !== label ? el("div", { class: "sup" }, "계정 ", el("code", { text: a.name })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 6px", text: "별칭" }), inp)), actions: [
+  const d = dialog({ classic: true, title: label, body: el("div", { class: "col" }, a.name !== label ? el("div", { class: "sup" }, "계정 ", el("code", { text: a.name })) : null, el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: "별칭" }), inp)), actions: [
     a.alias ? { label: "지우기", kind: "danger", onclick: (c, b) => alias("", "별칭을 지웠어요")(b, c) } : null,
     ACC.accounts.length > 1 ? { label: "계정 삭제", kind: "danger", onclick: async (c, b) => { if (!await ask(`${label} 삭제`, "OmO에서 이 계정의 로그인 정보를 지워요. 다시 쓰려면 다시 로그인해야 해요.", "삭제", true)) return; accMut(b, () => api(`/api/accounts?name=${enc(a.name)}`, "DELETE"), `${label}을(를) 지웠어요`, c); } } : null,
     { label: "이 계정으로 고정", kind: "tonal", disabled: ACC.mode === "pinned" && ACC.chosen && ACC.chosen.name === a.name, onclick: (c, b) => accMut(b, () => api("/api/accounts/mode", "PUT", { mode: "pinned", account: a.name }), `${label}로 고정했어요`, c) },
@@ -9116,7 +9134,7 @@ function rulesDialog() {
   };
   const acctPairs = cur => { const p = accts.map(a => [a.name, a.label || a.alias || a.name]); if (cur && !p.some(([v]) => v === cur)) p.push([cur, accLabel(cur)]); return p; };
   const select = (pairs, cur, label, onchange) => { const s = el("select", { class: "fi", "aria-label": label }, ...pairs.map(([v, t]) => el("option", { value: v, text: t, selected: v === cur }))); s.addEventListener("change", () => onchange(s.value)); return s; };
-  const field = (label, ...ctrl) => el("div", {}, el("div", { class: "lbl", style: "margin:0 0 6px", text: label }), el("div", { class: "row", style: "flex-wrap:wrap" }, ...ctrl));
+  const field = (label, ...ctrl) => el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: label }), el("div", { class: "row", style: "flex-wrap:wrap" }, ...ctrl));
   const ta = el("textarea", { class: "fi hs-ta hs-mono", rows: 14, spellcheck: "false", "aria-label": "규칙 JSON" });
   const box = el("div", { class: "col" });
   const move = (i, to) => { const l = list(); [l[i], l[to]] = [l[to], l[i]]; paint(); };
@@ -9148,7 +9166,7 @@ function rulesDialog() {
       for (const [v, t] of acctPairs()) { const at = pref.indexOf(v); doCtl.push(el("button", { type: "button", class: `chip${at >= 0 ? " on" : ""}`, "aria-pressed": String(at >= 0), text: at >= 0 ? `${at + 1} ${t}` : t, onclick: () => { at >= 0 ? pref.splice(at, 1) : pref.push(v); paint(); } })); }
     }
     const many = Object.keys(w).filter(k => ACC_COND.some(([c]) => c === k)).length > 1;
-    return el("div", { class: "list" }, el("div", { class: "li", style: "flex-direction:column;align-items:stretch;gap:12px" },
+    return el("div", { class: "list" }, el("div", { class: "li", style: "flex-direction:column;align-items:stretch;gap:var(--sp-3)" },
       el("div", { class: "row", style: "flex-wrap:wrap" }, nm,
         el("button", { type: "button", class: "btn text", disabled: i === 0, onclick: () => move(i, i - 1) }, "위로"),
         el("button", { type: "button", class: "btn text", disabled: i === n - 1, onclick: () => move(i, i + 1) }, "아래로"),
@@ -9396,7 +9414,7 @@ function renderDiscord() {
   clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" },
     el("div", { class: "li", "data-ms-status": "discord" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })),
       liEnd(el("span", { class: `tag ${tone}`, text: tag }), el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m))))),
-  el("div", { class: "sec", text: "자동 연결" }), onboardingPanel("discord"), ...dcSwitches(), ...guide, det);
+  ...obSection("discord", m ? m.state === "ok" : v.connected), ...dcSwitches(), ...guide, det);
 }
 
 // 설정의 메신저 화면: Discord · JANDI · Slack · Telegram each has its own view. Every view reads the shared index
@@ -9587,7 +9605,7 @@ function renderMessenger(id) {
       el("div", { class: "li", "data-ms-status": id }, el("span", { class: "lead" }, icon("chat")),
         el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), el("div", { class: "sup", text: msLine(id, m, s) })),
         liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m))))),
-    el("div", { class: "sec", text: "자동 연결" }), onboardingPanel(id)];
+    ...obSection(id, !!m && m.state === "ok")];
   if (s.notify) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" },
     ...notifyRows(k => s.notify[k] !== false, (k, on) => msNotifySet(id, k, on)),
     el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 그 알림은 여기로 보내지 않고 앱에만 와요." })))));
@@ -9696,6 +9714,11 @@ function obPoll(key) {
     catch { obPoll(key); }
   }, OB_POLL_MS);
 }
+// A live messenger has nothing left to connect, so its section goes; a run in progress or failed stays whatever the link says.
+const obSection = (key, live) => {
+  const s = OB[key] && OB[key].state;
+  return live && s !== "running" && s !== "waiting" && s !== "failed" ? [] : [el("div", { class: "sec", text: "자동 연결" }), onboardingPanel(key)];
+};
 // The panel: state, current step, error (only when the API sent one), the single owner line, and its actions.
 function onboardingPanel(key) {
   const v = OB[key] || { state: "idle", step: null, owner: null, error: null, url: null };
@@ -9894,7 +9917,7 @@ function rtReportView(r, report) {
     : stale ? `검사한 뒤 버전이 바뀌었어요 (v${report.version || "?"} → v${r.version}). 다시 검사해 주세요.`
     : report.verdict === "adjusted" ? `핵심 항목은 모두 통과했어요. ${changed}개 기능은 게이트웨이가 대신 처리하거나 꺼요.` : "모든 항목이 통과했어요.";
   const meta = `${new Date(report.at).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" })}${report.version ? ` · v${report.version}` : ""}`;
-  return el("div", { class: "rt-rep", style: "display:flex;flex-direction:column;gap:8px" },
+  return el("div", { class: "rt-rep", style: "display:flex;flex-direction:column;gap:var(--sp-2)" },
     el("p", { text: sum }), el("div", { class: "note", text: `검사 ${meta}` }),
     el("div", { class: "list rt-rows" }, ...report.items.map(i => el("div", { class: "rt-row" },
       el("div", { class: "top" }, el("span", { class: "nm", text: i.label }), i.core ? el("span", { class: "tag", text: "핵심" }) : null, el("span", { class: "sp" }), rtBadge(i)),
@@ -9903,7 +9926,7 @@ function rtReportView(r, report) {
 function rtFlow(r) {
   const roles = new Set(["orchestrator", "lanes"]);
   let report = null, st = null, timer = 0, checking = false;
-  const box = el("div", { style: "display:flex;flex-direction:column;gap:12px" });
+  const box = el("div", { style: "display:flex;flex-direction:column;gap:var(--sp-3)" });
   const d = dialog({ classic: true, title: `${r.label}로 바꾸기`, body: box, wide: true, onclose: () => { clearInterval(timer); rtLive = null; loadRuntimes(true); } });
   const usable = () => r.hasAdapter && (r.id === "omp" || (r.id === "omo" && r.installed !== false) || (report && report.verdict !== "blocked" && !(r.version && report.version !== r.version)));
   async function pull() {
@@ -14997,10 +15020,12 @@ const ntUnder = n => { if (!n.pc && validTarget(n.src || n.open || "")) ntJump(n
 // A tapped push: open its notice, or its conversation at the message it is about (loaded first when the stream missed it).
 async function pushOpen(hash, at, nid) {
   const p = parseHash(hash), t = p.t || MAIN;
-  if (!nid && p.view === "chat" && t === "alert") { go("notices"); return; }   // an alert push without a notice: the 알림 screen, not the record conversation
   if (!at || p.view !== "chat") { go(p.view, p.t); return; }
-  if (!NT.loaded) await loadNotices();   // a cold start: the push was sent before the list reached this page
-  noticeOpen(ntById(nid) || ntMsgFor(t, at) || { kind: "message", tone: "", src: t, open: t, at });
+  const find = () => (NT.loaded && ntById(nid)) || ntMsgFor(t, at);
+  if (!find()) await loadNotices();   // a cold start, or a page that slept through it: the notice decides where this lands (a monitor's row, a failure's sheet)
+  const n = find();
+  if (!n && t === "alert") { go("notices"); return; }   // no notice behind it: the 알림 screen, not the record conversation
+  noticeOpen(n || { kind: "message", tone: "", src: t, open: t, at });
 }
 
 /* ---- one handler for every notice entry point ---- */
@@ -15050,10 +15075,11 @@ async function noticeOpen(n, here = false) {
     default: return ntJump(n);
   }
 }
-// `quiet`: a page load, not a tap, asked (?n=): a stale link just stays on the route it loaded.
-async function noticeOpenId(id, quiet) {
+// `quiet`: a page load, not a tap, asked (?n=): a stale link just stays on the route it loaded. `hash`, `at`: where its push pointed, the landing when the notice is gone.
+async function noticeOpenId(id, quiet, hash, at) {
   let n = ntById(id);
   if (!n) { await loadNotices(); n = ntById(id); }
+  if (!n && at) return pushOpen(hash, at, "");
   if (!n) { if (!quiet) toast("이 알림은 이미 처리됐어요"); return; }
   return noticeOpen(n);
 }
@@ -15498,14 +15524,14 @@ function ntSheetShow(id, det, pn = null) {
 }
 
 // A tapped notification (or an option button on it) asks an open window to show the decision; a cold start carries it as ?n=<id>.
-if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (d.notice) noticeOpenId(d.notice); });
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (d.notice) { ovCloseAll(); noticeOpenId(d.notice, false, new URL(d.open, location.href).hash, d.ts); } });
 {
   const want = PUSH_FOLLOW ? "" : new URLSearchParams(location.search).get("n") || "";   // a relayed notice's ?n names an item on the other computer (prFollow)
   if (want) {
     const u = new URL(location.href);
     u.searchParams.delete("n");
     history.replaceState(history.state, "", u.pathname + u.search + u.hash);
-    setTimeout(() => noticeOpenId(want, true), 500);
+    setTimeout(() => noticeOpenId(want, true, PUSH_HASH, pushDecisionAt), 500);
   }
 }
 
@@ -17384,6 +17410,7 @@ function histSync() {
 
 function ovOpen(close) { const o = { close }; OV.push(o); histSync(); return o; }
 function ovDone(o) { const i = o ? OV.indexOf(o) : -1; if (i < 0) return; OV.splice(i, 1); histSync(); }
+const ovCloseAll = () => { for (const o of [...OV].reverse()) o.close(); };
 // A modal <dialog> is an overlay for as long as it is open (Esc, ✕ and back all end in its close event).
 function dialogHist(d) { const o = ovOpen(() => d.close()); d.addEventListener("close", () => ovDone(o)); }
 
@@ -17599,7 +17626,8 @@ function prSheet() {
       alert ? el("span", { class: `pr-n${p.need > 0 ? " need" : ""}`, text: String((p.need || 0) + (p.unread || 0)) }) : p.self ? icon("check", "pr-ck") : null);
   });
   const manage = el("button", { type: "button", class: "pr-row pr-manage", onclick: () => { prClose(false); go("settings"); } }, icon("settings"), el("span", { class: "pr-t", text: "컴퓨터 관리" }));
-  clear(PR.node.firstElementChild).append(el("div", { class: "pr-hd", id: "pr-t", text: "내 컴퓨터" }), el("div", { class: "pr-list" }, rows, manage));
+  const screen = S && S.desk ? el("button", { type: "button", class: "pr-row pr-screen", onclick: () => { prClose(false); openScreen(); } }, icon("desktop"), el("span", { class: "pr-t", text: "화면 공유 열기" })) : null;
+  clear(PR.node.firstElementChild).append(el("div", { class: "pr-hd", id: "pr-t", text: "내 컴퓨터" }), el("div", { class: "pr-list" }, rows, screen, manage));
 }
 
 function prKey(ev) {
@@ -18237,14 +18265,14 @@ let AB;
 const abUsd = n => `$${n.toFixed(2)}`;
 function budgetCard(B) {
   const card = el("div", { class: "card" }, el("div", { class: "ch" }, el("h3", { text: "API 월 한도" }),
-    el("button", { class: "btn text", type: "button", onclick: () => budgetDialog() }, "설정")));
+    el("button", { class: "btn text inrow", type: "button", onclick: () => budgetDialog() }, "설정")));
   const src = B.source === "admin" ? "콘솔 기준 (관리자 키)" : "이 앱 사용분 추정";
   if (B.limit_usd) {
     const pct = B.pct || 0, tone = pct >= 80 ? "warn" : "";
     card.append(el("div", { class: "lim" },
       el("div", { class: "kv" }, el("span", { class: "k", text: `${abUsd(B.spent_usd)} / ${abUsd(B.limit_usd)}` }), el("span", { style: "font-weight:500", text: `${Math.round(pct)}% 사용` })),
       el("div", { class: `bar ${tone}`, role: "progressbar", "aria-valuenow": Math.round(Math.min(100, pct)), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct).toFixed(1)}%` })),
-      el("div", { class: "kv", style: "margin-top:4px" }, el("span", { class: "v", text: `${kstStamp(B.resets_at)} 초기화 (KST)` }), el("span", { class: "v", text: rel(B.resets_at) }))));
+      el("div", { class: "kv", style: "margin-top:var(--sp-1)" }, el("span", { class: "v", text: `${kstStamp(B.resets_at)} 초기화 (KST)` }), el("span", { class: "v", text: rel(B.resets_at) }))));
   } else {
     card.append(el("div", { class: "lim" }, el("div", { class: "kv" }, el("span", { class: "k", text: `이번 달 ${abUsd(B.spent_usd)}` }), el("span", { class: "v", text: "월 한도 없음" })),
       el("div", { class: "sup", text: "콘솔에서 정한 월 한도를 설정에 입력하면 사용 비율을 보여줘요." })));
@@ -18297,6 +18325,123 @@ async function budgetDialog() {
     actions,
   });
 }
+
+/* ---------- 화면 공유: this computer's screen in a browser tab (hub/remote-desktop.ts; features/remote-desktop/DESIGN.md) ---------- */
+// (owner 2026-11-04) "크롬으로 되네. 크롬이 설치되어있으면 크롬에서 띄우는걸로 구현하자"
+// Keyboard lock (Cmd+W/T/Tab reach the screen) works only in a top-level tab of real Chrome, so the page asks the gateway it is on
+// (POST /api/desk/open): that gateway tells this page to open /desk/ here, or has the viewer's own gateway open Chrome. Everything on this
+// page hangs on S.desk, which /api/state carries only when the feature is available: no S.desk, no entry, no row, no pill, no space.
+// Names start with dsk (the dk prefix is taken by the draft sheet, 30-notices.js).
+const DSK = { st: null, asked: false, pending: false, busy: false, painted: false, pill: null };
+
+// Real desktop Chrome only. Brave, Edge, Opera and Aside report just "Chromium" (plus a grease entry), so the brand is the test;
+// navigator.keyboard exists in every Chromium and says nothing about the browser.
+function deskIsChrome() {
+  const u = navigator.userAgentData;
+  return !!u && !u.mobile && Array.isArray(u.brands) && u.brands.some(b => b && b.brand === "Google Chrome");
+}
+function deskIsPhone() {
+  const u = navigator.userAgentData;
+  if (u && typeof u.mobile === "boolean" && u.mobile) return true;
+  const ua = navigator.userAgent || "";
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+
+// The click that starts it. Real Chrome: wait for the answer, then open (Chrome keeps the click's permission for seconds). Any other
+// browser: a blank tab is opened inside the click, because it will not allow a window.open after an await, and it is pointed at /desk/
+// once the gateway says so, or closed when the answer is blocked or the viewer's own Chrome opened it.
+async function openScreen() {
+  if (DSK.busy) return;
+  DSK.busy = true;
+  const chrome = deskIsChrome(), phone = deskIsPhone();
+  let tab = null;
+  if (!chrome) { tab = window.open("", "_blank"); if (tab) tab.opener = null; }
+  try {
+    const r = (await api("/api/desk/open", "POST", { chrome, phone })) || {};
+    if (r.action === "here") {
+      const win = tab || window.open("/desk/", "_blank");
+      if (tab) tab.location.href = "/desk/";
+      if (!win) { toast("새 탭이 막혔어요. 팝업을 허용해 주세요", true); return; }
+      if (r.note) toast(r.note);
+    } else {
+      if (tab) tab.close();
+      if (r.action === "opened") toast(`${r.name || "그 컴퓨터"}의 크롬에서 열었어요`);
+      else toast(r.reason || "지금은 화면을 열 수 없어요", true);
+    }
+  } catch (e) {
+    if (tab) tab.close();
+    toast(e.message || "화면을 열지 못했어요", true);
+  } finally { DSK.busy = false; }
+}
+
+/* ---------- state ---------- */
+const dskViewers = () => (S && S.desk && Array.isArray(S.desk.viewers) ? S.desk.viewers : []);
+const dskWho = v => (v && (v.device || v.who)) || "기기";
+const dskPillText = vs => (vs.length === 1 ? `${dskWho(vs[0])}에서 보는 중` : `${vs.length}곳에서 보는 중`);
+// An answer of GET/PUT /api/desk/... is the new status; S.desk follows it at once instead of waiting for the next state refresh.
+function dskTake(st) {
+  DSK.st = st;
+  if (S && S.desk) S.desk = { ...S.desk, on: st.on, control: st.control, running: st.running, viewers: Array.isArray(st.viewers) ? st.viewers : [] };
+  dskPaint();
+  if (inSettings()) renderSettings();
+}
+async function dskLoad() {
+  DSK.asked = true;
+  try { dskTake(await api("/api/desk/status")); } catch { /* the row for the public address just stays out */ }
+}
+async function dskSet(patch, said) {
+  if (DSK.pending) return;
+  DSK.pending = true;
+  try { dskTake(await api("/api/desk/settings", "PUT", patch)); toast(said); }
+  catch (e) { toast(e.message, true); }
+  finally { DSK.pending = false; }
+}
+
+/* ---------- app-bar pill: who is watching ---------- */
+// Blue (--accent) is running; the pill is there while S.desk.viewers is non-empty and gone otherwise. It is painted from the state refresh
+// (17-state-refresh.js), which already runs on events: no timer of its own. A tap opens 설정, where the viewers are listed.
+function dskPillNode() {
+  if (!DSK.pill) {
+    DSK.pill = el("button", { type: "button", class: "tag pri dsk-pill", id: "dsk-pill", hidden: true, onclick: () => go("settings") });
+    const bar = $("#ustrip");
+    if (bar) bar.before(DSK.pill);
+  }
+  return DSK.pill;
+}
+function dskPaint() {
+  const p = dskPillNode(), vs = dskViewers(), fresh = DSK.painted;
+  DSK.painted = true;
+  if (vs.length) {
+    const text = dskPillText(vs);
+    p.setAttribute("aria-label", `${text}. 설정에서 보기`);
+    if (p.hidden) { p.textContent = text; p.hidden = false; if (fresh) motionIn(p, "fade"); }
+    else if (p.textContent !== text) motionSwap(p, () => { p.textContent = text; });
+  } else if (!p.hidden) {
+    if (fresh) motionOut(p).then(() => { if (!dskViewers().length) p.hidden = true; });
+    else p.hidden = true;
+  }
+}
+
+/* ---------- settings: beside 이 컴퓨터 이름 ---------- */
+const dskSwitch = (on, label, onclick) => el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(!!on), "aria-label": label, onclick });
+const dskRow = (key, hd, sup, end) => el("div", { class: "li", "data-dsk": key }, el("span", { class: "tx" }, el("div", { class: "hd", text: hd }), sup ? el("div", { class: "sup", text: sup }) : null), end ? liEnd(end) : null);
+// The rows of the 화면 공유 section, or nothing when this computer has no S.desk. The public address needs the cloudflare web access mode
+// (WA, 25-settings-web-access.js) and the saved value, which only GET /api/desk/status carries.
+function dskSettings() {
+  const d = S && S.desk;
+  if (!d) return [];
+  const vs = dskViewers(), cf = !!(WA.data && WA.data.mode === "cloudflare");
+  if (cf && !DSK.asked) dskLoad();
+  const rows = [dskRow("on", "화면 공유", "이 컴퓨터 화면을 내 다른 기기에서 봐요", dskSwitch(d.on, "화면 공유", () => dskSet({ on: !d.on }, d.on ? "화면 공유를 껐어요" : "화면 공유를 켰어요")))];
+  if (d.on) {
+    rows.push(dskRow("control", "조작 허용", "켜면 화면을 보는 사람이 이 컴퓨터를 직접 조작해요", dskSwitch(d.control, "조작 허용", () => dskSet({ control: !d.control }, d.control ? "보기만 할 수 있어요" : "조작을 허용했어요"))));
+    rows.push(dskRow("viewers", "지금 보는 사람", vs.length ? vs.map(dskWho).join(" · ") : "아무도 보고 있지 않아요", vs.length ? el("span", { class: "tag pri", text: String(vs.length) }) : null));
+  }
+  if (cf && DSK.st) rows.push(dskRow("allow_public", "공개 주소", "Cloudflare 주소로 들어온 기기도 화면을 볼 수 있어요", dskSwitch(DSK.st.allow_public, "공개 주소", () => dskSet({ allow_public: !DSK.st.allow_public }, DSK.st.allow_public ? "공개 주소로는 막았어요" : "공개 주소로도 열었어요"))));
+  return [stSec("화면 공유"), stList(...rows)];
+}
+
+dskPillNode();
 
 /* ---------- full-screen overlay: the one frame for every pop-up over the app (14-overlay.css) ---------- */
 // fsOpen builds the backdrop and the card, joins the back-button stack (ovOpen), takes Esc and Tab while it is the top overlay, and follows the visual
@@ -18701,7 +18846,7 @@ const runLaneRestart = (name, btn) => busy(btn, async () => {
   const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "/demo/custom.js" }));
   if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
   let h = parseHash();
-  if (pushOpenTs && !pushOpenNid && h.view === "chat" && h.t === "alert") h = { view: "notices", t: "" };   // an alert push without a notice opens the 알림 screen, drawn first
+  if (pushOpenTs && h.view === "chat" && h.t === "alert") h = { view: "notices", t: "" };   // #chat/alert is the 알림 screen: drawn first, then pushOpen lands on the item
   go(h.view || "home", h.t);
   if (pushOpenTs && h.view === "chat") CV.jump = pushOpenTs;   // the first draw lands on the tapped message (chatOpen); 30-notices.js pushOpen finishes by its kind
   // The first paint needs the history and the plan, not the state: ask for all of them at once instead of state first (the state
@@ -18713,7 +18858,7 @@ const runLaneRestart = (name, btn) => busy(btn, async () => {
   // 알림 and 작업내역 sit one tap away and their answers are small: read ahead once the page has settled, so their first opening has something to show.
   if (h.view !== "notices") setTimeout(() => { for (const t of ["worklog"]) if (t !== target && !ts(t).hLoaded) loadTarget(t, true).catch(() => {}); }, 1500);
   await state;
-  if (pushOpenTs) { const at = pushOpenTs; pushOpenTs = ""; pushOpen(location.hash, at, pushOpenNid); }   // the app was started by a tap on a push
+  if (pushOpenTs) { const at = pushOpenTs; pushOpenTs = ""; pushOpen(PUSH_HASH, at, pushOpenNid); }   // the app was started by a tap on a push
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
   loadSubs(); loadQueue(); loadContext(true).then(renderCtxRing);
