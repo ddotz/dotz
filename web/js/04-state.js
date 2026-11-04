@@ -178,6 +178,17 @@ function navShortcut(id) {
   if (id === "chat") !monCtx && (current === "chat" || current === "activity") ? go(lastChatView()) : chatTabEnter();
   else go(id);
 }
+// The wide sidebar folds to an icon rail (22-shell.css :root.side-min); the saved choice is applied before first paint in index.html.
+const SIDE_KEY = "dotz-side", SIDE_KEYS = isMac ? "⌘\\" : "Ctrl+\\";
+function sideSync() {
+  const min = document.documentElement.classList.contains("side-min"), b = $("#side-tog"), word = min ? "사이드바 펼치기" : "사이드바 접기";
+  b.setAttribute("aria-label", word); b.setAttribute("aria-expanded", String(!min)); b.title = `${word} (${SIDE_KEYS})`;
+}
+function sideToggle() {
+  const min = document.documentElement.classList.toggle("side-min");
+  try { if (min) localStorage.setItem(SIDE_KEY, "min"); else localStorage.removeItem(SIDE_KEY); } catch { /* storage blocked: the choice lasts until reload */ }
+  sideSync();
+}
 document.addEventListener("keydown", ev => {
   if (ev.isComposing || ev.altKey || ev.shiftKey || !(isMac ? ev.metaKey : ev.ctrlKey) || document.querySelector("dialog[open]:not([data-leaving])")) return;
   if (ev.code === "Slash" || ev.key === "/") {
@@ -186,13 +197,20 @@ document.addEventListener("keydown", ev => {
     $("#bell").click();
     return;
   }
+  if (ev.code === "Backslash" || ev.key === "\\") {
+    if (matchMedia("(min-width: 1024px)").matches) { ev.preventDefault(); sideToggle(); }
+    return;
+  }
   const n = /^Digit([1-6])$/.exec(ev.code || "")?.[1] || (/^[1-6]$/.test(ev.key) ? ev.key : ""), tab = n && navTabs()[n - 1];
   if (!tab) return;
   ev.preventDefault();
   navShortcut(tab[0]);
 });
 // 모니터링's badge (#nav-mon) counts what waits there (09-needs-you.js paintMonAttn).
-for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
+for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, "aria-label": label, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
+$("#side-tog").append(icon("side"));
+$("#side-tog").onclick = sideToggle;
+sideSync();
 // Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
