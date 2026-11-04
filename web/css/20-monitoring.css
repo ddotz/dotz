@@ -135,7 +135,7 @@
    the column or caps it at the chat's reading width (--col). A label's text starts on the card's outer edge, the same in the KakaoTalk pane (#kk-rooms .kk-lh). */
 #v-monitoring .tl-in { max-width: none; }
 /* the timeline of an open item: the prototype's section label above its rows (확인 기록), and the cards on the page's surface */
-#mon-tl > .mon-sec { margin: var(--sp-4) 0 var(--sp-15); color: var(--fg-2); font: 600 13px/18px var(--font); }
+#mon-tl > .mon-sec { margin: var(--sp-2) 0 calc(var(--sp-2) - var(--sp-4)); /* the list's 16px gap adds to these: 24px above, 8px to its card, like .sec */ color: var(--fg-2); font: 600 13px/18px var(--font); }
 #mon-tl > .mon-sec:first-child { margin-top: 0; }
 /* a phone opens the conversation with the same card: the wait, a down banner and the actions sit together, not loose on the page */
 #mon-tl > .mon-topcard { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
