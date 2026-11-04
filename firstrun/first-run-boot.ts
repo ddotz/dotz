@@ -1,4 +1,4 @@
-import { DATA_DIR, HOST, log, paths, PORT, writeAtomic } from "./config.ts";
+import { DATA_DIR, HOST, log, paths, PORT, writeAtomic } from "../hub/config.ts";
 import { firstRunPending } from "./first-run.ts";
 
 // While <data dir>/onboarding/first-run.json is pending (a seed install that has not finished its web onboarding), the gateway is only a web server:
@@ -6,7 +6,7 @@ import { firstRunPending } from "./first-run.ts";
 // pending it never settles, so the rest of main.ts (which starts all of those) does not run. The onboarding's last step exits the process once
 // and the service manager (launchd, systemd) starts the real gateway.
 if (firstRunPending(DATA_DIR)) {
-	const { makeRoute } = await import("./routes.ts");
+	const { makeRoute } = await import("../hub/routes.ts");
 	const server = Bun.serve({
 		hostname: HOST,
 		port: PORT,

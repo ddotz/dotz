@@ -1,5 +1,5 @@
 // HTTP routes of models, runtimes, accounts, providers, activity and commands (the middle part of the route chain). Split out of main.ts.
-import { ContextLimitError, log } from "./config.ts";
+import { ContextLimitError, DATA_DIR, log } from "./config.ts";
 import { compactTarget, ControlError, contextView, setContextModel, ForceRequired, modelsView, providersView, runCommand, setFallback, setModel } from "./control.ts";
 import { subagentDetail, subagentLists, transcriptPage } from "./activity.ts";
 import { activityItems } from "./events.ts";
@@ -18,10 +18,20 @@ import { postSettings, savePostSettings } from "./discord-post.ts";
 import { discordConnectionRoute } from "./discord-connection.ts";
 import { messengersRoute } from "./messengers-api.ts";
 import { onboardingRoute } from "./onboarding.ts";
+import { introOf, setIntro } from "../firstrun/first-run.ts";
 
 export async function routeSettings(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
 	const onboarding = await onboardingRoute(req, url);
 	if (onboarding) return onboarding;
+	// Whether the app tour was seen (docs/web-onboarding.md): the marker's intro, "seen" for an install that has no marker.
+	if (url.pathname === "/api/intro") {
+		if (req.method === "GET") return json({ intro: introOf(DATA_DIR) });
+		if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+		const b = await body(req);
+		if (b.intro !== "seen" && b.intro !== "pending") return json({ error: "intro must be seen or pending" }, 400);
+		setIntro(DATA_DIR, b.intro);
+		return json({ intro: introOf(DATA_DIR) });
+	}
 	const fail = (error: unknown) =>
 		error instanceof ForceRequired
 			? json({ error: error.message, requires_force: true, context_tokens: error.contextTokens }, error.status)

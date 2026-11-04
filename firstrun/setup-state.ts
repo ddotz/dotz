@@ -1,11 +1,11 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { harness } from "../onboard/harness.ts";
-import { SNOWFLAKE } from "../onboard/answers.ts";
-import { peerTokenFile, tokenFile, writeSecret } from "../onboard/apply.ts";
-import { en } from "./i18n-en.ts";
-import { ko } from "./i18n-ko.ts";
-import { baseLanguage, detectLanguage } from "./language.ts";
+import { SNOWFLAKE } from "./answers.ts";
+import { peerTokenFile, tokenFile, writeSecret } from "./apply.ts";
+import { en } from "../hub/i18n-en.ts";
+import { ko } from "../hub/i18n-ko.ts";
+import { baseLanguage, detectLanguage } from "../hub/language.ts";
 import type { SetupText } from "./setup-jobs.ts";
 
 // What the owner may put in the draft and which secrets the web may write. Both are fixed lists: the draft takes only the fields below, checked here,

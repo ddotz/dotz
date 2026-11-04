@@ -1,8 +1,8 @@
 // One look at this computer for the web onboarding's first screen (and nothing else): what is installed and signed in, so a step that is
 // already ready is skipped (owner rule 11-02). Read-only; never asks for credentials.
-import { asideState } from "./aside.ts";
-import { detectHarnesses, loginState } from "./harness.ts";
-import { tailscaleState } from "./tailscale.ts";
+import { asideState } from "../onboard/aside.ts";
+import { detectHarnesses, loginState } from "../onboard/harness.ts";
+import { tailscaleState } from "../onboard/tailscale.ts";
 
 const MAC = process.platform === "darwin";
 
@@ -39,5 +39,3 @@ export async function scanMachine() {
 		},
 	};
 }
-
-export type Scan = Awaited<ReturnType<typeof scanMachine>>;

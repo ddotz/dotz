@@ -47,13 +47,6 @@ export class AsideRepl {
 const CLICK = `globalThis.clickText = async (labels, ms = 12000) => { for (let t = 0; t < ms; t += 500) { const hit = await page.evaluate(ls => { const b = [...document.querySelectorAll('button')].find(x => ls.includes(x.innerText.trim())); if (b && !b.disabled) { b.click(); return b.innerText.trim(); } return ''; }, labels); if (hit) return hit; await new Promise(r => setTimeout(r, 500)); } return ''; };`;
 const READ_TOKEN = `{ const t = await page.evaluate(() => document.body.innerText + ' ' + [...document.querySelectorAll('input,textarea')].map(x => x.value).join(' ')); const m = t.match(${TOKEN_RE}); if (m) console.log('TOKEN_FOUND ' + m[0]); else console.log('WAITING'); }`;
 
-export async function ensureBrowser(): Promise<void> {
-	const probe = (await Bun.$`aside repl ${"const p = await openTab('about:blank'); console.log('READY');"}`.nothrow().quiet()).stdout.toString();
-	if (/READY/.test(probe)) return;
-	await Bun.$`open -a Aside`.nothrow().quiet();
-	await wait(6000);
-}
-
 export async function createApp(name: string): Promise<string> {
 	const task = `In the Discord Developer Portal (https://discord.com/developers/applications), logged in as the current user:
 1. If an application named "${name}" exists, open it; otherwise create it with "New Application" (accept the terms; solve a captcha if one appears).
