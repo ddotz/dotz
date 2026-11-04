@@ -14,7 +14,6 @@ import { loadFeatureDirs } from "./featuredirs.ts";
 import { PEER_HEADER, peerHeaders, peerTokenFor } from "./peer-auth.ts";
 import { knownComputers, tailscaleStatus } from "./peers.ts";
 import { Bridge } from "./remote-desktop-ws.ts";
-import { sameOrigin } from "./routes-util.ts";
 import { peerFetch } from "./tailnet-fetch.ts";
 
 const IDLE_MS = 60_000; // no viewer for this long -> stop voxl
@@ -219,6 +218,15 @@ export class DeskHost {
 	}
 }
 
+const sameOrigin = (req: Request): boolean => {
+	const origin = req.headers.get("origin");
+	if (!origin) return true;
+	try {
+		return new URL(origin).host === req.headers.get("host");
+	} catch {
+		return false;
+	}
+};
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const text = (s: string, status: number) => new Response(s, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
 const page = (s: string, status: number, refresh = false) =>
