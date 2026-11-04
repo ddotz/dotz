@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { pendingAskFile, pendingAsks, pendingAsksBlock } from "./asks.ts";
 import { cfg } from "./config.ts";
 import { msg } from "./i18n.ts";
+import { decisionsOf } from "./notices.ts";
 import type * as Lanes from "./lanes.ts";
 import type * as Orchestrator from "./orchestrator.ts";
 import { adapters } from "./runtime/index.ts";
@@ -79,7 +80,8 @@ async function turn(agent: FakeAgent, text: string): Promise<void> {
 	await advance(500);
 }
 const laneJson = () => JSON.parse(readFileSync(join(DATA, "lanes", "pa", "lane.json"), "utf8"));
-const question = (n: number) => `[ask] Which branch should this go to?\n${"detail ".repeat(Math.ceil(n / 7))}`.slice(0, n);
+const BLOCK = "결정: 어느 브랜치로 올릴까요?\n**1) main**\n**2) dev**";
+const question = (n: number) => `[ask] Which branch should this go to?\n${"detail ".repeat(Math.ceil(n / 7))}`.slice(0, n - BLOCK.length - 2) + `\n\n${BLOCK}`;
 
 test("pending ask: an [ask] report is saved whole, gateway notices keep it, the owner's answer or a plain report clears it", async () => {
 	const cwd = join(DATA, "asks-work");
@@ -114,15 +116,17 @@ test("pending ask: an [ask] report is saved whole, gateway notices keep it, the 
 	expect(pendingAsksBlock()).toBe("");
 
 	// A following non-[ask] report also clears a pending question; a new [ask] sets it again.
-	await turn(agent, "[ask] second question?");
-	expect(lane.pendingAsk?.text).toBe("[ask] second question?");
+	const second = `[ask] second question\n\n${BLOCK}`;
+	await turn(agent, second);
+	expect(lane.pendingAsk?.text).toBe(second);
 	await turn(agent, "[run] still working");
 	expect(lane.pendingAsk).toBeUndefined();
 	expect(laneJson().pendingAsk).toBeUndefined();
 
 	// lane.json keeps a new question, which is what a restarted gateway reads back (restoreLanes spreads the record).
-	await turn(agent, "[ask] third question?");
-	expect(laneJson().pendingAsk.text).toBe("[ask] third question?");
+	const third = `[ask] third question\n\n${BLOCK}`;
+	await turn(agent, third);
+	expect(laneJson().pendingAsk.text).toBe(third);
 	l.sendToLane("pa", "answer");
 	l.stopLane("pa");
 	await advance(300);
@@ -197,4 +201,61 @@ test("orchestrator: a fresh start sends pending asks in a second steer message, 
 	await advance(1000);
 	rmSync(join(DATA, "orchestrator.json"), { force: true });
 	rmSync(join(lanesDir, "pa-orch"), { recursive: true, force: true });
+});
+
+const REAL = "[ask] 디자인 문서를 다 썼어요.\n\n결정: 자기 주소가 있는 컴퓨터를 고르면 어떻게 열까요?\n**1) 그 주소의 웹앱으로 이동**\n화면과 기능이 그대로예요.\n**2) 평소 채팅 화면에서 중계**\n앱 안에 머물러요.";
+const fresh = async (name: string) => {
+	mkdirSync(join(DATA, "w", name), { recursive: true });
+	rmSync(join(DATA, "lanes", name), { recursive: true, force: true });
+	const reports: string[] = [], progress: string[] = [];
+	l.setReportHandler((_, text) => reports.push(text));
+	l.setProgressHandler((_, text) => progress.push(text));
+	l.setIdleHandler(() => {});
+	const lane = l.launch(name, join(DATA, "w", name), "Build it.\nDone when: tests pass");
+	const agent = agents.at(-1)!;
+	await advance(3000);
+	return { lane, agent, reports, progress };
+};
+const said = (agent: FakeAgent, ...texts: string[]) => agent.push({ type: "alive" }, { type: "turn_start" }, ...texts.map(text => ({ type: "assistant", text, stop: "stop" }) as AgentEvent), { type: "turn_end" });
+
+test("a question stays the turn's report when a continuation of the same turn says it is waiting (the lost ask of 2026-11-05)", async () => {
+	const { lane, agent, reports, progress } = await fresh("pc");
+	await said(agent, REAL, "형의 방향 답을 기다리느라 멈춰 있어요.", "[ask] 형의 답이 올 때까지 여기서 멈춰 있을게요.");
+	await advance(500);
+	expect(reports).toEqual([REAL]);
+	expect(progress).toEqual([]);
+	expect(lane.pendingAsk?.text).toBe(REAL);
+	l.sendToLane("pc", "답이에요");
+	await said(agent, REAL, "[done] 끝났어요");
+	await advance(500);
+	expect(progress).toEqual([REAL]);   // a tagged text takes the turn's report, and the question has gone out as a real message first
+	expect(reports).toEqual([REAL, "[done] 끝났어요"]);
+});
+
+test("an [ask] without choices raises nothing: it goes back to the session once, then stays a plain note", async () => {
+	const { lane, agent, reports } = await fresh("pd");
+	const bare = "[ask] 형의 답을 기다리는 중이에요. 앞서 올린 두 결정에 답해 주시면 구현을 시작할게요.";
+	await said(agent, bare);
+	await advance(500);
+	expect(reports).toEqual([]);
+	expect(lane.pendingAsk).toBeUndefined();
+	expect(agent.sent.at(-1)!.text).toContain(msg().askRefused(bare.slice(6)));
+	const count = agent.sent.length;
+	await said(agent, bare);
+	await advance(500);
+	expect(agent.sent.length).toBe(count);   // once
+	expect(reports).toEqual([bare.slice(6)]);
+	expect(lane.pendingAsk).toBeUndefined();
+	expect(decisionsOf({ ts: "t", kind: "lane_report", source: "lane:pd", lane: "pd", text: reports[0]! })).toEqual([]);
+});
+
+test("a \"still waiting\" [ask] on a card the owner still has open makes nothing, however its words differ", async () => {
+	const { agent, reports } = await fresh("pe");
+	l.setOpenCardCheck(name => name === "pe");
+	const count = agent.sent.length;
+	await said(agent, "[ask] 아직 답을 기다리고 있어요. 언제쯤 답을 받을 수 있을까요?");
+	await advance(500);
+	l.setOpenCardCheck(() => false);
+	expect(reports).toEqual([]);
+	expect(agent.sent.length).toBe(count);
 });

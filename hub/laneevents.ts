@@ -4,7 +4,7 @@ import { emitEventActivity } from "./activity.ts";
 import { noteEvent, compactDue, requestCompact, flushCompact } from "./context.ts";
 import { rmSync } from "node:fs";
 import { handleError, laneRecovered, settleRevert, settleChain } from "./lanefailover.ts";
-import { scheduleReport, REPORT_DEBOUNCE_MS } from "./lanereport.ts";
+import { nextLastText, scheduleReport, REPORT_DEBOUNCE_MS } from "./lanereport.ts";
 import { compactAtFor, lanesCompactAt, log } from "./config.ts";
 import { recover } from "./lanerun.ts";
 import { prompt } from "./laneprompt.ts";
@@ -47,7 +47,7 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 					laneRecovered(lane);
 				}
 				if (ev.text) {
-					lane.lastText = ev.text;
+					lane.lastText = nextLastText(lane, ev.text);
 					lane.unreported = true;
 					// A text that ends in a tool call, after an owner message, is the lane's short answer to it (the footer asks for one).
 					if (ev.stop !== "error") ownerNotes.text(lane.name, ev.text, ev.stop !== "other");

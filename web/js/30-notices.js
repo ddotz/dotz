@@ -449,6 +449,11 @@ const ntLooseAsks = () => NT.items.filter(n => ntNeeds(n) && !ntOpenDec(n) && !n
 const ntHasDecision = t => NT.items.some(n => ntOpenDec(n) && n.decision.to === t);
 // pc: the computer a peer's notice came from (n.pc), so its main chat reads that gateway's bot name (08-home.js pcTargetName).
 const ntDecWhere = (d, pc) => d.to.startsWith("auth:") ? "로그인 요청" : pcTargetName(d.to, pc);
+// What a question is about: the project of the session that asks, then the session (or the place it was asked).
+function ntDecCtx(n) {
+  const d = n.decision, l = !n.pc && d.to.startsWith("lane:") && S && S.lanes.find(x => `lane:${x.name}` === d.to), proj = l ? laneProject(l) : "";
+  return [proj, ntDecWhere(d, n.pc)].filter(Boolean).join(" · ");
+}
 function ntApply(item, unread) {
   if (item) { const i = NT.items.findIndex(x => x.id === item.id); if (i >= 0) NT.items[i] = item; else NT.items.push(item); }
   if (typeof unread === "number") NT.unread = unread;
@@ -528,7 +533,7 @@ function ntHomeRow(n, label = "답변 필요") {
   return el("div", { class: `hr hrx${chg ? " nt-w" : ""}${n.read ? "" : " un"}`, "data-nid": n.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => noticeOpen(n), "aria-label": label ? `${title} · ${label}` : title },
       lead,
-      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha" }, ...(chg ? [chg] : [[n.decision ? ntDecWhere(n.decision, n.pc) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), label === "" && !chg ? "" : ntWhen(n)].filter(Boolean).join(" · ")]))),
+      el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title })), el("span", { class: "ha" }, ...(chg ? [chg] : [[n.decision ? ntDecCtx(n) : ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림"), label === "" && !chg ? "" : ntWhen(n)].filter(Boolean).join(" · ")]))),
       chg ? el("span", { class: "nt-wt", text: ntWhen(n) }) : null,
       label === "" && !chg ? ntEndNode(n) : null,
       label ? el("span", { class: "hs warn", text: label }) : null),
@@ -613,7 +618,7 @@ function ntSheetPaint() {
   if (!n || !ntIsDec(n)) { ntSheetClose(false); return; }
   const d = n.decision, open = d.state === "open", ignd = d.state === "ignored", parts = ntParts(n), keep = NS.node.contains(document.activeElement) ? document.activeElement.dataset.k : "";
   const kids = [
-    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecWhere(d, n.pc)} · ${open ? "답변 필요" : ignd ? "무시함" : d.expired ? "기한 지남" : d.resolved ? "해결됨" : "답변함"}` })],
+    fsHead([el("span", { class: `fs-ey ${open ? "warn" : ignd ? "ign" : "done"}`, text: `${ntDecCtx(n)} · ${open ? "답변 필요" : ignd ? "무시함" : d.expired ? "기한 지남" : d.resolved ? "해결됨" : "답변함"}` })],
       { ignore: open ? () => ntIgnore(n) : null, ignoreOff: NS.busy, close: () => ntSheetClose() }),
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: parts.title || "답변이 필요해요" }),

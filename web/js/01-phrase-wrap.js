@@ -56,14 +56,15 @@ function phraseTree(text) {
 // The tree as plain arrays of strings (the gaps dropped), for reading and testing the split points.
 const phraseChunks = text => (phraseTree(text) || []).map(([s]) => s.map(([c]) => c.map(([p]) => p.map(([u]) => u))));
 
-const WPH_COPY = [".sup", ".note", ".empty", ".hc-none", ".cv-empty", ".bell-none", ".dr-none", ".dc-q", ".dc-ds", ".fs-body", ".md p", ".md li", ".md blockquote",
+const WPH_COPY = [".sup", ".note", ".empty", ".hc-none", ".cv-empty", ".bell-none", ".dr-none", ".fs-body",
   "dialog p", "[class$='-note']", "[class*='-note ']", "[class$='-sub']", "[class*='-sub ']", "[class$='-hint']", "[class*='-hint ']", "[class$='-desc']",
   "[class*='-desc ']", "[class$='-msg']", "[class$='-body']", "[class*='-body ']"].join(", ");
-// the chat window (#tl: answers, cards, notes) keeps normal line breaks (owner, 11-03);
+// the chat window (#tl: answers, cards, notes) keeps normal line breaks (owner, 11-03), and so does prose an agent wrote wherever it is shown
+// (.md, a question and its option text in a sheet): a long sentence in boxes breaks early before every box that does not fit (owner, 11-05);
 // code, inputs, links (an underline does not reach into an inline-block), mail bodies, the file viewer, and boxes that clamp or
 // ellipsize their text (an inline-block there would hide whole phrases instead of trimming the last line)
 const WPH_SKIP = ["pre", "code", "kbd", "samp", "textarea", "input", "select", "svg", "a", "[contenteditable]", ".btn", ".chip", ".tag", ".mb", ".mb-txt", ".tv-body",
-  ".clamp", "[class*='clamp']", ".ntf .bd2", ".pn .pt", ".ml-snip", ".qt", ".lg-q", ".lb", ".pj-sc .tx", ".hm-n .s", ".hm-sh .s", ".wh", ".rq-orig",
+  ".clamp", "[class*='clamp']", ".ntf .bd2", ".pn .pt", ".ml-snip", ".qt", ".lg-q", ".lb", ".pj-sc .tx", ".hm-n .s", ".hm-sh .s", ".wh", ".rq-orig", ".md", ".ds-t", ".dc-q", ".dc-ds",
   ".tr-rb", ".mr-sum", ".dr-ob", ".kk-lp-t", ".kk-lp-d", ".fr-sum", ".rc-title", ".mt-head .sup", ".ended .sup", ".sh-t .sup", ".wph", "#tl"].join(", ");
 
 function phraseFrag(tree) {

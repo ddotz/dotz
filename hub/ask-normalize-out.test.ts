@@ -54,7 +54,7 @@ test("(b) a lane's marked report in the wrong format is stored and relayed as th
 	expect(buttons(reports[0]!)).toEqual(["그대로 반영", "알림 행만 조정 후 반영", "보류"]);
 	report(lane, "[ask] 형이 대조표를 보고 답하기 전에는 진행할 수 없어서 멈췄고, 계획에도 대기로 표시했어요.");
 	expect(reports).toHaveLength(1);
-	report(lane, "[ask] 하나 더요. 알림도 같이 고칠까요?");
+	report(lane, "[ask] 하나 더요.\n\n결정: 알림도 같이 고칠까요?\n**1) 네**\n**2) 아니요**");
 	expect(reports).toHaveLength(2);
 	expect(lane.pendingAsk?.text).toBe(reports[1]);
 });

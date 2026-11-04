@@ -56,6 +56,8 @@ export type Lane = Record_ & {
 	progressText?: string;
 	// Set while the handover turn of a rotated session runs: that turn only reloads context, so its reply is not a report.
 	silent?: { lastText: string };
+	// A bare [ask] (no choice block) went back to the lane; the next one is a plain note. An owner message or a real card resets it.
+	askRefused?: boolean;
 	// Set when a compaction finished: the next prompt sent to the process carries the retain nudge once (no extra turn).
 	retainNext?: boolean;
 	// Set when the owner changed the workers' model of a running idle lane: its next prompt tells it once (no extra turn).
@@ -89,7 +91,7 @@ export type Lane = Record_ & {
 
 export const lanes = new Map<string, Lane>();
 type ReportFn = (lane: Lane, text: string, answeringOwner?: boolean) => void;
-export const hooks: { report: ReportFn; progress: ReportFn; notice: ReportFn; idle: (name: string) => void; verified: (name: string, text: string) => void } = { report: () => {}, progress: () => {}, notice: () => {}, idle: () => {}, verified: () => {} };
+export const hooks: { report: ReportFn; progress: ReportFn; notice: ReportFn; idle: (name: string) => void; verified: (name: string, text: string) => void; openCard: (name: string) => boolean } = { report: () => {}, progress: () => {}, notice: () => {}, idle: () => {}, verified: () => {}, openCard: () => false };
 // Owner messages sent to a lane and not answered yet (lanerelay.ts createOwnerNotes): the lane's short answer note at its next
 // tool boundary reaches the owner at once, and the delivery state of each message follows (hub/events.ts emitDelivery).
 export type OwnerNoteHandlers = { note: (lane: string, text: string, refs: string[]) => void; answered: (lane: string, refs: string[]) => void; refused?: (lane: string, refs: string[]) => void; lost: (lane: string, refs: string[]) => void };
@@ -121,6 +123,10 @@ export function setIdleHandler(fn: (name: string) => void): void {
 export function setVerifiedHandler(fn: (name: string, text: string) => void): void {
 	hooks.verified = fn;
 }
+// Whether a decision card of this lane still waits on the owner (hub/notices.ts): a "still waiting" [ask] then makes no new item.
+export function setOpenCardCheck(fn: (name: string) => boolean): void {
+	hooks.openCard = fn;
+}
 
 // Tests: bring every piece of module state back to its import-time value (a lane or handler left by one test file must not leak into the next).
 export function resetLaneStateForTest(): void {
@@ -130,6 +136,7 @@ export function resetLaneStateForTest(): void {
 	hooks.notice = () => {};
 	hooks.idle = () => {};
 	hooks.verified = () => {};
+	hooks.openCard = () => false;
 	ownerHandlers = noopOwnerHandlers();
 	ownerNotes = newOwnerNotes();
 }
