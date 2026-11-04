@@ -1,5 +1,5 @@
 // Versioned delivery (docs/releases.md): tag v<YYMMDD.N> scheduled or v<YYMMDD.N.M> forced on main plus VERSION, KST day.
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export type Release = { readonly date: string; readonly n: number; readonly hotfix: number | null; readonly text: string };
@@ -14,6 +14,11 @@ export type ForcedPlan =
 
 const MAX_PER_DAY = 3;
 const KST = "Asia/Seoul";
+const KST_OFFSET_MS = 9 * 3600_000;
+const DAY_MS = 24 * 3600_000;
+const SLOT_HOURS = [18, 12, 0];
+const RELEASE_REPO = "ddotz/dotz";
+const RELEASE_OWNER = "ddotz";
 export const TAG_RE = /^v(\d{2})(\d{2})(\d{2})\.([1-3])(?:\.(\d+))?$/;
 
 function kstParts(now: Date): { y: number; m: number; d: number } {
@@ -26,6 +31,14 @@ export function todayKst(now: Date = new Date()): string {
 	const { y, m, d } = kstParts(now);
 	if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) throw new Error("KST 날짜를 계산하지 못했어요.");
 	return `${String(y % 100).padStart(2, "0")}${String(m).padStart(2, "0")}${String(d).padStart(2, "0")}`;
+}
+
+// The start of the release slot `now` is in: the latest 00:00, 12:00 or 18:00 KST (the 24:00 cut is the next day's 00:00).
+export function slotStart(now: Date): Date {
+	const kst = now.getTime() + KST_OFFSET_MS;
+	const day = Math.floor(kst / DAY_MS) * DAY_MS;
+	const hour = SLOT_HOURS.find(h => kst >= day + h * 3600_000)!;
+	return new Date(day + hour * 3600_000 - KST_OFFSET_MS);
 }
 
 export function shiftDay(date: string, delta: number): string {
@@ -111,7 +124,7 @@ export function summarizeChanges(oneline: readonly string[], previous: Release |
 }
 
 export async function gitOutput(args: readonly string[], cwd: string): Promise<{ code: number; out: string }> {
-	const proc = Bun.spawn(["git", "--no-pager", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+	const proc = Bun.spawn(["git", "--no-pager", ...args], { cwd, env: process.env, stdout: "pipe", stderr: "pipe" });
 	const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
 	const code = await proc.exited;
 	return { code, out: `${out}${err}`.trim() };
@@ -134,6 +147,16 @@ export async function hasCommitsSince(root: string, since: string | null): Promi
 	const r = await gitOutput(["rev-list", "--count", `${since}..HEAD`], root);
 	if (r.code !== 0) throw new Error(`커밋을 세지 못했어요: ${r.out}`);
 	return Number(r.out) > 0;
+}
+
+// The scheduled release already cut in the slot of `now`, if any. A forced .M does not take a slot. The tag's commit time is the
+// only state both triggers share, so a GitHub cron run hours late sees what the dispatched run did.
+export async function cutInSlot(root: string, tags: readonly string[], now: Date): Promise<Release | null> {
+	const newest = newestVersion(tags.filter(t => parseVersion(t)?.hotfix === null));
+	if (!newest) return null;
+	const r = await gitOutput(["log", "-1", "--format=%ct", `v${newest.text}`], root);
+	if (r.code !== 0) throw new Error(`태그 시각을 읽지 못했어요: ${r.out}`);
+	return Number(r.out) * 1000 >= slotStart(now).getTime() ? newest : null;
 }
 
 export type PublishOptions = {
@@ -164,6 +187,11 @@ export async function publishVersion(opts: PublishOptions): Promise<number> {
 		const newest = newestVersion(newTags);
 		if (!(await hasCommitsSince(root, newest ? `v${newest.text}` : null))) {
 			print(`새 커밋이 없어서 버전을 내지 않았어요 (최신 ${newest ? `v${newest.text}` : "태그 없음"}).`);
+			return 0;
+		}
+		const cut = await cutInSlot(root, newTags, now);
+		if (cut) {
+			print(`이 시간대는 이미 v${cut.text}로 냈어요. 다음 시간대를 기다려요.`);
 			return 0;
 		}
 	}
@@ -269,12 +297,63 @@ export async function publishVersion(opts: PublishOptions): Promise<number> {
 	return 0;
 }
 
+type Exec = (cmd: readonly string[]) => Promise<{ code: number; out: string }>;
+
+async function run(cmd: readonly string[]): Promise<{ code: number; out: string }> {
+	const proc = Bun.spawn([...cmd], { stdout: "pipe", stderr: "pipe" });
+	const [out, err] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+	return { code: await proc.exited, out: `${out}${err}`.trim() };
+}
+
+export type DispatchOptions = {
+	stateDir: string;
+	dryRun?: boolean;
+	now?: Date;
+	exec?: Exec;
+	print?: (line: string) => void;
+};
+
+// One tick of the owner's release-slot watch (docs/releases.md): once per slot, start release.yml, whose --auto run decides whether
+// anything goes out. Runs only for the repo owner's GitHub login, so a copy of the watch on another install dispatches nothing.
+export async function dispatchSlot(opts: DispatchOptions): Promise<number> {
+	const print = opts.print ?? ((line: string) => console.log(line));
+	const exec = opts.exec ?? run;
+	const slot = slotStart(opts.now ?? new Date()).toISOString();
+	const stateFile = join(opts.stateDir, "release-slot");
+	if (existsSync(stateFile) && readFileSync(stateFile, "utf8").trim() === slot) return 0;
+
+	const login = await exec(["gh", "api", "user", "--jq", ".login"]);
+	if (login.code !== 0) {
+		print(`GitHub 계정을 확인하지 못했어요: ${login.out}`);
+		return 1;
+	}
+	if (login.out !== RELEASE_OWNER) {
+		print(`${RELEASE_OWNER} 계정이 아니라서 릴리스를 시작하지 않아요 (${login.out}).`);
+		return 0;
+	}
+	if (opts.dryRun) {
+		print(`[--dry-run] ${slot} 시간대의 release.yml을 시작할 차례예요.`);
+		return 0;
+	}
+	const started = await exec(["gh", "workflow", "run", "release.yml", "--repo", RELEASE_REPO, "--ref", "main"]);
+	if (started.code !== 0) {
+		print(`release.yml을 시작하지 못했어요: ${started.out}`);
+		return 1;
+	}
+	writeFileSync(stateFile, `${slot}\n`);
+	print(`release.yml을 시작했어요 (${slot}).`);
+	return 0;
+}
+
 if (import.meta.main) {
 	const args = process.argv.slice(2);
-	const unknown = args.filter(a => a !== "--auto" && a !== "--force" && a !== "--dry-run");
-	if (unknown.length || (args.includes("--auto") && args.includes("--force"))) {
-		console.log("usage: bun hub/release.ts [--auto] [--force] [--dry-run]");
+	const unknown = args.filter(a => a !== "--auto" && a !== "--force" && a !== "--dry-run" && a !== "--dispatch");
+	const stateDir = process.env.DOTZ_WATCH_STATE_DIR;
+	const dispatch = args.includes("--dispatch");
+	if (unknown.length || (args.includes("--auto") && args.includes("--force")) || (dispatch && (args.includes("--auto") || args.includes("--force") || !stateDir))) {
+		console.log("usage: bun hub/release.ts [--auto] [--force] [--dry-run]\n       DOTZ_WATCH_STATE_DIR=<dir> bun hub/release.ts --dispatch [--dry-run]");
 		process.exit(2);
 	}
+	if (dispatch) process.exit(await dispatchSlot({ stateDir: stateDir!, dryRun: args.includes("--dry-run") }));
 	process.exit(await publishVersion({ auto: args.includes("--auto"), force: args.includes("--force"), dryRun: args.includes("--dry-run"), cwd: process.cwd() }));
 }
