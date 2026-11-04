@@ -460,8 +460,8 @@ const CM_RULES_SHOWN = 5;
 let cmRuleQ = "";
 const cmRuleRow = i => el("button", { class: "li tap", type: "button", title: i.full, "aria-label": `${i.title} 수정`,
   onclick: () => { pmSheetsClose(); cmAsk(`${CM_TAG} 내 규칙 "${i.full || i.title}": `); } }, el("span", { class: "tx" }, el("div", { class: "hd", text: i.title })));
-const cmRulesCard = g => [el("div", { class: "list" }, ...g.items.slice(0, CM_RULES_SHOWN).map(cmRuleRow)),
-  g.items.length > CM_RULES_SHOWN ? el("div", { class: "cv-more" }, el("button", { class: "btn text sm", type: "button", "data-k": "more", onclick: () => { cmRuleQ = ""; pmSheet("rules"); }, text: `규칙 ${g.items.length - CM_RULES_SHOWN}개 더 보기` })) : null];
+const cmRulesCard = g => [el("div", { class: "list" }, ...g.items.slice(0, CM_RULES_SHOWN).map(cmRuleRow),
+  g.items.length > CM_RULES_SHOWN ? moreRow(`규칙 ${g.items.length - CM_RULES_SHOWN}개 더 보기`, () => { cmRuleQ = ""; pmSheet("rules"); }) : null)];
 function cmRulesBody() {
   const items = ((PM.D && PM.D.groups) || []).find(g => g.id === "rules")?.items || [], found = el("div");
   const fill = () => {

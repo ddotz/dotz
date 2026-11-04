@@ -30,8 +30,9 @@
 .mon-more { align-self: center; min-height: 44px; padding: 0 var(--sp-4); font-size: 14px; }
 .mon-rep { color: var(--fg-3); font-size: 12px; line-height: 16px; }
 
-/* 채팅's list at volume (31-conversations.js): the 더 보기 row of the projects */
-.cv-more { display: flex; justify-content: center; padding: var(--sp-2) 0; }
-.cv-more .btn { min-height: 44px; padding: 0 var(--sp-4); font-size: 14px; }
+/* 더 보기 (moreRow): a list card's own last line. Centered muted text across the whole card, so it reads as the card's foot, not one more row. */
+.cv-more { display: block; width: 100%; min-height: 44px; padding: var(--sp-2) var(--sp-4); border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg-3); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); text-align: center; cursor: pointer; }
+.cv-more:hover { background: var(--card-hover); color: var(--fg-2); }
+.cv-more:active { background: var(--row-sel); }
 .cv-empty { padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font-size: 12px; line-height: 16px; text-align: center; }
 @media (prefers-reduced-motion: reduce) { .fr-chev { transition: none; } }

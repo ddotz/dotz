@@ -303,6 +303,7 @@ function convCards(rows) {
     if (r.header) { nodes.push(el("div", { class: "cv-sec", role: "presentation", text: r.header })); box = null; continue; }
     if (!box) nodes.push(box = el("div", { class: "cv-card" }));
     box.append(convRow(r));
+    if (r.more) box = null; // 더 보기 is its card's last line: rows after it start their own card
   }
   return nodes;
 }
@@ -348,7 +349,7 @@ function convAvatar(t) {
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
   if (r.empty) return el("div", { class: "cv-empty", text: r.empty });
-  if (r.more) return el("div", { class: "cv-more" }, el("button", { class: "btn text", type: "button", "data-k": "more", onclick: () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); }, text: `프로젝트 ${r.more}개 더 보기` }));
+  if (r.more) return moreRow(`프로젝트 ${r.more}개 더 보기`, () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); });
   if (r.ended) return endedGroup() || "";
   const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";
   // 채팅 목록은 시제품의 채팅 행 (proto .li): 아이콘, 제목·미리보기, 오른쪽에 시각과 대기 표시. 모니터링 목록은 시각 없이 그대로예요.

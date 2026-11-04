@@ -30,7 +30,6 @@
 .pl-list > .empty { background: transparent; }
 .pl-empty { padding: var(--sp-8) var(--sp-4); }
 .pl-empty-a { margin-top: var(--sp-3); }
-.pl-list .cv-more { border-top: 1px solid var(--line); }
 .pl-row { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-width: 0; min-height: 48px; margin: 0; padding: var(--sp-2) var(--sp-4); border: 0; background: transparent; color: inherit; text-align: left; }
 .pl-row + .pl-row { border-top: 1px solid var(--line); }
 .pl-row:hover { background: var(--card-hover); }

@@ -279,11 +279,12 @@ function pjPaintRows() {
   box.dataset.sig = sig;
   // Section headers and one card per group, as the prototype's 프로젝트 list; a group with no row after the filter is left out.
   const nodes = [];
+  let card = null;
   for (const [label, group] of prjGroups(page)) {
     nodes.push(el("div", { class: "sec pl-sec", text: label }));
-    nodes.push(el("div", { class: "pl-list" }, ...group.map(prjRow)));
+    nodes.push(card = el("div", { class: "pl-list" }, ...group.map(prjRow)));
   }
-  if (rest > 0) nodes.push(el("div", { class: "cv-more" }, el("button", { class: "btn text sm", type: "button", "data-k": "more", onclick: () => { PJ.more += PJ_PAGE; pjPaintRows(); }, text: `프로젝트 ${rest}개 더 보기` })));
+  if (rest > 0) card.append(moreRow(`프로젝트 ${rest}개 더 보기`, () => { PJ.more += PJ_PAGE; pjPaintRows(); }));
   if (!rows.length) nodes.push(el("div", { class: "empty pl-empty", text: searching ? "찾는 프로젝트가 없어요" : PJ.view === "need" ? "확인할 프로젝트가 없어요" : PJ.view === "run" ? "지금 진행 중인 프로젝트가 없어요" : PJ.view === "done" ? "끝낸 프로젝트가 없어요" : "아직 프로젝트가 없어요" }));
   if (showSess) {
     nodes.push(el("div", { class: "sec pl-sec", text: "세션" }));
