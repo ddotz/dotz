@@ -14,3 +14,13 @@ test("stored mail cards are re-read with the current rules; body and ref are kep
 	expect((list[1] as any).decision.draft).toEqual({ toLabel: "대상", to: "영상 댓글", body: "고마워요!" });
 	expect(refreshNoticeDrafts(list)).toBe(0);
 });
+
+// A mail card rewritten to its app draft before the fix keeps the bot's "(mail:<id>)" in its title: on start the open one follows its draft's ref.
+test("an open card whose title still names the old ref takes the draft's ref; an answered one stays", () => {
+	const card = (id: string, state: string) => ({ id, title: "이대로 보낼까? (mail:1a1a.1)", text: "x", decision: { options: [], to: "mail:score-1a1a.1", group: 1, state, draft: { toLabel: "받는이", to: "a@example.com", body: "안녕하세요", ref: "RAYVKXK", noAttachments: true } } });
+	const list = [card("a", "open"), card("b", "answered")] as unknown as Notice[];
+	expect(refreshNoticeDrafts(list)).toBe(1);
+	expect(list[0]!.title).toBe("이대로 보낼까? (RAYVKXK)");
+	expect(list[1]!.title).toBe("이대로 보낼까? (mail:1a1a.1)");
+	expect(refreshNoticeDrafts(list)).toBe(0);
+});

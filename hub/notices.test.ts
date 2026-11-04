@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { CONFIG_FILE, NAME, paths } from "./config.ts";
 import { decisionsOf, resetNoticesForTest } from "./notices.ts";
 import { shortTitle } from "./notice-title.ts";
-import { draftApprovalBlock } from "./draft-approval.ts";
+import { DRAFT_SEND, draftApprovalBlock, draftVerdict } from "./draft-approval.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
@@ -709,6 +709,11 @@ test("a card rewritten to a newer draft of the same mail switches the open notic
 	expect(open).toHaveLength(1);
 	expect(open[0]!.decision!.draft!.ref).toBe("RAYVKXK");
 	expect(open[0]!.decision!.draft!.attachments?.map(a => a.name)).toEqual(["악보.pdf"]);
+	// 보내기 on this card records its title as the pick: the send gate looks for the draft's own id there (features/reply-drafts/lib/flow.ts sendDraft).
+	expect(open[0]!.title).toBe("이 답장 보낼까요? (RAYVKXK)");
+	const inbox = join(mkdtempSync(join(tmpdir(), "notice-pick-")), "inbox.jsonl");
+	writeFileSync(inbox, `${JSON.stringify({ ts: new Date().toISOString(), kind: "message", source: "web", channel: "mail:acct-1a1a", text: "결정 답", picks: [{ q: open[0]!.title, n: 1, label: DRAFT_SEND }] })}\n`);
+	expect(draftVerdict(inbox, "RAYVKXK", 0, { conv: "mail:acct-1a1a" }).verdict).toBe("send");
 });
 
 test("a session [ask] makes one decision for that session, a repeated copy adds none, and only a reply in that session settles it", () => {
