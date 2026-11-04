@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { checkDone, doneChecks, doneProblem, splitChecks } from "./donesignals.ts";
@@ -45,4 +45,16 @@ test("each check kind reads live state and says why it fails", async () => {
 	expect(checks[4]!.detail).toContain("exit 3");
 	expect(checks[6]!.detail).toBe("status 404, want 200");
 	expect(checks[8]!.detail).toContain("OPEN");
+});
+
+test("stdout~ anchors match a stream's last line as in a shell, in a folder with spaces and Korean", async () => {
+	const cwd = join(mkdtempSync(join(tmpdir(), "dotz-done-")), "내 드라이브 폴더");
+	mkdirSync(cwd);
+	writeFileSync(join(cwd, "사용 설명서_1.docx"), "x");
+	const checks = await checkDone(
+		['command `ls | grep -c "사용 설명서_"` stdout~"^1$"', 'command `echo 2` stdout~"^1$"', 'command `echo ok; echo warn >&2` stdout~"^warn$"'],
+		cwd,
+		{ receiptsDir: mkdtempSync(join(tmpdir(), "dotz-done-r-")) },
+	);
+	expect(checks.map(c => c.ok)).toEqual([true, false, true]);
 });
