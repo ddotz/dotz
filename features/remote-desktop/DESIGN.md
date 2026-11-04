@@ -21,8 +21,9 @@ Off by default. macOS only: on Linux and Windows the enable command stops and sa
 | Piece | File |
 |---|---|
 | Lifecycle, proxy, routes, opener | `hub/remote-desktop.ts` (+ `hub/remote-desktop.test.ts`) |
+| WebSocket bridge with backpressure | `hub/remote-desktop-ws.ts` |
 | Enable command | `features/remote-desktop/bin/onboard.ts`, `features/remote-desktop/feature.md` |
-| Web | `web/js/37-remote-desktop.js`, `web/css/` module, entries in palette, slash commands, settings (+ `hub/remote-desktop-web.test.ts`) |
+| Web (name prefix `dsk`; `dk` is taken by web/js/30-notices.js) | `web/js/37-remote-desktop.js`, `web/css/23-remote-desktop.css`, entries in palette, slash commands, settings (+ `hub/remote-desktop-web.test.ts`) |
 
 Data lives in `<DATA_DIR>/remote-desktop/`: `bin/voxl` (cargo install --root), `settings.json` `{on, control, allow_public}`, `onboard.json` (steps done).
 Defaults: on=true after enabling, **control=false** (view only until the owner turns it on, or the enable command got `--control`), allow_public=false.
@@ -101,7 +102,7 @@ A web page cannot start another app, and an HTTPS page cannot call a viewer-side
 4. link: `voxl --help` runs (dyld failure -> rebuild).
 5. enable: personal feature copy with `enabled: true`, `settings.json`.
 6. gateway: `GET /api/desk/status` through the hub token. Gateway from before this feature or off -> stop and say a restart is needed, exit 1; running the same command again resumes here.
-7. permissions: `POST /api/desk/probe` runs in the gateway's own chain, returns `{screen, accessibility}`. Screen missing (always) or accessibility missing (when control is on): open the pane with `open -g` (`onboard/selfserve.ts` PANES) from the gateway, try its toggle, re-check, else print the one step, exit 3.
+7. permissions: `POST /api/desk/probe` runs in the gateway's own chain, returns `{screen, accessibility}`. Screen missing (always) or accessibility missing (when control is on): the same call with `{grant:true}` opens the pane with `open -g` (`onboard/selfserve.ts` PANES) from the gateway, tries its toggle, re-checks; else the command prints the one step, exit 3.
 8. trial: the same route with `{trial:true}` starts voxl with `--read-only` regardless of settings, reads `/screenshot` over the Bearer, checks PNG magic and size, stops. Input is never tested.
 
 ## Web
