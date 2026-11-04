@@ -240,9 +240,11 @@ a.dr-att:active { background: var(--active); }
 .ms-hd .ms-n { color: var(--fg-3); font-size: 12px; }
 .ms-rm .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .mr-filter { position: sticky; top: 0; z-index: 2; display: flex; gap: var(--sp-1); flex-wrap: wrap; padding: var(--sp-1) 0 var(--sp-2); background: var(--bg); }
-.mr-filter .mr-f { height: 28px; padding: 0 var(--sp-3); font-size: 12.5px; color: var(--fg-2); background: var(--layer); }
-.mr-filter .mr-f.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
-.mr-filter .mr-fn { font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
+/* every view pill of an app, a mail list, 프로젝트 and 답장 대기 (ui-spec 탭·칩): the prototype's .tabs on the card fill, the chosen one filled with the ink */
+:is(.mr-filter, .pl-chips) .mr-f { flex: none; height: var(--chip-h); padding: 0 var(--sp-3); border-radius: var(--r-pill); background: var(--card); color: var(--fg-2); font: 500 13px/20px var(--font); }
+:is(.mr-filter, .pl-chips) .mr-f:hover { background: var(--card-hover); }
+:is(.mr-filter, .pl-chips) .mr-f.on, :is(.mr-filter, .pl-chips) .mr-f.on:hover { background: var(--fg); color: var(--bg); }
+:is(.mr-filter, .pl-chips) .mr-fn { margin-left: var(--sp-05); font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
 
 /* a briefing-shaped answer in chat (11-resultcard.js hcBriefNode): schedule rows with a muted time column, the mail line as a chip, counts as numbers */
 .hcb { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); min-width: 0; font-size: 15.5px; line-height: 28px; }

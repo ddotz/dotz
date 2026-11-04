@@ -212,6 +212,8 @@
     { name: "가격 페이지", kind: "watch", watch: "price-page", scope: "plain", last_run: ago(18), next_run: new Date(now + 12 * 60_000).toISOString(), last_result: "ok" },
     { name: "캠핑 의자 가격", kind: "watch", watch: "camp-chair", scope: "plain", last_run: ago(9), next_run: new Date(now + 21 * 60_000).toISOString(), last_result: "changed" },
     { name: "아침 브리핑", kind: "schedule", watch: "", scope: "plain", last_run: ago(61), next_run: new Date(now + 20 * 3600_000).toISOString(), last_result: "ok" },
+    // A schedule's text is the prompt it runs: the screen shows its plain first sentence, never the paths and commands after it (30-monitoring.js monHuman).
+    { name: "주간 점검 시간이에요. ~/notes/weekly/README.md대로 돌려요. `bun ~/notes/weekly/collect.ts`로 요청을 모으고 report.md를 써요.", kind: "schedule", watch: "", scope: "plain", every: "하루에 한 번", last_run: ago(95), next_run: new Date(now + 22 * 3600_000).toISOString(), last_result: "ok", last_summary: "주간 점검 확인(state.json weekly-1104, w…" },
   ];
 
   const projects = [

@@ -8,7 +8,8 @@
 #cm-empty + .btn { display: block; margin: calc(var(--sp-3) * -1) auto var(--sp-6); }
 .cm .kk-draft input.kk-ta { flex: 1; min-width: 0; min-height: 44px; padding: var(--sp-2) var(--sp-3); border-radius: 12px; border: 0; background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
 .cm .kk-draft input.kk-ta:focus { outline: 0; box-shadow: var(--ff-ring); }
-.cm-tabs { margin: var(--sp-2) var(--sp-4); }
+#cm-rooms .cm-tabs { position: static; flex-wrap: nowrap; margin: var(--sp-3) var(--sp-4) var(--sp-1); padding: 0; background: none; }
+#cm-rooms .cm-tabs .mr-f:not(.on) { background: var(--layer); }
 .dm-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-1) var(--sp-4) var(--sp-2); }
 .dm-note { color: var(--fg-3); font: 400 12px/16px var(--font); }
 
@@ -61,6 +62,11 @@
    done = green, busy (on its way) = blue, ask (waits for him) = orange, err = red (the shared state colors) */
 .cm-pg { display: flex; flex-wrap: wrap; gap: var(--sp-05) var(--sp-4); margin-top: var(--sp-1); min-width: 0; }
 .cm-tr { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; color: var(--fg-3); font: 400 12px/18px var(--font); }
+/* a post's row: counts, not steps of one comment, so no line between them */
+.cm-tr.sum { margin-top: var(--sp-05); }
+.cm-tr.sum .cm-st { flex: none; white-space: nowrap; }
+.cm-tr.sum .cm-st + .cm-st { padding-left: 0; }
+.cm-tr.sum .cm-st + .cm-st::after { display: none; }
 .cm-tn { margin-right: var(--sp-2); color: var(--fg-2); font-weight: 600; }
 .cm-st { position: relative; display: inline-flex; align-items: center; --cm-link: 10px; gap: var(--sp-1); min-width: 0; overflow-wrap: anywhere; }
 .cm-st::before { content: ""; flex: none; width: 8px; height: 8px; box-sizing: border-box; border: 1.5px solid var(--line-2); border-radius: 50%; }

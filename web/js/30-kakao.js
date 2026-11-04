@@ -14,7 +14,7 @@ const KK = {
   vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, dsig: [], droom: "", adding: null,   // adding: the 지켜볼 대화방 dialog while it is open
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], gaps: new Set(), more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", revise: null, reviseCode: "", draftT: 0, tailing: false, again: false,
-  typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
+  view: "all", typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
   peerT: 0, peerBusy: false, peerHead: "", lp: new Map(), olderBusy: false, olderAgain: false,
 };
 
@@ -577,15 +577,25 @@ function kkRow(r) {
         r.unreplied ? unrepPill() : null,
         r.unread ? el("span", { class: "nb warn", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null) : null);
 }
+// The pills of the watched rooms, the same format as the mail, project and 댓글 ones: which rooms the list shows. [key, label, keep, the empty list's line].
+const KK_VIEWS = [["all", "전체", () => true, ""], ["unread", "안 읽음", r => r.unread, "안 읽은 대화방이 없어요"], ["unreplied", "미답장", r => r.unreplied, "미답장 대화방이 없어요"]];
+const kkViewOf = () => KK_VIEWS.find(v => v[0] === KK.view) || KK_VIEWS[0];
+function kkViewBar(watched) {
+  return el("div", { class: "mr-filter kk-views", role: "tablist", "aria-label": "지켜보는 대화방 보기" }, ...KK_VIEWS.map(([k, label, ok]) => {
+    const on = k === kkViewOf()[0];
+    return el("button", { class: `cchip mr-f${on ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(on), "data-view": k, onclick: () => { KK.view = k; kkPaintRooms(); } }, label, cntSpan(`kk-view:${k}`, "mr-fn", watched.filter(ok).length));
+  }));
+}
 function kkPaintRooms() {
   const top = kkRooms.scrollTop, watched = KK.rooms.filter(r => r.watched).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
   const note = !KK.loaded ? "불러오는 중…" : !KK.on ? "카카오톡 연동이 꺼져 있어요" : KK.error, ready = KK.loaded && !note;
-  const head = el("div", { class: "kk-lh" }, el("span", { class: "kk-pt", text: "지켜보는 대화방" }), el("span", { class: "kk-cnt", text: ready ? `${watched.length}개` : "" }),
+  const shown = watched.filter(kkViewOf()[2]);
+  const head = el("div", { class: "kk-lh" }, ...(ready && watched.length ? [kkViewBar(watched)] : [el("span", { class: "kk-pt", text: "지켜보는 대화방" }), el("span", { class: "kk-cnt", text: ready ? "0개" : "" })]),
     ready && KK.rooms.length ? el("button", { class: "btn tonal sm kk-add-btn", id: "kk-add-btn", type: "button", onclick: () => kkAddOpen() }, icon("add"), el("span", { text: "추가" })) : null);
   const list = el("section", { class: "pl-list kk-watch", "aria-label": "지켜보는 대화방" });
   if (note) list.append(el("div", { class: "kk-note", role: "status", text: note }));
-  else if (watched.length) list.append(...watched.map(kkRow));
-  else list.append(el("div", { class: "kk-note", id: "kk-empty", text: KK.rooms.length ? "지켜볼 대화방을 추가해 주세요" : "고를 수 있는 대화방이 없어요" }));
+  else if (shown.length) list.append(...shown.map(kkRow));
+  else list.append(el("div", { class: "kk-note", id: "kk-empty", text: watched.length ? kkViewOf()[3] : KK.rooms.length ? "지켜볼 대화방을 추가해 주세요" : "고를 수 있는 대화방이 없어요" }));
   // The status of the watches the app owns (its new-message check, a login keeper) is at the top of the pane, on this computer and on the other alike.
   const own = (kkItemNow() || {}).owned || [];
   clear(kkRooms).append(...[own.length ? el("section", { class: "kk-own", "aria-label": "감시 상태" }, ...own.map(monStatNode)) : null, head, list].filter(Boolean));

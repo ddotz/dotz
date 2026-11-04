@@ -1567,7 +1567,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 
 ### 카카오톡 방 목록 (지켜보는 대화방)
 - 목적: 지켜보기로 한 방을 최근 순으로 나열하고, 안 읽음과 미답장을 보여줘요.
-- 구성: `#kk-rooms` 안에 (있으면) 감시 상태 `section.kk-own`(aria-label `감시 상태`, `monStatNode`), 머리 `.kk-lh`(`지켜보는 대화방`, 개수 `N개`, 버튼 `#kk-add-btn` `추가`), 목록 `section.pl-list.kk-watch`(aria-label `지켜보는 대화방`). 행 `button.cv-row.kk-row`: 아바타(이름 첫 글자, 이름으로 색), 이름, 단체/오픈채팅 표시 `.kk-grp`(`단체` 또는 `오픈채팅`), 한 줄 힌트, 오른쪽에 시각 `.kk-t`, 미답장 알약(`unrepPill`), 안 읽음 배지 `.nb.warn`.
+- 구성: `#kk-rooms` 안에 (있으면) 감시 상태 `section.kk-own`(aria-label `감시 상태`, `monStatNode`), 머리 `.kk-lh`(보기 알약 `.kk-views .mr-f`: `전체`·`안 읽음`·`미답장`과 개수, 방이 없으면 `지켜보는 대화방`; 버튼 `#kk-add-btn` `추가`), 목록 `section.pl-list.kk-watch`(aria-label `지켜보는 대화방`). 행 `button.cv-row.kk-row`: 아바타(이름 첫 글자, 이름으로 색), 이름, 단체/오픈채팅 표시 `.kk-grp`(`단체` 또는 `오픈채팅`), 한 줄 힌트, 오른쪽에 시각 `.kk-t`, 미답장 알약(`unrepPill`), 안 읽음 배지 `.nb.warn`.
 - 기능: 행 클릭 `kkOpen(chatId)`. `추가` 버튼 `kkAddOpen()`. 방 목록은 `kkPaintRooms`가 그리고 스크롤 위치를 유지해요.
 - 상태(정확한 문구):
   - 불러오는 중: `불러오는 중…`

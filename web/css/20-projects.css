@@ -16,10 +16,6 @@
 /* one line at every width: the chips scroll sideways instead of wrapping */
 .pl-chips { display: flex; flex-wrap: nowrap; gap: var(--sp-1); min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .pl-chips::-webkit-scrollbar { display: none; }
-.pl-chips .mr-f { flex: none; height: 28px; padding: 0 var(--sp-3); border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font: 500 13px/20px var(--font); }
-.pl-chips .mr-f:hover { background: var(--card-hover); }
-.pl-chips .mr-f.on, .pl-chips .mr-f.on:hover { background: var(--fg); color: var(--bg); }
-.pl-chips .mr-fn { margin-left: var(--sp-1); font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
 /* the prototype's .sec + .list: each group is its own card, with the heading above it */
 .pl-groups { display: flex; flex-direction: column; min-width: 0; }
 .pl-groups > .sec { margin: var(--sp-5) var(--sp-1) var(--sp-2); color: var(--fg-2); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); }
