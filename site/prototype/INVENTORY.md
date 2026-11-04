@@ -44,6 +44,7 @@
 | 사용량 카드 | 5시간 · 7일 한도를 막대로 | web/js/37-api-budget.js, hub/usage-account.ts | `#home` |
 | 홈 보드 배치 | 카드를 12칸 격자에서 끌어서 옮기고 크기를 바꿔요 | web/js/07-board.js | 없음 |
 | 카드 추가 폼 (시안: 새 폼) | 미리보기를 주인공으로, 제목 · 보기 · 내용만 먼저 보이고 나머지는 더 보기에 | web/custom.js (cardForm), web/css/03-base.css (.fi, .tf) | `#form`, `#form/filled`, `#form/more`, `#form/settings` |
+| 대기함 (시안: 자동발송) | 멈춘 답장을 앱 구분 없이 한 목록에 모아요. 답 필요 · 실패 · 보낸 것, 행마다 멈춘 이유 한 줄, 같은 이유의 실패는 묶어서 다시 보내기 | 없음(시안), web/js/30-triage.js(빠른 처리) | `#queue`, `#queue/failed`, `#queue/chat` |
 | 검색 (명령 팔레트) | 화면 이름이나 `/명령`으로 바로 가요 | web/js/05-command-palette.js | `#palette` |
 
 ## 채팅
