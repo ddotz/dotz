@@ -330,6 +330,12 @@ describe("the line about a mailbox that does not follow", () => {
 		expect(await note(on)).toBeNull();
 	}, 30_000);
 
+	test("a list with nothing to say draws no stray text between the filter and the rows", async () => {
+		only(CAN);
+		const v = await openList(1280, 800);
+		expect(await ev<string[]>(v, `[...document.querySelector("#mon-tl").childNodes].filter(n => n.nodeType === 3).map(n => n.textContent)`)).toEqual([]);
+	}, 30_000);
+
 	test("a mixed list says some, and a source that can do one of the two names only the other", async () => {
 		only(CAN);
 		mails.find(m => m.key === "fx-b")!.can = [];
