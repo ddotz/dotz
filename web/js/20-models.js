@@ -89,8 +89,9 @@ function targetCard(key, title, status, cur, confirmText, extra = {}) {
     if (p.thinking != null && p.thinking !== cur.thinking) change.thinking = p.thinking;
     await putModel(key, title, change, confirmText, `${modelName(model)} · ${thinkKo(thinking)}`);
   }) }, "적용");
+  const run = status ? runStatus(key, status, targetInfo(key).ask) : null, sub = [run && run[0], extra.sub].filter(Boolean).join(" · ");
   return el("section", { class: "mt-card", "data-target": key, "aria-label": title },
-    el("div", { class: "mt-head" }, status ? el("span", { class: `dot ${statusTone(status)}` }) : null, el("span", { class: "t", text: title }), extra.sub ? el("span", { class: "sup", text: extra.sub }) : null, el("span", { class: "sp" }), ...(extra.tags || [])),
+    el("div", { class: "mt-head" }, run ? el("span", { class: `dot ${run[1]}` }) : null, el("span", { class: "t", text: title }), sub ? el("span", { class: "sup", text: sub }) : null, el("span", { class: "sp" }), ...(extra.tags || [])),
     el("div", { class: "list mt-list" },
       el("div", { class: "mt-pick" },
         el("div", { class: "mt-model" }, modelField),
