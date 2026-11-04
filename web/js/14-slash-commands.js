@@ -148,7 +148,7 @@ const ULW_RE = /(^|[^a-z0-9])ulw(?![a-z0-9])/i;
 const ULW_ALL = /(^|[^a-z0-9])(ulw)(?![a-z0-9])/gi;
 const ulwHl = el("div", { class: "ta-hl", "aria-hidden": "true" });
 ta.before(ulwHl);
-ta.addEventListener("scroll", () => { ulwHl.scrollTop = ta.scrollTop; });
+ta.addEventListener("scroll", () => { ulwHl.scrollTop = ta.scrollTop; atkLay.scrollTop = ta.scrollTop; });
 function paintUlw(on) {
   ulwHl.hidden = !on;
   if (!on) { clear(ulwHl); return; }
@@ -175,8 +175,9 @@ function autosize() {
   ta.style.height = "auto";
   ta.style.height = `${Math.max(taFloor(), Math.min(ta.scrollHeight, 140))}px`;
   sendRow.style.height = "";
+  atkPaint();
 }
-ta.addEventListener("input", () => { autosize(); saveDraft(); updateHints(); });
+ta.addEventListener("input", ev => { atkSync(ev); autosize(); saveDraft(); updateHints(); });
 ta.addEventListener("focus", () => updateHints());
 ta.addEventListener("blur", () => { const box = $("#hints"); box.hidden = true; });
 // Registered before the send/stop key handler: while the menu is open, arrows move, Tab/Enter pick, Esc closes it.
@@ -232,12 +233,12 @@ async function sendCommand(text) {
 async function sendChat(how) {
   const text = ta.value.trim();
   if (ATT.some(a => !a.file)) { toast("파일을 올리는 중이에요"); return; }
-  const files = ATT.map(a => a.file), picks = pkItems();
+  const files = ATT.map(a => ({ ...a.file, label: a.no })), picks = pkItems();
   if ((!text && !files.length && !picks.length) || ta.disabled) return;
   if (files.length && text.startsWith("/")) { toast("명령에는 파일을 붙일 수 없어요", true); return; }
   if (picks.length && text.startsWith("/")) { toast("명령에는 요소를 붙일 수 없어요", true); return; }
   const refs = text.startsWith("/") ? [] : mnRefs(text), sentMentions = MENTIONS;
-  const sentAtt = ATT, sentPicks = PICK; ATT = []; renderAtt(); pkClear(); MENTIONS = [];
+  const sentAtt = ATT, sentPicks = PICK; ATT = []; atkForget(); renderAtt(); pkClear(); MENTIONS = [];
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
   ta.value = ""; ts(t).draft = ""; try { localStorage.removeItem(DRAFT_KEY(t)); } catch {} autosize(); updateHints(); renderWorking();
   if (typeof asTplEnd === "function") asTplEnd();
@@ -261,7 +262,7 @@ async function sendChat(how) {
     const body = { text, ...(reply ? { reply } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isSettingsT(t) ? { settings: settingsApp(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(mode ? { mode } : {}), ...(files.length ? { files } : {}), ...(picks.length ? { elements: picks } : {}), ...(refs.length ? { refs } : {}) };
     // A conversation of another computer gets the files uploaded there first (34-peer-monitoring.js pqUpload); a failed upload sends nothing.
     const owner = pqAct("/api/message", body);
-    if (owner && owner.pc && files.length) body.files = await pqUpload(owner.pc, sentAtt);
+    if (owner && owner.pc && files.length) body.files = (await pqUpload(owner.pc, sentAtt)).map((f, i) => ({ ...f, label: sentAtt[i].no }));
     const r = await api("/api/message", "POST", body);
     // A peer's conversation is not on this computer's event stream: its history is read again now, so the sent bubble shows at once.
     if (owner && owner.pc) loadTarget(t, true);
@@ -272,7 +273,7 @@ async function sendChat(how) {
   }
   catch (e) {
     // a failed send goes back to the conversation it came from, even when the owner has moved to another one meanwhile
-    if (t !== target) { ts(t).draft = text; ts(t).pick = sentPicks.concat(ts(t).pick || []); try { localStorage.setItem(DRAFT_KEY(t), text); } catch {} toast(`${e.message} · 보내지 못한 글은 원래 대화에 남겨 뒀어요${sentAtt.length ? " (파일은 다시 붙여 주세요)" : ""}`, true); return; }
+    if (t !== target) { ts(t).draft = text; ts(t).att = sentAtt.concat(ts(t).att || []); ts(t).pick = sentPicks.concat(ts(t).pick || []); try { localStorage.setItem(DRAFT_KEY(t), text); } catch {} atkStore(t, ts(t).att); toast(`${e.message} · 보내지 못한 글은 원래 대화에 남겨 뒀어요`, true); return; }
     toast(e.message, true); ta.value = text; MENTIONS = sentMentions.concat(MENTIONS); autosize(); ATT = sentAtt.concat(ATT); renderAtt(); pkRestore(sentPicks); rpRestore(reply);
   }
 }

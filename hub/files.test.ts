@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { allowedRoots, attachmentLines, canvasRoute, FileError, messageFiles, resolveAllowed, safeName, saveUpload, ownerFiles, serveFile, UPLOADS, uploadsFrom } from "./files.ts";
+import { allowedRoots, attachmentLines, canvasRoute, fileRoute, FileError, messageFiles, resolveAllowed, safeName, saveUpload, ownerFiles, serveFile, UPLOADS, uploadsFrom } from "./files.ts";
 import { isTempLane } from "./lanes.ts";
 
 const DATA = process.env.DOTZ_DIR!;
@@ -42,6 +42,26 @@ test("uploads are stored under the uploads dir and the size limit holds", async 
 	expect(got.map(f => f.name)).toEqual(["one.png", "two.txt"]);
 	expect(attachmentLines(got).split("\n")[0]).toBe(`[attachment] one.png (image/png) ${got[0].path}`);
 	expect(messageFiles([{ path: got[0].path, name: "one.png" }, { path: join(DATA, "outside.txt") }]).map(f => f.name)).toEqual(["one.png"]);
+});
+
+test("a composer token names its file in the [attachment] line, and only a token's shape passes", async () => {
+	const [up] = await uploadsFrom(new Request("http://x/api/upload", { method: "POST", body: (() => { const f = new FormData(); f.append("file", new File(["a"], "shot.png", { type: "image/png" })); return f; })() }));
+	const [good, bad] = messageFiles([{ ...up, label: "이미지2" }, { ...up, label: "x\n[attachment] evil" }]);
+	expect(attachmentLines([good])).toBe(`[attachment] 이미지2: shot.png (image/png) ${good.path}`);
+	expect(bad.label).toBeUndefined();
+});
+
+test("?thumb=1 answers a small webp under the original's ETag, and a small file as it is", async () => {
+	const w = 800, h = 800, pixels = w * h * 3, head = Buffer.alloc(54);
+	head.write("BM"); head.writeUInt32LE(54 + pixels, 2); head.writeUInt32LE(54, 10); head.writeUInt32LE(40, 14); head.writeInt32LE(w, 18); head.writeInt32LE(h, 22); head.writeUInt16LE(1, 26); head.writeUInt16LE(24, 28); head.writeUInt32LE(pixels, 34);
+	const { path: big } = await saveUpload(new File([Buffer.concat([head, Buffer.alloc(pixels, 120)])], "big.png", { type: "image/png" }));
+	const ask = (path: string, headers = {}) => { const url = new URL(`http://x/api/file?path=${encodeURIComponent(path)}&thumb=1`); return fileRoute(new Request(url, { headers }), url, allowedRoots([ROOT, UPLOADS]), new Set()); };
+	const res = await ask(big);
+	expect(res.headers.get("content-type")).toBe("image/webp");
+	const bytes = await res.arrayBuffer();
+	expect(bytes.byteLength).toBeLessThan(pixels / 10);
+	expect((await ask(big, { "if-none-match": res.headers.get("etag")! })).status).toBe(304);
+	expect((await ask(join(ROOT, "sub", "a.txt"))).headers.get("content-type")).toContain("text/plain");
 });
 
 test("the file route serves only regular files inside allowed roots", () => {

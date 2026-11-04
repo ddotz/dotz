@@ -109,7 +109,7 @@ function promptOf(text) {
   // attachments: their file names, not the local paths, and never as the title
   const files = [];
   const lines = s.split("\n").filter(l => {
-    const a = l.match(/^\[attachment\]\s*(.+?)\s+\([\w.+-]+\/[\w.+-]+\)/);
+    const a = l.match(/^\[attachment\]\s*(?:(?:이미지|파일)\d+:\s*)?(.+?)\s+\([\w.+-]+\/[\w.+-]+\)/);
     if (a) { files.push(a[1]); return false; }
     return !GW_NOISE.test(l) && !/^\[지금 도는 것\]|^\[now running\]/i.test(l);
   });
