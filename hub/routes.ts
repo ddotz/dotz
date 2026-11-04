@@ -6,9 +6,10 @@ import { approvalRoute, TRIAGE_MIN_DEFAULT, webAnswer } from "./approval-wire.ts
 import { droppedDraftRefs, restoreReopenedDrafts } from "./draft-restore.ts";
 import { join } from "node:path";
 import { cloudflareGate } from "./devices.ts";
-import { createWebAccess, WebAccessError, webAccessRoute } from "./web-access.ts";
+import { createLocalLogin } from "./local-login.ts";
+import { createWebAccess, localBrowser, WebAccessError, webAccessRoute } from "./web-access.ts";
 import type { Server } from "bun";
-import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, setMachineName } from "./config.ts";
+import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, PORT, setMachineName } from "./config.ts";
 import { limitWaits } from "./limitwait.ts";
 import { keyedSelector, keyFileOk, spendOnKey } from "./fallback.ts";
 import { changeTarget, ControlError, targetView, ForceRequired, looksLikeCommand, parseCommand } from "./control.ts";
@@ -113,14 +114,18 @@ export const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCas
 // Runtime web access (hub/web-access.ts, 설정 → 웹 접속): web.access = "cloudflare" is switched on and off live, so the gates below are read through it per request.
 // In that mode a valid Cloudflare Access token (hub/cf-access.ts) is checked once at the route entry (it needs the key fetch), then passed in as cfOk,
 // and only paired devices (hub/devices.ts) get in; Access, when set up, is required on top of the device session.
-// The Tailscale-User-Login header is not trusted in that mode: the tunnel delivers whatever header the client wrote.
-export const webAccess = createWebAccess({ dir: DATA_DIR, allow: ALLOW, notify: text => out("alert", text, undefined, { source: "gateway" }) });
+// The Tailscale-User-Login header is trusted only in "tailscale" mode: elsewhere nothing vouches for it, so whoever reaches the port could write it.
+// In "local" (이 컴퓨터만) a browser on this computer logs in once with a link minted from the terminal (hub/local-login.ts); leaving the mode voids its sessions.
+export const localLogin = createLocalLogin({ dir: DATA_DIR });
+export const webAccess = createWebAccess({ dir: DATA_DIR, allow: ALLOW, notify: text => out("alert", text, undefined, { source: "gateway" }), onLeaveLocal: () => localLogin.clear() });
+if (webAccess.mode() !== "local") localLogin.clear();
 
-function authorized(req: Request, cfOk = false, devOk = false): boolean {
+function authorized(req: Request, cfOk = false, devOk = false, peerIp?: string): boolean {
 	if (req.headers.get("x-dotz-token") === HUB_TOKEN) return true;
+	if (webAccess.mode() === "local" && localBrowser(req, peerIp) && localLogin.verify(req)) return true;
 	if (webAccess.devices() ? cloudflareGate({ device: devOk, accessConfigured: !!webAccess.cfAccess(), access: cfOk }) : cfOk) return true;
 	const login = (req.headers.get("tailscale-user-login") ?? "").toLowerCase();
-	if (login && ALLOW.has(login) && webAccess.mode() !== "cloudflare") return true;
+	if (login && ALLOW.has(login) && webAccess.mode() === "tailscale") return true;
 	const seen = [...req.headers.keys()].filter(k => k.startsWith("tailscale-")).map(k => `${k}=${req.headers.get(k)}`).join(" ");
 	log(`denied ${new URL(req.url).pathname} ${seen || "(no tailscale identity headers)"}`);
 	return false;
@@ -414,11 +419,15 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (pairing) return pairing;
 		const peer = checkPeer(req);
 		if (peer === "denied") return new Response("forbidden", { status: 403 });
-		if (peer === "none" && !authorized(req, !!cfAccess && (await cfAccess.verifyRequest(req)), !!devices && (await devices.verifySession(req)))) return devices ? devices.denied(req, url) : new Response("forbidden", { status: 403 });
+		// The login link is redeemed before the owner check (it is how a browser becomes the owner); a peer request never gets here (checkPeer above).
+		if (peer === "none" && req.method === "GET" && url.pathname === "/local-login") return localLogin.page(req, url, webAccess.mode(), srv?.requestIP(req)?.address);
+		if (peer === "none" && !authorized(req, !!cfAccess && (await cfAccess.verifyRequest(req)), !!devices && (await devices.verifySession(req)), srv?.requestIP(req)?.address)) return devices ? devices.denied(req, url) : webAccess.mode() === "local" ? localLogin.hint() : new Response("forbidden", { status: 403 });
 		const deviceApi = peer === "none" ? await devices?.apiRoute(req, url) : undefined;
 		if (deviceApi) return deviceApi;
 		const accessApi = peer === "none" ? await webAccessRoute(req, url, webAccess) : undefined;
 		if (accessApi) return accessApi;
+		const loginLink = peer === "none" ? localLogin.loginLink(req, url, { mode: webAccess.mode(), port: PORT, tokenOk: req.headers.get("x-dotz-token") === HUB_TOKEN }) : undefined;
+		if (loginLink) return loginLink;
 		// 설정 → 웹 접속: Cloudflare starts the onboarding flow, 이 컴퓨터만 records the mode and is done at once. Neither answer carries a secret.
 		if (peer === "none" && url.pathname === "/api/web-access/onboard") {
 			if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
