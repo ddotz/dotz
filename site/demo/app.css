@@ -800,7 +800,7 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .bm .more pre { margin: 0; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--card); color: var(--fg-2); font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; }
 .gban { flex: none; display: flex; align-items: center; gap: 10px; width: calc(100% - 48px); max-width: 872px; margin: 0 auto 4px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; }
 
-.oerr { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; width: calc(100% - 48px); max-width: 872px; margin: 0 auto 6px; padding: 10px 10px 10px 14px; border-radius: 12px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; box-shadow: inset 0 0 0 1px var(--warn, #d9822b); }
+.oerr { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; width: calc(100% - 48px); max-width: 872px; margin: 0 auto 6px; padding: 10px 10px 10px 14px; border-radius: 12px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; box-shadow: inset 0 0 0 1px var(--warn); }
 .oerr[hidden] { display: none; }
 .oerr .tx { flex: 1 1 220px; min-width: 0; }
 .oerr .tx b { color: var(--fg); font-weight: 600; }
@@ -862,8 +862,8 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .au .fld label { color: var(--fg-2); font-size: 12px; }
 .au .ctl { display: flex; gap: 6px; align-items: center; }
 .au .eye { flex: none; height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--fs-fill); color: var(--fg-2); font: 13px var(--font); }
-.au input.bad { border-color: var(--danger, #d93025); }
-.au .ferr { color: var(--danger, #d93025); font-size: 12px; min-height: 0; }
+.au input.bad { border-color: var(--err); }
+.au .ferr { color: var(--err); font-size: 12px; min-height: 0; }
 .au .rem { display: flex; gap: 8px; align-items: center; color: var(--fg-2); font-size: 13px; }
 .au .note { color: var(--fg-3); font-size: 12px; }
 .sn .ml-from { font-weight: 600; color: var(--fg); }
@@ -1347,7 +1347,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hr.hrx { flex-wrap: wrap; }
 .hrx-m:has(+ .hrx-f) { padding-right: 16px; }
 .hrx-f { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; padding: 0 16px 10px 36px; }
-.hrx-f .fatt { height: 44px; max-width: 100%; text-decoration: none; cursor: pointer; }
+.hrx-f .fatt { height: auto; min-height: 44px; max-width: 100%; text-decoration: none; cursor: pointer; }
 .hrx-f .fatt:hover { background: var(--hover); }
 
 /* 구성: simple map = the main line as a responsive flow of stage cards (3 columns from 1200px, 2 from 700px, one stacked
@@ -1610,7 +1610,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 #cbar::-webkit-scrollbar { display: none; }
 #cbar::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--fg-3); }
 #cbar:has(#c-model[hidden])::before { display: none; }
-#cbar .cchip { height: 20px; padding: 0 2px; background: transparent; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+#cbar .cchip { height: auto; min-height: 20px; padding: 0 2px; background: transparent; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 #cbar button.cchip { cursor: pointer; }
 #cbar button.cchip:hover { background: transparent; color: var(--fg); }
 #cbar .cchip.cown { opacity: 1; color: var(--fg-3); }
@@ -1967,11 +1967,12 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .dc-hb { flex: none; display: flex; align-items: center; gap: 2px; }
 /* 홈 답변 필요: a monitoring app's send approvals folded into one row; the items unfold below it, indented. */
 .ntg-h[aria-expanded="true"] .hs { color: var(--muted, inherit); }
-.ntg-l { margin: 0 0 6px 20px; padding-left: 8px; border-left: 2px solid var(--line, rgba(128, 128, 128, .35)); }
+.ntg-l { margin: 0 0 6px 20px; padding-left: 8px; border-left: 2px solid var(--line); }
 
 /* 알림 conversation: 지우기 (x) on each alert that needs no answer (30-notices.js ntAlertMarks) */
 #tl > [data-ts]:has(> .al-x) { position: relative; padding-right: 44px; }
 #tl > [data-ts] > .al-x { position: absolute; top: 8px; right: 8px; color: var(--fg-3); }
+#tl > .cont:has(> .al-x) > .mt:not(.dv) > .rp-btn { right: 44px; }   /* a continuation row hangs the quote button at the top right (15-reply.css): it stands left of the dismiss button */
 #tl > [data-ts] > .al-x:hover { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
 
 
