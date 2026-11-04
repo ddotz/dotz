@@ -22,7 +22,7 @@ const files = (kind: "js" | "css") => readdirSync(join(WEB, kind)).filter(f => f
 const joined = (kind: "js" | "css") => files(kind).map(f => source(`${kind}/${f}`)).join("\n");
 
 // The page names no server asset: /custom.js (appended by 99-boot.js) becomes the demo's own empty layer beside app.js.
-// Absolute /app.css and /app.js never appear in the sources; relative demo/app.* are what demo.html loads.
+// Absolute /app.css and /app.js never appear in the sources; /demo/app.* are what demo/index.html loads.
 const rewrite = (text: string) => text.replaceAll('"/custom.js"', '"/demo/custom.js"');
 
 const css = rewrite(joined("css"));
@@ -37,6 +37,13 @@ writeFileSync(join(OUT, "app.css"), css);
 writeFileSync(join(OUT, "app.js"), js);
 // No custom layer in the demo: the app appends this script on load, so it must exist (or the page logs a 404).
 writeFileSync(join(OUT, "custom.js"), "/* dotz demo: no custom layer */\n");
+
+// The page is never cached but these files are, for hours: without a version in their address a returning browser pairs the new page with the old
+// script and styles, and the layout breaks. The page names them with a hash of what they hold, so one deploy changes them together.
+const assets = ["app.css", "fixtures.js", "demo-api.js", "app.js"];
+const stamp = assets.reduce((h, f) => h.update(readFileSync(join(OUT, f))), createHash("sha1")).digest("hex").slice(0, 12);
+const page = join(OUT, "index.html");
+writeFileSync(page, readFileSync(page, "utf8").replace(/"\/demo\/(app\.css|fixtures\.js|demo-api\.js|app\.js)(?:\?v=\w+)?"/g, `"/demo/$1?v=${stamp}"`));
 
 const kb = (s: string) => `${Math.round(Buffer.byteLength(s) / 1024)} KB`;
 console.log(`site/demo/app.css  ${kb(css)}  (${files("css").length} files)`);
