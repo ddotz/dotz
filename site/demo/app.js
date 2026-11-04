@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "87dedabfdf2c";
+const WEB_BUILD = "5af2bea99b33";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -5466,7 +5466,7 @@ const CMDS = [
   { c: "/logout", d: "공급자 로그아웃", args: [{ n: "공급자", opts: slProviders }] },
   { c: "/quota", d: "공급자·모델별 사용 한도" },
   // 이 컴퓨터의 셸 (owner 2026-11-03): typed here, run in the terminal sheet - the composer's own way to the shell, not a gateway command.
-  { c: "/셸", d: "이 컴퓨터 터미널에서 명령 실행", args: [{ n: "명령", free: true }] },
+  { c: "/terminal", d: "이 컴퓨터 터미널에서 명령 실행", args: [{ n: "명령", free: true }] },
   { c: "/help", d: "명령 전체 설명" },
 ];
 // The command palette lists the same commands.
@@ -5653,9 +5653,9 @@ async function stopTarget() {
     scheduleState();
   } catch (e) { toast(e.message, true); }
 }
-// 컴포저에서 셸로 (owner 2026-11-03): "/셸 <명령>" is not a gateway command - it opens this computer's terminal sheet with the command in it
-// (36-shell.js openShell). Keep a bare "/셸" in the box and say what is missing instead of sending it anywhere.
-const SH_CMD = /^\/(?:셸|shell)(?:\s+([\s\S]*))?$/;
+// 컴포저에서 셸로 (owner 2026-11-03): "/terminal <명령>" is not a gateway command - it opens this computer's terminal sheet with the command in it
+// (36-shell.js openShell). Keep a bare "/terminal" in the box and say what is missing instead of sending it anywhere.
+const SH_CMD = /^\/(?:terminal|셸|shell)(?:\s+([\s\S]*))?$/;
 // A slash command (typed, or a card button) goes to the gateway for the current target; its answer joins the chat as a card.
 async function sendCommand(text) {
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
@@ -5685,7 +5685,7 @@ async function sendChat(how) {
     const m = SH_CMD.exec(text);
     if (m) {
       const command = (m[1] || "").trim();
-      if (!command) { toast("터미널에서 실행할 명령을 /셸 뒤에 적어 주세요", true); ta.value = text; autosize(); return; }
+      if (!command) { toast("터미널에서 실행할 명령을 /terminal 뒤에 적어 주세요", true); ta.value = text; autosize(); return; }
       openShell({ command }); return;
     }
     sendCommand(text); return;
