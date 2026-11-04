@@ -157,14 +157,15 @@ test("the list pages 12 projects at a time, filters by need/running/done and sea
 	expect(await q(v, `return document.querySelector("#v-project .pmv-title").textContent`)).toBe("커스텀");
 });
 
-test("커스텀 내 규칙: five rows and 모두 보기, a searchable full list, and a row opens the chat draft with the full text", async () => {
+test("커스텀 내 규칙: five rows and 더 보기 below the card, a searchable full list, and a row opens the chat draft with the full text", async () => {
 	const v = await boot(390, 844);
 	await waitFor(v, `document.querySelector("#pl-list .pl-row.sub")`);
 	await run(v, `document.querySelector("#pl-list .pl-row.sub").click()`);
-	await waitFor(v, `document.querySelector("#v-project [data-k='rules-all']")`);
-	expect(await q(v, `return [...document.querySelectorAll("#v-project .list > .li")].map(e => e.textContent)`)).toEqual(["규칙 하나", "규칙 둘", "규칙 셋", "규칙 넷", "규칙 다섯", "규칙 7개 모두 보기"]);
+	await waitFor(v, `document.querySelector("#v-project .list + .cv-more .btn.text.sm")`);
+	expect(await q(v, `return [...document.querySelectorAll("#v-project .list > .li")].map(e => e.textContent)`)).toEqual(["규칙 하나", "규칙 둘", "규칙 셋", "규칙 넷", "규칙 다섯"]);
+	expect(await q(v, `return document.querySelector("#v-project .cv-more .btn").textContent`)).toBe("규칙 2개 더 보기");
 	expect(await q(v, `return document.querySelectorAll("#v-project .list .btn").length`)).toBe(0);
-	await run(v, `document.querySelector("#v-project [data-k='rules-all']").click()`);
+	await run(v, `document.querySelector("#v-project .cv-more .btn").click()`);
 	await waitFor(v, `document.querySelector(".pdv-body #cm-q")`);
 	expect(await q(v, `return document.querySelectorAll(".pdv-body .li").length`)).toBe(7);
 	await run(v, `const i = document.querySelector("#cm-q"); i.value = "여섯의 원문"; i.dispatchEvent(new Event("input", { bubbles: true }))`);
