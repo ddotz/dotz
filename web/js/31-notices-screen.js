@@ -4,6 +4,7 @@
 // POST /api/notices/read {ids}, /:id/handled, /:id/dismiss, /:id/undismiss. State NSC lives in 04-state.js (go() needs it before this file runs).
 const NSC_FILTERS = [["all", "전체"], ["ask", "답변 필요"], ["result", "결과"], ["news", "새 소식"], ["alert", "경고"]];
 const NSC_GROUPS = [["need", "처리할 것"], ["news", "새 소식"], ["past", "지난 알림"]];
+const NSC_PAGE = 50;   // 새 소식 / 지난 알림 rows drawn at a time (NSC.lim starts at the same 50, 04-state.js)
 const NSC_X = { need: "처리했어요", news: "읽음으로 표시", past: "지우기" };
 
 // The list: a notice with an id that is neither a quiet watch check (log) nor a chat message (conv). Every count is this list's unread.
@@ -13,13 +14,21 @@ const nscUnreadIn = k => NT.items.reduce((c, n) => c + (nscListed(n) && !n.read 
 const nscGroup = n => (ntNeeds(n) || n.waits ? "need" : n.read ? "past" : "news");
 const nscReadable = () => nscIn(NSC.f).filter(n => !n.read && !ntNeeds(n));
 const nscTone = n => ntNeeds(n) || n.waits === "login" || n.tone === "warn" ? "warn" : n.tone === "fail" ? "err" : n.tone === "done" || n.cls === "result" ? "ok" : "";
+// The tag word of the prototype's D.notices, from the notice's own kind, tone and app: the app is the integration key (mail, kakao, instagram/youtube/site = 댓글)
+// or the prefix of the conversation it lives in. A word the data does not give is not made up: the rest is 감시 / 경고 / the app's name / 새 소식.
+const NSC_APP_TAG = { mail: "메일", kakao: "카카오톡", instagram: "댓글", youtube: "댓글", site: "댓글" };
+const nscApp = n => String(n.app || n.src || n.open || "").split(/[-:]/)[0];
 function nscTag(n) {
-  if (ntIsDec(n)) return n.decision.draft ? "답장 확인" : "결정";
+  const app = nscApp(n);
+  if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? "카카오톡" : "답장 확인") : "결정";
   if (n.waits === "login") return "로그인";
   if (n.waits === "fail" || n.tone === "fail") return "실패";
   if (n.tone === "ask") return "질문";
-  if (n.cls === "result") return "결과";
+  if (n.cls === "result") return n.tone === "done" ? "작업 완료" : "결과";
   if (n.kind === "watch" && nwChangeLine(n.text)) return "가격 변경";
+  if (NSC_APP_TAG[app]) return NSC_APP_TAG[app];
+  if (n.kind === "watch" && n.title === "예약") return "일정";
+  if (/아침/.test(n.title || "")) return "아침 점검";
   if (n.kind === "watch") return "감시";
   if (n.cls === "alert") return "경고";
   return ntPlain(n.app || "") || "새 소식";

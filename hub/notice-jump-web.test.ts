@@ -66,12 +66,14 @@ const monLanded = async (view: View) => {
 		return { id: m.dataset.nid, sel: MON.sel, seen: r.bottom > a.top && r.top < a.bottom };
 	})()`);
 };
-// A tap on the notice's row in the 알림 tab it is listed under.
+// A tap on the notice's row on the 알림 screen, under the filter it is listed in.
 const tapRow = async (view: View, tab: string, id: string) => {
 	const { run, waitFor } = on(view);
-	await run(`go("chat", "alert"); bellTab(${JSON.stringify(tab)});`);
-	await waitFor(`$('#bell-list .hr[data-nid="${id}"] .hrx-m')`);
-	await run(`$('#bell-list .hr[data-nid="${id}"] .hrx-m').click();`);
+	await run(`go("notices");`);
+	await waitFor(`current === "notices" && $('#v-notices .nsc-fb[data-f="${tab}"]')`);
+	await run(`$('#v-notices .nsc-fb[data-f="${tab}"]').click();`);
+	await waitFor(`$('#v-notices .nsc-r[data-nid="${id}"] .nsc-tx')`);
+	await run(`$('#v-notices .nsc-r[data-nid="${id}"] .nsc-tx').click();`);
 };
 
 // web/sw.js as shipped, with its platform stubbed: what a push shows, and what a tap on it does.
@@ -108,11 +110,15 @@ describe.each([["phone", 390], ["desktop", 1280]] as const)("%s", (_name, width)
 		expect(await landed(view)).toEqual({ t: "lane:a", at: LANE_AT, seen: true });
 	});
 
-	test("a decision lands on the asking message, with its sheet over it", async () => {
+	test("a decision row opens its sheet over the 알림 screen; from the home card or a push it lands on the asking message, with its sheet over it", async () => {
 		const view = await open(width);
 		await tapRow(view, "ask", "dec");
-		expect(await landed(view)).toEqual({ t: "main", at: ASK_AT, seen: true });
-		expect(await on(view).ev(`!!NS.h`)).toBe(true);
+		await on(view).waitFor(`NS.h`);
+		expect(await on(view).ev(`current`)).toBe("notices");
+		const second = await open(width);
+		await on(second).run(`noticeOpenId("dec");`);
+		expect(await landed(second)).toEqual({ t: "main", at: ASK_AT, seen: true });
+		expect(await on(second).ev(`!!NS.h`)).toBe(true);
 	});
 
 	test("a mail opens inside 모니터링 on that mail", async () => {

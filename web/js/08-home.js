@@ -503,7 +503,7 @@ const targetName = t => {
 const liveTargets = () => S ? [MAIN, ...projTargets(), ...S.lanes.filter(laneAlive).map(l => `lane:${l.name}`)] : [MAIN];
 const modeOf = () => current === "activity" ? "term" : "chat";
 let target = MAIN;
-try { const v = localStorage.getItem(TARGET_KEY); if (v && validTarget(v)) target = v; } catch {}
+try { const v = localStorage.getItem(TARGET_KEY); if (v && v !== "alert" && validTarget(v)) target = v; } catch {}
 // A settings conversation (a monitor's or an app's) shows the orchestrator busy only for a turn its own message started: TURN = target -> when that message
 // was sent, until the answer comes. A peer's monitor is answered on that computer, so this one's status never applies to it.
 const TURN = new Map();
