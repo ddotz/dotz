@@ -7,7 +7,7 @@
   const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "/custom.js" }));
   if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
   let h = parseHash();
-  if (pushOpenTs && !pushOpenNid && h.view === "chat" && h.t === "alert") h = { view: "notices", t: "" };   // an alert push without a notice opens the 알림 screen, drawn first
+  if (pushOpenTs && h.view === "chat" && h.t === "alert") h = { view: "notices", t: "" };   // #chat/alert is the 알림 screen: drawn first, then pushOpen lands on the item
   go(h.view || "home", h.t);
   if (pushOpenTs && h.view === "chat") CV.jump = pushOpenTs;   // the first draw lands on the tapped message (chatOpen); 30-notices.js pushOpen finishes by its kind
   // The first paint needs the history and the plan, not the state: ask for all of them at once instead of state first (the state
@@ -19,7 +19,7 @@
   // 알림 and 작업내역 sit one tap away and their answers are small: read ahead once the page has settled, so their first opening has something to show.
   if (h.view !== "notices") setTimeout(() => { for (const t of ["worklog"]) if (t !== target && !ts(t).hLoaded) loadTarget(t, true).catch(() => {}); }, 1500);
   await state;
-  if (pushOpenTs) { const at = pushOpenTs; pushOpenTs = ""; pushOpen(location.hash, at, pushOpenNid); }   // the app was started by a tap on a push
+  if (pushOpenTs) { const at = pushOpenTs; pushOpenTs = ""; pushOpen(PUSH_HASH, at, pushOpenNid); }   // the app was started by a tap on a push
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
   loadSubs(); loadQueue(); loadContext(true).then(renderCtxRing);

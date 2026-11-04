@@ -38,6 +38,7 @@ window.addEventListener("load", sharedIntake);
 // a tapped notification asks an open window to show its conversation; listened for as the script runs (not after the page's load
 // event) so a tap that lands while the page is still starting is not dropped
 if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}, h = d.open ? new URL(d.open, location.href).hash : ""; if (!h || d.notice) return;   // a decision push (d.notice) is opened by its id (30-notices.js)
+  ovCloseAll();   // nothing left open covers the landing
   if (d.ts) pushOpen(h, d.ts, d.nid); else if (location.hash !== h) { const p = parseHash(h); go(p.view, p.t); } });
 // A new shell version: sw.js refreshShell posts {type:"shell-updated"} when its background fetch brought a changed page, script or styles.
 // The page reloads onto it only while it is hidden and nothing would be lost (empty composer, no attachment, sheet, dialog, or viewer open): a reload
@@ -87,7 +88,7 @@ async function webBuildCheck(b) {
 // Views other than a conversation have no anchor: put their scroll back once they are drawn.
 if (SHELL_RESTORE && !SHELL_RESTORE.key && SHELL_RESTORE.views) for (const ms of [300, 1200]) setTimeout(() => { const v = $("#views"); if (SHELL_RESTORE && current !== "home" && !v.scrollTop) v.scrollTop = SHELL_RESTORE.views; }, ms);
 // A tap that had to start the app carries the message as ?m=<ts>: 99-boot.js opens it once the state is in. A decision carries ?n=<id> (its sheet,
-// 30-notices.js): it stays in the address and never also jumps to a conversation.
+// 30-notices.js), with ?m= only as the place to land when that decision is no longer listed.
 const pushQ = new URLSearchParams(location.search);
 // The device id: every subscription this device makes, on any computer, carries it, so the computers know they are one device (hub/push.ts fanOut).
 // It is minted once here; opening another computer from this app (33-peers.js) hands it on as ?did=, and the page that arrives with one keeps that one.
@@ -102,7 +103,8 @@ if (pushQ.has("did")) { pushQ.delete("did"); const rest = pushQ.toString(); hist
 // ?pc=<origin> (a notice relayed from another computer): the page switches to that computer (33-peers.js prFollow), with ?n / ?m as its own item.
 const PUSH_FOLLOW = pushQ.has("pc") ? location.href : "";
 let pushOpenTs = pushQ.has("n") || PUSH_FOLLOW ? "" : pushQ.get("m") || "";
-const pushOpenNid = pushQ.get("i") || "";
+const pushOpenNid = pushQ.get("i") || "", pushDecisionAt = pushQ.has("n") ? pushQ.get("m") || "" : "";
+const PUSH_HASH = location.hash;   // the tapped address: the first go() rewrites it (#chat/alert to #notices, a mail to #monitoring/c:...)
 if (pushQ.has("m") && !PUSH_FOLLOW) { pushQ.delete("m"); pushQ.delete("i"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
 async function pwaInit() {
   if (!("serviceWorker" in navigator)) return;
