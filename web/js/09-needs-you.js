@@ -64,15 +64,15 @@ function paintAttn() {
   toastAttn();
   monAttnSoon();
 }
-// The 모니터링 nav badge counts what waits there on this computer (it shows on every tab, and outside 모니터링 only the computer chip's dot
-// speaks for the other computers, owner 2026-10-31): each list row whose monitor or app failed or lost its
-// connection (a watch an app owns counts as that app's row, as the list shows it), plus each reply draft waiting for 보내기. It clears by what clears
-// those: a passing check, a reconnect, a draft sent or dropped. srcs: [{apps (GET /api/integrations items), mons (GET /api/monitors items)}].
+// The 모니터링 nav badge is the ONE number of 답장 대기 (30-replies.js rqWaiting: 답 필요 + 실패 as the screen shows them, of every computer). A monitor or an app
+// that failed or lost its connection is not in that number: it shows as the small dot (nub) titled "확인할 것 N개" while the number is 0. monAttnCount counts those
+// faults: each list row whose monitor or app failed or lost its connection (a watch an app owns counts as that app's row, as the list shows it).
+// srcs: [{apps (GET /api/integrations items), mons (GET /api/monitors items)}].
 function monAttnCount(srcs) {
   let n = 0;
   for (const { apps, mons } of srcs) {
     const bad = new Set();
-    for (const a of apps) { if (a.state === "disconnected") bad.add(`i:${a.key}`); n += ((a.needs || {}).drafts | 0); }
+    for (const a of apps) if (a.state === "disconnected") bad.add(`i:${a.key}`);
     for (const m of mons) { const k = monStatus(m).key; if (k === "fail" || k === "disconnected") { const o = monOwner(apps, m); bad.add(o ? `i:${o.key}` : `m:${m.name}`); } }
     n += bad.size;
   }
@@ -87,9 +87,10 @@ const monNews = () => NT.items.some(n => n.kind === "watch" && n.cls !== "log" &
 function paintMonAttn() {
   const b = $("#nav-mon");
   if (!b) return;
-  const n = monAttnCount([{ apps: INTG.items, mons: NM.items }]), news = !n && monNews(), say = n ? `확인할 것 ${n}개` : news ? "새 소식" : "", rise = n && b.hidden && b.dataset.seen;
-  b.hidden = !n && !news; b.title = say;
-  b.classList.toggle("nnb", !!n); b.classList.toggle("nub", news);
+  const n = rqWaiting(), faults = monAttnCount([{ apps: INTG.items, mons: NM.items }]), news = !n && !faults && monNews();
+  const say = n ? `확인할 것 ${n}개` : faults ? `확인할 것 ${faults}개` : news ? "새 소식" : "", rise = n && b.hidden && b.dataset.seen;
+  b.hidden = !say; b.title = say;
+  b.classList.toggle("nnb", !!n); b.classList.toggle("nub", !n && !!say);
   if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";
   if (rise) motionPop(b);
   if (NM.loaded && NT.loaded && INTG.loaded) b.dataset.seen = "1";
@@ -148,14 +149,14 @@ function attnToast(t, k) {
 /* ---------- 홈 답변 필요: only what the owner must do, the most important first ---------- */
 // Owner 2026-10-26: what to do comes first, system notices mostly run on their own, ask as little as possible and only critical ones loudly.
 // Each item: { rank, crit, act, n (a notice) | t (a session with a question) }. rank 0 critical (a login only the owner can do, a gateway
-// failure that needs his choice), 1 send approval, 2 another decision, 3 a session question, 4 a loose question of the assistant.
+// failure that needs his choice), 2 another decision, 3 a session question, 4 a loose question of the assistant.
 // A gateway [ask] that is not critical is a system notice it handles: not asked here, it is news in the 알림 card (08-home.js hcFyi).
 // A finished turn (결과 확인) and a rate limit (한도 걸림) are not decisions: the assistant card and 지금 진행 중 show them.
 const NY_LOGIN = /로그인|인증|2단계|OTP|비밀번호/i;
 function nyOf(n) {
   const d = ntOpenDec(n) ? n.decision : null, gw = n.by === "gateway", text = `${n.title || ""}\n${n.text || ""}`;
   if (d && d.to.startsWith("auth:")) return { n, rank: 0, crit: true, act: "로그인" };
-  if (d && d.draft) return { n, rank: 1, crit: false, act: "보내기 확인" };
+  if (d && d.draft) return null;   // a send approval is a row of 답장 대기 (30-replies.js), not of 답변 필요
   if (gw && NY_LOGIN.test(text)) return { n, rank: 0, crit: true, act: "로그인" };
   if (gw && (d || n.tone === "fail")) return { n, rank: 0, crit: true, act: "선택" };
   if (gw) return null;
@@ -181,28 +182,17 @@ function nyList() {
   const when = x => x.n ? ntAt(x.n) : Date.parse(x.at) || 0;
   return items.sort((a, b) => a.rank - b.rank || when(b) - when(a));
 }
-// One row per item; the send approvals of one app stay one row (30-notices.js ntHomeRows). The label on the right is the action.
+// One row per item. The label on the right is the action.
 function nyRows(items) {
   const out = [];
   const mark = (node, it) => {
-    if (it.n && it.n.pc) for (const h of node.querySelectorAll(".hrx-m:not(.ntg-h) .hn1")) h.append(el("span", { class: "tag mon-pc", text: it.n.pc.name }));   // another computer's question names it
-    for (const hs of node.querySelectorAll(".hrx-m:not(.ntg-h) .hs")) hs.textContent = it.act;
-    for (const b of node.querySelectorAll(".hrx-m:not(.ntg-h)")) b.setAttribute("aria-label", b.getAttribute("aria-label").replace(/답변 필요$/, it.crit ? `중요 · ${it.act}` : it.act));
+    if (it.n && it.n.pc) for (const h of node.querySelectorAll(".hrx-m .hn1")) h.append(el("span", { class: "tag mon-pc", text: it.n.pc.name }));   // another computer's question names it
+    for (const hs of node.querySelectorAll(".hrx-m .hs")) hs.textContent = it.act;
+    for (const b of node.querySelectorAll(".hrx-m")) b.setAttribute("aria-label", b.getAttribute("aria-label").replace(/답변 필요$/, it.crit ? `중요 · ${it.act}` : it.act));
     if (it.crit) { node.classList.add("crit"); if (it.n && it.n.tone === "fail") for (const e of node.querySelectorAll(".hs, .dot")) e.classList.add("err"); }   // a login stays orange; only a failure is red
     return node;
   };
-  for (let i = 0; i < items.length;) {
-    const it = items[i];
-    if (it.rank === 1) {
-      const run = [];
-      while (i < items.length && items[i].rank === 1) run.push(items[i++]);
-      const nodes = ntHomeRows(run.map(x => x.n));
-      for (const node of nodes) out.push({ node: mark(node, it), count: node.matches(".ntg") ? run.filter(x => ntGroupKey(x.n) === node.dataset.group).length : 1 });
-      continue;
-    }
-    out.push({ node: it.n ? mark(ntHomeRow(it.n), it) : it.m ? nyMonRow(it) : homeNowRow(it.t, it.act, "att"), count: 1 });
-    i++;
-  }
+  for (const it of items) out.push({ node: it.n ? mark(ntHomeRow(it.n), it) : it.m ? nyMonRow(it) : homeNowRow(it.t, it.act, "att"), count: 1 });
   return out;
 }
 // A monitor failing again and again: its name, the computer, how many times in a row; a tap opens it in 모니터링.

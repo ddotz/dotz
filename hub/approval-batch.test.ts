@@ -37,3 +37,19 @@ test("보내지 않기 on a draft the gateway cannot drop goes to the bot in one
 	expect(log.recorded.map(x => x.deliver)).toEqual([false, true]);
 	expect(log.recorded[1]!.text).toContain("3) 보내지 않기");
 });
+
+test("an open card the gateway answers keeps its button's label, and only after the answer is recorded: a record that fails leaves the card open", async () => {
+	const open: BatchCard = { ...cards[0]!, notice: "n1" };
+	const { deps } = setup(() => true);
+	const steps: string[] = [];
+	deps.cards = () => [open];
+	deps.record = async (_c, _t, _p, _d, notice) => void steps.push(`record:${notice ?? "none"}`);
+	deps.settle = (id, label) => void steps.push(`settle:${id}:${label}`);
+	await answerBatch("main", [{ ref: "D1", n: 1 }], deps);
+	expect(steps).toEqual(["record:none", "settle:n1:1) 보내기"]);
+
+	steps.length = 0;
+	deps.record = async () => { throw new Error("disk full"); };
+	await expect(answerBatch("main", [{ ref: "D1", n: 1 }], deps)).rejects.toThrow("disk full");
+	expect(steps).toEqual([]);
+});

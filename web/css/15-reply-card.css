@@ -1,4 +1,4 @@
-/* 답장 초안 카드 (web/js/10-reply-card.js) and the 답장 확인 queue (web/js/30-replies.js) */
+/* 답장 초안 카드 (web/js/10-reply-card.js) and the 답장 대기 screen (web/js/30-replies.js) */
 /* 머리: 한 줄 (받는 사람 + 출처), 상태는 오른쪽 (owner 2026-11-03: 머리줄은 한 줄, 초안이 주인공) */
 .rq-hd { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; min-height: 20px; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .rq-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-weight: 400; }
@@ -65,3 +65,31 @@
 @media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: -6px -2px; } }
 .rq-acts .btn.text.sm { padding: 0 var(--sp-2); }
 .rq-acts.dr-row .dr-send { flex: none; }
+
+/* 답장 대기 (web/js/30-replies.js): the prototype's #queue. Rows and tabs are the notice screen's own classes (09-notices-screen.css); the head sticks to the top of the scroll area. */
+.rq-hd2 { position: sticky; top: 0; z-index: 2; background: var(--bg); padding-bottom: var(--sp-1); }
+.rq-hd2 .nsc-f { margin-top: 0; }
+#v-monitoring.rq-on > .cv-head { display: none; }
+#v-monitoring.rq-on .tl-in { max-width: none; }
+.bm.q-fold .md > :not(:first-child) { display: none; }
+.rq-qm .sp { flex: 1; }
+.rq-qm[hidden], .rq-fast[hidden], .rq-chips:empty { display: none; }
+.nsc-fb .n.err { color: var(--err); } .nsc-fb.on .n.err { color: inherit; }
+.rq-ls .sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); } .rq-ls .sec:first-child { margin-top: 0; }
+.rq-ls .sec .meta { color: var(--fg-3); font-weight: 400; font-variant-numeric: tabular-nums; }
+.rq-r .hd { font-weight: 500; color: var(--fg); } .rq-r.sent .hd { font-weight: 400; color: var(--fg-2); }
+.rq-r .ln .tag { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq-g .rq-retry { position: relative; z-index: 1; flex: none; align-self: center; height: var(--btn-h-sm); min-height: 0; }
+.rq-g .rq-retry:disabled { opacity: .4; pointer-events: none; }
+.rq-g .nsc-tr svg { transition: transform var(--m-fast) var(--m-ease); }
+.rq-g .nsc-tx[aria-expanded="true"] ~ .nsc-tr svg { transform: rotate(180deg); }
+.rq-r[data-kid] { padding-left: calc(var(--row-px) + var(--sp-6)); }
+.rq-sheet .rq-sb { padding: 0 var(--sp-4) var(--sp-4); }
+.rq-sheet .rq-why { margin: 0 var(--sp-05) var(--sp-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); color: var(--fg-2); }
+/* the chat's one line above the composer when 2 or more send approvals wait (10-decision-card.js dcLine) */
+.qline { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; margin: 0 0 var(--sp-2); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font: 400 14px/20px var(--font); text-align: left; cursor: pointer; }
+.qline[hidden] { display: none; }
+.qline:hover { background: var(--hover); }
+.qline .tx { flex: none; } .qline .tx b { font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+.qline .sep { color: var(--fg-3); } .qline .go { font-weight: 600; color: var(--fg); }
+.qline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
