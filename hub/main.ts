@@ -86,6 +86,8 @@ import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { mailAction } from "./mail-sync.ts";
 import { applyMailStates, deliverAnswer, mailSyncDeps, makeRoute, startStallSweep, webAccess } from "./routes.ts";
 import { appProxySocket } from "./app-proxy.ts";
+import { desk, type DeskWsData } from "./remote-desktop.ts";
+import type { ServerWebSocket } from "bun";
 import { appEntries, appKeyOf, integrationContext, readAppsFile } from "./integrations.ts";
 import { mailFeatureOn } from "./app-feature-flags.ts";
 import { applyMemory, mailDiscordOn, setDiscordProbe } from "./app-settings.ts";
@@ -372,6 +374,7 @@ setLaneIdleHandler(name => flushQueue(`lane:${name}`));
 // Safety net for what the idle hooks miss: items kept over a gateway restart, a lane that went idle without a turn end.
 setInterval(() => queuedTargets().forEach(flushQueue), QUEUE_SWEEP_MS);
 
+const isDeskSocket = (ws: ServerWebSocket<unknown>): ws is ServerWebSocket<DeskWsData> => (ws.data as { kind?: string } | undefined)?.kind === "desk";
 const route = makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps, mailReconcile: reconcileMails });
 // Page, script, styles and JSON answers go out gzipped (hub/compress.ts); /api/file keeps its exact bytes and Content-Length.
 const server = Bun.serve({
@@ -379,7 +382,13 @@ const server = Bun.serve({
 	port: PORT,
 	idleTimeout: 0,
 	// A user app's websocket (/apps/<id>/…, hub/app-proxy.ts) is bridged to the app's own server; every other upgrade is refused.
-	websocket: appProxySocket,
+	// The remote desktop's viewers carry data.kind "desk" (hub/remote-desktop.ts); the rest are apps.
+	websocket: {
+		open: (ws: ServerWebSocket<any>) => (isDeskSocket(ws) ? desk.socket.open(ws) : appProxySocket.open(ws)),
+		message: (ws: ServerWebSocket<any>, msg: string | Buffer) => (isDeskSocket(ws) ? desk.socket.message(ws, msg) : appProxySocket.message(ws, msg)),
+		drain: (ws: ServerWebSocket<any>) => void (isDeskSocket(ws) && desk.socket.drain(ws)),
+		close: (ws: ServerWebSocket<any>) => (isDeskSocket(ws) ? desk.socket.close(ws) : appProxySocket.close(ws)),
+	},
 	async fetch(req, srv) {
 		const res = await route(req, srv);
 		if (!res) return undefined as unknown as Response;
@@ -576,6 +585,7 @@ function shutdown(): Promise<never> {
 			},
 		},
 		// A reply still in its rewrite is waited for, then lands with the original text in the outbox or the unsent ledger.
+		{ name: "remote desktop", run: () => desk.stop() },
 		{ name: "pending replies", run: async () => void (await replies.flush(outlangTimeoutMs() + 1000)) },
 		{ name: "discord connection", run: () => discord.disconnect() },
 		{ name: "watch and schedule timers", run: () => (stopWatches(), stopSchedules(), stopKakaoLive(), clearTrackedTimers()) },

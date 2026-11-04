@@ -177,7 +177,8 @@ function prSheet() {
       alert ? el("span", { class: `pr-n${p.need > 0 ? " need" : ""}`, text: String((p.need || 0) + (p.unread || 0)) }) : p.self ? icon("check", "pr-ck") : null);
   });
   const manage = el("button", { type: "button", class: "pr-row pr-manage", onclick: () => { prClose(false); go("settings"); } }, icon("settings"), el("span", { class: "pr-t", text: "컴퓨터 관리" }));
-  clear(PR.node.firstElementChild).append(el("div", { class: "pr-hd", id: "pr-t", text: "내 컴퓨터" }), el("div", { class: "pr-list" }, rows, manage));
+  const screen = S && S.desk ? el("button", { type: "button", class: "pr-row pr-screen", onclick: () => { prClose(false); openScreen(); } }, icon("desktop"), el("span", { class: "pr-t", text: "화면 공유 열기" })) : null;
+  clear(PR.node.firstElementChild).append(el("div", { class: "pr-hd", id: "pr-t", text: "내 컴퓨터" }), el("div", { class: "pr-list" }, rows, screen, manage));
 }
 
 function prKey(ev) {

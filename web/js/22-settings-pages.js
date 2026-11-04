@@ -84,6 +84,7 @@ function settingsList(go) {
       webAccessRow(stRow),
       devicesRow(stRow),
       mnRow()),
+    ...dskSettings(),
     stSec("앱"), stList(
       stRow("bell", "앱과 알림", stPushSub(), () => go("notifications")),
       navOff("apps") ? null : stRow("apps", "앱 관리", "", () => go("apps")),
