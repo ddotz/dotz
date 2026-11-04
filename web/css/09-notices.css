@@ -151,16 +151,18 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
    its time. 31-conversations.js bellRows draws the list; 30-notices.js ntHomeRow the row. A tab's list is read-only, so the composer steps aside. */
 #v-chat.bell-on > .composer { display: none; }
 /* the chip row is the prototype's tab row: small boxes, the chosen one filled */
-#v-chat.bell-on > .bell { align-items: center; gap: 4px; margin: 0 0 12px; padding: 0; }
-#v-chat.bell-on > .bell .chip { height: 30px; padding: 0 12px; }
-#v-chat.bell-on > .bell-list { padding: 0 0 12px; }
+/* One frame for every filter, the composer of 전체 or none: the filter row 12px inside the card, the content 12px under it, 12px at the bottom (owner 2026-11-04). */
+#v-chat.bell-view > .bell { align-items: center; gap: 4px; margin: 12px; padding: 0; }
+#v-chat.bell-view > .bell .chip { height: 32px; padding: 0 12px; }
+#v-chat.bell-on > .bell-list { padding: 0 12px 12px; }
 .bell-meta { padding: 0 4px 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .bell-meta b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
 .bell-note { margin: 8px 4px 0; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .bell-card { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .bell-card .hn { display: flex; flex-direction: column; gap: 0; border-radius: 0; background: none; overflow: visible; }
 .bell-card .hr { min-height: 60px; border-radius: 0; background: transparent; box-shadow: none; }
-.bell-card .hr + .hr { border-top: 1px solid var(--line); }
+.bell-card .hr + .hr, .bell-card .hrx + .hrx { border-top: 1px solid var(--line); }
+.bell-card .hrx { border-radius: 0; }
 .bell-card .hr:hover { background: var(--card-hover); }
 .bell-card .hr .hb { gap: 2px; }
 .bell-card .hr .ha { color: var(--fg-2); }
