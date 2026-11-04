@@ -503,5 +503,24 @@ Do this, briefly:
 			},
 		},
 	},
+	// Texts the gateway sends to the web onboarding (hub/setup-*.ts): job rows, owner steps, errors. {name} marks a value filled in on the server.
+	setup: {
+		jobs: { "install-omo": "Install OmO", "aside-app": "Install the Aside app", "aside-cli": "Install the Aside CLI", tailscale: "Install Tailscale", zele: "Install the mail and calendar tool (zele)", "tailscale-start": "Open Tailscale", permissions: "macOS permissions", apply: "Save and apply" },
+		terms: { "aside-login": "Aside sign-in", "zele-login": "Connect a mail and calendar account", "claude-login": "Claude Code sign-in", "omp-login": "omp sign-in" },
+		states: { done: "Done", skipped: "Not needed on this computer, skipped", failed: "Could not finish", running: "Working on it" },
+		steps: { secrets: "Saving secrets", tailnet: "Opening the web app on Tailscale", config: "Writing settings and identity", plugin: "Linked the omp plugin", permissions: "Checking macOS permissions", discord: "Setting up the Discord bot", finish: "Finishing up" },
+		owner: {
+			noBrew: "Homebrew is missing. Install it from brew.sh, then try again.",
+			sudo: "This needs your computer password, so it cannot finish here. Run {name} yourself in a terminal.",
+			asideDownload: "Download and install the Aside app from aside.com/download.",
+			tailscaleDownload: "Download and install Tailscale from tailscale.com/download.",
+			tailscaleUp: "Run sudo tailscale up in a terminal and sign in.",
+			tailscaleLogin: "Sign in in the Tailscale window that opened, then press this again.",
+			discord2fa: "Approve the Discord two-step verification request on your phone.",
+			missing: "{name} is not installed yet. Install it first.",
+		},
+		notes: { stayLocal: "Could not open the web app on Tailscale, so it stays on this computer only. {name}", planned: "{name}" },
+		errors: { unknownJob: "Unknown job", unknownTerm: "Unknown sign-in", termBody: "This request may only carry a size (cols, rows)", termNotRunning: "The terminal is not running", badSecret: "That secret cannot be saved", badDraft: "Check the values you entered", applyFailed: "Could not apply. {name}", busy: "Already running" },
+	},
 };
 export type Catalog = typeof en;

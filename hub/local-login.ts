@@ -133,6 +133,8 @@ export function createLocalLogin(deps: { dir: string; now?: () => number; confir
 		redeem,
 		verify,
 		clear,
+		/** The cookie headers of a new session, made the way the one-time login link makes one (mint, redeem): the first-run onboarding hands its browser this. */
+		sessionHeaders: (): Record<string, string> => cookieHeaders(redeem(mint()) as string),
 		/** The answer to an unauthenticated request while the mode is local: the login page for a navigation of a browser on this computer, else a plain line. */
 		hint(req: Request, peerIp: string | undefined): Response {
 			const navigation = req.method === "GET" && (req.headers.get("accept") ?? "").includes("text/html") && localBrowser(req, peerIp);
