@@ -35,7 +35,8 @@ test("recentEvents(0) is empty (the page asks /api/state for limit=0), not the w
 });
 
 test("a worker's result is the answer to its request, else the first real answer in its conversation after it ended", () => {
-	const base = Date.parse("2030-01-01T00:00:00.000Z"), at = (s: number) => new Date(base + s * 1000).toISOString();
+	// Later than any date another test file leaves in this process's log (notices.test.ts posts to main in 2052): workAnswer takes the first match in log order.
+	const base = Date.parse("2099-01-01T00:00:00.000Z"), at = (s: number) => new Date(base + s * 1000).toISOString();
 	const out = (s: number, target: string, over: object = {}) => emit("outbox", { ts: at(s), kind: "out", source: "orchestrator", target, text: "답", ...over });
 	out(0, "ch:9", { reply_to: "m-1" });
 	const w = { target: "ch:9", reply_to: "m-1", ended_at: base + 1000 };

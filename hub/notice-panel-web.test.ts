@@ -32,13 +32,13 @@ const boot = async () => {
 	await view.navigate(`${hub.origin}/`);
 	await waitFor(`typeof NT !== "undefined" && NT.loaded && S && current === "home" && ${alertCard} && ${alertCard}.querySelector(".hc-row")`);
 };
-const panel = () => view.evaluate(`JSON.stringify({ big: ${alertCard}.querySelector(".big").textContent, rows: [...${alertCard}.querySelectorAll(".hc-row")].map(r => r.querySelector(".t").textContent), unread: NT.unread })`).then(v => JSON.parse(v as string) as { big: string; rows: string[]; unread: number });
+const panel = () => view.evaluate(`JSON.stringify({ big: ${alertCard}.querySelector(".hc-n").textContent, rows: [...${alertCard}.querySelectorAll(".hc-row")].map(r => r.querySelector(".t").textContent), unread: NT.unread })`).then(v => JSON.parse(v as string) as { big: string; rows: string[]; unread: number });
 
 describe("the 알림 panel and its count", () => {
 	test("lists only the alert; replies of conversations and sessions are not notices there", async () => {
 		await boot();
 		const p = await panel();
-		expect(p.big).toBe("1개");
+		expect(p.big).toBe("1");
 		expect(p.rows).toEqual(["NAS 디스크 공간이 10% 남았어요"]);
 	});
 
