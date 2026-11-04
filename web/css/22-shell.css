@@ -45,10 +45,13 @@ body { display: flow-root; }
   .sf-row.warn .sf-v { color: var(--warn); }
   .sf-row.warn .sf-bar i { background: var(--warn); }
   .sf-ring { display: none; }
-  /* the fold button sits in the gutter between the sidebar and the main column, on the page title's line, left of it and out of the top bar's flow: the title never moves for it */
+  /* the fold control is a bare thin chevron on the line between the sidebar and the main column, at the page title's height: out of every flow, so it takes no width and the title never moves; ‹ open, › folded */
   .app { position: relative; }
-  .side-tog { position: absolute; left: calc(var(--side-w) - 8px); top: 18px; display: inline-grid; width: 24px; height: 24px; }
-  @media (pointer: coarse) { .side-tog { left: calc(var(--side-w) - 12px); top: 14px; width: 32px; height: 32px; } }
+  .side-tog, .side-tog:hover { background: transparent; }
+  .side-tog { position: absolute; left: calc(var(--side-w) - 14px); top: 16px; display: inline-grid; width: 28px; height: 28px; color: var(--fg-3); }
+  .side-tog:hover { color: var(--fg); }
+  .side-tog .ic { width: 18px; height: 18px; }
+  .side-min .side-tog .ic { transform: scaleX(-1); }
   /* folded (:root.side-min, 04-state.js sideToggle): a 60px icon rail. Names go to the title and the aria-label, a tab's dot sits at its icon's bottom right, the usage row is a ring of the same share and color with the number inside */
   :root.side-min { --side-w: 60px; }
   .side-min .side { padding: 12px 10px; }
