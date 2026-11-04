@@ -135,7 +135,7 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .oerr { grid-row: 4; grid-column: 1 / -1; }
 .views { grid-row: 5; grid-column: 1 / -1; }
 .brand { grid-column: 2; }
-.brand { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; letter-spacing: -.01em; text-align: left; cursor: pointer; }
+.brand { display: flex; align-items: center; gap: var(--sp-2); width: 100%; height: 32px; padding: 0 var(--sp-2); border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; letter-spacing: -.01em; text-align: left; cursor: pointer; }
 .brand:hover { background: var(--card); }
 #brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the ddotz.dev brand mark (site/index.html .brand-mark, web/icons/dotz.svg): four dots, big top-left and bottom-right, small top-right and bottom-left.
@@ -145,8 +145,8 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .logo::before { background: var(--fg); -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='3.5 3.5 17 17'%3E%3Ccircle cx='7.4' cy='7.4' r='3.1'/%3E%3Ccircle cx='16.6' cy='7.4' r='1.9'/%3E%3Ccircle cx='7.4' cy='16.6' r='1.9'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='3.5 3.5 17 17'%3E%3Ccircle cx='7.4' cy='7.4' r='3.1'/%3E%3Ccircle cx='16.6' cy='7.4' r='1.9'/%3E%3Ccircle cx='7.4' cy='16.6' r='1.9'/%3E%3C/svg%3E"); }
 .logo::after { background: var(--accent); -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='3.5 3.5 17 17'%3E%3Ccircle cx='16.6' cy='16.6' r='3.1'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='3.5 3.5 17 17'%3E%3Ccircle cx='16.6' cy='16.6' r='3.1'/%3E%3C/svg%3E"); }
 .brand { width: auto; }
-.rail { grid-column: 4; display: flex; gap: 2px; margin-left: 12px; }
-.ni { position: relative; display: flex; flex: none; align-items: center; gap: 4px; height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; white-space: nowrap; }
+.rail { grid-column: 4; display: flex; gap: var(--sp-05); margin-left: var(--sp-3); }
+.ni { position: relative; display: flex; flex: none; align-items: center; gap: var(--sp-1); height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; white-space: nowrap; }
 .ni:hover { background: var(--hover); color: var(--fg); }
 .ni:disabled, .ni:disabled:hover { background: transparent; color: var(--fg-3); opacity: .5; cursor: default; }
 .ni.on { color: var(--fg); font-weight: 700; }
@@ -158,21 +158,21 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 /* a dot on a tab or menu label overlaps the label's bottom-right corner (the bot name's computer dot, docs/ui-spec.md 점 배지) */
 .ni .nub { position: absolute; right: 4px; bottom: 6px; width: 6px; min-width: 6px; height: 6px; padding: 0; font-size: 0; line-height: 0; }
 .ni .nub[hidden] { display: none; }
-.appbar .cmdk { grid-column: 9; display: flex; align-items: center; gap: 6px; width: auto; height: 28px; margin-left: 8px; padding: 0 4px 0 8px; border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); }
+.appbar .cmdk { grid-column: 9; display: flex; align-items: center; gap: var(--sp-15); width: auto; height: 28px; margin-left: var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-2); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); }
 .cmdk:hover { background: var(--card-hover); }
 .cmdk .tx { display: none; }
-#back { grid-column: 5; margin-left: 8px; }
-.appbar h1 { grid-column: 6; min-width: 0; max-width: 320px; margin: 0 0 0 8px; font: 700 var(--fs-page)/var(--lh-page) var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#back { grid-column: 5; margin-left: var(--sp-2); }
+.appbar h1 { grid-column: 6; min-width: 0; max-width: 320px; margin: 0 0 0 var(--sp-2); font: 700 var(--fs-page)/var(--lh-page) var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* wide: the active tab names the page, so the big title shows only on a page with a back arrow (a project, a settings sub-page) */
 .appbar:not(.back) h1 { display: none; }
 .thead { grid-column: 7; }
-.conn { grid-column: 8; margin-left: 8px; }
-#vtog { grid-column: 10; margin-left: 4px; }
-.ustrip { grid-column: 11; margin-left: 4px; }
-.conn { flex: none; height: 20px; padding: 0 8px; border-radius: 10px; background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); font-size: 12px; line-height: 20px; font-weight: 500; white-space: nowrap; }
+.conn { grid-column: 8; margin-left: var(--sp-2); }
+#vtog { grid-column: 10; margin-left: var(--sp-1); }
+.ustrip { grid-column: 11; margin-left: var(--sp-1); }
+.conn { flex: none; height: 20px; padding: 0 var(--sp-2); border-radius: 10px; background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); font-size: 12px; line-height: 20px; font-weight: 500; white-space: nowrap; }
 button.conn { border: 0; font-family: inherit; cursor: pointer; }
 button.conn:disabled { cursor: default; }
-.ustrip { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; }
+.ustrip { flex: none; display: inline-flex; align-items: center; gap: var(--sp-2); height: 28px; padding: 0 var(--sp-2); border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 12px; line-height: 16px; white-space: nowrap; }
 .ustrip:hover { background: var(--hover); color: var(--fg); }
 .ustrip .ubar { width: 48px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
 .ustrip .ubar i { display: block; height: 100%; border-radius: 2px; background: var(--fg-2); }
@@ -182,31 +182,31 @@ button.conn:disabled { cursor: default; }
 .ustrip .uring { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--fg-2) calc(var(--p) * 1%), var(--track) 0); -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px); mask: radial-gradient(circle, transparent 5px, #000 6px); }
 .ustrip.warn .uring { background: conic-gradient(var(--warn) calc(var(--p) * 1%), var(--track) 0); }
 .views { min-height: 0; overflow-y: auto; overflow-x: hidden; }
-.view { max-width: 920px; margin: 0 auto; padding: 24px; }
+.view { max-width: 920px; margin: 0 auto; padding: var(--sp-6); }
 .view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
 /* wide: only the two-pane 채팅 screens start at the left like the top bar (--edge = where the logo starts); 프로젝트 does it in .views.pp; every other page stays centered */
 @media (min-width: 1100px) { #v-chat, #v-activity, #v-monitoring { margin: 0; padding-left: var(--edge); padding-right: var(--edge); } }
 /* wide: the top row holds only logo, computer, tabs and the right-side controls. A page with a back arrow (a settings sub-page, 모니터링) gets the arrow and its title as a page header in row 3, just above the page: both sit in the full-width cell and are offset to the left edge of the centered 920px column (.view max-width) */
 @media (min-width: 1100px) {
   .appbar #back, .appbar h1 { grid-row: 3; grid-column: 1 / -1; align-self: start; justify-self: start; }
-  .appbar #back { margin: 16px 0 0 calc(max(0px, (100% - 920px) / 2) + 18px); }
-  .appbar h1 { max-width: min(560px, 100%); margin: 16px 0 0 calc(max(0px, (100% - 920px) / 2) + 52px); font: 700 var(--fs-page-sm)/var(--lh-page-sm) var(--font); }
+  .appbar #back { margin: var(--sp-4) 0 0 calc(max(0px, (100% - 920px) / 2) + 18px); }
+  .appbar h1 { max-width: min(560px, 100%); margin: var(--sp-4) 0 0 calc(max(0px, (100% - 920px) / 2) + 52px); font: 700 var(--fs-page-sm)/var(--lh-page-sm) var(--font); }
 }
 @media (max-width: 1099px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; padding-top: 0; }
   .main { order: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-  .appbar { display: flex; flex: none; align-items: center; gap: 4px; height: calc(60px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 12px 0 24px; background: var(--bg); }
-  .appbar.back { padding-left: 12px; }
+  .appbar { display: flex; flex: none; align-items: center; gap: var(--sp-1); height: calc(60px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) var(--sp-3) 0 var(--sp-6); background: var(--bg); }
+  .appbar.back { padding-left: var(--sp-3); }
   .appbar h1, .appbar:not(.back) h1 { display: block; flex: 1; max-width: none; margin: 0; }
   #back, .conn { margin: 0; }
   #vtog, .ustrip { margin: 0; }
   .gban, .trban, .oerr, .views { grid-row: auto; grid-column: auto; }
   .views { flex: 1; }
   /* compact tab bar: a 46px row; the home-indicator inset is trimmed (labels end ~18px above the screen edge, clear of the indicator) */
-  .side { order: 2; display: flex; min-width: 0; min-height: 0; padding: 0 0 max(2px, calc(env(safe-area-inset-bottom) - 16px)); border-top: 1px solid var(--line); background: var(--card); }
+  .side { order: 2; display: flex; min-width: 0; min-height: 0; padding: 0 0 max(var(--sp-05), calc(env(safe-area-inset-bottom) - var(--sp-4))); border-top: 1px solid var(--line); background: var(--card); }
   .brand { display: none; }
   .rail { flex: 1; min-width: 0; gap: 0; margin: 0; }
-  .ni { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 1px; height: 46px; padding: 0 2px; border-radius: 0; font-size: 10px; line-height: 13px; text-align: center; }
+  .ni { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 1px; height: 46px; padding: 0 var(--sp-05); border-radius: 0; font-size: 10px; line-height: 13px; text-align: center; }
   .ni:hover { background: transparent; }
   .ni.on { font-weight: 600; }
   .ni .ic { display: block; width: 20px; height: 20px; }
@@ -223,13 +223,13 @@ button.conn:disabled { cursor: default; }
 @media (max-width: 639px) {
   /* typing: the keyboard covers the bar's place, so the bar steps aside instead of floating above the keyboard */
   .app:has(.composer textarea:focus) .side { display: none; }
-  .appbar { height: calc(52px + env(safe-area-inset-top)); padding-left: 16px; }
+  .appbar { height: calc(52px + env(safe-area-inset-top)); padding-left: var(--sp-4); }
   .appbar h1 { font-size: 20px; line-height: 28px; }
-  .main .composer { padding-bottom: 8px; }
-  .ustrip { gap: 4px; padding: 0 4px; font-size: 11px; }
+  .main .composer { padding-bottom: var(--sp-2); }
+  .ustrip { gap: var(--sp-1); padding: 0 var(--sp-1); font-size: 11px; }
   .ustrip .ulab, .ustrip .ubar { display: none; }
   .ustrip .uring, .ustrip .upct { display: inline-block; }
-  .view { padding: 16px 12px 24px; }
+  .view { padding: var(--sp-4) var(--sp-3) var(--sp-6); }
   .view.fill { padding-bottom: 0; }
 }
 @media (max-width: 1099px) and (pointer: coarse) { .app:has(.composer textarea:focus) .side { display: none; } }
@@ -246,27 +246,27 @@ button.conn:disabled { cursor: default; }
 .ib.pri:hover { background: var(--accent); opacity: .88; }
 .menu .mi.more { color: var(--fg-2); }
 .menu .mi.more svg { margin-left: auto; width: 14px; height: 14px; }
-.btn, .dc-act, .dc-go, .dc-back, .dc-manual { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--btn-h); padding: 0 16px; border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
+.btn, .dc-act, .dc-go, .dc-back, .dc-manual { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-15); height: var(--btn-h); padding: 0 var(--sp-4); border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
 .btn, .dc-go, .dc-act.main { background: var(--accent); color: var(--on-accent); }
 .btn.tonal, .btn.outlined, .dc-back, .dc-act.alt { background: var(--layer); color: var(--fg); }
 .btn.text, .dc-act, .dc-manual { background: transparent; color: var(--fg-2); padding: 0 10px; }
-.btn.sm { height: var(--btn-h-sm); padding: 0 12px; font-size: 13px; }
+.btn.sm { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
 .btn, .dc-act, .dc-go, .dc-back, .dc-manual { transition: opacity var(--m-fast) var(--m-ease), background-color var(--m-fast) var(--m-ease); }
 .btn:hover, .dc-go:hover, .dc-back:hover, .dc-act:hover, .dc-manual:hover { opacity: .85; }
 .btn.tonal:hover, .btn.outlined:hover, .dc-back:hover, .dc-act.alt:hover { background: var(--hover); opacity: 1; }
 .btn.text:hover, .dc-act:not(.main):not(.alt):hover, .dc-manual:hover { background: var(--hover); color: var(--fg); opacity: 1; }
 .btn.danger { background: transparent; color: var(--err); padding: 0 10px; }
 .btn.danger:hover { background: color-mix(in srgb, var(--err) 12%, transparent); opacity: 1; }
-.btn.danger.fill { background: var(--err); color: #fff; padding: 0 12px; }
-.btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn.danger.fill { background: var(--err); color: #fff; padding: 0 var(--sp-3); }
+.btns { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 /* 행 안 tier (docs/ui-spec.md 버튼, 설정 행): the button or field in the right slot of a row. 32px high, 13px; on a touch screen the box stays 32px and ::after widens the hit area to 44px. */
-.btn.inrow { position: relative; height: var(--btn-h-row); padding: 0 12px; font-size: 13px; }
+.btn.inrow { position: relative; height: var(--btn-h-row); padding: 0 var(--sp-3); font-size: 13px; }
 .btn.inrow.text, .btn.inrow.danger { padding: 0 10px; }
 @media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back, .dc-manual { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }
 @media (pointer: coarse), (max-width: 639px) { .btn.inrow { height: var(--btn-h-row); min-height: 0; } .btn.inrow::after { content: ""; position: absolute; inset: -6px 0; } }
 /* settings row (docs/ui-spec.md 설정 행): the existing .li (lead icon, .tx = .hd title + .sup one-line description) plus ONE right slot, .li-end,
    vertically centred by .li's align-items. The slot holds one control: a 행 안 button, a .hs-sw switch, a .sel / .fi at a fixed width, or a value.
    A row-level add action is not a row: it is a text or tonal .sm button in the section header (.sec.sec-act, 06-harness.css). */
-.li > .li-end { flex: none; display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.li > .li-end { flex: none; display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
 .li-end .fi, .li-end .sel { width: 160px; height: var(--ctl-h); }
 @media (pointer: coarse) { .li-end .fi, .li-end .sel { height: var(--field-h-touch); } }
