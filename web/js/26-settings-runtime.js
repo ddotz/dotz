@@ -34,7 +34,7 @@ function rtReportView(r, report) {
     : stale ? `검사한 뒤 버전이 바뀌었어요 (v${report.version || "?"} → v${r.version}). 다시 검사해 주세요.`
     : report.verdict === "adjusted" ? `핵심 항목은 모두 통과했어요. ${changed}개 기능은 게이트웨이가 대신 처리하거나 꺼요.` : "모든 항목이 통과했어요.";
   const meta = `${new Date(report.at).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" })}${report.version ? ` · v${report.version}` : ""}`;
-  return el("div", { class: "rt-rep", style: "display:flex;flex-direction:column;gap:8px" },
+  return el("div", { class: "rt-rep", style: "display:flex;flex-direction:column;gap:var(--sp-2)" },
     el("p", { text: sum }), el("div", { class: "note", text: `검사 ${meta}` }),
     el("div", { class: "list rt-rows" }, ...report.items.map(i => el("div", { class: "rt-row" },
       el("div", { class: "top" }, el("span", { class: "nm", text: i.label }), i.core ? el("span", { class: "tag", text: "핵심" }) : null, el("span", { class: "sp" }), rtBadge(i)),
@@ -43,7 +43,7 @@ function rtReportView(r, report) {
 function rtFlow(r) {
   const roles = new Set(["orchestrator", "lanes"]);
   let report = null, st = null, timer = 0, checking = false;
-  const box = el("div", { style: "display:flex;flex-direction:column;gap:12px" });
+  const box = el("div", { style: "display:flex;flex-direction:column;gap:var(--sp-3)" });
   const d = dialog({ classic: true, title: `${r.label}로 바꾸기`, body: box, wide: true, onclose: () => { clearInterval(timer); rtLive = null; loadRuntimes(true); } });
   const usable = () => r.hasAdapter && (r.id === "omp" || (r.id === "omo" && r.installed !== false) || (report && report.verdict !== "blocked" && !(r.version && report.version !== r.version)));
   async function pull() {
