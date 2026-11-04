@@ -1,12 +1,14 @@
 // Settings → 업데이트 against real git repos in a temp dir: a bare "origin", a clone the updater works on, and a second
 // clone that pushes newer commits. The test command is a shell check so a commit can make "the tests" fail on purpose.
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { autoHooks, commit, failFileTestCmd as testCmd, git as sh, head, makeRepos, type Repos, setSelfUpdateCfg } from "./selfupdate-fixture.ts";
 import { advance, flush } from "./runtime/test-clock.ts";
 import { clearTrackedTimers } from "./shutdown.ts";
 import { apply, autoCheck, CHECK_EVERY_MS, check, defaultExec, type Exec, failedTestNames, failureBlocks, fetchError, parseRelease, releaseTags, scrub, startSelfUpdate, updateAvailable } from "./selfupdate.ts";
+
+setDefaultTimeout(30_000); // real git repos and test runs: seconds each, more under parallel load
 
 test("failureBlocks keeps the error block bun prints before each (fail) line, and nothing from passing tests", () => {
 	const out = [
