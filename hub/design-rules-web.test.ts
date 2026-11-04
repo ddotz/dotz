@@ -55,7 +55,7 @@ const DURATION_ALLOWED = new Set([
 ]);
 // [px font-sizes, px radii] per file: a ceiling, too many entries to name one by one.
 const SIZE_ALLOWED: Record<string, [number, number]> = {
-	"01-tokens.css": [11, 4], "02-cards-lists-tags.css": [12, 3], "03-base.css": [32, 16], "04-files.css": [59, 25],
+	"01-tokens.css": [0, 0], "02-cards-lists-tags.css": [12, 3], "03-base.css": [32, 16], "04-files.css": [59, 25],
 	"05-log.css": [36, 18], "06-harness.css": [22, 3], "07-chat.css": [23, 5], "08-project-sessions.css": [6, 0],
 	"09-notices.css": [5, 1], "10-conversations.css": [8, 4], "11-peers.css": [0, 4], "13-code-shell.css": [2, 6],
 	"14-overlay.css": [1, 0], "15-draft-original.css": [2, 5], "15-reply-card.css": [4, 0], "15-reply.css": [2, 2],
