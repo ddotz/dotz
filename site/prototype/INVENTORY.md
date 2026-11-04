@@ -51,7 +51,7 @@
 
 | 이름 | 무엇 | 출처 파일 | 프로토타입 위치 |
 |---|---|---|---|
-| 대화 목록 | 카카오톡식 목록, 안 읽음 수, 읽은 위치 | web/js/31-conversations.js | `#chat` |
+| 대화 목록 | 메신저식 목록, 안 읽음 수, 읽은 위치 | web/js/31-conversations.js | `#chat` |
 | 대화 전환 칩 | 헤더에서 대화방(봇 · 채널 · 세션)을 바꿔요 | web/js/16-target-switcher-conversation.js | `#chat/main`, `#chat/ch1` |
 | 대화 / 터미널 전환 | 같은 세션을 대화 또는 터미널로 봐요 | web/js/16-target-switcher-conversation.js | `#chat/lane`, `#chat/terminal` |
 | 터미널 보기 | 세션 기록을 명령 · 출력 줄로 보여 줘요 | web/js/12-terminal-view.js | `#chat/terminal` |
@@ -91,8 +91,8 @@
 | 인스타그램 댓글 | 게시물마다 댓글과 답글 초안 | web/js/30-monitoring-comments.js, docs/youtube-instagram.md | `#comments/instagram` |
 | 웹사이트 댓글 | 사이트 댓글과 답글 초안 | web/js/30-monitoring-comments.js, features/comments | `#comments/website` |
 | 인스타그램 DM | DM 목록과 메시지, 읽기만 | web/js/30-monitoring-comments-dm.js, docs/ig-dm-api.md | `#comments/dm` |
-| 카카오톡 방 | 지켜볼 방 고르기, 미답장 · 안 읽음 | web/js/30-kakao.js, docs/kakao-rooms-api.md, features/kakao | `#kakao` |
-| 카카오톡 방 대화 | 말풍선 + 답장 초안 카드 | web/js/30-kakao.js, web/css/17-kakao.css | `#kakao/r1` |
+| 메신저 방 | 지켜볼 방 고르기, 미답장 · 안 읽음 | web/js/30-kakao.js, docs/kakao-rooms-api.md, features/kakao | `#kakao` |
+| 메신저 방 대화 | 말풍선 + 답장 초안 카드 | web/js/30-kakao.js, web/css/17-kakao.css | `#kakao/r1` |
 | 앱 | 기본 모니터링 앱과 내 앱 | web/js/30-apps.js, hub/user-apps.ts | `#apps` |
 | 앱 추가 시트 | 아래에서 올라오는 시트에서 앱을 골라 더해요 | web/js/30-apps.js, docs/custom-apps.md | `#apps/add` |
 | 요소 고르기 | 앱 화면의 요소를 눌러 메시지에 같이 보내요 | web/js/15-picker.js | `#app/memo` |
@@ -122,7 +122,7 @@
 |---|---|---|---|
 | 답장 초안 카드 (공통) | 받는이, 초안, 보내기 · 고치기 · 보내지 않기, 처리 뒤 되돌리기 | web/js/10-reply-card.js, web/css/15-reply-card.css, features/reply-drafts, hub/reply-draft.ts | `#replies`, `#chat/approve` |
 | 메일 답장 초안 | 제목 + 본문 초안 | web/js/10-reply-card.js, features/webmail-no-api | `#mail/1`, `#mail/3` |
-| 카카오톡 답장 초안 | 대화방 + 초안 | web/js/10-reply-card.js, features/kakao | `#kakao/r1` |
+| 메신저 답장 초안 | 대화방 + 초안 | web/js/10-reply-card.js, features/kakao | `#kakao/r1` |
 | 댓글 답글 초안 (유튜브) | 댓글마다 초안 | web/js/10-reply-card.js, features/comments | `#comments` |
 | 댓글 답글 초안 (인스타그램) | 댓글마다 초안 | web/js/10-reply-card.js, features/youtube-instagram | `#comments/instagram` |
 | 댓글 답글 초안 (웹사이트) | 댓글마다 초안 | web/js/10-reply-card.js, features/comments | `#comments/website` |
