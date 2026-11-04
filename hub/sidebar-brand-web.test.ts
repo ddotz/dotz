@@ -82,6 +82,39 @@ test("the sidebar folds to an icon rail and back: the toggle, the shortcut and a
 	expect(await rail()).toMatchObject({ side: 232, pressed: "true", saved: null });
 });
 
+test("the fold button sits between the sidebar and the title on the title's line, the same in both states", async () => {
+	const at = () => ev<{ inSide: boolean; off: number; mid: number; titleOff: number }>(v, `(() => {
+		const b = document.querySelector("#side-tog"), r = b.getBoundingClientRect(), t = document.querySelector("#title").getBoundingClientRect(), m = document.querySelector(".main").getBoundingClientRect();
+		return { inSide: !!b.closest(".side"), off: r.left - m.left, mid: r.top + r.height / 2 - (t.top + t.height / 2), titleOff: t.left - m.left };
+	})()`);
+	const wide = await at();
+	expect(wide).toEqual({ inSide: false, off: -8, mid: 0, titleOff: 24 });
+	await run(v, "sideToggle()");
+	expect(await at()).toEqual(wide);
+	await run(v, "sideToggle()");
+});
+
+test("the folded usage row is a ring with the expanded row's value and warning color, and a tap opens 사용량", async () => {
+	const quota = (remaining: number) => `noteQuota({ providers: [{ provider: "anthropic", limits: [{ id: "7d", window: "7d", label: "7d", limit: 100, remaining: ${remaining} }] }] })`;
+	const row = () => ev<{ shown: string; n: string; p: string; color: string; barColor: string; title: string; label: string | null; h: number }>(v, `(() => {
+		const s = document.querySelector("#sf-usage"), r = s.querySelector(".sf-ring"), c = getComputedStyle(r);
+		return { shown: c.display, n: r.textContent, p: r.style.getPropertyValue("--p"), color: c.color, barColor: getComputedStyle(s.querySelector(".sf-v")).color, title: s.title, label: s.getAttribute("aria-label"), h: r.getBoundingClientRect().height };
+	})()`);
+	await run(v, quota(24));
+	const wide = await row();
+	expect(wide.shown).toBe("none");
+	await run(v, "sideToggle()");
+	const warn = await row();
+	expect(warn).toMatchObject({ shown: "grid", n: "24", p: "24", color: wide.barColor, title: "사용량 · 7일 24% 남음", label: "사용량 · 7일 24% 남음", h: 36 });
+	await run(v, quota(80));
+	const calm = await row();
+	expect(calm.n).toBe("80");
+	expect(calm.color).not.toBe(warn.color);
+	await run(v, `document.querySelector("#sf-usage").click()`);
+	await waitFor(`current === "usage"`);
+	await run(v, `sideToggle(); go("home")`);
+});
+
 test("a tab with something new shows one dot right after its text, and none reserves space once it clears", async () => {
 	await run(v, `ts(MAIN).unread = 3; paintAttn()`);
 	const g = await ev<{ text: string; w: number; gap: number; label: string | null }>(v, `(() => {
