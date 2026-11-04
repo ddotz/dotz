@@ -68,13 +68,16 @@ for (const [w, h] of [[390, 844], [1280, 900]] as const) {
 	describe(`답변 필요 at ${w}px`, () => {
 		test("one list, critical first and marked, each row says what to do; gateway-handled notices and rate limits are not asked", async () => {
 			await boot(w, h);
-			expect(await q(`return document.querySelector("#home-now .hn-h .sup").textContent`)).toBe("10");
+			expect(await q(`return document.querySelector("#home-now .hn-h .sup").textContent`)).toBe("7");   // the 3 send approvals are 답장 대기's, not 답변 필요's
 			const r = await rows();
-			expect(r).toHaveLength(10);
+			expect(r).toHaveLength(7);
 			expect(r.slice(0, 3).map(x => x.crit)).toEqual([true, true, true]);
 			expect(r.slice(3).every(x => !x.crit)).toBe(true);
 			expect(r.slice(0, 3).map(x => x.act)).toEqual(["로그인", "선택", "로그인"]);   // newest first within a rank
-			expect(r[3]!.act).toBe("보내기 확인");
+			expect(r[3]!.act).toBe("선택");
+			expect(await q(`return ${LIST}.textContent`)).not.toContain("보내기 확인");
+			// the same 3 are the one 답장 대기 row of 홌
+			expect(await q(`return document.querySelector('#home-now .hr[data-k="replies"]').textContent`)).toContain("3건");
 			expect(await q(`return ${LIST}.textContent`)).not.toContain("업데이트");
 			expect(await q(`return ${LIST}.textContent`)).not.toContain("한도 걸림");
 			expect(await q(`return document.querySelector("#home-now .hn-h .tag.warn").textContent`)).toBe("중요 3");
@@ -87,9 +90,9 @@ for (const [w, h] of [[390, 844], [1280, 900]] as const) {
 		test("a long list holds every row and scrolls past six; the count stays the item count", async () => {
 			expect(await q(`return getComputedStyle(${LIST}).overflowY`)).toBe("auto");
 			const r = await rows();
-			expect(r).toHaveLength(10);
+			expect(r).toHaveLength(7);
 			expect(r.slice(-4).map(x => x.act)).toEqual(["선택", "답변", "답변", "답변"]);
-			expect(await q(`return document.querySelector("#home-now .hn-h .sup").textContent`)).toBe("10");
+			expect(await q(`return document.querySelector("#home-now .hn-h .sup").textContent`)).toBe("7");
 		});
 
 		test("the session questions waiting at page open are one toast with their count, and it opens 홈", async () => {

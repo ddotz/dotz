@@ -110,7 +110,7 @@ describe("batch answer", () => {
 		// D4 was not picked: it is not taken, not recorded, not sent.
 		expect(w.log).toEqual(["take D2,D3", "settle n1 1) 보내기", "send D1", "send D2"]);
 		expect(w.recorded.map(x => [x.deliver, x.notice ?? "", x.picks.map(p => `${p.q}=${p.label}`)])).toEqual([
-			[false, "n1", ["이 답글 올릴까요? (D1)=보내기", "이 답글 올릴까요? (D2)=보내기"]],
+			[false, "", ["이 답글 올릴까요? (D1)=보내기", "이 답글 올릴까요? (D2)=보내기"]],
 			[true, "", ["이 답글 올릴까요? (D3)=고치기"]],
 		]);
 		expect(w.recorded[1]!.text).toContain("2) 고치기 - 더 짧게");

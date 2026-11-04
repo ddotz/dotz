@@ -1,10 +1,8 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdirSync } from "node:fs";
 import { now } from "./config.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
-// 홈 답변 필요: the send approvals of one monitoring app instance are one row ("메일 답장 확인 3건"); the count is of items, a lone approval stays a plain row,
-// and an expanded group lists its items, each opening its own sheet. Neutral fixtures.
+// 홈 답변 필요: the send approvals of every app are no rows of it; one 답장 대기 row (30-replies.js rqWaiting) counts them all and opens the 답장 대기 screen. Neutral fixtures.
 const at = (minutesAgo: number) => new Date(Date.parse(now()) - minutesAgo * 60_000).toISOString();
 const OPTIONS = [{ n: 1, label: "보내기", desc: "", rec: true }, { n: 2, label: "고치기 …", desc: "", rec: false }, { n: 3, label: "보내지 않기", desc: "", rec: false }];
 const draft = (id: string, to: string, who: string, minutesAgo: number) => ({
@@ -46,43 +44,37 @@ afterAll(() => {
 	for (const v of views) v.close();
 	server.stop(true);
 });
-const SNAP = "/tmp/dotz-notice-group";
 
 type Page = InstanceType<typeof Bun.WebView>;
 const waitFor = (v: Page, expr: string) =>
 	v.evaluate(`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), 10000); const tick = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); res(true); } else requestAnimationFrame(tick); }; tick(); })`);
-type Rows = { groups: { key: string; title: string; open: boolean; items: number }[]; plain: string[]; badge: string };
-const rowsOf = async (v: Page): Promise<Rows> =>
-	JSON.parse(String(await v.evaluate(`JSON.stringify({ groups: [...document.querySelectorAll("#home-now .ntg")].map(g => ({ key: g.dataset.group, title: g.querySelector(".nm").textContent, open: g.classList.contains("open"), items: g.querySelectorAll(".ntg-l .hr").length })), plain: [...document.querySelector("#home-now .hn").children].filter(r => r.classList.contains("hr")).map(r => r.querySelector(".nm").textContent), badge: document.querySelector("#home-now .hn-h .sup").textContent })`)));
+const q = async <T>(v: Page, code: string): Promise<T> => JSON.parse(String(await v.evaluate(`JSON.stringify((() => { ${code} })())`))) as T;
 
 async function open(width: number, height: number) {
 	const v = new Bun.WebView({ width, height });
 	views.push(v);
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
-	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && typeof INTG !== "undefined" && INTG.items.length === 3 && document.querySelector("#home-now .ntg")`);
+	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && typeof INTG !== "undefined" && INTG.items.length === 3 && document.querySelector('#home-now .hr[data-k="replies"]')`);
 	return v;
 }
 
-test("approvals of one app are one row with the item count; a lone approval stays a row; the badge counts items", async () => {
-	const got = await rowsOf(await open(390, 900));
-	expect(got.groups.map(g => [g.key, g.title, g.open, g.items])).toEqual([["mail", "메일 답장 확인 3건", false, 0], ["youtube", "유튜브 댓글 답글 2건", false, 0]]);
-	expect(got.plain).toHaveLength(1);
+test("the send approvals of every app are no 답변 필요 rows or groups; one 답장 대기 row counts the items, and the nav badge is the same number", async () => {
+	const v = await open(390, 900);
+	const got = await q<{ groups: number; draftRows: number; row: string; badge: string; waiting: number }>(v, `const box = document.querySelector("#home-now");
+		return { groups: box.querySelectorAll(".ntg").length, draftRows: [...box.querySelectorAll(".hr")].filter(r => r.dataset.nid).length, row: box.querySelector('.hr[data-k="replies"]').textContent,
+			badge: document.querySelector("#nav-mon").textContent, waiting: rqWaiting() };`);
+	expect(got.groups).toBe(0);
+	expect(got.draftRows).toBe(0);
+	expect(got.row).toContain("답장 대기");
+	expect(got.row).toContain("6건");
+	expect(got.waiting).toBe(6);
 	expect(got.badge).toBe("6");
 });
 
-test("a group unfolds to its items, each opening its own sheet, and shows in screenshots at 390 and 1280", async () => {
-	mkdirSync(SNAP, { recursive: true });
+test("the 답장 대기 row opens the 답장 대기 screen, which lists all six items", async () => {
 	for (const [w, h] of [[390, 900], [1280, 900]] as const) {
 		const v = await open(w, h);
-		await v.evaluate(`(document.querySelector('#home-now .ntg[data-group="mail"] .ntg-h').click(), 0)`);
-		await waitFor(v, `document.querySelectorAll('#home-now .ntg[data-group="mail"] .ntg-l .hr').length === 3`);
-		const got = await rowsOf(v);
-		expect(got.groups.find(g => g.key === "mail")).toMatchObject({ open: true, items: 3 });
-		expect(got.groups.find(g => g.key === "youtube")).toMatchObject({ open: false, items: 0 });
-		expect(got.badge).toBe("6");
-		await Bun.write(`${SNAP}/grouped-${w}.png`, await v.screenshot());
-		await v.evaluate(`(document.querySelector('#home-now .ntg[data-group="mail"] .ntg-l .hrx-m').click(), 0)`);
-		await waitFor(v, `DK.node && DK.nid`);
-		expect(String(await v.evaluate(`DK.nid`))).toMatch(/^m[123]$/);
+		await v.evaluate(`(document.querySelector('#home-now .hr[data-k="replies"]').click(), 0)`);
+		await waitFor(v, `current === "monitoring" && MON.sel === "replies" && document.querySelectorAll("#mon-tl .rq-r").length === 6`);
 	}
 }, 30_000);

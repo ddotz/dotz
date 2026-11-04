@@ -1,6 +1,6 @@
 /* ---------- 빠른 처리: many waiting send approvals of one app instance, answered fast (hub/approval-wire.ts, docs/layers.md section 5) ---------- */
 // The UI adapts to the workload: with `triageMin` (web.triage_min, default 3) or more waiting cards in one group (an app instance: a mail
-// category, a comment source), a banner offers 빠른 처리 and opening one of those cards opens it here instead of the one-card sheet.
+// category, a comment source), the 답장 대기 screen's head offers 빠른 처리 and opening one of those cards opens it here instead of the one-card sheet.
 // One item fills the view (what it answers, the lines above the draft, the draft and its mail, files, rule), the draft text is edited in
 // place, and 보내기 / 고치기 / 건너뛰기 answer it and move on at once: the answer goes out in the background (POST /api/approvals) and the
 // gateway sends it itself; each card's progress comes back as approval_send events. 목록 shows every card of the group with its whole draft
@@ -16,9 +16,10 @@ async function trLoad() {
   TR.groups = Array.isArray(r.groups) ? r.groups : [];
   TR.min = Number(r.triageMin) > 0 ? Number(r.triageMin) : 3;
   for (const x of r.results || []) TR.results[x.ref] = x;
-  trBanner();
   if (current === "monitoring" && MON.sel === "replies") { MON.sig = ""; monSchedule(); }   // the queue's head offers 빠른 처리 once enough wait
   if (TR.h) trMerge();
+  paintDecision();   // a conversation with 2 or more waiting cards shows the 답장 초안 line (10-decision-card.js)
+  monAttnSoon(); homeSoon();
 }
 const trSoon = () => { clearTimeout(TR.t); TR.t = setTimeout(trLoad, 300); };
 const trBig = () => TR.groups.filter(g => g.count >= TR.min);
@@ -29,15 +30,6 @@ const trKst = at => new Date(at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul
 /** The group a waiting card is in, when it is one the triage view takes (big enough). */
 const trGroupFor = ref => trBig().find(g => g.cards.some(c => c.ref === ref));
 
-function trBanner() {
-  const b = $("#trban");
-  if (!b) return;
-  const total = trTotal(), g = TR.groups[0];
-  b.hidden = !g || total < TR.min || !!TR.h;
-  if (b.hidden) return;
-  clear(b).append(icon("list"), el("span", { class: "tx", text: TR.groups.length > 1 ? `답장 대기 ${total}건 · ${TR.groups.length}곳` : `${g.label} 대기 ${g.count}건` }), el("span", { class: "go", text: "빠르게 처리" }));
-  b.onclick = () => trOpen("*");
-}
 
 function trOpen(key, ref) {
   const g = TR.groups.find(x => x.key === key), cards = trCards(key);
@@ -45,11 +37,10 @@ function trOpen(key, ref) {
   if (TR.h) TR.h.close(false);
   Object.assign(TR, { key, label: g ? g.label : "전체", items: cards.slice(), list: false, picks: {}, edits: {}, notes: {}, done: {}, open: {}, noting: false });
   TR.i = Math.max(0, ref ? TR.items.findIndex(c => c.ref === ref) : 0);
-  const h = fsOpen({ label: `${TR.label} 빠른 처리`, cls: "tall tr", onClose: () => { if (TR.h === h) TR.h = null; document.removeEventListener("keydown", trKey); trBanner(); } });
+  const h = fsOpen({ label: `${TR.label} 빠른 처리`, cls: "tall tr", onClose: () => { if (TR.h === h) TR.h = null; document.removeEventListener("keydown", trKey); } });
   TR.h = h;
   document.addEventListener("keydown", trKey);
   trPaint();
-  trBanner();
   h.box.focus({ preventScroll: true });
 }
 

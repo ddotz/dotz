@@ -134,9 +134,6 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .hc-list:has(.nt-x) > .hc-row:not(:has(.nt-x))::after { content: ""; flex: none; width: 38px; }
 .ds-rl.ign { color: var(--fg-3); }
 .dc-hb { flex: none; display: flex; align-items: center; gap: var(--sp-05); }
-/* 홈 답변 필요: a monitoring app's send approvals folded into one row; the items unfold below it, indented. */
-.ntg-h[aria-expanded="true"] .hs { color: var(--muted, inherit); }
-.ntg-l { margin: 0 0 var(--sp-15) var(--sp-5); padding-left: var(--sp-2); border-left: 2px solid var(--line); }
 
 /* 알림 conversation: the record behind the 알림 screen has no composer (31-conversations.js convPaint sets .no-composer) */
 #v-chat.no-composer > .composer { display: none; }

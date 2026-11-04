@@ -40,7 +40,7 @@ describe("monStatus: connection > paused > fail > late > changed > ok > not run"
 describe("monNeedLine: drafts > 미답장 > 안 읽음 > sent today, at most two", () => {
 	test("미답장 is counted and ranks before 안 읽음", () => {
 		expect(monNeedLine({ drafts: 0, unreplied: 2, unread: 0, sentToday: 0 })).toBe("미답장 2건");
-		expect(monNeedLine({ drafts: 1, unreplied: 2, unread: 3, sentToday: 4 })).toBe("답장 확인 1건 · 미답장 2건");
+		expect(monNeedLine({ drafts: 1, unreplied: 2, unread: 3, sentToday: 4 })).toBe("답장 대기 1건 · 미답장 2건");
 		expect(monNeedLine({ drafts: 0, unreplied: 2, unread: 3, sentToday: 4 })).toBe("미답장 2건 · 안 읽음 3");
 	});
 	test("확인할 것 없어요 only when connected and every count is 0", () => {
@@ -88,6 +88,9 @@ const PEERS = [{
 		conversations: [],
 	},
 }];
+// A draft this computer's store keeps for the owner (GET /api/replies): the one waiting reply the badge counts.
+const KAKAO_DRAFT = { kind: "kakao", app: "kakao", code: "K1", chatId: "100", room: "가나다 모임", text: "안녕하세요", parts: ["안녕하세요"], at: Date.parse("2026-10-27T11:00:00Z"), attachmentsNone: true, cannotAttach: [], original: { who: "가나", text: "내일 어때요?" } };
+let localReplies: object[] = [KAKAO_DRAFT];
 const server = Bun.serve({
 	port: 0,
 	hostname: "127.0.0.1",
@@ -101,6 +104,7 @@ const server = Bun.serve({
 		if (url.pathname === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 });
 		if (url.pathname === "/api/notices") return json({ items: [], unread: 0 });
 		if (url.pathname === "/api/monitors") return json({ items: MONITORS });
+		if (url.pathname === "/api/replies") return json({ items: localReplies });
 		if (url.pathname === "/api/integrations") return json({ items: ITEMS });
 		if (url.pathname === "/api/monitoring/peers") return json(PEERS);
 		if (url.pathname === "/api/conversations") return json({ items: [] });
@@ -145,23 +149,28 @@ describe("screens", () => {
 		await v.evaluate(`(go("monitoring"), 0)`);
 		await v.evaluate(until(`PQ.loaded && monItems().some(i => i.pc)`, "peer rows not merged"));
 		const rows = await q<[string, string][]>(v, `return monRows(monItems(), null).filter(r => r.k && /^(i:|p:.*[|]i:)/.test(r.k)).map(r => [r.k, r.hint]);`);
-		expect(rows).toEqual([["i:mail", "답장 확인 1건 · 미답장 2건"], ["i:kakao", "연결 끊김"], ["i:youtube", "확인할 것 없어요"], ["p:http://peer-b.invalid|i:mail", "답장 확인 2건"]]);
+		expect(rows).toEqual([["i:mail", "답장 대기 1건 · 미답장 2건"], ["i:kakao", "연결 끊김"], ["i:youtube", "확인할 것 없어요"], ["p:http://peer-b.invalid|i:mail", "답장 대기 2건"]]);
 	});
 
-	test("the 모니터링 nav badge counts this computer's failing and disconnected rows plus pending drafts (never another computer's), and drops when they clear", async () => {
+	test("the 모니터링 nav badge is the one 답장 대기 number (rqWaiting); failing and disconnected rows are not in it but show as the small dot while it is 0", async () => {
 		const v = await open();
-		// local: kakao disconnected + flaky failing + 1 draft = 3 (paused and late are not counted); peer-b's failing watch and 2 drafts are not counted
+		// 1 waiting draft = 1; kakao disconnected + flaky failing are faults (paused and late are not), peer-b's failing watch is not counted
 		await v.evaluate(`pqLoad()`);
-		await v.evaluate(until(`PQ.loaded && document.querySelector("#nav-mon").textContent === "3" && !document.querySelector("#nav-mon").hidden`, "badge not 3"));
-		await v.evaluate(`(NM.items.find(x => x.name === "flaky").last_result = "ok", INTG.items[0].needs.drafts = 0, monSchedule(), 0)`);
-		await v.evaluate(until(`document.querySelector("#nav-mon").textContent === "1"`, "badge did not drop to 1"));
-		const label = (await v.evaluate(`document.querySelector('#nav [data-view="monitoring"]').getAttribute("aria-label")`)) as string;
-		expect(label).toBe("모니터링, 확인할 것 1개");
+		await v.evaluate(until(`PQ.loaded && RQ.loaded && document.querySelector("#nav-mon").textContent === "1" && !document.querySelector("#nav-mon").hidden`, "badge not 1"));
+		expect(await q<number[]>(v, `return [rqWaiting(), monAttnCount([{ apps: INTG.items, mons: NM.items }])]`)).toEqual([1, 2]);
+		expect((await v.evaluate(`document.querySelector('#nav [data-view="monitoring"]').getAttribute("aria-label")`)) as string).toBe("모니터링, 확인할 것 1개");
+		// the draft leaves: the number is 0 and the two faults show as the dot titled 확인할 것 2개
+		localReplies = [];
+		await v.evaluate(`(rqLoad(), 0)`);
+		await v.evaluate(until(`(b => b && !b.hidden && b.classList.contains("nub") && b.title === "확인할 것 2개" && b.textContent === "")(document.querySelector("#nav-mon"))`, "dot not 2"));
+		await v.evaluate(`(NM.items.find(x => x.name === "flaky").last_result = "ok", monSchedule(), 0)`);
+		await v.evaluate(until(`document.querySelector("#nav-mon").title === "확인할 것 1개"`, "dot did not drop to 1"));
+		expect((await v.evaluate(`document.querySelector('#nav [data-view="monitoring"]').getAttribute("aria-label")`)) as string).toBe("모니터링, 확인할 것 1개");
 	});
 
 	test("with nothing to count, an unread watch report puts the small dot on 모니터링 at the label's bottom-right corner, and reading it clears the dot", async () => {
 		const v = await open();
-		await v.evaluate(`(NM.items.forEach(m => { m.last_result = "ok"; m.connection = "connected"; }), INTG.items.forEach(i => { i.state = "connected"; i.needs = { drafts: 0, unread: 0, unreplied: 0, sentToday: 0 }; }), NT.items.push({ id: "w-news", kind: "watch", read: false, at: new Date().toISOString(), title: "새 소식" }), monSchedule(), 0)`);
+		await v.evaluate(`(RQ.local = [], NM.items.forEach(m => { m.last_result = "ok"; m.connection = "connected"; }), INTG.items.forEach(i => { i.state = "connected"; i.needs = { drafts: 0, unread: 0, unreplied: 0, sentToday: 0 }; }), NT.items.push({ id: "w-news", kind: "watch", read: false, at: new Date().toISOString(), title: "새 소식" }), monSchedule(), 0)`);
 		await v.evaluate(until(`(b => b && !b.hidden && b.classList.contains("nub"))(document.querySelector("#nav-mon"))`, "dot not shown"));
 		const g = await q<{ text: string; dotRight: number; dotBottom: number; labelRight: number; labelBottom: number }>(v, `const b = document.querySelector("#nav-mon"), l = b.parentElement.querySelector(".nl").getBoundingClientRect(), d = b.getBoundingClientRect();
 			return { text: b.textContent, dotRight: d.right, dotBottom: d.bottom, labelRight: l.right, labelBottom: l.bottom };`);

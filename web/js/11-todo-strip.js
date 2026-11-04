@@ -331,7 +331,7 @@ function msgNode(e) {
       // A briefing-shaped answer (schedule rows, a mail line, counts) is drawn as a card of rows and chips (11-resultcard.js hcBriefNode).
       const brief = e.kind === "out" && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
       if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);
-      return el("div", { class: `bm${card}` }, head, rpQuote(e), brief ? (tone ? [toneLead(el("div", { class: "md" }), tone), brief] : brief) : toneLead(md, tone), filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files);
+      return el("div", { class: `bm${card}`, ...(pc && pc.blocks.length > 1 ? { "data-dat": e.ts } : {}) }, head, rpQuote(e), brief ? (tone ? [toneLead(el("div", { class: "md" }), tone), brief] : brief) : toneLead(md, tone), filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files);
     }
   }
 }

@@ -12,7 +12,7 @@ body { display: flow-root; }
   .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: 0; }
   .side { order: 0; display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; min-height: 0; padding: var(--sp-3); overflow-y: auto; border-top: 0; background: var(--bg); }
   .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-  .gban, .trban, .oerr { flex: none; grid-row: auto; grid-column: auto; }
+  .gban, .oerr { flex: none; grid-row: auto; grid-column: auto; }
   .views { flex: 1; min-height: 0; grid-row: auto; grid-column: auto; }
   .appbar { display: flex; flex: none; align-items: center; gap: var(--sp-1); height: 60px; padding: 0 var(--sp-5) 0 var(--sp-6); background: transparent; }
   .appbar .ib { width: 32px; height: 32px; }
@@ -139,7 +139,7 @@ body { display: flow-root; }
 .hneeds .hn:has(> .hc-none) { padding: 0 var(--sp-5) var(--sp-5); }
 .hneeds .hn-h.hsub { padding: var(--sp-3) var(--sp-5) var(--sp-1); border-top: 1px solid var(--line); border-radius: 0; }
 .hneeds .hn-h.hsub h2 { font: 600 13px/18px var(--font); color: var(--fg-2); }
-.hneeds .hn > .hr, .hneeds .hn > .ntg { padding-left: var(--sp-5); padding-right: var(--sp-5); }
+.hneeds .hn > .hr { padding-left: var(--sp-5); padding-right: var(--sp-5); }
 
 /* the grid cards keep the prototype's card box: 20px padding, the header 8px above its list, rows to the card's edge; a row is as tall
    as its taller card and both cards fill it (07-board.js rows mode) */

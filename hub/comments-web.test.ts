@@ -217,7 +217,7 @@ describe("댓글 on a phone (390x844)", async () => {
 	test("the app list row carries the status line", async () => {
 		await boot(v);
 		await run(v, `go("monitoring", "list")`);
-		await waitFor(v, `document.querySelector("#mon-side") && document.querySelector("#mon-side").textContent.includes("답장 확인 1건 · 안 읽음 2")`);
+		await waitFor(v, `document.querySelector("#mon-side") && document.querySelector("#mon-side").textContent.includes("답장 대기 1건 · 안 읽음 2")`);
 	});
 });
 

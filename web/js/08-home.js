@@ -281,10 +281,10 @@ function homeOwedRow(it) {
     el("span", { class: "dot unreplied" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: it.name })), el("span", { class: "ha", text: "답장을 기다리는 것이 있어요" })),
     el("span", { class: "hs unreplied", text: `미답장 ${it.unreplied}` }));
 }
-// 답장 확인: the reply drafts of this computer's apps that wait for 보내기, one row that opens the queue (30-replies.js).
+// 답장 대기: what waits on the owner in the apps (a draft to send or a failed send, of every computer), one row that opens the screen (30-replies.js).
 function homeRepliesRow(n) {
-  return el("button", { class: "hr", type: "button", "data-k": "replies", onclick: () => rqOpen(), "aria-label": `답장 확인 ${n}건` },
-    el("span", { class: "dot att" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: "답장 확인" })), el("span", { class: "ha", text: "보내기 전에 확인할 답장 초안이 있어요" })),
+  return el("button", { class: "hr", type: "button", "data-k": "replies", onclick: () => rqOpen(), "aria-label": `답장 대기 ${n}건` },
+    el("span", { class: "dot att" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: "답장 대기" })), el("span", { class: "ha", text: "확인할 답장이 있어요" })),
     el("span", { class: "hs warn", text: `${n}건` }));
 }
 // Work deferred to the usage-limit reset (hub/limitwait.ts, /api/state `deferred`): a row of 지금 진행 중 with the badge drawn from resume_at.
@@ -379,7 +379,7 @@ function renderHomeNow() {
   if (!now || !box) return;
   const kept = capPlaces(), needs = nyList(), crit = needs.filter(x => x.crit).length;   // 09-needs-you.js: what only the owner can do, critical first
   // 홈 is this computer's alone (owner 2026-10-31): the other computers' items live in 모니터링, and the computer chip's dot says they want something.
-  const owed = monItems().filter(i => i.app && i.unreplied && !i.pc), owedN = owed.reduce((c, i) => c + i.unreplied, 0), drafts = rqAll().filter(x => !x.pc).length;
+  const owed = monItems().filter(i => i.app && i.unreplied && !i.pc), owedN = owed.reduce((c, i) => c + i.unreplied, 0), drafts = rqWaiting();
   const waiting = needs.length;
   // 지금 진행 중 is only what runs now (a turn, a background worker); a waiting or idle conversation is a row of 대기 중 below it,
   // and background work that ended within the hour is listed last (실패 · 이유 · 다시 맡기기).
@@ -400,7 +400,7 @@ function renderHomeNow() {
       nyListNode(needs), ...owedBlock));
   for (const w of settled) { const s = HC_SETTLE.get(w.id), row = s && !s.swapped ? now.querySelector(`[data-work="${CSS.escape(w.id)}"]`) : null; if (row) { s.swapped = true; motionSwap(row, () => {}); } }
   if (S && NT.loaded && HOME_READY) {
-    const rows = [...now.querySelectorAll(".hr, .ntg")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.work || r.dataset.mon || r.dataset.group || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
+    const rows = [...now.querySelectorAll(".hr")], keys = rows.map(r => `${(r.closest(".hn") || {}).dataset?.k || ""}|${r.dataset.t || r.dataset.wait || r.dataset.work || r.dataset.mon || r.dataset.id || r.dataset.k || (r.querySelector(".nm") || {}).textContent || ""}`);
     const fresh = freshKeys(HOME_ROWS, keys);
     rows.forEach((r, i) => { if (fresh.has(keys[i])) motionIn(r, "top"); });
   }

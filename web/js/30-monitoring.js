@@ -164,7 +164,7 @@ const MON_FEED = "감시 소식";
 // "확인할 것 없어요" only for a connected app with every count 0; `down` (the app is disconnected) says 연결 끊김 instead.
 function monNeedLine(n, down) {
   const parts = [];
-  if (n.drafts) parts.push(`답장 확인 ${n.drafts}건`);
+  if (n.drafts) parts.push(`답장 대기 ${n.drafts}건`);
   if (n.unreplied) parts.push(`미답장 ${n.unreplied}건`);
   if (n.unread) parts.push(`안 읽음 ${n.unread}`);
   if (n.sentToday) parts.push(`오늘 자동 답장 ${n.sentToday}건 보냄`);
@@ -214,7 +214,7 @@ function monItems() {
   const feed = ntWithRepeats(NT.items).filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), need = feed.filter(monNeed).length;
   // The feed's row: what waits on the owner as its chip (counted apart from the plain reports, like an app row), the head line under the name (monFeedHead).
   items.unshift({ key: "notice", group: "", name: MON_FEED, ic: "list", notices: feed, mails: [], unread: monUnread(feed), need, chips: monNeedChips(need), ...monFeedHead(feed) });
-  // 답장 확인 (30-replies.js): every waiting reply draft of every app and computer, right under 감시 소식.
+  // 답장 대기 (30-replies.js): every reply that waits on the owner, of every app and computer, right under 감시 소식.
   const rq = rqMonItem();
   if (rq) items.splice(1, 0, rq);
   return pqMerge(items);
@@ -244,7 +244,7 @@ function monState(it) {
   if (it.off) return "연결 안 됨";
   // The progress block under the name already carries the two runs in words, so the state line says only where it stands.
   if (it.mon) { const st = monStatus(it.mon); return st.key === "disconnected" ? "" : st.text; }
-  if (it.rq) return it.unread ? `기다리는 초안 ${it.unread}개` : it.hint;
+  if (it.rq) return it.unread ? `답장 ${it.unread}건 기다려요` : it.hint;
   if (it.key === "notice") return [it.need ? `답 필요 ${it.need}건` : "", it.unread ? `안 읽음 ${it.unread}개` : ""].filter(Boolean).join(" · ") || "감시와 예약 결과";
   return it.app ? it.hint : it.unread ? `안 읽음 ${it.unread}개` : "연결돼 있어요";
 }
@@ -972,14 +972,12 @@ function monHeadTime(it) {
 // the actions at the end of that row and the state / wait / banner under it. A phone has no .cv-head, so monTopNodes draws the same card there.
 const monHead = it => {
   const banner = monBannerOf(it), st = monState(it);
-  // An app with reply drafts waiting opens the one 답장 확인 queue on its own drafts (30-replies.js).
-  const rqBtn = it.app && it.drafts ? el("button", { class: "btn tonal sm rq-go", type: "button", "data-k": "replies", text: `답장 확인 ${it.drafts}`, onclick: () => rqOpen(it.inst, it.pc) }) : null;
+  // An app with reply drafts waiting opens the one 답장 대기 screen on its own drafts (30-replies.js).
+  const rqBtn = it.app && it.drafts ? el("button", { class: "btn tonal sm rq-go", type: "button", "data-k": "replies", text: `답장 대기 ${it.drafts}`, onclick: () => rqOpen(it.inst, it.pc) }) : null;
   // 대화로 이어가기 (owner 2026-11-03): every item continues in its own chat - the conversation its settings talk in (asOpen's own go()).
   // A mail or KakaoTalk item is already a conversation, so the way in is its row and this button stays out of the way there.
   const convBtn = monConvBtn(it);
-  // 빠른 처리 (30-triage.js): the whole queue answered one card at a time, offered once enough drafts wait.
-  const trBtn = it.rq && trTotal() >= TR.min ? el("button", { class: "btn text sm tr-open", type: "button", "data-k": "triage", onclick: () => trOpen("*") }, icon("spark"), el("span", { text: "빠른 처리" })) : null;
-  const acts = [convBtn, rqBtn, trBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
+  const acts = [convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
   const extra = [];
   if (it.mon) extra.push(monProgNode(it.mon, { compact: true, tag: !banner }));
   if (banner) extra.push(banner);
@@ -1056,7 +1054,8 @@ function renderMonitoring() {
     return;
   }
   MON.kkHead = "";
-  if (sel.rq) {   // 답장 확인: the cards of 30-replies.js, redrawn only when a draft or the queue's own state changes
+  $("#v-monitoring").classList.toggle("rq-on", !!sel.rq);   // the screen's own head is its tabs: no item head above them (the prototype's #queue)
+  if (sel.rq) {   // 답장 대기: the rows of 30-replies.js, redrawn only when an item or the screen's own state changes
     const sig = rqSig();
     if (sig !== MON.sig) {
       const keep = MON.shown === sel.key ? box.scrollTop : 0;
@@ -1089,7 +1088,7 @@ function renderMonitoring() {
   monSeen();
 }
 // The list column as the prototype draws it (#monitoring): section labels sit between one card per section, never inside one long card.
-// The first rows (감시 소식, 답장 확인) have no label and stand as their own cards; 앱 / 일반 모니터링 / 프로젝트·… each open a labeled card.
+// The first rows (감시 소식, 답장 대기) have no label and stand as their own cards; 앱 / 일반 모니터링 / 프로젝트·… each open a labeled card.
 function monSideNodes(rows) {
   const out = [];
   let list = null;
