@@ -220,3 +220,35 @@ test("--no-service and --setup keep the terminal path and create no marker", () 
 		expect(existsSync(join(s.data, "config.json"))).toBe(false);
 	}
 }, 60_000);
+
+// The open path waits for the gateway with curl on /api/peer-info: a curl stub first on PATH answers that one probe and runs the real curl for everything else (the tarball fetch).
+const stubOpenPath = (s: ReturnType<typeof scene>, opener: "works" | "fails") => {
+	const bin = join(dirname(s.data), "bin");
+	writeFileSync(join(bin, "curl"), `#!/bin/sh\ncase "$*" in *"/api/peer-info"*) exit 0 ;; esac\nexec ${Bun.which("curl")} "$@"\n`);
+	chmodSync(join(bin, "curl"), 0o755);
+	for (const name of ["open", "xdg-open"]) {
+		writeFileSync(join(bin, name), `#!/bin/sh\necho "$(basename "$0") $*" >> "$STUB_LOG"\nexit ${opener === "works" ? 0 : 1}\n`);
+		chmodSync(join(bin, name), 0o755);
+	}
+};
+
+test("a fresh install on a desktop hands the setup address to the opener and does not print it", () => {
+	const s = scene();
+	stubOpenPath(s, "works");
+	const i = s.install({ DISPLAY: ":0" });
+	if (i.code !== 0) throw new Error(i.out);
+	expect(s.stubCalls()).toMatch(OPENERS);
+	expect(s.stubCalls()).toMatch(ADDRESS);
+	expect(i.out).toContain("opened the setup page in your browser");
+	expect(i.out).not.toMatch(ADDRESS);
+}, 60_000);
+
+test("when the opener exits 1 the address is printed instead", () => {
+	const s = scene();
+	stubOpenPath(s, "fails");
+	const i = s.install({ DISPLAY: ":0" });
+	if (i.code !== 0) throw new Error(i.out);
+	expect(s.stubCalls()).toMatch(OPENERS);
+	expect(i.out).toMatch(ADDRESS);
+	expect(i.out).not.toContain("opened the setup page");
+}, 60_000);
