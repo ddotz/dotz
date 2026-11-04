@@ -135,7 +135,7 @@
 | 이름 | 무엇 | 출처 파일 | 프로토타입 위치 |
 |---|---|---|---|
 | 알림 종 | 새 알림 수 배지가 있는 종 | web/js/30-notices.js, hub/notices.ts | `#notices` |
-| 알림 목록 | 새 알림이 맨 위, 눌러서 읽음 처리 | web/js/30-notices.js, web/css/09-notices.css | `#notices` |
+| 알림 목록 (시안: 독립 화면) | 처리할 것 · 새 소식 · 지난 알림 세 묶음, 필터는 거르기만, 읽음은 누르기 · ✕ · 모두 읽음으로만. 실제 앱은 아직 알림 대화 | 시안 s-notices.js, 실제 web/js/31-conversations.js, web/js/30-notices.js | `#notices`, `#notices/read`, `#notices/empty`, `#notices/long`, `#notices/repeat` |
 | 가격 변경 알림 | 취소선 → 새 값이 알림 행에 | web/js/11-watchtext.js, hub/watchtext.ts | `#notices` |
 | 알림 종류 · 푸시 | 이 기기에서 켜는 알림과 앱처럼 설치 | web/js/23-installable-app-web.js, docs/notifications.md | `#settings/notifications` |
 | 알림 문체 | 일상 / 간결 / STE 중 알림 글 말투 | MODE.ko.md (Reporting), hub/notice-class.ts | `#settings/display` |

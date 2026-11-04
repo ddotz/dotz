@@ -55,14 +55,27 @@ window.D = (() => {
   ];
   D.kakaoDraft = { id: "d-k1", to: "정우", subj: "", text: "가는 길에 마트에 들러서 사자.\n내가 사 갈게!", kind: "카카오톡" };
 
+  /* 알림 화면(s-notices.js): cls는 hub/notice-class.ts의 분류, need는 처리할 것(처리될 때까지 남아요), rep는 같은 감시의 반복을 접은 행이에요 */
   D.notices = [
-    { id: "n1", tone: "warn", tag: "답장 확인", title: "한서윤님께 보낼 답장 초안", sub: "화요일 오후 2시가 좋다고 답해요", t: "방금", href: "mail/1", unread: true },
-    { id: "n3", tone: "warn", tag: "댓글", title: "댓글 3개에 답글을 달 수 있어요", sub: "유튜브 2 · 인스타그램 1 · 웹사이트 1", t: "35분 전", href: "comments", unread: true },
-    { id: "n4", tone: "warn", tag: "카카오톡", title: "정우님이 물어봤어요", sub: "그리고 장작은 어디서 살까?", t: "6분 전", href: "kakao/r1", unread: true },
-    { id: "n5", tone: "pri", tag: "아침 점검", title: "아침 브리핑이 왔어요", sub: "일정 4개 · 답장할 메일 2통", t: "오전 7:30", href: "briefing", unread: false },
-    { id: "n6", tone: "ok", tag: "작업 완료", title: "주간 보고서 정리를 마쳤어요", sub: "주간-보고서.md", t: "어제", href: "tasks", unread: false },
+    { id: "n-dec", cls: "ask", need: true, decision: true, tone: "warn", tag: "결정", title: "배포 공지 형태를 정해 주세요", sub: "릴리스 노트 · 답을 기다리고 있어요", t: "오전 10:41", href: "chat/ch2", unread: true },
+    { id: "n1", cls: "ask", need: true, draft: "d-m1", tone: "warn", tag: "답장 확인", title: "한서윤님께 보낼 답장 초안", sub: "화요일 오후 2시가 좋다고 답해요", t: "오전 10:24", href: "mail/1", unread: true },
+    { id: "n4", cls: "ask", need: true, draft: "d-k1", tone: "warn", tag: "카카오톡", title: "정우님이 물어봤어요", sub: "그리고 장작은 어디서 살까?", t: "오전 9:58", href: "kakao/r1", unread: false },
+    { id: "n-fail", cls: "alert", need: true, close: true, tone: "err", tag: "실패", title: "가격 페이지를 확인하지 못했어요", sub: "캠핑 의자 가격 · 페이지가 열리지 않아요", t: "오전 9:40", href: "watch/price", unread: true },
+    { id: "n-login", cls: "alert", need: true, tone: "warn", tag: "로그인", title: "인스타그램 로그인이 풀렸어요", sub: "댓글을 가져오려면 다시 로그인해 주세요", t: "오전 9:12", href: "comments/instagram", unread: true },
+    { id: "n-rep", cls: "news", tone: "", tag: "가격 변경", title: "캠핑 의자 가격이 바뀌었어요", price: ["89,000원", "72,000원"], t: "방금", href: "watch/price", unread: true, rep: [
+      { id: "n-rep1", tag: "가격 변경", title: "캠핑 의자 가격이 바뀌었어요", price: ["89,000원", "72,000원"], t: "방금", href: "watch/price" },
+      { id: "n-rep2", tag: "가격 변경", title: "캠핑 의자 가격이 바뀌었어요", price: ["92,000원", "89,000원"], t: "오전 10:05", href: "watch/price" },
+      { id: "n-rep3", tag: "가격 변경", title: "캠핑 의자 가격이 바뀌었어요", price: ["95,000원", "92,000원"], t: "오전 8:30", href: "watch/price" },
+    ] },
+    { id: "n3", cls: "news", tone: "", tag: "댓글", title: "댓글 4개에 답글을 달 수 있어요", sub: "유튜브 2 · 인스타그램 1 · 웹사이트 1", t: "오전 10:12", href: "comments", unread: true },
+    { id: "n-long", cls: "news", long: true, tone: "", tag: "일정", title: "다음 주 수요일 팀 회의 장소가 본관 3층 회의실에서 별관 1층 세미나실로 바뀌었고 시작 시간도 30분 앞당겨졌으니 참석자 모두 공유 일정을 다시 확인해 주세요", sub: "공유 일정에서 온 소식이에요 · 참석자 8명에게 같은 내용이 전달됐고 회의 자료는 그대로 쓰면 돼요", t: "오전 8:02", href: "briefing", unread: true },
+    { id: "n6", cls: "result", tone: "ok", tag: "작업 완료", title: "주간 보고서 정리를 마쳤어요", sub: "주간-보고서.md", t: "오전 7:50", href: "tasks", unread: true },
+    { id: "n-check", cls: "log", tone: "", tag: "감시", title: "가격 페이지: 확인했어요. 바뀐 곳은 없어요.", sub: "", t: "오전 7:45", href: "watch/price", unread: false },
+    { id: "n5", cls: "news", tone: "", tag: "아침 점검", title: "아침 브리핑이 왔어요", sub: "일정 4개 · 답장할 메일 2통", t: "오전 7:30", href: "briefing", unread: false },
+    { id: "n7", cls: "result", tone: "ok", tag: "작업 완료", title: "릴리스 노트 초안을 만들었어요", sub: "릴리스-노트.md", t: "어제", href: "tasks", unread: false },
+    { id: "n8", cls: "news", tone: "", tag: "메일", title: "새 메일 2통이 왔어요", sub: "오지훈 · 견적서 다시 보내 드려요", t: "어제", href: "mail", unread: false },
   ];
-  D.priceNotice = { id: "n2", tone: "pri", tag: "가격 변경", title: "캠핑 의자 가격이 바뀌었어요", sub: "89,000원 → 72,000원", price: ["89,000원", "72,000원"], t: "방금", href: "watch/price", unread: true };
+  D.arriveNotice = { id: "n-new", cls: "news", tone: "", tag: "메일", title: "새 메일이 왔어요", sub: "한서윤 · 회의 장소를 바꿔도 될까요", t: "방금", href: "mail/1", unread: true };
 
   D.convs = [
     { id: "main", title: "dotz AI", sub: "무엇을 도와드릴까요?", t: "8분 전", unread: 0, kind: "bot" },

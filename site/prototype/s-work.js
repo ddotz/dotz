@@ -38,18 +38,7 @@
 
   /* 알림 */
   const noticeRow = (n) => `<a class="li${n.unread ? " unread" : ""}" href="#${n.href}" data-act="notice-open" data-nid="${n.id}"><span class="lead"><span class="dot ${n.unread ? n.tone : ""}"></span></span><span class="tx"><span class="hd">${h(n.title)}</span><span class="sup">${n.price ? `<s class="old">${n.price[0]}</s> → ${n.price[1]}` : h(n.sub)}</span></span><span class="end"><span class="tag ${tagFor(n.tone)}">${h(n.tag)}</span><span>${h(n.t)}</span></span></a>`;
-  P.reg({ id: "notices", title: "알림", tab: "home", back: "home", group: "알림", desc: "알림 종 · 새 알림은 맨 위에 들어와요",
-    render: () => `<div class="row" style="margin-bottom:12px"><span class="meta">안 읽은 알림 <b data-count-n>${P.S.unread()}</b>개</span><span class="sp"></span><button class="btn tonal sm" data-act="demo-price">${ic("bell")}가격 변경 알림 받기</button><button class="btn text sm" data-act="notices-read">모두 읽음</button></div><div class="list" data-notices>${P.S.notices.map(noticeRow).join("")}</div><div class="note">"가격 변경 알림 받기"를 누르면 감시가 가격 변화를 찾았을 때처럼 맨 위에 새 줄이 들어와요.</div>` });
   P.acts["notice-open"] = (el) => { const n = P.S.notices.find((x) => x.id === el.dataset.nid); if (n) n.unread = false; P.refreshBadges(); };
-  P.acts["notices-read"] = () => { P.S.notices.forEach((n) => (n.unread = false)); $$("[data-notices] .li").forEach((li) => { li.classList.remove("unread"); const d = $(".dot", li); if (d) d.className = "dot"; }); const c = $("[data-count-n]"); if (c) P.roll(c, "0"); P.refreshBadges(); };
-  P.acts["demo-price"] = () => {
-    if (P.S.notices.some((n) => n.id === "n2")) { P.toast("가격 변경 알림은 이미 도착했어요"); return; }
-    const n = Object.assign({}, D.priceNotice); P.S.notices.unshift(n);
-    const box = $("[data-notices]");
-    if (box) { box.insertAdjacentHTML("afterbegin", noticeRow(n)); P.mIn(box.firstElementChild, "top"); const c = $("[data-count-n]"); if (c) P.roll(c, String(P.S.unread())); }
-    const home = $("#view .list .li[data-nid]"); void home;
-    P.refreshBadges(); P.toast("캠핑 의자 가격이 바뀌었어요 · 89,000원 → 72,000원");
-  };
 
   /* 프로젝트 */
   const stTone = { pri: "pri", warn: "warn" };
