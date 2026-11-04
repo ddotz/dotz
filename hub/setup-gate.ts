@@ -38,7 +38,7 @@ const reply = (body: unknown, status = 200): Response => Response.json(body, { s
 const notFound = (): Response => new Response("not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8", ...SECURE } });
 const frame = (event: string, data: unknown): string => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 const cookieOf = (req: Request): string | undefined => (req.headers.get("cookie") ?? "").split(";").map(c => c.trim()).find(c => c.startsWith(`${SETUP_COOKIE}=`))?.slice(SETUP_COOKIE.length + 1);
-const shell = (lang: string): string => `<!doctype html>\n<html lang="${lang.replace(/[^A-Za-z-]/g, "")}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>dotz</title><link rel="stylesheet" href="/setup.css"></head><body><div id="setup"></div><script src="/setup.js"></script></body></html>\n`;
+const shell = (lang: string, wait: string): string => `<!doctype html>\n<html lang="${lang.replace(/[^A-Za-z-]/g, "")}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>dotz</title><link rel="stylesheet" href="/setup.css"></head><body><div id="setup"><p class="ob-wait">${wait}</p></div><script src="/setup.js"></script></body></html>\n`;
 const read = (path: string): string => {
 	try {
 		return readFileSync(path, "utf8").trim();
@@ -52,6 +52,18 @@ export function createSetupGate(deps: SetupDeps) {
 	const { dir } = deps;
 	const draft = (): Record<string, unknown> => readFirstRun(dir)?.draft ?? {};
 	const text = () => setupText(draftLang(draft()));
+	// A scan takes seconds (it asks every CLI), so the state answers from the last one; ?fresh=1 looks again and joins a scan already running.
+	let scanned: Promise<unknown> | undefined;
+	let scanning = false;
+	const scanNow = (): Promise<unknown> => {
+		if (scanning) return scanned!;
+		scanning = true;
+		const run = (deps.scan ?? scanMachine)().finally(() => { scanning = false; });
+		scanned = run;
+		run.catch(() => { if (scanned === run) scanned = undefined; });
+		return run;
+	};
+	if (readFirstRun(dir)?.status === "pending") void scanNow();
 	const secretValues = (): string[] => [tokenFile(dir), peerTokenFile(dir)].map(read);
 	const jobs = createJobs({ text, secrets: secretValues, log: deps.log, ...(deps.jobs ? { jobs: deps.jobs } : {}) });
 	const terms = createTerms(deps.terms);
@@ -117,7 +129,7 @@ export function createSetupGate(deps: SetupDeps) {
 		const body = async (): Promise<Record<string, unknown>> => ((await req.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
 		if (name === "state" && get) {
 			const f = readFirstRun(dir)!;
-			return reply({ step: f.step, draft: f.draft, saved: savedSecrets(dir), scan: await (deps.scan ?? scanMachine)(), lang: draftLang(f.draft), text: text(), jobs: jobs.snapshot() });
+			return reply({ step: f.step, draft: f.draft, saved: savedSecrets(dir), scan: await (url.searchParams.has("fresh") ? scanNow() : (scanned ?? scanNow())), lang: draftLang(f.draft), text: text(), jobs: jobs.snapshot() });
 		}
 		if (name === "draft" && req.method === "PUT") {
 			const b = await body();
@@ -172,7 +184,7 @@ export function createSetupGate(deps: SetupDeps) {
 				return new Response(null, { status: 303, headers: { Location: "/setup", "Set-Cookie": `${SETUP_COOKIE}=${cookie}; Max-Age=86400; Path=/; HttpOnly; SameSite=Strict`, ...SECURE } });
 			}
 			if (!cookieValid(dir, cookieOf(req))) return notFound();
-			if (req.method === "GET" && p === "/setup") return new Response(shell(draftLang(draft())), { headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": CSP, ...SECURE } });
+			if (req.method === "GET" && p === "/setup") return new Response(shell(draftLang(draft()), text().ui.wait), { headers: { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": CSP, ...SECURE } });
 			if (req.method === "GET" && p === "/setup.js") return new Response(file("setup.js"), { headers: { "Content-Type": "text/javascript; charset=utf-8", ...SECURE } });
 			if (req.method === "GET" && p === "/setup.css") return new Response(`${bundle("css").text}\n${file("setup.css")}`, { headers: { "Content-Type": "text/css; charset=utf-8", ...SECURE } });
 			return p.startsWith("/api/setup/") ? api(req, url) : notFound();

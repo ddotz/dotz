@@ -505,6 +505,7 @@ export const ko: Catalog = {
 		errors: { unknownJob: "알 수 없는 작업이에요", unknownTerm: "알 수 없는 로그인이에요", termBody: "이 요청에는 크기(cols, rows)만 보낼 수 있어요", termNotRunning: "터미널이 실행 중이 아니에요", badSecret: "저장할 수 없는 비밀값이에요", badDraft: "입력한 값을 확인해 주세요", applyFailed: "적용하지 못했어요. {name}", busy: "이미 하고 있어요" },
 		// The screens of the web onboarding (web/setup/setup.js); {name}, {n}, {url}, {guild}, {bot}, {v} are filled in by the page.
 		ui: {
+			wait: "컴퓨터를 살펴보고 있어요",
 			steps: { harness: "하네스", tools: "도구", bot: "봇", discord: "Discord", web: "웹 앱", review: "확인" },
 			titles: { start: "dotz를 설정할게요", harness: "봇이 돌아갈 하네스를 골라요", tools: "봇이 쓸 도구를 준비해요", bot: "봇을 소개해 주세요", discord: "Discord를 연결해요", web: "웹 앱을 정리해요", review: "이대로 설정할까요", applying: "설정하고 있어요", done: "{name} 준비가 끝났어요" },
 			sups: { start: "준비된 것은 건너뛰고 필요한 것만 물어볼게요.", harness: "봇과 세션이 이 코딩 에이전트로 일해요.", tools: "없는 것만 설치해요. 지금 안 해도 나중에 설정에서 할 수 있어요.", bot: "Discord, 웹, 터미널 어디서나 이렇게 말해요.", discord: "밖에서 Discord로 말을 걸 수 있어요.", web: "", review: "", applying: "끝날 때까지 이 페이지를 열어 두세요." },
