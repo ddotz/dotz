@@ -2,8 +2,11 @@
 // deduped, at most 40 -> the "## 예시" section of ONE tone profile (settings.ts: install, app or app+room). The sources are injected
 // (a command runner for the sent-mail reader, a file, ready-made texts such as one messenger room's own lines), so tests never touch mail.
 import { readFileSync } from "node:fs";
-import { dataDir, writeExamples, type ToneKey } from "./settings.ts";
 import { join } from "node:path";
+import { addressesOf, AUTOMATED } from "../../../hub/reply-draft.ts";
+import { loadPairs, normText, savePairs, SIDE_MAX, type Pair } from "./pairs.ts";
+import { dataDir, writeExamples, type ToneKey } from "./settings.ts";
+import { listDrafts } from "./store.ts";
 
 export type RunResult = { code: number; stdout: string; stderr: string };
 export type Runner = (argv: string[]) => Promise<RunResult>;
@@ -29,6 +32,7 @@ const HISTORY = [
 	/^\s*_{5,}\s*$/,
 	/^\s*(보낸\s*사람|From)\s*:/i,
 	/^\s*.{0,80}님이.{0,80}작성/,
+	/^\s*\d{4}년\s*\d{1,2}월\s*\d{1,2}일.{0,120}(님이|<\S+@\S+>)\s*$/, // a mail client's quote header wrapped over two lines
 	/^\s*-- ?$/,
 	/^\s*sent from my\b/i,
 ];
@@ -78,18 +82,64 @@ export function pickExamples(texts: string[], max = MAX_EXAMPLES): string[] {
 	return out;
 }
 
-// The user's sent mail through the mail CLI (newest first as it lists them); a mail whose body cannot be read falls back to its snippet.
-export async function sentMailTexts(run: Runner, limit = MAX_EXAMPLES): Promise<string[]> {
+const FORWARD = /^\s*[-_=*\s]*(forwarded message|전달된 메일|original message)/i;
+const FWD_SUBJECT = /^\s*(fwd?|전달)\s*:/i;
+
+// The user's sent mail through the mail CLI (newest first as it lists them). `zele mail read` prints the whole thread, so only the messages
+// whose From is the listed account are the user's words (`texts`); a mail without one falls back to what the read or the snippet gave.
+// An own message that answers the nearest earlier message of someone else, sent to that sender, is also kept as a reply pair; forwards,
+// automated senders, long texts and bot drafts sent unchanged (`ownerDrafts`: their bodies) are not pairs.
+export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: string[] = []): Promise<{ texts: string[]; pairs: Pair[] }> {
 	const listed = await run(["zele", "mail", "list", "--folder", "sent", "--limit", String(limit)]);
 	if (listed.code !== 0) throw new Error(`보낸 메일 목록을 못 읽었어요: ${(listed.stderr || listed.stdout).trim().slice(0, 160)}`);
 	const items = ((Bun.YAML.parse(listed.stdout) as { items?: Record<string, unknown>[] } | null)?.items ?? []).slice(0, limit);
+	// Loaded on use: hub/zele.ts reads the gateway config when it is imported.
+	const { parseThread } = await import("../../../hub/zele.ts");
+	const bots = ownerDrafts.map(normText).filter(Boolean); // a bot draft as sent may end in a signature the draft did not have
 	const texts: string[] = [];
-	for (const m of items) {
+	const pairs: Pair[] = [];
+	const now = Date.now();
+	for (const [n, m] of items.entries()) {
 		const id = String(m.id ?? "");
+		const account = addressesOf(String(m.account ?? ""))[0];
 		const body = id ? await run(["zele", "mail", "read", id]) : undefined;
-		const text = body && body.code === 0 && body.stdout.trim() ? body.stdout : String(m.snippet ?? "");
-		if (text.trim()) texts.push(text);
+		const read = body && body.code === 0 && body.stdout.trim() ? body.stdout : "";
+		const thread = account ? parseThread(read) : [];
+		const own = (x: { from: string }) => addressesOf(x.from).includes(account!);
+		if (!thread.some(own)) {
+			const text = read || String(m.snippet ?? "");
+			if (text.trim()) texts.push(text);
+			continue;
+		}
+		const paired = new Set<number>();
+		for (const [i, msg] of thread.entries()) {
+			if (!own(msg)) continue;
+			if (msg.body.trim()) texts.push(msg.body);
+			const mine = ownText(msg.body).trim();
+			if (!mine || mine.length > SIDE_MAX || FORWARD.test(msg.body) || FORWARD.test(mine) || FWD_SUBJECT.test(String(m.subject ?? "")) || bots.some(b => normText(mine).startsWith(b))) continue;
+			const at = thread.findLastIndex((x, j) => j < i && !own(x));
+			const earlier = thread[at];
+			const sender = addressesOf(earlier?.from)[0];
+			if (!earlier || !sender || paired.has(at) || !addressesOf(msg.to).includes(sender) || AUTOMATED.test(sender.split("@")[0]!)) continue;
+			const received = ownText(earlier.body).trim();
+			if (!received) continue;
+			paired.add(at);
+			const stamp = Date.parse(msg.date);
+			pairs.push({ received, reply: mine, at: Number.isFinite(stamp) ? stamp : now - n });
+		}
 	}
+	return { texts, pairs };
+}
+
+export const sentMailTexts = async (run: Runner, limit = MAX_EXAMPLES): Promise<string[]> => (await sentMail(run, limit)).texts;
+
+// Bodies of the drafts the user sent without changing a word: not his own wording, so they make no pair.
+const botDrafts = (): string[] => listDrafts().filter(d => d.status === "sent" && !d.changes.length).map(d => d.body);
+
+// The sent mail is also kept as reply pairs for the prompt's examples (lib/pairs.ts), merged with the ones already stored.
+async function learnSentMail(run: Runner): Promise<string[]> {
+	const { texts, pairs } = await sentMail(run, SWEEP_LIMIT, botDrafts());
+	if (pairs.length) savePairs("mail", [...loadPairs("mail"), ...pairs]);
 	return texts;
 }
 
@@ -104,7 +154,7 @@ export async function installSentMail(run: Runner): Promise<string[]> {
 	try {
 		config = JSON.parse(readFileSync(join(dataDir(), "config.json"), "utf8"));
 	} catch {}
-	return zeleEnabled(config) ? sentMailTexts(run, SWEEP_LIMIT) : [];
+	return zeleEnabled(config) ? learnSentMail(run) : [];
 }
 
 export type LearnOpts = { fromFile?: string; run?: Runner; zeleOn?: boolean; texts?: string[]; textsLabel?: string };
@@ -125,7 +175,7 @@ export async function learnTone(key: ToneKey | "install", opts: LearnOpts): Prom
 	let warning: string | undefined;
 	if (opts.zeleOn && opts.run && key !== "install" && key.app === "mail" && key.room === undefined) {
 		try {
-			const mails = await sentMailTexts(opts.run, SWEEP_LIMIT);
+			const mails = await learnSentMail(opts.run);
 			texts.push(...mails);
 			if (mails.length) from.push(`보낸 메일 ${mails.length}통`);
 		} catch (e) {

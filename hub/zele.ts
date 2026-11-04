@@ -106,7 +106,7 @@ export async function zeleAccounts(): Promise<string[]> {
 
 // `zele mail read <thread>` prints a header, then one block per message split by a line of `─`: `From: Name <addr> [unread]`, `To:`, `Date:`,
 // optional `Auth:`, a blank line, the body. A block without a `From:` line (the header) is not a message.
-export type ThreadMessage = { from: string; date: string; body: string };
+export type ThreadMessage = { from: string; to: string; date: string; body: string };
 const SEPARATOR = /^\s*─{3,}\s*$/;
 export function parseThread(text: string): ThreadMessage[] {
 	const blocks: string[][] = [[]];
@@ -122,6 +122,7 @@ export function parseThread(text: string): ThreadMessage[] {
 		const head = lines.slice(at, blank < 0 ? lines.length : blank);
 		out.push({
 			from: lines[at].replace(/^From:\s*/, "").replace(/\s*\[unread\]\s*$/i, "").trim(),
+			to: head.find(l => /^\s*To:\s/.test(l))?.replace(/^\s*To:\s*/, "").trim() ?? "",
 			date: head.find(l => /^\s*Date:\s/.test(l))?.replace(/^\s*Date:\s*/, "").trim() ?? "",
 			body: blank < 0 ? "" : lines.slice(blank + 1).join("\n").trim(),
 		});

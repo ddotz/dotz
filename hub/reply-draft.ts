@@ -35,6 +35,8 @@ export type ReplyStyle = {
 	corrections: string[]; // the user's own past change requests, verbatim
 	forbidden: string[]; // substring, or /regex/flags
 	maxChars?: number;
+	examples?: { received: string; reply: string }[]; // the user's real past replies to the most similar received messages, verbatim (mail, comment)
+	habits?: string[]; // measured habits of the user's past replies
 };
 
 export type DraftOut = { to: string; subject?: string; body: string };
@@ -49,7 +51,7 @@ export type PromptExtras = { previous?: DraftOut; change?: string; failures?: st
 export type ModelJson = { action: "skip" | "draft" | "ask"; reason: string; to: string; subject?: string; body: string; questions: string[]; question?: string; choices?: string[] };
 
 const DEFAULT_MAX: Record<ReplyKind, number> = { mail: 1200, comment: 300, chat: 300 };
-const AUTOMATED = /^(no[-_.]?reply|do[-_.]?not[-_.]?reply|mailer[-_.]?daemon|postmaster|bounces?|notifications?|notify|alerts?|auto[-_.]?(reply|mailer|confirm)|newsletter)([-_.+].*)?$/i;
+export const AUTOMATED = /^(no[-_.]?reply|do[-_.]?not[-_.]?reply|mailer[-_.]?daemon|postmaster|bounces?|notifications?|notify|alerts?|auto[-_.]?(reply|mailer|confirm)|newsletter)([-_.+].*)?$/i;
 
 const norm = (s: string) => s.trim().toLowerCase();
 const EMAIL = /[^\s<>"',;()[\]]+@[^\s<>"',;()[\]]+\.[^\s<>"',;()[\]]+/g;
@@ -141,7 +143,14 @@ First check the LAST received chat message: if it asks the user for a decision, 
 const CHAT_PICK = `
 The user has ALREADY decided what to answer (his pick is given below). Write the reply that carries out exactly that decision, nothing more: no new decision, date or promise. Never output action "ask".`;
 
+// Only with past replies to show (style.examples): the user's own past replies decide the shape of the reply.
+const EGO = "Answer as this person, not as an assistant writing for them: read the message the way they would, decide what they would actually do here, then write only what they would type. If they would write one plain line, write one plain line. Their real quirks beat correct or polished writing. Nothing they would not bother to say.";
+const ADAPT = "The past replies below are the user's own. Find the one closest in situation to this message and write this reply in its shape: the same opening, the same order, about the same length, the same closing, reusing its sentences word for word wherever they fit, and changing only what this message needs. A short thank-you gets as little as they gave. Names, songs, files and dates come from this message only, never from an example.";
+const PLAIN = "A greeting, a thank-you line, a name or a signature goes in only if that closest past reply has it. If it is one line, this is one line.";
+
 const list = (title: string, xs: string[], empty: string) => `${title}\n${xs.length ? xs.map(x => `- ${x}`).join("\n") : empty}`;
+// A past text cannot close its own block early (the markers inside it are defanged).
+const defang = (s: string) => s.replace(/<<<(RECEIVED|REPLY)|(RECEIVED|REPLY)>>>/g, (_, a, b) => a ?? b);
 
 export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExtras = {}): { system: string; user: string } {
 	const head = [
@@ -173,6 +182,8 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		list("Forbidden expressions:", style.forbidden, "(none)"),
 		"",
 		...(item.kind === "chat" && item.choice ? [`The user's decision (his own words, data): "${item.choice.replace(/\s+/g, " ").trim().slice(0, 60).replace(/"/g, "'")}"`, ""] : []),
+		...(style.examples?.length ? ["The user's real past replies to the most similar received messages (verbatim, their exact wording; use them for voice and for how this kind of message is answered; facts must still fit THIS message):", ...style.examples.map(e => `<<<RECEIVED\n${defang(e.received)}\nRECEIVED>>>\n<<<REPLY\n${defang(e.reply)}\nREPLY>>>`), ""] : []),
+		...(style.habits?.length ? [list("The user's measured habits. Keep these as they are; never normalise, correct or beautify spelling, spacing or punctuation:", style.habits, ""), ""] : []),
 		`Keep the body within ${style.maxChars ?? DEFAULT_MAX[item.kind]} characters.`,
 		...(item.requested ? ["", 'The user asked for a reply to this message himself: action must be "draft", never "skip".'] : []),
 		...(item.files ? ["", item.files.length ? `Files that are attached to this reply (fact, 붙는 파일): ${item.files.map(f => `"${f.replace(/"/g, "'")}"`).join(", ")}. Write the reply as if they are attached; never say a file cannot be attached or ask the user to attach one.` : "No file in the attachment folder fits this mail (fact, 맞는 파일 없음): do not promise to attach a file."] : []),
@@ -181,7 +192,8 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 	if (extra.previous) parts.push("", "Previous draft:", `to: ${extra.previous.to}`, ...(extra.previous.subject ? [`subject: ${extra.previous.subject}`] : []), "<<<DRAFT", extra.previous.body, "DRAFT>>>");
 	if (extra.change) parts.push("", "The user asked for this change to the previous draft (apply it, keep the rest):", extra.change.trim());
 	if (extra.failures?.length) parts.push("", "Your last output failed these checks; fix every one:", ...extra.failures.map(f => `- ${f}`));
-	return { system: item.kind === "chat" ? SYSTEM + (item.choice ? CHAT_PICK : CHAT_ASK) : SYSTEM, user: parts.join("\n") };
+	const system = (item.kind === "chat" ? SYSTEM + (item.choice ? CHAT_PICK : CHAT_ASK) : SYSTEM) + (style.examples?.length ? `\n${EGO}\n${ADAPT}\n${PLAIN}` : "");
+	return { system, user: parts.join("\n") };
 }
 
 const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && !!x.trim()).map(x => x.trim()) : []);
