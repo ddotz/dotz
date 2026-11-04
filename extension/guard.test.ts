@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GUARD_DEFAULTS, guardConfigFrom, installedOriginal, loadGuardConfig } from "./guard-config.ts";
 import { LOOKUP_MODEL, omoSelector } from "../hub/runtime/omo.ts";
-import { addProjectFooter, PROJECT_MARKER, budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, laneMergeBlock, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
+import { addProjectFooter, FOLDER_RULES_MARKER, PROJECT_MARKER, budgetLine, budgetProblem, checkOmoTaskInput, livePin, LOOKUP_PIN, pinOmoTaskModel, checkTaskInput, estimateFrom, expensiveModel, expensiveTaskModel, externalAction, installGuard, laneMergeBlock, relativizeRoots, settleFromText, sharedWriteBlock, shouldIsolate, shellText, stateOwner, trimWaitOutput } from "./guard.ts";
 
 let dir: string;
 beforeAll(() => {
@@ -388,5 +388,26 @@ test("project footer: a channel with a project gets its README and RULES.md path
 		}
 	} finally {
 		rmSync(data, { recursive: true, force: true });
+	}
+});
+
+test("addProjectFooter: a brief naming a rule folder carries its AGENTS.md, once, from any cwd", () => {
+	const repo = mkdtempSync(join(tmpdir(), "folder-rules-"));
+	try {
+		mkdirSync(join(repo, "web"));
+		writeFileSync(join(repo, "web", "AGENTS.md"), "# web rules\n");
+		const fromCwd = { prompt: "fix web/js/a.js\nDone when: y" };
+		addProjectFooter(fromCwd, undefined, repo, repo);
+		expect(fromCwd.prompt).toContain(`${FOLDER_RULES_MARKER}${join(repo, "web", "AGENTS.md")}):\n# web rules`);
+		addProjectFooter(fromCwd, undefined, repo, repo);
+		expect(fromCwd.prompt.split(FOLDER_RULES_MARKER).length).toBe(2);
+		const elsewhere = { tasks: [{ task: `Repo: ${repo}\nfix web/js/a.js` }, { task: `fix ${repo}/web/js/a.js` }] };
+		addProjectFooter(elsewhere, undefined, "/tmp", repo);
+		for (const t of elsewhere.tasks) expect(t.task).toContain("# web rules");
+		const other = { prompt: "fix hub/a.ts and my-web/b.ts\nDone when: y" };
+		addProjectFooter(other, undefined, repo, repo);
+		expect(other.prompt).not.toContain(FOLDER_RULES_MARKER);
+	} finally {
+		rmSync(repo, { recursive: true, force: true });
 	}
 });
