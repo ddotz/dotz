@@ -489,15 +489,41 @@ a:hover {
 }
 
 .card {
-  padding: 26px 26px 28px;
+  padding: 26px 26px 24px;
   border-radius: var(--radius-lg);
   background: var(--surface);
 }
 
-.card-icon {
-  display: block;
-  width: 24px;
-  height: 24px;
+.card h3 {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+.links {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.links li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+.links svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
   fill: none;
   stroke: var(--accent);
   stroke-width: 1.5;
@@ -505,32 +531,21 @@ a:hover {
   stroke-linejoin: round;
 }
 
-.card h3 {
-  margin-top: 22px;
-  font-size: 1.1875rem;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: -0.01em;
+.card-demo {
+  display: none;
 }
 
-.card p {
-  margin-top: 8px;
+/* Without the module build the scene's text alternative is the visible example. */
+html:not(.ss) .card-demo {
+  display: block;
+  margin-bottom: 8px;
   color: var(--body);
   font-size: 0.9375rem;
   line-height: 1.7;
 }
 
-.card code {
-  color: var(--ink);
-  font-size: 0.9em;
-}
-
-.cards-2 {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.card-demo {
-  display: none;
+html:not(.ss) .card-demo::before {
+  content: attr(aria-label);
 }
 
 .ss .card-demo {
@@ -681,6 +696,13 @@ a:hover {
   display: none;
 }
 
+/* The hero's cursor starts at its wide rest point; WebKit keeps that as page width on a phone. Clipped at the viewport, so the window's shadow stays whole. */
+.ss .shot {
+  margin-inline: calc(var(--gutter) * -1);
+  padding-inline: var(--gutter);
+  overflow-x: clip;
+}
+
 .ss .shot picture {
   display: none;
 }
@@ -808,30 +830,28 @@ a:hover {
 
 
 .site-footer {
-  padding: 36px 0 56px;
+  padding: 12px 0 28px;
   border-top: 1px solid var(--line);
 }
 
 .footer-inner {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 12px 28px;
+  gap: 20px;
 }
 
 .footer-brand {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  color: var(--ink);
-  font-size: 0.9375rem;
+  color: var(--muted);
+  font-size: 0.875rem;
   font-weight: 600;
 }
 
 .footer-nav {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px 20px;
+  gap: 20px;
 }
 
 .footer-nav a {
@@ -944,9 +964,12 @@ a:hover {
     margin-bottom: 32px;
   }
 
-  .cards,
-  .cards-2 {
+  .cards {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .card {
@@ -1005,13 +1028,6 @@ a:hover {
     margin-top: 14px;
   }
 
-  .footer-inner {
-    gap: 10px 20px;
-  }
-
-  .footer-year {
-    margin-left: 0;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
