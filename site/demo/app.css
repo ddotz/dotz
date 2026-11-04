@@ -131,7 +131,6 @@ kbd { display: inline-block; flex: none; padding: 0 var(--sp-15); border: 1px so
 .side, .main, .appbar { display: contents; }
 .brand, .rail, #back, .appbar h1, .thead, .conn, .cmdk, #vtog, .ustrip { grid-row: 1; align-self: center; }
 .gban { grid-row: 2; grid-column: 1 / -1; }
-.trban { grid-row: 3; grid-column: 1 / -1; }
 .oerr { grid-row: 4; grid-column: 1 / -1; }
 .views { grid-row: 5; grid-column: 1 / -1; }
 .brand { grid-column: 2; }
@@ -200,7 +199,7 @@ button.conn:disabled { cursor: default; }
   .appbar h1, .appbar:not(.back) h1 { display: block; flex: 1; max-width: none; margin: 0; }
   #back, .conn { margin: 0; }
   #vtog, .ustrip { margin: 0; }
-  .gban, .trban, .oerr, .views { grid-row: auto; grid-column: auto; }
+  .gban, .oerr, .views { grid-row: auto; grid-column: auto; }
   .views { flex: 1; }
   /* compact tab bar: a 46px row; the home-indicator inset is trimmed (labels end ~18px above the screen edge, clear of the indicator) */
   .side { order: 2; display: flex; min-width: 0; min-height: 0; padding: 0 0 max(var(--sp-05), calc(env(safe-area-inset-bottom) - var(--sp-4))); border-top: 1px solid var(--line); background: var(--card); }
@@ -387,9 +386,9 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 /* 모델 · 폴백: one card per target (model + effort, then the numbered fallback list). Neutral surfaces; the accent marks
    only the model answering now. */
 .mt { max-width: 760px; }
-.mt-top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--sp-3); }
-.mt-intro { flex: 1 1 320px; margin: 0 var(--sp-1); color: var(--fg-2); font-size: 13px; line-height: 20px; }
-.mt-filter { flex: 0 1 220px; min-width: 160px; }
+.mt-top { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.mt-intro { flex: 1 1 0; margin: 0 var(--sp-1); color: var(--fg-2); font-size: 13px; line-height: 20px; }
+.mt-filter { flex: 0 0 148px; }
 .mt-card { display: flex; flex-direction: column; gap: var(--sp-4); scroll-margin-top: 12px; }
 .mt-use-list { display: flex; flex-direction: column; }
 .mt-use-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-05) var(--sp-2); padding: var(--sp-15) 0; border-top: 1px solid var(--line); }
@@ -414,23 +413,18 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .mt-head .t { min-width: 0; font: 700 17px/24px var(--font); overflow-wrap: anywhere; }
 .mt-head .sup { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mt-head .sp { flex: 1; }
-.mt-head .tag { flex: none; }
 .mt-pick { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 .mt-model { flex: 2 1 240px; max-width: 360px; }
 .mt-eff { flex: 1 1 140px; max-width: 200px; }
-.mt-fb-h .lb { display: block; margin-bottom: var(--sp-15); font: 500 12px/16px var(--font); color: var(--fg-2); }
-.mt-fb-h .lb { margin: 0; }
 .mt-apply { justify-content: flex-end; margin-top: calc(var(--sp-1) * -1); }
-.mt-fb { display: flex; flex-direction: column; gap: var(--sp-2); padding-top: var(--sp-4); border-top: 1px solid var(--line); }
-.mt-fb-h { display: flex; align-items: baseline; gap: var(--sp-2); }
-.mt-fb .note { margin-top: var(--sp-05); }
-.mt-foot { margin-top: calc(var(--sp-15) * -1); }
-@media (max-width: 640px) { .mt-model, .mt-eff { max-width: none; } .mt-filter { flex-basis: 100%; } }
+.mt-fb { display: flex; flex-direction: column; }
+.mt-fb-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); }
+@media (max-width: 640px) { .mt-model, .mt-eff { max-width: none; } }
 .fb-list { display: flex; flex-direction: column; gap: var(--sp-15); margin: 0; padding: 0; list-style: none; }
-.fb-item { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: 12px; background: var(--layer); color: var(--fg); touch-action: none; user-select: none; }
-.fb-item[data-i], .fb-item.base { cursor: pointer; }
+.fb-item { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: 12px; background: var(--layer); color: var(--fg); user-select: none; }
+.fb-item[data-i] { cursor: pointer; }
 .fb-item[data-i]:hover { background: var(--hover); }
-.fb-item.open { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fb-item.open { background: var(--layer); }
 .fbe { display: flex; flex-direction: column; gap: var(--sp-3); margin: calc(var(--sp-05) * -1) 0 var(--sp-1); padding: var(--sp-4); border-radius: 12px; background: var(--layer); }
 .fbe-grid, .fbe-cap { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
 .fbe-cap > .tf:first-child { grid-column: 1 / -1; }
@@ -438,40 +432,29 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .fbe-key .sup.warn { color: var(--warn); }
 .fbe-act { display: flex; align-items: center; gap: var(--sp-15); }
 .fbe-act .sp { flex: 1; }
+.fbe-act .up .ic { transform: rotate(180deg); }
 @media (max-width: 560px) { .fbe-grid, .fbe-cap { grid-template-columns: 1fr; } }
-.fb-item.off .nm, .fb-item.off .fb-n { opacity: .5; }
-.fb-sw { min-width: 44px; height: 28px; padding: 0 var(--sp-3); border-radius: 14px; border: 0; font-size: 12px; background: var(--hover); color: var(--fg-3); cursor: pointer; }
-.fb-sw { transition: background-color var(--m-fast) var(--m-ease), color var(--m-fast) var(--m-ease); }
-.fb-acts .fb-sw { background: var(--layer); }
-.fb-acts .fb-sw[aria-checked="true"] { background: var(--accent); color: var(--on-accent); }
+.fb-item.off :is(.nm, .fb-n, .fb-sum) { opacity: .5; }
 .fb-item.in-use { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 .fb-item.drag { position: relative; z-index: 5; cursor: grabbing; box-shadow: var(--float); opacity: .94; }
 .fb-item.over { outline: 2px dashed var(--fg-3); outline-offset: 2px; }
 .fb-n { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 11px; background: var(--card); color: var(--fg-2); font: 600 12px/1 var(--font); }
 .fb-item.in-use .fb-n { background: var(--accent); color: var(--on-accent); }
-.fb-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
-.fb-top { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
-.fb-top .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 14px/20px var(--font); }
-.fb-item[data-i] .fb-top { flex-wrap: wrap; }
-.fb-item[data-i] .fb-top .nm { white-space: normal; overflow-wrap: anywhere; }
-.fb-use, .fb-base { flex: none; height: 18px; padding: 0 var(--sp-15); border-radius: 9px; background: var(--card); color: var(--fg-2); font-size: 11px; line-height: 18px; font-weight: 600; }
-.fb-use { color: var(--accent); }
-.fb-tags { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
-.fb-tags .tag { height: 20px; line-height: 16px; font-size: 11px; background: var(--card); color: var(--fg-2); }
-.fb-tags .tag.warn { background: color-mix(in srgb, var(--warn) 14%, var(--card)); color: var(--warn); }
-.fb-usage { color: var(--fg-2); }
+.fb-body { flex: 1 1 0; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--sp-2); padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: inherit; }
+.fb-body .nm { min-width: 0; font: 600 14px/20px var(--font); overflow-wrap: anywhere; }
+.fb-sum { min-width: 0; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.fb-sw { flex: none; height: 28px; padding: 0 var(--sp-1); border: 0; border-radius: var(--r-ctl); background: none; color: var(--fg-3); font-size: 12px; cursor: pointer; transition: color var(--m-fast) var(--m-ease); }
+.fb-sw[aria-checked="true"] { color: var(--accent); }
+.fb-sw:hover { background: var(--hover); }
+.fb-grip { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--r-ctl); background: none; color: var(--fg-3); cursor: grab; touch-action: none; }
+.fb-grip:hover, .fb-grip:focus-visible { background: var(--hover); color: var(--fg); }
+.fb-grip .ic { width: 16px; height: 16px; }
+.fb-usage { flex: 1 0 100%; color: var(--fg-2); }
+.fb-usage.warn { color: var(--warn); }
 .fb-bar { height: 4px; border-radius: 2px; background: color-mix(in srgb, currentColor 18%, transparent); overflow: hidden; }
 .fb-bar i { display: block; height: 100%; border-radius: 2px; background: currentColor; }
 .fb-bar-l { font-size: 11px; line-height: 15px; }
-.fb-acts { display: flex; align-items: center; flex: none; gap: var(--sp-05); }
-.fb-acts button { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 14px; background: transparent; color: var(--fg-2); }
-.fb-acts button:hover, .fb-acts button:focus-visible { background: var(--hover); color: var(--fg); }
-.fb-acts button:disabled { opacity: .3; background: transparent; }
-.fb-ctl { display: flex; align-items: center; gap: var(--sp-05); }
-.fb-acts .ic { width: 15px; height: 15px; }
-.fb-acts .up .ic { transform: rotate(180deg); }
-@media (pointer: coarse) { .fb-acts button { width: 34px; height: 34px; } }
-.fb-add { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-15); height: var(--btn-h-sm); padding: 0 var(--sp-3) 0 var(--sp-2); border: 1px dashed var(--line-2); border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; }
+.fb-add { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-15); height: var(--btn-h-sm); padding: 0 var(--sp-3) 0 var(--sp-2); border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; }
 .fb-add:hover:not(:disabled) { background: var(--hover); color: var(--fg); }
 .fb-add:disabled { opacity: .5; }
 
@@ -485,15 +468,18 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .fi[aria-invalid="true"] { box-shadow: inset 0 0 0 1.5px var(--err); }
 .fi:disabled { color: var(--fg-3); cursor: default; }
 .sel .val { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sel svg.ic { color: var(--fg-3); width: 14px; height: 14px; }
+.sel svg.ic { flex: none; color: var(--fg-3); width: 14px; height: 14px; }
+@media (hover: hover) { .sel:hover { background: color-mix(in srgb, var(--fg) 6%, var(--ff-fill)); } }
 @media (pointer: coarse) { .fi, .sel { height: var(--field-h-touch); font-size: 16px; } }
 .lbl { margin: var(--sp-4) 0 var(--sp-15); font: 500 12px/16px var(--font); color: var(--fg-2); }
 
 /* menu: the single dropdown component */
-.menu { position: fixed; z-index: 1000; display: flex; flex-direction: column; padding: var(--sp-15); overflow-y: auto; border: 0; border-radius: var(--r-menu); background: var(--pop); box-shadow: var(--shadow-menu); outline: 0; }
+.menu { position: fixed; z-index: 1400; display: flex; flex-direction: column; padding: var(--sp-15); overflow-y: auto; border: 0; border-radius: var(--r-menu); background: var(--pop); box-shadow: var(--shadow-menu); outline: 0; }
 .menu .mh, .ph { z-index: 2; padding: var(--sp-2) var(--sp-2) var(--sp-1); color: var(--fg-3); font: 500 11px/16px var(--font); }
-.menu .mh { position: sticky; top: -4px; background: var(--pop); }
+.menu .mh { position: sticky; top: calc(-1 * var(--sp-15)); background: var(--pop); }
+:root[data-theme="dark"] .menu { --hover: var(--active); }
 .menu.msheet { border-radius: var(--r-sheet); padding: var(--sp-2); box-shadow: var(--shadow-sheet); }
+.menu.msheet .mh { top: calc(-1 * var(--sp-2)); }
 .menu.msheet .mi { min-height: var(--menu-h-sheet); }
 .mi { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: var(--menu-h); padding: var(--menu-py) var(--menu-px); border: 0; border-radius: var(--r-ctl); background: transparent; text-align: left; font-size: 13px; line-height: 20px; }
 .mi:hover, .mi:focus-visible { background: var(--hover); outline: 0; }
@@ -502,7 +488,7 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .mi .ml { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: var(--sp-2); overflow-wrap: anywhere; }
 .mi .ml small { flex: none; margin-left: auto; color: var(--fg-3); font-size: 11px; line-height: 16px; }
 .mi.sel-on { font-weight: 500; }
-@media (pointer: coarse) { .mi { min-height: 40px; font-size: 14px; } }
+@media (pointer: coarse) { .mi { min-height: var(--menu-h-sheet); font-size: 14px; } }
 
 /* segmented control: the track takes the small radius, the chosen cell one step smaller (outer = inner + 2) */
 .seg { display: flex; flex-wrap: wrap; gap: var(--sp-05); padding: var(--sp-05); border-radius: var(--r-seg); background: var(--layer); }
@@ -638,6 +624,7 @@ body:has(.upd-bar) .app { padding-top: 0; margin-top: var(--ubh); height: calc(1
   .appbar .tsw { display: none; }
   .appbar .tdrop.sel { display: inline-flex; flex: 0 1 auto; width: auto; max-width: 168px; height: 32px; gap: var(--sp-15); padding: 0 var(--sp-2) 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg); font: 600 14px/18px var(--font); }
   .appbar .tdrop .val { flex: 0 1 auto; }
+  @media (pointer: coarse) { .appbar .tdrop.sel { height: var(--btn-h); } }
   .appbar.tv .tdrop.sel { flex: none; }
   .appbar.tv .conn { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 }
@@ -694,6 +681,15 @@ details.work[open] { padding: var(--sp-15) var(--sp-2) var(--sp-2); border-radiu
 .sendrow .ta-hl { grid-area: ta; align-self: stretch; overflow: hidden; white-space: pre-wrap; overflow-wrap: break-word; color: transparent; pointer-events: none; box-sizing: border-box; }
 .sendrow .ta-hl[hidden] { display: none; }
 .sendrow .ta-hl ~ textarea { position: relative; z-index: 1; }
+/* The chips of the composer's tokens (15-attachments.js): above the textarea, the same text in the same box, nothing visible but the chips. */
+.sendrow .ta-tok { grid-area: ta; align-self: stretch; justify-self: start; position: relative; z-index: 2; overflow: hidden; white-space: pre-wrap; overflow-wrap: break-word; color: transparent; pointer-events: none; box-sizing: border-box; }
+.sendrow .ta-tok[hidden] { display: none; }
+.ta-tok .atk { position: relative; }
+.atk-in { display: inline-flex; align-items: center; gap: var(--sp-05); max-width: 100%; padding: 0 var(--sp-05); border: 0; border-radius: var(--r-seg-in); background: var(--active); color: var(--fg); font: 500 12px/18px var(--font); white-space: nowrap; overflow: hidden; vertical-align: text-bottom; cursor: zoom-in; }
+.ta-tok .atk-in { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); height: 20px; pointer-events: auto; justify-content: center; }
+.atk-in img, .atk-in svg { flex: none; width: 14px; height: 14px; border-radius: 3px; object-fit: cover; }
+.ub .atk-in { margin: 0 var(--sp-05); height: 20px; padding: 0 var(--sp-1); }
+.ub .atk-in:hover { background: var(--line-2); }
 .ta-hl .ulw-kw { color: transparent; background: linear-gradient(90deg, #5b9fe3, #9d8fe0, #e98aa6) bottom / 100% 2px no-repeat; border-radius: 2px; box-shadow: 0 -0.9em 0 0 color-mix(in srgb, #9d8fe0 14%, transparent) inset; }
 .sendrow.ulw { border: 2px solid transparent !important; padding: 11px 11px 7px 15px !important; /* nudge: the 2px gradient border takes 1px more than the 1px border of .sendrow, so every side is 1px less */ background: linear-gradient(var(--card), var(--card)) padding-box, linear-gradient(90deg, #5b9fe3, #9d8fe0 45%, #d98bc9 75%, #e98aa6) border-box !important; }
 .sendrow textarea { grid-area: ta; }
@@ -716,6 +712,7 @@ details.work[open] { padding: var(--sp-15) var(--sp-2) var(--sp-2); border-radiu
 .fatt { --fatt-x: 20px; position: relative; flex: none; display: flex; align-items: center; gap: var(--sp-2); height: 56px; max-width: 220px; padding: 0 calc(var(--sp-1) + var(--fatt-x) + var(--sp-15)) 0 var(--sp-3); border-radius: 12px; background: var(--layer); color: var(--fg); }
 .fatt.img { width: 56px; padding: 0; overflow: hidden; }
 .fatt.img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fatt-v { display: block; width: 100%; height: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
 .fatt .fi-ic { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 4px; background: var(--card); color: var(--fg-2); }
 .fatt .fi-ic svg { width: 18px; height: 18px; }
 .fatt .fi-t { min-width: 0; display: flex; flex-direction: column; }
@@ -763,8 +760,8 @@ two separate paths under their own chips and a long one ends in an ellipsis. */
 @media (pointer: coarse) { .fdl { width: 36px; height: 36px; border-radius: 18px; } .fbox > .fatt + .fdl { top: 10px; } }
 .bm .md code.path.fp { cursor: pointer; }
 .bm .md code.path.fp:hover { text-decoration: underline; text-underline-offset: 3px; }
-dialog.lbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: transparent; color: #fff; }
-dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
+dialog.lbox { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: rgb(0 0 0 / .86); color: #fff; }
+dialog.lbox::backdrop { background: transparent; }
 .lbox .lb-in { display: grid; grid-template-rows: auto auto minmax(0, 1fr); width: 100%; height: 100%; }
 .lbox .lb-bar { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); font-size: 14px; }
 .lbox .lb-n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
@@ -772,8 +769,14 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .lbox .lb-bar button.x { width: 32px; padding: 0; justify-content: center; }
 .lbox .lb-p { padding: 0 var(--sp-4) var(--sp-3); color: rgb(255 255 255 / .72); }
 .lbox .lb-img:focus { outline: 0; }
-.lbox .lb-img { display: grid; place-items: center; min-height: 0; padding: 0 var(--sp-4) var(--sp-6); }
-.lbox .lb-img img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; }
+.lbox .lb-img { position: relative; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; min-height: 0; padding: 0 var(--sp-4) var(--sp-6); overflow: hidden; }
+.lbox .lb-img img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 8px; touch-action: none; cursor: zoom-in; user-select: none; -webkit-user-select: none; }
+.lbox .lb-img.zoomed img { cursor: grab; }
+.lbox .lb-nav { position: absolute; top: 50%; display: grid; place-items: center; width: 40px; height: 40px; margin-top: calc(var(--sp-5) * -1); padding: 0; border: 0; border-radius: var(--r-sheet); background: rgb(255 255 255 / .16); color: #fff; cursor: pointer; }
+.lbox .lb-nav:hover { background: rgb(255 255 255 / .28); }
+.lbox .lb-nav.prev { left: var(--sp-3); }
+.lbox .lb-nav.next { right: var(--sp-3); }
+.lbox .lb-img.zoomed .lb-nav { display: none; }
 .ended { margin-top: var(--sp-3); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .ended > summary { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); list-style: none; cursor: pointer; color: var(--fg-2); font-size: 14px; font-weight: 600; }
 .ended > summary::-webkit-details-marker { display: none; }
@@ -852,6 +855,19 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 /* the session-result card sits straight in the timeline column: as wide as the replies and the composer, not the 560px a command answer gets */
 .bm.res > .ccard { max-width: none; }
 @media (max-width: 639px) { .tl-in > .bm.res { padding: 0; } .bm.res > .mt { padding: 0 var(--sp-4); } }
+/* a message from another computer's gateway (01-peer-msg.js): the computer, the kind, then the words */
+.bm.pmc > .ccard { padding: var(--sp-3) var(--sp-4); background: var(--layer); }
+.pmc-hd .mt { margin: 0 0 0 auto; flex: none; }
+.pmc .tag, .pmc .md :not(pre) > code { background: var(--card); }
+.pmc .md > :last-child { margin-bottom: 0; }
+.pmc-hd { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; font-size: var(--fs-sec); line-height: var(--lh-sec); color: var(--fg-2); }
+.pmc-hd .ic { width: 16px; height: 16px; flex: none; }
+.pmc-hd .mn { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pmc-b { margin-top: var(--sp-1); }
+.pmc-b.clamp { max-height: calc(6 * var(--lh-chat)); overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2 * var(--lh-chat)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 2 * var(--lh-chat)), transparent); }
+.pmc-b + .ubm { display: block; margin-left: auto; }
+.pmc-n { margin-top: var(--sp-2); color: var(--fg); }
+@media (max-width: 639px) { .tl-in > .bm.pmc { padding: 0; } }
 .cc-hd { display: flex; align-items: center; gap: var(--sp-2); font-size: 16px; line-height: 22px; font-weight: 600; }
 .cc-facts { display: grid; grid-template-columns: fit-content(40%) minmax(0, 1fr); gap: var(--sp-1) var(--sp-4); margin: var(--sp-2) 0 0; font-size: 14px; line-height: 22px; }
 .cc-facts dt { color: var(--fg-3); }
@@ -1179,12 +1195,29 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .hn-h .sup { margin-left: auto; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .hn + .hn-h { margin-top: var(--sp-3); }
 .hn { border-radius: 0 0 var(--r-card) var(--r-card); background: var(--card); overflow: hidden; }
+/* A one-line state has no row to trim, and its text can sit in the box's rounded corner: nothing clips it. */
+.hn:has(> .hc-none) { overflow: visible; }
+/* A home list past six rows scrolls inside its card, with no scrollbar (08-home.js capLists sets the height of six rows); six or fewer change nothing. */
+.list-cap { position: relative; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: none; }
+.list-cap::-webkit-scrollbar { display: none; }
+.list-cap > * { flex: none; }
+/* Rows far below the fold are not painted until they scroll near, so a list of hundreds costs what six do. */
+.list-cap > :nth-child(n+13) { content-visibility: auto; contain-intrinsic-block-size: auto var(--row-h); }
+/* These rows hang out of their list by the hover plate's inset: the scroll box makes room for it. */
+.hc-list.list-cap, .glist.list-cap { margin-inline: calc(var(--sp-15) * -1); padding-inline: var(--sp-15); }
+/* More rows below: the list's last line fades, and the fade leaves at the end of the scroll. Where scroll timelines are missing, the header's count says it. */
+@property --hn-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes hn-end { from, 80% { --hn-fade: var(--sp-8); } to { --hn-fade: 0px; } }
+@supports (animation-timeline: scroll()) {
+  .list-cap { -webkit-mask-image: linear-gradient(to top, transparent, #000 var(--hn-fade)); mask-image: linear-gradient(to top, transparent, #000 var(--hn-fade)); animation: hn-end linear both; animation-timeline: scroll(self); }
+}
 .hr { --hr-dot: 8px; display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 48px; padding: var(--sp-2) var(--row-px); border: 0; background: transparent; color: inherit; text-align: left; }
 .hr + .hr { border-top: 1px solid var(--line); }
 
 .hr.st:hover { background: transparent; }
 .hr:hover { background: var(--card-hover); }
 .hr .dot { width: var(--hr-dot); height: var(--hr-dot); }
+.hr .hq { flex: none; min-width: var(--sp-3); text-align: center; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); font-weight: 500; font-variant-numeric: tabular-nums; }
 .hr .hb { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-05); }
 .hr .hn1 { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font: 500 var(--fs-row)/var(--lh-row) var(--font); }
 .hr .hn1 .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1204,8 +1237,6 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .srows .hr + .li, .srows .li + .hr { box-shadow: inset 0 1px 0 var(--line); }
 /* 답변 필요 (09-needs-you.js): a critical row's dot is the error ink; 더 보기 is the list's last row, full width */
 .hr .dot.att.err { background: var(--err); }
-.hn .ny-more { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin: 0; padding: 0 var(--sp-4); border: 0; border-top: 0; border-radius: 0; background: transparent; color: var(--fg-2); font: 500 13px/18px var(--font); cursor: pointer; }
-.hn .ny-more:hover { background: var(--hover); color: var(--fg); }
 #home-sec { margin-top: var(--sp-6); }
 
 /* lanes board */
@@ -1483,6 +1514,10 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 .dcs-ok { color: var(--ok); font-weight: 600; }
 .dcs-res .btn { align-self: flex-start; margin-top: var(--sp-15); }
 .dv-code { font: 600 32px/40px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 6px; }
+/* black on white in both themes: phone cameras read a light-on-dark code badly */
+.dv-qr { display: block; width: min(220px, 100%); height: auto; }
+.dv-qr-bg { fill: #fff; }
+.dv-qr-ink { fill: #000; }
 /* settings: 업데이트 */
 .sec .upd-new { margin-left: var(--sp-2); vertical-align: middle; }
 /* a section heading with its own action (실행 하네스 · 확인): the button sits at the right end, apart from the title */
@@ -1603,10 +1638,13 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 #v-chat > .subs .subsum .dot { width: 6px; height: 6px; }
 #v-chat > .subs .subsum .chev { width: 14px; height: 14px; }
 #v-chat > .subs .sublist { padding: var(--sp-1); border-radius: var(--r-ctl); background: var(--layer); }
-/* 타임라인 위아래 페이드는 흰 카드에서 흰색으로 사라져야 해요 (03-base의 --bg 페이드 위에) */
-/* 위쪽 가장자리는 가는 선: 스크롤로 잘린 줄이 할 일 스트립 밑에 깔린 듯 카드색으로 흐려지지 않게 (스트립은 제 자리를 가져요) */
-#v-chat .chatbox::before { background: linear-gradient(var(--card), transparent); }
-#v-chat .chatbox::after { background: linear-gradient(transparent, var(--card)); }
+/* 타임라인 위아래 경계는 .kk-tl(17-kakao.css)과 같은 12px 마스크로 글자를 흐려요. 더 스크롤할 쪽에만 걸려요(edgeFade의 fade-t, fade-b).
+   맨 아래에서는 마지막 줄이 그대로 보이고, 맨 아래로 버튼과 입력창은 .timeline 밖이라 흐려지지 않아요. 03-base의 덮개 페이드는 여기서 꺼요.
+   메일을 열면 .mtop이 맨 위에 붙어 있어서 위쪽은 흐리지 않아요. */
+#v-chat .chatbox::before, #v-chat .chatbox::after { content: none; }
+#v-chat .timeline { --edge-t: 0px; --edge-b: 0px; -webkit-mask-image: linear-gradient(transparent, #000 var(--edge-t), #000 calc(100% - var(--edge-b)), transparent); mask-image: linear-gradient(transparent, #000 var(--edge-t), #000 calc(100% - var(--edge-b)), transparent); }
+#v-chat .chatbox.fade-t:not(:has(.mtop)) > .timeline { --edge-t: var(--sp-3); }
+#v-chat .chatbox.fade-b > .timeline { --edge-b: var(--sp-3); }
 
 /* ---------- 컴포저: 시제품 .cmp — [첨부 · 글 · 원형 전송] 회색 18px 상자 (모든 입력 줄의 공통 기반) ----------
    .sendrow 자체가 기반이에요: 채팅 입력줄(#send)과 카카오톡 방 입력줄(#kk-form) 같은 어떤 입력줄도 .sendrow 안에 [.cmp-plus(첨부, 선택) · textarea · .ib(보내기)]와
@@ -1627,6 +1665,7 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 #cbar button.cchip { cursor: pointer; }
 #cbar button.cchip:hover { background: transparent; color: var(--fg); }
 #cbar .cchip.cown { opacity: 1; color: var(--fg-3); }
+@media (pointer: coarse) { #cbar { min-height: var(--btn-h-sm); margin-top: 0; } #cbar button.cchip { min-height: var(--btn-h-sm); padding: 0 var(--sp-15); } }
 #cbar .working { display: none !important; }
 @media (pointer: coarse) { #c-attach, .sendrow > .cmp-plus { width: 36px; height: 36px; } }
 
@@ -1650,7 +1689,9 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 .au .ferr { color: var(--err); }
 .au .rem { color: var(--fg-2); font-size: 13px; }
 @media (pointer: coarse), (max-width: 639px) { .au input:not([type=checkbox]) { height: var(--field-h-touch); font-size: 16px; } .au .eye { height: var(--field-h-touch); } }
-/* 확인 카드 (owner 2026-11-03): 머리 한 줄(확인 필요 · 답 기다림), 짧은 질문, 작은 답 버튼, 지금보다 눈에 띄게 낮게 */.dcard { display: flex; flex-direction: column; max-height: max(60dvh, 240px); margin: 0 0 var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+/* 확인 카드 (owner 2026-11-03): 머리 한 줄(확인 필요 · 답 기다림), 짧은 질문, 작은 답 버튼, 지금보다 눈에 띄게 낮게 */
+/* At most ~40% of the screen (owner 2026-11-04: at 60% a several-draft card hid the conversation above it); its body scrolls inside */
+.dcard { display: flex; flex-direction: column; max-height: max(40dvh, 200px); margin: 0 0 var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .dcard[hidden] { display: none; }
 /* a waiting send-approval card that later posts pushed up: one row in the dock that opens it (10-decision-card.js dcPointer) */
 .dc-wait { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; padding: var(--sp-2) var(--row-px); border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
@@ -1672,6 +1713,7 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 .dc-decide li + li { margin-top: var(--sp-05); }
 .dcard.fold .dc-q { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 .dcard.fold .dc-hd { padding-bottom: var(--sp-2); }
+.dcard.fold .dc-decide { display: none; }
 .dc-fold { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-3); }
 .dc-fold:hover { background: var(--hover); }
 .dc-fold .ic { width: 18px; height: 18px; transition: transform var(--m-fast) var(--m-ease); }
@@ -1692,10 +1734,8 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 
 .dc-row.on, .dcm-row.on { background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
 .dc-key { flex: none; display: grid; place-items: center; min-width: 18px; height: 20px; padding: 0; color: var(--fg-3); font-size: 12px; line-height: 20px; font-weight: 400; font-variant-numeric: tabular-nums; }
-.dc-row.rec .dc-key, .dcm-row.rec .dc-key { color: var(--accent); font-weight: 600; }
 .dc-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-05); }
 .dc-lb { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15); font-size: 14px; line-height: 20px; font-weight: 500; }
-.dc-tag { flex: none; padding: 0 var(--sp-15); border-radius: var(--r-pill); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 10.5px; line-height: 16px; font-weight: 600; }
 .dc-ds { color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .dc-draft { flex: none; display: flex; flex-direction: column; gap: var(--sp-1); margin: 0 0 var(--sp-1); padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: color-mix(in srgb, var(--fg) 5%, transparent); }
 .dc-dr-h { display: flex; gap: var(--sp-2); font-size: 13px; line-height: 20px; }
@@ -1772,11 +1812,6 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 .pmv-htop > .pmv-ed { flex: 1 1 auto; min-width: 0; }
 .pmv-htop > .tag { flex: none; max-width: 100%; }
 .pmv-upd { flex: none; margin-left: auto; color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
-.pmv-hprog { flex: 1 1 100%; display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-15); min-width: 0; }
-/* a phone puts the bar right under the purpose and the buttons last (the prototype header has no buttons) */
-@media (max-width: 479px) { .pmv-head > .pmv-hprog { order: 1; } .pmv-head > .pmv-hact { order: 2; } }
-.pmv-hprog .bar { width: 100%; margin-top: 0; }
-.pmv-hprog-t { color: var(--fg-3); font: 400 12px/16px var(--font); }
 /* Left-aligned: when the head wraps (narrow screens, or the hint under a disabled button widens the box) a right-aligned button floated away from the text above it. */
 .pmv-hact { flex: none; max-width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
 .pmv-hact .note { margin-top: 0; }
@@ -1801,25 +1836,6 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
   .pmv-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--sp-4); align-items: start; }
   .pmv-col { display: flex; flex-direction: column; min-width: 0; }
 }
-.pmv-goal { display: flex; flex-direction: column; gap: var(--sp-3); }
-.pmv-prog { display: flex; align-items: center; gap: var(--sp-3); }
-.pmv-prog .bar { flex: 1; margin-top: 0; }
-.pmv-big { flex: none; font: 700 20px/28px var(--font); }
-.pmv-mlist { display: flex; flex-direction: column; }
-.pmv-ms { display: flex; align-items: flex-start; gap: var(--sp-3); min-height: 44px; padding: var(--sp-15) 0; }
-.pmv-ms + .pmv-ms { border-top: 1px solid var(--line); }
-.pmv-ms .pmv-edit { font-size: 15px; line-height: 22px; }
-.pmv-ms.done .pmv-edit { color: var(--fg-3); text-decoration: line-through; }
-.pmv-mtx { flex: 1; min-width: 0; padding-top: 1px; /* nudge: text line against the 22px checkbox */ }
-.pmv-ck { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-top: var(--sp-1); padding: 0; border: 1.5px solid var(--line-2); border-radius: 50%; background: transparent; color: var(--bg); }
-.pmv-ck .ic { width: 14px; height: 14px; opacity: 0; }
-.pmv-ck[aria-checked="true"] { border-color: var(--fg); background: var(--fg); }
-.pmv-ck[aria-checked="true"] .ic { opacity: 1; }
-.pmv-add { display: flex; align-items: stretch; gap: var(--sp-2); }
-.pmv-add .fi { flex: 1; min-width: 0; }
-.pmv-add .btn { flex: none; }
-.pmv-add .fi, .pmv-add .btn { height: auto; min-height: var(--field-h); }
-@media (pointer: coarse), (max-width: 639px) { .pmv-add .fi, .pmv-add .btn { min-height: var(--btn-hit); } }
 .pmv-rt { display: flex; flex-direction: column; gap: var(--sp-15); padding: var(--sp-3) var(--sp-4); }
 .pmv-rt-top { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15) var(--sp-2); min-width: 0; }
 .pmv-rt-name { flex: 1 1 120px; min-width: 0; font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
@@ -1836,6 +1852,7 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 .pm-sec-list .li .tx { display: flex; flex-direction: column; gap: var(--sp-05); }
 .pm-sec-list .li .hd { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pm-sec-list .li .sup { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pm-sec-list .li .hd.pmv-wrap { white-space: normal; overflow-wrap: anywhere; }
 .pmv-day { margin: var(--sp-3) var(--sp-1) var(--sp-15); color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .pmv-day:first-child { margin-top: 0; }
 .pmv-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -1953,7 +1970,7 @@ div.nt-mon .nt-dot { margin-top: 7px; /* nudge: same dot centring in the monitor
 .hsum-fb { margin-top: var(--sp-2); }
 .bi[data-id="main"] .subline { margin-top: var(--sp-3); padding: 0; background: none; color: var(--fg-2); }
 
-/* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option (recommended first). */
+/* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option. */
 /* Computer switch sheet (33-peers.js): the bottom sheet on the phone and a centered dialog from 700px. Decisions and notices use the full-screen overlay (14-overlay.css), not this. */
 .ds-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .42); }
 .ds-sheet { --fs-fill: var(--layer); display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: 90dvh; border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--pop); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); box-shadow: var(--float); }
@@ -1974,11 +1991,8 @@ div.nt-mon .nt-dot { margin-top: 7px; /* nudge: same dot centring in the monitor
 .ds-opt.c { align-items: center; }
 .ds-opt:hover, .ds-direct:hover { background: var(--hover); }
 .ds-opt:active, .ds-direct:active { background: var(--active); }
-.ds-opt.rec { background: var(--accent); color: var(--on-accent); }
-.ds-opt.rec:hover, .ds-opt.rec:active { background: var(--accent); filter: brightness(.94); }
 .ds-opt:disabled, .ds-direct:disabled { opacity: .55; }
 .ds-lb { display: flex; align-items: center; gap: var(--sp-2); font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
-.ds-tag { flex: none; padding: 0 var(--sp-2); border-radius: 10px; background: rgba(255, 255, 255, .22); font: 600 11px/18px var(--font); }
 .ds-ds { font: 400 13px/18px var(--font); opacity: .82; overflow-wrap: anywhere; }
 .ds-direct { align-items: center; background: transparent; color: var(--fg-2); font: 500 14px/20px var(--font); }
 .ds-st { color: var(--fg-3); font: 400 13px/18px var(--font); text-align: center; }
@@ -2017,9 +2031,6 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .hc-list:has(.nt-x) > .hc-row:not(:has(.nt-x))::after { content: ""; flex: none; width: 38px; }
 .ds-rl.ign { color: var(--fg-3); }
 .dc-hb { flex: none; display: flex; align-items: center; gap: var(--sp-05); }
-/* 홈 답변 필요: a monitoring app's send approvals folded into one row; the items unfold below it, indented. */
-.ntg-h[aria-expanded="true"] .hs { color: var(--muted, inherit); }
-.ntg-l { margin: 0 0 var(--sp-15) var(--sp-5); padding-left: var(--sp-2); border-left: 2px solid var(--line); }
 
 /* 알림 conversation: the record behind the 알림 screen has no composer (31-conversations.js convPaint sets .no-composer) */
 #v-chat.no-composer > .composer { display: none; }
@@ -2093,24 +2104,40 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .cv-sys .cv-sys-st { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--fg-2); }
 .cv-sys .cv-sys-st[hidden] { display: none; }
 .cv-sys .cv-sys-mt { font-variant-numeric: tabular-nums; }
-/* 백그라운드 작업 줄 (소개 페이지 작업 카드): 카드 바탕, 12px 회색 이름표, 500 제목, 오른쪽 상태 알약, 끝나면 결과 파일 칩과 가득 찬 막대. 움직이는 것 없음(원칙 3·6·7·9) */
-.tl-in > .cv-sys.cv-task { display: block; align-self: stretch; width: auto; max-width: none; margin: var(--sp-2) 0 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); color: var(--fg); text-align: left; }
-.cv-task .ct-hd { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.cv-task .ct-nm { display: grid; gap: var(--sp-05); min-width: 0; }
-.cv-task .ct-lb { color: var(--fg-3); font: 400 12px/16px var(--font); }
-.cv-task .ct-t { color: var(--fg); font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
-.cv-task .ct-pill { flex: none; gap: var(--sp-15); height: 24px; padding: 0 var(--sp-3); border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, var(--card)); color: var(--accent); font: 500 12px/16px var(--font); }
-.cv-task .ct-pill.ok { background: color-mix(in srgb, var(--ok) 14%, var(--card)); color: var(--ok); }
-.cv-task .ct-pill.err { background: color-mix(in srgb, var(--err) 12%, var(--card)); color: var(--err); }
+/* 백그라운드 작업 카드 (소개 페이지 작업 카드): 이어진 작업은 한 격자(.cv-tasks)로 묶여 채팅 폭을 꽉 채워요. 한 줄 3장까지, 남는 줄은 그 줄 안에서 폭을 나눠 가져요(4장 = 3 + 1, 5장 = 3 + 2).
+   장 수는 창이 아니라 격자 폭으로 정해요. 6칸 격자라 1·2·3장이 모두 나눠떨어져요.
+   상태가 바뀌어도 카드 높이는 그대로예요: 제목은 두 줄 칸을 늘 차지하고, 결과 파일은 그 둘째 줄 자리에 들어오고, 막대는 카드 아래 여백에 떠요(원칙 3·6·7·9). */
+.tl-in > .cv-tasks { container: cv-tasks / inline-size; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-2); align-self: stretch; margin: var(--sp-2) 0 0; }
+.cv-tasks:empty { display: none; }
+.cv-task { container: cv-task / inline-size; position: relative; grid-column: span 6; min-width: 0; padding: var(--sp-3) var(--sp-4) var(--sp-4); border-radius: var(--r-card); background: var(--layer); color: var(--fg); text-align: left; }
+@container cv-tasks (min-width: 320px) and (max-width: 559.98px) {
+  .cv-task { grid-column: span 3; }
+  .cv-task:nth-child(odd):last-child { grid-column: span 6; }
+}
+@container cv-tasks (min-width: 560px) {
+  .cv-task { grid-column: span 2; }
+  .cv-task:nth-child(3n+1):last-child { grid-column: span 6; }
+  .cv-task:nth-child(3n+1):nth-last-child(2), .cv-task:nth-child(3n+2):last-child { grid-column: span 3; }
+}
+.cv-task .ct-hd { display: grid; grid-template: "lb st" minmax(24px, auto) "t t" auto / minmax(0, 1fr) auto; align-items: center; gap: var(--sp-05) var(--sp-2); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cv-task .ct-nm { display: contents; }
+.cv-task .ct-lb { grid-area: lb; overflow: hidden; color: var(--fg-2); font: 400 12px/16px var(--font); text-overflow: ellipsis; white-space: nowrap; }
+.cv-task .ct-t { grid-area: t; display: -webkit-box; min-height: 2lh; overflow: hidden; color: var(--fg); font: 500 15px/22px var(--font); overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+@container cv-task (max-width: 299.98px) { .cv-task .ct-kind:not(:only-child) { display: none; } }   /* 좁은 카드는 알약 옆에 시각만 */
+.cv-task:has(.ct-file) .ct-t { min-height: 1lh; -webkit-line-clamp: 1; }
+.cv-task .ct-pill { grid-area: st; flex: none; gap: var(--sp-15); height: 24px; padding: 0 var(--sp-3); border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, var(--layer)); color: var(--accent); font: 500 12px/16px var(--font); }
+.cv-task .ct-pill.ok { background: color-mix(in srgb, var(--ok) 14%, var(--layer)); color: var(--ok); }
+.cv-task .ct-pill.err { background: color-mix(in srgb, var(--err) 12%, var(--layer)); color: var(--err); }
+.cv-task .ct-pill.warn { background: color-mix(in srgb, var(--warn) 14%, var(--layer)); color: var(--warn); }
+.cv-task .ct-pill.off { background: var(--line-2); color: var(--fg-2); }
 .cv-task .ct-pill .ic { width: 12px; height: 12px; stroke-width: 2.4; }
-.cv-task .ct-body { display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
-.cv-task .ct-file { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
-.cv-task .ct-fi { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--layer); color: var(--fg-2); }
-.cv-task .ct-fi .ic { width: 16px; height: 16px; }
-.cv-task .ct-ft { display: grid; gap: var(--sp-05); min-width: 0; }
-.cv-task .ct-ft b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 500 14px/20px var(--font); }
-.cv-task .ct-ft span { color: var(--fg-3); font: 400 12px/16px var(--font); }
-.cv-task .ct-bar { height: 3px; border-radius: 2px; background: var(--layer); overflow: hidden; }
+.cv-task .ct-body { display: flex; gap: var(--sp-3); overflow-x: auto; scrollbar-width: none; }
+.cv-task .ct-file { display: flex; flex: 1 1 0; align-items: center; gap: var(--sp-15); min-width: 96px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.cv-task .ct-file .ic { flex: none; width: 16px; height: 16px; color: var(--fg-2); }
+.cv-task .ct-ft { display: flex; align-items: baseline; gap: var(--sp-15); min-width: 0; }
+.cv-task .ct-ft b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 500 14px/22px var(--font); }
+.cv-task .ct-ft span { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); }
+.cv-task .ct-bar { position: absolute; right: var(--sp-4); bottom: var(--sp-15); left: var(--sp-4); height: 3px; border-radius: 2px; background: var(--track); overflow: hidden; }
 .cv-task .ct-bar span { display: block; height: 100%; background: var(--ok); }
 
 /* 목록 행 (시제품 채팅 목록 proto .li) — 모든 너비의 공통 기반이에요: 48px 두 줄, 36px 둥근 사각 아이콘 면, 오른쪽 시각·대기 표시, 구분선 한 줄, 고른 행은 회색 면.
@@ -2158,7 +2185,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
   #v-monitoring:not(:has(> .kk.chat-open:not([hidden]))) { width: 100%; max-width: 920px; margin: 0 auto; }
   #v-monitoring > * { grid-column: 1; }
   #v-monitoring > .cv-side { grid-row: 1 / -1; min-height: 0; margin-bottom: var(--sp-4); padding: var(--sp-2); }
-  #v-monitoring > .cv-head { grid-row: 1; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 var(--sp-1) var(--sp-3); }
+  #v-monitoring > .cv-head { grid-row: 1; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 0 var(--sp-3); }
   #v-monitoring > .chatbox { grid-row: 4; }
   /* 채팅: 시제품의 두 단 (proto .chat2 = 340px 목록 + 대화 카드 하나). 카드는 ::before가 그려 머리·todo·타임라인·컴포저가 한 면 안에 있어요 */
   #v-chat { --cv-w: 340px; position: relative; display: grid; max-width: none; column-gap: var(--sp-4); grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
@@ -2264,6 +2291,11 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .pr-frame { position: fixed; inset: 0; z-index: 2000; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--bg); }
 .pr-frame iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
 
+/* a relayed computer's chat (42-relay-chat.js): the normal chat view; what its messenger cannot carry is not drawn */
+body.rl :is(#c-attach, #c-own, #c-model, #c-effort, #c-worker, #ctx-ring, #c-api, #c-fb, #working, #runline, #runstate, #pausenote, #dcard, #queue, #hints, #atray, #todo, #vtog, #cvmenu, #pjmenu) { display: none !important; }
+.relaynote { margin: 0 0 var(--sp-15); padding: 0 var(--sp-1); color: var(--fg-3); font: 400 12px/16px var(--font); }
+.rl-pend { opacity: 0.6; }
+
 /* ---------- composer above the phone keyboard ----------
    --kb / --vvh come from web/js/34-composer-viewport.js (visualViewport). With interactive-widget=resizes-content the page already shrinks
    above the keyboard and --kb stays 0; on a browser that ignores it, --kb shrinks the app so the whole composer still sits above the keyboard.
@@ -2331,6 +2363,14 @@ dialog.dlg.shell .dact { display: none; }
 .md .mlist-s { color: var(--fg-3); font: 400 13px/18px var(--font); }
 .md .mlist-r { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
 .md .mlist-m { color: var(--fg-3); font: 400 12px/16px var(--font); }
+/* a source list (02-basic-markdown.js sourceListHtml): the same frame with low link rows; the clipped full URL is what a copy picks up */
+.md a.mlist-row { position: relative; min-height: var(--row-h); color: inherit; text-decoration: none; }
+.md a.mlist-row:hover { background: var(--card-hover); }
+.md .mlist-src .mlist-av { width: 28px; height: 28px; border-radius: var(--r-seg); font-size: var(--fs-sec); }
+.md .mlist-src .mlist-t { font: 500 var(--fs-sec)/var(--lh-sec) var(--font); }
+.md .mlist-src .mlist-s { font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.md .mlist-src .mlist-h, .md .mlist-src .mlist-av, .md .mlist-src .mlist-main { -webkit-user-select: none; user-select: none; }
+.md .mlist-url { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .md .mlist-b { min-width: 20px; height: 20px; padding: 0 var(--sp-15); border-radius: 10px; background: var(--err); color: #fff; font: 600 11px/20px var(--font); text-align: center; }
 
 /* menus: they open where they are anchored, fading in from the edge they came from (150ms, 8px, --m-ease); a phone menu sheet rises from the bottom (280ms).
@@ -2503,8 +2543,17 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .od-inline .od-pane, .fs-card .od-inline .od-pane { flex: none; overflow: visible; margin: 0; padding: 0; border-radius: 0; background: none; }
 .od-inline .od-open { min-height: 36px; }
 .dr-fh.ok { color: var(--ok); }
+/* The original of a mail row of 모니터링 > 메일 (10-draft-original.js orgMailRow, opened from the ⋯ menu), folded open on its own full line of the row */
+.mr .od-pane.mr-op { flex: 1 0 100%; min-width: 0; max-width: 100%; overflow: visible; margin: var(--sp-1) 0 var(--sp-2); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--bg); color: var(--fg); cursor: auto; user-select: text; }
+/* 날짜 and 제목 at the size of the sender box above them; these panes inherit a larger row or card size */
+.mr-op .dc-dr-v, .rq-op .dc-dr-v { font: 400 14px/20px var(--font); }
+@media (min-width: 1100px) {
+  /* the one-line row: an open row wraps so the original takes the full width under that line */
+  #mon-tl > .mr > .mr-op { order: 10; }
+  #mon-tl > .bm.rc.mr:has(> .mr-op) { flex-wrap: wrap; height: auto; padding-top: var(--sp-2); padding-bottom: var(--sp-1); }
+}
 
-/* 답장 초안 카드 (web/js/10-reply-card.js) and the 답장 확인 queue (web/js/30-replies.js) */
+/* 답장 초안 카드 (web/js/10-reply-card.js) and the 답장 대기 screen (web/js/30-replies.js) */
 /* 머리: 한 줄 (받는 사람 + 출처), 상태는 오른쪽 (owner 2026-11-03: 머리줄은 한 줄, 초안이 주인공) */
 .rq-hd { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; min-height: 20px; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .rq-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-weight: 400; }
@@ -2523,6 +2572,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rq-orig.clamp .rq-ot { --fade: 19px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); }
 .rq-og { height: 28px; min-height: 0; margin-top: var(--sp-05); padding: 0 var(--sp-1); color: var(--fg-3); font-size: var(--fs-meta); }
 .rq-og:hover { color: var(--fg); }
+.rq-og-wrap .rq-op { align-self: stretch; margin-top: var(--sp-2); }   /* the full original (10-reply-card.js rqOrigNode) takes the card's width */
 /* 초안: 카드의 본문, 상자 없이 (원칙 1·5) */
 .rq-body { margin-top: var(--sp-2); font: 400 15px/24px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
 .rq-body.clamp { --fade: 48px; max-height: calc(24px * 6); overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); }
@@ -2533,6 +2583,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rq-more { height: 28px; margin-top: var(--sp-05); padding: 0 var(--sp-1); font-size: 13px; }
 .rq-edit { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); }
 .rq-edit .kk-rv { min-height: 40px; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); border: 0; background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
+.rq-edit .sel { height: var(--field-h-touch); font: 400 16px/22px var(--font); }
 .rq-edit .btns { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
 
 /* 메시지 답글 카드 (소개 페이지 댓글 답글 데모): 남의 글은 조용한 인용, 초안 글이 주인공(원칙 1·5). 게시물 제목과 첨부 안내는 회색으로 물러나요 */
@@ -2570,6 +2621,34 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rq-acts .btn.text.sm { padding: 0 var(--sp-2); }
 .rq-acts.dr-row .dr-send { flex: none; }
 
+/* 답장 대기 (web/js/30-replies.js): the prototype's #queue. Rows and tabs are the notice screen's own classes (09-notices-screen.css); the head sticks to the top of the scroll area. */
+.rq-hd2 { position: sticky; top: 0; z-index: 2; background: var(--bg); padding-bottom: var(--sp-1); }
+.rq-hd2 .nsc-f { margin-top: 0; }
+#v-monitoring.rq-on > .cv-head { display: none; }
+#v-monitoring.rq-on .tl-in { max-width: none; }
+.bm.q-fold .md > :not(:first-child) { display: none; }
+.rq-qm .sp { flex: 1; }
+.rq-qm[hidden], .rq-fast[hidden], .rq-chips:empty { display: none; }
+.nsc-fb .n.err { color: var(--err); } .nsc-fb.on .n.err { color: inherit; }
+.rq-ls .sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); } .rq-ls .sec:first-child { margin-top: 0; }
+.rq-ls .sec .meta { color: var(--fg-3); font-weight: 400; font-variant-numeric: tabular-nums; }
+.rq-r .hd { font-weight: 500; color: var(--fg); } .rq-r.sent .hd { font-weight: 400; color: var(--fg-2); }
+.rq-r .ln .tag { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rq-g .rq-retry { position: relative; z-index: 1; flex: none; align-self: center; height: var(--btn-h-sm); min-height: 0; }
+.rq-g .rq-retry:disabled { opacity: .4; pointer-events: none; }
+.rq-g .nsc-tr svg { transition: transform var(--m-fast) var(--m-ease); }
+.rq-g .nsc-tx[aria-expanded="true"] ~ .nsc-tr svg { transform: rotate(180deg); }
+.rq-r[data-kid] { padding-left: calc(var(--row-px) + var(--sp-6)); }
+.rq-sheet .rq-sb { padding: 0 var(--sp-4) var(--sp-4); }
+.rq-sheet .rq-why { margin: 0 var(--sp-05) var(--sp-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); color: var(--fg-2); }
+/* the chat's one line above the composer when 2 or more send approvals wait (10-decision-card.js dcLine) */
+.qline { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; margin: 0 0 var(--sp-2); padding: 0 var(--sp-4); border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font: 400 14px/20px var(--font); text-align: left; cursor: pointer; }
+.qline[hidden] { display: none; }
+.qline:hover { background: var(--hover); }
+.qline .tx { flex: none; } .qline .tx b { font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+.qline .sep { color: var(--fg-3); } .qline .go { font-weight: 600; color: var(--fg); }
+.qline:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* ---------- reply: quoted message above the composer, the swipe pull and the desktop hover button (web/js/39-reply.js) ---------- */
 [data-rid] { position: relative; touch-action: pan-y; }
 [data-rid].rp-pull, [data-rid].rp-snap { transform: translateX(calc(var(--rp-x, 0px) * -1)); }
@@ -2577,8 +2656,6 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 [data-rid].rp-pull { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .rp-ind { position: absolute; top: 50%; right: calc(var(--rp-x, 0px) * -1 + 6px); --rp-d: 28px; width: var(--rp-d); height: var(--rp-d); margin-top: calc(var(--rp-d) / -2); display: grid; place-items: center; border-radius: 50%; background: var(--hover); color: var(--fg-3); opacity: var(--rp-p, 0); transform: scale(calc(.6 + .4 * var(--rp-p, 0))); transition: background var(--m-fast) var(--m-ease), color var(--m-fast) var(--m-ease); pointer-events: none; }
 .rp-hit > .rp-ind { background: var(--accent); color: var(--on-accent); transform: scale(1.12); }
-@keyframes rp-flash { from { background: color-mix(in srgb, var(--accent) 16%, transparent); } to { background: transparent; } }
-[data-rid].rp-flash { animation: rp-flash 1.2s ease-out; border-radius: var(--r-ctl); }
 /* 인용 버튼 (시제품 .mm .rq): 이름 · 시각 줄 바로 옆의 작은 회색 면. 행에 올리면 나타나고, 자리를 차지하지 않아 줄이 밀리지 않아요 (키보드 포커스에도 나타나요). */
 .mt:has(> .rp-btn) { position: relative; width: fit-content; max-width: 100%; }
 .rp-btn { position: absolute; top: 50%; left: 100%; display: grid; place-items: center; width: 24px; height: 24px; margin: calc(var(--sp-3) * -1) 0 0 var(--sp-2); padding: 0; border: 0; border-radius: var(--r-ctl); background: var(--hover); color: var(--fg-2); opacity: 0; pointer-events: none; transition: opacity var(--m-fast) var(--m-ease), background-color var(--m-fast) var(--m-ease); }
@@ -2611,6 +2688,12 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rp-ct, .rpq-ct { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rpq { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; padding: var(--sp-1) var(--sp-3); border: 0; border-radius: 8px; background: color-mix(in srgb, var(--accent) 8%, var(--bg)); color: var(--fg-2); font: inherit; font-size: 13px; line-height: 18px; text-align: left; cursor: pointer; }
 .rpq-au { font-weight: 700; color: var(--fg); }
+/* The pressed quote while its original loads; a fast jump never shows it. */
+@keyframes rp-wait { from { opacity: 0; } to { opacity: 1; } }
+.rpq.busy, .rp-tx.busy { position: relative; }
+.rpq.busy::after, .rp-tx.busy::after { content: attr(data-wait); position: absolute; top: var(--sp-1); right: var(--sp-3); color: var(--fg-3); font-size: var(--fs-tag); line-height: var(--lh-tag); animation: rp-wait var(--m-fast) var(--m-fast) backwards; }
+.rp-tx.busy::after { top: 0; right: 0; background: var(--bg); padding-left: var(--sp-2); }
+.msg-gap .btn { color: var(--fg-3); }
 
 /* 설정 목록과 하위 화면들: one row look. A row's icon sits on its own tile (prototype .ico), a status dot stays a dot. */
 :is(#settings, #notifications, #display, #update, #runtime) > .list + .sec { margin-top: var(--sp-6); }
@@ -2618,7 +2701,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 :is(#settings, #notifications, #display, #update, #runtime) > .sec:first-child { margin-top: var(--sp-2); }
 :is(#settings, #notifications, #display, #update, #runtime) > .list + .list { margin-top: var(--sp-3); }
 :is(#settings, #notifications, #display, #update, #runtime) > .list:first-child { margin-top: var(--sp-2); }
-:is(#settings, #notifications, #display, #update, #runtime, #models, #providers, #provider, #usage, #context, #messengers, #discord, #jandi, #slack, #telegram, #devices, #webaccess) .li > .lead:has(> .ic) {
+:is(#settings, #notifications, #display, #update, #runtime, #models, #accounts, #usage, #context, #messengers, #discord, #jandi, #slack, #telegram, #devices, #webaccess) .li > .lead:has(> .ic) {
   display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--layer); color: var(--fg-2);
 }
 :is(#settings, #notifications, #display, #update, #runtime, #messengers, #devices, #webaccess) .li > .lead:has(> .ic) .ic { width: 18px; height: 18px; }
@@ -2630,56 +2713,56 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 #models .mt-card { display: block; padding: 0; background: none; box-shadow: none; }
 #models .mt-head { margin: var(--sp-6) var(--sp-1) var(--sp-2); gap: var(--sp-2); align-items: baseline; }
 #models .mt-head .t { font: 600 var(--fs-sec)/var(--lh-sec) var(--font); color: var(--fg-2); }
-#models .mt-pick { display: block; }
-#models :is(.mt-model, .mt-eff) { max-width: none; padding: var(--row-py) var(--row-px); }
-#models .mt-eff, #models .mt-list > .mt-note, #models .mt-list > .mt-apply, #models .mt-list > .note, #models .mt-list > .mt-fb { border-top: 1px solid var(--line); }
+#models .mt-pick { flex: 1; min-width: 0; display: flex; gap: var(--sp-2); }
+#models .mt-list > .mt-pick { padding: var(--row-py) var(--row-px); }
+#models .mt-model { flex: 3 1 0; min-width: 0; max-width: none; }
+#models .mt-eff { flex: 2 1 0; min-width: 0; max-width: 160px; }
+#models .fb-sub, #models .mt-list > :is(.mt-note, .mt-apply) { border-top: 1px solid var(--line); }
 #models .mt-pick .tf { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--sp-3); }
 #models .mt-pick .tf > .lb { font: 500 var(--fs-row)/var(--lh-row) var(--font); color: var(--fg); }
-#models .mt-pick .sel { flex: none; width: min(60%, 220px); height: var(--ctl-h); min-height: 0; background: var(--layer); font-size: var(--fs-row); }
-#models .mt-list > .mt-note { margin: 0; padding: var(--sp-2) var(--row-px); }
-#models .mt-list > .note { margin: 0; padding: var(--sp-2) var(--row-px); }
+#models :is(.mt-pick, .mt-filter) .sel { height: var(--ctl-h); min-height: 0; font-size: var(--fs-row); }
+#models .mt-pick .sel { --ff-fill: var(--layer); flex: 1 1 auto; width: auto; min-width: 0; }
+#models .mt-pick:not(:has(.mt-eff)) .sel { flex: none; width: min(60%, 220px); }
+/* the pickers' values say what they are: their names stay on the button's aria-label */
+#models .mt-pick:has(.mt-eff) .tf > .lb, #models .mt-filter .lb { display: none; }
+#models :is(.mt-list, .fb-sub) > .mt-note { margin: 0; padding: var(--sp-2) var(--row-px); }
 #models .mt-apply { margin: 0; padding: var(--sp-2) var(--row-px); }
-#models .mt-fb { gap: 0; padding: 0; }
-#models .mt-fb-h { padding: var(--sp-2) var(--row-px) var(--sp-15); }
-#models .fb-list { gap: 0; }
-#models .fb-item { border-radius: 0; background: transparent; padding: var(--sp-2) var(--row-px); border-top: 1px solid var(--line); }
+#models .sec .sup { margin-left: var(--sp-2); font-weight: 400; }
+#models [data-target^="lane:"] .mt-head { margin-block: var(--sp-3) var(--sp-1); }
+#models .fb-list { --fb-n-w: 20px; gap: 0; }
+#models .fb-item { flex-wrap: wrap; border-radius: 0; background: transparent; padding: var(--sp-2) var(--row-px); border-top: 1px solid var(--line); }
+#models .fb-item.base { border-top: 0; }
 #models .fb-item[data-i]:hover { background: var(--card-hover); }
+#models .fb-item.open, #models .fb-item.open:hover { background: var(--layer); }
+#models .fb-item > .fb-usage { padding-left: calc(var(--fb-n-w) + var(--sp-2)); margin-top: var(--sp-1); }
 #models .fb-item.in-use { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
-#models .fb-n { width: 20px; height: auto; border-radius: 0; background: none; color: var(--fg-3); font-size: 13px; }
+#models .fb-n { width: var(--fb-n-w); height: auto; border-radius: 0; background: none; color: var(--fg-3); font-size: 13px; }
 #models .fb-item.in-use .fb-n { background: none; color: var(--accent); }
-#models .fb-add { margin: var(--sp-2) var(--row-px); }
-#models .fb-add + .fb-add { margin-top: 0; }
-#models .mt-fb > .note { margin: 0; padding: var(--sp-1) var(--row-px) var(--sp-3); }
-#models .fbe { margin: 0; border-radius: 0; padding: var(--sp-3) var(--row-px); }
+#models .mt-fb-foot { padding: var(--sp-1) var(--sp-2); border-top: 1px solid var(--line); }
+#models .fbe { --ff-fill: var(--card); margin: 0; border-radius: 0; padding: var(--sp-3) var(--row-px); }
+#models .fbe .tf { gap: var(--sp-1); }
+@media (min-width: 640px) {
+  #models .fbe > .tf, #models .fbe-cap > .tf:first-child { display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: center; gap: var(--sp-3); }
+}
 #models .mt-use-row { padding: var(--sp-15) var(--row-px); border-top: 0; }
 #models .mt-use-row + .mt-use-row { border-top: 1px solid var(--line); }
-@media (max-width: 639px) { #models .mt-pick .sel { width: min(58%, 200px); } }
-@media (pointer: coarse), (max-width: 639px) { #models .mt-pick .sel { height: var(--field-h-touch); } }
+@media (max-width: 639px) { #models .mt-pick:not(:has(.mt-eff)) .sel { width: min(58%, 200px); } }
+@media (pointer: coarse), (max-width: 639px) { #models :is(.mt-pick, .mt-filter) .sel { height: var(--field-h-touch); } }
 
 /* 공급자: the usage windows ride under the row, thin */
-#providers .prow-lim { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
-#providers .prow-lim .k { flex: none; min-width: 64px; }
-#providers .prow-lim .bar { flex: 1; max-width: 160px; margin-top: 0; }
+#accounts .prow-lim { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
+#accounts .prow-lim .k { flex: none; min-width: 64px; }
+#accounts .prow-lim .bar { flex: 1; max-width: 160px; margin-top: 0; }
 /* 사용량과 월 한도 */
 #usage .lim .kv b { font-weight: 700; }
 #usage .lim .bar { margin-top: var(--sp-15); }
 #usage .lim > .sup { margin-top: var(--sp-1); }
 #usage > .list + :is(.grid, .sec) { margin-top: var(--sp-3); }
-:is(#providers, #messengers, #devices, #webaccess, #usage) > .note { margin: var(--sp-2) var(--sp-1) 0; }
+:is(#accounts, #messengers, #devices, #webaccess, #usage) > .note { margin: var(--sp-2) var(--sp-1) 0; }
 
 /* Settings sub-screens (설정, 모델·폴백, 공급자, 사용량, 컨텍스트) and the small settings dialogs (dialog.dlg.cl) on a phone.
    Scoped to those surfaces so the rest of the app keeps its compact controls. Loaded last: same-specificity rules here win. */
 @media (max-width: 639px) {
-  /* fallback chain: the step buttons stay beside the model name, the on/off switch opens the tag line under it.
-     The switch keeps a 40px target while it takes the height of a tag line: its fill stops inside a transparent border. */
-  #models .fb-item[data-i] { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; row-gap: 0; }
-  #models .fb-item[data-i] :is(.fb-body, .fb-acts) { display: contents; }
-  #models .fb-item[data-i] .fb-n { grid-area: 1 / 1; }
-  #models .fb-item[data-i] .fb-top { grid-area: 1 / 2 / auto / 4; }
-  #models .fb-item[data-i] .fb-ctl { grid-area: 1 / 4; }
-  #models .fb-item[data-i] .fb-sw { position: relative; grid-area: 2 / 2; align-self: start; margin-block: calc(-1 * var(--sp-15)); border-block: var(--sp-15) solid transparent; background-clip: padding-box; }
-  #models .fb-item[data-i] .fb-tags { grid-area: 2 / 3 / auto / 5; padding-block: var(--sp-1); }
-  #models .fb-item[data-i] .fb-usage { grid-area: 3 / 2 / auto / 5; margin-top: var(--sp-1); }
   /* editor options that do not fit side by side wrap to the next line instead of being cut with an ellipsis */
   #models .fbe .seg button { flex: 1 0 auto; padding: 0 var(--sp-3); }
   /* update: commit subjects and paths wrap */
@@ -2688,15 +2771,16 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 @media (max-width: 639px), (pointer: coarse) {
   #harness .hm-row { height: 40px; }
   #harness .hm-chip { min-height: 36px; }
-  :is(#settings, #models, #providers, #usage, #context) .ib { width: 40px; height: 40px; }
+  :is(#settings, #models, #accounts, #usage, #context) .ib { width: 40px; height: 40px; }
   :is(#models, dialog.dlg) :is(.fi, .sel) { min-height: 44px; }
   :is(#models, dialog.dlg) .seg button { height: 40px; }
-  dialog.dlg select.fi { height: 44px; }
   dialog.dlg summary { padding: var(--sp-3) 0; }
   dialog.dlg.cl .btn { min-height: 40px; }
   #settings .hs-sw::before { content: ""; position: absolute; inset: -12px -4px; }
-  #models .fb-sw { min-width: 48px; height: 40px; }
-  #models .fb-acts button { width: 40px; height: 40px; border-radius: 20px; }
+  /* a row's two controls keep a 40px target without making the row taller */
+  #models :is(.fb-sw, .fb-grip) { height: 40px; margin-block: calc(var(--sp-1) * -1); }
+  #models .fb-sw { min-width: 40px; }
+  #models .fb-grip { width: 40px; }
   #models .fb-add { height: 40px; }
   dialog.dlg.cl .dhd .dx { --dx-grow: var(--sp-2); width: 44px; height: 44px; margin: calc((var(--dx-grow) + var(--sp-05)) * -1) calc((var(--dx-grow) + var(--sp-15)) * -1) 0 auto; }
   dialog.dlg.cl .dact .btn { min-height: 44px; }
@@ -2706,13 +2790,6 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 /* 빠른 처리 (web/js/30-triage.js): the banner that offers it, and the full view that answers many waiting send approvals of one kind fast.
    Desktop: a large centered dialog, the item in a readable column, actions on one row with key hints. Phone: the whole screen, three large
    buttons at the bottom (보내기 the widest, under the thumb), no key hints. Colors are the theme tokens, so dark mode follows. */
-.trban { flex: none; display: flex; align-items: center; gap: var(--sp-2); width: calc(100% - 48px); max-width: 872px; margin: 0 auto var(--sp-15); padding: var(--sp-2) var(--sp-4); border: 0; border-radius: 12px; background: color-mix(in srgb, var(--accent) 12%, var(--card)); color: var(--fg); font: 600 14px/20px var(--font); text-align: left; cursor: pointer; }
-.trban[hidden] { display: none; }
-.trban .ic { flex: none; width: 18px; height: 18px; color: var(--accent); }
-.trban .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.trban .go { flex: none; color: var(--accent); font-size: 13px; font-weight: 600; }
-.trban:hover { background: color-mix(in srgb, var(--accent) 18%, var(--card)); }
-.trban:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* the prototype's #triage: a compact card that is as tall as its draft, not a screen-high dialog */
 .fs-card.tr { width: min(680px, calc(100% - 48px)); height: auto; max-height: min(92dvh, 820px); }
@@ -2772,7 +2849,6 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .tr-rn:focus { outline: 0; box-shadow: var(--ff-ring); }
 @media (max-width: 639px) {
   .fs-card.tr { width: 100%; height: 100%; }
-  .trban { width: calc(100% - 24px); margin: 0 auto var(--sp-15); }
   .tr-keys { display: none; }
   .tr-b, .tr-go { height: 44px; padding: 0 var(--sp-4); }
   .tr-list .tr-seg { align-self: stretch; }
@@ -3109,7 +3185,7 @@ a.dr-att:active { background: var(--active); }
 /* The KakaoTalk room list reads as the prototype's: the head and the note sit on the page, the rooms in one card, a grey initial, the last message under
    the name, 미답장 and the count solid on the row's one line. Scoped by id: .kk-rooms is also the comment pane's column. */
 #kk-rooms { border-radius: 0; background: transparent; }
-#kk-rooms .kk-lh { min-height: 32px; padding: 0 var(--sp-1) var(--sp-2); }
+#kk-rooms .kk-lh { min-height: 32px; padding: 0 0 var(--sp-2); }
 #kk-rooms .kk-pt { color: var(--fg-2); font: 600 14px/20px var(--font); }
 #kk-rooms .kk-own { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 #kk-rooms .kk-own { margin-bottom: var(--sp-3); }
@@ -3377,7 +3453,8 @@ a.dr-att:active { background: var(--active); }
 .as-done { margin-top: var(--sp-3); color: var(--fg-2); font: 500 13px/20px var(--font); }
 .as-done.applied { color: var(--ok); }
 .as-done.cancelled, .as-card.cancelled .as-cr { color: var(--fg-3); }
-.as-in { flex: none; width: 150px; height: 32px; }
+.as-in { flex: none; width: 150px; height: var(--ctl-h); }
+@media (pointer: coarse) { .as-in { height: var(--field-h-touch); } }
 .as-in[type="number"] { width: 96px; text-align: right; }
 .as-seg { flex: none; flex-wrap: nowrap; height: 32px; }
 .as-seg button { flex: none; height: 28px; padding: 0 var(--sp-3); white-space: nowrap; }
@@ -3385,7 +3462,6 @@ a.dr-att:active { background: var(--active); }
 .as-step .ib { width: 32px; height: 32px; color: var(--fg-2); font: 400 18px/1 var(--font); }
 .as-step .as-in[type="number"] { width: 40px; padding: 0; border: 0; background: transparent; text-align: center; appearance: textfield; }
 .as-step .as-in[type="number"]::-webkit-inner-spin-button, .as-step .as-in[type="number"]::-webkit-outer-spin-button { appearance: none; margin: 0; }
-select.as-in { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the settings screen (asScreen): a pushed view with a back button, the options card as its body */
 .as-screen .fs-hd { gap: var(--sp-1); padding-left: max(var(--sp-1), env(safe-area-inset-left)); }
 .as-screen .fs-tt { flex: 1; min-width: 0; }
@@ -3567,9 +3643,10 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 .mon-more { align-self: center; min-height: 44px; padding: 0 var(--sp-4); font-size: 14px; }
 .mon-rep { color: var(--fg-3); font-size: 12px; line-height: 16px; }
 
-/* 채팅's list at volume (31-conversations.js): the 더 보기 row of the projects */
-.cv-more { display: flex; justify-content: center; padding: var(--sp-2) 0; }
-.cv-more .btn { min-height: 44px; padding: 0 var(--sp-4); font-size: 14px; }
+/* 더 보기 (moreRow): a list card's own last line. Centered muted text across the whole card, so it reads as the card's foot, not one more row. */
+.cv-more { display: block; width: 100%; min-height: 44px; padding: var(--sp-2) var(--sp-4); border: 0; border-top: 1px solid var(--line); background: transparent; color: var(--fg-3); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); text-align: center; cursor: pointer; }
+.cv-more:hover { background: var(--card-hover); color: var(--fg-2); }
+.cv-more:active { background: var(--row-sel); }
 .cv-empty { padding: var(--sp-8) var(--sp-4); color: var(--fg-3); font-size: 12px; line-height: 16px; text-align: center; }
 @media (prefers-reduced-motion: reduce) { .fr-chev { transition: none; } }
 
@@ -3652,8 +3729,11 @@ span.mr-star:not(.on) { opacity: .45; }
 .mr .tag.mr-unread { display: none; }
 #mon-tl > .bm.rc.mr.mr-sel { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 
-.mbox-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15); min-height: 28px; padding: 0 var(--sp-3) var(--sp-1) var(--sp-15); color: var(--fg-2); font-size: 12px; }
-.mbox-bar.on { position: sticky; top: 40px; z-index: 2; margin: 0 0 var(--sp-1); padding-top: var(--sp-15); background: var(--bg); }
+/* One line of one height whether or not anything is chosen, so ticking a mail never moves the rows; a bar wider than its pane scrolls sideways like the folder chips. */
+.mbox-bar { display: flex; align-items: center; gap: var(--sp-15); height: 40px; margin: 0 0 var(--sp-1); padding: 0 var(--sp-3) 0 var(--sp-15); overflow-x: auto; scrollbar-width: none; color: var(--fg-2); font-size: 12px; }
+.mbox-bar::-webkit-scrollbar { display: none; }
+.mbox-bar > * { flex: none; }
+.mbox-bar.on { position: sticky; top: 40px; z-index: 2; background: var(--bg); }
 .mbox-all:disabled { visibility: hidden; }
 .mbox-n { margin-right: auto; font-variant-numeric: tabular-nums; }
 .mbox-bar.on .mbox-n { margin-right: var(--sp-1); color: var(--fg); font-weight: 600; }
@@ -3662,7 +3742,6 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-b:disabled { opacity: .45; cursor: not-allowed; }
 .mbox-b .ic { width: 16px; height: 16px; }
 .mbox-b.mbox-x { width: 32px; padding: 0; justify-content: center; margin-left: auto; }
-.mbox-note { flex: 1 0 100%; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 /* the open mail's top bar (30-mail-box.js mailOpenBar): one row of icons on its own tinted strip across the card (prototype #mail/1) that separates
    it from the mail header, sticky while the mail scrolls. The card's padding is a variable so the strip can run edge to edge. */
 .tl-in > .bm.rc.mopen { --mpx: 18px; gap: var(--sp-1); padding: 0 var(--mpx) var(--sp-4); }
@@ -3770,14 +3849,10 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
   .mr-chk, .mbox-all { width: 18px; height: 18px; }
   #back, #as-bar, #as-more-bar { width: 32px; height: 32px; }
   .mr-slot button.cchip.mr-act { height: 44px; border-radius: 22px; }
-  .mbox-bar { padding: 0 var(--sp-1) var(--sp-1) var(--sp-15); }
-  .mbox-bar.on { flex-wrap: wrap; gap: var(--sp-05); }
+  .mbox-bar { gap: var(--sp-05); height: 44px; padding: 0 var(--sp-1) 0 var(--sp-15); }
   .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
   .mbox-bar.on .mbox-bt { display: none; }
-  .mbox-bar.on .mbox-b.mbox-fyi { order: 1; flex: 1 0 100%; width: auto; margin-top: var(--sp-05); border-radius: var(--r-ctl); background: var(--layer); }
-  .mbox-bar.on .mbox-fyi .mbox-bt { display: inline; }
-  .mbox-bar.on .mbox-note { order: 2; }
   .mbox-reply { margin: var(--sp-3) 0 var(--sp-4); padding: var(--sp-4); }
   .mbox-in { height: 44px; font-size: 16px; }
   textarea.mbox-ta { font-size: 16px; line-height: 24px; }
@@ -3815,7 +3890,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 @media (min-width: 1100px) {
   /* the list uses the whole content area right of the app list (owner 2026-11-03, like KakaoTalk or Instagram): the folder chips, the 메일 N개 row and the rows
      start at one left line (the row's 16px, the select-all box on the row checkbox's x) and the extra width goes to the subject and the preview */
-  #mon-tl:has(> .mr-filter.mr-mail) { max-width: none; margin: 0; }
   .mbox-bar { padding-left: var(--sp-3); }
   #mon-tl > .bm.rc.mr { flex-wrap: nowrap; column-gap: var(--sp-2); height: 48px; padding: 0 var(--sp-3) 0 var(--sp-4); }
   #mon-tl > .mr > .mr-dot { top: 50%; margin-top: calc(var(--sp-1) * -1); }
@@ -3894,8 +3968,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
   #v-chat.mail-thr .chatbox { display: flex; gap: var(--sp-4); align-items: stretch; }
   #v-chat.mail-thr .chatbox > .timeline { flex: 1 1 auto; min-width: 0; }
   #v-chat.mail-thr #mail-thread { display: flex; flex-direction: column; flex: 0 0 280px; min-height: 0; margin: 0 0 var(--sp-4); padding: var(--sp-2) var(--sp-15) var(--sp-2) var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
-  /* The transcript's top fade (.chatbox::before, 03-base.css) spans the whole box; the panel beside it stays clear of it (owner 2026-10-28). */
-  #v-chat.mail-thr #mail-thread { position: relative; z-index: 2; }
   #mail-thread[hidden] { display: none; }
   #mail-thread > .mth-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 }
@@ -4033,8 +4105,11 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 #mon-head .mon-prog-wrap .mon-prog-top { flex: 1 1 96px; min-width: 0; }
 #mon-head .mon-prog-wrap .mon-prog { height: 3px; }
 
+/* One column for every 모니터링 screen: the head card, the cards under it and the section labels share the view's left and right edges, so nothing here insets
+   the column or caps it at the chat's reading width (--col). A label's text starts on the card's outer edge, the same in the KakaoTalk pane (#kk-rooms .kk-lh). */
+#v-monitoring .tl-in { max-width: none; }
 /* the timeline of an open item: the prototype's section label above its rows (확인 기록), and the cards on the page's surface */
-#mon-tl > .mon-sec { margin: var(--sp-4) var(--sp-1) var(--sp-15); color: var(--fg-2); font: 600 13px/18px var(--font); }
+#mon-tl > .mon-sec { margin: var(--sp-2) 0 calc(var(--sp-2) - var(--sp-4)); /* the list's 16px gap adds to these: 24px above, 8px to its card, like .sec */ color: var(--fg-2); font: 600 13px/18px var(--font); }
 #mon-tl > .mon-sec:first-child { margin-top: 0; }
 /* a phone opens the conversation with the same card: the wait, a down banner and the actions sit together, not loose on the page */
 #mon-tl > .mon-topcard { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
@@ -4058,8 +4133,8 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 #mon-tl > .mon-chips { justify-content: flex-start; margin-top: var(--sp-2); }
 
 /* 프로젝트 (web/js/18-lanes.js, 19-project-main.js): three levels on one tab.
-   1 list  - search + chips (전체 / 진행 중 / 확인 필요 / 끝남), compact rows (name, one status line, milestone bar, last activity), 더 보기.
-   2 overview - the prototype's detail: header card, 확인 필요 (one action), then 단계 (ticks) · 세션 · 작업 · 결과 · 감시.
+   1 list  - search + chips (전체 / 진행 중 / 확인 필요), compact rows (name, one status line, last activity), 더 보기.
+   2 overview - the prototype's detail: header card, 확인 필요 (one action), then 세션 · 작업 · 결과 · 감시.
    3 pages - one section each, opened over the overview as a .pdv overlay (its own history entry: 뒤로 returns to the overview).
    The list prefix is .pl- (not .pj-: 05-log.css already owns .pj- for the project bands). */
 
@@ -4068,6 +4143,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 .pl-top { display: flex; flex-direction: column; gap: var(--sp-2); }
 .pl-search { display: flex; align-items: center; gap: var(--sp-2); height: 36px; padding: 0 var(--sp-3); border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); }
 .pl-search .ic { width: 18px; height: 18px; }
+.cm-rule-q { flex: none; margin-bottom: var(--sp-3); background: var(--ff-fill); }
 .pl-search input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: transparent; color: var(--fg); font: inherit; outline: 0; }
 .pl-search input::placeholder { color: var(--fg-3); }
 .pl-search:focus-within { box-shadow: inset 0 0 0 2px var(--accent); }
@@ -4088,7 +4164,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 .pl-list > .empty { background: transparent; }
 .pl-empty { padding: var(--sp-8) var(--sp-4); }
 .pl-empty-a { margin-top: var(--sp-3); }
-.pl-list .cv-more { border-top: 1px solid var(--line); }
 .pl-row { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-width: 0; min-height: 48px; margin: 0; padding: var(--sp-2) var(--sp-4); border: 0; background: transparent; color: inherit; text-align: left; }
 .pl-row + .pl-row { border-top: 1px solid var(--line); }
 .pl-row:hover { background: var(--card-hover); }
@@ -4108,12 +4183,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 .pl-row > .li-end { flex: none; display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
 .pl-row > .li-end > .tag { flex: none; }
 .pl-row > .li-end > .chev { width: 14px; height: 14px; color: var(--fg-3); }
-.pl-p { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-05); }
-/* one progress rule everywhere: accent while it runs, success green once every milestone is done */
-.pl-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
-.pl-bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
-.pl-bar.done i { background: var(--ok); }
-.pl-pn { flex: none; color: var(--fg-3); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
 
 /* ---- level 2: the overview ---- */
 .pm-o { display: flex; flex-direction: column; gap: var(--sp-3); max-width: 760px; margin-top: var(--sp-4); }
@@ -4123,14 +4192,9 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 .pm-need .ch h3 { flex: none; }
 .pm-need .ch .tag { flex: none; }
 .pm-need-t { font: 500 15px/22px var(--font); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-/* 단계: the prototype's checklist row; a ticked step is grey and its box takes the success green */
+/* 지금 상황: the summary line above the section's rows */
 .pm-goal { margin: calc(var(--sp-05) * -1) var(--sp-1) var(--sp-2); }
 .pm-sec-list > .li + .li { border-top: 1px solid var(--line); }
-.pm-ck { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border: 1.5px solid var(--line-2); border-radius: 6px; background: transparent; color: #fff; }
-.pm-ck .ic { width: 14px; height: 14px; opacity: 0; }
-.pm-step[aria-checked="true"] .pm-ck { border-color: var(--ok); background: var(--ok); }
-.pm-step[aria-checked="true"] .pm-ck .ic { opacity: 1; }
-.pm-step.done .hd { color: var(--fg-3); }
 .pm-need-s { color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .pm-need .cf { padding-top: var(--sp-3); }
 
@@ -4141,8 +4205,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 .pmv-hrow .btn.tonal:hover { background: var(--hover); }
 .pmv-hact .ib.pmv-more:hover { background: var(--card-hover); color: var(--fg); }
 .pmv-hact .ib.pmv-more .ic { width: 18px; height: 18px; }
-/* the goal page's own bar follows the same colour rule */
-.pmv-prog .bar.done i { background: var(--ok); }
 
 /* ---- level 3: a section page (an overlay, full screen on a phone) ---- */
 .pdv-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-5) var(--sp-15) var(--sp-2); }
@@ -4205,7 +4267,7 @@ body { display: flow-root; }
   .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: 0; }
   .side { order: 0; display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; min-height: 0; padding: var(--sp-3); overflow-y: auto; border-top: 0; background: var(--bg); }
   .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-  .gban, .trban, .oerr { flex: none; grid-row: auto; grid-column: auto; }
+  .gban, .oerr { flex: none; grid-row: auto; grid-column: auto; }
   .views { flex: 1; min-height: 0; grid-row: auto; grid-column: auto; }
   .appbar { display: flex; flex: none; align-items: center; gap: var(--sp-1); height: 60px; padding: 0 var(--sp-5) 0 var(--sp-6); background: transparent; }
   .appbar .ib { width: 32px; height: 32px; }
@@ -4332,7 +4394,7 @@ body { display: flow-root; }
 .hneeds .hn:has(> .hc-none) { padding: 0 var(--sp-5) var(--sp-5); }
 .hneeds .hn-h.hsub { padding: var(--sp-3) var(--sp-5) var(--sp-1); border-top: 1px solid var(--line); border-radius: 0; }
 .hneeds .hn-h.hsub h2 { font: 600 13px/18px var(--font); color: var(--fg-2); }
-.hneeds .hn > .hr, .hneeds .hn > .ntg, .hneeds .hn > .ny-more { padding-left: var(--sp-5); padding-right: var(--sp-5); }
+.hneeds .hn > .hr { padding-left: var(--sp-5); padding-right: var(--sp-5); }
 
 /* the grid cards keep the prototype's card box: 20px padding, the header 8px above its list, rows to the card's edge; a row is as tall
    as its taller card and both cards fill it (07-board.js rows mode) */
@@ -4361,11 +4423,16 @@ body { display: flow-root; }
   .appbar h1.pdot::after, .appbar h1.p-need::after { content: none; }
 }
 
-/* 화면 공유 (features/remote-desktop/DESIGN.md Web): the app-bar pill that names who is watching, and the switcher row. The settings rows are the plain .li + .hs-sw. */
+/* 화면 공유 (features/remote-desktop/DESIGN.md Web): the app-bar pill that names who is watching, and the button on a computer's row in the switcher. The settings rows are the plain .li + .hs-sw. */
 .dsk-pill { position: relative; grid-row: 1; grid-column: 8; align-self: center; max-width: 220px; margin-left: var(--sp-2); border: 0; font-family: inherit; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dsk-pill[hidden] { display: none; }
 .dsk-pill:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .conn:not([hidden]) ~ .dsk-pill { display: none; }
 @media (max-width: 1099px) { .dsk-pill { margin-left: 0; } }
 @media (max-width: 639px) { .dsk-pill { flex: 0 1 auto; min-width: 0; max-width: 40%; } }
-.pr-screen .ic { flex: none; width: 16px; height: 16px; color: var(--fg-3); }
+.pr-line { display: flex; align-items: center; gap: var(--sp-1); }
+.pr-line .pr-row { flex: 1; min-width: 0; }
+.btn.tonal.pr-desk { flex: none; margin-right: var(--sp-2); background: var(--hover); white-space: nowrap; }
+.btn.tonal.pr-desk:hover { background: var(--active); }
+.anch .btn.tonal.pr-desk { margin-right: var(--sp-1); }
+@media (min-width: 700px) { .ds-bd.anch .ds-sheet.pr-sheet { width: 280px; } }
