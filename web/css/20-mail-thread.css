@@ -1,5 +1,5 @@
 /* ---------- a mail's people and its thread (web/js/30-mail-thread.js): 보낸 사람 / 받는 사람 / 참조, and the same-sender panel ---------- */
-.mhd { display: flex; flex-direction: column; gap: var(--sp-05); margin-top: var(--sp-3); padding: 10px var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; }
+.mhd { display: flex; flex-direction: column; gap: var(--sp-05); margin-top: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 13px; line-height: 20px; }
 .mhd-r { display: flex; gap: var(--sp-2); min-width: 0; }
 .mhd-k { flex: none; width: 56px; color: var(--fg-3); }
 .mhd-v { min-width: 0; overflow-wrap: anywhere; }
@@ -20,7 +20,7 @@
 .od-pane .mhd-wrap .mhd { margin-top: 0; }
 
 .mth { display: none; }
-.mth-m { display: none; margin-top: 10px; }
+.mth-m { display: none; margin-top: var(--sp-2); }
 .mth-mb { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font: 500 14px/20px var(--font); text-align: left; }
 .mth-mb .ic { flex: none; width: 16px; height: 16px; }
 .mth-mt { flex: 1; min-width: 0; color: var(--fg); text-align: left; }
@@ -28,7 +28,7 @@
 .mth-mb.open .mth-ch { transform: rotate(180deg); }
 .mth-list { display: flex; flex-direction: column; gap: var(--sp-05); margin: 0; padding: 0; list-style: none; }
 .mth-m > .mth-list { margin-top: var(--sp-1); padding: var(--sp-1); border-radius: var(--r-ctl); background: var(--layer); }
-.mth-row { display: flex; flex-direction: column; gap: var(--sp-05); width: 100%; padding: var(--sp-2) 10px; border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mth-row { display: flex; flex-direction: column; gap: var(--sp-05); width: 100%; padding: var(--sp-2) var(--sp-3); border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .mth-row:hover { background: var(--card-hover); }
 .mth-row.on { background: var(--row-sel); cursor: default; }   /* the selected fill of every list (.cv-row.on) */
 .mth-top { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
@@ -58,7 +58,7 @@
   .mhd-line .mth-mb.open .mth-ch { transform: rotate(-90deg); }
   #v-chat.mail-thr .chatbox { display: flex; gap: var(--sp-4); align-items: stretch; }
   #v-chat.mail-thr .chatbox > .timeline { flex: 1 1 auto; min-width: 0; }
-  #v-chat.mail-thr #mail-thread { display: flex; flex-direction: column; flex: 0 0 280px; min-height: 0; margin: 0 0 var(--sp-4); padding: 10px var(--sp-15) 10px 10px; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+  #v-chat.mail-thr #mail-thread { display: flex; flex-direction: column; flex: 0 0 280px; min-height: 0; margin: 0 0 var(--sp-4); padding: var(--sp-2) var(--sp-15) var(--sp-2) var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
   /* The transcript's top fade (.chatbox::before, 03-base.css) spans the whole box; the panel beside it stays clear of it (owner 2026-10-28). */
   #v-chat.mail-thr #mail-thread { position: relative; z-index: 2; }
   #mail-thread[hidden] { display: none; }
