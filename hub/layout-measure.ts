@@ -443,7 +443,8 @@ const DEMO = join(ROOT, "site", "demo");
 
 // The real page and bundles from hub/webapp.ts with the demo's two scripts injected first thing in <head>, before the page's own early
 // fetches, so window.fetch and EventSource are the demo's. /custom.js (appended by 99-boot.js) is empty, as in site/build-demo.ts.
-export function startDemoServer() {
+// `now` freezes the page clock, so two runs draw the same times and screenshots compare byte for byte.
+export function startDemoServer(opts: { now?: number } = {}) {
 	process.env.DOTZ_WEB_LIVE = "1";   // current web/ files, not the committed snapshot (hub/runtime/test-setup.ts does the same for tests)
 	const stray: string[] = [];
 	const server = Bun.serve({
@@ -454,7 +455,8 @@ export function startDemoServer() {
 			const url = new URL(req.url), p = url.pathname;
 			if (p === "/") {
 				const html = await (await indexPage(new Request(req.url))).text();
-				const inject = '<script src="/__demo/fixtures.js"></script><script src="/__demo/demo-api.js"></script>';
+				const clock = opts.now ? `<script>(() => { const N = ${opts.now}, D = Date; window.Date = class extends D { constructor(...a) { super(...(a.length ? a : [N])); } static now() { return N; } }; })()</script>` : "";
+				const inject = `${clock}<script src="/__demo/fixtures.js"></script><script src="/__demo/demo-api.js"></script>`;
 				return new Response(html.replace(/<head[^>]*>/i, m => `${m}${inject}`), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 			}
 			if (p === "/__demo/fixtures.js" || p === "/__demo/demo-api.js") return new Response(Bun.file(join(DEMO, p.slice("/__demo/".length))), { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" } });
