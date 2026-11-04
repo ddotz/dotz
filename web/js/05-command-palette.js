@@ -165,7 +165,9 @@ function go(name, tgt) {
   if (name === "devices" || name === "settings") loadDevices();
   if (name === "webaccess" || name === "settings") loadWebAccess();
   if (name === "webaccess") loadOnboarding("web-access");
-  motionView(tv ? "chat" : name, [...$("#views").children].filter(v => !v.hidden), !tv);   // a different view rises in; the same view drawn again, and the first paint, do not move
+  // A different view rises in; the same view drawn again, and the first paint, do not move. Moving inside 모니터링 (a list to its item) is one screen,
+  // and a mail opening is plain content: neither replays the rise (owner 2026-11-04).
+  motionView(mc ? "monitoring" : tv ? "chat" : name, tv && isMailT(target) ? [] : [...$("#views").children].filter(v => !v.hidden), !tv);
   window.dotzCustom && dotzCustom.view(name, tgt);
 }
 // Entries the app made are handled by popstate; this is for a hash typed into the address bar or an old foreign entry.
