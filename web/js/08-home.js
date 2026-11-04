@@ -136,12 +136,12 @@ const HOME_NOTICE = { min: { w: 3, h: 4 }, max: { w: 12, h: 10 } };
 const hcState = () => (NT.loaded ? "" : NT.failed ? "불러오지 못했어요" : "불러오는 중…");
 const hcCard = (open, ...kids) => { const c = tapCard(open, ...kids); c.classList.add("hc"); return c; };
 const hcDot = tone => el("span", { class: `nt-dot tone-${tone || "none"}`, "aria-hidden": "true" });
-// A generic title (작업 기록, 알림) says nothing in a 3-row card: the row shows the entry's first line instead.
+// A generic title (작업 기록, 알림) says nothing in a card's row: the row shows the entry's first line instead.
 const hcLine = n => { const t = ntPlain(n.title); return !t || t === "작업 기록" || t === "작업내역" || t === "알림" ? ntPlain(String(n.text || "").split("\n")[0]) || t || "알림" : t; };
 // Each row opens its own item by kind (30-notices.js noticeOpen); a tap beside the rows still opens the card's conversation.
-const hcNotices = list => el("div", { class: "hc-list" }, ...list.map(n => el("div", { class: "hc-row", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); noticeOpen(n); } } }, hcDot(n.tone), el("span", { class: "tb" }, el("span", { class: "t", text: hcLine(n) }), ntLaneNote(n) ? el("span", { class: "n", text: ntLaneNote(n) }) : null), el("span", { class: "m", text: ntWhen(n) }), ntNeeds(n) ? ntIgnoreBtn(n) : null)));
+const hcNotices = (list, cap) => el("div", { class: "hc-list", "data-cap": cap }, ...list.map(n => el("div", { class: "hc-row", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); noticeOpen(n); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); noticeOpen(n); } } }, hcDot(n.tone), el("span", { class: "tb" }, el("span", { class: "t", text: hcLine(n) }), ntLaneNote(n) ? el("span", { class: "n", text: ntLaneNote(n) }) : null), el("span", { class: "m", text: ntWhen(n) }), ntNeeds(n) ? ntIgnoreBtn(n) : null)));
 // Gateway restarts are kept in the store (born read) but never shown on 홈 (owner 2026-10-19: restarts are not his news).
-const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a)).slice(0, 3);
+const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: 재시작했어요|를 다시 시작했어요)/.test(String(n.text || ""))).sort((a, b) => ntAt(b) - ntAt(a));
 // Only what is news: a question that waits is a row of 답변 필요 above, so it is not counted or listed here a second time; a gateway question it
 // handles itself is not asked there (09-needs-you.js nyHandled), so it is news here.
 const hcFyi = n => !n.read && ntHomeAlert(n) && (!ntNeeds(n) || nyHandled(n));
@@ -150,26 +150,47 @@ const hcUnread = () => nscUnreadIn("all");
 const hcHead = (title, o = {}) => el("div", { class: "ch" }, o.dot ? el("span", { class: `dot ${o.dot}` }) : null, el("h3", { text: title }),
   o.n ? el("span", { class: "hc-n" }, ...[].concat(o.n)) : null, o.note ? el("span", { class: "hc-n", text: o.note }) : null, o.menu ? menuBtn(o.menu) : null);
 const hcNone = text => el("div", { class: "hc-none", text });
+// One rule for every list on 홈: a list marked data-cap holds all its rows, shows LIST_CAP of them and scrolls inside its card (.list-cap, 05-log.css).
+// The height is read from the sixth row, since rows differ per list and per item. A refresh rebuilds the lists: capPlaces reads each one's place and
+// focused row before that, and capLists hands them to the new list.
+const LIST_CAP = 6, CAP_FOCUS = "button, [tabindex]";
+function capPlaces() {
+  const kept = new Map(), act = document.activeElement;
+  for (const l of document.querySelectorAll("#v-home [data-cap]")) if (l.scrollTop || l.contains(act)) kept.set(l.dataset.cap, [l.scrollTop, [...l.querySelectorAll(CAP_FOCUS)].indexOf(act)]);
+  return kept;
+}
+function capLists(root, kept) {
+  const lists = [...root.querySelectorAll("[data-cap]")], long = lists.filter(l => l.classList.toggle("list-cap", l.childElementCount > LIST_CAP));
+  const heights = long.map(l => { const r = l.children[LIST_CAP - 1]; return r.offsetTop + r.offsetHeight; });   // every read before any write: one layout, however many lists
+  long.forEach((l, i) => { if (heights[i]) l.style.maxHeight = `${heights[i]}px`; });
+  for (const l of kept ? lists : []) {
+    const place = kept.get(l.dataset.cap);
+    if (!place) continue;
+    l.scrollTop = place[0];
+    const row = l.querySelectorAll(CAP_FOCUS)[place[1]];
+    if (row) row.focus({ preventScroll: true });
+  }
+}
 function homeAlertCard() {
   const unread = hcUnread(), fresh = hcRecent(hcFyi), state = hcState(), none = !!state || !fresh.length;
   return hcCard(nscGo, hcHead("알림", { menu: "notices:alert", n: !state && unread ? String(unread) : null }),
-    none ? hcNone(state || "새 알림이 없어요") : hcNotices(fresh));
+    none ? hcNone(state || "새 알림이 없어요") : hcNotices(fresh, "alert"));
 }
 function homeWorklogCard() {
   const recent = hcRecent(n => n.kind === "worklog" || n.kind === "result"), state = hcState(), none = !!state || !recent.length;
-  return hcCard(() => openTarget("worklog", "chat"), hcHead("작업내역", { menu: "notices:worklog" }), none ? hcNone(state || "아직 작업내역이 없어요") : hcNotices(recent));
+  return hcCard(() => openTarget("worklog", "chat"), hcHead("작업내역", { menu: "notices:worklog" }), none ? hcNone(state || "아직 작업내역이 없어요") : hcNotices(recent, "worklog"));
 }
 function homeMonitorCard() {
-  const list = ntMons(), shown = list.slice(0, 4), bad = list.filter(m => monStatus(m).key === "fail").length;
+  const list = ntMons(), bad = list.filter(m => monStatus(m).key === "fail").length;
   const state = NM.loaded ? "" : NM.failed ? "불러오지 못했어요" : "불러오는 중…", none = !!state || !list.length;
   return hcCard(() => go("monitoring"), hcHead("모니터링", { menu: "notices:watch", n: bad ? [el("span", { class: "dot err" }), `실패 ${bad}`] : null }),
-    none ? hcNone(state || "모니터링 중인 항목이 없어요") : el("div", { class: "hc-list" }, ...shown.map(m => {
+    none ? hcNone(state || "모니터링 중인 항목이 없어요") : el("div", { class: "hc-list", "data-cap": "watch" }, ...list.map(m => {
       // The same status the 모니터링 row shows (30-monitoring.js monStatus); the dot's colour classes are the notice tones.
       const st = monStatus(m);
       return el("div", { class: "hc-mon", "data-status": st.key }, hcDot({ ok: "done", warn: "ask", err: "fail" }[st.tone]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "모니터링" }),
         el("span", { class: "s", text: [ntMonRun(m), st.text, ntMonNext(m)].filter(Boolean).join(" · ") })));
     })),
-    list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null);
+    list.length > LIST_CAP ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - LIST_CAP}개` }) : null);
 }
 
 let homeBoard = null;
@@ -356,7 +377,7 @@ function homeStripRow(title, sup, tag, tone, open) {
 function renderHomeNow() {
   const now = $("#home-now"), box = $("#home-cards");
   if (!now || !box) return;
-  const needs = nyList(), crit = needs.filter(x => x.crit).length;   // 09-needs-you.js: what only the owner can do, critical first
+  const kept = capPlaces(), needs = nyList(), crit = needs.filter(x => x.crit).length;   // 09-needs-you.js: what only the owner can do, critical first
   // 홈 is this computer's alone (owner 2026-10-31): the other computers' items live in 모니터링, and the computer chip's dot says they want something.
   const owed = monItems().filter(i => i.app && i.unreplied && !i.pc), owedN = owed.reduce((c, i) => c + i.unreplied, 0), drafts = rqAll().filter(x => !x.pc).length;
   const waiting = needs.length;
@@ -368,12 +389,11 @@ function renderHomeNow() {
   const restRow = t => homeNowRow(t, targetState(t)[0], "");
   // Above the grid, the prototype's full-width column: the greeting, the one alert row and 답변 필요. The replies the owner owes stay in
   // that card under its list, as the prototype's 답변 필요 rows do; each row still opens its own item.
-  const running = el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow),
+  const running = el("div", { class: "hn", "data-k": "running", "data-cap": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow),
     ...(working || bg.length || deferred.length ? [] : [hcNone("진행 중인 작업이 없어요")]));
-  running.classList.toggle("hn-cap", running.childElementCount > 6);
   const owedBlock = owed.length || drafts ? [
     el("div", { class: "hn-h hsub" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null),
-    el("div", { class: "hn", "data-k": "replies" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : [];
+    el("div", { class: "hn", "data-k": "replies", "data-cap": "replies" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : [];
   clear(now).append(homeGreeting(h), ...[homeStrip()].filter(Boolean),
     el("div", { class: "hneeds" },
       el("div", { class: "hn-h hneeds-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null, crit ? el("span", { class: "tag warn", text: `중요 ${crit}` }) : null),
@@ -388,15 +408,13 @@ function renderHomeNow() {
   if (endBox) clear(endBox).append(...[endedGroup()].filter(Boolean));
   // The grid after it, two cards to a row (07-board.js): 알림 · 지금 진행 중 · 대기 중 · 최근 끝난 작업 · 모니터링 · 작업내역 ·
   // 사용량 · 컨텍스트 · 공급자 · the owner's cards, each half the row and as tall as its content.
-  if (!homeBoard || (openMenu && box.contains(openMenu.anchor))) return;   // a ⋯ menu is open: repaint after it closes
-  // 지금 진행 중 scrolls inside its card past six rows and is rebuilt on a refresh: its place and the focused row carry over to the new list.
-  const oldRun = box.querySelector('[data-k="running"]'), runTop = oldRun ? oldRun.scrollTop : 0, runFocus = oldRun ? [...oldRun.querySelectorAll("button")].indexOf(document.activeElement) : -1;
+  if (!homeBoard || (openMenu && box.contains(openMenu.anchor))) { capLists($("#v-home"), kept); return; }   // a ⋯ menu is open: repaint after it closes
   const items = [], seen = new Set();
   const add = (id, node) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def: { w: 6, h: 1 }, ...HOME_FIT }); } };
   add("notices:alert", homeAlertCard());
   add("now:running", el("div", { class: "card" }, hcHead("지금 진행 중", { n: working ? `${working}개 작업 중` : null }), running));
-  if (restT.length) add("now:waiting", el("div", { class: "card" }, hcHead("대기 중"), el("div", { class: "hn", "data-k": "waiting" }, ...restT.map(restRow))));
-  if (ended.length) add("now:ended", el("div", { class: "card" }, hcHead("최근 끝난 작업"), el("div", { class: "hn", "data-k": "ended-work" }, ...ended.map(workRow))));
+  if (restT.length) add("now:waiting", el("div", { class: "card" }, hcHead("대기 중"), el("div", { class: "hn", "data-k": "waiting", "data-cap": "waiting" }, ...restT.map(restRow))));
+  if (ended.length) add("now:ended", el("div", { class: "card" }, hcHead("최근 끝난 작업"), el("div", { class: "hn", "data-k": "ended-work", "data-cap": "ended-work" }, ...ended.map(workRow))));
   add("notices:watch", homeMonitorCard());
   add("notices:worklog", homeWorklogCard());
 
@@ -437,17 +455,15 @@ function renderHomeNow() {
     const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : "없어요";
     add(`group:${kind}`, itemCard(view, "",
       hcHead(title, { dot: nAtt ? hcTone(list.some(e => e.tone === "err") ? "err" : "warn") : "", n: none ? null : String(list.length), menu: `group:${kind}` }),
-      none ? hcNone(empty) : el("div", { class: "glist" }, ...list.map(homeRow))));
+      none ? hcNone(empty) : el("div", { class: "glist", "data-cap": `group:${kind}` }, ...list.map(homeRow))));
   }
 
   // the owner's custom cards (web/custom.js) are board items like the rest; a half row by default, their own size when changed
   for (const it of window.dotzCustom ? dotzCustom.items() : []) if (!seen.has(it.id)) { seen.add(it.id); items.push({ ...it, def: { ...it.def, w: 6 }, head: it.head || ".ch" }); }
   // cards of data that has not arrived yet keep their saved place
   homeBoard.set(items, id => id.startsWith("custom:") ? !window.dotzCustom || dotzCustom.keep(id) : id.startsWith("ctx:") ? !C : id.startsWith("limit:") ? !HQ || !!HQ.error : id.startsWith("prov:") ? !P : false);
-  if (running.isConnected) {
-    running.scrollTop = runTop;
-    if (runFocus >= 0) { const b = running.querySelectorAll("button")[runFocus]; if (b) b.focus({ preventScroll: true }); }
-  }
+  capLists($("#v-home"), kept);
+  homeBoard.measure();   // the lists were full length when the board measured them, and a row is as tall as its taller card
 }
 
 // The home screen always opens at its top: on load, on the tab, and when the installed app comes back to the front (23-installable-app-web.js, 99-boot.js).

@@ -151,7 +151,6 @@ function attnToast(t, k) {
 // failure that needs his choice), 1 send approval, 2 another decision, 3 a session question, 4 a loose question of the assistant.
 // A gateway [ask] that is not critical is a system notice it handles: not asked here, it is news in the 알림 card (08-home.js hcFyi).
 // A finished turn (결과 확인) and a rate limit (한도 걸림) are not decisions: the assistant card and 지금 진행 중 show them.
-const NY = { top: 5, more: false };
 const NY_LOGIN = /로그인|인증|2단계|OTP|비밀번호/i;
 function nyOf(n) {
   const d = ntOpenDec(n) ? n.decision : null, gw = n.by === "gateway", text = `${n.title || ""}\n${n.text || ""}`;
@@ -215,11 +214,10 @@ function nyMonRow(it) {
       el("span", { class: "ha", text: [`${m.fails}번 연속 실패했어요`, m.last_summary || ""].filter(Boolean).join(" · ") })),
     el("span", { class: "hs warn", text: it.act }));
 }
-// The list of the 홈 card: the first NY.top rows, then 더 보기 with how many items are behind it.
+// The list of the 홈 card: every row, six in sight (08-home.js capLists).
 function nyListNode(items) {
-  const rows = nyRows(items), shown = NY.more ? rows : rows.slice(0, NY.top), rest = rows.slice(shown.length).reduce((c, r) => c + r.count, 0);
-  const toggle = rows.length > NY.top ? el("button", { class: "ny-more", type: "button", "data-k": "ny-more", "aria-expanded": String(NY.more), onclick: () => { NY.more = !NY.more; renderHomeNow(); } }, NY.more ? "접기" : `더 보기 · ${rest}개`) : null;
-  return el("div", { class: "hn", "data-k": "needs" }, ...shown.map(r => r.node), ...(rows.length ? [] : [hcNone("답변할 항목이 없어요")]), toggle);
+  const rows = nyRows(items);
+  return el("div", { class: "hn", "data-k": "needs", "data-cap": "needs" }, ...rows.map(r => r.node), ...(rows.length ? [] : [hcNone("답변할 항목이 없어요")]));
 }
 function attnChanged() {
   renderBars();
