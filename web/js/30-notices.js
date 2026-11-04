@@ -449,7 +449,6 @@ const ntLooseAsks = () => NT.items.filter(n => ntNeeds(n) && !ntOpenDec(n) && !n
 const ntHasDecision = t => NT.items.some(n => ntOpenDec(n) && n.decision.to === t);
 // pc: the computer a peer's notice came from (n.pc), so its main chat reads that gateway's bot name (08-home.js pcTargetName).
 const ntDecWhere = (d, pc) => d.to.startsWith("auth:") ? "로그인 요청" : pcTargetName(d.to, pc);
-const ntOptsOrdered = opts => [...opts].sort((a, b) => Number(b.rec) - Number(a.rec) || a.n - b.n);
 function ntApply(item, unread) {
   if (item) { const i = NT.items.findIndex(x => x.id === item.id); if (i >= 0) NT.items[i] = item; else NT.items.push(item); }
   if (typeof unread === "number") NT.unread = unread;
@@ -660,8 +659,8 @@ function ntSheetPaint() {
   const hadNote = !!NS.node.querySelector(".dc-note:focus");
   if (ed) foot.append(ntEditNode(n, ed));
   else if (open) {
-    for (const o of ntOptsOrdered(d.options)) foot.append(el("button", { type: "button", class: `ds-opt${o.rec ? " rec" : ""}`, "data-k": `o${o.n}`, disabled: NS.busy, onclick: () => ntAnswer(n, o) },
-      el("span", { class: "ds-lb" }, o.label, o.rec ? el("span", { class: "ds-tag", text: "추천" }) : null),
+    for (const o of d.options) foot.append(el("button", { type: "button", class: "ds-opt", "data-k": `o${o.n}`, disabled: NS.busy, onclick: () => ntAnswer(n, o) },
+      el("span", { class: "ds-lb" }, o.label),
       o.desc ? el("span", { class: "ds-ds", text: o.desc }) : null));
     foot.append(el("button", { type: "button", class: "ds-direct", "data-k": "direct", disabled: NS.busy, onclick: () => ntDirect(n), text: d.to.startsWith("auth:") ? "입력 창으로 가기" : "직접 답하기" }));
     if (NS.busy) foot.append(el("div", { class: "ds-st", role: "status", text: "보내는 중…" }));

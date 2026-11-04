@@ -1,7 +1,9 @@
 /* ---------- decision card: a question that waits on the owner, docked above the composer ---------- */
-// Choice block (MODE.md "Message layout"): `**1) name** ← 추천`, then one description line; a `결정:` line titles a block.
+// Choice block (MODE.md "Message layout"): `**1) name**`, then one description line; a `결정:` line titles a block.
 // Several blocks = several decisions: the card walks them one at a time and sends the numbers as "1-2".
-const CH_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
+const CH_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*$/;
+// Older messages, and gateways on an older version, still mark one option as recommended. Mirrors stripRecommendMark in hub/choices.ts.
+function stripRecMark(text) { return text.replace(/^([ \t]*>?[ \t]*(?:\*\*)?[ \t]*\d{1,2}(?:\)|\.[ \t]).*?)[ \t]*(?:(?:←|<-)[ \t]*(?:추천|recommended)|\([ \t]*(?:추천|권장|recommended)[ \t]*\))/gim, "$1"); }
 const CH_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 const CH_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 // An option that needs detail (tap opens a text field; the answer goes out as `n) label - <text>`): the bot marks it with a trailing ` …` on the name
@@ -12,7 +14,7 @@ const CH_FENCE = /^\s*```/;
 const isDescLine = nx => nx !== undefined && !!nx.trim() && !CH_OPT.test(nx) && !CH_HEAD.test(nx) && !CH_CLOSE.test(nx) && !CH_FENCE.test(nx);
 // The message text without its option lines (and their description lines): the buttons show them, so the body must not repeat them.
 function stripChoices(text) {
-  const lines = String(text ?? "").split("\n"), out = [];
+  const lines = stripRecMark(String(text ?? "")).split("\n"), out = [];
   for (let i = 0; i < lines.length; i++) {
     if (!CH_OPT.test(lines[i])) { out.push(lines[i]); continue; }
     if (isDescLine(lines[i + 1])) i++;
@@ -21,7 +23,7 @@ function stripChoices(text) {
 }
 function parseChoices(text) {
   const OPT = CH_OPT, HEAD = CH_HEAD;
-  const lines = String(text ?? "").replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
+  const lines = stripRecMark(String(text ?? "")).replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
   let i = 0, question = "", cur = null;
   while (i < lines.length && !lines[i].trim()) i++;
   if (i < lines.length && !OPT.test(lines[i]) && !HEAD.test(lines[i])) question = lines[i++].trim();
@@ -40,7 +42,7 @@ function parseChoices(text) {
     const nx = lines[i + 1];
     if (isDescLine(nx)) { desc = nx.trim(); i++; }
     const raw = m[2].replace(/^\*+|\*+$/g, "").trim();
-    cur.options.push({ n, label: raw.replace(DETAIL_MARK, "").trim(), desc, rec: !!m[3], ...(DETAIL_MARK.test(raw) ? { detail: true } : {}) });
+    cur.options.push({ n, label: raw.replace(DETAIL_MARK, "").trim(), desc, ...(DETAIL_MARK.test(raw) ? { detail: true } : {}) });
   }
   // Only a block a "결정:" line opened holds options (mirrors hub/choices.ts parseDecisions): a numbered or bold list in the body is text.
   return { question, blocks: blocks.filter(b => b.headed && b.options.length) };
@@ -453,9 +455,9 @@ function renderSheet(box, dc, picks, step) {
   if (nn && (refocus || (edit && !oldNote))) { nn.focus({ preventScroll: true }); nn.setSelectionRange(caret || nn.value.length, caret || nn.value.length); }
 }
 function choiceRow(dc, step, o, picks, st) {
-  return el("button", { class: `dc-row${o.rec ? " rec" : ""}${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
+  return el("button", { class: `dc-row${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
     el("span", { class: "dc-key", text: String(o.n) }),
-    el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null));
+    el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null));
 }
 function renderDecision(box, dc, picks, step) {
   if (dc.close) { renderSheet(box, dc, picks, step); return; }
@@ -482,9 +484,9 @@ function renderDecision(box, dc, picks, step) {
     if (blk) {
       if (blk.title && dc.blocks.length > 1) body.append(el("div", { class: "dc-sub", text: blk.title }));
       // Once the answer goes out the card keeps only the chosen row (the others leave), so 보냈어요 reads in the same place.
-      for (const o of st && !dc.draft && picks[step] ? blk.options.filter(x => x.n === picks[step].n) : blk.options) body.append(el("button", { class: `dc-row${o.rec ? " rec" : ""}${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
+      for (const o of st && !dc.draft && picks[step] ? blk.options.filter(x => x.n === picks[step].n) : blk.options) body.append(el("button", { class: `dc-row${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
         el("span", { class: "dc-key", text: String(o.n) }),
-        el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label, o.rec ? el("span", { class: "dc-tag", text: "추천" }) : null), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
+        el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
     }
     kids.push(body);
     }

@@ -26,7 +26,7 @@ describe("a [done] answer with a choice block", () => {
 		await waitFor(`typeof openTarget === "function" && S`);
 		await view.evaluate(`(openTarget("main", "chat"), 0)`);
 		await waitFor(`document.querySelectorAll("#dcard .dc-row").length === 3`);
-		expect(await view.evaluate(`[...document.querySelectorAll("#dcard .dc-row")].map(b => b.querySelector(".dc-lb").textContent.replace("추천", "")).join("|")`)).toBe("압구정 본점 10/28(화) 15:00|청담 메종 10/31(금) 14:00|다른 날짜나 매장");
+		expect(await view.evaluate(`[...document.querySelectorAll("#dcard .dc-row")].map(b => b.querySelector(".dc-lb").textContent).join("|")`)).toBe("압구정 본점 10/28(화) 15:00|청담 메종 10/31(금) 14:00|다른 날짜나 매장");
 		expect(await view.evaluate(`document.querySelectorAll(".dcm-row, #tl .dc-row").length`)).toBe(0);
 		expect(await view.evaluate(`[...document.querySelectorAll("#dcard .dc-row")].every(b => !b.disabled)`)).toBe(true);
 		expect(await view.evaluate(`!document.querySelector("#dcard").hidden && document.querySelector("#dcard .dc-q").textContent`)).toBe("방문 예약");

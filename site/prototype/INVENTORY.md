@@ -18,7 +18,7 @@
 | `[ask]` 확인 요청 | 오너의 답이 필요한 보고, 결정 블록과 함께 옴 | MODE.ko.md (Reporting), web/js/10-decision-card.js | `#chat/formats`, `#chat/ch2` |
 | `[fail]` 실패 보고 | 원인 / 다음 줄이 붙는 실패 알림 | MODE.ko.md (Reporting) | `#chat/formats` |
 | 세션 보고 4줄 | 결과 · 결정 · 글머리표 · `For <봇>:` 줄 | MODE.ko.md (Reporting) | `#chat/formats`, `#chat/lane` |
-| 결정(선택지) 블록 | `결정: <질문>` 아래 선택지 2-4개, 내 선택에 `← 추천` | web/js/10-decision-card.js, MODE.ko.md (Message layout) | `#chat/ch2`, `#chat/formats` |
+| 결정(선택지) 블록 | `결정: <질문>` 아래 선택지 2-4개 | web/js/10-decision-card.js, MODE.ko.md (Message layout) | `#chat/ch2`, `#chat/formats` |
 | 이유 선택지 (` …`) | 이름 끝에 ` …`가 붙은 선택지는 누르면 이유를 적는 칸이 열려요 | web/js/10-decision-card.js (DETAIL_MARK), hub/draft-approval.ts | `#chat/ch2`, `#chat/formats` |
 | 발송 승인 | 보내기 전 `> 받는이/제목/본문` 인용 + `1) 보내기 2) 고치기 3) 보내지 않기` | hub/draft-approval.ts, web/js/10-reply-card.js | `#chat/approve`, `#chat/formats` |
 | 목록 블록 | ```` ```목록 ```` 안에 `제목 \| 부제 \| 시각 \| 배지` 줄, 첫 줄 `# 제목`은 선택 | hub/listblock.ts | `#chat/formats` |

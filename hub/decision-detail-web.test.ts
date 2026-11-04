@@ -6,8 +6,8 @@ import { fakeHub, json, on } from "./test-web.ts";
 
 // An option that needs detail (안 됨 / 고치기 / a trailing " …") opens a text field and sends nothing until the owner writes it; a positive option sends at once.
 // Headless browser against a fixture history and the real notice store; every POST is recorded, nothing leaves the process.
-const ASK = "[ask] 확인\n결정: 확인\n**1) 확인됨** ← 추천\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n";
-const MARKED = "[ask] 배포\n결정: 배포\n**1) 배포하기** ← 추천\n바로 올려요\n**2) 보류 …**\n이유만 남겨요\n";
+const ASK = "[ask] 확인\n결정: 확인\n**1) 확인됨**\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n";
+const MARKED = "[ask] 배포\n결정: 배포\n**1) 배포하기**\n바로 올려요\n**2) 보류 …**\n이유만 남겨요\n";
 let history: unknown[] = [];
 const hub = fakeHub({
 	api: (req, url) => {
@@ -88,7 +88,7 @@ describe("decision options that need detail", () => {
 
 	test("the bot's trailing ' …' marks an option that needs detail, and the mark is not part of the label", async () => {
 		await openChat(MARKED);
-		expect(await view.evaluate(`[...document.querySelectorAll("#dcard .dc-lb")].map(b => b.textContent.replace("추천", "")).join("|")`)).toBe("배포하기|보류");
+		expect(await view.evaluate(`[...document.querySelectorAll("#dcard .dc-lb")].map(b => b.textContent).join("|")`)).toBe("배포하기|보류");
 		await view.evaluate(`(${rowOf(2)}.click(), 0)`);
 		await waitFor(`document.querySelector("#dcard .dc-note")`);
 		expect(await posts()).toEqual([]);
@@ -149,7 +149,7 @@ describe("decision options that need detail", () => {
 
 	test("the notice sheet of a plain decision asks for the reason of '안 됨' too", async () => {
 		const title = `점검-${Date.now()}`;
-		emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}\n결정: ${title}\n**1) 확인됨** ← 추천\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n` });
+		emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}\n결정: ${title}\n**1) 확인됨**\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n` });
 		const n = listNotices(300).items.find(i => i.kind === "decision" && i.decision?.state === "open" && i.title.includes(title))!;
 		expect(n).toBeDefined();
 		await load(`(noticeSheetOpen(${JSON.stringify(n.id)}), 0)`);

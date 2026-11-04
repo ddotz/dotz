@@ -68,7 +68,7 @@
     "nf-open": (el) => { const n = find(el.dataset.nid); if (n) n.unread = false; S.nKeep = true; S.nScroll = $("#views").scrollTop; S.backTo = S.route.id; P.refreshBadges(); },
     "nf-decide": (el) => {
       const n = find(el.dataset.nid); n.unread = false; paint(); P.refreshBadges();
-      P.sheet({ title: "결정", body: `<div class="dc nfd"><div class="dq">${h(D.decision.ask)}</div><div class="dm">${h(D.decision.q)}</div><div class="dos">${D.decision.opts.map((o) => `<button class="do" data-act="nf-pick" data-nid="${n.id}"><span class="n">${o.n}) ${h(o.name)}${o.rec ? ' <span class="tag pri">추천</span>' : ""}</span><span class="d">${h(o.desc)}</span></button>`).join("")}</div></div>` });
+      P.sheet({ title: "결정", body: `<div class="dc nfd"><div class="dq">${h(D.decision.ask)}</div><div class="dm">${h(D.decision.q)}</div><div class="dos">${D.decision.opts.map((o) => `<button class="do" data-act="nf-pick" data-nid="${n.id}"><span class="n">${o.n}) ${h(o.name)}</span><span class="d">${h(o.desc)}</span></button>`).join("")}</div></div>` });
     },
     "nf-pick": async (el) => {
       const n = find(el.dataset.nid);

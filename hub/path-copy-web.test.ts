@@ -13,7 +13,7 @@ const PDF = "/Users/fake/.dotz/uploads/2026-10-26/1분기_정산_보고서.pdf";
 const FILE_MSG = `첨부 두 개 보내 드려요.\n\n[file] ${XLSX}\n[file] ${PDF}`;
 const SHORT_XLSX = "~/…/2026-10-26/mvoqiv…장여비_신청.xlsx";
 const SHORT_PDF = "~/…/2026-10-26/1분기_정산_보고서.pdf";
-const ASK = "[ask] 확인\n결정: 어떻게 할까요?\n**1) 그대로 보내기** ← 추천\n바로 보내요\n**2) 고치기**\n내용을 고쳐요\n";
+const ASK = "[ask] 확인\n결정: 어떻게 할까요?\n**1) 그대로 보내기**\n바로 보내요\n**2) 고치기**\n내용을 고쳐요\n";
 const history = [
 	{ ts: "2026-10-26T01:10:00.000Z", kind: "message", source: "web", channel: "web", text: "첨부 좀 보내 줘" },
 	{ ts: "2026-10-26T01:11:00.000Z", kind: "out", source: "orchestrator", target: "web", reply_to: "e0a1b2c3", text: FILE_MSG },

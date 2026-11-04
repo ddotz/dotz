@@ -10,6 +10,7 @@ import * as livestatus from "./livestatus.ts";
 import { updateNow } from "./update-now.ts";
 import { isNote, msg } from "./i18n.ts";
 import { normalizeAsk } from "./ask-normalize.ts";
+import { stripRecommendMark } from "./choices.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
 import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages, tailEvents, workAnswer } from "./events.ts";
 import { settleWaiting, type Waiting } from "./awaiting.ts";
@@ -363,7 +364,7 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	// The assistant's send-approval card waits its turn in its conversation (a held card is posted later by the queue, marked `queued`).
 	const routed = answersOwner && !extra.update_key && !extra.queued;
 	// Every answer and dotz_send of every conversation passes here: a list of options becomes a decision card whoever wrote it (hub/ask-normalize.ts).
-	const job: OutJob = { target, text: routed ? normalizeAsk(stripHandoff(text)) : stripHandoff(text), replyTo: replyTo ?? (routed ? lateRequest(target) : undefined), extra };
+	const job: OutJob = { target, text: routed ? normalizeAsk(stripHandoff(text)) : stripRecommendMark(stripHandoff(text)), replyTo: replyTo ?? (routed ? lateRequest(target) : undefined), extra };
 	const routing: { card?: ReturnType<typeof approvals.route> } = {};
 	let landed = false;
 	replies.begin(job);

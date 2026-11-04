@@ -162,7 +162,7 @@ describe("deliver", () => {
 	});
 	test("a choice block shows its options once, in the text, and the reply is still a number", async () => {
 		captured.length = 0;
-		const text = normalizeAsk("영어 문장이 섞여 나갔어요.\n\n어떻게 할까요?\n1) 영어 문장 걸러 내기 - 컴퓨터에 적용하고 PR로 올려요 ← 추천\n2) 다른 수정 - 고칠 화면이나 증상을 알려 주시면 그것부터 할게요");
+		const text = normalizeAsk("영어 문장이 섞여 나갔어요.\n\n어떻게 할까요?\n1) 영어 문장 걸러 내기 - 컴퓨터에 적용하고 PR로 올려요\n2) 다른 수정 - 고칠 화면이나 증상을 알려 주시면 그것부터 할게요");
 		const options = parseChoices(text).options.map(o => ({ n: o.n, label: o.label }));
 		expect(options).toHaveLength(2);
 		await send("main", "main", text, { options });

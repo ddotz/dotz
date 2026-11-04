@@ -116,10 +116,8 @@
 
 .dc-row.on, .dcm-row.on { background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
 .dc-key { flex: none; display: grid; place-items: center; min-width: 18px; height: 20px; padding: 0; color: var(--fg-3); font-size: 12px; line-height: 20px; font-weight: 400; font-variant-numeric: tabular-nums; }
-.dc-row.rec .dc-key, .dcm-row.rec .dc-key { color: var(--accent); font-weight: 600; }
 .dc-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-05); }
 .dc-lb { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15); font-size: 14px; line-height: 20px; font-weight: 500; }
-.dc-tag { flex: none; padding: 0 var(--sp-15); border-radius: var(--r-pill); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 10.5px; line-height: 16px; font-weight: 600; }
 .dc-ds { color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .dc-draft { flex: none; display: flex; flex-direction: column; gap: var(--sp-1); margin: 0 0 var(--sp-1); padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: color-mix(in srgb, var(--fg) 5%, transparent); }
 .dc-dr-h { display: flex; gap: var(--sp-2); font-size: 13px; line-height: 20px; }

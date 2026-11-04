@@ -4,7 +4,7 @@
 // runs on every outgoing message, and a text without a question signal leaves at the first regex.
 // False positives are the risk, so it needs both a trailing list of 2-4 clean options and a question line right above it that offers a
 // choice. A yes / no question counts only under a "결정 필요" heading, in an [ask], or when an option carries a recommendation.
-import { D_CLOSE, DECISION_HEAD, DETAIL_DESC, DETAIL_MARK } from "./choices.ts";
+import { D_CLOSE, DECISION_HEAD, DETAIL_DESC, DETAIL_MARK, stripRecommendMark } from "./choices.ts";
 import { parseQuotedDraft } from "./draft-approval.ts";
 import { splitTone } from "./tone.ts";
 
@@ -92,17 +92,6 @@ function readOptions(lines: string[], fenced: boolean[], from: number, limit: nu
 	return options.length >= 2 && options.length <= 4 ? { options, end } : undefined;
 }
 
-// Marks the option the text before the question recommends, when no option carries the mark.
-function markRecommended(options: Option[], before: string[]): void {
-	if (options.some(o => o.rec)) return;
-	const said = before.slice(-5).flatMap(sentences).filter(s => /추천|권장|recommend/i.test(s)).join(" ");
-	if (!said) return;
-	const n = /(\d)\s*(?:번|\))[^\d]{0,12}(?:추천|권장)|(?:추천|권장)[^\d]{0,6}(\d)\s*번/.exec(said);
-	const byLabel = options.filter(o => flat(said).includes(flat(o.label))).sort((a, b) => b.label.length - a.label.length)[0];
-	const pick = n ? options[Number(n[1] ?? n[2]) - 1] : byLabel;
-	if (pick) pick.rec = true;
-}
-
 function findBlock(lines: string[], fenced: boolean[], limit: number, marked: boolean): Found | undefined {
 	for (let q = limit - 1; q >= 0 && q >= limit - LOOK_BACK; q--) {
 		const line = lines[q]!;
@@ -122,8 +111,6 @@ function findBlock(lines: string[], fenced: boolean[], limit: number, marked: bo
 		if (RHETORICAL.test(question) || asksPast(question)) return undefined;
 		const offered = HOW.test(question) ? HOW_PROCEED.test(question) : OFFERS.test(question);
 		if (!offered && !marked && !head && !underHead && !got.options.some(o => o.rec)) return undefined;
-		const before = [...lines.slice(0, q), ...(at > 0 ? parts.slice(0, at) : [])];
-		markRecommended(got.options, before);
 		return { from: bareHead ? prior : q, end: got.end, lead: at > 0 ? parts.slice(0, at).join(" ") : "", question, options: got.options };
 	}
 	return undefined;
@@ -132,12 +119,14 @@ function findBlock(lines: string[], fenced: boolean[], limit: number, marked: bo
 function blockLines(f: Found): string[] {
 	const ko = /[가-힣]/.test(f.question + f.options.map(o => o.label).join(""));
 	const question = f.question.replace(/\*\*/g, "").trim() || (ko ? "어떻게 할까요?" : "How should I proceed?");
-	const options = f.options.flatMap((o, i) => [`**${i + 1}) ${o.label}${o.detail ? " …" : ""}**${o.rec ? (ko ? " ← 추천" : " ← recommended") : ""}`, ...(o.desc ? [o.desc] : [])]);
+	const options = f.options.flatMap((o, i) => [`**${i + 1}) ${o.label}${o.detail ? " …" : ""}**`, ...(o.desc ? [o.desc] : [])]);
 	return [...(f.lead ? [f.lead, ""] : []), `${ko ? "결정" : "Decision"}: ${question}`, ...options];
 }
 
-/** The text with its trailing option list as the contract's choice block and a status marker the surfaces read; unchanged when it asks nothing. Idempotent. */
-export function normalizeAsk(text: string): string {
+/** The text with its trailing option list as the contract's choice block and a status marker the surfaces read; unchanged when it asks nothing but for an old recommendation mark. Idempotent. */
+export const normalizeAsk = (text: string): string => stripRecommendMark(toChoiceBlock(text));
+
+function toChoiceBlock(text: string): string {
 	if (!SIGNAL.test(text) || /\[(?:done|완료)\]/i.test(text)) return text;
 	const { tone, rest: bare } = splitTone(text);
 	if (tone === "done") return text;
