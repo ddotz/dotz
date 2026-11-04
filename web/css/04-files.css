@@ -70,7 +70,7 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .bm .more pre { margin: 0; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--card); color: var(--fg-2); font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; }
 .gban { flex: none; display: flex; align-items: center; gap: 10px; width: calc(100% - 48px); max-width: 872px; margin: 0 auto 4px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; }
 
-.oerr { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; width: calc(100% - 48px); max-width: 872px; margin: 0 auto 6px; padding: 10px 10px 10px 14px; border-radius: 12px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; box-shadow: inset 0 0 0 1px var(--warn, #d9822b); }
+.oerr { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; width: calc(100% - 48px); max-width: 872px; margin: 0 auto 6px; padding: 10px 10px 10px 14px; border-radius: 12px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; box-shadow: inset 0 0 0 1px var(--warn); }
 .oerr[hidden] { display: none; }
 .oerr .tx { flex: 1 1 220px; min-width: 0; }
 .oerr .tx b { color: var(--fg); font-weight: 600; }
@@ -132,8 +132,8 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .au .fld label { color: var(--fg-2); font-size: 12px; }
 .au .ctl { display: flex; gap: 6px; align-items: center; }
 .au .eye { flex: none; height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--fs-fill); color: var(--fg-2); font: 13px var(--font); }
-.au input.bad { border-color: var(--danger, #d93025); }
-.au .ferr { color: var(--danger, #d93025); font-size: 12px; min-height: 0; }
+.au input.bad { border-color: var(--err); }
+.au .ferr { color: var(--err); font-size: 12px; min-height: 0; }
 .au .rem { display: flex; gap: 8px; align-items: center; color: var(--fg-2); font-size: 13px; }
 .au .note { color: var(--fg-3); font-size: 12px; }
 .sn .ml-from { font-weight: 600; color: var(--fg); }

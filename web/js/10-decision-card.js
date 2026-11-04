@@ -407,7 +407,7 @@ function renderSheet(box, dc, picks, step) {
     !d.toLabel || d.toLabel !== "받는이" ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: d.toLabel }), el("span", { class: "dc-dr-v", text: d.to || "-" })) : null,
     d.subject ? el("div", { class: "dc-dh" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: d.subject })) : null,
     // hub/draft-approval.ts recipientCheck: a likely typo or an address the source does not have; the address itself is never changed.
-    d.recipientWarning ? el("div", { class: "dr-warn dc-rw", role: "alert" }, el("span", { text: `⚠️ 받는이 확인: ${d.recipientWarning}` })) : null]
+    d.recipientWarning ? el("div", { class: "dr-warn dc-rw", role: "alert" }, el("span", { text: `받는이 확인: ${d.recipientWarning}` })) : null]
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
   const both = !!d && !!d.mail && d.toLabel === "대상";   // a comment reply + mail: the original sits inline at the top (no room for the side panel beside the mail part)
