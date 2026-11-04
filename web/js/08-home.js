@@ -370,6 +370,7 @@ function renderHomeNow() {
   // that card under its list, as the prototype's 답변 필요 rows do; each row still opens its own item.
   const running = el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow),
     ...(working || bg.length || deferred.length ? [] : [hcNone("진행 중인 작업이 없어요")]));
+  running.classList.toggle("hn-cap", running.childElementCount > 6);
   const owedBlock = owed.length || drafts ? [
     el("div", { class: "hn-h hsub" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null),
     el("div", { class: "hn", "data-k": "replies" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : [];
@@ -388,6 +389,8 @@ function renderHomeNow() {
   // The grid after it, two cards to a row (07-board.js): 알림 · 지금 진행 중 · 대기 중 · 최근 끝난 작업 · 모니터링 · 작업내역 ·
   // 사용량 · 컨텍스트 · 공급자 · the owner's cards, each half the row and as tall as its content.
   if (!homeBoard || (openMenu && box.contains(openMenu.anchor))) return;   // a ⋯ menu is open: repaint after it closes
+  // 지금 진행 중 scrolls inside its card past six rows and is rebuilt on a refresh: its place and the focused row carry over to the new list.
+  const oldRun = box.querySelector('[data-k="running"]'), runTop = oldRun ? oldRun.scrollTop : 0, runFocus = oldRun ? [...oldRun.querySelectorAll("button")].indexOf(document.activeElement) : -1;
   const items = [], seen = new Set();
   const add = (id, node) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def: { w: 6, h: 1 }, ...HOME_FIT }); } };
   add("notices:alert", homeAlertCard());
@@ -441,6 +444,10 @@ function renderHomeNow() {
   for (const it of window.dotzCustom ? dotzCustom.items() : []) if (!seen.has(it.id)) { seen.add(it.id); items.push({ ...it, def: { ...it.def, w: 6 }, head: it.head || ".ch" }); }
   // cards of data that has not arrived yet keep their saved place
   homeBoard.set(items, id => id.startsWith("custom:") ? !window.dotzCustom || dotzCustom.keep(id) : id.startsWith("ctx:") ? !C : id.startsWith("limit:") ? !HQ || !!HQ.error : id.startsWith("prov:") ? !P : false);
+  if (running.isConnected) {
+    running.scrollTop = runTop;
+    if (runFocus >= 0) { const b = running.querySelectorAll("button")[runFocus]; if (b) b.focus({ preventScroll: true }); }
+  }
 }
 
 // The home screen always opens at its top: on load, on the tab, and when the installed app comes back to the front (23-installable-app-web.js, 99-boot.js).

@@ -69,3 +69,18 @@ test("a background task has one colour on every list", async () => {
 	expect(await t(work("failed", { handled: true }))).toBe("");
 	expect(await t(work("failed", { cancelled: true }))).toBe("");
 });
+
+test("지금 진행 중 stops at six rows, scrolls inside its card and keeps its place across a refresh", async () => {
+	const rows = (n: number) => ({ work: Array.from({ length: n }, (_, i) => work("running", { id: `w${i}`, started_at: 1 })) });
+	const box = async () => JSON.parse(await view.evaluate(`(l => JSON.stringify({ n: l.children.length, client: l.clientHeight, scroll: l.scrollHeight, row: l.lastElementChild.offsetHeight, y: getComputedStyle(l).overflowY, bar: getComputedStyle(l).scrollbarWidth, over: getComputedStyle(l).overscrollBehaviorY }))(document.querySelector('#v-home [data-k="running"]'))`) as string) as { n: number; client: number; scroll: number; row: number; y: string; bar: string; over: string };
+	await greet(rows(6));
+	const six = await box();
+	expect([six.y, six.scroll]).toEqual(["hidden", six.client]);
+	await greet(rows(8));
+	const eight = await box();
+	expect(eight.client).toBe(six.client);
+	expect(eight.scroll).toBe(six.client + 2 * eight.row);
+	expect([eight.y, eight.bar, eight.over]).toEqual(["auto", "none", "contain"]);
+	await view.evaluate(`(() => { const l = document.querySelector('#v-home [data-k="running"]'); l.scrollTop = 40; l.querySelectorAll("button")[7].focus({ preventScroll: true }); l.scrollTop = 40; S.work = S.work.map(w => ({ ...w, model: "다른 모델" })); renderHomeNow(); })()`);
+	expect(await view.evaluate(`(l => [l.scrollTop, [...l.querySelectorAll("button")].indexOf(document.activeElement), l.textContent.includes("다른 모델")].join("|"))(document.querySelector('#v-home [data-k="running"]'))`)).toBe("40|7|true");
+});
