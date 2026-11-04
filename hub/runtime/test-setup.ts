@@ -4,9 +4,12 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { installGitHooks } from "../git-hooks.ts";
 import { setMachineProbe } from "../limits.ts";
 import { liveDataDir } from "../live-guard.ts";
 import { installClock } from "./test-clock.ts";
+
+installGitHooks(join(import.meta.dir, "..", "..")); // the push gate reaches a developer clone here (hub/git-hooks.ts)
 
 // Tuning knobs and lane/hub markers of whatever shell runs the tests must not leak into the code under test.
 for (const k of Object.keys(process.env)) if (k.startsWith("DOTZ_") && k !== "DOTZ_TEST_DIR") delete process.env[k];
