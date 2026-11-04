@@ -335,7 +335,7 @@ export async function setFallback(target: string, chain: unknown[]) {
 	return { ok: true, target, chain: clean.map(entryView), applied, note: FALLBACK_NOTE };
 }
 
-const COMMANDS = ["help", "status", "context", "compact", "lanes", "model", "effort", "restart", "stop", "resume", "abort", "providers", "login", "logout", "quota", "account"];
+export const COMMANDS = ["help", "status", "context", "compact", "lanes", "model", "effort", "restart", "stop", "resume", "abort", "providers", "login", "logout", "quota", "account"];
 
 // "/name args" or "!name args" with a known command name; anything else is not a command.
 export function parseCommand(text: string): { name: string; args: string[]; rest: string } | undefined {

@@ -18,6 +18,10 @@ function palResult(c, run) {
     c.note ? el("div", { class: "cc-note", text: c.note }) : null,
     acts.length ? el("div", { class: "btns cc-act" }, ...acts.map(a => el("button", { type: "button", class: "btn tonal sm", title: a.send, text: a.label, onclick: () => run(a.send) }))) : null);
 }
+// Words a 도구 row is also found by: the names a screen used to have and the commands it replaced in this list.
+const PAL_WORDS = { accounts: "공급자 provider 로그인", usage: "한도 quota" };
+// A command row: one that cannot run without its first argument opens that argument's choices instead of failing.
+const palCmd = x => ({ kind: "cmd", ic: "chev", label: x.c, desc: x.d, run: x.c, fill: !!(x.args && x.args[0] && !x.args[0].opt) });
 function openPalette() {
   if (document.querySelector("dialog.pal")) return;
   closeMenu(false);
@@ -31,6 +35,10 @@ function openPalette() {
     [...list.querySelectorAll(".pal-i")].forEach((n, i) => { n.classList.toggle("on", i === idx); n.setAttribute("aria-selected", i === idx ? "true" : "false"); if (i === idx) n.scrollIntoView({ block: "nearest" }); });
   };
   const runCmd = async text => {
+    // /terminal and /screen live in this page, not in the gateway: the same way the composer opens them.
+    const sh = SH_CMD.exec(text);
+    if (sh) { d.close(); openShell(sh[1] && sh[1].trim() ? { command: sh[1].trim() } : undefined); return; }
+    if (SCR_CMD.test(text) && S && S.desk) { d.close(); openScreen(); return; }
     list.hidden = true; out.hidden = false;
     clear(out).append(el("div", { class: "pal-res", role: "status" }, el("div", { class: "pal-rh" }, el("span", { class: "dot pri" }), el("span", { class: "pal-rt", text: "실행 중" }))));
     try {
@@ -39,27 +47,40 @@ function openPalette() {
       if (/^\/(model|effort|compact|restart|resume|stop|abort)\b/i.test(text)) { refreshState(); loadModels(true); loadContext(true); }
     } catch (e) { clear(out).append(palResult(e.data && e.data.card ? e.data.card : { title: "실패", tone: "err", facts: [], note: e.message }, runCmd)); }
   };
-  const exec = it => { if (it.kind === "nav") { d.close(); go(it.go); } else if (it.kind === "act") { d.close(); it.act(); } else runCmd(it.run); };
+  const exec = it => { if (it.kind === "nav") { d.close(); go(it.go); } else if (it.kind === "act") { d.close(); it.act(); } else if (it.fill) { inp.value = `${it.run} `; build(); inp.focus(); } else runCmd(it.run); };
+  // The choices of the argument being typed, each a row with the whole command; /logout's come from the providers, which no screen may have asked for yet.
+  const argRows = p => {
+    const args = p.cmd.args || [], a = args[p.i], next = args[p.i + 1], q = p.q.toLowerCase();
+    if (!a || a.free) return;
+    if (a.opts === slProviders && !P) loadProviderData().then(() => { if (d.open) build(); }, () => {});
+    const base = `${p.cmd.c} ${p.done.length ? `${p.done.join(" ")} ` : ""}`;
+    for (const [val, lab] of a.opts()) if (!q || val.toLowerCase().includes(q) || (lab || "").toLowerCase().includes(q)) items.push({ kind: "cmd", ic: "chev", label: `${base}${val}`, desc: lab, run: `${base}${val}`, fill: !!(next && !next.opt) });
+  };
   const build = () => {
     const raw = inp.value.trim(), v = raw.toLowerCase();
     items = [];
+    let pick = 0;
     if (v.startsWith("/")) {
-      if (/\s/.test(v)) items.push({ kind: "cmd", ic: "send", label: raw, run: raw });
-      else for (const [c, desc] of hintList) if (c.startsWith(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
+      const p = slParse(inp.value.trimStart()), args = p && p.stage === "arg" ? p.cmd.args || [] : [], spaced = /\s/.test(v);
+      if (spaced || (args[0] && args[0].opt)) items.push({ kind: "cmd", ic: "send", label: raw, run: raw });
+      // Choosing an argument can act at once (/restart, /stop), so a command that still needs one preselects nothing: one more Enter never runs the first choice.
+      else if (args.length) pick = -1;
+      if (args.length) argRows(p);
+      else if (!spaced) for (const x of hintList) if (x.c.startsWith(v)) items.push(palCmd(x));
     } else {
-      for (const [c, desc] of hintList) if (!v || c.includes(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
-      for (const id of views) if (id !== "activity" && id !== "project" && id !== "cardform" && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
+      for (const x of hintList) if (!x.dup && (!v || x.c.includes(v))) items.push(palCmd(x));
+      for (const id of views) if (id !== "activity" && id !== "project" && id !== "cardform" && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v) || (PAL_WORDS[id] || "").includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
       // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
       const ended = endedLanes();
-      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `종료된 세션 ${ended.length}`, act: () => { endedOpen = true; go("chat", "list"); } });
-      else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || "종료된 세션".startsWith(v))) items.push({ kind: "act", ic: "lanes", label: `종료된 세션 · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
-      if (!v || "셸 터미널 명령줄 shell terminal".includes(v)) items.push({ kind: "act", ic: "shell", label: "셸 터미널 열기", act: () => openShell() });
+      if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `끝난 세션 ${ended.length}`, act: () => { endedOpen = true; go("chat", "list"); } });
+      else for (const l of ended) if (v && (l.name.toLowerCase().includes(v) || "끝난 세션 종료된 세션".includes(v))) items.push({ kind: "act", ic: "lanes", label: `끝난 세션 · ${l.name}`, act: () => openTarget(`lane:${l.name}`, lastChatView()) });
+      if (!v || "셸 터미널 명령줄 shell terminal".includes(v)) items.push({ kind: "act", ic: "shell", label: "터미널 열기", act: () => openShell() });
       if (S && S.desk && (!v || "화면 공유 원격 데스크톱 screen desktop remote".includes(v))) items.push({ kind: "act", ic: "desktop", label: "화면 공유 열기", act: () => openScreen() });
       if (!v || "화면 모드 전환 라이트 다크 theme dark light".includes(v)) items.push({ kind: "act", ic: themeIc(), label: `${themeNext()} 모드로 전환`, act: toggleTheme });
     }
     const rank = { nav: 0, act: 1, cmd: 2 };   // 도구 first, 명령 last; the arrow keys walk the list in this order
     items.sort((a, b) => rank[a.kind] - rank[b.kind]);
-    idx = 0;
+    idx = pick;
     clear(list);
     let last = "";
     items.forEach((it, i) => {
@@ -75,13 +96,11 @@ function openPalette() {
   inp.addEventListener("keydown", ev => {
     if (ev.isComposing || ev.keyCode === 229) return;
     if (ev.key === "ArrowDown") { ev.preventDefault(); if (items.length) { idx = (idx + 1) % items.length; mark(); } }
-    else if (ev.key === "ArrowUp") { ev.preventDefault(); if (items.length) { idx = (idx - 1 + items.length) % items.length; mark(); } }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); if (items.length) { idx = (Math.max(idx, 0) - 1 + items.length) % items.length; mark(); } }
     else if (ev.key === "Tab") { const it = items[idx]; if (it && it.kind === "cmd") { ev.preventDefault(); inp.value = `${it.run} `; build(); } }
     else if (ev.key === "Enter") {
       ev.preventDefault();
-      const raw = inp.value.trim();
-      if (raw.startsWith("/") && /\s/.test(raw)) runCmd(raw);
-      else if (items[idx]) exec(items[idx]);
+      if (items[idx]) exec(items[idx]);
     }
   });
   d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
@@ -117,7 +136,7 @@ function go(name, tgt) {
   // A mail (or any "monitoring/c:<target>") opens inside 모니터링: the chat view is drawn, the tab, the list and the address stay 모니터링's.
   const inChat = name === "chat" || name === "activity";
   let mc = false;
-  if (name === "monitoring" && tgt && tgt.startsWith("c:")) { name = "chat"; tgt = tgt.slice(2); mc = true; }
+  if (name === "monitoring" && tgt && tgt.startsWith("c:")) { if (validTarget(tgt.slice(2))) { name = "chat"; tgt = tgt.slice(2); mc = true; } else tgt = undefined; }
   else if (inChat && (tgt ? tgt !== "list" && monOwned(tgt) : monOwned(target))) { name = "chat"; mc = true; }
   else if (inChat && !tgt && monCtx && target === monCtx) mc = true;
   monCtx = mc ? tgt || target : "";
@@ -172,6 +191,9 @@ function go(name, tgt) {
   if (name === "devices" || name === "settings") loadDevices();
   if (name === "webaccess" || name === "settings") loadWebAccess();
   if (name === "webaccess") loadOnboarding("web-access");
+  // No screen is empty on its first frame: one whose loader has not drawn yet (사용량, 컨텍스트, 구성 ...) says so, and the loader replaces this line.
+  const body = $(`#v-${name} > #${name}`);
+  if (body && !body.firstChild) body.append(emptyNode("불러오는 중…"));
   // A different view rises in; the same view drawn again, and the first paint, do not move. Moving inside 모니터링 (a list to its item) is one screen,
   // and a mail opening is plain content: neither replays the rise (owner 2026-11-04).
   motionView(mc ? "monitoring" : tv ? "chat" : name, tv && isMailT(target) ? [] : [...$("#views").children].filter(v => !v.hidden), !tv);

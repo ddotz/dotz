@@ -4,7 +4,9 @@
 (async () => {
   // The owner's custom layer (web/custom.js) comes in after the page has loaded and never holds it: a <script> tag for it kept the document
   // loading while the gateway did not answer, and the load event (the service worker's registration waits on it) never came. It catches up on the open view.
-  const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "/custom.js" }));
+  // #cardform is drawn only by that layer: without it (a failed load, the demo's empty file) the address goes home instead of staying empty.
+  const noCustom = () => { if (!window.dotzCustom && current === "cardform") go("home"); };
+  const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "/custom.js", onload: noCustom, onerror: noCustom }));
   if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
   await snapHomeSeed();
   let h = parseHash();

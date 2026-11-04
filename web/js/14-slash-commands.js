@@ -7,29 +7,32 @@ const slModelTargets = () => [["orchestrator", botName], ["lanes", "세션 기�
 // Current models only: no Haiku, no Fable, no dated snapshots; newest versions first.
 const slModels = () => ((M && M.available) || []).filter(m => !/haiku|fable/i.test(`${m.selector} ${m.name || ""}`) && !/-\d{8}$/.test(m.selector)).sort((a, b) => b.selector.localeCompare(a.selector, "en", { numeric: true })).map(m => [m.selector, m.name || ""]);
 const slProviders = () => ((P && P.providers) || []).map(p => [p.id, p.name || ""]);
+const slAccounts = () => [["auto", "자동으로 고르기"], ...((ACC && ACC.accounts) || []).map(a => [a.name, a.label || a.alias || ""])];
+// dup: a 도구 row of the palette does the same job, so the palette shows this one only after "/" (one row per job); the composer always lists it.
 const CMDS = [
   { c: "/status", d: "봇·세션·Discord 상태와 컨텍스트" },
-  { c: "/context", d: "프로세스별 컨텍스트 사용량과 압축 상태" },
+  { c: "/context", d: "프로세스별 컨텍스트 사용량과 압축 상태", dup: true },
   { c: "/compact", d: "컨텍스트 압축 (작업 중이면 끝난 뒤)", args: [{ n: "대상", opts: slProcs }] },
-  { c: "/lanes", d: "세션마다 상태·모델·폴더" },
+  { c: "/lanes", d: "세션마다 상태와 모델" },
   { c: "/model", d: "모델 보기, 또는 대상의 모델 바꾸기", args: [{ n: "대상", opts: slModelTargets, opt: true }, { n: "모델", opts: slModels, opt: true }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]), opt: true }] },
   { c: "/effort", d: "추론 강도 바꾸기", args: [{ n: "대상", opts: slModelTargets }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]) }] },
   { c: "/restart", d: "에이전트 재시작 · 게이트웨이는 전체 재시작", args: [{ n: "대상", opts: () => [["orchestrator", botName], ["gateway", "게이트웨이 전체 (한가할 때)"], ...slLanes()] }] },
   { c: "/stop", d: "세션 멈추기 (나중에 다시 시작할 수 있어요)", args: [{ n: "세션", opts: slLanes }] },
   { c: "/resume", d: "멈춘 세션 이어가기, 실행 중이면 메시지 보내기", args: [{ n: "세션", opts: slLanes }, { n: "글", free: true, opt: true }] },
   { c: "/abort", d: "지금 하는 일 취소 (비우면 봇)", args: [{ n: "대상", opts: slProcs, opt: true }] },
-  { c: "/providers", d: "공급자별 계정·로그인·API 키" },
+  { c: "/providers", d: "연결된 공급자와 모델 수", dup: true },
+  { c: "/account", d: "지금 Claude 계정 보기, 또는 바꾸기", args: [{ n: "계정", opts: slAccounts, opt: true }] },
   { c: "/login", d: "공급자 로그인 (링크가 열려요)", args: [{ n: "공급자", opts: slProviders, opt: true }] },
   { c: "/logout", d: "공급자 로그아웃", args: [{ n: "공급자", opts: slProviders }] },
-  { c: "/quota", d: "공급자·모델별 사용 한도" },
+  { c: "/quota", d: "공급자·계정별 사용 한도", dup: true },
   // 이 컴퓨터의 셸 (owner 2026-11-03): typed here, run in the terminal sheet - the composer's own way to the shell, not a gateway command.
-  { c: "/terminal", d: "이 컴퓨터 터미널에서 명령 실행", args: [{ n: "명령", free: true }] },
+  { c: "/terminal", d: "이 컴퓨터 터미널에서 명령 실행", args: [{ n: "명령", free: true }], dup: true },
   // 화면 공유 (owner 2026-11-04): opens this computer's screen in a tab, not a gateway command; listed only while S.desk exists, and not in the palette (which has its own item).
   { c: "/screen", d: "이 컴퓨터 화면 열기", desk: true },
   { c: "/help", d: "명령 전체 설명" },
 ];
 // The command palette lists the same commands.
-const hintList = CMDS.filter(x => !x.desk).map(x => [x.c, x.d]);
+const hintList = CMDS.filter(x => !x.desk);
 let SL = { items: [], idx: -1, hide: "" };
 // @ in the same menu: what runs now (홈 지금 진행 중, from S: the assistant's background work, a conversation's session and its workers,
 // live sessions). A pick writes "@<title> " and is kept in MENTIONS; the message sends {kind, id, label} for every token still in the text

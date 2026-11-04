@@ -4,11 +4,10 @@ async function loadProviderData() {
   P = { providers: r.providers || [], addable: Array.isArray(r.addable) ? r.addable : null };
   return P;
 }
+let provFail = false;
 async function loadProviders() {
-  const box = $("#accounts");
-  if (!P) clear(box).append(emptyNode("불러오는 중…"));
-  try { await loadProviderData(); }
-  catch (e) { clear(box).append(emptyNode("공급자를 불러오지 못했어요")); return; }
+  try { await loadProviderData(); provFail = false; }
+  catch (e) { provFail = !P; }
   if (current === "accounts") renderAccounts();
 }
 // A usage window in plain Korean: the report's "Claude 5 Hour" / "Claude 7 Day Opus" read as 5시간 한도 / 7일 한도 Opus.
@@ -38,7 +37,7 @@ function provRow(p, g, own) {
 // provider is the group: a login provider has its own section with its accounts, and the rest (keys, not set up) share one list.
 function renderAccounts() {
   const box = $("#accounts");
-  if (!P) { clear(box).append(emptyNode("불러오는 중…")); return; }
+  if (!P) { clear(box).append(emptyNode(provFail ? "계정을 불러오지 못했어요" : "불러오는 중…")); return; }
   const groupOf = p => ((ACC && ACC.providers) || []).find(x => x.id === p.id);
   const own = p => p.auth === "oauth" || (p.id === "anthropic" && ACC && ACC.accounts.length > 0) || (groupOf(p) || {}).multi;
   const list = P.providers, rest = list.filter(p => !own(p));
