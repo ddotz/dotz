@@ -66,6 +66,12 @@ function dvOpen(d) {
 }
 
 /* ---------- a new device (or this one) ---------- */
+function dvQr(q) {
+  const NS = "http://www.w3.org/2000/svg", part = (name, attrs) => { const n = document.createElementNS(NS, name); for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v); return n; };
+  const box = q.size + 8, svg = part("svg", { viewBox: `-4 -4 ${box} ${box}`, class: "dv-qr", role: "img", "aria-label": "새 기기 연결 QR 코드", "data-dev-qr": "1", "shape-rendering": "crispEdges" });
+  svg.append(part("rect", { x: -4, y: -4, width: box, height: box, class: "dv-qr-bg" }), part("path", { d: q.path, class: "dv-qr-ink" }));
+  return svg;
+}
 function dvNew(self) {
   const res = el("div", { class: "dcs-res" });
   const steps = self
@@ -75,6 +81,8 @@ function dvNew(self) {
     const o = await api("/api/devices/code", "POST", {});
     const addr = input({ value: o.url, readonly: true, name: "dev-url", onfocus: ev => ev.target.select() });
     clear(res).append(
+      !self && o.qr ? dvQr(o.qr) : null,
+      !self && o.qr ? el("div", { class: "sup", text: "새 기기의 카메라로 찍으면 코드가 들어간 연결 화면이 열려요." }) : null,
       el("div", { class: "dv-code", "data-dev-code": o.code, text: o.code }),
       el("div", { class: "sup", text: `${o.minutes}분 동안 한 번만 쓸 수 있어요. 새 코드를 만들면 이 코드는 사라져요.` }),
       el("div", { class: "tf" }, el("label", { text: "연결 화면 주소", for: addr.id }), el("div", { class: "ms-copy" }, addr,
@@ -82,6 +90,7 @@ function dvNew(self) {
           : el("button", { type: "button", class: "btn tonal", onclick: () => { try { navigator.clipboard.writeText(o.url); } catch {} toast("복사했어요"); }, text: "복사" }))));
   });
   const body = el("div", { class: "col" },
+    self ? null : el("div", { class: "sup", text: "휴대폰이라면 아래에서 코드를 만들고 카메라로 QR을 찍으면 돼요. 코드를 입력할 필요가 없어요." }),
     el("ol", { class: "steps" }, ...steps.map(s => el("li", { text: s }))),
     el("div", { class: "sup", text: "코드는 10분 동안 한 번만 쓸 수 있고, 메신저와 이 화면을 합쳐 한 시간에 3번까지 만들 수 있어요." }),
     el("div", { class: "dcs-acts" }, el("button", { type: "button", class: "btn tonal", "data-dev-make": "1", onclick: ev => make(ev.currentTarget), text: "여기서 코드 만들기" })),

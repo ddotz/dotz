@@ -6,6 +6,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { join } from "node:path";
 import { log } from "./config.ts";
 import { PAIR_HTML, PAIR_JS } from "./pair-page.ts";
+import { qrPath } from "./qr.ts";
 import { cfBase } from "./weblink.ts";
 
 export const DEVICE_COOKIE = "dotz_dev";
@@ -360,7 +361,8 @@ export function createDevices(opts: DevicesOpts) {
 
 	/** For the settings screen (web/js/25-settings-devices.js); the caller has already checked authorized():
 	 * GET /api/devices (each marked `current` when it is the caller's own device), PATCH /api/devices/<id> {name}, DELETE /api/devices/<id>,
-	 * and POST /api/devices/code, a pairing code shown to the already-signed-in caller instead of sent (same slot, limit and life as /api/pair/code). */
+	 * and POST /api/devices/code, a pairing code shown to the already-signed-in caller instead of sent (same slot, limit and life as /api/pair/code), with a QR
+	 * of /pair that carries the code in the fragment, which no request, log or proxy ever sees; the phone still needs its passkey. */
 	async function apiRoute(req: Request, url: URL): Promise<Response | undefined> {
 		if (url.pathname === "/api/devices" && req.method === "GET") {
 			const cur = await currentDevice(req);
@@ -371,7 +373,7 @@ export function createDevices(opts: DevicesOpts) {
 			const limited = nextCode();
 			if (limited || !code) return limited ?? fail(500, "코드를 만들지 못했습니다");
 			log("web: a device pairing code was issued from settings");
-			return json({ code: code.value, minutes: CODE_TTL_MS / 60_000, url: `${base}/pair` });
+			return json({ code: code.value, minutes: CODE_TTL_MS / 60_000, url: `${base}/pair`, qr: qrPath(`${base}/pair#code=${code.value}`) });
 		}
 		const m = /^\/api\/devices\/([^/]+)$/.exec(url.pathname);
 		if (!m || (req.method !== "DELETE" && req.method !== "PATCH")) return undefined;

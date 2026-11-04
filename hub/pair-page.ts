@@ -70,6 +70,16 @@ export const PAIR_JS = `"use strict";
   $("name").value = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
   if (!supported) { say("이 브라우저는 패스키를 쓸 수 없습니다 (HTTPS 주소와 최신 브라우저가 필요합니다)", true); $("go").disabled = true; $("get").disabled = true; }
 
+  // Opened from the QR on the settings screen: the code comes in the fragment and leaves the address bar and the history at once.
+  const scanned = /^#code=(\\d{6})$/.exec(location.hash);
+  if (location.hash) history.replaceState(null, "", location.pathname);
+  if (scanned && supported) {
+    $("code").value = scanned[1];
+    $("enter").hidden = false;
+    $("get").hidden = true;
+    say("코드를 넣어 두었습니다. 이름을 확인하고 '이 기기 연결'을 눌러 주세요.");
+  }
+
   $("get").addEventListener("click", guard(async () => {
     await post("/api/pair/code");
     $("enter").hidden = false;
