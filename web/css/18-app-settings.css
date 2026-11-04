@@ -49,6 +49,12 @@
 .as-done.cancelled, .as-card.cancelled .as-cr { color: var(--fg-3); }
 .as-in { flex: none; width: 150px; height: 32px; }
 .as-in[type="number"] { width: 96px; text-align: right; }
+.as-seg { flex: none; flex-wrap: nowrap; height: 32px; }
+.as-seg button { flex: none; height: 28px; padding: 0 12px; white-space: nowrap; }
+.as-step { flex: none; display: inline-flex; align-items: center; gap: 2px; }
+.as-step .ib { width: 32px; height: 32px; color: var(--fg-2); font: 400 18px/1 var(--font); }
+.as-step .as-in[type="number"] { width: 40px; padding: 0; border: 0; background: transparent; text-align: center; appearance: textfield; }
+.as-step .as-in[type="number"]::-webkit-inner-spin-button, .as-step .as-in[type="number"]::-webkit-outer-spin-button { appearance: none; margin: 0; }
 select.as-in { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the settings screen (asScreen): a pushed view with a back button, the options card as its body */
 .as-screen .fs-hd { gap: 4px; padding-left: max(4px, env(safe-area-inset-left)); }

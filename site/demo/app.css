@@ -3118,16 +3118,34 @@ a.dr-att:active { background: var(--active); }
 .kk-pn:hover { text-decoration: underline; }
 .kk-pn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 /* 자동 초안: the room's one two-value switch, a thin card above the chat window */
-.kk-auto { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 16px; border-radius: var(--r-card); background: var(--card); }
+.kk-auto { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 10px 16px; border-radius: var(--r-card); background: var(--card); }
 .kk-auto[hidden] { display: none; }
-.kk-auto .cv-n { font-size: 14px; line-height: 20px; }
-.kk-auto .cv-p { font-size: 12px; line-height: 16px; color: var(--fg-3); }
+.kk-auto .cv-n { font: 600 15px/22px var(--font); }
+.kk-auto .cv-p { font-size: 12px; line-height: 16px; color: var(--fg-2); }
 .kk-av { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: hsl(var(--h) 45% 82%); color: hsl(var(--h) 45% 26%); font: 600 15px/1 var(--font); }
 .kk-av.sp { background: transparent; }
 :root[data-theme="dark"] .kk-av { background: hsl(var(--h) 22% 30%); color: hsl(var(--h) 45% 86%); }
 .kk-row .cv-m { flex-direction: column; align-items: flex-end; gap: 4px; }
 .kk-t { color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
 @media (min-width: 1100px) { :is(.kk-rooms) .kk-av { width: 32px; height: 32px; font-size: 14px; } }
+
+/* The KakaoTalk room list reads as the prototype's: the head and the note sit on the page, the rooms in one card, a grey initial, the last message under
+   the name, 미답장 and the count solid on the row's one line. Scoped by id: .kk-rooms is also the comment pane's column. */
+#kk-rooms { border-radius: 0; background: transparent; }
+#kk-rooms .kk-lh { min-height: 32px; padding: 0 4px 8px; }
+#kk-rooms .kk-pt { color: var(--fg-2); font: 600 14px/20px var(--font); }
+#kk-rooms .kk-watch, #kk-rooms .kk-own { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+#kk-rooms .kk-own { margin-bottom: 12px; }
+#kk-rooms .kk-foot-hint { padding: 8px 4px 0; border: 0; }
+#kk-add-btn { height: 32px; min-height: 32px; }
+#kk-rooms .kk-av, #kk-head .kk-av, .kk-pd.kk-add .kk-pr .kk-av { background: var(--layer); color: var(--fg-2); }
+#kk-rooms .kk-row .cv-m { flex-direction: row; align-items: center; }
+#kk-rooms .kk-row .kk-l1 .kk-t { flex: none; font-size: 11px; }
+#kk-rooms .kk-row .tag.unreplied { background: var(--unreplied); color: var(--on-unreplied); }
+#kk-rooms .kk-row .nb.warn { min-width: 18px; height: 18px; padding: 0 5px; background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
+#kk-chat { gap: 12px; }
+/* the room's bar sits on the page, not on a card like the main chat's: it is the card itself, or it vanishes into the light page */
+#kk-chat .kk-composer .sendrow:not(.ulw) { background: var(--card) !important; }
 
 /* switch */
 .kk-sw { position: relative; flex: none; width: 36px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: var(--track); transition: background var(--m-fast) var(--m-ease); }
@@ -3142,18 +3160,19 @@ a.dr-att:active { background: var(--active); }
 .kk-head:not(:empty) { display: flex; }
 @media (max-width: 1099px) { .kk-head, .kk-head:not(:empty) { display: none; } }
 .kk-owed { display: none; }
-@media (max-width: 1099px) { .kk-owed:not([hidden]) { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: var(--r-card); background: var(--card); } }
+@media (max-width: 1099px) { .kk-owed:not([hidden]) { display: flex; align-items: center; gap: 8px; padding: 0 4px; } }
 .kk-box { position: relative; flex: 1 0 auto; min-height: 260px; display: flex; border-radius: var(--r-card); background: var(--kk-bg); overflow: hidden; }
-.kk-chat > .kk-box { flex: 1 0 260px; }
+.kk-chat > .kk-box { flex: 1 0 min(400px, 52dvh); }
 /* Messages leaving the list fade out at both edges instead of being cut; the padding keeps the first and last one clear of the fade at rest. */
-.kk-tl { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 12px 12px 8px; -webkit-mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); }
+.kk-tl { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 16px; -webkit-mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); }
 /* the chat window's column is centered with a width cap: on a wide pane both sides keep the same distance to the edge, like a KakaoTalk window */
-.kk-in { display: flex; flex-direction: column; gap: 2px; width: 100%; max-width: 680px; min-width: 0; margin: 0 auto; }
+.kk-in { display: flex; flex-direction: column; gap: 4px; width: 100%; max-width: 680px; min-width: 0; margin: 0 auto; }
 .kk-in > .kk-note { margin: auto; color: var(--kk-time); }
 .kk-pill { position: absolute; left: 50%; bottom: 12px; z-index: 2; height: 32px; padding: 0 14px; transform: translateX(-50%); border-radius: var(--r-ctl); box-shadow: var(--float); }
 .kk-top { display: flex; justify-content: center; padding: 2px 0 6px; }
 .kk-more { align-self: center; color: var(--kk-time); }
-.kk-date { align-self: center; margin: 14px 0 8px; padding: 4px 12px; border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 500 12px/16px var(--font); }
+.kk-date { align-self: center; margin: 14px 0 8px; padding: 2px 12px; border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 400 12px/20px var(--font); }
+.kk-in > .kk-date:first-child { margin-top: 0; }
 .kk-new { display: flex; align-items: center; gap: 12px; margin: 12px 0 6px; color: var(--kk-time); font: 600 12px/16px var(--font); }
 .kk-new::before, .kk-new::after { content: ""; flex: 1; height: 1px; background: color-mix(in srgb, var(--kk-time) 45%, transparent); }
 .kk-gap { display: flex; align-items: center; gap: 8px; margin: 10px 0; color: var(--kk-time); }
@@ -3165,14 +3184,12 @@ a.dr-att:active { background: var(--active); }
 .kk-m.in { gap: 8px; align-items: flex-start; }
 .kk-m.me { flex-direction: column; align-items: flex-end; }
 .kk-mb { min-width: 0; max-width: calc(100% - 44px); display: flex; flex-direction: column; align-items: flex-start; }
-.kk-m.in:not(:has(> .kk-av)) .kk-mb { max-width: 92%; }
-.kk-name { margin: 0 0 4px 2px; color: var(--fg-2); font: 500 12px/16px var(--font); }
+.kk-m.in:not(:has(> .kk-av)) .kk-mb { max-width: 86%; }
+.kk-name { margin: 0 0 2px 4px; color: var(--kk-time); font: 400 12px/16px var(--font); }
 .kk-line { display: flex; align-items: flex-end; gap: 6px; max-width: 100%; min-width: 0; }
-.kk-m.me .kk-line { max-width: 92%; }
-.kk-bub { min-width: 0; padding: 8px 12px; border-radius: var(--r-ctl); background: var(--kk-in); color: var(--kk-in-fg); font: 400 14px/21px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
-.kk-m.in.first .kk-bub { border-top-left-radius: 4px; }
+.kk-m.me .kk-line { max-width: 86%; }
+.kk-bub { min-width: 0; padding: 8px 12px; border-radius: var(--r-menu); background: var(--kk-in); color: var(--kk-in-fg); font: 400 15px/22px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
 .kk-m.me .kk-bub { background: var(--kk-own); color: var(--kk-own-fg); }
-.kk-m.me.first .kk-bub { border-top-right-radius: 4px; }
 .kk-bub.ph { opacity: .75; }
 .kk-emo { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; max-width: 100%; }
 .kk-m.me .kk-emo { align-items: flex-end; }
@@ -3382,6 +3399,12 @@ a.dr-att:active { background: var(--active); }
 .as-done.cancelled, .as-card.cancelled .as-cr { color: var(--fg-3); }
 .as-in { flex: none; width: 150px; height: 32px; }
 .as-in[type="number"] { width: 96px; text-align: right; }
+.as-seg { flex: none; flex-wrap: nowrap; height: 32px; }
+.as-seg button { flex: none; height: 28px; padding: 0 12px; white-space: nowrap; }
+.as-step { flex: none; display: inline-flex; align-items: center; gap: 2px; }
+.as-step .ib { width: 32px; height: 32px; color: var(--fg-2); font: 400 18px/1 var(--font); }
+.as-step .as-in[type="number"] { width: 40px; padding: 0; border: 0; background: transparent; text-align: center; appearance: textfield; }
+.as-step .as-in[type="number"]::-webkit-inner-spin-button, .as-step .as-in[type="number"]::-webkit-outer-spin-button { appearance: none; margin: 0; }
 select.as-in { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the settings screen (asScreen): a pushed view with a back button, the options card as its body */
 .as-screen .fs-hd { gap: 4px; padding-left: max(4px, env(safe-area-inset-left)); }
