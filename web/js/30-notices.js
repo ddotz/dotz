@@ -88,8 +88,9 @@ function noticeLive(e) {
     }
     if (!ntOpenDec(e.item) || e.item.dismissed) ntHandled(e.item.id);
     // The dock's row for a card pushed up this conversation (10-decision-card.js dcPointer) follows it; an open sheet is left alone, since a
-    // repaint would drop the change it is making (its 받는이 edit) and the sheet's own update path repaints it.
-    if (ntIsDec(e.item) && e.item.decision.draft && e.item.decision.to === target && !DK.h) paintDecision();
+    // repaint would drop the change it is making (its 받는이 edit) and the sheet's own update path repaints it. Any decision of this conversation:
+    // a block of a several-draft card settles without `draft` when its draft is sent from 모니터링, and the docked card drops it here.
+    if (ntIsDec(e.item) && e.item.decision.to === target && !DK.h) paintDecision();
     if (e.item.kind === "watch") loadMonitors();
   } else if (e.kind === "notice_dismiss") {
     ntHandled(e.id);

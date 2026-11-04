@@ -118,7 +118,7 @@ setInterval(() => { if (!document.hidden) paintRunState(); }, 1000);
 async function runAskGo() {
   const box = $("#dcard");
   if (DC.cur && DC.cur.t === target && box && !box.hidden) {
-    if (DC.fold[DC.cur.key]) { DC.fold[DC.cur.key] = false; paintDecision(); }
+    if (DC.fold[DC.cur.t]) { DC.fold[DC.cur.t] = false; paintDecision(); }
     box.scrollIntoView({ block: "nearest" });
     const row = $(".dc-row:not(:disabled), .dc-note, .dc-act:not(:disabled)", box);
     (row || box).focus({ preventScroll: true });
