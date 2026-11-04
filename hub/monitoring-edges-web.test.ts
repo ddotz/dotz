@@ -7,8 +7,9 @@ const SHOTS = process.env.EDGE_SHOTS;
 const json = (v: unknown) => Response.json(v);
 const at = (min: number) => new Date(Date.now() + min * 60_000).toISOString();
 const monitors = [
-	{ name: "kakao 새 소식", kind: "watch", watch: "kakao-new", scope: "app", last_run: at(-1), next_run: at(1), last_ok: at(-1), last_result: "ok" },
-	{ name: "가격 페이지", kind: "watch", watch: "price-page", scope: "plain", last_run: at(-2), next_run: at(2), last_result: "ok" },
+	{ name: "카카오톡 새 소식", kind: "watch", watch: "kakao-new", scope: "app", last_run: at(-1), next_run: at(1), last_ok: at(-1), last_result: "ok" },
+	{ name: "가격 페이지", kind: "watch", watch: "price-page", scope: "plain", last_run: at(-2), next_run: at(2), last_ok: at(-2), last_result: "ok" },
+	{ name: "로그인 유지", kind: "watch", watch: "login-keep", scope: "plain", last_run: at(-3), next_run: at(3), last_ok: at(-60), last_result: "fail", fails: 2 },
 ];
 const notices = [{ id: "n1", kind: "watch", cls: "log", tone: "", watch: "가격 페이지", src: "alert", open: "alert", at: at(-2), title: "가격 페이지: 바뀐 곳은 없어요.", text: "가격 페이지: 바뀐 곳은 없어요.", read: true }];
 const integrations = [{ key: "kakao", app: "kakao", label: "카카오톡", kind: "app", icon: "chat", conv: [], own: ["kakao-new"], unread: 0, unreplied: 0, notices: [], needs: { drafts: 0, unread: 0, sentToday: 0 } }];
@@ -75,5 +76,15 @@ describe.each([[412, 844], [1280, 800]])("모니터링 한 열 at %ipx", (width,
 		const [title] = await edges(view, ["#mon-tl > .mon-sec"]);
 		expect(title.l).toBe(one.l);
 		expect(title.r).toBe(one.r);
+		const gaps = JSON.parse(await view.evaluate(`JSON.stringify((() => { const s = document.querySelector("#mon-tl > .mon-sec"), b = s.getBoundingClientRect(), p = s.previousElementSibling; return { below: s.nextElementSibling.getBoundingClientRect().top - b.bottom, above: p ? b.top - p.getBoundingClientRect().bottom : null }; })())`) as string);
+		expect(gaps).toEqual({ below: 8, above: headShown ? null : 24 });
+	});
+
+	test("마지막 정상: 정상인 모니터에는 없고, 실패 뒤에만 나와요", async () => {
+		const log = `document.querySelector("#mon-tl > .mon-log").innerText`;
+		await open("m:가격 페이지", `document.querySelector("#mon-tl > .mon-log")`);
+		expect(await view.evaluate(log)).not.toContain("마지막 정상");
+		await open("m:로그인 유지", `document.querySelector("#mon-tl > .mon-log")`);
+		expect(await view.evaluate(log)).toContain("마지막 정상");
 	});
 });

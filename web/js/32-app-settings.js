@@ -84,7 +84,7 @@ function asStatRow(app, m, i) {
   const line = i
     ? [i.status, i.last_run ? `마지막 확인 ${monTime(i.last_run)}` : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ")
     : [st && st.text, m ? ntMonRun(m) : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ");
-  const facts = [m && m.fails ? `연속 실패 ${m.fails}번` : "", m && m.last_ok ? `마지막 정상 ${monTime(m.last_ok)}` : "", m && m.last_output ? `마지막 결과: ${m.last_output}` : "",
+  const facts = [m && m.fails ? `연속 실패 ${m.fails}번` : "", m ? monLastOk(m) : "", m && m.last_output ? `마지막 결과: ${m.last_output}` : "",
     m && m.kind === "schedule" && m.every ? `반복 ${m.every}` : "", m && m.kind === "schedule" && m.channel ? `보낼 곳: ${targetName(m.channel)}` : ""].filter(Boolean);
   return el("div", { class: `as-row as-stat${i ? " as-int" : " as-conn"}`, "data-watch": m ? m.watch || m.name : i.id, ...(i ? { "data-internal": i.id, "data-kind": i.kind } : { "data-conn": dot === "fail" ? "disconnected" : dot === "ok" ? "connected" : "unknown" }) },
     el("span", { class: `as-dot ${dot}`, "aria-hidden": "true" }),
