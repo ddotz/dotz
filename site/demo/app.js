@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "85cc9bace65c";
+const WEB_BUILD = "706513368fa5";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -73,9 +73,10 @@ const ICONS = {
   code: "M9 8l-4 4 4 4M15 8l4 4-4 4M13.5 6l-3 12",
   braces: "M9 4C7 4 6 5 6 7v3c0 1-1 2-2 2 1 0 2 1 2 2v3c0 2 1 3 3 3M15 4c2 0 3 1 3 3v3c0 1 1 2 2 2-1 0-2 1-2 2v3c0 2-1 3-3 3",
   apps: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
+  side: "M14 6.4 10.5 12l3.5 5.6",
   pick: "M6 3l13 8-5.6 1.6L10 19zM13 13l4 6",
 };
-const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", projects: "projects", project: "projects", lanes: "lanes", monitoring: "activity", apps: "apps", harness: "harness", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context", discord: "discord", jandi: "chat", slack: "chat", telegram: "chat", messengers: "chat", provider: "key", devices: "key", webaccess: "open" };
+const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", projects: "projects", project: "projects", lanes: "lanes", monitoring: "activity", apps: "apps", notices: "bell", harness: "harness", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context", discord: "discord", jandi: "chat", slack: "chat", telegram: "chat", messengers: "chat", provider: "key", devices: "key", webaccess: "open" };
 const icon = (n, cls = "") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", `ic ${cls}`.trim()); s.setAttribute("aria-hidden", "true"); const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", ICONS[n]); s.append(p); return s; };
 
 /* ---------- formatting ---------- */
@@ -1111,8 +1112,11 @@ const navView = v => v === "activity" ? "chat" : v === "project" ? "projects" : 
 const viewFor = t => { if (!LOG_VIEW || t === "alert" || t === "worklog") return "chat"; try { return localStorage.getItem(t && t.startsWith("lane:") ? `dotz-lane-view:${t}` : CHAT_MODE_KEY) === "activity" ? "activity" : "chat"; } catch { return "chat"; } };
 const lastChatView = () => viewFor(target);
 const SUB = new Set(["models", "providers", "usage", "context", "harness", "discord", "jandi", "slack", "telegram", "messengers", "provider", "devices", "webaccess"]);
-const views = ["home", "chat", "activity", "harness", "settings", "models", "providers", "usage", "context", "discord", "jandi", "slack", "telegram", "messengers", "provider", "devices", "webaccess", "project", "projects", "monitoring", "apps"];
-const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", messengers: "메신저", provider: "공급자", devices: "연결된 기기", webaccess: "웹 접속", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱" };
+const views = ["home", "chat", "activity", "harness", "settings", "models", "providers", "usage", "context", "discord", "jandi", "slack", "telegram", "messengers", "provider", "devices", "webaccess", "project", "projects", "monitoring", "apps", "notices"];
+const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", messengers: "메신저", provider: "공급자", devices: "연결된 기기", webaccess: "웹 접속", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱", notices: "알림" };
+// 알림 화면 (31-notices-screen.js): f filter, lim rows drawn per group, open unfolded repeats, keep/scroll = come back from a row to the same place,
+// arm = the next go() was started by a row (ret: the way back is this screen), pass = ntGo lets the next go() open the alert record conversation, back = where ← goes when it was opened fresh.
+const NSC = { f: "all", lim: { news: 50, past: 50 }, open: new Set(), seen: new Set(), busy: new Set(), keep: false, scroll: 0, arm: 0, pass: 0, ret: false, back: "home", sig: "", raf: 0 };
 // The gateway's one live-lane rule (lanes.ts laneLive: not exited, process up, not a temp test project) drives every list.
 const laneAlive = l => !!l && (l.live ?? l.status !== "exited");
 const endedLanes = () => ((S && S.lanes) || []).filter(l => !laneAlive(l)).sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
@@ -1256,15 +1260,45 @@ function navShortcut(id) {
   if (id === "chat") !monCtx && (current === "chat" || current === "activity") ? go(lastChatView()) : chatTabEnter();
   else go(id);
 }
+// The wide sidebar folds to an icon rail (22-shell.css :root.side-min); the saved choice is applied before first paint in index.html.
+const SIDE_KEY = "dotz-side", SIDE_KEYS = isMac ? "⌘\\" : "Ctrl+\\";
+function sideSync() {
+  const min = document.documentElement.classList.contains("side-min"), b = $("#side-tog"), word = min ? "사이드바 펼치기" : "사이드바 접기";
+  b.setAttribute("aria-label", word); b.setAttribute("aria-expanded", String(!min)); b.title = `${word} (${SIDE_KEYS})`;
+}
+function sideToggle() {
+  const min = document.documentElement.classList.toggle("side-min");
+  try { if (min) localStorage.setItem(SIDE_KEY, "min"); else localStorage.removeItem(SIDE_KEY); } catch { /* storage blocked: the choice lasts until reload */ }
+  sideSync();
+}
 document.addEventListener("keydown", ev => {
   if (ev.isComposing || ev.altKey || ev.shiftKey || !(isMac ? ev.metaKey : ev.ctrlKey) || document.querySelector("dialog[open]:not([data-leaving])")) return;
+  if (ev.code === "Slash" || ev.key === "/") {
+    ev.preventDefault();
+    if (PR.node) prClose(false);
+    $("#bell").click();
+    return;
+  }
+  if (ev.code === "Period" || ev.key === ".") {
+    ev.preventDefault();
+    if (PR.node) prClose(false);
+    openTarget("main", "chat");
+    return;
+  }
+  if (ev.code === "Backslash" || ev.key === "\\") {
+    if (matchMedia("(min-width: 1024px)").matches) { ev.preventDefault(); sideToggle(); }
+    return;
+  }
   const n = /^Digit([1-6])$/.exec(ev.code || "")?.[1] || (/^[1-6]$/.test(ev.key) ? ev.key : ""), tab = n && navTabs()[n - 1];
   if (!tab) return;
   ev.preventDefault();
   navShortcut(tab[0]);
 });
 // 모니터링's badge (#nav-mon) counts what waits there (09-needs-you.js paintMonAttn).
-for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
+for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, "aria-label": label, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
+$("#side-tog").append(icon("side"));
+$("#side-tog").onclick = sideToggle;
+sideSync();
 // Light<->dark switch (settings row and palette; the app bar has no theme button, so the system setting rules until one is picked).
 const themeIs = () => dotzTheme.get();
 const themeIc = () => themeIs() === "dark" ? "sun" : "moon";
@@ -1274,9 +1308,9 @@ window.addEventListener("dotz-theme", () => { if (current === "settings") render
 $("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
 const setBrand = () => { $("#brand-name").textContent = botName; paintAttn(); };
 $("#send-btn").append(icon("send"));
-$("#back").append(icon("back"));
-const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : current === "provider" ? "providers" : ["discord", "jandi", "slack", "telegram"].includes(current) ? "messengers" : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat" && narrowChat()) ? "monitoring" : null;
-$("#back").onclick = () => (kkBack() || cmBack() ? 0 : monCtx && current === "chat" ? go("monitoring", MON.sel) : convOnPhone() ? openChatList() : go(backTarget() || "home"));
+$("#back").append(icon("back"), el("span", { class: "bk-l", text: titles.monitoring }));
+const backTarget = () => current === "notices" ? NSC.back : NSC.ret && current !== "home" ? "notices" : current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : current === "provider" ? "providers" : ["discord", "jandi", "slack", "telegram"].includes(current) ? "messengers" : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat") ? "monitoring" : null;
+$("#back").onclick = () => (nscBack() || kkBack() || cmBack() ? 0 : monCtx && current === "chat" ? go("monitoring", narrowChat() ? MON.sel : undefined) : convOnPhone() ? openChatList() : go(backTarget() || "home"));
 
 /* ---------- command palette: jump to a view or run a /command ---------- */
 // A command's answer (the card /api/command returns) in the app's own components: a status line, the facts as list rows,
@@ -1382,10 +1416,17 @@ function parseHash(hash = location.hash) {
   return { view: i < 0 ? h : h.slice(0, i), t };
 }
 // The 세션 tab is gone: an old #lanes address opens the chat (its list on a phone), where running sessions sit under 진행 중.
-const routeAlias = (name, tgt) => (name === "lanes" ? ["chat", "list"] : name === "providers" && tgt ? ["provider", tgt] : name === "accounts" || (name === "settings" && tgt === "accounts") ? ["provider", "anthropic"] : [name, tgt]);
+// #chat/alert is the 알림 screen now; only ntGo (a row's way to its source message) sets NSC.pass, which lets one go() open the record conversation.
+const alertAddr = (name, tgt) => (name === "chat" || name === "activity") && tgt === "alert" && !(NSC.pass > Date.now());
+const routeAlias = (name, tgt) => (alertAddr(name, tgt) ? ["notices", undefined] : name === "lanes" ? ["chat", "list"] : name === "providers" && tgt ? ["provider", tgt] : name === "accounts" || (name === "settings" && tgt === "accounts") ? ["provider", "anthropic"] : [name, tgt]);
 function go(name, tgt) {
   closeMenu(false);
   [name, tgt] = routeAlias(name, tgt);
+  NSC.pass = 0;
+  const viaRow = NSC.arm > Date.now();
+  NSC.arm = 0;
+  if (name === "notices") NSC.ret = false;
+  else { NSC.ret = viaRow; if (!viaRow) NSC.keep = false; }
   // A mail (or any "monitoring/c:<target>") opens inside 모니터링: the chat view is drawn, the tab, the list and the address stay 모니터링's.
   const inChat = name === "chat" || name === "activity";
   let mc = false;
@@ -1428,11 +1469,12 @@ function go(name, tgt) {
   convChrome();
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
   if (name === "harness") loadHarness(); else closeHSheet();
-  if (tv) enterTarget();
+  if (tv) { enterTarget(); if (!(ts(target).hLoaded && ts(target).aLoaded) && !ts(target).loading) loadTarget(target, hasCached(ts(target))); }
   if (name === "home") { renderHome(); loadHomeData(); }
   if (name === "projects" || pp) { renderProjects(); prjLoad(); }
   if (name === "monitoring" || mc) { renderMonitoring(); loadMonitors(); if (!noticesFresh()) loadNotices(); loadIntegrations(); }
   if (name === "project") pmOpen(tgt);
+  if (name === "notices") nscOpen();
   if (name === "settings") { loadUpdate(); renderSettings(); loadMessengerIndex(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
   if (name === "providers") loadProviders();
@@ -2090,7 +2132,7 @@ function homeMenu(anchor, id, inChat) {
     return showMenu(anchor, acts, { onPick: i => acts[i].run() });
   }
   if (id.startsWith("notices:")) {
-    const [label, to] = { alert: ["알림", () => openTarget("alert", "chat")], worklog: ["작업내역", () => openTarget("worklog", "chat")], watch: ["모니터링", () => go("monitoring")] }[id.slice(8)];
+    const [label, to] = { alert: ["알림", nscGo], worklog: ["작업내역", () => openTarget("worklog", "chat")], watch: ["모니터링", () => go("monitoring")] }[id.slice(8)];
     add(`${label} 열기`, to);
     homeMoveActs(id, inChat, add);
     return showMenu(anchor, acts, { onPick: i => acts[i].run() });
@@ -2201,14 +2243,14 @@ const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: �
 // Only what is news: a question that waits is a row of 답변 필요 above, so it is not counted or listed here a second time; a gateway question it
 // handles itself is not asked there (09-needs-you.js nyHandled), so it is news here.
 const hcFyi = n => !n.read && ntHomeAlert(n) && (!ntNeeds(n) || nyHandled(n));
-const hcUnread = () => NT.items.filter(hcFyi).length;
+const hcUnread = () => nscUnreadIn("all");
 // One head for every home card: [status dot] title, an optional count, an optional grey note. An empty card keeps the head and says why under it (hcNone); what is absent leaves no slot (docs/ui-principles.md 13).
 const hcHead = (title, o = {}) => el("div", { class: "ch" }, o.dot ? el("span", { class: `dot ${o.dot}` }) : null, el("h3", { text: title }),
   o.n ? el("span", { class: "hc-n" }, ...[].concat(o.n)) : null, o.note ? el("span", { class: "hc-n", text: o.note }) : null, o.menu ? menuBtn(o.menu) : null);
 const hcNone = text => el("div", { class: "hc-none", text });
 function homeAlertCard() {
   const unread = hcUnread(), fresh = hcRecent(hcFyi), state = hcState(), none = !!state || !fresh.length;
-  return hcCard(() => openTarget("alert", "chat"), hcHead("알림", { menu: "notices:alert", n: !state && unread ? String(unread) : null }),
+  return hcCard(nscGo, hcHead("알림", { menu: "notices:alert", n: !state && unread ? String(unread) : null }),
     none ? hcNone(state || "새 알림이 없어요") : hcNotices(fresh));
 }
 function homeWorklogCard() {
@@ -2559,7 +2601,7 @@ const targetName = t => {
 const liveTargets = () => S ? [MAIN, ...projTargets(), ...S.lanes.filter(laneAlive).map(l => `lane:${l.name}`)] : [MAIN];
 const modeOf = () => current === "activity" ? "term" : "chat";
 let target = MAIN;
-try { const v = localStorage.getItem(TARGET_KEY); if (v && validTarget(v)) target = v; } catch {}
+try { const v = localStorage.getItem(TARGET_KEY); if (v && v !== "alert" && validTarget(v)) target = v; } catch {}
 // A settings conversation (a monitor's or an app's) shows the orchestrator busy only for a turn its own message started: TURN = target -> when that message
 // was sent, until the answer comes. A peer's monitor is answered on that computer, so this one's status never applies to it.
 const TURN = new Map();
@@ -2643,7 +2685,7 @@ const attnLabel = k => ({ ask: "답변 필요", limit: "한도 걸림" })[k] || 
 // 세션; its question, rate limit and finished turn keep their own marks (home, 세션, toasts) and never hold this badge.
 const chatUnreadCount = (targets, unreadOf) => targets.filter(t => unreadOf(t) > 0).length;
 function paintAttn() {
-  const n = S ? chatUnreadCount([MAIN, "alert", "worklog", ...projTargets()], t => ts(t).unread) : 0, b = $("#nav-att");
+  const n = S ? chatUnreadCount([MAIN, "worklog", ...projTargets()], t => ts(t).unread) : 0, b = $("#nav-att");
   const say = n ? `읽지 않은 대화 ${n}개` : "", rise = n && b.hidden && b.dataset.seen;
   b.hidden = !n; b.title = say;
   if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";   // the digit that changed rolls; a hidden badge forgets, so it appears whole
@@ -2674,7 +2716,7 @@ let monAttnT = 0;
 const monAttnSoon = () => { if (!monAttnT) monAttnT = setTimeout(() => { monAttnT = 0; paintMonAttn(); }, 0); };
 // 모니터링 has news when nothing waits but something new came in there: an unread watch report, or an app with unread items (its row's badge).
 // The tab then carries the small dot, like the other tabs; reading them there clears it.
-const monNews = () => NT.items.some(n => n.kind === "watch" && !n.read && !n.dismissed) || INTG.items.some(it => ((it.needs || {}).unread | 0) > 0);
+const monNews = () => NT.items.some(n => n.kind === "watch" && n.cls !== "log" && !n.read && !n.dismissed) || INTG.items.some(it => ((it.needs || {}).unread | 0) > 0);
 function paintMonAttn() {
   const b = $("#nav-mon");
   if (!b) return;
@@ -2841,10 +2883,10 @@ function paintStrip() {
   b.style.setProperty("--p", pct);
   b.title = `사용량 · ${word} ${pct}% 남음`; b.setAttribute("aria-label", b.title);
   clear(b).append(el("span", { class: "ulab", text: `${word} ${pct}% 남음` }), el("span", { class: "ubar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "uring" }), el("span", { class: "upct", text: `${word} ${pct}%` }));
-  // the sidebar's lower area says the same in a row (22-shell.css): the tightest limit, its bar, and the share left
+  // the sidebar's lower area says the same in a row (22-shell.css): the tightest limit, its bar, and the share left; the folded rail shows only the ring
   if (side) {
     side.classList.toggle("warn", pct <= 40);
-    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: "사용량" }), el("span", { class: "sf-bar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "sf-v", text: `${word} ${pct}%` }));
+    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: "사용량" }), el("span", { class: "sf-bar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "sf-v", text: `${word} ${pct}%` }), el("span", { class: "sf-ring", style: `--p:${pct}`, text: String(pct) }));
     side.title = `사용량 · ${word} ${pct}% 남음`; side.setAttribute("aria-label", side.title);
   }
 }
@@ -2853,7 +2895,7 @@ function paintBell() {
   const n0 = $("#bell-n");
   if (!n0) return;
   let n = 0;
-  try { n = NT.unread | 0; } catch { /* 30-notices.js has not run yet */ }
+  try { n = NT.loaded ? nscUnreadIn("all") : NT.unread | 0; } catch { /* 30-notices.js has not run yet */ }
   const direct = !n || n0.hidden || !n0.dataset.seen, txt = n > 99 ? "99+" : String(n);
   n0.hidden = !n;
   if (direct) n0.textContent = txt; else rollCount(n0, txt);
@@ -3614,8 +3656,8 @@ function orgFill(pane, d, t, retry) {
   if (pc) PQ.of.set(`mail:${m.key}`, { pc, key: m.key });   // its body and files are read from the computer that owns the mail
   const files = mailRealFiles(m.attachments);   // the body's own pictures are drawn in it, not listed as files
   // 보낸 사람 / 받는 사람 / 참조 come from the mail view's own header (30-mail-thread.js), so every place a mail is read names them the same way
-  pane.append(...[mailHeadNode(m), orgRow("날짜", kstStamp(m.date)), orgRow("제목", m.subject),
-    el("div", { class: "od-body" }, mailBodyNode(m.key, m.html, m.text)),
+  pane.append(...[mailHeadNode({ ...m, ...mailPeople(m, m.text, m.subject) }), orgRow("날짜", kstStamp(m.date)), orgRow("제목", m.subject),
+    el("div", { class: "od-body" }, mailBodyNode(m.key, m.html, m.text, m.subject)),
     files.length ? el("div", { class: "od-files" }, ...files.map(({ f, i }) => el("a", { class: "dr-att", href: mailFileUrl(m.key, i), target: "_blank", rel: "noopener", title: `${f.name} 열기` },
       icon("clip"), el("span", { class: "dr-fn", text: f.name }), f.size ? el("span", { class: "dr-fs", text: mailSize(f.size) }) : null))) : null].filter(Boolean));
 }
@@ -3936,8 +3978,8 @@ function mailHtmlNode(key) {
 // True when a mail's "summary" is only text of its own body (the same words once white space is squeezed): the open mail then shows the body alone.
 const mailSumNorm = s => String(s ?? "").replace(/\s+/g, " ").trim();
 const mailSumIsBody = (sum, ...bodies) => { const s = mailSumNorm(sum); return !!s && bodies.some(x => mailSumNorm(x).includes(s)); };
-// The original of one mail: the HTML frame when the hub kept an HTML body, else the text.
-const mailBodyNode = (key, html, raw) => html ? mailHtmlNode(key) : mailTextNode(raw);
+// The original of one mail: the HTML frame when the hub kept an HTML body, else the text, without a repeat of the mail's header at its top (mailHeadBlock).
+const mailBodyNode = (key, html, raw, subject) => html ? mailHtmlNode(key) : mailTextNode(mailOwnBody(raw, subject));
 
 /* ---------- a mail's original as text (no HTML kept): read top-down, laid out ---------- */
 // Plain-text mail is parsed once per message into blocks (mtParse, no DOM, cached by its text) and drawn from them when the original opens:
@@ -4139,6 +4181,32 @@ function mtNode(blocks) {
   }
   return box;
 }
+// A secure mail's decrypted page opens with the mail's own header as text (company-mail-lib.ts decryptSecureMail): the subject, the date, then
+// `보낸사람(Sender) : … 받는사람(Recipient) : …`, a blank line, the mail. Its recipient is the original one, not the copy's. The view already shows that header, so
+// { body, to, cc } splits it off, only for all of it at the very top: the mail's subject, a line that is only a date, and a sender and a recipient label
+// on lines of nothing but labels, then a blank line or the end. Anything else is null. Stored mails stay as they are; a first-line compare ends most calls.
+const MH_LINES = 6;
+const MH_DATE = /^\d{4}[-./]\d{1,2}[-./]\d{1,2}\.?(?: ?\([^)]{1,9}\))? (?:오전 |오후 )?\d{1,2}:\d{2}(?::\d{2})?(?: ?(?:AM|PM|KST|GMT|UTC|[+-]\d{2}:?\d{2}))*$/i;
+const mhLabel = (ko, en) => `(?:${ko}\\s*\\(\\s*${en}\\s*\\)|${en}\\s*\\(\\s*${ko}\\s*\\)|${ko}|${en})`;
+const MH_FROM = mhLabel("보낸\\s*(?:사람|이)", "(?:sender|from)"), MH_TO = mhLabel("받는\\s*(?:사람|이)", "(?:recipients?|to)"), MH_CC = mhLabel("참조", "cc");
+const MH_LINE = new RegExp(`^(?:${MH_FROM}|${MH_TO}|${MH_CC})\\s*[:：]`, "i");
+const MH_PEOPLE = new RegExp(`^${MH_FROM}\\s*[:：]\\s*(.+?)\\s+${MH_TO}\\s*[:：]\\s*(.+?)(?:\\s+${MH_CC}\\s*[:：]\\s*(.+))?$`, "i");
+const mhSqueeze = s => String(s ?? "").replace(/\s+/g, " ").trim();
+function mailHeadBlock(raw, subject) {
+  const text = String(raw ?? "").trimStart(), nl = text.indexOf("\n");
+  if (nl < 0 || !subject || mhSqueeze(text.slice(0, nl)) !== mhSqueeze(subject)) return null;
+  const lines = text.split("\n", MH_LINES).map(l => l.trim());
+  if (!MH_DATE.test(lines[1])) return null;
+  let end = 2;
+  while (end < lines.length && lines[end]) { if (!MH_LINE.test(lines[end])) return null; end++; }
+  if (end >= MH_LINES) return null;
+  const m = lines.slice(2, end).join(" ").match(MH_PEOPLE);
+  return m ? { body: text.split("\n").slice(end).join("\n").trimStart(), to: m[2], cc: m[3] || "" } : null;
+}
+// The body to show or quote: the text without that header.
+const mailOwnBody = (raw, subject) => { const b = mailHeadBlock(raw, subject); return b ? b.body : raw; };
+// The body inside a mail event's text (hub/mail.ts mailText): what follows its 원문 line, else all but the first line.
+const mailOrigOf = text => { const raw = String(text ?? ""), at = raw.indexOf("\n원문\n"); return at >= 0 ? raw.slice(at + 4) : raw.split("\n").slice(1).join("\n"); };
 function mailTextNode(raw) {
   const out = el("div", { class: "mb-txt" });
   out.append(mtNode(mtParse(raw)));
@@ -4567,7 +4635,7 @@ function msgNode(e) {
         // "summary" that is only the start of the mail's own body is drawn once, as the body.
         const rec = MAILS.get(`mail:${key}`) || {}, rest = text.split("\n").slice(1).join("\n").trim(), sp = rcSplit(rest);
         const noSum = e.dir === "out" || rec.dir === "out" || mailSumIsBody(sp.text, e.preview, rec.preview, sp.raw);
-        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: noSum ? "" : rest, ...(noSum ? { raw: sp.raw } : {}), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw) : undefined });
+        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: noSum ? "" : rest, ...(noSum ? { raw: sp.raw } : {}), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw, e.subject) : undefined });
         // Gmail-like, top to bottom: the bar of icons (30-mail-box.js mailOpenBar, 초안 작성 and the ⋯ in it), the subject, the sender and time,
         // one muted line of 받는 사람 / 참조 that opens the full header (30-mail-thread.js), the summary, then the original.
         if (card && key) {
@@ -6369,7 +6437,7 @@ function renderBars() {
   // Three groups in this order: the main assistant, 프로젝트 (project orchestrators), 레인. Dragging reorders within a group.
   const projs = byOrder(projTargets()), live = byOrder(lanes.filter(laneAlive).map(l => `lane:${l.name}`)), dead = byOrder(lanes.filter(l => !laneAlive(l)).map(l => `lane:${l.name}`));
   if (isLaneT(target) && !live.includes(target) && !dead.includes(target)) live.push(target);
-  const alive = [MAIN, "alert", "worklog", ...projs, ...live];
+  const alive = [MAIN, "worklog", ...projs, ...live];   // 알림 is the screen (#notices), not a conversation to pick
   const view = t => {
     const i = targetInfo(t);
     const k = attnKind(t);
@@ -11169,14 +11237,13 @@ loadIntegrations();
 // Each message carries `unread` (KakaoTalk's yellow number: members who have not read it yet); kakao_read -> /reads refreshes the numbers without bodies.
 // Nothing is ever sent without a click: a typed message, a draft's 보내기 or an edited draft's 보내기 is the owner's own action.
 // Message text only ever goes through el({text}) / textContent, never innerHTML.
-ICONS.eye = "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z";   // the eye of the watch toggles (01-core.js has none)
 const KK_KEY = "i:kakao";
 const kkItem = it => !!it && (it.key === KK_KEY || !!it.kk);   // a peer's Kakao item (34-peer-monitoring.js) shows this same pane, its rooms read through the proxy (KK.pc)
 // The kakao item the pane shows: this computer's, or the peer's while KK.pc names it.
 const kkItemNow = () => monItems().find(i => kkItem(i) && (KK.pc ? !!i.pc && i.pc.url === KK.pc.url : !i.pc)) || null;
 const KK_PAGE = 50;
 const KK = {
-  vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, dsig: [], droom: "", adding: null,   // adding: the 대화방 추가 dialog while it is open
+  vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, dsig: [], droom: "", adding: null,   // adding: the 지켜볼 대화방 dialog while it is open
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], gaps: new Set(), more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", revise: null, reviseCode: "", draftT: 0, tailing: false, again: false,
   typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
@@ -11525,7 +11592,7 @@ function kkPerson(uid) {
   const body = el("div", { class: "kk-pd-b" }, el("div", { class: "kk-note", role: "status", text: "불러오는 중…" }));
   const d = el("dialog", { class: "kk-pd", "data-uid": uid, "aria-label": `${name} 사용자별 분석` },
     el("div", { class: "kk-pd-in" },
-      el("div", { class: "kk-pd-h" }, kkAvatar(name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: name }), el("span", { class: "cv-p", text: "사용자별 분석" })), el("button", { class: "x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+      el("div", { class: "kk-pd-h" }, kkAvatar(name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: name }), el("span", { class: "cv-p", text: "사용자별 분석" })), el("button", { class: "ib fs-x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
       body));
   document.body.append(d); d.showModal(); dialogHist(d);
   d.addEventListener("close", () => d.remove());
@@ -11690,7 +11757,7 @@ async function kkSetRoom(r, patch) {
   const was = { watched: r.watched, autoDraft: r.autoDraft };
   Object.assign(r, patch);
   if (patch.watched === false) r.autoDraft = false;
-  kkPaintRooms(); kkPickRefresh(r);
+  kkPaintRooms();
   try {
     await api(`/api/kakao/rooms/${enc(r.chatId)}`, "PUT", patch);
     if (patch.watched !== undefined && KK.open === r.chatId) {
@@ -11702,75 +11769,64 @@ async function kkSetRoom(r, patch) {
     kkIntgSoon();
   } catch (e) {
     Object.assign(r, was);
-    kkPaintRooms(); kkPickRefresh(r);
+    kkPaintRooms();
     toast(e.message, true);
   }
 }
-const kkSearch = el("input", { class: "kk-q", id: "kk-q", type: "search", placeholder: "대화방 검색", "aria-label": "대화방 검색", autocomplete: "off", enterkeyhint: "search" });
+const kkSearch = el("input", { id: "kk-q", type: "search", placeholder: "대화방 검색", "aria-label": "대화방 검색", autocomplete: "off", enterkeyhint: "search" });
 // Typing refilters only the list: the input itself stays in place (it keeps focus and the IME composition).
 kkSearch.addEventListener("input", () => { KK.q = kkSearch.value; const pl = $("#kk-pl"); if (pl) clear(pl).append(...kkPickRows()); });
-// The watch toggle is an eye on a grey surface: colored while the room is watched, grey while it is not. Never a switch (the one switch is the room's 자동 초안 card).
-const kkEye = (on, label, key, change) => el("button", { class: `kk-eye${on ? " on" : ""}`, type: "button", "aria-pressed": on ? "true" : "false", "aria-label": label, title: label, "data-k": key, onclick: ev => { ev.stopPropagation(); change(!on); } }, icon("eye"));
-const kkLine1 = (r, name, time) => el("span", { class: "kk-l1" }, name, kkTag(r) ? el("span", { class: "kk-grp", text: kkTag(r) }) : null, time || null);
-// The 대화방 추가 list: every room, the eye adds it to the watched ones or takes it off again; the name opens the room (read-only while it is not watched).
-const kkPickRow = r => el("div", { class: `kk-pr${KK.open === r.chatId ? " on" : ""}`, "data-chat": r.chatId },
+const kkLine1 = (r, name) => el("span", { class: "kk-l1" }, name, kkTag(r) ? el("span", { class: "kk-grp", text: kkTag(r) }) : null);
+// The 지켜볼 대화방 list: every room, and a tap on the row adds it to the watched ones or takes it off again. A watched row is the list's selected row with a check; never a switch (the one switch is the room's 자동 초안 card).
+const kkPickRow = r => el("button", { class: `pl-row kk-pr${r.watched ? " on" : ""}`, type: "button", role: "checkbox", "aria-checked": r.watched ? "true" : "false", "data-chat": r.chatId, onclick: () => kkSetRoom(r, { watched: !r.watched }) },
   kkAvatar(r.name),
-  el("span", { class: "cv-b" },
-    kkLine1(r, el("button", { class: "cv-n kk-pn", type: "button", "data-k": "open", title: r.name, text: r.name, "aria-label": `${r.name} 열기`, onclick: () => { kkOpen(r.chatId); if (KK.adding) KK.adding.close(); } })),
-    kkSubLine(r) ? el("span", { class: "cv-p", text: kkSubLine(r) }) : null),
-  kkEye(!!r.watched, `${r.name} 지켜보기 ${r.watched ? "끄기" : "켜기"}`, "watch", v => kkSetRoom(r, { watched: v })));
+  el("span", { class: "cv-b" }, kkLine1(r, el("span", { class: "cv-n", title: r.name, text: r.name })), kkSubLine(r) ? el("span", { class: "cv-p", text: kkSubLine(r) }) : null),
+  r.watched ? icon("check", "kk-ck") : null);
 function kkPickRows() {
   const list = KK.rooms.filter(r => kkMatch(r.name, KK.q));
   return list.length ? list.map(kkPickRow) : [el("div", { class: "kk-note", id: "kk-nomatch", role: "status", text: "찾는 대화방이 없어요" })];
 }
-// One toggled row is replaced in place (the list and its scroll stay); a focused eye keeps its focus.
-function kkPickRefresh(r) {
-  const n = [...document.querySelectorAll(".kk-pr")].find(x => x.dataset.chat === r.chatId);
-  if (!n) return;
-  const had = n.contains(document.activeElement), next = kkPickRow(r);
-  n.replaceWith(next);
-  if (had) next.querySelector('[data-k="watch"]').focus({ preventScroll: true });
-}
 function kkAddOpen() {
   if (KK.adding) return;
   KK.q = ""; kkSearch.value = "";
-  const d = el("dialog", { class: "kk-pd kk-add", id: "kk-add", "aria-label": "대화방 추가" },
-    el("div", { class: "kk-pd-in" },
-      el("div", { class: "kk-pd-h" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "대화방 추가" }), el("span", { class: "cv-p", text: "지켜볼 방을 고르세요" })), el("button", { class: "x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
-      el("div", { class: "kk-pd-b" }, kkSearch, el("div", { class: "kk-hint", text: "눈 아이콘을 누르면 그 방을 지켜보고, 다시 누르면 멈춰요." }), el("div", { class: "kk-pl", id: "kk-pl" }, ...kkPickRows()))));
+  const d = el("dialog", { class: "kk-pd kk-add", id: "kk-add", "aria-label": "지켜볼 대화방" },
+    el("div", { class: "kk-pd-in", tabindex: "-1", autofocus: true },
+      fsHead([el("h2", { class: "fs-t", text: "지켜볼 대화방" }), el("span", { class: "sup", text: "누르면 추가되고, 다시 누르면 빠져요" })], { close: () => d.close() }),
+      el("div", { class: "kk-pd-b" }, el("label", { class: "pl-search kk-search" }, icon("search"), kkSearch), el("div", { class: "pl-list kk-pl", id: "kk-pl" }, ...kkPickRows()))));
   KK.adding = d;
   document.body.append(d); d.showModal(); dialogHist(d);
   d.addEventListener("close", () => { if (KK.adding === d) KK.adding = null; d.remove(); });
 }
-// 지켜보기 끄기 from the list: the row leaves the list and the toast brings it back.
-const kkUnwatch = r => { kkSetRoom(r, { watched: false }); toast("지켜보기를 껐어요", false, { label: "되돌리기", onclick: () => kkSetRoom(r, { watched: true }) }, 6000); };
 function kkRow(r) {
-  const on = KK.open === r.chatId, sub = kkSubLine(r);
-  return el("div", { class: "kk-rw" },
-    el("button", { class: `cv-row pv kk-row${r.unread ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-chat": r.chatId, "aria-current": on ? "true" : null, onclick: () => kkOpen(r.chatId) },
+  const on = KK.open === r.chatId, sub = kkSubLine(r), time = r.lastAt ? el("span", { class: "kk-t", text: kkListTime(r.lastAt) }) : null;
+  return el("button", { class: `cv-row pv kk-row${r.unread ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-chat": r.chatId, "aria-current": on ? "true" : null, onclick: () => kkOpen(r.chatId) },
       kkAvatar(r.name),
-      el("span", { class: "cv-b" }, kkLine1(r, el("span", { class: "cv-n", title: r.name, text: r.name }), r.lastAt ? el("span", { class: "kk-t", text: kkListTime(r.lastAt) }) : null), sub ? el("span", { class: "cv-p", text: sub }) : null),
-      // The prototype's row end, on one line: 미답장, the unread count, then the eye.
-      r.unread || r.unreplied ? el("span", { class: "cv-m" }, el("span", { class: "kk-rmeta" },
+      el("span", { class: "cv-b" }, kkLine1(r, el("span", { class: "cv-n", title: r.name, text: r.name })), sub ? el("span", { class: "cv-p", text: sub }) : null),
+      // The row end like every list: the time on top, 미답장 and the unread count under it.
+      time || r.unread || r.unreplied ? el("span", { class: "cv-m" }, time, r.unread || r.unreplied ? el("span", { class: "kk-rmeta" },
         r.unreplied ? unrepPill() : null,
-        r.unread ? el("span", { class: "nb warn", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null)) : null),
-    kkEye(true, `${r.name} 지켜보기 끄기`, "watch", () => kkUnwatch(r)));
+        r.unread ? el("span", { class: "nb warn", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null) : null);
 }
 function kkPaintRooms() {
   const top = kkRooms.scrollTop, watched = KK.rooms.filter(r => r.watched).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
   const note = !KK.loaded ? "불러오는 중…" : !KK.on ? "카카오톡 연동이 꺼져 있어요" : KK.error, ready = KK.loaded && !note;
   const head = el("div", { class: "kk-lh" }, el("span", { class: "kk-pt", text: "지켜보는 대화방" }), el("span", { class: "kk-cnt", text: ready ? `${watched.length}개` : "" }),
     ready && KK.rooms.length ? el("button", { class: "btn tonal sm kk-add-btn", id: "kk-add-btn", type: "button", onclick: () => kkAddOpen() }, icon("add"), el("span", { text: "추가" })) : null);
-  const list = el("section", { class: "kk-watch", "aria-label": "지켜보는 대화방" });
+  const list = el("section", { class: "pl-list kk-watch", "aria-label": "지켜보는 대화방" });
   if (note) list.append(el("div", { class: "kk-note", role: "status", text: note }));
   else if (watched.length) list.append(...watched.map(kkRow));
   else list.append(el("div", { class: "kk-note", id: "kk-empty", text: KK.rooms.length ? "지켜볼 대화방을 추가해 주세요" : "고를 수 있는 대화방이 없어요" }));
   // The status of the watches the app owns (its new-message check, a login keeper) is at the top of the pane, on this computer and on the other alike.
   const own = (kkItemNow() || {}).owned || [];
-  clear(kkRooms).append(...[own.length ? el("section", { class: "kk-own", "aria-label": "감시 상태" }, ...own.map(monStatNode)) : null, head, list,
-    ready && watched.length ? el("div", { class: "kk-hint kk-foot-hint", text: "눈 아이콘을 누르면 그 방 지켜보기를 멈춰요. 새로 지켜볼 방은 추가에서 골라요." }) : null].filter(Boolean));
+  clear(kkRooms).append(...[own.length ? el("section", { class: "kk-own", "aria-label": "감시 상태" }, ...own.map(monStatNode)) : null, head, list].filter(Boolean));
   kkRooms.scrollTop = top;
-  if (KK.adding) { const pl = $("#kk-pl"); if (pl) clear(pl).append(...kkPickRows()); }
+  // The choice list repaints in place: a row with the keyboard focus keeps it.
+  const pl = KK.adding && $("#kk-pl");
+  if (pl) {
+    const had = pl.contains(document.activeElement) && document.activeElement.dataset.chat;
+    clear(pl).append(...kkPickRows());
+    if (had) { const n = [...pl.children].find(x => x.dataset.chat === had); if (n) n.focus({ preventScroll: true }); }
+  }
   kkPaintAuto();
 }
 
@@ -12380,6 +12436,7 @@ ICONS.inbox = "M4 13l2.2-7h11.6L20 13v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 13h4.5l
 ICONS.forward = "M15 7l5 5-5 5M20 12h-9a7 7 0 0 0-7 7";
 ICONS.replyall = "M8 7l-5 5 5 5M13 7l-5 5 5 5M8 12h5a8 8 0 0 1 8 7";
 ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
+ICONS.replyoff = "M10 7l-5 5 5 5M5 12h9a6 6 0 0 1 6 6M4 4l16 16";
 const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null };
 const mbKey = t => t.slice(5);
 const MB_SYNC_OFF = "dotz에서만 바뀌어요";
@@ -12498,6 +12555,40 @@ async function mbTrash(keys) {
   if (done.length < keys.length) toast("처리하지 못했어요", true);
   return done;
 }
+// 답장 안 함 on a selection or on the whole 답장 필요 list: mailSetFyi for many mails, one POST /api/mail/fyi {keys, on} per computer (a peer's mails go to
+// the computer that holds them). It stays in dotz: nothing is sent, the read state and the mailbox do not change. Only mails that owe a reply are marked, so
+// 되돌리기 (on = false) brings each back to 답장 필요. More than MB_FYI_ASK mails ask first. The rows change at once and go back when the hub refuses them.
+const MB_FYI_ASK = 5;
+const mbOwed = keys => keys.filter(t => MAILS.has(t) && mailOwed(MAILS.get(t)));
+async function mbFyi(keys, on = true) {
+  keys = on ? mbOwed(keys) : keys.filter(t => MAILS.has(t));
+  if (!keys.length) return [];
+  if (on && keys.length > MB_FYI_ASK && !await ask("답장 안 함", `메일 ${keys.length}개를 답장 안 함으로 표시할까요? 메일을 보내지는 않아요`, `${keys.length}개 표시`)) return [];
+  const was = new Map(keys.map(t => { const m = MAILS.get(t); return [t, { reply: m.reply, unreplied: m.unreplied }]; })), byPc = new Map();
+  for (const t of keys) {
+    Object.assign(MAILS.get(t), { reply: on ? "fyi" : "needs", unreplied: !on });
+    MBOX.sel.delete(t);
+    const pc = pqPc(t), k = pc ? pc.url : "";
+    if (!byPc.has(k)) byPc.set(k, { pc, keys: [] });
+    byPc.get(k).keys.push(t);
+  }
+  const leaving = mbRowsOut(keys);
+  if (leaving) leaving.then(mbRefresh); else mbRefresh();
+  const bad = new Set(), notes = await Promise.all([...byPc.values()].map(async g => {
+    const body = { keys: g.keys.map(mbKey), on };
+    try {
+      const r = await (g.pc ? api(pqProxy(g.pc, "/api/peer/act"), "POST", { action: "fyi", args: body }) : api("/api/mail/fyi", "POST", body));
+      for (const x of r.results) if (!x.ok) bad.add(`mail:${x.key}`);
+    } catch (e) { g.keys.forEach(t => bad.add(t)); return e.message; }
+  }));
+  for (const t of bad) if (MAILS.has(t)) Object.assign(MAILS.get(t), was.get(t));
+  const done = keys.filter(t => !bad.has(t));
+  if (bad.size) mbRefresh();
+  if (bad.size) toast(done.length ? `${keys.length}개 중 ${bad.size}개는 표시하지 못했어요` : notes.find(Boolean) || "표시하지 못했어요", true);
+  else toast(`${done.length > 1 ? `${done.length}개를 ` : ""}${on ? "답장 안 함으로" : "답장 필요로"} 표시했어요`, false, on ? { label: "되돌리기", onclick: () => mbFyi(done, false) } : undefined);
+  await Promise.allSettled([byPc.has("") ? convLoad() : null, byPc.size > (byPc.has("") ? 1 : 0) ? pqLoad() : null, loadIntegrations(), byPc.has("") ? loadNotices() : null]);
+  return done;
+}
 // An action on the open mail takes the owner back to the list (like the mailbox does) when the mail left it.
 const mbLeave = keys => { if (monCtx && keys.includes(monCtx) && current === "chat" && !MAILS.has(monCtx)) go("monitoring", MON.sel); };
 
@@ -12531,13 +12622,20 @@ function mbPaintBar() {
     mbPaintBar();
   } });
   chk.indeterminate = !all && keys.length > 0;
-  if (!keys.length) { clear(bar).append(chk, el("span", { class: "mbox-n", text: MBOX.vis.length ? `메일 ${MBOX.vis.length}개` : "" })); bar.classList.remove("on"); return; }
+  if (!keys.length) {
+    clear(bar).append(chk, el("span", { class: "mbox-n", text: MBOX.vis.length ? `메일 ${MBOX.vis.length}개` : "" }));
+    bar.classList.remove("on");
+    if (mailFilterOf()[0] === "owed" && MBOX.vis.length) bar.append(mbBtn("이 목록 전부 답장 안 함", "replyoff", () => mbFyi(MBOX.vis), { k: "mail-fyi-all" }));
+    return;
+  }
   const arch = mailFilterOf()[0] === "archived", can = a => keys.every(t => mailCan(t, a));
   const acts = [["read", "읽음으로 표시", "check"], ["unread", "안 읽음으로 표시", "mail"], arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "완료(보관)", "archive"], ["trash", "삭제", "trash"]];
-  const off = acts.find(([a]) => !can(a));
+  const off = acts.find(([a]) => !can(a)), owed = mbOwed(keys).length;
+  const btns = acts.map(([a, label, ic]) => mbBtn(label, ic, () => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar()), { k: `mail-${a}`, short: MB_SHORT[a] }));
+  // 답장 안 함 sits before 삭제, and only while a chosen mail owes a reply; a mixed selection says how many it reaches.
+  if (owed) btns.splice(3, 0, mbBtn("답장 안 함", "replyoff", () => mbFyi(keys).then(() => mbPaintBar()), { k: "mail-fyi", cls: "mbox-fyi", short: owed < keys.length ? `답장 안 함 ${owed}` : "" }));
   bar.classList.add("on");
-  clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }),
-    ...acts.map(([a, label, ic]) => mbBtn(label, ic, () => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar()), { k: `mail-${a}`, short: MB_SHORT[a] })),
+  clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }), ...btns,
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
   // A null child on append would print the word "null"; the note is added only when the mailbox will not follow the action.
   if (off) bar.append(el("div", { class: "mbox-note", role: "status", text: MB_NOTE[off[0]] }));
@@ -12663,9 +12761,8 @@ function mbDefaults(t, mode) {
 }
 // The original, as the quote under the reply: the 원문 of the mail's first message the page holds.
 function mbQuoteText(t) {
-  const e = ts(t).msgs.find(x => x.kind === "mail"), raw = String(e ? e.text : "");
-  const at = raw.indexOf("\n원문\n");
-  return (at >= 0 ? raw.slice(at + 4) : raw.split("\n").slice(1).join("\n")).trim();
+  const e = ts(t).msgs.find(x => x.kind === "mail");
+  return mailOwnBody(mailOrigOf(e ? e.text : ""), e && e.subject).trim();
 }
 function mbBox(t) {
   let b = MBOX.boxes.get(t);
@@ -12850,6 +12947,15 @@ function mailAddrNode(list, max = 2) {
   return box;
 }
 
+// To and Cc with the people a header at the top of the body names (mailHeadBlock) and the extracted ones lack: that block is not drawn, so they stay here.
+function mailPeople(m, raw, subject) {
+  const b = mailHeadBlock(raw, subject), add = (have, more) => {
+    const known = new Set(mailAddrList(have).map(a => (a.addr || a.name).toLowerCase()));
+    return [have, ...mailAddrList(more).filter(a => !known.has((a.addr || a.name).toLowerCase())).map(a => a.raw)].filter(Boolean).join(", ");
+  };
+  return b ? { to: add(m.to, b.to), cc: add(m.cc, b.cc) } : { to: m.to, cc: m.cc };
+}
+
 // The mail's header block: who sent it, who it is for, and 참조 when there is one. `m` = a mail card (MAILS) or a draft's original payload.
 function mailHeadNode(m) {
   const src = m || {};
@@ -12933,7 +13039,8 @@ function mailThreadToggle(open = !mthOpen) {
 // and under 1024px the thread chip at its end.
 function mailMetaNode(t, e) {
   const base = MAILS.get(t) || {};
-  const m = { from: base.from || (e && e.from), to: base.to || (e && e.to), cc: base.cc || (e && e.cc), dir: base.dir || (e && e.dir) };
+  const known = { to: base.to || (e && e.to), cc: base.cc || (e && e.cc) };
+  const m = { from: base.from || (e && e.from), ...mailPeople(known, e && mailOrigOf(e.text), (e && e.subject) || base.subject), dir: base.dir || (e && e.dir) };
   const head = mailHeadNode(m), to = mailAddrList(m.to), cc = mailAddrList(m.cc);
   head.hidden = true;
   const names = list => { const n = list.slice(0, 2).map(a => a.name || a.addr).join(", "); return list.length > 2 ? `${n} 외 ${list.length - 2}명` : n; };
@@ -13075,7 +13182,7 @@ function dmPaintChat(stick) {
 // comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
 // goes through el({text}), never innerHTML.
 const CM = { apps: new Set(), sources: [], local: { sources: [], apps: new Set() }, pc: null, vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
-  drafting: new Set(), revising: "", pick: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
+  drafting: new Set(), revising: "", pickD: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
 // An app item "i:<instance id>" opens the comment pane when one of its sources is followed. A source carries the instance that owns it (`app`: the
 // default instance of its app, or an added one such as site-mapia); an older gateway sends none, then the app of its kind.
 const cmAppOfKind = k => (k === "website" ? "site" : k);
@@ -13108,6 +13215,9 @@ $("#v-monitoring").append(cmPane);
 
 const cmIntgSoon = () => { clearTimeout(CM.intgT); CM.intgT = setTimeout(loadIntegrations, 500); };
 const cmSources = () => CM.sources.filter(s => cmOwner(s) === CM.app);
+// The sources of a settings app: this computer's ("youtube"), or a peer's ("youtube~<computer>") while the pane shows that computer (CM.pc).
+const cmSrcOf = app => (app.includes("~") === !!CM.pc ? CM.sources.filter(s => cmOwner(s) === app.split("~")[0]) : []);
+const cmWatchWord = srcs => { const w = srcs.flatMap(s => s.watch || []); return w.includes("*") ? "전부" : w.length ? `${w.length}개` : "없음"; };
 
 async function cmLoadSources() {
   try {
@@ -13123,6 +13233,7 @@ async function cmLoadSources() {
   if (!CM.pc) CM.local.apps = new Set(apps);
   if (changed && typeof monSchedule === "function") monSchedule();
   if (CM.vis) cmPaintRooms();
+  cmPickPaint(); asPaint();
 }
 async function cmLoad() {
   const seq = ++CM.rseq;
@@ -13145,18 +13256,19 @@ async function cmUpdate(s, patch) {
     await cmApi(`/api/comments/sources/${enc(s.key)}`, "PUT", patch);
     await cmLoadSources();
     if (patch.watch) CM.posts.delete(s.key);
-    cmLoad(); cmIntgSoon();
+    if (CM.vis) cmLoad();
+    cmIntgSoon();
   } catch (e) { toast(e.message, true); cmLoadSources(); }
 }
 async function cmPosts(s) {
   if (CM.posts.has(s.key)) return;
   CM.posts.set(s.key, { loading: true, list: [] });
-  cmPaintRooms();
+  cmPickPaint();
   try {
     const r = await cmApi(`/api/comments/sources/${enc(s.key)}/posts`);
     CM.posts.set(s.key, { list: Array.isArray(r.posts) ? r.posts : [], error: r.error || "" });
   } catch (e) { CM.posts.set(s.key, { list: [], error: e.message }); }
-  cmPaintRooms();
+  cmPickPaint();
 }
 function cmSourceNode(s) {
   const watch = s.watch || [], all = watch.includes("*"), p = CM.posts.get(s.key);
@@ -13176,6 +13288,23 @@ function cmSourceNode(s) {
       kkSwitch(all || !!post.watched, post.title, "post", v => cmUpdate(s, { watch: v ? [...watch.filter(x => x !== "*"), post.id] : watch.filter(x => x !== post.id && x !== "*").concat(all ? p.list.filter(x => x.id !== post.id).map(x => x.id) : []) }), true)));
   }
   return node;
+}
+// The picker: the side sheet of KakaoTalk's 지켜볼 대화방, opened from the app's settings row (asPickRow) or the empty list.
+function cmPickPaint() {
+  const d = CM.pickD;
+  if (!d) return;
+  const srcs = cmSrcOf(d.dataset.app);
+  clear(d.querySelector(".kk-pd-b")).append(...(srcs.length ? [el("div", { class: "kk-hint", text: "자동 초안은 새 댓글마다 답글 초안을 만들어서 토큰이 들어요." }), ...srcs.map(cmSourceNode)] : [el("div", { class: "kk-note", text: "켜 둔 곳이 없어요. 채팅에서 댓글 답글을 켜 달라고 요청해 주세요" })]));
+}
+function cmPickOpen(app) {
+  if (CM.pickD) return;
+  const d = CM.pickD = el("dialog", { class: "kk-pd kk-add", id: "cm-pick", "data-app": app, "aria-label": "지켜볼 글" },
+    el("div", { class: "kk-pd-in" },
+      el("div", { class: "kk-pd-h" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "지켜볼 글" })), el("button", { class: "ib fs-x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+      el("div", { class: "kk-pd-b" })));
+  cmPickPaint();
+  document.body.append(d); d.showModal(); dialogHist(d);
+  d.addEventListener("close", () => { if (CM.pickD === d) CM.pickD = null; d.remove(); });
 }
 function cmRow(t) {
   const on = CM.open && CM.open.source === t.source && CM.open.thread === t.thread, n = t.unread + t.drafts;
@@ -13214,29 +13343,23 @@ function cmTab(id) {
 function cmPaintRooms() {
   if (!CM.vis) return;
   if (CM.tab === "dm") { dmPaintRooms(); return; }
-  const top = cmRooms.scrollTop, srcs = cmSources(), expanded = CM.pick === null ? !CM.threads.length : CM.pick;
-  const sig = JSON.stringify([CM.app, CM.threads, srcs, expanded, CM.open && [CM.open.source, CM.open.thread], CM.loaded, CM.error, [...CM.posts], cmHasTabs()]);
+  const top = cmRooms.scrollTop, srcs = cmSources();
+  const sig = JSON.stringify([CM.app, CM.threads, srcs, CM.open && [CM.open.source, CM.open.thread], CM.loaded, CM.error, cmHasTabs()]);
   if (sig === CM.roomsSig) {   // nothing changed: only the relative times move, in place
     for (const t of CM.threads) { const n = cmRooms.querySelector(`[data-thread="${CSS.escape(t.thread)}"] .kk-t`); if (n && n.textContent !== kkListTime(t.lastAt)) n.textContent = kkListTime(t.lastAt); }
     return;
   }
   CM.roomsSig = sig;
-  const pick = el("section", { class: "kk-pick", "aria-label": "지켜볼 글 고르기" },
-    el("button", { class: "kk-ph", id: "cm-pick-btn", type: "button", "aria-expanded": expanded ? "true" : "false", onclick: () => { CM.pick = !expanded; cmPaintRooms(); } },
-      el("span", { class: "kk-pt", text: "지켜볼 글" }), el("span", { class: "kk-cnt", text: "" }), icon("drop", "kk-chev")));
-  if (expanded) {
-    if (!srcs.length) pick.append(el("div", { class: "kk-note", text: "켜 둔 곳이 없어요. 채팅에서 댓글 답글을 켜 달라고 요청해 주세요" }));
-    else pick.append(el("div", { class: "kk-hint", text: "자동 초안은 새 댓글마다 답글 초안을 만들어서 토큰이 들어요." }), ...srcs.map(cmSourceNode));
-  }
   const list = el("section", { class: "kk-watch", "aria-label": "댓글이 있는 글" });
   if (CM.loaded) {
     list.append(el("div", { class: "cv-gh", role: "presentation", text: "글" }));
     if (CM.error) list.append(el("div", { class: "kk-note", role: "status", text: CM.error }));
     else if (CM.threads.length) list.append(...CM.threads.map(cmRow));
-    else list.append(el("div", { class: "kk-note", id: "cm-empty", text: "아직 받은 댓글이 없어요" }));
+    else if (!srcs.length) list.append(el("div", { class: "kk-note", id: "cm-empty", text: "켜 둔 곳이 없어요. 채팅에서 댓글 답글을 켜 달라고 요청해 주세요" }));
+    else list.append(el("div", { class: "kk-note", id: "cm-empty", text: "아직 받은 댓글이 없어요" }), el("button", { class: "btn tonal sm", type: "button", "data-k": "pick-open", text: "지켜볼 글 고르기", onclick: () => cmPickOpen(CM.pc ? pqApp(CM.app, CM.pc) : CM.app) }));
   }
   const tabs = cmTabs();
-  clear(cmRooms).append(...(tabs ? [tabs] : []), pick, list);
+  clear(cmRooms).append(...(tabs ? [tabs] : []), list);
   cmRooms.scrollTop = top;
 }
 
@@ -13449,13 +13572,13 @@ function cmMode(app, shown, pc) {
   if (app) $("#v-monitoring").classList.add("kk-on");
   cmPane.hidden = !app;
   if (swap) {   // another computer's comments: start from an empty pane (this computer's sources stay for its app rows)
-    Object.assign(CM, { vis: false, sources: [], apps: new Set(), threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", roomsSig: "", chatSig: "", error: "" }); CM.seq++; clearInterval(CM.timer);
+    Object.assign(CM, { vis: false, sources: [], apps: new Set(), threads: [], loaded: false, open: null, view: null, headSig: "", roomsSig: "", chatSig: "", error: "" }); CM.seq++; clearInterval(CM.timer);
   }
   CM.pc = app ? pc || null : null;
   if (shown && (!CM.vis || CM.app !== app)) {
     // The DM tab is this computer's Instagram app only; another computer's comment app starts on its comments.
     const dm = !CM.pc && DM.on && DM.connected && app === DM_APP && !CM.sources.some(s => cmOwner(s) === app && (s.watch || []).length);
-    Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", roomsSig: "", chatSig: "", tab: dm ? "dm" : "comments" }); CM.seq++;
+    Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, headSig: "", roomsSig: "", chatSig: "", tab: dm ? "dm" : "comments" }); CM.seq++;
     Object.assign(DM, { open: null, view: null }); DM.seq++;
     cmPaintAll(); cmLoad();
     if (CM.tab === "dm") dmRefresh();
@@ -13481,10 +13604,10 @@ const NT_RESULT = { ok: ["정상", "done"], changed: ["바뀜", "ask"], fail: ["
 const MON_KIND = { watch: "모니터링", schedule: "예약" };
 // The list's groups after 감시 소식: app-type integrations (hub/integrations.ts kind "app"), then the plain monitors.
 const MON_GROUP = { app: "앱", plain: "일반 모니터링" };
-// sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: a phone shows the list instead of the conversation.
+// sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: the list is on screen instead of the item, on every width (the item then has the whole column).
 // filter: 전체 / 답 필요 / 실패 of the open item; open: the rows unfolded ("g:<source>", "n:<notice id>"); more: pages shown per list; grew: older reports were just added above.
 const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all", filter: "all", open: new Set(), more: new Map(), grew: false, running: new Set(), autoArmed: false, olderBusy: false, want: "", hl: "", hlUntil: 0 };   // want: the notice a jump is reaching (monOpen in 30-notices.js); hl: the row it lit, lit again if a redraw replaces it
-const monConv = () => current === "monitoring" && narrowChat() && !MON.list;
+const monConv = () => current === "monitoring" && !MON.list;
 const monHash = () => (!MON.list && MON.sel ? `monitoring/${enc(MON.sel)}` : "monitoring");
 // A mail is a conversation of 모니터링 (go() in 05-command-palette.js draws it with the chat view while the tab stays 모니터링); monItemOf: the list item it sits under.
 const monOwned = t => isMailT(String(t || "")) || isSettingsT(String(t || ""));
@@ -13499,14 +13622,14 @@ const monItemOf = t => {
   const it = INTG.items.find(x => intgHas(x, t));
   return `i:${it ? it.key : "mail"}`;
 };
-// go("monitoring", key) opens that item; without one a phone shows the list and a wide screen keeps the open item.
+// go("monitoring", key) opens that item; without one the list shows.
 function monRoute(tgt) {
   pqOpen();
   if (tgt && tgt !== "list") {
     if (tgt !== MON.sel) { MON.filter = "all"; MON.open.clear(); MON.more.clear(); }   // another item: its list starts whole and folded
     MON.autoArmed = false; MON.olderBusy = false;
     MON.sel = tgt; MON.list = false;
-  } else MON.list = narrowChat();
+  } else MON.list = true;
 }
 
 async function loadMonitors() {
@@ -13668,7 +13791,7 @@ function monItems() {
   const ownedNames = new Set([...owned.values()].flat());
   for (const m of mons) {
     if (monHidden(m)) continue;
-    const notices = NT.items.filter(n => monHas(m, n)), last = monNewest(notices), names = monNames(m);
+    const notices = ntWithRepeats(NT.items).filter(n => monHas(m, n)), last = monNewest(notices), names = monNames(m);
     for (const n of notices) shown.add(n.id);
     if (ownedNames.has(m)) continue;
     // The row says the newest result in words: the newest report, unless a later run said nothing (an "ok" run posts no report).
@@ -13681,7 +13804,7 @@ function monItems() {
   }
   items.push(...monGrouped(proj, plain));
   // A report the hub marked as an app's (n.app, hub/notices.ts) is never here, even before the app list below has loaded.
-  const feed = NT.items.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), need = feed.filter(monNeed).length;
+  const feed = ntWithRepeats(NT.items).filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), need = feed.filter(monNeed).length;
   // The feed's row: what waits on the owner as its chip (counted apart from the plain reports, like an app row), the head line under the name (monFeedHead).
   items.unshift({ key: "notice", group: "", name: MON_FEED, ic: "list", notices: feed, mails: [], unread: monUnread(feed), need, chips: monNeedChips(need), ...monFeedHead(feed) });
   // 답장 확인 (30-replies.js): every waiting reply draft of every app and computer, right under 감시 소식.
@@ -13708,7 +13831,7 @@ const monNeed = n => ntNeeds(n) && (!n.pc || ntIsDec(n));
 const monFailed = n => n.tone === "fail";
 const monNeedChips = need => (need ? [[`답 필요 ${need}`, "warn"]] : undefined);
 // The open item: the one picked, else on a wide screen the first (a phone shows its list until one is picked).
-const monSel = items => items.find(i => i.key === MON.sel) || (narrowChat() ? null : items[0] || null);
+const monSel = items => items.find(i => i.key === MON.sel) || null;
 const monName = () => { const it = monItems().find(i => i.key === MON.sel); return kkItem(it) && KK.open && KK.room ? KK.room.name : it ? it.name : titles.monitoring; };
 function monState(it) {
   if (it.off) return "연결 안 됨";
@@ -14474,7 +14597,7 @@ function monDetailApp() {
 function monSeen() {
   clearTimeout(MON.seenT);
   MON.seenT = setTimeout(() => {
-    if (current !== "monitoring" || MON.list && narrowChat() || document.visibilityState !== "visible") return;
+    if (current !== "monitoring" || MON.list || document.visibilityState !== "visible") return;
     const it = monSel(monItems()), box = $("#mon-timeline");
     if (!it || !box.clientHeight) return;
     const a = box.getBoundingClientRect(), seen = new Set();
@@ -14495,6 +14618,8 @@ function monSeen() {
   }, 700);
 }
 
+// The list's place, kept while it is off screen (a hidden box forgets its scroll).
+$("#mon-side").addEventListener("scroll", ev => { MON.top = ev.currentTarget.scrollTop; }, { passive: true });
 let monRaf = 0;
 const monSchedule = () => { monAttnSoon(); if (!monRaf) monRaf = requestAnimationFrame(renderMonitoring); };   // the nav badge reads the same data (09-needs-you.js)
 function renderMonitoring() {
@@ -14512,8 +14637,8 @@ function renderMonitoring() {
   monTickStart();
   const kakao = kkItem(sel);
   const cm = !kakao && sel ? cmAppOf(sel.key) : "";
-  kkMode(kakao, kakao && !(narrowChat() && MON.list), kakao ? sel.pc : null);
-  cmMode(cm, !!cm && !(narrowChat() && MON.list), cm ? sel.pc : null);
+  kkMode(kakao, kakao && !MON.list, kakao ? sel.pc : null);
+  cmMode(cm, !!cm && !MON.list, cm ? sel.pc : null);
   mailLand(sel);
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one
@@ -14675,6 +14800,7 @@ function ntPaint() {
   convSchedule();
   paintAttn();
   if (current === "monitoring") monSchedule();
+  if (current === "notices") nscSchedule();
 }
 
 // A watch's report carries its monitor's name as the title; a schedule whose text is a command line never shows it (30-monitoring.js monHuman / monTitle).
@@ -14700,7 +14826,6 @@ async function loadNotices() {
   ntPaint();
   homeSoon();
   syncInlineChoices();
-  ntSeenSoon();
   ntAlertMarks();
 }
 
@@ -14756,7 +14881,6 @@ function noticeLive(e) {
   ntSheetPaint();
   homeSoon();
   syncInlineChoices();
-  ntSeenSoon();
 }
 
 async function ntMarkRead(body) {
@@ -14777,6 +14901,7 @@ function ntGo(t) {
   if (isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // the session is gone: its result card is in the main chat
   if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast("이 프로젝트를 찾을 수 없어요"); go("projects"); return ""; }
   if (!validTarget(t)) { toast("이 화면을 찾을 수 없어요"); go("home"); return ""; }
+  if (t === "alert") NSC.pass = Date.now() + 1000;   // the one way into the record conversation: a row's source message (#chat/alert alone is the 알림 screen)
   if (current !== "chat" || target !== t || convListing()) go("chat", t);   // already open (a cold start draws the address first): no second draw
   return t;
 }
@@ -14805,27 +14930,6 @@ async function ntReach(t, at) {
     if (t === target) renderAll(true);
   }
 }
-// A notice whose source message is on screen in the open chat counts as seen: read here and on the hub (so the other devices agree).
-// What waits on the owner (ntNeeds) stays until it is answered or ignored.
-let ntSeenT = 0;
-function ntSeenSoon() { clearTimeout(ntSeenT); ntSeenT = setTimeout(ntSeen, 500); }
-function ntSeen() {
-  if (current !== "chat" || document.visibilityState !== "visible" || !NT.loaded || !timeline.clientHeight) return;
-  const pending = NT.items.filter(n => !n.read && !ntNeeds(n) && (n.src || n.open) === target && n.at);
-  if (!pending.length) return;
-  const a = timeline.getBoundingClientRect(), shown = new Set();
-  for (const m of tl.querySelectorAll("[data-ts]")) {
-    const r = m.getBoundingClientRect();
-    if (r.bottom > a.top && r.top < a.bottom) shown.add(m.dataset.ts);
-  }
-  const hit = pending.filter(n => shown.has(n.at));
-  if (!hit.length) return;
-  for (const n of hit) n.read = true;
-  NT.unread = Math.max(0, NT.unread - hit.length); ntPaint();
-  ntMarkRead({ ids: hit.map(n => n.id) });
-}
-timeline.addEventListener("scroll", ntSeenSoon, { passive: true });
-document.addEventListener("visibilitychange", ntSeenSoon);
 // The element that carries the highlight: the card or bubble inside the message when there is one (so the glow follows its own rounded shape),
 // else the message itself, drawn as a bar + tint ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
 function ntHlHost(node) {
@@ -14848,7 +14952,6 @@ let ntJumpSeq = 0;
 async function ntJump(n, quiet = false) {
   const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, t = ntGo(n.msg || n.src || n.open || "main");
   if (!t) return;
-  if (t === "alert" && BELL.tab !== "all") bellTab("all");   // the message is in the timeline, which the other 알림 tabs hide
   chatUnpin();
   CV.jump = at;   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
   try {
@@ -14871,6 +14974,7 @@ const ntUnder = n => { if (!n.pc && validTarget(n.src || n.open || "")) ntJump(n
 // A tapped push: open its notice, or its conversation at the message it is about (loaded first when the stream missed it).
 async function pushOpen(hash, at, nid) {
   const p = parseHash(hash), t = p.t || MAIN;
+  if (!nid && p.view === "chat" && t === "alert") { go("notices"); return; }   // an alert push without a notice: the 알림 screen, not the record conversation
   if (!at || p.view !== "chat") { go(p.view, p.t); return; }
   if (!NT.loaded) await loadNotices();   // a cold start: the push was sent before the list reached this page
   noticeOpen(ntById(nid) || ntMsgFor(t, at) || { kind: "message", tone: "", src: t, open: t, at });
@@ -14978,35 +15082,8 @@ timeline.addEventListener("click", ev => {
   noticeOpen(ntOfEvent(e), true);
 }, true);
 
-/* ---- the 알림 conversation: 모두 읽음 in its head (31-conversations.js convPaintHead), 지우기 on each alert ---- */
-// 모두 읽음 reads the conversation to its newest message and every 알림 notice that needs no answer (a question keeps waiting).
-const ntAlertUnread = () => NT.items.filter(n => n.id && !n.read && !ntNeeds(n) && ntTabOf(n) === "alert");
-const ntAlertReadAll = btn => busy(btn, async () => {
-  const ids = ntAlertUnread().map(n => n.id), last = CONV.get("alert");
-  const jobs = [];
-  if (ids.length) jobs.push(api("/api/notices/read", "POST", { ids }));
-  if (last && last.ts) { READ.alert = last.ts; ts("alert").unread = 0; jobs.push(api("/api/read", "POST", { target: "alert", ts: last.ts })); }
-  for (const n of NT.items) if (ids.includes(n.id)) n.read = true;
-  renderBars(); convSig = ""; convHeadSig = ""; ntPaint();
-  try { await Promise.all(jobs); } finally { loadNotices(); convLoad(); }
-  toast("알림을 모두 읽음으로 표시했어요");
-});
-// 지우기 (x) on an alert in that conversation dismisses its notice on the hub (POST /api/notices/<id>/dismiss): gone from the bell, 홈 and every
-// count, and hidden in the conversation on every page (NT.gone). A question that waits on the owner has no x (the hub refuses it).
-async function ntAlertDismiss(n, row) {
-  const left = motionOut(row).then(a => { row.hidden = true; if (a && a.cancel) a.cancel(); });   // the row fades out (150ms), then stays hidden
-  try {
-    const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
-    if (!r || !r.ok) throw new Error(r && r.held ? "답이 필요한 알림은 지울 수 없어요" : "지우지 못했어요");
-    if (n.at) NT.gone.add(n.at);
-    NT.items = NT.items.filter(x => x.id !== n.id);
-    NT.mut++;
-    if (typeof r.unread === "number") NT.unread = r.unread;
-    ntPaint(); homeSoon();
-    toast("알림을 지웠어요");
-  } catch (e) { await left; row.hidden = false; toast(e.message || "지우지 못했어요", true); }
-}
-// A notification that arrives while this conversation is open eases in. The first draw, a redraw and older messages loaded above move nothing:
+/* ---- the 알림 conversation is the record behind the 알림 screen (31-notices-screen.js): a message of it is reached from a row and has no reading or deleting of its own ---- */
+// A notification that arrives while this conversation is open eases in, and a message whose notice was dismissed stays hidden. The first draw, a redraw and older messages loaded above move nothing:
 // only a row that was not there and is newer than the newest one drawn before is new.
 const NT_SEEN = new Set();
 let ntNewest = "";
@@ -15017,10 +15094,6 @@ function ntAlertMarks() {
   for (const row of rows) {
     if (fresh.has(row.dataset.ts) && row.dataset.ts > was && was) motionIn(row, "rise");
     if (NT.gone.has(row.dataset.ts)) { row.hidden = true; continue; }
-    if (row.querySelector(".al-x")) continue;
-    const e = ts("alert").msgs.find(x => x.ts === row.dataset.ts), n = e && ntOfEvent(e);
-    if (!n || !n.id || ntNeeds(n) || ntOpenDec(n)) continue;
-    row.append(el("button", { class: "ib al-x", type: "button", "aria-label": "이 알림 지우기", title: "지우기", onclick: ev => { ev.stopPropagation(); ntAlertDismiss(n, row); } }, icon("close")));
   }
 }
 new MutationObserver(ntAlertMarks).observe(tl, { childList: true });
@@ -15137,6 +15210,8 @@ const ntLinkedDec = n => {
     || (n.kind === "message" && n.key === `msg:${t}` ? ntDecisions().find(d => d.decision.to === t) : null) || null;
 };
 const ntById = id => NT.items.find(x => String(x.id) === String(id));
+// A watch report that folded earlier ones into its repeats (hub/notices.ts) is its own line again for 모니터링's report lists and counts: nothing it recorded is lost.
+const ntWithRepeats = list => list.flatMap(n => n.kind === "watch" && n.repeats && n.repeats.length ? [n, ...n.repeats.map((r, i) => ({ ...n, id: `${n.id}~${i}`, text: r.text, ts: r.at, updated: r.at, repeats: undefined, read: true }))] : [n]);
 const ntDecisions = () => NT.items.filter(ntOpenDec).sort((a, b) => ntAt(b) - ntAt(a));
 // Loose [ask] notices: waiting on the owner, but not carrying (or linked to) an open decision, so ntDecisions() never lists them.
 const ntLooseAsks = () => NT.items.filter(n => ntNeeds(n) && !ntOpenDec(n) && !ntLinkedDec(n)).sort((a, b) => ntAt(b) - ntAt(a));
@@ -15779,7 +15854,7 @@ function trOriginal(c) {
   }
   if (!o) return null;
   const who = o.kind === "mail" ? [o.from, o.subject].filter(Boolean).join(" · ") : [o.author, o.post && o.post.title].filter(Boolean).join(" · ");
-  return el("div", { class: "tr-org" }, el("div", { class: "tr-k", text: o.kind === "mail" ? "받은 메일" : "원댓글" }), who ? el("div", { class: "tr-who", text: who }) : null, el("div", { class: "tr-otx", text: String(o.text || "").slice(0, o.kind === "mail" ? 600 : 2000) }));
+  return el("div", { class: "tr-org" }, el("div", { class: "tr-k", text: o.kind === "mail" ? "받은 메일" : "원댓글" }), who ? el("div", { class: "tr-who", text: who }) : null, el("div", { class: "tr-otx", text: String((o.kind === "mail" ? mailOwnBody(o.text, o.subject) : o.text) || "").slice(0, o.kind === "mail" ? 600 : 2000) }));
 }
 // A comment draft: the comment it answers, with the post, who and when (KST) and the linked-mail mark, right above the draft.
 function trCommentCtx(c) {
@@ -16151,24 +16226,21 @@ function convRows() {
   const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
   const running = all.filter(laneAlive).sort((a, b) => rank(a) - rank(b) || at(`lane:${b.name}`).localeCompare(at(`lane:${a.name}`)));
   const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionStatus(l), hint: convPreview(l.lastText) || m.hint }; };
-  const v = CVF.view, keep = r => v === "need" ? r.need : v === "session" ? isLaneT(r.t) : v === "alert" ? isFixedT(r.t) : true;
-  // The filter pills, then a card per group (a group with nothing under the filter has no header), and last the 메일 · 카카오톡 card of what waits there.
-  const projs = projects.map(mk).filter(keep), page = v === "all" ? projs.filter((r, i) => i < CVF.more || r.t === target) : projs;
-  const out = [{ bar: true }, ...[MAIN, "alert", "worklog"].map(mk).filter(keep)], lanes = running.map(sess).filter(keep);
+  // A card per group, and last the 메일 · 카카오톡 card of what waits there.
+  const projs = projects.map(mk), page = projs.filter((r, i) => i < CVF.more || r.t === target);
+  const out = [MAIN, "worklog"].map(mk), lanes = running.map(sess);
   if (lanes.length) out.push({ header: "진행 중", sec: true }, ...lanes);
   if (page.length) out.push({ header: "프로젝트", sec: true }, ...page);
   if (projs.length > page.length) out.push({ more: projs.length - page.length });
   const open = all.find(l => !laneAlive(l) && `lane:${l.name}` === target);
-  if (open && (v === "all" || v === "session")) out.push(sess(open));
-  const ended = v === "all" || v === "session" ? endedLanes() : [];
+  if (open) out.push(sess(open));
+  const ended = endedLanes();
   if (ended.length) out.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
-  const waits = v === "all" || v === "need" ? convWaiting() : [];
-  if (out.length === 1 && !waits.length) out.push({ empty: CVF_EMPTY[v] });
+  const waits = convWaiting();
   if (waits.length) out.push({ header: "메일 · 카카오톡", sec: true }, ...waits);
   out.push({ read: true });
   return out;
 }
-const CVF_EMPTY = { need: "답을 기다리는 대화가 없어요", session: "진행 중인 세션이 없어요", alert: "알림이 없어요" };
 // The 메일 · 카카오톡 card: this computer's mails with a draft or a reply owed and the watched rooms that owe one, newest first; a tap opens them in 모니터링.
 function convWaiting() {
   const letter = name => el("span", { class: "cv-av", "aria-hidden": "true", text: [...String(name || "?").trim()][0] || "?" });
@@ -16179,13 +16251,13 @@ function convWaiting() {
   const rooms = KK.rooms.filter(r => r.watched && r.unreplied).map(r => ({ at: r.lastAt || 0, k: `w:kk:${r.chatId}`, name: r.name, hint: kkSubLine(r), last: r.lastAt ? { ts: new Date(r.lastAt).toISOString() } : null, bold: r.unread > 0, need: true, av: letter(r.name), chips: [["미답장", "unreplied"]], open: () => { go("monitoring", "i:kakao"); kkOpen(r.chatId); } }));
   return [...mails, ...rooms].sort((a, b) => b.at - a.at).slice(0, 5);
 }
-// Rows in their cards: the bar and a section label stand on the page, every run of rows between them is one card.
+// Rows in their cards: a section label stands on the page, every run of rows between them is one card.
 function convCards(rows) {
   const nodes = [];
   let box = null;
   for (const r of rows) {
     if (r.read) { const b = convReadBtn(); if (b) nodes.push(b); continue; }
-    if (r.bar || r.header) { nodes.push(r.bar ? convBar() : el("div", { class: "cv-sec", role: "presentation", text: r.header })); box = null; continue; }
+    if (r.header) { nodes.push(el("div", { class: "cv-sec", role: "presentation", text: r.header })); box = null; continue; }
     if (!box) nodes.push(box = el("div", { class: "cv-card" }));
     box.append(convRow(r));
   }
@@ -16193,22 +16265,14 @@ function convCards(rows) {
 }
 const FIXED_DESC = { alert: "경고와 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
 
-/* ---- a long list: views, a page of projects, 읽음 처리 ---- */
-// view: 전체 / 답할 것 / 세션 / 알림; more: projects drawn in 전체 (CVF_PAGE more per 더 보기).
+/* ---- a long list: a page of projects, 읽음 처리 ---- */
+// more: projects drawn (CVF_PAGE more per 더 보기). What waits on an answer is on the 알림 screen's 처리할 것.
 const CVF_PAGE = 40;
-const CVF = { view: "all", more: CVF_PAGE };
+const CVF = { more: CVF_PAGE };
 // A conversation waits on the owner: an open decision asked there, a loose [ask] notice of it, or a session's question (same rules as 30-notices.js ntNeeds).
 // the same rule as the home 답변 필요 list: a gateway question it handles itself (nyHandled) is news there, not a need here
 const convNeeds = t => ntHasDecision(t) || NT.items.some(n => ntNeeds(n) && !nyHandled(n) && (n.src || n.open) === t) || !!(isLaneT(t) && targetInfo(t).ask);
-const convListed = () => [MAIN, "alert", "worklog", ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`), ...projTargets()];
-function convBar() {
-  const list = convListed(), need = list.filter(convNeeds).length + (KK.rooms.filter(r => r.watched && r.unreplied).length) + [...MAILS].filter(([t, m]) => !PQ.of.has(t) && m.dir !== "out" && !m.archived && (m.reply === "draft" || m.unreplied)).length;
-  const views = [["all", "전체", 0], ["need", "답할 것", need], ["session", "세션", 0], ["alert", "알림", 0]];
-  return el("div", { class: "cv-bar" },
-    el("div", { class: "cv-tabs", role: "tablist", "aria-label": "대화 보기" }, ...views.map(([k, label, n]) =>
-      el("button", { class: `cchip mr-f${CVF.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(CVF.view === k), "data-view": k, onclick: () => { CVF.view = k; CVF.more = CVF_PAGE; convSig = ""; convSchedule(); convSide.scrollTop = 0; } }, label, cntSpan(`cv-filter:${k}`, "mr-fn", n)))),
-  );
-}
+const convListed = () => [MAIN, "worklog", ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`), ...projTargets()];
 // 읽음 처리, under the list: it takes only what needs no answer, so a conversation waiting on the owner keeps its unread.
 function convReadBtn() {
   const fyi = convListed().filter(t => ts(t).unread > 0 && !convNeeds(t) && CONV.get(t));
@@ -16240,7 +16304,6 @@ function convAvatar(t) {
 // { name, badge: [word, tone], unread }, with an optional one-line preview (hint) under the name. A row never shows a time: the name and the content tell what it is.
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
-  if (r.bar) return convBar();
   if (r.empty) return el("div", { class: "cv-empty", text: r.empty });
   if (r.more) return el("div", { class: "cv-more" }, el("button", { class: "btn text", type: "button", "data-k": "more", onclick: () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); }, text: `프로젝트 ${r.more}개 더 보기` }));
   if (r.ended) return endedGroup() || "";
@@ -16260,13 +16323,13 @@ $("#v-chat").prepend(convSide, convHead);
 function convPaintHead() {
   asSync();
   if (isProjT(target) && !PRJ && !PRJ_FAIL) prjLoad().then(convSchedule);
-  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", alertN = target === "alert" ? cvAlertN() : 0, sig = `${target}|${targetName(target)}|${state}|${alertN}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
+  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
   // A conversation opened from a 모니터링 list (a mail of the 메일 list): ← goes back to that list inside the page, like the app bar's back on a phone.
   const up = monCtx && MON.sel && !isSettingsT(target) ? el("button", { class: "ib cv-up", type: "button", "aria-label": "목록으로", title: "목록으로", "data-k": "cv-up", onclick: () => go("monitoring", MON.sel) }, icon("back")) : null;
   // 시제품의 대화 머리 (proto .cv-hd): 제목 16/22 600 한 줄, 그 아래 상태 한 줄, 오른쪽에 그 대화의 동작.
-  const acts = [isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, target === "alert" ? el("button", { class: "btn text sm cv-readall", type: "button", "data-k": "read-all", disabled: !alertN, title: "답이 필요한 알림은 그대로 둬요", onclick: ev => ntAlertReadAll(ev.currentTarget), text: "모두 읽음" }) : null, ...asEntry(app)].filter(Boolean);
+  const acts = [isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, ...asEntry(app)].filter(Boolean);
   // 모니터링에서 연 대화(메일·설정)는 그 목록의 머리 그대로 아바타와 이름·상태 줄을 둬요.
   if (monCtx) clear(convHead).append(...[up, convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), pqLabel({ pc: pqPc(target) })), el("span", { class: "cv-p", text: state })), ...acts].filter(Boolean));
   else clear(convHead).append(...[up,
@@ -16283,65 +16346,13 @@ $("#vtog").before(cvAppMenu);
 const pjAppMenu = pmMenuButton(() => pmOfTarget(target), "cvmenu");
 pjAppMenu.id = "pjmenu"; pjAppMenu.hidden = true;
 cvAppMenu.before(pjAppMenu);
-// 모두 읽음 of the 알림 conversation (30-notices.js ntAlertReadAll): in its head on wide screens, in the app bar on a phone.
-const cvAlertN = () => ts("alert").unread + ntAlertUnread().length;
-const cvReadAllBar = el("button", { class: "btn text sm cv-readall", id: "cvreadall", type: "button", hidden: true, "data-k": "read-all", title: "답이 필요한 알림은 그대로 둬요", onclick: ev => ntAlertReadAll(ev.currentTarget), text: "모두 읽음" });
-pjAppMenu.before(cvReadAllBar);
-/* ---- the tabs of the 알림 conversation (owner 2026-11-01; classes: hub/notice-class.ts, n.cls) ---- */
-// 전체 is the timeline as it was; the other tabs list that class of NT.items instead. A "log" notice is in no tab and in no count.
-const BELL = { tab: "all", sig: "", lsig: "" }, BELL_SEEN = new Set();
-const BELL_TABS = [["all", "전체"], ["ask", "답변 필요"], ["result", "결과"], ["news", "새 소식"], ["alert", "경고"]];
-const bellUnread = tab => NT.items.reduce((c, n) => c + (!n.read && n.cls !== "log" && (tab === "all" || n.cls === tab) ? 1 : 0), 0);
-function bellTab(tab) { BELL.tab = tab; bellPaint(); }
-// 새 소식 by app (the app's own name, else the monitor, else the title); the groups follow their newest item.
-function bellGroups(list) {
-  const by = new Map();
-  for (const n of list) { const k = ntPlain(n.app || n.watch || ""); by.set(k, [...(by.get(k) || []), n]); }   // no app or monitor: one headerless group, never one per row title
-  return [...by];
-}
-function bellRows(tab) {
-  const list = NT.items.filter(n => n.id && n.cls === tab).sort((a, b) => (tab === "ask" ? Number(ntNeeds(b)) - Number(ntNeeds(a)) : 0) || ntAt(b) - ntAt(a)).slice(0, 100);
-  const row = n => ntHomeRow(n, ntNeeds(n) ? undefined : "");
-  if (!list.length) return [el("div", { class: "bell-none", text: "아직 없어요" })];
-  // The prototype's notices screen (30-notices.js ntHomeRow): one meta line, a card of rows (새 소식: a label and a card per app), one quiet note.
-  const card = items => el("div", { class: "bell-card" }, el("div", { class: "hn" }, ...items.map(row)));
-  const meta = el("div", { class: "bell-meta" }, "안 읽은 알림 ", el("b", { text: String(bellUnread(tab)) }), "개"), note = el("div", { class: "bell-note", text: "모두 읽음은 답이 필요한 알림을 그대로 둬요." });
-  if (tab !== "news") return [meta, card(list), note];
-  // A header that only repeats the title of its single row says nothing: it is not drawn.
-  const echo = (name, items) => items.length === 1 && [ntPlain(items[0].title), hcLine(items[0])].includes(name);
-  return [meta, ...bellGroups(list).flatMap(([name, items]) => [name && !echo(name, items) ? el("div", { class: "bell-gh", role: "presentation", text: name }) : null, card(items)].filter(Boolean)), note];
-}
-function bellPaint() {
-  const on = current === "chat" && target === "alert" && !monCtx, box = $("#bell-tabs"), list = $("#bell-list"), tab = BELL.tab, listed = on && tab !== "all";
-  box.hidden = !on; list.hidden = !listed;
-  $("#v-chat").classList.toggle("bell-on", listed);
-  $("#v-chat").classList.toggle("bell-view", on);   // every filter keeps one frame (09-notices.css): the same filter row, the same start of content
-  if (!on) return;
-  const counts = BELL_TABS.map(([k]) => NT.loaded ? bellUnread(k) : 0), sig = JSON.stringify([tab, counts]);
-  if (sig !== BELL.sig) {
-    BELL.sig = sig;
-    clear(box).append(...BELL_TABS.map(([k, label], i) => el("button", { class: `chip${k === tab ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === tab), "data-k": k, onclick: () => bellTab(k) },
-      el("span", { class: "tx", text: label }), cntSpan(`bell:${k}`, `nb${k === "ask" ? " warn" : k === "alert" ? " err" : ""}`, counts[i], { "aria-label": `안 읽은 알림 ${counts[i]}개` }))));
-  }
-  if (!listed) { BELL.lsig = ""; BELL_SEEN.clear(); BELL_SEEN.seeded = false; return; }
-  const lsig = JSON.stringify([tab, NT.items.filter(n => n.cls === tab).map(n => [n.id, n.read, n.ignored, n.updated || n.ts])]);
-  if (lsig === BELL.lsig) return;
-  BELL.lsig = lsig;
-  const top = list.scrollTop;
-  clear(list).append(...bellRows(tab));
-  list.scrollTop = top;
-  // a notification that arrives while a tab is open slides in at the top of it; opening a tab or drawing it again moves nothing
-  if (BELL_SEEN.scope !== tab) { BELL_SEEN.clear(); BELL_SEEN.seeded = false; BELL_SEEN.scope = tab; }
-  const rows = [...list.querySelectorAll(".hr[data-nid]")], fresh = rows.length ? freshKeys(BELL_SEEN, rows.map(r => r.dataset.nid)) : new Set();
-  for (const r of rows) if (fresh.has(r.dataset.nid)) motionIn(r, "top");
-}
 function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
   convTitle();
   mailSentPaint();
   mbReplyPaint();
-  const items = monCtx ? monItems() : null, rows = items ? monRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, rows.some(r => r.bar) ? [CVF.view, convListed().map(t => [ts(t).unread > 0, convNeeds(t)])] : 0]);
+  const items = monCtx ? monItems() : null, rows = items ? monRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx]);
   if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
   if (sig !== convSig) {
     convSig = sig;
@@ -16354,7 +16365,7 @@ function convPaint() {
   }
   convSide.classList.toggle("mon-side", !!monCtx);
   $("#v-chat").classList.toggle("mon-ctx", !!monCtx);
-  bellPaint();
+  $("#v-chat").classList.toggle("no-composer", target === "alert");
   convPaintHead();
 }
 function convSchedule() { if (!convRaf) convRaf = requestAnimationFrame(convPaint); }
@@ -16364,23 +16375,26 @@ function convSchedule() { if (!convRaf) convRaf = requestAnimationFrame(convPain
 function convOnPhone() { return current === "chat" && narrowChat() && !chatList; }
 function convTitle() {
   if (current === "chat") $("#title").textContent = convOnPhone() ? targetName(target) : monCtx ? titles.monitoring : titles.chat;
-  else if (current === "monitoring") $("#title").textContent = monConv() ? monName() : titles.monitoring;
-  const tag = (current === "chat" && monCtx && convOnPhone()) || (current === "monitoring" && monConv()) ? pqLabel(monItems().find(i => i.key === MON.sel)) : null;
+  else if (current === "monitoring") $("#title").textContent = monConv() && narrowChat() ? monName() : titles.monitoring;
+  const tag = (current === "chat" && monCtx && convOnPhone()) || (monConv() && narrowChat()) ? pqLabel(monItems().find(i => i.key === MON.sel)) : null;
   if (tag) $("#title").append(tag);
   cvAppMenu.hidden = !(convOnPhone() && isLaneT(target));
   pjAppMenu.hidden = !(convOnPhone() && pjMenuOn());
-  cvReadAllBar.hidden = !(convOnPhone() && target === "alert");
-  if (!cvReadAllBar.hidden) cvReadAllBar.disabled = !cvAlertN();
   if (asBar) asBarSync(narrowChat() ? monDetailApp() : "");
   if (asMoreBar) asMoreSync(convOnPhone() && isSettingsT(target) ? settingsApp(target) : narrowChat() ? monDetailApp() : "");
 }
 function convChrome() {
-  const conv = convOnPhone() || monConv(), back = !!backTarget() || conv, bar = $("#appbar");
+  const conv = convOnPhone() || (monConv() && narrowChat()), back = !!backTarget() || conv, bar = $("#appbar"), up = !narrowChat() && (monConv() || (!!monCtx && current === "chat"));
   $("#back").hidden = !back;
+  // Inside an app on a wide screen the bar's back button reads ‹ 모니터링 in the title's place; the app's own name stands in its head.
+  $("#back").classList.toggle("mon-up", up);
+  $("#back").setAttribute("aria-label", up ? "모니터링 목록으로" : "뒤로");
   bar.classList.toggle("back", back);
   bar.classList.toggle("cvconv", conv);
   $("#v-chat").classList.toggle("cv-listing", convListing());
-  $("#v-monitoring").classList.toggle("cv-listing", current === "monitoring" && narrowChat() && MON.list);
+  const listing = current === "monitoring" && MON.list, was = $("#v-monitoring").classList.contains("cv-listing");
+  $("#v-monitoring").classList.toggle("cv-listing", listing);
+  if (listing && !was) $("#mon-side").scrollTop = MON.top | 0;
   if (current === "monitoring") monSchedule();
   if (convListing()) $("#vtog").hidden = true;
   convTitle();
@@ -16397,9 +16411,252 @@ matchMedia("(max-width: 1099px)").addEventListener("change", () => {
 convLoad();
 
 /* ---- shell: the notice bell and the sidebar's computer row (22-shell.css) ---- */
-// The bell opens the 알림 conversation; its count comes from paintBell (09-needs-you.js), fed by every notice change.
+// The bell opens the 알림 screen (31-notices-screen.js); its count comes from paintBell (09-needs-you.js), fed by every notice change.
 $("#bell").prepend(icon("bell"));
-$("#bell").onclick = () => openTarget("alert", lastChatView());
+$("#bell").title = `알림 (${isMac ? "⌘/" : "Ctrl+/"})`;
+$("#bell").onclick = nscGo;
+
+/* ---------- 알림 화면 (#notices): the bell opens it, it is its own screen (prototype site/prototype/s-notices.js) ---------- */
+// Three groups of one row shape: 처리할 것 (an answer, a failure or a lost login that still waits), 새 소식 (unread) and 지난 알림. The filter only hides
+// rows. Unread changes by a tap on a row, the x and 모두 읽음, never by looking (the old ntSeen is gone). Data: NT.items (30-notices.js); API:
+// POST /api/notices/read {ids}, /:id/handled, /:id/dismiss, /:id/undismiss. State NSC lives in 04-state.js (go() needs it before this file runs).
+const NSC_FILTERS = [["all", "전체"], ["ask", "답변 필요"], ["result", "결과"], ["news", "새 소식"], ["alert", "경고"]];
+const NSC_GROUPS = [["need", "처리할 것"], ["news", "새 소식"], ["past", "지난 알림"]];
+const NSC_PAGE = 50;   // 새 소식 / 지난 알림 rows drawn at a time (NSC.lim starts at the same 50, 04-state.js)
+const NSC_X = { need: "처리했어요", news: "읽음으로 표시", past: "지우기" };
+
+// The list: a notice with an id that is neither a quiet watch check (log) nor a chat message (conv). Every count is this list's unread.
+const nscListed = n => !!n.id && n.cls !== "log" && n.cls !== "conv" && !n.dismissed;
+const nscIn = k => NT.items.filter(n => nscListed(n) && (k === "all" || n.cls === k));
+const nscUnreadIn = k => NT.items.reduce((c, n) => c + (nscListed(n) && !n.read && (k === "all" || n.cls === k) ? 1 : 0), 0);
+const nscGroup = n => (ntNeeds(n) || n.waits ? "need" : n.read ? "past" : "news");
+const nscReadable = () => nscIn(NSC.f).filter(n => !n.read && !ntNeeds(n));
+const nscTone = n => ntNeeds(n) || n.waits === "login" || n.tone === "warn" ? "warn" : n.tone === "fail" ? "err" : n.tone === "done" || n.cls === "result" ? "ok" : "";
+// The tag word of the prototype's D.notices, from the notice's own kind, tone and app: the app is the integration key (mail, kakao, instagram/youtube/site = 댓글)
+// or the prefix of the conversation it lives in. A word the data does not give is not made up: the rest is 감시 / 경고 / the app's name / 새 소식.
+const NSC_APP_TAG = { mail: "메일", kakao: "카카오톡", instagram: "댓글", youtube: "댓글", site: "댓글" };
+const nscApp = n => String(n.app || n.src || n.open || "").split(/[-:]/)[0];
+function nscTag(n) {
+  const app = nscApp(n);
+  if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? "카카오톡" : "답장 확인") : "결정";
+  if (n.waits === "login") return "로그인";
+  if (n.waits === "fail" || n.tone === "fail") return "실패";
+  if (n.tone === "ask") return "질문";
+  if (n.cls === "result") return n.tone === "done" ? "작업 완료" : "결과";
+  if (n.kind === "watch" && nwChangeLine(n.text)) return "가격 변경";
+  if (NSC_APP_TAG[app]) return NSC_APP_TAG[app];
+  if (n.kind === "watch" && n.title === "예약") return "일정";
+  if (/아침/.test(n.title || "")) return "아침 점검";
+  if (n.kind === "watch") return "감시";
+  if (n.cls === "alert") return "경고";
+  return ntPlain(n.app || "") || "새 소식";
+}
+// The second line: a price change as the old value struck and the new one bold, else the first line of the text that is not the title, else the place.
+function nscSummary(n, text = n.text) {
+  const chg = NW_CHANGE.exec(nwChangeLine(text));
+  if (chg) return el("span", {}, el("s", { text: chg[2] }), " → ", chg[3]);
+  if (n.decision) return n.decision.draft ? ntPlain(n.decision.draft.body.split("\n").find(l => l.trim()) || "") : `${ntDecWhere(n.decision, n.pc)} · 답을 기다리고 있어요`;
+  const title = ntPlain(hcLine(n)), src = n.src || n.open;
+  return String(text || "").split("\n").map(ntPlain).find(l => l && l !== title) || ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림");
+}
+// The time at the row's end stays short: 방금, the hour today, 어제, then the date.
+function nscWhen(t) {
+  if (Date.now() - Date.parse(t) < 60000) return "방금";
+  if (kstDay(t) === kstDay(Date.now())) return kstHM(t);
+  return kstDay(t) === kstDay(Date.now() - 86400000) ? "어제" : dayLabel(t).replace(/ \(.\)$/, "");
+}
+function nscLines(n, group, summary, when, tag, prefix = "") {
+  return [el("span", { class: "ln" }, el("span", { class: "hd", title: ntPlain(hcLine(n)), text: ntPlain(hcLine(n)) }), el("span", { class: "t", text: when })),
+    el("span", { class: "ln" }, el("span", { class: "nsc-s" }, prefix, summary), el("span", { class: "tag", text: tag }))];
+}
+function nscRow(n, group) {
+  const tone = group === "past" ? "" : nscTone(n), rep = n.repeats && n.repeats.length ? n.repeats : null, open = rep && NSC.open.has(n.id);
+  // One cell at the end; a repeated failure or past notice keeps its ✕ beside the fold, or it could not be handled or cleared.
+  const fold = rep ? el("button", { class: "ib nsc-fold", type: "button", "aria-expanded": String(!!open), "aria-label": "반복 알림 펼치기", onclick: ev => { ev.stopPropagation(); nscFold(n); } }, icon("chev")) : null;
+  const end = group === "need" && n.waits !== "fail" ? (fold || el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("chev")))
+    : fold && group === "news" ? fold
+    : el("button", { class: "ib nsc-x", type: "button", "aria-label": NSC_X[group], title: NSC_X[group], onclick: ev => { ev.stopPropagation(); nscX(n, group); } }, icon("close"));
+  return el("div", { class: `li nsc-r${n.read ? "" : " unread"}`, "data-nid": n.id },
+    el("span", { class: "lead" }, el("span", { class: `dot ${tone}` })),
+    el("button", { class: "tx nsc-tx", type: "button", onclick: () => nscTap(n) }, ...nscLines(n, group, nscSummary(n), nscWhen(n.updated || n.ts), nscTag(n), rep ? `${rep.length + 1}번 · ` : "")),
+    end === fold ? null : fold, end);
+}
+// An older occurrence folded into the head row: the same title, its own time and text; a tap opens the head's notice.
+const nscChild = (n, r) => el("div", { class: "li nsc-r", "data-nid": n.id, "data-child": "1" },
+  el("span", { class: "lead" }, el("span", { class: "dot" })),
+  el("button", { class: "tx nsc-tx", type: "button", onclick: () => nscTap(n) }, ...nscLines(n, "past", nscSummary(n, r.text), nscWhen(r.at), nscTag(n))),
+  el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("chev")));
+const nscRows = (n, group) => [nscRow(n, group), ...(n.repeats && n.repeats.length && NSC.open.has(n.id) ? n.repeats.map(r => nscChild(n, r)) : [])];
+
+function nscList(rows) {
+  if (!NT.loaded) return [el("div", { class: "list" }, el("div", { class: "empty", text: NT.failed ? "알림을 불러오지 못했어요" : "불러오는 중이에요" }))];
+  if (!rows.length) return [el("div", { class: "list" }, el("div", { class: "empty", text: "새 알림이 없어요" }))];
+  const out = [];
+  for (const [g, label] of NSC_GROUPS) {
+    const all = rows.filter(n => nscGroup(n) === g);
+    if (!all.length) continue;
+    const shown = g === "need" ? all : all.slice(0, NSC.lim[g]);   // 새 소식 and 지난 알림 draw 50 at a time: 300 rows are never all in the page
+    out.push(el("div", { class: "sec", text: label }), el("div", { class: "list", "data-g": g }, ...shown.flatMap(n => nscRows(n, g))));
+    if (all.length > shown.length) out.push(el("div", { class: "nsc-more" }, el("button", { class: "btn text sm", type: "button", "data-k": "more", onclick: () => { NSC.lim[g] += NSC_PAGE; nscPaint(true); } }, `${all.length - shown.length}개 더 보기`)));
+  }
+  return out;
+}
+
+let nscBox = null;
+function nscInit() {
+  if (nscBox) return;
+  const v = $("#v-notices");
+  nscBox = {
+    tabs: el("div", { class: "nsc-f", role: "tablist", "aria-label": "알림 종류" }, ...NSC_FILTERS.map(([k, l]) =>
+      el("button", { class: "nsc-fb", type: "button", role: "tab", "data-f": k, onclick: () => nscFilter(k) }, l, el("span", { class: "n", "data-n": k })))),
+    num: el("span", { "data-nu": "1", text: "0" }),
+    all: el("button", { class: "btn text sm", type: "button", "data-k": "read-all", hidden: true, text: "모두 읽음", onclick: ev => nscReadAll(ev.currentTarget) }),
+    list: el("div", { class: "nsc-l" }),
+  };
+  nscBox.meta = el("div", { class: "nsc-m" }, el("span", { class: "meta" }, "안 읽은 알림 ", nscBox.num, "개"), el("span", { class: "sp" }), nscBox.all);
+  v.append(nscBox.tabs, nscBox.meta, nscBox.list);
+}
+// One paint per frame at most, and only when what it shows changed (ntPaint calls nscSchedule on every notice change).
+function nscPaint(force) {
+  if (current !== "notices") return;
+  nscInit();
+  const rows = nscIn(NSC.f).sort((a, b) => ntAt(b) - ntAt(a)), readable = nscReadable().length, unread = rows.reduce((c, n) => c + (n.read ? 0 : 1), 0);
+  for (const b of nscBox.tabs.children) {
+    const on = b.dataset.f === NSC.f, c = NT.loaded ? nscUnreadIn(b.dataset.f) : 0, el0 = b.lastChild;
+    b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on));
+    if (el0.dataset.c !== String(c)) { el0.dataset.c = String(c); rollCount(el0, c ? String(c) : ""); }
+  }
+  nscBox.meta.hidden = !(NT.loaded && nscIn("all").length);
+  if (nscBox.num.textContent !== String(unread)) rollCount(nscBox.num, String(unread));
+  nscBox.all.hidden = !readable;
+  const sig = JSON.stringify([NSC.f, NT.loaded, NT.failed, NSC.lim, [...NSC.open], rows.map(n => [n.id, n.read ? 1 : 0, n.tone, n.updated || n.ts, n.waits || "", n.decision ? n.decision.state : "", (n.repeats || []).length])]);
+  if (!force && sig === NSC.sig) return;
+  NSC.sig = sig;
+  const first = !nscBox.list.firstChild, fresh = NT.loaded ? freshKeys(NSC.seen, rows.map(n => n.id)) : new Set();
+  nscBox.list.replaceChildren(...nscList(rows));
+  if (!first) for (const id of fresh) { const r = nscRowOf(id); if (r) motionIn(r, "top"); }   // a notification that arrives slides in at the top of its group
+}
+const nscRowOf = id => nscBox && nscBox.list.querySelector(`.nsc-r[data-nid="${CSS.escape(String(id))}"]:not([data-child])`);
+function nscSchedule() { if (!NSC.raf) NSC.raf = requestAnimationFrame(() => { NSC.raf = 0; nscPaint(false); }); }
+function nscOpen() {
+  nscInit();
+  const keep = NSC.keep;
+  NSC.keep = false;
+  if (!keep) {   // opened from the bell, the palette or the address: every filter shows, nothing is unfolded
+    NSC.f = "all"; NSC.open.clear(); NSC.lim = { news: NSC_PAGE, past: NSC_PAGE }; NSC.seen.clear(); NSC.seen.seeded = false;
+    NSC.back = prevView && prevView !== "notices" ? prevView : "home";
+  }
+  nscPaint(true);
+  if (keep) $("#views").scrollTop = NSC.scroll;   // back from a row: the filter and the place in the list stay
+  if (!noticesFresh()) loadNotices();
+}
+// The bell and the 홈 card: a fresh opening (전체, top).
+function nscGo() { NSC.keep = false; go("notices"); }
+function nscBack() {
+  if (!NSC.ret || current === "notices" || current === "home") return false;
+  NSC.keep = true; go("notices");
+  return true;
+}
+
+function nscFilter(k) {
+  if (k === NSC.f) return;
+  motionSwap(nscBox.list, () => { NSC.f = k; NSC.lim = { news: NSC_PAGE, past: NSC_PAGE }; NSC.seen.clear(); NSC.seen.seeded = false; NSC.sig = ""; nscPaint(true); });
+}
+function nscFold(n) {
+  const open = NSC.open.has(n.id), row = nscRowOf(n.id);
+  if (open) NSC.open.delete(n.id); else NSC.open.add(n.id);
+  const btn = row && row.querySelector(".nsc-fold");
+  if (btn) btn.setAttribute("aria-expanded", String(!open));
+  if (!row) return;
+  if (open) {
+    const kids = [...nscBox.list.querySelectorAll(`.nsc-r[data-nid="${CSS.escape(String(n.id))}"][data-child]`)];
+    Promise.all(kids.map(k => motionOut(k))).then(() => { kids.forEach(k => k.remove()); NSC.sig = ""; nscSchedule(); });
+    return;
+  }
+  const kids = n.repeats.map(r => nscChild(n, r));
+  row.after(...kids);
+  kids.forEach(k => motionIn(k, "top"));
+  NSC.sig = "";
+}
+
+// A tap on a row: what waits on an answer opens its sheet over this screen; anything else opens where it leads, and the way back comes here.
+// A tap reads a row that needs no answer; a question stays unread until it is answered.
+function nscTap(n) {
+  const a = noticeKindAction(n);
+  if (a === "sheet") { const d = ntLinkedDec(n) || n; noticeSheetOpen(n.pc ? n : d.id); return; }
+  if (a === "ask") { ntAskSheet(n).then(shown => { if (!shown) nscNav(n); }); return; }
+  if (a === "detail") { ntRead(n); ntDetailOpen(n); return; }
+  ntRead(n);
+  nscNav(n);
+}
+function nscNav(n) {
+  NSC.keep = true; NSC.scroll = $("#views").scrollTop; NSC.arm = Date.now() + 5000;
+  noticeOpen(n);
+}
+
+// Rows leave (motionOut) and then change group; the one that stays comes in at the top of its new group.
+async function nscLeave(n, change) {
+  if (NSC.busy.has(n.id)) return;
+  NSC.busy.add(n.id);
+  const rows = [...nscBox.list.querySelectorAll(`.nsc-r[data-nid="${CSS.escape(String(n.id))}"]`)];
+  await Promise.all(rows.map(r => motionOut(r)));
+  try { await change(); } finally { NSC.busy.delete(n.id); }
+  nscPaint(true);
+  const row = nscRowOf(n.id);
+  if (row) motionIn(row, "top");
+}
+function nscX(n, group) {
+  if (group === "news") return nscLeave(n, () => ntRead(n));
+  if (group === "need") return nscLeave(n, () => nscHandled(n));
+  return nscLeave(n, () => nscDismiss(n));
+}
+// ✕ on a failure: "확인했어요". It leaves 처리할 것 and stays as a past notice.
+async function nscHandled(n) {
+  const was = { read: n.read, waits: n.waits, handled: n.handled, unread: NT.unread };
+  n.read = true; n.waits = undefined; n.handled = new Date().toISOString();
+  if (!was.read) NT.unread = Math.max(0, NT.unread - 1);
+  ntPaint(); homeSoon();
+  try { const r = await api(`/api/notices/${enc(n.id)}/handled`, "POST", {}); ntApply(r.item, r.unread); }
+  catch (err) { Object.assign(n, { read: was.read, waits: was.waits, handled: was.handled }); NT.unread = was.unread; ntPaint(); homeSoon(); toast(err.message, true); }
+}
+// ✕ on a past notice: gone from every list and count, and the toast takes it back.
+async function nscDismiss(n) {
+  const at = NT.items.indexOf(n);
+  NT.items = NT.items.filter(x => x.id !== n.id); NT.mut++;
+  if (n.at) NT.gone.add(n.at);
+  ntPaint(); homeSoon();
+  try {
+    const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
+    if (!r || !r.ok) throw new Error("지우지 못했어요");
+    if (typeof r.unread === "number") { NT.unread = r.unread; ntPaint(); }
+    toast("알림을 지웠어요", false, { label: "실행 취소", onclick: () => nscUndo(n) }, 6000);
+  } catch (err) {
+    NT.items.splice(Math.max(0, at), 0, n); NT.mut++; if (n.at) NT.gone.delete(n.at);
+    ntPaint(); homeSoon(); toast(err.message, true);
+  }
+}
+async function nscUndo(n) {
+  try {
+    const r = await api(`/api/notices/${enc(n.id)}/undismiss`, "POST", {});
+    NT.mut++; if (n.at) NT.gone.delete(n.at);
+    ntApply(r.item, r.unread);
+    if (current === "notices") requestAnimationFrame(() => requestAnimationFrame(() => { const row = nscRowOf(n.id); if (row) motionIn(row, "top"); }));
+  } catch (err) { toast(err.message, true); }
+}
+// 모두 읽음: only what this filter shows, and a question that waits keeps its unread (the toast says so). Only /api/notices/read is called.
+async function nscReadAll(btn) {
+  const rows = nscReadable(), kept = nscIn(NSC.f).some(ntNeeds), ids = rows.map(n => n.id);
+  if (!ids.length) return;
+  btn.disabled = true;
+  const gone = new Set(ids);
+  await Promise.all([...nscBox.list.querySelectorAll(".nsc-r[data-nid]")].filter(r => gone.has(Number(r.dataset.nid)) || gone.has(r.dataset.nid)).map(r => motionOut(r)));
+  for (const n of rows) n.read = true;
+  NT.unread = Math.max(0, NT.unread - ids.length);
+  ntPaint(); homeSoon(); nscPaint(true);
+  btn.disabled = false;
+  await ntMarkRead({ ids });
+  if (kept) toast("답이 필요한 알림은 그대로 뒀어요");
+}
 
 /* ---------- 모니터링 > 앱 > 설정 대화 ---------- */
 // Every app with a settings schema (hub/app-settings.ts) has one pinned "설정" row and one conversation, target settings:<app>. Above the
@@ -16503,6 +16760,12 @@ function asStatRow(app, m, i) {
         el("span", { class: "as-unit", text: "분" }))) : null,
     i && i.dot !== "ok" ? el("button", { class: "btn tonal inrow", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id, i.down) }, i.down ? "다시 연결" : "다시 시도") : null,
     !i && st && st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
+}
+// 지켜볼 글 of a comment app: how many it follows, and the picker (30-monitoring-comments.js cmPickOpen).
+function asPickRow(app) {
+  const srcs = cmSrcOf(app);
+  return srcs.length ? el("div", { class: "as-row", "data-setting": "watch-posts" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "지켜볼 글" })),
+    el("span", { class: "as-v", text: cmWatchWord(srcs) }), el("button", { class: "btn tonal inrow", type: "button", "data-k": "pick-open", onclick: () => cmPickOpen(app) }, "고르기")) : null;
 }
 function asFeatRow(app, f) {
   return el("div", { class: "as-row as-feat", "data-feature": f.id },
@@ -16852,7 +17115,7 @@ function asPaint() {
   const feat = asOwn(app) ? null : AS.feat[app] || null;
   // The watch status rows and the connection row are drawn from the monitor and integration data, so their changes repaint too.
   const statSig = asOwn(app) ? [asMon(app)] : [monStatMons(app), (({ it }) => it ? [it.state, it.since, it.hint] : null)(asConnItem(app))];
-  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], feat, statSig, AR.edit[app] ? AR.edit[app].id || "new" : null]);
+  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], feat, statSig, AR.edit[app] ? AR.edit[app].id || "new" : null, cmSrcOf(app).length && cmWatchWord(cmSrcOf(app))]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   // Within a section: the switch that turns the feature on, then the feature rows, then the other values, then the lists, then what waits or runs.
@@ -16873,6 +17136,8 @@ function asPaint() {
   const byWatch = new Map(statMons.map(m => [m.watch || m.name, m])), drawn = new Set();
   for (const i of internals) { const m = byWatch.get(i.id); if (m) drawn.add(m); put("watch", 5, asStatRow(app, m || null, i)); }
   for (const m of statMons) if (!drawn.has(m)) put("watch", 5, asStatRow(app, m, null));
+  const pick = asPickRow(app);
+  if (pick) put("watch", 0, pick);
   const mem = fields.filter(f => f.memory);
   if (mem.length) put("advanced", 6, el("div", { class: "as-row as-mem", "data-setting": "memory" },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: "기억해 둔 것" }),
@@ -17020,13 +17285,14 @@ const hurl = c => `#${c[c.length - 1]}`;
 // The chain of routes for a view, computed when the app navigates by itself (a back/forward uses the entry's stored chain).
 function routeChain(name, hash) {
   if (name === "home") return ["home"];
+  if (NSC.ret && name !== "notices") return ["home", "notices", hash];
   const conv = n => narrowChat() ? ["home", "chat/list", `${n}/${target}`] : ["home", `${n}/${target}`];
   // A conversation opened from 모니터링 (a mail of the 메일 list): back returns to that item's list, on a wide screen too (owner 2026-10-27).
-  if (monCtx && (name === "chat" || name === "activity")) return narrowChat() ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : MON.sel ? ["home", `monitoring/${enc(MON.sel)}`, hash] : ["home", "monitoring", hash];
+  if (monCtx && (name === "chat" || name === "activity")) return MON.sel ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : ["home", "monitoring", hash];
   if (name === "chat" || name === "activity") return narrowChat() ? (chatList ? ["home", hash] : ["home", "chat/list", hash]) : ["home", hash];
   if (name === "harness") return ["home", "settings", hash];
   if (name === "project") return ["home", "projects", hash];
-  if (name === "monitoring") return narrowChat() && !MON.list ? ["home", "monitoring", hash] : ["home", hash];
+  if (name === "monitoring") return !MON.list ? ["home", "monitoring", hash] : ["home", hash];
   if (SUB.has(name)) {
     const bt = backTarget();
     if (bt === "home") return ["home", hash];
@@ -17229,7 +17495,7 @@ function prPaint() {
   chev.hidden = !on;
   if (!on) {
     for (const n of names) n.classList.remove("pdot", "p-need");
-    brand.setAttribute("aria-label", "홈으로"); brand.removeAttribute("title"); brand.removeAttribute("aria-haspopup");
+    brand.setAttribute("aria-label", "홈으로"); brand.title = "홈으로"; brand.removeAttribute("aria-haspopup");
     title.removeAttribute("tabindex"); title.removeAttribute("aria-haspopup");
     prClose(false); return;
   }
@@ -17658,7 +17924,7 @@ function pqMerge(items) {
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
     for (const m of mons) {
       if (monHidden(m)) continue;
-      const notices = sn.filter(n => monHas(m, n)), last = monNewest(notices);
+      const notices = ntWithRepeats(sn).filter(n => monHas(m, n)), last = monNewest(notices);
       for (const n of notices) shown.add(n.id);
       if (ownedNames.has(m)) continue;
       // A peer's watch has the same settings conversation as a local one; it lives on that computer (a watch name this computer has itself stays local).
@@ -17668,7 +17934,7 @@ function pqMerge(items) {
         hint: fresh ? monStrip(monLine(last), monNames(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
         badge: m.connection === "disconnected" ? ["연결 끊김", "err"] : m.paused ? ["꺼짐", ""] : m.last_result === "fail" ? ["실패", "err"] : m.kind === "schedule" ? [MON_KIND.schedule, ""] : null, pc, chips });
     }
-    news.push(...sn.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)));
+    news.push(...ntWithRepeats(sn).filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)));
   }
   const feed = items.find(i => i.key === "notice");
   if (feed && news.length) {
@@ -18396,15 +18662,18 @@ const runLaneRestart = (name, btn) => busy(btn, async () => {
   // loading while the gateway did not answer, and the load event (the service worker's registration waits on it) never came. It catches up on the open view.
   const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "/demo/custom.js" }));
   if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
-  const h = parseHash();
+  let h = parseHash();
+  if (pushOpenTs && !pushOpenNid && h.view === "chat" && h.t === "alert") h = { view: "notices", t: "" };   // an alert push without a notice opens the 알림 screen, drawn first
   go(h.view || "home", h.t);
   if (pushOpenTs && h.view === "chat") CV.jump = pushOpenTs;   // the first draw lands on the tapped message (chatOpen); 30-notices.js pushOpen finishes by its kind
   // The first paint needs the history and the plan, not the state: ask for all of them at once instead of state first (the state
   // is the biggest answer and nothing the conversation draws waits for it; a lane that is gone is switched away from inside refreshState).
   const state = refreshState();
-  snapSeed(target).then(seeded => loadTarget(target, seeded)); loadTodo(target); prjLoad().then(() => renderBars(), () => {});
+  // #notices needs the state and the notices (asked for in index.html), not the main chat: go() loads a conversation when it is first opened.
+  if (h.view !== "notices") { snapSeed(target).then(seeded => loadTarget(target, seeded)); loadTodo(target); }
+  prjLoad().then(() => renderBars(), () => {});
   // 알림 and 작업내역 sit one tap away and their answers are small: read ahead once the page has settled, so their first opening has something to show.
-  setTimeout(() => { for (const t of ["alert", "worklog"]) if (t !== target && !ts(t).hLoaded) loadTarget(t, true).catch(() => {}); }, 1500);
+  if (h.view !== "notices") setTimeout(() => { for (const t of ["worklog"]) if (t !== target && !ts(t).hLoaded) loadTarget(t, true).catch(() => {}); }, 1500);
   await state;
   if (pushOpenTs) { const at = pushOpenTs; pushOpenTs = ""; pushOpen(location.hash, at, pushOpenNid); }   // the app was started by a tap on a push
   loadModels(true);

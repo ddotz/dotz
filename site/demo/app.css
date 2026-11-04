@@ -229,6 +229,8 @@ button.conn:disabled { cursor: default; }
    .dc-go, .dc-back, .dc-manual) and are aliased here, so the look is defined once. */
 /* size tiers (docs/ui-spec.md 버튼, tokens in the :root above): 기본 --btn-h 36, 작은 --btn-h-sm 32 (.sm), 행 안 --btn-h-row 28 (.inrow).
    --btn-hit is the touch target, not a tier: a phone raises the box to it, a row button reaches 40px with padding (::after). */
+.bk-l { display: none; }
+#back.mon-up .bk-l { display: inline; }
 .ib { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); padding: 0; }
 .ib:hover { background: var(--hover); color: var(--fg); }
 .ib.pri { background: var(--accent); color: var(--on-accent); border-radius: 50%; }
@@ -1826,6 +1828,43 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 .pmv-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .lproj { padding-left: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 
+/* 알림 화면 (31-notices-screen.js, the prototype's #notices): a filter row, one meta line, then up to three lists of one row shape: the dot, the title with its
+   time, a one-line summary with the kind tag, and one cell at the end. Emphasis is the title weight only; the dot is the only colour, the tag stays grey. */
+#v-notices { display: flex; flex-direction: column; }
+.nsc-f { display: flex; flex-wrap: nowrap; gap: var(--sp-1); margin: var(--sp-1) 0 var(--sp-2); overflow-x: auto; scrollbar-width: none; }
+.nsc-f::-webkit-scrollbar { display: none; }
+.nsc-fb { flex: none; display: inline-flex; align-items: center; gap: 6px; height: var(--btn-h-sm); padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font: 500 13px/20px var(--font); }
+.nsc-fb:not(.on):hover { background: var(--hover); }
+.nsc-fb.on { background: var(--fg); color: var(--bg); font-weight: 600; }
+.nsc-fb .n { color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.nsc-fb.on .n { color: inherit; }
+.nsc-fb .n:empty { display: none; }
+.nsc-m { display: flex; align-items: center; min-height: var(--btn-h); margin: 0 var(--sp-1); }
+.nsc-m[hidden] { display: none; }
+.nsc-m .meta { color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); font-variant-numeric: tabular-nums; }
+.nsc-l .sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); }
+.nsc-l .sec:first-child { margin-top: var(--sp-2); }
+.nsc-more { display: flex; justify-content: center; margin-top: var(--sp-2); }
+.nsc-r { position: relative; align-items: flex-start; padding: 10px var(--sp-2) 10px var(--row-px); }
+.nsc-r + .nsc-r { border-top: 1px solid var(--line); }
+.nsc-r:hover { background: var(--card-hover); }
+.nsc-r:has(> .nsc-tx:active) { background: var(--row-sel); }
+.nsc-r .lead { align-items: center; width: 8px; height: var(--lh-row); }
+.nsc-tx { display: flex; flex-direction: column; gap: 2px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.nsc-tx::after { content: ""; position: absolute; inset: 0; }
+.nsc-tx:focus-visible { outline: none; }
+.nsc-tx:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: inherit; }
+.nsc-r .ln { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.nsc-r .hd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--fg-2); }
+.nsc-r.unread .hd { font-weight: 700; color: var(--fg); }
+.nsc-r .t { flex: none; color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-row) var(--font); }
+.nsc-s { flex: 1; min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.nsc-r .ib, .nsc-tr { position: relative; z-index: 1; flex: none; display: grid; place-items: center; width: var(--btn-h-row); height: var(--btn-h-row); align-self: center; margin-left: calc(var(--sp-1) * -1); color: var(--fg-3); }
+.nsc-tr { z-index: 0; pointer-events: none; }
+.nsc-r .ib::before { content: ""; position: absolute; inset: -6px; }
+.nsc-fold .ic { transition: transform var(--m-fast) var(--m-ease); transform: rotate(90deg); }
+.nsc-fold[aria-expanded="true"] .ic { transform: rotate(-90deg); }
+
 /* Rows of the 모니터링 screen (30-monitoring.js), the jump highlight (30-notices.js), the 홈 cards (08-home.js) and the decision sheet (30-notices.js). */
 .nt-row { display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: var(--row-h); padding: var(--row-py) 12px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; }
 .nt-row:hover { background: var(--card-hover); }
@@ -1969,45 +2008,8 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .ntg-h[aria-expanded="true"] .hs { color: var(--muted, inherit); }
 .ntg-l { margin: 0 0 6px 20px; padding-left: 8px; border-left: 2px solid var(--line); }
 
-/* 알림 conversation: 지우기 (x) on each alert that needs no answer (30-notices.js ntAlertMarks) */
-#tl > [data-ts]:has(> .al-x) { position: relative; padding-right: 44px; }
-#tl > [data-ts] > .al-x { position: absolute; top: 8px; right: 8px; color: var(--fg-3); }
-#tl > .cont:has(> .al-x) > .mt:not(.dv) > .rp-btn { right: 44px; }   /* a continuation row hangs the quote button at the top right (15-reply.css): it stands left of the dismiss button */
-#tl > [data-ts] > .al-x:hover { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
-
-
-/* ---------- 알림 화면: the prototype's notices screen (site/prototype/s-work.js #notices, proto.css .list / .li / .note) ----------
-   The tabs stay (this product's 답변 필요 / 결과 / 새 소식 / 경고), then ONE quiet meta line, then a card of rows (the 새 소식 tab: a label and a card
-   per app), then a quiet note. A row is the prototype's: the 8px dot, the title and its one-line summary, and at the end the notice's kind tag and
-   its time. 31-conversations.js bellRows draws the list; 30-notices.js ntHomeRow the row. A tab's list is read-only, so the composer steps aside. */
-#v-chat.bell-on > .composer { display: none; }
-/* the chip row is the prototype's tab row: small boxes, the chosen one filled */
-/* One frame for every filter, the composer of 전체 or none: the filter row 12px inside the card, the content 12px under it, 12px at the bottom (owner 2026-11-04). */
-#v-chat.bell-view > .bell { align-items: center; gap: 4px; margin: 12px; padding: 0; }
-#v-chat.bell-view > .bell .chip { height: 32px; padding: 0 8px; }
-#v-chat.bell-on > .bell-list { padding: 0 12px 12px; }
-.bell-meta { padding: 0 4px 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
-.bell-meta b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
-.bell-note { margin: 8px 4px 0; color: var(--fg-3); font: 400 12px/16px var(--font); }
-.bell-card { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
-.bell-card .hn { display: flex; flex-direction: column; gap: 0; border-radius: 0; background: none; overflow: visible; }
-.bell-card .hr { min-height: 60px; border-radius: 0; background: transparent; box-shadow: none; }
-.bell-card .hr + .hr, .bell-card .hrx + .hrx { border-top: 1px solid var(--line); }
-.bell-card .hrx { border-radius: 0; }
-.bell-card .hr:hover { background: var(--card-hover); }
-.bell-card .hr .hb { gap: 2px; }
-.bell-card .hr .ha { color: var(--fg-2); }
-.bell-card .hr .hn1 { font-weight: 500; }
-.bell-card .hr.un .hn1 { font-weight: 600; }
-.bell-card .hrx-m { min-height: 60px; padding: 8px 16px; }
-.bell-card .nt-end { flex: none; display: flex; align-items: center; gap: 10px; margin-left: 8px; }
-.bell-card .nt-time { min-width: 44px; color: var(--fg-3); font: 400 12px/16px var(--font); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-#v-chat.bell-on > .bell-list .bell-gh { padding: 16px 4px 6px; }
-#v-chat.bell-on > .bell-list .bell-gh:first-child { padding-top: 4px; }
-@media (max-width: 480px) {
-  .bell-card .nt-end { flex-direction: column; align-items: flex-end; gap: 2px; }
-  .bell-card .nt-time { min-width: 0; }
-}
+/* 알림 conversation: the record behind the 알림 screen has no composer (31-conversations.js convPaint sets .no-composer) */
+#v-chat.no-composer > .composer { display: none; }
 
 /* 채팅 (web/js/31-conversations.js): the chat list (a row = icon, title, one-line preview, status; never a time) and the "새 메시지" divider.
    Below 1100px the list and a conversation are two screens (#v-chat.cv-listing = the list); from 1100px they sit side by side. */
@@ -2019,7 +2021,6 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 
 .cv-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: var(--row-h); padding: var(--row-py) 16px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
 .cv-row + .cv-row { margin-top: 2px; }
-.cv-side .cv-bar { border-bottom: 0; }
 /* the open conversation: a small accent dot in the row's left padding (the slot every row already has, so text never shifts); phone only — the wide layout already highlights the row */
 .cv-row { position: relative; }
 @media (max-width: 1099px) { .cv-row.on::before { content: ""; position: absolute; top: 50%; left: 5px; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); } }
@@ -2102,17 +2103,11 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 /* 목록 행 (시제품 채팅 목록 proto .li) — 모든 너비의 공통 기반이에요: 48px 두 줄, 36px 둥근 사각 아이콘 면, 오른쪽 시각·대기 표시, 구분선 한 줄, 고른 행은 회색 면.
    프로젝트·모니터링 목록 패널도 이 형식(.cv-side 안의 .cv-row)에 맞춰요. */
 #chat-convo { padding: 0; }
-/* 채팅 목록 (proto listHtml): 필터 알약은 바탕 위에, 대화는 한 장의 카드에, '메일 · 카카오톡'은 제목과 그 아래 카드로. */
+/* 채팅 목록 (proto listHtml): 대화는 한 장의 카드에, '메일 · 카카오톡'은 제목과 그 아래 카드로. */
 #chat-convo:not(.mon-side) { background: transparent; border-radius: 0; }
-#chat-convo:not(.mon-side) .cv-bar { flex-wrap: wrap; gap: 6px; margin: 0; padding: 4px 0 12px; border: 0; background: var(--bg); }
-#chat-convo:not(.mon-side) .cv-tabs { flex-wrap: wrap; gap: 6px; overflow: visible; }
 .cv-foot { display: flex; justify-content: center; margin-top: 8px; }
-#chat-convo:not(.mon-side) .cv-tabs .cchip { height: 32px; padding: 0 14px; border-radius: 16px; background: transparent; color: var(--fg-2); font: 500 13px/32px var(--font); }
-#chat-convo:not(.mon-side) .cv-tabs .cchip:hover { background: var(--layer); }
-#chat-convo:not(.mon-side) .cv-tabs .cchip.on { background: var(--fg); color: var(--bg); font-weight: 600; }
 .cv-card { overflow: hidden; border-radius: var(--r-card); background: var(--card); }
 .cv-sec { margin: 24px 4px 8px; color: var(--fg-2); font: 600 14px/20px var(--font); }
-#chat-convo .cv-bar:not(:has(.cv-tabs)) { padding: 8px 8px 4px; }
 #chat-convo .cv-gh { padding: 12px 16px 4px; }
 #chat-convo .cv-row { min-height: 48px; padding: 8px 16px; gap: 12px; border-radius: 0; }
 #chat-convo .cv-row + .cv-row { margin-top: 0; border-top: 1px solid var(--line); }
@@ -2136,8 +2131,6 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
   #v-chat::before { content: none; }
   #v-chat > .cv-head { display: none; }
   #v-chat > .todo { order: 1; margin: 8px 12px 4px; }
-  #v-chat > .bell { order: 2; margin: 8px 4px 4px; }
-  #v-chat > .bell-list { order: 3; }
   #v-chat > .chatbox { order: 4; }
   #v-chat > .subs { order: 5; margin: 0 12px 4px; }
   #v-chat > .composer { order: 6; padding: 8px 12px 12px; }
@@ -2147,10 +2140,11 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 
 @media (min-width: 1100px) {
   :root { --cv-w: 240px; }
-  /* 모니터링: 목록 단과 대화 (같은 두 단 구조) */
-  #v-monitoring { display: grid; max-width: none; column-gap: 16px; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
-  #v-monitoring > * { grid-column: 2; }
-  #v-monitoring > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: 16px; padding: 8px; }
+  /* 모니터링: 폰과 같은 흐름으로 한 번에 한 층만 서요(목록, 또는 앱). 페이지 폭(.view)을 쓰고, 앱에서 항목을 고르면 그때만 전체 폭의 두 단(.kk.chat-open)이 돼요 */
+  #v-monitoring { display: grid; max-width: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+  #v-monitoring:not(:has(> .kk.chat-open:not([hidden]))) { width: 100%; max-width: 920px; margin: 0 auto; }
+  #v-monitoring > * { grid-column: 1; }
+  #v-monitoring > .cv-side { grid-row: 1 / -1; min-height: 0; margin-bottom: 16px; padding: 8px; }
   #v-monitoring > .cv-head { grid-row: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 4px 12px; }
   #v-monitoring > .chatbox { grid-row: 4; }
   /* 채팅: 시제품의 두 단 (proto .chat2 = 340px 목록 + 대화 카드 하나). 카드는 ::before가 그려 머리·todo·타임라인·컴포저가 한 면 안에 있어요 */
@@ -2161,8 +2155,6 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
   #v-chat > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: 16px; padding: 0; }
   #v-chat > .cv-head { grid-row: 1; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 12px 16px; }
   #v-chat > .todo { grid-row: 2; margin: 0 12px 4px; }
-  #v-chat > .bell { grid-row: 2; margin: 0 12px 4px; }
-  #v-chat > .bell-list { grid-row: 4; }
   #v-chat > .chatbox { grid-row: 4; }
   #v-chat > .subs { grid-row: 5; margin: 0 12px; }
   #v-chat > .composer { grid-row: 6; width: auto; max-width: none; margin: 0; padding: 8px 12px 12px; }
@@ -2183,39 +2175,14 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
   .cv-head .cv-av { width: 36px; height: 36px; font-size: 15px; }
 }
 
-/* The tabs of the 알림 conversation (31-conversations.js bellPaint): a chip row over the timeline; every tab but 전체 swaps the timeline for a list of that class.
-   Badges: 답변 필요 orange (--warn), 경고 red (--err), the rest the plain accent. */
-.bell[hidden], .bell-list[hidden] { display: none; }
-.bell { flex: none; display: flex; gap: 6px; margin: 0 0 8px; padding: 2px 0; overflow-x: auto; scrollbar-width: none; }
-.bell::-webkit-scrollbar { display: none; }
-.bell .chip { height: 32px; padding: 0 8px; gap: 4px; font-size: 12.5px; }
 /* a tab is its name and its count: the count is a plain number after the name, not a pill badge (proto .tabs) */
-.bell .chip .nb { min-width: 0; height: auto; padding: 0; border-radius: 0; background: transparent; color: var(--fg-3); font: 600 12px/16px var(--font); font-variant-numeric: tabular-nums; }
-.bell .chip.on .nb { color: inherit; opacity: .7; }
-.bell .chip .nb.warn { color: var(--warn); }
-.bell .chip .nb.err { color: var(--err); }
 .nb.err { background: var(--err); }
-#v-chat.bell-on .chatbox { display: none; }
-.bell-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 24px; }
-.bell-gh { padding: 12px 4px 6px; color: var(--fg-2); font: 600 13px/18px var(--font); }
-.bell-gh:first-child { padding-top: 4px; }
-.bell-none { padding: 32px 16px; color: var(--fg-3); text-align: center; font: 400 12px/16px var(--font); }
 .hr .dot.un { background: var(--accent); }
-/* The bell's tab lists: no dividers. What waits for you or is unread sits on the full card, the rest on a faint fill; a 2px gap keeps the rows apart. */
-.bell-list .hn { display: flex; flex-direction: column; gap: 2px; border-radius: 0; background: none; overflow: visible; }
-.bell-list .hr { border-radius: var(--r-ctl); background: color-mix(in srgb, var(--card) 55%, transparent); }
-.bell-list .hr + .hr { box-shadow: none; }
-.bell-list .hr:hover, .bell-list .hr:has(.dot:is(.un, .err, .att)) { background: var(--card); }
-/* One bold line per row (principle 1): only what is unread or waits for you is 600, a read row is 500 with its grey dot; the dot is the spec's 8px and the sub line 12/16 (ui-spec 목록 행). */
-.bell-list .hr .dot { width: 8px; height: 8px; }
-.bell-list .hr .hb { gap: 4px; }
-.bell-list .hr .ha { font-size: 12px; line-height: 16px; }
-.bell-list .hr:not(:has(.dot:is(.un, .err, .att))) .hn1 { font-weight: 500; }
 /* A watch change in a row's sub line or a card (nwChangeNode): the old value grey and struck, the new one the only emphasis (the landing page's 가격 알림 card). */
 .nw-chg s { color: var(--fg-3); }
 .nw-chg em { font-style: normal; font-weight: 600; color: var(--accent); }
 /* In the 알림 timeline every message carried a red dot; it is a quiet grey now, the new one arrives by moving in, not by colour. */
-#v-chat:has(#bell-tabs:not([hidden])) #tl > .bm.alert .mn::before { background: var(--fg-3); opacity: .6; }
+#tl > .bm.alert .mn::before { background: var(--fg-3); opacity: .6; }
 
 /* the result file of a finished worker under its system line (11-todo-strip.js hcSysFiles); a running line does not pulse */
 .tl-in > .cv-sys-f { display: flex; flex-wrap: wrap; justify-content: center; align-self: center; gap: 6px; max-width: 100%; margin: 6px auto 0; }
@@ -3059,7 +3026,7 @@ a.dr-att:active { background: var(--active); }
 .hcb-h .hcb-n { color: var(--fg-2); }
 
 /* 모니터링 > 앱 > 카카오톡 (web/js/30-kakao.js): the room column (rooms to watch + the watched ones) and a KakaoTalk-style chat.
-   From 1100px the column sits beside the chat; below it they are two screens (.kk.chat-open = the chat). Colors are the --kk-* tokens (01-tokens.css). */
+   Until something is picked only the column shows; once picked (.kk.chat-open) it sits beside the chat from 1100px, below that the chat replaces it. Colors are the --kk-* tokens (01-tokens.css). */
 .kk { display: flex; flex: 1; min-height: 0; gap: 16px; }
 #v-monitoring.kk-on > .chatbox { display: none; }
 /* the room column is one white card; the chat column is the prototype's stack of cards: head, 자동 초안, the chat window (the only kk-bg surface), the request bar, then the reply card(s) */
@@ -3067,56 +3034,42 @@ a.dr-att:active { background: var(--active); }
 .kk-rooms { flex: 1; min-width: 0; align-self: flex-start; max-height: 100%; overflow: hidden auto; border-radius: var(--r-card); background: var(--card); margin-bottom: 12px; }
 .kk-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; overflow: hidden auto; overscroll-behavior: contain; margin-bottom: 12px; }
 .kk-chat > * { flex: none; }
+.kk:not(.chat-open) .kk-chat { display: none; }
 @media (max-width: 1099px) {
-  .kk:not(.chat-open) .kk-chat { display: none; }
   .kk.chat-open .kk-rooms { display: none; }
   .kk-chat { margin-bottom: 0; }
 }
 @media (min-width: 1100px) {
   #v-monitoring > .kk { grid-row: 4; margin-bottom: 4px; }
-  .kk-rooms { flex: none; width: 300px; margin-bottom: 0; }
+  .kk-rooms { margin-bottom: 0; }
+  .kk.chat-open .kk-rooms { flex: none; width: 300px; }
   .kk-chat { margin-bottom: 0; }
 }
 
-/* the watched rooms: a head with the count and 추가, one row per room, the eye at the row's end */
+/* the watched rooms: a head with the count and 추가, one row per room */
 .kk-lh { display: flex; align-items: center; gap: 8px; min-height: var(--row-h); padding: 8px 12px 8px 16px; }
 .kk-pt { font: 600 15px/22px var(--font); }
 .kk-cnt { flex: 1; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .kk-add-btn { gap: 4px; padding: 0 12px 0 10px; }
 .kk-add-btn .ic { width: 14px; height: 14px; }
 .kk-watch .kk-note { padding: 24px 16px; }
-.kk-foot-hint { padding-top: 8px; border-top: 1px solid var(--line); }
-.kk-rw { position: relative; }
-.kk-rw + .kk-rw { border-top: 1px solid var(--line); }
-.kk-rw > .cv-row { padding-right: 56px; }
-.kk-rw > .kk-eye { position: absolute; right: 12px; top: 50%; margin-top: -16px; }
 .kk-l1 { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .kk-l1 > .cv-n { flex: 0 1 auto; min-width: 0; }
 .kk-grp { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); }
-/* the watch toggle: an eye on a grey surface, colored while watched, grey while not (never a switch) */
-.kk-eye { position: relative; flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-3); transition: background var(--m-fast) var(--m-ease), color var(--m-fast) var(--m-ease); }
-.kk-eye::before { content: ""; position: absolute; inset: -6px; }
-.kk-eye .ic { width: 18px; height: 18px; }
-.kk-eye:hover { background: var(--hover); color: var(--fg-2); }
-.kk-eye.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
-.kk-eye.on:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
-.kk-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* 대화방 추가: the .kk-pd sheet (side panel on a desktop, full screen on a phone) holding the search and every room */
+/* 지켜볼 대화방: the .kk-pd sheet (side panel on a desktop, full screen on a phone). The sheet's body is the page canvas, so the head is the sheets' .fs-hd and the
+   search and the rooms are the project list's own .pl-search, .pl-list and .pl-row, the same white on grey as that list. */
+#kk-add .kk-pd-in { background: var(--bg); outline: 0; }
+#kk-add .kk-pd-b { padding: 4px 24px 24px; }
+.kk-search + .kk-pl { margin-top: 12px; }
+.kk-pr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.kk-ck { flex: none; width: 18px; height: 18px; color: var(--accent); }
+@media (pointer: coarse), (max-width: 639px) { #kk-add .kk-search { height: 40px; font-size: 16px; } }
+@media (max-width: 639px) { #kk-add .kk-pd-in { padding-top: env(safe-area-inset-top); } #kk-add .kk-pd-b { padding-inline: 16px; } }
 .kk-add .kk-pd-b { padding: 8px 0 0; }
-.kk-add .kk-pl { max-height: none; border-bottom: 0; }
-.kk-q { display: block; width: calc(100% - 32px); height: var(--ctl-h); margin: 4px 16px 8px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--card); color: var(--fg); font: 400 13px/20px var(--font); }
-@media (pointer: coarse), (max-width: 639px) { .kk-q { height: 40px; font-size: 16px; } }
-.kk-q::placeholder { color: var(--fg-3); }
-.kk-q:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .kk-hint { padding: 0 16px 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .kk-note { padding: 32px 16px; color: var(--fg-3); font: 400 12px/16px var(--font); text-align: center; text-wrap: balance; }
-.kk-pl { max-height: min(46dvh, 360px); overflow-y: auto; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .kk-pr { display: flex; align-items: center; gap: 12px; min-height: var(--row-h); padding: var(--row-py) 16px; }
 .kk-pr + .kk-pr { border-top: 1px solid var(--line); }
-.kk-pr.on { background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.kk-pn { display: block; max-width: 100%; min-height: 24px; margin: -4px 0; padding: 4px 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
-.kk-pn:hover { text-decoration: underline; }
-.kk-pn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 /* 자동 초안: the room's one two-value switch, a thin card above the chat window */
 .kk-auto { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 10px 16px; border-radius: var(--r-card); background: var(--card); }
 .kk-auto[hidden] { display: none; }
@@ -3134,13 +3087,16 @@ a.dr-att:active { background: var(--active); }
 #kk-rooms { border-radius: 0; background: transparent; }
 #kk-rooms .kk-lh { min-height: 32px; padding: 0 4px 8px; }
 #kk-rooms .kk-pt { color: var(--fg-2); font: 600 14px/20px var(--font); }
-#kk-rooms .kk-watch, #kk-rooms .kk-own { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+#kk-rooms .kk-own { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 #kk-rooms .kk-own { margin-bottom: 12px; }
-#kk-rooms .kk-foot-hint { padding: 8px 4px 0; border: 0; }
 #kk-add-btn { height: 32px; min-height: 32px; }
 #kk-rooms .kk-av, #kk-head .kk-av, .kk-pd.kk-add .kk-pr .kk-av { background: var(--layer); color: var(--fg-2); }
-#kk-rooms .kk-row .cv-m { flex-direction: row; align-items: center; }
-#kk-rooms .kk-row .kk-l1 .kk-t { flex: none; font-size: 11px; }
+/* a row like the project list's: flat inside the card with the card's one selection color, the time on top at the row's end. These undo the wide-screen .cv-row (a rounded chip for the side columns). */
+#kk-rooms .kk-row { align-items: center; min-height: 56px; padding: 8px 16px; border-radius: 0; }
+#kk-rooms .kk-row + .kk-row { margin-top: 0; border-top: 1px solid var(--line); }
+#kk-rooms .kk-row.on { background: var(--row-sel); }
+#kk-rooms .kk-row .cv-m { align-self: flex-start; gap: 2px; padding-top: 2px; }
+#kk-rooms .kk-av { width: 36px; height: 36px; font-size: 15px; }
 #kk-rooms .kk-row .tag.unreplied { background: var(--unreplied); color: var(--on-unreplied); }
 #kk-rooms .kk-row .nb.warn { min-width: 18px; height: 18px; padding: 0 5px; background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
 #kk-chat { gap: 12px; }
@@ -3153,7 +3109,7 @@ a.dr-att:active { background: var(--active); }
 .kk-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .25); transition: transform var(--m-base) var(--m-ease); }
 .kk-sw.on { background: var(--accent); }
 .kk-sw.on .kk-knob { transform: translateX(16px); }
-@media (prefers-reduced-motion: reduce) { .kk-sw, .kk-knob, .kk-chev { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .kk-sw, .kk-knob { transition: none; } }
 
 /* chat */
 .kk-head { display: none; align-items: center; gap: 12px; padding: 10px 16px; border-radius: var(--r-card); background: var(--card); }
@@ -3323,7 +3279,7 @@ a.dr-att:active { background: var(--active); }
 .kk-pd::backdrop { background: rgb(0 0 0 / .3); }
 .kk-pd-in { display: flex; flex-direction: column; width: min(400px, 100vw); max-height: min(680px, 100dvh); margin: auto; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
 .kk-pd-h { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
-.kk-pd-h .x { margin-left: auto; }
+.kk-pd-h .fs-x { margin-left: auto; }
 .kk-pd-b { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 16px 16px; }
 .kk-psec { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .kk-psec:last-child { border-bottom: 0; }
@@ -3474,6 +3430,7 @@ textarea.as-in.as-ta { padding-top: 6px; padding-bottom: 6px; }
 /* choose what to follow */
 .kk-pick-src { padding: 4px 0 8px; border-top: 1px solid var(--line); }
 .kk-pick-src > .btn { margin: 0 16px; }
+#cm-empty + .btn { display: block; margin: -12px auto 24px; }
 .cm .kk-draft input.kk-ta { flex: 1; min-width: 0; min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--card); color: inherit; font: 400 16px/22px var(--font); }
 .cm-tabs { margin: 8px 16px; }
 .dm-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 16px 8px; }
@@ -3553,7 +3510,7 @@ textarea.as-in.as-ta { padding-top: 6px; padding-bottom: 6px; }
 /* 인스타그램 DM thread: one line per message (20-monitoring.css .dm-m), so nothing overlaps */
 .cm .dm-m { padding: 10px 0; }
 
-/* A lot piled up (web/js/30-monitoring.js monBar / monFeedNodes / monGroupNode, web/js/31-conversations.js convBar): the view chips with their
+/* A lot piled up (web/js/30-monitoring.js monBar / monFeedNodes / monGroupNode): the view chips with their
    counts and 읽음 처리 on one sticky bar, section and day lines, one compact row per report or per source, and the 더 보기 button of a page. */
 .mon-bar { align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: 8px; }
 .mon-tabs { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
@@ -3585,23 +3542,10 @@ textarea.as-in.as-ta { padding-top: 6px; padding-bottom: 6px; }
 .mon-more { align-self: center; min-height: 44px; padding: 0 16px; font-size: 14px; }
 .mon-rep { color: var(--fg-3); font-size: 12px; line-height: 16px; }
 
-/* 채팅's list at volume (31-conversations.js): the view chips over the list, the 더 보기 row of the projects */
-.cv-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 4px; padding: 8px 12px; background: var(--card); border-bottom: 1px solid var(--line); }
-.cv-bar .cv-tabs { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.cv-bar .cv-tabs::-webkit-scrollbar { display: none; }
-.cv-bar .mr-f { height: 32px; padding: 0 10px; font-size: 12.5px; color: var(--fg-2); background: var(--layer); }
-.cv-bar .mr-f.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
-.cv-bar .mr-fn { font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
-.cv-bar .cv-read { flex: none; margin-left: auto; height: 32px; padding: 0 8px; font-size: 13px; }
+/* 채팅's list at volume (31-conversations.js): the 더 보기 row of the projects */
 .cv-more { display: flex; justify-content: center; padding: 8px 0; }
 .cv-more .btn { min-height: 44px; padding: 0 16px; font-size: 14px; }
 .cv-empty { padding: 32px 16px; color: var(--fg-3); font-size: 12px; line-height: 16px; text-align: center; }
-@media (min-width: 1100px) {
-  .cv-bar { flex-wrap: wrap; margin: -8px -8px 4px; padding: 8px; border-radius: var(--r-card) var(--r-card) 0 0; }
-  .cv-bar .cv-tabs { flex: 1 0 100%; }
-  .cv-bar .mr-f { padding: 0 8px; }
-  .cv-bar .cv-read { font-size: 12.5px; }
-}
 @media (prefers-reduced-motion: reduce) { .fr-chev { transition: none; } }
 
 /* 앱 (web/js/30-apps.js): the 모니터링 list's rows on the left and the open app on the right. Below 1100px the list and the app
@@ -3806,6 +3750,9 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
   .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
   .mbox-bar.on .mbox-bt { display: none; }
+  .mbox-bar.on .mbox-b.mbox-fyi { order: 1; flex: 1 0 100%; width: auto; margin-top: 2px; border-radius: var(--r-ctl); background: var(--layer); }
+  .mbox-bar.on .mbox-fyi .mbox-bt { display: inline; }
+  .mbox-bar.on .mbox-note { order: 2; }
   .mbox-reply { margin: 12px 0 16px; padding: 16px; }
   .mbox-in { height: 44px; font-size: 16px; }
   textarea.mbox-ta { font-size: 16px; line-height: 24px; }
@@ -4033,7 +3980,14 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
 /* the wait bar lines up with the name, not under the icon (36px icon + 12px gap) */
 :is(#mon-side, #chat-convo.mon-side) .cv-row.has-mon-prog > .mon-prog-wrap { margin-left: 48px; width: auto; flex-basis: calc(100% - 48px); }
 /* one panel width in every 모니터링 state (list, app, mail, watch): the open mail conversation draws the same column (owner 2026-11-04) */
-@media (min-width: 1100px) { #v-monitoring, #v-chat.mon-ctx, #v-chat.mon-ctx.mail-open { --cv-w: 300px; } }
+/* a conversation opened from 모니터링 takes the whole column: the list column leaves, as it does in 모니터링 itself */
+@media (min-width: 1100px) {
+  #v-chat.mon-ctx { grid-template-columns: minmax(0, 1fr); }
+  #v-chat.mon-ctx::before, #v-chat.mon-ctx > * { grid-column: 1; }
+  #v-chat.mon-ctx > .cv-side { display: none; }
+  #v-chat.mon-ctx.canvas-open { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.25fr); }
+  #v-chat.mon-ctx.canvas-open > #canvas { grid-column: 2; }
+}
 
 /* the open item's header (owner 2026-11-04, compact and the same for a mail and a watch): one row - icon, name, place, the moment, the actions -
    and under it one 20px line indented to the name: a mail's state, or a watch's words, slim 3px bar and result tag. No empty band, no second row of buttons. */
@@ -4110,7 +4064,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
 .pl-empty { padding: 32px 16px; }
 .pl-empty-a { margin-top: 12px; }
 .pl-list .cv-more { border-top: 1px solid var(--line); }
-.pl-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 48px; padding: 8px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
+.pl-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: 48px; margin: 0; padding: 8px 16px; border: 0; background: transparent; color: inherit; text-align: left; }
 .pl-row + .pl-row { border-top: 1px solid var(--line); }
 .pl-row:hover { background: var(--card-hover); }
 /* the open project: the same selected fill as the chat list (.cv-row.on) */
@@ -4213,13 +4167,14 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
 @media (max-width: 639px) { .pk-chip { max-width: 100%; } .pk-chip .fi-n { max-width: 168px; } .pk-chip .fi-m { max-width: 180px; } }
 
 /* ---------- shell: the prototype's frame (site/prototype/proto.css "/* shell *\/") ----------
-   Wide (1024px and up): a 232px sidebar holds the brand, the computer picker row, the five nav items with their counts and the
+   Wide (1024px and up): a 232px sidebar (foldable to a 60px icon rail) holds the brand, the computer picker row, the five nav items with their counts and the
    usage row at the bottom; the main column holds the top bar (page title, search, bell, connection and usage chips) and the views.
    Narrow: the sidebar becomes the bottom tab bar (the same #nav, one component), the brand/picker/footer step aside, and the top
    bar keeps back + title + search + bell. Everything below only restates the frame; colors and sizes come from 01-tokens.css. */
 /* the page never scrolls: a bar above the app (the update bar, the demo bar) gives .app a top margin, which would otherwise collapse through
    <body> and push the document 44px past the screen; any focus or scrollIntoView then slides the top bar away and lifts the tab bar */
 body { display: flow-root; }
+.side-tog { display: none; }
 @media (min-width: 1024px) {
   :root { --side-w: 232px; }
   .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: 0; }
@@ -4244,7 +4199,7 @@ body { display: flow-root; }
   .ni .ic { display: block; width: 16px; height: 16px; }
   .ni .nl { min-width: 0; }
   /* a tab with something new carries one small dot at the bottom right of its text, no count (the count stays in the aria-label and the title); the phone tab bar draws the same badges */
-  .ni .nnb, .ni .nub { position: static; flex: none; align-self: flex-end; width: 6px; min-width: 6px; height: 6px; margin: 0 0 13px -7px; padding: 0; overflow: hidden; border-radius: 50%; font-size: 0; line-height: 0; }
+  .ni .nnb, .ni .nub { position: static; flex: none; align-self: flex-end; width: 6px; min-width: 6px; height: 6px; margin: 0 0 13px -6px; padding: 0; overflow: hidden; border-radius: 50%; font-size: 0; line-height: 0; }
   .ni .nnb { background: var(--warn); }
   /* lower area: what the limits say now; a tap opens 사용량 */
   .sfoot { margin-top: auto; padding-top: 8px; }
@@ -4257,8 +4212,32 @@ body { display: flow-root; }
   .sf-row .sf-v { flex: none; margin-left: auto; color: var(--fg-3); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
   .sf-row.warn .sf-v { color: var(--warn); }
   .sf-row.warn .sf-bar i { background: var(--warn); }
+  .sf-ring { display: none; }
+  /* the fold control is a bare thin chevron on the line between the sidebar and the main column, at the page title's height: out of every flow, so it takes no width and the title never moves; ‹ open, › folded */
+  .app { position: relative; }
+  .side-tog, .side-tog:hover { background: transparent; }
+  .side-tog { position: absolute; left: calc(var(--side-w) - 14px); top: 16px; display: inline-grid; width: 28px; height: 28px; color: var(--fg-3); }
+  .side-tog:hover { color: var(--fg); }
+  .side-tog .ic { width: 18px; height: 18px; }
+  .side-min .side-tog .ic { transform: scaleX(-1); }
+  /* folded (:root.side-min, 04-state.js sideToggle): a 60px icon rail. Names go to the title and the aria-label, a tab's dot sits at its icon's bottom right, the usage row is a ring of the same share and color with the number inside */
+  :root.side-min { --side-w: 60px; }
+  .side-min .side { padding: 12px 10px; }
+  .side-min .brand { position: relative; justify-content: center; padding: 0; }
+  .side-min #brand-name, .side-min .brand-c .ic, .side-min .ni .nl, .side-min .sf-row .ic, .side-min .sf-k, .side-min .sf-bar, .side-min .sf-v { display: none; }
+  .side-min .brand-c { position: absolute; left: 30px; top: 28px; width: 6px; height: 6px; margin: 0; }
+  .side-min .brand-c.pdot::after { right: 0; bottom: 0; }
+  .side-min .ni { justify-content: center; padding: 0; }
+  .side-min .ni .nnb, .side-min .ni .nub { position: absolute; left: 25px; top: 24px; margin: 0; }
+  .side-min .sf-row { justify-content: center; padding: 0; }
+  .side-min .sf-ring { position: relative; display: grid; place-items: center; width: 36px; height: 36px; font-size: 11px; line-height: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .side-min .sf-ring::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(currentColor calc(var(--p) * 1%), var(--track) 0); -webkit-mask: radial-gradient(circle closest-side, transparent 14.5px, #000 15px); mask: radial-gradient(circle closest-side, transparent 14.5px, #000 15px); }
+  .side-min .sf-row.warn .sf-ring { color: var(--warn); }
   /* top bar: title always names the page (the sidebar carries the tabs), then search, bell, connection and usage */
   .appbar #back { margin: 0; align-self: center; }
+  /* inside a 모니터링 app: ‹ 모니터링 where the page title stands; the empty title keeps the bar's right side in place */
+  .appbar #back.mon-up { display: inline-flex; align-items: center; gap: 2px; width: auto; padding: 0 8px 0 2px; color: var(--fg); font: 700 22px/30px var(--font); letter-spacing: -.02em; }
+  .appbar:has(#back.mon-up) h1 { visibility: hidden; }
   .appbar h1, .appbar:not(.back) h1 { display: block; align-self: center; flex: 1; min-width: 0; max-width: none; margin: 0; font: 700 22px/30px var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .appbar.tv h1 { flex: 0 0 auto; max-width: 260px; }
   .appbar .thead { flex: 1; min-width: 0; margin: 0 4px; }
