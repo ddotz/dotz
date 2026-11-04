@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, decisionText, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
-import { DRAFT_BODY_MAX, type DraftApproval, type DraftFileIn, draftActionOf, draftNeedsText, parseDraftApproval, quotedDraft, refreshDraft, rewriteDraftTo, withStagedFiles } from "./draft-approval.ts";
+import { blockDraftRef, DRAFT_BODY_MAX, type DraftApproval, type DraftFileIn, draftActionOf, draftNeedsText, parseDraftApproval, quotedDraft, refreshDraft, rewriteDraftTo, withStagedFiles } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { broadcast as broadcastRaw, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
@@ -995,13 +995,18 @@ export function resolveNotices(sel: { ids?: unknown; match?: unknown; conv?: unk
 // Signal 5: the item behind a send approval was handled without the notice hearing of it. An open draft decision is the owner's to pick, yet the draft
 // itself can be over: sent from the app or by the owner's own client, dropped, replaced by a revision, marked 답장 안 함, answered on the platform,
 // deleted at the source, or handled on another computer. The apps know it (hub/draft-handled.ts); this settles the notice as resolved.
-let draftHandled: (d: Decision, n: Notice) => Promise<boolean> | boolean = () => false;
+// A message asking about several drafts at once has one notice per draft without `draft`: its block title still names the ref (blockDraftRef).
+let draftHandled: (d: Decision, n: Notice, ref: string) => Promise<boolean> | boolean = () => false;
 export const setDraftHandled = (fn: typeof draftHandled) => void (draftHandled = fn);
+const openDraftRef = (i: Notice): string | undefined => i.decision!.draft?.ref ?? blockDraftRef(i.title, i.decision!.options.map(o => o.label));
 export async function settleHandledDrafts(at = now()): Promise<number> {
-	const open = items.filter(i => isOpenDecision(i) && i.decision!.draft?.ref && !i.decision!.to.startsWith("auth:"));
+	const open = items.flatMap(i => {
+		const ref = isOpenDecision(i) && !i.decision!.to.startsWith("auth:") ? openDraftRef(i) : undefined;
+		return ref ? [{ i, ref }] : [];
+	});
 	const hit: Notice[] = [];
-	for (const i of open)
-		if (await (async () => draftHandled(i.decision!, i))().catch(() => false)) hit.push(i);
+	for (const { i, ref } of open)
+		if (await (async () => draftHandled(i.decision!, i, ref))().catch(() => false)) hit.push(i);
 	for (const i of hit) if (isOpenDecision(i)) settleDecision(i, "", at, true);
 	return hit.length;
 }

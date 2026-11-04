@@ -150,7 +150,7 @@ tagStoredApps();
 setAppLabelResolver(key => appEntries(DATA_DIR).find(e => e.key === key)?.label ?? key);
 // One answer for the notices and the approval queue: is the item behind this send-approval ref (in this conversation) already handled?
 const refHandled = (ref: string, conv: string) => draftHandled(ref, { mail: { drafts: listMailDrafts, record: mailByKey }, comment: commentDraftFacts, kakao: kakaoDraftFacts }, conv);
-setDraftHandled(d => refHandled(d.draft!.ref!, d.to));
+setDraftHandled((d, _n, ref) => refHandled(ref, d.to));
 setRefHandled(refHandled);
 // Mails that wait are checked against their real thread (zele, read-only): an answer sent from Gmail or another script makes the mail 답장함 and closes its cards
 // and drafts. At most MAIL_RECONCILE_PER_RUN threads per 10 minutes on the sweep timer below; a larger pass at start.

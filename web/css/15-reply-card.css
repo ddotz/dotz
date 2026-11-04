@@ -17,6 +17,7 @@
 .rq-orig.clamp .rq-ot { --fade: 19px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); }
 .rq-og { height: 28px; min-height: 0; margin-top: var(--sp-05); padding: 0 var(--sp-1); color: var(--fg-3); font-size: var(--fs-meta); }
 .rq-og:hover { color: var(--fg); }
+.rq-og-wrap .rq-op { align-self: stretch; margin-top: var(--sp-2); }   /* the full original (10-reply-card.js rqOrigNode) takes the card's width */
 /* 초안: 카드의 본문, 상자 없이 (원칙 1·5) */
 .rq-body { margin-top: var(--sp-2); font: 400 15px/24px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
 .rq-body.clamp { --fade: 48px; max-height: calc(24px * 6); overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); }
