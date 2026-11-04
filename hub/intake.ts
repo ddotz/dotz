@@ -4,7 +4,8 @@ import { limitsCard, looksLikeCommand, parseCommand, runCommand } from "./contro
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { msg } from "./i18n.ts";
-import { askedText, emit, emitDelivery } from "./events.ts";
+import { recordCorrection } from "./corrections.ts";
+import { askedText, emit, emitDelivery, onEmit } from "./events.ts";
 import { attachmentLine, attachmentLines, type Upload } from "./files.ts";
 import { pickedLines, type Picked } from "./picked.ts";
 import { abortLane, approvesBudget, lanes, ownerNotes, sendToLane } from "./lanes.ts";
@@ -110,6 +111,8 @@ function inboxBody(e: Record<string, any>): string {
 // COALESCE_MS of each other (at most COALESCE_MAX_MS after the first) become one turn, the way someone's inbox monitor
 // batched lines that arrived together.
 const COALESCE_MS = Number((cfg as any).gateway?.coalesce_ms ?? DEFAULTS.coalesce_ms);
+// Every owner message of every surface is emitted to the inbox first, so the ledger sees them all, lanes and commands included.
+onEmit(e => recordCorrection(e));
 export const bursts = new Map<string, { events: Record<string, any>[]; replyTo?: string; first: number; timer?: ReturnType<typeof setTimeout> }>();
 
 export function intake(event: Record<string, any>, target: string, replyTo?: string): void {
@@ -191,7 +194,7 @@ export async function answerCommand(target: string, text: string, replyTo?: stri
 // The owner's answer to the orchestrator-error ask (orch-error.ts): handled here because the orchestrator cannot read it.
 // Restart is the same call as `/restart orchestrator`; waiting leaves the one automatic resume to the health probe.
 async function answerOrchError(target: string, answer: "restart" | "wait", session: Orchestrator, replyTo?: string): Promise<void> {
-	if (answer === "restart") session.resumeNow();
+	if (answer === "restart") session.resumeNow("owner's 다시 시작 on the error card");
 	else if (session.orch.error) session.orch.error.waiting = true;
 	const text = answer === "restart" ? "오케스트레이터만 다시 시작하고 답하지 못한 요청을 다시 처리해요." : "연결이 돌아오면 한 번 자동으로 다시 시도해요.";
 	await out(target, text, replyTo, { source: "gateway" }).catch(e => log(`orchestrator error reply failed: ${e}`));

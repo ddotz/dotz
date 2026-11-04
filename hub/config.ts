@@ -2,9 +2,12 @@ import { randomBytes } from "node:crypto";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { testDataRefusal } from "./live-guard.ts";
 
 export const HOME = homedir();
 export const DATA_DIR = process.env.DOTZ_DIR ?? join(HOME, ".dotz");
+const refused = testDataRefusal(DATA_DIR);
+if (refused) throw new Error(refused);
 export const expand = (p: string) => p.replace(/^~(?=\/|$)/, HOME);
 
 // `language`: BCP-47-ish code of the identity's main language ("ko", "en", "ja", ...); setup writes it. See hub/i18n.ts.
@@ -308,6 +311,8 @@ export const paths = {
 	rules: join(DATA_DIR, "RULES.md"),
 	ruleTitles: join(DATA_DIR, "rule-titles.json"),
 	lessons: join(DATA_DIR, "LESSONS.md"),
+	corrections: join(DATA_DIR, "corrections.jsonl"),
+	repeatAlerts: join(DATA_DIR, "repeat-alerts.json"),
 	// Owner memory (modeled on someone's human card / boundaries / observations): owner.md and boundaries.md go into the
 	// orchestrator's start prompt, observations.md only into the nightly reflection.
 	memory: join(DATA_DIR, "memory"),

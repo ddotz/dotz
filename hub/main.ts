@@ -501,7 +501,7 @@ startSchedules(s => {
 	deliver(inboxText(event), { target: channel });
 });
 syncRoutineSchedules();
-startReflection(text => deliver(text), () => orch.sessionFile);
+startReflection(text => deliver(text), () => orch.sessionFile, text => out("alert", text, undefined, { source: "gateway" }));
 for (const l of telemetryOff()) log(l);
 startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`harness update post failed: ${e}`)), restartGateway, alert);
 startTokenAudit(alert);
