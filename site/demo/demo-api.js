@@ -43,6 +43,8 @@
     const c = F.conversations.find(x => x.target === `mail:${k}`);
     if (c) c.mail = F.mailCard(m);
   }
+  // m-1 has a reply draft awaiting confirmation: its asking message is the card of the mail's chat (the open decision notice n-demo-1 carries the same draft).
+  F.histories["mail:m-1"].push({ ts: F.T_ASKM1, kind: "out", source: "orchestrator", target: "mail:m-1", text: F.mailDraftAsk });
   const log = { unknown: [], posts: [], said: [] };
   window.__demoApi = log;
 
@@ -151,11 +153,11 @@
       { from: "rules", to: "orchestrator", label: "규칙" }, { from: "lessons", to: "orchestrator", label: "배운 것" }, { from: "memory", to: "orchestrator", label: "기억" }, { from: "monitor", to: "lanes", label: "변화" },
     ],
     projects: [
-      { id: "p-blog", name: "블로그 정리", status: "working", status_text: "작업 중", overrides: 2, cwd: "/home/me/Code/blog", channels: [{ kind: "work", kind_text: "작업 채널", name: "블로그" }],
+      { id: "p-blog", name: "블로그 정리", status: "working", status_text: "작업 중", overrides: 2, cwd: "~/projects/blog", channels: [{ kind: "work", kind_text: "작업 채널", name: "블로그" }],
         fields: { model: { value: "claude-opus-4-8", global: "claude-opus-4-8", source: "global" }, effort: { value: "xhigh", global: "high", source: "project" }, worker_model: { value: "claude-sonnet-5-5", global: "claude-sonnet-5-5", source: "global" }, worker_effort: { value: "medium", global: "medium", source: "global" }, runtime: { value: "omo", global: "omo", source: "global" }, fallback: { value: [], global: [], source: "global" }, worker_fallback: { value: [], global: [], source: "global" } },
         files: [{ name: "AGENTS.md", bytes: 2480, modified: new Date(Date.now() - 864e5).toISOString() }], features: [{ name: "글 올리기 전 맞춤법" }], deny: ["rm -rf"], setup: { purpose: "블로그 글을 다듬고 올려요.", logins: [{ name: "티스토리" }], monitors: [1], standing: "" },
         map: { nodes: [], edges: [] } },
-      { id: "p-home", name: "집안일", status: "idle", status_text: "대기", overrides: 0, cwd: "/home/me/Code/home", channels: [{ kind: "home", kind_text: "홈 채널", name: "집" }],
+      { id: "p-home", name: "집안일", status: "idle", status_text: "대기", overrides: 0, cwd: "~/projects/home", channels: [{ kind: "home", kind_text: "홈 채널", name: "집" }],
         fields: { model: { value: "claude-opus-4-8", global: "claude-opus-4-8", source: "global" }, effort: { value: "high", global: "high", source: "global" }, worker_model: { value: "claude-sonnet-5-5", global: "claude-sonnet-5-5", source: "global" }, worker_effort: { value: "medium", global: "medium", source: "global" }, runtime: { value: "omo", global: "omo", source: "global" }, fallback: { value: [], global: [], source: "global" }, worker_fallback: { value: [], global: [], source: "global" } },
         files: [], features: [], deny: [], setup: null, map: { nodes: [], edges: [] } },
     ],
@@ -239,11 +241,12 @@
   const ST = {};
   const st = t => (ST[t] ||= { card: null, draft: null, list: null, last: null, awaitEdit: false, alt: 0 });
   ST["ch:2"] = { ...st("ch:2"), card: { kind: "pick", options: ["짧은 공지", "목록 공지", "공지 없이 배포"] } };
+  ST["mail:m-1"] = { ...st("mail:m-1"), card: { kind: "send" }, draft: { kind: "mail", key: "m-1", variant: "normal" } };
 
   const mail = k => F.mails.find(m => m.key === k);
   const who = m => (m.org ? m.name : `${m.name}님`);
   const inbox = () => F.mails.filter(m => m.dir === "in" && !m.archived);
-  const owed = () => inbox().filter(m => m.reply === "needs");
+  const owed = () => inbox().filter(m => m.reply === "needs" || m.reply === "draft");
   const quote = lines => lines.map(l => `> ${l}`).join("\n");
   const rx = (s, re) => re.test(s);
   const SUGGEST = "이렇게 말해 보세요.\n\n- 메일 정리해 줘\n- 오늘 일정 알려 줘\n- 가격 페이지 바뀌면 알려 줘";
@@ -321,10 +324,10 @@
     st(t).card = null; st(t).draft = null;
     if (d.kind === "mail") {
       const m = mail(d.key);
-      m.reply = "replied";
+      m.reply = "replied"; delete m.suggest;
       const sent = { key: `s-${Date.now()}`, at: new Date().toISOString(), dir: "out", read: true, from: "나 <me@example.com>", to: m.from, name: m.name, short: m.short, subject: `Re: ${m.subject}`, summary: "dotz가 쓴 답장이에요.", text: draftLines(d).join("\n") };
       F.mails.push(sent);
-      const c = conv(`mail:${m.key}`); if (c && c.mail) c.mail.reply = "replied";
+      const c = conv(`mail:${m.key}`); if (c && c.mail) { c.mail.reply = "replied"; delete c.mail.suggest; }
       F.histories[`mail:${sent.key}`] = [F.mailEvent(sent)];
       F.conversations.push({ target: `mail:${sent.key}`, last: { ts: sent.at, text: sent.subject, from: "owner" }, unread: 0, read: sent.at, mail: F.mailCard(sent) });
       worklog(`${who(m)}에게 답장을 보냈어요. (데모)`);
@@ -338,6 +341,8 @@
     return `[done] ${c.platform}에 답글을 달았어요.\n데모라 실제로 올라가지는 않아요.${left.length ? `\n\n남은 댓글이 ${left.length}개예요. "다음 댓글"이라고 하면 이어서 써요.` : ""}`;
   }
   function dropDraft(t) {
+    const d = st(t).draft, m = d && d.kind === "mail" && mail(d.key);
+    if (m && m.suggest) { delete m.suggest; if (m.reply === "draft") m.reply = "needs"; const c = conv(`mail:${m.key}`); if (c && c.mail) { c.mail.reply = m.reply; delete c.mail.suggest; } }
     st(t).card = null; st(t).draft = null; st(t).awaitEdit = false;
     return "알겠어요. 초안은 버렸고 아무것도 보내지 않았어요.";
   }
@@ -597,14 +602,31 @@
   }
   const plainAsk = text => text.replace(/^\[[a-z]+\]\s*/i, "");
 
-  function answer(body) {
-    const t = typeof target === "string" ? target : "main";
+  // The open decision notice of a conversation follows its scripted card: answered once the card is used up, rewritten while 고치기 keeps it going.
+  const openDecision = t => F.notices.items.find(x => x.kind === "decision" && x.decision.state === "open" && x.decision.to === t);
+  function settleDecision(n, t, had, r, pick) {
+    if (!n || !had) return;
+    const d = st(t).draft;
+    if (st(t).card) {
+      if (d && n.decision.draft) { n.decision.draft.body = draftLines(d).join("\n"); emit({ kind: "notice", item: n }); }
+      return;
+    }
+    const num = pick ? Number(pick.n) : /^\[done\]/.test(r.text) ? 1 : /^알겠어요\. 초안은 버렸/.test(r.text) ? 3 : 1;
+    const opt = n.decision.options.find(o => o.n === num) || n.decision.options[0];
+    Object.assign(n.decision, { state: "answered", answer: `${opt.n}) ${opt.label}`, answered_at: new Date().toISOString(), ...(opt.label === "보내기" && n.decision.draft ? { send: { state: "sent", at: new Date().toISOString() } } : {}) });
+    n.read = true;
+    F.state.notices_unread = unread();
+    emit({ kind: "notice", item: n });
+  }
+  function answer(body, to) {
+    const t = to || (typeof target === "string" ? target : "main");
     const picks = Array.isArray(body.picks) ? body.picks : [];
     const text = String(body.text || "").trim() || (picks.length ? `${picks[0].n}) ${picks[0].label}` : "메시지");
     ownerSays(t, text, picks);
     setWorking(true);
     let r;
-    try { r = respond(t, text, picks); }
+    const openN = openDecision(t), had = !!st(t).card;
+    try { r = respond(t, text, picks); settleDecision(openN, t, had, r, picks[0]); }
     catch (e) { console.warn(`demo script: ${e.message}`); r = { text: `잠깐 헷갈렸어요. 다시 말해 주세요.\n${SUGGEST}` }; }
     st(t).last = r;
     log.said.push({ t, text, reply: r.text });
@@ -727,6 +749,7 @@
     ],
   };
 
+  const onboard = key => ({ key, state: key === "slack" ? "idle" : "done", step: null, owner: null, error: null, url: null, updated_at: new Date().toISOString() });
   function get(u) {
     const p = u.pathname;
     if (p === "/api/state") return json({ ...F.state, work_now: Date.now(), notices_unread: unread() });
@@ -749,6 +772,12 @@
     if (/^\/api\/integrations\/[^/]+\/settings$/.test(p)) return json({ fields: F.appFields });
     if (/^\/api\/integrations\/[^/]+\/features$/.test(p)) return json(F.appFeatures);
     if (p === "/api/monitors") return json({ items: F.monitors });
+    if (p === "/api/monitoring/peers") return json([]);
+    // 감시·예약 설정 (hub/app-settings.ts), 답장 초안의 받는 사람·첨부 (hub/draft-recipients.ts, hub/draft-attach.ts), 연결 자동 설정 (hub/onboarding.ts)
+    if (/^\/api\/(watches|schedules)\/[^/]+\/settings$/.test(p)) return json({ fields: [{ key: "every_minutes", label: "확인 주기", type: "number", help: "몇 분마다 확인할지 정해요", section: "watch", min: 1, max: 1440, value: 30 }] });
+    if (/^\/api\/drafts\/[^/]+\/recipients$/.test(p)) return json({ to: ["한서윤 <seoyun.han@example.com>"], cc: [], mode: "reply", editable: true, reply: true });
+    if (/^\/api\/drafts\/[^/]+\/files$/.test(p)) return json({ files: [], canAttach: true, library: false, editable: true });
+    if (/^\/api\/onboarding\/[^/]+$/.test(p)) return json(onboard(p.split("/")[3]));
     if (p === "/api/notices") return json({ ...F.notices, unread: unread() });
     if (p === "/api/custom") return json({ dir: "", cards: [], projects: F.projects, routines: [], links: [] });
     if (p === "/api/custom/project") return json(F.projects.find(x => x.key === u.searchParams.get("key")) || {});
@@ -760,6 +789,7 @@
       return f == null ? new Response("데모 파일이 없어요", { status: 404 }) : new Response(f, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
     }
     if (lists[p] !== undefined) return json(lists[p]);
+    log.unknown.push(`GET ${p}`);
     return json({});
   }
 
@@ -796,6 +826,8 @@
   function postApi(u, body) {
     const p = u.pathname;
     log.posts.push(p);
+    const ob = /^\/api\/onboarding\/([^/]+)\//.exec(p);
+    if (ob) return json(onboard(ob[1]));
     if (/^\/api\/comments\/drafts\/[^/]+\/send$/.test(p)) return json({ ok: true });
     if (/^\/api\/comments\/thread\/[^/]+\/[^/]+\/read$/.test(p) || p === "/api/ig-dm/refresh") return json({ ok: true });
     if (/^\/api\/comments\/comment\/[^/]+\/draft$/.test(p)) return json({ state: "drafting" }, 202);
@@ -814,7 +846,20 @@
       if (pj) for (const k of ["title", "purpose", "goal", "milestones"]) if (body[k] !== undefined) pj.record[k] = body[k];
       return json({ ok: true });
     }
-    if (/^\/api\/notices\/[^/]+\/answer$/.test(p)) return isOutward(body) ? fail(NOTE) : json({});
+    const nr = /^\/api\/notices\/([^/]+)\/(answer|ignore|unignore|dismiss)$/.exec(p);
+    if (nr) {
+      const n = F.notices.items.find(x => String(x.id) === decodeURIComponent(nr[1]));
+      if (!n) return fail("이 알림은 이미 처리됐어요");
+      if (nr[2] === "answer") {
+        const opt = n.decision && n.decision.options.find(o => o.n === Number(body.n));
+        if (!opt) return fail("고를 수 없는 항목이에요");
+        answer({ text: `${opt.n}) ${opt.label}${body.note ? ` - ${body.note}` : ""}`, picks: [{ q: n.title, n: opt.n, label: opt.label, ...(body.note ? { note: body.note } : {}) }] }, n.decision.to);
+      } else if (nr[2] === "ignore") { n.ignored = new Date().toISOString(); if (n.decision) n.decision.state = "ignored"; }
+      else if (nr[2] === "unignore") { delete n.ignored; if (n.decision) n.decision.state = "open"; }
+      else { F.notices.items = F.notices.items.filter(x => x !== n); }
+      F.state.notices_unread = unread();
+      return json({ ok: true, item: nr[2] === "dismiss" ? undefined : n, unread: unread() });
+    }
     if (isOutward(body)) return fail(NOTE);
     return json({});
   }
