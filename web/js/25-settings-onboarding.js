@@ -85,6 +85,11 @@ function obPoll(key) {
     catch { obPoll(key); }
   }, OB_POLL_MS);
 }
+// A live messenger has nothing left to connect, so its section goes; a run in progress or failed stays whatever the link says.
+const obSection = (key, live) => {
+  const s = OB[key] && OB[key].state;
+  return live && s !== "running" && s !== "waiting" && s !== "failed" ? [] : [el("div", { class: "sec", text: "자동 연결" }), onboardingPanel(key)];
+};
 // The panel: state, current step, error (only when the API sent one), the single owner line, and its actions.
 function onboardingPanel(key) {
   const v = OB[key] || { state: "idle", step: null, owner: null, error: null, url: null };

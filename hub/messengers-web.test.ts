@@ -227,6 +227,19 @@ describe("메신저 설정", () => {
 		expect(await ev<string>(v, `document.querySelector("#telegram [data-onb-url]").textContent`)).toBe("https://t.me/example");
 	}, 30_000);
 
+	test("자동 연결 leaves a live messenger, and stays for a failed run or a link still connecting", async () => {
+		items.find(m => m.id === "jandi").state = "ok";
+		ob.jandi = { ...idle("jandi"), state: "failed", error: "웹훅을 만들지 못했어요" };
+		const v = await open(1280, 800, "light", "jandi");
+		await waitFor(v, `document.querySelector('#jandi [data-onb-state="failed"]')`);
+		ob.jandi = idle("jandi");
+		await run(v, `loadOnboarding("jandi")`);
+		await waitFor(v, `!document.querySelector("#jandi [data-onb]") && [...document.querySelectorAll("#jandi .sec")].every(x => x.textContent !== "자동 연결")`);
+		items.find(m => m.id === "jandi").state = "connecting";
+		await run(v, `loadMessengerIndex()`);
+		await waitFor(v, `document.querySelector('#jandi [data-onb-state="idle"]')`);
+	}, 30_000);
+
 	test("JANDI rooms stay read-only and 저장 sends only what changed", async () => {
 		const v = await open(1280, 800, "light", "jandi");
 		await waitFor(v, `document.querySelectorAll("#jandi [data-room]").length === 2`);
@@ -262,7 +275,7 @@ describe("메신저 설정", () => {
 		expect(await noOverflow(phone, "#messengers .list")).toBe(true);
 		for (const id of ["discord", "jandi", "slack", "telegram"]) {
 			const v = await open(1280, 800, "light", id);
-			await waitFor(v, `document.querySelector("#${id} [data-onb]")`);
+			await waitFor(v, `document.querySelector("#${id} [data-ms-status]")`);
 			await Bun.write(`${SHOTS}/messenger-${id}.png`, await v.screenshot());
 			expect(await noOverflow(v, `#${id} .list`)).toBe(true);
 		}
