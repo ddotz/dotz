@@ -189,8 +189,8 @@ test("커스텀 내 규칙: five rows and 더 보기 as the card's last line, a 
 test("a row opens the overview; every section opens its own page and 뒤로 or the browser back returns", async () => {
 	const v = await boot(390, 844);
 	await run(v, `document.querySelectorAll("#pl-list .pl-row")[0].click()`);
-	await waitFor(v, `document.querySelectorAll(".pm-sec").length === 5`);
-	expect(await q<string[]>(v, `return [...document.querySelectorAll(".pm-sec > span")].map(n => n.textContent)`)).toEqual(["단계 1/3", "세션 1", "작업 1", "결과 3", "감시 3"]);
+	await waitFor(v, `document.querySelectorAll(".pm-sec").length === 6`);
+	expect(await q<string[]>(v, `return [...document.querySelectorAll(".pm-sec > span")].map(n => n.textContent)`)).toEqual(["지금 상황", "단계 1/3", "세션 1", "작업 1", "결과 3", "감시 3"]);
 	// 확인 필요 is the primary action, and it is a single tap into the waiting session's chat
 	expect(await q(v, `return document.querySelector(".pm-need-t").textContent`)).toBe("질문 세션 1");
 	expect(await q(v, `return document.querySelector('.pm-need [data-k="answer"]').textContent`)).toBe("대화에서 답하기");
@@ -212,7 +212,7 @@ test("a row opens the overview; every section opens its own page and 뒤로 or t
 	expect(writes.at(-1)!.body.milestones.filter((m: Mile) => m.done).length).toBe(2);
 	await run(v, `document.querySelector(".pdv .pdv-back").click()`);
 	await waitFor(v, `!document.querySelector(".pdv")`);
-	expect(await q(v, `return document.querySelectorAll(".pm-sec").length`)).toBe(5);
+	expect(await q(v, `return document.querySelectorAll(".pm-sec").length`)).toBe(6);
 	// 단계: the steps are on the page, a tap on one writes the milestones like the goal page
 	await waitFor(v, `document.querySelectorAll('.pm-step[aria-checked="true"]').length === 2`);
 	await run(v, `document.querySelectorAll(".pm-step")[2].click()`);
@@ -232,7 +232,7 @@ test("a row opens the overview; every section opens its own page and 뒤로 or t
 	await waitFor(v, `!!document.querySelector(".pdv")`);
 	await run(v, `history.back()`);
 	await waitFor(v, `!document.querySelector(".pdv")`);
-	expect(await q(v, `return !document.querySelector("#v-project").hidden && document.querySelectorAll(".pm-sec").length`)).toBe(5);
+	expect(await q(v, `return !document.querySelector("#v-project").hidden && document.querySelectorAll(".pm-sec").length`)).toBe(6);
 	// 목표와 진행 edit was written through the project's record key
 	expect(writes[0].body.key).toBe("ch:8000");
 });
@@ -240,7 +240,7 @@ test("a row opens the overview; every section opens its own page and 뒤로 or t
 test("from 1100px the list sits beside the overview, and a section page opens over both", async () => {
 	const v = await boot(1280, 900);
 	await run(v, `document.querySelectorAll("#pl-list .pl-row")[0].click()`);
-	await waitFor(v, `document.querySelectorAll(".pl-row").length > 0 && document.querySelectorAll(".pm-sec").length === 5`);
+	await waitFor(v, `document.querySelectorAll(".pl-row").length > 0 && document.querySelectorAll(".pm-sec").length === 6`);
 	expect(await q(v, `return !document.querySelector("#v-projects").hidden && document.querySelector(".views").classList.contains("pp")`)).toBe(true);
 	// the open project is the selected row, and the chips stay on one line
 	expect(await q(v, `return document.querySelector("#pl-list .pl-row.on .pl-n").textContent`)).toBe("프로젝트 1");

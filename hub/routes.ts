@@ -55,6 +55,7 @@ import { main as mainOrch, orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
 import { type DecisionSend, type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissedAlertAts, dismissNotice, handledNotice, ignoreNotice, undismissNotice, listNotices, markNoticesRead, readConversationNotices, reopenDraftNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
+import { projectFiles } from "./projectinfo.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
@@ -936,7 +937,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			}
 		}
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/file") {
-			return fileRoute(req, url, fileRoots(), sentFiles());
+			return fileRoute(req, url, fileRoots(), new Set([...sentFiles(), ...projectFiles()]));
 		}
 		if ((req.method === "GET" || req.method === "HEAD") && url.pathname === "/api/canvas") {
 			return canvasRoute(req, url, fileRoots(), sentFiles());

@@ -9,6 +9,7 @@ import { DATA_DIR, now, writeAtomic } from "./config.ts";
 import { historyEvents } from "./events.ts";
 import { lanes, laneLive } from "./lanestate.ts";
 import { countChannelNotices, dropChannelNotices } from "./notices.ts";
+import { loadProjectInfo, removeProjectInfo } from "./projectinfo.ts";
 import { loadProjects, removeProject } from "./projects.ts";
 import { allWatches } from "./watch.ts";
 import { clearChannel, getSetup, watchLabel } from "./workchannels.ts";
@@ -94,12 +95,13 @@ export async function deleteProject(key: string, opts: { archive?: boolean } = {
 	if (opts.archive !== false) {
 		const events = historyEvents(plan.channel, 100_000);
 		mkdirSync(join(DATA_DIR, "archive", "projects"), { recursive: true });
-		writeAtomic(plan.archive, [{ archived: now(), project: { channel: plan.channel, name: plan.name, setup: getSetup(id) ?? null, record: loadProjects()[plan.channel] ?? null } }, ...events].map(e => JSON.stringify(e)).join("\n") + "\n");
+		writeAtomic(plan.archive, [{ archived: now(), project: { channel: plan.channel, name: plan.name, setup: getSetup(id) ?? null, record: loadProjects()[plan.channel] ?? null, info: loadProjectInfo()[plan.channel] ?? null } }, ...events].map(e => JSON.stringify(e)).join("\n") + "\n");
 		archive = plan.archive;
 	}
 	clearChannel(id);
 	const notices = dropChannelNotices(plan.channel);
 	removeProject(plan.channel);
+	removeProjectInfo(plan.channel);
 	let result: DeleteResult["discord"] = { ok: true };
 	await deps.removeChannel(id).catch(e => {
 		result = { ok: false, error: (e as Error).message };

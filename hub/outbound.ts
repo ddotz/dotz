@@ -14,6 +14,7 @@ import { asksPersonalInChat } from "./personal-ask.ts";
 import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages, tailEvents, workAnswer } from "./events.ts";
 import { settleWaiting, type Waiting } from "./awaiting.ts";
 import { outEvent } from "./projectchat.ts";
+import { recordProjectInfo } from "./projectinfo.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
 import { allowedRoots } from "./files.ts";
 import { claimPrefix, LaneRuntimeMismatch, lanes, type LaneDelivery, turnHeader } from "./lanes.ts";
@@ -28,7 +29,7 @@ import { createPrompts, type WorkLink } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
-import { splitTone, stripHandoff } from "./tone.ts";
+import { splitTone, stripHandoff, stripProjectInfo } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { markDraftPosted, onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote } from "./approval-queue.ts";
@@ -173,6 +174,12 @@ const threadHome = (thread: string): string | undefined => {
 	const parent = discord.channels.threads[thread]?.parent;
 	return parent && discord.channels.work[parent] ? parent : undefined;
 };
+// A project turn's <project-info> block goes into the project's info (hub/projectinfo.ts); an open project page reloads on the event.
+function noteProjectInfo(target: string, text: string): void {
+	const parent = target.startsWith("th:") ? threadHome(target.slice(3)) : undefined;
+	const key = parent ? `ch:${parent}` : /^ch:\d+$/.test(target) ? target : undefined;
+	if (key && recordProjectInfo(key, text)) broadcast({ kind: "project_info", key });
+}
 const threadMail = (thread: string): string | undefined => {
 	const m = mailByThread(thread);
 	return m && mailTarget(m.key);
@@ -349,6 +356,8 @@ export const systemNote = (target: string, text: string, system: string, worker?
 export async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
 	const answersOwner = extra.source === undefined || extra.source === "orchestrator";
+	noteProjectInfo(target, text);
+	if (text && !stripProjectInfo(text)) return { delivered: true };
 	// A gateway post to the alert conversation (a failing watch) is gated like alert() below.
 	if (target === "alert" && extra.source === "gateway" && !extra.update_key && repeatAlert(text)) extra = { ...extra, repeat: true };
 	// The assistant's send-approval card waits its turn in its conversation (a held card is posted later by the queue, marked `queued`).
@@ -509,7 +518,10 @@ function wireAnswers(c: Conv): void {
 	// The final answer of a turn goes to every channel that asked and did not already get a dotz_send reply.
 	c.o.setAnswerHandlers(
 		c.queue.onPrompt,
-		text => {
+		answer => {
+			// Read here too: an answer already sent with dotz_send drops this final text, and `[later]` must arrive bare.
+			noteProjectInfo(c.queue.current()?.target ?? c.primary, answer);
+			const text = stripProjectInfo(answer) || answer;
 			// The request this answer is for: only a [done] / [fail] to the same request can close an earlier question about it (notices.ts).
 			orchestratorAnswered(text, c.queue.current()?.replyTo);
 			c.queue.onAnswer(text);

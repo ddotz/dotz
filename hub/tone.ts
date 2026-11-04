@@ -66,13 +66,18 @@ export function parseTone(text: string): { tone?: Tone; text: string } {
 // OmO's harness opens a final answer with a handoff block ("Ask: ... - wanted: ... For you: ... Now: ... Next: ..."): agent
 // bookkeeping, not owner text. Shown messages drop that leading paragraph; a message that was only the block keeps its
 // "For you" part. Claim and report parsing read the raw text.
-export function stripHandoff(text: string): string {
+export function stripHandoff(raw: string): string {
+	const text = stripProjectInfo(raw);
 	const m = /^\s*Ask:[^\n]*(?:\n(?!\s*\n)[^\n]*)*/.exec(text);
 	if (!m || !/\bFor you:/.test(m[0])) return text;
 	const rest = text.slice(m[0].length).replace(/^\s+/, "");
 	if (rest) return rest;
 	return /\bFor you:\s*([\s\S]*?)(?:\s+Now:[\s\S]*)?$/.exec(m[0])?.[1]?.trim() || text;
 }
+
+// A project turn's <project-info> block (hub/projectinfo.ts) is for the gateway, never text for the owner. An unclosed block runs to the end.
+export const PROJECT_INFO_BLOCK = /\s*<project-info>([\s\S]*?)(?:<\/project-info>|$)/g;
+export const stripProjectInfo = (text: string): string => (text.includes("<project-info>") ? text.replace(PROJECT_INFO_BLOCK, "").trimEnd() : text);
 
 // True when a reply still carries the harness handoff labels (even when the leading block was stripped or never led).
 export const leaksHandoff = (text: string): boolean => /\bFor you:[\s\S]*\bNow:[\s\S]*\bNext:/.test(text);

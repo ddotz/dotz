@@ -9,6 +9,7 @@ import { basename, join } from "node:path";
 import type { BgWork } from "./bgwork.ts";
 import { cfg, DATA_DIR, expand, HOME, log, paths, TEMPLATES, TZ, writeAtomic } from "./config.ts";
 import { loadFeatureDirs } from "./featuredirs.ts";
+import { loadProjectInfo, type ProjectInfo } from "./projectinfo.ts";
 import { loadProjects, type ProjectRecord } from "./projects.ts";
 import { addSchedule, listSchedules, removeSchedule, type Schedule } from "./schedule.ts";
 import { parseTone, previewSource } from "./tone.ts";
@@ -638,6 +639,7 @@ export type DetailInput = {
 	watches: Array<Record<string, unknown>>;
 	work?: BgWork[];
 	record?: ProjectRecord;
+	info?: ProjectInfo;
 	channels: ChannelsIn;
 	git?: GitState;
 	// the gateway's own source checkout: an open task that names no other project is about it
@@ -693,6 +695,7 @@ export function projectDetailView(d: DetailInput) {
 		results.push({ kind: "verify", at: new Date(r.ranAt).toISOString(), title: r.command.slice(0, 160), ok: r.exitCode === 0, ...(lane ? { lane } : {}) });
 	}
 	for (const c of d.git?.commits ?? []) results.push({ kind: "commit", at: c.at, title: c.subject, hash: c.hash });
+	for (const r of d.info?.results ?? []) results.push({ kind: "note", at: r.at, title: r.text });
 	results.sort((a, b) => at(b.at) - at(a.at));
 
 	const lower = (s: string) => s.toLowerCase();
@@ -727,6 +730,7 @@ export function projectDetailView(d: DetailInput) {
 	return {
 		key: p.key,
 		...(d.record ? { record: d.record } : {}),
+		...(d.info ? { info: d.info } : {}),
 		monitors,
 		routines,
 		schedules: [...plainSchedules, ...routineSchedules],
@@ -828,7 +832,7 @@ async function projectDetail(key: string, deps: CustomDeps) {
 		if (r) reports[l.name] = r;
 	}
 	return projectDetailView({
-		project, record: project.record, others: all, lanes, reports, receipts: readReceipts(), tasks: openTasks(), routines: pins.routines, schedules: listSchedules(), watches: listWatches(), channels, work: deps.work?.() ?? [],
+		project, record: project.record, ...(project.channel ? { info: loadProjectInfo()[`ch:${project.channel.id}`] } : {}), others: all, lanes, reports, receipts: readReceipts(), tasks: openTasks(), routines: pins.routines, schedules: listSchedules(), watches: listWatches(), channels, work: deps.work?.() ?? [],
 		...(dir ? { git: await gitState(dir), self: real(dir) === real(join(import.meta.dir, "..")) } : {}),
 	});
 }
