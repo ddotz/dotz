@@ -501,6 +501,19 @@ a:hover {
   letter-spacing: -0.01em;
 }
 
+.card-scene h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.card-scene p {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.7;
+}
+
 .links {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
