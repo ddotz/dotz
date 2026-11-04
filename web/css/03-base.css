@@ -28,7 +28,6 @@
 .mt-head .t { min-width: 0; font: 700 17px/24px var(--font); overflow-wrap: anywhere; }
 .mt-head .sup { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mt-head .sp { flex: 1; }
-.mt-head .tag { flex: none; }
 .mt-pick { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 .mt-model { flex: 2 1 240px; max-width: 360px; }
 .mt-eff { flex: 1 1 140px; max-width: 200px; }
