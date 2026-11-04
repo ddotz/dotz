@@ -2,7 +2,8 @@
 // Split out of main.ts; the restart hooks come from main as plumbing, so this module never imports it.
 import { readFileSync } from "node:fs";
 import { dropAnsweredMailDraft } from "./draft-drop.ts";
-import { approvalRoute, TRIAGE_MIN_DEFAULT, webAnswer } from "./approval-wire.ts";
+import { approvalRoute, draftAppOf, sendTargetOf, TRIAGE_MIN_DEFAULT, webAnswer } from "./approval-wire.ts";
+import { collectOutcomes, localMidnight } from "./reply-outcomes.ts";
 import { droppedDraftRefs, restoreReopenedDrafts } from "./draft-restore.ts";
 import { join } from "node:path";
 import { cloudflareGate } from "./devices.ts";
@@ -83,11 +84,11 @@ import { ptyRoute } from "./pty.ts";
 import { desk } from "./remote-desktop.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { routeSettings } from "./routes-settings.ts";
-import { commentFlags, commentNeeds, commentPending, commentsRoute } from "./comments/gateway.ts";
+import { commentFlags, commentNeeds, commentOutcomeFacts, commentPending, commentsRoute } from "./comments/gateway.ts";
 import { appHealth, loadUserApps, PROXY_ROOT, removeUserApp, setUserAppOff, userApp } from "./user-apps.ts";
 import { proxyMatch, proxyRequest } from "./app-proxy.ts";
 import { igDmRoute } from "./ig-dm-gateway.ts";
-import { kakaoPendingCount, kakaoPendingDrafts, kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
+import { kakaoDraftSends, kakaoPendingCount, kakaoPendingDrafts, kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
 import { defaultOnboardDeps, onboardingService, setOnboardDeps } from "./onboarding.ts";
 import { saveWebAccessInput } from "./onboarding-web-access.ts";
 
@@ -620,7 +621,10 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				return models.get(key) ? { ...item, model: models.get(key) } : item;
 			};
 			const items = await Promise.all([...kakao, ...comments].map(withModel));
-			return json({ items: items.sort((a, b) => b.at - a.at) });
+			// 실패 / 보낸 것 / 멈춘 이유 (hub/reply-outcomes.ts): the stores' own records, read once here; `items` stays as it was.
+			const at = Date.now();
+			const outcomes = collectOutcomes({ notices: listNotices(NOTICE_CAP).items, sendKind: ref => sendTargetOf(ref)?.kind, appOf: draftAppOf, comments: commentOutcomeFacts(), kakao: kakaoDraftSends(), since: localMidnight(at), now: at });
+			return json({ items: items.sort((a, b) => b.at - a.at), ...outcomes });
 		}
 		// The 앱 list (hub/user-apps.ts): the 모니터링 apps this install has on, then the owner's own manifests (with their health).
 		if (req.method === "GET" && url.pathname === "/api/apps") {
@@ -738,7 +742,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			return json(r.body, r.status);
 		}
 		// The waiting send-approval cards of a conversation, their batch answer and the owner's own edit of a draft (hub/approval-wire.ts).
-		if (url.pathname === "/api/approvals" || /^\/api\/drafts\/[^/]+\/body$/.test(url.pathname)) {
+		if (url.pathname === "/api/approvals" || url.pathname === "/api/approvals/failed" || /^\/api\/drafts\/[^/]+\/body$/.test(url.pathname)) {
 			const login = req.headers.get("tailscale-user-login") ?? "local";
 			const res = await approvalRoute(req, url, { login, triageMin: cfg.web.triage_min ?? TRIAGE_MIN_DEFAULT, deliver: (to, text, picks, decision) => deliverAnswer({ to, text, picks, notice: decision ?? "", login }) });
 			if (res) return res;

@@ -84,6 +84,16 @@ export const ruleAllows = (src: SourceConfig, text: string): boolean => {
 	});
 };
 
+// Why an enabled auto-send rule does not send this draft (the reasons dispatchReply gives for by: "rule"), or undefined when the rule would send it.
+// One source of truth: the gate refuses with it, and the review queue (hub/reply-outcomes.ts) reads it for every pending draft.
+export function ruleRefusal(src: SourceConfig, commentText: string, draft: Pick<Draft, "clean">, replies: Reply[], at: number): string | undefined {
+	if (!ruleAllows(src, commentText)) return "자동 보내기 규칙에 맞지 않아요";
+	if (!draft.clean) return "확인할 점이 있는 초안은 자동으로 보내지 않아요";
+	const today = replies.filter(r => r.source === src.key && r.via === "rule" && r.state !== "failed" && r.at > at - DAY).length;
+	if (today >= (src.autoSend?.max_per_day ?? 0)) return "오늘 자동으로 보낼 수 있는 횟수를 다 썼어요";
+	return undefined;
+}
+
 // The one send gate. Refuses without the owner's explicit pick (approval "owner", set only by the owner's 보내기 route or an
 // approved ask) or an enabled per-source rule that matches; refuses a second send of the same comment unless the first one failed.
 export function dispatchReply(req: ReplyRequest, deps: GateDeps): GateResult {
@@ -100,17 +110,15 @@ export function dispatchReply(req: ReplyRequest, deps: GateDeps): GateResult {
 	const text = (req.text ?? draft.text).trim();
 	if (!text) return refuse("보낼 글이 비어 있어요");
 	if (req.approval.by === "rule") {
-		if (!ruleAllows(src, comment.text)) return refuse("자동 보내기 규칙에 맞지 않아요");
-		if (!draft.clean) return refuse("확인할 점이 있는 초안은 자동으로 보내지 않아요");
-		const today = store.replies().filter(r => r.source === src.key && r.via === "rule" && r.state !== "failed" && r.at > now() - DAY).length;
-		if (today >= (src.autoSend?.max_per_day ?? 0)) return refuse("오늘 자동으로 보낼 수 있는 횟수를 다 썼어요");
+		const why = ruleRefusal(src, comment.text, draft, store.replies(), now());
+		if (why) return refuse(why);
 	} else if (req.approval.by !== "owner") return refuse("보내기 승인이 없어요");
 	const sendId = `send:${comment.id}`;
 	const prior = store.replies().find(r => r.id === sendId);
 	if (deps.inflight.has(sendId) || prior?.state === "sending" || prior?.state === "sent") return refuse(prior?.state === "sent" ? "이미 답글을 보냈어요" : "이미 보내는 중이에요");
 	const adapter = deps.adapters[src.kind];
 	if (!adapter) return refuse("이 댓글 종류를 보낼 수 없어요");
-	const record: Reply = { id: sendId, commentId: comment.id, source: src.key, thread: comment.thread, text, state: "sending", at: now(), draft: draft.code, via: req.approval.by, collector: deps.collector };
+	const record: Reply = { id: sendId, commentId: comment.id, source: src.key, thread: comment.thread, text, state: "sending", at: now(), draft: draft.code, via: req.approval.by, collector: deps.collector, ...(prior?.state === "failed" ? { attempts: (prior.attempts ?? 1) + 1 } : {}) };
 	deps.inflight.add(sendId);
 	store.putReply(record);
 	deps.onState?.(record);
