@@ -69,7 +69,7 @@ const server = Bun.serve({
 		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: projects.flatMap(x => x.lanes.map((l: any) => ({ ...l, pendingAsk: l.waiting, cwd: `/tmp/${x.key}`, home: x.key }))), terminals: {}, channels: { work: {}, homes: {}, lanes: {}, threads: {} }, discord: {}, notices_unread: 0 });
 		if (p === "/api/custom") return json({ dir: "~/.dotz/custom", cards: [], projects: [builtin, ...projects], routines: [], links: [] });
 		if (p === "/api/custom/project") {
-			if (url.searchParams.get("key") === "builtin:custom") return json({ groups: [{ id: "rules", label: "규칙", empty: "없어요", items: [{ title: "짧게 답해요" }] }] });
+			if (url.searchParams.get("key") === "builtin:custom") return json({ groups: [{ id: "rules", label: "내 규칙", empty: "없어요", items: ["하나", "둘", "셋", "넷", "다섯", "여섯", "일곱"].map(n => ({ title: `규칙 ${n}`, full: `[11-01] 규칙 ${n}의 원문` })) }] });
 			const d = detailOf(url.searchParams.get("key") || "");
 			return d ? json(d[0]) : json({ error: "not found" }, 404);
 		}
@@ -155,6 +155,22 @@ test("the list pages 12 projects at a time, filters by need/running/done and sea
 	await run(v, `document.querySelector("#pl-list .pl-row.sub").click()`);
 	await waitFor(v, `document.querySelector("#v-project .pmv-title")`);
 	expect(await q(v, `return document.querySelector("#v-project .pmv-title").textContent`)).toBe("커스텀");
+});
+
+test("커스텀 내 규칙: five rows and 모두 보기, a searchable full list, and a row opens the chat draft with the full text", async () => {
+	const v = await boot(390, 844);
+	await waitFor(v, `document.querySelector("#pl-list .pl-row.sub")`);
+	await run(v, `document.querySelector("#pl-list .pl-row.sub").click()`);
+	await waitFor(v, `document.querySelector("#v-project [data-k='rules-all']")`);
+	expect(await q(v, `return [...document.querySelectorAll("#v-project .list > .li")].map(e => e.textContent)`)).toEqual(["규칙 하나", "규칙 둘", "규칙 셋", "규칙 넷", "규칙 다섯", "규칙 7개 모두 보기"]);
+	expect(await q(v, `return document.querySelectorAll("#v-project .list .btn").length`)).toBe(0);
+	await run(v, `document.querySelector("#v-project [data-k='rules-all']").click()`);
+	await waitFor(v, `document.querySelector(".pdv-body #cm-q")`);
+	expect(await q(v, `return document.querySelectorAll(".pdv-body .li").length`)).toBe(7);
+	await run(v, `const i = document.querySelector("#cm-q"); i.value = "여섯의 원문"; i.dispatchEvent(new Event("input", { bubbles: true }))`);
+	expect(await q(v, `return [...document.querySelectorAll(".pdv-body .li")].map(e => e.textContent)`)).toEqual(["규칙 여섯"]);
+	await run(v, `document.querySelector(".pdv-body .li").click()`);
+	await waitFor(v, `!document.querySelector(".fs-card.pdv:not([aria-hidden])") && ta.value.includes("[11-01] 규칙 여섯의 원문")`);
 });
 
 test("a row opens the overview; every section opens its own page and 뒤로 or the browser back returns", async () => {

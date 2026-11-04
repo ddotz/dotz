@@ -552,21 +552,40 @@ export const BUILTIN_KEY = "builtin:custom";
 export const builtinProject = (): Project => ({ key: BUILTIN_KEY, name: "커스텀", note: "내 취향대로 바꾼 것을 한곳에서 보고, 바꾸고 싶은 건 말로 부탁해요", pinned: true, builtin: true, lanes: [] });
 
 type OverviewItem = { title: string; line?: string; full?: string; bad?: boolean };
-type OverviewGroup = { id: string; label: string; empty: string; items: OverviewItem[]; more?: number };
+type OverviewGroup = { id: string; label: string; empty: string; items: OverviewItem[] };
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const routineWhen = (r: Routine) => (!r.schedule ? "눌러서 실행해요" : "at" in r.schedule ? `매일 ${r.schedule.at}에 해요` : `${r.schedule.every_minutes}분마다 해요`);
 const VIEW_KO: Record<View, string> = { text: "글", stat: "숫자", list: "목록", kv: "항목별 값" };
-const RULE_CAP = 15;
 const RULE_TITLE_MAX = 25;
 
+// Fits RULE_TITLE_MAX whole: cut at the last word that fits, no ellipsis; only one unbroken word is cut inside.
+function shortTitle(s: string): string {
+	if (s.length <= RULE_TITLE_MAX) return s;
+	const end = s.lastIndexOf(" ", RULE_TITLE_MAX);
+	return s.slice(0, end > 0 ? end : RULE_TITLE_MAX).replace(/[\s,·]+$/, "");
+}
+
 // One short phrase for a rule row. The owner's phrase wins: <DATA_DIR>/rule-titles.json maps a rule's text (as written after
-// its "- ") to a title, which the bot adds with the rule. Without one: the text without its [MM-DD] stamp, up to the first
-// sentence or clause end (". ", ": ", "; ", "("), cut to RULE_TITLE_MAX. No model call; the full text stays on the row.
+// its "- ", with or without the [MM-DD] stamp) to a title, which the bot adds with the rule. Without one: the text without its
+// stamp, up to the first sentence or clause end (". ", ": ", "; ", ", ", "("), then shortTitle. No model call.
 export function ruleTitle(text: string, titles: Record<string, unknown> = {}): string {
-	const own = titles[text];
-	if (typeof own === "string" && own.trim()) return clip(own.trim().replace(/\s+/g, " "), RULE_TITLE_MAX);
 	const plain = text.replace(/^\[\d{2}-\d{2}\]\s*/, "").replace(/\s+/g, " ").trim();
-	return clip((plain.split(/[.:;]\s|\s?\(/)[0] || plain).trim(), RULE_TITLE_MAX);
+	const own = titles[text] ?? titles[plain];
+	if (typeof own === "string" && own.trim()) return shortTitle(own.trim().replace(/\s+/g, " "));
+	return shortTitle((plain.split(/[.:;,]\s|\s?\(/)[0] || plain).trim());
+}
+
+// Newest first by the [MM-DD] stamp, a stamp later in the year than today being last year's; the same day: lower in the file first.
+// A rule without a stamp comes last.
+export function newestRules(rules: string[], now = new Date()): string[] {
+	const today = (now.getMonth() + 1) * 100 + now.getDate();
+	const when = (r: string) => {
+		const m = /^\[(\d{2})-(\d{2})\]/.exec(r);
+		if (!m) return -Infinity;
+		const day = Number(m[1]) * 100 + Number(m[2]);
+		return day > today ? day - 10000 : day;
+	};
+	return rules.map((r, i) => ({ r, i, at: when(r) })).sort((x, y) => (x.at === y.at ? y.i - x.i : y.at - x.at)).map(x => x.r);
 }
 
 export function builtinDetail() {
@@ -594,7 +613,7 @@ export function builtinDetail() {
 		{ id: "cards", label: "홈 카드", empty: "아직 만든 카드가 없어요", items: cards.map(c => ("error" in c ? { title: c.id, line: "파일에 문제가 있어서 카드가 안 보여요", bad: true } : { title: c.spec.title, line: c.spec.note || `홈에 ${VIEW_KO[c.spec.view]}로 보여 줘요` })) },
 		{ id: "pins", label: "고정 항목", empty: "사이드바에 고정한 게 없어요", items: [...pins.projects.map(p => ({ title: p.name, line: p.note || "사이드바에 고정한 프로젝트예요" })), ...pins.links.map(l => ({ title: l.name, line: "사이드바에 고정한 링크예요" }))] },
 		{ id: "routines", label: "루틴", empty: "아직 만든 루틴이 없어요", items: pins.routines.map(r => ({ title: r.name, line: routineWhen(r) })) },
-		{ id: "rules", label: "내 규칙", empty: "아직 정한 규칙이 없어요", items: rules.slice(0, RULE_CAP).map(r => ({ title: ruleTitle(r, ruleTitles), full: r })), ...(rules.length > RULE_CAP ? { more: rules.length - RULE_CAP } : {}) },
+		{ id: "rules", label: "내 규칙", empty: "아직 정한 규칙이 없어요", items: newestRules(rules).map(r => ({ title: ruleTitle(r, ruleTitles), full: r })) },
 		{ id: "features", label: "내 기능", empty: "아직 만든 기능이 없어요", items: feats.map(f => ({ title: f.name, line: f.enabled ? clip(f.what || "내가 만든 기능이에요", 80) : "꺼져 있어요", ...(f.enabled ? {} : { bad: true }) })) },
 		{ id: "identity", label: "말투와 성격", empty: "기본 말투와 성격 그대로예요", items: said },
 	];
