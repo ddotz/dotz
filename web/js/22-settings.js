@@ -190,7 +190,7 @@ function fbParts(L) {
         short ? el("span", { class: "fb-sum", text: short }) : null,
         inUse ? el("span", { class: "tag pri", text: "사용 중" }) : null,
         fbDownTag(e),
-        runs(e) ? null : el("span", { class: "tag warn", text: `${F.harness ? F.harness.name : "이 하네스"}에서 못 써요` })),
+        runs(e) ? null : el("span", { class: "tag warn", text: `여기서 못 써요` })),
       el("button", { type: "button", class: "fb-sw", role: "switch", "aria-checked": String(on), title: on ? "켜짐 · 눌러서 끄기" : "꺼짐 · 눌러서 켜기", "aria-label": `${nm} ${on ? "끄기" : "켜기"}`, onclick: () => fbSave(L.id, list.map((x, j) => (j === i ? { ...x, enabled: !on } : x))) }, on ? "켜짐" : "꺼짐"),
       grip,
       open(i) ? null : fbBar(e, true));
@@ -216,7 +216,6 @@ function fbParts(L) {
     : "";
   return {
     sub: L.sub,
-    tags: F.harness ? [el("span", { class: "tag", title: "이 대상을 돌리는 하네스", text: F.harness.name })] : [],
     chain: (pick, notes) => el("div", { class: "mt-fb" },
       el("ol", { class: "fb-list", "aria-label": `${L.title()} 폴백 순서` },
         el("li", { class: `fb-item base${used.has(prim) ? " in-use" : ""}` }, el("span", { class: "fb-n", text: "1" }), pick),
