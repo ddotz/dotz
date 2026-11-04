@@ -201,7 +201,7 @@ for (const ev of ["wheel", "touchstart", "pointerdown", "keydown"]) timeline.add
 // the real mailbox's flag, so a newer message of that mail still makes it unread again.
 function convMaybeRead() {
   const t = CV.key;
-  if (!t || t !== target || !CV.placed || document.visibilityState !== "visible") return;
+  if (!t || t !== target || isRelayT(t) || !CV.placed || document.visibilityState !== "visible") return;
   const mail = isMailT(t);
   if (!mail && !CV.captured) return;
   const s = ts(t), last = s.hLoaded && s.msgs.findLast(convReal);
@@ -247,7 +247,7 @@ convReadRO.observe(timeline); convReadRO.observe(tl);
 // Sent when it changes and every 20 s while it stays (the hub counts a report older than 60 s as gone).
 const VIEW = { id: Math.random().toString(36).slice(2) + Date.now().toString(36), sent: "", at: 0 };
 function viewReport(unload) {
-  const conv = !unload && document.visibilityState === "visible" && current === "chat" ? target : "";
+  const conv = !unload && document.visibilityState === "visible" && current === "chat" && !isRelayT(target) ? target : "";   // a relayed computer's chat is not a conversation of this gateway
   if (conv === VIEW.sent && (!conv || Date.now() - VIEW.at < 20000)) return;
   VIEW.sent = conv; VIEW.at = Date.now();
   if (unload) fetch("/api/viewing", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: VIEW.id, conv }), keepalive: true }).catch(() => {});
@@ -367,7 +367,7 @@ $("#v-chat").prepend(convSide, convHead);
 function convPaintHead() {
   asSync();
   if (isProjT(target) && !PRJ && !PRJ_FAIL) prjLoad().then(convSchedule);
-  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
+  const i = targetInfo(target), state = isRelayT(target) ? RELAY.note[target] || "" : isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
   // A conversation opened from a 모니터링 list (a mail of the 메일 list): ← goes back to that list inside the page, like the app bar's back on a phone.

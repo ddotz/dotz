@@ -4,6 +4,7 @@ import { postKind } from "./discord-post.ts";
 import { type HubEvent, onEmit } from "./events.ts";
 import { postClass, route } from "./notify-route.ts";
 import { listNotices, NOTICE_CAP } from "./notices.ts";
+import type { Peer } from "./peers.ts";
 import { convPath, webLink } from "./weblink.ts";
 
 // A generic messenger layer: any chat service (Telegram, JANDI, ...) is an Adapter. Outgoing posts reach the non-native adapters whose
@@ -15,7 +16,21 @@ export type AdapterStatus = { state: "off" | "connecting" | "ok" | "error"; erro
 export type OutMsg = { target: string; kind: Kind; text: string; replyTo?: string; updateKey?: string; options?: { n: number; label: string }[]; files?: string[]; /** A gateway status line, not an answer (see gatewayNote). */ gatewayNote?: true; /** The conversation's address in the web app, when there is one. */ link?: string };
 export type DeliverResult = { delivered: boolean; reason?: string; ids?: string[] };
 export type Incoming = { adapter: string; target: string; text: string; author: string; replyTo?: string; messageId?: string; quoted?: string };
-export type MessengerCtx = { receive(m: Incoming): void; log(s: string): void };
+/** A phone notification an adapter raises for something that reached it outside the owner's own conversations (hub/push.ts notify). */
+export type AdapterPush = { kind: "ask" | "result" | "conv"; title: string; body: string; url: string; tag: string };
+export type MessengerCtx = { receive(m: Incoming): void; log(s: string): void; notify?(m: AdapterPush): void };
+/** One line of a conversation with a computer reached through a messenger: `me` is the owner's own line, `at` its time in ms (0 = unknown). */
+export type RelayLine = { id: number; at: number; me: boolean; text: string };
+/** A row of the computer list (hub/peers.ts) reached through a messenger: `key` names it to the adapter, `note` is the adapter's one line about the transport. */
+export type RelayRow = Peer & { key: string; note: string };
+/** What a relay refuses or cannot reach; the route answers with `status` and the message. */
+export class RelayError extends Error {
+	status: 404 | 502;
+	constructor(message: string, status: 404 | 502 = 502) {
+		super(message);
+		this.status = status;
+	}
+}
 // The generic settings schema every adapter describes itself with (served by hub/messengers-api.ts, drawn by web/js/25-settings-messengers.js).
 // Secrets are write-only: a GET never carries a secret value, only `set`; a PUT that omits a secret keeps it, "" clears it.
 export type SettingsField = { key: string; label: string; type: "text" | "secret" | "number" | "readonly" | "copy" | "select"; value?: string | number; set?: boolean; hint?: string; as_user?: boolean; /** The choices of a "select" field (a room field; its value is the room's `values[key]`). */ options?: { value: string; label: string }[] };
@@ -72,6 +87,15 @@ export type Adapter = {
 	syncRooms?(desired: DesiredRoom[]): Promise<void>;
 	/** Left out of the settings list (an adapter another module owns while it is unfinished). */
 	hidden?(): boolean;
+	/** Computers with no address of their own that this messenger carries a conversation to (the web app's chat view, /api/relay/<id>/<key>/messages|send). */
+	relay?: {
+		rows(): Promise<RelayRow[]>;
+		lines(key: string): Promise<RelayLine[]>;
+		send(key: string, text: string): Promise<void>;
+		note: string;
+	};
+	/** deliver() places msg.link itself (JANDI's connect info, Telegram's URL button, Slack's link). Absent: the fan-out appends it to the text as a last line. */
+	ownsLink?: true;
 };
 
 /** The kind of conversation a target belongs to, or undefined for targets that live in the web only (mail:, settings:). */
@@ -157,6 +181,13 @@ function fail(a: Adapter, e: unknown): void {
 	log(`messenger ${a.id} delivery failed: ${e}`);
 }
 
+// The default way a web link reaches a messenger: a last line of the text (an adapter that sets ownsLink gets msg.link as it is).
+const shaped = (a: Adapter, msg: OutMsg): OutMsg => {
+	if (!msg.link || a.ownsLink) return msg;
+	const { link, ...rest } = msg;
+	return { ...rest, text: `${msg.text}\n\n웹에서 보기: ${link}` };
+};
+
 let fanout = false;
 /** One outbox subscription: every "out" event goes to each enabled, non-native adapter that is up and whose switch for the post's class is on. A failing adapter never reaches emit. */
 export function installFanout(): void {
@@ -172,7 +203,7 @@ export function installFanout(): void {
 			if (!wants[a.id]) continue;
 			try {
 				void a
-					.deliver(msg)
+					.deliver(shaped(a, msg))
 					.then(r => {
 						if (r.delivered && deliveryFailed.delete(a.id)) a.status = { state: "ok" };
 					})
@@ -217,8 +248,9 @@ export async function answerAsk(target: string, text: string, author = "owner"):
 }
 
 /** The ctx adapters get: an incoming message answers an open decision when it is an option number, else `enter` takes it as an owner message. */
-export function makeCtx(enter: (m: Incoming) => Promise<void>): MessengerCtx {
+export function makeCtx(enter: (m: Incoming) => Promise<void>, notify?: (m: AdapterPush) => void): MessengerCtx {
 	return {
+		...(notify ? { notify } : {}),
 		receive: m => {
 			void (async () => {
 				if (await answerAsk(m.target, m.text, m.author)) return;

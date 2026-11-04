@@ -3,8 +3,9 @@ import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { D_CLOSE, parseChoices } from "./choices.ts";
-import { DATA_DIR, writeAtomic } from "./config.ts";
+import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { dropForLine, forLines } from "./forline.ts";
+import { createPeerChats, peerReplyPush } from "./jandi-peers.ts";
 import { createSelfChat, normalizeSelfChat, type SelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import { sameRoom } from "./messenger-rooms.ts";
@@ -176,8 +177,10 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 	let server: ReturnType<typeof Bun.serve> | undefined;
 	let selfChat: SelfChat | undefined;
 	let ctx: MessengerCtx | undefined;
+	const peerChats = createPeerChats({ config: () => loadJandiConfig(dataDir).self_chat, client: () => selfChat, log });
 	const a: JandiAdapter = {
 		id: "jandi",
+		ownsLink: true,
 		label: "JANDI",
 		canEdit: false,
 		canButtons: false,
@@ -189,6 +192,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 		configured: () => loadJandiConfig(dataDir).rooms.length > 0,
 		port: () => server?.port,
 		selfChat: () => selfChat,
+		relay: peerChats,
 		start(c) {
 			ctx = c;
 			const cfg = loadJandiConfig(dataDir);
@@ -210,6 +214,10 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 					receive: text => {
 						mark("self_chat", { last_in: Date.now() });
 						ctx?.receive({ adapter: "jandi", target: "main", text, author: `jandi:${sc.member_id}` });
+					},
+					peerReply: (peer, text, id) => {
+						const m = peerReplyPush(peer, text, id);
+						if (m) ctx?.notify?.(m);
 					},
 					log: c.log,
 					onError: err => mark("self_chat", { last_error: err }),

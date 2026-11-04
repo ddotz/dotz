@@ -165,3 +165,18 @@ describe("telegram messenger", () => {
 		expect(readFileSync(telegramConfigPath(dir), "utf8")).toBe(before);
 	});
 });
+
+describe("telegram web link", () => {
+	const LINK = "https://dotz.example.com/#chat/main";
+	test("a link rides as one inline URL button; a message without one has no keyboard", async () => {
+		const dir = tempDir();
+		saveTelegramConfig({ enabled: true, token: TOKEN, chats: [{ id: "111", name: "main", kind: "main" }], allow: [] }, dir);
+		const fake = telegramFetch();
+		const a = createTelegramAdapter(dir, { fetch: fake.fetch, pollMs: 60_000 });
+		expect(a.ownsLink).toBe(true);
+		await a.deliver({ target: "main", kind: "main", text: "끝났어요", link: LINK });
+		await a.deliver({ target: "main", kind: "main", text: "링크 없음" });
+		expect(fake.calls[0]!.body).toEqual({ chat_id: "111", text: "끝났어요", reply_markup: { inline_keyboard: [[{ text: "웹에서 보기", url: LINK }]] } });
+		expect(fake.calls[1]!.body).toEqual({ chat_id: "111", text: "링크 없음" });
+	});
+});

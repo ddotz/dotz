@@ -69,6 +69,7 @@ function decisionGroup(t) {
   return { key: `${t}|g:${at}`, t, sig: `g:${at}`, at, each: true, question: mine.length === 1 ? ntPlain(mine[0].title) : "", blocks: mine.map(n => ({ title: ntPlain(n.title), options: n.decision.options, nd: n })) };
 }
 function decisionOf(t) {
+  if (isRelayT(t)) return null;   // another computer's text never becomes a card to answer here
   const one = decisionOne(t), grp = decisionGroup(t);
   return grp && !(one && msOf(one.at) > msOf(grp.at)) ? grp : one;
 }

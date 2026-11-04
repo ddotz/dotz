@@ -3,10 +3,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HUB_TOKEN } from "./config.ts";
-import { createPeerChats, isOnline, linesOf, messageBody, ONLINE_MS } from "./jandi-peers.ts";
+import { createPeerChats, isOnline, linesOf, messageBody, ONLINE_MS, peerReplyPush } from "./jandi-peers.ts";
 import { createSelfChat, normalizeSelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
+import { get, register, RelayError, unregister } from "./messenger.ts";
 import { loadJandiConfig, saveJandiConfig } from "./messenger-jandi.ts";
-import type { Peer } from "./peers.ts";
+import { relayRoute, relayRows } from "./relay-route.ts";
 import { makeRoute } from "./routes.ts";
 import { advance } from "./runtime/test-clock.ts";
 import { setSecretKey } from "./secretbox.ts";
@@ -65,12 +66,16 @@ function chats(config: SelfChatConfig | null = cfg, withClient = true) {
 	const logs: string[] = [];
 	return { logs, chat: createPeerChats({ config: () => config ?? undefined, client: () => (withClient ? client : undefined), now: () => NOW, log: m => logs.push(m) }) };
 }
-const get = (chat: ReturnType<typeof chats>["chat"], path: string) => chat.route(new Request(`http://x${path}`), new URL(`http://x${path}`));
-const send = (chat: ReturnType<typeof chats>["chat"], text: unknown, headers: Record<string, string> = { "Content-Type": "application/json" }) => {
-	const url = new URL("http://x/api/jandi-peer/work/send");
-	return chat.route(new Request(url, { method: "POST", headers, body: JSON.stringify({ text }) }), url);
+const ROW = { name: "work", url: "/#chat/relay:jandi:work", self: false, online: true, via: "jandi", key: "work", note: "잔디로 주고받아요" };
+// The relay endpoints as the web app calls them, through the messenger registry like hub/routes.ts does.
+const call = (chat: ReturnType<typeof chats>["chat"], path: string, init?: RequestInit) => {
+	register({ id: "jandi", relay: chat } as never);
+	const url = new URL(`http://x${path}`);
+	return relayRoute(new Request(url, init), url);
 };
-const MSGS = "/api/jandi-peer/work/messages";
+const send = (chat: ReturnType<typeof chats>["chat"], text: unknown, headers: Record<string, string> = { "Content-Type": "application/json" }) =>
+	call(chat, "/api/relay/jandi/work/send", { method: "POST", headers, body: JSON.stringify({ text }) });
+const MSGS = "/api/relay/jandi/work/messages";
 
 beforeEach(() => {
 	dir = mkdtempSync(join(tmpdir(), "jandi-peers-"));
@@ -88,7 +93,13 @@ beforeEach(() => {
 		{ id: 5, fromEntity: ME, body: "그냥 메모", time: NOW - HOUR },
 	];
 });
-afterEach(() => rmSync(dir, { recursive: true, force: true }));
+// All test files share one process: the real adapter goes back in the registry.
+const realJandi = get("jandi");
+afterEach(() => {
+	unregister("jandi");
+	if (realJandi) register(realJandi);
+	rmSync(dir, { recursive: true, force: true });
+});
 
 describe("self_chat.peers config", () => {
 	const base = { enabled: true, keyword: "dotz" };
@@ -156,16 +167,15 @@ describe("the conversation with one peer", () => {
 });
 
 describe("the computer list", () => {
-	test("appends one JANDI row per peer after the Tailscale rows, which stay as they are", async () => {
-		const tailscale: Peer[] = [
-			{ name: "맥북", url: "https://mac:8443", self: true, online: true },
-			{ name: "맥미니", url: "https://mini:8445", self: false, online: true, unread: 2, need: 1 },
-		];
-		const before = JSON.stringify(tailscale);
-		const list = await chats().chat.append(tailscale);
-		expect(list.slice(0, 2)).toEqual(tailscale);
-		expect(JSON.stringify(tailscale)).toBe(before);
-		expect(list.slice(2)).toEqual([{ name: "work", url: "/jandi-peer/work", self: false, online: true, via: "jandi" }]);
+	test("one relay row per peer, whose address is its chat view in the app with the key percent-encoded", async () => {
+		expect(await chats().chat.rows()).toEqual([ROW]);
+		const rows = await chats({ ...cfg, peers: [{ name: "집", keyword: "집", reply_prefix: "[집]" }] }).chat.rows();
+		expect(rows).toEqual([{ ...ROW, name: "집", url: "/#chat/relay:jandi:%EC%A7%91", key: "집", online: false }]);
+	});
+
+	test("the registered adapter's rows are what /api/peers appends after the Tailscale rows", async () => {
+		register({ id: "jandi", relay: chats().chat } as never);
+		expect(await relayRows()).toEqual([ROW]);
 	});
 
 	test("offline when the last reply is older than 24 hours, when JANDI fails, and when the room is not the owner's bot chat", async () => {
@@ -196,7 +206,7 @@ describe("the computer list", () => {
 			await advance(20);   // the test clock: only the short wait passes, JANDI never answers within it
 			return rows;
 		};
-		expect(await afterWait()).toEqual([{ name: "work", url: "/jandi-peer/work", self: false, online: false, via: "jandi" }]);   // nothing known yet
+		expect(await afterWait()).toEqual([{ ...ROW, online: false }]);   // nothing known yet
 		answer!({ records: [{ id: 1, fromEntity: OTHER, time: NOW - HOUR, message: { content: { body: "[work] 끝났어요" } } }] });
 		expect((await chat.rows())[0]!.online).toBe(true);   // the read that outlived the wait lands
 		t += 10_000;   // past the 2 s message cache: the next read goes to JANDI, which is slow again
@@ -204,26 +214,13 @@ describe("the computer list", () => {
 	});
 });
 
-describe("the chat routes", () => {
-	test("messages lists the filtered conversation as JSON", async () => {
-		const res = (await get(chats().chat, MSGS))!;
-		expect(res.status).toBe(200);
-		expect((await res.json()).map((l: { text: string }) => l.text)).toEqual(["빌드 돌려", "빌드 시작했어요"]);
-	});
-
-	test("the page is served for a configured peer, and an unknown peer or other path is not", async () => {
-		const { chat } = chats();
-		const page = (await get(chat, "/jandi-peer/work"))!;
-		expect([page.status, page.headers.get("content-type")]).toEqual([200, "text/html; charset=utf-8"]);
-		expect(await page.text()).toContain("/api/jandi-peer/work");
-		expect((await get(chat, "/jandi-peer/nobody"))!.status).toBe(404);
-		expect((await get(chat, "/api/jandi-peer/nobody/messages"))!.status).toBe(404);
-		expect(await get(chat, "/api/peers")).toBeUndefined();
+describe("the relay: lines and send", () => {
+	test("lines are the filtered conversation", async () => {
+		expect((await chats().chat.lines("work")).map(l => l.text)).toEqual(["빌드 돌려", "빌드 시작했어요"]);
 	});
 
 	test("send posts `<keyword> <text>` as the owner to the configured room", async () => {
-		const res = (await send(chats().chat, "  빌드 상태 알려줘 "))!;
-		expect([res.status, await res.json()]).toEqual([200, { ok: true }]);
+		await chats().chat.send("work", "빌드 상태 알려줘");
 		expect(posted).toHaveLength(1);
 		expect(posted[0]!.path).toBe(`/message-api/v3/teams/${TEAM}/rooms/${ROOM}/messages`);
 		expect(posted[0]!.auth).toBe("bearer at-secret");
@@ -232,54 +229,124 @@ describe("the chat routes", () => {
 		expect(posted[0]!.body).toEqual(messageBody("work 빌드 상태 알려줘"));
 	});
 
-	test("send refuses empty or over-long text, a non-JSON body and the wrong method, and posts nothing", async () => {
-		const { chat } = chats();
-		expect((await send(chat, ""))!.status).toBe(400);
-		expect((await send(chat, "   "))!.status).toBe(400);
-		expect((await send(chat, 42))!.status).toBe(400);
-		expect((await send(chat, "가".repeat(4001)))!.status).toBe(400);
-		expect((await send(chat, "x", { "Content-Type": "text/plain" }))!.status).toBe(415);
-		expect((await get(chat, "/api/jandi-peer/work/send"))!.status).toBe(405);
-		expect(posted).toEqual([]);
-		expect((await send(chat, "가".repeat(4000)))!.status).toBe(200);
+	test("a peer that is not configured is a 404, a JANDI failure a 502 with no token in it", async () => {
+		const { chat, logs } = chats();
+		const nobody = await chat.lines("nobody").catch((e: unknown) => e);
+		expect([nobody instanceof RelayError, (nobody as RelayError).status]).toEqual([true, 404]);
+		failMessages = 500;
+		const failed = await chat.lines("work").catch((e: unknown) => e);
+		expect([failed instanceof RelayError, (failed as RelayError).status]).toEqual([true, 502]);
+		expect((failed as RelayError).message).toContain("HTTP 500");
+		expect(`${(failed as RelayError).message}${logs.join("\n")}`).not.toMatch(/at-secret|rt-secret/);
 	});
 
-	test("a JANDI failure is an error, not an empty list, and carries no token", async () => {
+	test("a room that is not the owner's bot chat is refused before anything is read or sent", async () => {
+		roomType = "topic";
+		const { chat } = chats();
+		expect(((await chat.lines("work").catch((e: unknown) => e)) as RelayError).status).toBe(502);
+		expect(((await chat.send("work", "안녕").catch((e: unknown) => e)) as RelayError).status).toBe(502);
+		expect(posted).toEqual([]);
+	});
+
+	test("without a JANDI session the chat answers an error", async () => {
+		const failed = (await chats(cfg, false).chat.lines("work").catch((e: unknown) => e)) as RelayError;
+		expect([failed.status, typeof failed.message]).toEqual([502, "string"]);
+	});
+});
+
+describe("the relay endpoints", () => {
+	test("messages lists the filtered conversation as JSON, and an unknown peer or adapter is a 404", async () => {
+		const { chat } = chats();
+		const res = (await call(chat, MSGS))!;
+		expect(res.status).toBe(200);
+		expect((await res.json()).map((l: { text: string }) => l.text)).toEqual(["빌드 돌려", "빌드 시작했어요"]);
+		expect((await call(chat, "/api/relay/jandi/nobody/messages"))!.status).toBe(404);
+		expect((await call(chat, "/api/relay/nope/work/messages"))!.status).toBe(404);
+		expect(await call(chat, "/api/peers")).toBeUndefined();
+	});
+
+	test("a JANDI failure is a 502 with the reason, not an empty list, and carries no token", async () => {
 		failMessages = 500;
 		const { chat, logs } = chats();
-		const res = (await get(chat, MSGS))!;
+		const res = (await call(chat, MSGS))!;
 		const text = await res.text();
 		expect(res.status).toBe(502);
 		expect(JSON.parse(text).error).toContain("HTTP 500");
 		expect(text + logs.join("\n")).not.toMatch(/at-secret|rt-secret/);
 	});
 
-	test("a room that is not the owner's bot chat is refused before anything is read or sent", async () => {
+	test("send trims the text and posts it as `<keyword> <text>`", async () => {
+		const res = (await send(chats().chat, "  빌드 상태 알려줘 "))!;
+		expect([res.status, await res.json()]).toEqual([200, { ok: true }]);
+		expect(posted.map(p => p.body.text)).toEqual(["work 빌드 상태 알려줘"]);
+	});
+
+	test("send refuses a non-JSON body (415), a huge body (413), empty or over-long text (400) and the wrong method (405), and posts nothing", async () => {
+		const { chat } = chats();
+		expect((await send(chat, "x", { "Content-Type": "text/plain" }))!.status).toBe(415);
+		expect((await send(chat, "x".repeat(64 * 1024 + 1)))!.status).toBe(413);
+		expect((await send(chat, ""))!.status).toBe(400);
+		expect((await send(chat, "   "))!.status).toBe(400);
+		expect((await send(chat, 42))!.status).toBe(400);
+		expect((await send(chat, "가".repeat(4001)))!.status).toBe(400);
+		expect((await call(chat, "/api/relay/jandi/work/send"))!.status).toBe(405);
+		expect((await call(chat, MSGS, { method: "POST" }))!.status).toBe(405);
+		expect(posted).toEqual([]);
+		expect((await send(chat, "가".repeat(4000)))!.status).toBe(200);
+	});
+
+	test("the old chat page's address leads to the app's chat view, the key percent-encoded", async () => {
+		const { chat } = chats();
+		for (const [path, to] of [["/jandi-peer/work", "/#chat/relay:jandi:work"], ["/jandi-peer/%EC%A7%91/", "/#chat/relay:jandi:%EC%A7%91"], ["/jandi-peer/a%2Fb", "/#chat/relay:jandi:a%2Fb"]] as const) {
+			const res = (await call(chat, path))!;
+			expect([res.status, res.headers.get("location")]).toEqual([302, to]);
+		}
+		expect((await call(chat, "/jandi-peer/%E0%A4%A"))!.status).toBe(404);
+		expect((await call(chat, "/jandi-peer/work", { method: "POST" }))!.status).toBe(405);
+	});
+
+	test("a room that is not the owner's bot chat is a 502 on both endpoints and posts nothing", async () => {
 		roomType = "topic";
 		const { chat } = chats();
-		expect((await get(chat, MSGS))!.status).toBe(502);
+		expect((await call(chat, MSGS))!.status).toBe(502);
 		expect((await send(chat, "안녕"))!.status).toBe(502);
 		expect(posted).toEqual([]);
 	});
+});
 
-	test("without a JANDI session the routes answer an error", async () => {
-		const res = (await get(chats(cfg, false).chat, MSGS))!;
-		expect([res.status, typeof (await res.json()).error]).toEqual([502, "string"]);
+describe("a peer's new reply as a notification", () => {
+	const peer = cfg.peers![0]!;
+	test("the class follows the status marker: [ask] asks, [done] and [fail] are results, no marker is a message, [run] is silent", () => {
+		const kind = (text: string) => peerReplyPush(peer, text, 1)?.kind;
+		expect([kind("[ask] 배포할까요?"), kind("[done] 끝났어요"), kind("[fail] 실패했어요"), kind("빌드 시작했어요"), kind("[run] 도는 중")]).toEqual(["ask", "result", "result", "conv", undefined]);
+		expect(peerReplyPush(peer, "[ask]", 1)).toBeUndefined();
+	});
+
+	test("it is titled with the computer, opens its chat view, and carries one tag per reply", () => {
+		expect(peerReplyPush(peer, "빌드   끝났어요\n잘 됐어요", 7)).toEqual({ kind: "conv", title: "work", body: "빌드 끝났어요 잘 됐어요", url: "/#chat/relay:jandi:work", tag: "relay:jandi:work:7" });
+		expect(peerReplyPush(peer, "빌드 끝났어요", 8)!.tag).not.toBe(peerReplyPush(peer, "빌드 끝났어요", 7)!.tag);
+		expect(peerReplyPush({ ...peer, keyword: "집" }, "안녕", 1)!.url).toBe("/#chat/relay:jandi:%EC%A7%91");
+	});
+
+	test("the body is cut at 120 characters", () => {
+		const body = peerReplyPush(peer, "가".repeat(200), 1)!.body;
+		expect([body.length, body.endsWith("…")]).toEqual([120, true]);
+		expect(peerReplyPush(peer, "가".repeat(120), 1)!.body).toBe("가".repeat(120));
 	});
 });
 
 describe("the owner gate", () => {
 	const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
 	const call = (path: string, init: RequestInit = {}) => route(new Request(`http://mini.tailnet.ts.net${path}`, init));
-	const paths: Array<[string, RequestInit]> = [
-		["/jandi-peer/work", {}],
-		[MSGS, {}],
-		["/api/jandi-peer/work/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "안녕" }) }],
+	const paths: Array<[string, RequestInit, number]> = [
+		["/jandi-peer/work", {}, 302],
+		[MSGS, {}, 404],
+		["/api/relay/jandi/work/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "안녕" }) }, 404],
 	];
-	test("an unauthenticated request is refused on the page and both endpoints", async () => {
+	test("an unauthenticated request is refused on the old page and both endpoints", async () => {
 		for (const [path, init] of paths) expect((await call(path, init)).status).toBe(403);
 	});
-	test("a request with the hub token passes the gate (no peer is configured in this data dir, so 404)", async () => {
-		for (const [path, init] of paths) expect((await call(path, { ...init, headers: { ...(init.headers as object), "x-dotz-token": HUB_TOKEN } })).status).toBe(404);
+	test("a request with the hub token passes the gate (the page leads on, and no peer is configured in this data dir, so the endpoints answer 404)", async () => {
+		for (const [path, init, status] of paths) expect((await call(path, { ...init, headers: { ...(init.headers as object), "x-dotz-token": HUB_TOKEN } })).status).toBe(status);
 	});
 });

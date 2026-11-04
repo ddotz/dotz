@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { commandOf, createSelfChat, normalizeSelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
+import { commandOf, createSelfChat, normalizeSelfChat, type SelfChatConfig, type SelfChatPeer } from "./jandi-selfchat.ts";
 import { readSecretFile, setSecretKey } from "./secretbox.ts";
 
 const TEAM = 7;
@@ -121,4 +121,36 @@ test("a missing session secret is reported, not guessed around", async () => {
 	rmSync(join(dir, "secrets", "jandi-session"));
 	await expect(make([]).tick()).rejects.toThrow("no JANDI session");
 	expect(calls).toEqual([]);
+});
+
+test("a peer's reply from another member fires peerReply once, with the prefix taken off and the position already saved; never for notify: false, for the owner's own post, or for a word that only starts with the prefix", async () => {
+	const peers: SelfChatPeer[] = [
+		{ name: "work", keyword: "work", reply_prefix: "[work]" },
+		{ name: "quiet", keyword: "quiet", reply_prefix: "[quiet]", notify: false },
+	];
+	const state = join(dir, "messengers", "jandi-selfchat.json");
+	const saved: number[] = [];
+	const replies: Array<[string, string, number]> = [];
+	const again = () => createSelfChat({ ...cfg, peers }, {
+		dataDir: dir, api: `http://127.0.0.1:${jandi.port}/`, receive: () => {}, log: () => {}, onError: () => {},
+		peerReply: (peer, text, id) => {
+			saved.push(JSON.parse(readFileSync(state, "utf8")).last_link_id);
+			replies.push([peer.name, text, id]);
+		},
+	});
+	const sc = again();
+	await sc.tick();   // starts after the history
+	messages.push(
+		{ id: 2, fromEntity: WEBHOOK_BOT, body: "[work] 빌드 끝났어요" },
+		{ id: 3, fromEntity: WEBHOOK_BOT, body: "[quiet] 조용히 해요" },
+		{ id: 4, fromEntity: ME, body: "[work] 내가 쓴 글" },
+		{ id: 5, fromEntity: WEBHOOK_BOT, body: "[work]네" },
+		{ id: 6, fromEntity: WEBHOOK_BOT, body: "그냥 글" },
+	);
+	await sc.tick();
+	await sc.tick();
+	expect(replies).toEqual([["work", "빌드 끝났어요", 2]]);
+	expect(saved).toEqual([2]);
+	await again().tick();   // a restart does not notify the same reply again
+	expect(replies).toHaveLength(1);
 });

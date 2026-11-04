@@ -24,7 +24,7 @@
 
 목표는 하나예요. Tailscale 대신 Cloudflare 워커로 들어와도, 잔디, Discord, Telegram, Slack 어디서 링크를 열어도, 항상 같은 웹앱이 떠요. 메신저별 임시 대화 페이지는 남기지 않아요.
 
-### 지금 무엇이 왜 뜨는가
+### 고치기 전에 무엇이 왜 떴는가 (실측 커밋 기준)
 
 `extras/cf-worker/worker.ts`는 요청을 그대로 게이트웨이에 넘겨요. 워커 자체는 화면을 만들지 않아요. 그래서 문제는 워커가 아니라 그 뒤의 앱 쪽에 있어요.
 
@@ -98,8 +98,10 @@
 - `/pair`는 앱 토큰과 같은 값(색, 글꼴, 모서리, 버튼 높이, 라이트와 다크)으로 다시 그려요. 스크립트는 지금처럼 `/pair.js` 하나이고 CSP는 넓히지 않아요.
 - 가려던 곳은 `/pair?next=<같은 주소의 경로>`로 들고 가고, 해시는 브라우저가 리디렉션에서 유지해요. `next`는 `/`로 시작하고 `//`, `\`, 제어 문자가 없을 때만 써요. 아니면 `/`로 가요.
 - 미연결 기기가 `/api/file` 같은 링크를 화면으로 열면 `forbidden` 평문 대신 `/pair`로 가요. `fetch`는 지금처럼 403이에요.
-- 메신저에서 넘어온 첫 탐색은 고정된 작은 페이지가 같은 주소를 한 번 다시 열어요. 같은 사이트 탐색이 되어 쿠키가 실려요. 그래도 안 되면 `/pair`예요. `SameSite=Strict`는 그대로 둬요.
-- 서비스 워커는 `/pair`, `/pair.js`를 건드리지 않아요.
+- 메신저에서 넘어온 첫 탐색은 메신저가 실제로 거는 `/`와 `/api/file`에 한해서만, 고정된 작은 페이지(`/pair-hop.js`)가 같은 주소를 한 번 다시 열어요. 같은 사이트 탐색이 되어 쿠키가 실려요. 다른 주소는 다시 열지 않고 바로 `/pair?next=`로 보내요. 다른 사이트의 링크가 로그인 상태로 GET을 실행하면 안 되기 때문이에요. `SameSite=Strict`는 그대로 둬요.
+- `/pair?next`는 게이트를 통과할 요청만 `next`로 보내요. Access를 쓰면 기기 세션과 Access 토큰이 둘 다 있어야 해요. 그래서 문과 `/pair` 사이에서 반복되지 않아요.
+- 세션이 끊긴 앱 셸(캐시에서 뜬 경우)도 `web/js/01-forbidden-pair.js`가 주소와 해시를 들고 `/pair`로 가요.
+- 서비스 워커는 `/pair`, `/pair.js`를 건드리지 않아요. 옛 `/jandi-peer/*`도 서버 리다이렉트에 맡겨요.
 
 ### 메신저 어댑터
 
@@ -108,8 +110,8 @@
 ```ts
 type Adapter = {
 	// 기존 필드 그대로
-	/** 웹 링크를 이 메신저 모양으로 싣는다. 없으면 공용 기본값: 본문 끝에 한 줄. */
-	webLink?(msg: OutMsg, link: string): OutMsg;
+	/** deliver()가 msg.link를 직접 싣는다. 없으면 공용 기본값: 본문 끝에 한 줄. */
+	ownsLink?: true;
 	/** 주소 없는 컴퓨터와 이 메신저로 주고받는다. */
 	relay?: {
 		rows(): Promise<Peer[]>;
@@ -123,7 +125,7 @@ type Adapter = {
 | 메신저 | 링크 전달 | 중계 |
 |---|---|---|
 | 잔디 | `connectInfo`의 `웹에서 보기` (지금 그대로) | 있음: `hub/jandi-peers.ts`의 나와의 대화 |
-| Discord | 링크 버튼 | 없음 |
+| Discord | 결정 메시지와 알림에만 링크 버튼. 일반 메시지에는 없음 | 없음 |
 | Telegram | 인라인 URL 버튼 | 없음 |
 | Slack | `<url\|웹에서 보기>` 링크 | 없음 |
 
@@ -150,11 +152,9 @@ someone과 대조: someone은 웹 화면이 없고 게이트웨이 저장소(`~/
 
 ### 남은 일
 
-1. 평소 채팅 위 중계 대상(#46 재구성), 새 답 푸시(#45 재구성), `/jandi-peer` 페이지 삭제, `web/sw.js` 제외 정리.
-2. `/pair` 재디자인, `next` 보존, 화면 요청 처리, 다시 열기 페이지.
-3. 자기 행, 공개 주소 행, 중계 API 공용화.
-4. Telegram, Slack, Discord 링크 전달.
-5. `docs/web-access-cloudflare.ko.md`, `docs/messengers/jandi.ko.md`, `docs/ui-spec.md` 갱신.
+이 절의 구조는 모두 구현했어요. 남은 일은 하나예요.
+
+- 후속 작업: Ovis식 끝간 암호화 릴레이. 오너가 후속으로 예약했어요. 지금 Cloudflare 경로는 TLS가 Cloudflare에서 끝나서 Cloudflare가 평문을 볼 수 있고, 이 사실을 설정 화면과 `docs/web-access-cloudflare.ko.md`에 적었어요. 추정 비용은 20~28일이에요.
 
 ## 화면 지도
 
@@ -2249,7 +2249,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 목적: 앱 셸을 캐시해서 알림 탭으로 앱이 바로 뜨게 하고, 웹 푸시를 보여줘요.
 - 구성: 캐시 `dotz-shell-v11`(셸 `/`, `/app.js`, `/app.css`, `/custom.js`와 아이콘 4개), 공유 캐시 `dotz-share`, IndexedDB `dotz-snap`.
 - 기능: 설치 시 셸을 캐시하고 `skipWaiting`, 활성화 시 옛 캐시 삭제와 `clients.claim`. 탐색 요청이나 셸 파일 요청은 캐시 우선 응답 후 백그라운드 갱신(`refreshShell`, 셸 파일 셋이 모두 성공했을 때만 저장, ETag 또는 본문 비교로 변경 감지). 바뀌었으면 열린 창에 `{type:"shell-updated"}`. 페이지가 `{type:"refresh-shell"}`을 보내면 갱신 뒤 포트로 `done`. 공유 대상: `POST /share-target`이면 사진을 `dotz-share`에 저장하고 `/?shared=1#chat`으로 303. 푸시: `push`(알림 표시, 결정 옵션 버튼 최대 2개, `withdraw`로 처리된 알림 닫기, 화면에 같은 대화가 열려 있으면 억제하고 Apple 엔드포인트는 조용한 알림을 띄웠다 닫음), `pushsubscriptionchange`(재구독 `/api/push/subscribe`), `notificationclick`(열린 창에 `{open, ts, nid, notice}`를 보내거나 새 창을 `?m=`, `?i=`, `?n=`로 엶, 옵션 버튼은 `POST /api/notices/<id>/answer`, 성공 시 `답변을 보냈어요` 알림 3.5초).
-- 상태: 가로채지 않는 경로: `/api/*`, 다른 origin, GET이 아닌 요청, `/manifest.webmanifest`, `/jandi-peer/*`, `/desk`, `/desk/*`. `/pair`와 `/pair.js`는 제외 목록에 없어서 이 워커가 있는 브라우저에서 `/pair`로 이동하면 캐시된 `/` 셸이 응답해요(sw.js:78-81, 탐색 요청은 모두 `/` 키). 푸시 표시 제목 기본 `알림`, 정리 알림 `알림 정리`(본문 `처리한 알림을 정리했어요`), 푸시 때 대화 기록 60개를 미리 읽어 스냅샷에 넣어요(`warmConv`, 403이고 `x-dotz-pair` 헤더가 있으면 스냅샷 DB 삭제).
+- 상태: 가로채지 않는 경로: `/api/*`, 다른 origin, GET이 아닌 요청, `/manifest.webmanifest`, `/jandi-peer/*`, `/pair`, `/pair.js`, `/desk`, `/desk/*`. 푸시 표시 제목 기본 `알림`, 정리 알림 `알림 정리`(본문 `처리한 알림을 정리했어요`), 푸시 때 대화 기록 60개를 미리 읽어 스냅샷에 넣어요(`warmConv`, 403이고 `x-dotz-pair` 헤더가 있으면 스냅샷 DB 삭제).
 - 데이터: `/api/history?target=...&limit=60`, `/api/push`, `/api/push/subscribe`, `/api/notices/<id>/answer`.
 - 근거: web/sw.js:1-225(캐시 5-11, 갱신 36-58, fetch 67-85, push 121-163, click 183-225), 페이지 쪽 등록 web/js/23-installable-app-web.js:109-115,203.
 - css: 해당 없음.
@@ -2329,6 +2329,9 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 `web/index.html`, `web/js`, `web/css`를 쓰지 않는 단독 HTML이에요. 아래 두 페이지는 인라인 `<style>`만 써요.
 
 ### 앱 셸 밖 | /pair 페이지
+
+이 페이지는 앱 토큰 값으로 다시 그렸어요(`hub/pair-page.ts`, 값 일치는 `hub/devices.test.ts`가 검사해요). 카드 진입 모션은 `--m-base` 220ms 하나이고, 줄임 모션 설정이면 꺼져요. 아래 값은 고치기 전 실측이에요.
+
 - 목적: Cloudflare 접속(`web.access = "cloudflare"`)에서 아직 연결되지 않은 기기가 패스키로 기기를 연결하거나 로그인해요. 앱 셸(web/index.html, app.css, 토큰, 서비스 워커 셸)을 쓰지 않는 단독 페이지예요.
 - 구성: `main`(폭 `min(360px, 92vw)`) 안 `h1` `기기 연결`, `p#lead`, `section#login`(`button#go` `패스키로 들어가기`), `section#pairing`(`button#get.alt` `코드 받기`, `div#enter`: `input#code`(`inputmode=numeric`, `maxlength 6`, 플레이스홀더 `6자리 코드`), `input#name`(`maxlength 60`, 플레이스홀더 `기기 이름`), `button#join` `이 기기 연결`), `div#msg[role=status]`. 스크립트 `/pair.js`.
 - 기능: `코드 받기`가 `POST /api/pair/code`, `이 기기 연결`이 `POST /api/pair/begin {code}`, `navigator.credentials.create`(패스키 만들기), `POST /api/pair/register`(성공하면 `연결되었습니다.` 후 `location.replace("/")`), `패스키로 들어가기`가 `POST /api/pair/login-begin`, `navigator.credentials.get`, `POST /api/pair/login`(성공하면 `/`로). 기기 이름 입력은 `navigator.userAgentData.platform` 또는 `navigator.platform`으로 미리 채워요.
@@ -2356,7 +2359,10 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 | 본문 폭 | `min(360px,92vw)`, 위아래 `24px`(:13) | `--sheet-w` 480px, `--view-w` 920px, `--sp-6` 24px |
 
 
-### 앱 셸 밖 | /jandi-peer/<keyword> 페이지
+### 앱 셸 밖 | /jandi-peer/<keyword> 페이지 (삭제함)
+
+이 페이지는 지웠어요. 옛 주소는 게이트 뒤에서 `/#chat/relay:jandi:<keyword>`로 넘겨요(`hub/relay-route.ts`). 지금 화면은 "앱 안 대화 화면 (중계 컴퓨터)"이고, 아래는 고치기 전 실측이에요.
+
 - 목적: JANDI "나와의 대화"로만 닿는 다른 컴퓨터(`self_chat.peers`)와 주고받는 단독 채팅 페이지예요. 컴퓨터 전환 시트에서 `via:"jandi"` 행을 고르면 이 앱의 같은 origin 안에서 열려요(`prPick`의 `location.href = p.url`).
 - 구성: `header`(`a[href="/"]` `←` `aria-label` `돌아가기`, 컴퓨터 이름, `small` `잔디 나와의 대화로 주고받아요`), `#log`(말풍선 `.m.me`와 `.m.it`, 시각 `.t`), `#err`, `form#f`(`textarea#t`(`maxlength 4000`, 플레이스홀더 `<이름>에 시킬 일을 적어 주세요`, `required`)와 `button#b` `보내기`).
 - 기능: 3초마다 `GET /api/jandi-peer/<keyword>/messages`로 새로 읽어 바뀐 id 목록일 때만 다시 그려요(페이지가 보일 때만, 맨 아래에 붙어 있었으면 따라 내려감). 전송은 `POST /api/jandi-peer/<keyword>/send {text}`(Enter 전송, Shift+Enter 줄바꿈, IME 조합 중이면 무시), 성공하면 입력을 비우고 다시 읽고 맨 아래로. 시각 표시 `ko-KR`, 24시간제, `월/일 시:분`.
@@ -2994,6 +3000,6 @@ DESIGN.md:56은 "transform/opacity only"이고 ui-spec.md:397은 `.bar i` 너비
 | hub/pair-page.ts | 107 | 0 | 0 | 0 | 0 | 0 | 0 |
 | hub/jandi-peers.ts | 195 | 0 | 0 | 0 | 0 | 0 | 0 |
 
-결론: `/pair`(hub/pair-page.ts)와 `/jandi-peer`(hub/jandi-peers.ts)는 모션이 없고 디자인 토큰도 쓰지 않아요. 둘 다 `<style>` 안에 리터럴 값을 직접 적었어요(pair-page.ts:12-22, jandi-peers.ts:61-68: 글자 크기, `#2563eb`와 `#2f6fed` 같은 색, `border-radius:10px`). 정적인 상태 변화는 `button:disabled{opacity:.5}`(jandi-peers.ts:68)뿐이에요. jandi-peers.ts:86의 `setInterval(()=>{if(!document.hidden)load()},3000);`는 3초마다 목록을 다시 받는 폴링이고 화면을 움직이지 않아요.
+고치기 전 결론: `/pair`(hub/pair-page.ts)와 `/jandi-peer`(hub/jandi-peers.ts)는 모션이 없고 디자인 토큰도 쓰지 않아요. 둘 다 `<style>` 안에 리터럴 값을 직접 적었어요(pair-page.ts:12-22, jandi-peers.ts:61-68: 글자 크기, `#2563eb`와 `#2f6fed` 같은 색, `border-radius:10px`). 정적인 상태 변화는 `button:disabled{opacity:.5}`(jandi-peers.ts:68)뿐이에요. jandi-peers.ts:86의 `setInterval(()=>{if(!document.hidden)load()},3000);`는 3초마다 목록을 다시 받는 폴링이고 화면을 움직이지 않아요.
 
 원시 JSON에서 이 두 파일에 걸린 모션 행은 JS 호출 0행, 인라인 CSS 0행, 동작 줄이기 0행이에요.

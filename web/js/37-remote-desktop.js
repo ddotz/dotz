@@ -54,9 +54,9 @@ async function openScreen(p) {
 }
 
 // One button on one computer of the list (33-peers.js): another computer that answers, or this one when it has the feature. A computer
-// reached only through JANDI has no gateway to show a screen from, and an offline one has nothing to open: no button, no space.
+// reached only through JANDI, or only by a public address, has no gateway of ours to show a screen from, and an offline one has nothing to open: no button, no space.
 function dskRowBtn(p) {
-  if (selfDown || p.via || (p.self ? !(S && S.desk) : !p.online)) return null;
+  if (selfDown || p.via || p.public || (p.self ? !(S && S.desk) : !p.online)) return null;
   const off = p.self && !S.desk.on;
   return el("button", { type: "button", class: "btn tonal inrow pr-desk", text: off ? "켜고 보기" : "화면 보기", "aria-label": `${p.name} ${off ? "화면 공유 켜고 보기" : "화면 보기"}`, onclick: () => { prClose(false); openScreen(p); } });
 }
