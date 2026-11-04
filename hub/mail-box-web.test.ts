@@ -287,6 +287,36 @@ describe("the open mail", () => {
 	}, 30_000);
 });
 
+describe("the bar above the list", () => {
+	const place = `(() => { const y = s => Math.round(document.querySelector(s).getBoundingClientRect().top * 100) / 100; return { row: y("#mon-tl > .mr"), box: y("#mon-tl > .mr .mr-chk"), all: y(".mbox-all"), bar: document.querySelector("#mbox-bar").getBoundingClientRect().height }; })()`;
+	type Place = { row: number; box: number; all: number; bar: number };
+	for (const [width, height] of [[412, 915], [1280, 800]]) test(`selecting moves nothing at ${width}, and no line about the mailbox is added`, async () => {
+		const v = await openList(width, height);
+		// The list rises in as it opens; measure where it comes to rest.
+		await waitFor(v, `!document.getAnimations().some(a => a.playState === "running" && a.effect.getTiming().iterations !== Infinity)`);
+		const idle = await ev<Place>(v, place);
+		await shot(v, `bar-${width}-idle`);
+		// A mail that owes a reply beside one whose mailbox cannot follow: the fullest bar there is.
+		await tick(v, "월간 점검 보고서 확인 요청");
+		await tick(v, "회사 메일");
+		expect(await ev<boolean>(v, `!!document.querySelector('#mbox-bar [data-k="mail-fyi"]')`)).toBe(true);
+		expect(await ev<Place>(v, place)).toEqual(idle);
+		// One line: the bar holds every control on one row, nothing dropped below it.
+		expect(await ev<number>(v, `new Set([...document.querySelector("#mbox-bar").children].map(c => { const r = c.getBoundingClientRect(); return Math.round(r.top + r.height / 2); })).size`)).toBe(1);
+		expect(await ev<boolean>(v, `document.body.textContent.includes("dotz에서만 바뀌어요") || !!document.querySelector(".mbox-note")`)).toBe(false);
+		await shot(v, `bar-${width}-selected`);
+		await run(v, `document.querySelector("#mbox-bar .mbox-x").click()`);
+		expect(await ev<Place>(v, place)).toEqual(idle);
+		// The 답장 필요 folder's idle bar carries a button of its own and still keeps the height.
+		await run(v, `document.querySelector('#mon-tl [data-filter="owed"]').click()`);
+		await waitFor(v, `document.querySelector('#mbox-bar [data-k="mail-fyi-all"]')`);
+		const owed = await ev<Place>(v, place);
+		expect(owed.bar).toBe(idle.bar);
+		await run(v, `document.querySelector("#mon-tl > .mr .mr-chk").click()`);
+		expect(await ev<Place>(v, place)).toEqual(owed);
+	}, 30_000);
+});
+
 describe("답장 안 함 on many mails", () => {
 	const owe = () => { for (const m of mails) if (["fx-a", "fx-b", "fx-fail", "fx-kdb", "fx-old", "fx-d"].includes(m.key)) { m.reply = "needs"; m.archived = false; } };
 	const toastAct = (v: View) => run(v, `[...document.querySelectorAll(".snack button")].find(b => b.textContent === "되돌리기").click()`);
