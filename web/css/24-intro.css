@@ -1,7 +1,7 @@
 /* 화면 안내 (web/js/42-intro.js): the spotlight is a hole in the scrim over a real menu, the card sits next to it (above the tab bar on a phone) or in the middle. */
 .intro { position: fixed; inset: 0; z-index: 1500; }
-.intro-spot { position: fixed; border-radius: var(--r-ctl); box-shadow: 0 0 0 200vmax var(--scrim); }
-.intro-spot.none { inset: 0; border-radius: 0; box-shadow: none; background: var(--scrim); }
+.intro-spot { position: fixed; border-radius: var(--r-ctl); box-shadow: 0 0 0 200vmax var(--scrim); outline: 2px solid var(--accent); }
+.intro-spot.none { outline: 0; inset: 0; border-radius: 0; box-shadow: none; background: var(--scrim); }
 .intro-tip { position: fixed; display: flex; flex-direction: column; width: min(340px, calc(100% - var(--sp-6))); padding: var(--sp-5); border-radius: var(--r-sheet); background: var(--pop); box-shadow: var(--float); }
 .intro-tip.mid { inset: 0; margin: auto; height: fit-content; width: min(var(--sheet-w), calc(100% - var(--sp-6))); }
 .intro-n { margin-bottom: var(--sp-15); color: var(--fg-3); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); }
