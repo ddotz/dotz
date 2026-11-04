@@ -45,10 +45,10 @@ type Agent = { key: string; pid: number; busy: boolean; restart: (note: string) 
 function agents(): Agent[] {
 	const list: Agent[] = [];
 	const op = orchestratorPid();
-	if (op && orch.status !== "rate-limited") list.push({ key: "orchestrator", pid: op, busy: orch.status === "working", restart: () => restartOrchestrator() });
+	if (op && orch.status !== "rate-limited") list.push({ key: "orchestrator", pid: op, busy: orch.status === "working", restart: note => restartOrchestrator(`memory guard: ${note}`) });
 	for (const c of convs.conversations()) {
 		const pid = c.o.orchestratorPid();
-		if (pid && c.o.orch.status !== "rate-limited") list.push({ key: `conv:${c.key}`, pid, busy: c.o.orch.status === "working", restart: () => c.o.restart() });
+		if (pid && c.o.orch.status !== "rate-limited") list.push({ key: `conv:${c.key}`, pid, busy: c.o.orch.status === "working", restart: note => c.o.restart(`memory guard: ${note}`) });
 	}
 	for (const lane of lanes.values()) {
 		if (!lane.proc || lane.status === "rate-limited") continue;

@@ -225,8 +225,8 @@ export async function routeSettings(req: Request, url: URL, parts: string[]): Pr
 		try {
 			// resume: the owner's 재개 on a stopped or paused orchestrator (orchestrator.ts resumeNow); restart: a plain process restart
 			// 중단 names the conversation the button was in: with one session per conversation that session's turn ends, not main's.
-			if (parts[2] === "resume") resumeNow();
-			else if (parts[2] === "restart") restartOrchestrator();
+			if (parts[2] === "resume") resumeNow("web 재개 (POST /api/orchestrator/resume)");
+			else if (parts[2] === "restart") restartOrchestrator("web restart (POST /api/orchestrator/restart)");
 			else {
 				const t = String(((await body(req).catch(() => ({}))) as { target?: unknown }).target ?? "").trim();
 				if (t) convs.cancelFor(t);

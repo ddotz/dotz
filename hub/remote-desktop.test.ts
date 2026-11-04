@@ -378,7 +378,7 @@ console.log((await desk.host.ensure()) === "ok" ? "READY " + voxl : "FAILED");
 setInterval(() => {}, 1 << 30);
 `,
 		);
-		const gateway = Bun.spawn([process.execPath, script, dir, String(listener.port)], { stdin: "ignore", stdout: "pipe", stderr: "inherit" });
+		const gateway = Bun.spawn([process.execPath, script, dir, String(listener.port)], { env: process.env, stdin: "ignore", stdout: "pipe", stderr: "inherit" });
 		try {
 			const ready = (async () => {
 				for await (const c of gateway.stdout) {

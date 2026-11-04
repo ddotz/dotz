@@ -99,3 +99,19 @@ afterAll(async () => {
 	for (const n of openCards()) ignoreNotice(n.id);
 	expect(openCards()).toEqual([]);
 });
+
+test("one post with several draft blocks becomes one card per draft, shown one at a time", async () => {
+	const conv = "mail:aq-multi";
+	const block = (ref: string) => draftApprovalBlock({ to: "friend@example.com", toLabel: "받는이", subject: `Re: ${ref}`, body: `보내 ${ref}`, ref, question: "이 답장 보낼까요?" });
+	const open = () => listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === conv);
+	await out(conv, `[ask] 답장 초안이에요\n${["mb-1", "mb-2", "mb-3"].map(block).join("\n")}`);
+	for (const ref of ["mb-1", "mb-2", "mb-3"]) {
+		const [shown] = open();
+		expect(open()).toHaveLength(1);
+		expect(shown!.decision!.draft?.ref).toBe(ref);
+		const next = new Promise<void>(resolve => onEmit(e => e.kind === "out" && e.target === conv && resolve()));
+		ignoreNotice(shown!.id);
+		if (ref !== "mb-3") await next;
+	}
+	expect(open()).toEqual([]);
+});
