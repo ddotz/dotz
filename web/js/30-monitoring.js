@@ -32,6 +32,7 @@ const monItemOf = t => {
 // go("monitoring", key) opens that item; without one the list shows.
 function monRoute(tgt) {
   pqOpen();
+  MON.miss = false;
   if (tgt && tgt !== "list") {
     if (tgt !== MON.sel) { MON.filter = "all"; MON.open.clear(); MON.more.clear(); }   // another item: its list starts whole and folded
     MON.autoArmed = false; MON.olderBusy = false;
@@ -1033,6 +1034,9 @@ function renderMonitoring() {
   monRaf = 0;
   if (current !== "monitoring") { mbSeenReset(); if (monCtx && current === "chat") convSchedule(); return; }
   const items = monItems(), sel = monSel(items), side = $("#mon-side"), box = $("#mon-timeline"), tl = $("#mon-tl");
+  // An address whose item is not here (gone, or not loaded yet) shows the list, never an empty pane; an item that arrives later still opens.
+  if (!sel && !MON.list) { MON.miss = true; MON.list = true; convChrome(); }
+  else if (sel && MON.miss) { MON.miss = false; MON.list = false; convChrome(); }
   const rows = monRows(items, sel), sideSig = JSON.stringify([rows.map(r => [r.k, r.name, r.hint, r.unread, r.unreplied, r.badge, r.header, r.sel, r.chips, r.msig])]);
   if (sideSig !== MON.side) {
     MON.side = sideSig;

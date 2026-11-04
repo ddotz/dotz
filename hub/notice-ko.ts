@@ -19,7 +19,7 @@ const TOOLS: Record<string, string> = {
 };
 const SLASH: Record<string, string> = {
 	status: "상태 보기", context: "컨텍스트 보기", compact: "대화 정리", lanes: "세션 보기", model: "모델 바꾸기", effort: "추론 강도 바꾸기", restart: "다시 시작", stop: "멈추기",
-	resume: "이어가기", abort: "취소", providers: "로그인 보기", login: "로그인", logout: "로그아웃", quota: "사용 한도 보기", help: "도움말", new: "새 대화", clear: "비우기", 셸: "터미널 명령",
+	resume: "이어가기", abort: "취소", providers: "공급자 보기", account: "계정 보기", login: "로그인", logout: "로그아웃", quota: "사용 한도 보기", help: "도움말", new: "새 대화", clear: "비우기", 셸: "터미널 명령",
 };
 const CMD_FIRST: Record<string, string> = {
 	curl: "인터넷 요청", wget: "인터넷 요청", ls: "파일 확인", cat: "파일 확인", head: "파일 확인", tail: "파일 확인", grep: "내용 찾기", rg: "내용 찾기", sed: "파일 고치기", awk: "파일 확인",
