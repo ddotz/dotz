@@ -231,7 +231,7 @@
   });
 
   /* badges: the bell, the 채팅 tab and the 모니터링 tab */
-  P.S.notices = D.notices.slice();
+  P.S.notices = D.notices;
   P.S.unread = () => P.S.notices.filter((n) => n.unread).length;
   const chatUnread = () => D.convs.reduce((a, c) => a + (c.unread || 0), 0);
   const badge = (key, n, cls) => (n > 0 ? `<span class="${cls}" data-bd="${key}">${n}</span>` : "");
@@ -254,16 +254,19 @@
     $("#tabbar").innerHTML = NAV.map(([id, l, i]) => `<a data-tab="${id}" href="#${id}">${ic(i, "s20")}<span>${l}</span>${BD[id] ? `<span data-bdhost="${BD[id]}" data-bdcls="nb" style="display:contents">${badge(BD[id], BD[id] === "chat" ? chatUnread() : P.pending(), "nb")}</span>` : ""}</a>`).join("");
   };
   const buildBar = (r) => {
-    const back = r.back ? `<a class="ib" href="#${r.back}" aria-label="뒤로">${ic("back")}</a>` : "";
+    const to = typeof r.back === "function" ? r.back() : r.back;
+    const back = to ? `<a class="ib" href="#${to}" aria-label="뒤로">${ic("back")}</a>` : "";
     $("#appbar").className = "appbar" + (back ? " back" : "");
-    $("#appbar").innerHTML = `${back}<h1>${h(r.title)}</h1><button class="gw" data-act="gw">${ic("laptop")}<span data-gwn>${h(P.S.gw)}</span>${ic("chevd")}</button><button class="cmdk" data-act="palette" aria-label="검색">${ic("search")}<span>검색</span><kbd>⌘K</kbd></button><a class="ib" href="#notices" aria-label="알림">${ic("bell")}<span data-bdhost="bell" data-bdcls="bd" style="display:contents">${badge("bell", P.S.unread(), "bd")}</span></a>`;
+    $("#appbar").innerHTML = `${back}<h1>${h(r.title)}</h1><button class="gw" data-act="gw">${ic("laptop")}<span data-gwn>${h(P.S.gw)}</span>${ic("chevd")}</button><button class="cmdk" data-act="palette" aria-label="검색">${ic("search")}<span>검색</span><kbd>⌘K</kbd></button><a class="ib${r.tab === "notices" ? " on" : ""}" href="#notices" aria-label="알림">${ic("bell")}<span data-bdhost="bell" data-bdcls="bd" style="display:contents">${badge("bell", P.S.unread(), "bd")}</span></a>`;
   };
 
   P.reg = (r) => { P.routes[r.id] = r; P.order.push(r.id); };
 
   const render = () => {
     const id = decodeURIComponent(location.hash.slice(1)).replace(/^\/+/, "") || "home";
-    const r = P.routes[id] || { id, title: "없는 화면", tab: "home", back: "index", render: () => `<div class="empty">#${h(id)} 화면은 없어요.<br><a class="btn tonal sm" href="#index" style="margin-top:12px">화면 목록 열기</a></div>` };
+    const found = P.routes[id] || { id, title: "없는 화면", tab: "home", back: "index", render: () => `<div class="empty">#${h(id)} 화면은 없어요.<br><a class="btn tonal sm" href="#index" style="margin-top:12px">화면 목록 열기</a></div>` };
+    const r = P.S.backTo ? Object.assign({}, found, { back: P.S.backTo }) : found;   /* 알림 행에서 들어온 화면의 뒤로는 알림으로 가요 */
+    P.S.backTo = null;
     P.closeSheet(true); P.closePop(); closePalette(true);
     buildBar(r);
     $$("[data-tab]").forEach((a) => a.classList.toggle("on", a.dataset.tab === r.tab));
