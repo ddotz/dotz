@@ -31,9 +31,12 @@ export function P({ children, className }: { children: string[]; className?: str
 
 export function AppMark({ size = 22 }: { size?: number }) {
   return (
-    <span className="dz-mark" style={{ width: size, height: size }} aria-hidden>
-      <span />
-    </span>
+    <svg className="dz-mark" viewBox="3.5 3.5 17 17" width={size} height={size} aria-hidden>
+      <circle cx="7.4" cy="7.4" r="3.1" />
+      <circle cx="16.6" cy="7.4" r="1.9" />
+      <circle cx="7.4" cy="16.6" r="1.9" />
+      <circle className="dz-mark__dot" cx="16.6" cy="16.6" r="3.1" />
+    </svg>
   )
 }
 
