@@ -479,7 +479,7 @@ function cmPaint(root, p, D) {
       cmText(i),
       i.bad ? el("span", { class: "tag warn", text: "확인 필요" }) : null,
       el("span", { class: "li-end" }, ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `)))),
-      g.more ? el("div", { class: "sup", style: "padding:10px var(--sp-4)", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));
+      g.more ? el("div", { class: "sup", style: "padding:var(--sp-2) var(--sp-4)", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));
   clear(root).append(
     el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" },
       el("div", { class: "pmv-htop" }, el("div", { class: "pmv-title", text: p.name }), el("span", { class: "pmv-upd", text: "내 설정" })),
