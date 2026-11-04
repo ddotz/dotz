@@ -542,5 +542,5 @@ function workRow(w) {
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: line })),
       el("span", { class: `hs ${tone}`, text: state })),
     hcWorkFiles(w),
-    act ? el("button", { class: "btn text", type: "button", style: "flex:none;margin-right:8px", "data-act": "retry", onclick: ev => act[1](ev.currentTarget), text: act[0] }) : null);
+    act ? el("button", { class: "btn text", type: "button", style: "flex:none;margin-right:var(--sp-2)", "data-act": "retry", onclick: ev => act[1](ev.currentTarget), text: act[0] }) : null);
 }
