@@ -208,13 +208,14 @@ const post = (m: Made, path: string, body: unknown, headers: Record<string, stri
 const seenAs = (ip: string) => ({ "tailscale-user-login": "owner@example.com", "x-forwarded-for": ip });
 
 describe("voxl spawn", () => {
-	test("view-only args, a random password only in the env, no resize or mic", async () => {
+	test("control always on: no --read-only, a random password only in the env, no resize or mic", async () => {
 		const m = make();
 		expect(await m.d.host.ensure()).toBe("ok");
 		const first = m.spawned[0]!;
 		expect(first.argv).toContain("--addr=127.0.0.1");
 		expect(first.argv).toContain("--file-transfers=none");
-		expect(first.argv).toContain("--read-only");
+		expect(first.argv).not.toContain("--read-only");
+		expect(first.argv).toContain("--stripes=4");
 		expect(first.argv.join(" ")).not.toMatch(/enable-resize|microphone/);
 		const pw = first.env.VOXL_PASSWORD!;
 		expect(pw).toMatch(/^[0-9a-f]{64}$/);
@@ -225,11 +226,13 @@ describe("voxl spawn", () => {
 		expect(m.spawned[1]!.env.VOXL_PASSWORD).not.toBe(pw);
 	});
 
-	test("control on drops --read-only", async () => {
+	test("a stored control:false from an older install is ignored", async () => {
 		const m = make();
-		setCfg(m.dir, { control: true });
+		mkdirSync(join(m.dir, "remote-desktop"), { recursive: true });
+		writeFileSync(join(m.dir, "remote-desktop", "settings.json"), JSON.stringify({ on: true, control: false, allow_public: false }));
 		await m.d.host.ensure();
 		expect(m.spawned[0]!.argv).not.toContain("--read-only");
+		expect(m.d.summary()).toEqual({ on: true, running: true, viewers: [] });
 	});
 
 	test("the password is in no answer the browser can see", async () => {
@@ -335,30 +338,26 @@ describe("lifecycle", () => {
 		expect(child.exitCode).toBe(0);
 	});
 
-	test("turning control on or off stops it at once, and the next start uses the new mode", async () => {
+	test("turning sharing off stops it at once, and a control field changes nothing", async () => {
 		const m = make();
 		await m.d.host.ensure();
 		const first = m.spawned[0]!.child;
 		const put = (b: object) => call(m, "/api/desk/settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(b) });
-		const res = await put({ control: true });
+		const kept = (await (await put({ control: false })).json()) as Record<string, unknown>;
+		expect(first.exitCode).toBeNull();
+		expect("control" in kept).toBe(false);
+		const res = await put({ on: false });
 		expect(first.exitCode).not.toBeNull(); // gone before the answer
-		expect(((await res.json()) as { control: boolean; running: boolean }).running).toBe(false);
-		await m.d.host.ensure();
-		expect(m.spawned[1]!.argv).not.toContain("--read-only");
-		await put({ control: false });
-		expect(m.spawned[1]!.child.exitCode).not.toBeNull();
-		await m.d.host.ensure();
-		await put({ on: false });
-		expect(m.spawned[2]!.child.exitCode).not.toBeNull();
+		expect(((await res.json()) as { running: boolean }).running).toBe(false);
 		expect((await call(m, "/desk/")).status).toBe(403);
 	});
 
 	test("settings take booleans only, from the same origin", async () => {
 		const m = make();
 		const put = (body: unknown, headers = JSON_HEADERS) => call(m, "/api/desk/settings", { method: "PUT", headers, body: JSON.stringify(body) });
-		expect((await put({ control: "yes" })).status).toBe(400);
-		expect((await put({ control: true }, { ...JSON_HEADERS, origin: "https://evil.example" })).status).toBe(403);
-		expect((await put({ control: true }, { origin: JSON_HEADERS.origin } as typeof JSON_HEADERS)).status).toBe(400);
+		expect((await put({ on: "yes" })).status).toBe(400);
+		expect((await put({ on: true }, { ...JSON_HEADERS, origin: "https://evil.example" })).status).toBe(403);
+		expect((await put({ on: true }, { origin: JSON_HEADERS.origin } as typeof JSON_HEADERS)).status).toBe(400);
 		expect(existsSync(join(m.dir, "remote-desktop", "settings.json"))).toBe(false);
 	});
 
@@ -588,7 +587,7 @@ describe("the button of another computer", () => {
 		const read = async (m: Made, headers: Record<string, string> = PEER, mode?: string) => (await call(m, "/api/peer/desk", { headers, ...(mode ? { mode } : {}) }));
 		expect((await read(make(), {})).status).toBe(403);
 		const off = make();
-		setCfg(off.dir, { on: false, control: true });
+		setCfg(off.dir, { on: false });
 		expect(await (await read(off)).json()).toEqual({ available: true, on: false, public_blocked: false });
 		expect(await (await read(make(), PEER, "cloudflare")).json()).toEqual({ available: true, on: true, public_blocked: true });
 		expect(await (await read(make({ installBinary: false }))).json()).toEqual({ available: false });
@@ -878,29 +877,21 @@ describe("not available", () => {
 
 	test("available: the /api/state summary and the status carry the same facts", async () => {
 		const m = make();
-		expect(m.d.summary()).toEqual({ on: true, control: false, running: false, viewers: [] });
+		expect(m.d.summary()).toEqual({ on: true, running: false, viewers: [] });
 		const s = (await (await call(m, "/api/desk/status")).json()) as Record<string, unknown>;
-		expect(Object.keys(s).sort()).toEqual(["allow_public", "available", "control", "on", "public_blocked", "relay", "rebuilding", "running", "viewers"].sort());
+		expect(Object.keys(s).sort()).toEqual(["allow_public", "available", "on", "public_blocked", "relay", "rebuilding", "running", "viewers"].sort());
 	});
 });
 
 describe("permission probe", () => {
-	test("reports both permissions from the gateway's own process, and the trial reads a PNG read-only then stops", async () => {
+	test("reports both permissions from the gateway's own process, and the trial reads a PNG then stops", async () => {
 		const asked: string[][] = [];
 		const m = make({ host: { exec: async argv => (asked.push(argv), { code: 0, stdout: argv.join(" ").includes("CGPreflight") ? "true\n" : "false\n", stderr: "" }), sleep: async () => {} } });
 		expect(await (await post(m, "/api/desk/probe", {})).json()).toEqual({ screen: true, accessibility: false });
 		expect(asked.every(a => a[0] === "osascript")).toBe(true);
 		const trial = (await (await post(m, "/api/desk/probe", { trial: true })).json()) as { ok: boolean; bytes: number };
 		expect(trial.ok).toBe(true);
-		expect(m.spawned[0]!.argv).toContain("--read-only");
 		expect(m.d.host.ready).toBe(false);
-	});
-
-	test("a trial is read-only even when control is on", async () => {
-		const m = make();
-		setCfg(m.dir, { control: true });
-		await post(m, "/api/desk/probe", { trial: true });
-		expect(m.spawned[0]!.argv).toContain("--read-only");
 	});
 });
 
@@ -932,7 +923,7 @@ describe("onboard steps", () => {
 	const okGateway: Gw = (method, path, body) => {
 		if (path === "/api/desk/status") return { available: true };
 		if ((body as { trial?: boolean }).trial) return { ok: true, bytes: 5000 };
-		return { screen: true, accessibility: false };
+		return { screen: true, accessibility: true };
 	};
 	const state = (t: ReturnType<typeof io>) => JSON.parse(t.files.get(join(t.dataDir, "remote-desktop", "onboard.json")) ?? "{}");
 
@@ -959,7 +950,7 @@ describe("onboard steps", () => {
 		expect(t.execs.filter(a => a[0] === "cargo").length).toBe(1);
 		expect(t.execs.find(a => a[0] === "cargo")).toContain("--locked");
 		expect(state(t).done).toEqual(["preflight", "deps", "build", "link", "enable", "gateway", "permissions", "trial"]);
-		expect(JSON.parse(t.files.get(join(t.dataDir, "remote-desktop", "settings.json"))!)).toEqual({ on: true, control: false, allow_public: false });
+		expect(JSON.parse(t.files.get(join(t.dataDir, "remote-desktop", "settings.json"))!)).toEqual({ on: true, allow_public: false });
 		const copy = join(t.dataDir, "features", "remote-desktop", "feature.md");
 		mkdirSync(join(scratch, "onboard-data", "features", "remote-desktop"), { recursive: true });
 		writeFileSync(copy, t.files.get(copy)!);
@@ -968,11 +959,10 @@ describe("onboard steps", () => {
 		expect(loadFeatureDirs(join(scratch, "onboard-data")).features.find(f => f.id === "remote-desktop")).toMatchObject({ enabled: true, origin: "personal", name: shipped!.name });
 	});
 
-	test("--control writes control and needs the accessibility permission too", async () => {
-		const t = io({ gateway: okGateway });
-		const r = await runOnboard(t.io, { control: true });
+	test("the accessibility permission is needed too", async () => {
+		const t = io({ gateway: (m, p, b) => (p === "/api/desk/probe" && !(b as { trial?: boolean }).trial ? { screen: true, accessibility: false } : okGateway(m, p, b)) });
+		const r = await runOnboard(t.io, {});
 		expect(r).toMatchObject({ code: 3, status: "waiting", step: "permissions" });
-		expect(JSON.parse(t.files.get(join(t.dataDir, "remote-desktop", "settings.json"))!).control).toBe(true);
 		expect(t.said.join("\n")).toContain("손쉬운 사용");
 	});
 

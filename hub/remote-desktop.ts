@@ -1,5 +1,6 @@
 // Owner (2026-11-04): "https://github.com/tembo/voxl 이거 붙여서 해당 게이트웨이가 설치된 컴퓨터 화면 띄우고 조작 가능하게 가능하냐? 전체모드로 하면 로컬화면처럼 전체로 사용가능하게 하고"
 // Owner: "크롬으로 되네. 크롬이 설치되어있으면 크롬에서 띄우는걸로 구현하자"
+// Owner (2026-11-05): "조작은 상시 가능해야하니까 on/off 필요 없음"
 // Remote desktop (features/remote-desktop/DESIGN.md): the gateway runs voxl (a screen streamer) on loopback only while someone watches,
 // and is its only door: /desk/ proxies the allow-listed paths with the Bearer added here, the websocket goes through a raw TCP client so
 // a slow viewer can stop the reading (backpressure), and every other path of voxl (screenshot, files, record...) stays unreachable.
@@ -22,7 +23,7 @@ const OPEN_GAP_MS = 5_000; // at most one Chrome open per this
 
 export type Child = { pid: number; exited: Promise<number>; kill(sig?: NodeJS.Signals): void; stderr?: ReadableStream<Uint8Array> | null };
 export type Clock = { now(): number; after(ms: number, fn: () => void): () => void };
-export type Settings = { on: boolean; control: boolean; allow_public: boolean };
+export type Settings = { on: boolean; allow_public: boolean };
 type Computer = { name: string; host: string; url: string; self: boolean };
 type TsStatus = { Self?: { TailscaleIPs?: string[] }; Peer?: Record<string, { TailscaleIPs?: string[]; DNSName?: string }> };
 export type PeerDesk = { available: boolean; on?: boolean; public_blocked?: boolean; unsupported?: boolean; old?: boolean };
@@ -59,9 +60,9 @@ const settingsFile = (dataDir: string) => join(dirOf(dataDir), "settings.json");
 export function readSettings(dataDir: string): Settings {
 	try {
 		const o = JSON.parse(readFileSync(settingsFile(dataDir), "utf8")) as Partial<Settings>;
-		return { on: o.on !== false, control: o.control === true, allow_public: o.allow_public === true };
+		return { on: o.on !== false, allow_public: o.allow_public === true };
 	} catch {
-		return { on: true, control: false, allow_public: false };
+		return { on: true, allow_public: false };
 	}
 }
 function writeSettings(dataDir: string, s: Settings): void {
@@ -76,7 +77,6 @@ export class DeskHost {
 	port = 0;
 	password = ""; // in the child's env and the Bearer to it; never logged, never in an answer
 	ready = false;
-	readOnly = true;
 	viewers = new Map<Closable, ViewerRec>();
 	relay = { bytes: 0, paused_ms: 0, pauses: 0, max_buffered: 0 };
 	private child?: Child;
@@ -97,20 +97,19 @@ export class DeskHost {
 		await this.rebuilding;
 	}
 
-	async ensure(trial = false): Promise<Ensure> {
+	async ensure(): Promise<Ensure> {
 		if (this.rebuilding) return "rebuilding";
-		const ro = trial || !readSettings(this.d.dataDir).control;
-		if (this.ready && this.readOnly === ro) {
+		if (this.ready) {
 			if (!this.viewers.size) this.armIdle();
 			return "ok";
 		}
-		this.starting ??= this.start(ro).finally(() => (this.starting = undefined));
+		this.starting ??= this.start().finally(() => (this.starting = undefined));
 		return this.starting;
 	}
 
-	private async start(ro: boolean): Promise<Ensure> {
+	private async start(): Promise<Ensure> {
 		await this.kill();
-		const first = await this.launch(ro);
+		const first = await this.launch();
 		if (first === "ok") return this.up();
 		// A voxl that cannot link its libraries (a brew upgrade moved x264) is rebuilt once; the page tells the viewer to wait.
 		if (first === "failed" || this.rebuilt) return "failed";
@@ -118,7 +117,7 @@ export class DeskHost {
 		log("remote-desktop: voxl does not link, rebuilding");
 		this.rebuilding = this.d
 			.rebuild()
-			.then(async ok => void (ok && (await this.launch(ro)) === "ok" && this.up()))
+			.then(async ok => void (ok && (await this.launch()) === "ok" && this.up()))
 			.catch(e => log(`remote-desktop: rebuild failed: ${e}`))
 			.finally(() => (this.rebuilding = undefined));
 		return "rebuilding";
@@ -129,10 +128,10 @@ export class DeskHost {
 		return "ok";
 	}
 
-	private async launch(ro: boolean): Promise<"ok" | "failed" | "dyld"> {
+	private async launch(): Promise<"ok" | "failed" | "dyld"> {
 		const port = await this.d.freePort();
 		const password = randomBytes(32).toString("hex");
-		const argv = [binOf(this.d.dataDir), "--addr=127.0.0.1", `--port=${port}`, "--file-transfers=none", ...(ro ? ["--read-only"] : [])];
+		const argv = [binOf(this.d.dataDir), "--addr=127.0.0.1", `--port=${port}`, "--file-transfers=none", "--stripes=4"];
 		const env = Object.fromEntries(["PATH", "HOME", "TMPDIR", "USER", "LANG"].flatMap(k => (process.env[k] ? [[k, process.env[k]!]] : [])));
 		let child: Child;
 		try {
@@ -141,7 +140,7 @@ export class DeskHost {
 			log(`remote-desktop: spawn failed: ${e}`);
 			return "failed";
 		}
-		Object.assign(this, { child, port, password, readOnly: ro, tail: "" });
+		Object.assign(this, { child, port, password, tail: "" });
 		const drained = this.drain(child.stderr);
 		this.stopWatch = this.d.watch(child.pid);
 		void child.exited.then(() => this.child === child && this.cleanup());
@@ -187,9 +186,9 @@ export class DeskHost {
 		this.viewers.delete(ws);
 		if (!this.viewers.size && this.ready) this.armIdle();
 	}
-	/** Turning `on` or `control` off (or on) takes effect now: the mode is fixed at spawn. */
+	/** Turning `on` off takes effect now. */
 	settingsChanged(prev: Settings, next: Settings): Promise<void> {
-		return prev.on !== next.on || prev.control !== next.control ? this.stop() : Promise.resolve();
+		return prev.on !== next.on ? this.stop() : Promise.resolve();
 	}
 
 	async stop(): Promise<void> {
@@ -234,9 +233,9 @@ const page = (s: string, status: number, refresh = false) =>
 	new Response(`<!doctype html><meta charset="utf-8">${refresh ? '<meta http-equiv="refresh" content="3">' : ""}<title>화면 공유</title><p>${s}</p>`, { status, headers: { "content-type": "text/html; charset=utf-8" } });
 // A link from another site (the switcher on another computer included) must not start capture by itself, so it lands here: nothing runs
 // until a tap on this page, whose own link is same-origin. Framing it is refused like every /desk answer.
-const tapPage = (name: string, control: boolean) =>
+const tapPage = (name: string) =>
 	new Response(
-		`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>화면 공유</title><style>:root{color-scheme:light dark;font:16px/1.5 system-ui,sans-serif}body{margin:0;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:24px;box-sizing:border-box;text-align:center}h1{margin:0;font-size:20px}p{margin:0 0 16px;opacity:.65}a{display:block;width:100%;max-width:320px;box-sizing:border-box;padding:14px;border-radius:12px;background:#2563eb;color:#fff;font-weight:600;text-decoration:none}</style><h1>${Bun.escapeHTML(name)} 화면</h1><p>${control ? "보고 조작할 수 있어요" : "보기만 할 수 있어요"}</p><a href="/desk/">화면 열기</a>`,
+		`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>화면 공유</title><style>:root{color-scheme:light dark;font:16px/1.5 system-ui,sans-serif}body{margin:0;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:24px;box-sizing:border-box;text-align:center}h1{margin:0;font-size:20px}p{margin:0 0 16px;opacity:.65}a{display:block;width:100%;max-width:320px;box-sizing:border-box;padding:14px;border-radius:12px;background:#2563eb;color:#fff;font-weight:600;text-decoration:none}</style><h1>${Bun.escapeHTML(name)} 화면</h1><p>보고 조작할 수 있어요</p><a href="/desk/">화면 열기</a>`,
 		{ status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
 	);
 const PUBLIC_HEADERS = ["cf-ray", "cf-connecting-ip", "cf-access-jwt-assertion"];
@@ -296,7 +295,7 @@ export function createDesk(d: DeskDeps) {
 		const site = req.headers.get("sec-fetch-site");
 		if (site && site !== "same-origin" && site !== "none") {
 			if (req.method !== "GET" || url.pathname !== "/desk/" || upgrade || req.headers.get("sec-fetch-dest") !== "document") return text("cross-site request refused", 403);
-			return tapPage((await d.computers().catch(() => [])).find(c => c.self)?.name ?? "이 컴퓨터", s.control);
+			return tapPage((await d.computers().catch(() => [])).find(c => c.self)?.name ?? "이 컴퓨터");
 		}
 		// Relative: this server sees http behind tailscale serve, an absolute URL would leave https.
 		if (url.pathname === "/desk") return new Response(null, { status: 301, headers: { location: "/desk/" } });
@@ -404,7 +403,7 @@ export function createDesk(d: DeskDeps) {
 		const b = await body(req);
 		if (!b) return json({ error: "JSON body required" }, 400);
 		if (b.trial === true) {
-			if ((await host.ensure(true).catch(() => "failed")) !== "ok") return json({ ok: false, reason: "start" });
+			if ((await host.ensure().catch(() => "failed")) !== "ok") return json({ ok: false, reason: "start" });
 			try {
 				const shot = await host.fetchUp("/screenshot");
 				const png = new Uint8Array(await shot.arrayBuffer());
@@ -415,11 +414,9 @@ export function createDesk(d: DeskDeps) {
 			}
 		}
 		const check = async (k: keyof typeof JXA) => (await d.host.exec(["osascript", "-l", "JavaScript", "-e", JXA[k]], { timeoutMs: 15_000 })).stdout.trim() === "true";
-		const need = [["screen", true], ["accessibility", readSettings(d.dataDir).control]] as const;
 		let step: string | undefined;
 		if (b.grant === true)
-			for (const [key, wanted] of need) {
-				if (!wanted) continue;
+			for (const key of ["screen", "accessibility"] as const) {
 				const g = await grantPermission(d.host, { key, row: "bun", path: process.execPath, check: () => check(key) });
 				step ??= g.step;
 			}
@@ -434,8 +431,8 @@ export function createDesk(d: DeskDeps) {
 		if (act === "probe" && req.method === "POST") return probe(req);
 		if (act === "settings" && req.method === "PUT") {
 			const b = await body(req);
-			const keys = ["on", "control", "allow_public"] as const;
-			if (!b || keys.some(k => k in b && typeof b[k] !== "boolean")) return json({ error: "on, control, allow_public must be booleans" }, 400);
+			const keys = ["on", "allow_public"] as const;
+			if (!b || keys.some(k => k in b && typeof b[k] !== "boolean")) return json({ error: "on, allow_public must be booleans" }, 400);
 			const prev = readSettings(d.dataDir);
 			const next = { ...prev, ...Object.fromEntries(keys.filter(k => k in b).map(k => [k, b[k]])) } as Settings;
 			writeSettings(d.dataDir, next);
@@ -467,7 +464,7 @@ export function createDesk(d: DeskDeps) {
 		summary: () => {
 			if (!available()) return undefined;
 			const s = readSettings(d.dataDir);
-			return { on: s.on, control: s.control, running: host.ready, viewers: [...host.viewers.values()] };
+			return { on: s.on, running: host.ready, viewers: [...host.viewers.values()] };
 		},
 		stop: () => host.stop(),
 		socket: {
