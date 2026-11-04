@@ -302,6 +302,14 @@ export function parseDraftApproval(text: string): DraftApproval | undefined {
 	return draft && ref ? { ...draft, ref } : draft;
 }
 
+// One block of a message that asks about several drafts at once ("<question> (<ref>)" over 보내기 / 고치기 / 보내지 않기): its notice carries no
+// `draft` (parseDraftApproval reads a one-block message only), yet the draft behind it can be sent or dropped elsewhere (the 모니터링 queue),
+// so hub/notices.ts settleHandledDrafts asks for it by this ref.
+export function blockDraftRef(title: string, labels: string[]): string | undefined {
+	if (labels.slice(0, 3).join("|") !== [DRAFT_SEND, DRAFT_EDIT, DRAFT_DROP].join("|") || !labels.slice(3).every(l => DRAFT_MODES.has(l))) return undefined;
+	return REF.exec(title)?.[1];
+}
+
 // The quoted draft of a message as a draft (recipient line, optional subject, body), whatever the options below it are; undefined when the
 // message quotes none. Blank lines in the body are collapsed to one (a mail quoted with doubled breaks reads as normal paragraphs).
 export function parseQuotedDraft(text: string): DraftApproval | undefined {

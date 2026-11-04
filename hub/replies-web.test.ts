@@ -64,6 +64,8 @@ const server = Bun.serve({
 		if (p === "/api/notices") return json({ unread: 1, items: [localNote] });
 		if (p === "/api/integrations") return json({ items: [LOCAL_MAIL, LOCAL_KAKAO, LOCAL_YOUTUBE], available: [] });
 		if (p === "/api/conversations") return json({ items: [conv("mail:company-local")] });
+		if (p === "/api/drafts/og1/original") return json({ kind: "mail", key: "company-og", from: "Kim <kim@example.com>", date: T.localMail, subject: "견적 요청", text: "안녕하세요.\n\n다음 주까지 견적을 받고 싶어요. 수량은 100개예요.", html: false, attachments: [] });
+		if (p === "/api/drafts/og2/original") return json({ kind: "comment", key: "og2", author: "가나", date: T.localComment, text: "자막 언제 나와요? 기다리고 있어요.", post: { kind: "youtube", title: "첫 번째 영상" } });
 		if (p === "/api/replies") { repliesReads++; return json({ items: localReplies }); }
 		if (p === "/api/monitoring/peers") { peerReads++; return json([{ name: "맥미니", url: MINI, online: true, stale: false, items: snapshot() }]); }
 		if (p === "/api/peer/proxy") {
@@ -196,4 +198,22 @@ describe.each([[390, 844], [1280, 900]])("답장 확인 at %ipx", (width, height
 		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-q > .rq").length === 5`);
 		expect(localPosts.map(x => x.path)).toEqual(["/api/comments/drafts/C1/drop", "/api/comments/drafts/C1/restore"]);
 	});
+});
+
+// 원문 보기 on a card whose draft has a ref opens the full original under the short quote: a mail's sender, subject, date and whole body, or the comment.
+test("원문 보기 opens the full original mail or comment", async () => {
+	const v = await boot(1280, 900);
+	const ref = await q<{ ref: string; t: string }>(v, `const o = rqOriginalOf({ kind: "notice", n: { decision: { to: "mail:x", draft: { ref: "og1", origin: { text: "답장 상태" } } } } }); return { ref: o.ref, t: o.t };`);
+	expect(ref).toEqual({ ref: "og1", t: "mail:x" });
+	await run(v, `const h = document.createElement("div"); h.id = "og-test"; h.append(rqOrigNode("og:m", { who: "", text: "답장 상태", ref: "og1", t: "mail:x" }), rqOrigNode("og:c", { who: "가나", text: "자막", ref: "og2" })); document.body.append(h);`);
+	const before = await q<{ btns: string[]; panes: boolean[] }>(v, `const w = [...document.querySelectorAll("#og-test .rq-og-wrap")]; return { btns: w.map(x => x.querySelector(".rq-og").textContent), panes: w.map(x => x.querySelector(".rq-op").hidden) };`);
+	expect(before).toEqual({ btns: ["원문 보기", "원문 보기"], panes: [true, true] });
+	await run(v, `document.querySelectorAll("#og-test .rq-og").forEach(b => b.click())`);
+	await waitFor(v, `[...document.querySelectorAll("#og-test .rq-op")].every(p => !p.hidden && p.querySelector(".od-body"))`);
+	const after = await q<string[]>(v, `return [...document.querySelectorAll("#og-test .rq-op")].map(p => p.textContent)`);
+	for (const s of ["kim@example.com", "견적 요청", "수량은 100개예요.", "날짜"]) expect(after[0]).toContain(s);
+	for (const s of ["가나", "자막 언제 나와요? 기다리고 있어요.", "첫 번째 영상"]) expect(after[1]).toContain(s);
+	// 원문 접기 hides it again
+	await run(v, `document.querySelector("#og-test .rq-og").click()`);
+	expect(await q<boolean>(v, `return document.querySelector("#og-test .rq-op").hidden`)).toBe(true);
 });

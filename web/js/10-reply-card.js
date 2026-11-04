@@ -68,19 +68,27 @@ function rqAttachNode(d = {}) {
 }
 // The original a draft answers, as a quiet quote (owner 2026-11-03): muted, behind one 2px left rule, two lines by default with a
 // 원문 보기 toggle. It reads as someone else's words, plainly separate from the draft under it (원칙 5). Open state is kept per card key.
+// When the draft has a ref (o.ref, o.t = its conversation), 원문 보기 always shows and opens the full original under the quote: a mail's sender, subject, date and
+// whole body, or the original comment (owner 2026-11-04), loaded through the 원문 panel's own loader and pane (10-draft-original.js orgLoad / orgFill).
 const RQ_OG = new Set();
 function rqOrigNode(key, o) {
-  const text = String(o.text || ""), long = [...text].length > 84 || text.includes("\n"), open = RQ_OG.has(key);
+  const text = String(o.text || ""), long = [...text].length > 84 || text.includes("\n"), open = RQ_OG.has(key), full = !!o.ref;
   const box = el("div", { class: `rq-orig${long && !open ? " clamp" : ""}`, title: text },
     el("div", { class: "rq-oh" }, el("span", { class: "rq-ow", text: o.who || "원문" })),
     el("span", { class: "rq-ot", text }));
-  if (!long) return el("div", { class: "rq-og-wrap" }, box);
+  if (!long && !full) return el("div", { class: "rq-og-wrap" }, box);
+  const pane = full ? el("div", { class: "od-pane rq-op", role: "region", "aria-label": "원문", hidden: !open }) : null;
+  const s = full ? orgSt(o.ref) : null;
+  const paint = () => { if (!RQ_OG.has(key)) return; orgFill(pane, { ref: o.ref }, o.t, () => { s.load = ""; load(); }); };
+  const load = () => { (s.subs ||= new Set()).add(paint); orgLoad(o.ref, o.t, paint); paint(); };
   const btn = el("button", { class: "btn text rq-og", type: "button", "aria-expanded": String(open), text: open ? "원문 접기" : "원문 보기", onclick: ev => {
     ev.stopPropagation();
     const on = !RQ_OG.has(key); if (on) RQ_OG.add(key); else RQ_OG.delete(key);
-    box.classList.toggle("clamp", !on); btn.setAttribute("aria-expanded", String(on)); btn.textContent = on ? "원문 접기" : "원문 보기";
+    box.classList.toggle("clamp", long && !on); btn.setAttribute("aria-expanded", String(on)); btn.textContent = on ? "원문 접기" : "원문 보기";
+    if (pane) { pane.hidden = !on; if (on) load(); }
   } });
-  return el("div", { class: "rq-og-wrap" }, box, btn);
+  if (pane && open) load();
+  return el("div", { class: "rq-og-wrap" }, box, btn, pane);
 }
 // The card. c: { key, cls, attrs, head (rqHeadNode), label + labelCls (a sub-head such as "답장 초안 · 메시지 2개"), to: [label, value],
 // recv (a mail draft's own 받는이·참조 rows, 10-decision-card.js draftToNode; given instead of `to`), subject,

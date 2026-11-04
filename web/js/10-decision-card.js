@@ -96,11 +96,18 @@ function decisionOne(t) {
   const pt = parseTone(noHandoff(raw)), body = pt.text, pc = parseChoices(body);
   if (!info.ask && !pc.blocks.length) return null;
   if (at && s.msgs.some(e => OWNER.has(e.kind) && msOf(e.ts) > msOf(at))) return null;
+  // Its notices settle wherever it is answered (here, the 모니터링 queue, a draft sent or dropped there: hub/notices.ts settleHandledDrafts),
+  // with no owner message in this conversation: once none of them is open the message no longer waits.
+  if (at && !info.ask && dcSettledAt(t, at)) return null;
   const sig = hashOf(body.trim());
   // A status message ([done] ...) that ends in a choice block: its first line is the status, so the block's own title is the question.
   const question = !info.ask && pc.blocks.length === 1 && pc.blocks[0].title ? pc.blocks[0].title : pc.question;
   return { key: `${t}|${sig}`, t, sig, at, question, blocks: pc.blocks };
 }
+const dcSettledAt = (t, at) => {
+  const ns = NT.items.filter(n => ntIsDec(n) && !n.pc && n.decision.to === t && n.decision.reply_to === at);
+  return ns.length > 0 && !ns.some(ntOpenDec);
+};
 async function answerDecision(dc, text, opt, note) {
   const t = dc.t, lane = isLaneT(t) ? laneOf(t) : "";   // the card's own conversation: the notice sheet may answer for one that is not on screen
   const files = DC.files[dc.key] || []; delete DC.files[dc.key];
@@ -453,7 +460,9 @@ function choiceRow(dc, step, o, picks, st) {
 function renderDecision(box, dc, picks, step) {
   if (dc.close) { renderSheet(box, dc, picks, step); return; }
   const hadNote = !!$(".dc-note", box);
-  const st = DC.st[dc.key] || "", fold = !!DC.fold[dc.key], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
+  // Folded per conversation, not per question (owner 2026-11-04: the arrow did not lower it): the bot re-asks what is left as a new
+  // message, and a fold kept on the old question let the next one cover the conversation again.
+  const st = DC.st[dc.key] || "", fold = !!DC.fold[dc.t], old = $(".dc-body", box), top = old && box.dataset.key === dc.key ? old.scrollTop : 0;
   // A draft message starts with its quoted draft, so the question is the block's own title without the draft's id.
   const qText = dc.draft ? draftQ(dc.blocks[0] && dc.blocks[0].title) : dc.question;
   // ONE tight header (owner 2026-11-03): 확인 필요 · 답 기다림 on one line, then the short question; the card asks only what it must.
@@ -461,7 +470,7 @@ function renderDecision(box, dc, picks, step) {
     el("div", { class: "dc-meta" }, el("span", { class: "dc-ey", text: "확인 필요" }), el("span", { class: "tag warn dc-wt", text: "답 기다림" })),
     qText ? mdNode(qText, "md dc-q") : null, decideNode(dc.draft)),
     el("div", { class: "dc-hb" },
-      el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.key] = !fold; paintDecision(); } }, icon("drop"))));
+      el("button", { class: "dc-fold", type: "button", "aria-expanded": String(!fold), "aria-label": fold ? "펼치기" : "접기", onclick: () => { DC.fold[dc.t] = !fold; paintDecision(); } }, icon("drop"))));
   const kids = [head];
   if (!fold) {
     const body = el("div", { class: "dc-body" });
@@ -591,7 +600,7 @@ function dcPointer(box, n) {
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
-  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr, (DC.files[dc.key] || []).length, !!DC.fbusy[dc.key]]);
+  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.t], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr, (DC.files[dc.key] || []).length, !!DC.fbusy[dc.key]]);
 }
 // What was decided stays in the conversation once the card is gone (owner 2026-11-03): the owner's answer message already carries the
 // question and the chosen option (hub/intake.ts decisionLines, `picks`), so the record is drawn from it here and from history after a
