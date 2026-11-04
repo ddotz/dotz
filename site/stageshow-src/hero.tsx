@@ -1,4 +1,4 @@
-import { ArrowUp, Bell, ChevronDown, Eye, Folder, House, MessageCircle, Monitor, Search, SlidersHorizontal } from 'lucide-react'
+import { Activity, ArrowUp, Bell, ChevronDown, ChevronLeft, Folder, House, MessageCircle, Plus, Search, SlidersHorizontal } from 'lucide-react'
 import { Stage } from './kit/stage'
 import { Window } from './kit/window'
 import { Collapse } from './kit/motion/Collapse'
@@ -47,9 +47,9 @@ async function script(a: Act<S>) {
 const ic = { size: 18, strokeWidth: 1.75, absoluteStrokeWidth: true, 'aria-hidden': true } as const
 const NAV = [
   { name: '홈', icon: <House {...ic} /> },
-  { name: '채팅', icon: <MessageCircle {...ic} />, badge: '1', on: true },
+  { name: '채팅', icon: <MessageCircle {...ic} />, on: true },
   { name: '프로젝트', icon: <Folder {...ic} /> },
-  { name: '모니터링', icon: <Eye {...ic} /> },
+  { name: '모니터링', icon: <Activity {...ic} /> },
   { name: '설정', icon: <SlidersHorizontal {...ic} /> },
 ]
 
@@ -59,34 +59,19 @@ function Sidebar() {
       <div className="hz-brand">
         <AppMark size={18} />
         dotz
-        <span className="hz-pc"><Monitor size={14} aria-hidden />맥북<ChevronDown size={14} aria-hidden /></span>
+        <ChevronDown className="hz-caret" size={14} aria-hidden />
       </div>
       <nav className="hz-nav">
         {NAV.map((n) => (
           <span key={n.name} className="hz-ni" data-on={n.on || undefined}>
             {n.icon}
             {n.name}
-            {n.badge && <span className="hz-nb">{n.badge}</span>}
           </span>
         ))}
       </nav>
       <div className="hz-use">
         사용량<span className="hz-use__bar"><i /></span><span>7일 18%</span>
       </div>
-    </div>
-  )
-}
-
-function Tabbar() {
-  return (
-    <div className="hz-tabbar">
-      {NAV.map((n) => (
-        <span key={n.name} className="hz-tab" data-on={n.on || undefined}>
-          {n.icon}
-          {n.name}
-          {n.badge && <span className="hz-nb">{n.badge}</span>}
-        </span>
-      ))}
     </div>
   )
 }
@@ -113,13 +98,13 @@ export default function HeroScene() {
             {layout === 'wide' && <Sidebar />}
             <div className="hz-main">
               <div className="hz-bar">
-                <h2>채팅</h2>
-                {layout === 'compact' && <span className="hz-gw"><Monitor size={13} aria-hidden />맥북</span>}
-                <span className="hz-cmdk"><Search size={15} aria-hidden /><span>검색</span><kbd>⌘K</kbd></span>
+                <ChevronLeft className="hz-back" size={layout === 'wide' ? 15 : 20} aria-hidden />
+                <h2>{layout === 'wide' ? '채팅' : 'dotz'}</h2>
+                <span className="hz-cmdk"><Search size={15} aria-hidden /><span>명령</span><kbd>⌘K</kbd></span>
                 <span className="hz-bell"><Bell size={18} strokeWidth={1.75} aria-hidden /><span className="hz-bd">1</span></span>
               </div>
               <div className="hz-cv">
-                <div className="hz-cvh"><b>dotz</b><span>대기</span></div>
+                {layout === 'wide' && <div className="hz-cvh"><b>dotz</b><span>대기</span></div>}
                 <div className="hz-thread">
                   <div className="hz-msg hz-me">
                     <span className="hz-bub"><P>{['새 메일이 오면', '요약하고 답장 초안 써 줘']}</P></span>
@@ -165,13 +150,13 @@ export default function HeroScene() {
                 </Collapse>
                 <div className="hz-cmp">
                   <div className="hz-box">
-                    <span>dotz에게 말해 보세요</span>
+                    <Plus size={18} strokeWidth={1.75} aria-hidden />
+                    <span className="hz-ph">메시지 보내기</span>
                     <span className="hz-send"><ArrowUp size={16} strokeWidth={2} aria-hidden /></span>
                   </div>
                 </div>
               </div>
             </div>
-            {layout === 'compact' && <Tabbar />}
           </div>
         </Window>
       )}
