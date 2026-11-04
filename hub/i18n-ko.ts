@@ -541,7 +541,7 @@ export const ko: Catalog = {
 			review: { harness: "하네스", tools: "도구", bot: "봇", web: "웹 앱", loggedIn: " · 로그인됨", loginLater: " · 나중에 로그인", laterWord: "나중에", noName: "이름 없음", discordSum: "서버 {guild} · 봇 {bot}", botTokenWord: "붙여넣은 토큰", botAutoWord: "자동으로 만들기", noDiscord: "쓰지 않음", onlyHere: "이 컴퓨터에서만", go: "설정하기" },
 			errors: { name: "봇 이름을 2자에서 32자 사이로 적어 주세요", guild: "서버 ID는 17~20자리 숫자예요", owner: "내 Discord ID는 17~20자리 숫자예요", token: "봇 토큰을 붙여넣어 주세요", peer: "공유 키는 공백 없이 16자 이상이어야 해요", port: "포트는 1에서 65535 사이 숫자예요", waitJob: "하는 중인 일이 끝나면 넘어갈 수 있어요", closed: "설정이 끝났거나 주소가 만료됐어요. 새 주소는 터미널에서 bun setup.ts --web-link 로 받아요." },
 			term: { lib: "터미널 구성요소를 불러오지 못했어요", sub: "정해진 명령 하나만 도는 창이에요. 끝나면 알려 드려요.", starting: "여는 중이에요", live: "연결됐어요", done: "끝났어요. 닫으면 돼요", lost: "연결이 끊겼어요" },
-			login: { title: "Claude 구독 로그인", intro: "새 탭에서 로그인하고, 나온 코드를 붙여넣어 주세요.", open: "로그인 페이지 열기", code: "코드 또는 주소", go: "완료", empty: "코드나 주소를 붙여 넣어 주세요", fail: "로그인에 실패했어요" },
+			loginSheet: { title: "Claude 구독 로그인", intro: "새 탭에서 로그인하고, 나온 코드를 붙여넣어 주세요.", open: "로그인 페이지 열기", code: "코드 또는 주소", go: "완료", empty: "코드나 주소를 붙여 넣어 주세요", fail: "로그인에 실패했어요" },
 			done: { here: "이 컴퓨터", open: "열림", phone: "휴대폰이나 다른 컴퓨터", phoneSup: "{url} · 같은 Tailscale 계정으로 로그인해서 열어요", connected: "연결됨", discordSup: "{name} 카테고리의 대화 채널에 말을 걸면 돼요", openApp: "웹 앱 열기", opening: "웹 앱을 여는 중이에요" },
 		},
 	},

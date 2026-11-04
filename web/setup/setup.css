@@ -21,7 +21,7 @@ html, body, #setup { height: 100%; }
 .ob-col h1:focus { outline: 0; }
 .ob-sup { margin-top: var(--sp-2); color: var(--fg-2); font-size: 14px; line-height: 22px; text-wrap: balance; }
 .ob-col [data-ob-body] { margin-top: var(--sp-6); }
-.ob-col .lbl { margin: var(--sp-4) 0 var(--sp-15); }
+.ob-col .lbl { display: block; margin: var(--sp-4) 0 var(--sp-15); }
 .ob-col .lbl:first-child { margin-top: 0; }
 .ob-col .note { margin: var(--sp-15) var(--sp-1) 0; }
 .ob-gap { margin-top: var(--sp-3); }
@@ -37,6 +37,9 @@ html, body, #setup { height: 100%; }
 .ob-two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
 .ob-more { margin-top: var(--sp-4); }
 .ob-more summary { display: flex; align-items: center; min-height: var(--btn-hit); padding: 0 var(--sp-1); color: var(--fg-2); font-size: 14px; font-weight: 500; cursor: pointer; }
+.ob-more summary::after { content: "+"; margin-left: auto; color: var(--fg-3); }
+.ob-more[open] summary::after { content: "\2212"; }
+.ob-more summary::-webkit-details-marker { display: none; }
 .ob-ft { flex: none; padding: var(--sp-3) var(--sp-6) var(--sp-4); }
 .ob-ft-in { display: flex; align-items: center; gap: var(--sp-2); max-width: 512px; margin: 0 auto; }
 .ob-ft .btn { text-decoration: none; }
@@ -54,6 +57,7 @@ html, body, #setup { height: 100%; }
 @media (max-width: 899px) {
   .ob { display: flex; flex-direction: column; }
   .ob-rail { display: none; }
+  .ob-main { flex: 1; }
   .ob-top { display: flex; flex-direction: column; gap: var(--sp-15); padding: var(--sp-3) var(--sp-4) 0; }
   .ob-col { padding: var(--sp-4) var(--sp-4) var(--sp-5); }
   .ob-col h1 { font-size: 20px; line-height: 28px; }

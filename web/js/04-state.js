@@ -193,22 +193,18 @@ function sideToggle() {
   try { if (min) localStorage.setItem(SIDE_KEY, "min"); else localStorage.removeItem(SIDE_KEY); } catch { /* storage blocked: the choice lasts until reload */ }
   sideSync();
 }
+// The ⌘/Ctrl keys besides 1..6 and K (05-command-palette.js): one list drives the handler below and the keys the screen tour shows (42-intro.js).
+const MOD_KEYS = [
+  { code: "Slash", key: "/", label: "알림", run: () => { if (PR.node) prClose(false); $("#bell").click(); } },
+  { code: "Period", key: ".", label: "메인 대화", run: () => { if (PR.node) prClose(false); openTarget("main", "chat"); } },
+  { code: "Backslash", key: "\\", label: "사이드바 접기", wide: true, run: sideToggle },
+];
+const modKeyWide = k => !k.wide || matchMedia("(min-width: 1024px)").matches;
 document.addEventListener("keydown", ev => {
   if (ev.isComposing || ev.altKey || ev.shiftKey || !(isMac ? ev.metaKey : ev.ctrlKey) || document.querySelector("dialog[open]:not([data-leaving])")) return;
-  if (ev.code === "Slash" || ev.key === "/") {
-    ev.preventDefault();
-    if (PR.node) prClose(false);
-    $("#bell").click();
-    return;
-  }
-  if (ev.code === "Period" || ev.key === ".") {
-    ev.preventDefault();
-    if (PR.node) prClose(false);
-    openTarget("main", "chat");
-    return;
-  }
-  if (ev.code === "Backslash" || ev.key === "\\") {
-    if (matchMedia("(min-width: 1024px)").matches) { ev.preventDefault(); sideToggle(); }
+  const mk = MOD_KEYS.find(k => ev.code === k.code || ev.key === k.key);
+  if (mk) {
+    if (modKeyWide(mk)) { ev.preventDefault(); mk.run(); }
     return;
   }
   const n = /^Digit([1-6])$/.exec(ev.code || "")?.[1] || (/^[1-6]$/.test(ev.key) ? ev.key : ""), tab = n && navTabs()[n - 1];

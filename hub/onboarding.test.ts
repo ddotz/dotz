@@ -1,11 +1,13 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDiscordStore } from "./discord-connection.ts";
 import { createJandiStore } from "./onboarding-jandi.ts";
-import { issueToken, markDone, SETUP_COOKIE } from "./first-run.ts";
-import { createSetupGate } from "./setup-gate.ts";
+import { HUB_TOKEN } from "./config.ts";
+import { introOf, issueToken, markDone, markTerminalDone, SETUP_COOKIE } from "./first-run.ts";
+import { makeRoute } from "./routes.ts";
+import { createSetupGate, type SetupDeps } from "./setup-gate.ts";
 import { createOnboarding, type OnboardDeps, type OnboardKey, onboardingRoute, type OnboardView } from "./onboarding.ts";
 
 const API = "https://discord.com/api/v10";
@@ -291,7 +293,7 @@ describe("onboarding engine", () => {
 
 describe("first-run setup gate", () => {
 	const HOUR = 3600_000;
-	const open = (extra: Record<string, string> = {}) => {
+	const open = (extra: Partial<SetupDeps> = {}) => {
 		const dir = mkdtempSync(join(tmpdir(), "setup-gate-"));
 		dirs.push(dir);
 		const logs: string[] = [];
@@ -376,5 +378,54 @@ describe("first-run setup gate", () => {
 		expect((await call("/api/setup/run/nope", json({}, cookie))).status).toBe(404);
 		expect((await call("/api/setup/term/bash", json({}, cookie))).status).toBe(404);
 		expect((await call("/api/setup/term/aside-login", json({ argv: ["sh", "-c", "id"] }, cookie))).status).toBe(400);
+	});
+
+	test("the state answers from the last scan and ?fresh=1 scans again", async () => {
+		let scans = 0;
+		const { call, login } = open({ scan: async () => ({ n: ++scans }) });
+		const cookie = await login();
+		const scanOf = async (path: string) => ((await (await call(path, { cookie })).json()) as { scan: { n: number } }).scan.n;
+		expect(await scanOf("/api/setup/state")).toBe(1);
+		expect(await scanOf("/api/setup/state")).toBe(1);
+		expect(await scanOf("/api/setup/state?fresh=1")).toBe(2);
+		expect(await scanOf("/api/setup/state")).toBe(2);
+		expect(scans).toBe(2);
+	});
+});
+
+describe("/api/intro", () => {
+	const data = process.env.DOTZ_DIR!;
+	const route = makeRoute({ busyNow: () => [], restartGateway: () => "", restartGatewayNow: () => "" });
+	const ask = async (method: string, intro?: string, token = HUB_TOKEN) => {
+		const headers: Record<string, string> = { "content-type": "application/json", ...(token ? { "x-dotz-token": token } : {}) };
+		const r = await route(new Request("http://127.0.0.1:7420/api/intro", { method, headers, ...(intro ? { body: JSON.stringify({ intro }) } : {}) }));
+		return { status: r.status, text: await r.text() };
+	};
+	const intro = async (method = "GET", value?: string) => (JSON.parse((await ask(method, value)).text) as { intro: string }).intro;
+	afterEach(() => rmSync(join(data, "onboarding"), { recursive: true, force: true }));
+
+	test("pending after the web onboarding is done, seen once the tour ran, and it stays seen", async () => {
+		issueToken(data);
+		markDone(data);
+		expect(await intro()).toBe("pending");
+		expect(await intro("POST", "seen")).toBe("seen");
+		expect(await intro()).toBe("seen");
+		expect(JSON.parse(readFileSync(join(data, "onboarding", "first-run.json"), "utf8")).status).toBe("done");
+	});
+
+	test("an install that never went through the web onboarding is never pending", async () => {
+		expect(await intro()).toBe("seen");
+		expect(await intro("POST", "pending")).toBe("seen");
+		expect(existsSync(join(data, "onboarding"))).toBe(false);
+		markTerminalDone(data, false);
+		expect(introOf(data)).toBe("seen");
+	});
+
+	test("it is answered for the owner only, and a value other than seen or pending is refused", async () => {
+		issueToken(data);
+		markDone(data);
+		const stranger = await ask("GET", undefined, "");
+		expect(stranger.text).not.toContain("\"intro\"");
+		expect((await ask("POST", "maybe")).status).toBe(400);
 	});
 });

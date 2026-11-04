@@ -387,7 +387,7 @@
 
   // "anthropic" is the Claude subscription provider the OmO accounts are made of (web/js/21-providers.js uses the same id)
   async function openLogin() {
-    const x = u().login, base = "/api/setup/providers/anthropic/login";
+    const x = u().loginSheet, base = "/api/setup/providers/anthropic/login";
     let r;
     try { r = await api(base, "POST", {}); } catch (e) { say(e.message, true); return; }
     let timer, finished = false;
