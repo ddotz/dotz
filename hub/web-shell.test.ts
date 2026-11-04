@@ -206,19 +206,19 @@ describe("the web terminal is a real terminal, in a headless browser", () => {
 		expect(host.alive).toBe(true);
 	}, 60_000);
 
-	// owner 2026-11-03: the conversation→terminal toggle is gone, and a command typed in the composer (/셸) reaches the terminal
-	test("the composer's /셸 sends a command to the terminal, and the conversation stays a conversation", async () => {
+	// owner 2026-11-03: the conversation→terminal toggle is gone, and a command typed in the composer (/terminal) reaches the terminal
+	test("the composer's /terminal sends a command to the terminal, and the conversation stays a conversation", async () => {
 		const v = await open(1280, 800);
 		await host.restart();
 		await waitFor(v, `typeof sendChat === "function" && typeof openShell === "function" && S`);
 		const toggled = await v.evaluate(`(() => { const t = document.querySelector("#vtog"); return t ? getComputedStyle(t).display : "none"; })()`);
 		expect(toggled).toBe("none");
 		sent.length = 0;
-		await v.evaluate(`(() => { const ta = document.querySelector("#text"); ta.value = "/셸 echo hi"; sendChat(); })()`);
+		await v.evaluate(`(() => { const ta = document.querySelector("#text"); ta.value = "/terminal echo hi"; sendChat(); })()`);
 		await waitTerm(v, `typeof SH !== "undefined" && SH.alive && ${BUF}.includes("echo hi")`);
 		const m = JSON.parse(await v.evaluate(`JSON.stringify({ shell: !!document.querySelector("dialog.shell"), inChat: (document.querySelector("#tl") || {}).textContent || "", pend: SH.pend })`) as string) as { shell: boolean; inChat: string; pend: string };
 		expect(m.shell).toBe(true);
-		expect(m.inChat).not.toContain("/셸");   // it went to the terminal, not to the model
+		expect(m.inChat).not.toContain("/terminal");   // it went to the terminal, not to the model
 		expect(m.pend).toBe("");
 		expect(typed()).toContain("echo hi");
 	}, 90_000);
