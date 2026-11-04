@@ -17,7 +17,7 @@
 | 파일 쓰기 | 다른 프로세스가 읽는 상태 파일은 `writeAtomic` | 일반 쓰기 hub 43, features 8, setup 8, extension 3, onboard 1 | 규칙 7 |
 | 시간 제한 | 외부 호출에는 제한이나 중단 신호 | 제한 없는 호출 hub 72, features 13, onboard 7, setup 5, extension 2 | 규칙 8. 웹 페이지는 제외 |
 | 시험의 시간 의존 | 고정 대기와 벽시계 예산 단언 증가 0 | 고정 대기 12, 예산 단언 파일 5 | 규칙 9 |
-| 죽은 코드 | 아무도 부르지 않는 export·웹 전역 증가 0 | export 1, 웹 전역 8 | 규칙 10, 11. 목록 이름별 |
+| 죽은 코드 | 아무도 부르지 않는 export·웹 전역 증가 0 | export 1, 웹 전역 7 | 규칙 10, 11. 목록 이름별 |
 | 모듈 지도 | 새 `hub/*.ts`는 `docs/ARCHITECTURE.md`에 등재 | 260개 중 151개 미등재 | 규칙 12 |
 | 같은 이름 도우미 | 사본 증가 0 | `json` 17, `readJson` 13, `git` 7, `shq` 5, `sleep` 4, `sameOrigin` 4 | 규칙 13 |
 | 복사 덩어리 | 12줄 이상 덩어리 증가 0 | 4개. jscpd(8줄 이상) 기준 중복 0.22% | 규칙 14 |
