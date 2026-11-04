@@ -561,12 +561,16 @@ function paintDecision() {
   const box = $("#dcard");
   if (!box) return;
   // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
-  const dc = isFixedT(target) ? null : decisionOf(target), had = !!DC.cur;
+  // 2 or more send-approval cards waiting in this conversation: one line above the composer (dcLine) instead of the dock card or its pointer; a question that is not a draft keeps its card.
+  const dc0 = isFixedT(target) ? null : decisionOf(target), askN = !isFixedT(target) && dcDraftRefs(target) >= 2 ? rqAskCount() : 0, line = askN > 0, dc = line && dc0 && dcDraftAsk(dc0) ? null : dc0, had = !!DC.cur;
+  dcLine(askN);
+  // A message that carries several of those drafts folds to its first paragraph while they wait: the drafts live in 답장 대기, not in the conversation.
+  for (const m of document.querySelectorAll("#timeline .bm[data-dat]")) m.classList.toggle("q-fold", line && ntDecisions().filter(n => n.decision.draft && n.decision.to === target && n.decision.reply_to === m.dataset.dat).length > 1);
   DC.cur = dc;
   if (dc) { dcLast = dc; delete box.dataset.out; if (dcOut && dcOut.cancel) dcOut.cancel(); dcOut = null; }
   const arrived = S && freshKeys(DC_SEEN, dc ? [...DC_SEEN, dc.key] : [...DC_SEEN]).has(dc && dc.key) && dcShownT === target;
   if (S) dcShownT = target;
-  const waiting = dc || isFixedT(target) ? null : dcWaitingCard(target);
+  const waiting = dc || line || isFixedT(target) ? null : dcWaitingCard(target);
   if (waiting) dcPointer(box, waiting);
   else if (!dc && dcLast && !box.hidden && box.dataset.key === dcLast.key && DC.st[dcLast.key]) dcLeave(box, dcLast);
   else if (!dc) { box.hidden = true; delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; clear(box); }
@@ -586,6 +590,27 @@ function paintDecision() {
   syncInlineChoices();
   dkPaint();
   if (had !== !!dc) updateComposerMeta();
+}
+// A docked question that is a send approval: a draft notice was made from its message.
+const dcDraftAsk = dc => !dc.each && ntDecisions().some(n => n.decision.draft && n.decision.to === dc.t && n.decision.reply_to === dc.at);
+// The send-approval cards waiting in conversation t, open ones and held ones, one per draft.
+function dcDraftRefs(t) {
+  const refs = new Set();
+  for (const n of typeof ntDecisions === "function" ? ntDecisions() : []) if (n.decision.draft && n.decision.to === t) refs.add(n.decision.draft.ref || n.id);
+  try { for (const g of TR.groups) for (const c of g.cards) if (c.to === t) refs.add(c.ref); } catch { /* 30-triage.js has not run yet */ }
+  return refs.size;
+}
+// 답장 초안 N건 기다려요 · 확인하기 (the prototype's .qline): N is the 답 필요 count of the 답장 대기 screen, a tap opens it.
+function dcLine(n) {
+  const q = $("#qline");
+  if (!q) return;
+  if (!n) { q.hidden = true; return; }
+  const shown = !q.hidden;
+  q.hidden = false;
+  if (!q.firstChild) clear(q).append(el("span", { class: "dot warn" }), el("span", { class: "tx" }, "답장 초안 ", el("b", { "data-qn": "" }), "건 기다려요"), el("span", { class: "sep", text: "·" }), el("span", { class: "go", text: "확인하기" }));
+  rollCount(q.querySelector("b"), String(n));
+  q.onclick = () => rqOpen();
+  if (!shown) motionIn(q);
 }
 // A send-approval card still open in this conversation although later posts pushed it up (decisionOf only docks the newest message's
 // question): the dock keeps one row naming it, and a tap opens it as the sheet (2026-10-31: "19번 카드는 위에 있어" -> "어디에있음?").

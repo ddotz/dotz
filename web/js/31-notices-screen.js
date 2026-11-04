@@ -20,7 +20,7 @@ const NSC_APP_TAG = { mail: "메일", kakao: "카카오톡", instagram: "댓글"
 const nscApp = n => String(n.app || n.src || n.open || "").split(/[-:]/)[0];
 function nscTag(n) {
   const app = nscApp(n);
-  if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? "카카오톡" : "답장 확인") : "결정";
+  if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? "카카오톡" : "답장 대기") : "결정";
   if (n.waits === "login") return "로그인";
   if (n.waits === "fail" || n.tone === "fail") return "실패";
   if (n.tone === "ask") return "질문";

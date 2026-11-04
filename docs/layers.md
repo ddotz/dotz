@@ -136,7 +136,7 @@ links still open it.
   that kind instead of showing them one by one in the normal view; few items keep the normal view. "One kind" comes from the
   data (an app instance, a queue), never from app names or a person, and the switch point is a setting with a sane default.
   First user: send approvals (hub/approval-wire.ts): with `web.triage_min` (default 3) or more waiting cards of one app
-  instance, a banner "<instance> 대기 N건 · 빠르게 처리" opens 빠른 처리: one item filling the view (original, draft, files,
+  instance, the 답장 대기 screen's head (모니터링, 빠른 처리 at the right of its meta row) opens 빠른 처리: one item filling the view (original, draft, files,
   rule), big 보내기 / 고치기 / 건너뛰기 with keys on desktop and large buttons on a phone, edit-in-place then send, auto-advance
   with a progress bar, and a list to jump around and send the checked ones. Each item still needs its own pick.
 

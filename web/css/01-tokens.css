@@ -131,7 +131,6 @@ kbd { display: inline-block; flex: none; padding: 0 var(--sp-15); border: 1px so
 .side, .main, .appbar { display: contents; }
 .brand, .rail, #back, .appbar h1, .thead, .conn, .cmdk, #vtog, .ustrip { grid-row: 1; align-self: center; }
 .gban { grid-row: 2; grid-column: 1 / -1; }
-.trban { grid-row: 3; grid-column: 1 / -1; }
 .oerr { grid-row: 4; grid-column: 1 / -1; }
 .views { grid-row: 5; grid-column: 1 / -1; }
 .brand { grid-column: 2; }
@@ -200,7 +199,7 @@ button.conn:disabled { cursor: default; }
   .appbar h1, .appbar:not(.back) h1 { display: block; flex: 1; max-width: none; margin: 0; }
   #back, .conn { margin: 0; }
   #vtog, .ustrip { margin: 0; }
-  .gban, .trban, .oerr, .views { grid-row: auto; grid-column: auto; }
+  .gban, .oerr, .views { grid-row: auto; grid-column: auto; }
   .views { flex: 1; }
   /* compact tab bar: a 46px row; the home-indicator inset is trimmed (labels end ~18px above the screen edge, clear of the indicator) */
   .side { order: 2; display: flex; min-width: 0; min-height: 0; padding: 0 0 max(var(--sp-05), calc(env(safe-area-inset-bottom) - var(--sp-4))); border-top: 1px solid var(--line); background: var(--card); }

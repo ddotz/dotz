@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { sseResponse } from "./events.ts";
 import { appAsset, indexPage } from "./webapp.ts";
 
-// 답장 확인 (web/js/30-replies.js): one queue of every reply draft that waits for 보내기, of every app and every computer, newest first, each drawn as
-// the one reply card (web/js/10-reply-card.js) with its app, account, computer and model, where it goes, the original and an always-shown 첨부 줄.
-// Reached from 홈 답장 대기 and an app row's 답장 확인; a peer's draft is acted on its own computer once, and this one reads the queue again.
+// 답장 대기 (web/js/30-replies.js): every reply that waits on the owner, of every app and every computer, as the prototype's #queue: tabs with counts, a sticky head,
+// sections 실패 / 답 필요 / 보낸 것, rows that open ONE sheet holding the reply card (web/js/10-reply-card.js). Failed sends of one app and reason fold into one row.
+// Reached from 홈 답장 대기 and an app row's 답장 대기; a peer's draft is acted on its own computer once, and this one reads the queue again.
 const SHOTS = process.env.REPLIES_SHOTS ?? join(tmpdir(), "replies-shots");
 mkdirSync(SHOTS, { recursive: true });
 const MINI = "http://mini.test";
@@ -40,8 +40,25 @@ let localReplies = [kakaoDraft("K1", T.localKakao), commentDraft(T.localComment)
 let peerReplies = [kakaoDraft("PK1", T.peerKakao, { room: "공부 모임" })];
 let peerNote = mailDraft("dp", "mail:company-peer", T.peerMail);
 const localNote = mailDraft("dl", "mail:company-local", T.localMail, [{ name: "견적서.pdf", size: "2.1MB" }]);
+localNote.decision.draft = { ...localNote.decision.draft, warning: "받는이 주소가 처음이에요" };
+// What the hub's GET /api/replies adds: failed sends (three mail ones of one reason, one comment reply without a reason, two KakaoTalk sends of one reason), today's sent ones,
+// and why a rule did not send a draft.
+const mkFail = (key: string, extra: object) => ({ key, kind: "mail", app: "mail", who: "Kim", what: "견적 요청", at: Date.now() - 9 * 60_000, text: "견적서를 보내 드려요.", ...extra });
+const FAILED = () => [
+	mkFail("F1", { ref: "r1", conv: "mail:company-a", why: "서버가 응답하지 않았어요" }), mkFail("F2", { ref: "r2", conv: "mail:company-b", why: "서버가 응답하지 않았어요", at: Date.now() - 10 * 60_000 }),
+	mkFail("F3", { ref: "r3", conv: "mail:company-c", why: "서버가 응답하지 않았어요", at: Date.now() - 11 * 60_000 }),
+	mkFail("FC", { kind: "comment", app: "youtube", who: "가나", what: "첫 번째 영상", sendId: "cs1", at: Date.now() - 12 * 60_000 }),
+	mkFail("FK1", { kind: "kakao", app: "kakao", who: "가나다 모임", what: "카카오톡 답장", chatId: "100", sendId: "s1", ref: "kr1", why: "카카오톡 창이 닫혀 있어요", at: Date.now() - 13 * 60_000 }),
+	mkFail("FK2", { kind: "kakao", app: "kakao", who: "가나다 모임", what: "카카오톡 답장", chatId: "100", sendId: "s2", ref: "kr2", why: "카카오톡 창이 닫혀 있어요", at: Date.now() - 14 * 60_000 }),
+];
+const SENT = () => [
+	{ key: "S1", kind: "mail", app: "mail", who: "Kim", what: "견적 요청", at: Date.now() - 20 * 60_000, how: "owner", text: "보냈어요" },
+	{ key: "S2", kind: "kakao", app: "kakao", who: "가나다 모임", what: "카카오톡 답장", at: Date.now() - 30 * 60_000, how: "rule", text: "보냈어요" },
+];
+const STOP_K1 = "상대가 처음 보내는 사람이에요";
+let failedList: ReturnType<typeof FAILED> = FAILED(), sentList: object[] = SENT();
 const conv = (t: string) => ({ target: t, mail: { key: t.slice(5), subject: "견적 요청", from: "Kim <kim@example.com>", source: "company", at: T.localMail, summary: "다음 주까지 견적을 받고 싶어요.", reply: "draft", unreplied: true }, last: { ts: T.localMail, text: "견적 요청 메일", via: "company" }, unread: 0 });
-const snapshot = () => ({ name: "맥미니", rev: `r${peerReplies.length}${peerNote.decision.state}`, monitors: [], notices: [peerNote], integrations: [PEER_MAIL, PEER_KAKAO], available: [], conversations: [conv("mail:company-peer")], replies: peerReplies });
+const snapshot = () => ({ name: "맥미니", rev: `r${peerReplies.length}${peerNote.decision.state}`, monitors: [], notices: [peerNote], integrations: [PEER_MAIL, PEER_KAKAO], available: [], conversations: [conv("mail:company-peer")], replies: peerReplies, failed: [], sent: [], stops: {} });
 
 const acts: { action: string; args: Record<string, unknown> }[] = [];
 const localPosts: { path: string; body: unknown }[] = [];
@@ -66,7 +83,7 @@ const server = Bun.serve({
 		if (p === "/api/conversations") return json({ items: [conv("mail:company-local")] });
 		if (p === "/api/drafts/og1/original") return json({ kind: "mail", key: "company-og", from: "Kim <kim@example.com>", date: T.localMail, subject: "견적 요청", text: "안녕하세요.\n\n다음 주까지 견적을 받고 싶어요. 수량은 100개예요.", html: false, attachments: [] });
 		if (p === "/api/drafts/og2/original") return json({ kind: "comment", key: "og2", author: "가나", date: T.localComment, text: "자막 언제 나와요? 기다리고 있어요.", post: { kind: "youtube", title: "첫 번째 영상" } });
-		if (p === "/api/replies") { repliesReads++; return json({ items: localReplies }); }
+		if (p === "/api/replies") { repliesReads++; return json({ items: localReplies, failed: failedList, sent: sentList, stops: { K1: STOP_K1 } }); }
 		if (p === "/api/monitoring/peers") { peerReads++; return json([{ name: "맥미니", url: MINI, online: true, stale: false, items: snapshot() }]); }
 		if (p === "/api/peer/proxy") {
 			const pp = url.searchParams.get("p") ?? "";
@@ -82,6 +99,14 @@ const server = Bun.serve({
 		if (req.method === "POST") {
 			const b = await req.json().catch(() => null);
 			localPosts.push({ path: p, body: b });
+			// a retry hands the send back: the failed row leaves (what the hub does once the send is queued)
+			const cs = /^\/api\/comments\/sends\/(\w+)\/retry$/.exec(p), ks = /^\/api\/kakao\/chat\/\w+\/send\/(\w+)\/retry$/.exec(p);
+			if (cs || ks) failedList = failedList.filter(x => (x as { sendId?: string }).sendId !== (cs || ks)![1]);
+			if (p === "/api/approvals/failed") {
+				const items = ((b as { items?: { ref: string }[] } | null)?.items ?? []);
+				failedList = failedList.filter(x => !items.some(i => i.ref === (x as { ref?: string }).ref));
+				return json({ results: items.map(() => ({ ok: true })) });
+			}
 			if (p.endsWith("/drop")) localReplies = localReplies.filter(d => !p.includes(d.code));
 			return json({ ok: true });
 		}
@@ -100,6 +125,7 @@ const boot = async (width: number, height: number) => {
 	localReplies = [kakaoDraft("K1", T.localKakao), commentDraft(T.localComment)];
 	peerReplies = [kakaoDraft("PK1", T.peerKakao, { room: "공부 모임" })];
 	peerNote = mailDraft("dp", "mail:company-peer", T.peerMail);
+	failedList = FAILED(); sentList = SENT();
 	acts.length = 0; localPosts.length = 0;
 	const v = new Bun.WebView({ width, height });
 	views.push(v);
@@ -112,91 +138,192 @@ const openQueue = async (v: View) => {
 	await run(v, `go("monitoring")`);
 	await waitFor(v, `monItems().some(i => i.key === "replies") && RQ.loaded`);
 	await run(v, `go("monitoring", "replies")`);
-	await waitFor(v, `document.querySelectorAll("#mon-tl .rq-q > .rq").length`);
+	await waitFor(v, `document.querySelectorAll("#mon-tl .rq-r").length`);
 };
+const ASK_KEYS = ["n:http://mini.test|dp", "kakao:http://mini.test|PK1", "kakao:|K1", "n:|dl", "comment:|C1"];   // newest first
+const rowOf = (key: string) => `document.querySelector('[data-qr="${key}"]')`;
 
-describe.each([[390, 844], [1280, 900]])("답장 확인 at %ipx", (width, height) => {
-	test("one queue of every app and computer's draft, newest first, each with its app, account, computer, model, where it goes and the original", async () => {
+describe.each([[390, 844], [1280, 900]])("답장 대기 at %ipx", (width, height) => {
+	test("the tab counts, the sections and the nav badge are one number; asks are newest first; the meta row names the apps and offers 빠른 처리", async () => {
 		const v = await boot(width, height);
 		await openQueue(v);
-		const got = await q<{ kinds: string[]; meta: string[]; to: string[]; orig: string[]; attach: string[]; acts: string[][]; long: number; over: boolean }>(v, `
-			const cards = [...document.querySelectorAll("#mon-tl .rq-q > .rq")];
+		await waitFor(v, `document.querySelector("#nav-mon").textContent === "11"`);
+		const got = await q<{ tabs: string[]; secs: string[]; ask: string[]; meta: string; fast: boolean; nav: string; waiting: number; over: boolean; tab: string }>(v, `
 			const txt = e => e ? e.textContent.trim() : "";
-			return { kinds: cards.map(c => c.dataset.kind), meta: cards.map(c => txt(c.querySelector(".rq-meta"))), to: cards.map(c => txt(c.querySelector(".dr-chip"))),
-				orig: cards.map(c => txt(c.querySelector(".rq-orig .rq-ot") || c.querySelector(".rq-ct"))), attach: cards.map(c => txt(c.querySelector(".rq-att") || c.querySelector(".dr-files"))),
-				acts: cards.map(c => [...c.querySelectorAll(".rq-acts button")].map(txt)), long: cards.filter(c => c.querySelector(".rq-more")).length,
-				over: document.documentElement.scrollWidth > innerWidth };`);
-		// newest first: the Mac mini's mail draft, its KakaoTalk draft, this computer's KakaoTalk draft, its mail draft, its comment draft
-		expect(got.kinds).toEqual(["notice", "kakao", "kakao", "notice", "comment"]);
-		expect(got.meta).toEqual(["메일 · 회사 메일 · 맥미니", "카카오톡 · Sonnet 5.5 · 보통 · 맥미니", "카카오톡 · Sonnet 5.5 · 보통 · 맥북", "메일 · 회사 메일 · 맥북", "가나님께 답장 · 유튜브 댓글 · 맥북"]);
-		expect(got.to).toEqual(["Kim <kim@example.com>", "공부 모임", "가나다 모임", "Kim <kim@example.com>", ""]);
-		expect(got.orig).toEqual(["견적 요청", "내일 점심 어때요?", "내일 점심 어때요?", "견적 요청", "자막 언제 나와요?"]);
-		// the attachment line always shows what goes: the mail's files with name and size, 첨부: 없음 for a text-only app, and the files that stay behind
-		expect(got.attach[0]).toBe("첨부: 없음");
-		expect(got.attach[1]).toBe("첨부: 없음 · 파일을 붙일 수 없는 곳이에요");
-		expect(got.attach[3]).toBe("첨부 1개견적서.pdfPDF · 2.1MB");
-		expect(got.attach[4]).toBe("첨부: 없음 · 파일을 붙일 수 없는 곳이에요남는 파일: 견적서.pdf");
-		for (const a of got.acts) expect(a).toEqual(["보내기", "고치기", "보내지 않기"]);
-		// a body over about six lines is clamped with 펼치기 (the KakaoTalk drafts are two short parts, so they are not)
-		expect(got.long).toBe(1);
+			return { tabs: [...document.querySelectorAll(".rq-tabs .nsc-fb")].map(b => txt(b.querySelector(".n"))), secs: [...document.querySelectorAll(".rq-ls .sec")].map(txt),
+				ask: [...document.querySelectorAll(".rq-r.ask")].map(r => r.dataset.qr), meta: txt(document.querySelector(".rq-qm .meta")), fast: !document.querySelector(".rq-fast").hidden,
+				nav: txt(document.querySelector("#nav-mon")), waiting: rqWaiting(), over: document.documentElement.scrollWidth > innerWidth, tab: txt(document.querySelector(".rq-tabs .nsc-fb.on")) };`);
+		// 답 필요 5 + 실패 6 = the number on the nav, the home row and the list row; 보낸 것 2 stays out of it
+		expect(got.tabs).toEqual(["", "5", "6", "2"]);
+		expect(got.nav).toBe("11");
+		expect(got.waiting).toBe(11);
+		expect(got.secs).toEqual(["실패 6건", "답 필요 5건", "보낸 것 2건"]);
+		expect(got.ask).toEqual(ASK_KEYS);
+		expect(got.meta).toBe("앱 5곳에서 5건 기다려요");
+		expect(got.fast).toBe(true);
 		expect(got.over).toBe(false);
-		const more = await q<{ open: string; label: string; clamped: boolean }>(v, `const c = document.querySelector('.rq[data-kind="comment"]'), m = c.querySelector(".rq-more");
-			return { open: m.getAttribute("aria-expanded"), label: m.textContent, clamped: c.querySelector(".rq-body").classList.contains("clamp") };`);
-		expect(more).toEqual({ open: "false", label: "펼치기", clamped: true });
-		await run(v, `document.querySelector('.rq[data-kind="comment"] .rq-more').click()`);
-		expect(await q<string>(v, `return document.querySelector('.rq[data-kind="comment"] .rq-more').textContent + "|" + document.querySelector('.rq[data-kind="comment"] .rq-body').classList.contains("clamp")`)).toBe("접기|false");
+		expect(got.tab.startsWith("전체")).toBe(true);
+		// the list row of 모니터링 reads the same number
+		expect(await q<number>(v, `return monItems().find(i => i.key === "replies").unread`)).toBe(11);
 		await Bun.write(join(SHOTS, `replies-${width}.png`), await v.screenshot());
 	});
 
-	test("the home 답장 대기 row counts this computer's drafts and opens the queue of every computer (모니터링); an app row's 답장 확인 the app's own drafts only", async () => {
+	test("a row's tag is the real stop reason or nothing: a rule's refusal, the draft's own warning, how a sent one went; a row without a reason has no tag", async () => {
 		const v = await boot(width, height);
-		await run(v, `go("home")`);
-		await waitFor(v, `document.querySelector('#home-now .hr[data-k="replies"]')`);
-		const home = await q<string>(v, `return document.querySelector('#home-now .hr[data-k="replies"]').textContent`);
-		expect(home).toContain("답장 확인");
-		expect(home).toContain("3건");   // 홈 is this computer's alone; the queue in 모니터링 holds the other computer's 2 as well
-		await run(v, `document.querySelector('#home-now .hr[data-k="replies"]').click()`);
-		await waitFor(v, `current === "monitoring" && MON.sel === "replies" && document.querySelectorAll("#mon-tl .rq-q > .rq").length === 5`);
-		// an app's row opens the queue on that app's drafts of that computer
-		await run(v, `go("monitoring", "i:kakao")`);
-		await waitFor(v, `document.querySelector('#mon-head .rq-go')`);
-		const label = await q<string>(v, `return document.querySelector('#mon-head .rq-go').textContent`);
-		expect(label).toBe("답장 확인 1");
-		await run(v, `document.querySelector('#mon-head .rq-go').click()`);
-		await waitFor(v, `MON.sel === "replies" && document.querySelectorAll("#mon-tl .rq-q > .rq").length === 1`);
-		expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .rq-q > .rq")].map(c => c.querySelector(".dr-chip").textContent)`)).toEqual(["가나다 모임"]);
+		await openQueue(v);
+		await run(v, `RQ.tab = "all"; RQ.fold.add("|youtube|"); MON.sig = ""; renderMonitoring()`);
+		const tags = await q<Record<string, string | null>>(v, `const o = {}; for (const r of document.querySelectorAll(".rq-r[data-qr]")) { const t = r.querySelector(".tag"); o[r.dataset.qr] = t ? t.textContent : null; } return o;`);
+		expect(tags["kakao:|K1"]).toBe(STOP_K1);   // GET /api/replies stops
+		expect(tags["n:|dl"]).toBe("받는이 주소가 처음이에요");   // the draft's own warning
+		for (const k of ["n:http://mini.test|dp", "kakao:http://mini.test|PK1", "comment:|C1", "f:|FC"]) expect(tags[k]).toBeNull();   // nothing recorded: no tag, no slot
+		expect(tags["s:|S1"]).toBe("확인 후 발송");
+		expect(tags["s:|S2"]).toBe("자동 발송");
+		// the failure group carries its reason under the title instead of a tag
+		expect(await q<string[]>(v, `return [...document.querySelectorAll(".rq-g")].map(g => g.textContent)`)).toEqual([expect.stringContaining("서버가 응답하지 않았어요"), expect.stringContaining("카카오톡 창이 닫혀 있어요")]);
 	});
 
-	test("a peer's draft is sent on its computer once, and the queue reads both computers again", async () => {
+	test("the same app and reason fold into one row, 2 or more only; the chevron unfolds the items", async () => {
+		const v = await boot(width, height);
+		await openQueue(v);
+		await run(v, `document.querySelector('.rq-tabs [data-f="fail"]').click()`);
+		await waitFor(v, `document.querySelectorAll(".rq-r.fail").length === 3 && !document.querySelector(".rq-ls .sec")`);
+		const folded = await q<{ titles: string[]; kids: number; plain: string[] }>(v, `return { titles: [...document.querySelectorAll(".rq-g .hd")].map(e => e.textContent), kids: document.querySelectorAll("[data-kid]").length, plain: [...document.querySelectorAll(".rq-r.fail:not(.rq-g)")].map(r => r.dataset.qr) }`);
+		expect(folded.titles.map(t => t.replace(/^\S+ /, ""))).toEqual(["3건을 못 보냈어요", "2건을 못 보냈어요"]);
+		expect(folded.kids).toBe(0);
+		expect(folded.plain).toEqual(["f:|FC"]);   // the lone failure stays a plain row
+		await run(v, `document.querySelector('.rq-g[data-qg*="mail"] .nsc-tx').click()`);
+		await waitFor(v, `document.querySelectorAll("[data-kid]").length === 3`);
+		expect(await q<string[]>(v, `return [...document.querySelectorAll("[data-kid]")].map(r => r.dataset.qr)`)).toEqual(["f:|F1", "f:|F2", "f:|F3"]);
+		await run(v, `document.querySelector('.rq-g[data-qg*="mail"] .nsc-tx').click()`);
+		await waitFor(v, `!document.querySelector("[data-kid]")`);
+	});
+
+	test("모두 다시 보내기 hands back only the failed items, each by its own route, and never answers an approval", async () => {
+		const v = await boot(width, height);
+		await openQueue(v);
+		await run(v, `document.querySelector('.rq-tabs [data-f="fail"]').click()`);
+		await waitFor(v, `document.querySelectorAll(".rq-g").length === 2`);
+		await run(v, `document.querySelector('.rq-g[data-qg*="mail"] .rq-retry').click()`);
+		await waitFor(v, `!document.querySelector('.rq-g[data-qg*="mail"]')`);
+		await run(v, `document.querySelector('.rq-g[data-qg*="kakao"] .rq-retry').click()`);
+		await waitFor(v, `!document.querySelector('.rq-g[data-qg*="kakao"]')`);
+		// the lone comment failure: its sheet's 다시 보내기
+		await run(v, `document.querySelector('[data-qr="f:|FC"] .tx').click()`);
+		await waitFor(v, `document.querySelector('.rq-sheet [data-k="retry"]')`);
+		await run(v, `document.querySelector('.rq-sheet [data-k="retry"]').click()`);
+		await waitFor(v, `!document.querySelector(".rq-r.fail") && !document.querySelector(".rq-sheet")`);
+		expect(localPosts.map(x => x.path)).toEqual(["/api/approvals/failed", "/api/kakao/chat/100/send/s1/retry", "/api/kakao/chat/100/send/s2/retry", "/api/comments/sends/cs1/retry"]);
+		const mail = localPosts[0]!.body as { op: string; items: { ref: string; to: string }[] };
+		expect(mail.op).toBe("retry");
+		expect(mail.items.map(i => [i.ref, i.to]).sort()).toEqual([["r1", "mail:company-a"], ["r2", "mail:company-b"], ["r3", "mail:company-c"]]);
+		expect(localPosts.some(x => x.path === "/api/approvals")).toBe(false);   // nothing was answered with a pick
+		expect(acts).toEqual([]);
+		expect(await q<string>(v, `return document.querySelector("#nav-mon").textContent`)).toBe("5");   // the failures left the number
+	});
+
+	test("a row opens ONE sheet with the why line on top and the reply card under it; a failed item offers 다시 보내기 and 보내지 않기, a sent one only 보냈어요", async () => {
+		const v = await boot(width, height);
+		await openQueue(v);
+		await run(v, `${rowOf("kakao:|K1")}.querySelector(".tx").click()`);
+		await waitFor(v, `document.querySelector('.rq-sheet .rq[data-kind="kakao"]')`);
+		const sheet = await q<{ why: string; label: string; acts: string[]; count: number }>(v, `const s = document.querySelector(".rq-sheet"); return { why: s.querySelector(".rq-why").textContent, label: s.querySelector(".fs-t").textContent, acts: [...s.querySelectorAll(".rq-acts button")].map(b => b.textContent.trim()), count: document.querySelectorAll(".rq-sheet").length }`);
+		expect(sheet).toEqual({ why: STOP_K1, label: "답장 확인", acts: ["보내기", "고치기", "보내지 않기"], count: 1 });
+		await run(v, `RQ.sheet.close()`);
+		await waitFor(v, `!document.querySelector(".rq-sheet")`);
+		await run(v, `${rowOf("f:|FC")}.querySelector(".tx").click()`);
+		await waitFor(v, `document.querySelector(".rq-sheet .rq-acts")`);
+		expect(await q<string[]>(v, `return [...document.querySelectorAll(".rq-sheet .rq-acts button")].map(b => b.textContent.trim())`)).toEqual(["다시 보내기", "보내지 않기"]);
+		await run(v, `RQ.sheet.close()`);
+		await waitFor(v, `!document.querySelector(".rq-sheet")`);
+		await run(v, `${rowOf("s:|S1")}.querySelector(".tx").click()`);
+		await waitFor(v, `document.querySelector(".rq-sheet .rq-sent")`);
+		expect(await q<number>(v, `return document.querySelectorAll(".rq-sheet .rq-acts").length`)).toBe(0);
+		expect(localPosts).toEqual([]);
+	});
+
+	test("the head stays at the top of the scroll area after 40 rows are scrolled past", async () => {
+		const v = await boot(width, height);
+		sentList = [...SENT(), ...Array.from({ length: 40 }, (_, i) => ({ key: `X${i}`, kind: "mail", app: "mail", who: `받는이 ${i}`, what: "견적 요청", at: Date.now() - (40 + i) * 60_000, how: "owner", text: "보냈어요" }))];
+		await run(v, `rqLoad()`);
+		await openQueue(v);
+		await waitFor(v, `document.querySelectorAll(".rq-r").length >= 50`);
+		await run(v, `$("#mon-timeline").scrollTop = 900`);
+		await waitFor(v, `$("#mon-timeline").scrollTop > 300`);
+		const g = await q<{ top: number; boxTop: number; h: number; hit: boolean }>(v, `const box = $("#mon-timeline"), hd = document.querySelector(".rq-hd2"), r = hd.getBoundingClientRect(), t = hd.querySelector(".nsc-fb").getBoundingClientRect();
+			const at = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2);
+			return { top: r.top, boxTop: box.getBoundingClientRect().top, h: r.height, hit: !!at && hd.contains(at) };`);
+		expect(Math.abs(g.top - g.boxTop)).toBeLessThanOrEqual(1);
+		expect(g.hit).toBe(true);   // the tabs are on top of the scrolled rows and can be tapped
+		await Bun.write(join(SHOTS, `replies-scrolled-${width}.png`), await v.screenshot());
+	});
+
+	test("the home 답장 대기 row counts the one number and opens the screen of every computer; an app row's 답장 대기 button the app's own", async () => {
+		const v = await boot(width, height);
+		await run(v, `go("home")`);
+		await waitFor(v, `document.querySelector('#home-now .hr[data-k="replies"]') && RQ.loaded`);
+		const home = await q<string>(v, `return document.querySelector('#home-now .hr[data-k="replies"]').textContent`);
+		expect(home).toContain("답장 대기");
+		expect(home).not.toContain("답장 확인");
+		expect(home).toContain("11건");
+		await run(v, `document.querySelector('#home-now .hr[data-k="replies"]').click()`);
+		await waitFor(v, `current === "monitoring" && MON.sel === "replies" && document.querySelectorAll("#mon-tl .rq-r.ask").length === 5`);
+		// an app's row opens the screen on that app's items of that computer
+		await run(v, `go("monitoring", "i:kakao")`);
+		await waitFor(v, `document.querySelector('#mon-head .rq-go')`);
+		expect(await q<string>(v, `return document.querySelector('#mon-head .rq-go').textContent`)).toBe("답장 대기 1");
+		await run(v, `document.querySelector('#mon-head .rq-go').click()`);
+		await waitFor(v, `MON.sel === "replies" && document.querySelectorAll("#mon-tl .rq-r.ask").length === 1`);
+		expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .rq-r.ask .hd")].map(e => e.textContent)`)).toEqual(["가나다 모임"]);
+	});
+
+	test("a peer's draft is sent on its computer once from the sheet, and the screen reads both computers again", async () => {
 		const v = await boot(width, height);
 		await openQueue(v);
 		const reads = peerReads;
+		await run(v, `${rowOf("kakao:http://mini.test|PK1")}.querySelector(".tx").click()`);
+		await waitFor(v, `document.querySelector('.rq-sheet .rq[data-rq^="kakao:http://mini.test|PK1"] .dr-send')`);
 		// two taps: the card is busy after the first, so exactly one act leaves this computer
-		await run(v, `const b = document.querySelector('.rq[data-kind="kakao"][data-rq^="kakao:http://mini.test|PK1"] .dr-send'); b.click(); b.click()`);
-		// the sent card stays where it was: 보냈어요 in the action row's place, no toast, nothing below moves
-		await waitFor(v, `document.querySelector('.rq[data-rq^="kakao:http://mini.test|PK1"] .rq-sent')`);
-		expect(await q<number[]>(v, `return [document.querySelectorAll("#mon-tl .rq-q > .rq").length, document.querySelectorAll(".snack").length, document.querySelectorAll('.rq[data-rq^="kakao:http://mini.test|PK1"] .rq-acts').length]`)).toEqual([5, 0, 0]);
+		await run(v, `const b = document.querySelector('.rq-sheet .dr-send'); b.click(); b.click()`);
+		// the sent card stays where it was: 보냈어요 in the action row's place, no toast
+		await waitFor(v, `document.querySelector('.rq-sheet .rq-sent')`);
+		expect(await q<number[]>(v, `return [document.querySelectorAll(".snack").length, document.querySelectorAll('.rq-sheet .rq-acts').length]`)).toEqual([0, 0]);
 		expect(acts).toEqual([{ action: "kakao", args: { op: "draft-send", code: "PK1" } }]);
 		expect(localPosts).toEqual([]);
 		await waitFor(v, `true`, 200).catch(() => {});
 		await waitFor(v, `${peerReads} > ${reads}`).catch(() => {});
-		expect(peerReads).toBeGreaterThan(reads);   // the queue reads the Mac mini again (its own queue does the same from its own store)
+		expect(peerReads).toBeGreaterThan(reads);   // the screen reads the Mac mini again (its own screen does the same from its own store)
 	});
 
-	test("보내지 않기 of a local draft offers 되돌리기, and the undo brings it back once", async () => {
+	test("보내지 않기 of a local draft offers 되돌리기, the sheet closes with its item, and the undo brings it back once", async () => {
 		const v = await boot(width, height);
 		await openQueue(v);
-		await run(v, `document.querySelector('.rq[data-kind="comment"] [data-k="drop"]').click()`);
-		await waitFor(v, `document.querySelector(".snack.act .sa") && !document.querySelector('.rq[data-kind="comment"]')`);
+		await run(v, `${rowOf("comment:|C1")}.querySelector(".tx").click()`);
+		await waitFor(v, `document.querySelector('.rq-sheet [data-k="drop"]')`);
+		await run(v, `document.querySelector('.rq-sheet [data-k="drop"]').click()`);
+		await waitFor(v, `document.querySelector(".snack.act .sa") && !${rowOf("comment:|C1")} && !document.querySelector(".rq-sheet")`);
 		const snack = await q<string>(v, `return document.querySelector(".snack").textContent`);
 		expect(snack).toContain("보내지 않았어요");
 		expect(snack).toContain("되돌리기");
 		expect(localPosts.map(x => x.path)).toEqual(["/api/comments/drafts/C1/drop"]);
-		// the undo is one request and the card waits again
+		// the undo is one request and the item waits again
 		localReplies = [kakaoDraft("K1", T.localKakao), commentDraft(T.localComment)];
 		await run(v, `document.querySelector(".snack.act .sa").click(); document.querySelectorAll(".snack.act .sa").forEach(b => b.remove())`);
-		await waitFor(v, `document.querySelectorAll("#mon-tl .rq-q > .rq").length === 5`);
+		await waitFor(v, `${rowOf("comment:|C1")}`);
 		expect(localPosts.map(x => x.path)).toEqual(["/api/comments/drafts/C1/drop", "/api/comments/drafts/C1/restore"]);
+	});
+
+	test("a failed send whose draft still waits shows once as the failure; a draft that came back after the failure shows as the ask", async () => {
+		const v = await boot(width, height);
+		await openQueue(v);
+		const states = (at: string) => q<string[]>(v, `RQ.failed = [{ key: "FK", kind: "kakao", app: "kakao", who: "Kim", what: "답장", at: ${at}, ref: "K1" }];
+			return rqRows().filter(r => r.key === "f:|FK" || r.key === "kakao:|K1").map(r => r.state);`);
+		expect(await states("rqAll().find(x => x.key === 'kakao:|K1').at + 1")).toEqual(["fail"]);
+		expect(await states("rqAll().find(x => x.key === 'kakao:|K1').at - 1")).toEqual(["ask"]);
+	});
+
+	test("the old banner is gone: no #trban, no trBanner", async () => {
+		const v = await boot(width, height);
+		expect(await q<[boolean, string]>(v, `return [!!document.getElementById("trban"), typeof trBanner]`)).toEqual([false, "undefined"]);
 	});
 });
 
