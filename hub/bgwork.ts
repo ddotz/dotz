@@ -19,7 +19,7 @@ import { fileLinePaths } from "./files.ts";
 import { failureText } from "./runstate.ts";
 import { previewSource } from "./tone.ts";
 
-type BgWork = {
+export type BgWork = {
 	id: string;
 	/** The short description written at the spawn (Korean, as the orchestrator wrote it). */
 	description: string;
@@ -273,38 +273,54 @@ export function createBgWork(deps: BgWorkDeps) {
 
 	function records(sessionFile: string): Rec[] {
 		const root = /_([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/.exec(sessionFile)?.[1];
-		const projects = join(dirname(dirname(dirname(sessionFile))), "projects");
+		const projects = sessionProjects(sessionFile);
 		if (!root || !existsSync(projects)) return [];
 		const out: Rec[] = [];
 		for (const project of readdirSync(projects)) {
 			const tasks = join(projects, project, "senpi-task", "tasks");
 			if (!existsSync(tasks)) continue;
 			for (const name of readdirSync(tasks).filter(n => n.endsWith(".json"))) {
-				const file = join(tasks, name);
-				let changed: string;
-				try {
-					const s = statSync(file);
-					changed = `${s.mtimeMs}:${s.size}`;
-				} catch {
-					continue;
-				}
-				let hit = cache.get(file);
-				if (!hit || hit.stamp !== changed) {
-					let rec: Rec | undefined;
-					try {
-						rec = JSON.parse(readFileSync(file, "utf8")) as Rec;
-					} catch {
-						rec = undefined;
-					}
-					cache.set(file, (hit = { stamp: changed, rec }));
-				}
-				if (hit.rec?.root_session_id === root && hit.rec.task_id) {
-					out.push(hit.rec);
-					storeOf.set(hit.rec.task_id, join(projects, project, "senpi-task"));
+				const rec = recordAt(join(tasks, name));
+				if (rec?.root_session_id === root && rec.task_id) {
+					out.push(rec);
+					storeOf.set(rec.task_id, join(projects, project, "senpi-task"));
 				}
 			}
 		}
 		return out;
+	}
+	function recordAt(file: string): Rec | undefined {
+		let changed: string;
+		try {
+			const s = statSync(file);
+			changed = `${s.mtimeMs}:${s.size}`;
+		} catch {
+			return undefined;
+		}
+		let hit = cache.get(file);
+		if (!hit || hit.stamp !== changed) {
+			let rec: Rec | undefined;
+			try {
+				rec = JSON.parse(readFileSync(file, "utf8")) as Rec;
+			} catch {
+				rec = undefined;
+			}
+			cache.set(file, (hit = { stamp: changed, rec }));
+		}
+		return hit.rec;
+	}
+	/** One job by id, whichever session ran it (hub/workrows.ts): only its own record is read. Undefined when no store holds it. */
+	function byId(id: string, projects: string[]): { work: BgWork; raw: string; created: number } | undefined {
+		const known = storeOf.get(id);
+		const stores = known ? [known] : projects.flatMap(p => readdirSync(p).map(n => join(p, n, "senpi-task")));
+		for (const store of stores) {
+			const rec = recordAt(join(store, "tasks", `${id}.json`));
+			if (rec?.task_id !== id) continue;
+			storeOf.set(id, store);
+			return { work: toWork(rec), raw: (rec.status ?? "").toLowerCase(), created: stamp(rec.created_at) || stamp(rec.started_at) };
+		}
+		storeOf.delete(id);
+		return undefined;
 	}
 
 	// Why a worker OmO still lists as running no longer works, and since when; undefined while it works or nothing shows either
@@ -573,11 +589,15 @@ export function createBgWork(deps: BgWorkDeps) {
 		return { ok: true };
 	}
 
-	return { list, running, runningWork, takeStalled, cancel, reportOf };
+	return { list, running, runningWork, takeStalled, cancel, reportOf, byId };
 }
 
 const anySession = createBgWork({ sessionFile: () => undefined, deferred: () => [] });
 /** Running OmO workers under one session file (a lane's, say); 0 for no session. */
+/** One job by id in the given `projects` folders of OmO's agent dir (a task-store lookup that no session owns). */
+export const omoWorkById = (id: string, projects: string[]) => anySession.byId(id, projects);
+/** The `projects` folder of the agent dir a session file lives in. */
+export const sessionProjects = (sessionFile: string) => join(dirname(dirname(dirname(sessionFile))), "projects");
 export const runningOmoWorkers = (sessionFile: string | undefined): number => anySession.running(sessionFile);
 /** The running OmO workers under one session file (a lane's), as records with description, start and model; none for no session. */
 export const runningOmoWork = (sessionFile: string | undefined): BgWork[] => (sessionFile ? anySession.runningWork(sessionFile) : []);

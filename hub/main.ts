@@ -20,7 +20,8 @@ import { projectTarget } from "./projectchat.ts";
 import { startPeerStreams } from "./peer-stream.ts";
 import { notify as pushNotify, setWatchPushOff, startPush } from "./push.ts";
 import { msg, textsToReport } from "./i18n.ts";
-import { broadcast, emit, emitDelivery, onEmit, sentFiles, subscriberCount } from "./events.ts";
+import { broadcast, emit, emitDelivery, onEmit, recentEvents, sentFiles, subscriberCount } from "./events.ts";
+import { WORK_SWEEP_MS } from "./workrows.ts";
 import { startDataCleanup, startLaneHygiene, startOrphanReaper, startWorktreeCleanup } from "./hygiene.ts";
 import { startLaneIdleStop } from "./laneidle.ts";
 import { startMemoryGuard } from "./memguard.ts";
@@ -77,7 +78,7 @@ import { setFollowupWake } from "./followup.ts";
 import { startHostSweep } from "./runtime/omo-hosts.ts";
 import { telemetryOff } from "./runtime/omo.ts";
 import { compressResponse } from "./compress.ts";
-import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, approvals, convOfTarget, setRefHandled, reconcileMailCards } from "./outbound.ts";
+import { sends, send, queue, deliver, deliverNow, lastOwner, receiptNote, laneFailed, out, alert, fileRoots, replayPending, replayOpen, installDelivery, clearLeftWebProgress, replies, bgWork, workRows, approvals, convOfTarget, setRefHandled, reconcileMailCards } from "./outbound.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
 import { convs } from "./convsessions.ts";
 import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
@@ -641,6 +642,10 @@ const waitCheck = createWaitCheck({
 	})),
 });
 setInterval(waitCheck.tick, WAIT_CHECK_MS);
+// One sweep over the open background-work rows (hub/workrows.ts), for whoever watches: a load reconciles the rest.
+for (const e of recentEvents(300)) workRows.seen(e);
+onEmit(workRows.seen);
+setInterval(() => void (subscriberCount() > 0 && workRows.sweep()), WORK_SWEEP_MS);
 const restartGate = createRestartGate({
 	busy: busyNow,
 	collecting: () => bursts.size > 0,

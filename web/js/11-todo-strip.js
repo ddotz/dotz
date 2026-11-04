@@ -131,23 +131,58 @@ function cardNode(c) {
     acts.length ? el("div", { class: "btns cc-act" }, ...acts) : null);
 }
 // A gateway system line (hub/outbound.ts `system`, e.g. "백그라운드 작업으로 맡겼어요: …"): one small muted line in the style of the
-// 여기까지 읽음 divider, no bubble or author. With a `worker` it opens that worker, and its state (S.work) is painted in place on each refresh.
-const SYS_NODES = new Map();   // worker id -> its line's status node (the newest drawing)
-const SYS_ST = { running: ["pri", "진행 중"], done: ["ok", "완료"], failed: ["err", "실패"] };
+// 여기까지 읽음 divider, no bubble or author. With a `worker` it opens that worker (its result once there is one), and its job's state is painted in place.
+// The state is the gateway's (hub/workrows.ts), never the event's: `work` on /api/history for what a load finds, a stream frame when a job changes, and S.work.
+const SYS_NODES = new Map();   // worker id -> every line drawn for it: { st, at, w } (a follow-up joined to a job writes a second line)
+const WORK_ROWS = new Map();   // worker id -> the gateway's newest word on its job
+const WORK_ROWS_MAX = 600, SYS_SLACK_MS = 5000;
+const SYS_ST = { running: ["pri", "진행 중"], stalled: ["warn", "멈춤"], done: ["ok", "완료"], failed: ["err", "실패"], gone: ["off", "끝남"] };
+const SYS_STOPPED = ["off", "중단됨"];
+function workRowNote(w, at) {
+  const o = WORK_ROWS.get(w.id);
+  if (o && o.at > at) return;
+  WORK_ROWS.delete(w.id);   // newest last: the oldest word goes first
+  WORK_ROWS.set(w.id, { ...w, at, created_at: w.created_at ?? o?.created_at, cancelled: w.cancelled || (o?.cancelled && o.status === w.status) });   // S.work does not know every stop a row does
+  if (WORK_ROWS.size > WORK_ROWS_MAX) WORK_ROWS.delete(WORK_ROWS.keys().next().value);
+}
+function workRowsOf(events) { for (const e of events) if (e.work) workRowNote(e.work, e.work.at); queueMicrotask(paintSysLines); }
+function workRowsLive(e) { for (const w of e.items || []) workRowNote(w, e.at); paintSysLines(); }
 function paintSysLines() {
-  for (const [id, st] of SYS_NODES) {
-    if (!st.isConnected) { SYS_NODES.delete(id); continue; }
-    const w = ((S && S.work) || []).find(x => x.id === id), s = w && (w.cancelled ? ["", "중단됨"] : SYS_ST[w.status]);
-    st.hidden = !s;
-    if (!s || st.dataset.s === s[1]) continue;
-    const was = st.dataset.s, card = st.classList.contains("ct-pill"), paint = () => {
-      if (card) { st.className = `cv-sys-st ct-pill ${s[0]}`; st.replaceChildren(s[0] === "ok" ? icon("check") : el("span", { class: `dot ${s[0]}` }), el("span", { text: s[1] })); }
-      else { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; }
-      hcSysFiles(st, w);
-    };
-    st.dataset.s = s[1];
-    if (was) motionSwap(st.closest(".cv-sys") || st, paint); else paint();   // running -> 완료 changes in place (with the result file as a chip under the line); the first paint just draws
+  for (const w of (S && S.work) || []) workRowNote(w, S.work_now || 0);
+  for (const [id, rows] of SYS_NODES) {
+    for (const row of rows) if (row.st.isConnected) paintSysLine(row, WORK_ROWS.get(id)); else rows.delete(row);
+    if (!rows.size) SYS_NODES.delete(id);
   }
+}
+function paintSysLine(row, job) {
+  // A row older than the job's record was written for the job that held this id before: that one was given up.
+  const st = row.st, w = job && row.at < job.created_at - SYS_SLACK_MS ? { id: job.id, status: "failed", cancelled: true } : job, s = w && (w.cancelled ? SYS_STOPPED : SYS_ST[w.status]);
+  row.w = w;
+  st.hidden = !s;
+  if (!s) return;
+  const open = st.closest("button");
+  if (open) open.title = w.result_at ? "결과 보기" : "작업 열기";
+  if (st.dataset.s === s[1]) return;
+  const was = st.dataset.s, card = st.classList.contains("ct-pill"), paint = () => {
+    if (card) { st.className = `cv-sys-st ct-pill ${s[0]}`; st.replaceChildren(s[0] === "ok" ? icon("check") : el("span", { class: `dot ${s[0]}` }), el("span", { text: s[1] })); }
+    else { st.firstChild.className = `dot ${s[0]}`; st.lastChild.textContent = s[1]; }
+    hcSysFiles(st, w);
+  };
+  st.dataset.s = s[1];
+  if (was) motionSwap(st.closest(".cv-sys") || st, paint); else paint();   // running -> 완료 changes in place (with the result file as a chip under the line); the first paint just draws
+}
+function sysRow(id, st, e) {
+  const row = { st, at: Date.parse(e.ts) || 0, w: null };
+  if (!SYS_NODES.has(id)) SYS_NODES.set(id, new Set());
+  SYS_NODES.get(id).add(row);
+  queueMicrotask(paintSysLines);
+  return row;
+}
+// A tap: the message holding the job's result, else the worker.
+function sysOpen(row, id, title, e) {
+  const w = row.w;
+  if (w && w.result_at) ntJump({ src: w.result_conv || eventTarget(e) || MAIN, at: w.result_at });
+  else openSub("orchestrator", id, null, title);
 }
 // The result file of a finished worker: one chip row right under its line, replaced when the state is painted again.
 function hcSysFiles(st, w) {
@@ -174,22 +209,20 @@ function hcTaskBody(line, w) {
 }
 function sysTaskLine(e, title, hm, id) {
   const st = el("span", { class: "cv-sys-st ct-pill", hidden: true }, el("span", { class: "dot" }), el("span"));
-  SYS_NODES.set(id, st);
-  const hd = el("button", { class: "ct-hd", type: "button", title: "작업 열기", onclick: () => openSub("orchestrator", id, null, title) },
+  const row = sysRow(id, st, e);
+  const hd = el("button", { class: "ct-hd", type: "button", title: "작업 열기", onclick: () => sysOpen(row, id, title, e) },
     el("span", { class: "ct-nm" }, el("span", { class: "ct-lb", text: ["백그라운드 작업", hm].filter(Boolean).join(" · ") }), el("span", { class: "cv-sys-tx ct-t", text: title })), st);
-  queueMicrotask(paintSysLines);
   return el("div", { class: "cv-sys cv-task", role: "group" }, hd);
 }
 function sysLine(e, text, hm) {
   const id = typeof e.worker === "string" ? e.worker : "", task = id && SYS_TASK.exec(text);
+  if (e.work) workRowNote(e.work, e.work.at);
   if (task) return sysTaskLine(e, task[1].trim(), hm, id);
   const st = el("span", { class: "cv-sys-st", hidden: true }, el("span", { class: "dot" }), el("span"));
   const kids = [icon("lanes"), el("span", { class: "cv-sys-tx", text }), st, hm ? el("span", { class: "cv-sys-mt", text: hm }) : null];
   if (!id) return el("div", { class: "cv-sys", role: "note" }, ...kids);
-  SYS_NODES.set(id, st);
-  const n = el("button", { class: "cv-sys", type: "button", title: "작업 열기", onclick: () => openSub("orchestrator", id, null, text.replace(/^[^:]*:\s*/, "")) }, ...kids);
-  queueMicrotask(paintSysLines);
-  return n;
+  const row = sysRow(id, st, e);
+  return el("button", { class: "cv-sys", type: "button", title: "작업 열기", onclick: () => sysOpen(row, id, text.replace(/^[^:]*:\s*/, ""), e) }, ...kids);
 }
 function msgNode(e) {
   const text = String(e.text ?? ""), hm = kstHM(e.ts);

@@ -2,6 +2,7 @@
 // Split out of main.ts; it owns the one instance of that state and the other hub modules import it.
 import { existsSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { DATA_DIR, log, NAME, now, paths, TZ, writeAtomic } from "./config.ts";
 import * as discord from "./discord.ts";
@@ -20,7 +21,8 @@ import { main, type Orchestrator, steer as steerOrchestrator } from "./orchestra
 import { type Conv, convs, setWiring } from "./convsessions.ts";
 import { MAIN } from "./session-key.ts";
 import { errorAsk } from "./orch-error.ts";
-import { createBgWork } from "./bgwork.ts";
+import { createBgWork, omoWorkById, sessionProjects } from "./bgwork.ts";
+import { createWorkRows } from "./workrows.ts";
 import { digest } from "./convdigest.ts";
 import { createPrompts, type WorkLink } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
@@ -139,6 +141,17 @@ export const queue = makeQueue(MAIN, main, PENDING, () => bgWork);
 // The orchestrator's background task workers (what a `[later]` turn waits for), read from OmO's task store: /api/workers, /api/state `work`.
 export const bgWork = sessionBg(main, queue);
 const mainConv = convs.setMain({ key: MAIN, o: main, queue, bg: bgWork });
+// The rows that name a job in every conversation (hub/workrows.ts): any session's job, read from the agent's task store.
+const taskProjects = () => [...new Set([join(process.env.OMO_CODING_AGENT_DIR ?? process.env.PI_AGENT_DIR ?? join(homedir(), ".omo", "agent"), "projects"), ...(main.orch.sessionFile ? [sessionProjects(main.orch.sessionFile)] : [])])].filter(p => existsSync(p));
+export const workRows = createWorkRows({
+	find: id => {
+		const projects = taskProjects();
+		return projects.length ? omoWorkById(id, projects) : null;
+	},
+	answer: workAnswer,
+	replyOf: id => [queue, ...convs.conversations().map(c => c.queue)].map(q => q?.linkOf(id)?.replyTo).find(Boolean),
+	push: (items, at) => broadcast({ kind: "work", items, at }),
+});
 // `owner` marks the owner's own message (it leads with the what-runs-now line); schedules, watches and mail carry a target but are not.
 // True when the message was steered into the running turn (only one of the same conversation is, prompts.ts deliver).
 // An owner message goes to its conversation's session (main with conversation sessions off); everything else to main.
