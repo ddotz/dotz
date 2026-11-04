@@ -132,7 +132,7 @@ export function PhoneScene() {
       }}
     >
       {(s) => (
-        <Phone width={250} frame="bezel" time="8:30" dark={dark} wallpaper="var(--surface)" className="cz-phone">
+        <Phone width={304} frame="bezel" time="8:30" dark={dark} wallpaper="var(--surface)" className="cz-phone">
           <div className="cz-chat">
             <div className="cz-chat__hd"><AppMark size={18} /><b>dotz</b></div>
             <Collapse open={s.ask} reveal="drop" from="below">
