@@ -115,13 +115,13 @@ test("claim: [done] reports, verify only from reported, any other report clears 
 	// OmO's handoff block, posted as its own turn after the [done], is no new report: the claim stays verifiable.
 	await turn(agent, "Ask: fix the README - wanted: a fixed README. For you: done.");
 	expect(lane.claim?.state).toBe("reported");
-	await turn(agent, "[ask] which branch?");
+	await turn(agent, "[ask] which branch?\n\n결정: which branch?\n**1) main**\n**2) dev**");
 	expect(lane.claim).toBeUndefined();
 	expect(saved()).toBeUndefined();
 	// A final report that opens with the handoff block and says [done] below it is a claim too (2026-10-21).
 	await turn(agent, "Ask: pick the branch - wanted: main. For you: merged.\n\n[done] merged to main");
 	expect(lane.claim?.state).toBe("reported");
-	await turn(agent, "[ask] which branch?");
+	await turn(agent, "[ask] which branch?\n\n결정: which branch?\n**1) main**\n**2) dev**");
 	expect(lane.claim).toBeUndefined();
 	expect(() => l.verifyLane("nope", "x")).toThrow("no lane nope");
 

@@ -4,7 +4,7 @@ import { settleChain, settleRevert } from "./lanefailover.ts";
 import { runningSubagents } from "./activity.ts";
 import { recover } from "./lanerun.ts";
 
-export { lanes, setOwnerNoteHandlers, ownerNotes, setReportHandler, setProgressHandler, setNoticeHandler, setIdleHandler, setVerifiedHandler, laneWorkerModel, isTempLane, laneRunning, laneLive } from "./lanestate.ts";
+export { lanes, setOwnerNoteHandlers, ownerNotes, setReportHandler, setProgressHandler, setNoticeHandler, setIdleHandler, setVerifiedHandler, setOpenCardCheck, laneWorkerModel, isTempLane, laneRunning, laneLive } from "./lanestate.ts";
 export type { LaneStatus, Lane, OwnerNoteHandlers } from "./lanestate.ts";
 export { LANE_MIN_HOURS, laneJustification, checkBrief, isExpensive, DEFAULT_EST, BUDGET_MARGIN, BUDGET_WINDOW_HOURS, estimateOf, budgetVerdict, budgetLine, titleProblem } from "./lanegates.ts";
 export type { BudgetOutcome } from "./lanegates.ts";

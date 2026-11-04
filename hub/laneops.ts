@@ -130,6 +130,7 @@ export function sendToLane(name: string, text: string, ref?: string, gateway = f
 	if (!lane.proc && (!lane.sessionFile || !existsSync(lane.sessionFile))) throw new Error(`lane ${name} is not running and has no session to resume`);
 	// New work makes an unchecked [done] claim stale; a verified one stays until the lane's next report replaces it.
 	// Any message to the lane is the owner's answer to a pending [ask].
+	lane.askRefused = false;
 	if (lane.claim?.state === "reported" || lane.pendingAsk) {
 		if (lane.claim?.state === "reported") lane.claim = undefined;
 		clearAsk(lane);

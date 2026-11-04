@@ -4,7 +4,7 @@ import { now, writeAtomic, log } from "./config.ts";
 import { parseTone } from "./tone.ts";
 import { pendingAskFile } from "./asks.ts";
 import { lastQuestion } from "./ask-options.ts";
-import { normalizeAsk } from "./ask-normalize.ts";
+import { bareAsk, normalizeAsk } from "./ask-normalize.ts";
 import { parseDecisions } from "./choices.ts";
 import { join } from "node:path";
 import { workerCheck } from "./activity.ts";
@@ -16,21 +16,44 @@ import { prompt } from "./laneprompt.ts";
 export const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 
 // An [ask] while the lane's last one is still open (any owner message clears it) that asks nothing new: the same text, or a line with no
-// option and no question ("답을 받기 전에는 진행할 수 없어서 멈췄어요", 2026-11-04 spacing-rules, 11 s after the real question).
+// option and no question ("답을 받기 전에는 진행할 수 없어서 멈췄어요", 2026-11-04 spacing-rules, 11 s after the real question). A card of this
+// lane still open on the owner's side counts too: "still waiting" asks nothing, whatever its words (2026-11-05 cloudflare-webapp).
 function repeatsOpenAsk(lane: Lane, text: string): boolean {
-	if (!lane.pendingAsk || parseTone(text).tone !== "ask") return false;
+	if (parseTone(text).tone !== "ask") return false;
+	if (bareAsk(text) && hooks.openCard(lane.name)) return true;
+	if (!lane.pendingAsk) return false;
 	return lane.pendingAsk.text === text || (!parseDecisions(text).blocks.length && !lastQuestion(text));
+}
+
+// A question the owner has not seen stays the turn's report: a harness continuation inside one turn (senpi.todo-owed, 2026-11-05 cloudflare-webapp)
+// made two "still waiting" texts in 5 s, the last text won at turn_end and the [ask] with its two decisions reached nobody. A later untagged text or
+// bare [ask] does not replace it; a tagged one does, and the question goes out as a real message first. Returns the text the turn now stands on.
+export function nextLastText(lane: Lane, text: string): string {
+	const asked = lane.lastText;
+	if (!lane.unreported || parseTone(asked).tone !== "ask" || !parseDecisions(normalizeAsk(asked)).blocks.length) return text;
+	if (!parseTone(text).tone || bareAsk(normalizeAsk(text))) return asked;
+	if (text !== asked) hooks.progress(lane, asked);
+	return text;
 }
 
 // `notice` marks a gateway-written text ([lane error], [lane exited], pause/rate-limit): it is not the lane speaking, so it
 // leaves a pending ask alone.
 export function report(lane: Lane, written: string, notice = false): void {
-	const text = notice ? written : normalizeAsk(written);
+	let text = notice ? written : normalizeAsk(written);
 	rmSync(pendingFile(lane), { force: true });
 	lane.unreported = false;
 	if (lane.reportedThisTurn === text) return log(`lane ${lane.name} report dropped (same text again before a new turn)`);
 	lane.reportedThisTurn = text;
 	if (!notice && repeatsOpenAsk(lane, text)) return log(`lane ${lane.name} report dropped (restates the question still open)`);
+	if (!notice && bareAsk(text)) {
+		// Once back to the session for a real choice block; the second time it is a plain note, so the text is never lost and never loops.
+		if (lane.proc && !lane.askRefused) {
+			lane.askRefused = true;
+			log(`lane ${lane.name} [ask] refused (no choice block)`);
+			return prompt(lane, msg().askRefused(parseTone(text).text));
+		}
+		text = parseTone(text).text;
+	}
 	// The turn's final text answers every owner message still open (a gateway notice does not).
 	const answering = !notice && ownerNotes.reported(lane.name, text);
 	lane.reports++;
@@ -43,6 +66,7 @@ export function report(lane: Lane, written: string, notice = false): void {
 	const claimsDone = tone === "done" || (!tone && /\[(done|완료)\]/i.test(text));
 	lane.claim = claimsDone ? { state: "reported", at: now() } : tone ? undefined : lane.claim;
 	if (tone === "ask" && !notice) {
+		lane.askRefused = false;
 		lane.pendingAsk = { text, at: now() };
 		writeAtomic(pendingAskFile(lane.name), `${text}\n`);
 	} else if (!notice) clearAsk(lane);

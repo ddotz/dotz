@@ -4,9 +4,11 @@
 // runs on every outgoing message, and a text without a question signal leaves at the first regex.
 // False positives are the risk, so it needs both a trailing list of 2-4 clean options and a question line right above it that offers a
 // choice. A yes / no question counts only under a "결정 필요" heading, in an [ask], or when an option carries a recommendation.
-import { D_CLOSE, DECISION_HEAD, DETAIL_DESC, DETAIL_MARK, stripRecommendMark } from "./choices.ts";
+import { askedDraft } from "./ask-options.ts";
+import { D_CLOSE, DECISION_HEAD, DETAIL_DESC, DETAIL_MARK, parseDecisions, stripRecommendMark } from "./choices.ts";
 import { parseQuotedDraft } from "./draft-approval.ts";
-import { splitTone } from "./tone.ts";
+import { orchestratorOnlyAsk } from "./forline.ts";
+import { parseTone, splitTone } from "./tone.ts";
 
 const FENCE = /^\s*```/;
 const SIGNAL = /[?？]|까요|주세요|결정\s*(?:이\s*)?필요|decision needed/i;
@@ -125,6 +127,15 @@ function blockLines(f: Found): string[] {
 
 /** The text with its trailing option list as the contract's choice block and a status marker the surfaces read; unchanged when it asks nothing but for an old recommendation mark. Idempotent. */
 export const normalizeAsk = (text: string): string => stripRecommendMark(toChoiceBlock(text));
+
+// A session's [ask] the owner cannot answer from the card (owner 2026-11-05: "뭐에 대한 질문인지 저기에서 바로 답변이 어려워"): no choice block, not a
+// budget question or a quoted draft (both have their own buttons), not a chore for the orchestrator. It never becomes an answer-needed item:
+// a turn-end report goes back to the session once (lanereport.ts), everything else goes on as a plain note (plainBareAsk).
+export function bareAsk(text: string): boolean {
+	const p = parseTone(text);
+	return p.tone === "ask" && !parseDecisions(p.text).blocks.length && !/\/budget-ok/.test(text) && !askedDraft(p.text) && !orchestratorOnlyAsk(p.text);
+}
+export const plainBareAsk = (text: string): string => (bareAsk(text) ? parseTone(text).text : text);
 
 function toChoiceBlock(text: string): string {
 	if (!SIGNAL.test(text) || /\[(?:done|완료)\]/i.test(text)) return text;

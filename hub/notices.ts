@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
 import { type DecisionOption, decisionText, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
 import { blockDraftRef, DRAFT_BODY_MAX, type DraftApproval, type DraftFileIn, draftActionOf, draftNeedsText, parseDraftApproval, quotedDraft, refreshDraft, rewriteDraftTo, withStagedFiles } from "./draft-approval.ts";
-import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
+import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS, lastQuestion } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { broadcast as broadcastRaw, emit, eventTarget, historyEvents, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { classOfNotice, isLoginLost } from "./notice-class.ts";
@@ -144,11 +144,39 @@ function retitleDraftCard(n: Notice): boolean {
 	n.title = `${n.title.slice(0, tag.index)}(${ref})`;
 	return true;
 }
+// Asks stored before one question was one item (2026-11-05), read once on start, silently: a report row beside its card leaves every list, and a
+// session's open question with no choice to answer it, or an unread loose [ask] of a session, closes. The text stays in the history.
+export function retireStoredAsks(list: Notice[], at: string): number {
+	let n = 0;
+	const cards = new Set(list.filter(d => d.decision?.reply_to).map(d => `${d.decision!.to}|${d.decision!.reply_to}`));
+	const lane = (s?: string) => !!s?.startsWith("lane:");
+	for (const i of list) {
+		const d = i.decision;
+		if (d) {
+			if (d.state !== "open" || !lane(d.to) || d.options.length) continue;
+			Object.assign(d, { state: "answered", resolved: true, answered_at: at });
+			i.read = true;
+			n++;
+		} else if (i.tone === "ask" && !i.dismissed && cards.has(`${i.src ?? i.open}|${i.at}`)) {
+			i.read = i.dismissed = true;
+			n++;
+		} else if (i.tone === "ask" && !i.read && !i.dismissed && lane(i.by)) {
+			i.read = true;
+			n++;
+		}
+	}
+	return n;
+}
 {
 	const n = refreshNoticeDrafts(items);
 	if (n) {
 		save();
 		log(`notices: ${n} draft card(s) re-read with the current rules`);
+	}
+	const old = retireStoredAsks(items, now());
+	if (old) {
+		save();
+		log(`notices: ${old} old ask item(s) merged or closed`);
 	}
 }
 // An open send-approval card shows the files staged for its draft now, not the ones staged when it was posted: a file attached later
@@ -309,6 +337,7 @@ const broadcast = (e: Record<string, unknown>): void => broadcastRaw(e.kind === 
 export const needsAnswer = (i: Notice) => !i.read && !i.dismissed && !i.ignored && !hasExpired(i.decision) && (isOpenDecision(i) || i.tone === "ask");
 // The alert / message twin of a decision: an [ask] item made by the same asking event, or by a repeat of the same text (a session's mid-turn line and its
 // turn-end report both post it), so it ends with the decision.
+export const laneHasOpenCard = (name: string): boolean => items.some(i => isOpenDecision(i) && i.decision!.to === `lane:${name}`);
 const twinOf = (d: Notice, n: Notice) => !n.decision && n.tone === "ask" && (n.at === d.decision?.reply_to || n.text === d.text);
 
 // Oldest read item goes first; when everything is unread, the oldest one. An open decision is never dropped.
@@ -540,8 +569,9 @@ function feed(e: HubEvent): void {
 			if (!replaying && typeof e.source === "string" && e.source !== "web" && e.source !== "terminal") readConversationNotices(eventTarget(e) ?? "main", e.ts);
 		}
 		else {
-			fromInbox(e);
 			const ds = decisionsOf(e);
+			// One question is one item: an [ask] that made its card makes no report row beside it.
+			if (!ds.length || clean(e.text).tone !== "ask") fromInbox(e);
 			for (const d of ds) putDecision(d, e.ts);
 			// A session's turn-end report goes to its Discord channel as a real message whatever its tone (hub/lanewire.ts): an untagged one
 			// (often the answer to the owner) is the session conversation's message item, as its mid-turn answers are.
@@ -706,7 +736,8 @@ export function decisionsOf(e: HubEvent): Draft[] {
 	if (!pc.blocks.length) {
 		if (to.startsWith("lane:") && /\/budget-ok/.test(body)) return [draft(line || "답변이 필요해요", BUDGET_OPTIONS, 1, 0)];
 		const options = askDefaults(body, to.startsWith("mail:"));
-		return [{ ...draft(line || "답변이 필요해요", options, 1, 0), ...(options.length ? { assumed: true as const } : {}) }];
+		const asked = lastQuestion(body);
+		return [{ ...draft((asked && shortTitle(asked)) || line || "답변이 필요해요", options, 1, 0), ...(options.length ? { assumed: true as const } : {}) }];
 	}
 	const many = pc.blocks.length > 1;
 	// Several decisions are several notices: each carries its own text, so opening one never shows the others under its title.
