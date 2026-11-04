@@ -96,7 +96,7 @@ function targetCard(key, title, status, cur, confirmText, extra = {}) {
     dirty ? el("div", { class: "btns mt-apply" }, el("button", { class: "btn text", type: "button", onclick: () => { delete pending[key]; renderModels(); } }, "되돌리기"), apply) : null,
   ].filter(Boolean);
   return el("section", { class: "mt-card", "data-target": key, "aria-label": title },
-    el("div", { class: "mt-head" }, run ? el("span", { class: `dot ${run[1]}` }) : null, el("span", { class: "t", text: title }), sub ? el("span", { class: "sup", text: sub }) : null, el("span", { class: "sp" }), ...(extra.tags || [])),
+    el("div", { class: "mt-head" }, run ? el("span", { class: `dot ${run[1]}` }) : null, el("span", { class: "t", text: title }), sub ? el("span", { class: "sup", text: sub }) : null, el("span", { class: "sp" })),
     el("div", { class: "list mt-list" }, ...(extra.chain ? [extra.chain(pick, notes)] : [pick, ...notes])));
 }
 function renderModels() {
