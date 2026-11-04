@@ -6,7 +6,11 @@
 //
 // A worker belongs to the owner message of the turn that spawned it (prompts.ts turnAt); one spawned by no turn of ours (a
 // run a worker's result woke, a restart) belongs to the latest still-open deferred message delivered before its spawn.
-// Finished workers keep no such message, nothing waits for them.
+// Finished workers keep no such message, nothing waits for them. The prompt queue keeps that tie on disk (prompts.ts WorkLink), so
+// it survives a restart.
+//
+// A worker's report is its last substantive message, not always OmO's final_response: OmO's todo-owed reminder fires after the report
+// when the worker's todo list is still open, the worker closes the list, and that one line becomes the final_response (reportOf).
 import { closeSync, existsSync, openSync, readdirSync, readFileSync, readSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { scrub } from "./activity.ts";
@@ -150,6 +154,11 @@ const ERROR_EVENTS = new Set(["child_error", "retry_fallback_exhausted"]);
 // Only the end of a task log is read.
 const LOG_TAIL_BYTES = 8 * 1024;
 const DONE = new Set(["completed", "done", "succeeded"]);
+// A last message this short may be housekeeping after the report; a report it replaces is at least this long and three times longer.
+const TRAILING_MAX_CHARS = 200;
+const REPORT_RATIO = 3;
+const REPORT_LOG_TAIL_BYTES = 64 * 1024;
+const HOUSEKEEPING_TOOLS = new Set(["todo", "todo_write"]);
 
 const stamp = (s?: string) => (s ? Date.parse(s) || 0 : 0);
 // A report whose status line is [fail] (after an optional "Ask: ..." handoff block, as custom.ts reportHead reads it): that line, unmarked.
@@ -165,6 +174,30 @@ function folderOf(r: Rec): string | undefined {
 	const repo = /^\s*Repo:\s*(\/[^\s;,()]+)/m.exec((s?.prompt ?? "").slice(0, 600))?.[1];
 	return repo ?? (s?.cwd && !s.isolation ? s.cwd : undefined);
 }
+/** The report a finished worker's task log holds when its last message only closed its todo list: nothing but todo calls ran after it. */
+export function trailingReport(lastMessage: string, logTail: string): string | undefined {
+	const last = lastMessage.trim();
+	if (!last || last.length >= TRAILING_MAX_CHARS || previewSource(last).split("\n").some(l => MARK_LINE.test(l))) return undefined;
+	let seenLast = false;
+	for (const line of logTail.split("\n").reverse()) {
+		let e: { type?: string; payload?: { tool?: string; text?: string } };
+		try {
+			e = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (e.type === "tool_execution" && !HOUSEKEEPING_TOOLS.has(e.payload?.tool ?? "")) return undefined;
+		if (e.type !== "assistant_message") continue;
+		const text = (e.payload?.text ?? "").trim();
+		if (!seenLast) {
+			seenLast = true;
+			if (text !== last) return undefined;
+			continue;
+		}
+		return text.length >= TRAILING_MAX_CHARS && text.length >= REPORT_RATIO * last.length ? text : undefined;
+	}
+	return undefined;
+}
 const pidAlive = (pid: number) => {
 	try {
 		process.kill(pid, 0);
@@ -178,6 +211,9 @@ type BgWorkDeps = {
 	/** The orchestrator's session file (empty before its first run). */
 	sessionFile: () => string | undefined;
 	deferred: () => OpenDeferred[];
+	/** The request a worker was linked to at its spawn, kept across restarts (prompts.ts WorkLink), and where a tie found here is recorded. */
+	linkOf?: (id: string) => { target: string; replyTo?: string } | undefined;
+	link?: (id: string, to: { target: string; replyTo?: string }, description?: string) => void;
 	/** The owner message the turn running at that time (ms) was answering (prompts.ts turnAt), when a turn of ours was running. */
 	turn?: (at: number) => { target: string; replyTo?: string } | undefined;
 	/** The message that carries a finished worker's result (events.ts workAnswer). */
@@ -217,6 +253,8 @@ export function createBgWork(deps: BgWorkDeps) {
 	const served = new Map<string, { target: string; reply_to?: string }>();
 	// The message each finished worker's result went out in, once it is certain (list() asks again until then).
 	const results = new Map<string, { result_at: string; result_conv: string }>();
+	// The substantive report of each finished worker read from its task log (a finished worker's log no longer changes).
+	const reports = new Map<string, string>();
 	// Failures already written to the log (list() runs on every /api/state read).
 	const told = new Set<string>();
 	// Failures already handed to the session (once each; a restart re-reads turnEndedAt, which the handed turn moved past them).
@@ -329,13 +367,41 @@ export function createBgWork(deps: BgWorkDeps) {
 		return found;
 	}
 
+	// A finished worker's report: its last message, or the real report when that message only closed its todo list.
+	function reportText(r: Rec): string | undefined {
+		const last = r.final_response;
+		if (!last || !r.task_id || last.trim().length >= TRAILING_MAX_CHARS) return last;
+		const known = reports.get(r.task_id);
+		if (known !== undefined) return known;
+		const report = trailingReport(last, readLogTail(r.task_id)) ?? last;
+		reports.set(r.task_id, report);
+		return report;
+	}
+	function readLogTail(id: string): string {
+		const store = storeOf.get(id);
+		if (!store) return "";
+		const file = join(store, "logs", `${id}.jsonl`);
+		try {
+			const size = statSync(file).size, len = Math.min(size, REPORT_LOG_TAIL_BYTES), buf = Buffer.alloc(len), fd = openSync(file, "r");
+			try {
+				readSync(fd, buf, 0, len, size - len);
+			} finally {
+				closeSync(fd);
+			}
+			return buf.toString("utf8");
+		} catch {
+			return "";
+		}
+	}
+
 	function toWork(r: Rec): BgWork {
 		const started = stamp(r.started_at) || stamp(r.created_at) || stamp(r.updated_at);
 		const raw = (r.status ?? "").toLowerCase();
 		let status: BgWork["status"] = RUNNING.has(raw) ? "running" : DONE.has(raw) ? "done" : "failed";
 		let ended = stamp(r.terminal_at) || stamp(r.updated_at);
 		// OmO's "completed" only says the process ended; a worker that stopped on its token cap or an error reports [fail] (st_01a19616).
-		const reported = status === "done" ? failLine(r.final_response) : undefined;
+		const report = status === "done" ? reportText(r) : undefined;
+		const reported = failLine(report);
 		if (reported) status = "failed";
 		// A worker the owner stopped is listed as stopped from then on, whatever OmO's record says; the workers die with the
 		// gateway's process tree, and the record of one that died mid-run is never closed by anyone.
@@ -367,7 +433,7 @@ export function createBgWork(deps: BgWorkDeps) {
 		const error = why ? scrub(why).replace(/\s+/g, " ").trim().slice(0, 200) : "";
 		const model = workModel(r);
 		const reason = stopped ? "직접 중단했어요" : status === "failed" ? failureText(error) : "";
-		const files = status === "done" ? resultFiles(r.final_response) : [];
+		const files = status === "done" ? resultFiles(report) : [];
 		return { id: r.task_id!, description, status, started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}), ...(error ? { error } : {}), ...(model ? { model } : {}), ...(reason ? { reason } : {}), ...(stopped ? { cancelled: true } : {}), ...(files.length ? { files } : {}) };
 	}
 
@@ -382,10 +448,12 @@ export function createBgWork(deps: BgWorkDeps) {
 			// The turn that spawned the worker is its message; only a worker no turn of ours spawned falls back to the latest
 			// deferred message before it (an answered or newer message is no reason to move it: owner 2026-10-23). A worker that
 			// failed at spawn was never seen running, so a finished one still asks the turn at its spawn time (st_01a17c03, 2026-10-27).
-			const p: { target: string; replyTo?: string; reply_to?: string } | undefined = w.status === "running"
+			const linked = deps.linkOf?.(w.id);
+			const p: { target: string; replyTo?: string; reply_to?: string } | undefined = linked ?? (w.status === "running"
 				? (deps.turn?.(w.started_at) ?? served.get(w.id) ?? open.filter(d => d.at <= w.started_at + SPAWN_SLACK_MS).at(-1))
-				: (served.get(w.id) ?? deps.turn?.(w.started_at));
+				: (served.get(w.id) ?? deps.turn?.(w.started_at)));
 			if (p) {
+				if (!linked && deps.link) deps.link(w.id, { target: p.target, ...(p.replyTo ?? p.reply_to ? { replyTo: p.replyTo ?? p.reply_to } : {}) }, w.description);
 				w.target = p.target;
 				const ref = "reply_to" in p ? p.reply_to : p.replyTo;
 				if (ref) w.reply_to = ref;
@@ -439,6 +507,13 @@ export function createBgWork(deps: BgWorkDeps) {
 			woken.add(w.id);
 			deps.stalled(w);
 		}
+	}
+
+	/** A finished worker's real report when OmO's final_response is only the line that closed its todo list; undefined otherwise. */
+	function reportOf(id: string, file = deps.sessionFile()): string | undefined {
+		const rec = file ? records(file).find(r => r.task_id === id) : undefined;
+		const report = rec ? reportText(rec) : undefined;
+		return report !== rec?.final_response ? report : undefined;
 	}
 
 	/** The stalled workers no wake named yet, marked as named: what the usage-limit resume note lists. */
@@ -498,7 +573,7 @@ export function createBgWork(deps: BgWorkDeps) {
 		return { ok: true };
 	}
 
-	return { list, running, runningWork, takeStalled, cancel };
+	return { list, running, runningWork, takeStalled, cancel, reportOf };
 }
 
 const anySession = createBgWork({ sessionFile: () => undefined, deferred: () => [] });

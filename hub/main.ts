@@ -38,6 +38,8 @@ import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch,
 import { errorAsk, startErrorWatch } from "./orch-error.ts";
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
+import { createWaitCheck } from "./waitcheck.ts";
+import { ownerMessage } from "./events.ts";
 import { forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, refreshQuota, usageSnapshot } from "./providers.ts";
 import { sealPlainSecrets } from "./secretbox.ts";
 import { backfillNotices, dropChannelNotices, setAppLabelResolver, setDraftHandled, settleExpiredQuestions, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
@@ -613,6 +615,22 @@ function busyNow(): string[] {
 		}),
 	].filter(Boolean);
 }
+// An open owner request with nothing running that could answer it: one bounded wake, no model call otherwise (hub/waitcheck.ts).
+const WAIT_CHECK_MS = 20_000;
+const waitCheck = createWaitCheck({
+	restarting: () => restartGate.waiting(),
+	log,
+	sessions: () => convs.all().map(c => ({
+		key: c.key,
+		open: c.queue.openRequests,
+		busy: () => Boolean(orchBusy(c.o.orch)) || c.o.orch.status === "rate-limited",
+		workers: () => c.bg.running(),
+		armed: since => allWatches().some(w => w.once && w.to === "orchestrator" && !w.paused && Date.parse(w.created) >= since),
+		lastTurnEndAt: () => c.o.lastTurnEndAt(),
+		wake: (open, last) => void convs.deliverTo(c.key, msg().openRequests(open.map(r => ({ ...r, asked: r.replyTo ? ownerMessage(r.replyTo)?.text : undefined })), last), { target: open[0]!.target, ...(open[0]!.replyTo ? { replyTo: open[0]!.replyTo } : {}) }),
+	})),
+});
+setInterval(waitCheck.tick, WAIT_CHECK_MS);
 const restartGate = createRestartGate({
 	busy: busyNow,
 	collecting: () => bursts.size > 0,
