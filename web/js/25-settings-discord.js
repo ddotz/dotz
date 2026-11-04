@@ -123,5 +123,5 @@ function renderDiscord() {
   clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" },
     el("div", { class: "li", "data-ms-status": "discord" }, el("span", { class: "lead" }, icon("discord")), el("span", { class: "tx" }, el("div", { class: "hd", text: "Discord 봇" }), el("div", { class: "sup", text: line })),
       liEnd(el("span", { class: `tag ${tone}`, text: tag }), el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": "discord", onclick: ev => dcConnect(ev.currentTarget) }, msConnectLabel(m))))),
-  el("div", { class: "sec", text: "자동 연결" }), onboardingPanel("discord"), ...dcSwitches(), ...guide, det);
+  ...obSection("discord", m ? m.state === "ok" : v.connected), ...dcSwitches(), ...guide, det);
 }

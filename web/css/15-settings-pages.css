@@ -17,11 +17,11 @@
 #models .mt-head { margin: var(--sp-6) 4px var(--sp-2); gap: 8px; align-items: baseline; }
 #models .mt-head .t { font: 600 var(--fs-sec)/var(--lh-sec) var(--font); color: var(--fg-2); }
 #models .mt-pick { display: block; }
-#models :is(.mt-model, .mt-eff) { max-width: none; padding: 0 var(--row-px); }
+#models :is(.mt-model, .mt-eff) { max-width: none; padding: var(--row-py) var(--row-px); }
 #models .mt-eff, #models .mt-list > .mt-note, #models .mt-list > .mt-apply, #models .mt-list > .note, #models .mt-list > .mt-fb { border-top: 1px solid var(--line); }
-#models .mt-pick .tf { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--row-h); }
+#models .mt-pick .tf { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; }
 #models .mt-pick .tf > .lb { font: 500 var(--fs-row)/var(--lh-row) var(--font); color: var(--fg); }
-#models .mt-pick .sel { flex: none; width: min(60%, 220px); background: var(--layer); }
+#models .mt-pick .sel { flex: none; width: min(60%, 220px); height: var(--ctl-h); min-height: 0; background: var(--layer); font-size: var(--fs-row); }
 #models .mt-list > .mt-note { margin: 0; padding: 8px var(--row-px); }
 #models .mt-list > .note { margin: 0; padding: 8px var(--row-px); }
 #models .mt-apply { margin: 0; padding: 8px var(--row-px); }
@@ -40,6 +40,7 @@
 #models .mt-use-row { padding: 6px var(--row-px); border-top: 0; }
 #models .mt-use-row + .mt-use-row { border-top: 1px solid var(--line); }
 @media (max-width: 639px) { #models .mt-pick .sel { width: min(58%, 200px); } }
+@media (pointer: coarse), (max-width: 639px) { #models .mt-pick .sel { height: var(--field-h-touch); } }
 
 /* 공급자: the usage windows ride under the row, thin */
 #providers .prow-lim { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--fg-2); font-size: 12px; line-height: 16px; }

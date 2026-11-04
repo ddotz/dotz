@@ -186,7 +186,7 @@ function renderMessenger(id) {
       el("div", { class: "li", "data-ms-status": id }, el("span", { class: "lead" }, icon("chat")),
         el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), el("div", { class: "sup", text: msLine(id, m, s) })),
         liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m))))),
-    el("div", { class: "sec", text: "자동 연결" }), onboardingPanel(id)];
+    ...obSection(id, !!m && m.state === "ok")];
   if (s.notify) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" },
     ...notifyRows(k => s.notify[k] !== false, (k, on) => msNotifySet(id, k, on)),
     el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "sup", text: "끄면 그 알림은 여기로 보내지 않고 앱에만 와요." })))));
