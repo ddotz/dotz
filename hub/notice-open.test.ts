@@ -196,7 +196,7 @@ describe("a decision never docks in the 알림 / 작업내역 conversations", ()
 		const dc = { key: `${target}|x`, t: target, sig: "x", at: "T", question: "q", blocks: [{ title: "", options: [{ n: 1, label: "a" }] }] };
 		const src = web("js/10-decision-card.js"), body = src.slice(src.indexOf("function paintDecision"));
 		const page: Record<string, unknown> = {
-			$: () => box, decisionOf: () => dc, isFixedT: (x: string) => x === "alert" || x === "worklog", target, DC, clear: () => {}, renderDecision: () => calls.push("render"),
+			$: () => box, document: { querySelectorAll: () => [] }, decisionOf: () => dc, isFixedT: (x: string) => x === "alert" || x === "worklog", target, DC, clear: () => {}, renderDecision: () => calls.push("render"),
 			syncInlineChoices: () => {}, dkPaint: () => {}, updateComposerMeta: () => {}, S: null, DC_SEEN: new Set(), freshKeys: () => new Set(), dcLast: null, dcOut: null, dcShownT: "",
 			dcLeave: () => calls.push("leave"), motionSwap: (_: unknown, f: () => void) => f(), motionIn: () => {},
 		};
