@@ -145,7 +145,7 @@ test("a full run connects both platforms: every step done, watches, card and pro
 	expect(h.execs).toContainEqual(["brew", "install", "ffmpeg", "cloudflared"]);
 
 	expect(h.f.watches.filter(w => w.name).map(w => w.name)).toEqual(["sns-yt-comments", "sns-ig-comments", "sns-ig-dm", "sns-inbox", "sns-due", "sns-tokens", "sns-yt-login"]);
-	expect(h.f.gateway().filter(c => c.method === "PUT" && c.url.endsWith("/api/projects"))).toHaveLength(2);
+	expect(h.f.gateway().filter(c => c.method === "PUT" && c.url.endsWith("/api/projects"))).toHaveLength(1);
 	expect(existsSync(join(dir, "custom", "cards", "sns-channels", "card.json"))).toBe(true);
 	expect(read(paths.config())).toMatchObject({ youtube: { channel_id: "UCabcdefghij1234", upload_via: "aside" }, instagram: { username: "owner" }, posting_times: ["18:00"], approval: "each" });
 	expect(read(paths.config()).youtube.languages).toEqual([]);

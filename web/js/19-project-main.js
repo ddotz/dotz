@@ -1,7 +1,7 @@
 /* ---------- 프로젝트: level 2 overview (header, 확인 필요, four summary rows) and level 3 drill-in pages ---------- */
-// PM.D = the detail; PM.open counts fields being edited (a refresh never repaints under them); PM.draft keeps the milestone input;
+// PM.D = the detail; PM.open counts fields being edited (a refresh never repaints under them);
 // PM.sheets = the open drill-in pages, repainted from the re-fetched detail after every write.
-const pmReset = () => ({ key: "", D: null, fail: false, open: 0, flight: null, draft: "", sheets: new Set() });
+const pmReset = () => ({ key: "", D: null, fail: false, open: 0, flight: null, sheets: new Set() });
 let PM = pmReset();
 function pmOpen(key) {
   if (PM.key !== key) { for (const s of PM.sheets) s.h.close(false); PM = { ...pmReset(), key }; }
@@ -86,20 +86,6 @@ function pmPrimary(rows) {
     wait.length > 1 ? el("div", { class: "pm-need-s", text: `외 ${wait.length - 1}개도 답을 기다려요` }) : null,
     el("div", { class: "cf" }, el("button", { class: "btn pm-need-a", type: "button", "data-k": "answer", onclick: () => openTarget(`lane:${ask.name}`, lastChatView()) }, "대화에서 답하기")));
 }
-// A step of the project as the prototype's checklist row: tap to tick it. The write is the goal page's own (PUT milestones); the page repaints from what the gateway kept.
-function pmStepRow(ms, i) {
-  const m = ms[i];
-  const row = el("button", { class: `li pm-step${m.done ? " done" : ""}`, type: "button", role: "checkbox", "aria-checked": String(!!m.done), "data-k": "step" },
-    el("span", { class: "pm-ck", "aria-hidden": "true" }, icon("check")), el("span", { class: "tx" }, el("span", { class: "hd", text: m.text })));
-  row.onclick = async () => {
-    row.disabled = true;
-    row.classList.toggle("done", !m.done); row.setAttribute("aria-checked", String(!m.done));
-    try { await pmWrite({ milestones: ms.map((x, j) => j === i ? { ...x, done: !x.done } : x) }); }
-    catch (e) { row.classList.toggle("done", !!m.done); row.setAttribute("aria-checked", String(!!m.done)); row.disabled = false; toast(`저장하지 못했어요 · ${e.message}`, true); return; }
-    await pmReload();
-  };
-  return row;
-}
 // A monitor, routine or schedule of the project as a prototype 감시 row: health dot, name, one quiet line, and what kind it is.
 function pmWatchRow(x) {
   const mins = x.every_minutes ?? (x.schedule && x.schedule.every_minutes) ?? 0, [tone, why] = pmHealth(x);
@@ -110,17 +96,13 @@ function pmWatchRow(x) {
     el("span", { class: "li-end" }, el("span", { class: "tag", text: PM_KIND[x.kind] })));
 }
 function pmOverview(q, D, rows) {
-  const ms = prjMiles(q), goal = (q.record && q.record.goal) || "";
   const work = (D && D.work) || [], results = (D && D.results) || [], items = pmRoutineItems(D);
   const works = [...work.filter(w => w.status === "running"), ...work.filter(w => w.status !== "running")];
-  const done = ms.filter(m => m.done).length;
   const info = (D && D.info) || {}, files = info.files || [];
   return el("div", { class: "pm-o" },
     pmPrimary(rows),
     pmSection({ kind: "info", label: "지금 상황", count: "", action: D && D.info ? "전체" : "", head: info.summary ? el("div", { class: "pm-goal sup", text: info.summary }) : null,
       nodes: pmInfoRows(info), empty: info.summary ? "" : "대화하면서 정한 내용이 여기에 모여요" }),
-    pmSection({ kind: "goal", label: "단계", count: ms.length ? `${done}/${ms.length}` : "", action: "편집", head: goal ? el("div", { class: "pm-goal sup", text: goal }) : null,
-      nodes: ms.map((_, i) => pmStepRow(ms, i)), empty: "아직 단계가 없어요" }),
     pmSection({ kind: "sessions", label: "세션", count: rows.length, action: rows.length ? "전체" : "", nodes: rows.slice(0, 5).map(pmLaneRow), empty: "아직 세션이 없어요" }),
     pmSection({ kind: "sessions", label: "작업", count: work.length, nodes: works.slice(0, 4).map(pmWorkRow), empty: "진행 중인 작업이 없어요" }),
     pmSection({ kind: "results", label: "결과", count: results.length, action: results.length ? "전체" : "", nodes: results.slice(0, 4).map(pmResultRow), empty: "아직 결과가 없어요" }),
@@ -143,7 +125,7 @@ function pmInfoBody(D) {
   ];
   return nodes.length ? el("div", {}, ...nodes) : emptyNode("대화하면서 정한 내용이 여기에 모여요");
 }
-// The prototype's section header + list (s-work.js project detail: 단계 · 세션 · 작업 · 결과 · 감시); the header button opens the section's full page.
+// The prototype's section header + list (s-work.js project detail: 지금 상황 · 세션 · 작업 · 결과 · 감시); the header button opens the section's full page.
 function pmSection({ kind, label, count, action, head, nodes, empty }) {
   return el("div", { class: "pm-block" },
     el("div", { class: "sec sec-act pm-sec" }, el("span", { text: `${label}${count !== "" ? ` ${count}` : ""}` }),
@@ -153,7 +135,7 @@ function pmSection({ kind, label, count, action, head, nodes, empty }) {
 }
 // Level 3: one section page over the overview. It is an overlay, so 32-history-nav gives it its own history entry: the back arrow
 // (or the browser's back) returns to the overview. Every function of the old one-page layout lives here, unchanged.
-const PM_PAGE = { info: ["지금 상황", "대화에서 정리된 내용이에요"], rules: ["내 규칙", "최근에 정한 순서예요"], goal: ["목표와 진행", "목표와 단계를 고쳐요"], sessions: ["세션 기록", "이 프로젝트의 세션과 백그라운드 작업"], results: ["결과 전체", "보고, 확인, 커밋"], routines: ["루틴과 모니터링", "주기적으로 도는 일"] };
+const PM_PAGE = { info: ["지금 상황", "대화에서 정리된 내용이에요"], rules: ["내 규칙", "최근에 정한 순서예요"], sessions: ["세션 기록", "이 프로젝트의 세션과 백그라운드 작업"], results: ["결과 전체", "보고, 확인, 커밋"], routines: ["루틴과 모니터링", "주기적으로 도는 일"] };
 function pmSheet(kind) {
   const [title, ey] = PM_PAGE[kind] || [kind, ""];
   let entry;
@@ -161,8 +143,8 @@ function pmSheet(kind) {
   entry = { h, paint: () => {
     const p = pmProject();
     if (!p) { clear(h.box).append(el("div", { class: "fs-body pdv-body" }, emptyNode("불러오는 중…"))); return; }
-    const q = { ...p, record: (PM.D && PM.D.record) || p.record }, rows = pmSessionRows(p, PM.D);
-    const body = kind === "info" ? pmInfoBody(PM.D) : kind === "rules" ? cmRulesBody() : kind === "goal" ? pmGoalBody(q) : kind === "sessions" ? pmSessions(PM.D, rows) : kind === "results" ? pmResults(PM.D) : pmRoutines(PM.D);
+    const rows = pmSessionRows(p, PM.D);
+    const body = kind === "info" ? pmInfoBody(PM.D) : kind === "rules" ? cmRulesBody() : kind === "sessions" ? pmSessions(PM.D, rows) : kind === "results" ? pmResults(PM.D) : pmRoutines(PM.D);
     clear(h.box).append(
       el("div", { class: "pdv-hd" },
         el("button", { class: "ib pdv-back", type: "button", "data-k": "back", "aria-label": "뒤로", title: "프로젝트로", onclick: () => h.close() }, icon("back")),
@@ -205,10 +187,9 @@ function pmEditable({ value, shown = value, placeholder = "비어 있어요", la
   return wrap;
 }
 
-// The prototype's project header card: name + state tag + last activity, the purpose under it, then the milestone bar and count.
+// The prototype's project header card: name + state tag + last activity, the purpose under it.
 function pmHead(q) {
   const chat = prjChat(q), can = !!chat && validTarget(chat), st = prjState(q), tone = st.tone === "att" ? "warn" : st.tone, at = prjLastAt(q);
-  const ms = prjMiles(q), done = ms.filter(m => m.done).length, pct = ms.length ? Math.round(done / ms.length * 100) : 0;
   return el("div", { class: "pmv-head" },
     el("div", { class: "pmv-hmain" },
       el("div", { class: "pmv-htop" },
@@ -219,11 +200,7 @@ function pmHead(q) {
     // No work channel, nothing to chat with: the button is left out instead of showing a dead one.
     chat ? el("div", { class: "pmv-hact" }, el("div", { class: "pmv-hrow" },
       can ? el("button", { class: "btn tonal", type: "button", title: "이 프로젝트 전용 채팅을 열어요", onclick: () => openTarget(chat, lastChatView()), text: "프로젝트 채팅" }) : null,
-      pmMenuButton(q))) : null,
-    // The bar runs the card's full width under the title and the buttons, as the prototype's header card.
-    ms.length ? el("div", { class: "pmv-hprog" },
-      el("div", { class: "bar", role: "progressbar", "aria-label": `마일스톤 진행 ${done}/${ms.length}`, "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` })),
-      el("span", { class: "pmv-hprog-t", text: `${done}/${ms.length} 단계 끝났어요` })) : null);
+      pmMenuButton(q))) : null);
 }
 // The project a chat target (ch:<id>) belongs to, from the list the 프로젝트 tab shows (null until it has loaded or once it is gone).
 const pmOfTarget = t => ((PRJ && PRJ.projects) || []).find(x => !x.builtin && prjChat(x) === t) || null;
@@ -286,36 +263,6 @@ async function pmDeleteAsk(q) {
     el("div", { class: "fs-ft row" }, el("button", { class: "btn text", type: "button", onclick: () => h.close() }, "취소"), go1));
 }
 
-// 목표와 진행: the goal, its progress and the milestone list, plus the milestone input. Opens as the "goal" page (pmSheet).
-function pmGoalBody(q) {
-  const ms = prjMiles(q), done = ms.filter(m => m.done).length, rec = q.record || {}, pct = ms.length ? Math.round(done / ms.length * 100) : 0;
-  const note = el("div", { class: "note" });
-  const put = milestones => pmDo(note, () => pmWrite({ milestones }));
-  const once = (btn, p) => { btn.disabled = true; p.then(ok => { if (!ok) btn.disabled = false; }); };
-  const rows = ms.map((m, i) => {
-    const ck = el("button", { class: "pmv-ck", type: "button", role: "checkbox", "aria-checked": String(!!m.done), "aria-label": `${m.text} 완료 표시`, onclick: () => once(ck, put(ms.map((x, j) => j === i ? { ...x, done: !x.done } : x))) }, icon("check"));
-    const del = el("button", { class: "ib", type: "button", "aria-label": `${m.text} 삭제`, title: "삭제", onclick: () => once(del, put(ms.filter((_, j) => j !== i))) }, icon("trash"));
-    return el("div", { class: `pmv-ms${m.done ? " done" : ""}` }, ck,
-      el("div", { class: "pmv-mtx" }, pmEditable({ value: m.text, label: "마일스톤", required: true, save: v => pmWrite({ milestones: ms.map((x, j) => j === i ? { ...x, text: v } : x) }) })), del);
-  });
-  const addBtn = el("button", { class: "btn tonal sm", type: "button", disabled: true, text: "추가" });
-  const addIn = input({ placeholder: "마일스톤 추가", "aria-label": "마일스톤 추가", maxlength: "200", oninput: ev => { PM.draft = ev.target.value; addBtn.disabled = !ev.target.value.trim(); } });
-  const doAdd = async () => {
-    const t = addIn.value.trim(), keep = PM.draft;
-    if (!t) return;
-    addBtn.disabled = true; PM.draft = "";
-    if (!await put([...ms, { text: t, done: false }])) { PM.draft = keep; addBtn.disabled = false; }
-  };
-  addBtn.onclick = doAdd;
-  addIn.addEventListener("keydown", ev => { if (ev.key === "Enter" && !ev.isComposing && ev.keyCode !== 229) { ev.preventDefault(); doAdd(); } });
-  const bare = !rec.goal && !ms.length, node = el("div", { class: "card pmv-goal" },
-    pmEditable({ value: rec.goal || "", label: "목표", placeholder: "아직 목표가 없어요 · 눌러서 적어 주세요", multiline: true, save: v => pmWrite({ goal: v }) }),
-    ms.length ? el("div", { class: "pmv-prog" }, el("span", { class: "pmv-big", text: `${done}/${ms.length}` }), el("div", { class: `bar${done === ms.length ? " done" : ""}`, role: "progressbar", "aria-label": "마일스톤 진행", "aria-valuenow": pct, "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${pct}%` }))) : bare ? null : el("div", { class: "sup", text: "단계를 더하면 진행률이 보여요" }),
-    ms.length ? el("div", { class: "pmv-mlist" }, ...rows) : null,
-    el("div", { class: "pmv-add" }, addIn, addBtn), note);
-  if (PM.draft) { addIn.value = PM.draft; addBtn.disabled = !PM.draft.trim(); }
-  return node;
-}
 // 세션 기록 page: what runs now, then the ended sessions and finished background work, newest first.
 function pmSessions(D, rows) {
   const live = rows.filter(r => r.live), past = rows.filter(r => !r.live), work = (D && D.work) || [];
