@@ -148,7 +148,7 @@
 .dcm.fx { cursor: pointer; }
 .dcm.fx .dcm-row { pointer-events: none; }
 .dcm { display: flex; flex-direction: column; gap: var(--sp-05); max-width: 520px; margin-top: var(--sp-2); }
-.todo { flex: none; margin: 0 0 var(--sp-2); border-radius: 12px; background: var(--card); }
+.todo { --td-lh: 20px; --td-g: 14px; flex: none; margin: 0 0 var(--sp-2); border-radius: 12px; background: var(--card); }
 .todo[hidden] { display: none; }
 .td-bar { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 36px; padding: var(--sp-1) var(--sp-3); border: 0; border-radius: 12px; background: transparent; color: var(--fg); font: inherit; font-size: 13.5px; line-height: 20px; text-align: left; cursor: pointer; }
 .td-bar .td-g { margin-top: 0; }
@@ -158,7 +158,7 @@
 .td-bar[aria-expanded="true"] .td-ch { transform: rotate(180deg); }
 .td-list { max-height: min(40dvh, 320px); padding: 0 var(--sp-3) var(--sp-2); overflow-y: auto; overscroll-behavior: contain; }
 .td-ph { margin: var(--sp-2) 0 var(--sp-05); color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 400; }
-.td-r { display: flex; align-items: flex-start; gap: var(--sp-2); --td-lh: 20px; --td-g: 14px; padding: var(--sp-1) 0; color: var(--fg-2); font-size: 13.5px; line-height: var(--td-lh); }
+.td-r { display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-1) 0; color: var(--fg-2); font-size: 13.5px; line-height: var(--td-lh); }
 .tr-act .td-tx { color: var(--fg); font-weight: 500; }
 .td-tx { min-width: 0; }
 .tr-done .td-tx { color: var(--fg-3); }
