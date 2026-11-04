@@ -302,3 +302,62 @@ test("while the session is paused on a usage limit no wake goes out; its resume 
 	expect(woke).toEqual([]);
 	expect(work.takeStalled()).toEqual([]);
 });
+
+const taskLog = (id: string, events: object[]) => {
+	mkdirSync(join(tasks, "..", "logs"), { recursive: true });
+	writeFileSync(join(tasks, "..", "logs", id + ".jsonl"), events.map(e => JSON.stringify(e)).join("\n") + "\n");
+};
+const said = (text: string) => ({ type: "assistant_message", payload: { text } });
+const ran = (tool: string) => ({ type: "tool_execution", payload: { tool, is_error: false } });
+const done = { type: "transition_applied", payload: { status: "completed" } };
+
+test("a line that only closed the todo list does not replace the report before it, for the work row and result files (st_01a1a465)", () => {
+	const file = join(dir, "속도측정.md");
+	writeFileSync(file, "x");
+	const report = "[done] 커밋 6301f32를 올렸어요. " + "측정 결과 ".repeat(40) + "\n[file] " + file;
+	const closing = "할 일 목록이 갱신되지 않은 채 남아 있어서 전부 완료로 닫았어요.";
+	record("st_1", { status: "completed", terminal_at: iso(T0 + 9000), final_response: closing });
+	taskLog("st_1", [ran("eval"), said(report), ran("todo"), ran("todo"), said(closing), done]);
+	const bg = make(() => T0 + 60_000);
+	expect(bg.list()[0]!.files?.map(f => f.path)).toEqual([file]);
+	expect(bg.reportOf("st_1")).toBe(report);
+});
+
+test("a trailing line after a [fail] report leaves the worker failed", () => {
+	const report = "[fail] 토큰 한도로 멈췄어요. " + "남은 일 ".repeat(60);
+	record("st_1", { status: "completed", terminal_at: iso(T0 + 9000), final_response: "할 일만 닫았어요." });
+	taskLog("st_1", [said(report), ran("todo"), said("할 일만 닫았어요."), done]);
+	expect(make(() => T0 + 60_000).list()[0]!.status).toBe("failed");
+});
+
+test("a short last message stays the report when work ran after the long one, it carries a status mark, or it is itself long", () => {
+	const long = "중간 계획 ".repeat(60);
+	const cases: [string, object[]][] = [
+		["커밋 abc를 올렸어요.", [said(long), ran("eval"), said("커밋 abc를 올렸어요."), done]],
+		["[done] 올렸어요.", [said(long), ran("todo"), said("[done] 올렸어요."), done]],
+		["끝.", [said("짧은 메모"), ran("todo"), said("끝."), done]],
+		[long, [said(long + long), ran("todo"), said(long), done]],
+	];
+	for (const [i, [last, events]] of cases.entries()) {
+		record("st_" + i, { status: "completed", terminal_at: iso(T0 + 9000), final_response: last });
+		taskLog("st_" + i, events);
+	}
+	const bg = make(() => T0 + 60_000);
+	bg.list();
+	for (const i of cases.keys()) expect(bg.reportOf("st_" + i)).toBeUndefined();
+});
+
+test("after a restart a worker keeps the request of its stored link, with no turn to ask", () => {
+	record("st_1");
+	record("st_2", { status: "completed", terminal_at: iso(T0 + 9000) });
+	const links = new Map([["st_1", { target: "web", replyTo: "m1" }], ["st_2", { target: "ch:1", replyTo: "m2" }]]);
+	const bg = createBgWork({ sessionFile: () => session, deferred: () => [{ target: "other", replyTo: "newer", at: T0 }], now: () => T0 + 60_000, linkOf: id => links.get(id) });
+	expect(bg.list().map(w => [w.id, w.target, w.reply_to])).toEqual([["st_1", "web", "m1"], ["st_2", "ch:1", "m2"]]);
+});
+
+test("a worker tied to a request by its turn is recorded as a link, so the tie outlives the process", () => {
+	record("st_1");
+	const seen: unknown[] = [];
+	createBgWork({ sessionFile: () => session, deferred: () => [], now: () => T0 + 60_000, turn: () => ({ target: "web", replyTo: "m1" }), link: (id, to) => seen.push([id, to]) }).list();
+	expect(seen).toEqual([["st_1", { target: "web", replyTo: "m1" }]]);
+});

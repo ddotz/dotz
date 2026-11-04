@@ -115,6 +115,16 @@ function subagentUpdate(p: Record<string, any>): SubagentUpdate | undefined {
 	};
 }
 
+const TASK_ID = /\bst_[0-9a-z]{6,}\b/g;
+// OmO's task result: "Started task <description> (st_x, running)...", or for a batch numbered lines naming each id.
+function spawnedWorkers(text: string): { id: string; description?: string }[] {
+	const single = /^Started task (.+) \((st_[0-9a-z]+),/.exec(text);
+	if (single) return [{ id: single[2]!, description: single[1]! }];
+	return [...new Set(text.match(TASK_ID) ?? [])].map(id => ({ id }));
+}
+// OmO's wake after a worker ended: one "task completion name:<n> id:st_x ..." per worker (a wake can carry several).
+const finishedWorkers = (text: string) => [...text.matchAll(/task completion name:\S+ id:(st_[0-9a-z]+)/g)].map(m => m[1]!);
+
 // Everything one omp frame means to the hub, in the order the hub must apply it. A task worker that moved to a fallback
 // model has no frame of its own: its progress reports the model it resolved to (`resolvedModel`, flagged
 // `resolvedModelIsFallback`), so a change of that field is the worker's fallback. `workers` remembers it per worker id.
@@ -134,6 +144,13 @@ export function eventsFromFrame(f: Frame, workers: Map<string, string>): AgentEv
 	}
 	for (const row of activityFromFrame(f)) out.push({ type: "activity", row });
 	switch (f.type) {
+		case "tool_execution_end": {
+			if (f.toolName !== "task" || f.isError) break;
+			const r = f.result as { content?: Block[] | string } | string | undefined;
+			const workers = spawnedWorkers(typeof r === "string" ? r : joined(r?.content));
+			if (workers.length) out.push({ type: "workers_spawned", workers });
+			break;
+		}
 		case "agent_start":
 			out.push({ type: "turn_start" });
 			break;
@@ -143,6 +160,10 @@ export function eventsFromFrame(f: Frame, workers: Map<string, string>): AgentEv
 		case "message_end": {
 			const m = f.message;
 			if (m?.role === "user") out.push({ type: "user", text: textOf(m) || (typeof m.content === "string" ? m.content.trim() : "") });
+			else if (m?.role === "custom" && (m as { customType?: string }).customType === "omo-senpi:wake") {
+				const ids = finishedWorkers(textOf(m) || (typeof m.content === "string" ? m.content : ""));
+				if (ids.length) out.push({ type: "workers_done", ids });
+			}
 			else if (m?.role === "assistant") {
 				const u = m.usage;
 				if (u) {
