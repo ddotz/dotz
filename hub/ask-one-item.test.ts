@@ -1,6 +1,7 @@
 import { beforeEach, expect, test } from "bun:test";
 import { emit } from "./events.ts";
-import { answerDecision, ignoreNotice, listNotices, needsAnswer, type Notice, resetNoticesForTest, retireStoredAsks } from "./notices.ts";
+import { retireStoredAsks } from "./asks.ts";
+import { answerDecision, ignoreNotice, listNotices, needsAnswer, type Notice, resetNoticesForTest } from "./notices.ts";
 
 // One lane question is one item on every list (owner 2026-11-05: "2개가 사실상 같은 질문지인데 따로 생성되고 있음"): the lists of the 알림 screen, 답변 필요
 // and the push all read the notices, so these count them after the real event path.
