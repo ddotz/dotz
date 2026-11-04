@@ -356,7 +356,7 @@ function cmDraftCard(d) {
   const sending = CM.view.sends.some(s => s.commentId === d.commentId && s.state === "sending");
   const edit = CM.revising === d.code, src = CM.view.source || {};
   // A reply that carries a mail (hub/comments/engine.ts Draft.mail): 고치기 says which part it changes.
-  const part = d.mail ? el("select", { class: "kk-ta", "aria-label": "고칠 곳" }, el("option", { value: "reply", text: "답글" }), el("option", { value: "mail", text: "메일" })) : null;
+  const part = d.mail ? selectButton({ label: "고칠 곳", items: [{ value: "reply", label: "답글" }, { value: "mail", label: "메일" }], value: "reply" }) : null;
   const wrap = el("div", { class: "od-cwrap" });
   const who = ((CM.view.comments || []).find(c => c.id === d.commentId) || {}).author;
   const card = rqCard({ key: `cm:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: CM.app, label: src.label, pc: CM.pc ? CM.pc.name : pqSelf(), at: d.created }, label: "답글 초안", labelCls: "kk-dh",

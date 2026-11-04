@@ -21,7 +21,7 @@
 #models .mt-eff, #models .mt-list > .mt-note, #models .mt-list > .mt-apply, #models .mt-list > .note, #models .mt-list > .mt-fb { border-top: 1px solid var(--line); }
 #models .mt-pick .tf { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--sp-3); }
 #models .mt-pick .tf > .lb { font: 500 var(--fs-row)/var(--lh-row) var(--font); color: var(--fg); }
-#models .mt-pick .sel { flex: none; width: min(60%, 220px); height: var(--ctl-h); min-height: 0; background: var(--layer); font-size: var(--fs-row); }
+#models .mt-pick .sel { --ff-fill: var(--layer); flex: none; width: min(60%, 220px); height: var(--ctl-h); min-height: 0; font-size: var(--fs-row); }
 #models .mt-list > .mt-note { margin: 0; padding: var(--sp-2) var(--row-px); }
 #models .mt-list > .note { margin: 0; padding: var(--sp-2) var(--row-px); }
 #models .mt-apply { margin: 0; padding: var(--sp-2) var(--row-px); }

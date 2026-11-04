@@ -345,10 +345,13 @@ function asControl(f, set) {
     } })));
     return seg;
   }
+  if (f.type === "enum") {
+    const b = selectButton({ label: f.label, items: (f.options || []).map(o => ({ value: String(o), label: (f.labels || {})[o] || String(o) })), value: String(f.value), onPick: set });
+    b.classList.add("as-in"); b.dataset.k = f.key;
+    return b;
+  }
   const num = f.type === "number";
-  const c = f.type === "enum"
-    ? el("select", { class: "fi as-in", "aria-label": f.label, "data-k": f.key, onchange: () => set(c.value) }, ...(f.options || []).map(o => el("option", { value: o, text: (f.labels || {})[o] || o })))
-    : el("input", { class: "fi as-in", type: num ? "number" : "text", ...(num ? { min: f.min, max: f.max, inputmode: "numeric" } : {}), "aria-label": f.label, "data-k": f.key, onchange: () => set(num ? Number(c.value) : c.value.trim()) });
+  const c = el("input", { class: "fi as-in", type: num ? "number" : "text", ...(num ? { min: f.min, max: f.max, inputmode: "numeric" } : {}), "aria-label": f.label, "data-k": f.key, onchange: () => set(num ? Number(c.value) : c.value.trim()) });
   c.value = String(f.value);
   if (!num) return c;
   const step = d => { const v = Math.min(f.max ?? Infinity, Math.max(f.min ?? -Infinity, Number(c.value) + d)); if (v !== Number(c.value)) { c.value = String(v); set(v); } };
