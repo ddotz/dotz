@@ -133,7 +133,7 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			}
 			await run(v, `${row("mail:loc-1")}.querySelector(".mr-more").click()`);
 			await waitFor(v, `document.querySelector(".menu .mi")`);
-			expect(await menuLabels(v)).toEqual(["초안 작성", "답장 안 함", "삭제"]);
+			expect(await menuLabels(v)).toEqual(["초안 작성", "답장 안 함", "삭제", "원문 보기"]);
 			expect(await q<string>(v, `return location.hash`)).not.toContain("c:");   // the tap opened the menu, not the mail
 			expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
 			await shot(v, `mail-menu-${width}.png`);
@@ -142,10 +142,10 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 
 		test("every incoming mail offers the same actions by its state, an outgoing one only 삭제, and the row buttons follow one rule", async () => {
 			await openList(v, false);
-			expect(await menuOf(v, "mail:loc-2")).toEqual(["초안 작성", "답장 필요로 표시", "삭제"]);
+			expect(await menuOf(v, "mail:loc-2")).toEqual(["초안 작성", "답장 필요로 표시", "삭제", "원문 보기"]);
 			// one pencil, 초안 작성, on every incoming row, owed or not; 답장 안 함 is in the ⋯ (owner 2026-11-03: one Gmail-like row)
 			expect(await inlineOf(v, "mail:loc-1")).toEqual(["초안 작성"]);
-			expect(await menuOf(v, "mail:loc-1")).toEqual(["초안 작성", "답장 안 함", "삭제"]);
+			expect(await menuOf(v, "mail:loc-1")).toEqual(["초안 작성", "답장 안 함", "삭제", "원문 보기"]);
 			expect(await inlineOf(v, "mail:loc-2")).toEqual(["초안 작성"]);
 			// 답장 필요로 표시 on a mail with no state makes it 답장 필요, with the same buttons as every owed row
 			await pick(v, "mail:loc-2", "답장 필요로 표시");
@@ -155,7 +155,7 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			// the sent mail, under 보낸 메일: only 삭제, no row buttons
 			await run(v, `document.querySelector('#mon-tl .mr-f[data-filter="sent"]').click()`);
 			await waitFor(v, `${row("mail:loc-3")} && !${row("mail:loc-2")}`);
-			expect(await menuOf(v, "mail:loc-3")).toEqual(["삭제"]);
+			expect(await menuOf(v, "mail:loc-3")).toEqual(["삭제", "원문 보기"]);
 			expect(await inlineOf(v, "mail:loc-3")).toEqual([]);
 			await run(v, `document.querySelector('#mon-tl .mr-f[data-filter="all"]').click()`);
 		});
