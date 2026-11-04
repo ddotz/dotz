@@ -56,6 +56,7 @@ Check: `ps aux | grep hub/main.ts` shows `~/.local/share/dotz/hub/main.ts`, and 
   parallel, failed files retried alone). Both must exit 0. The machines differ in macOS and system SQLite (macOS 26 / SQLite 3.51 vs
   macOS 27 / 3.54), and a change that passes on only one of them breaks updates on the other. A new test must pass in a folder without
   `.git` (a tarball install) and under parallel load.
+- `bun hub/hangul-measure.ts <url|file> [widths] [--scope selector] [--text 150,200] [--json]` measures Korean line breaks on the rendered page (split words, overflow, orphans, and with `--text` clipped or covered buttons). It is a manual check, headless, and not part of the gate; `#tl` and code are exempt from split and orphan (`docs/ui-principles.md` rule 11).
 - Owner machines do not run the suite on update. The update gate (`hub/update-gate.json`, read from the version being installed) is
   `bun test ./hub/update-smoke-run.ts` (5-minute limit, under a second in practice). It starts that version's gateway on a throwaway data dir,
   HOME and port, with no Discord, no agent and no tailscale, and checks `/api/health`, the web page with its scripts and styles, and
