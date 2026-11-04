@@ -23,13 +23,13 @@
   :is(#models, dialog.dlg) :is(.fi, .sel) { min-height: 44px; }
   :is(#models, dialog.dlg) .seg button { height: 40px; }
   dialog.dlg select.fi { height: 44px; }
-  dialog.dlg summary { padding: 14px 0; }
+  dialog.dlg summary { padding: var(--sp-3) 0; }
   dialog.dlg.cl .btn { min-height: 40px; }
   #settings .hs-sw::before { content: ""; position: absolute; inset: -12px -4px; }
   #models .fb-sw { min-width: 48px; height: 40px; }
   #models .fb-acts button { width: 40px; height: 40px; border-radius: 20px; }
   #models .fb-add { height: 40px; }
-  dialog.dlg.cl .dhd .dx { width: 44px; height: 44px; margin: -10px -14px 0 auto; }
+  dialog.dlg.cl .dhd .dx { --dx-grow: var(--sp-2); width: 44px; height: 44px; margin: calc((var(--dx-grow) + var(--sp-05)) * -1) calc((var(--dx-grow) + var(--sp-15)) * -1) 0 auto; }
   dialog.dlg.cl .dact .btn { min-height: 44px; }
   dialog.dlg.cl .chip { height: 40px; min-width: 40px; justify-content: center; }
 }
