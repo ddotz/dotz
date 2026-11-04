@@ -16,5 +16,17 @@ not count against the three scheduled releases of the day. Installations pick a 
 version; nothing reaches them sooner.
 Cut a scheduled release outside the windows with `bun hub/release.ts` (same rule and cap), or add `--dry-run` to see the
 version and summary without writing anything. It never runs tests: the updater side tests what a release contains.
+
+GitHub delays scheduled runs and sometimes drops them (the 12:00 slot of 2026-11-04 never ran; others came up to 6 hours late), so
+the owner's machine starts each slot itself. A dotz watch on that machine, `bun hub/release.ts --dispatch` every minute, starts
+`release.yml` once per slot through `gh workflow run`; the cron stays as the fallback for when the machine is off. It is a watch,
+not gateway code: no restart, no model, and it exists only in the owner's `~/.dotz/watches.json`. The command also refuses any GitHub
+login except `ddotz`, so a copied watch does nothing. Add it from the install folder, which follows the tags:
+`dotz_watch` name `release-slot`, every 1 minute, on `fail`, command
+`PATH=/opt/homebrew/bin:$PATH bun ~/.local/share/dotz/hub/release.ts --dispatch`.
+One slot publishes once: `--auto` stops when the newest scheduled tag's commit is at or after the slot start (00:00, 12:00 or
+18:00 KST), so a cron run that lands hours late does nothing, and the workflow's `release` concurrency group runs both triggers one
+at a time. A hand-cut scheduled release takes its slot the same way; a forced `.M` does not.
+
 See the current version with `cat VERSION`, and what shipped with `git tag --list 'v*' | tail -3` or
 `git ls-remote --tags origin`; `git describe --tags --abbrev=0` names the last release marker.
