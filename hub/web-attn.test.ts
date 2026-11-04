@@ -54,11 +54,11 @@ describe("채팅 nav badge", () => {
 		expect(api.chatUnreadCount(["web", "ch:1", "ch:2"], (t: string) => unread[t] ?? 0)).toBe(0);
 	});
 
-	test("an unread 알림 conversation counts once, like any listed conversation", () => {
+	test("the 알림 conversation is no chat: its unread never joins the badge (the bell counts it)", () => {
 		const b = { hidden: true, textContent: "", title: "", dataset: {}, parentElement: { setAttribute: () => {} } };
 		const { api } = page({ phone: true, badge: b, alertUnread: 3 });
 		api.paintAttn();
-		expect(b).toMatchObject({ hidden: false, textContent: "1", title: "읽지 않은 대화 1개" });
+		expect(b.hidden).toBe(true);
 	});
 
 	test("the hub's unread notice count (no bell any more) never joins the badge", () => {

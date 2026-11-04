@@ -12,7 +12,7 @@ const between = (src: string, from: string, to: string) => {
 const array = (src: string, name: string) => new Function(`${between(src, `const ${name} =`, ";\n")}; return ${name};`)() as unknown[];
 
 const NAV = array(state, "NAV") as [string, string][], views = array(state, "views") as string[];
-const routeAlias = new Function(`${between(palette, "const routeAlias =", ";\n")}; return routeAlias;`)() as (name: string, tgt?: string) => [string, string | undefined];
+const routeAlias = new Function(`const NSC = { pass: 0 };\n${between(palette, "const alertAddr =", ";\n")};\n${between(palette, "const routeAlias =", ";\n")}; return routeAlias;`)() as (name: string, tgt?: string) => [string, string | undefined];
 
 type Mon = { sel: string; list: boolean };
 function monitoringRoute(narrow: boolean) {
@@ -22,7 +22,7 @@ function monitoringRoute(narrow: boolean) {
 }
 
 function chain(name: string, hash: string, narrow: boolean, mon: Mon) {
-	const env = { narrowChat: () => narrow, chatList: false, target: "main", SUB: new Set(), backTarget: () => null, MON: mon, monCtx: "", enc: encodeURIComponent };
+	const env = { narrowChat: () => narrow, chatList: false, target: "main", SUB: new Set(), NSC: { ret: false }, backTarget: () => null, MON: mon, monCtx: "", enc: encodeURIComponent };
 	const src = `${between(history, "function routeChain", "function navSync")}\nreturn routeChain;`;
 	return (new Function(...Object.keys(env), src)(...Object.values(env)) as (n: string, h: string) => string[])(name, hash);
 }
@@ -41,6 +41,7 @@ describe("top-level tabs", () => {
 		expect(routeAlias("lanes", "x")).toEqual(["chat", "list"]);
 		expect(routeAlias("monitoring", "i:mail")).toEqual(["monitoring", "i:mail"]);
 		expect(routeAlias("chat", "lane:a")).toEqual(["chat", "lane:a"]);
+		expect(routeAlias("chat", "alert")).toEqual(["notices", undefined]);
 	});
 });
 
