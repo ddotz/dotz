@@ -68,7 +68,7 @@ const SIZE_ALLOWED: Record<string, [number, number]> = {
 const SPACE_ALLOWED: Record<string, [number, number]> = {
 	"01-tokens.css": [11, 0], "02-cards-lists-tags.css": [6, 0], "03-base.css": [41, 0], "04-files.css": [37, 0],
 	"05-log.css": [42, 0], "06-harness.css": [22, 0], "07-chat.css": [21, 0], "07-messengers.css": [0, 0],
-	"08-project-sessions.css": [3, 0], "09-notices-screen.css": [3, 0], "09-notices.css": [6, 0], "10-conversations.css": [12, 0],
+	"08-project-sessions.css": [3, 0], "09-notices-screen.css": [0, 0], "09-notices.css": [6, 0], "10-conversations.css": [12, 0],
 	"11-peers.css": [6, 0], "13-code-shell.css": [5, 0], "14-overlay.css": [0, 0], "15-draft-original.css": [6, 0],
 	"15-reply-card.css": [11, 0], "15-reply.css": [2, 0], "15-settings-pages.css": [3, 0], "15-settings-phone.css": [3, 0],
 	"15-triage.css": [14, 0], "16-result-card.css": [37, 0], "17-kakao.css": [32, 0], "18-app-settings.css": [5, 0],
