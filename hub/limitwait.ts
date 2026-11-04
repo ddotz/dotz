@@ -56,11 +56,11 @@ export function clearLimitWait(file: string, lane: string): boolean {
 	return changed;
 }
 
-export function limitWaits(file: string): { id: string; what: string; lane?: string; next?: string; resume_at?: string }[] {
+export function limitWaits(file: string): { id: string; what: string; lane?: string; next?: string; resume_at?: string; since?: string }[] {
 	try {
 		return tasksOf(readState(file)).filter(isLimitWait).map(t => ({
 			id: String(t.id ?? t.lane ?? ""), what: stripLegacy(String(t.what ?? t.id ?? "")),
-			...(typeof t.lane === "string" ? { lane: t.lane } : {}), ...(typeof t.next === "string" ? { next: t.next } : {}), ...(typeof t.resume_at === "string" ? { resume_at: t.resume_at } : {}),
+			...(typeof t.lane === "string" ? { lane: t.lane } : {}), ...(typeof t.next === "string" ? { next: t.next } : {}), ...(typeof t.resume_at === "string" ? { resume_at: t.resume_at } : {}), ...(typeof t.since === "string" ? { since: t.since } : {}),
 		}));
 	} catch {
 		return [];

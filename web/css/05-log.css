@@ -157,6 +157,7 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .hr.st:hover { background: transparent; }
 .hr:hover { background: var(--card-hover); }
 .hr .dot { width: var(--hr-dot); height: var(--hr-dot); }
+.hr .hq { flex: none; min-width: var(--sp-3); text-align: center; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); font-weight: 500; font-variant-numeric: tabular-nums; }
 .hr .hb { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-05); }
 .hr .hn1 { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font: 500 var(--fs-row)/var(--lh-row) var(--font); }
 .hr .hn1 .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -361,3 +361,14 @@ test("a worker tied to a request by its turn is recorded as a link, so the tie o
 	createBgWork({ sessionFile: () => session, deferred: () => [], now: () => T0 + 60_000, turn: () => ({ target: "web", replyTo: "m1" }), link: (id, to) => seen.push([id, to]) }).list();
 	expect(seen).toEqual([["st_1", { target: "web", replyTo: "m1" }]]);
 });
+
+test("a worker OmO holds is queued, never stalled however long it waits, and stops being queued when it runs", () => {
+	record("st_q", { status: "queued", started_at: undefined, updated_at: iso(T0) });
+	const t = T0 + 60 * 60_000;
+	const work = make(() => t);
+	expect(work.list()).toMatchObject([{ id: "st_q", status: "running", queued: true }]);
+	expect(work.queuedWork(session).map(w => w.id)).toEqual(["st_q"]);
+	record("st_q", { status: "running", pid: 1, updated_at: iso(t) });
+	expect(work.queuedWork(session)).toEqual([]);
+	expect(work.list()[0]!.queued).toBeUndefined();
+});

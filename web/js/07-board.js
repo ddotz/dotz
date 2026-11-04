@@ -141,10 +141,10 @@ function makeBoard(container, key, opts = {}) {
     persist();
     container.classList.add("bnt"); paint(); void container.offsetHeight; container.classList.remove("bnt");
   }
-  // The home grid's reading order: the owner's order first, then the order 홈 builds (a new card appends after them).
+  // The home grid's reading order: a pinned card, then the owner's order, then the order 홈 builds (a new card appends after them).
   function rowOrder() {
     const idx = new Map((userOrder || []).map((id, i) => [id, i])), curIdx = new Map(cur.map((it, i) => [it.id, i]));
-    const at = id => idx.has(id) ? idx.get(id) : 1e6 + (curIdx.get(id) ?? 1e6);
+    const at = id => meta(id)?.pin ? -1 : idx.has(id) ? idx.get(id) : 1e6 + (curIdx.get(id) ?? 1e6);
     return [...lay].sort((a, b) => at(a.id) - at(b.id));
   }
   // Rows mode (홈): the cards keep the prototype's two per row, the row as tall as its taller card and both cards filling it.
