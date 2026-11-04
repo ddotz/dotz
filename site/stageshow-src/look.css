@@ -18,33 +18,27 @@
   --ss-accent-2: var(--accent);
   --ss-accent-soft: var(--accent-soft);
   --ss-accent-text: var(--accent-ink);
-  --ss-success: var(--accent);
-  --ss-success-soft: var(--accent-soft);
-  --ss-success-text: var(--accent-ink);
+  --ss-success: var(--ok);
+  --ss-success-soft: color-mix(in srgb, var(--ok) 14%, transparent);
+  --ss-success-text: var(--ok);
   --ss-font: var(--font-sans);
   --ss-mono: var(--font-mono);
   --ss-radius-sm: 6px;
   --ss-radius-md: var(--radius-sm);
   --ss-radius-lg: var(--radius-md);
   --ss-radius-window: var(--radius-lg);
-  --ss-shadow-hero: 0 0 0 1px var(--line), 0 20px 48px rgba(20, 25, 20, 0.1), 0 2px 6px rgba(20, 25, 20, 0.06);
-  --ss-shadow-satellite: 0 0 0 1px var(--line), 0 14px 32px -8px rgba(20, 25, 20, 0.18), 0 4px 10px -4px rgba(20, 25, 20, 0.08);
-  --ss-shadow-ground: 0 0 0 1px var(--line), 0 18px 36px -20px rgba(20, 25, 20, 0.2);
+  --ss-shadow-hero: 0 0 0 1px var(--line), var(--float);
+  --ss-shadow-satellite: 0 0 0 1px var(--line), var(--float);
+  --ss-shadow-ground: none;
   color: var(--ink);
   word-break: keep-all;
   overflow-wrap: break-word;
 }
 
-.dz .ss-stage[data-theme="dark"] {
-  --ss-shadow-hero: 0 0 0 1px var(--line), 0 20px 48px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
-  --ss-shadow-satellite: 0 0 0 1px var(--line-strong), 0 14px 32px -8px rgba(0, 0, 0, 0.7);
-  --ss-shadow-ground: 0 0 0 1px var(--line), 0 18px 36px -20px rgba(0, 0, 0, 0.7);
-}
-
 /* A phrase that never breaks inside (Netflix-subtitle line breaks) */
 .dz .ph { display: inline-block; }
 
-/* The app's own buttons: 보내기 dark, 고치기 tonal, 보내지 않기 text */
+/* The app's own buttons: 보내기 accent, 고치기 tonal, 보내지 않기 text */
 .dz-btn {
   display: inline-grid;
   grid-template-areas: 'stack';
@@ -57,7 +51,7 @@
   white-space: nowrap;
   color: var(--ink);
   background: var(--surface-2);
-  transition: background-color 0.25s ease, color 0.25s ease, opacity 0.3s ease, transform 0.12s ease;
+  transition: background-color var(--m-base) var(--m-ease), color var(--m-base) var(--m-ease), opacity var(--m-slow) var(--m-ease), transform 0.12s ease;
 }
 .dz-btn[data-pressed] { transform: scale(0.97); }
 .dz-btn--send { background: var(--btn-bg); color: var(--btn-ink); min-width: 68px; }
@@ -70,7 +64,7 @@
   gap: 6px;
   opacity: 0;
   filter: blur(2px);
-  transition: opacity 0.22s ease, filter 0.22s ease;
+  transition: opacity var(--m-base) var(--m-ease), filter var(--m-base) var(--m-ease);
 }
 .dz-layer[data-on] { opacity: 1; filter: none; transition-delay: 0.06s; }
 .dz-btn--send .ss-check__ring { stroke: color-mix(in srgb, var(--btn-ink) 40%, transparent); }
@@ -79,7 +73,7 @@
 /* The draft card's actions and its sent line share one cell, so nothing
    below moves when it turns to 보냈어요 */
 .dz-acts-cell { display: grid; grid-template-areas: 'stack'; }
-.dz-acts-cell > * { grid-area: stack; transition: opacity 0.3s ease, filter 0.3s ease; }
+.dz-acts-cell > * { grid-area: stack; transition: opacity var(--m-slow) var(--m-ease), filter var(--m-slow) var(--m-ease); }
 .dz-acts-cell > [data-off] { opacity: 0; filter: blur(2px); pointer-events: none; }
 .dz-acts { display: flex; align-items: center; gap: 8px; }
 .dz-sent {
@@ -87,22 +81,21 @@
   align-items: center;
   gap: 8px;
   height: 32px;
-  color: var(--accent-ink);
+  color: var(--ok);
   font-size: 13px;
   font-weight: 600;
 }
 .dz-sent .dz-sent__time { color: var(--muted); font-weight: 400; }
-.dz-sent .ss-check__fill { fill: var(--accent); }
+.dz-sent .ss-check__fill { fill: var(--ok); }
 .dz-sent .ss-check__tick { stroke: var(--surface); }
 
-/* The draft card, as the web app draws it (web/js/10-reply-card.js) */
+/* The reply draft card, as the web app draws it (web/js/10-reply-card.js): a layer on the white card, the draft text on white */
 .dz-draft {
   display: grid;
   gap: 10px;
   padding: 14px 16px;
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  box-shadow: 0 0 0 1px var(--line);
+  border-radius: 14px;
+  background: var(--surface-2);
 }
 .dz-draft__hd {
   display: flex;
@@ -116,10 +109,32 @@
 .dz-draft__body {
   padding: 10px 12px;
   border-radius: var(--radius-sm);
-  background: var(--bg);
+  background: var(--surface);
   color: var(--body);
   font-size: 13px;
   line-height: 1.55;
 }
 .dz-draft__to { display: flex; gap: 10px; font-size: 12.5px; color: var(--muted); }
 .dz-draft__to b { color: var(--ink); font-weight: 500; }
+.dz-draft .dz-btn:not(.dz-btn--send):not(.dz-btn--text) { background: var(--surface); }
+
+/* Small status tags (the product's .tag): a tint of the status colour; two can share one cell and swap in place */
+.dz-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--body);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.dz-tag--pri { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-ink); }
+.dz-tag--ok { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.dz-tag--warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); }
+.dz-swap { display: inline-grid; grid-template-areas: 'stack'; }
+.dz-swap > * { grid-area: stack; justify-self: end; transition: opacity var(--m-base) var(--m-ease), transform var(--m-base) var(--m-ease); }
+.dz-swap > [data-off] { opacity: 0; transform: scale(0.985); }

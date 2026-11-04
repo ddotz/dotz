@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 import { Stage } from './kit/stage'
-import { Bar } from './kit/window'
 import { Collapse } from './kit/motion/Collapse'
 import { Icon } from './kit/parts/Icon'
 import { Check } from './kit/parts/Check'
@@ -16,12 +15,13 @@ import './cards.css'
 // its result file. Only the comment card has a cursor; the others are the
 // system acting on its own.
 
-function CardStage<S extends object>({ name, initial, poster, script, cursor, children }: {
+function CardStage<S extends object>({ name, initial, poster, script, cursor, bare, children }: {
   name: string
   initial: S
   poster: S
   script: (a: Act<S>) => Promise<void>
   cursor?: boolean
+  bare?: boolean
   children: (s: S) => ReactNode
 }) {
   const dark = useDark()
@@ -39,7 +39,7 @@ function CardStage<S extends object>({ name, initial, poster, script, cursor, ch
       fill
       cursor={cursor ? { at: { wide: { x: 470, y: 250 }, compact: { x: 320, y: 250 } }, idle: false } : undefined}
     >
-      {(s) => <div className="cz-panel">{children(s)}</div>}
+      {(s) => <div className={`cz-panel${bare ? ' cz-panel--bare' : ''}`}>{children(s)}</div>}
     </Stage>
   )
 }
@@ -147,10 +147,13 @@ export function CommentScene() {
 
 type Watch = { alert: boolean }
 
+const NT_TABS: [string, string | null][] = [['전체', '3'], ['답변 필요', null], ['새 소식', '1'], ['경고', null]]
+
 export function WatchScene() {
   return (
     <CardStage<Watch>
       name="watch"
+      bare
       initial={{ alert: false }}
       poster={{ alert: true }}
       script={async (a) => {
@@ -160,30 +163,38 @@ export function WatchScene() {
     >
       {(s) => (
         <>
-          <div className="cz-title"><Icon name="bell" size={15} />알림</div>
-          <div className="cz-alerts">
+          <div className="cz-title">알림<span className="cz-meta">안 읽은 알림 1개</span></div>
+          <div className="cz-tabs">
+            {NT_TABS.map(([name, n]) => (
+              <span key={name} className="cz-tabs__t" data-on={name === '전체' || undefined}>{name}{n && <b>{n}</b>}</span>
+            ))}
+          </div>
+          <div className="cz-nts">
             <Collapse open={s.alert} reveal="drop">
-              <div className="cz-alert" data-new>
-                <span className="cz-alert__ic"><Icon name="bell" size={14} /></span>
-                <span className="cz-alert__b">
+              <div className="cz-nt" data-unread>
+                <span className="cz-nt__dot" />
+                <span className="cz-nt__b">
                   <b>가격이 바뀌었어요</b>
                   <span className="cz-price">캠핑 의자 <s>89,000원</s> → <em>72,000원</em></span>
                 </span>
-                <span className="cz-alert__time">방금</span>
+                <span className="cz-nt__time">방금</span>
               </div>
             </Collapse>
-            <div className="cz-alert">
-              <span className="cz-alert__ic"><Icon name="lock" size={14} /></span>
-              <span className="cz-alert__b">
+            <div className="cz-nt">
+              <span className="cz-nt__dot" />
+              <span className="cz-nt__b">
                 <b>로그인 유지</b>
                 <span>사이트 세 곳 · 바뀐 것 없음</span>
               </span>
-              <span className="cz-alert__time">오전 8:00</span>
+              <span className="cz-nt__time">오전 8:00</span>
             </div>
-            <div className="cz-alert">
-              <span className="cz-alert__ic"><Icon name="globe" size={14} /></span>
-              <span className="cz-alert__b"><Bar w={120} h={7} tone={3} /><Bar w={170} h={6} tone={2} /></span>
-              <span className="cz-alert__time">어제</span>
+            <div className="cz-nt">
+              <span className="cz-nt__dot" />
+              <span className="cz-nt__b">
+                <b>아침 점검을 보냈어요</b>
+                <span>일정 3개 · 새 메일 2통</span>
+              </span>
+              <span className="cz-nt__time">어제</span>
             </div>
           </div>
         </>
@@ -211,11 +222,11 @@ export function TaskScene() {
     >
       {(s) => (
         <>
-          <div className="cz-title"><Icon name="file" size={15} />블로그 글</div>
+          <div className="cz-title"><Icon name="file" size={15} />블로그 글<span className="dz-tag">프로젝트 채널</span></div>
           <div className="cz-task">
             <div className="cz-task__row">
               <span className="cz-task__name">
-                <span className="cz-meta">백그라운드 작업</span>
+                <span className="cz-meta">진행 중인 작업</span>
                 <P className="cz-task__t">{['캠핑장 세 곳', '비교해서 정리하기']}</P>
               </span>
               <span className="cz-badge" data-done={s.done || undefined}>
