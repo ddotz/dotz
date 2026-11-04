@@ -20,6 +20,7 @@
 // <data dir>/secrets/github-token (0600, saved by install.sh), `gh api` when gh is signed in, then none (public repos).
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { installGitHooks } from "./git-hooks.ts";
 import { issueBlock } from "./choices.ts";
 import { CONFIG_FILE, cfg, DATA_DIR, HUB_TOKEN, log, PORT, writeAtomic } from "./config.ts";
 import { FORMAT, type Keep, keepLine, openTrial, parseCommits, type Saved, saveLocal, savedNote, splitEquivalent, writeSavedSummary } from "./selfupdate-local.ts";
@@ -980,6 +981,7 @@ const readPending = (file: string): Pending | undefined => {
 };
 export function updateBoot(hooks: { alert: (text: string) => void }, o: { dir?: string; dataDir?: string; settleMs?: number; health?: () => Promise<boolean> } = {}): void {
 	const dir = o.dir ?? REPO_DIR;
+	installGitHooks(dir);
 	const data = o.dataDir ?? DATA_DIR;
 	const file = join(data, PENDING_FILE);
 	const logDir = join(data, "logs");

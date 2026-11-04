@@ -1,6 +1,7 @@
 // Versioned delivery (docs/releases.md): tag v<YYMMDD.N> scheduled or v<YYMMDD.N.M> forced on main plus VERSION, KST day.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { writeAtomic } from "../firstrun/atomic.ts"; // not hub/config.ts: it needs a data dir at load, and CI has none
 
 export type Release = { readonly date: string; readonly n: number; readonly hotfix: number | null; readonly text: string };
 
@@ -340,7 +341,7 @@ export async function dispatchSlot(opts: DispatchOptions): Promise<number> {
 		print(`release.yml을 시작하지 못했어요: ${started.out}`);
 		return 1;
 	}
-	writeFileSync(stateFile, `${slot}\n`);
+	writeAtomic(stateFile, `${slot}\n`);
 	print(`release.yml을 시작했어요 (${slot}).`);
 	return 0;
 }
