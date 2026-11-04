@@ -1,3 +1,4 @@
+import { stripSteerMark } from "./steer-mark.ts";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -369,4 +370,4 @@ if (!existsSync(paths.hubToken)) {
 }
 export const HUB_TOKEN = readFileSync(paths.hubToken, "utf8").trim();
 export const now = () => new Date().toISOString();
-export const log = (msg: string) => appendFileSync(paths.log, `${now()} ${msg}\n`);
+export const log = (msg: string) => appendFileSync(paths.log, `${now()} ${stripSteerMark(msg)}\n`);

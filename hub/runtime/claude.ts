@@ -23,6 +23,7 @@ import { summary } from "../activity.ts";
 import { DATA_DIR, log, parseSelector } from "../config.ts";
 import { isNote } from "../i18n.ts";
 import { classifyProviderError } from "../providers.ts";
+import { stripSteerMark } from "../steer-mark.ts";
 import { type Probes, makeProbes } from "./claude-probes.ts";
 import { detectBinary } from "./detect.ts";
 import type { ActivityRow, AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts, SubagentUpdate } from "./types.ts";
@@ -315,7 +316,7 @@ class ClaudeProcess implements AgentProcess {
 					buffer = buffer.slice(nl + 1);
 					let f: unknown;
 					try {
-						f = JSON.parse(line);
+						f = JSON.parse(stripSteerMark(line));
 					} catch {
 						continue;
 					}
@@ -434,7 +435,7 @@ export function recentExchanges(ref: string): string | undefined {
 			const m = entry.message;
 			if (!m || entry.isSidechain || entry.isMeta || entry.isCompactSummary) continue;
 			if (m.role === "assistant" && m.stop_reason !== "end_turn" && m.stop_reason !== "max_tokens") continue;
-			const t = textOfBlocks(m.content).trim();
+			const t = stripSteerMark(textOfBlocks(m.content)).trim();
 			if (!t || INTERNAL_USER.test(t) || t.startsWith("This session is being continued") || t.startsWith("[keepalive]") || t === "ok" || isNote(t, "youAre") || t.includes("\n[dotz lane ")) continue;
 			turns.push(`${m.role === "user" ? "IN" : "YOU"}: ${t.length > 700 ? `${t.slice(0, 700)}...` : t}`);
 		}
@@ -469,6 +470,7 @@ function args(o: SpawnOpts, settings: string, autocompact: number | undefined): 
 		...(effort ? ["--effort", effort] : []),
 		...(fallback.length ? ["--fallback-model", fallback.join(",")] : []),
 		...(autocompact ? ["--autocompact", String(autocompact)] : []),
+		...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []),
 		// Only a Claude session id resumes; a reference from another runtime (an omp session file) starts fresh.
 		...(o.resume && SESSION_ID.test(o.resume) ? ["--resume", o.resume] : []),
 	];

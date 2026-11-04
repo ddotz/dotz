@@ -32,7 +32,7 @@ export function report(lane: Lane, written: string, notice = false): void {
 	lane.reportedThisTurn = text;
 	if (!notice && repeatsOpenAsk(lane, text)) return log(`lane ${lane.name} report dropped (restates the question still open)`);
 	// The turn's final text answers every owner message still open (a gateway notice does not).
-	const answering = !notice && ownerNotes.reported(lane.name);
+	const answering = !notice && ownerNotes.reported(lane.name, text);
 	lane.reports++;
 	lane.lastReportAt = now();
 	const tone = parseTone(text).tone;

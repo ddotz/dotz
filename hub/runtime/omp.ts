@@ -9,6 +9,7 @@ import { DATA_DIR, OMP, parseSelector, splitThinking } from "../config.ts";
 import { isNote } from "../i18n.ts";
 import { keyedWorker } from "../fallback.ts";
 import { classifyProviderError } from "../providers.ts";
+import { stripSteerMark } from "../steer-mark.ts";
 import { isSilent } from "../tone.ts";
 import { detectBinary } from "./detect.ts";
 import type { ActivityRow, AgentEvent, AgentProcess, RuntimeAdapter, SendMode, SpawnOpts, SubagentUpdate } from "./types.ts";
@@ -245,7 +246,7 @@ export class OmpProcess implements AgentProcess {
 				buffer = buffer.slice(nl + 1);
 				let f: unknown;
 				try {
-					f = JSON.parse(line);
+					f = JSON.parse(stripSteerMark(line));
 				} catch {
 					continue;
 				}
@@ -344,7 +345,7 @@ export function recentExchanges(sessionFile: string): string | undefined {
 			const m = parsed.message;
 			if (!m) continue;
 			if (m.role === "assistant" && m.stopReason !== "stop" && m.stopReason !== "length") continue;
-			const t = (Array.isArray(m.content) ? m.content.filter(b => b?.type === "text").map(b => b.text).join("") : (m.content ?? "")).trim();
+			const t = stripSteerMark(Array.isArray(m.content) ? m.content.filter(b => b?.type === "text").map(b => b.text).join("") : (m.content ?? "")).trim();
 			if (!t || t.startsWith("[keepalive]") || t === "ok" || (m.role === "assistant" && (t === "[later]" || isSilent(t))) || isNote(t, "youAre") || t.includes("\n[dotz lane ")) continue;
 			turns.push(`${m.role === "user" ? "IN" : "YOU"}: ${t.length > 700 ? `${t.slice(0, 700)}...` : t}`);
 		}
@@ -366,7 +367,7 @@ export const omp: RuntimeAdapter = {
 		// starts on the entry's own model and is switched to the key provider's copy before the first prompt (RPC commands run in order).
 		const key = o.env.DOTZ_KEY_PROVIDER && o.env.DOTZ_KEY_VALUE ? (JSON.parse(o.env.DOTZ_KEY_PROVIDER) as { id: string; baseModel: string; models: Array<{ id: string }> }) : undefined;
 		const startModel = key ? `${key.baseModel}:${parseSelector(o.model).thinking}` : o.model;
-		const proc = Bun.spawn([OMP, "--mode", "rpc", "--model", startModel, ...mode, ...(o.resume ? ["--resume", o.resume] : [])], {
+		const proc = Bun.spawn([OMP, "--mode", "rpc", "--model", startModel, ...mode, ...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []), ...(o.resume ? ["--resume", o.resume] : [])], {
 			cwd: o.cwd,
 			stdin: "pipe",
 			stdout: "pipe",

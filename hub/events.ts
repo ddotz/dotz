@@ -2,6 +2,7 @@ import { appendFileSync, closeSync, existsSync, openSync, readFileSync, readSync
 import { DATA_DIR, paths } from "./config.ts";
 import { fileLinePaths, snapshotSent } from "./files.ts";
 import { liveEmitRefusal } from "./live-guard.ts";
+import { stripSteerMark } from "./steer-mark.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
 
 export type HubEvent = { ts: string; kind: string; source: string; text: string; [key: string]: unknown };
@@ -30,6 +31,7 @@ export const onEmit = (fn: (event: HubEvent) => void) => void emitListeners.add(
 const emitRefused = liveEmitRefusal(DATA_DIR);
 export function emit(box: "inbox" | "outbox", event: HubEvent): void {
 	if (emitRefused) throw new Error(emitRefused);
+	if (typeof event.text === "string") event.text = stripSteerMark(event.text);
 	appendFileSync(box === "inbox" ? paths.inbox : paths.outbox, `${JSON.stringify(event)}\n`);
 	if (typeof event.text === "string" && event.text.includes("[file]")) snapshotSent(event.text);
 	recent.push(event);

@@ -293,7 +293,7 @@ export function orchestratorWorkerModel(o: SpawnOpts): string {
 export function omoArgs(o: SpawnOpts): string[] {
 	const key = keyProviderOf(o);
 	const model = key ? `${key.baseModel}:${parseSelector(o.model).thinking}` : o.model;
-	return [OMO, "--mode", "rpc", "--model", omoSelector(model), "--extension", EXTENSION, "--no-model-fallback", MEMORY_OFF, NO_ASK, "--exclude-tools", excludedTools(o.role), ...(o.resume ? ["--session", o.resume] : [])];
+	return [OMO, "--mode", "rpc", "--model", omoSelector(model), "--extension", EXTENSION, "--no-model-fallback", MEMORY_OFF, NO_ASK, "--exclude-tools", excludedTools(o.role), ...(o.systemNote ? ["--append-system-prompt", o.systemNote] : []), ...(o.resume ? ["--session", o.resume] : [])];
 }
 
 export const omo: RuntimeAdapter = {

@@ -1,7 +1,8 @@
 import { type Lane, setStatus, dir, laneWorkerModel, ownerNotes, hooks, pendingFile } from "./lanestate.ts";
 import { HARNESS_NAMES, runtimeFor } from "./runtime/index.ts";
 import { msg } from "./i18n.ts";
-import { log, chainAfter, compactAtFor, fallbackChain, parseSelector, lanesCompactAt, lanesKeepRecent } from "./config.ts";
+import { HUB_TOKEN, log, chainAfter, compactAtFor, fallbackChain, parseSelector, lanesCompactAt, lanesKeepRecent } from "./config.ts";
+import { markSteers, steerContract, steerToken } from "./steer-mark.ts";
 import { hubChain, Chain, keyedWorker, Reverter, workerKeyEnv } from "./fallback.ts";
 import { pauseExhausted } from "./lanefailover.ts";
 import { statusActivity, endSubagents } from "./activity.ts";
@@ -94,8 +95,10 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 	try {
 	// posix_spawn with a missing cwd reports ENOENT for the binary (`omo`), which hides the real cause.
 	if (!existsSync(lane.cwd)) throw new Error(`working directory does not exist: ${lane.cwd}`);
-	proc = runtimeFor("lane").start({
+	const steer = steerToken(HUB_TOKEN, `lane:${lane.name}`);
+	proc = markSteers(runtimeFor("lane").start({
 		role: "lane",
+		systemNote: steerContract(steer),
 		cwd: lane.cwd,
 		model: spawnModel,
 		// A plain list cannot bill through a key: those entries are left out (on Claude Code one would repeat the main model).
@@ -106,7 +109,7 @@ export function spawn(lane: Lane, resume: boolean): boolean {
 		env,
 		// Rewritten at every spawn so changed lanes.* settings apply the next time the lane starts or resumes.
 		lane: { name: lane.name, dir: dir(lane.name), workerModel, workerFallback: keyedWorkers ? [] : chainAfter(laneWorkerModel(lane), fallbackChain("workers")).filter(e => !e.key_file).map(e => e.model), compactAt: compactAtFor(spawnModel, lanesCompactAt()), keepRecent: lanesKeepRecent(), workerSlots: lane.workerSlots },
-	});
+	}), steer);
 	} catch (e) {
 		startFailed(lane, (e as Error).message, resume);
 		return false;

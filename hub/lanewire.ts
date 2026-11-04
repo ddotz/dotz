@@ -66,6 +66,7 @@ export function installLaneHandlers(): void {
 				.catch(e => log(`lane answer note failed: ${e}`));
 		},
 		answered: (lane, refs) => refs.forEach(ref => emitDelivery(`lane:${lane}`, ref, "answered")),
+		refused: (lane, refs) => refs.forEach(ref => emitDelivery(`lane:${lane}`, ref, "failed", "세션이 이 메시지를 따르지 않았어요. 다시 보내 주세요")),
 		lost: (lane, refs) => refs.forEach(ref => emitDelivery(`lane:${lane}`, ref, "failed", "세션이 끝났어요")),
 	});
 
