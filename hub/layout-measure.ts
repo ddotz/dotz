@@ -5,7 +5,8 @@
 //   bun hub/layout-measure.ts [--screens a,b] [--widths 390,1280] [--json] [--out file] [--write-baseline]
 // Data: the real page from hub/webapp.ts (current web/ CSS and JS) in a local Bun.serve, with site/demo/fixtures.js and
 // site/demo/demo-api.js injected the way site/build-demo.ts wires them into site/demo/index.html, so every /api call and the event
-// stream are answered by the demo. Nothing is built into site/demo, nothing is written anywhere but --out and the baseline.
+// stream are answered by the demo. The public demo leaves the kakao app out, so hub/layout-measure-kakao-fixture.js (not deployed) adds it
+// after them for the kakao screen. Nothing is built into site/demo, nothing is written anywhere but --out and the baseline.
 // Output per check: the histogram of every measured value and the worst 15 with selector path and element name.
 // Baseline: hub/layout-baseline.json holds the accepted item keys (check|screen|width|el); a run fails on a bad item whose key is not in
 // it and on a key in it that no longer shows up (the list only shrinks). --write-baseline rewrites it from the run.
@@ -466,10 +467,11 @@ export function startDemoServer(opts: { now?: number } = {}) {
 			if (p === "/") {
 				const html = await (await indexPage(new Request(req.url))).text();
 				const clock = opts.now ? `<script>(() => { const N = ${opts.now}, D = Date; window.Date = class extends D { constructor(...a) { super(...(a.length ? a : [N])); } static now() { return N; } }; })()</script>` : "";
-				const inject = `${clock}<script src="/__demo/fixtures.js"></script><script src="/__demo/demo-api.js"></script>`;
+				const inject = `${clock}<script src="/__demo/fixtures.js"></script><script src="/__demo/demo-api.js"></script><script src="/__test/kakao-fixture.js"></script>`;
 				return new Response(html.replace(/<head[^>]*>/i, m => `${m}${inject}`), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 			}
 			if (p === "/__demo/fixtures.js" || p === "/__demo/demo-api.js") return new Response(Bun.file(join(DEMO, p.slice("/__demo/".length))), { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" } });
+			if (p === "/__test/kakao-fixture.js") return new Response(Bun.file(join(ROOT, "hub", "layout-measure-kakao-fixture.js")), { headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" } });
 			if (p === "/custom.js") return new Response("/* layout-measure: no custom layer */\n", { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
 			const asset = appAsset(req, p);
 			if (asset) return asset;
@@ -527,7 +529,7 @@ export const SCREENS: Screen[] = [
 		open: { call: `${SHOWN_ADD}.click()`, ready: `!!document.querySelector(".dr-rc-edit .dr-rc-in")` }, close: `document.querySelectorAll(".dr-rc-edit .btn.text:not(.dr-rc-go)").forEach(b => b.click())` },
 	{ name: "notices", call: `go("notices")`, view: "notices", ready: `NT.loaded && !!document.querySelector("#v-notices > *")` },
 	{ name: "settings", call: `go("settings")`, view: "settings", ready: `!!document.querySelector("#settings > *")` },
-	{ name: "kakao", call: `go("monitoring", "i:kakao")`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:kakao" && KK.loaded` },
+	{ name: "kakao", call: `go("monitoring", "i:kakao")`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:kakao" && KK.loaded && KK.rooms.length === 5` },
 	// harness: the search field + the 형식 select button
 	{ name: "harness", call: `go("harness")`, view: "harness", ready: `!!document.querySelector("#v-harness .fi")` },
 ];

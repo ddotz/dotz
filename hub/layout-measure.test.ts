@@ -147,6 +147,7 @@ test("every screen at both widths against hub/layout-baseline.json: no new bad i
 	const { items, unreached, stray } = await measureScreens(names, WIDTHS);
 	expect(unreached).toEqual([]);
 	expect(stray).toEqual([]);
+	expect(WIDTHS.filter(w => items.some(i => i.screen === "kakao" && i.width === w))).toEqual(WIDTHS);
 	// a check that measured nothing reads nothing; left-edges-tangent only has items for pairs that are near-tangent, none is the goal (left-edges measures the same lines)
 	expect(new Set(items.map(i => i.check))).toEqual(new Set(CHECKS.filter(c => c !== "left-edges-tangent")));
 	const { added, stale } = compareBaseline(items, readBaseline(BASELINE_FILE), { screens: names, widths: WIDTHS });
