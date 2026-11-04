@@ -20,7 +20,7 @@
   --ok: #0a8754; --warn: #b85e00; --err: #e42939;
   /* 미답장 (waiting for the owner's reply): orange fill + its text colour, 5.2:1 on white (light), 8:1 on the dark card (dark) */
   --unreplied: #c2410c; --on-unreplied: #ffffff;
-  /* KakaoTalk chat (30-kakao.js): the room's backdrop, incoming / own bubbles, time and date chip */
+  /* Messenger chat (30-kakao.js): the room's backdrop, incoming / own bubbles, time and date chip */
   --kk-bg: #dbe5ee; --kk-in: #ffffff; --kk-in-fg: #191f28; --kk-own: #fee500; --kk-own-fg: #191919; --kk-time: #5b6877; --kk-chip: rgb(25 31 40 / .38); --kk-chip-fg: #ffffff;
   --scrim: rgb(0 0 0 / .4);
   /* terminal panel: dark in both themes */
@@ -1647,7 +1647,7 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 #v-chat .chatbox.fade-b > .timeline { --edge-b: var(--sp-3); }
 
 /* ---------- 컴포저: 시제품 .cmp — [첨부 · 글 · 원형 전송] 회색 18px 상자 (모든 입력 줄의 공통 기반) ----------
-   .sendrow 자체가 기반이에요: 채팅 입력줄(#send)과 카카오톡 방 입력줄(#kk-form) 같은 어떤 입력줄도 .sendrow 안에 [.cmp-plus(첨부, 선택) · textarea · .ib(보내기)]와
+   .sendrow 자체가 기반이에요: 채팅 입력줄(#send)과 메신저 방 입력줄(#kk-form) 같은 어떤 입력줄도 .sendrow 안에 [.cmp-plus(첨부, 선택) · textarea · .ib(보내기)]와
    (선택) .cbar 칩 줄을 두면 같은 모양이에요. 채팅 컴포저의 힌트 줄(#cbar: 모델·컨텍스트 칩)은 상자 밖 아래에 서요. */
 .sendrow { grid-template-columns: auto minmax(0, 1fr) auto !important; grid-template-areas: "at at at" "plus ta send" "bar bar bar" !important; align-items: flex-end; gap: 0 var(--sp-1); }   /* no row gap: the empty tray row above would add 4px of padding to the top only */
 .sendrow:not(.ulw) { padding: var(--sp-15) !important; border: 0 !important; border-radius: var(--r-card) !important; background: var(--layer) !important; }
@@ -2143,7 +2143,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 /* 목록 행 (시제품 채팅 목록 proto .li) — 모든 너비의 공통 기반이에요: 48px 두 줄, 36px 둥근 사각 아이콘 면, 오른쪽 시각·대기 표시, 구분선 한 줄, 고른 행은 회색 면.
    프로젝트·모니터링 목록 패널도 이 형식(.cv-side 안의 .cv-row)에 맞춰요. */
 #chat-convo { padding: 0; }
-/* 채팅 목록 (proto listHtml): 대화는 한 장의 카드에, '메일 · 카카오톡'은 제목과 그 아래 카드로. */
+/* 채팅 목록 (proto listHtml): 대화는 한 장의 카드에, '메일'은 제목과 그 아래 카드로. */
 #chat-convo:not(.mon-side) { background: transparent; border-radius: 0; }
 .cv-foot { display: flex; justify-content: center; margin-top: var(--sp-2); }
 .cv-card { overflow: hidden; border-radius: var(--r-card); background: var(--card); }
@@ -3127,7 +3127,7 @@ a.dr-att:active { background: var(--active); }
 .hcb-n { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
 .hcb-h .hcb-n { color: var(--fg-2); }
 
-/* 모니터링 > 앱 > 카카오톡 (web/js/30-kakao.js): the room column (rooms to watch + the watched ones) and a KakaoTalk-style chat.
+/* 모니터링 > 앱 > 메신저 (web/js/30-kakao.js): the room column (rooms to watch + the watched ones) and a Messenger-style chat.
    Until something is picked only the column shows; once picked (.kk.chat-open) it sits beside the chat from 1100px, below that the chat replaces it. Colors are the --kk-* tokens (01-tokens.css). */
 .kk { display: flex; flex: 1; min-height: 0; gap: var(--sp-4); }
 #v-monitoring.kk-on > .chatbox { display: none; }
@@ -3184,7 +3184,7 @@ a.dr-att:active { background: var(--active); }
 .kk-t { color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
 @media (min-width: 1100px) { :is(.kk-rooms) .kk-av { width: 32px; height: 32px; font-size: 14px; } }
 
-/* The KakaoTalk room list reads as the prototype's: the head and the note sit on the page, the rooms in one card, a grey initial, the last message under
+/* The Messenger room list reads as the prototype's: the head and the note sit on the page, the rooms in one card, a grey initial, the last message under
    the name, 미답장 and the count solid on the row's one line. Scoped by id: .kk-rooms is also the comment pane's column. */
 #kk-rooms { border-radius: 0; background: transparent; }
 #kk-rooms .kk-lh { min-height: 32px; padding: 0 0 var(--sp-2); }
@@ -3226,7 +3226,7 @@ a.dr-att:active { background: var(--active); }
 .kk-chat > .kk-box { flex: 1 0 min(400px, 52dvh); }
 /* Messages leaving the list fade out at both edges instead of being cut; the padding keeps the first and last one clear of the fade at rest. */
 .kk-tl { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: var(--sp-4); -webkit-mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); }
-/* the chat window's column is centered with a width cap: on a wide pane both sides keep the same distance to the edge, like a KakaoTalk window */
+/* the chat window's column is centered with a width cap: on a wide pane both sides keep the same distance to the edge, like a Messenger window */
 .kk-in { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; max-width: 880px; min-width: 0; margin: 0 auto; }
 .kk-in > .kk-note { margin: auto; color: var(--kk-time); }
 .kk-pill { position: absolute; left: 50%; bottom: 12px; z-index: 2; height: 32px; padding: 0 var(--sp-3); transform: translateX(-50%); border-radius: var(--r-ctl); box-shadow: var(--float); }
@@ -3254,7 +3254,7 @@ a.dr-att:active { background: var(--active); }
 .kk-bub.ph { opacity: .75; }
 .kk-emo { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); min-width: 0; max-width: 100%; }
 .kk-m.me .kk-emo { align-items: flex-end; }
-/* a sticker image: no bubble, at most 120px like KakaoTalk's in-chat size */
+/* a sticker image: no bubble, at most 120px like Messenger's in-chat size */
 .kk-sticker { width: 120px; height: 120px; }
 @media (max-width: 639px) { .kk-sticker { width: 100px; height: 100px; } }
 .kk-sticker img { display: block; width: 100%; height: 100%; object-fit: contain; -webkit-user-drag: none; }
@@ -3529,7 +3529,7 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 .as-new-in::placeholder { color: var(--fg-3); }
 
 /* 모니터링 > 앱 > 유튜브 / 인스타그램 / 웹사이트 댓글 and 인스타그램 DM (web/js/30-monitoring-comments.js, 30-monitoring-comments-dm.js).
-   The pane keeps the KakaoTalk pane's frame (17-kakao.css: .kk, .kk-rooms, .kk-chat) but reads as the prototype's screens: the conversation sits on the same card
+   The pane keeps the Messenger pane's frame (17-kakao.css: .kk, .kk-rooms, .kk-chat) but reads as the prototype's screens: the conversation sits on the same card
    surface as the post list (no chat backdrop, no bubbles, no dark date pills), a comment is a row, the follow-up of each comment is a short track of steps. */
 
 /* choose what to follow */
@@ -3743,6 +3743,7 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-bar { display: flex; align-items: center; gap: var(--sp-15); height: 40px; margin: 0 0 var(--sp-1); padding: 0 var(--sp-3) 0 var(--sp-15); overflow-x: auto; scrollbar-width: none; color: var(--fg-2); font-size: 12px; }
 .mbox-bar::-webkit-scrollbar { display: none; }
 .mbox-bar > * { flex: none; }
+.mbox-note { padding: 0 var(--sp-3) var(--sp-1) var(--sp-15); color: var(--fg-3); font-size: 12px; line-height: 16px; word-break: keep-all; }
 .mbox-bar.on { position: sticky; top: 40px; z-index: 2; background: var(--bg); }
 .mbox-all:disabled { visibility: hidden; }
 .mbox-n { margin-right: auto; font-variant-numeric: tabular-nums; }
@@ -3894,7 +3895,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 #mon-tl > .mr > .mr-pts li + li::before { content: " · "; position: static; width: auto; height: auto; background: none; color: var(--fg-3); }
 #mon-tl > .mr > :is(.mr-to, .mr-todo) { display: none; }
 @media (min-width: 1100px) {
-  /* the list uses the whole content area right of the app list (owner 2026-11-03, like KakaoTalk or Instagram): the folder chips, the 메일 N개 row and the rows
+  /* the list uses the whole content area right of the app list (owner 2026-11-03, like Messenger or Instagram): the folder chips, the 메일 N개 row and the rows
      start at one left line (the row's 16px, the select-all box on the row checkbox's x) and the extra width goes to the subject and the preview */
   .mbox-bar { padding-left: var(--sp-3); }
   #mon-tl > .bm.rc.mr { flex-wrap: nowrap; column-gap: var(--sp-2); height: 48px; padding: 0 var(--sp-3) 0 var(--sp-4); }
@@ -4112,7 +4113,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 #mon-head .mon-prog-wrap .mon-prog { height: 3px; }
 
 /* One column for every 모니터링 screen: the head card, the cards under it and the section labels share the view's left and right edges, so nothing here insets
-   the column or caps it at the chat's reading width (--col). A label's text starts on the card's outer edge, the same in the KakaoTalk pane (#kk-rooms .kk-lh). */
+   the column or caps it at the chat's reading width (--col). A label's text starts on the card's outer edge, the same in the Messenger pane (#kk-rooms .kk-lh). */
 #v-monitoring .tl-in { max-width: none; }
 /* the timeline of an open item: the prototype's section label above its rows (확인 기록), and the cards on the page's surface */
 #mon-tl > .mon-sec { margin: var(--sp-2) 0 calc(var(--sp-2) - var(--sp-4)); /* the list's 16px gap adds to these: 24px above, 8px to its card, like .sec */ color: var(--fg-2); font: 600 13px/18px var(--font); }

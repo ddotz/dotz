@@ -53,13 +53,13 @@ window.D = (() => {
     ["in", "정우", "좋아. 의자는 내가 챙길게", "오전 9:02"],
     ["in", "정우", "그리고 장작은 어디서 살까?", "오전 9:04"],
   ];
-  D.kakaoDraft = { id: "d-k1", to: "정우", subj: "", text: "가는 길에 마트에 들러서 사자.\n내가 사 갈게!", kind: "카카오톡" };
+  D.kakaoDraft = { id: "d-k1", to: "정우", subj: "", text: "가는 길에 마트에 들러서 사자.\n내가 사 갈게!", kind: "메신저" };
 
   /* 알림 화면(s-notices.js): cls는 hub/notice-class.ts의 분류, need는 처리할 것(처리될 때까지 남아요), rep는 같은 감시의 반복을 접은 행이에요 */
   D.notices = [
     { id: "n-dec", cls: "ask", need: true, decision: true, tone: "warn", tag: "결정", title: "배포 공지 형태를 정해 주세요", sub: "릴리스 노트 · 답을 기다리고 있어요", t: "오전 10:41", href: "chat/ch2", unread: true },
     { id: "n1", cls: "ask", need: true, draft: "d-m1", tone: "warn", tag: "답장 확인", title: "한서윤님께 보낼 답장 초안", sub: "화요일 오후 2시가 좋다고 답해요", t: "오전 10:24", href: "mail/1", unread: true },
-    { id: "n4", cls: "ask", need: true, draft: "d-k1", tone: "warn", tag: "카카오톡", title: "정우님이 물어봤어요", sub: "그리고 장작은 어디서 살까?", t: "오전 9:58", href: "kakao/r1", unread: false },
+    { id: "n4", cls: "ask", need: true, draft: "d-k1", tone: "warn", tag: "메신저", title: "정우님이 물어봤어요", sub: "그리고 장작은 어디서 살까?", t: "오전 9:58", href: "kakao/r1", unread: false },
     { id: "n-fail", cls: "alert", need: true, close: true, tone: "err", tag: "실패", title: "가격 페이지를 확인하지 못했어요", sub: "캠핑 의자 가격 · 페이지가 열리지 않아요", t: "오전 9:40", href: "watch/price", unread: true },
     { id: "n-login", cls: "alert", need: true, tone: "warn", tag: "로그인", title: "인스타그램 로그인이 풀렸어요", sub: "댓글을 가져오려면 다시 로그인해 주세요", t: "오전 9:12", href: "comments/instagram", unread: true },
     { id: "n-rep", cls: "news", tone: "", tag: "가격 변경", title: "캠핑 의자 가격이 바뀌었어요", price: ["89,000원", "72,000원"], t: "방금", href: "watch/price", unread: true, rep: [
@@ -169,7 +169,7 @@ window.D = (() => {
   ];
 
   D.apps = [
-    { id: "kakao", label: "카카오톡", icon: "chat", kind: "monitor", status: "ok", sub: "방 3개 지켜보는 중", href: "kakao" },
+    { id: "kakao", label: "메신저", icon: "chat", kind: "monitor", status: "ok", sub: "방 3개 지켜보는 중", href: "kakao" },
     { id: "mail", label: "메일", icon: "mail", kind: "monitor", status: "ok", sub: "안 읽은 메일 2통", href: "mail" },
     { id: "insta", label: "인스타그램", icon: "image", kind: "monitor", status: "err", sub: "로그인이 풀렸어요", href: "comments/instagram" },
     { id: "memo", label: "메모장", icon: "file", kind: "tool", status: "ok", sub: "내가 만든 앱", href: "app/memo" },
@@ -179,7 +179,7 @@ window.D = (() => {
 
   D.palette = [
     ["home", "홈", "상태 한눈에"], ["chat", "채팅", "대화 목록"], ["chat/formats", "답 형식 모음", "채팅 출력 형식"], ["projects", "프로젝트", "프로젝트 목록"],
-    ["monitoring", "모니터링", "감시와 앱"], ["mail", "메일", "받은 편지함"], ["mail/compose", "메일 쓰기", "새 메일"], ["kakao", "카카오톡", "지켜보는 방"],
+    ["monitoring", "모니터링", "감시와 앱"], ["mail", "메일", "받은 편지함"], ["mail/compose", "메일 쓰기", "새 메일"], ["kakao", "메신저", "지켜보는 방"],
     ["comments", "댓글", "유튜브 · 인스타그램 · 웹사이트"], ["notices", "알림", "알림 목록"], ["settings", "설정", "모든 설정"], ["settings/providers", "공급자와 모델", "모델 설정"],
     ["settings/messengers", "메신저", "Discord · Slack"], ["form", "카드 추가", "새 폼 시안"], ["apps", "앱", "앱 관리"], ["peers", "컴퓨터", "다른 컴퓨터"], ["index", "화면 목록", "프로토타입 전체"],
   ];

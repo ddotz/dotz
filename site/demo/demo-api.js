@@ -162,7 +162,6 @@
     nodes: [
       hn("ch-web", "channel", "flow", "웹 채팅", "브라우저에서 보낸 글", { facts: [{ label: "연결", value: "2개 기기" }] }),
       hn("ch-discord", "channel", "flow", "Discord", "서버 1곳 · 채널 3개", { status: "warn", facts: [{ label: "연결", value: "재연결 중" }] }),
-      hn("ch-kakao", "channel", "flow", "카카오톡", "나와의 채팅 1개", { status: "off" }),
       hn("gateway", "gateway", "flow", "게이트웨이", "들어온 글을 모아 어시스턴트에게 넘겨요", { facts: [{ label: "열린 길", value: "8080" }], settings: [hset("gateway.debounce", "글 묶는 시간", 1200, "number", { unit: "ms", default: 800, min: 0, max: 5000 }), hset("gateway.quiet", "조용한 시간 알림 끄기", true, "bool", { default: false })] }),
       hn("orchestrator", "orchestrator", "flow", "어시스턴트", "받은 글을 읽고 할 일을 나눠요", { status: "busy", facts: [{ label: "모델", value: "Opus 4.8" }], settings: [hset("orchestrator.thinking", "생각 강도", "high", "select", { options: [{ value: "low", label: "낮음" }, { value: "high", label: "높음" }], default: "medium" }), hset("orchestrator.reply_style", "답 말투", "해요체", "text", { default: "해요체" })] }),
       hn("lanes", "lanes", "flow", "세션", "채널마다 이어지는 작업 줄 4개", { status: "busy", facts: [{ label: "돌아가는 중", value: "2개" }] }),
@@ -173,7 +172,7 @@
       hn("monitor", "system", "support", "모니터링", "점검 3개", { anchor: "lanes", order: 1 }),
     ],
     edges: [
-      { from: "ch-web", to: "gateway", label: "들어온 글" }, { from: "ch-discord", to: "gateway", label: "들어온 글" }, { from: "ch-kakao", to: "gateway", label: "들어온 글" },
+      { from: "ch-web", to: "gateway", label: "들어온 글" }, { from: "ch-discord", to: "gateway", label: "들어온 글" },
       { from: "gateway", to: "orchestrator", label: "묶은 글" }, { from: "orchestrator", to: "lanes", label: "일 맡기기" }, { from: "lanes", to: "workers", label: "나눈 일" },
       { from: "rules", to: "orchestrator", label: "규칙" }, { from: "lessons", to: "orchestrator", label: "배운 것" }, { from: "memory", to: "orchestrator", label: "기억" }, { from: "monitor", to: "lanes", label: "변화" },
     ],
@@ -187,7 +186,7 @@
         files: [], features: [], deny: [], setup: null, map: { nodes: [], edges: [] } },
     ],
   };
-  HARNESS_FX.projects.forEach(p => { p.map = { nodes: HARNESS_FX.nodes.filter(n => n.group === "flow" && !n.id.startsWith("ch-")).concat(HARNESS_FX.nodes.filter(n => n.id === "ch-web")), edges: HARNESS_FX.edges.filter(e => !/^ch-(discord|kakao)/.test(e.from) && !["rules", "lessons", "memory", "monitor"].includes(e.from)) }; });
+  HARNESS_FX.projects.forEach(p => { p.map = { nodes: HARNESS_FX.nodes.filter(n => n.group === "flow" && !n.id.startsWith("ch-")).concat(HARNESS_FX.nodes.filter(n => n.id === "ch-web")), edges: HARNESS_FX.edges.filter(e => !/^ch-discord/.test(e.from) && !["rules", "lessons", "memory", "monitor"].includes(e.from)) }; });
   const hf = (id, form, name, what, trigger, stage, strength, label, extra = {}) => ({ id, form, name, what, trigger, stage, strength, source: { label }, enabled: true, toggleable: false, origin: "personal", ...extra });
   const FEATURES_FX = {
     generated: new Date().toISOString(), harness: { id: "omo", name: "OmO", dirs: [] }, data_dir: "~/.dotz", skipped_dirs: [],
@@ -802,8 +801,6 @@
     if (p === "/api/ig-dm") return json(cmDemo.dmList);
     if (/^\/api\/ig-dm\/[^/]+$/.test(p)) { const v = cmDemo.dm[p.split("/")[3]]; return v ? json(v) : fail("대화를 찾지 못했어요"); }
     if (/^\/api\/mail\/[^/]+\/body$/.test(p)) { const m = mail(p.split("/")[3]); return m && m.html ? new Response(F.mailBody(m), { headers: { "Content-Type": "text/html; charset=utf-8" } }) : new Response("", { status: 404 }); }
-    if (p === "/api/kakao/rooms") return json({ on: true, rooms: F.kakaoRooms });
-    if (/^\/api\/kakao\/chat\/[^/]+$/.test(p)) { const c = F.kakaoChat[p.split("/")[4]]; return c ? json(c) : new Response(JSON.stringify({ error: "대화방을 찾지 못했어요" }), { status: 404, headers: { "Content-Type": "application/json" } }); }
     if (/^\/api\/integrations\/[^/]+\/settings$/.test(p)) return json({ fields: F.appFields });
     if (/^\/api\/integrations\/[^/]+\/features$/.test(p)) return json(F.appFeatures);
     if (p === "/api/monitors") return json({ items: F.monitors });
@@ -828,36 +825,6 @@
     return json({});
   }
 
-  // 카카오톡: the room toggles and the draft flow (a request writes or rewrites the draft, 보내기 puts its parts in the room as separate messages) without any real send.
-  function kakaoPost(p, body) {
-    const chats = F.kakaoChat;
-    let m = p.match(/^\/api\/kakao\/rooms\/([^/]+)$/);
-    if (m) { const r = F.kakaoRooms.find(x => x.chatId === m[1]); if (r) Object.assign(r, body); return json({ ok: true }); }
-    m = p.match(/^\/api\/kakao\/chat\/([^/]+)\/draft$/);
-    if (m && chats[m[1]]) {
-      const c = chats[m[1]], old = body.revise && c.drafts.find(d => d.code === body.revise.code), change = String((body.revise && body.revise.change) || body.intent || "").trim();
-      const parts = old ? (/짧/.test(change) ? [old.parts[0]] : [...old.parts.slice(0, 1), `${change}, 반영했어요`]) : [`알겠어, ${change}`, "곧 다시 얘기하자"];
-      const draft = { code: `dk${Date.now()}`, text: parts.join("\n"), parts, basisLogId: old ? old.basisLogId : "", created: Date.now(), ...(old ? {} : { intent: change }) };
-      c.drafts = c.drafts.filter(d => !old || d.code !== old.code).concat(draft);
-      setTimeout(() => { if (typeof window.kkLive === "function") window.kkLive({ kind: "kakao_draft", chatId: m[1] }); }, 700);
-      return json({ ok: true });
-    }
-    m = p.match(/^\/api\/kakao\/drafts\/([^/]+)\/(send|drop|restore)$/);
-    if (m) {
-      for (const c of Object.values(chats)) {
-        const d = c.drafts.find(x => x.code === m[1]);
-        if (!d) continue;
-        if (m[2] === "restore") return json({ ok: true });
-        c.drafts = c.drafts.filter(x => x !== d);
-        if (m[2] === "drop") return json({ ok: true });
-        const last = Math.max(...c.messages.map(x => Number(x.logId)));
-        (d.parts || [d.text]).forEach((text, i) => c.messages.push({ id: last + i + 1, logId: String(last + i + 1), authorId: "u1", sender: "나", text, type: 1, sentAt: Date.now() + i, fromMe: true, unread: 1 }));
-        return json({ id: `s${Date.now()}`, state: "sent" }, 202);
-      }
-    }
-    return null;
-  }
-
   function postApi(u, body) {
     const p = u.pathname;
     log.posts.push(p);
@@ -866,8 +833,6 @@
     if (/^\/api\/comments\/drafts\/[^/]+\/send$/.test(p)) return json({ ok: true });
     if (/^\/api\/comments\/thread\/[^/]+\/[^/]+\/read$/.test(p) || p === "/api/ig-dm/refresh") return json({ ok: true });
     if (/^\/api\/comments\/comment\/[^/]+\/draft$/.test(p)) return json({ state: "drafting" }, 202);
-    const kk = kakaoPost(p, body);
-    if (kk) return kk;
     if (p === "/api/message") return json(answer(body));
     if (p === "/api/command") return json({ output: "데모에서는 명령을 실행하지 않아요." });
     if (p === "/api/read") { const c = conv(body.target); if (c) c.unread = 0; return json({}); }

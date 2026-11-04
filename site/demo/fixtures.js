@@ -131,9 +131,9 @@
     ],
   };
   for (const m of mails) histories[`mail:${m.key}`] = [mailEvent(m)];
-  histories["settings:kakao"] = [
-    { ts: ago(12), kind: "message", source: "web", channel: "web", target: "settings:kakao", text: "확인 주기를 10분으로 바꾸고 자동 초안은 꺼 줘" },
-    { ts: ago(11), kind: "out", source: "orchestrator", target: "settings:kakao", text: "[done] 이렇게 바꿀까요?\n\n```dotz-settings\n{\"app\":\"kakao\",\"changes\":{\"every_minutes\":10,\"auto_draft\":false}}\n```" },
+  histories["settings:mail"] = [
+    { ts: ago(12), kind: "message", source: "web", channel: "web", target: "settings:mail", text: "확인 주기를 10분으로 바꾸고 자동 초안은 꺼 줘" },
+    { ts: ago(11), kind: "out", source: "orchestrator", target: "settings:mail", text: "[done] 이렇게 바꿀까요?\n\n```dotz-settings\n{\"app\":\"mail\",\"changes\":{\"every_minutes\":10,\"auto_draft\":false}}\n```" },
   ];
 
   const state = {
@@ -167,42 +167,23 @@
 
   const integrations = [
     { key: "mail", label: "메일", icon: "mail", conv: ["mail:"], notices: ["n-demo-1"], state: "connected" },
-    { key: "kakao", label: "카카오톡", icon: "chat", conv: ["kakao:"], notices: ["n-demo-11"], state: "connected" },
   ];
 
-  // 카카오톡: the room list (GET /api/kakao/rooms) and one room's chat (GET /api/kakao/chat/<id>), epoch milliseconds like the real hub.
-  const kakaoRooms = [
-    { chatId: "r1", name: "정우", kind: "direct", hint: "그리고 장작은 어디서 살까?", watched: true, autoDraft: true, unread: 2, unreplied: true, lastAt: now - 6 * 60_000 },
-    { chatId: "r2", name: "캠핑 모임", kind: "group", hint: "토요일 날씨 괜찮대요", watched: true, autoDraft: false, unread: 14, lastAt: now - 38 * 60_000 },
-    { chatId: "r3", name: "엄마", kind: "direct", hint: "밥은 먹었니?", watched: true, autoDraft: false, unread: 0, lastAt: now - 26 * 3600_000 },
-    { chatId: "r4", name: "동네 이웃", kind: "group", hint: "분리수거 요일 바뀌었어요", watched: false, autoDraft: false, unread: 0, lastAt: now - 3 * 86400_000 },
-    { chatId: "r5", name: "나와의 채팅", kind: "self", hint: "메모", watched: false, autoDraft: false, unread: 0, lastAt: now - 5 * 86400_000 },
-  ];
-  const kakaoChat = {
-    r1: { room: { chatId: "r1", name: "정우", kind: "direct", group: false, watched: true }, read: null, kakaoUnread: 2, sends: [],
-      drafts: [{ code: "dk1", text: "가는 길에 마트에 들러서 사자.\n내가 사 갈게!", parts: ["가는 길에 마트에 들러서 사자.", "내가 사 갈게!"], basisLogId: "104", created: now - 5 * 60_000 }], messages: [
-      { id: 1, logId: "101", authorId: "u2", sender: "정우", text: "형, 이번 주말에 캠핑 가기로 한 거 기억나?", type: 1, sentAt: now - 52 * 60_000, fromMe: false, unread: 0 },
-      { id: 2, logId: "102", authorId: "u1", sender: "나", text: "응, 토요일 아침에 출발하자", type: 1, sentAt: now - 49 * 60_000, fromMe: true, unread: 0 },
-      { id: 3, logId: "103", authorId: "u2", sender: "정우", text: "좋아. 의자는 내가 챙길게", type: 1, sentAt: now - 8 * 60_000, fromMe: false, unread: 0 },
-      { id: 4, logId: "104", authorId: "u2", sender: "정우", text: "그리고 장작은 어디서 살까?", type: 1, sentAt: now - 6 * 60_000, fromMe: false, unread: 0 },
-    ] },
-  };
   // 설정 화면 (GET /api/integrations/<app>/settings and /features, hub/app-settings.ts, hub/app-features.ts).
   const appFields = [
-    { key: "notify", label: "새 메시지 알림", type: "bool", help: "지켜보는 방에 새 메시지가 오면 알려 줘요", section: "notify", switch: true, value: true },
+    { key: "notify", label: "새 메시지 알림", type: "bool", help: "새 메시지가 오면 알려 줘요", section: "notify", switch: true, value: true },
     { key: "auto_draft", label: "자동 초안", type: "bool", help: "답할 거리가 있으면 초안을 만들어요", section: "draft", switch: true, value: true },
     { key: "tone", label: "말투", type: "enum", help: "초안을 쓸 때 따라 할 말투예요", section: "draft", options: ["mine", "polite"], labels: { mine: "내 말투", polite: "존댓말" }, value: "mine" },
     { key: "every_minutes", label: "확인 주기", type: "number", help: "새 메시지를 몇 분마다 볼지 정해요", section: "watch", min: 1, max: 60, value: 5 },
     { key: "use_here", label: "이 기기에서 쓰기", type: "bool", help: "끄면 이 컴퓨터의 앱 목록에서 빠져요", section: "advanced", value: true },
   ];
   const appFeatures = {
-    features: [{ id: "kakao-new", name: "새 메시지 확인", status: "켜져 있어요", on: true, section: "watch" }],
-    internal: [{ id: "kakao-keeper", name: "로그인 유지", kind: "keeper", dot: "ok", status: "정상", last_run: ago(4), every_minutes: 10 }],
-    approvals: [{ id: "ap-1", title: "정우 방에 답장 보내기", kind: "카카오톡", at: ago(5), options: [{ label: "보내기", n: 1 }, { label: "버리기", n: 2 }] }],
+    features: [{ id: "mail-new", name: "새 메시지 확인", status: "켜져 있어요", on: true, section: "watch" }],
+    internal: [{ id: "mail-keeper", name: "로그인 유지", kind: "keeper", dot: "ok", status: "정상", last_run: ago(4), every_minutes: 10 }],
+    approvals: [{ id: "ap-1", title: "한서윤님에게 답장 보내기", kind: "메일", at: ago(5), options: [{ label: "보내기", n: 1 }, { label: "버리기", n: 2 }] }],
   };
   // 앱 페이지 (GET /api/apps).
   const apps = [
-    { id: "kakao", label: "카카오톡", kind: "monitor", source: "registry", icon: "chat", status: "running" },
     { id: "mail", label: "메일", kind: "monitor", source: "registry", icon: "mail", status: "running" },
     { id: "insta", label: "인스타그램", kind: "monitor", source: "registry", icon: "image", status: "unreachable", hint: "로그인이 풀렸어요" },
     { id: "memo", label: "메모장", kind: "tool", source: "manifest", icon: "file", status: "running", web: { href: "/apps/memo/", url: "/apps/memo/", path: "/apps/memo/", mode: "frame" } },
@@ -284,9 +265,6 @@
   const mailDraftBody = "안녕하세요, 서윤님.\n\n다음 주 화요일 오후 2시가 좋아요.\n온라인으로 뵐까요?\n\n감사합니다.";
   const mailDraftAsk = `[ask] 서윤님에게 보낼 답장 초안이에요.\n\n> 받는이: 한서윤 <seoyun.han@example.com>\n> 제목: Re: 다음 주 미팅 일정 확인 부탁드려요\n>\n${mailDraftBody.split("\n").map(l => `> ${l}`.trimEnd()).join("\n")}\n\n결정: 이대로 보낼까요?\n1) 보내기 ← 추천\n이 초안으로 답장해요\n2) 고치기 …\n고칠 내용을 적어 주세요\n3) 보내지 않기\n초안을 버려요`;
 
-  // The kakao reply draft awaiting 보내기 / 고치기 / 보내지 않기 (the same draft as kakaoChat.r1.drafts[0]).
-  const kakaoDraftBody = "가는 길에 마트에 들러서 사자.\n내가 사 갈게!";
-  const T_ASKK = ago(58);
   // Mirrors the real hub notice: cls / waits / handled / repeats are what hub/notice-class.ts withClass and hub/notices.ts add.
   //   처리할 것: the open decisions (ask), the failure (waits "fail", handled null) and the dropped login (waits "login").
   //   새 소식: the other unread items, the price change folding three older reports into repeats.   지난 알림: the read rest. The unchanged check is cls "log" (not listed).
@@ -299,10 +277,6 @@
       { id: "n-demo-1", kind: "decision", cls: "ask", tone: "ask", src: "mail:m-1", open: "mail:m-1", at: T_ASKM1, title: "한서윤님에게 보낼 답장을 확인해 주세요", text: mailDraftAsk, read: false,
         decision: { options: [{ n: 1, label: "보내기", desc: "이 초안으로 답장해요", rec: true }, { n: 2, label: "고치기", desc: "고칠 내용을 적어 주세요", rec: false, detail: true }, { n: 3, label: "보내지 않기", desc: "초안을 버려요", rec: false }], to: "mail:m-1", reply_to: T_ASKM1, group: 1, state: "open",
           draft: { toLabel: "받는이", to: "한서윤 <seoyun.han@example.com>", mode: "reply", subject: "Re: 다음 주 미팅 일정 확인 부탁드려요", body: mailDraftBody, ref: "dr-m1" } } },
-      // 카카오톡 물음: read, but it keeps waiting in 처리할 것 until it is answered.
-      { id: "n-demo-11", kind: "decision", cls: "ask", tone: "ask", src: "kakao:r1", open: "kakao:r1", at: T_ASKK, title: "정우님이 물어봤어요: 그리고 장작은 어디서 살까?", text: "[ask] 정우님에게 보낼 답장 초안이에요.\n\n> 받는이: 정우\n>\n> 가는 길에 마트에 들러서 사자.\n> 내가 사 갈게!\n\n결정: 이대로 보낼까요?\n1) 보내기 ← 추천\n이 초안으로 답장해요\n2) 고치기 …\n고칠 내용을 적어 주세요\n3) 보내지 않기\n초안을 버려요", read: true,
-        decision: { options: [{ n: 1, label: "보내기", desc: "이 초안으로 답장해요", rec: true }, { n: 2, label: "고치기", desc: "고칠 내용을 적어 주세요", rec: false, detail: true }, { n: 3, label: "보내지 않기", desc: "초안을 버려요", rec: false }], to: "kakao:r1", reply_to: T_ASKK, group: 1, state: "open",
-          draft: { toLabel: "받는이", to: "정우", mode: "reply", subject: "", body: kakaoDraftBody, ref: "dk1" } } },
       { id: "n-demo-12", kind: "watch", cls: "alert", tone: "fail", watch: "캠핑 의자 가격", src: "alert", open: "alert", at: ago(80), title: "가격 페이지를 확인하지 못했어요", text: "[fail] 캠핑 의자 가격 확인에 실패했어요.\n\n- 원인: 페이지가 열리지 않아요\n- 다음: 잠시 뒤 다시 확인해요", read: false, waits: "fail", handled: null },
       { id: "n-demo-8", kind: "alert", cls: "alert", tone: "fail", src: "alert", open: "alert", at: ago(105), title: "인스타그램 로그인이 풀렸어요", text: "[fail] 인스타그램 확인에 실패했어요.\n\n- 원인: 로그인이 풀렸어요\n- 다음: 설정에서 다시 로그인해 주세요", read: false, waits: "login", handled: null },
       { id: "n-demo-5", kind: "watch", cls: "news", tone: "", watch: "캠핑 의자 가격", src: "alert", open: "alert", at: ago(9), title: "캠핑 의자 가격이 바뀌었어요", text: "[캠핑 의자 가격] 가격이 바뀌었어요.\n\n- 캠핑 의자 89,000원 → 72,000원", read: false,
@@ -334,6 +308,6 @@
 
   window.DEMO_FIXTURES = {
     now, ago, T_ASKM1, mailDraftAsk, mailDraftBody, MODEL, model, la, mails, mailBody, mailCard, mailEvent, calendar, comments, histories, state, conversations,
-    integrations, kakaoRooms, kakaoChat, appFields, appFeatures, apps, monitors, projects, todo, subagents, queue, notices, canvases, files,
+    integrations, appFields, appFeatures, apps, monitors, projects, todo, subagents, queue, notices, canvases, files,
   };
 })();

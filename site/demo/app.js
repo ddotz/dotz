@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "0c405e7855e2";
+const WEB_BUILD = "08d196474748";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -225,7 +225,7 @@ const NAMES = {
   gateway: "게이트웨이",
   notify: "알림",
   notice: "알림",
-  kakao: "카카오톡",
+  kakao: "메신저",
   discord: "디스코드",
   push: "휴대폰 알림",
   auth: "로그인",
@@ -3941,12 +3941,12 @@ function orgNodes(d, t, host, draftEl) {
   return { bar, orig };
 }
 
-/* ---------- 답장 초안 카드: one card for every reply draft (메일, 카카오톡, 댓글) of every computer ---------- */
-// One component for the 답장 확인 queue (30-replies.js), the mail list's 확인 대기 (30-monitoring.js draftCardNode), the KakaoTalk room
+/* ---------- 답장 초안 카드: one card for every reply draft (메일, 메신저, 댓글) of every computer ---------- */
+// One component for the 답장 확인 queue (30-replies.js), the mail list's 확인 대기 (30-monitoring.js draftCardNode), the Messenger room
 // (30-kakao.js kkDraftCard) and a comment thread (30-monitoring-comments.js cmDraftCard): the same head (앱 · 계정 · 컴퓨터 · 모델 when known),
 // the body clamped to about six lines with 펼치기, and the same three actions with the same words, 보내기 · 고치기 · 보내지 않기.
 // Each caller passes what its actions do; the card never decides where a draft is sent.
-const RQ_APPS = { mail: ["메일", "mail"], kakao: ["카카오톡", "chat"], instagram: ["인스타그램", "chat"], youtube: ["유튜브", "chat"], site: ["웹사이트 댓글", "chat"] };
+const RQ_APPS = { mail: ["메일", "mail"], kakao: ["메신저", "chat"], instagram: ["인스타그램", "chat"], youtube: ["유튜브", "chat"], site: ["웹사이트 댓글", "chat"] };
 const RQ_LINES = 6;
 const RQ_OPEN = new Set();   // card keys whose long body was unfolded (펼치기); kept across repaints
 // The app key of an instance id ("mail-2" -> "mail", a peer's "kakao~h1" -> "kakao").
@@ -3967,7 +3967,7 @@ function rqHeadNode(h) {
 }
 // A body is long when it would take more than RQ_LINES lines at a phone's width (about 36 Korean characters a line).
 const rqLong = text => String(text || "").split("\n").reduce((n, l) => n + Math.max(1, Math.ceil([...l].length / 36)), 0) > RQ_LINES;
-// b: { text, parts (a KakaoTalk draft's messages: one bubble each, sentParts of them already in the room), node (the caller's own body), cls, partCls }
+// b: { text, parts (a Messenger draft's messages: one bubble each, sentParts of them already in the room), node (the caller's own body), cls, partCls }
 function rqBodyNode(key, b) {
   const parts = Array.isArray(b.parts) && b.parts.length > 1 ? b.parts : null, long = rqLong(parts ? parts.join("\n") : b.text), open = RQ_OPEN.has(key);
   const inner = b.node || (parts ? el("div", { class: `${b.cls || "rq-text"} rq-parts` }, ...parts.map((p, i) => el("div", { class: `${b.partCls || "rq-part"}${i < (b.sentParts | 0) ? " sent" : ""}`, text: p }))) : el("div", { class: b.cls || "rq-text", text: b.text }));
@@ -9421,7 +9421,7 @@ function updateSection() {
 // The web app and the phone are one place, "앱 알림": one switch per notice class, the same on every device. The bell keeps every notice
 // either way; a switch decides whether that class notifies. Each messenger has its own 알림 switches in its connection sheet (설정 → 메신저).
 const NOTIFY_CLASSES = [["ask", "답변 필요", "질문 · 승인 · 로그인"], ["alert", "경고", "게이트웨이 오류 · 로그인 끊김 · 감시 반복 실패"], ["result", "결과", "세션 · 작업 완료 · 실패"],
-  ["news", "새 소식", "메일 · 카톡 · 댓글 · 감시 · 예약"], ["conv", "대화", "보고 있지 않은 대화의 새 답"], ["log", "진행", "진행 중 보고 · 작업 기록"]];
+  ["news", "새 소식", "메일 · 댓글 · 감시 · 예약"], ["conv", "대화", "보고 있지 않은 대화의 새 답"], ["log", "진행", "진행 중 보고 · 작업 기록"]];
 // One plain row per class with a switch; `on(k)` reads a class's state, `set(k, on)` changes it, `only` limits the classes shown.
 const notifyRows = (on, set, only) => NOTIFY_CLASSES.filter(([k]) => !only || only.includes(k)).map(([k, label, desc]) => el("div", { class: "li", "data-notify": k }, el("span", { class: "tx" }, el("div", { class: "hd", text: label }), el("div", { class: "sup", text: desc })),
   liEnd(el("button", { type: "button", class: "hs-sw", role: "switch", "aria-checked": String(on(k)), "aria-label": `${label} 알림`, "data-k": k, onclick: () => set(k, !on(k)) }))));
@@ -11722,7 +11722,7 @@ addEventListener("message", ev => {
 });
 addEventListener("resize", () => { if (CVS.path && CVS.narrow !== narrowChat()) canvasHead(); });
 
-/* ---------- 모니터링 sources: one per integration that contacts the owner first (메일, 카카오톡, 인스타그램, 유튜브 ...) ---------- */
+/* ---------- 모니터링 sources: one per integration that contacts the owner first (메일, 메신저, 인스타그램, 유튜브 ...) ---------- */
 // Data: GET /api/integrations (hub/integrations.ts) -> {items: [{key, label, icon, iconPath?, conv, unread, notices}]}: only the integrations enabled on
 // this install, with the ids of their notices and the unread count. The registry lives in the hub; the 모니터링 tab (30-monitoring.js) lists
 // whatever it returns beside the dotz_watch monitors and 알림.
@@ -11765,11 +11765,11 @@ function intgWatch() {
 }
 loadIntegrations();
 
-/* ---------- 모니터링 > 앱 > 카카오톡: choose the rooms to watch, and a KakaoTalk-style chat per chosen room ---------- */
+/* ---------- 모니터링 > 앱 > 메신저: choose the rooms to watch, and a Messenger-style chat per chosen room ---------- */
 // API: docs/kakao-rooms-api.md. The item (30-monitoring.js, key "i:kakao") shows this pane instead of the notice timeline: renderMonitoring calls
 // kkMode(). Wide screens put the room column beside the chat; below 1100px they are two screens (KK.open picks which; the app bar's back
 // arrow, kkBack(), leaves the chat). Live updates arrive on the event stream as kakao / kakao_send / kakao_draft / kakao_rooms / kakao_read (99-boot.js -> kkLive).
-// Each message carries `unread` (KakaoTalk's yellow number: members who have not read it yet); kakao_read -> /reads refreshes the numbers without bodies.
+// Each message carries `unread` (Messenger's yellow number: members who have not read it yet); kakao_read -> /reads refreshes the numbers without bodies.
 // Nothing is ever sent without a click: a typed message, a draft's 보내기 or an edited draft's 보내기 is the owner's own action.
 // Message text only ever goes through el({text}) / textContent, never innerHTML.
 const KK_KEY = "i:kakao";
@@ -11805,7 +11805,7 @@ function kkAvatar(name, cls = "") {
   n.style.setProperty("--h", String(kkHue(name)));
   return n;
 }
-// What a message that is not plain text says (KakaoTalk's type codes). A reply (26) carries its own text.
+// What a message that is not plain text says (Messenger's type codes). A reply (26) carries its own text.
 const KK_TYPE = { 2: "(사진)", 27: "(사진)", 3: "(동영상)", 4: "(음성 메시지)", 5: "(음성 메시지)", 12: "(이모티콘)", 20: "(이모티콘)", 25: "(이모티콘)", 18: "(파일)", 16: "(위치)" };
 const KK_OTHER = "(지원하지 않는 메시지)";
 // A JSON record in the message column (an attachment of a type this build does not draw) is not words: never show it.
@@ -11823,7 +11823,7 @@ function kkBody(m) {
 // The one line a room row shows under its name (the same rule as the hub's room list).
 const kkHint = m => { const chars = [...kkBody(m).text.replace(/\s+/g, " ").trim()]; return chars.length > 32 ? `${chars.slice(0, 31).join("").trimEnd()}…` : chars.join(""); };
 const kkSys = m => Number(m.type) === 0;
-// A system line (type 0) whose text is KakaoTalk's own feed record ({"feedType":..}) reads as words, never as JSON: a hidden message, people who came
+// A system line (type 0) whose text is Messenger's own feed record ({"feedType":..}) reads as words, never as JSON: a hidden message, people who came
 // in or left; a record of any other kind is not drawn (better nothing than a guess).
 function kkSysText(text) {
   const s = String(text ?? "").trim();
@@ -11962,7 +11962,7 @@ function kkFileNode(m, md) {
     el("span", { class: "kk-fb" }, el("span", { class: "kk-fn", title: md.name, text: md.name }), sub ? el("span", { class: "kk-sub", text: sub }) : null),
     md.local ? el("a", { class: "btn tonal inrow kk-open", href: kkFileUrl(m), target: "_blank", rel: "noopener", download: md.name, text: "열기" }) : el("span", { class: "kk-sub kk-nopc", text: "PC에 없음" }));
 }
-// Like KakaoTalk: "<author of the original>에게 답장" over the quoted original, then the reply's own text. The quote is a button that jumps to
+// Like Messenger: "<author of the original>에게 답장" over the quoted original, then the reply's own text. The quote is a button that jumps to
 // the original (kkJump), when the attachment names its logId.
 function kkReplyNode(m, md) {
   const { text } = kkBody(m);
@@ -12197,7 +12197,7 @@ const kkWide = () => !narrowChat();
 const kkCoarse = () => matchMedia("(pointer: coarse), (max-width: 639px)").matches;
 
 /* ---- the pane ---- */
-const kkRooms = el("div", { class: "kk-rooms", id: "kk-rooms", "aria-label": "카카오톡 대화방" });
+const kkRooms = el("div", { class: "kk-rooms", id: "kk-rooms", "aria-label": "메신저 대화방" });
 const kkHead = el("div", { class: "kk-head", id: "kk-head" });
 const kkIn = el("div", { class: "kk-in", id: "kk-in" });
 const kkTl = el("div", { class: "kk-tl", id: "kk-tl" }, kkIn);
@@ -12284,7 +12284,7 @@ async function kkLoadRooms() {
   if (KK.open && !kkRoom(KK.open) && !KK.failed) kkClose();
   kkPaintRooms();
   if (KK.open) kkPaintChat();
-  convSig = ""; convSchedule();   // the 채팅 list's 메일 · 카카오톡 card
+  convSig = ""; convSchedule();   // the 채팅 list's 메일 card
 }
 function kkSwitch(on, label, key, change, small) {
   return el("button", { class: `kk-sw${on ? " on" : ""}${small ? " sm" : ""}`, type: "button", role: "switch", "aria-checked": on ? "true" : "false", "aria-label": label, "data-k": key, onclick: ev => { ev.stopPropagation(); change(!on); } }, el("span", { class: "kk-knob" }));
@@ -12355,7 +12355,7 @@ function kkViewBar(watched) {
 }
 function kkPaintRooms() {
   const top = kkRooms.scrollTop, watched = KK.rooms.filter(r => r.watched).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
-  const note = !KK.loaded ? "불러오는 중…" : !KK.on ? "카카오톡 연동이 꺼져 있어요" : KK.error, ready = KK.loaded && !note;
+  const note = !KK.loaded ? "불러오는 중…" : !KK.on ? "메신저 연동이 꺼져 있어요" : KK.error, ready = KK.loaded && !note;
   const shown = watched.filter(kkViewOf()[2]);
   const head = el("div", { class: "kk-lh" }, ...(ready && watched.length ? [kkViewBar(watched)] : [el("span", { class: "kk-pt", text: "지켜보는 대화방" }), el("span", { class: "kk-cnt", text: ready ? "0개" : "" })]),
     ready && KK.rooms.length ? el("button", { class: "btn tonal sm kk-add-btn", id: "kk-add-btn", type: "button", onclick: () => kkAddOpen() }, icon("add"), el("span", { text: "추가" })) : null);
@@ -12433,7 +12433,7 @@ function kkMsgNode(m, first, last) {
   const urls = !m.media && !ph ? kkUrls(text) : [];
   const bub = (m.media && kkMediaNode(m, m.media)) || el("div", { class: `kk-bub${ph ? " ph" : ""}${urls.length ? " kk-lb" : ""}` }, urls.length ? kkLinkText(text) : text);
   const previews = urls.length ? el("div", { class: "kk-lps" }, ...urls.map(kkLpCard)) : null;
-  // On the time side of the bubble: KakaoTalk's yellow number (members who have not read it yet) above the time; nothing when 0.
+  // On the time side of the bubble: Messenger's yellow number (members who have not read it yet) above the time; nothing when 0.
   const n = m.unread | 0, meta = n > 0 || last ? el("span", { class: "kk-meta" }, n > 0 ? el("span", { class: "kk-rd", "aria-label": `아직 안 읽은 사람 ${n}명`, text: String(n) }) : null, last ? el("span", { class: "kk-time", text: kkTime(m.sentAt) }) : null) : null;
   if (m.fromMe) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-log": m.logId }, el("div", { class: "kk-line" }, meta, bub), previews);
   return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-log": m.logId, "data-author": m.authorId || null },
@@ -12467,7 +12467,7 @@ function kkTimeline() {
     const newDay = !prev || kkDay(prev.sentAt) !== kkDay(m.sentAt), mark = !!KK.div && m.logId === KK.div, next = msgs[i + 1], gapBefore = !!prev && KK.gaps.has(prev.logId);
     if (newDay) out.push(kkDateNode(m.sentAt));
     if (mark) out.push(kkMarkNode());
-    // Name and avatar once per run of one sender (like KakaoTalk); the time once per same-minute run.
+    // Name and avatar once per run of one sender (like Messenger); the time once per same-minute run.
     const cont = !!prev && !newDay && !mark && !gapBefore && !kkSys(prev) && kkWho(prev) === kkWho(m);
     const nextCont = !!next && !KK.gaps.has(m.logId) && kkDay(next.sentAt) === kkDay(m.sentAt) && !(KK.div && next.logId === KK.div) && kkSame(m, next);
     const node = kkMsgNode(m, !cont, !nextCont);
@@ -12490,13 +12490,13 @@ function kkPaintTl(stick) {
   kkLpWatch();
   kkSyncStick();
 }
-// Where the unread line goes (it is drawn, the view still opens at the newest message): before the first message after the web's read position; never opened: KakaoTalk's own unread count says how many of the newest are unread.
+// Where the unread line goes (it is drawn, the view still opens at the newest message): before the first message after the web's read position; never opened: Messenger's own unread count says how many of the newest are unread.
 function kkMarker(msgs, read, unread) {
   if (read != null) { const m = msgs.find(x => !x.fromMe && kkGt(x.logId, read)); return m ? m.logId : ""; }
   if (unread > 0) { const tail = msgs.filter(x => !x.fromMe).slice(-unread); return tail.length ? tail[0].logId : ""; }
   return "";
 }
-// A room opens at its newest message, like KakaoTalk.
+// A room opens at its newest message, like Messenger.
 function kkPlace() {
   if (!kkTl.clientHeight) return;
   kkTl.scrollTop = kkTl.scrollHeight;
@@ -12640,7 +12640,7 @@ function kkMaybeRead() {
     kkIntgSoon();
   }, () => { if (KK.readSent === last) KK.readSent = prev; });
 }
-// KakaoTalk's read counters changed: ask for the numbers of the shown messages (no bodies) and repaint when any changed.
+// Messenger's read counters changed: ask for the numbers of the shown messages (no bodies) and repaint when any changed.
 async function kkReads() {
   const id = KK.open, first = KK.msgs[0];
   if (!id || !first || KK.loading || KK.roomErr) return;
@@ -12781,7 +12781,7 @@ function kkReviseBox(d, rv) {
   return rqReviseNode({ value: rv.text, onInput: v => { rv.text = v; }, go: change => { KK.revise = null; kkMakeDraft(undefined, { code: d.code, change }); },
     cancel: () => { KK.revise = null; kkPaintFoot(); }, manual: () => { KK.revise = null; kkEdit(d); } });
 }
-// A draft of several KakaoTalk messages (d.parts) shows one bubble per message, in the order they go out; one 보내기 sends them all.
+// A draft of several Messenger messages (d.parts) shows one bubble per message, in the order they go out; one 보내기 sends them all.
 const kkDraftParts = d => (Array.isArray(d.parts) && d.parts.length ? d.parts : [d.text]);
 const kkDraftLabel = d => `${d.intent ? "새 메시지 초안" : "답장 초안"}${kkDraftParts(d).length > 1 ? ` · 메시지 ${kkDraftParts(d).length}개` : ""}`;
 // 되돌리기 on the 보내지 않았어요 toast: the dropped draft waits again (POST .../restore; a peer's room on its own computer, 34-peer-monitoring.js).
@@ -12795,7 +12795,7 @@ function kkDraftCard(d) {
   const parts = kkDraftParts(d), inst = (INTG.items.find(i => i.key === "kakao") || {}).label;
   // The message the draft answers (its basis): "<이름>님께 답장" and the original quoted, as the prototype's reply card has it; a new message (intent) has none.
   const basis = d.intent ? null : KK.msgs.find(m => m.logId === d.basisLogId && !m.fromMe && !kkSys(m)) || null;
-  // A KakaoTalk draft is text only: its card says so in the 첨부 줄 (10-reply-card.js rqAttachNode), never hiding it.
+  // A Messenger draft is text only: its card says so in the 첨부 줄 (10-reply-card.js rqAttachNode), never hiding it.
   const card = { key: `kk:${d.code}`, cls: "kk-draft", attrs: { "data-code": d.code }, head: { app: "kakao", ...(basis ? { who: basis.sender || "상대", src: KK.pc ? "" : inst } : { label: KK.pc ? "" : inst }), pc: KK.pc ? KK.pc.name : pqSelf(), at: d.created },
     ...(basis ? { original: { who: `${basis.sender || "상대"} · ${rcWhen(new Date(basis.sentAt).toISOString())}`, text: kkBody(basis).text } } : {}),
     label: kkDraftLabel(d), labelCls: "kk-dh",
@@ -12973,7 +12973,7 @@ function kkMode(item, shown, pc) {
 // The page asks the hub, never the mail account: POST /api/mail/<key>/action {action} -> {ok, synced, note?} for one mail and POST /api/mail/actions {keys, action}
 // -> {ok, results:[{key, ok, synced, note?}]} for a selection (action = read | unread | archive | unarchive | trash | star | unstar). Every action is optimistic:
 // the row changes at once and goes back when the hub says ok:false (or cannot be reached); the hub's note is told once.
-// A mail card says what its mailbox can do in `can` (GET /api/conversations items[].mail); an action it does not list is a disabled button with one short line.
+// A mail card says what its mailbox can do in `can` (GET /api/conversations items[].mail); an action it does not list still works here, and mbNote says it stays in dotz.
 // A card with no `can` at all (a hub that does not know the field) can only be deleted, through the old DELETE /api/mail/<key>.
 // Nothing here sends a mail: 메일 쓰기 and the inline reply save a draft (POST /api/mail/compose) and the owner's 보내기 stays on its approval card.
 ICONS.star = "M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z";
@@ -13182,6 +13182,15 @@ function mbPaintBar() {
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }), ...btns,
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
+}
+// The one line over the list when read or delete stay in dotz for its mails (a source with no mailAction, can without them). It looks at the whole list, not
+// the selection or the folder, so it never comes and goes and the rows stay where they are. A card with no `can` is an older hub, which cannot say.
+function mbNote(mails) {
+  const known = mails.filter(t => Array.isArray((MAILS.get(t) || {}).can));
+  const off = [["read", "읽음"], ["trash", "삭제"]].filter(([a]) => known.some(t => !mailCan(t, a)));
+  if (!off.length) return null;
+  const what = off.map(x => x[1]).join("·"), some = known.some(t => off.every(([a]) => mailCan(t, a)));
+  return el("div", { class: "mbox-note", text: `${some ? "일부 메일의 " : ""}${what}${what === "읽음" ? "은" : "는"} dotz에서만 바뀌고 실제 메일함에는 반영되지 않아요` });
 }
 // The visible mails of the list (select all) and the bar itself, at the head of the rows.
 function mbList(vis) {
@@ -13620,7 +13629,7 @@ MT_READY = true;
 
 /* ---------- 모니터링 > 앱 > 인스타그램 > DM: the conversation list and its messages, read only ---------- */
 // API: docs/ig-dm-api.md. It draws into the comment pane (30-monitoring-comments.js: cmRooms / cmHead / cmIn) when its DM tab is chosen and reuses
-// the KakaoTalk pane's classes (30-kakao.js, 17-kakao.css). This file sorts before the comment file, so it only touches CM / cm* inside functions.
+// the Messenger pane's classes (30-kakao.js, 17-kakao.css). This file sorts before the comment file, so it only touches CM / cm* inside functions.
 // There is no composer and no send: a DM is never answered from here. Text only goes through el({text}), never innerHTML.
 const DM_APP = "instagram";
 const DM = { on: false, connected: false, perm: "unknown", line: "", convs: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, busy: false };
@@ -13721,7 +13730,7 @@ function dmPaintChat(stick) {
 
 /* ---------- 모니터링 > 앱 > 유튜브 / 인스타그램 / 웹사이트 댓글: choose what to follow, one conversation per post ---------- */
 // API: docs/comments-api.md. Shown instead of the notice timeline of an app entry only while the owner has comment replies on for that
-// app (CM.apps). It reuses the KakaoTalk pane's layout and classes (30-kakao.js, 17-kakao.css). Live updates: comment / comment_draft /
+// app (CM.apps). It reuses the Messenger pane's layout and classes (30-kakao.js, 17-kakao.css). Live updates: comment / comment_draft /
 // comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
 // goes through el({text}), never innerHTML.
 const CM = { apps: new Set(), sources: [], local: { sources: [], apps: new Set() }, pc: null, vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
@@ -13832,7 +13841,7 @@ function cmSourceNode(s) {
   }
   return node;
 }
-// The picker: the side sheet of KakaoTalk's 지켜볼 대화방, opened from the app's settings row (asPickRow) or the empty list.
+// The picker: the side sheet of Messenger's 지켜볼 대화방, opened from the app's settings row (asPickRow) or the empty list.
 function cmPickPaint() {
   const d = CM.pickD;
   if (!d) return;
@@ -13998,7 +14007,7 @@ function cmCommentNode(c, v, by, nested) {
     el("div", { class: "kk-mb" }, hd, parent && !nested ? el("div", { class: "kk-reply", text: `↳ ${parent.author}` }) : null, el("div", { class: "kk-bub", text: c.text }), cmProgress(c, v),
       make || no ? el("div", { class: "cm-acts" }, make, no) : null));
 }
-// A reply that did not go out offers 다시 보내기 (the same text through the same gate) and 지우기 (the record goes, the draft stays), like KakaoTalk.
+// A reply that did not go out offers 다시 보내기 (the same text through the same gate) and 지우기 (the record goes, the draft stays), like Messenger.
 const cmSendCall = (s, op) => cmApi(`/api/comments/sends/${enc(s.id)}/${op}`, "POST", {});
 async function cmSendFix(btn, s, op) {
   btn.disabled = true;
@@ -14150,7 +14159,7 @@ cmLoadSources();
 /* ---------- 모니터링: a tab built like 채팅 - a list of what is watched, and a conversation per item ---------- */
 // The list is the chat list's panel and row (31-conversations.js convRow); an item opens as a conversation: its notices and results as messages,
 // an open decision answered in place with the same choice rows a chat message has (10-decision-card.js answerInline). Items: 알림, every
-// integration enabled on this install (30-integrations.js: 메일, 카카오톡 ...) and every dotz_watch monitor or schedule.
+// integration enabled on this install (30-integrations.js: 메일, 메신저 ...) and every dotz_watch monitor or schedule.
 // Only what a watch, a schedule or an integration produced is shown here (monMine). The 알림 channel's posts and the decisions asked there
 // stay in 채팅's 알림 conversation and never show here; watch reports are not in that conversation (hub/events.ts eventTarget).
 // Data: GET /api/monitors (hub/monitors.ts) -> {items: [{name, watch?, kind, channel?, last_run?, last_result?, next_run?, every?, connection?, since?, conn_reason?, paused?, last_summary?}]}, the notices (30-notices.js NT)
@@ -14450,7 +14459,7 @@ function drOriginal(t) {
 // The app instance that holds a conversation target, for the card's head (a peer's row first: PQ.of).
 const monInstLabel = t => { const pe = PQ.of.get(t); if (pe) return pe.label || ""; const it = INTG.items.find(x => intgHas(x, t)); return it ? it.label : ""; };
 // The send approval as the one reply card (web/js/10-reply-card.js): same head (앱 · 계정 · 컴퓨터 · 모델), same 첨부 줄, clamped body, and the same
-// three actions as the 답장 확인 queue, the KakaoTalk room and a comment thread. The answer path is the notice's (answerInline / ntPost), so this
+// three actions as the 답장 확인 queue, the Messenger room and a comment thread. The answer path is the notice's (answerInline / ntPost), so this
 // card and the chat card stay in step.
 // o.bare: only the mail it sends (a handled draft unfolded inside its mail's conversation, 30-mail-sent.js).
 function draftCardNode(n, o = {}) {
@@ -15013,7 +15022,7 @@ function monChronoNodes(it, names) {
   }
   if (cut && newestTop) nodes.push(...(it.mon ? [monOlderSentinel(it.key, cut, "end")] : []), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
   else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
-  if (withMails) return [mailFilterBar(it.mails, it.notices.filter(ok)), mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t))), ...(nodes.length ? nodes : [el("div", { class: "empty", text: held ? "확인할 초안이 없어요" : "이 보기에 해당하는 메일이 없어요" })]), mbFab()];
+  if (withMails) return [mailFilterBar(it.mails, it.notices.filter(ok)), mbNote(it.mails), mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t))), ...(nodes.length ? nodes : [el("div", { class: "empty", text: held ? "확인할 초안이 없어요" : "이 보기에 해당하는 메일이 없어요" })]), mbFab()];
   return nodes;
 }
 // A short feed (a handful of reports) reads best as the whole cards, newest first, with the machine of a peer's report; past MON_COMPACT
@@ -15035,7 +15044,7 @@ function monTopNodes(it) {
   // The prototype's detail card opens the conversation on a phone too: the wait, a down banner and the actions in one card (never loose).
   return out.length ? [el("div", { class: "mon-topcard" }, ...out)] : [];
 }
-// 대화로 이어가기 (owner 2026-11-03): the item's own settings conversation (the same go() as the 대화 icon). A mail or KakaoTalk item is
+// 대화로 이어가기 (owner 2026-11-03): the item's own settings conversation (the same go() as the 대화 icon). A mail or Messenger item is
 // already a conversation, so it has no button of its own here.
 function monConvBtn(it) {
   const app = monSettingsApp(it);
@@ -15133,7 +15142,7 @@ const monHead = it => {
   // An app with reply drafts waiting opens the one 답장 대기 screen on its own drafts (30-replies.js).
   const rqBtn = it.app && it.drafts ? el("button", { class: "btn tonal sm rq-go", type: "button", "data-k": "replies", text: `답장 대기 ${it.drafts}`, onclick: () => rqOpen(it.inst, it.pc) }) : null;
   // 대화로 이어가기 (owner 2026-11-03): every item continues in its own chat - the conversation its settings talk in (asOpen's own go()).
-  // A mail or KakaoTalk item is already a conversation, so the way in is its row and this button stays out of the way there.
+  // A mail or Messenger item is already a conversation, so the way in is its row and this button stays out of the way there.
   const convBtn = monConvBtn(it);
   const acts = [convBtn, rqBtn, it.mon && it.mon.watch && !banner ? monRunBtn(it.mon) : null, it.unreplied ? unrepPill(`미답장 ${it.unreplied}`) : null, ...(kkItem(it) && KK.open ? [] : asEntry(monSettingsApp(it)))].filter(Boolean);
   const extra = [];
@@ -15626,7 +15635,7 @@ function ntOfEvent(e) {
     title: e.title || (own === "alert" ? "알림" : own === "worklog" ? "작업 기록" : lane ? `세션 ${lane}` : botName), text: p.text, src, open: src, at: e.ts, ts: e.ts };
 }
 // A 모니터링 report: its screen, on its own row. MON.want makes the draw reach that row (unfolded, whatever page and group it is in); the draw is synchronous inside
-// go(). KakaoTalk and comments draw their own rooms, not report rows, so those land on the app's pane (a report naming a Kakao room opens that room).
+// go(). Messenger and comments draw their own rooms, not report rows, so those land on the app's pane (a report naming a Kakao room opens that room).
 async function monOpen(n) {
   const seq = ++ntJumpSeq;
   await Promise.all([NM.loaded || loadMonitors(), INTG.loaded || loadIntegrations()]);
@@ -16118,7 +16127,7 @@ const rqRefOf = x => (x.kind === "notice" ? x.n.decision.draft.ref : x.kind === 
 function rqAskRow(x) {
   const o = rqOriginalOf(x), dr = x.kind === "notice" ? x.n.decision.draft : x.kind === "held" ? x.tr.draft : null;
   const who = x.kind === "notice" ? (o && o.who) || (dr && dr.to) || "" : x.kind === "held" ? (dr && dr.to) || "" : x.kind === "kakao" ? x.d.room || "" : (x.d.original && x.d.original.who) || x.d.to || "";
-  const what = x.kind === "notice" ? ntPlain(x.n.title).replace(/\s*\([^()]*\)\s*$/, "") : x.kind === "held" ? draftQ(x.tr.question) : x.kind === "kakao" ? "카카오톡 답장" : x.d.title || "";
+  const what = x.kind === "notice" ? ntPlain(x.n.title).replace(/\s*\([^()]*\)\s*$/, "") : x.kind === "held" ? draftQ(x.tr.question) : x.kind === "kakao" ? "메신저 답장" : x.d.title || "";
   return { key: x.key, state: "ask", who, what, inst: x.inst, app: x.label || rqAppName(x.inst), pc: x.pc, at: x.at, why: rqAskWhy(x), x };
 }
 // Every row of the screen: ask (rqAll), fail and sent (this computer's and the peers'), failures first. A failed send whose draft still waits shows once, as the failure,
@@ -16278,7 +16287,7 @@ async function rqRunKey(key, job) {
   try { await job(); } catch (e) { toast(e instanceof TypeError ? "연결이 끊겨 처리하지 못했어요" : e.message, true); }
   RQ.busy.delete(key); MON.sig = ""; monSchedule(); rqSheetPaint();
 }
-// 다시 보내기 / 모두 다시 보내기: a comment reply and a KakaoTalk send by their own retry, a mail or gateway send through POST /api/approvals/failed (the owner's pick is
+// 다시 보내기 / 모두 다시 보내기: a comment reply and a Messenger send by their own retry, a mail or gateway send through POST /api/approvals/failed (the owner's pick is
 // read back there and refused when it is not a send), once per computer. A refusal is counted and toasted; what stays failed stays listed.
 function rqRetryAll(rows, key) {
   return rqRunKey(key || rows[0].key, async () => {
@@ -16742,7 +16751,7 @@ async function trSendPicked() {
   }
 }
 
-/* ---------- 채팅: the chat list (KakaoTalk-style) and the read position (Discord-style) ---------- */
+/* ---------- 채팅: the chat list (Messenger-style) and the read position (Discord-style) ---------- */
 // Data: GET /api/conversations (hub/conversations.ts) gives every conversation's newest real message, the owner's read position
 // and the unread count; POST /api/read moves the position forward and every device hears {kind:"read"} on the event stream.
 // ts(t).unread (the counter the switcher and the nav already use) is that server count, kept current by convNote.
@@ -17013,7 +17022,7 @@ function convRows() {
   const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
   const running = all.filter(laneAlive).sort((a, b) => rank(a) - rank(b) || at(`lane:${b.name}`).localeCompare(at(`lane:${a.name}`)));
   const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionStatus(l), hint: convPreview(l.lastText) || m.hint }; };
-  // A card per group, and last the 메일 · 카카오톡 card of what waits there.
+  // A card per group, and last the 메일 card of what waits there.
   const projs = projects.map(mk), page = projs.filter((r, i) => i < CVF.more || r.t === target);
   const out = [MAIN, "worklog"].map(mk), lanes = running.map(sess);
   if (lanes.length) out.push({ header: "진행 중", sec: true }, ...lanes);
@@ -17024,11 +17033,11 @@ function convRows() {
   const ended = endedLanes();
   if (ended.length) out.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
   const waits = convWaiting();
-  if (waits.length) out.push({ header: "메일 · 카카오톡", sec: true }, ...waits);
+  if (waits.length) out.push({ header: "메일", sec: true }, ...waits);
   out.push({ read: true });
   return out;
 }
-// The 메일 · 카카오톡 card: this computer's mails with a draft or a reply owed and the watched rooms that owe one, newest first; a tap opens them in 모니터링.
+// The 메일 card: this computer's mails with a draft or a reply owed and the watched rooms that owe one, newest first; a tap opens them in 모니터링.
 function convWaiting() {
   const letter = name => el("span", { class: "cv-av", "aria-hidden": "true", text: [...String(name || "?").trim()][0] || "?" });
   const mails = [...MAILS].filter(([t, m]) => !PQ.of.has(t) && m.dir !== "out" && !m.archived && (m.reply === "draft" || m.unreplied)).map(([t, m]) => {
@@ -17223,11 +17232,11 @@ const nscReadable = () => nscIn(NSC.f).filter(n => !n.read && !ntNeeds(n));
 const nscTone = n => ntNeeds(n) || n.waits === "login" || n.tone === "warn" ? "warn" : n.tone === "fail" ? "err" : n.tone === "done" || n.cls === "result" ? "ok" : "";
 // The tag word of the prototype's D.notices, from the notice's own kind, tone and app: the app is the integration key (mail, kakao, instagram/youtube/site = 댓글)
 // or the prefix of the conversation it lives in. A word the data does not give is not made up: the rest is 감시 / 경고 / the app's name / 새 소식.
-const NSC_APP_TAG = { mail: "메일", kakao: "카카오톡", instagram: "댓글", youtube: "댓글", site: "댓글" };
+const NSC_APP_TAG = { mail: "메일", kakao: "메신저", instagram: "댓글", youtube: "댓글", site: "댓글" };
 const nscApp = n => String(n.app || n.src || n.open || "").split(/[-:]/)[0];
 function nscTag(n) {
   const app = nscApp(n);
-  if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? "카카오톡" : "답장 대기") : "결정";
+  if (ntIsDec(n)) return n.decision.draft ? (app === "kakao" ? "메신저" : "답장 대기") : "결정";
   if (n.waits === "login") return "로그인";
   if (n.waits === "fail" || n.tone === "fail") return "실패";
   if (n.tone === "ask") return "질문";
