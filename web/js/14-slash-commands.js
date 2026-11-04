@@ -307,7 +307,7 @@ function renderWorking() {
   const bg = on ? [] : workOfTarget(target), show = on || bg.length > 0;
   workingBg = bg;
   box.hidden = !show;
-  // Only while the gateway reports this target running: status line, model-chip spinner, and stop in place of send
+  // Only while the gateway reports this target running: status line, and stop in place of send
   // (with text typed the button sends it into the running turn instead).
   // The send button is the one stop control (owner 2026-10-28): it stops the running turn, or, with no turn running, this conversation's background worker.
   const line = $("#runline"), stopMode = ((on && st !== "rate-limited") || bg.length > 0) && !ta.value.trim() && !ATT.length && !pkCount();
