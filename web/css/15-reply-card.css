@@ -1,65 +1,65 @@
 /* 답장 초안 카드 (web/js/10-reply-card.js) and the 답장 확인 queue (web/js/30-replies.js) */
 /* 머리: 한 줄 (받는 사람 + 출처), 상태는 오른쪽 (owner 2026-11-03: 머리줄은 한 줄, 초안이 주인공) */
-.rq-hd { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 20px; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.rq-hd { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; min-height: 20px; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .rq-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-weight: 400; }
 .rq-meta .rq-wt { color: var(--fg); font-size: 13px; font-weight: 600; }
 .rq-meta .rq-src { color: var(--fg-3); font-weight: 400; }
 .rq-hd .rc-time { flex: none; }
-.rq-lb { margin-top: 8px; color: var(--fg-3); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
-.rq-to { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 8px; }
+.rq-lb { margin-top: var(--sp-2); color: var(--fg-3); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
+.rq-to { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; margin-top: var(--sp-2); }
 .rq-to .dr-chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rq-sub { margin-top: 6px; }
+.rq-sub { margin-top: var(--sp-15); }
 /* 원문: 회색·왼쪽 괘선·두 줄, 길면 원문 보기 (원칙 5: 남의 글은 조용한 인용, 초안과 눈에 띄게 나뉨) */
-.rq-og-wrap { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; margin-top: 8px; }
+.rq-og-wrap { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 100%; margin-top: var(--sp-2); }
 .rq-orig { min-width: 0; max-width: 100%; padding: 1px 0 1px 10px; border-left: 2px solid var(--line-2); color: var(--fg-2); font: 400 13px/19px var(--font); overflow-wrap: anywhere; }
-.rq-orig .rq-oh { margin-bottom: 2px; color: var(--fg-3); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
+.rq-orig .rq-oh { margin-bottom: var(--sp-05); color: var(--fg-3); font: 500 var(--fs-meta)/var(--lh-meta) var(--font); }
 .rq-orig .rq-ot { display: block; }
 .rq-orig.clamp .rq-ot { --fade: 19px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); }
-.rq-og { height: 28px; min-height: 0; margin-top: 2px; padding: 0 4px; color: var(--fg-3); font-size: var(--fs-meta); }
+.rq-og { height: 28px; min-height: 0; margin-top: var(--sp-05); padding: 0 var(--sp-1); color: var(--fg-3); font-size: var(--fs-meta); }
 .rq-og:hover { color: var(--fg); }
 /* 초안: 카드의 본문, 상자 없이 (원칙 1·5) */
 .rq-body { margin-top: 10px; font: 400 15px/24px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
 .rq-body.clamp { --fade: 48px; max-height: calc(24px * 6); overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); }
 .rq-body .kk-dt { max-height: none; margin: 0; overflow: visible; }
-.rq-parts { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; white-space: normal; }
-.rq-part { max-width: 85%; padding: 6px 10px; border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 14%, var(--card)); white-space: pre-wrap; }
+.rq-parts { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); white-space: normal; }
+.rq-part { max-width: 85%; padding: var(--sp-15) 10px; border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 14%, var(--card)); white-space: pre-wrap; }
 .rq-part.sent { opacity: .55; }
-.rq-more { height: 28px; margin-top: 2px; padding: 0 4px; font-size: 13px; }
-.rq-edit { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-.rq-edit .kk-rv { min-height: 40px; padding: 8px 12px; border-radius: var(--r-ctl); border: 0; background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
-.rq-edit .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.rq-more { height: 28px; margin-top: var(--sp-05); padding: 0 var(--sp-1); font-size: 13px; }
+.rq-edit { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: 10px; }
+.rq-edit .kk-rv { min-height: 40px; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); border: 0; background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
+.rq-edit .btns { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
 
 /* 메시지 답글 카드 (소개 페이지 댓글 답글 데모): 남의 글은 조용한 인용, 초안 글이 주인공(원칙 1·5). 게시물 제목과 첨부 안내는 회색으로 물러나요 */
-.rq[data-kind="comment"] .rq-sub { margin-top: 6px; color: var(--fg-2); font: 500 13px/19px var(--font); }
+.rq[data-kind="comment"] .rq-sub { margin-top: var(--sp-15); color: var(--fg-2); font: 500 13px/19px var(--font); }
 .rq-orig .rq-ow { color: var(--fg-2); font-weight: 500; }
-.rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) { margin-top: 8px; padding: 0; background: none; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) { margin-top: var(--sp-2); padding: 0; background: none; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 .rq-att[data-k="none"] .dr-none:not(:has(.dr-wn)) .ic { width: 14px; height: 14px; color: inherit; stroke-width: 2; }
 /* 보냈어요: 버튼 행과 같은 높이, 그 자리에서 바뀝니다(원칙 6) */
-.rq-sent { display: flex; align-items: center; gap: 6px; height: var(--btn-h-sm); margin-top: 12px; color: var(--fg); font: 500 14px/20px var(--font); }
+.rq-sent { display: flex; align-items: center; gap: var(--sp-15); height: var(--btn-h-sm); margin-top: var(--sp-3); color: var(--fg); font: 500 14px/20px var(--font); }
 .rq-sent .ic { flex: none; width: 16px; height: 16px; fill: none; stroke: var(--ok); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .kk-st > .rq-sent { height: auto; margin-top: 0; }
 .rq-sent-at { color: var(--fg-3); font: 400 12px/16px var(--font); }
 
 /* the queue: one list, newest first, an app filter on top */
-.rq-q { display: flex; flex-direction: column; gap: 12px; }
-.rq-q > .rq { padding: 12px 14px; border-radius: var(--r-card); background: var(--card); }
+.rq-q { display: flex; flex-direction: column; gap: var(--sp-3); }
+.rq-q > .rq { padding: var(--sp-3) 14px; border-radius: var(--r-card); background: var(--card); }
 .rq-q > .rq.busy { opacity: .6; }
-.rq-filter { display: flex; flex-wrap: wrap; gap: 6px; }
-.rq-open { margin-left: auto; height: 28px; padding: 0 8px; font-size: 12px; }
-@media (pointer: coarse), (max-width: 639px) { .rq-q > .rq { padding: 12px; } }
+.rq-filter { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
+.rq-open { margin-left: auto; height: 28px; padding: 0 var(--sp-2); font-size: 12px; }
+@media (pointer: coarse), (max-width: 639px) { .rq-q > .rq { padding: var(--sp-3); } }
 
 /* 댓글 답글 카드: 작은 아바타 + 이름과 출처가 한 줄, 댓글은 조용한 인용, 초안이 본문, 버튼은 작은 단계 하나 줄 (원칙 1·5·9) */
-.rq-who { gap: 8px; }
+.rq-who { gap: var(--sp-2); }
 .rq-av { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 600 var(--fs-tag)/1 var(--font); text-transform: uppercase; }
-.rq.cm .rq-sub { margin-top: 4px; color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.rq.cm .rq-sub { margin-top: var(--sp-1); color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
 .rq.cm.dr .rq-sub { margin-top: 10px; color: var(--fg); font: 600 14px/20px var(--font); }   /* a mail draft: its reply subject heads the body */
 .rq.cm .rq-body, .rq.cm .rq-bodywrap { margin-top: 10px; }
 .rq.cm .rq-body, .rq.cm .rq-bodywrap > .rq-body { padding: 0; background: none; }
 .rq.cm .rq-acts { margin-top: 10px; }
-.rq-acts { flex-wrap: wrap; gap: 8px; }
+.rq-acts { flex-wrap: wrap; gap: var(--sp-2); }
 /* one row, one height: primary (accent) / secondary (tonal) / text, the same 32px box and --r-ctl corner on every card, never a pill (the prototype's .cf row) */
 .rq-acts .btn.sm { height: var(--btn-h-sm); min-height: 0; padding: 0 14px; border-radius: var(--r-ctl); font: 600 13px/20px var(--font); }
 /* the reply draft's small buttons keep the 32px box on a phone too: the box is what the owner reads, the 44px reach is an invisible ::after (ui-spec 버튼) */
 @media (pointer: coarse), (max-width: 639px) { .rq-acts .btn.sm { position: relative; height: var(--btn-h-sm); min-height: 0; } .rq-acts .btn.sm::after { content: ""; position: absolute; inset: -6px -2px; } }
-.rq-acts .btn.text.sm { padding: 0 8px; }
+.rq-acts .btn.text.sm { padding: 0 var(--sp-2); }
 .rq-acts.dr-row .dr-send { flex: none; }
