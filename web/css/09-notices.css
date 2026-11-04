@@ -144,6 +144,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 /* 알림 conversation: 지우기 (x) on each alert that needs no answer (30-notices.js ntAlertMarks) */
 #tl > [data-ts]:has(> .al-x) { position: relative; padding-right: 44px; }
 #tl > [data-ts] > .al-x { position: absolute; top: 8px; right: 8px; color: var(--fg-3); }
+#tl > .cont:has(> .al-x) > .mt:not(.dv) > .rp-btn { right: 44px; }   /* a continuation row hangs the quote button at the top right (15-reply.css): it stands left of the dismiss button */
 #tl > [data-ts] > .al-x:hover { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
 
 

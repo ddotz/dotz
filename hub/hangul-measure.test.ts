@@ -50,6 +50,12 @@ test("--text finds a clipped button and a covered one", async () => {
 	expect(await summary(file, 200)).toMatchObject({ clip: 1, blocked: 1 });
 });
 
+test("--text skips a covered button folded inside a closed details, not one in an open details", async () => {
+	const folded = (open: string) => `<details${open}><summary>끝난 세션 목록이에요</summary><div style="position:relative;width:60px;height:40px"><button aria-label="삭제" style="width:40px;height:30px"></button><div style="position:absolute;inset:0"></div></div></details>`;
+	expect((await summary(page("closed", folded("")), 200)).blocked).toBe(0);
+	expect((await summary(page("opened", folded(" open")), 200)).blocked).toBe(1);
+});
+
 test("the CLI exits 0 clean, 1 problems, 2 could not run", async () => {
 	const cli = (...args: string[]) => Bun.spawn(["bun", join(import.meta.dir, "hangul-measure.ts"), ...args], { stdout: "ignore", stderr: "ignore" }).exited;
 	const codes = await Promise.all([cli(page("cli-clean", CLEAN), "390"), cli(page("cli-split", SPLIT), "390"), cli(join(dir, "missing.html"), "390"), cli(page("cli-scope", CLEAN), "390", "--scope", "#nope")]);
