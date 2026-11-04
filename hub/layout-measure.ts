@@ -520,9 +520,6 @@ export const SCREENS: Screen[] = [
 	{ name: "chat-open", call: `go("chat", "main")`, view: "chat", ready: `target === "main" && CV.placed && tl.querySelectorAll(".um, .bm, .cv-sys").length >= 1` },
 	{ name: "projects", call: `go("projects")`, view: "projects,project", ready: `!!document.querySelector("#v-projects > *, #v-project > *")` },
 	{ name: "project", call: `go("project", "ch:5")`, view: "project", ready: `!!document.querySelector("#v-project > *")` },
-	// project-goal: the project's 단계 editor, a full-screen dialog (fs-card) with the milestone field + 추가 button
-	{ name: "project-goal", call: `go("project", "ch:5")`, view: "project", ready: `!!document.querySelector("button[data-k=goal]")`, scope: "section.fs-card",
-		open: { call: `document.querySelector("button[data-k=goal]").click()`, ready: `!!document.querySelector("section.fs-card .pmv-add")` }, close: `document.querySelector("section.fs-card .pdv-back")?.click()` },
 	{ name: "monitoring", call: `go("monitoring")`, view: "monitoring", ready: `NM.loaded` },
 	{ name: "mail", call: `go("monitoring", "i:mail")`, view: "monitoring", ready: `NM.loaded && MON.sel === "i:mail"` },
 	// mail-recipient: the draft card's 받는 사람 추가 opened, an address field + 확인 button in the row

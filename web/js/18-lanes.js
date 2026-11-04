@@ -134,7 +134,6 @@ function prjBlurb(text) {
   const t = out.join(". ");
   return t.length > 90 ? `${out[0].length <= 90 ? out[0] : out[0].slice(0, 88)}…` : t;
 }
-const prjMiles = p => { const m = (p.record && p.record.milestones) || p.milestones; return Array.isArray(m) ? m : []; };
 const prjMonitors = p => Array.isArray(p.monitors) ? p.monitors.length : typeof p.monitors === "number" ? p.monitors : null;
 const prjChat = p => p.key.startsWith("ch:") ? p.key : p.channel ? `ch:${p.channel.id}` : "";
 const prjPaused = p => !!(p.paused || (p.record && p.record.paused));
@@ -176,14 +175,14 @@ function sessionRow(l, o = {}) {
     el("span", { class: `hs ${tone}`, text: word }));
 }
 
-/* ---------- 프로젝트 level 1: a compact list (name, one status line, milestone progress, last activity), filtered and paged ----------
+/* ---------- 프로젝트 level 1: a compact list (name, one status line, last activity), filtered and paged ----------
    Rows sort by what needs the owner, then what runs, then the most recent. A row opens the project's overview (level 2); the overview's
    sections open one drill-in page each (level 3). The built-in 커스텀 project is a settings page, so it sits at the end, outside the filters. */
-const PJ_PAGE = 12, PJ_VIEWS = [["all", "전체"], ["run", "진행 중"], ["need", "확인 필요"], ["done", "끝남"]];
+const PJ_PAGE = 12, PJ_VIEWS = [["all", "전체"], ["run", "진행 중"], ["need", "확인 필요"]];
 const PJ = { view: "all", q: "", more: PJ_PAGE };
-// What the owner should do with a project now: a waiting session first, then work running, then a finished goal, then a resting one.
+// What the owner should do with a project now: a waiting session first, then work running, then a resting one.
 function prjState(p) {
-  const ls = p.lanes || [], ms = prjMiles(p), allDone = ms.length > 0 && ms.every(m => m.done);
+  const ls = p.lanes || [];
   if (prjPaused(p)) return { k: "paused", tone: "", word: "일시 정지" };
   const ask = ls.find(l => l.waiting);
   if (ask) return { k: "need", tone: "att", word: "답을 기다려요", lane: ask };
@@ -193,7 +192,6 @@ function prjState(p) {
   if (work) return { k: "run", tone: "pri", word: work.st[0], lane: work.l };
   const stuck = at("err") || at("warn");
   if (stuck) return { k: "need", tone: stuck.st[1], word: stuck.st[0], lane: stuck.l };
-  if (allDone) return { k: "done", tone: "ok", word: "끝남" };
   if (ls.some(l => l.live)) return { k: "run", tone: "", word: "세션 열림" };
   return { k: "idle", tone: "", word: ls.length ? "쉬는 중" : "아직 세션이 없어요" };
 }
@@ -220,7 +218,7 @@ function projRows(list) {
     .sort((a, b) => prjRank(a.st) - prjRank(b.st) || prjLastAt(b.p) - prjLastAt(a.p) || String(prjTitle(a.p)).localeCompare(String(prjTitle(b.p)), "ko", { numeric: true }));
 }
 function pjChipCounts(rows) {
-  return { all: rows.length, need: rows.filter(r => r.st.k === "need").length, run: rows.filter(r => r.st.k === "run").length, done: rows.filter(r => r.st.k === "done").length };
+  return { all: rows.length, need: rows.filter(r => r.st.k === "need").length, run: rows.filter(r => r.st.k === "run").length };
 }
 function pjFiltered() {
   const q = PJ.q.trim().toLowerCase(), rows = projRows((PRJ && PRJ.projects) || []);
@@ -228,9 +226,9 @@ function pjFiltered() {
 }
 // One row, the prototype's list row (s-work.js 프로젝트): a folder tile, the name with one quiet line under it, then the state tag at the right.
 function prjRow(r) {
-  const { p, st } = r, ms = prjMiles(p), done = ms.filter(m => m.done).length;
+  const { p, st } = r;
   const chat = prjChat(p), unread = chat ? ts(chat).unread : 0, at = prjLastAt(p), sel = current === "project" && ppCur === p.key;
-  const line = prjBlurb(prjPurpose(p)) || (st.lane ? (st.lane.title || st.lane.name) : ""), full = [line, ms.length ? `${done}/${ms.length} 단계` : "", prjAgo(at)].filter(Boolean).join(" · ");
+  const line = prjBlurb(prjPurpose(p)) || (st.lane ? (st.lane.title || st.lane.name) : ""), full = [line, prjAgo(at)].filter(Boolean).join(" · ");
   const tone = st.tone === "att" ? "warn" : st.tone;
   return el("button", { class: `pl-row${sel ? " on" : ""}${unread ? " unread" : ""}`, type: "button", "data-key": p.key, "aria-label": `${prjTitle(p)} · ${full} · 열기`, onclick: () => go("project", p.key) },
     el("span", { class: "ico" }, icon("projects")),
@@ -272,7 +270,7 @@ function pjPaintRows() {
   const rows = pjFiltered(), page = rows.slice(0, PJ.more), rest = rows.length - page.length;
   const builtin = ((PRJ && PRJ.projects) || []).find(p => p.builtin), searching = !!PJ.q.trim();
   const showBuiltin = !!builtin && PJ.view === "all" && (!searching || "커스텀".includes(PJ.q.trim().toLowerCase()));
-  const sig = JSON.stringify([rows.map(r => [r.p.key, r.st.k, r.st.word, r.st.lane && r.st.lane.name, prjLastAt(r.p), prjMiles(r.p).map(m => m.done), prjChat(r.p) ? ts(prjChat(r.p)).unread : 0]), PJ.more, PJ.view, PJ.q, current === "project" ? ppCur : "", showBuiltin]);
+  const sig = JSON.stringify([rows.map(r => [r.p.key, r.st.k, r.st.word, r.st.lane && r.st.lane.name, prjLastAt(r.p), prjChat(r.p) ? ts(prjChat(r.p)).unread : 0]), PJ.more, PJ.view, PJ.q, current === "project" ? ppCur : "", showBuiltin]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   // Section headers and one card per group, as the prototype's 프로젝트 list; a group with no row after the filter is left out.

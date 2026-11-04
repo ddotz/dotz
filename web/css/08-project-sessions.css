@@ -9,11 +9,6 @@
 .pmv-htop > .pmv-ed { flex: 1 1 auto; min-width: 0; }
 .pmv-htop > .tag { flex: none; max-width: 100%; }
 .pmv-upd { flex: none; margin-left: auto; color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
-.pmv-hprog { flex: 1 1 100%; display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-15); min-width: 0; }
-/* a phone puts the bar right under the purpose and the buttons last (the prototype header has no buttons) */
-@media (max-width: 479px) { .pmv-head > .pmv-hprog { order: 1; } .pmv-head > .pmv-hact { order: 2; } }
-.pmv-hprog .bar { width: 100%; margin-top: 0; }
-.pmv-hprog-t { color: var(--fg-3); font: 400 12px/16px var(--font); }
 /* Left-aligned: when the head wraps (narrow screens, or the hint under a disabled button widens the box) a right-aligned button floated away from the text above it. */
 .pmv-hact { flex: none; max-width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
 .pmv-hact .note { margin-top: 0; }
@@ -38,25 +33,6 @@
   .pmv-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 var(--sp-4); align-items: start; }
   .pmv-col { display: flex; flex-direction: column; min-width: 0; }
 }
-.pmv-goal { display: flex; flex-direction: column; gap: var(--sp-3); }
-.pmv-prog { display: flex; align-items: center; gap: var(--sp-3); }
-.pmv-prog .bar { flex: 1; margin-top: 0; }
-.pmv-big { flex: none; font: 700 20px/28px var(--font); }
-.pmv-mlist { display: flex; flex-direction: column; }
-.pmv-ms { display: flex; align-items: flex-start; gap: var(--sp-3); min-height: 44px; padding: var(--sp-15) 0; }
-.pmv-ms + .pmv-ms { border-top: 1px solid var(--line); }
-.pmv-ms .pmv-edit { font-size: 15px; line-height: 22px; }
-.pmv-ms.done .pmv-edit { color: var(--fg-3); text-decoration: line-through; }
-.pmv-mtx { flex: 1; min-width: 0; padding-top: 1px; /* nudge: text line against the 22px checkbox */ }
-.pmv-ck { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-top: var(--sp-1); padding: 0; border: 1.5px solid var(--line-2); border-radius: 50%; background: transparent; color: var(--bg); }
-.pmv-ck .ic { width: 14px; height: 14px; opacity: 0; }
-.pmv-ck[aria-checked="true"] { border-color: var(--fg); background: var(--fg); }
-.pmv-ck[aria-checked="true"] .ic { opacity: 1; }
-.pmv-add { display: flex; align-items: stretch; gap: var(--sp-2); }
-.pmv-add .fi { flex: 1; min-width: 0; }
-.pmv-add .btn { flex: none; }
-.pmv-add .fi, .pmv-add .btn { height: auto; min-height: var(--field-h); }
-@media (pointer: coarse), (max-width: 639px) { .pmv-add .fi, .pmv-add .btn { min-height: var(--btn-hit); } }
 .pmv-rt { display: flex; flex-direction: column; gap: var(--sp-15); padding: var(--sp-3) var(--sp-4); }
 .pmv-rt-top { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15) var(--sp-2); min-width: 0; }
 .pmv-rt-name { flex: 1 1 120px; min-width: 0; font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
