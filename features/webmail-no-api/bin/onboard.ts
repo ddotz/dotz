@@ -7,7 +7,7 @@ import { blockedByFeatures } from "../../../hub/featuredirs.ts";
 import { dataDir, liveCtx } from "../lib/config.ts";
 import { cookieHeaderFromAside } from "../lib/cookies.ts";
 import { liveGateway } from "../lib/gateway.ts";
-import { loginViaRepl } from "../lib/login.ts";
+import { beforeKill, loginViaRepl } from "../lib/login.ts";
 import { loadOnboard, render, runOnboard, type Io, type LoginResult } from "../lib/onboard.ts";
 import { readRecording, recordViaAside } from "./capture.ts";
 
@@ -34,13 +34,13 @@ try {
 	const s = await pg.evaluate(() => ({ pw: !!document.querySelector('input[type=password]'), href: location.href }));
 	console.log('WM_LOGIN ' + (s.pw ? 'form' : 'in'));
 } finally { await closeTab(pg).catch(() => {}); }`;
-	const out = await run(["aside", "repl", code], 45_000);
+	const out = await run(["aside", "repl", beforeKill(code, 45_000)], 45_000);
 	const m = out.match(/WM_LOGIN (form|in)/);
 	return m ? (m[1] as "form" | "in") : "unknown";
 }
 
 async function login(url: string, allowSecondFactor: boolean): Promise<LoginResult> {
-	return loginViaRepl((code, ms) => run(["aside", "repl", code], ms), url, allowSecondFactor);
+	return loginViaRepl((code, ms) => run(["aside", "repl", beforeKill(code, ms)], ms), url, allowSecondFactor);
 }
 
 function liveIo(site: string, channel?: string): Io {
