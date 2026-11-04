@@ -2,7 +2,7 @@
 // a tarball install stamps itself and then self-updates to a newer local tarball; a --git install stays a git checkout and
 // self-updates through git as before. The copy of this repo's files is the "release".
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -15,7 +15,7 @@ const run = (cmd: string[], extra: Record<string, string> = {}, cwd = root) => {
 };
 // The release: this checkout's code (tracked or new, not ignored) without tests, web assets, docs and feature folders, copied once. The
 // update flow only needs the files the installer checks for and the code the updater CLI imports.
-const releaseFile = (f: string) => !f.endsWith(".test.ts") && (f.startsWith("hub/") || ["setup.ts", "package.json", "VERSION"].includes(f));
+const releaseFile = (f: string) => !f.endsWith(".test.ts") && (f.startsWith("hub/") || f.startsWith("onboard/") || ["setup.ts", "package.json", "VERSION"].includes(f));
 function copyTree(dir: string) {
 	const listed = run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], {}, REPO);
 	// The self-update runs these tests in a tarball install's staging folder, which has no .git: there the folder itself is the release.
@@ -127,4 +127,96 @@ test("--git installs a clone that updates through git, without a stamp", () => {
 	const up = selfupdate(app, "--apply", "--test-cmd", "test -f RELEASE_2");
 	expect(up.json.status).toBe("updated");
 	expect(existsSync(join(app, "RELEASE_2"))).toBe(true);
+}, 60_000);
+// The web onboarding branch (docs/web-onboarding.md, "설치 스크립트 분기"). launchctl, systemctl, open and xdg-open are stubs first on PATH that only
+// log their calls, so no real service, browser or the live label dev.dotz.gateway is ever touched. --no-open keeps the run from waiting for a gateway.
+const ADDRESS = /http:\/\/127\.0\.0\.1:(\d+)\/setup\?token=([A-Za-z0-9_-]+)/;
+const OPENERS = /^(open|xdg-open) /m;
+let webTgz = "";
+function scene() {
+	const dir = mkdtempSync(join(root, "web-"));
+	const bin = join(dir, "bin");
+	mkdirSync(bin);
+	// launchctl print failing = "service not loaded", so setup.ts does not wait for an unload
+	for (const name of ["launchctl", "systemctl", "open", "xdg-open"]) {
+		writeFileSync(join(bin, name), `#!/bin/sh\necho "\$(basename "\$0") \$*" >> "\$STUB_LOG"\n[ "\$1" = print ] && exit 1\nexit 0\n`);
+		chmodSync(join(bin, name), 0o755);
+	}
+	const probe = Bun.serve({ port: 0, fetch: () => new Response("") });
+	const port = probe.port;
+	void probe.stop(true);
+	if (!webTgz) tarball((webTgz = join(root, "web-release.tar.gz")));
+	const data = join(dir, "data");
+	const calls = join(dir, "stub.log");
+	const env = { HOME: join(dir, "home"), DOTZ_DIR: data, DOTZ_HOME: join(dir, "app"), DOTZ_TARBALL: `file://${webTgz}`, DOTZ_PORT: String(port), PATH: `${bin}:${process.env.PATH}`, STUB_LOG: calls, DOTZ_TAILSCALE_BIN: "", SSH_CONNECTION: "", DISPLAY: "", WAYLAND_DISPLAY: "" };
+	mkdirSync(env.HOME);
+	// detached: no controlling terminal, so a terminal wizard can never read the developer's tty
+	const install = (extra: Record<string, string>, ...args: string[]) => {
+		const r = Bun.spawnSync(["sh", join(REPO, "install.sh"), "--yes", ...args], { cwd: root, env: { ...process.env, ...env, ...extra }, stdout: "pipe", stderr: "pipe", stdin: "ignore", detached: true });
+		return { code: r.exitCode, out: `${r.stdout}${r.stderr}` };
+	};
+	const stubCalls = () => (existsSync(calls) ? readFileSync(calls, "utf8") : "");
+	return { data, port, install, stubCalls, marker: join(data, "onboarding", "first-run.json") };
+}
+
+test("a fresh install with --no-open writes the seed config and marker, prints a one-use address and opens nothing", () => {
+	const s = scene();
+	const i = s.install({}, "--no-open");
+	if (i.code !== 0) throw new Error(i.out);
+	const [, port, token] = i.out.match(ADDRESS) ?? [];
+	expect(Number(port)).toBe(s.port);
+	expect(JSON.parse(readFileSync(join(s.data, "config.json"), "utf8"))).toEqual({ web: { port: s.port, access: "local" } });
+	const marker = readFileSync(s.marker, "utf8");
+	expect(JSON.parse(marker).status).toBe("pending");
+	expect(marker).not.toContain(token!);
+	expect(statSync(s.marker).mode & 0o777).toBe(0o600);
+	expect(i.out).toContain("setup.ts");
+	expect(s.stubCalls()).not.toMatch(OPENERS);
+	expect(i.out).not.toContain("ssh -L");
+}, 60_000);
+
+test("over SSH the address comes with the ssh -L line and no browser is opened", () => {
+	const s = scene();
+	const i = s.install({ SSH_CONNECTION: "10.0.0.2 50000 10.0.0.1 22" });
+	if (i.code !== 0) throw new Error(i.out);
+	expect(i.out).toMatch(ADDRESS);
+	expect(i.out).toContain(`ssh -L ${s.port}:127.0.0.1:${s.port} `);
+	expect(s.stubCalls()).not.toMatch(OPENERS);
+}, 60_000);
+
+test("a re-run while the marker is pending restarts and prints a new address for the same seed config", () => {
+	const s = scene();
+	const first = s.install({}, "--no-open");
+	if (first.code !== 0) throw new Error(first.out);
+	const seed = readFileSync(join(s.data, "config.json"), "utf8");
+	const again = s.install({}, "--no-open");
+	if (again.code !== 0) throw new Error(again.out);
+	const [a, b] = [first.out.match(ADDRESS)?.[2], again.out.match(ADDRESS)?.[2]];
+	expect(b).toBeTruthy();
+	expect(b).not.toBe(a);
+	expect(readFileSync(join(s.data, "config.json"), "utf8")).toBe(seed);
+	expect(JSON.parse(readFileSync(s.marker, "utf8")).status).toBe("pending");
+}, 60_000);
+
+test("a re-run on an existing config without a marker shows no onboarding", () => {
+	const s = scene();
+	mkdirSync(s.data);
+	writeFileSync(join(s.data, "config.json"), "{}\n");
+	const i = s.install({}, "--no-open");
+	if (i.code !== 0) throw new Error(i.out);
+	expect(i.out).not.toMatch(ADDRESS);
+	expect(existsSync(join(s.data, "onboarding"))).toBe(false);
+	expect(s.stubCalls()).not.toMatch(OPENERS);
+}, 60_000);
+
+test("--no-service and --setup keep the terminal path and create no marker", () => {
+	for (const flag of ["--no-service", "--setup"]) {
+		const s = scene();
+		const i = s.install({}, flag);
+		if (i.code !== 0) throw new Error(i.out);
+		expect(i.out).toContain("no terminal for the wizard");
+		expect(i.out).not.toMatch(ADDRESS);
+		expect(existsSync(s.marker)).toBe(false);
+		expect(existsSync(join(s.data, "config.json"))).toBe(false);
+	}
 }, 60_000);

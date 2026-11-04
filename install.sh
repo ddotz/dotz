@@ -5,8 +5,15 @@
 #   sh install.sh --uninstall [--purge]                     remove the code and the service (--purge: the data dir too)
 # Steps: bun (official installer when missing) -> the agent harness (OmO by default: bun add -g omo-ai; an installed omp
 # or Claude Code is detected and offered by the wizard) -> the dotz code (tarball of DOTZ_REPO@DOTZ_REF, or DOTZ_TARBALL)
-# -> bun install -> a fresh data dir -> the onboarding wizard (setup.ts) on the terminal -> the web app.
-# A re-run with an existing config.json only replaces the code and restarts the gateway (the wizard runs again with --setup).
+# -> bun install -> a fresh data dir -> the onboarding -> the web app.
+# Onboarding (docs/web-onboarding.md): a fresh install with a screen asks nothing on the terminal (besides the OmO question above). It writes a seed
+# config.json, starts the gateway service, waits for it and opens the browser on a one-time local address (`setup.ts --first-run`). Over SSH, on a
+# Linux box without DISPLAY/WAYLAND_DISPLAY, with --no-open, or when the browser cannot be opened, it prints that address instead (plus the
+# `ssh -L` line under SSH, and `bun <code>/setup.ts` for the terminal wizard). The address is printed, never written to a file or log.
+# --setup, --answers FILE and --no-service run the terminal wizard (setup.ts) as before; --no-setup skips onboarding.
+# A re-run with an existing config.json only replaces the code and restarts the gateway (the wizard runs again with --setup). If that
+# install is still waiting for its web onboarding (<data dir>/onboarding/first-run.json says pending), the re-run also restarts and prints
+# or opens a new address (`setup.ts --web-link`).
 #
 # Self-update: the install writes a stamp (.dotz-install: source kind, repo, ref, commit sha, how it authenticated) so the
 # gateway can check the repo for newer commits and swap in a new tarball itself (settings -> update). A private repo needs a
@@ -21,6 +28,8 @@
 #   DOTZ_DIR      data dir (config, secrets, memory)    (default ~/.dotz)
 #   DOTZ_HARNESS  omo | omp | claude | none             (default omo; none = install no harness)
 #   DOTZ_GIT_URL  clone URL for --git                   (default https://github.com/$DOTZ_REPO.git)
+#   DOTZ_PORT     first port to try for the web app on a fresh install; the next free one is used (default 7420)
+#   DOTZ_OPEN_WAIT  seconds to wait for the gateway before opening the browser (default 30)
 #   GITHUB_TOKEN / GH_TOKEN   token for a private repo (else an existing `gh` login is used)
 # Options: --git --service --no-service --setup --no-setup --answers FILE --tailscale --no-open --uninstall --purge --yes
 set -eu
@@ -263,13 +272,61 @@ if [ "$AUTH" = token ] && [ -z "$GIT" ]; then
 	say "token saved to $DATA/secrets/github-token (self-update checks of the private repo)"
 fi
 
-# 6. wizard
+# 6. onboarding: in the browser (WEB=first on a fresh install, WEB=link while the first-run marker is pending) or the terminal wizard
+WEB=
 if [ "$SETUP" = auto ]; then
-	if [ -f "$DATA/config.json" ]; then SETUP=no; else SETUP=yes; fi
+	if [ -f "$DATA/config.json" ]; then
+		if grep -q '"status": *"pending"' "$DATA/onboarding/first-run.json" 2>/dev/null; then
+			if [ -n "$ANSWERS" ] || [ "$SERVICE" = no ]; then SETUP=yes; else WEB=link; fi
+		else SETUP=no; fi
+	elif [ -n "$ANSWERS" ] || [ "$SERVICE" = no ]; then SETUP=yes
+	else WEB=first; fi
 fi
 if [ "$SETUP" = no ]; then
 	[ -n "$UPGRADE" ] && svc_restart
 	say "done. Wizard again: bun $APP/setup.ts"
+	exit 0
+fi
+if [ -n "$WEB" ]; then
+	PORT=${DOTZ_PORT:-7420}
+	case $PORT in '' | *[!0-9]*) die "DOTZ_PORT must be a port number" ;; esac
+	cd "$APP"
+	# The output is held in a variable: it carries the one-time token, which must not reach a file or log.
+	if [ "$WEB" = link ]; then
+		svc_restart
+		OUT=$(DOTZ_DIR=$DATA bun setup.ts --web-link --dir "$DATA") || die "could not issue a setup address"
+	else
+		OUT=$(DOTZ_DIR=$DATA bun setup.ts --first-run --port "$PORT" --load --dir "$DATA") || die "first-run setup failed"
+	fi
+	URL=$(printf '%s\n' "$OUT" | sed -n 's/^setup-url: //p' | head -n 1)
+	printf '%s\n' "$OUT" | grep -v '^setup-url: ' || true
+	[ -n "$URL" ] || die "setup.ts printed no setup address"
+	P=${URL#http://127.0.0.1:}
+	P=${P%%/*}
+	MODE=open
+	[ -n "$OPEN" ] || MODE=print
+	[ -z "${SSH_CONNECTION:-}" ] || MODE=print
+	if [ "$OS" = Linux ] && [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then MODE=print; fi
+	if [ "$MODE" = open ]; then
+		UP= i=0
+		while [ "$i" -lt "${DOTZ_OPEN_WAIT:-30}" ]; do
+			if curl -s -o /dev/null -m 2 "http://127.0.0.1:$P/api/peer-info"; then UP=1; break; fi
+			i=$((i + 1))
+			sleep 1
+		done
+		OPENER=open
+		if [ "$OS" = Linux ]; then OPENER=xdg-open; fi
+		if [ -z "$UP" ]; then say "the gateway is not answering yet"; MODE=print
+		elif have "$OPENER" && "$OPENER" "$URL" >/dev/null 2>&1; then say "opened the setup page in your browser"
+		else MODE=print; fi
+	fi
+	if [ "$MODE" = print ]; then
+		say "open this address on this computer to finish setup (one use, valid 24 h):"
+		printf '%s\n' "$URL"
+		if [ -n "${SSH_CONNECTION:-}" ]; then say "from your own computer: ssh -L $P:127.0.0.1:$P $(id -un)@$(hostname), then open the address there"; fi
+		say "or answer in the terminal instead: bun $APP/setup.ts"
+	fi
+	say "done. Code: $APP  Data: $DATA  Upgrade: run this installer again"
 	exit 0
 fi
 LOAD=
