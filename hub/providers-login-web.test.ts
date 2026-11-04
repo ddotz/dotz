@@ -14,14 +14,14 @@ const calls: string[] = [];
 let onAccounts: (() => void) | undefined;
 const PROMPT = "Complete login in your browser, or paste the authorization code / redirect URL here:";
 // OmO's Claude sign-in asks questions first and names the page in a later step (stepped = true)
-let stepped = false, step = 0;
+let stepped = false, step = 0, sameAccount = false;
 const MANUAL = "https://claude.ai/oauth/authorize?redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&state=stub";
 const providers = () => ({
 	providers: [
 		{ id: "anthropic", name: "Anthropic Subscription (Claude Pro/Max)", auth: "oauth", account: "work", accounts: accounts.length, models: 3, in_use: true, can_login: true, can_add_account: true, can_logout: true },
 		{ id: "openrouter", name: "openrouter", auth: "api_key", masked: "or-…ijkl", models: 1, in_use: false, can_login: true, can_logout: true },
 	],
-	addable: [{ id: "github-copilot", name: "GitHub Copilot", kind: "oauth" }, { id: "xai", name: "xAI (Grok/X subscription)", kind: "oauth" }, { id: "openai", name: "openai", kind: "api_key" }],
+	addable: [{ id: "anthropic", name: "Anthropic Subscription (Claude Pro/Max)", kind: "oauth", add_account: true }, { id: "github-copilot", name: "GitHub Copilot", kind: "oauth" }, { id: "xai", name: "xAI (Grok/X subscription)", kind: "oauth" }, { id: "openai", name: "openai", kind: "api_key" }],
 });
 const accountsBody = () => ({
 	mode: "pinned",
@@ -77,6 +77,7 @@ const server = Bun.serve({
 			const b = (await req.json()) as { login_id: string; code: string };
 			calls.push(`complete ${b.login_id} ${b.code}`);
 			if (stepped && step++ === 0) return json({ ok: true, provider: "anthropic", status: "waiting", url: MANUAL, needs_code: true, prompt: "Paste the code Anthropic shows after you sign in:" });
+			if (sameAccount) return json({ ok: true, provider: "anthropic", status: "done", outcome: "refreshed", account: "work" });
 			accounts = [...accounts, `login-${accounts.length + 1}`];
 			return json({ ok: true, provider: "anthropic", status: "done" });
 		}
@@ -109,14 +110,10 @@ const boot = async (v: View) => {
 	await opened;
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && NM.loaded && S`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
-	await run(v, `go("providers")`);
-	await waitFor(v, `document.querySelector("#providers .prow")`);
+	await run(v, `go("accounts")`);
+	await waitFor(v, `document.querySelector("#accounts [data-acc-add]") && document.querySelector("#accounts .li.acc")`);
 };
-const anthropicRow = `[...document.querySelectorAll("#providers .prow")].find(r => r.textContent.includes("Claude Pro/Max"))`;
-const openAnthropic = async (v: View) => {
-	await run(v, `${anthropicRow}.click()`);
-	await waitFor(v, `current === "provider" && document.querySelector("#provider [data-acc-add]")`);
-};
+const anthropicRow = `document.querySelector('[data-prov-conn="anthropic"]')`;
 const button = (scope: string, label: string) => `[...${scope}.querySelectorAll("button")].find(b => b.textContent.trim().endsWith(${JSON.stringify(label)}))`;
 const overflow = (v: View) => q<{ vw: number; doc: number }>(v, `return { vw: innerWidth, doc: document.documentElement.scrollWidth }`);
 
@@ -131,26 +128,25 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as con
 		expect(o.doc).toBeLessThanOrEqual(o.vw);
 		await shot(v, `providers-${w}.png`);
 
-		await run(v, `${button("document.querySelector('#providers .sec-act')", "추가")}.click()`);
+		await run(v, `${button("document.querySelector('#accounts .tools-bar')", "추가")}.click()`);
 		await waitFor(v, `document.querySelector(".pickbox")`);
 		expect(await q(v, `const secs = [...document.querySelectorAll(".pickbox .sec")].map(s => s.textContent); const login = document.querySelector(".pickbox .list").textContent; return [secs, login.includes("GitHub Copilot"), login.includes("xAI")]`)).toEqual([["로그인", "API 키"], true, true]);
 		await shot(v, `providers-add-${w}.png`);
 		await run(v, `${button("document.querySelector('dialog[open]')", "취소")}.click()`);
 		await waitFor(v, `!document.querySelector("dialog[open]")`);
 
-		await openAnthropic(v);
-		await run(v, `document.querySelector("#provider [data-acc-add]").click()`);
+		await run(v, `document.querySelector("#accounts [data-acc-add]").click()`);
 		await waitFor(v, `[...document.querySelectorAll(".sup")].some(s => s.textContent.includes("authorization code"))`);
 		expect(await q(v, `const t = document.querySelector("dialog[open] .dtitle")?.textContent ?? ""; return t.endsWith("계정 추가")`)).toBe(true);
 		expect(await q(v, `return [...document.querySelectorAll("a.btn")].find(a => a.textContent.includes("로그인 페이지 열기"))?.getAttribute("href")`)).toBe("https://claude.ai/oauth/authorize?state=stub");
 		await shot(v, `providers-login-${w}.png`);
 		const refetched = new Promise<void>((res, rej) => { const t = setTimeout(() => rej(new Error("설정 → 계정 was not read again")), 4000); onAccounts = () => { clearTimeout(t); res(); }; });
 		await run(v, `const i = [...document.querySelectorAll("input")].find(x => x.type === "text" && x.offsetParent); i.value = "code-abc"; ${button("document.querySelector('dialog[open]')", "완료")}.click()`);
-		await waitFor(v, `document.querySelectorAll("#provider .li.acc").length === 3`);
+		await waitFor(v, `document.querySelectorAll("#accounts .li.acc").length === 3`);
 		await refetched;
 		onAccounts = undefined;
 		expect(calls).toEqual(["GET /api/accounts", "POST login", "complete L1 code-abc", "GET /api/accounts"]);
-		expect(await q(v, `const sec = document.querySelector("#provider .sec-act"); return !!sec && !!${button("sec", "추가")}`)).toBe(true);
+		expect(await q(v, `const sec = document.querySelector("#accounts .sec-act"); return !!sec && !!${button("sec", "추가")}`)).toBe(true);
 		const s = await overflow(v);
 		expect(s.doc).toBeLessThanOrEqual(s.vw);
 		await shot(v, `provider-accounts-${w}.png`);
@@ -164,8 +160,7 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as con
 			await boot(v);
 			const link = `[...document.querySelectorAll("dialog[open] a.btn")].find(a => a.textContent.includes("로그인 페이지 열기"))`;
 			const state = `const a = ${link}; return a ? [a.getAttribute("href"), a.offsetParent !== null] : null`;
-			await openAnthropic(v);
-			await run(v, `document.querySelector("#provider [data-acc-add]").click()`);
+			await run(v, `document.querySelector("#accounts [data-acc-add]").click()`);
 			await waitFor(v, `[...document.querySelectorAll("dialog[open] .sup")].some(s => s.textContent.includes("Name for this account"))`);
 			expect(await q(v, state)).toEqual([null, false]);
 			await run(v, `const i = [...document.querySelectorAll("input")].find(x => x.type === "text" && x.offsetParent); i.value = "account-3"; ${button("document.querySelector('dialog[open]')", "완료")}.click()`);
@@ -175,9 +170,31 @@ for (const [label, w, h] of [["phone", 390, 844], ["desktop", 1280, 860]] as con
 			expect(o.doc).toBeLessThanOrEqual(o.vw);
 			await shot(v, `providers-login-stepped-${w}.png`);
 			await run(v, `const i = [...document.querySelectorAll("input")].find(x => x.type === "text" && x.offsetParent); i.value = "code-xyz"; ${button("document.querySelector('dialog[open]')", "완료")}.click()`);
-			await waitFor(v, `document.querySelectorAll("#provider .li.acc").length === 3`);
+			await waitFor(v, `document.querySelectorAll("#accounts .li.acc").length === 3`);
 		} finally {
 			stepped = false;
+		}
+	}, 20_000);
+
+	test(`${label} ${w}px: 공급자 추가 lists the connected Claude, and a login of a stored account says so`, async () => {
+		accounts = ["default", "work"];
+		sameAccount = true;
+		calls.length = 0;
+		try {
+			const v = open(w, h);
+			await boot(v);
+			await run(v, `${button("document.querySelector('#accounts .tools-bar')", "추가")}.click()`);
+			await waitFor(v, `document.querySelector(".pickbox")`);
+			const claude = `[...document.querySelectorAll(".pickbox button")].find(b => b.textContent.includes("Claude Pro/Max"))`;
+			expect(await q(v, `return ${claude}.textContent.includes("계정 추가")`)).toBe(true);
+			await run(v, `${claude}.click()`);
+			await waitFor(v, `document.querySelector("dialog[open] .dtitle")?.textContent.endsWith("계정 추가")`);
+			await run(v, `const i = [...document.querySelectorAll("input")].find(x => x.type === "text" && x.offsetParent); i.value = "code-same"; ${button("document.querySelector('dialog[open]')", "완료")}.click()`);
+			await waitFor(v, `document.querySelector(".snack")?.textContent.includes("이미 등록된 계정이에요 (work)")`);
+			expect(await q(v, `return document.querySelectorAll("#accounts .li.acc").length`)).toBe(2);
+			expect(calls).toContain("POST login");
+		} finally {
+			sameAccount = false;
 		}
 	}, 20_000);
 }

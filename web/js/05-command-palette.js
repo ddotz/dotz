@@ -48,7 +48,7 @@ function openPalette() {
       else for (const [c, desc] of hintList) if (c.startsWith(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
     } else {
       for (const [c, desc] of hintList) if (!v || c.includes(v)) items.push({ kind: "cmd", ic: "chev", label: c, desc, run: c });
-      for (const id of views) if (id !== "activity" && id !== "project" && id !== "provider" && id !== "cardform" && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
+      for (const id of views) if (id !== "activity" && id !== "project" && id !== "cardform" && !navOff(id) && (!v || titles[id].toLowerCase().includes(v) || id.includes(v))) items.push({ kind: "nav", ic: VIEW_ICON[id], label: titles[id], desc: navKeyHint(id), go: id === "chat" ? lastChatView() : id });
       // Ended lanes stay folded: one row without a query, each lane once the query names it (or "종료").
       const ended = endedLanes();
       if (ended.length && !v) items.push({ kind: "act", ic: "lanes", label: `종료된 세션 ${ended.length}`, act: () => { endedOpen = true; go("chat", "list"); } });
@@ -105,7 +105,7 @@ function parseHash(hash = location.hash) {
 // The 세션 tab is gone: an old #lanes address opens the chat (its list on a phone), where running sessions sit under 진행 중.
 // #chat/alert is the 알림 screen now; only ntGo (a row's way to its source message) sets NSC.pass, which lets one go() open the record conversation.
 const alertAddr = (name, tgt) => (name === "chat" || name === "activity") && tgt === "alert" && !(NSC.pass > Date.now());
-const routeAlias = (name, tgt) => (alertAddr(name, tgt) ? ["notices", undefined] : name === "lanes" ? ["chat", "list"] : name === "providers" && tgt ? ["provider", tgt] : name === "accounts" || (name === "settings" && tgt === "accounts") ? ["provider", "anthropic"] : [name, tgt]);
+const routeAlias = (name, tgt) => (alertAddr(name, tgt) ? ["notices", undefined] : name === "lanes" ? ["chat", "list"] : name === "providers" || name === "provider" ? ["accounts", tgt] : name === "settings" && tgt === "accounts" ? ["accounts", undefined] : [name, tgt]);
 function go(name, tgt) {
   closeMenu(false);
   [name, tgt] = routeAlias(name, tgt);
@@ -125,14 +125,13 @@ function go(name, tgt) {
   if (!views.includes(name) || navOff(name)) name = "home";
   if (name === "projects" && ppWide()) { name = "project"; tgt = ppCur && (!PRJ || PRJ.projects.some(p => p.key === ppCur)) ? ppCur : "builtin:custom"; }
   if (name === "project" && !tgt) name = "projects";
-  if (name === "provider" && !tgt) name = "providers";
-  if (name === "provider") provCur = tgt;
+  if (name === "accounts") accFocus = tgt || "";
   if (name === "project") ppCur = tgt;
   if (name === "monitoring") monRoute(tgt);
   // "chat/list" is the phone's chat list; any other way into 채팅 opens a conversation.
   chatList = name === "chat" && tgt === "list" && narrowChat();
   if (name === "chat" && tgt === "list") tgt = undefined;
-  if (tgt && name !== "project" && name !== "provider" && name !== "cardform" && tgt !== target && validTarget(tgt)) setTarget(tgt);
+  if (tgt && name !== "project" && name !== "accounts" && name !== "cardform" && tgt !== target && validTarget(tgt)) setTarget(tgt);
   if (name === "activity" && (!LOG_VIEW || isFixedT(target))) name = "chat";   // 알림 / 작업 기록 have no terminal view; LOG_VIEW off: no log view at all
   if (name !== current) prevView = current;
   current = name;
@@ -140,7 +139,7 @@ function go(name, tgt) {
   if (convSync()) renderAll();
   const tv = name === "chat" || name === "activity";
   if (name === "harness") hProjId = tgt && tgt.startsWith("project/") ? tgt.slice(8) : "";
-  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "cardform" && tgt ? `cardform/${enc(tgt)}` : name === "provider" ? `provider/${enc(tgt)}` : name === "monitoring" ? monHash() : name === "apps" ? appsHash() : name;
+  const hash = tv ? (chatList ? "chat/list" : mc ? `monitoring/c:${enc(target)}` : `${name}/${target}`) : name === "harness" && hProjId ? `harness/project/${enc(hProjId)}` : name === "project" && tgt ? `project/${enc(tgt)}` : name === "cardform" && tgt ? `cardform/${enc(tgt)}` : name === "monitoring" ? monHash() : name === "apps" ? appsHash() : name;
   navSync(name, hash);
   const pp = name === "project" && ppWide();
   for (const v of views) $(`#v-${v}`).hidden = v !== name && !(pp && v === "projects");
@@ -152,7 +151,7 @@ function go(name, tgt) {
   th.hidden = !tv; $("#vtog").hidden = !tv || !LOG_VIEW;
   if (tv && th.dataset.mode !== mode) { th.dataset.mode = mode; th.dataset.sig = ""; }
   if (MT_READY) mailThreadSync();   // the same-sender mail panel belongs to the mail conversation that is open (30-mail-thread.js)
-  $("#title").textContent = name === "home" ? botName : name === "provider" ? providerName(provCur) : titles[name];
+  $("#title").textContent = name === "home" ? botName : titles[name];
   convChrome();
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
   if (name === "harness") loadHarness(); else closeHSheet();
@@ -164,8 +163,7 @@ function go(name, tgt) {
   if (name === "notices") nscOpen();
   if (name === "settings") { loadUpdate(); renderSettings(); loadMessengerIndex(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
-  if (name === "providers") loadProviders();
-  if (name === "provider") { renderProvider(); if (!P) loadProviders(); loadAccounts(); }
+  if (name === "accounts") { renderAccounts(); loadProviders(); loadAccounts(); if (!SQ) api("/api/quota").then(q => { noteQuota(q); if (current === "accounts") renderAccounts(); }, () => {}); }
   if (name === "messengers") { renderMessengers(); loadMessengerIndex(); }
   if (name === "usage") loadQuota();
   if (name === "context") loadContext();
