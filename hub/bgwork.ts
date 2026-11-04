@@ -40,6 +40,9 @@ type BgWork = {
 	cancelled?: boolean;
 	/** A finished worker's result files: the `[file]` lines of its report that name an existing file (the web shows them as file chips). */
 	files?: WorkFile[];
+	/** The message holding a finished worker's result, as the web jumps to it: its event ts and conversation. */
+	result_at?: string;
+	result_conv?: string;
 	/** A failure the session already took up: one of its turns ended after the worker failed (it read OmO's failure notice, or the
 	 * gateway's handover below). Nothing is asked of the owner about it. */
 	handled?: boolean;
@@ -177,6 +180,8 @@ type BgWorkDeps = {
 	deferred: () => OpenDeferred[];
 	/** The owner message the turn running at that time (ms) was answering (prompts.ts turnAt), when a turn of ours was running. */
 	turn?: (at: number) => { target: string; replyTo?: string } | undefined;
+	/** The message that carries a finished worker's result (events.ts workAnswer). */
+	answer?: (w: BgWork) => { at: string; conv: string; exact: boolean } | undefined;
 	now?: () => number;
 	/** Is this process still alive? A record that says running while its process is gone is a worker the restart killed. */
 	alive?: (pid: number) => boolean;
@@ -210,6 +215,8 @@ export function createBgWork(deps: BgWorkDeps) {
 	const cache = new Map<string, { stamp: string; rec?: Rec }>();
 	// The conversation a worker was waiting for, kept after it ends (the open message is gone then).
 	const served = new Map<string, { target: string; reply_to?: string }>();
+	// The message each finished worker's result went out in, once it is certain (list() asks again until then).
+	const results = new Map<string, { result_at: string; result_conv: string }>();
 	// Failures already written to the log (list() runs on every /api/state read).
 	const told = new Set<string>();
 	// Failures already handed to the session (once each; a restart re-reads turnEndedAt, which the handed turn moved past them).
@@ -387,6 +394,13 @@ export function createBgWork(deps: BgWorkDeps) {
 				const k = served.get(w.id);
 				if (k) Object.assign(w, k);
 			}
+		}
+		for (const w of works) {
+			if (w.cancelled || (w.status !== "done" && w.status !== "failed")) continue;
+			const known = results.get(w.id), found = known ? undefined : deps.answer?.(w);
+			const link = known ?? (found && { result_at: found.at, result_conv: found.conv });
+			if (link) Object.assign(w, link);
+			if (link && found?.exact) results.set(w.id, link);
 		}
 		// A failed worker's reason goes to the hub log once, while it is still in the list (the record itself stays in OmO's store).
 		for (const w of works) {

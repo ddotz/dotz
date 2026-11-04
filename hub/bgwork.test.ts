@@ -85,6 +85,20 @@ test("a worker that failed at spawn still names its conversation and why, and th
 	expect(lines).toEqual(["background work st_start failed in th:000000000000000000: child turn produced no assistant output"]);
 });
 
+test("a finished worker carries the message of its result; an unsure one is asked again, a cancelled or running one never", () => {
+	record("st_done", { status: "completed", terminal_at: iso(T0 + 20_000) });
+	record("st_run");
+	const asked: string[] = [];
+	let hit: { at: string; conv: string; exact: boolean } | undefined = { at: iso(T0 + 21_000), conv: "main", exact: false };
+	const work = createBgWork({ sessionFile: () => session, deferred: () => [], now: () => T0 + 60_000, answer: w => (asked.push(w.id), hit) });
+	expect(work.list().find(w => w.id === "st_done")).toMatchObject({ result_at: iso(T0 + 21_000), result_conv: "main" });
+	hit = { at: iso(T0 + 22_000), conv: "ch:1", exact: true };
+	expect(work.list().find(w => w.id === "st_done")).toMatchObject({ result_at: iso(T0 + 22_000), result_conv: "ch:1" });
+	hit = undefined;
+	expect(work.list().find(w => w.id === "st_done")).toMatchObject({ result_at: iso(T0 + 22_000), result_conv: "ch:1" });
+	expect(asked).toEqual(["st_done", "st_done"]);
+});
+
 test("a gateway restart rebuilds the same list from the task store alone", () => {
 	record("st_a");
 	record("st_b", { status: "completed", terminal_at: iso(T0 + 20_000) });

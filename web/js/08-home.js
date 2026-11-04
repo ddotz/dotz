@@ -515,20 +515,9 @@ function targetInfo(t) {
   return l ? { status: l.status, alive: laneAlive(l), known: true, resumable: !!l.resumable, ask: l.pendingAsk && l.pendingAsk.text ? l.pendingAsk : null } : { status: "", alive: true, known: false };
 }
 const isWorking = t => { const i = targetInfo(t); return i.alive && (i.status === "working" || i.status === "starting"); };
-// The main assistant's background work (S.work) as a row on Home: tap goes to the message that asked for it, flashed (its own detail when that message is unknown).
-async function workGo(w) {
-  const t = w.target && validTarget(w.target) ? w.target : MAIN;
-  // A conversation session's worker (homeConvRow) is not the assistant's: its detail sheet would read the wrong session, so it opens the conversation.
-  const fallback = () => w.conv ? go("chat", t) : openSub("orchestrator", w.id, null, w.description);
-  if (!w.reply_to) return fallback();
-  if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t).catch(() => {});
-  const asked = ts(t).msgs.find(e => e.mid === w.reply_to);
-  if (!asked) return fallback();
-  ntJump({ src: t, at: asked.ts });
-}
 // A running one shows only its state (owner 2026-11-01: no 중단 on the list; the conversation's send button stops it, 14-slash-commands.js),
 // one the owner stopped offers 다시 맡기기 (06-subagents.js workRetry); a failed one is the agent's to take up (blue 이어서 처리 중, no button);
-// the rest of the row goes to the conversation.
+// the rest of the row goes to the conversation, or to the result message of finished work (18-lanes.js workGo).
 function workRow(w) {
   // stalled: OmO still says running but the worker stopped working (hub/bgwork.ts); its session was woken to take it over.
   const run = w.status === "running", done = w.status === "done", rec = workRecovering(w), stall = w.status === "stalled";
@@ -536,7 +525,7 @@ function workRow(w) {
   const line = run ? [workElapsed(w), w.model].filter(Boolean).join(" · ") : stall ? `${w.reason || "활동이 없어요"} · ${workAgo(w)}` : done ? `끝남 · ${workAgo(w)}` : `${workFailText(w)} · ${workAgo(w)}`;
   const act = w.cancelled ? ["다시 맡기기", b => workRetry(w.id, b)] : null;
   return el("div", { class: "hr hrx", "data-work": w.id },
-    el("button", { class: "hrx-m", type: "button", onclick: () => workGo(w), "aria-label": `${w.description} · ${state} · 대화로 가기` },
+    el("button", { class: "hrx-m", type: "button", onclick: () => workGo(w), "aria-label": `${w.description} · ${state} · ${run || stall || rec ? "대화로 가기" : "결과 보기"}` },
       el("span", { class: `dot ${run || rec ? "pri" : stall ? "att" : done ? "ok" : w.cancelled ? "" : "err"}` }),
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: line })),
       el("span", { class: `hs ${run || rec ? "pri" : stall ? "warn" : done || w.cancelled ? "" : "err"}`, text: state })),
