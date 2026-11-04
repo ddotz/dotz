@@ -4,7 +4,7 @@
 // comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
 // goes through el({text}), never innerHTML.
 const CM = { apps: new Set(), sources: [], local: { sources: [], apps: new Set() }, pc: null, vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
-  drafting: new Set(), revising: "", pickD: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
+  drafting: new Set(), revising: "", note: {}, pickD: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
 // An app item "i:<instance id>" opens the comment pane when one of its sources is followed. A source carries the instance that owns it (`app`: the
 // default instance of its app, or an added one such as site-mapia); an older gateway sends none, then the app of its kind.
 const cmAppOfKind = k => (k === "website" ? "site" : k);
@@ -190,7 +190,7 @@ function cmPaintRooms() {
 const cmUrl = t => `/api/comments/thread/${enc(t.source)}/${enc(t.thread)}`;
 async function cmOpen(t) {
   const seq = ++CM.seq;
-  CM.open = { source: t.source, thread: t.thread, title: t.title }; CM.view = null; CM.loading = true; CM.viewErr = ""; CM.revising = "";
+  CM.open = { source: t.source, thread: t.thread, title: t.title }; CM.view = null; CM.loading = true; CM.viewErr = ""; CM.revising = ""; CM.note = {};
   cmPaintAll();
   await cmReload(seq, true);
 }
@@ -208,7 +208,7 @@ async function cmReload(seq = CM.seq, scroll = false) {
   cmPaintChat(scroll);
   cmMarkRead();
 }
-function cmClose() { CM.open = null; CM.view = null; CM.seq++; CM.loading = false; CM.revising = ""; cmPaintAll(); convTitle(); }
+function cmClose() { CM.open = null; CM.view = null; CM.seq++; CM.loading = false; CM.revising = ""; CM.note = {}; cmPaintAll(); convTitle(); }
 function cmBack() {
   if (!(CM.vis && (CM.tab === "dm" ? DM.open : CM.open) && narrowChat() && current === "monitoring" && !MON.list)) return false;
   if (CM.tab === "dm") { dmClose(); return true; }
@@ -300,10 +300,14 @@ function cmPaintChat(stick) {
   if (!open) { clear(cmIn).append(el("div", { class: "kk-note", text: "글을 골라 주세요" })); return; }
   if (CM.loading) { clear(cmIn).append(el("div", { class: "kk-note", text: "불러오는 중…" })); return; }
   if (CM.viewErr || !v) { clear(cmIn).append(el("div", { class: "kk-note", role: "status", text: CM.viewErr })); return; }
+  // A repaint while he types what to change draws a new field (its text is CM.note): give it the focus and the caret the old one had.
+  const a = document.activeElement, typing = a && a.matches(".rq-edit input") && cmIn.contains(a) ? [a.selectionStart, a.selectionEnd, a.selectionDirection] : null;
   const nodes = [cmPostCard(v.thread, v.source.kind), ...cmThreadNodes(v)];
   const keep = cmTl.scrollTop;
   clear(cmIn).append(...nodes);
-  cmTl.scrollTop = stick ? cmTl.scrollHeight : keep;
+  cmTl.scrollTop = stick && !typing ? cmTl.scrollHeight : keep;
+  const inp = typing && $(".rq-edit input", cmIn);
+  if (inp) { inp.focus({ preventScroll: true }); inp.setSelectionRange(...typing); }
   clear(cmDrafts);
   cmDrafts.hidden = true;
 }
@@ -364,8 +368,9 @@ function cmDraftCard(d) {
     // A comment reply is text only (a file goes with the mail that rides along, shown below): say so before 보내기.
     attach: { attachmentsNone: true, cannotAttach: [] },
     extra: [draftMailNode(d.mail), d.mail ? el("div", { class: "kk-note", role: "status", text: "보내기를 누르면 답글을 올린 뒤 메일을 보내요" }) : null, d.notes && d.notes.length ? el("div", { class: "kk-note", role: "status", text: d.notes.join(" / ") }) : null],
-    ...(edit ? { revise: rqReviseNode({ pick: part, cancel: () => { CM.revising = ""; cmPaintChat(false); },
-      go: change => run($(".rq-edit [data-k=revise-go]", wrap) || el("button"), async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/revise`, "POST", { change, ...(part ? { part: part.value } : {}) }); CM.revising = ""; await cmReload(); }) }) }
+    // What he types is kept per draft (CM.note): the thread repaints on its own while he types (the timer, a live event), and a new field must not start empty.
+    ...(edit ? { revise: rqReviseNode({ pick: part, value: CM.note[d.code] || "", onInput: t => { CM.note[d.code] = t; }, cancel: () => { CM.revising = ""; delete CM.note[d.code]; cmPaintChat(false); },
+      go: change => run($(".rq-edit [data-k=revise-go]", wrap) || el("button"), async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/revise`, "POST", { change, ...(part ? { part: part.value } : {}) }); CM.revising = ""; delete CM.note[d.code]; await cmReload(); }) }) }
       : { acts: {
         send: sending ? null : ev => run(ev.currentTarget, async () => { await cmApi(`/api/comments/drafts/${enc(d.code)}/send`, "POST", {}); await cmReload(CM.seq, true); }),
         edit: () => { CM.revising = d.code; cmPaintChat(false); },
