@@ -180,7 +180,7 @@ describe("the 알림 screen", () => {
 		expect(await ev(`target`)).toBe("main");
 		await run(`ntGo("alert")`);
 		await waitFor(`current === "chat" && target === "alert"`);
-		expect(await ev(`document.querySelector("#v-chat").classList.contains("no-composer")`)).toBe(true);
+		await waitFor(`document.querySelector("#v-chat").classList.contains("no-composer")`);
 		await run(`go("chat", "alert")`);   // a second go() has no pass any more
 		await waitFor(`current === "notices"`);
 		expect(await ev(`[...document.querySelectorAll(".tchip")].some(c => c.dataset.t === "alert")`)).toBe(false);   // 알림 is not a conversation to pick
@@ -201,5 +201,29 @@ describe("the 알림 screen", () => {
 		await waitFor(`Math.abs($("#views").scrollTop - 300) <= 2`);
 		expect(await ev(`document.querySelector("#v-notices .nsc-fb.on").dataset.f`)).toBe("alert");
 		expect(calls).toEqual([]);   // a read notice, a jump and a way back: nothing to write
+	}, 30_000);
+
+	test("no back arrow on the screen at any width, the title stays where it was, and a row opened from it keeps its way back", async () => {
+		for (const width of [390, 800, 1280]) {
+			const v = await open(width, "#settings");
+			const spot = () => on(v).ev<{ arrow: boolean; title: [number, number]; fold: number[] }>(`(r => ({ arrow: !$("#back").hidden, title: [r.left, r.top], fold: (b => [b.left, b.top])($("#side-tog").getBoundingClientRect()) }))($("#title").getBoundingClientRect())`);
+			await on(v).waitFor(`current === "settings"`);
+			const plain = await spot();
+			await on(v).run(`go("notices")`);
+			await shown(v);
+			expect(await spot()).toEqual({ ...plain, arrow: false });   // the spot of a page that has no arrow, the sidebar's chevron unmoved
+		}
+		const v = await shown(await open(390));
+		await click(v, '#v-notices .nsc-r[data-nid="a3"] .nsc-tx');
+		await on(v).waitFor(`current === "chat" && !$("#back").hidden`);
+		expect(await on(v).ev(`backTarget()`)).toBe("notices");
+	}, 30_000);
+
+	test("a page load with a stale ?n= stays on its route, with no toast", async () => {
+		const v = await shown(await open(1280, "?n=gone#notices"));
+		// Queued after the boot's own 500 ms timer, so that timer has run; the two loads then end after the one it started.
+		await v.evaluate(`new Promise(r => setTimeout(r, 500)).then(() => loadNotices()).then(() => loadNotices())`);
+		await settled(v);
+		expect(await on(v).ev(`[current, location.search, document.querySelectorAll(".snack").length]`)).toEqual(["notices", "", 0]);
 	}, 30_000);
 });
