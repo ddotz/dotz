@@ -362,6 +362,7 @@ function kkPerson(uid) {
     el("div", { class: "kk-pd-in" },
       el("div", { class: "kk-pd-h" }, kkAvatar(name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: name }), el("span", { class: "cv-p", text: "사용자별 분석" })), el("button", { class: "ib fs-x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
       body));
+  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
   document.body.append(d); d.showModal(); dialogHist(d);
   d.addEventListener("close", () => d.remove());
   api(`/api/kakao/person/${enc(uid)}?room=${enc(id)}`).then(r => { if (d.isConnected) kkPersonPaint(d, body, r); }, e => { if (d.isConnected) clear(body).append(el("div", { class: "kk-note", role: "status", text: e.message })); });
@@ -562,6 +563,7 @@ function kkAddOpen() {
       fsHead([el("h2", { class: "fs-t", text: "지켜볼 대화방" }), el("span", { class: "sup", text: "누르면 추가되고, 다시 누르면 빠져요" })], { close: () => d.close() }),
       el("div", { class: "kk-pd-b" }, el("label", { class: "pl-search kk-search" }, icon("search"), kkSearch), el("div", { class: "pl-list kk-pl", id: "kk-pl" }, ...kkPickRows()))));
   KK.adding = d;
+  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
   document.body.append(d); d.showModal(); dialogHist(d);
   d.addEventListener("close", () => { if (KK.adding === d) KK.adding = null; d.remove(); });
 }
