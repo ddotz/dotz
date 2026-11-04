@@ -199,8 +199,7 @@ Only the watches for the connected platforms are added. Commands use `command` (
 - pins.json project `{ name: "유튜브·인스타 관리", path: SNS_DIR, channel?: "ch:<id>", note: "유튜브와 인스타 올리기, 댓글, 통계를 맡아요" }`
   (merged, never duplicated).
 - Before setup (no config.json) the card prints `{"상태": "설정 전이에요. 채팅에서 '유튜브·인스타 설정해줘'라고 말해 주세요"}`.
-- Project record `PUT /api/projects` key `dir:<SNS_DIR with ~>` or `ch:<id>`: title, purpose, milestones
-  (계정 연결, 기본값 정하기, 감시 켜기).
+- Project record `PUT /api/projects` key `dir:<SNS_DIR with ~>` or `ch:<id>`: title, purpose.
 
 ## playbook.md (read on demand; feature.md keeps only a pointer and the approval rule, ~430 chars, so installs that
 ## never use the feature pay almost nothing per prompt)
