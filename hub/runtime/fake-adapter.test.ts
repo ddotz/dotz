@@ -2,6 +2,7 @@
 // hub must reach idle -> working -> final answer -> idle, and pause on a rate-limit error, with exactly the calls on the
 // process the omp-bound code used to make. Also pins how the registry picks a runtime.
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { stripSteerMark } from "../steer-mark.ts";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type * as Lanes from "../lanes.ts";
@@ -42,7 +43,7 @@ class FakeAgent implements AgentProcess {
 		await flush();
 	}
 	send(text: string, mode: SendMode): void {
-		this.calls.push(`send:${mode}:${text.slice(0, 40)}`);
+		this.calls.push(`send:${mode}:${stripSteerMark(text).slice(0, 40)}`);
 	}
 	abort = () => void this.calls.push("abort");
 	compact = () => void this.calls.push("compact");

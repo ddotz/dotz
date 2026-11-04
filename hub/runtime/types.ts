@@ -97,6 +97,8 @@ export interface SpawnOpts {
 	resume?: string;
 	// Added to the hub's own environment (role markers read by the dotz extension).
 	env: Record<string, string>;
+	// Appended to the system prompt of this process (hub/steer-mark.ts); survives compaction, unlike a prompt.
+	systemNote?: string;
 	// Model selectors tried in order after `model` fails at request time; empty/absent = no fallback.
 	fallback?: string[];
 	// The hub switches models itself (conditional entries, spend caps): the runtime must not walk a fallback chain of its own for this process.

@@ -11,7 +11,7 @@ import { advance, flush } from "./test-clock.ts";
 
 const DATA = process.env.DOTZ_DIR!;
 const REPO = join(import.meta.dir, "..", "..");
-const norm = (s: string) => s.split(DATA).join("<DATA>").split(REPO).join("<REPO>");
+const norm = (s: string) => s.split(DATA).join("<DATA>").split(REPO).join("<REPO>").replace(/dotz-steer:[0-9a-f]+/g, "dotz-steer:<TOKEN>");
 // Long prompts (recall, footer) are compared by shape: paths normalised, digits blanked (the footer carries machine-sized slot counts).
 // Repo text that other work legitimately edits (MODE.md, the shipped feature catalog) is blanked first so only prompt structure is compared.
 const volatile = () => [readFileSync(modeFile(), "utf8"), featurePrompt(DATA, "orchestrator", () => {}), featurePrompt(DATA, "lanes", () => {})].filter(Boolean);

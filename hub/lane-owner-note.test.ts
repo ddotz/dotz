@@ -116,6 +116,20 @@ test("steered into a running turn: the session's note before its next tool call 
 	await advance(300);
 });
 
+test("a steer through a real lane spawn ends with the mark its system prompt names; a prompt to an idle lane has none", async () => {
+	const { agent } = await working("note-mark");
+	const opts = spawns.at(-1)!.opts;
+	const mark = /\[dotz-steer:[0-9a-f]+\]/.exec(opts.systemNote ?? "")?.[0];
+	expect(mark).toBeDefined();
+	expect(agent.sent[0]!.mode).toBe("prompt");
+	expect(agent.sent[0]!.text).not.toContain("[dotz-steer:");
+	l.sendToLane("note-mark", "[owner via web] 멈춰", "m-mark");
+	expect(agent.sent.at(-1)!.mode).toBe("steer");
+	expect(agent.sent.at(-1)!.text.endsWith(`\n${mark}`)).toBe(true);
+	l.stopLane("note-mark");
+	await advance(300);
+});
+
 test("the final report answers what the note did not, and a [run] final is flagged as an answer to the owner", async () => {
 	answered.length = 0;
 	shown.length = 0;
