@@ -36,7 +36,8 @@ test("a clean page passes, with the intended exceptions not counted", async () =
 		<div id="tl" style="width:90px;word-break:break-all">${LONG}</div>
 		<pre style="width:90px;white-space:pre-wrap;word-break:break-all">${LONG}</pre>
 		<div style="width:90px;overflow-x:auto;white-space:nowrap">가로로 스크롤하는 긴 글자 상자예요</div>
-		<div style="width:90px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">말줄임으로 끝나는 긴 글자 상자예요</div>`);
+		<div style="width:90px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">말줄임으로 끝나는 긴 글자 상자예요</div>
+		<div style="width:90px;overflow:hidden;white-space:nowrap;mask-image:linear-gradient(to right,#000 70px,transparent)">끝이 흐려지는 긴 글자 상자예요</div>`);
 	expect(await summary(clean)).toEqual({ split: 0, overflow: 0, clip: 0, blocked: 0, orphan: 0 });
 });
 

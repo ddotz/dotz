@@ -42,6 +42,8 @@ function measure(scopeSel: string, loose: string, tapsToo: boolean) {
 	// WebKit still gives boxes to what a closed <details> folds away, so only its summary counts as shown.
 	const folded = (el: Element) => { const d = el.closest("details:not([open])"); return !!d && !d.querySelector(":scope > summary")?.contains(el); };
 	const shown = (el: Element) => { const s = getComputedStyle(el); return s.visibility !== "hidden" && s.display !== "none" && el.getClientRects().length > 0 && !folded(el); };
+	// A box that ends its text on purpose: an ellipsis, or the end fade of a list title (web/css/25-list-title.css).
+	const endsCut = (el: Element) => { const s = getComputedStyle(el); return s.textOverflow === "ellipsis" || s.maskImage !== "none"; };
 	// overflow-y: auto also computes overflow-x to auto, so a box that scrolls vertically is not a horizontal scroller.
 	const inScroller = (el: Element) => { for (let x: Element | null = el; x && x !== document.documentElement; x = x.parentElement) { const o = getComputedStyle(x).overflowX; if ((o === "auto" || o === "scroll") && x.scrollHeight <= x.clientHeight + 1) return true; } return false; };
 
@@ -110,7 +112,7 @@ function measure(scopeSel: string, loose: string, tapsToo: boolean) {
 		}
 		// Measured on the glyphs, not scrollWidth: an icon hung outside the box (the chat's hidden quote button) is not text overflow.
 		const over = Math.round(Math.max(...seq.map(c => c.right)) - el.getBoundingClientRect().right);
-		if (el.clientWidth > 0 && over > 1 && getComputedStyle(el).textOverflow !== "ellipsis" && !inScroller(el)) add({ kind: "overflow", px: over });
+		if (el.clientWidth > 0 && over > 1 && !endsCut(el) && !inScroller(el)) add({ kind: "overflow", px: over });
 	}
 	const pageOver = document.documentElement.scrollWidth - window.innerWidth;
 	if (pageOver > 1) found.push({ kind: "overflow", el: "html", px: pageOver, page: true, lines: [] });
@@ -124,7 +126,7 @@ function measure(scopeSel: string, loose: string, tapsToo: boolean) {
 		let over = 0;
 		const texts = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
 		for (let n = texts.nextNode() as Text | null; n; n = texts.nextNode() as Text | null) {
-			if (!n.data.trim() || getComputedStyle(n.parentElement!).textOverflow === "ellipsis") continue;
+			if (!n.data.trim() || endsCut(n.parentElement!)) continue;
 			const r = document.createRange(); r.selectNodeContents(n);
 			for (const q of r.getClientRects()) over = Math.max(over, Math.round(Math.max(q.right - box.right, box.left - q.left, q.bottom - box.bottom, box.top - q.top)));
 		}
