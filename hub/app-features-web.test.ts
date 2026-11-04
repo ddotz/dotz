@@ -171,7 +171,7 @@ const suite = (label: string, width: number, height: number, tag: string) => des
 		expect(await q(v, `return [...document.querySelectorAll("#app-sw [data-approval] [data-k^='appr:']")].map(b => b.textContent)`)).toEqual(["올리기", "그만두기", "자세히"].slice(0, 2).concat(["자세히"]));
 		expect(await q(v, `return document.querySelector("#app-sw .as-chip, #app-sw .as-sum")`)).toBeNull();
 		expect(await q(v, `return !!document.querySelector('#app-sw [data-setting="approval"] .as-n')`)).toBe(true);
-		expect(await q(v, `return document.querySelectorAll('#app-sw [data-setting="approval"] option').length`)).toBe(2);
+		expect(await q(v, `return document.querySelectorAll('#app-sw [data-setting="approval"] .as-seg button').length`)).toBe(2);
 		expect(await q(v, `return !!document.querySelector('#app-sw [data-setting="reply_model"] .as-n')`)).toBe(true);
 		await run(v, `document.querySelector('#app-sw [data-setting="approval"]').scrollIntoView({ block: "center" })`);
 		await shot(v, `${tag}-instagram-settings.png`);

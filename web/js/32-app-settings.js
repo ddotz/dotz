@@ -331,12 +331,22 @@ function asChange(f, before, after) {
 /* ---- the controls above the conversation: a switch, a menu or a box per common setting ---- */
 function asControl(f, set) {
   if (f.type === "bool") return kkSwitch(f.value, f.label, f.key, set);
+  // Two choices are the prototype's segment, a number its − + stepper around the same field (a longer list stays a select).
+  if (f.type === "enum" && (f.options || []).length === 2) {
+    const seg = el("div", { class: "seg as-seg", role: "radiogroup", "aria-label": f.label, "data-k": f.key }, ...f.options.map(o => el("button", { type: "button", role: "radio", class: String(f.value) === String(o) ? "on" : "", "aria-checked": String(String(f.value) === String(o)), "data-v": o, text: (f.labels || {})[o] || o, onclick: ev => {
+      for (const b of seg.children) { const on = b === ev.currentTarget; b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); }
+      set(o);
+    } })));
+    return seg;
+  }
   const num = f.type === "number";
   const c = f.type === "enum"
     ? el("select", { class: "fi as-in", "aria-label": f.label, "data-k": f.key, onchange: () => set(c.value) }, ...(f.options || []).map(o => el("option", { value: o, text: (f.labels || {})[o] || o })))
     : el("input", { class: "fi as-in", type: num ? "number" : "text", ...(num ? { min: f.min, max: f.max, inputmode: "numeric" } : {}), "aria-label": f.label, "data-k": f.key, onchange: () => set(num ? Number(c.value) : c.value.trim()) });
   c.value = String(f.value);
-  return c;
+  if (!num) return c;
+  const step = d => { const v = Math.min(f.max ?? Infinity, Math.max(f.min ?? -Infinity, Number(c.value) + d)); if (v !== Number(c.value)) { c.value = String(v); set(v); } };
+  return el("span", { class: "as-step" }, el("button", { class: "ib", type: "button", "aria-label": `${f.label} 줄이기`, text: "−", onclick: () => step(-1) }), c, el("button", { class: "ib", type: "button", "aria-label": `${f.label} 늘리기`, text: "+", onclick: () => step(1) }));
 }
 /* ---- 자동 초안 규칙 (hub/app-settings.ts draft_rules, draft_default): the rules of a mail app, edited here or by the bot (bin/rules.ts) ---- */
 // A rule = 이름 (the badge), 언제 (a plain condition one short model call checks), 어떻게 (the draft's instruction) and 붙일 파일; the 기본 규칙 goes into every
