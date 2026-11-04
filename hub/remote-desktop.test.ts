@@ -752,6 +752,13 @@ describe("frame parsing", () => {
 		x.stop();
 	});
 
+	test("a close code that may not be sent on still closes the viewer", async () => {
+		const x = await bridge();
+		x.read(0x88, 2, 0x03, 0xed);
+		expect(x.closed).toEqual([1011]);
+		x.stop();
+	});
+
 	test("one message bigger than the hold passes while nothing waits ahead of it", async () => {
 		const x = await bridge();
 		x.b.send(new Uint8Array(HOLD + 1024));
