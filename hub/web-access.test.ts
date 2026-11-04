@@ -121,6 +121,21 @@ describe("웹 접속", () => {
 		}
 	});
 
+	test("a fresh install without a Tailscale login starts on this computer, one with a login on Tailscale", () => {
+		const saved = readFileSync(FILE);
+		rmSync(FILE);
+		const web = cfg.web!;
+		const { access: _, ...unset } = web;
+		cfg.web = unset;
+		try {
+			expect(createWebAccess({ dir: DATA, allow: new Set<string>(), notify: () => {} }).mode()).toBe("local");
+			expect(createWebAccess({ dir: DATA, allow: new Set([OWNER]), notify: () => {} }).mode()).toBe("tailscale");
+		} finally {
+			cfg.web = web;
+			writeFileSync(FILE, saved, { mode: 0o600 });
+		}
+	});
+
 	test("PUT back to Tailscale stops the tunnel and the Tailscale login works again; the token is kept until cleared", async () => {
 		const r = await mode("tailscale");
 		expect(await r.json()).toMatchObject({ mode: "tailscale", token_set: true, tunnel: { state: "off" } });

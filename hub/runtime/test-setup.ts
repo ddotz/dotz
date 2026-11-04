@@ -40,7 +40,7 @@ writeFileSync(
 	JSON.stringify({
 		identity: { name: "tester", language: "en", timezone: "Asia/Seoul" },
 		discord: { token_file: join(dir, "missing-token"), owner_id: "1", guild: "1" },
-		web: { port: 47999, tailscale_https_port: 0, allow_logins: [] },
+		web: { port: 47999, tailscale_https_port: 0, allow_logins: [], access: "tailscale" },
 		lanes: { compact_at: 300000, keep_recent: 30000 },
 		// API-key entries are under test in many files; the default (keys off) has its own test in hub/apikey-policy.test.ts.
 		guard: { allow_api_key: true },

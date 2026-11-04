@@ -343,7 +343,7 @@ async function interactive(): Promise<Answers> {
   호칭 ${address || "(없음)"}${avatar ? `\n  프로필 이미지 ${avatar}` : ""}
   디스코드 ${guild ? `서버 ${guild}, 주인 ${owner_id}, 봇 ${existsSync(TOKEN_FILE) ? "저장된 토큰" : bot_token ? "붙여넣은 토큰" : "자동 생성"}` : "사용 안 함"}
   이 컴퓨터 이름 ${machine_name}
-  웹 ${allow_logins.length ? `${allow_logins.join(", ")}, 포트 ${a.web_port} -> ${a.tailscale_https_port}` : "사용 안 함 (Tailscale 로그인 없음)"}`);
+  웹 ${allow_logins.length ? `${allow_logins.join(", ")}, 포트 ${a.web_port} -> ${a.tailscale_https_port}` : "이 컴퓨터에서만 (Tailscale 로그인 없음)"}`);
 	if (/^n/i.test(ask("이대로 진행할까요? Y/n", "y"))) {
 		console.log("취소했어요. 다시 실행하면 방금 값은 저장되지 않은 상태로 시작해요.");
 		process.exit(1);
@@ -450,7 +450,7 @@ const config = {
 	identity: a.identity,
 	discord: { token_file: TOKEN_FILE.replace(HOME, "~"), owner_id: a.owner_id, guild: a.guild, ...(prior.discord?.app_id ? { app_id: prior.discord.app_id } : {}) },
 	// The default name is not saved: an empty web.machine_name keeps following the hostname.
-	web: { port: a.web_port, tailscale_https_port: a.tailscale_https_port, allow_logins: a.allow_logins, ...(a.machine_name !== defaultMachineName || priorMachineName ? { machine_name: a.machine_name } : {}) },
+	web: { ...prior.web, port: a.web_port, tailscale_https_port: a.tailscale_https_port, allow_logins: a.allow_logins, ...(a.machine_name !== defaultMachineName || priorMachineName ? { machine_name: a.machine_name } : {}) },
 	orchestrator: { runtime: a.runtime, ...pick(prior.orchestrator, ["rotate_tokens"]) },
 	lanes: { runtime: a.runtime, ...pick(prior.lanes, ["max_active"]) },
 	models: { ...prior.models, orchestrator: { ...prior.models?.orchestrator, ...split(a.orchestrator_model) }, lanes: { ...prior.models?.lanes, ...split(a.lane_model) } },
@@ -588,15 +588,15 @@ const runtimeLabel = harness(a.runtime)?.label ?? a.runtime;
 console.log(`\n끝! ${a.identity.name}는 ${runtimeLabel}로 돌아가요.${a.guild ? ` 디스코드에서는 ${a.identity.name} 카테고리의 대화 채널에 말을 걸면 돼요.` : ""}${ompInstalled ? ` omp 터미널에서도 "${a.identity.name}모드 켜"라고 하면 그 터미널이 ${a.identity.name}와(과) 연결돼요.` : ""}`);
 // The web address goes last, once the gateway and the tailnet proxy answer: a freshly loaded service needs a few
 // seconds, and opening the browser before that showed an error page instead of the app.
+const answers = async (url: string, seconds: number) => {
+	for (let i = 0; i < seconds; i++) {
+		const r = await fetch(url, { signal: AbortSignal.timeout(2000) }).catch(() => undefined);
+		if (r && r.status < 500) return true;
+		await Bun.sleep(1000);
+	}
+	return false;
+};
 if (webUrl) {
-	const answers = async (url: string, seconds: number) => {
-		for (let i = 0; i < seconds; i++) {
-			const r = await fetch(url, { signal: AbortSignal.timeout(2000) }).catch(() => undefined);
-			if (r && r.status < 500) return true;
-			await Bun.sleep(1000);
-		}
-		return false;
-	};
 	const served = Boolean(tsNow?.running);
 	if (served && flag("--load")) console.log("\n웹 앱이 뜨길 기다리는 중...");
 	const up = served && flag("--load") && (await answers(`http://127.0.0.1:${a.web_port}/`, 40)) && (await answers(webUrl, 15));
@@ -604,4 +604,8 @@ if (webUrl) {
 	console.log(`\n웹 앱 주소: ${webUrl}${why ? `  (${why})` : ""}`);
 	console.log(`  휴대폰이나 다른 컴퓨터에서는 같은 Tailscale 계정(${a.allow_logins[0]})으로 로그인한 뒤 이 주소를 열면 돼요.`);
 	if (flag("--open") && up) await Bun.$`${MAC ? "open" : "xdg-open"} ${webUrl}`.nothrow().quiet();
+} else if (!a.allow_logins.length && (prior.web?.access ?? "local") === "local") {
+	const localUrl = `http://127.0.0.1:${a.web_port}/`;
+	console.log(`\n웹 앱 주소: ${localUrl}\n  이 컴퓨터의 브라우저에서 열고 로그인 버튼을 누르면 돼요.`);
+	if (flag("--open") && flag("--load") && (await answers(localUrl, 40))) await Bun.$`${MAC ? "open" : "xdg-open"} ${localUrl}`.nothrow().quiet();
 }

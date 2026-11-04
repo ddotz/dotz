@@ -1,11 +1,13 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Server } from "bun";
 import { HUB_TOKEN, PORT } from "./config.ts";
+import { type DialogAnswer, dialogAnswer, dialogCommand, dialogFinder, MAC_SCRIPT } from "./local-login-dialog.ts";
+import { loginPage } from "./local-login-page.ts";
 import { createLocalLogin } from "./local-login.ts";
-import { ALLOW, makeRoute, webAccess } from "./routes.ts";
+import { ALLOW, localLogin, makeRoute, setLoginConfirm, webAccess } from "./routes.ts";
 
 // 이 컴퓨터만 로그인 링크 on the real route: a link minted with the hub token becomes a cookie, and every check of localBrowser() still applies to both
 // the redeeming and the cookie. Unit cases (expiry, caps, an unreadable file) use createLocalLogin with an injected clock.
@@ -27,7 +29,8 @@ const cookieOf = (r: Response) => r.headers.get("set-cookie")!.split(";")[0]!;
 const session = async () => cookieOf(await hit(await linkPath()));
 const setMode = (mode: string) => webAccess.change({ mode });
 const logText = () => (existsSync(join(DATA, "hub.log")) ? readFileSync(join(DATA, "hub.log"), "utf8") : "");
-const DENIED = "링크가 만료됐거나 이미 썼어요. 터미널에서 다시 받아 주세요.";
+const DENIED = "링크가 만료됐거나 이미 썼어요. 이 주소의 첫 화면에서 다시 로그인해 주세요.";
+const HINT = "이 컴퓨터만 모드예요. 브라우저에서 이 주소를 열어 로그인해 주세요.";
 
 // Not a browser on this computer: each must refuse both a code and a valid cookie. [headers, base, peer ip]
 const NOT_LOCAL: [Record<string, string>, string?, string?][] = [
@@ -44,7 +47,21 @@ const NOT_LOCAL: [Record<string, string>, string?, string?][] = [
 	[{ "sec-fetch-site": "same-site" }],
 ];
 
+// The login page's confirmation dialog is a fake whose answer the test gives: `answer` settles the latest dialog and returns once the route has seen it.
+const asked: string[] = [];
+let settleDialog: (a: DialogAnswer) => void = () => {};
+const answer = async (a: DialogAnswer): Promise<void> => {
+	settleDialog(a);
+	await Promise.resolve();
+};
+
 beforeAll(async () => {
+	setLoginConfirm(number => {
+		asked.push(number);
+		return new Promise<DialogAnswer>(resolve => {
+			settleDialog = resolve;
+		});
+	});
 	await webAccess.change({ mode: "local" });
 });
 afterAll(async () => {
@@ -69,7 +86,7 @@ describe("이 컴퓨터만 로그인 링크", () => {
 	test("no header and no cookie from the loopback is 403 and says how to get a link", async () => {
 		const r = await hit("/api/state");
 		expect([r.status, r.headers.get("content-type")]).toEqual([403, "text/plain; charset=utf-8"]);
-		expect(await r.text()).toBe("이 컴퓨터만 모드예요. 터미널에서 bun hub/web-login-cli.ts 를 실행해 로그인 링크를 받아 주세요.");
+		expect(await r.text()).toBe(HINT);
 		expect(await status("/api/state", { headers: { cookie: "dotz_local=" } })).toBe(403);
 		expect(await status("/api/state", { headers: { cookie: "dotz_local=not-a-session" } })).toBe(403);
 	});
@@ -229,5 +246,234 @@ describe("createLocalLogin", () => {
 		const ll = make(dir);
 		expect(ll.verify(withCookie("anything"))).toBe(false);
 		expect(ll.redeem(ll.mint())).toBeString();
+	});
+});
+
+describe("이 컴퓨터만 로그인 페이지의 확인 창", () => {
+	const html = { accept: "text/html" };
+	const sameOrigin = (base = BASE) => ({ origin: base });
+	const ask = (o: Hit = {}) => hit("/local-login/request", { method: "POST", ...o, headers: { ...sameOrigin(o.base), ...o.headers } });
+	const poll = (id: string, o: Hit = {}) => hit(`/local-login/status?id=${encodeURIComponent(id)}`, o);
+	const begin = async () => ((await ask()).json() as Promise<{ id: string; number: string }>);
+	const stateOf = async (id: string, o: Hit = {}) => ((await poll(id, o)).json() as Promise<{ state: string }>).then(b => b.state);
+	beforeEach(() => {
+		localLogin.clear();
+		asked.length = 0;
+	});
+
+	test("allow: pending, then the cookie once to the browser that asked, and it opens the API", async () => {
+		const r = await ask();
+		expect([r.status, r.headers.get("cache-control")]).toEqual([200, "no-store"]);
+		const { id, number } = (await r.json()) as { id: string; number: string };
+		expect(id).toMatch(/^[\w-]{43}$/);
+		expect(number).toMatch(/^\d{4}$/);
+		expect(asked).toEqual([number]);
+		expect(await stateOf(id)).toBe("pending");
+		await answer("allow");
+		const done = await poll(id);
+		expect([done.status, done.headers.get("cache-control"), done.headers.get("referrer-policy")]).toEqual([200, "no-store", "no-referrer"]);
+		expect(done.headers.get("set-cookie")).toMatch(/^dotz_local=[\w-]{43}; Max-Age=2592000; Path=\/; HttpOnly; SameSite=Strict$/);
+		expect(await done.json()).toEqual({ state: "allowed" });
+		expect(await status("/api/state", { headers: { cookie: cookieOf(done) } })).toBe(200);
+		const again = await poll(id);
+		expect([await again.json(), again.headers.get("set-cookie")]).toEqual([{ state: "expired" }, null]);
+	});
+
+	test("the cookie goes only to the holder of the id", async () => {
+		const { id } = await begin();
+		await answer("allow");
+		for (const wrong of ["", "nope", "A".repeat(43)]) {
+			const r = await poll(wrong);
+			expect([await r.json(), r.headers.get("set-cookie")]).toEqual([{ state: "expired" }, null]);
+		}
+		expect((await poll(id)).headers.get("set-cookie")).toBeString();
+	});
+
+	test("a no and an unavailable dialog are told to the page", async () => {
+		const first = await begin();
+		await answer("deny");
+		expect(await stateOf(first.id)).toBe("denied");
+		localLogin.clear();
+		const second = await begin();
+		await answer("unavailable");
+		expect(await stateOf(second.id)).toBe("unavailable");
+		expect((await poll(second.id)).headers.get("set-cookie")).toBeNull();
+	});
+
+	test("only a browser on this computer, in local mode, from its own origin, reaches the dialog", async () => {
+		for (const [headers, base, ip] of NOT_LOCAL) {
+			const o = { base, ip, headers };
+			expect([headers, base, ip, await status("/local-login/request", { ...o, method: "POST", headers: { ...sameOrigin(base), ...headers } })]).toEqual([headers, base, ip, 403]);
+			expect([headers, base, ip, await status("/local-login/status?id=x", o)]).toEqual([headers, base, ip, 403]);
+		}
+		expect(await status("/local-login/request", { method: "POST" })).toBe(403);
+		expect(await status("/local-login/request", { method: "POST", headers: { origin: "https://evil.com" } })).toBe(403);
+		expect(await status("/local-login/request", { method: "POST", headers: { origin: "null" } })).toBe(403);
+		await setMode("tailscale");
+		expect(await status("/local-login/request", { method: "POST", headers: sameOrigin() })).toBe(403);
+		expect(await status("/local-login/status?id=x")).toBe(403);
+		await setMode("local");
+		expect(asked).toEqual([]);
+	});
+
+	test("a status read may come without an Origin, a peer request never reaches the dialog", async () => {
+		const { id } = await begin();
+		expect(await status(`/local-login/status?id=${id}`)).toBe(200);
+		mkdirSync(join(DATA, "secrets"), { recursive: true });
+		writeFileSync(PEER_FILE, PEER);
+		const peer = { "x-dotz-peer": PEER, "tailscale-user-login": OWNER, ...sameOrigin() };
+		expect(await status("/local-login/request", { method: "POST", headers: peer })).not.toBe(200);
+		expect(await status(`/local-login/status?id=${id}`, { headers: peer })).not.toBe(200);
+		expect(asked).toHaveLength(1);
+	});
+
+	test("the login page is for a navigation of a browser on this computer only", async () => {
+		const r = await hit("/", { headers: html });
+		expect([r.status, r.headers.get("content-type"), r.headers.get("cache-control")]).toEqual([403, "text/html; charset=utf-8", "no-store"]);
+		expect(r.headers.get("content-security-policy")).toContain("default-src 'none'");
+		const page = await r.text();
+		expect(page).toContain("<button");
+		for (const word of ["터미널", "토큰", "쿠키", "bun "]) expect(page).not.toContain(word);
+		for (const [headers, base, ip] of [[html, "http://dotz.test"], [html, "http://rebind.evil.com:7420"], [html, undefined, "192.168.0.7"], [{ ...html, "x-forwarded-for": "203.0.113.9" }], [{ accept: "application/json" }], [{}]] as [Record<string, string>, string?, string?][]) {
+			const plain = await hit("/", { headers, base, ip });
+			expect([headers, base, ip, plain.status, plain.headers.get("content-type"), await plain.text()]).toEqual([headers, base, ip, 403, "text/plain; charset=utf-8", HINT]);
+		}
+		const post = await hit("/api/state", { method: "POST", headers: html });
+		expect(post.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+	});
+
+	test("the page escapes the assistant's name", () => {
+		const page = loginPage("<script>alert(1)</script>");
+		expect(page).not.toContain("<script>alert(1)");
+		expect(page).toContain("&lt;script&gt;alert(1)&lt;/script&gt; 로그인");
+	});
+});
+
+describe("local-login-dialog", () => {
+	const HOSTILE = '"; do shell script "x';
+	const none = () => null;
+
+	test("the number and the name are argv items on macOS, never part of the script", () => {
+		const argv = dialogCommand("darwin", "4821", HOSTILE, none);
+		expect(argv).toEqual(["osascript", "-e", MAC_SCRIPT, "4821", HOSTILE]);
+		expect(MAC_SCRIPT).not.toContain("4821");
+		expect(MAC_SCRIPT).not.toContain("shell script");
+	});
+
+	test("on Linux zenity wins over kdialog, the name stays inside its own item, and no shell is involved", () => {
+		const zenity = dialogCommand("linux", "4821", HOSTILE, bin => bin);
+		expect(zenity?.[0]).toBe("zenity");
+		expect(zenity).toContain(`--title=${HOSTILE} 로그인`);
+		expect(zenity?.filter(a => a.includes("shell script"))).toHaveLength(1);
+		expect(zenity?.filter(a => a.includes("4821"))).toHaveLength(1);
+		const kdialog = dialogCommand("linux", "4821", HOSTILE, bin => (bin === "kdialog" ? bin : null));
+		expect(kdialog?.[0]).toBe("kdialog");
+		expect(kdialog).toContain(`${HOSTILE} 로그인`);
+		expect(dialogCommand("linux", "4821", HOSTILE, none)).toBeUndefined();
+		expect(dialogCommand("win32", "4821", HOSTILE, bin => bin)).toBeUndefined();
+	});
+
+	test("Linux without a display has no dialog to offer, so the page says unavailable instead of denied", () => {
+		const which = (bin: string) => bin;
+		expect(dialogCommand("linux", "4821", "n", dialogFinder("linux", {}, which))).toBeUndefined();
+		expect(dialogCommand("linux", "4821", "n", dialogFinder("linux", { WAYLAND_DISPLAY: "wayland-0" }, which))?.[0]).toBe("zenity");
+		expect(dialogCommand("darwin", "4821", "n", dialogFinder("darwin", {}, which))?.[0]).toBe("osascript");
+	});
+
+	test("what the exit means: a no and a cancel deny, anything else is unavailable", () => {
+		const cases: [NodeJS.Platform, number | null, string, string, DialogAnswer][] = [
+			["darwin", 0, "허용\n", "", "allow"],
+			["darwin", 0, "거부\n", "", "deny"],
+			["darwin", 0, "timeout\n", "", "deny"],
+			["darwin", 1, "", "execution error: User canceled. (-128)", "deny"],
+			["darwin", 1, "", "execution error: No user interaction allowed. (-1713)", "unavailable"],
+			["linux", 0, "", "", "allow"],
+			["linux", 1, "", "", "deny"],
+			["linux", 5, "", "", "deny"],
+			["linux", 127, "", "", "unavailable"],
+			["linux", null, "", "", "unavailable"],
+		];
+		for (const [platform, code, out, err, want] of cases) expect([platform, code, dialogAnswer(platform, code, out, err)]).toEqual([platform, code, want]);
+	});
+});
+
+describe("createLocalLogin requests", () => {
+	const tmp = mkdtempSync(join(tmpdir(), "local-login-ask-"));
+	afterAll(() => rmSync(tmp, { recursive: true, force: true }));
+	let t = 5_000_000;
+	let settle: (a: DialogAnswer) => void = () => {};
+	let dialogs = 0;
+	const ll = createLocalLogin({
+		dir: tmp,
+		now: () => t,
+		confirm: () => {
+			dialogs++;
+			return new Promise<DialogAnswer>(resolve => {
+				settle = resolve;
+			});
+		},
+	});
+	const call = (path: string, method = "GET") => {
+		const req = new Request(`${BASE}${path}`, { method, headers: { origin: BASE } });
+		const url = new URL(req.url);
+		return method === "POST" ? ll.request(req, url, "local", "127.0.0.1") : ll.status(req, url, "local", "127.0.0.1");
+	};
+	const begin = () => call("/local-login/request", "POST");
+	const stateOf = async (id: string) => ((await call(`/local-login/status?id=${id}`).json()) as { state: string }).state;
+	const idOf = async (r: Response) => ((await r.json()) as { id: string }).id;
+	const answerNow = async (a: DialogAnswer) => {
+		settle(a);
+		await Promise.resolve();
+	};
+
+	test("only one request waits at a time; the second is 429 and does not open another dialog", async () => {
+		const first = await begin();
+		expect(first.status).toBe(200);
+		const second = await begin();
+		expect([second.status, await second.json()]).toEqual([429, { error: "pending" }]);
+		expect(dialogs).toBe(1);
+		await answerNow("allow");
+		expect(await stateOf(await idOf(first))).toBe("allowed");
+		ll.clear();
+	});
+
+	test("after a no a new request waits 3 seconds", async () => {
+		const id = await idOf(await begin());
+		await answerNow("deny");
+		expect(await stateOf(id)).toBe("denied");
+		const before = dialogs;
+		const early = await begin();
+		expect([early.status, await early.json()]).toEqual([429, { error: "wait" }]);
+		t += 2999;
+		expect((await begin()).status).toBe(429);
+		t += 1;
+		expect((await begin()).status).toBe(200);
+		expect(dialogs).toBe(before + 1);
+		ll.clear();
+	});
+
+	test("a request expires after 120 seconds, a late answer gets no cookie, and the next request waits 3 seconds from the expiry", async () => {
+		const id = await idOf(await begin());
+		t += 119_999;
+		expect(await stateOf(id)).toBe("pending");
+		t += 1;
+		expect(await stateOf(id)).toBe("expired");
+		await answerNow("allow");
+		const late = call(`/local-login/status?id=${id}`);
+		expect([await late.json(), late.headers.get("set-cookie")]).toEqual([{ state: "expired" }, null]);
+		expect((await begin()).status).toBe(429);
+		t += 3000;
+		expect((await begin()).status).toBe(200);
+		ll.clear();
+	});
+
+	test("a rejected dialog is unavailable", async () => {
+		const broken = createLocalLogin({ dir: tmp, now: () => t, confirm: () => Promise.reject(new Error("spawn failed")) });
+		const req = new Request(`${BASE}/local-login/request`, { method: "POST", headers: { origin: BASE } });
+		const id = await idOf(broken.request(req, new URL(req.url), "local", "127.0.0.1"));
+		await Promise.resolve();
+		const probe = new Request(`${BASE}/local-login/status?id=${id}`);
+		const r = broken.status(probe, new URL(probe.url), "local", "127.0.0.1");
+		expect(await r.json()).toEqual({ state: "unavailable" });
 	});
 });

@@ -93,7 +93,7 @@ export function createWebAccess(deps: WebAccessDeps) {
 	const publicUrl = (): string | undefined => (cfg.web as { public_url?: string } | undefined)?.public_url?.replace(/\/+$/, "") || undefined;
 
 	const fromConfig = (): WebAccessState => ({
-		mode: WEB_MODES.includes(cfg.web?.access as WebMode) ? (cfg.web!.access as WebMode) : "tailscale",
+		mode: WEB_MODES.includes(cfg.web?.access as WebMode) ? (cfg.web!.access as WebMode) : deps.allow.size ? "tailscale" : "local", // nobody can log in through Tailscale without a login, so such an install starts on this computer
 		hostname: cfg.web?.cloudflare?.hostname ?? "",
 		team: cfg.web?.cloudflare?.team ?? "",
 		aud: cfg.web?.cloudflare?.aud ?? "",

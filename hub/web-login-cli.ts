@@ -1,4 +1,5 @@
-// Run in a terminal on this computer while web.access is "local" (이 컴퓨터만): prints a one-time login link for the browser. Only the url goes to stdout.
+// Fallback for the bot while web.access is "local" (이 컴퓨터만); the owner normally logs in with the button on the login page (hub/local-login-page.ts).
+// Prints a one-time login link for the browser (only the url goes to stdout); --open also opens it in this computer's default browser.
 import { HUB_TOKEN, PORT } from "./config.ts";
 
 const r = await fetch(`http://127.0.0.1:${PORT}/api/web-access/login-link`, { method: "POST", headers: { "x-dotz-token": HUB_TOKEN } }).catch(() => undefined);
@@ -12,3 +13,11 @@ if (!r.ok || !data.url) {
 	process.exit(1);
 }
 console.log(data.url);
+if (process.argv.includes("--open")) {
+	const opener = process.platform === "darwin" ? "open" : "xdg-open";
+	const proc = Bun.spawn([opener, data.url], { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
+	if ((await proc.exited) !== 0) {
+		console.error("브라우저를 열지 못했어요. 위 주소를 브라우저에서 열어 주세요");
+		process.exit(1);
+	}
+}

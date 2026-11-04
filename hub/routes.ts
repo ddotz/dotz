@@ -6,6 +6,7 @@ import { approvalRoute, TRIAGE_MIN_DEFAULT, webAnswer } from "./approval-wire.ts
 import { droppedDraftRefs, restoreReopenedDrafts } from "./draft-restore.ts";
 import { join } from "node:path";
 import { cloudflareGate } from "./devices.ts";
+import { type Confirm, nativeConfirm } from "./local-login-dialog.ts";
 import { createLocalLogin } from "./local-login.ts";
 import { createWebAccess, localBrowser, WebAccessError, webAccessRoute } from "./web-access.ts";
 import type { Server } from "bun";
@@ -115,8 +116,12 @@ export const ALLOW = new Set((cfg.web?.allow_logins ?? []).map(s => s.toLowerCas
 // In that mode a valid Cloudflare Access token (hub/cf-access.ts) is checked once at the route entry (it needs the key fetch), then passed in as cfOk,
 // and only paired devices (hub/devices.ts) get in; Access, when set up, is required on top of the device session.
 // The Tailscale-User-Login header is trusted only in "tailscale" mode: elsewhere nothing vouches for it, so whoever reaches the port could write it.
-// In "local" (이 컴퓨터만) a browser on this computer logs in once with a link minted from the terminal (hub/local-login.ts); leaving the mode voids its sessions.
-export const localLogin = createLocalLogin({ dir: DATA_DIR });
+// In "local" (이 컴퓨터만) a browser on this computer logs in once: a button on the login page makes the gateway ask on the owner's screen (or the bot hands out a
+// link, hub/web-login-cli.ts); leaving the mode voids its sessions (hub/local-login.ts).
+let confirmLogin: Confirm = nativeConfirm;
+/** Tests replace the native confirmation dialog of the login page (hub/local-login-dialog.ts) with a fake whose answer they control. */
+export const setLoginConfirm = (c: Confirm): void => { confirmLogin = c; };
+export const localLogin = createLocalLogin({ dir: DATA_DIR, confirm: number => confirmLogin(number) });
 export const webAccess = createWebAccess({ dir: DATA_DIR, allow: ALLOW, notify: text => out("alert", text, undefined, { source: "gateway" }), onLeaveLocal: () => localLogin.clear() });
 if (webAccess.mode() !== "local") localLogin.clear();
 
@@ -419,9 +424,11 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (pairing) return pairing;
 		const peer = checkPeer(req);
 		if (peer === "denied") return new Response("forbidden", { status: 403 });
-		// The login link is redeemed before the owner check (it is how a browser becomes the owner); a peer request never gets here (checkPeer above).
+		// The login link and the login page's request are answered before the owner check (they are how a browser becomes the owner); a peer request never gets here (checkPeer above).
 		if (peer === "none" && req.method === "GET" && url.pathname === "/local-login") return localLogin.page(req, url, webAccess.mode(), srv?.requestIP(req)?.address);
-		if (peer === "none" && !authorized(req, !!cfAccess && (await cfAccess.verifyRequest(req)), !!devices && (await devices.verifySession(req)), srv?.requestIP(req)?.address)) return devices ? devices.denied(req, url) : webAccess.mode() === "local" ? localLogin.hint() : new Response("forbidden", { status: 403 });
+		if (peer === "none" && req.method === "POST" && url.pathname === "/local-login/request") return localLogin.request(req, url, webAccess.mode(), srv?.requestIP(req)?.address);
+		if (peer === "none" && req.method === "GET" && url.pathname === "/local-login/status") return localLogin.status(req, url, webAccess.mode(), srv?.requestIP(req)?.address);
+		if (peer === "none" && !authorized(req, !!cfAccess && (await cfAccess.verifyRequest(req)), !!devices && (await devices.verifySession(req)), srv?.requestIP(req)?.address)) return devices ? devices.denied(req, url) : webAccess.mode() === "local" ? localLogin.hint(req, srv?.requestIP(req)?.address) : new Response("forbidden", { status: 403 });
 		const deviceApi = peer === "none" ? await devices?.apiRoute(req, url) : undefined;
 		if (deviceApi) return deviceApi;
 		const accessApi = peer === "none" ? await webAccessRoute(req, url, webAccess) : undefined;
