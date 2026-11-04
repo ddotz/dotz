@@ -76,7 +76,7 @@ const reload = async () => {
 const order = () => view.evaluate(`homeBoard.order().join(",")`) as Promise<string>;
 const layout = () => view.evaluate(`localStorage.getItem("dotz-board-home")`) as Promise<string | null>;
 const clickText = (sel: string, text: string) => view.evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(sel)})].find(n => n.textContent.trim() === ${JSON.stringify(text)}); if (!b) throw new Error("no " + ${JSON.stringify(text)}); b.click(); })()`);
-const fill = (field: string, value: string) => view.evaluate(`(() => { const i = document.querySelector('dialog[open] [data-f="${field}"] .fi'); i.value = ${JSON.stringify(value)}; i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+const fill = (field: string, value: string) => view.evaluate(`(() => { const i = document.querySelector('#v-cardform [data-f="${field}"] .fi'); i.value = ${JSON.stringify(value)}; i.dispatchEvent(new Event("input", { bubbles: true })); })()`);
 const menuPick = async (id: string, label: string) => {
 	await view.evaluate(`document.querySelector('.bi[data-id="${id}"] .ch .ib').click()`);
 	await waitFor(`document.querySelector(".menu")`);
@@ -89,19 +89,37 @@ describe("홈 cards at 1100px", () => {
 		await view.resize?.(1100, 800);
 		await boot();
 		await clickText(".bbar .btn", "카드 추가");
-		await waitFor(`document.querySelector('dialog[open] [data-f="title"] .fi')`);
+		await waitFor(`current === "cardform" && document.querySelector('#v-cardform [data-f="title"] .fi')`);
 		await fill("title", "새 카드");
 		await fill("text", "내용");
 		await fill("link", "ftp://x");
 		failNext = "link는 https:// 또는 #으로 시작해야 해요";
-		await clickText("dialog[open] .btn", "저장");
-		await waitFor(`document.querySelector("dialog[open] .cu-ferr").textContent.startsWith("link")`);
-		expect(await view.evaluate(`document.querySelector('dialog[open] [data-f="link"] .fi').getAttribute("aria-invalid")`)).toBe("true");
+		await clickText("#v-cardform .btn", "저장");
+		await waitFor(`document.querySelector("#v-cardform .cu-ferr").textContent.startsWith("link")`);
+		expect(await view.evaluate(`document.querySelector("#v-cardform .cu-more").open`)).toBe(true);
+		expect(await view.evaluate(`document.querySelector('#v-cardform [data-f="link"] .fi').getAttribute("aria-invalid")`)).toBe("true");
 		await fill("link", "");
-		await clickText("dialog[open] .btn", "저장");
-		await waitFor(`!document.querySelector("dialog[open]") && document.querySelector('.bi[data-id="custom:card-3"] h3')`);
+		await clickText("#v-cardform .btn", "저장");
+		await waitFor(`current === "home" && document.querySelector('.bi[data-id="custom:card-3"] h3')`);
 		expect(await view.evaluate(`document.querySelector('.bi[data-id="custom:card-3"] h3').textContent`)).toBe("새 카드");
 		expect(files["card-3"]).toMatchObject({ title: "새 카드", text: "내용" });
+	});
+
+	test("the form draws the real card as it is typed: empty shape, view, 더 보기 count; nothing in the preview can be pressed", async () => {
+		reset();
+		await boot();
+		await clickText(".bbar .btn", "카드 추가");
+		await waitFor(`document.querySelector("#v-cardform .cu-pv .card h3.cu-g")`);
+		expect(await view.evaluate(`location.hash`)).toBe("#cardform");
+		await view.evaluate(`([...document.querySelectorAll("#v-cardform .cu-vt input")].find(i => i.value === "list").click(), 0)`);
+		await fill("text", "우유 사기\n치과 예약");
+		await fill("title", "장보기");
+		await fill("note", "오늘");
+		await waitFor(`[...document.querySelectorAll("#v-cardform .cu-pv .nm")].map(n => n.textContent).join("|") === "우유 사기|치과 예약" && document.querySelector("#v-cardform .cu-more .cu-hint").textContent.endsWith("1개 채움")`);
+		expect(await view.evaluate(`document.querySelector("#v-cardform .cu-pv h3").textContent`)).toBe("장보기");
+		expect(await view.evaluate(`document.querySelector("#v-cardform .cu-pv > [inert] .card").textContent.includes("오늘")`)).toBe(true);
+		await clickText("#v-cardform .btn", "취소");
+		await waitFor(`current === "home" && !document.querySelector("#v-cardform form")`);
 	});
 
 	test("text on a 목록 or 항목별 값 card reads line by line", async () => {
@@ -118,10 +136,10 @@ describe("홈 cards at 1100px", () => {
 		reset();
 		await boot();
 		await menuPick("custom:memo", "수정…");
-		await waitFor(`document.querySelector('dialog[open] [data-f="title"] .fi') && document.querySelector('dialog[open] [data-f="title"] .fi').value === "메모"`);
+		await waitFor(`document.querySelector('#v-cardform [data-f="title"] .fi') && document.querySelector('#v-cardform [data-f="title"] .fi').value === "메모"`);
 		await fill("title", "메모 2");
-		await clickText("dialog[open] .btn", "저장");
-		await waitFor(`document.querySelector('.bi[data-id="custom:memo"] h3').textContent === "메모 2"`);
+		await clickText("#v-cardform .btn", "저장");
+		await waitFor(`current === "home" && document.querySelector('.bi[data-id="custom:memo"] h3').textContent === "메모 2"`);
 		await menuPick("custom:memo", "삭제…");
 		await waitFor(`document.querySelector("dialog[open]") && document.querySelector("dialog[open]").textContent.includes("cards/memo.json")`);
 		await clickText("dialog[open] .btn", "삭제");
