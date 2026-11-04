@@ -73,6 +73,8 @@ self.addEventListener("fetch", ev => {
   if (url.pathname === "/manifest.webmanifest") return;
   // a JANDI-only computer's chat page (hub/jandi-peers.ts) is its own page from the gateway, not the app shell
   if (url.pathname.startsWith("/jandi-peer/")) return;
+  // the remote desktop (hub/remote-desktop.ts) is the gateway's own page, never the app shell
+  if (url.pathname === "/desk" || url.pathname.startsWith("/desk/")) return;
   if (req.mode === "navigate" || FRESH.includes(url.pathname)) {
     const key = req.mode === "navigate" ? "/" : url.pathname;
     if (req.mode === "navigate") ev.waitUntil(refreshShell());

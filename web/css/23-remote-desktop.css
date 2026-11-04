@@ -1,0 +1,8 @@
+/* 화면 공유 (features/remote-desktop/DESIGN.md Web): the app-bar pill that names who is watching, and the switcher row. The settings rows are the plain .li + .hs-sw. */
+.dsk-pill { position: relative; grid-row: 1; grid-column: 8; align-self: center; max-width: 220px; margin-left: var(--sp-2); border: 0; font-family: inherit; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsk-pill[hidden] { display: none; }
+.dsk-pill:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.conn:not([hidden]) ~ .dsk-pill { display: none; }
+@media (max-width: 1099px) { .dsk-pill { margin-left: 0; } }
+@media (max-width: 639px) { .dsk-pill { flex: 0 1 auto; min-width: 0; max-width: 40%; } }
+.pr-screen .ic { flex: none; width: 16px; height: 16px; color: var(--fg-3); }

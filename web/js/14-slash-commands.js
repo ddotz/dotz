@@ -24,10 +24,12 @@ const CMDS = [
   { c: "/quota", d: "공급자·모델별 사용 한도" },
   // 이 컴퓨터의 셸 (owner 2026-11-03): typed here, run in the terminal sheet - the composer's own way to the shell, not a gateway command.
   { c: "/terminal", d: "이 컴퓨터 터미널에서 명령 실행", args: [{ n: "명령", free: true }] },
+  // 화면 공유 (owner 2026-11-04): opens this computer's screen in a tab, not a gateway command; listed only while S.desk exists, and not in the palette (which has its own item).
+  { c: "/screen", d: "이 컴퓨터 화면 열기", desk: true },
   { c: "/help", d: "명령 전체 설명" },
 ];
 // The command palette lists the same commands.
-const hintList = CMDS.map(x => [x.c, x.d]);
+const hintList = CMDS.filter(x => !x.desk).map(x => [x.c, x.d]);
 let SL = { items: [], idx: -1, hide: "" };
 // @ in the same menu: what runs now (홈 지금 진행 중, from S: the assistant's background work, a conversation's session and its workers,
 // live sessions). A pick writes "@<title> " and is kept in MENTIONS; the message sends {kind, id, label} for every token still in the text
@@ -71,7 +73,8 @@ function updateHints() {
       .map(it => { const tok = `@${it.label} `; return { kind: "mn", it, fill: `${v.slice(0, p.from)}${tok}${v.slice(p.to)}`, caret: p.from + tok.length }; });
     head = el("div", { class: "sl-hd" }, el("span", { class: "tx", text: "지금 진행 중 · 골라서 지칭하기" }));
   } else if (p.stage === "cmd") {
-    const pre = CMDS.filter(x => x.c.startsWith(p.q)), sub = CMDS.filter(x => !x.c.startsWith(p.q) && x.c.includes(p.q.slice(1)));
+    const pool = CMDS.filter(x => !x.desk || (S && S.desk));
+    const pre = pool.filter(x => x.c.startsWith(p.q)), sub = pool.filter(x => !x.c.startsWith(p.q) && x.c.includes(p.q.slice(1)));
     items = [...pre, ...sub].map(x => ({ kind: "cmd", x, fill: `${x.c} ` }));
     head = el("div", { class: "sl-hd" }, el("span", { class: "logo" }), el("span", { class: "nm", text: botName }), el("span", { class: "tx", text: "명령" }));
   } else {
@@ -213,6 +216,7 @@ async function stopTarget() {
 // 컴포저에서 셸로 (owner 2026-11-03): "/terminal <명령>" is not a gateway command - it opens this computer's terminal sheet with the command in it
 // (36-shell.js openShell). Keep a bare "/terminal" in the box and say what is missing instead of sending it anywhere.
 const SH_CMD = /^\/(?:terminal|셸|shell)(?:\s+([\s\S]*))?$/;
+const SCR_CMD = /^\/(?:screen|화면)\s*$/;
 // A slash command (typed, or a card button) goes to the gateway for the current target; its answer joins the chat as a card.
 async function sendCommand(text) {
   const t = target, lane = isLaneT(t) ? laneOf(t) : "";
@@ -239,6 +243,10 @@ async function sendChat(how) {
   if (typeof asTplEnd === "function") asTplEnd();
   chatStick = true; termStick = true;
   if (text.startsWith("/")) {
+    if (SCR_CMD.test(text)) {
+      if (!(S && S.desk)) { toast("이 컴퓨터에서는 화면 공유를 쓸 수 없어요", true); ta.value = text; autosize(); return; }
+      openScreen(); return;
+    }
     const m = SH_CMD.exec(text);
     if (m) {
       const command = (m[1] || "").trim();

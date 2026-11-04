@@ -77,6 +77,7 @@ import { MAIN, primaryTarget } from "./session-key.ts";
 import { parseReply, replyLine, sendWeb } from "./intake.ts";
 import { json, body, terminals } from "./routes-util.ts";
 import { ptyRoute } from "./pty.ts";
+import { desk } from "./remote-desktop.ts";
 import { routeLanes } from "./routes-lanes.ts";
 import { routeSettings } from "./routes-settings.ts";
 import { commentFlags, commentNeeds, commentPending, commentsRoute } from "./comments/gateway.ts";
@@ -438,6 +439,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		const peerResponse = await peers.route(req, url);
 		if (peerResponse) return peerResponse;
+		// 화면 공유 (hub/remote-desktop.ts): /desk/, /api/desk/*, the peer's Chrome opener; null = upgraded to a websocket.
+		const deskResponse = await desk.route(req, url, srv, webAccess.mode());
+		if (deskResponse !== undefined) return deskResponse as Response;
 		// A computer reached only through the owner's JANDI self chat: its chat page and JSON, behind the same gate (hub/jandi-peers.ts).
 		const jandiPeer = peer === "none" ? await jandiPeerChats.route(req, url) : undefined;
 		if (jandiPeer) return jandiPeer;
@@ -549,7 +553,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), deferred: limitWaits(join(DATA_DIR, "state.json")), work_now: Date.now(), web_build: webBuild() });
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), deferred: limitWaits(join(DATA_DIR, "state.json")), work_now: Date.now(), web_build: webBuild(), desk: desk.summary() });
 		if (req.method === "GET" && url.pathname === "/api/notices") syncCardFiles();
 		if (req.method === "GET" && url.pathname === "/api/notices") return json({ ...listNotices(Number(url.searchParams.get("limit") ?? 100)), gone: dismissedAlertAts() });
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
