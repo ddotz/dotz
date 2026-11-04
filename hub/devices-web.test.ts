@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
+import { PAIR_HTML, PAIR_JS } from "./pair-page.ts";
+import { qrPath } from "./qr.ts";
 import { ev, fakeHub, fixPageNow, json, run, waitFor, type View } from "./test-web.ts";
 
 // 설정 → 연결된 기기 (패스키) against a stub gateway (headless Bun.WebView): the list with the 이 기기 badge, rename, unpair with its
@@ -25,6 +27,7 @@ const initial = () => [
 let devices = initial();
 const calls: string[] = [];
 
+const QR = qrPath("https://dotz.example.com/pair#code=482913")!;
 const hub = fakeHub({
 	api: async (req, url) => {
 		const p = url.pathname;
@@ -32,7 +35,7 @@ const hub = fakeHub({
 		if (p === "/api/devices" && req.method === "GET") return json(devices);
 		if (p === "/api/devices/code" && req.method === "POST") {
 			calls.push("POST code");
-			return json({ code: "482913", minutes: 10, url: "https://dotz.example.com/pair" });
+			return json({ code: "482913", minutes: 10, url: "https://dotz.example.com/pair", qr: QR });
 		}
 		const m = /^\/api\/devices\/([^/]+)$/.exec(p);
 		if (m) {
@@ -138,6 +141,34 @@ describe("연결된 기기 설정 화면", () => {
 		await waitFor(v, `document.querySelector("dialog[open] [data-dev-code]")`);
 		expect(await ev(v, `[${top}.querySelector("[data-dev-code]").textContent, ${top}.querySelector('input[name="dev-url"]').value]`)).toEqual(["482913", "https://dotz.example.com/pair"]);
 		expect(calls).toEqual(["POST code"]);
+		expect(await ev(v, `[${top}.querySelector("[data-dev-qr] path").getAttribute("d"), ${top}.querySelector("[data-dev-qr]").getAttribute("viewBox")]`)).toEqual([QR.path, `-4 -4 ${QR.size + 8} ${QR.size + 8}`]);
+		const box = await ev<{ w: number; bg: string; ink: string }>(v, `(() => { const q = ${top}.querySelector("[data-dev-qr]"); return { w: q.getBoundingClientRect().width, bg: getComputedStyle(q.querySelector("rect")).fill, ink: getComputedStyle(q.querySelector("path")).fill }; })()`);
+		expect(box).toEqual({ w: 220, bg: "rgb(255, 255, 255)", ink: "rgb(0, 0, 0)" });
+	});
+
+	test("a browser adding its own passkey gets no QR: it has nothing to scan with", async () => {
+		devices = initial().map(d => ({ ...d, current: false }));
+		const v = await open(1280, 800);
+		await click(v, "#devices [data-dev-self]");
+		await waitFor(v, `document.querySelector("dialog[open] [data-dev-make]")`);
+		await click(v, "dialog[open] [data-dev-make]");
+		await waitFor(v, `document.querySelector("dialog[open] [data-dev-code]")`);
+		expect(await ev(v, `!!${top}.querySelector("[data-dev-qr]")`)).toBe(false);
+	});
+
+	test("the QR's address fills the code in on /pair and takes it out of the address bar; a bad fragment fills nothing", async () => {
+		const page = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: req => new URL(req.url).pathname === "/pair.js" ? new Response(PAIR_JS, { headers: { "Content-Type": "text/javascript" } }) : new Response(PAIR_HTML.replace("__DEVICES__", "1"), { headers: { "Content-Type": "text/html" } }) });
+		try {
+			const v = await plain.view({ width: 390, height: 844 });
+			await v.navigate(`http://127.0.0.1:${page.port}/pair#code=482913`);
+			await waitFor(v, `document.getElementById("code") && document.getElementById("code").value === "482913"`);
+			expect(await ev(v, `[location.hash, location.pathname, document.getElementById("enter").hidden, document.getElementById("get").hidden]`)).toEqual(["", "/pair", false, true]);
+			await v.navigate(`http://127.0.0.1:${page.port}/pair?second#code=48291x`); // a hash-only change would not load the page again
+			await waitFor(v, `document.getElementById("lead").textContent.length > 0`);
+			expect(await ev(v, `[location.hash, document.getElementById("code").value, document.getElementById("enter").hidden]`)).toEqual(["", "", true]);
+		} finally {
+			page.stop(true);
+		}
 	});
 
 	test("a browser without its own passkey is offered one", async () => {
