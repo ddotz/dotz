@@ -80,6 +80,7 @@ describe("the x (무시) in a headless browser", () => {
 		// ignore from the sheet: leaves 답변 필요 here and on the other page, the toast offers the undo, the hub keeps it as ignored
 		await phone.evaluate(`document.querySelector(".fs-card .fs-ign").click()`);
 		await waitFor(phone, `document.querySelector(".snack") && /무시했어요/.test(document.querySelector(".snack").textContent) && !document.querySelector(".fs-card")`);
+		await phone.evaluate(`go("home")`);   // the row's tap moved this page to the question's message
 		await waitFor(phone, `!document.querySelector(".hn .hrx")`);
 		await waitFor(desk, `!document.querySelector(".hn .hrx")`);
 		expect(item().decision!.state).toBe("ignored");

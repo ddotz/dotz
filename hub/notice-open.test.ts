@@ -38,6 +38,7 @@ describe("notice kind -> action", () => {
 		["monitor that is gone", { kind: "watch", tone: "", title: "없는 감시", src: "alert" }, "monitor"],
 		["plain alert", { kind: "alert", tone: "", src: "alert" }, "message"],
 		["plain message", { kind: "message", tone: "", src: "main" }, "message"],
+		["new mail", { kind: "watch", tone: "", src: "mail:abc" }, "message"],
 	])("%s", (_name, n, want) => {
 		expect(actionOf(n as N, mons)).toBe(want as string);
 	});
@@ -72,7 +73,7 @@ describe("a notice that links to an open decision", () => {
 	});
 	test("noticeOpen hands the sheet the decision's id, whichever twin was tapped", async () => {
 		const items = live("open"), opened: unknown[] = [];
-		const fn = new Function("noticeKindAction", "ntLinkedDec", "ntRead", "noticeSheetOpen", "ntAskSheet", "ntJump", "ntDetailOpen", "ntSession", "monOpen",
+		const fn = new Function("noticeKindAction", "ntLinkedDec", "ntRead", "noticeSheetOpen", "ntAskSheet", "ntJump", "ntDetailOpen", "ntUnder", "monOpen",
 			`${between(notices, "async function noticeOpen(", "async function noticeOpenId(")}; return noticeOpen;`)(
 			actionIn(items), linkedOf(items), () => {}, (id: string) => opened.push(id), () => { throw new Error("ask"); }, () => { throw new Error("jump"); }, () => {}, () => {}, () => {});
 		for (const n of items.slice(0, 3)) await fn(n);
@@ -91,26 +92,28 @@ describe("web build id", () => {
 });
 
 describe("noticeOpen dispatch", () => {
-	const run = (n: N | null, ask = true) => {
+	const run = (n: N | null, ask = true, here = false) => {
 		const calls: unknown[][] = [];
 		const rec = (name: string) => (...a: unknown[]) => { calls.push([name, ...a]); return undefined; };
-		const fn = new Function("noticeKindAction", "ntLinkedDec", "ntRead", "noticeSheetOpen", "ntAskSheet", "ntJump", "ntDetailOpen", "ntSession", "monOpen",
+		const fn = new Function("noticeKindAction", "ntLinkedDec", "ntRead", "noticeSheetOpen", "ntAskSheet", "ntJump", "ntDetailOpen", "ntUnder", "monOpen",
 			`${between(notices, "async function noticeOpen(", "async function noticeOpenId(")}; return noticeOpen;`)(
-			(x: N) => x.act, () => null, rec("read"), rec("sheet"), (x: N) => { calls.push(["ask", x.id]); return Promise.resolve(ask); }, rec("jump"), rec("detail"), rec("session"), rec("monitor"));
-		return fn(n).then(() => calls);
+			(x: N) => x.act, () => null, rec("read"), rec("sheet"), (x: N) => { calls.push(["ask", x.id]); return Promise.resolve(ask); }, rec("jump"), rec("detail"), rec("under"), rec("monitor"));
+		return fn(n, here).then(() => calls);
 	};
 	test("each action reaches its own opener", async () => {
-		expect(await run({ act: "sheet", id: "7" })).toEqual([["sheet", "7"]]);
-		expect(await run({ act: "detail", id: "8" })).toEqual([["read", { act: "detail", id: "8" }], ["detail", { act: "detail", id: "8" }]]);
-		expect((await run({ act: "session", id: "9" }))[1]![0]).toBe("session");
+		expect(await run({ act: "sheet", id: "7" })).toEqual([["under", { act: "sheet", id: "7" }], ["sheet", "7"]]);
+		expect(await run({ act: "sheet", id: "7" }, true, true)).toEqual([["sheet", "7"]]);   // tapped on the message: the list stays put
+		expect(await run({ act: "detail", id: "8" })).toEqual([["read", { act: "detail", id: "8" }], ["under", { act: "detail", id: "8" }], ["detail", { act: "detail", id: "8" }]]);
+		expect((await run({ act: "session", id: "9" }))[1]![0]).toBe("jump");
 		expect(await run({ act: "monitor", title: "디스크 감시" })).toEqual([["read", { act: "monitor", title: "디스크 감시" }], ["monitor", { act: "monitor", title: "디스크 감시" }]]);
 		expect(await run({ act: "worklog", id: "1" })).toEqual([["jump", { act: "worklog", id: "1" }]]);
 		expect(await run({ act: "message", id: "2" })).toEqual([["jump", { act: "message", id: "2" }]]);
 		expect(await run(null)).toEqual([]);
 	});
 	test("an [ask] whose question is gone falls back to the conversation", async () => {
-		expect(await run({ act: "ask", id: "3" }, true)).toEqual([["ask", "3"]]);
-		expect(await run({ act: "ask", id: "3" }, false)).toEqual([["ask", "3"], ["jump", { act: "ask", id: "3" }]]);
+		expect(await run({ act: "ask", id: "3" }, true)).toEqual([["under", { act: "ask", id: "3" }], ["ask", "3"]]);
+		expect(await run({ act: "ask", id: "3" }, false)).toEqual([["under", { act: "ask", id: "3" }], ["ask", "3"]]);
+		expect(await run({ act: "ask", id: "3" }, false, true)).toEqual([["ask", "3"], ["jump", { act: "ask", id: "3" }]]);
 	});
 });
 
@@ -180,7 +183,7 @@ describe("entry points use the shared handler", () => {
 		expect(notices).toContain("if (d.notice) noticeOpenId(d.notice);");
 		expect(notices).toContain("setTimeout(() => noticeOpenId(want), 500);");
 		expect(between(notices, "function noticeLive", "async function ntMarkRead")).toContain("noticeOpenId(e.item.id)");
-		expect(sw).toContain("pushOpen(h, d.ts)");
+		expect(sw).toContain("pushOpen(h, d.ts, d.nid)");
 		expect(home).toContain("noticeOpen(n)");
 	});
 });

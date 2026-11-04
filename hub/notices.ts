@@ -35,6 +35,8 @@ export type Notice = {
 	// on the rendered message (data-ts). Older items have neither: the web falls back to open + updated.
 	src?: string;
 	at?: string;
+	// The conversation holding the `at` message when it is not `src`: a session's line posted to 작업내역 belongs to the session (src) but lives there.
+	msg?: string;
 	key?: string;
 	// Who raised it: "orchestrator", "lane:<name>" or "gateway" (older items have none: originOf falls back to the decision target / lane key).
 	by?: string;
@@ -296,7 +298,7 @@ function trim(): void {
 	}
 }
 
-type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; key?: string; watch?: string; by?: string; ref?: string; item?: WatchItem; read?: boolean; unread?: boolean; src?: string; at?: string };
+type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; key?: string; watch?: string; by?: string; ref?: string; item?: WatchItem; read?: boolean; unread?: boolean; src?: string; at?: string; msg?: string };
 
 // A notice that just became unread (new, or a read one reopened): the phone notification for it (hub/push.ts noticePush). Decisions have onDecision.
 const unreadHooks: Array<(n: Notice) => void> = [];
@@ -319,6 +321,8 @@ function upsert(i: Input): Notice {
 		old.src = i.src ?? i.open;
 		old.at = at;
 		old.updated = at;
+		if (i.msg) old.msg = i.msg;
+		else delete old.msg;
 		if (i.by) old.by = i.by;
 		if (i.ref) old.ref = i.ref;
 		if (i.watch) old.watch = i.watch;
@@ -331,7 +335,7 @@ function upsert(i: Input): Notice {
 		}
 		item = old;
 	} else {
-		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: i.kind, tone: i.tone, title: i.title, text: i.text, open: i.open, src: i.src ?? i.open, at, ...(i.key ? { key: i.key } : {}), ...(i.watch ? { watch: i.watch } : {}), ...(i.by ? { by: i.by } : {}), ...(i.ref ? { ref: i.ref } : {}), ...(i.item ? { item: i.item } : {}), read: i.read === true };
+		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: i.kind, tone: i.tone, title: i.title, text: i.text, open: i.open, src: i.src ?? i.open, at, ...(i.msg ? { msg: i.msg } : {}), ...(i.key ? { key: i.key } : {}), ...(i.watch ? { watch: i.watch } : {}), ...(i.by ? { by: i.by } : {}), ...(i.ref ? { ref: i.ref } : {}), ...(i.item ? { item: i.item } : {}), read: i.read === true };
 		if (!quiet) {
 			items.push(item);
 			trim();
@@ -390,7 +394,7 @@ function fromOutbox(e: HubEvent, asks = false): void {
 	if (target === "worklog" || (restart && target === "web" && e.source === "gateway")) {
 		if (key?.startsWith("lane:")) {
 			const name = key.slice(5);
-			return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: key, key, ...(by ? { by } : {}), at: e.ts });
+			return void upsert({ kind: "result", tone, title: laneTitle(name), text, open: key, key, ...(by ? { by } : {}), ...(target === "worklog" ? { msg: target } : {}), at: e.ts });
 		}
 		// The gateway's own status lines there (a restart, a model fallback, an account switch, a harness upgrade) are a record, not news: born read.
 		// A gateway [ask] / [fail] there still waits, and so does a daily digest with its own title (야간 정리, 토큰 점검).
