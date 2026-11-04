@@ -72,7 +72,8 @@ test("홈: 지금 진행 중 is only what runs; waiting rows say their state in 
 	expect(s.running).toHaveLength(1);
 	expect(s.running![0]).toContain("흐름도 그리기");
 	expect(s.running![0]).toContain("Opus 5.5 medium");
-	expect(s.waiting!.some(r => r.includes("끝났어요"))).toBe(true);
+	expect(s.waiting!.some(r => r.includes("끝났어요"))).toBe(false);
+	expect(s.waiting!.some(r => r.includes("중단됨"))).toBe(true);
 	expect(s.waiting!.some(r => r.includes("쉬는 중 · 할 일 2개 남음"))).toBe(true);
 	expect(s.waiting!.join("|")).not.toContain("The WebView worker");
 	expect(s["ended-work"]!.find(r => r.includes("빌드 고치기"))).toContain("이어서 처리 중");
@@ -103,7 +104,7 @@ test("홈: a session the run line calls 진행 중 (waiting on its own worker) i
 		expect(s.running).toHaveLength(1);
 		expect(s.running![0]).toContain("알림 분류 업데이트 마무리");
 		expect(s.running![0]).toContain("진행 중");
-		expect(s.waiting!.join("|")).not.toContain("알림 분류 업데이트 마무리");
+		expect(s.waiting).toBeUndefined();
 		expect(await v.evaluate(`document.querySelector('#v-home .card:has([data-k="running"]) .hc-n').textContent`)).toBe("1개 작업 중");
 	} finally {
 		LANES.pop();
@@ -151,7 +152,7 @@ test("홈: nothing running says so instead of listing idle conversations under �
 	await waitFor(v, `current === "home" && document.querySelector('#v-home .hn[data-k="running"]')`);
 	const s = await sections(v);
 	expect(s.running).toEqual(["진행 중인 작업이 없어요"]);
-	expect(s.waiting!.length).toBe(2);
+	expect(s.waiting).toBeUndefined();
 	expect(s["ended-work"]).toBeUndefined();
 }, 20_000);
 
