@@ -4,7 +4,7 @@
 // comment_send / comment_sources events (99-boot.js -> cmLive). Nothing is posted without a click on a draft's 보내기; text only
 // goes through el({text}), never innerHTML.
 const CM = { apps: new Set(), sources: [], local: { sources: [], apps: new Set() }, pc: null, vis: false, app: "", threads: [], loaded: false, error: "", open: null, view: null, loading: false, viewErr: "", seq: 0, rseq: 0,
-  drafting: new Set(), revising: "", pick: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
+  drafting: new Set(), revising: "", pickD: null, tab: "comments", posts: new Map(), timer: 0, intgT: 0, readSent: "", roomsSig: "", chatSig: "" };
 // An app item "i:<instance id>" opens the comment pane when one of its sources is followed. A source carries the instance that owns it (`app`: the
 // default instance of its app, or an added one such as site-mapia); an older gateway sends none, then the app of its kind.
 const cmAppOfKind = k => (k === "website" ? "site" : k);
@@ -37,6 +37,9 @@ $("#v-monitoring").append(cmPane);
 
 const cmIntgSoon = () => { clearTimeout(CM.intgT); CM.intgT = setTimeout(loadIntegrations, 500); };
 const cmSources = () => CM.sources.filter(s => cmOwner(s) === CM.app);
+// The sources of a settings app: this computer's ("youtube"), or a peer's ("youtube~<computer>") while the pane shows that computer (CM.pc).
+const cmSrcOf = app => (app.includes("~") === !!CM.pc ? CM.sources.filter(s => cmOwner(s) === app.split("~")[0]) : []);
+const cmWatchWord = srcs => { const w = srcs.flatMap(s => s.watch || []); return w.includes("*") ? "전부" : w.length ? `${w.length}개` : "없음"; };
 
 async function cmLoadSources() {
   try {
@@ -52,6 +55,7 @@ async function cmLoadSources() {
   if (!CM.pc) CM.local.apps = new Set(apps);
   if (changed && typeof monSchedule === "function") monSchedule();
   if (CM.vis) cmPaintRooms();
+  cmPickPaint(); asPaint();
 }
 async function cmLoad() {
   const seq = ++CM.rseq;
@@ -74,18 +78,19 @@ async function cmUpdate(s, patch) {
     await cmApi(`/api/comments/sources/${enc(s.key)}`, "PUT", patch);
     await cmLoadSources();
     if (patch.watch) CM.posts.delete(s.key);
-    cmLoad(); cmIntgSoon();
+    if (CM.vis) cmLoad();
+    cmIntgSoon();
   } catch (e) { toast(e.message, true); cmLoadSources(); }
 }
 async function cmPosts(s) {
   if (CM.posts.has(s.key)) return;
   CM.posts.set(s.key, { loading: true, list: [] });
-  cmPaintRooms();
+  cmPickPaint();
   try {
     const r = await cmApi(`/api/comments/sources/${enc(s.key)}/posts`);
     CM.posts.set(s.key, { list: Array.isArray(r.posts) ? r.posts : [], error: r.error || "" });
   } catch (e) { CM.posts.set(s.key, { list: [], error: e.message }); }
-  cmPaintRooms();
+  cmPickPaint();
 }
 function cmSourceNode(s) {
   const watch = s.watch || [], all = watch.includes("*"), p = CM.posts.get(s.key);
@@ -105,6 +110,23 @@ function cmSourceNode(s) {
       kkSwitch(all || !!post.watched, post.title, "post", v => cmUpdate(s, { watch: v ? [...watch.filter(x => x !== "*"), post.id] : watch.filter(x => x !== post.id && x !== "*").concat(all ? p.list.filter(x => x.id !== post.id).map(x => x.id) : []) }), true)));
   }
   return node;
+}
+// The picker: the side sheet of KakaoTalk's 대화방 추가, opened from the app's settings row (asPickRow) or the empty list.
+function cmPickPaint() {
+  const d = CM.pickD;
+  if (!d) return;
+  const srcs = cmSrcOf(d.dataset.app);
+  clear(d.querySelector(".kk-pd-b")).append(...(srcs.length ? [el("div", { class: "kk-hint", text: "자동 초안은 새 댓글마다 답글 초안을 만들어서 토큰이 들어요." }), ...srcs.map(cmSourceNode)] : [el("div", { class: "kk-note", text: "켜 둔 곳이 없어요. 채팅에서 댓글 답글을 켜 달라고 요청해 주세요" })]));
+}
+function cmPickOpen(app) {
+  if (CM.pickD) return;
+  const d = CM.pickD = el("dialog", { class: "kk-pd kk-add", id: "cm-pick", "data-app": app, "aria-label": "지켜볼 글" },
+    el("div", { class: "kk-pd-in" },
+      el("div", { class: "kk-pd-h" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "지켜볼 글" })), el("button", { class: "x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+      el("div", { class: "kk-pd-b" })));
+  cmPickPaint();
+  document.body.append(d); d.showModal(); dialogHist(d);
+  d.addEventListener("close", () => { if (CM.pickD === d) CM.pickD = null; d.remove(); });
 }
 function cmRow(t) {
   const on = CM.open && CM.open.source === t.source && CM.open.thread === t.thread, n = t.unread + t.drafts;
@@ -143,29 +165,23 @@ function cmTab(id) {
 function cmPaintRooms() {
   if (!CM.vis) return;
   if (CM.tab === "dm") { dmPaintRooms(); return; }
-  const top = cmRooms.scrollTop, srcs = cmSources(), expanded = CM.pick === null ? !CM.threads.length : CM.pick;
-  const sig = JSON.stringify([CM.app, CM.threads, srcs, expanded, CM.open && [CM.open.source, CM.open.thread], CM.loaded, CM.error, [...CM.posts], cmHasTabs()]);
+  const top = cmRooms.scrollTop, srcs = cmSources();
+  const sig = JSON.stringify([CM.app, CM.threads, srcs, CM.open && [CM.open.source, CM.open.thread], CM.loaded, CM.error, cmHasTabs()]);
   if (sig === CM.roomsSig) {   // nothing changed: only the relative times move, in place
     for (const t of CM.threads) { const n = cmRooms.querySelector(`[data-thread="${CSS.escape(t.thread)}"] .kk-t`); if (n && n.textContent !== kkListTime(t.lastAt)) n.textContent = kkListTime(t.lastAt); }
     return;
   }
   CM.roomsSig = sig;
-  const pick = el("section", { class: "kk-pick", "aria-label": "지켜볼 글 고르기" },
-    el("button", { class: "kk-ph", id: "cm-pick-btn", type: "button", "aria-expanded": expanded ? "true" : "false", onclick: () => { CM.pick = !expanded; cmPaintRooms(); } },
-      el("span", { class: "kk-pt", text: "지켜볼 글" }), el("span", { class: "kk-cnt", text: "" }), icon("drop", "kk-chev")));
-  if (expanded) {
-    if (!srcs.length) pick.append(el("div", { class: "kk-note", text: "켜 둔 곳이 없어요. 채팅에서 댓글 답글을 켜 달라고 요청해 주세요" }));
-    else pick.append(el("div", { class: "kk-hint", text: "자동 초안은 새 댓글마다 답글 초안을 만들어서 토큰이 들어요." }), ...srcs.map(cmSourceNode));
-  }
   const list = el("section", { class: "kk-watch", "aria-label": "댓글이 있는 글" });
   if (CM.loaded) {
     list.append(el("div", { class: "cv-gh", role: "presentation", text: "글" }));
     if (CM.error) list.append(el("div", { class: "kk-note", role: "status", text: CM.error }));
     else if (CM.threads.length) list.append(...CM.threads.map(cmRow));
-    else list.append(el("div", { class: "kk-note", id: "cm-empty", text: "아직 받은 댓글이 없어요" }));
+    else if (!srcs.length) list.append(el("div", { class: "kk-note", id: "cm-empty", text: "켜 둔 곳이 없어요. 채팅에서 댓글 답글을 켜 달라고 요청해 주세요" }));
+    else list.append(el("div", { class: "kk-note", id: "cm-empty", text: "아직 받은 댓글이 없어요" }), el("button", { class: "btn tonal sm", type: "button", "data-k": "pick-open", text: "지켜볼 글 고르기", onclick: () => cmPickOpen(CM.pc ? pqApp(CM.app, CM.pc) : CM.app) }));
   }
   const tabs = cmTabs();
-  clear(cmRooms).append(...(tabs ? [tabs] : []), pick, list);
+  clear(cmRooms).append(...(tabs ? [tabs] : []), list);
   cmRooms.scrollTop = top;
 }
 
@@ -378,13 +394,13 @@ function cmMode(app, shown, pc) {
   if (app) $("#v-monitoring").classList.add("kk-on");
   cmPane.hidden = !app;
   if (swap) {   // another computer's comments: start from an empty pane (this computer's sources stay for its app rows)
-    Object.assign(CM, { vis: false, sources: [], apps: new Set(), threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", roomsSig: "", chatSig: "", error: "" }); CM.seq++; clearInterval(CM.timer);
+    Object.assign(CM, { vis: false, sources: [], apps: new Set(), threads: [], loaded: false, open: null, view: null, headSig: "", roomsSig: "", chatSig: "", error: "" }); CM.seq++; clearInterval(CM.timer);
   }
   CM.pc = app ? pc || null : null;
   if (shown && (!CM.vis || CM.app !== app)) {
     // The DM tab is this computer's Instagram app only; another computer's comment app starts on its comments.
     const dm = !CM.pc && DM.on && DM.connected && app === DM_APP && !CM.sources.some(s => cmOwner(s) === app && (s.watch || []).length);
-    Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, pick: null, headSig: "", roomsSig: "", chatSig: "", tab: dm ? "dm" : "comments" }); CM.seq++;
+    Object.assign(CM, { vis: true, app, threads: [], loaded: false, open: null, view: null, headSig: "", roomsSig: "", chatSig: "", tab: dm ? "dm" : "comments" }); CM.seq++;
     Object.assign(DM, { open: null, view: null }); DM.seq++;
     cmPaintAll(); cmLoad();
     if (CM.tab === "dm") dmRefresh();

@@ -45,6 +45,7 @@ const hub = fakeHub({
 		if (p === "/api/integrations") return json({ items: [{ key: "youtube", label: "유튜브", icon: "youtube", kind: "app", conv: [], notices: [], unread: 2, needs: { drafts: drafts.length, unread: 2, sentToday: 0 } }] });
 		if (p === "/api/comments/sources") return json({ on: true, sources: [{ key: "youtube", kind: "youtube", label: "유튜브 댓글", watch: ["*"], autoDraft: false, autoSend: false, error: null, ranAt: at(22, 3, 0) }] });
 		if (p === "/api/comments/threads") return json({ threads: [{ source: "youtube", thread: "v1", title: "첫 번째 영상", link: "https://video.example/v1", lastAt: at(22, 2, 0), lastText: "다음 주에 올릴게요", lastAuthor: "나", unread: 2, drafts: drafts.length }] });
+		if (p === "/api/integrations/youtube/settings") return json({ fields: [] });
 		const body = req.method === "GET" ? null : ((await req.json().catch(() => ({}))) as Record<string, unknown>);
 		if (p === "/api/comments/thread/youtube/v1" && req.method === "GET")
 			return json({ source: { key: "youtube", kind: "youtube", label: "유튜브 댓글" }, thread: { id: "v1", title: "첫 번째 영상", link: "https://video.example/v1" }, comments: COMMENTS, read: null, drafts, sends });
@@ -172,6 +173,18 @@ describe("댓글 on a phone (390x844)", async () => {
 		await waitFor(v, `!document.querySelector("#cm .kk-m.pend.failed")`);
 		expect(reqs.filter(r => r.path.endsWith("/dismiss"))).toHaveLength(1);
 		await shot(v, "comments-send-failed-390.png");
+	});
+
+	test("지켜볼 글 lives in the app's settings: the row shows the count and opens the picker, the post list has no section for it", async () => {
+		await boot(v);
+		expect(await q(v, `return document.querySelector("#cm-rooms").textContent.includes("지켜볼 글")`)).toBe(false);
+		await run(v, `asScreen("youtube")`);
+		await waitFor(v, `document.querySelector('[data-setting="watch-posts"] [data-k="pick-open"]')`);
+		expect(await q(v, `return document.querySelector('[data-setting="watch-posts"] .as-v').textContent`)).toBe("전부");
+		await run(v, `document.querySelector('[data-setting="watch-posts"] [data-k="pick-open"]').click()`);
+		await waitFor(v, `document.querySelector('#cm-pick[open] .kk-pick-src[data-src="youtube"] [data-k="all"]')`);
+		await run(v, `document.querySelector('#cm-pick [data-k="close"]').click(); ASC.h.close()`);
+		await waitFor(v, `!CM.pickD && !ASC.h`);
 	});
 
 	test("the app list row carries the status line", async () => {
