@@ -566,7 +566,7 @@ function ctxModels() {
     const win = m.window || m.window_default, at = m.compact_at || m.compact_at_default;
     const pct = win ? ` (${Math.round(at / win * 100)}%)` : "";
     return el("div", { class: "card ctx-model" },
-      el("div", { class: "ch" }, el("h3", { text: modelName(m.model) }), el("button", { class: "btn text", type: "button", onclick: () => ctxDialog(m) }, "설정")),
+      el("div", { class: "ch" }, el("h3", { text: modelName(m.model) }), el("button", { class: "btn text inrow", type: "button", onclick: () => ctxDialog(m) }, "설정")),
       el("div", { class: "kv" }, el("span", { class: "k", text: "컨텍스트 크기" }), el("span", { class: "v", text: win ? `${num(win)} 토큰${m.window ? " · 직접 설정" : " · 기본"}` : "아직 모름 (처음 응답 뒤 표시)" })),
       el("div", { class: "kv" }, el("span", { class: "k", text: "자동 압축" }), el("span", { class: "v", text: `${num(at)} 토큰${pct}${m.compact_at ? " · 직접 설정" : " · 기본"}` })),
       el("div", { class: "sup", text: `사용: ${m.used_by.map(ctxUser).join(", ")}` }));
