@@ -6,7 +6,7 @@ import { type DecisionOption, decisionText, detailOf, hasDecisionHead, parseDeci
 import { DRAFT_BODY_MAX, type DraftApproval, type DraftFileIn, draftActionOf, draftNeedsText, parseDraftApproval, quotedDraft, refreshDraft, rewriteDraftTo, withStagedFiles } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
-import { broadcast as broadcastRaw, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
+import { broadcast as broadcastRaw, emit, eventTarget, historyEvents, type HubEvent, onBroadcast, onEmit } from "./events.ts";
 import { classOfNotice, isLoginLost } from "./notice-class.ts";
 import { noticeKo } from "./notice-ko.ts";
 import type { Upload } from "./files.ts";
@@ -1005,6 +1005,27 @@ export async function settleHandledDrafts(at = now()): Promise<number> {
 	for (const i of hit) if (isOpenDecision(i)) settleDecision(i, "", at, true);
 	return hit.length;
 }
+
+// A draft sent or dropped from 모니터링 closes its card in the conversation at once, not at the next 30 s sweep: the apps announce every change
+// of a draft or a send, so a burst of them runs one pass and at most one more after it.
+const DRAFT_CHANGED = new Set(["comment_send", "comment_draft", "kakao_send", "kakao_draft", "mail_unreplied"]);
+let settling = false, settleAgain = false;
+function settleSoon(): void {
+	if (settling) return void (settleAgain = true);
+	settling = true;
+	void settleHandledDrafts()
+		.catch(e => log(`handled-draft settle failed: ${(e as Error).message}`))
+		.finally(() => {
+			settling = false;
+			if (settleAgain) {
+				settleAgain = false;
+				settleSoon();
+			}
+		});
+}
+onBroadcast(e => {
+	if (DRAFT_CHANGED.has(String(e.kind))) settleSoon();
+});
 
 // The send approvals of one monitoring app instance are shown, and pushed, as one group ("메일 답장 확인 3건"): the app instance key, its name and the open count.
 let appLabelOf: (key: string) => string = key => key;
