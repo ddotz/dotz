@@ -188,7 +188,7 @@ function trOriginal(c) {
   }
   if (!o) return null;
   const who = o.kind === "mail" ? [o.from, o.subject].filter(Boolean).join(" · ") : [o.author, o.post && o.post.title].filter(Boolean).join(" · ");
-  return el("div", { class: "tr-org" }, el("div", { class: "tr-k", text: o.kind === "mail" ? "받은 메일" : "원댓글" }), who ? el("div", { class: "tr-who", text: who }) : null, el("div", { class: "tr-otx", text: String(o.text || "").slice(0, o.kind === "mail" ? 600 : 2000) }));
+  return el("div", { class: "tr-org" }, el("div", { class: "tr-k", text: o.kind === "mail" ? "받은 메일" : "원댓글" }), who ? el("div", { class: "tr-who", text: who }) : null, el("div", { class: "tr-otx", text: String((o.kind === "mail" ? mailOwnBody(o.text, o.subject) : o.text) || "").slice(0, o.kind === "mail" ? 600 : 2000) }));
 }
 // A comment draft: the comment it answers, with the post, who and when (KST) and the linked-mail mark, right above the draft.
 function trCommentCtx(c) {
