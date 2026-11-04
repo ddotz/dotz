@@ -165,7 +165,7 @@ describe("웹 접속 화면", () => {
 		found = false;
 		wa = { ...wa, mode: "cloudflare", hostname: "dotz.example.com", token_set: true, tunnel: { state: "error", error: "cloudflared를 찾을 수 없습니다" } };
 		const v = await open();
-		expect(await text(v, "[data-wa-cf-missing]")).toContain("brew install cloudflared");
+		expect(await text(v, "[data-wa-cf-missing]")).toContain("웹 접속 설치해 줘");
 		found = true;
 	}, 30_000);
 

@@ -116,7 +116,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
 .mbox-reply.open .mbox-rb { padding: 4px 0 0; overflow: visible; }
 .mbox-reply .mbox-sf { padding: 12px 0 0; }
 .mbox-quote { margin: 8px 0 4px; color: var(--fg-3); font-size: 13px; }
-.mbox-quote summary { display: flex; align-items: center; width: fit-content; height: 28px; padding: 0 12px; border-radius: 14px; background: var(--layer); font-weight: 500; line-height: 20px; cursor: pointer; }
+.mbox-quote summary { display: flex; align-items: center; width: fit-content; height: 28px; padding: 0 8px; border-radius: var(--r-ctl); color: var(--fg-2); font-weight: 500; line-height: 20px; cursor: pointer; }
 .mbox-qt { max-height: 220px; margin: 6px 0 0; padding-left: 10px; overflow: auto; border-left: 2px solid var(--line-2); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* A phone keeps the sender's name whole: the unread tag is the bold row itself (the row's aria-label still says 안 읽음), the paperclip count

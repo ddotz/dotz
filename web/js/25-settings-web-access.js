@@ -32,7 +32,7 @@ function webAccessRow(row) {
 function waTunnel(d) {
   const t = d.tunnel || { state: "off" };
   const [text, tone] = t.state === "running" ? ["연결됨", "ok"] : t.state === "starting" ? ["연결 중", "warn"] : t.state === "error" ? ["연결 안 됨", "err"] : ["꺼짐", ""];
-  const hint = !d.cloudflared_found ? "cloudflared가 없어요. 터미널에서 brew install cloudflared 를 실행해 주세요."
+  const hint = !d.cloudflared_found ? "터널 프로그램이 없어요. 채팅에서 ‘웹 접속 설치해 줘’라고 말해 주세요."
     : t.error || (t.state === "running" ? "터널이 열려 있어요" : "");
   return el("div", { class: "li", "data-wa-tunnel": t.state },
     el("span", { class: "lead" }, el("span", { class: `dot ${tone}`, "aria-hidden": "true" })),
@@ -62,9 +62,9 @@ async function waPickTailscale(btn) {
 function waAdvanced(d, f) {
   const field = (label, key, opts, hint) => el("div", {}, textField(label, input({ value: f[key], name: `wa-${key}`, ...opts, oninput: ev => { f[key] = ev.target.value; waSync(); } })), hint ? el("div", { class: "sup", text: hint }) : null);
   const out = el("div", {}, el("div", { class: "list" }, el("div", { class: "li dcs-form" },
-    field("주소", "hostname", { placeholder: "dotz.example.com", inputmode: "url" }, "터널의 Public Hostname이에요. 주소를 바꾸면 기기를 다시 연결해야 해요."),
-    field("팀 이름 (선택)", "team", { placeholder: "myteam" }, "Cloudflare Access로 한 번 더 확인할 때만 적어요. AUD와 함께 적어요."),
-    field("AUD (선택)", "aud", {}, "Access 애플리케이션의 Audience Tag예요."),
+    field("주소", "hostname", { placeholder: "dotz.example.com", inputmode: "url" }, "터널에 연결해 둔 주소예요. 주소를 바꾸면 기기를 다시 연결해야 해요."),
+    field("팀 이름 (선택)", "team", { placeholder: "myteam" }, "Cloudflare Access로 한 번 더 확인할 때만 적어요. 확인 번호와 함께 적어요."),
+    field("확인 번호 (선택)", "aud", {}, "Access 앱 화면의 Audience Tag 값이에요."),
     el("div", {}, textField("터널 토큰", input({ type: "password", autocomplete: "new-password", name: "wa-token", placeholder: d.token_set ? "바꾸려면 새로 붙여 넣기" : "eyJ…", oninput: ev => { f.token = ev.target.value; waSync(); } })),
       d.token_set ? el("div", { class: "tag ok dcs-saved", "data-wa-token-set": "1", text: "저장됨" }) : null,
       el("div", { class: "sup", text: "저장하면 이 컴퓨터에만 보관하고, 화면에는 다시 보여 주지 않아요." })),
@@ -91,7 +91,7 @@ function renderWebAccess() {
       el("span", { class: "lead" }, icon("key")), el("span", { class: "tx" }, el("div", { class: "hd", text: "연결된 기기 (패스키)" }), el("div", { class: "sup", text: "이 웹앱에 들어올 수 있는 브라우저" })),
       el("span", { class: "li-end" }, el("span", { class: "tag", text: `${d.devices}대` }), icon("chev", "chev")))));
   if (cf && !d.cloudflared_found) nodes.push(el("div", { class: "list" }, el("div", { class: "li" }, el("span", { class: "tx" },
-    el("div", { class: "hd", text: "cloudflared가 없어요" }), el("div", { class: "sup dcs-err", "data-wa-cf-missing": "1", text: "터미널에서 brew install cloudflared 를 실행해 주세요." })))));
+    el("div", { class: "hd", text: "터널 프로그램이 없어요" }), el("div", { class: "sup dcs-err", "data-wa-cf-missing": "1", text: "채팅에서 ‘웹 접속 설치해 줘’라고 말해 주세요." })))));
   const det = msAdvanced("data-wa-advanced", WA.advOpen, () => waAdvanced(d, f));
   det.addEventListener("toggle", () => { WA.advOpen = det.open; });
   nodes.push(det);

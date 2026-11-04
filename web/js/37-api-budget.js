@@ -37,7 +37,7 @@ function budgetSub() {
 async function budgetDialog() {
   try { AB = await api("/api/api-budget"); } catch (e) { toast(e.message, true); return; }
   const limit = input({ type: "number", inputmode: "decimal", min: "0", step: "any", placeholder: "예: 100", value: AB.monthly_usd == null ? "" : String(AB.monthly_usd) });
-  const key = input({ type: "password", autocomplete: "new-password", name: "admin-key", placeholder: "sk-ant-admin…" });
+  const key = input({ type: "password", autocomplete: "new-password", name: "admin-key", placeholder: "관리자 키 붙여 넣기" });
   const has = AB.admin_key && AB.admin_key.present;
   const done = (c, msg) => { c(); toast(msg); renderSettings(); if (current === "usage") loadQuota(); };
   const send = (c, btn, body, msg) => busy(btn, async () => {
@@ -56,9 +56,9 @@ async function budgetDialog() {
     title: "API 월 한도",
     body: el("div", { class: "col" },
       el("p", { class: "sup", text: "Anthropic 콘솔에서 정한 월 한도(달러)예요. API로는 읽을 수 없어서 직접 입력해요. 비우면 한도 없이 사용액만 보여줘요." }),
-      textField("월 한도 (USD)", limit),
-      el("p", { class: "sup", text: has ? `관리자 키: ${AB.admin_key.masked}. 새 키를 붙여 넣으면 바꿔요.` : "관리자 키가 없어요. 콘솔 → 설정 → Admin keys에서 만들어 붙여 넣으면 콘솔 기준 사용액을 보여줘요. 없으면 이 앱 사용분 추정만 보여줘요." }),
-      textField("관리자 키 (sk-ant-admin…)", key),
+      textField("월 한도 (달러)", limit),
+      el("p", { class: "sup", text: has ? `관리자 키: ${AB.admin_key.masked}. 새 키를 붙여 넣으면 바꿔요.` : "관리자 키가 없어요. 콘솔 설정의 관리자 키 메뉴에서 만들어 붙여 넣으면 콘솔 기준 사용액을 보여줘요. 없으면 이 앱 사용분 추정만 보여줘요." }),
+      textField("관리자 키", key),
       el("p", { class: "sup", text: "키는 저장하기 전에 한 번 확인하고, 다시 보여주거나 기록에 남기지 않아요." })),
     actions,
   });
