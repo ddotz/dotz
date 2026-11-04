@@ -5,7 +5,7 @@ import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { msg } from "./i18n.ts";
 import { askedText, emit, emitDelivery } from "./events.ts";
-import { attachmentLines, type Upload } from "./files.ts";
+import { attachmentLine, attachmentLines, type Upload } from "./files.ts";
 import { pickedLines, type Picked } from "./picked.ts";
 import { abortLane, approvesBudget, lanes, ownerNotes, sendToLane } from "./lanes.ts";
 import { accountView, readPool } from "./account-sticky.ts";
@@ -92,7 +92,7 @@ function inboxBody(e: Record<string, any>): string {
 	if (parts.length > 1) lines.push(m.inboxBurst(parts.length));
 	for (const p of parts) {
 		if (p.reply) lines.push(m.replyingTo(p.reply.author, p.reply.content));
-		for (const a of p.attachments ?? []) lines.push(`[attachment] ${a.name}${a.type ? ` (${a.type})` : ""} ${a.url}`);
+		for (const a of p.attachments ?? []) lines.push(attachmentLine(a, a.url));
 		lines.push(p.text);
 		if (p.elements?.length) lines.push(pickedLines(p.elements));
 		if (p.refs?.length) lines.push(...p.refs);
@@ -254,7 +254,7 @@ export async function sendWeb(s: WebSend): Promise<void> {
 	const info = thread ? discord.threadInfo(thread) : undefined;
 	// A web-only mail has no thread: its turn names the conversation (the mail note carries the subject), not a thread.
 	const where = s.mail ? { conv: mailTarget(s.mail.key), ...(thread ? { thread_name: s.mail.subject, ...(info ? { parent: info.parentTarget } : {}), parent_name: hook?.parentName ?? info?.parentName ?? msg().channelNames.mail } : {}) } : s.project ? { channel_name: s.project.name } : {};
-	const event = { ts: now(), kind: "message", source: s.source ?? s.channel, channel: to, ...where, author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path })) } : {}) };
+	const event = { ts: now(), kind: "message", source: s.source ?? s.channel, channel: to, ...where, author: s.login, text: s.text, ...extra, ...(s.files?.length ? { attachments: s.files.map(f => ({ name: f.name, type: f.type, url: f.path, ...(f.label ? { label: f.label } : {}) })) } : {}) };
 	emit("inbox", event);
 	if (s.settings) watchAsked(to, s.settings);
 	const mem = s.mail && !hook?.note ? memoryNote(DATA_DIR, instanceOf(appEntries(DATA_DIR), "mail", `mail:${s.mail.key}`)) : "";

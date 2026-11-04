@@ -21,6 +21,8 @@ const TABLE: [string, string][] = [
 	["[지금 도는 것]\n- a", "\n- a"],
 	["[system] 알림", "알림"],
 	["[attachment] a.png /tmp/a.png", "a.png /tmp/a.png"],
+	["[attachment] 이미지1: a.png /tmp/a.png", "이미지1: a.png /tmp/a.png"],
+	["[이미지1] 여기가 깨졌어요", "[이미지1] 여기가 깨졌어요"],
 	["[ok | 12ms] 결과", "결과"],
 	["[owner via web] 안녕", "안녕"],
 	["**[blocked]** 막혔어요", "막혔어요"],

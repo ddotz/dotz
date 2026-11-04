@@ -199,7 +199,7 @@ function msgNode(e) {
   switch (e.kind) {
     case "message": case "lane_message": case "_cmd": {
       const via = e.kind === "_cmd" ? "명령" : e.source === "discord" ? "Discord" : e.source === "terminal" ? "터미널" : "";
-      const ub = el("div", { class: "ub", text }), long = text.length > 420 || text.split("\n").length > 6;
+      const ub = el("div", { class: "ub" }, ...atkParts(text, e.files, e)), long = text.length > 420 || text.split("\n").length > 6;
       if (long) ub.classList.add("clamp");
       const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = ub.classList.toggle("clamp"); more.textContent = c ? "더 보기" : "접기"; } }, "더 보기") : null;
       const base = [hm, via].filter(Boolean).join(" · "), mt = el("div", { class: "mt", text: base }), mid = e.mid || e.message_id || "";
@@ -209,7 +209,7 @@ function msgNode(e) {
       // An answered decision is a quiet record of what was decided, not a "1) …" bubble (10-decision-card.js dcRecordNode); the options
       // themselves stay only in the card/sheet that asked (owner 2026-11-03).
       if (e.kind !== "_cmd" && Array.isArray(e.picks) && e.picks.length) return dcRecordNode(e, filesNode(pc ? e.files.map(f => ({ ...f, pc })) : e.files, true), mt);
-      return el("div", { class: "um" }, filesNode(pc ? e.files.map(f => ({ ...f, pc })) : e.files, true), rpQuote(e), text ? ub : null, more, mt);
+      return el("div", { class: "um" }, filesNode(pc ? e.files.map(f => ({ ...f, pc })) : e.files, true), rpQuote(e), text && !atkOnly(text, e.files) ? ub : null, more, mt);
     }
     case "_cmdout": return el("div", { class: `cmdbox${e.is_error ? " err" : ""}` }, e.card ? cardNode(e.card) : el("pre", { text }), el("div", { class: "mt", text: hm }));
     case "notice": case "notice_read": return null;
