@@ -45,6 +45,8 @@ const stamp = assets.reduce((h, f) => h.update(readFileSync(join(OUT, f))), crea
 const page = join(OUT, "index.html");
 writeFileSync(page, readFileSync(page, "utf8").replace(/"\/demo\/(app\.css|fixtures\.js|demo-api\.js|app\.js)(?:\?v=\w+)?"/g, `"/demo/$1?v=${stamp}"`));
 
+await import("./stamp-landing.ts");
+
 const kb = (s: string) => `${Math.round(Buffer.byteLength(s) / 1024)} KB`;
 console.log(`site/demo/app.css  ${kb(css)}  (${files("css").length} files)`);
 console.log(`site/demo/app.js   ${kb(js)}  (${files("js").length} files, build ${build})`);
