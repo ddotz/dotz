@@ -297,7 +297,8 @@ export function createDesk(d: DeskDeps) {
 		if (ready === "failed") return text("화면 공유를 시작하지 못했어요", 502);
 		if (name === "ws") {
 			if (!upgrade || !srv) return text("websocket only", 400);
-			const who = req.headers.get("tailscale-user-login") ?? "기기";
+			// Only tailscale serve sets this header; on a public door anyone could write a name into it.
+			const who = (isPublic(req, mode) ? undefined : req.headers.get("tailscale-user-login")) ?? "기기";
 			const device = "name" in viewer ? viewer.name : undefined;
 			return srv.upgrade(req, { data: { kind: "desk", who, search: voxlQuery(url), ...(device ? { device } : {}) } }) ? null : text("websocket upgrade failed", 400);
 		}

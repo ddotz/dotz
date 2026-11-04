@@ -25,6 +25,9 @@ function frameOf(op: number, body: Uint8Array): Uint8Array {
 }
 
 /** One browser websocket bridged to voxl's: a raw TCP client so the reading can be paused (new WebSocket() cannot). */
+// A code the browser side may not be sent would throw in ws.close and leave the viewer connected to nothing.
+const sendableClose = (code: number) => (code >= 1000 && code < 5000 && ![1005, 1006, 1015].includes(code) ? code : 1011);
+
 export class Bridge {
 	private sock?: Socket;
 	private shaken = false;
@@ -156,7 +159,7 @@ export class Bridge {
 				return;
 			}
 			case 8:
-				return this.fail(f.len >= 2 ? (f.buf[0]! << 8) | f.buf[1]! : 1000, "voxl closed");
+				return this.fail(sendableClose(f.len >= 2 ? (f.buf[0]! << 8) | f.buf[1]! : 1000), "voxl closed");
 			case 9:
 				this.out.push(frameOf(10, f.buf)); // out[0] may be half written
 				return this.flush();
