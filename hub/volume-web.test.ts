@@ -81,9 +81,10 @@ test("the chat list has no filter chips and no 알림 row, and draws the project
 	// 땅콩 and the two feeds, then 진행 중, then 프로젝트 with its 더 보기: each kind of row collapsed to one entry
 	const order = `[...document.querySelectorAll("#chat-convo .cv-sec, #chat-convo .cv-row, #chat-convo .cv-more")].map(n => n.matches(".cv-sec") ? n.textContent : n.matches(".cv-more") ? "more" : n.dataset.t.replace(/^(lane|ch):.*/, "$1")).filter((s, i, a) => s !== a[i - 1])`;
 	expect((await ev<string[]>(order)).slice(0, 8)).toEqual(["main", "worklog", "진행 중", "lane", "프로젝트", "ch", "more"]);
-	await ev(`(document.querySelector('#chat-convo .cv-more .btn').click(), 0)`);
+	expect(await ev<boolean>(`!!document.querySelector('#chat-convo .cv-card > .cv-more:last-child')`)).toBe(true);
+	await ev(`(document.querySelector('#chat-convo .cv-more').click(), 0)`);
 	await wait(`${projects} === 80`, "next page");
-	expect(await ev<string>(`document.querySelector('#chat-convo .cv-more .btn').textContent`)).toBe("프로젝트 20개 더 보기");
+	expect(await ev<string>(`document.querySelector('#chat-convo .cv-more').textContent`)).toBe("프로젝트 20개 더 보기");
 	expect(await ev<number>(`document.querySelectorAll('#chat-convo [data-t="alert"]').length`)).toBe(0);   // the 알림 row is not in the list at all
 });
 
