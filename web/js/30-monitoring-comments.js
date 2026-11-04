@@ -129,11 +129,18 @@ function cmPickOpen(app) {
   document.body.append(d); d.showModal(); dialogHist(d);
   d.addEventListener("close", () => { if (CM.pickD === d) CM.pickD = null; d.remove(); });
 }
+// What the post's comments set going in mail, at a glance on its row: how many failed, wait as drafts, went out (threads rows, hub/comments/engine.ts).
+function cmMailSum(t) {
+  const m = t.mails;
+  if (!m) return null;
+  const st = [[m.failed, "실패", "err"], [m.drafted, "초안", "ask"], [m.sent, "보냄", "done"]].filter(x => x[0]).map(([n, word, s]) => ({ text: `${word} ${n}`, s }));
+  return el("span", { class: "cm-tr sum", "data-track": "mail", role: "group", "aria-label": `메일: ${st.map(x => x.text).join(", ")}` }, el("span", { class: "cm-tn", text: "메일" }), ...st.map(x => el("span", { class: "cm-st", "data-s": x.s, text: x.text })));
+}
 function cmRow(t) {
   const on = CM.open && CM.open.source === t.source && CM.open.thread === t.thread, n = t.unread + t.drafts;
   return el("button", { class: `cv-row pv kk-row${n ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-thread": t.thread, "aria-current": on ? "true" : null, onclick: () => cmOpen(t) },
     cmThumb(t.title, t.thumb),
-    el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: t.title, text: t.title }), el("span", { class: "cv-p", text: `${t.lastAuthor}: ${t.lastText}` })),
+    el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: t.title, text: t.title }), el("span", { class: "cv-p", text: `${t.lastAuthor}: ${t.lastText}` }), cmMailSum(t)),
     el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(t.lastAt) }), n || t.unreplied ? el("span", { class: "kk-rmeta" }, n ? el("span", { class: "nb", "aria-label": t.drafts ? `답장 확인 ${t.drafts}건` : `읽지 않은 댓글 ${t.unread}개`, text: t.drafts ? `초안 ${t.drafts}` : String(t.unread > 99 ? "99+" : t.unread) }) : null, t.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${t.unreplied}개`, text: `미답장 ${t.unreplied}` }) : null) : null));
 }
 // The picture of a post: its thumbnail when the source gave one (it falls back to the title's initial when the picture does not load).
@@ -154,8 +161,8 @@ const cmOpenWord = kind => (kind === "youtube" ? "영상 열기" : "원본 글 �
 const cmHasTabs = () => DM.on && DM.connected && CM.app === DM_APP && cmSources().some(s => (s.watch || []).length);
 function cmTabs() {
   if (!cmHasTabs()) return null;
-  const b = (id, text) => el("button", { type: "button", class: CM.tab === id ? "on" : "", "data-tab": id, "aria-pressed": CM.tab === id ? "true" : "false", text, onclick: () => cmTab(id) });
-  return el("div", { class: "seg cm-tabs", role: "group", "aria-label": "보기" }, b("comments", "댓글"), b("dm", "DM"));
+  const b = (id, text) => el("button", { type: "button", class: `cchip mr-f${CM.tab === id ? " on" : ""}`, role: "tab", "data-tab": id, "aria-selected": String(CM.tab === id), text, onclick: () => cmTab(id) });
+  return el("div", { class: "mr-filter cm-tabs", role: "tablist", "aria-label": "보기" }, b("comments", "댓글"), b("dm", "DM"));
 }
 function cmTab(id) {
   if (CM.tab === id) return;

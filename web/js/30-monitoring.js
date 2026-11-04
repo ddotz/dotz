@@ -119,16 +119,22 @@ function monProgNode(m, opts = {}) {
 const monWords = s => /^[A-Za-z0-9][\w.-]*$/.test(s) && /[-_]/.test(s) ? s.replace(/[-_]+/g, " ") : s;
 const monRaw = m => String(m.watch || m.name || "");
 // A raw command never reaches the screen (owner 2026-11-04): a schedule's text is what it runs ("미설이 피드백 데일리 보고: ssh -o BatchMode=yes ... python3 - 24 < ~/.dotz/...").
-// monHuman keeps the plain part before the colon and drops the command; a text that is only a command gives "" and the caller names the kind in words.
-const MON_CMD = /\b(?:ssh|scp|rsync|curl|wget|python3?|node|bun|npm|npx|bash|zsh|git|sudo|docker|osascript)\s+(?:-|[\w.-]*@|~|\.{0,2}\/|[\w.-]+\.(?:py|sh|js|ts|mjs)\b)|(?:^|\s)-{1,2}[A-Za-z][\w-]*(?:=|\s|$)|\s[<>|]{1,2}\s|\$\(|~\/|(?:^|\s)\.{0,2}\/[\w.-]+\/|@\d{1,3}(?:\.\d{1,3}){3}/;
+// monHuman keeps the plain sentences before the first one that holds a command or a file path (a schedule's text can be the whole prompt it runs), stops at the
+// colon before a command, and drops a bracket that holds one; a text that is only a command gives "" and the caller names the kind in words.
+const MON_CMD = /\b[\w.-]+\.(?:md|jsonl?|ya?ml|toml|log|py|sh)\b|\b(?:ssh|scp|rsync|curl|wget|python3?|node|bun|npm|npx|bash|zsh|git|sudo|docker|osascript)\s+(?:-|[\w.-]*@|~|\.{0,2}\/|[\w.-]+\.(?:py|sh|js|ts|mjs)\b)|(?:^|\s)-{1,2}[A-Za-z][\w-]*(?:=|\s|$)|\s[<>|]{1,2}\s|\$\(|~\/|(?:^|\s)\.{0,2}\/[\w.-]+\/|@\d{1,3}(?:\.\d{1,3}){3}/;
+const monSentences = s => s.split(/(?<=[.!?。])\s+/);
 function monHuman(raw) {
-  const s = String(raw ?? "").replace(/\s+/g, " ").trim(), i = s.search(/[:：]\s/);
-  if (i > 0 && MON_CMD.test(s.slice(i + 1))) { const head = s.slice(0, i).trim(); return MON_CMD.test(head) ? "" : head; }
-  return MON_CMD.test(s) ? "" : s;
+  const s = String(raw ?? "").replace(/\s+/g, " ").replace(/\s*[(（][^()（）]*(?:[)）]|$)/g, m => MON_CMD.test(m) ? "" : m).trim();
+  if (!MON_CMD.test(s)) return s;
+  const i = s.search(/[:：]\s/), keep = [];
+  for (const t of monSentences(i > 0 ? s.slice(0, i) : s)) { if (MON_CMD.test(t)) break; keep.push(t); }
+  return keep.join(" ").replace(/[.。]$/, "").trim();
 }
 const monClean = (s, fb = "") => monHuman(ntPlain(s)) || fb;
 const MON_GENTLE = { watch: "지켜보는 일", schedule: "예약한 일" };
-const monTitle = m => monWords(monHuman(ntPlain(m.name))) || MON_GENTLE[m.kind] || "모니터링";
+// A title stays one short phrase: a long prompt in plain words gives its first sentence.
+const MON_TITLE_MAX = 40;
+const monTitle = m => { const t = monWords(monHuman(ntPlain(m.name))); return (t.length > MON_TITLE_MAX ? monSentences(t)[0] : t) || MON_GENTLE[m.kind] || "모니터링"; };
 // One or two plain sentences under the name, from what the monitor really is (its cadence), never from the command it runs.
 const monDesc = m => m.kind === "schedule" ? (m.every ? `${m.every} 알아서 실행해요.` : "정해 둔 때에 한 번 실행해요.") : `바뀐 곳이 있는지 ${m.every ? `${m.every} ` : "알아서 "}확인해요.`;
 const monNames = m => [...new Set([monTitle(m), String(m.name || ""), monRaw(m), monWords(monRaw(m))].filter(Boolean))];
@@ -208,7 +214,7 @@ function monItems() {
     const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
     const need = notices.filter(monNeed).length, conn = m.connection === "disconnected", running = !!m.watch && MON.running.has(m.watch);
     (monProject(m) ? proj : plain).push({ key: `m:${m.name}`, group: monGroupOf(m), ...(monProject(m) ? { proj: true } : {}), name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices), need, chips: monNeedChips(need),
-      hint: conn ? monConnShort(m) : running ? "지금 확인하고 있어요" : fresh ? monStrip(monLine(last), names) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
+      hint: conn ? monConnShort(m) : running ? "지금 확인하고 있어요" : fresh ? monClean(monStrip(monLine(last), names), monRunLine(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
       msig: [m.last_run, m.next_run, m.last_result, m.paused, m.connection, running].join("|"),
       badge: (st => [st.text, st.tone])(monStatus(m)) });
   }
@@ -665,7 +671,7 @@ const MON_FOLD_MIN = 3;    // a run of this many same results in a row folds int
 // A row's summary: the report's first two lines (the monitor's name and the original dropped), 140 characters at most.
 function monSummary(n, names) {
   const body = String(n.text || "").split(/\n(?:```원문|원문[ \t]*\n)/)[0];
-  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => ntPlain(l)).filter(Boolean);
+  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
   const s = lines.slice(0, 2).join(" · ");
   return (s.length > 140 ? `${s.slice(0, 139)}…` : s) || ntPlain(n.title) || "알림";
 }
@@ -745,7 +751,7 @@ function monLogRow(n, names) {
   if (n.id === MON.want) MON.open.add(key);
   if (ntIsDec(n) || n.item || monNeed(n) || MON.open.has(key)) return monRowNode(n, names);
   const body = String(n.text || "").split(/\n(?:\`\`\`원문|원문[ \t]*\n)/)[0];
-  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => ntPlain(l)).filter(Boolean);
+  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
   const chg = nwChangeNode(nwChangeLine(n.text)), plain = lines.filter(l => !l.includes("→")).map(l => l.replace(/^\[[^\]]*\]\s*/, ""));
   const main = chg || plain[0] || ntPlain(n.title) || "알림", sub = chg ? plain[0] || "" : plain[1] || "";
   const src = ntPlain(names[0] || n.title) || "알림";
@@ -902,7 +908,7 @@ function monOverview(it) {
       return el("button", { class: "mon-ov-row", type: "button", "data-ov": i.key, onclick: () => go("monitoring", i.key) },
         el("span", { class: "mon-ov-hd" }, el("span", { class: "mon-ov-n", text: monTitle(m) }), i.pc ? el("span", { class: "tag", text: i.pc.name }) : null),
         peerBar ? el("span", { class: "mon-ov-peer", text: "다른 컴퓨터" }) : monProgNode(m, { compact: true }),
-        el("span", { class: "mon-ov-s", text: m.connection === "disconnected" ? monConnLine(m) : m.last_summary || monRunLine(m) }));
+        el("span", { class: "mon-ov-s", text: m.connection === "disconnected" ? monConnLine(m) : monClean(m.last_summary || "", monRunLine(m)) }));
     }) : [el("div", { class: "mon-ov-empty", text: "아직 일반 모니터링이 없어요" })]));
 }
 function monTimeline(it) {
@@ -955,7 +961,7 @@ function monBannerOf(it) {
   if (it.mon) {
     const m = it.mon, down = m.connection === "disconnected";
     if (!down && m.last_result !== "fail") return null;
-    const detail = down ? monConnWhy(m) : [m.fails > 1 ? `${m.fails}번 연속 실패했어요` : "마지막 확인이 실패했어요", m.last_summary || ""].filter(Boolean).join(" · ");
+    const detail = down ? monConnWhy(m) : [m.fails > 1 ? `${m.fails}번 연속 실패했어요` : "마지막 확인이 실패했어요", monClean(m.last_summary || "")].filter(Boolean).join(" · ");
     return monBannerNode(down ? "down" : "fail", detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m), down ? "다시 연결" : undefined) : null);
   }
   if (!it.conn) return null;

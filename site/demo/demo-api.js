@@ -85,7 +85,7 @@
   const cmDemo = (() => {
     const now = F.now;
     const min = m => now - m * 60_000;
-    const src = (key, kind, app, label) => ({ key, kind, app, label, watch: ["*"], autoDraft: kind !== "website", autoSend: false, autoMail: kind === "youtube", mailApp: kind === "youtube" ? "mail" : null, error: null, ranAt: min(4) });
+    const src = (key, kind, app, label) => ({ key, kind, app, label, watch: ["*"], autoDraft: kind !== "website", autoSend: false, autoMail: kind !== "website", mailApp: kind !== "website" ? "mail" : null, error: null, ranAt: min(4) });
     const sources = [src("yt-main", "youtube", "youtube", "dotz 채널"), src("ig-main", "instagram", "instagram", "@dotz.daily"), src("site-main", "website", "site", "dotz 소개 사이트")];
     const views = {};
     // c: [native, parent, author, text, minutes ago, flags]; d: [code, native, text, mail?]; s: [native, state, minutes ago, reason?, mail outcome?]
@@ -119,7 +119,9 @@
       ["i1", null, "달빛고양이", "다음 라이브는 언제 해요?", 34, { unrep: true }],
       ["i2", null, "모카", "알림 설정했어요!", 25, { needs: true, unrep: true }],
       ["i3", null, "책읽는곰", "응원해요, 오늘도 화이팅", 8, { unrep: true }],
-    ], [["DI1", "i1", "이번 주 금요일 저녁 8시에 해요.\n알림 설정해 두시면 바로 알려 드릴게요."]], [["i3", "sending", 0]]);
+      ["i5", null, "연필깎이", "라이브 자료를 메일로 받고 싶어요. pencil@example.com", 50, { unrep: true }],
+    ], [["DI1", "i1", "이번 주 금요일 저녁 8시에 해요.\n알림 설정해 두시면 바로 알려 드릴게요."],
+      ["DI2", "i5", "라이브 자료는 메일로 보내 드릴게요.", { id: "mail-d2", to: "pencil@example.com", subject: "금요일 라이브 자료", body: "안녕하세요. 말씀하신 라이브 자료를 보내 드려요.", attachments: [] }]], [["i3", "sending", 0]]);
     thread("ig-main", "p2", "신상 노트 입고", "https://example.com/p/p2", 60, [
       ["i4", null, "종이비행기", "재입고는 언제쯤이에요?", 900],
       ["i4r", "i4", "나", "다음 주 화요일에 들어와요", 880, { mine: true }],
@@ -129,10 +131,11 @@
       ["w2", null, "방문자 도토리", "견적서를 메일로 보내 주세요. buyer@example.com", 600],
     ], [["DW1", "w1", "문의하기 페이지에 남겨 주시면\n하루 안에 답드릴게요."]], [["w2", "sent", 560, undefined, { state: "sent", text: "메일을 보냈어요" }]]);
     const clip = (t, n) => ([...t].length > n ? `${[...t].slice(0, n).join("")}…` : t);
+    const mailCounts = list => { const marks = list.filter(c => c.mail), n = s => marks.filter(c => c.mail.state === s).length; return marks.length ? { mails: { drafted: n("drafted"), sent: n("sent"), failed: n("failed") } } : {}; };
     const threads = app => Object.values(views).filter(v => sources.find(s => s.key === v.source.key).app === app).map(v => {
       const last = v.comments[v.comments.length - 1], mineLast = last.mine;
       return { source: v.source.key, thread: v.thread.id, kind: v.source.kind, title: v.thread.title, link: v.thread.link, thumb: null, lastAt: last.at, lastText: clip(last.text, 80), lastAuthor: mineLast ? "나" : last.author,
-        unread: v.comments.filter(c => !c.mine && (v.read === null || c.at > v.read)).length, drafts: v.drafts.length, unreplied: v.comments.filter(c => c.unreplied).length };
+        unread: v.comments.filter(c => !c.mine && (v.read === null || c.at > v.read)).length, drafts: v.drafts.length, unreplied: v.comments.filter(c => c.unreplied).length, ...mailCounts(v.comments) };
     }).sort((a, b) => b.lastAt - a.lastAt);
     // 인스타그램 DM (GET /api/ig-dm, /api/ig-dm/<id>): read only.
     const dmList = { on: true, connected: true, perm: "ok", line: "", convs: [

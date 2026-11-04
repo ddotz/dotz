@@ -60,6 +60,9 @@
 #kk-rooms { border-radius: 0; background: transparent; }
 #kk-rooms .kk-lh { min-height: 32px; padding: 0 0 var(--sp-2); }
 #kk-rooms .kk-pt { color: var(--fg-2); font: 600 14px/20px var(--font); }
+/* the view pills share the head line with 추가: no sticky bar here, the pane scrolls as a whole */
+#kk-rooms .kk-views { position: static; flex: 1; flex-wrap: nowrap; min-width: 0; margin: 0; padding: 0; overflow-x: auto; scrollbar-width: none; background: none; }
+#kk-rooms .kk-views::-webkit-scrollbar { display: none; }
 #kk-rooms .kk-own { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 #kk-rooms .kk-own { margin-bottom: var(--sp-3); }
 #kk-add-btn { height: 32px; min-height: 32px; }

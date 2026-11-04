@@ -653,13 +653,20 @@ export function createEngine(deps: EngineDeps) {
 		const mine = new Set(Object.values(cfg.sources).filter(s => ownerOf(s) === app).map(s => s.key));
 		const reads = store.reads();
 		const pendingDrafts = store.drafts().filter(d => d.status === "pending");
-		const replies = store.replies(), dismissed = store.dismissed();
+		const replies = store.replies(), dismissed = store.dismissed(), allDrafts = store.drafts();
+		// Only comments that ever carried a mail are looked up: this list runs on every comment watched.
+		const mailed = new Set([...replies.filter(r => r.mail), ...allDrafts.filter(d => d.mail || d.mailKept)].map(x => x.commentId));
+		const mailCounts = (list: Comment[]) => {
+			const states = list.flatMap(c => (mailed.has(c.id) ? [mailMarkOf(c.id, replies, allDrafts)?.state] : [])).filter(s => s);
+			const n = (s: MailMark["state"]) => states.filter(x => x === s).length;
+			return states.length ? { mails: { drafted: n("drafted"), sent: n("sent"), failed: n("failed") } } : {};
+		};
 		const by = new Map<string, Comment[]>();
 		for (const c of store.comments()) if (mine.has(c.source) && watches(cfg.sources[c.source]!, c.thread)) by.set(threadKey(c.source, c.thread), [...(by.get(threadKey(c.source, c.thread)) ?? []), c]);
 		return [...by.values()]
 			.map(list => {
 				const last = list[list.length - 1]!;
-				return { source: last.source, thread: last.thread, kind: cfg.sources[last.source]!.kind, title: last.postTitle, link: last.postLink ?? null, thumb: last.thumb ?? null, lastAt: last.at, lastText: clip(last.text, 80), lastAuthor: last.mine ? "나" : last.author, unread: list.filter(c => unreadOf(c, reads)).length, drafts: pendingDrafts.filter(d => d.source === last.source && d.thread === last.thread).length, unreplied: list.filter(c => unrepliedWith(c, replies, dismissed)).length };
+				return { source: last.source, thread: last.thread, kind: cfg.sources[last.source]!.kind, title: last.postTitle, link: last.postLink ?? null, thumb: last.thumb ?? null, lastAt: last.at, lastText: clip(last.text, 80), lastAuthor: last.mine ? "나" : last.author, unread: list.filter(c => unreadOf(c, reads)).length, drafts: pendingDrafts.filter(d => d.source === last.source && d.thread === last.thread).length, unreplied: list.filter(c => unrepliedWith(c, replies, dismissed)).length, ...mailCounts(list) };
 			})
 			.sort((a, b) => b.lastAt - a.lastAt);
 	}

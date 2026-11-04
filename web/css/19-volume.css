@@ -3,7 +3,6 @@
 .mon-bar { align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: var(--sp-2); }
 .mon-tabs { display: flex; gap: var(--sp-1); min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .mon-tabs::-webkit-scrollbar { display: none; }
-.mon-bar .mr-f { height: 32px; }
 .mon-read { flex: none; height: 32px; padding: 0 var(--sp-3); font-size: 13px; }
 .mon-read:disabled { color: var(--fg-3); }
 .mon-sh { padding: var(--sp-3) var(--sp-1) 0; color: var(--fg-2); font: 600 13px/18px var(--font); }

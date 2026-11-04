@@ -132,7 +132,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 @media (max-width: 639px) {
   .mr-filter { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 calc(var(--sp-3) * -1); padding: var(--sp-05) var(--sp-3) var(--sp-15); overscroll-behavior-x: contain; }
   .mr-filter::-webkit-scrollbar { display: none; }
-  .mr-filter .mr-f { flex: none; height: 30px; padding: 0 var(--sp-3); border-radius: 15px; font-size: 13px; }
   .mr-star { width: 28px; height: 28px; }
   .mr-chk, .mbox-all { width: 18px; height: 18px; }
   #back, #as-bar, #as-more-bar { width: 32px; height: 32px; }
@@ -154,9 +153,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 #mon-tl:has(> .bm.rc.mr) { --mon-dock: 104px; gap: 0; padding-bottom: var(--mon-dock); }
 #mon-tl:has(> .bm.rc.mr) > :not(.mr, .mr-filter, .mbox-bar) { margin: var(--sp-2) 0; }
 #mon-tl > .mr-filter { padding-bottom: var(--sp-3); }
-/* the mail folders are chips (ui-spec 탭·칩): 28px pills on the card grey, the chosen one filled with the ink */
-.mr-filter.mr-mail .mr-f { height: 28px; padding: 0 var(--sp-3); border-radius: 16px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; }
-.mr-filter.mr-mail .mr-f.on { background: var(--fg); color: var(--bg); font-weight: 500; }
 #mon-tl > .bm.rc.mr { position: relative; flex-flow: row wrap; align-items: center; column-gap: var(--sp-15); row-gap: var(--sp-05); padding: var(--sp-2) var(--sp-4); border-radius: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--card) 55%, var(--bg)); }
 #mon-tl > :not(.mr) + .bm.rc.mr { border-top-left-radius: 12px; border-top-right-radius: 12px; }
 #mon-tl > .bm.rc.mr:not(:has(+ .bm.rc.mr)) { border-bottom: 0; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }

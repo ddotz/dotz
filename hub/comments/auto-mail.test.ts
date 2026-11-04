@@ -77,6 +77,7 @@ describe("autoMail", () => {
 		expect(out.drafted).toHaveLength(1);
 		const d = pendingOf(t)[0]!;
 		expect(d).toMatchObject({ mail: "M1", clean: false, notes: [] });
+		expect(t.engine.threads(t.engine.ownerOf(t.source))[0]!.mails).toEqual({ drafted: 1, sent: 0, failed: 0 });
 		expect(t.mail.specs).toHaveLength(1);
 		expect(t.mail.specs[0]).toMatchObject({ app: "mail", to: "Fan@Example.com" });
 		// the library is searched with the post title and the comment words
