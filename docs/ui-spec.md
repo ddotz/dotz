@@ -361,7 +361,7 @@
 
 ## 검사할 수 있는 규칙
 
-나중에 웹 테스트가 렌더된 화면에서 재요. 숫자는 CSS px, 요소의 `getBoundingClientRect`와 `getComputedStyle` 기준이고 (정상 포인터, 라이트·다크 둘 다)예요. 기준에 걸리면 고치되, 의도한 예외는 명세에 이미 적힌 것만 허용해요.
+여백·정렬은 `hub/layout-measure.ts`가 데모 데이터로 주요 화면을 390·1280에서 재고(좁은 상자, 입력칸과 옆 버튼 높이, 동심 모서리, 왼쪽 시작선, 아이콘과 글자의 세로 중심, 같은 종류 행의 높이), `hub/layout-measure.test.ts`가 `hub/layout-baseline.json`과 대조해요. 값 눈금은 `web/DESIGN.md` Space scale이에요. 그 밖의 규칙은 나중에 웹 테스트가 렌더된 화면에서 재요. 숫자는 CSS px, 요소의 `getBoundingClientRect`와 `getComputedStyle` 기준이고 (정상 포인터, 라이트·다크 둘 다)예요. 기준에 걸리면 고치되, 의도한 예외는 명세에 이미 적힌 것만 허용해요.
 
 | 이름 | 걸리는 조건 | 예외 |
 |---|---|---|
