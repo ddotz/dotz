@@ -83,7 +83,7 @@ let monAttnT = 0;
 const monAttnSoon = () => { if (!monAttnT) monAttnT = setTimeout(() => { monAttnT = 0; paintMonAttn(); }, 0); };
 // 모니터링 has news when nothing waits but something new came in there: an unread watch report, or an app with unread items (its row's badge).
 // The tab then carries the small dot, like the other tabs; reading them there clears it.
-const monNews = () => NT.items.some(n => n.kind === "watch" && !n.read && !n.dismissed) || INTG.items.some(it => ((it.needs || {}).unread | 0) > 0);
+const monNews = () => NT.items.some(n => n.kind === "watch" && n.cls !== "log" && !n.read && !n.dismissed) || INTG.items.some(it => ((it.needs || {}).unread | 0) > 0);
 function paintMonAttn() {
   const b = $("#nav-mon");
   if (!b) return;
