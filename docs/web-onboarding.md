@@ -1,7 +1,7 @@
 # 웹 온보딩 설계
 
 `curl | sh` 설치가 끝나면 터미널 대신 브라우저(`http://127.0.0.1:<port>/`)에서 온보딩을 하고, 끝나면 화면 안내를 한 번 보여 준 뒤 웹 앱 메인으로 가요.
-시제품: `site/prototype/index.html#onboard` (안내는 `#intro`). 이 문서와 시제품이 승인되기 전에는 `install.sh`와 앱을 고치지 않아요.
+시제품: `site/prototype/index.html#onboard` (안내는 `#intro/spot`). 이 문서와 시제품이 승인되기 전에는 `install.sh`와 앱을 고치지 않아요.
 
 ## 지금 코드에서 확인한 사실
 
@@ -107,10 +107,30 @@ Linux의 화면 판별은 `DISPLAY` 또는 `WAYLAND_DISPLAY`, SSH 판별은 `SSH
 
 `web.access`가 `local`로 끝나면 기존 일회용 로그인 링크와 같은 경로로 `dotz_local` 쿠키를 받아서 바로 메인으로 가요. Tailscale 로그인을 넣었고 `tailscale serve`가 성공하면 끝 화면에서 테일넷 주소로 보내요. serve가 실패하면 `local`로 남겨서 잠기지 않게 하고, 이유를 끝 화면에 적어요.
 
-## 오너 결정 대기
+## 오너 결정
 
-1. 화면 안내 모양: A안 가운데 시트(`#intro`), B안 진짜 메뉴를 가리키기(`#intro/spot`).
-2. 터미널이 꼭 필요한 로그인(Aside CLI, zele, Claude Code, omp): 정해진 명령 하나만 도는 터미널 창을 온보딩 안에 띄울지, 명령을 복사해 터미널에서 돌리고 다시 확인할지. 시제품은 앞쪽이에요.
+1. 화면 안내 모양: 진짜 메뉴를 가리키는 방식으로 정했어요(`#intro/spot`). 메뉴가 없는 단축키 단계만 가운데에 떠요.
+2. 터미널이 꼭 필요한 로그인(Aside CLI, zele, Claude Code, omp): 온보딩 안의 터미널 창으로 정했어요. 정해진 명령 하나만 돌고, 임의 명령은 실행할 수 없어요.
+
+## API 계약
+
+전부 `/setup` 게이트(첫 실행 `pending` + `localBrowser()` + `dotz_setup` 쿠키) 뒤에 있고, 어긋나면 404예요. POST에는 같은 출처 검사가 그대로 들어가요.
+
+| 경로 | 동작 |
+|---|---|
+| `GET /setup?token=...` | 토큰을 쿠키로 바꾸고 `/setup`으로 넘김 (토큰은 한 번만) |
+| `GET /setup` | 앱의 `index.html` 대신 온보딩 전용 쉘 |
+| `GET /setup.js`, `GET /setup.css` | 온보딩 코드, `/app.css` 토큰을 함께 씀 |
+| `GET /api/setup/state` | `{ step, draft, scan, lang, text }` (비밀값 없음) |
+| `PUT /api/setup/draft` | `{ step, values }` 저장, 서버에서 값 검사 |
+| `POST /api/setup/secret` | `{ name: "discord-bot-token" \| "peer-token", value }`, 이름은 고정 목록, 응답에 값 없음 |
+| `POST /api/setup/run/<job>` | 고정 목록의 설치·연결 작업 시작 |
+| `GET /api/setup/stream` | SSE: 작업 줄, 상태, 주인 할 일 |
+| `POST /api/setup/term/<id>` | 고정 목록의 로그인 명령을 PTY로 시작. 입력·크기는 `/api/setup/term/<id>/input`, `/resize`, 출력은 스트림 |
+| `POST /api/setup/apply` | 저장과 적용 시작, 끝나면 게이트웨이 재시작 |
+| `GET /api/intro`, `POST /api/intro` | 일반 owner 인증. 안내를 봤는지 읽고 쓰기 |
+
+터미널 명령은 서버의 표 하나로만 정해요: `aside-login`, `zele-login`, `claude-login`, `omp-login`. 요청에서 argv, 경로, 환경 변수를 받지 않아요. 명령이 끝나면 PTY가 닫히고 셸로 떨어지지 않아요. 터미널 출력은 로그에 남기지 않아요.
 
 ## 화면 안내
 
