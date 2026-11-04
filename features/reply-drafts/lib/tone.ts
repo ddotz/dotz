@@ -4,7 +4,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { addressesOf, AUTOMATED } from "../../../hub/reply-draft.ts";
-import { loadPairs, normText, savePairs, SIDE_MAX, type Pair } from "./pairs.ts";
+import { SIDE_MAX } from "../../../hub/comments/past.ts";
+import { loadPairs, normText, savePairs, type Pair } from "./pairs.ts";
 import { dataDir, writeExamples, type ToneKey } from "./settings.ts";
 import { listDrafts } from "./store.ts";
 
@@ -130,8 +131,6 @@ export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: s
 	}
 	return { texts, pairs };
 }
-
-export const sentMailTexts = async (run: Runner, limit = MAX_EXAMPLES): Promise<string[]> => (await sentMail(run, limit)).texts;
 
 // Bodies of the drafts the user sent without changing a word: not his own wording, so they make no pair.
 const botDrafts = (): string[] => listDrafts().filter(d => d.status === "sent" && !d.changes.length).map(d => d.body);
