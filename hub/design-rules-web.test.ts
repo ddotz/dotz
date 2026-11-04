@@ -47,9 +47,9 @@ const COLOR_ALLOWED = new Set([
 	'04-files.css :root[data-theme="dark"] .hintrow', "04-files.css dialog.lbox::backdrop", "04-files.css dialog.tbox::backdrop",
 	"17-kakao.css .kk-av", '17-kakao.css :root[data-theme="dark"] .kk-av', "17-kakao.css .kk-chat", '17-kakao.css :root[data-theme="dark"] .kk-chat', "17-kakao.css .kk-video",
 ]);
-// Literal times with no token to match: highlights of over a second, a looping pulse, delays that wait for a close, and two sheet openings between tokens.
+// Literal times with no token to match: highlights of over a second, delays that wait for a close, and two sheet openings between tokens.
 const DURATION_ALLOWED = new Set([
-	"04-files.css #c-model.run::after", "09-notices.css .nt-hl::after", "14-overlay.css .menu.msheet", "14-overlay.css dialog.pal[open]::backdrop", "15-draft-original.css .od-orig[inert]",
+	"09-notices.css .nt-hl::after", "14-overlay.css .menu.msheet", "14-overlay.css dialog.pal[open]::backdrop", "15-draft-original.css .od-orig[inert]",
 	"15-draft-original.css .od-cwrap .od-orig[inert]", "15-draft-original.css .od-draftcol[inert], .od-cwrap .kk-draft[inert]", "15-reply.css [data-rid].rp-flash",
 	"17-kakao.css .kk-m.kk-hl .kk-bub, .kk-m.kk-hl .kk-media, .kk-m.kk-hl .kk-sticker",
 ]);
@@ -66,7 +66,7 @@ const SIZE_ALLOWED: Record<string, [number, number]> = {
 };
 // [off-scale, raw] px spacing values per file (see space above), as SIZE_ALLOWED: a ceiling and, because the number is exact, a floor.
 const SPACE_ALLOWED: Record<string, [number, number]> = {
-	"01-tokens.css": [11, 41], "02-cards-lists-tags.css": [6, 39], "03-base.css": [41, 143], "04-files.css": [37, 166],
+	"01-tokens.css": [11, 41], "02-cards-lists-tags.css": [6, 39], "03-base.css": [41, 143], "04-files.css": [37, 165],
 	"05-log.css": [42, 148], "06-harness.css": [22, 109], "07-chat.css": [21, 70], "07-messengers.css": [0, 5],
 	"08-project-sessions.css": [3, 43], "09-notices-screen.css": [3, 2], "09-notices.css": [6, 60], "10-conversations.css": [12, 79],
 	"11-peers.css": [6, 16], "13-code-shell.css": [5, 32], "14-overlay.css": [0, 41], "15-draft-original.css": [6, 40],

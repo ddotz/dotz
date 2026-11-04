@@ -43,8 +43,6 @@
 .sendrow > .cbar { grid-area: bar; margin: 0; padding: 4px 4px 2px; min-height: 0; }
 #cbar { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; min-height: 20px; margin: 4px 0 0; padding: 0 4px; overflow-x: auto; scrollbar-width: none; }
 #cbar::-webkit-scrollbar { display: none; }
-#cbar::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--fg-3); }
-#cbar:has(#c-model[hidden])::before { display: none; }
 #cbar .cchip { height: auto; min-height: 20px; padding: 0 2px; background: transparent; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 #cbar button.cchip { cursor: pointer; }
 #cbar button.cchip:hover { background: transparent; color: var(--fg); }
