@@ -71,7 +71,8 @@ const waitFor = (v: View, expr: string, ms = 10_000) =>
 	v.evaluate(
 		`new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("timeout: " + ${JSON.stringify(expr)})), ${ms}); const done = () => { let ok = false; try { ok = !!(${expr}); } catch {} if (ok) { clearTimeout(t); o.disconnect(); res(true); } return ok; }; const o = new MutationObserver(done); o.observe(document, { subtree: true, childList: true, attributes: true, characterData: true }); done(); })`,
 	);
-const settled = (v: View) => v.evaluate(`Promise.all(document.getAnimations().map(a => a.finished.catch(() => 0))).then(() => true)`);
+// A scroll-linked animation (.list-cap's fade on 홈, under the sheet) never finishes: only time-based ones are waited for.
+const settled = (v: View) => v.evaluate(`Promise.all(document.getAnimations().filter(a => a.timeline === document.timeline).map(a => a.finished.catch(() => 0))).then(() => true)`);
 type Box = { l: number; t: number; r: number; b: number; w: number; h: number };
 const box = async (v: View, sel: string): Promise<Box | null> =>
 	JSON.parse(await v.evaluate(`JSON.stringify((() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null; const r = e.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; })())`));
@@ -262,10 +263,10 @@ describe("원문 보기 in the send sheet", () => {
 		await showDraft(v);
 		await settled(v);
 		await showOrig(v);
-		const t = await v.evaluate(`document.getAnimations().map(a => a.effect.getComputedTiming().duration).filter(d => d > 0)`);
+		const t = await v.evaluate(`document.getAnimations().filter(a => a.timeline === document.timeline).map(a => a.effect.getComputedTiming().duration).filter(d => d > 0)`);
 		expect(t.length).toBeGreaterThan(0);
 		for (const d of t as number[]) expect(d).toBe(300);
-		await v.evaluate(`document.getAnimations().forEach(a => { a.pause(); a.currentTime = 150; })`);
+		await v.evaluate(`document.getAnimations().filter(a => a.timeline === document.timeline).forEach(a => { a.pause(); a.currentTime = 150; })`);
 		const op = Number(await v.evaluate(`getComputedStyle(document.querySelector(".od-orig")).opacity`));
 		expect(op).toBeGreaterThan(0.05);
 		expect(op).toBeLessThan(0.95);
