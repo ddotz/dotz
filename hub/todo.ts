@@ -65,8 +65,12 @@ export function readTodo(file: string | undefined): Todo {
 // ("waiting_background" when a turn ended on purpose to wait) and `waitingOn` (subagents, background shells, monitors). The latest record
 // is the truth; only the file's tail is read, cached by size, time and last bytes.
 const TAIL = 1024 * 1024;
-const waitCache = new Map<string, { stamp: string; desc?: string }>();
-export function openMonitor(file: string | undefined): string | undefined {
+// What ends with the process and comes back to nobody: background shells and detached eval cells. OmO restores a monitor by itself
+// (terminal/durable-command.js) and leaves delivery:* receipts listed for hours, so neither is work a restart cuts off.
+const DIES_WITH_PROCESS = new Set(["terminal-background-sessions", "senpi-codemode"]);
+type Lifecycle = { desc?: string; dying: number; cut: boolean };
+const waitCache = new Map<string, { stamp: string; life: Lifecycle }>();
+function lifecycle(file: string | undefined): Lifecycle | undefined {
 	if (!file || !existsSync(file)) return undefined;
 	const st = statSync(file), size = st.size;
 	const fd = openSync(file, "r");
@@ -76,7 +80,7 @@ export function openMonitor(file: string | undefined): string | undefined {
 		readSync(fd, end, 0, end.length, size - end.length);
 		stamp = `${size}:${st.mtimeMs}:${end.toString("hex")}`;
 		const hit = waitCache.get(file);
-		if (hit && hit.stamp === stamp) return hit.desc;
+		if (hit && hit.stamp === stamp) return hit.life;
 		const start = Math.max(0, size - TAIL);
 		const buf = Buffer.alloc(size - start);
 		readSync(fd, buf, 0, buf.length, start);
@@ -84,7 +88,7 @@ export function openMonitor(file: string | undefined): string | undefined {
 	} finally {
 		closeSync(fd);
 	}
-	let desc: string | undefined;
+	const life: Lifecycle = { dying: 0, cut: false };
 	const lines = text.split("\n");
 	for (let i = lines.length - 1; i >= 0; i--) {
 		if (!lines[i]!.includes('"session-lifecycle"')) continue;
@@ -96,16 +100,24 @@ export function openMonitor(file: string | undefined): string | undefined {
 		}
 		const d = e?.data;
 		if (e?.customType !== "session-lifecycle" || !d) continue;
+		const bg: any[] = Array.isArray(d.waitingOn?.background) ? d.waitingOn.background : [];
+		const kids = Number(d.waitingOn?.children) || 0;
+		life.dying = bg.filter(b => DIES_WITH_PROCESS.has(b?.source)).reduce((n, b) => n + (Number(b.activeCount) || 0), 0);
+		// no_wake: OmO saw the turn's last wake source go (site-demo-proto 01:11:37, its shell killed) with nothing left to wake it.
+		life.cut = life.dying > 0 || kids > 0 || d.lastStop?.cause === "no_wake";
 		if (String(d.state ?? "").startsWith("waiting")) {
-			const bg: any[] = Array.isArray(d.waitingOn?.background) ? d.waitingOn.background : [];
 			const items = (src: string) => bg.filter(b => b?.source === src && b.activeCount > 0).flatMap(b => (Array.isArray(b.items) ? b.items : []));
 			const mon = items("terminal-monitors").map(x => str(x?.description)).find(Boolean);
 			const shells = items("terminal-background-sessions").length;
-			const kids = Number(d.waitingOn?.children) || 0;
-			desc = mon || (shells ? `백그라운드 작업 ${shells}개` : kids ? `서브에이전트 ${kids}개` : undefined);
+			life.desc = mon || (shells ? `백그라운드 작업 ${shells}개` : kids ? `서브에이전트 ${kids}개` : undefined);
 		}
 		break;
 	}
-	waitCache.set(file, { stamp, desc });
-	return desc;
+	waitCache.set(file, { stamp, life });
+	return life;
 }
+export const openMonitor = (file: string | undefined): string | undefined => lifecycle(file)?.desc;
+/** Shells and eval cells the session's live process still runs: a restart now would kill them, and no result would ever come back. */
+export const backgroundWork = (file: string | undefined): number => lifecycle(file)?.dying ?? 0;
+/** Read after the process ended: it stopped with work it was waiting on cut off. */
+export const workCutOff = (file: string | undefined): boolean => lifecycle(file)?.cut ?? false;
