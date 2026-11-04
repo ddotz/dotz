@@ -104,6 +104,16 @@ describe("홈 cards at 1100px", () => {
 		expect(files["card-3"]).toMatchObject({ title: "새 카드", text: "내용" });
 	});
 
+	test("text on a 목록 or 항목별 값 card reads line by line", async () => {
+		reset();
+		files.todo = { title: "할 일", view: "list", text: "우유 사기\n\n치과 예약\n" };
+		files.disk = { title: "디스크", view: "kv", text: "남은 공간: 128GB\n시각: 10:30\n이름만" };
+		await boot();
+		await waitFor(`document.querySelector('.bi[data-id="custom:disk"] .kv')`);
+		expect(await view.evaluate(`[...document.querySelectorAll('.bi[data-id="custom:todo"] .nm')].map(n => n.textContent).join("|")`)).toBe("우유 사기|치과 예약");
+		expect(await view.evaluate(`[...document.querySelectorAll('.bi[data-id="custom:disk"] .kv')].map(n => n.querySelector(".k").textContent + "=" + n.querySelector(".v").textContent).join("|")`)).toBe("남은 공간=128GB|시각=10:30|이름만=");
+	});
+
 	test("수정… opens the card's file in the editor and saves it in place; 삭제… asks first, then removes it", async () => {
 		reset();
 		await boot();

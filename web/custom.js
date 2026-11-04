@@ -170,6 +170,10 @@ button.pv-res:hover { background: var(--card-hover); }
   // (.card .ch h3 .tag .big .sup .kv .row .more .cf .btn), at most 2 buttons in the footer, the rest in the card's ⋯ menu.
   const KV_MAX = 6, LIST_MAX = 5, ACT_MAX = 4, ACT_SHOWN = 2;
   const splitActions = list => ({ shown: list.slice(0, ACT_SHOWN), rest: list.slice(ACT_SHOWN, ACT_MAX) });
+  // Text given to 목록 or 항목별 값 (a card's `text`, a command's plain output): one line, one item, "이름: 값" for a pair.
+  const textLines = t => t.split("\n").map(l => l.trim()).filter(Boolean);
+  const linePair = l => { const i = l.indexOf(":"); return i < 0 ? [l, ""] : [l.slice(0, i).trim(), l.slice(i + 1).trim()]; };
+  const cardData = (v, d) => typeof d !== "string" ? d : v === "list" ? textLines(d) : v === "kv" ? textLines(d).map(linePair) : d;
   const moreRow = n => n > 0 ? el("div", { class: "more", text: `더 보기 · ${n}개` }) : null;
   // One line of state inside a card (empty, loading, failed), the same element the built-in 알림 / 작업내역 / 모니터링 cards use.
   const stateLine = (text, cls = "") => el("div", { class: `hc-none${cls ? ` ${cls}` : ""}`, text });
@@ -179,7 +183,7 @@ button.pv-res:hover { background: var(--card-hover); }
     stateLine(str(c.error) || "카드를 그리지 못했어요", "clamp c4"));
 
   function viewBody(c) {
-    const d = c.data, v = c.view || "text";
+    const v = c.view || "text", d = cardData(v, c.data);
     if (d === undefined || d === null) return stateLine(c.error ? "값을 받지 못했어요" : "값 없음");
     if (v === "stat") {
       const o = typeof d === "object" && !Array.isArray(d) ? d : { value: d };
@@ -201,7 +205,7 @@ button.pv-res:hover { background: var(--card-hover); }
     if (v === "kv") {
       const pairs = Array.isArray(d) ? d.filter(Array.isArray).map(p => [p[0], p[1]]) : d && typeof d === "object" ? Object.entries(d) : [];
       if (!pairs.length) return stateLine("비어 있어요");
-      return el("div", null, ...pairs.slice(0, KV_MAX).map(([k, val]) => el("div", { class: "kv" }, el("span", { class: "k", text: str(k) }), el("span", { class: "v", text: show(val) }))), moreRow(pairs.length - KV_MAX));
+      return el("div", null, ...pairs.slice(0, KV_MAX).map(([k, val]) => el("div", { class: "kv" }, el("span", { class: "k", text: str(k) }), el("span", { class: "v", text: val === "" ? "" : show(val) }))), moreRow(pairs.length - KV_MAX));
     }
     return el("div", { class: "clamp c4", text: show(typeof d === "object" && !Array.isArray(d) && "text" in d ? d.text : d) });
   }
@@ -264,7 +268,7 @@ button.pv-res:hover { background: var(--card-hover); }
   }
   // Default size: a third of the width, tall enough for the content (header, rows, buttons); wider only for long text.
   function homeSize(c) {
-    const d = c.data, v = c.view || "text", n = Array.isArray(d) ? d.length : d && typeof d === "object" ? Object.keys(d).length : 1;
+    const v = c.view || "text", d = cardData(v, c.data), n = Array.isArray(d) ? d.length : d && typeof d === "object" ? Object.keys(d).length : 1;
     const text = str(d && typeof d === "object" && !Array.isArray(d) && "text" in d ? d.text : d);
     const rows = Math.min(n, v === "kv" ? KV_MAX : LIST_MAX), more = (v === "kv" || v === "list") && n > rows ? 28 : 0;
     const body = c.error && d === undefined ? 44 : c.render ? 140 : v === "kv" || v === "list" ? rows * 30 + more : v === "stat" ? 60 : Math.min(4, Math.ceil(text.length / 40)) * 22;

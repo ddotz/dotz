@@ -108,8 +108,8 @@ HTML or CSS: only the fields below change what the page draws.
 | `stale` (set by the gateway) | `오래된 값` tag in the header |
 | `note` | one gray 12px line under the header |
 | `view: stat` | one 20px bold value, then gray 12px `label` and `sub` |
-| `view: kv` | one row per key: label 14px left, value 12px gray right, one line each, 8px apart |
-| `view: list` | one row per item: `title` left, `sub` gray right, one line each |
+| `view: kv` | one row per key: label 14px left, value 12px gray right, one line each, 8px apart. Plain text is read line by line as `name: value` |
+| `view: list` | one row per item: `title` left, `sub` gray right, one line each. Plain text gives one item per line |
 | `view: text` | 14px text, at most 4 lines |
 | `actions` | small buttons in one footer row, never wrapped |
 | `link` | the whole card is tappable (also `열기` in the menu) |
