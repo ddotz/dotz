@@ -52,7 +52,7 @@ import { withHomes } from "./laneviews.ts";
 import { main as mainOrch, orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { type DecisionSend, type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissedAlertAts, dismissNotice, ignoreNotice, listNotices, markNoticesRead, readConversationNotices, reopenDraftNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
+import { type DecisionSend, type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissedAlertAts, dismissNotice, handledNotice, ignoreNotice, undismissNotice, listNotices, markNoticesRead, readConversationNotices, reopenDraftNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
 import { listSchedules } from "./schedule.ts";
@@ -703,6 +703,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const r = dismissNotice(decodeURIComponent(dismiss[1]!));
 			return json(r, r.ok ? 200 : r.held ? 409 : 404);
 		}
+		// The ✕ on a failure that waits (handled) and the undo of a dismiss (the toast's 실행 취소).
+		const settle = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/(handled|undismiss)$/.exec(url.pathname) : null;
+		if (settle) {
+			const r = (settle[2] === "handled" ? handledNotice : undismissNotice)(decodeURIComponent(settle[1]!));
+			return json(r.body, r.status);
+		}
 		// The x (무시) on a question that waits, and its undo: off the badge and 답변 필요, kept in the history, nothing sent to the bot.
 		const ignore = req.method === "POST" ? /^\/api\/notices\/([^/]+)\/(ignore|unignore)$/.exec(url.pathname) : null;
 		if (ignore) {
@@ -736,8 +742,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if (req.method === "POST" && url.pathname === "/api/read") {
 			const r = markRead(await body(req));
-			// Reading a conversation also reads its bell items up to there (whether or not the position moved), so the two never disagree.
-			if (r.ok) readConversationNotices(r.target, r.ts);
+			// Reading a conversation reads its unread answer up to there (and a mail's new-mail notice), whether or not the position moved; every other
+			// notice is read by the owner's tap, ✕ or read-all (/api/notices/read).
+			if (r.ok) readConversationNotices(r.target, r.ts, "viewed");
 			// A mail he opened here is read in its mailbox too, where that is one cheap call (hub/mail.ts mailOpened).
 			if (r.ok && r.moved) mailOpened(r.target);
 			return json(r, r.ok ? 200 : 400);

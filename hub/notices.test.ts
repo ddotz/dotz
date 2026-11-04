@@ -9,7 +9,9 @@ import { draftApprovalBlock } from "./draft-approval.ts";
 import { emit, eventTarget, type HubEvent, lastEventId, recentEvents, replayAfter } from "./events.ts";
 import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
-import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, settleExpiredQuestions, UPDATE_NOTICE_KEY, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { blockText, recoveryText } from "./limit-alert.ts";
+import { watchLine } from "./watchtext.ts";
+import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, handledNotice, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, settleExpiredQuestions, UPDATE_NOTICE_KEY, undismissNotice, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -959,25 +961,29 @@ test("a viewed conversation makes no message item; looking at one reads its item
 	expect(setViewing("tab-b", "nope")).toEqual({ ok: false });
 });
 
-test("a notice whose message the owner has seen is no longer unread: by the read position, and when the page shows its conversation", () => {
+test("looking at a conversation reads its unread answer and a mail's notice, never a result, alert or monitor report; a tap reads those", () => {
 	const mine = (key: string) => stored().find(n => n.key === key)!;
-	// a session result whose card lives in lane:seen1; reading that conversation up to it (POST /api/read) reads the notice
-	emit("outbox", { ts: "2026-10-22T01:00:00.000Z", kind: "out", source: "lane:seen1", target: "worklog", text: "[done] 읽은 결과", update_key: "lane:seen1" });
+	// a session result whose card lives in lane:seen1: reading that conversation (POST /api/read, scope viewed) leaves the result unread
+	emit("outbox", { ts: "2026-10-22T01:00:00.000Z", kind: "out", source: "lane:seen1", target: "worklog", text: "[done] 읽지 않은 결과", update_key: "lane:seen1" });
 	expect(mine("lane:seen1")).toMatchObject({ kind: "result", src: "lane:seen1", read: false });
-	const before = unreadCount();
 	const r = markRead({ target: "lane:seen1", ts: "2026-10-22T01:00:00.000Z" });
-	if (r.ok) readConversationNotices(r.target, r.ts);
+	if (r.ok) readConversationNotices(r.target, r.ts, "viewed");
+	expect(mine("lane:seen1").read).toBe(false);
+	markRead({ target: "lane:seen1", ts: "2026-10-22T03:00:00.000Z" });
+	setViewing("tab-seen", "lane:seen1", Date.now());
+	expect(mine("lane:seen1").read).toBe(false);
+	markNoticesRead({ ids: [mine("lane:seen1").id] });
 	expect(mine("lane:seen1").read).toBe(true);
-	expect(unreadCount()).toBe(before - 1);
-	// a position that is behind the message leaves it unread
-	emit("outbox", { ts: "2026-10-22T02:00:00.000Z", kind: "out", source: "lane:seen2", target: "worklog", text: "[done] 안 읽은 결과", update_key: "lane:seen2" });
-	readConversationNotices("lane:seen2", "2026-10-22T01:30:00.000Z");
-	expect(mine("lane:seen2").read).toBe(false);
-	// read earlier on another device: the next report that this conversation is on screen clears it
-	markRead({ target: "lane:seen2", ts: "2026-10-22T03:00:00.000Z" });
-	expect(mine("lane:seen2").read).toBe(false);
-	setViewing("tab-seen", "lane:seen2", Date.now());
-	expect(mine("lane:seen2").read).toBe(true);
+	// the conversation's unread answer is read by the read position, and by viewing it
+	emit("outbox", { ts: "2026-10-22T04:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:9411", text: "보일 답이에요" });
+	emit("outbox", { ts: "2026-10-22T04:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:9412", text: "보일 답이에요 둘" });
+	expect(mine("msg:ch:9411")).toMatchObject({ kind: "message", read: false });
+	readConversationNotices("ch:9411", "2026-10-22T03:00:00.000Z", "viewed");
+	expect(mine("msg:ch:9411").read).toBe(false);
+	readConversationNotices("ch:9411", "2026-10-22T04:00:00.000Z", "viewed");
+	expect(mine("msg:ch:9411").read).toBe(true);
+	setViewing("tab-seen", "ch:9412", Date.now());
+	expect(mine("msg:ch:9412").read).toBe(true);
 	setViewing("tab-seen", "", Date.now());
 });
 
@@ -1047,17 +1053,19 @@ test("read state survives a reload: what the owner read (by position or by id) s
 	const dir = storeDir({
 		lanes: ["rd"],
 		reads: { "lane:rd": "2026-10-20T02:00:00.000Z" },
-		notices: [stale("ccccccc1", "lane:rd", early), stale("ccccccc2", "lane:rd", late), stale("ccccccc3", "lane:rd", early, { key: "msg:lane:rd", read: true })],
+		notices: [stale("ccccccc1", "lane:rd", early, { kind: "message", key: "msg:lane:rd:a" }), stale("ccccccc2", "lane:rd", late), stale("ccccccc3", "lane:rd", early, { key: "msg:lane:rd", read: true }), stale("ccccccc4", "lane:rd", early, { key: "lane:rd:r" })],
 	});
 	const fresh = loadIn(dir);
 	const by = (id: string) => fresh.items.find(n => n.id === id)!;
+	// the read position covers a conversation's unread answer only; a result before it is still the owner's to tap
 	expect(by("ccccccc1").read).toBe(true);
 	expect(by("ccccccc2").read).toBe(false);
 	expect(by("ccccccc3").read).toBe(true);
-	expect(fresh.unread).toBe(1);
+	expect(by("ccccccc4").read).toBe(false);
+	expect(fresh.unread).toBe(2);
 	// and the corrected state is what the file holds, so a second load agrees
 	const again = loadIn(dir);
-	expect(again.items.filter(n => !n.read).map(n => n.id)).toEqual(["ccccccc2"]);
+	expect(again.items.filter(n => !n.read).map(n => n.id).sort()).toEqual(["ccccccc2", "ccccccc4"]);
 	expect((JSON.parse(readFileSync(join(dir, "notices.json"), "utf8")) as Notice[]).find(n => n.id === "ccccccc1")!.read).toBe(true);
 });
 
@@ -1085,12 +1093,15 @@ test("on load, waiting items are redrawn from their source event by the current 
 	expect(loadIn(dir).items.find(n => n.id === "ddddddd1")).toEqual(by("ddddddd1"));
 });
 
-test("a notice that arrives after the owner already read that conversation past it is born read; a newer one is unread", () => {
+test("an answer that arrives after the owner already read that conversation past it is born read, a newer one is unread; a result is never born read that way", () => {
 	markRead({ target: "lane:born1", ts: "2026-10-22T05:00:00.000Z" });
 	emit("outbox", { ts: "2026-10-22T04:00:00.000Z", kind: "out", source: "lane:born1", target: "worklog", text: "[done] 이미 본 결과", update_key: "lane:born1" });
-	expect(stored().find(n => n.key === "lane:born1")).toMatchObject({ read: true });
-	emit("outbox", { ts: "2026-10-22T06:00:00.000Z", kind: "out", source: "lane:born1", target: "worklog", text: "[done] 새 결과", update_key: "lane:born1" });
 	expect(stored().find(n => n.key === "lane:born1")).toMatchObject({ read: false });
+	markRead({ target: "ch:9421", ts: "2026-10-22T05:00:00.000Z" });
+	emit("outbox", { ts: "2026-10-22T04:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:9421", text: "이미 본 답이에요" });
+	expect(stored().find(n => n.key === "msg:ch:9421")).toMatchObject({ read: true });
+	emit("outbox", { ts: "2026-10-22T06:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:9421", text: "새 답이에요" });
+	expect(stored().find(n => n.key === "msg:ch:9421")).toMatchObject({ read: false });
 });
 
 test("on load, a notice of a channel the gateway no longer has is retired; known channels, a session's own channel and read history stay", () => {
@@ -1279,4 +1290,204 @@ test("an all-clear alert is born read; a repeat updates the first alert in place
 	expect(same).toHaveLength(1);
 	expect(same[0]).toMatchObject({ id: first!.id, read: true, text: "땃쥐: 모델 제공자 오류(timeout after 45000ms)" });
 	expect(unreadCount()).toBe(0);
+});
+
+/* ---------- the notices screen's rules: reading apart from handling, handled, repeats ---------- */
+type Listed = Notice & { cls: string; waits?: string };
+const listed = (id: string): Listed | undefined => listNotices(300).items.find(n => n.id === id) as Listed | undefined;
+const later = (ms = 1000) => new Date(Date.parse(ts()) + ms).toISOString();
+// Runs a script in a fresh process on a throwaway data dir (like loadIn) and returns its last output line as JSON.
+function scriptIn(dir: string, script: string): Record<string, any> {
+	const run = Bun.spawnSync([process.execPath, "-e", script], { cwd: join(import.meta.dir, ".."), env: { ...process.env, DOTZ_DIR: dir } });
+	expect(run.exitCode).toBe(0);
+	return JSON.parse(run.stdout.toString().trim().split("\n").at(-1)!);
+}
+
+test("a post from the web app reads no notice; an answer from a messenger reads that room's earlier notices", () => {
+	emit("outbox", { ts: "2026-11-04T01:00:00.000Z", kind: "out", source: "gateway", target: "ch:9511", text: "[감시9511] 새 글이 올라왔어요" });
+	const item = () => stored().find(n => n.open === "ch:9511" && n.kind === "watch")!;
+	expect(item().read).toBe(false);
+	emit("inbox", { ts: "2026-11-04T01:01:00.000Z", kind: "message", source: "web", channel: "ch:9511", text: "웹에서 쓴 글" });
+	expect(item().read).toBe(false);
+	emit("inbox", { ts: "2026-11-04T01:02:00.000Z", kind: "message", source: "discord", channel: "ch:9511", text: "디스코드에서 쓴 글" });
+	expect(item().read).toBe(true);
+});
+
+test("opening a mail reads its new-mail notice; looking at any other conversation never reads a monitor report", () => {
+	emit("inbox", { ts: "2026-11-04T02:00:00.000Z", kind: "mail", incoming: true, mail: "m9521", from: "홍길동 <a@x.kr>", subject: "견적 보내드려요", conv: "mail:m9521" });
+	emit("outbox", { ts: "2026-11-04T02:00:00.000Z", kind: "out", source: "gateway", target: "ch:9522", text: "[감시9522] 가격이 바뀌었어요" });
+	const mail = () => stored().find(n => n.key === "mail:m9521")!, report = () => stored().find(n => n.open === "ch:9522")!;
+	expect([mail().read, report().read]).toEqual([false, false]);
+	readConversationNotices("ch:9522", "2026-11-04T03:00:00.000Z", "viewed");
+	readConversationNotices("mail:m9521", "2026-11-04T03:00:00.000Z", "viewed");
+	expect([mail().read, report().read]).toEqual([true, false]);
+	setViewing("tab-9522", "ch:9522", Date.now());
+	expect(report().read).toBe(false);
+	setViewing("tab-9522", "", Date.now());
+});
+
+test("handled: the ✕ on a waiting failure reads and closes it for good, only a failure that waits can be handled, undismiss lists a dismissed notice again", () => {
+	post("alert", "[fail] 디스크 9531이 찼어요", { source: "gateway" });
+	const n = byText("디스크 9531이 찼어요")[0]!;
+	expect(listed(n.id)).toMatchObject({ cls: "alert", waits: "fail" });
+	expect(n.handled).toBeNull();
+	// reading it leaves it on the owner's list
+	markNoticesRead({ ids: [n.id] });
+	expect(listed(n.id)).toMatchObject({ read: true, waits: "fail" });
+	const seen = lastEventId();
+	const r = handledNotice(n.id);
+	expect(r.status).toBe(200);
+	expect(r.body.item).toMatchObject({ id: n.id, read: true, cls: "alert" });
+	expect(typeof (r.body.item as Notice).handled).toBe("string");
+	expect(listed(n.id)!.waits).toBeUndefined();
+	expect(replayAfter(seen)?.some(f => f.includes('"kind":"notice"') && f.includes(n.id) && f.includes('"handled"'))).toBe(true);
+	expect(handledNotice(n.id).status).toBe(409);
+	expect(handledNotice("no-such-id").status).toBe(404);
+	// a finished result and a lost login are not handled with the ✕
+	post("worklog", "[done] 끝난 일 9531", { update_key: "lane:hd1" });
+	expect(handledNotice(stored().find(x => x.key === "lane:hd1")!.id).status).toBe(409);
+	post("alert", "카톡9531: 저장된 비밀번호가 없어 다시 로그인하지 못했어요", { source: "gateway" });
+	const login = byText("카톡9531: 저장된 비밀번호가 없어 다시 로그인하지 못했어요")[0]!;
+	expect(listed(login.id)!.waits).toBe("login");
+	expect(handledNotice(login.id).status).toBe(409);
+	// undismiss
+	expect(dismissNotice(n.id).ok).toBe(true);
+	expect(listed(n.id)).toBeUndefined();
+	const u = undismissNotice(n.id);
+	expect(u.status).toBe(200);
+	expect(listed(n.id)).toMatchObject({ id: n.id, read: true });
+	expect(stored().find(x => x.id === n.id)!.dismissed).toBeUndefined();
+	expect(undismissNotice("no-such-id").status).toBe(404);
+});
+
+test("a rerun that passed closes a failure, a new failure waits again, and a repeat of a closed one does not reopen it", () => {
+	emit("inbox", { ts: rts(), kind: "lane_report", source: "lane:wt1", lane: "wt1", text: "[fail] 첫 실패" });
+	const row = () => stored().find(n => n.key === "lane:wt1")!;
+	expect(row().handled).toBeNull();
+	expect(listed(row().id)!.waits).toBe("fail");
+	emit("inbox", { ts: rts(), kind: "lane_report", source: "lane:wt1", lane: "wt1", text: "[done] 다시 돌려 성공" });
+	expect(typeof row().handled).toBe("string");
+	expect(listed(row().id)!.waits).toBeUndefined();
+	emit("inbox", { ts: rts(), kind: "lane_report", source: "lane:wt1", lane: "wt1", text: "[fail] 또 실패" });
+	expect(row()).toMatchObject({ handled: null, read: false });
+	expect(listed(row().id)!.waits).toBe("fail");
+	// the ✕, then the same alert again within the gateway's repeat window: stays closed
+	post("alert", "[fail] 반복되는 오류 100번", { source: "gateway" });
+	const alert = byText("반복되는 오류 100번")[0]!;
+	handledNotice(alert.id);
+	post("alert", "[fail] 반복되는 오류 200번", { source: "gateway", repeat: true });
+	const same = stored().filter(n => n.kind === "alert" && n.text.startsWith("반복되는 오류"));
+	expect(same).toHaveLength(1);
+	expect(same[0]).toMatchObject({ id: alert.id, text: "반복되는 오류 200번", read: true });
+	expect(typeof same[0]!.handled).toBe("string");
+	expect(listed(alert.id)!.waits).toBeUndefined();
+});
+
+test("notices stored before handled keep their meaning: an old unread failure waits, an old read one is a past notice and stays so", () => {
+	const at = "2026-10-20T01:00:00.000Z";
+	const old = (id: string, extra: Partial<Notice>): Notice => stale(id, "alert", at, { kind: "alert", open: "alert", src: "alert", key: undefined, ...extra });
+	const dir = storeDir({
+		notices: [
+			old("eeeeeee1", { tone: "fail", text: "예전 실패 하나" }),
+			old("eeeeeee2", { tone: "fail", text: "읽은 예전 실패", read: true }),
+			old("eeeeeee3", { tone: "", text: watchLine("카톡예전", "stopped after a password failure"), title: "알림" }),
+			old("eeeeeee4", { tone: "", text: watchLine("카톡예전", "stopped after a password failure"), title: "알림", read: true }),
+		],
+	});
+	const out = scriptIn(dir, 'import { listNotices, markNoticesRead } from "./hub/notices.ts"; const w = () => Object.fromEntries(listNotices(300).items.map(n => [n.id, (n as any).waits ?? null])); const before = w(); markNoticesRead({ ids: ["eeeeeee1", "eeeeeee3"] }); console.log(JSON.stringify({ before, after: w() })); process.exit(0);');
+	expect(out.before).toEqual({ eeeeeee1: "fail", eeeeeee2: null, eeeeeee3: "login", eeeeeee4: null });
+	// reading an old unread failure keeps it waiting, like one made now; the read ones are never revived
+	expect(out.after).toEqual({ eeeeeee1: "fail", eeeeeee2: null, eeeeeee3: "login", eeeeeee4: null });
+	const saved: Notice[] = JSON.parse(readFileSync(join(dir, "notices.json"), "utf8"));
+	const at_ = (id: string) => saved.find(n => n.id === id)!;
+	expect([at_("eeeeeee1").handled, at_("eeeeeee3").handled]).toEqual([null, null]);
+	expect("handled" in at_("eeeeeee2") || "handled" in at_("eeeeeee4")).toBe(false);
+});
+
+test("a lost login is an alert of any kind and waits for its recovery: the watch passing, the provider back; words that only mention a login are not one", () => {
+	const seen = lastEventId();
+	const lost = watchLine("카톡9541", "failed 3 times in a row (exit 1)", "DOTZ_FAIL login\n세션이 끊겼어요");
+	post("alert", lost, { source: "gateway" });
+	const a = byText(lost)[0]!;
+	expect(listed(a.id)).toMatchObject({ cls: "alert", waits: "login" });
+	expect(replayAfter(seen)?.some(f => f.includes('"kind":"notice"') && f.includes('"waits":"login"'))).toBe(true);
+	// a monitor report of the orchestrator's watches (kind watch) is an alert too, not news
+	emit("inbox", { ts: rts(), kind: "watch", watch: "w9542", label: "쿠팡9542", reason: "needs the owner's approval for a second factor (x)", text: "DOTZ_FAIL approval" });
+	const w = stored().find(n => n.kind === "watch" && n.watch === "w9542")!;
+	expect(listed(w.id)).toMatchObject({ cls: "alert", waits: "login" });
+	// quoting the words is not a lost login
+	emit("inbox", { ts: rts(), kind: "lane_report", source: "lane:wt2", lane: "wt2", text: "[done] 로그인이 풀렸어요 문구를 고쳤어요" });
+	expect(listed(stored().find(n => n.key === "lane:wt2")!.id)).toMatchObject({ cls: "result" });
+	emit("inbox", { ts: rts(), kind: "watch", watch: "w9543", label: "친구9543", reason: "output changed", text: "로그인이 풀렸어요" });
+	expect(listed(stored().find(n => n.kind === "watch" && n.watch === "w9543")!.id)).toMatchObject({ cls: "news" });
+	expect(listed(stored().find(n => n.kind === "watch" && n.watch === "w9543")!.id)!.waits).toBeUndefined();
+	// the watch passes again: the outbox line and the orchestrator's wake event both close it, read or not
+	markNoticesRead({ ids: [a.id] });
+	expect(listed(a.id)!.waits).toBe("login");
+	emit("outbox", { ts: later(), kind: "out", source: "gateway", target: "ch:9543", text: "카톡9541: 다시 정상이에요" });
+	expect(listed(a.id)!.waits).toBeUndefined();
+	expect(typeof stored().find(n => n.id === a.id)!.handled).toBe("string");
+	emit("inbox", { ts: later(), kind: "watch", watch: "w9542", label: "쿠팡9542", reason: "recovered", text: "ok" });
+	expect(listed(w.id)!.waits).toBeUndefined();
+	// the model provider: its stop text waits, its recovery line closes it
+	post("alert", "땃쥐: " + blockText("auth", "acct9544", "anthropic", 1_800_000), { source: "gateway" });
+	const p = stored().find(n => n.kind === "alert" && n.text.includes("acct9544"))!;
+	expect(listed(p.id)).toMatchObject({ cls: "alert", waits: "login" });
+	post("alert", "땃쥐: " + recoveryText(), { source: "gateway" });
+	expect(listed(p.id)!.waits).toBeUndefined();
+	expect(stored().find(n => n.id === p.id)).toMatchObject({ read: true });
+});
+
+test("a monitor report with nothing new is a record (log), also when it was stored before; one with news is not", () => {
+	const same = watchLine("감시9551", "output changed", "글 3개 123456789", { prev: "글 3개 987654321" });
+	emit("inbox", { ts: rts(), kind: "watch", watch: "w9551", label: "감시9551", reason: "output changed", text: "글 3개 123456789", prev: "글 3개 987654321" });
+	emit("inbox", { ts: rts(), kind: "watch", watch: "w9551", label: "감시9551", reason: "output changed", text: "글 3개 111111111", prev: "글 3개 123456789" });
+	const rows = stored().filter(n => n.kind === "watch" && n.watch === "w9551");
+	// log reports never fold, so both are their own rows
+	expect(rows).toHaveLength(2);
+	expect(rows.map(n => listed(n.id)!.cls)).toEqual(["log", "log"]);
+	expect(rows[0]!.text).toContain("내용은 그대로이고");
+	emit("inbox", { ts: rts(), kind: "watch", watch: "w9552", label: "감시9552", reason: "output changed", text: "글 4개 새로 올라옴", prev: "글 3개" });
+	expect(listed(stored().find(n => n.watch === "w9552")!.id)!.cls).toBe("news");
+	const dir = storeDir({ notices: [stale("fffffff1", "alert", new Date(Date.now() - 3_600_000).toISOString(), { kind: "watch", title: "감시9551", text: same, open: "alert", src: "alert", key: undefined })] });
+	expect(loadIn(dir).items.map(n => (n as Listed).cls)).toEqual(["log"]);
+});
+
+test("a report that found nothing new is a log, in the alert and the monitor paths alike; one that found something stays listed", () => {
+	emit("outbox", { ts: ts(), kind: "out", source: "gateway", target: "ch:9571", text: "[감시9571] 확인했어요. 바뀐 곳은 없어요." });
+	emit("outbox", { ts: ts(), kind: "out", source: "gateway", target: "alert", text: "[감시9572] 확인했어요. 바뀐 곳은 없어요." });
+	emit("outbox", { ts: ts(), kind: "out", source: "gateway", target: "ch:9573", text: "[감시9573] 가격이 바뀌었어요" });
+	const cls = (s: string) => (listNotices(300).items as Listed[]).find(n => n.title.includes(s) || n.text.includes(s))?.cls;
+	expect([cls("감시9571"), cls("감시9572"), cls("감시9573")]).toEqual(["log", "log", "news"]);
+});
+
+test("monitor reports within a day fold into one unread row, newest first, 20 x 160 chars; a day later, or an alert repeat, keeps the same bounds", () => {
+	const base = Date.now() - 3 * 3_600_000;
+	const rep = (min: number, text: string) => emit("outbox", { ts: new Date(base + min * 60_000).toISOString(), kind: "out", source: "gateway", target: "ch:9561", text: "[감시9561] " + text });
+	for (let i = 0; i < 25; i++) rep(i, "새 글 " + i + " " + "가".repeat(300));
+	const rows = () => stored().filter(n => n.kind === "watch" && n.title === "감시9561");
+	expect(rows()).toHaveLength(1);
+	const row = rows()[0]!;
+	expect(row.text.startsWith("새 글 24")).toBe(true);
+	expect(row.repeats).toHaveLength(20);
+	expect(row.repeats![0]!.text.startsWith("새 글 23")).toBe(true);
+	expect(row.repeats!.every(r => r.text.length <= 160)).toBe(true);
+	markNoticesRead({ ids: [row.id] });
+	expect(rows()[0]!.read).toBe(true);
+	rep(30, "또 새 글");
+	expect(rows()).toHaveLength(1);
+	expect(rows()[0]).toMatchObject({ read: false, text: "또 새 글" });
+	// more than a day after the row's last report: its own row
+	rep(26 * 60, "다음 날 새 글");
+	expect(rows()).toHaveLength(2);
+	// an alert repeat keeps the same cap and the read state
+	post("alert", "땃쥐9562: 오류 0번 " + "나".repeat(400), { source: "gateway" });
+	const first = stored().find(n => n.kind === "alert" && n.text.startsWith("땃쥐9562"))!;
+	markNoticesRead({ ids: [first.id] });
+	for (let i = 1; i <= 25; i++) post("alert", "땃쥐9562: 오류 " + i + "번 " + "나".repeat(400), { source: "gateway", repeat: true });
+	const alerts = stored().filter(n => n.kind === "alert" && n.text.startsWith("땃쥐9562"));
+	expect(alerts).toHaveLength(1);
+	expect(alerts[0]).toMatchObject({ id: first.id, read: true });
+	expect(alerts[0]!.repeats).toHaveLength(20);
+	expect(alerts[0]!.repeats!.every(r => r.text.length <= 160)).toBe(true);
 });

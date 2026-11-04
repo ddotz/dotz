@@ -5,6 +5,15 @@
 // folds the fence) and Discord shows as a code block.
 import { TZ } from "./config.ts";
 
+// The words the gateway writes for a lost login, its recovery and a check that found nothing new. hub/notice-class.ts reads them back
+// (loginLost, watchUnchanged) and hub/limit-alert.ts writes the provider ones, so both sides share one spelling.
+export const LOGIN_LOST_KO = "로그인이 풀렸어요";
+export const LOGIN_NO_PASSWORD_KO = "저장된 비밀번호가 없어 다시 로그인하지 못했어요";
+export const LOGIN_SECOND_FACTOR_KO = "2차 인증이 필요해요";
+export const LOGIN_BLOCKED_KO = "모델 제공자 로그인이 풀려서 멈췄어요";
+export const PROVIDER_BACK_KO = "모델 제공자가 다시 연결됐어요";
+export const WATCH_UNCHANGED_KO = "내용은 그대로이고 시각 같은 값만 바뀌었어요";
+
 // The reason of one notify() call as a Korean phrase. Anything unknown (already Korean, or a new reason) passes through.
 export function watchReasonKo(reason: string): string {
 	const r = reason.trim();
@@ -14,9 +23,9 @@ export function watchReasonKo(reason: string): string {
 	if (r === "recovered") return "다시 정상이에요";
 	const fails = /^failed (\d+) times in a row/.exec(r)?.[1];
 	if (fails) return `${fails}번 연속 실패했어요`;
-	if (r.startsWith("stopped after a password")) return "저장된 비밀번호가 없어 다시 로그인하지 못했어요. 맥 암호에 저장하고 다시 연결을 눌러 주세요";
+	if (r.startsWith("stopped after a password")) return `${LOGIN_NO_PASSWORD_KO}. 맥 암호에 저장하고 다시 연결을 눌러 주세요`;
 	if (r.startsWith("stopped after")) return "실패가 이어져 멈췄어요. 승인하면 다시 돌아요";
-	if (r.startsWith("needs the owner's approval for a second factor")) return "2차 인증이 필요해요. 다시 연결을 누르면 휴대폰으로 승인 요청을 보내요";
+	if (r.startsWith("needs the owner's approval for a second factor")) return `${LOGIN_SECOND_FACTOR_KO}. 다시 연결을 누르면 휴대폰으로 승인 요청을 보내요`;
 	if (r.startsWith("needs the owner")) return "승인이 필요해요";
 	return r;
 }
@@ -92,12 +101,29 @@ export function itemRefOf(output: string): ItemRef | undefined {
 
 export const isIssue = (reason: string) => /^(?:fail\b|failed \d+|stopped after|needs the owner)/.test(reason.trim());
 
+// A notice text that says a login was lost, from the words above and nothing broader: the reason line of a stopped check (password, second factor),
+// the provider's own stop, or a failing check whose output named a login kind (the line after the reason is exactly LOGIN_LOST_KO).
+const LEAD = /^[^:\n]{1,60}:\s+/;
+const ISSUE_HEAD = /^(?:\d+번 연속 실패했어요|실패가 이어져 멈췄어요|점검에 실패했어요|승인이 필요해요)/;
+export function loginLost(text: string): boolean {
+	const [first = "", second = ""] = text.split("\n", 2);
+	const bare = first.replace(LEAD, "");
+	if ([first, bare].some(h => h.startsWith(LOGIN_NO_PASSWORD_KO) || h.startsWith(LOGIN_SECOND_FACTOR_KO) || h.startsWith(LOGIN_BLOCKED_KO))) return true;
+	return second === LOGIN_LOST_KO && ISSUE_HEAD.test(bare);
+}
+// A change report whose only difference was values like times (describeOutput's last words): the line after the reason is exactly WATCH_UNCHANGED_KO.
+// Or a report that says so itself ("확인했어요. 바뀐 곳은 없어요.").
+export const watchUnchanged = (text: string): boolean => {
+	const [first = "", second] = text.split("\n", 2);
+	return second === WATCH_UNCHANGED_KO || /바뀐 곳은 없어요\.?$/.test(first);
+};
+
 const ISO_ALL = new RegExp(ISO.source, "g");
 const LONG_ID = /\b(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,}|\d{9,})\b/gi;
 
 // What a `DOTZ_FAIL <kind>` line means to the owner. A kind that is not here reads as the plain failure phrase.
 const FAIL_KO: Record<string, string> = {
-	login: "로그인이 풀렸어요", session: "로그인이 풀렸어요", auth: "로그인이 풀렸어요", expired: "로그인이 풀렸어요",
+	login: LOGIN_LOST_KO, session: LOGIN_LOST_KO, auth: LOGIN_LOST_KO, expired: LOGIN_LOST_KO,
 	approval: "승인이 필요해요", "token-source": "토큰 원본을 읽지 못했어요",
  fetch: "내용을 가져오지 못했어요", network: "네트워크에 연결하지 못했어요", timeout: "시간이 너무 오래 걸렸어요",
 	captcha: "보안 확인(캡차)이 필요해요", off: "연동이 꺼져 있어요", app: "앱이 꺼져 있어요", browser: "브라우저를 열지 못했어요",
@@ -172,7 +198,7 @@ export function describeOutput(output: string, opts: DescribeOpts = {}): Describ
 	if (added) {
 		if (![...added, ...removed].every(plainLine)) return { text: "", readable: false };
 		const said = [added.length ? `새로 생겼어요: ${items(added)}` : "", removed.length ? `사라졌어요: ${items(removed)}` : ""].filter(Boolean);
-		return { text: said.join("\n") || "내용은 그대로이고 시각 같은 값만 바뀌었어요", readable: true };
+		return { text: said.join("\n") || WATCH_UNCHANGED_KO, readable: true };
 	}
 	if (HANGUL.test(out)) return { text: out, readable: true };
 	if (cur.length <= 3 && cur.every(plainLine)) return { text: cur.join("\n"), readable: true };
