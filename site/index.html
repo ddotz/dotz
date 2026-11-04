@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>dotz — 내 맥에서 항상 켜져 있는 개인 비서</title>
-<meta name="description" content="메일 정리부터 답장 초안까지 내가 없어도 끝내 두고, 폰으로 한마디만 하면 되며, 보내기는 내가 눌러야만 나가는 내 맥의 개인 비서예요.">
+<meta name="description" content="메일 답장, 일정 확인, 가격 알림. 맨날 미루던 잡일을 dotz가 먼저 해 놓고 폰으로 알려 줘요. 나는 확인하고 보내기만 누르면 끝이에요.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f2f4f6" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#121214" media="(prefers-color-scheme: dark)">
 <meta property="og:title" content="dotz — 내 맥에서 항상 켜져 있는 개인 비서">
-<meta property="og:description" content="메일 정리부터 답장 초안까지 내가 없어도 끝내 두고, 폰으로 한마디만 하면 되며, 보내기는 내가 눌러야만 나가는 내 맥의 개인 비서예요.">
+<meta property="og:description" content="메일 답장, 일정 확인, 가격 알림. 맨날 미루던 잡일을 dotz가 먼저 해 놓고 폰으로 알려 줘요. 나는 확인하고 보내기만 누르면 끝이에요.">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="ko_KR">
 <meta property="og:url" content="https://ddotz.dev/">
@@ -19,10 +19,10 @@
 <meta property="og:image:alt" content="dotz 웹 앱의 채팅 화면. 채팅 목록 옆 흰 대화 카드에 답이 있고, 입력창 위에 내 결정을 기다리는 확인 카드가 붙어 있습니다.">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css?v=191d133101dc">
-<script src="app.js?v=191d133101dc" defer></script>
+<link rel="stylesheet" href="style.css?v=fae419fa5a0b">
+<script src="app.js?v=fae419fa5a0b" defer></script>
 <script>if ('noModule' in HTMLScriptElement.prototype) document.documentElement.classList.add('ss');</script>
-<script type="module" src="js/stageshow.js?v=191d133101dc" defer></script>
+<script type="module" src="js/stageshow.js?v=fae419fa5a0b" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">본문으로 건너뛰기</a>
@@ -49,7 +49,7 @@
     <div class="wrap">
       <h1 class="wordmark" id="hero-title">dotz</h1>
       <p class="pitch">내 맥에서 항상 켜져 있는 개인 비서.</p>
-      <p class="hero-lede"><span class="ln"><span class="ph">메일 정리부터 답장 초안까지,</span> <span class="ph">내가 없어도 끝내 둬요.</span></span> <span class="ln"><span class="ph">폰으로 한마디만 하면 되고,</span></span> <span class="ln"><span class="ph">보내기는 내가 눌러야만 나가요.</span></span></p>
+      <p class="hero-lede"><span class="ln"><span class="ph">메일 답장, 일정 확인, 가격 알림.</span></span> <span class="ln"><span class="ph">맨날 미루던 잡일을 dotz가 먼저 해 놓고</span> <span class="ph">폰으로 알려 줘요.</span></span> <span class="ln"><span class="ph">나는 확인하고 보내기만 누르면 끝이에요.</span></span></p>
 
       <div class="install">
         <div class="install-bar">
@@ -98,15 +98,18 @@
       <ul class="cards">
         <li class="card card-scene">
           <div class="card-demo" data-ss="mail" role="img" aria-label="새 메일이 오자 dotz가 내용을 요약하고 답장 초안을 써 둡니다. 초안은 보내기 버튼 앞에서 내 확인을 기다립니다."></div>
-          <h3>메일 오면 답장까지 써 둬요</h3>
+          <h3>메일 답장, 이제 확인만 하세요</h3>
+          <p><span class="ph">새 메일을 읽고 내 말투로 초안까지 써 둬요.</span> <span class="ph">마음에 들면 보내기만 누르면 돼요.</span></p>
         </li>
         <li class="card card-scene">
           <div class="card-demo" data-ss="phone" role="img" aria-label="폰에서 dotz에게 오늘 일정을 물으면, 잠시 뒤 오늘 일정 두 개가 답으로 돌아옵니다."></div>
-          <h3>폰으로 물어보면 돼요</h3>
+          <h3>폰에서 말만 걸면 돼요</h3>
+          <p>자리에 없어도 쓰던 메신저로 오늘 일정부터 메일까지 바로 물어볼 수 있어요.</p>
         </li>
         <li class="card card-scene">
           <div class="card-demo" data-ss="watch" role="img" aria-label="지켜보던 캠핑 의자 가격이 89,000원에서 72,000원으로 내려가자 알림 목록 맨 위에 '가격이 바뀌었어요' 알림이 들어옵니다."></div>
-          <h3>가격 떨어지면 알려 줘요</h3>
+          <h3>살 타이밍을 놓치지 않아요</h3>
+          <p><span class="ph">지켜볼 상품만 정해 두면</span> <span class="ph">가격이 내려갈 때 폰으로 바로 알려 줘요.</span></p>
         </li>
       </ul>
     </div>
