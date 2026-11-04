@@ -1,7 +1,10 @@
 // English message catalog (see hub/i18n.ts). Moved out of i18n.ts unchanged; the types come from i18n.ts as type-only imports.
 import { join } from "node:path";
 import { IDENTITY_FILE, NAME, paths, tzLabel } from "./config.ts";
+import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import type { FileText, HelpText, LaneFooterArgs, RecallArgs, SettingText, WorktreeArgs } from "./i18n.ts";
+
+const TOPIC_LABELS: Record<string, string> = { linebreak: "line breaks", copy: "copy and tone", "no-card": "questions without a card", duplicate: "duplicate features", stalled: "stalls and lost reports", misread: "misread instructions", "missing-output": "output not visible", ui: "UI consistency", "ignored-setting": "ignored settings", "not-applied": "not applied or half verified", other: "other" };
 
 // Prefixes (leads) of notes that are matched later; every note that has a lead starts with it.
 export const enLeads = {
@@ -238,11 +241,17 @@ export const en = {
 	reflect: (digest: string, lessons: string) => `[dotz reflect] Nightly self-review of the last 24h. Data from the gateway:\n${digest}\n
 Do this, briefly:
 1. Find what went wrong or cost too much: owner corrections or repeated asks, failed or stuck lanes, alerts, cache rewrites.
-2. For each real lesson add or update one dated line in ${lessons} (keep it under ~30 lines; delete lessons that no longer apply or that a rule already covers). For each owner correction or reaction above, add one sourced line to ${paths.observations}; move a durable owner preference or context (stated plainly, or seen twice there) to ${paths.owner}, and a "don't" in the owner's own words to ${paths.boundaries}, verbatim with its source. Only what the owner said or did; never write about other people there.
+2. For each real lesson add or update one dated line in ${lessons} (keep the file under ${LESSONS_MAX_BYTES} bytes; the gateway refuses lines past that; delete lessons that no longer apply or that a rule already covers). For each owner correction or reaction above, add one sourced line to ${paths.observations}; move a durable owner preference or context (stated plainly, or seen twice there) to ${paths.owner}, and a "don't" in the owner's own words to ${paths.boundaries}, verbatim with its source. Only what the owner said or did; never write about other people there.
 3. If there is an issue (a failure, an anomaly, a repeated mistake, a token leak, something that recurred although RULES.md or LESSONS.md already covers it), once, ${enIssue}
 4. Never edit RULES.md here; offer a rule change as an option and wait for the owner's answer.
 5. Finish with one dotz_send worklog line in the identity's language and Notices style, starting "Nightly review: ...". If nothing was wrong, that one line is all you send: nothing to alert.`,
 
+	// Gateway-written: the lessons gate and the repeat card (hub/reflect.ts admitLessons, sendRepeatAlerts).
+	lessonGate: (topics: string[]) => `\n\nThese lesson topics hold prose and nothing enforced, so the gateway removes any further prose line in them: ${topics.join(", ")}. A new line there needs "(enforced: <guard, test or check>)". Name a line's topic with "(topic: <name>)" when its words do not show it.`,
+	lessonsRefused: (rows: { line: string; topic: string; why: "prose" | "cap" }[], cap: number) => `[dotz gate] Removed from LESSONS.md, do not add them back as prose:\n${rows.map(r => `- ${r.line} (${r.why === "cap" ? `over the ${cap} byte cap: merge or delete a line first` : `topic ${r.topic} has no enforced lesson: fix it in code and end the line with (enforced: <guard, test or check>)`})`).join("\n")}`,
+	repeatAlert: (a: { topic: string; count: number; broken: number; examples: string[] }) => [`The same correction keeps coming back: ${TOPIC_LABELS[a.topic] ?? a.topic} (${[a.count ? `${a.count} in 7 days` : "", a.broken ? `a lesson broken on ${a.broken} nights` : ""].filter(Boolean).join(", ")})`, ...a.examples.map(e => `- ${e}`)].join("\n"),
+	repeatAlertQuestion: "Open a structural fix instead of another lesson?",
+	repeatAlertOptions: [{ name: "Open a structural fix", result: "A guard, check or test that stops this; it starts only after this answer." }, { name: "Leave it this week", result: "No card on this topic for 7 days." }],
 	// Appended to `reflect` only when LESSONS.md has stale or near-duplicate lines or is over its byte cap (hub/reflect.ts lessonCandidates).
 	// Appended to `reflect` with the lessons no "(enforced: ...)" carries: all of them on a day with corrections, else those broken on 2+ nights (hub/reflect.ts lessonChecks).
 	lessonRepeats: (rows: { line: string; score: number; broken: number; likely: boolean }[], today: string) => `\n\nLessons nothing enforces yet, checked against today's corrections. Judge by meaning, not by the words: the score is only how many of a lesson's words a correction repeats ("likely" = 0.4 or more), and "broken N" counts the nights it was already found broken. For each lesson that was really broken today: add ${today} to its "(broken: ...)" list (start one if missing), then fix it at the highest level that works: remove the cause in the code or this contract, then a guard or check whose message names the right way, then a test; reword only a pure judgment call (and add the failure as an example). After a structural fix end the line with "(enforced: <the guard, check or test>)"; delete a lesson once its mistake cannot happen. A lesson broken on two or more nights is not reworded again: it gets the structural fix now. Leave the others as they are:\n${rows.map(r => `${r.line}${r.broken ? ` [broken ${r.broken}]` : ""}${r.likely ? ` [likely ${r.score}]` : ""}`).join("\n")}`,

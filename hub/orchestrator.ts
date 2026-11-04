@@ -10,6 +10,7 @@ import { emitEventActivity, runningSubagents, statusActivity } from "./activity.
 import { pendingAsksBlock } from "./asks.ts";
 import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
+import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { dropSection, newestLines, renderState } from "./recall-parts.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
@@ -138,7 +139,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	let stopping = false;
 	let rotating = false;
 	let restarting = false;
-	let pendingRestart = false;
+	let pendingRestart = "";
 	// A model/effort change made while a turn or a compaction ran: switched in place at turn_end / when the compaction ends (applyModelChange).
 	let pendingModel = false;
 	let turnsSinceStart = 0;
@@ -262,12 +263,12 @@ export function createOrchestrator(opts: OrchOpts) {
 	// One automatic resume: restart, and with no open request to replay, one tiny probe turn.
 	function resumeAfterError(): void {
 		probeAfterStart = true;
-		restart();
+		restart("automatic resume after an error");
 	}
 	// The owner's 재개 (the stopped banner, the paused line, the error ask's 다시 시작): the pause ends now instead of at its timer, the
 	// process starts again, and the held or open requests go in; with none, one tiny probe turn tests the model. A success clears the
 	// error and sends the one recovery line; a failure pauses again quietly (the stoppage was already announced).
-	function resumeNow(): "resumed" {
+	function resumeNow(why = "owner resume"): "resumed" {
 		clearTimeout(resumeTimer);
 		resumeTimer = undefined;
 		if (orch.status === "rate-limited") {
@@ -277,7 +278,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		}
 		if (orch.error) orch.error.waiting = false;
 		probeAfterStart = true;
-		restart();
+		restart(why);
 		return "resumed";
 	}
 
@@ -332,7 +333,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		};
 		const features = featurePrompt(DATA_DIR, "orchestrator", log);
 		const scope = opts.scope?.() ?? "";
-		return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, 3000), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, setups: setupsSummary(), state }) + (scope ? `\n\n${scope}` : ""));
+		return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, LESSONS_MAX_BYTES), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, setups: setupsSummary(), state }) + (scope ? `\n\n${scope}` : ""));
 	}
 
 	function handover(runtime: RuntimeAdapter, previous: string): string {
@@ -388,7 +389,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		}
 		freshSwitch = { again };
 		continueAfterSwitch = again;
-		restart();
+		restart(`model chain moved to ${chain.label(move.to)}`);
 		return true;
 	}
 	// At an idle moment: act on a spend cap reached during the turn, or go back to an earlier entry whose limit has reset.
@@ -424,7 +425,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			resumeTimer = undefined;
 			pauseAlerted = false;
 			noteResuming();
-			restart();
+			restart("pause timer ended");
 		});
 	}
 
@@ -464,11 +465,12 @@ export function createOrchestrator(opts: OrchOpts) {
 					} else if (orch.status === "idle") {
 						if (rotateWhenIdle || (++turnsSinceStart > 1 && orch.ctx.tokens > compactAt() && !compacting())) limitContext();
 						else if (pendingRestart) {
-							pendingRestart = false;
-							restart();
+							const why = pendingRestart;
+							pendingRestart = "";
+							restart(`${why}, after the turn`);
 						} else if (pendingModel) {
 							pendingModel = false;
-							if (!switchInPlace()) restart();
+							if (!switchInPlace()) restart("model or effort change");
 						} else {
 							proc?.refreshUsage();
 							flushCompact(orch.ctx, port);
@@ -562,7 +564,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					// A model/effort change that arrived during the compaction: a set_model mid-compaction cancels it.
 					if (pendingModel && !compacting() && !rotating && orch.status === "idle") {
 						pendingModel = false;
-						if (!switchInPlace()) restart();
+						if (!switchInPlace()) restart("model or effort change");
 					}
 					// Owner prompts that arrived during the compaction go in now (OmO refuses a prompt while a requested
 					// compaction runs).
@@ -678,7 +680,7 @@ export function createOrchestrator(opts: OrchOpts) {
 				resumeTimer = undefined;
 				save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
 				noteResuming();
-				if (proc) restart();
+				if (proc) restart("login store changed");
 				else fire();
 			});
 		}
@@ -824,6 +826,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			if (unstarted.length) log(`${who} exited with ${unstarted.length} prompt(s) it never started; holding them for the next process`);
 			held.unshift(...unstarted.splice(0));
 			log(`${who} exited (${code})`);
+			if (code === 143 && !restarting && !rotating && !stopping) log(`${who} got SIGTERM with no restart asked: a kill from outside the gateway, or the hung-turn check above`);
 			statusActivity(opts.source, `orchestrator exited (code ${code})`);
 			if (stopping) return;
 			if (!rotating) replayAfterStart = true;
@@ -933,7 +936,8 @@ export function createOrchestrator(opts: OrchOpts) {
 	// Restart the agent process; the session is resumed unless the configured model or thinking level changed since it was
 	// saved (start() then begins a fresh session with a handover, the model-change rule above). Prompts arriving
 	// meanwhile are held and delivered by the new process.
-	function restart(): void {
+	function restart(why: string): void {
+		log(`${who} restart: ${why}`);
 		errorStreak.ok();
 		streakAlerted = false;
 		transientTries = 0;
@@ -959,7 +963,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			return "next-start";
 		}
 		if (switchInPlace()) return "live";
-		restart();
+		restart("model or effort change");
 		return "restarted";
 	}
 	// A model switched in place moves the orchestrator's task workers with it (the profile OmO reads); the guard pins subagent_type
@@ -1009,7 +1013,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			pauseAlerted = false;
 			save({ pausedUntil: undefined });
 			continueAfterSwitch = Boolean(proc);
-			restart();
+			restart("model chain changed");
 			return "restarted";
 		}
 		if (adapter?.id === "omo" && (!chain || chain.active === 0)) {
@@ -1018,10 +1022,10 @@ export function createOrchestrator(opts: OrchOpts) {
 			return "updated";
 		}
 		if (orch.status === "working") {
-			pendingRestart = true;
+			pendingRestart = "model chain changed";
 			return "after-turn";
 		}
-		restart();
+		restart("model chain changed");
 		return "restarted";
 	}
 
@@ -1035,7 +1039,7 @@ export function createOrchestrator(opts: OrchOpts) {
 	function applyAccountPin(): "restarted" | "after-turn" | "not-running" {
 		if (!proc) return "not-running";
 		if (orch.status === "working" || compacting()) {
-			pendingRestart = true;
+			pendingRestart = "account pin changed";
 			return "after-turn";
 		}
 		if (orch.status === "rate-limited") {
@@ -1044,7 +1048,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
 			orch.status = "idle";
 		}
-		restart();
+		restart("account pin changed");
 		return "restarted";
 	}
 

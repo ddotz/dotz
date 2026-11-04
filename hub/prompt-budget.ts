@@ -26,4 +26,6 @@ export const LESSONS_TEMPLATE_MAX_BYTES = 170; // measured 153
 export const OWNER_TEMPLATE_MAX_BYTES = 250; // measured 220
 export const BOUNDARIES_TEMPLATE_MAX_BYTES = 240; // measured 217
 // The live ~/.dotz/LESSONS.md is user data: only the cap lives here, nothing in the test suite reads the file.
-export const LESSONS_MAX_BYTES = 1400; // measured 1268
+// The one size of the lessons: the gate on the file (hub/reflect.ts admitLessons), the nightly prompt and the injection cut all read it. 3000 is
+// what the injection always carried, about 30 lines of 100 bytes; the 1400 here was already passed by the live file (2121, 2026-11-04).
+export const LESSONS_MAX_BYTES = 3000;

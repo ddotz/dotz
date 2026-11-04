@@ -278,6 +278,9 @@ const LOG_MAX_BYTES = 5e6;
 const LOG_KEEP_BYTES = 1e6;
 const EVENTS_MAX_BYTES = 5e6;
 const EVENTS_KEEP_BYTES = 2e6;
+// A week of corrections is about 200 KB: what stays live always covers the 7 days the repeat alerts count.
+const CORRECTIONS_MAX_BYTES = 2e6;
+const CORRECTIONS_KEEP_BYTES = 1e6;
 const HUB_LOG_ARCHIVE_DAYS = 90;
 const UPLOAD_KEEP_DAYS = 60;
 const TEMP_SESSION_IDLE_MS = 86_400_000;
@@ -310,7 +313,7 @@ export function runDataCleanup(now = Date.now()): string[] {
 		}
 	};
 	const mb = (n: number) => `${(n / 1e6).toFixed(2)} MB`;
-	for (const [file, max, keep] of [[paths.log, LOG_MAX_BYTES, LOG_KEEP_BYTES], [paths.inbox, EVENTS_MAX_BYTES, EVENTS_KEEP_BYTES], [paths.outbox, EVENTS_MAX_BYTES, EVENTS_KEEP_BYTES]] as const)
+	for (const [file, max, keep] of [[paths.log, LOG_MAX_BYTES, LOG_KEEP_BYTES], [paths.inbox, EVENTS_MAX_BYTES, EVENTS_KEEP_BYTES], [paths.outbox, EVENTS_MAX_BYTES, EVENTS_KEEP_BYTES], [paths.corrections, CORRECTIONS_MAX_BYTES, CORRECTIONS_KEEP_BYTES]] as const)
 		step(`rotate ${basename(file)}`, () => {
 			const r = rotateFile(file, max, keep, now);
 			return r && `rotated ${basename(file)} ${mb(r.before)} -> ${mb(r.after)} (head in ${basename(r.archive)})`;
@@ -318,6 +321,10 @@ export function runDataCleanup(now = Date.now()): string[] {
 	step("hub.log archives", () => {
 		const gone = pruneArchives(join(DATA_DIR, "archive"), basename(paths.log), HUB_LOG_ARCHIVE_DAYS, now);
 		return gone.length ? `removed ${gone.length} hub.log archive(s) older than ${HUB_LOG_ARCHIVE_DAYS} days` : undefined;
+	});
+	step("corrections archives", () => {
+		const gone = pruneArchives(join(DATA_DIR, "archive"), basename(paths.corrections), HUB_LOG_ARCHIVE_DAYS, now);
+		return gone.length ? `removed ${gone.length} corrections archive(s) older than ${HUB_LOG_ARCHIVE_DAYS} days` : undefined;
 	});
 	step("uploads", () => {
 		const gone = pruneUploads(UPLOADS, UPLOAD_KEEP_DAYS, now);

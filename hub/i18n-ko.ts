@@ -1,7 +1,10 @@
 // Korean message catalog (see hub/i18n.ts). Moved out of i18n.ts unchanged.
 import { join } from "node:path";
 import { ADDRESS, IDENTITY_FILE, NAME, paths, tzLabel } from "./config.ts";
+import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import type { Catalog, Leads } from "./i18n-en.ts";
+
+const TOPIC_LABELS: Record<string, string> = { linebreak: "줄바꿈", copy: "문체·카피", "no-card": "카드 없는 질문", duplicate: "기능 중복", stalled: "멈춤·보고 끊김", misread: "지시 오해", "missing-output": "산출물 안 보임", ui: "UI 일관성", "ignored-setting": "설정 불이행", "not-applied": "미반영·반쯤 검증", other: "기타" };
 
 // How a nightly or monitoring run reports an issue (hub/reflect.ts, hub/watch.ts wake turn): one line plus a choice block that the web's
 // decision buttons and decision notices read (web/js/10-decision-card.js, hub/choices.ts).
@@ -226,13 +229,18 @@ export const ko: Catalog = {
 	reflect: (digest, lessons) => `[dotz reflect] 지난 24시간의 야간 자기 점검이에요. 게이트웨이가 모은 데이터:\n${digest}\n
 짧게 이렇게 하세요:
 1. 잘못됐거나 비용이 너무 든 것을 찾으세요: 오너의 정정이나 반복된 요청, 실패했거나 멈춘 세션, 알림, 캐시 재작성.
-2. 진짜 교훈마다 ${lessons}에 날짜가 붙은 줄을 하나 추가하거나 고치세요(30줄 안팎으로 유지하고, 더 이상 맞지 않거나 규칙이 이미 다루는 교훈은 지우세요). 위 오너의 정정이나 반응마다 ${paths.observations}에 출처가 붙은 줄을 하나 남기세요. 오래 갈 오너의 선호나 맥락(분명히 말했거나 거기서 두 번 보인 것)은 ${paths.owner}로, 오너가 직접 한 '하지 마'는 원문 그대로 출처와 함께 ${paths.boundaries}로 옮기세요. 오너가 말하거나 한 것만 적고, 다른 사람에 대해서는 여기에 쓰지 마세요.
+2. 진짜 교훈마다 ${lessons}에 날짜가 붙은 줄을 하나 추가하거나 고치세요(파일은 ${LESSONS_MAX_BYTES}바이트 안으로 유지하고(넘는 줄은 게이트웨이가 거절해요), 더 이상 맞지 않거나 규칙이 이미 다루는 교훈은 지우세요). 위 오너의 정정이나 반응마다 ${paths.observations}에 출처가 붙은 줄을 하나 남기세요. 오래 갈 오너의 선호나 맥락(분명히 말했거나 거기서 두 번 보인 것)은 ${paths.owner}로, 오너가 직접 한 '하지 마'는 원문 그대로 출처와 함께 ${paths.boundaries}로 옮기세요. 오너가 말하거나 한 것만 적고, 다른 사람에 대해서는 여기에 쓰지 마세요.
 3. 문제가 있으면(실패, 이상, 되풀이된 실수, 토큰 누수, RULES.md나 LESSONS.md가 이미 다루는데도 되풀이된 일) alert로 한 번만 ${koIssue}
 4. 여기서 RULES.md는 절대 수정하지 마세요. 규칙 변경은 선택지로 올리고 답을 기다리세요.
 5. 마지막으로 dotz_send worklog에 한 줄만 올리세요(identity의 Notices 문체, "야간 정리: ..."로 시작). 문제가 없었다면 이 한 줄이 전부예요. alert에는 아무것도 보내지 마세요.`,
 
 	lessonRepeats: (rows, today) => `\n\n아직 지키게 하는 장치가 없는 교훈이에요. 오늘의 정정과 맞춰 봤어요. 단어가 아니라 뜻으로 판단하세요: 점수는 정정이 교훈의 단어를 얼마나 되풀이했는지일 뿐이고("likely" = 0.4 이상), "broken N"은 이미 어긴 것으로 확인된 밤의 수예요. 오늘 정말 어긴 교훈마다: 그 줄의 "(broken: ...)" 목록에 ${today}를 더하고(없으면 새로), 되는 가장 높은 단계에서 고치세요: 코드나 이 계약에서 원인을 없애고, 안 되면 바른 방법을 알려 주는 가드나 검사, 그다음 테스트예요. 판단이 필요한 것만 문장을 고치고 실패 예를 붙이세요. 구조로 고친 뒤 줄 끝에 "(enforced: <가드·검사·테스트>)"를 붙이고, 실수가 더는 일어날 수 없으면 교훈을 지우세요. 두 밤 이상 어긴 교훈은 문장을 또 고치지 말고 지금 구조로 고치세요. 나머지는 그대로 두세요:\n${rows.map(r => `${r.line}${r.broken ? ` [broken ${r.broken}]` : ""}${r.likely ? ` [likely ${r.score}]` : ""}`).join("\n")}`,
 	staleObservations: stale => `\n\n${paths.observations}에 90일 넘은 줄이 있어요. 지우세요(아직 맞는 패턴은 먼저 owner.md나 LESSONS.md로 옮기기):\n${stale.join("\n")}`,
+	lessonGate: topics => `\n\n이 교훈 주제에는 문장만 있고 강제 장치가 없어서, 문장 교훈을 더 넣으면 게이트웨이가 지워요: ${topics.join(", ")}. 새 줄에는 "(enforced: <가드·검사·테스트>)"가 있어야 해요. 줄의 단어로 주제가 안 드러나면 "(topic: <이름>)"을 붙이세요.`,
+	lessonsRefused: (rows, cap) => `[dotz gate] LESSONS.md에서 지웠어요. 문장으로 다시 넣지 마세요:\n${rows.map(r => `- ${r.line} (${r.why === "cap" ? `${cap}바이트 상한 초과: 먼저 줄을 합치거나 지우세요` : `${r.topic} 주제에 강제된 교훈이 없어요: 코드로 고치고 줄 끝에 (enforced: <가드·검사·테스트>)를 붙이세요`})`).join("\n")}`,
+	repeatAlert: a => [`같은 지적이 되풀이되고 있어요: ${TOPIC_LABELS[a.topic] ?? a.topic} (${[a.count ? `7일간 ${a.count}건` : "", a.broken ? `교훈이 ${a.broken}번 깨짐` : ""].filter(Boolean).join(", ")})`, ...a.examples.map(e => `- ${e}`)].join("\n"),
+	repeatAlertQuestion: "교훈을 더 쓰는 대신 구조 수정을 열까요?",
+	repeatAlertOptions: [{ name: "구조 수정 열기", result: "되풀이를 막는 가드·검사·테스트를 만들어요. 이 답을 받은 뒤에만 시작해요." }, { name: "이번 주는 두기", result: "7일 동안 이 주제로 카드를 올리지 않아요." }],
 	lessonCandidates: (stale, duplicates, over) => `\n\n코드가 고른 LESSONS.md 정리 후보예요. 지울지 합칠지는 직접 판단하세요(합칠 때는 더 최근이거나 구체적인 문장을 남기세요):${over ? `\n- ${over}` : ""}${stale.length ? `\n- 90일 넘은 줄:\n${stale.join("\n")}` : ""}${duplicates.length ? `\n- 거의 같은 줄(단어 겹침 0.6 이상):\n${duplicates.join("\n")}` : ""}`,
 
 	auth: {
