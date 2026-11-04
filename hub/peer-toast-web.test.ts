@@ -16,10 +16,10 @@ const hubA = Bun.serve({
 	hostname: "127.0.0.1",
 	idleTimeout: 0,
 	fetch(req) {
-		const { pathname } = new URL(req.url);
+		const { pathname, searchParams } = new URL(req.url);
 		if (pathname === "/api/notices") return Response.json(aList);
-		if (pathname === "/") return new Response("<!doctype html><title>A home</title><script>fetch(\"/loaded\")</script>", { headers: { "Content-Type": "text/html" } });
-		if (pathname === "/loaded") { aRoot.push(pathname); return new Response("ok"); }
+		if (pathname === "/") return new Response("<!doctype html><title>A home</title><script>fetch(\"/loaded?at=\" + encodeURIComponent(location.href))</script>", { headers: { "Content-Type": "text/html" } });
+		if (pathname === "/loaded") { aRoot.push(searchParams.get("at")!); return new Response("ok"); }
 		if (pathname !== "/api/events") return new Response("no", { status: 404 });
 		let ctl!: ReadableStreamDefaultController<string>;
 		return new Response(new ReadableStream<string>({
@@ -69,8 +69,8 @@ test("in 모니터링 a notice on the other computer toasts once on this page, l
 	expect(await view.evaluate(`document.documentElement.scrollWidth`)).toBeLessThanOrEqual(390);
 
 	await view.evaluate(`document.querySelector(".snack .sa").click()`);
-	await aRoot.until(r => r.length >= 1, 10_000, "page opened A");
-	const to = new URL(view.url);
+	const [opened] = await aRoot.until(r => r.length >= 1, 10_000, "page opened A");
+	const to = new URL(opened!);
 	expect(to.origin).toBe(A.url);
 	expect(to.searchParams.get("n")).toBe("d1");
 	expect(to.searchParams.get("did")).toBeTruthy();
