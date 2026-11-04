@@ -2,14 +2,13 @@ import type { ComponentType } from 'react'
 import { createRoot } from 'react-dom/client'
 import './look.css'
 import HeroScene from './hero'
-import { BriefingScene, CommentScene, TaskScene, WatchScene } from './cards'
+import { MailScene, PhoneScene, WatchScene } from './cards'
 
 const SCENES: Record<string, ComponentType> = {
   hero: HeroScene,
-  briefing: BriefingScene,
-  comment: CommentScene,
+  mail: MailScene,
+  phone: PhoneScene,
   watch: WatchScene,
-  task: TaskScene,
 }
 
 const mount = (slot: HTMLElement) => {
