@@ -9,15 +9,17 @@
 .nsc-fb .n { color: var(--fg-3); font-variant-numeric: tabular-nums; }
 .nsc-fb.on .n { color: inherit; }
 .nsc-fb .n:empty { display: none; }
-.nsc-m { display: flex; align-items: center; min-height: var(--btn-h-sm); margin: 0 var(--sp-1); }
+.nsc-m { display: flex; align-items: center; min-height: var(--btn-h); margin: 0 var(--sp-1); }
 .nsc-m[hidden] { display: none; }
 .nsc-m .meta { color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); font-variant-numeric: tabular-nums; }
+.nsc-l .sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); }
+.nsc-l .sec:first-child { margin-top: var(--sp-2); }
 .nsc-more { display: flex; justify-content: center; margin-top: var(--sp-2); }
-.nsc-r { position: relative; align-items: flex-start; padding: var(--row-py) var(--sp-2) var(--row-py) var(--row-px); }
+.nsc-r { position: relative; align-items: flex-start; padding: 10px var(--sp-2) 10px var(--row-px); }
 .nsc-r:hover { background: var(--card-hover); }
 .nsc-r:has(> .nsc-tx:active) { background: var(--row-sel); }
 .nsc-r .lead { align-items: center; width: 8px; height: var(--lh-row); }
-.nsc-tx { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.nsc-tx { display: flex; flex-direction: column; gap: 2px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
 .nsc-tx::after { content: ""; position: absolute; inset: 0; }
 .nsc-tx:focus-visible { outline: none; }
 .nsc-tx:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: inherit; }
@@ -25,9 +27,7 @@
 .nsc-r .hd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--fg-2); }
 .nsc-r.unread .hd { font-weight: 700; color: var(--fg); }
 .nsc-r .t { flex: none; color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-row) var(--font); }
-.nsc-r .sup { flex: 1; min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
-.nsc-r .sup .nw-chg em { color: inherit; }
-.nsc-r .tag { background: transparent; padding: 0; color: var(--fg-3); }
+.nsc-r .sup { flex: 1; min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
 .nsc-r .ib, .nsc-tr { position: relative; z-index: 1; flex: none; display: grid; place-items: center; width: var(--btn-h-row); height: var(--btn-h-row); align-self: center; margin-left: calc(var(--sp-1) * -1); color: var(--fg-3); }
 .nsc-tr { z-index: 0; pointer-events: none; }
 .nsc-r .ib::before { content: ""; position: absolute; inset: -6px; }
