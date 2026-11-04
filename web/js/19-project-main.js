@@ -128,7 +128,7 @@ function pmSection({ kind, label, count, action, head, nodes, empty }) {
 }
 // Level 3: one section page over the overview. It is an overlay, so 32-history-nav gives it its own history entry: the back arrow
 // (or the browser's back) returns to the overview. Every function of the old one-page layout lives here, unchanged.
-const PM_PAGE = { goal: ["목표와 진행", "목표와 단계를 고쳐요"], sessions: ["세션 기록", "이 프로젝트의 세션과 백그라운드 작업"], results: ["결과 전체", "보고, 확인, 커밋"], routines: ["루틴과 모니터링", "주기적으로 도는 일"] };
+const PM_PAGE = { rules: ["내 규칙", "최근에 정한 순서예요"], goal: ["목표와 진행", "목표와 단계를 고쳐요"], sessions: ["세션 기록", "이 프로젝트의 세션과 백그라운드 작업"], results: ["결과 전체", "보고, 확인, 커밋"], routines: ["루틴과 모니터링", "주기적으로 도는 일"] };
 function pmSheet(kind) {
   const [title, ey] = PM_PAGE[kind] || [kind, ""];
   let entry;
@@ -137,7 +137,7 @@ function pmSheet(kind) {
     const p = pmProject();
     if (!p) { clear(h.box).append(el("div", { class: "fs-body pdv-body" }, emptyNode("불러오는 중…"))); return; }
     const q = { ...p, record: (PM.D && PM.D.record) || p.record }, rows = pmSessionRows(p, PM.D);
-    const body = kind === "goal" ? pmGoalBody(q) : kind === "sessions" ? pmSessions(PM.D, rows) : kind === "results" ? pmResults(PM.D) : pmRoutines(PM.D);
+    const body = kind === "rules" ? cmRulesBody() : kind === "goal" ? pmGoalBody(q) : kind === "sessions" ? pmSessions(PM.D, rows) : kind === "results" ? pmResults(PM.D) : pmRoutines(PM.D);
     clear(h.box).append(
       el("div", { class: "pdv-hd" },
         el("button", { class: "ib pdv-back", type: "button", "data-k": "back", "aria-label": "뒤로", title: "프로젝트로", onclick: () => h.close() }, icon("back")),
@@ -453,19 +453,22 @@ function cmAsk(text) {
   openTarget(MAIN, lastChatView());
   ta.value = text; autosize(); saveDraft(); updateHints(); ta.focus();
 }
-// A row's text: the title, the plain line when there is one, and (rules) the full text behind a tap on the row.
-function cmText(i) {
-  const tx = el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: i.title }), i.line ? el("div", { class: "sup", text: i.line }) : null);
-  if (!i.full) return tx;
-  const full = el("div", { class: "sup", text: i.full, hidden: true });
-  tx.append(full);
-  tx.title = i.full; tx.style.cursor = "pointer";
-  tx.setAttribute("role", "button"); tx.tabIndex = 0;
-  const flip = () => { full.hidden = !full.hidden; tx.setAttribute("aria-expanded", String(!full.hidden)); };
-  tx.addEventListener("click", flip);
-  tx.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
-  tx.setAttribute("aria-expanded", "false");
-  return tx;
+const cmText = i => el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: i.title }), i.line ? el("div", { class: "sup", text: i.line }) : null);
+// 내 규칙: the newest few here, every rule behind "모두 보기" (hub/custom.ts newestRules sets the order). A row is one short title; a tap
+// opens the same chat draft as the other groups' 수정, carrying the rule's full text, and hover shows that text too.
+const CM_RULES_SHOWN = 5;
+let cmRuleQ = "";
+const cmRuleRow = i => el("button", { class: "li tap", type: "button", title: i.full, "aria-label": `${i.title} 수정`,
+  onclick: () => { pmSheetsClose(); cmAsk(`${CM_TAG} 내 규칙 "${i.full || i.title}": `); } }, el("span", { class: "tx" }, el("div", { class: "hd", text: i.title })));
+function cmRulesBody() {
+  const items = ((PM.D && PM.D.groups) || []).find(g => g.id === "rules")?.items || [], found = el("div");
+  const fill = () => {
+    const q = cmRuleQ.trim().toLowerCase(), hit = items.filter(i => `${i.title} ${i.full}`.toLowerCase().includes(q));
+    clear(found).append(hit.length ? el("div", { class: "list" }, ...hit.map(cmRuleRow)) : emptyNode("찾는 규칙이 없어요"));
+  };
+  fill();
+  return [el("label", { class: "pl-search cm-rule-q" }, icon("search"),
+    el("input", { id: "cm-q", type: "search", placeholder: "규칙 검색", "aria-label": "규칙 검색", autocomplete: "off", value: cmRuleQ, oninput: ev => { cmRuleQ = ev.target.value; fill(); } })), found];
 }
 function cmPaint(root, p, D) {
   const sig = JSON.stringify([p, D]);
@@ -475,11 +478,13 @@ function cmPaint(root, p, D) {
   const ask = (label, text) => el("button", { class: "btn tonal inrow", type: "button", "aria-label": `${label} 수정`, onclick: () => cmAsk(text), text: "수정" });
   const group = g => el("section", { class: "pmv-sec" },
     el("div", { class: "sec sec-act" }, el("span", { text: g.label }), el("button", { class: "btn text sm", type: "button", onclick: () => cmAsk(`${CM_TAG} ${g.label}: `), text: "추가" })),
-    g.items.length ? el("div", { class: "list" }, ...g.items.map(i => el("div", { class: "li" },
+    !g.items.length ? emptyNode(g.empty) : g.id === "rules" ? el("div", { class: "list" }, ...g.items.slice(0, CM_RULES_SHOWN).map(cmRuleRow),
+      g.items.length > CM_RULES_SHOWN ? el("button", { class: "li tap", type: "button", "data-k": "rules-all", onclick: () => { cmRuleQ = ""; pmSheet("rules"); } },
+        el("span", { class: "tx" }, el("div", { class: "hd", text: `규칙 ${g.items.length}개 모두 보기` })), el("span", { class: "li-end" }, icon("chev", "chev"))) : null)
+    : el("div", { class: "list" }, ...g.items.map(i => el("div", { class: "li" },
       cmText(i),
       i.bad ? el("span", { class: "tag warn", text: "확인 필요" }) : null,
-      el("span", { class: "li-end" }, ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `)))),
-      g.more ? el("div", { class: "sup", style: "padding:var(--sp-2) var(--sp-4)", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));
+      el("span", { class: "li-end" }, ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `))))));
   clear(root).append(
     el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" },
       el("div", { class: "pmv-htop" }, el("div", { class: "pmv-title", text: p.name }), el("span", { class: "pmv-upd", text: "내 설정" })),
