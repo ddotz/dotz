@@ -70,7 +70,7 @@ const SPACE_ALLOWED: Record<string, [number, number]> = {
 	"05-log.css": [42, 148], "06-harness.css": [22, 109], "07-chat.css": [21, 70], "07-messengers.css": [0, 5],
 	"08-project-sessions.css": [3, 43], "09-notices-screen.css": [3, 2], "09-notices.css": [6, 60], "10-conversations.css": [12, 79],
 	"11-peers.css": [6, 16], "13-code-shell.css": [5, 32], "14-overlay.css": [0, 41], "15-draft-original.css": [6, 40],
-	"15-reply-card.css": [11, 30], "15-reply.css": [2, 11], "15-settings-pages.css": [3, 17], "15-settings-phone.css": [3, 2],
+	"15-reply-card.css": [11, 30], "15-reply.css": [2, 11], "15-settings-pages.css": [3, 17], "15-settings-phone.css": [3, 1],
 	"15-triage.css": [14, 34], "16-result-card.css": [37, 132], "17-kakao.css": [32, 116], "18-app-settings.css": [5, 56],
 	"18-comments.css": [12, 35], "19-volume.css": [4, 19], "20-apps.css": [2, 16], "20-canvas.css": [0, 4],
 	"20-mail-box.css": [8, 94], "20-mail-thread.css": [6, 31], "20-monitoring.css": [5, 51], "20-projects.css": [4, 46],

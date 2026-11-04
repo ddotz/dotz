@@ -1,9 +1,16 @@
 /* Settings sub-screens (설정, 모델·폴백, 공급자, 사용량, 컨텍스트) and the small settings dialogs (dialog.dlg.cl) on a phone.
    Scoped to those surfaces so the rest of the app keeps its compact controls. Loaded last: same-specificity rules here win. */
 @media (max-width: 639px) {
-  /* fallback chain: the five step buttons sit on their own row, so the model name and tags keep the full width */
-  #models .fb-item { flex-wrap: wrap; row-gap: 6px; }
-  #models .fb-item .fb-acts { flex: 1 0 100%; justify-content: flex-end; }
+  /* fallback chain: the step buttons stay beside the model name, the on/off switch opens the tag line under it.
+     The switch keeps a 40px target while it takes the height of a tag line: its fill stops inside a transparent border. */
+  #models .fb-item[data-i] { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; row-gap: 0; }
+  #models .fb-item[data-i] :is(.fb-body, .fb-acts) { display: contents; }
+  #models .fb-item[data-i] .fb-n { grid-area: 1 / 1; }
+  #models .fb-item[data-i] .fb-top { grid-area: 1 / 2 / auto / 4; }
+  #models .fb-item[data-i] .fb-ctl { grid-area: 1 / 4; }
+  #models .fb-item[data-i] .fb-sw { position: relative; grid-area: 2 / 2; align-self: start; margin-block: calc(-1 * var(--sp-15)); border-block: var(--sp-15) solid transparent; background-clip: padding-box; }
+  #models .fb-item[data-i] .fb-tags { grid-area: 2 / 3 / auto / 5; padding-block: var(--sp-1); }
+  #models .fb-item[data-i] .fb-usage { grid-area: 3 / 2 / auto / 5; margin-top: var(--sp-1); }
   /* editor options that do not fit side by side wrap to the next line instead of being cut with an ellipsis */
   #models .fbe .seg button { flex: 1 0 auto; padding: 0 12px; }
   /* update: commit subjects and paths wrap */

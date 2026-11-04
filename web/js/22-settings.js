@@ -13,10 +13,11 @@ const fbRunId = e => { const m = fbBase(e.model); if (!e.key_file) return m; con
 const fbMoney = n => `$${Number.isInteger(n) ? n : n.toFixed(2)}`;
 const fbCapText = c => `${c.period === "day" ? "일" : "월"} ${c.usd ? fbMoney(c.usd) : `${num(c.tokens)} 토큰`}까지`;
 let fbDragging = false;
+// A long model id breaks after its separators, not inside a word; the text itself stays the same.
+const fbNameParts = nm => nm.split(/(?<=[-/])/).flatMap((p, i) => (i ? [el("wbr"), p] : [p]));
 function fbTags(e) {
   const t = [];
   if (e.key_file) t.push(el("span", { class: "tag", text: "API 키" }));
-  if (e.enabled === false) t.push(el("span", { class: "tag", text: "꺼짐" }));
   if (e.key_file && e.workers) t.push(el("span", { class: "tag", text: "서브에이전트·세션도 사용" }));
   if (e.when) t.push(el("span", { class: "tag", text: FB_WHEN[e.when] }));
   if (e.cap) t.push(el("span", { class: "tag", text: fbCapText(e.cap) }));
@@ -167,16 +168,17 @@ function fbParts(L) {
     const on = !base && e.enabled !== false;
     const acts = base ? null : el("div", { class: "fb-acts" },
       el("button", { type: "button", class: "fb-sw", role: "switch", "aria-checked": String(on), title: on ? "켜짐 · 눌러서 끄기" : "꺼짐 · 눌러서 켜기", "aria-label": `${nm} ${on ? "끄기" : "켜기"}`, onclick: () => fbSave(L.id, list.map((x, j) => (j === i ? { ...x, enabled: !on } : x))) }, on ? "켜짐" : "꺼짐"),
-      el("button", { type: "button", class: "up", title: "위로", "aria-label": `${nm} 위로`, disabled: i === 0, onclick: () => move(i, i - 1) }, icon("down")),
-      el("button", { type: "button", title: "아래로", "aria-label": `${nm} 아래로`, disabled: i === list.length - 1, onclick: () => move(i, i + 1) }, icon("down")),
-      el("button", { type: "button", title: "편집", "aria-label": `${nm} 편집`, "aria-expanded": String(open(i)), onclick: () => fbOpenStep(L.id, list, i) }, icon("more")),
-      el("button", { type: "button", title: "빼기", "aria-label": `${nm} 빼기`, onclick: () => fbSave(L.id, list.filter((_, j) => j !== i)) }, icon("close")));
+      el("div", { class: "fb-ctl" },
+        el("button", { type: "button", class: "up", title: "위로", "aria-label": `${nm} 위로`, disabled: i === 0, onclick: () => move(i, i - 1) }, icon("down")),
+        el("button", { type: "button", title: "아래로", "aria-label": `${nm} 아래로`, disabled: i === list.length - 1, onclick: () => move(i, i + 1) }, icon("down")),
+        el("button", { type: "button", title: "편집", "aria-label": `${nm} 편집`, "aria-expanded": String(open(i)), onclick: () => fbOpenStep(L.id, list, i) }, icon("more")),
+        el("button", { type: "button", title: "빼기", "aria-label": `${nm} 빼기`, onclick: () => fbSave(L.id, list.filter((_, j) => j !== i)) }, icon("close"))));
     let tags = base ? null : fbTags(e);
     if (!base && !runs(e)) (tags ||= el("div", { class: "fb-tags" })).append(el("span", { class: "tag warn", text: `${F.harness ? F.harness.name : "이 하네스"}에서 못 써요` }));
     const node = el("li", { class: `fb-item${inUse ? " in-use" : ""}${!base && e.enabled === false ? " off" : ""}${base ? " base" : ""}${!base && open(i) ? " open" : ""}`, ...(base ? {} : { "data-i": String(i) }), title: base ? `${fbBase(model)} · 눌러서 모델 바꾸기` : `${fbBase(model)} · 눌러서 편집` },
       el("span", { class: "fb-n", text: String(i + 2) }),
       el("div", { class: "fb-body" },
-        el("div", { class: "fb-top" }, el("span", { class: "nm", text: nm }), base ? el("span", { class: "fb-base", text: "기본" }) : null, inUse ? el("span", { class: "fb-use", text: "사용 중" }) : null),
+        el("div", { class: "fb-top" }, base ? el("span", { class: "nm", text: nm }) : el("span", { class: "nm" }, ...fbNameParts(nm)), base ? el("span", { class: "fb-base", text: "기본" }) : null, inUse ? el("span", { class: "fb-use", text: "사용 중" }) : null),
         tags, base ? null : fbBar(e)),
       acts);
     if (!base) fbDrag(node, L.id, list, i);
