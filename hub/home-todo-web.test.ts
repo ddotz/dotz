@@ -105,3 +105,11 @@ test("a session whose only worker is queued is not running; its worker is the on
 	expect((await seen("사진첩 고치기")).groups).toEqual(["todo"]);
 	expect(await view.evaluate(`homeRunning().n`)).toBe(0);
 });
+
+test("at desktop width, cards appearing behind the pinned 할일 still pair up, two to a row", async () => {
+	await view.resize(1280, 900);
+	await paint({ work: [job({}), job({ id: "w2", status: "failed", cancelled: true, ended_at: NOW }), job({ id: "w3", status: "done", ended_at: NOW - 60_000 })] });
+	const y = (id: string) => `document.querySelector("#home-cards .bi[data-id='${id}']")?.getBoundingClientRect().top`;
+	await waitFor(`${y("now:running")} === ${y("now:waiting")} && ${y("now:todo")} === ${y("notices:alert")}`);
+	await view.resize(390, 844);
+});
