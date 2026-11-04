@@ -42,7 +42,7 @@
 .pl-1 { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .pl-n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 15px/22px var(--font); }
 .pl-row.unread .pl-n { font-weight: 600; }
-.pl-nb { flex: none; height: 18px; min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
+.pl-nb { flex: none; height: 18px; min-width: 18px; padding: 0 var(--sp-15); border-radius: 9px; background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
 .pl-at { flex: none; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .pl-s { display: flex; align-items: center; min-width: 0; color: var(--fg-2); font: 400 12px/16px var(--font); }
 .pl-sw { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -86,9 +86,9 @@
 .pmv-prog .bar.done i { background: var(--ok); }
 
 /* ---- level 3: a section page (an overlay, full screen on a phone) ---- */
-.pdv-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: 10px var(--sp-5) var(--sp-15) var(--sp-2); }
+.pdv-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-5) var(--sp-15) var(--sp-2); }
 .pdv-back { width: 40px; height: 40px; border-radius: var(--r-ctl); color: var(--fg-2); }
-.pdv-tt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pdv-tt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-05); }
 .pdv-t { margin: 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
 .pdv-ey { color: var(--fg-3); font-size: 13px; line-height: 18px; }
 .pdv-body { display: flex; flex-direction: column; padding: var(--sp-15) var(--sp-5) var(--sp-6); }
@@ -107,6 +107,6 @@
   .views.pp > #v-projects { padding: 0 var(--sp-2) 0 var(--sp-1); }
   /* the chip row is wider than the column most of the time: the fade shows there is more to scroll */
   .pl-chips { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent); }
-  .pl-groups > .sec { margin: 18px var(--sp-1) var(--sp-2); }
+  .pl-groups > .sec { margin: var(--sp-4) var(--sp-1) var(--sp-2); }
   .pm-o { max-width: 760px; }
 }
