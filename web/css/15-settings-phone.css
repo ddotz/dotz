@@ -19,7 +19,7 @@
 @media (max-width: 639px), (pointer: coarse) {
   #harness .hm-row { height: 40px; }
   #harness .hm-chip { min-height: 36px; }
-  :is(#settings, #models, #providers, #usage, #context) .ib { width: 40px; height: 40px; }
+  :is(#settings, #models, #accounts, #usage, #context) .ib { width: 40px; height: 40px; }
   :is(#models, dialog.dlg) :is(.fi, .sel) { min-height: 44px; }
   :is(#models, dialog.dlg) .seg button { height: 40px; }
   dialog.dlg summary { padding: var(--sp-3) 0; }

@@ -512,11 +512,11 @@ when omp is selected.
 - `GET /api/activity?source=orchestrator|lane:<name>&limit=N`: in-memory ring (300) of what an agent conversation did; the
   same items stream on `/api/events` as `{kind: "activity", ...}` (live only, not in the inbox/outbox files).
 - `GET /api/providers` -> `{providers: [{id, name, auth: "oauth"|"api_key"|"none", account?, masked?, models, in_use, can_login, can_logout}], addable: [{id, name, kind: "oauth"|"api_key"}]}`
-  (`addable` = providers the runtime supports that are not configured yet); `POST /api/providers {provider, key}` saves
+  (`addable` = providers the runtime supports that are not configured yet, plus signed-in logins that hold several accounts, marked `add_account`); `POST /api/providers {provider, key}` saves
   an API key, `DELETE /api/providers/<id>` removes only that saved key.
 - `POST /api/providers/<id>/login` -> `{ok, login_id, url, needs_code, prompt?, instructions?}`;
-  `POST /api/providers/<id>/login/complete {login_id, code}` -> `{ok, provider, status: "done"|"waiting", ...}`;
-  `GET /api/providers/<id>/login?login_id=` -> `{status: "waiting"|"done"|"failed", error?}`;
+  `POST /api/providers/<id>/login/complete {login_id, code}` -> `{ok, provider, status: "done"|"waiting", outcome?: "added"|"refreshed", account?, ...}`;
+  `GET /api/providers/<id>/login?login_id=` -> `{status: "waiting"|"done"|"failed", error?, outcome?, account?}`;
   `DELETE /api/providers/<id>/login` cancels; `POST /api/providers/<id>/logout` -> `{ok}`.
 - `GET /api/quota`: usage per provider and window (per-model windows such as the Fable one included);
   providers with credentials but no usage report are listed under `unavailable` with a plain reason.

@@ -224,7 +224,31 @@ export function writeProviderPin(provider: string, account: string | undefined, 
 	}
 }
 
-// Drops one account from a provider's pool. The last account is a sign-out (공급자 → 로그아웃), not a removal, and an older
+// A login of an account the pool already holds, stored by OmO under a fresh slot: the older slot takes the fresh login and keeps its
+// name, display name and model blocks, as OmO's own re-login of a named account does (signedInSlot), so the pin and dotz's order and
+// alias stay valid. The copy goes, or two slots of one account would share its limits and 자동 전환 would switch to the same account.
+const SLOT_KEEPS = ["name", "displayName", "modelBlocks"];
+export function mergeSameAccount(provider: string, keep: string, copy: string, now = Date.now()): boolean {
+	let merged = false;
+	rewriteAuth(provider, entry => {
+		const accounts: Json[] = Array.isArray(entry.accounts) ? entry.accounts : [];
+		const old = accounts.find(a => a?.name === keep), fresh = accounts.find(a => a?.name === copy);
+		if (!old || !fresh) return;
+		const kept: Json = { ...fresh };
+		for (const k of SLOT_KEEPS) {
+			if (k in old) kept[k] = old[k];
+			else delete kept[k];
+		}
+		entry.accounts = accounts.filter(a => a !== fresh).map(a => (a === old ? kept : a));
+		if (entry.pinned === copy) entry.pinned = keep;
+		if (Array.isArray(entry.order)) entry.order = entry.order.filter((n: unknown) => n !== copy);
+		merged = true;
+	}, now);
+	if (merged) log(`OmO account merged (${provider}): ${copy} into ${keep}`);
+	return merged;
+}
+
+// Drops one account from a provider's pool. The last account is a sign-out (계정 → 로그아웃), not a removal, and an older
 // single-login entry holds nothing to drop, so both report without writing.
 export function deletePoolAccount(provider: string, name: string, now = Date.now()): "deleted" | "missing" | "last" {
 	const file = authFile();
