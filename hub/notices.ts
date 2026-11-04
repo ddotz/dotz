@@ -1438,7 +1438,8 @@ function readableStored(n: Notice): Notice {
 	if (n.kind !== "watch") return n;
 	const title = watchLabelOf(n.title);
 	const [first = "", ...rest] = n.text.split("\n");
-	const text = watchReasonKo(first) !== first ? watchLine(title, first, rest.join("\n"), { raw: false }) : n.text;
+	const named = title !== n.title && n.text.startsWith(`${n.title}:`) ? `${title}${n.text.slice(n.title.length)}` : n.text;
+	const text = watchReasonKo(first) !== first ? watchLine(title, first, rest.join("\n"), { raw: false }) : named;
 	return title === n.title && text === n.text ? n : { ...n, title, text };
 }
 
