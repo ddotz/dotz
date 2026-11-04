@@ -270,7 +270,7 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .pj-card:hover { background: var(--card-hover); }
 .pj-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pj-top { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); min-width: 0; }
-.pj-nm { flex: 1 1 auto; min-width: 0; font: 600 15px/22px var(--font); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.pj-nm { flex: 1 1 8em; min-width: 0; font: 600 15px/22px var(--font); letter-spacing: -.01em; overflow-wrap: anywhere; }
 .pj-chs { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
 .pj-tg { display: inline-flex; align-items: center; gap: var(--sp-15); max-width: 100%; min-height: 24px; padding: 0 var(--sp-3); border-radius: 12px; background: var(--layer); color: var(--fg-2); font: 500 11.5px/16px var(--font); overflow-wrap: anywhere; }
 .pj-tg .kd { color: var(--fg-3); font-weight: 400; }

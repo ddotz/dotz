@@ -402,7 +402,7 @@ function pmResultRow(r) {
   const tap = r.kind === "report" && r.lane;
   const tag = r.kind === "report" ? (r.tone === "fail" ? ["err", "안 됨"] : r.verified ? ["ok", "확인됨"] : ["", "보고만 함"]) : r.kind === "verify" ? (r.ok ? ["ok", "통과"] : ["err", "안 됨"]) : ["", "커밋"];
   return el(tap ? "button" : "div", { class: `li${tap ? " tap" : ""}`, type: tap ? "button" : null, onclick: tap ? () => laneResultGo(r.lane, r.at) : null },
-    el("span", { class: "tx" }, el("div", { class: `hd pmv-clamp${r.kind === "note" ? " pmv-wrap" : ""}`, text: r.title || PM_RES[r.kind] || "결과" }),
+    el("span", { class: "tx" }, el("div", { class: `hd${r.kind === "note" ? " pmv-clamp pmv-wrap" : ""}`, title: r.title || null, text: r.title || PM_RES[r.kind] || "결과" }),
       el("div", { class: "sup", text: [PM_RES[r.kind] || r.kind, r.kind === "commit" ? r.hash : "", r.lane ? pmLaneTitle(r.lane) : "", kstHM(r.at)].filter(Boolean).join(" · ") })),
     tag ? el("span", { class: `tag ${tag[0]}`, text: tag[1] }) : null);
 }
@@ -425,7 +425,7 @@ function cmAsk(text) {
   openTarget(MAIN, lastChatView());
   ta.value = text; autosize(); saveDraft(); updateHints(); ta.focus();
 }
-const cmText = i => el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: i.title }), i.line ? el("div", { class: "sup", text: i.line }) : null);
+const cmText = i => el("span", { class: "tx" }, el("div", { class: "hd", title: i.title, text: i.title }), i.line ? el("div", { class: "sup", text: i.line }) : null);
 // 내 규칙: the newest few here, every rule behind the list's 더 보기 (hub/custom.ts newestRules sets the order). A row is one short title; a tap
 // opens the same chat draft as the other groups' 수정, carrying the rule's full text, and hover shows that text too.
 const CM_RULES_SHOWN = 5;

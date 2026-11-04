@@ -153,7 +153,7 @@ function inUseSection() {
     const why = r.fallback ? (r.key === "main" ? fbWhy("orchestrator") : r.key.startsWith("lane:") ? fbWhy("lanes") : { reason: "", until: "" }) : null;
     const model = selText(r.model);
     return el("div", { class: "mt-use-row", "data-use": r.key },
-      el("div", { class: "mt-use-tx" }, el("span", { class: "nm", text: r.label }), r.sub || ch.none ? el("span", { class: "sup", text: [r.sub, ch.none].filter(Boolean).join(" · ") }) : null),
+      el("div", { class: "mt-use-tx" }, el("span", { class: "nm", title: r.label, text: r.label }), r.sub || ch.none ? el("span", { class: "sup", text: [r.sub, ch.none].filter(Boolean).join(" · ") }) : null),
       el("div", { class: "mt-use-rest" }, el("span", { class: "mt-use-m", title: model, text: model }), why ? fbTag(why, r.configured) : null),
       open ? el("button", { class: "mt-use-act", type: "button", title: "바꾸기", "aria-label": `${r.label} 바꾸기`, onclick: open }, icon("pencil")) : null);
   };
