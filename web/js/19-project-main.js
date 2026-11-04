@@ -15,6 +15,11 @@ function pmLoad() {
     .then(ok => { st.flight = null; if (PM === st) pmPaint(); return ok; });
   return st.flight;
 }
+// A project turn changed this project's info (hub/outbound.ts noteProjectInfo): a fetch already out may predate it, so one follows it.
+function pmLive(e) {
+  if (current !== "project" || (e.key !== PM.key && e.key !== (pmProject() || {}).recordKey)) return;
+  (PM.flight || Promise.resolve()).then(pmLoad);
+}
 // After a write: fetch again and repaint from what the gateway kept (the page never shows the typed value as saved).
 async function pmReload() {
   const st = PM;
@@ -109,14 +114,34 @@ function pmOverview(q, D, rows) {
   const work = (D && D.work) || [], results = (D && D.results) || [], items = pmRoutineItems(D);
   const works = [...work.filter(w => w.status === "running"), ...work.filter(w => w.status !== "running")];
   const done = ms.filter(m => m.done).length;
+  const info = (D && D.info) || {}, files = info.files || [];
   return el("div", { class: "pm-o" },
     pmPrimary(rows),
+    pmSection({ kind: "info", label: "지금 상황", count: "", action: D && D.info ? "전체" : "", head: info.summary ? el("div", { class: "pm-goal sup", text: info.summary }) : null,
+      nodes: pmInfoRows(info), empty: info.summary ? "" : "대화하면서 정한 내용이 여기에 모여요" }),
     pmSection({ kind: "goal", label: "단계", count: ms.length ? `${done}/${ms.length}` : "", action: "편집", head: goal ? el("div", { class: "pm-goal sup", text: goal }) : null,
       nodes: ms.map((_, i) => pmStepRow(ms, i)), empty: "아직 단계가 없어요" }),
     pmSection({ kind: "sessions", label: "세션", count: rows.length, action: rows.length ? "전체" : "", nodes: rows.slice(0, 5).map(pmLaneRow), empty: "아직 세션이 없어요" }),
     pmSection({ kind: "sessions", label: "작업", count: work.length, nodes: works.slice(0, 4).map(pmWorkRow), empty: "진행 중인 작업이 없어요" }),
     pmSection({ kind: "results", label: "결과", count: results.length, action: results.length ? "전체" : "", nodes: results.slice(0, 4).map(pmResultRow), empty: "아직 결과가 없어요" }),
+    files.length ? pmSection({ kind: "info", label: "파일", count: files.length, action: files.length > 3 ? "전체" : "", nodes: files.slice(-3).toReversed().map(pmFileRow) }) : null,
     pmSection({ kind: "routines", label: "감시", count: items.length, action: items.length ? "전체" : "", nodes: items.slice(0, 4).map(pmWatchRow), empty: "연결된 감시가 없어요" }));
+}
+// A line of what the project's turns kept (hub/projectinfo.ts), with what kind of line it is.
+const pmInfoRow = (text, tag, tone = "") => el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp pmv-wrap", text })), tag ? el("span", { class: "li-end" }, el("span", { class: `tag ${tone}`, text: tag })) : null);
+const pmInfoRows = i => [...(i.blocked || []).map(t => pmInfoRow(t, "막힘", "warn")), ...(i.next || []).slice(0, 3).map(t => pmInfoRow(t, "다음")), ...(i.decided || []).slice(-3).toReversed().map(d => pmInfoRow(d.text, "정함"))];
+const pmFileRow = f => el("button", { class: "li tap", type: "button", onclick: () => openPath(f.path) }, el("span", { class: "tx" }, el("div", { class: "hd", text: f.label })));
+function pmInfoBody(D) {
+  const i = (D && D.info) || {}, part = (title, rows) => rows.length ? [el("div", { class: "pmv-day", text: title }), el("div", { class: "list" }, ...rows)] : [];
+  const nodes = [
+    ...(i.summary ? [el("div", { class: "pm-goal sup", text: i.summary })] : []),
+    ...part("막힌 것", (i.blocked || []).map(t => pmInfoRow(t))),
+    ...part("다음", (i.next || []).map(t => pmInfoRow(t))),
+    ...part("정한 것", (i.decided || []).toReversed().map(d => pmInfoRow(d.text))),
+    ...part("기억해 둔 말", (i.prefs || []).toReversed().map(p => pmInfoRow(p.text))),
+    ...part("파일", (i.files || []).toReversed().map(pmFileRow)),
+  ];
+  return nodes.length ? el("div", {}, ...nodes) : emptyNode("대화하면서 정한 내용이 여기에 모여요");
 }
 // The prototype's section header + list (s-work.js project detail: 단계 · 세션 · 작업 · 결과 · 감시); the header button opens the section's full page.
 function pmSection({ kind, label, count, action, head, nodes, empty }) {
@@ -124,11 +149,11 @@ function pmSection({ kind, label, count, action, head, nodes, empty }) {
     el("div", { class: "sec sec-act pm-sec" }, el("span", { text: `${label}${count !== "" ? ` ${count}` : ""}` }),
       action ? el("button", { class: "btn text sm", type: "button", "data-k": kind, onclick: () => pmSheet(kind), text: action }) : null),
     head,
-    nodes.length ? el("div", { class: "list pm-sec-list" }, ...nodes) : el("div", { class: "empty", text: empty }));
+    nodes.length ? el("div", { class: "list pm-sec-list" }, ...nodes) : empty ? el("div", { class: "empty", text: empty }) : null);
 }
 // Level 3: one section page over the overview. It is an overlay, so 32-history-nav gives it its own history entry: the back arrow
 // (or the browser's back) returns to the overview. Every function of the old one-page layout lives here, unchanged.
-const PM_PAGE = { rules: ["내 규칙", "최근에 정한 순서예요"], goal: ["목표와 진행", "목표와 단계를 고쳐요"], sessions: ["세션 기록", "이 프로젝트의 세션과 백그라운드 작업"], results: ["결과 전체", "보고, 확인, 커밋"], routines: ["루틴과 모니터링", "주기적으로 도는 일"] };
+const PM_PAGE = { info: ["지금 상황", "대화에서 정리된 내용이에요"], rules: ["내 규칙", "최근에 정한 순서예요"], goal: ["목표와 진행", "목표와 단계를 고쳐요"], sessions: ["세션 기록", "이 프로젝트의 세션과 백그라운드 작업"], results: ["결과 전체", "보고, 확인, 커밋"], routines: ["루틴과 모니터링", "주기적으로 도는 일"] };
 function pmSheet(kind) {
   const [title, ey] = PM_PAGE[kind] || [kind, ""];
   let entry;
@@ -137,7 +162,7 @@ function pmSheet(kind) {
     const p = pmProject();
     if (!p) { clear(h.box).append(el("div", { class: "fs-body pdv-body" }, emptyNode("불러오는 중…"))); return; }
     const q = { ...p, record: (PM.D && PM.D.record) || p.record }, rows = pmSessionRows(p, PM.D);
-    const body = kind === "rules" ? cmRulesBody() : kind === "goal" ? pmGoalBody(q) : kind === "sessions" ? pmSessions(PM.D, rows) : kind === "results" ? pmResults(PM.D) : pmRoutines(PM.D);
+    const body = kind === "info" ? pmInfoBody(PM.D) : kind === "rules" ? cmRulesBody() : kind === "goal" ? pmGoalBody(q) : kind === "sessions" ? pmSessions(PM.D, rows) : kind === "results" ? pmResults(PM.D) : pmRoutines(PM.D);
     clear(h.box).append(
       el("div", { class: "pdv-hd" },
         el("button", { class: "ib pdv-back", type: "button", "data-k": "back", "aria-label": "뒤로", title: "프로젝트로", onclick: () => h.close() }, icon("back")),
@@ -422,7 +447,7 @@ function pmRecent(past, done) {
   return items.length ? el("div", { class: "list" }, ...items.map(x => x.node)) : emptyNode("아직 끝난 세션이 없어요");
 }
 
-const PM_RES = { report: "보고", verify: "확인", commit: "커밋" };
+const PM_RES = { report: "보고", verify: "확인", commit: "커밋", note: "대화" };
 const pmDay = at => { const d = kstDay(at), n = Date.now(); return d === kstDay(n) ? "오늘" : d === kstDay(n - 864e5) ? "어제" : d; };
 const pmLaneTitle = n => (((S && S.lanes) || []).find(l => l.name === n) || {}).title || n;
 // The prototype's result row (s-work.js project 결과): the title, the kind · hash · session · time line, and its state tag.
@@ -430,7 +455,7 @@ function pmResultRow(r) {
   const tap = r.kind === "report" && r.lane;
   const tag = r.kind === "report" ? (r.tone === "fail" ? ["err", "안 됨"] : r.verified ? ["ok", "확인됨"] : ["", "보고만 함"]) : r.kind === "verify" ? (r.ok ? ["ok", "통과"] : ["err", "안 됨"]) : ["", "커밋"];
   return el(tap ? "button" : "div", { class: `li${tap ? " tap" : ""}`, type: tap ? "button" : null, onclick: tap ? () => laneResultGo(r.lane, r.at) : null },
-    el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: r.title || PM_RES[r.kind] || "결과" }),
+    el("span", { class: "tx" }, el("div", { class: `hd pmv-clamp${r.kind === "note" ? " pmv-wrap" : ""}`, text: r.title || PM_RES[r.kind] || "결과" }),
       el("div", { class: "sup", text: [PM_RES[r.kind] || r.kind, r.kind === "commit" ? r.hash : "", r.lane ? pmLaneTitle(r.lane) : "", kstHM(r.at)].filter(Boolean).join(" · ") })),
     tag ? el("span", { class: `tag ${tag[0]}`, text: tag[1] }) : null);
 }

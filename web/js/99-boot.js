@@ -53,6 +53,7 @@
     else if (e.kind === "comment" || e.kind === "comment_send" || e.kind === "comment_draft" || e.kind === "comment_sources") cmLive(e);
     else if (e.kind === "kakao" || e.kind === "kakao_send" || e.kind === "kakao_draft" || e.kind === "kakao_rooms" || e.kind === "kakao_read" || e.kind === "kakao_unreplied") kkLive(e);
     else if (e.kind === "mail_unreplied") { convLoad(); loadIntegrations(); }
+    else if (e.kind === "project_info") pmLive(e);
     else if (e.kind === "runtime_check") { if (rtLive) rtLive(); }
     else if (e.kind === "update_available") loadUpdate();   // the top update bar (24-settings-update.js) offers it
     // 구성 (lanes node, 프로젝트) is drawn from /api/harness, not the state: reload it too when a lane starts or ends.
