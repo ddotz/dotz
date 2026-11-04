@@ -83,7 +83,7 @@ const handled = new Set<string>();
 beforeEach(() => {
 	resetNoticesForTest();
 	handled.clear();
-	setDraftHandled(d => handled.has(d.draft!.ref!));
+	setDraftHandled((_d, _n, ref) => handled.has(ref));
 	setAppResolver(n => (n.decision?.draft ? "mail" : undefined));
 	setAppLabelResolver(() => "메일");
 });
@@ -125,6 +125,24 @@ test("a startup sweep cleans approvals that went stale while the hub was down, a
 	});
 	expect(await settleHandledDrafts()).toBe(1);
 	expect(open().map(i => i.decision!.draft!.ref)).toEqual(["d1"]);
+});
+
+test("one message asking about several drafts: each block closes when its own draft was sent or dropped elsewhere (the 모니터링 queue)", async () => {
+	const block = (ref: string) => draftApprovalBlock({ to: "유튜브 댓글", toLabel: "대상", body: `답글 ${ref}`, ref, question: "이 답글 올릴까?" });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "ch:1", text: `[ask] 댓글 답글 초안이에요\n\n${["c1", "c2", "c3"].map(block).join("\n\n")}` });
+	const blocks = () => listNotices(100).items.filter(i => i.decision?.to === "ch:1");
+	expect(blocks().map(i => [i.decision!.group, !!i.decision!.draft, i.decision!.state])).toEqual([[3, false, "open"], [3, false, "open"], [3, false, "open"]]);
+	handled.add("c2");
+	expect(await settleHandledDrafts()).toBe(1);
+	const settled = blocks().filter(i => i.decision!.state !== "open");
+	expect(settled.map(i => i.title)).toEqual(["이 답글 올릴까? (c2)"]);
+	expect(settled[0]).toMatchObject({ read: true, decision: { state: "answered", resolved: true } });
+	// A plain several-decision question (no draft options) is never asked about.
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "ch:2", text: "[ask] 두 가지\n\n결정: 어느 쪽? (c1)\n1) 가\n2) 나\n\n결정: 언제? (c3)\n1) 오늘\n2) 내일" });
+	handled.add("c1");
+	handled.add("c3");
+	expect(await settleHandledDrafts()).toBe(2);
+	expect(listNotices(100).items.filter(i => i.decision?.to === "ch:2" && i.decision.state === "open")).toHaveLength(2);
 });
 
 test("draftHandled answers a mail:<id> ref from the conversation it was asked in", async () => {

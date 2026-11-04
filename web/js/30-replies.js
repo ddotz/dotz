@@ -122,10 +122,11 @@ function rqRevise(x) {
     }) });
 }
 function rqOriginalOf(x) {
-  if (x.kind !== "notice") return x.d.original ? { who: x.d.original.who, text: x.d.original.text } : null;
-  const d = x.n.decision, m = String(d.to || "").startsWith("mail:") ? MAILS.get(d.to) : null;
-  if (m) return { who: mailSender(m.from), text: m.subject || mailBrief(m, d.to) };
-  return d.draft.origin && d.draft.origin.text ? { who: "", text: d.draft.origin.text } : null;
+  if (x.kind !== "notice") return x.d.original ? { who: x.d.original.who, text: x.d.original.text, ref: x.d.ref } : null;
+  const d = x.n.decision, m = String(d.to || "").startsWith("mail:") ? MAILS.get(d.to) : null, src = { ref: d.draft.ref, t: d.to };   // ref: 원문 보기 loads the full original
+  if (m) return { who: mailSender(m.from), text: m.subject || mailBrief(m, d.to), ...src };
+  if (d.draft.origin && d.draft.origin.text) return { who: "", text: d.draft.origin.text, ...src };
+  return d.draft.ref ? { who: "", text: d.draft.subject || "", ...src } : null;
 }
 function rqCardOf(x) {
   const dr = x.kind === "notice" ? x.n.decision.draft : null;
