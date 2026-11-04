@@ -17,8 +17,11 @@ span.mr-star:not(.on) { opacity: .45; }
 .mr .tag.mr-unread { display: none; }
 #mon-tl > .bm.rc.mr.mr-sel { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 
-.mbox-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15); min-height: 28px; padding: 0 var(--sp-3) var(--sp-1) var(--sp-15); color: var(--fg-2); font-size: 12px; }
-.mbox-bar.on { position: sticky; top: 40px; z-index: 2; margin: 0 0 var(--sp-1); padding-top: var(--sp-15); background: var(--bg); }
+/* One line of one height whether or not anything is chosen, so ticking a mail never moves the rows; a bar wider than its pane scrolls sideways like the folder chips. */
+.mbox-bar { display: flex; align-items: center; gap: var(--sp-15); height: 40px; margin: 0 0 var(--sp-1); padding: 0 var(--sp-3) 0 var(--sp-15); overflow-x: auto; scrollbar-width: none; color: var(--fg-2); font-size: 12px; }
+.mbox-bar::-webkit-scrollbar { display: none; }
+.mbox-bar > * { flex: none; }
+.mbox-bar.on { position: sticky; top: 40px; z-index: 2; background: var(--bg); }
 .mbox-all:disabled { visibility: hidden; }
 .mbox-n { margin-right: auto; font-variant-numeric: tabular-nums; }
 .mbox-bar.on .mbox-n { margin-right: var(--sp-1); color: var(--fg); font-weight: 600; }
@@ -27,7 +30,6 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-b:disabled { opacity: .45; cursor: not-allowed; }
 .mbox-b .ic { width: 16px; height: 16px; }
 .mbox-b.mbox-x { width: 32px; padding: 0; justify-content: center; margin-left: auto; }
-.mbox-note { flex: 1 0 100%; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 /* the open mail's top bar (30-mail-box.js mailOpenBar): one row of icons on its own tinted strip across the card (prototype #mail/1) that separates
    it from the mail header, sticky while the mail scrolls. The card's padding is a variable so the strip can run edge to edge. */
 .tl-in > .bm.rc.mopen { --mpx: 18px; gap: var(--sp-1); padding: 0 var(--mpx) var(--sp-4); }
@@ -135,14 +137,10 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
   .mr-chk, .mbox-all { width: 18px; height: 18px; }
   #back, #as-bar, #as-more-bar { width: 32px; height: 32px; }
   .mr-slot button.cchip.mr-act { height: 44px; border-radius: 22px; }
-  .mbox-bar { padding: 0 var(--sp-1) var(--sp-1) var(--sp-15); }
-  .mbox-bar.on { flex-wrap: wrap; gap: var(--sp-05); }
+  .mbox-bar { gap: var(--sp-05); height: 44px; padding: 0 var(--sp-1) 0 var(--sp-15); }
   .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
   .mbox-bar.on .mbox-bt { display: none; }
-  .mbox-bar.on .mbox-b.mbox-fyi { order: 1; flex: 1 0 100%; width: auto; margin-top: var(--sp-05); border-radius: var(--r-ctl); background: var(--layer); }
-  .mbox-bar.on .mbox-fyi .mbox-bt { display: inline; }
-  .mbox-bar.on .mbox-note { order: 2; }
   .mbox-reply { margin: var(--sp-3) 0 var(--sp-4); padding: var(--sp-4); }
   .mbox-in { height: 44px; font-size: 16px; }
   textarea.mbox-ta { font-size: 16px; line-height: 24px; }
