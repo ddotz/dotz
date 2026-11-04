@@ -6,7 +6,7 @@
 // Config: `token_audit_at` ("HH:MM" local time, default "04:30", "off" disables). The reflection digest reads the result.
 // usage: bun hub/token-audit.ts --dry [--hours N]    (--dry prints the alert instead of sending it; history is not recorded)
 // Last stdout line: RESULT {...}
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, DEFAULTS, HOME, log, writeAtomic } from "./config.ts";
 import { issueBlock } from "./choices.ts";
@@ -21,6 +21,7 @@ const CAUSE: Record<string, [string, string]> = {
 	shrink: ["OmO 맥락 축소(창 50% 넘으면 요청마다 비영속 축소)", "한 태스크 컨텍스트를 ~250K 아래로(단계별 워커, MODE 'Lanes and workers')"],
 	repin: ["압축 직후 메모리 projection 재핀", "로컬 조치 없음(OmO 쪽)"],
 	date: ["UTC 날짜 변경(environment-context 재주입)", "로컬 조치 없음(하루 1회)"],
+	idle: ["유휴 뒤 둘째 호출 패턴(기전 미증명)", "미증명이라 고칠 곳을 단정할 수 없음: 재발하면 해당 요청의 프롬프트 차이를 대조"],
 };
 // Unexplained OmO breaks: what the injected event before them points at (from someone's audit), instead of a generic hint.
 const BUST_FIX: [RegExp, string][] = [
@@ -28,6 +29,12 @@ const BUST_FIX: [RegExp, string][] = [
 	[/^omo-memory:(projection-pin|notice|soul-updated)$/, "메모리 projection 재핀이 프롬프트 앞부분을 바꾸는지 확인(dotz는 OmO 메모리를 끔)"],
 	[/^environment-context$/, "environment-context 재주입(날짜·cwd 변경)이 프리픽스를 깨는지 확인"],
 ];
+// OmO logs how each request continues its Claude SDK session; these kinds rebuild that session, so the prefix is written again.
+const CONTINUITY_EVENT = "claude_sdk_oauth_session_continuity";
+const CONTINUITY_LOGS = ["session.log.1", "session.log"].map(f => join(HOME, ".omo/agent/logs", f));
+const REBUILD_KINDS = new Set(["flatten", "fork", "bootstrap"]);
+const AFTER_REBUILD = "재구성 직후";
+const IDLE_GAP = 5 * 60e3;
 const LOG_DIR = join(DATA_DIR, "logs");
 const HISTORY = join(DATA_DIR, "token-audit.json");
 const BUST_UNCACHED = 50_000;
@@ -65,9 +72,12 @@ export const projectLabel = (dir: string) => labelOf(dir, HOME, DATA_DIR);
 const collect = (since: number) => collectSessions(since, { home: HOME, dataDir: DATA_DIR });
 
 type Bust = { ts: number; uncached: number; cr: number; prevCtx: number; cost: number; events: string[]; cause: string };
+type Rebuild = { ts: number; uncached: number; cost: number; label: string };
+type Decision = { ts: number; kind: string; reason: string };
+export type Decisions = Map<string, Decision[]>;
 type Stats = {
 	src: Src; start?: number; turns: number; tokens: number; cost: number; cw: number; cr: number; out: number; maxCtx: number; compactions: number;
-	busts: Bust[]; explained: Record<string, number>; bigNew: number;
+	busts: Bust[]; rebuilds: Rebuild[]; explained: Record<string, number>; bigNew: number;
 	wakes: Record<string, { n: number; tokens: number; cost: number }>; warmings: number;
 	errTurns: number; maxErrStreak: number; errCodes: Record<string, number>; compactErr: number;
 	maxBigStreak: number; bigTokens: number; bigCost: number;
@@ -82,15 +92,36 @@ const sameModel = (a: string, b: string) => {
 	return x.includes(y) || y.includes(x);
 };
 
-export function analyze(src: Src, since: number, exhaust: Exhaust[] = []): Stats {
+// Decisions per session, oldest first. Either log may be missing (rotation), and most of their lines are unrelated, so only matching lines are parsed.
+export function readDecisions(files = CONTINUITY_LOGS): Decisions {
+	const all: Decisions = new Map();
+	for (const file of files) {
+		if (!existsSync(file)) continue;
+		for (const line of readFileSync(file, "utf8").split("\n")) {
+			if (!line.includes(CONTINUITY_EVENT)) continue;
+			try {
+				const o = JSON.parse(line);
+				const list = all.get(o.sessionId) ?? [];
+				list.push({ ts: Date.parse(o.ts), kind: o.kind, reason: o.reason });
+				all.set(o.sessionId, list);
+			} catch {}
+		}
+	}
+	return all;
+}
+
+export function analyze(src: Src, since: number, exhaust: Exhaust[] = [], decisions: Decisions = new Map()): Stats {
 	const s: Stats = {
-		src, intended: src.requested, fbSegs: [], shrinks: 0, turns: 0, tokens: 0, cost: 0, cw: 0, cr: 0, out: 0, maxCtx: 0, compactions: 0, busts: [], explained: {}, bigNew: 0, wakes: {}, warmings: 0,
+		src, intended: src.requested, fbSegs: [], shrinks: 0, turns: 0, tokens: 0, cost: 0, cw: 0, cr: 0, out: 0, maxCtx: 0, compactions: 0, busts: [], rebuilds: [], explained: {}, bigNew: 0, wakes: {}, warmings: 0,
 		errTurns: 0, maxErrStreak: 0, errCodes: {}, compactErr: 0, maxBigStreak: 0, bigTokens: 0, bigCost: 0, fbTurns: 0, fbModels: new Set(),
 		fable: 0, fableCost: 0, effortTurns: 0, effortCost: 0, expensiveCost: 0, efforts: new Set(), maxToolStreak: 0, maxToolDesc: "", loopTokens: 0, loopCost: 0, readRate: 0,
 	};
+	const sessionDecisions = decisions.get(src.file.match(/([0-9a-f]{8}-[0-9a-f-]{27})\.jsonl$/)?.[1] ?? "") ?? [];
+	const decisionIn = (from: number, to: number) => sessionDecisions.findLast(d => d.ts > from && d.ts <= to);
 	let events: string[] = [];
+	let injected: string[] = []; // what can reach the model: a plain `custom` entry is local state unless it marks a prompt reassembly (BUST_FIX)
 	let compacted = false, modelChanged = false, thinkChanged = false, user = false;
-	let prev: { ts: number; ctx: number; ttlMin: number; out: number } | undefined;
+	let prev: { ts: number; ctx: number; ttlMin: number; out: number; before?: number } | undefined;
 	let prevStop = "stop";
 	let lastCompactTs = 0, fbOpen = false;
 	let omoLong = false;
@@ -107,7 +138,9 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = []): Stats
 				continue;
 			}
 			if (head.includes('"role":"custom"')) {
-				events.push(head.match(/"customType":"([^"]+)"/)?.[1] ?? "custom");
+				const kind = head.match(/"customType":"([^"]+)"/)?.[1] ?? "custom";
+				events.push(kind);
+				injected.push(kind);
 				continue;
 			}
 			if (!head.includes('"role":"assistant"')) continue;
@@ -135,7 +168,9 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = []): Stats
 		} else {
 			const kind = head.match(/"customType":"([^"]+)"/)?.[1];
 			if (kind && (head.startsWith('{"type":"custom"') || head.startsWith('{"type":"custom_message"'))) {
-				events.push(kind === "pi-rules.scan" ? `pi-rules.scan(${head.match(/"reason":"([^"]+)"/)?.[1] ?? "?"})` : kind);
+				const event = kind === "pi-rules.scan" ? `pi-rules.scan(${head.match(/"reason":"([^"]+)"/)?.[1] ?? "?"})` : kind;
+				events.push(event);
+				if (head.startsWith('{"type":"custom_message"') || BUST_FIX.some(([re]) => re.test(event))) injected.push(event);
 				if (/warm|keepalive/i.test(kind)) s.warmings++;
 			}
 			continue;
@@ -211,11 +246,24 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = []): Stats
 				const why = compacted ? "compaction" : modelChanged ? "model change" : thinkChanged ? "thinking change" : gapMin > prev.ttlMin ? `gap>${prev.ttlMin}m` : "";
 				if (why) s.explained[why] = (s.explained[why] ?? 0) + 1;
 				else if (cr < prev.ctx * 0.8) {
-					const seen = [...new Set(events)];
-					const cause = shrunk ? "shrink"
-						: seen.includes("omo-memory:projection-pin") && ts - lastCompactTs < 20 * 60e3 ? "repin"
-						: seen.includes("environment-context") && new Date(prev.ts).toISOString().slice(0, 10) !== new Date(ts).toISOString().slice(0, 10) ? "date" : "";
-					s.busts.push({ ts, uncached, cr, prevCtx: prev.ctx, cost: (u.cost?.cacheWrite ?? 0) + (u.cost?.input ?? 0), events: seen, cause });
+					const seen = [...new Set(injected)];
+					const bustCost = (u.cost?.cacheWrite ?? 0) + (u.cost?.input ?? 0);
+					const decision = decisionIn(prev.ts, ts);
+					const prior = decisionIn(prev.before ?? -Infinity, prev.ts);
+					const rebuilt = shrunk ? ""
+						: decision && REBUILD_KINDS.has(decision.kind) ? `${decision.kind}/${decision.reason}`
+						: prior && REBUILD_KINDS.has(prior.kind) ? AFTER_REBUILD : "";
+					if (rebuilt) {
+						const key = rebuilt === AFTER_REBUILD ? rebuilt : `재구성(${rebuilt})`;
+						s.explained[key] = (s.explained[key] ?? 0) + 1;
+						s.rebuilds.push({ ts, uncached, cost: bustCost, label: rebuilt });
+					} else {
+						const cause = shrunk ? "shrink"
+							: seen.includes("omo-memory:projection-pin") && ts - lastCompactTs < 20 * 60e3 ? "repin"
+							: seen.includes("environment-context") && new Date(prev.ts).toISOString().slice(0, 10) !== new Date(ts).toISOString().slice(0, 10) ? "date"
+							: prev.before !== undefined && prev.ts - prev.before >= IDLE_GAP ? "idle" : "";
+						s.busts.push({ ts, uncached, cr, prevCtx: prev.ctx, cost: bustCost, events: seen, cause });
+					}
 				}
 				else s.bigNew++; // prefix reused; the write is genuinely new content
 			}
@@ -264,9 +312,10 @@ export function analyze(src: Src, since: number, exhaust: Exhaust[] = []): Stats
 		// its TTL is what the session showed: a cache read after a gap over 5 minutes means the 1h cache (PI_CACHE_RETENTION=long).
 		if (src.runtime === "omo" && prev && ts - prev.ts > 5 * 60e3 && cr >= prev.ctx * 0.8) omoLong = true;
 		const ttlMin = u.cttl?.ephemeral1h ? 60 : u.cttl?.ephemeral5m ? 5 : src.runtime === "omo" ? (omoLong ? 60 : 5) : (prev?.ttlMin ?? 5);
-		prev = { ts, ctx, ttlMin, out: u.output ?? 0 };
+		prev = { ts, ctx, ttlMin, out: u.output ?? 0, before: prev?.ts };
 		prevStop = m.stopReason ?? "stop";
 		events = [];
+		injected = [];
 		compacted = modelChanged = thinkChanged = user = false;
 	}
 	s.readRate = readTok ? readCost / readTok : 0;
@@ -298,11 +347,11 @@ export function findingsOf(results: Stats[], exhaust: Exhaust[] = []): Finding[]
 			F.push({
 				flag: s.busts.length >= 3 || uncached > 1e6, kind: "캐시 깨짐", who, tip: "직전 주입 이벤트 확인",
 				what: `캐시 깨짐 ${s.busts.length}회 (압축/모델 변경/TTL 공백 아님)`, amount: `미캐시 재입력 ${M(uncached)} tok, ${usd(cost)}`, save, cost,
-				evidence: s.busts.slice(0, 6).map(b => `${kst(b.ts)} 새로 ${K(b.uncached)}/읽기 ${K(b.cr)} (직전 ${K(b.prevCtx)}) <- ${b.cause ? `원인: ${CAUSE[b.cause][0]}` : b.events.join(", ") || "이벤트 없음: 도구 목록/시스템 프롬프트 변경 의심"}`).join("; "),
+				evidence: s.busts.slice(0, 6).map(b => `${kst(b.ts)} 새로 ${K(b.uncached)}/읽기 ${K(b.cr)} (직전 ${K(b.prevCtx)}) <- ${b.cause ? `${b.cause === "idle" ? "" : "원인: "}${CAUSE[b.cause][0]}` : b.events.join(", ") || "모델에 가는 주입 이벤트 없음: 도구 목록/시스템 프롬프트 변경 의심(미증명)"}`).join("; "),
 				fix: [
 					...known.map(([c, n]) => `${CAUSE[c][0]} x${n} -> ${CAUSE[c][1]}`),
 					...new Set(top.flatMap(e => BUST_FIX.find(([re]) => re.test(e))?.[1] ?? [])),
-					...(known.reduce((a, [, n]) => a + n, 0) < s.busts.length ? [`제안: 직전 주입 이벤트(${top.join(", ") || "없음"})가 프롬프트 앞부분을 바꾸는지 확인해 고정 - 예상 절감 ~${usd(save)} (같은 토큰을 쓰기 대신 읽기로). 컨텍스트·모델은 그대로라 성능 영향 없음`] : []),
+					...(known.reduce((a, [, n]) => a + n, 0) >= s.busts.length ? [] : top.length ? [`제안: 직전 주입 이벤트(${top.join(", ")})가 프롬프트 앞부분을 바꾸는지 확인해 고정 - 예상 절감 ~${usd(save)} (같은 토큰을 쓰기 대신 읽기로). 컨텍스트·모델은 그대로라 성능 영향 없음`] : ["원인 미증명: 세션 재구성도 주입 이벤트도 아님"]),
 				].join(" / "),
 			});
 		}
@@ -367,6 +416,19 @@ export function findingsOf(results: Stats[], exhaust: Exhaust[] = []): Finding[]
 			});
 		}
 	}
+	// Busts with a known cause in OmO's own log: one note, never the unexplained warning or its escalation.
+	const rebuilds = results.flatMap(s => s.rebuilds);
+	if (rebuilds.length) {
+		const sum = (l: Rebuild[]) => `${l.length}회 ${M(l.reduce((a, r) => a + r.uncached, 0))} tok`;
+		const after = rebuilds.filter(r => r.label === AFTER_REBUILD);
+		const direct = rebuilds.filter(r => r.label !== AFTER_REBUILD);
+		const cost = rebuilds.reduce((a, r) => a + r.cost, 0);
+		F.push({
+			flag: false, kind: "세션 재구성", who: "전체", what: `세션 재구성으로 캐시 깨짐 ${sum(direct)}, 재구성 직후 큰 쓰기 ${sum(after)}`,
+			amount: `미캐시 재입력 ${M(rebuilds.reduce((a, r) => a + r.uncached, 0))} tok, ${usd(cost)}`, save: 0, cost,
+			evidence: Object.entries(Object.groupBy(direct, r => r.label)).sort((a, b) => b[1]!.length - a[1]!.length).map(([label, l]) => `${label} ${sum(l!)}`).join(", ") || undefined,
+		});
+	}
 	return F;
 }
 
@@ -425,9 +487,10 @@ function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditResult {
 	const hours = opts.hours && opts.hours > 0 ? opts.hours : 24;
 	const since = now - hours * 3600e3;
 	const exhaust: Exhaust[] = [];
+	const decisions = readDecisions();
 	const results = collect(since).flatMap(src => {
 		try {
-			const s = analyze(src, since, exhaust);
+			const s = analyze(src, since, exhaust, decisions);
 			return s.turns + s.errTurns > 0 ? [s] : [];
 		} catch (error) {
 			console.error(`skip ${src.file}: ${error}`);
@@ -498,7 +561,7 @@ function runAudit(opts: { hours?: number; dry?: boolean } = {}): AuditResult {
 		"",
 		...(opts.dry ? ["(dry 실행: 기록 없음)"] : history.map(d => `- ${d.date}: ${M(d.tokens)} tok, ${usd(d.cost)}, 캐시 쓰기 ${M(d.cacheWrite)}, 세션 ${d.sessions}, 경고 ${d.flags}`)),
 		"",
-		`기준: 캐시 깨짐 = 미캐시 입력(캐시 쓰기+input) >${K(BUST_UNCACHED)}이면서 캐시 읽기가 직전 컨텍스트의 80% 미만이고, 직전에 압축/모델·thinking 변경/TTL(1h, 5m) 초과 공백이 없음. 헛깨움 = 사용자 입력 없이 알림만으로 시작된 턴이 도구 호출 없이 출력 ${IDLE_OUT} tok 이하로 끝남. 하위에이전트 >${M(SUB_NOTE)} 참고, >${M(SUB_FLAG)} 경고. 비싼 모델 = Fable 응답 또는 max/xhigh 생각 수준 ${EFFORT_FLAG_TURNS}턴 이상. 깨짐 원인(OmO): 직전 요청이 ${K(REDUCE_GATE)} 이상이고 압축 없이 10% 넘게 줄면 맥락 축소, 압축 20분 안의 projection-pin이면 재핀, environment-context와 UTC 날짜 변경이면 날짜. 폴백 = 의도한 모델(폴백 전환 전 모델, 워커는 요청 모델)과 다른 모델 턴; Anthropic 429 retry-after 안이면 참고, 풀린 뒤 60분 넘게 폴백이면 경고. 🔁 = 같은 클래스가 어제까지 연속으로 경고였음(기존 규칙은 MODE.md 섹션명으로 표기).`,
+		`기준: 캐시 깨짐 = 미캐시 입력(캐시 쓰기+input) >${K(BUST_UNCACHED)}이면서 캐시 읽기가 직전 컨텍스트의 80% 미만이고, 직전에 압축/모델·thinking 변경/TTL(1h, 5m) 초과 공백이 없음. 헛깨움 = 사용자 입력 없이 알림만으로 시작된 턴이 도구 호출 없이 출력 ${IDLE_OUT} tok 이하로 끝남. 하위에이전트 >${M(SUB_NOTE)} 참고, >${M(SUB_FLAG)} 경고. 비싼 모델 = Fable 응답 또는 max/xhigh 생각 수준 ${EFFORT_FLAG_TURNS}턴 이상. 깨짐 원인(OmO): 직전 요청이 ${K(REDUCE_GATE)} 이상이고 압축 없이 10% 넘게 줄면 맥락 축소, 압축 20분 안의 projection-pin이면 재핀, environment-context와 UTC 날짜 변경이면 날짜, 5분 넘게 쉰 뒤 둘째 호출이면 유휴 패턴(기전 미증명). 세션 재구성 = OmO 연속성 로그에서 그 호출이 flatten/fork/bootstrap이면 재구성, 바로 앞 호출이 그랬으면 재구성 직후로 따로 세고 깨짐에 넣지 않음(맥락 축소가 우선). 폴백 = 의도한 모델(폴백 전환 전 모델, 워커는 요청 모델)과 다른 모델 턴; Anthropic 429 retry-after 안이면 참고, 풀린 뒤 60분 넘게 폴백이면 경고. 🔁 = 같은 클래스가 어제까지 연속으로 경고였음(기존 규칙은 MODE.md 섹션명으로 표기).`,
 	].join("\n");
 	mkdirSync(LOG_DIR, { recursive: true });
 	writeFileSync(reportPath, `${report}\n`);

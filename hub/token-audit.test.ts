@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
-import { analyze, auditAlert, fallbackAfterCapacity, findingsOf, material, projectLabel } from "./token-audit.ts";
+import { analyze, auditAlert, type Decisions, fallbackAfterCapacity, findingsOf, material, projectLabel, readDecisions } from "./token-audit.ts";
 
 const T0 = Date.UTC(2026, 9, 19, 12);
 const at = (min: number) => new Date(T0 + min * 60e3).toISOString();
@@ -42,6 +42,53 @@ test("a cache break after the 50% gate is a context shrink; one right after a co
 	expect(s.busts.map(b => b.cause)).toEqual(["shrink", "repin"]);
 	expect(s.explained).toEqual({ compaction: 1 });
 	expect(findingsOf([s])[0].fix).toContain("OmO 맥락 축소");
+});
+
+const SID = "01a1a03d-89dd-74a5-a67c-02759cfe1bde";
+const decided = (...list: [number, string, string][]): Decisions => new Map([[SID, list.map(([min, kind, reason]) => ({ ts: T0 + min * 60e3, kind, reason }))]]);
+
+test("continuity decisions come from both logs, oldest first, and a missing log is fine", () => {
+	const line = (min: number, kind: string, sessionId: string) => JSON.stringify({ ts: at(min), level: "info", event: "claude_sdk_oauth_session_continuity", kind, reason: "r", count: 1, sessionId });
+	const older = join(DATA_DIR, "audit-session.log.1");
+	const newer = join(DATA_DIR, "audit-session.log");
+	writeFileSync(older, `${line(1, "flatten", "a")}\nnot json\n`);
+	writeFileSync(newer, `${JSON.stringify({ ts: at(2), event: "other", sessionId: "a" })}\n${line(3, "delta", "a")}\n${line(3, "fork", "b")}\n`);
+	const all = readDecisions([join(DATA_DIR, "audit-missing.log"), older, newer]);
+	expect(all.get("a")?.map(d => d.kind)).toEqual(["flatten", "delta"]);
+	expect(all.get("b")?.map(d => d.kind)).toEqual(["fork"]);
+});
+
+test("a bust on a rebuild and the one right after are explained, stay out of the warning and land in one note", () => {
+	const src = session(`2026-11-03T00-00-00-000Z_${SID}`, [
+		user(0), turn(0, 0, 100_000), turn(1, 100_000, 1_000), turn(2, 10_000, 100_000), turn(3, 32_000, 90_000), turn(4, 122_000, 1_000),
+	]);
+	const s = analyze(src, T0 - 1, [], decided([1, "delta", "prefix_matched"], [2, "flatten", "tainted_compaction"], [3, "delta", "prefix_matched"], [4, "delta", "prefix_matched"]));
+	expect(s.busts).toEqual([]);
+	expect(s.rebuilds.map(r => r.label)).toEqual(["flatten/tainted_compaction", "재구성 직후"]);
+	expect(s.rebuilds.map(r => r.uncached)).toEqual([100_002, 90_002]);
+	const found = findingsOf([s]);
+	expect(found.map(f => [f.kind, f.flag])).toEqual([["세션 재구성", false]]);
+});
+
+test("a delta bust stays a warning, and only entries that reach the model are suspects", () => {
+	const lines = [
+		user(0), turn(0, 0, 100_000), turn(1, 100_000, 1_000),
+		custom(2, "claude-sdk-oauth-binding"), custom(2, "session-lifecycle"), custom(2, "work-custody"),
+		JSON.stringify({ type: "custom", customType: "pi-rules.scan", timestamp: at(2), data: { reason: "reload" }, reason: "reload" }),
+		JSON.stringify({ type: "custom_message", customType: "dotz-mode", timestamp: at(2) }),
+		turn(2, 0, 101_000),
+	];
+	const s = analyze(session(`2026-11-03T00-00-01-000Z_${SID}`, lines), T0 - 1, [], decided([1, "delta", "prefix_matched"], [2, "delta", "prefix_matched"]));
+	expect(s.rebuilds).toEqual([]);
+	expect(s.busts.map(b => b.events)).toEqual([["pi-rules.scan(reload)", "dotz-mode"]]);
+});
+
+test("the second call after an idle gap is its own unproven pattern, unless that gap's first call rebuilt the session", () => {
+	const lines = [user(0), turn(0, 0, 100_000), user(7), turn(7, 100_000, 1_000), turn(8, 0, 101_000)];
+	expect(analyze(session(`2026-11-03T00-00-02-000Z_${SID}`, lines), T0 - 1).busts.map(b => b.cause)).toEqual(["idle"]);
+	const rebuilt = analyze(session(`2026-11-03T00-00-03-000Z_${SID}`, lines), T0 - 1, [], decided([7, "fork", "idle_ttl"], [8, "delta", "prefix_matched"]));
+	expect(rebuilt.busts).toEqual([]);
+	expect(rebuilt.rebuilds.map(r => r.label)).toEqual(["재구성 직후"]);
 });
 
 test("OmO's cache TTL is what the session showed: a full read after a 7-minute gap makes a later break after a gap a real break", () => {
