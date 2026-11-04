@@ -148,7 +148,7 @@
   #v-monitoring:not(:has(> .kk.chat-open:not([hidden]))) { width: 100%; max-width: 920px; margin: 0 auto; }
   #v-monitoring > * { grid-column: 1; }
   #v-monitoring > .cv-side { grid-row: 1 / -1; min-height: 0; margin-bottom: var(--sp-4); padding: var(--sp-2); }
-  #v-monitoring > .cv-head { grid-row: 1; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 var(--sp-1) var(--sp-3); }
+  #v-monitoring > .cv-head { grid-row: 1; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; padding: 0 0 var(--sp-3); }
   #v-monitoring > .chatbox { grid-row: 4; }
   /* 채팅: 시제품의 두 단 (proto .chat2 = 340px 목록 + 대화 카드 하나). 카드는 ::before가 그려 머리·todo·타임라인·컴포저가 한 면 안에 있어요 */
   #v-chat { --cv-w: 340px; position: relative; display: grid; max-width: none; column-gap: var(--sp-4); grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto auto; }
