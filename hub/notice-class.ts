@@ -2,12 +2,13 @@
 // (web/js/30-notices.js), the web push (hub/push.ts) and Discord's ping (hub/discord.ts via pushReachesOwner) all read it, and hub/notify-route.ts routes by it; a notice gets its
 // class when it is read or broadcast (hub/notices.ts withClass), so nothing stored changes.
 //   ask    답변 필요  [ask] questions, send approvals, login / 2FA requests: push at once, pinned on top until answered, orange badge.
-//   alert  경고       gateway failures, lost logins, monitors failing again and again: push, red badge.
+//   alert  경고       gateway failures, lost logins (any kind of notice, loginLost), monitors failing again and again: push, red badge.
 //   result 결과       a session's or background job's [done] / [fail], a work log entry that finished: push.
 //   news   새 소식    mail, KakaoTalk, comments, monitors, schedules: push per app (that app's own switch), grouped by app in the bell.
 //   conv   대화       a new answer in a conversation the owner is not looking at: push only then (hub/push.ts shouldNotify).
-//   log    기록       [run] progress and routine records: no push, no badge, only in 작업내역.
+//   log    기록       [run] progress, routine records and a monitor report that found nothing new (watchUnchanged): no push, no badge, only in 작업내역 / 모니터링.
 import type { Notice, NoticeKind, NoticeTone } from "./notices.ts";
+import { loginLost, watchUnchanged } from "./watchtext.ts";
 
 export const NOTICE_CLASSES = ["ask", "alert", "result", "news", "conv", "log"] as const;
 export type NoticeClass = (typeof NOTICE_CLASSES)[number];
@@ -25,18 +26,22 @@ export const ROUTINE_ALERT = /^토큰 누수 점검/;
 // the alert channel, or a non-critical post by someone other than the gateway; the event path decides it, hub/push.ts classifyEvent).
 export type ClassInput = { kind: NoticeKind; tone: NoticeTone; decision?: string; key?: string; text?: string; read?: boolean; ignored?: boolean; quiet?: boolean };
 
+// A lost login: only the gateway's own alert and monitor reports can say so (a mail or a session's report that quotes the words is not one).
+export const isLoginLost = (n: Pick<ClassInput, "kind" | "tone" | "text">): boolean => (n.kind === "alert" || n.kind === "watch") && n.tone !== "done" && loginLost(n.text ?? "");
+
 function clsOf(n: ClassInput): NoticeClass {
 	if (n.kind === "decision" || n.decision !== undefined || n.tone === "ask") return "ask";
 	if (n.tone === "run") return "log";
+	if (isLoginLost(n)) return "alert";
 	switch (n.kind) {
 		case "alert":
 			if (n.key === "self-update") return "news";
-			return n.quiet || ROUTINE_ALERT.test(n.text ?? "") ? "log" : "alert";
+			return n.quiet || ROUTINE_ALERT.test(n.text ?? "") || watchUnchanged(n.text ?? "") ? "log" : "alert";
 		case "result":
 		case "worklog":
 			return n.tone === "done" || n.tone === "fail" ? "result" : "log";
 		case "watch":
-			return "news";
+			return watchUnchanged(n.text ?? "") ? "log" : "news";
 		case "message":
 			return "conv";
 	}
