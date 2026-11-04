@@ -8,6 +8,7 @@ import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { updateNow } from "./update-now.ts";
 import { isNote, msg } from "./i18n.ts";
+import { normalizeAsk } from "./ask-normalize.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
 import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages, tailEvents, workAnswer } from "./events.ts";
 import { settleWaiting, type Waiting } from "./awaiting.ts";
@@ -336,9 +337,10 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	const answersOwner = extra.source === undefined || extra.source === "orchestrator";
 	// A gateway post to the alert conversation (a failing watch) is gated like alert() below.
 	if (target === "alert" && extra.source === "gateway" && !extra.update_key && repeatAlert(text)) extra = { ...extra, repeat: true };
-	const job: OutJob = { target, text: stripHandoff(text), replyTo: replyTo ?? (answersOwner && !extra.update_key && !extra.queued ? lateRequest(target) : undefined), extra };
 	// The assistant's send-approval card waits its turn in its conversation (a held card is posted later by the queue, marked `queued`).
 	const routed = answersOwner && !extra.update_key && !extra.queued;
+	// Every answer and dotz_send of every conversation passes here: a list of options becomes a decision card whoever wrote it (hub/ask-normalize.ts).
+	const job: OutJob = { target, text: routed ? normalizeAsk(stripHandoff(text)) : stripHandoff(text), replyTo: replyTo ?? (routed ? lateRequest(target) : undefined), extra };
 	const routing: { card?: ReturnType<typeof approvals.route> } = {};
 	let landed = false;
 	replies.begin(job);

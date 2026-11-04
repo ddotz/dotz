@@ -8,7 +8,8 @@ const CH_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 // (stripped from the label), or it is guessed from a negative / edit label or a description that asks for text. Mirrors hub/choices.ts detailOf.
 const DETAIL_MARK = /\s*…\s*$/, DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|아니|아냐|고치기|수정|다른)/, DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세요)|내용.*(?:적|알려|써)/;
 const detailOf = o => !!o.detail || DETAIL_LABEL.test(o.label) || DETAIL_DESC.test(o.desc || "");
-const isDescLine = nx => nx !== undefined && !!nx.trim() && !CH_OPT.test(nx) && !CH_HEAD.test(nx) && !CH_CLOSE.test(nx);
+const CH_FENCE = /^\s*```/;
+const isDescLine = nx => nx !== undefined && !!nx.trim() && !CH_OPT.test(nx) && !CH_HEAD.test(nx) && !CH_CLOSE.test(nx) && !CH_FENCE.test(nx);
 // The message text without its option lines (and their description lines): the buttons show them, so the body must not repeat them.
 function stripChoices(text) {
   const lines = String(text ?? "").split("\n"), out = [];
@@ -25,7 +26,10 @@ function parseChoices(text) {
   while (i < lines.length && !lines[i].trim()) i++;
   if (i < lines.length && !OPT.test(lines[i]) && !HEAD.test(lines[i])) question = lines[i++].trim();
   const blocks = [];
+  let fence = false;
   for (; i < lines.length; i++) {
+    if (CH_FENCE.test(lines[i])) { fence = !fence; continue; }
+    if (fence) continue;
     const h = HEAD.exec(lines[i]);
     if (h) { cur = { title: h[1].trim(), options: [], headed: true }; blocks.push(cur); continue; }
     const m = OPT.exec(lines[i]);
@@ -94,7 +98,7 @@ function decisionOne(t) {
   if (at && s.msgs.some(e => OWNER.has(e.kind) && msOf(e.ts) > msOf(at))) return null;
   const sig = hashOf(body.trim());
   // A status message ([done] ...) that ends in a choice block: its first line is the status, so the block's own title is the question.
-  const question = !info.ask && pt.tone !== "ask" && pc.blocks.length === 1 && pc.blocks[0].title ? pc.blocks[0].title : pc.question;
+  const question = !info.ask && pc.blocks.length === 1 && pc.blocks[0].title ? pc.blocks[0].title : pc.question;
   return { key: `${t}|${sig}`, t, sig, at, question, blocks: pc.blocks };
 }
 async function answerDecision(dc, text, opt, note) {

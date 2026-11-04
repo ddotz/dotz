@@ -1,0 +1,3 @@
+// The two questions of 2026-11-04 that reached the owner without a card.
+export const ASK_A = "2부를 브랜치에서 끝냈어요. 여백 값은 전부 눈금에 올라갔고 검사는 통과해요.\n\n저는 그대로 반영하는 걸 추천해요. 어떻게 할까요?\n\n1) 그대로 반영\n2) 알림 행만 조정하고 반영 (어떻게 바꿀지 알려 주세요)\n3) 반영 보류\n\n[file] /tmp/spacing-rules/compare/notices-390-light.png\n[file] /tmp/spacing-rules/compare/mail-1280-light.png";
+export const ASK_B = "[ask] 2부 이전을 브랜치에서 끝냈어요.\n\n땅콩 몫: 형 답을 받아 전달해 주세요.\n\n**결정 필요**\n1. 2부를 main에 반영할까요? (브랜치 `lane/spacing-rules`, 커밋 79개)\n   - 그대로 반영 (추천): 값이 규칙에 맞게 통일됐고, 나빠진 곳은 못 찾았어요.\n   - 알림 행만 조정 후 반영: 행 높이를 이전과 같게 두는 대신 목록 행 규칙(8px)에서는 벗어나요.\n   - 보류: 대조표를 보고 고칠 곳을 알려 주세요.\n\n대조표: `/tmp/spacing-rules/README.md` (이미지는 `/tmp/spacing-rules/compare/`)";
