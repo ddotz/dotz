@@ -67,7 +67,7 @@ const SIZE_ALLOWED: Record<string, [number, number]> = {
 // [off-scale, raw] px spacing values per file (see space above), as SIZE_ALLOWED: a ceiling and, because the number is exact, a floor.
 const SPACE_ALLOWED: Record<string, [number, number]> = {
 	"01-tokens.css": [11, 0], "02-cards-lists-tags.css": [6, 0], "03-base.css": [41, 0], "04-files.css": [37, 0],
-	"05-log.css": [42, 0], "06-harness.css": [22, 0], "07-chat.css": [21, 70], "07-messengers.css": [0, 5],
+	"05-log.css": [42, 0], "06-harness.css": [22, 0], "07-chat.css": [21, 0], "07-messengers.css": [0, 5],
 	"08-project-sessions.css": [3, 43], "09-notices-screen.css": [3, 2], "09-notices.css": [6, 60], "10-conversations.css": [12, 79],
 	"11-peers.css": [6, 16], "13-code-shell.css": [5, 32], "14-overlay.css": [0, 41], "15-draft-original.css": [6, 40],
 	"15-reply-card.css": [11, 30], "15-reply.css": [2, 11], "15-settings-pages.css": [3, 17], "15-settings-phone.css": [3, 1],
