@@ -122,7 +122,7 @@ self.addEventListener("push", ev => {
     icon: "/icons/icon-192.png",
     badge: "/icons/badge-96.png",   // Android draws it as a white mask: the dotz mark on a transparent background
     ...(actions.length ? { actions } : {}),
-    data: { url: m.url || "/", ts: m.id ? "" : m.ts || "", id: m.id || "", pc: m.pc || "" },
+    data: { url: m.url || "/", ts: m.id ? "" : m.ts || "", id: m.id || "", nid: m.nid || "", pc: m.pc || "" },
   });
   ev.waitUntil((async () => {
     const wins = m.pc ? [] : await self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => []);
@@ -158,8 +158,8 @@ self.addEventListener("notificationclick", ev => {
   ev.notification.close();
   const data = ev.notification.data || {};
   const url = new URL(data.url || "/", location.origin).href;
-  // The message the notification is about: the page makes sure it is loaded before it jumps to it (a cold start gets it as ?m=).
-  const at = data.ts || "", id = data.id || "";
+  // The message the notification is about: the page makes sure it is loaded before it jumps to it (a cold start gets it as ?m=, its notice as ?i=).
+  const at = data.ts || "", id = data.id || "", nid = data.nid || "";
   const openApp = async () => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const win = wins.find(w => new URL(w.url).origin === location.origin);
@@ -171,11 +171,12 @@ self.addEventListener("notificationclick", ev => {
     }
     if (win) {
       await win.focus();
-      win.postMessage({ open: url, ts: at, ...(id ? { notice: id } : {}) });
+      win.postMessage({ open: url, ts: at, ...(nid ? { nid } : {}), ...(id ? { notice: id } : {}) });
       return;
     }
-    const cold = new URL(id ? "/" : url, location.origin);   // a decision opens its sheet over the start screen, not its conversation
+    const cold = new URL(url);   // the conversation draws first; the page then lands on the message (a decision also opens its sheet over it)
     if (at) cold.searchParams.set("m", at);
+    if (nid) cold.searchParams.set("i", nid);
     if (id) cold.searchParams.set("n", id);
     await self.clients.openWindow(cold.href);
   };
