@@ -39,7 +39,9 @@ function measure(scopeSel: string, loose: string, tapsToo: boolean) {
 	// A .wph phrase box (web/js/01-phrase-wrap.js) is an inline-block, but its lines belong to the box around it.
 	const flows = (el: Element) => { const d = getComputedStyle(el).display; return el.classList.contains("wph") || d === "inline" || d === "contents"; };
 	const blockOf = (n: Node) => { let el = n.parentElement; while (el && el !== scope && flows(el)) el = el.parentElement; return el; };
-	const shown = (el: Element) => { const s = getComputedStyle(el); return s.visibility !== "hidden" && s.display !== "none" && el.getClientRects().length > 0; };
+	// WebKit still gives boxes to what a closed <details> folds away, so only its summary counts as shown.
+	const folded = (el: Element) => { const d = el.closest("details:not([open])"); return !!d && !d.querySelector(":scope > summary")?.contains(el); };
+	const shown = (el: Element) => { const s = getComputedStyle(el); return s.visibility !== "hidden" && s.display !== "none" && el.getClientRects().length > 0 && !folded(el); };
 	// overflow-y: auto also computes overflow-x to auto, so a box that scrolls vertically is not a horizontal scroller.
 	const inScroller = (el: Element) => { for (let x: Element | null = el; x && x !== document.documentElement; x = x.parentElement) { const o = getComputedStyle(x).overflowX; if ((o === "auto" || o === "scroll") && x.scrollHeight <= x.clientHeight + 1) return true; } return false; };
 
