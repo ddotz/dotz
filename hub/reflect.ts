@@ -1,16 +1,18 @@
 // Nightly self-review. The gateway pre-digests the last 24h (owner corrections, failures, alerts, token use) so the
 // model reviews a few hundred tokens of facts instead of reading logs, and skips the turn entirely on a quiet day.
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, watch, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pushBackup, unstageSecrets } from "./backup.ts";
-import { cfg, DATA_DIR, DEFAULTS, log, paths } from "./config.ts";
+import { issueBlock } from "./choices.ts";
+import { cfg, DATA_DIR, DEFAULTS, log, paths, writeAtomic } from "./config.ts";
+import { type Correction, TOPIC_NAMES, type Topic, topicOf } from "./corrections.ts";
 import { msg, withReplyLine } from "./i18n.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { trackTimer } from "./shutdown.ts";
 import { auditSummaryLine } from "./token-audit.ts";
 
-const CORRECTION = /(아니|말고|하지\s*마|하지마|왜\s|다시|틀렸|잘못|그게 아니|no,|don't|stop)/i;
 const DAY = 24 * 3600_000;
+const WEEK = 7 * DAY;
 
 function jsonl(file: string, since: number): Record<string, any>[] {
 	if (!existsSync(file)) return [];
@@ -47,9 +49,31 @@ function usage(sessionFile: string, since: number): string {
 	return `${requests} requests, cache read ${Math.round(read / 1000)}K, cache write ${Math.round(write / 1000)}K, full rewrites >30K: ${busts}`;
 }
 
+const ledger = (since: number): Correction[] => jsonl(paths.corrections, since) as Correction[];
 // The owner's messages of the last 24h that read like a correction or a repeat (the digest lists them; repeatedLessons matches lessons against them).
-export function ownerCorrections(now = Date.now()): string[] {
-	return jsonl(paths.inbox, now - DAY).filter(e => (e.kind === "message" || e.kind === "lane_message") && CORRECTION.test(String(e.text))).map(e => String(e.text));
+export const ownerCorrections = (now = Date.now()): string[] => ledger(now - DAY).map(e => e.text);
+
+// The ledger's day by topic, biggest first: every topic keeps its count, and examples go to the topics in turns until the block is full, so a
+// heavy day costs the same as a quiet one. The old list of 10 at 160 chars was about 1950 chars; this adds 650 (about 0.3K tokens).
+export const CORRECTIONS_MAX_CHARS = 2600;
+const EXAMPLES = 3;
+const EXAMPLE_CHARS = 110;
+export function correctionBlock(entries: readonly Correction[]): string[] {
+	const groups = new Map<Topic, Correction[]>();
+	for (const e of entries) groups.set(e.topic, [...(groups.get(e.topic) ?? []), e]);
+	const topics = [...groups].sort((a, b) => b[1].length - a[1].length).map(([topic, list]) => ({ topic, list: list.toReversed(), shown: [] as string[] }));
+	let room = CORRECTIONS_MAX_CHARS - topics.length * 40;
+	for (let turn = 0; turn < EXAMPLES; turn++) {
+		for (const t of topics) {
+			const e = t.list[turn];
+			if (!e) continue;
+			const line = `  - ${e.text.replace(/\s+/g, " ").slice(0, EXAMPLE_CHARS)}${e.message_id ? ` (src: discord ${e.message_id})` : ` (src: ${e.conv} ${String(e.ts).slice(0, 16)})`}${e.attachments.length ? ` [${e.attachments.length} file]` : ""}`;
+			if (line.length + 1 > room) continue;
+			room -= line.length + 1;
+			t.shown.push(line);
+		}
+	}
+	return [`possible corrections or repeats (${entries.length}), by topic; whole text, attachments and the answer before each: ${paths.corrections}`, ...topics.flatMap(t => [`- ${t.topic}: ${t.list.length}`, ...t.shown])];
 }
 
 export function digest(sessionFile: string, now = Date.now()): string | undefined {
@@ -62,13 +86,11 @@ export function digest(sessionFile: string, now = Date.now()): string | undefine
 	const logLines = existsSync(paths.log) ? readFileSync(paths.log, "utf8").split("\n").filter(l => Date.parse(l.slice(0, 24)) >= since) : [];
 	const count = (re: RegExp) => logLines.filter(l => re.test(l)).length;
 	const short = (t: unknown, n = 160) => String(t ?? "").replace(/\s+/g, " ").slice(0, n);
-	const corrections = owner.filter(e => CORRECTION.test(String(e.text)));
 	const audit = auditSummaryLine(now);
 	return [
 		`owner messages: ${owner.length} (${[...new Set(owner.map(e => e.channel ?? e.source))].join(", ")})`,
-		`possible corrections or repeats (${corrections.length}):`,
 		// The message id is the source the reflection cites in memory/observations.md.
-		...corrections.slice(-10).map(e => `- ${short(e.text)}${e.message_id ? ` (src: discord ${e.message_id})` : ` (src: ${e.channel ?? e.source} ${String(e.ts).slice(0, 16)})`}`),
+		...correctionBlock(ledger(since)),
 		`lane trouble (${laneTrouble.length}):`,
 		...laneTrouble.slice(-8).map(e => `- ${e.lane}: ${short(e.text)}`),
 		`alerts sent (${outbox.filter(e => e.target === "alert").length}):`,
@@ -88,6 +110,121 @@ function laneUsage(since: number): string[] {
 		const u = usage(JSON.parse(readFileSync(file, "utf8")).sessionFile ?? "", since);
 		return u === "n/a" || u.startsWith("0 requests") ? [] : [`lane ${name} tokens: ${u}`];
 	});
+}
+
+// The lesson lines count by topic: a line can name its own with "(topic: ui)", else its words decide.
+const TOPIC_TAG = /\(topic:\s*([a-z-]+)\)/i;
+const BULLET = /^\s*[-*]\s/;
+function lessonTopic(line: string): Topic {
+	const tag = TOPIC_TAG.exec(line)?.[1].toLowerCase() as Topic | undefined;
+	return tag && TOPIC_NAMES.includes(tag) ? tag : topicOf(line.replace(BROKEN, "").replace(ENFORCED, ""));
+}
+const lessonLines = (text: string): string[] => text.split("\n").filter(l => BULLET.test(l));
+function proseByTopic(text: string): { prose: Map<Topic, number>; enforced: Set<Topic> } {
+	const prose = new Map<Topic, number>(), enforced = new Set<Topic>();
+	for (const line of lessonLines(text)) {
+		const topic = lessonTopic(line);
+		if (ENFORCED.test(line)) enforced.add(topic);
+		else prose.set(topic, (prose.get(topic) ?? 0) + 1);
+	}
+	return { prose, enforced };
+}
+/** Topics where another prose lesson is refused: they hold prose and no line that names an enforcer. */
+export function proseClosedTopics(text: string): Topic[] {
+	const { prose, enforced } = proseByTopic(text);
+	return [...prose.keys()].filter(t => t !== "other" && !enforced.has(t));
+}
+
+export type RejectedLesson = { line: string; topic: Topic; why: "prose" | "cap" };
+// What a change to LESSONS.md may keep. A topic with prose and no enforcer cannot grow in prose lines (rewording and merging do not grow it, so
+// they pass), and new lines cannot push the file past the one cap. Untouched lines are never removed: a file already over the cap only stops growing.
+export function admitLessons(before: string, after: string): { text: string; rejected: RejectedLesson[] } {
+	const known = new Set(lessonLines(before));
+	const was = proseByTopic(before).prose, now = proseByTopic(after);
+	const rejected: RejectedLesson[] = [];
+	const added = lessonLines(after).filter(l => !known.has(l) && !ENFORCED.test(l));
+	const over = new Map<Topic, number>();
+	for (const line of added.toReversed()) {
+		const topic = lessonTopic(line);
+		if (topic === "other" || now.enforced.has(topic)) continue;
+		const excess = (now.prose.get(topic) ?? 0) - Math.max(was.get(topic) ?? 0, 1) - (over.get(topic) ?? 0);   // the first line of a new topic is free
+		if (excess <= 0) continue;
+		over.set(topic, (over.get(topic) ?? 0) + 1);
+		rejected.push({ line, topic, why: "prose" });
+	}
+	const without = (text: string, line: string) => text.replace(`${line}\n`, "").replace(line, "");
+	let text = rejected.reduce((t, r) => without(t, r.line), after);
+	for (const line of lessonLines(text).filter(l => !known.has(l)).toReversed()) {
+		if (Buffer.byteLength(text) <= LESSONS_MAX_BYTES) break;
+		text = without(text, line);
+		rejected.push({ line, topic: lessonTopic(line), why: "cap" });
+	}
+	return { text, rejected };
+}
+
+// The file is written by the model's edit tool, so the gate reads what landed: the accepted text is the baseline, a refused line is taken back out
+// and the session that wrote it is told why, once.
+let acceptedLessons: string | undefined;
+export function gateLessons(tell: (text: string) => void, reset = false): RejectedLesson[] {
+	if (reset) acceptedLessons = undefined;
+	const text = existsSync(paths.lessons) ? readFileSync(paths.lessons, "utf8") : "";
+	if (acceptedLessons === undefined || text === acceptedLessons) {
+		acceptedLessons = text;
+		return [];
+	}
+	const r = admitLessons(acceptedLessons, text);
+	acceptedLessons = r.text;
+	if (r.rejected.length) {
+		writeAtomic(paths.lessons, r.text);
+		log(`lessons gate: refused ${r.rejected.length} line(s)`);
+		tell(msg().lessonsRefused(r.rejected, LESSONS_MAX_BYTES));
+	}
+	return r.rejected;
+}
+
+export type RepeatAlert = { key: string; topic: Topic; count: number; broken: number; examples: string[] };
+// Three corrections on one topic in 7 days, or a lesson found broken on two nights: the words have failed, so the gateway says so itself, one card
+// per topic per 7 days. "other" holds no one subject, so it never counts; a broken lesson of no topic stands alone under its own key.
+export function dueAlerts(entries: readonly Correction[], lessons: string, sent: Record<string, number>, now: number): RepeatAlert[] {
+	const due = new Map<string, RepeatAlert>();
+	const week = entries.filter(e => Date.parse(e.ts) >= now - WEEK && e.topic !== "other");
+	for (const e of week) {
+		const a = due.get(e.topic) ?? { key: e.topic, topic: e.topic, count: 0, broken: 0, examples: [] };
+		a.count++;
+		a.examples = [e.text.replace(/\s+/g, " ").slice(0, 120), ...a.examples].slice(0, EXAMPLES);
+		due.set(e.topic, a);
+	}
+	for (const [key, a] of due) if (a.count < 3) due.delete(key);
+	for (const c of lessonChecks(lessons, []).filter(c => c.broken >= 2)) {
+		const topic = lessonTopic(c.line);
+		const key = topic === "other" ? `lesson:${c.line.slice(0, 60)}` : topic;
+		const a = due.get(key) ?? { key, topic, count: 0, broken: 0, examples: [] };
+		a.broken = Math.max(a.broken, c.broken);
+		a.examples = [c.line.slice(0, 120), ...a.examples].slice(0, EXAMPLES);
+		due.set(key, a);
+	}
+	return [...due.values()].filter(a => now - (sent[a.key] ?? -Infinity) >= WEEK);
+}
+
+const readSent = (): Record<string, number> => {
+	try {
+		return JSON.parse(readFileSync(paths.repeatAlerts, "utf8"));
+	} catch {
+		return {};
+	}
+};
+/** Posts the due cards. It only proposes: opening the fix is the owner's answer on the card. A card that failed to post stays due. */
+export async function sendRepeatAlerts(post: (text: string) => Promise<unknown>, now = Date.now()): Promise<RepeatAlert[]> {
+	const sent = readSent();
+	const lessons = existsSync(paths.lessons) ? readFileSync(paths.lessons, "utf8") : "";
+	const due = dueAlerts(ledger(now - WEEK), lessons, sent, now);
+	for (const a of due) {
+		const m = msg();
+		await post(`${m.repeatAlert(a)}\n\n${issueBlock(m.repeatAlertQuestion, m.repeatAlertOptions)}`);
+		sent[a.key] = now;
+		writeAtomic(paths.repeatAlerts, `${JSON.stringify(sent)}\n`);
+	}
+	return due;
 }
 
 // Local history of the files the bot edits itself (rules, lessons, identity, schedules), so a bad edit can be undone.
@@ -218,7 +355,8 @@ function candidateBlock(now: number, corrections: readonly string[] = []): strin
 	// two nights is listed even on a quiet day of matches, since it is a repeat by count, not by words.
 	const checks = existsSync(paths.lessons) ? lessonChecks(readFileSync(paths.lessons, "utf8"), corrections) : [];
 	const shown = corrections.length ? checks : checks.filter(c => c.broken >= 2);
-	return lessonBlock(now) + (shown.length ? msg().lessonRepeats(shown.map(c => ({ ...c, likely: c.score >= LIKELY })), localMd(now)) : "") + (stale.length ? msg().staleObservations(stale) : "");
+	const closed = existsSync(paths.lessons) ? proseClosedTopics(readFileSync(paths.lessons, "utf8")) : [];
+	return lessonBlock(now) + (closed.length ? msg().lessonGate(closed) : "") + (shown.length ? msg().lessonRepeats(shown.map(c => ({ ...c, likely: c.score >= LIKELY })), localMd(now)) : "") + (stale.length ? msg().staleObservations(stale) : "");
 }
 
 function lessonBlock(now: number): string {
@@ -237,7 +375,16 @@ if (import.meta.main && process.argv[2] === "--candidates" && process.argv[3]) {
 	console.log(JSON.stringify(lessonCandidates(readFileSync(process.argv[3], "utf8"), Date.now()), null, 2));
 }
 
-export function startReflection(deliver: (text: string) => void, sessionFile: () => string): void {
+export function startReflection(deliver: (text: string) => void, sessionFile: () => string, post: (text: string) => Promise<unknown>): void {
+	gateLessons(deliver, true);
+	let gate: ReturnType<typeof setTimeout> | undefined;
+	// The folder, not the file: an edit that replaces the file by rename ends a watch on the file itself.
+	watch(DATA_DIR, (_, name) => {
+		if (name !== "LESSONS.md") return;
+		clearTimeout(gate);
+		gate = setTimeout(() => gateLessons(deliver), 500);
+		trackTimer("lessons-gate", gate);
+	});
 	const at = String((cfg as { reflect_at?: string }).reflect_at ?? DEFAULTS.reflect_at);
 	if (at === "off") return;
 	const [h, m] = at.split(":").map(Number);
@@ -255,6 +402,7 @@ export function startReflection(deliver: (text: string) => void, sessionFile: ()
 			log("reflection: delivering nightly self-review");
 			deliver(reflectPrompt(d, Date.now(), ownerCorrections()));
 		} else log("reflection: quiet day, skipped");
+		await sendRepeatAlerts(post).catch(e => log(`repeat alerts failed: ${e}`));
 		trackTimer("reflection", setTimeout(run, next()));
 	};
 	trackTimer("reflection", setTimeout(run, next()));

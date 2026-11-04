@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { paths } from "./config.ts";
-import { digest, lessonCandidates, lessonChecks, lessonScore, reflectPrompt, repeatedLessons } from "./reflect.ts";
+import type { Correction } from "./corrections.ts";
+import { admitLessons, correctionBlock, CORRECTIONS_MAX_CHARS, digest, dueAlerts, gateLessons, lessonCandidates, lessonChecks, lessonScore, proseClosedTopics, reflectPrompt, repeatedLessons, sendRepeatAlerts } from "./reflect.ts";
 
 const DAY = 24 * 3600_000;
 const now = Date.UTC(2026, 9, 19);
+const correction = (text: string, topic: Correction["topic"], ts = new Date(now - 3600_000).toISOString(), message_id?: string): Correction => ({ ts, topic, conv: "web", text, attachments: [], previous: "", ...(message_id ? { message_id } : {}) });
 
 test("stale: exactly 90 days old is kept, 91 days is flagged", () => {
 	const exact = "- [2026-07-21] exactly ninety days";
@@ -29,10 +31,13 @@ test("dates do not count as overlap and tokens are case-insensitive", () => {
 
 test("the digest cites the Discord message id of an owner correction, the source of an observation line", () => {
 	const had = existsSync(paths.inbox) ? readFileSync(paths.inbox, "utf8") : undefined;
-	writeFileSync(paths.inbox, `${JSON.stringify({ ts: new Date(now - 3600_000).toISOString(), kind: "message", channel: "chat", message_id: "1561556210908667915", text: "아니 그거 하지 마" })}\n`);
+	const at = new Date(now - 3600_000).toISOString();
+	writeFileSync(paths.inbox, `${JSON.stringify({ ts: at, kind: "message", channel: "chat", message_id: "1561556210908667915", text: "아니 그거 하지 마" })}\n`);
+	writeFileSync(paths.corrections, `${JSON.stringify(correction("아니 그거 하지 마", "misread", at, "1561556210908667915"))}\n`);
 	try {
-		expect(digest("", now)).toContain("- 아니 그거 하지 마 (src: discord 1561556210908667915)");
+		expect(digest("", now)).toContain("  - 아니 그거 하지 마 (src: discord 1561556210908667915)");
 	} finally {
+		rmSync(paths.corrections, { force: true });
 		if (had === undefined) rmSync(paths.inbox);
 		else writeFileSync(paths.inbox, had);
 	}
@@ -111,4 +116,105 @@ test("the nightly prompt hands over every unenforced lesson on a day with correc
 
 test("trailer dates are not lesson words: two lessons sharing only (broken: ...) dates are no duplicates", () => {
 	expect(lessonCandidates("- [10-01] alpha beta (broken: 10-02, 10-03)\n- [10-04] gamma delta (broken: 10-02, 10-03)", now).duplicates).toEqual([]);
+});
+
+test("a heavy day groups every topic with its count and stays inside the block's size", () => {
+	const topics = ["ui", "copy", "stalled", "not-applied", "misread", "duplicate", "no-card", "linebreak", "missing-output", "ignored-setting"] as const;
+	const day = Array.from({ length: 100 }, (_, i) => correction(`${i}번 메시지 ${"가".repeat(300)}`, topics[i % 3 === 0 ? 0 : i % topics.length]));
+	const block = correctionBlock(day).join("\n");
+	expect(block.length).toBeLessThanOrEqual(CORRECTIONS_MAX_CHARS + 200);
+	expect(block).toContain("(100), by topic");
+	for (const t of topics) expect(block).toMatch(new RegExp(`^- ${t}: \\d+$`, "m"));
+	expect(block.indexOf("- ui:")).toBeLessThan(block.indexOf("- copy:"));
+});
+
+test("three corrections on one topic raise exactly one alert, and the same topic stays quiet for 7 days", async () => {
+	const ts = [3, 2, 1].map(d => new Date(now - d * DAY).toISOString());
+	writeFileSync(paths.corrections, `${ts.map((t, i) => JSON.stringify(correction(`여백이 이상함 ${i}`, "ui", t))).join("\n")}\n`);
+	const posted: string[] = [];
+	const post = async (text: string) => void posted.push(text);
+	try {
+		expect((await sendRepeatAlerts(post, now)).map(a => a.key)).toEqual(["ui"]);
+		expect(await sendRepeatAlerts(post, now + DAY)).toEqual([]);
+		expect(posted).toHaveLength(1);
+		expect(posted[0]).toContain("여백이 이상함 2");
+		expect(posted[0]).toMatch(/^결정: /m);
+		expect(posted[0]).toMatch(/^\*\*1\) .+ ← /m);
+	} finally {
+		rmSync(paths.corrections, { force: true });
+		rmSync(paths.repeatAlerts, { force: true });
+	}
+});
+
+test("a repeat card is due at 3 in 7 days and not at 2, older ones do not count, and the 7 days reopen", () => {
+	const at = (d: number) => new Date(now - d * DAY).toISOString();
+	const rows = [correction("a", "ui", at(1)), correction("b", "ui", at(2))];
+	expect(dueAlerts(rows, "", {}, now)).toEqual([]);
+	expect(dueAlerts([...rows, correction("c", "ui", at(8))], "", {}, now)).toEqual([]);
+	expect(dueAlerts([...rows, correction("c", "other", at(1)), correction("d", "other", at(1))], "", {}, now)).toEqual([]);
+	const three = [...rows, correction("c", "ui", at(3))];
+	expect(dueAlerts(three, "", { ui: now - 6 * DAY }, now)).toEqual([]);
+	expect(dueAlerts(three, "", { ui: now - 7 * DAY }, now).map(a => a.count)).toEqual([3]);
+});
+
+test("a lesson broken on two nights raises a card under its topic, merged with that topic's corrections; an enforced one does not", () => {
+	const broken = "- [10-02] Keep the icon spacing even (broken: 10-03, 10-05)";
+	const a = dueAlerts([], broken, {}, now);
+	expect(a.map(x => [x.key, x.broken])).toEqual([["ui", 2]]);
+	const rows = ["a", "b", "c"].map(t => correction(t, "ui"));
+	expect(dueAlerts(rows, broken, {}, now).map(x => [x.key, x.count, x.broken])).toEqual([["ui", 3, 2]]);
+	expect(dueAlerts([], `${broken} (enforced: hub/x.test.ts)`, {}, now)).toEqual([]);
+	expect(dueAlerts([], "- [10-02] Sign the tag (broken: 10-03, 10-05)", {}, now).map(x => x.key)).toEqual(["lesson:- [10-02] Sign the tag (broken: 10-03, 10-05)"]);
+});
+
+test("a topic with prose and no enforcer refuses more prose; an enforced line, a rewording and another topic pass", () => {
+	const before = "# Lessons\n- [10-01] Keep the icon spacing even\n";
+	const more = "- [10-02] Compare the layout at both widths";
+	expect(proseClosedTopics(before)).toEqual(["ui"]);
+	const refused = admitLessons(before, `${before}${more}\n`);
+	expect(refused.text).toBe(before);
+	expect(refused.rejected).toEqual([{ line: more, topic: "ui", why: "prose" }]);
+	const enforced = `${before}${more} (enforced: hub/layout.test.ts)\n`;
+	expect(admitLessons(before, enforced)).toEqual({ text: enforced, rejected: [] });
+	const opened = `${enforced}- [10-03] Check the icon size\n`;
+	expect(admitLessons(enforced, opened).rejected).toEqual([]);
+	const reworded = "# Lessons\n- [10-01] Keep every icon spacing even\n";
+	expect(admitLessons(before, reworded).rejected).toEqual([]);
+	const other = `${before}- [10-02] Sign the release tag\n`;
+	expect(admitLessons(before, other).rejected).toEqual([]);
+	const tagged = `${before}- [10-02] Sign the release tag (topic: ui)\n`;
+	expect(admitLessons(before, tagged).rejected.map(r => r.topic)).toEqual(["ui"]);
+});
+
+test("the first prose line of a new topic is free and the second is not", () => {
+	const after = "- [10-01] Keep the icon spacing even\n- [10-02] Compare the layout at both widths\n";
+	expect(admitLessons("", after).rejected.map(r => r.line)).toEqual(["- [10-02] Compare the layout at both widths"]);
+});
+
+test("new lines cannot pass the one cap, while a file already over it keeps its lines", () => {
+	const old = `- [10-01] ${"x ".repeat(1600)}\n`;
+	const line = "- [10-02] Sign the release tag";
+	const r = admitLessons(old, `${old}${line}\n`);
+	expect(r.text).toBe(old);
+	expect(r.rejected).toEqual([{ line, topic: "other", why: "cap" }]);
+	expect(admitLessons(`${old}- [10-03] a\n`, old).rejected).toEqual([]);
+});
+
+test("the gate takes a refused line back out of the file and tells the session once; the prompt names the closed topics", () => {
+	const before = "# Lessons\n- [10-01] Keep the icon spacing even\n";
+	const more = "- [10-02] Compare the layout at both widths";
+	writeFileSync(paths.lessons, before);
+	const told: string[] = [];
+	try {
+		gateLessons(t => told.push(t), true);
+		writeFileSync(paths.lessons, `${before}${more}\n`);
+		expect(gateLessons(t => told.push(t)).map(r => r.line)).toEqual([more]);
+		expect(readFileSync(paths.lessons, "utf8")).toBe(before);
+		expect(gateLessons(t => told.push(t))).toEqual([]);
+		expect(told).toHaveLength(1);
+		expect(told[0]).toContain(more);
+		expect(reflectPrompt("digest", now)).toContain("ui");
+	} finally {
+		rmSync(paths.lessons, { force: true });
+	}
 });
