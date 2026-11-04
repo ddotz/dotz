@@ -37,7 +37,7 @@ function rtReportView(r, report) {
   return el("div", { class: "rt-rep", style: "display:flex;flex-direction:column;gap:var(--sp-2)" },
     el("p", { text: sum }), el("div", { class: "note", text: `검사 ${meta}` }),
     el("div", { class: "list rt-rows" }, ...report.items.map(i => el("div", { class: "rt-row" },
-      el("div", { class: "top" }, el("span", { class: "nm", text: i.label }), i.core ? el("span", { class: "tag", text: "핵심" }) : null, el("span", { class: "sp" }), rtBadge(i)),
+      el("div", { class: "top" }, el("span", { class: "nm", title: i.label, text: i.label }), i.core ? el("span", { class: "tag", text: "핵심" }) : null, el("span", { class: "sp" }), rtBadge(i)),
       i.note ? el("div", { class: "sup", text: i.note }) : null))));
 }
 function rtFlow(r) {
