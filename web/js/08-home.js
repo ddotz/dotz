@@ -311,7 +311,7 @@ const homeGreetWord = () => { const h = new Date().getHours(); return h < 5 ? "�
 function homeGreeting() {
   const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, live = liveModel(MAIN), [base, level] = String(live.sel || "").split(":");
   const modelText = om && base ? (modelName(base).includes("-") ? modelChipText(base) : modelName(base)) : "";
-  const word = !S ? "연결 중" : o.status === "working" || o.status === "starting" ? "일하는 중" : o.status === "idle" ? "쉬는 중" : statusKo(o.status);
+  const word = !S ? "연결 중" : o.status === "working" || o.status === "starting" || (o.status === "idle" && workRunning().length) ? "일하는 중" : o.status === "idle" ? "쉬는 중" : statusKo(o.status);
   const lanes = ((S && S.lanes) || []).filter(laneAlive).length, me = (typeof prSelf === "function" && (prSelf() || {}).name) || "";
   const line = [`${iGa(botName)} ${word}`, modelText && `${modelText}${level ? ` · ${thinkKo(level)}` : ""}`, lanes ? `세션 ${lanes}개` : "", me, kstHM(Date.now())].filter(Boolean).join(" · ");
   const more = el("button", { class: "ib hgreet-more", type: "button", "aria-label": "어시스턴트 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => homeMenu(ev.currentTarget, MAIN) }, icon("more"));
