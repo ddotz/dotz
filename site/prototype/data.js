@@ -181,7 +181,7 @@ window.D = (() => {
     ["home", "홈", "상태 한눈에"], ["chat", "채팅", "대화 목록"], ["chat/formats", "답 형식 모음", "채팅 출력 형식"], ["projects", "프로젝트", "프로젝트 목록"],
     ["monitoring", "모니터링", "감시와 앱"], ["mail", "메일", "받은 편지함"], ["mail/compose", "메일 쓰기", "새 메일"], ["kakao", "카카오톡", "지켜보는 방"],
     ["comments", "댓글", "유튜브 · 인스타그램 · 웹사이트"], ["notices", "알림", "알림 목록"], ["settings", "설정", "모든 설정"], ["settings/providers", "공급자와 모델", "모델 설정"],
-    ["settings/messengers", "메신저", "Discord · Slack"], ["apps", "앱", "앱 관리"], ["peers", "컴퓨터", "다른 컴퓨터"], ["index", "화면 목록", "프로토타입 전체"],
+    ["settings/messengers", "메신저", "Discord · Slack"], ["form", "카드 추가", "새 폼 시안"], ["apps", "앱", "앱 관리"], ["peers", "컴퓨터", "다른 컴퓨터"], ["index", "화면 목록", "프로토타입 전체"],
   ];
   return D;
 })();
