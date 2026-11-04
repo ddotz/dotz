@@ -1590,7 +1590,7 @@ textarea.fi { display: block; height: auto; padding: 8px 10px; line-height: 18px
 #v-chat > .subs .sublist { padding: 4px; border-radius: var(--r-ctl); background: var(--layer); }
 /* 타임라인 위아래 페이드는 흰 카드에서 흰색으로 사라져야 해요 (03-base의 --bg 페이드 위에) */
 /* 위쪽 가장자리는 가는 선: 스크롤로 잘린 줄이 할 일 스트립 밑에 깔린 듯 카드색으로 흐려지지 않게 (스트립은 제 자리를 가져요) */
-#v-chat .chatbox::before { left: 12px; right: 12px; height: 1px; background: var(--line); }
+#v-chat .chatbox::before { background: linear-gradient(var(--card), transparent); }
 #v-chat .chatbox::after { background: linear-gradient(transparent, var(--card)); }
 
 /* ---------- 컴포저: 시제품 .cmp — [첨부 · 글 · 원형 전송] 회색 18px 상자 (모든 입력 줄의 공통 기반) ----------
@@ -1979,16 +1979,18 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
    its time. 31-conversations.js bellRows draws the list; 30-notices.js ntHomeRow the row. A tab's list is read-only, so the composer steps aside. */
 #v-chat.bell-on > .composer { display: none; }
 /* the chip row is the prototype's tab row: small boxes, the chosen one filled */
-#v-chat.bell-on > .bell { align-items: center; gap: 4px; margin: 0 0 12px; padding: 0; }
-#v-chat.bell-on > .bell .chip { height: 30px; padding: 0 12px; }
-#v-chat.bell-on > .bell-list { padding: 0 0 12px; }
+/* One frame for every filter, the composer of 전체 or none: the filter row 12px inside the card, the content 12px under it, 12px at the bottom (owner 2026-11-04). */
+#v-chat.bell-view > .bell { align-items: center; gap: 4px; margin: 12px; padding: 0; }
+#v-chat.bell-view > .bell .chip { height: 32px; padding: 0 8px; }
+#v-chat.bell-on > .bell-list { padding: 0 12px 12px; }
 .bell-meta { padding: 0 4px 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .bell-meta b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
 .bell-note { margin: 8px 4px 0; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .bell-card { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .bell-card .hn { display: flex; flex-direction: column; gap: 0; border-radius: 0; background: none; overflow: visible; }
 .bell-card .hr { min-height: 60px; border-radius: 0; background: transparent; box-shadow: none; }
-.bell-card .hr + .hr { border-top: 1px solid var(--line); }
+.bell-card .hr + .hr, .bell-card .hrx + .hrx { border-top: 1px solid var(--line); }
+.bell-card .hrx { border-radius: 0; }
 .bell-card .hr:hover { background: var(--card-hover); }
 .bell-card .hr .hb { gap: 2px; }
 .bell-card .hr .ha { color: var(--fg-2); }
@@ -2097,7 +2099,17 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 /* 목록 행 (시제품 채팅 목록 proto .li) — 모든 너비의 공통 기반이에요: 48px 두 줄, 36px 둥근 사각 아이콘 면, 오른쪽 시각·대기 표시, 구분선 한 줄, 고른 행은 회색 면.
    프로젝트·모니터링 목록 패널도 이 형식(.cv-side 안의 .cv-row)에 맞춰요. */
 #chat-convo { padding: 0; }
-#chat-convo .cv-bar { padding: 8px 8px 4px; }
+/* 채팅 목록 (proto listHtml): 필터 알약은 바탕 위에, 대화는 한 장의 카드에, '메일 · 카카오톡'은 제목과 그 아래 카드로. */
+#chat-convo:not(.mon-side) { background: transparent; border-radius: 0; }
+#chat-convo:not(.mon-side) .cv-bar { flex-wrap: wrap; gap: 6px; padding: 4px 0 12px; border: 0; background: var(--bg); }
+#chat-convo:not(.mon-side) .cv-tabs { flex-wrap: wrap; gap: 6px; overflow: visible; }
+.cv-foot { display: flex; justify-content: center; margin-top: 8px; }
+#chat-convo:not(.mon-side) .cv-tabs .cchip { height: 32px; padding: 0 14px; border-radius: 16px; background: transparent; color: var(--fg-2); font: 500 13px/32px var(--font); }
+#chat-convo:not(.mon-side) .cv-tabs .cchip:hover { background: var(--layer); }
+#chat-convo:not(.mon-side) .cv-tabs .cchip.on { background: var(--fg); color: var(--bg); font-weight: 600; }
+.cv-card { overflow: hidden; border-radius: var(--r-card); background: var(--card); }
+.cv-sec { margin: 24px 4px 8px; color: var(--fg-2); font: 600 14px/20px var(--font); }
+#chat-convo .cv-bar:not(:has(.cv-tabs)) { padding: 8px 8px 4px; }
 #chat-convo .cv-gh { padding: 12px 16px 4px; }
 #chat-convo .cv-row { min-height: 48px; padding: 8px 16px; gap: 12px; border-radius: 0; }
 #chat-convo .cv-row + .cv-row { margin-top: 0; border-top: 1px solid var(--line); }
@@ -2701,7 +2713,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .trban[hidden] { display: none; }
 .trban .ic { flex: none; width: 18px; height: 18px; color: var(--accent); }
 .trban .tx { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.trban .go { flex: none; padding: 4px 12px; border-radius: var(--r-ctl); background: var(--accent); color: var(--on-accent); font-size: 13px; }
+.trban .go { flex: none; color: var(--accent); font-size: 13px; font-weight: 600; }
 .trban:hover { background: color-mix(in srgb, var(--accent) 18%, var(--card)); }
 .trban:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -3126,7 +3138,8 @@ a.dr-att:active { background: var(--active); }
 @media (max-width: 1099px) { .kk-owed:not([hidden]) { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: var(--r-card); background: var(--card); } }
 .kk-box { position: relative; flex: 1 0 auto; min-height: 260px; display: flex; border-radius: var(--r-card); background: var(--kk-bg); overflow: hidden; }
 .kk-chat > .kk-box { flex: 1 0 260px; }
-.kk-tl { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 12px 12px 8px; }
+/* Messages leaving the list fade out at both edges instead of being cut; the padding keeps the first and last one clear of the fade at rest. */
+.kk-tl { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 12px 12px 8px; -webkit-mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); mask-image: linear-gradient(transparent, #000 12px, #000 calc(100% - 12px), transparent); }
 /* the chat window's column is centered with a width cap: on a wide pane both sides keep the same distance to the edge, like a KakaoTalk window */
 .kk-in { display: flex; flex-direction: column; gap: 2px; width: 100%; max-width: 680px; min-width: 0; margin: 0 auto; }
 .kk-in > .kk-note { margin: auto; color: var(--kk-time); }
@@ -3739,7 +3752,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
 .mbox-reply.open .mbox-rb { padding: 4px 0 0; overflow: visible; }
 .mbox-reply .mbox-sf { padding: 12px 0 0; }
 .mbox-quote { margin: 8px 0 4px; color: var(--fg-3); font-size: 13px; }
-.mbox-quote summary { display: flex; align-items: center; width: fit-content; height: 28px; padding: 0 12px; border-radius: 14px; background: var(--layer); font-weight: 500; line-height: 20px; cursor: pointer; }
+.mbox-quote summary { display: flex; align-items: center; width: fit-content; height: 28px; padding: 0 8px; border-radius: var(--r-ctl); color: var(--fg-2); font-weight: 500; line-height: 20px; cursor: pointer; }
 .mbox-qt { max-height: 220px; margin: 6px 0 0; padding-left: 10px; overflow: auto; border-left: 2px solid var(--line-2); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* A phone keeps the sender's name whole: the unread tag is the bold row itself (the row's aria-label still says 안 읽음), the paperclip count

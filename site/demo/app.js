@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "b4510e53e323";
+const WEB_BUILD = "9fd876b13397";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -1445,7 +1445,9 @@ function go(name, tgt) {
   if (name === "devices" || name === "settings") loadDevices();
   if (name === "webaccess" || name === "settings") loadWebAccess();
   if (name === "webaccess") loadOnboarding("web-access");
-  motionView(tv ? "chat" : name, [...$("#views").children].filter(v => !v.hidden), !tv);   // a different view rises in; the same view drawn again, and the first paint, do not move
+  // A different view rises in; the same view drawn again, and the first paint, do not move. Moving inside 모니터링 (a list to its item) is one screen,
+  // and a mail opening is plain content: neither replays the rise (owner 2026-11-04).
+  motionView(mc ? "monitoring" : tv ? "chat" : name, tv && isMailT(target) ? [] : [...$("#views").children].filter(v => !v.hidden), !tv);
   window.dotzCustom && dotzCustom.view(name, tgt);
 }
 // Entries the app made are handled by popstate; this is for a hash typed into the address bar or an old foreign entry.
@@ -2985,7 +2987,7 @@ function stripChoices(text) {
     if (!CH_OPT.test(lines[i])) { out.push(lines[i]); continue; }
     if (isDescLine(lines[i + 1])) i++;
   }
-  return out.join("\n").replace(/\n{3,}/g, "\n\n");
+  return out.filter(l => !CH_CLOSE.test(l)).join("\n").replace(/\n{3,}/g, "\n\n");
 }
 function parseChoices(text) {
   const OPT = CH_OPT, HEAD = CH_HEAD;
@@ -3023,7 +3025,19 @@ const draftAsksText = o => o.label === DRAFT_EDIT || o.label === DRAFT_OWN;
 const hashOf = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36); };
 // What the target waits on: a session's pendingAsk, else its last bot message when that is an [ask] with a choice block and no
 // owner message came after it. Null when nothing waits (so the card goes away once the answer lands).
+// Several decisions of one message are answered one by one (owner 2026-11-04): each open notice of the group is a block, a pick answers that
+// notice at once and the block leaves the card; the rest wait. A newer question of the conversation takes the dock first.
+function decisionGroup(t) {
+  const open = NT.items.filter(n => ntOpenDec(n) && !n.pc && !n.decision.draft && n.decision.to === t && n.decision.group > 1 && n.decision.reply_to);
+  if (!open.length) return null;
+  const at = open.map(n => n.decision.reply_to).sort().pop(), mine = open.filter(n => n.decision.reply_to === at);
+  return { key: `${t}|g:${at}`, t, sig: `g:${at}`, at, each: true, question: mine.length === 1 ? ntPlain(mine[0].title) : "", blocks: mine.map(n => ({ title: ntPlain(n.title), options: n.decision.options, nd: n })) };
+}
 function decisionOf(t) {
+  const one = decisionOne(t), grp = decisionGroup(t);
+  return grp && !(one && msOf(one.at) > msOf(grp.at)) ? grp : one;
+}
+function decisionOne(t) {
   if (!S) return null;
   const info = targetInfo(t), s = ts(t);
   if (isLaneT(t) && info.known && !info.alive && !info.resumable) return null;
@@ -3082,9 +3096,16 @@ function pickOption(dc, bi, opt, note) {
   DC.picks[dc.key] = p;
   p[bi] = note ? { ...opt, note } : opt;
   delete DC.edit[dc.key]; delete DC.note[dc.key];
+  if (dc.each) { answerEach(dc, bi, opt, note); return; }
   // Several decisions (owner 2026-11-01): a pick only marks that decision (and can be changed); nothing goes out until 보내기 (dcSendAll).
   if (dc.blocks.length > 1) { paintDecision(); return; }
   answerDecision(dc, pickSay(p[0]), p[0], note);
+}
+async function answerEach(dc, bi, opt, note) {
+  DC.st[dc.key] = "sending"; paintDecision();
+  try { await ntPost(dc.blocks[bi].nd, opt.n, note, DC.files[dc.key]); delete DC.files[dc.key]; } catch (e) { toast(e.message, true); }
+  delete DC.st[dc.key]; delete DC.picks[dc.key]; delete DC.step[dc.key];
+  paintDecision();
 }
 function dcSendAll(dc) {
   const p = DC.picks[dc.key] || [];
@@ -3095,7 +3116,7 @@ function dcSendAll(dc) {
 function multiNodes(dc, picks, st) {
   const got = dc.blocks.filter((_, i) => picks[i]).length, all = got === dc.blocks.length;
   return [...dc.blocks.flatMap((b, i) => [el("div", { class: "dc-sub", text: `${picks[i] ? "✓ " : ""}${b.title || `결정 ${i + 1}`}` }), ...b.options.map(o => choiceRow(dc, i, o, picks, st))]),
-    el("button", { class: "btn dc-send", type: "button", disabled: !!st || !all, onclick: () => dcSendAll(dc) }, all ? "보내기" : `보내기 (${got}/${dc.blocks.length} 선택)`)];
+    dc.each ? null : el("button", { class: "btn dc-send", type: "button", disabled: !!st || !all, onclick: () => dcSendAll(dc) }, all ? "보내기" : `보내기 (${got}/${dc.blocks.length} 선택)`)].filter(Boolean);
 }
 // The files a draft sends along (hub/draft-approval.ts `> 첨부:` lines): one row per file, the row opens the file that will go out
 // (GET /api/drafts/<ref>/files/<n>, hub/draft-files.ts; through the peer proxy for a peer's draft). `첨부 없음` = the mail it answers had
@@ -3537,7 +3558,7 @@ function dcPointer(box, n) {
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
-  return JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr, (DC.files[dc.key] || []).length, !!DC.fbusy[dc.key]]);
+  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr, (DC.files[dc.key] || []).length, !!DC.fbusy[dc.key]]);
 }
 // What was decided stays in the conversation once the card is gone (owner 2026-11-03): the owner's answer message already carries the
 // question and the chosen option (hub/intake.ts decisionLines, `picks`), so the record is drawn from it here and from history after a
@@ -8922,7 +8943,7 @@ function rulesDialog() {
         el("button", { type: "button", class: "btn danger", onclick: () => { list().splice(i, 1); paint(); } }, "삭제")),
       field("요일 (선택)", ...days),
       field("시간 (선택)", time("from", "시작"), el("span", { class: "sup", text: "~" }), time("to", "끝")),
-      field("조건", ...condCtl), many ? el("div", { class: "sup", text: "조건이 여러 개예요. 모두 보려면 JSON으로 편집해 주세요." }) : null,
+      field("조건", ...condCtl), many ? el("div", { class: "sup", text: "조건이 여러 개예요. 모두 바꾸려면 채팅에서 말해 주세요." }) : null,
       field("동작", ...doCtl)));
   }
   function paint() {
@@ -9156,9 +9177,8 @@ function renderDiscord() {
   const [tag, tone] = m ? msTag(m) : v.enabled ? (v.connected ? ["연결됨", "ok"] : v.error ? ["연결 안 됨", "err"] : ["연결됨", "ok"]) : ["설정 안 됨", "warn"];
   const guide = v.enabled ? [] : [el("div", { class: "sec", text: "연결하는 방법" }), el("div", { class: "list" }, el("div", { class: "li", "data-dc-guide": "1" }, el("ol", { class: "steps" },
     el("li", { text: "디스코드 개발자 포털(discord.com/developers)에서 새 앱을 만들고 Bot 탭에서 MESSAGE CONTENT를 켠 뒤 봇 토큰을 복사해요" }),
-    el("li", { text: "OAuth2 초대 링크로 내 서버에 봇을 초대해요 (위에서 저장한 뒤 연결 확인을 누르면 초대 링크가 나와요)" }),
-    el("li", { text: "봇 토큰, 서버 ID, 내 사용자 ID를 ‘직접 입력’에 붙여 넣고 저장해요" }),
-    el("li", { text: "터미널에서는 bun setup.ts로도 같은 설정을 할 수 있어요" }))))];
+    el("li", { text: "초대 링크로 내 서버에 봇을 초대해요 (위에서 저장한 뒤 연결 확인을 누르면 초대 링크가 나와요)" }),
+    el("li", { text: "봇 토큰, 서버 ID, 내 사용자 ID를 ‘직접 입력’에 붙여 넣고 저장해요" }))))];
   const det = msAdvanced("data-ms-advanced", DCS.advOpen, () => dcAdvanced(v));
   det.addEventListener("toggle", () => { DCS.advOpen = det.open; });
   clear(box).append(el("div", { class: "sec", text: "연결" }), el("div", { class: "list" },
@@ -9540,7 +9560,7 @@ function webAccessRow(row) {
 function waTunnel(d) {
   const t = d.tunnel || { state: "off" };
   const [text, tone] = t.state === "running" ? ["연결됨", "ok"] : t.state === "starting" ? ["연결 중", "warn"] : t.state === "error" ? ["연결 안 됨", "err"] : ["꺼짐", ""];
-  const hint = !d.cloudflared_found ? "cloudflared가 없어요. 터미널에서 brew install cloudflared 를 실행해 주세요."
+  const hint = !d.cloudflared_found ? "터널 프로그램이 없어요. 채팅에서 ‘웹 접속 설치해 줘’라고 말해 주세요."
     : t.error || (t.state === "running" ? "터널이 열려 있어요" : "");
   return el("div", { class: "li", "data-wa-tunnel": t.state },
     el("span", { class: "lead" }, el("span", { class: `dot ${tone}`, "aria-hidden": "true" })),
@@ -9570,9 +9590,9 @@ async function waPickTailscale(btn) {
 function waAdvanced(d, f) {
   const field = (label, key, opts, hint) => el("div", {}, textField(label, input({ value: f[key], name: `wa-${key}`, ...opts, oninput: ev => { f[key] = ev.target.value; waSync(); } })), hint ? el("div", { class: "sup", text: hint }) : null);
   const out = el("div", {}, el("div", { class: "list" }, el("div", { class: "li dcs-form" },
-    field("주소", "hostname", { placeholder: "dotz.example.com", inputmode: "url" }, "터널의 Public Hostname이에요. 주소를 바꾸면 기기를 다시 연결해야 해요."),
-    field("팀 이름 (선택)", "team", { placeholder: "myteam" }, "Cloudflare Access로 한 번 더 확인할 때만 적어요. AUD와 함께 적어요."),
-    field("AUD (선택)", "aud", {}, "Access 애플리케이션의 Audience Tag예요."),
+    field("주소", "hostname", { placeholder: "dotz.example.com", inputmode: "url" }, "터널에 연결해 둔 주소예요. 주소를 바꾸면 기기를 다시 연결해야 해요."),
+    field("팀 이름 (선택)", "team", { placeholder: "myteam" }, "Cloudflare Access로 한 번 더 확인할 때만 적어요. 확인 번호와 함께 적어요."),
+    field("확인 번호 (선택)", "aud", {}, "Access 앱 화면의 Audience Tag 값이에요."),
     el("div", {}, textField("터널 토큰", input({ type: "password", autocomplete: "new-password", name: "wa-token", placeholder: d.token_set ? "바꾸려면 새로 붙여 넣기" : "eyJ…", oninput: ev => { f.token = ev.target.value; waSync(); } })),
       d.token_set ? el("div", { class: "tag ok dcs-saved", "data-wa-token-set": "1", text: "저장됨" }) : null,
       el("div", { class: "sup", text: "저장하면 이 컴퓨터에만 보관하고, 화면에는 다시 보여 주지 않아요." })),
@@ -9599,7 +9619,7 @@ function renderWebAccess() {
       el("span", { class: "lead" }, icon("key")), el("span", { class: "tx" }, el("div", { class: "hd", text: "연결된 기기 (패스키)" }), el("div", { class: "sup", text: "이 웹앱에 들어올 수 있는 브라우저" })),
       el("span", { class: "li-end" }, el("span", { class: "tag", text: `${d.devices}대` }), icon("chev", "chev")))));
   if (cf && !d.cloudflared_found) nodes.push(el("div", { class: "list" }, el("div", { class: "li" }, el("span", { class: "tx" },
-    el("div", { class: "hd", text: "cloudflared가 없어요" }), el("div", { class: "sup dcs-err", "data-wa-cf-missing": "1", text: "터미널에서 brew install cloudflared 를 실행해 주세요." })))));
+    el("div", { class: "hd", text: "터널 프로그램이 없어요" }), el("div", { class: "sup dcs-err", "data-wa-cf-missing": "1", text: "채팅에서 ‘웹 접속 설치해 줘’라고 말해 주세요." })))));
   const det = msAdvanced("data-wa-advanced", WA.advOpen, () => waAdvanced(d, f));
   det.addEventListener("toggle", () => { WA.advOpen = det.open; });
   nodes.push(det);
@@ -10910,7 +10930,7 @@ function canvasHeader() {
   return el("header", { class: "apps-hd" },
     narrow ? el("button", { class: "ib", type: "button", "aria-label": "캔버스 닫기", title: "닫기", onclick: canvasClose }, icon("back")) : null,
     el("span", { class: "cv-av app-av", "aria-hidden": "true" }, icon("file")),
-    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: CVS.name }), el("p", { class: "apps-p", title: CVS.path, text: `HTML · ${shortPath(CVS.path)}` }), pkHint()),   // the hint under the name (a beside-the-title hint left the name 1px wide in the side pane)
+    el("div", { class: "apps-hb" }, el("h2", { class: "apps-n", text: CVS.name }), el("p", { class: "apps-p", title: CVS.path, text: "화면 파일" }), pkHint()),   // the hint under the name (a beside-the-title hint left the name 1px wide in the side pane)
     el("a", { class: "ib", href: canvasUrl(CVS.path), target: "_blank", rel: "noopener", "aria-label": "새 탭에서 열기", title: "새 탭에서 열기" }, icon("open")),
     narrow ? null : el("button", { class: "ib", type: "button", "aria-label": "캔버스 닫기", title: "닫기", onclick: canvasClose }, icon("close")));
 }
@@ -11462,7 +11482,11 @@ const KK_ASK = "요청을 입력하세요 · 예: 좀 더 짧게";
 const kkTa = el("textarea", { id: "kk-text", rows: "1", autocomplete: "off", maxlength: "500", placeholder: KK_ASK, "aria-label": "답장 요청" });
 const kkSendBtn = el("button", { class: "ib pri", id: "kk-send-btn", type: "submit", "aria-label": "요청 보내기", title: "요청 보내기" }, icon("send"));
 const kkDraftBtn = el("button", { class: "cchip kk-dbtn", id: "kk-draft-btn", type: "button", onclick: () => kkMakeDraft() }, icon("spark"), el("span", { text: "답장 초안" }));
-const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: ev => { ev.preventDefault(); kkSend(); } }, kkTa, el("div", { class: "cbar" }, kkDraftBtn), kkSendBtn);
+// 직접 보내기 (owner 2026-11-04): what is typed goes to the room as it is, past the assistant. It shows only with text, and never on another computer's room or while a draft is edited.
+const kkDirectBtn = el("button", { class: "cchip kk-dbtn", id: "kk-direct-btn", type: "button", hidden: true, onclick: () => kkSendDirect() }, icon("send"), el("span", { text: "직접 보내기" }));
+const kkDirectSync = () => { kkDirectBtn.hidden = !kkTa.value.trim() || !!KK.edit || !!KK.pc; };
+kkTa.addEventListener("input", kkDirectSync);
+const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: ev => { ev.preventDefault(); kkSend(); } }, kkTa, el("div", { class: "cbar" }, kkDraftBtn, kkDirectBtn), kkSendBtn);
 const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkEditBar, kkForm, kkDrafts);
 // 자동 초안 of the open room: the one two-value switch of this screen (the watch toggles are eyes). Built once; kkPaintAuto only flips it.
 const kkAutoSw = el("button", { class: "kk-sw", type: "button", role: "switch", "aria-checked": "false", "aria-label": "자동 초안", "data-k": "auto", onclick: () => { const r = kkRoom(KK.open); if (r) kkSetRoom(r, { autoDraft: !r.autoDraft }); } }, el("span", { class: "kk-knob" }));
@@ -11533,6 +11557,7 @@ async function kkLoadRooms() {
   if (KK.open && !kkRoom(KK.open) && !KK.failed) kkClose();
   kkPaintRooms();
   if (KK.open) kkPaintChat();
+  convSig = ""; convSchedule();   // the 채팅 list's 메일 · 카카오톡 card
 }
 function kkSwitch(on, label, key, change, small) {
   return el("button", { class: `kk-sw${on ? " on" : ""}${small ? " sm" : ""}`, type: "button", role: "switch", "aria-checked": on ? "true" : "false", "aria-label": label, "data-k": key, onclick: ev => { ev.stopPropagation(); change(!on); } }, el("span", { class: "kk-knob" }));
@@ -11943,10 +11968,17 @@ function kkAskBot(text) {
   // The other computer's gateway takes a revise ({revise}) but not a new message's intent (34-peer-monitoring.js kakao draft): say so instead of making an unrelated draft there.
   if (KK.pc && !KK.drafts.length) { toast("다른 컴퓨터의 방에서는 초안을 만든 뒤에 고쳐 달라고 요청할 수 있어요", true); return; }
   const ts = x => (typeof x === "number" ? x : Date.parse(x) || 0), d = KK.drafts.slice().sort((a, b) => ts(b.created) - ts(a.created))[0];
-  kkTa.value = ""; KK.typed.delete(id); kkAutosize();
+  kkTa.value = ""; KK.typed.delete(id); kkAutosize(); kkDirectSync();
   KK.revise = null;
   if (d) kkMakeDraft(undefined, { code: d.code, change: text.slice(0, 500) }); else kkComposeMake(text);
   if (kkWide()) kkTa.focus();
+}
+async function kkSendDirect() {
+  const text = kkTa.value.trim(), id = KK.open;
+  if (!id || !text || KK.sending) return;
+  kkTa.value = ""; KK.typed.delete(id); kkAutosize(); kkDirectSync();
+  const ok = await kkSendText(text);
+  if (!ok && KK.open === id && !kkTa.value) { kkTa.value = text; kkAutosize(); kkDirectSync(); }
 }
 async function kkSend() {
   const text = kkTa.value.trim(), edit = KK.edit;
@@ -12155,7 +12187,7 @@ function kkLive(e) {
   if (e.kind === "kakao_draft" || e.kind === "kakao_send") rqSoon();   // the 답장 확인 queue (30-replies.js) reads this computer's drafts again
   if (KK.pc) return;   // the stream is this computer's; a peer's room is refreshed by the timer
   if (e.kind === "kakao_read") { if (KK.vis && e.chatId === KK.open) kkReads(); return; }
-  if (e.kind === "kakao_rooms" || e.kind === "kakao_unreplied") { if (KK.vis) kkLoadRooms(); kkIntgSoon(); return; }
+  if (e.kind === "kakao_rooms" || e.kind === "kakao_unreplied") { if (KK.vis || current === "chat") kkLoadRooms(); kkIntgSoon(); return; }
   kkIntgSoon();
   if (!KK.vis) return;
   const open = e.chatId === KK.open;
@@ -15141,7 +15173,8 @@ function ntSheetPaint() {
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: parts.title || "답변이 필요해요" }),
       el("div", { class: "ds-m", text: ntWhen(n) }),
-      ...ntBody(n, parts.rest))];
+      // The buttons show the options; a "결정:" line that only repeats the title goes too.
+      ...ntBody(n, d.options.length && !d.draft ? stripChoices(parts.rest).split("\n").filter(l => (CH_HEAD.exec(l) || [])[1] !== ntPlain(n.title)).join("\n").trim() : parts.rest))];
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).
@@ -15727,6 +15760,17 @@ function convNote(e, t, was) {
   if (convIncoming(e) && !again && !convEnded(t) && !(READ[t] && READ[t] >= e.ts) && !(CV.key === t && chatStick && document.visibilityState === "visible")) { ts(t).unread++; renderBars(); }
   convSchedule();
 }
+// A mail the hub listed before and no longer does was deleted (on another device, or by the mailbox's own sync): it leaves this page too, and a view
+// of it goes back to the list instead of answering "이 메일을 찾지 못했어요" on the next tap. A mail that only arrived live, or another computer's, is not touched.
+let convHadMail = new Set();
+function convDropGone(items) {
+  const now = new Set(items.filter(it => it.mail).map(it => it.target)), gone = [...convHadMail].filter(t => !now.has(t) && !PQ.of.has(t));
+  convHadMail = now;
+  if (!gone.length) return;
+  for (const t of gone) { MAILS.delete(t); CONV.delete(t); MBOX.sel.delete(t); ts(t).unread = 0; }
+  if (current === "chat" && gone.includes(target)) go("monitoring", MON.sel || "i:mail");
+  mbRefresh();
+}
 async function convLoad() {
   clearTimeout(convRetry);
   try {
@@ -15743,6 +15787,7 @@ async function convLoad() {
       else READ[t] = it.read || null;
       ts(t).unread = unread;
     }
+    convDropGone(r.items || []);
     CV.loaded = true; CV.failed = false;
     renderBars();
     if (convCapture() || (CV.key && !CV.placed)) renderAll();   // the first paint of an opening waits for this (chatReady)
@@ -15930,55 +15975,72 @@ setInterval(viewReport, 2000);
 function convRows() {
   const at = t => (CONV.get(t) || {}).ts || "";
   const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
-  const mk = t => { const last = CONV.get(t) || null, need = convNeeds(t); return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread, need, chips: need ? [["답변 필요", "warn"]] : undefined }; };
+  const mk = t => { const last = CONV.get(t) || null; return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread, need: convNeeds(t) }; };
   const all = (S && S.lanes) || [];
   const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
   const running = all.filter(laneAlive).sort((a, b) => rank(a) - rank(b) || at(`lane:${b.name}`).localeCompare(at(`lane:${a.name}`)));
   const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionStatus(l), hint: convPreview(l.lastText) || m.hint }; };
-  const rows = [MAIN, "alert", "worklog"].map(mk);
-  if (running.length) rows.push({ header: "진행 중" }, ...running.map(sess));
-  // A long list: 답 필요 / 안 읽음 narrow it to what waits; 전체 draws the projects a page at a time (the open one is always drawn).
-  if (rows.length + projects.length > CVF_MIN) {
-    const keep = r => CVF.view === "need" ? r.need : CVF.view === "unread" ? r.unread > 0 : true;
-    const lanes = running.map(sess).filter(keep), all = projects.map(mk).filter(keep);
-    const page = CVF.view === "all" ? all.filter((r, i) => i < CVF.more || r.t === target) : all;
-    const out = [{ bar: true }, ...rows.slice(0, 3).filter(keep)];
-    if (lanes.length) out.push({ header: "진행 중" }, ...lanes);
-    if (page.length) out.push({ header: "프로젝트" }, ...page);
-    if (all.length > page.length) out.push({ more: all.length - page.length });
-    const open = ((S && S.lanes) || []).find(l => !laneAlive(l) && `lane:${l.name}` === target);
-    if (open) out.push(sess(open));
-    if (out.length === 1) out.push({ empty: CVF.view === "need" ? "답을 기다리는 대화가 없어요" : "안 읽은 대화가 없어요" });
-    if (CVF.view === "all") { const ended = endedLanes(); if (ended.length) out.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` }); }
-    return out;
-  }
-  if (projects.length) rows.push({ header: "프로젝트" }, ...projects.map(mk));
+  const v = CVF.view, keep = r => v === "need" ? r.need : v === "session" ? isLaneT(r.t) : v === "alert" ? isFixedT(r.t) : true;
+  // The prototype's list (s-chat.js listHtml): the filter pills, one card of conversations, then the 메일 · 카카오톡 card of what waits there.
+  const projs = projects.map(mk).filter(keep), page = v === "all" ? projs.filter((r, i) => i < CVF.more || r.t === target) : projs;
+  const out = [{ bar: true }, ...[mk(MAIN)].filter(keep), ...page];
+  if (projs.length > page.length) out.push({ more: projs.length - page.length });
+  out.push(...["alert", "worklog"].map(mk).filter(keep), ...running.map(sess).filter(keep));
   const open = all.find(l => !laneAlive(l) && `lane:${l.name}` === target);
-  if (open) rows.push(sess(open));
-  // Mails are not listed here: each is a conversation under 모니터링's 앱 group (30-monitoring.js).
-  const ended = endedLanes();
-  if (ended.length) rows.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
-  return rows;
+  if (open && (v === "all" || v === "session")) out.push(sess(open));
+  const ended = v === "all" || v === "session" ? endedLanes() : [];
+  if (ended.length) out.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
+  const waits = v === "all" || v === "need" ? convWaiting() : [];
+  if (out.length === 1 && !waits.length) out.push({ empty: CVF_EMPTY[v] });
+  if (waits.length) out.push({ header: "메일 · 카카오톡", sec: true }, ...waits);
+  out.push({ read: true });
+  return out;
+}
+const CVF_EMPTY = { need: "답을 기다리는 대화가 없어요", session: "진행 중인 세션이 없어요", alert: "알림이 없어요" };
+// The 메일 · 카카오톡 card: this computer's mails with a draft or a reply owed and the watched rooms that owe one, newest first; a tap opens them in 모니터링.
+function convWaiting() {
+  const letter = name => el("span", { class: "cv-av", "aria-hidden": "true", text: [...String(name || "?").trim()][0] || "?" });
+  const mails = [...MAILS].filter(([t, m]) => !PQ.of.has(t) && m.dir !== "out" && !m.archived && (m.reply === "draft" || m.unreplied)).map(([t, m]) => {
+    const who = mailSender(m.from), owed = !!m.unreplied;
+    return { at: Date.parse(m.at) || 0, k: `w:${t}`, name: m.subject || "(제목 없음)", hint: m.reply === "draft" ? `${who} · 답장 초안이 기다려요` : who, last: { ts: m.at }, bold: mailUnread(t, m), need: true, sel: current === "chat" && target === t, av: letter(who), chips: owed ? [["미답장", "unreplied"]] : undefined, open: () => go("monitoring", `c:${t}`) };
+  });
+  const rooms = KK.rooms.filter(r => r.watched && r.unreplied).map(r => ({ at: r.lastAt || 0, k: `w:kk:${r.chatId}`, name: r.name, hint: kkSubLine(r), last: r.lastAt ? { ts: new Date(r.lastAt).toISOString() } : null, bold: r.unread > 0, need: true, av: letter(r.name), chips: [["미답장", "unreplied"]], open: () => { go("monitoring", "i:kakao"); kkOpen(r.chatId); } }));
+  return [...mails, ...rooms].sort((a, b) => b.at - a.at).slice(0, 5);
+}
+// Rows in their cards: the bar and a section label stand on the page, every run of rows between them is one card.
+function convCards(rows) {
+  const nodes = [];
+  let box = null;
+  for (const r of rows) {
+    if (r.read) { const b = convReadBtn(); if (b) nodes.push(b); continue; }
+    if (r.bar || r.header) { nodes.push(r.bar ? convBar() : el("div", { class: "cv-sec", role: "presentation", text: r.header })); box = null; continue; }
+    if (!box) nodes.push(box = el("div", { class: "cv-card" }));
+    box.append(convRow(r));
+  }
+  return nodes;
 }
 const FIXED_DESC = { alert: "경고와 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
 
 /* ---- a long list: views, a page of projects, 읽음 처리 ---- */
-// view: 전체 / 답 필요 / 안 읽음; more: projects drawn in 전체 (CVF_PAGE more per 더 보기). The bar shows once the list holds more than CVF_MIN rows.
-const CVF_MIN = 12, CVF_PAGE = 40;
+// view: 전체 / 답할 것 / 세션 / 알림; more: projects drawn in 전체 (CVF_PAGE more per 더 보기).
+const CVF_PAGE = 40;
 const CVF = { view: "all", more: CVF_PAGE };
 // A conversation waits on the owner: an open decision asked there, a loose [ask] notice of it, or a session's question (same rules as 30-notices.js ntNeeds).
 // the same rule as the home 답변 필요 list: a gateway question it handles itself (nyHandled) is news there, not a need here
 const convNeeds = t => ntHasDecision(t) || NT.items.some(n => ntNeeds(n) && !nyHandled(n) && (n.src || n.open) === t) || !!(isLaneT(t) && targetInfo(t).ask);
 const convListed = () => [MAIN, "alert", "worklog", ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`), ...projTargets()];
 function convBar() {
-  const list = convListed(), need = list.filter(convNeeds).length, unread = list.filter(t => ts(t).unread > 0).length;
-  // 읽음 처리 takes only what needs no answer: a conversation waiting on the owner keeps its unread.
-  const fyi = list.filter(t => ts(t).unread > 0 && !convNeeds(t) && CONV.get(t));
-  const views = [["all", "전체", 0], ["need", "답 필요", need], ["unread", "안 읽음", unread]];
+  const list = convListed(), need = list.filter(convNeeds).length + (KK.rooms.filter(r => r.watched && r.unreplied).length) + [...MAILS].filter(([t, m]) => !PQ.of.has(t) && m.dir !== "out" && !m.archived && (m.reply === "draft" || m.unreplied)).length;
+  const views = [["all", "전체", 0], ["need", "답할 것", need], ["session", "세션", 0], ["alert", "알림", 0]];
   return el("div", { class: "cv-bar" },
     el("div", { class: "cv-tabs", role: "tablist", "aria-label": "대화 보기" }, ...views.map(([k, label, n]) =>
       el("button", { class: `cchip mr-f${CVF.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(CVF.view === k), "data-view": k, onclick: () => { CVF.view = k; CVF.more = CVF_PAGE; convSig = ""; convSchedule(); convSide.scrollTop = 0; } }, label, cntSpan(`cv-filter:${k}`, "mr-fn", n)))),
-    el("button", { class: "btn text cv-read", type: "button", "data-k": "read", disabled: !fyi.length, title: "답이 필요한 대화는 그대로 둬요", onclick: ev => convReadAll(ev.currentTarget, fyi), text: fyi.length ? `${fyi.length}개 읽음 처리` : "읽음 처리" }));
+  );
+}
+// 읽음 처리, under the list: it takes only what needs no answer, so a conversation waiting on the owner keeps its unread.
+function convReadBtn() {
+  const fyi = convListed().filter(t => ts(t).unread > 0 && !convNeeds(t) && CONV.get(t));
+  return fyi.length ? el("div", { class: "cv-foot" }, el("button", { class: "btn text cv-read", type: "button", "data-k": "read", title: "답이 필요한 대화는 그대로 둬요", onclick: ev => convReadAll(ev.currentTarget, fyi), text: `${fyi.length}개 읽음 처리` })) : null;
 }
 // The listed conversations are read up to their newest message here at once and on the hub (POST /api/read, one per conversation); a failure
 // re-reads the counts from the hub and says why (busy toasts it).
@@ -16013,10 +16075,10 @@ function convRow(r) {
   const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";
   // 채팅 목록은 시제품의 채팅 행 (proto .li): 아이콘, 제목·미리보기, 오른쪽에 시각과 대기 표시. 모니터링 목록은 시각 없이 그대로예요.
   const when = !monCtx && r.last && r.last.ts ? prjAgo(Date.parse(r.last.ts)) : "";
-  return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
+  return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread || r.bold ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
-    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${r.unreplied}개`, text: `미답장 ${r.unreplied > 99 ? "99+" : r.unreplied}` }) : null)));
+    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, r.need && !r.chips && !r.k ? el("span", { class: "dot warn", role: "img", "aria-label": "답변 필요" }) : null, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${r.unreplied}개`, text: `미답장 ${r.unreplied > 99 ? "99+" : r.unreplied}` }) : null)));
 }
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
@@ -16081,6 +16143,7 @@ function bellPaint() {
   const on = current === "chat" && target === "alert" && !monCtx, box = $("#bell-tabs"), list = $("#bell-list"), tab = BELL.tab, listed = on && tab !== "all";
   box.hidden = !on; list.hidden = !listed;
   $("#v-chat").classList.toggle("bell-on", listed);
+  $("#v-chat").classList.toggle("bell-view", on);   // every filter keeps one frame (09-notices.css): the same filter row, the same start of content
   if (!on) return;
   const counts = BELL_TABS.map(([k]) => NT.loaded ? bellUnread(k) : 0), sig = JSON.stringify([tab, counts]);
   if (sig !== BELL.sig) {
@@ -16107,12 +16170,13 @@ function convPaint() {
   mailSentPaint();
   mbReplyPaint();
   const items = monCtx ? monItems() : null, rows = items ? monRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, rows.some(r => r.bar) ? [CVF.view, convListed().map(t => [ts(t).unread > 0, convNeeds(t)])] : 0]);
+  if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
   if (sig !== convSig) {
     convSig = sig;
     convSide.setAttribute("aria-label", monCtx ? "모니터링 목록" : "채팅 목록");
     const top = convSide.scrollTop;
     // A conversation opened from 모니터링 keeps 모니터링's own panel (sections, cards, bars: 30-monitoring.js), never the chat list's rows.
-    clear(convSide).append(...(monCtx ? monSideNodes(rows) : rows.map(convRow)));
+    clear(convSide).append(...(monCtx ? monSideNodes(rows) : convCards(rows)));
     if (monCtx) monDecorateRows(convSide, items);
     convSide.scrollTop = top;
   }
@@ -17753,7 +17817,7 @@ function budgetSub() {
 async function budgetDialog() {
   try { AB = await api("/api/api-budget"); } catch (e) { toast(e.message, true); return; }
   const limit = input({ type: "number", inputmode: "decimal", min: "0", step: "any", placeholder: "예: 100", value: AB.monthly_usd == null ? "" : String(AB.monthly_usd) });
-  const key = input({ type: "password", autocomplete: "new-password", name: "admin-key", placeholder: "sk-ant-admin…" });
+  const key = input({ type: "password", autocomplete: "new-password", name: "admin-key", placeholder: "관리자 키 붙여 넣기" });
   const has = AB.admin_key && AB.admin_key.present;
   const done = (c, msg) => { c(); toast(msg); renderSettings(); if (current === "usage") loadQuota(); };
   const send = (c, btn, body, msg) => busy(btn, async () => {
@@ -17772,9 +17836,9 @@ async function budgetDialog() {
     title: "API 월 한도",
     body: el("div", { class: "col" },
       el("p", { class: "sup", text: "Anthropic 콘솔에서 정한 월 한도(달러)예요. API로는 읽을 수 없어서 직접 입력해요. 비우면 한도 없이 사용액만 보여줘요." }),
-      textField("월 한도 (USD)", limit),
-      el("p", { class: "sup", text: has ? `관리자 키: ${AB.admin_key.masked}. 새 키를 붙여 넣으면 바꿔요.` : "관리자 키가 없어요. 콘솔 → 설정 → Admin keys에서 만들어 붙여 넣으면 콘솔 기준 사용액을 보여줘요. 없으면 이 앱 사용분 추정만 보여줘요." }),
-      textField("관리자 키 (sk-ant-admin…)", key),
+      textField("월 한도 (달러)", limit),
+      el("p", { class: "sup", text: has ? `관리자 키: ${AB.admin_key.masked}. 새 키를 붙여 넣으면 바꿔요.` : "관리자 키가 없어요. 콘솔 설정의 관리자 키 메뉴에서 만들어 붙여 넣으면 콘솔 기준 사용액을 보여줘요. 없으면 이 앱 사용분 추정만 보여줘요." }),
+      textField("관리자 키", key),
       el("p", { class: "sup", text: "키는 저장하기 전에 한 번 확인하고, 다시 보여주거나 기록에 남기지 않아요." })),
     actions,
   });
@@ -18022,7 +18086,7 @@ function paintOrchError() {
   const e = S && S.orchestrator && S.orchestrator.error, box = $("#oerr");
   box.hidden = !e;
   if (!e) return;
-  $("#oerr-tx").innerHTML = `<b>오케스트레이터가 멈췄어요</b> · ${e.text} · ${kstHM(e.since)}부터`;
+  clear($("#oerr-tx")).append(el("b", { text: `${iGa(botName)} 멈췄어요` }), ` · ${noticeKo(String(e.text ?? ""), NK)} · ${kstHM(e.since)}부터`);
   box.title = e.raw || "";
   $("#oerr-btn").onclick = ev => orchResume(ev.currentTarget);
 }
@@ -18121,6 +18185,8 @@ function paintRunState() {
     if (swap) motionSwap(box, paint); else paint();
   }
   $("#runstate-tx").textContent = runText(r);
+  // A pause whose time has passed: the gateway has moved on, so the line asks instead of staying on 한도 until the next event (a phone that slept missed it).
+  if (r.kind === "limited" && Date.parse(r.detail) <= runClock() && Date.now() - (RUN_MEMO.asked || 0) > 5000) { RUN_MEMO.asked = Date.now(); scheduleState(); }
 }
 setInterval(() => { if (!document.hidden) paintRunState(); }, 1000);
 
