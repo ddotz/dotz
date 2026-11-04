@@ -99,8 +99,7 @@ const SCREENS: Array<[string, string]> = [
 	["update", `document.querySelector("#update [aria-label='자동 확인']")`],
 	["runtime", `document.querySelector("#runtime .card.empty, #runtime .li")`],
 	["messengers", `document.querySelectorAll("#messengers [data-ms-row]").length === 4`],
-	["provider/anthropic", `document.querySelector("#provider [aria-label='자동 전환']") && document.querySelector("#provider .sec-act")`],
-	["providers", `document.querySelectorAll("#providers .prow").length === 4`],
+	["accounts", `document.querySelector("#accounts [aria-label='자동 전환']") && document.querySelector("#accounts .sec-act") && document.querySelectorAll("#accounts [data-prov-conn]").length === 4`],
 	["discord", `document.querySelector("[data-ms-connect='discord']") && document.querySelector("[data-dc]")`],
 	["jandi", `document.querySelector("[data-ms-connect='jandi']") && document.querySelector("#jandi [data-k]")`],
 ];

@@ -109,6 +109,8 @@ export const ko: Catalog = {
 		loginNone: "진행 중인 로그인이 없어요",
 		loginCancelled: provider => `${provider} 로그인을 취소했어요`,
 		loginDone: provider => `${provider} 로그인이 끝났어요`,
+		loginAdded: account => `계정을 추가했어요 (${account})`,
+		loginRefreshed: account => `이미 등록된 계정이에요 (${account}). 로그인을 새로 고쳤어요`,
 		loginOpen: "아래 주소를 열어 로그인해 주세요",
 		loginMore: provider => `값이 하나 더 필요해요. /login ${provider} <값>으로 보내 주세요.`,
 		loginCode: provider => `다른 기기라면 이동한 주소창의 전체 주소(또는 코드)를 /login ${provider} <주소 또는 코드>로 보내 주세요.`,
