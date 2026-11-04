@@ -89,6 +89,7 @@ function histSync() {
 
 function ovOpen(close) { const o = { close }; OV.push(o); histSync(); return o; }
 function ovDone(o) { const i = o ? OV.indexOf(o) : -1; if (i < 0) return; OV.splice(i, 1); histSync(); }
+const ovCloseAll = () => { for (const o of [...OV].reverse()) o.close(); };
 // A modal <dialog> is an overlay for as long as it is open (Esc, ✕ and back all end in its close event).
 function dialogHist(d) { const o = ovOpen(() => d.close()); d.addEventListener("close", () => ovDone(o)); }
 
