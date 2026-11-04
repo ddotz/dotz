@@ -43,7 +43,7 @@ const MODELS = {
 	}),
 	replies: { value: "", model: REPLY_DEFAULT, default: REPLY_DEFAULT, default_label: "기본값 · Sonnet 5.5 · 보통", options: c.options, labels: c.labels },
 };
-const STATE = { name: "dotz", orchestrator: { status: "idle", activeModel: `${SONNET}:high` }, lanes: [{ name: "pay", title: "결제", model: `${OPUS}:high`, worker_model: `${SONNET}:high`, status: "idle", live: true, startedAt: UNTIL, reports: [], context: {} }], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 };
+const STATE = { name: "dotz", orchestrator: { status: "idle", activeModel: `${SONNET}:high` }, lanes: [{ name: "pay", title: "결제", model: `${OPUS}:high`, worker_model: `${SONNET}:high`, status: "working", live: true, startedAt: UNTIL, reports: [], context: {} }], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 };
 
 const json = (v: unknown, status = 200) => Response.json(v, { status });
 const server = Bun.serve({

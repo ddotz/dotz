@@ -161,7 +161,8 @@ function makeBoard(container, key, opts = {}) {
     let y = 0;
     for (let i = 0; i < order.length;) {
       const a = lay.find(x => x.id === order[i].id), b = i + 1 < order.length ? lay.find(x => x.id === order[i + 1].id) : null;
-      const side = !!b && (a.x + a.w <= b.x || b.x + b.w <= a.x);
+      // Two cards that fit a row share it wherever they were saved: a card that appears or is pinned ahead would otherwise leave half a row empty.
+      const side = !!b && a.w + b.w <= 12;
       const h = Math.max(nat.get(a.id) ?? a.h, side ? nat.get(b.id) ?? b.h : 0);
       a.y = y; a.h = h;
       // half-row cards pack left (so a card that left the layout earlier does not keep the right column); a wider owner card keeps its x
