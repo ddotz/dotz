@@ -96,7 +96,7 @@ function prPaint() {
   chev.hidden = !on;
   if (!on) {
     for (const n of names) n.classList.remove("pdot", "p-need");
-    brand.setAttribute("aria-label", "홈으로"); brand.removeAttribute("title"); brand.removeAttribute("aria-haspopup");
+    brand.setAttribute("aria-label", "홈으로"); brand.title = "홈으로"; brand.removeAttribute("aria-haspopup");
     title.removeAttribute("tabindex"); title.removeAttribute("aria-haspopup");
     prClose(false); return;
   }

@@ -1,5 +1,5 @@
 /* ---------- shell: the prototype's frame (site/prototype/proto.css "/* shell *\/") ----------
-   Wide (1024px and up): a 232px sidebar holds the brand, the computer picker row, the five nav items with their counts and the
+   Wide (1024px and up): a 232px sidebar (foldable to a 60px icon rail) holds the brand, the computer picker row, the five nav items with their counts and the
    usage row at the bottom; the main column holds the top bar (page title, search, bell, connection and usage chips) and the views.
    Narrow: the sidebar becomes the bottom tab bar (the same #nav, one component), the brand/picker/footer step aside, and the top
    bar keeps back + title + search + bell. Everything below only restates the frame; colors and sizes come from 01-tokens.css. */
@@ -43,6 +43,21 @@ body { display: flow-root; }
   .sf-row .sf-v { flex: none; margin-left: auto; color: var(--fg-3); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
   .sf-row.warn .sf-v { color: var(--warn); }
   .sf-row.warn .sf-bar i { background: var(--warn); }
+  /* the fold button stands above the usage row (the brand row keeps its name and chevron free), its icon on the nav icons' line; the shell's 32px icon button */
+  .sfoot { display: flex; flex-direction: column; gap: 4px; }
+  .side-tog { align-self: flex-start; width: 32px; height: 32px; margin-left: 2px; }
+  /* folded (:root.side-min, 04-state.js sideToggle): a 60px icon rail. Names go to the title and the aria-label, a tab's dot sits at its icon's bottom right, a usage warning colors its icon */
+  :root.side-min { --side-w: 60px; }
+  .side-min .side { padding: 12px 10px; }
+  .side-min .brand { position: relative; justify-content: center; padding: 0; }
+  .side-min #brand-name, .side-min .brand-c .ic, .side-min .ni .nl, .side-min .sf-k, .side-min .sf-bar, .side-min .sf-v { display: none; }
+  .side-min .brand-c { position: absolute; left: 26px; top: 26px; width: 6px; height: 6px; margin: 0; }
+  .side-min .brand-c.pdot::after { right: 0; bottom: 0; }
+  .side-min .ni { justify-content: center; padding: 0; }
+  .side-min .ni .nnb, .side-min .ni .nub { position: absolute; left: 25px; top: 24px; margin: 0; }
+  .side-min .side-tog { align-self: center; margin-left: 0; }
+  .side-min .sf-row { justify-content: center; padding: 0; }
+  .side-min .sf-row.warn .ic { color: var(--warn); }
   /* top bar: title always names the page (the sidebar carries the tabs), then search, bell, connection and usage */
   .appbar #back { margin: 0; align-self: center; }
   .appbar h1, .appbar:not(.back) h1 { display: block; align-self: center; flex: 1; min-width: 0; max-width: none; margin: 0; font: 700 22px/30px var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
