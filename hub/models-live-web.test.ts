@@ -153,12 +153,12 @@ describe("REQ2/REQ3/REQ5 on 모델·폴백", () => {
 		expect(r.field).toContain("기본값 · Sonnet 5.5 · 보통");
 		expect(r.note).toContain("API 키로 넘어가지 않아요");
 	});
-	test("effort is said in Korean and the fallback count is the number of drawn steps", async () => {
+	test("effort is said in Korean and the last step number is the number of drawn steps", async () => {
 		const v = await openModels();
-		const r = await q<{ eff: string; count: string; steps: number }>(v, `const c = document.querySelector('[data-target="orchestrator"]'); return { eff: c.querySelector(".mt-eff").textContent, count: c.querySelector(".mt-fb-h .sup").textContent, steps: c.querySelectorAll(".fb-list > .fb-item").length }`);
+		const r = await q<{ eff: string; count: string; steps: number }>(v, `const c = document.querySelector('[data-target="orchestrator"]'); return { eff: c.querySelector(".mt-eff").textContent, count: [...c.querySelectorAll(".fb-n")].at(-1).textContent, steps: c.querySelectorAll(".fb-list > .fb-item").length }`);
 		expect(r.eff).toContain("높음");
 		expect(r.eff).not.toContain("high");
 		expect(r.steps).toBe(3);
-		expect(r.count).toBe(`기본 포함 ${r.steps}단계`);
+		expect(r.count).toBe(String(r.steps));
 	});
 });

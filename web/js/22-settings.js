@@ -15,24 +15,23 @@ const fbCapText = c => `${c.period === "day" ? "일" : "월"} ${c.usd ? fbMoney(
 let fbDragging = false;
 // A long model id breaks after its separators, not inside a word; the text itself stays the same.
 const fbNameParts = nm => nm.split(/(?<=[-/])/).flatMap((p, i) => (i ? [el("wbr"), p] : [p]));
-function fbTags(e) {
-  const t = [];
-  if (e.key_file) t.push(el("span", { class: "tag", text: "API 키" }));
-  if (e.key_file && e.workers) t.push(el("span", { class: "tag", text: "서브에이전트·세션도 사용" }));
-  if (e.when) t.push(el("span", { class: "tag", text: FB_WHEN[e.when] }));
-  if (e.cap) t.push(el("span", { class: "tag", text: fbCapText(e.cap) }));
-  if (e.revert === false) t.push(el("span", { class: "tag", text: "복귀 안 함" }));
-  if (e.down) t.push(el("span", { class: "tag warn", title: e.until ? `풀리는 때: ${new Date(e.until).toLocaleString("ko-KR")}` : "", text: e.down === "cap" ? "상한 도달" : e.down === "quota" ? "한도 소진" : e.down_reason === "api_key_ban" ? "공유 계정 사용 중이라 꺼짐" : e.down_reason === "api_key_off" ? "API 키 사용 안 함(설정)" : "쓸 수 없음" }));
-  return t.length ? el("div", { class: "fb-tags" }, ...t) : null;
+// A step's row says at most two of these; the rest sit behind the tap (and in the row's title).
+const fbFacts = e => [e.key_file ? "API 키" : "", e.cap ? fbCapText(e.cap) : "", e.when ? FB_WHEN[e.when] : "", e.revert === false ? "복귀 안 함" : ""].filter(Boolean);
+function fbDownTag(e) {
+  if (!e.down) return null;
+  return el("span", { class: "tag warn", title: e.until ? `풀리는 때: ${new Date(e.until).toLocaleString("ko-KR")}` : "", text: e.down === "cap" ? "상한 도달" : e.down === "quota" ? "한도 소진" : e.down_reason === "api_key_ban" ? "공유 계정 사용 중이라 꺼짐" : e.down_reason === "api_key_off" ? "API 키 사용 안 함(설정)" : "쓸 수 없음" });
 }
-function fbBar(e) {
+// Usage against the cap. The row draws it only from this share of the cap on; the step's editor always does.
+const FB_NEAR = 80;
+function fbBar(e, nearOnly) {
   if (!e.cap || !e.used) return null;
   const byUsd = e.cap.usd && (e.used.usd > 0 || !e.used.tokens);
   const used = byUsd ? e.used.usd : e.used.tokens, cap = byUsd ? e.cap.usd : (e.cap.tokens || e.cap.usd);
-  const pct = Math.max(0, Math.min(100, cap ? (used / cap) * 100 : 0));
+  const pct = Math.max(0, Math.min(100, cap ? (used / cap) * 100 : 0)), near = pct >= FB_NEAR;
+  if (nearOnly && !near) return null;
   const when = e.cap.period === "day" ? "오늘" : "이번 달";
   const label = byUsd ? `${when} ${fbMoney(e.used.usd)} / ${fbMoney(e.cap.usd)}` : `${when} ${num(e.used.tokens)} / ${num(e.cap.tokens || 0)} 토큰`;
-  return el("div", { class: "fb-usage" }, el("div", { class: "fb-bar", role: "progressbar", "aria-valuenow": String(Math.round(pct)), "aria-valuemin": "0", "aria-valuemax": "100", "aria-label": label }, el("i", { style: `width:${pct}%` })), el("div", { class: "fb-bar-l", text: label }));
+  return el("div", { class: `fb-usage${near ? " warn" : ""}` }, el("div", { class: "fb-bar", role: "progressbar", "aria-valuenow": String(Math.round(pct)), "aria-valuemin": "0", "aria-valuemax": "100", "aria-label": label }, el("i", { style: `width:${pct}%` })), el("div", { class: "fb-bar-l", text: label }));
 }
 async function fbSave(layer, list) {
   try {
@@ -52,7 +51,7 @@ function fbOpenStep(layer, list, i) {
   if (fbOpen) api("/api/apikeys").then(k => { fbKeys = k; if (current === "models") renderModels(); }, () => {});
   renderModels();
 }
-function fbEditor(L, F, list, i) {
+function fbEditor(L, F, list, i, move) {
   const d = fbOpen.draft, { base, level } = fbSplit(d.model), nm = modelName(base);
   const redraw = () => renderModels();
   const setModel = (b, lv) => { d.model = lv ? `${b}:${lv}` : b; redraw(); };
@@ -90,8 +89,11 @@ function fbEditor(L, F, list, i) {
       seg("사용 상한 (KST)", [["month", "월"], ["day", "일"]], c.period, v => { c.period = v; redraw(); }),
       textField("금액 (USD)", capNum("usd", { step: "any", inputmode: "decimal" })),
       textField("토큰", capNum("tokens", { step: "1", inputmode: "numeric" }))) : null,
+    cond ? fbBar(d) : null,
     el("div", { class: "btns fbe-act" },
       el("button", { type: "button", class: "btn text danger", onclick: ev => remove(ev.currentTarget) }, "삭제"),
+      list.length > 1 ? el("button", { type: "button", class: "ib up", title: "위로", "aria-label": `${nm} 위로`, disabled: i === 0, onclick: () => move(i, i - 1) }, icon("down")) : null,
+      list.length > 1 ? el("button", { type: "button", class: "ib", title: "아래로", "aria-label": `${nm} 아래로`, disabled: i === list.length - 1, onclick: () => move(i, i + 1) }, icon("down")) : null,
       el("span", { class: "sp" }),
       el("button", { type: "button", class: "btn text", onclick: () => { fbOpen = null; renderModels(); } }, "취소"),
       el("button", { type: "button", class: "btn pri", onclick: ev => save(ev.currentTarget) }, "저장")));
@@ -123,20 +125,21 @@ async function fbKeyDialog(e, done) {
   dialog({ title: "API 키", body: el("div", { class: "col" }, el("p", { class: "sup", text: "구독 대신 API 키로 쓸 때 키를 붙여 넣어요. 저장하기 전에 한 번 확인하고, 키 값은 다시 보여주거나 기록에 남기지 않아요. 비워 두면 저장된 키를 써요." }), status, textField("API 키", key), adv), actions });
   setTimeout(() => key.focus(), 0);
 }
-// Drag a fallback item to another place in its chain (pointer events); the arrow buttons do the same from the keyboard.
-function fbDrag(item, layer, list, i) {
-  item.addEventListener("pointerdown", ev => {
-    if (ev.button !== 0 || ev.target.closest("button")) return;
+// Drag a fallback step by its handle to another place in its chain (pointer events); the handle's arrow keys and the editor's arrow
+// buttons do the same. Only the handle takes the touch, so a finger on a row still scrolls the page.
+function fbDrag(grip, item, i, move) {
+  grip.addEventListener("pointerdown", ev => {
+    if (ev.button !== 0) return;
     const chips = [...item.parentNode.querySelectorAll(".fb-item[data-i]")];
     const rects = chips.map(c => c.getBoundingClientRect());
     const x0 = ev.clientX, y0 = ev.clientY;
     let moving = false, to = i;
-    const move = m => {
+    const drag = m => {
       const dx = m.clientX - x0, dy = m.clientY - y0;
       if (!moving) {
         if (Math.hypot(dx, dy) < 6) return;
         moving = true; fbDragging = true; item.classList.add("drag");
-        try { item.setPointerCapture(ev.pointerId); } catch {}
+        try { grip.setPointerCapture(ev.pointerId); } catch {}
       }
       item.style.transform = `translate(${dx}px,${dy}px)`;
       let best = i, bd = Infinity;
@@ -145,68 +148,81 @@ function fbDrag(item, layer, list, i) {
       chips.forEach((c, k) => c.classList.toggle("over", k === to && to !== i));
     };
     const end = () => {
-      item.removeEventListener("pointermove", move); item.removeEventListener("pointerup", end); item.removeEventListener("pointercancel", end);
+      grip.removeEventListener("pointermove", drag); grip.removeEventListener("pointerup", end); grip.removeEventListener("pointercancel", end);
       if (!moving) return;
       item.classList.remove("drag"); item.style.transform = ""; chips.forEach(c => c.classList.remove("over"));
       setTimeout(() => { fbDragging = false; }, 0);
-      if (to !== i) { const next = list.slice(); next.splice(to, 0, next.splice(i, 1)[0]); fbSave(layer, next); }
+      if (to !== i) move(i, to);
     };
-    item.addEventListener("pointermove", move); item.addEventListener("pointerup", end); item.addEventListener("pointercancel", end);
+    grip.addEventListener("pointermove", drag); grip.addEventListener("pointerup", end); grip.addEventListener("pointercancel", end);
   });
 }
-// The fallback part of a target's card: its harness, then the chain as a numbered list (1 = the target's own model).
-// Harness-aware: conditions only where the hub drives the chain, the add menu limited to what the harness can run.
+// The fallback part of a target's card: the numbered chain, step 1 being the target's own model and effort pickers, then one compact row
+// per fallback (the rest of a step opens under its row). Harness-aware: conditions only where the hub drives the chain, the add menu
+// limited to what the harness can run.
+const FB_ADD_KEY = "apikey";
 function fbParts(L) {
   const F = (M.fallbacks || {})[L.id] || { chain: [], active: [] };
   const list = F.chain, cur = L.cur(), used = new Set(F.active || []), prim = fbBase(cur && cur.model);
   const runs = e => !F.providers || F.providers.includes(fbBase(e.model).split("/")[0]);
-  const move = (i, to) => { const n = list.slice(); n.splice(to, 0, n.splice(i, 1)[0]); fbSave(L.id, n); };
-  const chain = el("ol", { class: "fb-list", "aria-label": `${L.title()} 폴백 순서` });
+  const open = i => Boolean(fbOpen && fbOpen.layer === L.id && fbOpen.i === i);
+  const move = async (i, to) => {
+    const n = list.slice(), wasOpen = open(i);
+    n.splice(to, 0, n.splice(i, 1)[0]);
+    if (wasOpen) fbOpen.i = to;
+    const ok = await fbSave(L.id, n);
+    if (!ok && wasOpen) { fbOpen = null; renderModels(); }
+  };
   const itemFor = (e, i) => {
-    const base = i < 0, model = base ? prim : e.model, nm = modelName(fbBase(model));
-    const inUse = base ? used.has(prim) : used.has(fbRunId(e));
-    const on = !base && e.enabled !== false;
-    const acts = base ? null : el("div", { class: "fb-acts" },
-      el("button", { type: "button", class: "fb-sw", role: "switch", "aria-checked": String(on), title: on ? "켜짐 · 눌러서 끄기" : "꺼짐 · 눌러서 켜기", "aria-label": `${nm} ${on ? "끄기" : "켜기"}`, onclick: () => fbSave(L.id, list.map((x, j) => (j === i ? { ...x, enabled: !on } : x))) }, on ? "켜짐" : "꺼짐"),
-      el("div", { class: "fb-ctl" },
-        el("button", { type: "button", class: "up", title: "위로", "aria-label": `${nm} 위로`, disabled: i === 0, onclick: () => move(i, i - 1) }, icon("down")),
-        el("button", { type: "button", title: "아래로", "aria-label": `${nm} 아래로`, disabled: i === list.length - 1, onclick: () => move(i, i + 1) }, icon("down")),
-        el("button", { type: "button", title: "편집", "aria-label": `${nm} 편집`, "aria-expanded": String(open(i)), onclick: () => fbOpenStep(L.id, list, i) }, icon("more")),
-        el("button", { type: "button", title: "빼기", "aria-label": `${nm} 빼기`, onclick: () => fbSave(L.id, list.filter((_, j) => j !== i)) }, icon("close"))));
-    let tags = base ? null : fbTags(e);
-    if (!base && !runs(e)) (tags ||= el("div", { class: "fb-tags" })).append(el("span", { class: "tag warn", text: `${F.harness ? F.harness.name : "이 하네스"}에서 못 써요` }));
-    const node = el("li", { class: `fb-item${inUse ? " in-use" : ""}${!base && e.enabled === false ? " off" : ""}${base ? " base" : ""}${!base && open(i) ? " open" : ""}`, ...(base ? {} : { "data-i": String(i) }), title: base ? `${fbBase(model)} · 눌러서 모델 바꾸기` : `${fbBase(model)} · 눌러서 편집` },
+    const nm = modelName(fbBase(e.model)), inUse = used.has(fbRunId(e)), on = e.enabled !== false;
+    const facts = fbFacts(e), short = facts.slice(0, 2).join(" · ");
+    const all = [fbBase(e.model), ...facts, e.key_file && e.workers ? "서브에이전트·세션도 사용" : ""].filter(Boolean).join(" · ");
+    const grip = list.length > 1 ? el("button", { type: "button", class: "fb-grip", title: "끌어서 순서 바꾸기", "aria-label": `${nm} 순서 바꾸기, 위아래 화살표 키`, onkeydown: ev => {
+      const to = ev.key === "ArrowUp" ? i - 1 : ev.key === "ArrowDown" ? i + 1 : -1;
+      if (to < 0 || to >= list.length) return;
+      ev.preventDefault();
+      move(i, to).then(() => { const g = document.querySelector(`[data-target="${L.id}"] .fb-item[data-i="${to}"] .fb-grip`); if (g) g.focus(); });
+    } }, icon("grip")) : null;
+    const node = el("li", { class: `fb-item${inUse ? " in-use" : ""}${on ? "" : " off"}${open(i) ? " open" : ""}`, "data-i": String(i), title: all },
       el("span", { class: "fb-n", text: String(i + 2) }),
-      el("div", { class: "fb-body" },
-        el("div", { class: "fb-top" }, base ? el("span", { class: "nm", text: nm }) : el("span", { class: "nm" }, ...fbNameParts(nm)), base ? el("span", { class: "fb-base", text: "기본" }) : null, inUse ? el("span", { class: "fb-use", text: "사용 중" }) : null),
-        tags, base ? null : fbBar(e)),
-      acts);
-    if (!base) fbDrag(node, L.id, list, i);
-    // A click on the step (not a drag, not one of its buttons) opens its editor; the base step opens the card's model picker.
-    node.addEventListener("click", ev => {
-      if (ev.target.closest("button") || fbDragging) return;
-      if (base) { const b = node.closest(".mt-card").querySelector(".mt-model button"); if (b) b.click(); }
-      else fbOpenStep(L.id, list, i);
-    });
+      el("button", { type: "button", class: "fb-body", "aria-expanded": String(open(i)), "aria-label": `${[nm, short].filter(Boolean).join(" · ")} 편집` },
+        el("span", { class: "nm" }, ...fbNameParts(nm)),
+        short ? el("span", { class: "fb-sum", text: short }) : null,
+        inUse ? el("span", { class: "tag pri", text: "사용 중" }) : null,
+        fbDownTag(e),
+        runs(e) ? null : el("span", { class: "tag warn", text: `${F.harness ? F.harness.name : "이 하네스"}에서 못 써요` })),
+      el("button", { type: "button", class: "fb-sw", role: "switch", "aria-checked": String(on), title: on ? "켜짐 · 눌러서 끄기" : "꺼짐 · 눌러서 켜기", "aria-label": `${nm} ${on ? "끄기" : "켜기"}`, onclick: () => fbSave(L.id, list.map((x, j) => (j === i ? { ...x, enabled: !on } : x))) }, on ? "켜짐" : "꺼짐"),
+      grip,
+      open(i) ? null : fbBar(e, true));
+    if (grip) fbDrag(grip, node, i, move);
+    node.addEventListener("click", ev => { if (!ev.target.closest(".fb-sw, .fb-grip") && !fbDragging) fbOpenStep(L.id, list, i); });
     return node;
   };
-  const open = i => Boolean(fbOpen && fbOpen.layer === L.id && fbOpen.i === i);
   if (fbOpen && fbOpen.layer === L.id && fbOpen.i >= list.length) fbOpen = null;
-  chain.append(itemFor(null, -1), ...list.flatMap((e, i) => (open(i) ? [itemFor(e, i), fbEditor(L, F, list, i)] : [itemFor(e, i)])));
   const full = list.length >= ((M.fallbacks || {}).max || 6);
+  // The usual case first in the add menu: the subscription ran out, so the same model goes on through an API key (only after a usage limit).
+  const keyStep = F.conditions && prim && !list.some(x => x.key_file && fbBase(x.model) === prim);
   const add = el("button", { type: "button", class: "fb-add", "aria-haspopup": "listbox", disabled: full, onclick: ev => {
     const only = F.providers && F.providers.length === 1 ? F.providers[0] : "";
-    showMenu(ev.currentTarget, modelItems(`fb:${L.id}`, "", only), { value: "", onPick: v => { if (list.some(x => x.model === v && !x.key_file) || fbBase(v) === prim) toast("이미 있는 모델이에요", true); else { fbOpen = { layer: L.id, i: list.length, draft: fbDraftOf({ model: v }) }; fbSave(L.id, [...list, { model: v }]); } } });
-  } }, icon("add"), full ? "더 넣을 수 없어요" : "폴백 모델 추가");
-  // The usual case: the subscription ran out, so the same model goes on through an API key (only after a usage limit).
-  const addKey = F.conditions && prim && !full && !list.some(x => x.key_file && fbBase(x.model) === prim) ? el("button", { type: "button", class: "fb-add", onclick: () => fbKeyDialog({ model: prim }, file => file && fbSave(L.id, [...list, { model: prim, key_file: file, when: "quota" }])) }, icon("add"), "구독 소진 시 API 키로 계속") : null;
-  const how = L.id === "workers" ? "서브에이전트 폴백은 순서대로 넘어가요. API 키 단계는 세션이 시작될 때 정해져요. 이미 실행 중인 서브에이전트는 모델을 그대로 쓰고, 상한·복귀는 다음 시작부터 반영돼요."
-    : F.harness && F.harness.id === "claude" ? "Claude Code는 Anthropic 모델만, 조건 없이 순서대로 넘어가요."
-    : "단계를 누르면 바로 수정해요(모델·추론 강도·구독/API 키·넘어가는 때·복귀·상한). 끌거나 화살표로 순서를 바꿔요.";
+    const items = [...(keyStep ? [{ value: FB_ADD_KEY, label: `${modelName(prim)} API 키로 계속`, sub: "구독 소진 시" }] : []), ...modelItems(`fb:${L.id}`, "", only)];
+    showMenu(ev.currentTarget, items, { value: "", onPick: v => {
+      if (v === FB_ADD_KEY) fbKeyDialog({ model: prim }, file => file && fbSave(L.id, [...list, { model: prim, key_file: file, when: "quota" }]));
+      else if (list.some(x => x.model === v && !x.key_file) || fbBase(v) === prim) toast("이미 있는 모델이에요", true);
+      else { fbOpen = { layer: L.id, i: list.length, draft: fbDraftOf({ model: v }) }; fbSave(L.id, [...list, { model: v }]); }
+    } });
+  } }, icon("add"), full ? "더 넣을 수 없어요" : "폴백 추가");
+  const how = L.id === "workers" ? "실행 중인 서브에이전트는 다음 시작부터 반영돼요."
+    : F.harness && F.harness.id === "claude" ? "Claude Code는 Anthropic 모델만, 조건 없이 넘어가요."
+    : "";
   return {
     sub: L.sub,
     tags: F.harness ? [el("span", { class: "tag", title: "이 대상을 돌리는 하네스", text: F.harness.name })] : [],
-    body: [el("div", { class: "mt-fb" }, el("div", { class: "mt-fb-h" }, el("span", { class: "lb", text: "폴백 순서" }), el("span", { class: "sup", text: list.length ? `기본 포함 ${list.length + 1}단계` : "기본 모델만" })), chain, add, addKey, el("div", { class: "note", text: how }))],
+    chain: (pick, notes) => el("div", { class: "mt-fb" },
+      el("ol", { class: "fb-list", "aria-label": `${L.title()} 폴백 순서` },
+        el("li", { class: `fb-item base${used.has(prim) ? " in-use" : ""}` }, el("span", { class: "fb-n", text: "1" }), pick),
+        notes.length ? el("li", { class: "fb-sub" }, ...notes) : null,
+        ...list.flatMap((e, i) => (open(i) ? [itemFor(e, i), fbEditor(L, F, list, i, move)] : [itemFor(e, i)]))),
+      el("div", { class: "mt-fb-foot" }, add, how ? el("span", { class: "sup", text: how }) : null)),
   };
 }
 /* ---------- settings ---------- */

@@ -120,9 +120,23 @@ describe("effort levels follow the model", () => {
 		const v = await boot();
 		await openModels(v);
 		await run(v, `M.fallbacks.orchestrator.chain[1].enabled = false; renderModels()`);
-		const got = await q<{ sw: string; tags: string[] }>(v, `const n = document.querySelector('[data-target="orchestrator"] .fb-item[data-i="1"]'); return { sw: n.querySelector(".fb-sw").textContent, tags: [...n.querySelectorAll(".fb-tags .tag")].map(t => t.textContent) }`);
+		const got = await q<{ sw: string; tags: string[] }>(v, `const n = document.querySelector('[data-target="orchestrator"] .fb-item[data-i="1"]'); return { sw: n.querySelector(".fb-sw").textContent, tags: [...n.querySelectorAll(".tag")].map(t => t.textContent) }`);
 		expect(got.sw).toBe("꺼짐");
 		expect(got.tags).not.toContain("꺼짐");
+	});
+	test("a step is one row: a short summary, usage only near the cap, and the API-key step as a choice inside the one add control", async () => {
+		const v = await boot();
+		await openModels(v);
+		const row = () => q<{ sum: string; bar: boolean }>(v, `const n = document.querySelector('[data-target="orchestrator"] .fb-item[data-i="1"]'); return { sum: n.querySelector(".fb-sum").textContent, bar: !!n.querySelector(".fb-usage") }`);
+		await run(v, `Object.assign(M.fallbacks.orchestrator.chain[1], { key_file: "k", when: "quota", revert: false, cap: { period: "month", usd: 100 }, used: { usd: 10, tokens: 0 } }); renderModels()`);
+		expect(await row()).toEqual({ sum: "API 키 · 월 $100까지", bar: false });
+		await run(v, `M.fallbacks.orchestrator.chain[1].used.usd = 90; renderModels()`);
+		expect((await row()).bar).toBe(true);
+		expect(await q<number>(v, `return document.querySelectorAll('[data-target="orchestrator"] .fb-add').length`)).toBe(1);
+		await run(v, `document.querySelector('[data-target="orchestrator"] .fb-add').click()`);
+		await waitFor(v, `document.querySelector(".menu .mi .ml")`);
+		expect((await menuLabels(v))[0]).toContain("API 키로 계속");
+		await run(v, `closeMenu(false)`);
 	});
 	test("a fallback entry lists exactly its model's levels plus off, and the saved level stays when it is not one", async () => {
 		const v = await boot();
