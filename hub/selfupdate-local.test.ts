@@ -1,10 +1,12 @@
 // Self-update with local work on a git install, against real temp repos (bare origin, the install, a pusher; no network).
-import { afterEach, beforeEach, expect, test } from "bun:test";
+import { afterEach, beforeEach, expect, setDefaultTimeout, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { keepsLocal } from "./selfupdate-local.ts";
 import { autoHooks, commit, failFileTestCmd, git as sh, head, makeRepos, type Repos, setSelfUpdateCfg as setCfg } from "./selfupdate-fixture.ts";
 import { apply, autoCheck, check, onLocalSaved } from "./selfupdate.ts";
+
+setDefaultTimeout(30_000); // real git repos and test runs: seconds each, more under parallel load
 
 let r: Repos;
 let root: string, work: string, pusher: string, logDir: string;
