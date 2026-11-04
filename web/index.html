@@ -19,23 +19,31 @@
   try { const v = localStorage.getItem("dotz-target"); if (v && v !== "alert" && ok(v)) t = v; } catch {}
   const h = location.hash.slice(1), i = h.indexOf("/");
   try { const a = i < 0 ? "" : decodeURIComponent(h.slice(i + 1)); if (a && ok(a) && h.slice(0, i) !== "project") t = a; } catch {}
-  const q = encodeURIComponent(t);
+  const q = encodeURIComponent(t), v = h.split("/")[0];
   ask("/api/state?limit=0");
-  if (h.split("/")[0] === "notices" || t === "alert") ask("/api/notices?limit=300");
+  if (v === "notices" || t === "alert") ask("/api/notices?limit=300");
+  else if (!v || v === "home") ask("/api/conversations");   // 홈 (where a computer switch lands) draws from the state: 99-boot.js reads the conversation after it
   else {
   ask(`/api/history?target=${q}&limit=150`);
   ask(`/api/todo?target=${q}`);
   ask("/api/conversations");
   if (t !== "alert" && t !== "worklog") ask(`/api/activity?source=${encodeURIComponent(t.startsWith("lane:") ? t : "orchestrator")}&limit=300`);
   }
-  // The conversation as last drawn on this device (web/js/13-snapshot.js), for a paint that does not wait for any of the above.
+  // The conversation and 홈 as last drawn on this device (web/js/13-snapshot.js), for a paint that does not wait for any of the above.
+  let homeRec = () => {};
+  window.__snapHome = new Promise(res => { homeRec = res; });
   window.__snap = new Promise(res => {
+    const none = () => { homeRec(null); res(null); };
     try {
       const q = indexedDB.open("dotz-snap", 1);
       q.onupgradeneeded = () => q.result.createObjectStore("conv");
-      q.onerror = () => res(null);
-      q.onsuccess = () => { const g = q.result.transaction("conv").objectStore("conv").get(t); g.onerror = () => res(null); g.onsuccess = () => { q.result.close(); res(g.result || null); }; };
-    } catch { res(null); }
+      q.onerror = none;
+      q.onsuccess = () => {
+        const os = q.result.transaction("conv").objectStore("conv"), g = os.get(t), home = os.get("~home");
+        home.onerror = () => homeRec(null); home.onsuccess = () => homeRec(home.result || null);
+        g.onerror = () => res(null); g.onsuccess = () => { q.result.close(); res(g.result || null); };
+      };
+    } catch { none(); }
   });
 }
 </script>

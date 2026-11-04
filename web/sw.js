@@ -12,6 +12,8 @@ const SHELL = [...FRESH, ...ICONS];
 // Web Share Target (manifest share_target): the phone's share sheet POSTs photos to /share-target. The worker keeps them in this
 // cache and redirects to the chat, where the page (web/js/23-installable-app-web.js sharedIntake) takes them into the composer.
 const SHARE = "dotz-share";
+// A navigation answers from the cache at once; its background check waits this long, so its eight requests do not join the page's own first ones on a busy gateway.
+const REFRESH_AFTER_MS = 3000;
 
 async function stashShare(req) {
   try {
@@ -77,7 +79,7 @@ self.addEventListener("fetch", ev => {
   if (url.pathname === "/desk" || url.pathname.startsWith("/desk/")) return;
   if (req.mode === "navigate" || FRESH.includes(url.pathname)) {
     const key = req.mode === "navigate" ? "/" : url.pathname;
-    if (req.mode === "navigate") ev.waitUntil(refreshShell());
+    if (req.mode === "navigate") ev.waitUntil(new Promise(res => setTimeout(res, REFRESH_AFTER_MS)).then(refreshShell));
     ev.respondWith(caches.match(key).then(hit => hit || fetch(req)));
     return;
   }
