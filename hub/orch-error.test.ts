@@ -235,6 +235,12 @@ test("the banner shows with the reason, since when and the restart button, and c
 		api: async (path: string, method: string) => void calls.push(`${method} ${path}`),
 		toast: () => {},
 		refreshState: () => {},
+		clear: (n: { innerHTML: string }) => { n.innerHTML = ""; return Object.assign(n, { append: (...xs: (string | { text: string })[]) => { n.innerHTML += xs.map(x => (typeof x === "string" ? x : x.text)).join(""); } }); },
+		el: (_tag: string, o: { text: string }) => o,
+		iGa: (s: string) => `${s}가`,
+		botName: "비서",
+		noticeKo: (s: string) => s,
+		NK: {},
 	};
 	const { paintOrchError } = new Function(...Object.keys(env), `${src}\nreturn { paintOrchError };`)(...Object.values(env));
 	paintOrchError();

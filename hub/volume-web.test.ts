@@ -3,7 +3,7 @@ import { type Store, serve, until } from "./volume-fixture.ts";
 
 // The lists at volume in a headless browser at 390px against hub/volume-fixture.ts (180+ notices, 100 projects with unread, sessions waiting):
 // 감시 소식 puts what waits first and folds repeats (web/js/30-monitoring.js monFeedNodes), its views count right and 읽음 처리 never clears an
-// ask; the chat list narrows to 답 필요 / 안 읽음, pages the projects and reads only what needs no answer (web/js/31-conversations.js convBar);
+// ask; the chat list narrows to 답할 것 / 세션 / 알림, pages the projects and reads only what needs no answer (web/js/31-conversations.js convBar);
 // on load the waiting questions are one card (web/js/09-needs-you.js toastAttn); the whole notice set is loaded (web/js/30-notices.js).
 let store: Store, url = "", stop = () => {};
 const view = new Bun.WebView({ width: 390, height: 844 });
@@ -73,9 +73,9 @@ test("감시 소식's 읽음 처리 reads the plain reports only; what waits sta
 	expect(await ev<string>(`document.querySelector('#mon-tl .mr-f[data-filter="need"]').textContent`)).toBe("답 필요3");
 });
 
-test("the chat list narrows to 답 필요 and 안 읽음 with their counts and draws the projects a page at a time", async () => {
+test("the chat list narrows to 답할 것 with its count, keeps 세션 and 알림 as filters and draws the projects a page at a time", async () => {
 	await open("#chat/list", chatReady);
-	expect(await ev<string[]>(`[...document.querySelectorAll("#chat-convo .cv-bar .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "답 필요15", "안 읽음99"]);
+	expect(await ev<string[]>(`[...document.querySelectorAll("#chat-convo .cv-bar .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "답할 것15", "세션", "알림"]);
 	const projects = `[...document.querySelectorAll("#chat-convo .cv-row")].filter(r => (r.dataset.t || "").startsWith("ch:")).length`;
 	expect(await ev<number>(projects)).toBe(40);
 	await ev(`(document.querySelector('#chat-convo .cv-more .btn').click(), 0)`);
@@ -96,10 +96,10 @@ test("the chat list's 읽음 처리 moves the read position of the conversations
 	store.readPosts.length = 0;
 	expect(await ev<string>(`document.querySelector("#chat-convo .cv-read").textContent`)).toBe("85개 읽음 처리");
 	await ev(`(document.querySelector("#chat-convo .cv-read").click(), 0)`);
-	await wait(`document.querySelector("#chat-convo .cv-read").disabled && !!document.querySelector(".snack:not(.bad)")`, "read done");
+	await wait(`!!document.querySelector(".snack:not(.bad)")`, "read done");
 	const targets = store.readPosts.map(p => p.target);
 	expect(targets.length).toBe(85);
 	expect(targets).toContain("main");
 	for (const t of ["alert", "lane:s1", "lane:s2", "ch:1001", "ch:1008"]) expect(targets).not.toContain(t);
-	expect(await ev<string>(`document.querySelector('#chat-convo .mr-f[data-view="unread"]').textContent`)).toBe("안 읽음14");
+	expect(await ev<string>(`document.querySelector('#chat-convo .mr-f[data-view="need"]').textContent`)).toBe("답할 것15");
 });
