@@ -35,6 +35,12 @@ import { installBgGuard } from "./bg-guard.ts";
 import { jsonZod, params } from "./schema.ts";
 import { secretIn } from "./peer-secrets.ts";
 
+// The claude.ai connectors (Gmail, Calendar, Drive, Docs) reach a fresh Claude Code process only after its first request, so
+// its second request adds their 48 tools mid-conversation, and every such request lost the whole message cache: 126 of 126
+// over 60K against 6 of 4394 without, 9.5M tokens rewritten in 24h (2026-11-03). No session has ever called them. Children
+// read process.env at spawn; an owner-set value wins.
+process.env.ENABLE_CLAUDEAI_MCP_SERVERS ??= "false";
+
 const DATA = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 const PKG = join(import.meta.dir, "..");
 const NAME = (() => {
