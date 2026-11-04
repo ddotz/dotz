@@ -33,11 +33,11 @@ code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom
 button.cchip.unrep-no { height: 22px; padding: 0 var(--sp-2); font-size: 11.5px; color: var(--unreplied); }
 /* 초안 작성 beside 답장 안 함: the one action that moves the mail forward, so it carries the accent (30-monitoring.js mailDraftButton).
    A tonal pill with the pencil (owner 2026-10-29: bare accent text looked unfinished); --layer on the card, --hover under the pointer. */
-button.cchip.mr-draft { height: 24px; gap: var(--sp-1); padding: 0 10px 0 var(--sp-2); background: var(--layer); font-size: 12px; font-weight: 600; color: var(--accent); }
+button.cchip.mr-draft { height: 24px; gap: var(--sp-1); padding: 0 var(--sp-3) 0 var(--sp-2); background: var(--layer); font-size: 12px; font-weight: 600; color: var(--accent); }
 button.cchip.mr-draft:hover { background: var(--hover); }
 button.cchip.mr-draft .ic { width: 14px; height: 14px; stroke-width: 2; }
 /* a mail's row buttons on a phone: a finger-sized target (the row itself opens the mail, so a near miss must not) */
-@media (pointer: coarse), (max-width: 639px) { button.cchip.mr-act { height: 32px; padding: 0 var(--sp-3); font-size: 13px; } button.cchip.mr-draft { padding: 0 14px 0 10px; } button.cchip.mr-draft .ic { width: 16px; height: 16px; } }
+@media (pointer: coarse), (max-width: 639px) { button.cchip.mr-act { height: 32px; padding: 0 var(--sp-3); font-size: 13px; } button.cchip.mr-draft { padding: 0 var(--sp-3); } button.cchip.mr-draft .ic { width: 16px; height: 16px; } }
 .row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .row + .row { margin-top: var(--sp-2); }
 .row .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -52,7 +52,7 @@ button.cchip.mr-draft .ic { width: 14px; height: 14px; stroke-width: 2; }
 .bar.warn { --bar: var(--warn); } .bar.err { --bar: var(--err); }
 .lim + .lim { margin-top: var(--sp-3); }
 .more { margin-top: var(--sp-3); color: var(--fg-3); font-size: 12px; }
-.sec { margin: 28px var(--sp-1) 10px; color: var(--fg-2); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); }
+.sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); color: var(--fg-2); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); }
 .sec:first-child { margin-top: 0; }
 .list { border: 0; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .list > * + * { border-top: 1px solid var(--line); }
@@ -87,7 +87,7 @@ button.li:hover, .li.tap:hover { background: var(--card-hover); }
 .acc-dragging .li.acc.drag { position: relative; z-index: 2; transition: none; background: var(--card); box-shadow: 0 6px 20px rgb(0 0 0 / .18); cursor: grabbing; }
 .rt-roles { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .rt-roles .seg { flex: none; flex-wrap: nowrap; }
-.rt-roles .seg button { flex: none; padding: 0 10px; }
+.rt-roles .seg button { flex: none; padding: 0 var(--sp-3); }
 .rt-rows { max-height: min(48dvh, 400px); overflow-y: auto; }
 .rt-row { padding: var(--sp-2) var(--sp-3); min-width: 0; }
 .rt-row .top { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
