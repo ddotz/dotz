@@ -54,3 +54,17 @@ test("a system event is a compact line with its worker's live state, opens the w
 	await v.evaluate(`($("#tl .cv-sys .ct-hd").click(), 0)`);
 	await waitFor(v, `SUBD && SUBD.id === "st_w1"`);
 }, 20_000);
+
+// The hub pushes a job's first state on its next sweep, seconds after the row: a row that just arrived starts as running, in the same task that draws it.
+test("a work card that arrives live has its running badge before the page can paint; a replayed old one claims nothing", async () => {
+	const v = new Bun.WebView({ width: 390, height: 800 });
+	views.push(v);
+	await v.navigate(`http://127.0.0.1:${server.port}/?sys=2#chat`);
+	await waitFor(v, `S && S.work && document.querySelector("#tl .cv-sys")`);
+	const arrive = (worker: string, ts: string) => v.evaluate(`new Promise(res => {
+		ingestMsg({ ...${JSON.stringify({ ...SYS, worker })}, ts: ${ts} });
+		queueMicrotask(() => { const c = [...document.querySelectorAll("#tl .cv-task")].at(-1), p = c.querySelector(".cv-sys-st"); res({ hidden: p.hidden, text: p.textContent, tone: p.classList.contains("pri") }); });
+	})`);
+	expect(await arrive("st_new", "new Date().toISOString()")).toEqual({ hidden: false, text: "진행 중", tone: true });
+	expect((await arrive("st_old", "new Date(Date.now() - 3600000).toISOString()") as { hidden: boolean }).hidden).toBe(true);
+}, 20_000);

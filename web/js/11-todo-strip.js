@@ -135,9 +135,10 @@ function cardNode(c) {
 // A gateway system line (hub/outbound.ts `system`, e.g. "백그라운드 작업으로 맡겼어요: …"): one small muted line in the style of the
 // 여기까지 읽음 divider, no bubble or author. With a `worker` it opens that worker (its result once there is one), and its job's state is painted in place.
 // The state is the gateway's (hub/workrows.ts), never the event's: `work` on /api/history for what a load finds, a stream frame when a job changes, and S.work.
+// The first frame comes with the next sweep, seconds after the row: a row that just arrived starts as running, so its card is whole at once, and any word from the gateway replaces that.
 const SYS_NODES = new Map();   // worker id -> every line drawn for it: { st, at, w } (a follow-up joined to a job writes a second line)
 const WORK_ROWS = new Map();   // worker id -> the gateway's newest word on its job
-const WORK_ROWS_MAX = 600, SYS_SLACK_MS = 5000;
+const WORK_ROWS_MAX = 600, SYS_SLACK_MS = 5000, SYS_FRESH_MS = 60_000;
 const SYS_ST = { running: ["pri", "진행 중"], stalled: ["warn", "멈춤"], done: ["ok", "완료"], failed: ["err", "실패"], gone: ["off", "끝남"] };
 const SYS_STOPPED = ["off", "중단됨"];
 function workRowNote(w, at) {
@@ -226,6 +227,7 @@ function sysTaskLine(e, title, hm, id) {
 function sysLine(e, text, hm) {
   const id = typeof e.worker === "string" ? e.worker : "", task = id && SYS_TASK.exec(text);
   if (e.work) workRowNote(e.work, e.work.at);
+  else if (id && Date.now() - Date.parse(e.ts) < SYS_FRESH_MS) workRowNote({ id, status: "running" }, Date.parse(e.ts));
   if (task) return sysTaskLine(e, task[1].trim(), hm, id);
   const st = el("span", { class: "cv-sys-st", hidden: true }, el("span", { class: "dot" }), el("span"));
   const kids = [icon("lanes"), el("span", { class: "cv-sys-tx", text }), st, hm ? el("span", { class: "cv-sys-mt", text: hm }) : null];
