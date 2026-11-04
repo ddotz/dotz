@@ -25,6 +25,27 @@
     F.state.lanes.push(lane);
     F.state.channels.work["5"] = "한글 문서 자동화";
     F.state.channels.homes["hdocs-fill"] = "5";
+    // 나머지 프로젝트의 세션과 대화: 채팅 목록과 프로젝트 화면이 빈 미리보기나 영문 세션 이름을 보이지 않게 채워요.
+    F.state.channels.work["3"] = "가격 조사";
+    F.state.channels.work["4"] = "주간 보고서";
+    F.state.channels.homes["notes-draft"] = "2";
+    F.state.channels.homes["price-research"] = "3";
+    for (const pj of F.projects) for (const l of pj.lanes) if (!F.state.lanes.some(x => x.name === l.name)) F.state.lanes.push({ ...l, model: F.MODEL, lastText: pj.key === "ch:2" ? "배포 공지 형태를 기다려요" : "요금표 세 곳을 비교하고 있어요" });
+    const chat = (t, ask, m, reply) => {
+      F.histories[t] = [
+        { ts: ago(m + 1), kind: "message", source: "web", channel: "web", target: t, text: ask },
+        { ts: ago(m), kind: "out", source: "orchestrator", target: t, text: `[done] ${reply}` },
+      ];
+      F.conversations.push({ target: t, last: { ts: ago(m), text: reply, from: "bot" }, unread: 0, read: ago(m) });
+    };
+    chat("ch:3", "경쟁 서비스 세 곳 요금표를 모아 줘", 3, "요금표 세 곳을 모았어요. 비교표를 만들고 있어요.");
+    chat("ch:4", "이번 주 보고서 정리해 줘", 52, "주간 보고서를 정리했어요.");
+    chat("ch:5", "공문 초안 세 건 만들어 줘", 5, "공문 초안 3건을 만들었어요. 표 서식을 맞추고 있어요.");
+    for (const n of ["notes-draft", "price-research", "hdocs-fill"]) {
+      const l = F.state.lanes.find(x => x.name === n);
+      F.histories[`lane:${n}`] = [{ ts: ago(4), kind: "out", source: `lane:${n}`, lane: n, target: `lane:${n}`, text: l.lastText }];
+      F.conversations.push({ target: `lane:${n}`, last: { ts: ago(4), text: l.lastText, from: "session" }, unread: 0, read: ago(4) });
+    }
   }
   const NOTE = "데모에서는 실제로 보내지 않아요";
   /* Mail summaries in the format the hub writes now (hub/mail-summary.ts): two lines, what the mail is about, then what to do with the to-do and its
@@ -659,6 +680,7 @@
     in_use: [{ key: "main", label: "dotz", model: F.MODEL }],
     fallbacks: {},
   };
+  const BUDGET = { limit_usd: 50, spent_usd: 12.4, pct: 24.8, month: new Date().toISOString().slice(0, 7), resets_at: new Date(Date.now() + 26 * 864e5).toISOString(), source: "estimate" };
   const lists = {
     "/api/workers": { items: [] },
     "/api/apps": { items: [] },
@@ -717,7 +739,7 @@
     ] },
     "/api/features": FEATURES_FX,
     "/api/harness": HARNESS_FX,
-    "/api/api-budget": {},
+    "/api/api-budget": BUDGET,
     "/api/web-access": { mode: "tailscale", hostname: "", team: "", aud: "", token_set: false, tunnel: { state: "off" }, devices: 2, cloudflared_found: true },
     "/api/push/gateways": { items: [] },
     "/api/push": { subscribed: false },
@@ -737,7 +759,7 @@
       { id: "google", name: "Gemini", auth: "api_key", masked: "AIza…x9Qd", can_login: true, can_logout: true },
       { id: "cursor", name: "Cursor", auth: "none", can_login: true },
     ] },
-    "/api/quota": { providers: [{ provider: "claude", limits: [
+    "/api/quota": { budget: BUDGET, providers: [{ provider: "anthropic", limits: [
       { id: "five_hour", label: "Claude 5 Hour", limit: 100, remaining: 64, status: "ok" },
       { id: "seven_day", label: "Claude 7 Day", limit: 100, remaining: 18, status: "warn" },
     ] }] },
