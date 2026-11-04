@@ -8,7 +8,6 @@
 
 .cv-row { display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; min-height: var(--row-h); padding: var(--row-py) 16px; border: 0; border-radius: 0; background: transparent; color: inherit; text-align: left; }
 .cv-row + .cv-row { margin-top: 2px; }
-.cv-side .cv-bar { border-bottom: 0; }
 /* the open conversation: a small accent dot in the row's left padding (the slot every row already has, so text never shifts); phone only — the wide layout already highlights the row */
 .cv-row { position: relative; }
 @media (max-width: 1099px) { .cv-row.on::before { content: ""; position: absolute; top: 50%; left: 5px; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); } }
@@ -91,17 +90,11 @@
 /* 목록 행 (시제품 채팅 목록 proto .li) — 모든 너비의 공통 기반이에요: 48px 두 줄, 36px 둥근 사각 아이콘 면, 오른쪽 시각·대기 표시, 구분선 한 줄, 고른 행은 회색 면.
    프로젝트·모니터링 목록 패널도 이 형식(.cv-side 안의 .cv-row)에 맞춰요. */
 #chat-convo { padding: 0; }
-/* 채팅 목록 (proto listHtml): 필터 알약은 바탕 위에, 대화는 한 장의 카드에, '메일 · 카카오톡'은 제목과 그 아래 카드로. */
+/* 채팅 목록 (proto listHtml): 대화는 한 장의 카드에, '메일 · 카카오톡'은 제목과 그 아래 카드로. */
 #chat-convo:not(.mon-side) { background: transparent; border-radius: 0; }
-#chat-convo:not(.mon-side) .cv-bar { flex-wrap: wrap; gap: 6px; margin: 0; padding: 4px 0 12px; border: 0; background: var(--bg); }
-#chat-convo:not(.mon-side) .cv-tabs { flex-wrap: wrap; gap: 6px; overflow: visible; }
 .cv-foot { display: flex; justify-content: center; margin-top: 8px; }
-#chat-convo:not(.mon-side) .cv-tabs .cchip { height: 32px; padding: 0 14px; border-radius: 16px; background: transparent; color: var(--fg-2); font: 500 13px/32px var(--font); }
-#chat-convo:not(.mon-side) .cv-tabs .cchip:hover { background: var(--layer); }
-#chat-convo:not(.mon-side) .cv-tabs .cchip.on { background: var(--fg); color: var(--bg); font-weight: 600; }
 .cv-card { overflow: hidden; border-radius: var(--r-card); background: var(--card); }
 .cv-sec { margin: 24px 4px 8px; color: var(--fg-2); font: 600 14px/20px var(--font); }
-#chat-convo .cv-bar:not(:has(.cv-tabs)) { padding: 8px 8px 4px; }
 #chat-convo .cv-gh { padding: 12px 16px 4px; }
 #chat-convo .cv-row { min-height: 48px; padding: 8px 16px; gap: 12px; border-radius: 0; }
 #chat-convo .cv-row + .cv-row { margin-top: 0; border-top: 1px solid var(--line); }
