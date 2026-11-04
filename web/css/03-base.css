@@ -86,13 +86,14 @@
 .fb-add:disabled { opacity: .5; }
 
 /* fields */
-.tf { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.tf > label, .tf > .lb { font: 500 12px/16px var(--font); color: var(--fg-2); }
-.fi, .sel { display: flex; align-items: center; gap: 8px; width: 100%; height: var(--field-h); padding: 0 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--card); outline: 0; font-size: 13px; text-align: left; }
+.tf { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tf > label, .tf > .lb { font: 500 14px/20px var(--font); color: var(--fg-2); }
+.fi, .sel { display: flex; align-items: center; gap: 8px; width: 100%; height: var(--field-h); padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); outline: 0; font-size: 13px; text-align: left; }
 .fi { min-width: 0; }
 .fi::placeholder { color: var(--fg-3); }
-.fi:focus, .sel[aria-expanded="true"] { border-color: var(--accent); box-shadow: none; }
-.sel:hover { border-color: var(--fg-3); }
+.fi:focus, .sel:focus-visible, .sel[aria-expanded="true"] { box-shadow: var(--ff-ring); }
+.fi[aria-invalid="true"] { box-shadow: var(--ff-ring-err); }
+.fi:disabled { color: var(--fg-3); cursor: default; }
 .sel .val { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sel svg.ic { color: var(--fg-3); width: 14px; height: 14px; }
 @media (pointer: coarse) { .fi, .sel { height: var(--field-h-touch); font-size: 16px; } }

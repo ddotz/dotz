@@ -63,12 +63,12 @@
 
 
 /* dotz_auth 입력 요청 (16-target-switcher-conversation.js authCard): 새 토큰의 입력칸과 버튼. 비밀 값은 type=password 그대로, 화면에만 보기/숨기기 */
-.au input:not([type=checkbox]) { height: var(--field-h); padding: 0 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--card); color: var(--fg); font-size: var(--fs-body); }
-.au input:not([type=checkbox]):focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+.au input:not([type=checkbox]) { height: var(--field-h); padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg); font-size: var(--fs-body); }
+.au input:not([type=checkbox]):focus { outline: 0; box-shadow: var(--ff-ring); }
 .au .fld label { color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); }
-.au .eye { height: var(--field-h); padding: 0 10px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font: 500 13px/20px var(--font); }
+.au .eye { height: var(--field-h); padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg-2); font: 500 13px/20px var(--font); }
 .au .eye:hover { background: var(--hover); color: var(--fg); }
-.au input.bad { border-color: var(--err); }
+.au input.bad, .au input.bad:not([type=checkbox]):focus { box-shadow: var(--ff-ring-err); }
 .au .ferr { color: var(--err); }
 .au .rem { color: var(--fg-2); font-size: 13px; }
 @media (pointer: coarse), (max-width: 639px) { .au input:not([type=checkbox]) { height: var(--field-h-touch); font-size: 16px; } .au .eye { height: var(--field-h-touch); } }
@@ -126,8 +126,8 @@
 .dc-dr-b { max-height: min(22dvh, 180px); margin-top: 2px; overflow-y: auto; overscroll-behavior: contain; color: var(--fg); font-size: 14px; line-height: 22px; white-space: pre-wrap; }
 .dc-edit { flex: none; display: flex; flex-direction: column; gap: 8px; }
 .dc-ctx { display: flex; align-items: center; gap: 8px; }
-.dc-note { width: 100%; box-sizing: border-box; min-height: 72px; padding: 10px 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--card); resize: vertical; font-size: 14px; line-height: 22px; }
-.dc-note:focus { outline: 0; border-color: var(--accent); }
+.dc-note { width: 100%; box-sizing: border-box; min-height: 72px; padding: 10px 12px; border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); resize: vertical; font-size: 14px; line-height: 22px; }
+.dc-note:focus { outline: 0; box-shadow: var(--ff-ring); }
 .dc-eb { display: flex; gap: 8px; }
 .dc-fl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .dc-fl .dr-add { flex: none; padding: 0 12px; }
