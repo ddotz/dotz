@@ -1,5 +1,5 @@
 import { DATA_DIR, log, paths, selectorOf, lanesModel, now, chainAfter, fallbackChain, parseSelector } from "./config.ts";
-import { type Lane, laneLive, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus, portOf, type Record_, pendingFile } from "./lanestate.ts";
+import { type Lane, hooks, laneLive, laneWorkerModel, lanes, dir, persist, ownerNotes, setStatus, portOf, type Record_, pendingFile } from "./lanestate.ts";
 import { broadcast } from "./events.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
@@ -16,6 +16,10 @@ import { baseLanguage, languageName } from "./language.ts";
 import { hubChain, Chain, Reverter } from "./fallback.ts";
 import { runtimeFor } from "./runtime/index.ts";
 import { statusActivity, runningSubagents } from "./activity.ts";
+import { runningOmoWorkers } from "./bgwork.ts";
+import { openTodos } from "./runstate.ts";
+import { backgroundWork, readTodo, workCutOff } from "./todo.ts";
+import { parseTone } from "./tone.ts";
 import { activeCount, laneLimits, launchWait, waitingLanes } from "./lanelimits.ts";
 import { trackTimer } from "./shutdown.ts";
 import { diskGuardTick } from "./diskguard.ts";
@@ -341,9 +345,33 @@ export function handoverLane(name: string, text?: string): void {
 	lane.silent = { lastText: lane.lastText };
 }
 
-// Brings back every lane that was alive when the gateway stopped: working ones resume their turn, idle ones (waiting on
-// the owner) are respawned idle so they keep answering in their channel. Lanes already stopped stay stopped.
-// Returns the lanes that were resumed mid-work.
+const closesTurn = (text: string) => ["done", "ask"].includes(parseTone(text).tone ?? "");
+
+// Continuation turns one unchanged plan gets from gateway restarts before the owner is told instead.
+export const RESTART_WAKE_MAX = 3;
+// The note for a lane that stopped idle with work left: tasks open, or what it waited on cut off, and no closing report. A [done] or
+// an open [ask] stays idle. A restart costs no context: the note is one prompt on the same session, and the first turn after the
+// 33-minute gap read the whole prefix from cache (site-demo-proto 01:43: 182,024 read, 738 written).
+function restartNote(lane: Lane): string | undefined {
+	const reported = join(dir(lane.name), "report.md");
+	const todo = openTodos(readTodo(lane.sessionFile));
+	if (lane.pendingAsk || lane.claim || (existsSync(reported) && closesTurn(readFileSync(reported, "utf8"))) || (!todo.open && !workCutOff(lane.sessionFile))) {
+		lane.restartWakes = undefined;
+		return undefined;
+	}
+	const plan = `${todo.open}:${todo.current ?? ""}`;
+	const count = lane.restartWakes?.plan === plan ? lane.restartWakes.count : 0;
+	if (count === RESTART_WAKE_MAX) {
+		log(`lane ${lane.name} left idle: ${count} continuation turns after restarts changed nothing in its plan`);
+		hooks.report(lane, msg().laneRestartStuck(count));
+	}
+	lane.restartWakes = { plan, count: Math.min(count + 1, RESTART_WAKE_MAX + 1) };
+	return count < RESTART_WAKE_MAX ? msg().laneRestartContinue(todo.open, todo.current ?? "") : undefined;
+}
+
+// Brings back every lane that was alive when the gateway stopped: working ones resume their turn, idle ones with work left get a
+// continuation turn (restartNote), and the rest (finished, waiting on the owner) are respawned idle so they keep answering in their
+// channel. Lanes already stopped stay stopped. Returns the lanes that were resumed mid-work.
 export function restoreLanes(): string[] {
 	const resumed: string[] = [];
 	if (!existsSync(paths.lanes)) return resumed;
@@ -367,6 +395,12 @@ export function restoreLanes(): string[] {
 			lane.quiet = true;
 			log(`lane ${name} stays parked (idle, no process; a message resumes it)`);
 		} else if (session && rec.status === "idle") {
+			const note = restartNote(lane);
+			if (note) {
+				resumeLane(lane, note);
+				resumed.push(name);
+				continue;
+			}
 			if (spawn(lane, true)) setStatus(lane, "idle");
 			log(`lane ${name} respawned idle ${rec.sessionFile}`);
 		} else if (rec.waiting && rec.status === "starting") log(`lane ${name} still queued (${rec.waiting}), it starts when the limits allow`);
@@ -375,10 +409,15 @@ export function restoreLanes(): string[] {
 	return resumed;
 }
 
-// A lane is busy while its turn runs or any of its task workers still runs (a turn often ends while workers go on).
+// A lane is busy while its turn runs, any of its task workers still runs (a turn often ends while workers go on), or its ended turn
+// waits on a background shell of its own: on OmO neither shows in the lane's status or frames, only in its task store and session file
+// (a restart killed the shell of a turn that had ended 88 s earlier, site-demo-proto 2026-11-04 01:11; 0.6 s, prototype-to-product 00:44).
+// A shell left running after a [done] or an [ask] (a dev server, say) is not what the lane waits on.
 // Only a live process is busy: a queued lane or one whose spawn failed has nothing a gateway restart could cut off (the Mac mini's
 // restart waited on the dead kdb-allowance-review, 2026-10-29).
-export const laneBusy = (lane: Lane): boolean => (Boolean(lane.proc) && (lane.status === "working" || lane.status === "starting")) || runningSubagents(`lane:${lane.name}`) > 0;
+export const laneBusy = (lane: Lane): boolean =>
+	(Boolean(lane.proc) && (lane.status === "working" || lane.status === "starting" || runningOmoWorkers(lane.sessionFile) > 0 || (backgroundWork(lane.sessionFile) > 0 && !closesTurn(lane.lastText)))) ||
+	runningSubagents(`lane:${lane.name}`) > 0;
 
 // Memory: stops an idle lane's process (~1 GB with its claude child) and keeps the lane idle on the same session file; the
 // next message resumes it there (sendToLane), and a gateway restart leaves it stopped (restoreLanes). Never a busy lane.
@@ -394,7 +433,7 @@ export function parkLane(lane: Lane): boolean {
 export function shutdownLanes(): void {
 	for (const lane of lanes.values()) {
 		if (!lane.proc) continue;
-		// An idle lane whose workers are cut off here is saved as working, so restoreLanes resumes it with the note that
+		// An idle lane whose workers or shells are cut off here (only the owner's restart now does that) is saved as working, so restoreLanes resumes it with the note that
 		// its workers stopped instead of respawning it idle.
 		if (lane.status === "idle" && laneBusy(lane)) {
 			lane.status = "working";
