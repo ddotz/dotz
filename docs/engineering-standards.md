@@ -8,7 +8,7 @@
 
 | 항목 | 기준값 | 현재값 | 확인 방법 |
 |---|---|---|---|
-| 파일 크기 | 제품 코드 800줄 이하 | 12개 초과. 최대 `hub/notices.ts` 1620, TS 400개 중 p50 121, p90 473, p99 1107 | 규칙 1. 초과 파일은 이름별 상한(다음 25 단위) |
+| 파일 크기 | 제품 코드 800줄 이하 | 13개 초과. 최대 `hub/notices.ts` 1630, TS 400개 중 p50 121, p90 473, p99 1107 | 규칙 1. 초과 파일은 이름별 상한(다음 25 단위) |
 | 함수 크기 | 맨 바깥 함수 300줄 이하 | 12개 초과. 최대 `createOrchestrator` 999, `makeRoute` 738, `createKakaoWeb` 687 | 규칙 2 |
 | 순환 의존 | 새 순환 0 | 5묶음(레인 5개 모듈, 폴백 3개, 감시 3개, 계정 2개, 유튜브 2개) | 규칙 3 |
 | 층 경계 | 층을 넘는 import 증가 0. web은 hub를 import하지 않음 | hub→features 50, hub→onboard 7, hub→extension 2, extension→hub 12, onboard→hub 1, features→onboard 2, 기능끼리 18. web↔hub import 0 | 규칙 4 |
@@ -18,7 +18,7 @@
 | 시간 제한 | 외부 호출에는 제한이나 중단 신호 | 제한 없는 호출 hub 72, features 13, onboard 7, setup 5, extension 2 | 규칙 8. 웹 페이지는 제외 |
 | 시험의 시간 의존 | 고정 대기와 벽시계 예산 단언 증가 0 | 고정 대기 12, 예산 단언 파일 5 | 규칙 9 |
 | 죽은 코드 | 아무도 부르지 않는 export·웹 전역 증가 0 | export 1, 웹 전역 9 | 규칙 10, 11. 목록 이름별 |
-| 모듈 지도 | 새 `hub/*.ts`는 `docs/ARCHITECTURE.md`에 등재 | 254개 중 145개 미등재 | 규칙 12 |
+| 모듈 지도 | 새 `hub/*.ts`는 `docs/ARCHITECTURE.md`에 등재 | 257개 중 148개 미등재 | 규칙 12 |
 | 같은 이름 도우미 | 사본 증가 0 | `json` 17, `readJson` 13, `git` 7, `shq` 5, `sleep` 4, `sameOrigin` 3 | 규칙 13 |
 | 복사 덩어리 | 12줄 이상 덩어리 증가 0 | 4개. jscpd(8줄 이상) 기준 중복 0.22% | 규칙 14 |
 | 프롬프트 크기 | 상한은 바이트로 고정 | `MODE.md` 31,735 / 상한 31,735 | `hub/prompt-budget.ts`와 그 시험 |
