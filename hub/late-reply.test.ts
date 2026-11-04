@@ -115,3 +115,11 @@ test("a turn that ends with [later] leaves its request waiting until a real answ
 	expect(posts).toEqual([{ target: "ch:1", text: "[done] 바꿨어요", replyTo: "a1111111" }]);
 	expect(q.isAnswered("b2222222")).toBe(false);
 });
+
+test("an answer in the web settles what waits there, except requests with a worker's result or a turn still to come (2026-11-04 23e38963)", () => {
+	const open = [{ ref: "a", by: "a" }, { ref: "b", by: "b" }, { ref: "c", by: "c" }, { ref: "steered" }];
+	const r = settleWaiting(open, "a", true, ["a", "b", "c"]);
+	expect(r.done.map(w => w.ref)).toEqual(["a", "steered"]);
+	expect(r.keep.map(w => w.ref)).toEqual(["b", "c"]);
+	expect(settleWaiting(open, undefined, false, ["c"]).keep.map(w => w.ref)).toEqual(["c"]);
+});

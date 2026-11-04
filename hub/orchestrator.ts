@@ -299,6 +299,14 @@ export function createOrchestrator(opts: OrchOpts) {
 		onAnswer = answer;
 	}
 
+	// Background workers as the runtime reports them: spawned in this session, or finished (their result is what the next run reads).
+	let onWorkersSpawned: (workers: { id: string; description?: string }[]) => void = () => {};
+	let onWorkersDone: (ids: string[]) => void = () => {};
+	function setWorkerHandlers(spawned: typeof onWorkersSpawned, done: typeof onWorkersDone): void {
+		onWorkersSpawned = spawned;
+		onWorkersDone = done;
+	}
+
 	const saved = (): Saved => (existsSync(opts.stateFile) ? JSON.parse(readFileSync(opts.stateFile, "utf8")) : {});
 	let currentModel = "";
 	const save = (s: Saved) => writeAtomic(opts.stateFile, `${JSON.stringify({ ...saved(), ...s }, null, 2)}\n`);
@@ -464,6 +472,12 @@ export function createOrchestrator(opts: OrchOpts) {
 						}
 					}
 					if (orch.status === "idle") setTimeout(() => orch.status === "idle" && onIdle(), 200);
+					break;
+				case "workers_spawned":
+					onWorkersSpawned(ev.workers);
+					break;
+				case "workers_done":
+					onWorkersDone(ev.ids);
 					break;
 				case "user":
 					if (!isResumeNote(ev.text) && onPrompt(ev.text) === true) proc?.abort();
@@ -1079,7 +1093,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		return true;
 	}
 
-	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setResumeExtra, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, heldCount: () => held.length + unstarted.length, turnFailed: () => turnFailed };
+	return { key: opts.key, source: opts.source, orch, orchestratorPid, setTurnHeader, setResumeExtra, setWorkerHandlers, setNoticeHandler, setAlertHandler, setErrorHandler, setRestartedHandler, resumeAfterError, resumeNow, setIdleHandler, setAnswerHandlers, nightlyHandover, start, keepaliveSupported, deliver, steer, stop, park, restart, applyModelChange, applyChainChange, applyAccountChange, applyAccountPin, abort, setOwnerCancel, onOwnerCancel, cancelByOwner, compact, lastTurnEndAt: () => lastTurnEnd, heldCount: () => held.length + unstarted.length, turnFailed: () => turnFailed };
 }
 export type Orchestrator = ReturnType<typeof createOrchestrator>;
 

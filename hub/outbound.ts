@@ -21,7 +21,7 @@ import { MAIN } from "./session-key.ts";
 import { errorAsk } from "./orch-error.ts";
 import { createBgWork } from "./bgwork.ts";
 import { digest } from "./convdigest.ts";
-import { createPrompts } from "./prompts.ts";
+import { createPrompts, type WorkLink } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
@@ -67,7 +67,18 @@ export const send = (target: string, text: string, ref?: string): Promise<{ deli
 // The name the owner reads for a conversation: its own name when set, else the target it was opened for.
 const convLabel = (target: string) => convs.forTarget(target)?.meta.name || convs.forTarget(target)?.primary || target;
 function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => ReturnType<typeof createBgWork> | undefined) {
+	// Which request each worker serves, beside pending.json: read here once, written only when a link changes.
+	const linksFile = pendingFile.replace(/\.json$/, "-links.json");
+	let links: WorkLink[] = [];
+	try {
+		if (existsSync(linksFile)) links = JSON.parse(readFileSync(linksFile, "utf8"));
+	} catch (e) {
+		log(`worker links in ${linksFile} not read: ${e}`);
+	}
 	return createPrompts({
+		links,
+		persistLinks: all => writeAtomic(linksFile, `${JSON.stringify(all)}\n`),
+		report: id => bg()?.reportOf(id),
 		deliver: o.deliver,
 		steer: o.steer,
 		working: () => o.orch.status === "working",
@@ -108,6 +119,8 @@ const sessionBg = (o: Orchestrator, q: ReturnType<typeof createPrompts>) => {
 	const to = (w: { target?: string; reply_to?: string }) => (w.target ? { target: w.target, ...(w.reply_to ? { replyTo: w.reply_to } : {}) } : undefined);
 	const bg = createBgWork({
 		sessionFile: () => o.orch.sessionFile, deferred: q.deferredOpen, turn: q.turnAt, answer: workAnswer, log,
+		linkOf: q.linkOf,
+		link: (id, to, description) => void q.link(id, to, description),
 		turnEndedAt: () => o.lastTurnEndAt(),
 		busy: () => o.orch.status === "working" || o.orch.status === "starting",
 		paused: () => o.orch.status === "rate-limited",
@@ -188,14 +201,15 @@ const askedAtMs = (id: string): number | undefined => {
 const lateFor = (target: string, replyTo: string | undefined) => isLate(replyTo, lastOwner.get(target), replyTo ? askedAtMs(replyTo) : undefined);
 const lateRequest = (target: string) => {
 	const q = convs.forTarget(target)?.queue ?? queue;
-	return lateRequestId(target, q.current(), q.deferredOpen(), lastOwner.get(target), askedAtMs);
+	const result = q.current() ? undefined : q.resultFor(target);
+	return lateRequestId(target, q.current(), result ? [{ target, replyTo: result }] : q.deferredOpen(), lastOwner.get(target), askedAtMs);
 };
 // An answer (not a progress note, not a gateway notice, not a held approval card shown later) settles the owner messages waiting in this conversation.
 function settleAnswer(j: OutJob): void {
 	if ((j.extra.source === undefined || j.extra.source === "orchestrator") && !j.extra.update_key && !j.extra.queued) {
 		// The answer ends the turn's progress reports here, the web chat's included: none may post after it.
 		void livestatus.stop(j.target);
-		const { done, keep } = settleWaiting(awaiting.get(j.target) ?? [], j.replyTo, isLocal(j.target));
+		const { done, keep } = settleWaiting(awaiting.get(j.target) ?? [], j.replyTo, isLocal(j.target), (convs.forTarget(j.target)?.queue ?? queue).waitingIds(j.target));
 		awaiting.set(j.target, keep);
 		// One truth: a message shown as answered is answered for the prompt queue too (deferred wait, pending.json, restart replay).
 		// An answer that names the last message of a burst (`by`) leaves the burst's other prompts open otherwise.
@@ -443,6 +457,8 @@ export function replayPending(): number {
 	unanswered = [];
 	// Stored conversation sessions come back parked; their open prompts go into their own session (feature on) or main (off).
 	const stored = convs.restore();
+	// The messages still wait after the restart: their answer must settle them (`awaiting` lives in memory).
+	for (const p of [...open, ...stored.flatMap(r => r.pending)]) if (p.target && p.replyTo) awaiting.set(p.target, [...(awaiting.get(p.target) ?? []), { ref: p.replyTo, by: p.replyTo }]);
 	const toMain = [...stored.filter(r => r.key === MAIN).flatMap(r => r.pending)];
 	// With conversation sessions on, main's own file may still hold a conversation's prompt from before: it goes to that session.
 	const mine = open.filter(p => convs.keyOf(p.target) === MAIN);
@@ -473,6 +489,7 @@ export function cancelOwnerTurn(c: Conv = mainConv): string | undefined {
 // The handlers every instance gets; main's turn header is the what-runs-now line, a conversation session's alerts name the conversation.
 function wireAnswers(c: Conv): void {
 	c.o.setOwnerCancel(() => cancelOwnerTurn(c));
+	c.o.setWorkerHandlers(c.queue.workersSpawned, c.queue.workersDone);
 	// The final answer of a turn goes to every channel that asked and did not already get a dotz_send reply.
 	c.o.setAnswerHandlers(
 		c.queue.onPrompt,

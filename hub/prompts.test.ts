@@ -3,7 +3,7 @@
 import { expect, test } from "bun:test";
 import { emit, answeredIds, historyEvents } from "./events.ts";
 import { outEvent } from "./projectchat.ts";
-import { createPrompts, type OwnerMessage, type Pending, type PromptDeps } from "./prompts.ts";
+import { createPrompts, type OwnerMessage, type Pending, type PromptDeps, type WorkLink } from "./prompts.ts";
 import { eventsFromFrame } from "./runtime/omp.ts";
 
 function setup(answered: string[] = [], recent: OwnerMessage[] = [], extra: Partial<PromptDeps> = {}) {
@@ -876,4 +876,212 @@ test("an answer with no prompt goes to the conversation whose worker finished la
 	plain.q.onAnswer("작업 결과예요");
 	await Promise.resolve();
 	expect(plain.state.posts.map(p => [p.target, p.replyTo])).toEqual([["ch:A", "a1"]]);
+});
+
+const defer = (t: ReturnType<typeof setup>, id: string, target = "web") => {
+	t.startTurn("request " + id, { target, replyTo: id });
+	t.q.onAnswer("[later]");
+	t.state.working = false;
+	t.q.settleTurn();
+};
+
+test("every worker spawned in one conversation gets its own line, and a follow-up to a running worker gets none (2026-11-04 02:22)", () => {
+	const announced: { text: string; worker?: string }[] = [];
+	const rows: { id: string; description: string; status: "running"; target: string; startedAt: number }[] = [];
+	const t = setup([], [], {
+		announce: (_t, text, worker) => announced.push({ text, ...(worker ? { worker } : {}) }),
+		work: () => rows,
+		workFor: () => rows[0],
+	});
+	t.startTurn("first", { target: "web", replyTo: "m1" });
+	rows.push({ id: "st_old", description: "old job", status: "running", target: "web", startedAt: Date.now() });
+	t.q.onAnswer("[later]");
+	t.state.working = false;
+	t.q.settleTurn();
+	rows[0]!.startedAt -= 60_000;
+
+	// The store already lists the new worker, behind the older one.
+	t.startTurn("second", { target: "web", replyTo: "m2" });
+	rows.push({ id: "st_new", description: "new job", status: "running", target: "web", startedAt: Date.now() });
+	t.q.onAnswer("[later]");
+	t.state.working = false;
+	t.q.settleTurn();
+	rows[1]!.startedAt -= 60_000;
+
+	// The store does not list it yet: the spawn event names it.
+	t.startTurn("third", { target: "web", replyTo: "m3" });
+	t.q.workersSpawned([{ id: "st_third", description: "third job" }]);
+	t.q.onAnswer("[later]");
+	t.state.working = false;
+	t.q.settleTurn();
+
+	// No new worker: the owner's 2026-10-30 rule, silence.
+	t.startTurn("follow-up", { target: "web", replyTo: "m4" });
+	t.q.onAnswer("[later]");
+	expect(announced.map(a => a.worker)).toEqual(["st_old", "st_new", "st_third"]);
+	expect(announced.map(a => a.text)).toEqual(["old job", "new job", "third job"].map(d => "백그라운드 작업으로 맡겼어요: " + d));
+});
+
+test("a batch spawn gets one line per worker, and a worker spawned by a woken run gets its line in that request's conversation", () => {
+	const announced: string[] = [];
+	const t = setup([], [], { announce: (target, _text, worker) => announced.push(target + " " + worker) });
+	t.startTurn("batch", { target: "web", replyTo: "m1" });
+	t.q.workersSpawned([{ id: "st_a" }, { id: "st_b" }]);
+	t.q.onAnswer("[later]");
+	t.state.working = false;
+	t.q.settleTurn();
+	expect(announced).toEqual(["web st_a", "web st_b"]);
+	t.q.workersDone(["st_a"]);
+	t.q.workersSpawned([{ id: "st_c" }]);
+	expect(announced.at(-1)).toBe("web st_c");
+	expect(t.q.linkOf("st_c")).toMatchObject({ target: "web", replyTo: "m1" });
+});
+
+test("three open requests whose workers finish out of order are each answered at their own message", async () => {
+	const t = setup();
+	for (const [id, worker] of [["a", "st_a"], ["b", "st_b"], ["c", "st_c"]] as const) {
+		t.startTurn("request " + id, { target: "web", replyTo: id });
+		t.q.workersSpawned([{ id: worker }]);
+		t.q.onAnswer("[later]");
+		t.state.working = false;
+		t.q.settleTurn();
+	}
+	for (const id of ["c", "a", "b"]) {
+		t.q.workersDone(["st_" + id]);
+		t.q.onAnswer("[later]"); // a woken run that still waits spends nothing
+		t.q.onAnswer("result of " + id);
+		await Promise.resolve();
+	}
+	expect(t.state.posts.map(p => [p.replyTo, p.text])).toEqual([["c", "result of c"], ["a", "result of a"], ["b", "result of b"]]);
+	expect(t.q.deferredOpen()).toEqual([]);
+});
+
+test("two results read in one run go to their own requests in the order they finished, by the store when no wake was seen", async () => {
+	const now = Date.now();
+	const rows = [
+		{ id: "st_b", description: "b", status: "done" as const, startedAt: now - 9_000, endedAt: now - 1_000 },
+		{ id: "st_a", description: "a", status: "done" as const, startedAt: now - 9_000, endedAt: now - 2_000 },
+	];
+	const t = setup([], [], { work: () => rows });
+	for (const id of ["a", "b"]) {
+		t.startTurn("request " + id, { target: "web", replyTo: id });
+		t.q.link("st_" + id, { target: "web", replyTo: id });
+		t.q.onAnswer("[later]");
+		t.state.working = false;
+		t.q.settleTurn();
+	}
+	t.q.onAnswer("first result");
+	t.q.onAnswer("second result");
+	await Promise.resolve();
+	expect(t.state.posts.map(p => p.replyTo)).toEqual(["a", "b"]);
+});
+
+test("a dotz_send from a woken run with no reply_to settles the request of the worker that woke it, not the oldest one", () => {
+	const t = setup();
+	for (const id of ["a", "b"]) {
+		t.startTurn("request " + id, { target: "web", replyTo: id });
+		t.q.workersSpawned([{ id: "st_" + id }]);
+		t.q.onAnswer("[later]");
+		t.state.working = false;
+		t.q.settleTurn();
+	}
+	t.q.workersDone(["st_b"]);
+	expect(t.q.resultFor("web")).toBe("b");
+	t.q.sent("web", "result of b");
+	expect(t.q.deferredOpen().map(d => d.replyTo)).toEqual(["a"]);
+});
+
+test("a result for a request the owner cancelled is dropped, not guessed onto another message", async () => {
+	const t = setup();
+	t.startTurn("request a", { target: "web", replyTo: "a" });
+	t.q.workersSpawned([{ id: "st_a" }]);
+	t.q.onAnswer("[later]");
+	t.startTurn("request b", { target: "web", replyTo: "b" });
+	t.q.cancel();
+	t.state.working = false;
+	t.q.settleTurn();
+	t.q.workersDone(["st_a"]);
+	t.q.onAnswer("late result");
+	await Promise.resolve();
+	expect(t.state.posts).toEqual([]);
+});
+
+test("a restart keeps the link and the wait: the request is not run again, and the result reaches its message", async () => {
+	let stored: WorkLink[] = [];
+	const first = setup([], [], { persistLinks: l => (stored = JSON.parse(JSON.stringify(l))) });
+	defer(first, "x");
+	for (const id of ["a", "b"]) {
+		first.startTurn("request " + id, { target: "web", replyTo: id });
+		first.q.workersSpawned([{ id: "st_" + id }]);
+		first.q.onAnswer("[later]");
+		first.state.working = false;
+		first.q.settleTurn();
+	}
+	const pending: Pending[] = JSON.parse(JSON.stringify(first.open()));
+
+	const second = setup([], [], { links: stored });
+	expect(second.q.replay(pending, text => "[replay] " + text)).toBe(1); // x has no worker: it runs again, as before
+	expect(second.state.delivered).toEqual(["[replay] request x"]);
+	expect(second.q.deferredOpen().map(d => d.replyTo)).toEqual(["a", "b"]);
+	expect(second.q.openRequests().map(r => r.workers.map(w => w.id))).toEqual([["st_a"], ["st_b"]]);
+	expect(second.open().filter(p => p.deferred).map(p => p.replyTo)).toEqual(["a", "b"]);
+	second.q.onPrompt("[replay] request x");
+	second.q.onAnswer("x answered");
+	second.state.working = false;
+	second.q.settleTurn();
+
+	second.q.workersDone(["st_b"]);
+	second.q.onAnswer("result of b");
+	await Promise.resolve();
+	expect(second.state.posts.at(-1)).toMatchObject({ replyTo: "b", text: "result of b" });
+	expect(second.q.deferredOpen().map(d => d.replyTo)).toEqual(["a"]);
+});
+
+test("a receipt survives a restart, and a request whose worker failed runs again after it", () => {
+	const announced: (string | undefined)[] = [];
+	const links: WorkLink[] = [{ id: "st_a", target: "web", replyTo: "a", at: Date.now(), receipted: true }];
+	const pending: Pending[] = [{ text: "request a", at: Date.now(), target: "web", replyTo: "a", deferred: true }];
+	const running = setup([], [], { links, announce: (_t, _x, w) => announced.push(w), work: () => [{ id: "st_a", description: "a", status: "running", target: "web", startedAt: Date.now() }] });
+	running.q.replay(pending, text => text);
+	running.startTurn("follow-up", { target: "web", replyTo: "m2" });
+	running.q.onAnswer("[later]");
+	expect(announced).toEqual([]);
+
+	const failed = setup([], [], { links, work: () => [{ id: "st_a", description: "a", status: "failed", target: "web", startedAt: 0, endedAt: 1 }] });
+	expect(failed.q.replay(pending, text => text)).toBe(1);
+});
+
+test("a gateway wake for a waiting request that ends in [later] adds no second wait and no line", () => {
+	const announced: string[] = [];
+	const t = setup([], [], { announce: (_t, text) => announced.push(text) });
+	t.startTurn("request a", { target: "web", replyTo: "a" });
+	t.q.workersSpawned([{ id: "st_a" }]);
+	t.q.onAnswer("[later]");
+	t.state.working = false;
+	t.q.settleTurn();
+	t.startTurn("[dotz gateway] open requests", { target: "web", replyTo: "a" });
+	t.q.onAnswer("[later]");
+	t.state.working = false;
+	t.q.settleTurn();
+	expect(t.q.deferredOpen().map(d => d.replyTo)).toEqual(["a"]);
+	expect(announced.length).toBe(1);
+});
+
+test("the real report follows a housekeeping result into the run, and that note is no prompt", () => {
+	const t = setup([], [], { report: id => (id === "st_a" ? "the whole report" : undefined), isNote: () => false });
+	t.startTurn("request a", { target: "web", replyTo: "a" });
+	t.q.workersDone(["st_a", "st_b"]);
+	expect(t.state.steered).toEqual(['<dotz-worker-report task="st_a">\nthe whole report\n</dotz-worker-report>']);
+	t.q.onPrompt(t.state.steered[0]!);
+	expect(t.q.current()?.replyTo).toBe("a");
+});
+
+test("the task tool's results and OmO's wake frame name the workers", () => {
+	const end = (text: string) => eventsFromFrame({ type: "tool_execution_end", toolName: "task", toolCallId: "c", result: { content: [{ type: "text", text }] } }, new Map());
+	expect(end("Started task 웹앱 화면 (전환) 개선 (st_01a1a465, running), the task host is still admitting it; Completion is automatically delivered.").at(-1)).toEqual({ type: "workers_spawned", workers: [{ id: "st_01a1a465", description: "웹앱 화면 (전환) 개선" }] });
+	expect(end('Batch running.\n1. home st_01a1a439 (running)\n\n[task_id: st_01a1a439 - continue]\n2. lane st_01a1a43a (running)').at(-1)).toEqual({ type: "workers_spawned", workers: [{ id: "st_01a1a439" }, { id: "st_01a1a43a" }] });
+	expect(end("no worker here").some(e => e.type === "workers_spawned")).toBe(false);
+	const wake = (content: unknown) => eventsFromFrame({ type: "message_end", message: { role: "custom", customType: "omo-senpi:wake", content } as never }, new Map());
+	expect(wake('task completion name:recent-done-jump id:st_01a1a45c category:deep-low status:completed result:"x"\ntask completion name:b id:st_01a1a45d status:failed').at(-1)).toEqual({ type: "workers_done", ids: ["st_01a1a45c", "st_01a1a45d"] });
+	expect(wake([{ type: "text", text: "task completion name:a id:st_01a1a459 status:completed" }]).at(-1)).toEqual({ type: "workers_done", ids: ["st_01a1a459"] });
 });
