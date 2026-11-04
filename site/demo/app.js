@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "5c8afbd31788";
+const WEB_BUILD = "838775c4f6a4";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -15970,8 +15970,8 @@ setInterval(viewReport, 2000);
 
 /* ---- the list ---- */
 // The main assistant and the two feeds first, then the running sessions under 진행 중 (one with a question waiting first), the projects by their
-// newest message (silent ones after, in project order) and the mails. A session that ended stays in the list only while it is open;
-// the ended ones fold into one group at the bottom. 모니터링 has its own tab (30-monitoring.js) and uses this same row.
+// newest message (silent ones after, in project order). A session that ended stays in the list only while it is open; the ended ones fold into
+// one group after that, and the mails and rooms that wait on the owner close the list. 모니터링 has its own tab (30-monitoring.js) and uses this same row.
 function convRows() {
   const at = t => (CONV.get(t) || {}).ts || "";
   const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
@@ -15981,11 +15981,12 @@ function convRows() {
   const running = all.filter(laneAlive).sort((a, b) => rank(a) - rank(b) || at(`lane:${b.name}`).localeCompare(at(`lane:${a.name}`)));
   const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionStatus(l), hint: convPreview(l.lastText) || m.hint }; };
   const v = CVF.view, keep = r => v === "need" ? r.need : v === "session" ? isLaneT(r.t) : v === "alert" ? isFixedT(r.t) : true;
-  // The prototype's list (s-chat.js listHtml): the filter pills, one card of conversations, then the 메일 · 카카오톡 card of what waits there.
+  // The filter pills, then a card per group (a group with nothing under the filter has no header), and last the 메일 · 카카오톡 card of what waits there.
   const projs = projects.map(mk).filter(keep), page = v === "all" ? projs.filter((r, i) => i < CVF.more || r.t === target) : projs;
-  const out = [{ bar: true }, ...[mk(MAIN)].filter(keep), ...page];
+  const out = [{ bar: true }, ...[MAIN, "alert", "worklog"].map(mk).filter(keep)], lanes = running.map(sess).filter(keep);
+  if (lanes.length) out.push({ header: "진행 중", sec: true }, ...lanes);
+  if (page.length) out.push({ header: "프로젝트", sec: true }, ...page);
   if (projs.length > page.length) out.push({ more: projs.length - page.length });
-  out.push(...["alert", "worklog"].map(mk).filter(keep), ...running.map(sess).filter(keep));
   const open = all.find(l => !laneAlive(l) && `lane:${l.name}` === target);
   if (open && (v === "all" || v === "session")) out.push(sess(open));
   const ended = v === "all" || v === "session" ? endedLanes() : [];
@@ -16679,7 +16680,8 @@ function asSettingRow(app, f, feat, box) {
 }
 // The options and the status of the settings screen (asScreen) - never of the conversation, which is chat only.
 function asPaint() {
-  const box = $("#app-sw"), app = ASC.app;
+  // the open sheet's own box: a closed one keeps its #app-sw in the page while it fades out (fsOpen)
+  const box = ASC.h && ASC.h.box.querySelector("#app-sw"), app = ASC.app;
   if (!box || !app) return;
   const fields = AS.by[app];
   if (!fields) {
