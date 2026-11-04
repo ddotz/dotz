@@ -219,7 +219,7 @@ function rulesDialog() {
         el("button", { type: "button", class: "btn danger", onclick: () => { list().splice(i, 1); paint(); } }, "삭제")),
       field("요일 (선택)", ...days),
       field("시간 (선택)", time("from", "시작"), el("span", { class: "sup", text: "~" }), time("to", "끝")),
-      field("조건", ...condCtl), many ? el("div", { class: "sup", text: "조건이 여러 개예요. 모두 보려면 JSON으로 편집해 주세요." }) : null,
+      field("조건", ...condCtl), many ? el("div", { class: "sup", text: "조건이 여러 개예요. 모두 바꾸려면 채팅에서 말해 주세요." }) : null,
       field("동작", ...doCtl)));
   }
   function paint() {

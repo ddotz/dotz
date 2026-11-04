@@ -364,6 +364,15 @@ describe("카카오톡 at desktop width (1280x800)", async () => {
 		expect(reqs.filter(r => r.path === "/api/kakao/chat/100/send")).toHaveLength(0);
 	});
 
+	test("직접 보내기 shows with text and sends it to the room as typed, past the assistant", async () => {
+		expect(await q<boolean>(v, `return document.querySelector("#kk-direct-btn").hidden`)).toBe(true);
+		await run(v, `const t = document.querySelector("#kk-text"); t.value = "지금 갈게요"; t.dispatchEvent(new Event("input", { bubbles: true }));`);
+		await waitFor(v, `!document.querySelector("#kk-direct-btn").hidden`);
+		await run(v, `document.querySelector("#kk-direct-btn").click()`);
+		expect((await expectReq(isReq("POST", "/api/kakao/chat/100/send"))).body).toEqual({ text: "지금 갈게요" });
+		await waitFor(v, `document.querySelector("#kk-text").value === "" && document.querySelector("#kk-direct-btn").hidden`);
+	}, 30_000);
+
 	test("Shift+Enter is a new line and sends nothing", async () => {
 		const before = reqs.filter(r => r.path.endsWith("/send")).length;
 		const prevented = await q<boolean>(v, `const t = document.querySelector("#kk-text"); const e = new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true, cancelable: true }); t.dispatchEvent(e); return e.defaultPrevented`);

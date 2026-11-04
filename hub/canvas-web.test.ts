@@ -79,7 +79,7 @@ describe("캔버스 at 1280px", () => {
 	for (const theme of ["light", "dark"] as const) test(`an HTML result opens beside the conversation under the 앱 header (${theme})`, async () => {
 		const v = await open(1280, 900, theme);
 		const h = await head(v);
-		expect({ ...h, box: undefined }).toEqual({ name: "report.html", sub: expect.stringMatching(/^HTML · .*report\.html$/), hint: "⌘+클릭으로 요소 고르기", buttons: ["새 탭에서 열기", "캔버스 닫기"], font: "18px", box: undefined, ran: false });
+		expect({ ...h, box: undefined }).toEqual({ name: "report.html", sub: "화면 파일", hint: "⌘+클릭으로 요소 고르기", buttons: ["새 탭에서 열기", "캔버스 닫기"], font: "18px", box: undefined, ran: false });
 		const comp = await get(v, `const c = document.querySelector("#composer").getBoundingClientRect(); return { right: Math.round(c.right), shown: c.width > 300 };`);
 		expect(comp.shown).toBe(true);
 		expect(h.box[0]).toBeGreaterThanOrEqual(comp.right);

@@ -34,7 +34,7 @@ function paintOrchError() {
   const e = S && S.orchestrator && S.orchestrator.error, box = $("#oerr");
   box.hidden = !e;
   if (!e) return;
-  $("#oerr-tx").innerHTML = `<b>오케스트레이터가 멈췄어요</b> · ${e.text} · ${kstHM(e.since)}부터`;
+  clear($("#oerr-tx")).append(el("b", { text: `${iGa(botName)} 멈췄어요` }), ` · ${noticeKo(String(e.text ?? ""), NK)} · ${kstHM(e.since)}부터`);
   box.title = e.raw || "";
   $("#oerr-btn").onclick = ev => orchResume(ev.currentTarget);
 }
