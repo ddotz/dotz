@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { qrPath } from "./qr.ts";
 import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -352,8 +353,9 @@ describe("the settings screen's calls", () => {
 		const ta = await t.pair(await Authenticator.make(-7));
 		const sentBefore = t.sent.length;
 		const r = await call(t, "POST", "/api/devices/code", { token: ta });
-		const o = (await r.json()) as { code: string; minutes: number; url: string };
+		const o = (await r.json()) as { code: string; minutes: number; url: string; qr: unknown };
 		expect([r.status, o.minutes, o.url, /^\d{6}$/.test(o.code)]).toEqual([200, 10, `${ORIGIN}/pair`, true]);
+		expect(o.qr).toEqual(qrPath(`${ORIGIN}/pair#code=${o.code}`));
 		expect(t.sent.length).toBe(sentBefore);
 		expect((await t.post("/api/pair/begin", { code: o.code })).status).toBe(200);
 		expect((await t.post("/api/pair/begin", { code: o.code })).status).toBe(403);

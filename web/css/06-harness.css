@@ -117,6 +117,10 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 .dcs-ok { color: var(--ok); font-weight: 600; }
 .dcs-res .btn { align-self: flex-start; margin-top: var(--sp-15); }
 .dv-code { font: 600 32px/40px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 6px; }
+/* black on white in both themes: phone cameras read a light-on-dark code badly */
+.dv-qr { display: block; width: min(220px, 100%); height: auto; }
+.dv-qr-bg { fill: #fff; }
+.dv-qr-ink { fill: #000; }
 /* settings: 업데이트 */
 .sec .upd-new { margin-left: var(--sp-2); vertical-align: middle; }
 /* a section heading with its own action (실행 하네스 · 확인): the button sits at the right end, apart from the title */
