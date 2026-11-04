@@ -43,7 +43,7 @@
 
   /* shape: soft boxes, one small control radius; only a status tag and the two-value toggle are fully rounded (알약 규칙) */
   --r-card: 18px; --r-sheet: 20px; --r-menu: 14px; --r-ctl: 10px; --r-seg: 8px; --r-seg-in: 6px; --r-pill: 999px;
-  --edge: 28px;
+  --edge: 28px; --view-w: 920px; --sheet-w: 480px; --lead-ind: calc(var(--row-px) + var(--sp-6) + var(--sp-3)); --back-x: calc(var(--sp-6) - var(--sp-15)); --back-w: calc(var(--sp-8) + var(--sp-05));
 
   /* heights: rows, menu items, controls and every button tier take their height here (docs/ui-spec.md) */
   --row-h: 44px; --row-py: 8px; --row-px: 16px;
@@ -121,7 +121,7 @@ dialog.dlg { --ff-fill: var(--ff-pop); }
 @media (max-width: 639px) { .fs-card, dialog.dlg.fs-card[open] { --ff-fill: var(--card); } .fs-body.panel { --ff-fill: var(--layer); } #v-chat { --ff-fill: var(--layer); } } /* a phone sheet is grey with white panels; the phone chat is white */
 svg.ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 button:disabled { opacity: .4; cursor: default; pointer-events: none; }
-kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(--line-2); border-radius: 4px; background: var(--layer); color: var(--fg-3); font: 500 11px/16px var(--font); }
+kbd { display: inline-block; flex: none; padding: 0 var(--sp-15); border: 1px solid var(--line-2); border-radius: 4px; background: var(--layer); color: var(--fg-3); font: 500 11px/16px var(--font); }
 /* 동작 줄이기: every transition and animation is off, pseudo-elements included (no motion on/off switch in the product) */
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after, ::backdrop { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }
 
@@ -146,7 +146,7 @@ kbd { display: inline-block; flex: none; padding: 0 5px; border: 1px solid var(-
 .logo::after { background: var(--accent); -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='3.5 3.5 17 17'%3E%3Ccircle cx='16.6' cy='16.6' r='3.1'/%3E%3C/svg%3E"); mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='3.5 3.5 17 17'%3E%3Ccircle cx='16.6' cy='16.6' r='3.1'/%3E%3C/svg%3E"); }
 .brand { width: auto; }
 .rail { grid-column: 4; display: flex; gap: var(--sp-05); margin-left: var(--sp-3); }
-.ni { position: relative; display: flex; flex: none; align-items: center; gap: var(--sp-1); height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; white-space: nowrap; }
+.ni { position: relative; display: flex; flex: none; align-items: center; gap: var(--sp-1); height: 32px; padding: 0 var(--sp-3); border: 0; border-radius: 6px; background: transparent; color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; white-space: nowrap; }
 .ni:hover { background: var(--hover); color: var(--fg); }
 .ni:disabled, .ni:disabled:hover { background: transparent; color: var(--fg-3); opacity: .5; cursor: default; }
 .ni.on { color: var(--fg); font-weight: 700; }
@@ -182,15 +182,15 @@ button.conn:disabled { cursor: default; }
 .ustrip .uring { width: 18px; height: 18px; border-radius: 50%; background: conic-gradient(var(--fg-2) calc(var(--p) * 1%), var(--track) 0); -webkit-mask: radial-gradient(circle, transparent 5px, #000 6px); mask: radial-gradient(circle, transparent 5px, #000 6px); }
 .ustrip.warn .uring { background: conic-gradient(var(--warn) calc(var(--p) * 1%), var(--track) 0); }
 .views { min-height: 0; overflow-y: auto; overflow-x: hidden; }
-.view { max-width: 920px; margin: 0 auto; padding: var(--sp-6); }
+.view { max-width: var(--view-w); margin: 0 auto; padding: var(--sp-6); }
 .view.fill { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
 /* wide: only the two-pane 채팅 screens start at the left like the top bar (--edge = where the logo starts); 프로젝트 does it in .views.pp; every other page stays centered */
 @media (min-width: 1100px) { #v-chat, #v-activity, #v-monitoring { margin: 0; padding-left: var(--edge); padding-right: var(--edge); } }
 /* wide: the top row holds only logo, computer, tabs and the right-side controls. A page with a back arrow (a settings sub-page, 모니터링) gets the arrow and its title as a page header in row 3, just above the page: both sit in the full-width cell and are offset to the left edge of the centered 920px column (.view max-width) */
 @media (min-width: 1100px) {
   .appbar #back, .appbar h1 { grid-row: 3; grid-column: 1 / -1; align-self: start; justify-self: start; }
-  .appbar #back { margin: var(--sp-4) 0 0 calc(max(0px, (100% - 920px) / 2) + 18px); }
-  .appbar h1 { max-width: min(560px, 100%); margin: var(--sp-4) 0 0 calc(max(0px, (100% - 920px) / 2) + 52px); font: 700 var(--fs-page-sm)/var(--lh-page-sm) var(--font); }
+  .appbar #back { margin: var(--sp-4) 0 0 calc(max(0px, (100% - var(--view-w)) / 2) + var(--back-x)); }
+  .appbar h1 { max-width: min(560px, 100%); margin: var(--sp-4) 0 0 calc(max(0px, (100% - var(--view-w)) / 2) + var(--back-x) + var(--back-w)); font: 700 var(--fs-page-sm)/var(--lh-page-sm) var(--font); }
 }
 @media (max-width: 1099px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; padding-top: 0; }
@@ -206,12 +206,12 @@ button.conn:disabled { cursor: default; }
   .side { order: 2; display: flex; min-width: 0; min-height: 0; padding: 0 0 max(var(--sp-05), calc(env(safe-area-inset-bottom) - var(--sp-4))); border-top: 1px solid var(--line); background: var(--card); }
   .brand { display: none; }
   .rail { flex: 1; min-width: 0; gap: 0; margin: 0; }
-  .ni { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: 1px; height: 46px; padding: 0 var(--sp-05); border-radius: 0; font-size: 10px; line-height: 13px; text-align: center; }
+  .ni { flex: 1 1 0; min-width: 0; flex-direction: column; justify-content: center; gap: var(--sp-05); height: 46px; padding: 0 var(--sp-05); border-radius: 0; font-size: 10px; line-height: 13px; text-align: center; }
   .ni:hover { background: transparent; }
   .ni.on { font-weight: 600; }
   .ni .ic { display: block; width: 20px; height: 20px; }
   .ni.on::after { content: none; }
-  .ni .nnb { position: absolute; top: 3px; left: calc(50% + 4px); min-width: 16px; height: 16px; padding: 0 5px; background: var(--warn); color: var(--bg); font-size: 10.5px; }
+  .ni .nnb { position: absolute; top: 3px; left: calc(50% + 4px); min-width: 16px; height: 16px; padding: 0 var(--sp-15); background: var(--warn); color: var(--bg); font-size: 10.5px; }
   .ni .nub { position: absolute; top: 5px; left: calc(50% + 6px); width: 8px; min-width: 8px; height: 8px; }
   .ni.on::before { content: ""; position: absolute; top: -1px; left: 25%; right: 25%; height: 2px; border-radius: 0 0 2px 2px; background: var(--accent); }
   /* search: the one #cmdk button is an icon in the app bar here (its label and key hint are for the top row) */
@@ -249,19 +249,19 @@ button.conn:disabled { cursor: default; }
 .btn, .dc-act, .dc-go, .dc-back, .dc-manual { display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-15); height: var(--btn-h); padding: 0 var(--sp-4); border: 1px solid transparent; border-radius: var(--r-ctl); color: var(--fg-2); background: transparent; font: 600 14px/20px var(--font); text-decoration: none; white-space: nowrap; max-width: 100%; cursor: pointer; }
 .btn, .dc-go, .dc-act.main { background: var(--accent); color: var(--on-accent); }
 .btn.tonal, .btn.outlined, .dc-back, .dc-act.alt { background: var(--layer); color: var(--fg); }
-.btn.text, .dc-act, .dc-manual { background: transparent; color: var(--fg-2); padding: 0 10px; }
+.btn.text, .dc-act, .dc-manual { background: transparent; color: var(--fg-2); padding: 0 var(--sp-3); }
 .btn.sm { height: var(--btn-h-sm); padding: 0 var(--sp-3); font-size: 13px; }
 .btn, .dc-act, .dc-go, .dc-back, .dc-manual { transition: opacity var(--m-fast) var(--m-ease), background-color var(--m-fast) var(--m-ease); }
 .btn:hover, .dc-go:hover, .dc-back:hover, .dc-act:hover, .dc-manual:hover { opacity: .85; }
 .btn.tonal:hover, .btn.outlined:hover, .dc-back:hover, .dc-act.alt:hover { background: var(--hover); opacity: 1; }
 .btn.text:hover, .dc-act:not(.main):not(.alt):hover, .dc-manual:hover { background: var(--hover); color: var(--fg); opacity: 1; }
-.btn.danger { background: transparent; color: var(--err); padding: 0 10px; }
+.btn.danger { background: transparent; color: var(--err); padding: 0 var(--sp-3); }
 .btn.danger:hover { background: color-mix(in srgb, var(--err) 12%, transparent); opacity: 1; }
 .btn.danger.fill { background: var(--err); color: #fff; padding: 0 var(--sp-3); }
 .btns { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 /* 행 안 tier (docs/ui-spec.md 버튼, 설정 행): the button or field in the right slot of a row. 32px high, 13px; on a touch screen the box stays 32px and ::after widens the hit area to 44px. */
 .btn.inrow { position: relative; height: var(--btn-h-row); padding: 0 var(--sp-3); font-size: 13px; }
-.btn.inrow.text, .btn.inrow.danger { padding: 0 10px; }
+.btn.inrow.text, .btn.inrow.danger { padding: 0 var(--sp-2); }
 @media (pointer: coarse), (max-width: 639px) { .ib { width: 36px; height: 36px; } .btn, .dc-act, .dc-go, .dc-back, .dc-manual { height: auto; min-height: var(--btn-hit); } .ni { min-height: 44px; } }
 @media (pointer: coarse), (max-width: 639px) { .btn.inrow { height: var(--btn-h-row); min-height: 0; } .btn.inrow::after { content: ""; position: absolute; inset: -6px 0; } }
 /* settings row (docs/ui-spec.md 설정 행): the existing .li (lead icon, .tx = .hd title + .sup one-line description) plus ONE right slot, .li-end,
