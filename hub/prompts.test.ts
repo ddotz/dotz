@@ -1103,6 +1103,146 @@ test("the task tool's results and OmO's wake frame name the workers", () => {
 	const wake = (content: unknown) => eventsFromFrame({ type: "message_end", message: { role: "custom", customType: "omo-senpi:wake", content } as never }, new Map());
 	expect(wake('task completion name:recent-done-jump id:st_01a1a45c category:deep-low status:completed result:"x"\ntask completion name:b id:st_01a1a45d status:failed').at(-1)).toEqual({ type: "workers_done", ids: ["st_01a1a45c", "st_01a1a45d"] });
 	expect(wake([{ type: "text", text: "task completion name:a id:st_01a1a459 status:completed" }]).at(-1)).toEqual({ type: "workers_done", ids: ["st_01a1a459"] });
+	const steer = (text: string, isError = false) => eventsFromFrame({ type: "tool_execution_end", toolName: "task_send", toolCallId: "c", isError, result: { content: [{ type: "text", text }] } }, new Map());
+	expect(steer("Delivered to st_01a1a6be as steer.").at(-1)).toEqual({ type: "workers_steered", ids: ["st_01a1a6be"] });
+	expect(steer("Unknown task st_01a1a6be", true).filter(e => e.type === "workers_steered")).toEqual([]);
+});
+
+// 2026-11-04 13:22-13:38 UTC: a result landed inside a prompted turn and stayed at the head of the wake list, so each later answer took the previous worker's request.
+function deferTo(t: ReturnType<typeof setup>, replyTo: string, how: { spawned?: string; steered?: string }) {
+	t.startTurn("request " + replyTo, { target: "web", replyTo });
+	if (how.spawned) t.q.workersSpawned([{ id: how.spawned }]);
+	if (how.steered) t.q.workersSteered([how.steered]);
+	t.q.onAnswer("[later]");
+	t.state.working = false;
+	t.q.settleTurn();
+}
+const answerWake = async (t: ReturnType<typeof setup>, id: string, text: string) => {
+	t.q.workersDone([id]);
+	t.q.onAnswer(text);
+	await Promise.resolve();
+	t.q.settleTurn();
+};
+
+test("the 2026-11-04 sequence: each result reaches its own request, follow-ups close with it, and a restart replays nothing", async () => {
+	let stored: WorkLink[] = [];
+	const t = setup([], [], { persistLinks: l => (stored = JSON.parse(JSON.stringify(l))), readHereNote: id => "[read here] " + id });
+	deferTo(t, "0397177d", { spawned: "st_ac" });
+	t.startTurn("push question", { target: "web", replyTo: "b8065c69" });
+	t.q.workersDone(["st_ac"]); // read inside a turn that answers another message
+	t.q.onAnswer("push answer");
+	await Promise.resolve();
+	t.state.working = false;
+	t.q.settleTurn();
+	// That result is asked again once, at its own message, and that turn answers it.
+	const again = t.state.delivered.at(-1)!;
+	expect(again).toStartWith("[read here] st_ac");
+	t.q.onPrompt(again);
+	t.q.onAnswer("aside result");
+	await Promise.resolve();
+	t.q.settleTurn();
+	expect(t.state.posts.at(-1)).toMatchObject({ replyTo: "0397177d", text: "aside result" });
+	deferTo(t, "dd2c54f2", { spawned: "st_bb" });
+	deferTo(t, "9e445436", { steered: "st_bb" });
+	deferTo(t, "de7dd2a3", { spawned: "st_be" });
+	deferTo(t, "ca853833", { steered: "st_be" });
+	t.startTurn("schedule: check the restart", { target: "chat" });
+	t.q.onAnswer("-");
+	t.state.working = false;
+	t.q.settleTurn();
+	expect(t.q.deferredOpen().map(d => d.replyTo)).toEqual(["dd2c54f2", "9e445436", "de7dd2a3", "ca853833"]);
+
+	await answerWake(t, "st_be", "note result");
+	await answerWake(t, "st_bb", "card result");
+	expect(t.state.posts.slice(2).map(p => [p.replyTo, p.text])).toEqual([["de7dd2a3", "note result"], ["dd2c54f2", "card result"]]);
+	expect(t.q.deferredOpen()).toEqual([]);
+
+	const pending: Pending[] = JSON.parse(JSON.stringify(t.open()));
+	expect(pending).toEqual([]);
+	expect(setup([], [], { links: stored }).q.replay(pending, text => text)).toBe(0);
+});
+
+test("a worker with two requests answers the oldest and closes the other, across a restart too", async () => {
+	let stored: WorkLink[] = [];
+	const first = setup([], [], { persistLinks: l => (stored = JSON.parse(JSON.stringify(l))) });
+	deferTo(first, "m1", { spawned: "st_a" });
+	deferTo(first, "m2", { steered: "st_a" });
+	const second = setup([], [], { links: stored });
+	expect(second.q.replay(JSON.parse(JSON.stringify(first.open())), text => text)).toBe(0);
+	expect(second.q.openRequests().map(r => r.workers.map(w => w.id))).toEqual([["st_a"], ["st_a"]]);
+	await answerWake(second, "st_a", "done");
+	expect(second.state.posts).toEqual([{ target: "web", text: "done", replyTo: "m1" }]);
+	expect(second.q.deferredOpen()).toEqual([]);
+	expect(second.open()).toEqual([]);
+});
+
+test("two workers finishing in reverse order each answer their own request", async () => {
+	const t = setup();
+	deferTo(t, "m1", { spawned: "st_a" });
+	deferTo(t, "m2", { spawned: "st_b" });
+	await answerWake(t, "st_b", "result b");
+	await answerWake(t, "st_a", "result a");
+	expect(t.state.posts.map(p => [p.replyTo, p.text])).toEqual([["m2", "result b"], ["m1", "result a"]]);
+});
+
+test("a follow-up steered to the second worker is not taken for the oldest running one", () => {
+	const logs: string[] = [];
+	const running = (id: string) => ({ id, description: id });
+	const t = setup([], [], { log: m => logs.push(m), workFor: () => running("st_a"), announce: () => {} });
+	deferTo(t, "m1", { spawned: "st_a" });
+	deferTo(t, "m2", { spawned: "st_b" });
+	deferTo(t, "m3", { steered: "st_b" });
+	expect(t.q.linkOf("st_b")).toMatchObject({ replyTo: "m2", also: ["m3"] });
+	expect(t.q.linkOf("st_a")?.also).toBeUndefined();
+	expect(logs.at(-1)).toContain("worker st_b");
+});
+
+test("a run no worker woke leaves deferred requests open and links to no answered message", async () => {
+	const t = setup();
+	t.startTurn("older question", { target: "web", replyTo: "old" });
+	t.q.onAnswer("older answer");
+	await Promise.resolve();
+	t.state.working = false;
+	t.q.settleTurn();
+	deferTo(t, "m1", { spawned: "st_a" });
+	t.q.onAnswer("a monitor run's note");
+	t.q.sent("web", "a progress line from that run");
+	await Promise.resolve();
+	expect(t.state.posts.at(-1)).toEqual({ target: "web", text: "a monitor run's note", replyTo: undefined });
+	expect(t.q.deferredOpen().map(d => d.replyTo)).toEqual(["m1"]);
+});
+
+test("a turn that started from an unpaired frame takes no deferred request, even one whose worker finished", async () => {
+	const now = Date.now();
+	const t = setup([], [], { work: () => [{ id: "st_a", description: "a", status: "done", target: "web", replyTo: "m1", startedAt: now - 9_000, endedAt: now - 1_000 }] });
+	deferTo(t, "m1", { spawned: "st_a" });
+	deferTo(t, "m2", {});
+	t.q.onPrompt("schedule: morning check");
+	t.q.onAnswer("the morning check is fine");
+	await Promise.resolve();
+	expect(t.state.posts).toEqual([{ target: "web", text: "the morning check is fine", replyTo: undefined }]);
+	expect(t.q.deferredOpen().map(d => d.replyTo)).toEqual(["m1", "m2"]);
+	t.q.settleTurn();
+	await answerWake(t, "st_a", "result");
+	expect(t.state.posts.at(-1)).toEqual({ target: "web", text: "result", replyTo: "m1" });
+});
+
+test("a result with no link goes to the oldest deferred request", async () => {
+	const t = setup();
+	deferTo(t, "m1", {});
+	deferTo(t, "m2", {});
+	await answerWake(t, "st_unknown", "result");
+	expect(t.state.posts).toEqual([{ target: "web", text: "result", replyTo: "m1" }]);
+	expect(t.q.deferredOpen().map(d => d.replyTo)).toEqual(["m2"]);
+});
+
+test("a woken run that said [later] does not leave its wake for the next run", async () => {
+	const t = setup();
+	deferTo(t, "m1", { spawned: "st_a" });
+	deferTo(t, "m2", { spawned: "st_b" });
+	await answerWake(t, "st_a", "[later]");
+	await answerWake(t, "st_b", "result b");
+	expect(t.state.posts).toEqual([{ target: "web", text: "result b", replyTo: "m2" }]);
 });
 
 test("a no-op answer wrapped in a short note posts nothing, with or without a prompt, and is logged", async () => {
