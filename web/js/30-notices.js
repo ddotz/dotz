@@ -200,10 +200,12 @@ const ntUnder = n => { if (!n.pc && validTarget(n.src || n.open || "")) ntJump(n
 // A tapped push: open its notice, or its conversation at the message it is about (loaded first when the stream missed it).
 async function pushOpen(hash, at, nid) {
   const p = parseHash(hash), t = p.t || MAIN;
-  if (!nid && p.view === "chat" && t === "alert") { go("notices"); return; }   // an alert push without a notice: the 알림 screen, not the record conversation
   if (!at || p.view !== "chat") { go(p.view, p.t); return; }
-  if (!NT.loaded) await loadNotices();   // a cold start: the push was sent before the list reached this page
-  noticeOpen(ntById(nid) || ntMsgFor(t, at) || { kind: "message", tone: "", src: t, open: t, at });
+  const find = () => (NT.loaded && ntById(nid)) || ntMsgFor(t, at);
+  if (!find()) await loadNotices();   // a cold start, or a page that slept through it: the notice decides where this lands (a monitor's row, a failure's sheet)
+  const n = find();
+  if (!n && t === "alert") { go("notices"); return; }   // no notice behind it: the 알림 screen, not the record conversation
+  noticeOpen(n || { kind: "message", tone: "", src: t, open: t, at });
 }
 
 /* ---- one handler for every notice entry point ---- */
@@ -253,10 +255,11 @@ async function noticeOpen(n, here = false) {
     default: return ntJump(n);
   }
 }
-// `quiet`: a page load, not a tap, asked (?n=): a stale link just stays on the route it loaded.
-async function noticeOpenId(id, quiet) {
+// `quiet`: a page load, not a tap, asked (?n=): a stale link just stays on the route it loaded. `hash`, `at`: where its push pointed, the landing when the notice is gone.
+async function noticeOpenId(id, quiet, hash, at) {
   let n = ntById(id);
   if (!n) { await loadNotices(); n = ntById(id); }
+  if (!n && at) return pushOpen(hash, at, "");
   if (!n) { if (!quiet) toast("이 알림은 이미 처리됐어요"); return; }
   return noticeOpen(n);
 }
@@ -701,14 +704,14 @@ function ntSheetShow(id, det, pn = null) {
 }
 
 // A tapped notification (or an option button on it) asks an open window to show the decision; a cold start carries it as ?n=<id>.
-if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (d.notice) noticeOpenId(d.notice); });
+if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", ev => { const d = ev.data || {}; if (d.notice) { ovCloseAll(); noticeOpenId(d.notice, false, new URL(d.open, location.href).hash, d.ts); } });
 {
   const want = PUSH_FOLLOW ? "" : new URLSearchParams(location.search).get("n") || "";   // a relayed notice's ?n names an item on the other computer (prFollow)
   if (want) {
     const u = new URL(location.href);
     u.searchParams.delete("n");
     history.replaceState(history.state, "", u.pathname + u.search + u.hash);
-    setTimeout(() => noticeOpenId(want, true), 500);
+    setTimeout(() => noticeOpenId(want, true, PUSH_HASH, pushDecisionAt), 500);
   }
 }
 

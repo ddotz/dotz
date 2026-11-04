@@ -146,7 +146,7 @@ self.addEventListener("push", ev => {
     icon: "/icons/icon-192.png",
     badge: "/icons/badge-96.png",   // Android draws it as a white mask: the dotz mark on a transparent background
     ...(actions.length ? { actions } : {}),
-    data: { url: m.url || "/", ts: m.id ? "" : m.ts || "", id: m.id || "", nid: m.nid || "", pc: m.pc || "" },
+    data: { url: m.url || "/", ts: m.ts || "", id: m.id || "", nid: m.nid || "", pc: m.pc || "" },
   });
   // The app is usually closed when a push lands: its conversation is read now, so the tap paints the very message without the network (web/js/13-snapshot.js).
   if (!m.pc && m.kind !== "test") ev.waitUntil(warmConv(m.url, m.nid).catch(() => {}));
@@ -191,12 +191,12 @@ self.addEventListener("notificationclick", ev => {
     const win = wins.find(w => new URL(w.url).origin === location.origin);
     // A notice relayed from another computer: this app opens, then the page switches to that computer (33-peers.js prFollow), at the item.
     if (data.pc) {
-      if (win) { await win.focus(); win.postMessage({ follow: url }); return; }
+      if (win && await win.focus().then(() => true, () => false)) { win.postMessage({ follow: url }); return; }
       await self.clients.openWindow(url);
       return;
     }
-    if (win) {
-      await win.focus();
+    // A window that refuses focus (a browser may) would change where nobody sees it: a new one opens at the item instead.
+    if (win && await win.focus().then(() => true, () => false)) {
       win.postMessage({ open: url, ts: at, ...(nid ? { nid } : {}), ...(id ? { notice: id } : {}) });
       return;
     }
