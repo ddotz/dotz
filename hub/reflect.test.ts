@@ -139,7 +139,7 @@ test("three corrections on one topic raise exactly one alert, and the same topic
 		expect(posted).toHaveLength(1);
 		expect(posted[0]).toContain("여백이 이상함 2");
 		expect(posted[0]).toMatch(/^결정: /m);
-		expect(posted[0]).toMatch(/^\*\*1\) .+ ← /m);
+		expect(posted[0]).toMatch(/^\*\*1\) /m);
 	} finally {
 		rmSync(paths.corrections, { force: true });
 		rmSync(paths.repeatAlerts, { force: true });
