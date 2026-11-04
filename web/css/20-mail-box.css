@@ -1,6 +1,6 @@
 /* The mailbox of the mail app (web/js/30-mail-box.js): row checkbox and star, the bold unread row, the selection bar, the floating 메일 쓰기 and its sheet, the inline reply. */
-.mr-lead { flex: none; display: inline-flex; align-items: center; gap: 2px; margin-left: -4px; }
-.mr-chk, .mbox-all { flex: none; width: 16px; height: 16px; margin: 0 6px 0 4px; accent-color: var(--accent); cursor: pointer; }
+.mr-lead { flex: none; display: inline-flex; align-items: center; gap: var(--sp-05); margin-left: calc(var(--sp-1) * -1); }
+.mr-chk, .mbox-all { flex: none; width: 16px; height: 16px; margin: 0 var(--sp-15) 0 var(--sp-1); accent-color: var(--accent); cursor: pointer; }
 .mr-star { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--fg-3); }
 button.mr-star { cursor: pointer; }
 button.mr-star:hover { background: var(--active); color: var(--fg); }
@@ -17,12 +17,12 @@ span.mr-star:not(.on) { opacity: .45; }
 .mr .tag.mr-unread { display: none; }
 #mon-tl > .bm.rc.mr.mr-sel { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 
-.mbox-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 28px; padding: 0 12px 4px 6px; color: var(--fg-2); font-size: 12px; }
-.mbox-bar.on { position: sticky; top: 40px; z-index: 2; margin: 0 0 4px; padding-top: 6px; background: var(--bg); }
+.mbox-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15); min-height: 28px; padding: 0 var(--sp-3) var(--sp-1) var(--sp-15); color: var(--fg-2); font-size: 12px; }
+.mbox-bar.on { position: sticky; top: 40px; z-index: 2; margin: 0 0 var(--sp-1); padding-top: var(--sp-15); background: var(--bg); }
 .mbox-all:disabled { visibility: hidden; }
 .mbox-n { margin-right: auto; font-variant-numeric: tabular-nums; }
-.mbox-bar.on .mbox-n { margin-right: 4px; color: var(--fg); font-weight: 600; }
-.mbox-b { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font: inherit; font-size: 13px; line-height: 20px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.mbox-bar.on .mbox-n { margin-right: var(--sp-1); color: var(--fg); font-weight: 600; }
+.mbox-b { display: inline-flex; align-items: center; gap: var(--sp-15); height: 32px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font: inherit; font-size: 13px; line-height: 20px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .mbox-b:hover:not(:disabled) { background: var(--hover); }
 .mbox-b:disabled { opacity: .45; cursor: not-allowed; }
 .mbox-b .ic { width: 16px; height: 16px; }
@@ -30,19 +30,19 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-note { flex: 1 0 100%; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 /* the open mail's top bar (30-mail-box.js mailOpenBar): one row of icons on its own tinted strip across the card (prototype #mail/1) that separates
    it from the mail header, sticky while the mail scrolls. The card's padding is a variable so the strip can run edge to edge. */
-.tl-in > .bm.rc.mopen { --mpx: 18px; gap: 4px; padding: 0 var(--mpx) 16px; }
+.tl-in > .bm.rc.mopen { --mpx: 18px; gap: var(--sp-1); padding: 0 var(--mpx) var(--sp-4); }
 @media (max-width: 639px) { .tl-in > .bm.rc.mopen { --mpx: 16px; padding-bottom: 14px; } }
-.mtop { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 0; height: 40px; margin: 0 calc(var(--mpx) * -1) 10px; padding: 0 calc(var(--mpx) - 8px); border-radius: var(--r-ctl); background: var(--layer); }
+.mtop { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 0; height: 40px; margin: 0 calc(var(--mpx) * -1) 10px; padding: 0 calc(var(--mpx) - var(--sp-2)); border-radius: var(--r-ctl); background: var(--layer); }
 .mtop .mtop-b, .mtop .mr-more { flex: 0 1 36px; min-width: 32px; width: 36px; height: 32px; border-radius: var(--r-ctl); color: var(--fg-2); }
 .mtop .mtop-b .ic, .mtop .mr-more .ic { width: 16px; height: 16px; }
 .mtop .mtop-b:hover, .mtop .mr-more[aria-expanded="true"] { background: var(--active); color: var(--fg); }
 .mtop .mr-more { margin: 0; }
 /* the day / 지난 기록 lines above an open mail only push it down: the mail's own time is in its header */
 #tl > .a-div:has(~ .bm.mopen) { display: none; }
-.mopen > .rc-title { margin-top: 4px; font-size: 15px; line-height: 21px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.mopen > .rc-title { margin-top: var(--sp-1); font-size: 15px; line-height: 21px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .mopen > .rc-hd { margin-top: 0; font-size: 13px; }
 /* the summary (11-mailtext.js mailSumBlock): a tinted block, the lightning mark, 요약 ·, two short sentences with the to-do in bold */
-.msum { display: flex; align-items: flex-start; gap: 8px; margin: 6px 0 4px; padding: 8px 12px; border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: 14px; line-height: 21px; }
+.msum { display: flex; align-items: flex-start; gap: var(--sp-2); margin: var(--sp-15) 0 var(--sp-1); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: 14px; line-height: 21px; }
 .msum > .ic { flex: none; width: 16px; height: 16px; margin-top: 2.5px; color: var(--accent); }
 .msum-t { min-width: 0; overflow-wrap: anywhere; word-break: keep-all; }
 .msum-k { color: var(--fg-3); }
@@ -53,17 +53,17 @@ span.mr-star:not(.on) { opacity: .45; }
 .mopen .mb-txt { padding: 0; border: 0; background: none; }
 .mopen .mb-frame { border: 0; }
 /* the files: chips with the name and the size, one download each (principle 3); the head is a grey word, not a bold line */
-.mopen > .mr-files { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 0; padding-top: 0; border-top: 0; }
+.mopen > .mr-files { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: 0; padding-top: 0; border-top: 0; }
 .mopen > .mr-files > .mr-fh { flex: 1 0 100%; font-weight: 500; }
-.mopen > .mr-files > .mr-file { position: relative; min-height: 36px; max-width: 100%; padding: 0 12px; gap: 6px; background: var(--layer); font-size: 13px; }
+.mopen > .mr-files > .mr-file { position: relative; min-height: 36px; max-width: 100%; padding: 0 var(--sp-3); gap: var(--sp-15); background: var(--layer); font-size: 13px; }
 .mopen > .mr-files > .mr-file::after { content: ""; position: absolute; inset: -4px 0; }
 .mopen > .mr-files > .mr-file:hover { background: var(--hover); }
 .mopen > .mr-files > .mr-file .ic { width: 16px; height: 16px; }
 .mopen > .rc-raw[open] > summary { display: none; }
-.mopen > .rc-raw { margin-top: 4px; }
+.mopen > .rc-raw { margin-top: var(--sp-1); }
 .mopen > .rc-raw > .rc-rawbody { margin-top: 0; }
 
-.mbox-fab { position: fixed; z-index: 40; right: 24px; bottom: 24px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 56px; height: 56px; padding: 0 20px; border: 0; border-radius: 28px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 700; box-shadow: 0 2px 8px rgba(0, 0, 0, .16); cursor: pointer; }
+.mbox-fab { position: fixed; z-index: 40; right: 24px; bottom: 24px; display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2); min-width: 56px; height: 56px; padding: 0 var(--sp-5); border: 0; border-radius: 28px; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 15px; font-weight: 700; box-shadow: 0 2px 8px rgba(0, 0, 0, .16); cursor: pointer; }
 .mbox-fab:hover { filter: brightness(1.06); }
 .mbox-fab .ic { width: 22px; height: 22px; }
 /* A phone keeps the button above the compact tab bar (web/css/01-tokens.css .side: a 46px row), not on top of its tabs. */
@@ -73,21 +73,21 @@ span.mr-star:not(.on) { opacity: .45; }
 .mbox-sheet { position: fixed; z-index: 60; inset: 0; margin: auto; display: flex; flex-direction: column; width: min(560px, calc(100% - 48px)); height: fit-content; max-height: min(86dvh, 820px); border-radius: 20px; background: var(--pop); color: var(--fg); box-shadow: var(--float); overflow: hidden; }
 .mbox-sheet.min { inset: auto 24px 0 auto; margin: 0; width: 360px; max-height: 56px; border-radius: 20px 20px 0 0; }
 .mbox-sheet.min > :not(.mbox-sh) { display: none; }
-.mbox-sh { display: flex; align-items: center; gap: 2px; flex: none; padding: 16px 8px 8px 24px; }
+.mbox-sh { display: flex; align-items: center; gap: var(--sp-05); flex: none; padding: var(--sp-4) var(--sp-2) var(--sp-2) var(--sp-6); }
 .mbox-st { flex: 1; font-size: 20px; line-height: 28px; font-weight: 700; }
-.mbox-sb, .mbox-rb { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: 4px 24px 16px; }
+.mbox-sb, .mbox-rb { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; padding: var(--sp-1) var(--sp-6) var(--sp-4); }
 /* the fields are rows split by one hairline (the label is a grey word, principle 3); the body has none */
-.mbox-f { position: relative; display: flex; align-items: center; gap: 8px; min-height: 48px; border-bottom: 1px solid var(--line); }
+.mbox-f { position: relative; display: flex; align-items: center; gap: var(--sp-2); min-height: 48px; border-bottom: 1px solid var(--line); }
 .mbox-fk { flex: none; width: 64px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 500; }
 .mbox-in { flex: 1; min-width: 0; height: 44px; border: 0; outline: 0; background: none; color: var(--fg); font: inherit; font-size: 14px; }
-.mbox-cc { flex: none; height: 28px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--fg-3); font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }
+.mbox-cc { flex: none; height: 28px; padding: 0 var(--sp-2); border: 0; border-radius: 6px; background: none; color: var(--fg-3); font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }
 .mbox-cc:hover { background: var(--hover); color: var(--fg); }
-textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8px; padding: 0; border: 0; outline: 0; resize: none; background: none; color: var(--fg); font: inherit; font-size: 14px; line-height: 22px; }
+textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-3) 0 var(--sp-2); padding: 0; border: 0; outline: 0; resize: none; background: none; color: var(--fg); font: inherit; font-size: 14px; line-height: 22px; }
 .mbox-fw:empty { display: none; }
 /* the files are the open mail's chips (name, size, one action): 36px on the grey step */
-.mbox-files { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
-.mbox-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 36px; padding: 0 4px 0 12px; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font-size: 13px; line-height: 20px; }
-.mbox-chip.wait { opacity: .6; padding-right: 12px; }
+.mbox-files { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-2) 0; }
+.mbox-chip { display: inline-flex; align-items: center; gap: var(--sp-15); max-width: 100%; height: 36px; padding: 0 var(--sp-1) 0 var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg); font-size: 13px; line-height: 20px; }
+.mbox-chip.wait { opacity: .6; padding-right: var(--sp-3); }
 .mbox-chip .ic { flex: none; width: 16px; height: 16px; color: var(--fg-3); }
 .mbox-cn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mbox-cs { flex: none; color: var(--fg-3); font-variant-numeric: tabular-nums; }
@@ -95,58 +95,58 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
 .mbox-cx:hover { background: var(--active); color: var(--fg); }
 .mbox-cx .ic { width: 12px; height: 12px; }
 /* the send row (ui-spec .fs-ft): the one filled button on the right, the paperclip at the left, 8px between */
-.mbox-sf { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: none; padding: 12px 16px 16px; }
+.mbox-sf { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); flex: none; padding: var(--sp-3) var(--sp-4) var(--sp-4); }
 .mbox-sf .mbox-attach { order: -1; margin-right: auto; }
 .mbox-sf .mbox-save { order: 1; }
 @media (max-width: 639px) {
   .mbox-sheet { inset: 0; width: auto; height: auto; max-height: none; border: 0; border-radius: 0; }
   .mbox-sheet.min { inset: auto 0 0 0; height: fit-content; max-height: 56px; border-radius: 20px 20px 0 0; }
-  .mbox-sb { flex: 1; padding: 4px 20px 16px; }
-  .mbox-sf { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .mbox-sb { flex: 1; padding: var(--sp-1) var(--sp-5) var(--sp-4); }
+  .mbox-sf { padding-bottom: calc(var(--sp-4) + env(safe-area-inset-bottom)); }
 }
 
 /* the reply is a card of the thread (ui-spec 카드: 18px corners, 20px inside); the way to answer is a chip row, the chosen one filled with the ink (ui-spec 탭·칩) */
-.mbox-reply { margin: 12px 0 20px; padding: 16px 20px; border-radius: var(--r-card); background: var(--card); }
-.mbox-modes { display: flex; flex-wrap: wrap; gap: 4px; }
+.mbox-reply { margin: var(--sp-3) 0 var(--sp-5); padding: var(--sp-4) var(--sp-5); border-radius: var(--r-card); background: var(--card); }
+.mbox-modes { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
 .mbox-reply:not(.open) { display: none; }
-.mbox-modes .mbox-mode { position: relative; height: 28px; gap: 6px; padding: 0 12px; border-radius: 16px; font-size: 13px; line-height: 20px; font-weight: 500; background: var(--layer); color: var(--fg-2); }
+.mbox-modes .mbox-mode { position: relative; height: 28px; gap: var(--sp-15); padding: 0 var(--sp-3); border-radius: 16px; font-size: 13px; line-height: 20px; font-weight: 500; background: var(--layer); color: var(--fg-2); }
 .mbox-modes .mbox-mode.on { background: var(--fg); color: var(--bg); }
 .mbox-modes .mbox-mode .ic { width: 16px; height: 16px; }
 .mbox-modes .mbox-mode::after { content: ""; position: absolute; inset: -8px 0; }
-.mbox-reply.open .mbox-rb { padding: 4px 0 0; overflow: visible; }
-.mbox-reply .mbox-sf { padding: 12px 0 0; }
-.mbox-quote { margin: 8px 0 4px; color: var(--fg-3); font-size: 13px; }
-.mbox-quote summary { display: flex; align-items: center; width: fit-content; height: 28px; padding: 0 8px; border-radius: var(--r-ctl); color: var(--fg-2); font-weight: 500; line-height: 20px; cursor: pointer; }
-.mbox-qt { max-height: 220px; margin: 6px 0 0; padding-left: 10px; overflow: auto; border-left: 2px solid var(--line-2); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mbox-reply.open .mbox-rb { padding: var(--sp-1) 0 0; overflow: visible; }
+.mbox-reply .mbox-sf { padding: var(--sp-3) 0 0; }
+.mbox-quote { margin: var(--sp-2) 0 var(--sp-1); color: var(--fg-3); font-size: 13px; }
+.mbox-quote summary { display: flex; align-items: center; width: fit-content; height: 28px; padding: 0 var(--sp-2); border-radius: var(--r-ctl); color: var(--fg-2); font-weight: 500; line-height: 20px; cursor: pointer; }
+.mbox-qt { max-height: 220px; margin: var(--sp-15) 0 0; padding-left: 10px; overflow: auto; border-left: 2px solid var(--line-2); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* A phone keeps the sender's name whole: the unread tag is the bold row itself (the row's aria-label still says 안 읽음), the paperclip count
    is in the open mail, and the one tag that stays is small. */
 @media (max-width: 639px) {
   .mr .mr-clip { display: none; }
-  .mr .rc-hd .tag { font-size: 10.5px; padding: 0 6px; }
+  .mr .rc-hd .tag { font-size: 10.5px; padding: 0 var(--sp-15); }
 }
 
 /* Phone: one scrolling row of slim folder chips, an icon-only selection bar on one line, 44px targets in the sheet and the reply. The sheet and the reply keep their buttons clear of the home indicator. */
 @media (max-width: 639px) {
-  .mr-filter { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -12px; padding: 2px 12px 6px; overscroll-behavior-x: contain; }
+  .mr-filter { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 calc(var(--sp-3) * -1); padding: var(--sp-05) var(--sp-3) var(--sp-15); overscroll-behavior-x: contain; }
   .mr-filter::-webkit-scrollbar { display: none; }
-  .mr-filter .mr-f { flex: none; height: 30px; padding: 0 12px; border-radius: 15px; font-size: 13px; }
+  .mr-filter .mr-f { flex: none; height: 30px; padding: 0 var(--sp-3); border-radius: 15px; font-size: 13px; }
   .mr-star { width: 28px; height: 28px; }
   .mr-chk, .mbox-all { width: 18px; height: 18px; }
   #back, #as-bar, #as-more-bar { width: 32px; height: 32px; }
   .mr-slot button.cchip.mr-act { height: 44px; border-radius: 22px; }
-  .mbox-bar { padding: 0 4px 4px 6px; }
-  .mbox-bar.on { flex-wrap: wrap; gap: 2px; }
+  .mbox-bar { padding: 0 var(--sp-1) var(--sp-1) var(--sp-15); }
+  .mbox-bar.on { flex-wrap: wrap; gap: var(--sp-05); }
   .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
   .mbox-bar.on .mbox-bt { display: none; }
-  .mbox-bar.on .mbox-b.mbox-fyi { order: 1; flex: 1 0 100%; width: auto; margin-top: 2px; border-radius: var(--r-ctl); background: var(--layer); }
+  .mbox-bar.on .mbox-b.mbox-fyi { order: 1; flex: 1 0 100%; width: auto; margin-top: var(--sp-05); border-radius: var(--r-ctl); background: var(--layer); }
   .mbox-bar.on .mbox-fyi .mbox-bt { display: inline; }
   .mbox-bar.on .mbox-note { order: 2; }
-  .mbox-reply { margin: 12px 0 16px; padding: 16px; }
+  .mbox-reply { margin: var(--sp-3) 0 var(--sp-4); padding: var(--sp-4); }
   .mbox-in { height: 44px; font-size: 16px; }
   textarea.mbox-ta { font-size: 16px; line-height: 24px; }
-  .mbox-sh { padding-top: calc(16px + env(safe-area-inset-top)); }
+  .mbox-sh { padding-top: calc(var(--sp-4) + env(safe-area-inset-top)); }
 }
 
 /* The list is Gmail's (owner 2026-11-03): flat rows on one sheet with thin dividers, no gap between them. As in Gmail, a mail you have read
@@ -154,20 +154,20 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
    (☐ ☆ sender, tags, time, the 초안 작성 pencil and ⋯ / the subject, its reply-draft tag / a one-line summary) and one line from 1100px.
    The 받는 사람 line and 할 일 stay in the open mail. The list ends clear of the floating 메일 쓰기. */
 #mon-tl:has(> .bm.rc.mr) { gap: 0; padding-bottom: 104px; }
-#mon-tl:has(> .bm.rc.mr) > :not(.mr, .mr-filter, .mbox-bar) { margin: 8px 0; }
-#mon-tl > .mr-filter { padding-bottom: 12px; }
+#mon-tl:has(> .bm.rc.mr) > :not(.mr, .mr-filter, .mbox-bar) { margin: var(--sp-2) 0; }
+#mon-tl > .mr-filter { padding-bottom: var(--sp-3); }
 /* the mail folders are chips (ui-spec 탭·칩): 28px pills on the card grey, the chosen one filled with the ink */
-.mr-filter.mr-mail .mr-f { height: 28px; padding: 0 12px; border-radius: 16px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; }
+.mr-filter.mr-mail .mr-f { height: 28px; padding: 0 var(--sp-3); border-radius: 16px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; }
 .mr-filter.mr-mail .mr-f.on { background: var(--fg); color: var(--bg); font-weight: 500; }
-#mon-tl > .bm.rc.mr { position: relative; flex-flow: row wrap; align-items: center; column-gap: 6px; row-gap: 1px; padding: 10px 16px; border-radius: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--card) 55%, var(--bg)); }
+#mon-tl > .bm.rc.mr { position: relative; flex-flow: row wrap; align-items: center; column-gap: var(--sp-15); row-gap: 1px; padding: 10px var(--sp-4); border-radius: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--card) 55%, var(--bg)); }
 #mon-tl > :not(.mr) + .bm.rc.mr { border-top-left-radius: 12px; border-top-right-radius: 12px; }
 #mon-tl > .bm.rc.mr:not(:has(+ .bm.rc.mr)) { border-bottom: 0; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
 #mon-tl > .bm.rc.mr:hover, #mon-tl > .bm.rc.mr.mr-new { background: var(--card); }
 #mon-tl > .bm.rc.mr.mr-sel { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 /* the reply state of a mail you need not act on is a plain grey word; only what waits for you (답장 필요, 미답장) keeps its colour */
 #mon-tl > .mr .rc-hd .tag:not(.warn, .unreplied) { padding: 0; background: none; color: var(--fg-3); font-weight: 400; }
-#mon-tl > .mr > .rc-hd { flex: 1 0 100%; height: 22px; gap: 6px; }
-#mon-tl > .mr .rc-hd .ib { width: 28px; height: 28px; margin: -3px -4px; color: var(--fg-3); }
+#mon-tl > .mr > .rc-hd { flex: 1 0 100%; height: 22px; gap: var(--sp-15); }
+#mon-tl > .mr .rc-hd .ib { width: 28px; height: 28px; margin: -3px calc(var(--sp-1) * -1); color: var(--fg-3); }
 #mon-tl > .mr .rc-hd .ib .ic { width: 16px; height: 16px; }
 #mon-tl > .mr .rc-hd .ib:hover { background: var(--active); color: var(--fg); }
 #mon-tl > .mr > .rc-title { flex: 1 1 0; min-width: 0; font-size: 15px; line-height: 22px; }
@@ -181,9 +181,9 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
   /* the list uses the whole content area right of the app list (owner 2026-11-03, like KakaoTalk or Instagram): the folder chips, the 메일 N개 row and the rows
      start at one left line (the row's 16px, the select-all box on the row checkbox's x) and the extra width goes to the subject and the preview */
   #mon-tl:has(> .mr-filter.mr-mail) { max-width: none; margin: 0; }
-  .mbox-bar { padding-left: 12px; }
-  #mon-tl > .bm.rc.mr { flex-wrap: nowrap; column-gap: 8px; height: 48px; padding: 0 12px 0 16px; }
-  #mon-tl > .mr > .mr-dot { top: 50%; margin-top: -4px; }
+  .mbox-bar { padding-left: var(--sp-3); }
+  #mon-tl > .bm.rc.mr { flex-wrap: nowrap; column-gap: var(--sp-2); height: 48px; padding: 0 var(--sp-3) 0 var(--sp-4); }
+  #mon-tl > .mr > .mr-dot { top: 50%; margin-top: calc(var(--sp-1) * -1); }
   #mon-tl > .mr > .rc-hd { display: contents; }
   #mon-tl > .mr .rc-hd > * { order: 2; }
   #mon-tl > .mr .rc-hd > .mr-lead { order: 0; }
