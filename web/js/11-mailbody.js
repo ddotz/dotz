@@ -170,5 +170,5 @@ function mailHtmlNode(key) {
 // True when a mail's "summary" is only text of its own body (the same words once white space is squeezed): the open mail then shows the body alone.
 const mailSumNorm = s => String(s ?? "").replace(/\s+/g, " ").trim();
 const mailSumIsBody = (sum, ...bodies) => { const s = mailSumNorm(sum); return !!s && bodies.some(x => mailSumNorm(x).includes(s)); };
-// The original of one mail: the HTML frame when the hub kept an HTML body, else the text.
-const mailBodyNode = (key, html, raw) => html ? mailHtmlNode(key) : mailTextNode(raw);
+// The original of one mail: the HTML frame when the hub kept an HTML body, else the text, without a repeat of the mail's header at its top (mailHeadBlock).
+const mailBodyNode = (key, html, raw, subject) => html ? mailHtmlNode(key) : mailTextNode(mailOwnBody(raw, subject));

@@ -56,6 +56,15 @@ function mailAddrNode(list, max = 2) {
   return box;
 }
 
+// To and Cc with the people a header at the top of the body names (mailHeadBlock) and the extracted ones lack: that block is not drawn, so they stay here.
+function mailPeople(m, raw, subject) {
+  const b = mailHeadBlock(raw, subject), add = (have, more) => {
+    const known = new Set(mailAddrList(have).map(a => (a.addr || a.name).toLowerCase()));
+    return [have, ...mailAddrList(more).filter(a => !known.has((a.addr || a.name).toLowerCase())).map(a => a.raw)].filter(Boolean).join(", ");
+  };
+  return b ? { to: add(m.to, b.to), cc: add(m.cc, b.cc) } : { to: m.to, cc: m.cc };
+}
+
 // The mail's header block: who sent it, who it is for, and 참조 when there is one. `m` = a mail card (MAILS) or a draft's original payload.
 function mailHeadNode(m) {
   const src = m || {};
@@ -139,7 +148,8 @@ function mailThreadToggle(open = !mthOpen) {
 // and under 1024px the thread chip at its end.
 function mailMetaNode(t, e) {
   const base = MAILS.get(t) || {};
-  const m = { from: base.from || (e && e.from), to: base.to || (e && e.to), cc: base.cc || (e && e.cc), dir: base.dir || (e && e.dir) };
+  const known = { to: base.to || (e && e.to), cc: base.cc || (e && e.cc) };
+  const m = { from: base.from || (e && e.from), ...mailPeople(known, e && mailOrigOf(e.text), (e && e.subject) || base.subject), dir: base.dir || (e && e.dir) };
   const head = mailHeadNode(m), to = mailAddrList(m.to), cc = mailAddrList(m.cc);
   head.hidden = true;
   const names = list => { const n = list.slice(0, 2).map(a => a.name || a.addr).join(", "); return list.length > 2 ? `${n} 외 ${list.length - 2}명` : n; };
