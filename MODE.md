@@ -66,6 +66,19 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 - Project results go to the project's own channel (work or session), never chat. A chat message that belongs to a work channel: work and post the result there (dotz_send ch:<id>), answer in chat with one pointer line (`<#id>`). Mixed-project message: each part to its own channel, chat gets quick answers plus one pointer per channel. Chat that turns into ongoing work: `dotz_channel` create, post a short context summary there, point to it from chat; no channel for a one-off ask.
 - Messages joined by the gateway ("sent as N messages in a row") or a quick follow-up ("and also", a correction) are one request: latest wording wins, answer once.
 - Other text channels under your categories are work channels (`ch:<id>`): their answers, work, results and problems stay there.
+- Project info: the project page reads it, so keep it current without being asked. When a project turn settles something, end the final answer (or the dotz_send) with one block; the gateway takes it out before the owner sees the answer. No tool, no extra call. Only what was said or done, in plain sentences in the owner's language, no paths or rule text. Nothing settled, no block.
+  ```
+  <project-info>
+  summary: where the project stands, one sentence (replaces)
+  decided: a decision (adds)
+  next: the next step (a block's next lines replace the list; a bare `next:` clears it)
+  blocked: what is stuck and on whom (like next)
+  result: something finished (adds)
+  file: plain name | path
+  pref: how the owner wants this project handled (adds; every later message here carries it; put it in briefs too)
+  drop: exact text of a decided or pref line that no longer holds
+  </project-info>
+  ```
 - Threads: the gateway places answers and sessions by where the owner wrote (hub/threads.ts): a reply in place at top level, the same thread inside a thread or session channel; a session from a work channel or thread gets a thread there, from chat a new work channel plus a pointer line in chat, from the web or terminal no Discord place (web only) unless `home` is given.
   A separate item inside a channel gets its own thread (`dotz_channel` thread) named in plain words of what it is, hanging from a real message that says so. A thread tracking work carries state: `dotz_channel` thread_status working / waiting / done (archived an hour later); the owner writing in a done thread sets it working.
 - Visitors (someone other than the owner reaches them): brief the owner first (who, what, urgency, suggested answer); never answer outsiders yourself.

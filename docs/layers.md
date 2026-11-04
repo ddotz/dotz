@@ -94,6 +94,15 @@ New file `~/.dotz/projects.json` (hub/projects.ts), keyed by the project key alr
 - Absent file = today's behaviour. A record overrides the derived title/purpose; the derived project list
   (projectsView) is unchanged otherwise. The work channel setup's `purpose` stays the source until the owner edits it
   on the project page; an edit writes both (setup purpose and the record) so the orchestrator prompt and the page agree.
+- `~/.dotz/project-info.json` (hub/projectinfo.ts), keyed by `ch:<id>`: what a project stands at, kept by its own turns (owner
+  2026-11-05: chat decisions went to the README while the page kept showing the purpose set at creation). A turn ends its answer
+  with a `<project-info>` block (MODE.md); `out()` and the turn's final answer merge it (summary replaces; decided, result, file
+  and pref add; next and blocked replace their list; drop takes a decision or preference back) and `stripHandoff` keeps it from
+  every owner surface. A block needs no tool, so every runtime gets it, and no extra model call or tool round trip: cost is the
+  block itself (at most ~100 output tokens on a turn that settled something) and what `channelContext` adds to each project
+  message: a 15-token reminder, plus state (cap 300 characters) and preferences (cap 400). A line with a path, link or file name
+  is refused, only `file:` keeps a path, shown by its plain name. A change broadcasts `project_info`; an open page refetches.
+  `GET /api/custom/project` returns it as `info`, its results join `results` as kind `note`. Deleting a project removes it.
 - Monitors (hub/watch.ts) belong to a project through their `channels` (already stored); schedules and routines through
   their `target` (`ch:<id>`). `paused` on a watch stops its timer without deleting it.
 - lane.json gains `title` (optional on read; old files show the key until relaunched).

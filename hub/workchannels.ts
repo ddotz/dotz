@@ -3,6 +3,7 @@
 // channels on the same site and kept for as long as some channel needs them; a deleted channel drops its setup.
 import { existsSync, readFileSync } from "node:fs";
 import { now, paths, writeAtomic } from "./config.ts";
+import { projectInfoContext } from "./projectinfo.ts";
 import { addWatch, allWatches, relabelWatches, removeWatch, setWatchChannels, type Watch } from "./watch.ts";
 import { deriveLabel, humanLabel, isKeyLabel } from "./watchtext.ts";
 
@@ -122,7 +123,7 @@ export const listSetups = () => setups.map(s => ({ ...s, login_health: health(s)
 
 export function channelContext(channel?: string): string {
 	const s = channel && getSetup(channel);
-	if (!s) return "";
+	if (!s) return channel ? projectInfoContext(`ch:${channel}`) : "";
 	const bad = health(s).filter(h => !h.ok).map(h => h.login);
 	return [
 		`channel #${s.name} setup: ${s.purpose}.`,
@@ -130,6 +131,7 @@ export function channelContext(channel?: string): string {
 		s.logins.length ? `Kept logins: ${s.logins.join(", ")}.` : "",
 		s.monitors.length ? `Monitors: ${s.monitors.join(", ")}.` : "",
 		bad.length ? `Login not healthy: ${bad.join(", ")} - do not act on a broken login; follow the relogin rule first.` : "",
+		projectInfoContext(`ch:${s.channel}`),
 	].filter(Boolean).join(" ");
 }
 
