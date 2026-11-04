@@ -129,11 +129,20 @@ export function refreshNoticeDrafts(list: Notice[]): number {
 		const d = it.decision?.draft;
 		if (!d) continue;
 		const r = refreshDraft(d, it.text);
-		if (JSON.stringify(r) === JSON.stringify(d)) continue;
+		const retitled = it.decision!.state === "open" && retitleDraftCard(it);
+		if (!retitled && JSON.stringify(r) === JSON.stringify(d)) continue;
 		it.decision!.draft = r;
 		n++;
 	}
 	return n;
+}
+// The question's trailing "(<ref>)" is what a 보내기 pick records and what the send gate looks for (draftVerdict matches the draft's own id), so it
+// follows the draft: a bot's `mail:<id>` card rewritten to the app draft of that mail otherwise refuses every 보내기 as "not approved".
+function retitleDraftCard(n: Notice): boolean {
+	const ref = n.decision?.draft?.ref, tag = /\(([^()]*)\)\s*$/.exec(n.title);
+	if (!ref || !tag || tag[1] === ref) return false;
+	n.title = `${n.title.slice(0, tag.index)}(${ref})`;
+	return true;
 }
 {
 	const n = refreshNoticeDrafts(items);
@@ -836,6 +845,7 @@ export function rewriteOpenDraft(to: string, ref: string, text: string): number 
 	for (const n of hit) {
 		n.text = body.slice(0, TEXT_MAX);
 		if (draft) n.decision!.draft = draft;
+		retitleDraftCard(n);
 		n.updated = at;
 	}
 	announce(hit, at);

@@ -59,7 +59,9 @@ export async function readMailBody(source: string, id: string, run: Runner, acco
 export const canAttach = (source: string): boolean => source === "zele" || (!webmailSite(source) && pluginRepliesWithFiles(source));
 
 const fail = (message: string): SendOutcome => ({ ok: false, message });
-const tail = (r: { stdout: string; stderr: string }) => (r.stderr || r.stdout).trim().slice(0, 160);
+// Node prints its warnings first on stderr; they must not stand in for the reason the owner reads.
+const NODE_NOISE = /^\(node:\d+\) |^\(Use `node --trace-warnings/;
+const tail = (r: { stdout: string; stderr: string }) => (r.stderr.split("\n").filter(l => !NODE_NOISE.test(l)).join("\n").trim() || r.stdout.trim()).slice(0, 160);
 
 export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome> {
 	if (rec.kind !== "mail") return fail(MANUAL);
