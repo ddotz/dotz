@@ -34,6 +34,7 @@
   mq.addEventListener("change", apply);
   window.dotzTheme = { get, toggle: () => { localStorage.setItem("dotz-theme", get() === "dark" ? "light" : "dark"); apply(); return get(); } };
   apply();
+  try { if (localStorage.getItem("dotz-side") === "min") document.documentElement.classList.add("side-min"); } catch {}
 })();
 </script>
 <script>
@@ -56,7 +57,7 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
   <aside class="side">
     <button class="brand" id="brand" type="button" aria-label="홈으로"><span class="logo"></span><span id="brand-name">dotz</span></button>
     <nav class="rail" id="nav" aria-label="메뉴"></nav>
-    <div class="sfoot"><button class="sf-row" id="sf-usage" type="button" hidden></button></div>
+    <div class="sfoot"><button class="ib side-tog" id="side-tog" type="button"></button><button class="sf-row" id="sf-usage" type="button" hidden></button></div>
   </aside>
   <div class="main">
     <header class="appbar" id="appbar">
