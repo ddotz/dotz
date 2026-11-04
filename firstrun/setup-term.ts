@@ -1,5 +1,5 @@
-import { json } from "./routes-util.ts";
-import { PtyHost, ptyRoute } from "./pty.ts";
+import { json } from "../hub/routes-util.ts";
+import { PtyHost, ptyRoute } from "../hub/pty.ts";
 import type { SetupText } from "./setup-jobs.ts";
 
 // The logins that need a real terminal during the web onboarding (Aside CLI, zele, Claude Code, omp). The command of each id is decided by this table

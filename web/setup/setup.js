@@ -1,4 +1,4 @@
-// First-run onboarding page (docs/web-onboarding.md). Served by hub/setup-gate.ts as /setup.js, apart from the app bundle. Every word comes from
+// First-run onboarding page (docs/web-onboarding.md). Served by firstrun/setup-gate.ts as /setup.js, apart from the app bundle. Every word comes from
 // state.text.ui (hub/i18n-*.ts, "setup" block); nothing is stored in the browser: the draft and the secrets live on the gateway.
 // allow: SIZE_OK — the gate serves exactly one /setup.js and there is no bundler, so the six steps, the two sheets and the glue stay in one file.
 (() => {
@@ -217,7 +217,7 @@
   };
   const nav = (back, act, label, extra = "") => `${back ? `<a class="btn text" href="#${back}">${h(u().back)}</a>` : ""}<span class="ob-sp"></span>${extra}<button class="btn" data-act="${act}" data-next>${h(label)}</button>`;
 
-  // The lines the apply job reports (hub/setup-apply.ts says one step line each); a line that is not a step name is the detail of the running step.
+  // The lines the apply job reports (firstrun/setup-apply.ts says one step line each); a line that is not a step name is the detail of the running step.
   function applyRows() {
     const x = u(), lines = V.log.apply || [], known = Object.values(S.text.steps), seen = known.filter(t => lines.includes(t)), last = lines[lines.length - 1];
     const detail = known.includes(last) ? "" : last || "";
@@ -349,7 +349,7 @@
     await add("script", { src: "/vendor/addon-fit.js" });
   })().catch(e => { lib = null; throw e; }));
 
-  // Only a fixed id leaves this page (hub/setup-term.ts maps it to one command); the keys typed into the terminal answer that command's own prompts.
+  // Only a fixed id leaves this page (firstrun/setup-term.ts maps it to one command); the keys typed into the terminal answer that command's own prompts.
   async function openTerm(id) {
     const x = u().term, sh = openSheet({ title: S.text.terms[id], sub: x.sub, body: '<div class="sh-term ob-xterm"></div><div class="note" id="ob-term-st" role="status"></div>' });
     const st = sh.q("#ob-term-st"), box = sh.q(".sh-term"), ctl = new AbortController();

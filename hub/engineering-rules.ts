@@ -9,11 +9,11 @@ export type Src = { readonly path: string; readonly text: string };
 type Counts = Record<string, number>;
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "vendor"]);
-const TREE_DIRS = ["hub", "extension", "features", "onboard", "web", "site"];
+const TREE_DIRS = ["hub", "extension", "features", "onboard", "firstrun", "web", "site"];
 const ARCH = "docs/ARCHITECTURE.md";
 const GENERATED = "web/js/01-notice-ko.js";
 const SELF_TEST = "hub/engineering-rules.test.ts";
-const PROD_ROOT = /^(?:hub|extension|features|onboard|web\/js)\/|^setup\.ts$/;
+const PROD_ROOT = /^(?:hub|extension|features|onboard|firstrun|web\/js)\/|^setup\.ts$/;
 
 // Walks the file system (no git, so a tarball install works) and reads every .ts/.js/.html under the scanned dirs, plus setup.ts and the module map.
 export function loadTree(root: string): Src[] {

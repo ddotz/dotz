@@ -1,5 +1,5 @@
 /* ---------- 화면 안내 (docs/web-onboarding.md): a spotlight over the real menus, shown once after the web onboarding ---------- */
-// The gateway remembers whether it was seen (GET/POST /api/intro, hub/first-run.ts), so another browser does not show it again.
+// The gateway remembers whether it was seen (GET/POST /api/intro, firstrun/first-run.ts), so another browser does not show it again.
 // introStart() runs once the boot has settled and asks at most once per tab session; 설정 → 화면 안내 다시 보기 calls introOpen().
 const INTRO_SEEN = "dotz-intro-seen";
 const introTouch = () => matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -70,7 +70,7 @@ function introDone() {
   removeEventListener("resize", introDraw);
   introEl.remove(); introEl = null;
   try { sessionStorage.setItem(INTRO_SEEN, "1"); } catch { /* storage blocked: the gateway still remembers */ }
-  api("/api/intro", "POST", { intro: "seen" }).catch(() => {});
+  api("/api/intro", "POST", { intro: "seen" }).catch(() => { /* the session flag already hides it here; the next visit asks the gateway again */ });
   go("home");
   if (introFrom?.isConnected) introFrom.focus();
 }

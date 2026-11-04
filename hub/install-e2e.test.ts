@@ -15,7 +15,7 @@ const run = (cmd: string[], extra: Record<string, string> = {}, cwd = root) => {
 };
 // The release: this checkout's code (tracked or new, not ignored) without tests, web assets, docs and feature folders, copied once. The
 // update flow only needs the files the installer checks for and the code the updater CLI imports.
-const releaseFile = (f: string) => !f.endsWith(".test.ts") && (f.startsWith("hub/") || f.startsWith("onboard/") || ["setup.ts", "package.json", "VERSION"].includes(f));
+const releaseFile = (f: string) => !f.endsWith(".test.ts") && (f.startsWith("hub/") || f.startsWith("onboard/") || f.startsWith("firstrun/") || ["setup.ts", "package.json", "VERSION"].includes(f));
 function copyTree(dir: string) {
 	const listed = run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], {}, REPO);
 	// The self-update runs these tests in a tarball install's staging folder, which has no .git: there the folder itself is the release.

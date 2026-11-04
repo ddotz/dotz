@@ -1,4 +1,4 @@
-/* First-run onboarding (docs/web-onboarding.md). hub/setup-gate.ts serves this after the app's own CSS bundle, so the tokens, .list/.li/.btn/.fi/.seg/.bar/.sheet are the app's;
+/* First-run onboarding (docs/web-onboarding.md). firstrun/setup-gate.ts serves this after the app's own CSS bundle, so the tokens, .list/.li/.btn/.fi/.seg/.bar/.sheet are the app's;
    only the page frame and the few pieces the app has no class for are here. Spacing is web/DESIGN.md steps only. */
 html, body, #setup { height: 100%; }
 #setup { height: 100dvh; }

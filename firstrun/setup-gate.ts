@@ -1,14 +1,15 @@
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { cookieValid, markDone, readFirstRun, redeemToken, saveDraft, SETUP_COOKIE } from "./first-run.ts";
 import { runApply } from "./setup-apply.ts";
 import { type JobFn, type JobId, createJobs, fill, isJobId } from "./setup-jobs.ts";
 import { draftLang, parseDraft, saveSecret, savedSecrets, setupText } from "./setup-state.ts";
 import { createTerms, type TermId } from "./setup-term.ts";
-import { scanMachine } from "../onboard/scan.ts";
-import { tokenFile, peerTokenFile } from "../onboard/apply.ts";
+import { scanMachine } from "./scan.ts";
+import { tokenFile, peerTokenFile } from "./apply.ts";
 import { readFileSync } from "node:fs";
-import { bundle } from "./webapp.ts";
-import { localBrowser } from "./web-access.ts";
+import { bundle } from "../hub/webapp.ts";
+import { localBrowser } from "../hub/web-access.ts";
 
 // The first-run gate (docs/web-onboarding.md, "보안" and "API 계약"): /setup, /setup.js, /setup.css and /api/setup/* answer only while first-run.json is
 // pending, the request is a browser on this computer (localBrowser) and it holds the dotz_setup cookie. Anything else is a plain 404, so a request
@@ -17,8 +18,8 @@ import { localBrowser } from "./web-access.ts";
 
 export type SetupDeps = {
 	dir: string;
-	home: string;
-	pkg: string;
+	home?: string;
+	pkg?: string;
 	localHeaders: () => Record<string, string>;
 	restart: () => void;
 	providers: (req: Request, url: URL, parts: string[]) => Promise<Response | undefined>;
@@ -31,7 +32,8 @@ export type SetupDeps = {
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'";
 const SECURE = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 const SSE = { ...SECURE, "Content-Type": "text/event-stream", Connection: "keep-alive" };
-const WEB_SETUP = join(import.meta.dir, "..", "web", "setup");
+const PKG = join(import.meta.dir, "..");
+const WEB_SETUP = join(PKG, "web", "setup");
 const PING_MS = 15_000;
 
 const reply = (body: unknown, status = 200): Response => Response.json(body, { status, headers: SECURE });
@@ -75,7 +77,7 @@ export function createSetupGate(deps: SetupDeps) {
 			saveDraft(dir, "apply", {});
 			let outcome: Awaited<ReturnType<typeof runApply>> | undefined;
 			const row = jobs.start("apply", async io => {
-				outcome = await runApply({ dir, home: deps.home, pkg: deps.pkg, permissionsDone: () => jobs.snapshot().find(r => r.id === "permissions")?.state === "done" }, io);
+				outcome = await runApply({ dir, home: deps.home ?? homedir(), pkg: deps.pkg ?? PKG, permissionsDone: () => jobs.snapshot().find(r => r.id === "permissions")?.state === "done" }, io);
 				return outcome.ok ? { ok: true, owner: outcome.owner, detail: outcome.why } : { ok: false, detail: outcome.error };
 			});
 			applying = row.then(() => outcome!);
@@ -107,11 +109,13 @@ export function createSetupGate(deps: SetupDeps) {
 				const send = (event: string, data: unknown): void => {
 					try {
 						c.enqueue(frame(event, data));
-					} catch {}
+					} catch {
+						// The browser closed the stream; there is nobody left to tell.
+					}
 				};
 				send("snapshot", { jobs: jobs.snapshot() });
 				off = jobs.subscribe(e => (e.type === "line" ? send("line", { job: e.job, text: e.text }) : send("state", e.row)));
-				ping = setInterval(() => { try { c.enqueue(": ping\n\n"); } catch {} }, PING_MS);
+				ping = setInterval(() => { try { c.enqueue(": ping\n\n"); } catch { /* the stream is closed; cancel() stops this timer */ } }, PING_MS);
 			},
 			cancel() {
 				off();

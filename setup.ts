@@ -20,14 +20,14 @@ import { createServer } from "node:net";
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { asideState, installApp, installCli, loginCli, openApp } from "./onboard/aside.ts";
-import { type Answers, CHARACTERS, NOTICES, priorOf, stripExample, TONES, validateAnswers, SNOWFLAKE, type Identity } from "./onboard/answers.ts";
-import { type Env, linkOmp, peerTokenFile, serveTailnet, setupDiscord, tokenFile, writeConfig, writeSecrets } from "./onboard/apply.ts";
+import { type Answers, CHARACTERS, NOTICES, priorOf, stripExample, TONES, validateAnswers, SNOWFLAKE, type Identity } from "./firstrun/answers.ts";
+import { type Env, linkOmp, peerTokenFile, serveTailnet, setupDiscord, tokenFile, writeConfig, writeSecrets } from "./firstrun/apply.ts";
 import { defaultHarness, detectHarnesses, type Detected, harness, harnessLine, loginState } from "./onboard/harness.ts";
 import { checkPermissions, printPermissions, requestPermissions } from "./onboard/permissions.ts";
-import { zeleAccounts } from "./onboard/scan.ts";
+import { zeleAccounts } from "./firstrun/scan.ts";
 import { installTailscale, startTailscale, tailscaleState } from "./onboard/tailscale.ts";
 import { LABEL, serviceFile, servicePath, UNIT } from "./onboard/service.ts";
-import { firstRunPending, issueToken, markTerminalDone } from "./hub/first-run.ts";
+import { firstRunPending, issueToken, markTerminalDone } from "./firstrun/first-run.ts";
 import { cleanName, MAX_NAME } from "./hub/machine-name.ts";
 
 const HOME = homedir();

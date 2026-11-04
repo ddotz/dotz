@@ -6,6 +6,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 
 - `hub/main.ts` gateway process (startup, timers, shutdown, restart gate)
 - `setup.ts` + `onboard/` install wizard (`harness.ts`, `service.ts`, `tailscale.ts`, `aside.ts`, `discord.ts`, `permissions.ts`)
+- `firstrun/` first-run web onboarding between hub and onboard: the marker (`first-run.ts`, `first-run-boot.ts`), the gate and its jobs (`setup-gate.ts`, `setup-jobs.ts`, `setup-state.ts`, `setup-term.ts`, `setup-apply.ts`) and the shared answers/apply/scan/exec code; it may import hub and onboard, and only `hub/main.ts`, `hub/routes.ts`, `hub/routes-settings.ts` and `setup.ts` import it
 - `extension/index.ts` agent-side extension (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `output-cap.ts`, `owner-values.ts`, `task-cap.ts`, `compact-kept.ts`, `schema.ts`, `token-audit.ts`)
 
 ## Gateway core
