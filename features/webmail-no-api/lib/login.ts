@@ -3,6 +3,10 @@
 // No password is typed or read here. The runner is injected so tests need no Aside.
 import type { LoginResult } from "./onboard.ts";
 
+// Killing `aside repl` leaves its openTab() tabs open for good: the run ends itself before the kill at `ms`, which closes them.
+export const beforeKill = (code: string, ms: number): string =>
+	`await Promise.race([(async () => {\n${code}\n})(), new Promise(r => setTimeout(r, ${Math.floor(ms * 0.9)}))]);`;
+
 export type Repl = (code: string, timeoutMs: number) => Promise<string>;
 
 const FIRST_WAIT_MS = 3000;

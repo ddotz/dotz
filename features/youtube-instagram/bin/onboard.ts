@@ -62,7 +62,7 @@ export function realAside(ctx: Ctx): Aside {
 		repl: async body => {
 			await ensure();
 			const code = `try { const dzOut = await (async () => {\n${body}\n})(); console.log("RESULT " + JSON.stringify({ data: dzOut ?? null })); } catch (e) { console.log("RESULT " + JSON.stringify({ error: String((e && e.message) || e).slice(0, 300) })); }`;
-			const r = await ctx.exec(["aside", "repl", code], { timeoutMs: 118_000 });
+			const r = await ctx.exec(["aside", "repl", `await Promise.race([(async () => {\n${code}\n})(), new Promise(r => setTimeout(r, 106_000))]);`], { timeoutMs: 118_000 });
 			const m = [...r.stdout.matchAll(/^.*?RESULT (\{.*\})\s*$/gm)].at(-1);
 			if (!m) throw new Error(asideReason(r.stdout + r.stderr) || "aside repl가 답하지 않았어요");
 			const j = JSON.parse(m[1]!);

@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import { capture, type CapturedRequest } from "../lib/capture.ts";
 import { paths, writeJson } from "../lib/config.ts";
+import { beforeKill } from "../lib/login.ts";
 
 export function fromHar(har: any): CapturedRequest[] {
 	const entries = har?.log?.entries;
@@ -126,7 +127,7 @@ try {
 // The page may navigate when a mail is opened (a full page load drops the page's recording), so the first pass's calls are
 // kept on the repl side and merged with whatever the page (old or new) recorded after the click.
 export async function recordViaAside(url: string, deep: boolean): Promise<CapturedRequest[]> {
-	const proc = Bun.spawn(["aside", "repl", recordCode(url, deep)], { stdout: "pipe", stderr: "pipe" });
+	const proc = Bun.spawn(["aside", "repl", beforeKill(recordCode(url, deep), 90_000)], { stdout: "pipe", stderr: "pipe" });
 	const timer = setTimeout(() => proc.kill(9), 90_000);
 	const out = await new Response(proc.stdout).text().catch(() => "");
 	await proc.exited;
