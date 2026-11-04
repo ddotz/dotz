@@ -83,3 +83,14 @@
 .od-inline .od-pane, .fs-card .od-inline .od-pane { flex: none; overflow: visible; margin: 0; padding: 0; border-radius: 0; background: none; }
 .od-inline .od-open { min-height: 36px; }
 .dr-fh.ok { color: var(--ok); }
+/* 원문 보기 on a mail row of 모니터링 > 메일 (10-draft-original.js orgMailRow): a small text button after the summary, the original folded open on its own full line of the row */
+.mr-og { flex: none; display: inline-flex; align-items: center; gap: var(--sp-1); height: 28px; padding: 0 var(--sp-2); font-size: var(--fs-meta); }
+.mr-og svg { width: 14px; height: 14px; }
+.mr .od-pane.mr-op { flex: 1 0 100%; min-width: 0; max-width: 100%; overflow: visible; margin: var(--sp-1) 0 var(--sp-2); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--bg); color: var(--fg); cursor: auto; user-select: text; }
+.mr .od-pane.mr-op[hidden] { display: none; }
+@media (min-width: 1100px) {
+  /* the one-line row: the button sits right after the preview; an open row wraps so the original takes the full width under that line */
+  #mon-tl > .mr > .mr-og { order: 5; }
+  #mon-tl > .mr > .mr-op { order: 10; }
+  #mon-tl > .bm.rc.mr:has(> .mr-op:not([hidden])) { flex-wrap: wrap; height: auto; padding-top: var(--sp-2); padding-bottom: var(--sp-1); }
+}
