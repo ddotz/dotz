@@ -281,6 +281,48 @@ describe("service worker shell", () => {
 		expect(await (await caches.open("dotz-shell-v11")).match("/app.js").then(r => r!.text())).toBe("new /app.js");
 	});
 
+	test("an unchanged shell stays stored as it is, and a new bundle replaces it and reaches the open pages", async () => {
+		const caches = fakeCaches();
+		const c = await caches.open("dotz-shell-v11");
+		for (const p of ["/", "/app.js", "/app.css", "/custom.js"]) await c.put(p, new Response(`v1 ${p}`, { headers: { ETag: `"1${p}"` } }));
+		const stored: string[] = [], open0 = caches.open;
+		caches.open = async (n: string) => { const o = await open0(n), put = o.put; o.put = async (k: string, r: Response) => { if (!k.startsWith("/icons/")) stored.push(k); await put(k, r); }; return o; };
+		const posted: unknown[] = [];
+		let build = "1";
+		const reply = (u: string) => new Response(`v${build} ${u}`, { headers: u.startsWith("/icons/") ? {} : { ETag: `"${u === "/app.js" ? build : 1}${u}"` } });
+		const h = boot(caches, async u => reply(u), { matchAll: async () => [{ postMessage: (m: unknown) => posted.push(m) }] });
+		const open = async () => { let pending!: Promise<unknown>; h.fetch!({ request: { method: "GET", url: "https://dotz.test/", mode: "navigate" }, respondWith: () => {}, waitUntil: (p: Promise<unknown>) => { pending = p; } }); await pending; };
+		await open();
+		expect(stored).toEqual([]);
+		expect(posted).toEqual([]);
+		build = "2";
+		await open();
+		expect(stored).toEqual(["/app.js"]);
+		expect(await c.match("/app.js").then(r => r!.text())).toBe("v2 /app.js");
+		expect(posted).toEqual([{ type: "shell-updated" }]);
+	});
+
+	test("a push reads its conversation ahead into the device's store, and a device without access drops the store", async () => {
+		const rows = new Map<string, any>();
+		const req = (fn: () => unknown) => { const q: any = {}; queueMicrotask(() => { q.result = fn(); q.onsuccess?.(); }); return q; };
+		let deleted = 0;
+		const indexedDB = {
+			deleteDatabase: () => req(() => { deleted++; }),
+			open: () => req(() => ({ close() {}, transaction: () => { const tx: any = { objectStore: () => ({ get: (k: string) => { const g = req(() => rows.get(k)); return g; }, put: (v: unknown, k: string) => { rows.set(k, v); queueMicrotask(() => queueMicrotask(() => tx.oncomplete?.())); } }) }; return tx; } })),
+		};
+		const events = [{ ts: "t2", text: "새 메시지" }];
+		let status = 200;
+		const handlers: Record<string, (ev: any) => void> = {};
+		new Function("self", "caches", "location", "fetch", "Response", "URL", "indexedDB", swSource)({ clients: { matchAll: async () => [] }, registration: { showNotification: async () => {}, getNotifications: async () => [] }, addEventListener: (t: string, f: (ev: any) => void) => { handlers[t] = f; } }, fakeCaches(), { origin: "https://dotz.test" }, async (u: string) => (u.startsWith("/api/history") ? Response.json({ events }, { status, headers: status === 403 ? { "X-Dotz-Pair": "1" } : {} }) : new Response("")), Response, URL, indexedDB);
+		const push = async () => { const all: Promise<unknown>[] = []; handlers.push!({ data: { json: () => ({ url: "/#chat/main", title: "t", body: "b" }) }, waitUntil: (p: Promise<unknown>) => all.push(p) }); await Promise.all(all); };
+		rows.set("main", { v: 1, t: "main", acts: [{ ts: "t1" }], msgs: [{ ts: "t0" }], read: "t0" });
+		await push();
+		expect(rows.get("main")).toMatchObject({ v: 1, msgs: events, acts: [{ ts: "t1" }], read: "t0", hmore: false });
+		status = 403;
+		await push();
+		expect(deleted).toBe(1);
+	});
+
 	test("the shell is replaced only when every file of the new version arrived", async () => {
 		const caches = fakeCaches();
 		const c = await caches.open("dotz-shell-v11");

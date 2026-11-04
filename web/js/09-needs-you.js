@@ -347,9 +347,13 @@ function scrollChat(force, top) {
 function scrollTerm(force) {
   if (force || termStick) requestAnimationFrame(() => { term.scrollTop = term.scrollHeight; termStick = true; $("#act-jump").hidden = true; });
 }
-const kstHM = t => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleTimeString("ko-KR", { ...KST, hour: "numeric", minute: "2-digit" }); };
-const kstDay = t => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleDateString("ko-KR", { ...KST, year: "numeric", month: "numeric", day: "numeric" }); };
-const dayLabel = t => kstDay(t) === kstDay(Date.now()) ? "오늘" : new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric", weekday: "short" });
+// One formatter each: toLocale*String builds a new one per call, and a conversation asks for these on every row (a fifth of the time of opening one).
+const KST_HM = new Intl.DateTimeFormat("ko-KR", { ...KST, hour: "numeric", minute: "2-digit" });
+const KST_DAY = new Intl.DateTimeFormat("ko-KR", { ...KST, year: "numeric", month: "numeric", day: "numeric" });
+const KST_LABEL = new Intl.DateTimeFormat("ko-KR", { ...KST, month: "long", day: "numeric", weekday: "short" });
+const kstHM = t => { const d = new Date(t); return isNaN(d) ? "" : KST_HM.format(d); };
+const kstDay = t => { const d = new Date(t); return isNaN(d) ? "" : KST_DAY.format(d); };
+const dayLabel = t => { const d = new Date(t); return isNaN(d) ? "" : kstDay(t) === kstDay(Date.now()) ? "오늘" : KST_LABEL.format(d); };
 function fmtDur(ms) {
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}초`;
@@ -362,7 +366,7 @@ let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 
 // (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.
 // pin = what the view is anchored to while the opening settles (late images, the todo strip, an SSE frame): "div" (the divider at the top),
 // "top" (a mail's start), "bottom", or "" once the owner took over; placed = the opening has been positioned.
-const CV = { key: "", drawn: "", div: "", divNode: null, jump: "", loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", openAt: 0, gateT: 0 };
+const CV = { key: "", drawn: "", div: "", divNode: null, jump: "", from: "", low: "", seeded: false, loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", openAt: 0, gateT: 0 };
 // 31-conversations.js state; declared here because the boot code calls go() before that file has run.
 const CONV = new Map(), READ = {}, convPend = new Map();
 let convRaf = 0, convSig = "", convHeadSig = "", convRetry = 0, convReadT = 0, convPendT = 0, convReadF = 0;

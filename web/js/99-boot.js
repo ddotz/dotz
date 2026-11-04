@@ -8,10 +8,11 @@
   if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
   const h = parseHash();
   go(h.view || "home", h.t);
+  if (pushOpenTs && h.view === "chat") CV.jump = pushOpenTs;   // the first draw lands on the tapped message (chatOpen); 30-notices.js pushOpen finishes by its kind
   // The first paint needs the history and the plan, not the state: ask for all of them at once instead of state first (the state
   // is the biggest answer and nothing the conversation draws waits for it; a lane that is gone is switched away from inside refreshState).
   const state = refreshState();
-  loadTarget(target); loadTodo(target); prjLoad().then(() => renderBars(), () => {});
+  snapSeed(target).then(seeded => loadTarget(target, seeded)); loadTodo(target); prjLoad().then(() => renderBars(), () => {});
   // 알림 and 작업내역 sit one tap away and their answers are small: read ahead once the page has settled, so their first opening has something to show.
   setTimeout(() => { for (const t of ["alert", "worklog"]) if (t !== target && !ts(t).hLoaded) loadTarget(t, true).catch(() => {}); }, 1500);
   await state;
