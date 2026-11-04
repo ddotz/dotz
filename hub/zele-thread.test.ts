@@ -19,8 +19,8 @@ describe("parseThread", () => {
 	test("one message per block after the header: sender, unread flag stripped, date and body", () => {
 		const msgs = parseThread(threadText({ from: "Kim Partner <partner@example.com>", body: "Hello,\n\nCould we meet on Friday?" }, { from: "partner@example.com", body: "Thanks!", unread: true }));
 		expect(msgs).toEqual([
-			{ from: "Kim Partner <partner@example.com>", date: "Oct 20, 10:00 AM", body: "Hello,\n\nCould we meet on Friday?" },
-			{ from: "partner@example.com", date: "Oct 21, 10:00 AM", body: "Thanks!" },
+			{ from: "Kim Partner <partner@example.com>", to: "Someone <someone@example.com>", date: "Oct 20, 10:00 AM", body: "Hello,\n\nCould we meet on Friday?" },
+			{ from: "partner@example.com", to: "Someone <someone@example.com>", date: "Oct 21, 10:00 AM", body: "Thanks!" },
 		]);
 	});
 	test("a block without a From: line is not a message; CRLF is fine", () => {
