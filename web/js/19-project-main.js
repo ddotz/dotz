@@ -454,12 +454,14 @@ function cmAsk(text) {
   ta.value = text; autosize(); saveDraft(); updateHints(); ta.focus();
 }
 const cmText = i => el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: i.title }), i.line ? el("div", { class: "sup", text: i.line }) : null);
-// 내 규칙: the newest few here, every rule behind "모두 보기" (hub/custom.ts newestRules sets the order). A row is one short title; a tap
+// 내 규칙: the newest few here, every rule behind the list's 더 보기 (hub/custom.ts newestRules sets the order). A row is one short title; a tap
 // opens the same chat draft as the other groups' 수정, carrying the rule's full text, and hover shows that text too.
 const CM_RULES_SHOWN = 5;
 let cmRuleQ = "";
 const cmRuleRow = i => el("button", { class: "li tap", type: "button", title: i.full, "aria-label": `${i.title} 수정`,
   onclick: () => { pmSheetsClose(); cmAsk(`${CM_TAG} 내 규칙 "${i.full || i.title}": `); } }, el("span", { class: "tx" }, el("div", { class: "hd", text: i.title })));
+const cmRulesCard = g => [el("div", { class: "list" }, ...g.items.slice(0, CM_RULES_SHOWN).map(cmRuleRow)),
+  g.items.length > CM_RULES_SHOWN ? el("div", { class: "cv-more" }, el("button", { class: "btn text sm", type: "button", "data-k": "more", onclick: () => { cmRuleQ = ""; pmSheet("rules"); }, text: `규칙 ${g.items.length - CM_RULES_SHOWN}개 더 보기` })) : null];
 function cmRulesBody() {
   const items = ((PM.D && PM.D.groups) || []).find(g => g.id === "rules")?.items || [], found = el("div");
   const fill = () => {
@@ -478,13 +480,11 @@ function cmPaint(root, p, D) {
   const ask = (label, text) => el("button", { class: "btn tonal inrow", type: "button", "aria-label": `${label} 수정`, onclick: () => cmAsk(text), text: "수정" });
   const group = g => el("section", { class: "pmv-sec" },
     el("div", { class: "sec sec-act" }, el("span", { text: g.label }), el("button", { class: "btn text sm", type: "button", onclick: () => cmAsk(`${CM_TAG} ${g.label}: `), text: "추가" })),
-    !g.items.length ? emptyNode(g.empty) : g.id === "rules" ? el("div", { class: "list" }, ...g.items.slice(0, CM_RULES_SHOWN).map(cmRuleRow),
-      g.items.length > CM_RULES_SHOWN ? el("button", { class: "li tap", type: "button", "data-k": "rules-all", onclick: () => { cmRuleQ = ""; pmSheet("rules"); } },
-        el("span", { class: "tx" }, el("div", { class: "hd", text: `규칙 ${g.items.length}개 모두 보기` })), el("span", { class: "li-end" }, icon("chev", "chev"))) : null)
-    : el("div", { class: "list" }, ...g.items.map(i => el("div", { class: "li" },
+    ...(!g.items.length ? [emptyNode(g.empty)] : g.id === "rules" ? cmRulesCard(g)
+    : [el("div", { class: "list" }, ...g.items.map(i => el("div", { class: "li" },
       cmText(i),
       i.bad ? el("span", { class: "tag warn", text: "확인 필요" }) : null,
-      el("span", { class: "li-end" }, ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `))))));
+      el("span", { class: "li-end" }, ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `)))))]));
   clear(root).append(
     el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" },
       el("div", { class: "pmv-htop" }, el("div", { class: "pmv-title", text: p.name }), el("span", { class: "pmv-upd", text: "내 설정" })),
