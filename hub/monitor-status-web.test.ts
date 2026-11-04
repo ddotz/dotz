@@ -172,6 +172,9 @@ describe("screens", () => {
 		const v = await open();
 		await v.evaluate(`(RQ.local = [], NM.items.forEach(m => { m.last_result = "ok"; m.connection = "connected"; }), INTG.items.forEach(i => { i.state = "connected"; i.needs = { drafts: 0, unread: 0, unreplied: 0, sentToday: 0 }; }), NT.items.push({ id: "w-news", kind: "watch", read: false, at: new Date().toISOString(), title: "새 소식" }), monSchedule(), 0)`);
 		await v.evaluate(until(`(b => b && !b.hidden && b.classList.contains("nub"))(document.querySelector("#nav-mon"))`, "dot not shown"));
+		const dotBg = (theme: string) => q<string>(v, `document.documentElement.dataset.theme = "${theme}"; return getComputedStyle(document.querySelector("#nav-mon")).backgroundColor`);
+		expect(await dotBg("dark")).toBe("rgb(245, 165, 36)");
+		expect(await dotBg("light")).toBe("rgb(49, 130, 246)");
 		const g = await q<{ text: string; dotRight: number; dotBottom: number; labelRight: number; labelBottom: number }>(v, `const b = document.querySelector("#nav-mon"), l = b.parentElement.querySelector(".nl").getBoundingClientRect(), d = b.getBoundingClientRect();
 			return { text: b.textContent, dotRight: d.right, dotBottom: d.bottom, labelRight: l.right, labelBottom: l.bottom };`);
 		expect(g.text).toBe("");

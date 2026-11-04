@@ -157,6 +157,8 @@ kbd { display: inline-block; flex: none; padding: 0 var(--sp-15); border: 1px so
 /* a dot on a tab or menu label overlaps the label's bottom-right corner (the bot name's computer dot, docs/ui-spec.md 점 배지) */
 .ni .nub { position: absolute; right: 4px; bottom: 6px; width: 6px; min-width: 6px; height: 6px; padding: 0; font-size: 0; line-height: 0; }
 .ni .nub[hidden] { display: none; }
+/* dark only: the tab dot takes the color of the tab number beside it (owner 2026-11-05); light keeps the .nb accent */
+:root[data-theme="dark"] .ni .nub.att { background: var(--warn); }
 .appbar .cmdk { grid-column: 9; display: flex; align-items: center; gap: var(--sp-15); width: auto; height: 28px; margin-left: var(--sp-2); padding: 0 var(--sp-1) 0 var(--sp-2); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); }
 .cmdk:hover { background: var(--card-hover); }
 .cmdk .tx { display: none; }
