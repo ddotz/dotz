@@ -35,6 +35,8 @@ const lastChatView = () => viewFor(target);
 const SUB = new Set(["models", "providers", "usage", "context", "harness", "discord", "jandi", "slack", "telegram", "messengers", "provider", "devices", "webaccess"]);
 const views = ["home", "chat", "activity", "harness", "settings", "models", "providers", "usage", "context", "discord", "jandi", "slack", "telegram", "messengers", "provider", "devices", "webaccess", "project", "projects", "monitoring", "apps", "notices", "cardform"];
 const titles = { home: "홈", chat: "채팅", activity: "채팅", harness: "구성", settings: "설정", models: "모델 · 폴백", providers: "공급자", usage: "사용량", context: "컨텍스트", discord: "Discord", jandi: "JANDI", slack: "Slack", telegram: "Telegram", messengers: "메신저", provider: "공급자", devices: "연결된 기기", webaccess: "웹 접속", project: "프로젝트", projects: "프로젝트", monitoring: "모니터링", apps: "앱", notices: "알림", cardform: "카드 추가" };
+// 카드 추가·수정 (web/custom.js cardForm) has its section made here: go() needs one for every view, and the demo's own index.html has no custom layer.
+$("#views").append(el("section", { class: "view cu-page", id: "v-cardform", hidden: true }));
 // 알림 화면 (31-notices-screen.js): f filter, lim rows drawn per group, open unfolded repeats, keep/scroll = come back from a row to the same place,
 // arm = the next go() was started by a row (ret: the way back is this screen), pass = ntGo lets the next go() open the alert record conversation, back = where ← goes when it was opened fresh.
 const NSC = { f: "all", lim: { news: 50, past: 50 }, open: new Set(), seen: new Set(), busy: new Set(), keep: false, scroll: 0, arm: 0, pass: 0, ret: false, sig: "", raf: 0 };
