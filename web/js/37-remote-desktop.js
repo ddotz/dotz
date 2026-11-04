@@ -22,28 +22,42 @@ function deskIsPhone() {
 // The click that starts it. Real Chrome: wait for the answer, then open (Chrome keeps the click's permission for seconds). Any other
 // browser: a blank tab is opened inside the click, because it will not allow a window.open after an await, and it is pointed at /desk/
 // once the gateway says so, or closed when the answer is blocked or the viewer's own Chrome opened it.
-async function openScreen() {
+// `p`: another computer of the computer list. Its gateway is asked through this one, because the page never calls another computer; a
+// tab pointed at it lands on that computer's one-tap page (a link from elsewhere cannot start capture). No `p`: this computer, and when
+// it is off the same tap switches it on.
+async function openScreen(p) {
   if (DSK.busy) return;
   DSK.busy = true;
-  const chrome = deskIsChrome(), phone = deskIsPhone();
+  const chrome = deskIsChrome(), phone = deskIsPhone(), peer = p && !p.self ? p : null;
+  const path = peer ? `${peer.url}/desk/` : "/desk/", turnOn = !peer && !!S && !!S.desk && !S.desk.on;
   let tab = null;
   if (!chrome) { tab = window.open("", "_blank"); if (tab) tab.opener = null; }
   try {
-    const r = (await api("/api/desk/open", "POST", { chrome, phone })) || {};
+    const r = (await api("/api/desk/open", "POST", { chrome, phone, ...(peer ? { peer: peer.url } : {}), ...(turnOn ? { on: true } : {}) })) || {};
+    if (turnOn && r.action !== "blocked") dskLoad();
     if (r.action === "here") {
-      const win = tab || window.open("/desk/", "_blank");
-      if (tab) tab.location.href = "/desk/";
+      const win = tab || window.open(path, "_blank");
+      if (tab) tab.location.href = path;
       if (!win) { toast("새 탭이 막혔어요. 팝업을 허용해 주세요", true); return; }
       if (r.note) toast(r.note);
     } else {
       if (tab) tab.close();
       if (r.action === "opened") toast(`${r.name || "그 컴퓨터"}의 크롬에서 열었어요`);
-      else toast(r.reason || "지금은 화면을 열 수 없어요", true);
+      // an off computer can only be switched on over there: the one step, with the way to it
+      else toast(r.reason || "지금은 화면을 열 수 없어요", true, peer && typeof r.to === "string" ? { label: `${peer.name} 열기`, onclick: () => prGo(`${peer.url}/?did=${enc(DEVICE_ID)}${r.to}`) } : undefined, peer ? 10000 : undefined);
     }
   } catch (e) {
     if (tab) tab.close();
     toast(e.message || "화면을 열지 못했어요", true);
   } finally { DSK.busy = false; }
+}
+
+// One button on one computer of the list (33-peers.js): another computer that answers, or this one when it has the feature. A computer
+// reached only through JANDI has no gateway to show a screen from, and an offline one has nothing to open: no button, no space.
+function dskRowBtn(p) {
+  if (selfDown || p.via || (p.self ? !(S && S.desk) : !p.online)) return null;
+  const off = p.self && !S.desk.on;
+  return el("button", { type: "button", class: "btn tonal inrow pr-desk", text: off ? "켜고 보기" : "화면 보기", "aria-label": `${p.name} ${off ? "화면 공유 켜고 보기" : "화면 보기"}`, onclick: () => { prClose(false); openScreen(p); } });
 }
 
 /* ---------- state ---------- */
@@ -104,7 +118,8 @@ function dskSettings() {
   if (!d) return [];
   const vs = dskViewers(), cf = !!(WA.data && WA.data.mode === "cloudflare");
   if (cf && !DSK.asked) dskLoad();
-  const rows = [dskRow("on", "화면 공유", "이 컴퓨터 화면을 내 다른 기기에서 봐요", dskSwitch(d.on, "화면 공유", () => dskSet({ on: !d.on }, d.on ? "화면 공유를 껐어요" : "화면 공유를 켰어요")))];
+  const opens = dskRow("open", "이 컴퓨터 화면", !d.on ? "꺼져 있어요. 누르면 켜고 열어요" : d.control ? "다른 기기에서 보고 조작해요" : "다른 기기에서 봐요. 조작은 꺼져 있어요", el("button", { type: "button", class: "btn inrow", text: d.on ? "화면 보기" : "켜고 보기", onclick: () => openScreen() }));
+  const rows = [opens, dskRow("on", "화면 공유", "이 컴퓨터 화면을 내 다른 기기에서 봐요", dskSwitch(d.on, "화면 공유", () => dskSet({ on: !d.on }, d.on ? "화면 공유를 껐어요" : "화면 공유를 켰어요")))];
   if (d.on) {
     rows.push(dskRow("control", "조작 허용", "켜면 화면을 보는 사람이 이 컴퓨터를 직접 조작해요", dskSwitch(d.control, "조작 허용", () => dskSet({ control: !d.control }, d.control ? "보기만 할 수 있어요" : "조작을 허용했어요"))));
     rows.push(dskRow("viewers", "지금 보는 사람", vs.length ? vs.map(dskWho).join(" · ") : "아무도 보고 있지 않아요", vs.length ? el("span", { class: "tag pri", text: String(vs.length) }) : null));

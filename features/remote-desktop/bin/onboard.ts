@@ -59,6 +59,7 @@ export async function runOnboard(io: Io, flags: Flags): Promise<Result> {
 
 	if (io.platform !== "darwin") return fail("preflight", `화면 공유는 macOS에서만 돼요 (${io.platform}에서는 켜지 않아요: voxl이 화면을 잡는 방식이 macOS 전용이에요)`);
 	if (!io.which("brew")) return fail("preflight", "Homebrew가 필요해요 (https://brew.sh). 설치한 뒤 같은 명령을 다시 돌려요");
+	done("preflight");
 
 	if (!saved.done.includes("deps") && !flags.rebuild) {
 		const need = [];
@@ -104,6 +105,8 @@ export async function runOnboard(io: Io, flags: Flags): Promise<Result> {
 		return fail("gateway", `${(e as Error).message}. 게이트웨이를 켠 뒤 같은 명령을 다시 돌려요`);
 	}
 
+	done("gateway");
+
 	// Asked from the gateway's own process: macOS ties the permission to the program that asks, never to a terminal.
 	const perm = await io.gateway("POST", "/api/desk/probe", { grant: true }).catch(e => ({ error: (e as Error).message }));
 	if (perm.error) return fail("permissions", `권한 확인이 실패했어요: ${perm.error}`);
@@ -112,13 +115,14 @@ export async function runOnboard(io: Io, flags: Flags): Promise<Result> {
 		io.say("켠 뒤 같은 명령을 다시 돌려요");
 		return { code: 3, status: "waiting", step: "permissions" };
 	}
+	done("permissions"); // preflight, gateway and permissions are asked again on every run; `done` only records for --status that they passed
 
 	if (!saved.done.includes("trial")) {
 		const t = await io.gateway("POST", "/api/desk/probe", { trial: true }).catch(e => ({ ok: false, error: (e as Error).message }));
 		if (!t.ok) return fail("trial", `화면 시험이 실패했어요${t.error ? `: ${t.error}` : t.bytes !== undefined ? ` (${t.bytes}바이트)` : ""}`);
 		done("trial");
 	}
-	io.say(`화면 공유를 켰어요 (${control ? "조작 허용" : "보기만"}). 다른 컴퓨터의 앱에서 이 컴퓨터를 고르고 화면 공유를 열어요`);
+	io.say(`화면 공유를 켰어요 (${control ? "조작 허용" : "보기만"}). 다른 기기의 앱에서 컴퓨터 목록을 열고 이 컴퓨터 옆 화면 버튼을 눌러요`);
 	return { code: 0, status: "done" };
 }
 
