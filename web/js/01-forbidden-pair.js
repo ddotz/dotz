@@ -3,7 +3,7 @@
   const realFetch = window.fetch.bind(window);
   window.fetch = async (...args) => {
     const res = await realFetch(...args);
-    if (res.status === 403 && res.headers.get("x-dotz-pair") && location.pathname !== "/pair") location.replace("/pair");
+    if (res.status === 403 && res.headers.get("x-dotz-pair") && location.pathname !== "/pair") { snapForget(); location.replace("/pair"); }   // the stored conversations go with the access (13-snapshot.js)
     return res;
   };
 }

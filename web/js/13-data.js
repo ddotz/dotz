@@ -59,20 +59,26 @@ function ingestAct(a) {
 // What the store already holds for a conversation: it is drawn at once and refreshed behind it, so coming back to one never blanks it.
 const hasCached = s => s.msgs.length > 0 || s.acts.length > 0;
 // quiet: a repeated read (a peer's conversation, 34-peer-monitoring.js; a refresh behind a drawn conversation) redraws only when it brought something new.
+// What the drawn stretch of a conversation holds: a quiet refresh that leaves it alone needs no redraw.
+const chatTail = s => `${s.msgs.filter(e => e.ts >= CV.low).length}|${s.acts.filter(a => a.ts >= CV.low).length}`;
 async function loadTarget(t, quiet) {
-  const s = ts(t), before = s.mk.size + s.ak.size;
+  const s = ts(t), before = chatTail(s);
+  let settled = false;
   if (s.loading) return s.loading;
   s.loading = (async () => {
     await Promise.all([
-      api(`/api/history?target=${enc(t)}&limit=150`).then(r => { s.hmore = (r.events || []).length >= 150; for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
-      isFixedT(t) || isMailT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
+      api(`/api/history?target=${enc(t)}&limit=150`).then(r => { settled = snapSettle(s, "msgs", r.events || []) || settled; s.hmore = (r.events || []).length >= 150; for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
+      isFixedT(t) || isMailT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { settled = snapSettle(s, "acts", r.items || []) || settled; s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
     ]);
     s.hLoaded = s.aLoaded = true;
     if (t === MAIN) paintRestartBanner();
     { const te = isLaneT(t) ? s.acts.findLast(a => a.type === "turn_end") : s.msgs.findLast(e => chatAnswer(t, e) && !quietReply(s, e)); if (te) noteDone(t, te.ts, false); }
   })().finally(() => { s.loading = null; });
   await s.loading;
-  if (t === target && (!quiet || s.mk.size + s.ak.size !== before)) renderAll();
+  snapSoon(t);
+  if (t !== target) return;
+  if (!quiet || settled || chatTail(s) !== before) renderAll();
+  else if (CV.full) { if (s.msgs[0] && s.msgs[0].ts < CV.low) CV.from = CV.low; CV.drawn = CV.divNode ? "" : chatSig(s); }   // only rows above the drawn stretch came: nothing on screen changes
 }
 // A tapped push or notice names a message the stream may not have delivered (it stalls while the phone sleeps): fetch the
 // history until that message is in. loadTarget joins a fetch already in flight, so the second round covers one that began before the message existed.
@@ -107,6 +113,7 @@ async function loadOlder() {
 // Older chat messages, 150 at a time, when the conversation is scrolled to its top (history keeps more than the first read).
 async function loadOlderMsgs() {
   const t = target, s = ts(t);
+  if (t === target && CV.from) chatWiden();   // the store still holds older rows than the view: those come first
   if (!s.hmore || s.olderMsgs || !s.hLoaded || !s.msgs.length) return;   // one request in flight, and nothing past the beginning
   s.olderMsgs = true;
   try {
@@ -131,6 +138,34 @@ async function loadOlderMsgs() {
 }
 function renderAll(keepScroll) { renderAll0(keepScroll); mailSentPaint(); mbReplyPaint(); paintDecision(); paintTodo(); paintWorkers(); paintRunState(); edgeFade(timeline); edgeFade(term); }
 function edgeFade(t) { const b = t.parentElement; b.classList.toggle("fade-t", t.scrollTop > 4); b.classList.toggle("fade-b", t.scrollTop + t.clientHeight < t.scrollHeight - 4); }
+// A long conversation draws its newest stretch only: what a row costs is mostly the layout of every row above it, and the owner reads the bottom or one
+// message. Older rows of the store join when the view reaches the top (loadOlderMsgs) or a jump asks for one (chatShow). "" draws everything.
+const CHAT_WINDOW = 50;
+function chatFrom(s) {
+  const M = s.msgs;
+  if (s.whole || LOG_VIEW || M.length <= CHAT_WINDOW * 1.4) return "";   // the log view draws from the same loop and shows everything
+  const edge = M.length - CHAT_WINDOW;
+  const need = [CV.jump, CV.div, CV.pin === "at" ? CV.pinTs : "", SHELL_RESTORE && SHELL_RESTORE.key === target && SHELL_RESTORE.anchor ? SHELL_RESTORE.anchor.ts : ""].filter(Boolean).sort()[0];
+  const at = need ? M.findIndex(m => m.ts >= need) : -1;
+  const i = at >= 0 && at < edge ? at - 12 : edge;   // rows above a jump target keep the top of the view, which would widen (and redraw) it, out of sight
+  return i > 0 ? M[i].ts : "";
+}
+// Every stored row, with the row at the top of the view staying where it is.
+function chatWiden() {
+  const s = ts(target), at = chatAnchor(), ch = timeline.scrollHeight - timeline.scrollTop;
+  s.whole = true;
+  chatUnpin();
+  renderAll(true);
+  const now = at && [...tl.querySelectorAll("[data-ts]")].find(m => m.dataset.ts === at.ts);
+  if (now) timeline.scrollTop += now.getBoundingClientRect().top - timeline.getBoundingClientRect().top - at.off;
+  else timeline.scrollTop = timeline.scrollHeight - ch;
+}
+// A jump to a stored message older than the drawn stretch.
+function chatShow(at) {
+  if (!CV.from || at >= CV.from) return;
+  ts(target).whole = true;
+  renderAll(true);
+}
 function renderAll0(keepScroll) {
   if (current !== "chat") return;   // nothing is shown: entering the chat draws it (go, convSync)
   const s = ts(target);
@@ -142,10 +177,12 @@ function renderAll0(keepScroll) {
     termEmpty = term.appendChild(el("div", { class: "a-div", text: "불러오는 중…" }));
     return;
   }
-  const A = s.acts, M = s.msgs, first = A.length ? A[0].ts : null;
+  const A = s.acts, M = s.msgs, first = A.length ? A[0].ts : null, from = chatFrom(s);
+  CV.from = from; CV.low = from || (M[0] ? M[0].ts : "");
   if (s.amore && A.length) term.append(el("button", { class: "btn text tmore", type: "button", onclick: () => loadOlder() }, "이전 기록 더 보기"));
-  if (s.ahist && A.length) { tl.append(el("div", { class: "a-div", text: "지난 기록" })); term.append(el("div", { class: "tdv", text: "지난 기록" })); }
-  let i = 0, j = 0;
+  if (s.ahist && A.length && !from) { tl.append(el("div", { class: "a-div", text: "지난 기록" })); term.append(el("div", { class: "tdv", text: "지난 기록" })); }
+  let i = from ? A.findIndex(a => a.ts >= from) : 0, j = from ? M.findIndex(m => m.ts >= from) : 0;
+  if (i < 0) i = A.length;
   while (i < A.length || j < M.length) {
     if (j < M.length && (i >= A.length || M[j].ts <= A[i].ts)) {
       const m = M[j++];
@@ -187,6 +224,7 @@ function setTarget(t) {
   try { localStorage.setItem(TARGET_KEY, t); } catch {}
   if (current === "chat" || current === "activity") routeReplace(monCtx && current === "chat" ? `monitoring/c:${enc(t)}` : `${current}/${t}`);
   const s = ts(t);
+  s.whole = false;
   convSync();
   markSeen();
   if (!s.draft) { try { s.draft = localStorage.getItem(DRAFT_KEY(target)) || ""; } catch {} }
