@@ -72,6 +72,19 @@ export function throwawayReason(
 	return undefined;
 }
 
+// Why this process may not append to the event logs of its data dir, or undefined when it may. Those logs are the owner's chat: the web reads its
+// history from them, so a line there shows up as a message (2026-11-04 15:19 UTC: a worker's `bun /tmp/.../probe2.ts` imported hub/events.ts, had no
+// test preload and no DOTZ_DIR, and its emit("outbox", ...) reached the owner's real web chat as a fake draft). Only the gateway writes them; a
+// throwaway data dir is free, and DOTZ_ALLOW_LIVE=1 lets a deliberate end-to-end run through.
+const GATEWAY_ENTRY = /[\\/]hub[\\/]main\.ts$/;
+export function liveEmitRefusal(dataDir: string, env: Record<string, string | undefined> = process.env, entry = Bun.main): string | undefined {
+	if (allowLive(env) || (env.DOTZ_DIR && isTempPath(dataDir)) || GATEWAY_ENTRY.test(entry)) return undefined;
+	return `refused: ${entry} is not the gateway and would write the live event log in ${dataDir}. Set DOTZ_DIR to a temp dir (or DOTZ_ALLOW_LIVE=1 for a deliberate run).`;
+}
+// `bun test` without the suite's preload (it comes from ./bunfig.toml, so a run from any other cwd has none) must stop before it can touch a real data dir.
+export const testDataRefusal = (dataDir: string, env: Record<string, string | undefined> = process.env): string | undefined =>
+	env.NODE_ENV === "test" && !isTempPath(dataDir) ? `refused: a test run on the live data dir ${dataDir}. Run bun test from the repo root (bunfig.toml loads hub/runtime/test-setup.ts).` : undefined;
+
 // The live data dir a throwaway must not write: the default ~/.dotz, or DOTZ_DIR unless that is a temp one.
 export const liveDataDir = (dataDir: string): string | undefined => (isTempPath(dataDir) ? undefined : resolve(dataDir));
 export const defaultDataDir = (): string => join(homedir(), ".dotz");

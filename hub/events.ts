@@ -1,6 +1,7 @@
 import { appendFileSync, closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
-import { paths } from "./config.ts";
+import { DATA_DIR, paths } from "./config.ts";
 import { fileLinePaths, snapshotSent } from "./files.ts";
+import { liveEmitRefusal } from "./live-guard.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
 
 export type HubEvent = { ts: string; kind: string; source: string; text: string; [key: string]: unknown };
@@ -26,7 +27,9 @@ export const subscriberCount = (): number => subscribers.size;
 const emitListeners = new Set<(event: HubEvent) => void>();
 export const onEmit = (fn: (event: HubEvent) => void) => void emitListeners.add(fn);
 
+const emitRefused = liveEmitRefusal(DATA_DIR);
 export function emit(box: "inbox" | "outbox", event: HubEvent): void {
+	if (emitRefused) throw new Error(emitRefused);
 	appendFileSync(box === "inbox" ? paths.inbox : paths.outbox, `${JSON.stringify(event)}\n`);
 	if (typeof event.text === "string" && event.text.includes("[file]")) snapshotSent(event.text);
 	recent.push(event);

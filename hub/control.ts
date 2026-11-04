@@ -525,7 +525,7 @@ async function execute(text: string): Promise<CommandCard> {
 				return card(t.restartGateway, [], { tone: "busy", note: t.restartGatewayNote(RESTART_NOTICE_MS / 60_000) });
 			}
 			if (first === "orchestrator") {
-				restartOrchestrator();
+				restartOrchestrator("/restart orchestrator");
 				return card(t.restartMain(NAME), [], { tone: "busy" });
 			}
 			if (!first) throw new ControlError("usage: /restart gateway|orchestrator|<lane>");

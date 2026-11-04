@@ -12,6 +12,7 @@
 // mail are one item). A newer card of an item that has an open or held card replaces it in place (one that waits behind another card is replaced on the
 // load/sweep path too), and a held card whose item was handled meanwhile (deps.handled) is dropped instead of being shown.
 import { existsSync, readFileSync } from "node:fs";
+import { DECISION_HEAD } from "./choices.ts";
 import { parseDraftApproval, withRecipientMark } from "./draft-approval.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 
@@ -49,6 +50,29 @@ export function closedCardText(text: string, how: "answered" | "resolved" | "ign
 /** The draft ref a post asks approval for, or undefined when it is no send-approval card. */
 export function cardRef(text: string): string | undefined {
 	return parseDraftApproval(parseTone(stripHandoff(text)).text.trim())?.ref;
+}
+
+/**
+ * One post that asks about several drafts: one post per draft, so each is a real card (a draft, its own notice, its turn in the queue) instead of one
+ * message the queue does not know. Undefined unless every part is a draft approval with a ref of its own.
+ */
+export function splitDraftCards(text: string): string[] | undefined {
+	const lines = text.split("\n");
+	const starts: number[] = [];
+	let fence = false, decided = false;
+	lines.forEach((line, i) => {
+		if (/^\s*```/.test(line)) fence = !fence;
+		else if (!fence && /^\s*>/.test(line) && (!starts.length || decided)) {
+			starts.push(i);
+			decided = false;
+		} else if (!fence && DECISION_HEAD.test(line)) decided = true;
+	});
+	if (starts.length < 2) return undefined;
+	const lead = lines.slice(0, starts[0]).join("\n").trim() || "[ask] 답장 초안이에요";
+	const head = lead.includes("\n") ? "[ask] 답장 초안이에요" : lead;
+	const cards = starts.map((from, i) => `${i ? head : lead}\n${lines.slice(from, starts[i + 1]).join("\n").trim()}`);
+	const refs = cards.map(cardRef);
+	return refs.every(Boolean) && new Set(refs).size === refs.length ? cards : undefined;
 }
 
 /**
