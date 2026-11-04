@@ -223,7 +223,9 @@ describe("카카오톡 at desktop width (1280x800)", async () => {
 		const sw = await q<string[][]>(v, `return [...document.querySelectorAll("#kk-add .kk-pr")].map(p => [p.dataset.chat, p.querySelector('[data-k="watch"]').getAttribute("aria-pressed")])`);
 		expect(sw).toEqual([["100", "true"], ["200", "false"], ["300", "true"]]);
 		await shot(v, "01-desktop-rooms.png");
-		await run(v, `document.querySelector('#kk-add [data-k="close"]').click()`);
+		// The sheet and the rows are the app's parts: a flat card row with one selection color, a quiet eye, the sheets' close button.
+		expect(await q(v, `const c = s => getComputedStyle(document.querySelector(s)); return [c("#kk-add .kk-eye").backgroundColor, c("#kk-add .fs-x").borderTopWidth, c(".kk-row").borderTopLeftRadius]`)).toEqual(["rgba(0, 0, 0, 0)", "0px", "0px"]);
+		await run(v, `document.querySelector('#kk-add .fs-x').click()`);
 		await waitFor(v, `!document.querySelector("#kk-add")`);
 	});
 
@@ -232,7 +234,7 @@ describe("카카오톡 at desktop width (1280x800)", async () => {
 		await run(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="watch"]').click()`);
 		expect((await expectReq(isReq("PUT", "/api/kakao/rooms/200"))).body).toEqual({ watched: true });
 		await waitFor(v, `document.querySelector('.kk-row[data-chat="200"]') && document.querySelector('.kk-pr[data-chat="200"] [data-k="watch"]').getAttribute("aria-pressed") === "true"`);
-		await run(v, `document.querySelector('#kk-add [data-k="close"]').click()`);
+		await run(v, `document.querySelector('#kk-add .fs-x').click()`);
 		await waitFor(v, `!document.querySelector("#kk-add")`);
 		await openRoom(v);
 		expect(await q(v, `return [document.querySelector('#kk-auto [data-k="auto"]').getAttribute("aria-checked")]`)).toEqual(["false"]);
@@ -562,7 +564,7 @@ describe("대화방 검색 (room search)", async () => {
 		reset();
 		await boot(v);
 		await run(v, `document.querySelector("#kk-add-btn").click()`);
-		const top = await q<Record<string, any>>(v, `const i = document.querySelector("#kk-q"); return { ph: i.placeholder, first: i.parentElement.firstElementChild === i && !!i.closest("#kk-add"), label: i.getAttribute("aria-label") }`);
+		const top = await q<Record<string, any>>(v, `const i = document.querySelector("#kk-q"); return { ph: i.placeholder, first: i.closest(".pl-search").parentElement.firstElementChild === i.closest(".pl-search") && !!i.closest("#kk-add"), label: i.getAttribute("aria-label") }`);
 		expect(top).toEqual({ ph: "대화방 검색", first: true, label: "대화방 검색" });
 		expect(await rowsOf(v)).toEqual(["100", "200", "300"]);
 		await search(v, "라마");
