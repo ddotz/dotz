@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "b9f667e53428";
+const WEB_BUILD = "07997e29ee7a";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -101,7 +101,7 @@ const lsJson = (key, fallback) => { try { return JSON.parse(localStorage.getItem
   const realFetch = window.fetch.bind(window);
   window.fetch = async (...args) => {
     const res = await realFetch(...args);
-    if (res.status === 403 && res.headers.get("x-dotz-pair") && location.pathname !== "/pair") location.replace("/pair");
+    if (res.status === 403 && res.headers.get("x-dotz-pair") && location.pathname !== "/pair") { snapForget(); location.replace("/pair"); }   // the stored conversations go with the access (13-snapshot.js)
     return res;
   };
 }
@@ -2938,9 +2938,13 @@ function scrollChat(force, top) {
 function scrollTerm(force) {
   if (force || termStick) requestAnimationFrame(() => { term.scrollTop = term.scrollHeight; termStick = true; $("#act-jump").hidden = true; });
 }
-const kstHM = t => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleTimeString("ko-KR", { ...KST, hour: "numeric", minute: "2-digit" }); };
-const kstDay = t => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleDateString("ko-KR", { ...KST, year: "numeric", month: "numeric", day: "numeric" }); };
-const dayLabel = t => kstDay(t) === kstDay(Date.now()) ? "오늘" : new Date(t).toLocaleDateString("ko-KR", { ...KST, month: "long", day: "numeric", weekday: "short" });
+// One formatter each: toLocale*String builds a new one per call, and a conversation asks for these on every row (a fifth of the time of opening one).
+const KST_HM = new Intl.DateTimeFormat("ko-KR", { ...KST, hour: "numeric", minute: "2-digit" });
+const KST_DAY = new Intl.DateTimeFormat("ko-KR", { ...KST, year: "numeric", month: "numeric", day: "numeric" });
+const KST_LABEL = new Intl.DateTimeFormat("ko-KR", { ...KST, month: "long", day: "numeric", weekday: "short" });
+const kstHM = t => { const d = new Date(t); return isNaN(d) ? "" : KST_HM.format(d); };
+const kstDay = t => { const d = new Date(t); return isNaN(d) ? "" : KST_DAY.format(d); };
+const dayLabel = t => { const d = new Date(t); return isNaN(d) ? "" : kstDay(t) === kstDay(Date.now()) ? "오늘" : KST_LABEL.format(d); };
 function fmtDur(ms) {
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}초`;
@@ -2953,7 +2957,7 @@ let CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 
 // (the "새 메시지" divider goes before the first message after it), divNode = that divider in the timeline.
 // pin = what the view is anchored to while the opening settles (late images, the todo strip, an SSE frame): "div" (the divider at the top),
 // "top" (a mail's start), "bottom", or "" once the owner took over; placed = the opening has been positioned.
-const CV = { key: "", drawn: "", div: "", divNode: null, jump: "", loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", openAt: 0, gateT: 0 };
+const CV = { key: "", drawn: "", div: "", divNode: null, jump: "", from: "", low: "", seeded: false, loaded: false, captured: false, failed: false, placed: false, full: false, snap: null, pin: "", openAt: 0, gateT: 0 };
 // 31-conversations.js state; declared here because the boot code calls go() before that file has run.
 const CONV = new Map(), READ = {}, convPend = new Map();
 let convRaf = 0, convSig = "", convHeadSig = "", convRetry = 0, convReadT = 0, convPendT = 0, convReadF = 0;
@@ -5110,20 +5114,26 @@ function ingestAct(a) {
 // What the store already holds for a conversation: it is drawn at once and refreshed behind it, so coming back to one never blanks it.
 const hasCached = s => s.msgs.length > 0 || s.acts.length > 0;
 // quiet: a repeated read (a peer's conversation, 34-peer-monitoring.js; a refresh behind a drawn conversation) redraws only when it brought something new.
+// What the drawn stretch of a conversation holds: a quiet refresh that leaves it alone needs no redraw.
+const chatTail = s => `${s.msgs.filter(e => e.ts >= CV.low).length}|${s.acts.filter(a => a.ts >= CV.low).length}`;
 async function loadTarget(t, quiet) {
-  const s = ts(t), before = s.mk.size + s.ak.size;
+  const s = ts(t), before = chatTail(s);
+  let settled = false;
   if (s.loading) return s.loading;
   s.loading = (async () => {
     await Promise.all([
-      api(`/api/history?target=${enc(t)}&limit=150`).then(r => { s.hmore = (r.events || []).length >= 150; for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
-      isFixedT(t) || isMailT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
+      api(`/api/history?target=${enc(t)}&limit=150`).then(r => { settled = snapSettle(s, "msgs", r.events || []) || settled; s.hmore = (r.events || []).length >= 150; for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
+      isFixedT(t) || isMailT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { settled = snapSettle(s, "acts", r.items || []) || settled; s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
     ]);
     s.hLoaded = s.aLoaded = true;
     if (t === MAIN) paintRestartBanner();
     { const te = isLaneT(t) ? s.acts.findLast(a => a.type === "turn_end") : s.msgs.findLast(e => chatAnswer(t, e) && !quietReply(s, e)); if (te) noteDone(t, te.ts, false); }
   })().finally(() => { s.loading = null; });
   await s.loading;
-  if (t === target && (!quiet || s.mk.size + s.ak.size !== before)) renderAll();
+  snapSoon(t);
+  if (t !== target) return;
+  if (!quiet || settled || chatTail(s) !== before) renderAll();
+  else if (CV.full) { if (s.msgs[0] && s.msgs[0].ts < CV.low) CV.from = CV.low; CV.drawn = CV.divNode ? "" : chatSig(s); }   // only rows above the drawn stretch came: nothing on screen changes
 }
 // A tapped push or notice names a message the stream may not have delivered (it stalls while the phone sleeps): fetch the
 // history until that message is in. loadTarget joins a fetch already in flight, so the second round covers one that began before the message existed.
@@ -5158,6 +5168,7 @@ async function loadOlder() {
 // Older chat messages, 150 at a time, when the conversation is scrolled to its top (history keeps more than the first read).
 async function loadOlderMsgs() {
   const t = target, s = ts(t);
+  if (t === target && CV.from) chatWiden();   // the store still holds older rows than the view: those come first
   if (!s.hmore || s.olderMsgs || !s.hLoaded || !s.msgs.length) return;   // one request in flight, and nothing past the beginning
   s.olderMsgs = true;
   try {
@@ -5182,6 +5193,34 @@ async function loadOlderMsgs() {
 }
 function renderAll(keepScroll) { renderAll0(keepScroll); mailSentPaint(); mbReplyPaint(); paintDecision(); paintTodo(); paintWorkers(); paintRunState(); edgeFade(timeline); edgeFade(term); }
 function edgeFade(t) { const b = t.parentElement; b.classList.toggle("fade-t", t.scrollTop > 4); b.classList.toggle("fade-b", t.scrollTop + t.clientHeight < t.scrollHeight - 4); }
+// A long conversation draws its newest stretch only: what a row costs is mostly the layout of every row above it, and the owner reads the bottom or one
+// message. Older rows of the store join when the view reaches the top (loadOlderMsgs) or a jump asks for one (chatShow). "" draws everything.
+const CHAT_WINDOW = 50;
+function chatFrom(s) {
+  const M = s.msgs;
+  if (s.whole || LOG_VIEW || M.length <= CHAT_WINDOW * 1.4) return "";   // the log view draws from the same loop and shows everything
+  const edge = M.length - CHAT_WINDOW;
+  const need = [CV.jump, CV.div, CV.pin === "at" ? CV.pinTs : "", SHELL_RESTORE && SHELL_RESTORE.key === target && SHELL_RESTORE.anchor ? SHELL_RESTORE.anchor.ts : ""].filter(Boolean).sort()[0];
+  const at = need ? M.findIndex(m => m.ts >= need) : -1;
+  const i = at >= 0 && at < edge ? at - 12 : edge;   // rows above a jump target keep the top of the view, which would widen (and redraw) it, out of sight
+  return i > 0 ? M[i].ts : "";
+}
+// Every stored row, with the row at the top of the view staying where it is.
+function chatWiden() {
+  const s = ts(target), at = chatAnchor(), ch = timeline.scrollHeight - timeline.scrollTop;
+  s.whole = true;
+  chatUnpin();
+  renderAll(true);
+  const now = at && [...tl.querySelectorAll("[data-ts]")].find(m => m.dataset.ts === at.ts);
+  if (now) timeline.scrollTop += now.getBoundingClientRect().top - timeline.getBoundingClientRect().top - at.off;
+  else timeline.scrollTop = timeline.scrollHeight - ch;
+}
+// A jump to a stored message older than the drawn stretch.
+function chatShow(at) {
+  if (!CV.from || at >= CV.from) return;
+  ts(target).whole = true;
+  renderAll(true);
+}
 function renderAll0(keepScroll) {
   if (current !== "chat") return;   // nothing is shown: entering the chat draws it (go, convSync)
   const s = ts(target);
@@ -5193,10 +5232,12 @@ function renderAll0(keepScroll) {
     termEmpty = term.appendChild(el("div", { class: "a-div", text: "불러오는 중…" }));
     return;
   }
-  const A = s.acts, M = s.msgs, first = A.length ? A[0].ts : null;
+  const A = s.acts, M = s.msgs, first = A.length ? A[0].ts : null, from = chatFrom(s);
+  CV.from = from; CV.low = from || (M[0] ? M[0].ts : "");
   if (s.amore && A.length) term.append(el("button", { class: "btn text tmore", type: "button", onclick: () => loadOlder() }, "이전 기록 더 보기"));
-  if (s.ahist && A.length) { tl.append(el("div", { class: "a-div", text: "지난 기록" })); term.append(el("div", { class: "tdv", text: "지난 기록" })); }
-  let i = 0, j = 0;
+  if (s.ahist && A.length && !from) { tl.append(el("div", { class: "a-div", text: "지난 기록" })); term.append(el("div", { class: "tdv", text: "지난 기록" })); }
+  let i = from ? A.findIndex(a => a.ts >= from) : 0, j = from ? M.findIndex(m => m.ts >= from) : 0;
+  if (i < 0) i = A.length;
   while (i < A.length || j < M.length) {
     if (j < M.length && (i >= A.length || M[j].ts <= A[i].ts)) {
       const m = M[j++];
@@ -5238,6 +5279,7 @@ function setTarget(t) {
   try { localStorage.setItem(TARGET_KEY, t); } catch {}
   if (current === "chat" || current === "activity") routeReplace(monCtx && current === "chat" ? `monitoring/c:${enc(t)}` : `${current}/${t}`);
   const s = ts(t);
+  s.whole = false;
   convSync();
   markSeen();
   if (!s.draft) { try { s.draft = localStorage.getItem(DRAFT_KEY(target)) || ""; } catch {} }
@@ -5256,6 +5298,65 @@ function enterTarget() {
   autosize();
   if (!matchMedia("(pointer: coarse)").matches && !document.querySelector("dialog[open]:not([data-leaving])")) ta.focus({ preventScroll: true });
 }
+/* ---------- the conversation as last drawn, kept on this device ---------- */
+// A cold start paints the conversation it opens from here (index.html reads the record into window.__snap before this script is parsed) and the network
+// refreshes it behind (loadTarget quiet). sw.js puts the newest messages in as a push arrives, so a tap finds the very message. One record per conversation, in
+// this origin's IndexedDB, the same words the page already holds; a device that lost its access drops it (01-forbidden-pair.js, 25-settings-devices.js).
+// Local command rows, mail and another computer's conversations stay out of it.
+const SNAP_MSGS = 60, SNAP_ACTS = 120, SNAP_KEEP = 8, SNAP_MRU = "dotz-snap-mru", SNAP_WAIT_MS = 150;
+const snapDb = () => new Promise((res, rej) => {
+  const q = indexedDB.open("dotz-snap", 1);
+  q.onupgradeneeded = () => q.result.createObjectStore("conv");
+  q.onsuccess = () => res(q.result);
+  q.onerror = () => rej(q.error);
+});
+const snapDone = q => new Promise((res, rej) => { q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
+let snapTimer = 0, snapGone = false;
+const snapOk = t => !snapGone && !isMailT(t) && !pqPc(t);
+function snapSoon(t) { clearTimeout(snapTimer); snapTimer = setTimeout(() => snapSave(t), 1500); }
+async function snapSave(t) {
+  const s = ts(t);
+  if (!snapOk(t) || !s.hLoaded || !s.msgs.length) return;
+  try {
+    const db = await snapDb();
+    const mru = [t, ...JSON.parse(localStorage.getItem(SNAP_MRU) || "[]").filter(k => k !== t)];
+    localStorage.setItem(SNAP_MRU, JSON.stringify(mru.slice(0, SNAP_KEEP)));
+    const os = db.transaction("conv", "readwrite").objectStore("conv");
+    os.put({ v: 1, t, at: Date.now(), msgs: s.msgs.filter(e => e.source !== "local").slice(-SNAP_MSGS), acts: s.acts.slice(-SNAP_ACTS), hmore: s.hmore || s.msgs.length > SNAP_MSGS, amore: s.amore || s.acts.length > SNAP_ACTS, ahist: s.ahist, todo: TD.by[t], read: READ[t] || "" }, t);
+    for (const k of await snapDone(os.getAllKeys())) if (!mru.slice(0, SNAP_KEEP).includes(k)) os.delete(k);
+    db.close();
+  } catch (e) { console.warn("snapshot", e); }
+}
+const snapForget = () => { snapGone = true; clearTimeout(snapTimer); try { indexedDB.deleteDatabase("dotz-snap"); localStorage.removeItem(SNAP_MRU); } catch {} };
+// The record joins the store as a first answer would, unless the real one got here first. True when the conversation was drawn from it.
+async function snapSeed(t) {
+  const rec = await Promise.race([window.__snap, new Promise(r => setTimeout(r, SNAP_WAIT_MS))]);
+  const s = ts(t);
+  if (!rec || rec.v !== 1 || rec.t !== t || t !== target || s.hLoaded || !rec.msgs.length) return false;
+  const seed = s.seed = { msgs: new Set(), acts: new Set() };
+  for (const e of rec.msgs) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); seed.msgs.add(k); } }
+  for (const a of rec.acts) { const k = actKey(a); if (!s.ak.has(k)) { s.ak.add(k); s.acts.push(a); seed.acts.add(k); } }
+  s.msgs.sort(byTs); s.acts.sort(byTs);
+  if (isFixedT(t)) dedupKeyed(s);
+  s.hmore = rec.hmore; s.amore = rec.amore; s.ahist = rec.ahist;
+  if (TD.by[t] === undefined && rec.todo) TD.by[t] = rec.todo;
+  if (READ[t] === undefined && rec.read) READ[t] = rec.read;
+  CV.seeded = true;
+  renderAll();
+  return true;
+}
+// The first real answer settles what the record said: a stored row it does not hold goes (removed since, or older than a gap the paging could never fill).
+// True when one went, so a quiet refresh redraws.
+function snapSettle(s, kind, real) {
+  const seed = s.seed && s.seed[kind];
+  if (!seed) return false;
+  const [keyOf, keys] = kind === "msgs" ? [msgKey, s.mk] : [actKey, s.ak], keep = new Set(real.map(keyOf)), had = s[kind].length;
+  s[kind] = s[kind].filter(e => { const k = keyOf(e), out = seed.has(k) && !keep.has(k); if (out) keys.delete(k); return !out; });
+  s.seed[kind] = null;
+  return s[kind].length !== had;
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") snapSave(target); });
+
 /* ---------- slash commands: Discord-style menu above the composer (hub/control.ts COMMANDS) ---------- */
 // Each arg: n = placeholder, opts() = [value, label?] choices from live state, opt = may be left out, free = any text.
 const SL_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max", "auto"];
@@ -9043,7 +9144,7 @@ function dvOpen(d) {
       await busy(b, async () => {
         await api(`/api/devices/${enc(d.id)}`, "DELETE");
         c();
-        if (d.current) return location.replace("/pair");
+        if (d.current) { snapForget(); return location.replace("/pair"); }
         toast("기기를 해제했어요");
         await motionOut(document.querySelector(`[data-dev="${CSS.escape(String(d.id))}"]`));   // the unpaired device's row leaves (150ms), then the list is read again
         await loadDevices();
@@ -14678,7 +14779,7 @@ function ntGo(t) {
   if (isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // the session is gone: its result card is in the main chat
   if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast("이 프로젝트를 찾을 수 없어요"); go("projects"); return ""; }
   if (!validTarget(t)) { toast("이 화면을 찾을 수 없어요"); go("home"); return ""; }
-  go("chat", t);
+  if (current !== "chat" || target !== t || convListing()) go("chat", t);   // already open (a cold start draws the address first): no second draw
   return t;
 }
 // The rendered message of an event ts (data-ts is set in chatPush): the exact one, else the nearest in time.
@@ -14736,6 +14837,7 @@ function ntHlHost(node) {
 }
 function ntFlash(node) {
   const { host, bar } = ntHlHost(node);
+  if (host.classList.contains("nt-hl")) return;   // the first draw lit it and the notice list confirmed it: the glow does not restart
   for (const x of document.querySelectorAll(".nt-hl")) x.classList.remove("nt-hl", "nt-bar");
   void host.offsetWidth;
   host.classList.add("nt-hl");
@@ -14752,11 +14854,13 @@ async function ntJump(n, quiet = false) {
   chatUnpin();
   CV.jump = at;   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
   try {
-    if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t);
+    const s = ts(t), stored = s.msgs.some(e => e.ts === at);
+    if (!(s.hLoaded && s.aLoaded)) { if (stored) loadTarget(t, true).catch(() => {}); else await loadTarget(t); }   // the message is here: land now, refresh behind it
     await ensureMsg(t, at);   // a stale stream may not have the message yet: fetch it before jumping
     await ntReach(t, at);
     for (let i = 0; i < 300 && seq === ntJumpSeq && !CV.placed; i++) await ntRaf();   // the opening's first draw waits for the read position (chatReady)
     if (seq !== ntJumpSeq || target !== t || current !== "chat") return;
+    chatShow(at);
     const m = ntFind(at), exact = !!m && m.dataset.ts === at;
     if (m) chatJump(m);
     if (exact) ntFlash(m);
@@ -15884,7 +15988,7 @@ function convSync() {
   const key = current === "chat" && !convListing() ? target : "";
   if (key === CV.key) return false;
   chatUnpin(); clearTimeout(CV.gateT);
-  Object.assign(CV, { key, div: "", divNode: null, jump: "", captured: false, failed: false, placed: false, full: false, snap: null, openAt: performance.now() });
+  Object.assign(CV, { key, div: "", divNode: null, jump: "", seeded: false, captured: false, failed: false, placed: false, full: false, snap: null, openAt: performance.now() });
   convCapture();
   return !!key;   // the caller draws the conversation: the divider is in it from the first paint
 }
@@ -15894,6 +15998,7 @@ function convCapture() {
   const at = READ[CV.key];
   if (!at || !(ts(CV.key).unread > 0)) return false;   // never opened before: nothing to compare with
   CV.div = at;
+  if (CV.seeded) CV.placed = false;
   return true;
 }
 const convDivider = () => el("div", { class: "cv-new", role: "separator", "aria-label": "여기부터 읽지 않은 메시지" }, el("span", { text: "여기까지 읽음" }));
@@ -15902,7 +16007,7 @@ const convDivider = () => el("div", { class: "cv-new", role: "separator", "aria-
 // and the todo plan (its strip pushes the timeline down). Until then "불러오는 중…" stays, so nothing is drawn at the wrong place
 // first. A slow answer cannot hold it forever: the plan gives up after 0.7 s, the read position after 3 s (no divider then).
 function chatReady() {
-  if (!CV.key) return true;
+  if (!CV.key || CV.jump || CV.seeded) return true;   // a jump lands on its message and a stored copy (13-snapshot.js) shows at once: the plan's strip re-places them (chatPlace), a divider re-opens it (convCapture)
   const age = performance.now() - CV.openAt, convOk = CV.loaded || CV.failed || age > 3000, todoOk = TD.by[target] !== undefined || age > 700;
   if (convOk && todoOk) return true;
   clearTimeout(CV.gateT);
@@ -15919,7 +16024,7 @@ function chatOpen() {
     CV.placed = true;
     if (CV.jump) {   // a jump target wins over the divider (ntJump)
       const m = ntFind(CV.jump);
-      if (m) { chatJump(m); return; }
+      if (m) { chatJump(m); if (m.dataset.ts === CV.jump) ntFlash(m); return; }
       chatUnpin(); scrollChat(true); return;
     }
     // reloaded onto a new shell (23-installable-app-web.js): the place the owner was at, unless they were at the bottom
@@ -18303,10 +18408,11 @@ const runLaneRestart = (name, btn) => busy(btn, async () => {
   if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
   const h = parseHash();
   go(h.view || "home", h.t);
+  if (pushOpenTs && h.view === "chat") CV.jump = pushOpenTs;   // the first draw lands on the tapped message (chatOpen); 30-notices.js pushOpen finishes by its kind
   // The first paint needs the history and the plan, not the state: ask for all of them at once instead of state first (the state
   // is the biggest answer and nothing the conversation draws waits for it; a lane that is gone is switched away from inside refreshState).
   const state = refreshState();
-  loadTarget(target); loadTodo(target); prjLoad().then(() => renderBars(), () => {});
+  snapSeed(target).then(seeded => loadTarget(target, seeded)); loadTodo(target); prjLoad().then(() => renderBars(), () => {});
   // 알림 and 작업내역 sit one tap away and their answers are small: read ahead once the page has settled, so their first opening has something to show.
   setTimeout(() => { for (const t of ["alert", "worklog"]) if (t !== target && !ts(t).hLoaded) loadTarget(t, true).catch(() => {}); }, 1500);
   await state;
