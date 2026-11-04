@@ -3,7 +3,7 @@
 // so it is one regex, a read of the live event ring and one append: no model, no file read. hygiene.ts rotates the file.
 import { appendFileSync } from "node:fs";
 import { paths } from "./config.ts";
-import { eventTarget, recentEvents, type HubEvent } from "./events.ts";
+import { eventTarget, isPeerMessage, recentEvents, type HubEvent } from "./events.ts";
 
 const SCAN_CHARS = 400;   // a long message is a brief: a correction says so at its start, and a word deep in a brief is not one
 const TEXT_MAX = 8000;
@@ -41,7 +41,7 @@ export const isCorrectionText = (text: string): boolean => !HANDOVER.test(text) 
 
 /** An owner's own typed message that reads like a correction; a button choice (picks, decision) answers a question and is none. */
 export function isCorrection(e: HubEvent): boolean {
-	if (e.kind !== "message" && e.kind !== "lane_message") return false;
+	if ((e.kind !== "message" && e.kind !== "lane_message") || isPeerMessage(e)) return false;
 	return !(e.picks as unknown[] | undefined)?.length && !e.decision && isCorrectionText(e.text);
 }
 

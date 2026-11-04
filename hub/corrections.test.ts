@@ -82,3 +82,12 @@ test("replayed night by night, the labeled week raises one card per topic with a
 	expect(new Set(cards).size).toBe(cards.length);
 	expect(cards.length).toBe(10);
 });
+
+test("a peer gateway's message is no owner correction; the owner's own message from the other computer's page still is", () => {
+	const peer = { author: "ddotz@github", via: "맥북" };
+	expect(isCorrection(event({ ...peer, text: "맥북: 홈 빈 문구 잘림 수정을 main에 올렸어요. 재시작은 필요 없어요." }))).toBe(false);
+	expect(isCorrection(event({ ...peer, text: "맥북 수치예요. 여전히 표본이 작아요." }))).toBe(false);
+	expect(isCorrection(event({ ...peer, kind: "lane_message", lane: "work", text: "맥북: 여전히 안되네" }))).toBe(false);
+	expect(isCorrection(event({ ...peer, channel: "mail:inbox", text: "여전히 안되네" }))).toBe(true);
+	expect(isCorrection(event({ author: "ddotz@github", text: "맥북 왜 안되냐" }))).toBe(true);
+});

@@ -161,3 +161,14 @@ test("초안 작성 with text: the owner's instruction is in the prompt as his w
 	const without = buildPrompt(base, { identity: "", templates: "", samples: [], rules: "", corrections: [], forbidden: [] } as never);
 	expect(without.user).not.toContain("The user's instruction for this reply");
 });
+
+test("a draft that says it already sent something gets one rewrite; the user's own word or an attached file is ground for it", async () => {
+	const claim = j({ action: "draft", reason: "r", body: "선생님 MR 메일로 보내드렸습니다~!" });
+	const plain = j({ action: "draft", reason: "r", body: "선생님 MR 곧 확인해 볼게요~!" });
+	const m = fake([claim, plain]);
+	const r = await generateReply(item, style, m.call);
+	expect(r).toMatchObject({ action: "draft", tries: 2, warnings: [], draft: { body: "선생님 MR 곧 확인해 볼게요~!" } });
+	for (const grounded of [{ files: ["mr.mp3"] }, { instruction: "보냈다고 답해" }]) expect(await generateReply({ ...item, ...grounded }, style, fake([claim]).call)).toMatchObject({ tries: 1, warnings: [] });
+	expect(await generateReply(item, style, fake([claim, claim]).call)).toMatchObject({ tries: 2, warnings: [expect.stringContaining("already sent")] });
+	expect(lintReply({ to: "kim@example.com", subject: "Re: 회의 일정 문의", body: "메일로 보내드렸습니다" }, item, style)).toEqual([]);
+});

@@ -263,8 +263,14 @@ export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle, o
 }
 
 // Findings a rewrite by the model can fix; the rest (a recipient the model cannot know, the user's own address) come back as warnings, never as a retry.
-const REWRITABLE = /^the body is empty$|^the body is \d+ characters|^the text contains a placeholder$|^it uses the forbidden expression /;
+const REWRITABLE = /^the body is empty$|^the body is \d+ characters|^the text contains a placeholder$|^it uses the forbidden expression |^it says something was already sent/;
 export const rewritable = (failures: string[]): string[] => failures.filter(f => REWRITABLE.test(f));
+
+// A real reply says "메일로 보내드렸습니다", so a draft copies it though nothing was sent (reply-voice test set, 1 in 49 at Sonnet medium and high alike).
+// Draft time only, never in lintReply: the owner may have sent it himself by the time he approves, and a lint failure refuses the send.
+const SENT_CLAIM = /보내\s*드렸|보내\s*놨|보내\s*두었|발송(?:했|해\s*드렸|드렸|하였)|전송(?:했|해\s*드렸)|전달(?:했|해\s*드렸|드렸)|첨부(?:했|해\s*드렸|하였)/;
+export const SENT_CLAIM_FAILURE = "it says something was already sent or attached, but nothing here shows that: write what the user will do, or put it in questions";
+const unfoundedSend = (body: string, item: ReplyItem, base: PromptExtras): boolean => SENT_CLAIM.test(body) && !item.files?.length && !item.instruction?.trim() && !item.choice && !base.change;
 
 const defaultTo = (item: ReplyItem) => (item.kind === "mail" ? addressesOf(item.replyTo)[0] ?? addressesOf(item.from)[0] ?? item.from : item.from);
 const defaultSubject = (item: ReplyItem) => (item.kind === "mail" && item.subject?.trim() ? (/^re\s*:/i.test(item.subject.trim()) ? item.subject.trim() : `Re: ${item.subject.trim()}`) : undefined);
@@ -315,7 +321,7 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		// The recipient and the Re: subject are settled here, by rule: a model retry cannot know an address the message does not show.
 		const draft: DraftOut = { to: recipientOf(parsed.to, item), subject: subjectOf(parsed.subject, item), body: parsed.body };
 		if (!draft.subject) delete draft.subject;
-		const found = lintReply(draft, item, style);
+		const found = [...lintReply(draft, item, style), ...(unfoundedSend(draft.body, item, base) ? [SENT_CLAIM_FAILURE] : [])];
 		const fixable = rewritable(found);
 		if (!fixable.length || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings: found, tries };
 		first ??= { draft, questions: parsed.questions, warnings: found };
