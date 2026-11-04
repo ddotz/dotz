@@ -135,6 +135,15 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .hn-h .sup { margin-left: auto; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .hn + .hn-h { margin-top: var(--sp-3); }
 .hn { border-radius: 0 0 var(--r-card) var(--r-card); background: var(--card); overflow: hidden; }
+/* 지금 진행 중 shows six rows at most (a two-line row and its 1px hairline) and scrolls inside the card, with no scrollbar; six or fewer change nothing. */
+.hn.hn-cap { max-height: calc((var(--lh-row) + var(--sp-05) + var(--lh-meta) + var(--sp-2) * 2) * 6 + 5px); overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: none; }
+.hn.hn-cap::-webkit-scrollbar { display: none; }
+/* More rows below: the list's last line fades, and the fade leaves at the end of the scroll. Where scroll timelines are missing, the header's count says it. */
+@property --hn-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes hn-end { from, 80% { --hn-fade: var(--sp-4); } to { --hn-fade: 0px; } }
+@supports (animation-timeline: scroll()) {
+  .hn.hn-cap { -webkit-mask-image: linear-gradient(to top, transparent, #000 var(--hn-fade)); mask-image: linear-gradient(to top, transparent, #000 var(--hn-fade)); animation: hn-end linear both; animation-timeline: scroll(self); }
+}
 .hr { --hr-dot: 8px; display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 48px; padding: var(--sp-2) var(--row-px); border: 0; background: transparent; color: inherit; text-align: left; }
 .hr + .hr { border-top: 1px solid var(--line); }
 
