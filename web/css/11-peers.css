@@ -8,13 +8,13 @@
    sits at the title's right end and the computer dot keeps the name's bottom-right corner just before it. */
 .appbar.hasp:not(.back) h1::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(45deg); }
 /* the brand row: one chevron right after the name, only with a computer to switch to (it reserves nothing otherwise); the other computers' dot sits at its bottom right */
-.brand-c { position: relative; display: flex; flex: none; margin-left: -4px; color: var(--fg-3); }
+.brand-c { position: relative; display: flex; flex: none; margin-left: calc(var(--sp-1) * -1); color: var(--fg-3); }
 .brand-c[hidden] { display: none; }
 .brand-c .ic { width: 14px; height: 14px; }
 .brand-c.pdot::after { content: ""; position: absolute; right: -2px; bottom: -1px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .brand-c.p-need::after { background: var(--warn); }
-.appbar.hasp:not(.back) h1 { position: relative; padding-right: 16px; }
-.appbar.hasp:not(.back) h1::before { position: absolute; right: 2px; top: 50%; margin-top: -6px; }
+.appbar.hasp:not(.back) h1 { position: relative; padding-right: var(--sp-4); }
+.appbar.hasp:not(.back) h1::before { position: absolute; right: 2px; top: 50%; margin-top: calc(var(--sp-15) * -1); }
 .appbar.hasp:not(.back) h1.pdot { padding-right: 26px; }
 .appbar.hasp:not(.back) h1.pdot::after { right: 14px; }
 .appbar:not(.back) h1.p-need::after { background: var(--warn); }
@@ -23,13 +23,13 @@
 .ds-sheet.pr-sheet { box-shadow: none; animation: none; }
 @media (min-width: 700px) { .ds-sheet.pr-sheet { max-width: 340px; } }
 .ds-bd.anch { display: block; background: transparent; animation: none; }
-.ds-bd.anch .ds-sheet.pr-sheet { position: fixed; width: 240px; max-width: calc(100vw - 24px); padding: 6px; border-radius: 14px; box-shadow: var(--float); }
-.pr-hd { padding: 16px 20px 6px; color: var(--fg-3); font: 600 12px/16px var(--font); }
-.anch .pr-hd { padding: 8px 10px 4px; font-weight: 400; }
-.pr-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 10px; }
+.ds-bd.anch .ds-sheet.pr-sheet { position: fixed; width: 240px; max-width: calc(100vw - 24px); padding: var(--sp-15); border-radius: 14px; box-shadow: var(--float); }
+.pr-hd { padding: var(--sp-4) var(--sp-5) var(--sp-15); color: var(--fg-3); font: 600 12px/16px var(--font); }
+.anch .pr-hd { padding: var(--sp-2) 10px var(--sp-1); font-weight: 400; }
+.pr-list { display: flex; flex-direction: column; gap: var(--sp-05); padding: 0 var(--sp-2) 10px; }
 .anch .pr-list { padding: 0; }
-.pr-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 6px 12px; border: 0; border-radius: 10px; background: transparent; color: var(--fg); font: inherit; text-align: left; transition: background-color var(--m-base) var(--m-ease); }
-.anch .pr-row { padding: 6px 10px; }
+.pr-row { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: 48px; padding: var(--sp-15) var(--sp-3); border: 0; border-radius: 10px; background: transparent; color: var(--fg); font: inherit; text-align: left; transition: background-color var(--m-base) var(--m-ease); }
+.anch .pr-row { padding: var(--sp-15) 10px; }
 .pr-row:hover { background: var(--hover); }
 .pr-row:active { background: var(--active); }
 .pr-row.off .pr-t { color: var(--fg-3); }
@@ -41,7 +41,7 @@
 .pr-n { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--layer); color: var(--fg-2); font: 600 11px/18px var(--font); text-align: center; }
 .pr-n.need { background: var(--warn); color: var(--bg); }
 .pr-ck { flex: none; width: 16px; height: 16px; margin-left: auto; color: var(--fg-3); }
-.pr-manage { min-height: 44px; margin-top: 4px; border-radius: 0 0 10px 10px; box-shadow: 0 -1px 0 var(--line); }
+.pr-manage { min-height: 44px; margin-top: var(--sp-1); border-radius: 0 0 10px 10px; box-shadow: 0 -1px 0 var(--line); }
 .pr-manage .ic { flex: none; width: 16px; height: 16px; color: var(--fg-3); }
 @media (prefers-reduced-motion: reduce) { .pr-row { transition: none; } }
 .pr-line .chev { flex: none; align-self: center; color: var(--fg-3); }
