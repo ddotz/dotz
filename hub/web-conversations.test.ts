@@ -33,7 +33,7 @@ function page() {
 	].join("\n");
 	return new Function(...Object.keys(env), `${src}\nreturn { eventTarget, ingestMsg, convReal, parseChoices, isChoiceMsg, choiceAsks, parseTone, isFixedT, TS };`)(...Object.values(env)) as {
 		eventTarget: (e: any) => string | null; ingestMsg: (e: any) => void; convReal: (e: any) => boolean;
-		parseChoices: (t: string) => { question: string; blocks: { title: string; options: { n: number; label: string; desc: string; rec: boolean }[] }[] };
+		parseChoices: (t: string) => { question: string; blocks: { title: string; options: { n: number; label: string; desc: string }[] }[] };
 		isChoiceMsg: (pc: any) => boolean; isFixedT: (t: string) => boolean;
 		choiceAsks: (e: any, tone: string, pc: any) => boolean; parseTone: (t: string) => { tone: string; text: string };
 	} & { TS: Record<string, any> };
@@ -97,7 +97,7 @@ describe("buttons for an [ask] message or any message with a 결정: choice bloc
 	});
 
 	test("the [ask] marker (its real outgoing shape) and the gateway's own alert keep their buttons", () => {
-		expect(shown(reply(`[ask] 어떻게 할까요?\n결정: 설치\n**1) 브루** ← 추천\n빠르고 간단해요\n**2) 직접 빌드**\n오래 걸려요`))).toBe(true);
+		expect(shown(reply(`[ask] 어떻게 할까요?\n결정: 설치\n**1) 브루**\n빠르고 간단해요\n**2) 직접 빌드**\n오래 걸려요`))).toBe(true);
 		expect(shown(reply(`[ask] ${list}`))).toBe(true);
 		const block = issueBlock("어떻게 할까요?", [{ name: "원인 확인", result: "살펴봐요." }, { name: "넘어가요", result: "다음에 봐요." }]);
 		expect(shown(out(2, "alert", { text: `토큰 점검에서 경고 1건\n${block}` }))).toBe(true);
@@ -111,7 +111,7 @@ describe("buttons for an [ask] message or any message with a 결정: choice bloc
 		const pc = page().parseChoices(page().parseTone(DONE_REPLY).text);
 		expect(pc.blocks).toHaveLength(1);
 		expect(pc.blocks[0]!.title).toBe("방문 예약");
-		expect(pc.blocks[0]!.options.map(o => [o.n, o.rec])).toEqual([[1, true], [2, false], [3, false]]);
+		expect(pc.blocks[0]!.options.map(o => o.n)).toEqual([1, 2, 3]);
 	});
 
 	test("a bare numbered list or a single option after 결정: stays text under any marker", () => {
@@ -121,7 +121,7 @@ describe("buttons for an [ask] message or any message with a 결정: choice bloc
 });
 
 describe("issue reports are choices the decision parser reads", () => {
-	// The shape every prompt teaches: a "결정:" / "Decision:" line and 2-4 `**n) name** ← 추천` options, each with a one-line consequence.
+	// The shape every prompt teaches: a "결정:" / "Decision:" line and 2-4 `**n) name**` options, each with a one-line consequence.
 	const template = (text: string) => {
 		const lines = text.split("\n"), i = lines.findIndex(l => /^(?:결정|Decision):/.test(l));
 		expect(i).toBeGreaterThanOrEqual(0);
@@ -132,7 +132,6 @@ describe("issue reports are choices the decision parser reads", () => {
 		expect(p.isChoiceMsg(pc)).toBe(true);
 		expect(pc.blocks).toHaveLength(1);
 		expect(pc.blocks[0]!.options.map(o => o.n)).toEqual([1, 2]);
-		expect(pc.blocks[0]!.options.map(o => o.rec)).toEqual([true, false]);
 		expect(pc.blocks[0]!.options.every(o => o.desc.length > 0)).toBe(true);
 	};
 
@@ -146,6 +145,10 @@ describe("issue reports are choices the decision parser reads", () => {
 		const ev = { kind: "watch", watch: "w", reason: "output changed", text: "out" };
 		reads(template(inboxText({ ...ev, channels: ["1"] })));
 		reads(template(inboxText(ev)));
+	});
+
+	test("an old message's recommendation mark never reaches the page's options", () => {
+		expect(page().parseChoices("[ask] 배포\n결정: 시점\n**1) 지금** ← 추천\n바로 올려요\n**2) 내일**\n미뤄요").blocks[0]!.options.map(o => o.label)).toEqual(["지금", "내일"]);
 	});
 
 	test("a gateway report (issue line + issueBlock) is read by the page's parser", () => {

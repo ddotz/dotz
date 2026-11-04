@@ -15,7 +15,7 @@
 //   > 함께 보낼 메일
 //   > 받는이: <address>   > 제목: <subject>   > 첨부: <name> (<size>)   >   > <mail body, every line quoted>
 //   결정: <question> (<ref>)                 (ref = the id the approve command takes: draft id, job id, draft code)
-//   **1) 보내기** ← 추천
+//   **1) 보내기**
 //   <what happens>
 //   **2) 고치기 …**   **3) 보내지 않기** ...
 //

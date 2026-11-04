@@ -128,8 +128,8 @@
       } else if (/^결정:/.test(l)) {
         flush(); let blk = `<div class="ch-blk"><div class="cq">${h(l.slice(3).trim())}</div>`;
         for (i++; i < L.length && L[i].trim(); i++) {
-          const m = /^\*{0,2}(\d)\) (.+?)\*{0,2}( ← 추천)?$/.exec(L[i]);
-          if (m) { const d = L[i + 1] && !/^\*{0,2}\d\)/.test(L[i + 1]) ? L[++i] : ""; blk += `<div class="co"><b>${h(m[1])}) ${h(m[2])}</b>${m[3] ? ' <span class="tag pri">추천</span>' : ""}${d ? `<div>${h(d)}</div>` : ""}</div>`; }
+          const m = /^\*{0,2}(\d)\) (.+?)\*{0,2}(?: ← 추천)?$/.exec(L[i]);
+          if (m) { const d = L[i + 1] && !/^\*{0,2}\d\)/.test(L[i + 1]) ? L[++i] : ""; blk += `<div class="co"><b>${h(m[1])}) ${h(m[2])}</b>${d ? `<div>${h(d)}</div>` : ""}</div>`; }
         }
         out += blk + "</div>";
       } else if (/^- /.test(l)) {

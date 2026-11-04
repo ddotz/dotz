@@ -38,7 +38,7 @@ for (const [width, height] of [[390, 844], [1280, 1700]] as const) {
 		await waitFor(`document.querySelectorAll("#dcard .dc-row").length === 3`);
 		const seen = JSON.parse(
 			await view.evaluate(`JSON.stringify({
-				options: [...document.querySelectorAll("#dcard .dc-row")].map(b => b.querySelector(".dc-lb").textContent.replace("추천", "").trim()),
+				options: [...document.querySelectorAll("#dcard .dc-row")].map(b => b.querySelector(".dc-lb").textContent.trim()),
 				rows: document.querySelectorAll("#tl .dcm-row").length,
 				text: document.body.innerText,
 				over: document.documentElement.scrollWidth > innerWidth,

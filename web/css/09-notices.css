@@ -73,7 +73,7 @@ div.nt-mon .nt-dot { margin-top: 7px; /* nudge: same dot centring in the monitor
 .hsum-fb { margin-top: var(--sp-2); }
 .bi[data-id="main"] .subline { margin-top: var(--sp-3); padding: 0; background: none; color: var(--fg-2); }
 
-/* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option (recommended first). */
+/* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option. */
 /* Computer switch sheet (33-peers.js): the bottom sheet on the phone and a centered dialog from 700px. Decisions and notices use the full-screen overlay (14-overlay.css), not this. */
 .ds-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .42); }
 .ds-sheet { --fs-fill: var(--layer); display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: 90dvh; border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--pop); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); box-shadow: var(--float); }
@@ -94,11 +94,8 @@ div.nt-mon .nt-dot { margin-top: 7px; /* nudge: same dot centring in the monitor
 .ds-opt.c { align-items: center; }
 .ds-opt:hover, .ds-direct:hover { background: var(--hover); }
 .ds-opt:active, .ds-direct:active { background: var(--active); }
-.ds-opt.rec { background: var(--accent); color: var(--on-accent); }
-.ds-opt.rec:hover, .ds-opt.rec:active { background: var(--accent); filter: brightness(.94); }
 .ds-opt:disabled, .ds-direct:disabled { opacity: .55; }
 .ds-lb { display: flex; align-items: center; gap: var(--sp-2); font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
-.ds-tag { flex: none; padding: 0 var(--sp-2); border-radius: 10px; background: rgba(255, 255, 255, .22); font: 600 11px/18px var(--font); }
 .ds-ds { font: 400 13px/18px var(--font); opacity: .82; overflow-wrap: anywhere; }
 .ds-direct { align-items: center; background: transparent; color: var(--fg-2); font: 500 14px/20px var(--font); }
 .ds-st { color: var(--fg-3); font: 400 13px/18px var(--font); text-align: center; }

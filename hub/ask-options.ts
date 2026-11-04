@@ -44,13 +44,13 @@ export function askDefaults(text: string, mail = false): DecisionOption[] {
 	const ref = SEND.test(q) ? (REF_END.exec(q) ?? REF_ANY.exec(text))?.[1] : undefined;
 	if (ref || (mail && SEND.test(q)))
 		return [
-			{ n: 1, label: DRAFT_SEND, desc: "그대로 보내요", rec: true },
-			{ n: 2, label: DRAFT_EDIT, desc: "무엇을 고칠지 알려 주면 고쳐서 다시 물어봐요", rec: false, detail: true },
-			{ n: 3, label: DRAFT_DROP, desc: "보내지 않아요", rec: false },
+			{ n: 1, label: DRAFT_SEND, desc: "그대로 보내요" },
+			{ n: 2, label: DRAFT_EDIT, desc: "무엇을 고칠지 알려 주면 고쳐서 다시 물어봐요", detail: true },
+			{ n: 3, label: DRAFT_DROP, desc: "보내지 않아요" },
 		];
 	return [
-		{ n: 1, label: "네", desc: "", rec: true },
-		{ n: 2, label: "아니요", desc: "", rec: false, detail: true },
+		{ n: 1, label: "네", desc: "" },
+		{ n: 2, label: "아니요", desc: "", detail: true },
 	];
 }
 
@@ -64,7 +64,7 @@ export function askedDraft(text: string): DraftApproval | undefined {
 }
 
 export const DRAFT_OPTIONS: DecisionOption[] = [
-	{ n: 1, label: DRAFT_SEND, desc: "그대로 보내요", rec: true },
-	{ n: 2, label: DRAFT_EDIT, desc: "무엇을 고칠지 알려 주면 고쳐서 다시 물어봐요", rec: false, detail: true },
-	{ n: 3, label: DRAFT_DROP, desc: "보내지 않아요", rec: false },
+	{ n: 1, label: DRAFT_SEND, desc: "그대로 보내요" },
+	{ n: 2, label: DRAFT_EDIT, desc: "무엇을 고칠지 알려 주면 고쳐서 다시 물어봐요", detail: true },
+	{ n: 3, label: DRAFT_DROP, desc: "보내지 않아요" },
 ];

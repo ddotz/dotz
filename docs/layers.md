@@ -130,7 +130,7 @@ links still open it.
 - 채팅: target switcher groups 채팅 / 프로젝트 / 세션; the header names the layer. A todo strip sits above the timeline
   (current item + done/total, tap to open the phased list, hidden when empty or all done; reference: herdr-web-ui's
   plan chip). A decision card docks above the composer while the target waits on the owner: the question, numbered
-  options as full-width rows (the recommended one tagged), tap sends the option number as the owner's message; typing
+  options as full-width rows, tap sends the option number as the owner's message; typing
   still works.
 
 - The UI adapts to the workload. When many items of one kind wait on the owner, the app opens a fast triage view built for

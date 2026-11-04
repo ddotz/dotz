@@ -5,8 +5,8 @@ import { fakeHub, inbox, json, on } from "./test-web.ts";
 // gets the same number message as before, and 질문 … · 답: … remains in the body (the owner's answer event carries the `picks`, so the same
 // record is drawn again from history after a reload). A several-decision card sends only once every block has an answer.
 // Headless browser against fixture histories; the hub's own answer event is pushed the way events.ts broadcasts it. Nothing leaves the process.
-const ASK = "[ask] 배포 공지를 어떤 형태로 정리할까요?\n\n결정: 공지 형태\n**1) 짧은 공지** ← 추천\n한 문단으로 핵심만 전해요\n**2) 목록 공지**\n바뀐 항목을 순서대로 적어요\n**3) 공지 없이 배포**\n릴리스 노트만 남겨요";
-const TWO = "[ask] 두 가지를 정해 주세요\n\n결정: 공지 형태\n**1) 짧은 공지** ← 추천\n한 문단으로 핵심만 전해요\n**2) 목록 공지**\n바뀐 항목을 순서대로 적어요\n\n결정: 보낼 곳\n**1) 채널**\n바로 올려요\n**2) 메일**\n메일로도 보내요";
+const ASK = "[ask] 배포 공지를 어떤 형태로 정리할까요?\n\n결정: 공지 형태\n**1) 짧은 공지**\n한 문단으로 핵심만 전해요\n**2) 목록 공지**\n바뀐 항목을 순서대로 적어요\n**3) 공지 없이 배포**\n릴리스 노트만 남겨요";
+const TWO = "[ask] 두 가지를 정해 주세요\n\n결정: 공지 형태\n**1) 짧은 공지**\n한 문단으로 핵심만 전해요\n**2) 목록 공지**\n바뀐 항목을 순서대로 적어요\n\n결정: 보낼 곳\n**1) 채널**\n바로 올려요\n**2) 메일**\n메일로도 보내요";
 const AT = "2026-11-03T09:19:00.000Z";
 const sent = inbox<Record<string, any>>();
 let history: unknown[] = [];

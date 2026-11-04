@@ -2,30 +2,38 @@ import { expect, test } from "bun:test";
 import { clipKeepingAsk, normalizeAsk } from "./ask-normalize.ts";
 import { ASK_A, ASK_B } from "./ask-normalize.fixture.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
-import { decisionText, hasDecisionHead, parseChoices, parseDecisions } from "./choices.ts";
+import { decisionText, hasDecisionHead, parseChoices, parseDecisions, stripRecommendMark } from "./choices.ts";
 
-test("parses the MODE choice block with a recommended option", () => {
-	const text = "[ask] 게이트웨이 시작 설정\n\n결정: 시작 설정\n**1) 지금 고치기** ← 추천\n재부팅 뒤에도 켜져요\n**2) 그대로 두기**\n다음 재부팅까지는 괜찮아요";
+test("an old message's recommendation mark does not survive parsing or display", () => {
+	const old = "[ask] 배포\n결정: 시점\n**1) 지금** ← 추천\n바로 올려요\n2) 내일 (recommended)\n3) 모레 <- recommended";
+	expect(parseDecisions(old).blocks[0]!.options.map(o => o.label)).toEqual(["지금", "내일", "모레"]);
+	expect(parseChoices("**1) A ← 추천**\n**2) B**").options.map(o => o.label)).toEqual(["A", "B"]);
+	expect(stripRecommendMark(old)).toBe("[ask] 배포\n결정: 시점\n**1) 지금**\n바로 올려요\n2) 내일\n3) 모레");
+	expect(stripRecommendMark("추천 ← 추천 이유는 빨라서")).toBe("추천 ← 추천 이유는 빨라서");
+});
+
+test("parses the MODE choice block", () => {
+	const text = "[ask] 게이트웨이 시작 설정\n\n결정: 시작 설정\n**1) 지금 고치기**\n재부팅 뒤에도 켜져요\n**2) 그대로 두기**\n다음 재부팅까지는 괜찮아요";
 	expect(parseChoices(text)).toEqual({
 		question: "결정: 시작 설정",
 		options: [
-			{ n: 1, label: "지금 고치기", recommended: true },
-			{ n: 2, label: "그대로 두기", recommended: false },
+			{ n: 1, label: "지금 고치기" },
+			{ n: 2, label: "그대로 두기" },
 		],
 	});
 });
 
 test("plain numbered lines, English marker, quote prefixes", () => {
-	const r = parseChoices("> Which one?\n> **1) Fix it now** ← recommended\n> restarts\n> 2) Leave it\n> nothing");
+	const r = parseChoices("> Which one?\n> **1) Fix it now**\n> restarts\n> 2) Leave it\n> nothing");
 	expect(r.question).toBe("Which one?");
 	expect(r.options).toEqual([
-		{ n: 1, label: "Fix it now", recommended: true },
-		{ n: 2, label: "Leave it", recommended: false },
+		{ n: 1, label: "Fix it now" },
+		{ n: 2, label: "Leave it" },
 	]);
 });
 
 test("the marker may sit inside the bold", () => {
-	expect(parseChoices("**1) A ← 추천**\n**2) B**").options[0]).toEqual({ n: 1, label: "A", recommended: true });
+	expect(parseChoices("**1) A**\n**2) B**").options[0]).toEqual({ n: 1, label: "A" });
 });
 
 test("no options for prose, one option, fenced lines or a missing 1", () => {
@@ -47,19 +55,19 @@ test("question is absent when the options open the message; more than 25 options
 });
 
 test("numbered decision heads (결정 1: / 결정 2:) are decisions, each its own block", () => {
-	const text = ["처음 한 번만 정할 게 있어요.", "결정 1: 기차는 어디서 끊으세요?", "1) KTX (코레일) ← 추천", "코레일 승차권 내역에서 가져와요", "2) SRT", "SRT 승차권 내역에서 가져와요", "3) 둘 다", "",
-		"결정 2: 다 모은 증빙은 어디로 보낼까요?", "1) 회사 메일 나에게 보내기 ← 추천", "2) 맥북 땃쥐에게 넘기기", "3) 다운로드 폴더에만 저장", "", "번호로 답해 주세요."].join("\n");
+	const text = ["처음 한 번만 정할 게 있어요.", "결정 1: 기차는 어디서 끊으세요?", "1) KTX (코레일)", "코레일 승차권 내역에서 가져와요", "2) SRT", "SRT 승차권 내역에서 가져와요", "3) 둘 다", "",
+		"결정 2: 다 모은 증빙은 어디로 보낼까요?", "1) 회사 메일 나에게 보내기", "2) 맥북 땃쥐에게 넘기기", "3) 다운로드 폴더에만 저장", "", "번호로 답해 주세요."].join("\n");
 	const r = parseDecisions(text);
-	expect(r.blocks.map(b => [b.title, b.options.map(o => o.label), b.options.findIndex(o => o.rec)])).toEqual([
-		["기차는 어디서 끊으세요?", ["KTX (코레일)", "SRT", "둘 다"], 0],
-		["다 모은 증빙은 어디로 보낼까요?", ["회사 메일 나에게 보내기", "맥북 땃쥐에게 넘기기", "다운로드 폴더에만 저장"], 0],
+	expect(r.blocks.map(b => [b.title, b.options.map(o => o.label)])).toEqual([
+		["기차는 어디서 끊으세요?", ["KTX (코레일)", "SRT", "둘 다"]],
+		["다 모은 증빙은 어디로 보낼까요?", ["회사 메일 나에게 보내기", "맥북 땃쥐에게 넘기기", "다운로드 폴더에만 저장"]],
 	]);
 	expect(hasDecisionHead(r.blocks)).toBe(true);
 	expect(parseDecisions("결정 답: 기차 → 1) KTX\n1) a\n2) b").blocks.every(b => !b.headed)).toBe(true);
 });
 
 test("one decision of several keeps the lead text and its own lines, never the other decisions or the option lines", () => {
-	const body = "[ask] 세 가지예요\n결정: 가\n참고 한 줄\n**1) 하나** ← 추천\n설명\n**2) 둘**\n설명\n\n결정: 나\n**1) 셋**\n설명\n**2) 넷**\n설명\n번호로 답해 주세요";
+	const body = "[ask] 세 가지예요\n결정: 가\n참고 한 줄\n**1) 하나**\n설명\n**2) 둘**\n설명\n\n결정: 나\n**1) 셋**\n설명\n**2) 넷**\n설명\n번호로 답해 주세요";
 	expect(decisionText(body, 0)).toBe("세 가지예요\n\n참고 한 줄");
 	expect(decisionText(body, 1)).toBe("세 가지예요");
 });
@@ -68,10 +76,10 @@ test("one decision of several keeps the lead text and its own lines, never the o
 test("a final answer's plain option list becomes the contract's block, keeping the report", () => {
 	const got = normalizeAsk(ASK_A);
 	expect(got.startsWith("[ask] 2부를 브랜치에서 끝냈어요.")).toBe(true);
-	expect(got).toContain("저는 그대로 반영하는 걸 추천해요.\n\n결정: 어떻게 할까요?\n**1) 그대로 반영** ← 추천\n**2) 알림 행만 조정하고 반영 …**\n어떻게 바꿀지 알려 주세요\n**3) 반영 보류**");
+	expect(got).toContain("저는 그대로 반영하는 걸 추천해요.\n\n결정: 어떻게 할까요?\n**1) 그대로 반영**\n**2) 알림 행만 조정하고 반영 …**\n어떻게 바꿀지 알려 주세요\n**3) 반영 보류**");
 	const { blocks } = parseDecisions(got);
 	expect(blocks).toHaveLength(1);
-	expect(blocks[0]!.options.map(o => [o.label, o.rec, !!o.detail])).toEqual([["그대로 반영", true, false], ["알림 행만 조정하고 반영", false, true], ["반영 보류", false, false]]);
+	expect(blocks[0]!.options.map(o => [o.label, !!o.detail])).toEqual([["그대로 반영", false], ["알림 행만 조정하고 반영", true], ["반영 보류", false]]);
 	expect(parseChoices(got).options.map(o => o.label)).toEqual(["그대로 반영", "알림 행만 조정하고 반영", "반영 보류"]);
 	expect(got.endsWith("**3) 반영 보류**\n\n[file] /tmp/spacing-rules/compare/notices-390-light.png\n[file] /tmp/spacing-rules/compare/mail-1280-light.png")).toBe(true);
 	expect(normalizeAsk(got)).toBe(got);
@@ -79,8 +87,7 @@ test("a final answer's plain option list becomes the contract's block, keeping t
 
 test("a marked [ask] in the wrong format is rewritten and its 결정 필요 heading goes", () => {
 	const got = normalizeAsk(ASK_B);
-	expect(got).toBe("[ask] 2부 이전을 브랜치에서 끝냈어요.\n\n땅콩 몫: 형 답을 받아 전달해 주세요.\n\n결정: 2부를 main에 반영할까요? (브랜치 `lane/spacing-rules`, 커밋 79개)\n**1) 그대로 반영** ← 추천\n값이 규칙에 맞게 통일됐고, 나빠진 곳은 못 찾았어요.\n**2) 알림 행만 조정 후 반영**\n행 높이를 이전과 같게 두는 대신 목록 행 규칙(8px)에서는 벗어나요.\n**3) 보류 …**\n대조표를 보고 고칠 곳을 알려 주세요.\n\n대조표: `/tmp/spacing-rules/README.md` (이미지는 `/tmp/spacing-rules/compare/`)");
-	expect(parseDecisions(got).blocks[0]!.options.map(o => o.rec)).toEqual([true, false, false]);
+	expect(got).toBe("[ask] 2부 이전을 브랜치에서 끝냈어요.\n\n땅콩 몫: 형 답을 받아 전달해 주세요.\n\n결정: 2부를 main에 반영할까요? (브랜치 `lane/spacing-rules`, 커밋 79개)\n**1) 그대로 반영**\n값이 규칙에 맞게 통일됐고, 나빠진 곳은 못 찾았어요.\n**2) 알림 행만 조정 후 반영**\n행 높이를 이전과 같게 두는 대신 목록 행 규칙(8px)에서는 벗어나요.\n**3) 보류 …**\n대조표를 보고 고칠 곳을 알려 주세요.\n\n대조표: `/tmp/spacing-rules/README.md` (이미지는 `/tmp/spacing-rules/compare/`)");
 });
 
 test("two numbered questions under a heading are two blocks; a [fail] keeps its marker", () => {
@@ -117,7 +124,7 @@ const PLAIN: [string, string][] = [
 for (const [name, text] of PLAIN) test(`stays plain: ${name}`, () => expect(normalizeAsk(text)).toBe(text));
 
 test("a contract block and an exact draft approval block are never touched", () => {
-	const issue = "[ask] 결정이 필요해요\n결정: 게이트웨이 설정\n**1) 고치기** ← 추천\n재부팅해도 살아나요\n**2) 두기**\n다음 재부팅까지 괜찮아요";
+	const issue = "[ask] 결정이 필요해요\n결정: 게이트웨이 설정\n**1) 고치기**\n재부팅해도 살아나요\n**2) 두기**\n다음 재부팅까지 괜찮아요";
 	const draft = `[ask] 초안이에요\n${draftApprovalBlock({ to: "a@example.test", body: "본문이에요", ref: "abc123", question: "보낼까요?" } as Parameters<typeof draftApprovalBlock>[0])}`;
 	expect(normalizeAsk(issue)).toBe(issue);
 	expect(normalizeAsk(draft)).toBe(draft);

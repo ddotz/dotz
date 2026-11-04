@@ -11,10 +11,10 @@ describe("decisionsOf: any bot message with a choice block", () => {
 		const ds = decisionsOf(ev(DONE_REPLY));
 		expect(ds).toHaveLength(1);
 		expect(ds[0]).toMatchObject({ title: "방문 예약", to: "main", group: 1 });
-		expect(ds[0]!.options.map(o => [o.n, o.label, o.rec])).toEqual([
-			[1, "압구정 본점 10/28(화) 15:00", true],
-			[2, "청담 메종 10/31(금) 14:00", false],
-			[3, "다른 날짜나 매장", false],
+		expect(ds[0]!.options.map(o => [o.n, o.label])).toEqual([
+			[1, "압구정 본점 10/28(화) 15:00"],
+			[2, "청담 메종 10/31(금) 14:00"],
+			[3, "다른 날짜나 매장"],
 		]);
 		expect(ds[0]!.options[0]!.desc).toBe("제일 빨리 가서 직접 물어볼 수 있어요");
 	});
@@ -30,7 +30,7 @@ describe("decisionsOf: any bot message with a choice block", () => {
 	});
 
 	test("the multi-decision form gives one decision per block", () => {
-		const text = "[done] 두 가지 정해 주세요\n\n결정: 장소\n**1) 압구정** ← 추천\n가까워요\n**2) 청담**\n커요\n\n결정: 시간\n**1) 오후 3시** ← 추천\n비어 있어요\n**2) 오후 4시**\n늦어요\n\n번호로 답해 주세요.";
+		const text = "[done] 두 가지 정해 주세요\n\n결정: 장소\n**1) 압구정**\n가까워요\n**2) 청담**\n커요\n\n결정: 시간\n**1) 오후 3시**\n비어 있어요\n**2) 오후 4시**\n늦어요\n\n번호로 답해 주세요.";
 		const ds = decisionsOf(ev(text));
 		expect(ds.map(d => [d.title, d.group, d.options.length])).toEqual([["장소", 2, 2], ["시간", 2, 2]]);
 	});

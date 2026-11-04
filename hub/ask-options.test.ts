@@ -7,15 +7,15 @@ import { CONFIG_FILE } from "./config.ts";
 import { decisionsOf } from "./notices.ts";
 
 const ev = (text: string, extra: Record<string, unknown> = {}) => ({ ts: "2050-06-01T00:00:00.000Z", kind: "out", source: "orchestrator", target: "th:1300000000000000001", text, ...extra });
-const labels = (o: { n: number; label: string; rec: boolean }[]) => o.map(x => [x.n, x.label, x.rec]);
+const labels = (o: { n: number; label: string }[]) => o.map(x => [x.n, x.label]);
 
 test("a thread [ask] with a choice block makes a notice with the block's options", () => {
-	const ds = decisionsOf(ev("[ask] 답장 초안을 만들었어요.\n결정: 답장\n**1) 보내기** ← 추천\n그대로 보내요\n**2) 미루기**\n내일 다시 물어봐요", { conv: "mail:abc" }));
+	const ds = decisionsOf(ev("[ask] 답장 초안을 만들었어요.\n결정: 답장\n**1) 보내기**\n그대로 보내요\n**2) 미루기**\n내일 다시 물어봐요", { conv: "mail:abc" }));
 	expect(ds).toHaveLength(1);
 	expect(ds[0]!.to).toBe("mail:abc");
 	expect(labels(ds[0]!.options)).toEqual([
-		[1, "보내기", true],
-		[2, "미루기", false],
+		[1, "보내기"],
+		[2, "미루기"],
 	]);
 });
 
@@ -23,8 +23,8 @@ test("a yes / no [ask] without a choice block gets 1) 네 2) 아니요, and 아�
 	const ds = decisionsOf(ev("[ask] 지원팀 메일은 정리했어요. 감사 답장 한 통만 남았어요. 진행해도 될까요?"));
 	expect(ds).toHaveLength(1);
 	expect(labels(ds[0]!.options)).toEqual([
-		[1, "네", true],
-		[2, "아니요", false],
+		[1, "네"],
+		[2, "아니요"],
 	]);
 	expect(ds[0]!.options[1]!.detail).toBe(true);
 	expect(ds[0]!.assumed).toBe(true);
@@ -76,13 +76,13 @@ test("a mail thread's send question without the draft gets the thread's latest d
 test("a mail thread's bare send question gets 1) 보내기 2) 고치기 3) 보내지 않기, other threads keep 네 / 아니요", () => {
 	const q = "[ask] 감사 답장 초안이에요. 보내도 될까요?";
 	expect(labels(decisionsOf(ev(q, { conv: "mail:abc" }))[0]!.options)).toEqual([
-		[1, "보내기", true],
-		[2, "고치기", false],
-		[3, "보내지 않기", false],
+		[1, "보내기"],
+		[2, "고치기"],
+		[3, "보내지 않기"],
 	]);
 	expect(labels(decisionsOf(ev(q))[0]!.options)).toEqual([
-		[1, "네", true],
-		[2, "아니요", false],
+		[1, "네"],
+		[2, "아니요"],
 	]);
 	expect(askDefaults("메일 정리해도 될까요?", true).map(o => o.label)).toEqual(["네", "아니요"]);
 });

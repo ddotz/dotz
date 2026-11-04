@@ -180,7 +180,7 @@ test("gateway alerts notify as usage; Discord-bound answers and inbox messages d
 test("a decision notice pushes as 답변이 필요해요 with its id, the decision line and at most two option buttons", () => {
 	const fresh: Notice[] = [];
 	onDecision(n => fresh.push(n));
-	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "web", text: "[ask] 어떻게 할까요?\n결정: 배포 방식\n**1) 지금 바로** ← 추천\n**2) 밤에**\n**3) 하지 않기**" });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "web", text: "[ask] 어떻게 할까요?\n결정: 배포 방식\n**1) 지금 바로**\n**2) 밤에**\n**3) 하지 않기**" });
 	const n = fresh.find(x => x.title === "배포 방식")!;
 	expect(n).toBeDefined();
 	expect(decisionPush(n)).toEqual({ kind: "ask", title: "답변이 필요해요", body: "배포 방식", url: "/#chat/main", tag: `decision:${n.id}`, ts: n.at, id: n.id, actions: [{ action: "opt:1", title: "1) 지금 바로" }, { action: "opt:2", title: "2) 밤에" }] });

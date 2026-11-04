@@ -46,7 +46,7 @@ test("a gateway alert with a choice block makes a decision, a plain one or a wor
 	const ask = { ts: "2050-05-01T00:00:00.000Z", kind: "out", source: "gateway", target: "alert", text: `토큰 점검: 경고 1건\n${block}` };
 	const [d] = decisionsOf(ask);
 	expect(d).toMatchObject({ to: "alert", group: 1 });
-	expect(d!.options.map(o => [o.n, o.rec])).toEqual([[1, true], [2, false]]);
+	expect(d!.options.map(o => o.n)).toEqual([1, 2]);
 	expect(decisionsOf({ ...ask, text: "토큰 점검: 경고 1건" })).toEqual([]);
 	expect(decisionsOf({ ...ask, target: "worklog" })).toEqual([]);
 });
