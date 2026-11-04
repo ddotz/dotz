@@ -2,10 +2,13 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
+import { D_CLOSE, parseChoices } from "./choices.ts";
 import { DATA_DIR, writeAtomic } from "./config.ts";
+import { dropForLine, forLines } from "./forline.ts";
 import { createSelfChat, normalizeSelfChat, type SelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import { sameRoom } from "./messenger-rooms.ts";
+import { parseTone, plainChoice, stripHandoff, TONE_EMOJI } from "./tone.ts";
 
 // JANDI (on-prem, LAN) as a built-in messenger. Inbound: a JANDI Team Outgoing Webhook POSTs to /jandi/<room id> on our own listener
 // (no Tailscale needed). Outbound: each room has a JANDI Incoming Webhook URL. JANDI cannot edit a posted message, so progress edits are skipped.
@@ -13,7 +16,8 @@ import { sameRoom } from "./messenger-rooms.ts";
 export type RoomKind = "main" | "project" | "alert" | "worklog";
 export type JandiRoom = { id: string; name: string; kind: RoomKind; project?: string; outgoing_token: string; incoming_url: string };
 /** `incoming_url` is the one webhook every room without its own posts to (JANDI cannot make webhooks by API, so one pasted URL is the fallback). */
-export type JandiConfig = { enabled: boolean; listen: { host: string; port: number }; allow_emails: string[]; allow_names?: string[]; incoming_url?: string; rooms: JandiRoom[]; self_chat?: SelfChatConfig };
+/** `sender_step_shown`: onboarding already asked for the bot's name and image on the connector (only JANDI's connector screen can set them). */
+export type JandiConfig = { enabled: boolean; listen: { host: string; port: number }; allow_emails: string[]; allow_names?: string[]; incoming_url?: string; rooms: JandiRoom[]; self_chat?: SelfChatConfig; sender_step_shown?: true };
 export type RoomStatus = { last_in?: number; last_out?: number; last_error?: string };
 
 const KINDS: readonly string[] = ["main", "project", "alert", "worklog"];
@@ -21,6 +25,10 @@ const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_PART = 4000;
 const RECEIPT = { body: "받았어요", connectColor: "#FAC11B" };
 const ASK_HINT = "번호로 답해 주세요";
+const FILES_IN_WEB = "첨부 파일은 웹에서 볼 수 있어요";
+// Text the gateway wrote for a model or a session, never for the owner.
+const GATEWAY_LINE = /^\s*\[(?:dotz(?: [^\]\n]*)?|gateway [^\]\n]*|orchestrator-guard|keepalive|handover|system)\]/i;
+const NO_REPLY = /^(?:-|ok)$/i;
 
 export const jandiConfigPath = (dataDir: string = DATA_DIR) => join(dataDir, "messengers", "jandi.json");
 
@@ -53,6 +61,7 @@ function normalize(raw: unknown): JandiConfig {
 		...(typeof o.incoming_url === "string" && o.incoming_url.trim() ? { incoming_url: o.incoming_url.trim() } : {}),
 		rooms,
 		...(selfChat ? { self_chat: selfChat } : {}),
+		...(o.sender_step_shown === true ? { sender_step_shown: true as const } : {}),
 	};
 }
 
@@ -99,6 +108,29 @@ const targetOf = (r: JandiRoom): string | undefined => (r.kind === "main" ? "mai
 
 // Progress edits (update_key) cannot be edited in place on JANDI; only a lane's final [ask]/[done]/[fail] line or a decision with options goes through.
 const isFinal = (m: OutMsg) => !!m.options?.length || /^\s*\[(ask|done|fail)\]/m.test(m.text);
+
+/** What JANDI shows for a post, undefined when nothing of it is for the owner. Only the answer leaves, like Discord's plain text: the status marker becomes its emoji, and JANDI has no subtext line, so a `-# ` line stays as plain text (a recipient warning lives there). Options stay in the text, each once. */
+function jandiText(msg: OutMsg): string | undefined {
+	const raw = stripHandoff(msg.text);
+	if (msg.gatewayNote || GATEWAY_LINE.test(raw)) return undefined;
+	let fence = false;
+	const lines: string[] = [];
+	for (const line of raw.split("\n")) {
+		if (/^\s*```/.test(line)) fence = !fence;
+		else if (!fence && GATEWAY_LINE.test(line)) continue;
+		lines.push(fence ? line : line.replace(/^-# /, ""));
+	}
+	const kept = lines.join("\n");
+	const shown = dropForLine(kept);
+	if (shown === kept && forLines(kept)) return undefined;
+	const { tone, text } = parseTone(shown);
+	if (tone === "run" && !msg.options?.length) return undefined;
+	let body = plainChoice(text).trim();
+	if (!body) return msg.files?.length ? FILES_IN_WEB : undefined;
+	if (NO_REPLY.test(body)) return undefined;
+	if (msg.options?.length && parseChoices(body).options.length !== msg.options.length) body += `\n\n${msg.options.map(o => `${o.n}) ${o.label}`).join("\n")}`;
+	return tone ? `${TONE_EMOJI[tone]} ${body}` : body;
+}
 
 export function splitText(text: string, max = MAX_PART): string[] {
 	const parts: string[] = [];
@@ -413,6 +445,8 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 
 	async function deliver(msg: OutMsg): Promise<DeliverResult> {
 		if (msg.updateKey && !isFinal(msg)) return { delivered: false, reason: "edit" };
+		const text = jandiText(msg);
+		if (!text) return { delivered: false, reason: "internal" };
 		const cfg = loadJandiConfig(dataDir);
 		const ready = cfg.rooms.map(room => ({ room, url: room.incoming_url || cfg.incoming_url || "" })).filter(r => r.url);
 		let dests = ready.filter(r => r.room.kind === msg.kind && (msg.kind !== "project" || r.room.project === msg.target));
@@ -421,8 +455,9 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 		dests = dests.filter((d, i) => dests.findIndex(x => x.url === d.url) === i);
 		if (!dests.length) return { delivered: false, reason: "no room" };
 		const prefix = cfg.self_chat?.enabled && cfg.self_chat.reply_prefix ? `${cfg.self_chat.reply_prefix} ` : "";
-		const parts = splitText(msg.text, MAX_PART - prefix.length).map(p => prefix + p);
-		const ask = msg.options?.length ? { title: "선택지", description: msg.options.map(o => `${o.n}) ${o.label}`).join("\n") } : undefined;
+		const parts = splitText(text, MAX_PART - prefix.length).map(p => prefix + p);
+		const ask = !!msg.options?.length;
+		const hint = ask && !text.split("\n").some(l => D_CLOSE.test(l));
 		const color = ask ? "#FAC11B" : msg.kind === "alert" ? "#E5484D" : undefined;
 		let failed: unknown;
 		let ok = 0;
@@ -430,7 +465,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 			try {
 				for (const [i, part] of parts.entries()) {
 					const last = i === parts.length - 1;
-					await post(room, url, { body: last && ask ? `${part}\n\n${ASK_HINT}` : part, ...(color ? { connectColor: color } : {}), ...(last && (ask || msg.link) ? { connectInfo: [...(ask ? [ask] : []), ...(msg.link ? [{ title: "웹에서 보기", description: msg.link }] : [])] } : {}) });
+					await post(room, url, { body: last && hint ? `${part}\n\n${ASK_HINT}` : part, ...(color ? { connectColor: color } : {}), ...(last && msg.link ? { connectInfo: [{ title: "웹에서 보기", description: msg.link }] } : {}) });
 				}
 				ok++;
 			} catch (e) {
