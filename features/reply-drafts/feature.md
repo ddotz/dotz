@@ -23,6 +23,8 @@ setup: bun {repo}/features/reply-drafts/bin/onboard.ts on --to <asking target>
 
 카톡 대화방 답장도 같은 엔진이에요(`draft.ts new --app kakao --room <방 id> --kind chat`, 최근 대화를 stdin으로). 출력은 답장 글만이고 `features/kakao/feature.md`가 이어서 맡아요. 그 방의 말투 프로필이 비어 있으면 그 방에서 사용자가 보낸 말로 처음 한 번 배워요. 방마다 말투가 따로예요. 받은 말이 사용자만 정할 수 있는 일(할지 말지, 어느 쪽, 날짜, 취소 여부)이면 같은 모델 호출이 초안 대신 선택지를 돌려줘요. 그때 종료 코드는 4이고, stdout에 `결정: <질문>`과 `**n) 선택지**` 줄(마지막은 `직접 쓸게 …`)이 찍혀요. 이 블록을 고치지 말고 `[ask]`로 올리고, 사용자가 고르면 같은 명령을 `--choice "<고른 글>"`을 붙여 다시 실행해요(stdin도 같게). 그러면 그 선택대로 쓴 답장이 찍혀요(종료 코드 0). `직접 쓸게 - <글>`이면 그 글이 답장이에요. 웹의 답장 초안 카드는 같은 선택지를 버튼으로 보여 줘요. 카톡 답장을 고쳤을 때는 `draft.ts correct --app kakao --room <방 id> --change "<내용>"`으로 그 방 프로필에 기록해요.
 
+메일·댓글 초안은 사용자가 예전에 실제로 보낸 답 중 받은 글과 가장 비슷한 8개를 받은 글과 함께 그대로 보고 쓰고, 길이·첫 단어·끝 부호·이모지 같은 측정한 버릇도 같이 봐요. 메일 쌍은 `custom/reply-drafts/pairs/mail.jsonl`에 한 줄씩 쌓여요(보낸 메일함에서, 그리고 사용자가 고쳐서 보낸 초안에서; 고치지 않고 보낸 초안은 넣지 않아요). 메일 말투를 배울 때는 스레드에서 사용자 본인이 쓴 메시지만 읽어요. 예전 방식으로 배운 메일 프로필은 다음 초안 때 한 번만 다시 배우고(`MAIL_TONE_VERSION`, 실패하면 하루 뒤 다시), 그 전에 `tone/mail.md.bak-<날짜>`로 백업해요. 다시 쓰는 건 정체성·답장 틀·예시뿐이고 말투·금지·고친 점은 그대로예요.
+
 말투 다시 배우기·끄기: `onboard.ts learn [--app <앱|install>] [--room <방 id>] [--from-file <파일>]`, `onboard.ts off`. 보낸 사람을 제한하려면 `~/.dotz/custom/reply-drafts/config.json`의 `senders.only`·`senders.skip`(주소 또는 `@도메인`)을 고쳐요.
 
 새 메일 초안(답할 메일이 없는 메일): `bun {repo}/hub/mail-cli.ts compose --app <메일 앱> --to <주소> --subject "<제목>" [--attach <경로>]... [--from-library <키워드>] [--origin comment|mail|kakao:<id>]`를 실행하고 본문은 stdin으로 넘겨요. 파일을 붙여 두고 초안을 기록한 뒤 받는이·제목·첨부·본문·보내기/고치기/보내지 않기 블록을 찍으니 그대로 [ask]로 올려요. `결정 답: ... → 1) 보내기`일 때만 `bun {repo}/hub/mail-cli.ts send --draft <코드>`로 보내요. 고치기와 보내지 않기는 위의 `draft.ts revise`·`drop`과 같아요. 웹 메일 앱에는 답장 초안처럼 '메일 초안' 항목으로 보여요.

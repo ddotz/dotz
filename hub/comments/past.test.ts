@@ -1,5 +1,5 @@
-// Drafts seeded from the owner's past replies (`pastSeed`): the closest pairs reach the prompt, an empty or skipped model reply takes the closest
-// past answer with a 확인 필요 note, and a source without pastSeed keeps the old behaviour (no draft on a skip).
+// The owner's past replies: the closest pairs always reach the prompt as examples; with `pastSeed` an empty or skipped model reply takes the closest
+// past answer with a 확인 필요 note, and without it a skip still makes no draft. A bot draft sent unchanged is not one of his past replies.
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { commentId, type CommentAdapter, type RawComment, type SourceConfig } from "./contract.ts";
 import { createEngine } from "./engine.ts";
 import { pastPairs, SEEDED_NOTE, similarPairs } from "./past.ts";
+import type { Draft } from "./store.ts";
 
 const NOW = Date.parse("2026-10-23T00:00:00.000Z");
 const json = (o: object) => `\`\`\`json\n${JSON.stringify({ reason: "r", to: "", questions: [], ...o })}\n\`\`\``;
@@ -41,7 +42,7 @@ test("the pairs are the owner's answers under other people's comments, closest f
 	expect(similarPairs("download backing track?", pairs, 1)[0]!.reply).toBe("It is linked in the description.");
 });
 
-test("pastSeed: the prompt carries the similar past answers, and a skip becomes the closest past answer marked 확인 필요", async () => {
+test("pastSeed: a skip becomes the closest past answer marked 확인 필요", async () => {
 	const t = await setup(json({ action: "skip", body: "" }), true);
 	const step = await t.engine.makeDraft(commentId("youtube", "n1"));
 	expect(step.ok).toBe(true);
@@ -49,12 +50,20 @@ test("pastSeed: the prompt carries the similar past answers, and a skip becomes 
 	expect(step.draft.text).toBe("It is linked in the description.");
 	expect(step.draft.notes).toContain(SEEDED_NOTE);
 	expect(step.draft.clean).toBe(false);
-	expect(t.prompts[0]).toContain("내 답: It is linked in the description.");
 });
 
-test("without pastSeed a skip still makes no draft and the prompt has no past answers", async () => {
+test("the prompt always carries the similar past answers verbatim; without pastSeed a skip still makes no draft", async () => {
 	const t = await setup(json({ action: "skip", body: "" }), false);
 	const step = await t.engine.makeDraft(commentId("youtube", "n1"));
 	expect(step.ok).toBe(false);
-	expect(t.prompts[0]).not.toContain("내 답:");
+	expect(t.prompts[0]).toContain("<<<REPLY\nIt is linked in the description.\nREPLY>>>");
+	expect(t.prompts[0]).toContain("<<<RECEIVED\nWhere can I download the backing track?\nRECEIVED>>>");
+	expect(t.prompts[0]).not.toContain("비슷한 지난 댓글");
+});
+
+test("a bot draft the owner sent unchanged is not a past reply of his; an edited one is", () => {
+	const comments = history.map(r => ({ ...r, id: commentId("youtube", r.native), source: "youtube", mine: r.mine === true, collector: "m" }));
+	const draft = (text: string, changes: string[]): Draft => ({ code: "D1", commentId: "x", source: "youtube", thread: "p1", text, status: "sent", created: NOW, changes, clean: true, notes: [] });
+	expect(pastPairs(comments, [], "youtube", [draft("Thank  you so much!", [])]).map(p => p.reply)).toEqual(["It is linked in the description."]);
+	expect(pastPairs(comments, [], "youtube", [draft("Thank you so much!", ["shorter"])]).map(p => p.reply)).toEqual(["It is linked in the description.", "Thank you so much!"]);
 });

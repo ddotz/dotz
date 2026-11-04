@@ -7,7 +7,8 @@ import { asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts"
 import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Tokens } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
-import { pastContext, pastPairs, SEEDED_NOTE, similarPairs } from "./past.ts";
+import { EXAMPLES, withExamples } from "../../features/reply-drafts/lib/pairs.ts";
+import { pastPairs, SEEDED_NOTE, similarPairs } from "./past.ts";
 
 // The mail that rides on a comment reply (hub/comments/mail-link.ts is the real one): written with the draft, shown in the same card, sent right
 // after the reply is posted, revised or dropped with it.
@@ -137,15 +138,16 @@ export function createEngine(deps: EngineDeps) {
 			tokens.outChars += r.text.length;
 			return r.text;
 		};
-		const seeds = src.pastSeed ? similarPairs(c.text, pastPairs(store.comments(), store.replies(), src.key), 3, c.thread) : [];
+		const past = pastPairs(store.comments(), store.replies(), src.key, store.drafts());
+		const seeds = src.pastSeed ? similarPairs(c.text, past, 3, c.thread) : [];
 		// The mail check runs once per comment (a revision keeps the lines of the draft it revises); a failure is a line on the card, not a lost draft.
 		const matched = previous
 			? previous.notes.filter(n => MATCH_NOTE.test(n))
 			: src.mailMatch && deps.mailMatch
 				? await deps.mailMatch({ author: c.author, postTitle: c.postTitle, text: c.text, at: c.at }).catch(e => [`메일 대조: 확인 실패 - ${e instanceof Error ? clip(e.message, 160) : "알 수 없는 이유"}`])
 				: [];
-		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: [contextOf(c), ...pastContext(seeds), ...matched].join("\n") };
-		const style = styleOf(src);
+		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: [contextOf(c), ...matched].join("\n") };
+		const style = withExamples(styleOf(src), similarPairs(c.text, past, EXAMPLES), past.map(p => p.reply));
 		const r = previous && change !== undefined ? await reviseReply(item, style, { to: `${c.author} 댓글`, body: previous.text }, change, call) : await generateReply(item, style, call);
 		// pastSeed: no empty card. An empty or skipped reply takes the closest past answer of the owner, marked 확인 필요.
 		const seed = (r.action === "skip" || !r.draft.body.trim()) && !previous ? seeds[0] : undefined;

@@ -16,6 +16,7 @@ export const paths = {
 	toneDir: () => join(root(), "tone"),
 	drafts: () => join(root(), "drafts.json"),
 	learned: () => join(root(), "learned.json"), // tone profiles whose first sweep already ran: { "<profile>": iso }
+	pairs: (app: string) => join(root(), "pairs", `${app}.jsonl`), // the user's real past replies with the message each answered, one JSON line per pair (lib/pairs.ts)
 	corpusDir: () => join(root(), "sent"), // the first sweep's extract of the user's sent texts, one file per profile (re-analysis reads it)
 	snsTone: () => join(dataDir(), "custom", "sns", "tone.md"),
 	inbox: () => join(dataDir(), "inbox.jsonl"),

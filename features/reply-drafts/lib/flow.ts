@@ -12,6 +12,7 @@ import { canAttach, sendWith, webmailSite, type SendOutcome } from "./senders.ts
 import { carryStagedFiles, stagedFiles, stagedName, stageLibraryFile, type StageOpts } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
 import { maybeRefine } from "./persona.ts";
+import { addPair, styleWithExamples } from "./pairs.ts";
 import { addDraft, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
 
@@ -86,6 +87,8 @@ function tracedCall(deps: FlowDeps, item: ReplyItem, conv: string | undefined, t
 
 export const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "draft"): ModelCall => (deps.trace ? tracedCall(deps, item, conv, deps.trace, what) : deps.call ?? replyCall(item.app ?? "mail", conv));
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
+// A mail draft's style carries the user's closest real past replies as examples; chat and comments keep theirs.
+const styleOf = (item: ReplyItem, key: ToneKey) => (item.kind === "mail" ? styleWithExamples(loadStyle(key), "mail", item.text) : loadStyle(key));
 
 function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[] }, changes: string[], deps: FlowDeps): DraftRec {
 	return { id: newId(), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...meta, to: r.draft.to, ...(r.draft.subject ? { subject: r.draft.subject } : {}), body: r.draft.body, status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item };
@@ -97,7 +100,7 @@ function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: 
 // back to the model.
 export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): Promise<Built> {
 	const trace = deps.trace ?? draftTrace();
-	const style = loadStyle(toneKey(item)), call = callOf({ ...deps, trace }, item, meta.ref);
+	const style = styleOf(item, toneKey(item)), call = callOf({ ...deps, trace }, item, meta.ref);
 	const r = await generateChatReply(item, style, call);
 	if (r.action !== "draft") return r;
 	const questions = item.kind === "mail" ? r.questions.filter(q => !ADDRESS_ASK.test(q)) : r.questions;
@@ -242,7 +245,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	// The words are rewritten knowing which files ride on the draft now.
 	const held = stagedFiles(old.id).map(f => f.name);
 	const item = held.length ? { ...old.item, files: held } : old.item;
-	const r = await reviseReply(item, loadStyle(toneKey(old)), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
+	const r = await reviseReply(item, styleOf(old.item, toneKey(old)), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
 	const rec = toRec(old.item, { source: old.source, mailId: old.mailId, ref: old.ref, ...(old.account ? { account: old.account } : {}), ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
 	// The recipients the owner set on the card stay: a rewrite of the words is not a reason to send it to somebody else.
@@ -311,6 +314,14 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 		const out = await (deps.send ?? (rec => sendWith(rec, deps.run ?? realRunner)))(now);
 		if (!out.ok) return { ok: false, text: out.message };
 		setStatus(id, "sent");
+		// A draft the owner changed is his own wording now: it joins his past replies. An unchanged bot draft never does.
+		if (now.kind === "mail" && !now.compose && now.changes.length > 0 && now.item.text.trim()) {
+			try {
+				addPair("mail", { received: now.item.text, reply: now.body, at: nowOf(deps).getTime() });
+			} catch (e) {
+				console.error(`reply draft: sent draft ${id} not kept as a past reply: ${(e as Error).message}`);
+			}
+		}
 		return { ok: true, text: out.message };
 	} finally {
 		release();
