@@ -43,6 +43,7 @@
     if (e.kind === "activity") { onActivity(e); laneActivity(e); }
     else if (e.kind === "subagents") setSubs(e.source, e.items);
     else if (e.kind === "queue") { QUEUE = e.items || []; renderQueue(); }
+    else if (e.kind === "waitlist") { if (S) S.waitlist = e.items || []; scheduleState(); }   // 할일 changed (hub/waitlist.ts)
     else if (e.kind === "work") { workRowsLive(e); scheduleState(); }   // a background job changed (hub/workrows.ts): its rows, then the lists
     else if (e.kind === "notice" || e.kind === "notice_read" || e.kind === "notice_dismiss") { noticeLive(e); if (e.kind === "notice") trSoon(); }
     else if (e.kind === "approval_send") { trLive(e); rqSoon(); }

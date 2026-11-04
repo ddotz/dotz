@@ -25,6 +25,8 @@ export type BgWork = {
 	description: string;
 	/** stalled: OmO still says running, but the worker no longer works (its last event an error, or no activity for a while). */
 	status: "running" | "stalled" | "done" | "failed";
+	/** Received but not started: OmO holds it behind a limit. Its status stays running, so the restart gate still waits for it. */
+	queued?: boolean;
 	started_at: number;
 	ended_at?: number;
 	/** The channel of the open owner message this work serves, when known. */
@@ -143,7 +145,8 @@ export const FINISHED_KEEP_MS = 3600_000;
 const SPAWN_SLACK_MS = 5_000;
 // A running record with no pid and no update for this long is a leftover, not a worker (seen: records from 2026-10-19 still "running").
 const NO_PID_STALE_MS = 3 * 3600_000;
-const RUNNING = new Set(["running", "queued", "pending"]);
+const QUEUED = new Set(["queued", "pending"]);
+const RUNNING = new Set(["running", ...QUEUED]);
 // A running worker with no transcript or task-log activity for this long is stalled (DOTZ_WORKER_STALL_MIN, default 15).
 export const STALL_IDLE_MS = Number(process.env.DOTZ_WORKER_STALL_MIN ?? 15) * 60_000;
 // A worker whose task log ends on an error is stalled once no retry or fallback followed it for this long (OmO retries in seconds).
@@ -432,7 +435,8 @@ export function createBgWork(deps: BgWorkDeps) {
 			status = "failed";
 			ended = stamp(r.updated_at) || started;
 		}
-		const stall = status === "running" ? stallOf(r.task_id!) : undefined;
+		const queued = status === "running" && QUEUED.has(raw);
+		const stall = status === "running" && !queued ? stallOf(r.task_id!) : undefined;
 		if (stall) {
 			status = "stalled";
 			ended = stall.since;
@@ -450,7 +454,7 @@ export function createBgWork(deps: BgWorkDeps) {
 		const model = workModel(r);
 		const reason = stopped ? "직접 중단했어요" : status === "failed" ? failureText(error) : "";
 		const files = status === "done" ? resultFiles(report) : [];
-		return { id: r.task_id!, description, status, started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}), ...(error ? { error } : {}), ...(model ? { model } : {}), ...(reason ? { reason } : {}), ...(stopped ? { cancelled: true } : {}), ...(files.length ? { files } : {}) };
+		return { id: r.task_id!, description, status, ...(queued ? { queued } : {}), started_at: started, ...(status === "running" ? {} : { ended_at: ended || started }), ...(folder ? { folder } : {}), ...(error ? { error } : {}), ...(model ? { model } : {}), ...(reason ? { reason } : {}), ...(stopped ? { cancelled: true } : {}), ...(files.length ? { files } : {}) };
 	}
 
 	/** Running work (oldest first), then what finished within the last hour (newest first). */
@@ -549,6 +553,12 @@ export function createBgWork(deps: BgWorkDeps) {
 	}
 
 	/** The running workers of one OmO session (default: the orchestrator's), oldest first: what a lane's run line names. */
+	/** The workers of one session still waiting to start. The stream's sweep calls this, so only their records are built. */
+	function queuedWork(file = deps.sessionFile()): BgWork[] {
+		if (!file) return [];
+		return records(file).filter(r => QUEUED.has((r.status ?? "").toLowerCase())).map(toWork).filter(w => w.queued);
+	}
+
 	function runningWork(file = deps.sessionFile()): BgWork[] {
 		if (!file) return [];
 		const works = records(file).map(toWork);
@@ -589,7 +599,7 @@ export function createBgWork(deps: BgWorkDeps) {
 		return { ok: true };
 	}
 
-	return { list, running, runningWork, takeStalled, cancel, reportOf, byId };
+	return { list, running, runningWork, queuedWork, takeStalled, cancel, reportOf, byId };
 }
 
 const anySession = createBgWork({ sessionFile: () => undefined, deferred: () => [] });

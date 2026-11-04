@@ -287,14 +287,15 @@ function homeRepliesRow(n) {
     el("span", { class: "dot att" }), el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: "답장 대기" })), el("span", { class: "ha", text: "확인할 답장이 있어요" })),
     el("span", { class: "hs warn", text: `${n}건` }));
 }
-// Work deferred to the usage-limit reset (hub/limitwait.ts, /api/state `deferred`): a row of 지금 진행 중 with the badge drawn from resume_at.
+// 할일 (/api/state `waitlist`, hub/waitlist.ts): what was received but has not started, oldest first. A row is its place in line and a plain title;
+// work deferred to the usage-limit reset also says when it resumes (resume_at). It leaves by itself once the work starts.
 const limitBadge = t => { const d = new Date(t || NaN); return isNaN(d) ? "한도 리셋되면 재개" : `한도 리셋되면 재개 (${d.toLocaleTimeString("en-GB", { ...KST, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })})`; };
-function homeLimitRow(d) {
-  const what = String(d.what || d.id).replace(/^\s*\[한도 리셋 뒤 재개 \d{1,2}:\d{2}\]\s*/, "");
-  return el("div", { class: "hr st", "data-wait": d.id },
-    el("span", { class: "dot" }),
-    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: what })), d.next ? el("span", { class: "ha", text: d.next }) : null),
-    el("span", { class: "hs", text: limitBadge(d.resume_at) }));
+function homeTodoRow(d, i) {
+  const open = d.target && validTarget(convWebT(d.target)) ? () => go("chat", convWebT(d.target)) : null;
+  return el(open ? "button" : "div", { class: open ? "hr" : "hr st", "data-wait": d.id, ...(open ? { type: "button", onclick: open } : {}) },
+    el("span", { class: "hq", text: `${i + 1}` }),
+    el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: d.title })), d.next ? el("span", { class: "ha", text: d.next }) : null),
+    el("span", { class: "hs", text: d.kind === "limit" ? limitBadge(d.resume_at) : "순서 대기" }));
 }
 // Rows of 홈 already shown: only a row that newly appears rises in (not the first paint, nor before the lists have loaded).
 const HOME_ROWS = new Set();
@@ -334,10 +335,20 @@ function homeRunning() {
   // A conversation's own workers are listed under its row; a mail with no session whose worker is the assistant's (S.work) is that worker's row alone.
   const runW = workRunning(), mainBg = new Set(runW.map(w => w.id)), convs = (S && S.convs) || [];
   const convT = convs.filter(c => validTarget(convWebT(c.target)) && convRunning(c) && !(runOf(c.target).work && mainBg.has(runOf(c.target).work)));
-  const convWork = convT.flatMap(c => [c, ...(c.work || []).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
+  const convWork = convT.flatMap(c => [c, ...(c.work || []).filter(w => !w.queued).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
   const asks = t => { const r = runOf(t); return !!r && waitsOnOwner(r); };
   return { all, runT, convWork, runW, n: runT.length + convWork.length + runW.length, ask: all.some(t => targetInfo(t).ask || asks(t)) || convs.some(c => asks(c.target)) };
 }
+// 대기 중 holds what started and then stopped: stopped by the owner, blocked, or at a usage limit, and its row says why. Stopped workers come from homeWorkHeld.
+function homeHeld(t) {
+  const i = targetInfo(t), r = runOf(t);
+  if (i.ask || (r && waitsOnOwner(r))) return true;
+  if (i.status === "rate-limited" || i.status === "stopped") return true;
+  return !!r && (r.kind === "limited" || r.kind === "stopped" || (r.kind === "error" && !r.cancelled) || (r.kind === "idle" && !!r.reason));
+}
+const homeWorkHeld = w => w.status === "stalled" || !!w.cancelled;
+// A session whose work ended within the hour (the gateway keeps a finished worker as long, hub/bgwork.ts) is a row of 최근 끝난 작업; older ones just rest.
+const homeLaneDone = t => { const r = runOf(t); return isLaneT(t) && !!r && r.kind === "done" && workNow() - (Date.parse(r.since) || 0) < 3600000; };
 // The greeting's word: 일하는 중 while anything on 지금 진행 중 runs, 쉬는 중 only when nothing does; a conversation stuck on the owner or the main session's own state says so.
 function homeWord(h) {
   if (!S) return "연결 중";
@@ -351,7 +362,7 @@ function homeWord(h) {
 function homeGreeting(h) {
   const om = M && M.orchestrator, live = liveModel(MAIN), [base, level] = String(live.sel || "").split(":");
   const modelText = om && base ? (modelName(base).includes("-") ? modelChipText(base) : modelName(base)) : "";
-  const lanes = ((S && S.lanes) || []).filter(laneAlive).length, me = (typeof prSelf === "function" && (prSelf() || {}).name) || "";
+  const lanes = ((S && S.lanes) || []).filter(l => laneAlive(l) && !l.waiting).length, me = (typeof prSelf === "function" && (prSelf() || {}).name) || "";
   const line = [`${iGa(botName)} ${homeWord(h)}`, modelText && `${modelText}${level ? ` · ${thinkKo(level)}` : ""}`, lanes ? `세션 ${lanes}개` : "", me, kstHM(Date.now())].filter(Boolean).join(" · ");
   const more = el("button", { class: "ib hgreet-more", type: "button", "aria-label": "어시스턴트 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => homeMenu(ev.currentTarget, MAIN) }, icon("more"));
   return el("div", { class: "hgreet" },
@@ -381,16 +392,17 @@ function renderHomeNow() {
   // 홈 is this computer's alone (owner 2026-10-31): the other computers' items live in 모니터링, and the computer chip's dot says they want something.
   const owed = monItems().filter(i => i.app && i.unreplied && !i.pc), owedN = owed.reduce((c, i) => c + i.unreplied, 0), drafts = rqWaiting();
   const waiting = needs.length;
-  // 지금 진행 중 is only what runs now (a turn, a background worker); a waiting or idle conversation is a row of 대기 중 below it,
-  // and background work that ended within the hour is listed last (실패 · 이유 · 다시 맡기기).
+  // Four groups, and an item sits in exactly one (the table in docs/ui-spec.md): 할일 was received and has not started; 지금 진행 중 runs now (a turn, a
+  // background worker); 대기 중 started and stopped; 최근 끝난 작업 ended within the hour (실패 · 이유 · 다시 맡기기). A session resting with nothing left is in none.
   // A session the run line calls busy (41-runstate.js runBusy: waiting on its own worker) runs too, so its 진행 중 label sits in this section.
   const h = homeRunning(), { all, runT, convWork, runW, n: working } = h, restT = all.filter(t => !runT.includes(t));
-  const settled = hcSettled(), bg = [...runW, ...settled], ended = workEnded().filter(w => !settled.includes(w)), deferred = (S && S.deferred) || [];
+  const settled = hcSettled(), bg = [...runW, ...settled], over = workEnded().filter(w => !settled.includes(w)), todo = (S && S.waitlist) || [];
+  const heldT = restT.filter(homeHeld), heldW = over.filter(homeWorkHeld), ended = over.filter(w => !homeWorkHeld(w)), doneT = restT.filter(t => !heldT.includes(t) && homeLaneDone(t));
   const restRow = t => homeNowRow(t, targetState(t)[0], "");
   // Above the grid, the prototype's full-width column: the greeting, the one alert row and 답변 필요. The replies the owner owes stay in
   // that card under its list, as the prototype's 답변 필요 rows do; each row still opens its own item.
-  const running = el("div", { class: "hn", "data-k": "running", "data-cap": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow),
-    ...(working || bg.length || deferred.length ? [] : [hcNone("진행 중인 작업이 없어요")]));
+  const running = el("div", { class: "hn", "data-k": "running", "data-cap": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow),
+    ...(working || bg.length ? [] : [hcNone("진행 중인 작업이 없어요")]));
   const owedBlock = owed.length || drafts ? [
     el("div", { class: "hn-h hsub" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null),
     el("div", { class: "hn", "data-k": "replies", "data-cap": "replies" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : [];
@@ -406,15 +418,17 @@ function renderHomeNow() {
   }
   const endBox = $("#home-ended");
   if (endBox) clear(endBox).append(...[endedGroup()].filter(Boolean));
-  // The grid after it, two cards to a row (07-board.js): 알림 · 지금 진행 중 · 대기 중 · 최근 끝난 작업 · 모니터링 · 작업내역 ·
-  // 사용량 · 컨텍스트 · 공급자 · the owner's cards, each half the row and as tall as its content.
+  // The grid after it, two cards to a row (07-board.js): 할일 · 알림 · 지금 진행 중 · 대기 중 · 최근 끝난 작업 · 모니터링 · 작업내역 ·
+  // 사용량 · 컨텍스트 · 공급자 · the owner's cards, each half the row and as tall as its content. 할일 is always there and stays first (pin).
   if (!homeBoard || (openMenu && box.contains(openMenu.anchor))) { capLists($("#v-home"), kept); return; }   // a ⋯ menu is open: repaint after it closes
   const items = [], seen = new Set();
   const add = (id, node) => { if (!seen.has(id)) { seen.add(id); items.push({ id, node, head: ".ch", def: { w: 6, h: 1 }, ...HOME_FIT }); } };
+  add("now:todo", el("div", { class: "card" }, hcHead("할일", { n: todo.length ? `${todo.length}개` : null }), el("div", { class: "hn", "data-k": "todo", "data-cap": "todo" }, ...todo.map(homeTodoRow), ...(todo.length ? [] : [hcNone("아직 시작 전인 일이 없어요")]))));
+  items[0].pin = true;
   add("notices:alert", homeAlertCard());
   add("now:running", el("div", { class: "card" }, hcHead("지금 진행 중", { n: working ? `${working}개 작업 중` : null }), running));
-  if (restT.length) add("now:waiting", el("div", { class: "card" }, hcHead("대기 중"), el("div", { class: "hn", "data-k": "waiting", "data-cap": "waiting" }, ...restT.map(restRow))));
-  if (ended.length) add("now:ended", el("div", { class: "card" }, hcHead("최근 끝난 작업"), el("div", { class: "hn", "data-k": "ended-work", "data-cap": "ended-work" }, ...ended.map(workRow))));
+  if (heldT.length || heldW.length) add("now:waiting", el("div", { class: "card" }, hcHead("대기 중"), el("div", { class: "hn", "data-k": "waiting", "data-cap": "waiting" }, ...heldT.map(restRow), ...heldW.map(workRow))));
+  if (ended.length || doneT.length) add("now:ended", el("div", { class: "card" }, hcHead("최근 끝난 작업"), el("div", { class: "hn", "data-k": "ended-work", "data-cap": "ended-work" }, ...doneT.map(restRow), ...ended.map(workRow))));
   add("notices:watch", homeMonitorCard());
   add("notices:worklog", homeWorklogCard());
 

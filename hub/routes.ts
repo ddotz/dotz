@@ -13,6 +13,7 @@ import { createWebAccess, localBrowser, WebAccessError, webAccessRoute } from ".
 import type { Server } from "bun";
 import { ADDRESS, cfg, DATA_DIR, HUB_TOKEN, log, NAME, now, PORT, setMachineName } from "./config.ts";
 import { limitWaits } from "./limitwait.ts";
+import { buildWaitlist } from "./waitlist.ts";
 import { keyedSelector, keyFileOk, spendOnKey } from "./fallback.ts";
 import { changeTarget, ControlError, targetView, ForceRequired, looksLikeCommand, parseCommand } from "./control.ts";
 import * as discord from "./discord.ts";
@@ -266,6 +267,11 @@ function stateConvs(): { target: string; name?: string; work: ReturnType<typeof 
 		return { target: c.primary, ...(mail?.subject ? { name: mail.subject } : {}), work: c.bg.list().filter(w => w.status === "running").map(w => ({ ...w, target: c.primary })) };
 	});
 }
+export const stateWaitlist = () => buildWaitlist({
+	deferred: limitWaits(join(DATA_DIR, "state.json")),
+	lanes: laneSummary(),
+	work: [...bgWork.queuedWork(), ...convs.conversations().filter(c => convs.live(c)).flatMap(c => c.bg.queuedWork().map(w => ({ ...w, target: c.primary })))],
+});
 const mainWork = (t: string | undefined) => t === "web" || t === "terminal" || !t;
 const lastTurnStart = (items: ReturnType<typeof activityItems>): string | undefined => {
 	for (let i = items.length - 1; i >= 0; i--) if (items[i]!.type === "turn_start") return items[i]!.ts;
@@ -572,7 +578,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), deferred: limitWaits(join(DATA_DIR, "state.json")), work_now: Date.now(), web_build: webBuild(), desk: desk.summary() });
+			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), waitlist: stateWaitlist(), work_now: Date.now(), web_build: webBuild(), desk: desk.summary() });
 		if (req.method === "GET" && url.pathname === "/api/notices") syncCardFiles();
 		if (req.method === "GET" && url.pathname === "/api/notices") return json({ ...listNotices(Number(url.searchParams.get("limit") ?? 100)), gone: dismissedAlertAts() });
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });

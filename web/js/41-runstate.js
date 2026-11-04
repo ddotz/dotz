@@ -8,23 +8,29 @@ const RUN_DOT = { working: "pri", waiting: "warn", idle: "", limited: "warn", er
 // "답을 기다려요" only when the owner's answer is awaited (a question); work the agent handed off reads as its own progress and is not
 // colored as needing him (owner 2026-10-28: "답을 기다려요" read as waiting on him; he picked "맡긴 작업 진행 중").
 // recover: a background worker failed and the agent takes it up itself (hub/runstate.ts failedRun) - its progress, not a request to the owner.
-const waitLabel = r => r.reason === "ask" ? RUN_LABEL.waiting : r.reason === "capacity" ? "순서를 기다려요" : r.reason === "recover" ? "이어서 처리 중" : "맡긴 작업 진행 중";
+const waitLabel = r => r.reason === "ask" ? RUN_LABEL.waiting : runQueued(r) ? "순서를 기다려요" : r.reason === "recover" ? "이어서 처리 중" : "맡긴 작업 진행 중";
 const waitsOnOwner = r => r.kind === "waiting" && r.reason === "ask";
-// A conversation waiting on work it handed off or on its turn (capacity) is progressing: blue on every row that shows it, like this line.
+// A conversation waiting on work it handed off is progressing: blue on every row that shows it, like this line. One whose turn or whose
+// only worker is still queued has not started, so it is gray and counts as running nowhere; a session held by the limits is the same (S.lanes waiting).
 const runOf = t => (S && S.runs && S.runs[t === MAIN ? "main" : t]) || null;
-const runBusy = t => { const r = runOf(t); return !!r && r.kind === "waiting" && !waitsOnOwner(r); };
+const runQueued = r => !!r && r.kind === "waiting" && (!!r.queued || r.reason === "capacity");
+const laneQueued = t => ((S && S.lanes) || []).some(l => l.waiting && `lane:${l.name}` === t);
+const runBusy = t => { const r = runOf(t); return !!r && r.kind === "waiting" && !waitsOnOwner(r) && !runQueued(r); };
 // Anything still moving, seen or not: 06-subagents.js keeps the state fresh while one is, so no row or word is left behind when no event comes.
 const runMoving = r => r.kind === "working" || (r.kind === "waiting" && !waitsOnOwner(r));
 // The word and the tone of one conversation or session, the only place a row turns state into colour (the table in docs/ui-spec.md):
 // blue runs or progresses, orange needs the owner or sits at a limit, red failed, gray rests or ended. The word differs for every tone, so colour never speaks alone.
 function runStatus(t, status, ask) {
   const r = runOf(t);
+  if (laneQueued(t)) return ["순서 대기", ""];
   if (status === "working" || status === "starting") return [statusKo(status), "pri"];
   if (ask || (r && waitsOnOwner(r))) return [RUN_LABEL.waiting, "warn"];
   if (r && r.kind === "working") return [RUN_LABEL.working, "pri"];
-  if (runBusy(t)) return [r.reason === "capacity" ? "순서 대기" : "진행 중", "pri"];
+  if (runQueued(r)) return ["순서 대기", ""];
+  if (runBusy(t)) return ["진행 중", "pri"];
   if (status === "rate-limited" || (r && r.kind === "limited")) return [statusKo("rate-limited"), "warn"];
   if (r && r.kind === "error" && !r.cancelled) return ["오류", "err"];
+  if (r && r.kind === "done") return ["끝남", ""];
   return [statusKo(status), statusTone(status)];
 }
 const targetState = t => { const i = targetInfo(t); return i.alive ? runStatus(t, i.status, i.ask) : ["종료됨", ""]; };

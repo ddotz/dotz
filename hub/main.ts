@@ -85,7 +85,8 @@ import { timeoutMs as outlangTimeoutMs } from "./outlang.ts";
 import { inboxText, bursts, intake, flush, answerCommand, QUEUE_SWEEP_MS, flushQueue, sendWeb } from "./intake.ts";
 import { laneRelay, installLaneHandlers } from "./lanewire.ts";
 import { mailAction } from "./mail-sync.ts";
-import { applyMailStates, deliverAnswer, mailSyncDeps, makeRoute, startStallSweep, webAccess } from "./routes.ts";
+import { applyMailStates, deliverAnswer, mailSyncDeps, makeRoute, startStallSweep, stateWaitlist, webAccess } from "./routes.ts";
+import { waitlistSweep } from "./waitlist.ts";
 import { appProxySocket } from "./app-proxy.ts";
 import { desk, type DeskWsData } from "./remote-desktop.ts";
 import type { ServerWebSocket } from "bun";
@@ -659,6 +660,8 @@ setInterval(waitCheck.tick, WAIT_CHECK_MS);
 for (const e of recentEvents(300)) workRows.seen(e);
 onEmit(workRows.seen);
 setInterval(() => void (subscriberCount() > 0 && workRows.sweep()), WORK_SWEEP_MS);
+const sweepWaitlist = waitlistSweep(stateWaitlist, items => broadcast({ kind: "waitlist", items }));
+setInterval(() => void (subscriberCount() > 0 && sweepWaitlist()), WORK_SWEEP_MS);
 const restartGate = createRestartGate({
 	busy: busyNow,
 	collecting: () => bursts.size > 0,

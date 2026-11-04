@@ -226,3 +226,11 @@ test("a turn that stopped on an error is not 끝났어요; a failed step the age
 	expect(runState({ ...base, lastTurnEnd: iso(60_000), turnFailed: true })).toEqual({ kind: "error", since: iso(60_000), detail: "답을 끝내지 못했어요" });
 	expect(runState({ ...base, lastTurnEnd: iso(60_000), turnFailed: false }).kind).toBe("done");
 });
+
+test("a session whose only worker is queued says so, and a running worker outranks a queued one", () => {
+	const q = { id: "q", description: "기다리는 일", status: "running" as const, queued: true, started_at: now - 2000 };
+	const r = { id: "r", description: "도는 일", status: "running" as const, started_at: now - 1000 };
+	expect(runState({ ...base, work: [q] })).toMatchObject({ kind: "waiting", reason: "work", work: "q", queued: true });
+	const both = runState({ ...base, work: [q, r] });
+	expect([both.work, both.queued]).toEqual(["r", undefined]);
+});
