@@ -43,14 +43,14 @@ import { createWaitCheck } from "./waitcheck.ts";
 import { ownerMessage } from "./events.ts";
 import { forgetAccountUsage, onQuota, QUOTA_REFRESH_MS, refreshQuota, usageSnapshot } from "./providers.ts";
 import { sealPlainSecrets } from "./secretbox.ts";
-import { backfillNotices, dropChannelNotices, setAppLabelResolver, setDraftHandled, settleExpiredQuestions, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
+import { backfillNotices, draftCardCounts, dropChannelNotices, refreshStoredDrafts, setAppLabelResolver, setDraftHandled, settleExpiredQuestions, settleHandledDrafts, setConvNameResolver, setLaneTitleResolver, setAppBlocker, setAppResolver, setOrchestratorAvailable, setWatchLabelResolver, setWatchSummarizer, tagStoredApps, updateAvailable, updateResolved } from "./notices.ts";
 import { startReflection } from "./reflect.ts";
 import { syncFeatureWatches } from "./features.ts";
 import { startSchedules, stopSchedules } from "./schedule.ts";
 import { syncRoutineSchedules } from "./custom.ts";
 import { startHarnessUpdate } from "./update.ts";
 import { startOmoEngineWatch } from "./runtime/omo-engine-watch.ts";
-import { runMigrations } from "./migrations.ts";
+import { CARD_AUDIT_ID, type CardAudit, runMigrations } from "./migrations.ts";
 import { applyAndSave, defaultExec, onUpdateResolved, startSelfUpdate, updateBoot, diskCommit } from "./selfupdate.ts";
 import { createUpdateNow, setUpdateNow, updateNow } from "./update-now.ts";
 import { pendingBackups } from "./carryover.ts";
@@ -175,7 +175,7 @@ const settleSweep = () => {
 	// Questions past their answer time close here, in the pass that already settles handled drafts: no timer of their own.
 	const expired = settleExpiredQuestions();
 	if (expired) log(`notices: ${expired} questions past their answer time closed`);
-	return settleHandledDrafts().then(n => void (n && log(`notices: ${n} send approvals closed, their drafts were handled elsewhere`)), e => log(`handled-draft sweep failed: ${(e as Error).message}`));
+	return settleHandledDrafts().then(n => (n && log(`notices: ${n} send approvals closed, their drafts were handled elsewhere`), n), e => (log(`handled-draft sweep failed: ${(e as Error).message}`), 0));
 };
 // Settle first; then the queue drops held cards that are handled or duplicated, then shows the next one (releaseAll does both, and is a no-op the second time).
 const startupSettled = settleSweep();
@@ -420,11 +420,16 @@ if (process.env.DOTZ_NO_ORCHESTRATOR !== "1") {
 sends.resume();
 // Cards from before a restart: a bot-written mail card gives way to the app draft of the same mail that waits under it (older installs), then a
 // conversation with no open card shows its next held one (hub/approval-queue.ts). Both passes change nothing the second time.
-void startupSettled
-	.then(() => reconcileMailCards().catch(e => (log(`mail card reconcile failed: ${(e as Error).message}`), 0)))
-	.then(n => void (n && log(`approval cards: ${n} bot mail card(s) replaced by their waiting draft`)))
-	.then(() => approvals.releaseAll())
-	.catch(e => log(`approval queue release failed: ${(e as Error).message}`));
+const startupCards = startupSettled.then(async closed => {
+	const replaced = await reconcileMailCards().catch(e => (log(`mail card reconcile failed: ${(e as Error).message}`), 0));
+	if (replaced) log(`approval cards: ${replaced} bot mail card(s) replaced by their waiting draft`);
+	try {
+		await approvals.releaseAll();
+	} catch (e) {
+		log(`approval queue release failed: ${(e as Error).message}`);
+	}
+	return { closed, replaced };
+});
 const resumedLanes = restoreLanes();
 discord.recordLaneChannels();
 for (const name of resumedLanes) void send(`lane:${name}`, "게이트웨이가 재시작돼서 멈췄던 작업을 이어서 하고 있어요.").catch(e => log(`lane resume notice failed: ${e}`));
@@ -527,7 +532,15 @@ void startSelfUpdate(text => {
 // An update applied before this start: marked healthy after a quiet settle (ends the rollback watchdog), or the watchdog's rollback told once.
 updateBoot({ alert });
 // One-time setup steps the new code needs (hub/migrations.ts) run here, once per install: no command is left for the owner's bot after an update.
-void runMigrations({ dataDir: DATA_DIR, ask: alert, notify: text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`migration notice failed: ${e}`)) }).catch(e => log(`migrations failed: ${e}`));
+// The card audit waits for the start's own card passes and counts their work; it adds nothing to the start, and with no orchestrator it stays for a later start.
+const cards: CardAudit = {
+	known: () => draftCardCounts().all + approvals.held().length,
+	closeSent: async () => (await startupCards).closed + (await settleHandledDrafts()),
+	refresh: async () => refreshStoredDrafts() + (await startupCards).replaced,
+	open: () => draftCardCounts().open,
+	turn: c => wakeOnce(CARD_AUDIT_ID, msg().cardAudit(c.closed, c.refreshed, c.open)),
+};
+void runMigrations({ ...(process.env.DOTZ_NO_ORCHESTRATOR === "1" ? {} : { cards }), dataDir: DATA_DIR, ask: alert, notify: text => void out(discord.status.enabled ? "worklog" : "web", text, undefined, { source: "gateway" }).catch(e => log(`migration notice failed: ${e}`)) }).catch(e => log(`migrations failed: ${e}`));
 setWatchSummarizer(createWatchSummarizer());
 nameWatches();
 // A monitor's own 디스코드에도 보내기 (hub/watch-settings.ts), or for an app's watch the app's (hub/app-settings.ts appDiscordField; a mail instance's

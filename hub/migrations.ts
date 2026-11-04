@@ -13,11 +13,22 @@ import { APPS_FILE, srcKey } from "./integrations.ts";
 
 export const MIGRATIONS_FILE = "migrations.json";
 export const LEGACY_ID = "legacy-sns-tokens";
+export const CARD_AUDIT_ID = "card-audit";
 
 type State = { done: Record<string, { at: string; note?: string }>; pending: Record<string, string[]> };
-export type Ctx = { dataDir: string; state: State; ask: (text: string) => void };
+/** What the card audit needs from the running gateway. It holds no way to send, approve or discard: closing goes only through the send records (settleHandledDrafts). */
+export type CardAudit = {
+	/** Send-approval cards this install has, open or closed. */
+	known: () => number;
+	closeSent: () => Promise<number>;
+	refresh: () => number | Promise<number>;
+	open: () => number;
+	/** Starts the one chat turn that compares the apps with the send records. */
+	turn: (counts: { closed: number; refreshed: number; open: number }) => void;
+};
+export type Ctx = { dataDir: string; state: State; ask: (text: string) => void; cards?: CardAudit };
 export type Migration = { id: string; label: string; run: (ctx: Ctx) => string | undefined | Promise<string | undefined> };
-export type Deps = { dataDir: string; ask: (text: string) => void; notify: (text: string) => void; migrations?: Migration[]; log?: (s: string) => void; now?: () => Date };
+export type Deps = { dataDir: string; ask: (text: string) => void; notify: (text: string) => void; cards?: CardAudit; migrations?: Migration[]; log?: (s: string) => void; now?: () => Date };
 
 const readState = (dataDir: string): State => {
 	try {
@@ -78,7 +89,21 @@ const legacyTokens: Migration = {
 	},
 };
 
-export const MIGRATIONS: Migration[] = [siteApps, legacyTokens];
+// (c) One audit of the cards after this update: the gateway closes what the send records prove and refreshes what is left, then the install's own
+// orchestrator gets one turn for what code cannot judge (the apps against the send records, one short summary). An install with no card has nothing to audit.
+const cardAudit: Migration = {
+	id: CARD_AUDIT_ID,
+	label: "카드 전역 점검",
+	run: async ({ cards }) => {
+		if (!cards?.known()) return undefined;
+		const closed = await cards.closeSent();
+		const refreshed = await cards.refresh();
+		cards.turn({ closed, refreshed, open: cards.open() });
+		return `카드 점검: 보낸 카드 ${closed}장 닫음, ${refreshed}장 새로 고침, 나머지는 대화에서 이어서 봐요`;
+	},
+};
+
+export const MIGRATIONS: Migration[] = [siteApps, legacyTokens, cardAudit];
 
 /** Runs every migration that is not done, in order. One notice line lists what changed; each failure gets its own notice and is retried at the next start. */
 export async function runMigrations(deps: Deps): Promise<{ ran: string[]; failed: string[] }> {
@@ -86,9 +111,10 @@ export async function runMigrations(deps: Deps): Promise<{ ran: string[]; failed
 	const state = readState(deps.dataDir);
 	const ran: string[] = [], failed: string[] = [];
 	for (const m of deps.migrations ?? MIGRATIONS) {
-		if (state.done[m.id]) continue;
+		// A gateway with no orchestrator (the update smoke check) has no one to take the audit: it stays for the next real start.
+		if (state.done[m.id] || (m.id === CARD_AUDIT_ID && !deps.cards)) continue;
 		try {
-			const note = await m.run({ dataDir: deps.dataDir, state, ask: deps.ask });
+			const note = await m.run({ dataDir: deps.dataDir, state, ask: deps.ask, cards: deps.cards });
 			state.done[m.id] = { at: (deps.now?.() ?? new Date()).toISOString(), ...(note ? { note } : {}) };
 			saveState(deps.dataDir, state);
 			log(`migration ${m.id}: ${note ?? "nothing to do"}`);

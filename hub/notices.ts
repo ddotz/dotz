@@ -1022,6 +1022,18 @@ export async function settleHandledDrafts(at = now()): Promise<number> {
 	for (const i of hit) if (isOpenDecision(i)) settleDecision(i, "", at, true);
 	return hit.length;
 }
+// The one-time card audit (hub/migrations.ts): the send-approval cards of this install, open or closed, and those still open.
+const isDraftCard = (i: Notice) => !!i.decision && !i.decision.to.startsWith("auth:") && !!openDraftRef(i);
+export const draftCardCounts = (): { all: number; open: number } => {
+	const all = items.filter(isDraftCard);
+	return { all: all.length, open: all.filter(isOpenDecision).length };
+};
+/** The re-read of the load, on the live cards: an open card's title follows its draft's ref, so its 보내기 passes the send gate. */
+export function refreshStoredDrafts(at = now()): number {
+	const n = refreshNoticeDrafts(items);
+	if (n) announce(items.filter(i => isOpenDecision(i) && i.decision!.draft), at);
+	return n;
+}
 
 // A draft sent or dropped from 모니터링 closes its card in the conversation at once, not at the next 30 s sweep: the apps announce every change
 // of a draft or a send, so a burst of them runs one pass and at most one more after it.
