@@ -41,7 +41,7 @@
 #c-attach:hover, .sendrow > .cmp-plus:hover { background: var(--hover); color: var(--fg); }
 .sendrow > .ib { grid-area: send; width: 36px; height: 36px; border-radius: 50%; }
 .sendrow > .cbar { grid-area: bar; margin: 0; padding: var(--sp-1) var(--sp-1) var(--sp-05); min-height: 0; }
-#cbar { display: flex; align-items: center; flex-wrap: nowrap; gap: var(--sp-15); min-height: 20px; margin: var(--sp-1) 0 0; padding: 0 var(--sp-1); overflow-x: auto; scrollbar-width: none; }
+#cbar { display: flex; align-items: center; flex-wrap: nowrap; gap: var(--sp-15); min-height: 20px; margin: var(--sp-1) 0 0; padding: 0 var(--sp-05); overflow-x: auto; scrollbar-width: none; }
 #cbar::-webkit-scrollbar { display: none; }
 #cbar .cchip { height: auto; min-height: 20px; padding: 0 var(--sp-05); background: transparent; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 #cbar button.cchip { cursor: pointer; }
