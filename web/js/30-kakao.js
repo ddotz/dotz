@@ -5,14 +5,13 @@
 // Each message carries `unread` (KakaoTalk's yellow number: members who have not read it yet); kakao_read -> /reads refreshes the numbers without bodies.
 // Nothing is ever sent without a click: a typed message, a draft's 보내기 or an edited draft's 보내기 is the owner's own action.
 // Message text only ever goes through el({text}) / textContent, never innerHTML.
-ICONS.eye = "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0z";   // the eye of the watch toggles (01-core.js has none)
 const KK_KEY = "i:kakao";
 const kkItem = it => !!it && (it.key === KK_KEY || !!it.kk);   // a peer's Kakao item (34-peer-monitoring.js) shows this same pane, its rooms read through the proxy (KK.pc)
 // The kakao item the pane shows: this computer's, or the peer's while KK.pc names it.
 const kkItemNow = () => monItems().find(i => kkItem(i) && (KK.pc ? !!i.pc && i.pc.url === KK.pc.url : !i.pc)) || null;
 const KK_PAGE = 50;
 const KK = {
-  vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, dsig: [], droom: "", adding: null,   // adding: the 대화방 추가 dialog while it is open
+  vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, dsig: [], droom: "", adding: null,   // adding: the 지켜볼 대화방 dialog while it is open
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], gaps: new Set(), more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", revise: null, reviseCode: "", draftT: 0, tailing: false, again: false,
   typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
@@ -526,7 +525,7 @@ async function kkSetRoom(r, patch) {
   const was = { watched: r.watched, autoDraft: r.autoDraft };
   Object.assign(r, patch);
   if (patch.watched === false) r.autoDraft = false;
-  kkPaintRooms(); kkPickRefresh(r);
+  kkPaintRooms();
   try {
     await api(`/api/kakao/rooms/${enc(r.chatId)}`, "PUT", patch);
     if (patch.watched !== undefined && KK.open === r.chatId) {
@@ -538,59 +537,43 @@ async function kkSetRoom(r, patch) {
     kkIntgSoon();
   } catch (e) {
     Object.assign(r, was);
-    kkPaintRooms(); kkPickRefresh(r);
+    kkPaintRooms();
     toast(e.message, true);
   }
 }
 const kkSearch = el("input", { id: "kk-q", type: "search", placeholder: "대화방 검색", "aria-label": "대화방 검색", autocomplete: "off", enterkeyhint: "search" });
 // Typing refilters only the list: the input itself stays in place (it keeps focus and the IME composition).
 kkSearch.addEventListener("input", () => { KK.q = kkSearch.value; const pl = $("#kk-pl"); if (pl) clear(pl).append(...kkPickRows()); });
-// The watch toggle is the app's quiet icon button with an eye: accent while the room is watched, grey while it is not. Never a switch (the one switch is the room's 자동 초안 card).
-const kkEye = (on, label, key, change) => el("button", { class: `ib kk-eye${on ? " on" : ""}`, type: "button", "aria-pressed": on ? "true" : "false", "aria-label": label, title: label, "data-k": key, onclick: ev => { ev.stopPropagation(); change(!on); } }, icon("eye"));
 const kkLine1 = (r, name) => el("span", { class: "kk-l1" }, name, kkTag(r) ? el("span", { class: "kk-grp", text: kkTag(r) }) : null);
-// The 대화방 추가 list: every room, the eye adds it to the watched ones or takes it off again; the name opens the room (read-only while it is not watched).
-const kkPickRow = r => el("div", { class: `pl-row kk-pr${KK.open === r.chatId ? " on" : ""}`, "data-chat": r.chatId },
+// The 지켜볼 대화방 list: every room, and a tap on the row adds it to the watched ones or takes it off again. A watched row is the list's selected row with a check; never a switch (the one switch is the room's 자동 초안 card).
+const kkPickRow = r => el("button", { class: `pl-row kk-pr${r.watched ? " on" : ""}`, type: "button", role: "checkbox", "aria-checked": r.watched ? "true" : "false", "data-chat": r.chatId, onclick: () => kkSetRoom(r, { watched: !r.watched }) },
   kkAvatar(r.name),
-  el("span", { class: "cv-b" },
-    kkLine1(r, el("button", { class: "cv-n kk-pn", type: "button", "data-k": "open", title: r.name, text: r.name, "aria-label": `${r.name} 열기`, onclick: () => { kkOpen(r.chatId); if (KK.adding) KK.adding.close(); } })),
-    kkSubLine(r) ? el("span", { class: "cv-p", text: kkSubLine(r) }) : null),
-  kkEye(!!r.watched, `${r.name} 지켜보기 ${r.watched ? "끄기" : "켜기"}`, "watch", v => kkSetRoom(r, { watched: v })));
+  el("span", { class: "cv-b" }, kkLine1(r, el("span", { class: "cv-n", title: r.name, text: r.name })), kkSubLine(r) ? el("span", { class: "cv-p", text: kkSubLine(r) }) : null),
+  r.watched ? icon("check", "kk-ck") : null);
 function kkPickRows() {
   const list = KK.rooms.filter(r => kkMatch(r.name, KK.q));
   return list.length ? list.map(kkPickRow) : [el("div", { class: "kk-note", id: "kk-nomatch", role: "status", text: "찾는 대화방이 없어요" })];
 }
-// One toggled row is replaced in place (the list and its scroll stay); a focused eye keeps its focus.
-function kkPickRefresh(r) {
-  const n = [...document.querySelectorAll(".kk-pr")].find(x => x.dataset.chat === r.chatId);
-  if (!n) return;
-  const had = n.contains(document.activeElement), next = kkPickRow(r);
-  n.replaceWith(next);
-  if (had) next.querySelector('[data-k="watch"]').focus({ preventScroll: true });
-}
 function kkAddOpen() {
   if (KK.adding) return;
   KK.q = ""; kkSearch.value = "";
-  const d = el("dialog", { class: "kk-pd kk-add", id: "kk-add", "aria-label": "대화방 추가" },
+  const d = el("dialog", { class: "kk-pd kk-add", id: "kk-add", "aria-label": "지켜볼 대화방" },
     el("div", { class: "kk-pd-in", tabindex: "-1", autofocus: true },
-      fsHead([el("h2", { class: "fs-t", text: "대화방 추가" }), el("span", { class: "sup", text: "눈 아이콘으로 지켜볼 방을 골라요" })], { close: () => d.close() }),
+      fsHead([el("h2", { class: "fs-t", text: "지켜볼 대화방" }), el("span", { class: "sup", text: "누르면 추가되고, 다시 누르면 빠져요" })], { close: () => d.close() }),
       el("div", { class: "kk-pd-b" }, el("label", { class: "pl-search kk-search" }, icon("search"), kkSearch), el("div", { class: "pl-list kk-pl", id: "kk-pl" }, ...kkPickRows()))));
   KK.adding = d;
   document.body.append(d); d.showModal(); dialogHist(d);
   d.addEventListener("close", () => { if (KK.adding === d) KK.adding = null; d.remove(); });
 }
-// 지켜보기 끄기 from the list: the row leaves the list and the toast brings it back.
-const kkUnwatch = r => { kkSetRoom(r, { watched: false }); toast("지켜보기를 껐어요", false, { label: "되돌리기", onclick: () => kkSetRoom(r, { watched: true }) }, 6000); };
 function kkRow(r) {
   const on = KK.open === r.chatId, sub = kkSubLine(r), time = r.lastAt ? el("span", { class: "kk-t", text: kkListTime(r.lastAt) }) : null;
-  return el("div", { class: "kk-rw" },
-    el("button", { class: `cv-row pv kk-row${r.unread ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-chat": r.chatId, "aria-current": on ? "true" : null, onclick: () => kkOpen(r.chatId) },
+  return el("button", { class: `cv-row pv kk-row${r.unread ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-chat": r.chatId, "aria-current": on ? "true" : null, onclick: () => kkOpen(r.chatId) },
       kkAvatar(r.name),
       el("span", { class: "cv-b" }, kkLine1(r, el("span", { class: "cv-n", title: r.name, text: r.name })), sub ? el("span", { class: "cv-p", text: sub }) : null),
-      // The row end like every list: the time on top, 미답장 and the unread count under it; the eye sits past them (.kk-rw).
+      // The row end like every list: the time on top, 미답장 and the unread count under it.
       time || r.unread || r.unreplied ? el("span", { class: "cv-m" }, time, r.unread || r.unreplied ? el("span", { class: "kk-rmeta" },
         r.unreplied ? unrepPill() : null,
-        r.unread ? el("span", { class: "nb warn", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null) : null),
-    kkEye(true, `${r.name} 지켜보기 끄기`, "watch", () => kkUnwatch(r)));
+        r.unread ? el("span", { class: "nb warn", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null) : null);
 }
 function kkPaintRooms() {
   const top = kkRooms.scrollTop, watched = KK.rooms.filter(r => r.watched).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
@@ -605,7 +588,13 @@ function kkPaintRooms() {
   const own = (kkItemNow() || {}).owned || [];
   clear(kkRooms).append(...[own.length ? el("section", { class: "kk-own", "aria-label": "감시 상태" }, ...own.map(monStatNode)) : null, head, list].filter(Boolean));
   kkRooms.scrollTop = top;
-  if (KK.adding) { const pl = $("#kk-pl"); if (pl) clear(pl).append(...kkPickRows()); }
+  // The choice list repaints in place: a row with the keyboard focus keeps it.
+  const pl = KK.adding && $("#kk-pl");
+  if (pl) {
+    const had = pl.contains(document.activeElement) && document.activeElement.dataset.chat;
+    clear(pl).append(...kkPickRows());
+    if (had) { const n = [...pl.children].find(x => x.dataset.chat === had); if (n) n.focus({ preventScroll: true }); }
+  }
   kkPaintAuto();
 }
 
