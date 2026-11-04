@@ -201,17 +201,24 @@ function hcTaskBody(line, w) {
   const files = w.status === "done" && !w.cancelled && Array.isArray(w.files) ? w.files.filter(f => f && f.path) : [];
   const chips = files.map(f => { const name = f.name || String(f.path).split("/").pop(), size = f.size ? fsize(f.size) : "", opt = VIEW_RE.test(name) ? { onclick: () => viewer(f.path, name, f.pc) } : { href: fileUrl(f.path, false, f.pc) };
     return el(opt.href ? "a" : "button", { class: "ct-file", ...(opt.href ? { href: opt.href, target: "_blank", rel: "noopener" } : { type: "button", onclick: opt.onclick }), title: `${name} · 열기` },
-      el("span", { class: "ct-fi" }, icon("file")), el("span", { class: "ct-ft" }, el("b", { text: name }), el("span", { text: ["결과 파일", size].filter(Boolean).join(" · ") }))); });
+      icon("file"), el("span", { class: "ct-ft" }, el("b", { text: name }), size ? el("span", { text: size }) : null)); });
   const done = w.status === "done" && !w.cancelled;
   const body = chips.length || done ? el("div", { class: "ct-body" }, ...chips, done ? el("div", { class: "ct-bar" }, el("span")) : null) : null;
   if (old) old.remove();
   if (body) line.append(body);
 }
+// A row's place in the chat: a work card joins the run of cards that ends the chat, or starts one. A chat message ends a run; a folded tool group does not (the orchestrator's calls land between the rows it deferred).
+function tlHome(n) {
+  if (!n.classList.contains("cv-task")) return tl;
+  let last = tl.lastElementChild;
+  while (last && last.matches("details.work")) last = last.previousElementSibling;
+  return last && last.classList.contains("cv-tasks") ? last : tl.appendChild(el("div", { class: "cv-tasks" }));
+}
 function sysTaskLine(e, title, hm, id) {
   const st = el("span", { class: "cv-sys-st ct-pill", hidden: true }, el("span", { class: "dot" }), el("span"));
   const row = sysRow(id, st, e);
   const hd = el("button", { class: "ct-hd", type: "button", title: "작업 열기", onclick: () => sysOpen(row, id, title, e) },
-    el("span", { class: "ct-nm" }, el("span", { class: "ct-lb", text: ["백그라운드 작업", hm].filter(Boolean).join(" · ") }), el("span", { class: "cv-sys-tx ct-t", text: title })), st);
+    el("span", { class: "ct-nm" }, el("span", { class: "ct-lb" }, el("span", { class: "ct-kind", text: hm ? "백그라운드 작업 · " : "백그라운드 작업" }), hm ? el("span", { text: hm }) : null), el("span", { class: "cv-sys-tx ct-t", text: title })), st);
   return el("div", { class: "cv-sys cv-task", role: "group" }, hd);
 }
 function sysLine(e, text, hm) {
@@ -387,7 +394,7 @@ function chatPush(en, bulk) {
       if (who && who === CS.who && t - CS.whoT < 600000 && !(e.target === "alert" && n.querySelector(":scope > .mt > .tag"))) n.classList.add("cont");   // an 알림 row that carries a status tag keeps its head, so the tag shows
       CS.who = who; CS.whoT = t;
       if (convIncoming(e)) fresh = n;
-      tl.append(n); if (!bulk) motionIn(n, "rise", M_MS.fast);   // a message that arrives live rises in (150ms); the drawn history never moves
+      tlHome(n).append(n); if (!bulk) motionIn(n, "rise", M_MS.fast);   // a message that arrives live rises in (150ms); the drawn history never moves
       if (pkey) CS.prog.set(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {
