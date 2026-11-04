@@ -111,7 +111,7 @@ function cmSourceNode(s) {
   }
   return node;
 }
-// The picker: the side sheet of KakaoTalk's 대화방 추가, opened from the app's settings row (asPickRow) or the empty list.
+// The picker: the side sheet of KakaoTalk's 지켜볼 대화방, opened from the app's settings row (asPickRow) or the empty list.
 function cmPickPaint() {
   const d = CM.pickD;
   if (!d) return;

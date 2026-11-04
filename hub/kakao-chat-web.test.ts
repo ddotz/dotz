@@ -208,32 +208,32 @@ const geo = (v: View) => q<Geo>(v, `const m = document.querySelector(".kk-new"),
 describe("카카오톡 at desktop width (1280x800)", async () => {
 	const v = await open(1280, 800);
 
-	test("only the watched rooms are rows (name, initial, time, unread, an eye); 추가 opens the full list with an eye per room", async () => {
+	test("only the watched rooms are rows (name, initial, time, unread) with no watch control; 추가 opens the full list as checkbox rows", async () => {
 		await boot(v);
-		const s = await q<{ rows: { name: string; initial: string; time: string; badge: string; eye: string }[]; switches: number; dialog: boolean }>(v, `
-			const rows = [...document.querySelectorAll(".kk-row")].map(r => ({ name: r.querySelector(".cv-n").textContent, initial: r.querySelector(".kk-av").textContent, time: (r.querySelector(".kk-t") || {}).textContent || "", badge: (r.querySelector(".nb") || {}).textContent || "", eye: r.parentElement.querySelector('[data-k="watch"]').getAttribute("aria-pressed") }));
+		const s = await q<{ rows: { name: string; initial: string; time: string; badge: string; controls: number }[]; switches: number; dialog: boolean }>(v, `
+			const rows = [...document.querySelectorAll(".kk-row")].map(r => ({ name: r.querySelector(".cv-n").textContent, initial: r.querySelector(".kk-av").textContent, time: (r.querySelector(".kk-t") || {}).textContent || "", badge: (r.querySelector(".nb") || {}).textContent || "", controls: r.parentElement.querySelectorAll(":scope > :not(.kk-row), .ib").length }));
 			return { rows, switches: document.querySelectorAll('.kk-rooms [role="switch"]').length, dialog: !!document.querySelector("#kk-add") }`);
 		expect(s.rows.map(r => r.name)).toEqual(["가나다 모임", "라마바"]);
-		expect(s.rows[0]).toMatchObject({ initial: "가", badge: "30", eye: "true" });
+		expect(s.rows[0]).toMatchObject({ initial: "가", badge: "30", controls: 0 });
 		expect(s.rows[0]!.time.length).toBeGreaterThan(0);
 		expect(s.switches).toBe(0);
 		expect(s.dialog).toBe(false);
 		await run(v, `document.querySelector("#kk-add-btn").click()`);
 		await waitFor(v, `document.querySelector("#kk-add")`);
-		const sw = await q<string[][]>(v, `return [...document.querySelectorAll("#kk-add .kk-pr")].map(p => [p.dataset.chat, p.querySelector('[data-k="watch"]').getAttribute("aria-pressed")])`);
+		const sw = await q<string[][]>(v, `return [...document.querySelectorAll("#kk-add .kk-pr")].map(p => [p.dataset.chat, p.getAttribute("aria-checked")])`);
 		expect(sw).toEqual([["100", "true"], ["200", "false"], ["300", "true"]]);
 		await shot(v, "01-desktop-rooms.png");
-		// The sheet and the rows are the app's parts: a flat card row with one selection color, a quiet eye, the sheets' close button.
-		expect(await q(v, `const c = s => getComputedStyle(document.querySelector(s)); return [c("#kk-add .kk-eye").backgroundColor, c("#kk-add .fs-x").borderTopWidth, c(".kk-row").borderTopLeftRadius]`)).toEqual(["rgba(0, 0, 0, 0)", "0px", "0px"]);
+		// The sheet and the rows are the app's parts: a flat card row, the watched row selected with a check and the other bare, the sheets' close button.
+		expect(await q(v, `const c = s => getComputedStyle(document.querySelector(s)); const r = [...document.querySelectorAll("#kk-add .kk-pr")].map(p => [p.getAttribute("role"), p.classList.contains("on"), !!p.querySelector(".kk-ck")]); return [r.slice(0, 2), c("#kk-add .fs-x").borderTopWidth, c(".kk-row").borderTopLeftRadius]`)).toEqual([[["checkbox", true, true], ["checkbox", false, false]], "0px", "0px"]);
 		await run(v, `document.querySelector('#kk-add .fs-x').click()`);
 		await waitFor(v, `!document.querySelector("#kk-add")`);
 	});
 
-	test("the eye in the 추가 list PUTs {watched} and the room joins the rows; the eye on a row stops watching; the open room's 자동 초안 switch PUTs {autoDraft}", async () => {
+	test("a tap on a sheet row PUTs {watched} and the room joins the rows, a second tap takes it off without opening it; the open room's 자동 초안 switch PUTs {autoDraft}", async () => {
 		await run(v, `document.querySelector("#kk-add-btn").click()`);
-		await run(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="watch"]').click()`);
+		await run(v, `document.querySelector('.kk-pr[data-chat="200"]').click()`);
 		expect((await expectReq(isReq("PUT", "/api/kakao/rooms/200"))).body).toEqual({ watched: true });
-		await waitFor(v, `document.querySelector('.kk-row[data-chat="200"]') && document.querySelector('.kk-pr[data-chat="200"] [data-k="watch"]').getAttribute("aria-pressed") === "true"`);
+		await waitFor(v, `document.querySelector('.kk-row[data-chat="200"]') && document.querySelector('.kk-pr[data-chat="200"]').getAttribute("aria-checked") === "true"`);
 		await run(v, `document.querySelector('#kk-add .fs-x').click()`);
 		await waitFor(v, `!document.querySelector("#kk-add")`);
 		await openRoom(v);
@@ -241,9 +241,14 @@ describe("카카오톡 at desktop width (1280x800)", async () => {
 		await run(v, `document.querySelector('#kk-auto [data-k="auto"]').click()`);
 		expect((await expectReq(isReq("PUT", "/api/kakao/rooms/100"))).body).toEqual({ autoDraft: true });
 		await waitFor(v, `document.querySelector('#kk-auto [data-k="auto"]').getAttribute("aria-checked") === "true"`);
-		await run(v, `document.querySelector('.kk-row[data-chat="200"]').parentElement.querySelector('[data-k="watch"]').click()`);
+		await run(v, `document.querySelector("#kk-add-btn").click()`);
+		await waitFor(v, `document.querySelector('.kk-pr[data-chat="200"]')`);
+		await run(v, `document.querySelector('.kk-pr[data-chat="200"]').click()`);
 		expect((await expectReq(r => r.method === "PUT" && r.path === "/api/kakao/rooms/200" && r.body?.watched === false)).body).toEqual({ watched: false });
-		await waitFor(v, `!document.querySelector('.kk-row[data-chat="200"]')`);
+		await waitFor(v, `!document.querySelector('.kk-row[data-chat="200"]') && document.querySelector('.kk-pr[data-chat="200"]').getAttribute("aria-checked") === "false"`);
+		expect(await q(v, `return KK.open`)).toBe("100");
+		await run(v, `document.querySelector('#kk-add .fs-x').click()`);
+		await waitFor(v, `!document.querySelector("#kk-add")`);
 	});
 
 	test("opening a room: bubbles left and right, names and times per run, date dividers, placeholders, escaped text, the unread line", async () => {
@@ -560,7 +565,7 @@ describe("대화방 검색 (room search)", async () => {
 	const v = await open(1280, 800);
 	const rowsOf = (v: View) => q<string[]>(v, `return [...document.querySelectorAll(".kk-pr")].map(r => r.dataset.chat)`);
 
-	test("a search input tops the 대화방 추가 list; it filters by name (substring, case-insensitive, initial consonants) and says so when nothing matches", async () => {
+	test("a search input tops the 지켜볼 대화방 list; it filters by name (substring, case-insensitive, initial consonants) and says so when nothing matches", async () => {
 		reset();
 		await boot(v);
 		await run(v, `document.querySelector("#kk-add-btn").click()`);
@@ -585,15 +590,16 @@ describe("대화방 검색 (room search)", async () => {
 		expect(await q(v, `return [kkMatch("Book Club", "bOOK"), kkMatch("가나다 모임", "나다"), kkMatch("가나다", "ㄴ"), kkMatch("가나다", "ㄹ"), kkMatch("가나다", "가ㄴ")]`)).toEqual([true, true, true, false, false]);
 	});
 
-	test("the eyes keep working while filtered, and the query survives the repaint; the watched rows behind the dialog are not filtered", async () => {
+	test("the rows keep toggling while filtered, and the query survives the repaint; the watched rows behind the dialog are not filtered", async () => {
 		await search(v, "라마");
-		await run(v, `document.querySelector('.kk-pr[data-chat="300"] [data-k="watch"]').click()`);
+		await run(v, `document.querySelector('.kk-pr[data-chat="300"]').focus(); document.querySelector('.kk-pr[data-chat="300"]').click()`);
 		expect((await expectReq(isReq("PUT", "/api/kakao/rooms/300"))).body).toEqual({ watched: false });
-		await waitFor(v, `document.querySelector('.kk-pr[data-chat="300"] [data-k="watch"]').getAttribute("aria-pressed") === "false"`);
+		await waitFor(v, `document.querySelector('.kk-pr[data-chat="300"]').getAttribute("aria-checked") === "false"`);
 		expect(await rowsOf(v)).toEqual(["300"]);
+		expect(await q(v, `return document.activeElement.dataset.chat`)).toBe("300");   // the repaint keeps the keyboard on the row
 		expect(await q(v, `return [document.querySelector("#kk-q").value, [...document.querySelectorAll(".kk-row")].map(r => r.dataset.chat)]`)).toEqual(["라마", ["100"]]);
 		await search(v, "사아");
-		await run(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="watch"]').click()`);
+		await run(v, `document.querySelector('.kk-pr[data-chat="200"]').click()`);
 		await expectReq(isReq("PUT", "/api/kakao/rooms/200"));
 		await waitFor(v, `document.querySelector('.kk-row[data-chat="200"]')`);
 		expect(await rowsOf(v)).toEqual(["200"]);
@@ -1111,12 +1117,10 @@ for (const [w, h] of [[390, 844], [1280, 800]] as const)
 			await light(v);
 		});
 
-		test("a room that is not watched opens read-only from the room choice: no composer, a 감시 시작 bar that starts watching it", async () => {
+		test("a room that is not watched opens read-only: no composer, a 감시 시작 bar that starts watching it", async () => {
 			useOpen();
 			await boot(v);
-			await run(v, `document.querySelector("#kk-add-btn").click()`);
-			await waitFor(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="open"]')`);
-			await run(v, `document.querySelector('.kk-pr[data-chat="200"] [data-k="open"]').click()`);
+			await run(v, `kkOpen("200")`);
 			await waitFor(v, `KK.open === "200" && !KK.loading && KK.placed`);
 			const s = await q<Record<string, any>>(v, `const ro = document.querySelector("#kk-ro"); return { foot: document.querySelector("#kk-foot").hidden, ro: ro.hidden, text: ro.querySelector(".kk-ro-t").textContent, btn: ro.querySelector('[data-k="watch"]').textContent, h: Math.round(ro.querySelector('[data-k="watch"]').getBoundingClientRect().height), msgs: document.querySelectorAll("#kk-tl [data-log]").length }`);
 			expect(s).toMatchObject({ foot: true, ro: false, text: "감시하지 않는 방이에요. 읽기만 할 수 있어요", btn: "감시 시작", msgs: 6 });
