@@ -1176,6 +1176,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hr .hn1 .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hr.un .hn1 { font-weight: 600; }
 .hr .ha { min-width: 0; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr .ha:empty { display: none; }
 .hr .hp { flex: none; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); font-variant-numeric: tabular-nums; }
 .hr .hs.unreplied { color: var(--unreplied); font-weight: 600; }
 .hr .hs { flex: none; min-width: 44px; text-align: right; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); font-weight: 500; }
@@ -1191,7 +1192,6 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hr .dot.att.err { background: var(--err); }
 .hn .ny-more { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin: 0; padding: 0 16px; border: 0; border-top: 0; border-radius: 0; background: transparent; color: var(--fg-2); font: 500 13px/18px var(--font); cursor: pointer; }
 .hn .ny-more:hover { background: var(--hover); color: var(--fg); }
-.hn .empty { padding: 18px 16px; text-align: left; font-size: 13px; color: var(--fg-3); }
 #home-sec { margin-top: 28px; }
 
 /* lanes board */
@@ -1890,7 +1890,9 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .hc-none { margin-top: 8px; color: var(--fg-3); font: 400 14px/22px var(--font); }
 /* head note and count: plain grey text, a dot is the only colour; an empty card is just this head (fold) */
 .hc-n { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--fg-3); font: 400 13px/18px var(--font); }
-.card.fold .ch { margin-bottom: 0; }
+/* the head's gap belongs to a body: with nothing under it, or a one-line state (.hc-none brings its own 8px), the card stays balanced */
+.ch:last-child, .ch:has(+ .hc-none), .ch:has(+ .hn > .hc-none) { margin-bottom: 0; }
+.ch:has(+ .hc-none), .ch:has(+ .hn > .hc-none) { min-height: 24px; }   /* the height of a head with a ⋯, so side-by-side state lines share a baseline */
 /* the summary strip (the assistant card): label over number, wrapping as columns */
 .hsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 12px 16px; }
 .hsum-s { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -4300,6 +4302,9 @@ body { display: flow-root; }
 .hneeds .hn-h .tag { order: 2; }
 .hneeds .hn { border-radius: 0 0 var(--r-card) var(--r-card); }
 .hneeds .hn:has(+ .hn-h) { border-radius: 0; padding-bottom: 4px; }
+/* nothing to answer: the same box as an empty grid card (20px around, the state line 8px under the title) */
+.hneeds:has(> .hn > .hc-none) > .hn-h:first-child { padding: 20px 20px 0; }
+.hneeds .hn:has(> .hc-none) { padding: 0 20px 20px; }
 .hneeds .hn-h.hsub { padding: 12px 20px 4px; border-top: 1px solid var(--line); border-radius: 0; }
 .hneeds .hn-h.hsub h2 { font: 600 13px/18px var(--font); color: var(--fg-2); }
 .hneeds .hn > .hr, .hneeds .hn > .ntg, .hneeds .hn > .ny-more { padding-left: 20px; padding-right: 20px; }
@@ -4318,7 +4323,7 @@ body { display: flow-root; }
 #home-cards .card > .hn > .hr.hrx > .hrx-m:last-child, #home-cards .card > .hn > .hr.hrx > .hrx-m:has(+ .hrx-f) { padding-right: 20px; }
 #home-cards .card > .hn > .hr.hrx > .hrx-f { padding-left: 40px; padding-right: 20px; }
 #home-cards .card > .hn > .hr.hrx > .btn { margin-right: 16px; }
-#home-cards .card > .hn > .empty { padding: 20px 20px 4px; }
+#home-cards .card > .hn:has(> .hc-none) { margin: 0; }
 @media (max-width: 1023px) { #v-home { padding: 4px 16px 24px; } }
 
 /* the computer is named once on a wide screen (the sidebar's picker row), so the brand and the page title carry no second dot */
