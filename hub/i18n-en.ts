@@ -523,6 +523,7 @@ Do this, briefly:
 		errors: { unknownJob: "Unknown job", unknownTerm: "Unknown sign-in", termBody: "This request may only carry a size (cols, rows)", termNotRunning: "The terminal is not running", badSecret: "That secret cannot be saved", badDraft: "Check the values you entered", applyFailed: "Could not apply. {name}", busy: "Already running" },
 		// The screens of the web onboarding (web/setup/setup.js); {name}, {n}, {url}, {guild}, {bot}, {v} are filled in by the page.
 		ui: {
+			wait: "Checking this computer",
 			steps: { harness: "Harness", tools: "Tools", bot: "Bot", discord: "Discord", web: "Web app", review: "Review" },
 			titles: { start: "Let's set up dotz", harness: "Pick the harness your bot runs on", tools: "Get the tools your bot uses", bot: "Introduce your bot", discord: "Connect Discord", web: "Set up the web app", review: "Set it up like this?", applying: "Setting things up", done: "{name} is ready" },
 			sups: { start: "What is already ready is skipped; you are only asked for the rest.", harness: "The bot and its sessions work through this coding agent.", tools: "Only what is missing gets installed. Anything you skip here can be done later in Settings.", bot: "It talks like this on Discord, the web and the terminal.", discord: "Lets you talk to it from Discord when you are away.", web: "", review: "", applying: "Keep this page open until it finishes." },

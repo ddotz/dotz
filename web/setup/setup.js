@@ -71,10 +71,10 @@
     return out;
   }
   async function refresh(all) {
-    const f = await api("/api/setup/state");
+    const f = await api(`/api/setup/state${all ? "" : "?fresh=1"}`);
     S.scan = f.scan; S.saved = f.saved; S.jobs = f.jobs;
     if (all) Object.assign(S, { text: f.text, lang: f.lang, draft: f.draft });
-    if (["harness", "tools"].includes(V.view)) render();
+    if (["start", "harness", "tools"].includes(V.view)) render();
   }
 
   /* ---------- rows ---------- */
@@ -319,7 +319,7 @@
     b.disabled = true;
     say(u().done.opening);
     // the gateway restarts once after the apply; wait until it answers again before leaving
-    for (;;) {
+    for (let i = 0; i < 120; i++) {
       const up = await fetch("/api/peer-info", { cache: "no-store" }).then(r => r.ok, () => false);
       if (up) break;
       await new Promise(r => setTimeout(r, 500));
@@ -498,6 +498,7 @@
     V.view = viewFromHash();
     listen();
     render({ step: true });
+    refresh().catch(() => {});
     if (job("apply").state === "running") apply();
   })();
 })();
