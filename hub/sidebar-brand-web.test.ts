@@ -82,15 +82,18 @@ test("the sidebar folds to an icon rail and back: the toggle, the shortcut and a
 	expect(await rail()).toMatchObject({ side: 232, pressed: "true", saved: null });
 });
 
-test("the fold button sits between the sidebar and the title on the title's line, the same in both states", async () => {
-	const at = () => ev<{ inSide: boolean; off: number; mid: number; titleOff: number }>(v, `(() => {
+test("the fold chevron sits on the sidebar's edge on the title's line, the same in both states, and flips when folded", async () => {
+	const at = () => ev<{ inSide: boolean; off: number; mid: number; titleOff: number; flow: string }>(v, `(() => {
 		const b = document.querySelector("#side-tog"), r = b.getBoundingClientRect(), t = document.querySelector("#title").getBoundingClientRect(), m = document.querySelector(".main").getBoundingClientRect();
-		return { inSide: !!b.closest(".side"), off: r.left - m.left, mid: r.top + r.height / 2 - (t.top + t.height / 2), titleOff: t.left - m.left };
+		return { inSide: !!b.closest(".side"), off: r.left - m.left, mid: r.top + r.height / 2 - (t.top + t.height / 2), titleOff: t.left - m.left, flow: getComputedStyle(b).position };
 	})()`);
 	const wide = await at();
-	expect(wide).toEqual({ inSide: false, off: -8, mid: 0, titleOff: 24 });
+	expect(wide).toEqual({ inSide: false, off: -14, mid: 0, titleOff: 24, flow: "absolute" });
+	const flip = () => ev<string>(v, `getComputedStyle(document.querySelector("#side-tog .ic")).transform`);
+	expect(await flip()).toBe("none");
 	await run(v, "sideToggle()");
 	expect(await at()).toEqual(wide);
+	expect(await flip()).toBe("matrix(-1, 0, 0, 1, 0, 0)");
 	await run(v, "sideToggle()");
 });
 
