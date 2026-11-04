@@ -73,7 +73,7 @@ const SPACE_ALLOWED: Record<string, [number, number]> = {
 	"15-reply-card.css": [11, 0], "15-reply.css": [2, 0], "15-settings-pages.css": [3, 0], "15-settings-phone.css": [3, 0],
 	"15-triage.css": [14, 0], "16-result-card.css": [37, 0], "17-kakao.css": [32, 0], "18-app-settings.css": [5, 0],
 	"18-comments.css": [12, 0], "19-volume.css": [4, 0], "20-apps.css": [2, 0], "20-canvas.css": [0, 0],
-	"20-mail-box.css": [8, 0], "20-mail-thread.css": [6, 31], "20-monitoring.css": [5, 51], "20-projects.css": [4, 46],
+	"20-mail-box.css": [8, 0], "20-mail-thread.css": [6, 0], "20-monitoring.css": [5, 51], "20-projects.css": [4, 46],
 	"21-picker.css": [3, 7], "22-shell.css": [8, 64],
 };
 // The same per script file: literal padding / margin / gap px in strings.
