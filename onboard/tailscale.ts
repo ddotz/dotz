@@ -8,7 +8,7 @@ import { join } from "node:path";
 const MAC = process.platform === "darwin";
 const APP_BINS = ["/Applications/Tailscale.app/Contents/MacOS/Tailscale", join(homedir(), "Applications", "Tailscale.app", "Contents", "MacOS", "Tailscale")];
 
-type TailscaleState = { bin: string; running: boolean; login: string; host: string; error?: string };
+export type TailscaleState = { bin: string; running: boolean; login: string; host: string; error?: string };
 
 function tailscaleBin(): string {
 	return Bun.which("tailscale", { PATH: process.env.PATH }) ?? (MAC ? (APP_BINS.find(existsSync) ?? "") : "");
@@ -32,10 +32,12 @@ export async function tailscaleState(): Promise<TailscaleState> {
 	return { bin, ...parseStatus(r.stdout.toString() || r.stderr.toString()) };
 }
 
-const run = async (cmd: string[]) => (await Bun.spawn(cmd, { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited) === 0;
+/** Runs one command and says whether it succeeded. The terminal wizard inherits stdio; the web onboarding passes a runner that never reads a terminal (onboard/exec.ts). */
+export type Run = (cmd: string[]) => Promise<boolean>;
+const inherit: Run = async cmd => (await Bun.spawn(cmd, { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited) === 0;
 
 // macOS: Homebrew cask (tailscale-app), else the download page. Linux: the official install script.
-export async function installTailscale(): Promise<boolean> {
+export async function installTailscale(run: Run = inherit): Promise<boolean> {
 	if (!MAC) return run(["bash", "-c", "curl -fsSL https://tailscale.com/install.sh | sh"]);
 	if (Bun.which("brew")) return run(["brew", "install", "--cask", "tailscale-app"]);
 	await run(["open", "https://tailscale.com/download/mac"]);
@@ -43,7 +45,7 @@ export async function installTailscale(): Promise<boolean> {
 }
 
 // Sign-in: the macOS app owns it (opening the app shows its login); on Linux `tailscale up` prints a login link.
-export async function startTailscale(bin: string): Promise<void> {
+export async function startTailscale(bin: string, run: Run = inherit): Promise<void> {
 	if (MAC) await run(["open", "-a", "Tailscale"]);
 	else await run(["sudo", bin || "tailscale", "up"]);
 }
