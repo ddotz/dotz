@@ -42,6 +42,7 @@ html, body, #setup { height: 100%; }
 .ob-ft .btn { text-decoration: none; }
 .ob-sp { flex: 1; }
 .ob-msg { max-width: 512px; min-height: var(--sp-4); margin: var(--sp-15) auto 0; }
+.ob-wait { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--fg-2); font-size: 14px; }
 .ob-dead { display: flex; align-items: center; justify-content: center; }
 .ob-dead .brand { margin-bottom: var(--sp-4); cursor: default; }
 .ob-scrim { position: fixed; inset: 0; z-index: 899; background: var(--scrim); }
