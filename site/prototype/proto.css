@@ -504,3 +504,19 @@ textarea.ff { min-height: 92px; max-height: 240px; field-sizing: content; }
   .fp-ft .btn { flex: 1; }
   .ff, .ff.in { font-size: 16px; }
 }
+
+/* 대기함 시안 (s-queue.js): 행은 알림 행과 같은 모양, 머리는 긴 목록에서도 위에 붙어 있어요 */
+.qhd { position: sticky; top: 0; z-index: 2; background: var(--bg); }
+.tabs.nf .n.err { color: var(--err); } .tabs.nf .on .n.err { color: inherit; }
+.li.nr.q .hd { font-weight: 500; color: var(--fg); } .li.nr.q.sent .hd { font-weight: 400; color: var(--fg-2); }
+.qg .btn { position: relative; z-index: 1; flex: none; align-self: center; }
+.qg .tr svg { transition: transform var(--m-fast) var(--m-ease); } .qg .tx[aria-expanded="true"] ~ .tr svg { transform: rotate(180deg); }
+.li.nr[data-qkid] { padding-left: 36px; }
+.qs .qwhy { margin: 0 2px 10px; font-size: 13px; line-height: 20px; color: var(--fg-2); }
+.qs .qaddr { display: block; margin-top: 12px; } .qs .qaddr .meta { display: block; margin-bottom: 4px; }
+.qs .cf { margin-top: 12px; } .qs .btn:disabled { opacity: .4; pointer-events: none; }
+.qs .done-st { margin-top: 12px; }
+.qg .btn:disabled { opacity: .4; pointer-events: none; }
+.qline { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 8px; padding: 0 16px; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font-size: 14px; line-height: 20px; text-decoration: none; }
+.qline:hover { background: var(--hover); } .qline .tx b { font-weight: 600; color: var(--fg); }
+.qline .sep { color: var(--fg-3); } .qline .go { font-weight: 600; color: var(--fg); }
