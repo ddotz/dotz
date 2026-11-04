@@ -252,6 +252,14 @@ export function createKakaoWeb(deps: WebDeps) {
 	};
 	/** How many reply drafts wait in the watched rooms (the app row's 답장 확인 count): the drafts file only, no database read. */
 	const pendingCount = (skip?: ReadonlySet<string>): number => pendingOf(readConfig(paths), skip).length;
+	/** The sends that came from a draft (failed ones are the 실패 list, sent ones the 보낸 것 list of GET /api/replies) with the state and room of each draft: two file reads, no database. */
+	const draftSends = () => {
+		const sends = sendList().filter(s => s.draft);
+		const codes = new Set(sends.map(s => s.draft));
+		const drafts: Record<string, { status: string; room: string }> = {};
+		for (const d of readDrafts(paths)) if (codes.has(d.code)) drafts[d.code] = { status: d.status, room: roomsCache?.names.get(d.chatId) ?? d.roomName };
+		return { sends: sends.map(({ id, chatId, text, state, reason, at, draft, retried }) => ({ id, chatId, text, state, ...(reason ? { reason } : {}), at, draft: draft!, ...(retried ? { retried } : {}) })), drafts };
+	};
 	let lastCount = 0;
 	// Only rooms that are still watched count (a room taken off the list mid-cache must not keep the number up).
 	const owedIn = (rooms: Map<string, string>, config: KakaoConfig) => [...rooms.keys()].filter(id => (config.watch_chats ?? []).includes(id)).length;
@@ -814,5 +822,5 @@ export function createKakaoWeb(deps: WebDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { route, idle, unrepliedCount, draftFacts, pendingDrafts, pendingCount };
+	return { route, idle, unrepliedCount, draftFacts, pendingDrafts, pendingCount, draftSends };
 }

@@ -20,8 +20,9 @@ export type Computer = { name: string; url: string; self: boolean };
 export type OrchestratorPause = { status: string; pauseKind: string };
 // `runs`: the run state of that gateway's mail conversations (`mail:<key>`), so a mail opened here shows what its bot is doing there.
 // `replies`: the reply drafts its apps keep in their own stores (GET /api/replies: KakaoTalk rooms, comment sources), for the 답장 확인 queue here.
+// `failed`, `sent`, `stops`: the 답장 대기 screen's 실패 / 보낸 것 rows and why a rule did not send a draft (GET /api/replies, hub/reply-outcomes.ts); an older peer leaves them out.
 // `bot`: that gateway's own bot name, so its items name their main chat after it on the computer that shows them (never that computer's bot).
-export type Snapshot = { name: string; bot?: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause; runs?: Record<string, unknown>; replies?: unknown[] };
+export type Snapshot = { name: string; bot?: string; rev: string; monitors: unknown[]; notices: unknown[]; integrations: unknown[]; available: unknown[]; conversations: unknown[]; orchestrator?: OrchestratorPause; runs?: Record<string, unknown>; replies?: unknown[]; failed?: unknown[]; sent?: unknown[]; stops?: Record<string, string> };
 export type PeerView = { name: string; url: string; online: boolean; stale: boolean; items: Snapshot | null };
 type Fetcher = (url: string, init?: RequestInit) => Promise<Response>;
 export type MonitorDeps = {
@@ -110,12 +111,13 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 	const read = async (path: string): Promise<any> => (await ask("GET", path)).json();
 
 	const PARTS = ["/api/monitors", "/api/notices?limit=100", "/api/integrations", "/api/conversations"];
-	const build = (name: string, [m, n, i, c]: any[], replies?: unknown[], bot?: string): Snapshot => {
-		const part = { name, ...(bot ? { bot } : {}), monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv), ...(deps.orchestrator ? { orchestrator: deps.orchestrator() } : {}), ...(deps.runs ? { runs: deps.runs() } : {}), ...(replies ? { replies } : {}) };
+	const build = (name: string, [m, n, i, c]: any[], r?: RepliesPart, bot?: string): Snapshot => {
+		const part = { name, ...(bot ? { bot } : {}), monitors: m?.items ?? [], notices: n?.items ?? [], integrations: i?.items ?? [], available: i?.available ?? [], conversations: (c?.items ?? []).filter(isConv), ...(deps.orchestrator ? { orchestrator: deps.orchestrator() } : {}), ...(deps.runs ? { runs: deps.runs() } : {}), ...(r ? { replies: r.items, ...(r.failed ? { failed: r.failed } : {}), ...(r.sent ? { sent: r.sent } : {}), ...(r.stops ? { stops: r.stops } : {}) } : {}) };
 		return { ...part, rev: createHash("sha1").update(JSON.stringify(part)).digest("hex").slice(0, 12) };
 	};
 	// The reply drafts are optional: a handler without /api/replies (or one that fails) leaves them out instead of failing the snapshot.
-	const replies = async (): Promise<unknown[] | undefined> => { try { const r = await ask("GET", "/api/replies"); return r.ok ? ((await r.json()) as { items?: unknown[] }).items ?? [] : undefined; } catch { return undefined; } };
+	type RepliesPart = { items: unknown[]; failed?: unknown[]; sent?: unknown[]; stops?: Record<string, string> };
+	const replies = async (): Promise<RepliesPart | undefined> => { try { const r = await ask("GET", "/api/replies"); if (!r.ok) return undefined; const b = (await r.json()) as Partial<RepliesPart>; return { items: b.items ?? [], ...(Array.isArray(b.failed) ? { failed: b.failed } : {}), ...(Array.isArray(b.sent) ? { sent: b.sent } : {}), ...(b.stops && typeof b.stops === "object" ? { stops: b.stops } : {}) }; } catch { return undefined; } };
 	const snapshot = async (): Promise<Snapshot> => { const [parts, rs] = await Promise.all([Promise.all(PARTS.map(read)), replies()]); return build(deps.name(), parts, rs, deps.bot?.()); };
 
 	// An older peer (404 on /api/peer/monitoring) or no shared token here: the four plain reads, which the peer allows through the owner's
@@ -379,13 +381,14 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (!id) return bad("chatId or code required");
 				if (a.op === "send" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/send`, { text: a.text }, login);
 				if (a.op === "send-delete" && a.chatId && a.sendId) return ask("DELETE", `/api/kakao/chat/${id}/send/${encodeURIComponent(String(a.sendId))}`, undefined, login);
+				if (a.op === "send-retry" && a.chatId && a.sendId) return ask("POST", `/api/kakao/chat/${id}/send/${encodeURIComponent(String(a.sendId))}/retry`, {}, login);
 				if (a.op === "read" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/read`, { logId: a.logId }, login);
 				if (a.op === "draft" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/draft`, typeof a.choice === "string" ? { choice: a.choice } : a.revise && typeof a.revise === "object" ? { revise: a.revise } : {}, login);
 				if (a.op === "ask-drop" && a.chatId) return ask("POST", `/api/kakao/chat/${id}/ask/drop`, {}, login);
 				// 지켜보기 / 자동 초안 of a room, switched from the other computer: the owner's own room PUT, which checks the values.
 				if (a.op === "room" && a.chatId) return ask("PUT", `/api/kakao/rooms/${id}`, { watched: a.watched, autoDraft: a.autoDraft }, login);
 				if ((a.op === "draft-send" || a.op === "draft-drop" || a.op === "draft-restore") && a.code) return ask("POST", `/api/kakao/drafts/${id}/${a.op.slice(6)}`, a.text === undefined ? {} : { text: a.text }, login);
-				return bad("op must be send, send-delete, read, draft, ask-drop, room, draft-send, draft-drop or draft-restore");
+				return bad("op must be send, send-delete, send-retry, read, draft, ask-drop, room, draft-send, draft-drop or draft-restore");
 			}
 			// Comment replies (hub/comments/web.ts) of a source the other computer collects: its drafts, failed sends and threads are acted on there.
 			case "comments": {
@@ -401,6 +404,10 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 				if (a.op === "source" && a.key) return ask("PUT", `/api/comments/sources/${e(a.key)}`, { ...(a.watch !== undefined ? { watch: a.watch } : {}), ...(a.autoDraft !== undefined ? { autoDraft: a.autoDraft } : {}) }, login);
 				return bad("op must be draft-send, draft-drop, draft-restore, draft-revise, send-retry, send-dismiss, draft, no-reply, read or source");
 			}
+			// 다시 보내기 / 지우기 of failed sends the other computer ran for the owner's pick (hub/reply-outcomes.ts): its own gate checks the pick again there.
+			case "approvals":
+				if ((a.op === "retry" || a.op === "drop") && Array.isArray(a.items)) return ask("POST", "/api/approvals/failed", { op: a.op, items: a.items }, login);
+				return bad("op must be retry or drop, with items");
 			// 초안 작성 on a mail the other computer holds: its draft is made and offered there.
 			case "mail-draft":
 				if (typeof a.key !== "string" || !a.key) return bad("key required");

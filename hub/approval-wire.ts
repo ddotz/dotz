@@ -2,6 +2,8 @@
 //   GET  /api/approvals?to=<conv>        { cards: [{ ref, question, draft, notice?, sendable }], results: [...], triageMin }
 //                                        the open card and the held ones of one conversation, in queue order, and recent sends there
 //   POST /api/approvals                  { to, items: [{ ref, n: 1 | 2, note? }] }: the batch review / triage answer (n 1 = 보내기, 2 = 고치기)
+//   POST /api/approvals/failed           { op: "retry" | "drop", items: [{ ref, to }] }: 다시 보내기 / 지우기 of sends the gateway ran for the owner's pick and that failed
+//                                        -> { results: [{ ref, ok, reason? }] } (hub/reply-outcomes.ts); no new approval is recorded
 //   POST /api/drafts/<ref>/body          { text, part?: "reply" | "mail" }: the owner's own edit of a pending draft's text, before he sends it
 // and the single-card answers of the web (routes.ts) and Discord (main.ts), which take this path when the gateway can send the draft.
 import { log, now } from "./config.ts";
@@ -9,7 +11,8 @@ import { broadcast, emit } from "./events.ts";
 import { approvals, convOfTarget, newMid, out } from "./outbound.ts";
 import { answerDecision, type DecisionSend, listNotices, markDraftSend, NOTICE_CAP, openDraftCards, settleOpenDecision } from "./notices.ts";
 import type { Upload } from "./files.ts";
-import { commentContextOf, commentDraftOf, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
+import { commentContextOf, commentDraftOf, commentSendFailed, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
+import { dropFailed, retryFailed, type RetryDeps } from "./reply-outcomes.ts";
 import { appEntries, commentOwner } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
 import { DATA_DIR } from "./config.ts";
@@ -31,6 +34,12 @@ export function sendTargetOf(ref: string): SendTarget | undefined {
 	if (m && m.kind === "mail" && m.status === "pending" && !linkedComment(ref)) return { kind: "mail", lane: `mail:${m.source}` };
 	return undefined;
 }
+
+/** The app a draft belongs to (a mail draft's own app, a comment draft's source app), for the 실패 / 보낸 것 rows. */
+export const draftAppOf = (ref: string): string | undefined => {
+	const c = commentDraftOf(ref);
+	return c ? commentSourceApp(c.source) : getDraft(ref)?.app;
+};
 
 // A conversation's gateway note goes where its cards were posted.
 const targetOf = (conv: string, ref: string): string => approvals.targetOf(conv, ref) ?? (conv === "main" ? "web" : conv);
@@ -134,6 +143,19 @@ export function cardGroups(cards = waitingCards()): CardGroup[] {
 }
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
+const FAILED_BATCH_MAX = 100;
+
+/** The 보내지 않기 of a comment draft or a mail draft of the store, the same steps as the card's. */
+async function dropDraftRef(ref: string): Promise<{ ok: boolean; reason?: string }> {
+	if (commentDraftOf(ref)) {
+		const r = dropCommentDraft(ref);
+		return r.ok ? { ok: true } : { ok: false, reason: r.reason ?? "지우지 못했어요" };
+	}
+	if (getDraft(ref)?.status !== "pending") return { ok: false, reason: "이미 처리됐거나 없는 초안이에요" };
+	const { dropDraft } = await import("../features/reply-drafts/lib/flow.ts");
+	const r = dropDraft(ref);
+	return r.ok ? { ok: true } : { ok: false, reason: r.text };
+}
 
 /**
  * The approval routes. `deliver` hands an owner answer to the bot as one turn (routes.ts: the same path as a card's answer).
@@ -162,6 +184,12 @@ export async function approvalRoute(req: Request, url: URL, deps: { login: strin
 		}
 		if (!convs.length) return json({ error: "고른 카드가 없어요" }, 400);
 		return json({ ok: true, sending, toBot });
+	}
+	if (url.pathname === "/api/approvals/failed" && req.method === "POST") {
+		const b = (await req.json().catch(() => ({}))) as { op?: unknown; items?: unknown };
+		if ((b.op !== "retry" && b.op !== "drop") || !Array.isArray(b.items) || b.items.length > FAILED_BATCH_MAX) return json({ error: "op (retry | drop) and items are required" }, 400);
+		const deps: RetryDeps = { notices: listNotices(NOTICE_CAP).items, can: (ref, action) => sender.can(ref, action), enqueue: j => sender.enqueue(j), commentFailed: commentSendFailed, drop: dropDraftRef };
+		return json({ results: b.op === "retry" ? retryFailed(b.items, deps) : await dropFailed(b.items, deps) });
 	}
 	async function answerConv(conv: string, items: { ref: string; n: number; note?: string }[]) {
 		return answerBatch(conv, items, {

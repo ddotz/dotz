@@ -29,6 +29,17 @@ export const commentOriginalOf = (code: string) => commentOriginal(engine.store,
 export const commentNeeds = () => engine.needs();
 // The pending reply drafts of every source (the 답장 확인 queue, GET /api/replies).
 export const commentPending = () => engine.pendingDrafts();
+/**
+ * What the 답장 확인 screen's 실패 / 보낸 것 / 멈춘 이유 read (hub/reply-outcomes.ts): the sources and their app, the pending drafts, the send records and the comments they
+ * answer. Store reads only, nothing is written.
+ */
+export const commentOutcomeFacts = () => {
+	const cfg = engine.store.config();
+	if (!cfg.enabled) return { sources: {}, drafts: [], replies: [], comments: [] };
+	return { sources: Object.fromEntries(Object.values(cfg.sources).map(s => [s.key, { src: s, app: engine.ownerOf(s) }])), drafts: engine.store.drafts().filter(d => d.status === "pending" && cfg.sources[d.source]), replies: engine.store.replies(), comments: engine.store.comments() };
+};
+/** Whether a send of comment draft `code` failed and is on record (its 다시 보내기 / 지우기 are the comment routes'). */
+export const commentSendFailed = (code: string): boolean => engine.store.replies().some(r => r.draft === code && r.state === "failed");
 export const commentDraftFacts = {
 	drafts: () => engine.store.drafts().map(d => ({ code: d.code, commentId: d.commentId, status: d.status, created: d.created })),
 	waiting: (commentId: string): boolean | undefined => {

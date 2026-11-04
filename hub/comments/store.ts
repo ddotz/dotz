@@ -16,7 +16,9 @@ export type Draft = { code: string; commentId: string; source: string; thread: s
 	/** The mail draft that was linked to this draft and left on its own (the reply was answered elsewhere, or 메일만 보내기 sent it): the comment keeps showing its state. */
 	mailKept?: string };
 export type MailOutcome = { state: "sent" | "failed"; text: string };
-export type Reply = { id: string; commentId: string; source: string; thread: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft: string; via: "owner" | "rule"; collector: string; ref?: string; mail?: MailOutcome };
+export type Reply = { id: string; commentId: string; source: string; thread: string; text: string; state: "sending" | "sent" | "failed"; reason?: string; at: number; draft: string; via: "owner" | "rule"; collector: string; ref?: string; mail?: MailOutcome;
+	/** Which try this is, set when a failed send is sent again (absent = the first). */
+	attempts?: number };
 // `queue`: ids of new comments waiting for an auto-draft (engine.ts collect), left for the next run when one run's cap or budget is reached.
 export type Cursor = { cursor?: string; ranAt?: number; error?: string; queue?: string[] };
 
