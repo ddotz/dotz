@@ -1,14 +1,15 @@
-// `bun hub/kakao/cli.ts <setup|status|login|read|draft|send|off>`: the one entry point of the KakaoTalk integration for the
+// `bun hub/kakao/cli.ts <setup|status|login|read|draft|send|send-file|off>`: the one entry point of the KakaoTalk integration for the
 // orchestrator and the owner. Off by default: until `setup` wrote an enabled config, every command except setup/status/off prints
 // one line and does nothing else (no runner call, no gateway call). The db / creds / login / send modules are loaded on first use
 // (variable specifier, like watch.ts does for creds.ts), so `status` and `off` stay cheap and never touch the app.
-import { existsSync, readFileSync, rmdirSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmdirSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { atomicWrite, cardFile, featureFile, isOn, OFF_LINE, type Deps, pidAlive, type Ports, readJson, readState, RUNNING_LINE, runDry, runLoginOnly, runOnboarding, stepName, WATCH_NAME } from "./onboard.ts";
 import { createHub } from "./hub.ts";
 import { hasWords, readText } from "./db.ts";
 import type { RoomFact } from "./room.ts";
+import type { FileSendInput, FileSendResult } from "./sendfile.ts";
 import { listBlock } from "../listblock.ts";
 import { defaultRunner, type HubFull, type KakaoConfig, type KakaoPaths, kakaoPaths, type Msg, type Room, type Runner } from "./types.ts";
 
@@ -18,6 +19,8 @@ export type Reader = {
 	draftable: (room: Room) => boolean;
 	// Display label of a room without a name (group rooms named after their members).
 	label?: (chatId: string) => Promise<string | undefined>;
+	// The owner's own profile name: the title KakaoTalk's list shows for the 나와의 채팅 (the database keeps that room unnamed).
+	selfName?: (chatId: string) => Promise<string | undefined>;
 };
 export type DraftsApi = {
 	create: (input: { chatId: string; roomName: string; text: string; basisLogId: string }) => Promise<{ code: string }>;
@@ -38,6 +41,7 @@ export type Ctx = {
 	spawnSetup: (args: string[]) => void;
 	reader: (config: KakaoConfig) => Promise<Reader>;
 	drafts: () => Promise<DraftsApi>;
+	sendFiles?: (input: FileSendInput) => Promise<FileSendResult>;
 	sleep: (ms: number) => Promise<void>;
 	now: () => number;
 	pid: number;
@@ -46,9 +50,11 @@ export type Ctx = {
 };
 
 const VALUE_FLAGS = new Set(["to", "chat", "limit", "draft"]);
-const GATED = new Set(["login", "rooms", "read", "draft", "send"]);
+const GATED = new Set(["login", "rooms", "read", "draft", "send", "send-file"]);
 const MAX_READ = 50;
-const USAGE = "사용법: cli.ts setup [--to <대상>] [--dry-run] | status [--json] | login | rooms [--all] [--limit 30] [--plain] | read --chat <id> [--limit 20] | draft --chat <id> | send --draft <코드> | off [--forget]";
+const MAX_FILES = 10;
+const MAX_FILE_BYTES = 300 * 1024 * 1024;
+const USAGE = "사용법: cli.ts setup [--to <대상>] [--dry-run] | status [--json] | login | rooms [--all] [--limit 30] [--plain] | read --chat <id> [--limit 20] | draft --chat <id> | send --draft <코드> | send-file --self --file <경로> [--file <경로>...] | off [--forget]";
 
 function parseArgs(argv: string[]): Record<string, string | true> {
 	const out: Record<string, string | true> = {};
@@ -195,6 +201,38 @@ async function send(args: Record<string, string | true>, ctx: Ctx, config: Kakao
 	return r.ok ? 0 : 1;
 }
 
+// Files go only to the owner's own 나와의 채팅 (the one database room of type 5), so no draft approval: no other room can be named here.
+async function sendFile(argv: string[], args: Record<string, string | true>, ctx: Ctx, config: KakaoConfig): Promise<number> {
+	if (args.self !== true || args.chat !== undefined) return ctx.out("파일은 나와의 채팅에만 보낼 수 있어요: send-file --self --file <경로>"), 2;
+	const files = argv.flatMap((a, i) => (a === "--file" && argv[i + 1] !== undefined && !argv[i + 1]!.startsWith("--") ? [resolve(argv[i + 1]!)] : []));
+	if (!files.length) return ctx.out(USAGE), 2;
+	if (files.length > MAX_FILES) return ctx.out(`파일은 한 번에 ${MAX_FILES}개까지 보낼 수 있어요`), 2;
+	for (const f of files) {
+		let size: number;
+		try {
+			const st = statSync(f);
+			if (!st.isFile()) return ctx.out(`파일이 아니에요: ${f}`), 1;
+			size = st.size;
+		} catch {
+			return ctx.out(`파일을 찾지 못했어요: ${f}`), 1;
+		}
+		if (size > MAX_FILE_BYTES) return ctx.out(`카카오톡으로 보낼 수 있는 크기(300MB)를 넘어요: ${f}`), 1;
+	}
+	const reader = await ctx.reader(config);
+	const all = await reader.rooms();
+	const selfs = all.filter(r => r.kind === "self");
+	if (selfs.length !== 1) return ctx.out("나와의 채팅방을 하나로 찾지 못해서 보내지 않았어요"), 1;
+	const self = selfs[0]!;
+	const name = self.name !== "(unknown)" && self.name.trim() ? self.name : await reader.selfName?.(self.chatId);
+	if (!name || !ctx.sendFiles) return ctx.out("카카오톡 목록에서 나와의 채팅을 찾을 이름을 알 수 없어요"), 1;
+	const facts = all.map(({ chatId, name, kind, members }) => ({ chatId, name, kind, members }));
+	const r = await ctx.sendFiles({ files, room: { chatId: self.chatId, name, kind: "self", members: self.members }, all: facts, messages: limit => reader.messages(self.chatId, limit) });
+	if (r.ok) ctx.out(`나와의 채팅에 파일 ${r.sent}개를 보냈어요`);
+	else ctx.out(`${r.sent ? `${files.length}개 중 ${r.sent}개를 보냈어요. ` : ""}보내지 못했어요: ${r.reason ?? "이유를 알 수 없어요"}`);
+	for (const s of r.steps) ctx.log?.(s);
+	return r.ok ? 0 : 1;
+}
+
 async function off(args: Record<string, string | true>, ctx: Ctx): Promise<number> {
 	const { paths } = ctx;
 	const config = readJson<KakaoConfig>(paths.config);
@@ -240,6 +278,7 @@ export async function run(argv: string[], ctx: Ctx): Promise<number> {
 	if (cmd === "rooms") return rooms(args, ctx, config);
 	if (cmd === "read") return read(args, ctx, config);
 	if (cmd === "draft") return draft(args, ctx, config);
+	if (cmd === "send-file") return sendFile(rest, args, ctx, config);
 	return send(args, ctx, config);
 }
 
@@ -295,8 +334,9 @@ export function realCtx(paths: KakaoPaths): Ctx {
 		reader: async config => {
 			const m = await dbm();
 			const db = await openDb(config);
-			return { rooms: () => m.rooms(db), messages: (chatId, limit) => m.messages(db, chatId, limit, config.userId ?? ""), draftable: room => m.isDraftCandidate(room, config), label: chatId => m.memberLabel(db, chatId, config.userId ?? "") };
+			return { rooms: () => m.rooms(db), messages: (chatId, limit) => m.messages(db, chatId, limit, config.userId ?? ""), draftable: room => m.isDraftCandidate(room, config), label: chatId => m.memberLabel(db, chatId, config.userId ?? ""), selfName: async chatId => (await m.ownerNames(db, chatId, config.userId ?? ""))[0] };
 		},
+		sendFiles: async input => (await load<typeof import("./sendfile.ts")>("sendfile")).sendFilesToSelf(input, { runner, sleep: ms => new Promise(resolve => setTimeout(resolve, ms)), now: Date.now }),
 		drafts: async () => {
 			const s = await load<typeof import("./send.ts")>("send");
 			return { create: input => s.createDraft(input, deps), block: s.draftBlock, send: (code, extra) => s.sendDraft(code, { ...deps, ...extra }) };
