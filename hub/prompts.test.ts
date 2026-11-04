@@ -220,7 +220,7 @@ test("a user frame that matches nothing delivered leaves the running turn's prom
 
 // The OmO session of 2026-10-20 12:49Z: the gateway restarted mid-delegation, the resumed session was woken by the dead task
 // worker's completion, and its report (a run no delivered prompt started) was dropped.
-test("an answer to a run no prompt started goes to the owner's newest message of the last 30 minutes", async () => {
+test("an answer to a run no prompt started reaches the conversation of the owner's newest message of the last 30 minutes", async () => {
 	const now = Date.now();
 	// A new process: the prompts are gone, the inbox log tail names the owner's messages.
 	const { q, state } = setup([], [{ target: "web", at: now - 3 * 60_000 }]);
@@ -239,7 +239,7 @@ test("an answer to a run no prompt started goes to the owner's newest message of
 	expect(live.state.posts.map(p => p.text)).toEqual(["a worker is on it", "The README is done and pushed."]);
 });
 
-test("an answer without a prompt prefers an unanswered owner message", async () => {
+test("an answer without a prompt prefers an unanswered owner message's conversation and names no message", async () => {
 	const now = Date.now();
 	const { q, state } = setup(["b"], [
 		{ target: "ch:1", replyTo: "a", at: now - 10 * 60_000 },
@@ -247,7 +247,7 @@ test("an answer without a prompt prefers an unanswered owner message", async () 
 	]);
 	q.onAnswer("for the unanswered one");
 	await Promise.resolve();
-	expect(state.posts).toEqual([{ target: "ch:1", text: "for the unanswered one", replyTo: "a" }]);
+	expect(state.posts).toEqual([{ target: "ch:1", text: "for the unanswered one", replyTo: undefined }]);
 });
 
 test("a real answer no message can take is never dropped: the newest owner message's conversation of any age, else the main chat", async () => {
@@ -303,6 +303,7 @@ test("OmO frames of a run with a raw mid-run message still deliver the answer", 
 test("a turn that defers to a background worker sends nothing; the run the worker's result wakes answers that request", async () => {
 	const { q, state, open, startTurn } = setup([], []);
 	startTurn("fix the sidebar", { target: "web" });
+	q.workersSpawned([{ id: "st_sidebar" }]);
 	q.onAnswer("[later]");
 	state.working = false;
 	q.settleTurn();
@@ -311,6 +312,7 @@ test("a turn that defers to a background worker sends nothing; the run the worke
 	expect(q.waitingOnWorkers()).toBe(1);
 	expect(q.deferredOpen().map(d => d.target)).toEqual(["web"]);
 	// A wake before the result is in: still waiting, nothing sent.
+	q.workersDone(["st_sidebar"]);
 	q.onAnswer("[later]");
 	expect(state.posts).toEqual([]);
 	// The worker's result wakes a run with no user prompt of ours.
@@ -591,12 +593,14 @@ test("an answer that came without a prompt settles the deferred settings request
 	const SETTINGS = "settings:w:login-cartier-com";
 	const { q, state, open, startTurn } = setup();
 	startTurn("원인 찾아 줘", { target: SETTINGS, replyTo: "m1" });
+	q.workersSpawned([{ id: "st_login" }]);
 	q.onAnswer("[later]");
 	q.settleTurn();
 	expect(q.deferredOpen()).toEqual([expect.objectContaining({ target: SETTINGS, replyTo: "m1" })]);
 	expect(open().map(p => p.target)).toEqual([SETTINGS]);
 
 	// A run a worker's result woke answers with no prompt of ours: it goes to the owner's message, which is then answered.
+	q.workersDone(["st_login"]);
 	q.onAnswer("원인을 찾았어요. 로그인 화면이 바뀌었어요.");
 	await Bun.sleep(0);
 	expect(state.posts).toEqual([{ target: SETTINGS, text: "원인을 찾았어요. 로그인 화면이 바뀌었어요.", replyTo: "m1" }]);
@@ -606,13 +610,13 @@ test("an answer that came without a prompt settles the deferred settings request
 	expect(q.waitingOnWorkers()).toBe(0);
 });
 
-test("the newest-message path (no deferred prompt) marks that owner message answered too", async () => {
+test("the newest-message path (no deferred prompt) names no message and answers none", async () => {
 	const SETTINGS = "settings:w:login-cartier-com";
 	const { q, state, open } = setup([], [{ target: SETTINGS, replyTo: "m7", at: Date.now() - 60_000 }]);
 	q.onAnswer("다시 로그인했어요. 다음 확인 때 정상으로 바뀌는지 볼게요.");
 	await Bun.sleep(0);
-	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([[SETTINGS, "m7"]]);
-	expect(q.isAnswered("m7")).toBe(true);
+	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([[SETTINGS, undefined]]);
+	expect(q.isAnswered("m7")).toBe(false);
 	expect(open()).toEqual([]);
 });
 
@@ -663,15 +667,18 @@ test("a dotz_send reply_to to a deferred prompt leaves nothing to replay", () =>
 	expect(open()).toEqual([]);
 });
 
-test("an answer without a prompt that went to the newest message leaves no earlier answered message to replay", async () => {
+test("an answer without a prompt that a worker's link names leaves no earlier answered message to replay", async () => {
 	const { q, open, startTurn } = setup();
 	startTurn("one", web("n1"));
+	q.workersSpawned([{ id: "st_n" }]);
 	q.onAnswer("[later]");
 	q.settleTurn();
 	q.deliver("two", web("n2"));
 	q.onPrompt("two");
+	q.workersSteered(["st_n"]);
 	q.onAnswer("[later]");
 	q.settleTurn();
+	q.workersDone(["st_n"]);
 	q.onAnswer("the worker finished: everything is done");
 	await Promise.resolve();
 	// the outbox shows both as answered (the answer named n1; n2 was in the same web conversation)
@@ -763,12 +770,12 @@ test("a promptless answer stays in the last turn's conversation and never goes t
 	q.deliver("? 이거 파일 어디감?", { target: "th:9", replyTo: "t1", owner: true });
 	q.onAnswer("KTX 쪽은 예약을 걸려면 값이 필요해요. 날짜와 구간을 주세요.");
 	await Promise.resolve();
-	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([["web", "w1"]]);
+	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([["web", undefined]]);
 	// the mail question's own turn answers it in its own conversation
 	q.onPrompt("? 이거 파일 어디감?");
 	q.onAnswer("파일은 그대로 있어요.");
 	await Promise.resolve();
-	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([["web", "w1"], ["th:9", "t1"]]);
+	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([["web", undefined], ["th:9", "t1"]]);
 });
 
 // 2026-10-28 13:25Z (Mac mini): the pinned account was rate-limited at the start of the turn; the turn ended with no text and the owner's
@@ -882,7 +889,7 @@ test("an answer with no prompt goes to the conversation whose worker finished la
 	await Promise.resolve();
 	expect(state.posts.map(p => [p.target, p.replyTo])).toEqual([["ch:B", "b1"]]);
 
-	// With no finished worker to name, the oldest open request still goes first.
+	// With no finished worker to name, the oldest open request's conversation gets it, on no message.
 	const plain = setup();
 	plain.startTurn("A 요청", { target: "ch:A", replyTo: "a1" });
 	plain.q.onAnswer("[later]");
@@ -894,7 +901,7 @@ test("an answer with no prompt goes to the conversation whose worker finished la
 	plain.q.settleTurn();
 	plain.q.onAnswer("작업 결과예요");
 	await Promise.resolve();
-	expect(plain.state.posts.map(p => [p.target, p.replyTo])).toEqual([["ch:A", "a1"]]);
+	expect(plain.state.posts.map(p => [p.target, p.replyTo])).toEqual([["ch:A", undefined]]);
 });
 
 const defer = (t: ReturnType<typeof setup>, id: string, target = "web") => {
@@ -1227,13 +1234,13 @@ test("a turn that started from an unpaired frame takes no deferred request, even
 	expect(t.state.posts.at(-1)).toEqual({ target: "web", text: "result", replyTo: "m1" });
 });
 
-test("a result with no link goes to the oldest deferred request", async () => {
+test("a result with no link reaches the conversation on no message and closes no request", async () => {
 	const t = setup();
 	deferTo(t, "m1", {});
 	deferTo(t, "m2", {});
 	await answerWake(t, "st_unknown", "result");
-	expect(t.state.posts).toEqual([{ target: "web", text: "result", replyTo: "m1" }]);
-	expect(t.q.deferredOpen().map(d => d.replyTo)).toEqual(["m2"]);
+	expect(t.state.posts).toEqual([{ target: "web", text: "result", replyTo: undefined }]);
+	expect(t.q.deferredOpen().map(d => d.replyTo)).toEqual(["m1", "m2"]);
 });
 
 test("a woken run that said [later] does not leave its wake for the next run", async () => {

@@ -116,14 +116,16 @@ test("a record that says running while its process is gone counts as failed, unl
 	expect(w.find(x => x.id === "st_dead")?.ended_at).toBe(T0 + 5000);
 });
 
-test("a running worker serves the latest open deferred message delivered before it was spawned", () => {
+test("a running worker no turn spawned stays in the conversation of the latest open deferred message before it, tied to no message", () => {
 	record("st_1", { started_at: iso(T0 + 100_000) });
 	const open: OpenDeferred[] = [
 		{ target: "ch:1", replyTo: "m-early", at: T0 + 10_000 },
 		{ target: "web", replyTo: "m-web", at: T0 + 60_000 },
 		{ target: "web", replyTo: "m-later", at: T0 + 300_000 },
 	];
-	expect(make(() => T0 + 120_000, open).list()[0]).toMatchObject({ id: "st_1", target: "web", reply_to: "m-web" });
+	const row = make(() => T0 + 120_000, open).list()[0];
+	expect(row).toMatchObject({ id: "st_1", target: "web" });
+	expect(row?.reply_to).toBeUndefined();
 	expect(make(() => T0 + 120_000, []).list()[0]?.target).toBeUndefined();
 });
 
@@ -143,7 +145,7 @@ test("a worker is tied to the folder its brief names (not its isolated copy) and
 	open.length = 0;
 	record("st_1", { status: "completed", terminal_at: iso(T0 + 150_000), started_at: iso(T0 + 100_000), spawn_spec: { cwd: "/h/Code/other", prompt: "x" } });
 	const ended = work.list();
-	expect(ended.find(w => w.id === "st_1")).toMatchObject({ status: "done", target: "ch:9", reply_to: "m-9" });
+	expect(ended.find(w => w.id === "st_1")).toMatchObject({ status: "done", target: "ch:9" });
 });
 
 test("a worker spawned by a turn serves that turn's message even when an older deferred message is the only one open", () => {

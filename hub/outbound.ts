@@ -225,8 +225,7 @@ const askedAtMs = (id: string): number | undefined => {
 const lateFor = (target: string, replyTo: string | undefined) => isLate(replyTo, lastOwner.get(target), replyTo ? askedAtMs(replyTo) : undefined);
 const lateRequest = (target: string) => {
 	const q = convs.forTarget(target)?.queue ?? queue;
-	const result = q.current() ? undefined : q.resultFor(target);
-	return lateRequestId(target, q.current(), result ? [{ target, replyTo: result }] : q.deferredOpen(), lastOwner.get(target), askedAtMs);
+	return lateRequestId(target, q.current(), lastOwner.get(target), askedAtMs);
 };
 // An answer (not a progress note, not a gateway notice, not a held approval card shown later) settles the owner messages waiting in this conversation.
 function settleAnswer(j: OutJob): void {
