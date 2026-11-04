@@ -189,7 +189,11 @@ export function serveFile(path: string, req: Request, dl = false): Response {
 		"Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'",
 		"Cache-Control": "private, max-age=60",
 	};
+	// A timeline redraw asks for every thumbnail again: past max-age an unchanged file answers 304, not its bytes.
+	const etag = `"${size.toString(36)}-${Math.round(f.lastModified).toString(36)}"`;
+	headers.ETag = etag;
 	const range = req.headers.get("range");
+	if (!range && req.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers });
 	if (range) {
 		const m = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
 		let start = m && m[1] !== "" ? Number(m[1]) : NaN;

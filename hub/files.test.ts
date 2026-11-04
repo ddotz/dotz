@@ -58,6 +58,16 @@ test("the file route serves only regular files inside allowed roots", () => {
 	expect(status(() => resolveAllowed("sub/a.txt", roots))).toBe(400);
 });
 
+test("serveFile answers 304 to the ETag of an unchanged file", () => {
+	const p = join(UPLOADS, "etag.txt");
+	writeFileSync(p, "same bytes");
+	const etag = serveFile(p, new Request("http://x")).headers.get("etag")!;
+	const again = serveFile(p, new Request("http://x", { headers: { "if-none-match": etag } }));
+	expect(again.status).toBe(304);
+	writeFileSync(p, "other bytes, longer");
+	expect(serveFile(p, new Request("http://x", { headers: { "if-none-match": etag } })).status).toBe(200);
+});
+
 test("serveFile sets type, disposition and answers byte ranges", async () => {
 	const p = resolveAllowed(join(ROOT, "sub", "a.txt"), allowedRoots([ROOT]));
 	const full = serveFile(p, new Request("http://x"));

@@ -22,7 +22,7 @@ function ingestMsg(e) {
   if (s.msgs.length > 400) s.mk.delete(msgKey(s.msgs.shift()));
   if (isRestart(e)) paintRestartBanner();
   convNote(e, t, was);
-  if (t === target && s.hLoaded && CV.full) { chatPush({ m: e }); if (ownerish(e)) termPush(ownerAct(e)); }   // CV.full: drawn (until then the draw takes it from msgs)
+  if (t === target && s.hLoaded && CV.full) { chatPush({ m: e }); if (LOG_VIEW && ownerish(e)) termPush(ownerAct(e)); }   // CV.full: drawn (until then the draw takes it from msgs)
   if (t === target) paintDecision();
   if (isLaneT(t) && isLaneReport(e) && LP[t.slice(5)]) laneRefresh(LP[t.slice(5)]);
   if (chatAnswer(t, e) && !quietReply(s, e)) noteDone(t, e.ts, true);
@@ -53,24 +53,26 @@ function ingestAct(a) {
     if (s.ak.has(k)) continue;
     s.ak.add(k); s.acts.push(a);
     if (s.acts.length > s.cap) s.ak.delete(actKey(s.acts.shift()));
-    if (t === target && s.aLoaded && CV.full) { if (!isProjT(t)) chatPush({ a }); termPush(a); }
+    if (t === target && s.aLoaded && CV.full) { if (!isProjT(t)) chatPush({ a }); if (LOG_VIEW) termPush(a); }
   }
 }
-// quiet: a repeated read of a peer's conversation (34-peer-monitoring.js) redraws only when it brought something new.
+// What the store already holds for a conversation: it is drawn at once and refreshed behind it, so coming back to one never blanks it.
+const hasCached = s => s.msgs.length > 0 || s.acts.length > 0;
+// quiet: a repeated read (a peer's conversation, 34-peer-monitoring.js; a refresh behind a drawn conversation) redraws only when it brought something new.
 async function loadTarget(t, quiet) {
-  const s = ts(t), before = s.mk.size;
+  const s = ts(t), before = s.mk.size + s.ak.size;
   if (s.loading) return s.loading;
   s.loading = (async () => {
     await Promise.all([
       api(`/api/history?target=${enc(t)}&limit=150`).then(r => { s.hmore = (r.events || []).length >= 150; for (const e of r.events || []) { const k = msgKey(e); if (!s.mk.has(k)) { s.mk.add(k); s.msgs.push(e); } } s.msgs.sort(byTs); if (isFixedT(t)) dedupKeyed(s); s.herr = false; }, () => { s.herr = true; }),
-      isFixedT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
+      isFixedT(t) || isMailT(t) ? null : api(`/api/activity?source=${enc(sourceOf(t))}&limit=300`).then(r => { s.ahist = !!r.history; s.amore = !!r.more; for (const a of r.items || []) { const k = actKey(a); if (!s.ak.has(k) && !(a.type === "text" && isLaterText(a.text))) { s.ak.add(k); s.acts.push(a); } } s.acts.sort(byTs); }, () => {}),
     ]);
     s.hLoaded = s.aLoaded = true;
     if (t === MAIN) paintRestartBanner();
     { const te = isLaneT(t) ? s.acts.findLast(a => a.type === "turn_end") : s.msgs.findLast(e => chatAnswer(t, e) && !quietReply(s, e)); if (te) noteDone(t, te.ts, false); }
   })().finally(() => { s.loading = null; });
   await s.loading;
-  if (t === target && (!quiet || s.mk.size !== before)) renderAll();
+  if (t === target && (!quiet || s.mk.size + s.ak.size !== before)) renderAll();
 }
 // A tapped push or notice names a message the stream may not have delivered (it stalls while the phone sleeps): fetch the
 // history until that message is in. loadTarget joins a fetch already in flight, so the second round covers one that began before the message existed.
@@ -82,7 +84,7 @@ async function ensureMsg(t, at) {
 function resync() {
   refreshState();
   for (const k of Object.keys(TS)) if (k !== target) TS[k].hLoaded = TS[k].aLoaded = false;
-  loadTarget(target); loadSubs(); loadQueue(); convLoad();
+  loadTarget(target, hasCached(ts(target))); loadSubs(); loadQueue(); convLoad();
 }
 // Older activity from the saved session transcript, 300 at a time, prepended while the scroll position stays put.
 async function loadOlder() {
@@ -130,10 +132,12 @@ async function loadOlderMsgs() {
 function renderAll(keepScroll) { renderAll0(keepScroll); mailSentPaint(); mbReplyPaint(); paintDecision(); paintTodo(); paintWorkers(); paintRunState(); edgeFade(timeline); edgeFade(term); }
 function edgeFade(t) { const b = t.parentElement; b.classList.toggle("fade-t", t.scrollTop > 4); b.classList.toggle("fade-b", t.scrollTop + t.clientHeight < t.scrollHeight - 4); }
 function renderAll0(keepScroll) {
+  if (current !== "chat") return;   // nothing is shown: entering the chat draws it (go, convSync)
   const s = ts(target);
+  if (!keepScroll && chatReuse(s)) return;
   if (CV.full) { CV.snap = { top: timeline.scrollTop, stick: chatStick }; CV.full = false; }   // a redraw keeps the owner's place (chatOpen)
   resetChat(); resetTerm();
-  if (!(s.hLoaded && s.aLoaded) || !chatReady()) {
+  if (!((s.hLoaded && s.aLoaded) || hasCached(s)) || !chatReady()) {
     CS.empty = tl.appendChild(el("div", { class: "a-div", text: "불러오는 중…" }));
     termEmpty = term.appendChild(el("div", { class: "a-div", text: "불러오는 중…" }));
     return;
@@ -146,13 +150,23 @@ function renderAll0(keepScroll) {
     if (j < M.length && (i >= A.length || M[j].ts <= A[i].ts)) {
       const m = M[j++];
       chatPush({ m }, true);
-      if (ownerish(m) && first && m.ts >= first) termPush(ownerAct(m), true);
-    } else { const a = A[i++]; if (!isProjT(target) && !isFixedT(target)) chatPush({ a }, true); termPush(a, true); }
+      if (LOG_VIEW && ownerish(m) && first && m.ts >= first) termPush(ownerAct(m), true);
+    } else { const a = A[i++]; if (!isProjT(target) && !isFixedT(target)) chatPush({ a }, true); if (LOG_VIEW) termPush(a, true); }
   }
   if (tl.children.length <= 1) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));   // only the top sentinel is there
-  if (!term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동이 없어요" }));
-  if (!keepScroll) { chatOpen(); scrollTerm(true); } else { CV.snap = null; CV.full = true; }
+  if (LOG_VIEW && !term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동이 없어요" }));
+  if (!keepScroll) { chatOpen(); if (LOG_VIEW) scrollTerm(true); } else { CV.snap = null; CV.full = true; }
   markLive();
+  CV.drawn = CV.divNode ? "" : chatSig(s);   // a divider belongs to one opening: the next one draws anew
+}
+// Coming back to the conversation still in the timeline, with nothing new while it was away: the drawn rows stay (their images too) and only the place is set.
+// Live changes skipped while hidden reach the store first, so its counts and newest times tell. An opening with a read divider or a pending draw redraws.
+const chatSig = s => `${target}|${s.msgs.length}|${s.msgs.at(-1)?.ts}|${s.acts.length}|${s.acts.at(-1)?.ts}|${NT.gone.size}`;
+function chatReuse(s) {
+  if (!CV.key || CV.placed || CV.div || !chatReady() || CV.drawn !== chatSig(s)) return false;
+  chatOpen();
+  markLive();
+  return true;
 }
 function onActivity(a) {
   if (a.source === "orchestrator" || a.type === "turn_start" || a.type === "turn_end" || a.type === "status") scheduleState();
@@ -179,7 +193,7 @@ function setTarget(t) {
   ta.value = s.draft; ATT = s.att || []; renderAtt(); pkAssign(s.pick || []); autosize(); updateHints();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
   renderAll();
-  if (!(s.hLoaded && s.aLoaded)) loadTarget(t);
+  if (!(s.hLoaded && s.aLoaded)) loadTarget(t, hasCached(s));
   loadTodo(t);
 }
 function enterTarget() {

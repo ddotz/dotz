@@ -3,7 +3,7 @@
 // (routed here by 99-boot.js, never into the chat timeline or the corner toasts). There is no notice list screen: 알림 and 작업내역 are their own
 // conversations (chat list), 모니터링 is its own screen (30-monitoring.js); what waits on the owner shows on 홈 and in the decision sheet below.
 const ntTabOf = n => n.kind === "worklog" ? "worklog" : n.kind === "watch" ? "watch" : "alert";
-const NT = { items: [], unread: 0, loaded: false, failed: false, gone: new Set(), mut: 0 };   // gone: event times of 알림 messages whose notice was dismissed (GET /api/notices gone)
+const NT = { items: [], unread: 0, loaded: false, failed: false, gone: new Set(), mut: 0, at: 0 };   // gone: event times of 알림 messages whose notice was dismissed (GET /api/notices gone)
 // The 홈 알림 card lists alerts only: a reply in a conversation or a session's report (kind message / result) is not a notice there; it is
 // unread in its own conversation, which the 채팅 tab and the session list lead to (owner 2026-10-23).
 const ntHomeAlert = n => ntTabOf(n) === "alert" && n.kind !== "message" && n.kind !== "result";
@@ -45,7 +45,7 @@ async function loadNotices() {
     // A dismiss that landed while this list was on its way makes it stale (it would bring the alert back): read it again.
     if (NT.mut !== m) return loadNotices();
     NT.items = (Array.isArray(r.items) ? r.items : []).map(ntClean);
-    NT.unread = r.unread | 0; NT.loaded = true; NT.failed = false;
+    NT.unread = r.unread | 0; NT.loaded = true; NT.failed = false; NT.at = Date.now();
     if (Array.isArray(r.gone)) NT.gone = new Set(r.gone);
   } catch { NT.failed = !NT.loaded; }
   ntPaint();
@@ -55,6 +55,9 @@ async function loadNotices() {
   ntAlertMarks();
 }
 
+// 모니터링 opened again soon after: the list (300 notices, about 300 KB) stands; the stream keeps it live and ntSync catches a missed frame.
+const NOTICES_FRESH_MS = 60000;
+const noticesFresh = () => NT.loaded && Date.now() - NT.at < NOTICES_FRESH_MS;
 // /api/state carries notices_unread: a count that disagrees with ours means a frame was missed, so refetch.
 function ntSync(s) {
   if (!s || typeof s.notices_unread !== "number" || s.notices_unread === NT.unread) return;

@@ -49,7 +49,7 @@ function paintOlderTop() {
   TL_MORE_BTN.hidden = !more;
 }
 if (TL_MORE_BTN) TL_MORE_BTN.onclick = () => loadOlderMsgs();
-function resetChat() { clear(tl); if (TL_TOP_NODE) tl.append(TL_TOP_NODE); CV.divNode = null; CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; paintOlderTop(); }
+function resetChat() { clear(tl); CV.drawn = ""; if (TL_TOP_NODE) tl.append(TL_TOP_NODE); CV.divNode = null; CS = { day: "", group: null, empty: null, prog: new Map(), who: "", whoT: 0 }; paintOlderTop(); }
 function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; CS.who = ""; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
 // Who said a message, for the meta line: shown once per run of messages from the same speaker (a gap over 10 minutes starts a new run).
 function speakerOf(e) {
@@ -298,7 +298,10 @@ function msgNode(e) {
 const WORK = new Set(["tool_call", "tool_result", "thinking", "text", "error"]);
 function newGroup(a) {
   const wsum = el("span", { class: "wsum" }), body = el("div", { class: "wbody" });
-  const node = el("details", { class: "work" }, el("summary", {}, el("span", { class: "wdot" }), wsum), body);
+  // A fold's rows are built when it opens: a conversation holds hundreds of them and drawing them took most of a chat switch. Its summary counts stay live.
+  const waiting = [];
+  const fill = () => { for (const w of waiting.splice(0)) { const n = actNode(w, g.ctx); if (n) g.body.append(n); } };
+  const node = el("details", { class: "work" }, el("summary", { onclick: () => fill() }, el("span", { class: "wdot" }), wsum), body);
   const g = { node, body, ctx: { calls: new Map() }, kinds: new Map(), tools: 0, think: 0, errs: 0, t0: Date.parse(a.ts), t1: Date.parse(a.ts), live: false };
   g.update = () => {
     const parts = [g.t1 - g.t0 >= 1000 ? `${fmtDur(g.t1 - g.t0)} 작업` : g.tools ? "작업" : g.think ? "생각" : "작업"];
@@ -309,8 +312,8 @@ function newGroup(a) {
     node.classList.toggle("bad", g.errs > 0);
   };
   g.add = a => {
-    const n = actNode(a, g.ctx);
-    if (n) g.body.append(n);
+    waiting.push(a);
+    if (node.open) fill();
     if (a.type === "tool_call") { g.tools++; const k = kindOf(a.tool); g.kinds.set(k, (g.kinds.get(k) || 0) + 1); }
     else if (a.type === "thinking") g.think++;
     if (a.type === "error" || (a.type === "tool_result" && a.is_error)) g.errs++;
