@@ -4,22 +4,22 @@
 .mon-tabs { display: flex; gap: var(--sp-1); min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .mon-tabs::-webkit-scrollbar { display: none; }
 .mon-bar .mr-f { height: 32px; }
-.mon-read { flex: none; height: 32px; padding: 0 10px; font-size: 13px; }
+.mon-read { flex: none; height: 32px; padding: 0 var(--sp-3); font-size: 13px; }
 .mon-read:disabled { color: var(--fg-3); }
 .mon-sh { padding: var(--sp-3) var(--sp-1) 0; color: var(--fg-2); font: 600 13px/18px var(--font); }
 .mon-sh:first-of-type { padding-top: 0; }
 .mon-day { padding: var(--sp-1) var(--sp-1) 0; color: var(--fg-3); font: 500 12px/16px var(--font); }
 
 /* a report or a folded source as one compact row: source, state, time on the first line, the summary under it (two lines at most) */
-:is(#mon-tl, .fr-list) > .bm.rc.fr { gap: var(--sp-1); padding: 10px var(--sp-4); cursor: pointer; }
-.fr-list > .bm.alert { padding: 10px var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+:is(#mon-tl, .fr-list) > .bm.rc.fr { gap: var(--sp-1); padding: var(--sp-2) var(--sp-4); cursor: pointer; }
+.fr-list > .bm.alert { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
 .fr-list > .bm.rc { display: flex; flex-direction: column; gap: var(--sp-3); }
 :is(#mon-tl, .fr-list) > .bm.rc.fr:hover { background: var(--hover); }
 :is(#mon-tl, .fr-list) > .bm.rc.fr:focus-visible { outline-offset: -2px; }
 .fr-sum { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--fg-2); font-size: 14px; line-height: 20px; overflow-wrap: break-word; }
 /* unread: the source in full weight and a dot before it (never a coloured edge) */
 .fr.un .rc-src { color: var(--fg); font-weight: 700; }
-.fr.un .rc-src::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 var(--sp-15) 1px 0; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+.fr.un .rc-src::before { content: ""; display: inline-block; width: 6px; height: 6px; margin: 0 var(--sp-15) 1px 0; /* nudge: dot centred on the text's x-height */ border-radius: 50%; background: var(--accent); vertical-align: middle; }
 .fr .fr-n { font-variant-numeric: tabular-nums; }
 .fr-chev { flex: none; display: inline-flex; color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
 .fr-chev .ic { width: 16px; height: 16px; }
