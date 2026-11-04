@@ -56,7 +56,8 @@
 .fb-item.off .nm, .fb-item.off .fb-n { opacity: .5; }
 .fb-sw { min-width: 44px; height: 28px; padding: 0 10px; border-radius: 14px; border: 0; font-size: 12px; background: var(--hover); color: var(--fg-3); cursor: pointer; }
 .fb-sw { transition: background-color var(--m-fast) var(--m-ease), color var(--m-fast) var(--m-ease); }
-.fb-sw[aria-checked="true"] { background: var(--accent); color: var(--on-accent); }
+.fb-acts .fb-sw { background: var(--layer); }
+.fb-acts .fb-sw[aria-checked="true"] { background: var(--accent); color: var(--on-accent); }
 .fb-item.in-use { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
 .fb-item.drag { position: relative; z-index: 5; cursor: grabbing; box-shadow: var(--float); opacity: .94; }
 .fb-item.over { outline: 2px dashed var(--fg-3); outline-offset: 2px; }
@@ -65,6 +66,8 @@
 .fb-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .fb-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .fb-top .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 14px/20px var(--font); }
+.fb-item[data-i] .fb-top { flex-wrap: wrap; }
+.fb-item[data-i] .fb-top .nm { white-space: normal; overflow-wrap: anywhere; }
 .fb-use, .fb-base { flex: none; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--card); color: var(--fg-2); font-size: 11px; line-height: 18px; font-weight: 600; }
 .fb-use { color: var(--accent); }
 .fb-tags { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -78,6 +81,7 @@
 .fb-acts button { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 14px; background: transparent; color: var(--fg-2); }
 .fb-acts button:hover, .fb-acts button:focus-visible { background: var(--hover); color: var(--fg); }
 .fb-acts button:disabled { opacity: .3; background: transparent; }
+.fb-ctl { display: flex; align-items: center; gap: var(--sp-05); }
 .fb-acts .ic { width: 15px; height: 15px; }
 .fb-acts .up .ic { transform: rotate(180deg); }
 @media (pointer: coarse) { .fb-acts button { width: 34px; height: 34px; } }
