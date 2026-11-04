@@ -6,6 +6,7 @@
 /* the page never scrolls: a bar above the app (the update bar, the demo bar) gives .app a top margin, which would otherwise collapse through
    <body> and push the document 44px past the screen; any focus or scrollIntoView then slides the top bar away and lifts the tab bar */
 body { display: flow-root; }
+.side-tog { display: none; }
 @media (min-width: 1024px) {
   :root { --side-w: 232px; }
   .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100vh; height: 100dvh; padding-top: 0; }
@@ -43,21 +44,24 @@ body { display: flow-root; }
   .sf-row .sf-v { flex: none; margin-left: auto; color: var(--fg-3); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
   .sf-row.warn .sf-v { color: var(--warn); }
   .sf-row.warn .sf-bar i { background: var(--warn); }
-  /* the fold button stands above the usage row (the brand row keeps its name and chevron free), its icon on the nav icons' line; the shell's 32px icon button */
-  .sfoot { display: flex; flex-direction: column; gap: 4px; }
-  .side-tog { align-self: flex-start; width: 32px; height: 32px; margin-left: 2px; }
-  /* folded (:root.side-min, 04-state.js sideToggle): a 60px icon rail. Names go to the title and the aria-label, a tab's dot sits at its icon's bottom right, a usage warning colors its icon */
+  .sf-ring { display: none; }
+  /* the fold button sits in the gutter between the sidebar and the main column, on the page title's line, left of it and out of the top bar's flow: the title never moves for it */
+  .app { position: relative; }
+  .side-tog { position: absolute; left: calc(var(--side-w) - 8px); top: 18px; display: inline-grid; width: 24px; height: 24px; }
+  @media (pointer: coarse) { .side-tog { left: calc(var(--side-w) - 12px); top: 14px; width: 32px; height: 32px; } }
+  /* folded (:root.side-min, 04-state.js sideToggle): a 60px icon rail. Names go to the title and the aria-label, a tab's dot sits at its icon's bottom right, the usage row is a ring of the same share and color with the number inside */
   :root.side-min { --side-w: 60px; }
   .side-min .side { padding: 12px 10px; }
   .side-min .brand { position: relative; justify-content: center; padding: 0; }
-  .side-min #brand-name, .side-min .brand-c .ic, .side-min .ni .nl, .side-min .sf-k, .side-min .sf-bar, .side-min .sf-v { display: none; }
+  .side-min #brand-name, .side-min .brand-c .ic, .side-min .ni .nl, .side-min .sf-row .ic, .side-min .sf-k, .side-min .sf-bar, .side-min .sf-v { display: none; }
   .side-min .brand-c { position: absolute; left: 30px; top: 28px; width: 6px; height: 6px; margin: 0; }
   .side-min .brand-c.pdot::after { right: 0; bottom: 0; }
   .side-min .ni { justify-content: center; padding: 0; }
   .side-min .ni .nnb, .side-min .ni .nub { position: absolute; left: 25px; top: 24px; margin: 0; }
-  .side-min .side-tog { align-self: center; margin-left: 0; }
   .side-min .sf-row { justify-content: center; padding: 0; }
-  .side-min .sf-row.warn .ic { color: var(--warn); }
+  .side-min .sf-ring { position: relative; display: grid; place-items: center; width: 36px; height: 36px; font-size: 11px; line-height: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .side-min .sf-ring::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(currentColor calc(var(--p) * 1%), var(--track) 0); -webkit-mask: radial-gradient(circle closest-side, transparent 14.5px, #000 15px); mask: radial-gradient(circle closest-side, transparent 14.5px, #000 15px); }
+  .side-min .sf-row.warn .sf-ring { color: var(--warn); }
   /* top bar: title always names the page (the sidebar carries the tabs), then search, bell, connection and usage */
   .appbar #back { margin: 0; align-self: center; }
   /* inside a 모니터링 app: ‹ 모니터링 where the page title stands; the empty title keeps the bar's right side in place */
