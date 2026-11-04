@@ -30,8 +30,8 @@
 .tr-otx { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 22px; max-height: 9.5em; overflow-y: auto; }
 .tr-info { margin: 0; padding: 0 0 0 18px; color: var(--fg-2); font-size: 13px; line-height: 20px; }
 .tr-warn { padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 12%, var(--card)); color: var(--warn); font-size: 13px; line-height: 20px; }
-.tr-ta { width: 100%; min-height: 88px; max-height: 52vh; field-sizing: content; padding: 12px 14px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--card); color: var(--fg); font: 400 15px/24px var(--font); resize: vertical; box-sizing: border-box; }
-.tr-ta:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+.tr-ta { width: 100%; min-height: 88px; max-height: 52vh; field-sizing: content; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--ff-fill); color: var(--fg); font: 400 15px/24px var(--font); resize: vertical; box-sizing: border-box; }
+.tr-ta:focus { outline: 0; box-shadow: var(--ff-ring); }
 .tr-ta:disabled { opacity: .7; }
 .tr-mail { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
 .tr-files { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -63,7 +63,8 @@
 .tr-sg { min-height: 36px; padding: 0 14px; border: 0; border-radius: 9px; background: transparent; color: var(--fg-2); font: 600 13px/20px var(--font); cursor: pointer; }
 .tr-sg.on { background: var(--accent); color: var(--on-accent); }
 .tr-sg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.tr-rn { min-height: 40px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--card); color: var(--fg); font: 400 14px/20px var(--font); }
+.tr-rn { min-height: 40px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--ff-fill); color: var(--fg); font: 400 14px/20px var(--font); }
+.tr-rn:focus { outline: 0; box-shadow: var(--ff-ring); }
 @media (max-width: 639px) {
   .fs-card.tr { width: 100%; height: 100%; }
   .trban { width: calc(100% - 24px); margin: 0 auto 6px; }

@@ -37,7 +37,8 @@ dialog.dlg.shell .dact { display: none; }
 .sh-pw-t { color: var(--fg-2); font: 500 12.5px/18px var(--font); }
 .sh-pw-r { display: flex; align-items: center; gap: 6px; }
 .btn.sh-pw-send { flex: none; height: 44px; min-width: 76px; }
-.sh-pw-in { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--card); color: var(--fg); font: 16px var(--font); }
+.sh-pw-in { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg); font: 16px var(--font); }
+.sh-pw-in:focus { outline: 0; box-shadow: var(--ff-ring); }
 @media (max-width: 639px) {
   dialog.dlg.shell[open] { width: 100vw; max-width: 100vw; height: var(--vvh, 100dvh); max-height: none; margin: 0; border-radius: 0; padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom)); }
 }

@@ -236,8 +236,8 @@
 .kk-dp { max-width: 86%; padding: 6px 10px; border-radius: var(--r-ctl); background: var(--kk-own); color: var(--kk-own-fg); white-space: pre-wrap; overflow-wrap: anywhere; }
 .kk-dp.sent { opacity: .55; }
 .kk-rq { margin: 2px 0 6px; color: var(--fg-2); font: 600 13px/18px var(--font); }
-.kk-rv { width: 100%; box-sizing: border-box; min-height: 40px; margin: 0 0 8px; padding: 8px 12px; border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--card); color: inherit; font: 400 16px/22px var(--font); }
-.kk-rv:focus { outline: 0; border-color: var(--accent); }
+.kk-rv { width: 100%; box-sizing: border-box; min-height: 40px; margin: 0 0 8px; padding: 8px 12px; border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
+.kk-rv:focus { outline: 0; box-shadow: var(--ff-ring); }
 .kk-st { color: var(--fg-3); font: 500 12.5px/18px var(--font); }
 .kk-manual { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; color: var(--fg-2); }
 .kk-manual .ic { width: 14px; height: 14px; }
