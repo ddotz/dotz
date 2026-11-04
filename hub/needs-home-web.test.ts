@@ -70,7 +70,7 @@ for (const [w, h] of [[390, 844], [1280, 900]] as const) {
 			await boot(w, h);
 			expect(await q(`return document.querySelector("#home-now .hn-h .sup").textContent`)).toBe("10");
 			const r = await rows();
-			expect(r).toHaveLength(5);
+			expect(r).toHaveLength(10);
 			expect(r.slice(0, 3).map(x => x.crit)).toEqual([true, true, true]);
 			expect(r.slice(3).every(x => !x.crit)).toBe(true);
 			expect(r.slice(0, 3).map(x => x.act)).toEqual(["로그인", "선택", "로그인"]);   // newest first within a rank
@@ -84,17 +84,12 @@ for (const [w, h] of [[390, 844], [1280, 900]] as const) {
 			if (SHOTS) await Bun.write(join(SHOTS, `B-home-needs-${w}.png`), await view.screenshot());
 		}, 15_000);
 
-		test("a long list shows the top five and 더 보기 opens the rest; the count stays the item count", async () => {
-			const more = `${LIST}.querySelector('[data-k="ny-more"]')`;
-			expect(await q(`return ${more}.textContent`)).toBe("더 보기 · 5개");
-			await view.evaluate(`${more}.click()`);
-			await waitFor(`!${more} || ${more}.textContent === "접기"`);
+		test("a long list holds every row and scrolls past six; the count stays the item count", async () => {
+			expect(await q(`return getComputedStyle(${LIST}).overflowY`)).toBe("auto");
 			const r = await rows();
 			expect(r).toHaveLength(10);
 			expect(r.slice(-4).map(x => x.act)).toEqual(["선택", "답변", "답변", "답변"]);
 			expect(await q(`return document.querySelector("#home-now .hn-h .sup").textContent`)).toBe("10");
-			if (SHOTS) await Bun.write(join(SHOTS, `B-home-needs-open-${w}.png`), await view.screenshot());
-			await view.evaluate(`${more}.click()`);
 		});
 
 		test("the session questions waiting at page open are one toast with their count, and it opens 홈", async () => {

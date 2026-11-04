@@ -84,10 +84,10 @@ One card never runs twice at the same time.
 
 - `text`: a string, or `{ "text": string }`.
 - `stat`: `{ "value": string|number, "label"?: string, "sub"?: string }`, or a plain string or number (the value).
-- `list`: an array of strings, or of `{ "title": string, "sub"?: string, "url"?: string }`. The card shows up to 5 rows.
-- `kv`: an object (key -> value), or an array of `[key, value]` pairs. The card shows up to 6 rows.
+- `list`: an array of strings, or of `{ "title": string, "sub"?: string, "url"?: string }`. Every row is kept: the card shows 6 and scrolls.
+- `kv`: an object (key -> value), or an array of `[key, value]` pairs. Every row is kept: the card shows 6 and scrolls.
 
-Rows past the limit show as `더 보기 · N개`. Put the most important rows first.
+A card with a `link` adds `더 보기 · N개` under the list. Put the most important rows first.
 
 ### render.js
 
@@ -119,7 +119,7 @@ Limits:
 
 - At most 2 action buttons show in the footer: the first 2 actions. Actions 3 and 4 move into the `⋯` menu, in order.
   A label is cut with an ellipsis when it does not fit, so keep it short (about 8 characters or less).
-- `kv` shows 6 rows and `list` shows 5. The rest is a `더 보기 · N개` line.
+- `kv` and `list` show 6 rows and scroll inside the card; on a card with a `link`, a `더 보기 · N개` line follows.
 - Values are plain text on one line. Write dates as ISO 8601 (the page shows them in local time), write an empty value
   as an empty string or `-` (the page shows `없음`), and put units in the value (`12개`, `42%`).
 - The card is as tall as its content, so do not add blank lines or filler rows.

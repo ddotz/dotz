@@ -9,6 +9,7 @@ const longAgo = new Date(Date.now() - 30 * 3600_000).toISOString();
 const cards = [
 	{ id: "kakao", title: "카톡", view: "kv", data: { 연결: "켜짐", 설정: "진행 중: -", "마지막 확인": longAgo, "답장 대기": "-" }, actions: [{ label: "지금 확인" }], rev: "1" },
 	{ id: "todo", title: "오늘 할 일", view: "stat", data: { value: "7", label: "남은 일", sub: longAgo }, actions: [], rev: "1" },
+	{ id: "rows", title: "긴 목록", view: "list", link: "https://example.com/", data: Array.from({ length: 9 }, (_, i) => `줄 ${i + 1}`), rev: "1" },
 	{ id: "multi", title: "여러 동작", view: "kv", data: { a: "1", b: "2", c: "3", d: "4", e: "5", f: "6", g: "7" }, actions: [{ label: "하나" }, { label: "둘, 이름이 아주 긴 동작" }, { label: "셋" }, { label: "넷" }], rev: "1" },
 ];
 
@@ -106,6 +107,17 @@ describe("custom cards on 홈", () => {
 		expect(Math.abs((await width()) - w1)).toBeLessThan(2);
 	});
 
+	test("a list of a custom card holds every row, shows six and scrolls; a card with a link keeps its 더 보기", async () => {
+		await boot("rows");
+		for (const [card, rows, more] of [["rows", 9, "더 보기 · 3개"], ["multi", 7, null]] as const) {
+			const got = JSON.parse((await view.evaluate(`JSON.stringify((() => {
+				const l = document.querySelector('[data-cap="custom:${card}"]'), s = getComputedStyle(l);
+				return { rows: l.children.length, y: s.overflowY, six: l.children[5].offsetTop + l.children[5].offsetHeight, client: l.clientHeight, more: (l.closest(".card").querySelector(".more") || {}).textContent ?? null };
+			})())`)) as string);
+			expect(got).toEqual({ rows, y: "auto", six: got.client, client: got.client, more });
+		}
+	});
+
 	test("a card shows at most 2 action buttons in one row and moves the next 2 into the ⋯ menu", async () => {
 		await boot("multi");
 		const foot = JSON.parse((await view.evaluate(`JSON.stringify((() => {
@@ -115,8 +127,8 @@ describe("custom cards on 홈", () => {
 		expect(foot.labels).toEqual(["하나", "둘, 이름이 아주 긴 동작"]);
 		expect(foot.oneRow).toBe(true);
 		expect(foot.inside).toBe(true);
-		expect(foot.rows).toBe(6);
-		expect(foot.more).toBe("더 보기 · 1개");
+		expect(foot.rows).toBe(7);
+		expect(foot.more).toBeUndefined();
 		expect(foot.clipped).toBe(false);
 		expect(((await view.evaluate(`dotzCustom.menuActs("multi").map(a => a.label)`)) as string[]).slice(0, 3)).toEqual(["새로고침", "셋", "넷"]);
 		expect(await view.evaluate(`JSON.stringify(dotzCustom.split([1, 2, 3, 4, 5, 6]))`)).toBe(JSON.stringify({ shown: [1, 2], rest: [3, 4] }));
