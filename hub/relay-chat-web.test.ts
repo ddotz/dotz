@@ -164,6 +164,18 @@ describe("a reply is only text", () => {
 	});
 });
 
+describe("a reply's fence is only code", () => {
+	test("a shell fence has no run button and a dotz-settings fence no settings card", async () => {
+		lines = [{ id: 1, at: Date.now() - 1000, me: false, text: '```bash\nrm -rf /tmp/x\n```\n\n```dotz-settings\n{"app":"mail","changes":{"a":1}}\n```' }];
+		await open();
+		await waitFor(`PR.list.length === 2`);
+		await pickRow("work");
+		await waitFor(`target === "relay:jandi:work" && document.querySelectorAll(".bm .md pre").length === 2`);
+		expect((await texts(".bm .md pre"))[0]).toBe("rm -rf /tmp/x");
+		expect(await ev(`document.querySelectorAll('[data-cb="run"], .as-card').length`)).toBe(0);
+	});
+});
+
 describe("a computer with a public address", () => {
 	beforeEach(() => { peers = [WORK, CORP]; });
 	const ready = async () => {
