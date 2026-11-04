@@ -79,6 +79,7 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
       <section class="view" id="v-home" hidden><div id="home-now"></div><div id="home-cards"></div><div id="home-ended"></div></section>
       <section class="view" id="v-project" hidden></section>
       <section class="view" id="v-projects" hidden></section>
+      <section class="view" id="v-notices" hidden></section>
       <section class="view fill" id="v-monitoring" hidden>
         <aside class="cv-side" id="mon-side" aria-label="모니터링 목록"></aside>
         <div class="cv-head" id="mon-head"></div>
@@ -87,8 +88,6 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
       <section class="view fill" id="v-chat" hidden>
         <div class="subs" hidden></div>
         <div class="todo" id="todo" hidden></div>
-        <div class="bell" id="bell-tabs" role="tablist" aria-label="알림 종류" hidden></div>
-        <div class="bell-list" id="bell-list" hidden></div>
         <div class="chatbox">
           <div class="timeline" id="timeline"><div class="tl-in" id="tl"><div class="tl-top" id="tl-top" hidden><button class="btn text tl-more" id="tl-more" type="button" hidden>이전 메시지 더 보기</button></div></div></div>
           <button class="btn tonal jump" id="chat-jump" type="button" aria-label="맨 아래로" title="맨 아래로" hidden></button>
