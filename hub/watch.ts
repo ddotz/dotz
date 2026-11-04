@@ -20,7 +20,7 @@ import { type Relogin, relogin } from "./autologin.ts";
 import { issueBlock } from "./choices.ts";
 import { DATA_DIR, log, now, paths, writeAtomic } from "./config.ts";
 import { blockedByFeatures } from "./featuredirs.ts";
-import { deriveLabel, isKeyLabel } from "./watchtext.ts";
+import { deriveLabel, isKeyLabel, plainLabel } from "./watchtext.ts";
 
 export type WatchOwner = { app?: string; project?: string; internal?: true };
 export type Watch = {
@@ -417,7 +417,11 @@ function scriptHeader(path: string): string {
 export function relabelWatches(projectOf: (w: Watch) => string | undefined): number {
 	let n = 0;
 	for (const w of items) {
-		if (w.label && !isKeyLabel(w.label)) continue;
+		if (w.label && !isKeyLabel(w.label)) {
+			const plain = plainLabel(w.label);
+			if (plain !== w.label) { w.label = plain; n++; }
+			continue;
+		}
 		const site = w.session ? new URL(w.session.url).hostname.replace(/^www\./, "") : undefined;
 		const index = Number(/^ch-\d+-(\d+)$/.exec(w.name)?.[1]) || undefined;
 		w.label = deriveLabel({ name: w.name, project: projectOf(w), header: scriptHeader(w.script ?? w.command), site, index });

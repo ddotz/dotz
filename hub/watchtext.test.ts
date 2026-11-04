@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { clockKo, deriveLabel, describeOutput, humanLabel, isKeyLabel, isMachineOutput, rawFence, scheduleLine, watchLine, watchSummary } from "./watchtext.ts";
+import { clockKo, deriveLabel, describeOutput, humanLabel, isKeyLabel, isMachineOutput, nameKo, plainLabel, rawFence, scheduleLine, watchLine, watchSummary } from "./watchtext.ts";
 
 const KAKAO = "kakao chat=458693335449148 new=1 from=3957198286878674945 to=3957198286878674945 at=2026-10-22T12:26:36.000Z";
 const NOW = Date.parse("2026-10-22T13:00:00.000Z");
@@ -85,6 +85,11 @@ test("an unlabeled watch gets a readable Korean name, never its key", () => {
 	expect(deriveLabel({ name: "sample-login" })).toBe("sample 로그인");
 	expect(deriveLabel({ name: "x1", site: "example.com" })).toBe("example.com 로그인 유지");
 	expect(deriveLabel({ name: "stock-check", header: "# 재고가 생기는지 확인합니다.", project: "샘플" })).toBe("샘플 재고가 생기는지 확인합니다");
+	expect(["kakao-new", "sns-yt-comments", "sns-ig-dm", "sns-yt-tokens", "sns-tokens", "sns-due", "sns-inbox", "webmail-naver", "webmail-naver-login", "comments"].map(nameKo)).toEqual(
+		["카카오톡 새 소식", "유튜브 댓글", "인스타그램 DM", "유튜브 연결 유지", "SNS 연결 유지", "SNS 예약 글 올리기", "SNS 새 영상", "네이버 메일", "네이버 메일 로그인", "댓글"]);
+	expect(plainLabel("kakao 새 소식")).toBe("카카오톡 새 소식");
+	expect(plainLabel("kakaopay 새 소식")).toBe("kakaopay 새 소식");
+	expect(plainLabel("GitHub 감시")).toBe("GitHub 감시");
 	expect(isKeyLabel("kdb login")).toBe(true);
 	expect(isKeyLabel("샘플 로그인")).toBe(false);
 	expect(isKeyLabel("Cartier")).toBe(false);
