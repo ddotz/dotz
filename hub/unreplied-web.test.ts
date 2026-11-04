@@ -86,6 +86,7 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 			expect(rows["peer:i:mail"]!.unreplied).toEqual(["미답장 2"]);
 			expect(await fg(v, '#mon-side .nb.unreplied')).toBe("rgb(194, 65, 12)");
 			expect(await bg(v, '#mon-side .cv-row[data-k="i:youtube"] .nb:not(.unreplied)')).toBe("rgb(49, 130, 246)");
+			expect(await bg(v, "#nav-upd")).toBe("rgb(49, 130, 246)");
 			expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= ${width}`)).toBe(true);
 			await shot(v, `app-list-${width}-light.png`);
 		});
@@ -95,7 +96,7 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 			expect(await fg(v, '#mon-side .nb.unreplied')).toBe("rgb(255, 154, 77)");
 			expect(await bg(v, '#mon-side .cv-row[data-k="i:youtube"] .nb:not(.unreplied)')).not.toBe(await bg(v, '#mon-side .nb.unreplied'));
 			expect(await bg(v, '#mon-side .cv-row[data-k="i:youtube"] .nb:not(.unreplied)')).toBe("rgb(255, 154, 77)");
-			expect(await bg(v, "#nav-upd")).toBe("rgb(76, 148, 255)");
+			expect(await bg(v, "#nav-upd")).toBe("rgb(245, 165, 36)");
 			await shot(v, `app-list-${width}-dark.png`);
 		});
 	});
