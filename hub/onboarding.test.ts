@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDiscordStore } from "./discord-connection.ts";
 import { createJandiStore } from "./onboarding-jandi.ts";
+import { issueToken, markDone, SETUP_COOKIE } from "./first-run.ts";
+import { createSetupGate } from "./setup-gate.ts";
 import { createOnboarding, type OnboardDeps, type OnboardKey, onboardingRoute, type OnboardView } from "./onboarding.ts";
 
 const API = "https://discord.com/api/v10";
@@ -284,5 +286,95 @@ describe("onboarding engine", () => {
 		for (const path of ["/api/onboarding/discord/start", "/api/onboarding/discord/continue", "/api/onboarding/discord/cancel"]) {
 			expect((await call("POST", path)).text).not.toContain(TOKEN);
 		}
+	});
+});
+
+describe("first-run setup gate", () => {
+	const HOUR = 3600_000;
+	const open = (extra: Record<string, string> = {}) => {
+		const dir = mkdtempSync(join(tmpdir(), "setup-gate-"));
+		dirs.push(dir);
+		const logs: string[] = [];
+		const gate = createSetupGate({ dir, home: dir, pkg: join(import.meta.dir, ".."), localHeaders: () => ({}), restart: () => {}, providers: async () => undefined, log: l => logs.push(l), scan: async () => ({}), terms: () => undefined, ...extra });
+		const call = async (path: string, init: RequestInit & { cookie?: string; host?: string } = {}) => {
+			const { cookie, host = "127.0.0.1:7420", ...rest } = init;
+			const req = new Request(`http://${host}${path}`, { ...rest, headers: { ...(cookie ? { cookie: `${SETUP_COOKIE}=${cookie}` } : {}), ...(rest.headers as Record<string, string> | undefined) } });
+			return (await gate.route(req, new URL(req.url), "127.0.0.1")) ?? new Response("passed on", { status: 599 });
+		};
+		const login = async (): Promise<string> => {
+			const r = await call(`/setup?token=${issueToken(dir)}`);
+			return /dotz_setup=([^;]+)/.exec(r.headers.get("set-cookie") ?? "")![1]!;
+		};
+		return { dir, logs, call, login };
+	};
+	const json = (body: unknown, cookie: string, method = "POST") => ({ method, cookie, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+	test("the token is used once: 303 with an HttpOnly cookie, then 404", async () => {
+		const { dir, call } = open();
+		const token = issueToken(dir);
+		const first = await call(`/setup?token=${token}`);
+		expect(first.status).toBe(303);
+		expect(first.headers.get("set-cookie")).toMatch(/^dotz_setup=.+HttpOnly; SameSite=Strict/);
+		expect((await call(`/setup?token=${token}`)).status).toBe(404);
+	});
+
+	test("an expired token is 404 and a request without the cookie learns nothing", async () => {
+		const { dir, call, login } = open();
+		expect((await call(`/setup?token=${issueToken(dir, Date.now() - 25 * HOUR)}`)).status).toBe(404);
+		const cookie = await login();
+		expect((await call("/setup")).status).toBe(404);
+		expect((await call("/api/setup/state")).status).toBe(404);
+		expect((await call("/api/setup/state", { cookie })).status).toBe(200);
+	});
+
+	test("proxy headers, a foreign Host and a foreign Origin are 404 even with a valid cookie", async () => {
+		const { call, login } = open();
+		const cookie = await login();
+		for (const init of [{ headers: { "x-forwarded-for": "1.2.3.4" } }, { headers: { "tailscale-user-login": "me@example.com" } }, { host: "evil.example:7420" }, { headers: { origin: "https://evil.example" } }])
+			expect((await call("/api/setup/state", { cookie, ...init })).status).toBe(404);
+	});
+
+	test("after markDone every setup route is 404", async () => {
+		const { dir, call, login } = open();
+		const cookie = await login();
+		markDone(dir);
+		for (const path of ["/setup", "/setup.js", "/api/setup/state"]) expect((await call(path, { cookie })).status).toBe(404);
+	});
+
+	test("a draft resumes in a new gate and drops fields it does not know", async () => {
+		const { dir, call, login } = open();
+		const cookie = await login();
+		expect((await call("/api/setup/draft", json({ step: "identity", values: { name: "Dotty", evil: "x" } }, cookie, "PUT"))).status).toBe(200);
+		const again = createSetupGate({ dir, home: dir, pkg: dir, localHeaders: () => ({}), restart: () => {}, providers: async () => undefined, log: () => {}, scan: async () => ({}) });
+		const req = new Request("http://127.0.0.1:7420/api/setup/state", { headers: { cookie: `${SETUP_COOKIE}=${cookie}` } });
+		const state = (await (await again.route(req, new URL(req.url), "127.0.0.1"))!.json()) as { step: string; draft: Record<string, unknown> };
+		expect(state.step).toBe("identity");
+		expect(state.draft).toEqual({ name: "Dotty" });
+	});
+
+	test("a secret lands in secrets/ only: not in first-run.json, the log or the state body", async () => {
+		const { dir, logs, call, login } = open({ jobs: { tailscale: async io => (io.line(TOKEN), { ok: true, detail: TOKEN }) } });
+		const cookie = await login();
+		const saved = await call("/api/setup/secret", json({ name: "discord-bot-token", value: TOKEN }, cookie));
+		expect(saved.status).toBe(200);
+		expect(await saved.text()).not.toContain(TOKEN);
+		expect((await call("/api/setup/run/tailscale", json({}, cookie))).status).toBe(202);
+		let state = "";
+		// the job runs on microtasks: poll the state body (bounded) until its row is done
+		for (let n = 0; n < 200 && !state.includes('"state":"done"'); n++) state = await (await call("/api/setup/state", { cookie })).text();
+		expect(state).toContain('"state":"done"');
+		expect(readFileSync(join(dir, "secrets", "discord-bot-token"), "utf8")).toContain(TOKEN);
+		expect(statSync(join(dir, "secrets", "discord-bot-token")).mode & 0o777).toBe(0o600);
+		expect(readFileSync(join(dir, "onboarding", "first-run.json"), "utf8")).not.toContain(TOKEN);
+		expect(logs.join("\n")).not.toContain(TOKEN);
+		expect(state).not.toContain(TOKEN);
+	});
+
+	test("an unknown job, an unknown terminal id and a body carrying argv are refused", async () => {
+		const { call, login } = open();
+		const cookie = await login();
+		expect((await call("/api/setup/run/nope", json({}, cookie))).status).toBe(404);
+		expect((await call("/api/setup/term/bash", json({}, cookie))).status).toBe(404);
+		expect((await call("/api/setup/term/aside-login", json({ argv: ["sh", "-c", "id"] }, cookie))).status).toBe(400);
 	});
 });
