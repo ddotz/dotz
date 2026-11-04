@@ -19,6 +19,6 @@ const budgets: [name: string, size: number, cap: number][] = [
 test("prompt files stay within their byte caps", () => {
 	const over = budgets
 		.filter(([, size, cap]) => size > cap)
-		.map(([name, size, cap]) => `${name} is ${size - cap} bytes over its cap (${size} > ${cap}); bump the cap in hub/prompt-budget.ts only if the growth is deliberate`);
+		.map(([name, size, cap]) => `${name} is ${size - cap} bytes over its cap (${size} > ${cap}); cut text to fit (the two MODE caps in hub/prompt-budget.ts are fixed; bump a template cap only if the growth is deliberate)`);
 	expect(over).toEqual([]);
 });
