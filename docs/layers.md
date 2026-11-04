@@ -87,11 +87,10 @@ New file `~/.dotz/projects.json` (hub/projects.ts), keyed by the project key alr
 ```json
 { "projects": { "ch:123": {
   "title": "메일 자동답장", "purpose": "새 메일을 보고 정해진 답을 보내요",
-  "goal": "회사 메일 응답 자동화", "milestones": [{ "text": "감시 등록", "done": true }],
   "paused": false, "updated": "2026-10-21T..." } } }
 ```
 
-- Absent file = today's behaviour. A record overrides the derived title/purpose; the derived project list
+- Absent file = today's behaviour. Older records can still hold `goal` and `milestones`: they stay in the file and nothing reads them. A record overrides the derived title/purpose; the derived project list
   (projectsView) is unchanged otherwise. The work channel setup's `purpose` stays the source until the owner edits it
   on the project page; an edit writes both (setup purpose and the record) so the orchestrator prompt and the page agree.
 - Monitors (hub/watch.ts) belong to a project through their `channels` (already stored); schedules and routines through
@@ -101,7 +100,7 @@ New file `~/.dotz/projects.json` (hub/projects.ts), keyed by the project key alr
 API (all behind the hub token, JSON):
 - `GET /api/custom/project?key=` adds `record` (the stored fields), `monitors` (id, name, command summary,
   every_minutes, on, pattern, lastRun, lastOk, nextAt, fails, paused), `routines`/`schedules` scoped to the project.
-- `PUT /api/projects` `{ key, title?, purpose?, goal?, milestones?, paused? }` -> the merged record.
+- `PUT /api/projects` `{ key, title?, purpose?, paused? }` -> the merged record. `goal` and `milestones` in the body are ignored.
 - `PATCH /api/watches/<id>` `{ every_minutes?, pattern?, on?, paused? }` -> the watch.
 - `PATCH /api/schedules/<id>` `{ every_minutes?, at?, text?, paused? }` -> the schedule.
 - `GET /api/todo?target=main|lane:<n>|ch:<id>` -> `{ phases: [{ name, tasks: [{ content, status }] }], at }` from the
@@ -112,9 +111,9 @@ API (all behind the hub token, JSON):
 NAV: 홈, 채팅, 프로젝트, 세션, 설정. 구성 (the harness map) is a row under 설정 and opens as a sub-view; old `#harness`
 links still open it.
 
-- 프로젝트 list: one card per project: title, purpose line, status dot, progress `n/m`, counts (sessions, monitors).
+- 프로젝트 list: one card per project: title, purpose line, status dot, counts (sessions, monitors).
 - 프로젝트 main: header (title, purpose; tap to edit in place) and an "프로젝트 채팅" button that opens the project
-  orchestrator chat. Then: 목표와 진행 (goal + milestones, progress bar, add/check/edit), 루틴과 모니터링 (each row:
+  orchestrator chat. Then: 루틴과 모니터링 (each row:
   name, interval, last / next run, health; edit interval / pattern, pause / resume), 세션 (rows with status, opens the
   session), 최근 결과.
 - 세션: running sessions as a list of cards (title, project, status, waiting question, subagents n/m), ended ones folded.

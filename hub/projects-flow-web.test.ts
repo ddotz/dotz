@@ -19,6 +19,7 @@ const projects = Array.from({ length: 30 }, (_, i) => {
 		: i < 20 ? [{ text: "시작", done: true }, { text: "끝", done: true }] : [];
 	const lanes = i < 4 ? [{ name: `lane-q${i}`, title: `질문 세션 ${n}`, status: "idle", live: true, waiting: true, startedAt: AT, lastText: "확인 부탁드려요" }]
 		: i < 10 ? [{ name: `lane-w${i}`, title: `작업 세션 ${n}`, status: "working", live: true, startedAt: AT, lastText: "작업 중" }] : [];
+	// A stored record can still hold milestones and a goal; the screens must not show them.
 	const rec: Rec = { title: `프로젝트 ${n}`, purpose: `${n}번째 프로젝트`, updated: AT, milestones: ms };
 	if (i < 10) rec.goal = `${n}번째 목표`;
 	records[key] = rec;
@@ -78,8 +79,7 @@ const server = Bun.serve({
 			writes.push({ path: p, body });
 			const rec = records[body.key];
 			if (rec) {
-				for (const k of ["title", "purpose", "goal"]) if (typeof body[k] === "string") rec[k as "title"] = body[k];
-				if (Array.isArray(body.milestones)) rec.milestones = body.milestones;
+				for (const k of ["title", "purpose"]) if (typeof body[k] === "string") rec[k as "title"] = body[k];
 				rec.updated = AT;
 			}
 			return json({ key: body.key, record: rec });
@@ -118,7 +118,7 @@ async function boot(width: number, height: number): Promise<View> {
 	return v;
 }
 
-test("the list pages 12 projects at a time, filters by need/running/done and searches", async () => {
+test("the list pages 12 projects at a time, filters by need/running and searches", async () => {
 	const v = await boot(390, 844);
 	const rows = `[...document.querySelectorAll('#pl-list .pl-row:not(.sub):not([data-k="sessions"])')]`;
 	expect(await q<string[]>(v, `return ${rows}.slice(0, 3).map(r => r.querySelector(".li-end .tag").textContent)`).then(s => s.every(t => t.includes("답을 기다려요")))).toBe(true);
@@ -134,22 +134,21 @@ test("the list pages 12 projects at a time, filters by need/running/done and sea
 	await run(v, `document.querySelector('#pl-list [data-k="more"]').click()`);
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 30`);
 	expect(await q(v, `return !!document.querySelector('#pl-list [data-k="more"]')`)).toBe(false);
-	// chips: need -> running -> done -> all (paging starts again)
+	// chips: need -> running -> all (paging starts again)
+	expect(await q<string[]>(v, `return [...document.querySelectorAll(".pl-chips .mr-f")].map(b => b.dataset.view)`)).toEqual(["all", "run", "need"]);
 	await run(v, `document.querySelector('.pl-chips [data-view="need"]').click()`);
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 4`);
 	await run(v, `document.querySelector('.pl-chips [data-view="run"]').click()`);
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 6`);
 	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .li-end .tag")].map(n => n.textContent)`).then(s => s.every(t => t.includes("작업 중")))).toBe(true);
-	await run(v, `document.querySelector('.pl-chips [data-view="done"]').click()`);
-	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 10`);
-	expect(await q<string[]>(v, `return [...document.querySelectorAll("#pl-list .pl-row:not(.sub) .li-end .tag")].map(n => n.textContent)`).then(s => s.every(t => t.includes("끝남")))).toBe(true);
-	expect(await q(v, `return document.querySelector("#pl-list .pl-row .li-end .tag").textContent`)).toBe("끝남");
 	await run(v, `document.querySelector('.pl-chips [data-view="all"]').click()`);
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 12`);
 	// search narrows to the typed name
 	await run(v, `const i = document.querySelector("#pl-q"); i.value = "프로젝트 17"; i.dispatchEvent(new Event("input", { bubbles: true }))`);
 	await waitFor(v, `document.querySelectorAll("#pl-list .pl-row:not(.sub):not([data-k='sessions'])").length === 1`);
 	expect(await q(v, `return document.querySelector("#pl-list .pl-row .pl-n").textContent`)).toBe("프로젝트 17");
+	// every milestone of this stored record is ticked, and that no longer makes the project finished
+	expect(await q(v, `return document.querySelector("#pl-list .pl-row .li-end .tag").textContent`)).toBe("아직 세션이 없어요");
 	// the built-in 커스텀 page stays reachable at the end of 전체
 	await run(v, `const i = document.querySelector("#pl-q"); i.value = ""; i.dispatchEvent(new Event("input", { bubbles: true }))`);
 	await waitFor(v, `document.querySelector("#pl-list .pl-row.sub")`);
@@ -189,35 +188,15 @@ test("커스텀 내 규칙: five rows and 더 보기 as the card's last line, a 
 test("a row opens the overview; every section opens its own page and 뒤로 or the browser back returns", async () => {
 	const v = await boot(390, 844);
 	await run(v, `document.querySelectorAll("#pl-list .pl-row")[0].click()`);
-	await waitFor(v, `document.querySelectorAll(".pm-sec").length === 5`);
-	expect(await q<string[]>(v, `return [...document.querySelectorAll(".pm-sec > span")].map(n => n.textContent)`)).toEqual(["단계 1/3", "세션 1", "작업 1", "결과 3", "감시 3"]);
+	await waitFor(v, `document.querySelectorAll(".pm-sec").length === 4`);
+	expect(await q<string[]>(v, `return [...document.querySelectorAll(".pm-sec > span")].map(n => n.textContent)`)).toEqual(["세션 1", "작업 1", "결과 3", "감시 3"]);
 	// 확인 필요 is the primary action, and it is a single tap into the waiting session's chat
 	expect(await q(v, `return document.querySelector(".pm-need-t").textContent`)).toBe("질문 세션 1");
 	expect(await q(v, `return document.querySelector('.pm-need [data-k="answer"]').textContent`)).toBe("대화에서 답하기");
-	expect(await q(v, `return document.querySelector(".pmv-hprog .bar").getAttribute("aria-valuenow")`)).toBe("33");
+	expect(await q(v, `return document.querySelector("#v-project").textContent.includes("단계")`)).toBe(false);
 	// the page menu is a real 40px icon button, like the app's other ⋯ menus
 	expect(await q(v, `const b = document.querySelector(".pmv-more").getBoundingClientRect(); return [Math.round(b.width), Math.round(b.height)]`)).toEqual([40, 40]);
-	// in progress = accent, complete = success green
-	expect(await q(v, `return getComputedStyle(document.querySelector(".pmv-hprog .bar i")).backgroundColor`)).toBe("rgb(49, 130, 246)");
 	await shot(v, "02-overview-390.png");
-	// 목표와 진행: the goal and its milestones, editable as before
-	await run(v, `document.querySelector('.pm-sec [data-k="goal"]').click()`);
-	await waitFor(v, `document.querySelector(".pdv .pmv-mlist")`);
-	expect(await q(v, `return document.querySelector(".pdv-t").textContent`)).toBe("목표와 진행");
-	expect(await q<number>(v, `return document.querySelectorAll(".pdv .pmv-ms").length`)).toBe(3);
-	await shot(v, "03-goal-390.png");
-	expect(await q<number>(v, `return document.querySelectorAll('.pdv .pmv-ck[aria-checked="true"]').length`)).toBe(1);
-	await run(v, `document.querySelectorAll(".pdv .pmv-ck")[1].click()`);
-	await waitFor(v, `document.querySelectorAll('.pdv .pmv-ck[aria-checked="true"]').length === 2`);
-	expect(writes.at(-1)!.body.milestones.filter((m: Mile) => m.done).length).toBe(2);
-	await run(v, `document.querySelector(".pdv .pdv-back").click()`);
-	await waitFor(v, `!document.querySelector(".pdv")`);
-	expect(await q(v, `return document.querySelectorAll(".pm-sec").length`)).toBe(5);
-	// 단계: the steps are on the page, a tap on one writes the milestones like the goal page
-	await waitFor(v, `document.querySelectorAll('.pm-step[aria-checked="true"]').length === 2`);
-	await run(v, `document.querySelectorAll(".pm-step")[2].click()`);
-	await waitFor(v, `PM.D.record.milestones.filter(m => m.done).length === 3`);
-	expect(writes.at(-1)!.body.milestones.filter((m: Mile) => m.done).length).toBe(3);
 	// 세션 기록, 결과 전체, 루틴과 모니터링 each open in place and close back to the overview
 	for (const [k, title, seen] of [["sessions", "세션 기록", ".pdv .srows"], ["results", "결과 전체", ".pdv .li"], ["routines", "루틴과 모니터링", ".pdv .pmv-rt"]] as const) {
 		await run(v, `document.querySelector('.pm-sec [data-k="${k}"]').click()`);
@@ -232,20 +211,20 @@ test("a row opens the overview; every section opens its own page and 뒤로 or t
 	await waitFor(v, `!!document.querySelector(".pdv")`);
 	await run(v, `history.back()`);
 	await waitFor(v, `!document.querySelector(".pdv")`);
-	expect(await q(v, `return !document.querySelector("#v-project").hidden && document.querySelectorAll(".pm-sec").length`)).toBe(5);
-	// 목표와 진행 edit was written through the project's record key
-	expect(writes[0].body.key).toBe("ch:8000");
+	expect(await q(v, `return !document.querySelector("#v-project").hidden && document.querySelectorAll(".pm-sec").length`)).toBe(4);
+	// a write goes through the project's record key
+	await v.evaluate(`pmWrite({ title: "프로젝트 1" }).then(() => 0)`);
+	expect(writes.at(-1)!.body.key).toBe("ch:8000");
 });
 
 test("from 1100px the list sits beside the overview, and a section page opens over both", async () => {
 	const v = await boot(1280, 900);
 	await run(v, `document.querySelectorAll("#pl-list .pl-row")[0].click()`);
-	await waitFor(v, `document.querySelectorAll(".pl-row").length > 0 && document.querySelectorAll(".pm-sec").length === 5`);
+	await waitFor(v, `document.querySelectorAll(".pl-row").length > 0 && document.querySelectorAll(".pm-sec").length === 4`);
 	expect(await q(v, `return !document.querySelector("#v-projects").hidden && document.querySelector(".views").classList.contains("pp")`)).toBe(true);
 	// the open project is the selected row, and the chips stay on one line
 	expect(await q(v, `return document.querySelector("#pl-list .pl-row.on .pl-n").textContent`)).toBe("프로젝트 1");
 	expect(await q(v, `return getComputedStyle(document.querySelector("#pl-list .pl-row.on")).backgroundColor`)).toBe("rgb(232, 235, 238)");
-	expect(await q(v, `return document.querySelector(".pl-chips").scrollWidth > document.querySelector(".pl-chips").clientWidth`)).toBe(true);
 	expect(await q<number>(v, `const b = [...document.querySelectorAll(".pl-chips .mr-f")].map(x => Math.round(x.getBoundingClientRect().top)); return new Set(b).size`)).toBe(1);
 	await shot(v, "05-list-overview-1280.png");
 	await run(v, `document.querySelector('.pm-sec [data-k="sessions"]').click()`);
