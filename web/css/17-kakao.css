@@ -23,7 +23,7 @@
 .kk-lh { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--row-h); padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-4); }
 .kk-pt { font: 600 15px/22px var(--font); }
 .kk-cnt { flex: 1; color: var(--fg-3); font: 400 12px/16px var(--font); }
-.kk-add-btn { gap: var(--sp-1); padding: 0 var(--sp-3) 0 10px; }
+.kk-add-btn { gap: var(--sp-1); padding: 0 var(--sp-3); }
 .kk-add-btn .ic { width: 14px; height: 14px; }
 .kk-watch .kk-note { padding: var(--sp-6) var(--sp-4); }
 .kk-l1 { display: flex; align-items: baseline; gap: var(--sp-15); min-width: 0; }
@@ -44,7 +44,7 @@
 .kk-pr { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--row-h); padding: var(--row-py) var(--sp-4); }
 .kk-pr + .kk-pr { border-top: 1px solid var(--line); }
 /* 자동 초안: the room's one two-value switch, a thin card above the chat window */
-.kk-auto { display: flex; align-items: center; gap: var(--sp-3); min-height: 60px; padding: 10px var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+.kk-auto { display: flex; align-items: center; gap: var(--sp-3); min-height: 60px; padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
 .kk-auto[hidden] { display: none; }
 .kk-auto .cv-n { font: 600 15px/22px var(--font); }
 .kk-auto .cv-p { font-size: 12px; line-height: 16px; color: var(--fg-2); }
@@ -71,7 +71,7 @@
 #kk-rooms .kk-row .cv-m { align-self: flex-start; gap: var(--sp-05); padding-top: var(--sp-05); }
 #kk-rooms .kk-av { width: 36px; height: 36px; font-size: 15px; }
 #kk-rooms .kk-row .tag.unreplied { background: var(--unreplied); color: var(--on-unreplied); }
-#kk-rooms .kk-row .nb.warn { min-width: 18px; height: 18px; padding: 0 5px; background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
+#kk-rooms .kk-row .nb.warn { min-width: 18px; height: 18px; padding: 0 var(--sp-15); background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
 #kk-chat { gap: var(--sp-3); }
 /* the room's bar sits on the page, not on a card like the main chat's: it is the card itself, or it vanishes into the light page */
 #kk-chat .kk-composer .sendrow:not(.ulw) { background: var(--card) !important; }
@@ -85,7 +85,7 @@
 @media (prefers-reduced-motion: reduce) { .kk-sw, .kk-knob { transition: none; } }
 
 /* chat */
-.kk-head { display: none; align-items: center; gap: var(--sp-3); padding: 10px var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+.kk-head { display: none; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
 .kk-head:not(:empty) { display: flex; }
 @media (max-width: 1099px) { .kk-head, .kk-head:not(:empty) { display: none; } }
 .kk-owed { display: none; }
@@ -97,19 +97,19 @@
 /* the chat window's column is centered with a width cap: on a wide pane both sides keep the same distance to the edge, like a KakaoTalk window */
 .kk-in { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; max-width: 880px; min-width: 0; margin: 0 auto; }
 .kk-in > .kk-note { margin: auto; color: var(--kk-time); }
-.kk-pill { position: absolute; left: 50%; bottom: 12px; z-index: 2; height: 32px; padding: 0 14px; transform: translateX(-50%); border-radius: var(--r-ctl); box-shadow: var(--float); }
+.kk-pill { position: absolute; left: 50%; bottom: 12px; z-index: 2; height: 32px; padding: 0 var(--sp-3); transform: translateX(-50%); border-radius: var(--r-ctl); box-shadow: var(--float); }
 .kk-top { display: flex; justify-content: center; padding: var(--sp-05) 0 var(--sp-15); }
 .kk-more { align-self: center; color: var(--kk-time); }
-.kk-date { align-self: center; margin: 14px 0 var(--sp-2); padding: var(--sp-05) var(--sp-3); border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 400 12px/20px var(--font); }
+.kk-date { align-self: center; margin: var(--sp-3) 0 var(--sp-2); padding: var(--sp-05) var(--sp-3); border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 400 12px/20px var(--font); }
 .kk-in > .kk-date:first-child { margin-top: 0; }
 .kk-new { display: flex; align-items: center; gap: var(--sp-3); margin: var(--sp-3) 0 var(--sp-15); color: var(--kk-time); font: 600 12px/16px var(--font); }
 .kk-new::before, .kk-new::after { content: ""; flex: 1; height: 1px; background: color-mix(in srgb, var(--kk-time) 45%, transparent); }
-.kk-gap { display: flex; align-items: center; gap: var(--sp-2); margin: 10px 0; color: var(--kk-time); }
+.kk-gap { display: flex; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0; color: var(--kk-time); }
 .kk-gap::before, .kk-gap::after { content: ""; flex: 1; border-top: 1px dashed color-mix(in srgb, var(--kk-time) 55%, transparent); }
 .kk-gap .btn { color: var(--kk-time); }
 .kk-m { display: flex; min-width: 0; }
 .kk-m:empty { display: none; }
-.kk-m.first { margin-top: 10px; }
+.kk-m.first { margin-top: var(--sp-2); }
 .kk-m.in { gap: var(--sp-2); align-items: flex-start; }
 .kk-m.me { flex-direction: column; align-items: flex-end; }
 .kk-mb { min-width: 0; max-width: calc(100% - 44px); display: flex; flex-direction: column; align-items: flex-start; }
@@ -130,7 +130,7 @@
 .kk-chat { --kk-rd: #d99700; }
 :root[data-theme="dark"] .kk-chat { --kk-rd: #ffd21f; }
 /* time side of a bubble: the read counter (yellow, bold) above the time; own bubbles right-align it, incoming ones left-align it */
-.kk-meta { flex: none; display: flex; flex-direction: column; align-items: flex-start; padding-bottom: 1px; }
+.kk-meta { flex: none; display: flex; flex-direction: column; align-items: flex-start; padding-bottom: 1px; /* nudge: time stamp sits on the bubble's last text line */ }
 .kk-m.me .kk-meta { align-items: flex-end; }
 .kk-rd { color: var(--kk-rd); font: 700 11px/14px var(--font); white-space: nowrap; }
 .kk-time { flex: none; color: var(--kk-time); font: 400 11px/14px var(--font); white-space: nowrap; }
@@ -151,7 +151,7 @@
 .kk-gonet, .kk-bub.gone { color: var(--kk-time); font: 400 12px/18px var(--font); text-align: center; }
 .kk-gonet { padding: var(--sp-15); }
 .kk-bub.card.gone { background: var(--kk-in) !important; color: var(--kk-time) !important; }
-.kk-album { display: grid; gap: 3px; width: var(--kk-maxw); max-width: 100%; border-radius: 12px; overflow: hidden; }
+.kk-album { display: grid; gap: var(--sp-05); width: var(--kk-maxw); max-width: 100%; border-radius: 12px; overflow: hidden; }
 .kk-album.c2 { grid-template-columns: repeat(2, 1fr); }
 .kk-album.c3 { grid-template-columns: repeat(3, 1fr); }
 .kk-album > .kk-photo { width: auto; max-height: none; aspect-ratio: 1; border-radius: 0; }
@@ -160,8 +160,8 @@
 .kk-video { background: #1b1f26; }
 .kk-play { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); border-radius: 50%; background: rgb(0 0 0 / .55); }
 .kk-play::after { content: ""; position: absolute; left: 17px; top: 12px; border-style: solid; border-width: 10px 0 10px 16px; border-color: transparent transparent transparent #fff; }
-.kk-dur { position: absolute; right: 6px; bottom: 6px; padding: 1px var(--sp-15); border-radius: 8px; background: rgb(0 0 0 / .55); color: #fff; font: 500 11px/16px var(--font); }
-.kk-bub.card { display: flex; align-items: center; gap: 10px; min-width: 0; max-width: 100%; white-space: normal; }
+.kk-dur { position: absolute; right: 6px; bottom: 6px; padding: 0 var(--sp-15); border-radius: 8px; background: rgb(0 0 0 / .55); color: #fff; font: 500 11px/16px var(--font); }
+.kk-bub.card { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; max-width: 100%; white-space: normal; }
 .kk-m.me .kk-bub.card { background: var(--kk-in); color: var(--kk-in-fg); }
 .kk-bub.card.voice { flex-direction: column; align-items: flex-start; gap: var(--sp-05); padding: var(--sp-15) var(--sp-2); }
 .kk-bub.card audio { width: min(240px, 100%); height: 36px; }
@@ -177,7 +177,7 @@
 .kk-bub.card.loc .kk-fn { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .kk-bub.reply { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 150px; max-width: 100%; }
 /* The quote reads as a link to the original: a bar on its left and "원문 보기" on the right of its name line. */
-.kk-quote { display: flex; flex-direction: column; gap: 1px; align-self: stretch; margin: calc(var(--sp-05) * -1) calc(var(--sp-1) * -1) 0; padding: var(--sp-1) var(--sp-2) var(--sp-1) 10px; border: 0; border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent); border-radius: 8px; background: color-mix(in srgb, currentColor 8%, transparent); color: inherit; text-align: left; font: 400 12px/17px var(--font); }
+.kk-quote { display: flex; flex-direction: column; gap: var(--sp-05); align-self: stretch; margin: calc(var(--sp-05) * -1) calc(var(--sp-1) * -1) 0; padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-2); border: 0; border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent); border-radius: 8px; background: color-mix(in srgb, currentColor 8%, transparent); color: inherit; text-align: left; font: 400 12px/17px var(--font); }
 /* not ".jump": that global class (05-log.css) is the absolutely placed scroll-to-latest button, and it pulled every quote out of its bubble */
 .kk-quote.kk-qjump { cursor: pointer; border-left-color: var(--accent); }
 .kk-quote.kk-qjump:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
@@ -186,10 +186,10 @@
 .kk-quote.busy .kk-qgo { visibility: hidden; }
 .kk-quote.busy::after { content: attr(data-wait); color: var(--fg-3); font-size: 11px; }
 /* after a jump: back to the reply the owner came from */
-.kk-backpill { position: absolute; left: 50%; bottom: 84px; z-index: 5; display: inline-flex; align-items: center; gap: var(--sp-15); height: 34px; padding: 0 14px; border: 0; border-radius: var(--r-ctl); background: var(--accent); color: #fff; font: 600 13px/1 var(--font); box-shadow: 0 4px 14px rgb(0 0 0 / .25); transform: translateX(-50%); cursor: pointer; }
+.kk-backpill { position: absolute; left: 50%; bottom: 84px; z-index: 5; display: inline-flex; align-items: center; gap: var(--sp-15); height: 34px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--accent); color: #fff; font: 600 13px/1 var(--font); box-shadow: 0 4px 14px rgb(0 0 0 / .25); transform: translateX(-50%); cursor: pointer; }
 .kk-backpill .ic { width: 14px; height: 14px; transform: rotate(-90deg); fill: none; stroke: currentColor; stroke-width: 2; }
 .kk-m.kk-hl { position: relative; }
-.kk-m.kk-hl::before { content: attr(data-hl); position: absolute; top: -18px; left: 0; padding: 1px var(--sp-2); border-radius: 9px; background: var(--accent); color: #fff; font: 600 11px/16px var(--font); pointer-events: none; }
+.kk-m.kk-hl::before { content: attr(data-hl); position: absolute; top: -18px; left: 0; padding: 0 var(--sp-2); border-radius: 9px; background: var(--accent); color: #fff; font: 600 11px/16px var(--font); pointer-events: none; }
 .kk-m.me.kk-hl::before { left: auto; right: 0; }
 .kk-quote:disabled { cursor: default; }
 /* a quote tap flashes the original message (30-kakao.js kkFlash) */
@@ -206,15 +206,15 @@
 .kk-m.me .kk-lps { align-self: flex-end; }
 .kk-lp { display: flex; flex-direction: column; overflow: hidden; border-radius: 12px; background: var(--card); color: var(--fg); text-decoration: none; }
 .kk-lp img { display: block; width: 100%; max-height: 150px; object-fit: cover; background: var(--layer); }
-.kk-lp-b { display: flex; flex-direction: column; gap: 1px; padding: var(--sp-2) 10px; }
+.kk-lp-b { display: flex; flex-direction: column; gap: var(--sp-05); padding: var(--sp-2) var(--sp-3); }
 .kk-lp-s { color: var(--fg-3); font: 500 11px/15px var(--font); }
 .kk-lp-t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font: 600 13px/18px var(--font); }
 .kk-lp-d { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--fg-2); font: 400 12px/17px var(--font); }
-.kk-lp-ph { padding: 10px; color: var(--fg-3); font: 400 12px/16px var(--font); }
-.kk-sys { align-self: center; max-width: 86%; margin: 10px 0 var(--sp-1); padding: 3px var(--sp-3); border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 400 12px/17px var(--font); text-align: center; overflow-wrap: anywhere; white-space: pre-wrap; }
+.kk-lp-ph { padding: var(--sp-3); color: var(--fg-3); font: 400 12px/16px var(--font); }
+.kk-sys { align-self: center; max-width: 86%; margin: var(--sp-2) 0 var(--sp-1); padding: var(--sp-05) var(--sp-3); border-radius: 12px; background: var(--kk-chip); color: var(--kk-chip-fg); font: 400 12px/17px var(--font); text-align: center; overflow-wrap: anywhere; white-space: pre-wrap; }
 .kk-vw video, .kk-vw img { max-width: 100%; max-height: 100%; }
 /* a room that is not watched: read-only, this bar instead of the composer */
-.kk-ro { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: 10px var(--sp-4); border-radius: var(--r-card); background: var(--card); color: var(--fg-2); font: 400 13px/18px var(--font); }
+.kk-ro { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); color: var(--fg-2); font: 400 13px/18px var(--font); }
 .kk-ro[hidden] { display: none; }
 .kk-ro .btn { flex: none; }
 .kk-vw video { background: #000; }
@@ -223,9 +223,9 @@
 .kk-chat > .kk-composer { max-width: none; margin: 0; padding: 0; }
 .kk-drafts { display: flex; flex-direction: column; gap: var(--sp-2); margin: var(--sp-2) 0 0; }
 .kk-drafts[hidden] { display: none; }
-.kk-draft { flex: none; padding: var(--sp-3) 14px; border-radius: var(--r-card); background: var(--card); }
-.kk-draft .kk-dh { margin-top: 10px; }
-.kk-mk { padding: 10px 14px; border-radius: var(--r-card); background: var(--card); color: var(--fg-3); font: 500 13px/18px var(--font); }
+.kk-draft { flex: none; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+.kk-draft .kk-dh { margin-top: var(--sp-2); }
+.kk-mk { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-card); background: var(--card); color: var(--fg-3); font: 500 13px/18px var(--font); }
 .kk-dh { color: var(--fg-2); font: 600 12px/16px var(--font); }
 .kk-draft .btns { gap: var(--sp-15); }
 .kk-choices { flex-wrap: wrap; }
@@ -233,7 +233,7 @@
 .kk-dt { max-height: min(16dvh, 120px); margin: var(--sp-05) 0 var(--sp-2); overflow-y: auto; font: 400 14px/21px var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* a draft of several messages: one bubble each, in send order (a part already in the room is muted) */
 .kk-dt.kk-dps { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); max-height: min(28dvh, 220px); white-space: normal; }
-.kk-dp { max-width: 86%; padding: var(--sp-15) 10px; border-radius: var(--r-ctl); background: var(--kk-own); color: var(--kk-own-fg); white-space: pre-wrap; overflow-wrap: anywhere; }
+.kk-dp { max-width: 86%; padding: var(--sp-15) var(--sp-3); border-radius: var(--r-ctl); background: var(--kk-own); color: var(--kk-own-fg); white-space: pre-wrap; overflow-wrap: anywhere; }
 .kk-dp.sent { opacity: .55; }
 .kk-rq { margin: var(--sp-05) 0 var(--sp-15); color: var(--fg-2); font: 600 13px/18px var(--font); }
 .kk-rv { width: 100%; box-sizing: border-box; min-height: 40px; margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
@@ -251,19 +251,19 @@
 .kk-pd { border: 0; padding: 0; max-width: none; max-height: none; background: transparent; color: var(--fg); }
 .kk-pd::backdrop { background: rgb(0 0 0 / .3); }
 .kk-pd-in { display: flex; flex-direction: column; width: min(400px, 100vw); max-height: min(680px, 100dvh); margin: auto; border-radius: var(--r-card); background: var(--card); box-shadow: var(--shadow-panel); overflow: hidden; }
-.kk-pd-h { display: flex; align-items: center; gap: 10px; padding: 14px var(--sp-4); border-bottom: 1px solid var(--line); }
+.kk-pd-h { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); }
 .kk-pd-h .fs-x { margin-left: auto; }
 .kk-pd-b { flex: 1; min-height: 0; overflow-y: auto; padding: var(--sp-2) var(--sp-4) var(--sp-4); }
-.kk-psec { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.kk-psec { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
 .kk-psec:last-child { border-bottom: 0; }
-.kk-prow { display: flex; gap: var(--sp-3); padding: 3px 0; font: 400 13px/19px var(--font); }
+.kk-prow { display: flex; gap: var(--sp-3); padding: var(--sp-05) 0; font: 400 13px/19px var(--font); }
 .kk-pk { flex: none; width: 108px; color: var(--fg-3); }
 .kk-pv { min-width: 0; overflow-wrap: anywhere; }
 .kk-hist { display: flex; align-items: flex-end; gap: var(--sp-05); height: 64px; margin: var(--sp-2) 0 var(--sp-1); }
 .kk-hb { flex: 1; min-height: 2px; border-radius: 2px 2px 0 0; background: var(--accent); }
 .kk-hax { display: flex; justify-content: space-between; color: var(--fg-3); font: 400 10px/14px var(--font); }
 .kk-hax7 { justify-content: space-around; font-size: 11px; }
-.kk-pun { display: flex; flex-direction: column; gap: 1px; padding: var(--sp-15) 0; }
+.kk-pun { display: flex; flex-direction: column; gap: var(--sp-05); padding: var(--sp-15) 0; }
 .kk-put { font: 400 13px/19px var(--font); overflow-wrap: anywhere; }
 .kk-sum { padding-top: var(--sp-3); }
 .kk-sum .btn { margin-top: var(--sp-2); height: var(--btn-h-sm); }
