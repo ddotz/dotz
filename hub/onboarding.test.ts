@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { createDiscordStore } from "./discord-connection.ts";
 import { createJandiStore } from "./onboarding-jandi.ts";
 import { HUB_TOKEN } from "./config.ts";
-import { introOf, issueToken, markDone, markTerminalDone, SETUP_COOKIE } from "./first-run.ts";
+import { introOf, issueToken, markDone, markTerminalDone, SETUP_COOKIE } from "../firstrun/first-run.ts";
 import { makeRoute } from "./routes.ts";
-import { createSetupGate, type SetupDeps } from "./setup-gate.ts";
+import { createSetupGate, type SetupDeps } from "../firstrun/setup-gate.ts";
 import { createOnboarding, type OnboardDeps, type OnboardKey, onboardingRoute, type OnboardView } from "./onboarding.ts";
 
 const API = "https://discord.com/api/v10";

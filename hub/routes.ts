@@ -92,9 +92,7 @@ import { igDmRoute } from "./ig-dm-gateway.ts";
 import { kakaoDraftSends, kakaoPendingCount, kakaoPendingDrafts, kakaoRoute, kakaoUnreplied } from "./kakao/gateway.ts";
 import { defaultOnboardDeps, onboardingService, setOnboardDeps } from "./onboarding.ts";
 import { saveWebAccessInput } from "./onboarding-web-access.ts";
-import { homedir } from "node:os";
-import { introOf, setIntro } from "./first-run.ts";
-import { createSetupGate } from "./setup-gate.ts";
+import { createSetupGate } from "../firstrun/setup-gate.ts";
 
 const BOOT_ID = Date.now().toString(36);
 setAppName(NAME);
@@ -400,14 +398,11 @@ const parseMailStates = (raw: unknown): { source: string; items: MailSourceState
 };
 
 export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps, mailReconcile }: RestartHooks): (req: Request, srv?: Server<unknown>) => Promise<Response> {
-	// The web onboarding's first-run gate (hub/setup-gate.ts): inert unless <data dir>/onboarding/first-run.json says pending.
-	const setupGate = createSetupGate({ dir: DATA_DIR, home: homedir(), pkg: join(import.meta.dir, ".."), localHeaders: () => localLogin.sessionHeaders(), restart: () => void restartGatewayNow(), providers: routeSettings, log });
+	const setupGate = createSetupGate({ dir: DATA_DIR, localHeaders: () => localLogin.sessionHeaders(), restart: () => void restartGatewayNow(), providers: routeSettings, log });
 	// Before any onboarding route can run: the real browser/exec, a gateway restart only after a flow changed config, and the live web-access switch.
 	setOnboardDeps(
 		defaultOnboardDeps(DATA_DIR, {
-			restart: async () => {
-				restartGateway();
-			},
+			restart: async () => void restartGateway(),
 			applyWebAccess: async input => {
 				await webAccess.change(input);
 			},
@@ -441,9 +436,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (peer === "none" && req.method === "GET" && url.pathname === "/local-login") return localLogin.page(req, url, webAccess.mode(), srv?.requestIP(req)?.address);
 		if (peer === "none" && req.method === "POST" && url.pathname === "/local-login/request") return localLogin.request(req, url, webAccess.mode(), srv?.requestIP(req)?.address);
 		if (peer === "none" && req.method === "GET" && url.pathname === "/local-login/status") return localLogin.status(req, url, webAccess.mode(), srv?.requestIP(req)?.address);
-		// The first-run onboarding answers (or 404s) its own paths here, before the owner check: it has its own cookie, and it changes nothing below.
-		const setup = peer === "none" ? await setupGate.route(req, url, srv?.requestIP(req)?.address) : undefined;
-		if (setup) return setup;
+		if (peer === "none") { const r = await setupGate.route(req, url, srv?.requestIP(req)?.address); if (r) return r; }
 		if (peer === "none" && !authorized(req, !!cfAccess && (await cfAccess.verifyRequest(req)), !!devices && (await devices.verifySession(req)), srv?.requestIP(req)?.address)) return devices ? devices.denied(req, url) : webAccess.mode() === "local" ? localLogin.hint(req, srv?.requestIP(req)?.address) : new Response("forbidden", { status: 403 });
 		const deviceApi = peer === "none" ? await devices?.apiRoute(req, url) : undefined;
 		if (deviceApi) return deviceApi;
@@ -451,15 +444,6 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (accessApi) return accessApi;
 		const loginLink = peer === "none" ? localLogin.loginLink(req, url, { mode: webAccess.mode(), port: PORT, tokenOk: req.headers.get("x-dotz-token") === HUB_TOKEN }) : undefined;
 		if (loginLink) return loginLink;
-		// Whether the app tour was seen (docs/web-onboarding.md): the marker's intro, "seen" for an install that has no marker.
-		if (peer === "none" && url.pathname === "/api/intro") {
-			if (req.method === "GET") return json({ intro: introOf(DATA_DIR) });
-			if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
-			const b = await body(req);
-			if (b.intro !== "seen" && b.intro !== "pending") return json({ error: "intro must be seen or pending" }, 400);
-			setIntro(DATA_DIR, b.intro);
-			return json({ intro: introOf(DATA_DIR) });
-		}
 		// 설정 → 웹 접속: Cloudflare starts the onboarding flow, 이 컴퓨터만 records the mode and is done at once. Neither answer carries a secret.
 		if (peer === "none" && url.pathname === "/api/web-access/onboard") {
 			if (req.method !== "POST") return json({ error: "method not allowed" }, 405);

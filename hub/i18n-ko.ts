@@ -485,7 +485,7 @@ export const ko: Catalog = {
 			},
 		},
 	},
-	// Texts the gateway sends to the web onboarding (hub/setup-*.ts): job rows, owner steps, errors. {name} marks a value filled in on the server.
+	// Texts the gateway sends to the web onboarding (firstrun/setup-*.ts): job rows, owner steps, errors. {name} marks a value filled in on the server.
 	setup: {
 		jobs: { "install-omo": "OmO 설치", "aside-app": "Aside 앱 설치", "aside-cli": "Aside CLI 설치", tailscale: "Tailscale 설치", zele: "메일·일정 도구(zele) 설치", "tailscale-start": "Tailscale 열기", permissions: "macOS 권한", apply: "저장하고 적용" },
 		terms: { "aside-login": "Aside 로그인", "zele-login": "메일·일정 계정 연결", "claude-login": "Claude Code 로그인", "omp-login": "omp 로그인" },
@@ -516,7 +516,7 @@ export const ko: Catalog = {
 			bot: {
 				name: "이름", namePh: "루미, 모모, 비서", nameHint: "2~32자예요. Discord 봇 이름과 카테고리도 이 이름을 써요.", character: "성격", tone: "말투", notices: "작업 기록과 알림 문체", custom: "직접 쓰기", customPh: "원하는 대로 적어 주세요", later: "나중에 대화에서 바꿀 수 있어요.",
 				address: "나를 부르는 말", addressPh: "형, 대표님, 이름", addressHint: "비워 두면 호칭 없이 말해요.", avatar: "프로필 이미지", avatarPh: "/Users/me/Pictures/bot.png", avatarHint: "png나 jpg 파일 경로를 적어요. 비워 두면 이미지 없이 시작해요.",
-				// v is the text kept in the identity (the same lists as onboard/answers.ts); t and s are what the page shows.
+				// v is the text kept in the identity (the same lists as firstrun/answers.ts); t and s are what the page shows.
 				opts: {
 					character: [
 						{ t: "차분하고 믿음직한 개인 비서", s: "먼저 결과를 말하고 필요한 것만 물어요", v: "차분하고 믿음직한 개인 비서. 먼저 결과를 말하고 필요한 것만 묻는다." },

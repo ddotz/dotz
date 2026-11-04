@@ -1,11 +1,11 @@
 // The answers of the onboarding (terminal wizard, --answers file, web onboarding) and the checks that turn them into a complete set. Shared by setup.ts and
-// the web onboarding (hub/setup-apply.ts), so both write exactly the same config.
+// the web onboarding (firstrun/setup-apply.ts), so both write exactly the same config.
 import { existsSync, readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { detectLanguage, languageName } from "../hub/language.ts";
 import { cleanName, friendlyName } from "../hub/machine-name.ts";
-import { defaultHarness, harness, HARNESSES } from "./harness.ts";
+import { defaultHarness, harness, HARNESSES } from "../onboard/harness.ts";
 
 export const SNOWFLAKE = /^\d{17,20}$/;
 

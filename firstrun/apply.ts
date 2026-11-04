@@ -1,12 +1,25 @@
 // What onboarding does once the answers are complete: secrets, config.json, state.json, IDENTITY.md, the omp plugin link, `tailscale serve`
-// and the Discord bot. Moved out of setup.ts so the terminal wizard and the web onboarding (hub/setup-apply.ts) run the same code;
+// and the Discord bot. Moved out of setup.ts so the terminal wizard and the web onboarding (firstrun/setup-apply.ts) run the same code;
 // every line goes through env.say (console.log in the terminal, the scrubbed stream on the web).
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { type Answers, identityDoc, type Prior } from "./answers.ts";
-import { AsideRepl, createApp, ensureBrowser, invite, isAdmin, PERMISSIONS, resetToken } from "./discord.ts";
-import { serveWeb, tailscaleState, type TailscaleState } from "./tailscale.ts";
+import { writeAtomic } from "./atomic.ts";
+import { AsideRepl, createApp, invite, isAdmin, PERMISSIONS, resetToken } from "../onboard/discord.ts";
+import { tailscaleState, type TailscaleState } from "../onboard/tailscale.ts";
+
+async function ensureBrowser(): Promise<void> {
+	const probe = (await Bun.$`aside repl ${"const p = await openTab('about:blank'); console.log('READY');"}`.nothrow().quiet()).stdout.toString();
+	if (/READY/.test(probe)) return;
+	await Bun.$`open -a Aside`.nothrow().quiet();
+	await Bun.sleep(6000);
+}
+
+async function serveWeb(bin: string, httpsPort: number, localPort: number): Promise<{ ok: boolean; out: string }> {
+	const r = await Bun.$`${bin} serve --bg --https=${httpsPort} http://127.0.0.1:${localPort}`.nothrow().quiet();
+	return { ok: r.exitCode === 0, out: `${r.stdout.toString()}\n${r.stderr.toString()}`.trim() };
+}
 
 export type Env = { dir: string; home: string; pkg: string; say: (line: string) => void };
 
@@ -53,12 +66,12 @@ export function writeConfig(env: Env, a: Answers, prior: Prior, access?: "local"
 		lanes: { runtime: a.runtime, ...pick(prior.raw.lanes, ["max_active"]) },
 		models: { ...prior.raw.models, orchestrator: { ...prior.raw.models?.orchestrator, ...split(a.orchestrator_model) }, lanes: { ...prior.raw.models?.lanes, ...split(a.lane_model) } },
 	};
-	writeFileSync(join(env.dir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
-	if (!existsSync(join(env.dir, "state.json"))) writeFileSync(join(env.dir, "state.json"), `${JSON.stringify({ open_tasks: [] }, null, 2)}\n`);
+	writeAtomic(join(env.dir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
+	if (!existsSync(join(env.dir, "state.json"))) writeAtomic(join(env.dir, "state.json"), `${JSON.stringify({ open_tasks: [] }, null, 2)}\n`);
 	const identityFile = join(env.dir, "identity", "IDENTITY.md");
 	if (JSON.stringify(a.identity) !== JSON.stringify(prior.raw.identity ?? null) || !existsSync(identityFile)) {
 		mkdirSync(join(env.dir, "identity"), { recursive: true });
-		writeFileSync(identityFile, identityDoc(a.identity));
+		writeAtomic(identityFile, identityDoc(a.identity));
 		env.say(`identity: ${identityFile}`);
 	}
 	env.say(`config: ${join(env.dir, "config.json")}`);
@@ -108,7 +121,7 @@ export async function setupDiscord(env: Env, r: DiscordRun): Promise<boolean> {
 			env.say(`discord: Aside로 '${a.identity.name}' 앱을 만들거나 기존 앱을 찾는 중...`);
 			const appId = prior.raw.discord?.app_id ?? (await createApp(a.identity.name));
 			config.discord = { ...config.discord, app_id: appId } as typeof config.discord;
-			writeFileSync(join(env.dir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
+			writeAtomic(join(env.dir, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
 			r.ownerStep?.();
 			const fresh = await resetToken(repl, appId, msg => env.say(`discord: ${msg}`));
 			writeSecret(token, fresh);
@@ -130,7 +143,7 @@ async function checkBot(env: Env, { a, auto, ownerStep }: DiscordRun): Promise<v
 	const file = tokenFile(env.dir);
 	const token = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
 	if (!token) return void (a.guild && env.say("discord: 아직 봇 토큰이 없어요. 웹 앱과 터미널로는 지금도 쓸 수 있어요."));
-	const me = await fetch("https://discord.com/api/v10/oauth2/applications/@me", { headers: { Authorization: `Bot ${token}` } });
+	const me = await fetch("https://discord.com/api/v10/oauth2/applications/@me", { headers: { Authorization: `Bot ${token}` }, signal: AbortSignal.timeout(15_000) });
 	if (!me.ok) return void env.say(`discord: 토큰이 거절됐어요 (${me.status}). secrets/discord-bot-token 을 지우고 setup 을 다시 실행하세요.`);
 	const app = (await me.json()) as { id: string; name: string };
 	// Every install runs the bot as server administrator; an older install invited with fewer rights is re-authorized.

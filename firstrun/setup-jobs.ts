@@ -1,11 +1,11 @@
 import { asideState, installApp, installCli } from "../onboard/aside.ts";
-import { lineRunner } from "../onboard/exec.ts";
+import { lineRunner } from "./exec.ts";
 import { detectHarnesses, harness } from "../onboard/harness.ts";
 import { requestPermissions } from "../onboard/permissions.ts";
 import { realHost, realUiBlocked } from "../onboard/selfserve.ts";
 import { installTailscale, type Run, startTailscale, tailscaleState } from "../onboard/tailscale.ts";
-import { scrubText } from "./onboarding.ts";
-import type { Catalog } from "./i18n-en.ts";
+import { scrubText } from "../hub/onboarding.ts";
+import type { Catalog } from "../hub/i18n-en.ts";
 
 // The long jobs of the web onboarding: a fixed server-side list (docs/web-onboarding.md "API 계약"), each one an existing onboard/ function run without
 // a terminal. A line reaches the stream only through scrubText; the log (deps.log) gets step names and outcomes, never the lines.

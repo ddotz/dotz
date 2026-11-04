@@ -1,12 +1,12 @@
-import { type Answers, priorOf, validateAnswers } from "../onboard/answers.ts";
-import { linkOmp, serveTailnet, setupDiscord, type Env, writeConfig, writeSecrets } from "../onboard/apply.ts";
+import { type Answers, priorOf, validateAnswers } from "./answers.ts";
+import { linkOmp, serveTailnet, setupDiscord, type Env, writeConfig, writeSecrets } from "./apply.ts";
 import { requestPermissions } from "../onboard/permissions.ts";
 import { realHost, realUiBlocked } from "../onboard/selfserve.ts";
 import { readFirstRun } from "./first-run.ts";
 import { fill, type JobIO } from "./setup-jobs.ts";
 
 // "저장하고 적용": everything setup.ts does after the answers, run from the draft. The secrets were written to secrets/ when they were entered,
-// so the draft never held them; what is left here is the shared onboard/apply.ts code with its lines going to the scrubbed stream.
+// so the draft never held them; what is left here is the shared firstrun/apply.ts code with its lines going to the scrubbed stream.
 
 export type ApplyDeps = { dir: string; home: string; pkg: string; permissionsDone: () => boolean };
 export type ApplyOutcome = { ok: true; access: "local" | "tailscale"; url: string; why: string; owner: string } | { ok: false; error: string };
@@ -16,7 +16,7 @@ const str = (v: unknown): string => (typeof v === "string" ? v.trim() : "");
 const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isInteger(v) ? v : undefined);
 const present = <T extends object>(o: T): Partial<T> => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== "" && v !== undefined)) as Partial<T>;
 
-/** The draft of the wizard as answers; what the owner left empty takes the earlier run's value or the default (onboard/answers.ts). */
+/** The draft of the wizard as answers; what the owner left empty takes the earlier run's value or the default (firstrun/answers.ts). */
 export function draftAnswers(draft: Record<string, unknown>): Partial<Answers> {
 	const identity = present({ name: str(draft.name), character: str(draft.character), tone: str(draft.tone), notices: str(draft.notices), address: str(draft.address), avatar: str(draft.avatar), language: str(draft.lang) });
 	return {

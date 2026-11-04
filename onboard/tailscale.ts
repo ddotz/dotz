@@ -32,7 +32,7 @@ export async function tailscaleState(): Promise<TailscaleState> {
 	return { bin, ...parseStatus(r.stdout.toString() || r.stderr.toString()) };
 }
 
-/** Runs one command and says whether it succeeded. The terminal wizard inherits stdio; the web onboarding passes a runner that never reads a terminal (onboard/exec.ts). */
+/** Runs one command and says whether it succeeded. The terminal wizard inherits stdio; the web onboarding passes a runner that never reads a terminal (firstrun/exec.ts). */
 export type Run = (cmd: string[]) => Promise<boolean>;
 const inherit: Run = async cmd => (await Bun.spawn(cmd, { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited) === 0;
 
@@ -48,9 +48,4 @@ export async function installTailscale(run: Run = inherit): Promise<boolean> {
 export async function startTailscale(bin: string, run: Run = inherit): Promise<void> {
 	if (MAC) await run(["open", "-a", "Tailscale"]);
 	else await run(["sudo", bin || "tailscale", "up"]);
-}
-
-export async function serveWeb(bin: string, httpsPort: number, localPort: number): Promise<{ ok: boolean; out: string }> {
-	const r = await Bun.$`${bin} serve --bg --https=${httpsPort} http://127.0.0.1:${localPort}`.nothrow().quiet();
-	return { ok: r.exitCode === 0, out: `${r.stdout.toString()}\n${r.stderr.toString()}`.trim() };
 }
