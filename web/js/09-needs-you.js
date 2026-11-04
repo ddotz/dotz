@@ -219,7 +219,7 @@ function nyMonRow(it) {
 function nyListNode(items) {
   const rows = nyRows(items), shown = NY.more ? rows : rows.slice(0, NY.top), rest = rows.slice(shown.length).reduce((c, r) => c + r.count, 0);
   const toggle = rows.length > NY.top ? el("button", { class: "ny-more", type: "button", "data-k": "ny-more", "aria-expanded": String(NY.more), onclick: () => { NY.more = !NY.more; renderHomeNow(); } }, NY.more ? "접기" : `더 보기 · ${rest}개`) : null;
-  return el("div", { class: "hn", "data-k": "needs" }, ...shown.map(r => r.node), ...(rows.length ? [] : [el("div", { class: "empty", text: "답변할 항목이 없어요" })]), toggle);
+  return el("div", { class: "hn", "data-k": "needs" }, ...shown.map(r => r.node), ...(rows.length ? [] : [hcNone("답변할 항목이 없어요")]), toggle);
 }
 function attnChanged() {
   renderBars();

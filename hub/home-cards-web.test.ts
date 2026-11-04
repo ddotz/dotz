@@ -135,8 +135,12 @@ describe("홈 cards at 1100px", () => {
 		})())`)) as string) as string[][];
 		expect(same[0]).toEqual(same[1]);
 		expect(same[0]).toEqual(same[2]);
-		// a status card with nothing to list folds to its head (one line), not an empty body
-		expect(await view.evaluate(`document.querySelector('.bi[data-id="notices:worklog"] .card').classList.contains("fold") && !document.querySelector('.bi[data-id="notices:worklog"] .hc-list')`)).toBe(true);
+		// a status card with nothing to list is its head and one state line: the head's body gap is gone, so the line sits 8px under it
+		const emptyCard = JSON.parse((await view.evaluate(`JSON.stringify((() => {
+			const box = document.querySelector('.bi[data-id="notices:worklog"]'), head = box.querySelector(".ch").getBoundingClientRect(), line = box.querySelector(".card > .hc-none").getBoundingClientRect();
+			return { list: !!box.querySelector(".hc-list"), gap: line.top - head.bottom, below: box.querySelector(".card").getBoundingClientRect().bottom - line.bottom };
+		})())`)) as string);
+		expect(emptyCard).toEqual({ list: false, gap: 8, below: 20 });
 	});
 
 	test("Esc during a mouse drag puts the card back and saves nothing", async () => {
