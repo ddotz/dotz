@@ -60,7 +60,7 @@ const SIZE_ALLOWED: Record<string, [number, number]> = {
 	"09-notices.css": [0, 0], "10-conversations.css": [0, 0], "11-peers.css": [0, 0], "13-code-shell.css": [0, 0],
 	"14-overlay.css": [1, 0], "15-draft-original.css": [0, 0], "15-reply-card.css": [0, 0], "15-reply.css": [0, 0],
 	"15-settings-pages.css": [0, 0], "15-settings-phone.css": [0, 0], "15-triage.css": [0, 0], "16-result-card.css": [0, 0],
-	"17-kakao.css": [0, 0], "18-app-settings.css": [2, 1], "18-comments.css": [3, 2], "19-volume.css": [10, 0],
+	"17-kakao.css": [0, 0], "18-app-settings.css": [0, 0], "18-comments.css": [3, 2], "19-volume.css": [10, 0],
 	"20-apps.css": [4, 0], "20-mail-box.css": [25, 14], "20-mail-thread.css": [7, 4], "20-monitoring.css": [7, 2],
 	"20-projects.css": [4, 2], "21-picker.css": [1, 3], "22-shell.css": [7, 3],
 };
