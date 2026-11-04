@@ -3,7 +3,7 @@ let AB;
 const abUsd = n => `$${n.toFixed(2)}`;
 function budgetCard(B) {
   const card = el("div", { class: "card" }, el("div", { class: "ch" }, el("h3", { text: "API 월 한도" }),
-    el("button", { class: "btn text", type: "button", onclick: () => budgetDialog() }, "설정")));
+    el("button", { class: "btn text inrow", type: "button", onclick: () => budgetDialog() }, "설정")));
   const src = B.source === "admin" ? "콘솔 기준 (관리자 키)" : "이 앱 사용분 추정";
   if (B.limit_usd) {
     const pct = B.pct || 0, tone = pct >= 80 ? "warn" : "";
