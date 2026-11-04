@@ -19,6 +19,8 @@ export type WebAccessDeps = {
 	dir: string;
 	allow: Set<string>;
 	notify: (text: string) => void;
+	/** Called when the mode moves away from "local": the local login sessions and codes are void from then on. */
+	onLeaveLocal?: () => void;
 };
 
 const DEFAULT_TOKEN_FILE = "cloudflared-tunnel-token";
@@ -29,6 +31,29 @@ const TOKEN_RE = /^[A-Za-z0-9+/=_.-]{16,4096}$/;
 const NO_CLOUDFLARED = "cloudflared를 찾을 수 없어요. `brew install cloudflared` 로 설치해 주세요";
 
 export class WebAccessError extends Error {}
+
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+const isLoopbackIp = (ip: string): boolean => /^(::ffff:)?127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/i.test(ip) || ip === "::1";
+// Set by a proxy or tunnel in front of the gateway (tailscale serve, cloudflared, a reverse proxy): such a request did not start on this computer.
+const FORWARDED = ["forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip", "cf-connecting-ip", "cf-ray"];
+
+/**
+ * web.access "local" (이 컴퓨터만): only a browser on this computer may even try to log in (hub/local-login.ts). The gateway listens on 127.0.0.1 only, so the rule
+ * is about what else reaches that socket: the TCP peer must be loopback, the Host loopback (a DNS-rebound name is refused), no proxy or
+ * tunnel header may be present (a tailscale serve or cloudflared still running in front of the port relays from loopback too), and the
+ * request must not come from another site's page in the same browser (Origin, when sent, is this same origin; Sec-Fetch-Site, when sent,
+ * is same-origin or none) so a web page cannot drive the API through the owner's browser.
+ */
+export function localBrowser(req: Request, peerIp: string | undefined): boolean {
+	if (!peerIp || !isLoopbackIp(peerIp)) return false;
+	const url = new URL(req.url);
+	if (!LOOPBACK_HOSTS.has(url.hostname)) return false;
+	for (const k of req.headers.keys()) if (FORWARDED.includes(k) || k.startsWith("tailscale-")) return false;
+	const origin = req.headers.get("origin");
+	if (origin !== null && origin !== url.origin) return false;
+	const site = req.headers.get("sec-fetch-site");
+	return site === null || site === "same-origin" || site === "none";
+}
 
 /** DOTZ_TAILSCALE_BIN (colon-separated, empty = none) replaces the lookup list: a test forces "no tailscale" on a host that has the app. */
 const tailscaleBins = (): string[] => (process.env.DOTZ_TAILSCALE_BIN !== undefined ? process.env.DOTZ_TAILSCALE_BIN.split(":").filter(Boolean) : ["tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"]);
@@ -193,7 +218,9 @@ export function createWebAccess(deps: WebAccessDeps) {
 				if (token) writeToken(tokenPath(next), token);
 				else rmSync(tokenPath(next), { force: true });
 			}
+			const leavingLocal = state.mode === "local" && next.mode !== "local";
 			persist(next);
+			if (leavingLocal) deps.onLeaveLocal?.();
 			await go(next);
 			log(`web: access is now ${next.mode}${next.mode === "cloudflare" ? ` on ${next.hostname}` : ""}`);
 		});
