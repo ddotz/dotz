@@ -70,8 +70,8 @@ async function logoutProvider(p) {
   await loadProviders(); loadModels(true);
   if (current === "home") renderHome();
 }
-// 모델 · 폴백: one card per target - its model and effort, then (orchestrator, lane default, workers) the ordered fallback
-// chain that target's harness walks. The composer chips, the home card menu, 구성 and 설정 all open this screen.
+// 모델 · 폴백: one card per target - its model and effort on one row, which is step 1 of the fallback chain that target's harness walks
+// where it has one (orchestrator, lane default, workers). The composer chips, the home card menu, 구성 and 설정 all open this screen.
 let modelsFocus = "";
 const openModels = key => { modelsFocus = key || ""; if (current === "models") renderModels(); else go("models"); };
 function targetCard(key, title, status, cur, confirmText, extra = {}) {
@@ -90,15 +90,14 @@ function targetCard(key, title, status, cur, confirmText, extra = {}) {
     await putModel(key, title, change, confirmText, `${modelName(model)} · ${thinkKo(thinking)}`);
   }) }, "적용");
   const run = status ? runStatus(key, status, targetInfo(key).ask) : null, sub = [run && run[0], extra.sub].filter(Boolean).join(" · ");
+  const pick = el("div", { class: "mt-pick" }, el("div", { class: "mt-model" }, modelField), el("div", { class: "mt-eff" }, effField));
+  const notes = [
+    info && !info.reasoning && thinking && thinking !== "off" ? el("div", { class: "sup mt-note", text: "이 모델은 추론 강도를 쓰지 않아요" }) : null,
+    dirty ? el("div", { class: "btns mt-apply" }, el("button", { class: "btn text", type: "button", onclick: () => { delete pending[key]; renderModels(); } }, "되돌리기"), apply) : null,
+  ].filter(Boolean);
   return el("section", { class: "mt-card", "data-target": key, "aria-label": title },
-    el("div", { class: "mt-head" }, run ? el("span", { class: `dot ${run[1]}` }) : null, el("span", { class: "t", text: title }), sub ? el("span", { class: "sup", text: sub }) : null, el("span", { class: "sp" }), ...(extra.tags || [])),
-    el("div", { class: "list mt-list" },
-      el("div", { class: "mt-pick" },
-        el("div", { class: "mt-model" }, modelField),
-        el("div", { class: "mt-eff" }, effField)),
-      info && !info.reasoning && thinking && thinking !== "off" ? el("div", { class: "sup mt-note", text: "이 모델은 추론 강도를 쓰지 않아요" }) : null,
-      dirty ? el("div", { class: "btns mt-apply" }, el("button", { class: "btn text", type: "button", onclick: () => { delete pending[key]; renderModels(); } }, "되돌리기"), apply) : null,
-      ...(extra.body || [])));
+    el("div", { class: "mt-head" }, run ? el("span", { class: `dot ${run[1]}` }) : null, el("span", { class: "t", text: title }), sub ? el("span", { class: "sup", text: sub }) : null, el("span", { class: "sp" })),
+    el("div", { class: "list mt-list" }, ...(extra.chain ? [extra.chain(pick, notes)] : [pick, ...notes])));
 }
 function renderModels() {
   const box = $("#models");
@@ -106,16 +105,16 @@ function renderModels() {
   closeMenu(false);
   if (!M) { clear(box).append(emptyNode("불러오는 중…")); return; }
   const provs = [...new Set((M.available || []).map(a => a.provider))].sort((a, b) => providerName(a).localeCompare(providerName(b)));
-  const filter = selectField("공급자", providerFilter ? providerName(providerFilter) : "전체", [{ value: "", label: "전체" }, ...provs.map(p => ({ value: p, label: providerName(p) }))], providerFilter, v => { providerFilter = v; renderModels(); });
+  const filter = selectField("공급자", providerFilter ? providerName(providerFilter) : "공급자 전체", [{ value: "", label: "전체" }, ...provs.map(p => ({ value: p, label: providerName(p) }))], providerFilter, v => { providerFilter = v; renderModels(); });
   const lanes = (M.lanes || []).filter(laneAlive);
   clear(box).append(
     el("div", { class: "col mt" },
-      el("div", { class: "mt-top" }, el("p", { class: "mt-intro", text: "대상마다 모델과 추론 강도, 막혔을 때 넘어갈 순서를 정해요. 어시스턴트·세션 폴백은 저장하면 바로 적용돼요." }), el("div", { class: "mt-filter" }, filter)),
+      el("div", { class: "mt-top" }, el("p", { class: "mt-intro", text: "막히면 번호 순서대로 넘어가요." }), el("div", { class: "mt-filter" }, filter)),
       inUseSection(),
       ...FB_LAYERS.map(L => targetCard(L.id, L.title(), "", L.cur(), L.confirm, fbParts(L))),
       repliesCard(),
-      lanes.length ? el("div", { class: "sec", text: "실행 중 세션" }) : null,
-      ...lanes.map(l => targetCard(`lane:${l.name}`, l.name, l.status, l, "", { body: [el("div", { class: "note mt-foot", text: "폴백은 세션 기본값 순서를 따라요" })] }))));
+      lanes.length ? el("div", { class: "sec" }, "실행 중 세션", el("span", { class: "sup", text: "폴백은 세션 기본값 순서를 따라요" })) : null,
+      ...lanes.map(l => targetCard(`lane:${l.name}`, l.name, l.status, l, ""))));
   if (modelsFocus) {
     const n = box.querySelector(`[data-target="${CSS.escape(modelsFocus)}"]`);
     modelsFocus = "";
