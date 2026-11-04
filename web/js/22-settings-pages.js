@@ -87,6 +87,7 @@ function settingsList(go) {
     stSec("앱"), stList(
       stRow("bell", "앱과 알림", stPushSub(), () => go("notifications")),
       navOff("apps") ? null : stRow("apps", "앱 관리", "", () => go("apps")),
+      stRow("spark", "화면 안내 다시 보기", "화면 설명과 단축키", () => introOpen()),
       stRow(themeIc(), "표시", `${themeIs() === "dark" ? "다크" : "라이트"} · 대화 탭 ${chatTabMode() === "main" ? "메인" : "마지막"}`, () => go("display"))),
     stSec("시스템"), stList(
       stRow("download", "업데이트", stUpdateSub(), () => go("update"), updRestartPending() ? stTag("재시작 필요") : updAvailable() ? stTag("새 버전") : hvNew() ? stTag("업데이트") : undefined),
