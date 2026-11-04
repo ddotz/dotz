@@ -2,7 +2,7 @@
 .nt-row { display: flex; align-items: flex-start; gap: var(--sp-3); width: 100%; min-height: var(--row-h); padding: var(--row-py) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; }
 .nt-row:hover { background: var(--card-hover); }
 .nt-row:active { background: var(--active); }
-.nt-dot { flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--fg-3); }
+.nt-dot { flex: none; width: 8px; height: 8px; margin-top: 7px; /* nudge: 8px dot centred on the first 22px text line */ border-radius: 50%; background: var(--fg-3); }
 .nt-dot.tone-done { background: var(--ok); }
 .nt-dot.tone-run { background: var(--accent); }
 .nt-dot.tone-ask { background: var(--warn); }
@@ -37,7 +37,7 @@
 button.nt-mon { cursor: pointer; }
 button.nt-mon .chev { flex: none; align-self: center; color: var(--fg-3); }
 div.nt-mon:hover, div.nt-mon:active { background: transparent; }
-div.nt-mon .nt-dot { margin-top: 7px; }
+div.nt-mon .nt-dot { margin-top: 7px; /* nudge: same dot centring in the monitoring row */ }
 
 /* Home cards: 알림 / 작업내역 / 모니터링 (as tall as their content on the board, 07-board.js fit). */
 .card.hc { display: flex; flex-direction: column; }
@@ -52,7 +52,7 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .hc-row .t, .hc-row .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hc-row .n { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .hc-row .m { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); }
-.hc-mon { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.hc-mon { display: flex; align-items: flex-start; gap: var(--sp-2); min-width: 0; }
 .hc-mon .nt-dot { margin-top: var(--sp-15); }
 .hc-mon .b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .hc-mon .n, .hc-mon .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -77,7 +77,7 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 /* Computer switch sheet (33-peers.js): the bottom sheet on the phone and a centered dialog from 700px. Decisions and notices use the full-screen overlay (14-overlay.css), not this. */
 .ds-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .42); }
 .ds-sheet { --fs-fill: var(--layer); display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: 90dvh; border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--pop); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); box-shadow: var(--float); }
-.ds-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: 14px var(--sp-3) 0 var(--sp-5); }
+.ds-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-3) var(--sp-3) 0 var(--sp-5); }
 .ds-ey { flex: 1; color: var(--warn); font: 600 13px/20px var(--font); }
 .ds-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--sp-1) var(--sp-5) var(--sp-3); }
 @media (min-width: 700px) {
@@ -87,10 +87,10 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .ds-t { margin: var(--sp-1) 0 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
 .ds-m { margin: var(--sp-05) 0 var(--sp-3); color: var(--fg-3); font: 400 12px/16px var(--font); }
 .ds-md { color: var(--fg-2); font: 400 14px/22px var(--font); overflow-wrap: anywhere; }
-.ds-md p { margin: 0 0 10px; }
+.ds-md p { margin: 0 0 var(--sp-2); }
 .ds-md p:last-child { margin-bottom: 0; }
 .ds-md code { overflow-wrap: anywhere; }
-.ds-opt, .ds-direct { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: var(--sp-05); width: 100%; min-height: var(--sheet-h); padding: 10px var(--sp-4); border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg); font: inherit; text-align: left; }
+.ds-opt, .ds-direct { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: var(--sp-05); width: 100%; min-height: var(--sheet-h); padding: var(--sp-2) var(--sp-4); border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg); font: inherit; text-align: left; }
 .ds-opt.c { align-items: center; }
 .ds-opt:hover, .ds-direct:hover { background: var(--hover); }
 .ds-opt:active, .ds-direct:active { background: var(--active); }
