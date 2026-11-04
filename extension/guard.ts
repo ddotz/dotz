@@ -27,7 +27,7 @@ import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { dataDir, type GuardConfig, GUARD_DEFAULTS, installedOriginal, isMain, loadGuardConfig, logOnce, stateDir, statePath as stateFile, SUB_COMPACT_STOP, SUB_COMPACT_WRAP_UP } from "./guard-config.ts";
 
 // Active configuration: the defaults until installGuard() loads <DOTZ_DIR>/config.json. The exported checks take their
@@ -192,14 +192,35 @@ export function projectFooter(brief: string, conv = process.env.DOTZ_CONV, cwd =
 	const rules = join(data, "RULES.md");
 	return `${PROJECT_MARKER} ${[...readmes, ...(existsSync(rules) ? [rules] : [])].join(", ")}. A derivative of an existing artifact starts from a copy of it.`;
 }
-// Appends the footer to each brief in place (both task shapes: OmO `prompt`, omp `tasks[].task`), once.
+// OmO injects a folder's AGENTS.md only on the `read` tool; a worker that reads through eval or a shell gets nothing (measured
+// 2026-11-05, /tmp/lessons-proof). A brief that names one of these folders carries the rules itself. Roots: the task's cwd and
+// every absolute path in the brief, walked upward, so "Repo: /x/dotz ... web/a.js" works from another cwd.
+export const FOLDER_RULES_MARKER = "Folder rules (";
+const RULE_FOLDERS = /(?<![\w.-])(web|site)\//g;
+function folderRules(brief: string, cwd: string): string[] {
+	const folders = new Set([...brief.matchAll(RULE_FOLDERS)].map(m => m[1]));
+	const found = new Set<string>();
+	if (folders.size)
+		for (const start of [cwd, ...(brief.match(/(?:~\/|\/)[\w./-]+/g) ?? [])]) {
+			for (let dir = start.replace(/^~/, homedir()); dir.length > 1; dir = dirname(dir))
+				for (const folder of folders) {
+					const file = join(dir, folder, "AGENTS.md");
+					if (existsSync(file)) found.add(file);
+				}
+		}
+	return [...found].map(file => `${FOLDER_RULES_MARKER}${file}):\n${readFileSync(file, "utf8").trim()}`);
+}
+
+// Appends the footers to each brief in place (both task shapes: OmO `prompt`, omp `tasks[].task`), once.
 export function addProjectFooter(input: any, conv = process.env.DOTZ_CONV, cwd = "", data = dataDir()): void {
 	const context = typeof input?.context === "string" ? input.context : "";
 	for (const item of Array.isArray(input?.tasks) ? input.tasks : [input]) {
 		const field = typeof item?.prompt === "string" ? "prompt" : typeof item?.task === "string" ? "task" : undefined;
-		if (!field || item[field].includes(PROJECT_MARKER)) continue;
-		const footer = projectFooter(`${item[field]}\n${context}`, conv, cwd, data);
-		if (footer) item[field] = `${item[field]}\n\n${footer}`;
+		if (!field) continue;
+		const brief = `${item[field]}\n${context}`;
+		const project = item[field].includes(PROJECT_MARKER) ? undefined : projectFooter(brief, conv, cwd, data);
+		const folders = item[field].includes(FOLDER_RULES_MARKER) ? [] : folderRules(brief, cwd);
+		for (const footer of [...(project ? [project] : []), ...folders]) item[field] = `${item[field]}\n\n${footer}`;
 	}
 }
 
