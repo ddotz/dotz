@@ -3,19 +3,19 @@ import { ASK_PREFIX, askComponents, askComponentsFor, askInteraction, parseAskId
 import type { Interaction } from "./discord.ts";
 import { buildPayloads } from "./discord-format.ts";
 
-const ASK = "[ask] 시작 설정\n\n**1) 지금 고치기** ← 추천\n재부팅 뒤에도 켜져요\n**2) 그대로 두기**\n다음 재부팅까지는 괜찮아요";
+const ASK = "[ask] 시작 설정\n\n**1) 지금 고치기**\n재부팅 뒤에도 켜져요\n**2) 그대로 두기**\n다음 재부팅까지는 괜찮아요";
 
-test("one button per option, recommended primary, others secondary", () => {
+test("one button per option, all secondary", () => {
 	const rows = askComponentsFor("lane:fix", ASK) as { type: number; components: { style: number; label: string; custom_id: string; disabled: boolean }[] }[];
 	expect(rows).toHaveLength(1);
 	expect(rows[0]!.components.map(c => [c.label, c.style, c.custom_id, c.disabled])).toEqual([
-		["지금 고치기", 1, `${ASK_PREFIX}:lane:fix:1`, false],
+		["지금 고치기", 2, `${ASK_PREFIX}:lane:fix:1`, false],
 		["그대로 두기", 2, `${ASK_PREFIX}:lane:fix:2`, false],
 	]);
 });
 
 test("rows of 5, label cut to 80, at most 25 buttons", () => {
-	const options = Array.from({ length: 7 }, (_, i) => ({ n: i + 1, label: "가".repeat(100), recommended: false }));
+	const options = Array.from({ length: 7 }, (_, i) => ({ n: i + 1, label: "가".repeat(100) }));
 	const rows = askComponents("chat", options) as { components: { label: string }[] }[];
 	expect(rows.map(r => r.components.length)).toEqual([5, 2]);
 	expect(rows[0]!.components[0]!.label).toHaveLength(80);

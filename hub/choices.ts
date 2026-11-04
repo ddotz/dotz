@@ -1,16 +1,16 @@
-// Decision options in a message, read from the MODE choice block: `**1) name** ← recommended` or `1) name`, optionally
+// Decision options in a message, read from the MODE choice block: `**1) name**` or `1) name`, optionally
 // quoted with ">". Pure parsing; the Discord buttons (hub/askbuttons.ts) and the web decision card use the same rules.
 //
 // Rules (the web card mirrors them):
 // - Lines inside ``` fences are ignored. A leading ">" and "**" around the option are stripped.
 // - Options are numbered 1, 2, 3 ... in a row. A number that restarts at 1 after that means several decision blocks
 //   ("1 and 2"): there is no single answer to click, so no options are returned. Fewer than 2 options: none.
-// - "← 추천" / "← recommended" anywhere on the option line marks the recommended one.
+// - The recommendation mark older messages carry on an option line is dropped (stripRecommendMark): nothing shows or keys on it.
 // - `question` is the last non-empty line before the first option, without a leading status marker.
-// The choice block a gateway job appends to an issue report on alert: "결정: <question>", then 2-4 options, the first one recommended,
+// The choice block a gateway job appends to an issue report on alert: "결정: <question>", then 2-4 options,
 // each a `**n) name**` line and a one-line consequence. The web's decision buttons and the decision notices read exactly this shape.
 export function issueBlock(question: string, options: { name: string; result: string }[]): string {
-	return [`결정: ${question}`, ...options.flatMap((o, i) => [`**${i + 1}) ${o.name}**${i === 0 ? " ← 추천" : ""}`, o.result])].join("\n");
+	return [`결정: ${question}`, ...options.flatMap((o, i) => [`**${i + 1}) ${o.name}**`, o.result])].join("\n");
 }
 
 // KakaoTalk reply drafts: when the incoming message needs a decision only the owner can make, the draft model returns 2-4 short choices
@@ -46,12 +46,11 @@ export function replyChoiceBlock(question: string, choices: string[]): string {
 	return [`결정: ${question}`, ...choices.flatMap((c, i) => [`**${i + 1}) ${c}**`, "고른 대로 답장을 써요"]), `**${choices.length + 1}) ${OWN_CHOICE} …**`, "적은 글을 답장으로 써요"].join("\n");
 }
 
-export type ChoiceOption = { n: number; label: string; recommended: boolean; detail?: true };
+export type ChoiceOption = { n: number; label: string; detail?: true };
 type Choices = { question?: string; options: ChoiceOption[] };
 
 const FENCE = /^\s*```/;
 const OPTION = /^\s*>?\s*(?:\*\*)?\s*(\d{1,2})\)\s*(.*)$/;
-const RECOMMENDED = /←\s*(?:추천|recommended)/i;
 const MAX_OPTIONS = 25;
 
 // A numbered list in the body above a "결정:" line is text, not a first decision block.
@@ -63,6 +62,10 @@ function fromFirstHead(lines: string[]): string[] {
 	}
 	return lines;
 }
+
+// Older messages, and gateways on an older version, still mark one option as recommended. Mirrors stripRecMark in web/js/10-decision-card.js.
+const REC_MARK = /^([ \t]*>?[ \t]*(?:\*\*)?[ \t]*\d{1,2}(?:\)|\.[ \t]).*?)[ \t]*(?:(?:←|<-)[ \t]*(?:추천|recommended)|\([ \t]*(?:추천|권장|recommended)[ \t]*\))/gim;
+export const stripRecommendMark = (text: string): string => text.replace(REC_MARK, "$1");
 
 export function parseChoices(text: string): Choices {
 	const options: ChoiceOption[] = [];
@@ -83,12 +86,11 @@ export function parseChoices(text: string): Choices {
 				if (options.length) return { options: [] };
 				continue;
 			}
-			const recommended = RECOMMENDED.test(m[2]!);
-			const raw = m[2]!.replace(/←.*$/, "").replace(/\*\*/g, "").trim();
+			const raw = stripRecommendMark(`1) ${m[2]!}`).slice(3).replace(/\*\*/g, "").trim();
 			const label = raw.replace(DETAIL_MARK, "").trim();
 			if (!label) return { options: [] };
 			if (!options.length) question = before;
-			options.push({ n, label, recommended, ...(detailOf({ label, detail: DETAIL_MARK.test(raw) }) ? { detail: true as const } : {}) });
+			options.push({ n, label, ...(detailOf({ label, detail: DETAIL_MARK.test(raw) }) ? { detail: true as const } : {}) });
 			continue;
 		}
 		const plain = line.replace(/^\s*>\s?/, "").replace(/\*\*/g, "").trim();
@@ -98,12 +100,12 @@ export function parseChoices(text: string): Choices {
 	return { ...(question ? { question } : {}), options };
 }
 
-// Several decisions in one message: a "결정: <title>" line opens a block, `**1) name** ← 추천` lines are its options, each with one
+// Several decisions in one message: a "결정: <title>" line opens a block, `**1) name**` lines are its options, each with one
 // description line under it. A number that restarts at 1 opens the next block. Mirrors the web card (web/js/10-decision-card.js)
 // so the bell and the chat card agree on what is being asked. Blocks with fewer than two options are not decisions.
 // `detail`: tapping this option asks the owner for a written reason / change first, and the answer goes out as `n) label - <text>`.
 // The bot marks it with a trailing ` …` on the option name (`**2) 안 됨 …**`, MODE.md); without the mark, detailOf guesses from the label and the description.
-export type DecisionOption = { n: number; label: string; desc: string; rec: boolean; detail?: true };
+export type DecisionOption = { n: number; label: string; desc: string; detail?: true };
 export const DETAIL_MARK = /\s*…\s*$/;
 const DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|아니|아냐|고치기|수정|다른)/;
 export const DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세요)|내용.*(?:적|알려|써)/;
@@ -113,13 +115,13 @@ export const detailOf = (o: { label: string; desc?: string; detail?: boolean }):
 // a bare numbered list without the "결정:" line is not.
 type DecisionBlock = { title: string; options: DecisionOption[]; headed?: true };
 export const hasDecisionHead = (blocks: DecisionBlock[]): boolean => blocks.some(b => b.headed);
-const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
+const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*$/;
 export const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 export const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 // One decision of a several-decision message: the lead text before the first "결정:" line plus that block's own lines, without its option
 // lines (the buttons show them) and without the other decisions. A message whose blocks are not all headed stays whole. Empty when nothing is left.
 export function decisionText(body: string, index: number): string {
-	const lines = body.replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
+	const lines = stripRecommendMark(body).replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
 	const lead: string[] = [];
 	const parts: string[][] = [];
 	let fence = false;
@@ -141,7 +143,7 @@ export function decisionText(body: string, index: number): string {
 	return [...lead, "", ...(parts[index] ?? [])].join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 export function parseDecisions(text: string): { question: string; blocks: DecisionBlock[] } {
-	const lines = text.replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
+	const lines = stripRecommendMark(text).replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
 	const blocks: DecisionBlock[] = [];
 	let i = 0;
 	let question = "";
@@ -177,7 +179,7 @@ export function parseDecisions(text: string): { question: string; blocks: Decisi
 		}
 		const raw = m[2]!.replace(/^\*+|\*+$/g, "").trim();
 		const marked = DETAIL_MARK.test(raw);
-		cur.options.push({ n, label: raw.replace(DETAIL_MARK, "").trim(), desc, rec: Boolean(m[3]), ...(marked ? { detail: true as const } : {}) });
+		cur.options.push({ n, label: raw.replace(DETAIL_MARK, "").trim(), desc, ...(marked ? { detail: true as const } : {}) });
 	}
 	// Only a block a "결정:" line opened is a decision (owner 2026-11-01): a numbered or bold list in the body ("**1) 답변 필요:** ...") is text, never an option.
 	return { question, blocks: blocks.filter(b => b.headed && b.options.length >= 2) };

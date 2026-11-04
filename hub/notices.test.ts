@@ -421,7 +421,7 @@ test("ignoring takes a question off the count, keeps it in the history, answers 
 
 test("one [ask] with a choice block posted to alert is one notice, and answering it closes that one", async () => {
 	const at = rts();
-	emit("outbox", { ts: at, kind: "out", source: "orchestrator", target: "alert", text: "[ask] 탭을 바꿨어요. 폰에서 봐 주세요.\n\n결정: 폰 탭 하나\n**1) 확인됨** ← 추천\n폰에서도 잘 보여요\n**2) 안 됨 …**\n어디가 이상한지 적어 주세요" });
+	emit("outbox", { ts: at, kind: "out", source: "orchestrator", target: "alert", text: "[ask] 탭을 바꿨어요. 폰에서 봐 주세요.\n\n결정: 폰 탭 하나\n**1) 확인됨**\n폰에서도 잘 보여요\n**2) 안 됨 …**\n어디가 이상한지 적어 주세요" });
 	const made = stored().filter(n => n.at === at || n.decision?.reply_to === at);
 	expect(made.map(n => n.kind)).toEqual(["decision"]);
 	const [d] = made;
@@ -440,7 +440,7 @@ test("on load, an alert item stored next to the decision of the same message rea
 	const T1 = "2026-10-22T14:07:14.500Z", T2 = "2026-10-22T14:09:00.000Z";
 	const base = { ts: T1, updated: T1, open: "alert", src: "alert", at: T1, read: false };
 	const pair: Notice[] = [
-		{ ...base, id: "dec00001", kind: "decision", tone: "ask", title: "폰 탭 구성 확인", text: "q", key: "dec:alert:x", decision: { options: [{ n: 1, label: "확인됨", desc: "", rec: true }, { n: 2, label: "안 됨", desc: "", rec: false }], to: "alert", reply_to: T1, group: 1, state: "open" } },
+		{ ...base, id: "dec00001", kind: "decision", tone: "ask", title: "폰 탭 구성 확인", text: "q", key: "dec:alert:x", decision: { options: [{ n: 1, label: "확인됨", desc: "" }, { n: 2, label: "안 됨", desc: "" }], to: "alert", reply_to: T1, group: 1, state: "open" } },
 		{ ...base, id: "twin0001", kind: "alert", tone: "ask", title: "알림", text: "q" },
 		{ ...base, id: "msg00001", kind: "message", tone: "", title: "알림", text: "q", key: "msg:alert" },
 		{ ...base, id: "fail0001", kind: "alert", tone: "fail", title: "알림", text: "디스크가 찼어요", ts: T2, updated: T2, at: T2 },
@@ -634,15 +634,15 @@ test("a message with two choice blocks gives two decision notices that stay unre
 	const at = ts();
 	const fresh: Notice[] = [];
 	onDecision(n => fresh.push(n));
-	post("web", "[ask] 두 가지를 정해 주세요\n결정: 먼저 고칠 것\n**1) 로그인 버그** ← 추천\n세션이 자꾸 풀려요\n**2) 결제 버그**\n결제가 가끔 안 돼요\n결정: 배포 시점\n**1) 지금**\n**2) 내일** ← 추천\n번호로 답해 주세요", { ts: at });
+	post("web", "[ask] 두 가지를 정해 주세요\n결정: 먼저 고칠 것\n**1) 로그인 버그**\n세션이 자꾸 풀려요\n**2) 결제 버그**\n결제가 가끔 안 돼요\n결정: 배포 시점\n**1) 지금**\n**2) 내일**\n번호로 답해 주세요", { ts: at });
 	const mine = decisions("main").filter(n => n.decision!.reply_to === at);
 	expect(mine.map(n => n.title)).toEqual(["먼저 고칠 것", "배포 시점"]);
 	expect(mine.every(n => !n.read && n.decision!.state === "open" && n.decision!.group === 2)).toBe(true);
 	expect(mine[0]!.decision!.options).toEqual([
-		{ n: 1, label: "로그인 버그", desc: "세션이 자꾸 풀려요", rec: true },
-		{ n: 2, label: "결제 버그", desc: "결제가 가끔 안 돼요", rec: false },
+		{ n: 1, label: "로그인 버그", desc: "세션이 자꾸 풀려요" },
+		{ n: 2, label: "결제 버그", desc: "결제가 가끔 안 돼요" },
 	]);
-	expect(mine[1]!.decision!.options.map(o => [o.label, o.rec])).toEqual([["지금", false], ["내일", true]]);
+	expect(mine[1]!.decision!.options.map(o => o.label)).toEqual(["지금", "내일"]);
 	expect(fresh.map(n => n.title)).toEqual(["먼저 고칠 것", "배포 시점"]);
 	// pinned: first in the list, not readable away, not dismissable
 	expect(listNotices().items.slice(0, 2).every(n => n.kind === "decision")).toBe(true);
@@ -838,7 +838,7 @@ test("on load, a stored open question without an expiry gets one from its own ti
 	rmSync(dir, { recursive: true, force: true });
 });
 
-const CHOICE = "결정: 정리 세션 시작 전 쌓인 변경 처리\n**1) 먼저 커밋** ← 추천\n지금 상태를 저장해요\n**2) 그대로 진행**\n설명 줄";
+const CHOICE = "결정: 정리 세션 시작 전 쌓인 변경 처리\n**1) 먼저 커밋**\n지금 상태를 저장해요\n**2) 그대로 진행**\n설명 줄";
 
 test("a plain reply with a numbered list is text: no decision, no notice, no push hook", () => {
 	const fresh: Notice[] = [];
@@ -852,7 +852,7 @@ test("a plain reply with a numbered list is text: no decision, no notice, no pus
 
 test("a reply without a marker but with a 결정: choice block is a decision", () => {
 	const at = "2052-01-01T00:00:02.000Z";
-	post("web", "결정: 다른 질문\n**1) 가나** ← 추천\n설명\n**2) 다라**\n설명", { ts: at });
+	post("web", "결정: 다른 질문\n**1) 가나**\n설명\n**2) 다라**\n설명", { ts: at });
 	expect(decisions("main").filter(n => n.decision!.reply_to === at)).toHaveLength(1);
 });
 
@@ -863,7 +863,7 @@ test("an [ask] with a choice block is a decision: notice, push hook and the answ
 	post("web", `[ask] 어떻게 할까요?\n${CHOICE}\n번호로 답해 주세요`, { ts: at });
 	const [d] = decisions("main").filter(n => n.decision!.reply_to === at);
 	expect(d).toMatchObject({ kind: "decision", read: false, title: "정리 세션 시작 전 쌓인 변경 처리", decision: { state: "open", group: 1 } });
-	expect(d!.decision!.options.map(o => [o.n, o.label, o.rec])).toEqual([[1, "먼저 커밋", true], [2, "그대로 진행", false]]);
+	expect(d!.decision!.options.map(o => [o.n, o.label])).toEqual([[1, "먼저 커밋"], [2, "그대로 진행"]]);
 	expect(fresh.filter(n => n.id === d!.id)).toHaveLength(1);
 	// a decision message makes only the decision item, no message item
 	expect(stored().filter(n => n.kind === "message" && n.text.includes("먼저 커밋"))).toHaveLength(0);
@@ -1076,7 +1076,7 @@ test("read state survives a reload: what the owner read (by position or by id) s
 
 test("on load, waiting items are redrawn from their source event by the current rules; ids, read and answer state stay, the rest is untouched", () => {
 	const t1 = "2026-10-20T01:00:00.000Z", t2 = "2026-10-20T01:05:00.000Z", t3 = "2026-10-20T01:10:00.000Z";
-	const ask: HubEvent = { ts: t1, kind: "out", source: "orchestrator", target: "main", text: "[ask] 배포할까요?\n\n결정: 배포 시점\n**1) 지금** ← 추천\n**2) 내일**" };
+	const ask: HubEvent = { ts: t1, kind: "out", source: "orchestrator", target: "main", text: "[ask] 배포할까요?\n\n결정: 배포 시점\n**1) 지금**\n**2) 내일**" };
 	const alert: HubEvent = { ts: t2, kind: "out", source: "gateway", target: "alert", text: "[fail] 디스크가 거의 찼어요" };
 	const done: HubEvent = { ts: t3, kind: "out", source: "gateway", target: "alert", text: "[fail] 이미 본 알림" };
 	const old = (id: string, at: string, extra: Partial<Notice>): Notice => ({ id, ts: at, updated: at, kind: "alert", tone: "", title: "옛 제목", text: "옛 문구", open: "main", src: "main", at, read: false, ...extra });

@@ -18,7 +18,7 @@ test("one answered [ask] with a choice block is one card: lead text, its 결정 
 	// leftovers of other test files: decisions with options are closed only by naming them
 	resolveNotices({ ids: listNotices(300).items.filter(n => n.decision?.state === "open").map(n => n.id) });
 	const at = new Date().toISOString();
-	emit("outbox", { ts: at, kind: "out", source: "orchestrator", target: "alert", text: "[ask] 탭 구성을 바꿨어요. 폰에서 확인해 주세요.\n\n결정: 폰 탭 구성 확인\n**1) 확인됨** ← 추천\n폰에서도 잘 보여요\n**2) 안 됨 …**\n어디가 이상한지 적어 주면 바로 고칠게요" });
+	emit("outbox", { ts: at, kind: "out", source: "orchestrator", target: "alert", text: "[ask] 탭 구성을 바꿨어요. 폰에서 확인해 주세요.\n\n결정: 폰 탭 구성 확인\n**1) 확인됨**\n폰에서도 잘 보여요\n**2) 안 됨 …**\n어디가 이상한지 적어 주면 바로 고칠게요" });
 	const mine = () => listNotices(300).items.filter(n => n.at === at);
 	expect(mine()).toHaveLength(1);
 	const id = mine()[0]!.id;

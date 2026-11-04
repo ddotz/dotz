@@ -187,7 +187,7 @@ Only the watches for the connected platforms are added. Commands use `command` (
 - Status flow: `draft` -> `approved` (owner chose OK in the decision block; the orchestrator runs `sns.ts approve <id>`)
   -> `scheduled` (approve with a future `publish_at` or a posting time) -> `posting` -> `done` | `failed`; `rejected`.
 - Nothing public happens from a job that is not `approved`/`scheduled`: `sns.ts publish` and `due.ts` refuse others.
-- The orchestrator shows drafts as a MODE choice block (`결정: ...`, `**1) 올리기** ← 추천`, `**2) 고쳐서 올리기**`,
+- The orchestrator shows drafts as a MODE choice block (`결정: ...`, `**1) 올리기**`, `**2) 고쳐서 올리기**`,
   `**3) 올리지 않기**`); in `batch` mode one block covers a batch and option 1 approves all of them.
 
 ## Home card and project
@@ -205,7 +205,7 @@ Only the watches for the connected platforms are added. Commands use `command` (
 ## playbook.md (read on demand; feature.md keeps only a pointer and the approval rule, ~430 chars, so installs that
 ## never use the feature pay almost nothing per prompt)
 
-- Setup on request: ask in ONE message with MODE choice blocks (platforms; posting time; approval each ← 추천 / batch;
+- Setup on request: ask in ONE message with MODE choice blocks (platforms; posting time; approval each / batch;
   quiet hours) and accept free text. Do not ask about languages: multilingual metadata is off until the owner asks
   for it later (then `setup.ts apply --languages <codes>`).
 - Credential order (contract login order): official API with a long-lived token first. YouTube: Google Cloud OAuth
@@ -217,7 +217,7 @@ Only the watches for the connected platforms are added. Commands use `command` (
   check `GET /api/custom` has no errors. Google keeps API uploads private until the project passes its audit: use
   `--youtube-via aside` for public uploads until then.
 - Wake-ups: `yt-comment`/`ig-comment` -> draft replies in the owner's voice from `~/.dotz/custom/sns/tone.md` (run
-  `sns.ts tone-sample` once if it is empty), `sns.ts job new`, show them as ONE choice-block message (올리기 ← 추천 /
+  `sns.ts tone-sample` once if it is empty), `sns.ts job new`, show them as ONE choice-block message (올리기 /
   고쳐서 올리기 / 올리지 않기; batch mode: one block for all). `new-video` -> draft title/description/tags in the base and
   configured languages + IG caption, upload job, ask. `needs-translation` -> draft localizations, metadata job, ask.
   `posted`/`failed`/`aside-needed` -> report in the project channel (aside-needed: do the upload with `aside repl`).

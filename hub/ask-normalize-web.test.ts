@@ -26,7 +26,7 @@ describe("a final answer ending in a plain option list", () => {
 		await waitFor(`typeof openTarget === "function" && S`);
 		await view.evaluate(`(openTarget("main", "chat"), 0)`);
 		await waitFor(`document.querySelectorAll("#dcard .dc-row").length === 3`);
-		expect(await view.evaluate(`[...document.querySelectorAll("#dcard .dc-row")].map(b => b.querySelector(".dc-lb").textContent.replace("추천", "")).join("|")`)).toBe("그대로 반영|알림 행만 조정하고 반영|반영 보류");
+		expect(await view.evaluate(`[...document.querySelectorAll("#dcard .dc-row")].map(b => b.querySelector(".dc-lb").textContent).join("|")`)).toBe("그대로 반영|알림 행만 조정하고 반영|반영 보류");
 		expect(await view.evaluate(`document.querySelector("#dcard .dc-q").textContent`)).toBe("어떻게 할까요?");
 	});
 });

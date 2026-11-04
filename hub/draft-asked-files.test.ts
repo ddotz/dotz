@@ -12,7 +12,7 @@ const dir = mkdtempSync(join(tmpdir(), "dotz-asked-"));
 const pdf = join(dir, "큐피드_연결정산표_대상회사_보정기준.pdf");
 writeFileSync(pdf, "%PDF-1.4 criteria");
 const ask = (ref: string, files: string, lines: string) =>
-	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "th:1", text: `[ask] 답장을 채워 뒀어요.\n\n> 받는이: 김 (kim@example.com)\n> 제목: RE: 기준\n${files}\n> 안녕하세요.\n> 붙임과 같이 전달드립니다.\n\n결정: 이 답장을 보낼까요? (${ref})\n**1) 보내기** ← 추천\n보내요\n**2) 고치기 …**\n고쳐요\n**3) 보내지 않기**\n안 보내요\n\n${lines}` });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "th:1", text: `[ask] 답장을 채워 뒀어요.\n\n> 받는이: 김 (kim@example.com)\n> 제목: RE: 기준\n${files}\n> 안녕하세요.\n> 붙임과 같이 전달드립니다.\n\n결정: 이 답장을 보낼까요? (${ref})\n**1) 보내기**\n보내요\n**2) 고치기 …**\n고쳐요\n**3) 보내지 않기**\n안 보내요\n\n${lines}` });
 const get = (path: string) => new Request(`http://x${path}`);
 
 test("a [file] line of the asking message is the draft's attached file: listed as tracked and served from the sheet", async () => {

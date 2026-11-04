@@ -37,7 +37,7 @@
     return `<div class="todo" data-todo><button data-act="todo-toggle"><span class="dot pri"></span><span class="tn">${cur >= 0 ? h(D.todo[cur].t) : "모두 끝났어요"}</span><span class="meta"><span data-todo-n>${done}</span>/${D.todo.length}</span>${ic("chevd")}</button><ol hidden>${D.todo.map((s) => `<li class="${s.done ? "done" : s.cur ? "cur" : ""}"><span class="ck">${s.done ? ic("check") : ""}</span><span class="t">${h(s.t)}</span></li>`).join("")}<li style="justify-content:flex-end"><button class="btn text inrow" data-act="todo-next">다음 단계 시연</button></li></ol></div>`;
   };
 
-  const decisionHtml = () => `<div class="dc" data-dc><div class="dq">${h(D.decision.ask)}</div><div class="dm">결정 · ${h(D.decision.q)}</div><div class="dos">${D.decision.opts.map((o) => `<button class="do" data-act="dec-pick" data-n="${o.n}"><span class="n">${o.n}) ${h(o.name)}${o.rec ? ' <span class="tag pri">추천</span>' : ""}</span><span class="d">${h(o.desc)}</span></button>`).join("")}</div></div>`;
+  const decisionHtml = () => `<div class="dc" data-dc><div class="dq">${h(D.decision.ask)}</div><div class="dm">결정 · ${h(D.decision.q)}</div><div class="dos">${D.decision.opts.map((o) => `<button class="do" data-act="dec-pick" data-n="${o.n}"><span class="n">${o.n}) ${h(o.name)}</span><span class="d">${h(o.desc)}</span></button>`).join("")}</div></div>`;
 
   const composerHtml = () => `<div class="cmp"><div class="rqt" hidden></div><div class="atts" hidden></div><div class="box"><button class="ib" data-act="attach" aria-label="파일 붙이기">${ic("plus")}</button><textarea rows="1" placeholder="dotz AI에게 말해 보세요" aria-label="메시지"></textarea><button class="send" data-act="send" aria-label="보내기" disabled>${ic("send")}</button></div><div class="mdl"><span class="dot" data-mdl></span><span>dotz AI</span></div></div>`;
 
@@ -192,7 +192,7 @@
     ["채팅 답 (2-4문장, 답 먼저)", "오늘은 일정이 4개예요. 첫 일정은 10시 주간 회의고요, 점심은 한서윤님과 해요.\n저녁 7시에 운동이 있어요."],
     ["[done] 완료 보고 (결론 한 줄 + 글머리표 + 근거)", "[done] 가격 페이지 감시를 켰어요.\n\n- 30분마다 확인해요\n- 바뀌면 알림으로 알려 드려요\n- 확인한 곳: `price-page.sh`"],
     ["[run] 진행 중 보고", "[run] 랜딩 페이지 모바일 점검 중이에요.\n\n- 화면 캡처 3장 완료\n- 링크 점검은 끝났어요"],
-    ["[ask] 확인 요청 + 결정 블록 (선택지, ← 추천)", "[ask] 배포 공지를 어떤 형태로 정리할까요?\n\n결정: 공지 형태\n**1) 짧은 공지** ← 추천\n한 문단으로 핵심만 전해요\n**2) 목록 공지**\n바뀐 항목을 순서대로 적어요\n**3) 다른 방식 …**\n원하는 방식과 이유를 적어 주세요\n\n번호로 답해 주세요."],
+    ["[ask] 확인 요청 + 결정 블록 (선택지)", "[ask] 배포 공지를 어떤 형태로 정리할까요?\n\n결정: 공지 형태\n**1) 짧은 공지**\n한 문단으로 핵심만 전해요\n**2) 목록 공지**\n바뀐 항목을 순서대로 적어요\n**3) 다른 방식 …**\n원하는 방식과 이유를 적어 주세요\n\n번호로 답해 주세요."],
     ["[fail] 실패 보고", "[fail] 인스타그램 확인에 실패했어요.\n\n- 원인: 로그인이 풀렸어요\n- 다음: 설정에서 다시 로그인해 주세요"],
     ["발송 승인 (보내기 · 고치기 · 보내지 않기)", "[ask] 한서윤님께 보낼 답장이에요.\n\n> 받는이: 한서윤\n> 제목: Re: 다음 주 미팅 일정 확인 부탁드려요\n> 서윤님, 화요일 오후 2시가 좋아요.\n> 그때 뵐게요. 장소는 온라인으로 해요.\n\n결정: 이 답장을 보낼까요? (d-m1)\n1) 보내기\n2) 고치기\n3) 보내지 않기"],
     ["목록 블록 (제목 | 부제 | 시각 | 배지)", "```목록\n# 안 읽은 메일\n한서윤 | 다음 주 미팅 일정 확인 부탁드려요 | 오전 9:12 | 답장\n별빛상회 주문팀 | 주문하신 책상 램프가 출발했어요 | 오전 8:04\n```"],

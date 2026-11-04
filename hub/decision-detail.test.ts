@@ -7,10 +7,10 @@ import { inboxText } from "./intake.ts";
 import type { Pick } from "./intake.ts";
 import { answerDecision, type DecisionSend, listNotices } from "./notices.ts";
 
-const ASK = "[ask] 확인\n결정: 확인\n**1) 확인됨** ← 추천\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n";
+const ASK = "[ask] 확인\n결정: 확인\n**1) 확인됨**\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n";
 
 test("a trailing ' …' marks a needs-detail option and is not part of the label; a plain positive option is not one", () => {
-	const marked = parseDecisions("[ask] 배포\n결정: 배포\n**1) 배포하기** ← 추천\n바로 올려요\n**2) 보류 …**\n이유만 남겨요\n").blocks[0]!.options;
+	const marked = parseDecisions("[ask] 배포\n결정: 배포\n**1) 배포하기**\n바로 올려요\n**2) 보류 …**\n이유만 남겨요\n").blocks[0]!.options;
 	expect(marked.map(o => [o.label, o.detail])).toEqual([["배포하기", undefined], ["보류", true]]);
 	const guessed = parseDecisions(ASK).blocks[0]!.options;
 	expect(guessed.map(o => !!o.detail)).toEqual([false, false]);
@@ -27,7 +27,7 @@ test("the final answer line carries the typed detail after the chosen option", (
 
 test("a notice option that needs detail is refused without text and answered as '2) 안 됨 - <text>'; '1) 확인됨' needs none", async () => {
 	const title = `상세-${Date.now()}`;
-	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}\n결정: ${title}\n**1) 확인됨** ← 추천\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n` });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}\n결정: ${title}\n**1) 확인됨**\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n` });
 	const find = () => listNotices(300).items.find(i => i.kind === "decision" && i.title.includes(title))!;
 	const sent: Parameters<DecisionSend>[0][] = [];
 	const send: DecisionSend = async a => void sent.push(a);
@@ -39,7 +39,7 @@ test("a notice option that needs detail is refused without text and answered as 
 	expect(sent).toHaveLength(1);
 	expect(sent[0]!.text).toBe("2) 안 됨 - 로그인이 안 돼요");
 	expect(sent[0]!.picks).toEqual([{ q: title, n: 2, label: "안 됨", note: "로그인이 안 돼요" }]);
-	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}2\n결정: ${title}2\n**1) 확인됨** ← 추천\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n` });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}2\n결정: ${title}2\n**1) 확인됨**\n잘 열려요\n**2) 안 됨**\n어디가 안 되는지 적어 주세요\n` });
 	const other = listNotices(300).items.find(i => i.kind === "decision" && i.title.includes(`${title}2`))!;
 	sent.length = 0;
 	expect((await answerDecision(other.id, { n: 1 }, send)).status).toBe(200);
@@ -83,7 +83,7 @@ test("Discord: an empty modal submit sends nothing", async () => {
 
 test("two answers to the same decision arriving together send once; the second is told it is already being answered", async () => {
 	const title = `동시-${Date.now()}`;
-	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}\n결정: ${title}\n**1) 보내기** ← 추천\n보내요\n**2) 보내지 않기**\n버려요\n` });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target: "alert", text: `[ask] ${title}\n결정: ${title}\n**1) 보내기**\n보내요\n**2) 보내지 않기**\n버려요\n` });
 	const id = listNotices(300).items.find(i => i.kind === "decision" && i.title.includes(title))!.id;
 	const sent: Parameters<DecisionSend>[0][] = [];
 	let release = () => {};

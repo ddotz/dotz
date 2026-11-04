@@ -8,14 +8,13 @@ import { msg } from "./i18n.ts";
 import { parseTone, TONE_EMOJI } from "./tone.ts";
 
 export const ASK_PREFIX = "dz-ask";
-const PRIMARY = 1;
 const SECONDARY = 2;
 const ROW = 5;
 const LABEL_MAX = 80;
 const ID_MAX = 100;
 
 export function askComponents(target: string, options: ChoiceOption[], disabled = false): unknown[] {
-	const buttons = options.map(o => ({ type: 2, style: o.recommended ? PRIMARY : SECONDARY, label: o.label.slice(0, LABEL_MAX), custom_id: `${ASK_PREFIX}:${target}:${o.n}`, disabled }));
+	const buttons = options.map(o => ({ type: 2, style: SECONDARY, label: o.label.slice(0, LABEL_MAX), custom_id: `${ASK_PREFIX}:${target}:${o.n}`, disabled }));
 	if (!buttons.length || buttons.some(b => b.custom_id.length > ID_MAX)) return [];
 	const rows: unknown[] = [];
 	for (let i = 0; i < buttons.length; i += ROW) rows.push({ type: 1, components: buttons.slice(i, i + ROW) });
