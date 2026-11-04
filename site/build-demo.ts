@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { assertNoBannedWords, scrubBundle } from "./banned-words";
 import { assertDemoViews } from "./demo-views";
 
 const ROOT = join(import.meta.dir, "..");
@@ -24,10 +25,10 @@ const joined = (kind: "js" | "css") => files(kind).map(f => source(`${kind}/${f}
 
 // The page names no server asset: /custom.js (appended by 99-boot.js) becomes the demo's own empty layer beside app.js.
 // Absolute /app.css and /app.js never appear in the sources; /demo/app.* are what demo/index.html loads.
-const rewrite = (text: string) => text.replaceAll('"/custom.js"', '"/demo/custom.js"');
+const rewrite = (text: string) => scrubBundle(text.replaceAll('"/custom.js"', '"/demo/custom.js"'));
 
 const css = rewrite(joined("css"));
-// The joined text is served by the gateway verbatim, so the demo needs no surgery on it: the same bundles run here.
+// The joined text is served by the gateway verbatim, so the demo needs no other surgery on it than rewrite: the same bundles run here.
 let js = rewrite(joined("js"));
 assertDemoViews(js, readFileSync(join(OUT, "index.html"), "utf8"));   // before anything is written: a failed build leaves the demo as it was
 const build = createHash("sha1").update(js).update(css).digest("hex").slice(0, 12);
@@ -48,6 +49,8 @@ const page = join(OUT, "index.html");
 writeFileSync(page, readFileSync(page, "utf8").replace(/"\/demo\/(app\.css|fixtures\.js|demo-api\.js|app\.js)(?:\?v=\w+)?"/g, `"/demo/$1?v=${stamp}"`));
 
 await import("./stamp-landing.ts");
+
+assertNoBannedWords(import.meta.dir);   // last: covers every file that deploys, hand-written and generated alike
 
 const kb = (s: string) => `${Math.round(Buffer.byteLength(s) / 1024)} KB`;
 console.log(`site/demo/app.css  ${kb(css)}  (${files("css").length} files)`);
