@@ -2101,7 +2101,7 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 #chat-convo { padding: 0; }
 /* 채팅 목록 (proto listHtml): 필터 알약은 바탕 위에, 대화는 한 장의 카드에, '메일 · 카카오톡'은 제목과 그 아래 카드로. */
 #chat-convo:not(.mon-side) { background: transparent; border-radius: 0; }
-#chat-convo:not(.mon-side) .cv-bar { flex-wrap: wrap; gap: 6px; padding: 4px 0 12px; border: 0; background: var(--bg); }
+#chat-convo:not(.mon-side) .cv-bar { flex-wrap: wrap; gap: 6px; margin: 0; padding: 4px 0 12px; border: 0; background: var(--bg); }
 #chat-convo:not(.mon-side) .cv-tabs { flex-wrap: wrap; gap: 6px; overflow: visible; }
 .cv-foot { display: flex; justify-content: center; margin-top: 8px; }
 #chat-convo:not(.mon-side) .cv-tabs .cchip { height: 32px; padding: 0 14px; border-radius: 16px; background: transparent; color: var(--fg-2); font: 500 13px/32px var(--font); }
