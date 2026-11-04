@@ -4,7 +4,7 @@
 
 <h1 align="center">dotz</h1>
 
-<h3 align="center">메일 정리부터 답장 초안까지, 내가 없어도 끝내 둬요.</h3>
+<h3 align="center">맨날 미루던 잡일, dotz가 먼저 해 놓고 폰으로 알려 줘요.</h3>
 
 <p align="center">
   내 컴퓨터에서 항상 켜져 있는 개인 비서.<br>

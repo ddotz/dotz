@@ -16,19 +16,8 @@
   font-size: 13px;
 }
 
-.dz-mark {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  border-radius: 28%;
-  background: var(--ink);
-}
-.dz-mark > span {
-  width: 36%;
-  height: 36%;
-  border-radius: 30%;
-  background: var(--bg);
-}
+.dz-mark { flex: none; fill: var(--ink); }
+.dz-mark__dot { fill: var(--accent); }
 
 .hz-side {
   display: flex;
@@ -46,15 +35,7 @@
   font-size: 15px;
   font-weight: 600;
 }
-.hz-pc {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-}
+.hz-caret { margin-left: -4px; color: var(--muted); }
 .hz-nav { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
 .hz-ni {
   display: flex;
@@ -68,19 +49,6 @@
   font-weight: 500;
 }
 .hz-ni[data-on] { background: var(--surface); color: var(--ink); font-weight: 700; }
-.hz-nb {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background: var(--warn);
-  color: var(--bg);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 18px;
-  text-align: center;
-}
-.hz-ni .hz-nb { margin-left: auto; }
 .hz-use {
   display: flex;
   align-items: center;
@@ -95,6 +63,7 @@
 
 .hz-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .hz-bar {
+  position: relative;
   flex: none;
   display: flex;
   align-items: center;
@@ -102,6 +71,7 @@
   height: 52px;
   padding: 0 16px 0 8px;
 }
+.hz-back { position: absolute; left: -14px; color: var(--muted); }
 .hz-bar h2 {
   flex: 1;
   min-width: 0;
@@ -153,18 +123,6 @@
   line-height: 16px;
   text-align: center;
 }
-.hz-gw {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 28px;
-  padding: 0 8px;
-  border-radius: 14px;
-  background: var(--surface);
-  color: var(--body);
-  font-size: 12px;
-  font-weight: 500;
-}
 
 .hz-cv {
   flex: 1;
@@ -176,7 +134,7 @@
   background: var(--surface);
   overflow: hidden;
 }
-.hz-cvh { flex: none; display: flex; align-items: baseline; gap: 8px; padding: 14px 20px 8px; }
+.hz-cvh { flex: none; display: grid; gap: 2px; padding: 14px 20px 8px; }
 .hz-cvh b { font-size: 16px; font-weight: 600; }
 .hz-cvh span { color: var(--muted); font-size: 12px; }
 
@@ -261,6 +219,7 @@
   color: var(--muted);
   font-size: 14px;
 }
+.hz-ph { flex: 1; min-width: 0; }
 .hz-send {
   display: grid;
   place-items: center;
@@ -272,48 +231,6 @@
   opacity: 0.3;
 }
 
-.hz-tabbar {
-  flex: none;
-  display: flex;
-  height: 50px;
-  border-top: 1px solid var(--line);
-  background: var(--surface);
-}
-.hz-tab {
-  position: relative;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 13px;
-}
-.hz-tab svg { width: 16px; height: 16px; }
-.hz-tab[data-on] { color: var(--ink); font-weight: 600; }
-.hz-tab[data-on]::before {
-  content: "";
-  position: absolute;
-  top: -1px;
-  left: 28%;
-  right: 28%;
-  height: 2px;
-  border-radius: 0 0 2px 2px;
-  background: var(--accent);
-}
-.hz-tab .hz-nb {
-  position: absolute;
-  top: 4px;
-  left: calc(50% + 4px);
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  font-size: 10.5px;
-  line-height: 16px;
-}
 
 .hz .ss-stage[data-layout='compact'] .hz-win {
   left: 8px;
@@ -322,12 +239,12 @@
 }
 .hz .ss-stage[data-layout='compact'] .hz-app { display: flex; flex-direction: column; }
 .hz .ss-stage[data-layout='compact'] .hz-main { flex: 1; }
-.hz .ss-stage[data-layout='compact'] .hz-bar { height: 46px; padding: 0 4px 0 14px; }
+.hz .ss-stage[data-layout='compact'] .hz-bar { height: 46px; padding: 0 4px 0 36px; }
+.hz .ss-stage[data-layout='compact'] .hz-back { left: 10px; }
 .hz .ss-stage[data-layout='compact'] .hz-cmdk { width: 32px; padding: 0; justify-content: center; background: transparent; }
 .hz .ss-stage[data-layout='compact'] .hz-cmdk span,
 .hz .ss-stage[data-layout='compact'] .hz-cmdk kbd { display: none; }
 .hz .ss-stage[data-layout='compact'] .hz-cv { margin: 0 8px 8px; }
-.hz .ss-stage[data-layout='compact'] .hz-cvh { padding: 12px 16px 6px; }
 .hz .ss-stage[data-layout='compact'] .hz-thread { padding: 0 16px 10px; }
 .hz .ss-stage[data-layout='compact'] .hz-dock { margin: 0 8px 6px; padding: 10px 12px; }
 .hz .ss-stage[data-layout='compact'] .hz-cmp { padding: 4px 8px 8px; }

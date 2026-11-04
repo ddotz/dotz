@@ -969,6 +969,11 @@ html:not(.ss) .card-demo::before {
     padding: 14px 16px;
   }
 
+  .install code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
   .section {
     padding: 60px 0;
   }
