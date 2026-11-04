@@ -197,6 +197,12 @@ document.addEventListener("keydown", ev => {
     $("#bell").click();
     return;
   }
+  if (ev.code === "Period" || ev.key === ".") {
+    ev.preventDefault();
+    if (PR.node) prClose(false);
+    openTarget("main", "chat");
+    return;
+  }
   if (ev.code === "Backslash" || ev.key === "\\") {
     if (matchMedia("(min-width: 1024px)").matches) { ev.preventDefault(); sideToggle(); }
     return;
