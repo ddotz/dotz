@@ -72,7 +72,7 @@ for (const w of [390, 1280] as const) {
 		expect(await items(v)).toEqual(["프로젝트 수정", "프로젝트 삭제"]);
 		await shot(v, `02-project-chat-menu-${w}.png`);
 		for (const t of ["main", "worklog", "alert", "lane:yt-upload"]) {
-			await run(v, `closeMenu(false); go("chat", ${JSON.stringify(t)})`);
+			await run(v, `closeMenu(false); ntGo(${JSON.stringify(t)})`);   // ntGo is the one way into the 알림 record conversation (#chat/alert alone is the screen)
 			await waitFor(v, `target === ${JSON.stringify(t)}`);
 			await waitFor(v, `!shown()`);
 			expect(await q(v, `return shown()`)).toBe(false);

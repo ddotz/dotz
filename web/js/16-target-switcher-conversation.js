@@ -33,7 +33,7 @@ function renderBars() {
   // Three groups in this order: the main assistant, 프로젝트 (project orchestrators), 레인. Dragging reorders within a group.
   const projs = byOrder(projTargets()), live = byOrder(lanes.filter(laneAlive).map(l => `lane:${l.name}`)), dead = byOrder(lanes.filter(l => !laneAlive(l)).map(l => `lane:${l.name}`));
   if (isLaneT(target) && !live.includes(target) && !dead.includes(target)) live.push(target);
-  const alive = [MAIN, "alert", "worklog", ...projs, ...live];
+  const alive = [MAIN, "worklog", ...projs, ...live];   // 알림 is the screen (#notices), not a conversation to pick
   const view = t => {
     const i = targetInfo(t);
     const k = attnKind(t);

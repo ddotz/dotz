@@ -1,4 +1,4 @@
-// The tabs of the 알림 conversation (전체 / 답변 필요 / 결과 / 새 소식 / 경고, each with its unread count by notice class) and the five per-class push
+// The filters of the 알림 screen #notices (전체 / 답변 필요 / 결과 / 새 소식 / 경고, each with its unread count by notice class) and the five per-class push
 // switches in 설정 (GET/PUT /api/push/classes). Headless (Bun.WebView) against a fake hub; classes come from the hub as `cls` (hub/notice-class.ts).
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
@@ -23,10 +23,10 @@ const notices: N[] = [
 	ask("q-open", 2, "배포할까요?", "open", false),
 	mk("r1", 3, "result", "result", "done", "세션 build 끝났어요", { src: "lane:build", open: "lane:build" }),
 	mk("r2", 4, "result", "worklog", "fail", "야간 정리가 실패했어요", { src: "worklog", open: "worklog" }),
-	mk("n1", 5, "news", "watch", "", "새 메일 도착", { app: "메일", watch: "mail-1" }),
-	mk("n2", 6, "news", "watch", "", "메일 답장이 왔어요", { app: "메일", watch: "mail-1" }),
-	mk("n3", 7, "news", "watch", "", "새 카톡이 왔어요", { app: "카카오톡", watch: "kakao-1" }),
-	mk("n4", 8, "news", "watch", "", "읽은 메일 소식", { app: "메일", watch: "mail-1", read: true }),
+	mk("n1", 5, "news", "watch", "", "새 메일 도착", { app: "mail", watch: "mail-1" }),
+	mk("n2", 6, "news", "watch", "", "메일 답장이 왔어요", { app: "mail", watch: "mail-1" }),
+	mk("n3", 7, "news", "watch", "", "새 카톡이 왔어요", { app: "kakao", watch: "kakao-1" }),
+	mk("n4", 8, "news", "watch", "", "읽은 메일 소식", { app: "mail", watch: "mail-1", read: true }),
 	mk("a1", 9, "alert", "alert", "fail", "게이트웨이가 멈췄어요", { src: "alert" }),
 	mk("m1", 10, "conv", "message", "", "프로젝트 대화에 새 답이 있어요", { src: "proj:p1", open: "proj:p1" }),
 	mk("l1", 11, "log", "worklog", "run", "진행 중인 기록", { src: "worklog", open: "worklog" }),
@@ -82,69 +82,62 @@ async function boot(width: number, height: number) {
 	const v = new Bun.WebView({ width, height });
 	views.push(v);
 	await v.navigate(`http://127.0.0.1:${server.port}/`);
-	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && NT.items.length === ${notices.length} && CONV.has("alert")`);
+	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && NT.items.length === ${notices.length} `);
 	return v;
 }
 const shot = async (v: View, name: string) => Bun.write(join(SHOTS, name), await v.screenshot());
-type Tab = { k: string; label: string; n: string | null; cls: string | null; on: boolean };
-const tabs = (v: View) => q<Tab[]>(v, `return [...document.querySelectorAll("#bell-tabs .chip")].map(c => { const b = c.querySelector(".nb"); return { k: c.dataset.k, label: c.querySelector(".tx").textContent, n: b && b.textContent, cls: b && b.className, on: c.classList.contains("on") }; })`);
+type Tab = { k: string; label: string; n: string; on: boolean };
+const tabs = (v: View) => q<Tab[]>(v, `return [...document.querySelectorAll("#v-notices .nsc-fb")].map(b => ({ k: b.dataset.f, label: b.firstChild.textContent, n: b.querySelector(".n").textContent, on: b.classList.contains("on") }))`);
 const openBell = async (v: View) => {
-	await run(v, `go("chat", "alert")`);
-	await waitFor(v, `!$("#bell-tabs").hidden && $("#bell-tabs .chip") && document.querySelector("#tl > [data-ts]")`);
+	await run(v, `go("notices")`);
+	await waitFor(v, `current === "notices" && document.querySelector("#v-notices .nsc-r")`);
 };
-const pick = (v: View, k: string) => run(v, `document.querySelector('#bell-tabs .chip[data-k="${k}"]').click()`);
-const rows = (v: View) => q<string[]>(v, `return [...document.querySelectorAll("#bell-list .hrx-m .nm")].map(x => x.textContent)`);
+const pick = (v: View, k: string) => run(v, `document.querySelector('#v-notices .nsc-fb[data-f="${k}"]').click()`);
+const rows = (v: View) => q<string[]>(v, `return [...document.querySelectorAll("#v-notices .nsc-r .hd")].map(x => x.textContent)`);
 
 describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => {
-	test("the tabs carry the unread count of their class (log counts nowhere); ask is orange, alert is red; 전체 is the timeline", async () => {
+	test("the filters carry the unread count of their class (log and conv are not on the screen); 전체 is every group", async () => {
 		const v = await boot(width, height);
 		await openBell(v);
 		const t = await tabs(v);
-		expect(t.map(x => [x.k, x.label, x.n, x.on])).toEqual([["all", "전체", "8", true], ["ask", "답변 필요", "1", false], ["result", "결과", "2", false], ["news", "새 소식", "3", false], ["alert", "경고", "1", false]]);
-		expect(t.find(x => x.k === "ask")!.cls).toBe("nb warn");
-		expect(t.find(x => x.k === "alert")!.cls).toBe("nb err");
-		expect(t.find(x => x.k === "news")!.cls).toBe("nb");
-		const colors = await q<{ ask: string; alert: string; warn: string; err: string }>(v, `const bg = e => getComputedStyle(e).backgroundColor, ink = e => getComputedStyle(e).color, dot = c => { const d = document.createElement("span"); d.className = "dot " + c; document.body.append(d); const x = bg(d); d.remove(); return x; };
-			return { ask: ink(document.querySelector('#bell-tabs .chip[data-k="ask"] .nb')), alert: ink(document.querySelector('#bell-tabs .chip[data-k="alert"] .nb')), warn: dot("att"), err: dot("err") }`);   // the count is a plain number: the tab's tone is its text colour, not a badge fill
-		expect(colors.ask).toBe(colors.warn);
-		expect(colors.alert).toBe(colors.err);
-		expect(colors.ask).not.toBe(colors.alert);
-		expect(await q<[boolean, number]>(v, `return [$("#bell-list").hidden, document.querySelectorAll("#tl > [data-ts]").length]`)).toEqual([true, 2]);
-		expect(await q<boolean>(v, `const c = $("#bell-tabs"); return c.scrollWidth <= c.clientWidth`)).toBe(true);
-		await shot(v, `bell-all-${width}.png`);
+		expect(t.map(x => [x.k, x.label, x.n, x.on])).toEqual([["all", "전체", "7", true], ["ask", "답변 필요", "1", false], ["result", "결과", "2", false], ["news", "새 소식", "3", false], ["alert", "경고", "1", false]]);
+		expect(await q<string[]>(v, `return [...document.querySelectorAll("#v-notices .sec")].map(x => x.textContent)`)).toEqual(["처리할 것", "새 소식", "지난 알림"]);
+		expect(await q<number>(v, `return document.querySelectorAll("#v-notices .nsc-r").length`)).toBe(9);   // 12 notices less the two log and the one conv
+		expect(await q<boolean>(v, `const c = document.querySelector("#v-notices .nsc-f"); return c.scrollWidth <= c.clientWidth || getComputedStyle(c).overflowX === "auto"`)).toBe(true);
+		await shot(v, `notices-all-${width}.png`);
 	}, 30_000);
 
-	test("답변 필요 lists what waits on top; 결과 and 경고 list their own class; log is in no tab", async () => {
+	test("답변 필요 lists what waits on top; 결과 and 경고 list their own class; log is in no filter", async () => {
 		const v = await boot(width, height);
 		await openBell(v);
 		await pick(v, "ask");
-		await waitFor(v, `$("#bell-list .hrx-m")`);
+		await waitFor(v, `document.querySelectorAll("#v-notices .nsc-r").length === 2`);
 		expect(await rows(v)).toEqual(["배포할까요?", "예전 질문"]);
-		expect(await q<string[]>(v, `return [...document.querySelectorAll("#bell-list .hrx-m")].map(b => b.querySelector(".hs") ? b.querySelector(".hs").textContent : "")`)).toEqual(["답변 필요", ""]);
-		expect(await q<boolean>(v, `return getComputedStyle(document.querySelector("#v-chat > .chatbox")).display === "none" && !$("#bell-list").hidden`)).toBe(true);
-		if (width === 390) await shot(v, "bell-ask-390.png");
+		expect(await q<string[]>(v, `return [...document.querySelectorAll("#v-notices .nsc-r .tag")].map(x => x.textContent)`)).toEqual(["결정", "결정"]);
+		if (width === 390) await shot(v, "notices-ask-390.png");
 
 		await pick(v, "result");
-		await waitFor(v, `document.querySelectorAll("#bell-list .hrx-m").length === 2`);
+		await waitFor(v, `document.querySelectorAll("#v-notices .nsc-r").length === 2 && document.querySelector('#v-notices .nsc-fb[data-f="result"].on')`);
 		expect(await rows(v)).toEqual(["야간 정리가 실패했어요", "세션 build 끝났어요"]);
 		await pick(v, "alert");
-		await waitFor(v, `document.querySelectorAll("#bell-list .hrx-m").length === 1`);
+		await waitFor(v, `document.querySelectorAll("#v-notices .nsc-r").length === 1`);
 		expect(await rows(v)).toEqual(["게이트웨이가 멈췄어요"]);
 		expect((await tabs(v)).filter(x => x.on).map(x => x.k)).toEqual(["alert"]);
 		await pick(v, "all");
-		await waitFor(v, `$("#bell-list").hidden && getComputedStyle(document.querySelector("#v-chat > .chatbox")).display !== "none"`);
+		await waitFor(v, `document.querySelectorAll("#v-notices .nsc-r").length === 9`);
 	}, 30_000);
 
-	test("새 소식 is grouped by app, newest group first, with a small header per app", async () => {
+	test("새 소식 filter: unread first and newest first, the read one under 지난 알림, the tag from the app, no app headers", async () => {
 		const v = await boot(width, height);
 		await openBell(v);
 		await pick(v, "news");
-		await waitFor(v, `document.querySelectorAll("#bell-list .bell-gh").length === 2`);
-		const got = await q<{ gh: string[]; groups: string[][] }>(v, `return { gh: [...document.querySelectorAll("#bell-list .bell-gh")].map(x => x.textContent), groups: [...document.querySelectorAll("#bell-list .hn")].map(g => [...g.querySelectorAll(".nm")].map(x => x.textContent)) }`);
-		expect(got.gh).toEqual(["메일", "카카오톡"]);
-		expect(got.groups).toEqual([["읽은 메일 소식", "메일 답장이 왔어요", "새 메일 도착"], ["새 카톡이 왔어요"]]);
-		expect(await q<boolean>(v, `const l = $("#bell-list"); return l.scrollWidth <= l.clientWidth`)).toBe(true);
-		await shot(v, `bell-news-${width}.png`);
+		await waitFor(v, `document.querySelectorAll("#v-notices .nsc-r").length === 4`);
+		const got = await q<{ sec: string[]; groups: string[][]; tags: string[] }>(v, `return { sec: [...document.querySelectorAll("#v-notices .sec")].map(x => x.textContent), groups: [...document.querySelectorAll("#v-notices .list[data-g]")].map(g => [...g.querySelectorAll(".hd")].map(x => x.textContent)), tags: [...document.querySelectorAll("#v-notices .nsc-r .tag")].map(x => x.textContent) }`);
+		expect(got.sec).toEqual(["새 소식", "지난 알림"]);
+		expect(got.groups).toEqual([["새 카톡이 왔어요", "메일 답장이 왔어요", "새 메일 도착"], ["읽은 메일 소식"]]);
+		expect(got.tags).toEqual(["카카오톡", "메일", "메일", "메일"]);
+		expect(await q<boolean>(v, `const l = document.querySelector("#v-notices"); return l.scrollWidth <= l.clientWidth`)).toBe(true);
+		await shot(v, `notices-news-${width}.png`);
 	}, 30_000);
 
 	test("설정 shows the six class switches, and a toggle PUTs /api/push/classes", async () => {

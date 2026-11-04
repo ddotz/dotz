@@ -1,5 +1,5 @@
-// Cleanup after work (ux3 T4): an ended session keeps its unread and 답변 필요 marks in the folded 끝난 세션 group, the 알림 conversation has
-// 모두 읽음 in its head and 지우기 on each alert (the hub dismiss route), and a pulled update that waits for its restart keeps the badge as
+// Cleanup after work (ux3 T4): an ended session keeps its unread and 답변 필요 marks in the folded 끝난 세션 group, the 알림 screen has
+// 모두 읽음 and 지우기 on each past alert (the hub dismiss route), and a pulled update that waits for its restart keeps the badge as
 // 재시작 필요 in the nav and the 업데이트 section (the update bar itself: update-bar-web.test.ts). Headless (Bun.WebView) against a fake hub.
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
@@ -103,31 +103,31 @@ describe.each([[390, 844], [1280, 900]] as const)("at %ipx", (width, height) => 
 		await Bun.write(join(SHOTS, `ended-closed-${width}.png`), await v.screenshot());
 	}, 30_000);
 
-	test("the 알림 conversation: 모두 읽음 reads the conversation and its alerts, 지우기 dismisses one alert on the hub and it stays gone", async () => {
+	test("the 알림 screen: 모두 읽음 reads the alerts (not the question that waits, never the conversation), 지우기 dismisses one past alert on the hub and it stays gone", async () => {
 		reset();
 		const v = await boot(width, height);
-		await run(v, `go("chat", "alert")`);
-		await waitFor(v, `document.querySelectorAll("#tl > [data-ts] > .al-x").length === 2`);
-		// 모두 읽음 is visible: the conversation's head on a wide screen, the app bar on a phone
-		const readAll = `[...document.querySelectorAll(".cv-readall")].find(b => b.offsetParent)`;
-		await waitFor(v, `${readAll} && !${readAll}.disabled`);
+		await run(v, `go("notices")`);
+		await waitFor(v, `current === "notices" && document.querySelectorAll("#v-notices .nsc-r").length === 3`);
+		const readAll = `document.querySelector('#v-notices [data-k="read-all"]')`;
+		await waitFor(v, `${readAll} && !${readAll}.hidden && !${readAll}.disabled`);
 		await Bun.write(join(SHOTS, `alert-${width}.png`), await v.screenshot());
 		await run(v, `${readAll}.click()`);
-		await hubState(() => notices.filter(n => n.src === "alert").every(n => n.read) && reads.some(r => JSON.stringify(r) === JSON.stringify({ read: { target: "alert", ts: A2 } })));
-		await waitFor(v, `${readAll}.disabled`);
+		await hubState(() => notices.filter(n => n.src === "alert").every(n => n.read));
+		expect(reads).toEqual([{ notices: ["a1", "a2"] }]);   // /api/notices/read only: no /api/read
 		expect(notices.find(n => n.id === "q1")!.read).toBe(false);   // the question elsewhere is untouched
+		await waitFor(v, `${readAll}.hidden && document.querySelectorAll('#v-notices .list[data-g="past"] .nsc-r').length === 2`);
 
-		await run(v, `document.querySelector('#tl > [data-ts="${A1}"] > .al-x').click()`);
-		await waitFor(v, `document.querySelector('#tl > [data-ts="${A1}"]').hidden && !ntById("a1")`);
+		await run(v, `document.querySelector('#v-notices .nsc-r[data-nid="a1"] .nsc-x').click()`);
+		await waitFor(v, `!ntById("a1") && !document.querySelector('#v-notices .nsc-r[data-nid="a1"]')`);
 		expect(dismissed).toEqual(["a1"]);
-		expect(await q<boolean>(v, `return document.querySelector('#tl > [data-ts="${A2}"]').hidden`)).toBe(false);
+		expect(await q<boolean>(v, `return !!document.querySelector('#v-notices .nsc-r[data-nid="a2"]')`)).toBe(true);
 		await Bun.write(join(SHOTS, `alert-dismissed-${width}.png`), await v.screenshot());
 
-		// another page (or a reload) hides the same alert
+		// another page (or a reload) does not list the same alert
 		const w = await boot(width, height);
-		await run(w, `go("chat", "alert")`);
-		await waitFor(w, `document.querySelector('#tl > [data-ts="${A2}"] > .al-x')`);
-		expect(await q<boolean>(w, `return document.querySelector('#tl > [data-ts="${A1}"]').hidden`)).toBe(true);
+		await run(w, `go("notices")`);
+		await waitFor(w, `document.querySelector('#v-notices .nsc-r[data-nid="a2"]')`);
+		expect(await q<boolean>(w, `return !!document.querySelector('#v-notices .nsc-r[data-nid="a1"]')`)).toBe(false);
 	}, 30_000);
 
 	test("a pulled update waiting for its restart keeps the badge as 재시작 필요, in the nav and the 업데이트 section", async () => {

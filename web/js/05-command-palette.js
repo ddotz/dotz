@@ -102,10 +102,13 @@ function parseHash(hash = location.hash) {
   return { view: i < 0 ? h : h.slice(0, i), t };
 }
 // The 세션 tab is gone: an old #lanes address opens the chat (its list on a phone), where running sessions sit under 진행 중.
-const routeAlias = (name, tgt) => (name === "lanes" ? ["chat", "list"] : name === "providers" && tgt ? ["provider", tgt] : name === "accounts" || (name === "settings" && tgt === "accounts") ? ["provider", "anthropic"] : [name, tgt]);
+// #chat/alert is the 알림 screen now; only ntGo (a row's way to its source message) sets NSC.pass, which lets one go() open the record conversation.
+const alertAddr = (name, tgt) => (name === "chat" || name === "activity") && tgt === "alert" && !(NSC.pass > Date.now());
+const routeAlias = (name, tgt) => (alertAddr(name, tgt) ? ["notices", undefined] : name === "lanes" ? ["chat", "list"] : name === "providers" && tgt ? ["provider", tgt] : name === "accounts" || (name === "settings" && tgt === "accounts") ? ["provider", "anthropic"] : [name, tgt]);
 function go(name, tgt) {
   closeMenu(false);
   [name, tgt] = routeAlias(name, tgt);
+  NSC.pass = 0;
   const viaRow = NSC.arm > Date.now();
   NSC.arm = 0;
   if (name === "notices") NSC.ret = false;
