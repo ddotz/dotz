@@ -125,6 +125,7 @@ function cmPickOpen(app) {
       el("div", { class: "kk-pd-h" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "지켜볼 글" })), el("button", { class: "ib fs-x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
       el("div", { class: "kk-pd-b" })));
   cmPickPaint();
+  d.addEventListener("click", ev => { if (ev.target === d) d.close(); });
   document.body.append(d); d.showModal(); dialogHist(d);
   d.addEventListener("close", () => { if (CM.pickD === d) CM.pickD = null; d.remove(); });
 }
