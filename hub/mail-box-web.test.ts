@@ -290,7 +290,7 @@ describe("the open mail", () => {
 describe("the bar above the list", () => {
 	const place = `(() => { const y = s => Math.round(document.querySelector(s).getBoundingClientRect().top * 100) / 100; return { row: y("#mon-tl > .mr"), box: y("#mon-tl > .mr .mr-chk"), all: y(".mbox-all"), bar: document.querySelector("#mbox-bar").getBoundingClientRect().height }; })()`;
 	type Place = { row: number; box: number; all: number; bar: number };
-	for (const [width, height] of [[412, 915], [1280, 800]]) test(`selecting moves nothing at ${width}, and no line about the mailbox is added`, async () => {
+	for (const [width, height] of [[412, 915], [1280, 800]]) test(`selecting moves nothing at ${width}, and the line about the mailbox stays put`, async () => {
 		const v = await openList(width, height);
 		// The list rises in as it opens; measure where it comes to rest.
 		await waitFor(v, `!document.getAnimations().some(a => a.playState === "running" && a.effect.getTiming().iterations !== Infinity)`);
@@ -303,7 +303,7 @@ describe("the bar above the list", () => {
 		expect(await ev<Place>(v, place)).toEqual(idle);
 		// One line: the bar holds every control on one row, nothing dropped below it.
 		expect(await ev<number>(v, `new Set([...document.querySelector("#mbox-bar").children].map(c => { const r = c.getBoundingClientRect(); return Math.round(r.top + r.height / 2); })).size`)).toBe(1);
-		expect(await ev<boolean>(v, `document.body.textContent.includes("dotz에서만 바뀌어요") || !!document.querySelector(".mbox-note")`)).toBe(false);
+		expect(await ev<number>(v, `document.querySelectorAll(".mbox-note").length`)).toBe(1);
 		await shot(v, `bar-${width}-selected`);
 		await run(v, `document.querySelector("#mbox-bar .mbox-x").click()`);
 		expect(await ev<Place>(v, place)).toEqual(idle);
@@ -314,6 +314,30 @@ describe("the bar above the list", () => {
 		expect(owed.bar).toBe(idle.bar);
 		await run(v, `document.querySelector("#mon-tl > .mr .mr-chk").click()`);
 		expect(await ev<Place>(v, place)).toEqual(owed);
+	}, 30_000);
+});
+
+describe("the line about a mailbox that does not follow", () => {
+	const note = (v: View) => ev<string | null>(v, `document.querySelector("#mon-tl .mbox-note")?.textContent ?? null`);
+	const only = (can: string[]) => { mails = mails.filter(m => m.key !== "fx-old"); for (const m of mails) m.can = can; };
+
+	test("a source without mailAction shows it, one with mailAction does not", async () => {
+		only([]);
+		const off = await openList(1280, 800);
+		expect(await note(off)).toContain("dotz에서만");
+		only(CAN);
+		const on = await openList(1280, 800);
+		expect(await note(on)).toBeNull();
+	}, 30_000);
+
+	test("a mixed list says some, and a source that can do one of the two names only the other", async () => {
+		only(CAN);
+		mails.find(m => m.key === "fx-b")!.can = [];
+		const mixed = await openList(1280, 800);
+		expect(await note(mixed)).toStartWith("일부 메일의 읽음·삭제");
+		only(["read", "unread"]);
+		const part = await openList(1280, 800);
+		expect(await note(part)).toStartWith("삭제는");
 	}, 30_000);
 });
 
