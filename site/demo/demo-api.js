@@ -20,7 +20,7 @@
         { kind: "report", title: "공문 초안 3건을 만들었어요", lane: "공문-채우기", verified: true, at: now - 20 * 60_000 },
         { kind: "report", title: "양식 12종 분석 보고", lane: "공문-채우기", verified: false, at: now - 26 * 3600_000 },
       ],
-      monitors: [], summary: { lastActivity: ago(5) },
+      monitors: [{ id: "form-page", name: "공문 양식 변경", on: "change", every_minutes: 720, lastRun: ago(90), lastOk: true, fails: 0, nextAt: new Date(now + 630 * 60_000).toISOString(), script: "watch/form-page.sh" }], summary: { lastActivity: ago(5) },
     });
     F.state.lanes.push(lane);
     F.state.channels.work["5"] = "한글 문서 자동화";
