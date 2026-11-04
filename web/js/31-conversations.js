@@ -482,8 +482,8 @@ function convSchedule() { if (!convRaf) convRaf = requestAnimationFrame(convPain
 function convOnPhone() { return current === "chat" && narrowChat() && !chatList; }
 function convTitle() {
   if (current === "chat") $("#title").textContent = convOnPhone() ? targetName(target) : monCtx ? titles.monitoring : titles.chat;
-  else if (current === "monitoring") $("#title").textContent = monConv() ? monName() : titles.monitoring;
-  const tag = (current === "chat" && monCtx && convOnPhone()) || (current === "monitoring" && monConv()) ? pqLabel(monItems().find(i => i.key === MON.sel)) : null;
+  else if (current === "monitoring") $("#title").textContent = monConv() && narrowChat() ? monName() : titles.monitoring;
+  const tag = (current === "chat" && monCtx && convOnPhone()) || (monConv() && narrowChat()) ? pqLabel(monItems().find(i => i.key === MON.sel)) : null;
   if (tag) $("#title").append(tag);
   cvAppMenu.hidden = !(convOnPhone() && isLaneT(target));
   pjAppMenu.hidden = !(convOnPhone() && pjMenuOn());
@@ -493,12 +493,17 @@ function convTitle() {
   if (asMoreBar) asMoreSync(convOnPhone() && isSettingsT(target) ? settingsApp(target) : narrowChat() ? monDetailApp() : "");
 }
 function convChrome() {
-  const conv = convOnPhone() || monConv(), back = !!backTarget() || conv, bar = $("#appbar");
+  const conv = convOnPhone() || (monConv() && narrowChat()), back = !!backTarget() || conv, bar = $("#appbar"), up = !narrowChat() && (monConv() || (!!monCtx && current === "chat"));
   $("#back").hidden = !back;
+  // Inside an app on a wide screen the bar's back button reads ‹ 모니터링 in the title's place; the app's own name stands in its head.
+  $("#back").classList.toggle("mon-up", up);
+  $("#back").setAttribute("aria-label", up ? "모니터링 목록으로" : "뒤로");
   bar.classList.toggle("back", back);
   bar.classList.toggle("cvconv", conv);
   $("#v-chat").classList.toggle("cv-listing", convListing());
-  $("#v-monitoring").classList.toggle("cv-listing", current === "monitoring" && narrowChat() && MON.list);
+  const listing = current === "monitoring" && MON.list, was = $("#v-monitoring").classList.contains("cv-listing");
+  $("#v-monitoring").classList.toggle("cv-listing", listing);
+  if (listing && !was) $("#mon-side").scrollTop = MON.top | 0;
   if (current === "monitoring") monSchedule();
   if (convListing()) $("#vtog").hidden = true;
   convTitle();

@@ -45,7 +45,7 @@ describe("top-level tabs", () => {
 });
 
 describe("모니터링 routing", () => {
-	test("a phone opens the list first and an item as its own screen; a wide screen keeps the item beside the list", () => {
+	test("every width opens the list first and an item as its own screen", () => {
 		const phone = monitoringRoute(true);
 		phone.monRoute();
 		expect(phone.MON.list).toBe(true);
@@ -60,15 +60,16 @@ describe("모니터링 routing", () => {
 
 		const wide = monitoringRoute(false);
 		wide.monRoute("i:mail");
+		expect(wide.monConv()).toBe(true);
 		wide.monRoute();
-		expect(wide.MON).toMatchObject({ sel: "i:mail", list: false });
+		expect(wide.MON).toMatchObject({ sel: "i:mail", list: true });
 		expect(wide.monConv()).toBe(false);
 	});
 
-	test("back from an item on a phone lands on the 모니터링 list, not on the chat list", () => {
+	test("back from an item lands on the 모니터링 list on every width, not on the chat list", () => {
 		const open = { sel: "i:mail", list: false }, list = { sel: "i:mail", list: true };
 		expect(chain("monitoring", "monitoring/i%3Amail", true, open)).toEqual(["home", "monitoring", "monitoring/i%3Amail"]);
 		expect(chain("monitoring", "monitoring", true, list)).toEqual(["home", "monitoring"]);
-		expect(chain("monitoring", "monitoring/i%3Amail", false, open)).toEqual(["home", "monitoring/i%3Amail"]);
+		expect(chain("monitoring", "monitoring/i%3Amail", false, open)).toEqual(["home", "monitoring", "monitoring/i%3Amail"]);
 	});
 });

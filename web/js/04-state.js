@@ -220,6 +220,6 @@ window.addEventListener("dotz-theme", () => { if (current === "settings") render
 $("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
 const setBrand = () => { $("#brand-name").textContent = botName; paintAttn(); };
 $("#send-btn").append(icon("send"));
-$("#back").append(icon("back"));
-const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : current === "provider" ? "providers" : ["discord", "jandi", "slack", "telegram"].includes(current) ? "messengers" : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat" && narrowChat()) ? "monitoring" : null;
-$("#back").onclick = () => (kkBack() || cmBack() ? 0 : monCtx && current === "chat" ? go("monitoring", MON.sel) : convOnPhone() ? openChatList() : go(backTarget() || "home"));
+$("#back").append(icon("back"), el("span", { class: "bk-l", text: titles.monitoring }));
+const backTarget = () => current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : current === "provider" ? "providers" : ["discord", "jandi", "slack", "telegram"].includes(current) ? "messengers" : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat") ? "monitoring" : null;
+$("#back").onclick = () => (kkBack() || cmBack() ? 0 : monCtx && current === "chat" ? go("monitoring", narrowChat() ? MON.sel : undefined) : convOnPhone() ? openChatList() : go(backTarget() || "home"));

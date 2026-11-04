@@ -136,10 +136,11 @@
 
 @media (min-width: 1100px) {
   :root { --cv-w: 240px; }
-  /* 모니터링: 목록 단과 대화 (같은 두 단 구조) */
-  #v-monitoring { display: grid; max-width: none; column-gap: 16px; grid-template-columns: var(--cv-w) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
-  #v-monitoring > * { grid-column: 2; }
-  #v-monitoring > .cv-side { grid-column: 1; grid-row: 1 / -1; display: block; min-height: 0; margin-bottom: 16px; padding: 8px; }
+  /* 모니터링: 폰과 같은 흐름으로 한 번에 한 층만 서요(목록, 또는 앱). 페이지 폭(.view)을 쓰고, 앱에서 항목을 고르면 그때만 전체 폭의 두 단(.kk.chat-open)이 돼요 */
+  #v-monitoring { display: grid; max-width: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+  #v-monitoring:not(:has(> .kk.chat-open:not([hidden]))) { width: 100%; max-width: 920px; margin: 0 auto; }
+  #v-monitoring > * { grid-column: 1; }
+  #v-monitoring > .cv-side { grid-row: 1 / -1; min-height: 0; margin-bottom: 16px; padding: 8px; }
   #v-monitoring > .cv-head { grid-row: 1; display: flex; align-items: center; gap: 12px; min-width: 0; padding: 0 4px 12px; }
   #v-monitoring > .chatbox { grid-row: 4; }
   /* 채팅: 시제품의 두 단 (proto .chat2 = 340px 목록 + 대화 카드 하나). 카드는 ::before가 그려 머리·todo·타임라인·컴포저가 한 면 안에 있어요 */
