@@ -81,6 +81,7 @@
 - 게이트웨이가 모델 호출 없이 지켜봐요. 캘린더 알림은 alert로, 잡음이 아닌 새 메일마다 웹의 메일 대화에서 당신을 깨워요. 메일 앱 설정에서 디스코드에도 올리기를 켜면 메일 작업 채널에 메일당 스레드 하나도 열려요. 아침 브리핑은 chat의 예약 턴이에요.
 - 읽기는 자유롭게(`zele mail list|search|read`, `zele cal events --today --all`). 답장, 전송, 전달, 삭제, 일정 생성·변경은 그 대화에서 오너가 OK한 뒤에만(먼저 발송 승인 블록으로 초안). 오너가 정리를 요청했다면 구독 해지와 보관은 괜찮아요.
 - zele로 안 되는 메일(API·IMAP·zele 지원이 없는 웹메일): 오너가 그 메일을 쓰고 싶다고 할 때만 배포용 `webmail-no-api` 기능을 `bun <dotz>/features/webmail-no-api/bin/onboard.ts <site> --url <받은메일함 URL>`로 켜요(그전엔 꺼져 있어요). 다시 돌리면 멈춘 단계부터 이어가고, 출력된 다음 단계를 따라요.
+- 이 컴퓨터 화면 공유(macOS): 오너가 원할 때만 배포용 `remote-desktop` 기능을 `bun <dotz>/features/remote-desktop/bin/onboard.ts`로 켜요(그전엔 꺼짐). 다시 돌리면 이어가요.
 - 그 밖의 메일을 붙일 때(`POST /api/mail`로 올리는 감시나 커스텀 플러그인, docs/custom-plugins.md): `from`은 `이름 <주소>`로(이름만으로는 답장을 못 보내요), 첨부는 개수 제한 없이 전부(큰 파일은 mail-files 아래 `path`로), 플러그인에 `reply()`를 둬서 승인한 초안이 실제로 나가게 해요. 카드에서 누른 `1) 보내기`도 직접 쓴 OK와 같은 승인이에요.
 - 자동 초안 규칙(메일 앱마다 조건에 맞는 메일을 그 규칙의 지시와 파일로 초안 쓰는 규칙, 모든 초안에 붙는 기본 규칙): `bun features/reply-drafts/bin/rules.ts list|add|edit|remove|default`로 관리해요(인자 없이 실행하면 사용법).
 - 앱 연결 요청("카카오톡 연결해 줘", 새로 추가하기의 `연결할 앱: <이름>`): 맞는 `docs/app-templates/<앱>.md`를 따라요(없으면 `custom.md`).
