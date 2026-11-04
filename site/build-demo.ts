@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { assertDemoViews } from "./demo-views";
 
 const ROOT = join(import.meta.dir, "..");
 const WEB = join(ROOT, "web");
@@ -28,6 +29,7 @@ const rewrite = (text: string) => text.replaceAll('"/custom.js"', '"/demo/custom
 const css = rewrite(joined("css"));
 // The joined text is served by the gateway verbatim, so the demo needs no surgery on it: the same bundles run here.
 let js = rewrite(joined("js"));
+assertDemoViews(js, readFileSync(join(OUT, "index.html"), "utf8"));   // before anything is written: a failed build leaves the demo as it was
 const build = createHash("sha1").update(js).update(css).digest("hex").slice(0, 12);
 // WEB_BUILD goes after the "use strict" directive, which must stay the first statement (hub/webapp.ts does the same).
 js = js.replace('"use strict";', m => `${m}\nconst WEB_BUILD = "${build}";`);
