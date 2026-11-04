@@ -13,6 +13,7 @@ import { inOrder, localize, noteHandoffLeak } from "./outlang.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { send, deliver, out } from "./outbound.ts";
 import { dropForLine, forLines } from "./forline.ts";
+import { clipKeepingAsk, normalizeAsk } from "./ask-normalize.ts";
 
 export const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n), steer: text => steerOrchestrator(msg().laneReportSteer(text)) });
 
@@ -40,7 +41,7 @@ export function installLaneHandlers(): void {
 			const kept = local === body ? text : [local, forLines(text)].filter(Boolean).join("\n\n");
 			// `answering`: the report answers an owner message (the bell and push treat it as the session's answer, hub/notices.ts, hub/push.ts).
 			emit("inbox", { ts: now(), kind: "lane_report", source: channel, lane: lane.name, text: kept, ...(answering ? { answering: true } : {}) });
-			return local.slice(0, 1800);
+			return clipKeepingAsk(local, 1800);
 		})
 			.then(async shown => {
 				if (running) return void (await discord.progress(channel, "progress", shown));
@@ -56,7 +57,7 @@ export function installLaneHandlers(): void {
 			noteHandoffLeak(`lane:${lane}`, raw);
 			const channel = `lane:${lane}`;
 			void inOrder(channel, async () => {
-				const shown = await localize(dropForLine(stripHandoff(raw)).slice(0, 900), channel, "lane");
+				const shown = await localize(clipKeepingAsk(dropForLine(normalizeAsk(stripHandoff(raw))), 900), channel, "lane");
 				emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, answers: refs });
 				return shown;
 			})
@@ -71,12 +72,12 @@ export function installLaneHandlers(): void {
 	// Mid-turn lane text: an [ask], [fail] or [done] line is something the owner must see and keep, so it is a real message;
 	// anything else edits the lane channel's one progress message.
 	setProgressHandler((lane, raw) => {
-		const text = stripHandoff(raw);
+		const text = normalizeAsk(stripHandoff(raw));
 		const channel = `lane:${lane.name}`;
 		const tone = parseTone(text).tone;
 		const real = tone === "ask" || tone === "fail" || tone === "done";
 		void inOrder(channel, async () => {
-			const local = await localize(dropForLine(text).slice(0, real ? 1800 : 900), channel, "lane");
+			const local = await localize(clipKeepingAsk(dropForLine(text), real ? 1800 : 900), channel, "lane");
 			const shown = real || tone === "run" ? local : `[run] ${local}`;
 			emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, ...(real ? {} : { update_key: "progress" }) });
 			return shown;

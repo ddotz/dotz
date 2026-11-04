@@ -3,6 +3,9 @@ import { rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { now, writeAtomic, log } from "./config.ts";
 import { parseTone } from "./tone.ts";
 import { pendingAskFile } from "./asks.ts";
+import { lastQuestion } from "./ask-options.ts";
+import { normalizeAsk } from "./ask-normalize.ts";
+import { parseDecisions } from "./choices.ts";
 import { join } from "node:path";
 import { workerCheck } from "./activity.ts";
 import { msg } from "./i18n.ts";
@@ -12,13 +15,22 @@ import { prompt } from "./laneprompt.ts";
 
 export const REPORT_DEBOUNCE_MS = Number(process.env.DOTZ_REPORT_DEBOUNCE_MS ?? 0);
 
+// An [ask] while the lane's last one is still open (any owner message clears it) that asks nothing new: the same text, or a line with no
+// option and no question ("답을 받기 전에는 진행할 수 없어서 멈췄어요", 2026-11-04 spacing-rules, 11 s after the real question).
+function repeatsOpenAsk(lane: Lane, text: string): boolean {
+	if (!lane.pendingAsk || parseTone(text).tone !== "ask") return false;
+	return lane.pendingAsk.text === text || (!parseDecisions(text).blocks.length && !lastQuestion(text));
+}
+
 // `notice` marks a gateway-written text ([lane error], [lane exited], pause/rate-limit): it is not the lane speaking, so it
 // leaves a pending ask alone.
-export function report(lane: Lane, text: string, notice = false): void {
+export function report(lane: Lane, written: string, notice = false): void {
+	const text = notice ? written : normalizeAsk(written);
 	rmSync(pendingFile(lane), { force: true });
 	lane.unreported = false;
 	if (lane.reportedThisTurn === text) return log(`lane ${lane.name} report dropped (same text again before a new turn)`);
 	lane.reportedThisTurn = text;
+	if (!notice && repeatsOpenAsk(lane, text)) return log(`lane ${lane.name} report dropped (restates the question still open)`);
 	// The turn's final text answers every owner message still open (a gateway notice does not).
 	const answering = !notice && ownerNotes.reported(lane.name);
 	lane.reports++;
