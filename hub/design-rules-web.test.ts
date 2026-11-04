@@ -61,7 +61,7 @@ const SIZE_ALLOWED: Record<string, [number, number]> = {
 	"14-overlay.css": [1, 0], "15-draft-original.css": [0, 0], "15-reply-card.css": [0, 0], "15-reply.css": [0, 0],
 	"15-settings-pages.css": [0, 0], "15-settings-phone.css": [0, 0], "15-triage.css": [0, 0], "16-result-card.css": [0, 0],
 	"17-kakao.css": [0, 0], "18-app-settings.css": [0, 0], "18-comments.css": [0, 0], "19-volume.css": [0, 0],
-	"20-apps.css": [0, 0], "20-mail-box.css": [0, 0], "20-mail-thread.css": [0, 0], "20-monitoring.css": [7, 2],
+	"20-apps.css": [0, 0], "20-mail-box.css": [0, 0], "20-mail-thread.css": [0, 0], "20-monitoring.css": [0, 0],
 	"20-projects.css": [4, 2], "21-picker.css": [1, 3], "22-shell.css": [7, 3],
 };
 // [off-scale, raw] px spacing values per file (see space above), as SIZE_ALLOWED: a ceiling and, because the number is exact, a floor.
