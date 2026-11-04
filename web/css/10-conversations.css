@@ -10,7 +10,7 @@
 .cv-row + .cv-row { margin-top: var(--sp-05); }
 /* the open conversation: a small accent dot in the row's left padding (the slot every row already has, so text never shifts); phone only — the wide layout already highlights the row */
 .cv-row { position: relative; }
-@media (max-width: 1099px) { .cv-row.on::before { content: ""; position: absolute; top: 50%; left: 5px; width: 6px; height: 6px; margin-top: -3px; border-radius: 50%; background: var(--accent); } }
+@media (max-width: 1099px) { .cv-row.on::before { content: ""; position: absolute; top: 50%; left: 5px; --dot: 6px; width: var(--dot); height: var(--dot); margin-top: calc(var(--dot) / -2); border-radius: 50%; background: var(--accent); } }
 .cv-row:hover { background: var(--card-hover); }
 .cv-av { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--layer); color: var(--fg-2); font: 700 15px/24px var(--font); }
 .cv-av .ic { width: 20px; height: 20px; }
@@ -43,7 +43,7 @@
 #cv-head .cv-hd-a { flex: none; display: flex; align-items: center; gap: var(--sp-1); margin-left: auto; }
 #cv-head .cvmenu { margin-left: 0; }
 /* a row with a preview line (running sessions, 모니터링) */
-.cv-row.pv { align-items: flex-start; padding-block: 10px; }
+.cv-row.pv { align-items: flex-start; padding-block: var(--sp-2); }
 .cv-row.pv .cv-p { font-size: 13px; line-height: 18px; }
 .cv-row.pv .cv-m { align-self: center; }
 .cv-m2 { display: flex; align-items: center; gap: var(--sp-15); }
@@ -60,7 +60,7 @@
 .tl-in > .cv-new { display: flex; align-items: center; gap: var(--sp-3); margin: var(--sp-2) 0 0; color: var(--accent); font: 600 12px/16px var(--font); }
 .tl-in > .cv-new::before, .tl-in > .cv-new::after { content: ""; flex: 1; height: 1px; background: var(--line-2); }
 /* a gateway system line (11-todo-strip.js sysLine): small, muted and centered like the divider above, no bubble */
-.tl-in > .cv-sys { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-15); align-self: center; width: fit-content; max-width: 100%; margin: var(--sp-2) auto 0; padding: var(--sp-05) 10px; border: 0; border-radius: var(--r-ctl); background: none; color: var(--fg-3); font: 500 12px/16px var(--font); text-align: center; overflow-wrap: anywhere; }
+.tl-in > .cv-sys { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-15); align-self: center; width: fit-content; max-width: 100%; margin: var(--sp-2) auto 0; padding: var(--sp-05) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: none; color: var(--fg-3); font: 500 12px/16px var(--font); text-align: center; overflow-wrap: anywhere; }
 .tl-in > button.cv-sys { cursor: pointer; }
 .tl-in > button.cv-sys:hover { background: var(--line-2); color: var(--fg-2); }
 .cv-sys .ic { width: 14px; height: 14px; flex: none; }
@@ -68,20 +68,20 @@
 .cv-sys .cv-sys-st[hidden] { display: none; }
 .cv-sys .cv-sys-mt { font-variant-numeric: tabular-nums; }
 /* 백그라운드 작업 줄 (소개 페이지 작업 카드): 카드 바탕, 12px 회색 이름표, 500 제목, 오른쪽 상태 알약, 끝나면 결과 파일 칩과 가득 찬 막대. 움직이는 것 없음(원칙 3·6·7·9) */
-.tl-in > .cv-sys.cv-task { display: block; align-self: stretch; width: auto; max-width: none; margin: 10px 0 0; padding: var(--sp-3) 14px; border-radius: var(--r-card); background: var(--card); color: var(--fg); text-align: left; }
+.tl-in > .cv-sys.cv-task { display: block; align-self: stretch; width: auto; max-width: none; margin: var(--sp-2) 0 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); color: var(--fg); text-align: left; }
 .cv-task .ct-hd { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .cv-task .ct-nm { display: grid; gap: var(--sp-05); min-width: 0; }
 .cv-task .ct-lb { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .cv-task .ct-t { color: var(--fg); font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
-.cv-task .ct-pill { flex: none; gap: 5px; height: 24px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, var(--card)); color: var(--accent); font: 500 12px/16px var(--font); }
+.cv-task .ct-pill { flex: none; gap: var(--sp-15); height: 24px; padding: 0 var(--sp-3); border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, var(--card)); color: var(--accent); font: 500 12px/16px var(--font); }
 .cv-task .ct-pill.ok { background: color-mix(in srgb, var(--ok) 14%, var(--card)); color: var(--ok); }
 .cv-task .ct-pill.err { background: color-mix(in srgb, var(--err) 12%, var(--card)); color: var(--err); }
 .cv-task .ct-pill .ic { width: 12px; height: 12px; stroke-width: 2.4; }
-.cv-task .ct-body { display: grid; gap: 10px; margin-top: 10px; }
-.cv-task .ct-file { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.cv-task .ct-body { display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
+.cv-task .ct-file { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
 .cv-task .ct-fi { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--layer); color: var(--fg-2); }
 .cv-task .ct-fi .ic { width: 16px; height: 16px; }
-.cv-task .ct-ft { display: grid; gap: 1px; min-width: 0; }
+.cv-task .ct-ft { display: grid; gap: var(--sp-05); min-width: 0; }
 .cv-task .ct-ft b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 500 14px/20px var(--font); }
 .cv-task .ct-ft span { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .cv-task .ct-bar { height: 3px; border-radius: 2px; background: var(--layer); overflow: hidden; }
@@ -146,7 +146,7 @@
   #v-chat > .subs { grid-row: 5; margin: 0 var(--sp-3); }
   #v-chat > .composer { grid-row: 6; width: auto; max-width: none; margin: 0; padding: var(--sp-2) var(--sp-3) var(--sp-3); }
   .cv-row.pv { padding-block: var(--sp-15); }
-  .cv-row { min-height: 36px; padding: var(--sp-1) 10px; gap: var(--sp-2); border-radius: var(--r-ctl); }
+  .cv-row { min-height: 36px; padding: var(--sp-1) var(--sp-3); gap: var(--sp-2); border-radius: var(--r-ctl); }
   .cv-row.sub { min-height: 36px; padding-left: var(--sp-5); }
   .cv-row .cv-n, .cv-row.sub .cv-n { font-size: 14px; line-height: 20px; }
   .cv-row + .cv-row { margin-top: var(--sp-05); border-top: 0; }

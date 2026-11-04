@@ -57,7 +57,7 @@ const DURATION_ALLOWED = new Set([
 const SIZE_ALLOWED: Record<string, [number, number]> = {
 	"01-tokens.css": [0, 0], "02-cards-lists-tags.css": [0, 0], "03-base.css": [0, 0], "04-files.css": [0, 0],
 	"05-log.css": [0, 0], "06-harness.css": [0, 0], "07-chat.css": [0, 0], "08-project-sessions.css": [0, 0],
-	"09-notices.css": [0, 0], "10-conversations.css": [8, 4], "11-peers.css": [0, 4], "13-code-shell.css": [2, 6],
+	"09-notices.css": [0, 0], "10-conversations.css": [0, 0], "11-peers.css": [0, 4], "13-code-shell.css": [2, 6],
 	"14-overlay.css": [1, 0], "15-draft-original.css": [2, 5], "15-reply-card.css": [4, 0], "15-reply.css": [2, 2],
 	"15-settings-pages.css": [2, 1], "15-settings-phone.css": [0, 1], "15-triage.css": [11, 13], "16-result-card.css": [67, 7],
 	"17-kakao.css": [10, 10], "18-app-settings.css": [2, 1], "18-comments.css": [3, 2], "19-volume.css": [10, 0],
