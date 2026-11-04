@@ -3,13 +3,13 @@
    surface as the post list (no chat backdrop, no bubbles, no dark date pills), a comment is a row, the follow-up of each comment is a short track of steps. */
 
 /* choose what to follow */
-.kk-pick-src { padding: 4px 0 8px; border-top: 1px solid var(--line); }
-.kk-pick-src > .btn { margin: 0 16px; }
-#cm-empty + .btn { display: block; margin: -12px auto 24px; }
-.cm .kk-draft input.kk-ta { flex: 1; min-width: 0; min-height: 44px; padding: 8px 12px; border-radius: 12px; border: 0; background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
+.kk-pick-src { padding: var(--sp-1) 0 var(--sp-2); border-top: 1px solid var(--line); }
+.kk-pick-src > .btn { margin: 0 var(--sp-4); }
+#cm-empty + .btn { display: block; margin: calc(var(--sp-3) * -1) auto var(--sp-6); }
+.cm .kk-draft input.kk-ta { flex: 1; min-width: 0; min-height: 44px; padding: var(--sp-2) var(--sp-3); border-radius: 12px; border: 0; background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
 .cm .kk-draft input.kk-ta:focus { outline: 0; box-shadow: var(--ff-ring); }
-.cm-tabs { margin: 8px 16px; }
-.dm-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 16px 8px; }
+.cm-tabs { margin: var(--sp-2) var(--sp-4); }
+.dm-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-1) var(--sp-4) var(--sp-2); }
 .dm-note { color: var(--fg-3); font: 400 12px/16px var(--font); }
 
 /* post list rows: avatar or thumbnail, title, one-line preview, time over the two counts */
@@ -19,19 +19,19 @@
 /* the conversation: the card surface, a hairline under the head */
 .cm .kk-chat { background: var(--card); }
 .cm .kk-head { border-bottom: 1px solid var(--line); }
-.cm .kk-tl { padding: 2px 16px 12px; }
+.cm .kk-tl { padding: var(--sp-05) var(--sp-4) var(--sp-3); }
 .cm .kk-in { gap: 0; }
 .cm .kk-in > .kk-note { color: var(--fg-3); }
-@media (max-width: 639px) { .cm .kk-tl { padding: 2px 12px 12px; } }
+@media (max-width: 639px) { .cm .kk-tl { padding: var(--sp-05) var(--sp-3) var(--sp-3); } }
 /* a day is a quiet label with a hairline, not a dark pill */
-.cm .kk-date { align-self: stretch; display: flex; align-items: center; gap: 10px; margin: 14px 0 2px; padding: 0; border-radius: 0; background: none; color: var(--fg-3); font: 500 12px/16px var(--font); }
+.cm .kk-date { align-self: stretch; display: flex; align-items: center; gap: 10px; margin: 14px 0 var(--sp-05); padding: 0; border-radius: 0; background: none; color: var(--fg-3); font: 500 12px/16px var(--font); }
 .cm .kk-date::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 
 /* the post at the top of its conversation: the pane head shows it on a wide screen, so only the phone (head hidden) draws it */
-.cm-post { display: flex; align-items: center; gap: 12px; margin: 0; padding: 8px 0 10px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; }
+.cm-post { display: flex; align-items: center; gap: var(--sp-3); margin: 0; padding: var(--sp-2) 0 10px; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; }
 .cm-post .kk-av.kk-thumb { width: 64px; height: 48px; }
 .cm-pt { display: block; color: var(--fg); font: 600 14px/20px var(--font); overflow-wrap: anywhere; }
-.cm-pl { display: inline-block; margin-top: 2px; color: var(--accent); font: 500 12px/16px var(--font); }
+.cm-pl { display: inline-block; margin-top: var(--sp-05); color: var(--accent); font: 500 12px/16px var(--font); }
 @media (min-width: 1100px) { .cm-post { display: none; } }
 
 /* a comment thread: the comment, replies under it behind a rule, a draft or a reply on its way right under the comment it answers */
@@ -42,8 +42,8 @@
 .cm-c { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
 .cm-c > .kk-av { width: 32px; height: 32px; font-size: 14px; }
 .cm-c > .kk-av.cm-me { background: color-mix(in srgb, var(--accent) 14%, var(--card)); color: var(--accent); font-size: 12px; }
-.cm-c > .kk-mb { flex: 1; max-width: none; min-width: 0; align-items: stretch; gap: 2px; }
-.cm-hd { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cm-c > .kk-mb { flex: 1; max-width: none; min-width: 0; align-items: stretch; gap: var(--sp-05); }
+.cm-hd { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .cm-hd .kk-name { min-width: 0; margin: 0; overflow: hidden; color: var(--fg); font: 600 13px/20px var(--font); text-overflow: ellipsis; white-space: nowrap; }
 .cm-hd .kk-time { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .cm-hd .tag.unreplied { margin-left: auto; }
@@ -52,19 +52,19 @@
 .cm-c .kk-bub { padding: 0; border-radius: 0; background: none; color: var(--fg); font: 400 14px/21px var(--font); }
 .cm-c.mine .kk-bub { color: var(--fg-2); }
 .cm-c [hidden] { display: none; }
-.cm-acts { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
-.cm-acts > .btn.text:first-child { margin-left: -8px; }
-.cm .od-bar { margin: 0 0 6px; }
+.cm-acts { display: flex; align-items: center; gap: var(--sp-15); margin-top: var(--sp-15); }
+.cm-acts > .btn.text:first-child { margin-left: calc(var(--sp-2) * -1); }
+.cm .od-bar { margin: 0 0 var(--sp-15); }
 .cm .od-tg { min-height: 28px; padding: 0 10px; font-size: 13px; }
 
 /* what the comment set going: a track per follow-up (답글: 초안 · 확인 · 보냄, 메일: 초안 · 보냄); the step it is at carries the color, the later ones stay hollow.
    done = green, busy (on its way) = blue, ask (waits for him) = orange, err = red (the shared state colors) */
-.cm-pg { display: flex; flex-wrap: wrap; gap: 2px 16px; margin-top: 4px; min-width: 0; }
+.cm-pg { display: flex; flex-wrap: wrap; gap: var(--sp-05) var(--sp-4); margin-top: var(--sp-1); min-width: 0; }
 .cm-tr { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; color: var(--fg-3); font: 400 12px/18px var(--font); }
-.cm-tn { margin-right: 8px; color: var(--fg-2); font-weight: 600; }
-.cm-st { position: relative; display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.cm-tn { margin-right: var(--sp-2); color: var(--fg-2); font-weight: 600; }
+.cm-st { position: relative; display: inline-flex; align-items: center; gap: var(--sp-1); min-width: 0; overflow-wrap: anywhere; }
 .cm-st::before { content: ""; flex: none; width: 8px; height: 8px; box-sizing: border-box; border: 1.5px solid var(--line-2); border-radius: 50%; }
-.cm-st + .cm-st { margin-left: 6px; padding-left: 14px; }
+.cm-st + .cm-st { margin-left: var(--sp-15); padding-left: 14px; }
 .cm-st + .cm-st::after { content: ""; position: absolute; left: 0; top: 9px; width: 10px; height: 1px; background: var(--line-2); }
 .cm-st[data-s="done"] { color: var(--fg-2); }
 .cm-st[data-s="done"]::before { border-color: var(--ok); background: var(--ok); }
