@@ -1,7 +1,8 @@
 /* ---------- computers: switch between this owner's gateways (맥북, 맥미니) ---------- */
 // Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?, via?}]. A row with via "jandi" is a computer reached only through the owner's JANDI self chat (hub/jandi-peers.ts): its url is a chat page on this gateway, opened in this app.
-// With 2 or more the bot name opens the switch sheet (owner 2026-11-03: no separate chip): the logo + name at the top left on a wide screen, the page title on the phone
-// (there the brand is hidden; on 홈 the title is the bot name). A small dot at the name's bottom right says another computer has something unread (warn: a question waits).
+// With 2 or more the bot name opens the switch sheet (owner 2026-11-04: one row, no separate computer row): the logo + name + one chevron at the top left on a wide screen, the page title on the
+// phone (there the brand is hidden; on 홈 the title is the bot name). A small dot says another computer has something unread (warn: a question waits): at the chevron's bottom right on a wide
+// screen, at the name's bottom right on the phone. The computer in use is named in the sheet, with its check.
 // The sheet is one row per computer: name, its own dot, and ✓ / 연결됨 / 연결 안 됨. An offline computer stays listed, greyed; choosing it says it cannot connect. Choosing one opens that computer's own address (its own PWA, login and push).
 // The last list that arrived is kept in localStorage and drawn at once: coming back from the other computer the page starts from the service worker's
 // cached shell before the phone's network is up, and a first /api/peers that failed left the switcher off until the next minute. A failed fetch is retried within seconds.
@@ -90,10 +91,11 @@ function prOpenItem(p, id) {
 const prTrig = () => !!prSelf() && PR.list.length >= 2;
 function prPaint() {
   prTryFollow();
-  const me = prSelf(), on = prTrig(), names = [$("#brand-name"), $("#title")], brand = $("#brand"), title = $("#title");
+  const me = prSelf(), on = prTrig(), chev = $("#brand-c"), names = [chev, $("#title")], brand = $("#brand"), title = $("#title");
   $("#appbar").classList.toggle("hasp", on);
+  chev.hidden = !on;
   if (!on) {
-    for (const n of names) n.classList.remove("pdot", "pneed");
+    for (const n of names) n.classList.remove("pdot", "p-need");
     brand.setAttribute("aria-label", "홈으로"); brand.removeAttribute("title"); brand.removeAttribute("aria-haspopup");
     title.removeAttribute("tabindex"); title.removeAttribute("aria-haspopup");
     prClose(false); return;
@@ -101,7 +103,7 @@ function prPaint() {
   // The TLS handshake to the other computer is paid now, not when the owner taps it.
   for (const p of prOthers()) if (p.online && !p.via && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
   const others = prOthers(), more = others.some(p => p.unread > 0 || p.need > 0), need = others.some(p => p.need > 0);
-  for (const n of names) { n.classList.toggle("pdot", more); n.classList.toggle("pneed", need); }
+  for (const n of names) { n.classList.toggle("pdot", more); n.classList.toggle("p-need", need); }
   const label = `컴퓨터 바꾸기, 지금은 ${me.name}${more ? ", 다른 컴퓨터에 새 알림" : ""}`;
   brand.setAttribute("aria-label", label); brand.setAttribute("aria-haspopup", "dialog");
   brand.title = `컴퓨터 바꾸기 (${prKeyHint}, 다음 컴퓨터로)`;
@@ -198,10 +200,10 @@ function prOpen() {
   // On the phone the tab bar stays free below the sheet, so tapping 홈 again (homeTabTap) can close it, as the 채팅 tab does with its list.
   const nr = $("#nav").getBoundingClientRect();
   if (nr.top > innerHeight / 2 && nr.height < innerHeight / 4) PR.node.style.bottom = `${Math.max(0, innerHeight - nr.top)}px`;
-  // With the sidebar's computer row on screen the switcher opens under it as a popover (no scrim), as the prototype draws it; the phone keeps its bottom sheet.
-  const gwb = $("#gwpick");
-  if (gwb && gwb.offsetParent) {
-    const r = gwb.getBoundingClientRect(), sh = PR.node.firstElementChild;
+  // With the sidebar's brand row on screen the switcher opens under it as a popover (no scrim), as the prototype draws it; the phone keeps its bottom sheet.
+  const brand = $("#brand");
+  if (brand.offsetParent) {
+    const r = brand.getBoundingClientRect(), sh = PR.node.firstElementChild;
     PR.node.classList.add("anch"); sh.style.left = `${Math.max(12, Math.round(r.left - 8))}px`; sh.style.top = `${Math.round(r.bottom + 6)}px`;
   }
   PR.ov = ovOpen(() => prClose(false));
@@ -247,6 +249,7 @@ const mnRow = () => MN.info && el("button", { class: "li tap", type: "button", o
   el("span", { class: "li-end" }, MN.info.name ? el("span", { class: "tag", text: MN.info.name }) : null, icon("chev", "chev")));
 mnLoad();
 
+$("#brand").append(el("span", { class: "brand-c", id: "brand-c", hidden: true }, icon("drop")));
 $("#brand").onclick = () => (prTrig() ? prOpen() : go("home"));
 // The phone's page title, on a page without a back arrow (there the title names the conversation or sub-page and the arrow leads back).
 const prTitleTap = () => { if (prTrig() && !$("#appbar").classList.contains("back")) prOpen(); };
