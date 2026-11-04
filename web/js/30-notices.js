@@ -124,7 +124,7 @@ function ntGo(t) {
   if (t === "settings") { go("settings"); return ""; }   // the 새 버전 notice: 설정 → 업데이트
   if (isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // the session is gone: its result card is in the main chat
   if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast("이 프로젝트를 찾을 수 없어요"); go("projects"); return ""; }
-  if (!validTarget(t)) { go("home"); return ""; }
+  if (!validTarget(t)) { toast("이 화면을 찾을 수 없어요"); go("home"); return ""; }
   go("chat", t);
   return t;
 }
@@ -183,7 +183,7 @@ function ntHlHost(node) {
 }
 function ntFlash(node) {
   const { host, bar } = ntHlHost(node);
-  for (const x of tl.querySelectorAll(".nt-hl")) x.classList.remove("nt-hl", "nt-bar");
+  for (const x of document.querySelectorAll(".nt-hl")) x.classList.remove("nt-hl", "nt-bar");
   void host.offsetWidth;
   host.classList.add("nt-hl");
   host.classList.toggle("nt-bar", bar);
@@ -191,8 +191,9 @@ function ntFlash(node) {
   host._hl = setTimeout(() => host.classList.remove("nt-hl", "nt-bar"), 2300);
 }
 let ntJumpSeq = 0;
-async function ntJump(n) {
-  const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, t = ntGo(n.src || n.open || "main");
+// `quiet`: a sheet is opening over the conversation and says what the notice is about itself, so a message that is gone needs no toast.
+async function ntJump(n, quiet = false) {
+  const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, t = ntGo(n.msg || n.src || n.open || "main");
   if (!t) return;
   if (t === "alert" && BELL.tab !== "all") bellTab("all");   // the message is in the timeline, which the other 알림 tabs hide
   chatUnpin();
@@ -203,32 +204,39 @@ async function ntJump(n) {
     await ntReach(t, at);
     for (let i = 0; i < 300 && seq === ntJumpSeq && !CV.placed; i++) await ntRaf();   // the opening's first draw waits for the read position (chatReady)
     if (seq !== ntJumpSeq || target !== t || current !== "chat") return;
-    const m = ntFind(at);
-    if (m) { chatJump(m); ntFlash(m); }
+    const m = ntFind(at), exact = !!m && m.dataset.ts === at;
+    if (m) chatJump(m);
+    if (exact) ntFlash(m);
+    else if (n.at && !quiet) toast(m ? "그 메시지가 없어서 가까운 곳을 열었어요" : "그 메시지를 찾을 수 없어요");
   } catch {}
 }
+// The conversation behind a sheet (a decision, an [ask], a failure): the same jump, without one for a question that has no conversation (a login request) or lives on another computer.
+const ntUnder = n => { if (!n.pc && validTarget(n.src || n.open || "")) ntJump(n, true); };
 
-// A tapped push: open its conversation and land on the message it is about (loaded first when the stream missed it).
-function pushOpen(hash, at) {
+// A tapped push: open its notice, or its conversation at the message it is about (loaded first when the stream missed it).
+async function pushOpen(hash, at, nid) {
   const p = parseHash(hash), t = p.t || MAIN;
-  if (at && p.view === "chat") noticeOpen(ntMsgFor(t, at) || { kind: "message", tone: "", src: t, open: t, at });
-  else go(p.view, p.t);
+  if (!at || p.view !== "chat") { go(p.view, p.t); return; }
+  if (!NT.loaded) await loadNotices();   // a cold start: the push was sent before the list reached this page
+  noticeOpen(ntById(nid) || ntMsgFor(t, at) || { kind: "message", tone: "", src: t, open: t, at });
 }
 
 /* ---- one handler for every notice entry point ---- */
 // The corner toast, a tapped push, a row of 답변 필요, a row of the 홈 notice cards and a message tapped in the 알림 / 작업내역 conversations all end in
 // noticeOpen: the item opens by the kind of thing it links to, never by where it was tapped.
-//   sheet    a decision notice (hub/notices.ts kind "decision")           -> the bottom decision sheet over the current screen
-//   ask      an [ask] message whose question still waits                    -> the same sheet (else the conversation at that message)
-//   detail   a failure alert                                                -> a detail sheet over the current screen
-//   session  a session's report                                             -> that session's view
+//   sheet    a decision notice (hub/notices.ts kind "decision")           -> its conversation at the asking message, the decision sheet over it
+//   ask      an [ask] message whose question still waits                    -> the same, with the sheet while the question waits
+//   detail   a failure alert                                                -> the 알림 message, a detail sheet over it
+//   session  a session's report                                             -> that session, on the report
 //   worklog  a 작업내역 post                                                 -> 작업내역, on that item
-//   monitor  a 모니터링 notice (a watch or schedule report)              -> 모니터링, at its monitor or 감시 소식
-//   message  anything else (plain message, result)                         -> the conversation, on that message
+//   monitor  a 모니터링 notice (a watch or schedule report)              -> 모니터링, on that report's row in its monitor, app or 감시 소식
+//   message  anything else (plain message, result, a mail)                 -> the conversation, on that message
+// `here`: tapped on the message itself (the 알림 / 작업내역 timeline), so the sheet opens without moving the list under it.
 function noticeKindAction(n, mons = NM.items) {
   if (ntIsDec(n) || ntLinkedDec(n)) return "sheet";
   if (n.tone === "ask") return "ask";
   if (n.kind === "alert" && n.tone === "fail") return "detail";
+  if (String(n.src || n.open || "").startsWith("mail:")) return "message";   // a new mail is a watch-kind notice, but it has its own conversation
   if (n.kind === "result" || String(n.src || n.open || "").startsWith("lane:")) return "session";
   if (String(n.src || n.open || "").startsWith("settings:")) return "app";   // a monitor's or app's settings conversation: it lives in 모니터링, not in 채팅
   if ((n.src || n.open) === "settings") return "settings";   // an account / update alert: 설정
@@ -236,17 +244,26 @@ function noticeKindAction(n, mons = NM.items) {
   if (n.kind === "watch") return "monitor";
   return "message";
 }
-async function noticeOpen(n) {
+async function noticeOpen(n, here = false) {
   if (!n) return;
   const a = noticeKindAction(n);
   if (a === "detail" || a === "session" || a === "monitor" || a === "settings" || a === "app") ntRead(n);   // no chat view follows these, so nothing else would mark them seen
   switch (a) {
-    case "sheet": return noticeSheetOpen(n.pc ? n : (ntLinkedDec(n) || n).id);   // a peer's question is not in NT: the notice itself
-    case "ask": if (await ntAskSheet(n)) return; return ntJump(n);   // answered or gone: the conversation
-    case "detail": return ntDetailOpen(n);
-    case "session": return ntSession(n);
+    case "sheet": {
+      const d = ntLinkedDec(n) || n;
+      if (!here) ntUnder(d);
+      return noticeSheetOpen(n.pc ? n : d.id);   // a peer's question is not in NT: the notice itself
+    }
+    case "ask":
+      if (!here) ntUnder(n);
+      if ((await ntAskSheet(n)) || !here) return;
+      return ntJump(n);   // answered or gone: the conversation
+    case "detail":
+      if (!here) ntUnder(n);
+      return ntDetailOpen(n);
+    case "session": return ntJump(n);
     case "monitor": return monOpen(n);
-    case "app": return ntApp(n);
+    case "app": return ntJump(n);   // a monitor's or app's settings conversation opens inside 모니터링 (go)
     case "settings": return void go("settings");
     default: return ntJump(n);
   }
@@ -276,16 +293,24 @@ function ntOfEvent(e) {
   return { id: "", kind: own === "alert" ? "alert" : own === "worklog" ? "worklog" : lane ? "result" : "message", tone: e.ask ? "ask" : own || lane ? p.tone : "",
     title: e.title || (own === "alert" ? "알림" : own === "worklog" ? "작업 기록" : lane ? `세션 ${lane}` : botName), text: p.text, src, open: src, at: e.ts, ts: e.ts };
 }
-function ntSession(n) {
-  const t = n.src || n.open;
-  if (isLaneT(t) && S && S.lanes.some(l => `lane:${l.name}` === t)) openTarget(t, lastChatView());
-  else ntJump(n);   // the session is gone: its result card in the main chat
-}
-const monOpen = n => go("monitoring", monKeyOf(n));
-// A settings conversation: opened inside 모니터링 (go's "c:" form); a target the page cannot open lands on 홈.
-function ntApp(n) {
-  const t = n.src || n.open;
-  go(...(validTarget(t) ? ["monitoring", `c:${t}`] : ["home"]));
+// A 모니터링 report: its screen, on its own row. MON.want makes the draw reach that row (unfolded, whatever page and group it is in); the draw is synchronous inside
+// go(). KakaoTalk and comments draw their own rooms, not report rows, so those land on the app's pane (a report naming a Kakao room opens that room).
+async function monOpen(n) {
+  const seq = ++ntJumpSeq;
+  await Promise.all([NM.loaded || loadMonitors(), INTG.loaded || loadIntegrations()]);
+  if (seq !== ntJumpSeq) return;
+  const key = monKeyOf(n);
+  MON.want = String(n.id || ""); MON.filter = "all"; MON.sig = "";
+  go("monitoring", key);
+  MON.want = "";
+  const it = monItems().find(i => i.key === key);
+  if (it && kkItem(it)) { if (n.item && n.item.app === "kakao") kkOpen(n.item.id); return; }
+  if (it && cmAppOf(key)) return;
+  const row = n.id ? monRowOf(n.id) : null;
+  if (!row) { toast("그 소식을 찾을 수 없어요"); return; }
+  row.scrollIntoView({ block: "center" });
+  ntFlash(row);
+  MON.hl = String(n.id); MON.hlUntil = Date.now() + 2300;
 }
 // A message tapped in the 알림 / 작업내역 conversations opens like its notice does (capture phase: the choice rows inside it do not answer in place there).
 timeline.addEventListener("click", ev => {
@@ -295,7 +320,7 @@ timeline.addEventListener("click", ev => {
   const e = ts(target).msgs.find(x => x.ts === m.dataset.ts);
   if (!e) return;
   ev.stopPropagation(); ev.preventDefault();
-  noticeOpen(ntOfEvent(e));
+  noticeOpen(ntOfEvent(e), true);
 }, true);
 
 /* ---- the 알림 conversation: 모두 읽음 in its head (31-conversations.js convPaintHead), 지우기 on each alert ---- */

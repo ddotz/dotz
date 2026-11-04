@@ -27,6 +27,15 @@ test("a worklog post becomes a persisted unread notice", () => {
 	expect(unreadCount()).toBeGreaterThan(0);
 });
 
+test("a session's line in 작업내역 records where its message lives; the session's own report clears that", () => {
+	post("worklog", "[done] 기록에 남긴 줄", { update_key: "lane:x" });
+	expect(byText("기록에 남긴 줄")[0]).toMatchObject({ src: "lane:x", msg: "worklog" });
+	emit("inbox", { ts: ts(), kind: "lane_report", lane: "x", text: "[done] 세션이 쓴 보고" });
+	const [n] = byText("세션이 쓴 보고");
+	expect(n).toMatchObject({ src: "lane:x" });
+	expect(n!.msg).toBeUndefined();
+});
+
 test("the same update_key updates one item in place and reopens it only for a new result", () => {
 	post("worklog", "[run] 진행 중이에요", { update_key: "lane:x" });
 	const first = stored().filter(n => n.key === "lane:x");

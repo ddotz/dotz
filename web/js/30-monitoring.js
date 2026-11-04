@@ -13,7 +13,7 @@ const MON_KIND = { watch: "모니터링", schedule: "예약" };
 const MON_GROUP = { app: "앱", plain: "일반 모니터링" };
 // sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: a phone shows the list instead of the conversation.
 // filter: 전체 / 답 필요 / 실패 of the open item; open: the rows unfolded ("g:<source>", "n:<notice id>"); more: pages shown per list; grew: older reports were just added above.
-const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all", filter: "all", open: new Set(), more: new Map(), grew: false, running: new Set(), autoArmed: false, olderBusy: false };
+const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all", filter: "all", open: new Set(), more: new Map(), grew: false, running: new Set(), autoArmed: false, olderBusy: false, want: "", hl: "", hlUntil: 0 };   // want: the notice a jump is reaching (monOpen in 30-notices.js); hl: the row it lit, lit again if a redraw replaces it
 const monConv = () => current === "monitoring" && narrowChat() && !MON.list;
 const monHash = () => (!MON.list && MON.sel ? `monitoring/${enc(MON.sel)}` : "monitoring");
 // A mail is a conversation of 모니터링 (go() in 05-command-palette.js draws it with the chat view while the tab stays 모니터링); monItemOf: the list item it sits under.
@@ -134,8 +134,15 @@ const monNames = m => [...new Set([monTitle(m), String(m.name || ""), monRaw(m),
 const monHas = (m, n) => n.kind === "watch" && monNames(m).includes(String(n.title || ""));
 // 모니터링's own notices: a watch's or a schedule's report (kind "watch"), or a notice living in an integration's own conversation (a mail).
 const monMine = (n, it) => n.kind === "watch" || (!!it && intgHas(it, n.src || n.open || ""));
-// Where a notice tap lands in 모니터링 (30-notices.js monOpen): its monitor, else 감시 소식.
-function monKeyOf(n) { const m = NM.items.find(x => monHas(x, n)); return m ? `m:${m.name}` : "notice"; }
+// Where a notice tap lands in 모니터링 (30-notices.js monOpen): the item that lists it, else its monitor, else 감시 소식.
+function monKeyOf(n) {
+  const it = monItems().find(i => i.notices.some(x => x.id === n.id));
+  if (it) return it.key;
+  const m = NM.items.find(x => monHas(x, n));
+  return m ? `m:${m.name}` : "notice";
+}
+// The drawn row of a notice: its own, or the folded run or group that stands for it.
+const monRowOf = id => [...$("#mon-tl").querySelectorAll("[data-nid], [data-nids]")].find(r => r.dataset.nid === id || String(r.dataset.nids || "").split(",").includes(id)) || null;
 // The words of a report without the monitor's name in front ("node security updates: 결과가 바뀌었어요" -> "결과가 바뀌었어요").
 function monStrip(s, names) {
   for (const x of names) if (s.startsWith(x)) { const r = s.slice(x.length).replace(/^\s*[:：]\s*/, ""); if (r !== s.slice(x.length)) return r; }
@@ -649,6 +656,8 @@ const monFeed = it => it.key === "notice";
 const MON_FILTERS = [["all", "전체", () => true], ["need", "답 필요", monNeed], ["fail", "실패", monFailed]];
 const monFilterOf = () => MON_FILTERS.find(f => f[0] === MON.filter) || MON_FILTERS[0];
 const MON_PAGE = 30;       // rows per page (더 보기 / 이전 소식 보기 bring the next)
+// Enough pages of list `key` to show its entry number `i` (-1: nothing to reach).
+const monPageTo = (key, i) => { if (i >= 0) MON.more.set(key, Math.max(MON.more.get(key) || MON_PAGE, (Math.floor(i / MON_PAGE) + 1) * MON_PAGE)); };
 const MON_FOLD_MIN = 3;    // a run of this many same results in a row folds into its last one
 // A row's summary: the report's first two lines (the monitor's name and the original dropped), 140 characters at most.
 function monSummary(n, names) {
@@ -699,6 +708,7 @@ const monReadAll = (btn, list) => busy(btn, async () => {
 function monRowNode(n, names) {
   if (ntIsDec(n) || n.item) return monNoticeNode(n, names);   // a report about an app item shows the item (a mail row) as the app draws it
   const key = `n:${n.id}`, src = ntPlain(names[0] || n.title) || "알림";
+  if (n.id === MON.want) MON.open.add(key);
   if (MON.open.has(key)) {
     const full = monNoticeNode(n, names);
     if (!full) return null;
@@ -729,6 +739,7 @@ function monLogLine({ tone, main, sub, at, unread, nid, onclick, label }) {
 }
 function monLogRow(n, names) {
   const key = `n:${n.id}`;
+  if (n.id === MON.want) MON.open.add(key);
   if (ntIsDec(n) || n.item || monNeed(n) || MON.open.has(key)) return monRowNode(n, names);
   const body = String(n.text || "").split(/\n(?:\`\`\`원문|원문[ \t]*\n)/)[0];
   const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => ntPlain(l)).filter(Boolean);
@@ -754,7 +765,9 @@ function monRunChips(it) {
 // Folded, the row stands for its newest report (seeing it reads that one); the rest are read as they come into view or by 읽음 처리.
 function monGroupNode(g, names) {
   if (g.length === 1) return [monRowNode(g[0], names)];
-  const n0 = g[0], need = monNeed(n0), key = `g:${need ? `need|${monSummary(n0, names)}|` : ""}${monSrcKey(n0)}`, open = MON.open.has(key), unread = g.filter(n => !n.read).length, src = ntPlain(names[0] || n0.title) || "알림";
+  const n0 = g[0], need = monNeed(n0), key = `g:${need ? `need|${monSummary(n0, names)}|` : ""}${monSrcKey(n0)}`, want = g.findIndex(n => n.id === MON.want);
+  if (want >= 0) { MON.open.add(key); monPageTo(key, want); }
+  const open = MON.open.has(key), unread = g.filter(n => !n.read).length, src = ntPlain(names[0] || n0.title) || "알림";
   const head = el("div", { class: `bm alert rc fr grp${unread ? " un" : ""}${open ? " open" : ""}`, "data-nid": open ? null : n0.id, "data-group": key, role: "button", tabindex: "0", "aria-expanded": String(open), "aria-label": `${src} 소식 ${g.length}건 ${open ? "접기" : "펼치기"}`, onclick: () => monToggle(key), onkeydown: ev => monKey(ev, () => monToggle(key)) },
     el("div", { class: "rc-hd" }, el("span", { class: "rc-src", text: src }), n0.pc ? el("span", { class: "tag", text: n0.pc.name }) : null, need ? monTag("ask") : monTag(n0.tone), el("span", { class: "tag fr-n", text: need ? `같은 질문 ${g.length}번` : `${g.length}건` }), unread ? el("span", { class: "nb", "aria-label": `안 읽음 ${unread}개`, text: unread > 99 ? "99+" : String(unread) }) : null, el("span", { class: "rc-time", text: monWhen(n0) }), el("span", { class: "fr-chev", "aria-hidden": "true" }, icon("drop"))),
     open ? null : el("div", { class: "fr-sum", text: monSummary(n0, names) }),
@@ -772,6 +785,7 @@ function monFeedNodes(it, names) {
   for (const n of list) if (!monNeed(n)) { const k = n.item ? `item|${n.id}` : monSrcKey(n); by.set(k, [...(by.get(k) || []), n]); }
   const groups = [...by.values()], bad = groups.filter(g => g.some(n => monFailed(n) && !n.read));
   const secs = [["답 필요", [...asked.values()]], ["실패", bad], ["소식", groups.filter(g => !bad.includes(g))]].filter(s => s[1].length);
+  monPageTo("feed", secs.flatMap(s => s[1]).findIndex(g => g.some(n => n.id === MON.want)));
   const page = MON.more.get("feed") || MON_PAGE, out = [];
   let shown = 0, left = 0;
   for (const [label, gs] of secs) {
@@ -808,6 +822,8 @@ function monChronoNodes(it, names) {
     const last = runs[runs.length - 1], k = monNeed(n) || ntIsDec(n) ? "" : monFoldKey(n, names);
     if (k && last && last.k === k) { last.all.push(n); last.n = n; } else runs.push({ k, n, all: [n] });
   }
+  const wanted = runs.findIndex(r => r.all.some(n => n.id === MON.want));
+  if (wanted >= 0) monPageTo(it.key, runs.length - 1 - wanted);
   const page = MON.more.get(it.key) || MON_PAGE, cut = Math.max(0, runs.length - page);
   const rep = r => {
     const draw = it.mon ? monLogRow : monNoticeNode;
@@ -1063,6 +1079,7 @@ function renderMonitoring() {
     if (MON.grew) { MON.grew = false; box.scrollTop = keep + (box.scrollHeight - was); }
     else box.scrollTop = monFeed(sel) || monMailList(sel) || sel.mon ? (again ? keep : 0) : stick ? box.scrollHeight : keep;
     edgeFade(box);
+    if (MON.hl && Date.now() < MON.hlUntil) { const r = monRowOf(MON.hl); if (r) ntFlash(r); }
   }
   MON.olderBusy = false;
   monObserveOlder();

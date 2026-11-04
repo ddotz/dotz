@@ -6,10 +6,20 @@ import { join } from "node:path";
 import { NAME } from "./config.ts";
 import { emit } from "./events.ts";
 import { type Notice, onNoticeUnread } from "./notices.ts";
-import { convOfUrl, noticePush, presenceQuiets, pushRoute, resetPushDedupeForTest, shouldNotify } from "./push.ts";
+import { classify, convOfUrl, decisionPush, noticePush, presenceQuiets, pushRoute, resetPushDedupeForTest, shouldNotify } from "./push.ts";
 import { b64u } from "./webpush.ts";
 
 const notice = (n: Partial<Notice>): Notice => ({ id: "n1", ts: "2026-11-01T00:00:00Z", updated: "2026-11-01T00:00:00Z", kind: "message", tone: "", title: "제목", text: "본문", open: "main", at: "2026-11-01T00:00:00Z", read: false, ...n });
+
+test("a notification names the place its message lives in", () => {
+	const t = "2026-11-01T00:00:00Z";
+	expect(noticePush(notice({ kind: "watch", title: "메일", open: "mail:abc", at: t }))).toMatchObject({ url: "/#chat/mail:abc", ts: t, nid: "n1" });
+	expect(classify({ ts: t, kind: "out", source: "gateway", target: "alert", text: "[fail] 게이트웨이 오류" })).toMatchObject({ url: "/#chat/alert", ts: t });
+	const dec = (to: string) => notice({ kind: "decision", tone: "ask", at: t, decision: { options: [], to, group: 1, state: "open" } });
+	expect(decisionPush(dec("alert")).url).toBe("/#chat/alert");
+	expect(decisionPush(dec("mail:abc")).url).toBe("/#chat/mail:abc");
+	expect(decisionPush(dec("auth:1")).url).toBe("/#chat/main");
+});
 
 test("results, monitoring news, alerts and unread answers notify; progress, questions (decisionPush) and read items do not", () => {
 	expect(noticePush(notice({ kind: "result", tone: "done", title: "ui-pwa", open: "lane:ui-pwa", key: "lane:ui-pwa", text: "[done] 배포 끝" }))).toMatchObject({ kind: "result", title: "ui-pwa · 완료", url: "/#chat/lane:ui-pwa", tag: "lane:ui-pwa", ts: "2026-11-01T00:00:00Z" });

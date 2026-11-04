@@ -35,10 +35,11 @@ type Stored = Subscription & { prefs: Prefs; ua?: string; at: string; app?: bool
 // makes sure that message is loaded before it jumps to it.
 // `id` + `actions` (a decision notice): the page opens its detail sheet, and the service worker offers the first options as buttons that
 // answer through POST /api/notices/<id>/answer.
+// `nid`: the bell notice this notification came from, so a tap opens that notice's own screen and row (web/js/30-notices.js pushOpen).
 type PushAction = { action: string; title: string };
 // `pc`: a notice relayed from another computer (its origin); a tap opens the app, which switches to that computer (web/js/33-peers.js prFollow).
 // `withdraw`: tags of notifications already handled; the service worker closes them (a "withdraw" push carries nothing else).
-type PushMessage = { kind: PushKind | "test" | "withdraw"; title: string; body: string; url: string; tag?: string; app?: string; ts?: string; id?: string; actions?: PushAction[]; pc?: string; withdraw?: string[] };
+type PushMessage = { kind: PushKind | "test" | "withdraw"; title: string; body: string; url: string; tag?: string; app?: string; ts?: string; id?: string; nid?: string; actions?: PushAction[]; pc?: string; withdraw?: string[] };
 
 const KEY_FILE = join(DATA_DIR, "secrets", "vapid.json");
 const SUBS_FILE = join(DATA_DIR, "push.json");
@@ -113,8 +114,8 @@ function classifyEvent(e: HubEvent, sinceOwner?: number): PushMessage | undefine
 		// An all-clear, or the same alert again (hub/alert-gate.ts), was already as good as told: a record, not a warning.
 		const quiet = !!e.reply_to || tone === "done" || e.repeat === true || quietAlert(text) || (tone !== "fail" && src !== "gateway" && !CRITICAL.test(rest));
 		const c = noticeClass({ kind: "alert", tone, text: rest, quiet });
-		if (c.cls === "ask") return { kind: "ask", title: `${NAME} · 확인 필요`, body: plain(rest), url: "/#chat/main", tag: "ask:alert" };
-		return c.cls === "alert" ? { kind: "alert", title: `${NAME} · 경고`, body: plain(rest), url: "/#chat/main", tag: "alert" } : undefined;
+		if (c.cls === "ask") return { kind: "ask", title: `${NAME} · 확인 필요`, body: plain(rest), url: "/#chat/alert", tag: "ask:alert" };
+		return c.cls === "alert" ? { kind: "alert", title: `${NAME} · 경고`, body: plain(rest), url: "/#chat/alert", tag: "alert" } : undefined;
 	}
 	if (lane && (e.kind === "out" || e.kind === "lane_report")) {
 		const url = `/#chat/lane:${encodeURIComponent(lane)}`;
@@ -159,7 +160,7 @@ export function noticePush(n: Notice): PushMessage | undefined {
 	const { cls } = classOfNotice(n);
 	if (cls === "ask") return undefined;
 	const conv = n.open || "main";
-	const base = { kind: cls, body: plain(n.text) || plain(n.title), url: convUrl(conv), ...(n.at ? { ts: n.at } : {}) };
+	const base = { kind: cls, body: plain(n.text) || plain(n.title), url: convUrl(conv), nid: n.id, ...(n.at ? { ts: n.at } : {}) };
 	switch (cls) {
 		case "result": {
 			const title = `${n.title} · ${n.tone === "fail" ? "실패" : "완료"}`;
@@ -183,10 +184,10 @@ const DECISION_ACTIONS = 2;
 // A decision notice as a notification: the decision line as the body, at most two option buttons (never the login form's own input).
 export function decisionPush(n: Notice): PushMessage {
 	const d = n.decision!;
-	const url = d.to.startsWith("lane:") ? `/#chat/lane:${encodeURIComponent(d.to.slice(5))}` : d.to.startsWith("ch:") ? `/#chat/${d.to}` : "/#chat/main";
+	const url = d.to.startsWith("auth:") ? "/#chat/main" : convUrl(d.to);
 	const group = confirmGroup(n);
 	// The send approvals of one monitoring app are one notification that evolves (same tag): "메일 답장 확인 3건", with no button, since a button answers one item.
-	if (group && group.count > 1) return { kind: "ask", title: DECISION_PUSH_TITLE, body: `${group.label} ${group.count}건`, url: "/#home", tag: `decision-group:${group.key}`, ts: n.at };
+	if (group && group.count > 1) return { kind: "ask", title: DECISION_PUSH_TITLE, body: `${group.label} ${group.count}건`, url: "/#home", tag: `decision-group:${group.key}`, ts: n.at, id: n.id };
 	const actions = d.options.filter(o => o.action !== "form").slice(0, DECISION_ACTIONS).map(o => ({ action: `opt:${o.n}`, title: plain(`${o.n}) ${o.label}`, 40) }));
 	return { kind: "ask", title: DECISION_PUSH_TITLE, body: plain(n.title), url, tag: `decision:${n.id}`, ts: n.at, id: n.id, ...(actions.length ? { actions } : {}) };
 }
