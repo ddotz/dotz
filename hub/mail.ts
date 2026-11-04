@@ -138,14 +138,17 @@ export function setMailReply(key: string, event: MailReplyEvent, at = new Date()
 	if (!r) return false;
 	if (r.dir === "out") return true;
 	if ((event === "skip" || event === "fyi") && by !== "owner") return true;
+	const next = replyNext(r, event, at, by);
+	if (JSON.stringify(next) !== JSON.stringify(r)) recordMail(next);
+	return true;
+}
+function replyNext(r: MailRecord, event: MailReplyEvent, at: string, by?: ReplyBy): MailRecord {
 	const { needsReply: _n, noReply: _o, suggest, reply_by, reply_at, ...rest } = r;
 	const reply = nextReply(replyOf(r), event);
 	const sentNow = event === "sent" && r.reply !== "replied";
 	const keep = suggest && !(event === "sent" && suggest.state !== "sent") ? { suggest } : {};
 	const mark = by ? { reply_by: by, reply_at: at } : reply_by && reply === replyOf(r) ? { reply_by, ...(reply_at ? { reply_at } : {}) } : {};
-	const next: MailRecord = { ...rest, ...(reply ? { reply } : {}), ...mark, ...(sentNow ? { sentAt: at } : {}), ...keep };
-	if (JSON.stringify(next) !== JSON.stringify(r)) recordMail(next);
-	return true;
+	return { ...rest, ...(reply ? { reply } : {}), ...mark, ...(sentNow ? { sentAt: at } : {}), ...keep };
 }
 /** A mail whose reply draft was dropped or replaced (보내지 않기, a newer draft, a stale one) and has no other draft waiting no longer has a draft:
  *  its 초안 있음 chip goes and the state goes back to 답장 필요. `drafts` is the reply-drafts list; true when a record changed. */
@@ -174,6 +177,21 @@ export const unrepliedMails = (sentRefs: ReadonlySet<string>, now = Date.now()):
 // The owner's marks (the routes POST / DELETE /api/mail/<key>/no-reply|fyi, also when another computer forwards his tap): 답장 안 함 and 답장 필요로 표시.
 export const setMailNoReply = (key: string, on: boolean): boolean => setMailReply(key, on ? "skip" : "reopen", undefined, "owner");
 export const setMailFyi = (key: string, on: boolean): boolean => setMailReply(key, on ? "fyi" : "reopen", undefined, "owner");
+/** The same mark on many mails (POST /api/mail/fyi) in one write of the store, whatever the count. `at` never changes, so the order stands. Returns the keys that are recorded. */
+export function setMailsFyi(keys: readonly string[], on: boolean, at = new Date().toISOString()): string[] {
+	const found = keys.filter(k => byKey.has(k)), changed = new Map<string, MailRecord>();
+	for (const k of found) {
+		const r = byKey.get(k)!;
+		if (r.dir === "out") continue;
+		const next = replyNext(r, on ? "fyi" : "reopen", at, "owner");
+		if (JSON.stringify(next) !== JSON.stringify(r)) changed.set(k, next);
+	}
+	if (!changed.size) return found;
+	for (const [k, r] of changed) byKey.set(k, r);
+	records = records.map(r => changed.get(r.key) ?? r);
+	writeAtomic(FILE, `${JSON.stringify(records, null, 2)}\n`);
+	return found;
+}
 
 // 삭제 on a mail card: the mail leaves dotz (its record and files), never the real mailbox. The key is remembered with the message id it stood for,
 // so the watcher posting the same message again does not bring it back; a newer message of the thread (another messageId) is a new mail (postMail).

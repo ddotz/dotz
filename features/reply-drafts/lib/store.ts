@@ -82,21 +82,25 @@ export function patchDraft(id: string, patch: Partial<Pick<DraftRec, "to" | "cc"
 }
 
 // 답장 안 해도 돼요 on a mail: its waiting drafts are kept aside (held), not dropped, so the undo can bring them back. Returns the held ids.
-export function holdDrafts(ref: string): string[] {
+export const holdDrafts = (ref: string): string[] => holdDraftsOf(new Set([ref]));
+export function holdDraftsOf(refs: ReadonlySet<string>): string[] {
 	const f = read();
-	const hit = f.drafts.filter(d => d.ref === ref && d.status === "pending");
+	const hit = f.drafts.filter(d => refs.has(d.ref) && d.status === "pending");
 	if (hit.length) write({ ...f, drafts: f.drafts.map(d => (hit.includes(d) ? { ...d, status: "held" as const } : d)) });
 	return hit.map(d => d.id);
 }
 
 // Its undo: the newest held draft of the mail waits for approval again (older held ones were already replaced by it: stale). Returns its id.
-export function restoreDrafts(ref: string): string | undefined {
+export const restoreDrafts = (ref: string): string | undefined => restoreDraftsOf(new Set([ref]))[0];
+export function restoreDraftsOf(refs: ReadonlySet<string>): string[] {
 	const f = read();
-	const held = f.drafts.filter(d => d.ref === ref && d.status === "held");
-	const top = held.reduce<DraftRec | undefined>((a, d) => (!a || d.created >= a.created ? d : a), undefined);
-	if (!top) return undefined;
-	write({ ...f, drafts: f.drafts.map(d => (d === top ? { ...d, status: "pending" as const } : held.includes(d) ? { ...d, status: "stale" as const } : d)) });
-	return top.id;
+	const held = f.drafts.filter(d => refs.has(d.ref) && d.status === "held");
+	const newest = new Map<string, DraftRec>();
+	for (const d of held) { const a = newest.get(d.ref); if (!a || d.created >= a.created) newest.set(d.ref, d); }
+	if (!newest.size) return [];
+	const top = new Set(newest.values());
+	write({ ...f, drafts: f.drafts.map(d => (top.has(d) ? { ...d, status: "pending" as const } : held.includes(d) ? { ...d, status: "stale" as const } : d)) });
+	return [...top].map(d => d.id);
 }
 
 // The mail was answered outside dotz: its waiting drafts (pending or held) are closed as answered. Returns their ids.

@@ -12,6 +12,7 @@ ICONS.inbox = "M4 13l2.2-7h11.6L20 13v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM4 13h4.5l
 ICONS.forward = "M15 7l5 5-5 5M20 12h-9a7 7 0 0 0-7 7";
 ICONS.replyall = "M8 7l-5 5 5 5M13 7l-5 5 5 5M8 12h5a8 8 0 0 1 8 7";
 ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
+ICONS.replyoff = "M10 7l-5 5 5 5M5 12h9a6 6 0 0 1 6 6M4 4l16 16";
 const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null };
 const mbKey = t => t.slice(5);
 const MB_SYNC_OFF = "dotz에서만 바뀌어요";
@@ -130,6 +131,40 @@ async function mbTrash(keys) {
   if (done.length < keys.length) toast("처리하지 못했어요", true);
   return done;
 }
+// 답장 안 함 on a selection or on the whole 답장 필요 list: mailSetFyi for many mails, one POST /api/mail/fyi {keys, on} per computer (a peer's mails go to
+// the computer that holds them). It stays in dotz: nothing is sent, the read state and the mailbox do not change. Only mails that owe a reply are marked, so
+// 되돌리기 (on = false) brings each back to 답장 필요. More than MB_FYI_ASK mails ask first. The rows change at once and go back when the hub refuses them.
+const MB_FYI_ASK = 5;
+const mbOwed = keys => keys.filter(t => MAILS.has(t) && mailOwed(MAILS.get(t)));
+async function mbFyi(keys, on = true) {
+  keys = on ? mbOwed(keys) : keys.filter(t => MAILS.has(t));
+  if (!keys.length) return [];
+  if (on && keys.length > MB_FYI_ASK && !await ask("답장 안 함", `메일 ${keys.length}개를 답장 안 함으로 표시할까요? 메일을 보내지는 않아요`, `${keys.length}개 표시`)) return [];
+  const was = new Map(keys.map(t => { const m = MAILS.get(t); return [t, { reply: m.reply, unreplied: m.unreplied }]; })), byPc = new Map();
+  for (const t of keys) {
+    Object.assign(MAILS.get(t), { reply: on ? "fyi" : "needs", unreplied: !on });
+    MBOX.sel.delete(t);
+    const pc = pqPc(t), k = pc ? pc.url : "";
+    if (!byPc.has(k)) byPc.set(k, { pc, keys: [] });
+    byPc.get(k).keys.push(t);
+  }
+  const leaving = mbRowsOut(keys);
+  if (leaving) leaving.then(mbRefresh); else mbRefresh();
+  const bad = new Set(), notes = await Promise.all([...byPc.values()].map(async g => {
+    const body = { keys: g.keys.map(mbKey), on };
+    try {
+      const r = await (g.pc ? api(pqProxy(g.pc, "/api/peer/act"), "POST", { action: "fyi", args: body }) : api("/api/mail/fyi", "POST", body));
+      for (const x of r.results) if (!x.ok) bad.add(`mail:${x.key}`);
+    } catch (e) { g.keys.forEach(t => bad.add(t)); return e.message; }
+  }));
+  for (const t of bad) if (MAILS.has(t)) Object.assign(MAILS.get(t), was.get(t));
+  const done = keys.filter(t => !bad.has(t));
+  if (bad.size) mbRefresh();
+  if (bad.size) toast(done.length ? `${keys.length}개 중 ${bad.size}개는 표시하지 못했어요` : notes.find(Boolean) || "표시하지 못했어요", true);
+  else toast(`${done.length > 1 ? `${done.length}개를 ` : ""}${on ? "답장 안 함으로" : "답장 필요로"} 표시했어요`, false, on ? { label: "되돌리기", onclick: () => mbFyi(done, false) } : undefined);
+  await Promise.allSettled([byPc.has("") ? convLoad() : null, byPc.size > (byPc.has("") ? 1 : 0) ? pqLoad() : null, loadIntegrations(), byPc.has("") ? loadNotices() : null]);
+  return done;
+}
 // An action on the open mail takes the owner back to the list (like the mailbox does) when the mail left it.
 const mbLeave = keys => { if (monCtx && keys.includes(monCtx) && current === "chat" && !MAILS.has(monCtx)) go("monitoring", MON.sel); };
 
@@ -163,13 +198,20 @@ function mbPaintBar() {
     mbPaintBar();
   } });
   chk.indeterminate = !all && keys.length > 0;
-  if (!keys.length) { clear(bar).append(chk, el("span", { class: "mbox-n", text: MBOX.vis.length ? `메일 ${MBOX.vis.length}개` : "" })); bar.classList.remove("on"); return; }
+  if (!keys.length) {
+    clear(bar).append(chk, el("span", { class: "mbox-n", text: MBOX.vis.length ? `메일 ${MBOX.vis.length}개` : "" }));
+    bar.classList.remove("on");
+    if (mailFilterOf()[0] === "owed" && MBOX.vis.length) bar.append(mbBtn("이 목록 전부 답장 안 함", "replyoff", () => mbFyi(MBOX.vis), { k: "mail-fyi-all" }));
+    return;
+  }
   const arch = mailFilterOf()[0] === "archived", can = a => keys.every(t => mailCan(t, a));
   const acts = [["read", "읽음으로 표시", "check"], ["unread", "안 읽음으로 표시", "mail"], arch ? ["unarchive", "받은편지함으로", "inbox"] : ["archive", "완료(보관)", "archive"], ["trash", "삭제", "trash"]];
-  const off = acts.find(([a]) => !can(a));
+  const off = acts.find(([a]) => !can(a)), owed = mbOwed(keys).length;
+  const btns = acts.map(([a, label, ic]) => mbBtn(label, ic, () => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar()), { k: `mail-${a}`, short: MB_SHORT[a] }));
+  // 답장 안 함 sits before 삭제, and only while a chosen mail owes a reply; a mixed selection says how many it reaches.
+  if (owed) btns.splice(3, 0, mbBtn("답장 안 함", "replyoff", () => mbFyi(keys).then(() => mbPaintBar()), { k: "mail-fyi", cls: "mbox-fyi", short: owed < keys.length ? `답장 안 함 ${owed}` : "" }));
   bar.classList.add("on");
-  clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }),
-    ...acts.map(([a, label, ic]) => mbBtn(label, ic, () => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar()), { k: `mail-${a}`, short: MB_SHORT[a] })),
+  clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }), ...btns,
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
   // A null child on append would print the word "null"; the note is added only when the mailbox will not follow the action.
   if (off) bar.append(el("div", { class: "mbox-note", role: "status", text: MB_NOTE[off[0]] }));
