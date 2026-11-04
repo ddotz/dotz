@@ -28,7 +28,7 @@
 .nsc-r .hd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; color: var(--fg-2); }
 .nsc-r.unread .hd { font-weight: 700; color: var(--fg); }
 .nsc-r .t { flex: none; color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-row) var(--font); }
-.nsc-r .sup { flex: 1; min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.nsc-s { flex: 1; min-width: 0; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
 .nsc-r .ib, .nsc-tr { position: relative; z-index: 1; flex: none; display: grid; place-items: center; width: var(--btn-h-row); height: var(--btn-h-row); align-self: center; margin-left: calc(var(--sp-1) * -1); color: var(--fg-3); }
 .nsc-tr { z-index: 0; pointer-events: none; }
 .nsc-r .ib::before { content: ""; position: absolute; inset: -6px; }
