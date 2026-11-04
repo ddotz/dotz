@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runOnboard, type Io } from "../features/remote-desktop/bin/onboard.ts";
 import { loadFeatureDirs } from "./featuredirs.ts";
-import { checkPeer, PEER_POST } from "./peer-auth.ts";
-import { binOf, createDesk, defaultDeps, JXA, viewerOf, voxlQuery, type DeskDeps, type Settings } from "./remote-desktop.ts";
+import { checkPeer, PEER_GET, PEER_POST } from "./peer-auth.ts";
+import { binOf, createDesk, defaultDeps, JXA, readSettings, viewerOf, voxlQuery, type DeskDeps, type PeerDesk, type Settings } from "./remote-desktop.ts";
 import { Bridge, HOLD } from "./remote-desktop-ws.ts";
 
 // A stand-in for voxl: a Bun server speaking the parts the gateway uses. It reports what happens to the test over a TCP side channel
@@ -136,6 +136,7 @@ const fakeClock = () => {
 	};
 };
 
+const NOTE = "단축키(Cmd+W 같은)는 이 컴퓨터로 가요";
 const SELF_IP = "100.64.0.1";
 const PEER_IP = "100.64.0.2";
 const TS = { Self: { TailscaleIPs: [SELF_IP] }, Peer: { a: { TailscaleIPs: [PEER_IP], DNSName: "mac-mini.tail1.ts.net." } } };
@@ -172,6 +173,7 @@ function make(o: Opts = {}) {
 		tailscale: async () => TS,
 		computers: async () => COMPUTERS,
 		peerOpen: async () => false,
+		peerDesk: async () => ({ available: true, on: true }),
 		run: async () => 0,
 		rebuild: async () => false,
 		host: { exec: async () => ({ code: 0, stdout: "true", stderr: "" }), sleep: async () => {} },
@@ -498,7 +500,6 @@ describe("viewerOf", () => {
 
 describe("POST /api/desk/open", () => {
 	const open = (m: Made, body: unknown, headers: Record<string, string> = {}, mode?: string) => post(m, "/api/desk/open", body, headers, mode).then(r => r.json() as Promise<{ action: string; reason?: string; note?: string; name?: string }>);
-	const NOTE = "단축키(Cmd+W 같은)는 이 컴퓨터로 가요";
 
 	test("blocked: not available, off, public access not allowed, viewer is this computer", async () => {
 		expect((await open(make({ featureOn: false }), { chrome: true })).action).toBe("blocked");
@@ -542,6 +543,87 @@ describe("POST /api/desk/open", () => {
 
 	test("a cross-origin page cannot ask", async () => {
 		expect((await post(make(), "/api/desk/open", { chrome: true }, { origin: "https://evil.example" })).status).toBe(403);
+	});
+});
+
+describe("the button of another computer", () => {
+	const mini = "https://mac-mini.tail1.ts.net:8443";
+	const tap = (m: Made, headers: Record<string, string> = {}) => post(m, "/api/desk/open", { chrome: false, phone: true, peer: mini }, headers).then(r => r.json() as Promise<Record<string, unknown>>);
+
+	test("that computer answers for itself; each refusal is one reason, off carries the way there", async () => {
+		const asked = (st: PeerDesk | undefined) => tap(make({ peerDesk: async () => st }));
+		expect(await asked(undefined)).toMatchObject({ action: "blocked" });
+		expect(await asked({ available: false, old: true })).toMatchObject({ action: "blocked", to: "#settings" });
+		expect((await asked({ available: false, unsupported: true })).to).toBeUndefined();
+		expect(await asked({ available: false })).toMatchObject({ action: "blocked", to: "" });
+		expect(await asked({ available: true, on: false })).toMatchObject({ action: "blocked", to: "#settings" });
+		expect(await asked({ available: true, on: true, public_blocked: true })).toMatchObject({ action: "blocked" });
+		expect(await tap(make({ peerDesk: async () => Promise.reject(new Error("down")) }))).toMatchObject({ action: "blocked" });
+	});
+
+	test("only a known other computer; this side needs no voxl", async () => {
+		const asked: string[] = [];
+		const m = make({ installBinary: false, peerDesk: async g => (asked.push(g), { available: true, on: true }) });
+		for (const peer of ["https://evil.example", `https://${HOST}`, 7]) expect(await (await post(m, "/api/desk/open", { peer })).json()).toMatchObject({ action: "blocked" });
+		expect(asked).toEqual([]);
+		expect(await tap(m)).toEqual({ action: "here", note: NOTE });
+		expect(asked).toEqual([mini]);
+	});
+
+	test("the browser on this computer: this gateway opens Chrome at that computer's /desk/", async () => {
+		const ran: string[][] = [];
+		const m = make({ run: async a => (ran.push(a), 0) });
+		expect(await tap(m, seenAs(SELF_IP))).toMatchObject({ action: "opened" });
+		expect(ran.at(-1)).toEqual(["open", "-a", "Google Chrome", `${mini}/desk/`]);
+		const none = make({ run: async () => 1 });
+		expect(await tap(none, seenAs(SELF_IP))).toEqual({ action: "here", note: NOTE });
+	});
+
+	test("the viewer is that very computer: no picture of itself", async () => {
+		expect(await tap(make(), seenAs(PEER_IP))).toMatchObject({ action: "blocked" });
+	});
+
+	test("GET /api/peer/desk: peer header only, the facts of this computer", async () => {
+		const PEER = { "x-dotz-peer": "token" };
+		const read = async (m: Made, headers: Record<string, string> = PEER, mode?: string) => (await call(m, "/api/peer/desk", { headers, ...(mode ? { mode } : {}) }));
+		expect((await read(make(), {})).status).toBe(403);
+		const off = make();
+		setCfg(off.dir, { on: false, control: true });
+		expect(await (await read(off)).json()).toEqual({ available: true, on: false, public_blocked: false });
+		expect(await (await read(make(), PEER, "cloudflare")).json()).toEqual({ available: true, on: true, public_blocked: true });
+		expect(await (await read(make({ installBinary: false }))).json()).toEqual({ available: false });
+		expect(await (await read(make({ platform: "linux" }))).json()).toEqual({ available: false, unsupported: true });
+		expect(PEER_GET.some(r => r.test("/api/peer/desk"))).toBe(true);
+	});
+
+	test("a link from another computer lands on one button; nothing starts and nothing else opens", async () => {
+		const m = make();
+		const doc = { "sec-fetch-site": "same-site", "sec-fetch-dest": "document" };
+		const r = await call(m, "/desk/", { headers: doc });
+		expect(r.status).toBe(200);
+		expect(await r.text()).toContain('href="/desk/"');
+		expect(r.headers.get("x-frame-options")).toBe("DENY");
+		expect(r.headers.get("content-security-policy")).toBe("frame-ancestors 'none'");
+		expect(m.spawned.length).toBe(0);
+		expect((await call(m, "/desk/client.js", { headers: doc })).status).toBe(403);
+		expect((await call(m, "/desk/", { headers: { ...doc, "sec-fetch-dest": "iframe" } })).status).toBe(403);
+		expect((await call(m, "/desk/ws", { headers: { ...doc, upgrade: "websocket", connection: "Upgrade" } })).status).toBe(403);
+		const off = make();
+		setCfg(off.dir, { on: false });
+		expect((await call(off, "/desk/", { headers: doc })).status).toBe(403);
+	});
+});
+
+describe("the button of an off computer", () => {
+	test("switches it on only after every gate passed", async () => {
+		const m = make();
+		setCfg(m.dir, { on: false });
+		expect(await (await post(m, "/api/desk/open", { chrome: true, on: true }, seenAs(SELF_IP))).json()).toMatchObject({ action: "blocked" });
+		expect(readSettings(m.dir).on).toBe(false);
+		expect(await (await post(m, "/api/desk/open", { chrome: true }, seenAs(PEER_IP))).json()).toMatchObject({ action: "blocked" });
+		expect(readSettings(m.dir).on).toBe(false);
+		expect(await (await post(m, "/api/desk/open", { chrome: true, on: true }, seenAs(PEER_IP))).json()).toEqual({ action: "here" });
+		expect(readSettings(m.dir).on).toBe(true);
 	});
 });
 
@@ -876,7 +958,7 @@ describe("onboard steps", () => {
 		expect(r).toEqual({ code: 0, status: "done" });
 		expect(t.execs.filter(a => a[0] === "cargo").length).toBe(1);
 		expect(t.execs.find(a => a[0] === "cargo")).toContain("--locked");
-		expect(state(t).done).toEqual(["deps", "build", "link", "enable", "trial"]);
+		expect(state(t).done).toEqual(["preflight", "deps", "build", "link", "enable", "gateway", "permissions", "trial"]);
 		expect(JSON.parse(t.files.get(join(t.dataDir, "remote-desktop", "settings.json"))!)).toEqual({ on: true, control: false, allow_public: false });
 		const copy = join(t.dataDir, "features", "remote-desktop", "feature.md");
 		mkdirSync(join(scratch, "onboard-data", "features", "remote-desktop"), { recursive: true });
@@ -900,7 +982,7 @@ describe("onboard steps", () => {
 		const first = await runOnboard(t.io, {});
 		expect(first).toMatchObject({ code: 3, status: "waiting", step: "permissions" });
 		expect(t.said).toContain("화면 기록에서 bun을 켜 주세요");
-		expect(state(t).done).toEqual(["deps", "build", "link", "enable"]);
+		expect(state(t).done).toEqual(["preflight", "deps", "build", "link", "enable", "gateway"]);
 		const before = t.execs.length;
 		granted = true;
 		expect(await runOnboard(t.io, {})).toEqual({ code: 0, status: "done" });

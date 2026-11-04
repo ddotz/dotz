@@ -215,17 +215,55 @@ describe("entry points follow S.desk", () => {
 		expect(await parse(v, `JSON.stringify([ta.value, window.__opens.length, !!document.querySelector(".snack.bad")])`)).toEqual(["/screen", 0, true]);
 	});
 
-	test("the computer switcher has a row for the screen only with S.desk", async () => {
-		const v = await page(chromeUA, ON);
-		await run(v, `prOpen();`);
+	const SELF = { name: "맥미니", url: "https://mini.test", self: true, online: true };
+	const OTHER = { name: "맥북", url: "https://book.test", self: false, online: true };
+	const OFFLINE = { name: "서재", url: "https://den.test", self: false, online: false };
+	const JANDI = { name: "회사", url: "/jandi-peer/x", self: false, online: true, via: "jandi" };
+	const sheet = async (v: View, list: object[]) => {
+		await run(v, `PR.list = ${JSON.stringify(list)}; prOpen(); prLoad = () => {};`);
 		await waitFor(v, `document.querySelector(".pr-sheet .pr-list")`);
-		expect(await parse(v, `JSON.stringify(document.querySelectorAll(".pr-screen").length)`)).toBe(1);
-		await run(v, `window.__hit = 0; openScreen = () => { window.__hit++; }; document.querySelector(".pr-screen").click();`);
-		expect(await parse(v, `JSON.stringify(window.__hit)`)).toBe(1);
-		const bare = await page(chromeUA);
-		await run(bare, `prOpen();`);
-		await waitFor(bare, `document.querySelector(".pr-sheet .pr-list")`);
-		expect(await parse(bare, `JSON.stringify(document.querySelectorAll(".pr-screen").length)`)).toBe(0);
+	};
+	const buttons = (v: View) => parse<(string | null)[]>(v, `JSON.stringify([...document.querySelectorAll(".pr-desk")].map(b => b.getAttribute("aria-label")))`);
+
+	test("the computer list has one button per computer that can show a screen", async () => {
+		const v = await page(chromeUA, ON);
+		await sheet(v, [SELF, OTHER, OFFLINE, JANDI]);
+		expect(await buttons(v)).toEqual(["맥미니 화면 보기", "맥북 화면 보기"]);
+		await run(v, `window.__hit = []; openScreen = p => { window.__hit.push(p.name); }; document.querySelectorAll(".pr-desk")[1].click();`);
+		expect(await parse(v, `JSON.stringify(window.__hit)`)).toEqual(["맥북"]);
+	});
+
+	test("a gateway without the feature still opens another computer's screen", async () => {
+		const v = await page(chromeUA);
+		await sheet(v, [SELF, OTHER]);
+		expect(await buttons(v)).toEqual(["맥북 화면 보기"]);
+	});
+
+	test("another computer: the page asks its own gateway and opens that computer's address", async () => {
+		const v = await page(asideUA);
+		await run(v, `openScreen(${JSON.stringify(OTHER)});`);
+		await waitFor(v, `window.__opens.length && window.__opens[0].href`);
+		expect(calls.find(c => c.path === "/api/desk/open")?.body).toEqual({ chrome: false, phone: false, peer: OTHER.url });
+		expect(await parse(v, `JSON.stringify(window.__opens[0].href)`)).toBe("https://book.test/desk/");
+	});
+
+	test("another computer that is off: the reason and the way there", async () => {
+		const v = await page(chromeUA);
+		openReply = { action: "blocked", reason: "맥북 설정에서 화면 공유를 켜 주세요", to: "#settings" };
+		await run(v, `openScreen(${JSON.stringify(OTHER)});`);
+		await waitFor(v, `document.querySelector(".snack.bad")`);
+		expect(await parse(v, `JSON.stringify([document.querySelector(".snack.bad button").textContent, window.__opens.length])`)).toEqual(["맥북 열기", 0]);
+	});
+
+	test("this computer off: the button says so and the same tap turns it on", async () => {
+		const v = await page(chromeUA, { ...ON, on: false });
+		await run(v, `go("settings");`);
+		await waitFor(v, `document.querySelector("[data-dsk=open] .btn")`);
+		expect(await parse(v, `JSON.stringify(document.querySelector("[data-dsk=open] .btn").textContent)`)).toBe("켜고 보기");
+		await run(v, `document.querySelector("[data-dsk=open] .btn").click();`);
+		await waitFor(v, `window.__opens.length`);
+		expect(calls.find(c => c.path === "/api/desk/open")?.body).toEqual({ chrome: true, phone: false, on: true });
+		expect(await parse(v, `JSON.stringify(window.__opens[0].u)`)).toBe("/desk/");
 	});
 });
 
@@ -276,14 +314,14 @@ describe("settings section", () => {
 		const v = await page(chromeUA, { ...ON, on: false });
 		await openSettings(v);
 		await waitFor(v, `document.querySelector("[data-dsk=on]")`);
-		expect(await rows(v)).toEqual(["on"]);
+		expect(await rows(v)).toEqual(["open", "on"]);
 	});
 
 	test("on: switch, control, who is watching; the public address stays out unless web access is cloudflare", async () => {
 		const v = await page(chromeUA, { ...ON, viewers: [WATCHER] });
 		await openSettings(v);
 		await waitFor(v, `document.querySelector("[data-dsk=on]")`);
-		expect(await rows(v)).toEqual(["on", "control", "viewers"]);
+		expect(await rows(v)).toEqual(["open", "on", "control", "viewers"]);
 		expect(await parse(v, `JSON.stringify(document.querySelector("[data-dsk=viewers] .tag").textContent)`)).toBe("1");
 		expect(calls.filter(c => c.path === "/api/desk/status")).toEqual([]);
 	});
@@ -293,7 +331,7 @@ describe("settings section", () => {
 		const v = await page(chromeUA, ON);
 		await openSettings(v);
 		await waitFor(v, `document.querySelector("[data-dsk=allow_public]")`);
-		expect(await rows(v)).toEqual(["on", "control", "viewers", "allow_public"]);
+		expect(await rows(v)).toEqual(["open", "on", "control", "viewers", "allow_public"]);
 		await run(v, `document.querySelector("[data-dsk=allow_public] .hs-sw").click();`);
 		await waitFor(v, `document.querySelector("[data-dsk=allow_public] .hs-sw").getAttribute("aria-checked") === "true"`);
 		expect(calls.filter(c => c.path === "/api/desk/settings").map(c => [c.method, c.body])).toEqual([["PUT", { allow_public: true }]]);
@@ -308,7 +346,7 @@ describe("settings section", () => {
 		await run(v, `document.querySelector("[data-dsk=on] .hs-sw").click();`);
 		await waitFor(v, `document.querySelector("[data-dsk=on] .hs-sw").getAttribute("aria-checked") === "false"`);
 		expect(calls.filter(c => c.path === "/api/desk/settings").map(c => c.body)).toEqual([{ control: true }, { on: false }]);
-		expect(await rows(v)).toEqual(["on"]);
+		expect(await rows(v)).toEqual(["open", "on"]);
 		expect(await parse(v, `JSON.stringify([S.desk.on, S.desk.control])`)).toEqual([false, true]);
 	});
 });
