@@ -67,7 +67,7 @@ function renderProviders() {
 function addProviderDialog() {
   const addable = P && P.addable;
   let pick = null, keyIn = null, free = null;
-  const body = el("div", { class: "col", style: "gap:16px" });
+  const body = el("div", { class: "col", style: "gap:var(--sp-4)" });
   const keyBox = el("div", { class: "col kb" });
   const rowsByKey = new Map();
   let dlg;
