@@ -263,55 +263,72 @@ setInterval(viewReport, 2000);
 function convRows() {
   const at = t => (CONV.get(t) || {}).ts || "";
   const projects = projTargets().map((t, i) => ({ t, i })).sort((a, b) => at(b.t).localeCompare(at(a.t)) || a.i - b.i).map(x => x.t);
-  const mk = t => { const last = CONV.get(t) || null, need = convNeeds(t); return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread, need, chips: need ? [["답변 필요", "warn"]] : undefined }; };
+  const mk = t => { const last = CONV.get(t) || null; return { t, last, name: targetName(t), hint: last ? convPreview(last.text) : "", unread: ts(t).unread, need: convNeeds(t) }; };
   const all = (S && S.lanes) || [];
   const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
   const running = all.filter(laneAlive).sort((a, b) => rank(a) - rank(b) || at(`lane:${b.name}`).localeCompare(at(`lane:${a.name}`)));
   const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionStatus(l), hint: convPreview(l.lastText) || m.hint }; };
-  const rows = [MAIN, "alert", "worklog"].map(mk);
-  if (running.length) rows.push({ header: "진행 중" }, ...running.map(sess));
-  // A long list: 답 필요 / 안 읽음 narrow it to what waits; 전체 draws the projects a page at a time (the open one is always drawn).
-  if (rows.length + projects.length > CVF_MIN) {
-    const keep = r => CVF.view === "need" ? r.need : CVF.view === "unread" ? r.unread > 0 : true;
-    const lanes = running.map(sess).filter(keep), all = projects.map(mk).filter(keep);
-    const page = CVF.view === "all" ? all.filter((r, i) => i < CVF.more || r.t === target) : all;
-    const out = [{ bar: true }, ...rows.slice(0, 3).filter(keep)];
-    if (lanes.length) out.push({ header: "진행 중" }, ...lanes);
-    if (page.length) out.push({ header: "프로젝트" }, ...page);
-    if (all.length > page.length) out.push({ more: all.length - page.length });
-    const open = ((S && S.lanes) || []).find(l => !laneAlive(l) && `lane:${l.name}` === target);
-    if (open) out.push(sess(open));
-    if (out.length === 1) out.push({ empty: CVF.view === "need" ? "답을 기다리는 대화가 없어요" : "안 읽은 대화가 없어요" });
-    if (CVF.view === "all") { const ended = endedLanes(); if (ended.length) out.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` }); }
-    return out;
-  }
-  if (projects.length) rows.push({ header: "프로젝트" }, ...projects.map(mk));
+  const v = CVF.view, keep = r => v === "need" ? r.need : v === "session" ? isLaneT(r.t) : v === "alert" ? isFixedT(r.t) : true;
+  // The prototype's list (s-chat.js listHtml): the filter pills, one card of conversations, then the 메일 · 카카오톡 card of what waits there.
+  const projs = projects.map(mk).filter(keep), page = v === "all" ? projs.filter((r, i) => i < CVF.more || r.t === target) : projs;
+  const out = [{ bar: true }, ...[mk(MAIN)].filter(keep), ...page];
+  if (projs.length > page.length) out.push({ more: projs.length - page.length });
+  out.push(...["alert", "worklog"].map(mk).filter(keep), ...running.map(sess).filter(keep));
   const open = all.find(l => !laneAlive(l) && `lane:${l.name}` === target);
-  if (open) rows.push(sess(open));
-  // Mails are not listed here: each is a conversation under 모니터링's 앱 group (30-monitoring.js).
-  const ended = endedLanes();
-  if (ended.length) rows.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
-  return rows;
+  if (open && (v === "all" || v === "session")) out.push(sess(open));
+  const ended = v === "all" || v === "session" ? endedLanes() : [];
+  if (ended.length) out.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
+  const waits = v === "all" || v === "need" ? convWaiting() : [];
+  if (out.length === 1 && !waits.length) out.push({ empty: CVF_EMPTY[v] });
+  if (waits.length) out.push({ header: "메일 · 카카오톡", sec: true }, ...waits);
+  out.push({ read: true });
+  return out;
+}
+const CVF_EMPTY = { need: "답을 기다리는 대화가 없어요", session: "진행 중인 세션이 없어요", alert: "알림이 없어요" };
+// The 메일 · 카카오톡 card: this computer's mails with a draft or a reply owed and the watched rooms that owe one, newest first; a tap opens them in 모니터링.
+function convWaiting() {
+  const letter = name => el("span", { class: "cv-av", "aria-hidden": "true", text: [...String(name || "?").trim()][0] || "?" });
+  const mails = [...MAILS].filter(([t, m]) => !PQ.of.has(t) && m.dir !== "out" && !m.archived && (m.reply === "draft" || m.unreplied)).map(([t, m]) => {
+    const who = mailSender(m.from), owed = !!m.unreplied;
+    return { at: Date.parse(m.at) || 0, k: `w:${t}`, name: m.subject || "(제목 없음)", hint: m.reply === "draft" ? `${who} · 답장 초안이 기다려요` : who, last: { ts: m.at }, bold: mailUnread(t, m), need: true, sel: current === "chat" && target === t, av: letter(who), chips: owed ? [["미답장", "unreplied"]] : undefined, open: () => go("monitoring", `c:${t}`) };
+  });
+  const rooms = KK.rooms.filter(r => r.watched && r.unreplied).map(r => ({ at: r.lastAt || 0, k: `w:kk:${r.chatId}`, name: r.name, hint: kkSubLine(r), last: r.lastAt ? { ts: new Date(r.lastAt).toISOString() } : null, bold: r.unread > 0, need: true, av: letter(r.name), chips: [["미답장", "unreplied"]], open: () => { go("monitoring", "i:kakao"); kkOpen(r.chatId); } }));
+  return [...mails, ...rooms].sort((a, b) => b.at - a.at).slice(0, 5);
+}
+// Rows in their cards: the bar and a section label stand on the page, every run of rows between them is one card.
+function convCards(rows) {
+  const nodes = [];
+  let box = null;
+  for (const r of rows) {
+    if (r.read) { const b = convReadBtn(); if (b) nodes.push(b); continue; }
+    if (r.bar || r.header) { nodes.push(r.bar ? convBar() : el("div", { class: "cv-sec", role: "presentation", text: r.header })); box = null; continue; }
+    if (!box) nodes.push(box = el("div", { class: "cv-card" }));
+    box.append(convRow(r));
+  }
+  return nodes;
 }
 const FIXED_DESC = { alert: "경고와 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
 
 /* ---- a long list: views, a page of projects, 읽음 처리 ---- */
-// view: 전체 / 답 필요 / 안 읽음; more: projects drawn in 전체 (CVF_PAGE more per 더 보기). The bar shows once the list holds more than CVF_MIN rows.
-const CVF_MIN = 12, CVF_PAGE = 40;
+// view: 전체 / 답할 것 / 세션 / 알림; more: projects drawn in 전체 (CVF_PAGE more per 더 보기).
+const CVF_PAGE = 40;
 const CVF = { view: "all", more: CVF_PAGE };
 // A conversation waits on the owner: an open decision asked there, a loose [ask] notice of it, or a session's question (same rules as 30-notices.js ntNeeds).
 // the same rule as the home 답변 필요 list: a gateway question it handles itself (nyHandled) is news there, not a need here
 const convNeeds = t => ntHasDecision(t) || NT.items.some(n => ntNeeds(n) && !nyHandled(n) && (n.src || n.open) === t) || !!(isLaneT(t) && targetInfo(t).ask);
 const convListed = () => [MAIN, "alert", "worklog", ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`), ...projTargets()];
 function convBar() {
-  const list = convListed(), need = list.filter(convNeeds).length, unread = list.filter(t => ts(t).unread > 0).length;
-  // 읽음 처리 takes only what needs no answer: a conversation waiting on the owner keeps its unread.
-  const fyi = list.filter(t => ts(t).unread > 0 && !convNeeds(t) && CONV.get(t));
-  const views = [["all", "전체", 0], ["need", "답 필요", need], ["unread", "안 읽음", unread]];
+  const list = convListed(), need = list.filter(convNeeds).length + (KK.rooms.filter(r => r.watched && r.unreplied).length) + [...MAILS].filter(([t, m]) => !PQ.of.has(t) && m.dir !== "out" && !m.archived && (m.reply === "draft" || m.unreplied)).length;
+  const views = [["all", "전체", 0], ["need", "답할 것", need], ["session", "세션", 0], ["alert", "알림", 0]];
   return el("div", { class: "cv-bar" },
     el("div", { class: "cv-tabs", role: "tablist", "aria-label": "대화 보기" }, ...views.map(([k, label, n]) =>
       el("button", { class: `cchip mr-f${CVF.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(CVF.view === k), "data-view": k, onclick: () => { CVF.view = k; CVF.more = CVF_PAGE; convSig = ""; convSchedule(); convSide.scrollTop = 0; } }, label, cntSpan(`cv-filter:${k}`, "mr-fn", n)))),
-    el("button", { class: "btn text cv-read", type: "button", "data-k": "read", disabled: !fyi.length, title: "답이 필요한 대화는 그대로 둬요", onclick: ev => convReadAll(ev.currentTarget, fyi), text: fyi.length ? `${fyi.length}개 읽음 처리` : "읽음 처리" }));
+  );
+}
+// 읽음 처리, under the list: it takes only what needs no answer, so a conversation waiting on the owner keeps its unread.
+function convReadBtn() {
+  const fyi = convListed().filter(t => ts(t).unread > 0 && !convNeeds(t) && CONV.get(t));
+  return fyi.length ? el("div", { class: "cv-foot" }, el("button", { class: "btn text cv-read", type: "button", "data-k": "read", title: "답이 필요한 대화는 그대로 둬요", onclick: ev => convReadAll(ev.currentTarget, fyi), text: `${fyi.length}개 읽음 처리` })) : null;
 }
 // The listed conversations are read up to their newest message here at once and on the hub (POST /api/read, one per conversation); a failure
 // re-reads the counts from the hub and says why (busy toasts it).
@@ -346,10 +363,10 @@ function convRow(r) {
   const sel = r.sel !== undefined ? r.sel : r.t === target && current === "chat";
   // 채팅 목록은 시제품의 채팅 행 (proto .li): 아이콘, 제목·미리보기, 오른쪽에 시각과 대기 표시. 모니터링 목록은 시각 없이 그대로예요.
   const when = !monCtx && r.last && r.last.ts ? prjAgo(Date.parse(r.last.ts)) : "";
-  return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
+  return el("button", { class: `cv-row${r.sub ? " sub" : ""}${r.hint ? " pv" : ""}${r.unread || r.bold ? " unread" : ""}${sel ? " on" : ""}${r.last || r.hint ? "" : " none"}`, type: "button", "data-t": r.t || null, "data-k": r.k || null, "aria-current": sel ? "true" : null, onclick: r.open || (() => go("chat", r.t)) },
     r.av || convAvatar(r.t),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: r.name, text: r.name }), r.hint ? el("span", { class: "cv-p", text: r.hint }) : null),
-    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${r.unreplied}개`, text: `미답장 ${r.unreplied > 99 ? "99+" : r.unreplied}` }) : null)));
+    el("span", { class: "cv-m" }, when ? el("span", { class: "cv-t", text: when }) : null, el("span", { class: "cv-m2" }, r.need && !r.chips && !r.k ? el("span", { class: "dot warn", role: "img", "aria-label": "답변 필요" }) : null, ...(r.chips || []).map(c => el("span", { class: `tag ${c[1]}`, text: c[0] })), r.badge ? el("span", { class: `tag ${r.badge[1]}`, text: r.badge[0] }) : null, cntSpan(`cv-row:${r.t || r.k || r.name}`, "nb", r.unread, { "aria-label": `읽지 않은 메시지 ${r.unread}개` }), r.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${r.unreplied}개`, text: `미답장 ${r.unreplied > 99 ? "99+" : r.unreplied}` }) : null)));
 }
 const convSide = el("aside", { id: "chat-convo", class: "cv-side", "aria-label": "채팅 목록" });
 // Wide screens: the name and state of the open conversation above its timeline (phones put the name in the app bar).
@@ -440,12 +457,13 @@ function convPaint() {
   mailSentPaint();
   mbReplyPaint();
   const items = monCtx ? monItems() : null, rows = items ? monRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, rows.some(r => r.bar) ? [CVF.view, convListed().map(t => [ts(t).unread > 0, convNeeds(t)])] : 0]);
+  if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
   if (sig !== convSig) {
     convSig = sig;
     convSide.setAttribute("aria-label", monCtx ? "모니터링 목록" : "채팅 목록");
     const top = convSide.scrollTop;
     // A conversation opened from 모니터링 keeps 모니터링's own panel (sections, cards, bars: 30-monitoring.js), never the chat list's rows.
-    clear(convSide).append(...(monCtx ? monSideNodes(rows) : rows.map(convRow)));
+    clear(convSide).append(...(monCtx ? monSideNodes(rows) : convCards(rows)));
     if (monCtx) monDecorateRows(convSide, items);
     convSide.scrollTop = top;
   }

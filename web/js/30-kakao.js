@@ -513,6 +513,7 @@ async function kkLoadRooms() {
   if (KK.open && !kkRoom(KK.open) && !KK.failed) kkClose();
   kkPaintRooms();
   if (KK.open) kkPaintChat();
+  convSig = ""; convSchedule();   // the 채팅 list's 메일 · 카카오톡 card
 }
 function kkSwitch(on, label, key, change, small) {
   return el("button", { class: `kk-sw${on ? " on" : ""}${small ? " sm" : ""}`, type: "button", role: "switch", "aria-checked": on ? "true" : "false", "aria-label": label, "data-k": key, onclick: ev => { ev.stopPropagation(); change(!on); } }, el("span", { class: "kk-knob" }));
@@ -1135,7 +1136,7 @@ function kkLive(e) {
   if (e.kind === "kakao_draft" || e.kind === "kakao_send") rqSoon();   // the 답장 확인 queue (30-replies.js) reads this computer's drafts again
   if (KK.pc) return;   // the stream is this computer's; a peer's room is refreshed by the timer
   if (e.kind === "kakao_read") { if (KK.vis && e.chatId === KK.open) kkReads(); return; }
-  if (e.kind === "kakao_rooms" || e.kind === "kakao_unreplied") { if (KK.vis) kkLoadRooms(); kkIntgSoon(); return; }
+  if (e.kind === "kakao_rooms" || e.kind === "kakao_unreplied") { if (KK.vis || current === "chat") kkLoadRooms(); kkIntgSoon(); return; }
   kkIntgSoon();
   if (!KK.vis) return;
   const open = e.chatId === KK.open;
