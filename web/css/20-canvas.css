@@ -3,11 +3,11 @@
 #v-chat > #canvas { display: none; }
 #v-chat.canvas-open > #canvas:not([hidden]) { display: flex; }
 @media (max-width: 1099px) {
-  #v-chat.canvas-open > #canvas { position: fixed; inset: 0; z-index: 60; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px calc(12px + env(safe-area-inset-bottom, 0px)); background: var(--bg); }
+  #v-chat.canvas-open > #canvas { position: fixed; inset: 0; z-index: 60; padding: calc(var(--sp-2) + env(safe-area-inset-top, 0px)) var(--sp-3) calc(var(--sp-3) + env(safe-area-inset-bottom, 0px)); background: var(--bg); }
 }
 @media (min-width: 1100px) {
   #v-chat.canvas-open { grid-template-columns: var(--cv-w) minmax(360px, 1fr) minmax(0, 1.25fr); }
-  #v-chat.canvas-open > #canvas { grid-column: 3; grid-row: 1 / -1; min-height: 0; margin-bottom: 16px; }
+  #v-chat.canvas-open > #canvas { grid-column: 3; grid-row: 1 / -1; min-height: 0; margin-bottom: var(--sp-4); }
 }
 
 /* the header's file mark sits on a surface of its own: the pane is on the page (--bg), where a --layer circle would vanish */
