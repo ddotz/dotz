@@ -146,7 +146,9 @@ describe("monitor settings at desktop width", async () => {
 		await waitFor(v, `document.querySelector('#app-sw [data-k="every_minutes"]').value === "30" && AS.by["w:t-web"].find(f => f.key === "every_minutes").value === 30`);
 		expect(patches[1]).toEqual({ app: "w:t-web", values: { every_minutes: 30 } });
 		expect(stored().every_minutes).toBe(30);
-		await run(v, `const s = document.querySelector('#app-sw [data-k="to"]'); s.value = "chat"; s.dispatchEvent(new Event("change"))`);
+		await run(v, `document.querySelector('#app-sw [data-k="to"]').click()`);
+		await waitFor(v, `document.querySelector(".menu .mi")`);
+		await run(v, `document.querySelectorAll(".menu .mi")[AS.by["w:t-web"].find(f => f.key === "to").options.indexOf("chat")].click()`);
 		await waitFor(v, `AS.by["w:t-web"].find(f => f.key === "to").value === "chat"`);
 		expect(stored().to).toBe("chat");
 		expect(sent).toEqual([]);
