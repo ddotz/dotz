@@ -16,6 +16,7 @@
 .nsc-l .sec:first-child { margin-top: var(--sp-2); }
 .nsc-more { display: flex; justify-content: center; margin-top: var(--sp-2); }
 .nsc-r { position: relative; align-items: flex-start; padding: 10px var(--sp-2) 10px var(--row-px); }
+.nsc-r + .nsc-r { border-top: 1px solid var(--line); }
 .nsc-r:hover { background: var(--card-hover); }
 .nsc-r:has(> .nsc-tx:active) { background: var(--row-sel); }
 .nsc-r .lead { align-items: center; width: 8px; height: var(--lh-row); }
