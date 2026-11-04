@@ -113,6 +113,6 @@ textarea.as-in.as-ta { padding-top: 6px; padding-bottom: 6px; }
 .as-rule .as-n { display: flex; }
 .as-rform .as-act { margin-top: 0; }
 .as-rl { display: flex; flex-direction: column; gap: 4px; }
-.as-new-in { display: block; width: 100%; min-height: 88px; margin: 0 0 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--layer); color: var(--fg); font: 400 15px/22px var(--font); resize: vertical; }
-.as-new-in:focus { outline: 0; border-color: var(--accent); }
+.as-new-in { display: block; width: 100%; min-height: 88px; margin: 0 0 8px; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--ff-fill); color: var(--fg); font: 400 15px/22px var(--font); resize: vertical; }
+.as-new-in:focus { outline: 0; box-shadow: var(--ff-ring); }
 .as-new-in::placeholder { color: var(--fg-3); }

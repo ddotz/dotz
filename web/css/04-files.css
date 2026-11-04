@@ -127,12 +127,12 @@ dialog.lbox::backdrop { background: rgb(10 10 12 / .86); }
 .au { display: contents; font-size: 14px; line-height: 20px; }
 .au .abd { display: flex; flex-direction: column; gap: 10px; }
 .au p { margin: 0; color: var(--fg-2); }
-.au input:not([type=checkbox]) { height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--fs-fill); color: var(--fg); font: 16px var(--font); min-width: 0; width: 100%; box-sizing: border-box; }
+.au input:not([type=checkbox]) { height: 40px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--ff-fill); color: var(--fg); font: 16px var(--font); min-width: 0; width: 100%; box-sizing: border-box; }
 .au .fld { display: flex; flex-direction: column; gap: 4px; }
 .au .fld label { color: var(--fg-2); font-size: 12px; }
 .au .ctl { display: flex; gap: 6px; align-items: center; }
-.au .eye { flex: none; height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--fs-fill); color: var(--fg-2); font: 13px var(--font); }
-.au input.bad { border-color: var(--err); }
+.au .eye { flex: none; height: 40px; padding: 0 10px; border: 0; border-radius: 10px; background: var(--ff-fill); color: var(--fg-2); font: 13px var(--font); }
+.au input.bad { box-shadow: var(--ff-ring-err); }
 .au .ferr { color: var(--err); font-size: 12px; min-height: 0; }
 .au .rem { display: flex; gap: 8px; align-items: center; color: var(--fg-2); font-size: 13px; }
 .au .note { color: var(--fg-3); font-size: 12px; }

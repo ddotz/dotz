@@ -26,7 +26,7 @@
 .rq-part.sent { opacity: .55; }
 .rq-more { height: 28px; margin-top: 2px; padding: 0 4px; font-size: 13px; }
 .rq-edit { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-.rq-edit .kk-rv { min-height: 40px; padding: 8px 12px; border-radius: var(--r-ctl); border: 1px solid var(--line-2); background: var(--card); color: inherit; font: 400 16px/22px var(--font); }
+.rq-edit .kk-rv { min-height: 40px; padding: 8px 12px; border-radius: var(--r-ctl); border: 0; background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
 .rq-edit .btns { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* 메시지 답글 카드 (소개 페이지 댓글 답글 데모): 남의 글은 조용한 인용, 초안 글이 주인공(원칙 1·5). 게시물 제목과 첨부 안내는 회색으로 물러나요 */

@@ -12,7 +12,7 @@ borderless white cards, one sparing blue accent, big bold titles, short copy. Li
 | `--card-hover` | `#f9fafb` | `#232328` | hover on a tappable card or row |
 | `--layer` | `#f2f4f6` | `#26262b` | tonal fill inside a card (owner bubble, tags, segmented control) |
 | `--hover` / `--active` | `#e9ecf0` / `#e5e8eb` | `#2b2b31` / `#303036` | hover / pressed on the canvas |
-| `--line` / `--line-2` | `#e5e8eb` / `#d1d6db` | `#2b2b31` / `#3d3d45` | hairlines inside a card, field edges only |
+| `--line` / `--line-2` | `#e5e8eb` / `#d1d6db` | `#2b2b31` / `#3d3d45` | hairlines inside a card; fields carry no border (see `--ff-fill`) |
 | `--fg` | `#191f28` | `#ececf0` | text |
 | `--fg-2` | `#4e5968` | `#b0b4bc` | secondary text |
 | `--fg-3` | `#6b7684` | `#8e939c` | meta text (4.5:1 on white) |
