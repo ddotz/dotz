@@ -146,3 +146,20 @@ describe("slack messenger", () => {
 		expect(readFileSync(slackConfigPath(dir), "utf8")).toBe(before);
 	});
 });
+
+describe("slack web link", () => {
+	test("a link is a <url|웹에서 보기> link at the end of the text; a message without one is unchanged", async () => {
+		const { a, fake } = setup(tempDir());
+		expect(a.ownsLink).toBe(true);
+		await a.deliver({ target: "main", kind: "main", text: "끝났어요", link: "https://dotz.example.com/#chat/main" });
+		await a.deliver({ target: "main", kind: "main", text: "링크 없음" });
+		expect(fake.calls[0]!.body.get("text")).toBe("끝났어요\n\n<https://dotz.example.com/#chat/main|웹에서 보기>");
+		expect(fake.calls[1]!.body.get("text")).toBe("링크 없음");
+	});
+
+	test("characters that would end the link early are encoded", async () => {
+		const { a, fake } = setup(tempDir());
+		await a.deliver({ target: "main", kind: "main", text: "x", link: "https://dotz.example.com/a|b>c d" });
+		expect(fake.calls[0]!.body.get("text")).toBe("x\n\n<https://dotz.example.com/a%7Cb%3Ec%20d|웹에서 보기>");
+	});
+});

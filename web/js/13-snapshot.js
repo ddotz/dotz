@@ -14,7 +14,7 @@ const snapDb = () => new Promise((res, rej) => {
 });
 const snapDone = q => new Promise((res, rej) => { q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); });
 let snapTimer = 0, snapGone = false;
-const snapOk = t => !snapGone && !isMailT(t) && !pqPc(t);
+const snapOk = t => !snapGone && !isMailT(t) && !isRelayT(t) && !pqPc(t);
 function snapSoon(t) { clearTimeout(snapTimer); snapTimer = setTimeout(() => snapSave(t), 1500); }
 async function snapSave(t) {
   const s = ts(t);

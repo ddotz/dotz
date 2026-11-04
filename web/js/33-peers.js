@@ -1,5 +1,5 @@
 /* ---------- computers: switch between this owner's gateways (맥북, 맥미니) ---------- */
-// Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?, via?}]. A row with via "jandi" is a computer reached only through the owner's JANDI self chat (hub/jandi-peers.ts): its url is a chat page on this gateway, opened in this app.
+// Data: GET /api/peers (hub/peers.ts) -> [{name, url, self, online, unread?, need?, via?}]. A row with key and via (hub/messenger.ts relay, today "jandi") is a computer reached only through that messenger: picking it keeps this app's chat view and only changes the transport (42-relay-chat.js); its url is only a unique string. `public: true`: the computer has a public address and opens as its own web app.
 // With 2 or more the bot name opens the switch sheet (owner 2026-11-04: one row, no separate computer row): the logo + name + one chevron at the top left on a wide screen, the page title on the
 // phone (there the brand is hidden; on 홈 the title is the bot name). A small dot says another computer has something unread (warn: a question waits): at the chevron's bottom right on a wide
 // screen, at the name's bottom right on the phone. The computer in use is named in the sheet, with its check.
@@ -14,12 +14,14 @@ const PR = { list: prCached(), node: null, ov: null, opener: null, tries: 0, tim
 const PR_RETRY_MS = [2000, 5000, 15000];
 const prSelf = () => PR.list.find(p => p.self);
 const prOthers = () => PR.list.filter(p => !p.self);
+/** The computer to switch to when this one is down: a relay row needs this gateway and a public row opens its own app, so only a direct one counts. */
+const prFailover = () => prOthers().find(p => !p.via && !p.public);
 const prText = p => [p.need > 0 ? `답변 필요 ${p.need}` : "", p.unread > 0 ? `새 알림 ${p.unread}` : ""].filter(Boolean).join(" · ");
 
 async function prLoad() {
   try {
     const r = await api("/api/peers"); PR.list = Array.isArray(r) ? prOrder(r) : []; PR.tries = 0; PR.fresh = true;
-    try { localStorage.setItem("dotz-peers", JSON.stringify(PR.list.map(({ name, url, self, online, via }) => ({ name, url, self, online, via })))); } catch {}
+    try { localStorage.setItem("dotz-peers", JSON.stringify(PR.list.map(({ name, url, self, online, via, key, note, public: open }) => ({ name, url, self, online, via, key, note, public: open })))); } catch {}
   } catch {
     clearTimeout(PR.timer);
     if (PR.tries < PR_RETRY_MS.length) PR.timer = setTimeout(prLoad, PR_RETRY_MS[PR.tries++]);
@@ -40,7 +42,7 @@ function prTryFollow() {
   if (!p && !PR.fresh) return;   // the cached list may predate this computer; wait for the fresh one
   prFollowHref = "";
   if (!p || !p.online) { toast(p ? `${p.name}에 연결할 수 없어요` : "그 컴퓨터를 찾지 못했어요", true); history.replaceState(history.state, "", location.pathname + location.hash); return; }
-  const q = new URLSearchParams({ did: DEVICE_ID });
+  const q = new URLSearchParams(p.public ? {} : { did: DEVICE_ID });   // a public computer is its own web app: no device id goes to it
   for (const k of ["n", "m"]) if (u.searchParams.has(k)) q.set(k, u.searchParams.get(k));
   prGo(`${p.url}/${q.size ? `?${q}` : ""}${u.hash}`, true);
 }
@@ -91,6 +93,8 @@ function prOpenItem(p, id) {
 const prTrig = () => !!prSelf() && PR.list.length >= 2;
 function prPaint() {
   prTryFollow();
+  relayNames();
+  relayPaint();   // a chat opened by address before the list came: the note line and the title wait for its names
   const me = prSelf(), on = prTrig(), chev = $("#brand-c"), names = [chev, $("#title")], brand = $("#brand"), title = $("#title");
   $("#appbar").classList.toggle("hasp", on);
   chev.hidden = !on;
@@ -104,7 +108,7 @@ function prPaint() {
   for (const p of prOthers()) if (p.online && !p.via && !document.head.querySelector(`link[rel=preconnect][href="${p.url}"]`)) document.head.append(el("link", { rel: "preconnect", href: p.url }));
   const others = prOthers(), more = others.some(p => p.unread > 0 || p.need > 0), need = others.some(p => p.need > 0);
   for (const n of names) { n.classList.toggle("pdot", more); n.classList.toggle("p-need", need); }
-  const label = `컴퓨터 바꾸기, 지금은 ${me.name}${more ? ", 다른 컴퓨터에 새 알림" : ""}`;
+  const label = `컴퓨터 바꾸기, 지금은 ${relayOn() ? targetName(target) : me.name}${more ? ", 다른 컴퓨터에 새 알림" : ""}`;
   brand.setAttribute("aria-label", label); brand.setAttribute("aria-haspopup", "dialog");
   brand.title = `컴퓨터 바꾸기 (${prKeyHint}, 다음 컴퓨터로)`;
   title.tabIndex = 0; title.setAttribute("aria-haspopup", "dialog");
@@ -151,30 +155,33 @@ window.addEventListener("message", ev => {
 });
 
 function prPick(p, o = {}) {
-  // a JANDI-only computer has no gateway of its own: its chat page is on this origin, so the app stays where it is
-  if (p.via === "jandi" && !p.self) { prClose(false); location.href = p.url; return; }
+  // a computer reached only through a messenger has no gateway of its own: this app's chat view stays and talks to it (42-relay-chat.js)
+  if (isRelayRow(p)) { prClose(false); relayEnter(p); return; }
   // inside another computer's app frame: the app around it does the switch (back to itself, or to a third computer)
-  if (prEmbedded && !p.self) { prClose(false); window.parent.postMessage({ dotz: "peer-pick", url: p.url }, "*"); return; }
-  if (p.self) { prClose(); return; }
+  if (prEmbedded && !p.self && !p.public) { prClose(false); window.parent.postMessage({ dotz: "peer-pick", url: p.url }, "*"); return; }
+  if (p.self) { prClose(); if (isRelayT(target)) relayLeave(); return; }
   // the online flags come from this computer's gateway: while it is unreachable they are stale, so the switch is tried anyway
   if (!p.online && !selfDown) { toast(`${p.name}에 연결할 수 없어요`, true); return; }
   if (!o.quiet) toast(`${p.name}(으)로 넘어가요`);
   prClose(false);
+  // a public address is the real web app there (its own login, no device id to hand over): the installed app opens it in the browser, never in the frame
+  if (p.public) { const href = prUrl(p); if (PR_EMBED() || prEmbedded) window.open(href, "_blank", "noopener"); else prGo(href); return; }
   prGo(prUrl(p, `?did=${enc(DEVICE_ID)}${o.auto ? "&auto=1" : ""}`));   // the device id goes along: the push subscriptions on both computers become one device
 }
 
 function prSheet() {
   const rows = PR.list.map(p => {
     // while this computer's gateway is unreachable the other rows' flags are stale: "확인 못 함", still selectable (prPick tries anyway)
+    const here = relayOn() ? isRelayRow(p) && target === relayTargetOf(p) : p.self;
     const off = !p.self && !p.online && !selfDown, alert = !p.self && (p.unread > 0 || p.need > 0);
     const st = p.self ? (selfDown ? "연결 안 됨" : "") : selfDown ? "확인 못 함" : p.online ? "연결됨" : "연결 안 됨";
     // the prototype's switcher row: a status dot, the name over one quiet line, and at the right the check (this one) or the count of what waits there
-    const sub = p.self ? (st || "이 컴퓨터") : alert ? prText(p) : st;
-    const row = el("button", { type: "button", class: `pr-row${p.self ? " on" : ""}${off ? " off" : ""}`, "aria-current": p.self ? "true" : null, "aria-disabled": off ? "true" : null,
-      "aria-label": [p.name, p.self ? "지금 보고 있어요" : "", st, alert ? prText(p) : ""].filter(Boolean).join(", "), onclick: () => prPick(p) },
+    const sub = p.self ? (st || "이 컴퓨터") : isRelayRow(p) ? [p.note, p.online ? "" : st].filter(Boolean).join(" · ") : alert ? prText(p) : st;
+    const row = el("button", { type: "button", class: `pr-row${here ? " on" : ""}${off ? " off" : ""}`, "aria-current": here ? "true" : null, "aria-disabled": off ? "true" : null,
+      "aria-label": [p.name, here ? "지금 보고 있어요" : "", st, alert ? prText(p) : ""].filter(Boolean).join(", "), onclick: () => prPick(p) },
       el("span", { class: `dot${(p.self ? !selfDown : p.online && !selfDown) ? " ok" : ""}` }),
       el("span", { class: "pr-tx" }, el("span", { class: "pr-t", text: p.name }), sub ? el("span", { class: "pr-sub", text: sub }) : null),
-      alert ? el("span", { class: `pr-n${p.need > 0 ? " need" : ""}`, text: String((p.need || 0) + (p.unread || 0)) }) : p.self ? icon("check", "pr-ck") : null);
+      alert ? el("span", { class: `pr-n${p.need > 0 ? " need" : ""}`, text: String((p.need || 0) + (p.unread || 0)) }) : here ? icon("check", "pr-ck") : null);
     const screen = dskRowBtn(p);
     return screen ? el("div", { class: "pr-line" }, row, screen) : row;
   });

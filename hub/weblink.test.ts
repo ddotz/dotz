@@ -5,7 +5,7 @@ import { flush } from "./runtime/test-clock.ts";
 import { cfBase, convPath, setWebBase, webBase, webLink } from "./weblink.ts";
 
 const got: OutMsg[] = [];
-const fake: Adapter = { id: "weblink-fake", label: "fake", enabled: () => true, status: { state: "ok" }, start() {}, stop() {}, deliver: async m => (got.push(m), { delivered: true }), canEdit: false, canButtons: false };
+const fake: Adapter = { id: "weblink-fake", ownsLink: true, label: "fake", enabled: () => true, status: { state: "ok" }, start() {}, stop() {}, deliver: async m => (got.push(m), { delivered: true }), canEdit: false, canButtons: false };
 register(fake);
 installFanout();
 const post = async (target: string, text = "hi") => {

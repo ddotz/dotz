@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { emit } from "./events.ts";
 import { type Adapter, installFanout, kindOf, type OutMsg, parseAskNumber, register, unregister } from "./messenger.ts";
 import { flush } from "./runtime/test-clock.ts";
+import { setWebBase } from "./weblink.ts";
 
 const fake = (id: string, over: Partial<Adapter> = {}): Adapter & { got: OutMsg[] } => {
 	const got: OutMsg[] = [];
@@ -25,7 +26,7 @@ const fake = (id: string, over: Partial<Adapter> = {}): Adapter & { got: OutMsg[
 const post = (target: string, text: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target, text });
 
 // All test files share one process: the fakes must not stay listed for the next file.
-afterAll(() => ["plain", "native", "off", "bad", "sync", "good", "flaky"].forEach(unregister));
+afterAll(() => ["plain", "native", "off", "bad", "sync", "good", "flaky", "line", "own"].forEach(unregister));
 
 describe("kindOf", () => {
 	test.each([
@@ -125,4 +126,25 @@ describe("parseAskNumber", () => {
 		["0", undefined],
 		["", undefined],
 	])("%j", (text, want) => expect(parseAskNumber(text)).toEqual(want));
+});
+
+describe("web link", () => {
+	test("an adapter that does not place the link itself gets it as the last line; one that does gets msg.link; no address, no link", async () => {
+		const line = fake("line");
+		const own = fake("own", { ownsLink: true });
+		register(line);
+		register(own);
+		installFanout();
+		setWebBase("https://dotz.example.com");
+		try {
+			post("main", "끝났어요");
+			await flush();
+		} finally {
+			setWebBase(undefined);
+		}
+		post("main", "주소 없음");
+		await flush();
+		expect(line.got.map(m => [m.text, m.link])).toEqual([["끝났어요\n\n웹에서 보기: https://dotz.example.com/#chat/main", undefined], ["주소 없음", undefined]]);
+		expect(own.got.map(m => [m.text, m.link])).toEqual([["끝났어요", "https://dotz.example.com/#chat/main"], ["주소 없음", undefined]]);
+	});
 });

@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { qrPath } from "./qr.ts";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cloudflareGate, createDevices, derToRaw } from "./devices.ts";
+import { cloudflareGate, createDevices, derToRaw, safeNext } from "./devices.ts";
+import { HOP_HTML, HOP_JS, PAIR_HTML, SAFE_NEXT_SRC } from "./pair-page.ts";
 import { clock } from "./runtime/test-clock.ts";
 import { ev, fakeHub, waitFor } from "./test-web.ts";
 
@@ -442,4 +443,210 @@ describe("the /pair page in a headless WebView", () => {
 		expect(await ev(view, `document.getElementById("login").hidden`)).toBe(false);
 		expect(await ev(view, `document.getElementById("go").textContent`)).toBe("패스키로 들어가기");
 	});
+});
+
+// What a link into the app does for a browser that is not paired, and what the paired one is sent on to.
+const NEXT_TABLE: [string | null | undefined, string][] = [
+	["/", "/"],
+	["/api/file?path=%2Ftmp%2Fa.txt", "/api/file?path=%2Ftmp%2Fa.txt"],
+	["/#chat/main", "/#chat/main"],
+	["/한글 경로?q=값", "/한글 경로?q=값"],
+	["/pairing", "/pairing"],
+	["/pair.js", "/pair.js"],
+	["/" + "a".repeat(1999), "/" + "a".repeat(1999)],
+	["//evil.com", "/"],
+	["//evil.com/x", "/"],
+	["/\\evil.com", "/"],
+	["\\evil.com", "/"],
+	["https://evil.com", "/"],
+	["http://evil.com/x", "/"],
+	["javascript:alert(1)", "/"],
+	["evil.com", "/"],
+	["", "/"],
+	[null, "/"],
+	[undefined, "/"],
+	["/pair", "/"],
+	["/pair?next=/x", "/"],
+	["/pair/x", "/"],
+	["/pair#a", "/"],
+	["/a\nb", "/"],
+	["/a\rb", "/"],
+	["/a\tb", "/"],
+	["/a\u0000b", "/"],
+	["/a\u007fb", "/"],
+	["/a\u0085b", "/"],
+	["/" + "a".repeat(2000), "/"],
+];
+const HOSTILE = ["//evil.com", "/\\evil.com", "https://evil.com", "/pair", "/a\nb", "/" + "a".repeat(5000), "/.//evil.com", "/%2F%2Fevil.com", "///evil.com", "/\t/evil.com"];
+
+describe("next: where a link goes after the door", () => {
+	test("safeNext takes a same-origin path only, and the browser's copy answers the same table", () => {
+		const twin = new Function(SAFE_NEXT_SRC + "\nreturn safeNext;")() as (raw: unknown) => string;
+		for (const [raw, want] of NEXT_TABLE) expect([raw?.slice(0, 40), safeNext(raw), twin(raw)]).toEqual([raw?.slice(0, 40), want, want]);
+	});
+
+	const nav = (path: string, headers: Record<string, string> = {}) => {
+		const url = new URL(ORIGIN + path);
+		return { url, req: new Request(url, { headers: { "sec-fetch-mode": "navigate", "sec-fetch-site": "none", ...headers } }) };
+	};
+
+	test("an unpaired page load, an /api link too, goes to /pair with its own address and receives nothing", async () => {
+		const t = fresh();
+		await t.pair(await Authenticator.make(-7));
+		for (const [path, to] of [["/api/file?path=/etc/hosts&x=%ED%95%9C", "/pair?next=" + encodeURIComponent("/api/file?path=/etc/hosts&x=%ED%95%9C")], ["/#chat/main", "/pair"], ["/", "/pair"], ["/some/page?q=1", "/pair?next=%2Fsome%2Fpage%3Fq%3D1"]] as const) {
+			const { url, req } = nav(path);
+			const r = t.d.denied(req, url);
+			expect([path, r.status, r.headers.get("location")]).toEqual([path, 302, to]);
+			expect(await r.text()).toBe("");
+		}
+		const html = nav("/api/state", { "sec-fetch-mode": "", accept: "text/html,application/xhtml+xml" });
+		html.req.headers.delete("sec-fetch-mode");
+		expect(t.d.denied(html.req, html.url).headers.get("location")).toBe("/pair?next=%2Fapi%2Fstate");
+	});
+
+	test("a fetch, or anything that is not a GET, stays the 403 the app reacts to", async () => {
+		const t = fresh();
+		for (const [method, headers] of [["GET", { "sec-fetch-mode": "cors", "sec-fetch-site": "same-origin", accept: "*/*" }], ["GET", { "sec-fetch-mode": "cors", accept: "text/html" }], ["POST", { "sec-fetch-mode": "navigate" }], ["GET", { accept: "application/json" }]] as const) {
+			const url = new URL(ORIGIN + "/api/file?path=/etc/hosts");
+			const r = t.d.denied(new Request(url, { method, headers, ...(method === "POST" ? { body: "x" } : {}) }), url);
+			expect([method, r.status, r.headers.get("x-dotz-pair"), await r.text()]).toEqual([method, 403, "1", "forbidden"]);
+		}
+	});
+
+	test("a cross-site first navigation, which carries no cookie, gets the fixed page with no data; its script is public", async () => {
+		const t = fresh();
+		for (const path of ["/", "/api/file?path=/etc/hosts", "/#chat/main"]) {
+			const { url, req } = nav(path, { "sec-fetch-site": "cross-site" });
+			const r = t.d.denied(req, url);
+			const body = await r.text();
+			expect([path, r.status, r.headers.get("content-type"), r.headers.get("location")]).toEqual([path, 200, "text/html; charset=utf-8", null]);
+			expect(body).toBe(HOP_HTML);
+			expect(body).not.toContain("etc");
+			expect(r.headers.get("content-security-policy")).toContain("script-src 'self'");
+			expect(r.headers.get("cache-control")).toBe("no-store");
+		}
+		const cors = new URL(ORIGIN + "/api/state");
+		expect(t.d.denied(new Request(cors, { headers: { "sec-fetch-mode": "cors", "sec-fetch-site": "cross-site" } }), cors).status).toBe(403);
+		const js = new URL(ORIGIN + "/pair-hop.js");
+		const r = (await t.d.pairRoute(new Request(js), js))!;
+		expect([r.status, r.headers.get("content-security-policy")?.includes("script-src 'self'"), await r.text()]).toEqual([200, true, HOP_JS]);
+	});
+
+	test("a cross-site first navigation anywhere but / and /api/file gets the plain redirect: no hop page, so no cookie travels and nothing runs signed in", async () => {
+		const t = fresh();
+		for (const path of ["/api/state", "/apps/x/y", "/desk/", "/api/file/../state"]) {
+			const { url, req } = nav(path, { "sec-fetch-site": "cross-site" });
+			const r = t.d.denied(req, url);
+			expect([path, r.status, r.headers.get("location")]).toEqual([path, 302, "/pair?next=" + encodeURIComponent(safeNext(url.pathname + url.search))]);
+			expect(await r.text()).not.toContain(HOP_HTML);
+		}
+	});
+
+	const pairGet = async (t: ReturnType<typeof fresh>, next: string | undefined, token?: string, access?: (req: Request) => Promise<boolean>): Promise<Response> => {
+		const url = new URL(ORIGIN + "/pair" + (next === undefined ? "" : "?next=" + encodeURIComponent(next)));
+		return (await t.d.pairRoute(new Request(url, { headers: token ? { cookie: "dotz_dev=" + token } : {} }), url, access))!;
+	};
+
+	test("with Cloudflare Access set up, /pair?next sends a paired browser on only when the Access check passes; otherwise it is the page", async () => {
+		const t = fresh();
+		const token = await t.pair(await Authenticator.make(-7));
+		const pass = await pairGet(t, "/x", token, async () => true);
+		expect([pass.status, pass.headers.get("location")]).toEqual([302, "/x"]);
+		const fail = await pairGet(t, "/x", token, async () => false);
+		expect([fail.status, fail.headers.get("location"), (await fail.text()).includes("data-devices")]).toEqual([200, null, true]);
+		let asked = 0;
+		const plain = await pairGet(t, undefined, token, async () => { asked++; return true; });
+		const unpaired = await pairGet(t, "/x", undefined, async () => { asked++; return true; });
+		expect([plain.status, unpaired.status, asked]).toEqual([200, 200, 0]);
+	});
+
+	test("/pair?next with a live device session goes on to next; without one, or with no next, it is the page", async () => {
+		const t = fresh();
+		const token = await t.pair(await Authenticator.make(-7));
+		const ok = await pairGet(t, "/api/file?path=%2Ftmp%2Fa.txt", token);
+		expect([ok.status, ok.headers.get("location")]).toEqual([302, "/api/file?path=%2Ftmp%2Fa.txt"]);
+		const korean = await pairGet(t, "/한글 경로?q=값", token);
+		expect(korean.headers.get("location")).toBe("/%ED%95%9C%EA%B8%80%20%EA%B2%BD%EB%A1%9C?q=%EA%B0%92");
+		for (const [next, tok] of [["/x", "A".repeat(43)], ["/x", undefined], [undefined, token]] as const) {
+			const r = await pairGet(t, next, tok);
+			expect([r.status, r.headers.get("location"), (await r.text()).includes("data-devices")]).toEqual([200, null, true]);
+		}
+	});
+
+	test("no next can make an open redirect: a hostile one lands on / and every Location stays on this origin", async () => {
+		const t = fresh();
+		const token = await t.pair(await Authenticator.make(-7));
+		for (const next of HOSTILE) {
+			const r = await pairGet(t, next, token);
+			const loc = r.headers.get("location")!;
+			expect([next.slice(0, 20), r.status, new URL(loc, ORIGIN).origin]).toEqual([next.slice(0, 20), 302, ORIGIN]);
+			expect(loc).toMatch(/^\/[^/\\]*|^\/\.\/\/|^\/%2F/);
+			expect(loc.startsWith("//")).toBe(false);
+			if (safeNext(next) === "/") expect(loc).toBe("/");
+		}
+		for (const next of HOSTILE) {
+			const { url, req } = nav("/" + next.replace(/^\/+/, ""));
+			const loc = t.d.denied(req, url).headers.get("location")!;
+			expect(new URL(loc, ORIGIN).origin).toBe(ORIGIN);
+		}
+	});
+});
+
+describe("the /pair page carries the app's tokens", () => {
+	const tokens = readFileSync(join(import.meta.dir, "..", "web", "css", "01-tokens.css"), "utf8");
+	const vars = (block: string): Map<string, string> => new Map([...block.matchAll(/(--[a-z0-9-]+):\s*([^;]+);/g)].map(m => [m[1]!, m[2]!.replace(/\s+/g, " ").trim()] as const));
+	const darkAt = tokens.indexOf(':root[data-theme="dark"] {');
+	const appLight = vars(tokens.slice(tokens.indexOf(":root {"), darkAt));
+	const appDark = vars(tokens.slice(darkAt, tokens.indexOf("\n}", darkAt)));
+	const css = PAIR_HTML.slice(PAIR_HTML.indexOf("<style>"), PAIR_HTML.indexOf("</style>"));
+	const mediaAt = css.indexOf("@media (prefers-color-scheme: dark){:root{");
+	const pageLight = vars(css.slice(css.indexOf(":root{"), css.indexOf("}")));
+	const pageDark = vars(css.slice(mediaAt, css.indexOf("}", mediaAt)));
+
+	test("every colour, size, space, radius, height, motion and font value equals web/css/01-tokens.css, light and dark", () => {
+		expect(pageLight.size).toBeGreaterThan(25);
+		expect(pageDark.size).toBeGreaterThan(8);
+		for (const [name, value] of pageLight) expect([name, value]).toEqual([name, appLight.get(name)]);
+		for (const [name, value] of pageDark) expect([name, value]).toEqual([name, appDark.get(name)]);
+	});
+
+	test("every colour the page changes in dark is one the app changes in dark, and every token it uses is defined", () => {
+		for (const name of pageDark.keys()) expect([name, appDark.has(name)]).toEqual([name, true]);
+		for (const m of css.matchAll(/var\((--[a-z0-9-]+)\)/g)) expect([m[1], pageLight.has(m[1]!)]).toEqual([m[1], true]);
+	});
+});
+
+describe("the /pair page, drawn", () => {
+	const SHOTS = process.env.PAIR_SHOTS ?? "/tmp/cf-webapp/shots";
+	mkdirSync(SHOTS, { recursive: true });
+	const t = fresh();
+	// WebView cannot switch prefers-color-scheme, so the page is served with its dark media query forced on (or off): the same rules, deterministic.
+	const hub = fakeHub({
+		api: async (req, url) => {
+			const real = await t.d.pairRoute(req, url);
+			const theme = url.searchParams.get("theme");
+			if (!real || url.pathname !== "/pair" || !theme) return real;
+			return new Response((await real.text()).replace("@media (prefers-color-scheme: dark)", theme === "dark" ? "@media all" : "@media not all"), { headers: real.headers });
+		},
+	});
+	afterAll(() => hub.stop());
+
+	test("light and dark, desktop and phone: the app's canvas, card, type size and one 220ms arrive; screenshots saved", async () => {
+		await t.pair(await Authenticator.make(-7));
+		const want = { light: ["rgb(242, 244, 246)", "rgb(255, 255, 255)"], dark: ["rgb(18, 18, 20)", "rgb(29, 29, 33)"] } as const;
+		for (const [width, height] of [[1280, 800], [390, 844]] as const) {
+			for (const theme of ["light", "dark"] as const) {
+				const v = await hub.view({ width, height }, "/pair?theme=" + theme);
+				await waitFor(v, 'document.getElementById("lead").textContent.length > 0');
+				await waitFor(v, 'document.getAnimations().every(a => a.playState !== "running")');
+				const got = await ev<string[]>(v, '(() => { const c = e => getComputedStyle(document.querySelector(e)); return [c("body").backgroundColor, c("main").backgroundColor, c("main").animationName, c("main").animationDuration, c("h1").fontSize, c("#go").height, c("#go").backgroundColor]; })()');
+				expect(got.slice(0, 2)).toEqual([...want[theme]]);
+				expect(got.slice(2, 4)).toEqual(["arrive", "0.22s"]);
+				expect(got[4]).toBe(width > 639 ? "22px" : "20px");
+				expect(got[5]).toBe("36px");
+				expect(got[6]).toBe(theme === "light" ? "rgb(49, 130, 246)" : "rgb(76, 148, 255)");
+				await Bun.write(SHOTS + "/pair-" + width + "-" + theme + ".png", await v.screenshot());
+			}
+		}
+	}, 60_000);
 });

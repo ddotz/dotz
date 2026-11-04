@@ -62,6 +62,7 @@ const hasCached = s => s.msgs.length > 0 || s.acts.length > 0;
 // What the drawn stretch of a conversation holds: a quiet refresh that leaves it alone needs no redraw.
 const chatTail = s => `${s.msgs.filter(e => e.ts >= CV.low).length}|${s.acts.filter(a => a.ts >= CV.low).length}`;
 async function loadTarget(t, quiet) {
+  if (isRelayT(t)) return relayLoad(t, quiet);
   const s = ts(t), before = chatTail(s);
   let settled = false;
   if (s.loading) return s.loading;
@@ -223,6 +224,7 @@ function renderAll0(keepScroll) {
       if (LOG_VIEW && ownerish(m) && first && m.ts >= first) termPush(ownerAct(m), true);
     } else { const a = A[i++]; if (!isProjT(target) && !isFixedT(target)) chatPush({ a }, true); if (LOG_VIEW) termPush(a, true); }
   }
+  if (isRelayT(target)) relayTail(s);   // a send still waiting for its line and the last error, before the "no conversation yet" line is considered
   if (tl.children.length <= 1) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));   // only the top sentinel is there
   if (LOG_VIEW && !term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동이 없어요" }));
   if (!keepScroll) { chatOpen(); if (LOG_VIEW) scrollTerm(true); } else { CV.snap = null; CV.full = true; }
@@ -254,7 +256,7 @@ function setTarget(t) {
   ts(target).pick = PICK;   // the picked elements stay with it too (15-picker.js)
   closeSheet();
   target = t;
-  try { localStorage.setItem(TARGET_KEY, t); } catch {}
+  if (!isRelayT(t)) try { localStorage.setItem(TARGET_KEY, t); } catch {}   // a relayed computer is entered by the address (#chat/relay:<adapter>:<key>), never restored from here
   if (current === "chat" || current === "activity") routeReplace(monCtx && current === "chat" ? `monitoring/c:${enc(t)}` : `${current}/${t}`);
   const s = ts(t);
   s.whole = false;

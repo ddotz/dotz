@@ -6,16 +6,19 @@
 // A peer that paired with this gateway (hub/peer-pair.ts) is bound to its dotz URL: that URL is asked first and the ports are scanned only
 // when it no longer answers as dotz (the new port is then bound). A bound peer tailscale reports offline stays listed, shown as not connected.
 // Each gateway names itself (web.machine_name, hub/machine-name.ts) and tells its peers through the public GET /api/peer-info; an older
-// peer without it keeps the hostname-derived name. Pure parts (names, filtering, counting, cache) are exported for tests; only listPeers() touches the network.
+// peer without it keeps the hostname-derived name. Without Tailscale this gateway's own row comes from its public address (webBase), so the switcher still opens.
+// A web.peers entry that is not a tailnet name is a public computer (`public: true`): its row is online or not by its public manifest only, with no counts, and
+// nothing that carries a peer token ever goes to it (knownComputers leaves it out). Pure parts (names, filtering, counting, cache) are exported for tests; only listPeers() touches the network.
 import { peerFetch } from "./tailnet-fetch.ts";
 import { cfg, log } from "./config.ts";
 import { friendlyName, label, peerInfoName, resolveName } from "./machine-name.ts";
 import { bindPeer, boundPeer, type Bound } from "./peer-pair.ts";
+import { webBase } from "./weblink.ts";
 
 export { friendlyName };
 
 // `via: "jandi"`: a computer reached only through the owner's JANDI self chat (hub/jandi-peers.ts); its url is a path on this gateway.
-export type Peer = { name: string; url: string; self: boolean; online: boolean; unread?: number; need?: number; via?: "jandi" };
+export type Peer = { name: string; url: string; self: boolean; online: boolean; unread?: number; need?: number; via?: "jandi"; public?: true };
 export type TsNode = { DNSName?: string; HostName?: string; UserID?: number; Online?: boolean; Tags?: string[] };
 export type TsStatus = { Self?: TsNode; Peer?: Record<string, TsNode>; User?: Record<string, { LoginName?: string }> };
 
@@ -151,7 +154,21 @@ export function loginOf(st: TsStatus | undefined): string | undefined {
 }
 export const ownLogin = cached(60_000, async () => loginOf(await tailscaleStatus()));
 
-export type Found = { name: string; host: string; url: string; self: boolean };
+export type Found = { name: string; host: string; url: string; self: boolean; public?: true };
+
+// A tailnet name (MagicDNS) or a tailnet address (100.64.0.0/10); any other host is reached over the public internet.
+export function isPublicHost(host: string): boolean {
+	const h = host.replace(/\.$/, "").toLowerCase();
+	const v4 = /^100\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(h);
+	return !(h.endsWith(".ts.net") || (v4 && Number(v4[1]) >= 64 && Number(v4[1]) <= 127));
+}
+
+// This gateway's own row when Tailscale gave none: its public address, named like a tailnet self (web.machine_name or the host).
+export function selfFound(base: string | undefined, machineName: unknown): Found | undefined {
+	if (!base) return undefined;
+	const host = new URL(base).hostname;
+	return { name: resolveName(machineName, host), host, url: base, self: true };
+}
 
 type Resolve = { isDotz: (url: string) => Promise<boolean>; peerName: (url: string) => Promise<string | undefined>; bound: (host: string) => Bound | undefined; bind: (host: string, url: string, name?: string) => void };
 
@@ -178,14 +195,16 @@ export async function discover(): Promise<Found[]> {
 	const w = cfg.web as { machine_name?: string; tailscale_https_port?: number; peers?: string[]; peer_discovery?: boolean; peer_ports?: number[] } | undefined;
 	const found: Found[] = [];
 	const urls = new Set<string>();
-	const add = (host: string, url: string, self: boolean, name?: string) => {
+	const add = (host: string, url: string, self: boolean, name?: string, isPublic = false) => {
 		if (urls.has(url) || found.length >= MAX_PEERS) return;
 		urls.add(url);
-		found.push({ name: name ?? friendlyName(host), host, url, self });
+		found.push({ name: name ?? friendlyName(host), host, url, self, ...(isPublic ? { public: true as const } : {}) });
 	};
 	const own = w?.tailscale_https_port ?? 0;
 	const st = w?.peer_discovery === false && !w?.peers?.length ? undefined : await tailscaleStatus();
 	if (st?.Self?.DNSName && own) add(st.Self.DNSName, baseUrl(st.Self.DNSName, own), true, resolveName(w?.machine_name, st.Self.DNSName));
+	const webSelf = found.length ? undefined : selfFound(webBase(), w?.machine_name);
+	if (webSelf) add(webSelf.host, webSelf.url, true, webSelf.name);
 	if (st && own && w?.peer_discovery !== false) {
 		const ports = candidatePorts(own, w?.peer_ports);
 		const nodes = sameUserNodes(st, true);
@@ -195,13 +214,14 @@ export async function discover(): Promise<Found[]> {
 	}
 	const manual = extraUrls(w?.peers).filter(u => !urls.has(u));
 	const okManual = await pool(manual, PROBE_PARALLEL, async u => ((await isDotz(u)) ? { u, name: await peerName(u) } : undefined));
-	for (const m of okManual) if (m) add(new URL(m.u).hostname, m.u, false, m.name);
+	for (const m of okManual) if (m) add(new URL(m.u).hostname, m.u, false, m.name, isPublicHost(new URL(m.u).hostname));
 	return uniqueNames(found);
 }
 
 const discovered = cached(DISCOVERY_TTL_MS, () => discover().catch(error => { log(`peers: discovery failed: ${(error as Error).message}`); return [] as Found[]; }), Date.now, STALE_OK_MS);
 // The discovered computers (self first), from the same cache as the switcher. hub/push.ts relays notices to them and accepts relays only from them.
-export const knownComputers = (): Promise<Found[]> => discovered();
+// Public computers are left out: what the callers send to these (a notice relay, a peer-token request) must never reach a public address.
+export const knownComputers = async (): Promise<Found[]> => (await discovered()).filter(f => !f.public);
 const countsCache = new Map<string, { at: number; v: { unread: number; need: number } | undefined }>();
 const STALE_COUNTS_MS = 45_000;
 const recounting = new Set<string>();
@@ -213,12 +233,24 @@ export async function refreshCounts(url: string, get: Fetcher = getJson): Promis
 	return v;
 }
 
+const publicOnline = new Map<string, { at: number; v: boolean }>();
+// A public computer's row: online by its public manifest alone (kept COUNTS_TTL_MS), no counts, and no other request to it.
+export async function publicPeer(f: Found, get: Fetcher = getJson): Promise<Peer> {
+	let c = publicOnline.get(f.url);
+	if (!c || Date.now() - c.at >= COUNTS_TTL_MS) {
+		c = { at: Date.now(), v: await isDotz(f.url, get) };
+		publicOnline.set(f.url, c);
+	}
+	return { name: f.name, url: f.url, self: false, online: c.v, public: true };
+}
+
 // The list for GET /api/peers. One entry or none: the web app hides the switcher (it needs two gateways).
 export async function listPeers(): Promise<Peer[]> {
 	const list = await discovered();
 	const t = Date.now();
 	return pool(list, PROBE_PARALLEL, async f => {
 		if (f.self) return { name: f.name, url: f.url, self: true, online: true } as Peer;
+		if (f.public) return publicPeer(f);
 		let c = countsCache.get(f.url);
 		if (!c || t - c.at >= COUNTS_TTL_MS + STALE_COUNTS_MS) {
 			c = { at: t, v: await counts(f.url) };

@@ -36,7 +36,7 @@ function runStatus(t, status, ask) {
 const targetState = t => { const i = targetInfo(t); return i.alive ? runStatus(t, i.status, i.ask) : ["종료됨", ""]; };
 const RUN_MEMO = { sig: "" };
 const runStateOf = () => {
-  if (isFixedT(target) || isSettingsT(target)) return null;
+  if (isFixedT(target) || isSettingsT(target) || isRelayT(target)) return null;
   const runs = (S && S.runs) || {};
   // A mail conversation's run state is the background worker its request was deferred to (hub/routes.ts stateRuns): this
   // computer's under /api/state `runs`, the other computer's in its monitoring snapshot (34-peer-monitoring.js pqRuns).

@@ -525,9 +525,14 @@ const PQ = { list: [], loaded: false, busy: false, again: false, at: 0, t: 0, of
 // An app's settings conversation (hub/app-settings.ts, 32-app-settings.js): target settings:<app>, answered by the orchestrator.
 const isSettingsT = t => t.startsWith("settings:");
 const settingsApp = t => t.slice(9);
+// A computer reached only through a messenger (hub/messenger.ts relay): target relay:<adapter>:<key>, the normal chat view over another transport (42-relay-chat.js).
+// RELAY.name / RELAY.note: target -> the row's name and the adapter's one line, kept from the computer list (33-peers.js) so the title names it before that list is drawn;
+// RELAY.back: the target to return to.
+const isRelayT = t => /^relay:[a-z0-9-]+:./.test(t);
+const RELAY = { name: {}, note: {}, back: MAIN, on: false };
 const mailSender = f => String(f || "").replace(/<[^>]*>/g, "").replace(/["']/g, "").trim() || String(f || "");
-const validTarget = t => t === MAIN || isFixedT(t) || isProjT(t) || (isLaneT(t) && t.length > 5) || (isMailT(t) && t.length > 5) || (isSettingsT(t) && t.length > 9);
-const sourceOf = t => t === MAIN || isProjT(t) || isFixedT(t) || isMailT(t) || isSettingsT(t) ? "orchestrator" : t;
+const validTarget = t => t === MAIN || isFixedT(t) || isProjT(t) || (isLaneT(t) && t.length > 5) || (isMailT(t) && t.length > 5) || (isSettingsT(t) && t.length > 9) || isRelayT(t);
+const sourceOf = t => t === MAIN || isProjT(t) || isFixedT(t) || isMailT(t) || isSettingsT(t) || isRelayT(t) ? "orchestrator" : t;
 const targetOfSource = s => s === "orchestrator" ? MAIN : s;
 // Owner-facing names: a project by its title (else its channel name), a session by its title (else its key).
 // The name of a target on the computer `pc` it belongs to (an item from another gateway carries pc = {name, url, bot}): there the main chat is
@@ -538,6 +543,7 @@ const targetName = t => {
   if (isFixedT(t)) return FIXED_NAME[t];
   if (isMailT(t)) return (MAILS.get(t) || {}).subject || "메일";
   if (isSettingsT(t)) return monSettingsName(t);
+  if (isRelayT(t)) return RELAY.name[t] || t.split(":").slice(2).join(":");
   if (isProjT(t)) {
     let list = [];
     try { list = (PRJ && PRJ.projects) || []; } catch { /* PRJ (the project list, declared further down) is not set up yet */ }
@@ -556,6 +562,7 @@ try { const v = localStorage.getItem(TARGET_KEY); if (v && v !== "alert" && vali
 // was sent, until the answer comes. A peer's monitor is answered on that computer, so this one's status never applies to it.
 const TURN = new Map();
 function targetInfo(t) {
+  if (isRelayT(t)) return { status: "", alive: true, known: true };
   if (isSettingsT(t)) { const o = (S && S.orchestrator) || {}, busy = o.status === "working" || o.status === "starting"; return { status: busy && (!TURN.has(t) || PQ.of.has(t)) ? "idle" : o.status || "", alive: true, known: true }; }
   if (t === MAIN || isFixedT(t) || isMailT(t)) { const o = (S && S.orchestrator) || {}; return { status: o.status || "", alive: true, known: true }; }
   if (isProjT(t)) { const o = (S && S.orchestrator) || {}, known = projTargets().includes(t); return { status: o.status || "", alive: known || !S, known }; }
