@@ -6,10 +6,10 @@
 .mt-filter { flex: 0 1 220px; min-width: 160px; }
 .mt-card { display: flex; flex-direction: column; gap: var(--sp-4); scroll-margin-top: 12px; }
 .mt-use-list { display: flex; flex-direction: column; }
-.mt-use-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-05) 10px; padding: var(--sp-15) 0; border-top: 1px solid var(--line); }
+.mt-use-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-05) var(--sp-2); padding: var(--sp-15) 0; border-top: 1px solid var(--line); }
 .mt-use-row:first-child { border-top: 0; }
 .mt-use-tx { flex: 1 1 100%; display: flex; flex-direction: column; min-width: 0; }
-.mt-use-rest { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: var(--sp-05) 10px; }
+.mt-use-rest { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: var(--sp-05) var(--sp-2); }
 .mt-use-m { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .mt-use-row .tag { flex: 0 1 auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mt-use-act { flex: none; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--fg-2); }
@@ -41,12 +41,12 @@
 .mt-foot { margin-top: calc(var(--sp-15) * -1); }
 @media (max-width: 640px) { .mt-model, .mt-eff { max-width: none; } .mt-filter { flex-basis: 100%; } }
 .fb-list { display: flex; flex-direction: column; gap: var(--sp-15); margin: 0; padding: 0; list-style: none; }
-.fb-item { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 10px var(--sp-2) 10px 10px; border-radius: 12px; background: var(--layer); color: var(--fg); touch-action: none; user-select: none; }
+.fb-item { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3); border-radius: 12px; background: var(--layer); color: var(--fg); touch-action: none; user-select: none; }
 .fb-item[data-i], .fb-item.base { cursor: pointer; }
 .fb-item[data-i]:hover { background: var(--hover); }
 .fb-item.open { outline: 2px solid var(--accent); outline-offset: -2px; }
-.fbe { display: flex; flex-direction: column; gap: var(--sp-3); margin: calc(var(--sp-05) * -1) 0 var(--sp-1); padding: 14px; border-radius: 12px; background: var(--layer); }
-.fbe-grid, .fbe-cap { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fbe { display: flex; flex-direction: column; gap: var(--sp-3); margin: calc(var(--sp-05) * -1) 0 var(--sp-1); padding: var(--sp-4); border-radius: 12px; background: var(--layer); }
+.fbe-grid, .fbe-cap { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
 .fbe-cap > .tf:first-child { grid-column: 1 / -1; }
 .fbe-key { display: flex; align-items: center; gap: var(--sp-2); margin-top: calc(var(--sp-15) * -1); }
 .fbe-key .sup.warn { color: var(--warn); }
@@ -54,7 +54,7 @@
 .fbe-act .sp { flex: 1; }
 @media (max-width: 560px) { .fbe-grid, .fbe-cap { grid-template-columns: 1fr; } }
 .fb-item.off .nm, .fb-item.off .fb-n { opacity: .5; }
-.fb-sw { min-width: 44px; height: 28px; padding: 0 10px; border-radius: 14px; border: 0; font-size: 12px; background: var(--hover); color: var(--fg-3); cursor: pointer; }
+.fb-sw { min-width: 44px; height: 28px; padding: 0 var(--sp-3); border-radius: 14px; border: 0; font-size: 12px; background: var(--hover); color: var(--fg-3); cursor: pointer; }
 .fb-sw { transition: background-color var(--m-fast) var(--m-ease), color var(--m-fast) var(--m-ease); }
 .fb-acts .fb-sw { background: var(--layer); }
 .fb-acts .fb-sw[aria-checked="true"] { background: var(--accent); color: var(--on-accent); }
@@ -85,7 +85,7 @@
 .fb-acts .ic { width: 15px; height: 15px; }
 .fb-acts .up .ic { transform: rotate(180deg); }
 @media (pointer: coarse) { .fb-acts button { width: 34px; height: 34px; } }
-.fb-add { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-15); height: var(--btn-h-sm); padding: 0 14px 0 10px; border: 1px dashed var(--line-2); border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; }
+.fb-add { align-self: flex-start; display: inline-flex; align-items: center; gap: var(--sp-15); height: var(--btn-h-sm); padding: 0 var(--sp-3) 0 var(--sp-2); border: 1px dashed var(--line-2); border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font-size: 13px; font-weight: 500; }
 .fb-add:hover:not(:disabled) { background: var(--hover); color: var(--fg); }
 .fb-add:disabled { opacity: .5; }
 
@@ -111,7 +111,7 @@
 .menu.msheet .mi { min-height: var(--menu-h-sheet); }
 .mi { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: var(--menu-h); padding: var(--menu-py) var(--menu-px); border: 0; border-radius: var(--r-ctl); background: transparent; text-align: left; font-size: 13px; line-height: 20px; }
 .mi:hover, .mi:focus-visible { background: var(--hover); outline: 0; }
-.mi.ind { padding-left: 28px; }
+.mi.ind { padding-left: calc(var(--menu-px) + var(--sp-5)); }
 .mi .ck { flex: none; width: 14px; height: 14px; color: var(--accent); }
 .mi .ml { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: var(--sp-2); overflow-wrap: anywhere; }
 .mi .ml small { flex: none; margin-left: auto; color: var(--fg-3); font-size: 11px; line-height: 16px; }
@@ -163,7 +163,7 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .pal-i .pd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .pal-i.cmd .nm { font: 500 13px/20px var(--mono); }
 .pal-out { padding: var(--sp-1) var(--sp-4) var(--sp-4); max-height: 360px; overflow: auto; }
-.pal-res { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.pal-res { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .pal-rh { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 .pal-rt { flex: 1; min-width: 0; font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
 .pal-res .list { background: var(--layer); box-shadow: none; }
@@ -181,8 +181,8 @@ dialog.pal { width: min(560px, calc(100vw - 24px)); margin: 12vh auto auto; padd
 .snack { position: fixed; z-index: 2000; left: 0; right: 0; margin: 0 auto; bottom: 16px; width: max-content; max-width: calc(100vw - 24px); padding: var(--sp-2) var(--sp-3); border-radius: 8px; background: var(--fg); color: var(--bg); font-size: 13px; line-height: 20px; overflow-wrap: anywhere; }
 /* a refusal or failure stays calm (owner 2026-10-20: "빨간색 글자 나오면 놀란다 사람들"): the usual snackbar with a small amber dot */
 /* A new shell waits for a tap: a bar across the top that pushes the app down (body:has), so it never covers a screen's own controls */
-.shell-chip { position: fixed; z-index: 1999; inset: 0 0 auto 0; padding: calc(var(--sp-2) + env(safe-area-inset-top, 0px)) 14px var(--sp-2); border: 0; border-radius: 0; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 13px; line-height: 18px; font-weight: 600; text-align: center; cursor: pointer; }
-body:has(.shell-chip) .app { padding-top: 0; margin-top: calc(34px + env(safe-area-inset-top, 0px)); height: calc(100dvh - 34px - env(safe-area-inset-top, 0px)); }
+.shell-chip { position: fixed; z-index: 1999; inset: 0 0 auto 0; padding: calc(var(--sp-2) + env(safe-area-inset-top, 0px)) var(--sp-4) var(--sp-2); border: 0; border-radius: 0; background: var(--accent); color: var(--on-accent); font: inherit; font-size: 13px; line-height: 18px; font-weight: 600; text-align: center; cursor: pointer; }
+body:has(.shell-chip) .app { --chip-h: 34px; padding-top: 0; margin-top: calc(var(--chip-h) + env(safe-area-inset-top, 0px)); height: calc(100dvh - var(--chip-h) - env(safe-area-inset-top, 0px)); }
 .upd-bar { position: fixed; z-index: 1998; inset: 0 0 auto 0; display: flex; align-items: center; justify-content: center; gap: var(--sp-2); padding: calc(var(--sp-15) + env(safe-area-inset-top, 0px)) var(--sp-10) var(--sp-15); background: var(--accent); color: var(--on-accent); font-size: 13px; line-height: 20px; text-align: center; }
 .upd-bar .ub-tx { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; overflow-wrap: anywhere; }
 .upd-bar span.ub-tx { cursor: default; }
@@ -198,7 +198,7 @@ body:has(.upd-bar) .app { padding-top: 0; margin-top: var(--ubh); height: calc(1
 /* floating notices (alert / worklog / lane report events): compact cards top-right; each leaves ~4s after the owner
    has actually seen it (tab visible and window focused), hover pauses, a dismissed one never comes back */
 .ntf-box { position: fixed; z-index: 1900; top: 16px; right: 16px; display: flex; flex-direction: column; gap: var(--sp-2); width: min(344px, calc(100vw - 32px)); pointer-events: none; }
-.ntf { pointer-events: auto; display: flex; align-items: flex-start; gap: 10px; padding: 10px var(--sp-15) 10px var(--sp-3); border-radius: var(--r-menu); background: var(--pop); color: var(--fg); box-shadow: 0 0 0 1px rgb(0 0 0 / .04), 0 1px 2px rgb(0 0 0 / .06), 0 8px 24px -4px rgb(0 0 0 / .12), 0 20px 40px -12px rgb(0 0 0 / .10); cursor: pointer; transform-origin: 100% 0; transition: transform var(--m-base) var(--m-ease), opacity var(--m-base) var(--m-ease), background var(--m-fast) var(--m-ease); }
+.ntf { pointer-events: auto; display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-15) var(--sp-2) var(--sp-3); border-radius: var(--r-menu); background: var(--pop); color: var(--fg); box-shadow: 0 0 0 1px rgb(0 0 0 / .04), 0 1px 2px rgb(0 0 0 / .06), 0 8px 24px -4px rgb(0 0 0 / .12), 0 20px 40px -12px rgb(0 0 0 / .10); cursor: pointer; transform-origin: 100% 0; transition: transform var(--m-base) var(--m-ease), opacity var(--m-base) var(--m-ease), background var(--m-fast) var(--m-ease); }
 :root[data-theme="dark"] .ntf { background: #2a2a30; box-shadow: inset 0 1px 0 rgb(255 255 255 / .07), 0 0 0 1px rgb(255 255 255 / .06), 0 2px 4px rgb(0 0 0 / .3), 0 12px 32px -4px rgb(0 0 0 / .55); }
 /* stacked cards step back a little, so the newest reads as the top layer */
 .ntf + .ntf { transform: scale(.985); opacity: .97; }
@@ -207,7 +207,7 @@ body:has(.upd-bar) .app { padding-top: 0; margin-top: var(--ubh); height: calc(1
 .ntf.out { opacity: 0; transform: translateX(12px) scale(.98); pointer-events: none; transition-duration: var(--m-fast); }
 .ntf:hover { background: var(--card-hover); }
 :root[data-theme="dark"] .ntf:hover { background: #303037; }
-.ntf > .dot { flex: none; margin-top: 7px; }
+.ntf > .dot { flex: none; margin-top: var(--sp-15); }
 .ntf .tx { flex: 1; min-width: 0; }
 .ntf .hd { display: flex; align-items: baseline; gap: var(--sp-15); min-width: 0; font: 600 13px/20px var(--font); }
 .ntf .hd .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -237,8 +237,8 @@ body:has(.upd-bar) .app { padding-top: 0; margin-top: var(--ubh); height: calc(1
 .tsep[hidden] { display: none; }
 .tchip.tmore .ic { width: 14px; height: 14px; }
 .nb.warn { background: var(--warn); }
-.nb { flex: none; min-width: 16px; height: 16px; padding: 0 5px; border-radius: 8px; background: var(--accent); color: var(--bg); font: 600 11px/16px var(--font); text-align: center; }
-.sb { flex: none; height: 16px; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font: 500 10.5px/16px var(--font); white-space: nowrap; }
+.nb { flex: none; min-width: 16px; height: 16px; padding: 0 var(--sp-15); border-radius: 8px; background: var(--accent); color: var(--bg); font: 600 11px/16px var(--font); text-align: center; }
+.sb { flex: none; height: 16px; padding: 0 var(--sp-15); border-radius: 4px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font: 500 10.5px/16px var(--font); white-space: nowrap; }
 .sb.warn { background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); }
 .tdrop { display: none; flex: 1 1 120px; width: auto; min-width: 0; }
 @media (max-width: 639px) { .thead.lanev .tdrop.sel { max-width: 112px; } }
@@ -266,13 +266,13 @@ body:has(.upd-bar) .app { padding-top: 0; margin-top: var(--ubh); height: calc(1
 .chatbox { position: relative; flex: 1; min-height: 0; }
 .timeline { height: 100%; overflow-y: auto; overflow-x: hidden; padding-inline: var(--sp-2); margin-inline: calc(var(--sp-2) * -1); }   /* the 8px gutter (padding, given back as margin) is room for the notice highlight's ring and bar: overflow-x hidden would clip them at the column edge (09-notices.css) */
 .tl-in { display: flex; flex-direction: column; gap: var(--sp-4); width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto; padding: var(--sp-2) 0 var(--sp-8); }
-@media (max-width: 639px) { .tl-in { padding: 0 0 var(--sp-6); } .tl-in > .bm { padding: 14px var(--sp-4); } }
+@media (max-width: 639px) { .tl-in { padding: 0 0 var(--sp-6); } .tl-in > .bm { padding: var(--sp-3) var(--sp-4); } }
 /* a clamped text that has a 더 보기 / 펼치기 button fades out over its last two lines instead of a hard cut (owner 2026-11-04); open removes .clamp, so the fade goes with it.
    .ub.clamp here, .rq-body.clamp and .rq-orig.clamp in 15-reply-card.css use the same gradient with their own --fade (the height the fade covers). */
 .ub.clamp { --fade: calc(2 * var(--lh-chat)); padding-bottom: 0; display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent); }
 .ubm { align-self: flex-end; height: 24px; padding: 0 var(--sp-1); border: 0; background: none; color: var(--fg-2); font-size: 12.5px; font-weight: 500; }
 .ubm:hover { color: var(--fg); }
-.lw-s { display: flex; flex-direction: column; padding: 0 var(--sp-2) var(--sp-15) 52px; }
+.lw-s { display: flex; flex-direction: column; padding: 0 var(--sp-2) var(--sp-15) var(--lead-ind); }
 .lw-s:empty { display: none; }
 .lw-r { display: flex; align-items: center; gap: var(--sp-2); min-height: 30px; padding: 0 var(--sp-2); border-radius: 8px; box-shadow: inset 2px 0 0 var(--line); font-size: 13px; }
 .lw-r:hover { background: var(--layer); }
@@ -284,12 +284,12 @@ details.work.bad:not(.live) .wdot { display: block; background: var(--err); }
 .mt { font-size: 12px; line-height: 16px; color: var(--fg-2); }
 .mt .mn { font-weight: 600; }
 /* a status pill in a message header (진행 중/완료/질문/실패) is exactly the 16px text line, so it neither sinks below the name and time nor makes the line taller */
-.mt > .tag { height: 16px; padding: 0 5px; margin-left: var(--sp-15); vertical-align: top; }
+.mt > .tag { height: 16px; padding: 0 var(--sp-15); margin-left: var(--sp-15); vertical-align: top; }
 .um { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); max-width: 80%; min-width: 0; margin-top: var(--sp-4); }
 .um:first-child { margin-top: 0; }
-.um.cont { margin-top: -10px; }
+.um.cont { margin-top: calc(var(--sp-2) * -1); }
 /* the owner's bubble is a small-radius box, not a pill */
-.ub { padding: 10px var(--sp-4); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--fg) 7%, var(--bg)); font-size: var(--fs-chat); line-height: var(--lh-chat); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ub { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--fg) 7%, var(--bg)); font-size: var(--fs-chat); line-height: var(--lh-chat); white-space: pre-wrap; overflow-wrap: anywhere; }
 .cont > .mt { display: none; }
 .cont > .mt.dv { display: block; } .mt.dv-fail { color: var(--err); }
 .bm.cont { margin-top: calc(var(--sp-1) * -1); }
@@ -297,10 +297,10 @@ details.work.bad:not(.live) .wdot { display: block; background: var(--err); }
 .bm .mt { margin-bottom: var(--sp-1); }
 /* chat reads like Claude: one calm page (the log's gray), replies as plain text, owner bubbles a shade darker,
    alerts and opened work folds on white cards, the composer a floating white card with its chips inside */
-.tl-in > .bm.rep, .tl-in > .bm.alert { max-width: none; padding: 14px 18px var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+.tl-in > .bm.rep, .tl-in > .bm.alert { max-width: none; padding: var(--sp-4); border-radius: var(--r-card); background: var(--card); }
 .bm .more pre { background: var(--layer) !important; }
-details.work[open] { padding: var(--sp-15) 10px var(--sp-2); border-radius: var(--r-card); background: var(--card); }
-.sendrow { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ta ta" "bar send"; align-items: center; gap: var(--sp-15) var(--sp-2); padding: 14px var(--sp-3) 10px 18px !important; border: 1px solid var(--line) !important; border-radius: 22px !important; background: var(--card) !important; }
+details.work[open] { padding: var(--sp-15) var(--sp-2) var(--sp-2); border-radius: var(--r-card); background: var(--card); }
+.sendrow { display: grid !important; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "ta ta" "bar send"; align-items: center; gap: var(--sp-15) var(--sp-2); padding: var(--sp-3) var(--sp-3) var(--sp-2) var(--sp-4) !important; border: 1px solid var(--line) !important; border-radius: 22px !important; background: var(--card) !important; }
 .sendrow:focus-within { border-color: var(--line-2) !important; }
 /* "ulw" in the message (14-slash-commands.js autosize): a 2px blue → violet → pink edge, padding 1px less so nothing inside moves */
 /* the keyword itself: the backdrop (14-slash-commands.js paintUlw) sits in the textarea's grid cell under it; its text is invisible, only the
@@ -309,10 +309,10 @@ details.work[open] { padding: var(--sp-15) 10px var(--sp-2); border-radius: var(
 .sendrow .ta-hl[hidden] { display: none; }
 .sendrow .ta-hl ~ textarea { position: relative; z-index: 1; }
 .ta-hl .ulw-kw { color: transparent; background: linear-gradient(90deg, #5b9fe3, #9d8fe0, #e98aa6) bottom / 100% 2px no-repeat; border-radius: 2px; box-shadow: 0 -0.9em 0 0 color-mix(in srgb, #9d8fe0 14%, transparent) inset; }
-.sendrow.ulw { border: 2px solid transparent !important; padding: 13px 11px 9px 17px !important; background: linear-gradient(var(--card), var(--card)) padding-box, linear-gradient(90deg, #5b9fe3, #9d8fe0 45%, #d98bc9 75%, #e98aa6) border-box !important; }
+.sendrow.ulw { border: 2px solid transparent !important; padding: 11px 11px 7px 15px !important; /* nudge: the 2px gradient border takes 1px more than the 1px border of .sendrow, so every side is 1px less */ background: linear-gradient(var(--card), var(--card)) padding-box, linear-gradient(90deg, #5b9fe3, #9d8fe0 45%, #d98bc9 75%, #e98aa6) border-box !important; }
 .sendrow textarea { grid-area: ta; }
 .sendrow > .ib { grid-area: send; }
-.sendrow > .cbar { grid-area: bar; margin: 0 0 0 -10px; padding: 0; min-height: 26px; }
+.sendrow > .cbar { grid-area: bar; margin: 0 0 0 calc(var(--sp-2) * -1); padding: 0; min-height: 26px; }
 /* Claude-style edges: the transcript (chat and log) fades into the page under the header and above the composer while
    there is more to scroll that way. Overlays only - no mask, shadow or layout change. */
 .chatbox, .termbox { position: relative; }
@@ -327,7 +327,7 @@ details.work[open] { padding: var(--sp-15) 10px var(--sp-2); border-radius: var(
 .sendrow.has-att { grid-template-areas: "at at" "ta ta" "bar send"; }
 .atray { grid-area: at; display: flex; gap: var(--sp-2); overflow-x: auto; scrollbar-width: none; margin: calc(var(--sp-05) * -1) 0 var(--sp-1) calc(var(--sp-15) * -1); padding: var(--sp-05); }
 .atray::-webkit-scrollbar { display: none; }
-.fatt { position: relative; flex: none; display: flex; align-items: center; gap: 10px; height: 56px; max-width: 220px; padding: 0 30px 0 10px; border-radius: 12px; background: var(--layer); color: var(--fg); }
+.fatt { --fatt-x: 20px; position: relative; flex: none; display: flex; align-items: center; gap: var(--sp-2); height: 56px; max-width: 220px; padding: 0 calc(var(--sp-1) + var(--fatt-x) + var(--sp-15)) 0 var(--sp-3); border-radius: 12px; background: var(--layer); color: var(--fg); }
 .fatt.img { width: 56px; padding: 0; overflow: hidden; }
 .fatt.img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .fatt .fi-ic { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--card); color: var(--fg-2); }
@@ -340,14 +340,14 @@ details.work[open] { padding: var(--sp-15) 10px var(--sp-2); border-radius: var(
 .fatt-n { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-1); }
 .tag.img-no { flex: none; margin-top: var(--sp-1); }
 .fatt-n > .tag.img-no { margin-top: 0; }
-.fatt .ax { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: rgb(0 0 0 / .55); color: #fff; }
+.fatt .ax { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: var(--fatt-x); height: var(--fatt-x); padding: 0; border: 0; border-radius: 10px; background: rgb(0 0 0 / .55); color: #fff; }
 .fatt .ax svg { width: 12px; height: 12px; }
 .fatt:not(.img) .ax { background: transparent; color: var(--fg-3); top: 18px; }
 #c-attach { width: 30px; padding: 0; justify-content: center; }
 #c-attach svg { width: 18px; height: 18px; }
 .composer.dropping .sendrow { background: color-mix(in srgb, var(--accent) 7%, var(--card)) !important; }
 .mfiles { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-15); max-width: 100%; }
-.bm .mfiles { justify-content: flex-start; margin-top: 10px; }
+.bm .mfiles { justify-content: flex-start; margin-top: var(--sp-2); }
 .lg-x .mfiles, .a-text .mfiles { justify-content: flex-start; margin-top: var(--sp-2); }
 .mfiles .thumb { display: block; padding: 0; border: 0; border-radius: 14px; overflow: hidden; background: var(--layer); cursor: zoom-in; }
 .mfiles .thumb img { display: block; max-width: min(240px, 60vw); max-height: 200px; object-fit: cover; }
