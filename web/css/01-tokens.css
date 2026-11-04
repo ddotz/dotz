@@ -9,7 +9,7 @@
   --card: #ffffff; --pop: #ffffff;
   /* fields: a filled surface with no border, a line only on focus or error. --ff-fill is the fill for the surface the field sits on (see .card below) */
   --ff-fill: var(--card); --ff-pop: var(--layer);
-  --ff-ring: inset 0 0 0 1.5px var(--accent); --ff-ring-err: inset 0 0 0 1.5px var(--err);
+  --ff-ring: inset 0 0 0 1.5px var(--accent);
   --layer: #f2f4f6; --hover: #e9ecf0; --active: #e5e8eb; --track: #e5e8eb;
   --card-hover: #f9fafb;
   /* a selected or pressed row inside a card: never the page's own grey (--bg/--layer), so a first or last row keeps the card's edge */
