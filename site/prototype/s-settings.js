@@ -10,7 +10,7 @@
 
   S("settings", "설정", "설정", "설정 목록", () => `${sec("모델")}<div class="list">${link("settings/providers", "bolt", "공급자와 계정", "구독 1개 · API 키 1개")}${link("settings/models", "list", "모델 순서", "dotz AI · 한도에 걸리면 다음 모델로")}${link("settings/accounts", "users", "계정", "개인 계정 사용 중")}${link("settings/usage", "clock", "사용량과 월 한도", "5시간 한도 62%")}</div>
     ${sec("연결")}<div class="list">${link("settings/messengers", "chat", "메신저", "Discord 연결됨 · Slack · JANDI · Telegram")}${link("settings/webaccess", "globe", "웹 접속", "Tailscale")}${link("settings/devices", "phone", "연결된 기기", "기기 2대")}${link("peers", "laptop", "컴퓨터", "맥북 · 맥미니")}</div>
-    ${sec("앱")}<div class="list">${link("settings/notifications", "bell", "앱과 알림", "푸시 알림 켬")}${link("apps", "grid", "앱 관리", "내 앱 2개")}${link("settings/display", "sliders", "표시", "테마 · 문체")}</div>
+    ${sec("앱")}<div class="list">${link("settings/notifications", "bell", "앱과 알림", "푸시 알림 켬")}${link("apps", "grid", "앱 관리", "내 앱 2개")}${link("intro", "bolt", "화면 안내 다시 보기", "화면 설명과 단축키")}${link("settings/display", "sliders", "표시", "테마 · 문체")}</div>
     ${sec("시스템")}<div class="list">${link("settings/update", "download", "업데이트", "새 버전 0.15.0", '<span class="tag pri">새 버전</span>')}${link("settings/runtime", "terminal", "실행 하네스", "OmO")}${link("settings/harness", "shield", "구성", "기능 지도")}</div>` );
 
   const providers = [["Anthropic 구독", "dotz AI · 구독 로그인", "ok", "연결됨", [["5시간 한도", 62], ["7일 한도", 38]]], ["API 키", "dotz AI · API 키", "ok", "연결됨", [["월 한도", 41]]], ["다른 공급자", "로그인이 필요해요", "warn", "로그인", []]];

@@ -1,0 +1,65 @@
+/* 웹 온보딩 시제품 (docs/web-onboarding.md). 간격은 web/DESIGN.md의 --sp-* 단계예요. */
+:root { --r-sheet: 20px; --sp-05: 2px; --sp-1: 4px; --sp-15: 6px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px; --sp-12: 48px; }
+.ob-full .side, .ob-full .appbar, .ob-full .tabbar { display: none; }
+.ob-full .app { display: block; }
+.ob-full .main { height: 100%; }
+.ob-full .views { height: 100%; overflow: hidden; }
+.ob-full .view { max-width: none; height: 100%; padding: 0; }
+.ob { display: grid; grid-template-columns: 232px minmax(0, 1fr); height: 100%; }
+.ob-rail { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-3); }
+.ob-rail .brand { cursor: default; }
+.ob-rail .brand:hover { background: transparent; }
+.ob-rail .ni .dot { margin-inline: var(--sp-1); }
+.ob-rail .ni .dot:not(.ok):not(.pri) { background: var(--line-2); }
+.ob-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.ob-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.ob-top { display: none; }
+.ob-col { max-width: 560px; margin: 0 auto; padding: var(--sp-12) var(--sp-6) var(--sp-8); }
+.ob-col h1 { font: 700 22px/30px var(--font); letter-spacing: -.02em; text-wrap: balance; }
+.ob-sup { margin-top: var(--sp-2); color: var(--fg-2); font-size: 14px; line-height: 22px; text-wrap: balance; }
+.ob-col [data-ob-body] { margin-top: var(--sp-6); }
+.ob-col .sec:first-child { margin-top: 0; }
+.ob-col .field { height: 44px; border: 0; background: var(--card); }
+.ob-col .field:focus { outline: 1.5px solid var(--accent); outline-offset: -1.5px; }
+.ob-col .lbl { margin: var(--sp-4) 0 var(--sp-15); color: var(--fg-2); font-weight: 500; }
+.ob-col .lbl:first-child { margin-top: 0; }
+.ob-col .note { margin: var(--sp-15) var(--sp-1) 0; }
+.ob-err { color: var(--err); }
+.ob-gap { margin-top: var(--sp-3); }
+.ob-pick { text-align: left; }
+.ob-pick[disabled] { opacity: .5; cursor: default; }
+.ob-pick .end { color: var(--accent); }
+.ob-pick.on .hd { font-weight: 600; }
+.ob-two { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+.ob-more { margin-top: var(--sp-4); }
+.ob-more summary { padding: var(--sp-2) var(--sp-1); color: var(--fg-2); font-size: 14px; font-weight: 500; cursor: pointer; }
+.ob-ft { flex: none; padding: var(--sp-3) var(--sp-6) var(--sp-4); }
+.ob-ft-in { display: flex; align-items: center; gap: var(--sp-2); max-width: 512px; margin: 0 auto; }
+.ob-term { overflow-x: auto; margin-top: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-ctl); background: var(--tb); color: var(--tf); font: 13px/20px var(--mono); }
+.ob-term b { color: var(--tac); font-weight: 500; }
+.ob-dead { display: flex; align-items: center; justify-content: center; }
+.ob-dead .brand { padding: 0; margin-bottom: var(--sp-4); cursor: default; }
+.ob-dead .brand:hover { background: transparent; }
+.ob-count { margin-bottom: var(--sp-15); }
+.ob-keys { display: grid; grid-template-columns: 1fr; margin-top: var(--sp-3); }
+.ob-key { display: flex; align-items: center; gap: var(--sp-3); min-height: 36px; font-size: 14px; color: var(--fg-2); }
+.ob-key kbd { flex: none; min-width: 84px; text-align: center; }
+.ob-spot { position: absolute; border-radius: var(--r-ctl); box-shadow: 0 0 0 200vmax var(--scrim); pointer-events: auto; }
+.ob-spot.none { inset: 0; border-radius: 0; box-shadow: none; background: var(--scrim); }
+.ob-tip { position: absolute; width: 340px; padding: var(--sp-5); border-radius: var(--r-sheet); background: var(--pop, var(--card)); box-shadow: var(--float); }
+.ob-tip.mid { left: 50%; top: 50%; width: min(480px, calc(100% - 24px)); transform: translate(-50%, -50%); }
+.ob-tip h2 { margin-top: var(--sp-3); font: 700 20px/28px var(--font); text-wrap: balance; }
+.ob-tip-ft { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-5); }
+.ob-tip-ft .btn { height: 36px; }
+@media (max-width: 899px) {
+  .ob { display: flex; flex-direction: column; }
+  .ob-rail { display: none; }
+  .ob-top { display: flex; flex-direction: column; gap: var(--sp-15); padding: var(--sp-3) var(--sp-4) 0; }
+  .ob-col { padding: var(--sp-4) var(--sp-4) var(--sp-5); }
+  .ob-col h1 { font-size: 20px; line-height: 28px; }
+  .ob-col .field { font-size: 16px; }
+  .ob-ft { padding: var(--sp-2) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom)); background: var(--card); }
+  .ob-ft-in { max-width: none; }
+  .ob-tip:not(.mid) { left: var(--sp-3); right: var(--sp-3); bottom: 72px; width: auto; }
+}
+@media (min-width: 640px) { .ob-in { width: min(480px, calc(100% - 24px)); } }
