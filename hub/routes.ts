@@ -1122,9 +1122,9 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				void progress(target, "progress", String(b.text ?? ""), b.reply_to).catch(e => log(`early text not shown on the progress line: ${(e as Error).message}`));
 				return json({ delivered: true, held: true, note: "held: it is shown on the progress line now and goes out together with your final answer for this request; do not send it again" });
 			}
-			sender.sent(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined);
+			const answers = sender.sent(target, String(b.text ?? ""), b.reply_to ? String(b.reply_to) : undefined);
 			try {
-				return json(await out(target, String(b.text ?? ""), b.reply_to));
+				return json(await out(target, String(b.text ?? ""), b.reply_to ?? answers));
 			} catch (error) {
 				return json({ delivered: false, reason: (error as Error).message }, 502);
 			}

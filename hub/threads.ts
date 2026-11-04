@@ -78,17 +78,17 @@ export function isLate(replyTo: string | undefined, newest: string | undefined, 
 
 /**
  * The request an orchestrator post to `target` that names none answers, when that request is late: the running turn's prompt
- * there, else the oldest deferred one (a worker's result woke the run). Undefined when nothing is waiting there or it is not late.
+ * there, nothing else. A post of any other run (a lane report's turn, a worker's run past its own answer) has no message of its own:
+ * taking the oldest deferred request there hung it on an unrelated message and closed that message unanswered (2026-11-05 01:08, 01:25, 01:33 KST).
  */
 export function lateRequestId(
 	target: string,
 	current: { target?: string; replyTo?: string; done?: boolean } | undefined,
-	deferred: { target: string; replyTo?: string }[],
 	newest: string | undefined,
 	askedAt: (id: string) => number | undefined,
 	now = Date.now(),
 ): string | undefined {
-	const id = current && !current.done && current.target === target ? current.replyTo : deferred.find(d => d.target === target)?.replyTo;
+	const id = current && !current.done && current.target === target ? current.replyTo : undefined;
 	return id && isLate(id, newest, askedAt(id), now) ? id : undefined;
 }
 
