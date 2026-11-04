@@ -472,7 +472,6 @@ setInterval(() => {
 
 /* ---------- context ---------- */
 let C = null, ctxTimer;
-const ctxTokens = name => ((C && C.processes) || []).find(p => p.name === name)?.tokens ?? 0;
 const ctxTone = pct => pct != null && pct >= 60 ? "warn" : "";   // context running out needs the owner: orange, never red (owner 2026-10-28)
 function compactState(c) {
   if (!c || !c.state) return null;

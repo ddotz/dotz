@@ -1,6 +1,5 @@
 /* ---------- 세션: a session's last report and chat link, and the 프로젝트 list below (the 세션 tab is gone: running sessions are rows of 채팅 and a card on 홈) ---------- */
 const LP = {};                  // lane name -> { acts: oldest-first {ts, text} lines in Korean, rev, loaded, loading, failedAt }
-const LANE_TAIL = 40;           // activity rows read per session
 const LANE_ACTS = 12;           // lines kept per session
 const laneKey = a => `${a.ts}|${a.type}|${a.call_id ?? ""}|${(a.text ?? "").length}|${(a.text ?? "").slice(0, 40)}`;
 function laneToolLabel(a) {
@@ -16,7 +15,6 @@ function laneToolLabel(a) {
 }
 // A session's last report or answer (not a progress note), from the conversation events this page has seen.
 const isLaneReport = e => e.kind === "lane_report" || (e.kind === "out" && !e.update_key && typeof e.source === "string" && e.source.startsWith("lane:"));
-const laneReport = name => ts(`lane:${name}`).msgs.findLast(isLaneReport) || null;
 // A finished session's result: its report nearest to `at` (a report row's time is the lane's, a moment before the event), else its last one; with none, the end of its conversation and the jump's toast.
 async function laneResultGo(name, at) {
   pmSheetsClose();
@@ -27,7 +25,6 @@ async function laneResultGo(name, at) {
   const rep = want ? reps.reduce((best, e) => (!best || gap(e) < gap(best) ? e : best), null) : reps.at(-1);
   ntJump({ src: t, at: rep ? rep.ts : at || new Date().toISOString() });
 }
-const openLaneChat = name => { setTarget(`lane:${name}`); go("chat"); };
 // The main assistant's background work (S.work): running first, then what ended in the last hour.
 // Tap on finished work: the message holding its result (hub/bgwork.ts result_at), flashed; with none, the conversation at the time it ended and the jump's short toast.
 // Tap on work still going: the conversation that asked for it (its waiting message, flashed). Message unknown or not drawn: the work's own detail, never another message.
@@ -64,24 +61,6 @@ function laneActKo(a) {
     default: return "";
   }
 }
-// The newest 3 lines of a session, newest first: its reports and its own activity, same line collapsed to "… (3번)".
-function laneRecent(name) {
-  const p = LP[name], rows = p ? p.acts.slice() : [];
-  for (const e of ts(`lane:${name}`).msgs.filter(isLaneReport).slice(-3)) {
-    const { text } = parseTone(noHandoff(String(e.text ?? "")));
-    rows.push({ ts: Date.parse(e.ts) || 0, text: `보고 · ${plainKo(text) || "내용을 남겼어요"}`, report: true });
-  }
-  rows.sort((x, y) => y.ts - x.ts);
-  const said = new Set(rows.filter(r => r.report).map(r => r.text.slice(5)));
-  const out = [];
-  for (const r of rows) {
-    if (!r.report && said.has(r.text)) continue;
-    const last = out[out.length - 1];
-    if (last && last.text === r.text) { last.n++; continue; }
-    if (out.length < 3) out.push({ ...r, n: 1 });
-  }
-  return out.map(r => ({ ts: r.ts, text: r.n > 1 ? `${r.text} (${r.n}번)` : r.text, report: r.report }));
-}
 function laneRefresh(p) { p.rev++; }
 function laneIngest(p, a) {
   const k = laneKey(a);
@@ -90,19 +69,6 @@ function laneIngest(p, a) {
   if (p.seen.size > 200) p.seen = new Set([...p.seen].slice(-100));
   const text = laneActKo(a);
   if (text) { p.acts.push({ ts: Date.parse(a.ts) || Date.now(), text }); if (p.acts.length > LANE_ACTS) p.acts.shift(); }
-  laneRefresh(p);
-}
-async function laneLoad(p) {
-  p.loading = true; p.queue = [];
-  const t = `lane:${p.name}`;
-  let r, h;
-  try { [r, h] = await Promise.all([api(`/api/activity?source=${enc(t)}&limit=${LANE_TAIL}`), api(`/api/history?target=${enc(t)}&limit=30`).catch(() => null)]); }
-  catch { p.loading = false; p.failedAt = Date.now(); return; }
-  if (h) { const st = ts(t); for (const e of h.events || []) { const k = msgKey(e); if (!st.mk.has(k)) { st.mk.add(k); st.msgs.push(e); } } st.msgs.sort(byTs); }
-  p.seen = new Set(); p.acts = [];
-  for (const a of r.items || []) laneIngest(p, a);
-  for (const a of p.queue) laneIngest(p, a);
-  p.queue = []; p.loading = false; p.loaded = true;
   laneRefresh(p);
 }
 // SSE "activity": keep every loaded session live, even while another view is open.
@@ -134,7 +100,6 @@ function prjBlurb(text) {
   const t = out.join(". ");
   return t.length > 90 ? `${out[0].length <= 90 ? out[0] : out[0].slice(0, 88)}…` : t;
 }
-const prjMonitors = p => Array.isArray(p.monitors) ? p.monitors.length : typeof p.monitors === "number" ? p.monitors : null;
 const prjChat = p => p.key.startsWith("ch:") ? p.key : p.channel ? `ch:${p.channel.id}` : "";
 const prjPaused = p => !!(p.paused || (p.record && p.record.paused));
 function prjLoad() {

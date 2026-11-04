@@ -42,6 +42,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 
 ## Background jobs
 
+- code health gate: `hub/engineering-rules.ts` (detectors), `hub/engineering-rules.test.ts` (ceilings, `docs/engineering-standards.md`)
 - `hub/watch.ts`, `hub/monitors.ts`, `hub/schedule.ts`, `hub/reflect.ts`, `hub/token-audit.ts`, `hub/session-sources.ts`, `hub/summaries.ts`, `hub/update.ts`, `hub/selfupdate.ts`, `hub/update-now.ts` (the top update bar's one tap: download and test, restart when work ends, turns after the tap held on disk and delivered after the restart), `hub/backup.ts`, `hub/zele.ts`, `hub/aside.ts`
 - harness views: `hub/harness.ts`, `hub/harnessprojects.ts`, `hub/features.ts`, `hub/featuredirs.ts`
 

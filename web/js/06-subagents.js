@@ -61,7 +61,6 @@ function subLine(src) {
   if (!n) return null;
   return el("div", { class: "subline", role: "button", tabindex: "0", onclick: ev => { ev.stopPropagation(); openSubs([src]); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openSubs([src]); } } }, el("span", { class: "dot pri" }), `서브에이전트 ${n}개 진행 중`);
 }
-function openSource(src) { setTarget(targetOfSource(src)); go("activity"); }
 function openTarget(t, view) { setTarget(t); go(isLaneT(t) && (view === "chat" || view === "activity") ? viewFor(t) : view); }
 // A switcher pick: the chat/log view follows the picked target's own choice.
 function pickTarget(t) { setTarget(t); const v = viewFor(t); if ((current === "chat" || current === "activity") && v !== current) go(v); }

@@ -182,4 +182,3 @@ export function createLocalLogin(deps: { dir: string; now?: () => number; confir
 	};
 }
 
-export type LocalLogin = ReturnType<typeof createLocalLogin>;

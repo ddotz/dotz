@@ -132,7 +132,6 @@ function laneLastFetch(name) {
 }
 
 // The 알림 / 작업내역 / 모니터링 cards: data live in 30-notices.js and 30-monitoring.js; they repaint from its live frames (homeSoon) and open the conversation or screen.
-const HOME_NOTICE = { min: { w: 3, h: 4 }, max: { w: 12, h: 10 } };
 const hcState = () => (NT.loaded ? "" : NT.failed ? "불러오지 못했어요" : "불러오는 중…");
 const hcCard = (open, ...kids) => { const c = tapCard(open, ...kids); c.classList.add("hc"); return c; };
 const hcDot = tone => el("span", { class: `nt-dot tone-${tone || "none"}`, "aria-hidden": "true" });
