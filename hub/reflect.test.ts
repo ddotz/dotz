@@ -218,3 +218,19 @@ test("the gate takes a refused line back out of the file and tells the session o
 		rmSync(paths.lessons, { force: true });
 	}
 });
+
+test("the digest counts the owner's messages, not a peer gateway's", () => {
+	const had = existsSync(paths.inbox) ? readFileSync(paths.inbox, "utf8") : undefined;
+	const at = new Date(now - 3600_000).toISOString();
+	const message = (extra: Record<string, unknown>) => `${JSON.stringify({ ts: at, kind: "message", source: "web", channel: "web", author: "ddotz@github", ...extra })}\n`;
+	const peer = message({ via: "맥북", text: "맥북: 2번 정리를 main에 올렸어요." });
+	try {
+		writeFileSync(paths.inbox, peer + message({ text: "이거 고쳐" }) + message({ via: "맥북", channel: "mail:inbox", text: "답장 초안 작성해." }));
+		expect(digest("", now)).toContain("owner messages: 2 (");
+		writeFileSync(paths.inbox, peer);
+		expect(digest("", now)).toBeUndefined();
+	} finally {
+		if (had === undefined) rmSync(paths.inbox);
+		else writeFileSync(paths.inbox, had);
+	}
+});
