@@ -81,28 +81,28 @@ test("an approval that does not come from the owner does not count", async () =>
 	expect(k.calls).toHaveLength(0);
 });
 
-test("a short affirmative reply_to the asking message approves; the same word to something else does not", async () => {
+test("a typed reply counts only in the conversation the ask went out in; a bare number or a question says nothing", async () => {
 	const d = await make();
 	ask(5, d);
-	owner(6, { text: "1", reply_to: at(4) });
+	owner(6, { text: "1" });
+	owner(7, { text: "보내도 돼?" });
 	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
-	owner(7, { text: "네 보내주세요", reply_to: at(5) });
+	owner(8, { text: "네 보내주세요", channel: "web:alert" });
 	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
-	owner(8, { text: "ㅇㅇ", reply_to: at(5) });
+	owner(9, { text: "네 보내주세요" });
 	expect(await approval(d.code, sender(fakeKmsg()))).toBe(true);
 });
 
-test("a typed affirmative without reply_to approves only when the newest asking message of that conversation holds the code", async () => {
+test("the owner's last typed word wins, in either order", async () => {
 	const d = await make();
 	ask(5, d, "web");
-	owner(6, { text: "응", channel: "web:alert" });
+	owner(6, { text: "응" });
+	owner(7, { text: "아니 보내지 마" });
 	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
-	add(paths.outbox, { ts: at(7), kind: "out", source: "orchestrator", target: "web", text: "다른 이야기예요", reply_to: null });
-	owner(8, { text: "응" });
-	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
-	add(paths.outbox, { ts: at(9), kind: "out", source: "orchestrator", target: "discord", text: draftBlock(d), reply_to: null });
-	owner(10, { text: "OK", source: "discord", channel: "discord" });
+	owner(8, { text: "ㅇㅇ" });
 	expect(await approval(d.code, sender(fakeKmsg()))).toBe(true);
+	owner(9, { text: "취소" });
+	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
 });
 
 test("an approval from before the draft existed does not count", async () => {
@@ -112,7 +112,19 @@ test("an approval from before the draft existed does not count", async () => {
 	expect(await approval(d.code, sender(fakeKmsg()))).toBe(false);
 });
 
-test("a later 보내지 않기 or 고치기 cancels the approval and drops the draft", async () => {
+test("a later 보내기 after a 보내지 않기 or 고치기 sends: the owner's last word wins", async () => {
+	for (const label of ["보내지 않기", "고치기"]) {
+		const d = await make({ chatId: `w-${label}` });
+		owner(10, pick(d, label, 3));
+		owner(11, pick(d, "보내기"));
+		const k = fakeKmsg();
+		expect(await approval(d.code, sender(k))).toBe(true);
+		expect((await sendDraft(d.code, sender(k))).ok).toBe(true);
+		expect(k.calls).toEqual([["ax-send", "스터디방", "내일 7시에 봐요"]]);
+	}
+});
+
+test("a later 보내지 않기 or 고치기 after an approval cancels it and drops the draft", async () => {
 	for (const label of ["보내지 않기", "고치기"]) {
 		const d = await make({ chatId: `c-${label}` });
 		owner(10, pick(d, "보내기"));

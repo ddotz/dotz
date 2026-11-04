@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { claimSend } from "../draft-claim.ts";
-import { draftApprovalBlock } from "../draft-approval.ts";
+import { type DraftAction, draftApprovalBlock, draftVerdict } from "../draft-approval.ts";
 import { type Confirmer, dbConfirmer, dbPreview } from "./confirm.ts";
 import { writePrivate } from "./creds.ts";
 import { draftParts } from "./draft.ts";
@@ -46,9 +46,6 @@ export const draftTextError = (text: string): string | undefined =>
 const MAX_DRAFTS = 200;
 const TAIL_BYTES = 2 * 1024 * 1024;
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-const OWNER_SOURCES = new Set(["web", "discord", "terminal"]);
-const YES = new Set(["1", "1)", "보내기", "보내", "보내요", "ㅇㅇ", "응", "네", "ok", "okay", "ㅇㅋ"]);
-const NO = new Set(["2", "2)", "3", "3)", "고치기", "보내지 않기", "보내지마", "보내지 마", "취소", "아니", "아니요", "ㄴㄴ", "no"]);
 
 const nowMs = (d: SendDeps) => (d.now ?? Date.now)();
 
@@ -117,51 +114,20 @@ function tailJsonl(file: string): Ev[] {
 	return out;
 }
 
-// Which conversation an event belongs to (the same rule as eventTarget in hub/events.ts, without its config side effects).
-function convOf(e: Ev): string {
-	const parts = [e.source, e.target, e.channel, e.lane].filter((v): v is string => typeof v === "string");
-	const lane = parts.find(v => v.startsWith("lane:"));
-	if (lane) return lane;
-	const project = parts.find(v => /^ch:\d+$/.test(v));
-	if (project) return project;
-	for (const v of [e.channel, e.target]) {
-		const m = typeof v === "string" ? /^(?:web:)?(alert|worklog)$/.exec(v) : null;
-		if (m) return m[1]!;
-	}
-	return "main";
-}
-
 const hasCode = (text: unknown, code: string) => typeof text === "string" && new RegExp(`(?<![A-Z0-9])${code}(?![A-Z0-9])`).test(text);
-const shortText = (text: unknown) => (typeof text === "string" ? text.trim().toLowerCase().replace(/[.!~。\s]+$/u, "") : "");
 const ms = (ts: string) => Date.parse(ts);
 
 type Verdict = "approved" | "cancelled" | "none";
 
-// Only the owner's own messages (web, discord, terminal) count. Any cancel after the draft was made wins over every approval.
+// A draft card has three answers: 보내기 approves, 고치기 and 보내지 않기 cancel; the other draft actions say nothing here.
+const VERDICT_OF: Record<DraftAction | "none", Verdict> = { send: "approved", edit: "cancelled", drop: "cancelled", "send-main": "none", "send-mail": "none", own: "none", none: "none" };
+
+// The same rule as every other draft (hub/draft-approval.ts draftVerdict): only the owner's own messages after the draft was made count, and
+// the owner's LAST word wins. A typed reply counts in the conversation the ask went out in, which the outbox says.
 function verdict(d: Draft, paths: KakaoPaths): Verdict {
-	const created = ms(d.created);
-	const outs = tailJsonl(paths.outbox).filter(e => e.kind === "out");
-	let approved = false;
-	let cancelled = false;
-	for (const m of tailJsonl(paths.inbox)) {
-		if (m.kind !== "message" || !OWNER_SOURCES.has(m.source) || !(ms(m.ts) > created)) continue;
-		for (const p of Array.isArray(m.picks) ? m.picks : []) {
-			if (!hasCode(p?.q, d.code)) continue;
-			if (p.label === "보내기") approved = true;
-			else if (p.label === "고치기" || p.label === "보내지 않기") cancelled = true;
-		}
-		const t = shortText(m.text);
-		const yes = YES.has(t);
-		if (!yes && !NO.has(t)) continue;
-		const answersAsk =
-			typeof m.reply_to === "string"
-				? outs.some(o => o.ts === m.reply_to && hasCode(o.text, d.code))
-				: hasCode(outs.findLast(o => ms(o.ts) < ms(m.ts) && convOf(o) === convOf(m))?.text, d.code);
-		if (!answersAsk) continue;
-		if (yes) approved = true;
-		else cancelled = true;
-	}
-	return cancelled ? "cancelled" : approved ? "approved" : "none";
+	const ask = tailJsonl(paths.outbox).findLast(o => o.kind === "out" && hasCode(o.text, d.code));
+	const conv = [ask?.channel, ask?.target].find((v): v is string => typeof v === "string" && !!v);
+	return VERDICT_OF[draftVerdict(paths.inbox, d.code, ms(d.created), conv ? { conv } : {}).verdict];
 }
 
 export async function approval(code: string, deps: SendDeps): Promise<boolean> {
