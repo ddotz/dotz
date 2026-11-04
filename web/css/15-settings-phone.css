@@ -1,16 +1,6 @@
 /* Settings sub-screens (설정, 모델·폴백, 공급자, 사용량, 컨텍스트) and the small settings dialogs (dialog.dlg.cl) on a phone.
    Scoped to those surfaces so the rest of the app keeps its compact controls. Loaded last: same-specificity rules here win. */
 @media (max-width: 639px) {
-  /* fallback chain: the step buttons stay beside the model name, the on/off switch opens the tag line under it.
-     The switch keeps a 40px target while it takes the height of a tag line: its fill stops inside a transparent border. */
-  #models .fb-item[data-i] { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; row-gap: 0; }
-  #models .fb-item[data-i] :is(.fb-body, .fb-acts) { display: contents; }
-  #models .fb-item[data-i] .fb-n { grid-area: 1 / 1; }
-  #models .fb-item[data-i] .fb-top { grid-area: 1 / 2 / auto / 4; }
-  #models .fb-item[data-i] .fb-ctl { grid-area: 1 / 4; }
-  #models .fb-item[data-i] .fb-sw { position: relative; grid-area: 2 / 2; align-self: start; margin-block: calc(-1 * var(--sp-15)); border-block: var(--sp-15) solid transparent; background-clip: padding-box; }
-  #models .fb-item[data-i] .fb-tags { grid-area: 2 / 3 / auto / 5; padding-block: var(--sp-1); }
-  #models .fb-item[data-i] .fb-usage { grid-area: 3 / 2 / auto / 5; margin-top: var(--sp-1); }
   /* editor options that do not fit side by side wrap to the next line instead of being cut with an ellipsis */
   #models .fbe .seg button { flex: 1 0 auto; padding: 0 var(--sp-3); }
   /* update: commit subjects and paths wrap */
@@ -25,8 +15,10 @@
   dialog.dlg summary { padding: var(--sp-3) 0; }
   dialog.dlg.cl .btn { min-height: 40px; }
   #settings .hs-sw::before { content: ""; position: absolute; inset: -12px -4px; }
-  #models .fb-sw { min-width: 48px; height: 40px; }
-  #models .fb-acts button { width: 40px; height: 40px; border-radius: 20px; }
+  /* a row's two controls keep a 40px target without making the row taller */
+  #models :is(.fb-sw, .fb-grip) { height: 40px; margin-block: calc(var(--sp-1) * -1); }
+  #models .fb-sw { min-width: 40px; }
+  #models .fb-grip { width: 40px; }
   #models .fb-add { height: 40px; }
   dialog.dlg.cl .dhd .dx { --dx-grow: var(--sp-2); width: 44px; height: 44px; margin: calc((var(--dx-grow) + var(--sp-05)) * -1) calc((var(--dx-grow) + var(--sp-15)) * -1) 0 auto; }
   dialog.dlg.cl .dact .btn { min-height: 44px; }
