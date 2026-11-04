@@ -64,7 +64,6 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
     <header class="appbar" id="appbar">
       <button class="ib" id="back" type="button" aria-label="뒤로" hidden></button>
       <h1 id="title">dotz</h1>
-      <button class="pchip" id="pchip" type="button" aria-haspopup="dialog" hidden></button>
       <div class="thead" id="thead" data-mode="chat" hidden></div>
       <button class="conn" id="conn" type="button" hidden>연결 끊김 · 다시 연결 중</button>
       <button class="ib" id="vtog" type="button" hidden></button>
@@ -73,7 +72,6 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
       <button class="ustrip" id="ustrip" type="button" hidden></button>
     </header>
     <div class="gban" id="gban" role="status" hidden><span class="dot" id="gban-dot"></span><span class="tx" id="gban-tx"></span><button class="x" id="gban-x" type="button" aria-label="재시작 알림 닫기">×</button></div>
-    <button class="trban" id="trban" type="button" hidden></button>
     <div class="oerr" id="oerr" role="alert" hidden><span class="dot warn"></span><span class="tx" id="oerr-tx"></span><button class="btn" id="oerr-btn" type="button">오케스트레이터 다시 시작</button></div>
     <div class="views" id="views">
       <section class="view" id="v-home" hidden><div id="home-now"></div><div id="home-cards"></div><div id="home-ended"></div></section>
@@ -93,11 +91,13 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
           <button class="btn tonal jump" id="chat-jump" type="button" aria-label="맨 아래로" title="맨 아래로" hidden></button>
         </div>
         <div class="composer" id="composer">
+          <button class="qline" id="qline" type="button" hidden></button>
           <section class="dcard" id="dcard" aria-label="답변 필요" hidden></section>
           <div class="qlist" id="queue" hidden></div>
           <div class="hintrow" id="hints" hidden></div>
           <div class="runstate" id="runstate" role="status" hidden><span class="dot" id="runstate-dot"></span><span class="rs-tx" id="runstate-tx"></span><button class="btn text rs-go" id="runstate-act" type="button" hidden></button></div>
           <div class="pausenote" id="pausenote" role="status" hidden></div>
+          <div class="relaynote" id="relaynote" role="note" hidden></div>
           <div class="runline" id="runline" hidden><span class="dot pri"></span><span id="runline-tx"></span></div>
           <form class="sendrow" id="send">
             <div class="atray" id="atray" hidden></div>
@@ -110,7 +110,7 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
               <span class="cchip cown" id="c-own" hidden></span>
               <button class="cchip" type="button" id="c-model" aria-haspopup="listbox" hidden></button>
               <button class="cchip" type="button" id="c-effort" aria-haspopup="listbox" hidden></button>
-              <span class="cchip cown" id="c-worker" hidden></span>
+              <button class="cchip cown" type="button" id="c-worker" hidden></button>
               <button class="cchip" type="button" id="ctx-ring" hidden></button>
               <span class="cchip capi" id="c-api" hidden>api사용중</span>
               <span class="cchip capi" id="c-fb" hidden></span>
@@ -134,7 +134,7 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
       <section class="view" id="v-harness" hidden><div id="harness"></div></section>
       <section class="view" id="v-settings" hidden><div id="settings"></div></section>
       <section class="view" id="v-models" hidden><div id="models"></div></section>
-      <section class="view" id="v-providers" hidden><div id="providers"></div></section>
+      <section class="view" id="v-accounts" hidden><div id="accounts"></div></section>
       <section class="view" id="v-usage" hidden><div id="usage"></div></section>
       <section class="view" id="v-context" hidden><div id="context"></div></section>
       <section class="view" id="v-discord" hidden><div id="discord"></div></section>
@@ -142,7 +142,6 @@ addEventListener("unhandledrejection", e => __demoLog.errors.push(String(e.reaso
       <section class="view" id="v-slack" hidden><div id="slack"></div></section>
       <section class="view" id="v-telegram" hidden><div id="telegram"></div></section>
       <section class="view" id="v-messengers" hidden><div id="messengers"></div></section>
-      <section class="view" id="v-provider" hidden><div id="provider"></div></section>
       <section class="view" id="v-devices" hidden><div id="devices"></div></section>
       <section class="view" id="v-webaccess" hidden><div id="webaccess"></div></section>
     </div>
