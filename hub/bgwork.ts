@@ -143,6 +143,7 @@ function resultFiles(report: string | undefined): WorkFile[] {
 export const FINISHED_KEEP_MS = 3600_000;
 // A worker spawned this much before the message it serves was delivered (clock rounding) still belongs to it.
 const SPAWN_SLACK_MS = 5_000;
+const conversationOf = (d: OpenDeferred | undefined) => d && { target: d.target };
 // A running record with no pid and no update for this long is a leftover, not a worker (seen: records from 2026-10-19 still "running").
 const NO_PID_STALE_MS = 3 * 3600_000;
 const QUEUED = new Set(["queued", "pending"]);
@@ -465,12 +466,12 @@ export function createBgWork(deps: BgWorkDeps) {
 		const open = deps.deferred().sort((a, b) => a.at - b.at);
 		const works = records(file).map(toWork).filter(w => w.status === "running" || w.status === "stalled" || t - (w.ended_at ?? 0) <= FINISHED_KEEP_MS);
 		for (const w of works) {
-			// The turn that spawned the worker is its message; only a worker no turn of ours spawned falls back to the latest
-			// deferred message before it (an answered or newer message is no reason to move it: owner 2026-10-23). A worker that
-			// failed at spawn was never seen running, so a finished one still asks the turn at its spawn time (st_01a17c03, 2026-10-27).
+			// The turn that spawned the worker is its message (an answered or newer message is no reason to move it: owner 2026-10-23);
+			// a worker no turn of ours spawned only stays in the conversation of the latest deferred message before it, tied to no
+			// message, since nothing says it is that message's work (st_01a1a761, 2026-11-05). A worker that failed at spawn was never seen running, so a finished one still asks the turn at its spawn time (st_01a17c03, 2026-10-27).
 			const linked = deps.linkOf?.(w.id);
 			const p: { target: string; replyTo?: string; reply_to?: string } | undefined = linked ?? (w.status === "running"
-				? (deps.turn?.(w.started_at) ?? served.get(w.id) ?? open.filter(d => d.at <= w.started_at + SPAWN_SLACK_MS).at(-1))
+				? (deps.turn?.(w.started_at) ?? served.get(w.id) ?? conversationOf(open.filter(d => d.at <= w.started_at + SPAWN_SLACK_MS).at(-1)))
 				: (served.get(w.id) ?? deps.turn?.(w.started_at)));
 			if (p) {
 				if (!linked && deps.link) deps.link(w.id, { target: p.target, ...(p.replyTo ?? p.reply_to ? { replyTo: p.replyTo ?? p.reply_to } : {}) }, w.description);

@@ -49,15 +49,15 @@ test("an answer is late when the owner wrote newer or the request is over two mi
 	expect(replyRef("th:700", SNOW, SNOW, true)).toBe(SNOW);
 });
 
-test("a post that names no request gets the late request of the turn or the deferred prompt in that conversation", () => {
+test("a post that names no request gets the running turn's late request and nothing else", () => {
 	const now = Date.parse("2026-10-23T07:40:00Z");
 	const old = now - 15 * 60_000;
 	const at = () => old;
-	expect(lateRequestId("ch:1", { target: "ch:1", replyTo: "r1" }, [], "r2", at, now)).toBe("r1");
-	expect(lateRequestId("ch:1", undefined, [{ target: "ch:2", replyTo: "x" }, { target: "ch:1", replyTo: "r1" }], "r1", at, now)).toBe("r1");
-	expect(lateRequestId("ch:1", undefined, [{ target: "ch:1", replyTo: "r1" }], "r1", () => now - 5_000, now)).toBeUndefined();
-	expect(lateRequestId("ch:1", { target: "ch:1", replyTo: "r1", done: true }, [], "r1", at, now)).toBe(undefined);
-	expect(lateRequestId("ch:9", undefined, [], "r1", at, now)).toBeUndefined();
+	expect(lateRequestId("ch:1", { target: "ch:1", replyTo: "r1" }, "r2", at, now)).toBe("r1");
+	expect(lateRequestId("ch:1", { target: "ch:1", replyTo: "r1" }, "r1", () => now - 5_000, now)).toBeUndefined();
+	expect(lateRequestId("ch:1", { target: "ch:1", replyTo: "r1", done: true }, "r1", at, now)).toBe(undefined);
+	expect(lateRequestId("ch:1", { target: "ch:2", replyTo: "x" }, "r1", at, now)).toBeUndefined();
+	expect(lateRequestId("ch:9", undefined, "r1", at, now)).toBeUndefined();
 });
 
 test("an answer to one request does not mark an older waiting request answered", () => {
@@ -105,11 +105,13 @@ test("a turn that ends with [later] leaves its request waiting until a real answ
 	q.deliver("[dotz inbox] ch:1 msg=a1111111\n계정 고정", { target: "ch:1", replyTo: "a1111111", owner: true });
 	q.deliver("[dotz inbox] ch:1 msg=b2222222\n다른 일", { target: "ch:1", replyTo: "b2222222", owner: true });
 	q.onPrompt("[dotz inbox] ch:1 msg=a1111111\n계정 고정");
+	q.workersSpawned([{ id: "st_a" }]);
 	q.onAnswer("[later]");
 	q.settleTurn();
 	expect(posts).toEqual([]);
 	expect(q.isAnswered("a1111111")).toBe(false);
 	expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["a1111111"]);
+	q.workersDone(["st_a"]);
 	q.onAnswer("[done] 바꿨어요");
 	await Promise.resolve();
 	await Promise.resolve();

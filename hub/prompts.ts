@@ -18,9 +18,10 @@
 // OmO consumes a queued message inside the running agent run and starts runs of its own (a finished task worker wakes the
 // session, also right after a gateway restart), so a user frame that matches no delivered prompt, or a run that started
 // without one, is normal there: an unmatched user frame leaves the unanswered prompt in place, a prompt that finished is
-// released when the orchestrator goes idle (a later run is a new one), and an answer with no prompt goes to the owner's
-// newest message of the last 30 minutes (one still unanswered first), unless it repeats what was already sent there. With no
-// such message it still reaches the owner: the conversation of his newest message of any age, else the main chat.
+// released when the orchestrator goes idle (a later run is a new one), and an answer with no prompt goes to the conversation of the
+// owner's newest message of the last 30 minutes (one still unanswered first), unless it repeats what was already sent there. With no
+// such message it still reaches the owner: the conversation of his newest message of any age, else the main chat. Such an answer
+// names no message: only a link, a stopped turn or a worker's recorded request gives an answer a reply target, never recency.
 //
 // A turn that hands code work to a background task worker ends with exactly `[later]` (MODE Routing; owner 2026-10-21:
 // a long inline turn kept every next message waiting a median 238 s): its prompt stays open (deferred) with nothing sent,
@@ -29,10 +30,10 @@
 // A worker is linked to its request when it is spawned (WorkLink, kept on disk next to pending.json): every worker a turn spawned
 // gets its own receipt line, and the answer of the run its result woke goes to exactly that request, whatever order workers finish
 // in. A follow-up that a turn passed to a worker (task_send) and deferred joins that worker's link (`also`): the answer replies to the
-// oldest request of the worker and closes the others. A wake counts only for the run it woke: a result read inside a prompted turn,
+// oldest request of the worker and closes the others. A worker spawned by a run with no request stays linked to no message. A wake counts only for the run it woke: a result read inside a prompted turn,
 // or left over when a run ended, stays out of the next run's pairing (2026-11-04 13:22 UTC: one such wake moved every later answer
-// one request back), and its request is asked again once. The guess in orphanTarget is only for a worker result no link explains;
-// a run no worker woke closes no request, and an answer no message explains is posted with no reply link.
+// one request back), and its request is asked again once. orphanTarget only picks a conversation for what no link explains; a run no
+// worker woke closes no request, and an answer no message explains is posted with no reply link.
 
 import { isSilent } from "./tone.ts";
 
@@ -253,24 +254,25 @@ export function createPrompts(deps: PromptDeps) {
 		save();
 	}
 
-	/** Records a dotz_send: the turn's current prompt has now sent this part, and a steered prompt it answers is settled. */
-	function sent(target: string, text: string, replyTo?: string): void {
+	/** Records a dotz_send: the turn's current prompt has now sent this part, and a steered prompt it answers is settled. Returns the request it answers, which the post must carry: the wake is spent here. */
+	function sent(target: string, text: string, replyTo?: string): string | undefined {
 		current?.sent.push({ target, text: text.trim() });
 		recentSent.push({ target, text: text.trim(), at: Date.now() });
 		if (recentSent.length > MAX_RECENT) recentSent.shift();
 		// A run with no prompt of ours (a worker's result woke it) answering with dotz_send settles the deferred prompt it
-		// answers: the one with this reply_to, else the oldest one in that channel.
+		// answers: the one with this reply_to or the waking worker's. A send that names neither closes nothing.
 		const ref = replyTo ?? (current ? undefined : resultFor(target));
 		if (!current || replyTo) {
-			const d = ref || wokenRun() ? openDeferred().find(p => p.target === target && (ref ? p.replyTo === ref : true)) : undefined;
+			const d = ref ? openDeferred().find(p => p.target === target && p.replyTo === ref) : undefined;
 			if (d) {
 				d.done = true;
 				save();
 			}
-			closeResults(ref ?? d?.replyTo);
+			closeResults(ref);
 		}
 		markAnswered(ref);
 		settleSteered(target, replyTo);
+		return ref;
 	}
 
 	/**
@@ -490,8 +492,10 @@ export function createPrompts(deps: PromptDeps) {
 	}
 
 	/**
-	 * Who an answer without a prompt goes to: a request waiting on a background worker first; else the owner's newest message of the
-	 * last 30 minutes, one still unanswered first. When a turn ran in this process in the last 30 minutes, only that turn's conversation
+	 * Where an answer without a prompt goes. Only a stopped turn's request or a finished worker's own request is named as its message;
+	 * anything else picks a conversation and no message: the one waiting on background work first, else that of the owner's newest
+	 * message of the last 30 minutes, one still unanswered first (2026-11-05 00:29 KST: a lessons report hung on a Cloudflare request).
+	 * When a turn ran in this process in the last 30 minutes, only that turn's conversation
 	 * qualifies (the run is its continuation), and a message still waiting as its own prompt never does: its turn answers it
 	 * (2026-10-28 21:44 KST, a KTX answer went to a mail thread's newer question).
 	 */
@@ -510,11 +514,12 @@ export function createPrompts(deps: PromptDeps) {
 				.filter(w => (w.status === "done" || w.status === "failed") && w.endedAt !== undefined && w.target)
 				.sort((a, b) => b.endedAt! - a.endedAt!);
 			for (const w of finished) {
-				const d = free.find(p => w.target && p.target === w.target && (w.replyTo === undefined || p.replyTo === w.replyTo)) ?? free.find(p => p.target === w.target);
+				const d = free.find(p => w.replyTo !== undefined && p.target === w.target && p.replyTo === w.replyTo);
 				if (d?.target) return { target: d.target, replyTo: d.replyTo, at: d.at, prompt: d };
+				if (free.some(p => p.target === w.target)) return { target: w.target!, at: Date.now() };
 			}
 			const d = free[0];
-			if (d?.target) return { target: d.target, replyTo: d.replyTo, at: d.at, prompt: d };
+			if (d?.target) return { target: d.target, at: d.at };
 		}
 		const last = turns.at(-1);
 		const conv = last?.prompt.target && Date.now() - (last.end ?? Date.now()) <= ORPHAN_MAX_AGE_MS ? last.prompt.target : undefined;
@@ -522,8 +527,9 @@ export function createPrompts(deps: PromptDeps) {
 		const fresh = owners.filter(o => Date.now() - o.at <= ORPHAN_MAX_AGE_MS && !(o.prompt && queuedNow.has(o.prompt)) && (!conv || sameConv(o.target, conv))).sort((a, b) => a.at - b.at);
 		const waits = new Set(open.map(p => p.replyTo));
 		const newest = fresh.at(-1);
-		// A message with an open wait or an answer of its own is not this answer's: the conversation gets it with no reply link.
-		return fresh.findLast(o => !(isAnswered(o.replyTo) || o.prompt?.deferred || waits.has(o.replyTo))) ?? (newest && { target: newest.target, at: newest.at });
+		const pick = fresh.findLast(o => !(isAnswered(o.replyTo) || o.prompt?.deferred || waits.has(o.replyTo))) ?? newest;
+		// A cancelled request keeps its prompt: onOrphanAnswer drops the late answer.
+		return pick && (pick.prompt?.cancelled ? pick : { target: pick.target, at: pick.at });
 	}
 
 	/** Where a real answer goes when orphanTarget finds no one: never dropped, and it settles nothing, so it answers no message by id (hub.log 2026-11-04T04:20:25Z, 823 chars lost). */
@@ -562,8 +568,10 @@ export function createPrompts(deps: PromptDeps) {
 			return;
 		}
 		const woken = woke.map(w => links.get(w.id)).find(l => l !== undefined);
-		const to = woken ?? openDeferred().at(-1);
-		if (!to?.target) return;
+		// A run nothing woke (a lane report's turn) serves no request: its worker gets its line in the conversation that waits, and no message (st_01a1a761 was tied to an unrelated newest request).
+		const waiting = openDeferred().at(-1)?.target;
+		const to = woken ?? (waiting ? { target: waiting } : undefined);
+		if (!to) return;
 		for (const w of workers) receipt(link(w.id, { target: to.target, replyTo: to.replyTo }, w.description));
 	}
 
