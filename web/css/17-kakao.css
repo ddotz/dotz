@@ -19,43 +19,30 @@
   .kk-chat { margin-bottom: 0; }
 }
 
-/* the watched rooms: a head with the count and 추가, one row per room, the eye at the row's end */
+/* the watched rooms: a head with the count and 추가, one row per room */
 .kk-lh { display: flex; align-items: center; gap: 8px; min-height: var(--row-h); padding: 8px 12px 8px 16px; }
 .kk-pt { font: 600 15px/22px var(--font); }
 .kk-cnt { flex: 1; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .kk-add-btn { gap: 4px; padding: 0 12px 0 10px; }
 .kk-add-btn .ic { width: 14px; height: 14px; }
 .kk-watch .kk-note { padding: 24px 16px; }
-.kk-rw { position: relative; }
-.kk-rw + .kk-rw { border-top: 1px solid var(--line); }
-.kk-rw > .cv-row { padding-right: 48px; }
-@media (pointer: coarse), (max-width: 639px) { .kk-rw > .cv-row { padding-right: 56px; } }
-.kk-rw > .kk-eye { position: absolute; top: 0; right: 12px; bottom: 0; margin-block: auto; }
 .kk-l1 { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .kk-l1 > .cv-n { flex: 0 1 auto; min-width: 0; }
 .kk-grp { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); }
-/* the watch toggle: the app's quiet icon button (.ib), accent while watched, grey while not (never a switch) */
-.kk-eye { position: relative; z-index: 1; color: var(--fg-3); }
-.kk-eye::before { content: ""; position: absolute; inset: -6px; }
-.kk-eye .ic { width: 18px; height: 18px; }
-.kk-eye.on, .kk-eye.on:hover { color: var(--accent); }
-.kk-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-/* 대화방 추가: the .kk-pd sheet (side panel on a desktop, full screen on a phone). The sheet's body is the page canvas, so the head is the sheets' .fs-hd and the
+/* 지켜볼 대화방: the .kk-pd sheet (side panel on a desktop, full screen on a phone). The sheet's body is the page canvas, so the head is the sheets' .fs-hd and the
    search and the rooms are the project list's own .pl-search, .pl-list and .pl-row, the same white on grey as that list. */
 #kk-add .kk-pd-in { background: var(--bg); outline: 0; }
 #kk-add .kk-pd-b { padding: 4px 24px 24px; }
 .kk-search + .kk-pl { margin-top: 12px; }
+.kk-pr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.kk-ck { flex: none; width: 18px; height: 18px; color: var(--accent); }
 @media (pointer: coarse), (max-width: 639px) { #kk-add .kk-search { height: 40px; font-size: 16px; } }
 @media (max-width: 639px) { #kk-add .kk-pd-in { padding-top: env(safe-area-inset-top); } #kk-add .kk-pd-b { padding-inline: 16px; } }
 .kk-add .kk-pd-b { padding: 8px 0 0; }
 .kk-hint { padding: 0 16px 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .kk-note { padding: 32px 16px; color: var(--fg-3); font: 400 12px/16px var(--font); text-align: center; text-wrap: balance; }
-.kk-pr { position: relative; display: flex; align-items: center; gap: 12px; min-height: var(--row-h); padding: var(--row-py) 16px; }
+.kk-pr { display: flex; align-items: center; gap: 12px; min-height: var(--row-h); padding: var(--row-py) 16px; }
 .kk-pr + .kk-pr { border-top: 1px solid var(--line); }
-.kk-pn { display: block; max-width: 100%; min-height: 24px; margin: -4px 0; padding: 4px 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
-/* the name's tap area is the whole row, like every list; the eye sits above it */
-.kk-pn::after { content: ""; position: absolute; inset: 0; }
-.kk-pn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 /* 자동 초안: the room's one two-value switch, a thin card above the chat window */
 .kk-auto { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 10px 16px; border-radius: var(--r-card); background: var(--card); }
 .kk-auto[hidden] { display: none; }
@@ -78,7 +65,8 @@
 #kk-add-btn { height: 32px; min-height: 32px; }
 #kk-rooms .kk-av, #kk-head .kk-av, .kk-pd.kk-add .kk-pr .kk-av { background: var(--layer); color: var(--fg-2); }
 /* a row like the project list's: flat inside the card with the card's one selection color, the time on top at the row's end. These undo the wide-screen .cv-row (a rounded chip for the side columns). */
-#kk-rooms .kk-row { align-items: center; min-height: 56px; padding-block: 8px; padding-left: 16px; border-radius: 0; }
+#kk-rooms .kk-row { align-items: center; min-height: 56px; padding: 8px 16px; border-radius: 0; }
+#kk-rooms .kk-row + .kk-row { margin-top: 0; border-top: 1px solid var(--line); }
 #kk-rooms .kk-row.on { background: var(--row-sel); }
 #kk-rooms .kk-row .cv-m { align-self: flex-start; gap: 2px; padding-top: 2px; }
 #kk-rooms .kk-av { width: 36px; height: 36px; font-size: 15px; }
