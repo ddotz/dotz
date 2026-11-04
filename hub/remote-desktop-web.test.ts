@@ -28,7 +28,7 @@ const hub = fakeHub({
 afterAll(() => hub.stop());
 beforeEach(() => { calls.length = 0; openReply = { action: "here" }; desk = undefined; webAccess = { ...webAccess, mode: "tailscale" }; });
 
-const ON = { on: true, control: false, running: false, viewers: [] };
+const ON = { on: true, running: false, viewers: [] };
 const WATCHER = { who: "owner", device: "맥미니", since: "2026-11-04T01:00:00Z" };
 
 const chromeUA = { brands: [{ brand: "Not.A/Brand", version: "99" }, { brand: "Chromium", version: "142" }, { brand: "Google Chrome", version: "142" }], mobile: false };
@@ -317,12 +317,11 @@ describe("settings section", () => {
 		expect(await rows(v)).toEqual(["open", "on"]);
 	});
 
-	test("on: switch, control, who is watching; the public address stays out unless web access is cloudflare", async () => {
+	test("on: the button and the switch, nothing about viewers or control; the public address stays out unless web access is cloudflare", async () => {
 		const v = await page(chromeUA, { ...ON, viewers: [WATCHER] });
 		await openSettings(v);
 		await waitFor(v, `document.querySelector("[data-dsk=on]")`);
-		expect(await rows(v)).toEqual(["open", "on", "control", "viewers"]);
-		expect(await parse(v, `JSON.stringify(document.querySelector("[data-dsk=viewers] .tag").textContent)`)).toBe("1");
+		expect(await rows(v)).toEqual(["open", "on"]);
 		expect(calls.filter(c => c.path === "/api/desk/status")).toEqual([]);
 	});
 
@@ -331,22 +330,20 @@ describe("settings section", () => {
 		const v = await page(chromeUA, ON);
 		await openSettings(v);
 		await waitFor(v, `document.querySelector("[data-dsk=allow_public]")`);
-		expect(await rows(v)).toEqual(["open", "on", "control", "viewers", "allow_public"]);
+		expect(await rows(v)).toEqual(["open", "on", "allow_public"]);
 		await run(v, `document.querySelector("[data-dsk=allow_public] .hs-sw").click();`);
 		await waitFor(v, `document.querySelector("[data-dsk=allow_public] .hs-sw").getAttribute("aria-checked") === "true"`);
 		expect(calls.filter(c => c.path === "/api/desk/settings").map(c => [c.method, c.body])).toEqual([["PUT", { allow_public: true }]]);
 	});
 
-	test("the switches send exactly their own field and follow the answer", async () => {
+	test("the switch sends exactly its own field and follows the answer", async () => {
 		const v = await page(chromeUA, ON);
 		await openSettings(v);
-		await waitFor(v, `document.querySelector("[data-dsk=control] .hs-sw")`);
-		await run(v, `document.querySelector("[data-dsk=control] .hs-sw").click();`);
-		await waitFor(v, `document.querySelector("[data-dsk=control] .hs-sw").getAttribute("aria-checked") === "true"`);
+		await waitFor(v, `document.querySelector("[data-dsk=on] .hs-sw")`);
 		await run(v, `document.querySelector("[data-dsk=on] .hs-sw").click();`);
 		await waitFor(v, `document.querySelector("[data-dsk=on] .hs-sw").getAttribute("aria-checked") === "false"`);
-		expect(calls.filter(c => c.path === "/api/desk/settings").map(c => c.body)).toEqual([{ control: true }, { on: false }]);
+		expect(calls.filter(c => c.path === "/api/desk/settings").map(c => c.body)).toEqual([{ on: false }]);
 		expect(await rows(v)).toEqual(["open", "on"]);
-		expect(await parse(v, `JSON.stringify([S.desk.on, S.desk.control])`)).toEqual([false, true]);
+		expect(await parse(v, `JSON.stringify(S.desk.on)`)).toBe(false);
 	});
 });
