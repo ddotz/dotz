@@ -151,7 +151,7 @@ function go(name, tgt) {
   if (tv) enterTarget();
   if (name === "home") { renderHome(); loadHomeData(); }
   if (name === "projects" || pp) { renderProjects(); prjLoad(); }
-  if (name === "monitoring" || mc) { renderMonitoring(); loadMonitors(); loadNotices(); loadIntegrations(); }
+  if (name === "monitoring" || mc) { renderMonitoring(); loadMonitors(); if (!noticesFresh()) loadNotices(); loadIntegrations(); }
   if (name === "project") pmOpen(tgt);
   if (name === "settings") { loadUpdate(); renderSettings(); loadMessengerIndex(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }

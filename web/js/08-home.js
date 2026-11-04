@@ -3,12 +3,12 @@ let HQ = null, homeTimer;
 let HOME_READY = false;   // the first loadHomeData has landed: until then rows arriving in pieces are the first paint, and move nothing
 async function loadHomeData() {
   clearTimeout(homeTimer);
+  // the other computers' snapshot, read ahead for 모니터링 and a peer's item opened by link; 홈 draws none of it, so its first paint does not wait for a slow peer
+  if (typeof pqLoad === "function") pqLoad().catch(() => {});
   await Promise.all([
     api("/api/quota").then(q => { HQ = q; noteQuota(q); }, () => { HQ = { error: true }; }),
     loadProviderData().catch(() => {}),
     loadMonitors(),
-    // the other computers' snapshot, read ahead for 모니터링 and a peer's item opened by link; 홈 itself draws none of it
-    typeof pqLoad === "function" ? pqLoad().catch(() => {}) : null,
   ]);
   HOME_READY = true;
   if (current === "home") { renderHome(); homeTimer = setTimeout(loadHomeData, 60000); }

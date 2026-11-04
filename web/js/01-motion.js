@@ -45,17 +45,17 @@ function motionPop(el) {
   el.animate([{ opacity: 0, transform: "scale(.6)" }, { opacity: 1, transform: "scale(1)" }], { duration: 200, easing: M_EASE });
 }
 
-// The owner moved to a different view (go(), 05-command-palette.js): the shown view rises in and its first 8 rows follow 35ms apart.
+// The owner moved to a different view (go(), 05-command-palette.js): the shown view rises in and its first 8 rows follow 12ms apart, all in about 240ms.
 // The first paint and a go() to the view already shown draw as before, and data that loads later never calls this, so a refresh never replays it.
 let viewSeen = "";
 function motionView(name, boxes, rows = true) {
   const was = viewSeen; viewSeen = name;
   if (!was || was === name || reducedMotion()) return;
-  for (const b of boxes) motionIn(b, "rise", M_MS.base);
+  for (const b of boxes) motionIn(b, "rise", M_MS.fast);
   if (!rows) return;
   const picked = [];
   for (const b of boxes) for (const r of b.querySelectorAll(".li, .card, .rc, .cv-row, .hr, .pj-card")) if (r.offsetParent && !picked.some(p => p.contains(r))) picked.push(r);
-  picked.slice(0, 8).forEach((r, i) => motionIn(r, "rise", M_MS.base, i * 35));
+  picked.slice(0, 8).forEach((r, i) => motionIn(r, "rise", M_MS.fast, i * 12));
 }
 
 // An element about to leave: resolves when it is gone from view, so the caller removes or hides it then.

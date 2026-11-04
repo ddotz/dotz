@@ -35,7 +35,7 @@ test("a peer's mail conversation gets the mini's later notice and held state, an
 	await waitFor(v, "S && PR.fresh");
 	await run(v, "go('monitoring')");
 	await waitFor(v, `PQ.loaded && PQ.of.has(${JSON.stringify(T)})`);
-	await run(v, `setTarget(${JSON.stringify(T)})`);
+	await run(v, `go("monitoring", ${JSON.stringify(`c:${T}`)})`);
 	await waitFor(v, `$("#tl").textContent.includes("답장 초안 작성해.")`);
 	await waitFor(v, `!$("#pausenote").hidden && $("#pausenote span").textContent === "맥미니 봇이 멈춰 있어요: 로그인 필요" && !$("#pausenote .pn-go")`);   // a peer's bot is resumed on that computer: no button here
 	expect(await v.evaluate(`$("#tl").textContent.includes("멈춰 있어요")`)).toBe(false);
