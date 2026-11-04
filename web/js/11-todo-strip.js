@@ -273,9 +273,10 @@ function msgNode(e) {
         const key = e.mail || (isMailT(e.conv || "") ? mailOf(e.conv) : ""), html = !!(e.html || (MAILS.get(`mail:${key}`) || {}).html);
         // The summary slot holds a real summary only: a sent mail has none (the collector gives its body's start, hub/mail.ts sentMailEvent), and a
         // "summary" that is only the start of the mail's own body is drawn once, as the body.
-        const rec = MAILS.get(`mail:${key}`) || {}, rest = text.split("\n").slice(1).join("\n").trim(), sp = rcSplit(rest);
-        const noSum = e.dir === "out" || rec.dir === "out" || mailSumIsBody(sp.text, e.preview, rec.preview, sp.raw);
-        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: noSum ? "" : rest, ...(noSum ? { raw: sp.raw } : {}), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw, e.subject) : undefined });
+        // The hub summarizes after the mail is posted (hub/mail-summary.ts), so the summary is often on the record and not in the event's text.
+        const rec = MAILS.get(`mail:${key}`) || {}, sp = rcSplit(text.split("\n").slice(1).join("\n").trim()), sum = sp.text || rec.summary || "";
+        const noSum = e.dir === "out" || rec.dir === "out" || mailSumIsBody(sum, e.preview, rec.preview, sp.raw);
+        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: noSum ? "" : sum, raw: sp.raw, rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw, e.subject) : undefined });
         // Gmail-like, top to bottom: the bar of icons (30-mail-box.js mailOpenBar, 초안 작성 and the ⋯ in it), the subject, the sender and time,
         // one muted line of 받는 사람 / 참조 that opens the full header (30-mail-thread.js), the summary, then the original.
         if (card && key) {

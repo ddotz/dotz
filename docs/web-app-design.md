@@ -764,7 +764,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 구성: 열린 메일 카드의 요약 `div.msum[data-k=mail-summary]`(번개 아이콘 + `요약 · ` + 굵은 할 일), 본문 `.mb-txt`(정리된 텍스트: 머리 줄, 키-값, 목록, 표, 인용 접기) 또는 `.mb`(HTML: `.mb-bar` + 샌드박스 `iframe.mb-frame`).
 - 기능: HTML 메일은 `sandbox="allow-popups allow-popups-to-escape-sandbox"`, `referrerpolicy=no-referrer`의 iframe에 줄인 HTML을 넣고 폭에 맞춰 높이를 재서 맞춰요(넓은 표는 축소). 바깥 이미지는 기본 차단, `이미지 보기`/`이미지 숨기기` 토글. 열면 `mailOpenSummary`가 결과 카드의 요약 섹션을 요약 블록으로 갈아 끼워요(요약이 본문과 같으면 본문만 보임, `mailSumIsBody`).
 - 상태: 바깥 이미지 차단 `바깥 이미지 ${n}개를 막았어요`, 켠 뒤 `바깥 이미지를 보고 있어요` 또는 `바깥 이미지 ${n}개는 이 기기에서 열리지 않아요`. 본문 불러오기 실패 `원문을 불러오지 못했어요`(`.mb-fail`). iframe title `메일 원문`. 폰(`max-width:520px`)에서 메일 표 셀 패딩 축소. 메일 대화는 맨 위에서 열리고 화면에 보이면 읽음이에요(위 읽음 위치 항목). 다른 컴퓨터 메일은 `pqLink`로 그 컴퓨터의 본문을 읽어요.
-- 데이터: `GET /api/mail/:key/body`(HTML 본문), 요약/텍스트는 메일 이벤트(`MAILS`)의 `summary`, `text`.
+- 데이터: `GET /api/mail/:key/body`(HTML 본문), 요약은 메일 기록(`MAILS`, `GET /api/conversations`)의 `summary`(허브가 게시 뒤에 요약하면 이벤트 `text`에는 없어요), 텍스트는 메일 이벤트의 `text`.
 - 근거: web/js/11-mailtext.js:227(mailTextNode), :239(mailSumSplit), :258(mailSumBlock), :267(mailOpenSummary); web/js/11-mailbody.js:115(mailHtmlNode), :172(mailSumIsBody), :174(mailBodyNode).
 - css: web/css/20-mail-thread.css(`.msum`, `.mb-txt`, `.mb`), 16-result-card.css(`.mb-txt` :55, :72 `max-width:520px`).
 
