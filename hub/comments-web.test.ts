@@ -152,6 +152,33 @@ describe("댓글 on a phone (390x844)", async () => {
 		await waitFor(v, `!document.querySelector("#cm .kk-draft")`);
 	});
 
+	// Owner 2026-11-04: typing what to change, then Backspace or moving the caret, wiped the field. The thread repaints on its own (the timer, a live
+	// event, a read mark), and the repaint drew a fresh, empty field. What he typed stays, and so do the focus and the caret.
+	test("고치기 keeps what he typed, the focus and the caret through Backspace, the arrow keys and a repaint", async () => {
+		await boot(v);
+		await run(v, `document.querySelector("#cm .kk-row").click()`);
+		await waitFor(v, `CM.open && !CM.loading && document.querySelector("#cm .kk-draft")`);
+		await run(v, `document.querySelector('#cm [data-k="edit"]').click()`);
+		await waitFor(v, `document.querySelector("#cm .rq-edit input")`);
+		await run(v, `document.querySelector("#cm .rq-edit input").focus()`);
+		await v.type("shorter please");
+		await v.press("Backspace");
+		await v.press("ArrowLeft");
+		await v.press("ArrowLeft");
+		await run(v, `cmPaintAll()`);   // what the timer or a live event does to the open thread
+		sends = [{ id: "send:cm:youtube:c2", commentId: "cm:youtube:c2", text: "곧 올릴게요", state: "failed", reason: "403", at: at(22, 4, 0) }];
+		await run(v, `cmReload()`);
+		await waitFor(v, `document.querySelector('#cm [data-k="retry"]')`);
+		const s = await q<{ value: string; focused: boolean; caret: number | null; go: boolean }>(v, `const i = document.querySelector("#cm .rq-edit input");
+			return { value: i.value, focused: document.activeElement === i, caret: i.selectionStart, go: !document.querySelector('#cm [data-k="revise-go"]').disabled }`);
+		expect(s).toEqual({ value: "shorter pleas", focused: true, caret: 11, go: true });
+		await v.type("X");   // still typing into the same field, at the caret
+		expect(await q<string>(v, `return document.querySelector("#cm .rq-edit input").value`)).toBe("shorter pleXas");
+		await run(v, `document.querySelector('#cm [data-k="revise-cancel"]').click()`);
+		await run(v, `document.querySelector('#cm [data-k="edit"]').click()`);
+		expect(await q<string>(v, `return document.querySelector("#cm .rq-edit input").value`)).toBe("");   // 취소 lets it go
+	});
+
 	test("a reply that did not go out offers 다시 보내기 and 지우기, and each posts once", async () => {
 		sends = [{ id: "send:cm:youtube:c2", commentId: "cm:youtube:c2", text: "곧 올릴게요", state: "failed", reason: "403 forbidden", at: at(22, 4, 0) }];
 		const v = await open(390, 844);
