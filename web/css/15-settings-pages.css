@@ -16,31 +16,41 @@
 #models .mt-card { display: block; padding: 0; background: none; box-shadow: none; }
 #models .mt-head { margin: var(--sp-6) var(--sp-1) var(--sp-2); gap: var(--sp-2); align-items: baseline; }
 #models .mt-head .t { font: 600 var(--fs-sec)/var(--lh-sec) var(--font); color: var(--fg-2); }
-#models .mt-pick { display: block; }
-#models :is(.mt-model, .mt-eff) { max-width: none; padding: var(--row-py) var(--row-px); }
-#models .mt-eff, #models .mt-list > .mt-note, #models .mt-list > .mt-apply, #models .mt-list > .note, #models .mt-list > .mt-fb { border-top: 1px solid var(--line); }
+#models .mt-pick { flex: 1; min-width: 0; display: flex; gap: var(--sp-2); }
+#models .mt-list > .mt-pick { padding: var(--row-py) var(--row-px); }
+#models .mt-model { flex: 3 1 0; min-width: 0; max-width: none; }
+#models .mt-eff { flex: 2 1 0; min-width: 0; max-width: 160px; }
+#models .fb-sub, #models .mt-list > :is(.mt-note, .mt-apply) { border-top: 1px solid var(--line); }
 #models .mt-pick .tf { flex-direction: row; align-items: center; justify-content: space-between; gap: var(--sp-3); }
 #models .mt-pick .tf > .lb { font: 500 var(--fs-row)/var(--lh-row) var(--font); color: var(--fg); }
-#models .mt-pick .sel { --ff-fill: var(--layer); flex: none; width: min(60%, 220px); height: var(--ctl-h); min-height: 0; font-size: var(--fs-row); }
-#models .mt-list > .mt-note { margin: 0; padding: var(--sp-2) var(--row-px); }
-#models .mt-list > .note { margin: 0; padding: var(--sp-2) var(--row-px); }
+#models :is(.mt-pick, .mt-filter) .sel { height: var(--ctl-h); min-height: 0; font-size: var(--fs-row); }
+#models .mt-pick .sel { --ff-fill: var(--layer); flex: 1 1 auto; width: auto; min-width: 0; }
+#models .mt-pick:not(:has(.mt-eff)) .sel { flex: none; width: min(60%, 220px); }
+/* the pickers' values say what they are: their names stay on the button's aria-label */
+#models .mt-pick:has(.mt-eff) .tf > .lb, #models .mt-filter .lb { display: none; }
+#models :is(.mt-list, .fb-sub) > .mt-note { margin: 0; padding: var(--sp-2) var(--row-px); }
 #models .mt-apply { margin: 0; padding: var(--sp-2) var(--row-px); }
-#models .mt-fb { gap: 0; padding: 0; }
-#models .mt-fb-h { padding: var(--sp-2) var(--row-px) var(--sp-15); }
-#models .fb-list { gap: 0; }
-#models .fb-item { border-radius: 0; background: transparent; padding: var(--sp-2) var(--row-px); border-top: 1px solid var(--line); }
+#models .sec .sup { margin-left: var(--sp-2); font-weight: 400; }
+#models [data-target^="lane:"] .mt-head { margin-block: var(--sp-3) var(--sp-1); }
+#models .fb-list { --fb-n-w: 20px; gap: 0; }
+#models .fb-item { flex-wrap: wrap; border-radius: 0; background: transparent; padding: var(--sp-2) var(--row-px); border-top: 1px solid var(--line); }
+#models .fb-item.base { border-top: 0; }
 #models .fb-item[data-i]:hover { background: var(--card-hover); }
+#models .fb-item.open, #models .fb-item.open:hover { background: var(--layer); }
+#models .fb-item > .fb-usage { padding-left: calc(var(--fb-n-w) + var(--sp-2)); margin-top: var(--sp-1); }
 #models .fb-item.in-use { background: color-mix(in srgb, var(--accent) 8%, var(--card)); }
-#models .fb-n { width: 20px; height: auto; border-radius: 0; background: none; color: var(--fg-3); font-size: 13px; }
+#models .fb-n { width: var(--fb-n-w); height: auto; border-radius: 0; background: none; color: var(--fg-3); font-size: 13px; }
 #models .fb-item.in-use .fb-n { background: none; color: var(--accent); }
-#models .fb-add { margin: var(--sp-2) var(--row-px); }
-#models .fb-add + .fb-add { margin-top: 0; }
-#models .mt-fb > .note { margin: 0; padding: var(--sp-1) var(--row-px) var(--sp-3); }
-#models .fbe { margin: 0; border-radius: 0; padding: var(--sp-3) var(--row-px); }
+#models .mt-fb-foot { padding: var(--sp-1) var(--sp-2); border-top: 1px solid var(--line); }
+#models .fbe { --ff-fill: var(--card); margin: 0; border-radius: 0; padding: var(--sp-3) var(--row-px); }
+#models .fbe .tf { gap: var(--sp-1); }
+@media (min-width: 640px) {
+  #models .fbe > .tf, #models .fbe-cap > .tf:first-child { display: grid; grid-template-columns: 120px minmax(0, 1fr); align-items: center; gap: var(--sp-3); }
+}
 #models .mt-use-row { padding: var(--sp-15) var(--row-px); border-top: 0; }
 #models .mt-use-row + .mt-use-row { border-top: 1px solid var(--line); }
-@media (max-width: 639px) { #models .mt-pick .sel { width: min(58%, 200px); } }
-@media (pointer: coarse), (max-width: 639px) { #models .mt-pick .sel { height: var(--field-h-touch); } }
+@media (max-width: 639px) { #models .mt-pick:not(:has(.mt-eff)) .sel { width: min(58%, 200px); } }
+@media (pointer: coarse), (max-width: 639px) { #models :is(.mt-pick, .mt-filter) .sel { height: var(--field-h-touch); } }
 
 /* 공급자: the usage windows ride under the row, thin */
 #providers .prow-lim { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }

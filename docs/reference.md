@@ -196,8 +196,9 @@ subagent model until it restarts.
 over. Three chains, each a list in `config.json`: `models.orchestrator.fallback`, `models.lanes.fallback` (every session's own
 model) and `models.workers.fallback` (the sessions' task subagents); an entry is a model selector (`provider/id[:thinking]`, the
 thinking level of the failing turn when omitted). They apply the next time a conversation starts and are edited on the web
-UI's 모델 · 폴백 screen (under each target's model and effort: drag an item or use its arrow buttons to reorder, "모델
-추가" picks from the model catalog the target's harness can run, the model answering now is marked "사용 중") or with
+UI's 모델 · 폴백 screen (a numbered chain under each target whose step 1 is its model and effort: drag a step's handle or use the arrows in its
+editor to reorder, "폴백 추가" picks from the model catalog the target's harness can run or continues the same model on an
+API key, the model answering now is marked "사용 중") or with
 `PUT /api/models {target, fallback}` (`PUT /api/fallbacks {target, chain}` still works). On OmO the gateway drives
 every chain itself; on omp a chain of bare models is left to omp (see "Runtime differences"). Every switch writes one line (`모델 폴백: A → B (사유)`): the orchestrator's goes
 to the alert channel (a silent switch to a weaker model went unnoticed once), its task subagents' to worklog, a session's and
