@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadFeatureDirs } from "./featuredirs.ts";
+import { featurePrompt, loadFeatureDirs } from "./featuredirs.ts";
 
 // A personal folder with a shipped id switches the shipped feature on or off; it does not freeze the shipped text (onboarding and
 // app-off write such copies, and an update must still reach them). `custom: true` keeps an owner's own text.
@@ -24,9 +24,20 @@ test("an old personal copy turns the shipped feature on, and the text is the shi
 	expect(f.body.length).toBeGreaterThan(50);
 });
 
+test("a switch copy is told apart from the owner's own, and the prompt still names the shipped file", () => {
+	const d = data();
+	const copy = join(d, "features", "kakao", "feature.md");
+	writeFileSync(copy, oldCopy(true));
+	const f = loadFeatureDirs(d).features.find(x => x.id === "kakao")!;
+	expect(f.switchFile).toBe(copy);
+	expect(f.file).toBe(join(import.meta.dir, "..", "features", "kakao", "feature.md"));
+	expect(featurePrompt(d, f.appliesTo === "lanes" ? "lanes" : "orchestrator")).toContain(`(${f.file}`);
+});
+
 test("custom: true keeps the owner's own text", () => {
 	const d = data();
 	writeFileSync(join(d, "features", "kakao", "feature.md"), oldCopy(true, "\ncustom: true"));
 	const f = loadFeatureDirs(d).features.find(x => x.id === "kakao")!;
 	expect(f.body).toContain("이전 버전의 본문이에요");
+	expect(f.switchFile).toBeUndefined();
 });

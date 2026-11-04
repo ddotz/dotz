@@ -603,7 +603,7 @@ export function builtinDetail() {
 		const raw = JSON.parse(readFileSync(paths.ruleTitles, "utf8"));
 		if (raw && typeof raw === "object" && !Array.isArray(raw)) ruleTitles = raw;
 	} catch {}
-	const feats = loadFeatureDirs(DATA_DIR).features.filter(f => f.origin === "personal");
+	const feats = loadFeatureDirs(DATA_DIR).features.filter(f => f.origin === "personal" && !f.switchFile);
 	const id = cfg.identity ?? {};
 	const said: OverviewItem[] = [];
 	if (id.name?.trim()) said.push({ title: "이름", line: id.name.trim() });

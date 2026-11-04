@@ -28,6 +28,8 @@ type FeatureDir = {
 	origin: "shipped" | "personal";
 	/** A personal folder that owns its whole text (`custom: true`), instead of only switching the shipped feature of the same id. */
 	custom?: boolean;
+	/** The personal feature.md of a folder that only switches the shipped feature of this id. Such a feature is still the shipped one (`file` and the text are), not the owner's own. */
+	switchFile?: string;
 	watch?: Record<string, any>;
 	schedule?: Record<string, any>;
 };
@@ -133,7 +135,7 @@ const mt = (p: string) => {
 // a whole copy used to freeze the text at the day it was made). `custom: true` in the personal frontmatter keeps the personal text as it is.
 // Malformed ones are listed in `skipped` (reported once per change through `warn`).
 const switched = (shipped: FeatureDir, mine: FeatureDir): FeatureDir =>
-	mine.custom ? mine : { ...shipped, enabled: mine.enabled, appliesTo: mine.appliesTo, origin: "personal", ...(mine.watch ? { watch: mine.watch } : {}), ...(mine.schedule ? { schedule: mine.schedule } : {}) };
+	mine.custom ? mine : { ...shipped, enabled: mine.enabled, appliesTo: mine.appliesTo, origin: "personal", switchFile: mine.file, ...(mine.watch ? { watch: mine.watch } : {}), ...(mine.schedule ? { schedule: mine.schedule } : {}) };
 export function loadFeatureDirs(dataDir: string, warn?: (msg: string) => void): Loaded {
 	const byId = new Map<string, FeatureDir>(), skipped = new Map<string, { id: string; reason: string }>();
 	for (const [root, origin] of [[SHIPPED_ROOT, "shipped"], [featuresRoot(dataDir), "personal"]] as const) {
