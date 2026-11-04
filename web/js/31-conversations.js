@@ -48,6 +48,17 @@ function convNote(e, t, was) {
   if (convIncoming(e) && !again && !convEnded(t) && !(READ[t] && READ[t] >= e.ts) && !(CV.key === t && chatStick && document.visibilityState === "visible")) { ts(t).unread++; renderBars(); }
   convSchedule();
 }
+// A mail the hub listed before and no longer does was deleted (on another device, or by the mailbox's own sync): it leaves this page too, and a view
+// of it goes back to the list instead of answering "이 메일을 찾지 못했어요" on the next tap. A mail that only arrived live, or another computer's, is not touched.
+let convHadMail = new Set();
+function convDropGone(items) {
+  const now = new Set(items.filter(it => it.mail).map(it => it.target)), gone = [...convHadMail].filter(t => !now.has(t) && !PQ.of.has(t));
+  convHadMail = now;
+  if (!gone.length) return;
+  for (const t of gone) { MAILS.delete(t); CONV.delete(t); MBOX.sel.delete(t); ts(t).unread = 0; }
+  if (current === "chat" && gone.includes(target)) go("monitoring", MON.sel || "i:mail");
+  mbRefresh();
+}
 async function convLoad() {
   clearTimeout(convRetry);
   try {
@@ -64,6 +75,7 @@ async function convLoad() {
       else READ[t] = it.read || null;
       ts(t).unread = unread;
     }
+    convDropGone(r.items || []);
     CV.loaded = true; CV.failed = false;
     renderBars();
     if (convCapture() || (CV.key && !CV.placed)) renderAll();   // the first paint of an opening waits for this (chatReady)
