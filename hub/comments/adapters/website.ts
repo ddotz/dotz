@@ -88,6 +88,8 @@ export function parseRss(xml: string, owner?: string): RawComment[] {
 	return out;
 }
 
+const sameWords = (a: string, b: string): boolean => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
+
 export function parseDmJson(text: string): { comments: RawComment[]; cursor?: string } {
 	const body = JSON.parse(text) as { messages?: Record<string, unknown>[]; cursor?: unknown };
 	if (!body || !Array.isArray(body.messages)) throw new Error("쪽지 읽기 결과에 messages 목록이 없어요");
@@ -208,7 +210,8 @@ export function websiteAdapter(deps: WebsiteDeps): CommentAdapter {
 			// Read back: a 2xx is not proof the message landed in that room.
 			try {
 				const last = (await readDms(site.dm, undefined, room)).comments.filter(m => m.thread === c.thread).sort((a, b) => a.at - b.at).at(-1);
-				if (!last?.mine || last.text.trim() !== text.trim()) return { ok: false, reason: "보냈다는 답은 왔지만 다시 읽은 마지막 쪽지가 이 답장이 아니에요. 사이트에서 확인해 주세요" };
+				// Sites rewrite line breaks (one forum stores \n as \r\n), so only the words are compared: a false "not sent" invites a duplicate.
+				if (!last?.mine || !sameWords(last.text, text)) return { ok: false, reason: "보냈다는 답은 왔지만 다시 읽은 마지막 쪽지가 이 답장이 아니에요. 사이트에서 확인해 주세요" };
 			} catch (e) {
 				return { ok: false, reason: `보낸 뒤 다시 읽어 확인하지 못했어요(갔을 수도 있어요): ${e instanceof Error ? e.message.slice(0, 120) : "알 수 없는 이유"}` };
 			}
