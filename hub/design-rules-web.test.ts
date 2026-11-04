@@ -99,7 +99,7 @@ const isBlackOrWhite = (c: string) => /^#(0{3,4}|f{3,4}|0{6}|f{6}|0{8}|f{8})$/i.
 const hues = (value: string) => (value.match(LITERAL) ?? []).filter(c => !isBlackOrWhite(c));
 const colored = (value: string) => /var\(--(accent|ok|warn|err|unreplied)\b/.test(value) || hues(value).length > 0;
 const TOKEN_SCOPE = /^:root(\[[^\]]*\])?$/;
-const STATE_WORD = /(?:^|[^a-z0-9])(ok|done|sent|success|warn|warning|err|error|fail|failed|bad|alert|att|ask|need|danger|down)(?![a-z0-9])/i;
+const STATE_WORD = /(?:^|[^a-z0-9])(ok|done|sent|success|warn|warning|err|error|fail|failed|bad|invalid|alert|att|ask|need|danger|down)(?![a-z0-9])/i;
 
 function stripes(r: Rule): string[] {
 	const found: string[] = [];
