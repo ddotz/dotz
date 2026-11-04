@@ -60,6 +60,9 @@ body { display: flow-root; }
   .side-min .sf-row.warn .ic { color: var(--warn); }
   /* top bar: title always names the page (the sidebar carries the tabs), then search, bell, connection and usage */
   .appbar #back { margin: 0; align-self: center; }
+  /* inside a 모니터링 app: ‹ 모니터링 where the page title stands; the empty title keeps the bar's right side in place */
+  .appbar #back.mon-up { display: inline-flex; align-items: center; gap: 2px; width: auto; padding: 0 8px 0 2px; color: var(--fg); font: 700 22px/30px var(--font); letter-spacing: -.02em; }
+  .appbar:has(#back.mon-up) h1 { visibility: hidden; }
   .appbar h1, .appbar:not(.back) h1 { display: block; align-self: center; flex: 1; min-width: 0; max-width: none; margin: 0; font: 700 22px/30px var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .appbar.tv h1 { flex: 0 0 auto; max-width: 260px; }
   .appbar .thead { flex: 1; min-width: 0; margin: 0 4px; }

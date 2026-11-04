@@ -103,7 +103,14 @@
 /* the wait bar lines up with the name, not under the icon (36px icon + 12px gap) */
 :is(#mon-side, #chat-convo.mon-side) .cv-row.has-mon-prog > .mon-prog-wrap { margin-left: 48px; width: auto; flex-basis: calc(100% - 48px); }
 /* one panel width in every 모니터링 state (list, app, mail, watch): the open mail conversation draws the same column (owner 2026-11-04) */
-@media (min-width: 1100px) { #v-monitoring, #v-chat.mon-ctx, #v-chat.mon-ctx.mail-open { --cv-w: 300px; } }
+/* a conversation opened from 모니터링 takes the whole column: the list column leaves, as it does in 모니터링 itself */
+@media (min-width: 1100px) {
+  #v-chat.mon-ctx { grid-template-columns: minmax(0, 1fr); }
+  #v-chat.mon-ctx::before, #v-chat.mon-ctx > * { grid-column: 1; }
+  #v-chat.mon-ctx > .cv-side { display: none; }
+  #v-chat.mon-ctx.canvas-open { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.25fr); }
+  #v-chat.mon-ctx.canvas-open > #canvas { grid-column: 2; }
+}
 
 /* the open item's header (owner 2026-11-04, compact and the same for a mail and a watch): one row - icon, name, place, the moment, the actions -
    and under it one 20px line indented to the name: a mail's state, or a watch's words, slim 3px bar and result tag. No empty band, no second row of buttons. */
