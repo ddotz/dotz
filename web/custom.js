@@ -222,13 +222,14 @@ button.pv-res:hover { background: var(--card-hover); }
   /* ---------- cards ---------- */
   // One standard for every generated card (docs/customization.md "Card design"): only the classes the built-in home cards use
   // (.card .ch h3 .tag .big .sup .kv .row .more .cf .btn), at most 2 buttons in the footer, the rest in the card's ⋯ menu.
-  const KV_MAX = 6, LIST_MAX = 5, ACT_MAX = 4, ACT_SHOWN = 2;
+  const ACT_MAX = 4, ACT_SHOWN = 2;
   const splitActions = list => ({ shown: list.slice(0, ACT_SHOWN), rest: list.slice(ACT_SHOWN, ACT_MAX) });
   // Text given to 목록 or 항목별 값 (a card's `text`, a command's plain output): one line, one item, "이름: 값" for a pair.
   const textLines = t => t.split("\n").map(l => l.trim()).filter(Boolean);
   const linePair = l => { const i = l.indexOf(":"); return i < 0 ? [l, ""] : [l.slice(0, i).trim(), l.slice(i + 1).trim()]; };
   const cardData = (v, d) => typeof d !== "string" ? d : v === "list" ? textLines(d) : v === "kv" ? textLines(d).map(linePair) : d;
-  const moreRow = n => n > 0 ? el("div", { class: "more", text: `더 보기 · ${n}개` }) : null;
+  // A card with a link says how many rows wait past the six in sight; the tap opens them. Without one the list scrolls and there is nowhere to go.
+  const moreRow = (c, n) => c.link && n > LIST_CAP ? el("div", { class: "more", text: `더 보기 · ${n - LIST_CAP}개` }) : null;
   // One line of state inside a card (empty, loading, failed), the same element the built-in 알림 / 작업내역 / 모니터링 cards use.
   const stateLine = (text, cls = "") => el("div", { class: `hc-none${cls ? ` ${cls}` : ""}`, text });
   // A card whose file cannot be read: the same header as every card (title, state tag, ⋯ menu with 수정… / 삭제…), the cause as its body.
@@ -248,18 +249,18 @@ button.pv-res:hover { background: var(--card-hover); }
     if (v === "list") {
       const all = Array.isArray(d) ? d : [];
       if (!all.length) return stateLine("비어 있어요");
-      return el("div", null, ...all.slice(0, LIST_MAX).map(it => {
+      return el("div", null, el("div", { "data-cap": `custom:${c.id}` }, ...all.map(it => {
         const o = it && typeof it === "object" ? it : { title: it };
         const kids = [el("span", { class: "nm", text: show(o.title) }), o.sub != null ? el("span", { class: "sup", text: show(o.sub) }) : null];
         return isHttp(o.url)
           ? el("div", { class: "row tap", role: "link", tabindex: "0", onclick: ev => { ev.stopPropagation(); openLink(o.url); }, onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); openLink(o.url); } } }, ...kids)
           : el("div", { class: "row" }, ...kids);
-      }), moreRow(all.length - LIST_MAX));
+      })), moreRow(c, all.length));
     }
     if (v === "kv") {
       const pairs = Array.isArray(d) ? d.filter(Array.isArray).map(p => [p[0], p[1]]) : d && typeof d === "object" ? Object.entries(d) : [];
       if (!pairs.length) return stateLine("비어 있어요");
-      return el("div", null, ...pairs.slice(0, KV_MAX).map(([k, val]) => el("div", { class: "kv" }, el("span", { class: "k", text: str(k) }), el("span", { class: "v", text: val === "" ? "" : show(val) }))), moreRow(pairs.length - KV_MAX));
+      return el("div", null, el("div", { "data-cap": `custom:${c.id}` }, ...pairs.map(([k, val]) => el("div", { class: "kv" }, el("span", { class: "k", text: str(k) }), el("span", { class: "v", text: val === "" ? "" : show(val) })))), moreRow(c, pairs.length));
     }
     return el("div", { class: "clamp c4", text: show(typeof d === "object" && !Array.isArray(d) && "text" in d ? d.text : d) });
   }
@@ -324,7 +325,7 @@ button.pv-res:hover { background: var(--card-hover); }
   function homeSize(c) {
     const v = c.view || "text", d = cardData(v, c.data), n = Array.isArray(d) ? d.length : d && typeof d === "object" ? Object.keys(d).length : 1;
     const text = str(d && typeof d === "object" && !Array.isArray(d) && "text" in d ? d.text : d);
-    const rows = Math.min(n, v === "kv" ? KV_MAX : LIST_MAX), more = (v === "kv" || v === "list") && n > rows ? 28 : 0;
+    const rows = Math.min(n, LIST_CAP), more = (v === "kv" || v === "list") && c.link && n > rows ? 28 : 0;
     const body = c.error && d === undefined ? 44 : c.render ? 140 : v === "kv" || v === "list" ? rows * 30 + more : v === "stat" ? 60 : Math.min(4, Math.ceil(text.length / 40)) * 22;
     const px = 24 + 30 + (c.note ? 24 : 0) + body + (c.error && d !== undefined ? 24 : 0) + ((c.actions || []).length ? 40 : 0) + 4;
     return { w: !c.render && v === "text" && text.length > 160 ? 6 : 4, h: Math.min(10, Math.max(3, Math.ceil((px + BGAP) / BSTEP))) };
@@ -447,6 +448,7 @@ button.pv-res:hover { background: var(--card-hover); }
       node.classList.toggle("cu-ghost", ghost);
       node.querySelector("h3").classList.toggle("cu-g", !t);
       clear(pvBox).append(node);
+      capLists(pvBox);
       const n = [note, link, id].filter(x => x && x.value.trim()).length + (actsBox.children.length ? 1 : 0);
       moreSub.textContent = `설명 · 링크 · 동작${id ? " · 아이디" : ""}${n ? ` · ${n}개 채움` : ""}`;
     };

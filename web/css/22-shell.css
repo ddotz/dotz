@@ -139,7 +139,7 @@ body { display: flow-root; }
 .hneeds .hn:has(> .hc-none) { padding: 0 var(--sp-5) var(--sp-5); }
 .hneeds .hn-h.hsub { padding: var(--sp-3) var(--sp-5) var(--sp-1); border-top: 1px solid var(--line); border-radius: 0; }
 .hneeds .hn-h.hsub h2 { font: 600 13px/18px var(--font); color: var(--fg-2); }
-.hneeds .hn > .hr, .hneeds .hn > .ntg, .hneeds .hn > .ny-more { padding-left: var(--sp-5); padding-right: var(--sp-5); }
+.hneeds .hn > .hr, .hneeds .hn > .ntg { padding-left: var(--sp-5); padding-right: var(--sp-5); }
 
 /* the grid cards keep the prototype's card box: 20px padding, the header 8px above its list, rows to the card's edge; a row is as tall
    as its taller card and both cards fill it (07-board.js rows mode) */
