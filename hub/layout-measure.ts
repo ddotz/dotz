@@ -28,6 +28,7 @@ export const THRESH = {
 	phoneMax: 480,         // viewport widths up to this count as a phone
 	fieldHeight: 0.5,      // a field and a button in one row may differ by this much (px)
 	fieldGap: 16,          // ... and count as neighbours when no further apart than this
+	iconButtonMax: 28,     // a button with no text this wide or less is an icon button (a chip's x), not a row partner of a field
 	radius: 2,             // inner radius vs max(outer radius - inset, 0)
 	inset: 12,             // an inner box this close to a side of its outer box "touches" that side
 	iconCenter: 1,         // icon centre vs text line centre
@@ -149,8 +150,11 @@ function cramped(cfg: any, ctx: any, H: any) {
 		if (/^(HTML|BODY|HEADER|NAV|FOOTER)$/.test(box.tagName) || c.position === "fixed" || c.position === "sticky" || b.width >= innerWidth - 1 || rootEls.some((r: Element) => box.contains(r))) continue;
 		const L = Math.min(...rs.map(q => q.left)) - b.left, R = b.right - Math.max(...rs.map(q => q.right));
 		const T = Math.min(...rs.map(q => q.top)) - b.top, B = b.bottom - Math.max(...rs.map(q => q.bottom));
-		const bad = L < cfg.crampedSide || R < cfg.crampedSide || T < cfg.crampedVert || B < cfg.crampedVert;
-		items.push({ check: "cramped", el: H.key(box), path: H.path(box), value: H.round(Math.min(L, R, T, B)), bad, detail: `box ${Math.round(b.width)}x${Math.round(b.height)} gaps L${H.round(L)} R${H.round(R)} T${H.round(T)} B${H.round(B)}` });
+		// without a fill only a border makes an edge (a quote with a left rule): judge just the sides that carry one
+		const has = (s: string) => H.filled(c) || H.side(c, s);
+		const jL = has("Left") ? L : 1e9, jR = has("Right") ? R : 1e9, jT = has("Top") ? T : 1e9, jB = has("Bottom") ? B : 1e9;
+		const bad = jL < cfg.crampedSide || jR < cfg.crampedSide || jT < cfg.crampedVert || jB < cfg.crampedVert;
+		items.push({ check: "cramped", el: H.key(box), path: H.path(box), value: H.round(Math.min(jL, jR, jT, jB)), bad, detail: `box ${Math.round(b.width)}x${Math.round(b.height)} gaps L${H.round(L)} R${H.round(R)} T${H.round(T)} B${H.round(B)}${H.filled(c) ? "" : " (border sides only)"}` });
 	}
 	for (const [p, e] of edge) {
 		const v = Math.min(e.l, e.r);
@@ -170,7 +174,8 @@ function fieldHeight(cfg: any, ctx: any, H: any) {
 	const isButton = (e: Element) => e.matches('button, .btn, [role=button], input[type=button], input[type=submit]');
 	// outermost only: an input inside a .fi wrapper is the wrapper's business
 	const fields = els.filter(e => isField(e) && !e.parentElement?.closest('.fi, .sel, select'));
-	const buttons = els.filter(e => isButton(e) && !fields.some(f => f.contains(e)) && !e.parentElement?.closest('button, .btn'));
+	const iconOnly = (e: Element) => !(e.textContent ?? "").trim() && e.getBoundingClientRect().width <= cfg.iconButtonMax;
+	const buttons = els.filter(e => isButton(e) && !iconOnly(e) && !fields.some(f => f.contains(e)) && !e.parentElement?.closest('button, .btn'));
 	const up = (e: Element, n: number) => { let x: Element | null = e; for (let i = 0; i < n && x; i++) x = x.parentElement; return x; };
 	const seen = new Set<string>();
 	for (const f of fields) {
@@ -277,7 +282,10 @@ function concentric(cfg: any, ctx: any, H: any) {
 // auto/scroll or an <aside>), or the screen's main view), so indentation inside a card is that card's business and does not add to the
 // screen's count. Items: a text block (its leftmost text), an input (where its text starts), an img/svg. Centred and right-aligned text is
 // not on a start line and is left out; so is an item with another item of its container to its left that overlaps it vertically (a
-// timestamp or value beside a title is a column of that row, not a start line).
+// timestamp or value beside a title is a column of that row, not a start line). A small round dot to the left of a text on its line counts
+// for that rule too (a status dot or a bullet leads the row, the text after it is its label), and so does text that a grid or flex box
+// centres (the initial in a round avatar, a number in a round badge): such a lead is no start line of its own. A filled inline pill (a badge)
+// starts at its edge, not at the text inside its padding.
 // Lines are clustered to 1px from the first of a cluster. Per container: how many lines hold 2 or more items; and every pair of lines
 // 1 to 3px apart (near-tangent), reported as its own item under "left-edges-tangent".
 function leftEdges(cfg: any, ctx: any, H: any) {
@@ -300,26 +308,28 @@ function leftEdges(cfg: any, ctx: any, H: any) {
 		group.set(cont, [...(group.get(cont) ?? []), { x, w: what, right: box.right, top: box.top, bottom: box.bottom }]);
 	};
 	for (const root of rootEls) {
-		const byBlock = new Map<Element, { x: number } & Box>();
+		const byBlock = new Map<Element, { x: number } & Box>(), lead = new Set<Element>();
 		for (const n of H.textNodes(root)) {
 			const b = blockOf(n, root);
 			if (!b) continue;
-			const ta = H.cs(b).textAlign;
+			const bc = H.cs(b), ta = bc.textAlign;
 			if (/center|right|end/.test(ta)) continue;
+			if ((/grid/.test(bc.display) && /center/.test(bc.justifyItems)) || (/flex/.test(bc.display) && /center/.test(bc.justifyContent))) lead.add(b);
 			const rs: DOMRect[] = H.lines(n);
 			if (rs.length) { const o = byBlock.get(b); byBlock.set(b, { x: Math.min(o?.x ?? 1e9, ...rs.map(q => q.left)), right: Math.max(o?.right ?? -1e9, ...rs.map(q => q.right)), top: Math.min(o?.top ?? 1e9, ...rs.map(q => q.top)), bottom: Math.max(o?.bottom ?? -1e9, ...rs.map(q => q.bottom)) }); }
 		}
-		for (const [b, o] of byBlock) add(b, root, o.x, "text", o);
+		for (const [b, o] of byBlock) add(b, root, H.painted(H.cs(b)) && /^inline/.test(H.cs(b).display) ? Math.min(o.x, b.getBoundingClientRect().left) : o.x, lead.has(b) ? "lead" : "text", o);
 		for (const e of H.all(ctx.scope) as Element[]) {
 			if (!root.contains(e) || e === root) continue;
 			const r = e.getBoundingClientRect();
 			if (e.matches("input:not([type=hidden]), select, textarea")) { const c = H.cs(e); add(e, root, r.left + H.px(c.borderLeftWidth) + H.px(c.paddingLeft), "field", r); }
 			else if (e.matches("img, svg") && !e.closest("svg:not(:scope)") && r.width >= 10 && r.height >= 10) add(e, root, r.left, "icon", r);
+			else if (!e.children.length && !(e.textContent ?? "").trim() && r.width >= 3 && r.width <= 14 && r.height >= 3 && r.height <= 14 && H.filled(H.cs(e)) && H.corner(e, H.cs(e), r, "TopLeft") >= Math.min(r.width, r.height) / 2 - 0.5) add(e, root, r.left, "lead", r);
 		}
 	}
 	for (const [cont, all] of group) {
 		// row starts only: drop an item that has another item of the container entirely to its left and overlapping it vertically by over half
-		const list = all.filter(i => !all.some(j => j !== i && j.right <= i.x + 1 && Math.min(i.bottom, j.bottom) - Math.max(i.top, j.top) > Math.min(i.bottom - i.top, j.bottom - j.top) / 2));
+		const list = all.filter(i => i.w !== "lead" && !all.some(j => j !== i && j.right <= i.x + 1 && Math.min(i.bottom, j.bottom) - Math.max(i.top, j.top) > Math.min(i.bottom - i.top, j.bottom - j.top) / 2));
 		if (list.length < 2) continue;
 		const xs = list.map(i => i.x).sort((a, b) => a - b);
 		const clusters: { x: number; n: number; sum: number }[] = [];
@@ -328,7 +338,7 @@ function leftEdges(cfg: any, ctx: any, H: any) {
 		const multi = at.filter(c => c.n >= 2).length;
 		const isRoot = rootEls.includes(cont);
 		const label = isRoot ? `${H.key(cont)} (screen)` : H.key(cont);
-		items.push({ check: "left-edges", el: label, path: H.path(cont), value: multi, bad: multi > cfg.leftLines, detail: `${list.length} row starts of ${all.length} items, ${at.length} lines, ${multi} with 2+: ${at.map(c => `${H.round(c.x)}x${c.n}`).join(" ")}` });
+		items.push({ check: "left-edges", el: label, path: H.path(cont), value: multi, bad: multi > cfg.leftLines, detail: `${list.length} row starts of ${all.filter(i => i.w !== "lead").length} items, ${at.length} lines, ${multi} with 2+: ${at.map(c => `${H.round(c.x)}x${c.n}`).join(" ")}` });
 		for (let i = 1; i < at.length; i++) {
 			const d = at[i]!.x - at[i - 1]!.x;
 			if (d >= cfg.tangentMin && d <= cfg.tangentMax) items.push({ check: "left-edges-tangent", el: label, path: H.path(cont), value: H.round(d), bad: true, detail: `x ${H.round(at[i - 1]!.x)} (${at[i - 1]!.n}) and ${H.round(at[i]!.x)} (${at[i]!.n})` });

@@ -124,6 +124,7 @@ body { display: flow-root; }
 .hstrip .tx { display: flex; flex-direction: column; gap: var(--sp-05); }
 .hstrip:hover { background: var(--card-hover); }
 .hstrip .sup { color: var(--fg-2); }
+.hstrip .end { flex: none; display: flex; align-items: center; }
 
 /* 답변 필요: the prototype's full-width card, its count an orange badge after the title, 답장 대기 a quieter second list in it */
 .hneeds { display: flex; flex-direction: column; min-width: 0; }
