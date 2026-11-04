@@ -204,11 +204,9 @@ details.work.live .wdot { display: block; }
 .runstate .rs-go::after, .pausenote .pn-go::after, .tl-top .tl-more::after { content: ""; position: absolute; inset: -8px -4px; }
 .runline.warn { color: var(--warn); }
 #working > .dot, #working-tx, #working > .sp, #working-stop { display: none !important; }
-#c-model.run::after { content: ""; flex: none; width: 6px; height: 6px; margin-left: 4px; border-radius: 50%; background: currentColor; animation: pulse 2.4s ease-in-out infinite; }
 #send-btn.stop { background: var(--fg); color: var(--bg); }
 #send-btn.stop > svg { display: none; }
 #send-btn.stop::before { content: ""; width: 12px; height: 12px; border: 2px solid currentColor; border-radius: 3px; }
-@media (prefers-reduced-motion: reduce) { #c-model.run::after { animation: none; } }
 @media (pointer: coarse) { .working .btn { height: 36px; padding: 0 10px; } }
 .qlist { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
 .qitem { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border: 0; border-radius: 12px; background: var(--layer); min-width: 0; }
