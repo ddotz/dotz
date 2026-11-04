@@ -34,6 +34,12 @@ test("cramped: text pressed against its filled box fails, padded text and exempt
 	expect(edge.map(i => i.el)).toEqual([expect.stringContaining("@edge")]);
 
 	expect(bad(await measure(`<div style="${CARD};padding:12px 16px;box-sizing:border-box">가나다라 마바사</div><p style="margin:0 16px">이 문장은 화면 가장자리에서 충분히 떨어져 있어요</p>`, "cramped"))).toEqual([]);
+	// a box with only a left rule and no fill has no visible right, top or bottom edge: only the left side is judged
+	const quote = (pad: string) => `<div style="width:240px;height:48px;border-left:3px solid #99a8ff;padding:${pad};box-sizing:border-box">가나다라 마바사</div>`;
+	expect(bad(await measure(quote("0 2px 0 12px"), "cramped"))).toEqual([]);
+	const rule = bad(await measure(quote("0 12px 0 0"), "cramped"));
+	expect(rule).toHaveLength(1);
+	expect(rule[0]!.detail).toMatch(/L[0-3]\b/);
 	// a bar (fixed), a scroller whose text runs on past the edge, and a small box are not looked at
 	expect(bad(await measure(`<div style="position:fixed;top:0;left:0;width:300px;height:40px;background:#ddd;padding:0 1px;box-sizing:border-box">고정 막대 안의 글</div>
 		<div style="${CARD};overflow-x:auto;white-space:nowrap;padding:0 2px;box-sizing:border-box">가로로 스크롤하는 아주 긴 글자 상자 안의 글</div>
@@ -48,6 +54,9 @@ test("field-height: a field and a button of different height in one row fail, eq
 	expect(await measure(row(36, 36), "field-height")).toHaveLength(1);
 	expect(bad(await measure(row(36, 36), "field-height"))).toEqual([]);
 	expect((await measure(row(40, 32, 60), "field-height"))).toEqual([]);
+	// a small icon-only button (no text, 28px wide or less) is not a row partner of a field
+	const chip = `<div style="display:flex;gap:8px;width:380px"><input style="height:32px;box-sizing:border-box;width:120px"><button style="width:28px;height:28px;padding:0"><svg width="12" height="12"></svg></button></div>`;
+	expect(await measure(chip, "field-height")).toEqual([]);
 	// a one-row textarea (the chat composer) is a field too, a two-row one is not; a button.sel beside a field is a button
 	const area = (rows: number, button: number) => `<div style="display:flex;align-items:flex-start;gap:8px;width:380px"><textarea rows="${rows}" style="padding:4px 8px;box-sizing:border-box;width:200px;font:16px/24px sans-serif"></textarea><button style="height:${button}px;box-sizing:border-box">보내기</button></div>`;
 	const one = await measure(area(1, 44), "field-height");
@@ -98,6 +107,9 @@ test("left-edges: lines 1-3px apart are near-tangent, a card's own indentation i
 	const meta = [row(140), row(140), row(142), row(142)].join("");
 	expect((await measure(meta, "left-edges")).map(i => i.value)).toEqual([1]);
 	expect(await measure(meta, "left-edges-tangent")).toEqual([]);
+	// a dot (or a centred initial) before a text leads its row: the label after it is no start line, the lead is none either
+	const dotRow = `<div style="display:flex;align-items:center"><span style="width:8px;height:8px;border-radius:50%;background:#99a8ff"></span><span style="margin-left:6px">라벨</span></div>`;
+	expect(await measure(p(16) + p(16) + dotRow, "left-edges-tangent")).toEqual([]);
 	// the same texts stacked, not beside each other, are start lines and are counted
 	expect((await measure(p(20) + p(20) + p(140) + p(140) + p(142) + p(142), "left-edges-tangent"))).toHaveLength(1);
 
@@ -135,7 +147,8 @@ test("every screen at both widths against hub/layout-baseline.json: no new bad i
 	const { items, unreached, stray } = await measureScreens(names, WIDTHS);
 	expect(unreached).toEqual([]);
 	expect(stray).toEqual([]);
-	expect(new Set(items.map(i => i.check))).toEqual(new Set(CHECKS));   // a check that measured nothing reads nothing
+	// a check that measured nothing reads nothing; left-edges-tangent only has items for pairs that are near-tangent, none is the goal (left-edges measures the same lines)
+	expect(new Set(items.map(i => i.check))).toEqual(new Set(CHECKS.filter(c => c !== "left-edges-tangent")));
 	const { added, stale } = compareBaseline(items, readBaseline(BASELINE_FILE), { screens: names, widths: WIDTHS });
 	expect({ added, stale }).toEqual({ added: [], stale: [] });
 	expect(itemKey(items[0]!)).toMatch(/^[a-z-]+\|[a-z-]+\|\d+\|/);

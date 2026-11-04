@@ -52,9 +52,11 @@
 .pmv-ck .ic { width: 14px; height: 14px; opacity: 0; }
 .pmv-ck[aria-checked="true"] { border-color: var(--fg); background: var(--fg); }
 .pmv-ck[aria-checked="true"] .ic { opacity: 1; }
-.pmv-add { display: flex; align-items: center; gap: var(--sp-2); }
+.pmv-add { display: flex; align-items: stretch; gap: var(--sp-2); }
 .pmv-add .fi { flex: 1; min-width: 0; }
 .pmv-add .btn { flex: none; }
+.pmv-add .fi, .pmv-add .btn { height: auto; min-height: var(--field-h); }
+@media (pointer: coarse), (max-width: 639px) { .pmv-add .fi, .pmv-add .btn { min-height: var(--btn-hit); } }
 .pmv-rt { display: flex; flex-direction: column; gap: var(--sp-15); padding: var(--sp-3) var(--sp-4); }
 .pmv-rt-top { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15) var(--sp-2); min-width: 0; }
 .pmv-rt-name { flex: 1 1 120px; min-width: 0; font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
