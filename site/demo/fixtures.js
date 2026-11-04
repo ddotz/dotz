@@ -5,13 +5,15 @@
   const ago = m => new Date(now - m * 60_000).toISOString();
   const MODEL = "dotz/dotz-ai";
   const model = { provider: "dotz", selector: MODEL, name: "dotz AI", family: "dotz AI", reasoning: true, thinking: [] };
+  // The times of the two open questions: the notice's decision.reply_to must equal its asking message's ts.
+  const T_ASK2 = ago(20), T_ASKM1 = ago(40);
   const la = { name: "site-check", title: "랜딩 페이지 점검", status: "idle", live: true, home: "ch:1", model: MODEL, startedAt: ago(58), lastText: "배포 전 점검 목록을 정리했어요" };
 
   // 메일: received (dir "in") and sent (dir "out"). Addresses are on the reserved example.* domains.
   const CAN = ["read", "unread", "archive", "unarchive", "star", "unstar", "trash"];
   const mails = [
     {
-      key: "m-1", at: ago(47), dir: "in", read: false, reply: "needs",
+      key: "m-1", at: ago(47), dir: "in", read: false, reply: "draft", suggest: { kind: "reply-draft", label: "메일 초안", ref: "dr-m1", state: "draft", at: ago(40) },
       from: "한서윤 <seoyun.han@example.com>", to: "나 <me@example.com>", name: "한서윤", short: "서윤님",
       subject: "다음 주 미팅 일정 확인 부탁드려요",
       summary: "다음 주 미팅 시간을 화요일 오후 2시와 수요일 오전 10시 중에서 골라 달라는 메일이에요.",
@@ -62,7 +64,7 @@
     },
   ];
   const mailBody = m => m.html ? "<!doctype html><meta charset=utf-8><body style=\"font:15px/1.6 sans-serif;margin:16px\">" + m.text.split("\n").map(l => l.trim() ? "<p>" + l + "</p>" : "").join("") + "</body>" : "";
-  const mailCard = m => ({ subject: m.subject, from: m.from, to: m.to, at: m.at, summary: m.summary, preview: m.html ? m.text.split("\n").filter(l => l.trim()).slice(0, 3).join("\n") : m.text.split("\n").find(l => l.trim()) || "", dir: m.dir, read: m.read, ...(m.html ? { html: true } : {}), ...(m.reply ? { reply: m.reply } : {}), can: CAN, attachments: m.attachments || [] });
+  const mailCard = m => ({ subject: m.subject, from: m.from, to: m.to, at: m.at, summary: m.summary, preview: m.html ? m.text.split("\n").filter(l => l.trim()).slice(0, 3).join("\n") : m.text.split("\n").find(l => l.trim()) || "", dir: m.dir, read: m.read, ...(m.html ? { html: true } : {}), ...(m.reply ? { reply: m.reply } : {}), ...(m.suggest ? { suggest: m.suggest } : {}), can: CAN, attachments: m.attachments || [] });
   const mailEvent = m => m.dir === "out" && m.html ? ({ ts: m.at, kind: "mail", dir: "out", source: "mail", target: `mail:${m.key}`, mail: m.key, conv: `mail:${m.key}`, subject: m.subject, from: m.from, to: m.to, preview: mailCard(m).preview, html: true, attachments: [], text: `${m.from} · ${m.subject}\n\n${m.text.split("\n").filter(l => l.trim()).slice(0, 3).join("\n")}` }) : ({ ts: m.at, kind: "mail", source: "mail", target: `mail:${m.key}`, mail: m.key, conv: `mail:${m.key}`, subject: m.subject, from: m.from, to: m.to, summary: m.summary, preview: mailCard(m).preview, attachments: m.attachments || [], text: `${m.subject}\n${m.summary}\n\n\`\`\`원문\n${m.text}\n\`\`\`` });
 
   // 오늘·내일 일정 (아침 브리핑과 일정 질문이 읽어요)
@@ -119,7 +121,7 @@
       { ts: ago(190), kind: "message", source: "web", channel: "web", target: "ch:2", text: "릴리스 노트 항목을 정리해 줘" },
       { ts: ago(189), kind: "out", source: "orchestrator", target: "ch:2", text: "[done] 초안을 정리했어요.\n\n- 새로 추가한 것: 데모 페이지\n- 고친 것: 모바일 문구 줄바꿈\n- 남은 것: 배포 공지" },
       {
-        ts: ago(20), kind: "out", source: "orchestrator", target: "ch:2",
+        ts: T_ASK2, kind: "out", source: "orchestrator", target: "ch:2",
         text: "[ask] 배포 공지를 어떤 형태로 정리할까요?\n\n결정: 공지 형태\n1) 짧은 공지 ← 추천\n한 문단으로 핵심만 전해요\n2) 목록 공지\n바뀐 항목을 순서대로 적어요\n3) 공지 없이 배포\n릴리스 노트만 남겨요",
       },
     ],
@@ -269,16 +271,25 @@
   ] } };
   const queue = { items: [{ id: "q-demo-1", target: "main", text: "끝나면 요금제별 표로 보여 줘" }] };
 
+  // The reply draft awaiting 보내기 / 고치기 / 보내지 않기 for m-1, in the asking-message format of hub/draft-approval.ts.
+  const mailDraftBody = "안녕하세요, 서윤님.\n\n다음 주 화요일 오후 2시가 좋아요.\n온라인으로 뵐까요?\n\n감사합니다.";
+  const mailDraftAsk = `[ask] 서윤님에게 보낼 답장 초안이에요.\n\n> 받는이: 한서윤 <seoyun.han@example.com>\n> 제목: Re: 다음 주 미팅 일정 확인 부탁드려요\n>\n${mailDraftBody.split("\n").map(l => `> ${l}`.trimEnd()).join("\n")}\n\n결정: 이대로 보낼까요?\n1) 보내기 ← 추천\n이 초안으로 답장해요\n2) 고치기 …\n고칠 내용을 적어 주세요\n3) 보내지 않기\n초안을 버려요`;
+
   const notices = {
     unread: 3,
     items: [
-      { id: "n-demo-1", kind: "notice", cls: "news", tone: "", src: "mail:m-1", open: "mail:m-1", at: ago(47), title: "한서윤님 메일에 답장이 필요해요", read: false },
-      { id: "n-demo-2", kind: "notice", cls: "news", tone: "", src: "ch:2", open: "ch:2", at: ago(20), title: "배포 공지 형태를 정해 주세요", read: false },
-      { id: "n-demo-3", kind: "notice", cls: "alert", tone: "", src: "alert", open: "alert", at: ago(35), title: "댓글 3개에 답글을 달 수 있어요", read: false },
-      { id: "n-demo-4", kind: "notice", cls: "news", tone: "", src: "worklog", open: "worklog", at: ago(310), title: "밤 사이 정리를 마쳤어요", read: true },
-      { id: "n-demo-5", kind: "watch", cls: "alert", tone: "", src: "alert", open: "alert", at: ago(9), title: "캠핑 의자 가격", text: "[캠핑 의자 가격] 가격이 바뀌었어요.\n\n- 캠핑 의자 89,000원 → 72,000원", read: false },
-      { id: "n-demo-6", kind: "notice", cls: "result", tone: "done", src: "st_report", open: "worklog", at: ago(52), title: "주간 보고서 정리를 마쳤어요", read: false },
-      { id: "n-demo-7", kind: "notice", cls: "result", tone: "done", src: "worklog", open: "worklog", at: ago(180), title: "아침 브리핑을 보냈어요", read: true },
+      // 답장 초안 확인 (a send approval): the card in the chat of mail:m-1 and the sheet answer it through POST /api/notices/<id>/answer.
+      { id: "n-demo-1", kind: "decision", cls: "ask", tone: "ask", src: "mail:m-1", open: "mail:m-1", at: T_ASKM1, title: "한서윤님에게 보낼 답장을 확인해 주세요", text: mailDraftAsk, read: false,
+        decision: { options: [{ n: 1, label: "보내기", desc: "이 초안으로 답장해요", rec: true }, { n: 2, label: "고치기", desc: "고칠 내용을 적어 주세요", rec: false, detail: true }, { n: 3, label: "보내지 않기", desc: "초안을 버려요", rec: false }], to: "mail:m-1", reply_to: T_ASKM1, group: 1, state: "open",
+          draft: { toLabel: "받는이", to: "한서윤 <seoyun.han@example.com>", mode: "reply", subject: "Re: 다음 주 미팅 일정 확인 부탁드려요", body: mailDraftBody, ref: "dr-m1" } } },
+      { id: "n-demo-2", kind: "decision", cls: "ask", tone: "ask", src: "ch:2", open: "ch:2", at: T_ASK2, title: "배포 공지 형태를 정해 주세요", text: "[ask] 배포 공지를 어떤 형태로 정리할까요?", read: false,
+        decision: { options: [{ n: 1, label: "짧은 공지", desc: "한 문단으로 핵심만 전해요", rec: true }, { n: 2, label: "목록 공지", desc: "바뀐 항목을 순서대로 적어요", rec: false }, { n: 3, label: "공지 없이 배포", desc: "릴리스 노트만 남겨요", rec: false }], to: "ch:2", reply_to: T_ASK2, group: 1, state: "open" } },
+      { id: "n-demo-3", kind: "watch", cls: "news", tone: "", app: "유튜브", src: "alert", open: "alert", at: ago(35), title: "댓글 3개에 답글을 달 수 있어요", text: "댓글 3개에 답글을 달 수 있어요.", read: false },
+      { id: "n-demo-8", kind: "alert", cls: "alert", tone: "fail", src: "alert", open: "alert", at: ago(18), title: "인스타그램 로그인이 풀렸어요", text: "[fail] 인스타그램 확인에 실패했어요.\n\n- 원인: 로그인이 풀렸어요\n- 다음: 설정에서 다시 로그인해 주세요", read: false },
+      { id: "n-demo-4", kind: "worklog", cls: "result", tone: "done", src: "worklog", open: "worklog", at: ago(310), title: "밤 사이 정리를 마쳤어요", read: true },
+      { id: "n-demo-5", kind: "watch", cls: "news", tone: "", watch: "캠핑 의자 가격", src: "alert", open: "alert", at: ago(9), title: "캠핑 의자 가격", text: "[캠핑 의자 가격] 가격이 바뀌었어요.\n\n- 캠핑 의자 89,000원 → 72,000원", read: false },
+      { id: "n-demo-6", kind: "result", cls: "result", tone: "done", src: "ch:4", open: "ch:4", at: ago(52), title: "주간 보고서 정리를 마쳤어요", read: false },
+      { id: "n-demo-7", kind: "worklog", cls: "result", tone: "done", src: "worklog", open: "worklog", at: ago(180), title: "아침 브리핑을 보냈어요", read: true },
     ],
     gone: [],
   };
@@ -292,7 +303,7 @@
   const files = { "reports/주간-보고서.md": "# 주간 보고서\n\n- 이번 주 한 일: 메일 정리, 댓글 답글, 감시 설정\n- 다음 주 할 일: 견적 확정, 배포 공지\n" };
 
   window.DEMO_FIXTURES = {
-    now, ago, MODEL, model, la, mails, mailBody, mailCard, mailEvent, calendar, comments, histories, state, conversations,
+    now, ago, T_ASKM1, mailDraftAsk, mailDraftBody, MODEL, model, la, mails, mailBody, mailCard, mailEvent, calendar, comments, histories, state, conversations,
     integrations, kakaoRooms, kakaoChat, appFields, appFeatures, apps, monitors, projects, todo, subagents, queue, notices, canvases, files,
   };
 })();
