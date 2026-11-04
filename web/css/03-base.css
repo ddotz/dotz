@@ -330,7 +330,7 @@ details.work[open] { padding: var(--sp-15) var(--sp-2) var(--sp-2); border-radiu
 .fatt { --fatt-x: 20px; position: relative; flex: none; display: flex; align-items: center; gap: var(--sp-2); height: 56px; max-width: 220px; padding: 0 calc(var(--sp-1) + var(--fatt-x) + var(--sp-15)) 0 var(--sp-3); border-radius: 12px; background: var(--layer); color: var(--fg); }
 .fatt.img { width: 56px; padding: 0; overflow: hidden; }
 .fatt.img img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.fatt .fi-ic { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--card); color: var(--fg-2); }
+.fatt .fi-ic { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 4px; background: var(--card); color: var(--fg-2); }
 .fatt .fi-ic svg { width: 18px; height: 18px; }
 .fatt .fi-t { min-width: 0; display: flex; flex-direction: column; }
 .fatt .fi-n { font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

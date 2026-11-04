@@ -1,25 +1,4 @@
 {
  "note": "accepted layout-measure items (check|screen|width|el); the list only shrinks",
- "keys": [
-  "concentric|home|1280|span.fi-ic < button.fatt < div.hrx-f in button.fatt",
-  "concentric|home|390|span.fi-ic < button.fatt < div.hrx-f in button.fatt",
-  "cramped|mail-recipient|1280|div.rq-orig < div.rq-og-wrap < div.rq.cm",
-  "cramped|mail-recipient|390|div.rq-orig < div.rq-og-wrap < div.rq.cm",
-  "cramped|mail|1280|div.rq-orig < div.rq-og-wrap < div.rq.cm",
-  "cramped|mail|390|div.rq-orig < div.rq-og-wrap < div.rq.cm",
-  "field-height|mail-recipient|1280|input.dr-rc-in < span.dr-rc-edit < div.dr-rc-list + button.btn.text",
-  "field-height|mail-recipient|1280|input.dr-rc-in < span.dr-rc-edit < div.dr-rc-list + button.dr-rc-x",
-  "field-height|project-goal|1280|input#f4.fi < div.pmv-add < div.card.pmv-goal + button.btn.tonal",
-  "field-height|project-goal|390|input#f4.fi < div.pmv-add < div.card.pmv-goal + button.btn.tonal",
-  "icon-center|home|1280|svg < span.end < button.li.hstrip",
-  "icon-center|home|390|svg < span.end < button.li.hstrip",
-  "left-edges-tangent|chat-open|1280|section#v-chat.view.fill < div#views.views < div.main (screen)",
-  "left-edges-tangent|chat|1280|section#v-chat.view.fill < div#views.views < div.main (screen)",
-  "left-edges-tangent|harness|1280|div.hm-st.one < div.hm-simple < div",
-  "left-edges-tangent|harness|1280|section#v-harness.view < div#views.views < div.main (screen)",
-  "left-edges-tangent|harness|390|div.hm-st.one < div.hm-simple < div",
-  "left-edges-tangent|harness|390|section#v-harness.view < div#views.views < div.main (screen)",
-  "left-edges-tangent|home|1280|div.card.tap < div.bi.fit < div#home-cards.board.rows",
-  "left-edges-tangent|home|390|div.card.tap < div.bi.fit < div#home-cards.board.rows"
- ]
+ "keys": []
 }
