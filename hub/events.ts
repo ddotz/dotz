@@ -7,6 +7,11 @@ import { mailByThread, mailTarget } from "./mail.ts";
 
 export type HubEvent = { ts: string; kind: string; source: string; text: string; [key: string]: unknown };
 
+/** A message a peer gateway left here (dotz_peer send, handoff), the rule of web/js/01-peer-msg.js peerMsgOf: `via` alone is not enough, the owner's own
+ * message or decision answer from the other computer's page carries it too. Both arrive as web messages under the owner's login, so only this tells them apart. */
+export const isPeerMessage = (e: HubEvent): boolean =>
+	!!e.via && (e.kind === "message" || e.kind === "lane_message") && !e.decision && !e.picks && !/^(?:mail|th|settings):/.test(String(e.conv || e.channel || ""));
+
 const recent: HubEvent[] = [];
 const subscribers = new Set<ReadableStreamDefaultController<string>>();
 

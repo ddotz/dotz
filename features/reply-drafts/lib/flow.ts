@@ -5,7 +5,7 @@ import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimSend } from "../../../hub/draft-claim.ts";
 import { asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { addressesOf, generateChatReply, lintReply, NO_RECIPIENT, reviseReply, withSenderAddress, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
+import { addressesOf, generateChatReply, lintReply, NO_RECIPIENT, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
 import { matchLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
 import { canAttach, sendWith, webmailSite, type SendOutcome } from "./senders.ts";
@@ -139,6 +139,7 @@ export function ownerWarning(w: string): string {
 	if (w === "the subject must start with 'Re:'") return "제목이 Re:로 시작하지 않아요";
 	if (w === "the body is empty") return "본문이 비어 있어요";
 	if ((x = m(/^the body is (\d+) characters; the limit is (\d+)$/))) return `본문이 ${x[1]}자예요 (최대 ${x[2]}자)`;
+	if (w === SENT_CLAIM_FAILURE) return "이미 보냈다고 썼는데 보낸 근거가 없어요";
 	if (w === "the text contains a placeholder") return "채워 넣지 않은 자리표시가 있어요";
 	if ((x = m(/^it uses the forbidden expression '(.+)'$/))) return `쓰지 않기로 한 표현 '${x[1]}'이(가) 있어요`;
 	return w;

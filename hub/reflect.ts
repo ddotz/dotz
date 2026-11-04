@@ -6,6 +6,7 @@ import { pushBackup, unstageSecrets } from "./backup.ts";
 import { issueBlock } from "./choices.ts";
 import { cfg, DATA_DIR, DEFAULTS, log, paths, writeAtomic } from "./config.ts";
 import { type Correction, TOPIC_NAMES, type Topic, topicOf } from "./corrections.ts";
+import { isPeerMessage } from "./events.ts";
 import { msg, withReplyLine } from "./i18n.ts";
 import { LESSONS_MAX_BYTES } from "./prompt-budget.ts";
 import { trackTimer } from "./shutdown.ts";
@@ -80,7 +81,7 @@ export function digest(sessionFile: string, now = Date.now()): string | undefine
 	const since = now - DAY;
 	const inbox = jsonl(paths.inbox, since);
 	const outbox = jsonl(paths.outbox, since);
-	const owner = inbox.filter(e => e.kind === "message" || e.kind === "lane_message");
+	const owner = inbox.filter(e => (e.kind === "message" || e.kind === "lane_message") && !isPeerMessage(e));
 	const laneTrouble = inbox.filter(e => e.kind === "lane_report" && /^\[lane (error|exited|paused)\]/.test(String(e.text)));
 	if (!owner.length && !laneTrouble.length) return undefined;
 	const logLines = existsSync(paths.log) ? readFileSync(paths.log, "utf8").split("\n").filter(l => Date.parse(l.slice(0, 24)) >= since) : [];
