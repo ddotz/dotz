@@ -4,7 +4,7 @@
 // The assistant's post that is a draft approval (hub/draft-approval.ts parseDraftApproval: one 보내기 / 고치기 / 보내지 않기 block with a
 // trailing "(<ref>)") goes through route() before it is shown:
 //   - no card waits in that conversation: it is posted (and becomes the visible one);
-//   - another card waits there: it is held, and the visible card says "남은 N건";
+//   - another card waits there: it is held, and the visible card says "남은 N건"; prose above the card goes out now (splitCardLead);
 //   - a card for the same ref is already open (or held): nothing new is posted; a changed text replaces the open card in place.
 // When the visible card closes (answered, resolved, ignored: notices.ts onDecisionClosed), the next held card is posted with its own
 // "남은 N건". Held cards are kept on disk, so a restart shows them later instead of losing them.
@@ -49,6 +49,33 @@ export function closedCardText(text: string, how: "answered" | "resolved" | "ign
 /** The draft ref a post asks approval for, or undefined when it is no send-approval card. */
 export function cardRef(text: string): string | undefined {
 	return parseDraftApproval(parseTone(stripHandoff(text)).text.trim())?.ref;
+}
+
+/**
+ * A post whose answer comes before its card: the prose, and the card from its head paragraph (or a later `[ask]` line) down. Only the card
+ * may wait; held whole, the answer went with it (2026-11-04 13:33 UTC: a 2,296-char report "롱폼 공개됐어" stayed held behind a card
+ * open since 09:21, and the owner saw no reply). Undefined when the post is the card alone.
+ */
+export function splitCardLead(text: string): { lead: string; card: string } | undefined {
+	const lines = text.split("\n");
+	let fence = false, quote = -1;
+	for (let i = 0; i < lines.length && quote < 0; i++) {
+		if (/^\s*```/.test(lines[i]!)) fence = !fence;
+		else if (!fence && /^\s*>/.test(lines[i]!)) quote = i;
+	}
+	if (quote < 0) return undefined;
+	let head = quote;
+	while (head > 0 && !lines[head - 1]!.trim()) head--;
+	while (head > 0 && lines[head - 1]!.trim()) head--;
+	const ask = lines.findIndex((l, i) => i > 0 && i < quote && /^\s*\[ask\]/i.test(l));
+	if (ask > 0) head = ask;
+	const lead = lines.slice(0, head).join("\n").trim();
+	if (!lead) return undefined;
+	const rest = lines.slice(head).join("\n");
+	// The ask belongs to the card: a lead that kept the tag would read as a question without buttons.
+	const asked = /^\s*\[ask\]\s*/i;
+	const split = asked.test(lead) ? { lead: lead.replace(asked, ""), card: asked.test(rest) ? rest : `[ask] ${rest}` } : { lead, card: rest };
+	return split.lead && cardRef(split.card) === cardRef(text) ? split : undefined;
 }
 
 const LEFT = /^-# (?:남은 \d+건(?: \(\d+\/\d+\))?|마지막 카드예요(?: \(\d+\/\d+\))?)$/;
@@ -118,13 +145,14 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 		if (!ref) return { action: "post" };
 		const conv = deps.convOf(target);
 		const item = itemOf(conv, ref);
+		const parts = splitCardLead(text);
 		const h = held.find(x => itemOf(conv, x.ref) === item && deps.convOf(x.target) === conv);
 		if (h) {
 			if (h.ref !== ref) Object.assign(h, { ref, target, extra });
-			h.text = text;
+			h.text = parts?.card ?? text;
 			save();
 			deps.log(`approval card ${ref} in ${conv} is already held (as one item); its text is replaced`);
-			return { action: "same" };
+			return parts ? { action: "post", text: parts.lead } : { action: "same" };
 		}
 		const s = shown.get(conv);
 		// A card still on its way (no notice yet) cannot be rewritten into another ref: that newer card waits like any other.
@@ -141,12 +169,12 @@ export function createApprovalQueue(deps: ApprovalQueueDeps) {
 			return { action: "update" };
 		}
 		if (waiting(conv) || deps.openRefs(conv).length) {
-			held.push({ ref, target, text, extra });
+			held.push({ ref, target, text: parts?.card ?? text, extra });
 			save();
 			const left = heldIn(conv).length;
 			deps.log(`approval card ${ref} in ${conv} held: ${left} wait behind the open one`);
 			recount(conv);
-			return { action: "hold", left };
+			return parts ? { action: "post", text: parts.lead } : { action: "hold", left };
 		}
 		// Nothing waits here: a new run of cards starts with this one.
 		place.set(conv, 1);

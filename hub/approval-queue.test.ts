@@ -1,7 +1,7 @@
 // One send-approval card at a time per conversation: the rest wait behind it ("남은 N건") and come one by one as each closes; the same
 // card again updates the open one instead of a second post.
 import { describe, expect, test } from "bun:test";
-import { type ApprovalQueueDeps, cardRef, CARDS_LEAD, closedCardText, createApprovalQueue, type Held, pendingCardsNote, withLeft } from "./approval-queue.ts";
+import { type ApprovalQueueDeps, cardRef, CARDS_LEAD, closedCardText, createApprovalQueue, type Held, pendingCardsNote, splitCardLead, withLeft } from "./approval-queue.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
 
 // Draft refs are 2+ characters (draft-approval.ts REF): "A" stands for the draft "cm-A".
@@ -232,5 +232,44 @@ describe("approval queue", () => {
 		expect(withLeft(withLeft(c, 3), 2).split("\n").filter(l => l.includes("남은"))).toEqual(["-# 남은 2건"]);
 		expect(withLeft(withLeft(c, 3), 0)).toBe(c);
 		expect(cardRef(withLeft(c, 3))).toBe("cm-A");
+	});
+});
+
+describe("an answer written above a held card", () => {
+	const report = "[done] 롱폼 공개됐어.\nhttps://youtu.be/x\n\n숏폼 카드는 아래에 있어.\n- 첫머리를 바꿨어.";
+	const open = () => {
+		const s = setup();
+		s.q.route("ch:1", card("A"));
+		s.show("ch:1", card("A"));
+		return s;
+	};
+
+	test("goes out now and only the card waits behind the open one", () => {
+		const s = open();
+		expect(s.q.route("ch:1", `${report}\n\n${card("B")}`)).toEqual({ action: "post", text: report });
+		expect(s.q.held().map(h => h.text)).toEqual([card("B")]);
+		s.close("ch:1", "cm-A");
+		expect(s.posts.map(p => cardRef(p.text))).toEqual(["cm-B"]);
+		expect(s.posts[0]!.text).not.toContain("롱폼 공개됐어");
+	});
+
+	test("goes out when the card was already held too, and the held card takes the new text", () => {
+		const s = open();
+		s.q.route("ch:1", card("B"));
+		expect(s.q.route("ch:1", `${report}\n\n${card("B", "고친 답글")}`)).toEqual({ action: "post", text: report });
+		expect(s.q.held().map(h => h.text)).toEqual([card("B", "고친 답글")]);
+	});
+
+	test("a card alone still just waits, and a post that is no card passes through", () => {
+		const s = open();
+		expect(s.q.route("ch:1", card("B"))).toEqual({ action: "hold", left: 1 });
+		expect(s.q.route("ch:1", report)).toEqual({ action: "post" });
+	});
+
+	test("a card whose head stands apart from its quote stays whole, its ask moves off the lead", () => {
+		const body = draftApprovalBlock({ to: "유튜브", toLabel: "대상", body: "설명", ref: "shorts:1", question: "이대로 올릴까?" });
+		expect(splitCardLead(`[done] 끝났어.\n\n[ask] 쇼츠 업로드\n길이 82초\n\n${body}`)).toEqual({ lead: "[done] 끝났어.", card: `[ask] 쇼츠 업로드\n길이 82초\n\n${body}` });
+		expect(splitCardLead(`쇼츠 업로드\n\n${body}`)).toBeUndefined();
+		expect(splitCardLead(`[ask] 끝났어.\n\n쇼츠 업로드\n${body}`)).toEqual({ lead: "끝났어.", card: `[ask] 쇼츠 업로드\n${body}` });
 	});
 });
