@@ -10,12 +10,22 @@ const TWO = "[ask] 두 가지를 정해 주세요\n\n결정: 공지 형태\n**1)
 const AT = "2026-11-03T09:19:00.000Z";
 const sent = inbox<Record<string, any>>();
 let history: unknown[] = [];
+let notices: Record<string, any>[] = [];
+const answered = inbox<{ id: string; n: number }>();
 const hub = fakeHub({
 	stream: "fake",
 	api: async (req, url) => {
 		if (url.pathname === "/api/history") return json({ target: url.searchParams.get("target"), events: url.searchParams.get("target") === "main" ? history : [] });
 		if (url.pathname === "/api/activity") return json({ items: [], more: false, history: false });
-		if (url.pathname === "/api/notices" && req.method === "GET") return json({ unread: 0, items: [] });
+		if (url.pathname === "/api/notices" && req.method === "GET") return json({ unread: notices.length, items: notices });
+		const an = /^\/api\/notices\/([^/]+)\/answer$/.exec(url.pathname);
+		if (an && req.method === "POST") {
+			const { n } = await req.json() as { n: number };
+			answered.push({ id: an[1]!, n });
+			const item = notices.find(x => x.id === an[1])!;
+			item.decision = { ...item.decision, state: "answered", answer: `${n})` };
+			return json({ item, unread: 0 });
+		}
 		if (url.pathname === "/api/message" && req.method === "POST") { sent.push(await req.json()); return json({ ok: true }); }
 	},
 });
@@ -65,6 +75,28 @@ describe("an answered decision in the conversation", () => {
 		await waitFor(`document.querySelector("#tl .dc-rec") && document.querySelector("#dcard").hidden`);
 		expect(await ev(`document.querySelector("#tl .dc-rec .dc-rec-r").textContent.startsWith("질문공지 형태· 답:1) 짧은 공지")`)).toBe(true);
 		expect(await ev(`document.querySelector("#dcard").hidden`)).toBe(true);
+	}, 30_000);
+
+	test("several decisions with their own notices are answered one by one: a pick answers that decision, the others stay, and each sheet shows only its own", async () => {
+		const opt = (n: number, label: string) => ({ n, label, desc: "", rec: false });
+		const dec = (id: string, title: string, text: string) => ({ id, ts: AT, updated: AT, at: AT, kind: "decision", tone: "ask", title, text, open: "main", src: "main", read: false, decision: { options: [opt(1, "하나"), opt(2, "둘")], to: "main", reply_to: AT, group: 2, state: "open" } });
+		notices = [dec("d1", "공지 형태", "두 가지를 정해 주세요"), dec("d2", "보낼 곳", "두 가지를 정해 주세요")];
+		await open([{ ts: AT, kind: "out", source: "orchestrator", target: "web", text: TWO }]);
+		await waitFor(`document.querySelectorAll("#dcard .dc-row").length === 4`);
+		expect(await ev(`document.querySelector("#dcard .dc-send")`)).toBe(null);
+		await run(`noticeSheetOpen("d2")`);
+		await waitFor(`document.querySelector(".ds-t")`);
+		expect(await ev<string>(`document.querySelector(".ds-t").textContent`)).toBe("보낼 곳");
+		expect(await ev<string>(`document.querySelector(".fs-body").textContent`)).not.toContain("공지 형태");
+		await run(`ntSheetClose()`);
+		await waitFor(`!document.querySelector(".ds-t")`);
+		await run(`document.querySelectorAll("#dcard .dc-row")[0].click()`);
+		await answered.until(items => items.length > 0, 10_000, "the first answer");
+		expect([...answered]).toEqual([{ id: "d1", n: 1 }]);
+		await waitFor(`document.querySelectorAll("#dcard .dc-row").length === 2`);
+		expect(await ev<string>(`document.querySelector("#dcard").textContent`)).toContain("보낼 곳");
+		expect(sent).toEqual([]);
+		notices = [];
 	}, 30_000);
 
 	test("a several-block decision sends nothing until every block is answered, then one message with both picks and two records", async () => {
