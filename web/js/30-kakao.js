@@ -361,7 +361,7 @@ function kkPerson(uid) {
   const body = el("div", { class: "kk-pd-b" }, el("div", { class: "kk-note", role: "status", text: "불러오는 중…" }));
   const d = el("dialog", { class: "kk-pd", "data-uid": uid, "aria-label": `${name} 사용자별 분석` },
     el("div", { class: "kk-pd-in" },
-      el("div", { class: "kk-pd-h" }, kkAvatar(name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: name }), el("span", { class: "cv-p", text: "사용자별 분석" })), el("button", { class: "x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
+      el("div", { class: "kk-pd-h" }, kkAvatar(name), el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: name }), el("span", { class: "cv-p", text: "사용자별 분석" })), el("button", { class: "ib fs-x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
       body));
   document.body.append(d); d.showModal(); dialogHist(d);
   d.addEventListener("close", () => d.remove());
@@ -542,14 +542,14 @@ async function kkSetRoom(r, patch) {
     toast(e.message, true);
   }
 }
-const kkSearch = el("input", { class: "kk-q", id: "kk-q", type: "search", placeholder: "대화방 검색", "aria-label": "대화방 검색", autocomplete: "off", enterkeyhint: "search" });
+const kkSearch = el("input", { id: "kk-q", type: "search", placeholder: "대화방 검색", "aria-label": "대화방 검색", autocomplete: "off", enterkeyhint: "search" });
 // Typing refilters only the list: the input itself stays in place (it keeps focus and the IME composition).
 kkSearch.addEventListener("input", () => { KK.q = kkSearch.value; const pl = $("#kk-pl"); if (pl) clear(pl).append(...kkPickRows()); });
-// The watch toggle is an eye on a grey surface: colored while the room is watched, grey while it is not. Never a switch (the one switch is the room's 자동 초안 card).
-const kkEye = (on, label, key, change) => el("button", { class: `kk-eye${on ? " on" : ""}`, type: "button", "aria-pressed": on ? "true" : "false", "aria-label": label, title: label, "data-k": key, onclick: ev => { ev.stopPropagation(); change(!on); } }, icon("eye"));
-const kkLine1 = (r, name, time) => el("span", { class: "kk-l1" }, name, kkTag(r) ? el("span", { class: "kk-grp", text: kkTag(r) }) : null, time || null);
+// The watch toggle is the app's quiet icon button with an eye: accent while the room is watched, grey while it is not. Never a switch (the one switch is the room's 자동 초안 card).
+const kkEye = (on, label, key, change) => el("button", { class: `ib kk-eye${on ? " on" : ""}`, type: "button", "aria-pressed": on ? "true" : "false", "aria-label": label, title: label, "data-k": key, onclick: ev => { ev.stopPropagation(); change(!on); } }, icon("eye"));
+const kkLine1 = (r, name) => el("span", { class: "kk-l1" }, name, kkTag(r) ? el("span", { class: "kk-grp", text: kkTag(r) }) : null);
 // The 대화방 추가 list: every room, the eye adds it to the watched ones or takes it off again; the name opens the room (read-only while it is not watched).
-const kkPickRow = r => el("div", { class: `kk-pr${KK.open === r.chatId ? " on" : ""}`, "data-chat": r.chatId },
+const kkPickRow = r => el("div", { class: `pl-row kk-pr${KK.open === r.chatId ? " on" : ""}`, "data-chat": r.chatId },
   kkAvatar(r.name),
   el("span", { class: "cv-b" },
     kkLine1(r, el("button", { class: "cv-n kk-pn", type: "button", "data-k": "open", title: r.name, text: r.name, "aria-label": `${r.name} 열기`, onclick: () => { kkOpen(r.chatId); if (KK.adding) KK.adding.close(); } })),
@@ -571,9 +571,9 @@ function kkAddOpen() {
   if (KK.adding) return;
   KK.q = ""; kkSearch.value = "";
   const d = el("dialog", { class: "kk-pd kk-add", id: "kk-add", "aria-label": "대화방 추가" },
-    el("div", { class: "kk-pd-in" },
-      el("div", { class: "kk-pd-h" }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "대화방 추가" }), el("span", { class: "cv-p", text: "지켜볼 방을 고르세요" })), el("button", { class: "x", type: "button", "data-k": "close", "aria-label": "닫기", onclick: () => d.close() }, icon("close"))),
-      el("div", { class: "kk-pd-b" }, kkSearch, el("div", { class: "kk-hint", text: "눈 아이콘을 누르면 그 방을 지켜보고, 다시 누르면 멈춰요." }), el("div", { class: "kk-pl", id: "kk-pl" }, ...kkPickRows()))));
+    el("div", { class: "kk-pd-in", tabindex: "-1", autofocus: true },
+      fsHead([el("h2", { class: "fs-t", text: "대화방 추가" }), el("span", { class: "sup", text: "눈 아이콘으로 지켜볼 방을 골라요" })], { close: () => d.close() }),
+      el("div", { class: "kk-pd-b" }, el("label", { class: "pl-search kk-search" }, icon("search"), kkSearch), el("div", { class: "pl-list kk-pl", id: "kk-pl" }, ...kkPickRows()))));
   KK.adding = d;
   document.body.append(d); d.showModal(); dialogHist(d);
   d.addEventListener("close", () => { if (KK.adding === d) KK.adding = null; d.remove(); });
@@ -581,15 +581,15 @@ function kkAddOpen() {
 // 지켜보기 끄기 from the list: the row leaves the list and the toast brings it back.
 const kkUnwatch = r => { kkSetRoom(r, { watched: false }); toast("지켜보기를 껐어요", false, { label: "되돌리기", onclick: () => kkSetRoom(r, { watched: true }) }, 6000); };
 function kkRow(r) {
-  const on = KK.open === r.chatId, sub = kkSubLine(r);
+  const on = KK.open === r.chatId, sub = kkSubLine(r), time = r.lastAt ? el("span", { class: "kk-t", text: kkListTime(r.lastAt) }) : null;
   return el("div", { class: "kk-rw" },
     el("button", { class: `cv-row pv kk-row${r.unread ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-chat": r.chatId, "aria-current": on ? "true" : null, onclick: () => kkOpen(r.chatId) },
       kkAvatar(r.name),
-      el("span", { class: "cv-b" }, kkLine1(r, el("span", { class: "cv-n", title: r.name, text: r.name }), r.lastAt ? el("span", { class: "kk-t", text: kkListTime(r.lastAt) }) : null), sub ? el("span", { class: "cv-p", text: sub }) : null),
-      // The prototype's row end, on one line: 미답장, the unread count, then the eye.
-      r.unread || r.unreplied ? el("span", { class: "cv-m" }, el("span", { class: "kk-rmeta" },
+      el("span", { class: "cv-b" }, kkLine1(r, el("span", { class: "cv-n", title: r.name, text: r.name })), sub ? el("span", { class: "cv-p", text: sub }) : null),
+      // The row end like every list: the time on top, 미답장 and the unread count under it; the eye sits past them (.kk-rw).
+      time || r.unread || r.unreplied ? el("span", { class: "cv-m" }, time, r.unread || r.unreplied ? el("span", { class: "kk-rmeta" },
         r.unreplied ? unrepPill() : null,
-        r.unread ? el("span", { class: "nb warn", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null)) : null),
+        r.unread ? el("span", { class: "nb warn", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null) : null),
     kkEye(true, `${r.name} 지켜보기 끄기`, "watch", () => kkUnwatch(r)));
 }
 function kkPaintRooms() {
@@ -597,14 +597,13 @@ function kkPaintRooms() {
   const note = !KK.loaded ? "불러오는 중…" : !KK.on ? "카카오톡 연동이 꺼져 있어요" : KK.error, ready = KK.loaded && !note;
   const head = el("div", { class: "kk-lh" }, el("span", { class: "kk-pt", text: "지켜보는 대화방" }), el("span", { class: "kk-cnt", text: ready ? `${watched.length}개` : "" }),
     ready && KK.rooms.length ? el("button", { class: "btn tonal sm kk-add-btn", id: "kk-add-btn", type: "button", onclick: () => kkAddOpen() }, icon("add"), el("span", { text: "추가" })) : null);
-  const list = el("section", { class: "kk-watch", "aria-label": "지켜보는 대화방" });
+  const list = el("section", { class: "pl-list kk-watch", "aria-label": "지켜보는 대화방" });
   if (note) list.append(el("div", { class: "kk-note", role: "status", text: note }));
   else if (watched.length) list.append(...watched.map(kkRow));
   else list.append(el("div", { class: "kk-note", id: "kk-empty", text: KK.rooms.length ? "지켜볼 대화방을 추가해 주세요" : "고를 수 있는 대화방이 없어요" }));
   // The status of the watches the app owns (its new-message check, a login keeper) is at the top of the pane, on this computer and on the other alike.
   const own = (kkItemNow() || {}).owned || [];
-  clear(kkRooms).append(...[own.length ? el("section", { class: "kk-own", "aria-label": "감시 상태" }, ...own.map(monStatNode)) : null, head, list,
-    ready && watched.length ? el("div", { class: "kk-hint kk-foot-hint", text: "눈 아이콘을 누르면 그 방 지켜보기를 멈춰요. 새로 지켜볼 방은 추가에서 골라요." }) : null].filter(Boolean));
+  clear(kkRooms).append(...[own.length ? el("section", { class: "kk-own", "aria-label": "감시 상태" }, ...own.map(monStatNode)) : null, head, list].filter(Boolean));
   kkRooms.scrollTop = top;
   if (KK.adding) { const pl = $("#kk-pl"); if (pl) clear(pl).append(...kkPickRows()); }
   kkPaintAuto();
