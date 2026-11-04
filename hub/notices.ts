@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { log, now, paths, writeAtomic } from "./config.ts";
-import { type DecisionOption, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
+import { type DecisionOption, decisionText, detailOf, hasDecisionHead, parseDecisions } from "./choices.ts";
 import { DRAFT_BODY_MAX, type DraftApproval, type DraftFileIn, draftActionOf, draftNeedsText, parseDraftApproval, quotedDraft, refreshDraft, rewriteDraftTo, withStagedFiles } from "./draft-approval.ts";
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
@@ -641,7 +641,13 @@ export function decisionsOf(e: HubEvent): Draft[] {
 		return [{ ...draft(line || "답변이 필요해요", options, 1, 0), ...(options.length ? { assumed: true as const } : {}) }];
 	}
 	const many = pc.blocks.length > 1;
-	return pc.blocks.map((b, i) => draft(b.title || (many ? `결정 ${i + 1}` : pc.question || line), b.options.map(o => ({ ...o })), pc.blocks.length, i));
+	// Several decisions are several notices: each carries its own text, so opening one never shows the others under its title.
+	const own = many && pc.blocks.every(b => b.headed);
+	return pc.blocks.map((b, i) => {
+		const title = b.title || (many ? `결정 ${i + 1}` : pc.question || line);
+		const d = draft(title, b.options.map(o => ({ ...o })), pc.blocks.length, i);
+		return own ? { ...d, detail: (decisionText(body, i) || title).slice(0, TEXT_MAX) } : d;
+	});
 }
 
 // A repeat of an ask that is already answered or ignored makes its twin item before putDecision sees it: that twin ends the same way.

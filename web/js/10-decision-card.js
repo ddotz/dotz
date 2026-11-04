@@ -16,7 +16,7 @@ function stripChoices(text) {
     if (!CH_OPT.test(lines[i])) { out.push(lines[i]); continue; }
     if (isDescLine(lines[i + 1])) i++;
   }
-  return out.join("\n").replace(/\n{3,}/g, "\n\n");
+  return out.filter(l => !CH_CLOSE.test(l)).join("\n").replace(/\n{3,}/g, "\n\n");
 }
 function parseChoices(text) {
   const OPT = CH_OPT, HEAD = CH_HEAD;
@@ -54,7 +54,19 @@ const draftAsksText = o => o.label === DRAFT_EDIT || o.label === DRAFT_OWN;
 const hashOf = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return h.toString(36); };
 // What the target waits on: a session's pendingAsk, else its last bot message when that is an [ask] with a choice block and no
 // owner message came after it. Null when nothing waits (so the card goes away once the answer lands).
+// Several decisions of one message are answered one by one (owner 2026-11-04): each open notice of the group is a block, a pick answers that
+// notice at once and the block leaves the card; the rest wait. A newer question of the conversation takes the dock first.
+function decisionGroup(t) {
+  const open = NT.items.filter(n => ntOpenDec(n) && !n.pc && !n.decision.draft && n.decision.to === t && n.decision.group > 1 && n.decision.reply_to);
+  if (!open.length) return null;
+  const at = open.map(n => n.decision.reply_to).sort().pop(), mine = open.filter(n => n.decision.reply_to === at);
+  return { key: `${t}|g:${at}`, t, sig: `g:${at}`, at, each: true, question: mine.length === 1 ? ntPlain(mine[0].title) : "", blocks: mine.map(n => ({ title: ntPlain(n.title), options: n.decision.options, nd: n })) };
+}
 function decisionOf(t) {
+  const one = decisionOne(t), grp = decisionGroup(t);
+  return grp && !(one && msOf(one.at) > msOf(grp.at)) ? grp : one;
+}
+function decisionOne(t) {
   if (!S) return null;
   const info = targetInfo(t), s = ts(t);
   if (isLaneT(t) && info.known && !info.alive && !info.resumable) return null;
@@ -113,9 +125,16 @@ function pickOption(dc, bi, opt, note) {
   DC.picks[dc.key] = p;
   p[bi] = note ? { ...opt, note } : opt;
   delete DC.edit[dc.key]; delete DC.note[dc.key];
+  if (dc.each) { answerEach(dc, bi, opt, note); return; }
   // Several decisions (owner 2026-11-01): a pick only marks that decision (and can be changed); nothing goes out until 보내기 (dcSendAll).
   if (dc.blocks.length > 1) { paintDecision(); return; }
   answerDecision(dc, pickSay(p[0]), p[0], note);
+}
+async function answerEach(dc, bi, opt, note) {
+  DC.st[dc.key] = "sending"; paintDecision();
+  try { await ntPost(dc.blocks[bi].nd, opt.n, note, DC.files[dc.key]); delete DC.files[dc.key]; } catch (e) { toast(e.message, true); }
+  delete DC.st[dc.key]; delete DC.picks[dc.key]; delete DC.step[dc.key];
+  paintDecision();
 }
 function dcSendAll(dc) {
   const p = DC.picks[dc.key] || [];
@@ -126,7 +145,7 @@ function dcSendAll(dc) {
 function multiNodes(dc, picks, st) {
   const got = dc.blocks.filter((_, i) => picks[i]).length, all = got === dc.blocks.length;
   return [...dc.blocks.flatMap((b, i) => [el("div", { class: "dc-sub", text: `${picks[i] ? "✓ " : ""}${b.title || `결정 ${i + 1}`}` }), ...b.options.map(o => choiceRow(dc, i, o, picks, st))]),
-    el("button", { class: "btn dc-send", type: "button", disabled: !!st || !all, onclick: () => dcSendAll(dc) }, all ? "보내기" : `보내기 (${got}/${dc.blocks.length} 선택)`)];
+    dc.each ? null : el("button", { class: "btn dc-send", type: "button", disabled: !!st || !all, onclick: () => dcSendAll(dc) }, all ? "보내기" : `보내기 (${got}/${dc.blocks.length} 선택)`)].filter(Boolean);
 }
 // The files a draft sends along (hub/draft-approval.ts `> 첨부:` lines): one row per file, the row opens the file that will go out
 // (GET /api/drafts/<ref>/files/<n>, hub/draft-files.ts; through the peer proxy for a peer's draft). `첨부 없음` = the mail it answers had
@@ -568,7 +587,7 @@ function dcPointer(box, n) {
 // a phone the keyboard closes and reopens while the owner types (owner 2026-10-22), so a live update that changes none of it leaves the card alone.
 function dcSig(dc, picks, step) {
   const dr = dc.draft ? [dc.draft.to, (dc.draft.cc || []).join(","), dc.draft.mode || ""] : 0;
-  return JSON.stringify([dc.key, dc.question, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr, (DC.files[dc.key] || []).length, !!DC.fbusy[dc.key]]);
+  return JSON.stringify([dc.key, dc.question, dc.each ? dc.blocks.map(b => b.nd.id) : 0, picks.map(o => o && o.n), step, !!DC.fold[dc.key], DC.st[dc.key] || "", DC.edit[dc.key] ? DC.edit[dc.key].opt.n + (DC.edit[dc.key].manual ? "m" : "") : 0, dr, (DC.files[dc.key] || []).length, !!DC.fbusy[dc.key]]);
 }
 // What was decided stays in the conversation once the card is gone (owner 2026-11-03): the owner's answer message already carries the
 // question and the chosen option (hub/intake.ts decisionLines, `picks`), so the record is drawn from it here and from history after a

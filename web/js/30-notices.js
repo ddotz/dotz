@@ -663,7 +663,8 @@ function ntSheetPaint() {
     el("div", { class: "fs-body" },
       el("h2", { class: "ds-t", id: "ds-t", text: parts.title || "답변이 필요해요" }),
       el("div", { class: "ds-m", text: ntWhen(n) }),
-      ...ntBody(n, parts.rest))];
+      // The buttons show the options; a "결정:" line that only repeats the title goes too.
+      ...ntBody(n, d.options.length && !d.draft ? stripChoices(parts.rest).split("\n").filter(l => (CH_HEAD.exec(l) || [])[1] !== ntPlain(n.title)).join("\n").trim() : parts.rest))];
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).

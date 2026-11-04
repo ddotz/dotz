@@ -106,6 +106,30 @@ export const hasDecisionHead = (blocks: DecisionBlock[]): boolean => blocks.some
 const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
 export const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
+// One decision of a several-decision message: the lead text before the first "결정:" line plus that block's own lines, without its option
+// lines (the buttons show them) and without the other decisions. A message whose blocks are not all headed stays whole. Empty when nothing is left.
+export function decisionText(body: string, index: number): string {
+	const lines = body.replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
+	const lead: string[] = [];
+	const parts: string[][] = [];
+	let fence = false;
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]!;
+		if (FENCE.test(line)) fence = !fence;
+		if (!fence && DECISION_HEAD.test(line)) {
+			parts.push([]);
+			continue;
+		}
+		if (!fence && D_CLOSE.test(line)) continue;
+		if (!fence && parts.length && D_OPT.test(line)) {
+			const nx = lines[i + 1];
+			if (nx !== undefined && nx.trim() && !D_OPT.test(nx) && !DECISION_HEAD.test(nx) && !D_CLOSE.test(nx)) i++;
+			continue;
+		}
+		(parts.length ? parts[parts.length - 1]! : lead).push(line);
+	}
+	return [...lead, "", ...(parts[index] ?? [])].join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
 export function parseDecisions(text: string): { question: string; blocks: DecisionBlock[] } {
 	const lines = text.replace(/^\s*\[[^\]\n]+\][ \t]*/, "").split("\n");
 	const blocks: DecisionBlock[] = [];
