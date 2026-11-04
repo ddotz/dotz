@@ -431,9 +431,7 @@ function hSetting(s, drafts) {
     } else if (s.type === "select" || s.type === "effort" || s.type === "model") {
       const opts = s.type === "model" ? null : s.options || [];
       const text = s.type === "model" ? modelName(draft) : ((opts.find(o => o.value === draft) || {}).label ?? String(draft));
-      const b = el("button", { type: "button", class: "sel", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `${s.label}: ${text}` }, el("span", { class: "val", text }), icon("drop"));
-      b.addEventListener("click", () => showMenu(b, opts || hModelItems(draft), { value: draft, onPick: v => { draft = v; paint(); } }));
-      ctl.append(b);
+      ctl.append(selectButton({ label: s.label, text, items: () => opts || hModelItems(draft), value: draft, onPick: v => { draft = v; paint(); } }));
     } else if (s.type === "number") {
       const inp = el("input", { class: "fi", type: "number", inputmode: "numeric", min: s.min, max: s.max, value: Number.isNaN(draft) ? "" : String(draft), "aria-label": s.label });
       inp.addEventListener("input", () => { draft = inp.value.trim() === "" ? NaN : Number(inp.value); mark(); });

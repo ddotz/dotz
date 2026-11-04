@@ -179,7 +179,7 @@ function rulesDialog() {
     return c;
   };
   const acctPairs = cur => { const p = accts.map(a => [a.name, a.label || a.alias || a.name]); if (cur && !p.some(([v]) => v === cur)) p.push([cur, accLabel(cur)]); return p; };
-  const select = (pairs, cur, label, onchange) => { const s = el("select", { class: "fi", "aria-label": label }, ...pairs.map(([v, t]) => el("option", { value: v, text: t, selected: v === cur }))); s.addEventListener("change", () => onchange(s.value)); return s; };
+  const select = (pairs, cur, label, onPick) => selectButton({ label, items: pairs.map(([value, text]) => ({ value, label: text })), value: cur, onPick });
   const field = (label, ...ctrl) => el("div", {}, el("div", { class: "lbl", style: "margin:0 0 var(--sp-15)", text: label }), el("div", { class: "row", style: "flex-wrap:wrap" }, ...ctrl));
   const ta = el("textarea", { class: "fi hs-ta hs-mono", rows: 14, spellcheck: "false", "aria-label": "규칙 JSON" });
   const box = el("div", { class: "col" });

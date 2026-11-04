@@ -19,6 +19,7 @@ import { ev, fakeHub, idleState, run, waitFor, type View } from "./test-web.ts";
 //   literal off the scale (2 4 6 8 12 16 20 24 32 40 48) is off-scale, an on-scale px literal is raw (--sp-*). A declaration followed by
 //   /* nudge: <reason> */ is excused (1px line compensation, optical nudge), at most 3 per file. The same px in strings of
 //   web/js, custom.js and index.html (inline style, CSS text) is counted too; the mail iframe CSS (const MB_CSS in 11-mailbody.js) is its own document and is exempt.
+// - select: no native <select> in web/js, custom.js or index.html; every choice list is selectButton() in 03-menu.js.
 // - accent: at most one accent-filled control (24px or wider, so a status dot does not count) on each main screen of a fixture page.
 //
 // Not checked, because a reading would not be reliable:
@@ -212,6 +213,7 @@ function auditText(sources: Source[]): string[] {
 		lines.forEach((line, i) => {
 			if (EMOJI.test(line)) out.push(`emoji: ${file}:${i + 1} ${line.match(EMOJI)?.[0]}`);
 			if (isJs && /var\(--(ok|warn|err)\b/.test(line) && file !== "custom.js") out.push(`status: ${file}:${i + 1} in a script`);
+			if (/el\(["'`]select["'`]|<select[\s>]|createElement\(["'`]select/.test(line) && !/^\s*\/\//.test(line)) out.push(`select: ${file}:${i + 1} native <select>; use selectButton()`);
 		});
 		const colors = isJs ? lines.filter(l => !/^\s*\/\//.test(l) && JS_LITERAL.test(l)).length : 0;
 		if (colors > (JS_COLOR_ALLOWED[file] ?? 0)) out.push(`color: ${file} has ${colors} lines with a color literal, allowed ${JS_COLOR_ALLOWED[file] ?? 0}`);
@@ -288,7 +290,7 @@ describe("web/DESIGN.md rules", () => {
 		expect(found.some(f => f.startsWith(`${rule}: `))).toBe(true);
 	});
 
-	test.each([["space", `box.style.cssText = "margin-top:4px";`], ["space", `box.style.cssText = "padding:10px";`]])("a planted %s in a script fails: %s", (rule, js) => {
+	test.each([["space", `box.style.cssText = "margin-top:4px";`], ["space", `box.style.cssText = "padding:10px";`], ["select", `const s = el("select", { class: "fi" });`]])("a planted %s in a script fails: %s", (rule, js) => {
 		expect(auditText([["planted.js", js]]).some(f => f.startsWith(`${rule}: `))).toBe(true);
 	});
 
