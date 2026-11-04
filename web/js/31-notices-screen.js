@@ -53,13 +53,15 @@ function nscLines(n, group, summary, when, tag, prefix = "") {
 }
 function nscRow(n, group) {
   const tone = group === "past" ? "" : nscTone(n), rep = n.repeats && n.repeats.length ? n.repeats : null, open = rep && NSC.open.has(n.id);
-  const end = rep ? el("button", { class: "ib nsc-fold", type: "button", "aria-expanded": String(!!open), "aria-label": "반복 알림 펼치기", onclick: ev => { ev.stopPropagation(); nscFold(n); } }, icon("chev"))
-    : group === "need" && n.waits !== "fail" ? el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("chev"))
+  // One cell at the end; a repeated failure or past notice keeps its ✕ beside the fold, or it could not be handled or cleared.
+  const fold = rep ? el("button", { class: "ib nsc-fold", type: "button", "aria-expanded": String(!!open), "aria-label": "반복 알림 펼치기", onclick: ev => { ev.stopPropagation(); nscFold(n); } }, icon("chev")) : null;
+  const end = group === "need" && n.waits !== "fail" ? (fold || el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("chev")))
+    : fold && group === "news" ? fold
     : el("button", { class: "ib nsc-x", type: "button", "aria-label": NSC_X[group], title: NSC_X[group], onclick: ev => { ev.stopPropagation(); nscX(n, group); } }, icon("close"));
   return el("div", { class: `li nsc-r${n.read ? "" : " unread"}`, "data-nid": n.id },
     el("span", { class: "lead" }, el("span", { class: `dot ${tone}` })),
     el("button", { class: "tx nsc-tx", type: "button", onclick: () => nscTap(n) }, ...nscLines(n, group, nscSummary(n), nscWhen(n.updated || n.ts), nscTag(n), rep ? `${rep.length + 1}번 · ` : "")),
-    end);
+    end === fold ? null : fold, end);
 }
 // An older occurrence folded into the head row: the same title, its own time and text; a tap opens the head's notice.
 const nscChild = (n, r) => el("div", { class: "li nsc-r", "data-nid": n.id, "data-child": "1" },

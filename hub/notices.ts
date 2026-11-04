@@ -356,7 +356,7 @@ function upsert(i: Input): Notice {
 	let item: Notice;
 	if (old) {
 		const reopened = (LOUD.has(i.tone) && i.tone !== old.tone) || (i.kind === "result" && i.text !== old.text) || i.unread === true;
-		const waited = waitKind(old);
+		const waited = waitKind(old), closed = waited && !waitsOf(old);
 		if (i.repeat || folded) old.repeats = [{ at: old.at ?? old.ts, text: old.text.slice(0, REPEAT_TEXT) }, ...(old.repeats ?? [])].slice(0, REPEATS_MAX);
 		old.kind = i.kind;
 		old.tone = i.tone;
@@ -373,7 +373,7 @@ function upsert(i: Input): Notice {
 		if (i.watch) old.watch = i.watch;
 		if (i.item) old.item = i.item;
 		if (i.read) old.read = true;
-		else if (reopened || folded) {
+		else if (reopened || (folded && !closed)) {
 			old.read = false;
 			delete old.dismissed;
 			delete old.ignored;

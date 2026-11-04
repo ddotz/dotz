@@ -1461,6 +1461,20 @@ test("a report that found nothing new is a log, in the alert and the monitor pat
 	expect([cls("감시9571"), cls("감시9572"), cls("감시9573")]).toEqual(["log", "log", "news"]);
 });
 
+test("a monitor failure the owner closed stays closed when the same failure folds into it again", () => {
+	const fail = (text: string) => emit("outbox", { ts: ts(), kind: "out", source: "gateway", target: "ch:9581", text: "[fail] [감시9581] " + text });
+	fail("페이지가 열리지 않아요");
+	const n = stored().find(x => x.kind === "watch" && x.title === "감시9581")!;
+	expect(listed(n.id)).toMatchObject({ waits: "fail" });
+	expect(handledNotice(n.id).status).toBe(200);
+	fail("페이지가 또 열리지 않아요");
+	const row = stored().filter(x => x.kind === "watch" && x.title === "감시9581");
+	expect(row).toHaveLength(1);
+	expect(row[0]!.read).toBe(true);
+	expect(row[0]!.repeats).toHaveLength(1);
+	expect((listed(n.id) as Listed).waits).toBeUndefined();
+});
+
 test("monitor reports within a day fold into one unread row, newest first, 20 x 160 chars; a day later, or an alert repeat, keeps the same bounds", () => {
 	const base = Date.now() - 3 * 3_600_000;
 	const rep = (min: number, text: string) => emit("outbox", { ts: new Date(base + min * 60_000).toISOString(), kind: "out", source: "gateway", target: "ch:9561", text: "[감시9561] " + text });

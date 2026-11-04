@@ -15,7 +15,7 @@ const reset = () => {
 	notices = [
 		mk("dec", 500, "ask", "decision", "ask", "배포 공지 형태를 정해 주세요", { open: "main", src: "main",
 			decision: { options: [{ n: 1, label: "짧게", desc: "", rec: true }, { n: 2, label: "길게", desc: "", rec: false }], to: "main", reply_to: iso(500), group: 1, state: "open" } }),
-		mk("fail", 490, "alert", "alert", "fail", "가격 페이지를 확인하지 못했어요", { waits: "fail", handled: null }),
+		mk("fail", 490, "alert", "alert", "fail", "가격 페이지를 확인하지 못했어요", { waits: "fail", handled: null, repeats: [{ at: "2026-07-05T00:00:00.000Z", text: "가격 페이지를 확인하지 못했어요" }] }),
 		mk("login", 480, "alert", "alert", "warn", "인스타그램 로그인이 풀렸어요", { waits: "login", handled: null, app: "instagram" }),
 		mk("price", 470, "news", "watch", "", "캠핑 의자 가격이 바뀌었어요", { text: "- 캠핑 의자 89,000원 → 72,000원", app: "", repeats: [{ at: iso(300), text: "- 캠핑 의자 92,000원 → 89,000원" }, { at: iso(200), text: "- 캠핑 의자 95,000원 → 92,000원" }] }),
 		mk("cmt", 460, "news", "watch", "", "댓글 4개에 답글을 달 수 있어요", { app: "youtube" }),
@@ -89,7 +89,7 @@ describe("the 알림 screen", () => {
 		expect(await ev(`document.querySelector("#v-notices [data-nu]").textContent`)).toBe("6");
 		expect(await ev<string[]>(`[...document.querySelectorAll("#v-notices .nsc-fb")].map(b => b.textContent)`)).toEqual(["전체6", "답변 필요1", "결과1", "새 소식2", "경고2"]);
 		// one row shape: the title with its time, the summary with its tag, one cell at the end
-		expect(await ev(`[...document.querySelectorAll("#v-notices .nsc-r")].every(r => r.querySelectorAll(".ln").length === 2 && r.querySelector(".ln .hd") && r.querySelector(".ln .t") && r.querySelector(".ln .tag") && r.querySelectorAll(".nsc-x, .nsc-tr, .nsc-fold").length === 1)`)).toBe(true);
+		expect(await ev(`[...document.querySelectorAll("#v-notices .nsc-r")].every(r => r.querySelectorAll(".ln").length === 2 && r.querySelector(".ln .hd") && r.querySelector(".ln .t") && r.querySelector(".ln .tag") && r.querySelectorAll(".nsc-x, .nsc-tr, .nsc-fold").length === (r.dataset.nid === "fail" ? 2 : 1))`)).toBe(true);
 		expect(await ev<string[]>(`[...document.querySelectorAll("#v-notices .nsc-r")].slice(0, 6).map(r => r.querySelector(".tag").textContent)`)).toEqual(["결정", "실패", "로그인", "가격 변경", "댓글", "작업 완료"]);
 		expect(await ev(`document.documentElement.scrollWidth <= innerWidth`)).toBe(true);
 	}, 30_000);
@@ -113,7 +113,7 @@ describe("the 알림 screen", () => {
 	test("the x has three meanings: 처리했어요 on a failure, 읽음으로 표시 on news, 지우기 on a past notice with 실행 취소; a login and a question have › instead", async () => {
 		const v = await shown(await open(390));
 		const { waitFor, ev } = on(v);
-		const cell = (id: string) => ev<string>(`(() => { const r = document.querySelector('#v-notices .nsc-r[data-nid="${id}"]'); const c = r.querySelector(".nsc-x, .nsc-tr, .nsc-fold"); return c.className.split(" ").find(k => k.startsWith("nsc-")) + "|" + (c.getAttribute("aria-label") || ""); })()`);
+		const cell = (id: string) => ev<string>(`(() => { const r = document.querySelector('#v-notices .nsc-r[data-nid="${id}"]'); const c = r.querySelector(".nsc-x") || r.querySelector(".nsc-tr, .nsc-fold"); return c.className.split(" ").find(k => k.startsWith("nsc-")) + "|" + (c.getAttribute("aria-label") || ""); })()`);
 		expect(await cell("dec")).toBe("nsc-tr|");
 		expect(await cell("login")).toBe("nsc-tr|");
 		expect(await cell("price")).toBe("nsc-fold|반복 알림 펼치기");
@@ -145,7 +145,7 @@ describe("the 알림 screen", () => {
 		const { waitFor, ev } = on(v);
 		await click(v, '#v-notices .nsc-r[data-nid="price"] .nsc-fold');
 		await waitFor(`document.querySelectorAll('#v-notices .nsc-r[data-child]').length === 2`);
-		expect(await ev(`document.querySelector('#v-notices .nsc-fold').getAttribute("aria-expanded")`)).toBe("true");
+		expect(await ev(`document.querySelector('#v-notices [data-nid="price"] .nsc-fold').getAttribute("aria-expanded")`)).toBe("true");
 		expect(calls).toEqual([]);
 
 		await click(v, '#v-notices [data-k="read-all"]');
