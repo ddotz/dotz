@@ -19,23 +19,23 @@ body { display: flow-root; }
   /* usage lives in the sidebar's lower row here (#sf-usage); the top bar copy is for the phone only */
   .appbar .ustrip { display: none; }
   /* brand: the mark and the assistant's name, 40px like the nav items below it */
-  .brand { display: flex; align-items: center; gap: var(--sp-2); width: 100%; height: 40px; padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: inherit; font: 600 15px/20px var(--font); letter-spacing: 0; text-align: left; }
+  .brand { display: flex; align-items: center; gap: var(--sp-2); width: 100%; height: 40px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: transparent; color: inherit; font: 600 15px/20px var(--font); letter-spacing: 0; text-align: left; }
   .brand:hover { background: var(--hover); }
   .brand .logo { width: 20px; height: 20px; }
   /* nav: one column, 40px rows, the open item a white card */
   .rail { display: flex; flex: none; flex-direction: column; align-self: stretch; gap: var(--sp-05); width: 100%; min-width: 0; margin: 0; margin-top: var(--sp-2); }
-  .ni { position: relative; display: flex; flex: none; flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; height: 40px; padding: 0 10px; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 500; text-align: left; }
+  .ni { position: relative; display: flex; flex: none; flex-direction: row; align-items: center; justify-content: flex-start; gap: var(--sp-2); width: 100%; height: 40px; padding: 0 var(--sp-3); border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 500; text-align: left; }
   .ni:hover { background: var(--hover); color: var(--fg); }
   .ni.on { background: var(--card); color: var(--fg); font-weight: 700; }
   .ni.on::after, .ni.on::before { content: none; }
   .ni .ic { display: block; width: 16px; height: 16px; }
   .ni .nl { min-width: 0; }
   /* a tab with something new carries one small dot at the bottom right of its text, no count (the count stays in the aria-label and the title); the phone tab bar draws the same badges */
-  .ni .nnb, .ni .nub { position: static; flex: none; align-self: flex-end; width: 6px; min-width: 6px; height: 6px; margin: 0 0 13px calc(var(--sp-15) * -1); padding: 0; overflow: hidden; border-radius: 50%; font-size: 0; line-height: 0; }
+  .ni .nnb, .ni .nub { position: static; flex: none; align-self: flex-end; width: 6px; min-width: 6px; height: 6px; margin: 0 0 13px calc(var(--sp-15) * -1); /* nudge: dot at the text's bottom right, 3px above the text line */ padding: 0; overflow: hidden; border-radius: 50%; font-size: 0; line-height: 0; }
   .ni .nnb { background: var(--warn); }
   /* lower area: what the limits say now; a tap opens 사용량 */
   .sfoot { margin-top: auto; padding-top: var(--sp-2); }
-  .sf-row { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 40px; padding: var(--sp-15) 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); text-align: left; }
+  .sf-row { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 40px; padding: var(--sp-15) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); text-align: left; }
   .sf-row:hover { background: var(--hover); color: var(--fg); }
   .sf-row .ic { color: var(--fg-3); }
   .sf-row .sf-k { flex: none; font-size: 12px; line-height: 16px; font-weight: 500; }
@@ -54,7 +54,7 @@ body { display: flow-root; }
   .side-min .side-tog .ic { transform: scaleX(-1); }
   /* folded (:root.side-min, 04-state.js sideToggle): a 60px icon rail. Names go to the title and the aria-label, a tab's dot sits at its icon's bottom right, the usage row is a ring of the same share and color with the number inside */
   :root.side-min { --side-w: 60px; }
-  .side-min .side { padding: var(--sp-3) 10px; }
+  .side-min .side { padding: var(--sp-3) calc((var(--side-w) - var(--sp-10)) / 2); }
   .side-min .brand { position: relative; justify-content: center; padding: 0; }
   .side-min #brand-name, .side-min .brand-c .ic, .side-min .ni .nl, .side-min .sf-row .ic, .side-min .sf-k, .side-min .sf-bar, .side-min .sf-v { display: none; }
   .side-min .brand-c { position: absolute; left: 30px; top: 28px; width: 6px; height: 6px; margin: 0; }
@@ -73,7 +73,7 @@ body { display: flow-root; }
   .appbar h1, .appbar:not(.back) h1 { display: block; align-self: center; flex: 1; min-width: 0; max-width: none; margin: 0; font: 700 22px/30px var(--font); letter-spacing: -.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .appbar.tv h1 { flex: 0 0 auto; max-width: 260px; }
   .appbar .thead { flex: 1; min-width: 0; margin: 0 var(--sp-1); }
-  .appbar .cmdk { display: inline-flex; align-items: center; gap: var(--sp-15); width: auto; height: 32px; margin: 0; padding: 0 var(--sp-15) 0 10px; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); font-size: 13px; }
+  .appbar .cmdk { display: inline-flex; align-items: center; gap: var(--sp-15); width: auto; height: 32px; margin: 0; padding: 0 var(--sp-15) 0 var(--sp-3); border-radius: var(--r-ctl); background: var(--card); color: var(--fg-3); font-size: 13px; }
   .appbar .cmdk .tx { display: inline; }
   .appbar .cmdk kbd { display: inline-block; }
   .appbar .conn, #vtog, .appbar .ustrip { margin-left: 0; }
@@ -129,7 +129,7 @@ body { display: flow-root; }
 .hneeds { display: flex; flex-direction: column; min-width: 0; }
 .hneeds .hn-h { margin-top: 0; padding: var(--sp-4) var(--sp-5) var(--sp-1); }
 .hneeds .hn-h h2 { order: 0; font: 600 16px/22px var(--font); letter-spacing: -.01em; }
-.hneeds .hn-h .sup { order: 1; margin-left: 0; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
+.hneeds .hn-h .sup { order: 1; margin-left: 0; min-width: 18px; height: 18px; padding: 0 var(--sp-15); border-radius: 9px; background: var(--warn); color: var(--bg); font: 600 11px/18px var(--font); text-align: center; }
 .hneeds .hn-h .tag { order: 2; }
 .hneeds .hn { border-radius: 0 0 var(--r-card) var(--r-card); }
 .hneeds .hn:has(+ .hn-h) { border-radius: 0; padding-bottom: var(--sp-1); }
