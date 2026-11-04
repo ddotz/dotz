@@ -54,12 +54,22 @@ const OPTION = /^\s*>?\s*(?:\*\*)?\s*(\d{1,2})\)\s*(.*)$/;
 const RECOMMENDED = /←\s*(?:추천|recommended)/i;
 const MAX_OPTIONS = 25;
 
+// A numbered list in the body above a "결정:" line is text, not a first decision block.
+function fromFirstHead(lines: string[]): string[] {
+	let fence = false;
+	for (let i = 0; i < lines.length; i++) {
+		if (FENCE.test(lines[i]!)) fence = !fence;
+		else if (!fence && DECISION_HEAD.test(lines[i]!)) return lines.slice(i);
+	}
+	return lines;
+}
+
 export function parseChoices(text: string): Choices {
 	const options: ChoiceOption[] = [];
 	let question: string | undefined;
 	let before: string | undefined;
 	let fence = false;
-	for (const line of text.split("\n")) {
+	for (const line of fromFirstHead(text.split("\n"))) {
 		if (FENCE.test(line)) {
 			fence = !fence;
 			continue;
@@ -96,7 +106,7 @@ export function parseChoices(text: string): Choices {
 export type DecisionOption = { n: number; label: string; desc: string; rec: boolean; detail?: true };
 export const DETAIL_MARK = /\s*…\s*$/;
 const DETAIL_LABEL = /^(?:안\s*됨|안\s*돼|아니|아냐|고치기|수정|다른)/;
-const DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세요)|내용.*(?:적|알려|써)/;
+export const DETAIL_DESC = /(?:적어|알려|써|말해)\s*(?:주|줘|달라|세요)|내용.*(?:적|알려|써)/;
 // Mirrors detailOf in web/js/10-decision-card.js. A marked option (`detail`) always asks; otherwise a negative / edit label or a description that asks for text does.
 export const detailOf = (o: { label: string; desc?: string; detail?: boolean }): boolean => !!o.detail || DETAIL_LABEL.test(o.label) || DETAIL_DESC.test(o.desc ?? "");
 // `headed`: the block was opened by a "결정:" line. Any bot message (not only an [ask]) holding a headed block with 2+ options is a decision;
@@ -105,7 +115,7 @@ type DecisionBlock = { title: string; options: DecisionOption[]; headed?: true }
 export const hasDecisionHead = (blocks: DecisionBlock[]): boolean => blocks.some(b => b.headed);
 const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*(←\s*(?:추천|recommended)|\(\s*(?:추천|recommended)\s*\))?\s*(?:\*\*)?\s*$/i;
 export const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
-const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
+export const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 // One decision of a several-decision message: the lead text before the first "결정:" line plus that block's own lines, without its option
 // lines (the buttons show them) and without the other decisions. A message whose blocks are not all headed stays whole. Empty when nothing is left.
 export function decisionText(body: string, index: number): string {

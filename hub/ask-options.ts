@@ -17,7 +17,7 @@ const REF_ANY = /(?:초안|draft)\s*(?:id|ID|번호)?\s*[:：]\s*`?([A-Za-z0-9][
 
 // The last sentence of the message that asks something (ends in "?", or in "까요" / "나요" without one): plain lines only (no code, no
 // quoted draft), split at sentence ends.
-function lastQuestion(text: string): string | undefined {
+export function lastQuestion(text: string): string | undefined {
 	let fence = false;
 	const lines: string[] = [];
 	for (const line of text.split("\n")) {

@@ -72,6 +72,11 @@ project turn (orchestrator in ch:<id>) --> project channel; chat gets one pointe
 - `[ask]` is stored as `pendingAsk` (lane.json + pending-ask.md) until the owner (or the orchestrator) writes to the
   session, so a restart never loses it. The owner sees it once per surface: the session's chat (decision card), the
   home "답 필요" list, Discord session channel (buttons). The orchestrator is told once and is not asked to repeat it.
+- A message that asks the owner to pick from a list is a decision whoever wrote it: `normalizeAsk` (hub/ask-normalize.ts) rewrites a
+  trailing list of 2-4 options under a question line (or a 결정 필요 heading) into the contract's `결정:` block and adds `[ask]`, at the
+  send boundary: `out()` for answers, dotz_send and conversation sessions, `report()` and the mid-turn texts for sessions. A rewrite, not
+  a reject and redo: it costs no model turn. `[done]`, code, quoted drafts and plain lists stay as written. An `[ask]` that adds no
+  option and no question while the session's question is open is dropped.
 - Project-homed sessions report the same way; the orchestrator handles the report in that project's channel.
 
 ## 4. Data model and migration
