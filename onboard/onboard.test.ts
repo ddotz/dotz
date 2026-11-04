@@ -116,6 +116,23 @@ test("setup --answers on a fresh HOME with OmO installed writes runtime omo, no 
 	}
 }, 60_000);
 
+test("without a Tailscale login setup gives the local address; a rerun keeps the saved way in", async () => {
+	const m = machine({ omo: FAKE_OMO });
+	try {
+		const first = await m.run({ identity, allow_logins: [] });
+		expect(first.out).toContain("웹 앱 주소: http://127.0.0.1:7420/");
+		const file = join(m.home, ".dotz", "config.json");
+		const cfg = JSON.parse(readFileSync(file, "utf8"));
+		const cloudflare = { hostname: "app.example.com", team: "t", aud: "a" };
+		writeFileSync(file, JSON.stringify({ ...cfg, web: { ...cfg.web, access: "cloudflare", cloudflare } }));
+		const again = await m.run({ identity, allow_logins: [] });
+		expect(again.out).not.toContain("http://127.0.0.1:7420/");
+		expect(JSON.parse(readFileSync(file, "utf8")).web).toMatchObject({ access: "cloudflare", cloudflare });
+	} finally {
+		m.cleanup();
+	}
+}, 60_000);
+
 test("setup makes a 0600 peer key once, keeps it on a rerun, and takes the other computer's key from the answers", async () => {
 	const m = machine({ omo: FAKE_OMO });
 	try {
