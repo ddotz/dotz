@@ -2,7 +2,8 @@
 
 Owner's words: "https://github.com/tembo/voxl 이거 붙여서 해당 게이트웨이가 설치된 컴퓨터 화면 띄우고 조작 가능하게 가능하냐? 전체모드로 하면 로컬화면처럼 전체로 사용가능하게 하고",
 "크롬으로 되네. 크롬이 설치되어있으면 크롬에서 띄우는걸로 구현하자",
-"지금 지켜보는 사람 필요 없음. 조작은 상시 가능해야하니까 on/off 필요 없음" (2026-11-05).
+"지금 지켜보는 사람 필요 없음. 조작은 상시 가능해야하니까 on/off 필요 없음" (2026-11-05),
+"중간에 한번 더 거치는거 필요 없고 / 그리고 각 접속하는 기기의 해상도에 맞춰서 전체화면으로 되어야해. 지금은 확대도 안되더라 모바일에서는" (2026-11-05).
 
 voxl (MIT source, GPL once linked with x264) streams the Mac's screen as H.264 over a WebSocket. dotz never ships the binary: the user's computer builds a pinned commit.
 Off by default. macOS only: on Linux and Windows the enable command stops and says why.
@@ -24,6 +25,7 @@ Off by default. macOS only: on Linux and Windows the enable command stops and sa
 | Lifecycle, proxy, routes, opener | `hub/remote-desktop.ts` (+ `hub/remote-desktop.test.ts`) |
 | WebSocket bridge with backpressure | `hub/remote-desktop-ws.ts` |
 | Enable command | `features/remote-desktop/bin/onboard.ts`, `features/remote-desktop/feature.md` |
+| Viewer inside voxl's page: fill, pinch, fullscreen | `features/remote-desktop/viewer.js` (+ `hub/remote-desktop-web.test.ts`) |
 | Web (name prefix `dsk`; `dk` is taken by web/js/30-notices.js) | `web/js/37-remote-desktop.js`, `web/css/23-remote-desktop.css`, entries in palette, slash commands, settings (+ `hub/remote-desktop-web.test.ts`) |
 
 Data lives in `<DATA_DIR>/remote-desktop/`: `bin/voxl` (cargo install --root), `settings.json` `{on, allow_public}` (a `control` key from an older install is ignored and dropped on the next write), `onboard.json` (steps done).
@@ -37,7 +39,7 @@ Defaults: on=true after enabling, allow_public=false.
 
 One `DeskHost`, injectable (spawn, clock, free port, binary path) so tests use a fake server script.
 
-- `ensure()`, single flight: spawn on the first `/desk/` request or websocket. Args: `--addr=127.0.0.1 --port=<free> --file-transfers=none --stripes=4`. Never `--enable-resize`, never `--microphone-enabled`. `VOXL_PASSWORD` = 32 random bytes in hex, new per run, in env only, never logged or sent to a browser. Ready = `/healthz` 200, bounded wait 10 s.
+- `ensure()`, single flight: spawn on the first `/desk/` request or websocket. Args: `--addr=127.0.0.1 --port=<free> --file-transfers=none --stripes=4`. Never `--enable-resize` (see Viewer), never `--microphone-enabled`. `VOXL_PASSWORD` = 32 random bytes in hex, new per run, in env only, never logged or sent to a browser. Ready = `/healthz` 200, bounded wait 10 s.
 - Stop: no viewers for 60 s (also armed right after start, so a page that never connects still ends) -> SIGTERM, SIGKILL after 3 s. `on` changing stops at once: turning sharing off must take effect now. Viewers' sockets close.
 - No orphans: `stop()` joins the shutdown stages in hub/main.ts. For a gateway that dies without shutdown (SIGKILL, crash), a watchdog sibling runs with the gateway holding its stdin pipe: `sh -c 'cat >/dev/null; kill -TERM <pid>'`. Pipe EOF means the gateway is gone. On a normal stop the watchdog is killed first. `kill_bash`-style tree kill alone would not cover SIGKILL (compared with OmO, which records the child pid in its slot for orphan accounting after a crash; a pipe needs no sweep at boot).
 - Broken binary: a start that exits with `dyld`/`Library not loaded` in stderr sets status `rebuilding` and runs `bun features/remote-desktop/bin/onboard.ts --rebuild` once, single flight, then retries. `/desk/` answers a small page that says so and refreshes itself.
@@ -49,8 +51,8 @@ Route sits after the owner check in `hub/routes.ts` (a peer token never gets her
 
 1. available and `on`.
 2. Public access: `webAccess.mode() === "cloudflare"` or any `cf-ray` / `cf-connecting-ip` / `cf-access-jwt-assertion` header -> 403 unless `allow_public`.
-3. `sameOrigin` (pty.ts rule) on websocket upgrades and every non-GET, and `Sec-Fetch-Site` when present must be `same-origin` or `none` (a cross-site link cannot start capture: it gets the one-button page, see Opening in Chrome).
-4. Allow-list of exactly: `/desk` (301 to `/desk/`), `/desk/`, `/desk/index.html`, `client.js`, `worker.js`, `audio.js`, `mic.js`, `favicon.ico`, `inter.woff2`, `ws`. `/screenshot`, `/record`, `/files`, `/wait`, `/stats` stay unreachable: they would read the screen without counting as a viewer.
+3. `sameOrigin` (pty.ts rule) on websocket upgrades and every non-GET, and `Sec-Fetch-Site` when present must be `same-origin` or `none` (a cross-site link cannot start capture: it gets the one-button page unless it carries a ticket, see Opening in Chrome).
+4. Allow-list of exactly: `/desk` (301 to `/desk/`), `/desk/`, `/desk/index.html`, `client.js`, `worker.js`, `audio.js`, `mic.js`, `favicon.ico`, `inter.woff2`, `ws`, and `viewer.js`, which the gateway answers itself without starting voxl. `/screenshot`, `/record`, `/files`, `/wait`, `/stats` stay unreachable: they would read the screen without counting as a viewer.
 5. Viewer is this computer -> 409 page with the reason (a picture of itself; also the client's check, step "open").
 
 Upstream request: `Host: 127.0.0.1:<port>`, no `Origin`, no `Cookie`, no `Tailscale-*`, no `x-dotz-*`, no `cf-*`, `Authorization: Bearer <password>`. Answers: drop `Set-Cookie`, `WWW-Authenticate`; add `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'`, `Cache-Control: no-store`, `Referrer-Policy: no-referrer`.
@@ -94,7 +96,7 @@ A web page cannot start another app, and an HTTPS page cannot call a viewer-side
 
 Extra body fields: `on: true` (the button of an off computer) switches this computer on after every gate passed, so a refused open changes nothing.
 
-`peer: <url>` is the button of another computer. Checked here: the url is a non-self entry of `knownComputers()`, public gate. Then that computer answers for itself on the tap (`GET /api/peer/desk`, in PEER_GET, 3 s, `{available, on, public_blocked}` or `{available:false, unsupported:true}`; nothing is read while nobody taps, no polling, no added list cost):
+`peer: <url>` is the button of another computer. Checked here: the url is a non-self entry of `knownComputers()`, public gate. Then that computer answers for itself on the tap (`GET /api/peer/desk`, in PEER_GET, 3 s, `{available, on, public_blocked, ticket?}` or `{available:false, unsupported:true}`; nothing is read while nobody taps, no polling, no added list cost):
 
 | That computer | Answer |
 |---|---|
@@ -108,7 +110,11 @@ Extra body fields: `on: true` (the button of an off computer) switches this comp
 
 `to` makes the toast action that opens that computer's app. Otherwise: viewer is this gateway's own computer -> this gateway opens Chrome (`launch`, same check and 5 s gap as `/api/peer/desk-open`); viewer is another known computer -> `peerOpen` there; else `{action:"here"}` and the page opens `<peer>/desk/`.
 
-That last case is a link from another origin, refused by proxy gate 3. Direct capture stays refused: a cross-site top-level `GET /desk/` (`Sec-Fetch-Dest: document`) answers a one-button page instead of 403. voxl does not start until the tap, the page's link is same-origin, and it cannot be framed. Every other cross-site request stays 403. A phone therefore taps twice (list, then this page); Chrome opened by a gateway has `Sec-Fetch-Site: none` and goes straight in.
+That last case is a link from another origin, refused by proxy gate 3. Gate 3 exists so that no other site can start capture by linking here; nothing in the page needs the tap itself (no fullscreen, audio or popup depends on it). So a computer that can be opened adds a `ticket` to its `/api/peer/desk` answer: 32 random bytes, one use, 30 s, at most 8 kept in memory. `{action:"here", go}` hands it to the tab, which opens `<peer>/desk/?go=<ticket>`, and that goes straight in.
+
+The ticket replaces gate 3 for one request and nothing else: only a top-level `GET /desk/` document spends it, gates 1 and 2 run first, and the owner check of `hub/routes.ts` still applies to the browser. A site cannot get one: it comes from the peer channel, to a page that passed the owner check of the gateway it is on. `go` never reaches voxl (`voxlQuery`) and leaves the address bar on load. No new peer route: the same answer carries one more field.
+
+Without a valid ticket (a bare link, or either gateway older than this), a cross-site top-level `GET /desk/` (`Sec-Fetch-Dest: document`) answers the one-button page instead of 403. voxl does not start until the tap, the page's link is same-origin, and it cannot be framed. Every other cross-site request stays 403. Chrome opened by a gateway has `Sec-Fetch-Site: none` and goes straight in.
 
 `note` is the one line: 단축키(Cmd+W 같은)는 이 컴퓨터로 가요. `window.open` happens after the await: real Chrome keeps the user gesture for seconds; for other browsers it is opened blank in the click and pointed afterwards. Client facts are only a hint for routing: the gates live on the server.
 
@@ -118,6 +124,22 @@ That last case is a link from another origin, refused by proxy gate 3. Direct ca
 - At most one open per 5 s.
 - darwin and `open -Ra "Google Chrome"` exit 0 (finds the app, launches nothing), then `open -a "Google Chrome" <url>`, through an injected runner: tests never start Chrome. `{ok:true}` or `{ok:false, reason:"no-chrome"|"unsupported"}`.
 - This side needs no voxl and no enabling: only the computer being watched does. It can only ever open that one path of the owner's own computers.
+
+## Viewer
+
+voxl's page is the screen, and its binary is built from a pinned commit, so the gateway changes that page as it passes: `deskPage` swaps the viewport tag (voxl's has `maximum-scale=1,user-scalable=no`) and adds `viewer.js`. A newer voxl with another page loses at worst the fill and the pinch. Nothing needs a rebuild.
+
+**What voxl offers.** `--enable-resize` does not fit a screen to the viewer: on a Mac it switches the real display to the largest fixed mode that fits (`src/mac/screen.rs`). Modes are landscape, so a portrait phone would get the smallest mode, with the Mac's own desktop and windows rearranged for whoever sits at it. It stays off, and the only fit is on the viewing side.
+
+**Fill.** voxl fits `#surface` to the window and snaps its height to a multiple that keeps video stripes seamless. Stripes are cut on 16-pixel rows, so at 1080 lines with `--stripes=4` that multiple is 135 device pixels: at 412 wide it gives 360, the black sides on the owner's phone. `viewer.js` puts a transform on `#surface` for the exact size, and each stripe reaches one screen pixel under the next instead. voxl reads input through `getBoundingClientRect`, so the remote pointer stays right.
+
+The stream keeps its shape, so a landscape Mac and a portrait phone cannot both be whole and without black. Touch screens start filled and centered (cover); a pinch out goes down to the whole screen (contain). A mouse cannot pan, so it starts at the whole screen. The area is the dynamic viewport minus the safe areas (`#dsk-room`); a turn of the device starts over.
+
+**Fingers.** One finger stays voxl's: tap, drag, long press. A second finger takes the gesture: `viewer.js` listens on `window` in the capture phase, sends voxl a `pointercancel` for the first finger and keeps all fingers from it until they are all up. This gives up voxl's two-finger remote scroll. The pinch is done by hand rather than by the browser because browser zoom cannot go past the layout viewport, which the filled view needs, and it would scale the toolbar too. `touch-action: none` stays for that reason.
+
+**Fullscreen** needs a user gesture, which a new tab does not have, so the first touch or click on the screen asks once. A refusal is quiet and iPhone Safari has no such call: the page already fills what the browser gives it.
+
+No timer and no frame loop: work happens per pointer event and per resize.
 
 ## Permissions and enable command
 
