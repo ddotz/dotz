@@ -58,7 +58,7 @@
 /* The KakaoTalk room list reads as the prototype's: the head and the note sit on the page, the rooms in one card, a grey initial, the last message under
    the name, 미답장 and the count solid on the row's one line. Scoped by id: .kk-rooms is also the comment pane's column. */
 #kk-rooms { border-radius: 0; background: transparent; }
-#kk-rooms .kk-lh { min-height: 32px; padding: 0 var(--sp-1) var(--sp-2); }
+#kk-rooms .kk-lh { min-height: 32px; padding: 0 0 var(--sp-2); }
 #kk-rooms .kk-pt { color: var(--fg-2); font: 600 14px/20px var(--font); }
 #kk-rooms .kk-own { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 #kk-rooms .kk-own { margin-bottom: var(--sp-3); }

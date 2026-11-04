@@ -180,7 +180,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 @media (min-width: 1100px) {
   /* the list uses the whole content area right of the app list (owner 2026-11-03, like KakaoTalk or Instagram): the folder chips, the 메일 N개 row and the rows
      start at one left line (the row's 16px, the select-all box on the row checkbox's x) and the extra width goes to the subject and the preview */
-  #mon-tl:has(> .mr-filter.mr-mail) { max-width: none; margin: 0; }
   .mbox-bar { padding-left: var(--sp-3); }
   #mon-tl > .bm.rc.mr { flex-wrap: nowrap; column-gap: var(--sp-2); height: 48px; padding: 0 var(--sp-3) 0 var(--sp-4); }
   #mon-tl > .mr > .mr-dot { top: 50%; margin-top: calc(var(--sp-1) * -1); }
