@@ -198,4 +198,6 @@ const limitLabel = (p, l, multi) => `${multi ? `${providerName(p.provider)} · `
 const isConnected = p => p.auth && p.auth !== "none";
 const needsAttention = p => p.in_use && !isConnected(p);
 const emptyNode = t => el("div", { class: "card empty", text: t });
+// The one 더 보기 of a list: the card's own last line, inside the card, never a control floating under it (.cv-more, 19-volume.css).
+const moreRow = (text, onclick) => el("button", { class: "cv-more", type: "button", "data-k": "more", onclick, text });
 

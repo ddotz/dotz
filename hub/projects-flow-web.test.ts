@@ -101,6 +101,8 @@ const waitFor = (v: View, expr: string, ms = 4000) =>
 const q = async <T = unknown>(v: View, code: string): Promise<T> => JSON.parse((await v.evaluate(`JSON.stringify((() => { ${code} })())`)) as string) as T;
 const run = (v: View, code: string) => v.evaluate(`(() => { ${code} })(), 0`);
 // A pulsing status dot (작업 중) runs forever; only the entrance animations are waited for.
+// The 더 보기 line spans its card and keeps the 44px tap height.
+const moreBox = (v: View, card: string) => q(v, `const c = document.querySelector(${JSON.stringify(card)}), m = c.querySelector(".cv-more").getBoundingClientRect(); return { whole: m.width === c.clientWidth, tall: m.height >= 44 }`);
 const shot = async (v: View, name: string) => { if (SHOTS) { await waitFor(v, `document.getAnimations().every(a => a.playState !== "running" || (a.effect && a.effect.getTiming().iterations === Infinity))`); await Bun.write(join(SHOTS, name), await v.screenshot()); } };
 
 async function boot(width: number, height: number): Promise<View> {
@@ -157,15 +159,25 @@ test("the list pages 12 projects at a time, filters by need/running/done and sea
 	expect(await q(v, `return document.querySelector("#v-project .pmv-title").textContent`)).toBe("커스텀");
 });
 
-test("커스텀 내 규칙: five rows and 더 보기 below the card, a searchable full list, and a row opens the chat draft with the full text", async () => {
+test("프로젝트 더 보기 is the last line of the last group's card and draws the next page", async () => {
+	const v = await boot(390, 844);
+	await waitFor(v, `document.querySelector(".pl-list > .cv-more:last-child")`);
+	expect(await moreBox(v, ".pl-list:has(> .cv-more)")).toEqual({ whole: true, tall: true });
+	expect(await q(v, `return document.querySelector(".pl-list > .cv-more").textContent`)).toBe("프로젝트 18개 더 보기");
+	await run(v, `document.querySelector(".pl-list > .cv-more").click()`);
+	await waitFor(v, `document.querySelector(".pl-list > .cv-more")?.textContent === "프로젝트 6개 더 보기"`);
+});
+
+test("커스텀 내 규칙: five rows and 더 보기 as the card's last line, a searchable full list, and a row opens the chat draft with the full text", async () => {
 	const v = await boot(390, 844);
 	await waitFor(v, `document.querySelector("#pl-list .pl-row.sub")`);
 	await run(v, `document.querySelector("#pl-list .pl-row.sub").click()`);
-	await waitFor(v, `document.querySelector("#v-project .list + .cv-more .btn.text.sm")`);
+	await waitFor(v, `document.querySelector("#v-project .list > .cv-more:last-child")`);
+	expect(await moreBox(v, "#v-project .list")).toEqual({ whole: true, tall: true });
 	expect(await q(v, `return [...document.querySelectorAll("#v-project .list > .li")].map(e => e.textContent)`)).toEqual(["규칙 하나", "규칙 둘", "규칙 셋", "규칙 넷", "규칙 다섯"]);
-	expect(await q(v, `return document.querySelector("#v-project .cv-more .btn").textContent`)).toBe("규칙 2개 더 보기");
+	expect(await q(v, `return document.querySelector("#v-project .cv-more").textContent`)).toBe("규칙 2개 더 보기");
 	expect(await q(v, `return document.querySelectorAll("#v-project .list .btn").length`)).toBe(0);
-	await run(v, `document.querySelector("#v-project .cv-more .btn").click()`);
+	await run(v, `document.querySelector("#v-project .cv-more").click()`);
 	await waitFor(v, `document.querySelector(".pdv-body #cm-q")`);
 	expect(await q(v, `return document.querySelectorAll(".pdv-body .li").length`)).toBe(7);
 	await run(v, `const i = document.querySelector("#cm-q"); i.value = "여섯의 원문"; i.dispatchEvent(new Event("input", { bubbles: true }))`);
