@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from "bun:test";
 import { draftApprovalBlock } from "./draft-approval.ts";
 import { commentDraftHandled, draftHandled, kakaoDraftHandled, mailDraftHandled, mailItemKey, mailRefHandled, type AllFacts } from "./draft-handled.ts";
-import { emit } from "./events.ts";
+import { broadcast, emit } from "./events.ts";
 import { type ClosedCard, confirmGroup, listNotices, markDraftPosted, onDecisionClosed, resetNoticesForTest, setAppLabelResolver, setAppResolver, setDraftHandled, settleHandledDrafts, unreadCount } from "./notices.ts";
 import { decisionPush } from "./push.ts";
 
@@ -86,6 +86,17 @@ beforeEach(() => {
 	setDraftHandled(d => handled.has(d.draft!.ref!));
 	setAppResolver(n => (n.decision?.draft ? "mail" : undefined));
 	setAppLabelResolver(() => "메일");
+});
+
+test("a send from 모니터링 closes its card at once, without waiting for the sweep; a burst of events settles it once", async () => {
+	post("mail:sample-1", "d1", "a@example.com");
+	post("mail:sample-2", "d2", "b@example.com");
+	handled.add("d1");
+	const closed = new Promise<string | undefined>(resolve => onDecisionClosed((_to, ref) => resolve(ref)));
+	for (let i = 0; i < 5; i++) broadcast({ kind: "comment_send", source: "s", thread: "t", id: "1", state: "sending" });
+	const ref = await Promise.race([closed, new Promise<never>((_, no) => AbortSignal.timeout(2000).addEventListener("abort", () => no(new Error("the card stayed open"))))]);
+	expect(ref).toBe("d1");
+	expect(open().map(i => i.decision!.draft!.ref)).toEqual(["d2"]);
 });
 
 test("the sweep closes each approval whose draft was handled elsewhere, keeps the rest, and is idempotent", async () => {
