@@ -55,6 +55,12 @@ describe("zele argv with several accounts", () => {
 		expect(f.calls.map(c => c.slice(0, 6))).toEqual([["zele", "mail", "read", "T42", "--account", A2], ["zele", "mail", "reply", "T42", "--account", A2]]);
 	});
 
+	test("a failed send names zele's error, not the runtime warning printed before it", async () => {
+		const stderr = "(node:72075) ExperimentalWarning: SQLite is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\nMultiple accounts matched\n";
+		const out = await sendWith(rec({ compose: true, mailId: "compose-x", ref: "compose-x" }), async () => ({ code: 1, stdout: "", stderr }));
+		expect(out).toMatchObject({ ok: false, message: "보내지 못했어요: Multiple accounts matched" });
+	});
+
 	test("an older draft without an account takes the account of its stored mail", async () => {
 		writeFileSync(join(env.dir, "mail-conversations.json"), JSON.stringify([{ key: "zele-t42", account: A2 }, { key: "zele-t43", account: A1 }]));
 		const f = fake();
