@@ -5,6 +5,8 @@ import { expect, test } from "bun:test";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { priorOf, validateAnswers } from "./answers.ts";
+import { writeConfig } from "./apply.ts";
 import { defaultHarness, harness, harnessLine, HARNESSES, parseClaudeAuth, parseOmoAuth } from "./harness.ts";
 import { launchdPlist, servicePATH, systemdUnit } from "./service.ts";
 import { parseStatus } from "./tailscale.ts";
@@ -180,3 +182,23 @@ test("setup --answers refuses codex (no adapter) and writes nothing", async () =
 		m.cleanup();
 	}
 }, 30_000);
+
+test("validateAnswers fills the defaults; writeConfig writes web.access only when it is passed and a rerun keeps it", () => {
+	const dir = mkdtempSync(join(tmpdir(), "onboard-config-"));
+	try {
+		const env = { dir, home: dir, pkg: dir, say: () => {} };
+		const prior = priorOf(dir);
+		const checked = validateAnswers({ identity: { name: "Dotty", character: "c", tone: "t" }, runtime: "omo", web_port: 7777, allow_logins: ["me@example.com"] }, prior, dir);
+		if (!checked.ok) throw new Error(checked.errors.join(", "));
+		expect(checked.answers).toMatchObject({ runtime: "omo", web_port: 7777, tailscale_https_port: 8443, guild: "", allow_logins: ["me@example.com"] });
+		const terminal = writeConfig(env, checked.answers, prior);
+		expect(terminal).toMatchObject({ identity: { name: "Dotty" }, orchestrator: { runtime: "omo" }, lanes: { runtime: "omo" }, web: { port: 7777, allow_logins: ["me@example.com"] } });
+		expect(terminal.web).not.toHaveProperty("access");
+		expect(JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).web).not.toHaveProperty("access");
+		expect(writeConfig(env, checked.answers, priorOf(dir), "local").web.access).toBe("local");
+		expect(writeConfig(env, checked.answers, priorOf(dir)).web.access).toBe("local");
+		expect(validateAnswers({ identity: { name: "x", character: "", tone: "" } }, prior, dir)).toMatchObject({ ok: false });
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
