@@ -20,7 +20,7 @@ const draft = (id: string, t: string, state = "open", extra: object = {}) => ({ 
 	decision: { options: OPTS, to: t, reply_to: now, group: 1, state, draft: DRAFT, ...extra } });
 const mail = (key: string) => ({ key, subject: "견적 요청", from: "Kim <kim@example.com>", source: "company", at: now, summary: "다음 주까지 견적을 받고 싶어요.", reply: "draft", unreplied: true });
 const conv = (t: string) => ({ target: t, mail: mail(t.slice(5)), last: { ts: now, text: "견적 요청 메일", via: "company" }, unread: 0 });
-const KAKAO_W = { name: "kakao 새 소식", watch: "kakao-new", kind: "watch", last_run: now, last_result: "ok", next_run: later(1), every: "1분마다", last_ok: now, fails: 0 };
+const KAKAO_W = { name: "카카오톡 새 소식", watch: "kakao-new", kind: "watch", last_run: now, last_result: "ok", next_run: later(1), every: "1분마다", last_ok: now, fails: 0 };
 const app = (key: string, label: string, icon: string, notices: string[], extra: object = {}) => ({ key, label, icon, kind: "app", unread: 0, notices, needs: { drafts: notices.length, unread: 0, sentToday: 0 }, ...extra });
 const MAIL_APP = (id: string) => app("mail", "메일", "mail", [id], { conv: ["mail:"] });
 const KAKAO_APP = app("kakao", "카카오톡", "chat", [], { conv: [], own: ["kakao-new"] });
@@ -140,8 +140,9 @@ describe.each([[390, 844], [1280, 900]])("the same app on this computer and on t
 		const pv = await boot(width, height, KEYS.kakao.peer, KAKAO_READY);
 		const peer = await parts(pv);
 		await Bun.write(join(SHOTS, `peer-kakao-${width}.png`), await pv.screenshot());
-		expect(local.stat).toContain("kakao 새 소식");
-		expect(local.stat).toContain("마지막 정상");
+		expect(local.stat).toContain("카카오톡 새 소식");
+		expect(local.stat).toContain("정상");
+		expect(local.stat).not.toContain("마지막 정상");
 		expect(peer).toEqual(local);
 		const head = async (v: View) => {
 			await run(v, `kkOpen("100")`);
