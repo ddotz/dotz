@@ -37,7 +37,7 @@ import { ev, fakeHub, idleState, run, waitFor, type View } from "./test-web.ts";
 const STATUS_ALLOWED = new Set([
 	".ds-ey", ".ds-rl", "#tl > [data-ts] > .al-x:hover", ".upd-block", ".fc-card .dup, .hs-ft .dup", ".mon-banner", ".mon-banner .ic", ".mon-banner-tx b",
 	".lg-e::before", ".lr.er .lb", ".mb-txt .mt-nt .up", ".mr-todo b", ".dr-none .ic", ".as-why", ".ended .erow .edel:hover", ".pausenote", ".cchip.capi",
-	".ni .nnb", ".conn", "#bell-n", ".pl-nb", '.pm-step[aria-checked="true"] .pm-ck', ".md .mlist-b", ".cv-task .ct-bar span",
+	".ni .nnb", ".conn", "#bell-n", ".pl-nb", ".md .mlist-b", ".cv-task .ct-bar span",
 	".hneeds .hn-h .sup", ".oerr", ".au .ferr",
 ]);
 // Literal colors a fix would visibly change, as `file selector`: the ulw keyword rainbow, the raised dark toast and hint, the lightbox backdrops, and
