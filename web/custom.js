@@ -15,28 +15,82 @@ button.cu-r:hover, a.cu-r:hover { background: var(--card-hover); }
 .cu-m { color: var(--fg-3); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
 .cf .btn:disabled, .pv-acts .btn:disabled { opacity: .4; cursor: default; }
 .cu-cause { margin-top: 8px; color: var(--err); font-size: 12px; line-height: 16px; }
-/* card editor (dialog): the app's fields, two to a row where they are short, one tonal block per action */
-.cu-form { display: flex; flex-direction: column; gap: 14px; padding-top: 8px; }
-.cu-form .fi { font-size: 14px; }
-.cu-form textarea.fi { height: auto; min-height: 76px; padding: 8px 12px; resize: vertical; font: inherit; font-size: 14px; line-height: 21px; }
-.cu-form .fi[aria-invalid="true"] { border-color: var(--err); }
-.cu-form .seg button { height: 32px; }
-.cu-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
-.cu-hint { margin-top: -8px; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+/* card editor (the #cardform page): the form beside its live card, one white block per action */
+.view.cu-page { max-width: 1000px; }
+.cu-fp { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 32px; align-items: start; }
+.cu-pv { order: 2; position: sticky; top: 8px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.cu-pv > .cu-m { padding: 0 4px; }
+.cu-pv .ch h3 { flex: 1; min-width: 0; }
+.cu-pv .cf { flex-wrap: nowrap; }
+.cu-pv .cf .btn { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cu-pv .ch .ib { width: 24px; height: 24px; }
+.cu-pv h3.cu-g, .cu-ghost :is(.big, .clamp, .nm, .k, .v) { color: var(--fg-3); }
+.cu-form { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.cu-form .fi { height: 44px; padding: 0 14px; font-size: 15px; }
+.cu-form .cu-t .fi { font: 600 16px/22px var(--font); }
+.cu-form textarea.fi { height: auto; min-height: 92px; max-height: 240px; padding: 11px 14px; field-sizing: content; resize: none; font: inherit; font-size: 15px; line-height: 22px; }
+.cu-form .fi[type="number"] { appearance: textfield; }
+.cu-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; }
+.cu-form .seg { flex-wrap: nowrap; background: var(--hover); }
+.cu-form .seg button { flex: 1 0 auto; height: 32px; padding: 0 14px; font-size: 13px; white-space: nowrap; }
+.cu-cmd { display: flex; flex-direction: column; gap: 16px; margin-top: -8px; }
+.cu-cmd[hidden] { display: none; }
+.cu-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.cu-hint { color: var(--fg-3); font-size: 12px; line-height: 16px; }
+.cu-hint:empty { display: none; }
+.cu-vts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.cu-vt { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; text-align: center; cursor: pointer; }
+.cu-vt input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.cu-vt-c { display: flex; flex-direction: column; justify-content: center; gap: 5px; height: 60px; padding: 8px 10px; border-radius: var(--r-ctl); background: var(--hover); color: var(--line-2); transition: background-color var(--m-base) var(--m-ease); }
+.cu-vt-c i, .cu-vt-c b { display: block; height: 4px; border-radius: 2px; background: currentColor; }
+.cu-vt-c i.s { width: 60%; }
+.cu-vt-c b { width: 70%; height: 12px; border-radius: 3px; }
+.cu-vt-c u { display: flex; justify-content: space-between; gap: 8px; text-decoration: none; }
+.cu-vt-c u i { flex: 0 0 34%; }
+.cu-vt-c u i + i { flex-basis: 22%; }
+.cu-vt-c.k-list i { position: relative; margin-left: 9px; }
+.cu-vt-c.k-list i::before { content: ""; position: absolute; left: -9px; top: 0; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+.cu-vt-n { font-size: 13px; line-height: 18px; color: var(--fg-3); }
+.cu-vt:hover .cu-vt-c { background: var(--active); }
+.cu-vt:has(input:checked) .cu-vt-c { background: var(--card); color: var(--fg-2); }
+.cu-vt:has(input:checked) .cu-vt-n { color: var(--fg); font-weight: 600; }
+:root[data-theme="dark"] .cu-vt-c { background: var(--card); }
+:root[data-theme="dark"] .cu-vt:hover .cu-vt-c { background: var(--hover); }
+:root[data-theme="dark"] .cu-vt:has(input:checked) .cu-vt-c { background: var(--active); }
+.cu-vt:has(input:focus-visible) .cu-vt-c { box-shadow: var(--ff-ring); }
+.cu-more { margin-top: -8px; }
+.cu-more summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 10px 0; list-style: none; cursor: pointer; }
+.cu-more summary::-webkit-details-marker { display: none; }
+.cu-more summary .lb { font: 500 14px/20px var(--font); color: var(--fg-2); }
+.cu-more summary .cu-hint { flex: 0 1 auto; min-width: 0; }
+.cu-more summary svg.ic { align-self: center; margin-left: auto; color: var(--fg-3); transform: rotate(90deg); transition: transform var(--m-base) var(--m-ease); }
+.cu-more[open] summary svg.ic { transform: rotate(-90deg); }
+.cu-more summary:focus-visible { border-radius: var(--r-ctl); }
+.cu-mb { display: flex; flex-direction: column; gap: 24px; padding-top: 8px; }
 .cu-acts { display: flex; flex-direction: column; gap: 8px; }
-.cu-act { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: var(--r-ctl); background: var(--layer); }
-.cu-act .fi, .cu-act .seg button.on { background: var(--card); }
+.cu-acts:empty { display: none; }
+.cu-act { --ff-fill: var(--layer); display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 14px; background: var(--card); }
+.cu-act .seg { background: var(--layer); }
+.cu-form .cu-act textarea.fi { min-height: 44px; }
 .cu-act-h { display: flex; align-items: center; gap: 8px; }
 .cu-act-h .fi { flex: 1; }
-.cu-act-h .seg { flex: none; width: 112px; }
+.cu-act-h .seg { flex: none; }
+.cu-act-h .seg button { padding: 0 10px; }
 .cu-act-f { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.cu-chk { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; color: var(--fg-2); font-size: 13px; cursor: pointer; }
+.cu-chk { display: inline-flex; align-items: center; gap: 8px; min-height: 28px; color: var(--fg-2); font-size: 13px; cursor: pointer; }
 .cu-chk input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .cu-ferr { display: flex; gap: 8px; align-items: flex-start; color: var(--err); font-size: 13px; line-height: 18px; overflow-wrap: anywhere; }
-.cu-ferr:empty { display: none; }
-.cu-add { align-self: flex-start; }
-@media (pointer: coarse) { .cu-form textarea.fi { font-size: 16px; } .cu-form .fi { font-size: 16px; } }
-@media (max-width: 639px) { .cu-2 { grid-template-columns: minmax(0, 1fr); } }
+.cu-ferr:empty, .cu-ferr-at:not(:has(.cu-ferr:not(:empty))) { display: none; }
+.btn.tonal.cu-add { align-self: flex-start; background: var(--card); }
+.btn.tonal.cu-add:hover { background: var(--card-hover); }
+.cu-ft { display: flex; justify-content: flex-end; gap: 8px; }
+@media (pointer: coarse), (max-width: 899px) { .cu-form .fi, .cu-form textarea.fi { font-size: 16px; } }
+@media (max-width: 1099px) {
+  .cu-fp { grid-template-columns: minmax(0, 1fr); gap: 16px; max-width: 560px; margin: 0 auto; }
+  .cu-pv { order: 0; top: 0; z-index: 2; margin: -4px -16px 0; padding: 4px 16px 12px; background: var(--bg); }
+  .cu-pv > .cu-m { display: none; }
+}
+@media (max-width: 899px) { .cu-ft .btn { flex: 1; } }
 .pv-cnt { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 12px; line-height: 16px; font-weight: 600; }
 .pv-path { max-width: 100%; color: var(--fg-3); font: 13px/18px var(--font); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.pv-path { padding: 0; border: 0; background: none; cursor: copy; }
@@ -184,7 +238,7 @@ button.pv-res:hover { background: var(--card-hover); }
 
   function viewBody(c) {
     const v = c.view || "text", d = cardData(v, c.data);
-    if (d === undefined || d === null) return stateLine(c.error ? "값을 받지 못했어요" : "값 없음");
+    if (d === undefined || d === null) return stateLine(c.error ? "값을 받지 못했어요" : c.empty || "값 없음");
     if (v === "stat") {
       const o = typeof d === "object" && !Array.isArray(d) ? d : { value: d };
       return el("div", null, el("div", { class: "big", text: show(o.value) }),
@@ -304,101 +358,149 @@ button.pv-res:hover { background: var(--card-hover); }
   const VIEW_KO = { text: "글", stat: "숫자", list: "목록", kv: "항목별 값" };
   const FIELD_KO = { title: "제목", note: "설명", view: "보기", text: "내용", command: "명령", cwd: "폴더", every_minutes: "갱신 주기", timeout_seconds: "제한 시간", link: "링크", actions: "동작", id: "아이디" };
   const ACT_MAX_EDIT = 4;
-  const seg = (items, value, onPick) => {
-    const box = el("div", { class: "seg", role: "radiogroup" });
+  const VIEW_PH = { text: "카드에 보일 글", stat: "예: 128GB", list: "우유 사기\n치과 예약", kv: "남은 공간: 128GB\n마지막 확인: 어제" };
+  const VIEW_HINT = { text: "", stat: "숫자나 짧은 값 하나를 적어요.", list: "한 줄에 하나씩 적어요.", kv: "한 줄에 이름: 값으로 적어요." };
+  // The preview while 내용 is empty: the chosen view's own shape in faint ink.
+  const VIEW_GHOST = { text: "카드에 보일 글", stat: "128GB", list: ["첫 번째 항목", "두 번째 항목"], kv: [["이름", "값"], ["이름", "값"]] };
+  const VIEW_MARKS = { text: "<i></i><i></i><i class=\"s\"></i>", stat: "<b></b><i class=\"s\"></i>", list: "<i></i><i></i><i></i>", kv: "<u><i></i><i></i></u><u><i></i><i></i></u><u><i></i><i></i></u>" };
+  const CMD_PH = "예: df -h ~ | tail -1   (출력이 JSON이면 그대로 읽어요)";
+  const seg = (items, value, onPick, label) => {
+    const box = el("div", { class: "seg", role: "radiogroup", "aria-label": label });
     const paint = v => { for (const b of box.children) { const on = b.dataset.v === v; b.classList.toggle("on", on); b.setAttribute("aria-checked", String(on)); } };
-    for (const [v, label] of items) box.append(el("button", { type: "button", role: "radio", "data-v": v, text: label, onclick: () => { paint(v); onPick(v); } }));
+    for (const [v, text] of items) box.append(el("button", { type: "button", role: "radio", "data-v": v, text, onclick: () => { paint(v); onPick(v); } }));
     paint(value);
     return box;
   };
   const field = (key, ctrl) => { const lb = el("label", { text: FIELD_KO[key], for: ctrl.id }); return el("div", { class: "tf", "data-f": key }, lb, ctrl); };
-  // The editor: one dialog for a new card and for an existing one. Saving sends the form as the card file's keys; the gateway's
-  // validation message comes back next to the field it names (the message starts with that key), else above the buttons.
+  const viewThumb = ([v, label], value, onPick) => el("label", { class: "cu-vt" },
+    el("input", { type: "radio", name: "cu-view", value: v, checked: v === value, onchange: () => onPick(v) }),
+    el("span", { class: `cu-vt-c k-${v}`, "aria-hidden": "true", safeHtml: VIEW_MARKS[v] }),
+    el("span", { class: "cu-vt-n", text: label }));
+  // The editor: one page (#cardform, #cardform/<id>) for a new card and for an existing one, the form beside the real card it will make.
+  // Saving sends the form as the card file's keys; the gateway's validation message comes back under the field it names (the message
+  // starts with that key), else above the buttons.
   function cardForm(spec, cur) {
     const s = spec || {}, acts0 = Array.isArray(s.actions) ? s.actions.slice(0, ACT_MAX_EDIT) : [];
     let view = VIEW_KO[s.view] ? s.view : "text", src = s.command !== undefined ? "command" : "text";
     const title = input({ value: s.title || "", maxlength: "40", placeholder: "예: 디스크 남은 공간", required: true });
-    const note = input({ value: s.note || "", maxlength: "120", placeholder: "제목 아래 한 줄 (선택)" });
+    const note = input({ value: s.note || "", maxlength: "120", placeholder: "제목 아래 한 줄" });
     const id = cur ? null : input({ value: "", maxlength: "40", placeholder: "비우면 제목으로 만들어요", pattern: "[a-z0-9][a-z0-9-]{0,39}" });
     const body = el("textarea", { id: `f${++fieldSeq}`, class: "fi", rows: "3", autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
     body.value = src === "command" ? s.command || "" : typeof s.text === "string" ? s.text : "";
     const cwd = input({ value: s.cwd || "", placeholder: "~/Code/… (선택)" });
     const every = input({ value: s.every_minutes != null ? String(s.every_minutes) : "", type: "number", min: "1", step: "1", inputmode: "numeric", placeholder: "10" });
     const timeout = input({ value: s.timeout_seconds != null ? String(s.timeout_seconds) : "", type: "number", min: "1", max: "60", step: "1", inputmode: "numeric", placeholder: "10" });
-    const link = input({ value: s.link || "", type: "url", inputmode: "url", placeholder: "https://… 또는 #화면 (선택)" });
-    const bodyField = field("text", body), cmdOnly = el("div", { class: "cu-2" }, field("cwd", cwd), field("every_minutes", every)), tmoField = field("timeout_seconds", timeout);
-    const hint = el("div", { class: "cu-hint" });
+    const link = input({ value: s.link || "", type: "url", inputmode: "url", placeholder: "https://… 또는 #화면" });
+    const bodyLabel = el("label", { for: body.id }), hint = el("div", { class: "cu-hint" }), moreSub = el("span", { class: "cu-hint" });
+    const bodyField = el("div", { class: "tf", "data-f": "text" }, el("div", { class: "cu-h" }, bodyLabel, seg([["text", "직접 입력"], ["command", "명령 실행"]], src, v => { src = v; paintSrc(); swapPreview(); }, "내용 출처")), body, hint);
+    const cmdOnly = el("div", { class: "cu-cmd" }, field("cwd", cwd), el("div", { class: "cu-2" }, field("every_minutes", every), field("timeout_seconds", timeout)));
+    const pvBox = el("div", { inert: true });
     const paintSrc = () => {
-      bodyField.querySelector("label").textContent = src === "command" ? FIELD_KO.command : FIELD_KO.text;
+      bodyLabel.textContent = src === "command" ? FIELD_KO.command : FIELD_KO.text;
       bodyField.dataset.f = src;
-      body.placeholder = src === "command" ? "예: df -h ~ | tail -1   (출력이 JSON이면 그대로 읽어요)" : "카드에 보일 글";
-      cmdOnly.hidden = src !== "command"; tmoField.hidden = src !== "command";
-      hint.textContent = src === "command" ? `갱신 주기는 분, 제한 시간은 초(1~60). 출력은 ${VIEW_KO[view]} 보기로 그려요.` : `적은 글을 ${VIEW_KO[view]} 보기로 그려요.`;
+      body.placeholder = src === "command" ? CMD_PH : VIEW_PH[view];
+      cmdOnly.hidden = src !== "command";
+      hint.textContent = src === "command" ? `갱신 주기는 분, 제한 시간은 초(1~60). 출력은 ${VIEW_KO[view]} 보기로 그려요.` : VIEW_HINT[view];
     };
-    const viewSeg = seg(Object.entries(VIEW_KO), view, v => { view = v; paintSrc(); });
-    const srcSeg = seg([["text", "직접 입력"], ["command", "명령 실행"]], src, v => { src = v; paintSrc(); });
-    paintSrc();
+    const viewBox = el("div", { class: "tf", role: "radiogroup", "aria-label": FIELD_KO.view }, el("span", { class: "lb", text: FIELD_KO.view }),
+      el("div", { class: "cu-vts" }, Object.entries(VIEW_KO).map(e => viewThumb(e, view, v => { view = v; paintSrc(); swapPreview(); }))));
     // actions: label, 명령 or 요청, its text, and whether to ask first
     const actsBox = el("div", { class: "cu-acts" });
-    const addAct = el("button", { class: "btn text cu-add", type: "button", text: "동작 추가" });
+    const addAct = el("button", { class: "btn tonal sm cu-add", type: "button", text: "동작 추가" });
     const actRow = a => {
       let kind = a.prompt !== undefined && a.command === undefined ? "prompt" : "command";
       const label = input({ value: a.label || "", maxlength: "20", placeholder: "버튼 이름", "aria-label": "동작 이름" });
-      const text = el("textarea", { id: `f${++fieldSeq}`, class: "fi", rows: "2", autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "동작 내용" });
+      const text = el("textarea", { id: `f${++fieldSeq}`, class: "fi", rows: "1", autocomplete: "off", autocapitalize: "off", spellcheck: "false", "aria-label": "동작 내용" });
       text.value = kind === "prompt" ? a.prompt || "" : a.command || "";
       const paintKind = () => { text.placeholder = kind === "prompt" ? `${botName}에게 보낼 요청` : "실행할 명령"; };
       const confirm = el("input", { type: "checkbox", ...(a.confirm ? { checked: true } : {}) });
       const row = el("div", { class: "cu-act" },
-        el("div", { class: "cu-act-h" }, label, seg([["command", "명령"], ["prompt", "요청"]], kind, v => { kind = v; paintKind(); })),
+        el("div", { class: "cu-act-h" }, label, seg([["command", "명령"], ["prompt", "요청"]], kind, v => { kind = v; paintKind(); }, "동작 종류")),
         text,
-        el("div", { class: "cu-act-f" }, el("label", { class: "cu-chk" }, confirm, "실행 전에 묻기"), el("button", { class: "btn text", type: "button", text: "빼기", onclick: () => { row.remove(); addAct.disabled = false; } })));
+        el("div", { class: "cu-act-f" }, el("label", { class: "cu-chk" }, confirm, "누르기 전에 확인"), el("button", { class: "btn text inrow", type: "button", text: "빼기", onclick: () => { row.remove(); addAct.disabled = false; schedule(); } })));
       paintKind();
       row._value = () => ({ label: label.value.trim(), [kind]: text.value, ...(confirm.checked ? { confirm: true } : {}) });
       return row;
     };
     for (const a of acts0) actsBox.append(actRow(a));
-    addAct.addEventListener("click", () => { if (actsBox.children.length >= ACT_MAX_EDIT) return; const r = actRow({}); actsBox.append(r); r.querySelector(".fi").focus(); addAct.disabled = actsBox.children.length >= ACT_MAX_EDIT; });
+    addAct.addEventListener("click", () => { if (actsBox.children.length >= ACT_MAX_EDIT) return; const r = actRow({}); actsBox.append(r); r.querySelector(".fi").focus(); addAct.disabled = actsBox.children.length >= ACT_MAX_EDIT; schedule(); });
     addAct.disabled = acts0.length >= ACT_MAX_EDIT;
-    const ferr = el("div", { class: "cu-ferr", role: "alert" });
-    const form = el("div", { class: "cu-form" },
-      cur ? el("div", { class: "cu-m", text: `파일 · ${cur.file}` }) : null,
+    const more = el("details", { class: "cu-more" },
+      el("summary", null, el("span", { class: "lb", text: "더 보기" }), moreSub, icon("chev")),
+      el("div", { class: "cu-mb" }, field("note", note), field("link", link),
+        el("div", { class: "tf" }, el("span", { class: "lb", text: FIELD_KO.actions }), el("div", { class: "cu-hint", text: `최대 ${ACT_MAX_EDIT}개, 앞의 2개는 카드에 버튼으로 보여요.` }), actsBox, addAct),
+        id ? field("id", id) : null,
+        cur ? el("div", { class: "cu-m", text: `파일 · ${cur.file}` }) : null));
+    const ferr = el("div", { class: "cu-ferr", role: "alert" }), ferrHome = el("div", { class: "cu-ferr-at" }, ferr);
+    const titleField = field("title", title);
+    titleField.classList.add("cu-t");
+    const save = el("button", { class: "btn pri", type: "submit", text: "저장" });
+    const form = el("form", { class: "cu-form", novalidate: true },
       cur && cur.error ? el("div", { class: "cu-ferr", text: `지금 파일에 문제가 있어요: ${cur.error}. 저장하면 이 내용으로 바꿔 써요.` }) : null,
-      field("title", title), field("note", note), id ? field("id", id) : null,
-      el("div", { class: "tf" }, el("span", { class: "lb", text: FIELD_KO.view }), viewSeg),
-      el("div", { class: "tf" }, el("span", { class: "lb", text: "내용 출처" }), srcSeg),
-      bodyField, hint, cmdOnly, tmoField, field("link", link),
-      el("div", { class: "tf" }, el("span", { class: "lb", text: `${FIELD_KO.actions} · 최대 ${ACT_MAX_EDIT}개, 앞의 2개는 버튼으로` }), actsBox, addAct),
-      ferr);
+      titleField, viewBox, bodyField, cmdOnly, more, ferrHome,
+      el("div", { class: "cu-ft" }, el("button", { class: "btn text", type: "button", text: "취소", onclick: () => go("home") }), save));
+    const actions = () => [...actsBox.children].map(r => r._value());
+    const paintPreview = () => {
+      const t = title.value.trim(), cmd = src === "command", ghost = !cmd && !body.value.trim();
+      const node = cardNode({ id: "preview", title: t || "카드 제목", note: note.value.trim(), view, actions: actions().filter(a => a.label), empty: cmd ? "저장하면 명령을 실행해 결과를 그려요" : "", ...(cmd ? {} : { data: ghost ? VIEW_GHOST[view] : body.value }) });
+      for (const b of node.querySelectorAll("button")) { const face = el("span", { class: b.className }); face.append(...b.childNodes); b.replaceWith(face); }   // a picture of the card: nothing in it is a control
+      node.classList.toggle("cu-ghost", ghost);
+      node.querySelector("h3").classList.toggle("cu-g", !t);
+      clear(pvBox).append(node);
+      const n = [note, link, id].filter(x => x && x.value.trim()).length + (actsBox.children.length ? 1 : 0);
+      moreSub.textContent = `설명 · 링크 · 동작${id ? " · 아이디" : ""}${n ? ` · ${n}개 채움` : ""}`;
+    };
+    // A keystroke draws the card once a frame at most; nothing here measures the page.
+    let queued = 0;
+    const schedule = () => { queued ||= requestAnimationFrame(() => { queued = 0; paintPreview(); }); };
+    const swapPreview = () => motionSwap(pvBox, paintPreview);
+    form.addEventListener("input", schedule);
+    paintSrc();
+    paintPreview();
     const value = () => ({
       ...(id && id.value.trim() ? { id: id.value.trim() } : {}),
       title: title.value.trim(), note: note.value.trim(), view,
       ...(src === "command" ? { command: body.value, cwd: cwd.value.trim(), every_minutes: every.value, timeout_seconds: timeout.value } : { text: body.value }),
       link: link.value.trim(),
-      actions: [...actsBox.children].map(r => r._value()),
+      actions: actions(),
       ...(s.order !== undefined ? { order: s.order } : {}),
     });
-    // the message names the field it is about ("title은 …", "actions[1]: …"): that field is marked and focused
-    const fail = message => {
+    // the message names the field it is about ("title은 …", "actions[1]: …"): that field is marked and focused, inside 더 보기 too
+    const fail = (message, named) => {
       for (const n of form.querySelectorAll("[aria-invalid]")) n.removeAttribute("aria-invalid");
       ferr.textContent = message;
-      const key = (/^([a-z_]+)/.exec(message) || [])[1], box = key && form.querySelector(`[data-f="${key}"]`);
+      const key = named || (/^([a-z_]+)/.exec(message) || [])[1], box = key && form.querySelector(`[data-f="${key}"]`);
       const ctrl = box ? box.querySelector(".fi") : key === "actions" ? actsBox.querySelector(".fi") : null;
-      if (ctrl) { ctrl.setAttribute("aria-invalid", "true"); ctrl.focus(); }
+      (ctrl ? ctrl.parentElement : ferrHome).append(ferr);
+      if (ctrl) { if (ctrl.closest("details")) more.open = true; ctrl.setAttribute("aria-invalid", "true"); ctrl.focus(); }
     };
-    return new Promise(res => {
-      let saved = null;
-      const d = dialog({ title: cur ? "카드 수정" : "카드 추가", body: form, onclose: () => res(saved), actions: [
-        { label: "취소", onclick: c => c() },
-        { label: "저장", kind: "pri", onclick: (c, btn) => busy(btn, async () => {
-          if (!title.value.trim()) return fail("title은 1~40자여야 해요");
-          try {
-            saved = cur ? await api(`/api/custom/cards/${enc(cur.id)}`, "PUT", value()) : await api("/api/custom/cards", "POST", value());
-          } catch (e) { return fail(e.message || "저장하지 못했어요"); }
-          c();
-        }) }] });
-      d.node.classList.add("wide");
-      title.focus();
+    form.addEventListener("submit", ev => {
+      ev.preventDefault();
+      busy(save, async () => {
+        if (!title.value.trim()) return fail("제목을 적어 주세요", "title");
+        if (id && !id.checkValidity()) return fail("영어 소문자, 숫자, 빼기(-)만 쓸 수 있어요", "id");
+        let saved;
+        try {
+          saved = cur ? await api(`/api/custom/cards/${enc(cur.id)}`, "PUT", value()) : await api("/api/custom/cards", "POST", value());
+        } catch (e) { return fail(e.message || "저장하지 못했어요"); }
+        formDone(saved, cur);
+      });
     });
+    return { title, node: el("div", { class: "cu-fp" }, el("aside", { class: "cu-pv", "aria-label": "미리보기" }, el("div", { class: "cu-m", text: "홈에서 이렇게 보여요" }), pvBox), form) };
+  }
+  const formBox = () => document.getElementById("v-cardform");
+  async function openForm(id) {
+    const box = formBox(), key = id || "new";
+    if (box.dataset.key === key && box.firstChild) return;
+    box.dataset.key = key;
+    clear(box);
+    const show = (spec, cur) => { const f = cardForm(spec, cur); box.append(f.node); if (!cur) f.title.focus({ preventScroll: true }); };
+    if (!id) { show(null, null); return; }
+    document.getElementById("title").textContent = "카드 수정";
+    try {
+      const r = await api(`/api/custom/cards/${enc(id)}`);
+      if (current === "cardform" && box.dataset.key === key) show(r.spec || null, { id, file: r.file, error: r.error });
+    } catch (e) { toast(e.message, true); go("home"); }
   }
   // A new card lands in the first free place of the board; the page scrolls to it and its header takes focus so the place is seen.
   function reveal(id) {
@@ -407,26 +509,16 @@ button.pv-res:hover { background: var(--card-hover); }
     w.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     if (h) h.focus({ preventScroll: true });
   }
-  async function add() {
-    const card = await cardForm(null, null);
-    if (!card) return;
+  function formDone(card, cur) {
     if (!DATA) DATA = { cards: [] };
-    DATA.cards = [...(DATA.cards || []).filter(x => x.id !== card.id), card];
-    hidden.delete(card.id); saveHidden();
-    onData();
-    toast(`${card.title || card.id} 카드를 추가했어요`);
-    setTimeout(() => reveal(card.id), 50);
+    if (cur) { DATA.cards = (DATA.cards || []).map(x => x.id === cur.id ? card : x); nodes.delete(cur.id); }
+    else { DATA.cards = [...(DATA.cards || []).filter(x => x.id !== card.id), card]; hidden.delete(card.id); saveHidden(); }
+    go("home");
+    toast(`${card.title || card.id} 카드를 ${cur ? "저장" : "추가"}했어요`);
+    if (!cur) setTimeout(() => reveal(card.id), 50);
   }
-  async function edit(id) {
-    let r;
-    try { r = await api(`/api/custom/cards/${enc(id)}`); } catch (e) { toast(e.message, true); return; }
-    const card = await cardForm(r.spec || null, { id, file: r.file, error: r.error });
-    if (!card) return;
-    applyCard(card);
-    nodes.delete(id);
-    onData();
-    toast(`${card.title || id} 카드를 저장했어요`);
-  }
+  const add = () => go("cardform");
+  const edit = id => go("cardform", id);
   async function remove(id) {
     const c = ((DATA && DATA.cards) || []).find(x => x.id === id), name = (c && c.title) || id;
     if (!await ask("카드 삭제", `${name} 카드와 그 파일(${(c && c.file) || `cards/${id}.json`})을 지워요. 되돌릴 수 없어요.`, "삭제", true)) return;
@@ -670,6 +762,8 @@ button.pv-res:hover { background: var(--card-hover); }
     load(10000);
   }
   function view(name, tgt) {
+    if (name === "cardform") { openForm(tgt); return; }
+    if (formBox().firstChild) clear(formBox());
     if (name !== "project") return;
     projKey = tgt || "";
     if (detailKey !== projKey) DETAIL = null;
@@ -684,7 +778,7 @@ button.pv-res:hover { background: var(--card-hover); }
   // The main script may already have rendered the first view: catch up, then keep the sidebar and open pages fresh.
   pins();
   if (current === "home") home();
-  else if (current === "project") view("project", parseHash().t);
+  else if (current === "project" || current === "cardform") view(current, parseHash().t);
   setInterval(() => {
     if (document.hidden) return;
     if (current === "home" || current === "project") load(25000); else pins();
