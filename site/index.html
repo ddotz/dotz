@@ -88,42 +88,6 @@
     </div>
   </section>
 
-  <section class="section" id="security" aria-labelledby="security-title">
-    <div class="wrap">
-      <div class="section-head">
-        <h2 id="security-title">내 정보는 내 맥에 둬요</h2>
-        <p class="section-lede"><span class="ln"><span class="ph">비서에게 메일과 계정을 맡기는 만큼,</span></span> <span class="ln"><span class="ph">무엇이 어디에 남고 언제 밖으로 나가는지</span> <span class="ph">분명하게 정해 두었어요.</span></span></p>
-      </div>
-
-      <ul class="cards">
-        <li class="card">
-          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 11 12 4.5 20 11"></path><path d="M6 9.6V19.5h12V9.6"></path></svg>
-          <h3>내 맥에서 돌아가요</h3>
-          <p>비서는 내 컴퓨터에서 백그라운드로 돌아요. 설정, 기억, 규칙, 메일 기록은 내 맥의 dotz 폴더에 남고, 따로 가입하는 서버가 없어요.</p>
-        </li>
-        <li class="card">
-          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.5 3.5 10 14"></path><path d="M20.5 3.5 14 20.5l-4-6.5-6.5-4z"></path></svg>
-          <h3>내가 보내기를 눌러야 나가요</h3>
-          <p>메일 답장, 유튜브·인스타 댓글, 메신저 메시지는 먼저 초안으로 보여 줘요. 확인 카드에서 내가 보내기를 골라야만 실제로 나가요.</p>
-        </li>
-        <li class="card">
-          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="8.2" cy="8.2" r="4.2"></circle><path d="m11.3 11.3 8.7 8.7"></path><path d="m17.4 17.4 1.8-1.8"></path><path d="m19.7 19.7 1.6-1.6"></path></svg>
-          <h3>비밀번호는 대화에 안 남아요</h3>
-          <p>토큰과 비밀번호는 내 맥의 비밀 폴더에 나만 읽을 수 있는 권한(0600)으로 저장해요. 카드 번호나 인증 코드 같은 정보는 채팅이 아니라 따로 마련된 보안 입력으로만 받아요.</p>
-        </li>
-        <li class="card">
-          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="9.5" rx="2"></rect><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"></path></svg>
-          <h3>2단계 인증은 허락을 받고</h3>
-          <p>로그인을 다시 하다가 휴대폰 인증 같은 사람 확인이 필요하면, 먼저 나에게 물어보고 허락한 뒤에만 진행해요.</p>
-        </li>
-        <li class="card">
-          <svg class="card-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"></circle><path d="m6 6 12 12"></path></svg>
-          <h3>위험한 명령은 미리 막아요</h3>
-          <p>실행하면 안 되는 명령은 실행 직전에 막아요. 기본 차단 목록이 들어 있고, 내 규칙에 막을 명령을 더 적어 둘 수도 있어요.</p>
-        </li>
-      </ul>
-    </div>
-  </section>
 
   <section class="section" id="usage" aria-labelledby="usage-title">
     <div class="wrap">
@@ -233,106 +197,8 @@
     </div>
   </section>
 
-  <section class="section" id="flow" aria-labelledby="flow-title">
-    <div class="wrap">
-      <div class="section-head">
-        <h2 id="flow-title">어떻게 움직이나</h2>
-        <p class="section-lede"><span class="ph">메신저나 웹 앱으로 부탁하면</span> <span class="ph">내 맥의 비서가 일을 나눠 처리하고,</span> <span class="ph">결과와 확인 요청을</span> <span class="ph">다시 대화로 돌려줘요.</span></p>
-      </div>
 
-      <figure class="flow">
-        <div class="flow-main">
-          <div class="tier">
-            <p class="tier-label">부탁</p>
-            <div class="nodes">
-              <span class="node">메신저</span>
-              <span class="node">웹 앱</span>
-            </div>
-          </div>
-          <div class="edge"><span>대화</span></div>
-          <div class="tier">
-            <p class="tier-label">내 맥</p>
-            <div class="nodes">
-              <span class="node node-gateway">
-                dotz 비서
-                <small>항상 켜져 있음 · 지켜보기 · 루틴</small>
-              </span>
-            </div>
-          </div>
-          <div class="edge"><span>일 나누기</span></div>
-          <div class="tier">
-            <p class="tier-label">할 일</p>
-            <div class="nodes nodes-sessions">
-              <span class="node node-session">메일<small>요약 · 초안</small></span>
-              <span class="node node-session">댓글<small>모으기 · 초안</small></span>
-              <span class="node node-session">프로젝트<small>작업 · 보고</small></span>
-            </div>
-          </div>
-          <div class="edge"><span>결과 · 초안</span></div>
-          <div class="tier">
-            <p class="tier-label">확인</p>
-            <div class="nodes">
-              <span class="node">진행 보고</span>
-              <span class="node">보내기 확인 카드</span>
-            </div>
-          </div>
-        </div>
-        <figcaption><span class="ph">밖으로 나가는 일은</span> <span class="ph">마지막 확인 카드에서 멈추고,</span> <span class="ph">내가 보내기를 고른 것만 나가요.</span></figcaption>
-      </figure>
-    </div>
-  </section>
 
-  <section class="section" id="install" aria-labelledby="install-title">
-    <div class="wrap">
-      <div class="section-head">
-        <h2 id="install-title">5분 설치</h2>
-        <p class="section-lede"><span class="ph">터미널에 명령 하나를 붙여 넣으면</span> <span class="ph">필요한 것을 깔고</span> <span class="ph">설정 마법사가 열려요.</span></p>
-      </div>
-
-      <ol class="steps">
-        <li class="step">
-          <p class="step-num" aria-hidden="true">01</p>
-          <div class="step-body">
-            <h3>설치</h3>
-            <p>첫 번째 명령은 설치와 마법사까지, 두 번째는 컴퓨터를 켤 때마다 비서가 저절로 시작되게까지 해 줘요.</p>
-            <div class="code-stack">
-              <p class="code-caption">설치와 마법사</p>
-              <pre><code>curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh</code></pre>
-              <p class="code-caption">항상 켜 두기까지</p>
-              <pre><code>curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh -s -- --service</code></pre>
-            </div>
-          </div>
-        </li>
-        <li class="step">
-          <p class="step-num" aria-hidden="true">02</p>
-          <div class="step-body">
-            <h3>마법사</h3>
-            <p>비서 이름과 말투, 연결할 메신저, 폰에서 열 방법을 차례로 물어요. 맥에서 필요한 권한도 이때 함께 정리해요.</p>
-          </div>
-        </li>
-        <li class="step">
-          <p class="step-num" aria-hidden="true">03</p>
-          <div class="step-body">
-            <h3>말 걸기</h3>
-            <p>마법사가 알려 준 웹 앱 주소를 폰에서 열거나 메신저에서 말을 걸어요. 메일, 유튜브 연결은 "메일 연결해 줘"처럼 부탁하면 비서가 순서대로 안내해요.</p>
-          </div>
-        </li>
-      </ol>
-    </div>
-  </section>
-
-  <section class="section section-fork" id="fork" aria-labelledby="fork-title">
-    <div class="wrap">
-      <div class="fork-grid">
-        <h2 id="fork-title"><span class="ph">업데이트해도</span> <span class="ph">내 설정은 그대로</span></h2>
-        <div class="prose">
-          <p>설정, 비밀, 기억, 규칙은 프로그램 폴더와 떨어진 내 dotz 폴더에 따로 둬요.</p>
-          <p>업데이트는 공개 저장소에서 바로 받아 오고, 프로그램이 바뀌어도 내 기록과 설정은 남아요.</p>
-          <p>그래서 저장소를 복사(포크)할 필요 없이 설치하면 돼요.</p>
-        </div>
-      </div>
-    </div>
-  </section>
 </main>
 
 <footer class="site-footer">
