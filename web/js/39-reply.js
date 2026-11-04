@@ -33,7 +33,7 @@ function rpPaint() {
   const r = RP.cur && RP.cur.t === target ? RP.cur : null;
   if (!RP.bar) {
     if (!r) return;
-    const tx = el("button", { class: "rp-tx", type: "button", "aria-label": "인용한 메시지로 이동", onclick: () => rpJump(RP.cur && RP.cur.id) }, el("span", { class: "rp-tg" }), el("span", { class: "rp-ct" }));
+    const tx = el("button", { class: "rp-tx", type: "button", "aria-label": "인용한 메시지로 이동", onclick: ev => rpJump(RP.cur && RP.cur.id, ev.currentTarget) }, el("span", { class: "rp-tg" }), el("span", { class: "rp-ct" }));
     RP.bar = el("div", { class: "rpbar", id: "replybar", role: "group", "aria-label": "인용할 메시지", onpointerdown: ev => ev.preventDefault() }, icon("quote", "rp-ic"), tx, el("button", { class: "ib rp-x", type: "button", "aria-label": "인용 취소", title: "인용 취소", onclick: rpClear }, icon("close")));
     $("#composer").insertBefore(RP.bar, $("#send"));
   }
@@ -49,12 +49,32 @@ function rpTake() {
   return { id: r.id, author: r.author, content: r.content };
 }
 function rpRestore(reply) { if (reply) { RP.cur = { t: target, ...reply, tone: RP.tone }; rpPaint(); } }
-function rpJump(id) {
-  const n = id && $("#tl [data-rid=\"" + CSS.escape(id) + "\"]");
-  if (!n) return;
-  n.scrollIntoView({ block: "center", behavior: "smooth" });
-  n.classList.add("rp-flash");
-  n.addEventListener("animationend", () => n.classList.remove("rp-flash"), { once: true });
+const rpNode = id => $("#tl [data-rid=\"" + CSS.escape(id) + "\"]");
+const rpRid = e => e.mid || e.message_id || e.ts;
+let rpJumpSeq = 0;
+// The quoted message: drawn, it is scrolled to; stored, it is drawn first; else the page around it comes in one request (GET /api/history?around=) and the
+// view lands there in the same frame, so nothing pages past. `from` is the pressed quote: it alone says it is looking, until then.
+async function rpJump(id, from) {
+  if (!id) return;
+  const seq = ++rpJumpSeq, t = target, s = ts(t), drawn = rpNode(id);
+  if (drawn) { drawn.scrollIntoView({ block: "center", behavior: "smooth" }); ntFlash(drawn); return; }
+  let at = s.msgs.find(e => rpRid(e) === id)?.ts;
+  if (!at) {
+    if (from) { from.classList.add("busy"); from.dataset.wait = "찾는 중…"; }
+    try {
+      const r = await api(`/api/history?target=${enc(t)}&limit=150&around=${enc(id)}`);
+      if (seq !== rpJumpSeq || t !== target) return;
+      at = r.at;
+      if (at) { chatMerge(s, r); s.whole = true; renderAll(true); }
+      else toast("원래 메시지를 찾지 못했어요 · 지워졌거나 너무 오래됐어요");
+    } catch (e) { toast(e.message, true); }
+    finally { if (from) from.classList.remove("busy"); }
+    if (!at || seq !== rpJumpSeq) return;
+  }
+  chatUnpin();
+  chatShow(at);
+  const n = rpNode(id) || ntFind(at);
+  if (n) { chatJump(n); ntFlash(n); }
 }
 // The owner message a bot message (kind "out") answers: the hub sends it as `reply` (hub/outbound.ts); an older event only has reply_to,
 // then it is looked up among the messages loaded for this conversation.
@@ -66,11 +86,11 @@ function rpAsked(e) {
   return content ? { id: e.reply_to, author: o.author || "", content } : null;
 }
 // The quote above a sent message (its reply field, hub/intake.ts) or above a bot message that answers one: tap to jump to the quoted
-// message when it is still drawn.
+// message, loaded first when it is not (rpJump).
 function rpQuote(e) {
   const r = rpAsked(e);
   if (!r || !r.content) return null;
-  return el("button", { class: "rpq", type: "button", onclick: () => rpJump(r.id) }, el("span", { class: "rpq-au", text: e.kind === "out" || r.author === e.author ? "나" : r.author }), el("span", { class: "rpq-ct", text: r.content }));
+  return el("button", { class: "rpq", type: "button", onclick: ev => rpJump(r.id, ev.currentTarget) }, el("span", { class: "rpq-au", text: e.kind === "out" || r.author === e.author ? "나" : r.author }), el("span", { class: "rpq-ct", text: r.content }));
 }
 // Swipe a message from right to left (touch / pen; a mouse uses the hover button). The row follows the finger with a rubber band to the
 // left and the reply icon shows on the right; it snaps at RP_PULL. A vertical drag (scroll) or a start at a screen edge (the system back

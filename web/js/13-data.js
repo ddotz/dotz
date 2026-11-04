@@ -160,6 +160,38 @@ function chatWiden() {
   if (now) timeline.scrollTop += now.getBoundingClientRect().top - timeline.getBoundingClientRect().top - at.off;
   else timeline.scrollTop = timeline.scrollHeight - ch;
 }
+// A page that may not touch what is stored (a quote's original, rpJump; a gap filled, chatFillGap), merged in one step. s.gaps holds the ts each stretch
+// of the store ends on, but for the newest: the page joins every stretch it reaches (r.prev and r.next are its neighbours, so a stretch right next to
+// it counts) and the rest stay apart. Only the page is held: the messages between are read when the owner asks (chatGapNode).
+function chatMerge(s, r, after) {
+  const got = r.events || [], from = after || r.prev || "", to = r.next || "\uffff", parts = [];
+  if (!got.length && !after) return;
+  let lo = "";
+  for (const m of s.msgs) { lo ||= m.ts; if (s.gaps.has(m.ts)) { parts.push([lo, m.ts]); lo = ""; } }
+  if (lo) parts.push([lo, s.msgs.at(-1).ts]);
+  const apart = parts.filter(([a, b]) => a > to || b < from), joined = parts.filter(p => !apart.includes(p)).map(p => p[1]);
+  const ends = [...apart.map(p => p[1]), [...joined, got.at(-1)?.ts || ""].sort().at(-1)].sort();
+  s.gaps = new Set(ends.slice(0, -1));
+  workRowsOf(got);
+  const add = got.filter(e => !s.mk.has(msgKey(e)));
+  for (const e of add) { s.mk.add(msgKey(e)); s.msgs.push(e); }
+  s.msgs.sort(byTs); s.cap += add.length + s.gaps.size;
+  if (isFixedT(target)) dedupKeyed(s);
+}
+// The messages after a gap, one page at a time, with the top of the view staying where it is.
+async function chatFillGap(after) {
+  const t = target, s = ts(t);
+  if (s.gapBusy) return;
+  s.gapBusy = true;
+  try {
+    const r = await api(`/api/history?target=${enc(t)}&limit=150&after=${enc(after)}`);
+    chatMerge(s, r, after);
+    if (t === target) chatWiden();
+  } catch { toast("이전 대화를 불러오지 못했어요", true); }
+  finally { s.gapBusy = false; }
+}
+const chatGapNode = after => el("div", { class: "a-div msg-gap", role: "separator", "aria-label": "불러오지 않은 메시지가 있어요" },
+  el("button", { class: "btn text", type: "button", text: "사이 메시지 불러오기", onclick: () => chatFillGap(after) }));
 // A jump to a stored message older than the drawn stretch.
 function chatShow(at) {
   if (!CV.from || at >= CV.from) return;
@@ -187,6 +219,7 @@ function renderAll0(keepScroll) {
     if (j < M.length && (i >= A.length || M[j].ts <= A[i].ts)) {
       const m = M[j++];
       chatPush({ m }, true);
+      if (s.gaps.has(m.ts) && M[j]?.ts !== m.ts) { tl.append(chatGapNode(m.ts)); CS.group = null; CS.who = ""; }
       if (LOG_VIEW && ownerish(m) && first && m.ts >= first) termPush(ownerAct(m), true);
     } else { const a = A[i++]; if (!isProjT(target) && !isFixedT(target)) chatPush({ a }, true); if (LOG_VIEW) termPush(a, true); }
   }

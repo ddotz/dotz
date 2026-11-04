@@ -30,7 +30,7 @@ import { refreshReplyModelChoices, replyModelLabel } from "./reply-model-choices
 import { replyModel } from "./reply-model.ts";
 import { watchOfSubject } from "./watch-settings.ts";
 import { markRead, markUnread } from "./reads.ts";
-import { activityItems, broadcast, historyEvents, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
+import { activityItems, broadcast, historyEvents, historyPage, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { subagentLists } from "./activity.ts";
 import { cancelOmoWorker, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
 import { lastTurnEnd, lastTurnFailed, mailConversation, openTodos, runIntent, runState, stallNudge, workConversationRuns, type RunState } from "./runstate.ts";
@@ -922,6 +922,12 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const target = url.searchParams.get("target") ?? "main";
 			if (target !== "main" && target !== "alert" && target !== "worklog" && !target.startsWith("lane:") && !isProjectTarget(target) && !isMailTarget(target) && !isSettingsTarget(target)) return json({ error: "target must be main, alert, worklog, lane:<name>, ch:<id>, mail:<key> or settings:<app>" }, 400);
 			const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 150) || 150, 500));
+			const around = url.searchParams.get("around"), after = url.searchParams.get("after");
+			// A quote's original outside what the page holds (web/js/39-reply.js rpJump), and the messages of the gap that leaves.
+			if (around || after) {
+				const page = historyPage(target, limit, around ? { around } : { after: after as string });
+				return json({ target, ...page, events: workRows.stamp(page.events) });
+			}
 			const before = url.searchParams.get("before") ?? undefined, events: unknown[] = workRows.stamp(historyEvents(target, limit, before));
 			// A sent mail has no conversation event of its own: its conversation opens on the mail itself (hub/mail.ts sentMailEvent).
 			const sent = !before && isMailTarget(target) && !events.some(e => (e as { kind?: string }).kind === "mail") ? sentMailEvent(target.slice(5)) : undefined;
