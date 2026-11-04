@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { now, paths, writeAtomic } from "./config.ts";
 import { projectInfoContext } from "./projectinfo.ts";
 import { addWatch, allWatches, relabelWatches, removeWatch, setWatchChannels, type Watch } from "./watch.ts";
-import { deriveLabel, humanLabel, isKeyLabel } from "./watchtext.ts";
+import { deriveLabel, humanLabel, isKeyLabel, plainLabel } from "./watchtext.ts";
 
 export type Login = { session_url: string; expect?: string; login_url?: string; secret?: string; host?: string; profile?: string };
 export type Monitor = { command: string; every_minutes?: number; on?: "change" | "match" | "fail"; pattern?: string; label?: string };
@@ -86,8 +86,8 @@ export const getSetup = (channel: string) => setups.find(s => s.channel === chan
 // words of its key. A notice can outlive its watch, so the key is still turned into words here ("ch-123-2" -> "<채널 이름> 감시 2"); a key never shows.
 export function watchLabel(name: string): string {
 	const own = allWatches().find(w => w.name === name)?.label;
-	if (own && !isKeyLabel(own)) return humanLabel(own);
-	if (!/^[a-z0-9][a-z0-9_ -]*$/.test(name)) return name;
+	if (own && !isKeyLabel(own)) return plainLabel(own);
+	if (!/^[a-z0-9][a-z0-9_ -]*$/.test(name)) return plainLabel(name);
 	const s = setups.find(x => x.monitors.includes(name)) ?? setups.find(x => x.channel === /^ch-(\d+)-\d+$/.exec(name)?.[1]);
 	if (s) return deriveLabel({ name, project: s.name, index: Number(/(\d+)$/.exec(name)?.[1]) || s.monitors.indexOf(name) + 1 });
 	const words = humanLabel(deriveLabel({ name }), name);

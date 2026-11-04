@@ -224,15 +224,27 @@ export function watchLine(label: string, reason: string, output = "", opts: Line
 
 // The key of a watch ("company-login", "ch-1234-2") as words the owner reads: known English words become Korean, other words (a site, a product)
 // stay. A key that carries no name of its own (a channel's numbered monitor) has no words: "".
+const APPS: Record<string, string> = {
+	kakao: "카카오톡", kakaotalk: "카카오톡", instagram: "인스타그램", ig: "인스타그램", youtube: "유튜브", yt: "유튜브", gmail: "지메일", naver: "네이버", daum: "다음",
+	discord: "디스코드", telegram: "텔레그램", slack: "슬랙", github: "깃허브", notion: "노션",
+};
 const WORDS: Record<string, string> = {
+	...APPS, sns: "SNS", webmail: "메일", comment: "댓글", comments: "댓글", dm: "DM", inbox: "새 영상", due: "예약 글 올리기", tokens: "연결 유지", metadata: "영상 정보",
 	login: "로그인", logout: "로그아웃", new: "새 소식", stock: "재고", build: "빌드", update: "업데이트", updates: "업데이트", upgrade: "업그레이드",
 	security: "보안", check: "확인", price: "가격", mail: "메일", patch: "패치", version: "버전", release: "릴리스", status: "상태", deploy: "배포",
 	error: "오류", session: "세션", keepalive: "유지",
 };
 export function nameKo(name: string): string {
 	const parts = name.replace(/^ch[-_ ](?:ch|\d+)[-_ ]\d+$/i, "").split(/[-_\s]+/).filter(Boolean);
-	return parts.map(p => WORDS[p.toLowerCase()] ?? p).join(" ");
+	if (parts[0]?.toLowerCase() === "sns" && APPS[parts[1]?.toLowerCase() ?? ""]) parts.shift();   // "sns-yt-comments" is 유튜브 댓글: the app already says where
+	const words = parts.map(p => WORDS[p.toLowerCase()] ?? p);
+	if (parts[0]?.toLowerCase() === "webmail" && words.length > 1) [words[0], words[1]] = [words[1]!, words[0]!];   // "webmail-naver" reads 네이버 메일
+	return words.join(" ");
 }
+
+// A readable label that still carries an app's key ("kakao 새 소식", named before the app had words): the same label with the app's Korean name. Keys are lowercase, so a name the owner typed ("GitHub 감시") stays.
+const APP_KEY = new RegExp(`(?<![\\w.-])(?:${Object.keys(APPS).join("|")})(?![\\w.-])`, "g");
+export const plainLabel = (label: string): string => humanLabel(label).replace(APP_KEY, k => APPS[k]!);
 
 export type LabelInput = { name: string; project?: string; index?: number; header?: string; site?: string };
 const KEYISH = /^[a-z0-9][a-z0-9_-]*$/;

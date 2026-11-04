@@ -101,6 +101,20 @@ test("a watch added without a label is named in Korean once, and a key-shaped la
 	}
 });
 
+test("a stored label that still carries an app's key is rewritten at boot, and an old notice reads the same words", () => {
+	const a = addWatch({ name: "kakao-new", command: "echo a=1", label: "kakao 새 소식" }, "");
+	const b = addWatch({ name: "sample-typed", command: "echo a=1", label: "GitHub 감시" }, "");
+	try {
+		expect(watchLabel("kakao-new")).toBe("카카오톡 새 소식");
+		expect(relabelWatches(() => undefined)).toBe(1);
+		expect(allWatches().find(w => w.id === a.id)!.label).toBe("카카오톡 새 소식");
+		expect(allWatches().find(w => w.id === b.id)!.label).toBe("GitHub 감시");
+		expect(watchLabel("kakao 새 소식")).toBe("카카오톡 새 소식");
+	} finally {
+		for (const w of [a, b]) removeWatch(w.id);
+	}
+});
+
 const ago = (ms: number) => new Date(Date.parse(now()) - ms).toISOString();
 const report = (label: string, ts: string, text: string) => emit("inbox", { ts, kind: "watch", watch: "sample-prune", label, to: "alert", reason: "output changed", text });
 
