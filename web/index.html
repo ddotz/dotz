@@ -25,6 +25,15 @@
   ask(`/api/todo?target=${q}`);
   ask("/api/conversations");
   if (t !== "alert" && t !== "worklog") ask(`/api/activity?source=${encodeURIComponent(t.startsWith("lane:") ? t : "orchestrator")}&limit=300`);
+  // The conversation as last drawn on this device (web/js/13-snapshot.js), for a paint that does not wait for any of the above.
+  window.__snap = new Promise(res => {
+    try {
+      const q = indexedDB.open("dotz-snap", 1);
+      q.onupgradeneeded = () => q.result.createObjectStore("conv");
+      q.onerror = () => res(null);
+      q.onsuccess = () => { const g = q.result.transaction("conv").objectStore("conv").get(t); g.onerror = () => res(null); g.onsuccess = () => { q.result.close(); res(g.result || null); }; };
+    } catch { res(null); }
+  });
 }
 </script>
 <link rel="icon" type="image/svg+xml" href="/icons/dotz.svg">

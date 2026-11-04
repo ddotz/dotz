@@ -1,4 +1,4 @@
-// dotz service worker: app-shell cache for a fast start, and Web Push display. /api (JSON, SSE, files) is never touched.
+// dotz service worker: app-shell cache for a fast start, and Web Push display. /api (JSON, SSE, files) is never answered from here; a push reads ahead (warmConv).
 // The page, script and styles answer from the cache at once (a tapped notification starts the app without waiting for the
 // network) and are fetched again in the background. When that fetch brings a changed shell, the open pages get a
 // {type:"shell-updated"} message (web/js/23-installable-app-web.js shellUpdated) and reload onto it, so a web change does not wait for the open after next.
@@ -47,8 +47,10 @@ function refreshShell() {
       const res = await Promise.all(FRESH.map(p => fetch(p, { cache: "no-cache" })));
       if (!res.every(r => r.ok)) { await icons; return; }
       const c = await caches.open(CACHE);
-      const diff = await Promise.all(FRESH.map(async (p, i) => changed(await c.match(p), res[i])));
-      await Promise.all([icons, ...FRESH.map((p, i) => c.put(p, res[i]))]);
+      const old = await Promise.all(FRESH.map(p => c.match(p)));
+      const diff = await Promise.all(FRESH.map((p, i) => changed(old[i], res[i])));
+      // An unchanged file keeps its entry: storing it again costs a 1.3 MB write per open and drops the compiled code the browser keeps beside the entry.
+      await Promise.all([icons, ...FRESH.map((p, i) => (!old[i] || diff[i] ? c.put(p, res[i]) : null))]);
       if (diff.some(Boolean)) for (const w of await self.clients.matchAll({ type: "window", includeUncontrolled: true })) w.postMessage({ type: "shell-updated" });
     })().catch(() => {}).finally(() => { refreshing = null; });
   }
@@ -94,6 +96,25 @@ function pushSuppressed(wins, url, origin) {
   });
 }
 
+const WARM_MSGS = 60;
+const snapTx = (fn) => new Promise((res, rej) => {
+  const q = indexedDB.open("dotz-snap", 1);
+  q.onupgradeneeded = () => q.result.createObjectStore("conv");
+  q.onerror = () => rej(q.error);
+  q.onsuccess = () => { const tx = q.result.transaction("conv", "readwrite"); fn(tx.objectStore("conv")); tx.oncomplete = () => { q.result.close(); res(); }; tx.onerror = () => rej(tx.error); };
+});
+async function warmConv(url) {
+  const hash = new URL(url || "/", location.origin).hash, at = hash.match(/^#chat\/(.+)$/);
+  if (!at || typeof indexedDB === "undefined") return;
+  const t = decodeURIComponent(at[1]);
+  if (t.startsWith("mail:")) return;   // 13-snapshot.js snapOk: mail stays off the device
+  const r = await fetch(`/api/history?target=${encodeURIComponent(t)}&limit=${WARM_MSGS}`, { cache: "no-store", signal: AbortSignal.timeout(4000) });
+  if (r.status === 403 && r.headers.get("x-dotz-pair")) return new Promise(res => { const q = indexedDB.deleteDatabase("dotz-snap"); q.onsuccess = q.onerror = q.onblocked = res; });
+  if (!r.ok) return;
+  const events = (await r.json()).events || [];
+  if (events.length) await snapTx(os => { const g = os.get(t); g.onsuccess = () => os.put({ v: 1, t, acts: [], amore: true, ahist: false, read: "", ...g.result, at: Date.now(), msgs: events, hmore: events.length >= WARM_MSGS }, t); });
+}
+
 self.addEventListener("push", ev => {
   let m = {};
   try { m = ev.data ? ev.data.json() : {}; } catch { m = { body: ev.data ? ev.data.text() : "" }; }
@@ -124,6 +145,8 @@ self.addEventListener("push", ev => {
     ...(actions.length ? { actions } : {}),
     data: { url: m.url || "/", ts: m.id ? "" : m.ts || "", id: m.id || "", nid: m.nid || "", pc: m.pc || "" },
   });
+  // The app is usually closed when a push lands: its conversation is read now, so the tap paints the very message without the network (web/js/13-snapshot.js).
+  if (!m.pc && m.kind !== "test") ev.waitUntil(warmConv(m.url).catch(() => {}));
   ev.waitUntil((async () => {
     const wins = m.pc ? [] : await self.clients.matchAll({ type: "window", includeUncontrolled: true }).catch(() => []);
     if (!pushSuppressed(wins, m.url, location.origin)) return show();

@@ -104,7 +104,7 @@ function convSync() {
   const key = current === "chat" && !convListing() ? target : "";
   if (key === CV.key) return false;
   chatUnpin(); clearTimeout(CV.gateT);
-  Object.assign(CV, { key, div: "", divNode: null, jump: "", captured: false, failed: false, placed: false, full: false, snap: null, openAt: performance.now() });
+  Object.assign(CV, { key, div: "", divNode: null, jump: "", seeded: false, captured: false, failed: false, placed: false, full: false, snap: null, openAt: performance.now() });
   convCapture();
   return !!key;   // the caller draws the conversation: the divider is in it from the first paint
 }
@@ -114,6 +114,7 @@ function convCapture() {
   const at = READ[CV.key];
   if (!at || !(ts(CV.key).unread > 0)) return false;   // never opened before: nothing to compare with
   CV.div = at;
+  if (CV.seeded) CV.placed = false;
   return true;
 }
 const convDivider = () => el("div", { class: "cv-new", role: "separator", "aria-label": "여기부터 읽지 않은 메시지" }, el("span", { text: "여기까지 읽음" }));
@@ -122,7 +123,7 @@ const convDivider = () => el("div", { class: "cv-new", role: "separator", "aria-
 // and the todo plan (its strip pushes the timeline down). Until then "불러오는 중…" stays, so nothing is drawn at the wrong place
 // first. A slow answer cannot hold it forever: the plan gives up after 0.7 s, the read position after 3 s (no divider then).
 function chatReady() {
-  if (!CV.key) return true;
+  if (!CV.key || CV.jump || CV.seeded) return true;   // a jump lands on its message and a stored copy (13-snapshot.js) shows at once: the plan's strip re-places them (chatPlace), a divider re-opens it (convCapture)
   const age = performance.now() - CV.openAt, convOk = CV.loaded || CV.failed || age > 3000, todoOk = TD.by[target] !== undefined || age > 700;
   if (convOk && todoOk) return true;
   clearTimeout(CV.gateT);
@@ -139,7 +140,7 @@ function chatOpen() {
     CV.placed = true;
     if (CV.jump) {   // a jump target wins over the divider (ntJump)
       const m = ntFind(CV.jump);
-      if (m) { chatJump(m); return; }
+      if (m) { chatJump(m); if (m.dataset.ts === CV.jump) ntFlash(m); return; }
       chatUnpin(); scrollChat(true); return;
     }
     // reloaded onto a new shell (23-installable-app-web.js): the place the owner was at, unless they were at the bottom

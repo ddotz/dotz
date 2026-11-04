@@ -128,7 +128,7 @@ function ntGo(t) {
   if (isLaneT(t) && S && !S.lanes.some(l => `lane:${l.name}` === t)) t = MAIN;   // the session is gone: its result card is in the main chat
   if (t !== MAIN && isProjT(t) && S && !projTargets().includes(t)) { toast("이 프로젝트를 찾을 수 없어요"); go("projects"); return ""; }
   if (!validTarget(t)) { toast("이 화면을 찾을 수 없어요"); go("home"); return ""; }
-  go("chat", t);
+  if (current !== "chat" || target !== t || convListing()) go("chat", t);   // already open (a cold start draws the address first): no second draw
   return t;
 }
 // The rendered message of an event ts (data-ts is set in chatPush): the exact one, else the nearest in time.
@@ -186,6 +186,7 @@ function ntHlHost(node) {
 }
 function ntFlash(node) {
   const { host, bar } = ntHlHost(node);
+  if (host.classList.contains("nt-hl")) return;   // the first draw lit it and the notice list confirmed it: the glow does not restart
   for (const x of document.querySelectorAll(".nt-hl")) x.classList.remove("nt-hl", "nt-bar");
   void host.offsetWidth;
   host.classList.add("nt-hl");
@@ -202,11 +203,13 @@ async function ntJump(n, quiet = false) {
   chatUnpin();
   CV.jump = at;   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
   try {
-    if (!(ts(t).hLoaded && ts(t).aLoaded)) await loadTarget(t);
+    const s = ts(t), stored = s.msgs.some(e => e.ts === at);
+    if (!(s.hLoaded && s.aLoaded)) { if (stored) loadTarget(t, true).catch(() => {}); else await loadTarget(t); }   // the message is here: land now, refresh behind it
     await ensureMsg(t, at);   // a stale stream may not have the message yet: fetch it before jumping
     await ntReach(t, at);
     for (let i = 0; i < 300 && seq === ntJumpSeq && !CV.placed; i++) await ntRaf();   // the opening's first draw waits for the read position (chatReady)
     if (seq !== ntJumpSeq || target !== t || current !== "chat") return;
+    chatShow(at);
     const m = ntFind(at), exact = !!m && m.dataset.ts === at;
     if (m) chatJump(m);
     if (exact) ntFlash(m);
