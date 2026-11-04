@@ -46,6 +46,8 @@ export type Lane = Record_ & {
 	pauseReported?: boolean;
 	pausing?: boolean;
 	pauseKind?: ProviderErrorKind;
+	/** The limit lifted and the held work went back in; no turn has started on it yet (the web line says so). */
+	resuming?: boolean;
 	transientTries?: number;
 	transientTimer?: Timer;
 	progressAt?: number;

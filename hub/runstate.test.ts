@@ -1,6 +1,6 @@
 // The run state derivation (hub/runstate.ts): every kind and every reason an idle conversation can give for leaving todos open.
 import { expect, test } from "bun:test";
-import { failureText, lastTurnEnd, mailConversation, openTodos, promisesWork, runIntent, runState, STALL_MS, stallNudge, workConversationRuns } from "./runstate.ts";
+import { failureText, lastTurnEnd, lastTurnFailed, mailConversation, openTodos, promisesWork, runIntent, runState, STALL_MS, stallNudge, workConversationRuns } from "./runstate.ts";
 
 const now = Date.UTC(2026, 9, 26, 3, 0);
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
@@ -210,4 +210,19 @@ test("a working session says what it is doing: its tool-call intent, else the pl
 	expect(runState({ ...base, status: "working", intent: "T1 수식 훑기", todos: todos(3, "질문 1 분석") })).toMatchObject({ kind: "working", detail: "T1 수식 훑기", todos: 3 });
 	expect(runState({ ...base, status: "working", todos: todos(3, "질문 1 분석") })).toMatchObject({ kind: "working", detail: "질문 1 분석" });
 	expect(runState({ ...base, status: "idle", watching: "추출 워커 종료 대기", todos: todos(13), lastTurnEnd: iso(600_000) })).toMatchObject({ kind: "waiting", reason: "work", detail: "추출 워커 종료 대기", todos: 13 });
+});
+
+test("the limit lifting reads as work resuming until a turn starts, and a pause or a running turn still says so first", () => {
+	expect(runState({ ...base, resuming: true, lastTurnEnd: iso(600_000) })).toEqual({ kind: "working", detail: "한도가 풀려서 작업을 이어가요" });
+	expect(runState({ ...base, status: "rate-limited", resuming: true }).kind).toBe("limited");
+});
+
+test("a turn that stopped on an error is not 끝났어요; a failed step the agent answered after is", () => {
+	const died = [{ type: "turn_start" }, { type: "tool_call", text: "bash" }, { type: "error", text: "429" }, { type: "turn_end" }];
+	const answered = [{ type: "turn_start" }, { type: "tool_result", is_error: true }, { type: "text", text: "다른 방법으로 끝냈어요" }, { type: "turn_end" }];
+	expect(lastTurnFailed(died)).toBe(true);
+	expect(lastTurnFailed(answered)).toBe(false);
+	expect(lastTurnFailed([...died, { type: "turn_start" }, { type: "text", text: "됐어요" }, { type: "turn_end" }])).toBe(false);
+	expect(runState({ ...base, lastTurnEnd: iso(60_000), turnFailed: true })).toEqual({ kind: "error", since: iso(60_000), detail: "답을 끝내지 못했어요" });
+	expect(runState({ ...base, lastTurnEnd: iso(60_000), turnFailed: false }).kind).toBe("done");
 });

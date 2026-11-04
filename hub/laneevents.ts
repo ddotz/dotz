@@ -29,6 +29,7 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				wasWorking = lane.status === "working";
 				break;
 			case "turn_start":
+				lane.resuming = false;
 				clearTimeout(lane.watchdog);
 				clearTimeout(lane.timer);
 				clearTimeout(lane.transientTimer);
@@ -62,6 +63,7 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				}
 				break;
 			case "turn_end":
+				lane.resuming = false;
 				scheduleReport(lane);
 				settleRevert(lane, true);
 				setTimeout(() => settleChain(lane), REPORT_DEBOUNCE_MS + 150);

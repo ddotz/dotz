@@ -92,6 +92,8 @@ function paintRunState() {
     if (swap) motionSwap(box, paint); else paint();
   }
   $("#runstate-tx").textContent = runText(r);
+  // A pause whose time has passed: the gateway has moved on, so the line asks instead of staying on 한도 until the next event (a phone that slept missed it).
+  if (r.kind === "limited" && Date.parse(r.detail) <= runClock() && Date.now() - (RUN_MEMO.asked || 0) > 5000) { RUN_MEMO.asked = Date.now(); scheduleState(); }
 }
 setInterval(() => { if (!document.hidden) paintRunState(); }, 1000);
 

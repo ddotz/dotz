@@ -30,7 +30,7 @@ import { markRead, markUnread } from "./reads.ts";
 import { activityItems, broadcast, historyEvents, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { subagentLists } from "./activity.ts";
 import { cancelOmoWorker, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
-import { lastTurnEnd, mailConversation, openTodos, runIntent, runState, stallNudge, workConversationRuns, type RunState } from "./runstate.ts";
+import { lastTurnEnd, lastTurnFailed, mailConversation, openTodos, runIntent, runState, stallNudge, workConversationRuns, type RunState } from "./runstate.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { askedFile, draftAttachRoute, syncCardFiles } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
@@ -179,6 +179,8 @@ function stateRuns(): Record<string, RunState> {
 		children: runningChildren("orchestrator"),
 		later: deferred.filter(d => d.target === "web" || d.target === "terminal").length,
 		lastTurnEnd: lastTurnEnd(mainItems),
+		turnFailed: lastTurnFailed(mainItems),
+		resuming: orch.resuming,
 		lastAnswer: orch.lastText,
 		compacting: compactingNow(orch.ctx),
 		queued: mainOrch.heldCount(),
@@ -199,6 +201,8 @@ function stateRuns(): Record<string, RunState> {
 			later: deferred.filter(d => d.target === source).length,
 			capacity: lane.waiting,
 			lastTurnEnd: lastTurnEnd(items),
+			turnFailed: lastTurnFailed(items),
+			resuming: lane.resuming,
 			lastAnswer: lane.lastText,
 			compacting: compactingNow(lane.ctx),
 			watching: openMonitor(lane.sessionFile),
@@ -226,6 +230,8 @@ function stateRuns(): Record<string, RunState> {
 			children: runningChildren(source),
 			later: c.queue.deferredOpen().length,
 			lastTurnEnd: lastTurnEnd(items),
+			turnFailed: lastTurnFailed(items),
+			resuming: c.o.orch.resuming,
 			lastAnswer: c.o.orch.lastText,
 			compacting: compactingNow(c.o.orch.ctx),
 			queued: c.o.heldCount(),
