@@ -16,12 +16,12 @@
   const ask = p => { const r = fetch(p, { cache: "no-store" }); r.catch(() => {}); early[p] = r; };
   const ok = x => x === "main" || x === "alert" || x === "worklog" || /^ch:\d+$/.test(x) || (x.startsWith("lane:") && x.length > 5);
   let t = "main";
-  try { const v = localStorage.getItem("dotz-target"); if (v && ok(v)) t = v; } catch {}
+  try { const v = localStorage.getItem("dotz-target"); if (v && v !== "alert" && ok(v)) t = v; } catch {}
   const h = location.hash.slice(1), i = h.indexOf("/");
   try { const a = i < 0 ? "" : decodeURIComponent(h.slice(i + 1)); if (a && ok(a) && h.slice(0, i) !== "project") t = a; } catch {}
   const q = encodeURIComponent(t);
   ask("/api/state?limit=0");
-  if (h.split("/")[0] === "notices") ask("/api/notices?limit=300");
+  if (h.split("/")[0] === "notices" || t === "alert") ask("/api/notices?limit=300");
   else {
   ask(`/api/history?target=${q}&limit=150`);
   ask(`/api/todo?target=${q}`);
