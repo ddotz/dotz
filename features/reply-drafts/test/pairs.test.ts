@@ -1,12 +1,13 @@
 // Evaluated reply drafts: the user's real past reply pairs reach the mail prompt, sent mail is learned from the user's own messages only,
 // and a mail profile learned the old way is relearned once. Everything runs on a scratch data dir with fake model calls and a fake mail CLI.
-import { afterAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, test, spyOn } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildPrompt, type ReplyItem, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { buildDraft, reviseDraft, sendDraft } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
-import { addPair, habitsOf, loadPairs, savePairs, styleWithExamples } from "../lib/pairs.ts";
+import { habitsOf } from "../../../hub/comments/past.ts";
+import { addPair, loadPairs, savePairs, styleWithExamples } from "../lib/pairs.ts";
 import { learnFirst, MAIL_TONE_VERSION } from "../lib/persona.ts";
 import { listProfiles, paths, toneFile } from "../lib/settings.ts";
 import { learnTone, ownText, sentMail, type Runner } from "../lib/tone.ts";
@@ -24,6 +25,19 @@ const mailItem: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", self:
 const meta = { source: "zele", mailId: "x", ref: "r" };
 const day = Date.parse("2026-10-01T00:00:00Z");
 const seedPairs = (n: number) => savePairs("mail", Array.from({ length: n }, (_, i) => ({ received: `일정 문의드립니다 ${i}번째 건입니다. 시간을 알려 주세요.`, reply: `${i}번 건은 화요일 괜찮아요^^`, at: day + i })));
+
+test("an unreadable pair line is skipped and reported, a blank line is not", () => {
+	mkdirSync(join(paths.pairs("mail"), ".."), { recursive: true });
+	const good = { received: "질문", reply: "답", at: day };
+	const logged = spyOn(console, "error").mockImplementation(() => {});
+	writeFileSync(paths.pairs("mail"), `${JSON.stringify(good)}\n\n`);
+	expect(loadPairs("mail")).toEqual([good]);
+	expect(logged).not.toHaveBeenCalled();
+	writeFileSync(paths.pairs("mail"), `{broken\n${JSON.stringify(good)}\n`);
+	expect(loadPairs("mail")).toEqual([good]);
+	expect(logged).toHaveBeenCalledTimes(1);
+	logged.mockRestore();
+});
 
 test("a mail prompt carries the 8 closest real replies and the measured habits; the system prompt tells to follow the closest one", async () => {
 	seedPairs(12);

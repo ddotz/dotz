@@ -7,8 +7,7 @@ import { asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts"
 import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Tokens } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
-import { EXAMPLES, withExamples } from "../../features/reply-drafts/lib/pairs.ts";
-import { pastPairs, SEEDED_NOTE, similarPairs } from "./past.ts";
+import { EXAMPLES, pastPairs, SEEDED_NOTE, similarPairs, withExamples } from "./past.ts";
 
 // The mail that rides on a comment reply (hub/comments/mail-link.ts is the real one): written with the draft, shown in the same card, sent right
 // after the reply is posted, revised or dropped with it.
