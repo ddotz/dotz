@@ -7,7 +7,8 @@ const RP = { cur: null, bar: null, drag: null, src: new WeakMap(), tone: "" };
 const RP_PULL = 60, RP_MAX = 92, RP_EDGE = 24, RP_QUOTE = 300;
 const rpOwnerKind = e => e.kind === "message" || e.kind === "lane_message";
 function rpText(e) {
-  const raw = String(e.text ?? "");
+  const raw = String(e.text ?? ""), peer = peerMsgOf(e);
+  if (peer) return (peer.kind === "ack" ? peerMsgLine(raw) : peer.words).trim();
   return (e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(raw)).text : raw).trim();
 }
 // Called for each drawn message row (chatPush): rows that carry text get an id, a hover button and the swipe.
@@ -90,7 +91,7 @@ function rpAsked(e) {
 function rpQuote(e) {
   const r = rpAsked(e);
   if (!r || !r.content) return null;
-  return el("button", { class: "rpq", type: "button", onclick: ev => rpJump(r.id, ev.currentTarget) }, el("span", { class: "rpq-au", text: e.kind === "out" || r.author === e.author ? "나" : r.author }), el("span", { class: "rpq-ct", text: r.content }));
+  return el("button", { class: "rpq", type: "button", onclick: ev => rpJump(r.id, ev.currentTarget) }, el("span", { class: "rpq-au", text: e.kind === "out" || r.author === e.author ? "나" : r.author }), el("span", { class: "rpq-ct", text: peerMsgLine(r.content) }));
 }
 // Swipe a message from right to left (touch / pen; a mouse uses the hover button). The row follows the finger with a rubber band to the
 // left and the reply icon shows on the right; it snaps at RP_PULL. A vertical drag (scroll) or a start at a screen edge (the system back

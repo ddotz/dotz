@@ -114,6 +114,19 @@ dialog.lbox::backdrop { background: transparent; }
 /* the session-result card sits straight in the timeline column: as wide as the replies and the composer, not the 560px a command answer gets */
 .bm.res > .ccard { max-width: none; }
 @media (max-width: 639px) { .tl-in > .bm.res { padding: 0; } .bm.res > .mt { padding: 0 var(--sp-4); } }
+/* a message from another computer's gateway (01-peer-msg.js): the computer, the kind, then the words */
+.bm.pmc > .ccard { padding: var(--sp-3) var(--sp-4); background: var(--layer); }
+.pmc-hd .mt { margin: 0 0 0 auto; flex: none; }
+.pmc .tag, .pmc .md :not(pre) > code { background: var(--card); }
+.pmc .md > :last-child { margin-bottom: 0; }
+.pmc-hd { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; font-size: var(--fs-sec); line-height: var(--lh-sec); color: var(--fg-2); }
+.pmc-hd .ic { width: 16px; height: 16px; flex: none; }
+.pmc-hd .mn { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pmc-b { margin-top: var(--sp-1); }
+.pmc-b.clamp { max-height: calc(6 * var(--lh-chat)); overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 2 * var(--lh-chat)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 2 * var(--lh-chat)), transparent); }
+.pmc-b + .ubm { display: block; margin-left: auto; }
+.pmc-n { margin-top: var(--sp-2); color: var(--fg); }
+@media (max-width: 639px) { .tl-in > .bm.pmc { padding: 0; } }
 .cc-hd { display: flex; align-items: center; gap: var(--sp-2); font-size: 16px; line-height: 22px; font-weight: 600; }
 .cc-facts { display: grid; grid-template-columns: fit-content(40%) minmax(0, 1fr); gap: var(--sp-1) var(--sp-4); margin: var(--sp-2) 0 0; font-size: 14px; line-height: 22px; }
 .cc-facts dt { color: var(--fg-3); }

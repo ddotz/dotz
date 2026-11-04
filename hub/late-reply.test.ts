@@ -70,11 +70,12 @@ test("an answer to one request does not mark an older waiting request answered",
 });
 
 const reply = readFileSync(join(import.meta.dir, "..", "web", "js", "39-reply.js"), "utf8");
+const peerMsg = readFileSync(join(import.meta.dir, "..", "web", "js", "01-peer-msg.js"), "utf8");
 const part = (name: string) => reply.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?\\n\\}\\n`))![0];
 type Node = { cls: string; kids: unknown[]; click?: () => void };
 const el = (_tag: string, p: { class?: string; text?: string; onclick?: () => void } | null, ...kids: unknown[]): Node => ({ cls: p?.class ?? "", kids: p?.text !== undefined ? [p.text, ...kids] : kids, click: p?.onclick });
 const quoteOf = (msgs: Record<string, unknown>[]) =>
-	new Function("el", "ts", "target", "rpJump", `const RP_QUOTE = 300;\n${part("rpText")}\n${part("rpAsked")}\n${part("rpQuote")}\nreturn rpQuote;`)(el, () => ({ msgs }), "ch:1", () => {}) as (e: Record<string, unknown>) => Node | null;
+	new Function("el", "ts", "target", "rpJump", `${peerMsg}\nconst RP_QUOTE = 300;\n${part("rpText")}\n${part("rpAsked")}\n${part("rpQuote")}\nreturn rpQuote;`)(el, () => ({ msgs }), "ch:1", () => {}) as (e: Record<string, unknown>) => Node | null;
 const texts = (n: Node): string[] => n.kids.map(k => (typeof k === "string" ? k : (k as Node).kids[0] as string));
 
 test("the web draws a bot message that replies to an owner message with the same quote block, from the hub's reply or from the loaded message", () => {
