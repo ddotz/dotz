@@ -87,4 +87,30 @@ Heights, padding, gaps, type steps and don'ts for each display form (list row, c
 
 Cards keep 20px padding, list rows 8/16px with a 44px minimum height. No shadows on cards; menus and dialogs keep one soft
 float shadow (`--float`, `--shadow-menu`, `--shadow-dialog`, `--shadow-sheet`). Type and space use the scale tokens
-(`--fs-*`, `--lh-*`, `--sp-1`..`--sp-8`) in `web/css/01-tokens.css`; the pill-sparingly rule is in `docs/ui-spec.md`.
+(`--fs-*`, `--lh-*`, `--sp-*`) in `web/css/01-tokens.css`; the pill-sparingly rule is in `docs/ui-spec.md`.
+
+### Space scale
+
+Every `padding*`, `margin*`, `gap`, `row-gap` and `column-gap` takes a step of this scale, written as its token (`--sp-N` = N x 4px). 0 needs no token.
+The app is a dense tool, so the small steps carry most of the layout; 6px stays because `docs/ui-spec.md` specifies it, and 2px is its half-step.
+
+| Token | Value | For |
+|---|---|---|
+| `--sp-05` | 2px | hairline gaps, segmented cells |
+| `--sp-1` | 4px | tight inline groups |
+| `--sp-15` | 6px | icon or dot + text, tag padding |
+| `--sp-2` | 8px | list row vertical padding, field groups |
+| `--sp-3` | 12px | gaps between rows |
+| `--sp-4` | 16px | list row horizontal padding |
+| `--sp-5` | 20px | card padding |
+| `--sp-6` | 24px | gaps between card sections |
+| `--sp-8` | 32px | page and section breathing room |
+| `--sp-10` | 40px | large blocks, empty states |
+| `--sp-12` | 48px | the largest step, for rare page-level space |
+
+10, 14 and 18px are off the scale: pick the step by what the rule is for (chip, row, card, field, menu), never by rounding the number. A value off the scale, or an on-scale px
+literal where a token exists, is allowed only when the declaration is followed on the same line by `/* nudge: <reason> */` with a reason
+(a 1px line compensation, an optical nudge); a file may carry at most 3 of them. The `space` check in `hub/design-rules-web.test.ts` counts
+the violations per file against a baseline that can only shrink (a count below it fails too, so lower the entry), and counts literal
+padding, margin and gap px in strings of `web/js`, `web/custom.js` and `web/index.html` the same way. The mail iframe CSS in
+`11-mailbody.js` is its own document and is exempt.
