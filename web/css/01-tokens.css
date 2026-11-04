@@ -38,8 +38,8 @@
   --fs-meta: 12px; --lh-meta: 16px;          /* meta, descriptions, captions */
   --fs-tag: 11px; --lh-tag: 16px;            /* status tag */
 
-  /* space: 4px steps to 24, then 32. Rows breathe by count, not by growing a row */
-  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px;
+  /* space (web/DESIGN.md Space scale): --sp-N = N x 4px. Rows breathe by count, not by growing a row */
+  --sp-05: 2px; --sp-1: 4px; --sp-15: 6px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px; --sp-12: 48px;
 
   /* shape: soft boxes, one small control radius; only a status tag and the two-value toggle are fully rounded (알약 규칙) */
   --r-card: 18px; --r-sheet: 20px; --r-menu: 14px; --r-ctl: 10px; --r-seg: 8px; --r-seg-in: 6px; --r-pill: 999px;
