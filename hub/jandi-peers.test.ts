@@ -139,7 +139,7 @@ describe("the conversation with one peer", () => {
 
 	test("a word that only starts with the keyword or prefix is not part of it", () => {
 		const recs = [
-			{ id: 1, fromEntity: ME, message: { content: { body: "work아 안녕" } } },
+			{ id: 1, fromEntity: ME, message: { content: { body: "work들 안녕" } } },
 			{ id: 2, fromEntity: OTHER, message: { content: { body: "[work]네" } } },
 			{ id: 3, fromEntity: OTHER, message: { content: { body: "[work]" } } },
 		];
