@@ -101,10 +101,24 @@ describe("the 대화 and ⋯ buttons of a monitoring detail sit side by side in 
 				// The conversation is chat only; its ⋯ button opens the screen that holds the options.
 				const more = `[...document.querySelectorAll("[data-as-more]")].find(b => b.offsetParent && !b.hidden)`;
 				await waitFor(v, more);
-				expect(await q(v, `return document.querySelector("#app-sw")`)).toBe(null);
+				// The closed sheet fades out for 150ms (fsOpen), so #app-sw leaves with it; one drawn into the conversation would stay and time out here.
+				await waitFor(v, `!document.querySelector("#app-sw")`);
 				await run(v, `${more}.click()`);
 				await waitFor(v, `document.querySelector(".as-screen #app-sw .as-row")`);
 			});
 		}
 	}
+
+	// The closed sheet stays in the page while it fades out; a screen opened in that moment still gets the options.
+	test("⋯ pressed right after 뒤로 shows the options in the new screen", async () => {
+		const v = await boot(1280, 800);
+		await run(v, `go("monitoring", "i:mail")`);
+		const more = `#mon-head .as-hd[data-as-more]`;
+		await waitFor(v, `document.querySelector(${JSON.stringify(more)})`);
+		await run(v, `document.querySelector(${JSON.stringify(more)}).click()`);
+		await waitFor(v, `document.querySelector(".as-screen #app-sw .as-row")`);
+		const s = await q<{ sheets: number; rows: number }>(v, `document.querySelector('[data-k="as-back"]').click(); document.querySelector(${JSON.stringify(more)}).click(); return { sheets: document.querySelectorAll(".as-screen").length, rows: FS[FS.length - 1].box.querySelectorAll(".as-row").length }`);
+		expect(s.sheets).toBe(2);   // the old one is still fading out
+		expect(s.rows).toBeGreaterThan(0);
+	});
 });

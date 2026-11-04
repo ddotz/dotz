@@ -427,7 +427,8 @@ function asSettingRow(app, f, feat, box) {
 }
 // The options and the status of the settings screen (asScreen) - never of the conversation, which is chat only.
 function asPaint() {
-  const box = $("#app-sw"), app = ASC.app;
+  // the open sheet's own box: a closed one keeps its #app-sw in the page while it fades out (fsOpen)
+  const box = ASC.h && ASC.h.box.querySelector("#app-sw"), app = ASC.app;
   if (!box || !app) return;
   const fields = AS.by[app];
   if (!fields) {
