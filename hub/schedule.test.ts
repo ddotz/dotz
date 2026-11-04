@@ -41,6 +41,21 @@ test("a paused schedule stays listed and persisted but never fires; resuming a r
 	expect(fired).toEqual([s.id]);
 });
 
+test("a recurring timer that fires a few ms before its slot fires once and moves to the next slot", async () => {
+	const s = addSchedule({ text: "보고", in_minutes: 10, every_minutes: 30 });
+	const slot = Date.parse(s.at);
+	const realNow = Date.now;
+	Date.now = () => realNow() - 46;
+	try {
+		await advance(10 * 60_000);
+	} finally {
+		Date.now = realNow;
+	}
+	await advance(1000);
+	expect(fired).toEqual([s.id]);
+	expect(stored(s.id).at).toBe(new Date(slot + 30 * 60_000).toISOString());
+});
+
 test("bad values and unknown ids are refused and change nothing", () => {
 	const s = addSchedule({ text: "그대로", in_minutes: 10, every_minutes: 30 });
 	const before = JSON.stringify(stored(s.id));

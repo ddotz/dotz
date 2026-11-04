@@ -24,7 +24,8 @@ function fire(s: Schedule): void {
 	timers.delete(s.id);
 	s.last = new Date().toISOString();
 	if (s.every_minutes) {
-		let next = Date.parse(s.at);
+		// Always step past this slot: a timer can fire a few ms before s.at, and a plain while would re-arm the same slot and fire twice.
+		let next = Date.parse(s.at) + s.every_minutes * 60_000;
 		while (next <= Date.now()) next += s.every_minutes * 60_000;
 		s.at = new Date(next).toISOString();
 		arm(s);
