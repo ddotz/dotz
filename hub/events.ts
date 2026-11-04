@@ -136,6 +136,20 @@ export function askedText(ts: string): string | undefined {
 	return (find(recent) ?? find(tailEvents(paths.outbox)))?.text;
 }
 
+// The message that carries a finished worker's result: the session's answer to the request the worker served (`exact`), else its first answer in that
+// conversation after the worker ended (a worker with no request, or one whose answer has not gone out yet). The live ring first; the outbox tail only
+// when the ring no longer reaches back to the worker's end.
+export function workAnswer(w: { target?: string; reply_to?: string; ended_at?: number }): { at: string; conv: string; exact: boolean } | undefined {
+	const since = new Date(w.ended_at ?? 0).toISOString(), home = eventTarget({ ts: since, kind: "out", source: "", text: "", ...(w.target ? { target: w.target } : {}) });
+	let first: HubEvent | undefined;
+	for (const e of (recent[0]?.ts ?? "") > since ? tailEvents(paths.outbox) : recent) {
+		if (e.ts < since || e.kind !== "out" || e.source !== "orchestrator" || e.system || e.update_key) continue;
+		if (w.reply_to && e.reply_to === w.reply_to) return { at: e.ts, conv: eventTarget(e) ?? "main", exact: true };
+		if (!first && (e.target === w.target || eventTarget(e) === home)) first = e;
+	}
+	return first && { at: first.ts, conv: eventTarget(first) ?? "main", exact: !w.reply_to };
+}
+
 // Which conversation an event belongs to: "main" (owner <-> the assistant), "lane:<name>", a project's "ch:<id>" or one of the two
 // fixed conversations "alert" / "worklog" (the gateway's alerts, and the answers to the owner's questions asked there, sent as target
 // "web:alert" / "web:worklog"). A watch wake event is in no chat conversation: its report is a notice of the 모니터링 tab (hub/notices.ts,

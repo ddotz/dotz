@@ -9,7 +9,7 @@ import * as livestatus from "./livestatus.ts";
 import { updateNow } from "./update-now.ts";
 import { isNote, msg } from "./i18n.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
-import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages, tailEvents } from "./events.ts";
+import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages, tailEvents, workAnswer } from "./events.ts";
 import { settleWaiting, type Waiting } from "./awaiting.ts";
 import { outEvent } from "./projectchat.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
@@ -107,7 +107,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 const sessionBg = (o: Orchestrator, q: ReturnType<typeof createPrompts>) => {
 	const to = (w: { target?: string; reply_to?: string }) => (w.target ? { target: w.target, ...(w.reply_to ? { replyTo: w.reply_to } : {}) } : undefined);
 	const bg = createBgWork({
-		sessionFile: () => o.orch.sessionFile, deferred: q.deferredOpen, turn: q.turnAt, log,
+		sessionFile: () => o.orch.sessionFile, deferred: q.deferredOpen, turn: q.turnAt, answer: workAnswer, log,
 		turnEndedAt: () => o.lastTurnEndAt(),
 		busy: () => o.orch.status === "working" || o.orch.status === "starting",
 		paused: () => o.orch.status === "rate-limited",

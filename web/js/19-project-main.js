@@ -65,6 +65,8 @@ function pmPaint() {
   pmSheetsPaint();
 }
 // An open drill-in page follows the detail: a save or a 20 s refresh repaints it from the re-fetched data, never under a field being typed in.
+// A row of one of these pages opens a conversation: the page must not stay over it.
+const pmSheetsClose = () => { for (const s of [...PM.sheets]) s.h.close(); };
 function pmSheetsPaint() {
   for (const s of PM.sheets) if (!(s.h.box.contains(document.activeElement) && document.activeElement.matches("input, textarea"))) s.paint();
 }
@@ -391,7 +393,7 @@ function pmRoutine(x) {
 }
 
 // The same session row as home (sessionRow, 18-lanes.js).
-const pmSessionRow = r => sessionRow({ name: r.name, title: r.title, status: r.status, live: r.live, pendingAsk: r.waiting }, { project: r.project, line: r.line });
+const pmSessionRow = (r, open) => sessionRow({ name: r.name, title: r.title, status: r.status, live: r.live, pendingAsk: r.waiting }, { project: r.project, line: r.line, ...(typeof open === "function" ? { open } : {}) });
 // The prototype's session row (s-work.js project 세션): a state dot, the title, the lane name, and the state tag at the right.
 function pmLaneRow(r) {
   const [dotTone, tagTone, word] = r.live && r.waiting ? ["att", "warn", "답을 기다려요"] : r.live && (r.status === "working" || r.status === "starting") ? ["pri", "pri", "작업 중"] : r.live ? ["", "", "열려 있음"] : ["", "", "끝남"];
@@ -400,7 +402,7 @@ function pmLaneRow(r) {
     el("span", { class: "tx" }, el("div", { class: "hd", text: r.title }), el("div", { class: "sup", text: r.name })),
     el("span", { class: "li-end" }, el("span", { class: `tag ${tagTone}`, text: word })));
 }
-// A background job of the main assistant that belongs to the project (asked in its chat, or briefed for its folder): tap lands on the asking message.
+// A background job of the main assistant that belongs to the project (asked in its chat, or briefed for its folder): tap lands on its result, or on the asking message while it runs.
 const pmWorkRow = w => {
   const run = w.status === "running", stall = w.status === "stalled", rec = workRecovering(w);
   const word = run ? "진행 중" : stall ? "멈춤" : w.status === "done" ? "완료" : w.cancelled ? "중단됨" : rec ? "이어서" : "실패";
@@ -416,7 +418,7 @@ function pmDoing(live, running) {
   return el("div", { class: "list srows" }, ...live.map(pmSessionRow), ...running.map(pmWorkRow));
 }
 function pmRecent(past, done) {
-  const items = [...past.map(r => ({ at: r.at, node: pmSessionRow(r) })), ...done.map(w => ({ at: w.ended_at || w.started_at, node: pmWorkRow(w) }))].sort((a, b) => b.at - a.at).slice(0, 10);
+  const items = [...past.map(r => ({ at: r.at, node: pmSessionRow(r, () => laneResultGo(r.name, r.at ? new Date(r.at).toISOString() : "")) })), ...done.map(w => ({ at: w.ended_at || w.started_at, node: pmWorkRow(w) }))].sort((a, b) => b.at - a.at).slice(0, 10);
   return items.length ? el("div", { class: "list" }, ...items.map(x => x.node)) : emptyNode("아직 끝난 세션이 없어요");
 }
 
@@ -427,7 +429,7 @@ const pmLaneTitle = n => (((S && S.lanes) || []).find(l => l.name === n) || {}).
 function pmResultRow(r) {
   const tap = r.kind === "report" && r.lane;
   const tag = r.kind === "report" ? (r.tone === "fail" ? ["err", "안 됨"] : r.verified ? ["ok", "확인됨"] : ["", "보고만 함"]) : r.kind === "verify" ? (r.ok ? ["ok", "통과"] : ["err", "안 됨"]) : ["", "커밋"];
-  return el(tap ? "button" : "div", { class: `li${tap ? " tap" : ""}`, type: tap ? "button" : null, onclick: tap ? () => openTarget(`lane:${r.lane}`, lastChatView()) : null },
+  return el(tap ? "button" : "div", { class: `li${tap ? " tap" : ""}`, type: tap ? "button" : null, onclick: tap ? () => laneResultGo(r.lane, r.at) : null },
     el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: r.title || PM_RES[r.kind] || "결과" }),
       el("div", { class: "sup", text: [PM_RES[r.kind] || r.kind, r.kind === "commit" ? r.hash : "", r.lane ? pmLaneTitle(r.lane) : "", kstHM(r.at)].filter(Boolean).join(" · ") })),
     tag ? el("span", { class: `tag ${tag[0]}`, text: tag[1] }) : null);
