@@ -110,7 +110,7 @@ The app is a dense tool, so the small steps carry most of the layout; 6px stays 
 
 10, 14 and 18px are off the scale: pick the step by what the rule is for (chip, row, card, field, menu), never by rounding the number. A value off the scale, or an on-scale px
 literal where a token exists, is allowed only when the declaration is followed on the same line by `/* nudge: <reason> */` with a reason
-(a 1px line compensation, an optical nudge); a file may carry at most 3 of them. The `space` check in `hub/design-rules-web.test.ts` counts
-the violations per file against a baseline that can only shrink (a count below it fails too, so lower the entry), and counts literal
-padding, margin and gap px in strings of `web/js`, `web/custom.js` and `web/index.html` the same way. The mail iframe CSS in
-`11-mailbody.js` is its own document and is exempt.
+(a 1px line compensation, an optical nudge); a file may carry at most 3 of them. An indent that lines up with something is a sum of tokens or a
+named custom property, so the two stay together; a sum is for that only, not a way around a step. A layout measure (`--view-w`, `--sheet-w`) is not
+spacing and has its own token. The `space` check in `hub/design-rules-web.test.ts` fails on any violation, and reads literal padding, margin and gap
+px in strings of `web/js`, `web/custom.js` and `web/index.html` the same way. The mail iframe CSS in `11-mailbody.js` is its own document and is exempt.

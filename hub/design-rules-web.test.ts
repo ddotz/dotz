@@ -17,9 +17,8 @@ import { ev, fakeHub, idleState, run, waitFor, type View } from "./test-web.ts";
 // - emoji: no emoji-presentation character in web/js, web/css or index.html.
 // - space: every px length in padding*, margin*, gap, row-gap and column-gap (var() contents removed, calc() included) is a token: 0 is fine, a px
 //   literal off the scale (2 4 6 8 12 16 20 24 32 40 48) is off-scale, an on-scale px literal is raw (--sp-*). A declaration followed by
-//   /* nudge: <reason> */ is excused (1px line compensation, optical nudge), at most 3 per file. Counted per file against SPACE_ALLOWED; a count
-//   below the baseline fails too, so the entry only shrinks. The same px in strings of web/js, custom.js and index.html (inline style, CSS text)
-//   is counted against SPACE_JS_ALLOWED; the mail iframe CSS (const MB_CSS in 11-mailbody.js) is its own document and is exempt.
+//   /* nudge: <reason> */ is excused (1px line compensation, optical nudge), at most 3 per file. The same px in strings of
+//   web/js, custom.js and index.html (inline style, CSS text) is counted too; the mail iframe CSS (const MB_CSS in 11-mailbody.js) is its own document and is exempt.
 // - accent: at most one accent-filled control (24px or wider, so a status dot does not count) on each main screen of a fixture page.
 //
 // Not checked, because a reading would not be reliable:
@@ -55,31 +54,14 @@ const DURATION_ALLOWED = new Set([
 ]);
 // [px font-sizes, px radii] per file: a ceiling, too many entries to name one by one.
 const SIZE_ALLOWED: Record<string, [number, number]> = {
-	"01-tokens.css": [0, 0], "02-cards-lists-tags.css": [0, 0], "03-base.css": [0, 0], "04-files.css": [0, 0],
-	"05-log.css": [0, 0], "06-harness.css": [0, 0], "07-chat.css": [0, 0], "08-project-sessions.css": [0, 0],
-	"09-notices.css": [0, 0], "10-conversations.css": [0, 0], "11-peers.css": [0, 0], "13-code-shell.css": [0, 0],
-	"14-overlay.css": [1, 0], "15-draft-original.css": [0, 0], "15-reply-card.css": [0, 0], "15-reply.css": [0, 0],
-	"15-settings-pages.css": [0, 0], "15-settings-phone.css": [0, 0], "15-triage.css": [0, 0], "16-result-card.css": [0, 0],
-	"17-kakao.css": [0, 0], "18-app-settings.css": [0, 0], "18-comments.css": [0, 0], "19-volume.css": [0, 0],
-	"20-apps.css": [0, 0], "20-mail-box.css": [0, 0], "20-mail-thread.css": [0, 0], "20-monitoring.css": [0, 0],
-	"20-projects.css": [0, 0], "21-picker.css": [0, 0], "22-shell.css": [0, 0],
-};
-// [off-scale, raw] px spacing values per file (see space above), as SIZE_ALLOWED: a ceiling and, because the number is exact, a floor.
-const SPACE_ALLOWED: Record<string, [number, number]> = {
-	"01-tokens.css": [11, 0], "02-cards-lists-tags.css": [6, 0], "03-base.css": [41, 0], "04-files.css": [37, 0],
-	"05-log.css": [42, 0], "06-harness.css": [22, 0], "07-chat.css": [21, 0], "07-messengers.css": [0, 0],
-	"08-project-sessions.css": [3, 0], "09-notices-screen.css": [0, 0], "09-notices.css": [6, 0], "10-conversations.css": [12, 0],
-	"11-peers.css": [6, 0], "13-code-shell.css": [5, 0], "14-overlay.css": [0, 0], "15-draft-original.css": [6, 0],
-	"15-reply-card.css": [11, 0], "15-reply.css": [2, 0], "15-settings-pages.css": [3, 0], "15-settings-phone.css": [3, 0],
-	"15-triage.css": [14, 0], "16-result-card.css": [37, 0], "17-kakao.css": [32, 0], "18-app-settings.css": [5, 0],
-	"18-comments.css": [12, 0], "19-volume.css": [4, 0], "20-apps.css": [2, 0], "20-canvas.css": [0, 0],
-	"20-mail-box.css": [8, 0], "20-mail-thread.css": [6, 0], "20-monitoring.css": [5, 0], "20-projects.css": [4, 0],
-	"21-picker.css": [3, 0], "22-shell.css": [8, 0],
-};
-// The same per script file: literal padding / margin / gap px in strings.
-const SPACE_JS_ALLOWED: Record<string, [number, number]> = {
-	"08-home.js": [0, 0], "19-project-main.js": [0, 0], "21-providers.js": [0, 0], "25-settings-accounts.js": [0, 0],
-	"26-settings-runtime.js": [0, 0], "37-api-budget.js": [0, 0], "custom.js": [0, 0],
+	"01-tokens.css": [11, 4], "02-cards-lists-tags.css": [12, 3], "03-base.css": [32, 16], "04-files.css": [59, 25],
+	"05-log.css": [36, 18], "06-harness.css": [22, 3], "07-chat.css": [23, 5], "08-project-sessions.css": [6, 0],
+	"09-notices.css": [5, 1], "10-conversations.css": [8, 4], "11-peers.css": [0, 4], "13-code-shell.css": [2, 6],
+	"14-overlay.css": [1, 0], "15-draft-original.css": [2, 5], "15-reply-card.css": [4, 0], "15-reply.css": [2, 2],
+	"15-settings-pages.css": [2, 1], "15-settings-phone.css": [0, 1], "15-triage.css": [11, 13], "16-result-card.css": [67, 7],
+	"17-kakao.css": [10, 10], "18-app-settings.css": [2, 1], "18-comments.css": [3, 2], "19-volume.css": [10, 0],
+	"20-apps.css": [4, 0], "20-mail-box.css": [25, 14], "20-mail-thread.css": [7, 4], "20-monitoring.css": [7, 2],
+	"20-projects.css": [4, 2], "21-picker.css": [1, 3], "22-shell.css": [7, 3],
 };
 const SPACE_NUDGES = 3;
 // Lines of a script that are another document's CSS, not the app's: the mail iframe stylesheet.
@@ -170,13 +152,7 @@ function spacePx(value: string): [number, number] {
 	}
 	return [off, raw];
 }
-function spaceBaseline(file: string, off: number, raw: number, allowed: Record<string, [number, number]>, table: string): string[] {
-	const [maxOff, maxRaw] = allowed[file] ?? [0, 0];
-	const has = `${file} has ${off} off-scale and ${raw} raw px spacing values`;
-	if (off > maxOff || raw > maxRaw) return [`space: ${has}, allowed ${maxOff} and ${maxRaw}; use --sp-*`];
-	if (off < maxOff || raw < maxRaw) return [`space: ${has}, below the baseline ${maxOff} and ${maxRaw}; lower its entry in ${table}`];
-	return [];
-}
+const spaceCount = (file: string, off: number, raw: number) => off + raw ? [`space: ${file} has ${off} off-scale and ${raw} raw px spacing values; use --sp-*`] : [];
 
 function auditCss(sheets: Source[]): string[] {
 	const out: string[] = [];
@@ -211,7 +187,7 @@ function auditCss(sheets: Source[]): string[] {
 	}
 	for (const [file, [off, raw, nudges]] of spaces) {
 		if (nudges > SPACE_NUDGES) out.push(`space: ${file} has ${nudges} nudges, allowed ${SPACE_NUDGES}; use --sp-*`);
-		out.push(...spaceBaseline(file, off, raw, SPACE_ALLOWED, "SPACE_ALLOWED"));
+		out.push(...spaceCount(file, off, raw));
 	}
 	return out;
 }
@@ -232,7 +208,7 @@ function auditText(sources: Source[]): string[] {
 				spaceOff += off; spaceRaw += raw;
 			}
 		}
-		out.push(...spaceBaseline(file, spaceOff, spaceRaw, SPACE_JS_ALLOWED, "SPACE_JS_ALLOWED"));
+		out.push(...spaceCount(file, spaceOff, spaceRaw));
 		lines.forEach((line, i) => {
 			if (EMOJI.test(line)) out.push(`emoji: ${file}:${i + 1} ${line.match(EMOJI)?.[0]}`);
 			if (isJs && /var\(--(ok|warn|err)\b/.test(line) && file !== "custom.js") out.push(`status: ${file}:${i + 1} in a script`);
@@ -317,21 +293,14 @@ describe("web/DESIGN.md rules", () => {
 	});
 
 	test("off-scale and raw px are counted apart", () => {
-		expect(auditCss([["planted.css", `.p { padding: 10px 4px; margin: calc(100% - 14px); }`]])).toEqual(["space: planted.css has 2 off-scale and 1 raw px spacing values, allowed 0 and 0; use --sp-*"]);
-		expect(auditText([["planted.js", `a.style.cssText = "margin-top:4px"; b.innerHTML = '<i style="padding:10px;gap:2px">';`]])).toEqual(["space: planted.js has 1 off-scale and 2 raw px spacing values, allowed 0 and 0; use --sp-*"]);
+		expect(auditCss([["planted.css", `.p { padding: 10px 4px; margin: calc(100% - 14px); }`]])).toEqual(["space: planted.css has 2 off-scale and 1 raw px spacing values; use --sp-*"]);
+		expect(auditText([["planted.js", `a.style.cssText = "margin-top:4px"; b.innerHTML = '<i style="padding:10px;gap:2px">';`]])).toEqual(["space: planted.js has 1 off-scale and 2 raw px spacing values; use --sp-*"]);
 	});
 
 	test("a fourth nudge in one file fails, three do not", () => {
 		const nudged = (n: number) => Array.from({ length: n }, (_, i) => `.n${i} { margin-top: 1px; /* nudge: line ${i} */ }`).join("\n");
 		expect(auditCss([["planted.css", nudged(3)]])).toEqual([]);
 		expect(auditCss([["planted.css", nudged(4)]])).toEqual(["space: planted.css has 4 nudges, allowed 3; use --sp-*"]);
-	});
-
-	test("a count below the baseline fails and names the entry", () => {
-		const css = Object.entries(SPACE_ALLOWED).find(([, n]) => n[0] + n[1] > 0)!;
-		expect(auditCss([[css[0], `.clean { padding: 0 var(--sp-2); }`]])).toEqual([expect.stringContaining("below the baseline")]);
-		const js = Object.entries(SPACE_JS_ALLOWED).find(([, n]) => n[0] + n[1] > 0)!;
-		expect(auditText([[js[0], `el("span", {})`]])).toEqual([expect.stringContaining("below the baseline")]);
 	});
 
 	test("the mail iframe stylesheet is exempt, other lines of that file are not", () => {

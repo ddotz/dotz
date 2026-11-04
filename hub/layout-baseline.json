@@ -14,7 +14,6 @@
   "icon-center|home|1280|svg < span.end < button.li.hstrip",
   "icon-center|home|390|svg < span.end < button.li.hstrip",
   "left-edges-tangent|chat-open|1280|section#v-chat.view.fill < div#views.views < div.main (screen)",
-  "left-edges-tangent|chat-open|390|section#v-chat.view.fill < div#views.views < div.main (screen)",
   "left-edges-tangent|chat|1280|section#v-chat.view.fill < div#views.views < div.main (screen)",
   "left-edges-tangent|harness|1280|div.hm-st.one < div.hm-simple < div",
   "left-edges-tangent|harness|1280|section#v-harness.view < div#views.views < div.main (screen)",
