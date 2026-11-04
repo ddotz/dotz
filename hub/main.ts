@@ -4,6 +4,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cfg, DATA_DIR, HOST, log, NAME, now, paths, PORT, TZ, writeAtomic } from "./config.ts";
 import "./lock.ts"; // must stay right after config.ts: takes the single-instance lock before the other modules load
+import "./first-run-boot.ts"; // a seed install still in its web onboarding serves only that and never gets past this line (hub/first-run-boot.ts)
 import { parseCommand, setGatewayRestart } from "./control.ts";
 import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";

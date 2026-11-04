@@ -4,6 +4,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { Run } from "./tailscale.ts";
 
 const HOME = homedir();
 const LOCAL_BIN = join(HOME, ".local", "bin");
@@ -26,14 +27,14 @@ export async function asideState(): Promise<AsideState> {
 	return { app, cli, signedIn, account };
 }
 
-const run = async (cmd: string[]) => (await Bun.spawn(cmd, { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited) === 0;
+const run: Run = async cmd => (await Bun.spawn(cmd, { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited) === 0;
 
-export async function installApp(): Promise<boolean> {
-	if (Bun.which("brew")) return run(["brew", "install", "--cask", "aside"]);
-	await run(["open", "https://aside.com/download"]);
+export async function installApp(runner: Run = run): Promise<boolean> {
+	if (Bun.which("brew")) return runner(["brew", "install", "--cask", "aside"]);
+	await runner(["open", "https://aside.com/download"]);
 	return false;
 }
 
-export const installCli = () => run(["bash", "-c", "curl -fsSL https://releases.aside.com/install.sh | bash"]);
+export const installCli = (runner: Run = run) => runner(["bash", "-c", "curl -fsSL https://releases.aside.com/install.sh | bash"]);
 export const loginCli = (cli: string) => run([cli, "login"]);
 export const openApp = () => run(["open", "-a", "Aside"]);
