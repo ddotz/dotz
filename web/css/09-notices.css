@@ -1,5 +1,5 @@
 /* Rows of the 모니터링 screen (30-monitoring.js), the jump highlight (30-notices.js), the 홈 cards (08-home.js) and the decision sheet (30-notices.js). */
-.nt-row { display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: var(--row-h); padding: var(--row-py) 12px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; }
+.nt-row { display: flex; align-items: flex-start; gap: var(--sp-3); width: 100%; min-height: var(--row-h); padding: var(--row-py) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; }
 .nt-row:hover { background: var(--card-hover); }
 .nt-row:active { background: var(--active); }
 .nt-dot { flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--fg-3); }
@@ -7,7 +7,7 @@
 .nt-dot.tone-run { background: var(--accent); }
 .nt-dot.tone-ask { background: var(--warn); }
 .nt-dot.tone-fail { background: var(--err); }
-.nt-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nt-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-05); }
 .nt-t { font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
 .nt-row.un .nt-t { font-weight: 600; }
 .nt-m { color: var(--fg-3); font: 400 12px/16px var(--font); }
@@ -20,7 +20,7 @@
 .nt-hl::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: color-mix(in srgb, var(--accent) var(--hl), transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) var(--hl-ring), transparent), 0 0 8px 0 color-mix(in srgb, var(--accent) var(--hl-glow), transparent); opacity: 0; pointer-events: none; animation: nt-hl 1.8s ease-in-out .2s both; }
 /* Plain text: the phone's message already has 16px side padding, so the bar sits in it. From 640px up the host grows 8px each side as padding and gives it back as margin: the text does not move. */
 .nt-hl.nt-bar { border-radius: var(--r-ctl); }
-@media (min-width: 640px) { .nt-hl.nt-bar { margin-inline: -8px; padding-inline: 8px; } }
+@media (min-width: 640px) { .nt-hl.nt-bar { margin-inline: calc(var(--sp-2) * -1); padding-inline: var(--sp-2); } }
 .nt-hl.nt-bar::after { box-shadow: none; }
 @keyframes nt-hl { 0% { opacity: 0; } 14% { opacity: 1; } 50% { opacity: 1; } 100% { opacity: 0; } }
 /* Reduced motion: no fade or scroll animation, just a still tint for a moment (a step animation; !important beats the global animation: none). */
@@ -30,9 +30,9 @@
 @keyframes nt-hl-still { 0% { opacity: 1; } 100% { opacity: 0; } }
 
 
-.mon-sum { padding: 4px 4px 12px; color: var(--fg-2); font: 500 14px/20px var(--font); }
-.mon-list { padding: 4px; }
-.mon-kind { margin-left: 8px; vertical-align: 1px; }
+.mon-sum { padding: var(--sp-1) var(--sp-1) var(--sp-3); color: var(--fg-2); font: 500 14px/20px var(--font); }
+.mon-list { padding: var(--sp-1); }
+.mon-kind { margin-left: var(--sp-2); vertical-align: 1px; }
 .nt-mon { cursor: default; }
 button.nt-mon { cursor: pointer; }
 button.nt-mon .chev { flex: none; align-self: center; color: var(--fg-3); }
@@ -42,9 +42,9 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 /* Home cards: 알림 / 작업내역 / 모니터링 (as tall as their content on the board, 07-board.js fit). */
 .card.hc { display: flex; flex-direction: column; }
 .hc .ch .tag { flex: none; }
-.hc-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.hc-row { display: flex; align-items: center; gap: 8px; min-width: 0; font: 400 14px/20px var(--font); }
-.hc-row { cursor: pointer; border-radius: var(--r-ctl); margin-inline: -6px; padding: 4px 6px; }
+.hc-list { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.hc-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font: 400 14px/20px var(--font); }
+.hc-row { cursor: pointer; border-radius: var(--r-ctl); margin-inline: calc(var(--sp-15) * -1); padding: var(--sp-1) var(--sp-15); }
 .hc-row:hover { background: var(--card-hover); }
 .hc-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .hc-row .nt-dot { margin-top: 0; }
@@ -53,74 +53,74 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .hc-row .n { color: var(--fg-3); font: 400 12px/16px var(--font); }
 .hc-row .m { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); }
 .hc-mon { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
-.hc-mon .nt-dot { margin-top: 6px; }
+.hc-mon .nt-dot { margin-top: var(--sp-15); }
 .hc-mon .b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .hc-mon .n, .hc-mon .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hc-mon .n { font: 500 14px/20px var(--font); }
 .hc-mon .s { color: var(--fg-3); font: 400 12px/16px var(--font); }
-.hc-more { margin-top: 8px; color: var(--fg-3); font: 400 12px/16px var(--font); }
-.hc-none { margin-top: 8px; color: var(--fg-3); font: 400 14px/22px var(--font); }
+.hc-more { margin-top: var(--sp-2); color: var(--fg-3); font: 400 12px/16px var(--font); }
+.hc-none { margin-top: var(--sp-2); color: var(--fg-3); font: 400 14px/22px var(--font); }
 /* head note and count: plain grey text, a dot is the only colour; an empty card is just this head (fold) */
-.hc-n { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--fg-3); font: 400 13px/18px var(--font); }
+.hc-n { flex: none; display: inline-flex; align-items: center; gap: var(--sp-15); color: var(--fg-3); font: 400 13px/18px var(--font); }
 /* the head's gap belongs to a body: with nothing under it, or a one-line state (.hc-none brings its own 8px), the card stays balanced */
 .ch:last-child, .ch:has(+ .hc-none), .ch:has(+ .hn > .hc-none) { margin-bottom: 0; }
 .ch:has(+ .hc-none), .ch:has(+ .hn > .hc-none) { min-height: 24px; }   /* the height of a head with a ⋯, so side-by-side state lines share a baseline */
 /* the summary strip (the assistant card): label over number, wrapping as columns */
-.hsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 12px 16px; }
-.hsum-s { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: var(--sp-3) var(--sp-4); }
+.hsum-s { display: flex; flex-direction: column; gap: var(--sp-05); min-width: 0; }
 .hsum-s .k { color: var(--fg-3); font: 400 12px/16px var(--font); }
-.hsum-s .v { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 20px/28px var(--font); letter-spacing: -.01em; }
-.hsum-fb { margin-top: 8px; }
-.bi[data-id="main"] .subline { margin-top: 12px; padding: 0; background: none; color: var(--fg-2); }
+.hsum-s .v { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 20px/28px var(--font); letter-spacing: -.01em; }
+.hsum-fb { margin-top: var(--sp-2); }
+.bi[data-id="main"] .subline { margin-top: var(--sp-3); padding: 0; background: none; color: var(--fg-2); }
 
 /* Decisions (30-notices.js): a question that waits on the owner. Tapping its card on 홈 opens the full-screen overlay (14-overlay.css): the whole text, then one button per option (recommended first). */
 /* Computer switch sheet (33-peers.js): the bottom sheet on the phone and a centered dialog from 700px. Decisions and notices use the full-screen overlay (14-overlay.css), not this. */
 .ds-bd { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: flex-end; justify-content: center; background: rgba(0, 0, 0, .42); }
 .ds-sheet { --fs-fill: var(--layer); display: flex; flex-direction: column; width: 100%; max-width: 520px; max-height: 90dvh; border-radius: var(--r-sheet) var(--r-sheet) 0 0; background: var(--pop); color: var(--fg); padding-bottom: env(safe-area-inset-bottom); box-shadow: var(--float); }
-.ds-hd { flex: none; display: flex; align-items: center; gap: 8px; padding: 14px 12px 0 20px; }
+.ds-hd { flex: none; display: flex; align-items: center; gap: var(--sp-2); padding: 14px var(--sp-3) 0 var(--sp-5); }
 .ds-ey { flex: 1; color: var(--warn); font: 600 13px/20px var(--font); }
-.ds-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px 20px 12px; }
+.ds-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--sp-1) var(--sp-5) var(--sp-3); }
 @media (min-width: 700px) {
   .ds-bd { align-items: center; }
   .ds-sheet { border-radius: var(--r-sheet); max-height: min(80vh, 760px); padding-bottom: 0; }
 }
-.ds-t { margin: 4px 0 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
-.ds-m { margin: 2px 0 12px; color: var(--fg-3); font: 400 12px/16px var(--font); }
+.ds-t { margin: var(--sp-1) 0 0; font: 700 20px/28px var(--font); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.ds-m { margin: var(--sp-05) 0 var(--sp-3); color: var(--fg-3); font: 400 12px/16px var(--font); }
 .ds-md { color: var(--fg-2); font: 400 14px/22px var(--font); overflow-wrap: anywhere; }
 .ds-md p { margin: 0 0 10px; }
 .ds-md p:last-child { margin-bottom: 0; }
 .ds-md code { overflow-wrap: anywhere; }
-.ds-opt, .ds-direct { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; width: 100%; min-height: var(--sheet-h); padding: 10px 16px; border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg); font: inherit; text-align: left; }
+.ds-opt, .ds-direct { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: var(--sp-05); width: 100%; min-height: var(--sheet-h); padding: 10px var(--sp-4); border: 0; border-radius: var(--r-ctl); background: var(--fs-fill); color: var(--fg); font: inherit; text-align: left; }
 .ds-opt.c { align-items: center; }
 .ds-opt:hover, .ds-direct:hover { background: var(--hover); }
 .ds-opt:active, .ds-direct:active { background: var(--active); }
 .ds-opt.rec { background: var(--accent); color: var(--on-accent); }
 .ds-opt.rec:hover, .ds-opt.rec:active { background: var(--accent); filter: brightness(.94); }
 .ds-opt:disabled, .ds-direct:disabled { opacity: .55; }
-.ds-lb { display: flex; align-items: center; gap: 8px; font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
-.ds-tag { flex: none; padding: 0 8px; border-radius: 10px; background: rgba(255, 255, 255, .22); font: 600 11px/18px var(--font); }
+.ds-lb { display: flex; align-items: center; gap: var(--sp-2); font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
+.ds-tag { flex: none; padding: 0 var(--sp-2); border-radius: 10px; background: rgba(255, 255, 255, .22); font: 600 11px/18px var(--font); }
 .ds-ds { font: 400 13px/18px var(--font); opacity: .82; overflow-wrap: anywhere; }
 .ds-direct { align-items: center; background: transparent; color: var(--fg-2); font: 500 14px/20px var(--font); }
 .ds-st { color: var(--fg-3); font: 400 13px/18px var(--font); text-align: center; }
-.ds-res { display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-radius: var(--r-ctl); background: var(--fs-fill); }
+.ds-res { display: flex; flex-direction: column; gap: var(--sp-05); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-ctl); background: var(--fs-fill); }
 .ds-rl { color: var(--ok); font: 600 12px/16px var(--font); }
 .ds-ra { font: 600 15px/22px var(--font); overflow-wrap: anywhere; }
 
 /* Decision overlay (30-notices.js dkOpen, 10-decision-card.js renderSheet) and draft approval (hub/draft-approval.ts): content only; the frame is 14-overlay.css. */
-.dc-dh { display: flex; align-items: baseline; gap: 8px; font-size: 14px; line-height: 22px; }
+.dc-dh { display: flex; align-items: baseline; gap: var(--sp-2); font-size: 14px; line-height: 22px; }
 .dc-dh .dc-dr-v { font-size: 16px; word-break: keep-all; }
 .dc-dh .dc-dr-v.sub { font-weight: 500; }
 .fs-body .dc-dr-b { max-height: none; margin: 0; overflow: visible; font-size: 15px; line-height: 24px; word-break: keep-all; }
 .fs-body .dc-q { margin-top: 0; font-size: 17px; line-height: 26px; }
 /* the send sheet's buttons are the one button system (01-tokens.css): .dc-act quiet, .dc-act.alt secondary, .dc-act.main primary */
-.dc-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dc-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-15); }
 .dc-act { flex: none; }
 .dc-act:active:not(:disabled) { background: var(--active); }
 .dc-act.alt { background: var(--fs-fill); }
-.dc-act.main { order: 0; padding: 0 20px; }
+.dc-act.main { order: 0; padding: 0 var(--sp-5); }
 .dc-act.main:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 85%, #000); }
 .dc-act:disabled { opacity: .55; }
-.dc-manual { margin-left: auto; gap: 4px; padding: 0 4px 0 8px; color: var(--fg-3); font-size: 13px; }
+.dc-manual { margin-left: auto; gap: var(--sp-1); padding: 0 var(--sp-1) 0 var(--sp-2); color: var(--fg-3); font-size: 13px; }
 .dc-manual:active { color: var(--fg); }
 .dc-manual .ic { width: 14px; height: 14px; }
 
@@ -128,18 +128,18 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 button.nt-x { width: 44px; height: 44px; border-radius: var(--r-ctl); color: var(--fg-3); }
 button.nt-x:active { background: var(--active); color: var(--fg); }
 .hr.hrx { gap: 0; padding: 0; }
-.hrx-m { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 4px 8px 16px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
-.hrx-m:last-child { padding-right: 16px; }
-.hrx .nt-x { margin-right: 8px; }
+.hrx-m { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-3); min-height: 48px; padding: var(--sp-2) var(--sp-1) var(--sp-2) var(--sp-4); border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.hrx-m:last-child { padding-right: var(--sp-4); }
+.hrx .nt-x { margin-right: var(--sp-2); }
 /* The x keeps its 44px target but takes no row height (it overhangs into the row padding and the list gap), so a row with an x is as tall as one without. */
-.hc-row .nt-x { margin-block: -12px; margin-right: -6px; }
+.hc-row .nt-x { margin-block: calc(var(--sp-3) * -1); margin-right: calc(var(--sp-15) * -1); }
 /* A row without an x keeps the x's slot (44px minus the -6px overhang) when its list has one, so the times line up in one column. */
 .hc-list:has(.nt-x) > .hc-row:not(:has(.nt-x))::after { content: ""; flex: none; width: 38px; }
 .ds-rl.ign { color: var(--fg-3); }
-.dc-hb { flex: none; display: flex; align-items: center; gap: 2px; }
+.dc-hb { flex: none; display: flex; align-items: center; gap: var(--sp-05); }
 /* 홈 답변 필요: a monitoring app's send approvals folded into one row; the items unfold below it, indented. */
 .ntg-h[aria-expanded="true"] .hs { color: var(--muted, inherit); }
-.ntg-l { margin: 0 0 6px 20px; padding-left: 8px; border-left: 2px solid var(--line); }
+.ntg-l { margin: 0 0 var(--sp-15) var(--sp-5); padding-left: var(--sp-2); border-left: 2px solid var(--line); }
 
 /* 알림 conversation: the record behind the 알림 screen has no composer (31-conversations.js convPaint sets .no-composer) */
 #v-chat.no-composer > .composer { display: none; }
