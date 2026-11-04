@@ -261,6 +261,8 @@
   /* ---------- leaving a step ---------- */
   function validate(v, val) {
     const e = u().errors, name = val.name ?? D().name ?? "";
+    // the gateway cannot start without its harness, so this one step has no "later"
+    if (v === "harness" && !hz(val.runtime)?.installed) return e.harness;
     if ((v === "bot" || v === "review") && (name.length < 2 || name.length > 32)) return e.name;
     if (v === "discord" && !V.dcOff && val.guild) {
       if (!ID.test(val.guild)) return e.guild;
