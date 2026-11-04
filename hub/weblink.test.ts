@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { emit } from "./events.ts";
-import { type Adapter, installFanout, type OutMsg, register } from "./messenger.ts";
+import { type Adapter, installFanout, type OutMsg, register, unregister } from "./messenger.ts";
 import { flush } from "./runtime/test-clock.ts";
 import { cfBase, convPath, setWebBase, webBase, webLink } from "./weblink.ts";
 
@@ -15,6 +15,7 @@ const post = async (target: string, text = "hi") => {
 	return got[0];
 };
 afterEach(() => setWebBase(undefined));
+afterAll(() => unregister(fake.id));
 
 describe("cloudflare web base", () => {
 	test("the hostname becomes the base of file links and every other link", () => {

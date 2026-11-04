@@ -131,7 +131,7 @@ for (const mode of ["all", "custom"] as const) {
 					await run(v, `$("#harness").querySelector(".hm-cs.fix .hm-more").click()`);
 					await waitFor(v, `$("#harness").querySelectorAll(".hm-cs.fix .hm-cr").length >= 34`);
 					const after = await q<{ h: number; sh: number; ch: number; paths: string[] }>(v, `const c = $("#harness").querySelector(".hm-cs.fix").closest(".hm-st"), l = c.querySelector(".hm-cs"); return { h: c.getBoundingClientRect().height, sh: l.scrollHeight, ch: l.clientHeight, paths: [...l.querySelectorAll(".m2.mono")].slice(0, 2).map(m => m.textContent + "|" + m.title) };`);
-					expect(after.h).toBe(before.h);
+					expect(after.h).toBeCloseTo(before.h, 0);   // a sub-pixel apart at most: layout heights are fractional
 					expect(after.sh).toBeGreaterThan(after.ch);
 					expect(after.paths[0]).toBe("…/browser-aside-keep-login-1/feature.md|~/.dotz/features/browser-aside-keep-login-1/feature.md");
 					const g = await fit(v);

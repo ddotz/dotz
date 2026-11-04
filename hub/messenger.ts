@@ -86,6 +86,7 @@ export function kindOf(target: string): Kind | undefined {
 
 const registry = new Map<string, Adapter>();
 export const register = (a: Adapter): void => void registry.set(a.id, a);
+export const unregister = (id: string): void => void registry.delete(id);
 export const adapters = (): Adapter[] => [...registry.values()];
 export const get = (id: string): Adapter | undefined => registry.get(id);
 

@@ -22,7 +22,7 @@ function page(opts: { current?: string; phone?: boolean; notices?: number; badge
 		S: { orchestrator: { status: "working" }, lanes: [] as { name: string; status: string }[] },
 		convListing: () => false, projTargets: () => [], liveTargets: () => [MAIN],
 		isProjT: (t: string) => /^ch:\d+$/.test(t), isLaneT: (t: string) => t.startsWith("lane:"),
-		targetName: () => "dotz", notify: (e: any) => notes.push(e), renderHome: () => {}, renderLanes: () => {}, $: (s: string) => (s === "#nav-att" ? opts.badge ?? null : null),
+		targetName: () => "dotz", notify: (e: any) => notes.push(e), rollCount: (b: any, n: string) => (b.textContent = n), motionPop: () => {}, paintBell: () => {}, renderHome: () => {}, renderLanes: () => {}, $: (s: string) => (s === "#nav-att" ? opts.badge ?? null : null),
 		ts: (t: string) => TS[t] || (TS[t] = { msgs: [], mk: new Set(), acts: [], ak: new Set(), cap: 600, hLoaded: false, aLoaded: false }),
 		TS, msgKey: (e: any) => `${e.ts}|${e.kind}|${e.text}`, actKey: (a: any) => `${a.ts}|${a.type}`,
 		eventTarget: () => MAIN, targetOfSource: () => MAIN, isRestart: () => false, paintRestartBanner: () => {}, convNote: () => {},
@@ -55,14 +55,14 @@ describe("채팅 nav badge", () => {
 	});
 
 	test("an unread 알림 conversation counts once, like any listed conversation", () => {
-		const b = { hidden: true, textContent: "", title: "", parentElement: { setAttribute: () => {} } };
+		const b = { hidden: true, textContent: "", title: "", dataset: {}, parentElement: { setAttribute: () => {} } };
 		const { api } = page({ phone: true, badge: b, alertUnread: 3 });
 		api.paintAttn();
 		expect(b).toMatchObject({ hidden: false, textContent: "1", title: "읽지 않은 대화 1개" });
 	});
 
 	test("the hub's unread notice count (no bell any more) never joins the badge", () => {
-		const b = { hidden: true, textContent: "", title: "", parentElement: { setAttribute: () => {} } };
+		const b = { hidden: true, textContent: "", title: "", dataset: {}, parentElement: { setAttribute: () => {} } };
 		page({ phone: true, notices: 2, badge: b }).api.paintAttn();
 		expect(b.hidden).toBe(true);
 	});

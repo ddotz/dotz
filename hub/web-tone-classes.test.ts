@@ -8,12 +8,20 @@ import { bundle } from "./webapp.ts";
 // `.att`, so a home card with a warning ("사용량" at 1% left) became a 220px flex row and its rows were squeezed off the card.
 const TONES = ["att", "warn", "err", "ok", "pri", "off"];
 
+// Commas and combinators split a selector only outside brackets: in `.dot:is(.un, .err)` the tone stays scoped to `.dot`.
 function compoundsOf(css: string): string[] {
 	const out: string[] = [];
 	const body = css.replace(/\/\*[\s\S]*?\*\//g, "");
 	for (const m of body.matchAll(/([^{}@;]+)\{/g)) {
-		for (const sel of m[1].split(",")) {
-			for (const c of sel.trim().split(/[\s>+~]+/)) if (c) out.push(c);
+		let depth = 0, part = "";
+		for (const ch of `${m[1]},`) {
+			if (ch === "(") depth++;
+			if (ch === ")") depth--;
+			if (depth > 0 || !/[,\s>+~]/.test(ch)) part += ch;
+			else {
+				if (part) out.push(part);
+				part = "";
+			}
 		}
 	}
 	return out;
@@ -31,8 +39,10 @@ describe("web stylesheet tone classes", () => {
 
 	test("no rule styles a tone class on its own", () => {
 		const bare = compounds.filter(c => {
+			// A leading :is() / :where() has no component in front of it, so each of its entries stands alone.
+			const list = c.match(/^:(?:is|where)\(([^()]*)\)/)?.[1].split(",").map(s => s.trim()) ?? [];
 			const head = c.replace(/::?[\w-]+(\([^)]*\))?/g, "");
-			return TONES.some(t => head === `.${t}`);
+			return TONES.some(t => head === `.${t}` || list.includes(`.${t}`));
 		});
 		expect(bare).toEqual([]);
 	});

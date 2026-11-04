@@ -1,6 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { emit } from "./events.ts";
-import { type Adapter, installFanout, kindOf, type OutMsg, parseAskNumber, register } from "./messenger.ts";
+import { type Adapter, installFanout, kindOf, type OutMsg, parseAskNumber, register, unregister } from "./messenger.ts";
 import { flush } from "./runtime/test-clock.ts";
 
 const fake = (id: string, over: Partial<Adapter> = {}): Adapter & { got: OutMsg[] } => {
@@ -23,6 +23,9 @@ const fake = (id: string, over: Partial<Adapter> = {}): Adapter & { got: OutMsg[
 	};
 };
 const post = (target: string, text: string) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "orchestrator", target, text });
+
+// All test files share one process: the fakes must not stay listed for the next file.
+afterAll(() => ["plain", "native", "off", "bad", "sync", "good", "flaky"].forEach(unregister));
 
 describe("kindOf", () => {
 	test.each([

@@ -240,7 +240,8 @@ describe("메신저 설정", () => {
 		await click(v, "#jandi [data-ms-save]");
 		await puts.until(x => x.length === 1);
 		expect(puts).toEqual([{ values: { port: 9000 } }]);
-		await waitFor(v, `document.querySelector('#jandi input[name="ms-port"]').value === "9000"`);
+		// The saved page is drawn: typing before that is wiped when the reply clears the edits (the field already shows 9000 as typed, so it proves nothing).
+		await waitFor(v, `document.querySelector("#jandi [data-ms-save]").textContent === "저장했어요" && document.querySelector('#jandi input[name="ms-port"]').value === "9000"`);
 		puts.length = 0;
 		await type(v, '#jandi input[name="ms-incoming_url"]', "http://in/SECRET");
 		await click(v, "#jandi [data-ms-save]");
