@@ -7,7 +7,7 @@
   // text a real project carries (paths, repos, ports, file names) on purpose: the screens must show it as a plain sentence.
   {
     const { now, ago } = F;
-    const lane = { name: "hdocs-fill", title: "공문 초안 채우기", live: true, status: "working", home: "ch:5", model: F.MODEL, startedAt: ago(35), lastReportAt: ago(5), lastText: "표 서식을 맞추는 중이에요" };
+    const lane = { name: "공문-채우기", title: "공문 초안 채우기", live: true, status: "working", home: "ch:5", model: F.MODEL, startedAt: ago(35), lastReportAt: ago(5), lastText: "표 서식을 맞추는 중이에요" };
     F.projects.unshift({
       key: "ch:5", name: "한글 문서 자동화", pinned: true, recordKey: "ch:5", channel: { id: "5", name: "한글 문서 자동화" },
       record: { title: "한글 문서 자동화", purpose: "공문 양식에 맞춰 HWPX 문서를 만드는 서비스예요. 저장소 ~/Code/docs/docs-web (github example/docs main), 라이브 ~/Code/docs/docs-web-live (4417, tailnet 8444). 규칙은 RULES.md 프로젝트 규칙(docs).", updated: ago(5), milestones: [{ text: "양식 분석", done: true }, { text: "공문 초안 생성", done: true }, { text: "표 서식 맞추기", done: false }, { text: "검수와 전달", done: false }] },
@@ -17,20 +17,20 @@
         { id: "w-h2", status: "done", description: "공문 양식 12종 읽기", started_at: now - 70 * 60_000, ended_at: now - 55 * 60_000 },
       ],
       results: [
-        { kind: "report", title: "공문 초안 3건을 만들었어요", lane: "hdocs-fill", verified: true, at: now - 20 * 60_000 },
-        { kind: "report", title: "양식 12종 분석 보고", lane: "hdocs-fill", verified: false, at: now - 26 * 3600_000 },
+        { kind: "report", title: "공문 초안 3건을 만들었어요", lane: "공문-채우기", verified: true, at: now - 20 * 60_000 },
+        { kind: "report", title: "양식 12종 분석 보고", lane: "공문-채우기", verified: false, at: now - 26 * 3600_000 },
       ],
       monitors: [], summary: { lastActivity: ago(5) },
     });
     F.state.lanes.push(lane);
     F.state.channels.work["5"] = "한글 문서 자동화";
-    F.state.channels.homes["hdocs-fill"] = "5";
+    F.state.channels.homes["공문-채우기"] = "5";
     // 나머지 프로젝트의 세션과 대화: 채팅 목록과 프로젝트 화면이 빈 미리보기나 영문 세션 이름을 보이지 않게 채워요.
     F.state.channels.work["3"] = "가격 조사";
     F.state.channels.work["4"] = "주간 보고서";
-    F.state.channels.homes["notes-draft"] = "2";
-    F.state.channels.homes["price-research"] = "3";
-    for (const pj of F.projects) for (const l of pj.lanes) if (!F.state.lanes.some(x => x.name === l.name)) F.state.lanes.push({ ...l, model: F.MODEL, lastText: pj.key === "ch:2" ? "배포 공지 형태를 기다려요" : "요금표 세 곳을 비교하고 있어요" });
+    F.state.channels.homes["공지-초안"] = "2";
+    F.state.channels.homes["가격-조사"] = "3";
+    for (const pj of F.projects) for (const l of pj.lanes) if (!F.state.lanes.some(x => x.name === l.name)) F.state.lanes.push({ ...l, model: F.MODEL, lastText: { "ch:2": "배포 공지 형태를 기다려요", "ch:3": "요금표 세 곳을 비교하고 있어요", "ch:4": "주간 보고서를 보냈어요" }[pj.key] });
     const chat = (t, ask, m, reply) => {
       F.histories[t] = [
         { ts: ago(m + 1), kind: "message", source: "web", channel: "web", target: t, text: ask },
@@ -41,7 +41,7 @@
     chat("ch:3", "경쟁 서비스 세 곳 요금표를 모아 줘", 3, "요금표 세 곳을 모았어요. 비교표를 만들고 있어요.");
     chat("ch:4", "이번 주 보고서 정리해 줘", 52, "주간 보고서를 정리했어요.");
     chat("ch:5", "공문 초안 세 건 만들어 줘", 5, "공문 초안 3건을 만들었어요. 표 서식을 맞추고 있어요.");
-    for (const n of ["notes-draft", "price-research", "hdocs-fill"]) {
+    for (const n of ["공지-초안", "가격-조사", "공문-채우기", "주간-정리"]) {
       const l = F.state.lanes.find(x => x.name === n);
       F.histories[`lane:${n}`] = [{ ts: ago(4), kind: "out", source: `lane:${n}`, lane: n, target: `lane:${n}`, text: l.lastText }];
       F.conversations.push({ target: `lane:${n}`, last: { ts: ago(4), text: l.lastText, from: "session" }, unread: 0, read: ago(4) });
@@ -675,12 +675,12 @@
     thinking_levels: ["off", "low", "medium", "high"],
     available: [F.model],
     pickable: [F.model],
-    lanes: [{ name: "site-check", model: F.MODEL, thinking: "" }],
+    lanes: [{ name: "랜딩-점검", model: F.MODEL, thinking: "" }],
     targets: [],
     in_use: [{ key: "main", label: "dotz", model: F.MODEL }],
     fallbacks: {},
   };
-  const BUDGET = { limit_usd: 50, spent_usd: 12.4, pct: 24.8, month: new Date().toISOString().slice(0, 7), resets_at: new Date(Date.now() + 26 * 864e5).toISOString(), source: "estimate" };
+  const BUDGET = { limit_usd: 50, spent_usd: 12.4, pct: 24.8, month: new Date().toISOString().slice(0, 7), resets_at: Date.now() + 26 * 864e5, source: "estimate" };
   const lists = {
     "/api/workers": { items: [] },
     "/api/apps": { items: [] },
@@ -743,14 +743,14 @@
     "/api/web-access": { mode: "tailscale", hostname: "", team: "", aud: "", token_set: false, tunnel: { state: "off" }, devices: 2, cloudflared_found: true },
     "/api/push/gateways": { items: [] },
     "/api/push": { subscribed: false },
-    "/api/update": { running: { kind: "git", branch: "main", commit: { sha: "a".repeat(40), short: "aaaaaaa", date: new Date(Date.now() - 3 * 864e5).toISOString() } }, disk: { kind: "git", branch: "main", commit: { sha: "a".repeat(40), short: "aaaaaaa", date: new Date(Date.now() - 3 * 864e5).toISOString() } }, settings: { auto_check: true, auto_apply: false, at: "09:00" }, busy: [] },
+    "/api/update": { running: { kind: "git", branch: "main", commit: { sha: "3f9c2e1".padEnd(40, "0"), short: "3f9c2e1", date: new Date(Date.now() - 3 * 864e5).toISOString() } }, disk: { kind: "git", branch: "main", commit: { sha: "3f9c2e1".padEnd(40, "0"), short: "3f9c2e1", date: new Date(Date.now() - 3 * 864e5).toISOString() } }, settings: { auto_check: true, auto_apply: false, at: "09:00" }, busy: [] },
     "/api/harness/update": { checking: false, harnesses: [
       { id: "omo", name: "OmO", current: "0.14.2", latest: "0.14.2", available: false, installMethod: "bun-global", checkedAt: new Date(Date.now() - 36e5).toISOString() },
     ] },
     "/api/push/classes": { classes: { ask: true, alert: true, result: true, news: true, conv: true, log: false } },
     "/api/context": { processes: [
       { name: "orchestrator", kind: "orchestrator", running: true, percent: 42, tokens: 84000 },
-      { name: "site-check", kind: "lane", running: true, percent: 83, tokens: 166000 },
+      { name: "랜딩-점검", kind: "lane", running: true, percent: 83, tokens: 166000 },
     ] },
     "/api/models": models,
     "/api/providers": { providers: [
@@ -771,6 +771,15 @@
     ],
   };
 
+  // 기본 프로젝트 커스텀 (hub/custom.ts builtinDetail): 넓은 화면의 프로젝트 탭이 처음 여는 페이지예요.
+  const BUILTIN = { key: "builtin:custom", name: "커스텀", builtin: true, note: "내가 바꾼 것을 한곳에서 봐요", lanes: [], work: [], results: [], monitors: [], summary: {} };
+  const BUILTIN_DETAIL = { groups: [
+    { id: "cards", label: "홈 카드", empty: "아직 만든 카드가 없어요", items: [{ title: "오늘 일정", line: "오늘 일정을 홈에서 바로 봐요" }, { title: "이번 달 지출", line: "카드 사용액을 매일 아침 모아요" }] },
+    { id: "pins", label: "고정 항목", empty: "사이드바에 고정한 게 없어요", items: [{ title: "한글 문서 자동화", line: "자주 여는 프로젝트예요" }, { title: "랜딩 페이지", line: "이번 주에 끝낼 일이에요" }] },
+    { id: "routines", label: "루틴", empty: "아직 만든 루틴이 없어요", items: [{ title: "아침 브리핑", line: "매일 오전 9시" }, { title: "주간 정리", line: "매주 금요일 오후 6시" }] },
+    { id: "rules", label: "내 규칙", empty: "아직 적은 규칙이 없어요", items: [{ title: "답은 해요체로 짧게", line: "세 줄 안에 끝내요" }, { title: "메일은 확인 후 발송", line: "내가 보내기를 눌러야 나가요" }] },
+    { id: "said", label: "비서 설정", empty: "아직 정한 게 없어요", items: [{ title: "이름", line: "dotz" }, { title: "말투", line: "편한 해요체" }] },
+  ] };
   const onboard = key => ({ key, state: key === "slack" ? "idle" : "done", step: null, owner: null, error: null, url: null, updated_at: new Date().toISOString() });
   function get(u) {
     const p = u.pathname;
@@ -801,8 +810,8 @@
     if (/^\/api\/drafts\/[^/]+\/files$/.test(p)) return json({ files: [], canAttach: true, library: false, editable: true });
     if (/^\/api\/onboarding\/[^/]+$/.test(p)) return json(onboard(p.split("/")[3]));
     if (p === "/api/notices") return json({ ...F.notices, unread: unread() });
-    if (p === "/api/custom") return json({ dir: "", cards: [], projects: F.projects, routines: [], links: [] });
-    if (p === "/api/custom/project") return json(F.projects.find(x => x.key === u.searchParams.get("key")) || {});
+    if (p === "/api/custom") return json({ dir: "", cards: [], projects: [...F.projects, BUILTIN], routines: [], links: [] });
+    if (p === "/api/custom/project") return json(u.searchParams.get("key") === BUILTIN.key ? BUILTIN_DETAIL : F.projects.find(x => x.key === u.searchParams.get("key")) || {});
     if (p === "/api/activity") return json({ items: [], more: false, history: false });
     if (p === "/api/canvas") return json({ path: u.searchParams.get("path") || "", text: F.canvases[u.searchParams.get("path")] || "" });
     if (p === "/api/target") return json({ key: "orchestrator", target: u.searchParams.get("target") || "main", model: F.MODEL, thinking: "", models: [F.model], running: false, busy: false, context: {} });
