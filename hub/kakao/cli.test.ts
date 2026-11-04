@@ -198,3 +198,26 @@ test("rooms lists draftable rooms newest first, labels unnamed groups by their m
 	expect(await run(["rooms", "--all", "--limit", "1", "--plain"], ctx)).toBe(0);
 	expect(log.out.filter(l => /^\d+ /.test(l)).map(l => l.split(" ")[0])).toEqual(["105"]);
 });
+
+test("send-file goes only to the one 나와의 채팅, named by the owner's profile name, and refuses any other room or a missing file", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "kk-file-"));
+	const file = join(dir, "a.png");
+	writeFileSync(file, "x");
+	const calls: any[] = [];
+	const rooms = [room("101", "Alex", "direct"), { ...room("777", "(unknown)", "self"), members: 1 }];
+	const reader: Reader = { rooms: async () => rooms, messages: async () => [], draftable: () => true, selfName: async id => (id === "777" ? "미설" : undefined) };
+	const { ctx, log } = build({ reader: async () => reader, sendFiles: async input => (calls.push(input), { ok: true, sent: input.files.length, steps: [] }) });
+	enable(ctx);
+	expect(await run(["send-file", "--file", file], ctx)).toBe(2);
+	expect(await run(["send-file", "--self", "--chat", "101", "--file", file], ctx)).toBe(2);
+	expect(await run(["send-file", "--self", "--file", join(dir, "nope.png")], ctx)).toBe(1);
+	expect(calls).toHaveLength(0);
+	expect(await run(["send-file", "--self", "--file", file, "--file", file], ctx)).toBe(0);
+	expect(calls).toHaveLength(1);
+	expect(calls[0].room).toEqual({ chatId: "777", name: "미설", kind: "self", members: 1 });
+	expect(calls[0].files).toEqual([file, file]);
+	expect(log.out.at(-1)).toContain("2개");
+	rooms.pop();
+	expect(await run(["send-file", "--self", "--file", file], ctx)).toBe(1);
+	expect(calls).toHaveLength(1);
+});
