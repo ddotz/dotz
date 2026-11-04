@@ -1,10 +1,11 @@
 // The approval queue on the real outbound path (outbound.out -> events -> notices): cards the assistant posts in one conversation are
 // shown one at a time, the same card again is not a second post, and closing the shown card brings the next one.
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, spyOn, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { type HubEvent, onEmit } from "./events.ts";
 import { draftApprovalBlock } from "./draft-approval.ts";
-import { answerDecision, ignoreNotice, listNotices } from "./notices.ts";
+import * as discord from "./discord.ts";
+import { answerDecision, ignoreNotice, listNotices, markDraftPosted } from "./notices.ts";
 import { out, reconcileMailCards } from "./outbound.ts";
 import { addDraft, listDrafts, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { paths } from "../features/reply-drafts/lib/settings.ts";
@@ -52,6 +53,24 @@ test("a bot mail card whose mail has a waiting app draft is replaced by the app 
 	for (const n of open) ignoreNotice(n.id);
 	rmSync(paths.drafts(), { force: true });
 	expect(listNotices(500).items.filter((n: any) => n.decision?.state === "open" && n.decision.to === RECONV)).toEqual([]);
+});
+
+test("a card posted on Discord closes there: buttons off, and the queue goes on to the next card", async () => {
+	const edit = spyOn(discord, "edit").mockImplementation(async () => ({ delivered: true }));
+	try {
+		await out(CONV, card("aq-dc-one"));
+		await out(CONV, card("aq-dc-two"));
+		markDraftPosted(CONV, "aq-dc-one", "1400000000000000001", ["1400000000000000002"]);
+		const next = nextCard("aq-dc-two");
+		ignoreNotice(openCards()[0].id);
+		await next;
+		expect(edit.mock.calls.map(c => [c[0], c[1], c[3]])).toEqual([["1400000000000000001", "1400000000000000002", { clearComponents: true }]]);
+		for (const n of openCards()) ignoreNotice(n.id);
+		expect(openCards()).toEqual([]);
+	} finally {
+		edit.mockRestore();
+		posted.length = 0;
+	}
 });
 
 test("three cards at once: one shows, the others wait; the same card again changes nothing; answering it shows the next", async () => {

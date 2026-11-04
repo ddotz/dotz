@@ -146,9 +146,16 @@ export function eventsFromFrame(f: Frame, workers: Map<string, string>): AgentEv
 	for (const row of activityFromFrame(f)) out.push({ type: "activity", row });
 	switch (f.type) {
 		case "tool_execution_end": {
-			if (f.toolName !== "task" || f.isError) break;
+			if ((f.toolName !== "task" && f.toolName !== "task_send") || f.isError) break;
 			const r = f.result as { content?: Block[] | string } | string | undefined;
-			const workers = spawnedWorkers(typeof r === "string" ? r : joined(r?.content));
+			const said = typeof r === "string" ? r : joined(r?.content);
+			if (f.toolName === "task_send") {
+				// OmO's result names the worker by id even when the call named it by task name: "Delivered to st_x as steer.", "Revived st_x ...".
+				const ids = said.match(TASK_ID);
+				if (ids) out.push({ type: "workers_steered", ids: [...new Set(ids)] });
+				break;
+			}
+			const workers = spawnedWorkers(said);
 			if (workers.length) out.push({ type: "workers_spawned", workers });
 			break;
 		}

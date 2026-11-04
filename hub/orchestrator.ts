@@ -302,9 +302,11 @@ export function createOrchestrator(opts: OrchOpts) {
 	// Background workers as the runtime reports them: spawned in this session, or finished (their result is what the next run reads).
 	let onWorkersSpawned: (workers: { id: string; description?: string }[]) => void = () => {};
 	let onWorkersDone: (ids: string[]) => void = () => {};
-	function setWorkerHandlers(spawned: typeof onWorkersSpawned, done: typeof onWorkersDone): void {
+	let onWorkersSteered: (ids: string[]) => void = () => {};
+	function setWorkerHandlers(spawned: typeof onWorkersSpawned, done: typeof onWorkersDone, steered: typeof onWorkersSteered): void {
 		onWorkersSpawned = spawned;
 		onWorkersDone = done;
+		onWorkersSteered = steered;
 	}
 
 	const saved = (): Saved => (existsSync(opts.stateFile) ? JSON.parse(readFileSync(opts.stateFile, "utf8")) : {});
@@ -478,6 +480,9 @@ export function createOrchestrator(opts: OrchOpts) {
 					break;
 				case "workers_done":
 					onWorkersDone(ev.ids);
+					break;
+				case "workers_steered":
+					onWorkersSteered(ev.ids);
 					break;
 				case "user":
 					if (!isResumeNote(ev.text) && onPrompt(ev.text) === true) proc?.abort();
