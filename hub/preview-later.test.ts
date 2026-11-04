@@ -49,7 +49,7 @@ function page() {
 		targetOfSource: () => "web", actKey: (a: { ts: string }) => a.ts,
 	};
 	const names = Object.keys(env);
-	const api = new Function(...names, `${tone}\n${home}\n${conv}\n${data}\nreturn { actLine, convPreview, friendlyLine, ingestAct };`)(...names.map(n => (env as Record<string, unknown>)[n])) as {
+	const api = new Function(...names, `${web("01-peer-msg.js")}\n${tone}\n${home}\n${conv}\n${data}\nreturn { actLine, convPreview, friendlyLine, ingestAct };`)(...names.map(n => (env as Record<string, unknown>)[n])) as {
 		actLine: (a: unknown) => string; convPreview: (s: string) => string; friendlyLine: (s: string) => string; ingestAct: (a: unknown) => void;
 	};
 	return { ...api, TS };

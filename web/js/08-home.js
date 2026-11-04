@@ -229,7 +229,7 @@ function nowLine(t) {
 const LATER_LINE = "백그라운드 작업 중";
 const isLaterText = s => /^\s*\[later\]\s*$/i.test(String(s ?? ""));
 function previewSrc(raw) {
-  const s = noHandoff(String(raw ?? "")).replace(/^\s*Ask:[ \t]*/i, "");
+  const s = noHandoff(peerMsgLine(raw)).replace(/^\s*Ask:[ \t]*/i, "");
   return isLaterText(s) ? LATER_LINE : s;
 }
 const friendlyLine = raw => oneLine(parseTone(previewSrc(raw)).text);

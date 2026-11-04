@@ -13,7 +13,7 @@ const ntAt = n => Date.parse(n.updated || n.ts) || 0;
 const ntTime = t => kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)} ${kstHM(t)}`;
 const ntWhen = n => ntTime(n.updated || n.ts);
 // Row text is plain: markdown marks (links, headings, bullets, emphasis, code) are dropped.
-const ntPlain = s => noticeKo(s, NK)
+const ntPlain = s => noticeKo(peerMsgLine(s), NK)
   .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
   .replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
   .replace(/\*+|~~|`+/g, "")
@@ -280,7 +280,7 @@ function ntOfEvent(e) {
   const src = e.ask && e.target ? e.target : own || (lane ? `lane:${lane}` : e.open || MAIN);
   const real = ntMsgFor(src, e.ts);
   if (real) return real;
-  const p = parseTone(noHandoff(String(e.text || "")), true);
+  const p = parseTone(noHandoff(peerMsgLine(e.text)), true);
   return { id: "", kind: own === "alert" ? "alert" : own === "worklog" ? "worklog" : lane ? "result" : "message", tone: e.ask ? "ask" : own || lane ? p.tone : "",
     title: e.title || (own === "alert" ? "알림" : own === "worklog" ? "작업 기록" : lane ? `세션 ${lane}` : botName), text: p.text, src, open: src, at: e.ts, ts: e.ts };
 }
@@ -589,7 +589,7 @@ function ntShort(line, max = 60) {
 // A notice sheet's title is one short line and its body the rest. A title that is not the text's own first sentence (a question, a block title)
 // keeps the whole text as the body; a first sentence that had to be cut stays in the body in full.
 function ntParts(n) {
-  const text = stripMarkers(noticeKo(n.text, { ...NK, keepFiles: true }), true).replace(/^\s*\[[^\]\n]{1,10}\][ \t]*/, "").trim(), title0 = ntPlain(n.title);
+  const text = stripMarkers(noticeKo(peerMsgLine(n.text), { ...NK, keepFiles: true }), true).replace(/^\s*\[[^\]\n]{1,10}\][ \t]*/, "").trim(), title0 = ntPlain(n.title);
   const first = (text.split("\n").find(l => l.trim()) || "").trim();
   const m = /^.*?[.!?。？！](?=\s|$)/.exec(first), sent = m ? m[0] : first;
   const head = ntShort(sent.replace(/[*_`#>]/g, "")), a = head.replace(/…$/, ""), b = title0.replace(/…$/, "");
