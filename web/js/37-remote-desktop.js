@@ -67,7 +67,7 @@ const dskPillText = vs => (vs.length === 1 ? `${dskWho(vs[0])}에서 보는 중`
 // An answer of GET/PUT /api/desk/... is the new status; S.desk follows it at once instead of waiting for the next state refresh.
 function dskTake(st) {
   DSK.st = st;
-  if (S && S.desk) S.desk = { ...S.desk, on: st.on, control: st.control, running: st.running, viewers: Array.isArray(st.viewers) ? st.viewers : [] };
+  if (S && S.desk) S.desk = { ...S.desk, on: st.on, running: st.running, viewers: Array.isArray(st.viewers) ? st.viewers : [] };
   dskPaint();
   if (inSettings()) renderSettings();
 }
@@ -85,7 +85,7 @@ async function dskSet(patch, said) {
 
 /* ---------- app-bar pill: who is watching ---------- */
 // Blue (--accent) is running; the pill is there while S.desk.viewers is non-empty and gone otherwise. It is painted from the state refresh
-// (17-state-refresh.js), which already runs on events: no timer of its own. A tap opens 설정, where the viewers are listed.
+// (17-state-refresh.js), which already runs on events: no timer of its own. A tap opens 설정, where sharing is switched off.
 function dskPillNode() {
   if (!DSK.pill) {
     DSK.pill = el("button", { type: "button", class: "tag pri dsk-pill", id: "dsk-pill", hidden: true, onclick: () => go("settings") });
@@ -116,14 +116,10 @@ const dskRow = (key, hd, sup, end) => el("div", { class: "li", "data-dsk": key }
 function dskSettings() {
   const d = S && S.desk;
   if (!d) return [];
-  const vs = dskViewers(), cf = !!(WA.data && WA.data.mode === "cloudflare");
+  const cf = !!(WA.data && WA.data.mode === "cloudflare");
   if (cf && !DSK.asked) dskLoad();
-  const opens = dskRow("open", "이 컴퓨터 화면", !d.on ? "꺼져 있어요. 누르면 켜고 열어요" : d.control ? "다른 기기에서 보고 조작해요" : "다른 기기에서 봐요. 조작은 꺼져 있어요", el("button", { type: "button", class: "btn inrow", text: d.on ? "화면 보기" : "켜고 보기", onclick: () => openScreen() }));
-  const rows = [opens, dskRow("on", "화면 공유", "이 컴퓨터 화면을 내 다른 기기에서 봐요", dskSwitch(d.on, "화면 공유", () => dskSet({ on: !d.on }, d.on ? "화면 공유를 껐어요" : "화면 공유를 켰어요")))];
-  if (d.on) {
-    rows.push(dskRow("control", "조작 허용", "켜면 화면을 보는 사람이 이 컴퓨터를 직접 조작해요", dskSwitch(d.control, "조작 허용", () => dskSet({ control: !d.control }, d.control ? "보기만 할 수 있어요" : "조작을 허용했어요"))));
-    rows.push(dskRow("viewers", "지금 보는 사람", vs.length ? vs.map(dskWho).join(" · ") : "아무도 보고 있지 않아요", vs.length ? el("span", { class: "tag pri", text: String(vs.length) }) : null));
-  }
+  const opens = dskRow("open", "이 컴퓨터 화면", d.on ? "다른 기기에서 보고 조작해요" : "꺼져 있어요. 누르면 켜고 열어요", el("button", { type: "button", class: "btn inrow", text: d.on ? "화면 보기" : "켜고 보기", onclick: () => openScreen() }));
+  const rows = [opens, dskRow("on", "화면 공유", "이 컴퓨터 화면을 내 다른 기기에서 보고 조작해요", dskSwitch(d.on, "화면 공유", () => dskSet({ on: !d.on }, d.on ? "화면 공유를 껐어요" : "화면 공유를 켰어요")))];
   if (cf && DSK.st) rows.push(dskRow("allow_public", "공개 주소", "Cloudflare 주소로 들어온 기기도 화면을 볼 수 있어요", dskSwitch(DSK.st.allow_public, "공개 주소", () => dskSet({ allow_public: !DSK.st.allow_public }, DSK.st.allow_public ? "공개 주소로는 막았어요" : "공개 주소로도 열었어요"))));
   return [stSec("화면 공유"), stList(...rows)];
 }

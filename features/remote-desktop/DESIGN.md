@@ -1,7 +1,8 @@
 # Remote desktop: design
 
 Owner's words: "https://github.com/tembo/voxl 이거 붙여서 해당 게이트웨이가 설치된 컴퓨터 화면 띄우고 조작 가능하게 가능하냐? 전체모드로 하면 로컬화면처럼 전체로 사용가능하게 하고",
-"크롬으로 되네. 크롬이 설치되어있으면 크롬에서 띄우는걸로 구현하자".
+"크롬으로 되네. 크롬이 설치되어있으면 크롬에서 띄우는걸로 구현하자",
+"지금 지켜보는 사람 필요 없음. 조작은 상시 가능해야하니까 on/off 필요 없음" (2026-11-05).
 
 voxl (MIT source, GPL once linked with x264) streams the Mac's screen as H.264 over a WebSocket. dotz never ships the binary: the user's computer builds a pinned commit.
 Off by default. macOS only: on Linux and Windows the enable command stops and says why.
@@ -25,8 +26,10 @@ Off by default. macOS only: on Linux and Windows the enable command stops and sa
 | Enable command | `features/remote-desktop/bin/onboard.ts`, `features/remote-desktop/feature.md` |
 | Web (name prefix `dsk`; `dk` is taken by web/js/30-notices.js) | `web/js/37-remote-desktop.js`, `web/css/23-remote-desktop.css`, entries in palette, slash commands, settings (+ `hub/remote-desktop-web.test.ts`) |
 
-Data lives in `<DATA_DIR>/remote-desktop/`: `bin/voxl` (cargo install --root), `settings.json` `{on, control, allow_public}`, `onboard.json` (steps done).
-Defaults: on=true after enabling, **control=false** (view only until the owner turns it on, or the enable command got `--control`), allow_public=false.
+Data lives in `<DATA_DIR>/remote-desktop/`: `bin/voxl` (cargo install --root), `settings.json` `{on, allow_public}` (a `control` key from an older install is ignored and dropped on the next write), `onboard.json` (steps done).
+Defaults: on=true after enabling, allow_public=false.
+
+**Control is always on.** voxl never runs `--read-only`: whoever passes the gateway login can see and operate this Mac. The only switch is `on`.
 
 `available` = darwin, the shipped feature enabled (hub/featuredirs.ts, a personal copy with `enabled: true`), and `bin/voxl` present. Everything visible hangs on it. Not available: no route answers anything but `{available:false}`, `/desk/` is 404, `/api/state` carries no `desk` key, no timer exists.
 
@@ -34,8 +37,8 @@ Defaults: on=true after enabling, **control=false** (view only until the owner t
 
 One `DeskHost`, injectable (spawn, clock, free port, binary path) so tests use a fake server script.
 
-- `ensure()`, single flight: spawn on the first `/desk/` request or websocket. Args: `--addr=127.0.0.1 --port=<free> --file-transfers=none`, plus `--read-only` unless control is on. Never `--enable-resize`, never `--microphone-enabled`. `VOXL_PASSWORD` = 32 random bytes in hex, new per run, in env only, never logged or sent to a browser. Ready = `/healthz` 200, bounded wait 10 s.
-- Stop: no viewers for 60 s (also armed right after start, so a page that never connects still ends) -> SIGTERM, SIGKILL after 3 s. `control` or `on` changing stops at once: turning control off must take effect now. Viewers' sockets close and voxl's client reconnects, which respawns in the new mode.
+- `ensure()`, single flight: spawn on the first `/desk/` request or websocket. Args: `--addr=127.0.0.1 --port=<free> --file-transfers=none --stripes=4`. Never `--enable-resize`, never `--microphone-enabled`. `VOXL_PASSWORD` = 32 random bytes in hex, new per run, in env only, never logged or sent to a browser. Ready = `/healthz` 200, bounded wait 10 s.
+- Stop: no viewers for 60 s (also armed right after start, so a page that never connects still ends) -> SIGTERM, SIGKILL after 3 s. `on` changing stops at once: turning sharing off must take effect now. Viewers' sockets close.
 - No orphans: `stop()` joins the shutdown stages in hub/main.ts. For a gateway that dies without shutdown (SIGKILL, crash), a watchdog sibling runs with the gateway holding its stdin pipe: `sh -c 'cat >/dev/null; kill -TERM <pid>'`. Pipe EOF means the gateway is gone. On a normal stop the watchdog is killed first. `kill_bash`-style tree kill alone would not cover SIGKILL (compared with OmO, which records the child pid in its slot for orphan accounting after a crash; a pipe needs no sweep at boot).
 - Broken binary: a start that exits with `dyld`/`Library not loaded` in stderr sets status `rebuilding` and runs `bun features/remote-desktop/bin/onboard.ts --rebuild` once, single flight, then retries. `/desk/` answers a small page that says so and refreshes itself.
 - No polling, no interval timers. Off or idle costs nothing: CPU 0, no model calls.
@@ -60,6 +63,12 @@ Upstream request: `Host: 127.0.0.1:<port>`, no `Origin`, no `Cookie`, no `Tailsc
 - Browser to voxl: small messages. `socket.write` returning short -> keep the rest (cap 1 MiB, close 1011 beyond it), flush on `drain`.
 - `hub/main.ts` keeps one `websocket` handler set: dispatch on `ws.data.kind === "desk"`, else `appProxySocket`. No change to the apps path.
 - Each socket counts as one viewer `{who, device, since}`: `who` = Tailscale-User-Login or "기기", `device` = the viewer computer's name when known. Counters `{bytes, paused_ms, pauses}` live on the host and are read by status.
+
+## Speed (measured 2026-11-05)
+
+Full table: `~/.dotz/projects/voxl-trial/speed-1105.md`. The bridge adds 0.1-0.24 ms at p50, `tailscale serve` 0.14 ms, its buffer stayed empty and small inputs saw no Nagle delay, so neither is tuned and the websocket keeps its authenticated hop. The felt slowness is Wi-Fi jitter (19% of pings to the router over 30 ms) on in-order TCP, voxl stopping its encoder when the queue passes RTT+120 ms, and CPU contention on the Mac.
+
+`--stripes=4` is the one change: pipeline p50 4.85 -> 3.1 ms at the same 57 fps and bitrate, encoder CPU 51 -> 58%. voxl marks it experimental; the viewer decoded four stripes with no drops and no visible seam in a headless page, a real Chrome is unchecked.
 
 ## Which computer is viewing
 
@@ -112,7 +121,7 @@ That last case is a link from another origin, refused by proxy gate 3. Direct ca
 
 ## Permissions and enable command
 
-`features/remote-desktop/bin/onboard.ts [--control] [--rebuild] [--status]`, resumes from `onboard.json`. Exit 0 done, 3 owner must act (one printed step), 1 failed (printed reason).
+`features/remote-desktop/bin/onboard.ts [--rebuild] [--status]`, resumes from `onboard.json`. Exit 0 done, 3 owner must act (one printed step), 1 failed (printed reason).
 
 1. preflight: darwin, brew present. Else the reason and stop.
 2. deps: `brew install` only what is missing (x264 opus pkg-config rust); esbuild via `bun add -g esbuild` when missing.
@@ -120,14 +129,14 @@ That last case is a link from another origin, refused by proxy gate 3. Direct ca
 4. link: `voxl --help` runs (dyld failure -> rebuild).
 5. enable: personal feature copy with `enabled: true`, `settings.json`.
 6. gateway: `GET /api/desk/status` through the hub token. Gateway from before this feature or off -> stop and say a restart is needed, exit 1; running the same command again resumes here.
-7. permissions: `POST /api/desk/probe` runs in the gateway's own chain, returns `{screen, accessibility}`. Screen missing (always) or accessibility missing (when control is on): the same call with `{grant:true}` opens the pane with `open -g` (`onboard/selfserve.ts` PANES) from the gateway, tries its toggle, re-checks; else the command prints the one step, exit 3.
-8. trial: the same route with `{trial:true}` starts voxl with `--read-only` regardless of settings, reads `/screenshot` over the Bearer, checks PNG magic and size, stops. Input is never tested.
+7. permissions: `POST /api/desk/probe` runs in the gateway's own chain, returns `{screen, accessibility}`. Screen or accessibility missing: the same call with `{grant:true}` opens the pane with `open -g` (`onboard/selfserve.ts` PANES) from the gateway, tries its toggle, re-checks; else the command prints the one step, exit 3.
+8. trial: the same route with `{trial:true}` starts voxl, reads `/screenshot` over the Bearer, checks PNG magic and size, stops. No client connects, so no input is sent.
 
 ## Web
 
-Same reach as the terminal: command palette item, `/screen` slash command, one `화면 보기` button per computer on its row of the switcher (`33-peers.js`, `dskRowBtn`: any online computer with a gateway, this one only with `S.desk`; a computer that lacks the feature is told by the tap, which needs no state in the list), and the settings section beside 이 컴퓨터 이름: `이 컴퓨터 화면` button (`켜고 보기` when off), 화면 공유 on/off, 조작 허용, 지금 보는 사람. Public-access switch appears only when web access is cloudflare. This computer's entries are absent when `S.desk` is absent; another computer's button is not (the viewing side needs no voxl).
+Same reach as the terminal: command palette item, `/screen` slash command, one `화면 보기` button per computer on its row of the switcher (`33-peers.js`, `dskRowBtn`: any online computer with a gateway, this one only with `S.desk`; a computer that lacks the feature is told by the tap, which needs no state in the list), and the settings section beside 이 컴퓨터 이름: `이 컴퓨터 화면` button (`켜고 보기` when off) and 화면 공유 on/off. Public-access switch appears only when web access is cloudflare. This computer's entries are absent when `S.desk` is absent; another computer's button is not (the viewing side needs no voxl).
 
-`/api/state` carries `desk: {on, control, running, viewers: [{who, device, since}]}` when available. A pill in the app bar shows who is watching while `viewers` is non-empty (blue: running, per web/DESIGN.md) and is gone otherwise.
+`/api/state` carries `desk: {on, running, viewers: [{who, device, since}]}` when available. A pill in the app bar shows who is watching while `viewers` is non-empty (blue: running, per web/DESIGN.md) and is gone otherwise.
 
-`PUT /api/desk/settings {on?, control?, allow_public?}`: `sameOrigin`, JSON only, answers the new status.
-`GET /api/desk/status`: `{available, on, control, allow_public, running, rebuilding, viewers, relay, public_blocked}`.
+`PUT /api/desk/settings {on?, allow_public?}`: `sameOrigin`, JSON only, answers the new status.
+`GET /api/desk/status`: `{available, on, allow_public, running, rebuilding, viewers, relay, public_blocked}`.

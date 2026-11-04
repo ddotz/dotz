@@ -1,6 +1,6 @@
 // Turns the remote desktop on (features/remote-desktop/DESIGN.md): macOS only; builds a pinned voxl on this computer, enables the shipped
-// feature, then asks the running gateway for the screen-recording permission and a read-only trial.
-// bun <dotz>/features/remote-desktop/bin/onboard.ts [--control] [--rebuild] [--status]
+// feature, then asks the running gateway for the screen-recording and accessibility permissions and a screenshot trial.
+// bun <dotz>/features/remote-desktop/bin/onboard.ts [--rebuild] [--status]
 // Exit 0 done, 3 the owner has one step to do (printed), 1 failed (reason printed). Run again to resume: finished steps are skipped.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -25,9 +25,9 @@ export type Io = {
 	gateway: Gateway;
 	say(line: string): void;
 };
-export type Flags = { control?: boolean; rebuild?: boolean };
+export type Flags = { rebuild?: boolean };
 export type Result = { code: 0 | 1 | 3; status: "done" | "waiting" | "failed"; step?: Step };
-type Saved = { done: Step[]; control?: boolean };
+type Saved = { done: Step[] };
 
 const rootOf = (io: Io) => join(io.dataDir, "remote-desktop");
 const binOf = (io: Io) => join(rootOf(io), "bin", "voxl");
@@ -93,9 +93,7 @@ export async function runOnboard(io: Io, flags: Flags): Promise<Result> {
 	if (!shipped) return fail("enable", "features/remote-desktop/feature.md가 없어요");
 	io.write(join(io.dataDir, "features", "remote-desktop", "feature.md"), shipped.replace(/^enabled: false$/m, "enabled: true"));
 	const prev = json(io.read(join(rootOf(io), "settings.json"))) ?? {};
-	const control = flags.control ?? saved.control ?? prev.control === true;
-	saved.control = control;
-	io.write(join(rootOf(io), "settings.json"), JSON.stringify({ on: true, control, allow_public: prev.allow_public === true }));
+	io.write(join(rootOf(io), "settings.json"), JSON.stringify({ on: true, allow_public: prev.allow_public === true }));
 	done("enable");
 
 	try {
@@ -110,7 +108,7 @@ export async function runOnboard(io: Io, flags: Flags): Promise<Result> {
 	// Asked from the gateway's own process: macOS ties the permission to the program that asks, never to a terminal.
 	const perm = await io.gateway("POST", "/api/desk/probe", { grant: true }).catch(e => ({ error: (e as Error).message }));
 	if (perm.error) return fail("permissions", `권한 확인이 실패했어요: ${perm.error}`);
-	if (!perm.screen || (control && !perm.accessibility)) {
+	if (!perm.screen || !perm.accessibility) {
 		io.say(perm.step ?? `시스템 설정 > 개인정보 보호 및 보안 > ${perm.screen ? "손쉬운 사용" : "화면 기록"}에서 bun을 켜 주세요`);
 		io.say("켠 뒤 같은 명령을 다시 돌려요");
 		return { code: 3, status: "waiting", step: "permissions" };
@@ -122,7 +120,7 @@ export async function runOnboard(io: Io, flags: Flags): Promise<Result> {
 		if (!t.ok) return fail("trial", `화면 시험이 실패했어요${t.error ? `: ${t.error}` : t.bytes !== undefined ? ` (${t.bytes}바이트)` : ""}`);
 		done("trial");
 	}
-	io.say(`화면 공유를 켰어요 (${control ? "조작 허용" : "보기만"}). 다른 기기의 앱에서 컴퓨터 목록을 열고 이 컴퓨터 옆 화면 버튼을 눌러요`);
+	io.say("화면 공유를 켰어요. 다른 기기의 앱에서 컴퓨터 목록을 열고 이 컴퓨터 옆 화면 버튼을 누르면 보고 조작할 수 있어요");
 	return { code: 0, status: "done" };
 }
 
@@ -159,7 +157,7 @@ if (import.meta.main) {
 		console.log(saved ? `끝난 단계: ${(saved.done as Step[]).join(", ") || "없음"}` : "화면 공유를 켠 적이 없어요");
 		process.exit(0);
 	}
-	const res = await runOnboard(io, { rebuild: argv.includes("--rebuild"), ...(argv.includes("--control") ? { control: true } : {}) });
+	const res = await runOnboard(io, { rebuild: argv.includes("--rebuild") });
 	console.log(`REMOTE_DESKTOP_ONBOARD ${res.status}${res.step ? ` ${res.step}` : ""}`);
 	process.exit(res.code);
 }
