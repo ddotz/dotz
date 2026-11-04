@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { runOnboard, type Io } from "../features/remote-desktop/bin/onboard.ts";
 import { loadFeatureDirs } from "./featuredirs.ts";
 import { checkPeer, PEER_POST } from "./peer-auth.ts";
-import { binOf, createDesk, defaultDeps, JXA, viewerOf, type DeskDeps, type Settings } from "./remote-desktop.ts";
+import { binOf, createDesk, defaultDeps, JXA, viewerOf, voxlQuery, type DeskDeps, type Settings } from "./remote-desktop.ts";
 import { Bridge, HOLD } from "./remote-desktop-ws.ts";
 
 // A stand-in for voxl: a Bun server speaking the parts the gateway uses. It reports what happens to the test over a TCP side channel
@@ -475,6 +475,12 @@ describe("proxy", () => {
 		expect(m.spawned.length).toBe(0);
 		expect((await call(m, "/desk/", { headers: seenAs(PEER_IP) })).status).toBe(200);
 	});
+});
+
+test("a ?token= from the browser never reaches voxl, other query words do", () => {
+	expect(voxlQuery(new URL("http://x/desk/?token=guess"))).toBe("");
+	expect(voxlQuery(new URL("http://x/desk/?a=1&token=guess&b=2"))).toBe("?a=1&b=2");
+	expect(voxlQuery(new URL("http://x/desk/"))).toBe("");
 });
 
 describe("viewerOf", () => {

@@ -123,17 +123,19 @@ export async function runOnboard(io: Io, flags: Flags): Promise<Result> {
 }
 
 function liveIo(): Io {
+	// The gateway runs this under launchd for a rebuild, and an older plist has none of these on PATH.
+	process.env.PATH = [join(homedir(), ".bun", "bin"), join(homedir(), ".cargo", "bin"), "/opt/homebrew/bin", "/usr/local/bin", process.env.PATH].join(":");
 	const dataDir = process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
 	return {
 		platform: process.platform,
 		dataDir,
 		repo: join(import.meta.dir, "..", "..", ".."),
 		exec: async argv => {
-			const proc = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+			const proc = Bun.spawn(argv, { env: process.env, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
 			const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
 			return { code: await proc.exited, stdout, stderr };
 		},
-		which: bin => !!Bun.which(bin),
+		which: bin => !!Bun.which(bin, { PATH: process.env.PATH! }),
 		read: file => (existsSync(file) ? readFileSync(file, "utf8") : undefined),
 		write: (file, text) => {
 			mkdirSync(dirname(file), { recursive: true });
