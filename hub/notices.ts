@@ -91,7 +91,7 @@ export type Decision = {
 	// ends like a plain question (the resolving signals may close it).
 	assumed?: true;
 	// An approved draft the gateway sends itself (hub/approval-send.ts): how that send went, shown on the answered card.
-	send?: { state: "queued" | "sending" | "sent" | "failed"; text?: string; at: string };
+	send?: { state: "queued" | "sending" | "sent" | "failed"; text?: string; at: string; /** Which try this is, set when a failed send was queued again (absent = the first). */ attempts?: number };
 	// Where the send-approval card went on Discord (outbound.ts markDraftPosted): kept so the message is closed when the card is, also after a restart.
 	card?: { target: string; ids: string[] };
 };
@@ -832,7 +832,9 @@ export function markDraftSend(to: string, ref: string, state: NonNullable<Decisi
 	const n = items.findLast(i => i.decision?.to === to && i.decision.draft?.ref === ref);
 	if (!n) return;
 	const at = now();
-	n.decision!.send = { state, ...(text ? { text: text.slice(0, 300) } : {}), at };
+	const prev = n.decision!.send;
+	const attempts = state === "queued" && prev?.state === "failed" ? (prev.attempts ?? 1) + 1 : prev?.attempts;
+	n.decision!.send = { state, ...(text ? { text: text.slice(0, 300) } : {}), at, ...(attempts ? { attempts } : {}) };
 	announce([n], at);
 }
 // The bot posted the open card of draft `ref` again with changes (or the queue changed its "남은 N건" line): the open card shows the new text in place.
