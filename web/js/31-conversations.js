@@ -517,4 +517,5 @@ convLoad();
 /* ---- shell: the notice bell and the sidebar's computer row (22-shell.css) ---- */
 // The bell opens the 알림 conversation; its count comes from paintBell (09-needs-you.js), fed by every notice change.
 $("#bell").prepend(icon("bell"));
+$("#bell").title = `알림 (${isMac ? "⌘/" : "Ctrl+/"})`;
 $("#bell").onclick = () => openTarget("alert", lastChatView());
