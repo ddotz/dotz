@@ -39,7 +39,7 @@ test("with no matching item the refusal creates a minimal one; a missing state f
 	const file = stateFile();
 	markLimitWait(file, "big-job", "큰 작업", AT, NOW);
 	expect(read(file).open_tasks).toEqual([{ id: "big-job", what: "큰 작업", lane: "big-job", since: new Date(NOW).toISOString(), waiting_for: "limit-reset", resume_at: AT }]);
-	expect(limitWaits(file)).toEqual([{ id: "big-job", what: "큰 작업", lane: "big-job", resume_at: AT }]);
+	expect(limitWaits(file)).toEqual([{ id: "big-job", what: "큰 작업", lane: "big-job", resume_at: AT, since: new Date(NOW).toISOString() }]);
 });
 
 test("the legacy '[한도 리셋 뒤 재개 HH:MM] ' prefix is stripped, so the time never shows twice", () => {

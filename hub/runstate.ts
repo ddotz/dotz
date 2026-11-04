@@ -7,7 +7,8 @@ export type RunKind = "working" | "waiting" | "idle" | "limited" | "error" | "st
 // waiting: ask | work | recover (a failed worker the agent is taking up itself) | child | later | capacity · idle: unfinished | interrupted · limited: rate | owner (a billing/auth block) · stopped: owner
 export type RunReason = "ask" | "work" | "recover" | "child" | "later" | "capacity" | "unfinished" | "interrupted" | "unknown" | "rate" | "owner";
 // work: the background worker the line is about (중단 while it runs, 다시 맡기기 after it failed); cancelled: the owner stopped it.
-export type RunState = { kind: RunKind; reason?: RunReason; since?: string; detail?: string; todos?: number; work?: string; cancelled?: boolean };
+// queued: every worker the line could name is still waiting to start, so nothing runs for this conversation yet.
+export type RunState = { kind: RunKind; reason?: RunReason; since?: string; detail?: string; todos?: number; work?: string; cancelled?: boolean; queued?: boolean };
 
 export type RunInput = {
 	status: string;
@@ -63,8 +64,8 @@ export function runState(i: RunInput): RunState {
 	if (i.resuming) return { kind: "working", detail: "한도가 풀려서 작업을 이어가요", ...todos };
 	if (i.queued) return { kind: "working", detail: "받은 메시지 시작하는 중", ...todos };
 	if (short(i.ask?.text)) return { kind: "waiting", reason: "ask", since: i.ask?.at, detail: short(i.ask?.text), ...todos };
-	const w = (i.work || [])[0];
-	if (w) return { kind: "waiting", reason: "work", since: iso(w.started_at), detail: workDetail(w), ...(w.id ? { work: w.id } : {}), ...todos };
+	const w = (i.work || []).find(x => !x.queued) ?? (i.work || [])[0];
+	if (w) return { kind: "waiting", reason: "work", since: iso(w.started_at), detail: workDetail(w), ...(w.id ? { work: w.id } : {}), ...(w.queued ? { queued: true } : {}), ...todos };
 	const c = (i.children || [])[0];
 	if (c) return { kind: "waiting", reason: "child", detail: short(c.description || c.name || "서브에이전트"), ...todos };
 	if (short(i.watching)) return { kind: "waiting", reason: "work", detail: short(i.watching), ...todos };
@@ -129,7 +130,7 @@ export function openTodos(t: TodoLike): { open: number; current?: string } {
 	return { open: live.length, ...(cur?.content ? { current: cur.content } : {}) };
 }
 
-export type WorkLike = { id?: string; description?: string; status: "running" | "done" | "failed"; started_at?: number; ended_at?: number; target?: string; error?: string; model?: string; reason?: string; cancelled?: boolean; handled?: boolean };
+export type WorkLike = { id?: string; description?: string; status: "running" | "done" | "failed"; queued?: boolean; started_at?: number; ended_at?: number; target?: string; error?: string; model?: string; reason?: string; cancelled?: boolean; handled?: boolean };
 /** A running worker's line: what it does, then the model it runs on, so the owner sees which model works for him ("<설명> · Opus 5.5 medium"). */
 export const workDetail = (w: { description?: string; model?: string }): string => [short(w.description || "백그라운드 작업"), short(w.model, 40)].filter(Boolean).join(" · ");
 
