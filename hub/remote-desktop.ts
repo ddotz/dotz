@@ -25,6 +25,7 @@ export type Clock = { now(): number; after(ms: number, fn: () => void): () => vo
 export type Settings = { on: boolean; control: boolean; allow_public: boolean };
 type Computer = { name: string; host: string; url: string; self: boolean };
 type TsStatus = { Self?: { TailscaleIPs?: string[] }; Peer?: Record<string, { TailscaleIPs?: string[]; DNSName?: string }> };
+export type PeerDesk = { available: boolean; on?: boolean; public_blocked?: boolean; unsupported?: boolean; old?: boolean };
 export type Viewer = { self: true } | { unknown: true } | { dns: string; name?: string; url?: string };
 type Ensure = "ok" | "rebuilding" | "failed";
 type Closable = { close(code?: number, reason?: string): void };
@@ -45,6 +46,8 @@ export type DeskDeps = {
 	computers(): Promise<Computer[]>;
 	/** The viewer computer's gateway opens `deskUrl` in its Chrome; true when it did. */
 	peerOpen(gatewayUrl: string, deskUrl: string): Promise<boolean>;
+	/** That computer's own answer about its screen; `old` = a gateway from before this route, undefined = unreachable. */
+	peerDesk(gatewayUrl: string): Promise<PeerDesk | undefined>;
 	/** Runs a program, returns its exit code (the Chrome opener). */
 	run(argv: string[]): Promise<number>;
 	host: Host;
@@ -229,6 +232,13 @@ const json = (v: unknown, status = 200) => Response.json(v, { status });
 const text = (s: string, status: number) => new Response(s, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
 const page = (s: string, status: number, refresh = false) =>
 	new Response(`<!doctype html><meta charset="utf-8">${refresh ? '<meta http-equiv="refresh" content="3">' : ""}<title>화면 공유</title><p>${s}</p>`, { status, headers: { "content-type": "text/html; charset=utf-8" } });
+// A link from another site (the switcher on another computer included) must not start capture by itself, so it lands here: nothing runs
+// until a tap on this page, whose own link is same-origin. Framing it is refused like every /desk answer.
+const tapPage = (name: string, control: boolean) =>
+	new Response(
+		`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>화면 공유</title><style>:root{color-scheme:light dark;font:16px/1.5 system-ui,sans-serif}body{margin:0;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:24px;box-sizing:border-box;text-align:center}h1{margin:0;font-size:20px}p{margin:0 0 16px;opacity:.65}a{display:block;width:100%;max-width:320px;box-sizing:border-box;padding:14px;border-radius:12px;background:#2563eb;color:#fff;font-weight:600;text-decoration:none}</style><h1>${Bun.escapeHTML(name)} 화면</h1><p>${control ? "보고 조작할 수 있어요" : "보기만 할 수 있어요"}</p><a href="/desk/">화면 열기</a>`,
+		{ status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
+	);
 const PUBLIC_HEADERS = ["cf-ray", "cf-connecting-ip", "cf-access-jwt-assertion"];
 const FILES = new Set(["", "index.html", "client.js", "worker.js", "audio.js", "mic.js", "favicon.ico", "inter.woff2", "ws"]);
 // voxl takes its password as ?token= too; only the Bearer added here may authenticate.
@@ -284,7 +294,10 @@ export function createDesk(d: DeskDeps) {
 		const upgrade = req.headers.get("upgrade")?.toLowerCase() === "websocket";
 		if ((upgrade || (req.method !== "GET" && req.method !== "HEAD")) && !sameOrigin(req)) return text("cross-origin request refused", 403);
 		const site = req.headers.get("sec-fetch-site");
-		if (site && site !== "same-origin" && site !== "none") return text("cross-site request refused", 403);
+		if (site && site !== "same-origin" && site !== "none") {
+			if (req.method !== "GET" || url.pathname !== "/desk/" || upgrade || req.headers.get("sec-fetch-dest") !== "document") return text("cross-site request refused", 403);
+			return tapPage((await d.computers().catch(() => [])).find(c => c.self)?.name ?? "이 컴퓨터", s.control);
+		}
 		// Relative: this server sees http behind tailscale serve, an absolute URL would leave https.
 		if (url.pathname === "/desk") return new Response(null, { status: 301, headers: { location: "/desk/" } });
 		const name = url.pathname.slice("/desk/".length);
@@ -308,16 +321,55 @@ export function createDesk(d: DeskDeps) {
 		const out = new Headers([...up.headers].filter(([k]) => !DROP_HEADERS.has(k.toLowerCase())));
 		return new Response(req.method === "HEAD" ? null : up.body, { status: up.status, statusText: up.statusText, headers: out });
 	}
+	// This computer's Chrome, at most once per OPEN_GAP_MS. Only ever called with a /desk/ address of the owner's own computers.
+	async function launch(href: string): Promise<"ok" | "rate" | "unsupported" | "no-chrome"> {
+		if (lastOpen !== undefined && d.clock.now() - lastOpen < OPEN_GAP_MS) return "rate";
+		lastOpen = d.clock.now();
+		if (d.platform !== "darwin") return "unsupported";
+		if ((await d.run(["open", "-Ra", "Google Chrome"])) !== 0) return "no-chrome";
+		return (await d.run(["open", "-a", "Google Chrome", href])) === 0 ? "ok" : "no-chrome";
+	}
+	// The button of another computer in the switcher. That computer answers for itself, asked on the tap: nothing is read while nobody taps.
+	// Only its owner's gateway can switch it on, so an off computer gets the one step (`to`: where in its app), never a remote switch.
+	async function openPeer(req: Request, mode: string, b: Record<string, unknown>): Promise<Response> {
+		const blocked = (reason: string, to?: string) => json({ action: "blocked", reason, ...(to === undefined ? {} : { to }) });
+		const origin = typeof b.peer === "string" ? URL.parse(b.peer)?.origin : undefined;
+		const computers = await d.computers().catch(() => []);
+		const c = computers.find(x => !x.self && URL.parse(x.url)?.origin === origin);
+		if (!c) return blocked("그 컴퓨터를 찾지 못했어요");
+		if (isPublic(req, mode) && !readSettings(d.dataDir).allow_public) return blocked("공개 접속으로는 화면 공유를 쓸 수 없어요");
+		const st = await d.peerDesk(c.url).catch(() => undefined);
+		if (!st) return blocked(`${c.name}에 연결할 수 없어요`);
+		if (st.old) return blocked(`${c.name}의 dotz를 업데이트한 뒤 다시 눌러 주세요`, "#settings");
+		if (st.unsupported) return blocked("화면 공유는 macOS에서만 돼요");
+		if (!st.available) return blocked(`${c.name}에서 아직 켜지 않았어요. ${c.name} 대화에서 "화면 공유 켜줘"라고 말해 주세요`, "");
+		if (!st.on) return blocked(`${c.name} 설정에서 화면 공유를 켜 주세요`, "#settings");
+		if (st.public_blocked) return blocked(`${c.name}은 공개 접속이라 화면 공유가 막혀 있어요`);
+		const viewer = await viewerOf(req, d);
+		if ("url" in viewer && viewer.url && URL.parse(viewer.url)?.origin === origin) return blocked("이 컴퓨터의 화면을 이 컴퓨터에서 보면 화면 안에 화면이 겹쳐 보여요. 다른 컴퓨터에서 열어 주세요");
+		// The browser sits on a computer with a gateway: that gateway opens Chrome, whose address-bar kind of open needs no second tap.
+		const deskUrl = new URL("/desk/", c.url).href;
+		if ("self" in viewer) {
+			if ((await launch(deskUrl)) === "ok") return json({ action: "opened", name: computers.find(x => x.self)?.name });
+		} else if ("url" in viewer && viewer.url && (await d.peerOpen(viewer.url, deskUrl).catch(() => false))) return json({ action: "opened", name: viewer.name });
+		return json({ action: "here", ...(b.chrome === true ? {} : { note: NOTE }) });
+	}
 	// Chrome is the keyboard-lock browser; the viewer's own gateway opens it, the page never calls another computer.
 	async function open(req: Request, url: URL, mode: string): Promise<Response> {
 		const b = await body(req);
 		const s = readSettings(d.dataDir);
 		const blocked = (reason: string) => json({ action: "blocked", reason });
 		if (!b) return json({ error: "JSON body required" }, 400);
-		if (!available() || !s.on) return blocked("화면 공유가 꺼져 있어요");
+		if (b.peer !== undefined) return openPeer(req, mode, b);
+		if (!available()) return blocked("화면 공유가 꺼져 있어요");
 		if (isPublic(req, mode) && !s.allow_public) return blocked("공개 접속으로는 화면 공유를 쓸 수 없어요");
 		const viewer = await viewerOf(req, d);
 		if ("self" in viewer) return blocked("이 컴퓨터의 화면을 이 컴퓨터에서 보면 화면 안에 화면이 겹쳐 보여요. 다른 컴퓨터에서 열어 주세요");
+		// `on`: the button of an off computer switches it on and opens. After the gates, so a refused open changes nothing.
+		if (!s.on) {
+			if (b.on !== true) return blocked("화면 공유가 꺼져 있어요");
+			writeSettings(d.dataDir, { ...s, on: true });
+		}
 		if (b.chrome === true) return json({ action: "here" });
 		if (b.phone === true) return json({ action: "here", note: NOTE });
 		const self = (await d.computers().catch(() => [])).find(c => c.self);
@@ -335,11 +387,17 @@ export function createDesk(d: DeskDeps) {
 		const u = typeof raw === "string" ? URL.parse(raw) : null;
 		const known = (await d.computers()).filter(c => !c.self).map(c => URL.parse(c.url)?.origin);
 		if (!u || u.protocol !== "https:" || u.pathname !== "/desk/" || u.search || u.hash || u.username || u.password || !known.includes(u.origin)) return json({ ok: false, reason: "bad-url" }, 400);
-		if (lastOpen !== undefined && d.clock.now() - lastOpen < OPEN_GAP_MS) return json({ ok: false, reason: "rate" }, 429);
-		lastOpen = d.clock.now();
-		if (d.platform !== "darwin") return json({ ok: false, reason: "unsupported" });
-		if ((await d.run(["open", "-Ra", "Google Chrome"])) !== 0) return json({ ok: false, reason: "no-chrome" });
-		return json((await d.run(["open", "-a", "Google Chrome", u.href])) === 0 ? { ok: true } : { ok: false, reason: "no-chrome" });
+		const r = await launch(u.href);
+		return r === "ok" ? json({ ok: true }) : json({ ok: false, reason: r }, r === "rate" ? 429 : 200);
+	}
+	// What the switcher on another computer asks before it shows this screen. The same facts /api/desk/status has, without the viewers.
+	function peerDesk(req: Request, mode: string): Response {
+		if (req.method !== "GET") return json({ error: "method not allowed" }, 405);
+		if (!req.headers.has(PEER_HEADER)) return text("forbidden", 403);
+		if (d.platform !== "darwin") return json({ available: false, unsupported: true });
+		if (!available()) return json({ available: false });
+		const s = readSettings(d.dataDir);
+		return json({ available: true, on: s.on, public_blocked: mode === "cloudflare" && !s.allow_public });
 	}
 	// Runs in the gateway's own process chain: macOS grants screen recording to the program that asks, never to a terminal.
 	async function probe(req: Request): Promise<Response> {
@@ -394,6 +452,7 @@ export function createDesk(d: DeskDeps) {
 		async route(req: Request, url: URL, srv: Server<unknown> | undefined, mode: string): Promise<Response | null | undefined> {
 			const p = url.pathname;
 			if (p === "/api/peer/desk-open") return peerOpen(req);
+			if (p === "/api/peer/desk") return peerDesk(req, mode);
 			if (p.startsWith("/api/desk/")) return api(req, url, mode);
 			if (p !== "/desk" && !p.startsWith("/desk/")) return undefined;
 			const res = await proxy(req, url, srv, mode);
@@ -468,6 +527,12 @@ export function defaultDeps(): DeskDeps {
 			if (!h) return false;
 			const r = await peerFetch(new URL("/api/peer/desk-open", gateway), { method: "POST", headers: { ...h, "content-type": "application/json" }, body: JSON.stringify({ url: deskUrl }), signal: AbortSignal.timeout(5_000) });
 			return r.ok && ((await r.json()) as { ok?: boolean }).ok === true;
+		},
+		peerDesk: async gateway => {
+			const h = peerHeaders(peerTokenFor(gateway));
+			if (!h) return undefined;
+			const r = await peerFetch(new URL("/api/peer/desk", gateway), { headers: h, signal: AbortSignal.timeout(3_000) });
+			return r.ok ? ((await r.json()) as PeerDesk) : { available: false, old: true };
 		},
 		run: async argv => await Bun.spawn(argv, { stdout: "ignore", stderr: "ignore" }).exited,
 		host: realHost,

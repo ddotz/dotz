@@ -46,7 +46,7 @@ Route sits after the owner check in `hub/routes.ts` (a peer token never gets her
 
 1. available and `on`.
 2. Public access: `webAccess.mode() === "cloudflare"` or any `cf-ray` / `cf-connecting-ip` / `cf-access-jwt-assertion` header -> 403 unless `allow_public`.
-3. `sameOrigin` (pty.ts rule) on websocket upgrades and every non-GET, and `Sec-Fetch-Site` when present must be `same-origin` or `none` (a cross-site link cannot start capture).
+3. `sameOrigin` (pty.ts rule) on websocket upgrades and every non-GET, and `Sec-Fetch-Site` when present must be `same-origin` or `none` (a cross-site link cannot start capture: it gets the one-button page, see Opening in Chrome).
 4. Allow-list of exactly: `/desk` (301 to `/desk/`), `/desk/`, `/desk/index.html`, `client.js`, `worker.js`, `audio.js`, `mic.js`, `favicon.ico`, `inter.woff2`, `ws`. `/screenshot`, `/record`, `/files`, `/wait`, `/stats` stay unreachable: they would read the screen without counting as a viewer.
 5. Viewer is this computer -> 409 page with the reason (a picture of itself; also the client's check, step "open").
 
@@ -83,6 +83,24 @@ A web page cannot start another app, and an HTTPS page cannot call a viewer-side
 | viewer gateway opened Chrome | `{action:"opened", name}` | toast "<name>의 크롬에서 열었어요" |
 | no gateway, no Chrome, old gateway, peer failed | `{action:"here", note}` | open, toast note |
 
+Extra body fields: `on: true` (the button of an off computer) switches this computer on after every gate passed, so a refused open changes nothing.
+
+`peer: <url>` is the button of another computer. Checked here: the url is a non-self entry of `knownComputers()`, public gate. Then that computer answers for itself on the tap (`GET /api/peer/desk`, in PEER_GET, 3 s, `{available, on, public_blocked}` or `{available:false, unsupported:true}`; nothing is read while nobody taps, no polling, no added list cost):
+
+| That computer | Answer |
+|---|---|
+| unreachable | blocked: cannot connect |
+| old gateway (route refused) | blocked: update it, `to:"#settings"` |
+| not macOS | blocked: macOS only |
+| never enabled | blocked: say 화면 공유 켜줘 in its chat, `to:""` |
+| off | blocked: switch it on in its settings, `to:"#settings"` (a peer token never switches a screen on) |
+| public door | blocked |
+| it is the viewer itself | blocked: a picture of itself |
+
+`to` makes the toast action that opens that computer's app. Otherwise: viewer is this gateway's own computer -> this gateway opens Chrome (`launch`, same check and 5 s gap as `/api/peer/desk-open`); viewer is another known computer -> `peerOpen` there; else `{action:"here"}` and the page opens `<peer>/desk/`.
+
+That last case is a link from another origin, refused by proxy gate 3. Direct capture stays refused: a cross-site top-level `GET /desk/` (`Sec-Fetch-Dest: document`) answers a one-button page instead of 403. voxl does not start until the tap, the page's link is same-origin, and it cannot be framed. Every other cross-site request stays 403. A phone therefore taps twice (list, then this page); Chrome opened by a gateway has `Sec-Fetch-Site: none` and goes straight in.
+
 `note` is the one line: 단축키(Cmd+W 같은)는 이 컴퓨터로 가요. `window.open` happens after the await: real Chrome keeps the user gesture for seconds; for other browsers it is opened blank in the click and pointed afterwards. Client facts are only a hint for routing: the gates live on the server.
 
 `POST /api/peer/desk-open {url}` (added to PEER_POST) on the viewer's gateway. Peer token + tailnet identity from `checkPeer`, then:
@@ -107,7 +125,7 @@ A web page cannot start another app, and an HTTPS page cannot call a viewer-side
 
 ## Web
 
-Same reach as the terminal: command palette item, `/screen` slash command, computer switcher (`33-peers.js`), and the settings section beside 이 컴퓨터 이름: 화면 공유 on/off, 조작 허용, 지금 보는 사람. Public-access switch appears only when web access is cloudflare. All absent when `S.desk` is absent.
+Same reach as the terminal: command palette item, `/screen` slash command, one `화면 보기` button per computer on its row of the switcher (`33-peers.js`, `dskRowBtn`: any online computer with a gateway, this one only with `S.desk`; a computer that lacks the feature is told by the tap, which needs no state in the list), and the settings section beside 이 컴퓨터 이름: `이 컴퓨터 화면` button (`켜고 보기` when off), 화면 공유 on/off, 조작 허용, 지금 보는 사람. Public-access switch appears only when web access is cloudflare. This computer's entries are absent when `S.desk` is absent; another computer's button is not (the viewing side needs no voxl).
 
 `/api/state` carries `desk: {on, control, running, viewers: [{who, device, since}]}` when available. A pill in the app bar shows who is watching while `viewers` is non-empty (blue: running, per web/DESIGN.md) and is gone otherwise.
 
