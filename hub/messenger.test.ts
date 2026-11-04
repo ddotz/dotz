@@ -61,6 +61,23 @@ describe("fan-out", () => {
 		expect(off.got).toEqual([]);
 	});
 
+	test("gateway records are marked as notes; asks, alerts, failures and answers are not", async () => {
+		const plain = fake("notes");
+		register(plain);
+		installFanout();
+		const gateway = (target: string, text: string, extra: Record<string, unknown> = {}) => emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "gateway", target, text, ...extra });
+		gateway("main", "백그라운드 작업으로 맡겼어요: DEMO 취합", { system: "deferred" });
+		gateway("web", "게이트웨이를 다시 시작했어요 (오후 11:34 KST).");
+		gateway("worklog", "게이트웨이를 다시 시작했어요 (오후 11:34 KST).");
+		gateway("web", "[ask] 가져올까요?");
+		gateway("worklog", "[fail] 세션을 다시 띄우지 못했어요");
+		gateway("alert", "땅콩: 사용량 한도에 걸려서 멈췄어요.");
+		gateway("main", "지금 사용량 한도로 멈춰 있어요.");
+		post("web", "답이에요");
+		await flush();
+		expect(plain.got.map(m => !!m.gatewayNote)).toEqual([true, true, true, false, false, false, false, false]);
+	});
+
 	test("a throwing adapter turns error and emit still works", async () => {
 		const bad = fake("bad", { deliver: () => Promise.reject(new Error("down")) });
 		const sync = fake("sync", {

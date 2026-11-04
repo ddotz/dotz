@@ -2,7 +2,7 @@ import { parseChoices } from "./choices.ts";
 import { log } from "./config.ts";
 import { postKind } from "./discord-post.ts";
 import { type HubEvent, onEmit } from "./events.ts";
-import { route } from "./notify-route.ts";
+import { postClass, route } from "./notify-route.ts";
 import { listNotices, NOTICE_CAP } from "./notices.ts";
 import { convPath, webLink } from "./weblink.ts";
 
@@ -12,7 +12,7 @@ import { convPath, webLink } from "./weblink.ts";
 
 export type Kind = "main" | "project" | "lane" | "alert" | "worklog";
 export type AdapterStatus = { state: "off" | "connecting" | "ok" | "error"; error?: string };
-export type OutMsg = { target: string; kind: Kind; text: string; replyTo?: string; updateKey?: string; options?: { n: number; label: string }[]; files?: string[]; /** The conversation's address in the web app, when there is one. */ link?: string };
+export type OutMsg = { target: string; kind: Kind; text: string; replyTo?: string; updateKey?: string; options?: { n: number; label: string }[]; files?: string[]; /** A gateway status line, not an answer (see gatewayNote). */ gatewayNote?: true; /** The conversation's address in the web app, when there is one. */ link?: string };
 export type DeliverResult = { delivered: boolean; reason?: string; ids?: string[] };
 export type Incoming = { adapter: string; target: string; text: string; author: string; replyTo?: string; messageId?: string; quoted?: string };
 export type MessengerCtx = { receive(m: Incoming): void; log(s: string): void };
@@ -125,6 +125,9 @@ export async function stopAll(): Promise<void> {
 }
 
 const FILE_LINE = /^[ \t]*\[file\][ \t]+(.+?)[ \t]*$/gm;
+// A deferral receipt, or the gateway's own record for the web conversation or the work log (a restart, an update). Asks, alerts and failures are never this.
+const gatewayNote = (e: HubEvent, target: string, kind: Kind, text: string): boolean =>
+	!!e.system || (e.source === "gateway" && (target === "web" || kind === "worklog") && !postClass(target, text, e) && !/^\[fail\]/i.test(text));
 function outMsg(e: HubEvent): OutMsg | undefined {
 	const kind = typeof e.target === "string" ? kindOf(e.target) : undefined;
 	if (!kind || typeof e.text !== "string" || !e.text) return undefined;
@@ -140,6 +143,7 @@ function outMsg(e: HubEvent): OutMsg | undefined {
 		...(typeof e.update_key === "string" ? { updateKey: e.update_key } : {}),
 		...(options.length ? { options } : {}),
 		...(files.length ? { files } : {}),
+		...(gatewayNote(e, e.target as string, kind, e.text) ? { gatewayNote: true as const } : {}),
 		...(link ? { link } : {}),
 	};
 }

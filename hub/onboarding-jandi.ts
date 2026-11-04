@@ -1,3 +1,4 @@
+import { cfg as dotzConfig, NAME } from "./config.ts";
 import { type JandiConfig, loadJandiConfig, saveJandiConfig } from "./messenger-jandi.ts";
 import type { OnboardFlow, OnboardFlowContext, OnboardOwnerStep } from "./onboarding.ts";
 
@@ -18,6 +19,16 @@ const LOGIN_OWNER: OnboardOwnerStep = {
 const WEBHOOK_OWNER: OnboardOwnerStep = {
 	label: "JANDI 웹훅 확인",
 	hint: "JANDI 관리자 화면에서 방의 수신 웹훅 URL과 발신 토큰을 확인한 뒤 계속을 누르세요.",
+};
+
+// An Incoming Webhook post carries only body, connectColor and connectInfo; its sender name and image exist only on JANDI's connector edit screen
+// (https://support.jandi.com/ko/articles/connect-incoming-webhook-21bc249f), so this one step stays the owner's.
+const senderOwner = (): OnboardOwnerStep => {
+	const image = dotzConfig.identity?.avatar?.trim();
+	return {
+		label: "JANDI에 봇 이름 넣기",
+		hint: `JANDI 커넥트에서 Incoming Webhook 수정 화면을 열어 이름을 "${NAME}"(으)로, 프로필 이미지를 봇 이미지${image ? `(${image})` : ""}로 바꾼 뒤 저장하고 계속을 누르세요. 웹훅이 여러 개면 각각 바꿉니다.`,
+	};
 };
 
 const ready = (cfg: JandiConfig): boolean => cfg.rooms.length > 0 && cfg.rooms.every(room => !!room.outgoing_token && !!(room.incoming_url || cfg.incoming_url));
@@ -91,6 +102,20 @@ export const jandiFlow: OnboardFlow = {
 				if (!ready(saved)) throw new Error("JANDI 웹훅이 아직 준비되지 않았어요");
 				ctx.changed();
 				return { done: true };
+			},
+		},
+		{
+			id: "sender",
+			title: "봇 이름 넣기",
+			detail: "JANDI 답이 Webhook 수신 대신 봇 이름으로 보이도록 커넥트의 이름과 이미지를 바꿔요.",
+			owner: senderOwner(),
+			run: async ctx => {
+				const cfg = ctx.jandi.load();
+				if (cfg.sender_step_shown) return { done: true };
+				ctx.jandi.save({ ...cfg, sender_step_shown: true });
+				// `changed` lasts one run and this one ends here: the rooms saved above reach the adapter now.
+				if (ctx.hasChanged()) await ctx.deps.restart();
+				return { waiting: senderOwner() };
 			},
 		},
 		{

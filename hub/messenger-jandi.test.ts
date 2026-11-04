@@ -2,6 +2,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { normalizeAsk } from "./ask-normalize.ts";
+import { parseChoices } from "./choices.ts";
+import { NAME } from "./config.ts";
 import type { Incoming } from "./messenger.ts";
 import { desiredRooms } from "./messenger-rooms.ts";
 import { createJandiAdapter, type JandiAdapter, jandiConfigPath, loadJandiConfig, roomStatus, saveJandiConfig, splitText } from "./messenger-jandi.ts";
@@ -151,12 +154,69 @@ describe("deliver", () => {
 		expect(captured.map(c => c.path)).toEqual(["/in/a1"]);
 		expect(roomStatus().a1?.last_out).toBeNumber();
 	});
-	test("options become connectInfo lines and a hint", async () => {
+	test("options missing from the text are added to it, numbered, with a hint", async () => {
 		captured.length = 0;
 		await send("alert", "alert", "[ask] 어떻게 할까요?", { options: [{ n: 1, label: "고치기" }, { n: 2, label: "미루기" }] });
+		expect(captured[0]!.body).toEqual({ body: "❓ 어떻게 할까요?\n\n1) 고치기\n2) 미루기\n\n번호로 답해 주세요", connectColor: "#FAC11B" });
+	});
+	test("a choice block shows its options once, in the text, and the reply is still a number", async () => {
+		captured.length = 0;
+		const text = normalizeAsk("영어 문장이 섞여 나갔어요.\n\n어떻게 할까요?\n1) 영어 문장 걸러 내기 - 컴퓨터에 적용하고 PR로 올려요 ← 추천\n2) 다른 수정 - 고칠 화면이나 증상을 알려 주시면 그것부터 할게요");
+		const options = parseChoices(text).options.map(o => ({ n: o.n, label: o.label }));
+		expect(options).toHaveLength(2);
+		await send("main", "main", text, { options });
+		expect(captured).toHaveLength(1);
 		const b = captured[0]!.body;
+		expect(b.connectInfo).toBeUndefined();
+		expect(b.body.startsWith("❓ 영어 문장이 섞여 나갔어요.")).toBe(true);
+		expect(b.body.match(/영어 문장 걸러 내기/g)).toHaveLength(1);
+		expect(b.body).toContain("**2) 다른 수정 …**");
 		expect(b.body.endsWith("번호로 답해 주세요")).toBe(true);
-		expect(b.connectInfo).toEqual([{ title: "선택지", description: "1) 고치기\n2) 미루기" }]);
+		const inbound = await hook("a1", { data: "1" });
+		expect(inbound.status).toBe(200);
+		expect(received.at(-1)).toMatchObject({ target: "alert", text: "1" });
+	});
+	test("a closing line that already asks for a number is not repeated", async () => {
+		captured.length = 0;
+		const text = "[ask] 어떻게 할까요?\n결정: 배포 시점\n**1) 지금**\n**2) 내일**\n번호로 답해 주세요";
+		await send("main", "main", text, { options: parseChoices(text).options.map(o => ({ n: o.n, label: o.label })) });
+		expect(captured[0]!.body.body.match(/번호로 답/g)).toHaveLength(1);
+	});
+	test("a status marker becomes its emoji, and a bracket that is content stays", async () => {
+		captured.length = 0;
+		await send("main", "main", "[done] 까르띠에 로그인을 해 뒰어요. [1]번 항목 참고");
+		await send("main", "main", "[fail] 세션을 다시 띄우지 못했어요");
+		expect(captured.map(c => c.body.body)).toEqual(["✅ 까르띠에 로그인을 해 뒰어요. [1]번 항목 참고", "❌ 세션을 다시 띄우지 못했어요"]);
+	});
+	test("what is not for the owner is never posted", async () => {
+		captured.length = 0;
+		for (const text of [
+			"-",
+			"ok",
+			"[later]",
+			"[run] Aside를 살려서 재고 감시를 1분 간격으로 걸어 뒴어요.",
+			"[dotz gateway] 연결 확인입니다. 아무 작업도 하지 말고 '-' 한 글자로만 답하세요.",
+			"[gateway check] [done] not accepted yet, sent back to the session:\n- NOT landed lane/mail-ui",
+			`${NAME} 몫: 없음`,
+		]) expect(await send("main", "main", text)).toEqual({ delivered: false, reason: "internal" });
+		expect(await send("main", "web", "백그라운드 작업으로 맡겼어요: DEMO 취합", { gatewayNote: true })).toEqual({ delivered: false, reason: "internal" });
+		expect(captured).toHaveLength(0);
+	});
+	test("gateway, role and subtext lines leave the answer, which still goes out", async () => {
+		captured.length = 0;
+		await send("main", "main", `[done] 끝났어요.\n[dotz gateway] 작업 중에 새 메시지가 도착했어요\nFor ${NAME}: 없음\n-# ⚠️ 받는이 확인: boss@corp.test`);
+		expect(captured[0]!.body.body).toBe("✅ 끝났어요.\n⚠️ 받는이 확인: boss@corp.test");
+	});
+	test("a code fence keeps its text as written", async () => {
+		captured.length = 0;
+		const text = "로그예요:\n```\n[dotz gateway] x\n-# y\n```";
+		await send("main", "main", text);
+		expect(captured[0]!.body.body).toBe(text);
+	});
+	test("a post that was only an attachment still says something", async () => {
+		captured.length = 0;
+		await send("main", "main", "[file] /Users/x/report.pdf", { files: ["/Users/x/report.pdf"] });
+		expect(captured[0]!.body.body).toBe("첨부 파일은 웹에서 볼 수 있어요");
 	});
 	test("a web link becomes a connectInfo line", async () => {
 		captured.length = 0;

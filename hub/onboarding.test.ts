@@ -232,7 +232,12 @@ describe("onboarding engine", () => {
 		});
 		const fake = browser();
 		const { svc, restarts } = service(dir, fake, discordFetch());
-		const view = await runStart(svc, "jandi");
+		const waiting = await runStart(svc, "jandi");
+		expect(waiting.state).toBe("waiting");
+		expect(waiting.step?.id).toBe("sender");
+		svc.continue("jandi");
+		await svc.idle("jandi");
+		const view = svc.view("jandi");
 		expect(view.state).toBe("done");
 		expect(fake.calls).toEqual([]);
 		expect(restarts()).toBe(1);
@@ -250,7 +255,10 @@ describe("onboarding engine", () => {
 		const rooms = [{ id: "m1", name: "메인", kind: "main", outgoing_token: "jandi-browser-token-1", incoming_url: "https://wh.jandi.com/in/1" }];
 		const fake = browser({ "jandi-webhooks": [{ ok: true, value: JSON.stringify(rooms) }] });
 		const { svc, restarts } = service(dir, fake, discordFetch());
-		const view = await runStart(svc, "jandi");
+		await runStart(svc, "jandi");
+		svc.continue("jandi");
+		await svc.idle("jandi");
+		const view = svc.view("jandi");
 		expect(view.state).toBe("done");
 		expect(fake.calls.map(c => c.action)).toEqual(["jandi-webhooks"]);
 		expect(restarts()).toBe(1);
