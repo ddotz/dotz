@@ -11,10 +11,10 @@ const NT_RESULT = { ok: ["정상", "done"], changed: ["바뀜", "ask"], fail: ["
 const MON_KIND = { watch: "모니터링", schedule: "예약" };
 // The list's groups after 감시 소식: app-type integrations (hub/integrations.ts kind "app"), then the plain monitors.
 const MON_GROUP = { app: "앱", plain: "일반 모니터링" };
-// sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: a phone shows the list instead of the conversation.
+// sel: the open item's key ("notice", "i:<integration>", "m:<monitor name>"); list: the list is on screen instead of the item, on every width (the item then has the whole column).
 // filter: 전체 / 답 필요 / 실패 of the open item; open: the rows unfolded ("g:<source>", "n:<notice id>"); more: pages shown per list; grew: older reports were just added above.
 const MON = { sel: "", list: true, shown: "", sig: "", side: "", seenT: 0, mailFilter: "all", filter: "all", open: new Set(), more: new Map(), grew: false, running: new Set(), autoArmed: false, olderBusy: false, want: "", hl: "", hlUntil: 0 };   // want: the notice a jump is reaching (monOpen in 30-notices.js); hl: the row it lit, lit again if a redraw replaces it
-const monConv = () => current === "monitoring" && narrowChat() && !MON.list;
+const monConv = () => current === "monitoring" && !MON.list;
 const monHash = () => (!MON.list && MON.sel ? `monitoring/${enc(MON.sel)}` : "monitoring");
 // A mail is a conversation of 모니터링 (go() in 05-command-palette.js draws it with the chat view while the tab stays 모니터링); monItemOf: the list item it sits under.
 const monOwned = t => isMailT(String(t || "")) || isSettingsT(String(t || ""));
@@ -29,14 +29,14 @@ const monItemOf = t => {
   const it = INTG.items.find(x => intgHas(x, t));
   return `i:${it ? it.key : "mail"}`;
 };
-// go("monitoring", key) opens that item; without one a phone shows the list and a wide screen keeps the open item.
+// go("monitoring", key) opens that item; without one the list shows.
 function monRoute(tgt) {
   pqOpen();
   if (tgt && tgt !== "list") {
     if (tgt !== MON.sel) { MON.filter = "all"; MON.open.clear(); MON.more.clear(); }   // another item: its list starts whole and folded
     MON.autoArmed = false; MON.olderBusy = false;
     MON.sel = tgt; MON.list = false;
-  } else MON.list = narrowChat();
+  } else MON.list = true;
 }
 
 async function loadMonitors() {
@@ -238,7 +238,7 @@ const monNeed = n => ntNeeds(n) && (!n.pc || ntIsDec(n));
 const monFailed = n => n.tone === "fail";
 const monNeedChips = need => (need ? [[`답 필요 ${need}`, "warn"]] : undefined);
 // The open item: the one picked, else on a wide screen the first (a phone shows its list until one is picked).
-const monSel = items => items.find(i => i.key === MON.sel) || (narrowChat() ? null : items[0] || null);
+const monSel = items => items.find(i => i.key === MON.sel) || null;
 const monName = () => { const it = monItems().find(i => i.key === MON.sel); return kkItem(it) && KK.open && KK.room ? KK.room.name : it ? it.name : titles.monitoring; };
 function monState(it) {
   if (it.off) return "연결 안 됨";
@@ -1004,7 +1004,7 @@ function monDetailApp() {
 function monSeen() {
   clearTimeout(MON.seenT);
   MON.seenT = setTimeout(() => {
-    if (current !== "monitoring" || MON.list && narrowChat() || document.visibilityState !== "visible") return;
+    if (current !== "monitoring" || MON.list || document.visibilityState !== "visible") return;
     const it = monSel(monItems()), box = $("#mon-timeline");
     if (!it || !box.clientHeight) return;
     const a = box.getBoundingClientRect(), seen = new Set();
@@ -1025,6 +1025,8 @@ function monSeen() {
   }, 700);
 }
 
+// The list's place, kept while it is off screen (a hidden box forgets its scroll).
+$("#mon-side").addEventListener("scroll", ev => { MON.top = ev.currentTarget.scrollTop; }, { passive: true });
 let monRaf = 0;
 const monSchedule = () => { monAttnSoon(); if (!monRaf) monRaf = requestAnimationFrame(renderMonitoring); };   // the nav badge reads the same data (09-needs-you.js)
 function renderMonitoring() {
@@ -1042,8 +1044,8 @@ function renderMonitoring() {
   monTickStart();
   const kakao = kkItem(sel);
   const cm = !kakao && sel ? cmAppOf(sel.key) : "";
-  kkMode(kakao, kakao && !(narrowChat() && MON.list), kakao ? sel.pc : null);
-  cmMode(cm, !!cm && !(narrowChat() && MON.list), cm ? sel.pc : null);
+  kkMode(kakao, kakao && !MON.list, kakao ? sel.pc : null);
+  cmMode(cm, !!cm && !MON.list, cm ? sel.pc : null);
   mailLand(sel);
   if (!sel) { MON.sig = ""; MON.shown = ""; convTitle(); return; }
   if (kakao || cm) {   // 30-kakao.js / 30-monitoring-comments.js draw this item's pane (rooms and chat); only the head is the usual one

@@ -1,5 +1,5 @@
 /* 모니터링 > 앱 > 카카오톡 (web/js/30-kakao.js): the room column (rooms to watch + the watched ones) and a KakaoTalk-style chat.
-   From 1100px the column sits beside the chat; below it they are two screens (.kk.chat-open = the chat). Colors are the --kk-* tokens (01-tokens.css). */
+   Until something is picked only the column shows; once picked (.kk.chat-open) it sits beside the chat from 1100px, below that the chat replaces it. Colors are the --kk-* tokens (01-tokens.css). */
 .kk { display: flex; flex: 1; min-height: 0; gap: 16px; }
 #v-monitoring.kk-on > .chatbox { display: none; }
 /* the room column is one white card; the chat column is the prototype's stack of cards: head, 자동 초안, the chat window (the only kk-bg surface), the request bar, then the reply card(s) */
@@ -7,14 +7,15 @@
 .kk-rooms { flex: 1; min-width: 0; align-self: flex-start; max-height: 100%; overflow: hidden auto; border-radius: var(--r-card); background: var(--card); margin-bottom: 12px; }
 .kk-chat { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; overflow: hidden auto; overscroll-behavior: contain; margin-bottom: 12px; }
 .kk-chat > * { flex: none; }
+.kk:not(.chat-open) .kk-chat { display: none; }
 @media (max-width: 1099px) {
-  .kk:not(.chat-open) .kk-chat { display: none; }
   .kk.chat-open .kk-rooms { display: none; }
   .kk-chat { margin-bottom: 0; }
 }
 @media (min-width: 1100px) {
   #v-monitoring > .kk { grid-row: 4; margin-bottom: 4px; }
-  .kk-rooms { flex: none; width: 300px; margin-bottom: 0; }
+  .kk-rooms { margin-bottom: 0; }
+  .kk.chat-open .kk-rooms { flex: none; width: 300px; }
   .kk-chat { margin-bottom: 0; }
 }
 

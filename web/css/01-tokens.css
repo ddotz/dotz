@@ -229,6 +229,8 @@ button.conn:disabled { cursor: default; }
    .dc-go, .dc-back, .dc-manual) and are aliased here, so the look is defined once. */
 /* size tiers (docs/ui-spec.md 버튼, tokens in the :root above): 기본 --btn-h 36, 작은 --btn-h-sm 32 (.sm), 행 안 --btn-h-row 28 (.inrow).
    --btn-hit is the touch target, not a tier: a phone raises the box to it, a row button reaches 40px with padding (::after). */
+.bk-l { display: none; }
+#back.mon-up .bk-l { display: inline; }
 .ib { display: inline-grid; place-items: center; flex: none; width: 28px; height: 28px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); padding: 0; }
 .ib:hover { background: var(--hover); color: var(--fg); }
 .ib.pri { background: var(--accent); color: var(--on-accent); border-radius: 50%; }

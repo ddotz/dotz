@@ -193,3 +193,24 @@ describe("댓글 on a phone (390x844)", async () => {
 		await waitFor(v, `document.querySelector("#mon-side") && document.querySelector("#mon-side").textContent.includes("답장 확인 1건 · 안 읽음 2")`);
 	});
 });
+
+describe("댓글 at 1280x800", async () => {
+	const v = await open(1280, 800);
+
+	test("the app takes the whole column: no list beside it, no empty pane until a post is picked, and ‹ 모니터링 returns to the list, the entry under the app is the list", async () => {
+		const seen = () => q<Record<string, unknown>>(v, `return { list: !!document.querySelector("#mon-side").offsetParent, chat: !!document.querySelector("#cm-chat").offsetParent, rooms: document.querySelector("#cm-rooms").offsetWidth, back: document.querySelector("#back").hidden ? "" : document.querySelector("#back").textContent, hash: location.hash }`);
+		await boot(v);
+		const app = await seen();
+		expect(app).toMatchObject({ list: false, chat: false, back: "모니터링" });
+		expect(app.rooms).toBeGreaterThan(600);
+		await run(v, `document.querySelector("#cm .kk-row").click()`);
+		await waitFor(v, `CM.open && document.querySelector("#cm-chat").offsetParent`);
+		expect((await seen()).rooms).toBe(300);
+		await run(v, `document.querySelector("#back").click()`);
+		await waitFor(v, `MON.list && document.querySelector("#mon-side").offsetParent`);
+		expect(await seen()).toMatchObject({ back: "", hash: "#monitoring" });
+		await run(v, `go("monitoring", "i:youtube")`);
+		await waitFor(v, `!MON.list && !document.querySelector("#mon-side").offsetParent`);
+		expect(await q(v, `return history.state.c`)).toEqual(["home", "monitoring", "monitoring/i%3Ayoutube"]);
+	});
+});

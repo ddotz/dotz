@@ -15,11 +15,11 @@ function routeChain(name, hash) {
   if (name === "home") return ["home"];
   const conv = n => narrowChat() ? ["home", "chat/list", `${n}/${target}`] : ["home", `${n}/${target}`];
   // A conversation opened from 모니터링 (a mail of the 메일 list): back returns to that item's list, on a wide screen too (owner 2026-10-27).
-  if (monCtx && (name === "chat" || name === "activity")) return narrowChat() ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : MON.sel ? ["home", `monitoring/${enc(MON.sel)}`, hash] : ["home", "monitoring", hash];
+  if (monCtx && (name === "chat" || name === "activity")) return MON.sel ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : ["home", "monitoring", hash];
   if (name === "chat" || name === "activity") return narrowChat() ? (chatList ? ["home", hash] : ["home", "chat/list", hash]) : ["home", hash];
   if (name === "harness") return ["home", "settings", hash];
   if (name === "project") return ["home", "projects", hash];
-  if (name === "monitoring") return narrowChat() && !MON.list ? ["home", "monitoring", hash] : ["home", hash];
+  if (name === "monitoring") return !MON.list ? ["home", "monitoring", hash] : ["home", hash];
   if (SUB.has(name)) {
     const bt = backTarget();
     if (bt === "home") return ["home", hash];
