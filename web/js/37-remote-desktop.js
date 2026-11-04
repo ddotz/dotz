@@ -22,9 +22,9 @@ function deskIsPhone() {
 // The click that starts it. Real Chrome: wait for the answer, then open (Chrome keeps the click's permission for seconds). Any other
 // browser: a blank tab is opened inside the click, because it will not allow a window.open after an await, and it is pointed at /desk/
 // once the gateway says so, or closed when the answer is blocked or the viewer's own Chrome opened it.
-// `p`: another computer of the computer list. Its gateway is asked through this one, because the page never calls another computer; a
-// tab pointed at it lands on that computer's one-tap page (a link from elsewhere cannot start capture). No `p`: this computer, and when
-// it is off the same tap switches it on.
+// `p`: another computer of the computer list. Its gateway is asked through this one, because the page never calls another computer, and
+// the answer's `go` is that computer's one-time ticket, which opens the screen straight away (a bare link from elsewhere cannot start
+// capture and lands on its one-tap page). No `p`: this computer, and when it is off the same tap switches it on.
 async function openScreen(p) {
   if (DSK.busy) return;
   DSK.busy = true;
@@ -36,8 +36,9 @@ async function openScreen(p) {
     const r = (await api("/api/desk/open", "POST", { chrome, phone, ...(peer ? { peer: peer.url } : {}), ...(turnOn ? { on: true } : {}) })) || {};
     if (turnOn && r.action !== "blocked") dskLoad();
     if (r.action === "here") {
-      const win = tab || window.open(path, "_blank");
-      if (tab) tab.location.href = path;
+      const href = r.go ? `${path}?go=${enc(r.go)}` : path;
+      const win = tab || window.open(href, "_blank");
+      if (tab) tab.location.href = href;
       if (!win) { toast("새 탭이 막혔어요. 팝업을 허용해 주세요", true); return; }
       if (r.note) toast(r.note);
     } else {

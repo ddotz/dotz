@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { runOnboard, type Io } from "../features/remote-desktop/bin/onboard.ts";
 import { loadFeatureDirs } from "./featuredirs.ts";
 import { checkPeer, PEER_GET, PEER_POST } from "./peer-auth.ts";
-import { binOf, createDesk, defaultDeps, JXA, readSettings, viewerOf, voxlQuery, type DeskDeps, type PeerDesk, type Settings } from "./remote-desktop.ts";
+import { binOf, createDesk, defaultDeps, deskPage, JXA, readSettings, viewerOf, voxlQuery, type DeskDeps, type PeerDesk, type Settings } from "./remote-desktop.ts";
 import { Bridge, HOLD } from "./remote-desktop-ws.ts";
 
 // A stand-in for voxl: a Bun server speaking the parts the gateway uses. It reports what happens to the test over a TCP side channel
@@ -482,6 +482,7 @@ test("a ?token= from the browser never reaches voxl, other query words do", () =
 	expect(voxlQuery(new URL("http://x/desk/?token=guess"))).toBe("");
 	expect(voxlQuery(new URL("http://x/desk/?a=1&token=guess&b=2"))).toBe("?a=1&b=2");
 	expect(voxlQuery(new URL("http://x/desk/"))).toBe("");
+	expect(voxlQuery(new URL("http://x/desk/?go=abc&b=2"))).toBe("?b=2");
 });
 
 describe("viewerOf", () => {
@@ -610,6 +611,74 @@ describe("the button of another computer", () => {
 		const off = make();
 		setCfg(off.dir, { on: false });
 		expect((await call(off, "/desk/", { headers: doc })).status).toBe(403);
+	});
+});
+
+describe("the direct open of another computer's screen", () => {
+	const PEER = { "x-dotz-peer": "token" };
+	const doc = { "sec-fetch-site": "cross-site", "sec-fetch-dest": "document" };
+	const ticket = async (m: Made) => ((await (await call(m, "/api/peer/desk", { headers: PEER })).json()) as PeerDesk).ticket!;
+	const isTap = async (r: Response) => (await r.text()).includes('href="/desk/"');
+
+	test("a ticket goes straight in, once", async () => {
+		const m = make({ env: { FAKE_NOTIFY: String(listener.port) } });
+		const go = await ticket(m);
+		const r = await call(m, `/desk/?go=${go}`, { headers: doc });
+		expect(r.status).toBe(200);
+		expect(await isTap(r)).toBe(false);
+		expect(m.spawned.length).toBe(1);
+		expect(await isTap(await call(m, `/desk/?go=${go}`, { headers: doc }))).toBe(true);
+		await m.d.stop();
+	});
+
+	test("a wrong ticket, a late ticket and a bare link start nothing", async () => {
+		const m = make();
+		expect(await isTap(await call(m, "/desk/?go=guess", { headers: doc }))).toBe(true);
+		expect(await isTap(await call(m, "/desk/", { headers: doc }))).toBe(true);
+		const go = await ticket(m);
+		m.clock.advance(30_000);
+		expect(await isTap(await call(m, `/desk/?go=${go}`, { headers: doc }))).toBe(true);
+		expect(m.spawned.length).toBe(0);
+	});
+
+	test("a ticket opens only the page: other requests stay refused and do not spend it", async () => {
+		const m = make();
+		const go = await ticket(m);
+		expect((await call(m, `/desk/client.js?go=${go}`, { headers: doc })).status).toBe(403);
+		expect((await call(m, `/desk/?go=${go}`, { headers: { ...doc, "sec-fetch-dest": "iframe" } })).status).toBe(403);
+		expect((await call(m, `/desk/ws?go=${go}`, { headers: { ...doc, upgrade: "websocket", connection: "Upgrade" } })).status).toBe(403);
+		expect(m.spawned.length).toBe(0);
+	});
+
+	test("a computer that cannot be opened gives no ticket, and the public gate still answers first", async () => {
+		const off = make();
+		setCfg(off.dir, { on: false });
+		expect(await ticket(off)).toBeUndefined();
+		const m = make();
+		const go = await ticket(m);
+		expect((await call(m, `/desk/?go=${go}`, { headers: { ...doc, "cf-ray": "1" } })).status).toBe(403);
+		expect(m.spawned.length).toBe(0);
+	});
+
+	test("the button passes a well-formed ticket on, and without one the tab still opens", async () => {
+		const go = "a".repeat(64);
+		const said = (ticket?: string) => post(make({ peerDesk: async () => ({ available: true, on: true, ticket }) }), "/api/desk/open", { peer: "https://mac-mini.tail1.ts.net:8443", phone: true }).then(r => r.json());
+		expect(await said(go)).toEqual({ action: "here", go, note: NOTE });
+		expect(await said("<x>")).toEqual({ action: "here", note: NOTE });
+		expect(await said()).toEqual({ action: "here", note: NOTE });
+	});
+
+	test("the viewer script comes from the gateway without starting voxl", async () => {
+		const m = make();
+		const r = await call(m, "/desk/viewer.js");
+		expect(r.status).toBe(200);
+		expect(r.headers.get("content-type")).toContain("javascript");
+		expect(m.spawned.length).toBe(0);
+	});
+
+	test("voxl's page keeps everything but its zoom ban, and gets the viewer script", () => {
+		const out = deskPage('<html><head><meta\n\t\t\tname="viewport"\n\t\t\tcontent="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" /><title>x</title></head><body></body></html>');
+		expect(out).toBe('<html><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>x</title><script src="viewer.js"></script></head><body></body></html>');
 	});
 });
 

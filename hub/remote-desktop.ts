@@ -1,6 +1,7 @@
 // Owner (2026-11-04): "https://github.com/tembo/voxl 이거 붙여서 해당 게이트웨이가 설치된 컴퓨터 화면 띄우고 조작 가능하게 가능하냐? 전체모드로 하면 로컬화면처럼 전체로 사용가능하게 하고"
 // Owner: "크롬으로 되네. 크롬이 설치되어있으면 크롬에서 띄우는걸로 구현하자"
 // Owner (2026-11-05): "조작은 상시 가능해야하니까 on/off 필요 없음"
+// Owner (2026-11-05): "중간에 한번 더 거치는거 필요 없고 / 그리고 각 접속하는 기기의 해상도에 맞춰서 전체화면으로 되어야해"
 // Remote desktop (features/remote-desktop/DESIGN.md): the gateway runs voxl (a screen streamer) on loopback only while someone watches,
 // and is its only door: /desk/ proxies the allow-listed paths with the Bearer added here, the websocket goes through a raw TCP client so
 // a slow viewer can stop the reading (backpressure), and every other path of voxl (screenshot, files, record...) stays unreachable.
@@ -20,13 +21,16 @@ const IDLE_MS = 60_000; // no viewer for this long -> stop voxl
 const KILL_MS = 3_000; // SIGTERM, then SIGKILL after this
 const READY_MS = 10_000; // /healthz must answer within this after the spawn
 const OPEN_GAP_MS = 5_000; // at most one Chrome open per this
+const TICKET_MS = 30_000; // a ticket covers one tap on another computer's button, not a saved link
+const TICKETS_MAX = 8;
+const VIEWER = join(import.meta.dir, "..", "features", "remote-desktop", "viewer.js");
 
 export type Child = { pid: number; exited: Promise<number>; kill(sig?: NodeJS.Signals): void; stderr?: ReadableStream<Uint8Array> | null };
 export type Clock = { now(): number; after(ms: number, fn: () => void): () => void };
 export type Settings = { on: boolean; allow_public: boolean };
 type Computer = { name: string; host: string; url: string; self: boolean };
 type TsStatus = { Self?: { TailscaleIPs?: string[] }; Peer?: Record<string, { TailscaleIPs?: string[]; DNSName?: string }> };
-export type PeerDesk = { available: boolean; on?: boolean; public_blocked?: boolean; unsupported?: boolean; old?: boolean };
+export type PeerDesk = { available: boolean; on?: boolean; public_blocked?: boolean; unsupported?: boolean; old?: boolean; ticket?: string };
 export type Viewer = { self: true } | { unknown: true } | { dns: string; name?: string; url?: string };
 type Ensure = "ok" | "rebuilding" | "failed";
 type Closable = { close(code?: number, reason?: string): void };
@@ -231,21 +235,27 @@ const json = (v: unknown, status = 200) => Response.json(v, { status });
 const text = (s: string, status: number) => new Response(s, { status, headers: { "content-type": "text/plain; charset=utf-8" } });
 const page = (s: string, status: number, refresh = false) =>
 	new Response(`<!doctype html><meta charset="utf-8">${refresh ? '<meta http-equiv="refresh" content="3">' : ""}<title>화면 공유</title><p>${s}</p>`, { status, headers: { "content-type": "text/html; charset=utf-8" } });
-// A link from another site (the switcher on another computer included) must not start capture by itself, so it lands here: nothing runs
-// until a tap on this page, whose own link is same-origin. Framing it is refused like every /desk answer.
+// A link from another site must not start capture by itself, so it lands here: nothing runs until a tap on this page, whose own link is
+// same-origin. The switcher of another computer skips it with a one-time ticket; a gateway too old to send one still lands here.
+// Framing it is refused like every /desk answer.
 const tapPage = (name: string) =>
 	new Response(
 		`<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>화면 공유</title><style>:root{color-scheme:light dark;font:16px/1.5 system-ui,sans-serif}body{margin:0;min-height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:24px;box-sizing:border-box;text-align:center}h1{margin:0;font-size:20px}p{margin:0 0 16px;opacity:.65}a{display:block;width:100%;max-width:320px;box-sizing:border-box;padding:14px;border-radius:12px;background:#2563eb;color:#fff;font-weight:600;text-decoration:none}</style><h1>${Bun.escapeHTML(name)} 화면</h1><p>보고 조작할 수 있어요</p><a href="/desk/">화면 열기</a>`,
 		{ status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
 	);
 const PUBLIC_HEADERS = ["cf-ray", "cf-connecting-ip", "cf-access-jwt-assertion"];
-const FILES = new Set(["", "index.html", "client.js", "worker.js", "audio.js", "mic.js", "favicon.ico", "inter.woff2", "ws"]);
-// voxl takes its password as ?token= too; only the Bearer added here may authenticate.
+const FILES = new Set(["", "index.html", "client.js", "worker.js", "audio.js", "mic.js", "favicon.ico", "inter.woff2", "ws", "viewer.js"]);
+// voxl takes its password as ?token= too; only the Bearer added here may authenticate. `go` is this gateway's own ticket, never voxl's.
 export function voxlQuery(url: URL): string {
 	const q = new URLSearchParams(url.search);
 	q.delete("token");
+	q.delete("go");
 	return q.size ? `?${q}` : "";
 }
+// voxl's page forbids zoom in its viewport tag and knows nothing of safe areas, and its binary is built from a pinned commit, so the two
+// lines change here: the view itself is features/remote-desktop/viewer.js.
+export const deskPage = (html: string): string =>
+	html.replace(/<meta\s+name="viewport"[^>]*>/, '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">').replace("</head>", '<script src="viewer.js"></script></head>');
 
 const SEND_HEADERS = ["accept", "accept-language", "if-none-match", "if-modified-since", "range", "user-agent"];
 const DROP_HEADERS = new Set(["set-cookie", "www-authenticate", "connection", "keep-alive", "transfer-encoding", "content-encoding"]);
@@ -274,6 +284,19 @@ export function createDesk(d: DeskDeps) {
 	const host = new DeskHost(d);
 	const available = () => d.platform === "darwin" && existsSync(binOf(d.dataDir)) && d.featureOn();
 	let lastOpen: number | undefined;
+	const tickets = new Map<string, number>(); // ticket -> when it ends; asked only on a tap, so no timer sweeps it
+	const mintTicket = () => {
+		if (tickets.size >= TICKETS_MAX) tickets.delete(tickets.keys().next().value!);
+		const t = randomBytes(32).toString("hex");
+		tickets.set(t, d.clock.now() + TICKET_MS);
+		return t;
+	};
+	const takeTicket = (t: string | null) => {
+		const end = t === null ? undefined : tickets.get(t);
+		if (end === undefined) return false;
+		tickets.delete(t!);
+		return d.clock.now() < end;
+	};
 	const status = (mode: string) => {
 		const s = readSettings(d.dataDir);
 		return { available: true, ...s, running: host.ready, rebuilding: host.isRebuilding, viewers: [...host.viewers.values()], relay: host.relay, public_blocked: mode === "cloudflare" && !s.allow_public };
@@ -295,13 +318,14 @@ export function createDesk(d: DeskDeps) {
 		const site = req.headers.get("sec-fetch-site");
 		if (site && site !== "same-origin" && site !== "none") {
 			if (req.method !== "GET" || url.pathname !== "/desk/" || upgrade || req.headers.get("sec-fetch-dest") !== "document") return text("cross-site request refused", 403);
-			return tapPage((await d.computers().catch(() => [])).find(c => c.self)?.name ?? "이 컴퓨터");
+			if (!takeTicket(url.searchParams.get("go"))) return tapPage((await d.computers().catch(() => [])).find(c => c.self)?.name ?? "이 컴퓨터");
 		}
 		// Relative: this server sees http behind tailscale serve, an absolute URL would leave https.
 		if (url.pathname === "/desk") return new Response(null, { status: 301, headers: { location: "/desk/" } });
 		const name = url.pathname.slice("/desk/".length);
 		if (!FILES.has(name)) return text("not found", 404);
 		if (req.method !== "GET" && req.method !== "HEAD") return text("method not allowed", 405);
+		if (name === "viewer.js") return new Response(Bun.file(VIEWER), { headers: { "content-type": "text/javascript; charset=utf-8" } });
 		const viewer = await viewerOf(req, d);
 		if ("self" in viewer) return page("이 컴퓨터의 화면을 이 컴퓨터에서 보면 화면 안에 화면이 계속 겹쳐 보여요. 다른 컴퓨터에서 열어 주세요.", 409);
 		const ready = await host.ensure().catch(() => "failed" as const);
@@ -318,6 +342,11 @@ export function createDesk(d: DeskDeps) {
 		const up = await host.fetchUp(`/${name}${voxlQuery(url)}`, { method: req.method, headers }).catch(() => undefined);
 		if (!up) return text("화면 공유가 응답하지 않아요", 502);
 		const out = new Headers([...up.headers].filter(([k]) => !DROP_HEADERS.has(k.toLowerCase())));
+		if (req.method === "GET" && up.status === 200 && out.get("content-type")?.includes("text/html")) {
+			out.delete("content-length");
+			out.delete("etag");
+			return new Response(deskPage(await up.text()), { status: 200, headers: out });
+		}
 		return new Response(req.method === "HEAD" ? null : up.body, { status: up.status, statusText: up.statusText, headers: out });
 	}
 	// This computer's Chrome, at most once per OPEN_GAP_MS. Only ever called with a /desk/ address of the owner's own computers.
@@ -351,7 +380,8 @@ export function createDesk(d: DeskDeps) {
 		if ("self" in viewer) {
 			if ((await launch(deskUrl)) === "ok") return json({ action: "opened", name: computers.find(x => x.self)?.name });
 		} else if ("url" in viewer && viewer.url && (await d.peerOpen(viewer.url, deskUrl).catch(() => false))) return json({ action: "opened", name: viewer.name });
-		return json({ action: "here", ...(b.chrome === true ? {} : { note: NOTE }) });
+		const go = /^[0-9a-f]{64}$/.test(st.ticket ?? "") ? { go: st.ticket } : {};
+		return json({ action: "here", ...go, ...(b.chrome === true ? {} : { note: NOTE }) });
 	}
 	// Chrome is the keyboard-lock browser; the viewer's own gateway opens it, the page never calls another computer.
 	async function open(req: Request, url: URL, mode: string): Promise<Response> {
@@ -389,14 +419,17 @@ export function createDesk(d: DeskDeps) {
 		const r = await launch(u.href);
 		return r === "ok" ? json({ ok: true }) : json({ ok: false, reason: r }, r === "rate" ? 429 : 200);
 	}
-	// What the switcher on another computer asks before it shows this screen. The same facts /api/desk/status has, without the viewers.
+	// What the switcher on another computer asks before it shows this screen. The same facts /api/desk/status has, without the viewers, and
+	// when the screen can be opened a one-time ticket past the cross-site gate. It replaces only that gate: the browser that spends it still
+	// passes the owner check here, and a site that wants to start capture cannot get one.
 	function peerDesk(req: Request, mode: string): Response {
 		if (req.method !== "GET") return json({ error: "method not allowed" }, 405);
 		if (!req.headers.has(PEER_HEADER)) return text("forbidden", 403);
 		if (d.platform !== "darwin") return json({ available: false, unsupported: true });
 		if (!available()) return json({ available: false });
 		const s = readSettings(d.dataDir);
-		return json({ available: true, on: s.on, public_blocked: mode === "cloudflare" && !s.allow_public });
+		const blocked = mode === "cloudflare" && !s.allow_public;
+		return json({ available: true, on: s.on, public_blocked: blocked, ...(s.on && !blocked ? { ticket: mintTicket() } : {}) });
 	}
 	// Runs in the gateway's own process chain: macOS grants screen recording to the program that asks, never to a terminal.
 	async function probe(req: Request): Promise<Response> {
