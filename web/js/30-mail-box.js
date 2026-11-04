@@ -2,7 +2,7 @@
 // The page asks the hub, never the mail account: POST /api/mail/<key>/action {action} -> {ok, synced, note?} for one mail and POST /api/mail/actions {keys, action}
 // -> {ok, results:[{key, ok, synced, note?}]} for a selection (action = read | unread | archive | unarchive | trash | star | unstar). Every action is optimistic:
 // the row changes at once and goes back when the hub says ok:false (or cannot be reached); the hub's note is told once.
-// A mail card says what its mailbox can do in `can` (GET /api/conversations items[].mail); an action it does not list is a disabled button with one short line.
+// A mail card says what its mailbox can do in `can` (GET /api/conversations items[].mail); an action it does not list still works here, and mbNote says it stays in dotz.
 // A card with no `can` at all (a hub that does not know the field) can only be deleted, through the old DELETE /api/mail/<key>.
 // Nothing here sends a mail: 메일 쓰기 and the inline reply save a draft (POST /api/mail/compose) and the owner's 보내기 stays on its approval card.
 ICONS.star = "M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z";
@@ -211,6 +211,15 @@ function mbPaintBar() {
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }), ...btns,
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
+}
+// The one line over the list when read or delete stay in dotz for its mails (a source with no mailAction, can without them). It looks at the whole list, not
+// the selection or the folder, so it never comes and goes and the rows stay where they are. A card with no `can` is an older hub, which cannot say.
+function mbNote(mails) {
+  const known = mails.filter(t => Array.isArray((MAILS.get(t) || {}).can));
+  const off = [["read", "읽음"], ["trash", "삭제"]].filter(([a]) => known.some(t => !mailCan(t, a)));
+  if (!off.length) return null;
+  const what = off.map(x => x[1]).join("·"), some = known.some(t => off.every(([a]) => mailCan(t, a)));
+  return el("div", { class: "mbox-note", text: `${some ? "일부 메일의 " : ""}${what}${what === "읽음" ? "은" : "는"} dotz에서만 바뀌고 실제 메일함에는 반영되지 않아요` });
 }
 // The visible mails of the list (select all) and the bar itself, at the head of the rows.
 function mbList(vis) {
