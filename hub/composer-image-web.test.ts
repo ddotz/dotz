@@ -169,6 +169,9 @@ describe("composer tokens", () => {
 		expect(sent[0]!.files.map(f => [f.label, f.path])).toEqual([["이미지1", "/uploads/a.png"], ["이미지2", "/uploads/b.png"], ["파일1", "/uploads/memo.txt"]]);
 		const node = await E<string[]>(v, `(() => { const e = { kind: 'message', ts: new Date().toISOString(), source: 'web', text: 'x', channel: 'ch:x' }; const p = atkParts(${JSON.stringify(sent[0]!.text)}, ${JSON.stringify(sent[0]!.files.map(f => ({ ...f, name: f.path.split('/').pop() })))}, e); return p.map(x => typeof x === 'string' ? x : x.textContent); })()`);
 		expect(node).toEqual(["이건 ", "이미지1", " 오류고 저건 ", "이미지2", " ", "파일1", ""]);
+		// under the bubble an image with its token carries the chip's name, not a path; a plain file keeps its path line
+		const rows = await E<number[]>(v, `(() => { const n = filesNode([{ path: "/u/a.png", name: "a.png", label: "이미지1" }, { path: "/u/m.txt", name: "m.txt", label: "파일1" }], true); return [...n.querySelectorAll(".fitem")].map(i => i.querySelectorAll(".fpath").length); })()`);
+		expect(rows).toEqual([0, 1]);
 	});
 });
 
