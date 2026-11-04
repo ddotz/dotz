@@ -66,7 +66,7 @@ const notifyField = (app: string): SettingField => ({ key: "notify", label: "새
 const pushField = (app: string): SettingField => ({ key: "push", label: "휴대폰 알림", type: "bool", help: "새 소식을 휴대폰에도 바로 알려요. 끄면 웹앱 알림 센터에만 남아요", store: "custom/apps.json", path: `${app}.push`, def: true, switch: true, section: "notify" });
 const nameField = (app: string): SettingField => ({ key: "label", label: "앱 이름", type: "text", help: "목록과 제목에 보이는 이름이에요. 비우면 기본 이름으로 돌아가요", store: "custom/apps.json", path: `${app}.label`, max: 30, def: INTEGRATIONS.find(e => e.key === app.split("-")[0])?.label ?? "", switch: true, section: "advanced" });
 
-// 답장 모델: the model of the reply drafts of one app or instance (hub/reply-model.ts reads it, then the global 답장 기본값, then Sonnet 5.5 medium).
+// 답장 모델: the model of the reply drafts of one app or instance (hub/reply-model.ts reads it, then the global 답장 기본값, then Sonnet 5.5 high).
 // The options are the runtime's model list, installed by hub/reply-model-choices.ts before a read or write; "" (기본값) is always valid.
 export type ReplyModelChoices = { options: string[]; labels: Record<string, string> };
 let replyChoices: ReplyModelChoices = { options: [""], labels: { "": "기본값" } };

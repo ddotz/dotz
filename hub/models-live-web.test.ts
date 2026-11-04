@@ -41,7 +41,7 @@ const MODELS = {
 		replies: [{ key: "mail", label: "메일", model: `${OPUS}:low` }],
 		outlang: SONNET,
 	}),
-	replies: { value: "", model: REPLY_DEFAULT, default: REPLY_DEFAULT, default_label: "기본값 · Sonnet 5.5 · 보통", options: c.options, labels: c.labels },
+	replies: { value: "", model: REPLY_DEFAULT, default: REPLY_DEFAULT, default_label: "기본값 · Sonnet 5.5 · 높음", options: c.options, labels: c.labels },
 };
 const STATE = { name: "dotz", orchestrator: { status: "idle", activeModel: `${SONNET}:high` }, lanes: [{ name: "pay", title: "결제", model: `${OPUS}:high`, worker_model: `${SONNET}:high`, status: "working", live: true, startedAt: UNTIL, reports: [], context: {} }], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 };
 
@@ -135,7 +135,7 @@ describe("REQ2/REQ3/REQ5 on 모델·폴백", () => {
 		expect(by.lookups!.model).toBe("Sonnet 5.5 · 보통");
 		expect(by["lane:pay"]!.tag).toStartWith("폴백 중");
 		expect(by["reply:mail"]!.model).toBe("Opus 5.5 · 낮음");
-		expect(by.replies!.model).toBe("Sonnet 5.5 · 보통");
+		expect(by.replies!.model).toBe("Sonnet 5.5 · 높음");
 		for (const k of ["main", "background", "lanes", "lane:pay", "workers", "replies", "reply:mail"]) expect(by[k]!.btn).toBe(true);
 		expect(by.lookups!.btn).toBe(false);
 		await shot(v, "models.png");
@@ -147,10 +147,10 @@ describe("REQ2/REQ3/REQ5 on 모델·폴백", () => {
 		await run(v, `window.__app = ""; asScreen = a => { window.__app = a; }; document.querySelector('[data-use="reply:mail"] button').click()`);
 		expect(await q<string>(v, `return window.__app`)).toBe("mail");
 	});
-	test("답장 기본값 is its own card naming Sonnet 5.5 보통 as the default, the same model the rows say drafts use", async () => {
+	test("답장 기본값 is its own card naming Sonnet 5.5 높음 as the default, the same model the rows say drafts use", async () => {
 		const v = await openModels();
 		const r = await q<{ field: string; note: string }>(v, `const c = document.querySelector('[data-target="replies"]'); return { field: c.querySelector(".mt-model").textContent, note: c.querySelector(".note").textContent }`);
-		expect(r.field).toContain("기본값 · Sonnet 5.5 · 보통");
+		expect(r.field).toContain("기본값 · Sonnet 5.5 · 높음");
 		expect(r.note).toContain("API 키로 넘어가지 않아요");
 	});
 	test("effort is said in Korean and the last step number is the number of drawn steps", async () => {

@@ -1,6 +1,6 @@
 // The model of a reply draft (owner 2026-10-23: the 답장 모델 setting of every app that drafts replies). Order: the app instance's own setting
 // (custom/reply-drafts/config.json models.<app or instance id>), then the global reply-drafts `model` (the 답장 기본값 setting, 모델·폴백),
-// then REPLY_DEFAULT, Sonnet 5.5 medium (owner 2026-10-27: its own default, no longer the subagent model).
+// then REPLY_DEFAULT, Sonnet 5.5 high (owner 2026-11-04, RULES.md: its own default, no longer the subagent model).
 // Light on purpose: the CLI draft path imports it, so nothing here pulls in the web, the orchestrator or the model list (reply-model-choices.ts does).
 import { dataDir as installDir, loadSettings, type Settings } from "../features/reply-drafts/lib/settings.ts";
 import { appEntries, inConv, type IntegrationEntry } from "./integrations.ts";
@@ -8,7 +8,7 @@ import { DRAFT_MODEL } from "./kakao/draft.ts";
 
 export type ReplyCall = (system: string, user: string, opts: { model?: string; timeoutMs?: number }) => Promise<{ text: string; inputTokens: number; outputTokens: number }>;
 
-/** The reply default when the owner set none: Sonnet 5.5 medium on the subscription. */
+/** The reply default when the owner set none: Sonnet 5.5 high on the subscription. */
 export const REPLY_DEFAULT = DRAFT_MODEL;
 
 /** The app instance a draft belongs to: the created instance whose filter claims `conv` (e.g. `kakao:<chat>`, `mail:<source>-<id>`), else the app itself. */

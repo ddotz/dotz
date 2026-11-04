@@ -9,7 +9,7 @@ const base = (o: Partial<InUseSnapshot> = {}): InUseSnapshot => ({
 	lanesDefault: OPUS,
 	workers: SONNET,
 	lanes: [],
-	replyDefault: "anthropic/claude-sonnet-5-5:medium",
+	replyDefault: "anthropic/claude-sonnet-5-5:high",
 	replies: [],
 	outlang: "anthropic/claude-sonnet-5-5",
 	...o,
