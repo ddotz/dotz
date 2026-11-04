@@ -228,7 +228,7 @@ function askOf(t) {
 // A row's preview is the conversation's state said in Korean (the run line above the composer, 41-runstate.js), not its last message.
 const homeRunLine = t => { const r = S && S.runs && S.runs[t === MAIN ? "main" : t]; return r ? runText(r) : ""; };
 function homeNowRow(t, label, tone) {
-  const i = targetInfo(t), subs = SUBS[sourceOf(t)] || [], done = subs.filter(s => s.status !== "running").length;
+  const i = targetInfo(t), st = tone === "att" ? "warn" : targetState(t)[1], subs = SUBS[sourceOf(t)] || [], done = subs.filter(s => s.status !== "running").length;
   const lane = isLaneT(t) && S ? S.lanes.find(x => x.name === laneOf(t)) : null;
   if (lane && !homeRunLine(t)) laneLastFetch(lane.name);
   // A session waiting on the owner says its question, so the row tells what to answer.
@@ -237,10 +237,10 @@ function homeNowRow(t, label, tone) {
   const lv = lane ? liveModel(t) : null, extra = lv && lv.fallback ? el("span", { class: "smodel" }, selText(lv.sel), fbTag(lv.fallback, lv.conf)) : null;
   if (lane) return sessionRow(lane, { line, extra, ...(tone === "att" ? { word: label, tone: "warn" } : {}) });   // a session: title, project, status, one tap to its chat
   return el("button", { class: "hr", type: "button", onclick: () => openTarget(t, lastChatView()), "aria-label": `${targetName(t)} · ${label}` },
-    el("span", { class: `dot ${tone === "att" ? "att" : runBusy(t) ? "pri" : statusTone(i.status)}` }),
+    el("span", { class: `dot ${st}` }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: targetName(t) })), el("span", { class: "ha", text: line })),
     subs.length ? el("span", { class: "hp", title: "서브에이전트 끝난 수 / 전체", text: `서브에이전트 ${done}/${subs.length}` }) : null,
-    el("span", { class: `hs ${tone === "att" ? "warn" : runBusy(t) ? "pri" : statusTone(i.status)}`, text: label }));
+    el("span", { class: `hs ${st}`, text: label }));
 }
 // An app conversation with a session of its own (a mail, a project channel, an app's settings: /api/state `convs`) runs apart from the
 // assistant, so while its turn or its worker runs it is a row here: its title (the mail's subject, the app or project name), what it
@@ -306,14 +306,32 @@ function hcWorkFiles(w) {
 /* The prototype's home (site/prototype/s-work.js): a full-width column of the greeting, the one alert row and 답변 필요, then the
    two-column card grid. Every card keeps the product's data, links and empty states; the board (07-board.js) still moves and sizes them. */
 const homeGreetWord = () => { const h = new Date().getHours(); return h < 5 ? "편안한 밤이에요" : h < 12 ? "좋은 아침이에요" : h < 18 ? "좋은 오후예요" : "좋은 저녁이에요"; };
+// What runs on this computer now: the rows of 지금 진행 중 and the greeting's word both read this, so they cannot disagree. ask: nothing may run while a
+// conversation waits on the owner's answer.
+function homeRunning() {
+  const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`)], runT = all.filter(t => targetState(t)[1] === "pri");
+  // A conversation's own workers are listed under its row; a mail with no session whose worker is the assistant's (S.work) is that worker's row alone.
+  const runW = workRunning(), mainBg = new Set(runW.map(w => w.id)), convs = (S && S.convs) || [];
+  const convT = convs.filter(c => validTarget(convWebT(c.target)) && convRunning(c) && !(runOf(c.target).work && mainBg.has(runOf(c.target).work)));
+  const convWork = convT.flatMap(c => [c, ...(c.work || []).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
+  const asks = t => { const r = runOf(t); return !!r && waitsOnOwner(r); };
+  return { all, runT, convWork, runW, n: runT.length + convWork.length + runW.length, ask: all.some(t => targetInfo(t).ask || asks(t)) || convs.some(c => asks(c.target)) };
+}
+// The greeting's word: 일하는 중 while anything on 지금 진행 중 runs, 쉬는 중 only when nothing does; a conversation stuck on the owner or the main session's own state says so.
+function homeWord(h) {
+  if (!S) return "연결 중";
+  if (h.n) return "일하는 중";
+  if (h.ask) return RUN_LABEL.waiting;
+  const s = (S.orchestrator || {}).status, r = runOf(MAIN);
+  return s !== "idle" ? statusKo(s) : r && r.kind === "error" && !r.cancelled ? RUN_LABEL.error : "쉬는 중";
+}
 // The greeting names the assistant and says what it does now, on which model, with how many sessions, on which computer and at what time;
 // the fallback tag says why the model changed, and the ⋯ menu keeps the assistant card's actions now that its summary card is gone.
-function homeGreeting() {
-  const o = (S && S.orchestrator) || {}, om = M && M.orchestrator, live = liveModel(MAIN), [base, level] = String(live.sel || "").split(":");
+function homeGreeting(h) {
+  const om = M && M.orchestrator, live = liveModel(MAIN), [base, level] = String(live.sel || "").split(":");
   const modelText = om && base ? (modelName(base).includes("-") ? modelChipText(base) : modelName(base)) : "";
-  const word = !S ? "연결 중" : o.status === "working" || o.status === "starting" || (o.status === "idle" && workRunning().length) ? "일하는 중" : o.status === "idle" ? "쉬는 중" : statusKo(o.status);
   const lanes = ((S && S.lanes) || []).filter(laneAlive).length, me = (typeof prSelf === "function" && (prSelf() || {}).name) || "";
-  const line = [`${iGa(botName)} ${word}`, modelText && `${modelText}${level ? ` · ${thinkKo(level)}` : ""}`, lanes ? `세션 ${lanes}개` : "", me, kstHM(Date.now())].filter(Boolean).join(" · ");
+  const line = [`${iGa(botName)} ${homeWord(h)}`, modelText && `${modelText}${level ? ` · ${thinkKo(level)}` : ""}`, lanes ? `세션 ${lanes}개` : "", me, kstHM(Date.now())].filter(Boolean).join(" · ");
   const more = el("button", { class: "ib hgreet-more", type: "button", "aria-label": "어시스턴트 메뉴", "aria-haspopup": "listbox", "aria-expanded": "false", onclick: ev => homeMenu(ev.currentTarget, MAIN) }, icon("more"));
   return el("div", { class: "hgreet" },
     el("div", { class: "bigrow" }, el("div", { class: "big", text: homeGreetWord() }), more),
@@ -338,7 +356,6 @@ function homeStripRow(title, sup, tag, tone, open) {
 function renderHomeNow() {
   const now = $("#home-now"), box = $("#home-cards");
   if (!now || !box) return;
-  const all = [MAIN, ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`)];
   const needs = nyList(), crit = needs.filter(x => x.crit).length;   // 09-needs-you.js: what only the owner can do, critical first
   // 홈 is this computer's alone (owner 2026-10-31): the other computers' items live in 모니터링, and the computer chip's dot says they want something.
   const owed = monItems().filter(i => i.app && i.unreplied && !i.pc), owedN = owed.reduce((c, i) => c + i.unreplied, 0), drafts = rqAll().filter(x => !x.pc).length;
@@ -346,14 +363,9 @@ function renderHomeNow() {
   // 지금 진행 중 is only what runs now (a turn, a background worker); a waiting or idle conversation is a row of 대기 중 below it,
   // and background work that ended within the hour is listed last (실패 · 이유 · 다시 맡기기).
   // A session the run line calls busy (41-runstate.js runBusy: waiting on its own worker) runs too, so its 진행 중 label sits in this section.
-  const live = t => { const s = targetInfo(t).status; return s === "working" || s === "starting" || (runBusy(t) && !(isLaneT(t) && (S.lanes.find(l => l.name === laneOf(t)) || {}).pendingAsk)); };
-  const runT = all.filter(live), restT = all.filter(t => !live(t));
-  // A conversation's own workers are listed under its row; a mail with no session whose worker is the assistant's (S.work) is that worker's row alone.
-  const mainBg = new Set(workRunning().map(w => w.id));
-  const convT = ((S && S.convs) || []).filter(c => validTarget(convWebT(c.target)) && convRunning(c) && !(runOf(c.target).work && mainBg.has(runOf(c.target).work)));
-  const convWork = convT.flatMap(c => [c, ...(c.work || []).map(w => ({ ...w, target: convWebT(c.target), conv: true }))]);
-  const runW = workRunning(), settled = hcSettled(), bg = [...runW, ...settled], ended = workEnded().filter(w => !settled.includes(w)), working = runT.length + convWork.length + runW.length, deferred = (S && S.deferred) || [];
-  const restRow = t => homeNowRow(t, !targetInfo(t).alive ? "종료됨" : runBusy(t) ? "진행 중" : statusKo(targetInfo(t).status), "");
+  const h = homeRunning(), { all, runT, convWork, runW, n: working } = h, restT = all.filter(t => !runT.includes(t));
+  const settled = hcSettled(), bg = [...runW, ...settled], ended = workEnded().filter(w => !settled.includes(w)), deferred = (S && S.deferred) || [];
+  const restRow = t => homeNowRow(t, targetState(t)[0], "");
   // Above the grid, the prototype's full-width column: the greeting, the one alert row and 답변 필요. The replies the owner owes stay in
   // that card under its list, as the prototype's 답변 필요 rows do; each row still opens its own item.
   const running = el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow),
@@ -361,7 +373,7 @@ function renderHomeNow() {
   const owedBlock = owed.length || drafts ? [
     el("div", { class: "hn-h hsub" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null),
     el("div", { class: "hn", "data-k": "replies" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : [];
-  clear(now).append(homeGreeting(), ...[homeStrip()].filter(Boolean),
+  clear(now).append(homeGreeting(h), ...[homeStrip()].filter(Boolean),
     el("div", { class: "hneeds" },
       el("div", { class: "hn-h hneeds-h" }, el("h2", { text: "답변 필요" }), waiting ? el("span", { class: "sup", text: `${waiting}` }) : null, crit ? el("span", { class: "tag warn", text: `중요 ${crit}` }) : null),
       nyListNode(needs), ...owedBlock));
@@ -520,15 +532,15 @@ const isWorking = t => { const i = targetInfo(t); return i.alive && (i.status ==
 // the rest of the row goes to the conversation, or to the result message of finished work (18-lanes.js workGo).
 function workRow(w) {
   // stalled: OmO still says running but the worker stopped working (hub/bgwork.ts); its session was woken to take it over.
-  const run = w.status === "running", done = w.status === "done", rec = workRecovering(w), stall = w.status === "stalled";
+  const run = w.status === "running", done = w.status === "done", rec = workRecovering(w), stall = w.status === "stalled", tone = workTone(w);
   const state = run ? "작업 중" : stall ? "멈춤" : done ? "완료" : w.cancelled ? "중단됨" : rec ? "이어서 처리 중" : "실패";
   const line = run ? [workElapsed(w), w.model].filter(Boolean).join(" · ") : stall ? `${w.reason || "활동이 없어요"} · ${workAgo(w)}` : done ? `끝남 · ${workAgo(w)}` : `${workFailText(w)} · ${workAgo(w)}`;
   const act = w.cancelled ? ["다시 맡기기", b => workRetry(w.id, b)] : null;
   return el("div", { class: "hr hrx", "data-work": w.id },
     el("button", { class: "hrx-m", type: "button", onclick: () => workGo(w), "aria-label": `${w.description} · ${state} · ${run || stall || rec ? "대화로 가기" : "결과 보기"}` },
-      el("span", { class: `dot ${run || rec ? "pri" : stall ? "att" : done ? "ok" : w.cancelled ? "" : "err"}` }),
+      el("span", { class: `dot ${tone}` }),
       el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: w.description })), el("span", { class: "ha", text: line })),
-      el("span", { class: `hs ${run || rec ? "pri" : stall ? "warn" : done || w.cancelled ? "" : "err"}`, text: state })),
+      el("span", { class: `hs ${tone}`, text: state })),
     hcWorkFiles(w),
     act ? el("button", { class: "btn text", type: "button", style: "flex:none;margin-right:8px", "data-act": "retry", onclick: ev => act[1](ev.currentTarget), text: act[0] }) : null);
 }

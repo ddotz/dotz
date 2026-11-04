@@ -20,9 +20,8 @@ code.path-short { display: inline-block; max-width: 100%; vertical-align: bottom
 .muted { color: var(--fg-2); }
 .empty { padding: 32px 16px; text-align: center; color: var(--fg-3); font-size: 12px; }
 .dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
-.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
+.dot.ok { background: var(--ok); } .dot.warn, .dot.att { background: var(--warn); } .dot.err { background: var(--err); }
 .dot.pri { background: var(--accent); }
-.dot.att { background: var(--warn); }
 @keyframes pulse { 50% { opacity: .5; } }
 /* a small status tag is the one pill besides the two-value toggle (docs/ui-spec.md 알약 규칙) */
 .tag { display: inline-flex; align-items: center; flex: none; height: var(--tag-h); padding: 0 var(--tag-px); border-radius: var(--r-pill); background: var(--layer); color: var(--fg-2); font-size: var(--fs-tag); line-height: var(--lh-tag); font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
