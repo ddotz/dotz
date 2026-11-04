@@ -296,6 +296,8 @@
       { id: "n-demo-4", kind: "worklog", cls: "result", tone: "done", src: "worklog", open: "worklog", at: ago(310), title: "밤 사이 정리를 마쳤어요", read: true },
       { id: "n-demo-5", kind: "watch", cls: "news", tone: "", watch: "캠핑 의자 가격", src: "alert", open: "alert", at: ago(9), title: "캠핑 의자 가격", text: "[캠핑 의자 가격] 가격이 바뀌었어요.\n\n- 캠핑 의자 89,000원 → 72,000원", read: false },
       { id: "n-demo-6", kind: "result", cls: "result", tone: "done", src: "ch:4", open: "ch:4", at: ago(52), title: "주간 보고서 정리를 마쳤어요", read: false },
+      { id: "n-demo-9", kind: "watch", cls: "news", tone: "", src: "alert", open: "alert", at: ago(75), title: "책상 램프 배송", text: "[책상 램프 배송] 배송이 시작됐어요.\n\n- 도착 예정: 목요일", read: false },
+      { id: "n-demo-10", kind: "watch", cls: "news", tone: "", src: "alert", open: "alert", at: ago(260), title: "도서관 예약", text: "[도서관 예약] 예약한 책이 도착했어요.", read: true },
       { id: "n-demo-7", kind: "worklog", cls: "result", tone: "done", src: "worklog", open: "worklog", at: ago(180), title: "아침 브리핑을 보냈어요", read: true },
     ],
     gone: [],
