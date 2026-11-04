@@ -231,6 +231,13 @@ const page = (s: string, status: number, refresh = false) =>
 	new Response(`<!doctype html><meta charset="utf-8">${refresh ? '<meta http-equiv="refresh" content="3">' : ""}<title>화면 공유</title><p>${s}</p>`, { status, headers: { "content-type": "text/html; charset=utf-8" } });
 const PUBLIC_HEADERS = ["cf-ray", "cf-connecting-ip", "cf-access-jwt-assertion"];
 const FILES = new Set(["", "index.html", "client.js", "worker.js", "audio.js", "mic.js", "favicon.ico", "inter.woff2", "ws"]);
+// voxl takes its password as ?token= too; only the Bearer added here may authenticate.
+export function voxlQuery(url: URL): string {
+	const q = new URLSearchParams(url.search);
+	q.delete("token");
+	return q.size ? `?${q}` : "";
+}
+
 const SEND_HEADERS = ["accept", "accept-language", "if-none-match", "if-modified-since", "range", "user-agent"];
 const DROP_HEADERS = new Set(["set-cookie", "www-authenticate", "connection", "keep-alive", "transfer-encoding", "content-encoding"]);
 const NOTE = "단축키(Cmd+W 같은)는 이 컴퓨터로 가요";
@@ -292,10 +299,10 @@ export function createDesk(d: DeskDeps) {
 			if (!upgrade || !srv) return text("websocket only", 400);
 			const who = req.headers.get("tailscale-user-login") ?? "기기";
 			const device = "name" in viewer ? viewer.name : undefined;
-			return srv.upgrade(req, { data: { kind: "desk", who, search: url.search, ...(device ? { device } : {}) } }) ? null : text("websocket upgrade failed", 400);
+			return srv.upgrade(req, { data: { kind: "desk", who, search: voxlQuery(url), ...(device ? { device } : {}) } }) ? null : text("websocket upgrade failed", 400);
 		}
 		const headers = Object.fromEntries(SEND_HEADERS.flatMap(h => (req.headers.has(h) ? [[h, req.headers.get(h)!]] : [])));
-		const up = await host.fetchUp(`/${name}${url.search}`, { method: req.method, headers }).catch(() => undefined);
+		const up = await host.fetchUp(`/${name}${voxlQuery(url)}`, { method: req.method, headers }).catch(() => undefined);
 		if (!up) return text("화면 공유가 응답하지 않아요", 502);
 		const out = new Headers([...up.headers].filter(([k]) => !DROP_HEADERS.has(k.toLowerCase())));
 		return new Response(req.method === "HEAD" ? null : up.body, { status: up.status, statusText: up.statusText, headers: out });

@@ -133,7 +133,7 @@ test("the push badge is a white-on-transparent alpha mask of the dotz mark, serv
 	expect(sw).toMatch(/icon: "\/icons\/icon-192\.png"/);
 	const manifest = JSON.parse(readFileSync(join(WEB, "manifest.webmanifest"), "utf8"));
 	for (const size of [192, 512]) {
-		expect(manifest.icons).toContainEqual({ src: `/icons/monochrome-${size}.png`, sizes: `${size}x${size}`, type: "image/png", purpose: "monochrome" });
+		expect(manifest.icons).toContainEqual({ src: `/icons/monochrome-${size}.png?v=6`, sizes: `${size}x${size}`, type: "image/png", purpose: "monochrome" });
 		const mono = await route(new Request(`http://x/icons/monochrome-${size}.png`));
 		expect([mono.status, mono.headers.get("content-type")]).toEqual([200, "image/png"]);
 	}
