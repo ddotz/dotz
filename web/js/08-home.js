@@ -146,30 +146,30 @@ const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: �
 // handles itself is not asked there (09-needs-you.js nyHandled), so it is news here.
 const hcFyi = n => !n.read && ntHomeAlert(n) && (!ntNeeds(n) || nyHandled(n));
 const hcUnread = () => NT.items.filter(hcFyi).length;
-// One head for every home card: [status dot] title, an optional count, an optional grey note (an empty card says why in it and folds to this one line).
+// One head for every home card: [status dot] title, an optional count, an optional grey note. An empty card keeps the head and says why under it (hcNone); what is absent leaves no slot (docs/ui-principles.md 13).
 const hcHead = (title, o = {}) => el("div", { class: "ch" }, o.dot ? el("span", { class: `dot ${o.dot}` }) : null, el("h3", { text: title }),
   o.n ? el("span", { class: "hc-n" }, ...[].concat(o.n)) : null, o.note ? el("span", { class: "hc-n", text: o.note }) : null, o.menu ? menuBtn(o.menu) : null);
-const hcFold = (card, fold) => { if (fold) card.classList.add("fold"); return card; };
+const hcNone = text => el("div", { class: "hc-none", text });
 function homeAlertCard() {
   const unread = hcUnread(), fresh = hcRecent(hcFyi), state = hcState(), none = !!state || !fresh.length;
-  return hcFold(hcCard(() => openTarget("alert", "chat"), hcHead("알림", { menu: "notices:alert", n: !state && unread ? String(unread) : null, note: none ? state || "새 알림이 없어요" : "" }),
-    none ? null : hcNotices(fresh)), none);
+  return hcCard(() => openTarget("alert", "chat"), hcHead("알림", { menu: "notices:alert", n: !state && unread ? String(unread) : null }),
+    none ? hcNone(state || "새 알림이 없어요") : hcNotices(fresh));
 }
 function homeWorklogCard() {
   const recent = hcRecent(n => n.kind === "worklog" || n.kind === "result"), state = hcState(), none = !!state || !recent.length;
-  return hcFold(hcCard(() => openTarget("worklog", "chat"), hcHead("작업내역", { menu: "notices:worklog", note: none ? state || "아직 작업내역이 없어요" : "" }), none ? null : hcNotices(recent)), none);
+  return hcCard(() => openTarget("worklog", "chat"), hcHead("작업내역", { menu: "notices:worklog" }), none ? hcNone(state || "아직 작업내역이 없어요") : hcNotices(recent));
 }
 function homeMonitorCard() {
   const list = ntMons(), shown = list.slice(0, 4), bad = list.filter(m => monStatus(m).key === "fail").length;
   const state = NM.loaded ? "" : NM.failed ? "불러오지 못했어요" : "불러오는 중…", none = !!state || !list.length;
-  return hcFold(hcCard(() => go("monitoring"), hcHead("모니터링", { menu: "notices:watch", n: bad ? [el("span", { class: "dot err" }), `실패 ${bad}`] : null, note: none ? state || "모니터링 중인 항목이 없어요" : "" }),
-    none ? null : el("div", { class: "hc-list" }, ...shown.map(m => {
+  return hcCard(() => go("monitoring"), hcHead("모니터링", { menu: "notices:watch", n: bad ? [el("span", { class: "dot err" }), `실패 ${bad}`] : null }),
+    none ? hcNone(state || "모니터링 중인 항목이 없어요") : el("div", { class: "hc-list" }, ...shown.map(m => {
       // The same status the 모니터링 row shows (30-monitoring.js monStatus); the dot's colour classes are the notice tones.
       const st = monStatus(m);
       return el("div", { class: "hc-mon", "data-status": st.key }, hcDot({ ok: "done", warn: "ask", err: "fail" }[st.tone]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "모니터링" }),
         el("span", { class: "s", text: [ntMonRun(m), st.text, ntMonNext(m)].filter(Boolean).join(" · ") })));
     })),
-    list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null), none);
+    list.length > shown.length ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - shown.length}개` }) : null);
 }
 
 let homeBoard = null;
@@ -357,7 +357,7 @@ function renderHomeNow() {
   // Above the grid, the prototype's full-width column: the greeting, the one alert row and 답변 필요. The replies the owner owes stay in
   // that card under its list, as the prototype's 답변 필요 rows do; each row still opens its own item.
   const running = el("div", { class: "hn", "data-k": "running" }, ...runT.map(restRow), ...convWork.map(x => x.conv ? workRow(x) : homeConvRow(x)), ...bg.map(workRow), ...deferred.map(homeLimitRow),
-    ...(working || bg.length || deferred.length ? [] : [el("div", { class: "empty", text: "진행 중인 작업이 없어요" })]));
+    ...(working || bg.length || deferred.length ? [] : [hcNone("진행 중인 작업이 없어요")]));
   const owedBlock = owed.length || drafts ? [
     el("div", { class: "hn-h hsub" }, el("h2", { text: "답장 대기" }), owedN ? unrepPill(`미답장 ${owedN}`) : null),
     el("div", { class: "hn", "data-k": "replies" }, ...(drafts ? [homeRepliesRow(drafts)] : []), ...owed.map(homeOwedRow))] : [];
@@ -420,9 +420,9 @@ function renderHomeNow() {
     if (!homeGroups.has(kind)) { for (const e of list) add(e.id, itemCard(e.open, "", ...e.card())); continue; }
     const [title, view] = HOME_KINDS[kind], nAtt = list.filter(e => e.tone).length, none = !list.length;
     const empty = !loaded[kind] ? "불러오는 중…" : kind === "limit" && HQ.error ? "사용량을 불러오지 못했어요" : "없어요";
-    add(`group:${kind}`, hcFold(itemCard(view, "",
-      hcHead(title, { dot: nAtt ? hcTone(list.some(e => e.tone === "err") ? "err" : "warn") : "", n: none ? null : String(list.length), note: none ? empty : "", menu: `group:${kind}` }),
-      none ? null : el("div", { class: "glist" }, ...list.map(homeRow))), none));
+    add(`group:${kind}`, itemCard(view, "",
+      hcHead(title, { dot: nAtt ? hcTone(list.some(e => e.tone === "err") ? "err" : "warn") : "", n: none ? null : String(list.length), menu: `group:${kind}` }),
+      none ? hcNone(empty) : el("div", { class: "glist" }, ...list.map(homeRow))));
   }
 
   // the owner's custom cards (web/custom.js) are board items like the rest; a half row by default, their own size when changed
