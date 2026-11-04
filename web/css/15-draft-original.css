@@ -83,3 +83,12 @@
 .od-inline .od-pane, .fs-card .od-inline .od-pane { flex: none; overflow: visible; margin: 0; padding: 0; border-radius: 0; background: none; }
 .od-inline .od-open { min-height: 36px; }
 .dr-fh.ok { color: var(--ok); }
+/* The original of a mail row of 모니터링 > 메일 (10-draft-original.js orgMailRow, opened from the ⋯ menu), folded open on its own full line of the row */
+.mr .od-pane.mr-op { flex: 1 0 100%; min-width: 0; max-width: 100%; overflow: visible; margin: var(--sp-1) 0 var(--sp-2); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line-2); border-radius: var(--r-ctl); background: var(--bg); color: var(--fg); cursor: auto; user-select: text; }
+/* 날짜 and 제목 at the size of the sender box above them; these panes inherit a larger row or card size */
+.mr-op .dc-dr-v, .rq-op .dc-dr-v { font: 400 14px/20px var(--font); }
+@media (min-width: 1100px) {
+  /* the one-line row: an open row wraps so the original takes the full width under that line */
+  #mon-tl > .mr > .mr-op { order: 10; }
+  #mon-tl > .bm.rc.mr:has(> .mr-op) { flex-wrap: wrap; height: auto; padding-top: var(--sp-2); padding-bottom: var(--sp-1); }
+}

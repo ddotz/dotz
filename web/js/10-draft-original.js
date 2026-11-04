@@ -9,15 +9,16 @@ const orgSt = ref => ORG.st[ref] || (ORG.st[ref] = { open: false, load: "", data
 const ORG_WIDE = matchMedia("(min-width: 900px)");
 ORG_WIDE.addEventListener("change", () => { for (const k in ORG.st) if (ORG.st[k].sync) ORG.st[k].sync(); });
 
-async function orgLoad(ref, t, paint) {
+// `get` replaces the draft route for an original that is not a draft's (orgMailRow: a mail of the list, keyed by its conversation).
+async function orgLoad(ref, t, paint, get) {
   const s = orgSt(ref), go = () => {
     (s.paint || paint)();
     if (s.subs) { for (const f of [...s.subs]) f(); if (s.load !== "busy") s.subs.clear(); }   // inline blocks (orgInline) waiting on the same fetch
   };
   if (s.load === "busy" || s.load === "ok" || s.load === "missing") return;
   s.load = "busy"; go();
-  DRF.pc[ref] = t ? pqPc(t) : null;
-  try { s.data = await api(drfPath(ref, "original")); s.load = "ok"; }
+  if (!get) DRF.pc[ref] = t ? pqPc(t) : null;
+  try { s.data = await (get ? get() : api(drfPath(ref, "original"))); s.load = "ok"; }
   catch (e) { s.load = /찾을 수 없|HTTP 404/.test(e.message) ? "missing" : "fail"; }
   go();
 }
@@ -58,6 +59,29 @@ function orgInline(d, t) {
   paint();
   if (s.load === "" || s.load === "busy") { (s.subs ||= new Set()).add(paint); orgLoad(d.ref, t, paint); }
   return el("div", { class: "od-inline" }, el("div", { class: "dr-mh" }, icon("chat"), el("span", { text: "댓글 원문" })), pane);
+}
+// A mail with no draft (a row of 모니터링 > 메일): the same answer as the draft route, read from the mail itself - its card (MAILS: sender, date, files, whether an
+// HTML body is kept) and the body in its conversation's mail event (GET /api/history, hub/mail.ts mailText). Nothing kept at all is a 404, so the pane says 찾을 수 없어요.
+async function orgMailOf(t) {
+  const rec = MAILS.get(t) || {}, r = await api(`/api/history?target=${enc(t)}&limit=150`);
+  const e = (r.events || []).filter(x => x.kind === "mail" && x.subject).pop();
+  const text = e ? mailOrigOf(e.text) : rec.preview || "", html = !!(rec.html || (e && e.html));
+  if (!e && !html && !text.trim()) throw new Error("HTTP 404");
+  return { kind: "mail", key: t.slice(5), from: rec.from || (e && e.from) || "", to: rec.to || (e && e.to) || "", cc: rec.cc || (e && e.cc) || "", date: rec.at || (e && e.ts),
+    subject: rec.subject || (e && e.subject) || "", text, html, attachments: rec.attachments || (e && e.attachments) || [] };
+}
+// 원문 보기 of a mail row (owner 2026-11-04): an item of the row's ⋯ menu (a row keeps no other right-side button, owner 2026-10-27) folds the original open under
+// the summary, without leaving the list. Open rows are kept across repaints; the first open fetches once (orgLoad), and a click inside the original does not open the mail's conversation.
+const MR_OG = new Set();
+const orgMailItem = t => [{ value: "original", label: MR_OG.has(t) ? "원문 접기" : "원문 보기", run: () => { if (!MR_OG.delete(t)) MR_OG.add(t); MON.sig = ""; monSchedule(); } }];
+function orgMailRow(t) {
+  if (!MR_OG.has(t)) return [];
+  const s = orgSt(t), stop = ev => ev.stopPropagation();
+  const pane = el("div", { class: "od-pane mr-op", role: "region", "aria-label": "메일 원문", onclick: stop, onkeydown: stop });
+  const paint = () => { if (MR_OG.has(t)) orgFill(pane, { ref: t }, t, () => { s.load = ""; load(); }); };
+  const load = () => { (s.subs ||= new Set()).add(paint); orgLoad(t, t, paint, () => orgMailOf(t)); paint(); };
+  load();
+  return [pane];
 }
 // The bar (desktop: one 원문 보기 button; phone: the 초안 | 원문 toggle) and the original panel for `host`, the box both panels live in; `draftEl` is the draft's own
 // side (it goes inert while the phone shows the original). The caller places bar above, orig and the draft in one stage. Nothing is fetched until the first open.
