@@ -49,7 +49,7 @@ function nscWhen(t) {
 }
 function nscLines(n, group, summary, when, tag, prefix = "") {
   return [el("span", { class: "ln" }, el("span", { class: "hd", title: ntPlain(hcLine(n)), text: ntPlain(hcLine(n)) }), el("span", { class: "t", text: when })),
-    el("span", { class: "ln" }, el("span", { class: "sup" }, prefix, summary), el("span", { class: "tag", text: tag }))];
+    el("span", { class: "ln" }, el("span", { class: "nsc-s" }, prefix, summary), el("span", { class: "tag", text: tag }))];
 }
 function nscRow(n, group) {
   const tone = group === "past" ? "" : nscTone(n), rep = n.repeats && n.repeats.length ? n.repeats : null, open = rep && NSC.open.has(n.id);
