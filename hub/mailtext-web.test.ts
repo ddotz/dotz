@@ -93,3 +93,50 @@ test("a 'label :text' bullet parses to label and text, the words kept", async ()
 	const ul = JSON.parse((await v.evaluate(`JSON.stringify(mtParse("- 지표 : 이 문장은 스무 자를 넘기는 긴 설명 문장입니다"))`)) as string) as { t: string; items: { k: string; v: string }[] }[];
 	expect(ul[0].items[0]).toEqual({ k: "지표", v: "이 문장은 스무 자를 넘기는 긴 설명 문장입니다" });
 }, 30_000);
+
+// A secure mail's decrypted page opens with the mail's own header as text, and its recipient is the original one, not the copy's.
+const SUBJECT = "RE: [company] 3분기 자료 송부 드립니다.";
+const HEAD = `${SUBJECT}\n2026-11-04 15:13:59\n보낸사람(Sender) : "redacted" <someone@example.com> 받는사람(Recipient) : "redacted" <someone@example.com>\n\n`;
+const QUOTED = `안녕하십니까 상무님\n\n---------- 원본 메일 ----------\n${HEAD}이전 본문`;
+const drawn = async (raw: string, subject: string) => {
+	const v = await open(390);
+	return (await v.evaluate(`mailBodyNode("k", false, ${JSON.stringify(raw)}, ${JSON.stringify(subject)}).textContent`)) as string;
+};
+
+test("a mail's own header at the top of the body is not drawn again, in its Korean and English forms", async () => {
+	const own = await drawn(`${HEAD}안녕하십니까 상무님`, SUBJECT);
+	expect(own.trim()).toBe("안녕하십니까 상무님");
+	const english = await drawn(`Q3 report\n2026-11-04 15:13\nFrom: Kim <kim@example.com>\nTo: Lee <lee@example.com>\n\nHello`, "Q3 report");
+	expect(english.trim()).toBe("Hello");
+}, 30_000);
+
+test("a body that only looks like that header keeps its text", async () => {
+	const mention = `${SUBJECT}\n2026-11-04 15:13:59\n보낸사람은 redacted입니다. 받는사람(Recipient)도 확인해 주세요.\n\n본문`;
+	expect(await drawn(mention, SUBJECT)).toContain("보낸사람은 redacted입니다");
+	const dateOnly = `2026-11-04 15:13:59\n회의는 이 시각에 시작합니다`;
+	expect(await drawn(dateOnly, SUBJECT)).toContain("2026-11-04 15:13:59");
+	const otherSubject = await drawn(`${HEAD}본문`, "다른 제목");
+	expect(otherSubject).toContain("보낸사람(Sender)");
+	// the people line alone is not the block: the line after it is the mail's first words
+	const noBreak = await drawn(`Q3\n2026-11-04 15:13\nFrom: Kim\nTo: Lee\n본문 첫 줄`, "Q3");
+	expect(noBreak).toContain("본문 첫 줄");
+	// a quoted original further down is the sender's text
+	const v = await open(390);
+	const fold = (await v.evaluate(`(() => { const n = mailBodyNode("k", false, ${JSON.stringify(QUOTED)}, ${JSON.stringify(SUBJECT)}); return n.querySelector(".mt-fold-body").textContent; })()`)) as string;
+	expect(fold).toContain("보낸사람(Sender)");
+}, 30_000);
+
+test("the block's recipient stays in the header and the reply quote starts at the real body", async () => {
+	const v = await open(1440);
+	const got = JSON.parse(
+		(await v.evaluate(`JSON.stringify((() => {
+			const t = "mail:k", e = { kind: "mail", subject: ${JSON.stringify(SUBJECT)}, from: '"redacted" <someone@example.com>', to: '"redacted" <someone@example.com>', text: ${JSON.stringify(`"redacted" · ${SUBJECT}\n\n요약\n\n원문\n${HEAD}안녕하십니까`)} };
+			ts(t).msgs.push(e);
+			return { head: mailMetaNode(t, e).querySelector(".mhd").textContent, quote: mbQuoteText(t) };
+		})())`)) as string,
+	) as { head: string; quote: string };
+	expect(got.head).toContain("redacted");
+	expect(got.head).toContain("redacted");
+	expect(got.head).toContain("someone@example.com");
+	expect(got.quote).toBe("안녕하십니까");
+}, 30_000);

@@ -295,9 +295,8 @@ function mbDefaults(t, mode) {
 }
 // The original, as the quote under the reply: the 원문 of the mail's first message the page holds.
 function mbQuoteText(t) {
-  const e = ts(t).msgs.find(x => x.kind === "mail"), raw = String(e ? e.text : "");
-  const at = raw.indexOf("\n원문\n");
-  return (at >= 0 ? raw.slice(at + 4) : raw.split("\n").slice(1).join("\n")).trim();
+  const e = ts(t).msgs.find(x => x.kind === "mail");
+  return mailOwnBody(mailOrigOf(e ? e.text : ""), e && e.subject).trim();
 }
 function mbBox(t) {
   let b = MBOX.boxes.get(t);

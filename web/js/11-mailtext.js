@@ -198,6 +198,32 @@ function mtNode(blocks) {
   }
   return box;
 }
+// A secure mail's decrypted page opens with the mail's own header as text (company-mail-lib.ts decryptSecureMail): the subject, the date, then
+// `보낸사람(Sender) : … 받는사람(Recipient) : …`, a blank line, the mail. Its recipient is the original one, not the copy's. The view already shows that header, so
+// { body, to, cc } splits it off, only for all of it at the very top: the mail's subject, a line that is only a date, and a sender and a recipient label
+// on lines of nothing but labels, then a blank line or the end. Anything else is null. Stored mails stay as they are; a first-line compare ends most calls.
+const MH_LINES = 6;
+const MH_DATE = /^\d{4}[-./]\d{1,2}[-./]\d{1,2}\.?(?: ?\([^)]{1,9}\))? (?:오전 |오후 )?\d{1,2}:\d{2}(?::\d{2})?(?: ?(?:AM|PM|KST|GMT|UTC|[+-]\d{2}:?\d{2}))*$/i;
+const mhLabel = (ko, en) => `(?:${ko}\\s*\\(\\s*${en}\\s*\\)|${en}\\s*\\(\\s*${ko}\\s*\\)|${ko}|${en})`;
+const MH_FROM = mhLabel("보낸\\s*(?:사람|이)", "(?:sender|from)"), MH_TO = mhLabel("받는\\s*(?:사람|이)", "(?:recipients?|to)"), MH_CC = mhLabel("참조", "cc");
+const MH_LINE = new RegExp(`^(?:${MH_FROM}|${MH_TO}|${MH_CC})\\s*[:：]`, "i");
+const MH_PEOPLE = new RegExp(`^${MH_FROM}\\s*[:：]\\s*(.+?)\\s+${MH_TO}\\s*[:：]\\s*(.+?)(?:\\s+${MH_CC}\\s*[:：]\\s*(.+))?$`, "i");
+const mhSqueeze = s => String(s ?? "").replace(/\s+/g, " ").trim();
+function mailHeadBlock(raw, subject) {
+  const text = String(raw ?? "").trimStart(), nl = text.indexOf("\n");
+  if (nl < 0 || !subject || mhSqueeze(text.slice(0, nl)) !== mhSqueeze(subject)) return null;
+  const lines = text.split("\n", MH_LINES).map(l => l.trim());
+  if (!MH_DATE.test(lines[1])) return null;
+  let end = 2;
+  while (end < lines.length && lines[end]) { if (!MH_LINE.test(lines[end])) return null; end++; }
+  if (end >= MH_LINES) return null;
+  const m = lines.slice(2, end).join(" ").match(MH_PEOPLE);
+  return m ? { body: text.split("\n").slice(end).join("\n").trimStart(), to: m[2], cc: m[3] || "" } : null;
+}
+// The body to show or quote: the text without that header.
+const mailOwnBody = (raw, subject) => { const b = mailHeadBlock(raw, subject); return b ? b.body : raw; };
+// The body inside a mail event's text (hub/mail.ts mailText): what follows its 원문 line, else all but the first line.
+const mailOrigOf = text => { const raw = String(text ?? ""), at = raw.indexOf("\n원문\n"); return at >= 0 ? raw.slice(at + 4) : raw.split("\n").slice(1).join("\n"); };
 function mailTextNode(raw) {
   const out = el("div", { class: "mb-txt" });
   out.append(mtNode(mtParse(raw)));
