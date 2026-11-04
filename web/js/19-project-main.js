@@ -479,7 +479,7 @@ function cmPaint(root, p, D) {
       cmText(i),
       i.bad ? el("span", { class: "tag warn", text: "확인 필요" }) : null,
       el("span", { class: "li-end" }, ask(g.label, `${CM_TAG} ${g.label} "${i.title}": `)))),
-      g.more ? el("div", { class: "sup", style: "padding:10px 16px", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));
+      g.more ? el("div", { class: "sup", style: "padding:10px var(--sp-4)", text: `그 밖에 ${g.more}개가 더 있어요` }) : null) : emptyNode(g.empty));
   clear(root).append(
     el("div", { class: "pmv-head" }, el("div", { class: "pmv-hmain" },
       el("div", { class: "pmv-htop" }, el("div", { class: "pmv-title", text: p.name }), el("span", { class: "pmv-upd", text: "내 설정" })),
@@ -509,7 +509,7 @@ function ctxBar(p) {
   const pct = p.percent;
   return el("div", {},
     el("div", { class: `bar ${ctxTone(pct)}`, role: "progressbar", "aria-label": `${p.name} 컨텍스트`, "aria-valuenow": Math.round(pct || 0), "aria-valuemin": 0, "aria-valuemax": 100 }, el("i", { style: `width:${Math.min(100, pct || 0).toFixed(1)}%` })),
-    el("div", { class: "kv", style: "margin-top:4px" }, el("span", { class: "v", text: p.window ? `${num(p.tokens)} / ${num(p.window)} 토큰` : `${num(p.tokens)} 토큰` }), el("span", { class: "v", text: pct != null ? `${pct}%` : "–" })));
+    el("div", { class: "kv", style: "margin-top:var(--sp-1)" }, el("span", { class: "v", text: p.window ? `${num(p.tokens)} / ${num(p.window)} 토큰` : `${num(p.tokens)} 토큰` }), el("span", { class: "v", text: pct != null ? `${pct}%` : "–" })));
 }
 async function loadContext(quiet) {
   clearTimeout(ctxTimer);
