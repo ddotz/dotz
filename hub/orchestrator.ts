@@ -121,6 +121,8 @@ export function createOrchestrator(opts: OrchOpts) {
 		startedAt: "",
 		lastText: "",
 		rateLimitedUntil: "",
+		// The limit lifted and the held work went back in: true until a turn starts on it (the web line says so) or the session pauses again.
+		resuming: false,
 		restarts: [] as number[],
 		// Set when the automatic retries gave up (markError); cleared by the next successful turn. The web banner reads it.
 		error: undefined as OrchError | undefined,
@@ -410,7 +412,7 @@ export function createOrchestrator(opts: OrchOpts) {
 		atTime(until, t => (resumeTimer = t), () => {
 			resumeTimer = undefined;
 			pauseAlerted = false;
-			orch.status = "idle";
+			noteResuming();
 			restart();
 		});
 	}
@@ -421,6 +423,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			noteEvent(orch.ctx, ev, port);
 			switch (ev.type) {
 				case "turn_start":
+					orch.resuming = false;
 					turnFailed = false;
 					// The turn watermark of the notices (a [done] never settles an ask of its own turn) is one per gateway: the main session's.
 					if (opts.key === "main") orchestratorTurnStarted();
@@ -438,6 +441,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					break;
 				case "turn_end":
 					orch.status = orch.status === "rate-limited" ? "rate-limited" : "idle";
+					orch.resuming = false;
 					settleRevert(true);
 					if (orch.status === "idle" && settleChain()) break;
 					lastTurnEnd = Date.now();
@@ -591,9 +595,16 @@ export function createOrchestrator(opts: OrchOpts) {
 	let resumeTimer: Timer | undefined;
 	let pausing = false;
 	let pauseAlerted = false;
+	// The pause is over: every window hears it now (statusActivity makes them read /api/state again), not when the first turn starts.
+	function noteResuming(): void {
+		orch.status = "idle";
+		orch.resuming = true;
+		statusActivity(opts.source, "한도가 풀려서 작업을 이어가요");
+	}
 	async function scheduleResume(err: string, kind: ProviderErrorKind): Promise<void> {
 		if (resumeTimer || pausing) return;
 		pausing = true;
+		orch.resuming = false;
 		orch.status = "rate-limited";
 		orch.rateLimitedUntil = "";
 		const owner = kind === "owner";
@@ -627,7 +638,7 @@ export function createOrchestrator(opts: OrchOpts) {
 			clearTimeout(resumeTimer);
 			resumeTimer = undefined;
 			save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
-			orch.status = "idle";
+			noteResuming();
 			// The held prompts go in one by one (each keeps its own answer channel) only after this turn succeeds, so a
 			// retry that hits the limit again loses nothing.
 			const m = msg();
@@ -646,7 +657,7 @@ export function createOrchestrator(opts: OrchOpts) {
 				clearTimeout(resumeTimer);
 				resumeTimer = undefined;
 				save({ pausedUntil: undefined, pausedKind: undefined, pausedAuth: undefined });
-				orch.status = "idle";
+				noteResuming();
 				if (proc) restart();
 				else fire();
 			});

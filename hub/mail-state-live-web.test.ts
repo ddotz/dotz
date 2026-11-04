@@ -70,6 +70,7 @@ test("a mail deleted on another device leaves this device's list and its stores 
 	await waitFor(`[...document.querySelectorAll("#mon-tl .mr")].some(r => r.textContent.includes("지난 안내 메일"))`);
 	await run(`go("monitoring", "c:mail:loc-2")`);
 	await waitFor(`current === "chat" && target === "mail:loc-2"`);
+	expect(await v.evaluate(`document.querySelector("#v-chat").getAnimations().length`)).toBe(0);   // opening a mail is a plain content move: no rise
 	older = false;
 	broadcast({ kind: "mail_unreplied", target: "mail:loc-2" });
 	await waitFor(`!MAILS.has("mail:loc-2") && !CONV.has("mail:loc-2") && current === "monitoring"`);

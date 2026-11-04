@@ -17,6 +17,7 @@ import { resumeLane } from "./lanerun.ts";
 async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKind): Promise<void> {
 	if (lane.resumeTimer || lane.pausing) return;
 	lane.pausing = true;
+	lane.resuming = false;
 	setStatus(lane, "rate-limited");
 	const owner = kind === "owner";
 	const agent = `lane:${lane.name}`;
@@ -40,6 +41,7 @@ async function pauseForRateLimit(lane: Lane, err: string, kind: ProviderErrorKin
 	const fire = () => {
 		clearTimeout(lane.resumeTimer);
 		lane.resumeTimer = undefined;
+		lane.resuming = true;
 		setStatus(lane, "idle");
 		prompt(lane, withHeld(lane, owner ? msg().laneProvider : msg().laneRate));
 	};
