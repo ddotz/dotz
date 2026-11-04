@@ -116,6 +116,14 @@ describe("effort levels follow the model", () => {
 		const table = JSON.parse(web.match(/const THINK_KO = (\{[^}]*\});/)![1]!.replace(/(\w+):/g, '"$1":'));
 		expect(Object.fromEntries(THINKING_LEVELS.map(l => [l, table[l]]))).toEqual(EFFORT_KO);
 	});
+	test("a switched-off step says so once: on its switch, not again as a tag", async () => {
+		const v = await boot();
+		await openModels(v);
+		await run(v, `M.fallbacks.orchestrator.chain[1].enabled = false; renderModels()`);
+		const got = await q<{ sw: string; tags: string[] }>(v, `const n = document.querySelector('[data-target="orchestrator"] .fb-item[data-i="1"]'); return { sw: n.querySelector(".fb-sw").textContent, tags: [...n.querySelectorAll(".fb-tags .tag")].map(t => t.textContent) }`);
+		expect(got.sw).toBe("꺼짐");
+		expect(got.tags).not.toContain("꺼짐");
+	});
 	test("a fallback entry lists exactly its model's levels plus off, and the saved level stays when it is not one", async () => {
 		const v = await boot();
 		await openModels(v);
