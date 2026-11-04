@@ -14,7 +14,7 @@
 .hm-st.rel { background: var(--card-hover); }
 .hm-row.rel { background: var(--card-hover); }
 .hm-chip.rel { background: var(--hover); color: var(--fg); }
-.hm-ar { position: absolute; top: 20px; left: calc(var(--hm-gap) / -2); display: grid; place-items: center; width: 22px; height: 22px; margin-left: -11px; border-radius: 50%; background: var(--card); color: var(--fg-3); box-shadow: 0 0 0 4px var(--bg); pointer-events: none; }
+.hm-ar { position: absolute; top: 20px; left: calc(var(--hm-gap) / -2); display: grid; place-items: center; --hm-ar: 22px; --hm-ar-h: calc(var(--hm-ar) / -2); width: var(--hm-ar); height: var(--hm-ar); margin-left: var(--hm-ar-h); border-radius: 50%; background: var(--card); color: var(--fg-3); box-shadow: 0 0 0 4px var(--bg); pointer-events: none; }
 .hm-ar .ic { width: 14px; height: 14px; stroke-width: 2.25; }
 .hm-from { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--sp-15); min-width: 0; margin: calc(var(--sp-1) * -1) 0 calc(var(--sp-1) * -1); color: var(--fg-3); font: 400 12px/16px var(--font); word-break: keep-all; overflow-wrap: anywhere; }
 .hm-from b { color: var(--fg-2); font-weight: 500; }
@@ -40,7 +40,7 @@ button.hm-sh { cursor: pointer; }
 .hm-rows + .hm-with { padding-top: var(--sp-2); }
 .hm-with .wl { color: var(--fg-3); font: 500 12px/16px var(--font); }
 .hm-chips { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
-.hm-chip { display: inline-flex; align-items: center; gap: var(--sp-15); min-width: 0; max-width: 100%; min-height: 28px; padding: var(--sp-05) 10px; border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font: 500 12px/16px var(--font); }
+.hm-chip { display: inline-flex; align-items: center; gap: var(--sp-15); min-width: 0; max-width: 100%; min-height: 28px; padding: var(--sp-05) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); font: 500 12px/16px var(--font); }
 .hm-chip:hover { background: var(--hover); color: var(--fg); }
 .hm-chip.on { background: var(--active); color: var(--fg); }
 .hm-chip.warn { background: color-mix(in srgb, var(--warn) 12%, var(--layer)); color: var(--warn); }
@@ -48,15 +48,15 @@ button.hm-sh { cursor: pointer; }
 .hm-chip.off { opacity: .65; }
 .hm-chip .dot { flex: none; }
 .hm-chip .l { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hm-chip .hm-bd { margin: 0; gap: 3px; flex-wrap: nowrap; }
+.hm-chip .hm-bd { margin: 0; gap: var(--sp-05); flex-wrap: nowrap; }
 .hm-chip .bd { height: 14px; padding: 0 var(--sp-1); font-size: 10px; line-height: 12px; }
 .hm-ov { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; z-index: 2; }
 /* connectors: the first card of every row turns its chevron down and moves it into the row gap above */
-.hm-simple > .hm-st:nth-of-type(3n+1) > .hm-ar { top: calc(var(--hm-gap) / -2); left: 32px; margin: -11px 0 0 -11px; transform: rotate(90deg); }
+.hm-simple > .hm-st:nth-of-type(3n+1) > .hm-ar { top: calc(var(--hm-gap) / -2); left: 32px; margin: var(--hm-ar-h) 0 0 var(--hm-ar-h); transform: rotate(90deg); }
 @media (max-width: 1199px) {
   .hm-simple { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .hm-simple > .hm-st:nth-of-type(3n+1) > .hm-ar { top: 20px; left: calc(var(--hm-gap) / -2); margin: 0 0 0 -11px; transform: none; }
-  .hm-simple > .hm-st:nth-of-type(2n+1) > .hm-ar { top: calc(var(--hm-gap) / -2); left: 32px; margin: -11px 0 0 -11px; transform: rotate(90deg); }
+  .hm-simple > .hm-st:nth-of-type(3n+1) > .hm-ar { top: 20px; left: calc(var(--hm-gap) / -2); margin: 0 0 0 var(--hm-ar-h); transform: none; }
+  .hm-simple > .hm-st:nth-of-type(2n+1) > .hm-ar { top: calc(var(--hm-gap) / -2); left: 32px; margin: var(--hm-ar-h) 0 0 var(--hm-ar-h); transform: rotate(90deg); }
 }
 @media (max-width: 699px) {
   #harness { --hm-gap: 32px; --hm-list-h: 300px; }
@@ -66,7 +66,7 @@ button.hm-sh { cursor: pointer; }
   #harness .hm-bar > .seg { flex: 1 1 100%; }
   #harness .hm-bar > .seg button { flex: 1 1 0; }
   #harness .hm-bar > .btn { flex: 1 1 0; padding: 0 var(--sp-3); }
-  .hm-simple > .hm-st > .hm-ar, .hm-simple > .hm-st:nth-of-type(n) > .hm-ar { top: calc(var(--hm-gap) / -2); left: 32px; margin: -11px 0 0 -11px; transform: rotate(90deg); }
+  .hm-simple > .hm-st > .hm-ar, .hm-simple > .hm-st:nth-of-type(n) > .hm-ar { top: calc(var(--hm-gap) / -2); left: 32px; margin: var(--hm-ar-h) 0 0 var(--hm-ar-h); transform: rotate(90deg); }
   /* the vertical connector: a hairline through the gap behind the chevron */
   .hm-simple > .hm-st + .hm-st::before { content: ""; position: absolute; top: calc(var(--hm-gap) * -1); left: 31px; width: 2px; height: var(--hm-gap); background: var(--line-2); }
 }
@@ -90,7 +90,7 @@ button.hm-sh { cursor: pointer; }
 .note:empty { display: none; }
 .note.ok { color: var(--ok); }
 .note.err { color: var(--err); }
-textarea.fi { display: block; height: auto; padding: var(--sp-2) 10px; line-height: 18px; resize: vertical; }
+textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); line-height: 18px; resize: vertical; }
 .hs-mono { font: 12px/18px var(--mono); min-height: 280px; }
 .hs-sw { position: relative; flex: none; width: 36px; height: 20px; padding: 0; border: 0; border-radius: 10px; background: var(--track); transition: background var(--m-fast) var(--m-ease); }
 .hs-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .3); transition: transform var(--m-base) var(--m-ease); }
@@ -123,7 +123,7 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) 10px; line-heig
 .sec.sec-act { display: flex; align-items: center; gap: var(--sp-2); }
 .sec.sec-act .upd-new { margin-left: 0; }
 .sec.sec-act > .btn { margin-left: auto; }
-.upd-box { padding: var(--sp-3) var(--sp-4) 14px 52px; display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.upd-box { padding: var(--sp-3) var(--sp-4) var(--sp-3) var(--lead-ind); display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .upd-box .hd { font-size: 14px; line-height: 20px; font-weight: 600; }
 .upd-box.err .hd, .upd-box.err .upd-msg { color: var(--err); }
 .upd-box.ok .upd-msg { color: var(--ok); }
@@ -135,14 +135,14 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) 10px; line-heig
 .upd-log li.dim { color: var(--fg-3); }
 .upd-log code { flex: none; background: none; padding: 0; color: var(--fg-3); }
 .upd-log span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.upd-block { display: flex; flex-direction: column; gap: var(--sp-1); padding: 10px var(--sp-3); border-radius: 10px; background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--warn); font-size: 13px; line-height: 19px; }
+.upd-block { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2) var(--sp-3); border-radius: 10px; background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--warn); font-size: 13px; line-height: 19px; }
 .upd-act { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; margin-top: var(--sp-05); }
 .upd-act .sup { color: var(--fg-3); font-size: 12px; }
 @media (max-width: 600px) { .upd-box { padding-left: var(--sp-4); } }
 .hs-chips { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
-.hs-chips .chip { height: auto; min-height: 28px; padding: 3px 10px; text-align: left; }
+.hs-chips .chip { height: auto; min-height: 28px; padding: var(--sp-1) var(--sp-3); text-align: left; }
 .hs-chips .chip .tx { white-space: normal; overflow-wrap: anywhere; }
-@media (min-width: 640px) { #harness.hs-open { padding-right: 480px; } }
+@media (min-width: 640px) { #harness.hs-open { padding-right: var(--sheet-w); } }
 /* 구성: 기능 보기 (badges on the map, 기능 목록 panel, 상세의 "여기서 작동하는 기능") */
 .btn.tonal[aria-pressed="true"] { background: var(--active); color: var(--accent); }
 [data-hm-refresh] { min-width: 112px; }
@@ -152,19 +152,19 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) 10px; line-heig
 .bd.a { background: var(--layer); color: var(--fg-2); }
 .tag.st.enforced { background: var(--accent); color: var(--bg); }
 .tag.st.advisory { background: var(--layer); color: var(--fg-2); }
-.fc { margin-top: 28px; }
+.fc { margin-top: var(--sp-6); }
 .fc-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: var(--sp-2) 0 var(--sp-1); }
 .fc-bar .fi { flex: 1 1 200px; width: auto; }
 .fc-bar .sel { width: auto; min-width: 150px; }
 .fc-bar .seg { flex: none; flex-wrap: nowrap; }
 .fc-bar .seg button { flex: none; padding: 0 var(--sp-3); }
 .fc-count { margin: var(--sp-1) 0 var(--sp-3); }
-.fc-gh { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) 10px; width: 100%; padding: var(--sp-3) var(--sp-05) var(--sp-1); border: 0; background: transparent; color: var(--fg); text-align: left; font: 600 13px/20px var(--font); }
+.fc-gh { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-2); width: 100%; padding: var(--sp-3) var(--sp-05) var(--sp-1); border: 0; background: transparent; color: var(--fg); text-align: left; font: 600 13px/20px var(--font); }
 .fc-gh .ic { width: 14px; height: 14px; color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
 .fc-gh[aria-expanded="false"] .ic { transform: rotate(-90deg); }
 .fc-gh .sup { font-weight: 400; }
 .fc-gh .note { flex-basis: 100%; margin: 0 0 0 var(--sp-6); }
-.fc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--sp-2); margin: 10px 0 var(--sp-5); }
+.fc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--sp-2); margin: var(--sp-2) 0 var(--sp-5); }
 .fc-card { display: flex; flex-direction: column; gap: var(--sp-15); min-width: 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-ctl); background: var(--card); cursor: pointer; transition: background var(--m-fast) var(--m-ease); }
 .fc-card:hover { background: var(--card-hover); }
 /* Material 3 card types instead of a colored side stripe: enforced = filled card, advisory = outlined card. */
@@ -178,7 +178,7 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) 10px; line-heig
 .fc-card .src, .hs-ft .src { color: var(--fg-3); font: 11px/16px var(--mono); overflow-wrap: anywhere; }
 .fc-card .dup, .hs-ft .dup { color: var(--warn); font-size: 11.5px; line-height: 16px; overflow-wrap: anywhere; }
 .hs-fts { display: flex; flex-direction: column; gap: var(--sp-2); }
-.hs-ft { display: flex; flex-direction: column; gap: var(--sp-1); padding: 10px var(--sp-4); border-radius: var(--r-ctl); background: var(--layer); }
+.hs-ft { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2) var(--sp-4); border-radius: var(--r-ctl); background: var(--layer); }
 .hs-ft.go { cursor: pointer; }
 .hs-ft.go:hover { background: var(--hover); }
 .hs-ft.on, .hs-ft.enforced.on { background: var(--active); }
@@ -210,4 +210,4 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) 10px; line-heig
 .hm-cr .m1 { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1) var(--sp-15); min-width: 0; word-break: keep-all; overflow-wrap: anywhere; }
 .hm-cr .m2 { color: var(--fg-3); font-weight: 400; font-size: 12px; line-height: 16px; }
 .hm-cr .m2.mono { font-family: var(--mono); font-size: 11px; }
-.hs-or { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15); margin-top: 10px; color: var(--fg-2); font-size: 12px; line-height: 18px; }
+.hs-or { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15); margin-top: var(--sp-2); color: var(--fg-2); font-size: 12px; line-height: 18px; }
