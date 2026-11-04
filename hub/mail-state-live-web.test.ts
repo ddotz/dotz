@@ -9,7 +9,7 @@ const json = (v: unknown, status = 200) => Response.json(v, { status });
 const iso = (h: number) => new Date(Date.UTC(2026, 9, 27, h, 0)).toISOString();
 const PEER = "http://mini.test";
 const card = (subject: string, h: number, reply: string) => ({ subject, from: "Kim <kim@example.com>", source: "mail", at: iso(h), summary: "회신 부탁드려요.", reply });
-let localReply = "draft", peerReply = "draft";
+let localReply = "draft", peerReply = "draft", older = true;
 const convs = (target: string, subject: string, reply: string) => [{ target, unread: 0, read: null, mail: card(subject, 9, reply), last: { ts: iso(9), text: subject, from: "bot" } }];
 const app = () => ({ key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: [], unread: 0, unreplied: 0, needs: { drafts: 0, unread: 0, sentToday: 0, unreplied: 0 } });
 
@@ -29,7 +29,7 @@ const server = Bun.serve({
 		if (p === "/api/machine") return json({ name: "맥북", custom: "", default: "맥북" });
 		if (p === "/api/monitoring/peers") return json([{ name: "맥미니", url: PEER, online: true, stale: false, items: { name: "맥미니", rev: `r-${peerReply}`, monitors: [], notices: [], available: [], integrations: [app()], conversations: convs("mail:peer-1", "견적 문의드립니다", peerReply) } }]);
 		if (p === "/api/integrations") return json({ items: [app()], available: [] });
-		if (p === "/api/conversations") return json({ items: convs("mail:loc-1", "계약서 확인 부탁드립니다", localReply) });
+		if (p === "/api/conversations") return json({ items: [...convs("mail:loc-1", "계약서 확인 부탁드립니다", localReply), ...(older ? [{ target: "mail:loc-2", unread: 0, read: null, mail: card("지난 안내 메일", 8, "none"), last: { ts: iso(8), text: "지난 안내 메일", from: "bot" } }] : [])] });
 		return p.startsWith("/api/") ? json({}) : new Response("not found", { status: 404 });
 	},
 });
@@ -63,4 +63,16 @@ test("the other computer's mail: 초안 있음 becomes 답장함 on the forwarde
 	peerReply = "replied";
 	broadcast({ kind: "peer_counts", source: "gateway", url: PEER, name: "맥미니", online: true, unread: 0, need: 0 });
 	await waitFor(`${tag} === "답장함"`);
+}, 30_000);
+
+test("a mail deleted on another device leaves this device's list and its stores on the same frame, and its open view goes back to the list", async () => {
+	await openList(`#mon-side .cv-row[data-k="i:mail"]`);
+	await waitFor(`[...document.querySelectorAll("#mon-tl .mr")].some(r => r.textContent.includes("지난 안내 메일"))`);
+	await run(`go("monitoring", "c:mail:loc-2")`);
+	await waitFor(`current === "chat" && target === "mail:loc-2"`);
+	older = false;
+	broadcast({ kind: "mail_unreplied", target: "mail:loc-2" });
+	await waitFor(`!MAILS.has("mail:loc-2") && !CONV.has("mail:loc-2") && current === "monitoring"`);
+	await waitFor(`document.querySelector("#mon-tl .mr") && ![...document.querySelectorAll("#mon-tl .mr")].some(r => r.textContent.includes("지난 안내 메일"))`);
+	expect(await v.evaluate(`document.querySelector(".toast, .ntf-toast, #toast")?.textContent ?? ""`)).not.toContain("찾지 못했어요");
 }, 30_000);
