@@ -139,7 +139,6 @@ export function fakeHub(opts: HubOptions = {}) {
 	};
 	return hub;
 }
-export type FakeHub = ReturnType<typeof fakeHub>;
 
 // Resolves when the page-side expression is truthy, re-checked every animation frame.
 export const waitFor = (v: View, expr: string, ms = 10_000) =>

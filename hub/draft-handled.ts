@@ -3,7 +3,6 @@
 // Pure: each app answers from its own store through the facts below (hub/main.ts wires the real ones).
 //
 //   undefined = the app does not know this draft (another app's ref, or its store is unreadable): the notice stays as it is.
-export type DraftFacts = { handled: boolean };
 
 /** A reply draft of the mail app (features/reply-drafts): `ref` is the mail key the draft answers. */
 export type MailDraftLike = { id: string; ref: string; status: string; created: string };

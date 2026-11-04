@@ -9,6 +9,7 @@
 // A websocket upgrade is bridged to the same upstream path (Bun's server.upgrade + a client WebSocket per connection), so an
 // app like mydocs keeps its editor channel. Bodies stream both ways.
 import type { Server, ServerWebSocket } from "bun";
+import { sameOrigin } from "./routes-util.ts";
 import type { UserApp } from "./user-apps.ts";
 
 export type AppWsData = { app: string; target: string; queue: (string | Uint8Array)[]; up?: WebSocket };
@@ -90,24 +91,14 @@ const TEXTUAL = /(?:^text\/html|^text\/css|^application\/xhtml\+xml)/i;
 // The gateway's own credentials and the owner's identity stay at the gateway; the app gets only the browser's request.
 const PRIVATE = (k: string): boolean => k === "x-dotz-token" || k === "x-dotz-peer" || k.startsWith("tailscale-");
 
-// tailscale serve signs every request from the owner's device, whichever page sent it: a page of another origin must not
-// open an app's websocket or send it a state-changing request with that identity (same rule as pty.ts).
-const sameOrigin = (req: Request): boolean => {
-	const origin = req.headers.get("origin");
-	if (!origin) return true;
-	try {
-		return new URL(origin).host === req.headers.get("host");
-	} catch {
-		return false;
-	}
-};
-
 /** The proxied answer, streaming, with only the headers a browser needs. */
 export async function proxyRequest(req: Request, url: URL, app: UserApp, match: { id: string; rest: string }, srv?: Server<unknown>): Promise<Response | undefined> {
 	const base = `/apps/${app.id}`;
 	const target = upstreamUrl(app, match.rest, url.search);
 	if (!app.web) return new Response("this app has no web ui", { status: 404 });
 	const upgrade = req.headers.get("upgrade")?.toLowerCase() === "websocket";
+	// tailscale serve signs every request from the owner's device, whichever page sent it: a page of another origin must not
+	// open an app's websocket or send it a state-changing request with that identity (same rule as pty.ts).
 	if ((upgrade || (req.method !== "GET" && req.method !== "HEAD")) && !sameOrigin(req)) return new Response("cross-origin request refused", { status: 403 });
 	if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
 		const ws = app.web.url.replace(/^http:/, "ws:");

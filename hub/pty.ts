@@ -6,7 +6,7 @@
 // in-memory ring (the replay for a page that reconnects). A password sent as a secret is held in one local string for a
 // few seconds, only to drop it from the output if the terminal echoes it, and is then cleared.
 import { homedir } from "node:os";
-import { json } from "./routes-util.ts";
+import { json, sameOrigin } from "./routes-util.ts";
 
 const RING_CHARS = 64_000;
 const INPUT_MAX = 64_000;
@@ -112,21 +112,11 @@ const clamp = (v: unknown, lo: number, hi: number, fallback: number): number => 
 	return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : fallback;
 };
 
-// A page of another origin (the browser sends Origin on every POST) must not drive the shell with the owner's identity.
-const sameOrigin = (req: Request): boolean => {
-	const origin = req.headers.get("origin");
-	if (!origin) return true;
-	try {
-		return new URL(origin).host === req.headers.get("host");
-	} catch {
-		return false;
-	}
-};
-
 const frame = (event: string, data: unknown): string => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
 export async function ptyRoute(req: Request, url: URL, host: PtyHost = sharedHost()): Promise<Response | undefined> {
 	if (!url.pathname.startsWith("/api/pty/")) return undefined;
+	// A page of another origin (the browser sends Origin on every POST) must not drive the shell with the owner's identity.
 	if (!sameOrigin(req)) return json({ error: "cross-origin request" }, 403);
 	const action = url.pathname.slice("/api/pty/".length);
 	if (req.method === "GET" && action === "stream") {

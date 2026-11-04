@@ -256,7 +256,6 @@ export function createConvSessions(d: ConvDeps) {
 		},
 	};
 }
-export type ConvSessions = ReturnType<typeof createConvSessions>;
 
 let on: boolean | undefined;
 let wiring: ((c: Conv) => { queue: Prompts; bg: BgWork }) | undefined;

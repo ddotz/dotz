@@ -127,4 +127,3 @@ export function createMailSummarizer(d: SummaryDeps) {
 		},
 	};
 }
-export type MailSummarizer = ReturnType<typeof createMailSummarizer>;

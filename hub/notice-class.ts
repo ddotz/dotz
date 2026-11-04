@@ -12,7 +12,6 @@ import { loginLost, watchUnchanged } from "./watchtext.ts";
 
 export const NOTICE_CLASSES = ["ask", "alert", "result", "news", "conv", "log"] as const;
 export type NoticeClass = (typeof NOTICE_CLASSES)[number];
-export const CLASS_LABELS: Record<NoticeClass, string> = { ask: "답변 필요", alert: "경고", result: "결과", news: "새 소식", conv: "대화", log: "기록" };
 // The owner's push switches start from these (config.json notify.push overrides them; hub/notify-route.ts reads both).
 export const CLASS_PUSH_DEFAULTS: Record<NoticeClass, boolean> = { ask: true, alert: true, result: true, news: true, conv: true, log: false };
 export type Badge = "orange" | "red" | "plain" | "none";
