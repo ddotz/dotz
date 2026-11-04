@@ -521,6 +521,46 @@ Do this, briefly:
 		},
 		notes: { stayLocal: "Could not open the web app on Tailscale, so it stays on this computer only. {name}", planned: "{name}" },
 		errors: { unknownJob: "Unknown job", unknownTerm: "Unknown sign-in", termBody: "This request may only carry a size (cols, rows)", termNotRunning: "The terminal is not running", badSecret: "That secret cannot be saved", badDraft: "Check the values you entered", applyFailed: "Could not apply. {name}", busy: "Already running" },
+		// The screens of the web onboarding (web/setup/setup.js); {name}, {n}, {url}, {guild}, {bot}, {v} are filled in by the page.
+		ui: {
+			steps: { harness: "Harness", tools: "Tools", bot: "Bot", discord: "Discord", web: "Web app", review: "Review" },
+			titles: { start: "Let's set up dotz", harness: "Pick the harness your bot runs on", tools: "Get the tools your bot uses", bot: "Introduce your bot", discord: "Connect Discord", web: "Set up the web app", review: "Set it up like this?", applying: "Setting things up", done: "{name} is ready" },
+			sups: { start: "What is already ready is skipped; you are only asked for the rest.", harness: "The bot and its sessions work through this coding agent.", tools: "Only what is missing gets installed. Anything you skip here can be done later in Settings.", bot: "It talks like this on Discord, the web and the terminal.", discord: "Lets you talk to it from Discord when you are away.", web: "", review: "", applying: "Keep this page open until it finishes." },
+			nav: "Onboarding steps", next: "Next", back: "Back", close: "Close", fix: "Change", later: "Later", retry: "Try again", install: "Install", login: "Sign in", connect: "Connect", running: "Running", ready: "Ready", yourTurn: "Your turn",
+			start: { found: "Found on this computer", installed: "Installed", missing: "Not installed", asideMissing: "The app or the command is missing", signedInAs: "Signed in as {name}", notSignedIn: "Not signed in", noAccounts: "No account connected", language: "Language", languageHint: "Language for the screens and the bot", go: "Get started" },
+			harness: { noAdapter: "dotz cannot use this one yet", defaultTag: "default", notInstalled: "Not installed", installOwn: "Install {name} in a terminal first, then reload this page.", loginTitle: "Sign in to {name}", loginSupOmo: "The bot works with this account", loginSupTerm: "You sign in inside a terminal window", accounts: "{n} account(s) connected" },
+			tools: { secAside: "Aside browser", secMail: "Mail and calendar", asideApp: "Aside app", asideAppSup: "Keeps logins and does web work", asideCli: "Aside command", asideCliSup: "Used when the bot drives the browser", asideLogin: "Aside sign-in", asideLoginSup: "Approve the code in the app", tsSup: "Lets you open the web app from your phone", tsLogin: "Tailscale sign-in", tsLoginSup: "Sign in in the window that opens", zeleSup: "The tool that reads mail and calendars", mailTitle: "Connect mail and calendar accounts", mailSup: "Google, Outlook, or IMAP such as Naver", needFirst: "Finish the install above first" },
+			bot: {
+				name: "Name", namePh: "Lumi, Momo, Assistant", nameHint: "2 to 32 characters. The Discord bot and its category use this name too.", character: "Character", tone: "Way of talking", notices: "Style of work logs and notices", custom: "Write my own", customPh: "Write it however you like", later: "You can change these later in a chat.",
+				address: "What the bot calls you", addressPh: "boss, a name", addressHint: "Leave it empty and the bot uses no form of address.", avatar: "Profile image", avatarPh: "/Users/me/Pictures/bot.png", avatarHint: "The path of a png or jpg file. Leave it empty to start without an image.",
+				// v is the text kept in the identity; t and s are what the page shows.
+				opts: {
+					character: [
+						{ t: "A calm, dependable personal assistant", s: "Gives the result first and asks only what it needs", v: "A calm, dependable personal assistant. Gives the result first and asks only what it needs." },
+						{ t: "A playful but reliable helper, like a friend", s: "Light in tone, exact on facts", v: "A playful but reliable helper, like a friend. Light in tone, exact on facts." },
+						{ t: "A careful engineer", s: "Checks evidence first and says so when unsure", v: "A careful engineer. Checks evidence and verification first, and says so when unsure." },
+					],
+					tone: [
+						{ t: "Relaxed and conversational", s: "Checked it. Tomorrow's meeting moved to 11, so I moved the event too.", v: "Relaxed, conversational English. Answers right after what was said in natural sentences, with no fixed openers or 'one-line conclusion + bullets' template. Lists only for reports and choices. Concrete evidence and numbers. No emoji (e.g. \"Checked it. Tomorrow's meeting moved from 10 to 11, so I moved the event too.\")" },
+						{ t: "Casual and short", s: "Yep, done. Sent the mail too.", v: "Casual, friendly and short (e.g. \"Yep, done. Sent the mail too\")" },
+						{ t: "Polite and brief", s: "Done. The mail is sent too.", v: "Polite and brief (e.g. \"Done. The mail is sent too\")" },
+						{ t: "Formal", s: "Completed. The mail has also been sent.", v: "Formal and courteous (e.g. \"Completed. The mail has also been sent\")" },
+					],
+					notices: [
+						{ t: "Everyday", s: "Sorted the files. Nothing missing, nothing left.", v: "Everyday: normal speech, the relevant facts in a few words (e.g. \"Sorted the files. Nothing missing, nothing left.\")" },
+						{ t: "Brief", s: "Finished sorting the files. No file is missing.", v: "Brief: plain statements, one fact per sentence, no filler (e.g. \"Finished sorting the files. No file is missing. Nothing is left.\")" },
+						{ t: "STE 80%", s: "File sorting is complete. No file is missing.", v: "STE 80%: ASD-STE100 rules (short sentences, active voice, fixed terms, numbered steps for procedures) at 80% strength, formal register. The strength can be changed, for example 'STE 100%' (e.g. \"File sorting is complete. No file is missing. No work is left.\")" },
+					],
+				},
+			},
+			discord: { offTitle: "Using it without Discord", offSup: "You can use the web and the terminal. Connect Discord later in Settings.", turnOn: "Turn back on", tokenSaved: "The bot token is saved", replace: "Replace", token: "Bot token", tokenHint: "It is not kept on screen or in any log. It goes straight to the secret store.", guild: "Server ID", idPh: "17 to 20 digits", guildHint: "In Discord, turn on Settings > Advanced > Developer Mode, then right-click the server name and choose Copy ID. Leave it empty to skip Discord.", owner: "My Discord ID", ownerHint: "Only this account's words are taken as commands. Right-click your profile and copy the ID.", bot: "Bot", botHow: "How should the bot be made?", tokenSup: "Paste a token you made in the developer portal", autoSup: "Aside makes it. You only approve the two-step verification", auto: "Automatic", tokenWord: "Token", skip: "Skip Discord" },
+			web: { peerSaved: "The shared key is saved", peer: "Shared key", peerHint: "Paste the shared key of your other computer. Leave it empty the first time.", machine: "Name of this computer", machineHint: "Shown under this name in the web app's list of computers.", logins: "Tailscale logins that may come in", loginsHint: "Separate several with commas. Empty means this computer only.", peerMore: "Use with other computers", advanced: "Ports and models", webPort: "Local port", tsPort: "Tailnet port", botModel: "Bot model", laneModel: "Session model", default: "Default" },
+			review: { harness: "Harness", tools: "Tools", bot: "Bot", web: "Web app", loggedIn: " · signed in", loginLater: " · sign in later", laterWord: "later", noName: "No name", discordSum: "Server {guild} · bot {bot}", botTokenWord: "pasted token", botAutoWord: "made automatically", noDiscord: "Not used", onlyHere: "This computer only", go: "Set it up" },
+			errors: { name: "Give the bot a name of 2 to 32 characters", guild: "The server ID is 17 to 20 digits", owner: "Your Discord ID is 17 to 20 digits", token: "Paste the bot token", peer: "The shared key needs 16 or more characters and no spaces", port: "A port is a number from 1 to 65535", waitJob: "You can go on when the running job finishes", closed: "The setup is finished or the address expired. Get a new one in a terminal with bun setup.ts --web-link." },
+			term: { lib: "Could not load the terminal component", sub: "A window that runs one fixed command. It tells you when it ends.", starting: "Opening", live: "Connected", done: "Finished. You can close this.", lost: "The connection dropped" },
+			login: { title: "Claude subscription sign-in", intro: "Sign in in the new tab, then paste the code it gives you.", open: "Open the sign-in page", code: "Code or address", go: "Done", empty: "Paste the code or address", fail: "Sign-in failed" },
+			done: { here: "This computer", open: "Open", phone: "Phone or another computer", phoneSup: "{url} · sign in with the same Tailscale account", connected: "Connected", discordSup: "Talk to {name} in the chat channel of its category", openApp: "Open the web app", opening: "Opening the web app" },
+		},
 	},
 };
 export type Catalog = typeof en;

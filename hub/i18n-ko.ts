@@ -503,5 +503,45 @@ export const ko: Catalog = {
 		},
 		notes: { stayLocal: "Tailscale로 열지 못해서 이 컴퓨터에서만 열어 뒀어요. {name}", planned: "{name}" },
 		errors: { unknownJob: "알 수 없는 작업이에요", unknownTerm: "알 수 없는 로그인이에요", termBody: "이 요청에는 크기(cols, rows)만 보낼 수 있어요", termNotRunning: "터미널이 실행 중이 아니에요", badSecret: "저장할 수 없는 비밀값이에요", badDraft: "입력한 값을 확인해 주세요", applyFailed: "적용하지 못했어요. {name}", busy: "이미 하고 있어요" },
+		// The screens of the web onboarding (web/setup/setup.js); {name}, {n}, {url}, {guild}, {bot}, {v} are filled in by the page.
+		ui: {
+			steps: { harness: "하네스", tools: "도구", bot: "봇", discord: "Discord", web: "웹 앱", review: "확인" },
+			titles: { start: "dotz를 설정할게요", harness: "봇이 돌아갈 하네스를 골라요", tools: "봇이 쓸 도구를 준비해요", bot: "봇을 소개해 주세요", discord: "Discord를 연결해요", web: "웹 앱을 정리해요", review: "이대로 설정할까요", applying: "설정하고 있어요", done: "{name} 준비가 끝났어요" },
+			sups: { start: "준비된 것은 건너뛰고 필요한 것만 물어볼게요.", harness: "봇과 세션이 이 코딩 에이전트로 일해요.", tools: "없는 것만 설치해요. 지금 안 해도 나중에 설정에서 할 수 있어요.", bot: "Discord, 웹, 터미널 어디서나 이렇게 말해요.", discord: "밖에서 Discord로 말을 걸 수 있어요.", web: "", review: "", applying: "끝날 때까지 이 페이지를 열어 두세요." },
+			nav: "온보딩 단계", next: "다음", back: "이전", close: "닫기", fix: "고치기", later: "나중에", retry: "다시 시도", install: "설치", login: "로그인", connect: "연결", running: "진행 중", ready: "준비됨", yourTurn: "내가 할 일",
+			start: { found: "이 컴퓨터에서 찾은 것", installed: "설치돼 있어요", missing: "설치돼 있지 않아요", asideMissing: "앱이나 명령어가 없어요", signedInAs: "{name} 으로 로그인돼 있어요", notSignedIn: "로그인하지 않았어요", noAccounts: "연결된 계정이 없어요", language: "언어", languageHint: "화면과 봇이 쓸 언어", go: "시작하기" },
+			harness: { noAdapter: "아직 dotz에서 쓸 수 없어요", defaultTag: "기본", notInstalled: "설치돼 있지 않아요", installOwn: "{name}은(는) 터미널에서 먼저 설치해 주세요. 설치한 뒤 이 페이지를 새로 고치면 돼요.", loginTitle: "{name} 로그인", loginSupOmo: "봇이 이 계정으로 일해요", loginSupTerm: "터미널 창에서 로그인해요", accounts: "계정 {n}개가 연결됐어요" },
+			tools: { secAside: "Aside 브라우저", secMail: "메일과 일정", asideApp: "Aside 앱", asideAppSup: "로그인 유지와 웹 작업에 써요", asideCli: "Aside 명령어", asideCliSup: "봇이 브라우저를 다룰 때 써요", asideLogin: "Aside 로그인", asideLoginSup: "코드를 앱에서 승인하면 돼요", tsSup: "휴대폰에서 웹 앱을 열 때 써요", tsLogin: "Tailscale 로그인", tsLoginSup: "열린 창에서 로그인해요", zeleSup: "메일과 캘린더를 읽는 도구예요", mailTitle: "메일·일정 계정 연결", mailSup: "Google, Outlook, 네이버 같은 IMAP", needFirst: "먼저 위의 설치를 끝내 주세요" },
+			bot: {
+				name: "이름", namePh: "루미, 모모, 비서", nameHint: "2~32자예요. Discord 봇 이름과 카테고리도 이 이름을 써요.", character: "성격", tone: "말투", notices: "작업 기록과 알림 문체", custom: "직접 쓰기", customPh: "원하는 대로 적어 주세요", later: "나중에 대화에서 바꿀 수 있어요.",
+				address: "나를 부르는 말", addressPh: "형, 대표님, 이름", addressHint: "비워 두면 호칭 없이 말해요.", avatar: "프로필 이미지", avatarPh: "/Users/me/Pictures/bot.png", avatarHint: "png나 jpg 파일 경로를 적어요. 비워 두면 이미지 없이 시작해요.",
+				// v is the text kept in the identity (the same lists as onboard/answers.ts); t and s are what the page shows.
+				opts: {
+					character: [
+						{ t: "차분하고 믿음직한 개인 비서", s: "먼저 결과를 말하고 필요한 것만 물어요", v: "차분하고 믿음직한 개인 비서. 먼저 결과를 말하고 필요한 것만 묻는다." },
+						{ t: "장난기 있지만 일은 확실한 친구 같은 조수", s: "가볍게 말하되 사실은 정확하게 말해요", v: "장난기 있지만 일은 확실한 친구 같은 조수. 가볍게 말하되 사실은 정확하게." },
+						{ t: "꼼꼼한 엔지니어", s: "근거와 검증을 먼저 챙기고 불확실하면 그렇다고 말해요", v: "꼼꼼한 엔지니어. 근거와 검증을 먼저 챙기고 불확실하면 그렇다고 말한다." },
+					],
+					tone: [
+						{ t: "편한 해요체", s: "확인해 봤어요. 내일 회의가 11시로 바뀌어서 일정도 옮겨 뒀어요.", v: "편한 해요체로 이어지는 대화. 상대 말에 바로 이어서 자연스러운 문장으로 답하고, 정해진 시작말이나 '한 줄 결론 + 불릿' 틀을 매번 쓰지 않음. 목록은 보고와 선택지에만. 근거와 숫자는 구체적으로. 이모지 없음 (예: \"확인해 봤어요. 내일 회의가 10시에서 11시로 바뀌어서 일정도 같이 옮겨 뒀어요.\")" },
+						{ t: "반말", s: "응, 끝났어. 메일도 보냈어.", v: "반말, 친근하고 짧게 (예: \"응, 끝났어. 메일도 보냈어\")" },
+						{ t: "존댓말, 간결하게", s: "네, 끝났어요. 메일도 보냈어요.", v: "존댓말, 간결하게 (예: \"네, 끝났어요. 메일도 보냈어요\")" },
+						{ t: "존댓말, 정중하게", s: "완료했습니다. 메일도 발송했습니다.", v: "존댓말, 정중하게 (예: \"완료했습니다. 메일도 발송했습니다\")" },
+					],
+					notices: [
+						{ t: "일상", s: "자료 정리 끝났어요. 빠진 파일 없고 남은 일 없어요.", v: "일상: 평소 말투 그대로, 관련 내용을 짧게 (예: \"자료 정리 끝났어요. 빠진 파일 없고 남은 일 없어요.\")" },
+						{ t: "간결", s: "자료 정리를 마쳤어요. 빠진 파일은 없어요.", v: "간결: 해요체 평서문, 한 문장에 사실 하나, 군말 없이 (예: \"자료 정리를 마쳤어요. 빠진 파일은 없어요. 남은 일은 없어요.\")" },
+						{ t: "STE 80%", s: "자료 정리를 완료했습니다. 빠진 파일이 없습니다.", v: "STE 80%: ASD-STE100 규칙(짧은 문장, 능동태, 정해진 용어, 절차는 번호 단계)을 80% 강도로, 합니다체. 강도는 'STE 100%'처럼 바꿀 수 있음 (예: \"자료 정리를 완료했습니다. 빠진 파일이 없습니다. 남은 작업은 없습니다.\")" },
+					],
+				},
+			},
+			discord: { offTitle: "Discord 없이 써요", offSup: "웹과 터미널로 쓸 수 있어요. 나중에 설정에서 연결하면 돼요.", turnOn: "다시 켜기", tokenSaved: "봇 토큰이 저장돼 있어요", replace: "바꾸기", token: "봇 토큰", tokenHint: "화면에도 기록에도 남지 않아요. 비밀 저장소로 바로 들어가요.", guild: "서버 ID", idPh: "17~20자리 숫자", guildHint: "Discord 설정 > 고급 > 개발자 모드를 켜고, 서버 이름을 우클릭해 ID 복사를 눌러요. 비워 두면 Discord 없이 써요.", owner: "내 Discord ID", ownerHint: "이 계정의 말만 명령으로 들어요. 내 프로필을 우클릭해 복사해요.", bot: "봇", botHow: "봇을 어떻게 만들까요", tokenSup: "개발자 포털에서 만든 토큰을 붙여넣어요", autoSup: "Aside로 만들어요. 2단계 인증만 승인해 주세요", auto: "자동", tokenWord: "토큰", skip: "Discord 없이 쓰기" },
+			web: { peerSaved: "공유 키가 저장돼 있어요", peer: "공유 키", peerHint: "다른 컴퓨터의 공유 키를 붙여넣어요. 처음이면 비워 두세요.", machine: "이 컴퓨터 이름", machineHint: "웹 앱의 컴퓨터 목록에 이 이름으로 보여요.", logins: "들어올 수 있는 Tailscale 로그인", loginsHint: "쉼표로 여러 개 적을 수 있어요. 비우면 이 컴퓨터에서만 열려요.", peerMore: "다른 컴퓨터와 함께 보기", advanced: "포트와 모델", webPort: "로컬 포트", tsPort: "테일넷 포트", botModel: "봇 모델", laneModel: "세션 모델", default: "기본값" },
+			review: { harness: "하네스", tools: "도구", bot: "봇", web: "웹 앱", loggedIn: " · 로그인됨", loginLater: " · 나중에 로그인", laterWord: "나중에", noName: "이름 없음", discordSum: "서버 {guild} · 봇 {bot}", botTokenWord: "붙여넣은 토큰", botAutoWord: "자동으로 만들기", noDiscord: "쓰지 않음", onlyHere: "이 컴퓨터에서만", go: "설정하기" },
+			errors: { name: "봇 이름을 2자에서 32자 사이로 적어 주세요", guild: "서버 ID는 17~20자리 숫자예요", owner: "내 Discord ID는 17~20자리 숫자예요", token: "봇 토큰을 붙여넣어 주세요", peer: "공유 키는 공백 없이 16자 이상이어야 해요", port: "포트는 1에서 65535 사이 숫자예요", waitJob: "하는 중인 일이 끝나면 넘어갈 수 있어요", closed: "설정이 끝났거나 주소가 만료됐어요. 새 주소는 터미널에서 bun setup.ts --web-link 로 받아요." },
+			term: { lib: "터미널 구성요소를 불러오지 못했어요", sub: "정해진 명령 하나만 도는 창이에요. 끝나면 알려 드려요.", starting: "여는 중이에요", live: "연결됐어요", done: "끝났어요. 닫으면 돼요", lost: "연결이 끊겼어요" },
+			login: { title: "Claude 구독 로그인", intro: "새 탭에서 로그인하고, 나온 코드를 붙여넣어 주세요.", open: "로그인 페이지 열기", code: "코드 또는 주소", go: "완료", empty: "코드나 주소를 붙여 넣어 주세요", fail: "로그인에 실패했어요" },
+			done: { here: "이 컴퓨터", open: "열림", phone: "휴대폰이나 다른 컴퓨터", phoneSup: "{url} · 같은 Tailscale 계정으로 로그인해서 열어요", connected: "연결됨", discordSup: "{name} 카테고리의 대화 채널에 말을 걸면 돼요", openApp: "웹 앱 열기", opening: "웹 앱을 여는 중이에요" },
+		},
 	},
 };
