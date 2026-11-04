@@ -53,6 +53,8 @@ function resetChat() { clear(tl); CV.drawn = ""; if (TL_TOP_NODE) tl.append(TL_T
 function dayDiv(t) { const d = kstDay(t); if (d && d !== CS.day) { CS.day = d; CS.who = ""; tl.append(el("div", { class: "a-div", text: dayLabel(t) })); } }
 // Who said a message, for the meta line: shown once per run of messages from the same speaker (a gap over 10 minutes starts a new run).
 function speakerOf(e) {
+  const peer = peerMsgOf(e);
+  if (peer) return `peer|${peer.from}`;
   if (e.kind === "message" || e.kind === "lane_message" || e.kind === "_cmd") return `owner|${e.kind === "_cmd" ? "cmd" : e.source ?? ""}`;
   if (e.kind === "lane_report") return `lane|${e.lane ?? ""}`;
   if (e.kind === "out" && (e.target === "alert" || e.target === "worklog")) return e.target;
@@ -236,6 +238,8 @@ function msgNode(e) {
   // Nothing to read: an outbox record with no text and no card is not a bubble (a deferral note must never look like an empty one).
   if (!text.trim() && !e.card && !(Array.isArray(e.files) && e.files.length) && e.kind !== "result" && e.kind !== "lane_start") return null;
   if (e.kind === "out" && e.system) return sysLine(e, text.trim(), hm);
+  const peer = peerMsgOf(e);
+  if (peer) return peerMsgCard(e, peer, hm);
   switch (e.kind) {
     case "message": case "lane_message": case "_cmd": {
       const via = e.kind === "_cmd" ? "명령" : e.source === "discord" ? "Discord" : e.source === "terminal" ? "터미널" : "";
