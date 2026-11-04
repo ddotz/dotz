@@ -12,7 +12,7 @@ import type { Platform } from "../../youtube-instagram/lib/watchkit.ts";
 import { appOn, dataDir, listProfiles, loadSettings, paths, REPO_FEATURE, saveSettings, setApp, validApp, type ToneKey } from "../lib/settings.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { defaultCall } from "../lib/flow.ts";
-import { sweep } from "../lib/persona.ts";
+import { MAIL_TONE_VERSION, markVersion, sweep } from "../lib/persona.ts";
 import { learnTone, realRunner, SWEEP_LIMIT, toneSummary, zeleEnabled, type Runner } from "../lib/tone.ts";
 
 type Out = { lines: string[]; code: number };
@@ -48,6 +48,7 @@ async function learn(key: ToneKey, opts: Parameters<typeof learnTone>[1], analyz
 		let identity = "";
 		if (analyze && r.texts.length) {
 			const a = await sweep(key, r.texts, where, analyze).catch(e => ((r.warning ??= `문체 분석 실패: ${(e as Error).message}`), undefined));
+			if (a?.identity && key.app === "mail" && key.room === undefined) markVersion(key, MAIL_TONE_VERSION);
 			if (a?.identity) identity = ` 보낸 글 ${r.texts.length}개를 분석해 문체와 성격 ${a.identity}가지를 정체성으로 잡고, 자주 오는 상황별 답장 틀 ${a.templates}개를 만들었어요.`;
 		}
 		return `${toneSummary(r)}${identity}`;

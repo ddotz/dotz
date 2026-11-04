@@ -6,10 +6,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
-import { correctionsOf, hasSamples, identityOf, paths, roomFile, type ToneKey, templatesOf, writeAtomic, writeExamples, writeIdentity } from "./settings.ts";
+import { correctionsOf, hasSamples, HEADINGS, identityOf, paths, roomFile, type ToneKey, templatesOf, toneFile, writeAtomic, writeExamples, writeIdentity, writeSections } from "./settings.ts";
 import { ownText, pickExamples, quotedText } from "./tone.ts";
 
 export const REFINE_EVERY = 5;
+const RETRY_MS = 24 * 60 * 60 * 1000;
+export const MAIL_TONE_VERSION = "2"; // 2: the mail profile is learned from the user's own messages only, not from whole threads
 const PER_TEXT = 1500;
 const CONTEXT_MAX = 400;
 const CORPUS_MAX = 60_000;
@@ -103,13 +105,40 @@ function readLearned(): Record<string, string> {
 	}
 }
 
+// Says a profile is learned at `version` (onboard.ts learn just did it by hand), so the next draft does not learn it again.
+export const markVersion = (key: ToneKey, version: string, now = new Date()): void => markLearned([`${fileKey(key)}@${version}`], now);
+
+const markLearned = (marks: string[], now: Date) => writeAtomic(paths.learned(), `${JSON.stringify({ ...readLearned(), ...Object.fromEntries(marks.map(m => [m, now.toISOString()])) }, null, 1)}\n`);
+
+// A profile learned by older code is learned once more when `version` is newer: the old profile is copied to <file>.bak-<date> first, then only
+// identity, reply templates and examples are rewritten. Nothing changes (and it is asked again next time) when the source is empty or the model fails.
+async function relearn(key: ToneKey, texts: string[], where: string, call: ModelCall, now: Date, mark: string): Promise<"learned" | "empty"> {
+	const a = await analyzeTone(texts, where, call);
+	if (!a.identity.length) return "empty";
+	const old = [toneFile(key), key.app === "mail" && key.room === undefined ? paths.legacyStyle() : ""].find(f => f && existsSync(f));
+	const bak = `${toneFile(key)}.bak-${now.toISOString().slice(0, 10)}`;
+	if (old && !existsSync(bak)) writeAtomic(bak, readFileSync(old, "utf8"));
+	const examples = pickExamples(texts);
+	writeAtomic(corpusFile(key), `${corpusOf(texts)}\n`);
+	writeSections(key, [[HEADINGS.identity, a.identity], [HEADINGS.templates, a.templates], ...(examples.length ? [[HEADINGS.samples, examples] as [string, string[]]] : [])]);
+	markLearned([mark], now);
+	return "learned";
+}
+
 // The first sweep for a profile that has no identity yet, done once per profile. A source with nothing to read yet (not set up, no sent
-// text) or one that failed is asked again with the next item.
-export async function learnFirst(key: ToneKey, source: () => Promise<string[]>, where: string, call: ModelCall, now = new Date()): Promise<"learned" | "known" | "empty"> {
-	if (identityOf(key).length || readLearned()[fileKey(key)]) return "known";
+// text) or one that failed is asked again with the next item. With a `version`, an existing profile not yet learned at that version is relearned.
+export async function learnFirst(key: ToneKey, source: () => Promise<string[]>, where: string, call: ModelCall, now = new Date(), version?: string): Promise<"learned" | "known" | "empty"> {
+	const learned = readLearned();
+	const mark = version ? `${fileKey(key)}@${version}` : undefined;
+	const exists = !!(identityOf(key).length || learned[fileKey(key)]);
+	if (exists && (!mark || learned[mark])) return "known";
+	// A relearn that failed or found nothing waits a day: it reads the whole sent folder, so it must not run with every mail.
+	if (exists && now.getTime() - Date.parse(learned[`${mark}~tried`] ?? "") < RETRY_MS) return "known";
+	if (exists) markLearned([`${mark}~tried`], now);
 	const texts = await source();
 	if (!texts.length) return "empty";
-	writeAtomic(paths.learned(), `${JSON.stringify({ ...readLearned(), [fileKey(key)]: now.toISOString() }, null, 1)}\n`);
+	if (exists) return relearn(key, texts, where, call, now, mark!);
+	markLearned([fileKey(key), ...(mark ? [mark] : [])], now);
 	return (await sweep(key, texts, where, call)).identity ? "learned" : "empty";
 }
 
