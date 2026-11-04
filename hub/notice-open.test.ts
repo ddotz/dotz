@@ -181,7 +181,7 @@ describe("entry points use the shared handler", () => {
 		expect(between(notices, "function pushOpen", "/* ---- one handler")).toContain("noticeOpen(");
 		expect(between(notices, "function ntHomeRow", "/* ---- detail sheet")).toContain("noticeOpen(n)");
 		expect(notices).toContain("if (d.notice) noticeOpenId(d.notice);");
-		expect(notices).toContain("setTimeout(() => noticeOpenId(want), 500);");
+		expect(notices).toContain("setTimeout(() => noticeOpenId(want, true), 500);");
 		expect(between(notices, "function noticeLive", "async function ntMarkRead")).toContain("noticeOpenId(e.item.id)");
 		expect(sw).toContain("pushOpen(h, d.ts, d.nid)");
 		expect(home).toContain("noticeOpen(n)");

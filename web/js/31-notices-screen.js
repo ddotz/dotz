@@ -126,7 +126,6 @@ function nscOpen() {
   NSC.keep = false;
   if (!keep) {   // opened from the bell, the palette or the address: every filter shows, nothing is unfolded
     NSC.f = "all"; NSC.open.clear(); NSC.lim = { news: NSC_PAGE, past: NSC_PAGE }; NSC.seen.clear(); NSC.seen.seeded = false;
-    NSC.back = prevView && prevView !== "notices" ? prevView : "home";
   }
   nscPaint(true);
   if (keep) $("#views").scrollTop = NSC.scroll;   // back from a row: the filter and the place in the list stay

@@ -253,10 +253,11 @@ async function noticeOpen(n, here = false) {
     default: return ntJump(n);
   }
 }
-async function noticeOpenId(id) {
+// `quiet`: a page load, not a tap, asked (?n=): a stale link just stays on the route it loaded.
+async function noticeOpenId(id, quiet) {
   let n = ntById(id);
   if (!n) { await loadNotices(); n = ntById(id); }
-  if (!n) { toast("이 알림은 이미 처리됐어요"); return; }
+  if (!n) { if (!quiet) toast("이 알림은 이미 처리됐어요"); return; }
   return noticeOpen(n);
 }
 function ntRead(n) {
@@ -707,7 +708,7 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("mess
     const u = new URL(location.href);
     u.searchParams.delete("n");
     history.replaceState(history.state, "", u.pathname + u.search + u.hash);
-    setTimeout(() => noticeOpenId(want), 500);
+    setTimeout(() => noticeOpenId(want, true), 500);
   }
 }
 
