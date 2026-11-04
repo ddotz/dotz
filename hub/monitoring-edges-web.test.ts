@@ -61,9 +61,28 @@ describe.each([[412, 844], [1280, 800]])("모니터링 한 열 at %ipx", (width,
 		expect(cards.length).toBe(headShown ? 3 : 2);
 		const [one] = cards;
 		for (const c of cards) expect({ s: c.s, l: c.l, r: c.r }).toEqual({ s: c.s, l: one.l, r: one.r });
-		const [title] = await edges(view, ["#kk-rooms .kk-pt"]), [add] = await edges(view, ["#kk-add-btn"]);
+		const [title] = await edges(view, ["#kk-rooms .kk-views .mr-f"]), [add] = await edges(view, ["#kk-add-btn"]);
 		expect(title.l).toBe(one.l);
 		expect(add.r).toBe(one.r);
+	});
+
+	test("카카오톡: 보기 알약이 지켜보는 방을 거르고, 빈 보기는 그렇다고 말해요", async () => {
+		const rows = `document.querySelectorAll("#kk-rooms .kk-row").length`;
+		expect(await view.evaluate(rows)).toBe(1);
+		await view.evaluate(`(document.querySelector('#kk-rooms [data-view="unreplied"]').click(), 0)`);
+		expect(await view.evaluate(rows)).toBe(0);
+		expect(await view.evaluate(`document.querySelector("#kk-empty").textContent`)).toBe("미답장 대화방이 없어요");
+		await view.evaluate(`(document.querySelector('#kk-rooms [data-view="all"]').click(), 0)`);
+		expect(await view.evaluate(rows)).toBe(1);
+	});
+
+	test("예약 문구가 프롬프트 전체여도 경로와 명령 없이 사람 말만 보여요", async () => {
+		const human = (s: string) => view.evaluate(`monHuman(${JSON.stringify(s)})`);
+		expect(await human("주간 점검 시간이에요. ~/notes/README.md대로 돌려요. `bun ~/notes/collect.ts`로 모아요.")).toBe("주간 점검 시간이에요");
+		expect(await human("주간 점검 확인(state.json weekly-1104, w…")).toBe("주간 점검 확인");
+		expect(await human("피드백 데일리 보고: ssh -o BatchMode=yes host python3 - 24 < ~/.dotz/x.py")).toBe("피드백 데일리 보고");
+		expect(await human("ssh -o BatchMode=yes host uptime")).toBe("");
+		expect(await human("Next.js 새 버전(14.2)을 확인해요")).toBe("Next.js 새 버전(14.2)을 확인해요");
 	});
 
 	test("모니터 상세: 머리 카드와 확인 기록 카드가 한 폭이고 제목은 카드 왼쪽 끝에서 시작해요", async () => {

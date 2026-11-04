@@ -201,7 +201,7 @@ function nyMonRow(it) {
   return el("button", { class: "hr", type: "button", "data-mon": it.key, onclick: () => go("monitoring", it.key), "aria-label": `${title} · ${it.act}` },
     el("span", { class: "dot att" }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title }), who ? el("span", { class: "tag mon-pc", text: who }) : null),
-      el("span", { class: "ha", text: [`${m.fails}번 연속 실패했어요`, m.last_summary || ""].filter(Boolean).join(" · ") })),
+      el("span", { class: "ha", text: [`${m.fails}번 연속 실패했어요`, monClean(m.last_summary || "")].filter(Boolean).join(" · ") })),
     el("span", { class: "hs warn", text: it.act }));
 }
 // The list of the 홈 card: every row, six in sight (08-home.js capLists).

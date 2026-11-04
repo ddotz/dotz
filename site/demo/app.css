@@ -1863,7 +1863,7 @@ textarea.fi { display: block; height: auto; padding: var(--sp-2) var(--sp-3); li
 #v-notices { display: flex; flex-direction: column; }
 .nsc-f { display: flex; flex-wrap: nowrap; gap: var(--sp-1); margin: var(--sp-1) 0 var(--sp-2); overflow-x: auto; scrollbar-width: none; }
 .nsc-f::-webkit-scrollbar { display: none; }
-.nsc-fb { flex: none; display: inline-flex; align-items: center; gap: var(--sp-15); height: var(--btn-h-sm); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font: 500 13px/20px var(--font); }
+.nsc-fb { flex: none; display: inline-flex; align-items: center; gap: var(--sp-15); height: var(--chip-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-pill); background: var(--card); color: var(--fg-2); font: 500 13px/20px var(--font); }
 .nsc-fb:not(.on):hover { background: var(--hover); }
 .nsc-fb.on { background: var(--fg); color: var(--bg); font-weight: 600; }
 .nsc-fb .n { color: var(--fg-3); font-variant-numeric: tabular-nums; }
@@ -3103,9 +3103,11 @@ a.dr-att:active { background: var(--active); }
 .ms-hd .ms-n { color: var(--fg-3); font-size: 12px; }
 .ms-rm .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .mr-filter { position: sticky; top: 0; z-index: 2; display: flex; gap: var(--sp-1); flex-wrap: wrap; padding: var(--sp-1) 0 var(--sp-2); background: var(--bg); }
-.mr-filter .mr-f { height: 28px; padding: 0 var(--sp-3); font-size: 12.5px; color: var(--fg-2); background: var(--layer); }
-.mr-filter .mr-f.on { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); font-weight: 600; }
-.mr-filter .mr-fn { font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
+/* every view pill of an app, a mail list, 프로젝트 and 답장 대기 (ui-spec 탭·칩): the prototype's .tabs on the card fill, the chosen one filled with the ink */
+:is(.mr-filter, .pl-chips) .mr-f { flex: none; height: var(--chip-h); padding: 0 var(--sp-3); border-radius: var(--r-pill); background: var(--card); color: var(--fg-2); font: 500 13px/20px var(--font); }
+:is(.mr-filter, .pl-chips) .mr-f:hover { background: var(--card-hover); }
+:is(.mr-filter, .pl-chips) .mr-f.on, :is(.mr-filter, .pl-chips) .mr-f.on:hover { background: var(--fg); color: var(--bg); }
+:is(.mr-filter, .pl-chips) .mr-fn { margin-left: var(--sp-05); font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
 
 /* a briefing-shaped answer in chat (11-resultcard.js hcBriefNode): schedule rows with a muted time column, the mail line as a chip, counts as numbers */
 .hcb { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); min-width: 0; font-size: 15.5px; line-height: 28px; }
@@ -3187,6 +3189,9 @@ a.dr-att:active { background: var(--active); }
 #kk-rooms { border-radius: 0; background: transparent; }
 #kk-rooms .kk-lh { min-height: 32px; padding: 0 0 var(--sp-2); }
 #kk-rooms .kk-pt { color: var(--fg-2); font: 600 14px/20px var(--font); }
+/* the view pills share the head line with 추가: no sticky bar here, the pane scrolls as a whole */
+#kk-rooms .kk-views { position: static; flex: 1; flex-wrap: nowrap; min-width: 0; margin: 0; padding: 0; overflow-x: auto; scrollbar-width: none; background: none; }
+#kk-rooms .kk-views::-webkit-scrollbar { display: none; }
 #kk-rooms .kk-own { border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 #kk-rooms .kk-own { margin-bottom: var(--sp-3); }
 #kk-add-btn { height: 32px; min-height: 32px; }
@@ -3533,7 +3538,8 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 #cm-empty + .btn { display: block; margin: calc(var(--sp-3) * -1) auto var(--sp-6); }
 .cm .kk-draft input.kk-ta { flex: 1; min-width: 0; min-height: 44px; padding: var(--sp-2) var(--sp-3); border-radius: 12px; border: 0; background: var(--ff-fill); color: inherit; font: 400 16px/22px var(--font); }
 .cm .kk-draft input.kk-ta:focus { outline: 0; box-shadow: var(--ff-ring); }
-.cm-tabs { margin: var(--sp-2) var(--sp-4); }
+#cm-rooms .cm-tabs { position: static; flex-wrap: nowrap; margin: var(--sp-3) var(--sp-4) var(--sp-1); padding: 0; background: none; }
+#cm-rooms .cm-tabs .mr-f:not(.on) { background: var(--layer); }
 .dm-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: var(--sp-1) var(--sp-4) var(--sp-2); }
 .dm-note { color: var(--fg-3); font: 400 12px/16px var(--font); }
 
@@ -3586,6 +3592,11 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
    done = green, busy (on its way) = blue, ask (waits for him) = orange, err = red (the shared state colors) */
 .cm-pg { display: flex; flex-wrap: wrap; gap: var(--sp-05) var(--sp-4); margin-top: var(--sp-1); min-width: 0; }
 .cm-tr { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; color: var(--fg-3); font: 400 12px/18px var(--font); }
+/* a post's row: counts, not steps of one comment, so no line between them */
+.cm-tr.sum { margin-top: var(--sp-05); }
+.cm-tr.sum .cm-st { flex: none; white-space: nowrap; }
+.cm-tr.sum .cm-st + .cm-st { padding-left: 0; }
+.cm-tr.sum .cm-st + .cm-st::after { display: none; }
 .cm-tn { margin-right: var(--sp-2); color: var(--fg-2); font-weight: 600; }
 .cm-st { position: relative; display: inline-flex; align-items: center; --cm-link: 10px; gap: var(--sp-1); min-width: 0; overflow-wrap: anywhere; }
 .cm-st::before { content: ""; flex: none; width: 8px; height: 8px; box-sizing: border-box; border: 1.5px solid var(--line-2); border-radius: 50%; }
@@ -3616,7 +3627,6 @@ textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); 
 .mon-bar { align-items: center; justify-content: space-between; flex-wrap: nowrap; gap: var(--sp-2); }
 .mon-tabs { display: flex; gap: var(--sp-1); min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .mon-tabs::-webkit-scrollbar { display: none; }
-.mon-bar .mr-f { height: 32px; }
 .mon-read { flex: none; height: 32px; padding: 0 var(--sp-3); font-size: 13px; }
 .mon-read:disabled { color: var(--fg-3); }
 .mon-sh { padding: var(--sp-3) var(--sp-1) 0; color: var(--fg-2); font: 600 13px/18px var(--font); }
@@ -3844,7 +3854,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 @media (max-width: 639px) {
   .mr-filter { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 calc(var(--sp-3) * -1); padding: var(--sp-05) var(--sp-3) var(--sp-15); overscroll-behavior-x: contain; }
   .mr-filter::-webkit-scrollbar { display: none; }
-  .mr-filter .mr-f { flex: none; height: 30px; padding: 0 var(--sp-3); border-radius: 15px; font-size: 13px; }
   .mr-star { width: 28px; height: 28px; }
   .mr-chk, .mbox-all { width: 18px; height: 18px; }
   #back, #as-bar, #as-more-bar { width: 32px; height: 32px; }
@@ -3866,9 +3875,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 #mon-tl:has(> .bm.rc.mr) { --mon-dock: 104px; gap: 0; padding-bottom: var(--mon-dock); }
 #mon-tl:has(> .bm.rc.mr) > :not(.mr, .mr-filter, .mbox-bar) { margin: var(--sp-2) 0; }
 #mon-tl > .mr-filter { padding-bottom: var(--sp-3); }
-/* the mail folders are chips (ui-spec 탭·칩): 28px pills on the card grey, the chosen one filled with the ink */
-.mr-filter.mr-mail .mr-f { height: 28px; padding: 0 var(--sp-3); border-radius: 16px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; }
-.mr-filter.mr-mail .mr-f.on { background: var(--fg); color: var(--bg); font-weight: 500; }
 #mon-tl > .bm.rc.mr { position: relative; flex-flow: row wrap; align-items: center; column-gap: var(--sp-15); row-gap: var(--sp-05); padding: var(--sp-2) var(--sp-4); border-radius: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--card) 55%, var(--bg)); }
 #mon-tl > :not(.mr) + .bm.rc.mr { border-top-left-radius: 12px; border-top-right-radius: 12px; }
 #mon-tl > .bm.rc.mr:not(:has(+ .bm.rc.mr)) { border-bottom: 0; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
@@ -4150,10 +4156,6 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 /* one line at every width: the chips scroll sideways instead of wrapping */
 .pl-chips { display: flex; flex-wrap: nowrap; gap: var(--sp-1); min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .pl-chips::-webkit-scrollbar { display: none; }
-.pl-chips .mr-f { flex: none; height: 28px; padding: 0 var(--sp-3); border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font: 500 13px/20px var(--font); }
-.pl-chips .mr-f:hover { background: var(--card-hover); }
-.pl-chips .mr-f.on, .pl-chips .mr-f.on:hover { background: var(--fg); color: var(--bg); }
-.pl-chips .mr-fn { margin-left: var(--sp-1); font-size: 11px; font-variant-numeric: tabular-nums; opacity: .8; }
 /* the prototype's .sec + .list: each group is its own card, with the heading above it */
 .pl-groups { display: flex; flex-direction: column; min-width: 0; }
 .pl-groups > .sec { margin: var(--sp-5) var(--sp-1) var(--sp-2); color: var(--fg-2); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); }
@@ -4436,3 +4438,19 @@ body { display: flow-root; }
 .btn.tonal.pr-desk:hover { background: var(--active); }
 .anch .btn.tonal.pr-desk { margin-right: var(--sp-1); }
 @media (min-width: 700px) { .ds-bd.anch .ds-sheet.pr-sheet { width: 280px; } }
+
+/* 화면 안내 (web/js/42-intro.js): the spotlight is a hole in the scrim over a real menu, the card sits next to it (above the tab bar on a phone) or in the middle. */
+.intro { position: fixed; inset: 0; z-index: 1500; }
+.intro-spot { position: fixed; border-radius: var(--r-ctl); box-shadow: 0 0 0 200vmax var(--scrim); outline: 2px solid var(--accent); }
+.intro-spot.none { outline: 0; inset: 0; border-radius: 0; box-shadow: none; background: var(--scrim); }
+.intro-tip { position: fixed; display: flex; flex-direction: column; width: min(340px, calc(100% - var(--sp-6))); padding: var(--sp-5); border-radius: var(--r-sheet); background: var(--pop); box-shadow: var(--float); }
+.intro-tip.mid { inset: 0; margin: auto; height: fit-content; width: min(var(--sheet-w), calc(100% - var(--sp-6))); }
+.intro-n { margin-bottom: var(--sp-15); color: var(--fg-3); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); }
+.intro-tip h2 { margin-top: var(--sp-3); font: 700 var(--fs-big)/var(--lh-big) var(--font); text-wrap: balance; }
+.intro-b { margin-top: var(--sp-2); color: var(--fg-2); font: 400 var(--fs-body)/var(--lh-body) var(--font); }
+.intro-keys { display: flex; flex-direction: column; margin-top: var(--sp-3); }
+.intro-key { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--btn-h); color: var(--fg-2); font: 400 var(--fs-body)/var(--lh-body) var(--font); }
+.intro-key kbd { min-width: calc(var(--sp-8) * 3); text-align: center; }
+.intro-ft { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-5); }
+.intro-skip { margin-right: auto; }
+@media (max-width: 1023px) { .intro-tip:not(.mid) { left: var(--sp-3); right: var(--sp-3); width: auto; } }

@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "d2538d5678d9";
+const WEB_BUILD = "0c405e7855e2";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -1382,22 +1382,18 @@ function sideToggle() {
   try { if (min) localStorage.setItem(SIDE_KEY, "min"); else localStorage.removeItem(SIDE_KEY); } catch { /* storage blocked: the choice lasts until reload */ }
   sideSync();
 }
+// The ⌘/Ctrl keys besides 1..6 and K (05-command-palette.js): one list drives the handler below and the keys the screen tour shows (42-intro.js).
+const MOD_KEYS = [
+  { code: "Slash", key: "/", label: "알림", run: () => { if (PR.node) prClose(false); $("#bell").click(); } },
+  { code: "Period", key: ".", label: "메인 대화", run: () => { if (PR.node) prClose(false); openTarget("main", "chat"); } },
+  { code: "Backslash", key: "\\", label: "사이드바 접기", wide: true, run: sideToggle },
+];
+const modKeyWide = k => !k.wide || matchMedia("(min-width: 1024px)").matches;
 document.addEventListener("keydown", ev => {
   if (ev.isComposing || ev.altKey || ev.shiftKey || !(isMac ? ev.metaKey : ev.ctrlKey) || document.querySelector("dialog[open]:not([data-leaving])")) return;
-  if (ev.code === "Slash" || ev.key === "/") {
-    ev.preventDefault();
-    if (PR.node) prClose(false);
-    $("#bell").click();
-    return;
-  }
-  if (ev.code === "Period" || ev.key === ".") {
-    ev.preventDefault();
-    if (PR.node) prClose(false);
-    openTarget("main", "chat");
-    return;
-  }
-  if (ev.code === "Backslash" || ev.key === "\\") {
-    if (matchMedia("(min-width: 1024px)").matches) { ev.preventDefault(); sideToggle(); }
+  const mk = MOD_KEYS.find(k => ev.code === k.code || ev.key === k.key);
+  if (mk) {
+    if (modKeyWide(mk)) { ev.preventDefault(); mk.run(); }
     return;
   }
   const n = /^Digit([1-6])$/.exec(ev.code || "")?.[1] || (/^[1-6]$/.test(ev.key) ? ev.key : ""), tab = n && navTabs()[n - 1];
@@ -3027,7 +3023,7 @@ function nyMonRow(it) {
   return el("button", { class: "hr", type: "button", "data-mon": it.key, onclick: () => go("monitoring", it.key), "aria-label": `${title} · ${it.act}` },
     el("span", { class: "dot att" }),
     el("span", { class: "hb" }, el("span", { class: "hn1" }, el("span", { class: "nm", text: title }), who ? el("span", { class: "tag mon-pc", text: who }) : null),
-      el("span", { class: "ha", text: [`${m.fails}번 연속 실패했어요`, m.last_summary || ""].filter(Boolean).join(" · ") })),
+      el("span", { class: "ha", text: [`${m.fails}번 연속 실패했어요`, monClean(m.last_summary || "")].filter(Boolean).join(" · ") })),
     el("span", { class: "hs warn", text: it.act }));
 }
 // The list of the 홈 card: every row, six in sight (08-home.js capLists).
@@ -4931,9 +4927,10 @@ function msgNode(e) {
         const key = e.mail || (isMailT(e.conv || "") ? mailOf(e.conv) : ""), html = !!(e.html || (MAILS.get(`mail:${key}`) || {}).html);
         // The summary slot holds a real summary only: a sent mail has none (the collector gives its body's start, hub/mail.ts sentMailEvent), and a
         // "summary" that is only the start of the mail's own body is drawn once, as the body.
-        const rec = MAILS.get(`mail:${key}`) || {}, rest = text.split("\n").slice(1).join("\n").trim(), sp = rcSplit(rest);
-        const noSum = e.dir === "out" || rec.dir === "out" || mailSumIsBody(sp.text, e.preview, rec.preview, sp.raw);
-        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: noSum ? "" : rest, ...(noSum ? { raw: sp.raw } : {}), rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw, e.subject) : undefined });
+        // The hub summarizes after the mail is posted (hub/mail-summary.ts), so the summary is often on the record and not in the event's text.
+        const rec = MAILS.get(`mail:${key}`) || {}, sp = rcSplit(text.split("\n").slice(1).join("\n").trim()), sum = sp.text || rec.summary || "";
+        const noSum = e.dir === "out" || rec.dir === "out" || mailSumIsBody(sum, e.preview, rec.preview, sp.raw);
+        const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: noSum ? "" : sum, raw: sp.raw, rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw, e.subject) : undefined });
         // Gmail-like, top to bottom: the bar of icons (30-mail-box.js mailOpenBar, 초안 작성 and the ⋯ in it), the subject, the sender and time,
         // one muted line of 받는 사람 / 참조 that opens the full header (30-mail-thread.js), the summary, then the original.
         if (card && key) {
@@ -8650,6 +8647,7 @@ function settingsList(go) {
     stSec("앱"), stList(
       stRow("bell", "앱과 알림", stPushSub(), () => go("notifications")),
       navOff("apps") ? null : stRow("apps", "앱 관리", "", () => go("apps")),
+      stRow("spark", "화면 안내 다시 보기", "화면 설명과 단축키", () => introOpen()),
       stRow(themeIc(), "표시", `${themeIs() === "dark" ? "다크" : "라이트"} · 대화 탭 ${chatTabMode() === "main" ? "메인" : "마지막"}`, () => go("display"))),
     stSec("시스템"), stList(
       stRow("download", "업데이트", stUpdateSub(), () => go("update"), updRestartPending() ? stTag("재시작 필요") : updAvailable() ? stTag("새 버전") : hvNew() ? stTag("업데이트") : undefined),
@@ -11783,7 +11781,7 @@ const KK = {
   vis: false, on: true, error: "", rooms: [], loaded: false, failed: false, dsig: [], droom: "", adding: null,   // adding: the 지켜볼 대화방 dialog while it is open
   open: "", seq: 0, loading: false, roomErr: "", room: null, msgs: [], gaps: new Set(), more: false, read: null, div: "", drafts: [], sends: [], ask: null, hidden: new Set(),
   stick: true, pill: false, pin: "", placed: false, readSent: "", edit: null, sending: false, drafting: "", revise: null, reviseCode: "", draftT: 0, tailing: false, again: false,
-  typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
+  view: "all", typed: new Map(), headSig: "", rseq: 0, timer: 0, intgT: 0, pc: null, reading: false, readAgain: false, q: "",
   peerT: 0, peerBusy: false, peerHead: "", lp: new Map(), olderBusy: false, olderAgain: false,
 };
 
@@ -12346,15 +12344,25 @@ function kkRow(r) {
         r.unreplied ? unrepPill() : null,
         r.unread ? el("span", { class: "nb warn", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null) : null);
 }
+// The pills of the watched rooms, the same format as the mail, project and 댓글 ones: which rooms the list shows. [key, label, keep, the empty list's line].
+const KK_VIEWS = [["all", "전체", () => true, ""], ["unread", "안 읽음", r => r.unread, "안 읽은 대화방이 없어요"], ["unreplied", "미답장", r => r.unreplied, "미답장 대화방이 없어요"]];
+const kkViewOf = () => KK_VIEWS.find(v => v[0] === KK.view) || KK_VIEWS[0];
+function kkViewBar(watched) {
+  return el("div", { class: "mr-filter kk-views", role: "tablist", "aria-label": "지켜보는 대화방 보기" }, ...KK_VIEWS.map(([k, label, ok]) => {
+    const on = k === kkViewOf()[0];
+    return el("button", { class: `cchip mr-f${on ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(on), "data-view": k, onclick: () => { KK.view = k; kkPaintRooms(); } }, label, cntSpan(`kk-view:${k}`, "mr-fn", watched.filter(ok).length));
+  }));
+}
 function kkPaintRooms() {
   const top = kkRooms.scrollTop, watched = KK.rooms.filter(r => r.watched).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
   const note = !KK.loaded ? "불러오는 중…" : !KK.on ? "카카오톡 연동이 꺼져 있어요" : KK.error, ready = KK.loaded && !note;
-  const head = el("div", { class: "kk-lh" }, el("span", { class: "kk-pt", text: "지켜보는 대화방" }), el("span", { class: "kk-cnt", text: ready ? `${watched.length}개` : "" }),
+  const shown = watched.filter(kkViewOf()[2]);
+  const head = el("div", { class: "kk-lh" }, ...(ready && watched.length ? [kkViewBar(watched)] : [el("span", { class: "kk-pt", text: "지켜보는 대화방" }), el("span", { class: "kk-cnt", text: ready ? "0개" : "" })]),
     ready && KK.rooms.length ? el("button", { class: "btn tonal sm kk-add-btn", id: "kk-add-btn", type: "button", onclick: () => kkAddOpen() }, icon("add"), el("span", { text: "추가" })) : null);
   const list = el("section", { class: "pl-list kk-watch", "aria-label": "지켜보는 대화방" });
   if (note) list.append(el("div", { class: "kk-note", role: "status", text: note }));
-  else if (watched.length) list.append(...watched.map(kkRow));
-  else list.append(el("div", { class: "kk-note", id: "kk-empty", text: KK.rooms.length ? "지켜볼 대화방을 추가해 주세요" : "고를 수 있는 대화방이 없어요" }));
+  else if (shown.length) list.append(...shown.map(kkRow));
+  else list.append(el("div", { class: "kk-note", id: "kk-empty", text: watched.length ? kkViewOf()[3] : KK.rooms.length ? "지켜볼 대화방을 추가해 주세요" : "고를 수 있는 대화방이 없어요" }));
   // The status of the watches the app owns (its new-message check, a login keeper) is at the top of the pane, on this computer and on the other alike.
   const own = (kkItemNow() || {}).owned || [];
   clear(kkRooms).append(...[own.length ? el("section", { class: "kk-own", "aria-label": "감시 상태" }, ...own.map(monStatNode)) : null, head, list].filter(Boolean));
@@ -13842,11 +13850,18 @@ function cmPickOpen(app) {
   document.body.append(d); d.showModal(); dialogHist(d);
   d.addEventListener("close", () => { if (CM.pickD === d) CM.pickD = null; d.remove(); });
 }
+// What the post's comments set going in mail, at a glance on its row: how many failed, wait as drafts, went out (threads rows, hub/comments/engine.ts).
+function cmMailSum(t) {
+  const m = t.mails;
+  if (!m) return null;
+  const st = [[m.failed, "실패", "err"], [m.drafted, "초안", "ask"], [m.sent, "보냄", "done"]].filter(x => x[0]).map(([n, word, s]) => ({ text: `${word} ${n}`, s }));
+  return el("span", { class: "cm-tr sum", "data-track": "mail", role: "group", "aria-label": `메일: ${st.map(x => x.text).join(", ")}` }, el("span", { class: "cm-tn", text: "메일" }), ...st.map(x => el("span", { class: "cm-st", "data-s": x.s, text: x.text })));
+}
 function cmRow(t) {
   const on = CM.open && CM.open.source === t.source && CM.open.thread === t.thread, n = t.unread + t.drafts;
   return el("button", { class: `cv-row pv kk-row${n ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-thread": t.thread, "aria-current": on ? "true" : null, onclick: () => cmOpen(t) },
     cmThumb(t.title, t.thumb),
-    el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: t.title, text: t.title }), el("span", { class: "cv-p", text: `${t.lastAuthor}: ${t.lastText}` })),
+    el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: t.title, text: t.title }), el("span", { class: "cv-p", text: `${t.lastAuthor}: ${t.lastText}` }), cmMailSum(t)),
     el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(t.lastAt) }), n || t.unreplied ? el("span", { class: "kk-rmeta" }, n ? el("span", { class: "nb", "aria-label": t.drafts ? `답장 확인 ${t.drafts}건` : `읽지 않은 댓글 ${t.unread}개`, text: t.drafts ? `초안 ${t.drafts}` : String(t.unread > 99 ? "99+" : t.unread) }) : null, t.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${t.unreplied}개`, text: `미답장 ${t.unreplied}` }) : null) : null));
 }
 // The picture of a post: its thumbnail when the source gave one (it falls back to the title's initial when the picture does not load).
@@ -13867,8 +13882,8 @@ const cmOpenWord = kind => (kind === "youtube" ? "영상 열기" : "원본 글 �
 const cmHasTabs = () => DM.on && DM.connected && CM.app === DM_APP && cmSources().some(s => (s.watch || []).length);
 function cmTabs() {
   if (!cmHasTabs()) return null;
-  const b = (id, text) => el("button", { type: "button", class: CM.tab === id ? "on" : "", "data-tab": id, "aria-pressed": CM.tab === id ? "true" : "false", text, onclick: () => cmTab(id) });
-  return el("div", { class: "seg cm-tabs", role: "group", "aria-label": "보기" }, b("comments", "댓글"), b("dm", "DM"));
+  const b = (id, text) => el("button", { type: "button", class: `cchip mr-f${CM.tab === id ? " on" : ""}`, role: "tab", "data-tab": id, "aria-selected": String(CM.tab === id), text, onclick: () => cmTab(id) });
+  return el("div", { class: "mr-filter cm-tabs", role: "tablist", "aria-label": "보기" }, b("comments", "댓글"), b("dm", "DM"));
 }
 function cmTab(id) {
   if (CM.tab === id) return;
@@ -14253,16 +14268,22 @@ function monProgNode(m, opts = {}) {
 const monWords = s => /^[A-Za-z0-9][\w.-]*$/.test(s) && /[-_]/.test(s) ? s.replace(/[-_]+/g, " ") : s;
 const monRaw = m => String(m.watch || m.name || "");
 // A raw command never reaches the screen (owner 2026-11-04): a schedule's text is what it runs ("someone이 피드백 데일리 보고: ssh -o BatchMode=yes ... python3 - 24 < ~/.dotz/...").
-// monHuman keeps the plain part before the colon and drops the command; a text that is only a command gives "" and the caller names the kind in words.
-const MON_CMD = /\b(?:ssh|scp|rsync|curl|wget|python3?|node|bun|npm|npx|bash|zsh|git|sudo|docker|osascript)\s+(?:-|[\w.-]*@|~|\.{0,2}\/|[\w.-]+\.(?:py|sh|js|ts|mjs)\b)|(?:^|\s)-{1,2}[A-Za-z][\w-]*(?:=|\s|$)|\s[<>|]{1,2}\s|\$\(|~\/|(?:^|\s)\.{0,2}\/[\w.-]+\/|@\d{1,3}(?:\.\d{1,3}){3}/;
+// monHuman keeps the plain sentences before the first one that holds a command or a file path (a schedule's text can be the whole prompt it runs), stops at the
+// colon before a command, and drops a bracket that holds one; a text that is only a command gives "" and the caller names the kind in words.
+const MON_CMD = /\b[\w.-]+\.(?:md|jsonl?|ya?ml|toml|log|py|sh)\b|\b(?:ssh|scp|rsync|curl|wget|python3?|node|bun|npm|npx|bash|zsh|git|sudo|docker|osascript)\s+(?:-|[\w.-]*@|~|\.{0,2}\/|[\w.-]+\.(?:py|sh|js|ts|mjs)\b)|(?:^|\s)-{1,2}[A-Za-z][\w-]*(?:=|\s|$)|\s[<>|]{1,2}\s|\$\(|~\/|(?:^|\s)\.{0,2}\/[\w.-]+\/|@\d{1,3}(?:\.\d{1,3}){3}/;
+const monSentences = s => s.split(/(?<=[.!?。])\s+/);
 function monHuman(raw) {
-  const s = String(raw ?? "").replace(/\s+/g, " ").trim(), i = s.search(/[:：]\s/);
-  if (i > 0 && MON_CMD.test(s.slice(i + 1))) { const head = s.slice(0, i).trim(); return MON_CMD.test(head) ? "" : head; }
-  return MON_CMD.test(s) ? "" : s;
+  const s = String(raw ?? "").replace(/\s+/g, " ").replace(/\s*[(（][^()（）]*(?:[)）]|$)/g, m => MON_CMD.test(m) ? "" : m).trim();
+  if (!MON_CMD.test(s)) return s;
+  const i = s.search(/[:：]\s/), keep = [];
+  for (const t of monSentences(i > 0 ? s.slice(0, i) : s)) { if (MON_CMD.test(t)) break; keep.push(t); }
+  return keep.join(" ").replace(/[.。]$/, "").trim();
 }
 const monClean = (s, fb = "") => monHuman(ntPlain(s)) || fb;
 const MON_GENTLE = { watch: "지켜보는 일", schedule: "예약한 일" };
-const monTitle = m => monWords(monHuman(ntPlain(m.name))) || MON_GENTLE[m.kind] || "모니터링";
+// A title stays one short phrase: a long prompt in plain words gives its first sentence.
+const MON_TITLE_MAX = 40;
+const monTitle = m => { const t = monWords(monHuman(ntPlain(m.name))); return (t.length > MON_TITLE_MAX ? monSentences(t)[0] : t) || MON_GENTLE[m.kind] || "모니터링"; };
 // One or two plain sentences under the name, from what the monitor really is (its cadence), never from the command it runs.
 const monDesc = m => m.kind === "schedule" ? (m.every ? `${m.every} 알아서 실행해요.` : "정해 둔 때에 한 번 실행해요.") : `바뀐 곳이 있는지 ${m.every ? `${m.every} ` : "알아서 "}확인해요.`;
 const monNames = m => [...new Set([monTitle(m), String(m.name || ""), monRaw(m), monWords(monRaw(m))].filter(Boolean))];
@@ -14342,7 +14363,7 @@ function monItems() {
     const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
     const need = notices.filter(monNeed).length, conn = m.connection === "disconnected", running = !!m.watch && MON.running.has(m.watch);
     (monProject(m) ? proj : plain).push({ key: `m:${m.name}`, group: monGroupOf(m), ...(monProject(m) ? { proj: true } : {}), name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: monUnread(notices), need, chips: monNeedChips(need),
-      hint: conn ? monConnShort(m) : running ? "지금 확인하고 있어요" : fresh ? monStrip(monLine(last), names) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
+      hint: conn ? monConnShort(m) : running ? "지금 확인하고 있어요" : fresh ? monClean(monStrip(monLine(last), names), monRunLine(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
       msig: [m.last_run, m.next_run, m.last_result, m.paused, m.connection, running].join("|"),
       badge: (st => [st.text, st.tone])(monStatus(m)) });
   }
@@ -14799,7 +14820,7 @@ const MON_FOLD_MIN = 3;    // a run of this many same results in a row folds int
 // A row's summary: the report's first two lines (the monitor's name and the original dropped), 140 characters at most.
 function monSummary(n, names) {
   const body = String(n.text || "").split(/\n(?:```원문|원문[ \t]*\n)/)[0];
-  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => ntPlain(l)).filter(Boolean);
+  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
   const s = lines.slice(0, 2).join(" · ");
   return (s.length > 140 ? `${s.slice(0, 139)}…` : s) || ntPlain(n.title) || "알림";
 }
@@ -14879,7 +14900,7 @@ function monLogRow(n, names) {
   if (n.id === MON.want) MON.open.add(key);
   if (ntIsDec(n) || n.item || monNeed(n) || MON.open.has(key)) return monRowNode(n, names);
   const body = String(n.text || "").split(/\n(?:\`\`\`원문|원문[ \t]*\n)/)[0];
-  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => ntPlain(l)).filter(Boolean);
+  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
   const chg = nwChangeNode(nwChangeLine(n.text)), plain = lines.filter(l => !l.includes("→")).map(l => l.replace(/^\[[^\]]*\]\s*/, ""));
   const main = chg || plain[0] || ntPlain(n.title) || "알림", sub = chg ? plain[0] || "" : plain[1] || "";
   const src = ntPlain(names[0] || n.title) || "알림";
@@ -15036,7 +15057,7 @@ function monOverview(it) {
       return el("button", { class: "mon-ov-row", type: "button", "data-ov": i.key, onclick: () => go("monitoring", i.key) },
         el("span", { class: "mon-ov-hd" }, el("span", { class: "mon-ov-n", text: monTitle(m) }), i.pc ? el("span", { class: "tag", text: i.pc.name }) : null),
         peerBar ? el("span", { class: "mon-ov-peer", text: "다른 컴퓨터" }) : monProgNode(m, { compact: true }),
-        el("span", { class: "mon-ov-s", text: m.connection === "disconnected" ? monConnLine(m) : m.last_summary || monRunLine(m) }));
+        el("span", { class: "mon-ov-s", text: m.connection === "disconnected" ? monConnLine(m) : monClean(m.last_summary || "", monRunLine(m)) }));
     }) : [el("div", { class: "mon-ov-empty", text: "아직 일반 모니터링이 없어요" })]));
 }
 function monTimeline(it) {
@@ -15089,7 +15110,7 @@ function monBannerOf(it) {
   if (it.mon) {
     const m = it.mon, down = m.connection === "disconnected";
     if (!down && m.last_result !== "fail") return null;
-    const detail = down ? monConnWhy(m) : [m.fails > 1 ? `${m.fails}번 연속 실패했어요` : "마지막 확인이 실패했어요", m.last_summary || ""].filter(Boolean).join(" · ");
+    const detail = down ? monConnWhy(m) : [m.fails > 1 ? `${m.fails}번 연속 실패했어요` : "마지막 확인이 실패했어요", monClean(m.last_summary || "")].filter(Boolean).join(" · ");
     return monBannerNode(down ? "down" : "fail", detail, m.watch ? monRecheckBtn(m.watch, ev => monRunNow(ev.currentTarget, m), down ? "다시 연결" : undefined) : null);
   }
   if (!it.conn) return null;
@@ -18711,7 +18732,7 @@ function pqMerge(items) {
       if (m.kind === "watch" && m.watch && !NM.items.some(x => x.watch === m.watch)) PQ.of.set(`settings:w:${m.watch}`, { pc, key: key(`m:${m.name}`), mon: m });
       const fresh = last && (!m.last_run || ntAt(last) >= Date.parse(m.last_run) - 60_000);
       (monProject(m) ? proj : plain).push({ key: key(`m:${m.name}`), group: monGroupOf(m), ...(monProject(m) ? { proj: true } : {}), name: monTitle(m), raw: monRaw(m), ic: "activity", notices, mails: [], mon: m, unread: 0,
-        hint: fresh ? monStrip(monLine(last), monNames(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
+        hint: fresh ? monClean(monStrip(monLine(last), monNames(m)), monRunLine(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
         badge: m.connection === "disconnected" ? ["연결 끊김", "err"] : m.paused ? ["꺼짐", ""] : m.last_result === "fail" ? ["실패", "err"] : m.kind === "schedule" ? [MON_KIND.schedule, ""] : null, pc, chips });
     }
     news.push(...ntWithRepeats(sn).filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)));
@@ -19605,6 +19626,90 @@ const runLaneRestart = (name, btn) => busy(btn, async () => {
   scheduleState();
 });
 
+/* ---------- 화면 안내 (docs/web-onboarding.md): a spotlight over the real menus, shown once after the web onboarding ---------- */
+// The gateway remembers whether it was seen (GET/POST /api/intro, firstrun/first-run.ts), so another browser does not show it again.
+// introStart() runs once the boot has settled and asks at most once per tab session; 설정 → 화면 안내 다시 보기 calls introOpen().
+const INTRO_SEEN = "dotz-intro-seen";
+const introTouch = () => matchMedia("(hover: none) and (pointer: coarse)").matches;
+const introStops = () => {
+  const apps = navTabs().some(n => n[0] === "apps");
+  const stops = [
+    { tab: "home", t: "홈에서 오늘 볼 것을 봐요", b: "새 메일, 답을 기다리는 일, 돌고 있는 작업이 카드로 모여요. 위의 종을 누르면 알림만 따로 볼 수 있어요." },
+    { tab: "chat", t: "채팅으로 일을 시켜요", b: "말하듯 쓰면 돼요. 일하는 중에 보내면 바로 끼어들어요. 메일처럼 밖으로 나가는 것은 보내기 전에 꼭 물어봐요." },
+    { tab: "projects", t: "프로젝트마다 대화가 따로예요", b: "폴더 하나가 프로젝트 하나예요. 세션과 결과가 프로젝트별로 남아서 섞이지 않아요." },
+    { tab: "monitoring", t: "모니터링은 대신 지켜봐요", b: "메일, 댓글, 사이트 변화를 보고 있다가 알려 줘요. 답장 초안도 여기서 고치고 보내요." },
+    { tab: "settings", t: "앱과 설정은 필요할 때 열어요", b: `${apps ? "내가 붙인 앱은 앱 탭에서 열어요. " : ""}계정, 메신저, 웹 접속은 설정에서 바꿔요. 이 안내도 설정에서 다시 볼 수 있어요.` },
+  ];
+  return introTouch() ? stops : [...stops, { keys: true, t: "단축키를 쓰면 더 빨라요" }];
+};
+// The keys come from the code that handles them: the palette button, MOD_KEYS and the tab numbers (04-state.js).
+const introKeys = () => {
+  const mod = isMac ? "⌘" : "Ctrl+", tabs = navTabs();
+  return [[$("#cmdk kbd").textContent, "검색과 명령"], ...MOD_KEYS.filter(modKeyWide).map(k => [mod + k.key, k.label]), [`${navKeyHint(tabs[0][0])} ~ ${navKeyHint(tabs.at(-1)[0])}`, "탭 이동"]];
+};
+let introEl = null, introAt = 0, introFrom = null;
+
+function introDraw() {
+  const stops = introStops(), s = stops[introAt], last = introAt === stops.length - 1;
+  const r = s.tab && $(`#nav .ni[data-view="${s.tab}"]`)?.getBoundingClientRect(), hit = !!r && r.width > 0;
+  const bar = el("div", { class: "bar" }, el("i"));
+  bar.firstChild.style.width = `${((introAt + 1) / stops.length) * 100}%`;
+  const go1 = n => () => { introAt += n; introDraw(); };
+  const tip = el("div", { class: `intro-tip${hit ? "" : " mid"}` },
+    el("div", { class: "intro-n", text: `${introAt + 1}/${stops.length}` }), bar,
+    el("h2", { id: "intro-h", text: s.t }),
+    s.b ? el("p", { class: "intro-b", text: s.b }) : null,
+    s.keys ? el("div", { class: "intro-keys" }, introKeys().map(([k, d]) => el("div", { class: "intro-key" }, el("kbd", { text: k }), el("span", { text: d })))) : null,
+    el("div", { class: "intro-ft" },
+      el("button", { class: "btn text intro-skip", type: "button", text: "건너뛰기", onclick: introDone }),
+      introAt ? el("button", { class: "btn tonal", type: "button", text: "이전", onclick: go1(-1) }) : null,
+      el("button", { class: "btn", type: "button", text: last ? "시작하기" : "다음", onclick: last ? introDone : go1(1) })));
+  const spot = el("div", { class: `intro-spot${hit ? "" : " none"}` });
+  if (hit) Object.assign(spot.style, { left: `${r.left - 4}px`, top: `${r.top - 4}px`, width: `${r.width + 8}px`, height: `${r.height + 8}px` });
+  introEl.replaceChildren(spot, tip);
+  if (hit && matchMedia("(min-width: 1024px)").matches) {
+    tip.style.left = `${r.right + 16}px`;
+    tip.style.top = `${Math.max(16, Math.min(r.top - 8, innerHeight - tip.offsetHeight - 16))}px`;
+  } else if (hit) tip.style.bottom = `${innerHeight - r.top + 8}px`;   // a phone: the tip sits above the tab bar
+  motionIn(tip, "rise");
+  tip.lastChild.lastChild.focus();
+}
+function introKey(ev) {
+  const to = { ArrowRight: 1, ArrowLeft: -1 }[ev.key], next = introAt + (to ?? 0);
+  if (ev.key === "Escape") introDone();
+  else if (to) { if (next >= 0 && next < introStops().length) { introAt = next; introDraw(); } }
+  else if (ev.key === "Tab") {
+    const b = [...introEl.querySelectorAll("button")], at = b.indexOf(document.activeElement), n = b.length;
+    b[(at + (ev.shiftKey ? n - 1 : 1)) % n].focus();
+  } else if (!ev.metaKey && !ev.ctrlKey) return;   // Enter and Space press the focused button
+  ev.preventDefault(); ev.stopPropagation();
+}
+function introOpen() {
+  if (introEl) return;
+  introAt = 0; introFrom = document.activeElement;
+  introEl = el("div", { class: "intro", role: "dialog", "aria-modal": "true", "aria-labelledby": "intro-h" });
+  document.body.append(introEl);
+  document.addEventListener("keydown", introKey, true);
+  addEventListener("resize", introDraw);
+  introDraw();
+}
+function introDone() {
+  document.removeEventListener("keydown", introKey, true);
+  removeEventListener("resize", introDraw);
+  introEl.remove(); introEl = null;
+  try { sessionStorage.setItem(INTRO_SEEN, "1"); } catch { /* storage blocked: the gateway still remembers */ }
+  api("/api/intro", "POST", { intro: "seen" }).catch(() => { /* the session flag already hides it here; the next visit asks the gateway again */ });
+  go("home");
+  if (introFrom?.isConnected) introFrom.focus();
+}
+function introStart() {
+  try { if (sessionStorage.getItem(INTRO_SEEN)) return; } catch { /* storage blocked: ask */ }
+  setTimeout(() => api("/api/intro").then(r => {
+    if (r.intro === "pending") { if (!document.querySelector("dialog[open]")) introOpen(); return; }
+    try { sessionStorage.setItem(INTRO_SEEN, "1"); } catch { /* ask again next time */ }
+  }, () => {}), 1500);
+}
+
 /* ---------- a relayed computer's chat: the normal chat view over a messenger (hub/messenger.ts relay, docs/messengers/jandi.ko.md) ---------- */
 // Picking a relay row of the computer list (33-peers.js prPick) makes the target relay:<adapter>:<key>. The conversation is drawn by the same code as any other
 // (renderAll, chatPush, msgNode): its lines are read from GET /api/relay/<adapter>/<key>/messages (hub/relay-route.ts) -> [{id, at, me, text}] and kept in
@@ -19724,6 +19829,7 @@ document.addEventListener("visibilitychange", relayTick);
   if (h.view !== "notices") setTimeout(() => { for (const t of ["worklog"]) if (t !== target && !ts(t).hLoaded) loadTarget(t, true).catch(() => {}); }, 1500);
   await state;
   if (pushOpenTs) { const at = pushOpenTs; pushOpenTs = ""; pushOpen(PUSH_HASH, at, pushOpenNid); }   // the app was started by a tap on a push
+  introStart();   // the screen tour (42-intro.js) asks the gateway after a pause; nothing here waits for it
   loadModels(true);
   loadProviderData().then(() => { if (current === "home") renderHome(); }, () => {});
   loadSubs(); loadQueue(); loadContext(true).then(renderCtxRing);
