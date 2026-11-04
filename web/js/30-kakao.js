@@ -442,7 +442,11 @@ const KK_ASK = "요청을 입력하세요 · 예: 좀 더 짧게";
 const kkTa = el("textarea", { id: "kk-text", rows: "1", autocomplete: "off", maxlength: "500", placeholder: KK_ASK, "aria-label": "답장 요청" });
 const kkSendBtn = el("button", { class: "ib pri", id: "kk-send-btn", type: "submit", "aria-label": "요청 보내기", title: "요청 보내기" }, icon("send"));
 const kkDraftBtn = el("button", { class: "cchip kk-dbtn", id: "kk-draft-btn", type: "button", onclick: () => kkMakeDraft() }, icon("spark"), el("span", { text: "답장 초안" }));
-const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: ev => { ev.preventDefault(); kkSend(); } }, kkTa, el("div", { class: "cbar" }, kkDraftBtn), kkSendBtn);
+// 직접 보내기 (owner 2026-11-04): what is typed goes to the room as it is, past the assistant. It shows only with text, and never on another computer's room or while a draft is edited.
+const kkDirectBtn = el("button", { class: "cchip kk-dbtn", id: "kk-direct-btn", type: "button", hidden: true, onclick: () => kkSendDirect() }, icon("send"), el("span", { text: "직접 보내기" }));
+const kkDirectSync = () => { kkDirectBtn.hidden = !kkTa.value.trim() || !!KK.edit || !!KK.pc; };
+kkTa.addEventListener("input", kkDirectSync);
+const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: ev => { ev.preventDefault(); kkSend(); } }, kkTa, el("div", { class: "cbar" }, kkDraftBtn, kkDirectBtn), kkSendBtn);
 const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkEditBar, kkForm, kkDrafts);
 // 자동 초안 of the open room: the one two-value switch of this screen (the watch toggles are eyes). Built once; kkPaintAuto only flips it.
 const kkAutoSw = el("button", { class: "kk-sw", type: "button", role: "switch", "aria-checked": "false", "aria-label": "자동 초안", "data-k": "auto", onclick: () => { const r = kkRoom(KK.open); if (r) kkSetRoom(r, { autoDraft: !r.autoDraft }); } }, el("span", { class: "kk-knob" }));
@@ -924,10 +928,17 @@ function kkAskBot(text) {
   // The other computer's gateway takes a revise ({revise}) but not a new message's intent (34-peer-monitoring.js kakao draft): say so instead of making an unrelated draft there.
   if (KK.pc && !KK.drafts.length) { toast("다른 컴퓨터의 방에서는 초안을 만든 뒤에 고쳐 달라고 요청할 수 있어요", true); return; }
   const ts = x => (typeof x === "number" ? x : Date.parse(x) || 0), d = KK.drafts.slice().sort((a, b) => ts(b.created) - ts(a.created))[0];
-  kkTa.value = ""; KK.typed.delete(id); kkAutosize();
+  kkTa.value = ""; KK.typed.delete(id); kkAutosize(); kkDirectSync();
   KK.revise = null;
   if (d) kkMakeDraft(undefined, { code: d.code, change: text.slice(0, 500) }); else kkComposeMake(text);
   if (kkWide()) kkTa.focus();
+}
+async function kkSendDirect() {
+  const text = kkTa.value.trim(), id = KK.open;
+  if (!id || !text || KK.sending) return;
+  kkTa.value = ""; KK.typed.delete(id); kkAutosize(); kkDirectSync();
+  const ok = await kkSendText(text);
+  if (!ok && KK.open === id && !kkTa.value) { kkTa.value = text; kkAutosize(); kkDirectSync(); }
 }
 async function kkSend() {
   const text = kkTa.value.trim(), edit = KK.edit;
