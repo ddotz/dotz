@@ -59,9 +59,9 @@ describe("the model list of the setting", () => {
 		expect(new Set(c.options).size).toBe(c.options.length);
 		expect(c.options.indexOf("openai/gpt-5:medium")).toBeGreaterThan(c.options.indexOf(OPUS));
 	});
-	test("the default option is the reply default, Sonnet 5.5 medium, or the global reply model when one is set, never the subagent model", () => {
-		expect(REPLY_DEFAULT).toBe("anthropic/claude-sonnet-5-5:medium");
-		expect(replyModelChoices(LIST).labels[""]).toBe("답장 기본값 · Sonnet 5.5 · 보통");
+	test("the default option is the reply default, Sonnet 5.5 high, or the global reply model when one is set, never the subagent model", () => {
+		expect(REPLY_DEFAULT).toBe("anthropic/claude-sonnet-5-5:high");
+		expect(replyModelChoices(LIST).labels[""]).toBe("답장 기본값 · Sonnet 5.5 · 높음");
 		expect(replyModelChoices(LIST, OPUS).labels[""]).toBe("답장 기본값 · Opus 5.5 · 높음");
 	});
 	test("the default option's label names exactly the model a draft with no app setting calls", async () => {
@@ -119,7 +119,7 @@ describe("which model a draft uses", () => {
 		expect(loadSettings().models).toBeUndefined();
 		expect(await replyModel("mail", undefined, { dataDir: dir })).toBe(REPLY_DEFAULT);
 	});
-	test("답장 기본값 is its own setting: saved as the global reply model, an unknown model refused, empty back to Sonnet 5.5 medium", async () => {
+	test("답장 기본값 is its own setting: saved as the global reply model, an unknown model refused, empty back to Sonnet 5.5 high", async () => {
 		const r = await setReplyDefault(OPUS, LIST);
 		expect(r.value).toBe(OPUS);
 		expect(config().model).toBe(OPUS);
@@ -166,6 +166,11 @@ describe("the draft paths call the model they resolved", () => {
 		await callReplyModel("kakao", "kakao:1", "s", "u", call, { dataDir: dir });
 		await callReplyModel("youtube", undefined, "s", "u", call, { dataDir: dir });
 		expect(seen.map(s => s.model)).toEqual([OPUS, REPLY_DEFAULT]);
+	});
+	test("every draft kind (mail, kakao, comment) with no setting calls Sonnet 5.5 high", async () => {
+		const { seen, call } = recorder();
+		for (const app of ["mail", "kakao", "youtube", "site"]) await callReplyModel(app, undefined, "s", "u", call, { dataDir: dir });
+		expect(seen.map(s => s.model)).toEqual(Array(4).fill("anthropic/claude-sonnet-5-5:high"));
 	});
 	test("a draft waits at most 45 s (a spent provider is refused before the call)", async () => {
 		const { seen, call } = recorder();

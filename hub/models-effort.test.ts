@@ -45,11 +45,11 @@ const MODELS = {
 			{ name: "pay", title: "메일함 개선", configured: `${OPUS}:high`, active: `${DEEP}:high`, worker: `${SONNET}:high` },
 			{ name: "mon", title: "모니터링 범주 정리", configured: `${OPUS}:high`, active: `${DEEP}:high`, worker: `${SONNET}:high` },
 		],
-		replyDefault: `${SONNET}:medium`,
+		replyDefault: `${SONNET}:high`,
 		replies: [{ key: "mail", label: "메일", model: `${OPUS}:low` }],
 		outlang: SONNET,
 	}),
-	replies: { value: "", model: REPLY_DEFAULT, default: REPLY_DEFAULT, default_label: "기본값 · Sonnet 5.5 · 보통", options: c.options, labels: c.labels },
+	replies: { value: "", model: REPLY_DEFAULT, default: REPLY_DEFAULT, default_label: "기본값 · Sonnet 5.5 · 높음", options: c.options, labels: c.labels },
 };
 const STATE = { name: "dotz", orchestrator: { status: "idle", activeModel: `${DEEP}:medium` }, lanes: [{ name: "pay", title: "메일함 개선", model: `${OPUS}:high`, status: "idle", live: true, startedAt: UNTIL, reports: [], context: {} }], terminals: {}, channels: { work: [] }, discord: {}, notices_unread: 0 };
 
