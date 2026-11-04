@@ -24,8 +24,57 @@ function unquoteChoices(lines) {
   }
   return out;
 }
-function blocks(text) {
-  const html = [], meta = metaRe();
+// A source list at the end of an answer: a heading line (출처:, 참고:, Sources:) over URL lines, or a last run of two or more bare URL lines,
+// becomes 목록 rows (site, then a short path or the link's own title). Everything comes from the URL string: no fetch, no favicon.
+// The full URL stays in the row as clipped text, the only selectable part, so copying the message gives the original URLs.
+const SRC_HEAD = /^\s*(?:#{1,6}\s+)?(?:\*\*)?(출처|참고(?: 자료| 링크)?|Sources?|References?)(?:\*\*)?\s*:?\s*(?:\*\*)?\s*$/i;
+const SRC_ITEM = /^\s*(?:(?:[-*•]|\d+[.)])\s+)?(?:\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|<?(https?:\/\/[^\s<>]+)>?)\s*$/;
+function sourceItem(line) {
+  const m = line.match(SRC_ITEM), href = m && (m[2] || m[3]);
+  return href && URL.canParse(href) ? { title: m[1] || "", href } : null;
+}
+// start line -> { head, items, end } for each source list in these lines; only the message's last text part (last) can hold a list without a heading.
+function sourceRuns(lines, last) {
+  const runs = new Map();
+  if (!lines.some(l => l.includes("://"))) return runs;
+  let taken = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const h = lines[i].match(SRC_HEAD);
+    if (!h) continue;
+    const items = [];
+    let end = i + 1;
+    for (let j = end; j < lines.length; j++) {
+      if (!lines[j].trim()) continue;
+      const item = sourceItem(lines[j]);
+      if (!item) break;
+      items.push(item); end = j + 1;
+    }
+    if (items.length) { runs.set(i, { head: h[1], items, end }); taken = end; i = end - 1; }
+  }
+  if (!last) return runs;
+  let end = lines.length;
+  while (end && !lines[end - 1].trim()) end--;
+  const items = [];
+  let start = end;
+  for (let item; start > taken && (item = sourceItem(lines[start - 1])) && !item.title; start--) items.unshift(item);
+  if (items.length > 1) runs.set(start, { head: "", items, end });
+  return runs;
+}
+const sourcePart = s => { try { return decodeURIComponent(s); } catch { return s; } };
+// The last two path segments, "…/" when more came before them; a bare domain has none.
+function sourcePath(url) {
+  const segs = url.pathname.split("/").filter(Boolean).map(sourcePart);
+  return (segs.length > 2 ? "…/" : "") + segs.slice(-2).join("/");
+}
+function sourceListHtml({ head, items }) {
+  const rows = items.map(({ title, href }) => {
+    const url = new URL(href), site = url.hostname.replace(/^www\./, ""), sub = title || sourcePath(url);
+    return `<a class="mlist-row" href="${esc(href)}" title="${esc(href)}" target="_blank" rel="noopener noreferrer"><span class="mlist-url" aria-hidden="true">${esc(href)}</span><span class="mlist-av" aria-hidden="true">${esc(site[0].toUpperCase())}</span><div class="mlist-main"><div class="mlist-t">${esc(site)}</div>${sub ? `<div class="mlist-s">${esc(sub)}</div>` : ""}</div></a>`;
+  });
+  return `<div class="mlist mlist-src">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
+}
+function blocks(text, last) {
+  const html = [], meta = metaRe(), lines = unquoteChoices(text.split("\n")), sources = sourceRuns(lines, last);
   let list = null, para = [], table = null, quote = [];
   const flushQ = () => { if (quote.length) html.push(`<blockquote>${quote.map(inline).join("<br>")}</blockquote>`); quote = []; };
   const flushP = () => { flushQ(); if (para.length) html.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; };
@@ -36,8 +85,10 @@ function blocks(text) {
     html.push(`<div class="tbl"><table>${head ? `<thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead>` : ""}<tbody>${rest.map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
     table = null;
   };
-  for (const line of unquoteChoices(text.split("\n"))) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i], run = sources.get(i);
     let m;
+    if (run) { flushT(); flushP(); flushL(); html.push(sourceListHtml(run)); i = run.end - 1; continue; }
     if (/^\s*\|.*\|\s*$/.test(line)) {
       flushP(); flushL();
       if (!table) table = { rows: [], head: false };
@@ -79,7 +130,7 @@ function mdHtml(src) {
   // A fence opens only at the start of a line (``` in the middle of a sentence stays text) and closes with ``` at the end of a line.
   const parts = stripMarkers(src).split(/(?:^|\n)[ \t]{0,3}```([^\n`]*)\n?([\s\S]*?)(?:```[ \t]*(?=\n|$)|$)/);
   // A fence tagged 원문 is a post's raw machine output (hub/watchtext.ts rawFence): folded, monospace, tap to open.
-  return parts.map((p, i) => i % 3 === 0 ? blocks(p) : i % 3 === 2 ? (parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "dotz-settings" ? settingsCardHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
+  return parts.map((p, i) => i % 3 === 0 ? blocks(p, i === parts.length - 1) : i % 3 === 2 ? (parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "dotz-settings" ? settingsCardHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
 }
 const mdNode = (src, cls = "md") => el("div", { class: cls, safeHtml: mdHtml(src) });
 
