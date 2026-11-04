@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { beforeEach, expect, test } from "bun:test";
 import { DATA_DIR } from "./config.ts";
+import { featureCatalog } from "./features.ts";
 import { saveProject } from "./projects.ts";
 import { BUILTIN_KEY, type CustomDeps, customRoute, type DetailInput, projectDetailView, newestRules, projectsView, readCards, readPins, reportHead, ruleTitle, settleRefreshes, syncRoutineSchedules } from "./custom.ts";
 import { advance, clock } from "./runtime/test-clock.ts";
@@ -58,6 +59,27 @@ test("커스텀 is listed first on an install with projects, survives hide_proje
 	const keys = (await json(await call("GET", "/api/custom"))).projects.map((p: any) => p.key);
 	expect(keys).toEqual([BUILTIN_KEY, "dir:~/Code/mine"]);
 	expect(() => saveProject({ key: BUILTIN_KEY, title: "바꾼 이름" })).toThrow();
+});
+
+test("내 기능 lists the owner's own features: a shipped feature he only switched on stays in the catalog as shipped, and asks never name the shipped file", async () => {
+	const shipped = readFileSync(join(import.meta.dir, "..", "features", "reply-drafts", "feature.md"), "utf8");
+	const put = (id: string, text: string) => {
+		mkdirSync(join(DATA_DIR, "features", id), { recursive: true });
+		writeFileSync(join(DATA_DIR, "features", id, "feature.md"), text);
+	};
+	try {
+		put("my-own", "---\nname: 내가 만든 것\nwhat: 내 기능이에요\ntrigger: 턴 끝\nstage: rules\n---\n본문\n");
+		put("reply-drafts", shipped.replace(/^enabled:.*$/m, "enabled: true")); // what onboarding writes
+		put("remote-desktop", readFileSync(join(import.meta.dir, "..", "features", "remote-desktop", "feature.md"), "utf8").replace(/^enabled:.*$/m, "enabled: true\ncustom: true")); // a real override
+		const groups = (await json(await call("GET", `/api/custom/project?key=${BUILTIN_KEY}`))).groups;
+		expect(groups.find((g: any) => g.id === "features").items.map((i: any) => i.title).sort()).toEqual(["내가 만든 것", "화면 공유"]);
+		const f = (await featureCatalog()).features.find(x => x.id === "dir-reply-drafts")!;
+		expect(f).toMatchObject({ origin: "shipped", enabled: true });
+		expect(f.source.label).toEndWith("/features/reply-drafts/feature.md");
+		expect(f.source.label).not.toStartWith("features/");
+	} finally {
+		rmSync(join(DATA_DIR, "features"), { recursive: true, force: true });
+	}
 });
 
 test("GET /api/custom/project?key=builtin:custom shows what is customized, each group with plain empty text on a fresh install", async () => {

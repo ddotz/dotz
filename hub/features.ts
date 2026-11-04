@@ -471,10 +471,12 @@ function dirFeatures(nodeIds: Set<string>): Feature[] {
 	for (const f of loadFeatureDirs(DATA_DIR, log).features) {
 		const parts = [f.body ? "글 지시" : "", f.deny.length ? `차단 ${f.deny.length}줄` : "", f.watch ? "모니터링" : "", f.schedule ? "예약 파일은 아직 실행되지 않아요" : ""].filter(Boolean);
 		const stage = nodeIds.has(f.stage) ? f.stage : "rules";
-		const src = { label: short(f.file) };
+		// A switch copy: a shipped feature to the catalog, and a request about it names the owner's copy, never the shipped file.
+		const src = { label: short(f.switchFile ?? f.file) };
+		const origin = f.switchFile ? "shipped" : f.origin;
 		const enforced = f.deny.length > 0 || Boolean(f.watch);
-		out.push({ id: dirId(f.id), form: "기능 폴더", name: f.name, what: `${clip(f.what, 110)}${parts.length ? ` · ${parts.join(" + ")}` : ""}${f.enabled ? "" : " (꺼짐)"}`, trigger: f.trigger as Trigger, stage, strength: enforced ? "enforced" : "advisory", source: src, enabled: f.enabled, toggleable: f.origin === "personal", origin: f.origin });
-		f.deny.forEach((d, i) => out.push({ id: `${dirId(f.id)}-deny-${i + 1}`, form: "기능 폴더", name: clip(d.reason, 40), what: `${f.enabled ? "실행 전에 막아요" : "꺼져 있어서 막지 않아요"} (${f.name}) · ${clip(d.reason, 100)}`, trigger: "도구 실행 직전", stage: "guard", strength: "enforced", source: { label: `${short(f.file)}:${d.line}` }, extra: d.pattern, enabled: f.enabled, toggleable: false, origin: f.origin }));
+		out.push({ id: dirId(f.id), form: "기능 폴더", name: f.name, what: `${clip(f.what, 110)}${parts.length ? ` · ${parts.join(" + ")}` : ""}${f.enabled ? "" : " (꺼짐)"}`, trigger: f.trigger as Trigger, stage, strength: enforced ? "enforced" : "advisory", source: src, enabled: f.enabled, toggleable: f.origin === "personal", origin });
+		f.deny.forEach((d, i) => out.push({ id: `${dirId(f.id)}-deny-${i + 1}`, form: "기능 폴더", name: clip(d.reason, 40), what: `${f.enabled ? "실행 전에 막아요" : "꺼져 있어서 막지 않아요"} (${f.name}) · ${clip(d.reason, 100)}`, trigger: "도구 실행 직전", stage: "guard", strength: "enforced", source: { label: `${short(f.file)}:${d.line}` }, extra: d.pattern, enabled: f.enabled, toggleable: false, origin }));
 	}
 	return out;
 }
