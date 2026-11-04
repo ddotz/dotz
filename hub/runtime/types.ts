@@ -49,6 +49,8 @@ export type AgentEvent =
 	// The session spawned background workers (OmO's task tool), and OmO told it these workers finished.
 	| { type: "workers_spawned"; workers: { id: string; description?: string }[] }
 	| { type: "workers_done"; ids: string[] }
+	// The session passed a message to running or finished workers (OmO's task_send).
+	| { type: "workers_steered"; ids: string[] }
 	// The runtime switched to the next model of a fallback chain after a request failed; `worker` when it was a task worker's model.
 	| { type: "fallback"; from: string; to: string; reason?: string; worker?: boolean }
 	// What one finished model request consumed (`usd` only when the runtime could price it); the hub counts it against per-entry spend caps.

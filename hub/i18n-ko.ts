@@ -188,6 +188,7 @@ export const ko: Catalog = {
 	joinWorker: (id, description) => `${koLeads.joinLead}: "${description.replace(/\s+/g, " ")}" (작업 ${id}). 이 메시지가 같은 일(같은 승인, 같은 게시)에 관한 것이면 새 작업을 띄우지 말고 task_send로 돌고 있는 작업에 전달한 뒤 [later]로 끝내세요. 아니면 평소처럼 처리하세요.`,
 	otherWorker: (id, conversation, replyTo) => `${koLeads.otherConvLead}. 이 턴의 마지막 답은 이 대화로만 보내세요. 작업 ${id}(${conversation})의 결과가 이 턴 중에 오면 그 답은 dotz_send target "${conversation}"${replyTo ? ` reply_to "${replyTo}"` : " reply_to <그 대화의 메시지 id>"}로 보내고, 이 대화로는 보내지 마세요.`,
 	workReadElsewhere: (id, conversation, readIn) => `${koLeads.otherConvLead}. 작업 ${id}(${conversation})의 결과가 다른 대화(${readIn})의 턴에서 읽혔어요. 그 결과는 ${conversation}의 요청에 대한 답이니 여기서 답해 주세요.`,
+	workReadHere: id => `[dotz gateway] 작업 ${id}의 결과가 이 요청에 답하지 않은 턴에서 읽혔어요. 그 결과로 지금 이 요청에 답해 주세요.`,
 	newMessage: (target, replyTo, text) => `${koLeads.newMessageLead}. 지금 바로 완성된 답을 줄 수 있으면(간단한 질문) dotz_send target "${target}"${replyTo ? ` reply_to "${replyTo}"` : ""}로 보내세요. 그러면 그 메시지는 답한 것으로 끝나고 다시 턴으로 오지 않아요. 아니면 아무것도 보내지 마세요. 그때는 지금 턴이 끝나면 이 메시지가 따로 턴으로 와요. 그다음 하던 일을 이어가세요. 최종 답은 처음 시작한 요청으로 가요.\n\n${text}`,
 	nowRunning: "[지금 도는 것]",
 	nowLanes: (n, body) => `세션 ${n}(${body})`,

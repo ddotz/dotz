@@ -101,6 +101,7 @@ function makeQueue(key: string, o: Orchestrator, pendingFile: string, bg: () => 
 		foreignNote: (w, target) => msg().otherWorker(w.id, convLabel(target), w.replyTo),
 		hasForeignNote: text => text.split("\n").some(line => isNote(line, "otherConvLead")),
 		readElsewhereNote: (w, readIn) => msg().workReadElsewhere(w.id, convLabel(w.target ?? readIn), convLabel(readIn)),
+		readHereNote: id => msg().workReadHere(id),
 		cardsNote: target => cardsNoteFor(target),
 		hasCardsNote: text => text.startsWith(CARDS_LEAD) || text.includes(`\n${CARDS_LEAD}`),
 		clearProgress: target => void discord.clearProgress(target),
@@ -306,7 +307,7 @@ export async function reconcileMailCards(): Promise<number> {
 function closeDiscordCard(to: string, ref: string | undefined, c: { text: string; how: "answered" | "resolved" | "ignored"; label: string; target?: string; ids?: string[] }): void {
 	const target = c.target ?? (ref ? approvals.targetOf(to, ref) : undefined);
 	const ids = c.ids?.length ? c.ids : ref ? approvals.idsOf(to, ref) : undefined;
-	if (!target || !ids?.length || isLocal(target) || !discordPosts(target)) return;
+	if (!target || !ids?.length || isLocal(target) || !route({ target }).messengers.discord) return;
 	const text = closedCardText(c.text, c.how, c.label);
 	if (/^\s*\[file\]\s/m.test(text)) return;
 	ids.forEach((id, i) => void discord.edit(target, id, i === 0 ? text : text.split("\n").slice(1).join("\n"), { clearComponents: true }).catch(e => log(`approval card ${ref} not closed on Discord: ${e}`)));
@@ -491,7 +492,7 @@ export function cancelOwnerTurn(c: Conv = mainConv): string | undefined {
 // The handlers every instance gets; main's turn header is the what-runs-now line, a conversation session's alerts name the conversation.
 function wireAnswers(c: Conv): void {
 	c.o.setOwnerCancel(() => cancelOwnerTurn(c));
-	c.o.setWorkerHandlers(c.queue.workersSpawned, c.queue.workersDone);
+	c.o.setWorkerHandlers(c.queue.workersSpawned, c.queue.workersDone, c.queue.workersSteered);
 	// The final answer of a turn goes to every channel that asked and did not already get a dotz_send reply.
 	c.o.setAnswerHandlers(
 		c.queue.onPrompt,
