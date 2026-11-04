@@ -114,6 +114,8 @@ export const en = {
 		loginNone: "No sign-in in progress",
 		loginCancelled: (provider: string) => `${provider} sign-in cancelled`,
 		loginDone: (provider: string) => `${provider} signed in`,
+		loginAdded: (account: string) => `Account added (${account})`,
+		loginRefreshed: (account: string) => `That account is already registered (${account}); its login was refreshed`,
 		loginOpen: "Open the link to sign in",
 		loginMore: (provider: string) => `One more value is needed. Send it as /login ${provider} <value>.`,
 		loginCode: (provider: string) => `On another device, send the full address you land on (or the code) as /login ${provider} <address or code>.`,

@@ -16,7 +16,7 @@ const table = [
 test("a machine whose only login is OmO's Claude subscription lists anthropic with its models", () => {
 	const auth = omoAuthInfos(mini);
 	const models = omoModels(table, mini, {});
-	expect(auth).toEqual([{ provider: "anthropic", type: "oauth", label: "imported-anthropic", masked: undefined, accounts: 2 }]);
+	expect(auth).toEqual([{ provider: "anthropic", type: "oauth", label: "imported-anthropic", masked: undefined, pool: true, accounts: 2 }]);
 	expect(models.map(m => m.selector)).toEqual(["anthropic/claude-opus-5-5", "anthropic/claude-haiku-4-5"]);
 	expect(models.map(m => m.reasoning)).toEqual([true, false]);
 	const { providers } = buildProviders({ auth, env: {}, models, catalog: [], inUse: new Set(["anthropic"]) });
@@ -46,8 +46,12 @@ test("an OmO install offers web logins: login-only providers under 추가, and �
 	const omo = buildProviders({ auth, env: {}, models: [], catalog, inUse: new Set(["anthropic"]) });
 	const a = omo.providers.find(p => p.id === "anthropic")!;
 	expect(a).toMatchObject({ can_login: true, can_add_account: true, accounts: 2, account: "imported-anthropic" });
+	expect(omo.addable.find(p => p.id === "anthropic")).toMatchObject({ kind: "oauth", add_account: true });
 	expect(omo.addable.find(p => p.id === "github-copilot")?.kind).toBe("oauth");
 	expect(omo.addable.find(p => p.id === "openai")?.kind).toBe("api_key");
+	// a provider that holds one key keeps out of the list once it is set
+	const keyed = buildProviders({ auth: [...auth, { provider: "openai", type: "api_key", masked: "sk-…ijkl" }], env: {}, models: [], catalog, inUse: new Set() });
+	expect(keyed.addable.find(p => p.id === "openai")).toBeUndefined();
 	const noLogin = buildProviders({ auth, env: {}, models: [], catalog: [], inUse: new Set() });
 	expect(noLogin.providers[0]).toMatchObject({ can_login: false });
 	expect(noLogin.providers[0].can_add_account).toBeUndefined();

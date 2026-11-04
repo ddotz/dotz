@@ -567,7 +567,7 @@ async function execute(text: string): Promise<CommandCard> {
 			}
 			if (pending && pending.provider === first && code) {
 				const r = await completeLogin(first, pending.id, code);
-				if (r.status === "done") return card(t.loginDone(first), [], { tone: "ok" });
+				if (r.status === "done") return card(r.outcome === "refreshed" ? t.loginRefreshed(r.account ?? first) : r.outcome === "added" ? t.loginAdded(r.account ?? first) : t.loginDone(first), [], { tone: "ok" });
 				return card(t.loginOpen, r.url ? [{ label: t.link, value: r.url }] : [], { tone: "busy", note: [r.instructions, r.prompt, t.loginMore(first)].filter(Boolean).join("\n") });
 			}
 			if (pending) throw new ControlError(pending.provider === first ? `${first} login is in progress; finish the approval in the browser or send the code with /login ${first} <code>` : `${pending.provider} login is in progress; /login cancel stops it`, 409);
