@@ -228,7 +228,7 @@ function setTarget(t) {
   convSync();
   markSeen();
   if (!s.draft) { try { s.draft = localStorage.getItem(DRAFT_KEY(target)) || ""; } catch {} }
-  ta.value = s.draft; ATT = s.att || []; renderAtt(); pkAssign(s.pick || []); autosize(); updateHints();
+  ta.value = s.draft; ATT = s.att || atkLoad(t); renderAtt(); pkAssign(s.pick || []); autosize(); updateHints();
   updateComposerMeta(); renderBars(); renderSubs(); renderWorking();
   renderAll();
   if (!(s.hLoaded && s.aLoaded)) loadTarget(t, hasCached(s));

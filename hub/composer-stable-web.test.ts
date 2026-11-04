@@ -28,7 +28,7 @@ beforeEach(async () => {
 	await view.navigate(`${hub.origin}/`);
 	await waitFor(`typeof S === "object" && S && S.web_build`);
 	await opened;
-	await view.evaluate(`(() => { go("chat", "main"); window.__ta = document.querySelector("#text"); sessionStorage.clear(); window.__reloads = 0; reloadPage = () => { window.__reloads++; }; })()`);
+	await view.evaluate(`(() => { go("chat", "main"); ta.value = ""; saveDraft(); autosize(); window.__ta = document.querySelector("#text"); sessionStorage.clear(); window.__reloads = 0; reloadPage = () => { window.__reloads++; }; })()`);
 	await waitFor(`!document.querySelector("#v-chat").hidden`);
 	await view.click("#text");
 	await waitFor(`document.activeElement === window.__ta`);

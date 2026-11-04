@@ -16,7 +16,9 @@ export class FileError extends Error {
 	}
 }
 
-export type Upload = { path: string; name: string; type: string; size: number };
+// label: the composer's token of this file ("이미지1", "파일2"): the message text holds `[이미지1]` where the owner put it, and its [attachment] line names it.
+export type Upload = { path: string; name: string; type: string; size: number; label?: string };
+const FILE_LABEL = /^(?:이미지|파일)\d{1,3}$/;
 
 // Keeps letters (any script), digits, dot, dash and underscore; never empty, never a dotfile, at most 120 chars.
 export function safeName(name: string): string {
@@ -209,14 +211,30 @@ export function serveFile(path: string, req: Request, dl = false): Response {
 	return new Response(f, { headers: { ...headers, "Content-Length": String(size) } });
 }
 
-// GET/HEAD /api/file?path=...[&download=1]: the whole route (main.ts adds the web auth in front). `listed` = events.ts sentFiles.
-export function fileRoute(req: Request, url: URL, roots: string[], listed: ReadonlySet<string>): Response {
+// ?thumb=1: a small webp for the chat, so a timeline never holds the originals in memory (the lightbox asks for the original). The ETag is
+// the original's, so a redraw answers 304 without decoding; what the decoder refuses falls back to the file itself.
+const THUMBABLE = /\.(png|jpe?g|webp)$/i, THUMB_MIN_BYTES = 200_000;
+async function fileThumb(res: Response, path: string): Promise<Response> {
+	if (res.status !== 200 || !THUMBABLE.test(path) || Bun.file(path).size < THUMB_MIN_BYTES) return res;
+	try {
+		const bytes = await Bun.file(path).image().resize(480, 480, { fit: "inside" }).webp({ quality: 75 }).bytes();
+		const headers = new Headers(res.headers);
+		headers.set("Content-Type", "image/webp"); headers.set("Content-Length", String(bytes.length)); headers.set("Cache-Control", "private, max-age=86400"); headers.delete("Accept-Ranges");
+		return new Response(bytes, { headers });
+	} catch {
+		return res;
+	}
+}
+
+// GET/HEAD /api/file?path=...[&download=1][&thumb=1]: the whole route (main.ts adds the web auth in front). `listed` = events.ts sentFiles.
+export function fileRoute(req: Request, url: URL, roots: string[], listed: ReadonlySet<string>): Response | Promise<Response> {
 	try {
 		const input = url.searchParams.get("path") ?? "", path = resolveAllowed(input, roots, listed);
 		// An original served live (an old message, sent before its copy was made) is copied now, so it still opens once it is deleted.
 		if (expand(input).startsWith("/") && !kept().some(d => under(path, d))) queueSnapshots([expand(input)], () => path);
 		const res = serveFile(path, req, url.searchParams.get("dl") === "1" || url.searchParams.get("download") === "1");
-		return req.method === "HEAD" ? new Response(null, { status: res.status, headers: res.headers }) : res;
+		if (req.method === "HEAD") return new Response(null, { status: res.status, headers: res.headers });
+		return url.searchParams.get("thumb") === "1" ? fileThumb(res, path) : res;
 	} catch (error) {
 		const message = (error as Error).message;
 		return Response.json({ error: message }, { status: error instanceof FileError ? error.status : 400, headers: { "X-File-Note": encodeURIComponent(message) } });
@@ -414,7 +432,8 @@ export function canvasRoute(req: Request, url: URL, roots: string[], listed: Rea
 }
 
 // The lines appended to a message for the agent: one per file, with its absolute path.
-export const attachmentLines = (files: Upload[]): string => files.map(f => `[attachment] ${f.name}${f.type ? ` (${f.type})` : ""} ${f.path}`).join("\n");
+export const attachmentLine = (f: { label?: string; name: string; type?: string }, at: string): string => `[attachment] ${f.label ? `${f.label}: ` : ""}${f.name}${f.type ? ` (${f.type})` : ""} ${at}`;
+export const attachmentLines = (files: Upload[]): string => files.map(f => attachmentLine(f, f.path)).join("\n");
 
 // Validates the files a /api/message body names: each must be an upload this gateway stored.
 // The files of an owner's message, all or nothing: a staged upload that is gone (or a path outside the uploads) is an error the
@@ -431,6 +450,6 @@ export function messageFiles(input: unknown): Upload[] {
 	return input.slice(0, 10).flatMap(x => {
 		const p = typeof x?.path === "string" ? real(x.path) : undefined;
 		if (!p || !root || !p.startsWith(root + sep) || !statSync(p).isFile()) return [];
-		return [{ path: p, name: safeName(String(x.name ?? basename(p))), type: String(x.type ?? Bun.file(p).type ?? ""), size: statSync(p).size }];
+		return [{ path: p, name: safeName(String(x.name ?? basename(p))), type: String(x.type ?? Bun.file(p).type ?? ""), size: statSync(p).size, ...(FILE_LABEL.test(String(x.label)) ? { label: String(x.label) } : {}) }];
 	});
 }
