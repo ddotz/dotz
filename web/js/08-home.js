@@ -34,7 +34,7 @@ function homeMenu(anchor, id, inChat) {
     return showMenu(anchor, acts, { onPick: i => acts[i].run() });
   }
   if (id.startsWith("notices:")) {
-    const [label, to] = { alert: ["알림", () => openTarget("alert", "chat")], worklog: ["작업내역", () => openTarget("worklog", "chat")], watch: ["모니터링", () => go("monitoring")] }[id.slice(8)];
+    const [label, to] = { alert: ["알림", nscGo], worklog: ["작업내역", () => openTarget("worklog", "chat")], watch: ["모니터링", () => go("monitoring")] }[id.slice(8)];
     add(`${label} 열기`, to);
     homeMoveActs(id, inChat, add);
     return showMenu(anchor, acts, { onPick: i => acts[i].run() });
@@ -145,14 +145,14 @@ const hcRecent = pick => NT.items.filter(n => pick(n) && !/^게이트웨이(?: �
 // Only what is news: a question that waits is a row of 답변 필요 above, so it is not counted or listed here a second time; a gateway question it
 // handles itself is not asked there (09-needs-you.js nyHandled), so it is news here.
 const hcFyi = n => !n.read && ntHomeAlert(n) && (!ntNeeds(n) || nyHandled(n));
-const hcUnread = () => NT.items.filter(hcFyi).length;
+const hcUnread = () => nscUnreadIn("all");
 // One head for every home card: [status dot] title, an optional count, an optional grey note. An empty card keeps the head and says why under it (hcNone); what is absent leaves no slot (docs/ui-principles.md 13).
 const hcHead = (title, o = {}) => el("div", { class: "ch" }, o.dot ? el("span", { class: `dot ${o.dot}` }) : null, el("h3", { text: title }),
   o.n ? el("span", { class: "hc-n" }, ...[].concat(o.n)) : null, o.note ? el("span", { class: "hc-n", text: o.note }) : null, o.menu ? menuBtn(o.menu) : null);
 const hcNone = text => el("div", { class: "hc-none", text });
 function homeAlertCard() {
   const unread = hcUnread(), fresh = hcRecent(hcFyi), state = hcState(), none = !!state || !fresh.length;
-  return hcCard(() => openTarget("alert", "chat"), hcHead("알림", { menu: "notices:alert", n: !state && unread ? String(unread) : null }),
+  return hcCard(nscGo, hcHead("알림", { menu: "notices:alert", n: !state && unread ? String(unread) : null }),
     none ? hcNone(state || "새 알림이 없어요") : hcNotices(fresh));
 }
 function homeWorklogCard() {

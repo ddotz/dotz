@@ -52,7 +52,7 @@ const attnLabel = k => ({ ask: "답변 필요", limit: "한도 걸림" })[k] || 
 // 세션; its question, rate limit and finished turn keep their own marks (home, 세션, toasts) and never hold this badge.
 const chatUnreadCount = (targets, unreadOf) => targets.filter(t => unreadOf(t) > 0).length;
 function paintAttn() {
-  const n = S ? chatUnreadCount([MAIN, "alert", "worklog", ...projTargets()], t => ts(t).unread) : 0, b = $("#nav-att");
+  const n = S ? chatUnreadCount([MAIN, "worklog", ...projTargets()], t => ts(t).unread) : 0, b = $("#nav-att");
   const say = n ? `읽지 않은 대화 ${n}개` : "", rise = n && b.hidden && b.dataset.seen;
   b.hidden = !n; b.title = say;
   if (n) rollCount(b, n > 99 ? "99+" : String(n)); else b.textContent = "";   // the digit that changed rolls; a hidden badge forgets, so it appears whole
@@ -262,7 +262,7 @@ function paintBell() {
   const n0 = $("#bell-n");
   if (!n0) return;
   let n = 0;
-  try { n = NT.unread | 0; } catch { /* 30-notices.js has not run yet */ }
+  try { n = NT.loaded ? nscUnreadIn("all") : NT.unread | 0; } catch { /* 30-notices.js has not run yet */ }
   const direct = !n || n0.hidden || !n0.dataset.seen, txt = n > 99 ? "99+" : String(n);
   n0.hidden = !n;
   if (direct) n0.textContent = txt; else rollCount(n0, txt);

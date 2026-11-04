@@ -223,7 +223,7 @@ function pqMerge(items) {
     const mons = (s.monitors || []).slice().sort((a, b) => (b.last_result === "fail") - (a.last_result === "fail") || (Date.parse(a.next_run) || Infinity) - (Date.parse(b.next_run) || Infinity));
     for (const m of mons) {
       if (monHidden(m)) continue;
-      const notices = sn.filter(n => monHas(m, n)), last = monNewest(notices);
+      const notices = ntWithRepeats(sn).filter(n => monHas(m, n)), last = monNewest(notices);
       for (const n of notices) shown.add(n.id);
       if (ownedNames.has(m)) continue;
       // A peer's watch has the same settings conversation as a local one; it lives on that computer (a watch name this computer has itself stays local).
@@ -233,7 +233,7 @@ function pqMerge(items) {
         hint: fresh ? monStrip(monLine(last), monNames(m)) : monRunLine(m), at: m.last_run || (last ? monNoticeAt(last) : ""),
         badge: m.connection === "disconnected" ? ["연결 끊김", "err"] : m.paused ? ["꺼짐", ""] : m.last_result === "fail" ? ["실패", "err"] : m.kind === "schedule" ? [MON_KIND.schedule, ""] : null, pc, chips });
     }
-    news.push(...sn.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)));
+    news.push(...ntWithRepeats(sn).filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)));
   }
   const feed = items.find(i => i.key === "notice");
   if (feed && news.length) {

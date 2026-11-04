@@ -13,6 +13,7 @@ const hurl = c => `#${c[c.length - 1]}`;
 // The chain of routes for a view, computed when the app navigates by itself (a back/forward uses the entry's stored chain).
 function routeChain(name, hash) {
   if (name === "home") return ["home"];
+  if (NSC.ret && name !== "notices") return ["home", "notices", hash];
   const conv = n => narrowChat() ? ["home", "chat/list", `${n}/${target}`] : ["home", `${n}/${target}`];
   // A conversation opened from 모니터링 (a mail of the 메일 list): back returns to that item's list, on a wide screen too (owner 2026-10-27).
   if (monCtx && (name === "chat" || name === "activity")) return MON.sel ? ["home", "monitoring", `monitoring/${enc(MON.sel)}`, hash] : ["home", "monitoring", hash];

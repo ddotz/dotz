@@ -143,7 +143,7 @@
     terminals: {},
     channels: { work: { "1": "랜딩 페이지", "2": "릴리스 노트" }, homes: { "랜딩-점검": "1" }, lanes: {}, threads: {} },
     discord: {},
-    notices_unread: 3,
+    notices_unread: 8,
     work: [
       { id: "st_price", description: "경쟁 서비스 가격 조사", status: "running", started_at: now - 4 * 60_000, model: "dotz AI" },
       { id: "st_report", description: "주간 보고서 정리", status: "done", started_at: now - 14 * 60_000, ended_at: now - 3 * 60_000, files: [{ path: "reports/주간-보고서.md", name: "주간-보고서.md", size: 2400 }] },
@@ -167,7 +167,7 @@
 
   const integrations = [
     { key: "mail", label: "메일", icon: "mail", conv: ["mail:"], notices: ["n-demo-1"], state: "connected" },
-    { key: "kakao", label: "카카오톡", icon: "chat", conv: ["kakao:"], notices: [], state: "connected" },
+    { key: "kakao", label: "카카오톡", icon: "chat", conv: ["kakao:"], notices: ["n-demo-11"], state: "connected" },
   ];
 
   // 카카오톡: the room list (GET /api/kakao/rooms) and one room's chat (GET /api/kakao/chat/<id>), epoch milliseconds like the real hub.
@@ -282,27 +282,46 @@
   const mailDraftBody = "안녕하세요, 서윤님.\n\n다음 주 화요일 오후 2시가 좋아요.\n온라인으로 뵐까요?\n\n감사합니다.";
   const mailDraftAsk = `[ask] 서윤님에게 보낼 답장 초안이에요.\n\n> 받는이: 한서윤 <seoyun.han@example.com>\n> 제목: Re: 다음 주 미팅 일정 확인 부탁드려요\n>\n${mailDraftBody.split("\n").map(l => `> ${l}`.trimEnd()).join("\n")}\n\n결정: 이대로 보낼까요?\n1) 보내기 ← 추천\n이 초안으로 답장해요\n2) 고치기 …\n고칠 내용을 적어 주세요\n3) 보내지 않기\n초안을 버려요`;
 
+  // The kakao reply draft awaiting 보내기 / 고치기 / 보내지 않기 (the same draft as kakaoChat.r1.drafts[0]).
+  const kakaoDraftBody = "가는 길에 마트에 들러서 사자.\n내가 사 갈게!";
+  const T_ASKK = ago(58);
+  // Mirrors the real hub notice: cls / waits / handled / repeats are what hub/notice-class.ts withClass and hub/notices.ts add.
+  //   처리할 것: the open decisions (ask), the failure (waits "fail", handled null) and the dropped login (waits "login").
+  //   새 소식: the other unread items, the price change folding three older reports into repeats.   지난 알림: the read rest. The unchanged check is cls "log" (not listed).
   const notices = {
-    unread: 3,
+    unread: 8,
     items: [
+      { id: "n-demo-2", kind: "decision", cls: "ask", tone: "ask", src: "ch:2", open: "ch:2", at: T_ASK2, title: "배포 공지 형태를 정해 주세요", text: "[ask] 배포 공지를 어떤 형태로 정리할까요?", read: false,
+        decision: { options: [{ n: 1, label: "짧은 공지", desc: "한 문단으로 핵심만 전해요", rec: true }, { n: 2, label: "목록 공지", desc: "바뀐 항목을 순서대로 적어요", rec: false }, { n: 3, label: "공지 없이 배포", desc: "릴리스 노트만 남겨요", rec: false }], to: "ch:2", reply_to: T_ASK2, group: 1, state: "open" } },
       // 답장 초안 확인 (a send approval): the card in the chat of mail:m-1 and the sheet answer it through POST /api/notices/<id>/answer.
       { id: "n-demo-1", kind: "decision", cls: "ask", tone: "ask", src: "mail:m-1", open: "mail:m-1", at: T_ASKM1, title: "한서윤님에게 보낼 답장을 확인해 주세요", text: mailDraftAsk, read: false,
         decision: { options: [{ n: 1, label: "보내기", desc: "이 초안으로 답장해요", rec: true }, { n: 2, label: "고치기", desc: "고칠 내용을 적어 주세요", rec: false, detail: true }, { n: 3, label: "보내지 않기", desc: "초안을 버려요", rec: false }], to: "mail:m-1", reply_to: T_ASKM1, group: 1, state: "open",
           draft: { toLabel: "받는이", to: "한서윤 <seoyun.han@example.com>", mode: "reply", subject: "Re: 다음 주 미팅 일정 확인 부탁드려요", body: mailDraftBody, ref: "dr-m1" } } },
-      { id: "n-demo-2", kind: "decision", cls: "ask", tone: "ask", src: "ch:2", open: "ch:2", at: T_ASK2, title: "배포 공지 형태를 정해 주세요", text: "[ask] 배포 공지를 어떤 형태로 정리할까요?", read: false,
-        decision: { options: [{ n: 1, label: "짧은 공지", desc: "한 문단으로 핵심만 전해요", rec: true }, { n: 2, label: "목록 공지", desc: "바뀐 항목을 순서대로 적어요", rec: false }, { n: 3, label: "공지 없이 배포", desc: "릴리스 노트만 남겨요", rec: false }], to: "ch:2", reply_to: T_ASK2, group: 1, state: "open" } },
-      { id: "n-demo-3", kind: "watch", cls: "news", tone: "", app: "유튜브", src: "alert", open: "alert", at: ago(35), title: "댓글 3개에 답글을 달 수 있어요", text: "댓글 3개에 답글을 달 수 있어요.", read: false },
-      { id: "n-demo-8", kind: "alert", cls: "alert", tone: "fail", src: "alert", open: "alert", at: ago(18), title: "인스타그램 로그인이 풀렸어요", text: "[fail] 인스타그램 확인에 실패했어요.\n\n- 원인: 로그인이 풀렸어요\n- 다음: 설정에서 다시 로그인해 주세요", read: false },
-      { id: "n-demo-4", kind: "worklog", cls: "result", tone: "done", src: "worklog", open: "worklog", at: ago(310), title: "밤 사이 정리를 마쳤어요", read: true },
-      { id: "n-demo-5", kind: "watch", cls: "news", tone: "", watch: "캠핑 의자 가격", src: "alert", open: "alert", at: ago(9), title: "캠핑 의자 가격", text: "[캠핑 의자 가격] 가격이 바뀌었어요.\n\n- 캠핑 의자 89,000원 → 72,000원", read: false },
-      { id: "n-demo-6", kind: "result", cls: "result", tone: "done", src: "ch:4", open: "ch:4", at: ago(52), title: "주간 보고서 정리를 마쳤어요", read: false },
-      { id: "n-demo-9", kind: "watch", cls: "news", tone: "", src: "alert", open: "alert", at: ago(75), title: "책상 램프 배송", text: "배송이 시작됐어요.\n\n- 도착 예정: 목요일", read: false },
-      { id: "n-demo-10", kind: "watch", cls: "news", tone: "", src: "alert", open: "alert", at: ago(260), title: "도서관 예약", text: "예약한 책이 도착했어요.", read: true },
+      // 카카오톡 물음: read, but it keeps waiting in 처리할 것 until it is answered.
+      { id: "n-demo-11", kind: "decision", cls: "ask", tone: "ask", src: "kakao:r1", open: "kakao:r1", at: T_ASKK, title: "정우님이 물어봤어요: 그리고 장작은 어디서 살까?", text: "[ask] 정우님에게 보낼 답장 초안이에요.\n\n> 받는이: 정우\n>\n> 가는 길에 마트에 들러서 사자.\n> 내가 사 갈게!\n\n결정: 이대로 보낼까요?\n1) 보내기 ← 추천\n이 초안으로 답장해요\n2) 고치기 …\n고칠 내용을 적어 주세요\n3) 보내지 않기\n초안을 버려요", read: true,
+        decision: { options: [{ n: 1, label: "보내기", desc: "이 초안으로 답장해요", rec: true }, { n: 2, label: "고치기", desc: "고칠 내용을 적어 주세요", rec: false, detail: true }, { n: 3, label: "보내지 않기", desc: "초안을 버려요", rec: false }], to: "kakao:r1", reply_to: T_ASKK, group: 1, state: "open",
+          draft: { toLabel: "받는이", to: "정우", mode: "reply", subject: "", body: kakaoDraftBody, ref: "dk1" } } },
+      { id: "n-demo-12", kind: "watch", cls: "alert", tone: "fail", watch: "캠핑 의자 가격", src: "alert", open: "alert", at: ago(80), title: "가격 페이지를 확인하지 못했어요", text: "[fail] 캠핑 의자 가격 확인에 실패했어요.\n\n- 원인: 페이지가 열리지 않아요\n- 다음: 잠시 뒤 다시 확인해요", read: false, waits: "fail", handled: null },
+      { id: "n-demo-8", kind: "alert", cls: "alert", tone: "fail", src: "alert", open: "alert", at: ago(105), title: "인스타그램 로그인이 풀렸어요", text: "[fail] 인스타그램 확인에 실패했어요.\n\n- 원인: 로그인이 풀렸어요\n- 다음: 설정에서 다시 로그인해 주세요", read: false, waits: "login", handled: null },
+      { id: "n-demo-5", kind: "watch", cls: "news", tone: "", watch: "캠핑 의자 가격", src: "alert", open: "alert", at: ago(9), title: "캠핑 의자 가격이 바뀌었어요", text: "[캠핑 의자 가격] 가격이 바뀌었어요.\n\n- 캠핑 의자 89,000원 → 72,000원", read: false,
+        repeats: [
+          { at: ago(75), text: "[캠핑 의자 가격] 가격이 바뀌었어요.\n\n- 캠핑 의자 92,000원 → 89,000원" },
+          { at: ago(225), text: "[캠핑 의자 가격] 가격이 바뀌었어요.\n\n- 캠핑 의자 95,000원 → 92,000원" },
+          { at: ago(400), text: "[캠핑 의자 가격] 가격이 바뀌었어요.\n\n- 캠핑 의자 98,000원 → 95,000원" },
+        ] },
+      { id: "n-demo-3", kind: "watch", cls: "news", tone: "", app: "유튜브", src: "alert", open: "alert", at: ago(35), title: "댓글 4개에 답글을 달 수 있어요", text: "댓글 4개에 답글을 달 수 있어요.\n\n- 유튜브 2 · 인스타그램 1 · 웹사이트 1", read: false },
+      { id: "n-demo-13", kind: "watch", cls: "news", tone: "", app: "일정", src: "alert", open: "alert", at: ago(120), title: "다음 주 수요일 팀 회의 장소가 본관 3층 회의실에서 별관 1층 세미나실로 바뀌었고 시작 시간도 30분 앞당겨졌으니 참석자 모두 공유 일정을 다시 확인해 주세요", text: "공유 일정에서 온 소식이에요. 참석자 8명에게 같은 내용이 전달됐고 회의 자료는 그대로 쓰면 돼요.", read: false },
+      { id: "n-demo-6", kind: "result", cls: "result", tone: "done", src: "ch:4", open: "ch:4", at: ago(150), title: "주간 보고서 정리를 마쳤어요", read: false },
+      // 변화 없는 감시: cls "log" keeps it out of the list (it stays in the monitor's 확인 기록).
+      { id: "n-demo-14", kind: "watch", cls: "log", tone: "", watch: "가격 페이지", src: "alert", open: "alert", at: ago(200), title: "가격 페이지: 확인했어요. 바뀐 곳은 없어요.", text: "가격 페이지: 확인했어요. 바뀐 곳은 없어요.", read: true },
       { id: "n-demo-7", kind: "worklog", cls: "result", tone: "done", src: "worklog", open: "worklog", at: ago(180), title: "아침 브리핑을 보냈어요", read: true },
+      { id: "n-demo-4", kind: "worklog", cls: "result", tone: "done", src: "worklog", open: "worklog", at: ago(310), title: "밤 사이 정리를 마쳤어요", read: true },
+      { id: "n-demo-10", kind: "watch", cls: "news", tone: "", src: "alert", open: "alert", at: ago(1500), title: "도서관 예약", text: "예약한 책이 도착했어요.", read: true },
+      { id: "n-demo-15", kind: "result", cls: "result", tone: "done", src: "ch:2", open: "ch:2", at: ago(1560), title: "릴리스 노트 초안을 만들었어요", read: true },
     ],
     gone: [],
   };
-  for (const n of notices.items) n.ts = n.at;   // the web reads a notice's time from ts / updated
+  for (const n of notices.items) { n.ts = n.at; n.updated = n.at; }   // the web reads a notice's time from ts / updated
 
   const canvases = {
     "notes/release.md": "# 릴리스 노트\n\n- 데모 페이지 추가\n- 모바일 문구 정리\n",

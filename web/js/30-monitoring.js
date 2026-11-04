@@ -198,7 +198,7 @@ function monItems() {
   const ownedNames = new Set([...owned.values()].flat());
   for (const m of mons) {
     if (monHidden(m)) continue;
-    const notices = NT.items.filter(n => monHas(m, n)), last = monNewest(notices), names = monNames(m);
+    const notices = ntWithRepeats(NT.items).filter(n => monHas(m, n)), last = monNewest(notices), names = monNames(m);
     for (const n of notices) shown.add(n.id);
     if (ownedNames.has(m)) continue;
     // The row says the newest result in words: the newest report, unless a later run said nothing (an "ok" run posts no report).
@@ -211,7 +211,7 @@ function monItems() {
   }
   items.push(...monGrouped(proj, plain));
   // A report the hub marked as an app's (n.app, hub/notices.ts) is never here, even before the app list below has loaded.
-  const feed = NT.items.filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), need = feed.filter(monNeed).length;
+  const feed = ntWithRepeats(NT.items).filter(n => n.kind === "watch" && !n.app && !shown.has(n.id)), need = feed.filter(monNeed).length;
   // The feed's row: what waits on the owner as its chip (counted apart from the plain reports, like an app row), the head line under the name (monFeedHead).
   items.unshift({ key: "notice", group: "", name: MON_FEED, ic: "list", notices: feed, mails: [], unread: monUnread(feed), need, chips: monNeedChips(need), ...monFeedHead(feed) });
   // 답장 확인 (30-replies.js): every waiting reply draft of every app and computer, right under 감시 소식.

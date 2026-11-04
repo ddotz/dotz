@@ -269,10 +269,10 @@ function convRows() {
   const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
   const running = all.filter(laneAlive).sort((a, b) => rank(a) - rank(b) || at(`lane:${b.name}`).localeCompare(at(`lane:${a.name}`)));
   const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionStatus(l), hint: convPreview(l.lastText) || m.hint }; };
-  const v = CVF.view, keep = r => v === "need" ? r.need : v === "session" ? isLaneT(r.t) : v === "alert" ? isFixedT(r.t) : true;
+  const v = CVF.view, keep = r => v === "need" ? r.need : v === "session" ? isLaneT(r.t) : true;
   // The filter pills, then a card per group (a group with nothing under the filter has no header), and last the 메일 · 카카오톡 card of what waits there.
   const projs = projects.map(mk).filter(keep), page = v === "all" ? projs.filter((r, i) => i < CVF.more || r.t === target) : projs;
-  const out = [{ bar: true }, ...[MAIN, "alert", "worklog"].map(mk).filter(keep)], lanes = running.map(sess).filter(keep);
+  const out = [{ bar: true }, ...[MAIN, "worklog"].map(mk).filter(keep)], lanes = running.map(sess).filter(keep);
   if (lanes.length) out.push({ header: "진행 중", sec: true }, ...lanes);
   if (page.length) out.push({ header: "프로젝트", sec: true }, ...page);
   if (projs.length > page.length) out.push({ more: projs.length - page.length });
@@ -286,7 +286,7 @@ function convRows() {
   out.push({ read: true });
   return out;
 }
-const CVF_EMPTY = { need: "답을 기다리는 대화가 없어요", session: "진행 중인 세션이 없어요", alert: "알림이 없어요" };
+const CVF_EMPTY = { need: "답을 기다리는 대화가 없어요", session: "진행 중인 세션이 없어요" };
 // The 메일 · 카카오톡 card: this computer's mails with a draft or a reply owed and the watched rooms that owe one, newest first; a tap opens them in 모니터링.
 function convWaiting() {
   const letter = name => el("span", { class: "cv-av", "aria-hidden": "true", text: [...String(name || "?").trim()][0] || "?" });
@@ -318,10 +318,10 @@ const CVF = { view: "all", more: CVF_PAGE };
 // A conversation waits on the owner: an open decision asked there, a loose [ask] notice of it, or a session's question (same rules as 30-notices.js ntNeeds).
 // the same rule as the home 답변 필요 list: a gateway question it handles itself (nyHandled) is news there, not a need here
 const convNeeds = t => ntHasDecision(t) || NT.items.some(n => ntNeeds(n) && !nyHandled(n) && (n.src || n.open) === t) || !!(isLaneT(t) && targetInfo(t).ask);
-const convListed = () => [MAIN, "alert", "worklog", ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`), ...projTargets()];
+const convListed = () => [MAIN, "worklog", ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`), ...projTargets()];
 function convBar() {
   const list = convListed(), need = list.filter(convNeeds).length + (KK.rooms.filter(r => r.watched && r.unreplied).length) + [...MAILS].filter(([t, m]) => !PQ.of.has(t) && m.dir !== "out" && !m.archived && (m.reply === "draft" || m.unreplied)).length;
-  const views = [["all", "전체", 0], ["need", "답할 것", need], ["session", "세션", 0], ["alert", "알림", 0]];
+  const views = [["all", "전체", 0], ["need", "답할 것", need], ["session", "세션", 0]];
   return el("div", { class: "cv-bar" },
     el("div", { class: "cv-tabs", role: "tablist", "aria-label": "대화 보기" }, ...views.map(([k, label, n]) =>
       el("button", { class: `cchip mr-f${CVF.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(CVF.view === k), "data-view": k, onclick: () => { CVF.view = k; CVF.more = CVF_PAGE; convSig = ""; convSchedule(); convSide.scrollTop = 0; } }, label, cntSpan(`cv-filter:${k}`, "mr-fn", n)))),
@@ -378,13 +378,13 @@ $("#v-chat").prepend(convSide, convHead);
 function convPaintHead() {
   asSync();
   if (isProjT(target) && !PRJ && !PRJ_FAIL) prjLoad().then(convSchedule);
-  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", alertN = target === "alert" ? cvAlertN() : 0, sig = `${target}|${targetName(target)}|${state}|${alertN}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
+  const i = targetInfo(target), state = isFixedT(target) ? FIXED_DESC[target] : isMailT(target) ? mailSender((MAILS.get(target) || {}).from) || "메일" : isSettingsT(target) ? "말로 설정을 바꾸고 적용을 눌러요" : i.alive ? statusKo(i.status) : "종료됨", k = monCtx && !isSettingsT(target) ? monItemOf(target) : "", app = k ? monSettingsApp(monItems().find(x => x.key === k)) : "", sig = `${target}|${targetName(target)}|${state}|${monCtx ? pqSelf() : ""}|${!!pjMenuOn()}|${app}|${!!AS.by[app]}|${monCtx ? MON.sel : ""}`;
   if (sig === convHeadSig) return;
   convHeadSig = sig;
   // A conversation opened from a 모니터링 list (a mail of the 메일 list): ← goes back to that list inside the page, like the app bar's back on a phone.
   const up = monCtx && MON.sel && !isSettingsT(target) ? el("button", { class: "ib cv-up", type: "button", "aria-label": "목록으로", title: "목록으로", "data-k": "cv-up", onclick: () => go("monitoring", MON.sel) }, icon("back")) : null;
   // 시제품의 대화 머리 (proto .cv-hd): 제목 16/22 600 한 줄, 그 아래 상태 한 줄, 오른쪽에 그 대화의 동작.
-  const acts = [isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, target === "alert" ? el("button", { class: "btn text sm cv-readall", type: "button", "data-k": "read-all", disabled: !alertN, title: "답이 필요한 알림은 그대로 둬요", onclick: ev => ntAlertReadAll(ev.currentTarget), text: "모두 읽음" }) : null, ...asEntry(app)].filter(Boolean);
+  const acts = [isLaneT(target) ? cvMenuBtn() : null, pjMenuOn() ? pmMenuButton(() => pmOfTarget(target), "cvmenu") : null, isSettingsT(target) ? asMoreBtn(settingsApp(target)) : null, ...asEntry(app)].filter(Boolean);
   // 모니터링에서 연 대화(메일·설정)는 그 목록의 머리 그대로 아바타와 이름·상태 줄을 둬요.
   if (monCtx) clear(convHead).append(...[up, convAvatar(target), el("span", { class: "cv-b" }, el("span", { class: "cv-n" }, targetName(target), pqLabel({ pc: pqPc(target) })), el("span", { class: "cv-p", text: state })), ...acts].filter(Boolean));
   else clear(convHead).append(...[up,
@@ -401,58 +401,6 @@ $("#vtog").before(cvAppMenu);
 const pjAppMenu = pmMenuButton(() => pmOfTarget(target), "cvmenu");
 pjAppMenu.id = "pjmenu"; pjAppMenu.hidden = true;
 cvAppMenu.before(pjAppMenu);
-// 모두 읽음 of the 알림 conversation (30-notices.js ntAlertReadAll): in its head on wide screens, in the app bar on a phone.
-const cvAlertN = () => ts("alert").unread + ntAlertUnread().length;
-const cvReadAllBar = el("button", { class: "btn text sm cv-readall", id: "cvreadall", type: "button", hidden: true, "data-k": "read-all", title: "답이 필요한 알림은 그대로 둬요", onclick: ev => ntAlertReadAll(ev.currentTarget), text: "모두 읽음" });
-pjAppMenu.before(cvReadAllBar);
-/* ---- the tabs of the 알림 conversation (owner 2026-11-01; classes: hub/notice-class.ts, n.cls) ---- */
-// 전체 is the timeline as it was; the other tabs list that class of NT.items instead. A "log" notice is in no tab and in no count.
-const BELL = { tab: "all", sig: "", lsig: "" }, BELL_SEEN = new Set();
-const BELL_TABS = [["all", "전체"], ["ask", "답변 필요"], ["result", "결과"], ["news", "새 소식"], ["alert", "경고"]];
-const bellUnread = tab => NT.items.reduce((c, n) => c + (!n.read && n.cls !== "log" && (tab === "all" || n.cls === tab) ? 1 : 0), 0);
-function bellTab(tab) { BELL.tab = tab; bellPaint(); }
-// 새 소식 by app (the app's own name, else the monitor, else the title); the groups follow their newest item.
-function bellGroups(list) {
-  const by = new Map();
-  for (const n of list) { const k = ntPlain(n.app || n.watch || ""); by.set(k, [...(by.get(k) || []), n]); }   // no app or monitor: one headerless group, never one per row title
-  return [...by];
-}
-function bellRows(tab) {
-  const list = NT.items.filter(n => n.id && n.cls === tab).sort((a, b) => (tab === "ask" ? Number(ntNeeds(b)) - Number(ntNeeds(a)) : 0) || ntAt(b) - ntAt(a)).slice(0, 100);
-  const row = n => ntHomeRow(n, ntNeeds(n) ? undefined : "");
-  if (!list.length) return [el("div", { class: "bell-none", text: "아직 없어요" })];
-  // The prototype's notices screen (30-notices.js ntHomeRow): one meta line, a card of rows (새 소식: a label and a card per app), one quiet note.
-  const card = items => el("div", { class: "bell-card" }, el("div", { class: "hn" }, ...items.map(row)));
-  const meta = el("div", { class: "bell-meta" }, "안 읽은 알림 ", el("b", { text: String(bellUnread(tab)) }), "개"), note = el("div", { class: "bell-note", text: "모두 읽음은 답이 필요한 알림을 그대로 둬요." });
-  if (tab !== "news") return [meta, card(list), note];
-  // A header that only repeats the title of its single row says nothing: it is not drawn.
-  const echo = (name, items) => items.length === 1 && [ntPlain(items[0].title), hcLine(items[0])].includes(name);
-  return [meta, ...bellGroups(list).flatMap(([name, items]) => [name && !echo(name, items) ? el("div", { class: "bell-gh", role: "presentation", text: name }) : null, card(items)].filter(Boolean)), note];
-}
-function bellPaint() {
-  const on = current === "chat" && target === "alert" && !monCtx, box = $("#bell-tabs"), list = $("#bell-list"), tab = BELL.tab, listed = on && tab !== "all";
-  box.hidden = !on; list.hidden = !listed;
-  $("#v-chat").classList.toggle("bell-on", listed);
-  $("#v-chat").classList.toggle("bell-view", on);   // every filter keeps one frame (09-notices.css): the same filter row, the same start of content
-  if (!on) return;
-  const counts = BELL_TABS.map(([k]) => NT.loaded ? bellUnread(k) : 0), sig = JSON.stringify([tab, counts]);
-  if (sig !== BELL.sig) {
-    BELL.sig = sig;
-    clear(box).append(...BELL_TABS.map(([k, label], i) => el("button", { class: `chip${k === tab ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(k === tab), "data-k": k, onclick: () => bellTab(k) },
-      el("span", { class: "tx", text: label }), cntSpan(`bell:${k}`, `nb${k === "ask" ? " warn" : k === "alert" ? " err" : ""}`, counts[i], { "aria-label": `안 읽은 알림 ${counts[i]}개` }))));
-  }
-  if (!listed) { BELL.lsig = ""; BELL_SEEN.clear(); BELL_SEEN.seeded = false; return; }
-  const lsig = JSON.stringify([tab, NT.items.filter(n => n.cls === tab).map(n => [n.id, n.read, n.ignored, n.updated || n.ts])]);
-  if (lsig === BELL.lsig) return;
-  BELL.lsig = lsig;
-  const top = list.scrollTop;
-  clear(list).append(...bellRows(tab));
-  list.scrollTop = top;
-  // a notification that arrives while a tab is open slides in at the top of it; opening a tab or drawing it again moves nothing
-  if (BELL_SEEN.scope !== tab) { BELL_SEEN.clear(); BELL_SEEN.seeded = false; BELL_SEEN.scope = tab; }
-  const rows = [...list.querySelectorAll(".hr[data-nid]")], fresh = rows.length ? freshKeys(BELL_SEEN, rows.map(r => r.dataset.nid)) : new Set();
-  for (const r of rows) if (fresh.has(r.dataset.nid)) motionIn(r, "top");
-}
 function convPaint() {
   convRaf = 0;
   if (current !== "chat") return;
@@ -472,7 +420,7 @@ function convPaint() {
   }
   convSide.classList.toggle("mon-side", !!monCtx);
   $("#v-chat").classList.toggle("mon-ctx", !!monCtx);
-  bellPaint();
+  $("#v-chat").classList.toggle("no-composer", target === "alert");
   convPaintHead();
 }
 function convSchedule() { if (!convRaf) convRaf = requestAnimationFrame(convPaint); }
@@ -487,8 +435,6 @@ function convTitle() {
   if (tag) $("#title").append(tag);
   cvAppMenu.hidden = !(convOnPhone() && isLaneT(target));
   pjAppMenu.hidden = !(convOnPhone() && pjMenuOn());
-  cvReadAllBar.hidden = !(convOnPhone() && target === "alert");
-  if (!cvReadAllBar.hidden) cvReadAllBar.disabled = !cvAlertN();
   if (asBar) asBarSync(narrowChat() ? monDetailApp() : "");
   if (asMoreBar) asMoreSync(convOnPhone() && isSettingsT(target) ? settingsApp(target) : narrowChat() ? monDetailApp() : "");
 }
@@ -520,7 +466,7 @@ matchMedia("(max-width: 1099px)").addEventListener("change", () => {
 convLoad();
 
 /* ---- shell: the notice bell and the sidebar's computer row (22-shell.css) ---- */
-// The bell opens the 알림 conversation; its count comes from paintBell (09-needs-you.js), fed by every notice change.
+// The bell opens the 알림 screen (31-notices-screen.js); its count comes from paintBell (09-needs-you.js), fed by every notice change.
 $("#bell").prepend(icon("bell"));
 $("#bell").title = `알림 (${isMac ? "⌘/" : "Ctrl+/"})`;
-$("#bell").onclick = () => openTarget("alert", lastChatView());
+$("#bell").onclick = nscGo;
