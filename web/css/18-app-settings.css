@@ -14,80 +14,80 @@
 
 /* 모니터링 > 앱 > 설정 대화 (web/js/32-app-settings.js): the switches above the conversation, the 설정 button of a detail's title bar and the change card.
    The switch itself is the kakao one (.kk-sw, 17-kakao.css). */
-.app-sw { display: flex; flex-direction: column; width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto 8px; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+.app-sw { display: flex; flex-direction: column; width: 100%; max-width: var(--col); min-width: 0; margin: 0 auto var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .app-sw[hidden] { display: none; }
-.as-row { display: flex; align-items: center; gap: 12px; min-height: var(--row-h); padding: var(--row-py) var(--row-px); }
+.as-row { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--row-h); padding: var(--row-py) var(--row-px); }
 .as-row + .as-row { border-top: 1px solid var(--line); }
 .as-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .as-n { font: 500 15px/22px var(--font); }
-.as-h { margin-top: 4px; color: var(--fg-2); font: 400 12px/16px var(--font); }
+.as-h { margin-top: var(--sp-1); color: var(--fg-2); font: 400 12px/16px var(--font); }
 .as-h + .as-h { margin-top: 0; }
 .as-v { flex: none; color: var(--fg-2); font: 400 13px/20px var(--font); }
-.as-rm { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.as-rm { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--line); }
 .as-rml { margin: 0; padding-left: 18px; color: var(--fg-2); font: 400 13px/20px var(--font); }
-.as-del { display: flex; align-items: flex-start; gap: 8px; font: 400 13px/20px var(--font); }
+.as-del { display: flex; align-items: flex-start; gap: var(--sp-2); font: 400 13px/20px var(--font); }
 .as-del input { flex: none; margin-top: 3px; }
-.as-rm .as-act { margin-top: 4px; }
+.as-rm .as-act { margin-top: var(--sp-1); }
 /* the 대화 and ⋯ buttons of a detail's title bar: at the right end of the head */
 :is(.cv-head, .kk-head) .as-hd { flex: none; margin-left: auto; }
 :is(.cv-head, .kk-head) .as-hd + .as-hd { margin-left: 0; }
 .as-hd[hidden] { display: none; }
 
-.as-card { margin: 4px 0; padding: 12px 16px; border-radius: var(--r-card); background: var(--layer); }
-.as-ct { margin-bottom: 8px; color: var(--fg-2); font: 500 13px/20px var(--font); }
+.as-card { margin: var(--sp-1) 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--layer); }
+.as-ct { margin-bottom: var(--sp-2); color: var(--fg-2); font: 500 13px/20px var(--font); }
 /* the prototype's change list (#apps/settings): the setting at the left, "old -> new" at the right, a hairline between the rows */
-.as-cr { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0; }
+.as-cr { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-2) 0; }
 .as-cr + .as-cr { box-shadow: inset 0 1px 0 var(--line); }
 .as-cn { flex: 1; min-width: 0; color: var(--fg); font: 500 14px/22px var(--font); }
 .as-cv { flex: none; max-width: 70%; text-align: right; overflow-wrap: anywhere; color: var(--fg-2); font: 400 14px/22px var(--font); }
 /* the value that changes is the one bold thing; the value it replaces stays beside it, grey and struck through */
 .as-old { color: var(--fg-3); text-decoration: line-through; }
 .as-now, .as-card.applied .as-cv { font-weight: 600; }
-.as-act { display: flex; gap: 8px; margin-top: 12px; }
-.as-done { margin-top: 12px; color: var(--fg-2); font: 500 13px/20px var(--font); }
+.as-act { display: flex; gap: var(--sp-2); margin-top: var(--sp-3); }
+.as-done { margin-top: var(--sp-3); color: var(--fg-2); font: 500 13px/20px var(--font); }
 .as-done.applied { color: var(--ok); }
 .as-done.cancelled, .as-card.cancelled .as-cr { color: var(--fg-3); }
 .as-in { flex: none; width: 150px; height: 32px; }
 .as-in[type="number"] { width: 96px; text-align: right; }
 .as-seg { flex: none; flex-wrap: nowrap; height: 32px; }
-.as-seg button { flex: none; height: 28px; padding: 0 12px; white-space: nowrap; }
-.as-step { flex: none; display: inline-flex; align-items: center; gap: 2px; }
+.as-seg button { flex: none; height: 28px; padding: 0 var(--sp-3); white-space: nowrap; }
+.as-step { flex: none; display: inline-flex; align-items: center; gap: var(--sp-05); }
 .as-step .ib { width: 32px; height: 32px; color: var(--fg-2); font: 400 18px/1 var(--font); }
 .as-step .as-in[type="number"] { width: 40px; padding: 0; border: 0; background: transparent; text-align: center; appearance: textfield; }
 .as-step .as-in[type="number"]::-webkit-inner-spin-button, .as-step .as-in[type="number"]::-webkit-outer-spin-button { appearance: none; margin: 0; }
 select.as-in { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the settings screen (asScreen): a pushed view with a back button, the options card as its body */
-.as-screen .fs-hd { gap: 4px; padding-left: max(4px, env(safe-area-inset-left)); }
+.as-screen .fs-hd { gap: var(--sp-1); padding-left: max(var(--sp-1), env(safe-area-inset-left)); }
 .as-screen .fs-tt { flex: 1; min-width: 0; }
-.as-screen .fs-body { padding-top: 8px; }
-.as-screen .app-sw { margin: 0 auto 16px; background: var(--card); }
-.as-screen .fs-body .as-row { padding: 10px 16px; }
-.as-screen .fs-body .as-rm { padding: 12px 16px; border-top: 1px solid var(--line); }
+.as-screen .fs-body { padding-top: var(--sp-2); }
+.as-screen .app-sw { margin: 0 auto var(--sp-4); background: var(--card); }
+.as-screen .fs-body .as-row { padding: 10px var(--sp-4); }
+.as-screen .fs-body .as-rm { padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--line); }
 
 /* 앱 추가 (web/js/32-app-settings.js): the sheet and the template chips above the chat box. */
-.fs-body .as-sec { margin: 16px 0 4px; color: var(--fg-2); font: 600 13px/20px var(--font); }
+.fs-body .as-sec { margin: var(--sp-4) 0 var(--sp-1); color: var(--fg-2); font: 600 13px/20px var(--font); }
 .fs-body .as-sec:first-child { margin-top: 0; }
-.fs-body .as-row { padding: 8px 0; }
+.fs-body .as-row { padding: var(--sp-2) 0; }
 .as-ic { flex: none; display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 50%; background: var(--layer); color: var(--fg-2); }
 .as-ic svg { width: 18px; height: 18px; }
-.as-lead { margin-bottom: 8px; }
-.as-tpls, .tplrow { display: flex; flex-wrap: wrap; gap: 6px; }
-.as-tpls { margin-bottom: 16px; }
-.tplrow { position: relative; flex-wrap: nowrap; align-items: center; padding: 6px 12px 2px; }
-.tplrow .tplnote { flex: 1; min-width: 0; padding: 0 4px; font-size: 13px; color: var(--fg-2); }
+.as-lead { margin-bottom: var(--sp-2); }
+.as-tpls, .tplrow { display: flex; flex-wrap: wrap; gap: var(--sp-15); }
+.as-tpls { margin-bottom: var(--sp-4); }
+.tplrow { position: relative; flex-wrap: nowrap; align-items: center; padding: var(--sp-15) var(--sp-3) var(--sp-05); }
+.tplrow .tplnote { flex: 1; min-width: 0; padding: 0 var(--sp-1); font-size: 13px; color: var(--fg-2); }
 .tplrow[hidden] { display: none; }
-.tplnote { padding: 2px 16px 0; color: var(--fg-3); font-size: 12px; line-height: 18px; }
+.tplnote { padding: var(--sp-05) var(--sp-4) 0; color: var(--fg-3); font-size: 12px; line-height: 18px; }
 .tplnote[hidden] { display: none; }
-.as-tpl { flex: none; display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg); font: 500 13px/20px var(--font); cursor: pointer; }
+.as-tpl { flex: none; display: inline-flex; align-items: center; justify-content: center; height: 28px; padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg); font: 500 13px/20px var(--font); cursor: pointer; }
 .as-tpl:hover { background: var(--hover); color: var(--fg); }
 .as-tpl[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
 #mon-chips { flex-wrap: wrap; overflow-x: visible; }
 .as-tpl-x { width: 28px; padding: 0; }
 .as-tpl-x svg { width: 14px; height: 14px; }
-.as-btns { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.as-btns { flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }
 .as-name .as-in { flex: 1 1 120px; min-width: 0; }
-.fs-body .as-rm { padding: 8px 0 12px; border-top: 0; }
-.fs-body .as-row ~ .btn { margin-top: 16px; }
+.fs-body .as-rm { padding: var(--sp-2) 0 var(--sp-3); border-top: 0; }
+.fs-body .as-row ~ .btn { margin-top: var(--sp-4); }
 .as-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
 .as-dot.ok { background: var(--ok); }
 .as-dot.fail { background: var(--err); }
@@ -96,23 +96,23 @@ select.as-in { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .as-appr { flex-wrap: wrap; }
 .as-appr .as-b { flex-basis: 100%; }
 .as-appr .as-btns { flex-basis: 100%; justify-content: flex-start; }
-.app-sw > .as-sec { margin: 16px 0 0; padding: 0 16px; }
+.app-sw > .as-sec { margin: var(--sp-4) 0 0; padding: 0 var(--sp-4); }
 .app-sw > .as-sec:first-child, .app-sw > .as-conn + .as-sec { margin-top: 0; padding-top: 14px; }
 /* 연결 상태 sits above every section, on the card's own top edge. */
 .app-sw > .as-conn { min-height: 56px; }
 .app-sw > .as-conn + .as-row, .app-sw > .as-conn + .as-sec + .as-row { border-top: 0; }
 /* 승인 대기 is a sub-heading inside 자동 초안과 승인, not a section of its own. */
-.app-sw > .as-sub { margin: 8px 0 0; padding: 4px 16px 0; color: var(--fg-3); font: 600 12px/18px var(--font); }
-.as-every-wrap { flex: none; display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
+.app-sw > .as-sub { margin: var(--sp-2) 0 0; padding: var(--sp-1) var(--sp-4) 0; color: var(--fg-3); font: 600 12px/18px var(--font); }
+.as-every-wrap { flex: none; display: inline-flex; align-items: center; gap: var(--sp-1); margin-left: var(--sp-2); }
 .as-every { flex: none; width: 68px; height: 32px; text-align: right; }
 .as-unit { color: var(--fg-3); font: 400 12px/18px var(--font); }
 /* 자동 초안 규칙 (32-app-settings.js arNodes): the 기본 규칙 box and a rule's form take the row's full width; the boxes grow with their text. */
-.as-col { flex-direction: column; align-items: stretch; gap: 8px; }
+.as-col { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
 .as-in.as-ta { width: 100%; height: auto; min-height: 32px; resize: vertical; font: inherit; line-height: 20px; }
-textarea.as-in.as-ta { padding-top: 6px; padding-bottom: 6px; }
+textarea.as-in.as-ta { padding-top: var(--sp-15); padding-bottom: var(--sp-15); }
 .as-rule .as-n { display: flex; }
 .as-rform .as-act { margin-top: 0; }
-.as-rl { display: flex; flex-direction: column; gap: 4px; }
-.as-new-in { display: block; width: 100%; min-height: 88px; margin: 0 0 8px; padding: 12px 14px; border: 0; border-radius: 12px; background: var(--ff-fill); color: var(--fg); font: 400 15px/22px var(--font); resize: vertical; }
+.as-rl { display: flex; flex-direction: column; gap: var(--sp-1); }
+.as-new-in { display: block; width: 100%; min-height: 88px; margin: 0 0 var(--sp-2); padding: var(--sp-3) 14px; border: 0; border-radius: 12px; background: var(--ff-fill); color: var(--fg); font: 400 15px/22px var(--font); resize: vertical; }
 .as-new-in:focus { outline: 0; box-shadow: var(--ff-ring); }
 .as-new-in::placeholder { color: var(--fg-3); }
