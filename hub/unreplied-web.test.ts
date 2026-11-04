@@ -85,6 +85,7 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 			expect(rows["i:kakao"]).toEqual({ nb: [], unreplied: ["미답장 1"] });
 			expect(rows["peer:i:mail"]!.unreplied).toEqual(["미답장 2"]);
 			expect(await fg(v, '#mon-side .nb.unreplied')).toBe("rgb(194, 65, 12)");
+			expect(await bg(v, '#mon-side .cv-row[data-k="i:youtube"] .nb:not(.unreplied)')).toBe("rgb(49, 130, 246)");
 			expect(await q<boolean>(v, `return document.documentElement.scrollWidth <= ${width}`)).toBe(true);
 			await shot(v, `app-list-${width}-light.png`);
 		});
@@ -93,6 +94,8 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 			await waitFor(v, `document.querySelector('#mon-side .cv-row[data-k="i:youtube"] .nb.unreplied')`);
 			expect(await fg(v, '#mon-side .nb.unreplied')).toBe("rgb(255, 154, 77)");
 			expect(await bg(v, '#mon-side .cv-row[data-k="i:youtube"] .nb:not(.unreplied)')).not.toBe(await bg(v, '#mon-side .nb.unreplied'));
+			expect(await bg(v, '#mon-side .cv-row[data-k="i:youtube"] .nb:not(.unreplied)')).toBe("rgb(255, 154, 77)");
+			expect(await bg(v, "#nav-upd")).toBe("rgb(76, 148, 255)");
 			await shot(v, `app-list-${width}-dark.png`);
 		});
 	});
@@ -116,6 +119,15 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 			// the pill and the button leave at the tap, before the request answers
 			expect(await q<boolean>(v, `const b = document.querySelector("#cm .cm-no"); b.click(); return b.hidden`)).toBe(true);
 			await expectReq(r => r.method === "POST" && decodeURIComponent(r.path) === "/api/comments/comment/cm:youtube:c1/no-reply");
+		});
+		test.each([["light", "rgb(49, 130, 246)"], ["dark", "rgb(255, 154, 77)"]] as const)("the plain unread number in %s: blue in light, orange in dark; a draft count stays blue", async (theme, unread) => {
+			await boot(v, theme, `go("monitoring", "i:youtube")`);
+			await waitFor(v, `!$("#cm").hidden && CM.loaded && document.querySelector("#cm .kk-row")`);
+			const sel = "#cm .kk-row .nb:not(.unreplied)";
+			expect(await fg(v, sel)).toBe(unread);
+			expect(await bg(v, sel)).toBe("rgba(0, 0, 0, 0)");
+			await run(v, `document.querySelector(${JSON.stringify(sel)}).classList.add("drafted")`);
+			expect(await fg(v, sel)).toBe(theme === "dark" ? "rgb(76, 148, 255)" : unread);
 		});
 	});
 }
