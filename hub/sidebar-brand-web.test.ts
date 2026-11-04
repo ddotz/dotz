@@ -52,6 +52,36 @@ test("several computers: the row opens the list under it with the current one ma
 	expect((await brand()).dot).toBe(false);
 });
 
+test("the sidebar folds to an icon rail and back: the toggle, the shortcut and a reload keep it, names stay readable, dots stay on the icons", async () => {
+	const rail = () => ev<{ side: number; tog: string; pressed: string; label: string | null; text: number; saved: string | null; early: boolean }>(v, `(() => ({
+		side: document.querySelector("#brand").parentElement.offsetWidth, tog: document.querySelector("#side-tog").title, pressed: document.querySelector("#side-tog").getAttribute("aria-expanded"),
+		label: document.querySelector('.ni[data-view="projects"]').getAttribute("aria-label"), text: document.querySelector('.ni[data-view="projects"] .nl').offsetWidth,
+		saved: localStorage.getItem("dotz-side"), early: document.documentElement.classList.contains("side-min") }))()`);
+	await load([self, other], "PR.list.length === 2");
+	expect((await rail()).side).toBe(232);
+	await run(v, `document.querySelector("#side-tog").click()`);
+	const min = await rail();
+	expect(min).toMatchObject({ side: 60, pressed: "false", label: "프로젝트", text: 0, saved: "min" });
+	expect(min.tog).toContain("펼치기");
+	expect(min.tog).toContain("\\");
+	await run(v, `ts(MAIN).unread = 3; paintAttn(); PR.list.find(p => p.name === "맥북").unread = 2; prPaint()`);
+	const dots = await ev<{ w: number; right: number; bottom: number; logoDot: boolean; chev: boolean; overflow: boolean }>(v, `(() => {
+		document.querySelector("#nav-att").getAnimations().forEach(a => a.finish());
+		const d = document.querySelector("#nav-att").getBoundingClientRect(), i = document.querySelector('.ni[data-view="chat"] .ic').getBoundingClientRect(), c = document.querySelector("#brand-c");
+		return { w: d.width, right: d.right - i.right, bottom: d.bottom - i.bottom, logoDot: getComputedStyle(c, "::after").content !== "none" && c.offsetWidth === 6, chev: !!c.querySelector(".ic").getBoundingClientRect().width, overflow: document.documentElement.scrollWidth > innerWidth };
+	})()`);
+	expect(dots).toEqual({ w: 6, right: 3, bottom: 2, logoDot: true, chev: false, overflow: false });
+	await run(v, `ts(MAIN).unread = 0; paintAttn(); document.querySelector("#brand").click()`);
+	await waitFor("PR.node");
+	await run(v, `prClose(false)`);
+	await v.navigate(`${hub.origin}/`);
+	await waitFor(`typeof PR !== "undefined"`);
+	expect((await rail()).early).toBe(true);
+	expect((await rail()).side).toBe(60);
+	await run(v, `document.dispatchEvent(new KeyboardEvent("keydown", { code: "Backslash", key: "₩", [isMac ? "metaKey" : "ctrlKey"]: true }))`);
+	expect(await rail()).toMatchObject({ side: 232, pressed: "true", saved: null });
+});
+
 test("a tab with something new shows one dot right after its text, and none reserves space once it clears", async () => {
 	await run(v, `ts(MAIN).unread = 3; paintAttn()`);
 	const g = await ev<{ text: string; w: number; gap: number; label: string | null }>(v, `(() => {
