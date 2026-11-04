@@ -80,6 +80,29 @@ test("a notice notifies when it becomes unread, not again while it stays unread"
 	expect(noticePush(mine[0]!)).toMatchObject({ kind: "result", tag: `lane:${lane}` });
 });
 
+test("monitor reports folded into one row each still notify, and a repeated alert stays quiet", () => {
+	resetPushDedupeForTest();
+	const pushed: NonNullable<ReturnType<typeof noticePush>>[] = [];
+	onNoticeUnread(n => {
+		const m = noticePush(n);
+		if (m && n.open === "ch:9701") pushed.push(m);
+	});
+	const base = Date.now() - 3_600_000;
+	// the row is unread from the first report on: the next two fold into it without it ever being read
+	for (let i = 0; i < 3; i++) emit("outbox", { ts: new Date(base + i * 60_000).toISOString(), kind: "out", source: "gateway", target: "ch:9701", text: `[감시9701] 새 글 ${i}번` });
+	expect(pushed.map(m => m.body)).toEqual(["새 글 0번", "새 글 1번", "새 글 2번"]);
+	expect(new Set(pushed.map(m => m.tag)).size).toBe(3);
+	const t = Date.now();
+	expect(pushed.map(m => shouldNotify(m, t, () => false, () => true))).toEqual([true, true, true]);
+	// a repeated alert updates its row and is not pushed again (hub/alert-gate.ts)
+	const alerts: unknown[] = [];
+	onNoticeUnread(n => n.kind === "alert" && n.text.includes("9702") && alerts.push(noticePush(n)));
+	emit("outbox", { ts: new Date(base).toISOString(), kind: "out", source: "gateway", target: "alert", text: "땃쥐: 모델 제공자 오류 9702 (1)" });
+	emit("outbox", { ts: new Date(base + 1000).toISOString(), kind: "out", source: "gateway", target: "alert", text: "땃쥐: 모델 제공자 오류 9702 (2)", repeat: true });
+	expect(alerts).toHaveLength(1);
+	resetPushDedupeForTest();
+});
+
 test("a dead app subscription (410) also ends the app's role, so the device's browser may subscribe again", async () => {
 	const call = (path: string, method: string, body?: unknown) => pushRoute(new Request(`http://x${path}`, { method, ...(body ? { body: JSON.stringify(body) } : {}) }), new URL(`http://x${path}`));
 	const key = () => {

@@ -170,7 +170,7 @@ export function noticePush(n: Notice): PushMessage | undefined {
 			if (n.key === "self-update") return { ...base, title: `${NAME} · ${n.title}`, tag: "update" };
 			if (n.watch && watchPushOff(n.watch)) return undefined;
 			if (conv.startsWith("mail:")) return { ...base, title: `${n.title} · 새 메일`, tag: `watch:${conv}`, ...(n.app ? { app: n.app } : {}) };
-			return { ...base, title: `${n.title} · 새 소식`, tag: `watch:${n.key ?? n.watch ?? n.id}`, ...(n.app ? { app: n.app } : {}) };
+			return { ...base, title: `${n.title} · 새 소식`, tag: `watch:${n.key ?? n.watch ?? (n.repeats?.length ? `${n.id}:${n.at}` : n.id)}`, ...(n.app ? { app: n.app } : {}) };
 		case "alert":
 			return { ...base, title: `${NAME} · ${n.tone === "fail" || CRITICAL.test(n.text) ? "경고" : n.title}`, tag: "alert" };
 		case "conv":

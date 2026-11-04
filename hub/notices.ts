@@ -7,14 +7,14 @@ import { DRAFT_BODY_MAX, type DraftApproval, type DraftFileIn, draftActionOf, dr
 import { askDefaults, askedDraft, asksSendWithoutDraft, DRAFT_OPTIONS } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { broadcast as broadcastRaw, emit, eventTarget, historyEvents, type HubEvent, onEmit } from "./events.ts";
-import { classOfNotice } from "./notice-class.ts";
+import { classOfNotice, isLoginLost } from "./notice-class.ts";
 import { noticeKo } from "./notice-ko.ts";
 import type { Upload } from "./files.ts";
 import { readOf } from "./reads.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { shortTitle } from "./notice-title.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
-import { describeOutput, humanLabel, isIssue, itemRefOf, scheduleLine, watchLine, watchReasonKo } from "./watchtext.ts";
+import { describeOutput, humanLabel, isIssue, itemRefOf, LOGIN_BLOCKED_KO, PROVIDER_BACK_KO, scheduleLine, watchLine, watchReasonKo } from "./watchtext.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
 
 // The web notification store: every worklog / alert / session result / watch / schedule post, kept in notices.json so the
@@ -54,6 +54,11 @@ export type Notice = {
 	// The owner's x on a question (ignoreNotice): off the badge and 답변 필요 but kept in the history, marked as ignored; undoable.
 	// Nothing is sent to the bot. The value is when it was ignored.
 	ignored?: string;
+	// A failure or lost login waits on the owner until this is a time (✕ on it, a rerun that passed, the login back); null = waiting. Absent on a notice stored before it:
+	// unread = waiting, read = a past notice (reading an unread one sets null). Never migrated in the file.
+	handled?: string | null;
+	// Earlier occurrences folded into this row, newest first: a repeated alert it overwrote, a monitor's earlier report within a day (REPEATS_MAX, REPEAT_TEXT).
+	repeats?: { at: string; text: string }[];
 	// kind "decision": a question that waits on the owner (title = the decision line, text = the whole asking message).
 	decision?: Decision;
 };
@@ -277,7 +282,18 @@ retitleStored();
 
 const isOpenDecision = (i: Notice) => i.decision?.state === "open" && !hasExpired(i.decision);
 // Every notice the pages get carries its class (hub/notice-class.ts), computed as it goes out: the bell's tabs and badge read it, nothing stored changes.
-const withClass = (n: Notice, shown: Notice = n): Notice & { cls: string } => ({ ...shown, cls: classOfNotice(n).cls });
+// `waits` is derived, never stored: a failure or lost login that is still the owner's to deal with (see Notice.handled).
+export type Waits = "fail" | "login";
+const waitKind = (n: Notice): Waits | undefined => {
+	const { cls } = classOfNotice(n);
+	if (cls === "ask" || cls === "log" || cls === "conv") return undefined;
+	return isLoginLost(n) ? "login" : n.tone === "fail" ? "fail" : undefined;
+};
+const waitsOf = (n: Notice): Waits | undefined => (n.dismissed || typeof n.handled === "string" || (n.handled !== null && n.read) ? undefined : waitKind(n));
+const withClass = (n: Notice, shown: Notice = n): Notice & { cls: string; waits?: Waits } => {
+	const waits = waitsOf(n);
+	return { ...shown, cls: classOfNotice(n).cls, ...(waits ? { waits } : {}) };
+};
 const broadcast = (e: Record<string, unknown>): void => broadcastRaw(e.kind === "notice" && e.item && typeof e.item === "object" ? { ...e, item: withClass(e.item as Notice, readable(e.item as Notice)) } : e);
 // A notice that waits on the owner's action: an open decision, or an [ask] item (the alert / message twin of one). Looking at it, anywhere, never
 // reads it; only an answer, a resolving signal (resolveAsks) or the owner's x (ignoreNotice) takes it off. Every other notice clears on view.
@@ -298,7 +314,33 @@ function trim(): void {
 	}
 }
 
-type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; key?: string; watch?: string; by?: string; ref?: string; item?: WatchItem; read?: boolean; unread?: boolean; src?: string; at?: string; msg?: string };
+// `repeat`: overwrites the alert it repeats (alert-gate), `fold`: a monitor report that joins the watch's newest row; both keep the old text in `repeats`.
+type Input = { kind: NoticeKind; tone: NoticeTone; title: string; text: string; open: string; key?: string; watch?: string; by?: string; ref?: string; item?: WatchItem; read?: boolean; unread?: boolean; src?: string; at?: string; msg?: string; repeat?: boolean; fold?: boolean };
+const REPEATS_MAX = 20;
+const REPEAT_TEXT = 160;
+const FOLD_MS = 24 * 3_600_000;
+
+// The row a monitor report joins: the watch's newest row when it is under a day old, has the same tone and no card on either side, and neither is a
+// report with nothing new (log). One pass over the list.
+function foldTarget(i: Input, at: string): Notice | undefined {
+	if (i.item || i.kind !== "watch") return undefined;
+	const name = i.watch ?? i.title;
+	let head: Notice | undefined;
+	for (const n of items) if (n.kind === "watch" && !n.dismissed && (n.watch ?? n.title) === name && (!head || n.updated > head.updated)) head = n;
+	if (!head || head.item || head.key || head.tone !== i.tone || Math.abs(Date.parse(at) - Date.parse(head.updated)) >= FOLD_MS) return undefined;
+	const mine = classOfNotice({ kind: i.kind, tone: i.tone, text: i.text }).cls, theirs = classOfNotice(head).cls;
+	return mine === "log" || theirs === "log" || mine !== theirs || waitKind(head) !== waitKind({ ...head, text: i.text }) ? undefined : head;
+}
+// A failure or lost login closes by this time (hub signals: a rerun that passed, a watch or the provider back).
+function closeWaiting(pick: (n: Notice) => boolean, at: string): Notice[] {
+	const hit = items.filter(n => waitsOf(n) && pick(n));
+	for (const n of hit) n.handled = at;
+	if (hit.length && !replaying) {
+		save();
+		for (const n of hit) broadcast({ ts: at, kind: "notice", source: "gateway", item: n, unread: unreadCount() });
+	}
+	return hit;
+}
 
 // A notice that just became unread (new, or a read one reopened): the phone notification for it (hub/push.ts noticePush). Decisions have onDecision.
 const unreadHooks: Array<(n: Notice) => void> = [];
@@ -306,13 +348,16 @@ export const onNoticeUnread = (fn: (n: Notice) => void): void => void unreadHook
 
 function upsert(i: Input): Notice {
 	const at = i.at ?? now();
-	const old = i.key ? items.find(n => n.key === i.key) : undefined;
+	const old = i.key ? items.find(n => n.key === i.key) : i.fold ? foldTarget(i, at) : undefined;
+	const folded = !i.key && i.fold === true && old !== undefined;
 	const wasUnread = old ? !old.read && !old.dismissed : false;
 	const quiet = appBlocked({ kind: i.kind, app: i.kind === "watch" ? appOf(i as unknown as Notice) : undefined, ...(i.watch ? { watch: i.watch } : {}), src: i.src ?? i.open, open: i.open });
 	if (quiet && old) return old;
 	let item: Notice;
 	if (old) {
 		const reopened = (LOUD.has(i.tone) && i.tone !== old.tone) || (i.kind === "result" && i.text !== old.text) || i.unread === true;
+		const waited = waitKind(old);
+		if (i.repeat || folded) old.repeats = [{ at: old.at ?? old.ts, text: old.text.slice(0, REPEAT_TEXT) }, ...(old.repeats ?? [])].slice(0, REPEATS_MAX);
 		old.kind = i.kind;
 		old.tone = i.tone;
 		old.title = i.title;
@@ -328,14 +373,19 @@ function upsert(i: Input): Notice {
 		if (i.watch) old.watch = i.watch;
 		if (i.item) old.item = i.item;
 		if (i.read) old.read = true;
-		else if (reopened) {
+		else if (reopened || folded) {
 			old.read = false;
 			delete old.dismissed;
 			delete old.ignored;
 		}
+		// A new failure (or one that changed from another tone) waits again; a repeat of a closed one does not reopen it.
+		const waits = waitKind(old);
+		if (waits && (!waited || reopened)) old.handled = null;
+		else if (!waits && old.handled === null) old.handled = at;
 		item = old;
 	} else {
 		item = { id: randomBytes(4).toString("hex"), ts: at, updated: at, kind: i.kind, tone: i.tone, title: i.title, text: i.text, open: i.open, src: i.src ?? i.open, at, ...(i.msg ? { msg: i.msg } : {}), ...(i.key ? { key: i.key } : {}), ...(i.watch ? { watch: i.watch } : {}), ...(i.by ? { by: i.by } : {}), ...(i.ref ? { ref: i.ref } : {}), ...(i.item ? { item: i.item } : {}), read: i.read === true };
+		if (waitKind(item)) item.handled = null;
 		if (!quiet) {
 			items.push(item);
 			trim();
@@ -349,15 +399,16 @@ function upsert(i: Input): Notice {
 	if (!replaying) {
 		save();
 		broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
-		if (!wasUnread && !item.read && !item.dismissed) for (const fn of unreadHooks) fn(item);
+		// A folded report is a new matter for the phone even when its row was already unread (hub/push.ts tags it by report time).
+		if ((!wasUnread || folded) && !item.read && !item.dismissed) for (const fn of unreadHooks) fn(item);
 	}
 	return item;
 }
 
-// The read position (reads.json, one per conversation, shared by every device) is the source of truth for "seen": a plain notice whose source message
-// it covers is read. What waits on the owner (needsAnswer) is never read this way.
+// The read position (reads.json, one per conversation, shared by every device) is the source of truth for "seen": a conversation's unread answer
+// (kind message) whose source message it covers is read. Every other notice is read by the owner's tap, ✕ or read-all, not by looking at a chat.
 function coveredByRead(i: Notice): boolean {
-	if (i.dismissed || needsAnswer(i)) return false;
+	if (i.kind !== "message" || i.dismissed || needsAnswer(i)) return false;
 	const seen = readOf(i.src ?? i.open);
 	return !!seen && seen >= (i.at ?? i.ts);
 }
@@ -389,7 +440,8 @@ function fromOutbox(e: HubEvent, asks = false): void {
 	if (!text) return;
 	const restart = RESTART_PREFIX.test(text);
 	const by = authorOf(e);
-	const recovered = e.source === "gateway" ? /^\[([^\]\n]+)\]\s*(?:recovered\b|다시 정상이에요)/.exec(text)?.[1] : undefined;
+	const back = e.source === "gateway" ? /^(?:\[([^\]\n]+)\]\s*|([^:\n]{1,60}):\s+)(?:recovered\b|다시 정상이에요)/.exec(text) : null;
+	const recovered = back?.[1] ?? back?.[2];
 	if (recovered) watchRecovered(recovered, e.ts);
 	if (target === "worklog" || (restart && target === "web" && e.source === "gateway")) {
 		if (key?.startsWith("lane:")) {
@@ -406,14 +458,16 @@ function fromOutbox(e: HubEvent, asks = false): void {
 		if (asks) return;
 		// An all-clear of the gateway is born read; a repeat (hub/alert-gate.ts) rewrites the alert it repeats, in place and in its read state.
 		const quiet = e.source === "gateway" && quietAlert(text);
+		// The provider is back: the logins it stopped on are over (limit-alert noteRecovered said so once for every agent).
+		if (quiet && text.replace(/^[^:\n]{1,60}:\s+/, "").startsWith(PROVIDER_BACK_KO)) providerBack(e.ts);
 		const prior = e.repeat === true ? items.findLast(n => n.kind === "alert" && !n.dismissed && n.by === by && alertMatter(n.text) === alertMatter(text)) : undefined;
 		if (prior && !prior.key) prior.key = `alert:${prior.id}`;
-		return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key: prior?.key ?? key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered) || quiet, at: e.ts });
+		return void upsert({ kind: "alert", tone, title: systemTitle(text, "알림"), text, open: "alert", key: prior?.key ?? key, ...(by ? { by } : {}), ...(refOf(e) ? { ref: refOf(e) } : {}), read: Boolean(recovered) || quiet, ...(prior ? { repeat: true } : {}), at: e.ts });
 	}
 	const watch = /^ch:\d+$/.test(target) && e.source === "gateway" ? /^\[([^\]\n]+)\]\s*/.exec(text) : null;
 	if (watch) {
 		const ref = recovered ? undefined : itemRefOf(text);
-		upsert({ kind: "watch", tone, title: watchLabelOf(watch[1]!), text: text.slice(watch[0].length) || text, open: target, key, read: Boolean(recovered), at: e.ts, ...(ref ? { item: resolveItem(ref) } : {}) });
+		upsert({ kind: "watch", tone, title: watchLabelOf(watch[1]!), text: text.slice(watch[0].length) || text, open: target, key, read: Boolean(recovered), at: e.ts, ...(recovered || key ? {} : { fold: true }), ...(ref ? { item: resolveItem(ref) } : {}) });
 	}
 }
 
@@ -437,7 +491,7 @@ function fromInbox(e: HubEvent): void {
 		const [head, reason, output] = [label || "모니터링", String(e.reason ?? ""), String(e.text ?? "")];
 		const prev = typeof e.prev === "string" ? e.prev : undefined;
 		const ref = recovered || isIssue(reason) ? undefined : itemRefOf(output);
-		const item = upsert({ kind: "watch", tone: "", title: head, text: clean(watchLine(head, reason, output, { prev })).text || "알림이 왔어요", open: "alert", ...(name ? { watch: name } : {}), read: recovered, at: e.ts, ...(ref ? { item: resolveItem(ref) } : {}) });
+		const item = upsert({ kind: "watch", tone: "", title: head, text: clean(watchLine(head, reason, output, { prev })).text || "알림이 왔어요", open: "alert", ...(name ? { watch: name } : {}), read: recovered, at: e.ts, ...(recovered ? {} : { fold: true }), ...(ref ? { item: resolveItem(ref) } : {}) });
 		if (summarizeWatch && !isIssue(reason) && !recovered && !describeOutput(output, { prev }).readable)
 			void summarizeWatch(output).then(summary => summary && retextWatch(item.id, clean(watchLine(head, reason, output, { prev, summary })).text));
 		return;
@@ -472,8 +526,9 @@ function feed(e: HubEvent): void {
 		} else if (e.kind === "message" || e.kind === "lane_message") {
 			answerReply(e);
 			ownerReplied(e);
-			// The owner writing in a conversation (on Discord too, which reports no read position) has seen what came before it.
-			if (!replaying) readConversationNotices(eventTarget(e) ?? "main", e.ts);
+			// The owner answering from a messenger (Discord and the others report no read position) has seen what came before it in that room; a post
+			// from the web app reads nothing (the app has its own tap, ✕ and read-all).
+			if (!replaying && typeof e.source === "string" && e.source !== "web" && e.source !== "terminal") readConversationNotices(eventTarget(e) ?? "main", e.ts);
 		}
 		else {
 			fromInbox(e);
@@ -512,7 +567,7 @@ export function setViewing(id: unknown, conv: unknown, nowMs = Date.now()): { ok
 	if (item && !item.read) markNoticesRead({ ids: [item.id] });
 	// Items of this conversation that the read position already covers (read on another device, or before this fix) leave the bell too.
 	const seen = conv ? readOf(conv) : null;
-	if (seen) readConversationNotices(conv, seen);
+	if (seen) readConversationNotices(conv, seen, "viewed");
 	return { ok: true, unread: unreadCount() };
 }
 
@@ -911,9 +966,19 @@ export function orchestratorAnswered(text: string, ref?: string, at = now()): nu
 function watchRecovered(name: string, at: string, label = name): void {
 	if (!name) return;
 	const isTitle = (t: string) => t === name || t === label;
+	// The gateway's failure alert starts with the watch's label ("<label>: ..."), or "[<name>]" in older text.
+	const failed = (i: Notice) => i.kind === "alert" && i.tone !== "ask" && [`[${name}]`, `${name}:`, `${label}:`].some(p => i.text.startsWith(p));
 	// Only the gateway's own failure alert for that watch (it may carry a cause-check choice that a pass makes moot), never another author's question.
 	resolveAsks(i => (i.by === "gateway" && i.text.startsWith(`[${name}]`)) || (i.kind === "watch" && isTitle(i.title)), at, true);
-	readIds(items.filter(i => !i.read && !i.dismissed && i.ts < at && ((i.kind === "watch" && isTitle(i.title)) || (i.kind === "alert" && i.tone !== "ask" && i.text.startsWith(`[${name}]`)))).map(i => i.id));
+	// Its failures and lost logins are over (handled), read or not.
+	closeWaiting(i => i.ts < at && (failed(i) || (i.kind === "watch" && isTitle(i.title))), at);
+	readIds(items.filter(i => !i.read && !i.dismissed && i.ts < at && ((i.kind === "watch" && isTitle(i.title)) || failed(i))).map(i => i.id));
+}
+
+// Signal 3b: the model provider answers again (limit-alert recoveryText). The login stops it raised are over, read or not.
+function providerBack(at: string): void {
+	const ended = closeWaiting(i => i.kind === "alert" && i.text.includes(LOGIN_BLOCKED_KO), at);
+	readIds(ended.filter(i => !i.read).map(i => i.id));
 }
 
 // Signal 4: the bot resolves notices itself. `ids` picks exact notices, `match` every asking notice whose title or text holds that text, `conv` every
@@ -1244,7 +1309,11 @@ export function backfillNotices(nowMs = Date.now()): number {
 	}
 	// A question older than a day that nobody answered in the replayed history is no longer waiting.
 	for (const i of items) if (isOpenDecision(i) && Date.parse(i.updated) < nowMs - DAY_MS) settleDecision(i, "", i.updated, true);
-	for (const i of items) if (!isOpenDecision(i) && Date.parse(i.updated) < nowMs - DAY_MS) i.read = true;
+	for (const i of items) {
+		if (isOpenDecision(i) || Date.parse(i.updated) >= nowMs - DAY_MS) continue;
+		i.read = true;
+		if (i.handled === null) i.handled = i.updated;
+	}
 	if (items.length) save();
 	log(`notices backfilled: ${items.length} items from ${events.length} persisted events`);
 	return items.length;
@@ -1352,8 +1421,11 @@ export function dismissNotice(id: unknown): { ok: boolean; held?: boolean; unrea
 
 // The owner read a conversation up to `upTo`: every bell item whose source message lives there (and the 알림 / 작업 기록 items of
 // those two conversations) up to that point is read too (an open decision stays open until answered).
-export function readConversationNotices(conv: string, upTo: string): void {
-	const ids = items.filter(i => !i.read && !i.dismissed && (i.kind === conv || (i.src ?? i.open) === conv) && (i.at ?? i.ts) <= upTo).map(i => i.id);
+// `viewed`: the owner only looked at the conversation (/api/read, setViewing): its unread answer, and a mail's new-mail notice (opening the mail is tapping
+// that row); nothing else is read by looking.
+export function readConversationNotices(conv: string, upTo: string, scope: "all" | "viewed" = "all"): void {
+	const seen = (i: Notice) => scope === "all" || i.kind === "message" || conv.startsWith("mail:");
+	const ids = items.filter(i => !i.read && !i.dismissed && (i.kind === conv || (i.src ?? i.open) === conv) && (i.at ?? i.ts) <= upTo && seen(i)).map(i => i.id);
 	if (ids.length) markNoticesRead({ ids });
 }
 
@@ -1364,11 +1436,40 @@ export function markNoticesRead(sel: { ids?: unknown; all?: unknown }, force = f
 	const all = sel.all === true;
 	const hit = items.filter(i => !i.read && !i.dismissed && !(force ? isOpenDecision(i) : needsAnswer(i)) && (all || ids.has(i.id)));
 	if (hit.length) {
-		for (const i of hit) i.read = true;
+		for (const i of hit) {
+			// An unread failure from before `handled` stays on the owner's list once read, like the ones made now.
+			if (i.handled === undefined && waitKind(i)) i.handled = null;
+			i.read = true;
+		}
 		save();
 		broadcast({ ts: now(), kind: "notice_read", source: "gateway", ids: hit.map(i => i.id), unread: unreadCount() });
 	}
 	return { unread: unreadCount() };
+}
+
+// The ✕ on a failure that waits (waits === "fail"): read, handled now, on every open page. A lost login closes only by its recovery.
+export function handledNotice(id: unknown): { status: number; body: Record<string, unknown> } {
+	const item = items.find(i => i.id === String(id));
+	if (!item) return { status: 404, body: { error: "unknown notice" } };
+	if (waitsOf(item) !== "fail") return { status: 409, body: { error: "not waiting" } };
+	const at = now();
+	item.read = true;
+	item.handled = at;
+	save();
+	broadcast({ ts: at, kind: "notice", source: "gateway", item, unread: unreadCount() });
+	return { status: 200, body: { ok: true, item: withClass(item, readable(item)), unread: unreadCount() } };
+}
+
+// Undo of dismissNotice (the toast's 실행 취소): listed and counted again, as it was.
+export function undismissNotice(id: unknown): { status: number; body: Record<string, unknown> } {
+	const item = items.find(i => i.id === String(id));
+	if (!item) return { status: 404, body: { error: "unknown notice" } };
+	if (item.dismissed) {
+		delete item.dismissed;
+		save();
+		broadcast({ ts: now(), kind: "notice", source: "gateway", item, unread: unreadCount() });
+	}
+	return { status: 200, body: { ok: true, item: withClass(item, readable(item)), unread: unreadCount() } };
 }
 
 // The ask notices that go with `item` (the decision and its alert / message twins, made by one asking message). Ignoring a decision of a message

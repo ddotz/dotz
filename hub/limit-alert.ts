@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { DATA_DIR, writeAtomic } from "./config.ts";
 import { authFile } from "./apikey-policy.ts";
 import { OWNER_RETRY_MS, type ProviderErrorKind } from "./providers.ts";
+import { LOGIN_BLOCKED_KO, PROVIDER_BACK_KO } from "./watchtext.ts";
 
 export type LimitKind = "auth" | "billing" | "limit" | "error";
 const OWNER_RETRY_MAX_MS = 6 * 3600_000;
@@ -114,6 +115,6 @@ export function blockText(kind: "auth" | "billing", account: string, provider: s
 	const wait = `${hoursText(retryMs)} 뒤에 조용히 다시 시도해요 (로그인 정보가 바뀌면 바로). 같은 문제로는 다시 알리지 않아요.`;
 	const held = "그동안 온 메시지는 모아뒀다가 해결되면 순서대로 처리해요.";
 	if (kind === "billing") return `모델 제공자 결제(크레딧) 문제로 멈췄어요. 계정: ${account}. ${provider} 사이트에서 크레딧을 충전해 주세요. ${held} ${wait}`;
-	return `모델 제공자 로그인이 풀려서 멈췄어요. 계정: ${account}. 이 게이트웨이를 돌리는 컴퓨터에서 /login ${provider} 를 실행해 주세요. ${held} ${wait}`;
+	return `${LOGIN_BLOCKED_KO}. 계정: ${account}. 이 게이트웨이를 돌리는 컴퓨터에서 /login ${provider} 를 실행해 주세요. ${held} ${wait}`;
 }
-export const recoveryText = (): string => "모델 제공자가 다시 연결됐어요. 멈춰 있던 일을 이어서 처리해요.";
+export const recoveryText = (): string => `${PROVIDER_BACK_KO}. 멈춰 있던 일을 이어서 처리해요.`;
