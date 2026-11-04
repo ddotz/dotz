@@ -72,7 +72,7 @@ import { activatePeerMonitor, createPeerMonitor } from "./peer-monitor.ts";
 import { handleLease, type LeaseReq } from "./send-lease.ts";
 import { cleanName, friendlyName, resolveName } from "./machine-name.ts";
 import { machineHost } from "./hostname.ts";
-import { queue, bgWork, out, progress, fileRoots } from "./outbound.ts";
+import { queue, bgWork, workRows, out, progress, fileRoots } from "./outbound.ts";
 import { convs, maxLiveView } from "./convsessions.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
 import { parseReply, replyLine, sendWeb } from "./intake.ts";
@@ -545,6 +545,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			if (workerAct[2] === "cancel") {
 				let r = await bgWork.cancel(id);
 				for (const lane of lanes.values()) if (!r.ok && r.status === 404) r = await cancelOmoWorker(id, lane.sessionFile);
+				if (r.ok) workRows.stopped(id);
 				return r.ok ? json({ ok: true, item: bgWork.list().find(w => w.id === id) }) : json({ error: r.error }, r.status);
 			}
 			const w = bgWork.list().find(x => x.id === id);
@@ -909,7 +910,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const target = url.searchParams.get("target") ?? "main";
 			if (target !== "main" && target !== "alert" && target !== "worklog" && !target.startsWith("lane:") && !isProjectTarget(target) && !isMailTarget(target) && !isSettingsTarget(target)) return json({ error: "target must be main, alert, worklog, lane:<name>, ch:<id>, mail:<key> or settings:<app>" }, 400);
 			const limit = Math.max(1, Math.min(Number(url.searchParams.get("limit") ?? 150) || 150, 500));
-			const before = url.searchParams.get("before") ?? undefined, events: unknown[] = historyEvents(target, limit, before);
+			const before = url.searchParams.get("before") ?? undefined, events: unknown[] = workRows.stamp(historyEvents(target, limit, before));
 			// A sent mail has no conversation event of its own: its conversation opens on the mail itself (hub/mail.ts sentMailEvent).
 			const sent = !before && isMailTarget(target) && !events.some(e => (e as { kind?: string }).kind === "mail") ? sentMailEvent(target.slice(5)) : undefined;
 			return json({ target, events: sent ? [sent, ...events] : events });
