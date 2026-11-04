@@ -99,6 +99,8 @@ describe("switching computers in the installed app", () => {
 
 describe("a computer reached only through JANDI", () => {
 	const pick = src.slice(src.indexOf("function prPick"), src.indexOf("function prSheet"));
+	const relaySrc = readFileSync(join(import.meta.dir, "..", "web", "js", "42-relay-chat.js"), "utf8");
+	const isRelayRow = relaySrc.slice(relaySrc.indexOf("function isRelayRow"), relaySrc.indexOf("const relayApi"));
 	function run(p: Record<string, unknown>) {
 		const calls: string[] = [];
 		const env: Record<string, unknown> = {
@@ -108,17 +110,18 @@ describe("a computer reached only through JANDI", () => {
 			prClose: () => calls.push("close"),
 			toast: (t: string) => calls.push(`toast ${t}`),
 			prGo: (h: string) => calls.push(`prGo ${h}`),
+			relayEnter: (q: { key: string }) => calls.push(`relay ${q.key}`),
 			prUrl: (q: Record<string, unknown>, extra = "") => `${q.url}/${extra}`,
 			enc: encodeURIComponent,
 			DEVICE_ID: "d1",
 		};
-		new Function(...Object.keys(env), `${pick}\nprPick(${JSON.stringify(p)});`)(...Object.values(env));
+		new Function(...Object.keys(env), `${isRelayRow}\n${pick}\nprPick(${JSON.stringify(p)});`)(...Object.values(env));
 		return calls;
 	}
-	test("opens its chat page on this origin even while it shows as not connected, and never leaves for another address", () => {
-		const row = { name: "work", url: "/jandi-peer/work", self: false, online: false, via: "jandi" };
-		expect(run(row)).toEqual(["close", "go /jandi-peer/work"]);
-		expect(run({ ...row, online: true })).toEqual(["close", "go /jandi-peer/work"]);
+	test("a relay row opens its chat in this app's chat view even while it shows as not connected, and never leaves for another address", () => {
+		const row = { name: "work", url: "/#chat/relay:jandi:work", self: false, online: false, via: "jandi", key: "work", note: "잔디로 주고받아요" };
+		expect(run(row)).toEqual(["close", "relay work"]);
+		expect(run({ ...row, online: true })).toEqual(["close", "relay work"]);
 	});
 	test("a Tailscale computer still opens at its own address", () => {
 		expect(run({ name: "맥미니", url: "https://mini:8445", self: false, online: true })).toEqual(["toast 맥미니(으)로 넘어가요", "close", "prGo https://mini:8445/?did=d1"]);

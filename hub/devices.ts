@@ -5,7 +5,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { log } from "./config.ts";
-import { PAIR_HTML, PAIR_JS } from "./pair-page.ts";
+import { HOP_HTML, HOP_JS, PAIR_HTML, PAIR_JS } from "./pair-page.ts";
 import { qrPath } from "./qr.ts";
 import { cfBase } from "./weblink.ts";
 
@@ -35,6 +35,25 @@ export type Devices = ReturnType<typeof createDevices>;
 
 /** The cloudflare-mode rule behind routes.ts authorized(): a paired device's session, and the Cloudflare Access token too when Access is set up. */
 export const cloudflareGate = (o: { device: boolean; accessConfigured: boolean; access: boolean }): boolean => o.device && (!o.accessConfigured || o.access);
+
+const NEXT_MAX = 2000;
+/** The `next` of /pair: a same-origin path (one leading `/`, no `//`, no backslash, no control character, not /pair itself, bounded); anything else is `/`. hub/pair-page.ts carries the same rule for the browser. */
+export function safeNext(raw: string | null | undefined): string {
+	if (typeof raw !== "string" || raw.length === 0 || raw.length > NEXT_MAX) return "/";
+	if (raw[0] !== "/" || raw[1] === "/" || /[\\\u0000-\u001f\u007f-\u009f]/.test(raw) || /^\/pair(?:[/?#]|$)/.test(raw)) return "/";
+	return raw;
+}
+// A Location header carries ASCII only: spaces and non-ASCII characters of a path go out percent-encoded.
+const locationOf = (path: string): string => path.replace(/[^\x21-\x7e]/gu, c => Array.from(new TextEncoder().encode(c), b => `%${b.toString(16).toUpperCase().padStart(2, "0")}`).join(""));
+// A document navigation (a page load, not a fetch): Sec-Fetch-Mode when the browser sends it, else an Accept that asks for HTML.
+const navigates = (req: Request): boolean => {
+	const mode = req.headers.get("sec-fetch-mode");
+	return mode !== null ? mode === "navigate" : (req.headers.get("accept") ?? "").includes("text/html");
+};
+// The only addresses a messenger links to; a cross-site visit there hops through /pair from this site so the Strict cookie travels. Any other path gets the plain redirect, with no cookie on the chain, so a link from another site never runs signed in.
+const HOP_PATHS: ReadonlySet<string> = new Set(["/", "/api/file"]);
+const PAGE_CSP = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const pageHeaders = (type: string): Record<string, string> => ({ "Content-Type": type, "Cache-Control": "no-store", "Content-Security-Policy": PAGE_CSP, "X-Content-Type-Options": "nosniff" });
 
 const enc = new TextEncoder();
 const b64u = (b: Uint8Array): string => Buffer.from(b).toString("base64url");
@@ -337,14 +356,17 @@ export function createDevices(opts: DevicesOpts) {
 	}
 
 	/** The pages and calls an unpaired browser may use: GET /pair, GET /pair.js and POST /api/pair/*. Undefined for any other request. */
-	async function pairRoute(req: Request, url: URL): Promise<Response | undefined> {
+	async function pairRoute(req: Request, url: URL, access?: (req: Request) => Promise<boolean>): Promise<Response | undefined> {
 		const p = url.pathname;
 		const read = req.method === "GET" || req.method === "HEAD";
-		if (read && (p === "/pair" || p === "/pair.js")) {
-			const csp = "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+		if (read && (p === "/pair" || p === "/pair.js" || p === "/pair-hop.js")) {
 			const page = p === "/pair";
-			const body = req.method === "HEAD" ? null : page ? PAIR_HTML.replace("__DEVICES__", String(data.devices.length)) : PAIR_JS;
-			return new Response(body, { headers: { "Content-Type": page ? "text/html; charset=utf-8" : "text/javascript; charset=utf-8", "Cache-Control": "no-store", "Content-Security-Policy": csp, "X-Content-Type-Options": "nosniff" } });
+			// A browser that would pass the gate (cloudflareGate: a paired session, and the Access token when Access is set up) and arrives with a `next` goes on to it;
+			// anyone else sees the page, so a session without a valid Access token cannot bounce between the gate and /pair.
+			const next = page ? url.searchParams.get("next") : null;
+			if (next !== null && (await verifySession(req)) && (!access || (await access(req)))) return new Response(null, { status: 302, headers: { Location: locationOf(safeNext(next)), "Cache-Control": "no-store" } });
+			const body = req.method === "HEAD" ? null : page ? PAIR_HTML.replace("__DEVICES__", String(data.devices.length)) : p === "/pair.js" ? PAIR_JS : HOP_JS;
+			return new Response(body, { headers: pageHeaders(page ? "text/html; charset=utf-8" : "text/javascript; charset=utf-8") });
 		}
 		if (req.method !== "POST" || !p.startsWith("/api/pair/")) return undefined;
 		const step = p.slice("/api/pair/".length);
@@ -407,9 +429,14 @@ export function createDevices(opts: DevicesOpts) {
 		return true;
 	}
 
-	/** What a request that failed the gate gets: a page load goes to /pair, anything else a 403 the web app turns into that redirect. */
+	/** What a request that failed the gate gets. A page load (also of an /api/ link) goes to /pair with its own address as `next` (the fragment stays with the browser); a
+	 * cross-site one to `/` or /api/file (what a messenger links to), which carries no SameSite=Strict cookie, gets a fixed page with no data that sends the browser to /pair from this site; anything else a 403 the web app turns into that redirect. */
 	function denied(req: Request, url: URL): Response {
-		if ((req.method === "GET" || req.method === "HEAD") && (req.headers.get("accept") ?? "").includes("text/html") && !url.pathname.startsWith("/api/")) return new Response(null, { status: 302, headers: { Location: "/pair", "Cache-Control": "no-store" } });
+		if ((req.method === "GET" || req.method === "HEAD") && navigates(req)) {
+			if (req.headers.get("sec-fetch-site") === "cross-site" && HOP_PATHS.has(url.pathname)) return new Response(req.method === "HEAD" ? null : HOP_HTML, { headers: pageHeaders("text/html; charset=utf-8") });
+			const next = safeNext(url.pathname + url.search);
+			return new Response(null, { status: 302, headers: { Location: next === "/" ? "/pair" : `/pair?next=${encodeURIComponent(next)}`, "Cache-Control": "no-store" } });
+		}
 		return new Response("forbidden", { status: 403, headers: { "X-Dotz-Pair": "1" } });
 	}
 

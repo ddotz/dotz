@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.ts";
 import { askComponentsFor } from "./askbuttons.ts";
+import { kindOf } from "./messenger.ts";
+import { convPath, webLink } from "./weblink.ts";
 import type { Pick } from "./intake.ts";
 import { msg } from "./i18n.ts";
 import { pushReachesOwner } from "./push.ts";
@@ -585,6 +587,12 @@ export async function send(
 	if (last >= 0) {
 		// An [ask] with a choice block carries one button per option on its last part (hub/askbuttons.ts).
 		const components = askComponentsFor(target, bare, bodies[last]!.content);
+		// Only a decision or an alert also carries a link button to its web conversation; an ordinary message carries none. The link holds no token.
+		// The address comes from the same rule as hub/messenger.ts: the kind of the target, then convPath; a lane or any target the web has no chat route for gets no button.
+		const kind = components.length || target === "alert" ? kindOf(target) : undefined;
+		const path = kind ? convPath(kind, target) : undefined;
+		const link = path ? webLink(path) : undefined;
+		if (link && components.length < 5) components.push({ type: 1, components: [{ type: 2, style: 5, label: "웹에서 보기", url: link }] });
 		if (components.length) bodies[last] = { ...bodies[last]!, components };
 	}
 	const plan = paths.length && last >= (opts?.skip ?? 0) ? planFiles(paths) : undefined;

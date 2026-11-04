@@ -3,7 +3,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bindPeer, boundPeer } from "./peer-pair.ts";
-import { baseUrl, cached, candidatePorts, countsFrom, extraUrls, friendlyName, isDotz, pool, resolveNode, sameUserNodes, uniqueNames } from "./peers.ts";
+import { cfg } from "./config.ts";
+import { baseUrl, cached, candidatePorts, countsFrom, discover, extraUrls, friendlyName, isDotz, isPublicHost, knownComputers, listPeers, pool, publicPeer, resolveNode, sameUserNodes, selfFound, uniqueNames } from "./peers.ts";
+import { setWebBase } from "./weblink.ts";
 
 const roots: string[] = [];
 afterAll(() => roots.forEach(d => rmSync(d, { recursive: true, force: true })));
@@ -165,4 +167,52 @@ test("a gateway is recognised by the manifest's gateway marker (its name is the 
 	expect(await isDotz("https://a", async () => ({ name: "땃쥐", gateway: "dotz" }))).toBe(true);
 	expect(await isDotz("https://b", async () => ({ name: "dotz" }))).toBe(true);
 	expect(await isDotz("https://c", async () => ({ name: "Other app" }))).toBe(false);
+});
+
+test("a host is public unless it is a tailnet name or a tailnet address", () => {
+	for (const [host, want] of [["dotz.example.com", true], ["mac.tail1234.ts.net", false], ["mac.tail1234.ts.net.", false], ["100.64.0.1", false], ["100.127.255.254", false], ["100.128.0.1", true], ["100.63.0.1", true], ["192.168.0.2", true], ["127.0.0.1", true]] as const) expect([host, isPublicHost(host)]).toEqual([host, want]);
+});
+
+test("without Tailscale the self row is made from the web address, so the switch sheet can open", async () => {
+	expect(selfFound(undefined, undefined)).toBeUndefined();
+	expect(selfFound("https://dotz.example.com", "내 맥")).toEqual({ name: "내 맥", host: "dotz.example.com", url: "https://dotz.example.com", self: true });
+	const before = cfg.web;
+	Object.assign(cfg, { web: { peer_discovery: false } });
+	setWebBase("https://dotz.example.com");
+	try {
+		const found = await discover();
+		expect(found.map(f => [f.url, f.self, f.public])).toEqual([["https://dotz.example.com", true, undefined]]);
+		setWebBase(undefined);
+		expect(await discover()).toEqual([]);
+	} finally {
+		setWebBase(undefined);
+		Object.assign(cfg, { web: before });
+	}
+});
+
+test("a computer in web.peers that is not on the tailnet is public: online by its manifest alone, no counts, and nothing for it among the computers that get a token", async () => {
+	const asked: string[] = [];
+	const other = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: req => (asked.push(new URL(req.url).pathname + (req.headers.has("x-dotz-peer") ? " +peer-token" : "")), new URL(req.url).pathname === "/manifest.webmanifest" ? Response.json({ name: "dotz" }) : new Response("no", { status: 404 })) });
+	const before = cfg.web;
+	const url = "http://127.0.0.1:" + other.port;
+	Object.assign(cfg, { web: { peer_discovery: false, peers: [url] } });
+	setWebBase("https://dotz.example.com");
+	try {
+		const rows = await listPeers();
+		expect(rows).toEqual([{ name: "dotz", url: "https://dotz.example.com", self: true, online: true }, { name: "127", url, self: false, online: true, public: true }]);
+		expect((await knownComputers()).map(c => c.url)).toEqual(["https://dotz.example.com"]);
+		expect(asked.every(p => p === "/manifest.webmanifest" || p === "/api/peer-info")).toBe(true);
+	} finally {
+		setWebBase(undefined);
+		Object.assign(cfg, { web: before });
+		other.stop(true);
+	}
+});
+
+test("a public row is offline when its manifest is not dotz's, and is asked for nothing else", async () => {
+	const asked: string[] = [];
+	const get = async (u: string): Promise<unknown> => (asked.push(u), { name: "other" });
+	const row = await publicPeer({ name: "x", host: "x.example.com", url: "https://x.example.com", self: false, public: true }, get);
+	expect(row).toEqual({ name: "x", url: "https://x.example.com", self: false, online: false, public: true });
+	expect(asked).toEqual(["https://x.example.com/manifest.webmanifest"]);
 });

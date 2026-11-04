@@ -228,7 +228,7 @@ const themeNext = () => themeIs() === "dark" ? "라이트" : "다크";
 function toggleTheme() { dotzTheme.toggle(); if (current === "settings") renderSettings(); }
 window.addEventListener("dotz-theme", () => { if (current === "settings") renderSettings(); });
 $("#cmdk").append(icon("search"), el("span", { class: "tx", text: "명령" }), el("kbd", { text: isMac ? "⌘K" : "Ctrl K" }));
-const setBrand = () => { $("#brand-name").textContent = botName; paintAttn(); };
+const setBrand = () => { $("#brand-name").textContent = relayBrand(); paintAttn(); };
 $("#send-btn").append(icon("send"));
 $("#back").append(icon("back"), el("span", { class: "bk-l", text: titles.monitoring }));
 const backTarget = () => current === "cardform" ? "home" : NSC.ret && current !== "home" ? "notices" : current === "harness" ? "settings" : SUB.has(current) ? (prevView && !SUB.has(prevView) && prevView !== current ? prevView : ["discord", "jandi", "slack", "telegram"].includes(current) ? "messengers" : "settings") : current === "project" ? (ppWide() ? null : "projects") : monConv() || (monCtx && current === "chat") ? "monitoring" : null;

@@ -18,6 +18,7 @@ $("#c-attach").onclick = () => {
 for (const id of ["#c-file", "#c-photo"]) $(id).onchange = ev => { addFiles([...ev.target.files]); ev.target.value = ""; };
 async function addFiles(list) {
   if (!list.length) return;
+  if (isRelayT(target)) { toast("이 대화에는 파일을 붙일 수 없어요", true); return; }
   if (ATT.length + list.length > 10) { toast("한 번에 10개까지 보낼 수 있어요", true); list = list.slice(0, Math.max(0, 10 - ATT.length)); }
   const items = list.map(f => ({ id: Math.random().toString(36).slice(2), name: f.name || "붙여넣은 이미지.png", type: f.type, size: f.size, url: /^image\//.test(f.type) ? URL.createObjectURL(f) : "", raw: f }));
   for (const a of items) { a.no = atkLabel(a, items); if (a.url) atkThumb(a); }

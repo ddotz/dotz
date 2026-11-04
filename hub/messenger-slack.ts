@@ -99,7 +99,7 @@ export function createSlackAdapter(dataDir: string = DATA_DIR, opts: { fetch?: t
 		let failed: unknown;
 		for (const ch of dests) {
 			try {
-				const r = await call(s.token, "chat.postMessage", { channel: ch.id, text: msg.text, unfurl_links: "false" });
+				const r = await call(s.token, "chat.postMessage", { channel: ch.id, text: msg.link ? `${msg.text}\n\n<${msg.link.replace(/[<>|\s]/g, encodeURIComponent)}|웹에서 보기>` : msg.text, unfurl_links: "false" });
 				if (!r.reply.ok) throw new Error(`${ch.id}: ${replyError(r.reply)}`);
 				if (typeof r.json?.ts === "string") ids.push(r.json.ts);
 			} catch (e) {
@@ -189,6 +189,7 @@ export function createSlackAdapter(dataDir: string = DATA_DIR, opts: { fetch?: t
 
 	const a: Adapter = {
 		id: "slack",
+		ownsLink: true,
 		label: "Slack",
 		canEdit: false,
 		canButtons: false,

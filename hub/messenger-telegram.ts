@@ -152,7 +152,7 @@ export function createTelegramAdapter(dataDir: string = DATA_DIR, opts: { fetch?
 		let failed: unknown;
 		for (const chat of dests) {
 			try {
-				const r = await call(s.token, "sendMessage", { chat_id: chat.id, text: msg.text, ...(msg.replyTo ? { reply_to_message_id: Number(msg.replyTo) || undefined } : {}) });
+				const r = await call(s.token, "sendMessage", { chat_id: chat.id, text: msg.text, ...(msg.link ? { reply_markup: { inline_keyboard: [[{ text: "웹에서 보기", url: msg.link }]] } } : {}), ...(msg.replyTo ? { reply_to_message_id: Number(msg.replyTo) || undefined } : {}) });
 				if (!r.ok) throw new Error(`${chat.id}: ${replyError(r)}`);
 				if (r.result?.message_id !== undefined) ids.push(String(r.result.message_id));
 			} catch (e) {
@@ -219,6 +219,7 @@ export function createTelegramAdapter(dataDir: string = DATA_DIR, opts: { fetch?
 
 	const a: TelegramAdapter = {
 		id: "telegram",
+		ownsLink: true,
 		label: "Telegram",
 		canEdit: false,
 		canButtons: false,

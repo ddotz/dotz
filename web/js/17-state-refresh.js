@@ -16,13 +16,13 @@ const cameByAuto = new URLSearchParams(location.search).has("auto");
 if (cameByAuto) { const u = new URL(location.href); u.searchParams.delete("auto"); history.replaceState(history.state, "", u.pathname + u.search + u.hash); }
 let autoTried = false;
 function autoSwitch() {
-  const other = typeof prOthers === "function" ? prOthers()[0] : null;
+  const other = typeof prFailover === "function" ? prFailover() : null;
   if (!other || cameByAuto || autoTried || everConnected) return;
   autoTried = true;
   prPick(other, { quiet: true, auto: true });
 }
 function paintConn() {
-  const c = $("#conn"), other = typeof prOthers === "function" ? prOthers()[0] : null;
+  const c = $("#conn"), other = typeof prFailover === "function" ? prFailover() : null;
   c.hidden = !selfDown;
   c.textContent = other ? `연결 끊김 · ${other.name}(으)로 전환` : "연결 끊김 · 다시 연결 중";
   c.disabled = !other;

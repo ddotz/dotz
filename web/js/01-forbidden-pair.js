@@ -3,7 +3,7 @@
   const realFetch = window.fetch.bind(window);
   window.fetch = async (...args) => {
     const res = await realFetch(...args);
-    if (res.status === 403 && res.headers.get("x-dotz-pair") && location.pathname !== "/pair") { snapForget(); location.replace("/pair"); }   // the stored conversations go with the access (13-snapshot.js)
+    if (res.status === 403 && res.headers.get("x-dotz-pair") && location.pathname !== "/pair") { snapForget(); location.replace((location.pathname === "/" ? "/pair" : `/pair?next=${encodeURIComponent(location.pathname + location.search)}`) + location.hash); }   // the stored conversations go with the access (13-snapshot.js)
     return res;
   };
 }
