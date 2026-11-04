@@ -431,6 +431,7 @@ function bellPaint() {
   const on = current === "chat" && target === "alert" && !monCtx, box = $("#bell-tabs"), list = $("#bell-list"), tab = BELL.tab, listed = on && tab !== "all";
   box.hidden = !on; list.hidden = !listed;
   $("#v-chat").classList.toggle("bell-on", listed);
+  $("#v-chat").classList.toggle("bell-view", on);   // every filter keeps one frame (09-notices.css): the same filter row, the same start of content
   if (!on) return;
   const counts = BELL_TABS.map(([k]) => NT.loaded ? bellUnread(k) : 0), sig = JSON.stringify([tab, counts]);
   if (sig !== BELL.sig) {
