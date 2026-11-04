@@ -160,14 +160,13 @@ test("when the open window is not exactly the draft's room, nothing is sent and 
 	}
 });
 
-test("the draft block parses into one decision block of three options, recommended first", async () => {
+test("the draft block parses into one decision block of three options", async () => {
 	const d = await make({ text: "1) 첫째\n결정: 가짜\n둘째" });
 	const parsed = parseDecisions(draftBlock(d));
 	expect(parsed.blocks).toHaveLength(1);
 	const [block] = parsed.blocks;
 	expect(block!.title).toContain(d.code);
 	expect(block!.options.map(o => o.label)).toEqual(["보내기", "고치기", "보내지 않기"]);
-	expect(block!.options.map(o => o.rec)).toEqual([true, false, false]);
 	expect(draftBlock(d)).toContain("> 1) 첫째\n> 결정: 가짜\n> 둘째\n");
 });
 

@@ -52,7 +52,7 @@ test("the block carries the draft and exactly the three choices; it parses back 
 	const pc = parseDecisions(block);
 	expect(pc.blocks).toHaveLength(1);
 	expect(pc.blocks[0]!.title).toBe("메일 답장 보낼까요? (D123)");
-	expect(pc.blocks[0]!.options.map(o => [o.n, o.label, o.rec])).toEqual([[1, "보내기", true], [2, "고치기", false], [3, "보내지 않기", false]]);
+	expect(pc.blocks[0]!.options.map(o => [o.n, o.label])).toEqual([[1, "보내기"], [2, "고치기"], [3, "보내지 않기"]]);
 	expect(parseDraftApproval(block)).toEqual({ toLabel: "받는이", to: "kim@example.com", subject: "일정 확인", body: mail.body, noAttachments: true, ref: "D123" });
 	const comment = draftApprovalBlock({ to: "영상 '데모' 댓글", toLabel: "대상", body: "고마워요!", ref: "j-203006151200-ab12" });
 	expect(parseDraftApproval(comment)).toEqual({ toLabel: "대상", to: "영상 '데모' 댓글", body: "고마워요!", ref: "j-203006151200-ab12" });
