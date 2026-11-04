@@ -31,9 +31,16 @@ const APPLY: Record<string, (m: Mail) => void> = {
 	read: m => { m.read = true; }, unread: m => { m.read = false; }, archive: m => { m.archived = true; }, unarchive: m => { m.archived = false; },
 	star: m => { m.starred = true; }, unstar: m => { m.starred = false; }, trash: m => { mails = mails.filter(x => x !== m); },
 };
+let fyiFails = false;
 const hub = fakeHub({
 	api: async (req, url) => {
 		const p = url.pathname;
+		if (p === "/api/mail/fyi" && req.method === "POST") {
+			const body = (await req.json()) as { keys: string[]; on: boolean }; posts.push({ path: p, body });
+			if (fyiFails) return json({ error: "표시하지 못했어요" }, 500);
+			for (const m of mails) if (body.keys.includes(m.key)) m.reply = body.on ? "fyi" : "needs";
+			return json({ ok: true, results: body.keys.map(key => ({ key, ok: true })) });
+		}
 		if (p === "/api/notices") return json({ items: [], unread: 0 });
 		if (p === "/api/integrations") return json({ items: [{ key: "mail", label: "메일", icon: "mail", kind: "app", conv: ["mail:"], notices: [], unread: mails.filter(m => !m.read).length, needs: { drafts: 0, unread: 0, sentToday: 0, unreplied: 0 } }], available: [] });
 		if (p === "/api/conversations") return json({ items: mails.map(m => ({ target: `mail:${m.key}`, unread: m.read || m.dir ? 0 : 1, read: null, mail: card(m), last: { ts: m.at, text: m.subject, from: "bot" } })) });
@@ -63,7 +70,7 @@ const hub = fakeHub({
 	},
 });
 afterAll(() => hub.stop());
-beforeEach(() => { mails = fresh(); posts = []; composeFails = false; });
+beforeEach(() => { mails = fresh(); posts = []; composeFails = false; fyiFails = false; });
 
 const rowJs = (title: string) => `[...document.querySelectorAll("#mon-tl > .mr")].find(r => r.querySelector(".rc-title").textContent === ${JSON.stringify(title)})`;
 const chips = (v: View) => ev<string[]>(v, `[...document.querySelectorAll("#mon-tl .mr-f")].map(b => b.textContent)`);
@@ -277,6 +284,49 @@ describe("the open mail", () => {
 		await posted(1);
 		expect(posts[0]).toEqual({ path: "/api/mail/fx-a/action", body: { action: "archive" } });
 		await waitFor(v, `document.querySelector("#mon-tl .mr") && !${rowJs("월간 점검 보고서 확인 요청")}`);
+	}, 30_000);
+});
+
+describe("답장 안 함 on many mails", () => {
+	const owe = () => { for (const m of mails) if (["fx-a", "fx-b", "fx-fail", "fx-kdb", "fx-old", "fx-d"].includes(m.key)) { m.reply = "needs"; m.archived = false; } };
+	const toastAct = (v: View) => run(v, `[...document.querySelectorAll(".snack button")].find(b => b.textContent === "되돌리기").click()`);
+
+	test("a selection is one post, skips the mails that owe nothing, changes no read state, and 되돌리기 is one post too", async () => {
+		owe();
+		const v = await openList(1280, 800);
+		await tick(v, "월간 점검 보고서 확인 요청"); await tick(v, "회의 일정 변경"); await tick(v, "견적서 보내드립니다");
+		expect(await ev<string>(v, `${bar(v, "답장 안 함")}.textContent`)).toBe("답장 안 함 2");
+		await run(v, `${bar(v, "답장 안 함")}.click()`);
+		await posted(1);
+		expect(posts[0]).toEqual({ path: "/api/mail/fyi", body: { keys: ["fx-a", "fx-b"], on: true } });
+		await waitFor(v, `${rowJs("회의 일정 변경")}.querySelector('.mr-state[data-state="답장 안 함"]')`);
+		expect(await ev<string>(v, `document.querySelector("#mbox-bar .mbox-n").textContent`)).toBe("1개 선택");
+		await toastAct(v);
+		await posted(2);
+		expect(posts[1]).toEqual({ path: "/api/mail/fyi", body: { keys: ["fx-a", "fx-b"], on: false } });
+		expect(posts.length).toBe(2);
+		expect(mails.find(m => m.key === "fx-b")!.read).toBe(false);
+	}, 30_000);
+
+	test("이 목록 전부 asks first above five mails, and a refused batch puts the rows back", async () => {
+		owe(); fyiFails = true;
+		const v = await openList(1280, 800), all = `document.querySelector('#mbox-bar [data-k="mail-fyi-all"]')`;
+		await folder(v, "owed");
+		await waitFor(v, all);
+		await run(v, `${all}.click()`);
+		await waitFor(v, `document.querySelector(".dact .btn:last-child")`);
+		expect(posts.length).toBe(0);
+		await run(v, `document.querySelector(".dact .btn:last-child").click()`);
+		await posted(1);
+		expect(posts[0].body.keys.length).toBe(6);
+		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr").length === 6`);
+		fyiFails = false;
+		await run(v, `${all}.click()`);
+		await waitFor(v, `document.querySelector(".dact .btn:last-child")`);
+		await run(v, `document.querySelector(".dact .btn:last-child").click()`);
+		await posted(2);
+		await waitFor(v, `document.querySelectorAll("#mon-tl > .mr").length === 0`);
+		expect(await chips(v)).toContain("답장 필요");
 	}, 30_000);
 });
 

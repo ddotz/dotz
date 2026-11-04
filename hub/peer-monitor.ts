@@ -414,6 +414,7 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 			}
 			// 답장 안 함 on a mail the other computer holds, or 답장 필요로 표시 (on false), and 삭제 of that mail from dotz there.
 			case "fyi":
+				if (Array.isArray(a.keys)) return ask("POST", "/api/mail/fyi", { keys: a.keys, on: a.on !== false }, login);
 				if (typeof a.key !== "string" || !a.key) return bad("key required");
 				return a.on === false ? ask("DELETE", `/api/mail/${encodeURIComponent(a.key)}/fyi`, undefined, login) : ask("POST", `/api/mail/${encodeURIComponent(a.key)}/fyi`, {}, login);
 			case "mail-delete":

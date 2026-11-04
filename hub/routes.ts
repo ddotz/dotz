@@ -37,13 +37,13 @@ import { parseFollowup, triggerFollowup } from "./followup.ts";
 import { draftFileRoute } from "./draft-files.ts";
 import { draftRecipientsRoute } from "./draft-recipients.ts";
 import { stagedFiles } from "../features/reply-drafts/lib/staged.ts";
-import { composeMail, deleteMail, mailKey, recordSentByDotz, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, setMailSuggest, sentMailEvent, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { composeMail, deleteMail, mailKey, recordSentByDotz, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, setMailsFyi, mailKeep, setMailSuggest, sentMailEvent, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
 import { applyMailboxFlags, canOf, isMailAction, mailAction, mailActions, type SyncDeps } from "./mail-sync.ts";
 import { manualDraft } from "./mail-manual.ts";
 import { askText } from "../features/reply-drafts/lib/flow.ts";
 import { pluginMailAction, pluginMailActions } from "./plugins.ts";
 import { webmailSite } from "../features/reply-drafts/lib/senders.ts";
-import { getDraft, holdDrafts, listDrafts, restoreDrafts } from "../features/reply-drafts/lib/store.ts";
+import { getDraft, holdDrafts, holdDraftsOf, listDrafts, restoreDrafts, restoreDraftsOf } from "../features/reply-drafts/lib/store.ts";
 import { attachmentLines, canvasRoute, fileRoute, FileError, messageFiles, ownerFiles, serveFile, uploadsFrom } from "./files.ts";
 import { ownerElements, pickedLines } from "./picked.ts";
 import { ownerRefs, refLines } from "./mentions.ts";
@@ -785,6 +785,19 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			}
 			broadcast({ kind: "mail_unreplied", target: mailTarget(key) });
 			return json({ ok: true });
+		}
+		// The same marks on many mails, {keys, on}: one write of each store and one broadcast (open pages only reload on it, the target is not read), however many mails.
+		if (req.method === "POST" && url.pathname === "/api/mail/fyi") {
+			const b = await body(req).catch(() => ({})) as { keys?: unknown; on?: unknown };
+			if (typeof b.on !== "boolean") return json({ error: "on must be true or false" }, 400);
+			if (!Array.isArray(b.keys) || !b.keys.length || b.keys.length > mailKeep() || b.keys.some(k => typeof k !== "string" || !/^[a-z0-9._-]+$/.test(k))) return json({ error: "keys must be an array of mail keys" }, 400);
+			const keys = [...new Set(b.keys as string[])], found = new Set(setMailsFyi(keys, b.on));
+			if (b.on) {
+				holdDraftsOf(found);
+				await settleHandledDrafts().catch(e => log(`mail batch: handled-draft settle failed: ${(e as Error).message}`));
+			} else reopenDraftNotices(restoreDraftsOf(found));
+			if (found.size) broadcast({ kind: "mail_unreplied", target: mailTarget(found.values().next().value!) });
+			return json({ ok: true, results: keys.map(key => ({ key, ok: found.has(key) })) });
 		}
 		// 읽음 / 안 읽음 / 보관 / 별표 / 휴지통 on a mail: dotz changes at once and the real mailbox follows (hub/mail-sync.ts has the contract).
 		if (req.method === "POST" && url.pathname === "/api/mail/actions") {

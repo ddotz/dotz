@@ -140,6 +140,9 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: 12px 0 8p
   .mbox-bar.on .mbox-b { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 22px; background: none; }
   .mbox-bar.on .mbox-b .ic { width: 20px; height: 20px; }
   .mbox-bar.on .mbox-bt { display: none; }
+  .mbox-bar.on .mbox-b.mbox-fyi { order: 1; flex: 1 0 100%; width: auto; margin-top: 2px; border-radius: var(--r-ctl); background: var(--layer); }
+  .mbox-bar.on .mbox-fyi .mbox-bt { display: inline; }
+  .mbox-bar.on .mbox-note { order: 2; }
   .mbox-reply { margin: 12px 0 16px; padding: 16px; }
   .mbox-in { height: 44px; font-size: 16px; }
   textarea.mbox-ta { font-size: 16px; line-height: 24px; }

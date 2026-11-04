@@ -1,12 +1,13 @@
 // A mail the owner wrote himself never becomes a new mail, and a thread he answered is 답장함: the zele watch (tick) fed with zele-shaped
 // thread lists, postMail, the unread count of the conversation, the mail card the web draws, and the one-time migration of stored mails.
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
+import * as config from "./config.ts";
 import { DATA_DIR } from "./config.ts";
 import { unreadOf } from "./conversations.ts";
 import { emit, type HubEvent } from "./events.ts";
-import { mailByKey, mailCard, mailTarget, migrateStoredMails, postMail, recordMail, setMailFyi, setMailNoReply, setMailReply, setMailSuggest, sentReplyRefs, unrepliedMails, type MailDeps, type MailRecord } from "./mail.ts";
+import { mailByKey, mailCard, mailTarget, migrateStoredMails, postMail, recordMail, setMailFyi, setMailNoReply, setMailReply, setMailsFyi, setMailSuggest, sentReplyRefs, unrepliedMails, type MailDeps, type MailRecord } from "./mail.ts";
 import { resetOwnAddresses, setOwnAddresses } from "./mail-state.ts";
 import { markRead } from "./reads.ts";
 import { tick } from "./zele.ts";
@@ -360,6 +361,19 @@ describe("reply state", () => {
 		expect(unrepliedMails(new Set()).some(m => m.key === key)).toBe(false);
 		setMailFyi(key, false);
 		expect(mailByKey(key)!.reply).toBe("needs");
+	});
+
+	test("the same mark on many mails: known keys only, one write of the store, undone the same way", async () => {
+		const a = await incoming({ needsReply: true }), b = await incoming({ needsReply: true });
+		const writes = spyOn(config, "writeAtomic");
+		const got = setMailsFyi([a, "nope", b], true);
+		expect(writes.mock.calls.length).toBe(1);
+		writes.mockRestore();
+		expect(got).toEqual([a, b]);
+		expect([mailByKey(a)!.reply, mailByKey(b)!.reply]).toEqual(["fyi", "fyi"]);
+		expect(mailByKey(a)!.reply_by).toBe("owner");
+		setMailsFyi([a, b], false);
+		expect([mailByKey(a)!.reply, mailByKey(b)!.reply]).toEqual(["needs", "needs"]);
 	});
 
 	test("an answered thread stays 답장함 when a mark or a late draft arrives", async () => {

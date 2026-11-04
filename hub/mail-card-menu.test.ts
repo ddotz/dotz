@@ -63,6 +63,21 @@ describe("답장 안 해도 돼요", () => {
 		expect(getDraft("RHLAAA2")!.status).toBe("stale");
 	});
 
+	test("POST /api/mail/fyi marks many mails, holds and restores their drafts, says which key it did not find, and refuses bad input", async () => {
+		const post = (b: unknown) => route(new Request("http://hub.test/api/mail/fyi", { method: "POST", headers: { "x-dotz-token": HUB_TOKEN, "content-type": "application/json" }, body: JSON.stringify(b) }));
+		const a = await incoming(uid("ba"), "m1"), b = await incoming(uid("bb"), "m1");
+		addDraft(draft("RBAAAA2", a));
+		addDraft(draft("RBBBBB2", b));
+		const r = await post({ keys: [a, "fx-nope", b, a], on: true });
+		expect(await r.json()).toEqual({ ok: true, results: [{ key: a, ok: true }, { key: "fx-nope", ok: false }, { key: b, ok: true }] });
+		expect([mailByKey(a)!.reply, mailByKey(b)!.reply]).toEqual(["fyi", "fyi"]);
+		expect([getDraft("RBAAAA2")!.status, getDraft("RBBBBB2")!.status]).toEqual(["held", "held"]);
+		expect((await post({ keys: [a, b], on: false })).status).toBe(200);
+		expect([mailByKey(a)!.reply, mailByKey(b)!.reply]).toEqual(["needs", "needs"]);
+		expect([getDraft("RBAAAA2")!.status, getDraft("RBBBBB2")!.status]).toEqual(["pending", "pending"]);
+		for (const bad of [{ keys: [a] }, { keys: [], on: true }, { keys: "x", on: true }, { keys: ["../x"], on: true }, { keys: [1], on: true }]) expect((await post(bad)).status).toBe(400);
+	});
+
 	test("삭제 drops a held draft too", async () => {
 		const key = await incoming(uid("hd"), "m1");
 		addDraft(draft("RHDAAA2", key));
