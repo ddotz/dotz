@@ -1,6 +1,7 @@
 // Pure pieces of the orchestrator's recall prompt (the first message of a session, which the runtime keeps through every compaction).
 
 export const STATE_CAP = 2500;
+export const OWNER_CAP = 3000;
 
 type OpenTask = { id?: unknown; what?: unknown; next?: unknown; lane?: unknown };
 
@@ -33,6 +34,22 @@ export function renderState(raw: string, path: string, max = STATE_CAP): string 
 	const cut = text.slice(0, Math.max(0, room));
 	const end = cut.lastIndexOf("\n");
 	return `${end >= 0 ? cut.slice(0, end) : ""}\n${marker}`;
+}
+
+// owner.md grows at the end, so an old head-only cut kept the oldest facts and lost every recent one. Over `max` characters
+// the card goes newest line first, whole lines only, and ends with a marker that names the file.
+export function newestLines(text: string, path: string, max = OWNER_CAP): string {
+	if (text.length <= max) return text;
+	const lines = text.split("\n").filter(line => line.trim());
+	const room = max - path.length - 60;
+	const kept: string[] = [];
+	let used = 0;
+	for (const line of lines.toReversed()) {
+		if (used + line.length + 1 > room) break;
+		kept.push(line);
+		used += line.length + 1;
+	}
+	return `${kept.join("\n")}\n[... newest ${kept.length} of ${lines.length} lines; read ${path} for the rest]`;
 }
 
 // MODE.md without one `## ` section: from the heading that starts with `heading` to the next `## ` heading (or the end).
