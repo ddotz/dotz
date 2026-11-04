@@ -13,6 +13,21 @@ const waitsOnOwner = r => r.kind === "waiting" && r.reason === "ask";
 // A conversation waiting on work it handed off or on its turn (capacity) is progressing: blue on every row that shows it, like this line.
 const runOf = t => (S && S.runs && S.runs[t === MAIN ? "main" : t]) || null;
 const runBusy = t => { const r = runOf(t); return !!r && r.kind === "waiting" && !waitsOnOwner(r); };
+// Anything still moving, seen or not: 06-subagents.js keeps the state fresh while one is, so no row or word is left behind when no event comes.
+const runMoving = r => r.kind === "working" || (r.kind === "waiting" && !waitsOnOwner(r));
+// The word and the tone of one conversation or session, the only place a row turns state into colour (the table in docs/ui-spec.md):
+// blue runs or progresses, orange needs the owner or sits at a limit, red failed, gray rests or ended. The word differs for every tone, so colour never speaks alone.
+function runStatus(t, status, ask) {
+  const r = runOf(t);
+  if (status === "working" || status === "starting") return [statusKo(status), "pri"];
+  if (ask || (r && waitsOnOwner(r))) return [RUN_LABEL.waiting, "warn"];
+  if (r && r.kind === "working") return [RUN_LABEL.working, "pri"];
+  if (runBusy(t)) return [r.reason === "capacity" ? "순서 대기" : "진행 중", "pri"];
+  if (status === "rate-limited" || (r && r.kind === "limited")) return [statusKo("rate-limited"), "warn"];
+  if (r && r.kind === "error" && !r.cancelled) return ["오류", "err"];
+  return [statusKo(status), statusTone(status)];
+}
+const targetState = t => { const i = targetInfo(t); return i.alive ? runStatus(t, i.status, i.ask) : ["종료됨", ""]; };
 const RUN_MEMO = { sig: "" };
 const runStateOf = () => {
   if (isFixedT(target) || isSettingsT(target)) return null;

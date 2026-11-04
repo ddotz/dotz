@@ -396,19 +396,19 @@ function pmRoutine(x) {
 const pmSessionRow = (r, open) => sessionRow({ name: r.name, title: r.title, status: r.status, live: r.live, pendingAsk: r.waiting }, { project: r.project, line: r.line, ...(typeof open === "function" ? { open } : {}) });
 // The prototype's session row (s-work.js project 세션): a state dot, the title, the lane name, and the state tag at the right.
 function pmLaneRow(r) {
-  const [dotTone, tagTone, word] = r.live && r.waiting ? ["att", "warn", "답을 기다려요"] : r.live && (r.status === "working" || r.status === "starting") ? ["pri", "pri", "작업 중"] : r.live ? ["", "", "열려 있음"] : ["", "", "끝남"];
+  const [word, tone] = sessionStatus({ name: r.name, status: r.status, live: r.live, pendingAsk: r.waiting });
   return el("button", { class: "li tap", type: "button", onclick: () => openTarget(`lane:${r.name}`, lastChatView()), "aria-label": `${r.title} · ${word} · 대화 열기` },
-    el("span", { class: "lead" }, el("span", { class: `dot ${dotTone}` })),
+    el("span", { class: "lead" }, el("span", { class: `dot ${tone}` })),
     el("span", { class: "tx" }, el("div", { class: "hd", text: r.title }), el("div", { class: "sup", text: r.name })),
-    el("span", { class: "li-end" }, el("span", { class: `tag ${tagTone}`, text: word })));
+    el("span", { class: "li-end" }, el("span", { class: `tag ${tone}`, text: word })));
 }
 // A background job of the main assistant that belongs to the project (asked in its chat, or briefed for its folder): tap lands on its result, or on the asking message while it runs.
 const pmWorkRow = w => {
   const run = w.status === "running", stall = w.status === "stalled", rec = workRecovering(w);
   const word = run ? "진행 중" : stall ? "멈춤" : w.status === "done" ? "완료" : w.cancelled ? "중단됨" : rec ? "이어서" : "실패";
-  const tag = run || rec ? "pri" : stall ? "warn" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err";
+  const tag = workTone(w);
   return el("button", { class: "li tap", type: "button", onclick: () => workGo(w) },
-    el("span", { class: "lead" }, el("span", { class: `dot ${run || rec ? "pri" : stall ? "att" : w.status === "done" ? "ok" : w.cancelled || w.handled ? "" : "err"}` })),
+    el("span", { class: "lead" }, el("span", { class: `dot ${tag}` })),
     el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: run ? `작업 중 · ${workElapsed(w)}` : `${stall ? `멈춤 · ${w.reason || "활동이 없어요"}` : w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : rec ? "이어서 처리 중" : "실패 · 이어서 처리함"} · ${workAgo(w)}` })),
     el("span", { class: "li-end" }, el("span", { class: `tag ${tag}`, text: word })));
 };
@@ -538,8 +538,9 @@ function renderContext() {
     }) }, "압축");
     // A waiting session whose process is off (it starts again on its next message) keeps 대기 like every other screen, and says why it has no numbers.
     const off = !p.running && p.status === "idle";
+    const t = p.kind === "lane" ? `lane:${p.name}` : MAIN, [word, tone] = runStatus(t, p.status, targetInfo(t).ask);
     list.append(el("div", { class: "card" },
-      el("div", { class: "heads" }, el("span", { class: `dot ${statusTone(p.status)}` }), el("span", { class: "t", text: p.kind === "lane" ? p.name : botName }), el("span", { class: "sp" }), el("span", { class: `tag ${statusTone(p.status)}`, text: statusKo(p.status) })),
+      el("div", { class: "heads" }, el("span", { class: `dot ${tone}` }), el("span", { class: "t", text: p.kind === "lane" ? p.name : botName }), el("span", { class: "sp" }), el("span", { class: `tag ${tone}`, text: word })),
       p.model ? el("div", { class: "sup sub", text: selLabel(p.model) }) : null,
       p.running ? el("div", { class: "mt8" }, ctxBar(p)) : el("div", { class: "sup mt8", text: off ? "꺼져 있어요. 다음 메시지가 오면 다시 시작해요" : "실행 중이 아니에요" }),
       el("div", { class: "row mt12", style: "justify-content:space-between" }, cs ? el("span", { class: `tag ${cs.tone}`, text: cs.text }) : el("span"), btn)));
