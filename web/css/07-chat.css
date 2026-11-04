@@ -23,10 +23,13 @@
 #v-chat > .subs .subsum .dot { width: 6px; height: 6px; }
 #v-chat > .subs .subsum .chev { width: 14px; height: 14px; }
 #v-chat > .subs .sublist { padding: var(--sp-1); border-radius: var(--r-ctl); background: var(--layer); }
-/* 타임라인 위아래 페이드는 흰 카드에서 흰색으로 사라져야 해요 (03-base의 --bg 페이드 위에) */
-/* 위쪽 가장자리는 가는 선: 스크롤로 잘린 줄이 할 일 스트립 밑에 깔린 듯 카드색으로 흐려지지 않게 (스트립은 제 자리를 가져요) */
-#v-chat .chatbox::before { background: linear-gradient(var(--card), transparent); }
-#v-chat .chatbox::after { background: linear-gradient(transparent, var(--card)); }
+/* 타임라인 위아래 경계는 .kk-tl(17-kakao.css)과 같은 12px 마스크로 글자를 흐려요. 더 스크롤할 쪽에만 걸려요(edgeFade의 fade-t, fade-b).
+   맨 아래에서는 마지막 줄이 그대로 보이고, 맨 아래로 버튼과 입력창은 .timeline 밖이라 흐려지지 않아요. 03-base의 덮개 페이드는 여기서 꺼요.
+   메일을 열면 .mtop이 맨 위에 붙어 있어서 위쪽은 흐리지 않아요. */
+#v-chat .chatbox::before, #v-chat .chatbox::after { content: none; }
+#v-chat .timeline { --edge-t: 0px; --edge-b: 0px; -webkit-mask-image: linear-gradient(transparent, #000 var(--edge-t), #000 calc(100% - var(--edge-b)), transparent); mask-image: linear-gradient(transparent, #000 var(--edge-t), #000 calc(100% - var(--edge-b)), transparent); }
+#v-chat .chatbox.fade-t:not(:has(.mtop)) > .timeline { --edge-t: var(--sp-3); }
+#v-chat .chatbox.fade-b > .timeline { --edge-b: var(--sp-3); }
 
 /* ---------- 컴포저: 시제품 .cmp — [첨부 · 글 · 원형 전송] 회색 18px 상자 (모든 입력 줄의 공통 기반) ----------
    .sendrow 자체가 기반이에요: 채팅 입력줄(#send)과 카카오톡 방 입력줄(#kk-form) 같은 어떤 입력줄도 .sendrow 안에 [.cmp-plus(첨부, 선택) · textarea · .ib(보내기)]와
