@@ -1,15 +1,15 @@
 /* ---------- element picker (web/js/15-picker.js): the app header's hint, hover box, numbered markers, composer chips ---------- */
 .pk-hint { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); white-space: nowrap; }
-.apps-hb .pk-hint { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
+.apps-hb .pk-hint { display: block; margin-top: var(--sp-05); overflow: hidden; text-overflow: ellipsis; }
 .pk-box { position: fixed; z-index: 70; pointer-events: none; border-radius: 4px; outline: 2px solid var(--accent); outline-offset: -1px; background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .pk-box[hidden] { display: none; }
-.pk-lab { position: absolute; left: -2px; bottom: 100%; margin-bottom: 4px; max-width: min(320px, 80vw); padding: 3px 8px; border-radius: 8px; background: var(--fg); color: var(--bg); font: 500 12px/16px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pk-box.below .pk-lab { bottom: auto; top: 100%; margin: 4px 0 0; }
+.pk-lab { position: absolute; left: -2px; bottom: 100%; margin-bottom: var(--sp-1); max-width: min(320px, 80vw); padding: 3px var(--sp-2); border-radius: 8px; background: var(--fg); color: var(--bg); font: 500 12px/16px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk-box.below .pk-lab { bottom: auto; top: 100%; margin: var(--sp-1) 0 0; }
 #pick-marks { position: fixed; inset: 0; z-index: 71; pointer-events: none; }
 .pk-mark { position: fixed; display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff; font: 700 11.5px/1 var(--font); transform: translate(0, -50%); }
 .pk-mark[hidden] { display: none; }
 .atray.has-pick { flex-wrap: wrap; overflow-x: visible; }
-.pk-chip { height: 44px; max-width: min(320px, 100%); padding: 0 32px 0 8px; border-radius: var(--r-ctl); gap: 8px; }
+.pk-chip { height: 44px; max-width: min(320px, 100%); padding: 0 var(--sp-8) 0 var(--sp-2); border-radius: var(--r-ctl); gap: var(--sp-2); }
 .pk-n { flex: none; display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; }
 .pk-chip .fi-t { min-width: 0; }
 .pk-chip .fi-n { max-width: 200px; }
