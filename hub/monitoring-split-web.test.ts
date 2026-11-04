@@ -41,7 +41,7 @@ function load(notices: N[], integrations: N[], monitors: N[]) {
 		cardNode: () => { throw new Error("a fact card is not a conversation message"); },
 		ts: () => ({ unread: 0 }), narrowChat: () => false, go: (...a: string[]) => went.push(a), current: "monitoring", enc: encodeURIComponent,
 		api: async () => ({}), homeSoon: () => {}, titles: { monitoring: "모니터링" }, ntIsDec: (n: N) => n.kind === "decision" && !!n.decision, ntNeeds: () => false,
-		noticeOpen: () => {}, asEntry: () => [], kkItem: () => false, KK: {}, asChipTexts: () => [], asAsk: () => {}, nwChangeNode: () => null, nwChangeLine: () => "", asAddHint: () => "", asAddSheet: () => {}, isSettingsT: () => false, settingsApp: () => "", isProjT: (t: string) => /^ch:\d+$/.test(t), S: null, projTargets: () => [], toast: () => {}, openTarget: () => {},
+		ntWithRepeats: (l: unknown[]) => l, noticeOpen: () => {}, asEntry: () => [], kkItem: () => false, KK: {}, asChipTexts: () => [], asAsk: () => {}, nwChangeNode: () => null, nwChangeLine: () => "", asAddHint: () => "", asAddSheet: () => {}, isSettingsT: () => false, settingsApp: () => "", isProjT: (t: string) => /^ch:\d+$/.test(t), S: null, projTargets: () => [], toast: () => {}, openTarget: () => {},
 	};
 	const body = `${between("const NM =", "async function loadMonitors")}\n${between("// Failed ones first", "// The owner is looking at an open item")}
 NM.items = MONS; NM.loaded = true;

@@ -73,28 +73,25 @@ test("감시 소식's 읽음 처리 reads the plain reports only; what waits sta
 	expect(await ev<string>(`document.querySelector('#mon-tl .mr-f[data-filter="need"]').textContent`)).toBe("답 필요3");
 });
 
-test("the chat list narrows to 답할 것 with its count, keeps 세션 and 알림 as filters and draws the projects a page at a time", async () => {
+test("the chat list narrows to 답할 것 with its count, keeps 세션 as the one other filter (알림 is its own screen) and draws the projects a page at a time", async () => {
 	await open("#chat/list", chatReady);
-	expect(await ev<string[]>(`[...document.querySelectorAll("#chat-convo .cv-bar .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "답할 것15", "세션", "알림"]);
+	expect(await ev<string[]>(`[...document.querySelectorAll("#chat-convo .cv-bar .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "답할 것14", "세션"]);
 	const projects = `[...document.querySelectorAll("#chat-convo .cv-row")].filter(r => (r.dataset.t || "").startsWith("ch:")).length`;
 	expect(await ev<number>(projects)).toBe(40);
 	// 땅콩 and the two feeds, then 진행 중, then 프로젝트 with its 더 보기: each kind of row collapsed to one entry
 	const order = `[...document.querySelectorAll("#chat-convo .cv-sec, #chat-convo .cv-row, #chat-convo .cv-more")].map(n => n.matches(".cv-sec") ? n.textContent : n.matches(".cv-more") ? "more" : n.dataset.t.replace(/^(lane|ch):.*/, "$1")).filter((s, i, a) => s !== a[i - 1])`;
-	expect((await ev<string[]>(order)).slice(0, 8)).toEqual(["main", "alert", "worklog", "진행 중", "lane", "프로젝트", "ch", "more"]);
+	expect((await ev<string[]>(order)).slice(0, 8)).toEqual(["main", "worklog", "진행 중", "lane", "프로젝트", "ch", "more"]);
 	await ev(`(document.querySelector('#chat-convo .cv-more .btn').click(), 0)`);
 	await wait(`${projects} === 80`, "next page");
 	expect(await ev<string>(`document.querySelector('#chat-convo .cv-more .btn').textContent`)).toBe("프로젝트 20개 더 보기");
 	await ev(`(document.querySelector('#chat-convo .mr-f[data-view="need"]').click(), 0)`);
 	await wait(`document.querySelector('#chat-convo .mr-f[data-view="need"]').classList.contains("on")`, "need view");
 	const need = await ev<string[]>(`[...document.querySelectorAll("#chat-convo .cv-row")].map(r => r.dataset.t)`);
-	expect(need.length).toBe(15);
-	expect(need).toContain("alert");
+	expect(need.length).toBe(14);
+	expect(need).not.toContain("alert");
 	expect(need).toContain("lane:s1");
 	expect(need).not.toContain("main");
-	// a group with nothing under the filter has no header
-	await ev(`(document.querySelector('#chat-convo .mr-f[data-view="alert"]').click(), 0)`);
-	await wait(`document.querySelector('#chat-convo .mr-f[data-view="alert"]').classList.contains("on")`, "alert view");
-	expect(await ev<number>(`document.querySelectorAll("#chat-convo .cv-sec").length`)).toBe(0);
+	expect(await ev<number>(`document.querySelectorAll('#chat-convo [data-t="alert"]').length`)).toBe(0);   // the 알림 row is not in the list at all
 	await ev(`(document.querySelector('#chat-convo .mr-f[data-view="all"]').click(), 0)`);
 });
 
@@ -108,5 +105,5 @@ test("the chat list's 읽음 처리 moves the read position of the conversations
 	expect(targets.length).toBe(85);
 	expect(targets).toContain("main");
 	for (const t of ["alert", "lane:s1", "lane:s2", "ch:1001", "ch:1008"]) expect(targets).not.toContain(t);
-	expect(await ev<string>(`document.querySelector('#chat-convo .mr-f[data-view="need"]').textContent`)).toBe("답할 것15");
+	expect(await ev<string>(`document.querySelector('#chat-convo .mr-f[data-view="need"]').textContent`)).toBe("답할 것14");
 });
