@@ -86,7 +86,7 @@ const boot = async (v: View) => {
 	await opened;
 	await waitFor(v, `typeof NT !== "undefined" && NT.loaded && NM.loaded && S`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
-	await run(v, `go("provider", "anthropic")`);
+	await run(v, `go("accounts")`);
 	await waitFor(v, `document.querySelectorAll(".li.acc").length === 5`);
 };
 const reset = () => { mode = "auto"; pin = "default"; order = [...NAMES]; calls.length = 0; };
@@ -184,20 +184,20 @@ test("touch: a long press on a row lifts it and a drag saves the order; a tap an
 	expect(calls.at(-1)?.[0]).toBe("/api/accounts/order");
 });
 
-// The account block moved inside 공급자: an old address or palette entry for it lands on the Claude 구독 screen there.
-for (const [from, args] of [["#settings/accounts", ["settings", "accounts"]], ["#accounts", ["accounts"]], ["#providers/anthropic", ["providers", "anthropic"]]] as const)
-	test(`${from}: the old account address opens the Claude screen inside 공급자`, async () => {
+// 공급자, each provider's screen and the account block are one 계정 screen now: every old address lands there.
+for (const [from, args] of [["#settings/accounts", ["settings", "accounts"]], ["#providers", ["providers"]], ["#providers/anthropic", ["providers", "anthropic"]], ["#provider/anthropic", ["provider", "anthropic"]]] as const)
+	test(`${from}: the old address opens the 계정 screen`, async () => {
 		reset();
 		const v = await open(1280, 800);
 		const opened = hub.nextStream();
 		await v.navigate(`${hub.origin}/`);
 		await opened;
 		await waitFor(v, `typeof NT !== "undefined" && NT.loaded && NM.loaded && S`);
-		await run(v, `go("providers")`);
-		await waitFor(v, `current === "providers"`);
+		await run(v, `go("settings")`);
+		await waitFor(v, `current === "settings"`);
 		await run(v, `go(...${JSON.stringify(args)})`);
-		await waitFor(v, `current === "provider" && provCur === "anthropic" && document.querySelectorAll("#provider .li.acc").length === 5`);
-		expect(await q(v, `return [location.hash, document.querySelectorAll("#settings .li.acc").length]`)).toEqual(["#provider/anthropic", 0]);
+		await waitFor(v, `current === "accounts" && document.querySelectorAll("#accounts .li.acc").length === 5`);
+		expect(await q(v, `return [location.hash, document.querySelectorAll("#settings .li.acc").length]`)).toEqual(["#accounts", 0]);
 		await run(v, `document.querySelector("#back").click()`);
-		await waitFor(v, `current === "providers"`);
+		await waitFor(v, `current === "settings"`);
 	}, 20_000);

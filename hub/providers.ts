@@ -8,6 +8,7 @@ import { label } from "./account-alias.ts";
 import { authFile } from "./apikey-policy.ts";
 import { OMO } from "./runtime/omo-hosts.ts";
 import { OmoRpc, omoLoginProviders, type RpcFrame } from "./runtime/omo-login.ts";
+import { mergeSameAccount } from "./accounts-providers.ts";
 import { writeOmoPin } from "./omo-pin.ts";
 import { hardPinned, stickyAccount } from "./account-sticky.ts";
 import { labeledAccountView } from "./accounts-api.ts";
@@ -178,7 +179,7 @@ export function omoAuthInfos(auth: Record<string, unknown> | undefined): AuthInf
 		const accounts = Array.isArray(c.accounts) ? (c.accounts as { name?: unknown }[]) : [];
 		const name = typeof c.pinned === "string" ? c.pinned : accounts.find(a => typeof a?.name === "string")?.name;
 		const key = ["key", "apiKey", "api_key"].map(k => c[k]).find((x): x is string => typeof x === "string" && x.length > 0);
-		return [{ provider: dotzProvider(id), type: String(c.type ?? (key ? "api_key" : "oauth")), label: typeof name === "string" ? name : undefined, masked: key ? mask(key) : undefined, ...(accounts.length > 1 ? { accounts: accounts.length } : {}) }];
+		return [{ provider: dotzProvider(id), type: String(c.type ?? (key ? "api_key" : "oauth")), label: typeof name === "string" ? name : undefined, masked: key ? mask(key) : undefined, ...(key ? {} : { pool: true }), ...(accounts.length > 1 ? { accounts: accounts.length } : {}) }];
 	});
 }
 
@@ -223,7 +224,7 @@ export const availableModels = async (): Promise<ModelInfo[]> =>
 	})) ?? [];
 
 // What omp itself has stored (`omp auth export`): only provider ids, credential types and masked key tails are kept.
-type AuthInfo = { provider: string; type: string; label?: string; masked?: string; accounts?: number };
+type AuthInfo = { provider: string; type: string; label?: string; masked?: string; accounts?: number; pool?: boolean };
 const authInfos = async (): Promise<AuthInfo[]> =>
 	(await cached("auth", async () => {
 		const own = usesOmo() ? omoAuthInfos(omoAuth()) : [];
@@ -288,13 +289,14 @@ export async function loginProviders(): Promise<LoginProvider[]> {
 }
 
 type ProviderRow = { id: string; name: string; auth: "oauth" | "api_key" | "none"; account?: string; accounts?: number; masked?: string; models: number; in_use: boolean; can_login: boolean; can_add_account?: boolean; can_logout: boolean };
-type AddableProvider = { id: string; name: string; kind: "oauth" | "api_key" };
+type AddableProvider = { id: string; name: string; kind: "oauth" | "api_key"; add_account?: boolean };
 
 // Providers that have an API-key env var but whose primary sign-in is the subscription (OAuth) login.
 const OAUTH_FIRST = new Set(["anthropic"]);
 
 // Pure: merges the runtime's stored credentials, env vars, the login catalog and the model catalog into the configured
-// rows and the not-yet-configured (addable) providers. A signed-in Claude subscription offers 계정 추가: a login there adds an account.
+// rows and the addable providers: the not-yet-configured ones, plus a signed-in login that holds several accounts (Claude, an OmO pool),
+// where a login adds an account. A provider that holds one key stays out once it is set.
 export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, string | undefined>; models: ModelInfo[]; catalog: LoginProvider[]; inUse: Set<string> }): { providers: ProviderRow[]; addable: AddableProvider[] } {
 	const names = new Map(input.catalog.map(p => [p.id, p.name]));
 	const nameOf = (id: string) => names.get(id) ?? id;
@@ -303,7 +305,7 @@ export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, st
 	const providers = [...ids].sort().map((id): ProviderRow => {
 		const base = { id, name: nameOf(id), models: input.models.filter(m => m.provider === id).length, in_use: input.inUse.has(id), can_login: names.has(id) };
 		const oauth = input.auth.find(a => a.provider === id && a.type === "oauth");
-		if (oauth) return { ...base, auth: "oauth", account: oauth.label, ...(oauth.accounts ? { accounts: oauth.accounts } : {}), ...(id === "anthropic" && base.can_login ? { can_add_account: true } : {}), can_logout: true };
+		if (oauth) return { ...base, auth: "oauth", account: oauth.label, ...(oauth.accounts ? { accounts: oauth.accounts } : {}), ...((id === "anthropic" || oauth.pool) && base.can_login ? { can_add_account: true } : {}), can_logout: true };
 		const key = input.auth.find(a => a.provider === id);
 		if (key) return { ...base, auth: "api_key", masked: key.masked, can_logout: true };
 		const v = PROVIDER_ENV[id];
@@ -314,6 +316,7 @@ export function buildProviders(input: { auth: AuthInfo[]; env: Record<string, st
 	for (const p of input.catalog) {
 		const kind = PROVIDER_ENV[p.id] && !OAUTH_FIRST.has(p.id) ? "api_key" : "oauth";
 		if (!ids.has(p.id)) addable.push({ id: p.id, name: p.name, kind });
+		else if (providers.find(r => r.id === p.id)?.can_add_account) addable.push({ id: p.id, name: p.name, kind: "oauth", add_account: true });
 	}
 	for (const id of Object.keys(PROVIDER_ENV)) if (!ids.has(id) && !names.has(id)) addable.push({ id, name: id, kind: "api_key" });
 	return { providers, addable: addable.sort((a, b) => a.name.localeCompare(b.name)) };
@@ -361,11 +364,15 @@ type OmoLogin = {
 	error?: string;
 	cancelled: boolean;
 	timer: ReturnType<typeof setTimeout>;
-	before?: { pinned?: string; accounts: string[] };
+	before?: PoolState;
+	result?: LoginResult;
 	waiters: Set<() => void>;
 };
 let login: Login | OmoLogin | undefined;
 
+// What a finished login did to the provider's pool. No result: a first sign-in, or a runtime that keeps one login.
+export type LoginResult = { outcome: "added" | "refreshed"; account: string };
+type PoolState = { pinned?: string; accounts: { name: string; email?: string; signedInAt?: unknown }[] };
 type LoginView = { url: string; needs_code: boolean; prompt?: string; instructions?: string; options?: string[] };
 
 // Pure: what the owner has to do next, read off the login process output (an unterminated last line is a pending prompt).
@@ -453,14 +460,14 @@ export async function startLogin(provider: string): Promise<{ login_id: string }
 	return { login_id: l.id, ...view };
 }
 
-export function loginStatus(provider: string, loginId: string): { status: Login["status"]; error?: string } {
+export function loginStatus(provider: string, loginId: string): { status: Login["status"]; error?: string } & Partial<LoginResult> {
 	const l = loginOf(provider, loginId);
-	return { status: l.status, ...(l.error ? { error: l.error } : {}) };
+	return { status: l.status, ...(l.error ? { error: l.error } : {}), ...(l.via === "omo" ? l.result : undefined) };
 }
 
 // Hands the pasted authorization code (or the full redirect URL, or whatever the sign-in asks for) to the login process
 // and waits for it to finish. A multi-step sign-in answers with status "waiting" and the next prompt instead.
-export async function completeLogin(provider: string, loginId: string, rawCode: string): Promise<{ provider: string; status: "done" | "waiting" } & Partial<LoginView>> {
+export async function completeLogin(provider: string, loginId: string, rawCode: string): Promise<{ provider: string; status: "done" | "waiting" } & Partial<LoginView> & Partial<LoginResult>> {
 	const l = loginOf(provider, loginId);
 	if (l.status === "done") return { provider, status: "done" };
 	if (l.exited) throw new ControlError(l.error ?? "로그인에 실패했어요", 400);
@@ -505,23 +512,47 @@ export async function cancelLogin(provider: string): Promise<void> {
 const OMO_START_MS = 45_000;
 const ANSWERED = new Set(["input", "select", "editor"]);
 
-function subscriptionState(rpcId: string): OmoLogin["before"] {
-	if (rpcId !== SUBSCRIPTION) return undefined;
-	const c = omoAuth()?.[SUBSCRIPTION] as { pinned?: unknown; accounts?: { name?: unknown }[] } | undefined;
-	if (!c || typeof c !== "object") return undefined;
-	return { ...(typeof c.pinned === "string" ? { pinned: c.pinned } : {}), accounts: (Array.isArray(c.accounts) ? c.accounts : []).flatMap(a => (typeof a?.name === "string" ? [a.name] : [])) };
+type StoredSlot = { name?: unknown; signedInAt?: unknown; profile?: { email?: unknown } };
+function poolState(rpcId: string): PoolState | undefined {
+	const c = omoAuth()?.[rpcId] as { type?: unknown; pinned?: unknown; accounts?: StoredSlot[] } | undefined;
+	if (!c || typeof c !== "object" || c.type === "api_key") return undefined;
+	// an older store keeps one login on the entry itself, which OmO lists as an account named default
+	const slots: StoredSlot[] = Array.isArray(c.accounts) ? c.accounts : [{ name: "default" }];
+	return { ...(typeof c.pinned === "string" ? { pinned: c.pinned } : {}), accounts: slots.flatMap(a => (typeof a?.name === "string" ? [{ name: a.name, signedInAt: a.signedInAt, ...(typeof a.profile?.email === "string" ? { email: a.profile.email } : {}) }] : [])) };
+}
+
+// Pure: the same login seen twice. OmO replaces a pool entry only when the login names it or the provider reports an identity; a Claude
+// login under a fresh name stores a second slot of an account the pool already has, told apart only by the email on its profile.
+export function loginResult(before: PoolState | undefined, after: PoolState | undefined): (LoginResult & { copyOf?: string }) | undefined {
+	if (!before?.accounts.length || !after) return undefined;
+	const known = new Set(before.accounts.map(a => a.name));
+	const fresh = after.accounts.find(a => !known.has(a.name));
+	if (!fresh) return { outcome: "refreshed", account: after.accounts.find(a => before.accounts.find(b => b.name === a.name)?.signedInAt !== a.signedInAt)?.name ?? after.accounts[0]?.name ?? "" };
+	const same = fresh.email ? before.accounts.find(a => a.email === fresh.email) : undefined;
+	return same ? { outcome: "refreshed", account: same.name, copyOf: fresh.name } : { outcome: "added", account: fresh.name };
 }
 
 function keepPin(l: OmoLogin): void {
 	const before = l.before;
 	if (!before) return;
-	const after = subscriptionState(l.rpcId);
-	if (after && after.pinned !== before.pinned) {
+	const after = poolState(l.rpcId);
+	if (l.rpcId === SUBSCRIPTION && after && after.pinned !== before.pinned) {
 		writeOmoPin(before.pinned);
 		log(`login: OmO moved the Claude pin to ${after.pinned ?? "(none)"}; put back ${before.pinned ?? "(none)"}`);
 	}
-	const lost = before.accounts.filter(n => !after?.accounts.includes(n));
-	if (lost.length) log(`login: Claude account(s) missing after the login: ${lost.join(", ")}`);
+	const lost = before.accounts.map(a => a.name).filter(n => !after?.accounts.some(a => a.name === n));
+	if (lost.length) log(`login: ${l.rpcId} account(s) missing after the login: ${lost.join(", ")}`);
+	const result = loginResult(before, after);
+	if (!result) return;
+	const { copyOf, ...shown } = result;
+	l.result = shown;
+	if (!copyOf) return;
+	try {
+		mergeSameAccount(l.provider, shown.account, copyOf);
+	} catch (e) {
+		log(`login: could not merge ${copyOf} into ${shown.account}: ${(e as Error).message}`);
+		l.result = { outcome: "added", account: copyOf };
+	}
 }
 
 function finishOmo(l: OmoLogin, ok: boolean, error?: string): void {
@@ -581,7 +612,7 @@ async function startOmoLogin(provider: string): Promise<{ login_id: string } & L
 	} catch {
 		throw new ControlError("OmO를 실행하지 못했어요. OmO가 설치돼 있는지 확인해 주세요", 502);
 	}
-	const l: OmoLogin = { via: "omo", id: crypto.randomUUID(), provider, rpcId, rpc, url: "", exited: false, status: "waiting", cancelled: false, before: subscriptionState(rpcId), waiters: new Set(), timer: setTimeout(() => cancelLogin(provider), LOGIN_TTL_MS) };
+	const l: OmoLogin = { via: "omo", id: crypto.randomUUID(), provider, rpcId, rpc, url: "", exited: false, status: "waiting", cancelled: false, before: poolState(rpcId), waiters: new Set(), timer: setTimeout(() => cancelLogin(provider), LOGIN_TTL_MS) };
 	l.timer.unref();
 	login = l;
 	rpc.on(f => onOmoFrame(l, f));
@@ -608,7 +639,7 @@ async function completeOmoLogin(l: OmoLogin, rawCode: string): Promise<{ provide
 		l.rpc.send({ type: "extension_ui_response", id: ask.id, value: code });
 		await settleOmo(l, () => Boolean(l.ask), LOGIN_COMPLETE_MS);
 	} else await settleOmo(l, () => false, LOGIN_COMPLETE_MS);
-	if (l.status === "done") return { provider: l.provider, status: "done" };
+	if (l.status === "done") return { provider: l.provider, status: "done", ...l.result };
 	if (l.exited) throw new ControlError(l.error ?? "로그인에 실패했어요", 400);
 	if (l.ask) return { provider: l.provider, status: "waiting", ...omoView(l) };
 	throw new ControlError("아직 로그인이 끝나지 않았어요. 잠시 후 다시 확인해 주세요", 408);

@@ -377,7 +377,7 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 			const name = url.searchParams.get("name") ?? "";
 			const r = deletePoolAccount(provider, name);
 			if (r === "missing") throw new AccountsError(`그런 계정이 없어요: ${name}`, 404);
-			if (r === "last") throw new AccountsError("마지막 남은 계정은 지울 수 없어요. 공급자 화면에서 로그아웃해 주세요", 409);
+			if (r === "last") throw new AccountsError("마지막 남은 계정은 지울 수 없어요. 계정 화면에서 로그아웃해 주세요", 409);
 			return Response.json(accountsBody(Date.now(), await catalog()));
 		}
 		// DELETE /api/accounts?name=<id>: removes a subscription account from OmO's store and from dotz's pick, order and alias.
@@ -386,7 +386,7 @@ export async function accountsRoute(req: Request, url: URL): Promise<Response | 
 			await quietly(async () => {
 				const r = removeAccount(name);
 				if (r === "missing") throw new AccountsError(`그런 계정이 없어요: ${name}`, 404);
-				if (r === "last") throw new AccountsError("마지막 남은 계정은 지울 수 없어요. 공급자 화면에서 로그아웃해 주세요", 409);
+				if (r === "last") throw new AccountsError("마지막 남은 계정은 지울 수 없어요. 계정 화면에서 로그아웃해 주세요", 409);
 				await checkNow();
 			});
 			return Response.json(accountsBody(Date.now(), await catalog()));

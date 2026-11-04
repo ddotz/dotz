@@ -52,7 +52,7 @@ function card(acc: object) {
 		startLogin: () => {},
 		loadQuota: () => {},
 	};
-	const mod = new Function(...Object.keys(env), `${rowToggleSrc}\n${src}\nACC = arguments[arguments.length - 1];\nreturn accountSection;`);
+	const mod = new Function(...Object.keys(env), `${rowToggleSrc}\n${src}\nACC = arguments[arguments.length - 1];\nreturn () => accountSection({ id: "anthropic", name: "Claude 구독" });`);
 	const section = mod(...Object.values(env), acc) as () => Node[];
 	return { nodes: section(), calls, renders: () => renders };
 }

@@ -4,7 +4,7 @@
 :is(#settings, #notifications, #display, #update, #runtime) > .sec:first-child { margin-top: var(--sp-2); }
 :is(#settings, #notifications, #display, #update, #runtime) > .list + .list { margin-top: var(--sp-3); }
 :is(#settings, #notifications, #display, #update, #runtime) > .list:first-child { margin-top: var(--sp-2); }
-:is(#settings, #notifications, #display, #update, #runtime, #models, #providers, #provider, #usage, #context, #messengers, #discord, #jandi, #slack, #telegram, #devices, #webaccess) .li > .lead:has(> .ic) {
+:is(#settings, #notifications, #display, #update, #runtime, #models, #accounts, #usage, #context, #messengers, #discord, #jandi, #slack, #telegram, #devices, #webaccess) .li > .lead:has(> .ic) {
   display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--layer); color: var(--fg-2);
 }
 :is(#settings, #notifications, #display, #update, #runtime, #messengers, #devices, #webaccess) .li > .lead:has(> .ic) .ic { width: 18px; height: 18px; }
@@ -43,12 +43,12 @@
 @media (pointer: coarse), (max-width: 639px) { #models .mt-pick .sel { height: var(--field-h-touch); } }
 
 /* 공급자: the usage windows ride under the row, thin */
-#providers .prow-lim { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
-#providers .prow-lim .k { flex: none; min-width: 64px; }
-#providers .prow-lim .bar { flex: 1; max-width: 160px; margin-top: 0; }
+#accounts .prow-lim { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
+#accounts .prow-lim .k { flex: none; min-width: 64px; }
+#accounts .prow-lim .bar { flex: 1; max-width: 160px; margin-top: 0; }
 /* 사용량과 월 한도 */
 #usage .lim .kv b { font-weight: 700; }
 #usage .lim .bar { margin-top: var(--sp-15); }
 #usage .lim > .sup { margin-top: var(--sp-1); }
 #usage > .list + :is(.grid, .sec) { margin-top: var(--sp-3); }
-:is(#providers, #messengers, #devices, #webaccess, #usage) > .note { margin: var(--sp-2) var(--sp-1) 0; }
+:is(#accounts, #messengers, #devices, #webaccess, #usage) > .note { margin: var(--sp-2) var(--sp-1) 0; }

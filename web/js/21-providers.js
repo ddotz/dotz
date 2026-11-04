@@ -5,64 +5,54 @@ async function loadProviderData() {
   return P;
 }
 async function loadProviders() {
-  const box = $("#providers");
+  const box = $("#accounts");
   if (!P) clear(box).append(emptyNode("불러오는 중…"));
   try { await loadProviderData(); }
   catch (e) { clear(box).append(emptyNode("공급자를 불러오지 못했어요")); return; }
-  if (current === "providers") renderProviders();
-  else if (current === "provider") renderProvider();
-}
-// The screen of one provider (설정 > 공급자 > it): its login or API key, and for a provider OmO holds accounts for (Claude 구독, ChatGPT 구독 ...)
-// the accounts block (25-settings-accounts.js): 자동 전환, 한도에 걸렸을 때, 계정 추가, 전환 규칙.
-function renderProvider() {
-  const box = $("#provider"), p = ((P && P.providers) || []).find(x => x.id === provCur);
-  if (current === "provider") $("#title").textContent = providerName(provCur);
-  if (!P) { clear(box).append(emptyNode("불러오는 중…")); return; }
-  if (!p) { clear(box).append(emptyNode("공급자를 찾지 못했어요")); return; }
-  const out = p.auth === "api_key" ? "키 삭제" : "로그아웃";
-  const act = p.can_add_account ? null
-    : p.can_login ? el("button", { class: `btn inrow ${isConnected(p) ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, isConnected(p) ? "다시 로그인" : "로그인") : null;
-  const rm = (p.can_logout ?? p.removable) ? el("button", { class: "ib", type: "button", title: out, "aria-label": out, onclick: ev => busy(ev.currentTarget, async () => { await logoutProvider(p); if (current === "provider") go("providers"); }) }, icon("trash")) : null;
-  const sub = [p.account || p.masked || (isConnected(p) ? "" : "연결 안 됨"), p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
-  const key = p.auth === "api_key";
-  const g = p.id === "anthropic" ? null : ((ACC && ACC.providers) || []).find(x => x.id === p.id);
-  clear(box).append(el("div", { class: "list" }, el("div", { class: "li", "data-prov-conn": p.id },
-      el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: key ? "API 키" : "로그인" }),
-          el("span", { class: `tag ${isConnected(p) ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : key ? "연결됨" : "연결 안 됨" })),
-        sub ? el("div", { class: "sup", text: sub }) : null),
-      liEnd(act, rm))),
-    ...(p.id === "anthropic" ? accountSection() : g ? accProviderSections([g]) : []));
+  if (current === "accounts") renderAccounts();
 }
 // A usage window in plain Korean: the report's "Claude 5 Hour" / "Claude 7 Day Opus" read as 5시간 한도 / 7일 한도 Opus.
 function limitName(l) {
   const m = /^Claude\s+(\d+)\s+(Hour|Day)s?\b\s*(.*)$/i.exec(l.label || "");
   return m ? `${m[1]}${/hour/i.test(m[2]) ? "시간" : "일"} 한도${m[3] ? ` ${m[3]}` : ""}` : l.label || l.id;
 }
-function renderProviders() {
-  const box = $("#providers");
-  const list = P.providers;
-  const wrap = el("div", {});
-  wrap.append(el("div", { class: "sec sec-act" }, el("span", { text: "공급자" }),
-    el("button", { class: "btn tonal sm", type: "button", onclick: () => addProviderDialog() }, icon("add"), "추가")));
+// One provider's row on the 계정 screen: its way in (login or key), status, usage windows and actions. In a provider's own section
+// (`own`) the section head names it; in 다른 공급자 the row does, and a key with a pool entry opens its alias.
+function provRow(p, g, own) {
+  const on = isConnected(p), key = p.auth === "api_key", tone = on ? "ok" : needsAttention(p) ? "warn" : "";
+  const out = key ? "키 삭제" : "로그아웃";
+  const act = p.can_add_account ? null
+    : p.can_login ? el("button", { class: `btn inrow ${on ? "text" : "tonal"}`, type: "button", onclick: () => startLogin(p) }, on ? "다시 로그인" : "로그인") : null;
+  const rm = (p.can_logout ?? p.removable) ? el("button", { class: "ib", type: "button", title: out, "aria-label": out, onclick: ev => busy(ev.currentTarget, () => logoutProvider(p)) }, icon("trash")) : null;
+  const slot = key && g ? g.accounts[0] : null;
+  const sub = [slot && slot.label !== "API 키" ? slot.label : "", p.account || p.masked || "", p.in_use ? "지금 사용 중" : "", p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
+  const q = typeof SQ !== "undefined" && SQ ? (SQ.providers || []).find(x => x.provider === p.id || (p.id === "anthropic" && x.provider === "claude")) : null;
+  const tx = el("div", { class: "tx" }, el("div", { class: "heads" }, el("span", { class: "hd", text: own ? (key ? "API 키" : "로그인") : p.name || p.id }),
+      el("span", { class: `tag ${tone}`, text: p.auth === "oauth" ? "로그인됨" : key ? "API 키" : "연결 안 됨" })),
+    sub ? el("div", { class: "sup", text: sub }) : null,
+    ...(q ? (q.limits || []).filter(l => limitFrac(l) != null) : []).map(l => el("div", { class: "prow-lim" }, el("span", { class: "k", text: limitName(l) }), bar(l), el("span", { class: "v", text: pctText(l) }))));
+  return el("div", { class: "li prow", "data-prov": own ? null : p.id, "data-prov-conn": p.id },
+    slot ? el("button", { class: "acc-main", type: "button", onclick: () => accProviderDialog(g, slot) }, tx) : tx, liEnd(act, rm));
+}
+// 계정: one screen for what used to be 공급자, each provider's screen and the accounts block. OmO keeps a pool per provider, so the
+// provider is the group: a login provider has its own section with its accounts, and the rest (keys, not set up) share one list.
+function renderAccounts() {
+  const box = $("#accounts");
+  if (!P) { clear(box).append(emptyNode("불러오는 중…")); return; }
+  const groupOf = p => ((ACC && ACC.providers) || []).find(x => x.id === p.id);
+  const own = p => p.auth === "oauth" || (p.id === "anthropic" && ACC && ACC.accounts.length > 0) || (groupOf(p) || {}).multi;
+  const list = P.providers, rest = list.filter(p => !own(p));
+  const wrap = el("div", {}, el("div", { class: "tools-bar" }, el("span", { class: "sup", text: `${list.filter(isConnected).length}개 연결` }),
+    el("button", { class: "btn tonal sm", type: "button", onclick: () => addProviderDialog() }, icon("add"), "공급자 추가")));
   if (!list.length) wrap.append(emptyNode("공급자가 없어요"));
-  const quotaOf = p => { const q = typeof SQ !== "undefined" && SQ ? (SQ.providers || []).find(x => x.provider === p.id || (p.id === "anthropic" && x.provider === "claude")) : null; return q ? (q.limits || []).filter(l => limitFrac(l) != null) : []; };
-  const row = p => {
-    const name = p.name || p.id;
-    const on = isConnected(p), sub = [p.account || p.masked || (on ? "" : "연결 안 됨"), p.in_use ? "지금 사용 중" : "", p.accounts > 1 ? `계정 ${p.accounts}개` : ""].filter(Boolean).join(" · ");
-    // each provider opens its own screen: the login or key, and for a subscription its accounts, switch rules and 한도에 걸렸을 때
-    return el("button", { class: "li tap prow", type: "button", "data-prov": p.id, onclick: () => go("provider", p.id) },
-      el("span", { class: "lead" }, el("span", { class: `dot ${on ? "ok" : needsAttention(p) ? "warn" : ""}` })),
-      el("span", { class: "tx" }, el("div", { class: "hd", text: name }),
-        sub ? el("div", { class: "sup", text: sub }) : null,
-        ...quotaOf(p).map(l => el("div", { class: "prow-lim" }, el("span", { class: "k", text: limitName(l) }), bar(l), el("span", { class: "v", text: pctText(l) })))),
-      el("span", { class: "li-end" }, el("span", { class: `tag ${on ? "ok" : needsAttention(p) ? "warn" : ""}`, text: p.auth === "oauth" ? "로그인됨" : p.auth === "api_key" ? "API 키" : "연결 안 됨" })));
-  };
-  // One list, as the prototype draws it: the way in is its own status on the row (로그인됨 / API 키 / 연결 안 됨), and the screens that
-  // can log in come first, then the API-key ones and the providers not set up yet.
-  const isLogin = p => p.auth === "oauth" || (p.auth === "none" && p.can_login);
-  wrap.append(el("div", { class: "list" }, ...[...list.filter(isLogin), ...list.filter(p => !isLogin(p))].map(row)));
-  wrap.append(el("div", { class: "note", text: "공급자를 누르면 로그인과 API 키, 계정과 한도를 바꿔요. 모델은 어느 경로로 쓰는지 공급자 줄에서 구분해요." }));
+  for (const p of list.filter(own)) wrap.append(...accSection(p, groupOf(p), provRow(p, groupOf(p), true)));
+  // the ones that can log in come first, then the API keys and the providers not set up yet
+  const canLogin = p => p.auth === "none" && p.can_login;
+  if (rest.length) wrap.append(el("div", { class: "sec", text: "다른 공급자" }), el("div", { class: "list" }, ...[...rest.filter(canLogin), ...rest.filter(p => !canLogin(p))].map(p => provRow(p, groupOf(p), false))));
+  wrap.append(el("div", { class: "note", text: "모델은 어느 경로로 쓰는지 공급자 줄에서 구분해요." }));
   clear(box).append(wrap);
+  // an old provider address or a home card lands on that provider, once both lists are in
+  if (accFocus && ACC) { const n = box.querySelector(`[data-prov="${CSS.escape(accFocus)}"]`); accFocus = ""; if (n) n.scrollIntoView({ block: "start" }); }
 }
 function addProviderDialog() {
   const addable = P && P.addable;
@@ -91,7 +81,7 @@ function addProviderDialog() {
         if (a.kind === "oauth") { dlg.close(); startLogin(a); return; }
         pick = a; paintKey();
       } }, el("span", { class: "avatar", text: [...(a.name || a.id)][0] || "?" }), el("span", { class: "tx" }, el("div", { class: "hd", text: a.name || a.id })),
-        el("span", { class: "sup", text: hint }), icon(a.kind === "oauth" ? "chev" : "key", "lead"));
+        el("span", { class: "sup", text: a.add_account ? "계정 추가" : hint }), icon(a.kind === "oauth" ? "chev" : "key", "lead"));
       rowsByKey.set(a.id, n); box.lastChild.append(n);
     }
     return box;
@@ -135,23 +125,22 @@ async function startLogin(p) {
     openBox.hidden = !ok;
   };
   const stop = () => { clearTimeout(timer); };
-  const success = async () => {
+  // the hub says what the login did to the pool: a new account, or one it already held and refreshed (hub/providers.ts loginResult)
+  const success = async s => {
     finished = true; stop(); dlg.close();
-    toast(p.can_add_account || p.add_account ? "계정을 추가했어요" : `${name} 로그인했어요`);
+    toast(s.outcome === "refreshed" ? `이미 등록된 계정이에요 (${accLabel(s.account)}). 로그인을 새로 고쳤어요` : s.outcome === "added" ? `계정을 추가했어요 (${s.account})` : `${name} 로그인했어요`);
     try { await loadProviderData(); } catch {}
-    if (current === "providers") renderProviders();
-    else if (current === "provider") renderProvider();
+    if (current === "accounts") renderAccounts();
     if (current === "home") renderHome();
     loadModels(true);
-    // 설정 → 공급자 → the provider holds its accounts; a new one shows there at once
-    if (p.id === "anthropic" || p.add_account) loadAccounts();
+    loadAccounts();
   };
   const fail = text => { msg.textContent = text; msg.hidden = false; };
   const poll = async () => {
     try {
       const s = await api(`/api/providers/${enc(p.id)}/login?login_id=${enc(r.login_id)}`);
       if (finished) return;
-      if (s.status === "done") { success(); return; }
+      if (s.status === "done") { success(s); return; }
       if (s.status === "failed") { stop(); fail(s.error || "로그인에 실패했어요"); return; }
     } catch {}
     if (!finished) timer = setTimeout(poll, 2000);
@@ -165,7 +154,7 @@ async function startLogin(p) {
       const s = await api(`/api/providers/${enc(p.id)}/login/complete`, "POST", { login_id: r.login_id, code: v });
       // a sign-in with more than one step answers with the next question instead of finishing
       if (s.status === "waiting") { code.value = ""; paintAsk(s); if (s.url) paintUrl(s.url); code.focus(); timer = setTimeout(poll, 2000); return; }
-      await success();
+      await success(s);
     }
     catch (e) { fail(e.message); if (!finished) timer = setTimeout(poll, 2000); }
   });
