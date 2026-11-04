@@ -47,6 +47,7 @@
 #cbar button.cchip { cursor: pointer; }
 #cbar button.cchip:hover { background: transparent; color: var(--fg); }
 #cbar .cchip.cown { opacity: 1; color: var(--fg-3); }
+@media (pointer: coarse) { #cbar { min-height: var(--btn-h-sm); margin-top: 0; } #cbar button.cchip { min-height: var(--btn-h-sm); padding: 0 var(--sp-15); } }
 #cbar .working { display: none !important; }
 @media (pointer: coarse) { #c-attach, .sendrow > .cmp-plus { width: 36px; height: 36px; } }
 

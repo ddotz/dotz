@@ -22,7 +22,6 @@
   :is(#settings, #models, #providers, #usage, #context) .ib { width: 40px; height: 40px; }
   :is(#models, dialog.dlg) :is(.fi, .sel) { min-height: 44px; }
   :is(#models, dialog.dlg) .seg button { height: 40px; }
-  dialog.dlg select.fi { height: 44px; }
   dialog.dlg summary { padding: var(--sp-3) 0; }
   dialog.dlg.cl .btn { min-height: 40px; }
   #settings .hs-sw::before { content: ""; position: absolute; inset: -12px -4px; }

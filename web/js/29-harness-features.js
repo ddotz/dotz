@@ -146,14 +146,8 @@ function fcPaintList() {
 function fcBuild(box) {
   const q = el("input", { class: "fi", type: "text", autocomplete: "off", spellcheck: "false", placeholder: "기능 검색 (이름·내용·파일)", "aria-label": "기능 검색", value: fcFilter.q });
   q.addEventListener("input", () => { fcFilter.q = q.value; fcPaintList(); });
-  const pick = (key, label, options) => {
-    const val = el("span", { class: "val" });
-    const b = el("button", { type: "button", class: "sel", "aria-haspopup": "listbox", "aria-expanded": "false" }, val, icon("drop"));
-    const paint = () => { val.textContent = `${label}: ${fcFilter[key] || "전체"}`; b.setAttribute("aria-label", val.textContent); };
-    b.addEventListener("click", () => showMenu(b, [{ value: "", label: "전체" }, ...options().map(v => ({ value: v, label: v }))], { value: fcFilter[key], onPick: v => { fcFilter[key] = v; paint(); fcPaintList(); } }));
-    paint();
-    return b;
-  };
+  const pick = (key, label, options) => selectButton({ label, items: () => [{ value: "", label: "전체" }, ...options().map(v => ({ value: v, label: v }))], value: fcFilter[key],
+    text: v => v || "전체", frame: t => `${label}: ${t}`, onPick: v => { fcFilter[key] = v; fcPaintList(); } });
   const seg = el("div", { class: "seg", role: "group", "aria-label": "강제/권고" });
   for (const [v, t] of [["", "전체"], ["enforced", "강제"], ["advisory", "권고"]]) {
     const b = el("button", { type: "button", class: fcFilter.strength === v ? "on" : "", text: t });

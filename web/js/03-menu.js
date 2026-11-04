@@ -58,7 +58,7 @@ function showMenu(anchor, items, { value, onPick, sheet }) {
     const up = below < 220 && above > below;
     node.style.maxHeight = `${Math.min(400, up ? above : below)}px`;
     const w = node.offsetWidth, h = node.offsetHeight;
-    let left = r.left;
+    let left = Math.max(8, r.left);
     if (left + w > vw - 8) left = Math.max(8, r.right - w);
     node.style.left = `${left}px`;
     node.style.top = `${Math.max(8, up ? r.top - h - 4 : r.bottom + 4)}px`;
@@ -94,11 +94,23 @@ function showMenu(anchor, items, { value, onPick, sheet }) {
   openMenu = { node, anchor, listeners: L };
   openMenu.ov = ovOpen(() => closeMenu(false));
 }
+// The one select control: a .sel button on the shared menu. b.value holds the choice, as on a native <select>, and the button shows the chosen item's label.
+// text (a string, or a function of the value) replaces that label when items is a function or the value is not in the list; frame dresses the shown text.
+function selectButton({ label, items, value, onPick, text, frame = t => t }) {
+  const val = el("span", { class: "val" });
+  const b = el("button", { type: "button", class: "sel", "aria-haspopup": "listbox", "aria-expanded": "false" }, val, icon("drop"));
+  const list = () => typeof items === "function" ? items() : items;
+  const paint = v => {
+    value = v; b.value = v ?? "";
+    const t = typeof text === "function" ? text(v) : text ?? (list().find(o => o.value === v) || {}).label ?? String(v ?? "");
+    val.textContent = frame(t); b.setAttribute("aria-label", `${label}: ${t}`);
+  };
+  b.addEventListener("click", () => showMenu(b, list(), { value, onPick: v => { paint(v); if (onPick) onPick(v); } }));
+  paint(value);
+  return b;
+}
 function selectField(label, text, items, value, onPick) {
-  const b = el("button", { type: "button", class: "sel", "aria-haspopup": "listbox", "aria-expanded": "false", "aria-label": `${label}: ${text}` },
-    el("span", { class: "val", text }), icon("drop"));
-  b.addEventListener("click", () => showMenu(b, typeof items === "function" ? items() : items, { value, onPick }));
-  return el("div", { class: "tf" }, el("span", { class: "lb", text: label }), b);
+  return el("div", { class: "tf" }, el("span", { class: "lb", text: label }), selectButton({ label, text, items, value, onPick }));
 }
 function textField(label, input) {
   return el("div", { class: "tf" }, el("label", { text: label, for: input.id }), input);
