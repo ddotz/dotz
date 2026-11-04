@@ -26,6 +26,7 @@ function ntPaint() {
   convSchedule();
   paintAttn();
   if (current === "monitoring") monSchedule();
+  if (current === "notices") nscSchedule();
 }
 
 // A watch's report carries its monitor's name as the title; a schedule whose text is a command line never shows it (30-monitoring.js monHuman / monTitle).
@@ -51,7 +52,6 @@ async function loadNotices() {
   ntPaint();
   homeSoon();
   syncInlineChoices();
-  ntSeenSoon();
   ntAlertMarks();
 }
 
@@ -107,7 +107,6 @@ function noticeLive(e) {
   ntSheetPaint();
   homeSoon();
   syncInlineChoices();
-  ntSeenSoon();
 }
 
 async function ntMarkRead(body) {
@@ -156,27 +155,6 @@ async function ntReach(t, at) {
     if (t === target) renderAll(true);
   }
 }
-// A notice whose source message is on screen in the open chat counts as seen: read here and on the hub (so the other devices agree).
-// What waits on the owner (ntNeeds) stays until it is answered or ignored.
-let ntSeenT = 0;
-function ntSeenSoon() { clearTimeout(ntSeenT); ntSeenT = setTimeout(ntSeen, 500); }
-function ntSeen() {
-  if (current !== "chat" || document.visibilityState !== "visible" || !NT.loaded || !timeline.clientHeight) return;
-  const pending = NT.items.filter(n => !n.read && !ntNeeds(n) && (n.src || n.open) === target && n.at);
-  if (!pending.length) return;
-  const a = timeline.getBoundingClientRect(), shown = new Set();
-  for (const m of tl.querySelectorAll("[data-ts]")) {
-    const r = m.getBoundingClientRect();
-    if (r.bottom > a.top && r.top < a.bottom) shown.add(m.dataset.ts);
-  }
-  const hit = pending.filter(n => shown.has(n.at));
-  if (!hit.length) return;
-  for (const n of hit) n.read = true;
-  NT.unread = Math.max(0, NT.unread - hit.length); ntPaint();
-  ntMarkRead({ ids: hit.map(n => n.id) });
-}
-timeline.addEventListener("scroll", ntSeenSoon, { passive: true });
-document.addEventListener("visibilitychange", ntSeenSoon);
 // The element that carries the highlight: the card or bubble inside the message when there is one (so the glow follows its own rounded shape),
 // else the message itself, drawn as a bar + tint ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
 function ntHlHost(node) {
@@ -199,7 +177,6 @@ let ntJumpSeq = 0;
 async function ntJump(n, quiet = false) {
   const seq = ++ntJumpSeq, at = n.at || n.updated || n.ts, t = ntGo(n.msg || n.src || n.open || "main");
   if (!t) return;
-  if (t === "alert" && BELL.tab !== "all") bellTab("all");   // the message is in the timeline, which the other 알림 tabs hide
   chatUnpin();
   CV.jump = at;   // set after ntGo (a new opening resets it): the opening's first draw lands on this message, not on the "새 메시지" divider (chatOpen)
   try {
@@ -222,6 +199,7 @@ const ntUnder = n => { if (!n.pc && validTarget(n.src || n.open || "")) ntJump(n
 // A tapped push: open its notice, or its conversation at the message it is about (loaded first when the stream missed it).
 async function pushOpen(hash, at, nid) {
   const p = parseHash(hash), t = p.t || MAIN;
+  if (!nid && p.view === "chat" && t === "alert") { go("notices"); return; }   // an alert push without a notice: the 알림 screen, not the record conversation
   if (!at || p.view !== "chat") { go(p.view, p.t); return; }
   if (!NT.loaded) await loadNotices();   // a cold start: the push was sent before the list reached this page
   noticeOpen(ntById(nid) || ntMsgFor(t, at) || { kind: "message", tone: "", src: t, open: t, at });
@@ -329,35 +307,8 @@ timeline.addEventListener("click", ev => {
   noticeOpen(ntOfEvent(e), true);
 }, true);
 
-/* ---- the 알림 conversation: 모두 읽음 in its head (31-conversations.js convPaintHead), 지우기 on each alert ---- */
-// 모두 읽음 reads the conversation to its newest message and every 알림 notice that needs no answer (a question keeps waiting).
-const ntAlertUnread = () => NT.items.filter(n => n.id && !n.read && !ntNeeds(n) && ntTabOf(n) === "alert");
-const ntAlertReadAll = btn => busy(btn, async () => {
-  const ids = ntAlertUnread().map(n => n.id), last = CONV.get("alert");
-  const jobs = [];
-  if (ids.length) jobs.push(api("/api/notices/read", "POST", { ids }));
-  if (last && last.ts) { READ.alert = last.ts; ts("alert").unread = 0; jobs.push(api("/api/read", "POST", { target: "alert", ts: last.ts })); }
-  for (const n of NT.items) if (ids.includes(n.id)) n.read = true;
-  renderBars(); convSig = ""; convHeadSig = ""; ntPaint();
-  try { await Promise.all(jobs); } finally { loadNotices(); convLoad(); }
-  toast("알림을 모두 읽음으로 표시했어요");
-});
-// 지우기 (x) on an alert in that conversation dismisses its notice on the hub (POST /api/notices/<id>/dismiss): gone from the bell, 홈 and every
-// count, and hidden in the conversation on every page (NT.gone). A question that waits on the owner has no x (the hub refuses it).
-async function ntAlertDismiss(n, row) {
-  const left = motionOut(row).then(a => { row.hidden = true; if (a && a.cancel) a.cancel(); });   // the row fades out (150ms), then stays hidden
-  try {
-    const r = await api(`/api/notices/${enc(n.id)}/dismiss`, "POST", {});
-    if (!r || !r.ok) throw new Error(r && r.held ? "답이 필요한 알림은 지울 수 없어요" : "지우지 못했어요");
-    if (n.at) NT.gone.add(n.at);
-    NT.items = NT.items.filter(x => x.id !== n.id);
-    NT.mut++;
-    if (typeof r.unread === "number") NT.unread = r.unread;
-    ntPaint(); homeSoon();
-    toast("알림을 지웠어요");
-  } catch (e) { await left; row.hidden = false; toast(e.message || "지우지 못했어요", true); }
-}
-// A notification that arrives while this conversation is open eases in. The first draw, a redraw and older messages loaded above move nothing:
+/* ---- the 알림 conversation is the record behind the 알림 screen (31-notices-screen.js): a message of it is reached from a row and has no reading or deleting of its own ---- */
+// A notification that arrives while this conversation is open eases in, and a message whose notice was dismissed stays hidden. The first draw, a redraw and older messages loaded above move nothing:
 // only a row that was not there and is newer than the newest one drawn before is new.
 const NT_SEEN = new Set();
 let ntNewest = "";
@@ -368,10 +319,6 @@ function ntAlertMarks() {
   for (const row of rows) {
     if (fresh.has(row.dataset.ts) && row.dataset.ts > was && was) motionIn(row, "rise");
     if (NT.gone.has(row.dataset.ts)) { row.hidden = true; continue; }
-    if (row.querySelector(".al-x")) continue;
-    const e = ts("alert").msgs.find(x => x.ts === row.dataset.ts), n = e && ntOfEvent(e);
-    if (!n || !n.id || ntNeeds(n) || ntOpenDec(n)) continue;
-    row.append(el("button", { class: "ib al-x", type: "button", "aria-label": "이 알림 지우기", title: "지우기", onclick: ev => { ev.stopPropagation(); ntAlertDismiss(n, row); } }, icon("close")));
   }
 }
 new MutationObserver(ntAlertMarks).observe(tl, { childList: true });
@@ -488,6 +435,8 @@ const ntLinkedDec = n => {
     || (n.kind === "message" && n.key === `msg:${t}` ? ntDecisions().find(d => d.decision.to === t) : null) || null;
 };
 const ntById = id => NT.items.find(x => String(x.id) === String(id));
+// A watch report that folded earlier ones into its repeats (hub/notices.ts) is its own line again for 모니터링's report lists and counts: nothing it recorded is lost.
+const ntWithRepeats = list => list.flatMap(n => n.kind === "watch" && n.repeats && n.repeats.length ? [n, ...n.repeats.map((r, i) => ({ ...n, id: `${n.id}~${i}`, text: r.text, ts: r.at, updated: r.at, repeats: undefined, read: true }))] : [n]);
 const ntDecisions = () => NT.items.filter(ntOpenDec).sort((a, b) => ntAt(b) - ntAt(a));
 // Loose [ask] notices: waiting on the owner, but not carrying (or linked to) an open decision, so ntDecisions() never lists them.
 const ntLooseAsks = () => NT.items.filter(n => ntNeeds(n) && !ntOpenDec(n) && !ntLinkedDec(n)).sort((a, b) => ntAt(b) - ntAt(a));

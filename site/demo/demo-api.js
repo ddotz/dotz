@@ -76,7 +76,8 @@
   const stamp = t => new Date(Math.max(Date.now(), lastTs(t) + 1)).toISOString();
   const conv = t => F.conversations.find(c => c.target === t);
   const plain = s => String(s || "").replace(/^\s*\[[a-z]+\]\s*/i, "").replace(/[#*`>[\]]/g, "").replace(/\s+/g, " ").trim().slice(0, 120);
-  const unread = () => F.notices.items.filter(n => !n.read).length;
+  // The web counts the list: items with an id whose class is not log / conv, unread and not dismissed.
+  const unread = () => F.notices.items.filter(n => n.id != null && n.cls !== "log" && n.cls !== "conv" && !n.read && !n.dismissed).length;
   const later = (ms, fn) => setTimeout(fn, ms);
 
   // 댓글 (유튜브 · 인스타그램 · 웹사이트)와 인스타그램 DM: the shapes of GET /api/comments/{sources,threads,thread/<source>/<thread>} and /api/ig-dm (hub/comments/engine.ts
@@ -809,7 +810,7 @@
     if (/^\/api\/drafts\/[^/]+\/recipients$/.test(p)) return json({ to: ["한서윤 <seoyun.han@example.com>"], cc: [], mode: "reply", editable: true, reply: true });
     if (/^\/api\/drafts\/[^/]+\/files$/.test(p)) return json({ files: [], canAttach: true, library: false, editable: true });
     if (/^\/api\/onboarding\/[^/]+$/.test(p)) return json(onboard(p.split("/")[3]));
-    if (p === "/api/notices") return json({ ...F.notices, unread: unread() });
+    if (p === "/api/notices") return json({ ...F.notices, items: F.notices.items.filter(n => !n.dismissed), unread: unread() });
     if (p === "/api/custom") return json({ dir: "", cards: [], projects: [...F.projects, BUILTIN], routines: [], links: [] });
     if (p === "/api/custom/project") return json(u.searchParams.get("key") === BUILTIN.key ? BUILTIN_DETAIL : F.projects.find(x => x.key === u.searchParams.get("key")) || {});
     if (p === "/api/activity") return json({ items: [], more: false, history: false });
@@ -867,7 +868,7 @@
     if (p === "/api/message") return json(answer(body));
     if (p === "/api/command") return json({ output: "데모에서는 명령을 실행하지 않아요." });
     if (p === "/api/read") { const c = conv(body.target); if (c) c.unread = 0; return json({}); }
-    if (p === "/api/notices/read") { for (const n of F.notices.items) if (!body.ids || body.ids.includes(String(n.id))) n.read = true; return json({ unread: unread() }); }
+    if (p === "/api/notices/read") { for (const n of F.notices.items) if (!body.ids || body.ids.includes(String(n.id))) n.read = true; F.state.notices_unread = unread(); return json({ unread: unread() }); }
     if (p === "/api/notices/reopen") return json({ unread: unread() });
     if (/^\/api\/mail\/[^/]+\/action$/.test(p)) { const m = mail(p.split("/")[3]); if (m && body.action === "read") m.read = true; if (m && body.action === "unread") m.read = false; return json({ ok: true, synced: true }); }
     if (p === "/api/mail/actions") return json({ ok: true, results: (body.keys || []).map(key => ({ key, ok: true, synced: true })) });
@@ -877,7 +878,7 @@
       if (pj) for (const k of ["title", "purpose", "goal", "milestones"]) if (body[k] !== undefined) pj.record[k] = body[k];
       return json({ ok: true });
     }
-    const nr = /^\/api\/notices\/([^/]+)\/(answer|ignore|unignore|dismiss)$/.exec(p);
+    const nr = /^\/api\/notices\/([^/]+)\/(answer|ignore|unignore|dismiss|undismiss|handled)$/.exec(p);
     if (nr) {
       const n = F.notices.items.find(x => String(x.id) === decodeURIComponent(nr[1]));
       if (!n) return fail("이 알림은 이미 처리됐어요");
@@ -887,8 +888,16 @@
         answer({ text: `${opt.n}) ${opt.label}${body.note ? ` - ${body.note}` : ""}`, picks: [{ q: n.title, n: opt.n, label: opt.label, ...(body.note ? { note: body.note } : {}) }] }, n.decision.to);
       } else if (nr[2] === "ignore") { n.ignored = new Date().toISOString(); if (n.decision) n.decision.state = "ignored"; }
       else if (nr[2] === "unignore") { delete n.ignored; if (n.decision) n.decision.state = "open"; }
-      else { F.notices.items = F.notices.items.filter(x => x !== n); }
+      else if (nr[2] === "handled") {
+        // ✕ on a failure that waits (waits "fail"): read, closed with a time, and out of 처리할 것; anything else is refused like the hub.
+        if (n.waits !== "fail") return json({ error: "처리할 것이 아니에요" }, 409);
+        n.read = true; n.handled = new Date().toISOString(); delete n.waits;
+      }
+      else if (nr[2] === "dismiss") { n.dismissed = new Date().toISOString(); }
+      else if (nr[2] === "undismiss") { delete n.dismissed; }   // the toast's 실행 취소
       F.state.notices_unread = unread();
+      if (nr[2] === "dismiss") emit({ kind: "notice", item: { ...n } });
+      else if (nr[2] === "handled" || nr[2] === "undismiss") emit({ kind: "notice", item: n });
       return json({ ok: true, item: nr[2] === "dismiss" ? undefined : n, unread: unread() });
     }
     if (isOutward(body)) return fail(NOTE);

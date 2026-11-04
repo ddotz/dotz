@@ -75,7 +75,7 @@ const ICONS = {
   side: "M14 6.4 10.5 12l3.5 5.6",
   pick: "M6 3l13 8-5.6 1.6L10 19zM13 13l4 6",
 };
-const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", projects: "projects", project: "projects", lanes: "lanes", monitoring: "activity", apps: "apps", harness: "harness", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context", discord: "discord", jandi: "chat", slack: "chat", telegram: "chat", messengers: "chat", provider: "key", devices: "key", webaccess: "open" };
+const VIEW_ICON = { home: "home", chat: "chat", activity: "activity", projects: "projects", project: "projects", lanes: "lanes", monitoring: "activity", apps: "apps", notices: "bell", harness: "harness", settings: "settings", models: "model", providers: "key", usage: "usage", context: "context", discord: "discord", jandi: "chat", slack: "chat", telegram: "chat", messengers: "chat", provider: "key", devices: "key", webaccess: "open" };
 const icon = (n, cls = "") => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("class", `ic ${cls}`.trim()); s.setAttribute("aria-hidden", "true"); const p = document.createElementNS("http://www.w3.org/2000/svg", "path"); p.setAttribute("d", ICONS[n]); s.append(p); return s; };
 
 /* ---------- formatting ---------- */

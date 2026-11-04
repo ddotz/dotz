@@ -106,6 +106,10 @@ const routeAlias = (name, tgt) => (name === "lanes" ? ["chat", "list"] : name ==
 function go(name, tgt) {
   closeMenu(false);
   [name, tgt] = routeAlias(name, tgt);
+  const viaRow = NSC.arm > Date.now();
+  NSC.arm = 0;
+  if (name === "notices") NSC.ret = false;
+  else { NSC.ret = viaRow; if (!viaRow) NSC.keep = false; }
   // A mail (or any "monitoring/c:<target>") opens inside 모니터링: the chat view is drawn, the tab, the list and the address stay 모니터링's.
   const inChat = name === "chat" || name === "activity";
   let mc = false;
@@ -148,11 +152,12 @@ function go(name, tgt) {
   convChrome();
   $("#views").scrollTop = 0; $("#appbar").classList.remove("scrolled");
   if (name === "harness") loadHarness(); else closeHSheet();
-  if (tv) enterTarget();
+  if (tv) { enterTarget(); if (!(ts(target).hLoaded && ts(target).aLoaded) && !ts(target).loading) loadTarget(target, hasCached(ts(target))); }
   if (name === "home") { renderHome(); loadHomeData(); }
   if (name === "projects" || pp) { renderProjects(); prjLoad(); }
   if (name === "monitoring" || mc) { renderMonitoring(); loadMonitors(); if (!noticesFresh()) loadNotices(); loadIntegrations(); }
   if (name === "project") pmOpen(tgt);
+  if (name === "notices") nscOpen();
   if (name === "settings") { loadUpdate(); renderSettings(); loadMessengerIndex(); loadProviderData().then(() => current === "settings" && renderSettings(), () => {}); loadRuntimes(); }
   if (name === "models") { renderModels(); loadModels(); loadProviderData().then(() => current === "models" && renderModels(), () => {}); }
   if (name === "providers") loadProviders();
