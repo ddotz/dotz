@@ -235,7 +235,7 @@ describe("카카오톡 at desktop width (1280x800)", async () => {
 		await run(v, `document.querySelector('#kk-add [data-k="close"]').click()`);
 		await waitFor(v, `!document.querySelector("#kk-add")`);
 		await openRoom(v);
-		expect(await q(v, `return [document.querySelector('#kk-auto [data-k="auto"]').getAttribute("aria-checked"), document.querySelector("#kk-auto .cv-p").textContent.includes("토큰")]`)).toEqual(["false", true]);
+		expect(await q(v, `return [document.querySelector('#kk-auto [data-k="auto"]').getAttribute("aria-checked")]`)).toEqual(["false"]);
 		await run(v, `document.querySelector('#kk-auto [data-k="auto"]').click()`);
 		expect((await expectReq(isReq("PUT", "/api/kakao/rooms/100"))).body).toEqual({ autoDraft: true });
 		await waitFor(v, `document.querySelector('#kk-auto [data-k="auto"]').getAttribute("aria-checked") === "true"`);

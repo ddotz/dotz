@@ -24,7 +24,7 @@ const kkBig = s => { try { return BigInt(s); } catch { return 0n; } };
 const kkGt = (a, b) => kkBig(a) > kkBig(b);
 const kkDay = t => { const d = new Date(t); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
 const kkTime = t => new Date(t).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
-const kkDate = t => new Date(t).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long" });
+const kkDate = t => { const now = new Date(), y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1); return kkDay(t) === kkDay(now) ? "오늘" : kkDay(t) === kkDay(y) ? "어제" : new Date(t).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric", weekday: "long" }); };
 function kkListTime(t) {
   if (!t) return "";
   const d = new Date(t), now = new Date(), y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
@@ -450,7 +450,7 @@ const kkForm = el("form", { class: "sendrow kk-send", id: "kk-form", onsubmit: e
 const kkFoot = el("div", { class: "composer kk-composer", id: "kk-foot" }, kkEditBar, kkForm, kkDrafts);
 // 자동 초안 of the open room: the one two-value switch of this screen (the watch toggles are eyes). Built once; kkPaintAuto only flips it.
 const kkAutoSw = el("button", { class: "kk-sw", type: "button", role: "switch", "aria-checked": "false", "aria-label": "자동 초안", "data-k": "auto", onclick: () => { const r = kkRoom(KK.open); if (r) kkSetRoom(r, { autoDraft: !r.autoDraft }); } }, el("span", { class: "kk-knob" }));
-const kkAuto = el("div", { class: "kk-auto", id: "kk-auto", hidden: true }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "자동 초안" }), el("span", { class: "cv-p", text: "새 메시지에 답장 초안을 만들어요 · 토큰이 들어요" })), kkAutoSw);
+const kkAuto = el("div", { class: "kk-auto", id: "kk-auto", hidden: true }, el("span", { class: "cv-b" }, el("span", { class: "cv-n", text: "자동 초안" }), el("span", { class: "cv-p", text: "답할 거리가 있으면 초안을 만들어요" })), kkAutoSw);
 function kkPaintAuto() {
   const r = KK.open ? kkRoom(KK.open) : null, show = !!r && !!r.watched;
   kkAuto.hidden = !show;
@@ -547,7 +547,7 @@ const kkSearch = el("input", { class: "kk-q", id: "kk-q", type: "search", placeh
 kkSearch.addEventListener("input", () => { KK.q = kkSearch.value; const pl = $("#kk-pl"); if (pl) clear(pl).append(...kkPickRows()); });
 // The watch toggle is an eye on a grey surface: colored while the room is watched, grey while it is not. Never a switch (the one switch is the room's 자동 초안 card).
 const kkEye = (on, label, key, change) => el("button", { class: `kk-eye${on ? " on" : ""}`, type: "button", "aria-pressed": on ? "true" : "false", "aria-label": label, title: label, "data-k": key, onclick: ev => { ev.stopPropagation(); change(!on); } }, icon("eye"));
-const kkLine1 = (r, name) => el("span", { class: "kk-l1" }, name, kkTag(r) ? el("span", { class: "kk-grp", text: kkTag(r) }) : null);
+const kkLine1 = (r, name, time) => el("span", { class: "kk-l1" }, name, kkTag(r) ? el("span", { class: "kk-grp", text: kkTag(r) }) : null, time || null);
 // The 대화방 추가 list: every room, the eye adds it to the watched ones or takes it off again; the name opens the room (read-only while it is not watched).
 const kkPickRow = r => el("div", { class: `kk-pr${KK.open === r.chatId ? " on" : ""}`, "data-chat": r.chatId },
   kkAvatar(r.name),
@@ -585,13 +585,11 @@ function kkRow(r) {
   return el("div", { class: "kk-rw" },
     el("button", { class: `cv-row pv kk-row${r.unread ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-chat": r.chatId, "aria-current": on ? "true" : null, onclick: () => kkOpen(r.chatId) },
       kkAvatar(r.name),
-      el("span", { class: "cv-b" }, kkLine1(r, el("span", { class: "cv-n", title: r.name, text: r.name })), sub ? el("span", { class: "cv-p", text: sub }) : null),
-      el("span", { class: "cv-m" },
-        r.lastAt ? el("span", { class: "kk-t", text: kkListTime(r.lastAt) }) : null,
-        // 미답장 and the unread count share the second line, so a row never grows a third one (owner 2026-10-28).
-        r.unread || r.unreplied ? el("span", { class: "kk-rmeta" },
-          r.unreplied ? unrepPill() : null,
-          r.unread ? el("span", { class: "nb", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null)),
+      el("span", { class: "cv-b" }, kkLine1(r, el("span", { class: "cv-n", title: r.name, text: r.name }), r.lastAt ? el("span", { class: "kk-t", text: kkListTime(r.lastAt) }) : null), sub ? el("span", { class: "cv-p", text: sub }) : null),
+      // The prototype's row end, on one line: 미답장, the unread count, then the eye.
+      r.unread || r.unreplied ? el("span", { class: "cv-m" }, el("span", { class: "kk-rmeta" },
+        r.unreplied ? unrepPill() : null,
+        r.unread ? el("span", { class: "nb warn", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null)) : null),
     kkEye(true, `${r.name} 지켜보기 끄기`, "watch", () => kkUnwatch(r)));
 }
 function kkPaintRooms() {
@@ -673,7 +671,7 @@ function kkMsgNode(m, first, last) {
   if (m.fromMe) return el("div", { class: `kk-m me${first ? " first" : ""}`, "data-log": m.logId }, el("div", { class: "kk-line" }, meta, bub), previews);
   return el("div", { class: `kk-m in${first ? " first" : ""}`, "data-log": m.logId, "data-author": m.authorId || null },
     group ? (first ? kkAvatar(m.sender) : el("span", { class: "kk-av sp", "aria-hidden": "true" })) : null,
-    el("div", { class: "kk-mb" }, group && first ? el("div", { class: "kk-name", text: m.sender || "알 수 없음" }) : null, el("div", { class: "kk-line" }, bub, meta), previews));
+    el("div", { class: "kk-mb" }, first ? el("div", { class: "kk-name", text: m.sender || "알 수 없음" }) : null, el("div", { class: "kk-line" }, bub, meta), previews));
 }
 // Sends of this room that are not (yet) a message of the room: sending, failed, or just sent and not read back from the database yet.
 function kkPending() {

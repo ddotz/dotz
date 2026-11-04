@@ -172,11 +172,11 @@
 
   // 카카오톡: the room list (GET /api/kakao/rooms) and one room's chat (GET /api/kakao/chat/<id>), epoch milliseconds like the real hub.
   const kakaoRooms = [
-    { chatId: "r1", name: "정우", kind: "direct", watched: true, autoDraft: true, unread: 2, unreplied: true, lastAt: now - 6 * 60_000 },
-    { chatId: "r2", name: "캠핑 모임", kind: "group", watched: true, autoDraft: false, unread: 14, lastAt: now - 38 * 60_000 },
-    { chatId: "r3", name: "엄마", kind: "direct", watched: true, autoDraft: false, unread: 0, lastAt: now - 26 * 3600_000 },
-    { chatId: "r4", name: "동네 이웃", kind: "group", watched: false, autoDraft: false, unread: 0, lastAt: now - 3 * 86400_000 },
-    { chatId: "r5", name: "나와의 채팅", kind: "self", watched: false, autoDraft: false, unread: 0, lastAt: now - 5 * 86400_000 },
+    { chatId: "r1", name: "정우", kind: "direct", hint: "그리고 장작은 어디서 살까?", watched: true, autoDraft: true, unread: 2, unreplied: true, lastAt: now - 6 * 60_000 },
+    { chatId: "r2", name: "캠핑 모임", kind: "group", hint: "토요일 날씨 괜찮대요", watched: true, autoDraft: false, unread: 14, lastAt: now - 38 * 60_000 },
+    { chatId: "r3", name: "엄마", kind: "direct", hint: "밥은 먹었니?", watched: true, autoDraft: false, unread: 0, lastAt: now - 26 * 3600_000 },
+    { chatId: "r4", name: "동네 이웃", kind: "group", hint: "분리수거 요일 바뀌었어요", watched: false, autoDraft: false, unread: 0, lastAt: now - 3 * 86400_000 },
+    { chatId: "r5", name: "나와의 채팅", kind: "self", hint: "메모", watched: false, autoDraft: false, unread: 0, lastAt: now - 5 * 86400_000 },
   ];
   const kakaoChat = {
     r1: { room: { chatId: "r1", name: "정우", kind: "direct", group: false, watched: true }, read: null, kakaoUnread: 2, sends: [],
