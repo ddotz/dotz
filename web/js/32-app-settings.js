@@ -101,6 +101,12 @@ function asStatRow(app, m, i) {
     i && i.dot !== "ok" ? el("button", { class: "btn tonal inrow", type: "button", "data-k": `retry:${i.id}`, onclick: () => asRetry(app, i.id, i.down) }, i.down ? "다시 연결" : "다시 시도") : null,
     !i && st && st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
 }
+// 지켜볼 글 of a comment app: how many it follows, and the picker (30-monitoring-comments.js cmPickOpen).
+function asPickRow(app) {
+  const srcs = cmSrcOf(app);
+  return srcs.length ? el("div", { class: "as-row", "data-setting": "watch-posts" }, el("span", { class: "as-b" }, el("span", { class: "as-n", text: "지켜볼 글" })),
+    el("span", { class: "as-v", text: cmWatchWord(srcs) }), el("button", { class: "btn tonal inrow", type: "button", "data-k": "pick-open", onclick: () => cmPickOpen(app) }, "고르기")) : null;
+}
 function asFeatRow(app, f) {
   return el("div", { class: "as-row as-feat", "data-feature": f.id },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.name }), el("span", { class: "as-h", text: f.status })),
@@ -449,7 +455,7 @@ function asPaint() {
   const feat = asOwn(app) ? null : AS.feat[app] || null;
   // The watch status rows and the connection row are drawn from the monitor and integration data, so their changes repaint too.
   const statSig = asOwn(app) ? [asMon(app)] : [monStatMons(app), (({ it }) => it ? [it.state, it.since, it.hint] : null)(asConnItem(app))];
-  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], feat, statSig, AR.edit[app] ? AR.edit[app].id || "new" : null]);
+  const sig = JSON.stringify([app, fields.map(f => f.value), AS.busy[app], !!AS.rm[app], feat, statSig, AR.edit[app] ? AR.edit[app].id || "new" : null, cmSrcOf(app).length && cmWatchWord(cmSrcOf(app))]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   // Within a section: the switch that turns the feature on, then the feature rows, then the other values, then the lists, then what waits or runs.
@@ -470,6 +476,8 @@ function asPaint() {
   const byWatch = new Map(statMons.map(m => [m.watch || m.name, m])), drawn = new Set();
   for (const i of internals) { const m = byWatch.get(i.id); if (m) drawn.add(m); put("watch", 5, asStatRow(app, m || null, i)); }
   for (const m of statMons) if (!drawn.has(m)) put("watch", 5, asStatRow(app, m, null));
+  const pick = asPickRow(app);
+  if (pick) put("watch", 0, pick);
   const mem = fields.filter(f => f.memory);
   if (mem.length) put("advanced", 6, el("div", { class: "as-row as-mem", "data-setting": "memory" },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: "기억해 둔 것" }),
