@@ -59,8 +59,6 @@
   #v-chat.mail-thr .chatbox { display: flex; gap: var(--sp-4); align-items: stretch; }
   #v-chat.mail-thr .chatbox > .timeline { flex: 1 1 auto; min-width: 0; }
   #v-chat.mail-thr #mail-thread { display: flex; flex-direction: column; flex: 0 0 280px; min-height: 0; margin: 0 0 var(--sp-4); padding: var(--sp-2) var(--sp-15) var(--sp-2) var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
-  /* The transcript's top fade (.chatbox::before, 03-base.css) spans the whole box; the panel beside it stays clear of it (owner 2026-10-28). */
-  #v-chat.mail-thr #mail-thread { position: relative; z-index: 2; }
   #mail-thread[hidden] { display: none; }
   #mail-thread > .mth-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 }
