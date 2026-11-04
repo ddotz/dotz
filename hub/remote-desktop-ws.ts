@@ -50,7 +50,7 @@ export class Bridge {
 				},
 				data: (_s, chunk) => this.onData(chunk.slice()),
 				drain: () => this.flush(),
-				close: () => this.fail(1011, "closed"),
+				close: () => void (this.sock && this.fail(1011, "closed")), // gone unasked; our own terminate() clears sock first
 				error: () => this.fail(1011, "error"),
 			},
 		}).catch(() => this.fail(1011, "connect"));
@@ -80,8 +80,9 @@ export class Bridge {
 		this.sock?.resume();
 	}
 	close(): void {
-		this.sock?.terminate();
+		const s = this.sock;
 		this.sock = undefined;
+		s?.terminate();
 	}
 	private fail(code: number, why: string): void {
 		this.close();
