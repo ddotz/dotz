@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
-import { fakeHub, idleState, json, run, waitFor, type View } from "./test-web.ts";
+import { deskPage } from "./remote-desktop.ts";
+import { ev, fakeHub, idleState, json, run, waitFor, type View } from "./test-web.ts";
 
 // The web side of the remote desktop (web/js/37-remote-desktop.js, features/remote-desktop/DESIGN.md Opening in Chrome and Web) in a headless
 // page against the real app bundle. Only S.desk, the three /api/desk routes and the web access mode are faked; navigator.userAgentData and
@@ -11,10 +12,24 @@ let openReply: Record<string, unknown> = { action: "here" };
 let webAccess: Record<string, unknown> = { mode: "tailscale", hostname: "", team: "", aud: "", tunnel: { state: "off" }, cloudflared_found: true };
 const status = () => ({ available: true, allow_public: false, rebuilding: false, ...desk });
 
+// The parts of voxl's page the viewer meets: its viewport tag, a surface sized like its layout() for a 1600x1000 desktop, and its way of
+// listening, on the surface. `?touch` makes the page a touch-first device.
+const VOXL_PAGE = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<script>if (location.search.includes("touch")) matchMedia = () => ({ matches: true });</script>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}body{display:flex;align-items:center;justify-content:center}#surface{position:relative;touch-action:none}</style></head>
+<body><div id="surface"></div><div id="tools"><button id="fs-btn">x</button></div><script>
+const s = document.getElementById("surface"), k = Math.min(innerWidth / 1600, innerHeight / 1000);
+s.style.width = 1600 * k + "px"; s.style.height = 1000 * k + "px";
+window.got = [];
+for (const t of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) s.addEventListener(t, e => got.push(t.slice(7) + e.pointerId));
+</script></body></html>`;
+
 const hub = fakeHub({
 	state: () => idleState(desk ? { desk } : {}),
 	api: async (req, url) => {
 		const p = url.pathname;
+		if (p === "/desk/") return new Response(deskPage(VOXL_PAGE), { headers: { "content-type": "text/html; charset=utf-8" } });
+		if (p === "/desk/viewer.js") return new Response(Bun.file(new URL("../features/remote-desktop/viewer.js", import.meta.url).pathname));
 		if (p === "/api/web-access") return json(webAccess);
 		if (!p.startsWith("/api/desk/") && p !== "/api/command") return undefined;
 		const body = req.method === "GET" ? undefined : await req.json().catch(() => undefined);
@@ -87,6 +102,13 @@ const click = (v: View) => parse<Outcome>(v, `(async () => {
 const sentOpen = () => calls.filter(c => c.path === "/api/desk/open").map(c => c.body);
 
 describe("openScreen", () => {
+	test("another computer's one-time ticket goes into the tab, so the screen opens at once", async () => {
+		openReply = { action: "here", go: "a".repeat(64) };
+		const v = await page(null, ON);
+		const r = await parse<Outcome>(v, `(async () => { await openScreen({ self: false, url: "https://mini.example", name: "맥미니" }); return JSON.stringify({ opens: window.__opens.map(t => ({ href: t.href })) }); })()`);
+		expect(r.opens).toEqual([{ href: `https://mini.example/desk/?go=${"a".repeat(64)}` }] as Outcome["opens"]);
+	});
+
 	test("real Chrome waits for the answer, then opens /desk/ in a new tab", async () => {
 		const v = await page(chromeUA, ON);
 		const r = await click(v);
@@ -345,5 +367,106 @@ describe("settings section", () => {
 		expect(calls.filter(c => c.path === "/api/desk/settings").map(c => c.body)).toEqual([{ on: false }]);
 		expect(await rows(v)).toEqual(["open", "on"]);
 		expect(await parse(v, `JSON.stringify(S.desk.on)`)).toBe(false);
+	});
+});
+
+describe("the viewer in voxl's page", () => {
+	type Rect = { left: number; top: number; right: number; bottom: number; width: number; height: number };
+	const rect = (v: View) => ev<Rect>(v, `document.getElementById("surface").getBoundingClientRect()`);
+	const viewer = async (width: number, height: number, query = "") => {
+		const v = await hub.view({ width, height }, `/desk/${query}`);
+		await waitFor(v, `document.getElementById("surface").style.transform`);
+		await run(v, `window.touch = (type, id, x, y, on) => (on || document.getElementById("surface")).dispatchEvent(new PointerEvent("pointer" + type, { pointerId: id, pointerType: "touch", clientX: x, clientY: y, bubbles: true, cancelable: true }));`);
+		return v;
+	};
+	const touch = (v: View, ...moves: [string, number, number, number][]) => run(v, moves.map(m => `touch(${m.map(x => JSON.stringify(x)).join(",")});`).join(""));
+	const got = (v: View) => ev<string[]>(v, "got");
+
+	test("the page allows zoom and reaches under the notch", async () => {
+		const v = await viewer(412, 915);
+		expect(await v.evaluate(`document.querySelector("meta[name=viewport]").content`)).toBe("width=device-width,initial-scale=1,viewport-fit=cover");
+	});
+
+	test("the one-time ticket leaves the address bar", async () => {
+		const v = await viewer(412, 915, "?go=abc&touch=1");
+		expect(await v.evaluate("location.search")).toBe("?touch=1");
+	});
+
+	test.each([[412, 915], [915, 412]])("a touch screen of %ix%i is filled, nothing black, and the shape stays", async (w, h) => {
+		const v = await viewer(w, h, "?touch");
+		const r = await rect(v);
+		expect(r.left).toBeLessThanOrEqual(0.1);
+		expect(r.top).toBeLessThanOrEqual(0.1);
+		expect(r.right).toBeGreaterThanOrEqual(w - 0.1);
+		expect(r.bottom).toBeGreaterThanOrEqual(h - 0.1);
+		expect(r.width / r.height).toBeCloseTo(1.6, 1);
+		expect(r.left + r.right).toBeCloseTo(w, 0);
+		expect(r.top + r.bottom).toBeCloseTo(h, 0);
+	});
+
+	test("a mouse gets the whole screen: it has no way to pan", async () => {
+		const v = await viewer(1280, 700);
+		const r = await rect(v);
+		expect(r.height).toBeCloseTo(700, 0);
+		expect(r.left).toBeCloseTo((1280 - r.width) / 2, 0);
+		expect(r.top).toBeCloseTo(0, 0);
+	});
+
+	test("two fingers zoom and pan the view; voxl sees the first finger cancelled and nothing else", async () => {
+		const v = await viewer(412, 915, "?touch");
+		const was = await rect(v);
+		await touch(v, ["down", 1, 150, 400], ["down", 2, 250, 400], ["move", 1, 100, 400], ["move", 2, 300, 400]);
+		const big = await rect(v);
+		expect(big.width / was.width).toBeCloseTo(2, 1);
+		expect((200 - big.left) / big.width).toBeCloseTo((200 - was.left) / was.width, 1);
+		await touch(v, ["move", 1, 40, 400], ["move", 2, 240, 400]);
+		expect((await rect(v)).left).toBeCloseTo(big.left - 60, 0);
+		await touch(v, ["up", 1, 40, 400], ["up", 2, 240, 400]);
+		expect(await got(v)).toEqual(["down1", "cancel1"]);
+	});
+
+	test("a pinch out ends at the whole screen, and the edges stop the pan", async () => {
+		const v = await viewer(412, 915, "?touch");
+		await touch(v, ["down", 1, 100, 400], ["down", 2, 300, 400], ["move", 1, 195, 400], ["move", 2, 205, 400], ["move", 1, 199, 400], ["move", 2, 201, 400]);
+		const r = await rect(v);
+		expect(r.width).toBeCloseTo(412, 0);
+		expect(r.top).toBeCloseTo((915 - r.height) / 2, 0);
+		const f = await viewer(412, 915, "?touch");
+		await touch(f, ["down", 1, 100, 400], ["down", 2, 200, 400], ["move", 1, 9100, 400], ["move", 2, 9200, 400]);
+		expect((await rect(f)).left).toBe(0);
+	});
+
+	test("one finger stays voxl's, also right after a pinch", async () => {
+		const v = await viewer(412, 915, "?touch");
+		const before = await rect(v);
+		await touch(v, ["down", 1, 100, 400], ["move", 1, 120, 400], ["up", 1, 120, 400]);
+		expect(await got(v)).toEqual(["down1", "move1", "up1"]);
+		expect(await rect(v)).toEqual(before);
+		await touch(v, ["down", 1, 100, 400], ["down", 2, 200, 400], ["up", 1, 100, 400], ["up", 2, 200, 400], ["down", 3, 50, 50], ["up", 3, 50, 50]);
+		expect((await got(v)).slice(-4)).toEqual(["down1", "cancel1", "down3", "up3"]);
+	});
+
+	test("the toolbar is not a finger on the screen", async () => {
+		const v = await viewer(412, 915, "?touch");
+		await run(v, `window.b = document.getElementById("fs-btn"); touch("down", 1, 400, 900, b); touch("down", 2, 200, 400); touch("up", 1, 400, 900, b); touch("up", 2, 200, 400);`);
+		expect(await got(v)).toEqual(["down2", "up2"]);
+	});
+
+	test("the first touch asks for fullscreen once; a refusal is quiet", async () => {
+		const v = await viewer(412, 915, "?touch");
+		await run(v, `window.asked = 0; window.bad = 0; addEventListener("unhandledrejection", () => bad++); document.documentElement.requestFullscreen = () => (asked++, Promise.reject(new TypeError("refused")));`);
+		await run(v, `touch("up", 9, 400, 900, document.getElementById("fs-btn"));`);
+		expect(await ev(v, "asked")).toBe(0);
+		await touch(v, ["down", 1, 100, 400], ["up", 1, 100, 400], ["down", 1, 100, 400], ["up", 1, 100, 400]);
+		expect(await ev(v, "asked")).toBe(1);
+		await v.evaluate("new Promise(r => setTimeout(r))");
+		expect(await ev(v, "bad")).toBe(0);
+	});
+
+	test("a browser without fullscreen (iPhone Safari) carries on", async () => {
+		const v = await viewer(412, 915, "?touch");
+		await run(v, `document.documentElement.requestFullscreen = undefined;`);
+		await touch(v, ["down", 1, 100, 400], ["up", 1, 100, 400]);
+		expect(await got(v)).toEqual(["down1", "up1"]);
 	});
 });
