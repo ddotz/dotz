@@ -3,7 +3,7 @@
 #v-notices { display: flex; flex-direction: column; }
 .nsc-f { display: flex; flex-wrap: nowrap; gap: var(--sp-1); margin: var(--sp-1) 0 var(--sp-2); overflow-x: auto; scrollbar-width: none; }
 .nsc-f::-webkit-scrollbar { display: none; }
-.nsc-fb { flex: none; display: inline-flex; align-items: center; gap: 6px; height: var(--btn-h-sm); padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font: 500 13px/20px var(--font); }
+.nsc-fb { flex: none; display: inline-flex; align-items: center; gap: var(--sp-15); height: var(--btn-h-sm); padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font: 500 13px/20px var(--font); }
 .nsc-fb:not(.on):hover { background: var(--hover); }
 .nsc-fb.on { background: var(--fg); color: var(--bg); font-weight: 600; }
 .nsc-fb .n { color: var(--fg-3); font-variant-numeric: tabular-nums; }
@@ -20,7 +20,7 @@
 .nsc-r:hover { background: var(--card-hover); }
 .nsc-r:has(> .nsc-tx:active) { background: var(--row-sel); }
 .nsc-r .lead { align-items: center; width: 8px; height: var(--lh-row); }
-.nsc-tx { display: flex; flex-direction: column; gap: 2px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.nsc-tx { display: flex; flex-direction: column; gap: var(--sp-05); padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
 .nsc-tx::after { content: ""; position: absolute; inset: 0; }
 .nsc-tx:focus-visible { outline: none; }
 .nsc-tx:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: inherit; }
