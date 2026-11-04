@@ -33,6 +33,7 @@ bunx serve site
 Cloudflare Pages에 `site` 폴더를 그대로 올립니다(프로젝트 이름 `dotz`, 사용자 도메인 `ddotz.dev`).
 
 ```sh
+bun site/stamp-landing.ts   # 자산 주소에 내용 해시를 찍어, 다시 찾은 브라우저가 옛 CSS와 섞이지 않게 합니다
 bunx wrangler pages deploy site --project-name dotz --branch main
 ```
 
