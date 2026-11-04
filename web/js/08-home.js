@@ -59,7 +59,7 @@ function homeMenu(anchor, id, inChat) {
     const p = ((P && P.providers) || []).find(x => x.id === id.slice(5));
     if (p && p.can_login) add(isConnected(p) ? "다시 로그인" : "로그인", () => startLogin(p));
     if (p && (p.can_logout ?? p.removable)) add(p.auth === "api_key" ? "키 삭제" : "로그아웃", () => busy(null, () => logoutProvider(p)));
-    add("공급자 열기", () => go("provider", p ? p.id : ""));
+    add("계정 열기", () => go("accounts", p ? p.id : ""));
   } else if (id.startsWith("custom:")) {
     for (const a of window.dotzCustom ? dotzCustom.menuActs(id.slice(7)) : []) add(a.label, a.run);
   } else if (id.startsWith("ctx:")) {
@@ -72,7 +72,7 @@ function homeMenu(anchor, id, inChat) {
     add("컨텍스트 열기", () => go("context"));
   } else {
     add("사용량 열기", () => go("usage"));
-    add("공급자 열기", () => go("providers"));
+    add("계정 열기", () => go("accounts"));
   }
   const kind = homeKind(id);
   if (kind && !inChat && !homeGroups.has(kind)) add(`${HOME_KINDS[kind][0]} 한 카드로 묶기`, () => setHomeGroup(kind, true));
@@ -197,7 +197,7 @@ let homeBoard = null;
 // Every card is as tall as its content (07-board.js fit): only the width is sized, half of the 12 columns by default so the cards make the prototype's two-column grid.
 const HOME_FIT = { fit: true, min: { w: 6, h: 1 }, max: { w: 12, h: 1 } };
 // Kinds of home items that can be bundled into one card (title, view the card opens); the bundled kinds are kept per browser.
-const HOME_KINDS = { ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["공급자", "providers"] };
+const HOME_KINDS = { ctx: ["컨텍스트", "context"], limit: ["사용량", "usage"], prov: ["계정", "accounts"] };
 const HOME_GROUPS_KEY = "dotz-home-groups";
 const homeKind = id => { const k = id.split(":")[0]; return HOME_KINDS[k] ? k : null; };
 let homeGroups = (() => { const v = lsJson(HOME_GROUPS_KEY, null); return new Set(Array.isArray(v) ? v : ["ctx", "limit", "prov"]); })();
@@ -441,7 +441,7 @@ function renderHomeNow() {
   for (const p of (P && P.providers) || []) {
     if (!isConnected(p) && !needsAttention(p)) continue;
     const id = `prov:${p.id}`, bad = needsAttention(p), st = bad ? "로그인 필요" : p.auth === "api_key" ? "API 키" : "로그인됨";
-    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("provider", p.id),
+    E.prov.push({ id, tone: bad ? "warn" : "", open: () => go("accounts", p.id),
       card: () => [hcHead(p.name || p.id, { dot: bad ? "att" : "ok", note: st, menu: id }),
         p.account ? el("div", { class: "sup", text: p.account }) : null],
       row: () => [el("div", { class: "row" }, el("span", { class: `dot ${bad ? "att" : "ok"}` }), el("span", { class: "nm", text: p.name || p.id }), el("span", { class: "sup", text: bad ? st : p.account || st }))] });

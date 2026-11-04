@@ -103,7 +103,7 @@ export function writeOmoPin(account: string | undefined, now = Date.now()): PinR
 
 // Removes one subscription account (a dead or unwanted login) from OmO's store: its entry in `accounts`, and the pin when it was the
 // pinned one. Same lock and write as the pin; a copy of the file before the change is kept as auth.json.dotz-delete-<time> (0600).
-// The last account is refused: that is a sign-out (공급자 → 로그아웃), not an account removal.
+// The last account is refused: that is a sign-out (계정 → 로그아웃), not an account removal.
 export function deleteOmoAccount(name: string, now = Date.now()): "deleted" | "missing" | "last" {
 	const file = authFile();
 	if (!existsSync(file)) return "missing";

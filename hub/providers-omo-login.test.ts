@@ -47,7 +47,10 @@ for await (const line of console) {
 		const taken = new Set(s.accounts.map(x => x.name));
 		let n = 2;
 		while (taken.has("login-" + n)) n++;
-		s.accounts.push({ name: "login-" + n, source: "login", access: "new-" + c.value, refresh: "r", expires: 1 });
+		// a Claude login OmO stores under a fresh name; FAKE_OMO_EMAIL is the mail on its profile. "relogin" names a stored slot.
+		const email = process.env.FAKE_OMO_EMAIL;
+		if (mode === "relogin") s.accounts[0].access = "new-" + c.value;
+		else s.accounts.push({ name: "login-" + n, source: "login", access: "new-" + c.value, refresh: "r", expires: 1, ...(email ? { dirId: "fresh", profile: { email } } : {}) });
 		if (mode === "clobber") s.pinned = "login-" + n;
 		writeFileSync(auth, JSON.stringify(a, null, 2));
 		out({ type: "auth_login_end", provider, success: true });
@@ -69,6 +72,7 @@ beforeEach(() => {
 	auth = join(process.env.OMO_CODING_AGENT_DIR, "auth.json");
 	writeFileSync(auth, JSON.stringify({ "anthropic-subscription": { type: "oauth", access: "a", refresh: "r", expires: 1, accounts: [{ name: "default", access: "a", refresh: "r", expires: 1 }, { name: "work", access: "b", refresh: "r", expires: 1 }], pinned: "work" } }, null, 2));
 	delete process.env.FAKE_OMO_MODE;
+	delete process.env.FAKE_OMO_EMAIL;
 });
 afterEach(async () => {
 	const p = pendingLogin();
@@ -94,7 +98,7 @@ test("start -> URL -> pasted code adds a second, then a third account; the old a
 	expect(r.url).toBe("https://claude.ai/oauth/authorize?state=fake");
 	expect(r.needs_code).toBe(true);
 	expect(r.prompt).toContain("authorization code");
-	expect(await completeLogin("anthropic", r.login_id, "code-1")).toEqual({ provider: "anthropic", status: "done" });
+	expect(await completeLogin("anthropic", r.login_id, "code-1")).toEqual({ provider: "anthropic", status: "done", outcome: "added", account: "login-2" });
 	expect(loginStatus("anthropic", r.login_id).status).toBe("done");
 	expect(sub().accounts.map((x: { name: string }) => x.name)).toEqual(["default", "work", "login-2"]);
 	expect(sub().pinned).toBe("work");
@@ -115,8 +119,41 @@ test("Claude's name and method questions come first; the page to open is the cod
 	expect(method).toMatchObject({ status: "waiting", url: "", options: ["Browser login (default)", "Copy code login (headless)"] });
 	const paste = await completeLogin("anthropic", r.login_id, "Browser login (default)");
 	expect(paste).toMatchObject({ status: "waiting", needs_code: true, url: "https://claude.ai/oauth/authorize?redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&state=fake" });
-	expect(await completeLogin("anthropic", r.login_id, "code-1")).toEqual({ provider: "anthropic", status: "done" });
+	expect(await completeLogin("anthropic", r.login_id, "code-1")).toMatchObject({ provider: "anthropic", status: "done" });
 	expect(sub().accounts.map((x: { name: string }) => x.name)).toEqual(["default", "work", "login-2"]);
+});
+
+const loginWith = async (code: string) => {
+	const { login_id } = await startLogin("anthropic");
+	return { login_id, done: await completeLogin("anthropic", login_id, code) };
+};
+
+test("a login of a new account says it was added", async () => {
+	process.env.FAKE_OMO_EMAIL = "new@example.test";
+	const { login_id, done } = await loginWith("code-new");
+	expect(done).toMatchObject({ status: "done", outcome: "added", account: "login-2" });
+	expect(loginStatus("anthropic", login_id)).toMatchObject({ status: "done", outcome: "added", account: "login-2" });
+	expect(sub().accounts.map((a: { name: string }) => a.name)).toEqual(["default", "work", "login-2"]);
+});
+
+test("a login of the same account under a fresh name refreshes the stored slot and leaves no copy", async () => {
+	const stored = JSON.parse(readFileSync(auth, "utf8"));
+	stored["anthropic-subscription"].accounts[1] = { ...stored["anthropic-subscription"].accounts[1], displayName: "회사", dirId: "old", profile: { email: "same@example.test" } };
+	writeFileSync(auth, JSON.stringify(stored));
+	process.env.FAKE_OMO_EMAIL = "same@example.test";
+	const { done } = await loginWith("code-same");
+	expect(done).toMatchObject({ status: "done", outcome: "refreshed", account: "work" });
+	const accounts = sub().accounts;
+	expect(accounts.map((a: { name: string }) => a.name)).toEqual(["default", "work"]);
+	expect(accounts[1]).toMatchObject({ name: "work", displayName: "회사", dirId: "fresh", access: "new-code-same" });
+	expect(sub().pinned).toBe("work");
+});
+
+test("a login that rewrites a stored slot says it was refreshed", async () => {
+	process.env.FAKE_OMO_MODE = "relogin";
+	const { done } = await loginWith("code-again");
+	expect(done).toMatchObject({ status: "done", outcome: "refreshed" });
+	expect(sub().accounts).toHaveLength(2);
 });
 
 test("a login that moves the Claude pin gets the pin put back", async () => {
