@@ -136,6 +136,8 @@ test("the service worker holds back a notification only for the conversation a f
 	expect(pushSuppressed([win("#chat/main")], "/#chat/main", O)).toBe(true);
 	expect(pushSuppressed([win("#chat/lane:x")], "/#chat/lane:x", O)).toBe(true);
 	expect(pushSuppressed([win("#chat/main")], "/#chat/lane:x", O)).toBe(false);
+	expect(pushSuppressed([win("#notices")], "/#chat/alert", O)).toBe(true);
+	expect(pushSuppressed([win("#notices")], "/#chat/main", O)).toBe(false);
 	expect(pushSuppressed([win("#chat/main", "hidden")], "/#chat/main", O)).toBe(false);
 	expect(pushSuppressed([win("#chat/main", "visible", false)], "/#chat/main", O)).toBe(false);
 	expect(pushSuppressed([win("#home")], "/#home", O)).toBe(false);
