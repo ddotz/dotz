@@ -74,7 +74,7 @@ function footer(lane: Lane): string {
 	const features = featurePrompt(DATA_DIR, "lanes", log);
 	// The owner's verbatim don'ts (memory/boundaries.md) bind a lane too; the empty template adds nothing.
 	const boundaries = existsSync(paths.boundaries) ? readFileSync(paths.boundaries, "utf8").trim() : "";
-	const donts = boundaries.includes("\n- [") ? `\n\n${boundaries.slice(0, 2000)}` : "";
+	const donts = boundaries.includes("\n- [") ? `\n\n${boundaries}` : "";
 	return withReplyLine(msg().footer({ lane: lane.name, language: languageName(lang()), mode: modeFile(), workerModel: laneWorkerModel(lane), slots: lane.workerSlots ?? laneLimits(0, lane).workers, worktree: worktreeNote(lane.worktree) })) + donts + (features ? `\n\n${features}` : "");
 }
 

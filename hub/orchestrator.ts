@@ -10,7 +10,7 @@ import { emitEventActivity, runningSubagents, statusActivity } from "./activity.
 import { pendingAsksBlock } from "./asks.ts";
 import { cfg, chainAfter, compactAtFor, DATA_DIR, DEFAULTS, fallbackChain, IDENTITY_FILE, log, NAME, now, orchestratorModel, parseSelector, paths, selectorOf, TZ, tzLabel, writeAtomic } from "./config.ts";
 import { isNote, modeFile, msg, withReplyLine } from "./i18n.ts";
-import { dropSection, renderState } from "./recall-parts.ts";
+import { dropSection, newestLines, renderState } from "./recall-parts.ts";
 import { featurePrompt } from "./featuredirs.ts";
 import { abandonCompact, type CompactPort, type Compaction, flushCompact, newCtx, noteEvent, requestCompact } from "./context.ts";
 import { anthropicUsage, type ProviderErrorKind, rateLimitDelay, TRANSIENT_RETRIES, transientBackoff } from "./providers.ts";
@@ -325,13 +325,14 @@ export function createOrchestrator(opts: OrchOpts) {
 		const id = cfg.identity;
 		const identity = existsSync(IDENTITY_FILE) ? readFileSync(IDENTITY_FILE, "utf8").slice(0, 3000) : msg().identityFallback(id?.character ?? "", id?.tone ?? "");
 		// A cut file says so: RULES.md outgrew the old 6000-character cap and silently lost its last lines (blocked commands).
+		const whole = (p: string) => (existsSync(p) ? readFileSync(p, "utf8") : "");
 		const file = (p: string, max: number) => {
-			const t = existsSync(p) ? readFileSync(p, "utf8") : "";
+			const t = whole(p);
 			return t.length > max ? `${t.slice(0, max)}\n[... cut at ${max} characters; read ${p} for the rest]` : t;
 		};
 		const features = featurePrompt(DATA_DIR, "orchestrator", log);
 		const scope = opts.scope?.() ?? "";
-		return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, 3000), memory: `${file(paths.owner, 3000)}\n${file(paths.boundaries, 2000)}`, setups: setupsSummary(), state }) + (scope ? `\n\n${scope}` : ""));
+		return withReplyLine(msg().recall({ mode, identity, rules: file(paths.rules, 12000) + (features ? `\n\n${features}` : ""), lessons: file(paths.lessons, 3000), memory: `${newestLines(whole(paths.owner), paths.owner)}\n${whole(paths.boundaries)}`, setups: setupsSummary(), state }) + (scope ? `\n\n${scope}` : ""));
 	}
 
 	function handover(runtime: RuntimeAdapter, previous: string): string {
