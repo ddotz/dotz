@@ -3,7 +3,7 @@ import { type Store, serve, until } from "./volume-fixture.ts";
 
 // The lists at volume in a headless browser at 390px against hub/volume-fixture.ts (180+ notices, 100 projects with unread, sessions waiting):
 // 감시 소식 puts what waits first and folds repeats (web/js/30-monitoring.js monFeedNodes), its views count right and 읽음 처리 never clears an
-// ask; the chat list narrows to 답할 것 / 세션 / 알림, pages the projects and reads only what needs no answer (web/js/31-conversations.js convBar);
+// ask; the chat list has no filter chips, pages the projects and reads only what needs no answer (web/js/31-conversations.js);
 // on load the waiting questions are one card (web/js/09-needs-you.js toastAttn); the whole notice set is loaded (web/js/30-notices.js).
 let store: Store, url = "", stop = () => {};
 const view = new Bun.WebView({ width: 390, height: 844 });
@@ -20,7 +20,7 @@ const open = async (hash: string, cond: string) => {
 	await ev(`new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))`);
 };
 const feedReady = `current === "monitoring" && NT.loaded && NM.loaded && !!document.querySelector("#mon-tl .mon-bar")`;
-const chatReady = `current === "chat" && CV.loaded && NT.loaded && !!S && S.lanes.length > 0 && !!document.querySelector("#chat-convo .cv-bar")`;
+const chatReady = `current === "chat" && CV.loaded && NT.loaded && !!S && S.lanes.length > 0 && !!document.querySelector("#chat-convo .cv-row")`;
 
 test("감시 소식 holds every report of the feed, what waits on top and each source folded with its count", async () => {
 	await open("#monitoring/notice", feedReady);
@@ -73,9 +73,9 @@ test("감시 소식's 읽음 처리 reads the plain reports only; what waits sta
 	expect(await ev<string>(`document.querySelector('#mon-tl .mr-f[data-filter="need"]').textContent`)).toBe("답 필요3");
 });
 
-test("the chat list narrows to 답할 것 with its count, keeps 세션 as the one other filter (알림 is its own screen) and draws the projects a page at a time", async () => {
+test("the chat list has no filter chips and no 알림 row, and draws the projects a page at a time", async () => {
 	await open("#chat/list", chatReady);
-	expect(await ev<string[]>(`[...document.querySelectorAll("#chat-convo .cv-bar .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "답할 것14", "세션"]);
+	expect(await ev<number>(`document.querySelectorAll("#chat-convo .mr-f, #chat-convo .cv-tabs").length`)).toBe(0);
 	const projects = `[...document.querySelectorAll("#chat-convo .cv-row")].filter(r => (r.dataset.t || "").startsWith("ch:")).length`;
 	expect(await ev<number>(projects)).toBe(40);
 	// 땅콩 and the two feeds, then 진행 중, then 프로젝트 with its 더 보기: each kind of row collapsed to one entry
@@ -84,15 +84,7 @@ test("the chat list narrows to 답할 것 with its count, keeps 세션 as the on
 	await ev(`(document.querySelector('#chat-convo .cv-more .btn').click(), 0)`);
 	await wait(`${projects} === 80`, "next page");
 	expect(await ev<string>(`document.querySelector('#chat-convo .cv-more .btn').textContent`)).toBe("프로젝트 20개 더 보기");
-	await ev(`(document.querySelector('#chat-convo .mr-f[data-view="need"]').click(), 0)`);
-	await wait(`document.querySelector('#chat-convo .mr-f[data-view="need"]').classList.contains("on")`, "need view");
-	const need = await ev<string[]>(`[...document.querySelectorAll("#chat-convo .cv-row")].map(r => r.dataset.t)`);
-	expect(need.length).toBe(14);
-	expect(need).not.toContain("alert");
-	expect(need).toContain("lane:s1");
-	expect(need).not.toContain("main");
 	expect(await ev<number>(`document.querySelectorAll('#chat-convo [data-t="alert"]').length`)).toBe(0);   // the 알림 row is not in the list at all
-	await ev(`(document.querySelector('#chat-convo .mr-f[data-view="all"]').click(), 0)`);
 });
 
 test("the chat list's 읽음 처리 moves the read position of the conversations that need no answer, never of one that waits", async () => {
@@ -105,5 +97,4 @@ test("the chat list's 읽음 처리 moves the read position of the conversations
 	expect(targets.length).toBe(85);
 	expect(targets).toContain("main");
 	for (const t of ["alert", "lane:s1", "lane:s2", "ch:1001", "ch:1008"]) expect(targets).not.toContain(t);
-	expect(await ev<string>(`document.querySelector('#chat-convo .mr-f[data-view="need"]').textContent`)).toBe("답할 것14");
 });

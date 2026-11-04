@@ -269,24 +269,21 @@ function convRows() {
   const rank = l => (l.pendingAsk ? 0 : l.status === "working" || l.status === "starting" ? 1 : 2);
   const running = all.filter(laneAlive).sort((a, b) => rank(a) - rank(b) || at(`lane:${b.name}`).localeCompare(at(`lane:${a.name}`)));
   const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionStatus(l), hint: convPreview(l.lastText) || m.hint }; };
-  const v = CVF.view, keep = r => v === "need" ? r.need : v === "session" ? isLaneT(r.t) : true;
-  // The filter pills, then a card per group (a group with nothing under the filter has no header), and last the 메일 · 카카오톡 card of what waits there.
-  const projs = projects.map(mk).filter(keep), page = v === "all" ? projs.filter((r, i) => i < CVF.more || r.t === target) : projs;
-  const out = [{ bar: true }, ...[MAIN, "worklog"].map(mk).filter(keep)], lanes = running.map(sess).filter(keep);
+  // A card per group, and last the 메일 · 카카오톡 card of what waits there.
+  const projs = projects.map(mk), page = projs.filter((r, i) => i < CVF.more || r.t === target);
+  const out = [MAIN, "worklog"].map(mk), lanes = running.map(sess);
   if (lanes.length) out.push({ header: "진행 중", sec: true }, ...lanes);
   if (page.length) out.push({ header: "프로젝트", sec: true }, ...page);
   if (projs.length > page.length) out.push({ more: projs.length - page.length });
   const open = all.find(l => !laneAlive(l) && `lane:${l.name}` === target);
-  if (open && (v === "all" || v === "session")) out.push(sess(open));
-  const ended = v === "all" || v === "session" ? endedLanes() : [];
+  if (open) out.push(sess(open));
+  const ended = endedLanes();
   if (ended.length) out.push({ ended: true, key: `${ended.map(l => { const m = endedMark(l); return `${l.name}:${m.unread}:${m.need ? 1 : 0}`; }).join("|")}|${endedOpen}` });
-  const waits = v === "all" || v === "need" ? convWaiting() : [];
-  if (out.length === 1 && !waits.length) out.push({ empty: CVF_EMPTY[v] });
+  const waits = convWaiting();
   if (waits.length) out.push({ header: "메일 · 카카오톡", sec: true }, ...waits);
   out.push({ read: true });
   return out;
 }
-const CVF_EMPTY = { need: "답을 기다리는 대화가 없어요", session: "진행 중인 세션이 없어요" };
 // The 메일 · 카카오톡 card: this computer's mails with a draft or a reply owed and the watched rooms that owe one, newest first; a tap opens them in 모니터링.
 function convWaiting() {
   const letter = name => el("span", { class: "cv-av", "aria-hidden": "true", text: [...String(name || "?").trim()][0] || "?" });
@@ -297,13 +294,13 @@ function convWaiting() {
   const rooms = KK.rooms.filter(r => r.watched && r.unreplied).map(r => ({ at: r.lastAt || 0, k: `w:kk:${r.chatId}`, name: r.name, hint: kkSubLine(r), last: r.lastAt ? { ts: new Date(r.lastAt).toISOString() } : null, bold: r.unread > 0, need: true, av: letter(r.name), chips: [["미답장", "unreplied"]], open: () => { go("monitoring", "i:kakao"); kkOpen(r.chatId); } }));
   return [...mails, ...rooms].sort((a, b) => b.at - a.at).slice(0, 5);
 }
-// Rows in their cards: the bar and a section label stand on the page, every run of rows between them is one card.
+// Rows in their cards: a section label stands on the page, every run of rows between them is one card.
 function convCards(rows) {
   const nodes = [];
   let box = null;
   for (const r of rows) {
     if (r.read) { const b = convReadBtn(); if (b) nodes.push(b); continue; }
-    if (r.bar || r.header) { nodes.push(r.bar ? convBar() : el("div", { class: "cv-sec", role: "presentation", text: r.header })); box = null; continue; }
+    if (r.header) { nodes.push(el("div", { class: "cv-sec", role: "presentation", text: r.header })); box = null; continue; }
     if (!box) nodes.push(box = el("div", { class: "cv-card" }));
     box.append(convRow(r));
   }
@@ -311,22 +308,14 @@ function convCards(rows) {
 }
 const FIXED_DESC = { alert: "경고와 결정 요청", worklog: "야간 정리와 세션 진행 기록" };
 
-/* ---- a long list: views, a page of projects, 읽음 처리 ---- */
-// view: 전체 / 답할 것 / 세션 / 알림; more: projects drawn in 전체 (CVF_PAGE more per 더 보기).
+/* ---- a long list: a page of projects, 읽음 처리 ---- */
+// more: projects drawn (CVF_PAGE more per 더 보기). What waits on an answer is on the 알림 screen's 처리할 것.
 const CVF_PAGE = 40;
-const CVF = { view: "all", more: CVF_PAGE };
+const CVF = { more: CVF_PAGE };
 // A conversation waits on the owner: an open decision asked there, a loose [ask] notice of it, or a session's question (same rules as 30-notices.js ntNeeds).
 // the same rule as the home 답변 필요 list: a gateway question it handles itself (nyHandled) is news there, not a need here
 const convNeeds = t => ntHasDecision(t) || NT.items.some(n => ntNeeds(n) && !nyHandled(n) && (n.src || n.open) === t) || !!(isLaneT(t) && targetInfo(t).ask);
 const convListed = () => [MAIN, "worklog", ...((S && S.lanes) || []).filter(laneAlive).map(l => `lane:${l.name}`), ...projTargets()];
-function convBar() {
-  const list = convListed(), need = list.filter(convNeeds).length + (KK.rooms.filter(r => r.watched && r.unreplied).length) + [...MAILS].filter(([t, m]) => !PQ.of.has(t) && m.dir !== "out" && !m.archived && (m.reply === "draft" || m.unreplied)).length;
-  const views = [["all", "전체", 0], ["need", "답할 것", need], ["session", "세션", 0]];
-  return el("div", { class: "cv-bar" },
-    el("div", { class: "cv-tabs", role: "tablist", "aria-label": "대화 보기" }, ...views.map(([k, label, n]) =>
-      el("button", { class: `cchip mr-f${CVF.view === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(CVF.view === k), "data-view": k, onclick: () => { CVF.view = k; CVF.more = CVF_PAGE; convSig = ""; convSchedule(); convSide.scrollTop = 0; } }, label, cntSpan(`cv-filter:${k}`, "mr-fn", n)))),
-  );
-}
 // 읽음 처리, under the list: it takes only what needs no answer, so a conversation waiting on the owner keeps its unread.
 function convReadBtn() {
   const fyi = convListed().filter(t => ts(t).unread > 0 && !convNeeds(t) && CONV.get(t));
@@ -358,7 +347,6 @@ function convAvatar(t) {
 // { name, badge: [word, tone], unread }, with an optional one-line preview (hint) under the name. A row never shows a time: the name and the content tell what it is.
 function convRow(r) {
   if (r.header) return el("div", { class: "cv-gh", role: "presentation", text: r.header });
-  if (r.bar) return convBar();
   if (r.empty) return el("div", { class: "cv-empty", text: r.empty });
   if (r.more) return el("div", { class: "cv-more" }, el("button", { class: "btn text", type: "button", "data-k": "more", onclick: () => { CVF.more += CVF_PAGE; convSig = ""; convSchedule(); }, text: `프로젝트 ${r.more}개 더 보기` }));
   if (r.ended) return endedGroup() || "";
@@ -407,7 +395,7 @@ function convPaint() {
   convTitle();
   mailSentPaint();
   mbReplyPaint();
-  const items = monCtx ? monItems() : null, rows = items ? monRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx, rows.some(r => r.bar) ? [CVF.view, convListed().map(t => [ts(t).unread > 0, convNeeds(t)])] : 0]);
+  const items = monCtx ? monItems() : null, rows = items ? monRows(items, items.find(i => i.key === MON.sel) || null) : convRows(), sig = JSON.stringify([rows.map(r => [r.t, r.k, r.key, r.name, r.last, r.unread, r.badge, r.header, r.hint, r.sel, r.need, r.more, r.empty]), target, current, !!monCtx]);
   if (!monCtx && !KK.loaded && !KK.asked && typeof INTG !== "undefined" && INTG.items.some(i => i.key === "kakao")) { KK.asked = true; kkLoadRooms(); }
   if (sig !== convSig) {
     convSig = sig;
