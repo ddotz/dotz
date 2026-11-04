@@ -51,7 +51,7 @@ Check: `ps aux | grep hub/main.ts` shows `~/.local/share/dotz/hub/main.ts`, and 
 
 ## Tests and the update gate
 
-- `bun run test` runs the whole suite in parallel (`bun test --parallel`), about 25 s on an M-series Mac.
+- `bun run test` runs the whole suite on four workers (`bun test --parallel=4`), 2-3 minutes on a busy M-series Mac. One worker per core is slower and fails under load: the WebView tests starve each other.
 - Before every push, run the full gate on both the MacBook and the Mac mini: `bun test ./hub/update-gate-run.ts` (the whole suite in
   parallel, failed files retried alone). Both must exit 0. The machines differ in macOS and system SQLite (macOS 26 / SQLite 3.51 vs
   macOS 27 / 3.54), and a change that passes on only one of them breaks updates on the other. A new test must pass in a folder without
