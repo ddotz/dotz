@@ -78,6 +78,9 @@ test("the chat list narrows to 답할 것 with its count, keeps 세션 and 알�
 	expect(await ev<string[]>(`[...document.querySelectorAll("#chat-convo .cv-bar .mr-f")].map(b => b.textContent)`)).toEqual(["전체", "답할 것15", "세션", "알림"]);
 	const projects = `[...document.querySelectorAll("#chat-convo .cv-row")].filter(r => (r.dataset.t || "").startsWith("ch:")).length`;
 	expect(await ev<number>(projects)).toBe(40);
+	// 땅콩 and the two feeds, then 진행 중, then 프로젝트 with its 더 보기: each kind of row collapsed to one entry
+	const order = `[...document.querySelectorAll("#chat-convo .cv-sec, #chat-convo .cv-row, #chat-convo .cv-more")].map(n => n.matches(".cv-sec") ? n.textContent : n.matches(".cv-more") ? "more" : n.dataset.t.replace(/^(lane|ch):.*/, "$1")).filter((s, i, a) => s !== a[i - 1])`;
+	expect((await ev<string[]>(order)).slice(0, 8)).toEqual(["main", "alert", "worklog", "진행 중", "lane", "프로젝트", "ch", "more"]);
 	await ev(`(document.querySelector('#chat-convo .cv-more .btn').click(), 0)`);
 	await wait(`${projects} === 80`, "next page");
 	expect(await ev<string>(`document.querySelector('#chat-convo .cv-more .btn').textContent`)).toBe("프로젝트 20개 더 보기");
@@ -88,6 +91,10 @@ test("the chat list narrows to 답할 것 with its count, keeps 세션 and 알�
 	expect(need).toContain("alert");
 	expect(need).toContain("lane:s1");
 	expect(need).not.toContain("main");
+	// a group with nothing under the filter has no header
+	await ev(`(document.querySelector('#chat-convo .mr-f[data-view="alert"]').click(), 0)`);
+	await wait(`document.querySelector('#chat-convo .mr-f[data-view="alert"]').classList.contains("on")`, "alert view");
+	expect(await ev<number>(`document.querySelectorAll("#chat-convo .cv-sec").length`)).toBe(0);
 	await ev(`(document.querySelector('#chat-convo .mr-f[data-view="all"]').click(), 0)`);
 });
 
