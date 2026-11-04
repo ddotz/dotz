@@ -35,11 +35,17 @@ function nscTag(n) {
 }
 // The second line: a price change as the old value struck and the new one bold, else the first line of the text that is not the title, else the place.
 function nscSummary(n, text = n.text) {
-  const chg = nwChangeNode(nwChangeLine(text));
-  if (chg) return chg;
-  if (n.decision) return ntDecWhere(n.decision, n.pc);
+  const chg = NW_CHANGE.exec(nwChangeLine(text));
+  if (chg) return el("span", {}, el("s", { text: chg[2] }), " → ", chg[3]);
+  if (n.decision) return n.decision.draft ? ntPlain(n.decision.draft.body.split("\n").find(l => l.trim()) || "") : `${ntDecWhere(n.decision, n.pc)} · 답을 기다리고 있어요`;
   const title = ntPlain(hcLine(n)), src = n.src || n.open;
   return String(text || "").split("\n").map(ntPlain).find(l => l && l !== title) || ntLaneNote(n) || (src ? pcTargetName(src, n.pc) : "알림");
+}
+// The time at the row's end stays short: 방금, the hour today, 어제, then the date.
+function nscWhen(t) {
+  if (Date.now() - Date.parse(t) < 60000) return "방금";
+  if (kstDay(t) === kstDay(Date.now())) return kstHM(t);
+  return kstDay(t) === kstDay(Date.now() - 86400000) ? "어제" : dayLabel(t).replace(/ \(.\)$/, "");
 }
 function nscLines(n, group, summary, when, tag, prefix = "") {
   return [el("span", { class: "ln" }, el("span", { class: "hd", title: ntPlain(hcLine(n)), text: ntPlain(hcLine(n)) }), el("span", { class: "t", text: when })),
@@ -52,13 +58,13 @@ function nscRow(n, group) {
     : el("button", { class: "ib nsc-x", type: "button", "aria-label": NSC_X[group], title: NSC_X[group], onclick: ev => { ev.stopPropagation(); nscX(n, group); } }, icon("close"));
   return el("div", { class: `li nsc-r${n.read ? "" : " unread"}`, "data-nid": n.id },
     el("span", { class: "lead" }, el("span", { class: `dot ${tone}` })),
-    el("button", { class: "tx nsc-tx", type: "button", onclick: () => nscTap(n) }, ...nscLines(n, group, nscSummary(n), ntWhen(n), nscTag(n), rep ? `${rep.length + 1}번 · ` : "")),
+    el("button", { class: "tx nsc-tx", type: "button", onclick: () => nscTap(n) }, ...nscLines(n, group, nscSummary(n), nscWhen(n.updated || n.ts), nscTag(n), rep ? `${rep.length + 1}번 · ` : "")),
     end);
 }
 // An older occurrence folded into the head row: the same title, its own time and text; a tap opens the head's notice.
 const nscChild = (n, r) => el("div", { class: "li nsc-r", "data-nid": n.id, "data-child": "1" },
   el("span", { class: "lead" }, el("span", { class: "dot" })),
-  el("button", { class: "tx nsc-tx", type: "button", onclick: () => nscTap(n) }, ...nscLines(n, "past", nscSummary(n, r.text), ntTime(r.at), nscTag(n))),
+  el("button", { class: "tx nsc-tx", type: "button", onclick: () => nscTap(n) }, ...nscLines(n, "past", nscSummary(n, r.text), nscWhen(r.at), nscTag(n))),
   el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("chev")));
 const nscRows = (n, group) => [nscRow(n, group), ...(n.repeats && n.repeats.length && NSC.open.has(n.id) ? n.repeats.map(r => nscChild(n, r)) : [])];
 
