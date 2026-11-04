@@ -9,9 +9,9 @@
 /* 내 말풍선 (proto .msg.me .bub): 회색 면, 18/18/6/18 모서리, 10x14 안여백. 봇 답은 말풍선 없이 한 페이지처럼 15/24, 문단 8px, 글머리표 2px (proto .bub) */
 .ub { padding: 10px 14px; border-radius: 18px 18px 6px 18px; background: var(--layer); }
 .bm .md { font-size: 15px; line-height: 24px; }
-.bm .md p { margin: 0 0 8px; }
-.bm .md ul, .bm .md ol { margin: 0 0 8px; padding-left: 20px; }
-.bm .md li + li { margin-top: 2px; }
+.bm .md p { margin: 0 0 var(--sp-2); }
+.bm .md ul, .bm .md ol { margin: 0 0 var(--sp-2); padding-left: var(--sp-5); }
+.bm .md li + li { margin-top: var(--sp-05); }
 .dc-wait { border-radius: var(--r-ctl); }
 
 /* ---------- 채팅 대화 카드 안의 차례 (proto .cv: 머리 -> todo -> 타임라인 -> 진행 줄 -> 확인 카드 -> 컴포저) ---------- */
@@ -19,10 +19,10 @@
 #v-chat > .todo { background: var(--layer); }
 /* 서브에이전트 줄: 타임라인 아래 한 줄 (proto .run), 카드가 아니라 조용한 글줄 */
 #v-chat > .subs { flex: none; border-radius: 0; background: transparent; overflow: visible; }
-#v-chat > .subs .subsum { min-height: 28px; padding: 4px 10px; border-radius: var(--r-ctl); color: var(--fg-2); font: 500 12px/16px var(--font); }
+#v-chat > .subs .subsum { min-height: 28px; padding: var(--sp-1) 10px; border-radius: var(--r-ctl); color: var(--fg-2); font: 500 12px/16px var(--font); }
 #v-chat > .subs .subsum .dot { width: 6px; height: 6px; }
 #v-chat > .subs .subsum .chev { width: 14px; height: 14px; }
-#v-chat > .subs .sublist { padding: 4px; border-radius: var(--r-ctl); background: var(--layer); }
+#v-chat > .subs .sublist { padding: var(--sp-1); border-radius: var(--r-ctl); background: var(--layer); }
 /* 타임라인 위아래 페이드는 흰 카드에서 흰색으로 사라져야 해요 (03-base의 --bg 페이드 위에) */
 /* 위쪽 가장자리는 가는 선: 스크롤로 잘린 줄이 할 일 스트립 밑에 깔린 듯 카드색으로 흐려지지 않게 (스트립은 제 자리를 가져요) */
 #v-chat .chatbox::before { background: linear-gradient(var(--card), transparent); }
@@ -31,19 +31,19 @@
 /* ---------- 컴포저: 시제품 .cmp — [첨부 · 글 · 원형 전송] 회색 18px 상자 (모든 입력 줄의 공통 기반) ----------
    .sendrow 자체가 기반이에요: 채팅 입력줄(#send)과 카카오톡 방 입력줄(#kk-form) 같은 어떤 입력줄도 .sendrow 안에 [.cmp-plus(첨부, 선택) · textarea · .ib(보내기)]와
    (선택) .cbar 칩 줄을 두면 같은 모양이에요. 채팅 컴포저의 힌트 줄(#cbar: 모델·컨텍스트 칩)은 상자 밖 아래에 서요. */
-.sendrow { grid-template-columns: auto minmax(0, 1fr) auto !important; grid-template-areas: "at at at" "plus ta send" "bar bar bar" !important; align-items: flex-end; gap: 0 4px; }   /* no row gap: the empty tray row above would add 4px of padding to the top only */
-.sendrow:not(.ulw) { padding: 6px !important; border: 0 !important; border-radius: var(--r-card) !important; background: var(--layer) !important; }
+.sendrow { grid-template-columns: auto minmax(0, 1fr) auto !important; grid-template-areas: "at at at" "plus ta send" "bar bar bar" !important; align-items: flex-end; gap: 0 var(--sp-1); }   /* no row gap: the empty tray row above would add 4px of padding to the top only */
+.sendrow:not(.ulw) { padding: var(--sp-15) !important; border: 0 !important; border-radius: var(--r-card) !important; background: var(--layer) !important; }
 .sendrow:not(.ulw):focus-within { border-color: transparent !important; }
-.sendrow textarea { grid-area: ta; padding: 7px 4px; font-size: 15px; line-height: 22px; text-overflow: ellipsis; }
+.sendrow textarea { grid-area: ta; padding: 7px var(--sp-1); font-size: 15px; line-height: 22px; text-overflow: ellipsis; }
 .sendrow textarea::placeholder { white-space: nowrap; text-overflow: ellipsis; }   /* 폰에서 긴 안내 글이 두 줄로 접혀 상자를 키우지 않게 한 줄로 (시제품 .cmp는 한 줄) */
 #c-attach, .sendrow > .cmp-plus { grid-area: plus; display: inline-flex; align-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; justify-content: center; border-radius: 50%; background: transparent; color: var(--fg-2); font-size: 0; }
 #c-attach .ic, .sendrow > .cmp-plus .ic { width: 18px; height: 18px; }
 #c-attach:hover, .sendrow > .cmp-plus:hover { background: var(--hover); color: var(--fg); }
 .sendrow > .ib { grid-area: send; width: 36px; height: 36px; border-radius: 50%; }
-.sendrow > .cbar { grid-area: bar; margin: 0; padding: 4px 4px 2px; min-height: 0; }
-#cbar { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; min-height: 20px; margin: 4px 0 0; padding: 0 4px; overflow-x: auto; scrollbar-width: none; }
+.sendrow > .cbar { grid-area: bar; margin: 0; padding: var(--sp-1) var(--sp-1) var(--sp-05); min-height: 0; }
+#cbar { display: flex; align-items: center; flex-wrap: nowrap; gap: var(--sp-15); min-height: 20px; margin: var(--sp-1) 0 0; padding: 0 var(--sp-1); overflow-x: auto; scrollbar-width: none; }
 #cbar::-webkit-scrollbar { display: none; }
-#cbar .cchip { height: auto; min-height: 20px; padding: 0 2px; background: transparent; color: var(--fg-3); font-size: 12px; line-height: 16px; }
+#cbar .cchip { height: auto; min-height: 20px; padding: 0 var(--sp-05); background: transparent; color: var(--fg-3); font-size: 12px; line-height: 16px; }
 #cbar button.cchip { cursor: pointer; }
 #cbar button.cchip:hover { background: transparent; color: var(--fg); }
 #cbar .cchip.cown { opacity: 1; color: var(--fg-3); }
@@ -51,17 +51,17 @@
 @media (pointer: coarse) { #c-attach, .sendrow > .cmp-plus { width: 36px; height: 36px; } }
 
 /* 실행 상태 줄 (41-runstate.js, 시제품 .run): 입력 상자 위 한 줄, 12/16 회색 글이에요. 경고·오류는 색만 바뀝니다 */
-.runstate { min-height: 20px; margin: 0 0 6px 4px; color: var(--fg-2); font-size: 12px; line-height: 16px; }
+.runstate { min-height: 20px; margin: 0 0 var(--sp-15) var(--sp-1); color: var(--fg-2); font-size: 12px; line-height: 16px; }
 
 /* 상태 태그 (시제품 .bub .st .tag): 봇 메시지 첫 줄 맨 앞에 [확인 필요 / 완료 / 진행 중 / 실패] — 02-basic-markdown.js toneLead가 넣어요 */
-.bm .st-tag { height: 22px; margin-right: 8px; padding: 0 9px; border-radius: 11px; font-size: 12px; line-height: 16px; vertical-align: 1px; }
+.bm .st-tag { height: 22px; margin-right: var(--sp-2); padding: 0 9px; border-radius: 11px; font-size: 12px; line-height: 16px; vertical-align: 1px; }
 
 /* 확인/질문 카드: 컴포저 바로 위에 붙어 있고, 흰 대화 카드 안에서도 한 면으로 읽히게 회색 위에 놓여요 (얇은 모양·동작은 그대로) */
 #composer > .dcard { background: var(--layer); }
 
 
 /* dotz_auth 입력 요청 (16-target-switcher-conversation.js authCard): 새 토큰의 입력칸과 버튼. 비밀 값은 type=password 그대로, 화면에만 보기/숨기기 */
-.au input:not([type=checkbox]) { height: var(--field-h); padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg); font-size: var(--fs-body); }
+.au input:not([type=checkbox]) { height: var(--field-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg); font-size: var(--fs-body); }
 .au input:not([type=checkbox]):focus { outline: 0; box-shadow: var(--ff-ring); }
 .au .fld label { color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .au .eye { height: var(--field-h); padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); color: var(--fg-2); font: 500 13px/20px var(--font); }
@@ -70,40 +70,40 @@
 .au .ferr { color: var(--err); }
 .au .rem { color: var(--fg-2); font-size: 13px; }
 @media (pointer: coarse), (max-width: 639px) { .au input:not([type=checkbox]) { height: var(--field-h-touch); font-size: 16px; } .au .eye { height: var(--field-h-touch); } }
-/* 확인 카드 (owner 2026-11-03): 머리 한 줄(확인 필요 · 답 기다림), 짧은 질문, 작은 답 버튼, 지금보다 눈에 띄게 낮게 */.dcard { display: flex; flex-direction: column; max-height: max(60dvh, 240px); margin: 0 0 8px; border-radius: var(--r-card); background: var(--card); overflow: hidden; }
+/* 확인 카드 (owner 2026-11-03): 머리 한 줄(확인 필요 · 답 기다림), 짧은 질문, 작은 답 버튼, 지금보다 눈에 띄게 낮게 */.dcard { display: flex; flex-direction: column; max-height: max(60dvh, 240px); margin: 0 0 var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
 .dcard[hidden] { display: none; }
 /* a waiting send-approval card that later posts pushed up: one row in the dock that opens it (10-decision-card.js dcPointer) */
-.dc-wait { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 10px 14px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dc-wait { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 44px; padding: 10px 14px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .dc-wait-k { flex: none; font-weight: 600; color: var(--accent); }
 .dc-wait-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dc-wait-n { flex: none; opacity: .7; font-size: .9em; }
 .dc-wait-go { flex: none; font-weight: 600; }
-.dc-hd { flex: none; display: flex; align-items: flex-start; gap: 4px; padding: 10px 4px 2px 14px; }
+.dc-hd { flex: none; display: flex; align-items: flex-start; gap: var(--sp-1); padding: 10px var(--sp-1) var(--sp-05) 14px; }
 .dc-tt { flex: 1; min-width: 0; }
 /* 확인 필요 · 답 기다림: the whole header on one 20px line */
-.dc-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dc-meta { display: flex; align-items: center; gap: var(--sp-15); min-width: 0; }
 .dc-ey { color: var(--fg); font: 600 13px/20px var(--font); }
 .dc-wt { flex: none; }
-.dc-q { margin-top: 2px; font-size: 15px; line-height: 22px; font-weight: 600; }
+.dc-q { margin-top: var(--sp-05); font-size: 15px; line-height: 22px; font-weight: 600; }
 .dc-q p { margin: 0; }
-.dc-decide { margin: 4px 0 2px; font: 400 13px/20px var(--font); letter-spacing: 0; }
+.dc-decide { margin: var(--sp-1) 0 var(--sp-05); font: 400 13px/20px var(--font); letter-spacing: 0; }
 .dc-decide-k { font-weight: 600; }
-.dc-decide ul { margin: 2px 0 0; padding-left: 18px; }
-.dc-decide li + li { margin-top: 2px; }
+.dc-decide ul { margin: var(--sp-05) 0 0; padding-left: 18px; }
+.dc-decide li + li { margin-top: var(--sp-05); }
 .dcard.fold .dc-q { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 .dcard.fold .dc-hd { padding-bottom: 10px; }
 .dc-fold { flex: none; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-3); }
 .dc-fold:hover { background: var(--hover); }
 .dc-fold .ic { width: 18px; height: 18px; transition: transform var(--m-fast) var(--m-ease); }
 .dcard.fold .dc-fold .ic { transform: rotate(180deg); }
-.dc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 2px; padding: 0 6px 6px; overflow-y: auto; overscroll-behavior: contain; }
-.dc-steps { flex: none; display: flex; gap: 6px; padding-bottom: 2px; overflow-x: auto; scrollbar-width: none; }
+.dc-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-05); padding: 0 var(--sp-15) var(--sp-15); overflow-y: auto; overscroll-behavior: contain; }
+.dc-steps { flex: none; display: flex; gap: var(--sp-15); padding-bottom: var(--sp-05); overflow-x: auto; scrollbar-width: none; }
 .dc-steps::-webkit-scrollbar { display: none; }
-.dc-chip { flex: none; max-width: 70%; height: var(--btn-h-sm); padding: 0 12px; border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font: inherit; font-size: 13px; line-height: var(--btn-h-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dc-chip { flex: none; max-width: 70%; height: var(--btn-h-sm); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font: inherit; font-size: 13px; line-height: var(--btn-h-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dc-chip.got { color: var(--fg); }
 .dc-chip.on { background: var(--fg); color: var(--bg); }
-.dc-sub, .dcm-sub { padding: 2px 4px 0; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
-.dc-row, .dcm-row { flex: none; display: flex; align-items: flex-start; gap: 8px; width: 100%; min-height: 40px; padding: 6px 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.dc-sub, .dcm-sub { padding: var(--sp-05) var(--sp-1) 0; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
+.dc-row, .dcm-row { flex: none; display: flex; align-items: flex-start; gap: var(--sp-2); width: 100%; min-height: 40px; padding: var(--sp-15) 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .dc-row, .dcm-row { transition: background-color var(--m-fast) var(--m-ease); }
 .dc-row:hover:not(:disabled), .dcm-row:hover:not(:disabled) { background: var(--hover); }
 .dc-row:active:not(:disabled), .dcm-row:active:not(:disabled) { background: var(--active); }
@@ -114,30 +114,30 @@
 .dc-key { flex: none; display: grid; place-items: center; min-width: 18px; height: 20px; padding: 0; color: var(--fg-3); font-size: 12px; line-height: 20px; font-weight: 400; font-variant-numeric: tabular-nums; }
 .dc-row.rec .dc-key, .dcm-row.rec .dc-key { color: var(--accent); font-weight: 600; }
 .dc-tx { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.dc-lb { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 14px; line-height: 20px; font-weight: 500; }
-.dc-tag { flex: none; padding: 0 6px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 10.5px; line-height: 16px; font-weight: 600; }
+.dc-lb { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-15); font-size: 14px; line-height: 20px; font-weight: 500; }
+.dc-tag { flex: none; padding: 0 var(--sp-15); border-radius: var(--r-pill); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 10.5px; line-height: 16px; font-weight: 600; }
 .dc-ds { color: var(--fg-3); font-size: 12px; line-height: 16px; }
-.dc-draft { flex: none; display: flex; flex-direction: column; gap: 4px; margin: 0 0 4px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--fg) 5%, transparent); }
-.dc-dr-h { display: flex; gap: 8px; font-size: 13px; line-height: 20px; }
+.dc-draft { flex: none; display: flex; flex-direction: column; gap: var(--sp-1); margin: 0 0 var(--sp-1); padding: 10px var(--sp-3); border-radius: 10px; background: color-mix(in srgb, var(--fg) 5%, transparent); }
+.dc-dr-h { display: flex; gap: var(--sp-2); font-size: 13px; line-height: 20px; }
 .dc-dr-k { flex: none; color: var(--fg-3); }
 .dc-dr-v { min-width: 0; color: var(--fg); font-weight: 500; }
-.dc-dr-b { max-height: min(22dvh, 180px); margin-top: 2px; overflow-y: auto; overscroll-behavior: contain; color: var(--fg); font-size: 14px; line-height: 22px; white-space: pre-wrap; }
-.dc-edit { flex: none; display: flex; flex-direction: column; gap: 8px; }
-.dc-ctx { display: flex; align-items: center; gap: 8px; }
-.dc-note { width: 100%; box-sizing: border-box; min-height: 72px; padding: 10px 12px; border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); resize: vertical; font-size: 14px; line-height: 22px; }
+.dc-dr-b { max-height: min(22dvh, 180px); margin-top: var(--sp-05); overflow-y: auto; overscroll-behavior: contain; color: var(--fg); font-size: 14px; line-height: 22px; white-space: pre-wrap; }
+.dc-edit { flex: none; display: flex; flex-direction: column; gap: var(--sp-2); }
+.dc-ctx { display: flex; align-items: center; gap: var(--sp-2); }
+.dc-note { width: 100%; box-sizing: border-box; min-height: 72px; padding: 10px var(--sp-3); border: 0; border-radius: var(--r-ctl); background: var(--ff-fill); resize: vertical; font-size: 14px; line-height: 22px; }
 .dc-note:focus { outline: 0; box-shadow: var(--ff-ring); }
-.dc-eb { display: flex; gap: 8px; }
-.dc-fl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.dc-fl .dr-add { flex: none; padding: 0 12px; }
+.dc-eb { display: flex; gap: var(--sp-2); }
+.dc-fl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.dc-fl .dr-add { flex: none; padding: 0 var(--sp-3); }
 .dc-fl .fatt { height: 48px; max-width: 100%; }
 /* 돌아가기 (secondary) and the send button (primary) are the one button system (01-tokens.css); only the row layout is here */
 .dc-back, .dc-go { flex: 1; }
 @media (pointer: coarse) { .dc-note { font-size: 16px; } }
-.dc-st { flex: none; padding: 4px 16px 10px; color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
+.dc-st { flex: none; padding: var(--sp-1) var(--sp-4) 10px; color: var(--fg-3); font-size: 12.5px; line-height: 18px; }
 /* 답한 결정의 기록 (10-decision-card.js dcRecordNode): 카드가 접힌 뒤 대화에 남는 조용한 한 줄 — 질문과 고른 답만, 바탕·테두리 없이 */
-.tl-in > .dc-rec { align-self: flex-end; display: grid; gap: 2px; max-width: 80%; min-width: 0; margin-top: 12px; color: var(--fg-3); font: 400 12.5px/18px var(--font); text-align: right; }
+.tl-in > .dc-rec { align-self: flex-end; display: grid; gap: var(--sp-05); max-width: 80%; min-width: 0; margin-top: var(--sp-3); color: var(--fg-3); font: 400 12.5px/18px var(--font); text-align: right; }
 .tl-in > .dc-rec:first-child { margin-top: 0; }
-.dc-rec-r { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; gap: 0 6px; min-width: 0; }
+.dc-rec-r { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: baseline; gap: 0 var(--sp-15); min-width: 0; }
 .dc-rec-k { flex: none; color: var(--fg-3); }
 .dc-rec-q, .dc-rec-a { min-width: 0; overflow-wrap: anywhere; }
 .dc-rec-q { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -147,18 +147,18 @@
 /* In the 알림 / 작업내역 conversations the rows are not answer buttons: a tap on the message opens the decision sheet (30-notices.js). */
 .dcm.fx { cursor: pointer; }
 .dcm.fx .dcm-row { pointer-events: none; }
-.dcm { display: flex; flex-direction: column; gap: 2px; max-width: 520px; margin-top: 8px; }
-.todo { flex: none; margin: 0 0 8px; border-radius: 12px; background: var(--card); }
+.dcm { display: flex; flex-direction: column; gap: var(--sp-05); max-width: 520px; margin-top: var(--sp-2); }
+.todo { flex: none; margin: 0 0 var(--sp-2); border-radius: 12px; background: var(--card); }
 .todo[hidden] { display: none; }
-.td-bar { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 4px 12px; border: 0; border-radius: 12px; background: transparent; color: var(--fg); font: inherit; font-size: 13.5px; line-height: 20px; text-align: left; cursor: pointer; }
+.td-bar { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: 36px; padding: var(--sp-1) var(--sp-3); border: 0; border-radius: 12px; background: transparent; color: var(--fg); font: inherit; font-size: 13.5px; line-height: 20px; text-align: left; cursor: pointer; }
 .td-bar .td-g { margin-top: 0; }
 .td-cur { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .td-n { flex: none; color: var(--fg-3); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .td-ch { flex: none; width: 16px; height: 16px; color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
 .td-bar[aria-expanded="true"] .td-ch { transform: rotate(180deg); }
-.td-list { max-height: min(40dvh, 320px); padding: 0 12px 10px; overflow-y: auto; overscroll-behavior: contain; }
-.td-ph { margin: 10px 0 2px; color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 400; }
-.td-r { display: flex; align-items: flex-start; gap: 10px; padding: 4px 0; color: var(--fg-2); font-size: 13.5px; line-height: 20px; }
+.td-list { max-height: min(40dvh, 320px); padding: 0 var(--sp-3) 10px; overflow-y: auto; overscroll-behavior: contain; }
+.td-ph { margin: 10px 0 var(--sp-05); color: var(--fg-3); font-size: 12px; line-height: 16px; font-weight: 400; }
+.td-r { display: flex; align-items: flex-start; gap: 10px; padding: var(--sp-1) 0; color: var(--fg-2); font-size: 13.5px; line-height: 20px; }
 .tr-act .td-tx { color: var(--fg); font-weight: 500; }
 .td-tx { min-width: 0; }
 .tr-done .td-tx { color: var(--fg-3); }
@@ -170,5 +170,5 @@
 .tg-done { background: var(--fg-3); }
 .tg-done::after { content: ""; position: absolute; left: 4px; top: 1.5px; width: 3px; height: 6px; border: solid var(--card); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
 .tg-drop { border: 1.5px dashed var(--fg-3); }
-@media (pointer: coarse) { .dc-fold { width: 44px; height: 44px; margin: -6px -4px 0 0; } .td-bar { min-height: 44px; } }
+@media (pointer: coarse) { .dc-fold { width: 44px; height: 44px; margin: calc(var(--sp-15) * -1) calc(var(--sp-1) * -1) 0 0; } .td-bar { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .dc-fold .ic, .td-ch { transition: none; } }
