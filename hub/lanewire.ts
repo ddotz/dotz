@@ -4,8 +4,8 @@ import { log, now, paths } from "./config.ts";
 import * as discord from "./discord.ts";
 import { msg } from "./i18n.ts";
 import { emit, emitDelivery } from "./events.ts";
-import { setNoticeHandler as setLaneNoticeHandler, setOwnerNoteHandlers, setProgressHandler, setReportHandler, setVerifiedHandler } from "./lanes.ts";
-import { laneVerified } from "./notices.ts";
+import { setNoticeHandler as setLaneNoticeHandler, setOpenCardCheck, setOwnerNoteHandlers, setProgressHandler, setReportHandler, setVerifiedHandler } from "./lanes.ts";
+import { laneHasOpenCard, laneVerified } from "./notices.ts";
 import { orch, steer as steerOrchestrator } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { createLaneRelay } from "./lanerelay.ts";
@@ -13,12 +13,13 @@ import { inOrder, localize, noteHandoffLeak } from "./outlang.ts";
 import { parseTone, stripHandoff } from "./tone.ts";
 import { send, deliver, out } from "./outbound.ts";
 import { dropForLine, forLines } from "./forline.ts";
-import { clipKeepingAsk, normalizeAsk } from "./ask-normalize.ts";
+import { clipKeepingAsk, normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 
 export const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n), steer: text => steerOrchestrator(msg().laneReportSteer(text)) });
 
 export function installLaneHandlers(): void {
 	setVerifiedHandler((name, text) => laneVerified(name, text));
+	setOpenCardCheck(laneHasOpenCard);
 	setReportHandler((lane, raw, answering) => {
 		noteHandoffLeak(`lane:${lane.name}`, raw);
 		const text = stripHandoff(raw);
@@ -57,7 +58,7 @@ export function installLaneHandlers(): void {
 			noteHandoffLeak(`lane:${lane}`, raw);
 			const channel = `lane:${lane}`;
 			void inOrder(channel, async () => {
-				const shown = await localize(clipKeepingAsk(dropForLine(normalizeAsk(stripHandoff(raw))), 900), channel, "lane");
+				const shown = await localize(clipKeepingAsk(dropForLine(plainBareAsk(normalizeAsk(stripHandoff(raw)))), 900), channel, "lane");
 				emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, answers: refs });
 				return shown;
 			})
@@ -73,7 +74,7 @@ export function installLaneHandlers(): void {
 	// Mid-turn lane text: an [ask], [fail] or [done] line is something the owner must see and keep, so it is a real message;
 	// anything else edits the lane channel's one progress message.
 	setProgressHandler((lane, raw) => {
-		const text = normalizeAsk(stripHandoff(raw));
+		const text = plainBareAsk(normalizeAsk(stripHandoff(raw)));
 		const channel = `lane:${lane.name}`;
 		const tone = parseTone(text).tone;
 		const real = tone === "ask" || tone === "fail" || tone === "done";

@@ -10,7 +10,7 @@ import * as livestatus from "./livestatus.ts";
 import { updateNow } from "./update-now.ts";
 import { isNote, msg } from "./i18n.ts";
 import { stripSteerMark } from "./steer-mark.ts";
-import { normalizeAsk } from "./ask-normalize.ts";
+import { normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 import { stripRecommendMark } from "./choices.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
 import { answeredIds, answeredSince, broadcast, emit, emitDelivery, eventTarget, type HubEvent, ownerMessage, recentOwnerMessages, tailEvents, workAnswer } from "./events.ts";
@@ -366,7 +366,8 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	// The assistant's send-approval card waits its turn in its conversation (a held card is posted later by the queue, marked `queued`).
 	const routed = answersOwner && !extra.update_key && !extra.queued;
 	// Every answer and dotz_send of every conversation passes here: a list of options becomes a decision card whoever wrote it (hub/ask-normalize.ts).
-	const body = routed ? normalizeAsk(stripHandoff(text)) : stripRecommendMark(stripHandoff(text));
+	const fromLane = typeof extra.source === "string" && extra.source.startsWith("lane:");
+	const body = routed ? normalizeAsk(stripHandoff(text)) : fromLane ? plainBareAsk(stripRecommendMark(stripHandoff(text))) : stripRecommendMark(stripHandoff(text));
 	// Several drafts in one post: each is its own card, in the queue below.
 	const drafts = routed ? splitDraftCards(body) : undefined;
 	if (drafts) {
