@@ -31,8 +31,8 @@ span.mr-star:not(.on) { opacity: .45; }
 /* the open mail's top bar (30-mail-box.js mailOpenBar): one row of icons on its own tinted strip across the card (prototype #mail/1) that separates
    it from the mail header, sticky while the mail scrolls. The card's padding is a variable so the strip can run edge to edge. */
 .tl-in > .bm.rc.mopen { --mpx: 18px; gap: var(--sp-1); padding: 0 var(--mpx) var(--sp-4); }
-@media (max-width: 639px) { .tl-in > .bm.rc.mopen { --mpx: 16px; padding-bottom: 14px; } }
-.mtop { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 0; height: 40px; margin: 0 calc(var(--mpx) * -1) 10px; padding: 0 calc(var(--mpx) - var(--sp-2)); border-radius: var(--r-ctl); background: var(--layer); }
+@media (max-width: 639px) { .tl-in > .bm.rc.mopen { --mpx: 16px; padding-bottom: var(--sp-3); } }
+.mtop { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 0; height: 40px; margin: 0 calc(var(--mpx) * -1) var(--sp-2); padding: 0 calc(var(--mpx) - var(--sp-2)); border-radius: var(--r-ctl); background: var(--layer); }
 .mtop .mtop-b, .mtop .mr-more { flex: 0 1 36px; min-width: 32px; width: 36px; height: 32px; border-radius: var(--r-ctl); color: var(--fg-2); }
 .mtop .mtop-b .ic, .mtop .mr-more .ic { width: 16px; height: 16px; }
 .mtop .mtop-b:hover, .mtop .mr-more[aria-expanded="true"] { background: var(--active); color: var(--fg); }
@@ -43,7 +43,7 @@ span.mr-star:not(.on) { opacity: .45; }
 .mopen > .rc-hd { margin-top: 0; font-size: 13px; }
 /* the summary (11-mailtext.js mailSumBlock): a tinted block, the lightning mark, 요약 ·, two short sentences with the to-do in bold */
 .msum { display: flex; align-items: flex-start; gap: var(--sp-2); margin: var(--sp-15) 0 var(--sp-1); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: 14px; line-height: 21px; }
-.msum > .ic { flex: none; width: 16px; height: 16px; margin-top: 2.5px; color: var(--accent); }
+.msum > .ic { flex: none; width: 16px; height: 16px; margin-top: var(--sp-05); color: var(--accent); }
 .msum-t { min-width: 0; overflow-wrap: anywhere; word-break: keep-all; }
 .msum-k { color: var(--fg-3); }
 .msum b { color: var(--fg); font-weight: 700; }
@@ -117,7 +117,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 .mbox-reply .mbox-sf { padding: var(--sp-3) 0 0; }
 .mbox-quote { margin: var(--sp-2) 0 var(--sp-1); color: var(--fg-3); font-size: 13px; }
 .mbox-quote summary { display: flex; align-items: center; width: fit-content; height: 28px; padding: 0 var(--sp-2); border-radius: var(--r-ctl); color: var(--fg-2); font-weight: 500; line-height: 20px; cursor: pointer; }
-.mbox-qt { max-height: 220px; margin: var(--sp-15) 0 0; padding-left: 10px; overflow: auto; border-left: 2px solid var(--line-2); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mbox-qt { max-height: 220px; margin: var(--sp-15) 0 0; padding-left: var(--sp-3); overflow: auto; border-left: 2px solid var(--line-2); font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* A phone keeps the sender's name whole: the unread tag is the bold row itself (the row's aria-label still says 안 읽음), the paperclip count
    is in the open mail, and the one tag that stays is small. */
@@ -153,13 +153,13 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
    sits on a faint fill and an unread one on the full card and in bold. A row is three lines on a phone
    (☐ ☆ sender, tags, time, the 초안 작성 pencil and ⋯ / the subject, its reply-draft tag / a one-line summary) and one line from 1100px.
    The 받는 사람 line and 할 일 stay in the open mail. The list ends clear of the floating 메일 쓰기. */
-#mon-tl:has(> .bm.rc.mr) { gap: 0; padding-bottom: 104px; }
+#mon-tl:has(> .bm.rc.mr) { --mon-dock: 104px; gap: 0; padding-bottom: var(--mon-dock); }
 #mon-tl:has(> .bm.rc.mr) > :not(.mr, .mr-filter, .mbox-bar) { margin: var(--sp-2) 0; }
 #mon-tl > .mr-filter { padding-bottom: var(--sp-3); }
 /* the mail folders are chips (ui-spec 탭·칩): 28px pills on the card grey, the chosen one filled with the ink */
 .mr-filter.mr-mail .mr-f { height: 28px; padding: 0 var(--sp-3); border-radius: 16px; background: var(--card); color: var(--fg-2); font-size: 13px; line-height: 20px; font-weight: 500; }
 .mr-filter.mr-mail .mr-f.on { background: var(--fg); color: var(--bg); font-weight: 500; }
-#mon-tl > .bm.rc.mr { position: relative; flex-flow: row wrap; align-items: center; column-gap: var(--sp-15); row-gap: 1px; padding: 10px var(--sp-4); border-radius: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--card) 55%, var(--bg)); }
+#mon-tl > .bm.rc.mr { position: relative; flex-flow: row wrap; align-items: center; column-gap: var(--sp-15); row-gap: var(--sp-05); padding: var(--sp-2) var(--sp-4); border-radius: 0; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--card) 55%, var(--bg)); }
 #mon-tl > :not(.mr) + .bm.rc.mr { border-top-left-radius: 12px; border-top-right-radius: 12px; }
 #mon-tl > .bm.rc.mr:not(:has(+ .bm.rc.mr)) { border-bottom: 0; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
 #mon-tl > .bm.rc.mr:hover, #mon-tl > .bm.rc.mr.mr-new { background: var(--card); }
@@ -167,7 +167,7 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
 /* the reply state of a mail you need not act on is a plain grey word; only what waits for you (답장 필요, 미답장) keeps its colour */
 #mon-tl > .mr .rc-hd .tag:not(.warn, .unreplied) { padding: 0; background: none; color: var(--fg-3); font-weight: 400; }
 #mon-tl > .mr > .rc-hd { flex: 1 0 100%; height: 22px; gap: var(--sp-15); }
-#mon-tl > .mr .rc-hd .ib { width: 28px; height: 28px; margin: -3px calc(var(--sp-1) * -1); color: var(--fg-3); }
+#mon-tl > .mr .rc-hd .ib { width: 28px; height: 28px; margin: -3px calc(var(--sp-1) * -1); /* nudge: 28px button inside a 22px text line */ color: var(--fg-3); }
 #mon-tl > .mr .rc-hd .ib .ic { width: 16px; height: 16px; }
 #mon-tl > .mr .rc-hd .ib:hover { background: var(--active); color: var(--fg); }
 #mon-tl > .mr > .rc-title { flex: 1 1 0; min-width: 0; font-size: 15px; line-height: 22px; }
