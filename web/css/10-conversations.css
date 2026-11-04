@@ -67,27 +67,40 @@
 .cv-sys .cv-sys-st { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--fg-2); }
 .cv-sys .cv-sys-st[hidden] { display: none; }
 .cv-sys .cv-sys-mt { font-variant-numeric: tabular-nums; }
-/* 백그라운드 작업 줄 (소개 페이지 작업 카드): 채팅의 흰 카드 위라 한 단계 어두운 --layer 바탕, 이어지면 --sp-1 간격으로 묶음, 12px 회색 이름표, 500 제목, 오른쪽 상태 알약, 끝나면 결과 파일 칩과 가득 찬 막대. 움직이는 것 없음(원칙 3·6·7·9) */
-.tl-in > .cv-sys.cv-task { display: block; align-self: stretch; width: auto; max-width: none; margin: var(--sp-2) 0 0; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--layer); color: var(--fg); text-align: left; }
-.tl-in > .cv-sys.cv-task + .cv-sys.cv-task { margin-top: calc(var(--sp-1) - var(--sp-3)); }
-.cv-task .ct-hd { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.cv-task .ct-nm { display: grid; gap: var(--sp-05); min-width: 0; }
-.cv-task .ct-lb { color: var(--fg-2); font: 400 12px/16px var(--font); }
-.cv-task .ct-t { color: var(--fg); font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
-.cv-task .ct-pill { flex: none; gap: var(--sp-15); height: 24px; padding: 0 var(--sp-3); border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, var(--layer)); color: var(--accent); font: 500 12px/16px var(--font); }
+/* 백그라운드 작업 카드 (소개 페이지 작업 카드): 이어진 작업은 한 격자(.cv-tasks)로 묶여 채팅 폭을 꽉 채워요. 한 줄 3장까지, 남는 줄은 그 줄 안에서 폭을 나눠 가져요(4장 = 3 + 1, 5장 = 3 + 2).
+   장 수는 창이 아니라 격자 폭으로 정해요. 6칸 격자라 1·2·3장이 모두 나눠떨어져요.
+   상태가 바뀌어도 카드 높이는 그대로예요: 제목은 두 줄 칸을 늘 차지하고, 결과 파일은 그 둘째 줄 자리에 들어오고, 막대는 카드 아래 여백에 떠요(원칙 3·6·7·9). */
+.tl-in > .cv-tasks { container: cv-tasks / inline-size; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--sp-2); align-self: stretch; margin: var(--sp-2) 0 0; }
+.cv-tasks:empty { display: none; }
+.cv-task { container: cv-task / inline-size; position: relative; grid-column: span 6; min-width: 0; padding: var(--sp-3) var(--sp-4) var(--sp-4); border-radius: var(--r-card); background: var(--layer); color: var(--fg); text-align: left; }
+@container cv-tasks (min-width: 320px) and (max-width: 559.98px) {
+  .cv-task { grid-column: span 3; }
+  .cv-task:nth-child(odd):last-child { grid-column: span 6; }
+}
+@container cv-tasks (min-width: 560px) {
+  .cv-task { grid-column: span 2; }
+  .cv-task:nth-child(3n+1):last-child { grid-column: span 6; }
+  .cv-task:nth-child(3n+1):nth-last-child(2), .cv-task:nth-child(3n+2):last-child { grid-column: span 3; }
+}
+.cv-task .ct-hd { display: grid; grid-template: "lb st" minmax(24px, auto) "t t" auto / minmax(0, 1fr) auto; align-items: center; gap: var(--sp-05) var(--sp-2); width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cv-task .ct-nm { display: contents; }
+.cv-task .ct-lb { grid-area: lb; overflow: hidden; color: var(--fg-2); font: 400 12px/16px var(--font); text-overflow: ellipsis; white-space: nowrap; }
+.cv-task .ct-t { grid-area: t; display: -webkit-box; min-height: 2lh; overflow: hidden; color: var(--fg); font: 500 15px/22px var(--font); overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+@container cv-task (max-width: 299.98px) { .cv-task .ct-kind:not(:only-child) { display: none; } }   /* 좁은 카드는 알약 옆에 시각만 */
+.cv-task:has(.ct-file) .ct-t { min-height: 1lh; -webkit-line-clamp: 1; }
+.cv-task .ct-pill { grid-area: st; flex: none; gap: var(--sp-15); height: 24px; padding: 0 var(--sp-3); border-radius: 999px; background: color-mix(in srgb, var(--accent) 12%, var(--layer)); color: var(--accent); font: 500 12px/16px var(--font); }
 .cv-task .ct-pill.ok { background: color-mix(in srgb, var(--ok) 14%, var(--layer)); color: var(--ok); }
 .cv-task .ct-pill.err { background: color-mix(in srgb, var(--err) 12%, var(--layer)); color: var(--err); }
 .cv-task .ct-pill.warn { background: color-mix(in srgb, var(--warn) 14%, var(--layer)); color: var(--warn); }
 .cv-task .ct-pill.off { background: var(--line-2); color: var(--fg-2); }
 .cv-task .ct-pill .ic { width: 12px; height: 12px; stroke-width: 2.4; }
-.cv-task .ct-body { display: grid; gap: var(--sp-2); margin-top: var(--sp-2); }
-.cv-task .ct-file { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
-.cv-task .ct-fi { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--card); color: var(--fg-2); }
-.cv-task .ct-fi .ic { width: 16px; height: 16px; }
-.cv-task .ct-ft { display: grid; gap: var(--sp-05); min-width: 0; }
-.cv-task .ct-ft b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 500 14px/20px var(--font); }
-.cv-task .ct-ft span { color: var(--fg-3); font: 400 12px/16px var(--font); }
-.cv-task .ct-bar { height: 3px; border-radius: 2px; background: var(--track); overflow: hidden; }
+.cv-task .ct-body { display: flex; gap: var(--sp-3); overflow-x: auto; scrollbar-width: none; }
+.cv-task .ct-file { display: flex; flex: 1 1 0; align-items: center; gap: var(--sp-15); min-width: 96px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.cv-task .ct-file .ic { flex: none; width: 16px; height: 16px; color: var(--fg-2); }
+.cv-task .ct-ft { display: flex; align-items: baseline; gap: var(--sp-15); min-width: 0; }
+.cv-task .ct-ft b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); font: 500 14px/22px var(--font); }
+.cv-task .ct-ft span { flex: none; color: var(--fg-3); font: 400 12px/16px var(--font); }
+.cv-task .ct-bar { position: absolute; right: var(--sp-4); bottom: var(--sp-15); left: var(--sp-4); height: 3px; border-radius: 2px; background: var(--track); overflow: hidden; }
 .cv-task .ct-bar span { display: block; height: 100%; background: var(--ok); }
 
 /* 목록 행 (시제품 채팅 목록 proto .li) — 모든 너비의 공통 기반이에요: 48px 두 줄, 36px 둥근 사각 아이콘 면, 오른쪽 시각·대기 표시, 구분선 한 줄, 고른 행은 회색 면.
