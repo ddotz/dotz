@@ -8,18 +8,20 @@ const says = (i: number) => ({ ts: ts(i), kind: "out", source: "orchestrator", t
 const MAIN = Array.from({ length: 200 }, (_, i) => says(i));
 const AT = ts(190);
 const notice = { id: "n1", kind: "message", tone: "", cls: "conv", read: false, title: "땃쥐", text: "내용", open: "main", src: "main", ts: AT, updated: AT, at: AT };
-let gate: Promise<void> | null = null;
+let gate: Promise<void> | null = null, stateGate: Promise<void> | null = null, extra: unknown[] = [], histories = 0;
 const hub = fakeHub({
 	state: () => idleState(),
 	api: async (_req, url) => {
+		if (url.pathname === "/api/state" && stateGate) await stateGate;
 		if (url.pathname === "/api/history") {
+			histories++;
 			if (gate) await gate;
 			const before = url.searchParams.get("before");
 			const all = url.searchParams.get("target") === "main" ? MAIN : [];
 			return json({ target: "main", events: (before ? all.filter(e => e.ts < before) : all).slice(-Number(url.searchParams.get("limit") ?? 60)) });
 		}
 		if (url.pathname === "/api/activity") { if (gate) await gate; return json({ items: [], more: false, history: false }); }
-		if (url.pathname === "/api/notices") { if (gate) await gate; return json({ unread: 1, items: [notice] }); }
+		if (url.pathname === "/api/notices") { if (gate) await gate; return json({ unread: 1, items: [notice, ...extra] }); }
 	},
 });
 afterAll(() => hub.stop());
@@ -85,6 +87,34 @@ describe("opening from a push", () => {
 		gate = null;
 		await waitFor(`ts("main").hLoaded && !tl.textContent.includes("지워진 메시지")`);
 		expect(await ev<boolean>(`ts("main").msgs.some(e => e.text === "지워진 메시지")`)).toBe(false);
+	});
+
+	test("a computer switch lands on 홈 drawn from the last visit with every answer held, and reads the conversation after the state", async () => {
+		const ask = { ...notice, id: "n2", kind: "message", tone: "ask", title: "물어볼 게 있어요", text: "확인해 주세요" };
+		extra = [ask];
+		const view = await hub.view({ width: 390, height: 844 }, "/#home");
+		const { waitFor, ev } = on(view);
+		await waitFor(`NT.loaded && S`);
+		await ev(`(async () => {
+			S.auth = [{ id: "pending-login" }];
+			await snapHomeSave();
+			const rec = await new Promise(res => { const q = indexedDB.open("dotz-snap", 1); q.onsuccess = () => { const g = q.result.transaction("conv").objectStore("conv").get("~home"); g.onsuccess = () => { q.result.close(); res(g.result); }; }; });
+			window.__kept = { auth: rec.state.auth, asks: rec.notices.length };
+		})()`);
+		await waitFor(`window.__kept`);
+		expect(await ev<{ auth: unknown[]; asks: number }>(`window.__kept`)).toEqual({ auth: [], asks: 1 });
+		let release!: () => void;
+		gate = stateGate = new Promise(r => { release = r; });
+		histories = 0;
+		await view.navigate(`${hub.origin}/`);
+		await waitFor(`S && S.seeded && $("#home-now").textContent.includes("물어볼 게 있어요")`);
+		expect(await ev<boolean>(`!NT.loaded`)).toBe(true);
+		expect(histories).toBe(0);
+		release();
+		gate = stateGate = null;
+		await waitFor(`S && !S.seeded && NT.loaded && ts("main").hLoaded`);
+		expect(histories).toBeGreaterThan(0);
+		extra = [];
 	});
 
 	test("a device that lost its pairing keeps no stored conversation, even as the page leaves", async () => {

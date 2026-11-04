@@ -259,7 +259,8 @@ describe("service worker shell", () => {
 	const boot = (caches: ReturnType<typeof fakeCaches>, fetchImpl: (u: string) => Promise<Response>, clients: unknown = {}) => {
 		const handlers: Record<string, (ev: any) => void> = {};
 		const location = { origin: "https://dotz.test" };
-		new Function("self", "caches", "location", "fetch", "Response", "URL", swSource)({ clients, addEventListener: (t: string, h: (ev: any) => void) => { handlers[t] = h; } }, caches, location, (u: string | Request) => fetchImpl(typeof u === "string" ? u : u.url), Response, URL);
+		// The worker's wait before its background check runs at once here: only what it does after that wait is under test.
+		new Function("self", "caches", "location", "fetch", "Response", "URL", "setTimeout", swSource)({ clients, addEventListener: (t: string, h: (ev: any) => void) => { handlers[t] = h; } }, caches, location, (u: string | Request) => fetchImpl(typeof u === "string" ? u : u.url), Response, URL, (run: () => void) => run());
 		return handlers;
 	};
 

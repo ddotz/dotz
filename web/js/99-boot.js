@@ -6,6 +6,7 @@
   // loading while the gateway did not answer, and the load event (the service worker's registration waits on it) never came. It catches up on the open view.
   const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "/custom.js" }));
   if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
+  await snapHomeSeed();
   let h = parseHash();
   if (pushOpenTs && h.view === "chat" && h.t === "alert") h = { view: "notices", t: "" };   // #chat/alert is the 알림 screen: drawn first, then pushOpen lands on the item
   go(h.view || "home", h.t);
@@ -14,7 +15,11 @@
   // is the biggest answer and nothing the conversation draws waits for it; a lane that is gone is switched away from inside refreshState).
   const state = refreshState();
   // #notices needs the state and the notices (asked for in index.html), not the main chat: go() loads a conversation when it is first opened.
-  if (h.view !== "notices") { snapSeed(target).then(seeded => loadTarget(target, seeded)); loadTodo(target); }
+  // Landing on 홈 (every computer switch from a conversation does) the hidden conversation waits for the state: its activity is the slowest answer on a busy gateway.
+  const loadOpen = () => { snapSeed(target).then(seeded => loadTarget(target, seeded)); loadTodo(target); };
+  if (h.view === "notices") { /* its list is already on the way */ }
+  else if ((!h.view || h.view === "home") && !pushOpenTs) state.then(loadOpen);
+  else loadOpen();
   prjLoad().then(() => renderBars(), () => {});
   // 알림 and 작업내역 sit one tap away and their answers are small: read ahead once the page has settled, so their first opening has something to show.
   if (h.view !== "notices") setTimeout(() => { for (const t of ["worklog"]) if (t !== target && !ts(t).hLoaded) loadTarget(t, true).catch(() => {}); }, 1500);
