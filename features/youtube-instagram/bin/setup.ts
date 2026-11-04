@@ -288,17 +288,12 @@ const WATCHES = [
 	{ name: "sns-yt-bulk", label: "유튜브 다국어 설명 적용", script: "yt-bulk.ts", every: 60, platform: "youtube", on: "change", timeout: 900 },
 ] as const;
 
-function projectBody(key: string, c: Config, watchesOn: boolean) {
+function projectBody(key: string, c: Config) {
 	const names = [c.youtube && "유튜브", c.instagram && "인스타"].filter(Boolean).join("·");
 	return {
 		key,
 		title: PROJECT_NAME,
 		purpose: `${names} 영상 올리기, 댓글 답글, 통계를 승인받고 처리해요`,
-		milestones: [
-			{ text: "계정 연결", done: true },
-			{ text: "기본값 정하기", done: true },
-			{ text: "감시 켜기", done: watchesOn },
-		],
 	};
 }
 
@@ -320,7 +315,7 @@ async function apply(ctx: Ctx, flags: Map<string, string | true>, out: (l: strin
 	out(`card ${CARD_ID}`);
 
 	const key = config.channel ?? `dir:${home(snsDir())}`;
-	await gateway(ctx, "PUT", "/api/projects", projectBody(key, config, false));
+	await gateway(ctx, "PUT", "/api/projects", projectBody(key, config));
 	out(`project ${key}`);
 
 	const translating = Boolean(config.youtube?.languages.length);
@@ -351,7 +346,6 @@ async function apply(ctx: Ctx, flags: Map<string, string | true>, out: (l: strin
 		});
 		out(`watch ${w.name} every ${w.every}m`);
 	}
-	await gateway(ctx, "PUT", "/api/projects", projectBody(key, config, true));
 	out("ok");
 }
 
