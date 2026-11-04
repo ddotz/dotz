@@ -34,7 +34,8 @@ Cloudflare Pages에 `site` 폴더를 그대로 올립니다(프로젝트 이름 
 
 ```sh
 bun site/stamp-landing.ts   # 자산 주소에 내용 해시를 찍어, 다시 찾은 브라우저가 옛 CSS와 섞이지 않게 합니다
-bunx wrangler pages deploy site --project-name dotz --branch main
+rsync -a --delete --exclude AGENTS.md site/ /tmp/dotz-site/   # Pages는 .assetsignore를 안 읽어서, 작업 규칙 파일은 복사본에서 뺍니다
+bunx wrangler pages deploy /tmp/dotz-site --project-name dotz --branch main
 ```
 
 `ddotz.dev`는 Pages 프로젝트의 커스텀 도메인으로 붙어 있고, apex 레코드는 존 안의 프록시된 CNAME이다. 배포마다 `site` 폴더의 파일을 그대로 덮어쓰므로 빌드 설정은 필요 없습니다.
