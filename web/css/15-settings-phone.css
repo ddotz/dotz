@@ -12,7 +12,7 @@
   #models .fb-item[data-i] .fb-tags { grid-area: 2 / 3 / auto / 5; padding-block: var(--sp-1); }
   #models .fb-item[data-i] .fb-usage { grid-area: 3 / 2 / auto / 5; margin-top: var(--sp-1); }
   /* editor options that do not fit side by side wrap to the next line instead of being cut with an ellipsis */
-  #models .fbe .seg button { flex: 1 0 auto; padding: 0 12px; }
+  #models .fbe .seg button { flex: 1 0 auto; padding: 0 var(--sp-3); }
   /* update: commit subjects and paths wrap */
   #settings .upd-log span { white-space: normal; overflow-wrap: anywhere; }
 }
