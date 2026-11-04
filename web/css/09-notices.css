@@ -62,7 +62,9 @@ div.nt-mon .nt-dot { margin-top: 7px; }
 .hc-none { margin-top: 8px; color: var(--fg-3); font: 400 14px/22px var(--font); }
 /* head note and count: plain grey text, a dot is the only colour; an empty card is just this head (fold) */
 .hc-n { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--fg-3); font: 400 13px/18px var(--font); }
-.card.fold .ch { margin-bottom: 0; }
+/* the head's gap belongs to a body: with nothing under it, or a one-line state (.hc-none brings its own 8px), the card stays balanced */
+.ch:last-child, .ch:has(+ .hc-none), .ch:has(+ .hn > .hc-none) { margin-bottom: 0; }
+.ch:has(+ .hc-none), .ch:has(+ .hn > .hc-none) { min-height: 24px; }   /* the height of a head with a ⋯, so side-by-side state lines share a baseline */
 /* the summary strip (the assistant card): label over number, wrapping as columns */
 .hsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 12px 16px; }
 .hsum-s { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

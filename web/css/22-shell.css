@@ -116,6 +116,9 @@ body { display: flow-root; }
 .hneeds .hn-h .tag { order: 2; }
 .hneeds .hn { border-radius: 0 0 var(--r-card) var(--r-card); }
 .hneeds .hn:has(+ .hn-h) { border-radius: 0; padding-bottom: 4px; }
+/* nothing to answer: the same box as an empty grid card (20px around, the state line 8px under the title) */
+.hneeds:has(> .hn > .hc-none) > .hn-h:first-child { padding: 20px 20px 0; }
+.hneeds .hn:has(> .hc-none) { padding: 0 20px 20px; }
 .hneeds .hn-h.hsub { padding: 12px 20px 4px; border-top: 1px solid var(--line); border-radius: 0; }
 .hneeds .hn-h.hsub h2 { font: 600 13px/18px var(--font); color: var(--fg-2); }
 .hneeds .hn > .hr, .hneeds .hn > .ntg, .hneeds .hn > .ny-more { padding-left: 20px; padding-right: 20px; }
@@ -134,7 +137,7 @@ body { display: flow-root; }
 #home-cards .card > .hn > .hr.hrx > .hrx-m:last-child, #home-cards .card > .hn > .hr.hrx > .hrx-m:has(+ .hrx-f) { padding-right: 20px; }
 #home-cards .card > .hn > .hr.hrx > .hrx-f { padding-left: 40px; padding-right: 20px; }
 #home-cards .card > .hn > .hr.hrx > .btn { margin-right: 16px; }
-#home-cards .card > .hn > .empty { padding: 20px 20px 4px; }
+#home-cards .card > .hn:has(> .hc-none) { margin: 0; }
 @media (max-width: 1023px) { #v-home { padding: 4px 16px 24px; } }
 
 /* the computer is named once on a wide screen (the sidebar's picker row), so the brand and the page title carry no second dot */

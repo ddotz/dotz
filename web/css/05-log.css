@@ -145,6 +145,7 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hr .hn1 .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hr.un .hn1 { font-weight: 600; }
 .hr .ha { min-width: 0; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hr .ha:empty { display: none; }
 .hr .hp { flex: none; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); font-variant-numeric: tabular-nums; }
 .hr .hs.unreplied { color: var(--unreplied); font-weight: 600; }
 .hr .hs { flex: none; min-width: 44px; text-align: right; color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); font-weight: 500; }
@@ -160,7 +161,6 @@ details.think .md { padding: 4px 8px 8px 21px; color: var(--fg-2); font-size: 12
 .hr .dot.att.err { background: var(--err); }
 .hn .ny-more { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin: 0; padding: 0 16px; border: 0; border-top: 0; border-radius: 0; background: transparent; color: var(--fg-2); font: 500 13px/18px var(--font); cursor: pointer; }
 .hn .ny-more:hover { background: var(--hover); color: var(--fg); }
-.hn .empty { padding: 18px 16px; text-align: left; font-size: 13px; color: var(--fg-3); }
 #home-sec { margin-top: 28px; }
 
 /* lanes board */
