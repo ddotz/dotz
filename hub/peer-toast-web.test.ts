@@ -60,7 +60,7 @@ test("in 모니터링 a notice on the other computer toasts once on this page, l
 	await waitFor(`document.querySelector(".snack")`);
 	sendA({ kind: "notice", item: decision("d1"), unread: 1 });
 	sendA({ kind: "notice", item: { id: "t1", kind: "alert", tone: "ask", title: "배포할까요?", read: false, at: "at-d1" }, unread: 2 });
-	await waitFor(`PR.list.find(p => !p.self).need === 1 && document.querySelector("#title.pneed")`);
+	await waitFor(`PR.list.find(p => !p.self).need === 1 && document.querySelector("#title.p-need")`);
 	expect(await view.evaluate(`document.querySelectorAll(".snack").length`)).toBe(1);
 	const text = (await view.evaluate(`document.querySelector(".snack").textContent`)) as string;
 	expect(text).toContain("맥미니");

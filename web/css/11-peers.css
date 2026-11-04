@@ -1,21 +1,25 @@
 /* Computers (33-peers.js): the bot name as the switcher (its unread dot), the switch sheet (on the .ds-* sheet of 09-notices.css) and the bell's other-computer lines. */
-/* the trigger: the brand name (wide) and the page title (phone, a page without a back arrow); the dot sits at the name's bottom right, inside its padding so the ellipsis clip keeps it */
+/* the trigger: the brand row (wide) and the page title (phone, a page without a back arrow). On the phone the dot sits at the name's bottom right, inside its padding so the ellipsis clip keeps it */
 .appbar.hasp:not(.back) h1 { cursor: pointer; }
 @media (max-width: 1099px) { .appbar.hasp:not(.back) h1 { flex: 0 1 auto; margin-right: auto; } }
-#brand-name.pdot, .appbar:not(.back) h1.pdot { position: relative; padding-right: 10px; }
-#brand-name.pdot::after, .appbar:not(.back) h1.pdot::after { content: ""; position: absolute; right: 0; bottom: 4px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
-.appbar:not(.back) h1.pdot::after { bottom: 6px; }
+.appbar:not(.back) h1.pdot { position: relative; padding-right: 10px; }
+.appbar:not(.back) h1.pdot::after { content: ""; position: absolute; right: 0; bottom: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 /* A computer switcher is there: a small chevron after the name says the name opens it (owner 2026-11-03). On the phone's page title the chevron
    sits at the title's right end and the computer dot keeps the name's bottom-right corner just before it. */
-body:has(#appbar.hasp) #brand::after, .appbar.hasp:not(.back) h1::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(45deg); }
-body:has(#appbar.hasp) #brand::after { margin: 0 2px 4px 2px; }
+.appbar.hasp:not(.back) h1::before { content: ""; flex: none; width: 6px; height: 6px; border-right: 1.5px solid var(--fg-3); border-bottom: 1.5px solid var(--fg-3); transform: rotate(45deg); }
+/* the brand row: one chevron right after the name, only with a computer to switch to (it reserves nothing otherwise); the other computers' dot sits at its bottom right */
+.brand-c { position: relative; display: flex; flex: none; margin-left: -4px; color: var(--fg-3); }
+.brand-c[hidden] { display: none; }
+.brand-c .ic { width: 14px; height: 14px; }
+.brand-c.pdot::after { content: ""; position: absolute; right: -2px; bottom: -1px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.brand-c.p-need::after { background: var(--warn); }
 .appbar.hasp:not(.back) h1 { position: relative; padding-right: 16px; }
 .appbar.hasp:not(.back) h1::before { position: absolute; right: 2px; top: 50%; margin-top: -6px; }
 .appbar.hasp:not(.back) h1.pdot { padding-right: 26px; }
 .appbar.hasp:not(.back) h1.pdot::after { right: 14px; }
-#brand-name.pneed::after, .appbar:not(.back) h1.pneed::after { background: var(--warn); }
+.appbar:not(.back) h1.p-need::after { background: var(--warn); }
 /* the switcher (proto.css .pop): "내 컴퓨터" over one low row per computer - status dot, name over one quiet line, the check or the waiting count at the right -
-   and 컴퓨터 관리 under a line. With the sidebar's computer row on screen it is a popover right under that row (no scrim, .anch); the phone keeps its bottom sheet. */
+   and 컴퓨터 관리 under a line. With the sidebar's brand row on screen it is a popover right under that row (no scrim, .anch); the phone keeps its bottom sheet. */
 .ds-sheet.pr-sheet { box-shadow: none; animation: none; }
 @media (min-width: 700px) { .ds-sheet.pr-sheet { max-width: 340px; } }
 .ds-bd.anch { display: block; background: transparent; animation: none; }

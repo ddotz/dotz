@@ -20,16 +20,7 @@ body { display: flow-root; }
   /* brand: the mark and the assistant's name, 40px like the nav items below it */
   .brand { display: flex; align-items: center; gap: 8px; width: 100%; height: 40px; padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: inherit; font: 600 15px/20px var(--font); letter-spacing: 0; text-align: left; }
   .brand:hover { background: var(--hover); }
-  .brand span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .brand .logo { width: 20px; height: 20px; }
-  /* computer picker row: the current computer, opens the switcher sheet (#brand keeps the same action) */
-  .gw { display: flex; align-items: center; gap: 6px; width: 100%; height: 32px; padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font: 500 12px/16px var(--font); text-align: left; }
-  .gw:hover { background: var(--hover); color: var(--fg); }
-  .gw .ic { color: var(--fg-3); }
-  .gw .gw-n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .gw .gw-c { margin-left: auto; color: var(--fg-3); }
-  .gw.pneed .gw-n { color: var(--fg); font-weight: 600; }
-  .gw.pdot .gw-c::after { content: ""; display: block; width: 6px; height: 6px; margin: 0 auto; border-radius: 50%; background: var(--warn); }
   /* nav: one column, 40px rows, the open item a white card */
   .rail { display: flex; flex: none; flex-direction: column; align-self: stretch; gap: 2px; width: 100%; min-width: 0; margin: 0; margin-top: 8px; }
   .ni { position: relative; display: flex; flex: none; flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; height: 40px; padding: 0 10px; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 500; text-align: left; }
@@ -38,8 +29,9 @@ body { display: flow-root; }
   .ni.on::after, .ni.on::before { content: none; }
   .ni .ic { display: block; width: 16px; height: 16px; }
   .ni .nl { min-width: 0; }
-  .ni .nnb { position: static; top: auto; left: auto; flex: none; margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--warn); color: var(--bg); font-size: 11px; line-height: 18px; font-weight: 600; text-align: center; }
-  .ni .nub { position: static; top: auto; left: auto; right: auto; bottom: auto; align-self: flex-end; margin: 0 0 6px 2px; }
+  /* a tab with something new carries one small dot right after its text, no count (the count stays in the aria-label and the title); the phone tab bar draws the same badges */
+  .ni .nnb, .ni .nub { position: static; flex: none; align-self: flex-end; width: 6px; min-width: 6px; height: 6px; margin: 0 0 12px -6px; padding: 0; overflow: hidden; border-radius: 50%; font-size: 0; line-height: 0; }
+  .ni .nnb { background: var(--warn); }
   /* lower area: what the limits say now; a tap opens 사용량 */
   .sfoot { margin-top: auto; padding-top: 8px; }
   .sf-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 6px 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg-2); text-align: left; }
@@ -70,8 +62,8 @@ body { display: flow-root; }
 #bell-n[hidden] { display: none; }
 
 @media (max-width: 1023px) {
-  /* phone / tablet: the sidebar is the bottom tab bar (proto .tabbar), the brand, picker and footer step aside */
-  .gw, .sfoot { display: none; }
+  /* phone / tablet: the sidebar is the bottom tab bar (proto .tabbar), the brand and footer step aside */
+  .sfoot { display: none; }
   .side { padding-bottom: max(2px, calc(env(safe-area-inset-bottom) - 8px)); }
   .ni { height: 56px; }
   .ni.on::before { left: 28%; right: 28%; }
@@ -140,15 +132,12 @@ body { display: flow-root; }
 #home-cards .card > .hn:has(> .hc-none) { margin: 0; }
 @media (max-width: 1023px) { #v-home { padding: 4px 16px 24px; } }
 
-/* the computer is named once on a wide screen (the sidebar's picker row), so the brand and the page title carry no second dot */
+/* the computer switcher is the sidebar's brand row on a wide screen, so the page title carries no chevron or dot */
 @media (min-width: 1024px) {
-  #brand-name.pdot { padding-right: 0; }
-  body:has(#appbar.hasp) #brand::after { content: none; }
-  .appbar:not(.back) h1.pdot::after, .appbar:not(.back) h1.pneed::after { content: none; }
-  .appbar.hasp:not(.back) h1.pdot::after, .appbar.hasp:not(.back) h1.pneed::after { content: none; }
+  .appbar:not(.back) h1.pdot::after, .appbar:not(.back) h1.p-need::after { content: none; }
+  .appbar.hasp:not(.back) h1.pdot::after, .appbar.hasp:not(.back) h1.p-need::after { content: none; }
   .appbar.hasp:not(.back) h1::before { content: none; }
-  .appbar.hasp:not(.back) h1.pdot, .appbar.hasp:not(.back) h1.pneed { padding-right: 0; }
-  #brand-name.pdot::after { content: none; }
-  .appbar h1.pdot, .appbar h1.pneed { padding-right: 0; }
-  .appbar h1.pdot::after, .appbar h1.pneed::after { content: none; }
+  .appbar.hasp:not(.back) h1.pdot, .appbar.hasp:not(.back) h1.p-need { padding-right: 0; }
+  .appbar h1.pdot, .appbar h1.p-need { padding-right: 0; }
+  .appbar h1.pdot::after, .appbar h1.p-need::after { content: none; }
 }

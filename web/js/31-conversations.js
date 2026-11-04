@@ -518,24 +518,3 @@ convLoad();
 // The bell opens the 알림 conversation; its count comes from paintBell (09-needs-you.js), fed by every notice change.
 $("#bell").prepend(icon("bell"));
 $("#bell").onclick = () => openTarget("alert", lastChatView());
-// The sidebar's picker row shows the computer this page is on and opens the same switcher as the brand (33-peers.js prOpen);
-// prPaint keeps the brand current, so the row follows its attributes instead of reading that file's state.
-function sidebarPick() {
-  const b = $("#gwpick"), name = $("#gw-name");
-  if (!b || !name) return;
-  let me = null, others = [];
-  try { me = prSelf(); others = prOthers(); } catch { /* 33-peers.js has not run yet */ }
-  name.textContent = (me && me.name) || "이 컴퓨터";
-  const need = others.some(p => p.need > 0), more = others.some(p => p.unread > 0);
-  b.classList.toggle("pneed", need);
-  b.classList.toggle("pdot", !need && more);
-  b.title = me ? `${me.name} · 컴퓨터 바꾸기` : "컴퓨터 바꾸기";
-}
-const gwpick = $("#gwpick");
-if (gwpick) {
-  gwpick.prepend(icon("desktop"));
-  gwpick.append(icon("drop", "gw-c"));
-  gwpick.onclick = () => $("#brand").click();
-  new MutationObserver(sidebarPick).observe($("#brand"), { attributes: true, subtree: true, childList: true, characterData: true });
-  setTimeout(sidebarPick, 0);
-}
