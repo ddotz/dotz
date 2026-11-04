@@ -122,7 +122,7 @@
       { ts: ago(189), kind: "out", source: "orchestrator", target: "ch:2", text: "[done] 초안을 정리했어요.\n\n- 새로 추가한 것: 데모 페이지\n- 고친 것: 모바일 문구 줄바꿈\n- 남은 것: 배포 공지" },
       {
         ts: T_ASK2, kind: "out", source: "orchestrator", target: "ch:2",
-        text: "[ask] 배포 공지를 어떤 형태로 정리할까요?\n\n결정: 공지 형태\n1) 짧은 공지 ← 추천\n한 문단으로 핵심만 전해요\n2) 목록 공지\n바뀐 항목을 순서대로 적어요\n3) 공지 없이 배포\n릴리스 노트만 남겨요",
+        text: "[ask] 배포 공지를 어떤 형태로 정리할까요?",
       },
     ],
     "lane:랜딩-점검": [
