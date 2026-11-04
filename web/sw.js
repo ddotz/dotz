@@ -83,7 +83,7 @@ self.addEventListener("fetch", ev => {
 });
 
 // Whether a notification would only repeat what is on screen: an open window of this app that is visible and focused shows the same conversation
-// (#chat/<conv>) the notification opens. A notification for any other page or conversation still shows. Pure, so hub/push-sw-web.test.ts runs it.
+// (#chat/<conv>) the notification opens, or the 알림 screen for #chat/alert. A notification for any other page or conversation still shows. Pure, so hub/push-sw-web.test.ts runs it.
 function pushSuppressed(wins, url, origin) {
   let want;
   try { want = new URL(url || "/", origin); } catch { return false; }
@@ -91,7 +91,7 @@ function pushSuppressed(wins, url, origin) {
   return wins.some(w => {
     try {
       const at = new URL(w.url);
-      return at.origin === want.origin && w.visibilityState === "visible" && w.focused === true && at.hash === want.hash;
+      return at.origin === want.origin && w.visibilityState === "visible" && w.focused === true && (at.hash === want.hash || (want.hash === "#chat/alert" && at.hash === "#notices"));
     } catch { return false; }
   });
 }
