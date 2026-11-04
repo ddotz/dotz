@@ -85,12 +85,15 @@ export async function replInTab(url: string | null, body: string, o: ReplOpts = 
 	await ensureAside();
 	const sec = o.secret ? oneShotSecret(readSecret(o.secret)) : null;
 	try {
-		const code = `let dzTab = null; try { const dzOut = await (async () => {
+		// Killing `aside repl` leaves its openTab() tabs open for good (measured: SIGKILL, SIGTERM, SIGINT), and Aside's own 120 s
+		// limit does not end a hung run. So the run ends itself before the kill below, and its finally closes the tab.
+		const ms = o.timeoutMs ?? 118_000;
+		const code = `let dzTab = null; try { const dzOut = await Promise.race([(async () => {
 ${sec ? `const secret = await (await fetch(${JSON.stringify(sec.url)})).text();` : ""}
 ${url ? `dzTab = await openTab(${JSON.stringify(url)}); const pg = dzTab;` : ""}
 ${body}
-})(); console.log("RESULT " + JSON.stringify({ data: dzOut ?? null })); } catch (e) { console.log("RESULT " + JSON.stringify({ error: String((e && e.message) || e).slice(0, 300) })); } finally { if (dzTab) await closeTab(dzTab).catch(() => {}); }`;
-		const r = await runCmd([ASIDE, "repl", code], o.timeoutMs ?? 118_000);
+})(), new Promise((_, no) => setTimeout(() => no(new Error("timed out")), ${Math.floor(ms * 0.9)}))]); console.log("RESULT " + JSON.stringify({ data: dzOut ?? null })); } catch (e) { console.log("RESULT " + JSON.stringify({ error: String((e && e.message) || e).slice(0, 300) })); } finally { if (dzTab) await closeTab(dzTab).catch(() => {}); }`;
+		const r = await runCmd([ASIDE, "repl", code], ms);
 		const m = [...r.out.matchAll(/^.*?RESULT (\{.*\})\s*$/gm)].at(-1);
 		if (!m) throw new Error(`aside repl${r.timedOut ? " timed out" : " failed"}: ${asideReason(r.out + r.err)}`);
 		const j = JSON.parse(m[1]);

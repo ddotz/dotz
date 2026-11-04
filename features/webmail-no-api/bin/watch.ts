@@ -11,7 +11,7 @@ import { endpointUrl } from "../lib/spec.ts";
 import { liveGateway } from "../lib/gateway.ts";
 import { initialState, pollOnce, postStates, postToGateway, type WatchState } from "../lib/watchkit.ts";
 import { describeMail } from "../lib/adapter.ts";
-import { loginViaRepl } from "../lib/login.ts";
+import { beforeKill, loginViaRepl } from "../lib/login.ts";
 import { loadOnboard } from "../lib/onboard.ts";
 
 const SITE = process.env.WEBMAIL_SITE ?? process.argv[2] ?? "";
@@ -29,7 +29,7 @@ const saveState = (f: string, s: WatchState) => writeFileSync(f, `${JSON.stringi
 // is reported to the owner.
 async function recoverViaAside(origin: string): Promise<boolean> {
 	const code = `const t = await openTab(${JSON.stringify(origin)}); await new Promise(r => setTimeout(r, 2500)); await closeTab(t); console.log('WEBMAIL_RECOVER_DONE');`;
-	const proc = Bun.spawn(["aside", "repl", code], { stdout: "pipe", stderr: "pipe" });
+	const proc = Bun.spawn(["aside", "repl", beforeKill(code, 30_000)], { stdout: "pipe", stderr: "pipe" });
 	const timer = setTimeout(() => proc.kill(9), 30_000);
 	const out = await new Response(proc.stdout).text().catch(() => "");
 	await proc.exited;
@@ -43,7 +43,7 @@ async function recoverViaAside(origin: string): Promise<boolean> {
 async function signInApproved(url: string): Promise<boolean> {
 	console.log("DOTZ_APPROVAL_USED");
 	const repl = async (code: string, ms: number) => {
-		const proc = Bun.spawn(["aside", "repl", code], { stdout: "pipe", stderr: "pipe" });
+		const proc = Bun.spawn(["aside", "repl", beforeKill(code, ms)], { stdout: "pipe", stderr: "pipe" });
 		const timer = setTimeout(() => proc.kill(9), ms);
 		const out = await new Response(proc.stdout).text().catch(() => "");
 		await proc.exited;
