@@ -46,6 +46,7 @@ async function refreshState() {
     if (current === "home") renderHome();
     if (current === "settings") renderSettings();
     loadContext(true);
+    snapHomeSoon();
   } catch { setConn(false); }
 }
 let stateTimer;

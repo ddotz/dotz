@@ -52,6 +52,7 @@ async function loadNotices() {
   ntPaint();
   homeSoon();
   syncInlineChoices();
+  snapHomeSoon();
   ntAlertMarks();
 }
 

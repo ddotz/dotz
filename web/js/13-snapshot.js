@@ -3,6 +3,8 @@
 // refreshes it behind (loadTarget quiet). sw.js puts the newest messages in as a push arrives, so a tap finds the very message. One record per conversation, in
 // this origin's IndexedDB, the same words the page already holds; a device that lost its access drops it (01-forbidden-pair.js, 25-settings-devices.js).
 // Local command rows, mail and another computer's conversations stay out of it.
+// 홈 has one record too (key ~home): the state and what waits on the owner, so a computer switch lands on a drawn 홈 even while that gateway is slow to answer
+// (measured 2026-11-05: the shell is on screen in 70 ms, the first state took 340-1690 ms from a Mac mini short of memory). The real answers replace it.
 const SNAP_MSGS = 60, SNAP_ACTS = 120, SNAP_KEEP = 8, SNAP_MRU = "dotz-snap-mru", SNAP_WAIT_MS = 150;
 const snapDb = () => new Promise((res, rej) => {
   const q = indexedDB.open("dotz-snap", 1);
@@ -23,7 +25,7 @@ async function snapSave(t) {
     localStorage.setItem(SNAP_MRU, JSON.stringify(mru.slice(0, SNAP_KEEP)));
     const os = db.transaction("conv", "readwrite").objectStore("conv"), gap = [...s.gaps].sort().at(-1) || "";   // only the newest stretch: a record has no gaps
     os.put({ v: 1, t, at: Date.now(), msgs: s.msgs.filter(e => e.source !== "local" && e.ts > gap).slice(-SNAP_MSGS), acts: s.acts.slice(-SNAP_ACTS), hmore: s.hmore || !!gap || s.msgs.length > SNAP_MSGS, amore: s.amore || s.acts.length > SNAP_ACTS, ahist: s.ahist, todo: TD.by[t], read: READ[t] || "" }, t);
-    for (const k of await snapDone(os.getAllKeys())) if (!mru.slice(0, SNAP_KEEP).includes(k)) os.delete(k);
+    for (const k of await snapDone(os.getAllKeys())) if (k !== SNAP_HOME && !mru.slice(0, SNAP_KEEP).includes(k)) os.delete(k);
     db.close();
   } catch (e) { console.warn("snapshot", e); }
 }
@@ -55,4 +57,24 @@ function snapSettle(s, kind, real) {
   s.seed[kind] = null;
   return s[kind].length !== had;
 }
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") snapSave(target); });
+const SNAP_HOME = "~home", SNAP_HOME_EVERY_MS = 30_000, SNAP_HOME_WAIT_MS = 40, SNAP_HOME_MAX_MS = 7 * 24 * 3600_000;
+let snapHomeAt = 0;
+// Only real answers are kept: the state of this gateway (never its pending logins) and the notices 홈 shows as 답변 필요.
+async function snapHomeSave() {
+  if (snapGone || !S || S.seeded || !NT.loaded) return;
+  snapHomeAt = Date.now();
+  try {
+    const db = await snapDb();
+    db.transaction("conv", "readwrite").objectStore("conv").put({ v: 1, at: snapHomeAt, state: { ...S, auth: [] }, notices: NT.items.filter(ntNeeds).slice(0, 40), unread: NT.unread }, SNAP_HOME);
+    db.close();
+  } catch (e) { console.warn("snapshot", e); }
+}
+const snapHomeSoon = () => { if (Date.now() - snapHomeAt >= SNAP_HOME_EVERY_MS) snapHomeSave(); };
+// Before the first draw: S and the notices as last seen here. Nothing but the first real answers replaces them; the connection line and the build check wait for those.
+async function snapHomeSeed() {
+  const rec = await Promise.race([window.__snapHome, new Promise(r => setTimeout(r, SNAP_HOME_WAIT_MS))]);
+  if (!rec || rec.v !== 1 || S || Date.now() - rec.at > SNAP_HOME_MAX_MS) return;
+  S = { ...rec.state, seeded: true };
+  if (!NT.loaded) { NT.items = rec.notices; NT.unread = rec.unread; }
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") { snapSave(target); snapHomeSave(); } });
