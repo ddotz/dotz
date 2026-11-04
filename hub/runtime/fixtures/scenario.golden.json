@@ -920,6 +920,12 @@
     {
      "kind": "activity",
      "source": "orchestrator",
+     "type": "status",
+     "text": "한도가 풀려서 작업을 이어가요"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
      "type": "turn_start",
      "text": "turn started"
     },
@@ -935,6 +941,12 @@
      "source": "orchestrator",
      "type": "turn_end",
      "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "status",
+     "text": "한도가 풀려서 작업을 이어가요"
     },
     {
      "kind": "activity",
@@ -1028,6 +1040,12 @@
      "source": "orchestrator",
      "type": "turn_end",
      "text": "turn finished"
+    },
+    {
+     "kind": "activity",
+     "source": "orchestrator",
+     "type": "status",
+     "text": "한도가 풀려서 작업을 이어가요"
     },
     {
      "kind": "activity",
@@ -1188,7 +1206,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#1f07nwojskm0u Build the thing.\nDone when: tests pass\n\n---\n[dotz lane alpha…"
+    "message": "#f1berfqkoz9u Build the thing.\nDone when: tests pass\n\n---\n[dotz lane alpha…"
    }
   ],
   [
@@ -1303,7 +1321,7 @@
    0,
    {
     "type": "prompt",
-    "message": "next please\n(Answer the owner in English.)"
+    "message": "#1tan09nyzcsy0 next please\n(Write every report, progress note, todo item an…"
    }
   ],
   [
@@ -1311,7 +1329,7 @@
    0,
    {
     "type": "steer",
-    "message": "also this\n(Answer the owner in English.)"
+    "message": "#21glbwpeq9sad also this\n(Write every report, progress note, todo item and …"
    }
   ],
   [
@@ -1369,7 +1387,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#37v4r014i05z7 during compaction\nBefore continuing, save any durable owner,…"
+    "message": "#1tzrwdcztbpb3 during compaction\nBefore continuing, save any durable owner,…"
    }
   ],
   [
@@ -1406,7 +1424,7 @@
    0,
    {
     "type": "prompt",
-    "message": "go on\n(Answer the owner in English.)"
+    "message": "#ck32m647sm8b go on\n(Write every report, progress note, todo item and tool…"
    }
   ],
   [
@@ -1457,7 +1475,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#f6q7umv5knub [dotz gateway] The rate limit has passed. Continue the work …"
+    "message": "#2kss00i4dcra1 [dotz gateway] The rate limit has passed. Continue the work …"
    }
   ],
   [
@@ -1524,7 +1542,7 @@
    0,
    {
     "type": "prompt",
-    "message": "flaky\n(Answer the owner in English.)"
+    "message": "#2igxfnlmpgczj flaky\n(Write every report, progress note, todo item and tool…"
    }
   ],
   [
@@ -1543,7 +1561,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#1119ql0ho1tt0 [dotz gateway] The provider had a temporary error (overloade…"
+    "message": "#2c47fy9878g21 [dotz gateway] The provider had a temporary error (overloade…"
    }
   ],
   [
@@ -1562,7 +1580,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#1119ql0ho1tt0 [dotz gateway] The provider had a temporary error (overloade…"
+    "message": "#2c47fy9878g21 [dotz gateway] The provider had a temporary error (overloade…"
    }
   ],
   [
@@ -1581,7 +1599,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#1119ql0ho1tt0 [dotz gateway] The provider had a temporary error (overloade…"
+    "message": "#2c47fy9878g21 [dotz gateway] The provider had a temporary error (overloade…"
    }
   ],
   [
@@ -1600,7 +1618,7 @@
    0,
    {
     "type": "prompt",
-    "message": "#1119ql0ho1tt0 [dotz gateway] The provider had a temporary error (overloade…"
+    "message": "#2c47fy9878g21 [dotz gateway] The provider had a temporary error (overloade…"
    }
   ],
   [
@@ -1642,7 +1660,7 @@
    0,
    {
     "type": "prompt",
-    "message": "compaction trouble\n(Answer the owner in English.)"
+    "message": "#t010r7ao7k2h compaction trouble\n(Write every report, progress note, todo …"
    }
   ],
   [
@@ -1704,7 +1722,7 @@
    1,
    {
     "type": "prompt",
-    "message": "[dotz gateway] Your process was restarted after it stopped responding. Continue the last request.\n(Answer the owner in English.)"
+    "message": "#1ve19muprtkey [dotz gateway] Your process was restarted after it stopped r…"
    }
   ],
   [
@@ -1809,7 +1827,7 @@
    2,
    {
     "type": "prompt",
-    "message": "[dotz gateway] Your process was restarted after it stopped responding. Continue the last request.\n(Answer the owner in English.)"
+    "message": "#1ve19muprtkey [dotz gateway] Your process was restarted after it stopped r…"
    }
   ],
   [
@@ -1935,7 +1953,7 @@
    4,
    {
     "type": "prompt",
-    "message": "#1ns7mwl3vq83z [dotz gateway] Your conversation was rotated to a fresh one …"
+    "message": "#3mnbesnq9bkv7 [dotz gateway] Your conversation was rotated to a fresh one …"
    }
   ],
   [
@@ -2051,7 +2069,7 @@
    5,
    {
     "type": "prompt",
-    "message": "[dotz gateway] Your process was restarted after it stopped responding. Continue the last request.\n(Answer the owner in English.)"
+    "message": "#1ve19muprtkey [dotz gateway] Your process was restarted after it stopped r…"
    }
   ],
   [

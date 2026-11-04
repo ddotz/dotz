@@ -138,7 +138,7 @@ describe("홈 cards at 1100px", () => {
 		// a status card with nothing to list is its head and one state line: the head's body gap is gone, so the line sits 8px under it
 		const emptyCard = JSON.parse((await view.evaluate(`JSON.stringify((() => {
 			const box = document.querySelector('.bi[data-id="notices:worklog"]'), head = box.querySelector(".ch").getBoundingClientRect(), line = box.querySelector(".card > .hc-none").getBoundingClientRect();
-			return { list: !!box.querySelector(".hc-list"), gap: line.top - head.bottom, below: box.querySelector(".card").getBoundingClientRect().bottom - line.bottom };
+			return { list: !!box.querySelector(".hc-list"), gap: Math.round(line.top - head.bottom), below: Math.round(box.querySelector(".card").getBoundingClientRect().bottom - line.bottom) };
 		})())`)) as string);
 		expect(emptyCard).toEqual({ list: false, gap: 8, below: 20 });
 	});

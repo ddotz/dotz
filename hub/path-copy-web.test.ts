@@ -134,13 +134,19 @@ for (const [name, width] of [["390", 390], ["1280", 1280]] as const) {
 		await waitFor(v, `document.querySelectorAll(".shot-cards .dr-act .btn").length === 3 && document.querySelectorAll(".shot-cards .cc-act .btn").length === 3`);
 		const got = JSON.parse(
 			(await v.evaluate(`JSON.stringify((() => {
-				const box = b => { const r = b.getBoundingClientRect(), s = getComputedStyle(b); return { label: b.textContent, h: Math.round(r.height), radius: s.borderRadius, bg: s.backgroundColor, color: s.color, weight: s.fontWeight }; };
+				const box = b => { const r = b.getBoundingClientRect(), s = getComputedStyle(b); return { label: b.textContent, h: Math.round(r.height), radius: s.borderRadius, bg: s.backgroundColor, color: s.color, weight: s.fontWeight, hit: getComputedStyle(b, "::after").top }; };
 				return { draft: [...document.querySelectorAll(".shot-cards .dr-act .btn")].map(box), result: [...document.querySelectorAll(".shot-cards .cc-act .btn")].map(box) };
 			})())`)) as string,
-		) as { draft: { label: string; h: number; radius: string; bg: string; color: string; weight: string }[]; result: { label: string; h: number; radius: string; bg: string; color: string; weight: string }[] };
+		) as { draft: { label: string; h: number; radius: string; bg: string; color: string; weight: string; hit: string }[]; result: { label: string; h: number; radius: string; bg: string; color: string; weight: string; hit: string }[] };
 		expect(got.draft.map(b => b.label)).toEqual(["보내기", "고치기", "보내지 않기"]);
 		expect(got.result.map(b => b.label)).toEqual(["열기", "나중에", "무시"]);
-		for (const b of [...got.draft, ...got.result]) {
+		// The draft card's row is the small step at every width; on a phone only its ::after grows the touch area to 44px (ui-spec, 418d545).
+		for (const b of got.draft) {
+			expect(b.radius).toBe("10px");
+			expect(b.h).toBe(32);
+			if (width === 390) expect(b.hit).toBe("-6px");
+		}
+		for (const b of got.result) {
 			expect(b.radius).toBe("10px");
 			expect(b.h).toBe(width === 390 ? 44 : 36);
 		}

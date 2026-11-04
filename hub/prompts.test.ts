@@ -68,8 +68,10 @@ test("a turn that ends without a stop answer sends its last text once", () => {
 	q.onText("half done, here is where it stands");
 	q.settleTurn();
 	q.settleTurn();
-	q.onAnswer("late stop");
 	expect(state.posts).toEqual([{ target: "web", text: "half done, here is where it stands", replyTo: undefined }]);
+	// A real text that comes after is not lost: it answers no one and still reaches the conversation.
+	q.onAnswer("late stop");
+	expect(state.posts.slice(1)).toEqual([{ target: "web", text: "late stop", replyTo: undefined }]);
 });
 
 test("a turn answered normally gets nothing more at idle", () => {
@@ -237,7 +239,7 @@ test("an answer to a run no prompt started goes to the owner's newest message of
 	expect(live.state.posts.map(p => p.text)).toEqual(["a worker is on it", "The README is done and pushed."]);
 });
 
-test("an answer without a prompt prefers an unanswered owner message, and stops at 30 minutes", async () => {
+test("an answer without a prompt prefers an unanswered owner message", async () => {
 	const now = Date.now();
 	const { q, state } = setup(["b"], [
 		{ target: "ch:1", replyTo: "a", at: now - 10 * 60_000 },
@@ -246,11 +248,26 @@ test("an answer without a prompt prefers an unanswered owner message, and stops 
 	q.onAnswer("for the unanswered one");
 	await Promise.resolve();
 	expect(state.posts).toEqual([{ target: "ch:1", text: "for the unanswered one", replyTo: "a" }]);
+});
 
-	const old = setup([], [{ target: "web", at: now - 31 * 60_000 }]);
-	old.q.onAnswer("too late for anyone");
+test("a real answer no message can take is never dropped: the newest owner message's conversation of any age, else the main chat", async () => {
+	const now = Date.now();
+	const old = setup([], [
+		{ target: "web", replyTo: "a", at: now - 90 * 60_000 },
+		{ target: "ch:1", replyTo: "b", at: now - 31 * 60_000 },
+	]);
+	old.q.onAnswer("a late report");
 	await Promise.resolve();
-	expect(old.state.posts).toEqual([]);
+	expect(old.state.posts).toEqual([{ target: "ch:1", text: "a late report", replyTo: undefined }]);
+
+	const none = setup();
+	none.q.onAnswer("a report with no message at all");
+	await Promise.resolve();
+	expect(none.state.posts).toEqual([{ target: "web", text: "a report with no message at all", replyTo: undefined }]);
+
+	for (const quiet of ["-", "ok", "[later]"]) none.q.onAnswer(quiet);
+	await Promise.resolve();
+	expect(none.state.posts).toHaveLength(1);
 });
 
 test("keepalive replies and very short texts go nowhere, and an answer already sent with dotz_send is not sent again", async () => {
@@ -301,9 +318,11 @@ test("a turn that defers to a background worker sends nothing; the run the worke
 	expect(state.posts).toEqual([{ target: "web", text: "sidebar fixed, tests pass", replyTo: undefined }]);
 	expect(q.waitingOnWorkers()).toBe(0);
 	expect(q.deferredOpen()).toEqual([]);
-	// A later promptless answer does not go to the settled request again.
+	// A later promptless answer reopens nothing: it reaches the conversation and the settled request stays settled.
 	q.onAnswer("another unrelated note");
-	expect(state.posts.length).toBe(1);
+	expect(state.posts.slice(1)).toEqual([{ target: "web", text: "another unrelated note", replyTo: undefined }]);
+	expect(q.waitingOnWorkers()).toBe(0);
+	expect(q.deferredOpen()).toEqual([]);
 });
 
 test("a deferred turn posts one short note naming the worker, so its conversation is not silent", () => {

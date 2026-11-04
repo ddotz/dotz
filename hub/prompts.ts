@@ -19,7 +19,8 @@
 // session, also right after a gateway restart), so a user frame that matches no delivered prompt, or a run that started
 // without one, is normal there: an unmatched user frame leaves the unanswered prompt in place, a prompt that finished is
 // released when the orchestrator goes idle (a later run is a new one), and an answer with no prompt goes to the owner's
-// newest message of the last 30 minutes (one still unanswered first), unless it repeats what was already sent there.
+// newest message of the last 30 minutes (one still unanswered first), unless it repeats what was already sent there. With no
+// such message it still reaches the owner: the conversation of his newest message of any age, else the main chat.
 //
 // A turn that hands code work to a background task worker ends with exactly `[later]` (MODE Routing; owner 2026-10-21:
 // a long inline turn kept every next message waiting a median 238 s): its prompt stays open (deferred) with nothing sent,
@@ -472,6 +473,12 @@ export function createPrompts(deps: PromptDeps) {
 		return fresh.findLast(o => !(o.prompt?.done || isAnswered(o.replyTo))) ?? fresh.at(-1);
 	}
 
+	/** Where a real answer goes when orphanTarget finds no one: never dropped, and it settles nothing, so it answers no message by id (hub.log 2026-11-04T04:20:25Z, 823 chars lost). */
+	function lastResortTarget(): OwnerMessage {
+		const last = owners.toSorted((a, b) => a.at - b.at).at(-1);
+		return { target: last?.target ?? "web", at: last?.at ?? Date.now() };
+	}
+
 	/** OmO said these workers finished, so a run is reading their results. A delivered result that is only a housekeeping line is followed by the real report. */
 	function workersDone(ids: string[]): void {
 		for (const id of ids) {
@@ -549,7 +556,7 @@ export function createPrompts(deps: PromptDeps) {
 		}
 	}
 
-	/** An answer that came without a prompt: to the request of the worker whose result it carries, else the 30-minute rule above, never a repeat of what was already sent there. */
+	/** An answer that came without a prompt: to the request of the worker whose result it carries, else the 30-minute rule above, else lastResortTarget, never a repeat of what was already sent there. */
 	function onOrphanAnswer(text: string): void {
 		const t = text.trim();
 		// Keepalive "ok" and "-" have no prompt by design.
@@ -562,8 +569,7 @@ export function createPrompts(deps: PromptDeps) {
 			saveLinks();
 			deps.log(`the result of ${result.id} goes to its request ${result.replyTo ?? "(no id)"} in ${result.target}`);
 		}
-		const to = result ? { target: result.target, replyTo: result.replyTo, at: result.at, prompt: deferred.find(d => d.target === result.target && d.replyTo === result.replyTo) } : orphanTarget();
-		if (!to) return void deps.log(`an answer had no prompt to go to (${t.length} chars): ${t.slice(0, 80)}`);
+		const to = result ? { target: result.target, replyTo: result.replyTo, at: result.at, prompt: deferred.find(d => d.target === result.target && d.replyTo === result.replyTo) } : (orphanTarget() ?? lastResortTarget());
 		if (to.prompt?.cancelled || result?.cancelled) return void deps.log(`an answer for a request the owner cancelled was dropped (${t.length} chars)`);
 		if (recentSent.some(s => s.target === to.target && Date.now() - s.at <= ORPHAN_MAX_AGE_MS && s.text.includes(t))) return;
 		deps.log(`an answer had no prompt; sent to the owner's newest message in ${to.target} (${t.length} chars): ${t.slice(0, 80)}`);
