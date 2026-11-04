@@ -272,9 +272,7 @@ function pjPaintRows() {
   const rows = pjFiltered(), page = rows.slice(0, PJ.more), rest = rows.length - page.length;
   const builtin = ((PRJ && PRJ.projects) || []).find(p => p.builtin), searching = !!PJ.q.trim();
   const showBuiltin = !!builtin && PJ.view === "all" && (!searching || "커스텀".includes(PJ.q.trim().toLowerCase()));
-  // The prototype's last section: one row to the sessions and channels (here the chat list, where running sessions and project channels sit).
-  const live = ((S && S.lanes) || []).filter(laneAlive).length, chans = projRows((PRJ && PRJ.projects) || []).length, showSess = PJ.view === "all" && !searching;
-  const sig = JSON.stringify([rows.map(r => [r.p.key, r.st.k, r.st.word, r.st.lane && r.st.lane.name, prjLastAt(r.p), prjMiles(r.p).map(m => m.done), prjChat(r.p) ? ts(prjChat(r.p)).unread : 0]), PJ.more, PJ.view, PJ.q, current === "project" ? ppCur : "", showBuiltin, showSess && [live, chans]]);
+  const sig = JSON.stringify([rows.map(r => [r.p.key, r.st.k, r.st.word, r.st.lane && r.st.lane.name, prjLastAt(r.p), prjMiles(r.p).map(m => m.done), prjChat(r.p) ? ts(prjChat(r.p)).unread : 0]), PJ.more, PJ.view, PJ.q, current === "project" ? ppCur : "", showBuiltin]);
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
   // Section headers and one card per group, as the prototype's 프로젝트 list; a group with no row after the filter is left out.
@@ -285,14 +283,6 @@ function pjPaintRows() {
   }
   if (rest > 0) nodes.push(el("div", { class: "cv-more" }, el("button", { class: "btn text sm", type: "button", "data-k": "more", onclick: () => { PJ.more += PJ_PAGE; pjPaintRows(); }, text: `프로젝트 ${rest}개 더 보기` })));
   if (!rows.length) nodes.push(el("div", { class: "empty pl-empty", text: searching ? "찾는 프로젝트가 없어요" : PJ.view === "need" ? "확인할 프로젝트가 없어요" : PJ.view === "run" ? "지금 진행 중인 프로젝트가 없어요" : PJ.view === "done" ? "끝낸 프로젝트가 없어요" : "아직 프로젝트가 없어요" }));
-  if (showSess) {
-    nodes.push(el("div", { class: "sec pl-sec", text: "세션" }));
-    nodes.push(el("div", { class: "pl-list" },
-      el("button", { class: "pl-row", type: "button", "data-k": "sessions", onclick: () => go("chat", "list") },
-        el("span", { class: "ico" }, icon("term")),
-        el("span", { class: "pl-b" }, el("span", { class: "pl-1" }, el("span", { class: "pl-n", text: "세션과 채널" })), el("span", { class: "pl-s" }, el("span", { class: "pl-sw", text: `일하는 세션 ${live}개 · 작업 채널 ${chans}개` }))),
-        el("span", { class: "li-end" }, icon("chev", "chev")))));
-  }
   // The built-in 커스텀 page is the owner's settings list: always reachable, never part of the filters.
   if (showBuiltin) {
     nodes.push(el("div", { class: "sec pl-sec pl-gh", role: "presentation", text: "내 설정" }));
