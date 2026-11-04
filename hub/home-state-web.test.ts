@@ -70,6 +70,13 @@ test("a background task has one colour on every list", async () => {
 	expect(await t(work("failed", { cancelled: true }))).toBe("");
 });
 
+test("an empty list's one line is not clipped by the list's rounded corner and starts under the head", async () => {
+	await greet({});
+	const got = JSON.parse(await view.evaluate(`JSON.stringify([...document.querySelectorAll('#v-home .hn:has(> .hc-none)')].map(l => ({ k: l.dataset.k, overflow: getComputedStyle(l).overflow, off: l.querySelector('.hc-none').getBoundingClientRect().left - l.closest('.card, .hneeds').querySelector('.ch, h2').getBoundingClientRect().left })))`) as string) as { k: string; overflow: string; off: number }[];
+	expect(got.map(l => l.k).sort()).toEqual(["needs", "running"]);
+	for (const l of got) expect(l).toMatchObject({ overflow: "visible", off: 0 });
+});
+
 test("지금 진행 중 stops at six rows, scrolls inside its card and keeps its place across a refresh", async () => {
 	const rows = (n: number) => ({ work: Array.from({ length: n }, (_, i) => work("running", { id: `w${i}`, started_at: 1 })) });
 	const box = async () => JSON.parse(await view.evaluate(`(l => JSON.stringify({ n: l.children.length, client: l.clientHeight, scroll: l.scrollHeight, row: l.lastElementChild.offsetHeight, y: getComputedStyle(l).overflowY, bar: getComputedStyle(l).scrollbarWidth, over: getComputedStyle(l).overscrollBehaviorY }))(document.querySelector('#v-home [data-k="running"]'))`) as string) as { n: number; client: number; scroll: number; row: number; y: string; bar: string; over: string };

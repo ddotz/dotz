@@ -135,6 +135,8 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .hn-h .sup { margin-left: auto; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .hn + .hn-h { margin-top: var(--sp-3); }
 .hn { border-radius: 0 0 var(--r-card) var(--r-card); background: var(--card); overflow: hidden; }
+/* A one-line state has no row to trim, and its text can sit in the box's rounded corner: nothing clips it. */
+.hn:has(> .hc-none) { overflow: visible; }
 /* A home list past six rows scrolls inside its card, with no scrollbar (08-home.js capLists sets the height of six rows); six or fewer change nothing. */
 .list-cap { position: relative; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: none; }
 .list-cap::-webkit-scrollbar { display: none; }
