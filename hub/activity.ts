@@ -7,6 +7,7 @@ import { mask, secretValues } from "./providers.ts";
 import { now } from "./config.ts";
 import { isNote } from "./i18n.ts";
 import { isLater } from "./tone.ts";
+import { stripSteerMark } from "./steer-mark.ts";
 import type { AgentEvent, SubagentUpdate } from "./runtime/types.ts";
 
 export type Block = { type?: string; text?: string; thinking?: string };
@@ -141,7 +142,7 @@ function itemsOf(lines: string[]): TranscriptItem[] {
 	for (const line of lines) {
 		let e: TranscriptEntry;
 		try {
-			e = JSON.parse(line) as TranscriptEntry;
+			e = JSON.parse(stripSteerMark(line)) as TranscriptEntry;
 		} catch {
 			continue;
 		}

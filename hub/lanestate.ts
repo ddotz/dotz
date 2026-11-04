@@ -92,13 +92,13 @@ type ReportFn = (lane: Lane, text: string, answeringOwner?: boolean) => void;
 export const hooks: { report: ReportFn; progress: ReportFn; notice: ReportFn; idle: (name: string) => void; verified: (name: string, text: string) => void } = { report: () => {}, progress: () => {}, notice: () => {}, idle: () => {}, verified: () => {} };
 // Owner messages sent to a lane and not answered yet (lanerelay.ts createOwnerNotes): the lane's short answer note at its next
 // tool boundary reaches the owner at once, and the delivery state of each message follows (hub/events.ts emitDelivery).
-export type OwnerNoteHandlers = { note: (lane: string, text: string, refs: string[]) => void; answered: (lane: string, refs: string[]) => void; lost: (lane: string, refs: string[]) => void };
+export type OwnerNoteHandlers = { note: (lane: string, text: string, refs: string[]) => void; answered: (lane: string, refs: string[]) => void; refused?: (lane: string, refs: string[]) => void; lost: (lane: string, refs: string[]) => void };
 const noopOwnerHandlers = (): OwnerNoteHandlers => ({ note: () => {}, answered: () => {}, lost: () => {} });
 let ownerHandlers: OwnerNoteHandlers = noopOwnerHandlers();
 export function setOwnerNoteHandlers(h: OwnerNoteHandlers): void {
 	ownerHandlers = h;
 }
-const newOwnerNotes = () => createOwnerNotes({ note: (l, t, r) => ownerHandlers.note(l, t, r), answered: (l, r) => ownerHandlers.answered(l, r), lost: (l, r) => ownerHandlers.lost(l, r) });
+const newOwnerNotes = () => createOwnerNotes({ note: (l, t, r) => ownerHandlers.note(l, t, r), answered: (l, r) => ownerHandlers.answered(l, r), refused: (l, r) => ownerHandlers.refused?.(l, r), lost: (l, r) => ownerHandlers.lost(l, r) });
 // `let` only so resetLaneStateForTest can swap in an empty relay (its open-message map is private); importers see the live binding.
 export let ownerNotes = newOwnerNotes();
 export function setReportHandler(fn: ReportFn): void {

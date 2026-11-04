@@ -9,6 +9,7 @@ import * as discord from "./discord.ts";
 import * as livestatus from "./livestatus.ts";
 import { updateNow } from "./update-now.ts";
 import { isNote, msg } from "./i18n.ts";
+import { stripSteerMark } from "./steer-mark.ts";
 import { normalizeAsk } from "./ask-normalize.ts";
 import { stripRecommendMark } from "./choices.ts";
 import { asksPersonalInChat } from "./personal-ask.ts";
@@ -65,7 +66,7 @@ export const sends = createSendLedger({
 // is no Discord place to send to, so the post is done there instead of failing in the ledger as an unknown Discord target.
 // A web-only install (no bot token, discord.status.enabled false) has no Discord at all: every post is done in the web the same way.
 export const send = (target: string, text: string, ref?: string): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> =>
-	!discord.status.enabled || (target.startsWith("lane:") && isWebLane(target.slice(5))) ? Promise.resolve({ delivered: true }) : sends.submit(target, text, ref);
+	!discord.status.enabled || (target.startsWith("lane:") && isWebLane(target.slice(5))) ? Promise.resolve({ delivered: true }) : sends.submit(target, stripSteerMark(text), ref);
 // One prompt queue per session (hub/convsessions.ts): main's, and with conversation sessions on, one per conversation. Each delivers into
 // its own orchestrator instance; `recent` keeps only that session's conversations, so an answer that arrives without a prompt can
 // only go to a message of its own conversation (prompts.ts orphanTarget).
@@ -357,6 +358,7 @@ export const systemNote = (target: string, text: string, system: string, worker?
 export async function out(target: string, text: string, replyTo?: string, extra: Record<string, unknown> = {}): Promise<{ delivered: boolean; reason?: string }> {
 	// Gateway notices (rate-limit hold, command and limits replies) reply to a message without answering its request.
 	const answersOwner = extra.source === undefined || extra.source === "orchestrator";
+	text = stripSteerMark(text);
 	noteProjectInfo(target, text);
 	if (text && !stripProjectInfo(text)) return { delivered: true };
 	// A gateway post to the alert conversation (a failing watch) is gated like alert() below.

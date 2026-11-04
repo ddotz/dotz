@@ -20,7 +20,16 @@ function relayItem(r: Relay): string {
 // in a tool call after such a message is its short answer note (the footer asks for one): it is shown to the owner where he wrote
 // at once, and is never routine progress ("disk") or an owner-only exchange kept off the surface. A text that ends the turn is
 // the final report, which answers them when it is reported.
-type OwnerNotesDeps = { note: (lane: string, text: string, refs: string[]) => void; answered: (lane: string, refs: string[]) => void; lost?: (lane: string, refs: string[]) => void };
+type OwnerNotesDeps = { note: (lane: string, text: string, refs: string[]) => void; answered: (lane: string, refs: string[]) => void; refused?: (lane: string, refs: string[]) => void; lost?: (lane: string, refs: string[]) => void };
+
+// A session that took a steered message for injected tool output says so in its next text (see hub/steer-mark.ts). That text is no
+// answer: the message stays unanswered and the owner sees that it failed, instead of an "answered" over a dropped instruction.
+const REFUSED = [
+	/(?:도구|툴)\s*(?:출력|결과)[^\n.]{0,80}(?:따르지|무시)/,
+	/(?:프롬프트\s*인젝션|prompt.injection)[^\n.]{0,80}(?:따르지|무시|ignor|not follow|won't follow|not act)/i,
+	/(?:tool|function) (?:output|result)[^\n.]{0,80}(?:ignor|not follow|won't follow|not act|not treat)/i,
+];
+export const refusesAsInjection = (text: string): boolean => REFUSED.some(r => r.test(text));
 
 export function createOwnerNotes(deps: OwnerNotesDeps) {
 	const open = new Map<string, string[]>();
@@ -35,16 +44,17 @@ export function createOwnerNotes(deps: OwnerNotesDeps) {
 			if (!refs?.length || !text.trim()) return "none";
 			if (endsTurn) return "final";
 			open.delete(lane);
-			deps.note(lane, text.trim(), refs);
-			deps.answered(lane, refs);
+			const refused = refusesAsInjection(text);
+			deps.note(lane, text.trim(), refused ? [] : refs);
+			(refused ? deps.refused : deps.answered)?.(lane, refs);
 			return "note";
 		},
 		/** The lane reported (its turn's final text): everything still open is answered by it; true when something was open (the report is an answer to the owner, whatever its tone). */
-		reported(lane: string): boolean {
+		reported(lane: string, text = ""): boolean {
 			const refs = open.get(lane);
 			if (!refs?.length) return false;
 			open.delete(lane);
-			deps.answered(lane, refs);
+			(refusesAsInjection(text) ? deps.refused : deps.answered)?.(lane, refs);
 			return true;
 		},
 		/** The lane has owner messages waiting for an answer. */
