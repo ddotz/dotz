@@ -33,7 +33,7 @@ import { inOrder, localize } from "./outlang.ts";
 import { splitTone, stripHandoff, stripProjectInfo } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { markDraftPosted, onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
-import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote } from "./approval-queue.ts";
+import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards } from "./approval-queue.ts";
 import { mailItemKey, mailKeyOfRef } from "./draft-handled.ts";
 import { listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
 import { askText } from "../features/reply-drafts/lib/flow.ts";
@@ -364,7 +364,15 @@ export async function out(target: string, text: string, replyTo?: string, extra:
 	// The assistant's send-approval card waits its turn in its conversation (a held card is posted later by the queue, marked `queued`).
 	const routed = answersOwner && !extra.update_key && !extra.queued;
 	// Every answer and dotz_send of every conversation passes here: a list of options becomes a decision card whoever wrote it (hub/ask-normalize.ts).
-	const job: OutJob = { target, text: routed ? normalizeAsk(stripHandoff(text)) : stripRecommendMark(stripHandoff(text)), replyTo: replyTo ?? (routed ? lateRequest(target) : undefined), extra };
+	const body = routed ? normalizeAsk(stripHandoff(text)) : stripRecommendMark(stripHandoff(text));
+	// Several drafts in one post: each is its own card, in the queue below.
+	const drafts = routed ? splitDraftCards(body) : undefined;
+	if (drafts) {
+		let last: { delivered: boolean; reason?: string } = { delivered: true };
+		for (const c of drafts) last = await out(target, c, replyTo, extra);
+		return last;
+	}
+	const job: OutJob = { target, text: body, replyTo: replyTo ?? (routed ? lateRequest(target) : undefined), extra };
 	const routing: { card?: ReturnType<typeof approvals.route> } = {};
 	let landed = false;
 	replies.begin(job);
