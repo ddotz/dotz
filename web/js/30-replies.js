@@ -392,15 +392,14 @@ function listPlace(box, nodes) {
 }
 // The first row of `root` (matching `sel`) in view and its offset from the top of the scroll box, `key` being the dataset name that identifies a row;
 // rowHold puts it back after the rows above it changed.
-function rowAnchor(root, sel, key) {
-  const box = $("#mon-timeline");
+function rowAnchor(root, sel, key, box = $("#mon-timeline")) {
   if (!box || box.scrollTop <= 0 || !root.isConnected) return null;
   const top = box.getBoundingClientRect().top, n = [...root.querySelectorAll(sel)].find(e => e.getBoundingClientRect().bottom > top);
-  return n ? { root, sel, key, id: n.dataset[key], off: n.getBoundingClientRect().top - top } : null;
+  return n ? { box, root, sel, key, id: n.dataset[key], off: n.getBoundingClientRect().top - top } : null;
 }
 function rowHold(a) {
-  const box = $("#mon-timeline"), n = a && [...a.root.querySelectorAll(a.sel)].find(e => e.dataset[a.key] === a.id);
-  if (n && box) box.scrollTop += n.getBoundingClientRect().top - box.getBoundingClientRect().top - a.off;
+  const n = a && [...a.root.querySelectorAll(a.sel)].find(e => e.dataset[a.key] === a.id);
+  if (n) a.box.scrollTop += n.getBoundingClientRect().top - a.box.getBoundingClientRect().top - a.off;
 }
 const rqAnchor = () => rowAnchor(rqUi().ls, ".rq-r", "rk");
 // What the list holds: the section heads and one box of rows per section (their own descriptors under `rows`).

@@ -186,6 +186,23 @@ describe("the 알림 screen", () => {
 		expect(await ev(`[...document.querySelectorAll(".tchip")].some(c => c.dataset.t === "alert")`)).toBe(false);   // 알림 is not a conversation to pick
 	}, 30_000);
 
+	test("a new notice while reading keeps the row in view where it is", async () => {
+		const v = await shown(await open(390));
+		const { run, ev, waitFor } = on(v);
+		const inView = `(() => { const s = $("#views"), top = s.getBoundingClientRect().top, r = [...document.querySelectorAll("#v-notices .nsc-r:not([data-child])")].find(e => e.getBoundingClientRect().bottom > top); return { id: r.dataset.nid, off: r.getBoundingClientRect().top - top }; })()`;
+		// Down among the past notices: the new one lands above them.
+		await run(`$("#views").scrollTop = $("#views").scrollHeight`);
+		await waitFor(`$("#views").scrollTop > 300`);
+		const before = await ev<{ id: string; off: number }>(inView);
+		notices.unshift(mk("new1", 600, "news", "watch", "", "새 알림이 왔어요"));
+		await run(`loadNotices()`);
+		await waitFor(`!!document.querySelector('#v-notices .nsc-r[data-nid="new1"]')`);
+		await settled(v);
+		const after = await ev<{ id: string; off: number }>(inView);
+		expect(after.id).toBe(before.id);
+		expect(Math.abs(after.off - before.off)).toBeLessThan(2);
+	});
+
 	test("a row leads to its source message, and back returns to the same filter and the same place in the list", async () => {
 		const v = await shown(await open(390));
 		const { waitFor, ev, run } = on(v);
