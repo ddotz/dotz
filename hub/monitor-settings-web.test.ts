@@ -123,6 +123,12 @@ describe("the control panel has the conversation's width (app and monitor settin
 describe("monitor settings at desktop width", async () => {
 	const v = await open(1280, 800);
 
+	test("a status block drops a watch's raw command but keeps a plain last result", async () => {
+		await boot(v, "m:웹 감시");
+		const facts = (out: string) => q<string>(v, `return monStatNode({ name: "t", last_output: ${JSON.stringify(out)} }).textContent`);
+		expect(await facts("ssh -o BatchMode=yes host uptime")).not.toContain("BatchMode");
+		expect(await facts("재고 3개")).toContain("재고 3개");
+	});
 	test("a monitor's header has a 설정 button that opens its settings conversation with the controls", async () => {
 		await boot(v, "m:웹 감시");
 		await waitFor(v, `document.querySelector("#mon-head .as-hd")`);
