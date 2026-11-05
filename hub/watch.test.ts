@@ -32,7 +32,7 @@ const approval = (name: string) => join(DATA_DIR, "approvals", name);
 test("the deadline SIGKILLs the whole process group, so a background grandchild cannot hold the read", async () => {
 	const fifo = join(mkdtempSync(join(tmpdir(), "dotz-pgkill-")), "pid");
 	expect((await Bun.spawn(["mkfifo", fifo]).exited)).toBe(0);
-	const run = exec(["/bin/zsh", "-c", `sleep 600 & echo $! > ${fifo}; wait`], undefined, 1000);
+	const run = exec(["/bin/sh", "-c", `sleep 600 & echo $! > ${fifo}; wait`], undefined, 1000);
 	const pid = Number((await readFile(fifo, "utf8")).trim());
 	expect(pid).toBeGreaterThan(0);
 	await advance(1000);
