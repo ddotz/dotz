@@ -13,7 +13,7 @@ export type Box = {
 	id: string; name: string; icon: string; mode?: BoxMode; notify: boolean; base?: true;
 	conds: { from: string[]; subj: string[]; body: string[]; src: string[] }; not: { from: string[] };
 	judge: { on: boolean; text: string }; how: string; greets: { who: string; addr: string; hello: string }[]; folders: string[]; bans: string[];
-	rules: Record<string, unknown>[];
+	rules: Record<string, unknown>[]; /** uses only its own `how` and `rules` and folders, none of the account's (an instance folded by hub/mailbox-cli.ts that had its own) */ alone?: true;
 };
 export type Mailboxes = { version: 1; accounts: Record<string, { boxes: Box[] }>; pins: Record<string, string> };
 /** What the hub does with a new mail: `box` is set only for a non-base box; `quiet` = mode quiet (no notice, thread, wake or draft), `mute` = notify:false (no notice only). */
@@ -41,6 +41,7 @@ export function cleanBox(raw: unknown): Box | undefined {
 		greets: (Array.isArray(raw.greets) ? raw.greets : []).filter(isObj).map(g => ({ who: text(g.who, 200), addr: text(g.addr, 200), hello: text(g.hello, 200) })).filter(g => g.who || g.addr || g.hello).slice(0, MAX_LIST),
 		folders: list(raw.folders, 500), bans: list(raw.bans),
 		rules: (Array.isArray(raw.rules) ? raw.rules : []).filter(isObj).filter(r => JSON.stringify(r).length <= 4000).slice(0, MAX_LIST),
+		...(raw.alone === true ? { alone: true as const } : {}),
 	};
 }
 
