@@ -499,7 +499,7 @@ function slackAppScript(name: string, inbox: string): string {
 		tick(3500),
 		`await page.evaluate(async m => { const byText = t => [...document.querySelectorAll('button,a,[role="button"]')].find(b => (b.innerText || '').trim() === t); const from = byText('From a manifest') || byText('매니페스트에서'); if (from) { from.click(); await new Promise(r => setTimeout(r, 1200)); } const next = byText('Next') || byText('다음'); if (next) { next.click(); await new Promise(r => setTimeout(r, 1200)); } const area = document.querySelector('textarea'); if (area) { const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(area, JSON.stringify(m, null, 2)); area.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 800)); } const create = byText('Create') || byText('만들기'); if (create) { create.click(); await new Promise(r => setTimeout(r, 2500)); } const install = [...document.querySelectorAll('button,a,[role="button"]')].find(b => /Install to Workspace|워크스페이스에 설치/i.test(b.innerText || '')); if (install) { install.click(); await new Promise(r => setTimeout(r, 2000)); } const allow = [...document.querySelectorAll('button,a,[role="button"]')].find(b => /^(Allow|허용)$/.test((b.innerText || '').trim())); if (allow) { allow.click(); await new Promise(r => setTimeout(r, 4000)); } }, ${JSON.stringify(manifest)});`,
 		`const token = await page.evaluate(() => ((document.body.innerText || '') + ' ' + [...document.querySelectorAll('input,textarea')].map(x => x.value || '').join(' ')).match(/xox[baprs]-[A-Za-z0-9-]{10,}/));`,
-		`if (token) { await fetch(${JSON.stringify(inbox)}, { method: 'POST', body: JSON.stringify({ token: token[0] }), signal: AbortSignal.timeout(10000) }); }`,
+		`if (token) { await fetch(${JSON.stringify(inbox)}, { method: 'POST', body: JSON.stringify({ token: token[0] }) }); }`,
 		`console.log('RESULT ' + JSON.stringify(token ? { ok: true } : { ok: false, waiting: 'login' }));`,
 		`await page.close();`,
 	].join(" ");
@@ -511,7 +511,7 @@ function telegramBotScript(inbox: string): string {
 		tick(4000),
 		`await page.evaluate(async () => { const box = document.querySelector('.input-message-input[contenteditable="true"], .input-message-input'); if (!box) return; box.focus(); document.execCommand('insertText', false, '/newbot'); await new Promise(r => setTimeout(r, 500)); box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true })); await new Promise(r => setTimeout(r, 2500)); });`,
 		`const token = await page.evaluate(() => ((document.body.innerText || '') + ' ' + [...document.querySelectorAll('input,textarea')].map(x => x.value || '').join(' ')).match(/(?:^|[^0-9])(\d{5,}:[A-Za-z0-9_-]{10,})/));`,
-		`if (token) { await fetch(${JSON.stringify(inbox)}, { method: 'POST', body: JSON.stringify({ token: token[1] }), signal: AbortSignal.timeout(10000) }); }`,
+		`if (token) { await fetch(${JSON.stringify(inbox)}, { method: 'POST', body: JSON.stringify({ token: token[1] }) }); }`,
 		`console.log('RESULT ' + JSON.stringify(token ? { ok: true } : { ok: false, waiting: 'login' }));`,
 		`await page.close();`,
 	].join(" ");
@@ -539,7 +539,8 @@ function createAsideBrowser(): BrowserLike {
 		return repl;
 	};
 	const script = async (code: string): Promise<{ ok: boolean; value?: string; waiting?: string; data?: Record<string, unknown> }> => {
-		const out = await (await ensure()).run(code);
+		// The repl keeps one top-level scope for its whole life: a block lets the same script run twice.
+		const out = await (await ensure()).run(`{ ${code} }`);
 		const hits = [...out.matchAll(RESULT_LINE)];
 		const raw = hits[hits.length - 1]?.[1];
 		if (!raw) return { ok: false };
