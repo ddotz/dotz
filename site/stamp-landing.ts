@@ -9,3 +9,12 @@ const stamp = assets.reduce((h, f) => h.update(readFileSync(join(SITE, f))), cre
 const page = join(SITE, "index.html");
 writeFileSync(page, readFileSync(page, "utf8").replace(/"(style\.css|app\.js|js\/stageshow\.js)(?:\?v=\w+)?"/g, `"$1?v=${stamp}"`));
 console.log(`landing assets stamped ${stamp}`);
+
+// The prototype page has the same problem. Each file gets its own hash, and the list is whatever local css and js the page names, so a new file needs no edit here.
+const PROTO = join(SITE, "prototype"), protoPage = join(PROTO, "index.html");
+let stamped = 0;
+writeFileSync(protoPage, readFileSync(protoPage, "utf8").replace(/\b(href|src)="([\w-]+\.(?:css|js))(?:\?v=\w+)?"/g, (_, attr, file) => {
+  stamped++;
+  return `${attr}="${file}?v=${createHash("sha1").update(readFileSync(join(PROTO, file))).digest("hex").slice(0, 12)}"`;
+}));
+console.log(`prototype assets stamped ${stamped}`);
