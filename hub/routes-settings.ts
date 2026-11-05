@@ -10,6 +10,7 @@ import { cancelByOwner, orch, restart as restartOrchestrator, resumeNow } from "
 import { convs } from "./convsessions.ts";
 import { cancelLogin, completeLogin, loginStatus, logoutProvider, quota, refreshQuota, saveProviderKey, startLogin } from "./providers.ts";
 import { featureCatalog } from "./features.ts";
+import { mailboxRoute } from "./routes-mailbox.ts";
 import { harnessGraph, readHarnessFile } from "./harness.ts";
 import { lastReport, RUNTIME_IDS, runtimesView, startVerify, UseRefused, useRuntime, verifyState, type UseRole } from "./runtime/verify.ts";
 import { json, body, terminals } from "./routes-util.ts";
@@ -21,6 +22,7 @@ import { onboardingRoute } from "./onboarding.ts";
 import { introOf, setIntro } from "../firstrun/first-run.ts";
 
 export async function routeSettings(req: Request, url: URL, parts: string[]): Promise<Response | undefined> {
+	if (url.pathname.startsWith("/api/mailbox/")) return mailboxRoute(req, url);
 	const onboarding = await onboardingRoute(req, url);
 	if (onboarding) return onboarding;
 	// Whether the app tour was seen (docs/web-onboarding.md): the marker's intro, "seen" for an install that has no marker.
