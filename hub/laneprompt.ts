@@ -26,6 +26,7 @@ export function prompt(lane: Lane, text: string): void {
 	lane.retainNext = lane.workerNext = undefined;
 	lane.proc?.send(`${text}${nudge}\n${msg().laneLanguage(languageName(lang()))}${handoffNote(`lane:${lane.name}`)}`, lane.status === "working" ? "steer" : "prompt");
 	if (lane.status === "working") return;
+	lane.prompted = text;
 	clearTimeout(lane.watchdog);
 	lane.watchdog = setTimeout(() => {
 		log(`lane ${lane.name} did not start a turn after a prompt; restarting it`);

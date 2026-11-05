@@ -36,7 +36,8 @@ class FakeAgent implements AgentProcess {
 		this.queue.push(ev);
 		this.wake?.();
 	}
-	send = () => {};
+	sent: string[] = [];
+	send = (text: string) => void this.sent.push(text);
 	abort = () => {};
 	compact = () => {};
 	refreshUsage = () => {};
@@ -154,6 +155,98 @@ test("the same report twice before a new turn starts goes out once; after a turn
 	report(lane, err, true);
 	expect(reports).toEqual([err, "[lane error] another failure", err]);
 	l.stopLane("report-twice");
+	await advance(300);
+});
+
+test("a message a busy session refused (its own turn or compaction still ran) is sent again, not lost; refused every time, the orchestrator gets it", async () => {
+	reports.length = 0;
+	const { REFUSED_RETRY_MS } = await import("./laneevents.ts");
+	const { lane, agent } = await working("busy-send");
+	agent.push({ type: "turn_end" });
+	await flush();
+	const err = "Concurrent Anthropic Subscription turn admission for session 01a1a5f3";
+	const refused = async () => {
+		agent.push({ type: "turn_start" });
+		agent.push({ type: "assistant", text: "", stop: "error", error: { text: err, kind: omp.classifyError(err), compaction: false } });
+		agent.push({ type: "turn_end" });
+		await flush();
+	};
+	l.sendToLane("busy-send", "양식 시트를 다시 맞춰요");
+	await refused();
+	const before = agent.sent.length;
+	await advance(REFUSED_RETRY_MS);
+	await flush();
+	expect(agent.sent.length).toBe(before + 1);
+	expect(agent.sent.at(-1)).toContain("양식 시트를 다시 맞춰요");
+	expect(lane.lastText).not.toContain("[lane error]");
+	expect(reports).toEqual([]);
+	for (let n = 0; n < 3; n++) {
+		await refused();
+		await advance(REFUSED_RETRY_MS);
+		await flush();
+	}
+	expect(reports).toHaveLength(1);
+	expect(reports[0]).toStartWith("[fail]");
+	expect(reports[0]).toContain("양식 시트를 다시 맞춰요");
+	l.stopLane("busy-send");
+	await advance(300);
+});
+
+const refusedErr = "Concurrent Anthropic Subscription turn admission for session 01a1a5f3";
+async function refuse(agent: FakeAgent): Promise<void> {
+	agent.push({ type: "turn_start" });
+	agent.push({ type: "assistant", text: "", stop: "error", error: { text: refusedErr, kind: omp.classifyError(refusedErr), compaction: false } });
+	agent.push({ type: "turn_end" });
+	await flush();
+}
+
+test("a refused message the session answered by itself before the retry is not sent a second time", async () => {
+	reports.length = 0;
+	const { REFUSED_RETRY_MS } = await import("./laneevents.ts");
+	const { agent } = await working("busy-answered");
+	agent.push({ type: "turn_end" });
+	await flush();
+	l.sendToLane("busy-answered", "한 번만 할 일");
+	await refuse(agent);
+	const before = agent.sent.length;
+	agent.push({ type: "turn_start" });
+	await flush();
+	await advance(REFUSED_RETRY_MS);
+	await flush();
+	expect(agent.sent.length).toBe(before); // a running turn waits for its own end
+	agent.push({ type: "assistant", text: "했어요", stop: "stop" });
+	agent.push({ type: "turn_end" });
+	await flush();
+	await advance(REFUSED_RETRY_MS * 2);
+	await flush();
+	expect(agent.sent.length).toBe(before);
+	l.stopLane("busy-answered");
+	await advance(300);
+});
+
+test("a second message refused while the first waits goes with it, and a restart before the retry still sends them", async () => {
+	reports.length = 0;
+	const { lane, agent } = await working("busy-restart");
+	const session = join(DATA, "busy-restart.jsonl");
+	writeFileSync(session, "");
+	lane.sessionFile = session;
+	agent.push({ type: "turn_end" });
+	await flush();
+	l.sendToLane("busy-restart", "첫 메시지");
+	await refuse(agent);
+	l.sendToLane("busy-restart", "둘째 메시지");
+	await refuse(agent);
+	expect(lane.refused?.text).toBe("첫 메시지\n\n둘째 메시지");
+	const before = spawns.length;
+	l.shutdownLanes();
+	await advance((await import("./laneevents.ts")).REFUSED_RETRY_MS);
+	await flush();
+	l.lanes.delete("busy-restart");
+	l.restoreLanes();
+	const back = spawns.slice(before).at(-1)!.agent;
+	expect(back.sent.at(-1)).toContain("첫 메시지\n\n둘째 메시지");
+	expect(reports).toEqual([]);
+	l.stopLane("busy-restart");
 	await advance(300);
 });
 
