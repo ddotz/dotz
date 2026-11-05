@@ -3,13 +3,14 @@
 // is never focused and is closed at once; Aside itself is started hidden if it is not running), the browser's saved
 // password through `aside repl` (autofill, submitted by our own code; no `aside exec`, no secret ever goes into a prompt), the local gateway for the watches and the one
 // evolving progress message. Exit 0 done, 3 waiting for the owner (the printed ask), 1 failed (the printed reason).
+import { join } from "node:path";
 import { blockedByFeatures } from "../../../hub/featuredirs.ts";
 import { dataDir, liveCtx } from "../lib/config.ts";
 import { cookieHeaderFromAside } from "../lib/cookies.ts";
 import { liveGateway } from "../lib/gateway.ts";
 import { beforeKill, loginViaRepl } from "../lib/login.ts";
 import { loadOnboard, render, runOnboard, type Io, type LoginResult } from "../lib/onboard.ts";
-import { readRecording, recordViaAside } from "./capture.ts";
+import { readRecording, recordSentViaAside, recordViaAside } from "./capture.ts";
 
 async function run(argv: string[], ms: number): Promise<string> {
 	const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe" });
@@ -43,6 +44,22 @@ async function login(url: string, allowSecondFactor: boolean): Promise<LoginResu
 	return loginViaRepl((code, ms) => run(["aside", "repl", beforeKill(code, ms)], ms), url, allowSecondFactor);
 }
 
+// The whole sent folder through mail.ts (the same read-only command the orchestrator uses), learned by reply-drafts as past replies and, for an instance
+// with no tone profile yet, as its own profile. Loaded on use: reply-drafts is not needed to connect a site.
+async function learnSent(site: string): Promise<string | undefined> {
+	const out = await run(["bun", join(import.meta.dir, "mail.ts"), site, "sent"], 30 * 60_000);
+	const items = out.split("\n").filter((l) => l.startsWith("{")).flatMap((l) => {
+		try {
+			return [JSON.parse(l)];
+		} catch {
+			return [];
+		}
+	});
+	if (!items.length) return "보낸편지함에서 읽을 수 있는 메일이 없어요: 예시 없이 씁니다";
+	const [{ learnSiteSent }, { defaultCall }, { loadSettings }] = await Promise.all([import("../../reply-drafts/lib/persona.ts"), import("../../reply-drafts/lib/flow.ts"), import("../../reply-drafts/lib/settings.ts")]);
+	return learnSiteSent(site, items, `mail-${site}`, defaultCall(loadSettings().model));
+}
+
 function liveIo(site: string, channel?: string): Io {
 	return {
 		ctx: liveCtx(cookieHeaderFromAside),
@@ -51,6 +68,8 @@ function liveIo(site: string, channel?: string): Io {
 		loginState,
 		login,
 		record: recordViaAside,
+		recordSent: recordSentViaAside,
+		learnSent,
 		gateway: liveGateway,
 		progress: async (text) => {
 			await liveGateway("POST", "/api/send", { target: channel ?? "chat", update_key: `webmail-onboard-${site}`, text });

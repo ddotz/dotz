@@ -6,8 +6,8 @@ import { addressesOf, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { EXAMPLES, similarPairs, withExamples, type PastPair } from "../../../hub/comments/past.ts";
 import { paths, writeAtomic } from "./settings.ts";
 
-/** `from`: the address of the person the reply went to (absent in pairs stored before it was kept). */
-export type Pair = { received: string; reply: string; at: number; from?: string };
+/** `from`: the address of the person the reply went to (absent in pairs stored before it was kept). `source`: the mail source whose sent folder it came from (a mail site, a plugin); absent = zele. */
+export type Pair = { received: string; reply: string; at: number; from?: string; source?: string };
 
 export const MAX_PAIRS = 1000;
 
@@ -22,7 +22,7 @@ export function loadPairs(app: string): Pair[] {
 		if (!line.trim()) continue;
 		try {
 			const p = JSON.parse(line);
-			if (p && typeof p.received === "string" && typeof p.reply === "string" && typeof p.at === "number" && p.reply.trim()) out.push({ received: p.received, reply: p.reply, at: p.at, ...(typeof p.from === "string" && p.from ? { from: p.from } : {}) });
+			if (p && typeof p.received === "string" && typeof p.reply === "string" && typeof p.at === "number" && p.reply.trim()) out.push({ received: p.received, reply: p.reply, at: p.at, ...(typeof p.from === "string" && p.from ? { from: p.from } : {}), ...(typeof p.source === "string" && p.source ? { source: p.source } : {}) });
 		} catch {
 			unreadable++;
 		}
@@ -32,24 +32,30 @@ export function loadPairs(app: string): Pair[] {
 }
 
 // Deduped by reply + received (the newest of a repeat stays, but takes the sender from a copy that has one, so a re-read upgrades an old pair),
-// the newest MAX_PAIRS kept, oldest first.
+// the newest MAX_PAIRS of each source kept (a big sent folder of one source never pushes out another's), oldest first.
 export function savePairs(app: string, pairs: Pair[]): void {
 	const seen = new Map<string, Pair>();
 	for (const p of [...pairs].sort((a, b) => b.at - a.at)) {
-		const k = `${normText(p.reply)}\n${normText(p.received)}`;
+		const k = `${p.source ?? ""}\n${normText(p.reply)}\n${normText(p.received)}`;
 		const before = seen.get(k);
 		if (!before) seen.set(k, p);
 		else if (!before.from && p.from) seen.set(k, { ...before, from: p.from });
 	}
-	const kept = [...seen.values()].slice(0, MAX_PAIRS);
+	const count = new Map<string, number>();
+	const kept = [...seen.values()].filter(p => {
+		const n = (count.get(p.source ?? "") ?? 0) + 1;
+		count.set(p.source ?? "", n);
+		return n <= MAX_PAIRS;
+	});
 	writeAtomic(paths.pairs(app), kept.reverse().map(p => JSON.stringify(p)).join("\n") + (kept.length ? "\n" : ""));
 }
 
 export const addPair = (app: string, pair: Pair): void => savePairs(app, [...loadPairs(app), pair]);
 
 // Up to 2 newest replies to the same address first (`same`), then the most similar ones, EXAMPLES in all, no repeats.
-export function styleWithExamples(style: ReplyStyle, app: string, text: string, from?: string): ReplyStyle {
-	const pairs = loadPairs(app);
+// `source`: only the pairs of that mail source (absent tag = zele) and the habits measured over them; undefined = every pair.
+export function styleWithExamples(style: ReplyStyle, app: string, text: string, from?: string, source?: string): ReplyStyle {
+	const pairs = loadPairs(app).filter(p => source === undefined || (p.source ?? "zele") === source);
 	const who = addressesOf(from)[0];
 	const past: PastPair[] = pairs.map(p => ({ comment: p.received, reply: p.reply, at: p.at, thread: "", ...(who && p.from && addressesOf(p.from)[0] === who ? { same: true } : {}) }));
 	const same = past.filter(p => p.same).sort((a, b) => b.at - a.at).slice(0, 2);

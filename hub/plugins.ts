@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Claim } from "./discord.ts";
+import type { SentMail } from "../features/reply-drafts/lib/tone.ts";
 
 export type { Claim };
 
@@ -57,7 +58,11 @@ export type Plugin = {
 	mailAction?(a: MailActionRequest): boolean | undefined | Promise<boolean | undefined>;
 	/** The actions `mailAction` can do for this source, e.g. ["read", "unread", "trash"]; without it dotz treats the source as read-only toward its mailbox. */
 	mailActions?(source: string): string[] | undefined;
+	/** The owner's own sent mail of this plugin's mailbox, newest first, at most `opts.limit`; `undefined` = none. Read-only; it feeds the examples of reply drafts for this plugin's source. */
+	sentMail?(opts: { limit: number }): Promise<PluginSentMail | undefined> | PluginSentMail | undefined;
 };
+/** The owner's sent folder of one source, newest first (`items` at most `limit`), for the reply examples (reply-drafts tone.ts sentPairs); `source` tags the pairs so only drafts of that source see them. */
+export type PluginSentMail = { source: string; items: SentMail[] };
 export type MailActionRequest = { source: string; id: string; action: "read" | "unread" | "archive" | "unarchive" | "trash" | "star" | "unstar" };
 
 type Loaded = { name: string; plugin: Plugin; file: string };
@@ -215,6 +220,23 @@ export async function pluginMailAction(a: MailActionRequest): Promise<boolean | 
 		}
 	}
 	return undefined;
+}
+
+/** The sent folders plugins hand over, each with the plugin's name. `limit` per plugin by name (0 skips it); a plugin that throws is logged and skipped. */
+export async function pluginSentMail(limit: number | ((plugin: string) => number)): Promise<(PluginSentMail & { plugin: string })[]> {
+	refresh();
+	const out: (PluginSentMail & { plugin: string })[] = [];
+	for (const l of loaded) {
+		const n = typeof limit === "number" ? limit : limit(l.name);
+		if (!l.plugin.sentMail || n <= 0) continue;
+		try {
+			const got = await l.plugin.sentMail({ limit: n });
+			if (got) out.push({ plugin: l.name, ...got });
+		} catch (error) {
+			note(`plugin ${l.name}: sentMail failed: ${error}`);
+		}
+	}
+	return out;
 }
 
 /** What the plugin of a source can do in its mailbox (the `can` of the mail card). */

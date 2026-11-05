@@ -126,8 +126,44 @@ try {
 
 // The page may navigate when a mail is opened (a full page load drops the page's recording), so the first pass's calls are
 // kept on the repl side and merged with whatever the page (old or new) recorded after the click.
-export async function recordViaAside(url: string, deep: boolean): Promise<CapturedRequest[]> {
-	const proc = Bun.spawn(["aside", "repl", beforeKill(recordCode(url, deep), 90_000)], { stdout: "pipe", stderr: "pipe" });
+export const recordViaAside = (url: string, deep: boolean): Promise<CapturedRequest[]> => replCaps(recordCode(url, deep));
+
+// The link text of the sent folder, as the page-side code tests it.
+export const SENT_LINK = /보낸\s*(편지|메일)함|보낸\s*메일|\bsent\b/i;
+
+// Same tab mechanics as recordCode: the calls the page made before the click are marked seen, the link whose text matches SENT_LINK is clicked, and only
+// the calls the sent folder made are returned. No such link, or any failure, gives no calls.
+const recordSentCode = (url: string) => `const pg = await openTab(${JSON.stringify(url)});
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+try {
+	await sleep(4000);
+	const clicked = await pg.evaluate(async () => { ${PAGE_SIDE}
+		hook();
+		for (const e of performance.getEntriesByType('resource')) W.seen.add(e.name);
+		W.out.length = 0;
+		const re = new RegExp(${JSON.stringify(SENT_LINK.source)}, 'i');
+		const els = [...document.querySelectorAll('a, span, li, div')].filter((e) => e.children.length <= 2 && (e.textContent || '').trim().length <= 30 && re.test(e.textContent || ''));
+		const el = els.find((e) => e.tagName === 'A') || els[els.length - 1];
+		if (!el) return false;
+		el.click();
+		return true;
+	}).catch(() => false);
+	if (clicked) {
+		await sleep(5000);
+		const caps = JSON.parse(await pg.evaluate(async () => { ${PAGE_SIDE}
+			await replayLoaded();
+			return JSON.stringify(window.__wm.out);
+		}).catch(() => '[]'));
+		console.log('WM_CAPS ' + JSON.stringify(caps));
+	}
+} finally {
+	await closeTab(pg).catch(() => {});
+}`;
+
+export const recordSentViaAside = (url: string): Promise<CapturedRequest[]> => replCaps(recordSentCode(url));
+
+async function replCaps(code: string): Promise<CapturedRequest[]> {
+	const proc = Bun.spawn(["aside", "repl", beforeKill(code, 90_000)], { stdout: "pipe", stderr: "pipe" });
 	const timer = setTimeout(() => proc.kill(9), 90_000);
 	const out = await new Response(proc.stdout).text().catch(() => "");
 	await proc.exited;
