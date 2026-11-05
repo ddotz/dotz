@@ -4,8 +4,8 @@ import { log, now, paths } from "./config.ts";
 import * as discord from "./discord.ts";
 import { msg } from "./i18n.ts";
 import { emit, emitDelivery } from "./events.ts";
-import { setNoticeHandler as setLaneNoticeHandler, setOpenCardCheck, setOwnerNoteHandlers, setProgressHandler, setReportHandler, setVerifiedHandler } from "./lanes.ts";
-import { laneHasOpenCard, laneVerified } from "./notices.ts";
+import { lanes, setNoticeHandler as setLaneNoticeHandler, setOpenCardCheck, setOwnerNoteHandlers, setProgressHandler, setReportHandler, setVerifiedHandler } from "./lanes.ts";
+import { decisionsOf, laneHasOpenCard, laneVerified } from "./notices.ts";
 import { orch, steer as steerOrchestrator } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { createLaneRelay } from "./lanerelay.ts";
@@ -16,6 +16,19 @@ import { dropForLine, forLines } from "./forline.ts";
 import { clipKeepingAsk, normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
 
 export const laneRelay = createLaneRelay({ busy: () => orch.status === "working", deliver: text => deliver(text), lead: n => msg().inboxLaneReports(n), steer: text => steerOrchestrator(msg().laneReportSteer(text)) });
+
+// Why this orchestrator post may not go out, when it would ask a session's open question a second time. A session's [ask] is already in 답변 필요 and the owner's answer
+// there reaches the session, so the turn that heard it makes no card of its own, in any words (2026-11-05 publish-voice: two cards 9 s apart; the same
+// on 2026-11-04 for web-onboarding, cloudflare-webapp and code-health, each a dotz_send). The card is what the post would make, read as the notices read
+// it; a send approval is its own card. Nothing is read unless this turn heard a question.
+export function repostRefusal(target: string, text: string): string | undefined {
+	const open = laneRelay.asked().filter(name => laneHasOpenCard(name) || lanes.get(name)?.pendingAsk);
+	if (!open.length) return undefined;
+	const cards = decisionsOf({ ts: now(), kind: "out", source: "orchestrator", target, text: normalizeAsk(stripHandoff(text)) });
+	if (!cards.some(c => !c.draft)) return undefined;
+	log(`orchestrator post to ${target} refused: it repeats the open question of ${open.join(", ")}`);
+	return msg().laneAskWaiting(open.join(", "));
+}
 
 export function installLaneHandlers(): void {
 	setVerifiedHandler((name, text) => laneVerified(name, text));

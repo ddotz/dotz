@@ -227,7 +227,8 @@ export const ko: Catalog = {
 
 	inboxLaneReport: lane => `[dotz inbox] 세션 ${lane}의 보고:`,
 	inboxLaneReports: n => `[dotz inbox] 세션 보고 ${n}건 (일상 진행은 report.md와 지금 도는 것 줄에만 있어요):`,
-	laneReportSteer: body => `${koLeads.laneReportLead}. 처리가 필요하면(전달할 결과, 질문, 실패) 지금 처리하세요. dotz_send로 전달하거나 dotz_lane으로 세션에 답한 뒤 하던 일을 이어가세요. 이 보고는 나중에 다시 오지 않아요.\n\n${body}`,
+	laneReportSteer: body => `${koLeads.laneReportLead}. 처리가 필요하면(전달할 결과나 실패, 당신이 답할 수 있는 질문) 지금 처리하세요. dotz_send로 전달하거나 dotz_lane으로 세션에 답한 뒤 하던 일을 이어가세요. 이 보고는 나중에 다시 오지 않아요. 세션의 [ask]는 이미 오너에게 갔으니 다시 올리지 마세요.\n\n${body}`,
+	laneAskWaiting: lanes => `올리지 않았어요. 세션 ${lanes}의 질문은 이미 오너의 답변 필요에 카드로 떠 있고, 거기서 답하면 세션에 바로 가요. 카드를 또 만들면 같은 질문이 두 번 보이니 어떤 말로도 다시 올리지 마세요. 당신의 다른 질문은 다음 턴에 내세요.`,
 	liveStatus: (minutes, now, lanes, workers, steps, rest) => `[run] ${minutes}분째 작업 중이에요.${now ? `\n지금: ${now}` : ""}${lanes ? `\n세션: ${lanes}` : ""}${workers ? `\n서브에이전트: ${workers}` : ""}${steps.length ? `\n최근 작업:${steps.map(s => `\n- ${s}`).join("")}${rest ? `\n- 그 밖에 ${rest}건 더` : ""}` : ""}`,
 	liveTool: { run: "명령 실행", read: "파일 읽기", edit: "파일 수정", search: "파일 검색", web: "웹 검색", fetch: "웹 페이지 읽기", task: "하위 작업", note: "기록 정리", other: "작업 진행" },
 	liveMore: n => `외 ${n}`,
