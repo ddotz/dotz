@@ -23,6 +23,8 @@ function stripChoices(text) {
   }
   return out.filter(l => !CH_CLOSE.test(l)).join("\n").replace(/\n{3,}/g, "\n\n");
 }
+// A body whose card shows the options: the question line loses its "결정:" label, and goes when `title` (the card's head) already says it. Text without an inline card reads as a sentence.
+const choiceBody = (text, title) => stripChoices(text).split("\n").flatMap(l => { const q = (CH_HEAD.exec(l) || [])[1]; return q === undefined ? [l] : q && q !== title ? [q] : []; }).join("\n").trim();
 // The message body above its inline card (dcInline): the card holds the question and the options, so neither stays as text. Text outside the blocks stays, code fences whole.
 function inlineBody(text) {
   const lines = stripRecMark(String(text ?? "")).split("\n"), out = [];

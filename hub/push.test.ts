@@ -212,3 +212,10 @@ test("an all-clear or a repeated gateway alert does not notify; a new failure an
 	expect(classify(ev({ source: "gateway", target: "alert", text: "땃쥐: 모델 제공자 오류(timeout)" }))).toMatchObject({ kind: "alert" });
 	expect(classify(ev({ source: "gateway", target: "alert", text: "[ask] 땃쥐: 모델 오류가 계속돼요.", repeat: true }))).toMatchObject({ kind: "ask" });
 });
+
+test("a push body is plain words: no option lines, no decision label, no small-line mark, no table rule", () => {
+	const ask = classify(ev({ target: "web", text: "[ask] 2부를 끝냈어요.\n\n결정: 반영할까요?\n**1) 반영**\n바로 나가요.\n**2) 보류**\n그대로 둬요." }));
+	expect(ask?.body).toBe("2부를 끝냈어요.");
+	const report = classify(ev({ target: "web", text: "[done] 표예요.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n-# 지난 주 기준이에요" }));
+	expect(report?.body).not.toMatch(/-{2,}|-#/);
+});

@@ -12,17 +12,21 @@ const convReal = e => CONV_KINDS.has(e.kind) && !(e.kind === "out" && e.update_k
 // A gateway system line (`system`, 11-todo-strip.js sysLine) is a status, never unread (hub/conversations.ts countIncoming).
 const convIncoming = e => convReal(e) && !OWNER.has(e.kind) && !cleanRestart(e) && !e.system;
 
-// Same rule as hub/conversations.ts previewOf: first meaningful line, plain text, 120 chars.
-function convPreview(raw) {
-  const text = noticeKo(parseTone(previewSrc(raw)).text, NK);
+// Same rule as hub/conversations.ts previewOf: the first meaningful lines, plain text. convPreview: the first, 120 chars.
+function previewLines(raw, max) {
+  const text = noticeKo(parseTone(previewSrc(raw)).text, NK), out = [];
   let fence = false;
   for (const line of text.split("\n")) {
     if (/^\s*```/.test(line)) { fence = !fence; continue; }
-    if (fence) continue;
+    if (fence || isSep(line)) continue;
     const plain = line.replace(/^\s*-#\s+/, "").replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, "").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_~`]+/g, "").replace(/\s+/g, " ").trim();
-    if (plain) return plain.length > 120 ? `${plain.slice(0, 119)}…` : plain;
+    if (plain && out.push(plain) >= max) break;
   }
-  return "";
+  return out;
+}
+function convPreview(raw) {
+  const [plain = ""] = previewLines(raw, 1);
+  return plain.length > 120 ? `${plain.slice(0, 119)}…` : plain;
 }
 function convLastOf(e) {
   if (!convReal(e) || typeof e.ts !== "string") return null;

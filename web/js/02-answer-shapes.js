@@ -1,13 +1,21 @@
 /* ---------- answer shapes: an assistant answer drawn by its written shape (site/prototype s-answers.js) ---------- */
 // Only the shape of the text decides, never a model or a list of label names; a block with no shape returns null and stays as today's text
 // (docs/ui-principles.md 12). The stored text is never touched, and a card holds only the words it shows, so a selection copies what it covers.
-// An answer reaches the page whole (11-todo-strip.js streamIn), so it is drawn once, on
+// answerNode is the one way a model's text reaches the screen: a chat answer, a session report, a notice sheet, a monitoring card. A surface that calls mdNode instead draws the
+// same text differently, and hub/answer-surfaces-web.test.ts fails on it. An answer reaches the page whole (11-todo-strip.js streamIn), so it is drawn once, on
 // its first paint: the live status and progress notes never come through here, and there is no text that later turns into a card.
 const ANS_LABEL = /^\*\*([^*\n]{1,24}?):?\*\*:?\s+(\S.*)$/;
 const ANS_EVIDENCE = /^근거:\s*(\S.*)$/;
 const ANS_HEAD = /^\*\*([^*\n]+)\*\*$/, ANS_COUNT = /^(.+?)\s*\((\d+회)\)$/;
 const ANS_SENTENCE = /^.+?[.!?](?=\s|$)/;
 const ANS_WORDY = 30, ANS_LEAD_MAX = 80, ANS_TABLE_COLS = 5;
+// shaped: the answer already has a shape (its files). lead: false where a title above the body is already the one bold thing (a sheet, a result card).
+const answerNode = (text, { cls = "md", shaped = false, lead = true } = {}) => mdNode(text, cls, false, { shaped, lead });
+// A body with its `[file]` lines taken out (fileLines): the text, the file rows, then the evidence line, which stays the last thing.
+function answerParts({ text, files }, o = {}) {
+  const md = answerNode(text, { ...o, shaped: files.length > 0 }), ev = files.length ? md.querySelector(":scope > .ans-ev:last-child") : null;
+  return [md, ...ansFiles(files), ev].filter(Boolean);
+}
 const ansRow = (key, value) => `<div class="rc-row"><span class="rc-k">${inline(key)}</span><span class="rc-w">${inline(value)}</span></div>`;
 // The list as a card, or null. Two or more flat items only: one line or a nested list is lighter as text.
 function ansListHtml(list) {

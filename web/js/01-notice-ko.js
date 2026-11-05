@@ -262,6 +262,7 @@ function prose(s, o) {
   t = t.replace(LONG_ID, "");
   t = t.replace(STATUS, "");
   t = t.replace(/^\[([^\]\n]{2,30})\][ \t]+(?=\S)/gm, (m, label) => /^[\d\sx]+$/i.test(label) ? m : `${label}: `);
+  t = t.replace(/``/g, "").replace(/(:|·)[ \t]*·/g, "$1");
   return josa(t).replace(/\(\s*[,·]?\s*\)|\[\s*\]/g, "").replace(/[ \t]+([,.!?)])/g, "$1").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+$/gm, "").replace(/[ \t]*·[ \t]*$/gm, "");
 }
 function errorKo(msg) {

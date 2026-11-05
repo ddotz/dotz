@@ -149,6 +149,8 @@ function prose(s: string, o: PlainOpts): string {
 	t = t.replace(LONG_ID, "");
 	t = t.replace(STATUS, "");
 	t = t.replace(/^\[([^\]\n]{2,30})\][ \t]+(?=\S)/gm, (m, label: string) => (/^[\d\sx]+$/i.test(label) ? m : `${label}: `));
+	// An id can be all a code span held, or all a "근거:" piece: neither its marks nor its separator stay behind.
+	t = t.replace(/``/g, "").replace(/(:|·)[ \t]*·/g, "$1");
 	return josa(t).replace(/\(\s*[,·]?\s*\)|\[\s*\]/g, "").replace(/[ \t]+([,.!?)])/g, "$1").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+$/gm, "").replace(/[ \t]*·[ \t]*$/gm, "");
 }
 
