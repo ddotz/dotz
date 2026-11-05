@@ -100,7 +100,7 @@ import { kakaoDraftFacts, startKakaoLive, stopKakaoLive } from "./kakao/gateway.
 import { commentDraftFacts } from "./comments/gateway.ts";
 import { draftHandled } from "./draft-handled.ts";
 import { syncCardFiles } from "./draft-attach.ts";
-import { answerDrafts, listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
+import { answerDrafts, draftHeads, listDrafts as listMailDrafts } from "../features/reply-drafts/lib/store.ts";
 
 // 앱 기억 (hub/app-settings.ts applyMemory): a bot answer that keeps an app's attach folder or follow-up rule is stored at once, in whatever
 // conversation the owner said it; other setting changes stay a card the owner applies.
@@ -154,7 +154,7 @@ tagStoredApps();
 const cardFilesChanged = () => void syncCardFiles();
 setAppLabelResolver(key => appEntries(DATA_DIR).find(e => e.key === key)?.label ?? key);
 // One answer for the notices and the approval queue: is the item behind this send-approval ref (in this conversation) already handled?
-const refHandled = (ref: string, conv: string) => draftHandled(ref, { mail: { drafts: listMailDrafts, record: mailByKey }, comment: commentDraftFacts, kakao: kakaoDraftFacts }, conv);
+const refHandled = (ref: string, conv: string) => draftHandled(ref, { mail: { drafts: draftHeads, record: mailByKey }, comment: commentDraftFacts, kakao: kakaoDraftFacts }, conv);
 setDraftHandled((d, _n, ref) => refHandled(ref, d.to));
 setRefHandled(refHandled);
 // Mails that wait are checked against their real thread (zele, read-only): an answer sent from Gmail or another script makes the mail 답장함 and closes its cards
@@ -162,7 +162,7 @@ setRefHandled(refHandled);
 const MAIL_RECONCILE_PER_RUN = 20, MAIL_RECONCILE_EVERY_MS = 10 * 60_000, MAIL_RECONCILE_AT_START = 100;
 const mailReconciler = createReconciler({
 	mails: mailRecords,
-	draftRefs: () => new Set(listMailDrafts().filter(d => d.status === "pending" || d.status === "held").map(d => d.ref)),
+	draftRefs: () => new Set(draftHeads().filter(d => d.status === "pending" || d.status === "held").map(d => d.ref)),
 	accounts: zeleAccounts,
 	read: zeleRead,
 	own: accounts => ownAddresses(accounts),

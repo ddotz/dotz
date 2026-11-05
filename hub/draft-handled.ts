@@ -7,7 +7,7 @@
 /** A reply draft of the mail app (features/reply-drafts): `ref` is the mail key the draft answers. */
 export type MailDraftLike = { id: string; ref: string; status: string; created: string };
 export type MailFacts = {
-	drafts: () => MailDraftLike[];
+	drafts: () => readonly MailDraftLike[];
 	/** The stored mail: reply skipped / fyi (or the older noReply flag) = no reply wanted, suggest.state = the reply state ("sent" = a reply went out, also when sent from his own client). Missing = deleted at the source. */
 	record: (key: string) => { reply?: string; noReply?: boolean; suggest?: { state?: string } } | undefined;
 };
@@ -41,7 +41,7 @@ export function mailRefHandled(ref: string, conv: string | undefined, f: MailFac
 	return !m || mailEnded(m) || f.drafts().some(d => d.ref === key && d.status === "sent");
 }
 /** The item a send-approval card is about, so two cards of one mail (the bot's `mail:<mailId>` and the app's reply draft) count as one; other refs are their own item. */
-export function mailItemKey(ref: string, conv: string, drafts: () => MailDraftLike[]): string {
+export function mailItemKey(ref: string, conv: string, drafts: () => readonly MailDraftLike[]): string {
 	if (ref.startsWith("mail:")) {
 		const key = mailKeyOfRef(ref, conv);
 		return key ? `mail:${key}` : ref;

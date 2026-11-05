@@ -50,7 +50,7 @@ const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 // The parsed file is kept while its identity (path, inode, mtime, size) is the same: every write is an atomic rename, so a write by the CLI in another
 // process changes the inode. Every public read hands out a copy of what it returns; `read()` (the write paths) works on a copy too.
-let cached: { id: string; file: File } | undefined;
+let cached: { id: string; file: File; heads?: readonly DraftHead[] } | undefined;
 
 function parsed(): File {
 	const path = paths.drafts();
@@ -91,6 +91,18 @@ export function newId(taken: Set<string> = new Set(listDrafts().map(d => d.id)))
 
 // What the readers get is a copy, so nothing they change reaches the kept parse.
 export const listDrafts = (): DraftRec[] => structuredClone(parsed().drafts);
+
+/** What a status check needs of a draft. */
+export type DraftHead = { id: string; ref: string; status: string; created: string };
+/**
+ * Every draft's id, ref, status and created, built once per version of the file and shared (read-only) by all callers, so asking for it once per card
+ * of a sweep copies nothing. Use listDrafts() when the caller needs the whole record or may change it.
+ */
+export function draftHeads(): readonly DraftHead[] {
+	const file = parsed();
+	if (cached?.file !== file) return file.drafts.map(({ id, ref, status, created }) => ({ id, ref, status, created }));
+	return (cached.heads ??= file.drafts.map(({ id, ref, status, created }) => ({ id, ref, status, created })));
+}
 export const getDraft = (id: string): DraftRec | undefined => {
 	const d = parsed().drafts.find(x => x.id === id);
 	return d && structuredClone(d);
