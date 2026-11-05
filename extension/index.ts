@@ -157,7 +157,7 @@ function authTool(pi: any, lane?: string): void {
 		}),
 		async execute(_id: string, p: AuthParams, signal?: AbortSignal) {
 			const text = (t: string) => ({ content: [{ type: "text", text: t }] });
-			const body: Record<string, unknown> = { site: p.site, kind: p.kind, purpose: p.purpose, target: lane ? `lane:${lane}` : (p.target ?? "chat") };
+			const body: Record<string, unknown> = { site: p.site, kind: p.kind, purpose: p.purpose, target: lane ? `lane:${lane}` : (p.target ?? "chat"), ...(lane ? {} : { session: process.env.DOTZ_CONV ?? "main" }) };
 			if (p.fields) body.fields = p.fields;
 			if (p.form) body.form = p.form;
 			if (p.remember !== undefined) body.remember = p.remember;
