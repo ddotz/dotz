@@ -283,8 +283,8 @@ addEventListener("pagehide", () => viewReport(true));
 setInterval(viewReport, 2000);
 
 /* ---- the list ---- */
-// 진행 중 on top while a session runs or waits on the owner (sessionsNow, the 홈 card's own list; no header when none does), then the main assistant and the
-// two feeds, the projects by their newest message (silent ones after, in project order). A session out of 진행 중 keeps a row only while it is open or still
+// The main assistant and 작업내역 on top, then 진행 중 while a session runs or waits on the owner (sessionsNow, the 홈 card's own list; no header when none does),
+// the projects by their newest message (silent ones after, in project order). A session out of 진행 중 keeps a row only while it is open or still
 // has something unread or asked; the ended ones fold into one group after that, and the mails and rooms that wait on the owner close the list. 모니터링 has its
 // own tab (30-monitoring.js) and uses this same row.
 function convRows() {
@@ -296,8 +296,8 @@ function convRows() {
   const sess = l => { const t = `lane:${l.name}`; const m = mk(t); return { ...m, badge: sessionState(l), hint: convPreview(l.lastText) || m.hint || homeRunLine(t) }; };
   // A card per group, and last the 메일 · 카카오톡 card of what waits there.
   const projs = projects.map(mk), page = projs.filter((r, i) => i < CVF.more || r.t === target);
-  const out = now.length ? [{ header: "진행 중", sec: true }, ...now.map(l => ({ ...sess(l), name: sessionHead(l) })), { split: true }] : [];
-  out.push(...[MAIN, "worklog"].map(mk));
+  const out = [MAIN, "worklog"].map(mk);
+  if (now.length) out.push({ header: "진행 중", sec: true }, ...now.map(l => ({ ...sess(l), name: sessionHead(l) })), { split: true });
   if (page.length) out.push({ header: "프로젝트", sec: true }, ...page);
   if (projs.length > page.length) out.push({ more: projs.length - page.length });
   const listed = new Set(now);
@@ -427,12 +427,13 @@ function convPaint() {
   if (sig !== convSig) {
     convSig = sig;
     convSide.setAttribute("aria-label", monCtx ? "모니터링 목록" : "채팅 목록");
-    // 진행 중 sits above everything: a list read further down stays where it is when a session starts or ends.
-    const top = convSide.scrollTop, mark = () => (convSide.querySelector(`.cv-row[data-t="${MAIN}"]`) || {}).offsetTop || 0, was = mark();
+    // 진행 중 grows and shrinks under 작업내역: a list read further down stays where it is when a session starts or ends, held by where 진행 중 (or, without it, 작업내역) ends.
+    const end = () => { const n = ([...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === "진행 중") || {}).nextElementSibling || convSide.querySelector('.cv-row[data-t="worklog"]'); return n ? n.offsetTop + n.offsetHeight : 0; };
+    const top = convSide.scrollTop, was = end();
     // A conversation opened from 모니터링 keeps 모니터링's own panel (sections, cards, bars: 30-monitoring.js), never the chat list's rows.
     clear(convSide).append(...(monCtx ? monSideNodes(rows) : convCards(rows)));
     if (monCtx) monDecorateRows(convSide, items);
-    convSide.scrollTop = top && top + mark() - was;
+    convSide.scrollTop = top && top + end() - was;
   }
   convSide.classList.toggle("mon-side", !!monCtx);
   $("#v-chat").classList.toggle("mon-ctx", !!monCtx);
