@@ -89,7 +89,7 @@ async function webBuildCheck(b) {
 if (SHELL_RESTORE && !SHELL_RESTORE.key && SHELL_RESTORE.views) for (const ms of [300, 1200]) setTimeout(() => { const v = $("#views"); if (SHELL_RESTORE && current !== "home" && !v.scrollTop) v.scrollTop = SHELL_RESTORE.views; }, ms);
 // A tap that had to start the app carries the message as ?m=<ts>: 99-boot.js opens it once the state is in. A decision carries ?n=<id> (its sheet,
 // 30-notices.js), with ?m= only as the place to land when that decision is no longer listed.
-const pushQ = new URLSearchParams(location.search);
+const pushQ = new URLSearchParams(location.search), PUSH_HREF = location.href;
 // The device id: every subscription this device makes, on any computer, carries it, so the computers know they are one device (hub/push.ts fanOut).
 // It is minted once here; opening another computer from this app (33-peers.js) hands it on as ?did=, and the page that arrives with one keeps that one.
 let DEVICE_ID = "";
@@ -100,12 +100,35 @@ try {
   if (!DEVICE_ID) localStorage.setItem("dotz-did", DEVICE_ID = crypto.randomUUID());
 } catch {}
 if (pushQ.has("did")) { pushQ.delete("did"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
+// An address a tap already spent, come back with the app: its landing is over, and only the route stays.
+const PUSH_SPENT = "dotz-push-spent", PUSH_SPENT_MAX = 30;
+const pushSpent = () => { try { return JSON.parse(localStorage.getItem(PUSH_SPENT) || "[]"); } catch { return []; } };
+const PUSH_REPLAY = pushSpent().includes(PUSH_HREF);
+if (PUSH_REPLAY) { for (const k of ["m", "i", "n", "pc"]) pushQ.delete(k); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
 // ?pc=<origin> (a notice relayed from another computer): the page switches to that computer (33-peers.js prFollow), with ?n / ?m as its own item.
 const PUSH_FOLLOW = pushQ.has("pc") ? location.href : "";
 let pushOpenTs = pushQ.has("n") || PUSH_FOLLOW ? "" : pushQ.get("m") || "";
 const pushOpenNid = pushQ.get("i") || "", pushDecisionAt = pushQ.has("n") ? pushQ.get("m") || "" : "";
 const PUSH_HASH = location.hash;   // the tapped address: the first go() rewrites it (#chat/alert to #notices, a mail to #monitoring/c:...)
 if (pushQ.has("m") && !PUSH_FOLLOW) { pushQ.delete("m"); pushQ.delete("i"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
+// The tap that started the app wins over the address it started at (web/sw.js openAt: a phone may bring back an older one), and that address is then spent.
+// Runs on load and on coming back: a window that never opened leaves its tap to the page it brought forward.
+const PUSH_TAP_MS = 60000;
+async function pushTapCheck() {
+  try {
+    const c = await caches.open("dotz-share"), hit = await c.match("/push/tap"), tap = hit && await hit.json();
+    if (!tap || tap.used || Date.now() - tap.at > PUSH_TAP_MS) return;
+    const spent = pushSpent().filter(h => h !== tap.href);
+    if (tap.href === PUSH_HREF && !PUSH_REPLAY) {
+      await c.put("/push/tap", new Response(JSON.stringify({ ...tap, used: true })));
+      localStorage.setItem(PUSH_SPENT, JSON.stringify([...spent, tap.href].slice(-PUSH_SPENT_MAX)));
+      return;
+    }
+    localStorage.setItem(PUSH_SPENT, JSON.stringify(spent));
+    history.replaceState(null, "", tap.href);
+    reloadPage();
+  } catch (e) { console.warn("push tap", e); }
+}
 async function pwaInit() {
   if (!("serviceWorker" in navigator)) return;
   try { PWA.reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" }); } catch (e) { console.warn("service worker", e); return; }

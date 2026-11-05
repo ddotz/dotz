@@ -2,7 +2,7 @@
 // The page, script and styles answer from the cache at once (a tapped notification starts the app without waiting for the
 // network) and are fetched again in the background. When that fetch brings a changed shell, the open pages get a
 // {type:"shell-updated"} message (web/js/23-installable-app-web.js shellUpdated) and reload onto it, so a web change does not wait for the open after next.
-const CACHE = "dotz-shell-v11";
+const CACHE = "dotz-shell-v12";
 // the page, its joined script and styles and the owner's custom.js: cache first, refreshed together in the background. A file the page loads that
 // is not here waits on the gateway, and with the gateway off the page never finished loading (2026-10-28).
 const FRESH = ["/", "/app.js", "/app.css", "/custom.js"];
@@ -12,6 +12,13 @@ const SHELL = [...FRESH, ...ICONS];
 // Web Share Target (manifest share_target): the phone's share sheet POSTs photos to /share-target. The worker keeps them in this
 // cache and redirects to the chat, where the page (web/js/23-installable-app-web.js sharedIntake) takes them into the composer.
 const SHARE = "dotz-share";
+// A tap that has to start the app, kept beside the shares: a phone may bring the app back at the address it started with, not the one openWindow named
+// (a stale ?n= came back on the owner's Samsung Internet app, and every push landed on one old decision, 2026-11-05). The page reads it on load (23-installable-app-web.js pushTapCheck).
+const TAP = "/push/tap";
+async function openAt(href) {
+  try { await (await caches.open(SHARE)).put(TAP, new Response(JSON.stringify({ href, at: Date.now() }))); } catch (e) { console.warn("push tap", e); }
+  await self.clients.openWindow(href);
+}
 // A navigation answers from the cache at once; its background check waits this long, so its eight requests do not join the page's own first ones on a busy gateway.
 const REFRESH_AFTER_MS = 3000;
 
@@ -196,7 +203,7 @@ self.addEventListener("notificationclick", ev => {
     // A notice relayed from another computer: this app opens, then the page switches to that computer (33-peers.js prFollow), at the item.
     if (data.pc) {
       if (win && await win.focus().then(() => true, () => false)) { win.postMessage({ follow: url }); return; }
-      await self.clients.openWindow(url);
+      await openAt(url);
       return;
     }
     // A window that refuses focus (a browser may) would change where nobody sees it: a new one opens at the item instead.
@@ -208,7 +215,7 @@ self.addEventListener("notificationclick", ev => {
     if (at) cold.searchParams.set("m", at);
     if (nid) cold.searchParams.set("i", nid);
     if (id) cold.searchParams.set("n", id);
-    await self.clients.openWindow(cold.href);
+    await openAt(cold.href);
   };
   // An option button of a decision: the answer is posted from here, the app stays closed. If it could not be delivered the detail opens.
   if (id && /^opt:\d+$/.test(ev.action || "")) {

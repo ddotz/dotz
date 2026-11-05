@@ -266,7 +266,7 @@ describe("service worker shell", () => {
 
 	test("a navigation answers from the cache without waiting for the network, then refreshes the shell in the background", async () => {
 		const caches = fakeCaches();
-		const c = await caches.open("dotz-shell-v11");
+		const c = await caches.open("dotz-shell-v12");
 		await c.put("/", new Response("old page"));
 		const calls: string[] = [];
 		let release!: () => void;
@@ -278,13 +278,13 @@ describe("service worker shell", () => {
 		release();
 		await pending;
 		expect(calls.sort()).toEqual(["/", "/app.css", "/app.js", "/custom.js", "/icons/apple-touch-icon.png", "/icons/badge-96.png", "/icons/icon-192.png", "/icons/icon-512.png"]);
-		expect(await (await caches.open("dotz-shell-v11")).match("/").then(r => r!.text())).toBe("new /");
-		expect(await (await caches.open("dotz-shell-v11")).match("/app.js").then(r => r!.text())).toBe("new /app.js");
+		expect(await (await caches.open("dotz-shell-v12")).match("/").then(r => r!.text())).toBe("new /");
+		expect(await (await caches.open("dotz-shell-v12")).match("/app.js").then(r => r!.text())).toBe("new /app.js");
 	});
 
 	test("an unchanged shell stays stored as it is, and a new bundle replaces it and reaches the open pages", async () => {
 		const caches = fakeCaches();
-		const c = await caches.open("dotz-shell-v11");
+		const c = await caches.open("dotz-shell-v12");
 		for (const p of ["/", "/app.js", "/app.css", "/custom.js"]) await c.put(p, new Response(`v1 ${p}`, { headers: { ETag: `"1${p}"` } }));
 		const stored: string[] = [], open0 = caches.open;
 		caches.open = async (n: string) => { const o = await open0(n), put = o.put; o.put = async (k: string, r: Response) => { if (!k.startsWith("/icons/")) stored.push(k); await put(k, r); }; return o; };
@@ -326,7 +326,7 @@ describe("service worker shell", () => {
 
 	test("the shell is replaced only when every file of the new version arrived", async () => {
 		const caches = fakeCaches();
-		const c = await caches.open("dotz-shell-v11");
+		const c = await caches.open("dotz-shell-v12");
 		for (const p of ["/", "/app.js", "/app.css"]) await c.put(p, new Response(`old ${p}`));
 		const h = boot(caches, async u => (u === "/app.js" ? new Response("boom", { status: 502 }) : new Response(`new ${u}`)));
 		let pending!: Promise<unknown>;
