@@ -170,7 +170,7 @@ export function flush(target: string): void {
 	// After a tap on the update bar: kept for the restart, acknowledged on the message (and in a Discord channel's progress line).
 	const heldRefs = b.events.flatMap(e => refOf(e) ?? []);
 	if (updateNow()?.hold(inboxText(merged), { target, replyTo: b.replyTo, owner: true }, heldRefs)) return heldForUpdate(target, heldRefs, b.replyTo);
-	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, owner: true });
+	const steered = deliver(inboxText(merged), { target, replyTo: b.replyTo, refs: heldRefs, owner: true });
 	// Another conversation's message waits for the running turn to end and goes in as its own turn (prompts.ts deliver); a parked
 	// conversation session was started again for it.
 	const status = convs.forTarget(target)?.o.orch.status;

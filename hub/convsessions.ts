@@ -13,7 +13,7 @@ import { mailByThread } from "./mail.ts";
 import { createOrchestrator, orchBusy, type OrchOpts, type Orchestrator } from "./orchestrator.ts";
 import { createCapacity } from "./convcapacity.ts";
 import { omoSelector } from "./runtime/omo.ts";
-import type { createPrompts, Pending } from "./prompts.ts";
+import type { createPrompts, Pending, Reply } from "./prompts.ts";
 import { CONV_KINDS, MAIN, primaryTarget, safeDir, sessionKeyOf } from "./session-key.ts";
 import { trackTimer } from "./shutdown.ts";
 
@@ -55,14 +55,25 @@ const readJson = (file: string): Record<string, unknown> => {
 };
 
 // The conversation's recent exchanges, handed to a brand-new session with its first prompt (it starts with no context of its own).
+// Context only: this first run has no prompt, so what it answers goes nowhere and what it starts belongs to no request. The message that
+// started the session is logged before it is delivered, so it is left out here and comes as its own turn (2026-11-05 web:worklog: it was
+// acted on from this history and then again as its turn, and the worker's answer closed nothing, so the owner got it twice).
 export function seedText(primary: string, events: HubEvent[], max = SEED_CHARS): string {
 	const lines = events
 		.filter(e => (e.kind === "message" || (e.kind === "out" && !e.update_key)) && typeof e.text === "string" && e.text.trim())
 		.map(e => `[${String(e.ts).slice(0, 16)}] ${e.kind === "message" ? `owner${e.author ? ` (${e.author})` : ""}` : NAME}: ${String(e.text).replace(/\s+/g, " ").trim()}`);
-	if (!lines.length) return "";
+	const wait = "This is context, not a request: reply with exactly - now. Any new message from the owner comes next as its own turn.";
+	if (!lines.length) return `[dotz gateway] This conversation (${primary}) is new. ${wait}`;
 	let body = lines.join("\n");
 	if (body.length > max) body = `…${body.slice(body.length - max)}`;
-	return `[dotz gateway] This conversation (${primary}) before this session started, oldest first. Its earlier turns were answered by the main session; continue from here.\n${body}`;
+	return `[dotz gateway] This conversation (${primary}) before this session started, oldest first. Its earlier turns were answered by the main session. ${wait}\n${body}`;
+}
+
+/** Every message the session still owes a turn or an answer: its starting history leaves them out, their own delivery carries them. */
+function owedIds(q: Prompts): Set<string> {
+	const running = q.current();
+	const owed: { replyTo?: string; refs?: string[] }[] = [...q.deferredOpen(), ...(running && !running.done ? [running] : []), ...q.queued()];
+	return new Set(owed.flatMap(p => [...(p.refs ?? []), ...(p.replyTo ? [p.replyTo] : [])]));
 }
 
 export const scopeText = (m: ConvMeta): string =>
@@ -109,7 +120,10 @@ export function createConvSessions(d: ConvDeps) {
 			model: () => c.meta.ownModel,
 			env: { DOTZ_CONV: key, DOTZ_WORKER_PIN_FILE: join(dir, "worker-pin"), ...(meta.name ? { DOTZ_CONV_NAME: meta.name } : {}) },
 			scope: () => scopeText(c.meta),
-			seed: () => seedText(c.primary, d.history(key, SEED_EVENTS)),
+			seed: () => {
+				const owed = owedIds(c.queue);
+				return seedText(c.primary, d.history(key, SEED_EVENTS).filter(e => !owed.has(String(e.mid ?? e.message_id))));
+			},
 		});
 		Object.assign(c, d.wire(c));
 		convs.set(key, c);
@@ -180,7 +194,7 @@ export function createConvSessions(d: ConvDeps) {
 	}
 
 	/** Delivers a prompt into the session `key` (spawning or resuming it); true when it was steered into its running turn. */
-	function deliverTo(key: string, text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): boolean {
+	function deliverTo(key: string, text: string, reply?: Reply): boolean {
 		const c = ensure(key);
 		if (reply?.owner && c.key !== MAIN) {
 			c.meta.lastOwnerAt = new Date(now()).toISOString();

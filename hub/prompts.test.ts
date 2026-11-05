@@ -3,8 +3,9 @@
 import { expect, test } from "bun:test";
 import { emit, answeredIds, historyEvents } from "./events.ts";
 import { outEvent } from "./projectchat.ts";
-import { createPrompts, type OwnerMessage, type Pending, type PromptDeps, type WorkLink } from "./prompts.ts";
+import { createPrompts, type OwnerMessage, type Pending, type PromptDeps, type WorkLink, type WorkRow } from "./prompts.ts";
 import { eventsFromFrame } from "./runtime/omp.ts";
+import { createWaitCheck, QUIET_MS } from "./waitcheck.ts";
 
 function setup(answered: string[] = [], recent: OwnerMessage[] = [], extra: Partial<PromptDeps> = {}) {
 	const state = { working: false, steerFails: false, delivered: [] as string[], steered: [] as string[], posts: [] as { target: string; text: string; replyTo?: string }[], saved: [] as Pending[][] };
@@ -1232,6 +1233,65 @@ test("a turn that started from an unpaired frame takes no deferred request, even
 	t.q.settleTurn();
 	await answerWake(t, "st_a", "result");
 	expect(t.state.posts.at(-1)).toEqual({ target: "web", text: "result", replyTo: "m1" });
+});
+
+// A worker no turn of ours spawned is listed by bgwork.ts in the conversation that waits, on no message; `rows` stands for that list.
+function listedWorkers(rows: () => WorkRow[], link: () => (id: string, to: { target: string }, description?: string) => unknown): Pick<PromptDeps, "work" | "workFor"> {
+	return {
+		work: rows,
+		workFor: target => {
+			const w = rows().find(w => w.status === "running" && w.target === target);
+			if (w) link()(w.id, { target }, w.description);
+			return w && { id: w.id, description: w.description ?? "" };
+		},
+	};
+}
+
+test("the 2026-11-05 web:worklog sequence: a message that came during the session start gets one answer and no nudge", async () => {
+	const target = "web:worklog";
+	const id = "st_01a1aa4c";
+	const worker: WorkRow = { id, description: "이슈 52 남은 한계 수정", status: "running", target, startedAt: Date.now() - 2_000 };
+	let rows: WorkRow[] = [];
+	const t = setup([], [], listedWorkers(() => rows, () => t.q.link));
+	const inbox = "[dotz inbox] web:worklog msg=4f205ede\n한계 부분 바로 검토해서 수정해";
+	t.q.deliver(inbox, { target, replyTo: "4f205ede", owner: true });
+	// The session's first run, on its start prompt, spawned the worker before the message had its own turn.
+	t.state.working = true;
+	t.q.onPrompt("[dotz gateway] start prompt");
+	rows = [worker];
+	t.q.workersSpawned([{ id, description: worker.description }]);
+	t.q.onAnswer("[later]");
+	t.q.settleTurn();
+	// The message's own turn defers to the worker that already runs.
+	t.q.onPrompt(inbox);
+	t.q.onAnswer("[later]");
+	t.state.working = false;
+	t.q.settleTurn();
+	expect(t.q.openRequests().map(r => r.workers.map(w => w.id))).toEqual([[id]]);
+	// The worker's result wakes a run, whose answer is the request's answer.
+	rows = [{ ...worker, status: "failed", endedAt: Date.now() }];
+	await answerWake(t, id, "남은 한계 두 가지를 고쳤어요");
+	expect(t.state.posts).toEqual([{ target, text: "남은 한계 두 가지를 고쳤어요", replyTo: "4f205ede" }]);
+	expect(t.q.isAnswered("4f205ede")).toBe(true);
+	expect(t.open()).toEqual([]);
+	// The silent-wait check, with nothing running.
+	let clock = 0;
+	const wakes: unknown[] = [];
+	const check = createWaitCheck({ sessions: () => [{ key: "worklog", open: t.q.openRequests, busy: () => false, workers: () => 0, armed: () => false, lastTurnEndAt: () => 0, wake: open => wakes.push(open) }], restarting: () => false, log: () => {}, now: () => clock });
+	check.tick();
+	clock += QUIET_MS + 1;
+	check.tick();
+	expect(wakes).toEqual([]);
+});
+
+test("a [later] does not take a worker another request owns: that request keeps its answer and this one stays open", async () => {
+	const worker: WorkRow = { id: "st_a", description: "a", status: "running", target: "web", replyTo: "m1", startedAt: Date.now() - 2_000 };
+	const t = setup([], [], listedWorkers(() => [worker], () => () => {}));
+	deferTo(t, "m1", { spawned: "st_a" });
+	deferTo(t, "m2", {});
+	await answerWake(t, "st_a", "result");
+	expect(t.state.posts.at(-1)).toEqual({ target: "web", text: "result", replyTo: "m1" });
+	expect(t.q.deferredOpen().map(d => d.replyTo)).toEqual(["m2"]);
 });
 
 test("a result with no link reaches the conversation on no message and closes no request", async () => {
