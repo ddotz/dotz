@@ -1,6 +1,6 @@
 (() => {
   const root = document.documentElement;
-  const P = (window.P = { S: { gw: "맥북", sheet: null, pop: null, first: true }, acts: {}, routes: {}, order: [] });
+  const P = (window.P = { S: { gw: "노트북", sheet: null, pop: null, first: true }, acts: {}, routes: {}, order: [] });
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   P.$ = $; P.$$ = $$;

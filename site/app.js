@@ -24,3 +24,13 @@ if (copyButton && copyLabel && copyStatus) {
     }, 2400);
   });
 }
+
+const osButtons = document.querySelectorAll("[data-os]");
+const windowsSteps = document.getElementById("install-windows");
+
+osButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    osButtons.forEach((other) => other.setAttribute("aria-pressed", String(other === button)));
+    windowsSteps.hidden = button.dataset.os !== "windows";
+  });
+});

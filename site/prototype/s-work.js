@@ -22,7 +22,7 @@
   P.reg({ id: "home", title: "홈", tab: "home", group: "홈", desc: "상태 카드: 답변 필요 · 알림 · 진행 중 · 끝난 작업 · 사용량",
     render: () => {
       const running = P.S.tasks.filter((t) => t.state === "running"), done = P.S.tasks.filter((t) => t.state === "done");
-      return `<div class="col"><div style="padding:0 4px"><div class="big">좋은 아침이에요</div><div class="meta">dotz AI가 일하는 중 · 세션 2개 · 맥북 · 오전 9:20</div></div>
+      return `<div class="col"><div style="padding:0 4px"><div class="big">좋은 아침이에요</div><div class="meta">dotz AI가 일하는 중 · 세션 2개 · 노트북 · 오전 9:20</div></div>
       <a class="li" href="#settings/providers" style="background:var(--card);border-radius:var(--r-card)"><span class="lead"><span class="dot err"></span></span><span class="tx"><span class="hd">인스타그램 로그인이 풀렸어요</span><span class="sup">경고 · 다시 로그인해야 댓글을 볼 수 있어요</span></span><span class="end"><span class="tag err">경고</span>${ic("chev", "chev")}</span></a>
       <div class="grid2">
       <div class="full">${card("답변 필요", `<div class="list">${needs().map((n) => `<a class="li" href="#${n[0]}"><span class="lead"><span class="dot warn"></span></span><span class="tx"><span class="hd">${h(n[1])}</span><span class="sup">${h(n[2])}</span></span><span class="end"><span class="tag ${n[3] === "미답장" ? "unrep" : "warn"}">${n[3]}</span></span></a>`).join("")}</div>`, "", `<span class="bd" data-count="drafts" style="margin-left:2px">${P.pending()}</span>`)}</div>
@@ -79,7 +79,7 @@
     <div class="sec">앱</div><div class="list">${link("mail", "mail", "메일", "안 읽은 메일 2통", '<span class="bd">2</span>')}${link("kakao", "chat", "메신저", "지켜보는 방 3개", '<span class="tag unrep">미답장 1</span>')}${link("comments", "play", "유튜브 댓글", "답글 초안 2개")}${link("comments/instagram", "image", "인스타그램", "로그인이 풀렸어요", '<span class="tag err">연결 끊김</span>')}${link("comments/website", "globe", "웹사이트 댓글", "답글 초안 1개")}</div>
     <div class="sec">감시</div><div class="list">${link("watch/price", "tag", "캠핑 의자 가격", '<s class="old">89,000원</s> → 72,000원 · 9분 전', '<span class="tag pri">바뀜</span>')}${link("watch/page", "eye", "가격 페이지", "바뀐 곳 없음 · 18분 전", '<span class="tag ok">정상</span>')}</div>
     <div class="sec">예약</div><div class="list">${link("schedule/briefing", "clock", "아침 브리핑", "매일 오전 7:30 · 다음은 내일")}</div>
-    <div class="sec">다른 컴퓨터</div><div class="list">${link("peers", "laptop", "맥미니", "감시 2 · 확인 1 · 알림 3", '<span class="bd">1</span>')}</div>
+    <div class="sec">다른 컴퓨터</div><div class="list">${link("peers", "laptop", "데스크톱", "감시 2 · 확인 1 · 알림 3", '<span class="bd">1</span>')}</div>
     <div class="sec">앱 관리</div><div class="list">${link("apps", "grid", "앱", "모니터링 앱과 내 앱")}</div>` });
 
   const spark = (pts) => `<svg viewBox="0 0 240 56" width="100%" height="56" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -174,7 +174,7 @@
   /* 컴퓨터 */
   P.reg({ id: "peers", title: "컴퓨터", tab: "monitoring", back: "monitoring", group: "모니터링", desc: "내 컴퓨터들 · 다른 컴퓨터의 모니터링",
     render: () => `<div class="list">${D.computers.map((c) => `<button class="li" data-act="gw-pick" data-n="${h(c.name)}"><span class="ico">${ic("laptop")}</span><span class="tx"><span class="hd">${h(c.name)}${c.self ? ' <span class="tag">이 컴퓨터</span>' : ""}</span><span class="sup">${h(c.sub)}</span></span><span class="end"><span class="dot ${c.online ? "ok" : ""}"></span>${c.need ? `<span class="bd">${c.need}</span>` : ""}</span></button>`).join("")}</div>
-    <div class="sec">맥미니의 모니터링</div><div class="list">${link("monitoring", "tag", "중고 모니터 가격", "맥미니가 감시 중 · 12분 전", '<span class="tag">맥미니</span>')}${link("monitoring", "mail", "답장 확인 1", "맥미니의 메일 초안", '<span class="tag warn">확인</span>')}</div>
+    <div class="sec">데스크톱의 모니터링</div><div class="list">${link("monitoring", "tag", "중고 모니터 가격", "데스크톱가 감시 중 · 12분 전", '<span class="tag">데스크톱</span>')}${link("monitoring", "mail", "답장 확인 1", "데스크톱의 메일 초안", '<span class="tag warn">확인</span>')}</div>
     <div class="sec">스튜디오 PC</div><div class="list"><div class="li"><span class="tx"><span class="hd">꺼져 있어요</span><span class="sup">마지막으로 본 것은 이틀 전이에요</span></span><span class="end"><span class="tag">오래된 정보</span></span></div></div>` });
 
   /* 앱 */

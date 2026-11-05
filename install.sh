@@ -10,6 +10,7 @@
 # config.json, starts the gateway service, waits for it and opens the browser on a one-time local address (`setup.ts --first-run`). Over SSH, on a
 # Linux box without DISPLAY/WAYLAND_DISPLAY, with --no-open, or when the browser cannot be opened, it prints that address instead (plus the
 # `ssh -L` line under SSH, and `bun <code>/setup.ts` for the terminal wizard). The address is printed, never written to a file or log.
+# Under WSL the browser is the Windows one (wslview, else PowerShell Start-Process) and systemd must be on: see docs/windows.md.
 # --setup, --answers FILE and --no-service run the terminal wizard (setup.ts) as before; --no-setup skips onboarding.
 # A re-run with an existing config.json only replaces the code and restarts the gateway (the wizard runs again with --setup). If that
 # install is still waiting for its web onboarding (<data dir>/onboarding/first-run.json says pending), the re-run also restarts and prints
@@ -82,8 +83,10 @@ OS=$(uname -s)
 case $OS in
 Darwin) SVC_FILE=$HOME/Library/LaunchAgents/$LABEL.plist ;;
 Linux) SVC_FILE=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$UNIT ;;
-*) die "supported: macOS and Linux (this is $OS)" ;;
+*) die "supported: macOS, Linux and Windows through WSL 2 (this is $OS). On Windows run this inside WSL: docs/windows.md" ;;
 esac
+WSL=
+if [ "$OS" = Linux ] && { [ -n "${WSL_DISTRO_NAME:-}" ] || grep -qi microsoft /proc/version 2>/dev/null; }; then WSL=1; fi
 
 # The service belongs to this install only when its file runs this copy of the code; a gateway installed from another
 # checkout (same label) is never stopped or restarted by this script.
@@ -114,6 +117,11 @@ if [ -n "$UNINSTALL" ]; then
 	elif [ -d "$DATA" ]; then say "kept data dir $DATA (config, secrets, memory); --purge removes it"; fi
 	say "the harness (omo/omp/claude) and bun stay installed"
 	exit 0
+fi
+
+# The gateway is a systemd user unit; a WSL distro without systemd would otherwise fail only after the whole install.
+if [ -n "$WSL" ] && [ "$SERVICE" != no ] && [ "$SETUP" != no ] && ! systemctl --user show-environment >/dev/null 2>&1; then
+	die "WSL needs systemd: put [boot] and systemd=true in /etc/wsl.conf, run wsl.exe --shutdown from Windows, then run this again (docs/windows.md)"
 fi
 
 have curl || die "curl is required"
@@ -306,7 +314,7 @@ if [ -n "$WEB" ]; then
 	MODE=open
 	[ -n "$OPEN" ] || MODE=print
 	[ -z "${SSH_CONNECTION:-}" ] || MODE=print
-	if [ "$OS" = Linux ] && [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then MODE=print; fi
+	if [ "$OS" = Linux ] && [ -z "$WSL" ] && [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then MODE=print; fi
 	if [ "$MODE" = open ]; then
 		UP= i=0
 		while [ "$i" -lt "${DOTZ_OPEN_WAIT:-30}" ]; do
@@ -314,10 +322,12 @@ if [ -n "$WEB" ]; then
 			i=$((i + 1))
 			sleep 1
 		done
-		OPENER=open
-		if [ "$OS" = Linux ]; then OPENER=xdg-open; fi
+		set -- open "$URL"
+		if [ -n "$WSL" ]; then
+			if have wslview; then set -- wslview "$URL"; else set -- powershell.exe -NoProfile -Command "Start-Process '$URL'"; fi
+		elif [ "$OS" = Linux ]; then set -- xdg-open "$URL"; fi
 		if [ -z "$UP" ]; then say "the gateway is not answering yet"; MODE=print
-		elif have "$OPENER" && "$OPENER" "$URL" >/dev/null 2>&1; then say "opened the setup page in your browser"
+		elif have "$1" && "$@" >/dev/null 2>&1; then say "opened the setup page in your browser"
 		else MODE=print; fi
 	fi
 	if [ "$MODE" = print ]; then

@@ -95,7 +95,7 @@
   const typing = (cv) => addMsg(cv, `<div class="typing" data-typing><span class="dot work"></span>dotz AI가 쓰고 있어요</div>`);
 
   const replyFor = (t) => {
-    if (/^\/status/.test(t)) return "[done] 지금은 이래요.\n\n- 맥북 온라인, 맥미니 온라인\n- 일하는 세션 2개\n- 5시간 한도 62% 사용";
+    if (/^\/status/.test(t)) return "[done] 지금은 이래요.\n\n- 노트북 온라인, 데스크톱 온라인\n- 일하는 세션 2개\n- 5시간 한도 62% 사용";
     if (/^\/usage/.test(t)) return "5시간 한도 62%, 7일 한도 38%를 썼어요.\n[usage]";
     if (/일정|스케줄/.test(t)) return "오늘 일정 4개예요.\n\n```목록\n# 오늘 일정\n주간 회의 | 온라인 | 10:00\n점심 | 한서윤님과 | 13:00\n견적서 검토 | 오지훈님 자료 | 15:30\n운동 | | 19:00\n```";
     if (/메일/.test(t)) return "[done] 안 읽은 메일 2통, 답장할 메일 2통이에요.\n\n```목록\n# 받은 편지함\n한서윤 | 다음 주 미팅 일정 확인 부탁드려요 | 오전 9:12 | 답장\n별빛상회 주문팀 | 주문하신 책상 램프가 출발했어요 | 오전 8:04\n오지훈 | 견적서 수정본 보내드려요 | 어제 | 답장\n```";

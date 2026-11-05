@@ -65,6 +65,15 @@ test("service files: launchd plist and systemd unit carry DOTZ_DIR and a PATH wi
 	expect(unit).toContain("WantedBy=default.target");
 });
 
+test("under WSL the service PATH ends with the Windows shells; off WSL it stays as it was", () => {
+	const s = { home: "/home/u", bun: "/home/u/.bun/bin/bun", pkg: "/opt/dotz", dir: "/home/u/.dotz", pathDirs: [] };
+	const sys32 = "/mnt/c/Windows/System32";
+	const ps = `${sys32}/WindowsPowerShell/v1.0`;
+	const windowsDirs = [ps, sys32];
+	expect(servicePATH({ ...s, windowsDirs }).split(":").slice(-3)).toEqual(["/bin", ps, sys32]);
+	expect(servicePATH(s).split(":").at(-1)).toBe("/bin");
+});
+
 // A throwaway machine: HOME, and a PATH with only bun, fake harness CLIs and inert launchctl/open/systemctl.
 // launchctl answers `bootstrap` the way the permission probe's job would (an empty result next to the plist, so every
 // permission reads "unknown"); a failing bootstrap would make setup retry for 5 s.

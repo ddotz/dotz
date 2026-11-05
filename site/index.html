@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>dotz — 내 맥에서 항상 켜져 있는 개인 비서</title>
+<title>dotz — 내 컴퓨터에서 항상 켜져 있는 개인 비서</title>
 <meta name="description" content="메일 답장, 일정 확인, 가격 알림. 맨날 미루던 잡일을 dotz가 먼저 해 놓고 폰으로 알려 줘요. 나는 확인하고 보내기만 누르면 끝이에요.">
 <meta name="color-scheme" content="light dark">
 <meta name="theme-color" content="#f2f4f6" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#121214" media="(prefers-color-scheme: dark)">
-<meta property="og:title" content="dotz — 내 맥에서 항상 켜져 있는 개인 비서">
+<meta property="og:title" content="dotz — 내 컴퓨터에서 항상 켜져 있는 개인 비서">
 <meta property="og:description" content="메일 답장, 일정 확인, 가격 알림. 맨날 미루던 잡일을 dotz가 먼저 해 놓고 폰으로 알려 줘요. 나는 확인하고 보내기만 누르면 끝이에요.">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="ko_KR">
@@ -19,10 +19,10 @@
 <meta property="og:image:alt" content="dotz 웹 앱의 채팅 화면. 채팅 목록 옆 흰 대화 카드에 답이 있고, 대화 안에 내 확인을 기다리는 보낼 초안 카드가 있습니다.">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="style.css?v=a7a72e09b6c5">
-<script src="app.js?v=a7a72e09b6c5" defer></script>
+<link rel="stylesheet" href="style.css?v=3bb06430428f">
+<script src="app.js?v=3bb06430428f" defer></script>
 <script>if ('noModule' in HTMLScriptElement.prototype) document.documentElement.classList.add('ss');</script>
-<script type="module" src="js/stageshow.js?v=a7a72e09b6c5" defer></script>
+<script type="module" src="js/stageshow.js?v=3bb06430428f" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#main">본문으로 건너뛰기</a>
@@ -48,12 +48,15 @@
   <section class="hero" id="top" aria-labelledby="hero-title">
     <div class="wrap">
       <h1 class="wordmark" id="hero-title">dotz</h1>
-      <p class="pitch">내 맥에서 항상 켜져 있는 개인 비서.</p>
+      <p class="pitch">내 컴퓨터에서 항상 켜져 있는 개인 비서.</p>
       <p class="hero-lede"><span class="ln"><span class="ph">메일 답장, 일정 확인, 가격 알림.</span></span> <span class="ln"><span class="ph">맨날 미루던 잡일을 dotz가 먼저 해 놓고</span> <span class="ph">폰으로 알려 줘요.</span></span> <span class="ln"><span class="ph">나는 확인하고 보내기만 누르면 끝이에요.</span></span></p>
 
       <div class="install">
         <div class="install-bar">
-          <span class="install-label">설치 명령</span>
+          <div class="os-pick" role="group" aria-label="운영체제">
+            <button class="os" type="button" data-os="mac" aria-pressed="true">맥</button>
+            <button class="os" type="button" data-os="windows" aria-pressed="false">윈도우</button>
+          </div>
           <button class="copy" type="button" data-copy="curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh">
             <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
               <rect x="8.5" y="8.5" width="11" height="11" rx="2"></rect>
@@ -63,6 +66,11 @@
           </button>
         </div>
         <pre><code>curl -fsSL https://raw.githubusercontent.com/ddotz/<wbr>dotz/main/install.sh | sh</code></pre>
+        <ol class="install-steps" id="install-windows" hidden>
+          <li>관리자 PowerShell에서 <code>wsl --install</code>을 실행해요.</li>
+          <li>재시작하고 Ubuntu 창에 위 명령을 붙여 넣어요.</li>
+          <li>dotz는 WSL에서 돌며 윈도우를 다뤄요. <a href="https://github.com/ddotz/dotz/blob/main/docs/windows.md">설치 가이드</a></li>
+        </ol>
       </div>
       <p class="visually-hidden" id="copy-status" aria-live="polite"></p>
 

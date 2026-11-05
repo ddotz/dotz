@@ -11,7 +11,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 
 ## Gateway core
 
-- config and process: `hub/config.ts`, `hub/lock.ts`, `hub/shutdown.ts`, `hub/restart.ts`, `hub/live-guard.ts`, `hub/systemdeny.ts`
+- config and process: `hub/config.ts`, `hub/opener.ts` (browser opener, WSL detection), `hub/lock.ts`, `hub/shutdown.ts`, `hub/restart.ts`, `hub/live-guard.ts`, `hub/systemdeny.ts`
 - HTTP: `hub/routes.ts` -> `hub/routes-settings.ts` -> `hub/routes-lanes.ts`, helpers `hub/routes-util.ts`, web assets `hub/webapp.ts`, `hub/compress.ts`, files `hub/files.ts`
 - message flow: inbound `hub/intake.ts`, outbound `hub/outbound.ts`, send ledger `hub/sendlog.ts`, prompt queue `hub/prompts.ts`, web queue `hub/queue.ts`, background workers `hub/bgwork.ts`, event bus `hub/events.ts`
 - request tracking: a worker is linked to its owner message at spawn (`hub/prompts.ts` WorkLink, `*-links.json` beside `pending.json`, survives a restart); each spawned worker gets its own line, its result answers exactly that message, a short todo-closing last message never replaces its report (`hub/bgwork.ts` reportOf), and `hub/waitcheck.ts` wakes the session once, bounded and with no model call before that, when a request stays open for 2 minutes with nothing running

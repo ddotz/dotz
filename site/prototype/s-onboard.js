@@ -9,7 +9,7 @@
   const CHAR_SUP = ["먼저 결과를 말하고 필요한 것만 물어요", "가볍게 말하되 사실은 정확하게 말해요", "근거와 검증을 먼저 챙기고 불확실하면 그렇다고 말해요"];
   const TONE = [["편한 해요체", "확인해 봤어요. 내일 회의가 11시로 바뀌어서 일정도 옮겨 뒀어요."], ["반말", "응, 끝났어. 메일도 보냈어."], ["존댓말, 간결하게", "네, 끝났어요. 메일도 보냈어요."], ["존댓말, 정중하게", "완료했습니다. 메일도 발송했습니다."]];
   const NOTE = [["일상", "자료 정리 끝났어요. 빠진 파일 없고 남은 일 없어요."], ["간결", "자료 정리를 마쳤어요. 빠진 파일은 없어요."], ["STE 80%", "자료 정리를 완료했습니다. 빠진 파일이 없습니다."]];
-  const seed = () => ({ harness: "omo", omo: "none", login: "none", aside: "none", asideCli: "none", asideLogin: "none", ts: "ok", zele: "none", mail: "none", failed: false, name: "", char: 0, tone: 0, note: 0, address: "", guild: "", owner: "", botMode: 0, dc: true, machine: "맥북", logins: "me@example.com", done: {} });
+  const seed = () => ({ harness: "omo", omo: "none", login: "none", aside: "none", asideCli: "none", asideLogin: "none", ts: "ok", zele: "none", mail: "none", failed: false, name: "", char: 0, tone: 0, note: 0, address: "", guild: "", owner: "", botMode: 0, dc: true, machine: "노트북", logins: "me@example.com", done: {} });
   let S = Object.assign(seed(), JSON.parse(localStorage.getItem(KEY) || "{}"));
   const save = () => localStorage.setItem(KEY, JSON.stringify(S));
   const idx = (id) => STEPS.findIndex((s) => s[0] === id);

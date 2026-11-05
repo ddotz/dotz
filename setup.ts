@@ -26,6 +26,7 @@ import { defaultHarness, detectHarnesses, type Detected, harness, harnessLine, l
 import { checkPermissions, printPermissions, requestPermissions } from "./onboard/permissions.ts";
 import { zeleAccounts } from "./firstrun/scan.ts";
 import { installTailscale, startTailscale, tailscaleState } from "./onboard/tailscale.ts";
+import { openerCommand, windowsToolDirs } from "./hub/opener.ts";
 import { LABEL, serviceFile, servicePath, UNIT } from "./onboard/service.ts";
 import { firstRunPending, issueToken, markTerminalDone } from "./firstrun/first-run.ts";
 import { cleanName, MAX_NAME } from "./hub/machine-name.ts";
@@ -319,7 +320,7 @@ async function installService(load: boolean): Promise<string> {
 	const bun = (await Bun.$`which bun`.nothrow().quiet()).stdout.toString().trim() || join(HOME, ".bun", "bin", "bun");
 	// The service PATH reaches every installed harness CLI, whichever one config.json names now or later.
 	const harnessDirs = (await detectHarnesses()).filter(d => d.found.path).map(d => dirname(d.found.path!));
-	const plist = serviceFile({ home: HOME, bun, pkg: PKG, dir: DIR, pathDirs: harnessDirs });
+	const plist = serviceFile({ home: HOME, bun, pkg: PKG, dir: DIR, pathDirs: harnessDirs, windowsDirs: windowsToolDirs() });
 	const kind = MAC ? "launchd" : "systemd";
 	// Without --load an existing service file is left alone (a test run with --dir once pointed the live gateway's plist
 	// at /tmp); the new file goes into the data dir instead.
@@ -451,9 +452,9 @@ if (webUrl) {
 	const why = !served ? (wantServe ? "Tailscale 을 켜고 bun setup.ts --tailscale 을 실행하면 열려요" : "bun setup.ts --tailscale 로 테일넷에 열어요") : !flag("--load") ? "게이트웨이를 시작하면 열려요" : up ? "" : "게이트웨이가 아직 뜨는 중이에요. 1분쯤 뒤에 열어 보세요";
 	console.log(`\n웹 앱 주소: ${webUrl}${why ? `  (${why})` : ""}`);
 	console.log(`  휴대폰이나 다른 컴퓨터에서는 같은 Tailscale 계정(${a.allow_logins[0]})으로 로그인한 뒤 이 주소를 열면 돼요.`);
-	if (flag("--open") && up) await Bun.$`${MAC ? "open" : "xdg-open"} ${webUrl}`.nothrow().quiet();
+	if (flag("--open") && up) await Bun.$`${openerCommand(webUrl)}`.nothrow().quiet();
 } else if (!a.allow_logins.length && (prior.web?.access ?? "local") === "local") {
 	const localUrl = `http://127.0.0.1:${a.web_port}/`;
 	console.log(`\n웹 앱 주소: ${localUrl}\n  이 컴퓨터의 브라우저에서 열고 로그인 버튼을 누르면 돼요.`);
-	if (flag("--open") && flag("--load") && (await answers(localUrl, 40))) await Bun.$`${MAC ? "open" : "xdg-open"} ${localUrl}`.nothrow().quiet();
+	if (flag("--open") && flag("--load") && (await answers(localUrl, 40))) await Bun.$`${openerCommand(localUrl)}`.nothrow().quiet();
 }
