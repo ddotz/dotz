@@ -4,7 +4,7 @@ import type { HubEvent } from "./events.ts";
 import { classOfNotice, isLoginLost } from "./notice-class.ts";
 import { readOf } from "./reads.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
-import { parseTone, stripHandoff } from "./tone.ts";
+import { dropClaim, parseTone, stripHandoff } from "./tone.ts";
 import type { Decision, Notice, NoticeTone } from "./notices-types.ts";
 import type { ClosedCard } from "./notices-wiring.ts";
 
@@ -61,7 +61,7 @@ export function coveredByRead(i: Notice): boolean {
 
 export const clean = (raw: unknown) => {
 	const p = parseTone(stripHandoff(String(raw ?? "")));
-	return { tone: (p.tone ?? "") as NoticeTone, text: p.text.trim().slice(0, TEXT_MAX) };
+	return { tone: (p.tone ?? "") as NoticeTone, text: dropClaim(p.text.trim()).slice(0, TEXT_MAX) };
 };
 
 // Gateway jobs that post on their own get their own title; everything else is a plain worklog / alert entry.

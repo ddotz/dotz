@@ -7,7 +7,7 @@ import { askDefaults } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { eventTarget, isPeerMessage, type HubEvent } from "./events.ts";
 import { classOfNotice } from "./notice-class.ts";
-import { isSilent, parkedTone } from "./tone.ts";
+import { dropClaim, isSilent, parkedTone } from "./tone.ts";
 import { describeOutput, humanLabel, isIssue, itemRefOf, LOGIN_BLOCKED_KO, PROVIDER_BACK_KO, scheduleLine, watchLine } from "./watchtext.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
 import type { Decision, DecisionOpt, Notice, NoticeKind, NoticeTone } from "./notices-types.ts";
@@ -22,7 +22,8 @@ const load = (): Notice[] => {
 	if (!existsSync(paths.notices)) return [];
 	try {
 		const parsed = JSON.parse(readFileSync(paths.notices, "utf8"));
-		return Array.isArray(parsed) ? parsed.filter((n): n is Notice => typeof n?.id === "string" && typeof n.text === "string") : [];
+		// An entry stored before the claim word was dropped reads the same as a new one (clean).
+		return Array.isArray(parsed) ? parsed.filter((n): n is Notice => typeof n?.id === "string" && typeof n.text === "string").map(n => ({ ...n, text: dropClaim(n.text) })) : [];
 	} catch (e) {
 		log(`notices.json unreadable, starting empty: ${e}`);
 		return [];

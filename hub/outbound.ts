@@ -31,7 +31,7 @@ import { createPrompts, type Reply, type WorkLink } from "./prompts.ts";
 import { createSendLedger } from "./sendlog.ts";
 import { createInflight } from "./inflight.ts";
 import { inOrder, localize } from "./outlang.ts";
-import { splitTone, stripHandoff, stripLater, stripProjectInfo } from "./tone.ts";
+import { dropClaim, splitTone, stripHandoff, stripLater, stripProjectInfo } from "./tone.ts";
 import { isLate, isSnowflake, lateQuote, lateRequestId, replyRef, snowflakeTime, withQuote } from "./threads.ts";
 import { markDraftPosted, onDecisionClosed, openDraftCards, openDraftRefs, orchestratorAnswered, rewriteOpenDraft } from "./notices.ts";
 import { cardPointer, cardRef, cardTitle, CARDS_LEAD, closedCardText, createApprovalQueue, loadHeld, pendingCardsNote, splitDraftCards } from "./approval-queue.ts";
@@ -475,7 +475,7 @@ export async function progress(target: string, key: string, text: string, replyT
 		if (target === "worklog" && key.startsWith("lane:")) {
 			const prefix = claimPrefix(key.slice(5));
 			const { head, rest } = splitTone(t);
-			if (prefix) t = `${head}${prefix}${rest}`;
+			if (prefix) t = `${head}${prefix}${dropClaim(rest)}`;
 		}
 		emit("outbox", outEvent({ ts: now(), kind: "out", source: "orchestrator", target, text: t, update_key: key }, threadHome, threadMail));
 		return t;
