@@ -19,32 +19,23 @@ for (const id of ["#c-file", "#c-photo"]) $(id).onchange = ev => { addFiles([...
 async function addFiles(list) {
   if (!list.length) return;
   if (isRelayT(target)) { toast("이 대화에는 파일을 붙일 수 없어요", true); return; }
+  for (const f of list) if (upTooBig(f.size)) toast(`${f.name}: ${upTooBig(f.size)}`, true);
+  list = list.filter(f => !upTooBig(f.size));
+  if (!list.length) return;
   if (ATT.length + list.length > 10) { toast("한 번에 10개까지 보낼 수 있어요", true); list = list.slice(0, Math.max(0, 10 - ATT.length)); }
   const items = list.map(f => ({ id: Math.random().toString(36).slice(2), name: f.name || "붙여넣은 이미지.png", type: f.type, size: f.size, url: /^image\//.test(f.type) ? URL.createObjectURL(f) : "", raw: f }));
   for (const a of items) { a.no = atkLabel(a, items); if (a.url) atkThumb(a); }
   ATT = ATT.concat(items); renderAtt(); ta.focus();
   atkInsert(items.map(a => `[${a.no}]`).join(" "));
-  const own = target;
-  await Promise.all(items.map(async a => {
-    const form = new FormData();
-    form.append("file", a.raw, a.name);
-    try {
-      const r = await fetch("/api/upload", { method: "POST", body: form });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error || `올리지 못했어요 (HTTP ${r.status})`);
-      a.file = d.files[0];
-    } catch (e) {
-      toast(`${a.name}: ${e instanceof TypeError ? "연결이 끊겨 올리지 못했어요" : e.message}`, true);
-      if (target === own) dropAtt(a.id, true); else { const s = ts(own); s.att = (s.att || []).filter(x => x.id !== a.id); s.draft = (s.draft || "").replaceAll(`[${a.no}]`, ""); atkStore(own, s.att); }   // switched away: off its own conversation's files
-    }
-    renderAtt();
-  }));
+  for (const a of items) upStart(target, a);
 }
-// Taken off the tray: the token leaves the text too, as an edit the browser can undo, so the file waits among the gone ones (atkSync); a failed
-// upload (forever) is really over.
-function dropAtt(id, forever = false) {
+// Taken off the tray: the token leaves the text too, as an edit the browser can undo, so the file waits among the gone ones (atkSync); one
+// not on the hub yet is really over, its upload stopped.
+function dropAtt(id) {
   const a = ATT.find(x => x.id === id) || atkGone().find(x => x.id === id);
   if (!a) return;
+  const forever = !a.file;
+  upCancel(target, id);
   ATT = ATT.filter(x => x !== a);
   if (forever) { ts(target).gone = atkGone().filter(x => x !== a); atkRevoke(a); } else if (!atkGone().includes(a)) atkGone().push(a);
   const tok = `[${a.no}]`;
@@ -60,7 +51,7 @@ const atkLay = el("div", { class: "ta-tok", "aria-hidden": "true", hidden: true 
 ta.after(atkLay);
 const atkGone = () => ts(target).gone || (ts(target).gone = []);   // files whose token left the text: undo or a paste brings them back
 const atkRevoke = a => { if (/^blob:/.test(a.url)) URL.revokeObjectURL(a.url); };
-function atkForget() { for (const a of atkGone()) atkRevoke(a); ts(target).gone = []; }
+function atkForget() { for (const a of atkGone()) { upCancel(target, a.id); atkRevoke(a); } ts(target).gone = []; }
 // The next free number of the kind. A number never moves while its file waits, so the words already written about 이미지2 stay true.
 function atkLabel(a, fresh) {
   const kind = a.url ? "이미지" : "파일", used = [...ATT, ...atkGone(), ...fresh].filter(x => x.no && x.no.startsWith(kind)).map(x => Number(x.no.slice(kind.length)));
@@ -226,10 +217,11 @@ function renderAtt() {
   box.hidden = !ATT.length;
   // Each file carries the name its token has in the text, so the tray and the words read the same.
   clear(box).append(...ATT.map(a => {
-    const x = el("button", { class: "ax", type: "button", "aria-label": `${a.name} 빼기`, onpointerdown: ev => ev.preventDefault(), onclick: () => dropAtt(a.id) }, icon("close"));
-    const th = a.url
-      ? el("div", { class: `fatt img${a.file ? "" : " up"}`, title: a.name }, el("button", { class: "fatt-v", type: "button", "aria-label": `${a.no} 크게 보기`, onclick: () => atkOpen(a) }, el("img", { src: a.url, alt: a.name })), x)
-      : fileChip(a.name, a.file ? [extOf(a.name), fsize(a.size)].filter(Boolean).join(" · ") : "올리는 중…", { cls: a.file ? "" : "up", x });
+    const job = upJob(target, a.id);
+    const x = el("button", { class: "ax", type: "button", "aria-label": `${a.name} ${job ? "올리기 취소" : "빼기"}`, onpointerdown: ev => ev.preventDefault(), onclick: () => dropAtt(a.id) }, icon("close"));
+    const th = job && job.ring ? upChip(a, job, x) : a.url
+      ? el("div", { class: "fatt img", title: a.name }, el("button", { class: "fatt-v", type: "button", "aria-label": `${a.no} 크게 보기`, onclick: () => atkOpen(a) }, el("img", { src: a.url, alt: a.name })), x)
+      : fileChip(a.name, [extOf(a.name), fsize(a.size)].filter(Boolean).join(" · "), { x });
     return el("div", { class: "fatt-n" }, th, imgNo(a.no));
   }));
   atkStore(target, ATT);

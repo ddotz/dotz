@@ -62,8 +62,7 @@ body { display: flow-root; }
   .side-min .ni { justify-content: center; padding: 0; }
   .side-min .ni .nnb, .side-min .ni .nub { position: absolute; left: 25px; top: 24px; margin: 0; }
   .side-min .sf-row { justify-content: center; padding: 0; }
-  .side-min .sf-ring { position: relative; display: grid; place-items: center; width: 36px; height: 36px; font-size: 11px; line-height: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
-  .side-min .sf-ring::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(currentColor calc(var(--p) * 1%), var(--track) 0); -webkit-mask: radial-gradient(circle closest-side, transparent 14.5px, #000 15px); mask: radial-gradient(circle closest-side, transparent 14.5px, #000 15px); }
+  .side-min .sf-ring { display: grid; width: 36px; height: 36px; font-size: 11px; }
   .side-min .sf-row.warn .sf-ring { color: var(--warn); }
   /* top bar: title always names the page (the sidebar carries the tabs), then search, bell, connection and usage */
   .appbar #back { margin: 0; align-self: center; }

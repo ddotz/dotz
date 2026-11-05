@@ -195,11 +195,8 @@ async function drfUpload(ref, f) {
 }
 // One file to this gateway's uploads (hub/files.ts): the record that a draft's 첨부 or a message's `files` names.
 async function uploadFile(f) {
-  const form = new FormData();
-  form.append("file", f, f.name);
-  const r = await fetch("/api/upload", { method: "POST", body: form }), d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.error || `올리지 못했어요 (HTTP ${r.status})`);
-  return d.files[0];
+  if (upTooBig(f.size)) throw new Error(upTooBig(f.size));
+  return uploadXhr(f, f.name).done;
 }
 // 보내기 on a draft whose mail account cannot send files: the owner is asked once more (resolves true to go on).
 async function drfSure(d, t) {
