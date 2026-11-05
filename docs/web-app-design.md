@@ -1202,6 +1202,7 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 근거: web/js/30-monitoring.js:187-200(`monItems` 앱 부분), :639(`monRecheckApp`), :809(`monChronoNodes`), :882(`monConvBtn`), :951(`monBannerOf`), :973(`monHead`), web/js/30-integrations.js:23(`loadIntegrations`).
 
 ### 항목: 메일 앱 (key `i:mail`, 메일함 목록)
+- 메일함(`web/js/30-mailboxes.js`, `30-mailboxes-set.js`, 계약 `docs/mailbox.md`): 메일 앱 인스턴스가 여러 개여도 모니터링의 한 줄과 한 화면이에요(계정이 둘 이상이면 이름은 `메일`, 앱 바에 계정 칩). 1100px부터 왼쪽에 `전체`와 메일함 칸, 그보다 좁으면 목록 맨 위 칩 줄이에요. 주소는 `monitoring/i%3Amail/<계정>/<메일함>[/set|/new]`이고 옛 주소도 열려요. 행의 폴더 버튼과 선택 막대의 `옮기기`로 같은 계정 안에서 옮기고, 옮긴 뒤 `앞으로는 어떻게 할까요?` 상자에서 고른 것만 학습해요(`되돌리기`는 고르기 전까지). 옮겨도 초안, 승인, 발송은 그대로예요.
 
 - 목적: 받은 메일을 받은편지함처럼 최신순 행으로 보여주고 답장 초안을 관리해요.
 - 구성: 머리, 메일 필터 바(`.mr-filter.mr-mail`, role tablist, aria-label `메일 보기`), 메일 행 목록(`mbList`, 30-mail-box.js), 메일에 속하지 않는 소식 카드, 새 메일 버튼(`mbFab`, 30-mail-box.js).
