@@ -532,7 +532,9 @@ const isRelayT = t => /^relay:[a-z0-9-]+:./.test(t);
 const RELAY = { name: {}, note: {}, back: MAIN, on: false };
 const mailSender = f => String(f || "").replace(/<[^>]*>/g, "").replace(/["']/g, "").trim() || String(f || "");
 const validTarget = t => t === MAIN || isFixedT(t) || isProjT(t) || (isLaneT(t) && t.length > 5) || (isMailT(t) && t.length > 5) || (isSettingsT(t) && t.length > 9) || isRelayT(t);
-const sourceOf = t => t === MAIN || isProjT(t) || isFixedT(t) || isMailT(t) || isSettingsT(t) || isRelayT(t) ? "orchestrator" : t;
+// A conversation that can have an agent session of its own (hub/session-key.ts CONV_KINDS): its target is its session key.
+const isConvT = t => isProjT(t) || isFixedT(t) || isMailT(t) || isSettingsT(t);
+const sourceOf = t => t === MAIN || isConvT(t) || isRelayT(t) ? "orchestrator" : t;
 const targetOfSource = s => s === "orchestrator" ? MAIN : s;
 // Owner-facing names: a project by its title (else its channel name), a session by its title (else its key).
 // The name of a target on the computer `pc` it belongs to (an item from another gateway carries pc = {name, url, bot}): there the main chat is

@@ -57,6 +57,7 @@ export const ko: Catalog = {
 		cancel: "취소",
 		none: "-",
 		notRunning: "꺼져 있음",
+		thisConversation: "이 대화",
 		model: "모델",
 		effort: "추론 강도",
 		sessions: "세션",
