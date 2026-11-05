@@ -73,12 +73,24 @@ function sourceListHtml({ head, items }) {
   });
   return `<div class="mlist mlist-src">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
 }
-function blocks(text, last) {
+// One key-column row (.rc-rows): the key muted, what it is, the detail after " · " muted (tail: a ready-made detail instead). raw is the line as
+// written: clipped and the only selectable part of the row, so copying the message gives the original line, as in a source list.
+function rcRowHtml(key, text, tail = "", raw = "") {
+  const d = tail ? null : /^(.*?)\s+·\s+(.*)$/.exec(text);
+  return `<div class="rc-row">${raw ? `<span class="mlist-url" aria-hidden="true">${esc(raw)}</span>` : ""}<span class="rc-k">${esc(key)}</span><span class="rc-w"><b>${inline(d ? d[1] : text)}</b>${d ? `<span class="rc-d">${inline(d[2])}</span>` : tail}</span></div>`;
+}
+// A list of two or more "10:00 what" items and nothing else is the landing page's schedule card; a mixed list or a single line stays as written.
+const TIME_ROW = /^(\d{1,2}:\d{2})\s+(\S.*)$/;
+const timeList = l => l.t === "ul" && l.items.length >= 2 && l.items.every(i => !i.sub && TIME_ROW.test(i.text));
+function timeRowsHtml(items) {
+  return `<div class="rc-rows">${items.map(i => { const m = TIME_ROW.exec(i.text); return rcRowHtml(m[1], m[2], "", i.raw); }).join("")}</div>`;
+}
+function blocks(text, last, timeRows) {
   const html = [], meta = metaRe(), lines = unquoteChoices(text.split("\n")), sources = sourceRuns(lines, last);
   let list = null, para = [], table = null, quote = [];
   const flushQ = () => { if (quote.length) html.push(`<blockquote>${quote.map(inline).join("<br>")}</blockquote>`); quote = []; };
   const flushP = () => { flushQ(); if (para.length) html.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; };
-  const flushL = () => { if (list) html.push(`<${list.t}>${list.items.map(i => `<li${i.sub ? ' class="sub"' : ""}>${inline(i.text)}</li>`).join("")}</${list.t}>`); list = null; };
+  const flushL = () => { if (list) html.push(timeRows && timeList(list) ? `<div class="hcb-card">${timeRowsHtml(list.items)}</div>` : `<${list.t}>${list.items.map(i => `<li${i.sub ? ' class="sub"' : ""}>${inline(i.text)}</li>`).join("")}</${list.t}>`); list = null; };
   const flushT = () => {
     if (!table) return;
     const [head, ...rest] = table.head ? table.rows : [null, ...table.rows];
@@ -103,7 +115,7 @@ function blocks(text, last) {
       flushP();
       const t = m[2] ? "ol" : "ul", sub = m[1].length >= 2 && !!list;
       if (!sub && (!list || list.t !== t)) { flushL(); list = { t, items: [] }; }
-      list.items.push({ text: m[3], sub });
+      list.items.push({ text: m[3], sub, raw: line.trim() });
     }
     else if ((m = line.match(/^\s*>\s?(.*)/))) { flushL(); if (para.length) { const q = quote; quote = []; flushP(); quote = q; } quote.push(m[1]); }
     else if ((m = line.match(/^#{1,6}\s+(.*)/))) { flushP(); flushL(); html.push(`<p class="h"><b>${inline(m[1])}</b></p>`); }
@@ -126,14 +138,15 @@ function listBlockHtml(src) {
   return `<div class="mlist">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
 }
 // relayed: another computer's reply (42-relay-chat.js) is text only: `[file]` lines stay text and a fence is a plain code block, with no run button and no settings card to act on here.
-function mdHtml(src, relayed = false) {
+// timeRows: an assistant answer (11-todo-strip.js) draws a time list as rows; every other caller keeps its list.
+function mdHtml(src, relayed = false, timeRows = false) {
   // split() with two groups: [text, language, code, text, language, code, ...]; each code block gets its copy / run bar (35-code-blocks.js).
   // A fence opens only at the start of a line (``` in the middle of a sentence stays text) and closes with ``` at the end of a line.
   const parts = stripRecMark(stripMarkers(src, relayed)).split(/(?:^|\n)[ \t]{0,3}```([^\n`]*)\n?([\s\S]*?)(?:```[ \t]*(?=\n|$)|$)/);
   // A fence tagged 원문 is a post's raw machine output (hub/watchtext.ts rawFence): folded, monospace, tap to open.
-  return parts.map((p, i) => i % 3 === 0 ? blocks(p, i === parts.length - 1) : i % 3 === 2 ? (relayed ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>` : parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "dotz-settings" ? settingsCardHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
+  return parts.map((p, i) => i % 3 === 0 ? blocks(p, i === parts.length - 1, timeRows) : i % 3 === 2 ? (relayed ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>` : parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "dotz-settings" ? settingsCardHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
 }
-const mdNode = (src, cls = "md", relayed = false) => el("div", { class: cls, safeHtml: mdHtml(src, relayed) });
+const mdNode = (src, cls = "md", relayed = false, timeRows = false) => el("div", { class: cls, safeHtml: mdHtml(src, relayed, timeRows) });
 
 /* ---------- message status (only an explicit line-1 marker sets it; it becomes one leading emoji) ---------- */
 const TONE_TAGS = new Map(Object.entries({ done: "done", "완료": "done", run: "run", "진행": "run", ask: "ask", "결정": "ask", fail: "fail", "실패": "fail", warn: "fail", "경고": "fail" }));

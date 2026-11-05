@@ -41,7 +41,7 @@ function measure(scopeSel: string, loose: string, tapsToo: boolean) {
 	const blockOf = (n: Node) => { let el = n.parentElement; while (el && el !== scope && flows(el)) el = el.parentElement; return el; };
 	// WebKit still gives boxes to what a closed <details> folds away, so only its summary counts as shown.
 	const folded = (el: Element) => { const d = el.closest("details:not([open])"); return !!d && !d.querySelector(":scope > summary")?.contains(el); };
-	const shown = (el: Element) => { const s = getComputedStyle(el); return s.visibility !== "hidden" && s.display !== "none" && el.getClientRects().length > 0 && !folded(el); };
+	const shown = (el: Element) => { const s = getComputedStyle(el); return s.visibility !== "hidden" && s.display !== "none" && s.clipPath !== "inset(50%)" && el.getClientRects().length > 0 && !folded(el); };
 	// A box that ends its text on purpose: an ellipsis, or the end fade of a list title (web/css/25-list-title.css).
 	const endsCut = (el: Element) => { const s = getComputedStyle(el); return s.textOverflow === "ellipsis" || s.maskImage !== "none"; };
 	// overflow-y: auto also computes overflow-x to auto, so a box that scrolls vertically is not a horizontal scroller.
