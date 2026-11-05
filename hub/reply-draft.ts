@@ -14,6 +14,7 @@ export type ReplyItem = {
 	kind: ReplyKind;
 	app?: string; // where the item came from (mail, youtube, kakao, ...): an install keeps one tone profile per app
 	room?: string; // the conversation inside a messenger app: its own tone profile
+	profile?: string; // a mail of a second mail app: the tone profile of that app when it has one of its own (absent = the shared one of `app`)
 	from: string;
 	replyTo?: string;
 	cc?: string[]; // the original mail's 참조 addresses: allowed as a recipient (전체 답장 keeps them)
