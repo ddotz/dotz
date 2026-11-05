@@ -267,6 +267,52 @@ test("a named account is passed on the list and the reads; without one each read
 	expect(argvs[1]!.slice(-2)).toEqual(["--account", "me@example.net"]);
 });
 
+test("zele leaves the account out of a list of one account: the named account, else whoami, says whose thread it is", async () => {
+	const inner = fakeZele({ t1: { text: threadOf(ASK, OWN) } });
+	const run: Runner = async argv => {
+		if (argv[1] === "whoami") return { code: 0, stdout: "items:\n  - email: me@example.net\n", stderr: "" };
+		const r = await inner(argv);
+		return argv[2] === "list" ? { ...r, stdout: r.stdout.replace(/"account":"[^"]+",/, "") } : r;
+	};
+	expect((await sentMail(run, 10, [], "me@example.net")).pairs).toMatchObject([{ reply: "네 가능해요.", from: "kim@example.com" }]);
+	expect((await sentMail(run, 10)).pairs).toHaveLength(1);
+});
+
+test("sent mail accounts come from the built-in mail instance and live mail instances, not deleted ones or other apps", async () => {
+	const which = spyOn(Bun, "which").mockReturnValue("/bin/zele");
+	try {
+		mkdirSync(join(env.dir, "custom"), { recursive: true });
+		writeFileSync(
+			join(env.dir, "custom", "apps.json"),
+			JSON.stringify({
+				mail: { filter: { account: "me@example.net" } },
+				"mail-work": { app: "mail", filter: { account: "work@example.net" } },
+				"mail-old": { app: "mail", deleted: true, filter: { account: "old@example.net" } },
+				site: { app: "site", filter: { account: "site@example.net" } },
+			}),
+		);
+		const { sentAccounts } = await import("../lib/tone.ts");
+		expect(sentAccounts(undefined)).toEqual(["me@example.net", "work@example.net"]);
+	} finally {
+		which.mockRestore();
+	}
+});
+
+test("a failing account keeps the pairs read from the accounts before it, and the first wide read is tried again", async () => {
+	const which = spyOn(Bun, "which").mockReturnValue("/bin/zele");
+	try {
+		mkdirSync(join(env.dir, "custom"), { recursive: true });
+		writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify({ a: { app: "mail", filter: { account: "me@example.net" } }, b: { app: "mail", filter: { account: "other@example.net" } } }));
+		const { refreshPairs } = await import("../lib/tone.ts");
+		const inner = fakeZele({ t1: { text: threadOf(ASK, OWN) } });
+		await refreshPairs(async argv => (argv.includes("other@example.net") ? { code: 1, stdout: "", stderr: "no" } : inner(argv)), now);
+		expect(loadPairs("mail")).toHaveLength(1);
+		expect(JSON.parse(readFileSync(paths.learned(), "utf8"))["pairs-mail@1"]).toBeUndefined();
+	} finally {
+		which.mockRestore();
+	}
+});
+
 test("pairs are refreshed without a model: the first read is wide, later ones once a day, and a mail app's account is enough", async () => {
 	const which = spyOn(Bun, "which").mockReturnValue("/bin/zele");
 	try {

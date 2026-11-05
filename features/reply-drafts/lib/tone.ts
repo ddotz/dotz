@@ -99,12 +99,14 @@ export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: s
 	// Loaded on use: hub/zele.ts reads the gateway config when it is imported.
 	const { parseThread } = await import("../../../hub/zele.ts");
 	const bots = ownerDrafts.map(normText).filter(Boolean); // a bot draft as sent may end in a signature the draft did not have
+	// zele names each mail's account only when it lists several: one account leaves the field out, and without an address no thread can be read as the user's.
+	const sole = account ?? (items.some(m => !m.account) ? addressesOf((await run(["zele", "whoami"])).stdout)[0] : undefined);
 	const texts: string[] = [];
 	const pairs: Pair[] = [];
 	const now = Date.now();
 	for (const [n, m] of items.entries()) {
 		const id = String(m.id ?? "");
-		const me = addressesOf(String(m.account ?? ""))[0];
+		const me = addressesOf(String(m.account ?? sole ?? ""))[0];
 		const readAs = account ?? (String(m.account ?? "").trim() || undefined);
 		const body = id ? await run(["zele", "mail", "read", id, ...(readAs ? ["--account", readAs] : [])]) : undefined;
 		const read = body && body.code === 0 && body.stdout.trim() ? body.stdout : "";
@@ -170,7 +172,8 @@ function installConfig(): Record<string, any> | undefined {
 export function sentAccounts(config: Record<string, any> | undefined): (string | undefined)[] {
 	if (zeleEnabled(config)) return [undefined];
 	if (!Bun.which("zele")) return [];
-	const named = Object.values(readAppsFile(dataDir())).filter(a => a?.app === "mail").map(a => a.filter?.account?.trim());
+	// The built-in instance has no `app`: its key is the app.
+	const named = Object.entries(readAppsFile(dataDir())).filter(([id, a]) => !a?.deleted && (a?.app ?? id) === "mail").map(([, a]) => a?.filter?.account?.trim());
 	return [...new Set(named.filter((a): a is string => !!a))];
 }
 
@@ -194,9 +197,10 @@ export async function refreshPairs(run: Runner, now = new Date()): Promise<void>
 	const first = !learned["pairs-mail@1"];
 	try {
 		const bots = botDrafts();
-		const pairs: Pair[] = [];
-		for (const account of accounts) pairs.push(...(await sentMail(run, first ? PAIR_SWEEP : PAIR_DAILY, bots, account)).pairs);
-		if (pairs.length) savePairs("mail", [...loadPairs("mail"), ...pairs]);
+		for (const account of accounts) {
+			const { pairs } = await sentMail(run, first ? PAIR_SWEEP : PAIR_DAILY, bots, account);
+			if (pairs.length) savePairs("mail", [...loadPairs("mail"), ...pairs]);
+		}
 		if (first) markLearned(["pairs-mail@1"], now);
 	} catch (e) {
 		console.error(`reply draft: past mail pairs not refreshed: ${(e as Error).message}`);
