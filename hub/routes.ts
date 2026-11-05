@@ -789,8 +789,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const owed = new Set(unrepliedMailList().map(m => m.key));
 			const sent = sentMailRefs();
 			// Ended sessions are listed too: 답변 필요 stays on their row (their unread is 0, conversations.ts unreadOf) in the folded 끝난 세션 group (web/js/04-state.js endedGroup).
-			// A mail conversation is listed only while its mail is: a deleted mail (mail-deleted.json) keeps its messages in the log, but it leaves
-			// this list, so it leaves every list and count here and on the other computer (its snapshot is this list, hub/peer-monitor.ts).
+			// A mail conversation is listed only while its mail is: a deleted mail (mail-deleted.json) keeps its log but leaves every list and count here and on the other computer (hub/peer-monitor.ts).
 			const lv = liveLanes(), trashable = originalDeletable(DATA_DIR, mailSyncDeps), place = boxPass(DATA_DIR);
 			const items = conversationList([...[...lv.live, ...lv.ended].map(n => `lane:${n}`), ...Object.keys(discord.channels.work).map(id => `ch:${id}`), ...mailTargets()]).flatMap(c => {
 				if (!c.target.startsWith("mail:")) return [c];
