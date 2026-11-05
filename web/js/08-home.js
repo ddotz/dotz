@@ -232,7 +232,7 @@ function previewSrc(raw) {
   const s = noHandoff(peerMsgLine(raw)).replace(/^\s*Ask:[ \t]*/i, "");
   return isLaterText(s) ? LATER_LINE : s;
 }
-const friendlyLine = raw => oneLine(parseTone(previewSrc(raw)).text);
+const friendlyLine = raw => oneLine(previewLines(choiceFree(raw), 3).join(" "));
 // Same rule as hub/tone.ts stripHandoff: the agent's leading "Ask: ... For you: ... Next: ..." block is not shown.
 function noHandoff(text) {
   const m = /^\s*Ask:[^\n]*(?:\n(?!\s*\n)[^\n]*)*/.exec(text);

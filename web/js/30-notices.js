@@ -13,7 +13,7 @@ const ntAt = n => Date.parse(n.updated || n.ts) || 0;
 const ntTime = t => kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)} ${kstHM(t)}`;
 const ntWhen = n => ntTime(n.updated || n.ts);
 // Row text is plain: markdown marks (links, headings, bullets, emphasis, code) are dropped.
-const ntPlain = s => noticeKo(peerMsgLine(s), NK)
+const ntPlain = s => plainTable(noticeKo(peerMsgLine(s), NK))
   .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
   .replace(/^\s{0,3}(?:#{1,6}|>|-#|[-*+]|\d+\.)\s+/gm, "")
   .replace(/\*+|~~|`+/g, "")

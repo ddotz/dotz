@@ -30,7 +30,7 @@ function peerMsgLine(raw) {
 }
 function peerMsgCard(e, p, hm) {
   const words = p.kind === "ack" ? "넘긴 작업을 이어서 해요" : p.words;
-  const body = words ? el("div", { class: "pmc-b" }, mdNode(words)) : null, long = !!body && (words.length > 420 || words.split("\n").length > 6);
+  const body = words ? el("div", { class: "pmc-b" }, answerNode(choiceFree(words))) : null, long = !!body && (words.length > 420 || words.split("\n").length > 6);
   if (long) body.classList.add("clamp");
   const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = body.classList.toggle("clamp"); more.textContent = c ? "더 보기" : "접기"; } }, "더 보기") : null;
   const mt = el("div", { class: "mt", text: hm }), mid = e.mid || e.message_id || "";
@@ -38,5 +38,5 @@ function peerMsgCard(e, p, hm) {
   return el("div", { class: "bm pmc" }, filesNode(e.files, true), rpQuote(e),
     el("div", { class: "ccard" },
       el("div", { class: "pmc-hd" }, icon("desktop"), el("span", { class: "mn", text: p.from }), el("span", { class: "tag", text: PEER_KIND[p.kind], ...(p.id ? { title: `id ${p.id}` } : {}) }), mt),
-      body, more, p.note ? el("details", { class: "more" }, el("summary", { text: "인계 메모" }), el("div", { class: "pmc-n" }, mdNode(p.note))) : null));
+      body, more, p.note ? el("details", { class: "more" }, el("summary", { text: "인계 메모" }), el("div", { class: "pmc-n" }, answerNode(choiceFree(p.note)))) : null));
 }

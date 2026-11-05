@@ -31,6 +31,7 @@ type N = Record<string, unknown>;
 function load(notices: N[], integrations: N[], monitors: N[]) {
 	const drawn: N[] = [], went: string[][] = [];
 	const env: Record<string, unknown> = {
+		choiceFree: (s: string) => s,
 		// No other computers here (web/js/34-peer-monitoring.js): the local list as is.
 		pqMerge: (items: N[]) => items, rqMonItem: () => null, pqLabel: () => null, pqSig: () => 0, pqOpen: () => {}, pqLink: (p: string) => p, kkItem: () => false, PQ: { of: new Map() },
 		intgWatch: () => {}, intgHas: (it: N, t: unknown) => ((it.conv as string[]) || []).some(p => String(t).startsWith(p)), INTG: { items: integrations, available: [] }, NT: { items: notices, loaded: true }, CONV: new Map(), MAILS: new Map(),
