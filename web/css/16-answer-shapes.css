@@ -10,6 +10,16 @@
 .ans-keys { --rc-k-w: 88px; }
 .ans-keys .rc-k { overflow-wrap: anywhere; }
 .ans-keys .rc-w b { font-weight: 400; }
+.ans-card .ans-secs { gap: 0; }
+.ans-card .ans-li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 var(--sp-2); align-items: baseline; padding: var(--sp-2) 0; }
+.ans-li + .ans-li { border-top: 1px solid var(--line); }
+.ans-card .ans-li:last-child { padding-bottom: 0; }
+.ans-li + .rc-sh { margin-top: var(--sp-5); }
+.ans-li .rc-k { width: auto; color: var(--fg); font-size: var(--fs-row); font-weight: 500; }
+.ans-li .rc-w { grid-column: 1 / -1; color: var(--fg-2); font-size: var(--fs-body); }
+.ans-n { color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.ans-card .rc-sh > span:not(.mlist-url), .ans-n { -webkit-user-select: none; user-select: none; }
+.ans-card .rc-sh { position: relative; }
 .bm .ans-files { flex-direction: column; flex-wrap: nowrap; gap: 0; margin-top: var(--sp-3); padding: var(--sp-1) var(--sp-4); }
 .ans-files .fitem { align-self: stretch; }
 .ans-files .fpath { display: none; }
