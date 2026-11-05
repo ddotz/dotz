@@ -87,6 +87,11 @@ export type Lane = Record_ & {
 	startError?: string;
 	/** The orchestrator was told this queued lane waits too long (laneops.ts startQueuedLanes). */
 	queueTold?: boolean;
+	// The last text sent as a new turn (not a steer) until the model answers, and the one a busy session refused, which is
+	// sent again (laneevents.ts refusedTurn).
+	prompted?: string;
+	refused?: { text: string; tries: number };
+	refusedTimer?: Timer;
 };
 
 export const lanes = new Map<string, Lane>();

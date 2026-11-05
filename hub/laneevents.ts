@@ -4,7 +4,7 @@ import { emitEventActivity } from "./activity.ts";
 import { noteEvent, compactDue, requestCompact, flushCompact } from "./context.ts";
 import { rmSync } from "node:fs";
 import { handleError, laneRecovered, settleRevert, settleChain } from "./lanefailover.ts";
-import { nextLastText, scheduleReport, REPORT_DEBOUNCE_MS } from "./lanereport.ts";
+import { nextLastText, scheduleReport, REPORT_DEBOUNCE_MS, report } from "./lanereport.ts";
 import { compactAtFor, lanesCompactAt, log } from "./config.ts";
 import { recover } from "./lanerun.ts";
 import { prompt } from "./laneprompt.ts";
@@ -15,6 +15,30 @@ import { runtimeFor } from "./runtime/index.ts";
 // A lane started with a fallback chain: after a failed request the runtime may move to the next model by itself and redo
 // the turn, so the failure is acted on (pause, retry, error report) only when no such switch follows within a short grace.
 const FALLBACK_GRACE_MS = 3000;
+
+// OmO refuses a new turn while its own turn or compaction still runs ("Concurrent ... turn admission"): the refused text
+// was lost and the lane went idle on a lane error (ecount-relearn 2026-11-06 02:10). It is sent again a little later (a
+// steer when a turn runs by then, held when a compaction does); refused every time, the orchestrator gets it back.
+const REFUSED_RE = /concurrent .*turn admission/i;
+export const REFUSED_RETRY_MS = 10_000;
+const REFUSED_TRIES = 3;
+function refusedTurn(lane: Lane, text: string): void {
+	const tries = lane.refused?.text === text ? lane.refused.tries + 1 : 1;
+	clearTimeout(lane.refusedTimer);
+	if (tries > REFUSED_TRIES) {
+		lane.refused = undefined;
+		report(lane, `[fail] 세션이 다른 턴이나 압축을 돌리는 중이라 보낸 메시지를 ${REFUSED_TRIES}번 받지 않았어요. 전하지 못한 메시지를 다시 보내세요:\n${text.slice(0, 1000)}`, true);
+		return;
+	}
+	lane.refused = { text, tries };
+	log(`lane ${lane.name} busy session refused a message (${tries}/${REFUSED_TRIES}); sending it again in ${REFUSED_RETRY_MS / 1000}s`);
+	lane.refusedTimer = setTimeout(() => {
+		lane.refusedTimer = undefined;
+		if (lane.proc) return prompt(lane, text);
+		lane.refused = undefined;
+		report(lane, `[fail] 세션이 바빠서 받지 않은 메시지를 다시 보내기 전에 프로세스가 끝났어요. 전하지 못한 메시지를 다시 보내세요:\n${text.slice(0, 1000)}`, true);
+	}, REFUSED_RETRY_MS);
+}
 
 export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> {
 	const source = `lane:${lane.name}`;
@@ -42,7 +66,13 @@ export async function readEvents(lane: Lane, proc: AgentProcess): Promise<void> 
 				lane.progressAt = Date.now();
 				break;
 			case "assistant":
+				if (ev.stop === "error" && lane.prompted !== undefined && REFUSED_RE.test(ev.error.text)) {
+					refusedTurn(lane, lane.prompted);
+					lane.prompted = undefined;
+					break;
+				}
 				if (ev.stop !== "error") {
+					lane.prompted = lane.refused = undefined;
 					lane.transientTries = 0;
 					laneRecovered(lane);
 				}
