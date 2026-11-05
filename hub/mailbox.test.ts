@@ -8,7 +8,7 @@ import { unreadOf } from "./conversations.ts";
 import { emit } from "./events.ts";
 import { mailByKey, mailCard, mailKey, mailTarget, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
 import { boxesOf, cleanBox, loadMailboxes, MAX_BOXES, MAX_LIST, MAX_PINS, pickBox, setPin, type Box } from "./mailbox.ts";
-import { boxPass, instanceOf, mailboxRoute, placeMail, SUGGEST_MAX, withBoxes } from "./routes-mailbox.ts";
+import { boxPass, instanceOf, mailboxRoute, placeByJudge, placeMail, SUGGEST_MAX, withBoxes } from "./routes-mailbox.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "mailbox-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -134,6 +134,24 @@ describe("where a new mail goes", () => {
 		expect([second.mbox, second.mwhy]).toEqual(["b-team", { kind: "thread" }]);
 		await post(deps, source, "901.1", { from: "someone@else.org", subject: "다른 대화" });
 		expect(mailByKey(mailKey(source, "901.1"))!.mbox).toBeUndefined();
+	});
+
+	test("a conversation that began in base stays there when a later message would match a box", async () => {
+		put({ accounts: { mail: { boxes: [team] } } });
+		const { deps } = fakes(), source = uid("base");
+		await post(deps, source, "910.1", { from: "someone@else.org", subject: "안부" });
+		await post(deps, source, "910.2", { from: "lee@team.example.org" });
+		expect(mailByKey(mailKey(source, "910.2"))!.mbox).toBeUndefined();
+	});
+
+	test("a judge hit leaves a mail the owner already moved", async () => {
+		put({ accounts: { mail: { boxes: [team, { id: "b-other", name: "다른 함" }] } } });
+		const { deps } = fakes(), source = uid("jdg");
+		await post(deps, source, "920");
+		const key = mailKey(source, "920");
+		await call("POST", "/api/mailbox/move", { keys: [key], box: "b-other" });
+		expect(placeByJudge(key, "b-team")).toBe(false);
+		expect(mailByKey(key)!.mbox).toBe("b-other");
 	});
 
 	test("a source rule reads old mail with no box, and base mail stays base", async () => {

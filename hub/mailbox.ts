@@ -141,9 +141,9 @@ const convKey = (source: string, id: string) => `${source}|${conversationOf(sour
 /** `<instance>|<source>-<conversation>`: the source is part of it because one account can hold several sources with ids that repeat. */
 export const pinKey = (instance: string, source: string, id: string) => `${instance}|${source}-${conversationOf(source, id)}`;
 
-// conversation -> box id of the stored mail (filled by hub/mail.ts at load and on every recordMail): rule 1 reads it, no file read per mail.
+// conversation -> box id of the stored mail, "" for a stored mail with no box of its own (filled by hub/mail.ts at load and on every recordMail): rule 1 reads it, no file read per mail.
 const convBox = new Map<string, string>();
-export const trackBox = (r: { source: string; id: string; mbox?: string }): void => void (r.mbox ? convBox.set(convKey(r.source, r.id), r.mbox) : convBox.delete(convKey(r.source, r.id)));
+export const trackBox = (r: { source: string; id: string; mbox?: string }): void => void convBox.set(convKey(r.source, r.id), r.mbox ?? "");
 export const boxOfConv = (source: string, id: string): string | undefined => convBox.get(convKey(source, id));
 
 /** Remembers the owner's move of a conversation past the eviction of its records; the oldest pins go over the cap. */

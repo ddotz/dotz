@@ -25,7 +25,8 @@ export const instanceOf = (dir: string, key: string): string => instanceIn(mailE
 export const placeMail = (dir: string) => (m: { key: string; source: string; id: string; from?: string; subject: string; summary?: string; body?: string }): Placed => {
 	const boxes = boxesOf(dir, instanceOf(dir, m.key)), instance = instanceOf(dir, m.key);
 	const held = loadMailboxes(dir).pins[pinKey(instance, m.source, m.id)] ?? boxOfConv(m.source, m.id);
-	const kept = held ? boxes.find(b => b.id === held) : undefined;
+	// "": the conversation is stored with no box of its own, so it stays where that mail reads: its source's box, else base.
+	const kept = held ? boxes.find(b => b.id === held) : held === "" ? boxOfSource(boxes, m.source) ?? boxes.find(b => b.base) : undefined;
 	const { box, why } = kept ? { box: kept, why: { kind: "thread" } as MailboxWhy } : pickBox({ src: m.source, from: m.from ?? "", subj: m.subject, body: `${m.summary ?? ""}\n${m.body ?? ""}` }, boxes);
 	return { ...(box.base ? {} : { box: box.id, ...(why ? { why } : {}) }), ...(box.mode === "quiet" ? { quiet: true as const } : box.notify === false ? { mute: true as const } : {}) };
 };
@@ -44,10 +45,10 @@ export function boxPass(dir: string): (m: MailRecord) => { box: string; boxWhy?:
 	};
 }
 
-/** A judge hit (features/reply-drafts/lib/offer.ts): the stored mail `key` is placed in `box` with `mwhy` kind judge. False when no such record is stored. */
+/** A judge hit (features/reply-drafts/lib/offer.ts): the stored mail `key` is placed in `box` with `mwhy` kind judge. False when no such record is stored, or the owner moved it meanwhile. */
 export function placeByJudge(key: string, box: string): boolean {
 	const r = mailByKey(key);
-	if (!r) return false;
+	if (!r || r.mwhy?.kind === "moved") return false;
 	recordMail({ ...r, mbox: box, mwhy: { kind: "judge" } });
 	return true;
 }

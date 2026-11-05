@@ -43,7 +43,7 @@ sit in 일반, and removing `custom/mailboxes.json` restores the old behavior wi
 
 `boxOfMail` in hub/mailbox.ts, synchronous, in order; first hit wins:
 
-1. Same conversation: a pin, else a stored record of that conversation (one in-memory map, no file read). `why.kind = "thread"`.
+1. Same conversation: a pin, else a stored record of that conversation, which keeps a conversation that began in 일반 there too (one in-memory map, no file read). `why.kind = "thread"`.
 2. Rules in mailbox order: `conds.src` (exact source), `conds.from` (address or `@domain`, a box's `not.from` vetoes), `conds.subj`, `conds.body`.
    Text compares lowercased; `body` sees what the post carried (summary and body), never an extra read.
 3. Base mailbox.
@@ -113,13 +113,14 @@ reads its sources.
     bun hub/mailbox-cli.ts fold --base <instance> --apply                         # keeps a backup under custom/mailbox-fold-<time>/
     bun hub/mailbox-cli.ts undo <that backup>
 
-- Each folded instance becomes a box with `conds.src`; `--base` folds one into 일반. `--into` (default `mail`) and `--from` narrow it; by default it takes the
-  instances with a `filter.source` on the same `filter.account` as the target.
+- The target is always the default `mail` instance, because it is the one that claims mail no other instance claims; it must have no `filter.source` of its own.
+  Each folded instance becomes a box with `conds.src`; `--base` folds one into 일반. By default it takes the instances with a `filter.source` on the same
+  `filter.account` as the target; `--from` narrows that list.
 - An instance with the same 기본 규칙, rules and folder as the target inherits them. One that differs becomes an `alone` box and keeps exactly what it had,
   so no mail starts following rules it did not follow. `mode` stays undefined, so drafting does not change until the owner picks a mode.
 - Watches move to the target. `tone/<instance>.md` is copied to `tone/<target>/<box>.md`; the old file stays for drafts still waiting.
 - Stored mail is not rewritten: a record with no `mbox` is read through `conds.src`. Waiting drafts keep working: their send route is the mail's source and account.
-- Not carried, listed by the plan: `discord`, `delete_original`, `push`, `off`. Anything that names an old instance outside these files (`--app mail-orders` in a rule
+- Not carried, listed by the plan: `discord`, `delete_original`, `push`, `off`. Anything that names an old instance outside these files (`--app <old id>` in a rule
   or a watch script) has to be changed by hand before `--apply`: search the install for the old ids first.
 
 Before `--apply` on another install, ask its owner. Test it on a copy with `--data <dir>`.
