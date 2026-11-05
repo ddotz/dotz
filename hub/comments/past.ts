@@ -76,19 +76,6 @@ function grams(s: string): Set<string> {
 	return g;
 }
 
-const cosine = (a: Set<string>, b: Set<string>): number => {
-	if (!a.size || !b.size) return 0;
-	let n = 0;
-	for (const x of a) if (b.has(x)) n++;
-	return n / Math.sqrt(a.size * b.size);
-};
-
-// How close `text` is to the closest of the shown pairs: plain similarity, since recency and hand edits rank pairs but do not make a situation the same.
-export const closeness = (text: string, pairs: PastPair[]): number => {
-	const q = grams(text);
-	return Math.max(0, ...pairs.map(p => cosine(q, grams(p.comment))));
-};
-
 // The k pairs whose comment reads most like `text` (cosine of bigram sets); a recent pair counts up to double (RECENT_HALF_LIFE_DAYS), one the owner
 // edited EDITED_WEIGHT times more, and a pair under the same post a bit more.
 export function similarPairs(text: string, pairs: PastPair[], k = 3, thread?: string, now = Date.now()): PastPair[] {
@@ -97,8 +84,10 @@ export function similarPairs(text: string, pairs: PastPair[], k = 3, thread?: st
 	return pairs
 		.map(p => {
 			const g = grams(p.comment);
+			let n = 0;
+			for (const x of g) if (q.has(x)) n++;
 			const recent = 1 + 0.5 ** (Math.max(0, now - p.at) / 86_400_000 / RECENT_HALF_LIFE_DAYS);
-			return { p, s: g.size ? cosine(g, q) * recent * (p.edited ? EDITED_WEIGHT : 1) + (thread && p.thread === thread ? 0.1 : 0) : 0 };
+			return { p, s: g.size ? (n / Math.sqrt(g.size * q.size)) * recent * (p.edited ? EDITED_WEIGHT : 1) + (thread && p.thread === thread ? 0.1 : 0) : 0 };
 		})
 		.filter(x => x.s > 0)
 		.sort((a, b) => b.s - a.s || b.p.at - a.p.at)
@@ -136,10 +125,10 @@ export function habitsOf(replies: string[]): string[] {
 
 const clip = (s: string) => s.trim().slice(0, SIDE_MAX);
 
-// The style with the closest past pairs as examples, how close they are to `text` and the habits of every reply; unchanged when nothing is close.
+// The style with the closest past pairs as examples and the habits of every reply; unchanged when nothing is close.
 // Shared by the mail flow and the comment engine, which hands in its own pairs.
-export function withExamples(style: ReplyStyle, close: PastPair[], replies: string[], text: string): ReplyStyle {
+export function withExamples(style: ReplyStyle, close: PastPair[], replies: string[]): ReplyStyle {
 	if (!close.length) return style;
 	const habits = habitsOf(replies);
-	return { ...style, examples: close.map(p => ({ received: clip(p.comment), reply: clip(p.reply), ...(p.same ? { same: true as const } : {}) })), closest: closeness(text, close), ...(habits.length ? { habits } : {}) };
+	return { ...style, examples: close.map(p => ({ received: clip(p.comment), reply: clip(p.reply), ...(p.same ? { same: true as const } : {}) })), ...(habits.length ? { habits } : {}) };
 }
