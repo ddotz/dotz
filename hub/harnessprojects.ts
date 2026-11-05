@@ -11,7 +11,7 @@ import type { HarnessEdge, HarnessNode, Setting } from "./harness.ts";
 import { msg } from "./i18n.ts";
 import { type Lane, laneRunning, lanes } from "./lanes.ts";
 import { allWatches } from "./watch.ts";
-import { listSetups, type Setup } from "./workchannels.ts";
+import { homeChannel, listSetups, type Setup } from "./workchannels.ts";
 
 export type Field<T> = { value: T; source: "global" | "project"; global?: T };
 export type Fallback = FallbackEntry;
@@ -30,7 +30,7 @@ const capText = (c: NonNullable<Fallback["cap"]>) => `${c.period} ${[c.usd ? `$$
 const chainText = (c: Fallback[]) => (c.length ? c.map(e => msg().harness.project.fallbackStep(`${e.model}${e.key_file ? " (API key)" : ""}`, e.when, e.cap ? capText(e.cap) : undefined, e.revert ? "on" : undefined)).join(" → ") : msg().harness.project.lane.none);
 
 function channelsOf(lane: Lane): Chan[] {
-	const ch = discord.channels, thread = ch.lanes[lane.name], parent = ch.homes[lane.name];
+	const ch = discord.channels, thread = ch.lanes[lane.name], parent = homeChannel(lane.name, lane.home, ch.homes);
 	if (parent) return [{ id: parent, name: ch.work[parent] ?? "?", kind: "home" }, ...(thread ? [{ id: thread, name: ch.threads[thread]?.name ?? lane.name, kind: "thread" as const }] : [])];
 	return thread ? [{ id: thread, name: ch.work[thread] ?? lane.name, kind: "work" }] : [];
 }

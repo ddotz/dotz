@@ -23,17 +23,29 @@ type LanePlace = { kind: "web" } | { kind: "channel" } | { kind: "thread"; paren
 export function lanePlace(a: { home?: string; asking?: string; askingMessage?: string; isWork: (id: string) => boolean; threadParent: (id: string) => string | undefined; discordForWeb?: boolean }): LanePlace {
 	const fromDiscord = Boolean(a.asking && !LOCAL.test(a.asking) && (!a.askingMessage || isSnowflake(a.askingMessage)));
 	if (!a.home && !fromDiscord && !a.discordForWeb) return { kind: "web" };
+	// A thread hangs only from a Discord message: a web message id is not one (2026-11-05: the 400 lost the lane its thread and its project).
+	const from = a.askingMessage && isSnowflake(a.askingMessage) ? { fromMessage: a.askingMessage } : {};
 	if (a.home?.startsWith("ch:")) {
 		const parent = a.home.slice(3);
-		return { kind: "thread", parent, ...(a.asking === a.home && a.askingMessage ? { fromMessage: a.askingMessage } : {}) };
+		return { kind: "thread", parent, ...(a.asking === a.home ? from : {}) };
 	}
-	if (a.asking?.startsWith("ch:") && a.isWork(a.asking.slice(3))) return { kind: "thread", parent: a.asking.slice(3), ...(a.askingMessage ? { fromMessage: a.askingMessage } : {}) };
+	if (a.asking?.startsWith("ch:") && a.isWork(a.asking.slice(3))) return { kind: "thread", parent: a.asking.slice(3), ...from };
 	if (a.asking?.startsWith("th:")) {
 		const thread = a.asking.slice(3);
 		const parent = a.threadParent(thread);
 		if (parent) return { kind: "adopt", thread, parent };
 	}
 	return { kind: "channel" };
+}
+
+/**
+ * The project channel a new lane was started in: the explicit home, else the work channel or thread the request came from,
+ * wherever it was typed (Discord or the channel's web view) and whether or not Discord then makes it a thread.
+ */
+export function startedIn(a: { home?: string; asking?: string; isWork: (id: string) => boolean; threadParent: (id: string) => string | undefined }): string | undefined {
+	if (a.home?.startsWith("ch:")) return a.home.slice(3);
+	if (a.asking?.startsWith("ch:") && a.isWork(a.asking.slice(3))) return a.asking.slice(3);
+	return a.asking?.startsWith("th:") ? a.threadParent(a.asking.slice(3)) : undefined;
 }
 
 /**

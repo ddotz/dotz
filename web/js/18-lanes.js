@@ -113,8 +113,14 @@ function prjLoad() {
 }
 // The work channel a session was started in (ch:<id>): the hub's lane list carries it as `home` (hub/laneviews.ts withHomes); the gateway's channel map is the fallback.
 const laneHome = l => l.home || (S && S.channels && S.channels.homes && S.channels.homes[l.name] ? `ch:${S.channels.homes[l.name]}` : "");
-// The project a session belongs to, by name: its home channel only (docs/layers.md §1). A session started from chat has none (""), even when its folder matches a project.
+// The project row holding a session. The hub decides (hub/custom.ts projectsView, docs/layers.md §1: the home channel, the folder only without one); every surface reads it here.
+const laneProjectRow = l => ((PRJ && PRJ.projects) || []).find(p => (p.lanes || []).some(x => x.name === l.name));
+// The chat of a session's project, "" when it has none.
+const laneChat = l => { const p = laneProjectRow(l); return (p && prjChat(p)) || laneHome(l); };
+// The project a session belongs to, by name. A session the list does not hold yet (just started, or the list is still loading) goes by its home.
 function laneProject(l) {
+  const row = laneProjectRow(l);
+  if (row) return prjTitle(row);
   const home = laneHome(l);
   if (!home) return "";
   const p = ((PRJ && PRJ.projects) || []).find(x => x.key === home || x.recordKey === home || (x.channel && `ch:${x.channel.id}` === home));

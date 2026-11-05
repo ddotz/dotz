@@ -81,6 +81,8 @@ export function clearChannel(channel: string): boolean {
 }
 
 export const getSetup = (channel: string) => setups.find(s => s.channel === channel);
+// A session's home channel id: the gateway's live channel map, else the lane's own record (bare id, or "ch:<id>" on a lane row).
+export const homeChannel = (name: string, home: unknown, homes?: Record<string, string>): string | undefined => homes?.[name] ?? (typeof home === "string" && home ? home.replace(/^ch:/, "") : undefined);
 
 // What the owner reads for a watch: its stored label (named once, see nameWatches), else "<채널 이름> 감시 <n>" for a monitor of a channel setup, else the
 // words of its key. A notice can outlive its watch, so the key is still turned into words here ("ch-123-2" -> "<채널 이름> 감시 2"); a key never shows.
