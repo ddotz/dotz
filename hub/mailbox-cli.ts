@@ -1,8 +1,9 @@
 // `bun hub/mailbox-cli.ts fold`: an install that split one mail account into app instances by `filter.source` turns them into mailboxes of one instance,
 // as data only (docs/mailbox.md "Folding per-source instances"). Without --apply it prints the plan and writes nothing. --apply keeps a backup and
 // `undo <backup dir>` puts everything back. Stored mail is never rewritten: a `conds.src` box reads old mail by its source. Gateway off or on: it reads the files by mtime.
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { writeAtomic } from "./config.ts";
 import type { AppRaw } from "./integrations.ts";
 import { BASE_ID, cleanBox, loadMailboxes, saveMailboxes, type Box, type Mailboxes } from "./mailbox.ts";
 
@@ -14,7 +15,7 @@ const NOT_CARRIED = ["discord", "delete_original", "push", "off"] as const;
 type Drafts = { draftDefaults?: Record<string, unknown>; draftRules?: Record<string, unknown>; attachFolders?: Record<string, unknown> };
 export type FoldPlan = { into: string; base?: string; boxes: Box[]; apps: Record<string, AppRaw>; removed: string[]; tones: { from: string; to: string }[]; notes: string[] };
 
-const readJson = <T>(file: string, empty: T): T => (existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as T) : empty);
+const fileJson = <T>(file: string, empty: T): T => (existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as T) : empty);
 const flag = (args: string[], name: string): string | undefined => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const isMail = (id: string, r: AppRaw) => r && typeof r === "object" && !r.deleted && (r.app === "mail" || id === "mail");
 
@@ -61,13 +62,13 @@ export function applyFold(dir: string, plan: FoldPlan, stamp: string): string {
 	copyFileSync(join(dir, APPS), join(backup, "apps.json"));
 	if (had) copyFileSync(join(dir, BOXES), join(backup, "mailboxes.json"));
 	const tones = plan.tones.filter(t => !existsSync(join(dir, t.to)));
-	writeFileSync(join(backup, "manifest.json"), `${JSON.stringify({ boxes: had, tones: tones.map(t => t.to) }, null, 2)}\n`);
+	writeAtomic(join(backup, "manifest.json"), `${JSON.stringify({ boxes: had, tones: tones.map(t => t.to) }, null, 2)}\n`);
 	for (const t of tones) {
 		mkdirSync(dirname(join(dir, t.to)), { recursive: true });
 		copyFileSync(join(dir, t.from), join(dir, t.to));
 	}
 	saveMailboxes(dir, foldedStore(loadMailboxes(dir), plan));
-	writeFileSync(join(dir, APPS), `${JSON.stringify(plan.apps, null, 2)}\n`);
+	writeAtomic(join(dir, APPS), `${JSON.stringify(plan.apps, null, 2)}\n`);
 	return backup;
 }
 
@@ -95,7 +96,7 @@ export function run(args: string[], dataDir: string, stamp: string): { lines: st
 	if (cmd !== "fold") return { lines: [USAGE], code: 2 };
 	try {
 		const from = flag(args, "--from")?.split(",").map(s => s.trim()).filter(Boolean), base = flag(args, "--base");
-		const plan = foldPlan(readJson<Record<string, AppRaw>>(join(dir, APPS), {}), readJson<Drafts>(join(dir, DRAFTS), {}), { into: flag(args, "--into") ?? "mail", ...(base ? { base } : {}), ...(from ? { from } : {}) }, id => existsSync(join(dir, toneOf(id))));
+		const plan = foldPlan(fileJson<Record<string, AppRaw>>(join(dir, APPS), {}), fileJson<Drafts>(join(dir, DRAFTS), {}), { into: flag(args, "--into") ?? "mail", ...(base ? { base } : {}), ...(from ? { from } : {}) }, id => existsSync(join(dir, toneOf(id))));
 		if (!args.includes("--apply")) return { lines: [...describe(plan), "시험 실행이라 아무것도 바꾸지 않았어요. 바꾸려면 --apply를 붙여요."], code: 0 };
 		return { lines: [...describe(plan), `옮겼어요. 되돌리려면: bun hub/mailbox-cli.ts undo ${applyFold(dir, plan, stamp)}`], code: 0 };
 	} catch (e) {
