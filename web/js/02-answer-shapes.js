@@ -6,7 +6,9 @@
 // its first paint: the live status and progress notes never come through here, and there is no text that later turns into a card.
 const ANS_LABEL = /^\*\*([^*\n]{1,24}?):?\*\*:?\s+(\S.*)$/;
 // A plain "이름: 값" item is the same row (MODE.md "Numbers", "Changed values") when the name is a few words and the value no sentence; a sentence with a colon stays a list item.
-const ANS_PLAIN = /^([^*:：`.,?!()\n]{1,24}?)\s*[:：]\s+(\S.*)$/;
+// The name may hold inline code (`**`); its length counts without the backticks, and the punctuation rule applies only outside the code.
+const ANS_PLAIN = /^((?:`[^`\n]+`|[^*:：`.,?!()\n])+?)\s*[:：]\s+(\S.*)$/;
+const ANS_NAME_MAX = 24;
 const ANS_SENTENCE_END = /[.!?요다죠]\s*$/;
 const ANS_PLAIN_MAX = 60;
 // "5,308ms → 36ms": numbers on both sides are a change; words around an arrow are a path or a flow ("설정 → 앱").
@@ -15,7 +17,7 @@ const ansKv = text => {
   const m = ANS_LABEL.exec(text);
   if (m) return m;
   const p = ANS_PLAIN.exec(text);
-  return p && p[2].length <= ANS_PLAIN_MAX && !ANS_SENTENCE_END.test(p[2]) ? p : null;
+  return p && p[1].replace(/`/g, "").length <= ANS_NAME_MAX && p[2].length <= ANS_PLAIN_MAX && !ANS_SENTENCE_END.test(p[2]) ? p : null;
 };
 function ansValue(value) {
   const m = ANS_CHANGE.exec(value);
