@@ -101,7 +101,7 @@ function mxScope(it) {
   const line = [it.accounts.length > 1 ? (MX.acct === "all" ? `계정 ${it.accounts.length}개` : sc[0].account || sc[0].label) : "", `안 읽음 ${all.unread}`, `메일함 ${sc.reduce((c, a) => c + a.boxes.length, 0)}개`].filter(Boolean).join(" · ");
   const rows = ents.map(e => ({ ...e, c: cnt.get(mxGroup(e.id) ? e.id : e.k) || MX_ZERO }));
   // listed: the app has stored mail, so a box with none of it still draws as a mail list.
-  return { ...it, listed: it.mails.some(t => MAILS.has(t)), mails: MX.scr ? [] : mails, notices: MX.scr ? [] : cut ? it.notices.filter(n => (MX.box === "all" ? MX.nof.get(n.id) === MX.acct : ok.has(mxNoticeMail(n)))) : it.notices, mxk: `|${MX.acct}|${MX.box}|${MX.scr}`, mxLine: it.conn ? "" : line, all, rows,
+  return { ...it, listed: !!MX.scr || it.mails.some(t => MAILS.has(t)), mails: MX.scr ? [] : mails, notices: MX.scr ? [] : cut ? it.notices.filter(n => (MX.box === "all" ? MX.nof.get(n.id) === MX.acct : ok.has(mxNoticeMail(n)))) : it.notices, mxk: `|${MX.acct}|${MX.box}|${MX.scr}`, mxLine: it.conn ? "" : line, all, rows,
     esig: JSON.stringify([MX.acct, MX.box, all, rows.map(e => [e.id, e.b.name, e.b.icon, !!e.b.base, e.b.mode, e.n, e.c]), it.accounts.map(a => [a.key, a.label, a.mk])]) };
 }
 
