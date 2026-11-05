@@ -8,6 +8,7 @@ export type FieldMap = {
 	// watch de-duplicates on); the rest are best-effort and shown to the owner.
 	id: string;
 	from?: string;
+	to?: string; // the receiver(s); the sent folder's mails are told apart by it
 	subject?: string;
 	time?: string;
 	read?: string; // truthy = already read (a field named like "unread" is read the other way round)
@@ -60,6 +61,8 @@ export type SiteSpec = {
 		listPath: string; // JSON path to the array of mails in the response, e.g. "mails" or "data.items"
 		fields: FieldMap;
 	};
+	// The sent folder, read page by page for the owner's own past replies (adapter.ts sentList). Same tokens as `list`: {mailbox}, {page}.
+	sent?: Endpoint & { mailbox?: string; listPath: string; fields: FieldMap };
 	read: Endpoint & {
 		bodyPath: string; // JSON path to the mail body in the detail response
 		bodyIsHtml?: boolean; // body is HTML and should be rendered to text
@@ -154,6 +157,7 @@ export function validateSpec(s: any): string | undefined {
 	if (!s.list || typeof s.list.path !== "string" || !s.list.path) return "list.path가 비어 있어요";
 	if (typeof s.list.listPath !== "string" || !s.list.listPath) return "list.listPath(메일 배열 경로)가 비어 있어요";
 	if (!s.list.fields || typeof s.list.fields.id !== "string" || !s.list.fields.id) return "list.fields.id가 비어 있어요";
+	if (s.sent && (typeof s.sent.path !== "string" || !s.sent.path || typeof s.sent.listPath !== "string" || !s.sent.listPath || typeof s.sent.fields?.id !== "string" || !s.sent.fields.id)) return "sent에는 path, listPath, fields.id가 필요해요";
 	if (!s.read || typeof s.read.path !== "string" || !s.read.path) return "read.path가 비어 있어요";
 	if (typeof s.read.bodyPath !== "string" || !s.read.bodyPath) return "read.bodyPath가 비어 있어요";
 	const at = s.read.attachments;

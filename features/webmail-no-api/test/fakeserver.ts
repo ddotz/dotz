@@ -3,12 +3,16 @@
 // a browser, the keychain or the network. Tests build a SiteSpec pointing at it and drive the adapter, keepalive and watch.
 import type { SiteSpec } from "../lib/spec.ts";
 
-export type FakeMail = { id: number; from: string; subject: string; date: string; read: boolean; html: string };
+export type FakeMail = { id: number; from: string; to?: string; subject: string; date: string; read: boolean; html: string };
 // One file as the fake site received it: parts arrive under one upload id and are hashed as they come in.
 export type FakeUpload = { name: string; bytes: number; parts: number; sha: string; big: boolean; contentLengths: (string | null)[]; maxPart: number };
 
 export function startFakeServer(initial: FakeMail[] = [], opts: { xssi?: boolean } = {}) {
 	let mails = [...initial];
+	// The sent folder is mailbox 200, paged by ?page= (`ignorePage`: a site that answers the first page whatever the page).
+	let sentMails: FakeMail[] = [];
+	let sentPaging = { pageSize: 2, ignorePage: false, pageParam: "page" };
+	const sentPages: number[] = [];
 	let loggedOut = false;
 	let failPart: number | undefined;
 	let status = "done";
@@ -25,6 +29,11 @@ export function startFakeServer(initial: FakeMail[] = [], opts: { xssi?: boolean
 		async fetch(req) {
 			const url = new URL(req.url);
 			if (!authed(req)) return logoutResponse();
+			if (url.pathname === "/mail/mboxes/200/mails") {
+				const page = sentPaging.ignorePage ? 1 : Number(url.searchParams.get(sentPaging.pageParam) ?? 1);
+				sentPages.push(page);
+				return Response.json({ mails: sentMails.slice((page - 1) * sentPaging.pageSize, page * sentPaging.pageSize).map(({ html, ...m }) => m) });
+			}
 			if (/\/mail\/mboxes\/\d+\/mails$/.test(url.pathname) && !url.searchParams.get("q")) {
 				const tag = etag();
 				if (req.headers.get("if-none-match") === tag) return new Response(null, { status: 304, headers: { etag: tag } });
@@ -38,7 +47,7 @@ export function startFakeServer(initial: FakeMail[] = [], opts: { xssi?: boolean
 			}
 			const detail = url.pathname.match(/\/mail\/mails\/(\d+)$/);
 			if (detail) {
-				const m = mails.find((x) => x.id === Number(detail[1]));
+				const m = [...mails, ...sentMails].find((x) => x.id === Number(detail[1]));
 				return m ? Response.json({ id: m.id, html: m.html }) : new Response("not found", { status: 404 });
 			}
 			if (url.pathname === "/mail/read" && req.method === "POST") {
@@ -111,11 +120,19 @@ export function startFakeServer(initial: FakeMail[] = [], opts: { xssi?: boolean
 		setUploadStatus: (s: string) => {
 			status = s;
 		},
+		setSent: (m: FakeMail[], paging: Partial<typeof sentPaging> = {}) => {
+			sentMails = [...m];
+			sentPaging = { ...sentPaging, ...paging };
+		},
+		sentPages,
 		setMails: (m: FakeMail[]) => {
 			mails = [...m];
 		},
 		close: () => server.stop(true),
 	};
 }
+
+// A mail the owner sent: it answers a question of the receiver, quoted below the reply.
+export const mkSent = (id: number): FakeMail => ({ ...mkMail(id), to: `rcpt${id}@example.test`, subject: `Re: subject ${id}`, html: `<p>reply ${id} 가능해요.</p><p>&gt; question ${id}인가요?</p>` });
 
 export const mkMail = (id: number, subject = `subject ${id}`): FakeMail => ({ id, from: `sender${id}@example.test`, subject, date: `2026-10-22T0${id % 10}:00:00Z`, read: false, html: `<p>body of ${id}</p>` });

@@ -7,7 +7,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { correctionsOf, hasSamples, HEADINGS, identityOf, isTuned, markLearned, paths, readLearned, roomFile, type ToneKey, templatesOf, toneFile, writeAtomic, writeExamples, writeIdentity, writeSections } from "./settings.ts";
-import { ownText, pickExamples, quotedText } from "./tone.ts";
+import { loadPairs, savePairs } from "./pairs.ts";
+import { botDrafts, ownText, pickExamples, quotedText, sentPairs, SWEEP_LIMIT, type SentMail } from "./tone.ts";
 
 export const REFINE_EVERY = 5;
 const RETRY_MS = 24 * 60 * 60 * 1000;
@@ -94,6 +95,23 @@ export async function sweep(key: ToneKey, texts: string[], where: string, call: 
 	const a = await analyzeTone(texts, where, call);
 	if (a.identity.length) writeIdentity(key, a.identity, a.templates);
 	return { examples: examples.length, identity: a.identity.length, templates: a.templates.length };
+}
+
+// A mail site's (or plugin's) sent folder, learned: its reply pairs are saved tagged with `source`, and an instance with no identity yet gets its own profile
+// (examples, identity, reply templates) from the same texts. A profile that has an identity is never rewritten. A model failure keeps the pairs and says so.
+export async function learnSiteSent(source: string, items: SentMail[], instance: string, call: ModelCall, now = new Date()): Promise<string> {
+	const pairs = sentPairs(items, source, botDrafts());
+	if (pairs.length) savePairs("mail", [...loadPairs("mail"), ...pairs]);
+	markLearned([`pairs-${source}@1`], now);
+	const done = `보낸편지함 ${items.length}통에서 답장 예시 ${pairs.length}개를 배웠어요`;
+	const key = { app: instance };
+	const texts = items.filter(m => !/^\s*(fwd?|전달)\s*:/i.test(m.subject ?? "")).slice(0, SWEEP_LIMIT).map(m => (m.received ? `${m.body}\n${m.received.split("\n").map(l => `> ${l}`).join("\n")}` : m.body));
+	if (identityOf(key).length || !texts.length) return done;
+	try {
+		return (await sweep(key, texts, `${source} 메일 (보낸편지함)`, call)).identity ? `${done}. 이 메일의 말투 프로필도 만들었어요` : `${done}. 말투는 분석하지 못해 예시 문장만 저장했어요`;
+	} catch (e) {
+		return `${done}. 말투 분석은 모델 오류로 못 했어요 (${(e as Error).message.slice(0, 100)})`;
+	}
 }
 
 // Says a profile is learned at `version` (onboard.ts learn just did it by hand), so the next draft does not learn it again.

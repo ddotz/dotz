@@ -6,7 +6,7 @@ import { headers, fetchList, type LoginState } from "./session.ts";
 import { type Ctx } from "./config.ts";
 import { type DraftFile } from "./upload.ts";
 
-export type Mail = { id: string; from: string; subject: string; time: string; read: boolean; /** the site says he replied (spec field `answered`); missing = the site does not say */ replied?: boolean };
+export type Mail = { id: string; from: string; /** the receivers, when the spec maps them (the sent folder) */ to?: string; subject: string; time: string; read: boolean; /** the site says he replied (spec field `answered`); missing = the site does not say */ replied?: boolean };
 export type Detail = { id: string; body: string; html?: string; raw: unknown };
 export type MailFile = { name: string; id?: string; url?: string; size?: number; type?: string };
 export type PostedFile = { name: string; type?: string; data: string };
@@ -25,6 +25,7 @@ export function mapMails(spec: SiteSpec, body: unknown): Mail[] {
 	return arr.map((item) => ({
 		id: str(getPath(item, f.id)),
 		from: f.from ? str(getPath(item, f.from)) : "",
+		...(f.to ? { to: str(getPath(item, f.to)) } : {}),
 		subject: f.subject ? str(getPath(item, f.subject)) : "",
 		time: f.time ? str(getPath(item, f.time)) : "",
 		// A field that holds "unread" is true for an unread mail, so it is read the other way round.
@@ -55,6 +56,44 @@ async function getJson(ctx: Ctx, spec: SiteSpec, ep: Endpoint, tokens: Record<st
 	} catch {
 		throw new Error(`${what}: JSON이 아닌 응답이 왔어요 (로그인이 풀렸거나 주소가 달라요)`);
 	}
+}
+
+export const SENT_LIMIT = 3000;
+const PAGE_PARAMS = ["currentPage", "page", "pageNo", "pageIndex", "p"];
+
+// A first-page call often shows no page param at all. Each usual name is tried with page 2: the first whose answer starts with another mail becomes {page}.
+// A folder of one page, or a site that pages some other way, keeps the call as it was.
+export async function withPaging(ctx: Ctx, spec: SiteSpec): Promise<SiteSpec["sent"]> {
+	const s = spec.sent;
+	if (!s || s.body || /\{page\}/.test(JSON.stringify([s.path, s.params]))) return s;
+	const view = { ...spec, list: { ...spec.list, ...s } };
+	const firstId = async (ep: Endpoint) => mapMails(view, await getJson(ctx, spec, ep, { mailbox: s.mailbox, page: "2" }, "보낸편지함 쪽 넘김"))[0]?.id;
+	const first = await firstId(s);
+	for (const key of PAGE_PARAMS) {
+		const ep = { ...s, params: { ...s.params, [key]: "{page}" } };
+		const next = await firstId(ep).catch(() => undefined);
+		if (next && next !== first) return ep;
+	}
+	return s;
+}
+
+// The sent folder, newest first as the site lists it: pages from 1 until a page is empty, repeats a first id (a site that ignores the page param) or `limit`
+// mails are in. A spec whose call has no {page} gives one page. Read-only.
+export async function sentList(ctx: Ctx, spec: SiteSpec, limit = SENT_LIMIT): Promise<Mail[]> {
+	const s = spec.sent;
+	if (!s) return [];
+	const view = { ...spec, list: { ...spec.list, ...s } };
+	const paged = /\{page\}/.test(JSON.stringify([s.path, s.params, s.body]));
+	const out: Mail[] = [];
+	const firsts = new Set<string>();
+	for (let page = 1; out.length < limit; page++) {
+		const mails = mapMails(view, await getJson(ctx, spec, s, { mailbox: s.mailbox, page: String(page) }, `보낸편지함 ${page}쪽`));
+		if (!mails.length || firsts.has(mails[0].id)) break;
+		firsts.add(mails[0].id);
+		out.push(...mails);
+		if (!paged) break;
+	}
+	return out.slice(0, limit);
 }
 
 export async function read(ctx: Ctx, spec: SiteSpec, id: string): Promise<Detail> {

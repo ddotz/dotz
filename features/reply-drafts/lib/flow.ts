@@ -105,9 +105,11 @@ export function mailStyleOf(text: string, from: string): ReplyStyle | undefined 
 	const s = loadStyle({ app: "mail" });
 	return s.samples.length || s.identity?.length ? styleWithExamples(s, "mail", text, from) : undefined;
 }
-// A mail draft's style carries the user's closest real past replies as examples; chat and comments keep theirs. A pair does not say which account
-// it came from, so a draft with a profile of its own gets none: another account's replies must not ride in its prompt.
-const styleOf = (item: ReplyItem, key: ToneKey) => (item.kind === "mail" && !item.profile ? styleWithExamples(loadStyle(key), "mail", item.text, item.from) : loadStyle(key));
+// A mail draft's style carries the user's closest real past replies of ITS source as examples (a site's own sent folder for its mails, zele's for zele's); chat
+// and comments keep theirs. A zele pair does not say which account it came from, so a zele draft with a profile of its own gets none: another account's replies
+// must not ride in its prompt.
+export const pairSource = (source: string): string => webmailSite(source) ?? source;
+const styleOf = (item: ReplyItem, key: ToneKey, source: string) => (item.kind === "mail" && !(item.profile && pairSource(source) === "zele") ? styleWithExamples(loadStyle(key), "mail", item.text, item.from, pairSource(source)) : loadStyle(key));
 
 function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[]; recipient?: Recipient }, changes: string[], deps: FlowDeps): DraftRec {
 	// The candidates were for this one model call; a later revision builds its own.
@@ -122,7 +124,7 @@ function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: 
 // back to the model.
 export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): Promise<Built> {
 	const trace = deps.trace ?? draftTrace();
-	const style = styleOf(item, toneKey({ ...item, box: meta.box, instance: meta.instance })), call = callOf({ ...deps, trace }, item, meta.ref);
+	const style = styleOf(item, toneKey({ ...item, box: meta.box, instance: meta.instance }), meta.source), call = callOf({ ...deps, trace }, item, meta.ref);
 	const r = await generateChatReply(item, style, call);
 	if (r.action !== "draft") return r;
 	const questions = item.kind === "mail" ? r.questions.filter(q => !ADDRESS_ASK.test(q)) : r.questions;
@@ -367,7 +369,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	const held = stagedFiles(old.id).map(f => f.name);
 	const rev = await revisionCandidates(old, change);
 	const item = rev ? { ...old.item, candidates: rev.names } : held.length ? { ...old.item, files: held } : old.item;
-	const r = await reviseReply(item, styleOf(old.item, toneKey(old)), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
+	const r = await reviseReply(item, styleOf(old.item, toneKey(old), old.source), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
 	const lesson = lessonOf(r, change);
 	if (lesson) {
@@ -458,7 +460,8 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 		// A draft the owner changed is his own wording now: it joins his past replies. An unchanged bot draft never does.
 		if (now.kind === "mail" && !now.compose && now.changes.length > 0 && now.item.text.trim()) {
 			try {
-				addPair("mail", { received: now.item.text, reply: now.body, at: nowOf(deps).getTime(), ...(addressesOf(now.item.from)[0] ? { from: addressesOf(now.item.from)[0] } : {}) });
+				const source = pairSource(now.source);
+				addPair("mail", { received: now.item.text, reply: now.body, at: nowOf(deps).getTime(), ...(addressesOf(now.item.from)[0] ? { from: addressesOf(now.item.from)[0] } : {}), ...(source !== "zele" ? { source } : {}) });
 			} catch (e) {
 				console.error(`reply draft: sent draft ${id} not kept as a past reply: ${(e as Error).message}`);
 			}

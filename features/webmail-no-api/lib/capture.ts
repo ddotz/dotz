@@ -22,6 +22,7 @@ const FIELD_RE: Record<keyof FieldMap, RegExp> = {
 	id: /^(id|idx|uid|seq|no|mailid|mail_id|msgid|msg_id|messageid|message_id|mailno|mailseq)$/i,
 	subject: /subject|title|subj/i,
 	from: /from|sender|author/i,
+	to: /^(to|tos|to_?(addr(ess)?|list|name)|rcpt)$|receiver|recipient|받는/i,
 	time: /date|time|sent|received|timestamp|created/i,
 	read: /^(is_?)?(read|seen|unread)$|read_?(yn|flag)|seen_?flag/i,
 	answered: /^(is_?)?(answered|replied)$|(reply|answer)_?(yn|flag)|answered_?flag/i,
@@ -66,7 +67,7 @@ function inferFields(items: Record<string, unknown>[]): FieldMap | undefined {
 	const id = pick("id");
 	if (!id) return undefined;
 	const fields: FieldMap = { id };
-	for (const which of ["from", "subject", "time", "read", "answered"] as const) {
+	for (const which of ["from", "to", "subject", "time", "read", "answered"] as const) {
 		const k = pick(which);
 		if (k && k !== id && !Object.values(fields).includes(k)) fields[which] = k;
 	}
@@ -191,6 +192,44 @@ export function readCandidates(spec: SiteSpec): SiteSpec["read"][] {
 	return out;
 }
 
+type ListHit = { req: CapturedRequest; listPath: string; fields: FieldMap; ids: Set<string> };
+
+// The call whose response is the mail list: the array with the most mail ids that reads like a list, a search call never.
+function pickList(json: CapturedRequest[]): ListHit | undefined {
+	let best = -1;
+	let hit: ListHit | undefined;
+	for (const r of json) {
+		for (const arr of findArrays(parse(r))) {
+			const f = inferFields(arr.items);
+			if (!f) continue;
+			const ids = new Set(arr.items.map((it) => String(it[f.id])).filter(Boolean));
+			const hasQuery = [...new URL(r.url).searchParams.keys()].some((k) => SEARCH_KEY.test(k)) || !!bodyQuery(r.requestBody);
+			const score = ids.size + (hasQuery ? -1000 : 0) + (/mail|inbox|message|list/i.test(new URL(r.url).pathname) ? 5 : 0);
+			if (score > best) {
+				best = score;
+				hit = { req: r, listPath: arr.path, fields: f, ids };
+			}
+		}
+	}
+	return hit;
+}
+
+const PAGE_KEY = /^(page|pageno|page_no|pagenum|page_num|pageindex|page_index|curpage|cur_page|currentpage|current_page)$/i;
+
+// `spec.sent` from the calls recorded while the sent folder was open, by the same inference as `list`. A call that has the list's own shape keeps its
+// template and only the mailbox changes; a page param the call shows becomes {page}. Undefined when no list was seen or it is the inbox again.
+export function captureSent(spec: SiteSpec, requests: CapturedRequest[]): SiteSpec["sent"] | undefined {
+	const json = requests.filter((r) => (r.method ?? "GET").toUpperCase() !== "OPTIONS" && (r.status ?? 200) < 300 && isJsonResponse(r));
+	const hit = pickList(json);
+	if (!hit) return undefined;
+	const tpl = templatize(hit.req.url, new Set());
+	const params = Object.fromEntries(Object.entries(tpl.params).map(([k, v]) => [k, PAGE_KEY.test(k) ? "{page}" : v]));
+	if (tpl.path === spec.list.path && tpl.mailbox === spec.list.mailbox && JSON.stringify(tpl.params) === JSON.stringify(spec.list.params ?? {})) return undefined;
+	const bt = methodOf(hit.req) ? bodyTemplate(hit.req.requestBody, new Set()) : undefined;
+	const body = bt?.body.replace(/((?:"|\b)(?:page|pageNo|page_no|pageNum|pageIndex|curPage)"?\s*[:=]\s*)\d+/i, "$1{page}");
+	return { ...withParams({ path: tpl.path }, params), ...(methodOf(hit.req) ? { method: "POST" as const } : {}), ...(bt && body ? { body, bodyType: bt.bodyType } : {}), ...(tpl.mailbox ? { mailbox: tpl.mailbox } : {}), listPath: hit.listPath, fields: hit.fields };
+}
+
 // Build a SiteSpec proposal from one session recording. `site` is the slug the owner chose.
 export function capture(site: string, requests: CapturedRequest[]): CaptureResult {
 	const notes: string[] = [];
@@ -206,28 +245,8 @@ export function capture(site: string, requests: CapturedRequest[]): CaptureResul
 		};
 	}
 
-	let listReq: CapturedRequest | undefined;
-	let listPath = "";
-	let fields: FieldMap | undefined;
-	let mailIds = new Set<string>();
-	let best = -1;
-	for (const r of json) {
-		for (const hit of findArrays(parse(r))) {
-			const f = inferFields(hit.items);
-			if (!f) continue;
-			const ids = new Set(hit.items.map((it) => String(it[f.id])).filter(Boolean));
-			const hasQuery = [...new URL(r.url).searchParams.keys()].some((k) => SEARCH_KEY.test(k)) || !!bodyQuery(r.requestBody);
-			const score = ids.size + (hasQuery ? -1000 : 0) + (/mail|inbox|message|list/i.test(new URL(r.url).pathname) ? 5 : 0);
-			if (score > best) {
-				best = score;
-				listReq = r;
-				listPath = hit.path;
-				fields = f;
-				mailIds = ids;
-			}
-		}
-	}
-	if (!listReq || !fields) {
+	const picked = pickList(json);
+	if (!picked) {
 		return {
 			kind: "no-list",
 			notes: [
@@ -237,6 +256,7 @@ export function capture(site: string, requests: CapturedRequest[]): CaptureResul
 		};
 	}
 
+	const { req: listReq, listPath, fields, ids: mailIds } = picked;
 	const listUrl = new URL(listReq.url);
 	const origin = listUrl.origin;
 	const listTpl = templatize(listReq.url, new Set());
