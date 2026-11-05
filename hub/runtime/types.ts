@@ -93,6 +93,8 @@ export interface SpawnOpts {
 	cwd: string;
 	// The model selector as the hub stores it (omp: `provider/id:thinking`).
 	model: string;
+	// The orchestrator's task workers' model when it differs from `model` (a conversation on its own model keeps main's workers).
+	workers?: string;
 	// Session reference to resume (a file path for omp); fresh session when absent.
 	resume?: string;
 	// Added to the hub's own environment (role markers read by the dotz extension).

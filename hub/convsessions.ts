@@ -3,23 +3,25 @@
 // first such message and parked after it sat idle; everything the gateway starts itself stays on `main`, the session that also
 // oversees the others. This module is the registry and the only one that knows the flag: with it off, every key is `main` and
 // nothing is ever spawned here. outbound.ts wires each instance's prompt queue and background-work view (setWiring).
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { createBgWork } from "./bgwork.ts";
 import { runningOmoWorkers } from "./bgwork.ts";
-import { convIdleStopMin, convKinds, convMaxLive, convSessionsOn, DATA_DIR, log as hubLog, NAME, writeAtomic } from "./config.ts";
+import { convIdleStopMin, convKinds, convMaxLive, convSessionsOn, DATA_DIR, log as hubLog, NAME, orchestratorModel, selectorOf, writeAtomic } from "./config.ts";
 import { historyEvents, type HubEvent } from "./events.ts";
 import { mailByThread } from "./mail.ts";
 import { createOrchestrator, orchBusy, type OrchOpts, type Orchestrator } from "./orchestrator.ts";
 import { createCapacity } from "./convcapacity.ts";
+import { omoSelector } from "./runtime/omo.ts";
 import type { createPrompts, Pending } from "./prompts.ts";
 import { MAIN, primaryTarget, safeDir, sessionKeyOf } from "./session-key.ts";
 import { trackTimer } from "./shutdown.ts";
 
 export type Prompts = ReturnType<typeof createPrompts>;
 export type BgWork = ReturnType<typeof createBgWork>;
-// Kept in the session's state.json next to the orchestrator's own fields (both writers merge).
-export type ConvMeta = { key: string; primary: string; aliases: string[]; name?: string; createdAt: string; lastOwnerAt?: string; parked?: true };
+// Kept in the session's state.json next to the orchestrator's own fields (both writers merge). ownModel: the selector the owner
+// picked for this conversation (hub/control.ts); without it the session inherits main's. Named apart from the orchestrator's `model`.
+export type ConvMeta = { key: string; primary: string; aliases: string[]; name?: string; createdAt: string; lastOwnerAt?: string; parked?: true; ownModel?: string };
 export type Conv = { key: string; primary: string; o: Orchestrator; queue: Prompts; bg: BgWork; meta: ConvMeta; dir?: string };
 export type ConvState = "new" | "parked" | "live";
 
@@ -34,6 +36,8 @@ export type ConvDeps = {
 	dataDir: string;
 	history: (target: string, limit: number) => HubEvent[];
 	workers: (c: Conv) => number;
+	/** Main's model as a task pin: the workers of a conversation on its own model stay on it (extension/guard.ts ownWorkerPin). */
+	workerPin: () => string;
 	log: (line: string) => void;
 	now?: () => number;
 };
@@ -76,6 +80,11 @@ export function createConvSessions(d: ConvDeps) {
 	const live = (c: Conv): boolean => c.o.orchestratorPid() !== undefined;
 	const metaFile = (c: Conv) => join(c.dir!, "state.json");
 	const saveMeta = (c: Conv) => writeAtomic(metaFile(c), `${JSON.stringify({ ...readJson(metaFile(c)), ...c.meta, parked: c.meta.parked }, null, 2)}\n`);
+	const syncPin = (c: Conv): void => {
+		const file = join(c.dir!, "worker-pin");
+		if (c.meta.ownModel) writeAtomic(file, `${d.workerPin()}\n`);
+		else rmSync(file, { force: true });
+	};
 
 	function setMain(c: Omit<Conv, "meta" | "primary"> & Partial<Pick<Conv, "meta" | "primary">>): Conv {
 		mainConv = { primary: "web", meta: { key: MAIN, primary: "web", aliases: [], createdAt: new Date(now()).toISOString() }, ...c } as Conv;
@@ -97,13 +106,15 @@ export function createConvSessions(d: ConvDeps) {
 			source: `conv:${key}`,
 			keepalive: false,
 			asks: false,
-			env: { DOTZ_CONV: key, ...(meta.name ? { DOTZ_CONV_NAME: meta.name } : {}) },
+			model: () => c.meta.ownModel,
+			env: { DOTZ_CONV: key, DOTZ_WORKER_PIN_FILE: join(dir, "worker-pin"), ...(meta.name ? { DOTZ_CONV_NAME: meta.name } : {}) },
 			scope: () => scopeText(c.meta),
 			seed: () => seedText(c.primary, d.history(key, SEED_EVENTS)),
 		});
 		Object.assign(c, d.wire(c));
 		convs.set(key, c);
 		saveMeta(c);
+		syncPin(c);
 		for (const h of hooks) h(c);
 		return c;
 	}
@@ -151,6 +162,22 @@ export function createConvSessions(d: ConvDeps) {
 		return c;
 	}
 	const queueOf = (key: string): Prompts => ensure(key).queue;
+
+	/** Saves this conversation's own model (undefined: back to main's); the session follows now, after its turn, or at its next start. Nothing spawns. */
+	function setOwnModel(key: string, selector: string | undefined): ReturnType<Orchestrator["applyModelChange"]> {
+		const c = convs.get(key) ?? create(key);
+		c.meta.ownModel = selector;
+		saveMeta(c);
+		syncPin(c);
+		return c.o.applyModelChange();
+	}
+	/** Main's model changed: sessions that inherit follow it, the others only re-pin their workers on it. */
+	function followMain(): void {
+		for (const c of convs.values()) {
+			if (c.meta.ownModel) syncPin(c);
+			else c.o.applyModelChange();
+		}
+	}
 
 	/** Delivers a prompt into the session `key` (spawning or resuming it); true when it was steered into its running turn. */
 	function deliverTo(key: string, text: string, reply?: { target: string; replyTo?: string; owner?: boolean }): boolean {
@@ -206,7 +233,7 @@ export function createConvSessions(d: ConvDeps) {
 				continue;
 			}
 			if (convs.has(stored.key)) continue;
-			const c = create(stored.key, { key: stored.key, primary: stored.primary ?? primaryTarget(stored.key), aliases: stored.aliases ?? [], name: stored.name, createdAt: stored.createdAt ?? new Date(now()).toISOString(), lastOwnerAt: stored.lastOwnerAt, parked: true });
+			const c = create(stored.key, { key: stored.key, primary: stored.primary ?? primaryTarget(stored.key), aliases: stored.aliases ?? [], name: stored.name, createdAt: stored.createdAt ?? new Date(now()).toISOString(), lastOwnerAt: stored.lastOwnerAt, ownModel: stored.ownModel, parked: true });
 			out.push({ conv: c, key: c.key, pending });
 		}
 		return out;
@@ -220,6 +247,8 @@ export function createConvSessions(d: ConvDeps) {
 		ensure,
 		queueOf,
 		deliverTo,
+		setOwnModel,
+		followMain,
 		stateOf,
 		setMain,
 		restore,
@@ -281,5 +310,6 @@ export const convs = createConvSessions({
 	dataDir: DATA_DIR,
 	history: historyEvents,
 	workers: c => runningOmoWorkers(c.o.orch.sessionFile),
+	workerPin: () => omoSelector(selectorOf(orchestratorModel())),
 	log: hubLog,
 });

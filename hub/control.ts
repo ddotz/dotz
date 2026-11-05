@@ -14,6 +14,8 @@ import type { AccountSwitch } from "./account-sticky.ts";
 import type { AccountReport } from "./usage-account.ts";
 import * as discord from "./discord.ts";
 import { keepHome, laneWorkerModel } from "./lanestate.ts";
+import { convs } from "./convsessions.ts";
+import { isProjectTarget } from "./projectchat.ts";
 import { abortLane, applyChainChange as applyLaneChain, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, setLaneWorkerModel, stopLane } from "./lanes.ts";
 import { cancelByOwner, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
 import { availableModels, cancelLogin, completeLogin, ControlError, listProviders, loginProviders, logoutProvider, type ModelInfo, pendingLogin, quota, startLogin } from "./providers.ts";
@@ -57,12 +59,21 @@ function fallbacksView() {
 	};
 }
 
+// A project conversation with its own session: its chip reads and changes that conversation alone (ConvMeta.ownModel); with
+// conversation sessions off the project runs on main, so its target is main's.
+const projectOf = (target: string) => (isProjectTarget(target) && convs.keyOf(target) === target ? target : undefined);
+const ownModelOf = (key: string) => convs.get(key)?.meta.ownModel;
+const convModel = (key: string) => (ownModelOf(key) ? parseSelector(ownModelOf(key)!) : orchestratorModel());
+// What the composer chips of every device read: project conversations that chose a model or run now. Absent means it inherits main's.
+const projectModels = () => Object.fromEntries(convs.conversations().filter(c => isProjectTarget(c.key) && (c.meta.ownModel || convs.live(c))).map(c => [c.key, { own: c.meta.ownModel ?? "", active: convs.live(c) ? c.o.orch.activeModel : "" }]));
+
 export async function modelsView() {
 	return {
 		orchestrator: orchestratorModel(),
 		lanes_default: lanesModel(),
 		workers: parseSelector(workerModel()),
 		lanes: laneModels(),
+		conversations: projectModels(),
 		thinking_levels: [...THINKING_LEVELS],
 		available: await availableModels(),
 		pickable: modelChoices(await availableModels()),
@@ -170,15 +181,24 @@ export function modelChoices(list: ModelInfo[], keep?: string): ModelChoice[] {
 	return out;
 }
 
-// The composer's chip popovers: model, effort and context of one chat target ("main" or "lane:<name>").
-const targetKey = (target: string): string => (target === "main" || target === "orchestrator" ? "orchestrator" : `lane:${target.replace(/^lane:/, "")}`);
+// The composer's chip popovers: model, effort and context of one chat target ("main", "lane:<name>" or a project's "ch:<id>").
+const targetKey = (target: string): string => (target === "main" || target === "orchestrator" ? "orchestrator" : (projectOf(target) ?? (isProjectTarget(target) ? "orchestrator" : `lane:${target.replace(/^lane:/, "")}`)));
+const choicesFor = async (model: string) => {
+	const models = modelChoices(await availableModels(), model);
+	return models.some(m => m.selector === model) ? models : [...models, ...(await availableModels()).filter(m => m.selector === model).map(m => ({ ...m, older: false }))];
+};
+// A project conversation's chips: `own` says whether the value is its own, `inherited` is main's. `key` opens the 모델 · 폴백 screen on main's chain, which it shares.
+async function projectView(key: string) {
+	const c = convs.get(key), cur = convModel(key);
+	return { target: key, key: "orchestrator", own: Boolean(ownModelOf(key)), inherited: selectorOf(orchestratorModel()), model: cur.model, thinking: cur.thinking, active_model: c?.o.orch.activeModel ?? "", running: Boolean(c && convs.live(c)), busy: c?.o.orch.status === "working", models: await choicesFor(cur.model), thinking_levels: [...THINKING_LEVELS], note: "" };
+}
 export async function targetView(target: string) {
 	const key = targetKey(target);
+	if (key.startsWith("ch:")) return projectView(key);
 	const lane = key === "orchestrator" ? undefined : lanes.get(key.slice(5));
 	if (key !== "orchestrator" && !lane) throw new ControlError(`no lane ${key.slice(5)}`, 404);
 	const cur = lane ? parseSelector(lane.model) : orchestratorModel();
 	const proc = contextView().processes.find(p => p.name === (lane ? lane.name : "orchestrator"))!;
-	const models = modelChoices(await availableModels(), cur.model);
 	return {
 		target: lane ? `lane:${lane.name}` : "main",
 		key,
@@ -188,7 +208,7 @@ export async function targetView(target: string) {
 		running: proc.running,
 		busy: lane ? lane.status === "working" || lane.status === "starting" : orch.status === "working",
 		context: { tokens: proc.tokens, window: proc.window, percent: proc.percent, compaction: proc.compaction },
-		models: models.some(m => m.selector === cur.model) ? models : [...models, ...(await availableModels()).filter(m => m.selector === cur.model).map(m => ({ ...m, older: false }))],
+		models: await choicesFor(cur.model),
 		thinking_levels: [...THINKING_LEVELS],
 		note: lane ? "" : ORCHESTRATOR_NOTE,
 	};
@@ -196,8 +216,9 @@ export async function targetView(target: string) {
 // Changes the target in place: model and/or effort (setModel's rules: a running lane needs force), or compacts its context.
 // `workerModel` changes the model a lane's task workers run on (a lane target) or models.workers ("workers"); `byLane`
 // marks a switch the lane itself made on the owner's word (hub/lane-cli.ts), which the lane is not told about again.
-export async function changeTarget(target: string, change: { model?: string; thinking?: string; compact?: boolean; force?: boolean; workerModel?: string; byLane?: boolean }) {
+export async function changeTarget(target: string, change: { model?: string; thinking?: string; compact?: boolean; force?: boolean; workerModel?: string; byLane?: boolean; inherit?: boolean }) {
 	const key = targetKey(target);
+	if (change.inherit && key.startsWith("ch:")) return inheritMain(key);
 	if (change.compact) {
 		const r = compactTarget(key === "orchestrator" ? key : key.slice(5));
 		return { ok: true, target: key, compaction: r.compaction.state, note: r.message };
@@ -232,7 +253,13 @@ function resolveModel(input: string, available: ModelInfo[]): string {
 	throw new ControlError(`"${input}" matches ${hits.length} models: ${hits.slice(0, 8).map(m => m.selector).join(", ")}${hits.length > 8 ? ", ..." : ""}`);
 }
 
-type ModelChange = { ok: true; target: string; model: string; thinking: string; applied: "live" | "restarted" | "next-start"; note: string };
+type ModelChange = { ok: true; target: string; model: string; thinking: string; applied: "live" | "restarted" | "next-start" | "next-turn"; note: string };
+const PROJECT_NOTE = "Only this conversation changes.";
+const projectApplied = (applied: "live" | "restarted" | "next-start") => (applied === "next-start" ? "next-turn" : applied);
+function inheritMain(key: string): ModelChange {
+	const main = orchestratorModel(), own = Boolean(ownModelOf(key));
+	return { ok: true, target: key, ...main, applied: own ? projectApplied(convs.setOwnModel(key, undefined)) : "live", note: own ? PROJECT_NOTE : "unchanged" };
+}
 
 // A running lane's model or effort change is refused without force: it invalidates that lane's whole message cache.
 export class ForceRequired extends ControlError {
@@ -266,14 +293,17 @@ export async function setModel(target: string, modelInput?: string, thinkingInpu
 	else if (target === "lanes") current = lanesModel();
 	else if (target === "workers") current = parseSelector(workerModel());
 	else if (target.startsWith("lane:") && lanes.has(target.slice(5))) current = parseSelector(lanes.get(target.slice(5))!.model);
+	else if (projectOf(target)) current = convModel(target);
 	else throw new ControlError(`target must be "orchestrator", "lanes", "workers" or "lane:<name>" of an existing lane (got "${target}")`);
 	const next = { model: model ? resolveModel(model, await availableModels()) : current.model, thinking: thinking ?? current.thinking };
 	const done = (applied: ModelChange["applied"], note: string): ModelChange => ({ ok: true, target, ...next, applied, note });
 	// models.workers re-picked as it is still pulls running lanes off their launch-time worker value (below).
-	if (next.model === current.model && next.thinking === current.thinking && target !== "workers") return done("live", "unchanged");
+	if (next.model === current.model && next.thinking === current.thinking && target !== "workers" && (!projectOf(target) || ownModelOf(target))) return done("live", "unchanged");
+	if (projectOf(target)) return done(projectApplied(convs.setOwnModel(target, selectorOf(next))), PROJECT_NOTE);
 	if (target === "orchestrator") {
 		updateModels("orchestrator", next);
 		const applied = applyModelChange();
+		convs.followMain();
 		return done(applied, applied === "live" ? `Orchestrator switched to ${selectorOf(next)} on its session. ${ORCHESTRATOR_NOTE}` : applied === "restarted" ? `Orchestrator restarting on ${selectorOf(next)}. ${ORCHESTRATOR_NOTE}` : `Saved. The orchestrator switches to ${selectorOf(next)} when its current turn ends (or on its next start). ${ORCHESTRATOR_NOTE}`);
 	}
 	if (target === "lanes") {
@@ -374,7 +404,7 @@ const laneLabel = (name: string) => lanes.get(name)?.title || name;
 // "Opus 5.5", not "anthropic/claude-opus-5-5": the family and version the pickers show, else the id's last part.
 // "anthropic/claude-opus-5-5" -> "Opus 5.5" (the names the 모델 screen shows); an unknown id stays as its last part.
 export const modelName = (selector: string) => { const m = parseSelector(selector).model, id = modelIdentity(m); return id ? `${id.family} ${id.version}` : (m.split("/").pop() ?? m); };
-const whoIs = (target: string) => (target === "orchestrator" ? NAME : target === "lanes" ? T().newSessions : target === "workers" ? T().subagents : laneLabel(target.replace(/^lane:/, "")));
+const whoIs = (target: string) => (target.startsWith("ch:") ? (discord.channels.work[target.slice(3)] ?? target) : target === "orchestrator" ? NAME : target === "lanes" ? T().newSessions : target === "workers" ? T().subagents : laneLabel(target.replace(/^lane:/, "")));
 function ctxValue(p: Proc): string {
 	const t = T();
 	if (!p.running) return t.notRunning;
@@ -415,9 +445,10 @@ export function setGatewayRestart(fn: () => string): void {
 	gatewayRestart = fn;
 }
 
-const normalizeTarget = (arg: string) => (arg === "orchestrator" || arg === "lanes" || arg === "workers" ? arg : `lane:${arg.replace(/^lane:/, "")}`);
+const normalizeTarget = (arg: string) => (arg === "orchestrator" || arg === "lanes" || arg === "workers" || arg.startsWith("ch:") ? arg : `lane:${arg.replace(/^lane:/, "")}`);
 
 function currentOf(target: string): { model: string; thinking: string } {
+	if (target.startsWith("ch:")) return convModel(target);
 	const cur = target === "orchestrator" ? orchestratorModel() : target === "lanes" ? lanesModel() : target === "workers" ? parseSelector(workerModel()) : lanes.has(target.slice(5)) ? parseSelector(lanes.get(target.slice(5))!.model) : undefined;
 	if (!cur) throw new ControlError(`unknown target "${target.replace(/^lane:/, "")}" (orchestrator, lanes, workers, or a lane name; /lanes lists them)`);
 	return cur;
@@ -445,6 +476,7 @@ async function modelActions(arg: string, current: string): Promise<CommandCard["
 async function targetCard(arg: string, kind: "model" | "effort"): Promise<CommandCard> {
 	const t = T(), target = normalizeTarget(arg), cur = currentOf(target);
 	const actions = kind === "model" ? await modelActions(arg, cur.model) : THINKING_LEVELS.filter(l => l !== cur.thinking).map(l => ({ label: l, send: `/effort ${arg} ${l}` }));
+	if (ownModelOf(target)) actions?.unshift({ label: t.inheritMain, send: `/${kind} ${arg} inherit` });
 	return card((kind === "model" ? t.modelTitle : t.effortTitle)(whoIs(target)), [{ label: t.model, value: modelName(cur.model) }, { label: t.effort, value: cur.thinking }], { actions });
 }
 
@@ -453,21 +485,36 @@ function changedCard(r: ModelChange): CommandCard {
 	return card((unchanged ? t.unchanged : t.updated)(whoIs(r.target)), [{ label: t.model, value: modelName(r.model) }, { label: t.effort, value: r.thinking }], { tone: "ok", note: unchanged ? undefined : [t.applied[r.applied] ?? r.applied, r.target === "orchestrator" ? ORCHESTRATOR_NOTE : ""].filter(Boolean).join(". ") });
 }
 
-export async function runCommand(text: string): Promise<CommandCard> {
+// /model and /effort in a project conversation, or naming one (a card's button): the same change as its chip. Target names are still main's or a lane's.
+async function projectCommand(key: string, kind: "model" | "effort", first?: string, second?: string, force = false): Promise<CommandCard> {
+	if (!first) return targetCard(key, kind);
+	if (first === "inherit") return changedCard(inheritMain(key));
+	const level = (THINKING_LEVELS as readonly string[]).includes(first);
+	return changedCard(await setModel(key, level ? undefined : first, level ? first : second, force));
+}
+const namesTarget = (a: string) => a === "orchestrator" || a === "lanes" || a === "workers" || lanes.has(a.replace(/^lane:/, ""));
+
+// `from`: the conversation the command was written in.
+export async function runCommand(text: string, from?: string): Promise<CommandCard> {
 	try {
-		return await execute(text);
+		return await execute(text, from);
 	} catch (e) {
 		return errorCard(e, text);
 	}
 }
 
-async function execute(text: string): Promise<CommandCard> {
+async function execute(text: string, from?: string): Promise<CommandCard> {
 	const cmd = parseCommand(text);
 	if (!cmd) throw new ControlError(`unknown command "${text.trim().split(/\s+/)[0]}"; /help lists them`);
 	const t = T();
 	const isForce = (a: string) => a === "--force" || a === "force";
 	const force = cmd.args.some(isForce);
 	const [first, second, third] = cmd.args.filter(a => !isForce(a));
+	if (cmd.name === "model" || cmd.name === "effort") {
+		if (first && projectOf(first)) return projectCommand(first, cmd.name, second, third, force);
+		const here = from && projectOf(from);
+		if (here && !(first && namesTarget(first))) return projectCommand(here, cmd.name, first, second, force);
+	}
 	switch (cmd.name) {
 		case "help": {
 			const h = t.help(THINKING_LEVELS.join(", "), RESTART_NOTICE_MS / 60_000);

@@ -228,7 +228,7 @@ async function sendCommand(text) {
   chatStick = true; termStick = true;
   ingestMsg(mk("_cmd", { text }));
   try {
-    const r = await api("/api/command", "POST", { text });
+    const r = await api("/api/command", "POST", { text, ...(isProjT(t) ? { from: t } : {}) });
     ingestMsg(mk("_cmdout", { text: String(r.output ?? "") || "✓", ...(r.card ? { card: r.card } : {}) }));
     if (/^\/(model|effort|compact|restart|resume|stop|abort)\b/i.test(text)) { refreshState(); loadModels(true); loadContext(true); }
   } catch (e) { ingestMsg(mk("_cmdout", { text: e.message, is_error: true, ...(e.data && e.data.card ? { card: e.data.card } : {}) })); }
@@ -394,20 +394,22 @@ function renderCtxRing() {
   const mb = $("#c-model"), lane = isLaneT(target) && S ? S.lanes.find(x => x.name === laneOf(target)) : null;
   const orchT = target === MAIN || isProjT(target);
   // The model it answers on now, a fallback included (20-models.js liveModel), with 폴백 중 beside it when that is not the configured one.
-  const live = orchT ? liveModel(MAIN) : lane ? liveModel(`lane:${lane.name}`) : null, sel = live && live.sel;
+  const live = orchT ? liveModel(target) : lane ? liveModel(`lane:${lane.name}`) : null, sel = live && live.sel;
   // The chips say whose they are: the orchestrator and a lane often run the same model with a similar context, and
   // unlabeled they read as one (owner 2026-10-20: "오케스트레이터와 레인별로 구분 안되는거 같은데").
   const owner = orchT ? botName : lane ? `세션 ${lane.title || lane.name}` : "";
   const ob = $("#c-own"), wb = $("#c-worker"), wsel = lane && lane.worker_model;
-  ob.hidden = !(sel && owner); ob.textContent = owner;
+  // A project conversation says whose value the chips show: its own, or main's while it made no choice.
+  const proj = isProjT(target), chipOwner = proj ? "이 프로젝트" : owner;
+  ob.hidden = !(sel && owner); ob.textContent = proj && !live.own ? "메인 대화와 같음" : chipOwner; ob.classList.toggle("keep", proj);
   wb.hidden = !wsel;
   if (wsel) { const [wbase, wlevel] = String(wsel).split(":"); wb.textContent = `서브에이전트 ${modelChipText(wbase)}${wlevel ? ` · ${thinkKo(wlevel)}` : ""}`; wb.title = `이 세션의 서브에이전트 모델`; }
   // model and effort are separate chips, each with its own popover
   const [base, level] = String(sel || "").split(":"), eb = $("#c-effort");
   mb.hidden = !sel; eb.hidden = !level;
   if (sel) prefetchTV();
-  if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `${owner} 모델 · ${t}${base && base !== t ? ` (${base})` : ""}`; }
-  if (level) { eb.textContent = thinkKo(level); eb.title = `${owner} 추론 강도 · ${thinkKo(level)}`; }
+  if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `${chipOwner} 모델 · ${t}${base && base !== t ? ` (${base})` : ""}`; }
+  if (level) { eb.textContent = thinkKo(level); eb.title = `${chipOwner} 추론 강도 · ${thinkKo(level)}`; }
   const keyed = !!(orchT ? S && S.orchestrator && S.orchestrator.key_fallback : lane && lane.key_fallback);
   $("#c-api").hidden = !keyed;
   const fbc = $("#c-fb"), fb = live && live.fallback;
@@ -426,7 +428,13 @@ function renderCtxRing() {
 /* ---------- composer chips: model / effort / context of the current target (GET/PUT /api/target) ---------- */
 // The chips are quick switches; the last row of each opens the 모델 · 폴백 screen at this target (fallback order lives there).
 const MODELS_LINK = { value: "__models", label: "모델 · 폴백 설정", sub: "폴백 순서까지" };
-const targetParam = () => isLaneT(target) ? target : "main";
+const targetParam = () => isLaneT(target) || isProjT(target) ? target : "main";
+// The context ring and its 압축 stay on the process they read (a project's ring shows main's numbers, as before).
+const ctxParam = () => isLaneT(target) ? target : "main";
+// A project conversation's way back: the first row of its menus, checked while it made no choice (T.own is absent elsewhere).
+const INHERIT = "__inherit";
+const inheritRow = T => T.own === undefined ? [] : [{ value: INHERIT, label: "메인 대화와 같게", sub: selText(T.inherited) }];
+const chipValue = (T, v) => T.own === false ? INHERIT : v;
 // GET /api/target per target, kept so a chip opens its menu at once; the server builds it from the CLI model list, which is slow while cold.
 // The first click used to wait for that response (owner 2026-10-22: first click on the model/effort chip felt slow).
 const TV = new Map(), TV_BUSY = new Set();
@@ -443,11 +451,11 @@ async function chipMenu(anchor, build) {
   const k = targetParam(), hit = TV.get(k);
   if (!hit) return build(await fetchTV(k));
   build(hit);
-  const sig = T => JSON.stringify([T.model, T.thinking, T.models.map(m => m.selector)]);
+  const sig = T => JSON.stringify([T.model, T.thinking, T.own, T.inherited, T.models.map(m => m.selector)]);
   fetchTV(k).then(T => { if (openMenu && openMenu.anchor === anchor && targetParam() === k && sig(T) !== sig(hit)) { closeMenu(false); build(T); } }).catch(() => {});
 }
-async function targetChange(title, change, label) {
-  const body = { target: targetParam(), ...change };
+async function targetChange(title, change, label, t = targetParam()) {
+  const body = { target: t, ...change };
   let r;
   try { r = await api("/api/target", "PUT", body); }
   catch (e) {
@@ -462,8 +470,8 @@ async function targetChange(title, change, label) {
 $("#c-model").onclick = ev => busy(null, () => {
   const anchor = ev.currentTarget;
   return chipMenu(anchor, T => {
-    const name = targetName(target), items = [...modelPickItems(T.models, T.model), MODELS_LINK];
-    showMenu(anchor, items, { value: T.model, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { model: v }, `${modelName(v)} · ${T.thinking}`)) });
+    const name = targetName(target), items = [...inheritRow(T), ...modelPickItems(T.models, T.model), MODELS_LINK];
+    showMenu(anchor, items, { value: chipValue(T, T.model), onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, v === INHERIT ? { inherit: true } : { model: v }, `${modelName(v)} · ${T.thinking}`)) });
   });
 });
 // A session's subagent model: the same model list, saved as the lane's worker_model (its effort is kept).
@@ -477,18 +485,18 @@ $("#c-effort").onclick = ev => busy(null, () => {
   const anchor = ev.currentTarget;
   return chipMenu(anchor, T => {
     const name = targetName(target);
-    showMenu(anchor, [{ header: "추론 강도" }, ...effortItems(T.model, T.thinking), MODELS_LINK], { value: T.thinking, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${thinkKo(v)}`)) });
+    showMenu(anchor, [...inheritRow(T), { header: "추론 강도" }, ...effortItems(T.model, T.thinking), MODELS_LINK], { value: chipValue(T, T.thinking), onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, v === INHERIT ? { inherit: true } : { thinking: v }, `${modelName(T.model)} · ${thinkKo(v)}`)) });
   });
 });
 $("#ctx-ring").setAttribute("aria-haspopup", "listbox");
 $("#ctx-ring").onclick = ev => busy(null, async () => {
-  const anchor = ev.currentTarget, T = await api(`/api/target?target=${enc(targetParam())}`), c = T.context || {};
+  const anchor = ev.currentTarget, T = await api(`/api/target?target=${enc(ctxParam())}`), c = T.context || {};
   const inFlight = c.compaction && (c.compaction.state === "queued" || c.compaction.state === "compacting");
   const items = [{ header: c.percent != null ? `컨텍스트 ${Math.round(c.percent)}% · ${kfmt(c.tokens)}/${kfmt(c.window)}` : `컨텍스트 ${kfmt(c.tokens || 0)} 토큰` }];
   if (T.running && !inFlight) items.push({ value: "compact", label: "지금 압축", sub: T.busy ? "작업이 끝나면 압축해요" : "캐시가 한 번 다시 쓰여요" });
   else if (inFlight) items.push({ value: "none", label: "압축 진행 중" });
   items.push({ value: "open", label: "컨텍스트 화면 열기" });
-  showMenu(anchor, items, { onPick: v => v === "open" ? go("context") : v === "compact" ? busy(null, () => targetChange(targetName(target), { compact: true }, "")) : null });
+  showMenu(anchor, items, { onPick: v => v === "open" ? go("context") : v === "compact" ? busy(null, () => targetChange(targetName(target), { compact: true }, "", ctxParam())) : null });
 });
 // 시제품 .cmp의 모양 (proto.css "/* composer *\/"): 첨부(+)는 글 상자의 왼쪽, 모델·컨텍스트 칩은 상자 아래 힌트 줄에 서요.
 // 칩을 폼 밖으로 옮겨도 각 칩의 클릭은 그대로예요 (이벤트는 요소에 붙어 있어요).
