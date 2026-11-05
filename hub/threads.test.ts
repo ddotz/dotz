@@ -2,7 +2,7 @@
 import { expect, test } from "bun:test";
 import { readable } from "./discord.ts";
 import { buildPayloads } from "./discord.ts";
-import { answerMovesToLane, lanePlace, replyRef, threadForReply, THREAD_NAME_MAX, threadTitle } from "./threads.ts";
+import { answerMovesToLane, lanePlace, replyRef, startedIn, threadForReply, THREAD_NAME_MAX, threadTitle } from "./threads.ts";
 
 const work = (id: string) => id === "500";
 const parents: Record<string, string> = { "700": "500" };
@@ -81,4 +81,17 @@ test("thread titles are plain words: no [kind], emoji or pipes; a code name give
 test("readable: headings become bold lines, tables become lines, raw ids become links, code fences untouched", () => {
 	const text = ["## 결과", "| 항목 | 값 |", "|---|---|", "| 테스트 | 120 |", "자세한 건 th:000000000000000000 참고", "```", "# not a heading", "| a | b |", "```", "-# 작은 글씨"].join("\n");
 	expect(readable(text)).toBe(["**결과**", "항목 · 값", "테스트 · 120", "자세한 건 <#000000000000000000> 참고", "```", "# not a heading", "| a | b |", "```", "-# 작은 글씨"].join("\n"));
+});
+
+test("a web message id never becomes a thread's starting message, so the lane still gets its thread", () => {
+	expect(place({ home: "ch:500", asking: "ch:500", askingMessage: "2924c716" })).toEqual({ kind: "thread", parent: "500" });
+	expect(place({ asking: "ch:500", askingMessage: "2924c716", discordForWeb: true })).toEqual({ kind: "thread", parent: "500" });
+});
+
+test("a lane's project is where it was started, typed on Discord or in the channel's web view", () => {
+	const from = (a: { home?: string; asking?: string }) => startedIn({ ...a, isWork: work, threadParent: id => parents[id] });
+	expect(from({ home: "ch:500", asking: "web" })).toBe("500");
+	expect(from({ asking: "ch:500" })).toBe("500");
+	expect(from({ asking: "th:700" })).toBe("500");
+	for (const asking of ["web", "chat", "ch:999", "th:999"]) expect(from({ asking })).toBeUndefined();
 });

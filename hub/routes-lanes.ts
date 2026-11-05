@@ -12,7 +12,7 @@ import { keepHome, persist } from "./lanestate.ts";
 import { laneVerified } from "./notices.ts";
 import { doneProblem } from "./donesignals.ts";
 import { stripHandoff } from "./tone.ts";
-import { answerMovesToLane, lanePlace } from "./threads.ts";
+import { answerMovesToLane, lanePlace, startedIn } from "./threads.ts";
 import { addSchedule, listSchedules, patchSchedule, removeSchedule } from "./schedule.ts";
 import { clearChannel, listSetups, setupChannel } from "./workchannels.ts";
 import { readWatchSettings, writeWatchSettings } from "./watch-settings.ts";
@@ -188,7 +188,8 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 				const home = b.home ? String(b.home) : undefined;
 				if (home && discord.status.enabled) discord.homeChannel(home);
 				const asking = queue.current();
-				const place = lanePlace({ home, asking: asking?.target, askingMessage: asking?.replyTo, isWork: id => Boolean(discord.channels.work[id]), threadParent: id => discord.channels.threads[id]?.parent, discordForWeb: postSettings().web_lanes });
+				const origin = { home, asking: asking?.target, askingMessage: asking?.replyTo, isWork: (id: string) => Boolean(discord.channels.work[id]), threadParent: (id: string) => discord.channels.threads[id]?.parent };
+				const place = lanePlace({ ...origin, discordForWeb: postSettings().web_lanes });
 				const lane = launch(String(b.name), String(b.cwd), String(b.brief ?? ""), b.model, b.worker_model ? String(b.worker_model) : undefined, asked, String(b.title).trim());
 				// Started from the web: it lives in the web (its session conversation, notices and push), with no Discord channel.
 				if (place.kind === "web") {
@@ -203,7 +204,8 @@ export async function routeLanes(req: Request, url: URL, parts: string[]): Promi
 					return undefined;
 				});
 				// The parent project outlives the channel map: releaseLane drops homes[lane] on stop/end, the lane record keeps it.
-				const parent = discord.channels.homes[lane.name];
+				// It is where the lane was started, so a web-only lane or a failed Discord thread keeps it too.
+				const parent = discord.channels.homes[lane.name] ?? startedIn(origin);
 				if (parent) {
 					lane.home = parent;
 					const homeName = discord.channels.work[parent];

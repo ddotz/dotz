@@ -53,7 +53,7 @@ function renderBars() {
     return b; };
   const sep = () => el("span", { class: "tsep", "aria-hidden": "true" });
   const menuItem = v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" });
-  const homeOfT = t => { const l = lanes.find(x => `lane:${x.name}` === t); return l ? laneHome(l) : ""; };
+  const homeOfT = t => { const l = lanes.find(x => `lane:${x.name}` === t); return l ? laneChat(l) : ""; };
   const sesItem = v => { const l = lanes.find(x => `lane:${x.name}` === v.t); return { ...menuItem(v), indent: true, sub: [l ? sessionStatus(l)[0] : v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · ") }; };
   for (const bar of document.querySelectorAll(".thead")) {
     const mode = bar.dataset.mode, msig = `${sig}|${mode}`;

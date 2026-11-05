@@ -3,6 +3,7 @@ import { keyedSelector } from "./fallback.ts";
 import { laneLive, laneWorkerModel, lanes } from "./lanestate.ts";
 import { ctxView } from "./context.ts";
 import { workersOf, kstClock, formatHeader } from "./lanevis.ts";
+import { homeChannel } from "./workchannels.ts";
 
 export function liveLanes(): { live: string[]; ended: string[] } {
 	const all = [...lanes.values()];
@@ -38,13 +39,13 @@ export function laneSummary(): Array<Record<string, unknown>> {
 }
 
 // The parent project of each session, from the gateway's channel map (docs/layers.md §1): a session started in a work channel
-// has `home: "ch:<id>"` and `project`, the channel's name; one started from chat has neither (a top-level session).
+// has `home: "ch:<id>"` and `project`, the channel's name; one started from chat has neither (hub/custom.ts projectsView then goes by its folder).
 // The gateway drops its mapping when the session stops or ends, so the lane record (home, homeName) is the fallback.
 // The channel's current name wins; the stored name is used when the channel is gone.
 export function withHomes(rows: Array<Record<string, unknown>>, ch: { homes?: Record<string, string>; work?: Record<string, string> }): Array<Record<string, unknown>> {
 	return rows.map(r => {
 		const rec = lanes.get(String(r.name));
-		const id = ch.homes?.[String(r.name)] ?? rec?.home;
+		const id = homeChannel(String(r.name), rec?.home, ch.homes);
 		return id ? { ...r, home: `ch:${id}`, project: ch.work?.[id] ?? rec?.homeName ?? "" } : r;
 	});
 }

@@ -23,8 +23,10 @@ Rules:
   routine reply live in a command the gateway runs itself (`dotz_watch`: no tokens while nothing changes), and the model
   is woken only for what needs judgment (a new case, a draft to approve, a failure). A schedule or routine that wakes the
   model every time is the exception and says why. The project page shows each row as 스크립트 (no tokens) or 모델 (tokens).
-- A project may run sessions (`home: "ch:<id>"`); a session started from chat with no project stays a top-level
-  session. A session never owns a monitor or a schedule; it reports and ends.
+- A project may run sessions (`home: "ch:<id>"`). A session belongs to the project it was started in, its `home`
+  channel, even when another project shares its folder; the folder is only the fallback for a session with no home, and
+  one with neither stays a top-level session. One resolver decides this (`projectsView` in `hub/custom.ts`); every
+  surface reads its result. A session never owns a monitor or a schedule; it reports and ends.
 - Subagents belong to exactly one parent (chat, a project turn or a session) and report only to it.
 - OmO evidence: OmO layers the same way (session -> `task` children -> teams); a child's result is delivered to its
   parent as a completion notification and "an idle session is always woken" (OmO CHANGELOG, Stop hook waits for
