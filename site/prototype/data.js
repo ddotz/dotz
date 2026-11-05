@@ -269,5 +269,64 @@ window.D = (() => {
       ["최서아", "쇼핑몰 문의", "송장 번호 안내", "자동 발송", "오전 8:20", "송장 번호 알려 주세요.", "주문 내역에서 송장 번호를 볼 수 있어요."],
     ].map(qRow("sent")),
   ];
+  /* 메일함 시안: 메일 앱 하나 안의 메일함. 이름, 주소, 본문은 전부 지어낸 값이에요 */
+  D.mailboxes = [
+    { id: "score", name: "문서 요청", icon: "file", mode: "auto", notify: true,
+      conds: { from: ["@team.example.org"], subj: ["문서", "보고서", "편집", "보조", "사용 허락", "연주 허가"], body: ["문서 파일"] },
+      judge: { on: true, text: "문서를 보내 달라거나 써도 되는지 묻는 메일" },
+      tone: { sum: "짧고 정중하게 써요. 곡 이름을 먼저 확인하고, 끝인사는 한 줄로 끝내요.", learned: "메일 38통에서 배웠어요 · 지난주", fixes: ["‘감사합니다’ 대신 ‘고맙습니다’로 써요", "끝인사는 한 줄로 줄여요", "문서 파일 이름을 본문에 적어요", "연주 날짜를 꼭 되물어요", "느낌표는 쓰지 않아요"],
+        samples: [{ q: "강변 왈츠 요약 문서를 동아리 보조에 쓰고 싶어요.", a: "안녕하세요, 도하 님.\n강변 왈츠 요약 문서를 붙여 보내요. 파일 이름은 강변왈츠_요약.pdf예요.\n연주 날짜를 알려 주시면 기록해 둘게요.\n고맙습니다." }, { q: "보고서도 따로 있나요?", a: "안녕하세요.\n보고서도 있어요. 어느 파트가 필요한지 알려 주세요.\n고맙습니다." }] },
+      how: "문서를 보낼 때는 곡 이름, 판, 쪽수를 한 줄로 적어 주세요. 사용 허락은 혼자 답하지 말고 연주 날짜와 장소를 먼저 물어봐 주세요.",
+      greets: [{ who: "도하 님 동아리", addr: "@team.example.org", hello: "지휘자님, 안녕하세요." }, { who: "배하람", addr: "haram.bae@example.net", hello: "하람 님, 잘 지내셨죠?" }],
+      folders: ["~/문서/보내는 판", "~/문서/보고서"], bans: ["무료로 쓰셔도 돼요", "편집해 드릴게요", "언제든 연락 주세요"] },
+    { id: "offer", name: "제안·업무", icon: "users", mode: "ask", notify: true,
+      conds: { from: ["@studio.example.com"], subj: ["협업", "제안", "견적"], body: [] },
+      judge: { on: true, text: "공연이나 작업을 같이 하자는 메일" },
+      tone: { sum: "존댓말을 갖춰 쓰고 일정과 금액을 분명하게 적어요.", learned: "메일 21통에서 배웠어요 · 이번 달", fixes: ["금액은 답장에 바로 적지 않아요", "회신 날짜를 먼저 적어요"], samples: [{ q: "가을 음악제에 신곡을 부탁드리고 싶어요.", a: "안녕하세요, 지안 님.\n제안 고맙습니다. 일정을 보고 금요일까지 답을 드릴게요." }] },
+      how: "금액과 일정은 확정하지 말고, 언제까지 답을 줄지 먼저 적어 주세요.", greets: [{ who: "달빛음악제 기획팀", addr: "@festival.example.org", hello: "지안 님, 안녕하세요." }], folders: ["~/업무/소개 자료"], bans: ["무조건 가능해요"] },
+    { id: "school", name: "학교·학회", icon: "list", mode: "notify", notify: true,
+      conds: { from: ["@hanbit-arts.example.ac.kr", "@newmusic.example.org"], subj: ["학술대회", "강의 계획서", "수강"], body: [] }, judge: { on: false, text: "" },
+      tone: { sum: "격식을 갖춰 쓰고 짧게 끝내요.", learned: "메일 9통에서 배웠어요 · 지난달", fixes: [], samples: [] }, how: "", greets: [], folders: [], bans: [] },
+    { id: "pay", name: "결제·영수증", icon: "tag", mode: "quiet", notify: false,
+      conds: { from: ["billing@cloudhost.example.com"], subj: ["영수증", "결제", "청구서"], body: ["세금계산서"] }, judge: { on: false, text: "" },
+      tone: { sum: "아직 배운 말투가 없어요.", learned: "초안을 쓰지 않아서 배우지 않았어요", fixes: [], samples: [] }, how: "", greets: [], folders: [], bans: [] },
+    { id: "general", name: "일반", icon: "mail", mode: "quiet", notify: false, base: true,
+      conds: { from: [], subj: [], body: [] }, judge: { on: false, text: "" },
+      tone: { sum: "메일 앱 말투를 그대로 써요.", learned: "메일 앱 전체 말투 · 메일 112통", fixes: [], samples: [] }, how: "", greets: [], folders: [], bans: [] },
+  ];
+  D.mailboxMails = [
+    { id: "m1", box: "score", from: "윤도하", addr: "yoon.doha@example.com", subj: "강변 왈츠 요약 문서 부탁드려요", sum: "동아리 보조에 쓸 요약 문서를 보내 달라는 메일이에요.", text: "안녕하세요. 다음 달 정기 연주회에서 강변 왈츠를 올리려고 해요.\n보조용 요약 문서를 받을 수 있을까요?", t: "오후 12:49", unread: true, st: "draft", kw: "문서", why: "제목의 ‘문서’가 맞아서 왔어요" },
+    { id: "m2", box: "score", from: "강서린", addr: "seorin.kang@example.net", subj: "새벽 종소리 변주곡 보고서 있을까요", sum: "현악 사중주 보고서가 있는지 묻는 메일이에요.", text: "학생들과 사중주로 연습하려고 해요. 보고서가 따로 있는지 궁금해요.", t: "오전 11:20", unread: true, st: "draft", kw: "보고서", why: "제목의 ‘보고서’가 맞아서 왔어요" },
+    { id: "m3", box: "score", from: "서가온", addr: "gaon.seo@example.org", subj: "연주 영상에 곡을 써도 될까요", sum: "유튜브 연주 영상에 곡을 써도 되는지 묻는 메일이에요.", text: "제가 연주한 영상을 올려도 괜찮은지 여쭤 봐요.", t: "오전 9:02", st: "draft", kw: "연주", why: "내용을 보고 판단했어요" },
+    { id: "m4", box: "score", from: "문태오", addr: "taeo.moon@example.com", subj: "문서 잘 받았어요, 고맙습니다", sum: "보내 준 문서를 잘 받았다는 인사예요.", text: "문서 잘 받았어요. 연주 끝나면 사진 보내 드릴게요.", t: "어제", st: "none", kw: "문서", why: "제목의 ‘문서’가 맞아서 왔어요" },
+    { id: "m5", box: "score", from: "배하람", addr: "haram.bae@example.net", subj: "성가대용 편집본 문의", sum: "성가대용 편집본이 있는지 물었고 답장을 보냈어요.", text: "성가대에서 부를 수 있는 편집본이 있을까요?", t: "11월 2일", st: "replied", kw: "편집", why: "제목의 ‘편집’이 맞아서 왔어요" },
+    { id: "m6", box: "offer", from: "오지안", addr: "jian.oh@festival.example.org", subj: "가을 음악제 협업 제안드려요", sum: "신곡을 맡아 달라는 제안이고, 금요일까지 답을 달라고 해요.", text: "", t: "오전 10:36", unread: true, st: "need", kw: "협업", why: "제목의 ‘협업’이 맞아서 왔어요", att: 1,
+      thread: [
+        { from: "오지안", t: "11월 1일", text: "안녕하세요. 달빛음악제 기획팀 오지안이에요.\n내년 가을 음악제에 올릴 신곡을 맡아 주실 수 있을까요?" },
+        { from: "나", t: "11월 2일", text: "제안 고맙습니다. 곡 길이와 편성을 알려 주세요." },
+        { from: "오지안", t: "오전 10:36", text: "현악 앙상블 10분 곡이에요. 계약금 입금과 세금계산서 일정은 붙임 파일에 적어 두었어요.\n금요일까지 답을 주시면 좋겠어요.", also: "pay" },
+      ] },
+    { id: "m7", box: "offer", from: "한결 스튜디오", addr: "hello@studio.example.com", subj: "광고 음악 작업 문의", sum: "30초 광고 음악 일정을 묻는 메일이에요.", text: "30초짜리 광고 음악을 맡아 주실 수 있는지 궁금해요. 납기는 이달 말이에요.", t: "어제", st: "need", kw: "작업", why: "보낸 사람이 맞아서 왔어요" },
+    { id: "m8", box: "offer", from: "노을출판", addr: "edit@noeul.example.com", subj: "문서집 출판 제안", sum: "요약 소품집을 내자는 제안이고 답장을 보냈어요.", text: "소품 열두 곡으로 문서집을 내면 어떨까요?", t: "10월 30일", st: "replied", kw: "출판", why: "제목의 ‘제안’이 맞아서 왔어요" },
+    { id: "m9", box: "offer", from: "나 → 한결 스튜디오", addr: "hello@studio.example.com", subj: "포트폴리오 보내드려요", sum: "소개 자료를 보낸 메일이에요.", text: "지난 작업 목록을 붙여 보내요.", t: "10월 28일", st: "sent", kw: "포트폴리오", why: "보낸 사람이 맞아서 왔어요" },
+    { id: "m10", box: "school", from: "한빛예술대학교 학사팀", addr: "academic@hanbit-arts.example.ac.kr", subj: "다음 학기 강의 계획서 제출 안내", sum: "11월 20일까지 강의 계획서를 내라는 안내예요.", text: "다음 학기 강의 계획서를 11월 20일까지 올려 주세요.", t: "오전 8:40", unread: true, st: "none", kw: "강의", why: "보낸 사람이 맞아서 왔어요" },
+    { id: "m11", box: "school", from: "새음악연구회", addr: "office@newmusic.example.org", subj: "가을 학술대회 발표 신청 안내", sum: "발표 신청 기한이 다음 주까지라는 안내예요.", text: "가을 학술대회 발표 신청을 다음 주 금요일까지 받아요.", t: "어제", st: "none", kw: "학술대회", why: "제목의 ‘학술대회’가 맞아서 왔어요" },
+    { id: "m12", box: "school", from: "류시온", addr: "sion.ryu@hanbit-arts.example.ac.kr", subj: "과제 제출 기한 문의드려요", sum: "수강생이 과제 기한을 늦출 수 있는지 물어요.", text: "이번 과제를 하루 늦게 내도 될까요?", t: "11월 3일", st: "need", kw: "과제", why: "보낸 사람이 맞아서 왔어요" },
+    { id: "m13", box: "pay", from: "별빛상회 주문팀", addr: "order@byeolbit.example.com", subj: "결제가 완료됐어요", sum: "보면대 주문 결제 내역이에요.", text: "주문하신 보면대 결제가 끝났어요.", t: "오후 12:01", unread: true, st: "none", kw: "결제", why: "제목의 ‘결제’가 맞아서 왔어요" },
+    { id: "m14", box: "pay", from: "구름호스팅", addr: "billing@cloudhost.example.com", subj: "11월 청구서", sum: "이번 달 호스팅 요금 청구서예요.", text: "이번 달 청구서를 보내 드려요.", t: "11월 1일", st: "none", kw: "청구서", why: "보낸 사람이 맞아서 왔어요", att: 1 },
+    { id: "m15", box: "pay", from: "종이나라문구", addr: "receipt@paper.example.com", subj: "오선지 구매 영수증", sum: "오선지 구매 영수증이에요.", text: "구매 영수증을 보내 드려요.", t: "10월 29일", st: "none", kw: "영수증", why: "제목의 ‘영수증’이 맞아서 왔어요" },
+    { id: "m16", box: "general", from: "표주원", addr: "juwon.pyo@example.com", subj: "지난번 사진 전해 드려요", sum: "연주회 때 찍은 사진을 보낸다는 메일이에요.", text: "", t: "오전 7:55", unread: true, st: "none", kw: "사진", why: "맞는 기준이 없어서 일반으로 왔어요",
+      thread: [{ from: "표주원", t: "10월 31일", text: "연주회 때 찍은 사진을 받으셨나요?" }, { from: "표주원", t: "오전 7:55", text: "용량이 커서 나눠 보내요. 지난번 사진 전해 드려요." }] },
+    { id: "m17", box: "general", from: "달무리 소식지", addr: "news@dalmuri.example.org", subj: "11월 첫째 주 소식", sum: "새 기능 소개와 다음 달 일정이 담긴 소식지예요.", text: "이번 주 소식을 전해요.", t: "오전 6:36", st: "none", kw: "소식", why: "맞는 기준이 없어서 일반으로 왔어요" },
+    { id: "m18", box: "general", from: "파란우체통", addr: "letter@blue-post.example.com", subj: "이달의 편지 도착", sum: "월간 뉴스레터예요.", text: "이달의 편지를 보내 드려요.", t: "어제", st: "none", kw: "편지", why: "맞는 기준이 없어서 일반으로 왔어요" },
+    { id: "m19", box: "general", from: "골목서점", addr: "hello@alley-books.example.com", subj: "10월호 동네 소식", sum: "서점 행사를 알리는 소식지예요.", text: "이달의 서점 행사를 알려 드려요.", t: "11월 2일", st: "none", kw: "소식", why: "맞는 기준이 없어서 일반으로 왔어요" },
+    { id: "m20", box: "general", from: "가람아트홀", addr: "stage@garam-hall.example.com", subj: "12월 공연 일정 문의", sum: "연말 공연 일정을 묻는 메일이에요.", text: "12월에 연주 일정이 비어 있는지 궁금해요.", t: "11월 1일", st: "need", kw: "공연", why: "맞는 기준이 없어서 일반으로 왔어요" },
+    { id: "m21", box: "general", from: "소담공연기획", addr: "plan@sodam.example.com", subj: "신년음악회 출연 문의", sum: "신년음악회에 나올 수 있는지 묻는 메일이에요.", text: "신년음악회 출연을 부탁드려도 될까요?", t: "10월 30일", st: "arch", kw: "출연", why: "맞는 기준이 없어서 일반으로 왔어요" },
+  ];
+  /* 앱이 찾은 묶음: ids는 일반에 있는 메일 중 이 묶음에 드는 것 */
+  D.mailboxSuggest = [
+    { id: "news", name: "소식지·안내", mode: "quiet", ids: ["m17", "m18", "m19"], line: "매달 오는 소식지가 일반에 쌓이고 있어요", conds: { from: ["@dalmuri.example.org", "@blue-post.example.com"], subj: ["소식"], body: [] } },
+    { id: "stage", name: "공연 문의", mode: "ask", ids: ["m20", "m21"], line: "공연 일정과 출연을 묻는 메일이 비슷해요", conds: { from: [], subj: ["공연", "출연"], body: [] }, judge: "공연 일정이나 출연을 묻는 메일" },
+  ];
   return D;
 })();
