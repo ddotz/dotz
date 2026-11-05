@@ -7,7 +7,7 @@
 //   GET    /api/drafts/<ref>/original     what this draft answers (the sheet's 원문 보기); 404 when it is gone. A mail: { kind: "mail", key, from, to?, date, subject?, text, html, attachments }.
 //                                          A comment (YouTube, Instagram, site): { kind: "comment", key, author, date?, text, post: { title?, link?, thumb?, kind }, parent? } (hub/comments/original.ts)
 // Only a pending mail draft of reply-drafts can change; nothing is sent from here (the owner's 보내기 does that).
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { paths } from "./config.ts";
 import { sentFiles, tailEvents } from "./events.ts";
@@ -143,7 +143,8 @@ export async function draftAttachRoute(req: Request, url: URL, ref: string, tail
 			} else if (b.upload && typeof b.upload === "object") {
 				const up = messageFiles([b.upload])[0];
 				if (!up) return json({ error: "올린 파일을 찾지 못했어요" }, 404);
-				addStagedFile(rec.id, up.path);
+				// Not the stored file's own name: that has the timestamp in front and the safe spelling of what he picked.
+				addStagedBytes(rec.id, up.original ?? up.name, readFileSync(up.path));
 			} else if (typeof b.name === "string" && typeof b.data === "string") {
 				const bytes = Buffer.from(b.data, "base64");
 				if (!bytes.length || bytes.length > FILE_MAX) return json({ error: "파일은 25MB 이하여야 해요" }, 413);

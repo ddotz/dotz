@@ -11,13 +11,15 @@ import { addressesOf, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, RECI
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
-import { canAttach, sendWith, webmailSite, type SendOutcome } from "./senders.ts";
+import { canAttach, sendWith, settleAccount, webmailSite, zeleAccountOf, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
 import { maybeRefine } from "./persona.ts";
 import { addPair, styleWithExamples } from "./pairs.ts";
 import { addDraft, claimFile, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
 import { realRunner, type Runner } from "./tone.ts";
+
+export { realRunner };
 
 // `analyze` = the model call of the identity sweep and its refinement (persona.ts); absent, no identity is analysed or refined.
 export type FlowDeps = { /** Chooses among tied library files by name (stageForReply); the default is one short model call. */ pick?: (names: string[]) => Promise<string[]>; call?: ModelCall; /** The model calls of one draft and its overall budget (draftTrace); buildDraft makes one when absent. */ trace?: DraftTrace; analyze?: ModelCall; run?: Runner; now?: () => Date; send?: (rec: DraftRec) => Promise<SendOutcome>; /** How library files are copied onto a draft (tests). */ stage?: StageOpts };
@@ -103,7 +105,8 @@ const styleOf = (item: ReplyItem, key: ToneKey) => (item.kind === "mail" && !ite
 function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[]; recipient?: Recipient }, changes: string[], deps: FlowDeps): DraftRec {
 	// The candidates were for this one model call; a later revision builds its own.
 	const { candidates: _candidates, ...kept } = item;
-	return { id: newId(), ...(r.recipient ? { recipient: r.recipient } : {}), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...(item.profile ? { profile: item.profile } : {}), ...meta, to: r.draft.to, ...(r.draft.subject ? { subject: r.draft.subject } : {}), body: r.draft.body, status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item: kept };
+	const account = item.kind === "mail" ? meta.account || zeleAccountOf({ ...meta, app: item.app ?? "mail" }) : undefined;
+	return { id: newId(), ...(r.recipient ? { recipient: r.recipient } : {}), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...(item.profile ? { profile: item.profile } : {}), ...meta, ...(account ? { account } : {}), to: r.draft.to, ...(r.draft.subject ? { subject: r.draft.subject } : {}), body: r.draft.body, status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item: kept };
 }
 
 // The owner is asked once, with a complete draft (owner 2026-10-26): the one draft call already settles every open point it can from what it
@@ -185,10 +188,28 @@ export function draftAttachIssues(rec: DraftRec): string[] {
 // The send-time lint of a draft as the owner reads it. The comment engine runs it before a combined card's reply is posted (hub/comments/engine.ts), so a hit never leaves a posted reply beside an unsent mail.
 export const draftLintFailures = (d: DraftRec): string[] => lintReply({ to: d.to, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true }).map(ownerWarning);
 
+export const ACCOUNT_HELD = "보낼 메일 계정을 메일 앱 설정에서 정하기 전에는 보내지 않아요";
+
+// The account of a new zele draft, settled before its card is shown: the owner hears here, not after he pressed 보내기, that it cannot go out as it is.
+// sendWith settles again and refuses without touching the mail, so a run that fails here (logged) loses nothing. No `run`: left to the send.
+export async function settleDraft(rec: DraftRec, run: Runner | undefined): Promise<void> {
+	if (!run || rec.kind !== "mail" || rec.source !== "zele" || rec.account) return;
+	try {
+		const settled = await settleAccount(rec, run);
+		if (settled.account) rec.account = settled.account;
+		if (settled.several) rec.accounts = settled.several;
+	} catch (e) {
+		console.error(`reply draft: account of draft ${rec.id} not settled: ${(e as Error).message}`);
+	}
+}
+
 // The [ask] message of one draft; the notes line carries lint warnings, the card's question what only the user can decide.
 export function askText(draft: DraftRec, warnings: string[], headline = draft.compose ? "새 메일 초안을 만들었어요" : "답장 초안을 만들었어요"): string {
 	const rec = withRecipient(draft);
 	if (rec !== draft) warnings = warnings.filter(w => w !== NO_RECIPIENT);
+	// An account set in the meantime answers it: the send finds that one.
+	const several = !zeleAccountOf(rec) && rec.accounts;
+	if (several) warnings = [...warnings, `메일 계정이 ${several.join(", ")} 여러 개인데 이 메일이 어느 계정 것인지 알 수 없어요. ${ACCOUNT_HELD}`];
 	const notes = warnings.map(w => `확인: ${ownerWarning(w)}`.replace(/\s+/g, " ")).join(" / ");
 	const staged = stagedFiles(rec.id).map(f => ({ name: f.name, size: f.size }));
 	// A webmail site sends text only (senders.ts canAttach): its files are listed as the ones that stay behind, and a send that holds them is refused.
@@ -196,7 +217,7 @@ export function askText(draft: DraftRec, warnings: string[], headline = draft.co
 	const attachments = noFiles ? [] : staged;
 	const issues = draftAttachIssues(rec);
 	const keptBack = noFiles && staged.length ? { sendResult: "파일이 붙어 있어 보내지 않아요. 파일을 빼면 본문만 보내요" } : {};
-	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", decide: withoutNoFileClaims(rec), ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}), ...(rec.rule ? { rule: rec.rule.name } : {}), ...(issues.length ? { attachIssues: issues } : {}) });
+	const block = draftApprovalBlock({ to: rec.to, toLabel: "받는이", ...(rec.cc?.length ? { cc: rec.cc } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, ref: rec.id, question: rec.compose ? "이 메일 보낼까요?" : "이 답장 보낼까요?", decide: withoutNoFileClaims(rec), ...(rec.compose ? { sendResult: `${rec.to}에게 이 메일을 보내요` } : {}), ...keptBack, ...(several ? { sendResult: ACCOUNT_HELD } : {}), ...(noFiles ? { cannotAttach: staged.map(f => f.name) } : {}), ...(rec.origin ? { origin: { text: rec.origin.text, ...(rec.origin.link ? { link: rec.origin.link } : {}) } } : {}), ...(attachments.length ? { attachments } : {}), ...((rec.origAttachments ?? 0) > 0 ? { attachmentsNone: true } : {}), ...(rec.asksFile ? { asksFile: true } : {}), ...(rec.libraryMiss ? { libraryMiss: true } : {}), ...(rec.rule ? { rule: rec.rule.name } : {}), ...(issues.length ? { attachIssues: issues } : {}) });
 	return [`[ask] ${headline}`, ...(notes ? [`-# ${notes}`] : []), block].join("\n");
 }
 
@@ -354,6 +375,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	if (old.wantFiles?.length) rec.wantFiles = old.wantFiles;
 	if (old.libraryMiss) rec.libraryMiss = true;
 	if (old.compose) rec.compose = true;
+	if (old.accounts) rec.accounts = old.accounts;
 	if (old.origin) rec.origin = old.origin;
 	if (old.rule) rec.rule = old.rule;
 	carryStagedFiles(old.id, rec.id);
@@ -415,7 +437,12 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	try {
 		const now = getDraft(id);
 		if (now?.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${now?.status ?? "없는"} 상태라 보내지 않았어요` };
-		const out = await (deps.send ?? (rec => sendWith(rec, deps.run ?? realRunner)))(now);
+		let out: SendOutcome;
+		try {
+			out = await (deps.send ?? (rec => sendWith(rec, deps.run ?? realRunner)))(now);
+		} catch (e) {
+			out = { ok: false, message: `보내지 못했어요: ${(e as Error).message}` };
+		}
 		if (!out.ok) return { ok: false, text: out.message, sendFailed: true };
 		setStatus(id, "sent");
 		// A draft the owner changed is his own wording now: it joins his past replies. An unchanged bot draft never does.

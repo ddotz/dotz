@@ -4,14 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { realMailLink } from "../../../hub/comments/mail-link.ts";
 import { parseDraftApproval } from "../../../hub/draft-approval.ts";
-import { reviseDraft, sendDraft } from "../lib/flow.ts";
+import { composeMail } from "../../../hub/mail-cli.ts";
+import { loadPlugins } from "../../../hub/plugins.ts";
+import { runDraft } from "../bin/draft.ts";
+import { ACCOUNT_HELD, askText, reviseDraft, sendDraft } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { readArgv, readMailBody, replyArgv, sendArgv, sendWith, zeleAccountOf } from "../lib/senders.ts";
 import { paths } from "../lib/settings.ts";
 import { addStagedFile, stagedFiles, stagedName } from "../lib/staged.ts";
 import { addDraft, answerDrafts, getDraft, listDrafts, type DraftRec } from "../lib/store.ts";
 import type { Runner } from "../lib/tone.ts";
-import { enable, fakeModel, j, mailFixture, setupEnv } from "./helpers.ts";
+import { enable, fakeModel, goodReply, j, mailFixture, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
 const lib = mkdtempSync(join(tmpdir(), "rd-acct-lib-"));
@@ -286,6 +289,77 @@ describe("mail ridden on a comment reply", () => {
 		expect(names(unsure.id)).toEqual([]);
 		expect(unsure.notes.join(" ")).toContain("확인 필요");
 		rmSync(songs, { recursive: true, force: true });
+	});
+});
+
+describe("the account of a draft is settled when the draft is made", () => {
+	const offer = async (key: string, run?: Runner) => {
+		enable(env, {});
+		const out = sink();
+		expect(await offerMailDraft({ ...mailFixture, key, id: "T42" }, { send: out.send, call: fakeModel([j(goodReply)]).call, run })).toBe("offered");
+		return { card: out.sent[0]!, made: listDrafts().find(d => d.ref === key)! };
+	};
+
+	test("the draft records the account its stored mail came to", async () => {
+		stored([{ key: "acct-stored", account: A2 }]);
+		expect((await offer("acct-stored")).made.account).toBe(A2);
+	});
+
+	test("the draft records the one account that opens the thread, and the card stays quiet", async () => {
+		const { made, card } = await offer("acct-probe", twoAccounts([A2]).run);
+		expect(made.account).toBe(A2);
+		expect(card).not.toContain(A1);
+	});
+
+	test("undecided among several accounts: the card names them and says it will not send, until an account is set", async () => {
+		const { made, card } = await offer("acct-none", twoAccounts().run);
+		expect(made.accounts).toEqual([A1, A2]);
+		expect(card).toContain(`${A1}, ${A2}`);
+		expect(card).toContain(ACCOUNT_HELD);
+		mkdirSync(join(env.dir, "custom"), { recursive: true });
+		writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify({ mail: { app: "mail", filter: { account: A1 } } }));
+		expect(askText(made, [])).not.toContain(ACCOUNT_HELD);
+	});
+
+	test("draft.ts new settles the account too", async () => {
+		enable(env, {});
+		const out = await runDraft(["new", "--mail", "zele-t77", "--from", "kim@example.com", "--source", "zele", "--id", "T77"], "회의 일정 알려 주세요", { call: fakeModel([j(goodReply)]).call, run: twoAccounts().run });
+		expect(out.lines[0]).toContain(ACCOUNT_HELD);
+	});
+
+	test("a new mail composed by the CLI says so too", async () => {
+		const made = await composeMail({ app: "mail", to: ["kim@example.com"], subject: "안내", body: "안녕하세요. 안내드립니다.", notify: false }, { run: twoAccounts().run });
+		if (!made.ok) throw new Error(made.error);
+		expect(askText(made.rec, [])).toContain(ACCOUNT_HELD);
+	});
+
+	test("a revised draft keeps saying so", async () => {
+		const { made } = await offer("acct-rev", twoAccounts().run);
+		const step = await reviseDraft(made.id, "더 짧게", { call: fakeModel([j(goodReply)]).call });
+		expect(step.text).toContain(ACCOUNT_HELD);
+	});
+
+	test("an older stored mail with no account: a plugin mailer gets the one account it was addressed to", async () => {
+		stored([{ key: "score-t42", to: `Owner <${A2}>` }]);
+		mkdirSync(join(env.dir, "custom", "plugins"), { recursive: true });
+		const plugin = join(env.dir, "custom", "plugins", "acct.ts");
+		writeFileSync(plugin, `export default { reply: async d => (globalThis.__acctGot = d.account, { ok: true, message: "보냈어요" }) };`);
+		await loadPlugins(env.dir);
+		const got = globalThis as { __acctGot?: string };
+		expect((await sendWith(rec({ source: "score", ref: "score-t42" }), twoAccounts().run)).ok).toBe(true);
+		expect(got.__acctGot).toBe(A2);
+		delete got.__acctGot;
+		rmSync(plugin);
+		await loadPlugins(env.dir);
+	});
+
+	test("a mailer that cannot even start is a failed send: the reason is reported and the draft stays unsent", async () => {
+		addDraft(rec({ id: "RTHROWN1", account: A1 }));
+		emitApproval("RTHROWN1");
+		const out = await sendDraft("RTHROWN1", { run: async () => { throw new Error("zele not found"); } });
+		expect(out).toMatchObject({ ok: false, sendFailed: true });
+		expect(out.text).toContain("zele not found");
+		expect(getDraft("RTHROWN1")!.status).toBe("pending");
 	});
 });
 

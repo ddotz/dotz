@@ -29,6 +29,13 @@ test("safeName keeps Korean, drops path parts and dotfile prefixes", () => {
 	expect(safeName("")).toBe("file");
 });
 
+test("an upload keeps the name it came with beside the safe one, through the record the page sends back", async () => {
+	const up = await saveUpload(new File(["x"], "(마크추가)파일.pdf"));
+	expect(up).toMatchObject({ name: "_마크추가_파일.pdf", original: "(마크추가)파일.pdf" });
+	expect(messageFiles([up])[0]).toMatchObject({ name: "_마크추가_파일.pdf", original: "(마크추가)파일.pdf" });
+	expect((await saveUpload(new File(["x"], "note.txt"))).original).toBeUndefined();
+});
+
 test("uploads are stored under the uploads dir and the size limit holds", async () => {
 	const up = await saveUpload(new File(["hello"], "note.txt", { type: "text/plain" }));
 	expect(up.path.startsWith(UPLOADS)).toBe(true);

@@ -351,7 +351,7 @@ const keyOfSource = (source: string, id: string): string | undefined => {
 async function draftFromApp(b: Record<string, unknown>, deps: MailDeps): Promise<Response> {
 	let files: { path: string; name: string }[];
 	try {
-		files = ownerFiles(b.attachments).map(f => ({ path: f.path, name: f.name }));
+		files = ownerFiles(b.attachments).map(f => ({ path: f.path, name: f.original ?? f.name }));
 	} catch (error) {
 		return json({ error: (error as Error).message }, error instanceof FileError ? error.status : 400);
 	}

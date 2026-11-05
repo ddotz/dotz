@@ -325,7 +325,7 @@ function mbForm(st, host, o) {
   const add = async list => {
     for (const f of list) {
       st.up.push(f.name); paintFiles();
-      try { const u = await uploadFile(f); st.files.push({ name: u.name, path: u.path, size: u.size, type: u.type }); }
+      try { const u = await uploadFile(f); st.files.push({ name: u.name, ...(u.original ? { original: u.original } : {}), path: u.path, size: u.size, type: u.type }); }
       catch (e) { toast(e.message || "올리지 못했어요", true); }
       st.up.splice(st.up.indexOf(f.name), 1); paintFiles();
     }
