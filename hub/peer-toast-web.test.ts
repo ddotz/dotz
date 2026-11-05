@@ -40,7 +40,8 @@ const hubB = fakeHub({
 let pumping = true;
 // the peer stream's debounce and backoff timers run on the fake clock: move it on every turn of the event loop
 void (async () => { while (pumping) { await new Promise<void>(r => setImmediate(r)); await advance(25); } })();
-const stop = startPeerStreams({ computers: async () => [A], countsDebounceMs: 10, backoffMs: [20] });
+// The pump runs the fake clock far ahead of real time: at the default idle limit a slow page load let B drop A's quiet stream, and a notice sent in the gap was lost.
+const stop = startPeerStreams({ computers: async () => [A], countsDebounceMs: 10, backoffMs: [20], idleMs: Number.MAX_SAFE_INTEGER });
 const view = await hubB.view({ width: 390, height: 844 });
 afterAll(() => { pumping = false; stop(); hubA.stop(true); hubB.stop(); });
 const { waitFor } = on(view);
