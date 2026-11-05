@@ -30,6 +30,8 @@ import { instanceOf } from "./reply-model.ts";
 import { settingsNote } from "./settings-turn.ts";
 import { watchAsked } from "./watch-recheck.ts";
 import { pluginThread } from "./plugins.ts";
+import { cancelAuth, pendingWaits } from "./auth.ts";
+import { cancelReply, waitNotice, type WaitDeps } from "./auth-wait.ts";
 
 // Chat is the hub over every work channel: each chat turn carries a short directory so the orchestrator can route the
 // work into the channel it belongs to (or split a growing thread of work into a new one).
@@ -149,11 +151,22 @@ export function dropPending(target: string): number {
 }
 convs.everyInstance(c => c.o.onOwnerCancel(target => void dropPending(target)));
 
+// A session waiting on dotz_auth gets owner messages only after the wait: the gateway answers them meanwhile (hub/auth-wait.ts).
+const authWait: WaitDeps = {
+	pending: pendingWaits,
+	sameSession: (a, b) => convs.keyOf(a) === convs.keyOf(b),
+	cancel: cancelAuth,
+	post: (to, text, replyTo) => void out(to, text, replyTo, { source: "gateway" }).catch(e => log(`auth wait reply to ${to} failed: ${e}`)),
+};
+
 export function flush(target: string): void {
 	const b = bursts.get(target);
 	if (!b) return;
 	bursts.delete(target);
 	const head = b.events[0];
+	// Every surface hands intake the owner's messages only (discord.ts OWNER, each messenger's allow list), as deliver's owner: true below says.
+	const inbound = { target, text: b.events.length === 1 ? String(head.text ?? "") : "", owner: true, replyTo: b.replyTo };
+	if (cancelReply(inbound, authWait)) return;
 	// The session that answers this conversation (main with conversation sessions off); one not started yet has no error.
 	const session = convs.forTarget(target)?.o;
 	const errAnswer = session?.orch.error && b.events.length === 1 ? errorAnswer(String(head.text ?? "")) : undefined;
@@ -164,6 +177,7 @@ export function flush(target: string): void {
 	const ask = b.events.length === 1 && !head.attachments?.length ? accountAsk(String(head.text ?? ""), readPool()?.names ?? [], readAliases()) : undefined;
 	if (ask) return void accountChatAnswer(target, ask, b.replyTo);
 	rateLimitNotice(target, b.replyTo);
+	waitNotice(inbound, authWait);
 	const merged = b.events.length > 1 ? { ...head, message_id: refOf(b.events.at(-1)!), parts: b.events } : head;
 	const was = convs.stateOf(target);
 	digest.note(convs.keyOf(target), "owner", String(merged.text ?? ""));
