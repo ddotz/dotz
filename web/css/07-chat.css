@@ -110,6 +110,9 @@
 .dc-chip.got { color: var(--fg); }
 .dc-chip.on { background: var(--fg); color: var(--bg); }
 .dc-sub, .dcm-sub { padding: var(--sp-05) var(--sp-1) 0; color: var(--fg-2); font-size: 12px; line-height: 16px; font-weight: 600; }
+.dc-inl { display: flex; flex-direction: column; gap: var(--sp-05); margin-top: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-card); background: var(--card); }
+.dc-inl .dc-q { margin: 0 0 var(--sp-05); padding: 0 var(--sp-1); }
+.dc-inl > .dc-ds { padding: 0 var(--sp-1); }
 .dc-row, .dcm-row { flex: none; display: flex; align-items: flex-start; gap: var(--sp-2); width: 100%; min-height: 40px; padding: var(--sp-15) var(--sp-3); border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .dc-row, .dcm-row { transition: background-color var(--m-fast) var(--m-ease); }
 .dc-row:hover:not(:disabled), .dcm-row:hover:not(:disabled) { background: var(--hover); }

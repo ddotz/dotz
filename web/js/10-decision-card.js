@@ -15,11 +15,27 @@ const isDescLine = nx => nx !== undefined && !!nx.trim() && !CH_OPT.test(nx) && 
 // The message text without its option lines (and their description lines): the buttons show them, so the body must not repeat them.
 function stripChoices(text) {
   const lines = stripRecMark(String(text ?? "")).split("\n"), out = [];
+  let fence = false;
   for (let i = 0; i < lines.length; i++) {
-    if (!CH_OPT.test(lines[i])) { out.push(lines[i]); continue; }
+    if (CH_FENCE.test(lines[i])) fence = !fence;
+    if (fence || CH_FENCE.test(lines[i]) || !CH_OPT.test(lines[i])) { out.push(lines[i]); continue; }
     if (isDescLine(lines[i + 1])) i++;
   }
   return out.filter(l => !CH_CLOSE.test(l)).join("\n").replace(/\n{3,}/g, "\n\n");
+}
+// The message body above its inline card (dcInline): the card holds the question and the options, so neither stays as text. Text outside the blocks stays, code fences whole.
+function inlineBody(text) {
+  const lines = stripRecMark(String(text ?? "")).split("\n"), out = [];
+  let fence = false, block = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (CH_FENCE.test(lines[i])) { fence = !fence; block = false; }
+    else if (!fence && CH_HEAD.test(lines[i]) && CH_OPT.test(lines.slice(i + 1).find(l => l.trim()) || "")) { block = true; continue; }
+    else if (!fence && block && CH_OPT.test(lines[i])) { if (isDescLine(lines[i + 1])) i++; continue; }
+    else if (!fence && CH_CLOSE.test(lines[i])) continue;
+    else if (lines[i].trim()) block = false;
+    out.push(lines[i]);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 function parseChoices(text) {
   const OPT = CH_OPT, HEAD = CH_HEAD;
@@ -465,8 +481,9 @@ function renderSheet(box, dc, picks, step) {
 function choiceRow(dc, step, o, picks, st) {
   return el("button", { class: `dc-row${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
     el("span", { class: "dc-key", text: String(o.n) }),
-    el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null));
+    el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: dcDesc(o) }) : null));
 }
+const dcDesc = o => o.desc.replace(/`/g, "");   // one plain line under the name: code marks would show raw
 function renderDecision(box, dc, picks, step) {
   if (dc.close) { renderSheet(box, dc, picks, step); return; }
   const hadNote = !!$(".dc-note", box);
@@ -494,7 +511,7 @@ function renderDecision(box, dc, picks, step) {
       // Once the answer goes out the card keeps only the chosen row (the others leave), so 보냈어요 reads in the same place.
       for (const o of st && !dc.draft && picks[step] ? blk.options.filter(x => x.n === picks[step].n) : blk.options) body.append(el("button", { class: `dc-row${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
         el("span", { class: "dc-key", text: String(o.n) }),
-        el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
+        el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: dcDesc(o) }) : null)));
     }
     kids.push(body);
     }
@@ -565,9 +582,59 @@ function dcLeave(box, dc) {
     dcOut = null; dcLast = null; box.hidden = true; delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; delete box.dataset.out; clear(box);
   })();
 }
+// The decision as a card in the message itself. It never fires on its own: open, it is the question that waits (the docked card's own, same key, so one answer closes
+// both); closed, an old message's answered or passed question, its rows are disabled and the chosen one marked. The hub normalizes stored messages on the way here
+// (hub/owner-text.ts shownEvent), so a message from before the rule gets this card without ever being able to answer twice.
+const DCI = new WeakMap();
+function dcInline(e, body, pc) {
+  const box = el("div", { class: "dc-inl" });
+  DCI.set(box, { e, t: target, body: body.trim(), question: pc.question, blocks: pc.blocks.filter(b => b.options.length > 1) });
+  paintInline(box, isFixedT(target) ? null : decisionOf(target));
+  return box;
+}
+const SEND_LABELS = /^보내기\|고치기\|보내지 않기/;
+function inlineDc(i, live) {
+  const sig = hashOf(i.body), at = i.e.ts, s = ts(i.t);
+  if (live && live.t === i.t && (live.sig === sig || live.at === at)) return live;
+  const info = targetInfo(i.t);
+  if (isLaneT(i.t) && info.known && !info.alive && !info.resumable) return null;
+  if (s.msgs.some(e => ownerSaid(e) && msOf(e.ts) > msOf(at)) || dcSettledAt(i.t, at)) return null;
+  // Only the newest question waits, and a send approval outside a session goes by its draft (the docked card or the notice), never by a bare answer.
+  if (s.msgs.some(e => msOf(e.ts) > msOf(at) && (e.kind === "out" || e.kind === "lane_report") && !e.update_key && parseChoices(parseTone(noHandoff(String(e.text ?? ""))).text).blocks.some(b => b.options.length > 1))) return null;
+  if (!isLaneT(i.t) && i.blocks.some(b => SEND_LABELS.test(b.options.map(o => o.label).join("|")))) return null;
+  return { key: `${i.t}|${sig}`, t: i.t, sig, at, question: i.blocks.length === 1 ? i.blocks[0].title : i.question, blocks: i.blocks };
+}
+// What was answered, from the answer's own picks (hub/intake.ts keeps them on the owner's message).
+function closedPicks(i) {
+  const a = ts(i.t).msgs.find(e => ownerSaid(e) && Array.isArray(e.picks) && msOf(e.ts) > msOf(i.e.ts) && e.picks.some(p => i.blocks.some(b => b.title === p.q)));
+  return i.blocks.map(b => a && a.picks.find(p => p.q === b.title));
+}
+function paintInline(box, live) {
+  const i = DCI.get(box), dc = inlineDc(i, live), picks = dc ? DC.picks[dc.key] || [] : closedPicks(i), st = dc ? DC.st[dc.key] || "" : "closed";
+  const docked = !!dc && dc === live && dc.at === i.e.ts, edit = dc && !docked ? DC.edit[dc.key] : null, sig = [dc ? dc.key : "", st, picks.map(p => (p ? p.n : 0)).join(), edit ? edit.opt.n : "", docked].join("|");
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  clear(box);
+  // Answered: the owner's message is drawn as the record of it (dc-rec), options live only in the card.
+  box.hidden = !dc && picks.some(Boolean);
+  if (box.hidden) return;
+  // While the card is docked its rows are there: the message keeps the question, one set of buttons on screen.
+  if (docked) box.append(...i.blocks.map(b => mdNode(draftQ(b.title), "md dc-q")));
+  else if (dc && i.blocks.length > 1) box.append(...multiNodes(dc, picks, st));
+  else for (const [bi, b] of i.blocks.entries()) box.append(...[b.title ? mdNode(draftQ(b.title), "md dc-q") : null, ...b.options.map(o => choiceRow(dc || { key: "" }, bi, o, picks, st))].filter(Boolean));
+  if (!dc && !picks.some(Boolean)) box.append(el("div", { class: "dc-ds", text: "지난 결정이에요" }));
+  // No docked card to type in (a session's mid-turn question): what to change is asked here.
+  if (edit) {
+    const note = el("textarea", { class: "dc-note", rows: 2, placeholder: "내용을 적어 주세요" });
+    box.append(note, el("button", { class: "btn dc-send", type: "button", onclick: () => note.value.trim() && pickOption(dc, edit.bi, edit.opt, note.value.trim()) }, "보내기"));
+    note.focus({ preventScroll: true });
+  }
+}
 function paintDecision() {
   const box = $("#dcard");
   if (!box) return;
+  const inlines = document.querySelectorAll("#timeline .dc-inl");
+  if (inlines.length) { const live = isFixedT(target) ? null : decisionOf(target); for (const b of inlines) paintInline(b, live); }
   // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
   // 2 or more send-approval cards waiting in this conversation: one line above the composer (dcLine) instead of the dock card or its pointer; a question that is not a draft keeps its card.
   const dc0 = isFixedT(target) ? null : decisionOf(target), askN = !isFixedT(target) && dcDraftRefs(target) >= 2 ? rqAskCount() : 0, line = askN > 0, dc = line && dc0 && dcDraftAsk(dc0) ? null : dc0, had = !!DC.cur;

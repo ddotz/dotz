@@ -75,6 +75,7 @@ project turn (orchestrator in ch:<id>) --> project channel; chat gets one pointe
   session, so a restart never loses it. The owner sees it once per surface: the session's chat (decision card), the
   home "답 필요" list, Discord session channel (buttons). The orchestrator is told once and is not asked to repeat it.
 - A message that asks the owner to pick from a list is a decision whoever wrote it: `normalizeAsk` (hub/ask-normalize.ts) rewrites a
+- What reaches the owner passes one rule, `ownerText` (hub/owner-text.ts): at the store (`emit`), at Discord (`send`, `edit`, `progress`) and on the way to the page for stored messages, so no path holds its own copy. A `결정:` block in any list style becomes the contract's block; one that cannot is a bug: logged, counted in `ask-broken.jsonl`, and shown as a plain question. hub/owner-text-paths.test.ts fails on a new path around it.
   trailing list of 2-4 options under a question line (or a 결정 필요 heading) into the contract's `결정:` block and adds `[ask]`, at the
   send boundary: `out()` for answers, dotz_send and conversation sessions, `report()` and the mid-turn texts for sessions. A rewrite, not
   a reject and redo: it costs no model turn. `[done]`, code, quoted drafts and plain lists stay as written. An `[ask]` that adds no

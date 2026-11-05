@@ -5,7 +5,7 @@
 // False positives are the risk, so it needs both a trailing list of 2-4 clean options and a question line right above it that offers a
 // choice. A yes / no question counts only under a "결정 필요" heading, in an [ask], or when an option carries a recommendation.
 import { askedDraft } from "./ask-options.ts";
-import { D_CLOSE, DECISION_HEAD, DETAIL_DESC, DETAIL_MARK, parseDecisions, stripRecommendMark } from "./choices.ts";
+import { D_CLOSE, DECISION_HEAD, D_OPT, DETAIL_DESC, DETAIL_MARK, parseDecisions, stripRecommendMark } from "./choices.ts";
 import { parseQuotedDraft } from "./draft-approval.ts";
 import { orchestratorOnlyAsk } from "./forline.ts";
 import { parseTone, splitTone } from "./tone.ts";
@@ -42,7 +42,7 @@ const plain = (s: string) => s.replace(/\*\*/g, "").replace(/^\s*(?:#{1,6}\s+|\d
 const sentences = (s: string) => s.split(/(?<=[.!?？。])\s+/).filter(Boolean);
 const flat = (s: string) => s.replace(/\s+/g, "");
 
-function optionOf(body: string): Option | undefined {
+function optionOf(body: string, headed = false): Option | undefined {
 	let s = body.replace(/\*\*/g, "").trim();
 	const rec = REC.test(s);
 	s = s.replace(REC, "").trim();
@@ -54,7 +54,9 @@ function optionOf(body: string): Option | undefined {
 	if (split) [s, desc] = [split[1]!, split[2]!];
 	else if (asked && DETAIL_DESC.test(asked[2]!)) [s, desc] = [asked[1]!, asked[2]!];
 	if (DETAIL_DESC.test(desc)) detail = true;
-	return !s || [...s].length > MAX_LABEL || NOT_LABEL.test(s) ? undefined : { label: s, desc, rec, detail };
+	// Under a "결정:" line the head vouches for the list: a long or sentence-like name is still an option, cut to a button's size with the rest as its description.
+	if (headed && s && [...s].length > MAX_LABEL) [s, desc] = [[...s].slice(0, MAX_LABEL).join("").trim(), desc || s];
+	return !s || (!headed && ([...s].length > MAX_LABEL || NOT_LABEL.test(s))) ? undefined : { label: s, desc, rec, detail };
 }
 
 const isTail = (line: string) => META.test(line) || D_CLOSE.test(line) || CLOSING.test(line) || LABELED.test(line);
@@ -125,8 +127,111 @@ function blockLines(f: Found): string[] {
 	return [...(f.lead ? [f.lead, ""] : []), `${ko ? "결정" : "Decision"}: ${question}`, ...options];
 }
 
-/** The text with its trailing option list as the contract's choice block and a status marker the surfaces read; unchanged when it asks nothing but for an old recommendation mark. Idempotent. */
-export const normalizeAsk = (text: string): string => stripRecommendMark(toChoiceBlock(text));
+/** The text with every option list as the contract's choice block and a status marker the surfaces read; unchanged when it asks nothing but for an old recommendation mark. Idempotent. */
+export const normalizeAsk = (text: string): string => stripRecommendMark(toChoiceBlock(canonHeaded(text)));
+/** Only the blocks a "결정:" line opened: for text the gateway wrote itself, where a question over a list is no guess about a model's meaning. */
+export const normalizeHeaded = (text: string): string => stripRecommendMark(canonHeaded(text, false));
+
+// A "결정:" line however the model dressed it ("**결정:** x", "### 결정: x", "**1) 결정: x**", "결정 필요: x"); a line inside a quote never matches.
+const HEAD_DRESS = /^\s*(?:#{1,6}\s+)?(?:\*\*)?\s*(?:\d[.)]\s+)?(결정|decision)(?:\s*(?:이\s*)?(?:필요(?:해요|합니다)?|needed))?(\s*#?\d{1,2})?\s*(?:\*\*)?\s*[:：]\s*(?:\*\*)?\s*(.*?)\s*(?:\*\*)?\s*$/i;
+const BARE_HEADING = /^\s*(?:#{1,6}\s+|\*\*)\s*(?:결정\s*(?:이\s*)?필요(?:해요|합니다)?|decision needed)\s*(?:\*\*)?\s*[:：]?\s*(?:\*\*)?\s*(.*)$/i;
+const CIRCLED = "①②③④⑤⑥⑦⑧⑨";
+const HEADED_OPTION = new RegExp(`^\\s*(?:\\*\\*)?\\s*(?:(\\d{1,2})(?:\\)|\\.(?!\\d))|([${CIRCLED}]))\\s*(.+)$`);
+const CANON_OPTION = /^\s*(?:\*\*)?\s*\d{1,2}\)\s*[^*\s][^*]*(?:\*\*)?\s*$/;
+const QUOTED = /^\s*[>|]/;
+const ASKS_ANYTHING = /[?？]|까요|나요|주세요/;
+const MAX_HEADED = 9;
+type Headed = { option: Option; raw: string; sameLine: boolean };
+
+// The options under a "결정:" line in any list style: numbers in a row, or bullets at one indent; a line under an option, or a deeper bullet, is its description.
+function readHeaded(lines: string[], fenced: boolean[], from: number): { list: Headed[]; numbered: boolean; end: number } | undefined {
+	const list: Headed[] = [];
+	let numbered = false, indent = -1, end = from;
+	for (let i = from; i < lines.length; i++) {
+		const line = lines[i]!;
+		if (!line.trim()) continue;
+		if (fenced[i] || QUOTED.test(line) || HEAD_DRESS.test(line) || D_CLOSE.test(line) || META.test(line)) break;
+		const n = HEADED_OPTION.exec(line), b = n ? null : BULLET.exec(line);
+		const at = line.length - line.trimStart().length;
+		const num = n ? (n[1] ? Number(n[1]) : CIRCLED.indexOf(n[2]!) + 1) : 0;
+		const isNext = list.length ? (numbered ? num === list.length + 1 : !!b && at <= indent) : !!n ? num === 1 : !!b;
+		if (isNext) {
+			const body = n ? n[3]! : b![1]!;
+			const option = optionOf(body, true);
+			if (!option) return undefined;
+			if (!list.length) [numbered, indent] = [!!n, at];
+			list.push({ option, raw: line, sameLine: !!option.desc });
+			end = i + 1;
+			continue;
+		}
+		const prev = list.at(-1);
+		// A line right under an option describes it; after a blank line it is the message going on.
+		if (!prev || !lines[i - 1]!.trim() || prev.option.desc) break;
+		prev.option.desc = line.trim().replace(/^[-*•]\s+/, "");
+		end = i + 1;
+	}
+	return list.length >= 2 && list.length <= MAX_HEADED ? { list, numbered, end } : undefined;
+}
+
+// Lines already in the contract's shape stay byte for byte: a card's identity and a draft's text must not move.
+const headedLines = (list: Headed[]): string[] =>
+	list.flatMap(({ option: o, raw, sameLine }, i) => {
+		const keep = !sameLine && CANON_OPTION.test(raw) && D_OPT.exec(raw)?.[1] === String(i + 1);
+		return [keep ? raw : `**${i + 1}) ${o.label}${o.detail ? " …" : ""}**`, ...(o.desc ? [o.desc] : [])];
+	});
+
+// Every "결정:" block in the contract's shape, wherever it stands and whatever list the model wrote, so the one parser reads it. Fences and quotes stay as written.
+function canonHeaded(text: string, mark = true): string {
+	if (!/결정|decision/i.test(text)) return text;
+	const { tone, head, rest } = splitTone(text);
+	const lines = rest.split("\n");
+	const fenced = fenceMap(lines);
+	const out: string[] = [];
+	let blocks = 0;
+	for (let i = 0; i < lines.length; i++) {
+		const m = fenced[i] ? null : HEAD_DRESS.exec(lines[i]!);
+		if (!m || !m[3]) {
+			out.push(lines[i]!);
+			continue;
+		}
+		const got = readHeaded(lines, fenced, i + 1);
+		// Bullets under a statement are a report of what was decided, not a question.
+		if (!got || (!got.numbered && tone !== "ask" && !ASKS_ANYTHING.test(m[3]))) {
+			out.push(lines[i]!);
+			continue;
+		}
+		blocks++;
+		const label = `${m[1]!.replace(/^d/, "D")}${m[2] ?? ""}: ${m[3]}`;
+		const next = lines.slice(got.end).find(l => l.trim());
+		out.push(DECISION_HEAD.exec(lines[i]!)?.[1] === m[3] ? lines[i]! : label, ...headedLines(got.list));
+		if (next !== undefined && lines[got.end]!.trim()) out.push("");
+		i = got.end - 1;
+	}
+	if (!blocks) return text;
+	const clean = dropBareHeading(out, fenceMap(out)).join("\n");
+	return !mark || tone === "ask" || tone === "fail" || tone === "done" ? `${head}${clean}` : `[ask] ${clean.trimStart()}`;
+}
+
+// "**결정 필요**" above "결정:" blocks says what the card says: the heading goes, a note on its line stays.
+function dropBareHeading(lines: string[], fenced: boolean[]): string[] {
+	const out: string[] = [];
+	lines.forEach((line, i) => {
+		const m = fenced[i] || HEAD_DRESS.test(line) ? null : BARE_HEADING.exec(line);
+		const next = lines.slice(i + 1).find(l => l.trim());
+		if (!m || !next || !DECISION_HEAD.test(next)) return void out.push(line);
+		if (m[1]!.trim()) out.push(m[1]!.trim());
+	});
+	return out;
+}
+
+const fenceMap = (lines: string[]): boolean[] => {
+	let open = false;
+	return lines.map(line => {
+		const isFence = FENCE.test(line);
+		if (isFence) open = !open;
+		return open || isFence;
+	});
+};
 
 // A session's [ask] the owner cannot answer from the card (owner 2026-11-05: "뭐에 대한 질문인지 저기에서 바로 답변이 어려워"): no choice block, not a
 // budget question or a quoted draft (both have their own buttons), not a chore for the orchestrator. It never becomes an answer-needed item:
@@ -142,12 +247,7 @@ function toChoiceBlock(text: string): string {
 	const { tone, rest: bare } = splitTone(text);
 	if (tone === "done") return text;
 	const lines = bare.split("\n");
-	const fenced: boolean[] = [];
-	let open = false;
-	for (const line of lines) {
-		if (FENCE.test(line)) open = !open;
-		fenced.push(open || FENCE.test(line));
-	}
+	const fenced = fenceMap(lines);
 	if (lines.some((l, i) => !fenced[i] && DECISION_HEAD.test(l))) return text;
 	const found: Found[] = [];
 	for (let limit = lines.length; ; ) {

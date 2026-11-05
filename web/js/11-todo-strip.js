@@ -337,12 +337,13 @@ function msgNode(e) {
       const fl = e.relay ? { text: body, files: [] } : fileLines(body), host = pqPc(eventTarget(e) || "");
       // Shapes are for a finished answer of the assistant: never a progress note, a gateway line, a relayed line, a decision or a "started" note.
       const answer = e.kind === "out" && !e.relay && !e.update_key && e.source !== "gateway" && !(pc0 && pc0.blocks.length) && tone !== "run" && !fl.text.startsWith("\u23f3");
-      const md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text, "md", !!e.relay, answer && { shaped: fl.files.length > 0 }), files = e.relay ? null : pathFiles(md, host);
+      const inl = pc && !isFixedT(target) && pc.blocks.some(b => b.options.length > 1);   // the card in the message (10-decision-card.js dcInline); in 알림 / 작업내역 a tap opens the sheet
+      const md = mdNode(inl ? inlineBody(fl.text) : pc && pc.blocks.length ? stripChoices(fl.text) : fl.text, "md", !!e.relay, answer && { shaped: fl.files.length > 0 }), files = e.relay ? null : pathFiles(md, host);
       // A briefing-shaped answer (schedule rows, a mail line, counts) is drawn as a card of rows and chips (11-resultcard.js hcBriefNode).
       const brief = e.kind === "out" && !e.relay && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
       if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);
       const ev = answer && fl.files.length ? md.querySelector(":scope > .ans-ev:last-child") : null;   // the evidence line stays the last thing, under the files
-      return el("div", { class: `bm${card}`, ...liveAttr, ...(pc && pc.blocks.length > 1 ? { "data-dat": e.ts } : {}) }, head, rpQuote(e), brief ? (tone || parked ? [toneLead(el("div", { class: "md" }), tone), brief] : brief) : toneLead(md, tone), (answer ? ansFiles : filesNode)(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, ev);
+      return el("div", { class: `bm${card}`, ...liveAttr, ...(pc && pc.blocks.length > 1 ? { "data-dat": e.ts } : {}) }, head, rpQuote(e), brief ? (tone || parked ? [toneLead(el("div", { class: "md" }), tone), brief] : brief) : toneLead(md, tone), inl ? dcInline(e, parsed, pc) : null, (answer ? ansFiles : filesNode)(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, ev);
     }
   }
 }
