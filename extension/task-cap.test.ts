@@ -1,17 +1,19 @@
 // Task workers past guard.task_token_cap: warned once at 75%, then tools blocked with a [fail] note, aborted if they keep calling tools.
+// Past guard.task_compact_tokens of context a worker compacts itself between tool steps, once per crossing.
 import { expect, test } from "bun:test";
 import { guardConfigFrom } from "./guard-config.ts";
 import { installTaskCap } from "./task-cap.ts";
 
-function worker(cap: number) {
+function worker(cap: number, compactAt = 0) {
 	const handlers: Record<string, ((event: any, ctx: any) => any)[]> = {};
 	const sent: { message: any; options: any }[] = [];
-	installTaskCap({ on: (name, fn) => (handlers[name] ??= []).push(fn), sendMessage: (message, options) => sent.push({ message, options }) }, cap);
+	installTaskCap({ on: (name, fn) => (handlers[name] ??= []).push(fn), sendMessage: (message, options) => sent.push({ message, options }) }, cap, compactAt);
 	let aborted = 0;
-	const ctx = { abort: () => aborted++ };
-	const turn = (cacheRead: number, toolResults: unknown[] = [{}]) => handlers.turn_end?.[0]({ message: { role: "assistant", usage: { input: 400, cacheRead, cacheWrite: 0, output: 600 } }, toolResults }, {});
+	const compacts: { onComplete?: (r: unknown) => void; onError?: (e: Error) => void }[] = [];
+	const ctx = { abort: () => aborted++, compact: (o: any) => compacts.push(o), sessionManager: { getSessionId: () => "sess-1" } };
+	const turn = (cacheRead: number, toolResults: unknown[] = [{}]) => handlers.turn_end?.[0]({ message: { role: "assistant", usage: { input: 400, cacheRead, cacheWrite: 0, output: 600 } }, toolResults }, ctx);
 	const call = () => handlers.tool_call?.[0]({ toolName: "eval", toolCallId: "x" }, ctx);
-	return { turn, call, handlers, sent, aborted: () => aborted };
+	return { turn, call, handlers, sent, compacts, aborted: () => aborted };
 }
 
 test("below the cap tools run; above it every call is blocked with what was spent", () => {
@@ -74,4 +76,89 @@ test("config: default 12M, 0 turns the cap off, bad values fall back", () => {
 	const off = worker(0);
 	expect(off.handlers.tool_call).toBeUndefined();
 	expect(off.handlers.turn_end).toBeUndefined();
+});
+
+test("past the context threshold a worker compacts between tool steps, once per crossing, and a hidden message continues it when the compaction ends", () => {
+	const w = worker(50_000_000, 100_000);
+	w.turn(98_000);
+	expect(w.compacts).toHaveLength(0);
+	w.turn(99_600);
+	expect(w.compacts).toHaveLength(1);
+	expect(w.sent).toEqual([]);
+	w.compacts[0].onComplete?.({});
+	const resume = w.sent.find(s => s.message.customType === "dotz-task-compact");
+	expect(resume?.options).toEqual({ triggerTurn: true, deliverAs: "followUp" });
+	expect(resume?.message.display).toBe(false);
+	expect(resume?.message.content).toContain("was compacted");
+	w.turn(130_000);
+	expect(w.compacts).toHaveLength(1);
+	w.compacts[0].onComplete?.({});
+	w.turn(40_000);
+	w.turn(120_000);
+	expect(w.compacts).toHaveLength(2);
+});
+
+test("a compaction that leaves the context above the threshold re-arms only after 50K more", () => {
+	const w = worker(50_000_000, 100_000);
+	w.turn(120_000);
+	w.compacts[0].onComplete?.({});
+	w.turn(130_000);
+	w.turn(170_000);
+	expect(w.compacts).toHaveLength(1);
+	w.turn(190_000);
+	expect(w.compacts).toHaveLength(2);
+});
+
+test("no compaction on the final turn without tools, past the token cap, or with the threshold at 0", () => {
+	const w = worker(50_000_000, 100_000);
+	w.turn(150_000, []);
+	expect(w.compacts).toHaveLength(0);
+	const capped = worker(1_000_000, 100_000);
+	capped.turn(1_200_000);
+	expect(capped.compacts).toHaveLength(0);
+	const off = worker(50_000_000, 0);
+	off.turn(900_000);
+	expect(off.compacts).toHaveLength(0);
+	expect(worker(0, 0).handlers.turn_end).toBeUndefined();
+	expect(worker(0, 100_000).handlers.turn_end).toBeDefined();
+});
+
+test("a failed compaction is retried only after 50K more context, not on every turn", () => {
+	const w = worker(50_000_000, 100_000);
+	w.turn(120_000);
+	w.compacts[0].onError?.(new Error("nope"));
+	expect(w.sent[0].message.content).toContain("could not be compacted");
+	w.turn(130_000);
+	expect(w.compacts).toHaveLength(1);
+	w.turn(172_000);
+	expect(w.compacts).toHaveLength(2);
+});
+
+test("the compaction summary request counts toward the cap", () => {
+	const w = worker(1_000_000, 100_000);
+	w.turn(299_000);
+	expect(w.compacts).toHaveLength(1);
+	w.compacts[0].onComplete?.({});
+	w.turn(0);
+	expect(w.call()).toBeUndefined();
+	w.turn(200_000);
+	expect(w.call().block).toBe(true);
+});
+
+test("the 75% warning asks for a handoff file and the cap's final-answer text names that path", () => {
+	const w = worker(1_000_000);
+	w.turn(800_000);
+	const warning = w.sent[0].message.content;
+	expect(warning).toContain("dotz-handoff/sess-1.md");
+	expect(warning).toMatch(/done.*remaining.*next step.*changed paths/s);
+	w.turn(300_000);
+	const reason = w.call().reason;
+	expect(reason).toContain("dotz-handoff/sess-1.md");
+	expect(reason).toContain("[fail] token cap");
+});
+
+test("config: compaction threshold defaults to 150K, 0 turns it off, bad values fall back", () => {
+	expect(guardConfigFrom({}).task_compact_tokens).toBe(150_000);
+	expect(guardConfigFrom({ task_compact_tokens: 0 }).task_compact_tokens).toBe(0);
+	expect(guardConfigFrom({ task_compact_tokens: -5 }).task_compact_tokens).toBe(150_000);
 });

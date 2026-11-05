@@ -2,7 +2,7 @@
 // - gateway orchestrator (DOTZ_ORCHESTRATOR=1): dotz_send / dotz_lane / dotz_schedule / dotz_auth tools, recall after compaction.
 // - lane session (DOTZ_LANE set): dotz_auth tool; 5-minute prompt cache (1h is for the orchestrator only; idle warming covers waits).
 // - an OmO task worker of a lane or the orchestrator (DOTZ_LANE or DOTZ_ORCHESTRATOR=1, + OMO_SENPI_TASK_DEPTH): owner rules,
-//   output caps, 5-minute cache only.
+//   output caps, 5-minute cache, the token cap and the in-place compaction past a context threshold (task-cap.ts).
 // - any other session: "<name>모드 켜" (dotz_mode tool, /dotz on) makes this terminal a thin client of the
 //   gateway: typed input is forwarded to the gateway orchestrator instead of the local model, replies addressed to
 //   the terminal are shown here. "<name>모드 꺼" or /dotz off stops forwarding. No terminal needs to stay open.
