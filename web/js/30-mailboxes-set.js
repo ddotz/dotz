@@ -6,7 +6,7 @@
 const MXS = { root: null, open: "", more: new Set(), add: "", blank: 0, reply: "", note: "", tone: new Map(), ack: new Map(), q: Promise.resolve(), d: null, sug: null, sugFor: "" };
 const MXS_MODES = { auto: ["자동 초안", "메일이 오면 초안을 써 둬요. 보내기 전에 확인해요."], ask: ["확인 먼저", "답장할지 먼저 물어요. 쓰라고 하면 그때 초안을 써요."], notify: ["알림만", "새 메일을 알려 줘요. 초안은 쓰지 않아요."], quiet: ["조용히 모으기", "알리지 않고 여기 모아 둬요."] };
 const MXS_KINDS = [["from", "보낸 사람", "주소나 @도메인"], ["subj", "제목", "제목에 든 말"], ["body", "내용", "내용에 든 말"]];
-const MXS_ICONS = ["mail", "folder", "file", "tag", "users", "bell"];
+const MXS_ICONS = [["mail", "편지"], ["folder", "폴더"], ["file", "문서"], ["tag", "태그"], ["users", "사람"], ["bell", "종"]];
 const MXS_CAP = 4, MXS_FIX = 2;
 const mxsErr = e => (e && e.data && e.data.error) || (e && e.message) || "저장하지 못했어요";
 const mxsFind = (app, id) => { const a = MX.accts.get(app); return a ? a.byId.get(id) : undefined; };
@@ -88,7 +88,7 @@ function mxsConds(o, apply) {
 }
 const mxsJudge = (o, apply) => [el("div", { class: "mxs-jr" }, el("span", { class: "mxs-h", text: "메일을 읽고 이 설명에 맞는지 판단해요" }), mxsSw(o.judge.on, "내용을 보고 판단", () => apply(x => { x.judge.on = !x.judge.on; }))),
   o.judge.on ? el("input", { class: "fi", value: o.judge.text, placeholder: "예: 강의 자료를 달라는 메일", "aria-label": "판단 설명", onchange: ev => apply(x => { x.judge.text = ev.target.value.trim(); }, false) }) : null];
-const mxsIcons = (o, apply) => el("div", { class: "mxs-chips", role: "radiogroup", "aria-label": "아이콘" }, ...MXS_ICONS.map(n => el("button", { class: `chip mxs-ic${o.icon === n ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(o.icon === n), "aria-label": n, onclick: () => apply(x => { x.icon = n; }) }, mxIc(n))));
+const mxsIcons = (o, apply) => el("div", { class: "mxs-chips", role: "radiogroup", "aria-label": "아이콘" }, ...MXS_ICONS.map(([n, label]) => el("button", { class: `chip mxs-ic${o.icon === n ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(o.icon === n), "aria-label": label, onclick: () => apply(x => { x.icon = n; }) }, mxIc(n))));
 function mxsGreets(o, apply) {
   const row = (g, i) => el("div", { class: "mxs-g" }, el("div", { class: "tx" }, el("input", { class: "mxs-in", value: g.who, placeholder: "이름", "aria-label": "이름" }), el("input", { class: "mxs-in s", value: g.addr, placeholder: "주소나 @도메인", "aria-label": "주소" })),
     el("input", { class: "fi", value: g.hello, placeholder: "첫 인사", "aria-label": "첫 인사" }), el("button", { class: "ib", type: "button", "aria-label": "지우기", onclick: () => { if (i < o.greets.length) apply(x => { x.greets.splice(i, 1); }); else { MXS.blank--; mxsPaint(); } } }, icon("close")));

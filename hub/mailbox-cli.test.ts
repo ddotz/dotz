@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foldPlan, run } from "./mailbox-cli.ts";
 import { boxesOf, boxOfSource } from "./mailbox.ts";
+import { instanceOf } from "./routes-mailbox.ts";
 
 const root = mkdtempSync(join(tmpdir(), "mailbox-fold-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -49,6 +50,9 @@ describe("foldPlan", () => {
 	test("refuses a base that is not folded and a target that is no mail app", () => {
 		expect(() => foldPlan(APPS, DRAFTS, { into: "mail", base: "mail-2" }, () => false)).toThrow();
 		expect(() => foldPlan(APPS, DRAFTS, { into: "youtube" }, () => false)).toThrow();
+		expect(() => foldPlan(APPS, DRAFTS, { into: "mail-2" }, () => false)).toThrow();
+		expect(() => foldPlan(APPS, DRAFTS, { into: "mail", from: ["mail-2"] }, () => false)).toThrow();
+		expect(() => foldPlan({ ...APPS, mail: { filter: { source: "own", account: "me@example.org" } } }, DRAFTS, { into: "mail" }, () => false)).toThrow();
 	});
 });
 
@@ -65,6 +69,7 @@ describe("run", () => {
 		expect(out.code).toBe(0);
 		expect(appsOf(dir)["mail-score"]).toBeUndefined();
 		expect(boxOfSource(boxesOf(dir, "mail"), "score")?.id).toBe("score");
+		expect(instanceOf(dir, "score-1")).toBe("mail");
 		expect(boxOfSource(boxesOf(dir, "mail"), "general")).toBeUndefined();
 		expect(existsSync(join(dir, "custom", "reply-drafts", "tone", "mail", "score.md"))).toBe(true);
 		expect(existsSync(join(dir, "custom", "reply-drafts", "tone", "mail-score.md"))).toBe(true);
