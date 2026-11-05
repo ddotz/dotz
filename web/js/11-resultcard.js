@@ -47,7 +47,7 @@ function rcRawMd(raw) {
   return out.join("\n");
 }
 const rcWhen = t => !t || !Number.isFinite(Date.parse(t)) ? "" : kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)} ${kstHM(t)}`;
-const rcPlain = s => String(s ?? "").replace(/^\s*#{1,6}\s*/, "").replace(/\*\*|`/g, "").trim();
+const rcPlain = s => plainTable(String(s ?? "")).replace(/^\s*#{1,6}\s*/, "").replace(/\*\*|`/g, "").trim();
 // The original folded behind "원문 보기" (raw: the text; opts.rawNode draws it itself, opts.rawOpen starts it open).
 function rcRawFold(raw, opts = {}) {
   const sum = el("summary", { text: opts.rawOpen ? "원문 접기" : "원문 보기" }), box = el("div", { class: `rc-rawbody${opts.rawNode ? " own" : ""}` }), d = el("details", { class: "rc-raw" }, sum, box);
@@ -81,7 +81,7 @@ function rcRowsNode(text) {
 // null when there is nothing to show.
 function resultCard(opts) {
   const sp = rcSplit(opts.text), raw = opts.raw !== undefined ? String(opts.raw).trim() : sp.raw;
-  let title = opts.title !== undefined ? rcPlain(opts.title) : "", body = sp.text;
+  let title = opts.title !== undefined ? rcPlain(opts.title) : "", body = choiceFree(sp.text);
   if (opts.title === undefined && body) {
     const [first, ...rest] = body.split("\n"), t = rcPlain(first);
     if (t && t.length <= 120 && !rcLabel(first)) { title = t; body = rest.join("\n").trim(); }

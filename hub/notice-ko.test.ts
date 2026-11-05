@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildNoticeKoWeb } from "./gen-notice-ko-web.ts";
-import { cronKo, errorKo, noticeKo } from "./notice-ko.ts";
+import { cronKo, errorKo, noticeKo, plainTable } from "./notice-ko.ts";
 import { stripMarkers } from "./tone.ts";
 import { clockKo } from "./watchtext.ts";
 
@@ -65,4 +65,9 @@ test("the page's copy is this code, and runs to the same answers", () => {
 test("an id that was all of a code span leaves no marks behind", () => {
 	expect(noticeKo("근거: `a1b2c3d` · 테스트 24개 통과")).toBe("근거: 테스트 24개 통과");
 	expect(noticeKo("커밋 `e1b86a59`, 테스트 · `a1b2c3d` · 끝")).not.toContain("``");
+});
+
+test("a table reads as words in a one-line preview", () => {
+	expect(plainTable("앞\n| | 기본 | 넉넉 |\n|---|:--|---|\n| 요금 | 1 | 2 |")).toBe("앞\n기본 · 넉넉\n요금 · 1 · 2");
+	expect(plainTable("a | b 는 그대로예요")).toBe("a | b 는 그대로예요");
 });
