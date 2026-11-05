@@ -10,11 +10,9 @@ import { dirname, join } from "node:path";
 import { type WatchLike, watchOwner } from "./app-features.ts";
 import { SettingsError, writeSettings } from "./app-settings.ts";
 import { loadFeatureDirs } from "./featuredirs.ts";
-import { type AppFilter, type AppRaw, APPS_FILE, appEntries, appLabel, type IntegrationEntry, inConv, INTEGRATIONS, readAppOff, readAppsFile, srcKey, whereOf } from "./integrations.ts";
+import { type AppFilter, type AppRaw, APPS_FILE, appEntries, appLabel, type IntegrationEntry, inConv, INTEGRATIONS, owns, readAppOff, readAppsFile, srcKey, whereOf } from "./integrations.ts";
 
 const entryOf = (dataDir: string, app: string): IntegrationEntry | undefined => appEntries(dataDir).find(e => e.key === app);
-const named = (list: readonly string[], watch: string): boolean => list.some(w => (w.endsWith("-") ? watch.startsWith(w) : watch === w));
-const owns = (e: IntegrationEntry, watch: string): boolean => named(e.watches ?? [], watch) && !named(e.not?.watches ?? [], watch);
 
 /** True when the watch belongs to an app this install switched off: the runner skips it. */
 export const watchOff = (dataDir: string, watch: string, session?: { url: string }, rest?: Omit<WatchLike, "name" | "session">): boolean => {

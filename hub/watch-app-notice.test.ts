@@ -22,7 +22,7 @@ const report = (watch: string, label: string, text: string) => emit("inbox", { t
 const watchNotice = (title: string) => listNotices(NOTICE_CAP).items.find(n => n.kind === "watch" && n.title === title)!;
 
 test("a mail watch report is the mail app's and a normal watch report is not", () => {
-	report("sample-mail-arrival", "메일 도착 점검", "a=1");
+	report("webmail-arrival", "메일 도착 점검", "a=1");
 	report("sample-plain-check", "샘플 일반 점검", "b=1");
 	expect(watchNotice("메일 도착 점검").app).toBe("mail");
 	expect(watchNotice("샘플 일반 점검").app).toBeUndefined();
@@ -30,7 +30,7 @@ test("a mail watch report is the mail app's and a normal watch report is not", (
 
 test("a report stored without `app` is tagged at start, a normal one stays", () => {
 	setAppResolver(() => undefined);
-	report("sample-mail-stored", "메일 오래된 점검", "a=2");
+	report("webmail-stored", "메일 오래된 점검", "a=2");
 	report("sample-plain-stored", "샘플 오래된 점검", "b=2");
 	expect(watchNotice("메일 오래된 점검").app).toBeUndefined();
 	setAppResolver(resolver);

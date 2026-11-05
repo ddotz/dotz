@@ -609,7 +609,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
 			const ctx = integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags());
 			const own = ownedWatches(DATA_DIR, allWatches());
-			const items = integrationItems(ctx, allNotices(), convUnread, 100, undefined, mailSuggests(), Date.now(), draftNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => withConnection({ ...i, own: own.get(i.key) ?? [] }, allWatches()));
+			const items = integrationItems({ ...ctx, own }, allNotices(), convUnread, 100, undefined, mailSuggests(), Date.now(), draftNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => withConnection({ ...i, own: own.get(i.key) ?? [] }, allWatches()));
 			return { items, available: integrationAvailable(items, ctx) };
 		};
 		if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
