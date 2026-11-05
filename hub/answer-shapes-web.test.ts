@@ -25,6 +25,11 @@ const cases: Record<string, object> = {
 	bundle: answer("문의를 묶어 봤어요. 둘은 남았어요.\n\n**아직 남음**\n- **배송 늦음 (6회):** 주말 주문이 몰렸어요.\n\n**처리함**\n- **영수증 재발급 (4회):** 바로 받을 수 있어요.\n- **비밀번호 찾기:** 스팸함으로 갔어요.\n\n오늘 안에 볼게요."),
 	loneTitle: answer("**아직 남음**\n- **배송 늦음:** 주말 주문이 몰렸어요."),
 	titleOverText: answer("**아직 남음**\n- 라벨 없는 줄이에요.\n- 또 하나예요."),
+	steps: answer("다시 연결하려면 이렇게 해 주세요.\n\n1. 전원을 꺼요.\n2) 버튼을 눌러요.\n3. 다시 찾아요."),
+	oneStep: answer("1. 전원을 꺼요."),
+	table: answer("두 요금제예요. 기본형이 나아요.\n\n| | 기본형 | 넉넉형 |\n|---|---|---|\n| 월 요금 | 19,000원 | 33,000원 |\n| 데이터 | 20GB | 무제한 |"),
+	wideTable: answer("| a | b | c | d | e | f |\n|---|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 | 6 |"),
+	noHeader: answer("| 월 요금 | 19,000원 |\n| 데이터 | 20GB |"),
 	user: { kind: "in", source: "web", target: "web", text: LABELS },
 	last: answer("끝이에요."),
 };
@@ -135,4 +140,30 @@ test("a lone title with one item, or a title over a plain list, stays as written
 
 test("a copied bundle gives its title and lines as written", async () => {
 	expect(lines(await copied(`${msg("bundle")}.querySelector(".ans-card")`))).toEqual(["**아직 남음**", "- **배송 늦음 (6회):** 주말 주문이 몰렸어요.", "**처리함**", "- **영수증 재발급 (4회):** 바로 받을 수 있어요.", "- **비밀번호 찾기:** 스팸함으로 갔어요."]);
+});
+
+test("numbered lines are steps with their number in a small cell", async () => {
+	expect(await count("steps", ".ans-steps .rc-row")).toBe(3);
+	expect(await page<string[]>(`[...${msg("steps")}.querySelectorAll(".rc-k")].map(e => e.textContent)`)).toEqual(["1", "2", "3"]);
+	expect(await count("steps", "ol")).toBe(0);
+	expect(await count("oneStep", ".ans-card")).toBe(0);
+	expect(await count("oneStep", "ol")).toBe(1);
+});
+
+test("a table of five columns or fewer wraps in a card, its first column a row label", async () => {
+	expect(await count("table", ".ans-tb table")).toBe(1);
+	expect(await count("table", "tbody th")).toBe(2);
+	expect(await page<boolean>(`(t => t.scrollWidth <= t.clientWidth)(${msg("table")}.querySelector(".ans-tb"))`)).toBe(true);
+});
+
+test("a wider table or one with no header stays today's table", async () => {
+	for (const n of ["wideTable", "noHeader"]) {
+		expect(await count(n, ".ans-card")).toBe(0);
+		expect(await count(n, ".tbl table")).toBe(1);
+	}
+});
+
+test("copied steps and a copied table give the lines as written", async () => {
+	expect(lines(await copied(`${msg("steps")}.querySelector(".ans-card")`))).toEqual(["1. 전원을 꺼요.", "2) 버튼을 눌러요.", "3. 다시 찾아요."]);
+	expect(lines(await copied(`${msg("table")}.querySelector(".ans-card")`))).toEqual(["| | 기본형 | 넉넉형 |", "|---|---|---|", "| 월 요금 | 19,000원 | 33,000원 |", "| 데이터 | 20GB | 무제한 |"]);
 });

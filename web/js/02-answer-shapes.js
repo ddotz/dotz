@@ -7,12 +7,13 @@ const ANS_LABEL = /^\*\*([^*\n]{1,24}?):?\*\*:?\s+(\S.*)$/;
 const ANS_EVIDENCE = /^근거:\s*(\S.*)$/;
 const ANS_HEAD = /^\*\*([^*\n]+)\*\*$/, ANS_COUNT = /^(.+?)\s*\((\d+회)\)$/;
 const ANS_SENTENCE = /^.+?[.!?](?=\s|$)/;
-const ANS_WORDY = 30, ANS_LEAD_MAX = 80;
+const ANS_WORDY = 30, ANS_LEAD_MAX = 80, ANS_TABLE_COLS = 5;
 const ansRaw = line => `<span class="mlist-url" aria-hidden="true">${esc(line)}</span>`;
 const ansRow = (key, value, raw) => `<div class="rc-row">${ansRaw(raw)}<span class="rc-k">${inline(key)}</span><span class="rc-w">${inline(value)}</span></div>`;
 // The list as a card, or null. Two or more flat items only: one line or a nested list is lighter as text.
 function ansListHtml(list) {
   if (list.items.length < 2 || list.items.some(i => i.sub)) return null;
+  if (list.t === "ol") return `<div class="ans-card"><div class="rc-rows ans-steps">${list.items.map((x, i) => ansRow(String(i + 1), x.text, x.raw)).join("")}</div></div>`;
   const kv = list.items.map(i => ANS_LABEL.exec(i.text));
   if (!kv.every(Boolean)) return null;
   const rows = kv.map((m, i) => ansRow(m[1], m[2], list.items[i].raw)).join("");
