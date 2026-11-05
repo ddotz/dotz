@@ -1,6 +1,6 @@
 // The draft life cycle shared by the gateway offer (offer.ts) and the CLI (bin/draft.ts): build -> ask -> revise | send | drop.
 // Nothing here sends without the user's 1) 보내기 pick for exactly that draft id, read from the inbox log.
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import type { DraftRule } from "../../../hub/app-settings.ts";
 import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimHolder, claimSend } from "../../../hub/draft-claim.ts";
@@ -13,7 +13,8 @@ import { basename } from "node:path";
 import { ruleFilePath } from "./rules.ts";
 import { canAttach, sendsThroughZele, sendWith, settleAccount, webmailSite, zeleAccountOf, type SendOutcome } from "./senders.ts";
 import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, type StageOpts, type Want } from "./staged.ts";
-import { dataDir, loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
+import { dataDir, loadSettings, loadStyle, paths, recordCorrection, toneFile, validApp, type ToneKey } from "./settings.ts";
+import { banWarnings, boxById } from "./box.ts";
 import { maybeRefine } from "./persona.ts";
 import { addPair, styleWithExamples } from "./pairs.ts";
 import { addDraft, claimFile, getDraft, listDrafts, newId, patchDraft, setStatus, type DraftRec } from "./store.ts";
@@ -31,8 +32,14 @@ export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promi
 }
 
 // The tone profile an item or draft belongs to: its room when it has one, else its own profile (a mail app instance's), else its app (mail unless the item says otherwise).
-export const toneKey = (x: { app?: string; room?: string; profile?: string }): ToneKey => ({ app: x.profile ?? x.app ?? "mail", ...(x.room !== undefined ? { room: x.room } : {}) });
-export type Meta = { source: string; mailId: string; ref: string; origAttachments?: number; /** The zele account the mail belongs to (its record's `account`); every zele call of the draft passes it. */ account?: string };
+// A draft made in a mailbox (box + instance) uses tone/<instance>/<box>.md when that file exists, falling back to the instance's profile (else the mail one), then the install.
+export const toneKey = (x: { app?: string; room?: string; profile?: string; box?: string; instance?: string }): ToneKey => {
+	const key: ToneKey = { app: x.profile ?? x.app ?? "mail", ...(x.room !== undefined ? { room: x.room } : {}) };
+	if (!x.box || !x.instance || x.room !== undefined || !validApp(x.instance)) return key;
+	const boxKey: ToneKey = { app: x.instance, room: x.box, ...(x.profile ? {} : { base: key.app }) };
+	return existsSync(toneFile(boxKey)) ? boxKey : key;
+};
+export type Meta = { /** The mailbox the mail is in and its mail app instance (box.ts boxCtx): set only for a mail in a box with settings. */ box?: string; instance?: string; source: string; mailId: string; ref: string; origAttachments?: number; /** The zele account the mail belongs to (its record's `account`); every zele call of the draft passes it. */ account?: string };
 // "ask" (chat only): the message needs a decision only the user can make; `choices` are 2-4 short answers.
 export type Built = { action: "skip"; reason: string } | { action: "draft"; rec: DraftRec; warnings: string[]; /** The candidates the model chose (ReplyResult.files); absent = it gave no choice. */ files?: string[] } | { action: "ask"; question: string; choices: string[] };
 
@@ -115,7 +122,7 @@ function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: 
 // back to the model.
 export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): Promise<Built> {
 	const trace = deps.trace ?? draftTrace();
-	const style = styleOf(item, toneKey(item)), call = callOf({ ...deps, trace }, item, meta.ref);
+	const style = styleOf(item, toneKey({ ...item, box: meta.box, instance: meta.instance })), call = callOf({ ...deps, trace }, item, meta.ref);
 	const r = await generateChatReply(item, style, call);
 	if (r.action !== "draft") return r;
 	const questions = item.kind === "mail" ? r.questions.filter(q => !ADDRESS_ASK.test(q)) : r.questions;
@@ -257,15 +264,16 @@ export type Candidates = { files: LibraryFile[]; /** Rule entries that name no f
 
 // The files the model may choose from for a mail, before the draft is written: the matched rule's files (resolved) first, then the library files that
 // share a word with the mail, CANDIDATE_MAX in all. Plain code, no model call; the model sees their names. undefined: this mail has no folder to choose from.
-export async function candidatesFor(item: ReplyItem, meta: { source: string; ref: string }, rule?: DraftRule): Promise<Candidates | undefined> {
+// `folders`: the mailbox's own folders, in front of the app's 첨부 파일 폴더 (box.ts boxFolders); empty = the single folder as before.
+export async function candidatesFor(item: ReplyItem, meta: { source: string; ref: string }, rule?: DraftRule, folders: string[] = []): Promise<Candidates | undefined> {
 	if (item.kind !== "mail" || !canAttach(meta.source)) return undefined;
-	const folder = await attachFolder(meta.ref);
-	if (!folder) return undefined;
-	const library = listLibrary(folder);
+	const app = await attachFolder(meta.ref), roots = [...new Set([...folders, ...(app ? [app] : [])])];
+	if (!roots.length) return undefined;
+	const library = folders.length ? roots.flatMap(listLibrary).filter((f, i, all) => all.findIndex(x => x.rel === f.rel) === i) : listLibrary(roots[0]!);
 	const files: LibraryFile[] = [], missing: string[] = [];
 	const add = (f: LibraryFile) => void (files.length < CANDIDATE_MAX && !files.some(x => x.path === f.path) && files.push(f));
 	for (const entry of rule?.files ?? []) {
-		const path = ruleFilePath(entry, folder);
+		const path = roots.map(r => ruleFilePath(entry, r)).find(Boolean);
 		if (!path) missing.push(entry);
 		else add(library.find(f => f.path === path) ?? { rel: basename(path), path, size: statSync(path).size });
 	}
@@ -366,7 +374,8 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 		recordCorrection(toneKey(old), lesson, nowOf(deps));
 		await refineAfterCorrection(toneKey(old), deps);
 	}
-	const rec = toRec(old.item, { source: old.source, mailId: old.mailId, ref: old.ref, ...(old.account ? { account: old.account } : {}), ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
+	const banned = old.box && old.instance ? banWarnings(boxById(old.instance, old.box), r.draft) : [];
+	const rec = toRec(old.item, { ...(old.box && old.instance ? { box: old.box, instance: old.instance } : {}), source: old.source, mailId: old.mailId, ref: old.ref, ...(old.account ? { account: old.account } : {}), ...(old.origAttachments ? { origAttachments: old.origAttachments } : {}) }, r, [...old.changes, change], deps);
 	// The recipients the owner set on the card stay: a rewrite of the words is not a reason to send it to somebody else.
 	rec.to = old.to;
 	if (old.cc?.length) rec.cc = old.cc;
@@ -382,7 +391,7 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	carryStagedFiles(old.id, rec.id);
 	const notStaged = await restageForRevision(rec, change, deps, rev && r.files ? { rev, chosen: r.files } : undefined).catch(e => [(e as Error).message]);
 	addDraft(rec);
-	return { ok: true, text: askText(rec, [...r.warnings, ...notStaged], "답장 초안을 고쳤어요"), id: rec.id };
+	return { ok: true, text: askText(rec, [...r.warnings, ...banned, ...notStaged], "답장 초안을 고쳤어요"), id: rec.id };
 }
 
 export function dropDraft(id: string): Step {

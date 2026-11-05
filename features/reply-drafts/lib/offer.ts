@@ -7,7 +7,9 @@ import { ownAddresses } from "../../../hub/mail-state.ts";
 import { threadIdOf, webmailSite } from "./senders.ts";
 import { retryWanted, type StageOpts, type Want } from "./staged.ts";
 import { askText, attachFolder, buildDraft, callOf, candidatesFor, chosenFrom, draftTrace, mailAsksFile, settleDraft, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
-import { anyRuleOn, mailInstanceOf, matchRule, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles } from "./rules.ts";
+import { anyRuleOn, mailInstanceOf, matchMail, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles } from "./rules.ts";
+import { banWarnings, boxFolders, boxLines, boxRules, noAutoDraft } from "./box.ts";
+import { boxCtx, moveByJudge, type BoxDeps } from "./box-place.ts";
 import { learnFirst, MAIL_TONE_VERSION } from "./persona.ts";
 import { appOn, ensureSwitch, hasOwnTone, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
@@ -15,7 +17,7 @@ import { FairQueue } from "./fair-queue.ts";
 import type { Runner } from "./tone.ts";
 
 export type OfferMail = { account?: string; key: string; /** false: the gateway judged the mail needs no reply (hub/mail.ts); only a draft rule drafts it then */ needs?: boolean; instruction?: string; messageId?: string; target: string; thread?: string; source: string; id: string; subject: string; from?: string; to?: string; cc?: string; summary?: string; body?: string; attachments?: { name: string; size?: number }[] };
-export type OfferDeps = {
+export type OfferDeps = BoxDeps & {
 	send: (target: string, text: string) => unknown;
 	call?: ModelCall;
 	/** Picks among tied 첨부 파일 폴더 files by name (flow.ts stageForReply); tests inject it. */
@@ -70,10 +72,15 @@ function startHistory(m: OfferMail, deps: OfferDeps): Promise<string[]> {
 }
 
 // The cheap checks of offerOne, without side effects: a mail the feature is off for, already looked at, or that needs no reply is not read ahead.
-function mayDraft(m: OfferMail): boolean {
+function mayDraft(m: OfferMail, instance: string, deps: OfferDeps): boolean {
 	try {
 		const settings = loadSettings();
-		if (!(appOn(settings, "mail") || (rulesAllowed(settings) && anyRuleOn())) || isDrafted(m.messageId ? `${m.key}#${m.messageId}` : m.key)) return false;
+		if (isDrafted(m.messageId ? `${m.key}#${m.messageId}` : m.key)) return false;
+		const ctx = boxCtx(instance, m, deps);
+		if (noAutoDraft(ctx.box)) return false;
+		// A mailbox can draft with the app switch off: its mode is auto, or a judge may move the mail into such a box.
+		const viaBox = rulesAllowed(settings) && (ctx.box?.mode === "auto" || (m.needs !== false && ctx.judges.length > 0));
+		if (!(appOn(settings, "mail") || (rulesAllowed(settings) && anyRuleOn()) || viaBox)) return false;
 		return !precheck({ kind: "mail", from: m.from ?? "", self: addressesOf(m.to), subject: m.subject, text: "" }, settings.senders, { addressLater: true });
 	} catch {
 		return false;
@@ -100,7 +107,7 @@ let readingAhead = 0;
 function startReads(j: Job): Reads {
 	if (j.reads) return j.reads;
 	try {
-		const may = j.requested || mayDraft(j.m);
+		const may = j.requested || mayDraft(j.m, j.instance, j.deps);
 		return (j.reads = { body: may ? fullBody(j.m, j.deps) : Promise.resolve(j.m.body), history: may ? startHistory(j.m, j.deps) : Promise.resolve([]) });
 	} catch (e) {
 		(j.deps.log ?? console.error)(`reply draft: mail ${j.m.key} reads not started: ${(e as Error).message}`);
@@ -154,14 +161,21 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 	let trace: DraftTrace | undefined;
 	try {
 		const settings = loadSettings();
-		const auto = appOn(settings, "mail");
-		// The rules of the mail's own app instance; a mail of an instance without a rule switched on costs nothing more.
-		const own = rulesAllowed(settings) ? await rulesOf(instance) : undefined;
-		const rules = own?.rules.filter(r => r.on) ?? [];
-		if (!requested && !auto && !rules.length) return "off";
-		if (!requested && m.needs === false && !rules.length) return "off";
+		// The mailbox the mail is in (none = the base box with nothing set: today's path). Its mode: auto drafts with the app switch off, ask / notify / quiet draft only on request.
+		const ctx = boxCtx(instance, m, deps);
+		let box = ctx.box;
+		const allowed = rulesAllowed(settings), autoOf = (b: typeof box) => appOn(settings, "mail") || (allowed && b?.mode === "auto");
+		let auto = autoOf(box);
 		// One look per message: a newer message of the same thread (messageId) is looked at again, a repeat of the same one is not.
 		const looked = m.messageId ? `${m.key}#${m.messageId}` : m.key;
+		if (!requested && noAutoDraft(box)) return isDrafted(looked) ? "skipped" : (markDrafted(looked), "off");
+		// The rules of the mail's own app instance (the mailbox's own, when it has some); a mail of an instance without a rule switched on costs nothing more.
+		const own = allowed ? await rulesOf(instance) : undefined;
+		const rules = (allowed ? boxRules(box) ?? own?.rules ?? [] : []).filter(r => r.on);
+		// The judge of the other mailboxes rides on the rule match: only a mail still in the base box, that needs a reply, and nobody asked a draft for.
+		const judges = !requested && m.needs !== false && allowed ? ctx.judges : [];
+		if (!requested && !auto && !rules.length && !judges.length) return "off";
+		if (!requested && m.needs === false && !rules.length) return "off";
 		if (!requested && isDrafted(looked)) return "skipped";
 		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: deps.own?.(m.source) ?? addressesOf(m.to), to: addressesOf(m.to), ...(m.cc ? { cc: addressesOf(m.cc) } : {}), subject: m.subject, text: "", ...(requested ? { requested: true } : {}), ...(requested && m.instruction?.trim() ? { instruction: m.instruction.trim().slice(0, 500) } : {}) };
 		// Learning stays on the shared mail profile; only the writing, the revising and the send check read the instance's own profile.
@@ -187,12 +201,27 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		trace = draftTrace();
 		// A short wait for an iCloud file to come back (the offer queue waits on this draft); what is still away is retried in the background (wantFiles).
 		const flow = { call: deps.call, pick: deps.pick, trace, stage: { tries: 5, ...deps.stage } };
-		const rule = rules.length ? await matchRule({ from: item.from, subject: item.subject, text: item.text }, rules, callOf(flow, item, m.key, "rule")).catch(e => (log(`reply draft: rules for mail ${m.key} not matched: ${(e as Error).message}`), undefined)) : undefined;
+		const hit = rules.length || judges.length ? await matchMail({ from: item.from, subject: item.subject, text: item.text }, rules, judges.map(b => b.judge.text), callOf(flow, item, m.key, "rule")).catch(e => (log(`reply draft: rules for mail ${m.key} not matched: ${(e as Error).message}`), {} as Awaited<ReturnType<typeof matchMail>>)) : {};
+		const rule = hit.rule;
+		if (hit.judge !== undefined) {
+			// The mail moves to the box the judge chose, and that box's mode applies; no second call.
+			box = judges[hit.judge]!;
+			try {
+				moveByJudge(deps, m.key, box);
+			} catch (e) {
+				log(`reply draft: mail ${m.key} not moved to its mailbox: ${(e as Error).message}`);
+			}
+			auto = autoOf(box);
+			if (noAutoDraft(box)) {
+				markDrafted(looked);
+				return "off";
+			}
+		}
 		if (!requested && !auto && !rule) {
 			markDrafted(looked);
 			return "skipped";
 		}
-		const instruction = ruleInstruction(own?.base ?? "", rule, requested ? m.instruction?.trim().slice(0, 500) : undefined);
+		const instruction = ruleInstruction(own?.base ?? "", rule, requested ? m.instruction?.trim().slice(0, 500) : undefined, boxLines(box, item.from));
 		if (instruction) item.instruction = instruction;
 		const read = Date.now();
 		refreshPairs(deps, log);
@@ -203,10 +232,10 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		const ruleFiles = !!rule?.files.length;
 		// The model chooses among candidates (the rule's files first, then the library matches); no model call picks them.
 		const asked = mailAsksFile(item);
-		const cands = ruleFiles || asked ? await candidatesFor(item, { source: m.source, ref: m.key }, rule).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined)) : undefined;
+		const cands = ruleFiles || asked ? await candidatesFor(item, { source: m.source, ref: m.key }, rule, boxFolders(box)).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined)) : undefined;
 		if (cands?.files.length) item.candidates = cands.files.map(f => f.rel);
 		else if (cands && asked) item.files = [];
-		const built = await buildDraft(item, { source: m.source, mailId: m.id, ref: m.key, ...(m.account ? { account: m.account } : {}), ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, flow);
+		const built = await buildDraft(item, { ...(box ? { box: box.id, instance } : {}), source: m.source, mailId: m.id, ref: m.key, ...(m.account ? { account: m.account } : {}), ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, flow);
 		if (built.action !== "draft") {
 			markDrafted(looked);
 			return "skipped";
@@ -215,7 +244,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		built.rec.mode = "reply";
 		ensureSwitch();
 		if (rule) built.rec.rule = { id: rule.id, name: rule.name };
-		const warnings = [...built.warnings];
+		const warnings = [...built.warnings, ...banWarnings(box, built.rec)];
 		const chosen = chosenFrom(cands, built.files);
 		const notStaged = (e: Error): string[] => (log(`reply draft: files for mail ${m.key} not staged: ${e.message}`), []);
 		if (chosen) {
