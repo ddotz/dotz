@@ -7,6 +7,14 @@ import { laneScenario, orchestratorScenario } from "./scenario.ts";
 
 const GOLDEN = join(import.meta.dir, "fixtures", "scenario.golden.json");
 
+// The #hash in front of a long prompt hashes its whole text, so every prompt edit moved it (429b1cd2, 95f1eb14). Marks are compared by order of first
+// appearance instead: each one must still be there, and a prompt sent twice in a run must carry the same mark twice.
+const MARK = /^#([0-9a-z]+) (?=[^]*…$)/;
+const marks = (trace: unknown) => {
+	const seen = new Map<string, number>();
+	return JSON.parse(JSON.stringify(trace), (_, v) => typeof v === "string" ? v.replace(MARK, (_m, h: string) => `#mark${seen.get(h) ?? seen.set(h, seen.size).get(h)} `) : v);
+};
+
 test("orchestrator and lane state machines keep their calls", async () => {
 	// The golden was captured from the omp adapter; since OmO became the default the scenario names omp explicitly.
 	const saved = cfg.runtime;
@@ -19,7 +27,8 @@ test("orchestrator and lane state machines keep their calls", async () => {
 		}
 	})();
 	if (process.env.CAPTURE_GOLDEN === "1") return void (await Bun.write(GOLDEN, `${JSON.stringify(actual, null, 1)}\n`));
-	const golden = JSON.parse(await Bun.file(GOLDEN).text());
-	expect(actual.orchestrator).toEqual(golden.orchestrator);
-	expect(actual.lane).toEqual(golden.lane);
+	const golden = marks(JSON.parse(await Bun.file(GOLDEN).text()));
+	const got = marks(actual);
+	expect(got.orchestrator).toEqual(golden.orchestrator);
+	expect(got.lane).toEqual(golden.lane);
 }, 60_000);
