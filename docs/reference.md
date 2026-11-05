@@ -275,8 +275,9 @@ the dotz extension into every agent it runs in: the orchestrator, sessions and t
   subagent is blocked (spawn a new one).
 - *Subagents*: external-impact commands (`git push`, `gh` writes, publish, deploy, `ssh`/`scp`/`rsync`, outbound HTTP writes,
   plus your `external_commands`) are blocked and handed back; the first compaction steers a subagent to wrap up and the second
-  disables its tools; the 1h cache TTL is dropped (5-minute cache). An OmO task worker past `task_token_cap` (8000000 tokens,
-  input + cache read/write + output summed over its turns; 0 = off) has its tools blocked with a `[fail]` note naming what it
+  disables its tools; the 1h cache TTL is dropped (5-minute cache). An OmO task worker past `task_token_cap` (12000000 tokens,
+  input + cache read/write + output summed over its turns; 0 = off) gets one note at 75% of the cap, in its next turn, to commit
+  what it has, finish or report the rest and start no new long runs; past the cap it has its tools blocked with a `[fail]` note naming what it
   spent, so its next answer goes back to the parent as a failure with its last state; it is aborted if it keeps calling tools.
 - *Owner thresholds*: a tool call that changes `orchestrator.rotate_tokens` or `lanes.compact_at` in `config.json` is undone
   unless one of the latest user messages names the new number (`300000`, `300k`, `30만`, `0.3M`); the tool result says so.
