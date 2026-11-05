@@ -1220,7 +1220,7 @@ export function installGuard(pi: any, config: GuardConfig = loadGuardConfig()): 
 			const p = raw.replace(/^['"]|['"]$/g, "").replace(/(\.patch):.*$/, "$1");
 			return p.startsWith("~/") ? join(homedir(), p.slice(2)) : resolve(base, p);
 		};
-		const path = String(event?.input?.path ?? "");
+		const path = String(event?.input?.path ?? event?.input?.file_path ?? "");
 		if (tool === "read" && /\.patch(:|$)/.test(path)) reviewedPatches.add(patchKey(path));
 		// OmO has no bash tool: shell commands run inside `eval` cells (tool.bash, Bun.$, subprocess), and read() reads a file.
 		if (tool === "bash" || tool === "eval") {

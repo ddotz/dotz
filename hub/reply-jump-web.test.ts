@@ -18,6 +18,7 @@ let reads: string[] = [];
 let hold: Promise<void> | undefined;
 
 const hub = fakeHub({
+	slowTimers: true,   // the page's own polls and prefetches (a worklog read) run only when a test says so, never between two reads of the test
 	state: () => ({ ...idleState(), channels: { work: [{ id: "7", name: "공사", project: "공사" }] } }),
 	api: async (_req, url) => {
 		if (url.pathname === "/api/history") {
