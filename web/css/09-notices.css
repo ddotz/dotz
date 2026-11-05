@@ -12,7 +12,7 @@
 .nt-row.un .nt-t { font-weight: 600; }
 .nt-m { color: var(--fg-3); font: 400 12px/16px var(--font); }
 /* The message a notice led to (ntFlash in 30-notices.js marks the element with .nt-hl). The effect sits on the content, never on the row:
-   - a card or bubble (.ub, .ccard, .sn, .pn) is lit inside its own rounded shape: a faint tint of itself plus a soft accent ring (the overlay copies the host's radius);
+   - a card or bubble (.ub, .ccard, .sn) is lit inside its own rounded shape: a faint tint of itself plus a soft accent ring (the overlay copies the host's radius);
    - plain text (.nt-hl.nt-bar) gets only a faint tint inside the message's own bounds (no left bar: owner 2026-10-22).
    It fades in ~0.2s after the scroll lands (delay), holds, and is gone at ~2s. The ring and glow stay within 8px: the timeline's own 8px gutter (03-base.css) keeps them from being clipped. */
 .nt-hl { position: relative; --hl: 9%; --hl-ring: 34%; --hl-glow: 20%; }
