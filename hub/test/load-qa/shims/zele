@@ -5,7 +5,8 @@
 //   Mail  = { id, account, folder?: "inbox"|"sent", from, to, cc?, subject, snippet?, body?, date?, messages?, flags?, labels?, thread?: {from,to,date,body}[] }
 //   Event = { id, summary, start, end, calendar?, account? }
 // send / reply / forward are only recorded (shim-calls.jsonl, would_send: true), never performed.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { begin } from "./_lib.ts";
 
 type Msg = { from: string; to: string; date: string; body: string };
@@ -20,7 +21,16 @@ const opt = (name: string): string | undefined => {
 };
 const WRITE = new Set(["send", "reply", "forward"]);
 const [group, verb] = argv;
-begin("zele", argv, group === "mail" && WRITE.has(verb ?? "") ? { would_send: true } : {});
+// A send fails while $LOAD_QA_RUN/fail-mail exists and waits (at most 120 s) while $LOAD_QA_RUN/hang-mail exists.
+const flagged = (name: string): boolean => Boolean(process.env.LOAD_QA_RUN) && existsSync(join(process.env.LOAD_QA_RUN!, name));
+const isSend = group === "mail" && WRITE.has(verb ?? "");
+const failing = isSend && flagged("fail-mail");
+begin("zele", argv, isSend ? (failing ? { would_send: false, failed: true } : { would_send: true }) : {});
+if (isSend) for (let i = 0; i < 1200 && flagged("hang-mail"); i++) await Bun.sleep(100);
+if (isSend && flagged("fail-mail")) {
+	console.error("load-qa: fake mail failure (fail-mail)");
+	process.exit(1);
+}
 
 const load = (): Data => {
 	const file = process.env.LOAD_QA_ZELE_MAIL;

@@ -117,9 +117,11 @@ export function launch(o: LaunchOpts): Launch {
 		...o.env,
 	};
 	const repo = o.repo ?? REPO;
+	const fakeNet = join(repo, "hub", "test", "load-qa", "fake-net.ts");
 	return {
-		argv: sandboxArgv(profileFile, [process.execPath, join(repo, "hub", "main.ts")]),
-		env,
+		argv: sandboxArgv(profileFile, [process.execPath, "--preload", fakeNet, join(repo, "hub", "main.ts")]),
+		// the approval send runs the comment post in a child bun process (hub/approval-send.ts runCli): BUN_OPTIONS carries the preload to it
+		env: { ...env, BUN_OPTIONS: `--preload ${fakeNet}` },
 		cwd: repo,
 		runDir,
 		dataDir,
