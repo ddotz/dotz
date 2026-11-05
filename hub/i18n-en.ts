@@ -94,7 +94,8 @@ export const en = {
 		effortTitle: (who: string) => `${who} effort`,
 		updated: (who: string) => `${who} updated`,
 		unchanged: (who: string) => `${who} unchanged`,
-		applied: { live: "Applied now", restarted: "Restarted on it", "next-start": "From the next start" } as Record<string, string>,
+		applied: { live: "Applied now", restarted: "Restarted on it", "next-start": "From the next start", "next-turn": "From the next turn" } as Record<string, string>,
+		inheritMain: "Same as main",
 		restartGateway: "Gateway restart queued",
 		restartGatewayNote: (minutes: number) => `It restarts once the main agent and every session have nothing left to do; you get a notice if that takes longer than ${minutes} minutes.`,
 		restartMain: (who: string) => `${who} is restarting`,
@@ -134,7 +135,7 @@ export const en = {
 			title: "Commands",
 			groups: [
 				{ label: "View", items: [["/status", "State of the main agent, sessions and Discord"], ["/context", "Context usage per process"], ["/lanes", "Sessions and their models"], ["/quota", "Usage limits per provider"], ["/providers", "Signed-in providers and their models"]] },
-				{ label: "Models", items: [["/model [target] [model] [effort]", "Show or change a model. Targets: orchestrator, lanes (new sessions), workers (subagents) or a session"], ["/effort <target> <level>", `Change the effort (${levels})`], ["/compact <target>", "Compact a context"]] },
+				{ label: "Models", items: [["/model [target] [model] [effort]", "Show or change a model. Targets: orchestrator, lanes (new sessions), workers (subagents) or a session. In a project conversation, no target changes that conversation only; inherit goes back to main's"], ["/effort <target> <level>", `Change the effort (${levels})`], ["/compact <target>", "Compact a context"]] },
 				{ label: "Sessions", items: [["/stop <session>", "Pause a session (continue it later)"], ["/resume <session> [text]", "Continue a paused session, or send text to a live one"], ["/abort [target]", "Cancel the current turn (default: orchestrator)"], ["/restart <target>", `Restart a process. gateway waits until all work is done (notice after ${minutes} min)`]] },
 				{ label: "Accounts", items: [["/login [provider]", "Sign in; /login cancel aborts"], ["/logout <provider>", "Sign out and remove the key"], ["/account [id|alias|auto]", "The Claude account in use and why; pick one, or back to automatic"], ["/account alias <id> <alias>", "Name an account (just <id> clears it)"]] },
 			],

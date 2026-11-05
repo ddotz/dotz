@@ -1,7 +1,7 @@
 /* ---------- models ---------- */
 const pending = {};
 let providerFilter = "";
-const applyKo = { live: "적용했어요", restarted: "적용했어요 · 재시작됨", "next-start": "다음 시작부터 적용돼요" };
+const applyKo = { live: "적용했어요", restarted: "적용했어요 · 재시작됨", "next-start": "다음 시작부터 적용돼요", "next-turn": "다음 턴부터 적용돼요" };
 async function loadModels(quiet) {
   try { M = await api("/api/models"); }
   catch (e) { if (!quiet && current === "models") clear($("#models")).append(emptyNode("모델 정보를 불러오지 못했어요")); return; }
@@ -132,6 +132,13 @@ function fbWhy(layer) {
   return { reason: pd ? FB_DOWN_KO[pd.down] || "" : "", until: pd && pd.until && isFinite(Date.parse(pd.until)) ? pd.until : "" };
 }
 function liveModel(t) {
+  // A project conversation: its own choice and its session's model, or main's as it is with no choice (own: false).
+  if (isProjT(t)) {
+    const c = M && M.conversations && M.conversations[t], m = liveModel(MAIN);
+    if (!c) return { ...m, own: false };
+    const conf = c.own || m.conf, act = c.active;
+    return { sel: act || conf, conf, own: !!c.own, fallback: act && conf && runBaseOf(act) !== runBaseOf(conf) ? fbWhy("orchestrator") : null };
+  }
   const main = t === MAIN, om = M && M.orchestrator;
   const lm = main ? null : ((M && M.lanes) || []).find(x => `lane:${x.name}` === t), sl = main || !S ? null : (S.lanes || []).find(x => `lane:${x.name}` === t);
   const conf = main ? (om ? withLevel(om.model, om.thinking) : "") : lm ? withLevel(lm.model, lm.thinking) : (sl && sl.model) || "";

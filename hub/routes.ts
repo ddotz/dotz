@@ -976,7 +976,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				if (req.method === "GET") return json(await targetView(url.searchParams.get("target") ?? "main"));
 				if (req.method === "PUT") {
 					const b = await body(req);
-					return json(await changeTarget(String(b.target ?? "main"), { model: b.model ? String(b.model) : undefined, thinking: b.thinking ? String(b.thinking) : undefined, compact: b.compact === true, force: b.force === true, workerModel: b.worker_model ? String(b.worker_model) : undefined, byLane: b.by === "lane" }));
+					return json(await changeTarget(String(b.target ?? "main"), { model: b.model ? String(b.model) : undefined, thinking: b.thinking ? String(b.thinking) : undefined, compact: b.compact === true, force: b.force === true, inherit: b.inherit === true, workerModel: b.worker_model ? String(b.worker_model) : undefined, byLane: b.by === "lane" }));
 				}
 			} catch (error) {
 				return fail(error);

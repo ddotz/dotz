@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cfg, paths } from "./config.ts";
+import { cfg, orchestratorModel, paths, selectorOf } from "./config.ts";
 import { activityItems } from "./events.ts";
 import { msg } from "./i18n.ts";
 import type * as Orchestrator from "./orchestrator.ts";
@@ -180,4 +180,35 @@ test("a conversation's session is never handed another conversation's pending qu
 	} finally {
 		rmSync(laneDir, { recursive: true, force: true });
 	}
+});
+
+test("a conversation on its own model: a change takes a fresh session with a handover after the running turn, the same model resumes", async () => {
+	const key = "ch:own", ref = join(DATA, "inst-own.jsonl");
+	writeFileSync(ref, "{}\n");
+	let own = "anthropic/claude-sonnet-5-5:low";
+	const c = mod.createOrchestrator({ key, stateFile: join(DATA, "inst-own.json"), source: `conv:${key}`, keepalive: false, env: { DOTZ_CONV: key }, model: () => own });
+	c.deliver("[dotz inbox] first", true);
+	const p1 = ofKey(key)[0]!;
+	expect(p1.opts.model).toBe(own);
+	expect(p1.opts.workers).toBe(selectorOf(orchestratorModel()));
+	await p1.push({ type: "session", ref }, { type: "turn_start" }, { type: "turn_end" });
+	c.park();
+	await advance(1000);
+	c.deliver("[dotz inbox] same model", true);
+	const p2 = ofKey(key)[1]!;
+	expect(p2.opts.resume).toBe(ref);
+	await p2.push({ type: "session", ref }, { type: "turn_start" });
+	// Busy: nothing is killed until its turn ends.
+	own = "anthropic/claude-haiku-5-5:medium";
+	expect(c.applyModelChange()).toBe("next-start");
+	await advance(1000);
+	expect(ofKey(key).length).toBe(2);
+	await p2.push({ type: "turn_end" });
+	await advance(1000);
+	const p3 = ofKey(key)[2]!;
+	expect(p3.opts.model).toBe(own);
+	expect(p3.opts.resume).toBeUndefined();
+	expect(p3.sent.some(s => s.mode === "steer" && s.text.includes("[handover]"))).toBe(true);
+	c.stop();
+	await advance(1000);
 });

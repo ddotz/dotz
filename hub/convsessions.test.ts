@@ -2,7 +2,7 @@
 // conversation's turn; a session over the live cap or idle past the stop time is parked and resumed by its next message. The
 // orchestrator is a fake: this file tests the registry's routing and lifecycle, not the agent.
 import { afterEach, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConvSessions, type BgWork, type Conv, type ConvDeps, type Prompts } from "./convsessions.ts";
@@ -19,10 +19,10 @@ const tmp = (): string => {
 	return d;
 };
 
-type Fake = { o: Orchestrator; delivered: string[]; parked: number; started(): boolean };
+type Fake = { o: Orchestrator; delivered: string[]; parked: number; applied: number; started(): boolean };
 
-function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number } = {}) {
-	const dir = tmp();
+function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number; dir?: string } = {}) {
+	const dir = opts.dir ?? tmp();
 	let clock = 1_000_000;
 	const fakes = new Map<string, Fake>();
 	const created: string[] = [];
@@ -37,6 +37,7 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number } = {}) 
 		const f: Fake = {
 			delivered,
 			parked: 0,
+			applied: 0,
 			started: () => pid !== undefined,
 			o: {
 				orch: { status: "idle", error: undefined, activeModel: "m", ctx: { tokens: 0, compaction: { state: "idle" } }, rateLimitedUntil: "", pauseKind: "rate", stoppedAt: "", stoppedBy: "", startedAt: "" },
@@ -54,6 +55,10 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number } = {}) 
 					return false;
 				},
 				steer: () => true,
+				applyModelChange: () => {
+					f.applied++;
+					return "next-start";
+				},
 			} as unknown as Orchestrator,
 		};
 		fakes.set(key, f);
@@ -93,6 +98,7 @@ function setup(opts: { on?: boolean; maxLive?: number; idleMin?: number } = {}) 
 		dataDir: dir,
 		history: () => [],
 		workers: () => 0,
+		workerPin: () => "main-pin",
 		log: () => {},
 		now: () => clock,
 	});
@@ -228,4 +234,31 @@ test("when the memory cap falls below what runs, the longest-resting sessions ar
 	o.maxLive = 1;
 	registry.sweep();
 	expect(["ch:1", "ch:2", "ch:3"].map(k => registry.live(registry.get(k)!))).toEqual([false, false, true]);
+});
+
+test("a conversation's own model stays its own, reaches its session alone, and survives a reload", () => {
+	const first = setup();
+	first.registry.ensure("ch:1");
+	first.registry.ensure("ch:2");
+	first.registry.setOwnModel("ch:1", "m/own:low");
+	expect(first.makes.get("ch:1")!.model!()).toBe("m/own:low");
+	expect(first.makes.get("ch:2")!.model!()).toBeUndefined();
+	expect(first.fakes.get("ch:1")!.applied).toBe(1);
+	expect(first.fakes.get("ch:2")!.applied).toBe(0);
+	const pin = join(first.dir, "conv-sessions", "ch_1", "worker-pin");
+	expect(readFileSync(pin, "utf8").trim()).toBe("main-pin");
+	expect(first.makes.get("ch:1")!.env!.DOTZ_WORKER_PIN_FILE).toBe(pin);
+	// Main moved: the one that inherits follows it, the one with its own model does not.
+	first.registry.followMain();
+	expect(first.fakes.get("ch:1")!.applied).toBe(1);
+	expect(first.fakes.get("ch:2")!.applied).toBe(1);
+
+	const again = setup({ dir: first.dir });
+	again.registry.restore();
+	expect(again.registry.get("ch:1")!.meta.ownModel).toBe("m/own:low");
+	expect(again.makes.get("ch:1")!.model!()).toBe("m/own:low");
+	expect(again.registry.get("ch:2")!.meta.ownModel).toBeUndefined();
+	expect(again.fakes.get("ch:1")!.started()).toBe(false);
+	again.registry.setOwnModel("ch:1", undefined);
+	expect(existsSync(pin)).toBe(false);
 });
