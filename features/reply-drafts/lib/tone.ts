@@ -7,8 +7,7 @@ import { addressesOf, AUTOMATED } from "../../../hub/reply-draft.ts";
 import { SIDE_MAX } from "../../../hub/comments/past.ts";
 import { readAppsFile } from "../../../hub/integrations.ts";
 import { loadPlugins, pluginsLoaded, pluginSentMail } from "../../../hub/plugins.ts";
-import { MAX_PAIRS, loadPairs, normText, savePairs, type Pair } from "./pairs.ts";
-import { dataDir, markLearned, readLearned, writeExamples, type ToneKey } from "./settings.ts";
+import { dataDir, loadPairs, markLearned, MAX_PAIRS, normText, type Pair, readLearned, savePairs, writeExamples, type ToneKey } from "./settings.ts";
 import { listDrafts } from "./store.ts";
 
 export type RunResult = { code: number; stdout: string; stderr: string };
