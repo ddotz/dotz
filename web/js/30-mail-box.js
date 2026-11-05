@@ -2,7 +2,8 @@
 // The page asks the hub, never the mail account: POST /api/mail/<key>/action {action} -> {ok, synced, note?} for one mail and POST /api/mail/actions {keys, action}
 // -> {ok, results:[{key, ok, synced, note?}]} for a selection (action = read | unread | archive | unarchive | trash | star | unstar). Every action is optimistic:
 // the row changes at once and goes back when the hub says ok:false (or cannot be reached); the hub's note is told once.
-// A mail card says what its mailbox can do in `can` (GET /api/conversations items[].mail); an action it does not list still works here, and mbNote says it stays in dotz.
+// A mail card says what its mailbox can do in `can` (GET /api/conversations items[].mail); an action it does not list still works here. `trashOriginal`: 삭제 takes the
+// original too (the app's 삭제하면 원본도 삭제 is on and the source can): POST /api/mail/delete-original, hub/mail-delete.ts.
 // A card with no `can` at all (a hub that does not know the field) can only be deleted, through the old DELETE /api/mail/<key>.
 // Nothing here sends a mail: 메일 쓰기 and the inline reply save a draft (POST /api/mail/compose) and the owner's 보내기 stays on its approval card.
 ICONS.star = "M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z";
@@ -99,6 +100,29 @@ async function mbRun(keys, action, quiet = false) {
   Promise.allSettled([convLoad(), loadIntegrations()]);
   return done;
 }
+// 삭제 with the app's 삭제하면 원본도 삭제 on: the confirm is his yes for the original (owner 11-05), and the mail leaves only when its source did it (hub/mail-delete.ts).
+// A mail that failed stays in the list and the toast offers it again. A peer's mail is deleted on its own computer and goes on as before, in dotz only.
+const mailOriginal = t => { const m = MAILS.get(t); return !!m && m.trashOriginal === true && !pqPc(t); };
+async function mbTrashOriginal(keys, orig) {
+  const n = keys.length, rest = keys.filter(t => !orig.includes(t));
+  const what = n > 1 ? `메일 ${n}개를 삭제할까요? ${orig.length === n ? "원본" : `그중 ${orig.length}개는 원본`}도 메일함 휴지통으로 옮겨요` : "이 메일을 삭제할까요? 원본도 메일함 휴지통으로 옮겨요";
+  if (!await ask("메일 삭제", what, n > 1 ? `${n}개 삭제` : "삭제", true)) return [];
+  let res;
+  try { res = (await api("/api/mail/delete-original", "POST", { keys: orig.map(mbKey) })).results.map(x => ({ ...x, key: `mail:${x.key}` })); }
+  catch (e) { const note = (e && e.data && e.data.error) || (e && e.message) || "원본을 지우지 못했어요"; res = orig.map(key => ({ key, ok: false, note })); }
+  const done = res.filter(x => x.ok).map(x => x.key), bad = res.filter(x => !x.ok);
+  for (const t of done) mbApply(t, "trash");
+  const leaving = mbRowsOut(done);
+  if (leaving) leaving.then(mbRefresh); else mbRefresh();
+  mbPaintBar();
+  mbLeave(done);
+  const local = rest.length ? await mbRun(rest, "trash", true) : [];
+  const gone = done.length + local.length;
+  if (bad.length) toast(orig.length > 1 ? `${orig.length}개 중 ${bad.length}개는 지우지 못했어요 · ${bad[0].note}` : bad[0].note, true, { label: "다시 시도", onclick: () => mbTrash(bad.map(x => x.key)) });
+  else toast(gone > 1 ? `${gone}개를 삭제했어요` : "삭제했어요");
+  Promise.allSettled([convLoad(), loadIntegrations(), loadNotices()]);
+  return [...done, ...local];
+}
 // 삭제 into the mailbox's trash can be undone: the mail leaves at once and 실행 취소 brings it back; the trash is sent when the toast's
 // time is up or the page goes away (Gmail's way, owner 11-03). A mailbox that will not follow, or an older hub, only drops the row from
 // dotz and cannot bring it back, so that asks first in the small confirm box.
@@ -106,6 +130,8 @@ const MB_UNDO_MS = 6000;
 async function mbTrash(keys) {
   keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
+  const orig = keys.filter(mailOriginal);
+  if (orig.length) return mbTrashOriginal(keys, orig);
   if (!keys.every(t => mailCan(t, "trash"))) {
     if (!await ask("메일 삭제", `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 메일함엔 남을 수 있어요`, "삭제", true)) return [];
     const done = await mbRun(keys, "trash");
@@ -212,15 +238,6 @@ function mbPaintBar() {
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }), ...btns,
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
-}
-// The one line over the list when read or delete stay in dotz for its mails (a source with no mailAction, can without them). It looks at the whole list, not
-// the selection or the folder, so it never comes and goes and the rows stay where they are. A card with no `can` is an older hub, which cannot say.
-function mbNote(mails) {
-  const known = mails.filter(t => Array.isArray((MAILS.get(t) || {}).can));
-  const off = [["read", "읽음"], ["trash", "삭제"]].filter(([a]) => known.some(t => !mailCan(t, a)));
-  if (!off.length) return null;
-  const what = off.map(x => x[1]).join("·"), some = known.some(t => off.every(([a]) => mailCan(t, a)));
-  return el("div", { class: "mbox-note", text: `${some ? "일부 메일의 " : ""}${what}${what === "읽음" ? "은" : "는"} dotz에서만 바뀌고 실제 메일함에는 반영되지 않아요` });
 }
 // The visible mails of the list (select all) and the bar itself, at the head of the rows.
 const MB_PAGE = 100;   // mail rows drawn at first and added per step

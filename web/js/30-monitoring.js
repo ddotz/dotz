@@ -597,8 +597,9 @@ const MAIL_ACT = { draft: "초안 작성", no: "답장 안 함", need: "답장 �
 const mailOwed = m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft");
 const mailActs = m => m.dir === "out" ? ["delete"] : ["draft", mailOwed(m) ? "no" : "need", "delete"];
 const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "delete" ? mailDelete(t) : mailSetFyi(t, a === "no");
-// 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it. A newer message of the thread brings it back.
+// 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it, unless the app's 삭제하면 원본도 삭제 is on (mbTrash). A newer message of the thread brings it back.
 async function mailDelete(t) {
+  if (mailOriginal(t)) return mbTrash([t]);
   if (!await ask("메일 삭제", "목록에서 지울까요? 메일함엔 남아 있어요", "삭제", true)) return;
   const pc = pqPc(t);
   await api(`/api/mail/${t.slice(5)}`, "DELETE");
@@ -606,8 +607,7 @@ async function mailDelete(t) {
   const p = pc && PQ.list.find(x => x && x.url === pc.url);
   if (p && p.items) p.items.conversations = (p.items.conversations || []).filter(c => String(c.target) !== t);
   if (monCtx === t && current === "chat") go("monitoring", MON.sel);   // deleted from its open conversation: back to the list
-  PQ.of.delete(t);
-  MON.sig = ""; MON.side = ""; monSchedule();
+  PQ.of.delete(t); MON.sig = ""; MON.side = ""; monSchedule();
   toast("메일을 목록에서 지웠어요");
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
@@ -868,7 +868,7 @@ function monChronoNodes(it, names) {
   else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
   if (hidden && hidden.size) nodes.push(...mbMoreNodes(hidden.size));
   if (withMails) mbRowsPrune();
-  if (withMails) return [mailFilterBar(it.mails, it.notices.filter(ok)), ...[mbNote(it.mails)].filter(Boolean), mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t))), ...(nodes.length ? nodes : [el("div", { class: "empty", text: held ? "확인할 초안이 없어요" : "이 보기에 해당하는 메일이 없어요" })]), mbFab()];
+  if (withMails) return [mailFilterBar(it.mails, it.notices.filter(ok)), mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t))), ...(nodes.length ? nodes : [el("div", { class: "empty", text: held ? "확인할 초안이 없어요" : "이 보기에 해당하는 메일이 없어요" })]), mbFab()];
   return nodes;
 }
 // A short feed (a handful of reports) reads best as the whole cards, newest first, with the machine of a peer's report; past MON_COMPACT
