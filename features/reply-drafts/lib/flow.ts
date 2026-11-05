@@ -232,7 +232,7 @@ async function restageForRevision(rec: DraftRec, change: string, deps: FlowDeps)
 	return failed;
 }
 
-export type Step = { ok: boolean; text: string; /** The id of the draft a revision made. */ id?: string };
+export type Step = { ok: boolean; text: string; /** The id of the draft a revision made. */ id?: string; /** The approved send itself failed (not the approval gate): the owner has to hear it. */ sendFailed?: true };
 
 // The user picked 2) 고치기 (or the CLI is asked to): the change is recorded verbatim in the tone profile of that draft (its room, else its app), then the draft is regenerated.
 export async function reviseDraft(id: string, change: string, deps: FlowDeps): Promise<Step> {
@@ -313,7 +313,7 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 		const now = getDraft(id);
 		if (now?.status !== "pending") return { ok: false, text: `초안 ${id}은(는) 이미 ${now?.status ?? "없는"} 상태라 보내지 않았어요` };
 		const out = await (deps.send ?? (rec => sendWith(rec, deps.run ?? realRunner)))(now);
-		if (!out.ok) return { ok: false, text: out.message };
+		if (!out.ok) return { ok: false, text: out.message, sendFailed: true };
 		setStatus(id, "sent");
 		// A draft the owner changed is his own wording now: it joins his past replies. An unchanged bot draft never does.
 		if (now.kind === "mail" && !now.compose && now.changes.length > 0 && now.item.text.trim()) {

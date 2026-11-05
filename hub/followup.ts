@@ -90,3 +90,6 @@ export function parseFollowup(b: unknown): FollowupInput | null {
 	if (!kind || typeof o.app !== "string" || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(o.app) || typeof o.key !== "string" || !o.key || o.key.length > 200) return null;
 	return { app: o.app, kind, key: o.key, ids };
 }
+
+/** A CLI's approved send failed: the gateway marks the card and tells the owner. A CLI the gateway runs itself reports through its own sender. */
+export const reportSendFailed = (rec: { id: string; ref: string }, text: string, hub?: HubLike): Promise<boolean> => (process.env.DOTZ_GATEWAY_SEND ? Promise.resolve(false) : notifyGateway({ path: "/api/approvals/failed", body: { op: "report", ref: rec.id, conv: `mail:${rec.ref}`, text } }, hub));

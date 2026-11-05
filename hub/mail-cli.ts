@@ -11,7 +11,7 @@
 import { existsSync, statSync } from "node:fs";
 import { addressesOf, lintReply } from "./reply-draft.ts";
 import { appEntries, instanceIdOf, readAppsFile } from "./integrations.ts";
-import { type HubLike, notifyGateway } from "./followup.ts";
+import { type HubLike, notifyGateway, reportSendFailed } from "./followup.ts";
 import { commentAsk } from "./comments/ask.ts";
 import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
@@ -134,6 +134,7 @@ export async function runMailCli(args: string[], stdin: string, deps: MailCliDep
 		const rec = getDraft(id);
 		if (rec && !rec.compose) return { lines: ["이 초안은 받은 메일의 답장이에요. features/reply-drafts/bin/draft.ts send로 보내 주세요"], code: 2 };
 		const r = await sendDraft(id, deps);
+		if (r.sendFailed && rec) await reportSendFailed(rec, r.text, deps.hub);
 		if (r.ok && rec) await notifyGateway({ path: "/api/mail/compose", body: { ref: rec.id, source: rec.source, state: "sent" } }, deps.hub);
 		return { lines: [r.text], code: r.ok ? 0 : 1 };
 	}

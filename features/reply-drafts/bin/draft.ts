@@ -2,7 +2,7 @@
 // `new` and `revise` print the [ask] block to post unchanged (comment and chat drafts print the reply text only, notes go to stderr);
 // `send` refuses unless the user picked 1) 보내기 for that exact id. Stdin of `new` is the text to answer.
 import { replyChoiceBlock } from "../../../hub/choices.ts";
-import { type HubLike, mailInstance, notifyGateway } from "../../../hub/followup.ts";
+import { type HubLike, mailInstance, notifyGateway, reportSendFailed } from "../../../hub/followup.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
 import { askText, buildDraft, defaultCall, dropDraft, kindOf, refineAfterCorrection, reviseDraft, sendDraft, type FlowDeps } from "../lib/flow.ts";
@@ -79,6 +79,7 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			if (!pos[0]) return { lines: [USAGE], code: 2 };
 			const rec = getDraft(pos[0]);
 			const r = await sendDraft(pos[0], deps);
+			if (r.sendFailed && rec) await reportSendFailed(rec, r.text, deps.hub);
 			// An approved mail reply went out: tell the gateway, which wakes the bot once if the mail app has a 이어서 할 일 rule (hub/followup.ts).
 			if (r.ok && rec?.kind === "mail" && !rec.compose) await notifyGateway({ path: "/api/followup", body: { app: mailInstance(rec.ref), kind: "mail", key: rec.id, ids: { draft: rec.id, mail: rec.ref } } }, deps.hub);
 			// A new mail he wrote went out: the mail app lists it under 보낸 메일 from here, with its text and files.

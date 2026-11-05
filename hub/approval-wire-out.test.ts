@@ -84,6 +84,27 @@ test("the batch answer: picked cards go (sends by the gateway, 고치기 to the 
 	expect(sender.results(CONV).find(r => r.ref === refs[1])?.state).toBe("failed");
 });
 
+test("a send a session's CLI ran fails: the gateway report reaches the owner where the card is and marks the card failed", async () => {
+	const conv = "mail:aw-report";
+	const ref = draft("세션이 보낸 답");
+	await out(conv, card(ref));
+	const told = new Promise<string>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error("no [fail] note came")), 5000);
+		onEmit(e => {
+			if (e.kind === "out" && e.target === conv && String(e.text).startsWith("[fail]")) (clearTimeout(timer), resolve(String(e.text)));
+		});
+	});
+	// The CLI knows only the draft, so the conversation it names is not the card's: the card is found by its ref.
+	const res = await route("POST", "/api/approvals/failed", { op: "report", ref, conv: `mail:aw-${ref.toLowerCase()}`, text: "메일 계정을 알 수 없어서 보내지 않았어요" });
+	expect(res!.status).toBe(200);
+	const note = await told;
+	expect(note).toContain(ref);
+	expect(note).toContain("메일 계정을 알 수 없어서 보내지 않았어요");
+	const shown = listNotices(500).items.find((n: any) => n.decision?.draft?.ref === ref) as any;
+	expect(shown.decision.send).toMatchObject({ state: "failed", text: "메일 계정을 알 수 없어서 보내지 않았어요" });
+	ignoreNotice(shown.id);
+});
+
 afterAll(() => {
 	for (const n of openCards()) ignoreNotice(n.id);
 	expect(openCards()).toEqual([]);

@@ -47,7 +47,7 @@ export const openDraftCards = (to?: string): { id: string; to: string; ref: stri
 	items.flatMap(i => (isOpenDecision(i) && (to === undefined || i.decision!.to === to) && i.decision!.draft?.ref ? [{ id: i.id, to: i.decision!.to, ref: i.decision!.draft.ref, title: i.title, draft: i.decision!.draft, at: i.at ?? i.ts, text: i.text }] : []));
 /** The newest card of draft `ref` in `to` shows how the gateway's send of it went. */
 export function markDraftSend(to: string, ref: string, state: NonNullable<Decision["send"]>["state"], text = ""): void {
-	const n = items.findLast(i => i.decision?.to === to && i.decision.draft?.ref === ref);
+	const n = items.findLast(i => i.decision?.to === to && openDraftRef(i) === ref);
 	if (!n) return;
 	const at = now();
 	const prev = n.decision!.send;

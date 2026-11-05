@@ -18,7 +18,7 @@ import { instanceOf } from "./reply-model.ts";
 import { DATA_DIR } from "./config.ts";
 import { linkedComment } from "./comments/linked.ts";
 import { getDraft, patchDraft } from "../features/reply-drafts/lib/store.ts";
-import { createApprovalSender, refOfQuestion, runCli, sendActionOf, type SendTarget } from "./approval-send.ts";
+import { createApprovalSender, refOfQuestion, runCli, sendActionOf, type SendResult, type SendTarget } from "./approval-send.ts";
 import { answerBatch, batchCard, type BatchCard, type BatchPick } from "./approval-batch.ts";
 import { DRAFT_BODY_MAX, withStagedFiles } from "./draft-approval.ts";
 import { pendingDraftFiles, syncCardFiles } from "./draft-attach.ts";
@@ -44,18 +44,19 @@ export const draftAppOf = (ref: string): string | undefined => {
 // A conversation's gateway note goes where its cards were posted.
 const targetOf = (conv: string, ref: string): string => approvals.targetOf(conv, ref) ?? (conv === "main" ? "web" : conv);
 
-export const sender = createApprovalSender({
-	kind: sendTargetOf,
-	run: runCli,
-	report: r => {
-		markDraftSend(r.conv, r.ref, r.state, r.text);
-		broadcast({ ts: now(), kind: "approval_send", source: "gateway", ...r });
-		if (r.state !== "failed") return;
-		const what = r.title.replace(/\s*\([^()]*\)\s*$/, "");
-		void out(targetOf(r.conv, r.ref), `[fail] 보내지 못했어요: ${what} (${r.ref})\n${r.text || "이유를 알 수 없어요"}\n다른 카드는 그대로 보내고 있어요.`, undefined, { source: "gateway" }).catch(e => log(`send failure note for ${r.ref} failed: ${e}`));
-	},
-	log,
-});
+const reportSend = (r: SendResult): void => {
+	markDraftSend(r.conv, r.ref, r.state, r.text);
+	broadcast({ ts: now(), kind: "approval_send", source: "gateway", ...r });
+	if (r.state !== "failed") return;
+	const what = r.title.replace(/\s*\([^()]*\)\s*$/, "");
+	void out(targetOf(r.conv, r.ref), `[fail] 보내지 못했어요: ${what} (${r.ref})\n${r.text || "이유를 알 수 없어요"}\n다른 카드는 그대로 보내고 있어요.`, undefined, { source: "gateway" }).catch(e => log(`send failure note for ${r.ref} failed: ${e}`));
+};
+export const sender = createApprovalSender({ kind: sendTargetOf, run: runCli, report: reportSend, log });
+// A send run from a CLI (a session's draft.ts send) failed: the card it answers shows it and the owner hears it, like a send of the gateway's own.
+function reportCliFailure(ref: string, conv: string, text: string): void {
+	const card = listNotices(NOTICE_CAP).items.find(i => i.decision && i.title.endsWith(`(${ref})`));
+	reportSend({ ref, conv: card?.decision?.to ?? conv, title: card?.title ?? "답장", state: "failed", text, at: Date.now() });
+}
 
 // The owner's answer as the inbox keeps it (the CLIs' approval check reads it there), with no model turn. `decision`: the open card it answers;
 // any other value settles nothing (notices.ts ownerReplied otherwise answers every open card of the conversation with it).
@@ -186,7 +187,12 @@ export async function approvalRoute(req: Request, url: URL, deps: { login: strin
 		return json({ ok: true, sending, toBot });
 	}
 	if (url.pathname === "/api/approvals/failed" && req.method === "POST") {
-		const b = (await req.json().catch(() => ({}))) as { op?: unknown; items?: unknown };
+		const b = (await req.json().catch(() => ({}))) as { op?: unknown; items?: unknown; ref?: unknown; conv?: unknown; text?: unknown };
+		if (b.op === "report") {
+			if (typeof b.ref !== "string" || typeof b.conv !== "string" || typeof b.text !== "string") return json({ error: "ref, conv and text are required" }, 400);
+			reportCliFailure(b.ref, b.conv, b.text);
+			return json({ ok: true });
+		}
 		if ((b.op !== "retry" && b.op !== "drop") || !Array.isArray(b.items) || b.items.length > FAILED_BATCH_MAX) return json({ error: "op (retry | drop) and items are required" }, 400);
 		const deps: RetryDeps = { notices: listNotices(NOTICE_CAP).items, can: (ref, action) => sender.can(ref, action), enqueue: j => sender.enqueue(j), commentFailed: commentSendFailed, drop: dropDraftRef };
 		return json({ results: b.op === "retry" ? retryFailed(b.items, deps) : await dropFailed(b.items, deps) });
