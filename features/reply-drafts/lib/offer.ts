@@ -124,9 +124,10 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 			markDrafted(looked);
 			return "skipped";
 		}
-		// A thread read: the newest message of the sender is the text, the earlier ones the context. Any other text is the text.
+		// A thread read: the newest message of the sender is the text, the earlier ones the context. Any other text is the text. A read with no text of its own
+		// (a mail of html or images only) leaves what the poster gave.
 		const thread = threadText((await body) ?? m.summary ?? "", ownAddresses(item.self));
-		item.text = thread.text.trim().slice(0, BODY_MAX) || m.subject;
+		item.text = (thread.text.trim() || m.body?.trim() || m.summary?.trim() || "").slice(0, BODY_MAX) || m.subject;
 		const earlier = await history;
 		const context = [thread.context, ...(earlier.length ? ["Earlier mail from this sender:", ...earlier] : [])].filter(Boolean).join("\n");
 		if (context) item.context = context;
