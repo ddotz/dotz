@@ -96,3 +96,9 @@ test("a --- line leaves no dashes on Discord, a code fence keeps them", () => {
 	expect(buildPayloads("앞 문단이에요.\n\n---\n\n뒤 문단이에요.")[0]!.content).not.toContain("---");
 	expect(buildPayloads("```\n---\n```")[0]!.content).toContain("---");
 });
+
+test("an id in brackets leaves Discord and a push, a code span keeps it", () => {
+	expect(buildPayloads("워커(st_01a1a07f)가 돌아요. `(st_01a1a07f)`")[0]!.content).toBe("워커가 돌아요. `(st_01a1a07f)`");
+	const push = classify({ kind: "lane_report", lane: "a", source: "lane:a", ts: "2026-11-05T01:00:00Z", text: "[done] 워커(st_01a1a07f)가 <#000000000000000000>에 올렸어요." } as HubEvent);
+	expect(push?.body).toBe("워커가 채널에 올렸어요.");
+});
