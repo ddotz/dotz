@@ -121,6 +121,11 @@ for (const [width, height] of [[390, 844], [1280, 800]] as const) {
 			expect(await q<boolean>(v, `const b = document.querySelector("#cm .cm-no"); b.click(); return b.hidden`)).toBe(true);
 			await expectReq(r => r.method === "POST" && decodeURIComponent(r.path) === "/api/comments/comment/cm:youtube:c1/no-reply");
 		});
+		test("the unread dots of a history row and a feed row follow the unread number: orange in dark", async () => {
+			await boot(v, "dark", `go("monitoring")`);
+			const read = `(() => { document.body.insertAdjacentHTML("beforeend", '<span class="hr"><i class="dot un"></i></span><div class="fr un"><span class="rc-src">x</span></div>'); return JSON.stringify([getComputedStyle(document.querySelector(".hr .dot.un")).backgroundColor, getComputedStyle(document.querySelector(".fr.un .rc-src"), "::before").backgroundColor]); })()`;
+			expect(JSON.parse((await v.evaluate(read)) as string)).toEqual(["rgb(255, 154, 77)", "rgb(255, 154, 77)"]);
+		});
 		test.each([["light", "rgb(49, 130, 246)"], ["dark", "rgb(255, 154, 77)"]] as const)("the plain unread number in %s: blue in light, orange in dark; a draft count stays blue", async (theme, unread) => {
 			await boot(v, theme, `go("monitoring", "i:youtube")`);
 			await waitFor(v, `!$("#cm").hidden && CM.loaded && document.querySelector("#cm .kk-row")`);
