@@ -18,7 +18,7 @@ setAuthOpened((w, discord) => void opened.push({ w, discord }));
 const made: string[] = [];
 // session: what the dotz_auth tool sends (extension/index.ts); a lane and kakao onboarding send none.
 async function ask(target: string, site: string, session?: string): Promise<string> {
-	const r = await call("/api/auth", "POST", { site, kind: "secret", purpose: "ICON 로그인", target, session, timeout_minutes: 15 });
+	const r = await call("/api/auth", "POST", { site, kind: "secret", purpose: "사이트 로그인", target, session, timeout_minutes: 15 });
 	const { id } = (await r.json()) as { id: string };
 	made.push(id);
 	return id;
@@ -49,7 +49,7 @@ test("while the main session waits on dotz_auth, an owner message from JANDI get
 	expect(posts).toHaveLength(1);
 	expect(posts[0].target).toBe("web");
 	expect(posts[0].replyTo).toBe("m1");
-	expect(posts[0].text).toContain("ICON 로그인");
+	expect(posts[0].text).toContain("사이트 로그인");
 	expect(posts[0].text).toContain(untilText(at!.w.expiresAt));
 	expect(await status(id)).toBe("pending");
 });
@@ -124,7 +124,7 @@ test("the owner's 취소 closes the pending request like DELETE /api/auth/<id>, 
 	expect(cancelReply({ target: "web", text: " 취소 ", owner: true, replyTo: "m2" }, d)).toBe(true);
 	expect(await status(id)).toBe("cancelled");
 	expect(posts).toHaveLength(1);
-	expect(posts[0].text).toContain("ICON 로그인");
+	expect(posts[0].text).toContain("사이트 로그인");
 	expect(cancelReply({ target: "web", text: "취소", owner: true }, d)).toBe(false);
 });
 
