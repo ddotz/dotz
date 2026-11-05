@@ -32,6 +32,8 @@ beforeEach(async () => {
 	await waitFor(`!document.querySelector("#v-chat").hidden`);
 	await view.click("#text");
 	await waitFor(`document.activeElement === window.__ta`);
+	// The screen's opening animation moves the composer by fractions of a pixel: the first measure comes after it ends.
+	await view.evaluate(`Promise.all(document.getAnimations().filter(a => a.effect.getComputedTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))).then(() => true)`);
 });
 
 // Everything that arrives while the owner types: a state poll that flips the working line, a toast, a corner notice, a new message, a new web build.
