@@ -20,6 +20,7 @@ let messages: Msg[];
 let calls: string[];
 let expireOnce: boolean;
 let rotate: string | undefined;
+let tokenStatus: number | undefined;
 
 const jandi = Bun.serve({
 	port: 0,
@@ -27,6 +28,7 @@ const jandi = Bun.serve({
 		const u = new URL(req.url);
 		calls.push(u.pathname + u.search);
 		if (u.pathname === "/inner-api/token") {
+			if (tokenStatus) return new Response(null, { status: tokenStatus });
 			const b = (await req.json()) as { refresh_token?: string };
 			if (b.refresh_token !== "rt-1" && b.refresh_token !== "rt-2") return Response.json({ code: 40000 }, { status: 400 });
 			return Response.json({ access_token: "at", refresh_token: rotate ?? b.refresh_token, expires_in: 43200 });
@@ -68,6 +70,7 @@ beforeEach(() => {
 	calls = [];
 	expireOnce = false;
 	rotate = undefined;
+	tokenStatus = undefined;
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -129,7 +132,7 @@ test("a missing session secret is reported, not guessed around", async () => {
 	expect(calls).toEqual([]);
 });
 
-test("a peer's reply from another member fires peerReply once, with the prefix taken off and the position already saved; never for notify: false, for the owner's own post, or for a word that only starts with the prefix", async () => {
+test("a peer's reply fires peerReply once, from another member or from the owner's own session, with the prefix taken off and the position already saved; never for notify: false or for a word that only starts with the prefix", async () => {
 	const peers: SelfChatPeer[] = [
 		{ name: "work", keyword: "work", reply_prefix: "[work]" },
 		{ name: "quiet", keyword: "quiet", reply_prefix: "[quiet]", notify: false },
@@ -156,14 +159,14 @@ test("a peer's reply from another member fires peerReply once, with the prefix t
 	);
 	await sc.tick();
 	await sc.tick();
-	expect(replies).toEqual([["work", "빌드 끝났어요", 2]]);
-	expect(saved).toEqual([2]);
+	expect(replies).toEqual([["work", "빌드 끝났어요", 2], ["work", "내가 쓴 글", 4]]);
+	expect(saved).toEqual([2, 4]);
 	await again().tick();   // a restart does not notify the same reply again
-	expect(replies).toHaveLength(1);
+	expect(replies).toHaveLength(2);
 	peers.splice(0, 1);   // the web settings removed it while this polls
 	messages.push({ id: 7, fromEntity: WEBHOOK_BOT, body: "[work] 또 끝났어요" });
 	await sc.tick();
-	expect(replies).toHaveLength(1);
+	expect(replies).toHaveLength(2);
 });
 
 // A real-shaped JANDI file message (hub/fixtures/jandi-file-message.json): `attachments[]` on a text record, with or without a caption.
@@ -346,4 +349,79 @@ test("a text before a file waits for the download, so both land in one burst; st
 	const again = makeFiles(next);
 	await again.tick();
 	expect(next.map(g => g.text)).toEqual(["다음"]);
+});
+
+function runOnce(lost: string[], extra: Partial<SelfChatDeps> = {}) {
+	const errors: (string | undefined)[] = [];
+	const sc: ReturnType<typeof createSelfChat> = createSelfChat(cfg, {
+		dataDir: dir,
+		api: `http://127.0.0.1:${jandi.port}/`,
+		receive: () => {},
+		log: () => {},
+		onError: e => errors.push(e),
+		onSessionLost: () => lost.push("lost"),
+		sleep: async () => sc.stop(),
+		...extra,
+	});
+	return { sc, errors };
+}
+
+test("a token exchange answered 400, 401 or 403 is a lost session; a 5xx is not", async () => {
+	for (const status of [400, 401, 403]) {
+		tokenStatus = status;
+		const lost: string[] = [];
+		const { sc } = runOnce(lost);
+		await sc.run();
+		expect(lost).toEqual(["lost"]);
+	}
+	tokenStatus = 503;
+	const lost: string[] = [];
+	const { sc, errors } = runOnce(lost);
+	await sc.run();
+	expect(lost).toEqual([]);
+	expect(errors.at(-1)).toContain("503");
+});
+
+test("a missing or empty session secret is a lost session", async () => {
+	rmSync(join(dir, "secrets", "jandi-session"));
+	const lost: string[] = [];
+	await runOnce(lost).sc.run();
+	expect(lost).toEqual(["lost"]);
+	writeFileSync(join(dir, "secrets", "jandi-session"), JSON.stringify({ refresh_token: "" }), { mode: 0o600 });
+	await runOnce(lost).sc.run();
+	expect(lost).toEqual(["lost", "lost"]);
+});
+
+test("a network failure is not a lost session", async () => {
+	const lost: string[] = [];
+	const { sc, errors } = runOnce(lost, { api: "http://127.0.0.1:1/" });
+	await sc.run();
+	expect(lost).toEqual([]);
+	expect(errors.at(-1)).toBeTruthy();
+});
+
+test("a reply the owner's own session posted reaches the peer's notice, not the commands, and a prefixed post is never read as a command", async () => {
+	const peers: SelfChatPeer[] = [{ name: "집", keyword: "home", reply_prefix: "[home]" }];
+	const got: string[] = [];
+	const replies: string[] = [];
+	const own = { ...cfg, keyword: "dotz", reply_prefix: "[dotz]" };
+	const sc = createSelfChat(own, {
+		dataDir: dir,
+		api: `http://127.0.0.1:${jandi.port}/`,
+		receive: t => got.push(t),
+		peers: () => peers,
+		peerReply: (_p, text) => replies.push(text),
+		log: () => {},
+		onError: () => {},
+	});
+	await sc.tick();
+	messages.push(
+		{ id: 2, fromEntity: ME, body: "[home] 끝났어요" },
+		{ id: 3, fromEntity: ME, body: "[dotz] dotz 안녕" },
+		{ id: 4, fromEntity: ME, body: "[dotz] 안녕하세요" },
+		{ id: 5, fromEntity: ME, body: "dotz 진짜 명령" },
+	);
+	await sc.tick();
+	expect(replies).toEqual(["끝났어요"]);
+	expect(got).toEqual(["진짜 명령"]);
 });

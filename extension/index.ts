@@ -25,6 +25,7 @@ import { codeLockReason } from "../hub/codeguard.ts";
 import { lockedCodeDir } from "../hub/selfupdate-local.ts";
 import { loadPlugins, pluginDeny } from "../hub/plugins.ts";
 import { createRefusals } from "./refusals.ts";
+import { connectText, type ConnectView } from "./connect-view.ts";
 import { installCompactKept } from "./compact-kept.ts";
 import { defaultDataDir, dryRun, hubPid, liveDataDir, liveWrite, throwawayReason } from "../hub/live-guard.ts";
 import { dropLongTtl, installGuard } from "./guard.ts";
@@ -256,6 +257,23 @@ function verifyTool(pi: any): void {
 	});
 }
 
+// Connecting a messenger from the conversation: the same flow as the web settings (hub/onboarding.ts); the hub messages `target` when the owner has a step.
+function connectTool(pi: any): void {
+	const z = pi.zod;
+	pi.registerTool({
+		name: "dotz_connect",
+		label: "Dotz connect",
+		description: "Connect a messenger the owner uses (discord, jandi, slack, telegram). start {messenger, target: the chat that asked}: begins the guided connection; the hub tells the owner each step in that chat. continue {choice?}: after the owner did the step or picked one of the listed choices. status / cancel. Returns the state, the step, what the owner does and any numbered choices; never a token.",
+		parameters: z.object({ messenger: z.enum(["discord", "jandi", "slack", "telegram"]), action: z.enum(["start", "continue", "status", "cancel"]), target: z.string(), choice: z.string().optional() }),
+		async execute(_id: string, p: { messenger: string; action: string; target: string; choice?: string }) {
+			const base = `/api/onboarding/${p.messenger}`;
+			const post = (path: string, body?: unknown) => call(`${base}/${path}`, { method: "POST", ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+			const view: ConnectView = p.action === "start" ? await post("start", { notify: p.target }) : p.action === "continue" ? await post("continue", p.choice ? { choice: p.choice } : undefined) : p.action === "cancel" ? await post("cancel") : await call(base);
+			return { content: [{ type: "text", text: connectText(view) }] };
+		},
+	});
+}
+
 // Landing reviewed work (hub/mergegate.ts): the verdict is pinned to the commit it read, the merge to that commit and green CI.
 function mergeTool(pi: any): void {
 	const z = pi.zod;
@@ -285,6 +303,7 @@ function orchestratorTools(pi: any): void {
 	verifyTool(pi);
 	mergeTool(pi);
 	authTool(pi);
+	connectTool(pi);
 	pi.on("session_compact", (_e: any, ctx: any) => {
 		if (isMain(ctx)) pi.sendMessage({ customType: "dotz-mode", content: recall() + (process.env.DOTZ_CONV ? `\n\n${convScope()}` : ""), display: false }, { deliverAs: "nextTurn" });
 	});

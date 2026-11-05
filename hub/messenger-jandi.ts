@@ -3,11 +3,12 @@ import { mkdirSync, readFileSync, statSync } from "node:fs";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { D_CLOSE, parseChoices } from "./choices.ts";
-import { DATA_DIR, log, writeAtomic } from "./config.ts";
+import { DATA_DIR, log, NAME, writeAtomic } from "./config.ts";
 import { dropForLine, forLines } from "./forline.ts";
 import { msg } from "./i18n.ts";
-import { createPeerChats, peerReplyPush } from "./jandi-peers.ts";
-import { createSelfChat, normalizeSelfChat, type SelfChat, type SelfChatConfig } from "./jandi-selfchat.ts";
+import { createPeerChats, messageBody, peerReplyPush } from "./jandi-peers.ts";
+import { createSelfChat, normalizeSelfChat, type SelfChat, type SelfChatConfig, selfChatReady } from "./jandi-selfchat.ts";
+import { createSessionMark } from "./jandi-session.ts";
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import { sameRoom } from "./messenger-rooms.ts";
 import { postClass } from "./notify-route.ts";
@@ -19,8 +20,7 @@ import { parkedTone, parseTone, plainChoice, stripHandoff, TONE_EMOJI } from "./
 export type RoomKind = "main" | "project" | "alert" | "worklog";
 export type JandiRoom = { id: string; name: string; kind: RoomKind; project?: string; outgoing_token: string; incoming_url: string };
 /** `incoming_url` is the one webhook every room without its own posts to (JANDI cannot make webhooks by API, so one pasted URL is the fallback). */
-/** `sender_step_shown`: onboarding already asked for the bot's name and image on the connector (only JANDI's connector screen can set them). */
-export type JandiConfig = { enabled: boolean; listen: { host: string; port: number }; allow_emails: string[]; allow_names?: string[]; incoming_url?: string; rooms: JandiRoom[]; self_chat?: SelfChatConfig; sender_step_shown?: true };
+export type JandiConfig = { enabled: boolean; listen: { host: string; port: number }; allow_emails: string[]; allow_names?: string[]; incoming_url?: string; rooms: JandiRoom[]; self_chat?: SelfChatConfig };
 export type RoomStatus = { last_in?: number; last_out?: number; last_error?: string };
 
 const KINDS: readonly string[] = ["main", "project", "alert", "worklog"];
@@ -64,7 +64,6 @@ function normalize(raw: unknown): JandiConfig {
 		...(typeof o.incoming_url === "string" && o.incoming_url.trim() ? { incoming_url: o.incoming_url.trim() } : {}),
 		rooms,
 		...(selfChat ? { self_chat: selfChat } : {}),
-		...(o.sender_step_shown === true ? { sender_step_shown: true as const } : {}),
 	};
 }
 
@@ -174,7 +173,7 @@ const isHttpUrl = (s: string) => /^https?:\/\/\S+$/i.test(s);
 
 /** The settings section of the computers reached through the self chat: only while it runs, so an install without it sees nothing new. */
 function relaySettings(sc: SelfChatConfig | undefined): Pick<Settings, "relays"> {
-	if (!sc?.enabled || !sc.team_id || !sc.room_id || !sc.member_id || !sc.bot_id) return {};
+	if (!selfChatReady(sc)) return {};
 	const t = msg().relay;
 	const field = (key: string, label: string, hint: string) => ({ key, label, type: "text" as const, hint });
 	return {
@@ -195,6 +194,70 @@ function withRelays(sc: SelfChatConfig | undefined, list: unknown): SelfChatConf
 	const next = normalizeSelfChat({ ...rest, peers: list })!;
 	if ((next.peers?.length ?? 0) !== list.length) throw new SettingsError(msg().relay.invalid);
 	return next;
+}
+
+/** One short post to every room's incoming URL; the result never carries the URL itself. */
+async function testRooms(dataDir: string, selfChat: SelfChat | undefined): Promise<TestResult> {
+	const rooms = loadJandiConfig(dataDir).rooms;
+	const results = await Promise.all(
+		rooms.map(async room => {
+			const head = { id: room.id, name: room.name };
+			const url = room.incoming_url || loadJandiConfig(dataDir).incoming_url;
+			if (!url && selfChat) {
+				try {
+					await selfChat.checkRoom();
+					return { ...head, ok: true };
+				} catch (e) {
+					return { ...head, ok: false, error: errText(e) };
+				}
+			}
+			if (!url) return { ...head, ok: false, error: "no incoming url" };
+			try {
+				const res = await fetch(url, {
+					method: "POST",
+					headers: { Accept: "application/vnd.tosslab.jandi-v2+json", "Content-Type": "application/json" },
+					body: JSON.stringify({ body: "dotz 연결 테스트예요" }),
+					signal: AbortSignal.timeout(10_000),
+				});
+				void res.body?.cancel();
+				if (!res.ok) {
+					mark(room.id, { last_error: `HTTP ${res.status}` });
+					return { ...head, ok: false, status: res.status, error: `HTTP ${res.status}` };
+				}
+				mark(room.id, { last_out: Date.now() });
+				return { ...head, ok: true, status: res.status };
+			} catch (e) {
+				mark(room.id, { last_error: errText(e) });
+				return { ...head, ok: false, error: errText(e) };
+			}
+		}),
+	);
+	return { results };
+}
+
+/** The settings row for the login-based connection: connected, lost (the login ended) or never connected. */
+function selfChatBlock(dataDir: string, sc: SelfChatConfig | undefined): Pick<Settings, "self_chat"> {
+	const t = msg().connect.expiry;
+	if (!selfChatReady(sc)) return { self_chat: { state: "off", label: t.off.label, hint: t.off.hint, connect: t.connect } };
+	const lost = createSessionMark(dataDir).state() === "lost";
+	return { self_chat: { state: lost ? "lost" : "ok", label: lost ? t.lost.label : t.ok.label, hint: lost ? t.lost.hint : t.ok.hint, connect: t.reconnect } };
+}
+
+/** With no webhook to post to, a reply goes out as a post of the owner's own session in the chat with the JANDI bot, always behind the reply prefix (so it is never read as a command). The worklog stays in the web app. */
+async function viaSession(selfChat: SelfChat | undefined, cfg: JandiConfig, msg: OutMsg, text: string): Promise<DeliverResult> {
+	const sc = cfg.self_chat;
+	const mainHasWebhook = cfg.rooms.some(r => r.kind === "main" && (r.incoming_url || cfg.incoming_url));
+	const wanted = msg.kind !== "worklog" && (msg.kind !== "lane" || ["result", "ask"].includes(postClass(msg.target, msg.text) ?? ""));
+	if (!selfChat || !selfChatReady(sc) || !wanted || mainHasWebhook) return { delivered: false, reason: "no room" };
+	const prefix = `${sc.reply_prefix || `[${NAME}]`} `;
+	const parts = splitText(text, MAX_PART - prefix.length);
+	const hint = !!msg.options?.length && !text.split("\n").some(l => D_CLOSE.test(l));
+	for (const [i, part] of parts.entries()) {
+		const body = i === parts.length - 1 && hint ? `${part}\n\n${ASK_HINT}` : part;
+		await selfChat.post(`message-api/v3/teams/${sc.team_id}/rooms/${sc.room_id}/messages`, 3, messageBody(prefix + body));
+	}
+	mark("self_chat", { last_out: Date.now() });
+	return { delivered: true };
 }
 
 export type JandiAdapter = Adapter & { port(): number | undefined; selfChat(): SelfChat | undefined };
@@ -234,7 +297,8 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 				a.status = { state: "error", error: `${cfg.listen.host}:${cfg.listen.port} ${(e as Error).message}` };
 			}
 			const sc = cfg.self_chat;
-			if (sc?.enabled && sc.team_id && sc.room_id && sc.member_id && sc.bot_id) {
+			if (selfChatReady(sc)) {
+				const loss = createSessionMark(dataDir, text => c.alert?.(text));
 				selfChat = createSelfChat(sc, {
 					dataDir,
 					receive: (text, files) => {
@@ -247,7 +311,11 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 						if (m) ctx?.notify?.(m);
 					},
 					log: c.log,
-					onError: err => mark("self_chat", { last_error: err }),
+					onError: err => {
+						mark("self_chat", { last_error: err });
+						if (!err) loss.ok();
+					},
+					onSessionLost: loss.lost,
 				});
 				void selfChat.run();
 			}
@@ -265,7 +333,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 			apply(body);
 			return settings();
 		},
-		test: () => test(),
+		test: () => testRooms(dataDir, selfChat),
 		syncRooms: d => syncRooms(d),
 	};
 
@@ -302,7 +370,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 			rooms: {
 				label: "방",
 				editable: true,
-				...(cfg.rooms.length && !cfg.incoming_url && cfg.rooms.some(r => !r.incoming_url) ? { hint: WEBHOOK_HINT } : {}),
+				...(cfg.rooms.length && !cfg.incoming_url && !selfChatReady(cfg.self_chat) && cfg.rooms.some(r => !r.incoming_url) ? { hint: WEBHOOK_HINT } : {}),
 				fields: [
 					{ key: "webhook", label: "발신 웹훅 URL", type: "copy", hint: "JANDI 발신 웹훅의 URL에 넣어요" },
 					{ key: "outgoing_token", label: "발신 토큰", type: "secret", hint: "JANDI 발신 웹훅의 토큰과 같게" },
@@ -318,6 +386,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 					...status[r.id],
 				})),
 			},
+			...selfChatBlock(dataDir, cfg.self_chat),
 			...relaySettings(cfg.self_chat),
 			projects: [],
 		};
@@ -398,37 +467,6 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 		saveJandiConfig(next, dataDir);
 	}
 
-	/** One short post to every room's incoming URL; the result never carries the URL itself. */
-	async function test(): Promise<TestResult> {
-		const rooms = loadJandiConfig(dataDir).rooms;
-		const results = await Promise.all(
-			rooms.map(async room => {
-				const head = { id: room.id, name: room.name };
-				const url = room.incoming_url || loadJandiConfig(dataDir).incoming_url;
-				if (!url) return { ...head, ok: false, error: "no incoming url" };
-				try {
-					const res = await fetch(url, {
-						method: "POST",
-						headers: { Accept: "application/vnd.tosslab.jandi-v2+json", "Content-Type": "application/json" },
-						body: JSON.stringify({ body: "dotz 연결 테스트예요" }),
-						signal: AbortSignal.timeout(10_000),
-					});
-					void res.body?.cancel();
-					if (!res.ok) {
-						mark(room.id, { last_error: `HTTP ${res.status}` });
-						return { ...head, ok: false, status: res.status, error: `HTTP ${res.status}` };
-					}
-					mark(room.id, { last_out: Date.now() });
-					return { ...head, ok: true, status: res.status };
-				} catch (e) {
-					mark(room.id, { last_error: errText(e) });
-					return { ...head, ok: false, error: errText(e) };
-				}
-			}),
-		);
-		return { results };
-	}
-
 	async function handle(req: Request): Promise<Response> {
 		const m = /^\/jandi\/([^/]+)$/.exec(new URL(req.url).pathname);
 		if (!m) return new Response(null, { status: 404 });
@@ -493,7 +531,7 @@ export function createJandiAdapter(dataDir: string = DATA_DIR): JandiAdapter {
 		// JANDI has no lane room: a lane's result or question ([done]/[fail]/[ask]) reaches the owner in the main room; its progress stays in the web.
 		if (!dests.length && msg.kind === "lane" && ["result", "ask"].includes(postClass(msg.target, msg.text) ?? "")) dests = ready.filter(r => r.room.kind === "main");
 		dests = dests.filter((d, i) => dests.findIndex(x => x.url === d.url) === i);
-		if (!dests.length) return { delivered: false, reason: "no room" };
+		if (!dests.length) return viaSession(selfChat, cfg, msg, text);
 		const prefix = cfg.self_chat?.enabled && cfg.self_chat.reply_prefix ? `${cfg.self_chat.reply_prefix} ` : "";
 		const parts = splitText(text, MAX_PART - prefix.length).map(p => prefix + p);
 		const ask = !!msg.options?.length;

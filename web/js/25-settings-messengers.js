@@ -75,6 +75,15 @@ function msLine(id, m, s) {
   if (id === "jandi" && s && s.rooms) return `연결돼 있어요 · 방 ${s.rooms.items.length}개`;
   return "연결돼 있어요.";
 }
+// JANDI's 나와의 대화 login: one row, every word from settings(); 다시 연결 (lost) is the lead, the other states offer a small button.
+function msSelfChatRow(id, s) {
+  const c = s.self_chat;
+  if (!c) return null;
+  const lost = c.state === "lost";
+  return el("div", { class: "li", "data-ms-selfchat": c.state }, el("span", { class: "lead" }, icon("chat")),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: c.label }), el("div", { class: lost ? "dcs-err" : "sup", text: c.hint })),
+    liEnd(el("button", { type: "button", class: lost ? "btn inrow" : "btn tonal inrow", "data-ms-selfchat-connect": id, onclick: ev => obStart(id, ev.currentTarget), text: c.connect })));
+}
 function msConnect(id, btn) {
   const m = msItem(id);
   if (m && m.configured && !m.enabled && !m.error) {
@@ -185,7 +194,8 @@ function renderMessenger(id) {
     el("div", { class: "list" },
       el("div", { class: "li", "data-ms-status": id }, el("span", { class: "lead" }, icon("chat")),
         el("span", { class: "tx" }, el("div", { class: "hd", text: (m && m.label) || MS_LABELS[id] }), el("div", { class: "sup", text: msLine(id, m, s) })),
-        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m))))),
+        liEnd(tag ? el("span", { class: `tag ${tone}`, text: tag, title: (m && m.error) || "" }) : null, el("button", { type: "button", class: "btn tonal inrow", "data-ms-connect": id, onclick: ev => msConnect(id, ev.currentTarget) }, msConnectLabel(m)))),
+      msSelfChatRow(id, s)),
     ...obSection(id, !!m && m.state === "ok")];
   if (s.notify) nodes.push(el("div", { class: "sec", text: "알림" }), el("div", { class: "list" },
     ...notifyRows(k => s.notify[k] !== false, (k, on) => msNotifySet(id, k, on)),

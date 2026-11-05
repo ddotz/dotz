@@ -227,7 +227,7 @@ describe("onboarding engine", () => {
 		expect(existsSync(join(dir, "secrets", "discord-bot-token"))).toBe(false);
 	});
 
-	test("JANDI reuses its saved rooms, enables the messenger, and writes no token to the state file", async () => {
+	test("JANDI reuses its saved webhook rooms, enables the messenger, and writes no token to the state file", async () => {
 		const dir = dataDir({
 			jandi: {
 				enabled: false,
@@ -236,12 +236,7 @@ describe("onboarding engine", () => {
 		});
 		const fake = browser();
 		const { svc, restarts } = service(dir, fake, discordFetch());
-		const waiting = await runStart(svc, "jandi");
-		expect(waiting.state).toBe("waiting");
-		expect(waiting.step?.id).toBe("sender");
-		svc.continue("jandi");
-		await svc.idle("jandi");
-		const view = svc.view("jandi");
+		const view = await runStart(svc, "jandi");
 		expect(view.state).toBe("done");
 		expect(fake.calls).toEqual([]);
 		expect(restarts()).toBe(1);
@@ -252,24 +247,6 @@ describe("onboarding engine", () => {
 		const stateText = readFileSync(join(dir, "onboarding", "jandi.json"), "utf8");
 		expect(stateText).not.toContain("jandi-out-token");
 		expect(stateText).not.toContain("wh.jandi.com");
-	});
-
-	test("JANDI reads the room webhooks through the browser when none are saved", async () => {
-		const dir = dataDir({ jandi: { enabled: false, rooms: [] } });
-		const rooms = [{ id: "m1", name: "메인", kind: "main", outgoing_token: "jandi-browser-token-1", incoming_url: "https://wh.jandi.com/in/1" }];
-		const fake = browser({ "jandi-webhooks": [{ ok: true, value: JSON.stringify(rooms) }] });
-		const { svc, restarts } = service(dir, fake, discordFetch());
-		await runStart(svc, "jandi");
-		svc.continue("jandi");
-		await svc.idle("jandi");
-		const view = svc.view("jandi");
-		expect(view.state).toBe("done");
-		expect(fake.calls.map(c => c.action)).toEqual(["jandi-webhooks"]);
-		expect(restarts()).toBe(1);
-		const saved = JSON.parse(readFileSync(join(dir, "messengers", "jandi.json"), "utf8"));
-		expect(saved.enabled).toBe(true);
-		expect(saved.rooms[0]).toMatchObject({ id: "m1", outgoing_token: "jandi-browser-token-1", incoming_url: "https://wh.jandi.com/in/1" });
-		expect(readFileSync(join(dir, "onboarding", "jandi.json"), "utf8")).not.toContain("jandi-browser-token");
 	});
 
 	test("the routes answer JSON only and refuse unknown keys and methods", async () => {

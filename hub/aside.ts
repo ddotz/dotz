@@ -76,6 +76,25 @@ function oneShotSecret(value: string): { url: string; stop: () => void } {
 	return { url: `http://127.0.0.1:${srv.port}/${token}`, stop: () => void srv.stop(true) };
 }
 
+/** Takes one JSON object POSTed to a random-path localhost URL, so a value read in a browser page reaches the gateway without touching stdout, argv or repl code. */
+export function oneShotInbox(): { url: string; got: () => Record<string, unknown> | undefined; stop: () => void } {
+	const token = crypto.randomUUID();
+	let value: Record<string, unknown> | undefined;
+	const srv = Bun.serve({
+		port: 0,
+		hostname: "127.0.0.1",
+		maxRequestBodySize: 64 * 1024,
+		fetch: async req => {
+			if (value || req.method !== "POST" || new URL(req.url).pathname !== `/${token}`) return new Response("", { status: 404 });
+			const parsed: unknown = await req.json().then(v => v as unknown, () => undefined);
+			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return new Response("", { status: 400 });
+			value = parsed as Record<string, unknown>;
+			return new Response(null, { status: 204 });
+		},
+	});
+	return { url: `http://127.0.0.1:${srv.port}/${token}`, got: () => value, stop: () => void srv.stop(true) };
+}
+
 type ReplOpts = { timeoutMs?: number; secret?: string };
 // Runs `body` (an async function body; `return` gives the result) in `aside repl`, starting Aside in the background
 // first if needed. With `url`, the body sees `pg`: a background tab opened with `openTab()` and closed in the same run

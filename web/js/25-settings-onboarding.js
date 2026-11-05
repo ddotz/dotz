@@ -21,7 +21,7 @@ function obAutoStop(o) { if (o && o.autoTimer) clearTimeout(o.autoTimer); if (o)
 function obAuto(key) {
   const o = OB[key];
   if (!o || o.state !== "waiting" || !obVisible(key)) { obAutoStop(o); return; }
-  if (o.autoTries >= OB_AUTO_MAX) return;
+  if (o.manual || o.autoTries >= OB_AUTO_MAX) return;
   if (o.autoTimer || o.autoBusy) return;
   o.autoTimer = setTimeout(async () => {
     const cur = OB[key];
@@ -43,7 +43,7 @@ function obApply(key, next) {
   const sameWait = next.state === "waiting" && was === "waiting";
   obStop(before);
   if (!sameWait) obAutoStop(before);
-  OB[key] = { ...before, ...next, timer: 0, swap: was != null && was !== next.state, ...(sameWait ? { autoTimer: before.autoTimer || 0 } : { autoTimer: 0 }) };
+  OB[key] = { ...before, manual: undefined, choices: undefined, ...next, timer: 0, swap: was != null && was !== next.state, ...(sameWait ? { autoTimer: before.autoTimer || 0 } : { autoTimer: 0 }) };
   if (next.state === "waiting" && !sameWait) { OB[key].autoTries = 0; OB[key].autoBusy = false; }
   obPaint(key);
   obPoll(key);
@@ -69,6 +69,9 @@ async function obStart(key, btn) {
   if (OB[key]) obAutoStop(OB[key]);
   delete OB[key];
   await busy(btn, async () => { obApply(key, await api(`/api/onboarding/${enc(key)}/start`, "POST")); });
+}
+async function obPick(key, choice, btn) {
+  await busy(btn, async () => { obApply(key, await api(`/api/onboarding/${enc(key)}/continue`, "POST", { choice })); });
 }
 async function obAct(key, action, btn) {
   await busy(btn, async () => { obApply(key, await api(`/api/onboarding/${enc(key)}/${action}`, "POST")); });
@@ -97,7 +100,7 @@ function onboardingPanel(key) {
   // One state row: the dot (blue running, orange waiting, green done, red failed; never pulsing), the line, and the actions in .li-end.
   // A state change swaps in this same row.
   const acts = [
-    ...(waiting || failed ? [el("button", { type: "button", class: "btn inrow", "data-onb-continue": "1", onclick: ev => obAct(key, "continue", ev.currentTarget) }, "계속")] : []),
+    ...((waiting && !v.choices) || failed ? [el("button", { type: "button", class: "btn inrow", "data-onb-continue": "1", onclick: ev => obAct(key, "continue", ev.currentTarget) }, "계속")] : []),
     ...(failed ? [el("button", { type: "button", class: "btn tonal inrow", "data-onb-start": "1", onclick: ev => obStart(key, ev.currentTarget) }, "다시 시작")] : []),
     ...(running || waiting ? [el("button", { type: "button", class: "btn text inrow", "data-onb-cancel": "1", onclick: ev => obAct(key, "cancel", ev.currentTarget) }, "취소")] : []),
   ];
@@ -109,6 +112,8 @@ function onboardingPanel(key) {
   if (v.error) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("div", { class: "dcs-err", role: "alert", "data-onb-error": "1", text: v.error }))));
   if ((waiting || failed) && v.owner) rows.push(el("div", { class: "li", "data-onb-owner": v.owner.label },
     el("span", { class: "tx" }, el("div", { class: "hd", text: v.owner.label }), el("div", { class: "sup", text: v.owner.hint }))));
+  if (waiting && v.choices) for (const c of v.choices) rows.push(el("div", { class: "li", "data-onb-choice": c.id }, el("span", { class: "tx" }, el("div", { class: "hd", text: c.label })),
+    liEnd(el("button", { type: "button", class: "btn tonal inrow", onclick: ev => obPick(key, c.id, ev.currentTarget) }, "고르기"))));
   if (v.url) rows.push(el("div", { class: "li" }, el("span", { class: "tx" }, el("a", { class: "ms-link", href: v.url, target: "_blank", rel: "noopener noreferrer", "data-onb-url": "1", text: v.url }))));
   return el("div", { class: "list ms-onb", "data-onb": key, "data-onb-state": v.state }, ...rows);
 }
