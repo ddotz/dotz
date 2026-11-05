@@ -208,26 +208,31 @@ for (const [width, height] of [[390, 844], [1280, 900]] as const) {
 			expect(await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .mr .rc-title")].map(t => t.textContent)`)).toEqual(["견적 문의드립니다"]);
 		});
 
-		test("the card at the top of a mail's conversation has the same ⋯", async () => {
+		test("the open mail has every action once in one bar that fits, and no ⋯", async () => {
 			await openList(v, false);
 			await run(v, `${row("mail:loc-1")}.click()`);
 			await waitFor(v, `current === "chat" && monCtx === "mail:loc-1"`);
 			await run(v, `ingestMsg({ ts: "${iso(9)}", kind: "mail", conv: "mail:loc-1", mail: "loc-1", subject: "계약서 확인 부탁드립니다", from: "Kim <kim@example.com>", text: "Kim · 계약서 확인 부탁드립니다\\n\\n금요일까지 회신 부탁드려요." })`);
-			await waitFor(v, `[...document.querySelectorAll(".bm.rc:not(.mr) .mtop .mr-more")].find(b => b.offsetParent)`);
-			// the conversation finishes loading (its thread panel) before the tap: the ⋯ has kept the same place for 10 frames
-			await waitFor(v, `(() => { const b = [...document.querySelectorAll(".bm.rc:not(.mr) .mtop .mr-more")].find(b => b.offsetParent), y = b && b.getBoundingClientRect().top; window.__mm = window.__mm && window.__mm.y === y ? { y, n: window.__mm.n + 1 } : { y, n: 0 }; return window.__mm.n >= 10; })()`);
+			const bar = `[...document.querySelectorAll(".bm.rc:not(.mr) .mtop")].find(b => b.offsetParent)`;
+			await waitFor(v, bar);
+			const names = () => q<string[]>(v, `return [...${bar}.querySelectorAll("button")].map(b => b.getAttribute("aria-label"))`);
+			expect(await names()).toEqual(["보관", "삭제", "안 읽음으로 표시", "답장", "전체답장", "전달", "초안 작성", "답장 안 함", "원문 접기"]);
+			const fit = await q<{ over: number; narrow: string[]; untitled: string[]; more: number }>(v, `const b = ${bar}, all = [...b.querySelectorAll("button")], w = b.getBoundingClientRect(); return { over: b.scrollWidth - b.clientWidth, narrow: all.filter(x => x.getBoundingClientRect().width < 35.5 || x.getBoundingClientRect().right > w.right).map(x => x.title), untitled: all.filter(x => !x.title || x.title !== x.getAttribute("aria-label")).map(x => x.outerHTML), more: b.querySelectorAll(".mr-more").length }`);
+			expect(fit).toEqual({ over: 0, narrow: [], untitled: [], more: 0 });
 			// 초안 작성 is visible without the ⋯: an icon in the mail's top bar at every width, and not again in the conversation head
 			const draft = await q<{ bar: number; head: number; inView: boolean }>(v, `const vis = s => [...document.querySelectorAll(s)].filter(b => b.offsetParent), d = vis(".bm.rc:not(.mr) .mtop .mr-draft")[0], r = d && d.getBoundingClientRect(); return { bar: vis(".bm.rc:not(.mr) .mtop .mr-draft").length, head: vis(".cv-head .mr-draft").length, inView: !!r && r.width > 0 && r.bottom <= innerHeight && r.right <= innerWidth }`);
 			expect(draft).toEqual({ bar: 1, head: 0, inView: true });
 			await shots(v, `mail-conv-${width}`);
-			await run(v, `[...document.querySelectorAll(".bm.rc:not(.mr) .mtop .mr-more")].find(b => b.offsetParent).click()`);
-			await waitFor(v, `document.querySelector(".menu .mi")`);
-			expect(await menuLabels(v)).toEqual(["초안 작성", "답장 안 함", "삭제", "원문 접기"]);
-			const at = await q<{ a: DOMRect; m: DOMRect }>(v, `return { a: openMenu.anchor.getBoundingClientRect().toJSON(), m: document.querySelector(".menu").getBoundingClientRect().toJSON() }`);
-			expect(at.a.width).toBeGreaterThan(0);
-			expect(Math.abs(at.m.top - at.a.bottom)).toBeLessThanOrEqual(12);
-			await shot(v, `mail-conv-menu-${width}.png`);
-			await run(v, `closeMenu()`);
+			// the mark and the fold keep working from the bar, and each button then names the other way
+			await run(v, `${bar}.querySelector('[data-k="mail-open-no"]').click()`);
+			await waitFor(v, `${bar}.querySelector('[data-k="mail-open-need"]') && !${bar}.querySelector(".mtop-fyi").disabled`);
+			expect(reqs).toMatchObject([{ method: "POST", path: "/api/mail/loc-1/fyi" }]);
+			await run(v, `${bar}.querySelector('[data-k="mail-open-need"]').click()`);
+			await waitFor(v, `${bar}.querySelector('[data-k="mail-open-no"]') && !${bar}.querySelector(".mtop-fyi").disabled`);
+			expect(reqs.at(-1)).toMatchObject({ method: "DELETE", path: "/api/mail/loc-1/fyi" });
+			await run(v, `${bar}.querySelector('[data-k="mail-open-raw"]').click()`);
+			await waitFor(v, `${bar}.querySelector('[data-k="mail-open-raw"]').title === "원문 보기"`);
+			expect(await q<boolean>(v, `return ${bar}.closest(".mopen").querySelector(":scope > .rc-raw").open`)).toBe(false);
 		});
 	});
 }

@@ -35,10 +35,12 @@ span.mr-star:not(.on) { opacity: .45; }
 .tl-in > .bm.rc.mopen { --mpx: 18px; gap: var(--sp-1); padding: 0 var(--mpx) var(--sp-4); }
 @media (max-width: 639px) { .tl-in > .bm.rc.mopen { --mpx: 16px; padding-bottom: var(--sp-3); } }
 .mtop { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 0; height: 40px; margin: 0 calc(var(--mpx) * -1) var(--sp-2); padding: 0 calc(var(--mpx) - var(--sp-2)); border-radius: var(--r-ctl); background: var(--layer); }
-.mtop .mtop-b, .mtop .mr-more { flex: 0 1 36px; min-width: 32px; width: 36px; height: 32px; border-radius: var(--r-ctl); color: var(--fg-2); }
-.mtop .mtop-b .ic, .mtop .mr-more .ic { width: 16px; height: 16px; }
-.mtop .mtop-b:hover, .mtop .mr-more[aria-expanded="true"] { background: var(--active); color: var(--fg); }
-.mtop .mr-more { margin: 0; }
+.mtop .mtop-b { flex: 0 1 36px; min-width: 32px; width: 36px; height: 32px; border-radius: var(--r-ctl); color: var(--fg-2); }
+.mtop .mtop-b .ic { width: 16px; height: 16px; }
+.mtop .mtop-b:hover { background: var(--active); color: var(--fg); }
+/* the phone's bar holds all nine at the .ib touch size (36px) */
+@media (pointer: coarse), (max-width: 639px) { .mtop .mtop-b { height: 36px; } }
+@media (max-width: 639px) { .mtop { padding: 0 var(--sp-05); } }
 /* the day / 지난 기록 lines above an open mail only push it down: the mail's own time is in its header */
 #tl > .a-div:has(~ .bm.mopen) { display: none; }
 .mopen > .rc-title { margin-top: var(--sp-1); font-size: 15px; line-height: 21px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -61,7 +63,7 @@ span.mr-star:not(.on) { opacity: .45; }
 .mopen > .mr-files > .mr-file::after { content: ""; position: absolute; inset: -4px 0; }
 .mopen > .mr-files > .mr-file:hover { background: var(--hover); }
 .mopen > .mr-files > .mr-file .ic { width: 16px; height: 16px; }
-.mopen > .rc-raw[open] > summary { display: none; }
+.mopen > .rc-raw > summary { display: none; }
 .mopen > .rc-raw { margin-top: var(--sp-1); }
 .mopen > .rc-raw > .rc-rawbody { margin-top: 0; }
 
