@@ -15,7 +15,7 @@ const WAIT_MS = 20 * 60_000;
 const MAX_HOLD_MS = 20 * 60_000;
 
 export type HeavySlot = { release: () => void; waitedMs: number; note?: string };
-type SlotOptions = { dir: string; label: string; slots?: number; timeoutMs?: number; maxHoldMs?: number; onWait?: (heldBy: string) => void; pid?: number };
+type SlotOptions = { dir: string; label: string; slots?: number; timeoutMs?: number; maxHoldMs?: number; onWait?: (heldBy: string) => void; pid?: number; family?: number[] };
 
 export const heavySlots = (): number => Math.max(1, Math.floor(Number(process.env.DOTZ_HEAVY_SLOTS) || cpus().length / 4));
 
@@ -85,7 +85,7 @@ export async function acquireHeavySlot(o: SlotOptions): Promise<HeavySlot> {
 			const slot = join(o.dir, `slot.${n}`);
 			if (link(me, slot)) return slot;
 			const holder = read(slot);
-			if (o.pid !== undefined && holder?.startsWith(`${o.pid} `)) return slot; // the slot of the run this process belongs to
+			if (o.family?.some(pid => holder?.startsWith(`${pid} `))) return slot; // held by this run or by what started it: waiting would wait for itself
 			if (holder !== undefined && stale(holder, maxHoldMs)) reap(o.dir, slot, holder, me);
 			else if (holder) heldBy ||= holder.split(" ").slice(3).join(" ");
 			if (link(me, slot)) return slot;
