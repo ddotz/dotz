@@ -253,7 +253,7 @@ a.dr-att:active { background: var(--active); }
 .hcb > .md { align-self: stretch; }
 .hcb-card { align-self: stretch; max-width: 400px; padding: 0 var(--sp-3); border-radius: var(--r-card); background: var(--layer); }
 .hcb-hd { display: flex; align-items: center; gap: var(--sp-2); min-height: 24px; padding-top: var(--sp-2); }
-.hcb-hd .tag { height: 22px; padding: 0 var(--sp-2); border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.hcb-hd .tag { height: 22px; padding: 0 var(--sp-2); border-radius: var(--r-seg); font-size: 11.5px; font-weight: 600; }
 .hcb-h { min-width: 0; color: var(--fg-2); font: 500 13px/20px var(--font); }
 /* time rows of a briefing, sized from the landing page's phone scene */
 .hcb-card .rc-row { padding: var(--sp-15) 0; }

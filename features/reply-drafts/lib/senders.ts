@@ -3,8 +3,7 @@
 // Comment replies are not sent from here (the youtube-instagram job flow posts them). The runner is injected.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { zeleMailSearch, type MailSearch } from "../../../hub/comments/mail-match.ts";
-import { zeleAccounts } from "../../../hub/zele.ts";
+import type { MailSearch } from "../../../hub/comments/mail-match.ts";
 import { readAppsFile } from "../../../hub/integrations.ts";
 import { loadPlugins, pluginNeedsAccount, pluginReply, pluginRepliesWithFiles, pluginsLoaded } from "../../../hub/plugins.ts";
 import { dataDir } from "./settings.ts";
@@ -119,8 +118,12 @@ export async function senderHistory(search: MailSearch, address: string, account
 	return items.filter(m => m.id !== thread).slice(0, HISTORY_MAX).map(m => `${m.date ?? ""} ${m.subject}: ${m.snippet.replace(/\s+/g, " ").trim().slice(0, HISTORY_SNIPPET)}`.trim());
 }
 
-export const zeleHistory = (address: string, account?: string, thread?: string): Promise<string[]> =>
-	Bun.which("zele") ? senderHistory(zeleMailSearch(zeleAccounts), address, account, thread) : Promise.resolve([]);
+// hub/zele.ts (also behind mail-match.ts) loads only here: it reads config.json on import, and the onboard CLIs that reach this file run before one exists.
+export const zeleHistory = async (address: string, account?: string, thread?: string): Promise<string[]> => {
+	if (!Bun.which("zele")) return [];
+	const [{ zeleMailSearch }, { zeleAccounts }] = await Promise.all([import("../../../hub/comments/mail-match.ts"), import("../../../hub/zele.ts")]);
+	return senderHistory(zeleMailSearch(zeleAccounts), address, account, thread);
+};
 
 // Whether a mail source can send the files staged for a draft: zele can (`mail reply --attach`), a webmail-no-api site cannot (its adapter only saves a text draft),
 // another source only when its custom plugin says so (hub/plugins.ts repliesWithFiles; docs/custom-plugins.md).
