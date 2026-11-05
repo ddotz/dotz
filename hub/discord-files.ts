@@ -15,6 +15,8 @@ let fileLink: (path: string) => string | undefined = () => undefined;
 export function setFileResolver(fn: (path: string) => string): void {
 	resolveFile = fn;
 }
+/** A `[file]` path as the file the gateway may send (main.ts sets the rule once for every messenger); throws why not. */
+export const resolveResultFile = (path: string): string => resolveFile(path);
 export function setFileLink(fn: (path: string) => string | undefined): void {
 	fileLink = fn;
 }

@@ -322,6 +322,32 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 		void res.body?.cancel();
 	}
 
+	/** A JSON POST as the owner; returns the answer. */
+	async function postJson(path: string, version: number, body: unknown): Promise<Record<string, unknown>> {
+		const res = await request(path, version, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+		return ((await res.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
+	}
+
+	/** Posts one local file to the room as the owner, the way the web client's chat does: an upload slot, the file to the slot's storage URL
+	 *  (no JANDI session there), the stored file registered in the room, then a message carrying it with `body` as its text. Throws with a short reason. */
+	async function sendFile(path: string, name: string, size: number, body: Record<string, unknown>): Promise<void> {
+		const room = `teams/${cfg.team_id}/rooms/${cfg.room_id}`;
+		const slot = await postJson(`file-api/v1/${room}/uploadUrl`, 1, { filename: name, size });
+		if (typeof slot.uploadUrl !== "string" || typeof slot.name !== "string") throw new SelfChatError("no upload slot");
+		const to = new URL(slot.uploadUrl);
+		if (to.protocol !== "https:" && to.origin !== apiOrigin) throw new SelfChatError("upload slot not https");
+		const form = new FormData();
+		for (const [k, v] of Object.entries((slot.fields ?? {}) as Record<string, unknown>)) form.append(k, String(v));
+		// Last: the storage reads the fields before the file. Wrapped, since Bun would name a Bun.file part by its full local path.
+		form.append("file", new File([Bun.file(path)], name));
+		const stored = await f(to, { method: "POST", body: form, signal: AbortSignal.timeout(FILES_TIMEOUT_MS) });
+		void stored.body?.cancel();
+		if (!stored.ok) throw new SelfChatError(`file storage HTTP ${stored.status}`);
+		const file = await postJson(`file-api/v2/${room}/attachment/files`, 2, { fileName: slot.name, title: name });
+		if (!int(file.id)) throw new SelfChatError("no file id");
+		await post(`message-api/v3/${room}/messages`, 3, { ...body, fileIds: [file.id], teamId: cfg.team_id, roomId: cfg.room_id });
+	}
+
 	const checkRoom = (): Promise<void> => checkRoomOf(get, cfg);
 
 	async function latest(): Promise<number> {
@@ -400,6 +426,7 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 	return {
 		get,
 		post,
+		sendFile,
 		checkRoom,
 		tick,
 		run,
