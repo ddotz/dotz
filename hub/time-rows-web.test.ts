@@ -2,7 +2,7 @@ import { afterAll, expect, test } from "bun:test";
 import { fakeHub, json, on } from "./test-web.ts";
 
 // A time list in a chat answer (web/js/02-basic-markdown.js timeRowsHtml), drawn in a headless browser: rows in one card for an answer, a
-// plain list or text for anything else, the original lines in a copied selection.
+// plain list or text for anything else, the words on screen in a copied selection.
 const ts = (n: number) => `2026-11-04T08:${String(10 + n).padStart(2, "0")}:00.000Z`;
 const answer = (n: number, text: string) => ({ ts: ts(n), kind: "out", source: "orchestrator", target: "web", text });
 const events = [
@@ -45,9 +45,9 @@ test("two time lines in an answer are key-column rows in one card, the detail ke
 	expect(got.over).toBe(false);
 });
 
-test("a copied selection gives the lines as written", async () => {
+test("a copied selection gives the rows as they read", async () => {
 	const copied = await page<string>(`(() => { const s = getSelection(); s.selectAllChildren(${msg(0)}.querySelector(".md")); const t = s.toString(); s.removeAllRanges(); return t; })()`);
-	expect(copied.trim().split(/\n+/).map(l => l.trim())).toEqual(["오늘 일정은 두 개예요.", "- 10:00 팀 주간 회의", "- 13:30 치과 예약 · 강남역 · 2번 출구"]);
+	expect(copied.trim().split(/\n+/).map(l => l.trim())).toEqual(["오늘 일정은 두 개예요.", "10:00", "팀 주간 회의", "13:30", "치과 예약 강남역 · 2번 출구"]);
 });
 
 test("a mixed list stays a list and a single time line stays as written", async () => {

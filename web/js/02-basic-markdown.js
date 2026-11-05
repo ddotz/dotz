@@ -73,17 +73,16 @@ function sourceListHtml({ head, items }) {
   });
   return `<div class="mlist mlist-src">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
 }
-// One key-column row (.rc-rows): the key muted, what it is, the detail after " · " muted (tail: a ready-made detail instead). raw is the line as
-// written: clipped and the only selectable part of the row, so copying the message gives the original line, as in a source list.
-function rcRowHtml(key, text, tail = "", raw = "") {
+// One key-column row (.rc-rows): the key muted, what it is, the detail after " · " muted (tail: a ready-made detail instead).
+function rcRowHtml(key, text, tail = "") {
   const d = tail ? null : /^(.*?)\s+·\s+(.*)$/.exec(text);
-  return `<div class="rc-row">${raw ? `<span class="mlist-url" aria-hidden="true">${esc(raw)}</span>` : ""}<span class="rc-k">${esc(key)}</span><span class="rc-w"><b>${inline(d ? d[1] : text)}</b>${d ? `<span class="rc-d">${inline(d[2])}</span>` : tail}</span></div>`;
+  return `<div class="rc-row"><span class="rc-k">${esc(key)}</span><span class="rc-w"><b>${inline(d ? d[1] : text)}</b> ${d ? `<span class="rc-d">${inline(d[2])}</span>` : tail}</span></div>`;
 }
 // A list of "10:00 what" items and nothing else is a schedule: the rows of an answer's card (02-answer-shapes.js) and of a briefing (11-resultcard.js).
 const TIME_ROW = /^(\d{1,2}:\d{2})\s+(\S.*)$/;
 const timeList = l => l.t === "ul" && l.items.length >= 2 && l.items.every(i => !i.sub && TIME_ROW.test(i.text));
 function timeRowsHtml(items) {
-  return `<div class="rc-rows">${items.map(i => { const m = TIME_ROW.exec(i.text); return rcRowHtml(m[1], m[2], "", i.raw); }).join("")}</div>`;
+  return `<div class="rc-rows">${items.map(i => { const m = TIME_ROW.exec(i.text); return rcRowHtml(m[1], m[2]); }).join("")}</div>`;
 }
 // answer: the shape state of one answer (02-answer-shapes.js), null for every other caller.
 function blocks(text, last, answer) {
@@ -111,7 +110,7 @@ function blocks(text, last, answer) {
     if (!table) return;
     const [head, ...rest] = table.head ? table.rows : [null, ...table.rows], card = answer && head && rest.length > 0 && head.length <= ANS_TABLE_COLS;
     if (card) answer.shaped = true;
-    html.push(`<div class="${card ? "ans-card ans-tb" : "tbl"}">${card ? ansRaw(table.raw.join("\n")) : ""}<table>${head ? `<thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead>` : ""}<tbody>${rest.map(r => `<tr>${r.map((c, i) => card && !i ? `<th>${inline(c)}</th>` : `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+    html.push(`<div class="${card ? "ans-card ans-tb" : "tbl"}"><table>${head ? `<thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead>` : ""}<tbody>${rest.map(r => `<tr>${r.map((c, i) => card && !i ? `<th>${inline(c)}</th>` : `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
     table = null;
   };
   for (let i = 0; i < lines.length; i++) {
@@ -120,8 +119,7 @@ function blocks(text, last, answer) {
     if (run) { flushT(); flushP(); flushL(); html.push(sourceListHtml(run)); i = run.end - 1; continue; }
     if (/^\s*\|.*\|\s*$/.test(line)) {
       flushP(); flushL();
-      if (!table) table = { rows: [], head: false, raw: [] };
-      table.raw.push(line.trim());
+      if (!table) table = { rows: [], head: false };
       if (isSep(line)) { if (table.rows.length === 1) table.head = true; } else table.rows.push(cells(line));
       continue;
     }
@@ -140,7 +138,7 @@ function blocks(text, last, answer) {
       flushP();
       const t = m[2] ? "ol" : "ul", sub = m[1].length >= 2 && !!list;
       if (!sub && (!list || list.t !== t)) { flushL(); list = { t, items: [], head }; }
-      list.items.push({ text: m[3], sub, raw: line.trim() });
+      list.items.push({ text: m[3], sub });
     }
     else if ((m = line.match(/^\s*>\s?(.*)/))) { flushL(); if (para.length) { const q = quote; quote = []; flushP(); quote = q; } quote.push(m[1]); }
     else if ((m = line.match(/^#{1,6}\s+(.*)/))) { flushP(); flushL(); html.push(`<p class="h"><b>${inline(m[1])}</b></p>`); }
