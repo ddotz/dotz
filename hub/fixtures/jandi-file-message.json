@@ -1,0 +1,52 @@
+{
+  "_note": "An image the member sent in a JANDI chat, as message-api/v2 .../messages returns it (anonymized: ids, names and URLs are made up; fileUrl is set by the test).",
+  "id": 0,
+  "fromEntity": 0,
+  "teamId": 7,
+  "status": "created",
+  "messageId": 0,
+  "time": 1762332000000,
+  "toEntity": [100],
+  "message": {
+    "content": { "richText": [], "connectInfo": [] },
+    "from": "web",
+    "status": "created",
+    "shareEntities": [100],
+    "feedbackId": -1,
+    "isFormatted": false,
+    "commentCount": 0,
+    "mentionedMembers": [],
+    "attachments": [
+      {
+        "id": 900001,
+        "contentType": "file",
+        "content": {
+          "extraInfo": { "thumbnailUrl": "https://thumbnail.example.test/t/1", "width": 640, "height": 480 },
+          "richText": [],
+          "title": "screenshot.png",
+          "name": "screenshot.png",
+          "filename": "0000000000000_screenshot.png",
+          "type": "image/png",
+          "icon": "image",
+          "size": 8,
+          "ext": "png",
+          "serverUrl": "storage",
+          "fileUrl": "",
+          "externalCode": null,
+          "externalUrl": null,
+          "externalShared": false,
+          "filterType": "image",
+          "connectInfo": []
+        },
+        "isStarred": false
+      }
+    ],
+    "sharedMessageIds": [],
+    "isEdited": false,
+    "isThreaded": false,
+    "isPinned": false,
+    "teamId": 7,
+    "writerId": 0,
+    "contentType": "text"
+  }
+}
