@@ -61,6 +61,22 @@ describe("opening from a push", () => {
 		MAIN.pop();
 	});
 
+	test("a redraw of the conversation while the glow is on keeps it on the tapped message", async () => {
+		const view = await hub.view({ width: 390, height: 844 }, "/#home");
+		const { waitFor, ev, run } = on(view);
+		await waitFor(`NT.loaded`);
+		await storeSnapshot(view, MAIN.slice(-60));
+		let release!: () => void;
+		gate = new Promise(r => { release = r; });
+		await view.navigate(`${hub.origin}/?m=${encodeURIComponent(AT)}&i=n1#chat/main`);
+		await waitFor(`tl.querySelector(".nt-hl") && timeline.clientHeight`);
+		await run(`renderAll();`);   // what an answer of the network does to the timeline: every row is drawn anew
+		const hl = await ev<string>(`(tl.querySelector(".nt-hl")?.closest("[data-ts]") || {}).dataset?.ts || ""`);
+		release();
+		gate = null;
+		expect(hl).toBe(AT);
+	});
+
 	test("a long conversation draws its newest stretch, and the top of the view brings the older stored rows", async () => {
 		const view = await hub.view({ width: 390, height: 844 }, "/#chat/main");
 		const { waitFor, ev, run } = on(view);
