@@ -40,6 +40,8 @@ export const refusesAsInjection = (text: string): boolean => REFUSED.some(r => r
 
 export function createOwnerNotes(deps: OwnerNotesDeps) {
 	const open = new Map<string, string[]>();
+	// Lanes whose owner message a mid-turn note already answered: the report that ends that turn is still the answer the owner waits for.
+	const noted = new Set<string>();
 	return {
 		/** The owner message `ref` was sent to `lane`. */
 		asked(lane: string, ref: string | undefined): void {
@@ -52,14 +54,16 @@ export function createOwnerNotes(deps: OwnerNotesDeps) {
 			if (endsTurn) return "final";
 			open.delete(lane);
 			const refused = refusesAsInjection(text);
+			if (!refused) noted.add(lane);
 			deps.note(lane, text.trim(), refused ? [] : refs);
 			(refused ? deps.refused : deps.answered)?.(lane, refs);
 			return "note";
 		},
-		/** The lane reported (its turn's final text): everything still open is answered by it; true when something was open (the report is an answer to the owner, whatever its tone). */
+		/** The lane reported (its turn's final text): everything still open is answered by it; true when something was open, or a note earlier in this turn answered the owner (the report is an answer to the owner, whatever its tone). */
 		reported(lane: string, text = ""): boolean {
 			const refs = open.get(lane);
-			if (!refs?.length) return false;
+			if (!refs?.length) return noted.delete(lane);
+			noted.delete(lane);
 			open.delete(lane);
 			(refusesAsInjection(text) ? deps.refused : deps.answered)?.(lane, refs);
 			return true;
@@ -70,10 +74,11 @@ export function createOwnerNotes(deps: OwnerNotesDeps) {
 		lost(lane: string): void {
 			const refs = open.get(lane);
 			open.delete(lane);
+			noted.delete(lane);
 			if (refs?.length) deps.lost?.(lane, refs);
 		},
 		/** The message could not be delivered after all. */
-		drop: (lane: string): void => void open.delete(lane),
+		drop: (lane: string): void => void (open.delete(lane), noted.delete(lane)),
 	};
 }
 
