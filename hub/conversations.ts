@@ -3,7 +3,7 @@ import { paths } from "./config.ts";
 import { briefMail, mailByKey } from "./mail.ts";
 import { laneLive, lanes } from "./lanestate.ts";
 import { readOf, unreadFrom } from "./reads.ts";
-import { noticeKo, plainTable } from "./notice-ko.ts";
+import { dropIdNote, noticeKo, plainTable } from "./notice-ko.ts";
 import { dropClaim, parseTone, previewSource } from "./tone.ts";
 
 // The messenger overview: one row per conversation (the main chat, each project channel, each session) with its newest real
@@ -39,11 +39,11 @@ export function previewOf(raw: string): string {
 			continue;
 		}
 		if (fence) continue;
-		const plain = line
+		const plain = dropIdNote(line
 			.replace(/^\s*-#\s+/, "")
 			.replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, "")
 			.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-			.replace(/[*~`]+|(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])/g, "")
+			.replace(/[*~`]+|(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])/g, ""))
 			.replace(/\s+/g, " ")
 			.trim();
 		if (!plain) continue;

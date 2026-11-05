@@ -110,6 +110,10 @@ test("a bare worker id and a code word stay readable on Discord, a push and a pr
 	expect(buildPayloads(text)[0]!.content).toBe(`✅ ${read}`);
 	expect(classify({ kind: "lane_report", lane: "a", source: "lane:a", ts: "2026-11-05T01:00:00Z", text } as HubEvent)?.body).toBe(read);
 	expect(previewOf(text)).toContain(read);
+	// a preview and a push have no code style, so a quoted id in brackets goes as a bracketed one does
+	const quoted = "[run] 게이트 리뷰어 판정을 기다려요(`st_01a1a780`).";
+	expect(previewOf(quoted)).toBe("게이트 리뷰어 판정을 기다려요.");
+	expect(classify({ kind: "lane_report", lane: "a", source: "lane:a", ts: "2026-11-05T01:00:00Z", text: quoted.replace("[run]", "[done]") } as HubEvent)?.body).toBe("게이트 리뷰어 판정을 기다려요.");
 });
 
 test("notice words keep an id and a half-named code word whole, and still name what they know", () => {
