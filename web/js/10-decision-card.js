@@ -62,17 +62,22 @@ const hashOf = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h *
 // owner message came after it. Null when nothing waits (so the card goes away once the answer lands).
 // Several decisions of one message are answered one by one (owner 2026-11-04): each open notice of the group is a block, a pick answers that
 // notice at once and the block leaves the card; the rest wait. A newer question of the conversation takes the dock first.
+// An open question with buttons stays here too once later messages pushed it up (decisionOne reads only the newest), until the owner answers its notice.
 function decisionGroup(t) {
-  const open = NT.items.filter(n => ntOpenDec(n) && !n.pc && !n.decision.draft && n.decision.to === t && n.decision.group > 1 && n.decision.reply_to);
+  if (isLaneT(t) && (i => i.known && !i.alive && !i.resumable)(targetInfo(t))) return null;
+  const open = NT.items.filter(n => ntOpenDec(n) && !n.pc && !n.decision.draft && !n.decision.assumed && n.decision.options.length && n.decision.to === t && n.decision.reply_to);
   if (!open.length) return null;
   const at = open.map(n => n.decision.reply_to).sort().pop(), mine = open.filter(n => n.decision.reply_to === at);
-  return { key: `${t}|g:${at}`, t, sig: `g:${at}`, at, each: true, question: mine.length === 1 ? ntPlain(mine[0].title) : "", blocks: mine.map(n => ({ title: ntPlain(n.title), options: n.decision.options, nd: n })) };
+  return { key: `${t}|g:${at}`, t, sig: `g:${at}`, at, each: true, lone: mine.every(n => n.decision.group === 1), question: mine.length === 1 ? ntPlain(mine[0].title) : "", blocks: mine.map(n => ({ title: ntPlain(n.title), options: n.decision.options, nd: n })) };
 }
 function decisionOf(t) {
   if (isRelayT(t)) return null;   // another computer's text never becomes a card to answer here
   const one = decisionOne(t), grp = decisionGroup(t);
-  return grp && !(one && msOf(one.at) > msOf(grp.at)) ? grp : one;
+  if (!grp || !one) return grp || one;
+  return grp.lone || msOf(one.at) > msOf(grp.at) ? one : grp;
 }
+// A peer gateway's line (dotz_peer send, a handoff) sits in the conversation as a message, but the owner did not say it. Mirrors hub ownerReplied.
+const ownerSaid = e => OWNER.has(e.kind) && !peerMsgOf(e);
 function decisionOne(t) {
   if (!S) return null;
   const info = targetInfo(t), s = ts(t);
@@ -82,7 +87,7 @@ function decisionOne(t) {
   else {
     for (let k = s.msgs.length - 1; k >= 0; k--) {
       const e = s.msgs[k];
-      if (OWNER.has(e.kind)) return null;
+      if (ownerSaid(e)) return null;
       // An alert or worklog post is not part of the conversation: it never cancels a question that still waits (the real case: a token-audit
       // alert and the night worklog landed after a decision, the card went away and the buttons greyed while the notice still held it open).
       if ((e.kind !== "out" && e.kind !== "lane_report") || e.update_key) continue;
@@ -98,7 +103,7 @@ function decisionOne(t) {
   }
   const pt = parseTone(noHandoff(raw)), body = pt.text, pc = parseChoices(body);
   if (!info.ask && !pc.blocks.length) return null;
-  if (at && s.msgs.some(e => OWNER.has(e.kind) && msOf(e.ts) > msOf(at))) return null;
+  if (at && s.msgs.some(e => ownerSaid(e) && msOf(e.ts) > msOf(at))) return null;
   // Its notices settle wherever it is answered (here, the 모니터링 queue, a draft sent or dropped there: hub/notices.ts settleHandledDrafts),
   // with no owner message in this conversation: once none of them is open the message no longer waits.
   if (at && !info.ask && dcSettledAt(t, at)) return null;

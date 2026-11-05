@@ -5,7 +5,7 @@ import { log, now, paths, writeAtomic } from "./config.ts";
 import type { DraftApproval } from "./draft-approval.ts";
 import { askDefaults } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
-import { eventTarget, type HubEvent } from "./events.ts";
+import { eventTarget, isPeerMessage, type HubEvent } from "./events.ts";
 import { classOfNotice } from "./notice-class.ts";
 import { isSilent, parkedTone } from "./tone.ts";
 import { describeOutput, humanLabel, isIssue, itemRefOf, LOGIN_BLOCKED_KO, PROVIDER_BACK_KO, scheduleLine, watchLine } from "./watchtext.ts";
@@ -366,6 +366,8 @@ export function settleDecision(item: Notice, answer: string, at = now(), resolve
 // The owner wrote in a chat or session: every open decision there is answered by it, unless the message names its decision
 // (a button answer carries `decision`), which then settles only that one.
 function ownerReplied(e: HubEvent): void {
+	// A peer gateway's line arrives as a web message under the owner's login, but he said nothing (2026-11-05: it answered an [ask] nobody had seen).
+	if (isPeerMessage(e)) return;
 	const to = eventTarget(e) ?? "main";
 	const id = typeof e.decision === "string" ? e.decision : "";
 	const text = String(e.text ?? "").trim();
