@@ -5,7 +5,7 @@ import type { DraftRule } from "../../../hub/app-settings.ts";
 import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimHolder, claimSend } from "../../../hub/draft-claim.ts";
 import { attachIssues, withoutKindWords } from "../../../hub/attach-check.ts";
-import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
+import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { addressesOf, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
@@ -181,6 +181,9 @@ export function draftAttachIssues(rec: DraftRec): string[] {
 	const want = (rec.wantFiles ?? []).map(f => f.name).filter(n => !files.includes(stagedName(n)));
 	return want.length ? [...found, `아직 못 붙인 파일: ${want.join(", ")}`] : found;
 }
+
+// The send-time lint of a draft as the owner reads it. The comment engine runs it before a combined card's reply is posted (hub/comments/engine.ts), so a hit never leaves a posted reply beside an unsent mail.
+export const draftLintFailures = (d: DraftRec): string[] => lintReply({ to: d.to, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true }).map(ownerWarning);
 
 // The [ask] message of one draft; the notes line carries lint warnings, the card's question what only the user can decide.
 export function askText(draft: DraftRec, warnings: string[], headline = draft.compose ? "새 메일 초안을 만들었어요" : "답장 초안을 만들었어요"): string {
@@ -403,8 +406,8 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 	if (v.verdict !== "send" && v.verdict !== "send-as-is") return { ok: false, text: "아직 보내도 된다는 답을 받지 못했어요" };
 	const issues = v.verdict === "send" ? draftAttachIssues(d) : [];
 	if (issues.length) return { ok: false, text: `${ATTACH_REFUSED} ${issues.join(" · ")}. ${ATTACH_AS_IS_HINT}` };
-	const failures = lintReply({ to: d.to, subject: d.subject, body: d.body }, d.item, loadStyle(toneKey(d)), { anyRecipient: d.ownerRecipients === true });
-	if (failures.length) return { ok: false, text: `보내기 직전 검사에서 걸려서 보내지 않았어요: ${failures.map(ownerWarning).join(" · ")}` };
+	const failures = draftLintFailures(d);
+	if (failures.length) return { ok: false, text: `${LINT_REFUSED} ${failures.join(" · ")}` };
 	// A second send of the same draft (a double tap, a replayed answer, the CLI beside the gateway) waits for no one: it is refused.
 	if (!opts.retry && claimHolder(claimFile(id)) === "dead") return { ok: false, text: `초안 ${id}은(는) 지난번에 보내다가 멈춰서 메일이 이미 나갔을 수 있어요. 보낸편지함을 확인하고, 안 나갔을 때만 다시 보내기를 눌러 주세요` };
 	const release = claimSend(claimFile(id), opts.retry === true);

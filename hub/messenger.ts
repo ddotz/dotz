@@ -3,7 +3,7 @@ import { log } from "./config.ts";
 import { postKind } from "./discord-post.ts";
 import { type HubEvent, onEmit } from "./events.ts";
 import { postClass, route } from "./notify-route.ts";
-import { listNotices, NOTICE_CAP } from "./notices.ts";
+import { allNotices } from "./notices.ts";
 import type { Peer } from "./peers.ts";
 import { convPath, webLink } from "./weblink.ts";
 
@@ -241,7 +241,7 @@ export async function answerAsk(target: string, text: string, author = "owner"):
 	const pick = parseAskNumber(text);
 	if (!pick || !applier) return false;
 	const to = decisionTo(target);
-	const open = listNotices(NOTICE_CAP).items.filter(i => i.decision?.state === "open" && i.decision.to === to && i.decision.options.some(o => o.n === pick.n));
+	const open = allNotices().filter(i => i.decision?.state === "open" && i.decision.to === to && i.decision.options.some(o => o.n === pick.n));
 	const item = open.sort((a, b) => b.updated.localeCompare(a.updated))[0];
 	if (!item) return false;
 	return (await applier(item.id, pick, author)).status === 200;

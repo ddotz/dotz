@@ -12,7 +12,7 @@ import { markRead } from "./reads.ts";
 import { watchChoice } from "./watch.ts";
 import { blockText, recoveryText } from "./limit-alert.ts";
 import { watchLine } from "./watchtext.ts";
-import { answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, handledNotice, ignoreNotice, laneVerified, listNotices, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, settleExpiredQuestions, UPDATE_NOTICE_KEY, undismissNotice, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
+import { allNotices, answerDecision, answerReply, authRequested, authSettled, type DecisionSend, dismissNotice, dropChannelNotices, dropLaneNotices, handledNotice, ignoreNotice, laneVerified, listNotices, markDraftSend, markNoticesRead, NOTICE_CAP, needsAnswer, type Notice, onDecision, orchestratorAnswered, orchestratorTurnStarted, resolveNotices, readConversationNotices, reopenNotices, rewriteOpenDraft, setConvNameResolver, setLaneTitleResolver, setViewing, setWatchLabelResolver, ANSWER_WINDOW_MS, ALERT_ANSWER_WINDOW_MS, settleExpiredQuestions, UPDATE_NOTICE_KEY, undismissNotice, unignoreNotice, unreadCount, updateAvailable, updateResolved } from "./notices.ts";
 
 const ts = () => new Date().toISOString();
 const stored = (): Notice[] => JSON.parse(readFileSync(paths.notices, "utf8"));
@@ -477,6 +477,34 @@ test("the store keeps at most 300 items, dropping read ones first and then the o
 	expect(items).toHaveLength(NOTICE_CAP);
 	expect(items.some(n => n.text === "읽지 않은 오래된 글")).toBe(false);
 	expect(items.some(n => n.text === "채우기 마지막")).toBe(true);
+});
+
+const draftCard = (i: number) => post("alert", `[ask] 초안 ${i}\n${draftApprovalBlock({ to: "owner@example.test", body: `본문 ${i}`, ref: `RC${i}`, question: "이 답장 보낼까요?" })}`);
+
+test("every open card is found past the 300 cap: allNotices and GET /api/notices hold them all, listNotices(300) alone does not", () => {
+	for (let i = 0; i < NOTICE_CAP + 158; i++) draftCard(i);
+	const open = stored().filter(n => n.decision?.state === "open");
+	expect(open).toHaveLength(NOTICE_CAP + 158);
+	expect(allNotices()).toHaveLength(open.length);
+	expect(listNotices(NOTICE_CAP).items).toHaveLength(NOTICE_CAP);
+	const last = allNotices().at(-1)!;
+	expect(listNotices(NOTICE_CAP).items.some(n => n.id === last.id)).toBe(false);
+	expect(allNotices().some(n => n.id === last.id)).toBe(true);
+	expect(listNotices(100, true).items).toHaveLength(open.length);
+});
+
+test("a closed card whose send failed outlives the cap until it is dismissed", async () => {
+	draftCard(0);
+	const card = stored().find(n => n.decision?.draft?.ref === "RC0")!;
+	expect((await answerDecision(card.id, { n: 1 }, async () => {})).status).toBe(200);
+	markDraftSend(card.decision!.to, "RC0", "failed", "보내지 못했어요");
+	for (let i = 0; i < NOTICE_CAP + 20; i++) post("worklog", `[run] 채우기 ${i}`);
+	expect(stored()).toHaveLength(NOTICE_CAP);
+	expect(stored().find(n => n.id === card.id)?.decision?.send?.state).toBe("failed");
+	expect(allNotices().some(n => n.id === card.id)).toBe(true);
+	dismissNotice(card.id);
+	post("worklog", "[run] 채우기 마지막");
+	expect(stored().some(n => n.id === card.id)).toBe(false);
 });
 
 test("a found dotz update creates one notice, a later check reuses it, and applying it marks it read", () => {
