@@ -9,7 +9,7 @@ import { retryWanted, type StageOpts, type Want } from "./staged.ts";
 import { askText, attachFolder, buildDraft, callOf, candidatesFor, chosenFrom, draftTrace, mailAsksFile, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
 import { anyRuleOn, mailInstanceOf, matchRule, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles } from "./rules.ts";
 import { learnFirst, MAIL_TONE_VERSION } from "./persona.ts";
-import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
+import { appOn, ensureSwitch, hasOwnTone, loadSettings } from "./settings.ts";
 import { addDraft, isDrafted, markDrafted } from "./store.ts";
 import { FairQueue } from "./fair-queue.ts";
 
@@ -161,6 +161,8 @@ async function offerOne(m: OfferMail, deps: OfferDeps, { body, history }: Reads,
 		const looked = m.messageId ? `${m.key}#${m.messageId}` : m.key;
 		if (!requested && isDrafted(looked)) return "skipped";
 		const item: ReplyItem = { kind: "mail", from: m.from ?? "", self: deps.own?.() ?? addressesOf(m.to), to: addressesOf(m.to), ...(m.cc ? { cc: addressesOf(m.cc) } : {}), subject: m.subject, text: "", ...(requested ? { requested: true } : {}), ...(requested && m.instruction?.trim() ? { instruction: m.instruction.trim().slice(0, 500) } : {}) };
+		// Learning stays on the shared mail profile; only the writing, the revising and the send check read the instance's own profile.
+		if (hasOwnTone(instance)) item.profile = instance;
 		if (!requested && precheck(item, settings.senders, { addressLater: true })) {
 			markDrafted(looked);
 			return "skipped";

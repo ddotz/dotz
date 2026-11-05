@@ -28,8 +28,8 @@ export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promi
 	await maybeRefine(key, deps.analyze).catch(e => console.error(`reply draft: identity of ${key.app} not refined: ${(e as Error).message}`));
 }
 
-// The tone profile an item or draft belongs to: its room when it has one, else its app (mail unless the item says otherwise).
-export const toneKey = (x: { app?: string; room?: string }): ToneKey => ({ app: x.app ?? "mail", ...(x.room !== undefined ? { room: x.room } : {}) });
+// The tone profile an item or draft belongs to: its room when it has one, else its own profile (a mail app instance's), else its app (mail unless the item says otherwise).
+export const toneKey = (x: { app?: string; room?: string; profile?: string }): ToneKey => ({ app: x.profile ?? x.app ?? "mail", ...(x.room !== undefined ? { room: x.room } : {}) });
 export type Meta = { source: string; mailId: string; ref: string; origAttachments?: number; /** The zele account the mail belongs to (its record's `account`); every zele call of the draft passes it. */ account?: string };
 // "ask" (chat only): the message needs a decision only the user can make; `choices` are 2-4 short answers.
 export type Built = { action: "skip"; reason: string } | { action: "draft"; rec: DraftRec; warnings: string[]; /** The candidates the model chose (ReplyResult.files); absent = it gave no choice. */ files?: string[] } | { action: "ask"; question: string; choices: string[] };
@@ -96,13 +96,14 @@ export function mailStyleOf(text: string, from: string): ReplyStyle | undefined 
 	const s = loadStyle({ app: "mail" });
 	return s.samples.length || s.identity?.length ? styleWithExamples(s, "mail", text, from) : undefined;
 }
-// A mail draft's style carries the user's closest real past replies as examples; chat and comments keep theirs.
-const styleOf = (item: ReplyItem, key: ToneKey) => (item.kind === "mail" ? styleWithExamples(loadStyle(key), "mail", item.text, item.from) : loadStyle(key));
+// A mail draft's style carries the user's closest real past replies as examples; chat and comments keep theirs. A pair does not say which account
+// it came from, so a draft with a profile of its own gets none: another account's replies must not ride in its prompt.
+const styleOf = (item: ReplyItem, key: ToneKey) => (item.kind === "mail" && !item.profile ? styleWithExamples(loadStyle(key), "mail", item.text, item.from) : loadStyle(key));
 
 function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[]; recipient?: Recipient }, changes: string[], deps: FlowDeps): DraftRec {
 	// The candidates were for this one model call; a later revision builds its own.
 	const { candidates: _candidates, ...kept } = item;
-	return { id: newId(), ...(r.recipient ? { recipient: r.recipient } : {}), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...meta, to: r.draft.to, ...(r.draft.subject ? { subject: r.draft.subject } : {}), body: r.draft.body, status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item: kept };
+	return { id: newId(), ...(r.recipient ? { recipient: r.recipient } : {}), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...(item.profile ? { profile: item.profile } : {}), ...meta, to: r.draft.to, ...(r.draft.subject ? { subject: r.draft.subject } : {}), body: r.draft.body, status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item: kept };
 }
 
 // The owner is asked once, with a complete draft (owner 2026-10-26): the one draft call already settles every open point it can from what it
