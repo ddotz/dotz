@@ -1,5 +1,5 @@
 "use strict";
-const WEB_BUILD = "08d196474748";
+const WEB_BUILD = "dabd1163882c";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 // DOM builder: strings become text nodes; safeHtml is used only with already-escaped markup.
@@ -99,11 +99,14 @@ const num = n => Number(n || 0).toLocaleString("ko-KR");
 const lsJson = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key) || "null") ?? fallback; } catch { return fallback; } };
 
 // web.access = "cloudflare": the gateway answers an unpaired browser with 403 and X-Dotz-Pair (hub/devices.ts); the app then goes to the pairing page.
+const pairGate = (status, pair) => {
+  if (status === 403 && pair && location.pathname !== "/pair") { snapForget(); location.replace((location.pathname === "/" ? "/pair" : `/pair?next=${encodeURIComponent(location.pathname + location.search)}`) + location.hash); }   // the stored conversations go with the access (13-snapshot.js)
+};
 {
   const realFetch = window.fetch.bind(window);
   window.fetch = async (...args) => {
     const res = await realFetch(...args);
-    if (res.status === 403 && res.headers.get("x-dotz-pair") && location.pathname !== "/pair") { snapForget(); location.replace((location.pathname === "/" ? "/pair" : `/pair?next=${encodeURIComponent(location.pathname + location.search)}`) + location.hash); }   // the stored conversations go with the access (13-snapshot.js)
+    pairGate(res.status, res.headers.get("x-dotz-pair"));
     return res;
   };
 }
@@ -175,11 +178,11 @@ function motionOut(el, to = "fade", ms = M_MS.fast) {
   return a.finished.then(() => a, () => a);
 }
 
-// The same element changes state in place (보내기 -> 보냈어요, a task finishing): change() runs at once, the new look fades up.
+// The same element changes state in place (보내기 -> 보냈어요, a task finishing): change() runs at once, the new look fades up at its own size.
 function motionSwap(el, change, ms = M_MS.base) {
   change();
   if (!el || !el.animate || reducedMotion()) return;
-  el.animate([{ opacity: .35, transform: "scale(.985)" }, { opacity: 1, transform: "none" }], { duration: ms, easing: M_EASE });
+  el.animate([{ opacity: .35 }, { opacity: 1 }], { duration: ms, easing: M_EASE });
 }
 
 // A count that changed: only the digits that differ roll in. textContent stays the plain number.
@@ -209,7 +212,7 @@ function freshKeys(store, keys) {
 }
 
 // Generated from hub/notice-ko.ts by hub/gen-notice-ko-web.ts; do not edit. stripMarkers (02-basic-markdown.js) and clockKo (11-watchtext.js) are the page's own.
-const { noticeKo, errorKo, cronKo } = (() => {
+const { noticeKo, errorKo, cronKo, plainTable } = (() => {
 const NAMES = {
   watch: "모니터링",
   watches: "모니터링",
@@ -472,6 +475,7 @@ function prose(s, o) {
   t = t.replace(LONG_ID, "");
   t = t.replace(STATUS, "");
   t = t.replace(/^\[([^\]\n]{2,30})\][ \t]+(?=\S)/gm, (m, label) => /^[\d\sx]+$/i.test(label) ? m : `${label}: `);
+  t = t.replace(/``/g, "").replace(/(:|·)[ \t]*·/g, "$1");
   return josa(t).replace(/\(\s*[,·]?\s*\)|\[\s*\]/g, "").replace(/[ \t]+([,.!?)])/g, "$1").replace(/[ \t]{2,}/g, " ").replace(/[ \t]+$/gm, "").replace(/[ \t]*·[ \t]*$/gm, "");
 }
 function errorKo(msg) {
@@ -502,6 +506,16 @@ function errorKo(msg) {
   if (/not found|enoent/i.test(m))
     return "찾지 못했어요";
   return /[A-Za-z]{2,}/.test(m) ? "처리하지 못했어요. 잠시 뒤에 다시 해 주세요" : m;
+}
+function plainTable(text) {
+  return text.split(`
+`).flatMap((l) => {
+    if (/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l))
+      return [];
+    const row = /^\s*\|(.*)\|\s*$/.exec(l);
+    return [row ? row[1].split("|").map((c) => c.trim()).filter(Boolean).join(" · ") : l];
+  }).join(`
+`);
 }
 function noticeKo(raw, o = {}) {
   let src = String(raw ?? "");
@@ -563,7 +577,7 @@ function noticeKo(raw, o = {}) {
 ${files.join(`
 `)}`.trim() : body;
 }
-return { noticeKo, errorKo, cronKo };
+return { noticeKo, errorKo, cronKo, plainTable };
 })();
 
 /* ---------- messages from another computer's gateway: a small card and one Korean line instead of the raw text ---------- */
@@ -598,7 +612,7 @@ function peerMsgLine(raw) {
 }
 function peerMsgCard(e, p, hm) {
   const words = p.kind === "ack" ? "넘긴 작업을 이어서 해요" : p.words;
-  const body = words ? el("div", { class: "pmc-b" }, mdNode(words)) : null, long = !!body && (words.length > 420 || words.split("\n").length > 6);
+  const body = words ? el("div", { class: "pmc-b" }, answerNode(choiceFree(words))) : null, long = !!body && (words.length > 420 || words.split("\n").length > 6);
   if (long) body.classList.add("clamp");
   const more = long ? el("button", { class: "ubm", type: "button", onclick: () => { const c = body.classList.toggle("clamp"); more.textContent = c ? "더 보기" : "접기"; } }, "더 보기") : null;
   const mt = el("div", { class: "mt", text: hm }), mid = e.mid || e.message_id || "";
@@ -606,7 +620,7 @@ function peerMsgCard(e, p, hm) {
   return el("div", { class: "bm pmc" }, filesNode(e.files, true), rpQuote(e),
     el("div", { class: "ccard" },
       el("div", { class: "pmc-hd" }, icon("desktop"), el("span", { class: "mn", text: p.from }), el("span", { class: "tag", text: PEER_KIND[p.kind], ...(p.id ? { title: `id ${p.id}` } : {}) }), mt),
-      body, more, p.note ? el("details", { class: "more" }, el("summary", { text: "인계 메모" }), el("div", { class: "pmc-n" }, mdNode(p.note))) : null));
+      body, more, p.note ? el("details", { class: "more" }, el("summary", { text: "인계 메모" }), el("div", { class: "pmc-n" }, answerNode(choiceFree(p.note)))) : null));
 }
 
 // Korean line breaks by meaning, like Netflix subtitles (web/DESIGN.md Type). keep-all already keeps words whole; this keeps
@@ -675,7 +689,7 @@ const WPH_COPY = [".sup", ".note", ".empty", ".hc-none", ".cv-empty", ".bell-non
 // code, inputs, links (an underline does not reach into an inline-block), mail bodies, the file viewer, and boxes that clamp or
 // ellipsize their text (an inline-block there would hide whole phrases instead of trimming the last line)
 const WPH_SKIP = ["pre", "code", "kbd", "samp", "textarea", "input", "select", "svg", "a", "[contenteditable]", ".btn", ".chip", ".tag", ".mb", ".mb-txt", ".tv-body",
-  ".clamp", "[class*='clamp']", ".ntf .bd2", ".pn .pt", ".ml-snip", ".qt", ".lg-q", ".lb", ".pj-sc .tx", ".hm-n .s", ".hm-sh .s", ".wh", ".rq-orig", ".md", ".ds-t", ".dc-q", ".dc-ds",
+  ".clamp", "[class*='clamp']", ".ntf .bd2", ".ml-snip", ".qt", ".lg-q", ".lb", ".pj-sc .tx", ".hm-n .s", ".hm-sh .s", ".wh", ".rq-orig", ".md", ".ds-t", ".dc-q", ".dc-ds",
   ".tr-rb", ".mr-sum", ".dr-ob", ".kk-lp-t", ".kk-lp-d", ".fr-sum", ".rc-title", ".mt-head .sup", ".ended .sup", ".sh-t .sup", ".wph", "#tl"].join(", ");
 
 function phraseFrag(tree) {
@@ -727,6 +741,79 @@ function phraseIn(n) {
 if (typeof document !== "undefined" && document.body && typeof MutationObserver !== "undefined") {
   new MutationObserver(muts => { for (const m of muts) for (const n of m.addedNodes) phraseIn(n); }).observe(document.body, { childList: true, subtree: true });
   phraseIn(document.body);
+}
+
+/* ---------- answer shapes: an assistant answer drawn by its written shape (site/prototype s-answers.js) ---------- */
+// Only the shape of the text decides, never a model or a list of label names; a block with no shape returns null and stays as today's text
+// (docs/ui-principles.md 12). The stored text is never touched, and a card holds only the words it shows, so a selection copies what it covers.
+// answerNode is the one way a model's text reaches the screen: a chat answer, a session report, a notice sheet, a monitoring card. A surface that calls mdNode instead draws the
+// same text differently, and hub/answer-surfaces-web.test.ts fails on it. An answer reaches the page whole (11-todo-strip.js streamIn), so it is drawn once, on
+// its first paint: the live status and progress notes never come through here, and there is no text that later turns into a card.
+const ANS_LABEL = /^\*\*([^*\n]{1,24}?):?\*\*:?\s+(\S.*)$/;
+const ANS_EVIDENCE = /^근거:\s*(\S.*)$/;
+const ANS_HEAD = /^\*\*([^*\n]+)\*\*$/, ANS_COUNT = /^(.+?)\s*\((\d+회)\)$/;
+const ANS_SENTENCE = /^.+?[.!?](?=\s|$)/;
+const ANS_WORDY = 30, ANS_LEAD_MAX = 80, ANS_TABLE_COLS = 5;
+// shaped: the answer already has a shape (its files). lead: false where a title above the body is already the one bold thing (a sheet, a result card).
+const answerNode = (text, { cls = "md", shaped = false, lead = true } = {}) => mdNode(text, cls, false, { shaped, lead });
+// A body with its `[file]` lines taken out (fileLines): the text, the file rows, then the evidence line, which stays the last thing.
+function answerParts({ text, files }, o = {}) {
+  const md = answerNode(text, { ...o, shaped: files.length > 0 }), ev = files.length ? md.querySelector(":scope > .ans-ev:last-child") : null;
+  return [md, ...ansFiles(files), ev].filter(Boolean);
+}
+const ansRow = (key, value) => `<div class="rc-row"><span class="rc-k">${inline(key)}</span><span class="rc-w">${inline(value)}</span></div>`;
+// The list as a card, or null. Two or more flat items only: one line or a nested list is lighter as text.
+function ansListHtml(list) {
+  if (list.items.length < 2 || list.items.some(i => i.sub)) return null;
+  if (list.t === "ol") return `<div class="ans-card"><div class="rc-rows ans-steps">${list.items.map((x, i) => ansRow(String(i + 1), x.text)).join("")}</div></div>`;
+  if (timeList(list)) return `<div class="ans-card">${timeRowsHtml(list.items)}</div>`;
+  const kv = list.items.map(i => ANS_LABEL.exec(i.text));
+  if (!kv.every(Boolean)) return null;
+  const rows = kv.map(m => ansRow(m[1], m[2])).join("");
+  return `<div class="ans-card"><div class="rc-rows ans-keys${kv.some(m => m[2].length > ANS_WORDY) ? " ans-wordy" : ""}">${rows}</div></div>`;
+}
+// The answer's one bold thing is its first sentence, drawn only when a shape below it carries the rest. A first line with no sentence end counts when it
+// is short; a mark left open across the cut (** or a backtick) keeps the paragraph as written.
+function ansLeadHtml(para) {
+  const first = para[0], one = (ANS_SENTENCE.exec(first) || [first.length <= ANS_LEAD_MAX ? first : ""])[0];
+  if (!one || one.split("**").length % 2 === 0 || one.split("`").length % 2 === 0) return "";
+  return `<p><span class="ans-lead">${inline(one)}</span>${[inline(first.slice(one.length)), ...para.slice(1).map(inline)].join("<br>")}</p>`;
+}
+// The answer's last line "근거: a · b" as small pieces under everything else; the same line with text after it stays a meta line.
+function ansEvidenceHtml(line, rest) {
+  const m = ANS_EVIDENCE.exec(line.trim());
+  if (!m || rest.some(l => l.trim())) return "";
+  return `<div class="ans-ev">${m[1].split(/\s+·\s+/).map(x => `<span>${inline(x)}</span>`).join("")}</div>`;
+}
+// An answer's files as rows in one card, the name first and selectable; a picture keeps its thumbnail.
+function ansFiles(files) {
+  const isImg = f => IMG_RE.test(f.name || f.path), box = filesNode(files.filter(f => !isImg(f)).map(f => ({ ...f, row: true })));
+  if (box) box.classList.add("ans-card", "ans-files");
+  return [box, filesNode(files.filter(isImg))];
+}
+// A "**title**" line over a list of labels: one part of a bundle report, or null when the list is not all labels. ansJoin draws the parts.
+function ansSection(list, plain) {
+  const kv = list.items.map(i => ANS_LABEL.exec(i.text));
+  if (!kv.every(Boolean) || list.items.some(i => i.sub)) return null;
+  const rows = kv.map(m => {
+    const c = ANS_COUNT.exec(m[1]);
+    return `<div class="rc-row ans-li"><span class="rc-k">${inline(c ? c[1] : m[1])}</span>${c ? `<span class="ans-n">${esc(c[2])}</span>` : ""}<span class="rc-w">${inline(m[2])}</span></div>`;
+  });
+  return { n: rows.length, plain, html: `<div class="rc-sh"><span>${inline(ANS_HEAD.exec(list.head)[1])}</span></div>${rows.join("")}` };
+}
+// Neighbouring parts of a bundle share one card; a lone part with a single item stays text.
+function ansJoin(html, answer) {
+  const out = [];
+  for (let i = 0; i < html.length; i++) {
+    if (typeof html[i] === "string") { out.push(html[i]); continue; }
+    const run = [];
+    for (; typeof html[i] === "object"; i++) run.push(html[i]);
+    i--;
+    const big = run.reduce((n, p) => n + p.n, 0) >= 2;
+    if (big) answer.shaped = true;
+    out.push(big ? `<div class="ans-card"><div class="rc-rows ans-secs">${run.map(p => p.html).join("")}</div></div>` : run.map(p => p.plain).join(""));
+  }
+  return out;
 }
 
 /* ---------- basic markdown (input is escaped before any markup is produced) ---------- */
@@ -804,16 +891,44 @@ function sourceListHtml({ head, items }) {
   });
   return `<div class="mlist mlist-src">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
 }
-function blocks(text, last) {
+// One key-column row (.rc-rows): the key muted, what it is, the detail after " · " muted (tail: a ready-made detail instead).
+function rcRowHtml(key, text, tail = "") {
+  const d = tail ? null : /^(.*?)\s+·\s+(.*)$/.exec(text);
+  return `<div class="rc-row"><span class="rc-k">${esc(key)}</span><span class="rc-w"><b>${inline(d ? d[1] : text)}</b> ${d ? `<span class="rc-d">${inline(d[2])}</span>` : tail}</span></div>`;
+}
+// A list of "10:00 what" items and nothing else is a schedule: the rows of an answer's card (02-answer-shapes.js) and of a briefing (11-resultcard.js).
+const TIME_ROW = /^(\d{1,2}:\d{2})\s+(\S.*)$/;
+const timeList = l => l.t === "ul" && l.items.length >= 2 && l.items.every(i => !i.sub && TIME_ROW.test(i.text));
+function timeRowsHtml(items) {
+  return `<div class="rc-rows">${items.map(i => { const m = TIME_ROW.exec(i.text); return rcRowHtml(m[1], m[2]); }).join("")}</div>`;
+}
+// answer: the shape state of one answer (02-answer-shapes.js), null for every other caller.
+function blocks(text, last, answer) {
   const html = [], meta = metaRe(), lines = unquoteChoices(text.split("\n")), sources = sourceRuns(lines, last);
   let list = null, para = [], table = null, quote = [];
   const flushQ = () => { if (quote.length) html.push(`<blockquote>${quote.map(inline).join("<br>")}</blockquote>`); quote = []; };
-  const flushP = () => { flushQ(); if (para.length) html.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; };
-  const flushL = () => { if (list) html.push(`<${list.t}>${list.items.map(i => `<li${i.sub ? ' class="sub"' : ""}>${inline(i.text)}</li>`).join("")}</${list.t}>`); list = null; };
+  const flushP = () => {
+    flushQ();
+    if (para.length) {
+      const p = `<p>${para.map(inline).join("<br>")}</p>`;
+      if (answer && !answer.opened && !html.length) { answer.plain = p; answer.rich = ansLeadHtml(para); }
+      html.push(p);
+    }
+    para = [];
+  };
+  const flushL = () => {
+    if (!list) return;
+    const head = list.head ? `<p>${inline(list.head)}</p>` : "", plain = `<${list.t}>${list.items.map(i => `<li${i.sub ? ' class="sub"' : ""}>${inline(i.text)}</li>`).join("")}</${list.t}>`;
+    const part = answer && head ? ansSection(list, head + plain) : null, card = answer && !part ? ansListHtml(list) : null;
+    if (card) answer.shaped = true;
+    html.push(part || head + (card || plain));
+    list = null;
+  };
   const flushT = () => {
     if (!table) return;
-    const [head, ...rest] = table.head ? table.rows : [null, ...table.rows];
-    html.push(`<div class="tbl"><table>${head ? `<thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead>` : ""}<tbody>${rest.map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+    const [head, ...rest] = table.head ? table.rows : [null, ...table.rows], card = answer && head && rest.length > 0 && head.length <= ANS_TABLE_COLS;
+    if (card) answer.shaped = true;
+    html.push(`<div class="${card ? "ans-card ans-tb" : "tbl"}"><table>${head ? `<thead><tr>${head.map(c => `<th>${inline(c)}</th>`).join("")}</tr></thead>` : ""}<tbody>${rest.map(r => `<tr>${r.map((c, i) => card && !i ? `<th>${inline(c)}</th>` : `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
     table = null;
   };
   for (let i = 0; i < lines.length; i++) {
@@ -828,12 +943,19 @@ function blocks(text, last) {
     }
     flushT();
     // Discord's "-# " subtext line renders like the meta lines.
-    if (meta.test(line) || /^\s*-#\s/.test(line)) { flushP(); flushL(); html.push(`<p class="meta">${inline(line.replace(/^\s*-#?\s+/, ""))}</p>`); continue; }
+    if (meta.test(line) || /^\s*-#\s/.test(line)) {
+      flushP(); flushL();
+      const ev = answer && last && ansEvidenceHtml(line, lines.slice(i + 1));
+      if (ev) answer.shaped = true;
+      html.push(ev || `<p class="meta">${inline(line.replace(/^\s*-#?\s+/, ""))}</p>`);
+      continue;
+    }
     // An indented item (2+ spaces) is a sub-item of the list it sits in, whatever its own marker.
     if ((m = line.match(/^(\s*)(?:[-*•]|(\d+)[.)])\s+(.*)/))) {
+      const head = answer && para.length === 1 && ANS_HEAD.test(para[0].trim()) ? para.pop().trim() : "";   // a title right above a list
       flushP();
       const t = m[2] ? "ol" : "ul", sub = m[1].length >= 2 && !!list;
-      if (!sub && (!list || list.t !== t)) { flushL(); list = { t, items: [] }; }
+      if (!sub && (!list || list.t !== t)) { flushL(); list = { t, items: [], head }; }
       list.items.push({ text: m[3], sub });
     }
     else if ((m = line.match(/^\s*>\s?(.*)/))) { flushL(); if (para.length) { const q = quote; quote = []; flushP(); quote = q; } quote.push(m[1]); }
@@ -842,7 +964,8 @@ function blocks(text, last) {
     else { flushL(); para.push(line); }
   }
   flushP(); flushL(); flushT();
-  return html.join("");
+  if (answer && html.length) answer.opened = true;
+  return (answer ? ansJoin(html, answer) : html).join("");
 }
 // A fence tagged 목록 is a list shown as UI rows (hub/listblock.ts writes it): an optional "# " title line, then one row per line
 // "title | subtitle | meta | badge" (the last three optional). Each row gets a round initial, the meta on the right and a count badge.
@@ -852,24 +975,29 @@ function listBlockHtml(src) {
   const rows = lines.map(l => {
     const [t = "", s = "", meta = "", badge = ""] = l.split(" | ").map(x => x.trim());
     const initial = Array.from(t.replace(/^[^\p{L}\p{N}]+/u, ""))[0] || "·";
-    return `<div class="mlist-row"><span class="mlist-av" aria-hidden="true">${esc(initial)}</span><div class="mlist-main"><div class="mlist-t">${esc(t)}</div>${s ? `<div class="mlist-s">${esc(s)}</div>` : ""}</div>${meta || badge ? `<div class="mlist-r">${meta ? `<span class="mlist-m">${esc(meta)}</span>` : ""}${/^\d+\+?$/.test(badge) && badge !== "0" ? `<span class="mlist-b">${esc(badge)}</span>` : ""}</div>` : ""}</div>`;
+    return `<div class="mlist-row"><span class="mlist-av" aria-hidden="true">${esc(initial)}</span><div class="mlist-main"><div class="mlist-t" title="${esc(t)}">${esc(t)}</div>${s ? `<div class="mlist-s">${esc(s)}</div>` : ""}</div>${meta || badge ? `<div class="mlist-r">${meta ? `<span class="mlist-m">${esc(meta)}</span>` : ""}${/^\d+\+?$/.test(badge) && badge !== "0" ? `<span class="mlist-b">${esc(badge)}</span>` : ""}</div>` : ""}</div>`;
   });
   return `<div class="mlist">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
 }
 // relayed: another computer's reply (42-relay-chat.js) is text only: `[file]` lines stay text and a fence is a plain code block, with no run button and no settings card to act on here.
-function mdHtml(src, relayed = false) {
+// answer: a model's text is drawn by its shapes through answerNode (02-answer-shapes.js), the one caller that passes this; a direct mdNode() keeps its text (hub/answer-surfaces-web.test.ts).
+function mdHtml(src, relayed = false, answer = false) {
+  const shape = answer ? { shaped: !!answer.shaped, opened: false, plain: "", rich: "" } : null;
   // split() with two groups: [text, language, code, text, language, code, ...]; each code block gets its copy / run bar (35-code-blocks.js).
   // A fence opens only at the start of a line (``` in the middle of a sentence stays text) and closes with ``` at the end of a line.
   const parts = stripRecMark(stripMarkers(src, relayed)).split(/(?:^|\n)[ \t]{0,3}```([^\n`]*)\n?([\s\S]*?)(?:```[ \t]*(?=\n|$)|$)/);
   // A fence tagged 원문 is a post's raw machine output (hub/watchtext.ts rawFence): folded, monospace, tap to open.
-  return parts.map((p, i) => i % 3 === 0 ? blocks(p, i === parts.length - 1) : i % 3 === 2 ? (relayed ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>` : parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "dotz-settings" ? settingsCardHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
+  const out = parts.map((p, i) => i % 3 === 0 ? blocks(p, i === parts.length - 1, shape) : i % 3 === 2 ? (relayed ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>` : parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "dotz-settings" ? settingsCardHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
+  return shape && shape.shaped && shape.rich && answer.lead !== false && out.startsWith(shape.plain) ? shape.rich + out.slice(shape.plain.length) : out;
 }
-const mdNode = (src, cls = "md", relayed = false) => el("div", { class: cls, safeHtml: mdHtml(src, relayed) });
+const mdNode = (src, cls = "md", relayed = false, answer = false) => el("div", { class: cls, safeHtml: mdHtml(src, relayed, answer) });
 
 /* ---------- message status (only an explicit line-1 marker sets it; it becomes one leading emoji) ---------- */
-const TONE_TAGS = new Map(Object.entries({ done: "done", "완료": "done", run: "run", "진행": "run", ask: "ask", "결정": "ask", fail: "fail", "실패": "fail", warn: "fail", "경고": "fail" }));
+const TONE_TAGS = new Map(Object.entries({ done: "done", "완료": "done", run: "run", "진행": "run", wait: "wait", "대기": "wait", ask: "ask", "결정": "ask", fail: "fail", "실패": "fail", warn: "fail", "경고": "fail" }));
 // The marker word is drawn as one status tag at the start of the message's first line (prototype .bub .st), never as the raw marker or an emoji.
-const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], ask: ["warn", "확인 필요"], fail: ["err", "실패"] };
+const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], wait: ["warn", "답을 기다려요"], ask: ["warn", "확인 필요"], fail: ["err", "실패"] };
+// [run] and [wait] are true only of the moment they were written: 41-runstate.js syncLiveTags draws them from the current state.
+const parkedTone = tone => tone === "run" || tone === "wait";
 const toneTag = tone => LANE_TONE[tone] ? el("span", { class: `tag ${LANE_TONE[tone][0]} st-tag`, text: LANE_TONE[tone][1] }) : null;
 // The tag goes in front of the first paragraph's text; a body that opens with a list or a card gets a line of its own.
 function toneLead(root, tone) {
@@ -882,7 +1010,7 @@ function toneLead(root, tone) {
 // known marker shapes at line start (behind an optional list dash, `**` or `**name**: ` lead), outside ``` fences; any
 // other bracket is content. Status words, [lane <word>], [dotz ...], [orchestrator-guard], [지금 도는 것], [attachment],
 // [system], [owner via <x>], [ok | 12ms], [routine:...], [10-23]; a left-over [file] line is dropped.
-const MK_BODY = "(?:run|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|결정|실패|경고|차단|부분|나중|오류|attachment|system|handover|keepalive|orchestrator-guard|지금 도는 것|now running|dotz(?: [a-z][\\w:-]*(?: [^\\]\\n]{1,40})?)?|lane [a-z가-힣][^\\]\\n]{0,30}|owner via [^\\]\\n]{1,30}|(?:ok|error|err|fail)[ ]*\\|[^\\]\\n]{1,24}|routine:[^\\]\\n]{1,60}|\\d{2}-\\d{2})";
+const MK_BODY = "(?:run|wait|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|대기|결정|실패|경고|차단|부분|나중|오류|attachment|system|handover|keepalive|orchestrator-guard|지금 도는 것|now running|dotz(?: [a-z][\\w:-]*(?: [^\\]\\n]{1,40})?)?|lane [a-z가-힣][^\\]\\n]{0,30}|owner via [^\\]\\n]{1,30}|(?:ok|error|err|fail)[ ]*\\|[^\\]\\n]{1,24}|routine:[^\\]\\n]{1,60}|\\d{2}-\\d{2})";
 const MK_LEAD = new RegExp("^([ \\t]*(?:[-*][ \\t]+)?(?:\\*\\*[^*\\n]{1,60}\\*\\*:?[ \\t]+)?)(\\*\\*)?\\[" + MK_BODY + "\\](\\*\\*)?[ \\t]*", "i");
 // keepFiles: a message body keeps its `[file]` lines for the attachment chips (fileLines, 15-attachments.js); mdNode drops them.
 function stripMarkers(text, keepFiles = false) {
@@ -1402,7 +1530,7 @@ document.addEventListener("keydown", ev => {
   navShortcut(tab[0]);
 });
 // 모니터링's badge (#nav-mon) counts what waits there (09-needs-you.js paintMonAttn).
-for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, "aria-label": label, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
+for (const [id, label] of navTabs()) $("#nav").append(el("button", { class: "ni", type: "button", "data-view": id, title: `${label} (${navKeyHint(id)})`, "aria-label": label, onclick: () => { if (id !== "home" && PR.node) prClose(false); id === "chat" ? chatTabTap() : id === "home" ? homeTabTap() : go(id); } }, icon(VIEW_ICON[id] || id), el("span", { class: "nl", text: label }), id === "chat" ? el("span", { class: "nb nnb", id: "nav-att", hidden: true }) : id === "monitoring" ? el("span", { class: "nb nnb att", id: "nav-mon", hidden: true }) : id === "settings" ? el("span", { class: "nb nub att", id: "nav-upd", hidden: true, text: "새 버전", title: "새 버전이 있어요" }) : null));
 $("#side-tog").append(icon("side"));
 $("#side-tog").onclick = sideToggle;
 sideSync();
@@ -2418,7 +2546,7 @@ function homeMonitorCard() {
     none ? hcNone(state || "모니터링 중인 항목이 없어요") : el("div", { class: "hc-list", "data-cap": "watch" }, ...list.map(m => {
       // The same status the 모니터링 row shows (30-monitoring.js monStatus); the dot's colour classes are the notice tones.
       const st = monStatus(m);
-      return el("div", { class: "hc-mon", "data-status": st.key }, hcDot({ ok: "done", warn: "ask", err: "fail" }[st.tone]), el("div", { class: "b" }, el("span", { class: "n", text: ntPlain(m.name) || "모니터링" }),
+      return el("div", { class: "hc-mon", "data-status": st.key }, hcDot({ ok: "done", warn: "ask", err: "fail" }[st.tone]), el("div", { class: "b" }, el("span", { class: "n", text: monTitle(m) }),
         el("span", { class: "s", text: [ntMonRun(m), st.text, ntMonNext(m)].filter(Boolean).join(" · ") })));
     })),
     list.length > LIST_CAP ? el("div", { class: "hc-more", text: `더 보기 · ${list.length - LIST_CAP}개` }) : null);
@@ -2464,7 +2592,7 @@ function previewSrc(raw) {
   const s = noHandoff(peerMsgLine(raw)).replace(/^\s*Ask:[ \t]*/i, "");
   return isLaterText(s) ? LATER_LINE : s;
 }
-const friendlyLine = raw => oneLine(parseTone(previewSrc(raw)).text);
+const friendlyLine = raw => oneLine(previewLines(choiceFree(raw), 3).join(" "));
 // Same rule as hub/tone.ts stripHandoff: the agent's leading "Ask: ... For you: ... Next: ..." block is not shown.
 function noHandoff(text) {
   const m = /^\s*Ask:[^\n]*(?:\n(?!\s*\n)[^\n]*)*/.exec(text);
@@ -2764,7 +2892,9 @@ const isRelayT = t => /^relay:[a-z0-9-]+:./.test(t);
 const RELAY = { name: {}, note: {}, back: MAIN, on: false };
 const mailSender = f => String(f || "").replace(/<[^>]*>/g, "").replace(/["']/g, "").trim() || String(f || "");
 const validTarget = t => t === MAIN || isFixedT(t) || isProjT(t) || (isLaneT(t) && t.length > 5) || (isMailT(t) && t.length > 5) || (isSettingsT(t) && t.length > 9) || isRelayT(t);
-const sourceOf = t => t === MAIN || isProjT(t) || isFixedT(t) || isMailT(t) || isSettingsT(t) || isRelayT(t) ? "orchestrator" : t;
+// A conversation that can have an agent session of its own (hub/session-key.ts CONV_KINDS): its target is its session key.
+const isConvT = t => isProjT(t) || isFixedT(t) || isMailT(t) || isSettingsT(t);
+const sourceOf = t => t === MAIN || isConvT(t) || isRelayT(t) ? "orchestrator" : t;
 const targetOfSource = s => s === "orchestrator" ? MAIN : s;
 // Owner-facing names: a project by its title (else its channel name), a session by its title (else its key).
 // The name of a target on the computer `pc` it belongs to (an item from another gateway carries pc = {name, url, bot}): there the main chat is
@@ -3063,7 +3193,7 @@ function paintStrip() {
   // the sidebar's lower area says the same in a row (22-shell.css): the tightest limit, its bar, and the share left; the folded rail shows only the ring
   if (side) {
     side.classList.toggle("warn", pct <= 40);
-    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: "사용량" }), el("span", { class: "sf-bar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "sf-v", text: `${word} ${pct}%` }), el("span", { class: "sf-ring", style: `--p:${pct}`, text: String(pct) }));
+    clear(side).append(icon("usage"), el("span", { class: "sf-k", text: "사용량" }), el("span", { class: "sf-bar" }, el("i", { style: `width:${pct}%` })), el("span", { class: "sf-v", text: `${word} ${pct}%` }), el("span", { class: "sf-ring pring", style: `--p:${pct}`, text: String(pct) }));
     side.title = `사용량 · ${word} ${pct}% 남음`; side.setAttribute("aria-label", side.title);
   }
 }
@@ -3198,11 +3328,34 @@ const isDescLine = nx => nx !== undefined && !!nx.trim() && !CH_OPT.test(nx) && 
 // The message text without its option lines (and their description lines): the buttons show them, so the body must not repeat them.
 function stripChoices(text) {
   const lines = stripRecMark(String(text ?? "")).split("\n"), out = [];
+  let fence = false;
   for (let i = 0; i < lines.length; i++) {
-    if (!CH_OPT.test(lines[i])) { out.push(lines[i]); continue; }
+    if (CH_FENCE.test(lines[i])) fence = !fence;
+    if (fence || CH_FENCE.test(lines[i]) || !CH_OPT.test(lines[i])) { out.push(lines[i]); continue; }
     if (isDescLine(lines[i + 1])) i++;
   }
   return out.filter(l => !CH_CLOSE.test(l)).join("\n").replace(/\n{3,}/g, "\n\n");
+}
+// A body whose card shows the options: the question line loses its "결정:" label, and goes when `title` (the card's head) already says it. Text without an inline card reads as a sentence.
+const choiceBody = (text, title) => stripChoices(text).split("\n").flatMap(l => { const q = (CH_HEAD.exec(l) || [])[1]; return q === undefined ? [l] : q && q !== title ? [q] : []; }).join("\n").trim();
+// Text on a surface that holds no options (a notice that is no decision, a report card): a choice block goes whether or not its question is still open; any other numbered list stays.
+function choiceFree(text) {
+  const t = String(text ?? "").replace(/^[ \t]*\d{1,2}\.[ \t]+(?=(?:\*\*)?[ \t]*결정[ \t]*[:：])/gm, "");   // text that never passed the hub (a peer's message) can number its heads
+  return parseChoices(t).blocks.length ? choiceBody(t) : text;
+}
+// The message body above its inline card (dcInline): the card holds the question and the options, so neither stays as text. Text outside the blocks stays, code fences whole.
+function inlineBody(text) {
+  const lines = stripRecMark(String(text ?? "")).split("\n"), out = [];
+  let fence = false, block = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (CH_FENCE.test(lines[i])) { fence = !fence; block = false; }
+    else if (!fence && CH_HEAD.test(lines[i]) && CH_OPT.test(lines.slice(i + 1).find(l => l.trim()) || "")) { block = true; continue; }
+    else if (!fence && block && CH_OPT.test(lines[i])) { if (isDescLine(lines[i + 1])) i++; continue; }
+    else if (!fence && CH_CLOSE.test(lines[i])) continue;
+    else if (lines[i].trim()) block = false;
+    out.push(lines[i]);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 function parseChoices(text) {
   const OPT = CH_OPT, HEAD = CH_HEAD;
@@ -3245,27 +3398,34 @@ const hashOf = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h *
 // owner message came after it. Null when nothing waits (so the card goes away once the answer lands).
 // Several decisions of one message are answered one by one (owner 2026-11-04): each open notice of the group is a block, a pick answers that
 // notice at once and the block leaves the card; the rest wait. A newer question of the conversation takes the dock first.
+// An open question with buttons stays here too once later messages pushed it up (decisionOne reads only the newest), until the owner answers its notice.
+const dcGone = t => isLaneT(t) && (i => i.known && !i.alive && !i.resumable)(targetInfo(t));   // a session that ended takes no answer
+const DC_GONE = "이 세션이 끝나서 답을 보낼 수 없어요";
 function decisionGroup(t) {
-  const open = NT.items.filter(n => ntOpenDec(n) && !n.pc && !n.decision.draft && n.decision.to === t && n.decision.group > 1 && n.decision.reply_to);
+  if (dcGone(t)) return null;
+  const open = NT.items.filter(n => ntOpenDec(n) && !n.pc && !n.decision.draft && !n.decision.assumed && n.decision.options.length && n.decision.to === t && n.decision.reply_to);
   if (!open.length) return null;
   const at = open.map(n => n.decision.reply_to).sort().pop(), mine = open.filter(n => n.decision.reply_to === at);
-  return { key: `${t}|g:${at}`, t, sig: `g:${at}`, at, each: true, question: mine.length === 1 ? ntPlain(mine[0].title) : "", blocks: mine.map(n => ({ title: ntPlain(n.title), options: n.decision.options, nd: n })) };
+  return { key: `${t}|g:${at}`, t, sig: `g:${at}`, at, each: true, lone: mine.every(n => n.decision.group === 1), question: mine.length === 1 ? ntPlain(mine[0].title) : "", blocks: mine.map(n => ({ title: ntPlain(n.title), options: n.decision.options, nd: n })) };
 }
 function decisionOf(t) {
   if (isRelayT(t)) return null;   // another computer's text never becomes a card to answer here
   const one = decisionOne(t), grp = decisionGroup(t);
-  return grp && !(one && msOf(one.at) > msOf(grp.at)) ? grp : one;
+  if (!grp || !one) return grp || one;
+  return grp.lone || msOf(one.at) > msOf(grp.at) ? one : grp;
 }
+// A peer gateway's line (dotz_peer send, a handoff) sits in the conversation as a message, but the owner did not say it. Mirrors hub ownerReplied.
+const ownerSaid = e => OWNER.has(e.kind) && !peerMsgOf(e);
 function decisionOne(t) {
   if (!S) return null;
   const info = targetInfo(t), s = ts(t);
-  if (isLaneT(t) && info.known && !info.alive && !info.resumable) return null;
+  if (dcGone(t)) return null;
   let raw = "", at = "";
   if (info.ask) { raw = String(info.ask.text); at = info.ask.at || ""; }
   else {
     for (let k = s.msgs.length - 1; k >= 0; k--) {
       const e = s.msgs[k];
-      if (OWNER.has(e.kind)) return null;
+      if (ownerSaid(e)) return null;
       // An alert or worklog post is not part of the conversation: it never cancels a question that still waits (the real case: a token-audit
       // alert and the night worklog landed after a decision, the card went away and the buttons greyed while the notice still held it open).
       if ((e.kind !== "out" && e.kind !== "lane_report") || e.update_key) continue;
@@ -3281,7 +3441,7 @@ function decisionOne(t) {
   }
   const pt = parseTone(noHandoff(raw)), body = pt.text, pc = parseChoices(body);
   if (!info.ask && !pc.blocks.length) return null;
-  if (at && s.msgs.some(e => OWNER.has(e.kind) && msOf(e.ts) > msOf(at))) return null;
+  if (at && s.msgs.some(e => ownerSaid(e) && msOf(e.ts) > msOf(at))) return null;
   // Its notices settle wherever it is answered (here, the 모니터링 queue, a draft sent or dropped there: hub/notices.ts settleHandledDrafts),
   // with no owner message in this conversation: once none of them is open the message no longer waits.
   if (at && !info.ask && dcSettledAt(t, at)) return null;
@@ -3301,7 +3461,7 @@ async function answerDecision(dc, text, opt, note) {
   try {
     // A card with one block whose question is a decision notice answers through the notice path (30-notices.js), so both stay in step.
     const nd = opt && dc.blocks.length === 1 ? ntFor(t, dc.at, opt) : null;
-    if (nd) await ntPost(nd, opt.n, note, files);
+    if (nd) await ntPost(nd, opt.n, note, files, opt.label);
     // The agent gets the question with each chosen option and the asking message (hub/intake.ts decisionLines); the bubble stays short.
     const pk = DC.picks[dc.key] || [], picks = dc.blocks.flatMap((b, i) => (pk[i] ? [{ q: b.title || dc.question || "", n: pk[i].n, label: pk[i].label, ...(pk[i].note && !dc.draft ? { note: pk[i].note } : {}) }] : []));
     const r = nd ? null : await api("/api/message", "POST", { text, ...(files.length ? { files } : {}), ...(picks.length ? { picks } : {}), ...(dc.at ? { reply_to: dc.at } : {}), ...(lane ? { lane } : {}), ...(isProjT(t) ? { project: projOf(t) } : {}), ...(isMailT(t) ? { mail: mailOf(t) } : {}), ...(isFixedT(t) ? { conv: t } : {}), ...(isWorking(t) ? { mode: "steer" } : {}) });
@@ -3316,6 +3476,9 @@ const needsNote = (dc, opt) => (dc.draft ? draftAsksText(opt) : detailOf(opt));
 const pickSay = o => `${o.n}) ${o.label}${o.note ? ` - ${o.note}` : ""}`;
 function pickOption(dc, bi, opt, note) {
   if (DC.st[dc.key]) return;
+  // A mail whose files disagree with its words is not sent by 보내기: the owner is shown what is off and 이대로 보내기 is the pick that sends it (cancel keeps the card).
+  const asIs = dc.draft && (dc.draft.attachIssues || []).length && dc.blocks[bi] && dc.blocks[bi].options.find(o => o.label === "이대로 보내기");
+  if (asIs && opt.label === "보내기" && !opt.sure) { ask("첨부를 확인해 주세요", `${dc.draft.attachIssues.join(" · ")}. 이대로 보낼까요?`, "이대로 보내기").then(ok => { if (ok) pickOption(dc, bi, { ...asIs, sure: true }, note); }); return; }
   if (dc.draft && (dc.draft.warning || (dc.draft.attachments || []).length) && opt.label === "보내기" && !opt.sure) { drfSure(dc.draft, dc.t).then(ok => { if (ok) pickOption(dc, bi, { ...opt, sure: true }, note); }); return; }
   if (!note && needsNote(dc, opt)) { DC.edit[dc.key] = { bi, opt }; paintDecision(); return; }
   const p = DC.picks[dc.key] || [];
@@ -3329,7 +3492,7 @@ function pickOption(dc, bi, opt, note) {
 }
 async function answerEach(dc, bi, opt, note) {
   DC.st[dc.key] = "sending"; paintDecision();
-  try { await ntPost(dc.blocks[bi].nd, opt.n, note, DC.files[dc.key]); delete DC.files[dc.key]; } catch (e) { toast(e.message, true); }
+  try { await ntPost(dc.blocks[bi].nd, opt.n, note, DC.files[dc.key], opt.label); delete DC.files[dc.key]; } catch (e) { toast(e.message, true); }
   delete DC.st[dc.key]; delete DC.picks[dc.key]; delete DC.step[dc.key];
   paintDecision();
 }
@@ -3351,14 +3514,16 @@ function multiNodes(dc, picks, st) {
 // app's 첨부 파일 폴더, x = take one off. The live list (DRF.st) replaces the one written in the message. o.t = the draft's conversation
 // (a peer's draft is changed on its own computer), o.edit false = read only, o.warn = a box the warning is drawn into instead of under the files.
 const DR_IMG = /\.(png|jpe?g|gif|webp|avif|heic)$/i;
-const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, add: {} };
+const DRF = { st: {}, pc: {}, menu: {}, lib: {}, busy: {}, add: {}, wait: {} };
 const DRF_WIRE_MAX = 10 * 1024 * 1024;
 const drfPath = (ref, tail) => `/api/drafts/${enc(ref)}/${tail}`;
 const drfNone = { files: [], canAttach: false, library: false, editable: false, failed: true };
-async function drfLoad(ref) { try { const r = await api(drfPath(ref, "files")); DRF.st[ref] = r && Array.isArray(r.files) ? r : drfNone; } catch { DRF.st[ref] = drfNone; } }
+function drfLoad(ref) {
+  return DRF.wait[ref] ||= api(drfPath(ref, "files")).then(r => { DRF.st[ref] = r && Array.isArray(r.files) ? r : drfNone; }, () => { DRF.st[ref] = drfNone; }).finally(() => { delete DRF.wait[ref]; });
+}
 async function drfWrite(ref, body) {
   const r = await api(drfPath(ref, "files"), "POST", body);
-  DRF.st[ref] = { files: r.files, canAttach: r.canAttach, library: r.library, editable: r.editable };
+  DRF.st[ref] = { files: r.files, canAttach: r.canAttach, library: r.library, editable: r.editable, attachIssues: r.attachIssues };
 }
 const drfBase64 = f => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = () => no(r.error); r.readAsDataURL(f); });
 async function drfUpload(ref, f) {
@@ -3370,11 +3535,8 @@ async function drfUpload(ref, f) {
 }
 // One file to this gateway's uploads (hub/files.ts): the record that a draft's 첨부 or a message's `files` names.
 async function uploadFile(f) {
-  const form = new FormData();
-  form.append("file", f, f.name);
-  const r = await fetch("/api/upload", { method: "POST", body: form }), d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.error || `올리지 못했어요 (HTTP ${r.status})`);
-  return d.files[0];
+  if (upTooBig(f.size)) throw new Error(upTooBig(f.size));
+  return uploadXhr(f, f.name).done;
 }
 // 보내기 on a draft whose mail account cannot send files: the owner is asked once more (resolves true to go on).
 async function drfSure(d, t) {
@@ -3405,20 +3567,21 @@ function draftFilesNode(d, o = {}) {
   };
   function paint() {
     const st = ref ? DRF.st[ref] : null, live = !!st && !st.failed && st.tracked !== false;
-    // Files named in the message that dotz did not stage itself: shown, with a line saying it could not check they go out.
-    const unchecked = !!st && st.tracked === false && Array.isArray(d.attachments) && d.attachments.length > 0;
+    // Files named in the message that dotz did not stage itself: the names stand, with a plain line saying the session attaches them.
+    const named = !!st && st.tracked === false && Array.isArray(d.attachments) && d.attachments.length > 0;
     const fl = live ? st.files : Array.isArray(d.attachments) ? d.attachments : [];
     const can = live && st.editable && o.edit !== false, busy = !!DRF.busy[ref];
     const warn = d.warning && !fl.length;
     const noSend = live && st.editable && !st.canAttach && (fl.length || d.warning);
+    const issues = live && st.attachIssues ? st.attachIssues : d.attachIssues || [];
     const warns = [
-      warn ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: d.warning }), d.note ? el("span", { class: "dr-wn", text: d.note }) : null)) : null,
-      noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "이 계정은 파일을 못 보내요 · 본문만 가요" })) : null,
-      unchecked ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부가 실제로 붙었는지 몰라요" }), el("span", { class: "dr-wn", text: "보내기 전에 확인해 주세요" }))) : null];
+      issues.length ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: "첨부 확인" }), el("span", { class: "dr-wn", text: issues.join(" · ") }))) : null,
+      warn && !issues.length ? el("div", { class: "dr-warn", role: "alert" }, icon("clip"), el("span", { class: "dr-wt" }, el("span", { text: d.warning }), d.note ? el("span", { class: "dr-wn", text: d.note }) : null)) : null,
+      noSend ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "이 계정은 파일을 못 보내요 · 본문만 가요" })) : null];
     const rows = fl.map((f, i) => {
       const ext = (String(f.name).match(/\.([A-Za-z0-9]{1,5})$/) || [0, ""])[1].toUpperCase(), meta = [ext, f.size].filter(Boolean).join(" · ");
       const kids = [el("span", { class: "dr-fi" }, icon(DR_IMG.test(f.name) ? "image" : "file")), el("span", { class: "dr-fn", text: f.name }), meta ? el("span", { class: "dr-fm", text: meta }) : null];
-      const link = ref ? el("a", { class: "dr-att", href: pqLink(drfPath(ref, `files/${i}`)), target: "_blank", rel: "noopener", title: `${f.name} 열기`, "aria-label": `${f.name} 열기${f.size ? ` (${f.size})` : ""}` }, ...kids, icon("open")) : el("div", { class: "dr-att" }, ...kids);
+      const link = ref && !named ? el("a", { class: "dr-att", href: pqLink(drfPath(ref, `files/${i}`)), target: "_blank", rel: "noopener", title: `${f.name} 열기`, "aria-label": `${f.name} 열기${f.size ? ` (${f.size})` : ""}` }, ...kids, icon("open")) : el("div", { class: "dr-att" }, ...kids);
       return can ? el("div", { class: "dr-ar" }, link, el("button", { class: "dr-x", type: "button", disabled: busy, title: "첨부에서 빼기", "aria-label": `${f.name} 빼기`, onclick: () => run(() => drfWrite(ref, { remove: i })) }, icon("close"))) : link;
     });
     const items = DRF.lib[ref] || [];
@@ -3433,12 +3596,13 @@ function draftFilesNode(d, o = {}) {
     const mailDraft = d.toLabel === "받는이";
     // o.live (the mail of a combined card, read only): the list is read from the staged files, so a ✓ says they are on the mail.
     clear(box).append(...[fl.length ? el("div", { class: o.live && live ? "dr-fh ok" : "dr-fh", text: o.live && live ? `✓ 첨부 ${fl.length}개 붙어 있어요` : `첨부 ${fl.length}개` }) : null, ...rows,
+      named ? el("div", { class: "dr-note", text: "세션이 직접 붙여 보내는 파일이라 여기서는 열어 볼 수 없어요" }) : null,
       !fl.length && (d.noAttachments || mailDraft) ? el("div", { class: "dr-none" }, icon("clip"), el("span", { text: "첨부: 없음" })) : null,
       add, menu, lib, ...(o.warn ? [] : warns), pickers].filter(Boolean));
     box.hidden = !box.querySelector(".dr-fh, .dr-none, .dr-warn, .dr-add");
   }
   paint();
-  if (ref && (o.edit !== false || o.live) && d.toLabel === "받는이" && !DRF.st[ref]) drfLoad(ref).then(paint);
+  if (ref && (o.edit !== false || o.live || (d.attachments || []).length) && d.toLabel === "받는이" && !DRF.st[ref]) drfLoad(ref).then(paint);
   return box;
 }
 /* ---------- 받는 사람·참조 of a mail reply draft (hub/draft-recipients.ts) ---------- */
@@ -3496,7 +3660,8 @@ function draftToNode(d, o = {}) {
   };
   function paint() {
     const st = ref ? DRR.st[ref] : null;
-    const live = st && !st.failed ? st : { to: drrSplit(d.to), cc: Array.isArray(d.cc) ? d.cc : [], mode: d.mode || "reply", editable: !!ref && o.edit !== false, reply: !!d.mode };
+    // No record of this draft (a block a session wrote): the hub has no list, the card's own 받는이 stands and nothing here can change it.
+    const live = st && !st.failed && (st.to.length || st.editable) ? st : { to: drrSplit(d.to), cc: Array.isArray(d.cc) ? d.cc : [], mode: d.mode || "reply", editable: !!st && !!st.failed && !!ref && o.edit !== false, reply: !!d.mode };
     const editable = live.editable && o.edit !== false, off = busy();
     const seg = live.reply ? el("div", { class: "seg dr-seg", role: "group", "aria-label": "답장 범위" },
       ...[['reply', '답장'], ['all', '전체 답장']].map(([k, text]) => el("button", { class: live.mode === k ? "on" : "", type: "button", "data-k": `mode-${k}`, "aria-pressed": String(live.mode === k), disabled: off || !editable, text, onclick: () => { if (editable && !off && live.mode !== k) run(() => drrWrite(ref, { mode: k })); } }))) : null;
@@ -3527,11 +3692,13 @@ function draftMailNode(m, o = {}) {
     el("div", { class: "dr-mh" }, icon("mail"), el("span", { text: "함께 보낼 메일" })),
     el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: m.toLabel || "받는이" }), el("span", { class: "dc-dr-v", text: m.to || "-" })),
     m.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v sub", text: m.subject })) : null,
-    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "함께 보낼 메일 내용", text: m.body }),
+    draftBodyNode(m.body, "dc-dr-b", { tabindex: "0", role: "region", "aria-label": "함께 보낼 메일 내용" }),
     draftFilesNode(part, { edit: false, live: !!ref, t: o.t }));
 }
 // A combined card (comment reply + mail): the comment it answers on top, then 내 답글, then the mail (draftMailNode).
 const replyHead = () => el("div", { class: "dr-mh" }, icon("chat"), el("span", { text: "내 답글" }));
+// The body of a draft, drawn as chat draws a message (relayed: words to read, no run button or settings card on what someone else may have written).
+const draftBodyNode = (text, cls, attrs = {}) => el("div", { ...attrs, class: `md ${cls}`, safeHtml: mdHtml(text, true) });
 function draftNode(d, o) {
   const both = !!d.mail && d.toLabel === "대상";
   return el("div", { class: "dc-draft" },
@@ -3539,7 +3706,7 @@ function draftNode(d, o) {
     !d.toLabel || d.toLabel === "받는이" ? draftToNode(d, o) : el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: d.toLabel }), el("span", { class: "dc-dr-v", text: d.to || "-" })),
     d.subject ? el("div", { class: "dc-dr-h" }, el("span", { class: "dc-dr-k", text: "제목" }), el("span", { class: "dc-dr-v", text: d.subject })) : null,
     draftRuleNode(d), draftOriginNode(d),
-    el("div", { class: "dc-dr-b", tabindex: "0", role: "region", "aria-label": "보낼 내용", text: d.body }), draftFilesNode(d, o), draftMailNode(d.mail, o));
+    draftBodyNode(d.body, "dc-dr-b", { tabindex: "0", role: "region", "aria-label": "보낼 내용" }), draftFilesNode(d, o), draftMailNode(d.mail, o));
 }
 // What the status line says after an answer: a 고치기 on a draft is the bot rewriting it.
 const dcStText = (dc, st) => (dc.draft && ((DC.picks[dc.key] || [])[0] || {}).label === DRAFT_EDIT ? "고치는 중…" : st === "sending" ? "보내는 중…" : "보냈어요 · 처리하는 중");
@@ -3607,16 +3774,18 @@ function renderSheet(box, dc, picks, step) {
     d.recipientWarning ? el("div", { class: "dr-warn dc-rw", role: "alert" }, el("span", { text: `받는이 확인: ${d.recipientWarning}` })) : null]
     : [el("span", { class: "fs-ey", text: dc.blocks.length ? "결정이 필요해요" : "답변이 필요해요" })], { ignore: dc.ignore, close: dc.close });
   const warnBox = el("div", { class: "dr-warnbox", hidden: true });
-  const both = !!d && !!d.mail && d.toLabel === "대상";   // a comment reply + mail: the original sits inline at the top (no room for the side panel beside the mail part)
-  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, decideNode(d), (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), el("div", { class: "dc-dr-b", text: d.body }), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
+  const orgDrawn = () => { delete box.dataset.sig; paintDecision(); };   // the sig does not hold the hub's answer, so the repaint is asked for
+  const both = !!d && !!d.mail && d.toLabel === "대상" && orgHas(d.ref, dc.t, orgDrawn);   // a comment reply + mail: the original sits inline at the top (no room for the side panel beside the mail part)
+  const body = d ? el("div", { class: "fs-body panel", tabindex: "0", role: "region", "aria-label": "보낼 내용" }, decideNode(d), (!d.toLabel || d.toLabel === "받는이" ? draftToNode(d, { t: dc.t, edit: !st }) : null), both ? orgInline(d, dc.t) : null, both ? replyHead() : null, draftRuleNode(d), draftOriginNode(d), draftBodyNode(d.body, "dc-dr-b"), draftFilesNode(d, { t: dc.t, edit: !st, warn: warnBox }), draftMailNode(d.mail, { t: dc.t }))
     : qText ? el("div", { class: "fs-body panel fit" }, mdNode(qText, "md dc-q")) : null;
   // 원문 보기 (10-draft-original.js): the original is its own panel beside the draft (a toggle on a phone); the draft side (body + footer) is the one that slides.
   box.classList.remove("od-host", "od-on");
-  const col = d && d.ref && body && ((d.toLabel === "대상" && !d.mail) || (d.toLabel === "받는이" && !d.mail)) ? el("div", { class: "od-draftcol" }) : null;
+  const col = d && d.ref && body && !d.mail && (d.toLabel === "대상" || d.toLabel === "받는이") && orgHas(d.ref, dc.t, orgDrawn) ? el("div", { class: "od-draftcol" }) : null;
   const org = col ? orgNodes(d, dc.t, box, col) : null;
   const foot = el("div", { class: "fs-ft" });
   foot.append(warnBox);
   if (edit) foot.append(editNode(dc, edit, st));
+  else if (d && dcGone(dc.t)) foot.append(el("div", { class: "dc-gone", role: "status", text: DC_GONE }));
   else if (d) {
     // One compact row: the first choice (보내기) filled, 고치기 tonal, the rest as text, and 직접 수정 as a small link at the end.
     const opts = dc.blocks[0].options, oe = opts.find(o => o.label === DRAFT_EDIT);
@@ -3641,8 +3810,9 @@ function renderSheet(box, dc, picks, step) {
 function choiceRow(dc, step, o, picks, st) {
   return el("button", { class: `dc-row${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
     el("span", { class: "dc-key", text: String(o.n) }),
-    el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null));
+    el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: dcDesc(o) }) : null));
 }
+const dcDesc = o => o.desc.replace(/`/g, "");   // one plain line under the name: code marks would show raw
 function renderDecision(box, dc, picks, step) {
   if (dc.close) { renderSheet(box, dc, picks, step); return; }
   const hadNote = !!$(".dc-note", box);
@@ -3670,7 +3840,7 @@ function renderDecision(box, dc, picks, step) {
       // Once the answer goes out the card keeps only the chosen row (the others leave), so 보냈어요 reads in the same place.
       for (const o of st && !dc.draft && picks[step] ? blk.options.filter(x => x.n === picks[step].n) : blk.options) body.append(el("button", { class: `dc-row${picks[step] && picks[step].n === o.n ? " on" : ""}`, type: "button", disabled: !!st, onclick: () => pickOption(dc, step, o) },
         el("span", { class: "dc-key", text: String(o.n) }),
-        el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
+        el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: dcDesc(o) }) : null)));
     }
     kids.push(body);
     }
@@ -3707,7 +3877,7 @@ async function answerInline(nd, opt) {
     await noticeSheetOpen(nd.pc ? nd : nd.id); ntAnswer(nd, opt); return;
   }
   dcSending.add(nd.id); syncInlineChoices();
-  try { await ntPost(nd, opt.n); dcAnswerToast(nd, opt); } catch (e) { toast(e.message, true); }
+  try { await ntPost(nd, opt.n, undefined, undefined, opt.label); dcAnswerToast(nd, opt); } catch (e) { toast(e.message, true); }
   dcSending.delete(nd.id); syncInlineChoices();
 }
 // What a draft answered in place did, with the next step: 보냈어요 · 메일 열기 (the mail it answered), 보내지 않았어요 · 되돌리기 (the draft waits again).
@@ -3741,9 +3911,58 @@ function dcLeave(box, dc) {
     dcOut = null; dcLast = null; box.hidden = true; delete box.dataset.sig; delete box.dataset.key; delete box.dataset.st; delete box.dataset.out; clear(box);
   })();
 }
+// The decision as a card in the message itself. It never fires on its own: open, it is the question that waits (the docked card's own, same key, so one answer closes
+// both); closed, an old message's answered or passed question, its rows are disabled and the chosen one marked. The hub normalizes stored messages on the way here
+// (hub/owner-text.ts shownEvent), so a message from before the rule gets this card without ever being able to answer twice.
+const DCI = new WeakMap();
+function dcInline(e, body, pc) {
+  const box = el("div", { class: "dc-inl" });
+  DCI.set(box, { e, t: target, body: body.trim(), question: pc.question, blocks: pc.blocks.filter(b => b.options.length > 1) });
+  paintInline(box, isFixedT(target) ? null : decisionOf(target));
+  return box;
+}
+const SEND_LABELS = /^보내기\|고치기\|보내지 않기/;
+function inlineDc(i, live) {
+  const sig = hashOf(i.body), at = i.e.ts, s = ts(i.t);
+  if (live && live.t === i.t && (live.sig === sig || live.at === at)) return live;
+  if (dcGone(i.t)) return null;
+  if (s.msgs.some(e => ownerSaid(e) && msOf(e.ts) > msOf(at)) || dcSettledAt(i.t, at)) return null;
+  // Only the newest question waits, and a send approval outside a session goes by its draft (the docked card or the notice), never by a bare answer.
+  if (s.msgs.some(e => msOf(e.ts) > msOf(at) && (e.kind === "out" || e.kind === "lane_report") && !e.update_key && parseChoices(parseTone(noHandoff(String(e.text ?? ""))).text).blocks.some(b => b.options.length > 1))) return null;
+  if (!isLaneT(i.t) && i.blocks.some(b => SEND_LABELS.test(b.options.map(o => o.label).join("|")))) return null;
+  return { key: `${i.t}|${sig}`, t: i.t, sig, at, question: i.blocks.length === 1 ? i.blocks[0].title : i.question, blocks: i.blocks };
+}
+// What was answered, from the answer's own picks (hub/intake.ts keeps them on the owner's message).
+function closedPicks(i) {
+  const a = ts(i.t).msgs.find(e => ownerSaid(e) && Array.isArray(e.picks) && msOf(e.ts) > msOf(i.e.ts) && e.picks.some(p => i.blocks.some(b => b.title === p.q)));
+  return i.blocks.map(b => a && a.picks.find(p => p.q === b.title));
+}
+function paintInline(box, live) {
+  const i = DCI.get(box), dc = inlineDc(i, live), picks = dc ? DC.picks[dc.key] || [] : closedPicks(i), st = dc ? DC.st[dc.key] || "" : "closed";
+  const docked = !!dc && dc === live && dc.at === i.e.ts, edit = dc && !docked ? DC.edit[dc.key] : null, sig = [dc ? dc.key : "", st, picks.map(p => (p ? p.n : 0)).join(), edit ? edit.opt.n : "", docked].join("|");
+  if (box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  clear(box);
+  // Answered: the owner's message is drawn as the record of it (dc-rec), options live only in the card.
+  box.hidden = !dc && picks.some(Boolean);
+  if (box.hidden) return;
+  // While the card is docked its rows are there: the message keeps the question, one set of buttons on screen.
+  if (docked) box.append(...i.blocks.map(b => mdNode(draftQ(b.title), "md dc-q")));
+  else if (dc && i.blocks.length > 1) box.append(...multiNodes(dc, picks, st));
+  else for (const [bi, b] of i.blocks.entries()) box.append(...[b.title ? mdNode(draftQ(b.title), "md dc-q") : null, ...b.options.map(o => choiceRow(dc || { key: "" }, bi, o, picks, st))].filter(Boolean));
+  if (!dc && !picks.some(Boolean)) box.append(el("div", { class: "dc-ds", text: "지난 결정이에요" }));
+  // No docked card to type in (a session's mid-turn question): what to change is asked here.
+  if (edit) {
+    const note = el("textarea", { class: "dc-note", rows: 2, placeholder: "내용을 적어 주세요" });
+    box.append(note, el("button", { class: "btn dc-send", type: "button", onclick: () => note.value.trim() && pickOption(dc, edit.bi, edit.opt, note.value.trim()) }, "보내기"));
+    note.focus({ preventScroll: true });
+  }
+}
 function paintDecision() {
   const box = $("#dcard");
   if (!box) return;
+  const inlines = document.querySelectorAll("#timeline .dc-inl");
+  if (inlines.length) { const live = isFixedT(target) ? null : decisionOf(target); for (const b of inlines) paintInline(b, live); }
   // 알림 / 작업내역 never dock the question: a decision there opens as the sheet (30-notices.js), whichever way the conversation was entered.
   // 2 or more send-approval cards waiting in this conversation: one line above the composer (dcLine) instead of the dock card or its pointer; a question that is not a draft keeps its card.
   const dc0 = isFixedT(target) ? null : decisionOf(target), askN = !isFixedT(target) && dcDraftRefs(target) >= 2 ? rqAskCount() : 0, line = askN > 0, dc = line && dc0 && dcDraftAsk(dc0) ? null : dc0, had = !!DC.cur;
@@ -3879,6 +4098,14 @@ function orgFill(pane, d, t, retry) {
     el("div", { class: "od-body" }, mailBodyNode(m.key, m.html, m.text, m.subject)),
     files.length ? el("div", { class: "od-files" }, ...files.map(({ f, i }) => el("a", { class: "dr-att", href: mailFileUrl(m.key, i), target: "_blank", rel: "noopener", title: `${f.name} 열기` },
       icon("clip"), el("span", { class: "dr-fn", text: f.name }), f.size ? el("span", { class: "dr-fs", text: mailSize(f.size) }) : null))) : null].filter(Boolean));
+}
+// Whether a draft has an original to open: the hub says so with its files (`original`), so a block a session wrote, with nothing behind it, offers no 원문.
+// Until the answer is here the sheet shows no tab; `repaint` draws it once it is.
+function orgHas(ref, t, repaint) {
+  const st = ref ? DRF.st[ref] : null;
+  if (st) return st.original !== false;
+  if (ref) { DRF.pc[ref] = t ? pqPc(t) : null; drfLoad(ref).then(repaint); }
+  return false;
 }
 // The comment a combined card (reply + mail) answers, as a compact block at the top of the card: the side panel has no room beside the mail part, so
 // the same pane content (orgFill) is drawn inline under a 댓글 원문 header. Null unless `d` is a comment reply.
@@ -4555,7 +4782,7 @@ function rcRawMd(raw) {
   return out.join("\n");
 }
 const rcWhen = t => !t || !Number.isFinite(Date.parse(t)) ? "" : kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)} ${kstHM(t)}`;
-const rcPlain = s => String(s ?? "").replace(/^\s*#{1,6}\s*/, "").replace(/\*\*/g, "").trim();
+const rcPlain = s => plainTable(String(s ?? "")).replace(/^\s*#{1,6}\s*/, "").replace(/\*\*|`/g, "").trim();
 // The original folded behind "원문 보기" (raw: the text; opts.rawNode draws it itself, opts.rawOpen starts it open).
 function rcRawFold(raw, opts = {}) {
   const sum = el("summary", { text: opts.rawOpen ? "원문 접기" : "원문 보기" }), box = el("div", { class: `rc-rawbody${opts.rawNode ? " own" : ""}` }), d = el("details", { class: "rc-raw" }, sum, box);
@@ -4574,22 +4801,22 @@ function rcRowsNode(text) {
     const m = /^[-*\u2022]\s+(.*)$/.exec(l), k = m && RC_KEY.exec(m[1]);
     if (!m) {   // a short line without punctuation is a small heading over the rows below it (오늘 일정 / 메일 / 감시)
       if (l.length > 16 || /[.!?,]/.test(l)) return null;
-      out.push(el("div", { class: "rc-sh", text: l }));
+      out.push(`<div class="rc-sh">${esc(l)}</div>`);
       continue;
     }
     if (!k) return null;
-    const chg = NW_CHANGE.exec(k[2]), [what, detail] = chg ? [chg[1].trim(), null] : k[2].split(/\s+·\s+/, 2);
-    out.push(el("div", { class: "rc-row" }, el("span", { class: "rc-k", text: k[1] }), el("span", { class: "rc-w" }, el("b", { text: what }), chg ? el("span", { class: "rc-d nw-chg" }, el("s", { text: chg[2] }), " → ", el("em", { text: chg[3] })) : detail ? el("span", { class: "rc-d", text: detail }) : null)));
+    const chg = NW_CHANGE.exec(k[2]);
+    out.push(chg ? rcRowHtml(k[1], chg[1].trim(), `<span class="rc-d nw-chg"><s>${esc(chg[2])}</s> → <em>${esc(chg[3])}</em></span>`) : rcRowHtml(k[1], k[2]));
     n++;
   }
-  return n >= 2 ? el("div", { class: "rc-rows" }, ...out) : null;
+  return n >= 2 ? el("div", { class: "rc-rows", safeHtml: out.join("") }) : null;
 }
 // opts: src (sender or source), at (ISO), title (else the first line of text), text (summary; may carry the original), raw (else taken
 // from text), tag (a node), actions (buttons), rawNode (raw -> node: draws the original itself, as a mail does), rawOpen (the original starts open).
 // null when there is nothing to show.
 function resultCard(opts) {
   const sp = rcSplit(opts.text), raw = opts.raw !== undefined ? String(opts.raw).trim() : sp.raw;
-  let title = opts.title !== undefined ? rcPlain(opts.title) : "", body = sp.text;
+  let title = opts.title !== undefined ? rcPlain(opts.title) : "", body = choiceFree(sp.text);
   if (opts.title === undefined && body) {
     const [first, ...rest] = body.split("\n"), t = rcPlain(first);
     if (t && t.length <= 120 && !rcLabel(first)) { title = t; body = rest.join("\n").trim(); }
@@ -4600,28 +4827,31 @@ function resultCard(opts) {
   if (title) kids.push(el("div", { class: "rc-title", text: title }));
   for (const s of rcSections(body)) {
     // [file] lines become file chips (as in a chat bubble and on Discord), and a path in the text opens like one
-    const fl = fileLines(s.body), rows = rcRowsNode(fl.text), md = !rows && fl.text.trim() ? mdNode(fl.text) : null;
-    kids.push(el("div", { class: "rc-sec" }, s.h ? el("div", { class: "rc-sh", text: s.h }) : null, rows || md, md ? pathFiles(md) : null, filesNode(fl.files)));
+    const fl = fileLines(s.body), rows = rcRowsNode(fl.text), [md, ...rest] = !rows && fl.text.trim() ? answerParts(fl, { lead: false }) : [null, ...ansFiles(fl.files)];
+    kids.push(el("div", { class: "rc-sec" }, s.h ? el("div", { class: "rc-sh", text: s.h }) : null, rows || md, md ? pathFiles(md) : null, rest));
   }
   if (raw || opts.rawNode) kids.push(rcRawFold(raw, opts));
   if (opts.actions && opts.actions.length) kids.push(el("div", { class: "btns cc-act" }, ...opts.actions));
   return el("div", { class: "bm alert rc" }, ...kids);
 }
 
-// A bot answer shaped like a morning briefing (a run of "- 10:00 title" lines, then counts and a mail line) is drawn as rows and chips;
-// the words are the bot's own and stay as written. Any other text returns null and is drawn as plain markdown.
-const HCB_ROW = /^\s*[-*\u2022]\s*(\d{1,2}:\d{2})\s+(\S.*?)\s*$/;
+// A morning briefing (a run of "- 10:00 title" lines with counts and a mail line) is drawn as the time rows plus chips; the words are the
+// bot's own and stay as written. Any other text returns null: its time lists are drawn by the markdown renderer (timeRowsHtml).
+const HCB_ROW = /^\s*[-*\u2022]\s+\d{1,2}:\d{2}\s+\S/;
+const HCB_ITEM = /^\s*(?:[-*\u2022]|\d+[.)])\s/;
 const HCB_MAIL = /메일\s*\d+통/;
 const HCB_COUNT = /\d+\s*(?:개|통|건|명)/;
 const hcbNums = s => { const out = []; String(s).split(/(\d+)/).forEach((p, i) => out.push(i % 2 ? el("span", { class: "hcb-n", text: p }) : p)); return out; };
 function hcBriefParse(text) {
   const lines = String(text ?? "").replace(/\r/g, "").split("\n");
-  let a = -1, b = -1;
+  if (!/브리핑|아침/.test(text) && !HCB_MAIL.test(text)) return null;
+  let a = -1, b = -1, fence = false;
   for (let i = 0; i < lines.length; i++) {
-    if (!HCB_ROW.test(lines[i])) continue;
+    if (/^\s*```/.test(lines[i])) fence = !fence;
+    if (fence || !HCB_ROW.test(lines[i])) continue;
     let j = i;
     while (j + 1 < lines.length && HCB_ROW.test(lines[j + 1])) j++;
-    if (j > i) { a = i; b = j; break; }
+    if (j > i && !HCB_ITEM.test(lines[i - 1] ?? "") && !HCB_ITEM.test(lines[j + 1] ?? "")) { a = i; b = j; break; }
     i = j;
   }
   if (a < 0) return null;
@@ -4629,19 +4859,19 @@ function hcBriefParse(text) {
   while (h >= 0 && !lines[h].trim()) h--;
   const head = h >= 0 && lines[h].trim().length <= 24 && !/[.!?요]$/.test(lines[h].trim()) ? lines[h].trim() : "";
   const pre = lines.slice(0, head ? h : a).join("\n").trim();
-  return { pre, head, rows: lines.slice(a, b + 1).map(l => HCB_ROW.exec(l).slice(1, 3)), post: lines.slice(b + 1) };
+  return { pre, head, rows: lines.slice(a, b + 1).map(l => ({ text: l.replace(/^\s*[-*\u2022]\s+/, "").trim() })), post: lines.slice(b + 1) };
 }
 function hcBriefNode(text) {
   const p = hcBriefParse(text);
   if (!p) return null;
   const kids = [];
-  if (p.pre) kids.push(mdNode(p.pre));
+  if (p.pre) kids.push(answerNode(p.pre));
   const tag = /브리핑|아침/.test(text) ? el("span", { class: "tag pri", text: "아침 점검" }) : null;
-  kids.push(el("div", { class: "hcb-card" },
-    tag || p.head ? el("div", { class: "hcb-hd" }, tag, p.head ? el("span", { class: "hcb-h" }, ...hcbNums(p.head)) : null) : null,
-    el("div", { class: "hcb-rows" }, ...p.rows.map(([t, title]) => el("div", { class: "hcb-r" }, el("span", { class: "hcb-t", text: t }), el("span", { class: "hcb-ti", text: title }))))));
+  const card = el("div", { class: "hcb-card", safeHtml: timeRowsHtml(p.rows) });
+  if (tag || p.head) card.prepend(el("div", { class: "hcb-hd" }, tag, p.head ? el("span", { class: "hcb-h" }, ...hcbNums(p.head)) : null));
+  kids.push(card);
   let plain = [];
-  const flush = () => { const s = plain.join("\n").trim(); plain = []; if (s) kids.push(mdNode(s)); };
+  const flush = () => { const s = plain.join("\n").trim(); plain = []; if (s) kids.push(answerNode(s)); };
   for (const l of p.post) {
     if (!l.trim()) { plain.push(l); continue; }
     if (HCB_MAIL.test(l)) { flush(); kids.push(el("div", { class: "hcb-chip" }, icon("mail"), el("span", {}, ...hcbNums(l.trim())))); }
@@ -4789,9 +5019,10 @@ function cardNode(c) {
 // A gateway system line (hub/outbound.ts `system`, e.g. "백그라운드 작업으로 맡겼어요: …"): one small muted line in the style of the
 // 여기까지 읽음 divider, no bubble or author. With a `worker` it opens that worker (its result once there is one), and its job's state is painted in place.
 // The state is the gateway's (hub/workrows.ts), never the event's: `work` on /api/history for what a load finds, a stream frame when a job changes, and S.work.
+// The first frame comes with the next sweep, seconds after the row: a row that just arrived starts as running, so its card is whole at once, and any word from the gateway replaces that.
 const SYS_NODES = new Map();   // worker id -> every line drawn for it: { st, at, w } (a follow-up joined to a job writes a second line)
 const WORK_ROWS = new Map();   // worker id -> the gateway's newest word on its job
-const WORK_ROWS_MAX = 600, SYS_SLACK_MS = 5000;
+const WORK_ROWS_MAX = 600, SYS_SLACK_MS = 5000, SYS_FRESH_MS = 60_000;
 const SYS_ST = { running: ["pri", "진행 중"], stalled: ["warn", "멈춤"], done: ["ok", "완료"], failed: ["err", "실패"], gone: ["off", "끝남"] };
 const SYS_STOPPED = ["off", "중단됨"];
 function workRowNote(w, at) {
@@ -4880,6 +5111,7 @@ function sysTaskLine(e, title, hm, id) {
 function sysLine(e, text, hm) {
   const id = typeof e.worker === "string" ? e.worker : "", task = id && SYS_TASK.exec(text);
   if (e.work) workRowNote(e.work, e.work.at);
+  else if (id && Date.now() - Date.parse(e.ts) < SYS_FRESH_MS) workRowNote({ id, status: "running" }, Date.parse(e.ts));
   if (task) return sysTaskLine(e, task[1].trim(), hm, id);
   const st = el("span", { class: "cv-sys-st", hidden: true }, el("span", { class: "dot" }), el("span"));
   const kids = [icon("lanes"), el("span", { class: "cv-sys-tx", text }), st, hm ? el("span", { class: "cv-sys-mt", text: hm }) : null];
@@ -4914,8 +5146,7 @@ function msgNode(e) {
     case "result": {
       const go = el("button", { class: "btn tonal", type: "button", text: "세션 열기" });
       go.onclick = () => pickTarget(e.open || "main");
-      // the preview is plain text: drop the markdown bold and code marks
-      const lines = text.replace(/\*\*|`/g, "").split("\n").filter(Boolean).slice(0, 3).join("\n");
+      const lines = previewLines(choiceBody(text), 3).join("\n");
       return el("div", { class: "bm res" }, el("div", { class: "mt", text: ["세션 결과", hm].filter(Boolean).join(" · ") }),
         el("div", { class: "ccard" }, el("div", { class: "cc-hd" }, el("span", { class: "dot ok" }), el("span", { text: `${e.title || "세션"} 끝났어요` }), e.verified ? el("span", { class: "tag ok", text: "확인됨" }) : null),
           lines ? el("div", { class: "cc-note", text: lines }) : null, el("div", { class: "btns cc-act" }, go)));
@@ -4932,7 +5163,7 @@ function msgNode(e) {
         const noSum = e.dir === "out" || rec.dir === "out" || mailSumIsBody(sum, e.preview, rec.preview, sp.raw);
         const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: noSum ? "" : sum, raw: sp.raw, rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw, e.subject) : undefined });
         // Gmail-like, top to bottom: the bar of icons (30-mail-box.js mailOpenBar, 초안 작성 and the ⋯ in it), the subject, the sender and time,
-        // one muted line of 받는 사람 / 참조 that opens the full header (30-mail-thread.js), the summary, then the original.
+        // one muted line of 받는 사람 / 참조 that opens the full header (30-mail-thread.js), the summary, the attachments, then the original.
         if (card && key) {
           const hd = card.querySelector(".rc-hd"), title = card.querySelector(".rc-title"), meta = mailMetaNode(`mail:${key}`, e);
           card.classList.add("mopen");
@@ -4941,7 +5172,7 @@ function msgNode(e) {
           if (MT_READY) mailThreadSync();
         }
         const files = card && key && Array.isArray(e.attachments) ? mailFilesNode(key, e.attachments) : null;
-        if (files) card.append(files);
+        if (files) card.querySelector(":scope > .rc-raw").before(files);
         return card;
       }
       const f = k => (text.match(new RegExp(`^${k}: ?(.*)$`, "m")) || [])[1] || "";
@@ -4960,20 +5191,19 @@ function msgNode(e) {
     }
     default: {
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
-      // A session's report or answer is a full message; only the gateway's progress line (update_key) stays one compact note.
-      const isNote = e.kind === "out" && !!e.update_key && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:")));
-      const { tone, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text), true) : { tone: "", text };
+      // A session's report or answer is a full message; its mid-turn progress line (update_key), new or stored, reads as the live status.
+      const { tone: mark, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text), true) : { tone: "", text };
+      const isNote = e.kind === "out" && !!e.update_key && !e.live && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:"))) && !parseChoices(parsed).blocks.length;
+      // A stored [run] or [wait] draws no tag of its own: syncLiveTags gives the newest report the state of now.
+      const parked = parkedTone(mark) && !e.live && !isNote, tone = parked ? "" : isNote ? mark || "run" : mark;
       // The marker is a status tag in front of the first line (02-basic-markdown.js toneLead), for the orchestrator and a session alike.
-      const body = parsed;
-      if (isNote) {
-        const n = el("div", { class: "pn", tabindex: "0", role: "button" }, el("span", { class: "mt", text: hm }), el("span", { class: "pt", text: body.replace(/^진행 중:\s*/, "") }));
-        n.onclick = () => { if (!getSelection().toString()) n.classList.toggle("open"); };
-        return n;
-      }
+      const body = isNote ? noteText(parsed.replace(/^진행 중:\s*/, "")) : parsed;
       const name = e.kind === "lane_report" ? String(e.lane ?? "") : fromLane ? targetName(e.source) : e.target === "alert" ? "알림" : e.target === "worklog" ? "작업내역" : isRestart(e) ? "게이트웨이" : e.relay ? targetName(e.target) : botName;
       if (e.kind === "out" && e.card && Array.isArray(e.card.facts)) return el("div", { class: "bm" }, el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null), rpQuote(e), cardNode(e.card));
       const card = e.kind === "lane_report" && !isLaneT(target) ? " rep" : e.target === "alert" ? " alert" : "";
       const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null);
+      if (e.live || isNote) return el("div", { class: `bm${card}` }, head, liveNode(body, tone, isNote));
+      const liveAttr = parked ? { "data-live-tone": "1", "data-live-of": fromLane ? e.source : e.kind === "lane_report" ? `lane:${e.lane}` : "" } : {};
       const pc0 = !e.relay && (e.kind === "out" || e.kind === "lane_report") ? parseChoices(parsed) : null, pc = pc0 && choiceAsks(e, tone, pc0) ? pc0 : null;
       // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, and a tap on it opens
       // the decision sheet (30-notices.js) — the options themselves live there, never in the message body.
@@ -4987,14 +5217,32 @@ function msgNode(e) {
       }
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       // A relayed line is another computer's text, not this gateway's: no file chips, no path chips, no choice card; its `[file]` lines stay text (e.relay, 42-relay-chat.js).
-      const fl = e.relay ? { text: body, files: [] } : fileLines(body), host = pqPc(eventTarget(e) || ""), md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text, "md", !!e.relay), files = e.relay ? null : pathFiles(md, host);
+      const fl = e.relay ? { text: body, files: [] } : fileLines(body), host = pqPc(eventTarget(e) || "");
+      // Shapes are for a finished answer or report of the assistant: never a progress note, a gateway line, a relayed line or a "started" note.
+      const answer = (e.kind === "out" || e.kind === "lane_report") && !e.relay && !e.update_key && e.source !== "gateway" && mark !== "run" && !fl.text.startsWith("\u23f3");
+      const inl = pc && !isFixedT(target) && pc.blocks.some(b => b.options.length > 1);   // the card in the message (10-decision-card.js dcInline); in 알림 / 작업내역 a tap opens the sheet
+      const shown = inl ? inlineBody(fl.text) : pc && pc.blocks.length ? choiceBody(fl.text) : fl.text;
+      const md = answer ? answerNode(shown, { shaped: fl.files.length > 0 }) : mdNode(shown, "md", !!e.relay), files = e.relay ? null : pathFiles(md, host);
       // A briefing-shaped answer (schedule rows, a mail line, counts) is drawn as a card of rows and chips (11-resultcard.js hcBriefNode).
       const brief = e.kind === "out" && !e.relay && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
       if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);
-      return el("div", { class: `bm${card}`, ...(pc && pc.blocks.length > 1 ? { "data-dat": e.ts } : {}) }, head, rpQuote(e), brief ? (tone ? [toneLead(el("div", { class: "md" }), tone), brief] : brief) : toneLead(md, tone), filesNode(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files);
+      const ev = answer && fl.files.length ? md.querySelector(":scope > .ans-ev:last-child") : null;   // the evidence line stays the last thing, under the files
+      return el("div", { class: `bm${card}`, ...liveAttr, ...(pc && pc.blocks.length > 1 ? { "data-dat": e.ts } : {}) }, head, rpQuote(e), brief ? (tone || parked ? [toneLead(el("div", { class: "md" }), tone), brief] : brief) : toneLead(md, tone), inl ? dcInline(e, parsed, pc) : null, (answer ? ansFiles : filesNode)(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, ev);
     }
   }
 }
+// The gateway's status while a turn runs (hub/livestatus.ts, e.live) and a session's progress note: the head line, one row per fact, then recent steps muted.
+// Every row stays on one line, so a long step never wraps on a phone and an update keeps the note's shape. A note is free text, so a tap (`tap`) opens what was cut.
+// A note is a model's text, so its marks are drawn (`code`, **bold**); a line of the gateway's status stays as written.
+function liveNode(body, tone, tap) {
+  const [lead, ...rows] = body.split("\n").filter(l => l.trim()), words = s => (tap ? { safeHtml: inline(s) } : { text: s });
+  const lv = toneLead(el("div", { class: "lv", ...(tap ? { tabindex: "0", role: "button" } : {}) }, el("p", words(lead)), ...rows.map(l =>
+    /^- /.test(l) ? el("div", { class: "lv-s", ...words(l.slice(2)) }) : l.endsWith(":") ? el("div", { class: "lv-s lv-h", ...words(l.slice(0, -1)) }) : el("div", { class: "lv-r", ...words(l) }))), tone);
+  if (tap) lv.onclick = () => { if (!getSelection().toString()) lv.classList.toggle("open"); };
+  return lv;
+}
+// A progress note as rows: no file line, code fence, table rule, small-line or quote mark of a full message.
+const noteText = t => fileLines(t).text.split("\n").filter(l => !/^\s*```/.test(l) && !isSep(l)).map(l => l.replace(/^\s*(?:-#|>)\s+/, "")).join("\n");
 const WORK = new Set(["tool_call", "tool_result", "thinking", "text", "error"]);
 function newGroup(a) {
   const wsum = el("span", { class: "wsum" }), body = el("div", { class: "wbody" });
@@ -5040,21 +5288,29 @@ function chatPush(en, bulk) {
     const et = eventTarget(e) || "", laneT = isLaneT(et) ? et : "";
     // One progress note per target+key (newest text at the newest position; a session keeps only its newest note);
     // the answer to that target (or its lane report) drops them.
+    // A status that updates stays where it is: no rise, and it never shrinks while the wait lasts.
+    const held = e.live && !bulk ? CS.prog.get(pkey)?.node.offsetHeight || 0 : 0;
     if (pkey) { dropProgress(pkey); if (laneT) for (const [k, v] of CS.prog) if (v.target === laneT) dropProgress(k); }
     else if (!isFixedT(target) && (e.kind === "lane_report" || (e.kind === "out" && !e.system))) {
       const t = e.kind === "lane_report" || laneT ? et : String(e.target ?? "");
       for (const [k, v] of CS.prog) if (v.target === t) dropProgress(k);
     }
+    // Repeated [run]/[wait] reports are one message, as on Discord (hub/lanewire.ts): the newest takes the place of the one before it, until another message stands between.
+    const parked = e.kind === "lane_report" && !e.answering && parkedTone(parseTone(noHandoff(String(e.text ?? ""))).tone);
+    if (parked && CS.parked) { if (!CS.parked.classList.contains("cont")) CS.who = ""; CS.parked.remove(); CS.parked = null; }
     const n = msgNode(e);
     if (n) {
+      if (!pkey) CS.parked = parked ? n : null;
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
       rpMark(n, e);
       if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { CV.divNode = tl.appendChild(convDivider()); CS.who = ""; }
-      const who = n.matches(".um, .bm") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
+      // A status goes when the answer comes, so it never carries a run of speaker heads: the answer keeps its own.
+      const who = n.matches(".um, .bm") && !n.querySelector(":scope > .lv") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
       if (who && who === CS.who && t - CS.whoT < 600000 && !(e.target === "alert" && n.querySelector(":scope > .mt > .tag"))) n.classList.add("cont");   // an 알림 row that carries a status tag keeps its head, so the tag shows
       CS.who = who; CS.whoT = t;
       if (convIncoming(e)) fresh = n;
-      tlHome(n).append(n); if (!bulk) motionIn(n, "rise", M_MS.fast);   // a message that arrives live rises in (150ms); the drawn history never moves
+      if (held) n.style.minHeight = `${held}px`;
+      tlHome(n).append(n); if (!bulk && !held) motionIn(n, "rise", M_MS.fast);   // a message that arrives live rises in (150ms); the drawn history never moves
       if (pkey) CS.prog.set(pkey, { node: n, target: laneT || String(e.target ?? "") });
     }
   } else {
@@ -5062,6 +5318,7 @@ function chatPush(en, bulk) {
     if (!CS.group) { dayDiv(en.a.ts); CS.group = newGroup(en.a); tl.append(CS.group.node); }
     CS.group.add(en.a);
   }
+  if (!bulk) syncLiveTags();
   const fixed = TL_TOP_NODE && TL_TOP_NODE.parentNode === tl ? 1 : 0;
   while (tl.children.length > ts(target).cap + fixed) (fixed ? tl.children[1] : tl.firstElementChild)?.remove();
   markLive();
@@ -5792,7 +6049,7 @@ const slAccounts = () => [["auto", "자동으로 고르기"], ...((ACC && ACC.ac
 const CMDS = [
   { c: "/status", d: "봇·세션·Discord 상태와 컨텍스트" },
   { c: "/context", d: "프로세스별 컨텍스트 사용량과 압축 상태", dup: true },
-  { c: "/compact", d: "컨텍스트 압축 (작업 중이면 끝난 뒤)", args: [{ n: "대상", opts: slProcs }] },
+  { c: "/compact", d: "컨텍스트 압축 (작업 중이면 끝난 뒤)", args: [{ n: "대상", opts: slProcs, get opt() { return isConvT(target); } }] },
   { c: "/lanes", d: "세션마다 상태와 모델" },
   { c: "/model", d: "모델 보기, 또는 대상의 모델 바꾸기", args: [{ n: "대상", opts: slModelTargets, opt: true }, { n: "모델", opts: slModels, opt: true }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]), opt: true }] },
   { c: "/effort", d: "추론 강도 바꾸기", args: [{ n: "대상", opts: slModelTargets }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]) }] },
@@ -6008,7 +6265,7 @@ async function sendCommand(text) {
   chatStick = true; termStick = true;
   ingestMsg(mk("_cmd", { text }));
   try {
-    const r = await api("/api/command", "POST", { text });
+    const r = await api("/api/command", "POST", { text, ...(isConvT(t) ? { from: t } : {}) });
     ingestMsg(mk("_cmdout", { text: String(r.output ?? "") || "✓", ...(r.card ? { card: r.card } : {}) }));
     if (/^\/(model|effort|compact|restart|resume|stop|abort)\b/i.test(text)) { refreshState(); loadModels(true); loadContext(true); }
   } catch (e) { ingestMsg(mk("_cmdout", { text: e.message, is_error: true, ...(e.data && e.data.card ? { card: e.data.card } : {}) })); }
@@ -6016,7 +6273,7 @@ async function sendCommand(text) {
 async function sendChat(how) {
   const text = ta.value.trim();
   if (isRelayT(target)) { if (text && !ta.disabled) relaySend(text); return; }
-  if (ATT.some(a => !a.file)) { toast("파일을 올리는 중이에요"); return; }
+  if (ATT.some(a => !a.file)) { toast(ATT.some(a => (upJob(target, a.id) || {}).error) ? "못 올린 파일을 다시 올리거나 빼 주세요" : "파일을 올리는 중이에요"); return; }
   const files = ATT.map(a => ({ ...a.file, label: a.no })), picks = pkItems();
   if ((!text && !files.length && !picks.length) || ta.disabled) return;
   if (files.length && text.startsWith("/")) { toast("명령에는 파일을 붙일 수 없어요", true); return; }
@@ -6170,15 +6427,26 @@ function modelChipText(sel) {
   const nm = modelLabel(base, a);
   return level ? `${nm} · ${thinkKo(level)}` : nm;
 }
+// The session whose context the chip shows: the conversation on screen's own (GET /api/context conversations, already loaded: a repaint fetches nothing).
+// Never main's for a conversation with its own session; only a project whose kind has none really runs on main.
+function ctxSession(t) {
+  const procs = (C && C.processes) || [], main = () => procs.find(x => x.name === "orchestrator");
+  if (t === MAIN) return main();
+  if (isLaneT(t)) return procs.find(x => x.name === laneOf(t));
+  if (projOnMain(t)) return main();
+  return ((C && C.conversations) || []).find(x => x.key === t);
+}
 function renderCtxRing() {
   const mb = $("#c-model"), lane = isLaneT(target) && S ? S.lanes.find(x => x.name === laneOf(target)) : null;
   const orchT = target === MAIN || isProjT(target);
   // The model it answers on now, a fallback included (20-models.js liveModel), with 폴백 중 beside it when that is not the configured one.
-  const live = orchT ? liveModel(MAIN) : lane ? liveModel(`lane:${lane.name}`) : null, sel = live && live.sel;
+  const live = orchT ? liveModel(target) : lane ? liveModel(`lane:${lane.name}`) : null, sel = live && live.sel;
   // The chips say whose they are: the orchestrator and a lane often run the same model with a similar context, and
   // unlabeled they read as one (owner 2026-10-20: "오케스트레이터와 레인별로 구분 안되는거 같은데").
   const owner = orchT ? botName : lane ? `세션 ${lane.title || lane.name}` : "";
   const ob = $("#c-own"), wb = $("#c-worker"), wsel = lane && lane.worker_model;
+  // The row reads as in main; a project's own choice shows in the tooltips and in the menus' first row (inheritRow).
+  const chipOwner = isProjT(target) ? "이 프로젝트" : owner;
   ob.hidden = !(sel && owner); ob.textContent = owner;
   wb.hidden = !wsel;
   if (wsel) { const [wbase, wlevel] = String(wsel).split(":"); wb.textContent = `서브에이전트 ${modelChipText(wbase)}${wlevel ? ` · ${thinkKo(wlevel)}` : ""}`; wb.title = `이 세션의 서브에이전트 모델`; }
@@ -6186,19 +6454,21 @@ function renderCtxRing() {
   const [base, level] = String(sel || "").split(":"), eb = $("#c-effort");
   mb.hidden = !sel; eb.hidden = !level;
   if (sel) prefetchTV();
-  if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `${owner} 모델 · ${t}${base && base !== t ? ` (${base})` : ""}`; }
-  if (level) { eb.textContent = thinkKo(level); eb.title = `${owner} 추론 강도 · ${thinkKo(level)}`; }
+  if (sel) { const t = modelChipText(base); mb.textContent = t; mb.title = `${chipOwner} 모델 · ${t}${base && base !== t ? ` (${base})` : ""}`; }
+  if (level) { eb.textContent = thinkKo(level); eb.title = `${chipOwner} 추론 강도 · ${thinkKo(level)}`; }
   const keyed = !!(orchT ? S && S.orchestrator && S.orchestrator.key_fallback : lane && lane.key_fallback);
   $("#c-api").hidden = !keyed;
   const fbc = $("#c-fb"), fb = live && live.fallback;
   fbc.hidden = !fb;
   if (fb) { fbc.textContent = fbTagText(fb); fbc.title = `${owner} 기본 모델 ${selText(live.conf)} 대신 쓰는 중`; }
   $("#cbar").classList.toggle("api", keyed);
-  const b = $("#ctx-ring"), p = ((C && C.processes) || []).find(x => x.name === (orchT ? "orchestrator" : laneOf(target)));
-  b.hidden = !(p && p.running && p.tokens != null);
+  const b = $("#ctx-ring"), p = ctxSession(target);
+  // A parked conversation keeps its last figure; a session with no figure yet has no chip.
+  b.hidden = !(p && (p.kind === "conversation" ? p.tokens > 0 : p.running && p.tokens != null));
   if (b.hidden) return;
   const pct = p.percent != null ? Math.min(100, Math.max(0, p.percent)) : 0;
-  const label = `${owner} 컨텍스트 ${p.percent != null ? `${Math.round(p.percent)}% · ${kfmt(p.tokens)}/${kfmt(p.window)}` : `${kfmt(p.tokens)} 토큰`}`;
+  const who = isProjT(target) ? chipOwner : isConvT(target) ? "이 대화" : owner;
+  const label = `${who} 컨텍스트 ${p.percent != null ? `${Math.round(p.percent)}% · ${kfmt(p.tokens)}/${kfmt(p.window)}` : `${kfmt(p.tokens)} 토큰`}${p.running ? "" : " · 쉬는 중이라 마지막 값이에요"}`;
   b.title = label; b.setAttribute("aria-label", label);
   b.textContent = p.percent != null ? `컨텍스트 ${Math.round(p.percent)}%` : `컨텍스트 ${kfmt(p.tokens)}`;
   b.classList.toggle("warn", pct >= 80);
@@ -6206,7 +6476,13 @@ function renderCtxRing() {
 /* ---------- composer chips: model / effort / context of the current target (GET/PUT /api/target) ---------- */
 // The chips are quick switches; the last row of each opens the 모델 · 폴백 screen at this target (fallback order lives there).
 const MODELS_LINK = { value: "__models", label: "모델 · 폴백 설정", sub: "폴백 순서까지" };
-const targetParam = () => isLaneT(target) ? target : "main";
+const targetParam = () => isLaneT(target) || isProjT(target) ? target : "main";
+// The context ring and its 압축 stay on the session they read; the hub maps the target to it (hub/control.ts convOf).
+const ctxParam = () => target;
+// A project conversation's way back: the first row of its menus, checked while it made no choice (T.own is absent elsewhere).
+const INHERIT = "__inherit";
+const inheritRow = T => T.own === undefined ? [] : [{ value: INHERIT, label: "메인 대화와 같게", sub: selText(T.inherited) }];
+const chipValue = (T, v) => T.own === false ? INHERIT : v;
 // GET /api/target per target, kept so a chip opens its menu at once; the server builds it from the CLI model list, which is slow while cold.
 // The first click used to wait for that response (owner 2026-10-22: first click on the model/effort chip felt slow).
 const TV = new Map(), TV_BUSY = new Set();
@@ -6223,11 +6499,11 @@ async function chipMenu(anchor, build) {
   const k = targetParam(), hit = TV.get(k);
   if (!hit) return build(await fetchTV(k));
   build(hit);
-  const sig = T => JSON.stringify([T.model, T.thinking, T.models.map(m => m.selector)]);
+  const sig = T => JSON.stringify([T.model, T.thinking, T.own, T.inherited, T.models.map(m => m.selector)]);
   fetchTV(k).then(T => { if (openMenu && openMenu.anchor === anchor && targetParam() === k && sig(T) !== sig(hit)) { closeMenu(false); build(T); } }).catch(() => {});
 }
-async function targetChange(title, change, label) {
-  const body = { target: targetParam(), ...change };
+async function targetChange(title, change, label, t = targetParam()) {
+  const body = { target: t, ...change };
   let r;
   try { r = await api("/api/target", "PUT", body); }
   catch (e) {
@@ -6242,8 +6518,8 @@ async function targetChange(title, change, label) {
 $("#c-model").onclick = ev => busy(null, () => {
   const anchor = ev.currentTarget;
   return chipMenu(anchor, T => {
-    const name = targetName(target), items = [...modelPickItems(T.models, T.model), MODELS_LINK];
-    showMenu(anchor, items, { value: T.model, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { model: v }, `${modelName(v)} · ${T.thinking}`)) });
+    const name = targetName(target), items = [...inheritRow(T), ...modelPickItems(T.models, T.model), MODELS_LINK];
+    showMenu(anchor, items, { value: chipValue(T, T.model), onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, v === INHERIT ? { inherit: true } : { model: v }, `${modelName(v)} · ${T.thinking}`)) });
   });
 });
 // A session's subagent model: the same model list, saved as the lane's worker_model (its effort is kept).
@@ -6257,18 +6533,19 @@ $("#c-effort").onclick = ev => busy(null, () => {
   const anchor = ev.currentTarget;
   return chipMenu(anchor, T => {
     const name = targetName(target);
-    showMenu(anchor, [{ header: "추론 강도" }, ...effortItems(T.model, T.thinking), MODELS_LINK], { value: T.thinking, onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, { thinking: v }, `${modelName(T.model)} · ${thinkKo(v)}`)) });
+    showMenu(anchor, [...inheritRow(T), { header: "추론 강도" }, ...effortItems(T.model, T.thinking), MODELS_LINK], { value: chipValue(T, T.thinking), onPick: v => v === MODELS_LINK.value ? openModels(T.key) : busy(null, () => targetChange(name, v === INHERIT ? { inherit: true } : { thinking: v }, `${modelName(T.model)} · ${thinkKo(v)}`)) });
   });
 });
 $("#ctx-ring").setAttribute("aria-haspopup", "listbox");
 $("#ctx-ring").onclick = ev => busy(null, async () => {
-  const anchor = ev.currentTarget, T = await api(`/api/target?target=${enc(targetParam())}`), c = T.context || {};
+  const anchor = ev.currentTarget, T = await api(`/api/target?target=${enc(ctxParam())}`), c = T.context || {};
   const inFlight = c.compaction && (c.compaction.state === "queued" || c.compaction.state === "compacting");
   const items = [{ header: c.percent != null ? `컨텍스트 ${Math.round(c.percent)}% · ${kfmt(c.tokens)}/${kfmt(c.window)}` : `컨텍스트 ${kfmt(c.tokens || 0)} 토큰` }];
   if (T.running && !inFlight) items.push({ value: "compact", label: "지금 압축", sub: T.busy ? "작업이 끝나면 압축해요" : "캐시가 한 번 다시 쓰여요" });
   else if (inFlight) items.push({ value: "none", label: "압축 진행 중" });
+  else items.push({ value: "none", label: "쉬는 중이에요", sub: "다음 메시지가 오면 다시 시작해요" });
   items.push({ value: "open", label: "컨텍스트 화면 열기" });
-  showMenu(anchor, items, { onPick: v => v === "open" ? go("context") : v === "compact" ? busy(null, () => targetChange(targetName(target), { compact: true }, "")) : null });
+  showMenu(anchor, items, { onPick: v => v === "open" ? go("context") : v === "compact" ? busy(null, () => targetChange(targetName(target), { compact: true }, "", ctxParam())) : null });
 });
 // 시제품 .cmp의 모양 (proto.css "/* composer *\/"): 첨부(+)는 글 상자의 왼쪽, 모델·컨텍스트 칩은 상자 아래 힌트 줄에 서요.
 // 칩을 폼 밖으로 옮겨도 각 칩의 클릭은 그대로예요 (이벤트는 요소에 붙어 있어요).
@@ -6296,32 +6573,23 @@ for (const id of ["#c-file", "#c-photo"]) $(id).onchange = ev => { addFiles([...
 async function addFiles(list) {
   if (!list.length) return;
   if (isRelayT(target)) { toast("이 대화에는 파일을 붙일 수 없어요", true); return; }
+  for (const f of list) if (upTooBig(f.size)) toast(`${f.name}: ${upTooBig(f.size)}`, true);
+  list = list.filter(f => !upTooBig(f.size));
+  if (!list.length) return;
   if (ATT.length + list.length > 10) { toast("한 번에 10개까지 보낼 수 있어요", true); list = list.slice(0, Math.max(0, 10 - ATT.length)); }
   const items = list.map(f => ({ id: Math.random().toString(36).slice(2), name: f.name || "붙여넣은 이미지.png", type: f.type, size: f.size, url: /^image\//.test(f.type) ? URL.createObjectURL(f) : "", raw: f }));
   for (const a of items) { a.no = atkLabel(a, items); if (a.url) atkThumb(a); }
   ATT = ATT.concat(items); renderAtt(); ta.focus();
   atkInsert(items.map(a => `[${a.no}]`).join(" "));
-  const own = target;
-  await Promise.all(items.map(async a => {
-    const form = new FormData();
-    form.append("file", a.raw, a.name);
-    try {
-      const r = await fetch("/api/upload", { method: "POST", body: form });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.error || `올리지 못했어요 (HTTP ${r.status})`);
-      a.file = d.files[0];
-    } catch (e) {
-      toast(`${a.name}: ${e instanceof TypeError ? "연결이 끊겨 올리지 못했어요" : e.message}`, true);
-      if (target === own) dropAtt(a.id, true); else { const s = ts(own); s.att = (s.att || []).filter(x => x.id !== a.id); s.draft = (s.draft || "").replaceAll(`[${a.no}]`, ""); atkStore(own, s.att); }   // switched away: off its own conversation's files
-    }
-    renderAtt();
-  }));
+  for (const a of items) upStart(target, a);
 }
-// Taken off the tray: the token leaves the text too, as an edit the browser can undo, so the file waits among the gone ones (atkSync); a failed
-// upload (forever) is really over.
-function dropAtt(id, forever = false) {
+// Taken off the tray: the token leaves the text too, as an edit the browser can undo, so the file waits among the gone ones (atkSync); one
+// not on the hub yet is really over, its upload stopped.
+function dropAtt(id) {
   const a = ATT.find(x => x.id === id) || atkGone().find(x => x.id === id);
   if (!a) return;
+  const forever = !a.file;
+  upCancel(target, id);
   ATT = ATT.filter(x => x !== a);
   if (forever) { ts(target).gone = atkGone().filter(x => x !== a); atkRevoke(a); } else if (!atkGone().includes(a)) atkGone().push(a);
   const tok = `[${a.no}]`;
@@ -6337,7 +6605,7 @@ const atkLay = el("div", { class: "ta-tok", "aria-hidden": "true", hidden: true 
 ta.after(atkLay);
 const atkGone = () => ts(target).gone || (ts(target).gone = []);   // files whose token left the text: undo or a paste brings them back
 const atkRevoke = a => { if (/^blob:/.test(a.url)) URL.revokeObjectURL(a.url); };
-function atkForget() { for (const a of atkGone()) atkRevoke(a); ts(target).gone = []; }
+function atkForget() { for (const a of atkGone()) { upCancel(target, a.id); atkRevoke(a); } ts(target).gone = []; }
 // The next free number of the kind. A number never moves while its file waits, so the words already written about 이미지2 stay true.
 function atkLabel(a, fresh) {
   const kind = a.url ? "이미지" : "파일", used = [...ATT, ...atkGone(), ...fresh].filter(x => x.no && x.no.startsWith(kind)).map(x => Number(x.no.slice(kind.length)));
@@ -6482,9 +6750,20 @@ function atkParts(text, files, e) {
 }
 // A message of files alone has nothing to say in a bubble: the thumbnails above it already show them.
 const atkOnly = (text, files) => Array.isArray(files) && files.some(f => f.label) && !text.replace(ATK_RE, "").trim();
+// extra.row: an answer's file row. A link or a button cannot start a text selection, so the row is a plain element that opens the file itself,
+// unless the click ends a selection inside it.
+function fileChipRow(name, meta, extra) {
+  const open = extra.onclick || (() => window.open(extra.href, "_blank", "noopener"));
+  const row = el("div", { class: "fatt", role: extra.href ? "link" : "button", tabindex: "0", title: `${name} · 열기`,
+    onclick: () => { const sel = getSelection(); if (sel.isCollapsed || !sel.containsNode(row, true)) open(); },
+    onkeydown: ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } } }, ...fileChipKids(name, meta));
+  return row;
+}
+const fileChipKids = (name, meta) => [el("span", { class: "fi-ic" }, icon("file")), el("span", { class: "fi-t" }, el("span", { class: "fi-n", text: name }), el("span", { class: "fi-m", text: meta }))];
 function fileChip(name, meta, extra = {}) {
+  if (extra.row) return fileChipRow(name, meta, extra);
   return el(extra.href ? "a" : extra.onclick ? "button" : "div", { class: `fatt${extra.cls ? ` ${extra.cls}` : ""}`, ...(extra.href ? { href: extra.href, target: "_blank", rel: "noopener", title: `${name} · 열기` } : extra.onclick ? { type: "button", onclick: extra.onclick, title: `${name} · 열기` } : { title: name }) },
-    el("span", { class: "fi-ic" }, icon("file")), el("span", { class: "fi-t" }, el("span", { class: "fi-n", text: name }), el("span", { class: "fi-m", text: meta })), extra.x || null);
+    ...fileChipKids(name, meta), extra.x || null);
 }
 function renderAtt() {
   const box = $("#atray");
@@ -6492,10 +6771,11 @@ function renderAtt() {
   box.hidden = !ATT.length;
   // Each file carries the name its token has in the text, so the tray and the words read the same.
   clear(box).append(...ATT.map(a => {
-    const x = el("button", { class: "ax", type: "button", "aria-label": `${a.name} 빼기`, onpointerdown: ev => ev.preventDefault(), onclick: () => dropAtt(a.id) }, icon("close"));
-    const th = a.url
-      ? el("div", { class: `fatt img${a.file ? "" : " up"}`, title: a.name }, el("button", { class: "fatt-v", type: "button", "aria-label": `${a.no} 크게 보기`, onclick: () => atkOpen(a) }, el("img", { src: a.url, alt: a.name })), x)
-      : fileChip(a.name, a.file ? [extOf(a.name), fsize(a.size)].filter(Boolean).join(" · ") : "올리는 중…", { cls: a.file ? "" : "up", x });
+    const job = upJob(target, a.id);
+    const x = el("button", { class: "ax", type: "button", "aria-label": `${a.name} ${job ? "올리기 취소" : "빼기"}`, onpointerdown: ev => ev.preventDefault(), onclick: () => dropAtt(a.id) }, icon("close"));
+    const th = job && job.ring ? upChip(a, job, x) : a.url
+      ? el("div", { class: "fatt img", title: a.name }, el("button", { class: "fatt-v", type: "button", "aria-label": `${a.no} 크게 보기`, onclick: () => atkOpen(a) }, el("img", { src: a.url, alt: a.name })), x)
+      : fileChip(a.name, [extOf(a.name), fsize(a.size)].filter(Boolean).join(" · "), { x });
     return el("div", { class: "fatt-n" }, th, imgNo(a.no));
   }));
   atkStore(target, ATT);
@@ -6532,7 +6812,7 @@ function fileItem(f, n = 0, sibs = null) {
   const img = IMG_RE.test(f.name || f.path);
   const main = img
     ? el("button", { class: "thumb", type: "button", "aria-label": `${f.name} 크게 보기`, onclick: () => lightbox(f.path, f.name, f.pc, sibs) }, el("img", { src: thumbUrl(f.path, f.pc), alt: f.name, loading: "lazy", decoding: "async" }))
-    : fileChip(f.name, fileMeta(f.name, f.size), VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name, f.pc) } : !f.pc && canvasIsHtml(f.name) ? { onclick: () => canvasOpen(f.path, f.name) } : { href: fileUrl(f.path, false, f.pc) });
+    : fileChip(f.name, fileMeta(f.name, f.size), { row: f.row, ...(VIEW_RE.test(f.name) ? { onclick: () => viewer(f.path, f.name, f.pc) } : !f.pc && canvasIsHtml(f.name) ? { onclick: () => canvasOpen(f.path, f.name) } : { href: fileUrl(f.path, false, f.pc) }) });
   const item = el("div", { class: "fitem" }, el("div", { class: "fbox" }, main, el("a", { class: "fdl", href: fileUrl(f.path, true, f.pc), download: f.name, title: `${f.name} 다운로드`, "aria-label": `${f.name} 다운로드` }, icon("download"))), n ? imgNo(n) : null, img && f.label ? null : pathCopy(f.path));   // an image with its token is named by the chip; the viewer keeps the path
   if (!f.check) return item;
   const off = why => { if (item.isConnected || item.parentNode) item.replaceWith(offChip(f, why)); };
@@ -6992,6 +7272,86 @@ new MutationObserver(muts => {
   }
 }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "class"] });
 
+/* ---------- uploads: POST /api/upload with progress (fetch has none), and the composer's running uploads by conversation ---------- */
+const UP_RING_MS = 700;   // an upload done sooner shows the plain chip all along: no ring that blinks past
+let upLive = 0;   // requests under way, of every caller; a page closed now would lose them
+const upGuard = ev => { ev.preventDefault(); ev.returnValue = ""; };
+const upBytes = n => n >= 10485760 ? `${Math.round(n / 1048576)}MB` : fsize(n);
+// The hub's own words (hub/files.ts), said before a byte goes. Empty until the first /api/state: the hub still refuses then.
+const upTooBig = n => S && S.upload_max && n > S.upload_max ? `파일이 너무 커요 (${Math.ceil(n / 1048576)}MB, 최대 ${Math.round(S.upload_max / 1048576)}MB)` : "";
+// One request: done gives the hub's record, or null when abort() ended it. The form holds the File as a handle: the browser reads the disk as it sends.
+function uploadXhr(f, name, onProgress) {
+  const x = new XMLHttpRequest(), form = new FormData();
+  form.append("file", f, name);
+  const done = new Promise((ok, no) => {
+    const end = fn => v => { if (!--upLive) removeEventListener("beforeunload", upGuard); fn(v); };
+    const fine = end(ok), bad = end(no);
+    x.upload.onprogress = ev => { if (onProgress && ev.lengthComputable) onProgress(f.size * ev.loaded / ev.total); };
+    x.onload = () => {
+      pairGate(x.status, x.getResponseHeader("x-dotz-pair"));
+      let d = {};
+      try { d = JSON.parse(x.responseText); } catch { /* a proxy's error page: the status says it below */ }
+      if (x.status >= 200 && x.status < 300 && d.files) fine(d.files[0]);
+      else bad(new Error(d.error || `올리지 못했어요 (HTTP ${x.status})`));
+    };
+    x.onerror = () => bad(new Error("연결이 끊겼어요"));
+    x.onabort = () => fine(null);
+    if (!upLive++) addEventListener("beforeunload", upGuard);
+    x.open("POST", "/api/upload");
+    x.send(form);
+  });
+  return { done, abort: () => x.abort() };
+}
+// target -> { attachment id: job }: the uploads of the composer. The tray only paints from here, so a repaint or a move to another conversation
+// and back finds the live numbers. A job's attachment waits in ATT or ts(t).att, whichever holds that conversation's files now.
+const UPS = {};
+const upJob = (t, id) => (UPS[t] || {})[id];
+function upStart(t, a, ring = false) {
+  const job = (UPS[t] = UPS[t] || {})[a.id] = { id: a.id, size: a.size, sent: 0, at: Date.now(), ring, error: "" };
+  const up = uploadXhr(a.raw, a.name, sent => {
+    job.sent = sent;
+    if (!job.ring && Date.now() - job.at >= UP_RING_MS) { job.ring = true; if (t === target) renderAtt(); }
+    else upPaint(t, job);
+  });
+  job.abort = up.abort;
+  up.done.then(rec => {
+    if (!rec) return;
+    a.file = rec;
+    delete UPS[t][a.id];
+    atkStore(t, t === target ? ATT : ts(t).att || []);   // on the conversation it came from, wherever the owner is now: a reload finds it in the draft
+    if (t === target) renderAtt();
+  }, e => {
+    job.error = e.message; job.ring = true; job.abort = null;
+    if (t === target) renderAtt(); else toast(`${a.name}: ${e.message}`, true);
+  });
+}
+function upCancel(t, id) {
+  const job = upJob(t, id);
+  if (!job) return;
+  delete UPS[t][id];
+  if (job.abort) job.abort();
+}
+const upPct = job => Math.min(100, Math.floor(job.sent / job.size * 100));
+const upMeta = job => `${upBytes(job.sent)} / ${upBytes(job.size)}`;
+// Between repaints a progress event touches its own ring and sub line only.
+function upPaint(t, job) {
+  const c = t === target && job.ring && $(`#atray [data-up="${job.id}"]`);
+  if (!c) return;
+  const r = c.querySelector(".pring"), pct = upPct(job);
+  if (!r) return;
+  r.style.setProperty("--p", pct); r.textContent = `${pct}%`; r.setAttribute("aria-valuenow", pct);
+  c.querySelector(".fi-m").textContent = upMeta(job);
+}
+// The tray's chip of a long or failed upload, an image too: its square has no line for the sizes or the reason.
+function upChip(a, job, x) {
+  const c = fileChip(a.name, job.error || upMeta(job), { cls: job.error ? "fail" : "", x }), pct = upPct(job);
+  c.dataset.up = job.id;
+  c.querySelector(".fi-ic").replaceWith(job.error
+    ? el("button", { class: "fi-ic up-retry", type: "button", title: "다시 올리기", "aria-label": `${a.name} 다시 올리기`, onpointerdown: ev => ev.preventDefault(), onclick: () => { upStart(target, a, true); renderAtt(); } }, icon("refresh"))
+    : el("span", { class: "pring", role: "progressbar", "aria-label": `${a.name} 올리는 중`, "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct), style: `--p:${pct}`, text: `${pct}%` }));
+  return c;
+}
+
 /* ---------- target switcher + 대화/터미널 toggle (rendered into the header of both views) ---------- */
 // Manual order from dragging the chips; 레인 panes and 홈 cards have their own free layout (makeBoard) and do not use it. Never-dragged targets keep spawn order after the ordered ones.
 const ORDER_KEY = "dotz-order";
@@ -7047,7 +7407,7 @@ function renderBars() {
     return b; };
   const sep = () => el("span", { class: "tsep", "aria-hidden": "true" });
   const menuItem = v => ({ value: v.t, label: v.name, tone: v.tone, sub: [v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · "), flag: v.attn ? attnLabel(v.attn) : "", badge: v.unread || "" });
-  const homeOfT = t => { const l = lanes.find(x => `lane:${x.name}` === t); return l ? laneHome(l) : ""; };
+  const homeOfT = t => { const l = lanes.find(x => `lane:${x.name}` === t); return l ? laneChat(l) : ""; };
   const sesItem = v => { const l = lanes.find(x => `lane:${x.name}` === v.t); return { ...menuItem(v), indent: true, sub: [l ? sessionStatus(l)[0] : v.status, v.subs ? `서브 ${v.subs}` : ""].filter(Boolean).join(" · ") }; };
   for (const bar of document.querySelectorAll(".thead")) {
     const mode = bar.dataset.mode, msig = `${sig}|${mode}`;
@@ -7400,8 +7760,14 @@ function prjLoad() {
 }
 // The work channel a session was started in (ch:<id>): the hub's lane list carries it as `home` (hub/laneviews.ts withHomes); the gateway's channel map is the fallback.
 const laneHome = l => l.home || (S && S.channels && S.channels.homes && S.channels.homes[l.name] ? `ch:${S.channels.homes[l.name]}` : "");
-// The project a session belongs to, by name: its home channel only (docs/layers.md §1). A session started from chat has none (""), even when its folder matches a project.
+// The project row holding a session. The hub decides (hub/custom.ts projectsView, docs/layers.md §1: the home channel, the folder only without one); every surface reads it here.
+const laneProjectRow = l => ((PRJ && PRJ.projects) || []).find(p => (p.lanes || []).some(x => x.name === l.name));
+// The chat of a session's project, "" when it has none.
+const laneChat = l => { const p = laneProjectRow(l); return (p && prjChat(p)) || laneHome(l); };
+// The project a session belongs to, by name. A session the list does not hold yet (just started, or the list is still loading) goes by its home.
 function laneProject(l) {
+  const row = laneProjectRow(l);
+  if (row) return prjTitle(row);
   const home = laneHome(l);
   if (!home) return "";
   const p = ((PRJ && PRJ.projects) || []).find(x => x.key === home || x.recordKey === home || (x.channel && `ch:${x.channel.id}` === home));
@@ -7612,11 +7978,10 @@ function pmProject() {
 function pmSessionRows(p, D) {
   const dl = (D && D.lanes) || [], all = (S && S.lanes) || [], names = new Set([...dl.map(l => l.name), ...(p.lanes || []).map(l => l.name)]);
   const chat = prjChat(p);
-  if (chat) for (const l of all) if (laneHome(l) === chat) names.add(l.name);
-  // A project with its own chat lists the sessions assigned to it; a live session of the same folder started from chat belongs to no project.
-  return [...names].filter(n => { const s = all.find(l => l.name === n); return !(chat && s && laneAlive(s) && !laneHome(s)); }).map(n => {
+  if (chat) for (const l of all) if (laneChat(l) === chat) names.add(l.name);
+  return [...names].map(n => {
     const s = all.find(l => l.name === n), d = dl.find(l => l.name === n) || (p.lanes || []).find(l => l.name === n) || {};
-    return { project: s && laneHome(s) ? laneProject(s) : prjTitle(p), at: Date.parse(d.finishedAt || d.lastReportAt || d.startedAt || (s && s.startedAt) || "") || 0, name: n, title: (s && s.title) || d.title || n, live: s ? laneAlive(s) : !!d.live, status: s ? s.status : d.status, waiting: s ? !!s.pendingAsk : !!d.waiting, ask: s && s.pendingAsk && s.pendingAsk.text ? oneLine(s.pendingAsk.text) : "", line: friendlyLine(d.line || d.lastText || "").slice(0, 140) };
+    return { project: (s && laneProject(s)) || prjTitle(p), at: Date.parse(d.finishedAt || d.lastReportAt || d.startedAt || (s && s.startedAt) || "") || 0, name: n, title: (s && s.title) || d.title || n, live: s ? laneAlive(s) : !!d.live, status: s ? s.status : d.status, waiting: s ? !!s.pendingAsk : !!d.waiting, ask: s && s.pendingAsk && s.pendingAsk.text ? oneLine(s.pendingAsk.text) : "", line: friendlyLine(d.line || d.lastText || "").slice(0, 140) };
   }).sort((a, b) => (b.live - a.live) || (b.waiting - a.waiting) || a.title.localeCompare(b.title));
 }
 // Level 2: the essentials only. Each section is one tappable summary row that opens its own page (level 3, pmSheet).
@@ -7946,7 +8311,7 @@ const pmWorkRow = w => {
   const tag = workTone(w);
   return el("button", { class: "li tap", type: "button", onclick: () => workGo(w) },
     el("span", { class: "lead" }, el("span", { class: `dot ${tag}` })),
-    el("span", { class: "tx" }, el("div", { class: "hd", text: w.description }), el("div", { class: "sup", text: w.queued ? "순서를 기다려요" : run ? `작업 중 · ${workElapsed(w)}` : `${stall ? `멈춤 · ${w.reason || "활동이 없어요"}` : w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : rec ? "이어서 처리 중" : "실패 · 이어서 처리함"} · ${workAgo(w)}` })),
+    el("span", { class: "tx" }, el("div", { class: "hd", text: friendlyLine(w.description) }), el("div", { class: "sup", text: w.queued ? "순서를 기다려요" : run ? `작업 중 · ${workElapsed(w)}` : `${stall ? `멈춤 · ${w.reason || "활동이 없어요"}` : w.status === "done" ? "끝남" : w.cancelled ? "중단됨" : rec ? "이어서 처리 중" : "실패 · 이어서 처리함"} · ${workAgo(w)}` })),
     el("span", { class: "li-end" }, el("span", { class: `tag ${tag}`, text: word })));
 };
 // 진행 중: sessions that are alive and background jobs that are running. 최근 세션: the ended ones, newest first.
@@ -7967,7 +8332,7 @@ function pmResultRow(r) {
   const tap = r.kind === "report" && r.lane;
   const tag = r.kind === "report" ? (r.tone === "fail" ? ["err", "안 됨"] : r.verified ? ["ok", "확인됨"] : ["", "보고만 함"]) : r.kind === "verify" ? (r.ok ? ["ok", "통과"] : ["err", "안 됨"]) : ["", "커밋"];
   return el(tap ? "button" : "div", { class: `li${tap ? " tap" : ""}`, type: tap ? "button" : null, onclick: tap ? () => laneResultGo(r.lane, r.at) : null },
-    el("span", { class: "tx" }, el("div", { class: `hd pmv-clamp${r.kind === "note" ? " pmv-wrap" : ""}`, text: r.title || PM_RES[r.kind] || "결과" }),
+    el("span", { class: "tx" }, el("div", { class: `hd${r.kind === "note" ? " pmv-clamp pmv-wrap" : ""}`, title: r.title || null, text: r.title || PM_RES[r.kind] || "결과" }),
       el("div", { class: "sup", text: [PM_RES[r.kind] || r.kind, r.kind === "commit" ? r.hash : "", r.lane ? pmLaneTitle(r.lane) : "", kstHM(r.at)].filter(Boolean).join(" · ") })),
     tag ? el("span", { class: `tag ${tag[0]}`, text: tag[1] }) : null);
 }
@@ -7990,7 +8355,7 @@ function cmAsk(text) {
   openTarget(MAIN, lastChatView());
   ta.value = text; autosize(); saveDraft(); updateHints(); ta.focus();
 }
-const cmText = i => el("span", { class: "tx" }, el("div", { class: "hd pmv-clamp", text: i.title }), i.line ? el("div", { class: "sup", text: i.line }) : null);
+const cmText = i => el("span", { class: "tx" }, el("div", { class: "hd", title: i.title, text: i.title }), i.line ? el("div", { class: "sup", text: i.line }) : null);
 // 내 규칙: the newest few here, every rule behind the list's 더 보기 (hub/custom.ts newestRules sets the order). A row is one short title; a tap
 // opens the same chat draft as the other groups' 수정, carrying the rule's full text, and hover shows that text too.
 const CM_RULES_SHOWN = 5;
@@ -8069,21 +8434,24 @@ function renderContext() {
   if (!C) { clear(box).append(emptyNode("불러오는 중…")); return; }
   const list = el("div", { class: "col" });
   // Exited lanes leave this list at once, like the lanes board; the orchestrator always stays.
-  for (const p of C.processes.filter(x => x.kind !== "lane" || laneAlive(x))) {
+  // Then each conversation with its own session, by the same row; a parked one shows its last figure.
+  const convRows = (C.conversations || []).map(x => ({ ...x, name: targetName(x.key) }));
+  for (const p of [...C.processes.filter(x => x.kind !== "lane" || laneAlive(x)), ...convRows]) {
     const cs = compactState(p.compaction);
     const inFlight = p.compaction && (p.compaction.state === "queued" || p.compaction.state === "compacting");
     const btn = el("button", { class: "btn tonal sm", type: "button", disabled: !p.running || inFlight, onclick: ev => busy(ev.currentTarget, async () => {
-      const r = await api("/api/compact", "POST", { target: p.name });
+      const r = await api("/api/compact", "POST", { target: p.key || p.name });
       toast(r.state === "queued" ? `${p.name}: 작업 중이라 끝나면 압축해요` : `${p.name}: 압축을 시작했어요`);
       loadContext(true);
     }) }, "압축");
     // A waiting session whose process is off (it starts again on its next message) keeps 대기 like every other screen, and says why it has no numbers.
-    const off = !p.running && p.status === "idle";
-    const t = p.kind === "lane" ? `lane:${p.name}` : MAIN, [word, tone] = runStatus(t, p.status, targetInfo(t).ask);
+    const off = !p.running && (p.status === "idle" || !!p.key);
+    const t = p.key || (p.kind === "lane" ? `lane:${p.name}` : MAIN), [word, tone] = runStatus(t, off ? "idle" : p.status, targetInfo(t).ask);
     list.append(el("div", { class: "card" },
-      el("div", { class: "heads" }, el("span", { class: `dot ${tone}` }), el("span", { class: "t", text: p.kind === "lane" ? p.name : botName }), el("span", { class: "sp" }), el("span", { class: `tag ${tone}`, text: word })),
+      el("div", { class: "heads" }, el("span", { class: `dot ${tone}` }), el("span", { class: "t", text: p.kind === "orchestrator" ? botName : p.name }), el("span", { class: "sp" }), el("span", { class: `tag ${tone}`, text: word })),
       p.model ? el("div", { class: "sup sub", text: selLabel(p.model) }) : null,
-      p.running ? el("div", { class: "mt8" }, ctxBar(p)) : el("div", { class: "sup mt8", text: off ? "꺼져 있어요. 다음 메시지가 오면 다시 시작해요" : "실행 중이 아니에요" }),
+      p.running || (p.key && p.tokens > 0) ? el("div", { class: "mt8" }, ctxBar(p)) : null,
+      p.running ? null : el("div", { class: "sup mt8", text: off ? "꺼져 있어요. 다음 메시지가 오면 다시 시작해요" : "실행 중이 아니에요" }),
       el("div", { class: "row mt12", style: "justify-content:space-between" }, cs ? el("span", { class: `tag ${cs.tone}`, text: cs.text }) : el("span"), btn)));
   }
   clear(box).append(list, ...ctxModels());
@@ -8150,7 +8518,7 @@ function ctxDialog(m) {
 /* ---------- models ---------- */
 const pending = {};
 let providerFilter = "";
-const applyKo = { live: "적용했어요", restarted: "적용했어요 · 재시작됨", "next-start": "다음 시작부터 적용돼요" };
+const applyKo = { live: "적용했어요", restarted: "적용했어요 · 재시작됨", "next-start": "다음 시작부터 적용돼요", "next-turn": "다음 턴부터 적용돼요" };
 async function loadModels(quiet) {
   try { M = await api("/api/models"); }
   catch (e) { if (!quiet && current === "models") clear($("#models")).append(emptyNode("모델 정보를 불러오지 못했어요")); return; }
@@ -8281,6 +8649,13 @@ function fbWhy(layer) {
   return { reason: pd ? FB_DOWN_KO[pd.down] || "" : "", until: pd && pd.until && isFinite(Date.parse(pd.until)) ? pd.until : "" };
 }
 function liveModel(t) {
+  // A project conversation: its own choice and its session's model, or main's as it is with no choice.
+  if (isProjT(t)) {
+    const c = M && M.conversations && M.conversations[t], m = liveModel(MAIN);
+    if (!c) return m;
+    const conf = c.own || m.conf, act = c.active;
+    return { sel: act || conf, conf, fallback: act && conf && runBaseOf(act) !== runBaseOf(conf) ? fbWhy("orchestrator") : null };
+  }
   const main = t === MAIN, om = M && M.orchestrator;
   const lm = main ? null : ((M && M.lanes) || []).find(x => `lane:${x.name}` === t), sl = main || !S ? null : (S.lanes || []).find(x => `lane:${x.name}` === t);
   const conf = main ? (om ? withLevel(om.model, om.thinking) : "") : lm ? withLevel(lm.model, lm.thinking) : (sl && sl.model) || "";
@@ -8302,7 +8677,7 @@ function inUseSection() {
     const why = r.fallback ? (r.key === "main" ? fbWhy("orchestrator") : r.key.startsWith("lane:") ? fbWhy("lanes") : { reason: "", until: "" }) : null;
     const model = selText(r.model);
     return el("div", { class: "mt-use-row", "data-use": r.key },
-      el("div", { class: "mt-use-tx" }, el("span", { class: "nm", text: r.label }), r.sub || ch.none ? el("span", { class: "sup", text: [r.sub, ch.none].filter(Boolean).join(" · ") }) : null),
+      el("div", { class: "mt-use-tx" }, el("span", { class: "nm", title: r.label, text: r.label }), r.sub || ch.none ? el("span", { class: "sup", text: [r.sub, ch.none].filter(Boolean).join(" · ") }) : null),
       el("div", { class: "mt-use-rest" }, el("span", { class: "mt-use-m", title: model, text: model }), why ? fbTag(why, r.configured) : null),
       open ? el("button", { class: "mt-use-act", type: "button", title: "바꾸기", "aria-label": `${r.label} 바꾸기`, onclick: open }, icon("pencil")) : null);
   };
@@ -8982,7 +9357,7 @@ async function webBuildCheck(b) {
 if (SHELL_RESTORE && !SHELL_RESTORE.key && SHELL_RESTORE.views) for (const ms of [300, 1200]) setTimeout(() => { const v = $("#views"); if (SHELL_RESTORE && current !== "home" && !v.scrollTop) v.scrollTop = SHELL_RESTORE.views; }, ms);
 // A tap that had to start the app carries the message as ?m=<ts>: 99-boot.js opens it once the state is in. A decision carries ?n=<id> (its sheet,
 // 30-notices.js), with ?m= only as the place to land when that decision is no longer listed.
-const pushQ = new URLSearchParams(location.search);
+const pushQ = new URLSearchParams(location.search), PUSH_HREF = location.href;
 // The device id: every subscription this device makes, on any computer, carries it, so the computers know they are one device (hub/push.ts fanOut).
 // It is minted once here; opening another computer from this app (33-peers.js) hands it on as ?did=, and the page that arrives with one keeps that one.
 let DEVICE_ID = "";
@@ -8993,12 +9368,35 @@ try {
   if (!DEVICE_ID) localStorage.setItem("dotz-did", DEVICE_ID = crypto.randomUUID());
 } catch {}
 if (pushQ.has("did")) { pushQ.delete("did"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
+// An address a tap already spent, come back with the app: its landing is over, and only the route stays.
+const PUSH_SPENT = "dotz-push-spent", PUSH_SPENT_MAX = 30;
+const pushSpent = () => { try { return JSON.parse(localStorage.getItem(PUSH_SPENT) || "[]"); } catch { return []; } };
+const PUSH_REPLAY = pushSpent().includes(PUSH_HREF);
+if (PUSH_REPLAY) { for (const k of ["m", "i", "n", "pc"]) pushQ.delete(k); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
 // ?pc=<origin> (a notice relayed from another computer): the page switches to that computer (33-peers.js prFollow), with ?n / ?m as its own item.
 const PUSH_FOLLOW = pushQ.has("pc") ? location.href : "";
 let pushOpenTs = pushQ.has("n") || PUSH_FOLLOW ? "" : pushQ.get("m") || "";
 const pushOpenNid = pushQ.get("i") || "", pushDecisionAt = pushQ.has("n") ? pushQ.get("m") || "" : "";
 const PUSH_HASH = location.hash;   // the tapped address: the first go() rewrites it (#chat/alert to #notices, a mail to #monitoring/c:...)
 if (pushQ.has("m") && !PUSH_FOLLOW) { pushQ.delete("m"); pushQ.delete("i"); const rest = pushQ.toString(); history.replaceState(history.state, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); }
+// The tap that started the app wins over the address it started at (web/sw.js openAt: a phone may bring back an older one), and that address is then spent.
+// Runs on load and on coming back: a window that never opened leaves its tap to the page it brought forward.
+const PUSH_TAP_MS = 60000;
+async function pushTapCheck() {
+  try {
+    const c = await caches.open("dotz-share"), hit = await c.match("/push/tap"), tap = hit && await hit.json();
+    if (!tap || tap.used || Date.now() - tap.at > PUSH_TAP_MS) return;
+    const spent = pushSpent().filter(h => h !== tap.href);
+    if (tap.href === PUSH_HREF && !PUSH_REPLAY) {
+      await c.put("/push/tap", new Response(JSON.stringify({ ...tap, used: true })));
+      localStorage.setItem(PUSH_SPENT, JSON.stringify([...spent, tap.href].slice(-PUSH_SPENT_MAX)));
+      return;
+    }
+    localStorage.setItem(PUSH_SPENT, JSON.stringify(spent));
+    history.replaceState(null, "", tap.href);
+    reloadPage();
+  } catch (e) { console.warn("push tap", e); }
+}
 async function pwaInit() {
   if (!("serviceWorker" in navigator)) return;
   try { PWA.reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" }); } catch (e) { console.warn("service worker", e); return; }
@@ -10420,7 +10818,7 @@ function rtReportView(r, report) {
   return el("div", { class: "rt-rep", style: "display:flex;flex-direction:column;gap:var(--sp-2)" },
     el("p", { text: sum }), el("div", { class: "note", text: `검사 ${meta}` }),
     el("div", { class: "list rt-rows" }, ...report.items.map(i => el("div", { class: "rt-row" },
-      el("div", { class: "top" }, el("span", { class: "nm", text: i.label }), i.core ? el("span", { class: "tag", text: "핵심" }) : null, el("span", { class: "sp" }), rtBadge(i)),
+      el("div", { class: "top" }, el("span", { class: "nm", title: i.label, text: i.label }), i.core ? el("span", { class: "tag", text: "핵심" }) : null, el("span", { class: "sp" }), rtBadge(i)),
       i.note ? el("div", { class: "sup", text: i.note }) : null))));
 }
 function rtFlow(r) {
@@ -10918,7 +11316,7 @@ function hCustomCard(s, i, cv, stages) {
   if (fl.length) {
     const all = hCvOpen.has(i), shown = all ? fl : fl.slice(0, H_CV_CAP);
     sec.append(el("div", { class: "cl", text: `내 기능 · ${fl.length}` }));
-    for (const f of shown) sec.append(row(() => fcOpenFeature(f), [f.name, el("span", { class: "tag", text: f.form }), f.enabled ? null : el("span", { class: "tag", text: "꺼짐" })], f.source.label, true));
+    for (const f of shown) sec.append(row(() => fcOpenFeature(f), [monClean(f.name, f.form), el("span", { class: "tag", text: f.form }), f.enabled ? null : el("span", { class: "tag", text: "꺼짐" })], f.source.label, true));
     if (fl.length > H_CV_CAP) {
       const more = el("button", { type: "button", class: "btn text hm-more", text: all ? "접기" : `${fl.length - H_CV_CAP}개 더 보기` });
       more.addEventListener("click", () => {
@@ -11765,6 +12163,16 @@ function intgWatch() {
 }
 loadIntegrations();
 
+// The pills of the watched rooms, the same format as the mail, project and 댓글 ones: which rooms the list shows. [key, label, keep, the empty list's line].
+const KK_VIEWS = [["all", "전체", () => true, ""], ["unread", "안 읽음", r => r.unread, "안 읽은 대화방이 없어요"], ["unreplied", "미답장", r => r.unreplied, "미답장 대화방이 없어요"]];
+const kkViewOf = () => KK_VIEWS.find(v => v[0] === KK.view) || KK_VIEWS[0];
+function kkViewBar(watched) {
+  return el("div", { class: "mr-filter kk-views", role: "tablist", "aria-label": "지켜보는 대화방 보기" }, ...KK_VIEWS.map(([k, label, ok]) => {
+    const on = k === kkViewOf()[0];
+    return el("button", { class: `cchip mr-f${on ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(on), "data-view": k, onclick: () => { KK.view = k; kkPaintRooms(); } }, label, cntSpan(`kk-view:${k}`, "mr-fn", watched.filter(ok).length));
+  }));
+}
+
 /* ---------- 모니터링 > 앱 > 메신저: choose the rooms to watch, and a Messenger-style chat per chosen room ---------- */
 // API: docs/kakao-rooms-api.md. The item (30-monitoring.js, key "i:kakao") shows this pane instead of the notice timeline: renderMonitoring calls
 // kkMode(). Wide screens put the room column beside the chat; below 1100px they are two screens (KK.open picks which; the app bar's back
@@ -12343,15 +12751,6 @@ function kkRow(r) {
       time || r.unread || r.unreplied ? el("span", { class: "cv-m" }, time, r.unread || r.unreplied ? el("span", { class: "kk-rmeta" },
         r.unreplied ? unrepPill() : null,
         r.unread ? el("span", { class: "nb warn", "aria-label": `읽지 않은 메시지 ${r.unread}개`, text: r.unread > 99 ? "99+" : String(r.unread) }) : null) : null) : null);
-}
-// The pills of the watched rooms, the same format as the mail, project and 댓글 ones: which rooms the list shows. [key, label, keep, the empty list's line].
-const KK_VIEWS = [["all", "전체", () => true, ""], ["unread", "안 읽음", r => r.unread, "안 읽은 대화방이 없어요"], ["unreplied", "미답장", r => r.unreplied, "미답장 대화방이 없어요"]];
-const kkViewOf = () => KK_VIEWS.find(v => v[0] === KK.view) || KK_VIEWS[0];
-function kkViewBar(watched) {
-  return el("div", { class: "mr-filter kk-views", role: "tablist", "aria-label": "지켜보는 대화방 보기" }, ...KK_VIEWS.map(([k, label, ok]) => {
-    const on = k === kkViewOf()[0];
-    return el("button", { class: `cchip mr-f${on ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(on), "data-view": k, onclick: () => { KK.view = k; kkPaintRooms(); } }, label, cntSpan(`kk-view:${k}`, "mr-fn", watched.filter(ok).length));
-  }));
 }
 function kkPaintRooms() {
   const top = kkRooms.scrollTop, watched = KK.rooms.filter(r => r.watched).sort((a, b) => (b.lastAt || 0) - (a.lastAt || 0));
@@ -12973,7 +13372,8 @@ function kkMode(item, shown, pc) {
 // The page asks the hub, never the mail account: POST /api/mail/<key>/action {action} -> {ok, synced, note?} for one mail and POST /api/mail/actions {keys, action}
 // -> {ok, results:[{key, ok, synced, note?}]} for a selection (action = read | unread | archive | unarchive | trash | star | unstar). Every action is optimistic:
 // the row changes at once and goes back when the hub says ok:false (or cannot be reached); the hub's note is told once.
-// A mail card says what its mailbox can do in `can` (GET /api/conversations items[].mail); an action it does not list still works here.
+// A mail card says what its mailbox can do in `can` (GET /api/conversations items[].mail); an action it does not list still works here. `trashOriginal`: 삭제 takes the
+// original too (the app's 삭제하면 원본도 삭제 is on and the source can): POST /api/mail/delete-original, hub/mail-delete.ts.
 // A card with no `can` at all (a hub that does not know the field) can only be deleted, through the old DELETE /api/mail/<key>.
 // Nothing here sends a mail: 메일 쓰기 and the inline reply save a draft (POST /api/mail/compose) and the owner's 보내기 stays on its approval card.
 ICONS.star = "M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z";
@@ -12984,7 +13384,7 @@ ICONS.forward = "M15 7l5 5-5 5M20 12h-9a7 7 0 0 0-7 7";
 ICONS.replyall = "M8 7l-5 5 5 5M13 7l-5 5 5 5M8 12h5a8 8 0 0 1 8 7";
 ICONS.mailopen = "M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1zM3 10l9 6 9-6";
 ICONS.replyoff = "M10 7l-5 5 5 5M5 12h9a6 6 0 0 1 6 6M4 4l16 16";
-const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null };
+const MBOX = { sel: new Set(), vis: [], boxes: new Map(), cs: null, drawn: 100, fk: "", rows: new Map(), pass: new Set() };
 const mbKey = t => t.slice(5);
 // Whether the mail's mailbox will follow an action. Every action still works in dotz either way: `can` only says what the hub can repeat in the
 // real mailbox (owner 2026-11-02: read/unread must always be there). A card with no `can` at all is an older hub, which knows only the delete route.
@@ -13020,6 +13420,7 @@ function mbFresh(scope, box) {
 function mbRowsOut(keys) {
   const keep = mailFilterOf()[2], gone = keys.filter(t => !MAILS.has(t) || !keep(MAILS.get(t), t));
   const rows = [...document.querySelectorAll("#mon-tl > .mr[data-t]")].filter(r => gone.includes(r.dataset.t));
+  for (const r of rows) MBOX.rows.delete(r.dataset.t);   // a row that fades out is not kept
   return rows.length ? Promise.all(rows.map(r => motionOut(r))) : null;
 }
 
@@ -13069,6 +13470,29 @@ async function mbRun(keys, action, quiet = false) {
   Promise.allSettled([convLoad(), loadIntegrations()]);
   return done;
 }
+// 삭제 with the app's 삭제하면 원본도 삭제 on: the confirm is his yes for the original (owner 11-05), and the mail leaves only when its source did it (hub/mail-delete.ts).
+// A mail that failed stays in the list and the toast offers it again. A peer's mail is deleted on its own computer and goes on as before, in dotz only.
+const mailOriginal = t => { const m = MAILS.get(t); return !!m && m.trashOriginal === true && !pqPc(t); };
+async function mbTrashOriginal(keys, orig) {
+  const n = keys.length, rest = keys.filter(t => !orig.includes(t));
+  const what = n > 1 ? `메일 ${n}개를 삭제할까요? ${orig.length === n ? "원본" : `그중 ${orig.length}개는 원본`}도 메일함 휴지통으로 옮겨요` : "이 메일을 삭제할까요? 원본도 메일함 휴지통으로 옮겨요";
+  if (!await ask("메일 삭제", what, n > 1 ? `${n}개 삭제` : "삭제", true)) return [];
+  let res;
+  try { res = (await api("/api/mail/delete-original", "POST", { keys: orig.map(mbKey) })).results.map(x => ({ ...x, key: `mail:${x.key}` })); }
+  catch (e) { const note = (e && e.data && e.data.error) || (e && e.message) || "원본을 지우지 못했어요"; res = orig.map(key => ({ key, ok: false, note })); }
+  const done = res.filter(x => x.ok).map(x => x.key), bad = res.filter(x => !x.ok);
+  for (const t of done) mbApply(t, "trash");
+  const leaving = mbRowsOut(done);
+  if (leaving) leaving.then(mbRefresh); else mbRefresh();
+  mbPaintBar();
+  mbLeave(done);
+  const local = rest.length ? await mbRun(rest, "trash", true) : [];
+  const gone = done.length + local.length;
+  if (bad.length) toast(orig.length > 1 ? `${orig.length}개 중 ${bad.length}개는 지우지 못했어요 · ${bad[0].note}` : bad[0].note, true, { label: "다시 시도", onclick: () => mbTrash(bad.map(x => x.key)) });
+  else toast(gone > 1 ? `${gone}개를 삭제했어요` : "삭제했어요");
+  Promise.allSettled([convLoad(), loadIntegrations(), loadNotices()]);
+  return [...done, ...local];
+}
 // 삭제 into the mailbox's trash can be undone: the mail leaves at once and 실행 취소 brings it back; the trash is sent when the toast's
 // time is up or the page goes away (Gmail's way, owner 11-03). A mailbox that will not follow, or an older hub, only drops the row from
 // dotz and cannot bring it back, so that asks first in the small confirm box.
@@ -13076,6 +13500,8 @@ const MB_UNDO_MS = 6000;
 async function mbTrash(keys) {
   keys = keys.filter(t => MAILS.has(t));
   if (!keys.length) return [];
+  const orig = keys.filter(mailOriginal);
+  if (orig.length) return mbTrashOriginal(keys, orig);
   if (!keys.every(t => mailCan(t, "trash"))) {
     if (!await ask("메일 삭제", `${keys.length > 1 ? `메일 ${keys.length}개를` : "이 메일을"} 목록에서 지울까요? 메일함엔 남을 수 있어요`, "삭제", true)) return [];
     const done = await mbRun(keys, "trash");
@@ -13184,6 +13610,42 @@ function mbPaintBar() {
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
 }
 // The visible mails of the list (select all) and the bar itself, at the head of the rows.
+const MB_PAGE = 100;   // mail rows drawn at first and added per step
+let mbObs = null;
+// How many mail rows the list draws: MB_PAGE, grown by each step, and back to MB_PAGE when the list (app, folder) changes. A live update keeps it.
+function mbDrawn(scope) {
+  if (MBOX.fk !== scope) { MBOX.fk = scope; MBOX.drawn = MB_PAGE; MBOX.rows.clear(); }
+  return MBOX.drawn;
+}
+// A mail row's node is kept while everything the row shows is the same (its signature): the mail card, its conversation, the unread count, the tick,
+// an open decision, the opened original, the summary line and the time text. Only rows drawn by the last repaint are kept (mbRowsPrune).
+function mbRow(t, label) {
+  const m = MAILS.get(t), last = CONV.get(t), when = (m ? mailRowWhen : rcWhen)(last ? last.ts : m && m.at);
+  const sig = JSON.stringify([label, m, last, ts(t).unread, MBOX.sel.has(t), ntHasDecision(t), MR_OG.has(t), m ? mailBrief(m, t) : "", when]), hit = MBOX.rows.get(t);
+  MBOX.pass.add(t);
+  if (hit && hit.sig === sig) return hit.node;
+  const node = monConvNode(t, label);
+  if (node) MBOX.rows.set(t, { sig, node }); else MBOX.rows.delete(t);
+  return node;
+}
+function mbRowsPrune() {
+  for (const t of [...MBOX.rows.keys()]) if (!MBOX.pass.has(t)) MBOX.rows.delete(t);
+  MBOX.pass.clear();
+}
+function mbMore() { MBOX.drawn += MB_PAGE; MON.sig = ""; monSchedule(); }
+// After the drawn rows: a sentinel that adds a page when it reaches the viewport, and the plain button for a browser without IntersectionObserver.
+function mbMoreNodes(left) {
+  const btn = moreRow(`${left}개 더 보기`, mbMore);
+  btn.dataset.mbMore = "1";
+  return [el("div", { class: "mon-sentinel", "data-mb": "1", "aria-hidden": "true" }), btn];
+}
+function mbObserve() {
+  const box = $("#mon-timeline"), s = box && box.querySelector(".mon-sentinel[data-mb]");
+  if (mbObs) mbObs.disconnect();
+  if (!s || typeof IntersectionObserver !== "function") return;
+  if (!mbObs) mbObs = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) mbMore(); }, { root: box, rootMargin: "240px 0px" });
+  mbObs.observe(s);
+}
 function mbList(vis) {
   MBOX.vis = vis;
   for (const t of [...MBOX.sel]) if (!vis.includes(t)) MBOX.sel.delete(t);
@@ -13233,7 +13695,7 @@ function mbForm(st, host, o) {
   const add = async list => {
     for (const f of list) {
       st.up.push(f.name); paintFiles();
-      try { const u = await uploadFile(f); st.files.push({ name: u.name, path: u.path, size: u.size, type: u.type }); }
+      try { const u = await uploadFile(f); st.files.push({ name: u.name, ...(u.original ? { original: u.original } : {}), path: u.path, size: u.size, type: u.type }); }
       catch (e) { toast(e.message || "올리지 못했어요", true); }
       st.up.splice(st.up.indexOf(f.name), 1); paintFiles();
     }
@@ -13862,7 +14324,7 @@ function cmRow(t) {
   return el("button", { class: `cv-row pv kk-row${n ? " unread" : ""}${on ? " on" : ""}`, type: "button", "data-thread": t.thread, "aria-current": on ? "true" : null, onclick: () => cmOpen(t) },
     cmThumb(t.title, t.thumb),
     el("span", { class: "cv-b" }, el("span", { class: "cv-n", title: t.title, text: t.title }), el("span", { class: "cv-p", text: `${t.lastAuthor}: ${t.lastText}` }), cmMailSum(t)),
-    el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(t.lastAt) }), n || t.unreplied ? el("span", { class: "kk-rmeta" }, n ? el("span", { class: "nb", "aria-label": t.drafts ? `답장 확인 ${t.drafts}건` : `읽지 않은 댓글 ${t.unread}개`, text: t.drafts ? `초안 ${t.drafts}` : String(t.unread > 99 ? "99+" : t.unread) }) : null, t.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${t.unreplied}개`, text: `미답장 ${t.unreplied}` }) : null) : null));
+    el("span", { class: "cv-m" }, el("span", { class: "kk-t", text: kkListTime(t.lastAt) }), n || t.unreplied ? el("span", { class: "kk-rmeta" }, n ? el("span", { class: t.drafts ? "nb drafted" : "nb", "aria-label": t.drafts ? `답장 확인 ${t.drafts}건` : `읽지 않은 댓글 ${t.unread}개`, text: t.drafts ? `초안 ${t.drafts}` : String(t.unread > 99 ? "99+" : t.unread) }) : null, t.unreplied ? el("span", { class: "nb unreplied", "aria-label": `미답장 ${t.unreplied}개`, text: `미답장 ${t.unreplied}` }) : null) : null));
 }
 // The picture of a post: its thumbnail when the source gave one (it falls back to the title's initial when the picture does not load).
 function cmThumb(title, thumb) {
@@ -13963,6 +14425,7 @@ function cmFlow(c, v) {
   const d = v.drafts.find(x => x.commentId === c.id), s = v.sends.filter(x => x.commentId === c.id).sort((p, q) => p.at - q.at).at(-1);
   let reply = null;
   if (s && s.state === "sending") reply = [step("초안", "done"), step("확인", "done"), step("보내는 중", "busy")];
+  else if (s && s.state === "unsure") reply = [step("초안", "done"), step("확인", "done"), step("확인 필요", "ask")];
   else if (d) reply = [step("초안", "done"), step("확인 대기", "ask"), step("보냄", "todo")];
   else if (s && s.state === "sent") reply = [step("초안", "done"), step("확인", "done"), step(s.via === "rule" ? "보냄 · 자동" : "보냄", "done")];
   else if (s && s.state === "failed") reply = [step("초안", "done"), step("확인", "done"), step(`실패${s.reason ? ` · ${s.reason}` : ""}`, "err")];
@@ -13999,6 +14462,7 @@ function cmCommentNode(c, v, by, nested) {
       make || no ? el("div", { class: "cm-acts" }, make, no) : null));
 }
 // A reply that did not go out offers 다시 보내기 (the same text through the same gate) and 지우기 (the record goes, the draft stays), like Messenger.
+// One nobody can say went up (hub/comments/recover.ts) offers 다시 보내기 and 완료 (closed as sent, nothing is posted).
 const cmSendCall = (s, op) => cmApi(`/api/comments/sends/${enc(s.id)}/${op}`, "POST", {});
 async function cmSendFix(btn, s, op) {
   btn.disabled = true;
@@ -14006,11 +14470,12 @@ async function cmSendFix(btn, s, op) {
   catch (e) { toast(e.message, true); btn.disabled = false; }
 }
 function cmSendNode(s) {
-  const failed = s.state === "failed", st = failed ? `실패${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? "보냄" : "보내는 중";
+  const failed = s.state === "failed", unsure = s.state === "unsure", st = failed ? `실패${s.reason ? ` · ${s.reason}` : ""}` : unsure ? `확인 필요${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? "보냄" : "보내는 중";
   return el("div", { class: `kk-m me pend ${s.state} first`, "data-send": s.id }, el("div", { class: "kk-line" }, el("div", { class: "kk-bub", text: s.text })),
-    el("div", { class: "kk-st", role: failed ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st }),
-      failed ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: "다시 보내기", onclick: ev => cmSendFix(ev.currentTarget, s, "retry") }) : null,
-      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: ev => cmSendFix(ev.currentTarget, s, "dismiss") }) : null));
+    el("div", { class: "kk-st", role: failed || unsure ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st }),
+      failed || unsure ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: "다시 보내기", onclick: ev => cmSendFix(ev.currentTarget, s, "retry") }) : null,
+      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: ev => cmSendFix(ev.currentTarget, s, "dismiss") }) : null,
+      unsure ? el("button", { class: "btn text", type: "button", "data-k": "done", text: "완료", onclick: ev => cmSendFix(ev.currentTarget, s, "done") }) : null));
 }
 function cmPaintChat(stick) {
   if (CM.tab === "dm") { dmPaintChat(); return; }
@@ -14085,7 +14550,7 @@ async function cmRestore(code) {
 }
 function cmDraftCard(d) {
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); cmReload(); } finally { btn.disabled = false; } };
-  const sending = CM.view.sends.some(s => s.commentId === d.commentId && s.state === "sending");
+  const sending = CM.view.sends.some(s => s.commentId === d.commentId && (s.state === "sending" || s.state === "unsure"));
   const edit = CM.revising === d.code, src = CM.view.source || {};
   // A reply that carries a mail (hub/comments/engine.ts Draft.mail): 고치기 says which part it changes.
   const part = d.mail ? selectButton({ label: "고칠 곳", items: [{ value: "reply", label: "답글" }, { value: "mail", label: "메일" }], value: "reply" }) : null;
@@ -14273,7 +14738,7 @@ const monRaw = m => String(m.watch || m.name || "");
 const MON_CMD = /\b[\w.-]+\.(?:md|jsonl?|ya?ml|toml|log|py|sh)\b|\b(?:ssh|scp|rsync|curl|wget|python3?|node|bun|npm|npx|bash|zsh|git|sudo|docker|osascript)\s+(?:-|[\w.-]*@|~|\.{0,2}\/|[\w.-]+\.(?:py|sh|js|ts|mjs)\b)|(?:^|\s)-{1,2}[A-Za-z][\w-]*(?:=|\s|$)|\s[<>|]{1,2}\s|\$\(|~\/|(?:^|\s)\.{0,2}\/[\w.-]+\/|@\d{1,3}(?:\.\d{1,3}){3}/;
 const monSentences = s => s.split(/(?<=[.!?。])\s+/);
 function monHuman(raw) {
-  const s = String(raw ?? "").replace(/\s+/g, " ").replace(/\s*[(（][^()（）]*(?:[)）]|$)/g, m => MON_CMD.test(m) ? "" : m).trim();
+  const s = String(raw ?? "").replace(/\s+/g, " ").replace(/\s*[(（][^()（）]*(?:[)）]|$)/g, m => MON_CMD.test(m) || /^\s*[(（]state\s/.test(m) ? "" : m).trim();
   if (!MON_CMD.test(s)) return s;
   const i = s.search(/[:：]\s/), keep = [];
   for (const t of monSentences(i > 0 ? s.slice(0, i) : s)) { if (MON_CMD.test(t)) break; keep.push(t); }
@@ -14438,7 +14903,7 @@ function drState(d) {
   if (d.state === "open" || d.state === "ignored") return d.state;
   if (d.draft && ntRevising({ kind: "decision", decision: d })) return "revising";   // 고치기 answered, the new draft has not landed
   const m = /^\s*(\d+)\)/.exec(String(d.answer || "")), o = m && d.options.find(x => x.n === Number(m[1]));
-  return d.resolved || !o ? "expired" : { 보내기: "send", 고치기: "edit", "보내지 않기": "drop", "답글만 보내기": "send", "메일만 보내기": "send", [DRAFT_OWN]: "own" }[o.label] || "expired";
+  return d.resolved || !o ? "expired" : { 보내기: "send", 고치기: "edit", "보내지 않기": "drop", "답글만 보내기": "send", "메일만 보내기": "send", "이대로 보내기": "send", [DRAFT_OWN]: "own" }[o.label] || "expired";
 }
 const drParas = body => String(body ?? "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim().split(/\n\n/);
 function drOriginal(t) {
@@ -14469,7 +14934,7 @@ function draftCardNode(n, o = {}) {
   if (o.bare) return el("div", { class: "dr-mail" }, recv,
     dr.subject ? el("div", { class: "dr-sub", text: dr.subject }) : null,
     draftOriginNode(dr),
-    man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))),
+    man ? ta : draftBodyNode(dr.body, "dr-body"),
     draftFilesNode(dr, { t: d.to, edit: open }), draftMailNode(dr.mail));
   // A mail answered by this draft reads like the landing page's comment card: who wrote, where it came from, what they wrote, then the draft in a grey box.
   const om = mail ? MAILS.get(d.to) || {} : {}, who = mail ? mailSender(om.from) : "", sent = st === "send";
@@ -14483,11 +14948,11 @@ function draftCardNode(n, o = {}) {
       const text = ta.value.trim();
       if (!text || !oEdit) return;
       dcSending.add(n.id); syncInlineChoices(); redraw();
-      try { await ntPost(n, oEdit.n, man ? MANUAL_LEAD + text : text); leave(); } catch (e) { toast(e.message, true); }
+      try { await ntPost(n, oEdit.n, man ? MANUAL_LEAD + text : text, undefined, oEdit.label); leave(); } catch (e) { toast(e.message, true); }
       dcSending.delete(n.id); syncInlineChoices();
     } });
   }
-  const acts = editing ? null : open ? {
+  const gone = open && dcGone(d.to), acts = editing || gone ? null : open ? {
     send: () => { if (!oSend || busy) return; if (dr.warning || (dr.attachments || []).length) drfSure(dr, d.to).then(ok => ok && answerInline(n, oSend)); else answerInline(n, oSend); },
     edit: oEdit ? () => { DR.edit.add(n.id); redraw(); } : null,
     drop: oDrop ? () => { if (!busy) answerInline(n, oDrop); } : null,
@@ -14500,11 +14965,11 @@ function draftCardNode(n, o = {}) {
   const card = rqCard({ key: `dr:${n.id}`, cls: `bm alert rc dr ${st}`, attrs: { "data-nid": n.id }, head,
     label: q || null, labelCls: "rc-title dr-q",
     recv, subject: dr.subject, ...(who && (om.summary || om.preview) ? { original: { text: String(om.summary || om.preview).split("\n")[0], ...(dr.ref ? { ref: dr.ref, t: d.to } : {}) } } : {}), sent, sentAt: when,
-    body: { text: dr.body, node: man ? ta : el("div", { class: "dr-body" }, ...drParas(dr.body).map(t => el("p", { text: t }))), cls: "dr-body" },
+    body: { text: dr.body, node: man ? ta : draftBodyNode(dr.body, "dr-body"), cls: "dr-body" },
     // A mail draft always shows its 첨부 줄 (files, or 첨부: 없음) right before 보내기; the files are editable while the draft waits.
     attach: draftFilesNode(dr, { t: d.to, edit: open }),
     extra: [mail && !who ? drOriginal(d.to) : null,   // the head already says who wrote and what
-      draftOriginNode(dr), draftMailNode(dr.mail)],
+      gone ? el("div", { class: "dc-gone", role: "status", text: DC_GONE }) : null, draftOriginNode(dr), draftMailNode(dr.mail)],
     ...(revise ? { revise } : acts ? { acts } : {}) });
   return card;
 }
@@ -14512,15 +14977,15 @@ function draftCardNode(n, o = {}) {
 function monDecisionNode(n) {
   const d = n.decision, open = d.state === "open", said = d.state === "answered" ? String(d.answer || "") : "";
   if (d.draft) return ntRevising(n) && ntSuccessor(n) ? null : draftCardNode(n);   // the rewritten draft replaces the one that was sent back
-  // The buttons show the options: the body keeps the lead text and the 결정: line, not the option lines (10-decision-card.js stripChoices).
-  const fl = fileLines(d.options.length ? stripChoices(n.text) : n.text);
+  // The buttons show the options and the card's head the question (10-decision-card.js choiceBody).
+  const fl = fileLines(d.options.length ? choiceBody(n.text, ntPlain(n.title)) : n.text);
   const rows = d.options.map(o => el("button", { class: `dcm-row${said.startsWith(`${o.n})`) ? " on" : ""}`, type: "button", disabled: !open || dcSending.has(n.id), "data-n": o.n,
     onclick: () => (d.draft || o.action === "form" ? noticeSheetOpen(n.pc ? n : n.id) : answerInline(n, o)) },
     el("span", { class: "dc-key", text: String(o.n) }),
-    el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: o.desc }) : null)));
+    el("span", { class: "dc-tx" }, el("span", { class: "dc-lb" }, o.label), o.desc ? el("span", { class: "dc-ds", text: dcDesc(o) }) : null)));
   const end = open ? null : el("div", { class: "mt", text: d.state === "ignored" ? "무시했어요" : d.expired ? "기한 지남" : d.resolved ? "답 없이 끝났어요" : `답했어요${said ? ` · ${ntPlain(said)}` : ""}` });
   return el("div", { class: "bm alert", "data-nid": n.id }, el("div", { class: "mt" }, el("span", { class: "mn", text: ntPlain(n.title) || "답변이 필요해요" }), ` · ${monWhen(n)}`, open ? " " : null, open ? monTag("ask") : null),
-    mdNode(fl.text), filesNode(fl.files), el("div", { class: "dcm fx mon-dc" }, ...rows), end);
+    answerParts(fl, { lead: false }), el("div", { class: "dcm fx mon-dc" }, ...rows), end);
 }
 // Any other notice is a result card (11-resultcard.js): the monitor's name, the time, the result in words, the original folded.
 // A monitor's own report drops the monitor's name in front of its first line (the card already says whose it is).
@@ -14746,8 +15211,9 @@ const MAIL_ACT = { draft: "초안 작성", no: "답장 안 함", need: "답장 �
 const mailOwed = m => m.dir !== "out" && (m.reply === "needs" || m.reply === "draft");
 const mailActs = m => m.dir === "out" ? ["delete"] : ["draft", mailOwed(m) ? "no" : "need", "delete"];
 const mailActRun = (t, a, b) => a === "draft" ? mailDraftRun(t, b) : a === "delete" ? mailDelete(t) : mailSetFyi(t, a === "no");
-// 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it. A newer message of the thread brings it back.
+// 삭제: the mail leaves dotz on the computer that holds it (DELETE /api/mail/<key>); the real mailbox keeps it, unless the app's 삭제하면 원본도 삭제 is on (mbTrash). A newer message of the thread brings it back.
 async function mailDelete(t) {
+  if (mailOriginal(t)) return mbTrash([t]);
   if (!await ask("메일 삭제", "목록에서 지울까요? 메일함엔 남아 있어요", "삭제", true)) return;
   const pc = pqPc(t);
   await api(`/api/mail/${t.slice(5)}`, "DELETE");
@@ -14755,8 +15221,7 @@ async function mailDelete(t) {
   const p = pc && PQ.list.find(x => x && x.url === pc.url);
   if (p && p.items) p.items.conversations = (p.items.conversations || []).filter(c => String(c.target) !== t);
   if (monCtx === t && current === "chat") go("monitoring", MON.sel);   // deleted from its open conversation: back to the list
-  PQ.of.delete(t);
-  MON.sig = ""; MON.side = ""; monSchedule();
+  PQ.of.delete(t); MON.sig = ""; MON.side = ""; monSchedule();
   toast("메일을 목록에서 지웠어요");
   await Promise.allSettled([pc ? pqLoad() : convLoad(), loadIntegrations(), pc ? null : loadNotices()]);
 }
@@ -14818,9 +15283,9 @@ const MON_PAGE = 30;       // rows per page (더 보기 / 이전 소식 보기 b
 const monPageTo = (key, i) => { if (i >= 0) MON.more.set(key, Math.max(MON.more.get(key) || MON_PAGE, (Math.floor(i / MON_PAGE) + 1) * MON_PAGE)); };
 const MON_FOLD_MIN = 3;    // a run of this many same results in a row folds into its last one
 // A row's summary: the report's first two lines (the monitor's name and the original dropped), 140 characters at most.
+const monLines = (n, names) => monStrip(choiceFree(String(n.text || "").split(/\n(?:```원문|원문[ \t]*\n)/)[0]), [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
 function monSummary(n, names) {
-  const body = String(n.text || "").split(/\n(?:```원문|원문[ \t]*\n)/)[0];
-  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
+  const lines = monLines(n, names);
   const s = lines.slice(0, 2).join(" · ");
   return (s.length > 140 ? `${s.slice(0, 139)}…` : s) || ntPlain(n.title) || "알림";
 }
@@ -14899,8 +15364,7 @@ function monLogRow(n, names) {
   const key = `n:${n.id}`;
   if (n.id === MON.want) MON.open.add(key);
   if (ntIsDec(n) || n.item || monNeed(n) || MON.open.has(key)) return monRowNode(n, names);
-  const body = String(n.text || "").split(/\n(?:\`\`\`원문|원문[ \t]*\n)/)[0];
-  const lines = monStrip(body, [...names, ntPlain(n.title)]).split("\n").map(l => monClean(l)).filter(Boolean);
+  const lines = monLines(n, names);
   const chg = nwChangeNode(nwChangeLine(n.text)), plain = lines.filter(l => !l.includes("→")).map(l => l.replace(/^\[[^\]]*\]\s*/, ""));
   const main = chg || plain[0] || ntPlain(n.title) || "알림", sub = chg ? plain[0] || "" : plain[1] || "";
   const src = ntPlain(names[0] || n.title) || "알림";
@@ -14911,7 +15375,7 @@ function monRunRow(it) {
   const m = it.mon;
   if (!m.last_run) return null;
   const next = [m.next_run ? `다음 확인 ${monTime(m.next_run)}` : "", m.every || ""].filter(Boolean).join(" · ");
-  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", monLastOk(m), m.last_output && !MON_CMD.test(m.last_output) ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
+  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", monLastOk(m), monLastOut(m)].filter(Boolean);
   return monLogLine({ tone: m.kind === "watch" ? m.last_result : "ok", main: monRunLine(m), sub: [...facts, next].join(" · "), at: m.last_run });
 }
 // The question chips of a watch (asChipTexts): one row of small buttons under its log.
@@ -14996,12 +15460,14 @@ function monChronoNodes(it, names) {
       return x;
     } }];
   };
-  const msgs = [...(it.mon && !held ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunRow(it) }] : []), ...runs.slice(cut).flatMap(rep), ...(held ? [] : mf ? it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, node: () => monConvNode(t, it.name) }))];
+  const msgs = [...(it.mon && !held ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunRow(it) }] : []), ...runs.slice(cut).flatMap(rep), ...(held ? [] : mf ? it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, mail: true, node: () => withMails ? mbRow(t, it.name) : monConvNode(t, it.name) }))];
   // A mail app reads like a mailbox, newest on top (owner 2026-10-27); a monitor stays a chat, oldest to newest. Equal times keep their order.
   // A monitor's log reads like the prototype's list, newest on top; its latest run leads on a tie.
   const newestTop = monMailList(it) || !!it.mon;
   msgs.sort((a, b) => newestTop ? b.at - a.at : a.at - b.at);
-  let nodes = msgs.map(x => x.node()).filter(Boolean);
+  // A mail list draws the newest mbDrawn mails; the rest comes a page at a time (mbMoreNodes). Select-all and the count read MBOX.vis, not these rows.
+  const hidden = withMails ? new Set(msgs.filter(x => x.mail).slice(mbDrawn(`${it.key}|${MON.mailFilter}`))) : null;
+  let nodes = msgs.filter(x => !hidden || !hidden.has(x)).map(x => x.node()).filter(Boolean);
   if (it.mon) {   // the compact rows of one stretch share one card; an opened report or a decision card ends the stretch
     const out = [];
     let box = null;
@@ -15013,6 +15479,8 @@ function monChronoNodes(it, names) {
   }
   if (cut && newestTop) nodes.push(...(it.mon ? [monOlderSentinel(it.key, cut, "end")] : []), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
   else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
+  if (hidden && hidden.size) nodes.push(...mbMoreNodes(hidden.size));
+  if (withMails) mbRowsPrune();
   if (withMails) return [mailFilterBar(it.mails, it.notices.filter(ok)), mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t))), ...(nodes.length ? nodes : [el("div", { class: "empty", text: held ? "확인할 초안이 없어요" : "이 보기에 해당하는 메일이 없어요" })]), mbFab()];
   return nodes;
 }
@@ -15086,7 +15554,7 @@ function monSettingsName(t) {
 const monStatMons = app => (asOwn(app) ? [asMon(app)] : (monItems().find(i => i.app && monSettingsApp(i) === app) || {}).owned || []).filter(Boolean);
 function monStatNode(m) {
   const st = monStatus(m);
-  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", monLastOk(m), m.last_output ? `마지막 결과: ${m.last_output}` : ""].filter(Boolean);
+  const facts = [m.fails ? `연속 실패 ${m.fails}번` : "", monLastOk(m), monLastOut(m)].filter(Boolean);
   return el("div", { class: "as-row as-stat", "data-watch": m.watch || m.name },
     el("span", { class: "as-b" }, el("span", { class: "as-n", text: monTitle(m) }), el("span", { class: "as-h", text: [st.text, ntMonRun(m), ntMonNext(m)].filter(Boolean).join(" · ") }), ...facts.map(t => el("span", { class: "as-h", text: t }))),
     st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
@@ -15219,11 +15687,12 @@ function renderMonitoring() {
   if (sel.rq) {   // 답장 대기: the rows of 30-replies.js, redrawn only when an item or the screen's own state changes
     const sig = rqSig();
     if (sig !== MON.sig) {
-      const keep = MON.shown === sel.key ? box.scrollTop : 0;
+      const keep = MON.shown === sel.key ? box.scrollTop : 0, anchor = keep > 0 ? rqAnchor() : null;   // the first row in view stays where it was
       MON.sig = sig; MON.shown = sel.key;
       clear($("#mon-head")).append(...monHead(sel));
       clear(tl).append(...rqNodes());
       box.scrollTop = keep;
+      rowHold(anchor);
       edgeFade(box);
     }
     convTitle();
@@ -15233,18 +15702,22 @@ function renderMonitoring() {
   if (sig !== MON.sig) {
     MON.sig = sig;
     const again = MON.shown === sel.key, keep = box.scrollTop, was = box.scrollHeight, stick = !again || box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
+    // The same mail list repainting keeps its row nodes in place and the first row in view where it was; anything else is drawn afresh.
+    const same = again && monMailList(sel), anchor = same && keep > 0 && !MON.grew ? rowAnchor(tl, ":scope > .mr", "t") : null;
     MON.shown = sel.key;
     clear($("#mon-head")).append(...monHead(sel));
-    clear(tl).append(...monTimeline(sel));
+    if (same) listPlace(tl, monTimeline(sel)); else clear(tl).append(...monTimeline(sel));
     if (monMailList(sel)) mbFresh(`${sel.key}|${MON.mailFilter || "all"}`, tl);
     // Older reports added above (이전 소식 보기) keep what was on screen where it is.
     if (MON.grew) { MON.grew = false; box.scrollTop = keep + (box.scrollHeight - was); }
     else box.scrollTop = monFeed(sel) || monMailList(sel) || sel.mon ? (again ? keep : 0) : stick ? box.scrollHeight : keep;
+    rowHold(anchor);
     edgeFade(box);
     if (MON.hl && Date.now() < MON.hlUntil) { const r = monRowOf(MON.hl); if (r) ntFlash(r); }
   }
   MON.olderBusy = false;
   monObserveOlder();
+  mbObserve();
   convTitle();
   monSeen();
 }
@@ -15354,10 +15827,11 @@ const ntAt = n => Date.parse(n.updated || n.ts) || 0;
 const ntTime = t => kstDay(t) === kstDay(Date.now()) ? kstHM(t) : `${dayLabel(t)} ${kstHM(t)}`;
 const ntWhen = n => ntTime(n.updated || n.ts);
 // Row text is plain: markdown marks (links, headings, bullets, emphasis, code) are dropped.
-const ntPlain = s => noticeKo(peerMsgLine(s), NK)
+const ntPlain = s => plainTable(noticeKo(peerMsgLine(s), NK))
   .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-  .replace(/^\s{0,3}(?:#{1,6}|>|[-*+]|\d+\.)\s+/gm, "")
+  .replace(/^\s{0,3}(?:#{1,6}|>|-#|[-*+]|\d+\.)\s+/gm, "")
   .replace(/\*+|~~|`+/g, "")
+  .replace(/^\s*결정\s*[:：]\s*/gm, "")
   .replace(/(^|\s)_+([^_\s][^_]*)_+(?=\s|$)/g, "$1$2")
   .replace(/\s+/g, " ").trim();
 
@@ -15433,7 +15907,7 @@ function noticeLive(e) {
     // repaint would drop the change it is making (its 받는이 edit) and the sheet's own update path repaints it. Any decision of this conversation:
     // a block of a several-draft card settles without `draft` when its draft is sent from 모니터링, and the docked card drops it here.
     if (ntIsDec(e.item) && e.item.decision.to === target && !DK.h) paintDecision();
-    if (e.item.kind === "watch") loadMonitors();
+    if (e.item.kind === "watch") monitorsLive();
   } else if (e.kind === "notice_dismiss") {
     ntHandled(e.id);
     const g = NT.items.find(x => x.id === e.id);
@@ -15499,12 +15973,11 @@ async function ntReach(t, at) {
     if (t === target) renderAll(true);
   }
 }
-// The element that carries the highlight: the card or bubble inside the message when there is one (so the glow follows its own rounded shape),
-// else the message itself, drawn as a bar + tint ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
+// The element that carries the highlight: the card or bubble inside the message when there is one, else the message itself. Anything that paints
+// its own fill keeps the glow on its own rounded shape; plain text gets the tint alone ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
 function ntHlHost(node) {
-  const card = node.matches(".um") ? node.querySelector(":scope > .ub") : node.matches(".bm") ? node.querySelector(":scope > .ccard") : node.matches(".cmdbox") ? node.querySelector(":scope > .ccard") : node.matches(".sn, .pn, .ccard") ? node : null;
-  if (!card && node.matches(".bm.rep, .bm.alert")) return { host: node, bar: false };   // these carry their own rounded card background
-  return { host: card || node, bar: !card };
+  const card = node.matches(".um") ? node.querySelector(":scope > .ub") : node.matches(".bm, .cmdbox") ? node.querySelector(":scope > .ccard") : null;
+  return { host: card || node, bar: !card && /(\d, ){3}0\)$/.test(getComputedStyle(node).backgroundColor) };   // alpha 0: no fill of its own
 }
 function ntFlash(node) {
   const { host, bar } = ntHlHost(node);
@@ -15807,10 +16280,19 @@ function ntApply(item, unread) {
 }
 // Throws with the hub's reason when the answer could not be delivered.
 // `files` (uploads, 10-decision-card.js uploadFile) go with a draft's 직접 수정 answer to the bot; a peer's question takes none.
-async function ntPost(n, num, note, files) {
-  if (n.pc) { await pqNotice(n, "answer", { id: String(n.id), n: num, ...(note ? { note } : {}) }); return; }   // a peer's question: answered on that computer (34-peer-monitoring.js)
-  const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(note ? { note } : {}), ...(files && files.length ? { files } : {}) });
-  ntApply(r.item, r.unread);
+// `label` is the button text the owner saw for `num` (default: the option of that number on the card as shown); the hub refuses it when the card's options changed since,
+// and the list is read again so the new options show (the error is thrown to the caller's toast like any other).
+const NT_STALE = "카드 선택지가 바뀌었어요. 다시 확인하고 골라 주세요";
+async function ntPost(n, num, note, files, label) {
+  const seen = label || ((n.decision && n.decision.options || []).find(o => o.n === num) || {}).label;
+  try {
+    if (n.pc) { await pqNotice(n, "answer", { id: String(n.id), n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}) }); return; }   // a peer's question: answered on that computer (34-peer-monitoring.js)
+    const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}), ...(files && files.length ? { files } : {}) });
+    ntApply(r.item, r.unread);
+  } catch (e) {
+    if (e && e.message === NT_STALE) await loadNotices();
+    throw e;
+  }
 }
 // The open decision that is this chat card's question (a card with one block), so the card and the notice answer through the same path.
 function ntFor(t, at, opt) {
@@ -15898,7 +16380,7 @@ async function ntAnswer(n, opt, note) {
   if (opt.action === "form") { ntDirect(n); return; }
   if (!note && ntNeedsNote(n, opt)) { NS.edit = { id: String(n.id), opt, text: "", fresh: true }; ntSheetPaint(); return; }
   NS.busy = true; ntSheetPaint();
-  try { await ntPost(n, opt.n, note); NS.edit = null; }
+  try { await ntPost(n, opt.n, note, undefined, opt.label); NS.edit = null; }
   catch (err) { toast(err.message, true); }
   NS.busy = false; ntSheetPaint();
 }
@@ -15913,7 +16395,7 @@ function ntEditNode(n, ed) {
 // A notice sheet's body: the text without its `[file]` lines, then those files as the same image / file chips a chat message shows (15-attachments.js).
 function ntBody(n, text) {
   const fl = fileLines(text == null ? n.text : text);
-  return [mdNode(ntCode(noticeKo(fl.text, NK)), "md ds-md"), filesNode(fl.files)];
+  return answerParts({ text: ntCode(noticeKo(fl.text, NK)), files: fl.files }, { cls: "md ds-md", lead: false });
 }
 // Ids, hashes and paths in the body read as `code` (they wrap anywhere); text already in backticks stays as it is.
 function ntCode(text) {
@@ -15966,7 +16448,7 @@ function ntSheetPaint() {
       el("h2", { class: "ds-t", id: "ds-t", text: parts.title || "답변이 필요해요" }),
       el("div", { class: "ds-m", text: ntWhen(n) }),
       // The buttons show the options; a "결정:" line that only repeats the title goes too.
-      ...ntBody(n, d.options.length && !d.draft ? stripChoices(parts.rest).split("\n").filter(l => (CH_HEAD.exec(l) || [])[1] !== ntPlain(n.title)).join("\n").trim() : parts.rest))];
+      ...ntBody(n, d.options.length && !d.draft ? choiceBody(parts.rest, ntPlain(n.title)) : parts.rest))];
   const foot = el("div", { class: "fs-ft" }), ed = open && NS.edit && NS.edit.id === String(n.id) ? NS.edit : null;
   // Every notice event repaints the open sheet; one that changes nothing it shows leaves it alone, so the reason field being typed in is not
   // replaced (a new field takes the focus and a phone closes and reopens its keyboard).
@@ -16046,7 +16528,7 @@ loadNotices();
 // a notice through its answer path (answerInline / ntPost, a peer's through /api/peer/act), a store draft through its app's route or the peer act, a held card
 // through trPost. 모두 다시 보내기 hands back only sends the owner already approved and that failed, each by its own route; nothing else sends from here.
 // Reached from 홈 답장 대기, the app rows' 답장 대기 button, the chat's 답장 초안 line and the list row itself; the row shows only while something waits (or it is open).
-const RQ = { local: [], failed: [], done: [], stops: {}, loaded: false, app: "", tab: "all", edit: "", note: {}, busy: new Set(), gone: new Set(), just: new Map(), fold: new Set(), cur: "", sheet: null, shSig: "", rows: null, t: 0 };   // just: a store draft just sent stays as its card, 보냈어요 in the action row's place, until the queue is opened again
+const RQ = { local: [], failed: [], done: [], stops: {}, loaded: false, app: "", tab: "all", edit: "", note: {}, busy: new Set(), gone: new Set(), just: new Map(), fold: new Set(), cur: "", sheet: null, shSig: "", rows: null, t: 0, lim: {}, reset: false };   // just: a store draft just sent stays as its card, 보냈어요 in the action row's place, until the queue is opened again
 const RQ_KEY = "replies";
 
 async function rqLoad() {
@@ -16118,7 +16600,8 @@ const rqRefOf = x => (x.kind === "notice" ? x.n.decision.draft.ref : x.kind === 
 function rqAskRow(x) {
   const o = rqOriginalOf(x), dr = x.kind === "notice" ? x.n.decision.draft : x.kind === "held" ? x.tr.draft : null;
   const who = x.kind === "notice" ? (o && o.who) || (dr && dr.to) || "" : x.kind === "held" ? (dr && dr.to) || "" : x.kind === "kakao" ? x.d.room || "" : (x.d.original && x.d.original.who) || x.d.to || "";
-  const what = x.kind === "notice" ? ntPlain(x.n.title).replace(/\s*\([^()]*\)\s*$/, "") : x.kind === "held" ? draftQ(x.tr.question) : x.kind === "kakao" ? "메신저 답장" : x.d.title || "";
+  // What the row is about: the mail's subject, the held draft's subject, a comment's post title or its text; the card's question only when none is known.
+  const what = x.kind === "notice" ? (MAILS.get(x.n.decision.to) || {}).subject || dr.subject || ntPlain(x.n.title).replace(/\s*\([^()]*\)\s*$/, "") : x.kind === "held" ? (dr && dr.subject) || draftQ(x.tr.question) : x.kind === "kakao" ? "메신저 답장" : x.d.title || (x.d.original && x.d.original.text) || "";
   return { key: x.key, state: "ask", who, what, inst: x.inst, app: x.label || rqAppName(x.inst), pc: x.pc, at: x.at, why: rqAskWhy(x), x };
 }
 // Every row of the screen: ask (rqAll), fail and sent (this computer's and the peers'), failures first. A failed send whose draft still waits shows once, as the failure,
@@ -16128,7 +16611,7 @@ function rqRows() {
   const from = [[null, RQ.failed, RQ.done], ...PQ.list.filter(p => p && p.items).map(p => [pqPcOf(p), p.items.failed || [], p.items.sent || []])];
   const fail = [], sent = [];
   for (const [pc, failed, done] of from) {
-    for (const f of failed) { const key = `f:${rqPcKey(pc)}|${f.key}`; if (!RQ.gone.has(key)) fail.push({ key, state: "fail", who: f.who || "", what: f.what || "", inst: f.app, app: labelOf(pc, f.app), pc, at: f.at, why: rqNorm(f.why), f }); }
+    for (const f of failed) { const key = `f:${rqPcKey(pc)}|${f.key}`; if (!RQ.gone.has(key)) fail.push({ key, state: "fail", who: f.who || "", what: f.what || "", inst: f.app, app: labelOf(pc, f.app), pc, at: f.at, why: rqNorm(f.unsure ? `확인 필요: ${f.why}` : f.why), f }); }
     for (const s of done) sent.push({ key: `s:${rqPcKey(pc)}|${s.key}`, state: "sent", who: s.who || "", what: s.what || "", inst: s.app, app: labelOf(pc, s.app), pc, at: s.at, why: RQ_SENT[s.how] || "", s });
   }
   const failedAt = new Map(fail.filter(r => r.f.ref).map(r => [r.f.ref, r.at || 0]));
@@ -16265,9 +16748,11 @@ function rqRecordCard(r, rec, foot) {
     original: o ? { who: o.who, text: o.text } : null, to: rec.who ? [kind === "kakao" ? "대화방" : kind === "comment" ? "댓글" : "받는이", rec.who] : null, subject: kind === "comment" ? rec.what : "",
     body: { text: rec.text }, attach: el("div", { hidden: true }), ...foot });
 }
+// A comment nobody can say went up (hub/comments/recover.ts): 다시 보내기 or 완료, each by the owner's own click on that one card.
 const rqFailActs = r => el("div", { class: "dr-act dr-row rq-acts" },
   el("button", { class: "btn sm dr-send", type: "button", "data-k": "retry", disabled: RQ.busy.has(r.key), text: "다시 보내기", onclick: () => rqRetryAll([r]) }),
-  el("button", { class: "btn text sm dr-drop", type: "button", "data-k": "drop", disabled: RQ.busy.has(r.key), text: "보내지 않기", onclick: () => rqDropFailed(r) }));
+  r.f.unsure ? el("button", { class: "btn text sm", type: "button", "data-k": "done", disabled: RQ.busy.has(r.key), text: "완료", onclick: () => rqMarkPosted(r) })
+    : el("button", { class: "btn text sm dr-drop", type: "button", "data-k": "drop", disabled: RQ.busy.has(r.key), text: "보내지 않기", onclick: () => rqDropFailed(r) }));
 
 /* ---- failed sends: only what the owner already approved, each by its own route ---- */
 // This computer's route, or the other computer's act (hub/peer-monitor.ts "comments" / "kakao" / "approvals").
@@ -16301,6 +16786,15 @@ function rqRetryAll(rows, key) {
     rqLoad();
   });
 }
+// 완료 of an unsure comment: closed as sent, nothing is posted.
+function rqMarkPosted(r) {
+  return rqRunKey(r.key, async () => {
+    await rqSendIt(r.pc, `/api/comments/sends/${enc(r.f.sendId)}/done`, {}, "comments", { op: "send-done", id: r.f.sendId });
+    RQ.gone.add(r.key); toast("완료로 표시했어요");
+    if (r.pc) pqLoad();
+    rqLoad(); loadIntegrations();
+  });
+}
 // 보내지 않기 of a failed send: the draft is dropped by its own route and leaves the list.
 function rqDropFailed(r) {
   const f = r.f;
@@ -16332,7 +16826,7 @@ function rqUi() {
 }
 function rqTab(k) {
   if (RQ.tab === k) return;
-  RQ.tab = k; RQ.now = true;
+  RQ.tab = k; RQ.now = true; RQ.reset = true; RQ.lim = {};
   motionSwap(rqUi().ls, () => { MON.sig = ""; renderMonitoring(); });
   const box = $("#mon-timeline"); if (box) box.scrollTop = 0;
 }
@@ -16342,13 +16836,14 @@ function rqFold(key) {
   RQ.now = true; MON.sig = ""; renderMonitoring();
   if (open) for (const k of rqUi().ls.querySelectorAll("[data-kid]")) if (k.dataset.kid === key) motionIn(k, "top");
 }
-// The app chips: shown while one app is picked (an app row's 답장 대기 button), to get back to 전체.
+// The app chips with each app's count: shown while two or more apps wait and the waiting count reaches the triage minimum, or while one app is picked (an app row's 답장 대기 button).
 function rqFilterBar(rows) {
   const by = new Map();
-  for (const r of rows) { if (r.state === "sent") continue; const k = rqFilterKey(r.pc, r.inst), cur = by.get(k); by.set(k, { n: (cur ? cur.n : 0) + 1, text: `${r.app || rqAppName(r.inst)}${r.pc ? ` · ${r.pc.name}` : ""}` }); }
+  for (const r of rows) { if (r.state === "sent") continue; const k = rqFilterKey(r.pc, r.inst), cur = by.get(k); by.set(k, { n: (cur ? cur.n : 0) + 1, text: `${r.app || rqAppName(r.inst) || "기타"}${r.pc ? ` · ${r.pc.name}` : ""}` }); }
   if (RQ.app && !by.has(RQ.app)) RQ.app = "";
-  const chip = (k, text, n) => el("button", { class: `cchip mr-f${RQ.app === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(RQ.app === k), "data-filter": k || "all", onclick: () => { RQ.app = k; MON.sig = ""; monSchedule(); } }, text, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
-  return RQ.app ? el("div", { class: "mr-filter rq-filter", role: "tablist", "aria-label": "앱별 답장" }, chip("", "전체", [...by.values()].reduce((c, v) => c + v.n, 0)), ...[...by].map(([k, v]) => chip(k, v.text, v.n))) : null;
+  const chip = (k, text, n) => el("button", { class: `cchip mr-f${RQ.app === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(RQ.app === k), "data-filter": k || "all", onclick: () => { RQ.app = k; RQ.lim = {}; MON.sig = ""; monSchedule(); } }, text, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
+  const total = [...by.values()].reduce((c, v) => c + v.n, 0);
+  return RQ.app || (by.size >= 2 && total >= TR.min) ? el("div", { class: "mr-filter rq-filter", role: "tablist", "aria-label": "앱별 답장" }, chip("", "전체", total), ...[...by].map(([k, v]) => chip(k, v.text, v.n))) : null;
 }
 // 방금 / N분 전 within the hour, as the prototype's rows, then the plain time.
 const rqWhen = at => { const m = at ? Math.floor((Date.now() - at) / 60_000) : -1; return !at ? "" : m < 1 ? "방금" : m < 60 ? `${m}분 전` : rcWhen(new Date(at).toISOString()); };
@@ -16357,30 +16852,46 @@ function rqRowNode(r, kid) {
   const at = rqWhen(r.at), head = r.who || r.what || r.app, sub = [r.app, r.who ? r.what : ""].filter(Boolean).join(" · ");
   return el("div", { class: `li nsc-r rq-r ${r.state}`, "data-qr": r.key, ...(kid ? { "data-kid": kid } : {}) },
     el("span", { class: "lead" }, el("span", { class: `dot ${RQ_TONE[r.state]}` })),
-    el("button", { class: "tx nsc-tx", type: "button", onclick: () => rqSheetOpen(r) },
+    el("button", { class: "tx nsc-tx", type: "button", onclick: () => rqSheetOpen(rqRows().find(x => x.key === r.key) || r) },
       el("span", { class: "ln" }, el("span", { class: "hd", text: head }), at ? el("span", { class: "t", text: at }) : null),
       sub || r.why ? el("span", { class: "ln" }, sub ? el("span", { class: "nsc-s", text: sub }) : null, r.why ? el("span", { class: `tag${r.state === "fail" ? " err" : ""}`, text: r.why }) : null) : null));
 }
+// A row as a keyed descriptor: rqSync keeps its node while the signature (everything the row shows) is the same.
+const rqRowDesc = (r, kid) => ({ key: `r:${r.key}`, sig: JSON.stringify([r.state, r.who, r.what, r.app, r.why, rqWhen(r.at), kid || ""]), make: () => rqRowNode(r, kid) });
 // 2 or more failures of one app with the same reason fold into one row; the others stay plain rows.
-function rqFailNodes(rows) {
+function rqFailDescs(rows) {
   const by = new Map(), out = [];
-  for (const r of rows) { const k = `${rqPcKey(r.pc)}|${r.inst}|${r.why}`; if (r.why) by.set(k, [...(by.get(k) || []), r]); }
+  // An unsure reply is never bundled: 모두 다시 보내기 could post it twice.
+  const bundles = r => r.why && !(r.f && r.f.unsure);
+  for (const r of rows) { const k = `${rqPcKey(r.pc)}|${r.inst}|${r.why}`; if (bundles(r)) by.set(k, [...(by.get(k) || []), r]); }
   const done = new Set();
   for (const r of rows) {
-    const k = `${rqPcKey(r.pc)}|${r.inst}|${r.why}`, g = r.why ? by.get(k) : null;
-    if (!g || g.length < 2) { out.push(rqRowNode(r)); continue; }
+    const k = `${rqPcKey(r.pc)}|${r.inst}|${r.why}`, g = bundles(r) ? by.get(k) : null;
+    if (!g || g.length < 2) { out.push(rqRowDesc(r)); continue; }
     if (done.has(k)) continue;
     done.add(k);
     const open = RQ.fold.has(k), busy = RQ.busy.has(k);
-    out.push(el("div", { class: "li nsc-r rq-r rq-g fail", "data-qg": k },
+    out.push({ key: `g:${k}`, sig: JSON.stringify([busy, open, r.why, rqAppName(r.inst) || r.app, g.map(x => x.key)]), make: () => el("div", { class: "li nsc-r rq-r rq-g fail", "data-qg": k },
       el("span", { class: "lead" }, el("span", { class: `dot ${busy ? "pri" : "err"}` })),
       el("button", { class: "tx nsc-tx", type: "button", "aria-expanded": String(open), onclick: () => rqFold(k) },
         el("span", { class: "ln" }, el("span", { class: "hd", text: `${rqAppName(r.inst) || r.app} ${g.length}건을 못 보냈어요` })),
         el("span", { class: "ln" }, el("span", { class: "nsc-s", text: busy ? "다시 보내는 중" : r.why }))),
       el("button", { class: "btn tonal sm rq-retry", type: "button", "data-k": "retry-all", disabled: busy, text: "모두 다시 보내기", onclick: () => rqRetryAll(g, k) }),
-      el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("drop"))), ...(open ? g.map(x => rqRowNode(x, k)) : []));
+      el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("drop"))) }, ...(open ? g.map(x => rqRowDesc(x, k)) : []));
   }
   return out;
+}
+// Replies the owner approved that are queued or on their way (a notice's decision.send), of this computer and the others.
+// The gateway's own record (TR.results: GET /api/approvals and the approval_send frames) counts every local send, whether or not its notice is in NT.items
+// (GET /api/notices keeps the open cards and the newest page, so an approved card can sit past it); the notices count the other computers' sends. A ref counts once.
+function rqSending() {
+  const seen = new Set(), live = s => !!s && (s.state === "queued" || s.state === "sending");
+  for (const r of Object.values(TR.results)) if (live(r)) seen.add(`|${r.ref}`);
+  for (const n of [...NT.items, ...rqApps().filter(a => a.pc).flatMap(a => a.notices)]) {
+    const d = n.decision;
+    if (d && live(d.send)) seen.add(`${n.pc ? n.pc.url : ""}|${d.draft && d.draft.ref ? d.draft.ref : `#${n.id}`}`);
+  }
+  return seen.size;
 }
 function rqPaintHead(rows) {
   const u = rqUi(), n = { ask: 0, fail: 0, sent: 0 };
@@ -16391,27 +16902,64 @@ function rqPaintHead(rows) {
     rollCount(b.querySelector(".n"), k === "all" || !n[k] ? "" : String(n[k]));
   }
   const fast = (RQ.tab === "all" || RQ.tab === "ask") && n.ask >= TR.min, apps = new Set(rows.filter(r => r.state === "ask").map(r => rqFilterKey(r.pc, r.inst))).size;
-  const text = fast ? `앱 ${apps}곳에서 ${n.ask}건 기다려요` : RQ.tab === "sent" && n.sent ? `오늘 보낸 답장 ${n.sent}건` : "";
+  const sending = rqSending(), text = [fast ? `앱 ${apps}곳에서 ${n.ask}건 기다려요` : RQ.tab === "sent" && n.sent ? `오늘 보낸 답장 ${n.sent}건` : "", sending ? `보내는 중 ${sending}건` : ""].filter(Boolean).join(" · ");
   u.mt.textContent = text; u.fast.hidden = !fast; u.meta.hidden = !text;
 }
+const RQ_PAGE = 200;   // rows drawn per section; 더 보기 adds a page (the failed section always draws all)
+// Keyed update of one box: a child stays when its key and signature are the same, the rest is removed, replaced or inserted in order.
+function rqSync(box, descs) {
+  const have = new Map([...box.children].map(n => [n.dataset.rk, n]));
+  listPlace(box, descs.map(d => {
+    let n = have.get(d.key);
+    if (!n || n._sig !== d.sig) { n = d.make(); n._sig = d.sig; n.dataset.rk = d.key; }
+    return n;
+  }));
+}
+// Puts `nodes` in `box` in that order: a child no longer wanted is removed, one already in place stays, the rest is inserted.
+function listPlace(box, nodes) {
+  const want = new Set(nodes);
+  for (const n of [...box.children]) if (!want.has(n)) n.remove();
+  let at = box.firstChild;
+  for (const n of nodes) { if (n === at) at = at.nextSibling; else box.insertBefore(n, at); }
+}
+// The first row of `root` (matching `sel`) in view and its offset from the top of the scroll box, `key` being the dataset name that identifies a row;
+// rowHold puts it back after the rows above it changed.
+function rowAnchor(root, sel, key, box = $("#mon-timeline")) {
+  if (!box || box.scrollTop <= 0 || !root.isConnected) return null;
+  const top = box.getBoundingClientRect().top, n = [...root.querySelectorAll(sel)].find(e => e.getBoundingClientRect().bottom > top);
+  return n ? { box, root, sel, key, id: n.dataset[key], off: n.getBoundingClientRect().top - top } : null;
+}
+function rowHold(a) {
+  const n = a && [...a.root.querySelectorAll(a.sel)].find(e => e.dataset[a.key] === a.id);
+  if (n) a.box.scrollTop += n.getBoundingClientRect().top - a.box.getBoundingClientRect().top - a.off;
+}
+const rqAnchor = () => rowAnchor(rqUi().ls, ".rq-r", "rk");
+// What the list holds: the section heads and one box of rows per section (their own descriptors under `rows`).
+function rqDescs(shown) {
+  if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : "불러오는 중…"; return [{ key: "empty", sig: text, make: () => el("div", { class: "list" }, el("div", { class: "empty", text })) }]; }
+  const out = [];
+  for (const [s, label] of RQ_SECS) {
+    const part = shown.filter(r => r.state === s);
+    if (!part.length) continue;
+    if (RQ.tab === "all") out.push({ key: `sec:${s}`, sig: `${label}|${part.length}`, make: () => el("div", { class: "sec" }, label, " ", el("span", { class: "meta", text: `${part.length}건` })) });
+    const lim = s === "fail" ? part.length : RQ.lim[s] || RQ_PAGE, rows = s === "fail" ? rqFailDescs(part) : part.slice(0, lim).map(r => rqRowDesc(r));
+    if (part.length > lim) rows.push({ key: `more:${s}`, sig: String(part.length - lim), make: () => moreRow(`${part.length - lim}개 더 보기`, () => { RQ.lim[s] = lim + RQ_PAGE; MON.sig = ""; monSchedule(); }) });
+    out.push({ key: `list:${s}`, sig: "", make: () => el("div", { class: "list rq-list" }), rows });
+  }
+  return out;
+}
 function rqPaintList(rows) {
-  const u = rqUi(), shown = RQ.tab === "all" ? rows : rows.filter(r => r.state === RQ.tab);
-  const build = () => {
-    const nodes = [];
-    if (!shown.length) nodes.push(el("div", { class: "list" }, el("div", { class: "empty", text: RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : "불러오는 중…" })));
-    else for (const [s, label] of RQ_SECS) {
-      const part = shown.filter(r => r.state === s);
-      if (!part.length) continue;
-      if (RQ.tab === "all") nodes.push(el("div", { class: "sec" }, label, " ", el("span", { class: "meta", text: `${part.length}건` })));
-      nodes.push(el("div", { class: "list rq-list" }, ...(s === "fail" ? rqFailNodes(part) : part.map(r => rqRowNode(r)))));
-    }
-    return nodes;
-  };
+  const u = rqUi(), shown = RQ.tab === "all" ? rows : rows.filter(r => r.state === RQ.tab), reset = RQ.reset;
+  RQ.reset = false;
   const apply = () => {
-    const at = document.activeElement, f = at && u.ls.contains(at) ? at.closest("[data-qr],[data-qg]") : null, fk = f ? (f.dataset.qr ? ["qr", f.dataset.qr] : ["qg", f.dataset.qg]) : null;
-    clear(u.ls).append(...build());
+    const at = document.activeElement, f = at && u.ls.contains(at) ? at.closest(".rq-r") : null, fk = f ? f.dataset.rk : "", anchor = rqAnchor();
+    if (reset) clear(u.ls);
+    const top = rqDescs(shown);
+    rqSync(u.ls, top);
+    for (const d of top) if (d.rows) rqSync([...u.ls.children].find(n => n.dataset.rk === d.key), d.rows);
     u.ls.dataset.on = "1";
-    if (fk) { const n = [...u.ls.querySelectorAll(`[data-${fk[0]}]`)].find(e => e.dataset[fk[0]] === fk[1]); const b = n && n.querySelector(".tx"); if (b) b.focus({ preventScroll: true }); }
+    if (fk) { const n = [...u.ls.querySelectorAll(".rq-r")].find(e => e.dataset.rk === fk), b = n && n.querySelector(".tx"); if (b && document.activeElement !== b) b.focus({ preventScroll: true }); }
+    rowHold(anchor);
   };
   // Rows that left (answered, sent again, dropped) fade out first; a tab change or a fold redraws at once.
   const keys = new Set(shown.map(r => r.key)), gone = RQ.now || !u.ls.dataset.on ? [] : [...u.ls.querySelectorAll("[data-qr]")].filter(n => !keys.has(n.dataset.qr));
@@ -16457,7 +17005,7 @@ const rqXSig = r => (r.x ? (r.x.kind === "notice" ? [r.x.n.decision.state, r.x.n
 // What the screen shows; it is redrawn only when this changes.
 function rqSig() {
   const rows = (RQ.rows = rqRows());
-  return JSON.stringify([RQ.app, RQ.tab, RQ.edit, [...RQ.busy], [...RQ.just.keys()], [...RQ.fold], TR.min, RQ.loaded, rows.map(r => [r.key, r.state, r.at, r.who, r.what, r.app, r.why, rqXSig(r)])]);
+  return JSON.stringify([RQ.app, RQ.tab, RQ.edit, RQ.lim, rqSending(), [...RQ.busy], [...RQ.just.keys()], [...RQ.fold], TR.min, RQ.loaded, rows.map(r => [r.key, r.state, r.at, r.who, r.what, r.app, r.why, rqXSig(r)])]);
 }
 rqLoad();
 
@@ -16478,6 +17026,8 @@ async function trLoad() {
   try { r = await api("/api/approvals"); } catch { return; }
   TR.groups = Array.isArray(r.groups) ? r.groups : [];
   TR.min = Number(r.triageMin) > 0 ? Number(r.triageMin) : 3;
+  // A send the gateway no longer holds (its frame was lost, or it restarted) does not stay 보내는 중 here.
+  for (const x of Object.values(TR.results)) if ((x.state === "queued" || x.state === "sending") && !(r.results || []).some(y => y.ref === x.ref)) delete TR.results[x.ref];
   for (const x of r.results || []) TR.results[x.ref] = x;
   if (current === "monitoring" && MON.sel === "replies") { MON.sig = ""; monSchedule(); }   // the queue's head offers 빠른 처리 once enough wait
   if (TR.h) trMerge();
@@ -16532,7 +17082,7 @@ function trState(c) {
   }
   return d;
 }
-const TR_ST = { drop: "보내지 않았어요", queued: "보낼 차례를 기다려요", sending: "보내는 중…", sent: "보냈어요", failed: "보내지 못했어요", bot: "봇이 보내요", edit: "봇이 고치는 중이에요", gone: "다른 곳에서 처리됐어요", err: "답을 보내지 못했어요" };
+const TR_ST = { drop: "보내지 않았어요", queued: "보낼 차례를 기다려요", sending: "보내는 중…", sent: "보냈어요", failed: "보내지 못했어요", unsure: "확인이 필요해요", bot: "봇이 보내요", edit: "봇이 고치는 중이에요", gone: "다른 곳에서 처리됐어요", err: "답을 보내지 못했어요" };
 const trChip = c => {
   const s = trState(c);
   return s ? el("span", { class: `tr-st ${s.state}`, "data-trst": trK(c), title: s.text || null, text: TR_ST[s.state] || s.state }) : el("span", { class: "tr-st", "data-trst": trK(c), hidden: true });
@@ -16555,10 +17105,17 @@ function trNext() {
   trPaint();
 }
 
+// Each item names the label of its button (1 보내기, 2 고치기, 3 보내지 않기); a hub that refuses a changed card (409) makes the list read again.
+const TR_LABEL = { 1: "보내기", 2: "고치기", 3: "보내지 않기" };
 async function trPost(items) {
-  const r = await api("/api/approvals", "POST", { items });
-  if (r && r.error) throw new Error(r.error);
-  return r;
+  try {
+    const r = await api("/api/approvals", "POST", { items: items.map(i => ({ ...i, label: TR_LABEL[i.n] })) });
+    if (r && r.error) throw new Error(r.error);
+    return r;
+  } catch (e) {
+    if (e && e.message === NT_STALE) await trLoad();
+    throw e;
+  }
 }
 // The owner's own words replace the draft's text before it is sent (POST /api/drafts/<ref>/body).
 async function trSaveEdits(c) {
@@ -16655,9 +17212,10 @@ function trCommentCtx(c) {
 const trFiles = files => (files && files.length ? el("div", { class: "tr-files" }, ...files.map(f => el("span", { class: "tr-file", text: f.size ? `${f.name} (${f.size})` : f.name }))) : null);
 
 function trOneView(c) {
-  const k = trK(c), d = c.draft || {}, st = trState(c), locked = !!st && st.state !== "err";
+  const k = trK(c), d = c.draft || {}, st = trState(c), gone = dcGone(c.to), locked = gone || (!!st && st.state !== "err");
   const e = (TR.edits[k] ||= {});
-  const area = (part, value) => el("textarea", { class: "tr-ta", rows: "6", "aria-label": part === "mail" ? "함께 보낼 메일 본문" : "보낼 글", disabled: locked, oninput: ev => { e[part] = ev.target.value; trSendLabel(c); } }, value);
+  // A draft the gateway cannot change in place (a block a session wrote) is read here and goes back to the session with 고치기.
+  const area = (part, value) => c.editable === false ? draftBodyNode(value, "dc-dr-b") : el("textarea", { class: "tr-ta", rows: "6", "aria-label": part === "mail" ? "함께 보낼 메일 본문" : "보낼 글", disabled: locked, oninput: ev => { e[part] = ev.target.value; trSendLabel(c); } }, value);
   const body = el("div", { class: "fs-body tr-body", tabindex: "-1" },
     el("div", { class: "tr-q" }, el("span", { text: trQ(c) || "이대로 보낼까요?" }), trChip(c)),
     decideNode(d),
@@ -16678,7 +17236,7 @@ function trOneView(c) {
       el("button", { class: "btn tr-b tr-go", type: "button", disabled: locked, onclick: () => trAnswer(c, 1) }, trSendText(c)),
       el("button", { class: "btn tonal tr-b", type: "button", disabled: locked, onclick: () => { TR.noting = true; trPaint(); } }, "고치기 …"),
       el("button", { class: "btn text tr-b", type: "button", disabled: locked, onclick: () => trAnswer(c, 3) }, "보내지 않기")),
-      el("div", { class: "tr-hint", text: "보내거나 보내지 않으면 다음 초안으로 넘어가요." }),
+      el("div", { class: "tr-hint", text: gone ? DC_GONE : "보내거나 보내지 않으면 다음 초안으로 넘어가요." }),
       el("div", { class: "tr-nav" }, el("button", { class: "btn text sm", type: "button", "aria-label": "이전 카드", disabled: TR.i === 0, onclick: () => trStep(-1) }, "‹ 이전"), el("button", { class: "btn text sm", type: "button", "aria-label": "다음 카드", onclick: () => trStep(1) }, "다음 ›")),
       el("div", { class: "tr-keys", text: "Enter·1 보내기 · 2·E 고치기 · 3·X 보내지 않기 · ← → 이전·다음 · L 목록" }));
   }
@@ -16694,7 +17252,7 @@ function trSendLabel(c) { const b = TR.h && $(".tr-go", TR.h.box); if (b) b.text
 function trDoneView() {
   const by = s => TR.items.filter(c => { const x = trState(c); return x && x.state === s; }).length;
   const skipped = TR.items.filter(c => !TR.done[trK(c)]).length;
-  const rows = [["보냈어요", by("sent")], ["보내지 않았어요", by("drop")], ["보내는 중", by("queued") + by("sending")], ["보내지 못했어요", by("failed") + by("err")], ["봇이 고치거나 보내요", by("edit") + by("bot")], ["건너뛰었어요", skipped]].filter(([, v]) => v);
+  const rows = [["보냈어요", by("sent")], ["보내지 않았어요", by("drop")], ["보내는 중", by("queued") + by("sending")], ["보내지 못했어요", by("failed") + by("err")], ["확인이 필요해요", by("unsure")], ["봇이 고치거나 보내요", by("edit") + by("bot")], ["건너뛰었어요", skipped]].filter(([, v]) => v);
   const body = el("div", { class: "fs-body tr-body tr-empty" }, el("div", { class: "tr-done-t", text: skipped ? "끝까지 봤어요" : "모두 답했어요" }), el("ul", { class: "tr-sumlist" }, ...rows.map(([t, v]) => el("li", {}, el("span", { text: t }), el("b", { text: `${v}건` })))));
   const foot = el("div", { class: "fs-ft tr-ft" }, el("div", { class: "tr-acts" },
     skipped ? el("button", { class: "dc-act alt tr-b", type: "button", onclick: () => { TR.i = TR.items.findIndex(c => !TR.done[trK(c)]); trPaint(); } }, "건너뛴 것 다시 보기") : null,
@@ -16706,10 +17264,10 @@ const TR_PICK = [[1, "보내기"], [2, "고치기"], [3, "건너뛰기"]];
 function trListView() {
   const picked = TR.items.filter(c => !TR.done[trK(c)] && (TR.picks[trK(c)] === 1 || (TR.picks[trK(c)] === 2 && (TR.notes[trK(c)] || "").trim()))).length;
   const body = el("div", { class: "fs-body tr-body tr-list" }, ...TR.items.map((c, i) => {
-    const k = trK(c), d = c.draft || {}, st = trState(c), locked = !!st && st.state !== "err", p = TR.picks[k] || 3;
+    const k = trK(c), d = c.draft || {}, st = trState(c), locked = dcGone(c.to) || (!!st && st.state !== "err"), p = TR.picks[k] || 3;
     return el("div", { class: `tr-row${locked ? " locked" : ""}` },
       el("button", { class: "tr-rh", type: "button", onclick: () => { TR.i = i; TR.list = false; trPaint(); } }, el("span", { class: "tr-n", text: String(i + 1) }), el("span", { class: "tr-rq", text: [d.to, trQ(c)].filter(Boolean).join(" · ") }), trChip(c)),
-      el("div", { class: `tr-rb${p === 1 || TR.open[k] ? " open" : ""}`, title: "눌러서 전체 보기", onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); }, text: (TR.edits[k] && TR.edits[k].reply) ?? d.body ?? "" }),
+      draftBodyNode((TR.edits[k] && TR.edits[k].reply) ?? d.body ?? "", `tr-rb${p === 1 || TR.open[k] ? " open" : ""}`, { title: "눌러서 전체 보기", onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); } }),
       d.mail ? el("div", { class: `tr-rb mail${p === 1 || TR.open[k] ? " open" : ""}`, onclick: ev => { TR.open[k] = ev.currentTarget.classList.toggle("open"); }, text: `함께 보낼 메일 → ${d.mail.to || ""}${d.mail.subject ? ` · ${d.mail.subject}` : ""}\n${(TR.edits[k] && TR.edits[k].mail) ?? d.mail.body ?? ""}` }) : null,
       locked ? null : el("div", { class: "tr-seg", role: "radiogroup", "aria-label": `${i + 1}번 카드` }, ...TR_PICK.map(([n, t]) => el("button", { class: `tr-sg${p === n ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(p === n), onclick: () => { TR.picks[k] = n; trPaint(); } }, t))),
       !locked && p === 2 ? el("input", { class: "tr-rn", type: "text", placeholder: "어떻게 고칠까요?", value: TR.notes[k] || "", "aria-label": `${i + 1}번 고칠 내용`, oninput: ev => { TR.notes[k] = ev.target.value; trListCount(); } }) : null);
@@ -16756,17 +17314,21 @@ const convReal = e => CONV_KINDS.has(e.kind) && !(e.kind === "out" && e.update_k
 // A gateway system line (`system`, 11-todo-strip.js sysLine) is a status, never unread (hub/conversations.ts countIncoming).
 const convIncoming = e => convReal(e) && !OWNER.has(e.kind) && !cleanRestart(e) && !e.system;
 
-// Same rule as hub/conversations.ts previewOf: first meaningful line, plain text, 120 chars.
-function convPreview(raw) {
-  const text = noticeKo(parseTone(previewSrc(raw)).text, NK);
+// Same rule as hub/conversations.ts previewOf: the first meaningful lines, plain text. convPreview: the first, 120 chars.
+function previewLines(raw, max) {
+  const text = plainTable(noticeKo(parseTone(previewSrc(raw)).text, NK)), out = [];
   let fence = false;
   for (const line of text.split("\n")) {
     if (/^\s*```/.test(line)) { fence = !fence; continue; }
     if (fence) continue;
     const plain = line.replace(/^\s*-#\s+/, "").replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/, "").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_~`]+/g, "").replace(/\s+/g, " ").trim();
-    if (plain) return plain.length > 120 ? `${plain.slice(0, 119)}…` : plain;
+    if (plain && out.push(plain) >= max) break;
   }
-  return "";
+  return out;
+}
+function convPreview(raw) {
+  const [plain = ""] = previewLines(raw, 1);
+  return plain.length > 120 ? `${plain.slice(0, 119)}…` : plain;
 }
 function convLastOf(e) {
   if (!convReal(e) || typeof e.ts !== "string") return null;
@@ -16803,7 +17365,28 @@ function convDropGone(items) {
   if (current === "chat" && gone.includes(target)) go("monitoring", MON.sel || "i:mail");
   mbRefresh();
 }
-async function convLoad() {
+// One load at a time: a call that comes while one runs makes it read again once it ends, and both callers get the same promise.
+let convFlight = null, convAgain = false;
+function convLoad() {
+  if (convFlight) { convAgain = true; return convFlight; }
+  convFlight = (async () => { do { convAgain = false; await convLoadNow(); } while (convAgain); })().finally(() => { convFlight = null; });
+  return convFlight;
+}
+// A live event (one per mail) refreshes through this: the first runs at once; events during the load or the next LIVE_GAP ms collapse into one trailing run.
+let LIVE_GAP = 2000;
+function coalesced(fn) {
+  let busy = false, queued = false;
+  const run = async () => {
+    busy = true; queued = false;
+    try { await fn(); } finally { setTimeout(() => { busy = false; if (queued) run(); }, LIVE_GAP); }
+  };
+  const live = () => { if (busy) queued = true; else run(); };
+  live.busy = () => busy;
+  return live;
+}
+const mailLive = coalesced(() => Promise.allSettled([convLoad(), loadIntegrations()]));
+const monitorsLive = coalesced(() => loadMonitors());
+async function convLoadNow() {
   clearTimeout(convRetry);
   try {
     const r = await api("/api/conversations");
@@ -17285,8 +17868,8 @@ function nscList(rows) {
     const all = rows.filter(n => nscGroup(n) === g);
     if (!all.length) continue;
     const shown = g === "need" ? all : all.slice(0, NSC.lim[g]);   // 새 소식 and 지난 알림 draw 50 at a time: 300 rows are never all in the page
-    out.push(el("div", { class: "sec", text: label }), el("div", { class: "list", "data-g": g }, ...shown.flatMap(n => nscRows(n, g))));
-    if (all.length > shown.length) out.push(el("div", { class: "nsc-more" }, el("button", { class: "btn text sm", type: "button", "data-k": "more", onclick: () => { NSC.lim[g] += NSC_PAGE; nscPaint(true); } }, `${all.length - shown.length}개 더 보기`)));
+    const more = all.length > shown.length ? moreRow(`${all.length - shown.length}개 더 보기`, () => { NSC.lim[g] += NSC_PAGE; nscPaint(true); }) : null;
+    out.push(el("div", { class: "sec", text: label }), el("div", { class: "list", "data-g": g }, ...shown.flatMap(n => nscRows(n, g)), more));
   }
   return out;
 }
@@ -17322,7 +17905,9 @@ function nscPaint(force) {
   if (!force && sig === NSC.sig) return;
   NSC.sig = sig;
   const first = !nscBox.list.firstChild, fresh = NT.loaded ? freshKeys(NSC.seen, rows.map(n => n.id)) : new Set();
+  const anchor = force || first ? null : rowAnchor(nscBox.list, ".nsc-r:not([data-child])", "nid", $("#views"));   // a live update leaves the reader's place alone
   nscBox.list.replaceChildren(...nscList(rows));
+  rowHold(anchor);
   if (!first) for (const id of fresh) { const r = nscRowOf(id); if (r) motionIn(r, "top"); }   // a notification that arrives slides in at the top of its group
 }
 const nscRowOf = id => nscBox && nscBox.list.querySelector(`.nsc-r[data-nid="${CSS.escape(String(id))}"]:not([data-child])`);
@@ -17496,8 +18081,8 @@ async function asApprove(app, a, o) {
   AS.busy[app] = true; asPaint();
   try {
     const n = !app.includes("~") && typeof ntById === "function" ? ntById(a.id) : null;
-    if (n) await ntPost(n, o.n);
-    else await api(app.includes("~") ? `/api/integrations/${enc(app)}/approve` : `/api/notices/${enc(a.id)}/answer`, "POST", app.includes("~") ? { id: a.id, n: o.n } : { n: o.n });
+    if (n) await ntPost(n, o.n, undefined, undefined, o.label);
+    else await api(app.includes("~") ? `/api/integrations/${enc(app)}/approve` : `/api/notices/${enc(a.id)}/answer`, "POST", app.includes("~") ? { id: a.id, n: o.n } : { n: o.n, label: o.label });
     toast(`${o.label}(으)로 답했어요`);
     await asFeatLoad(app);
   } catch (e) { toast(e.message || "답하지 못했어요", true); }
@@ -17523,6 +18108,8 @@ async function asEvery(app, i, v) {
   catch (e) { toast(e.message || "감시 주기를 바꾸지 못했어요", true); }
   AS.busy[app] = false; asPaint();
 }
+// A watch's last output in the facts of its status: a raw command never shows, in the detail row or a settings panel alike.
+const monLastOut = m => m.last_output && !MON_CMD.test(m.last_output) ? `마지막 결과: ${m.last_output}` : "";
 // One row for a watch: the monitor's own facts (the status card its detail shows) and, for a watch an app owns, the app's kind, reason, period and
 // 다시 시도. The machine hooks other panels read stay stable: .as-stat, data-watch, data-internal.
 function asStatRow(app, m, i) {
@@ -17532,7 +18119,7 @@ function asStatRow(app, m, i) {
   const line = i
     ? [i.status, i.last_run ? `마지막 확인 ${monTime(i.last_run)}` : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ")
     : [st && st.text, m ? ntMonRun(m) : "", m ? ntMonNext(m) : ""].filter(Boolean).join(" · ");
-  const facts = [m && m.fails ? `연속 실패 ${m.fails}번` : "", m ? monLastOk(m) : "", m && m.last_output ? `마지막 결과: ${m.last_output}` : "",
+  const facts = [m && m.fails ? `연속 실패 ${m.fails}번` : "", m ? monLastOk(m) : "", m ? monLastOut(m) : "",
     m && m.kind === "schedule" && m.every ? `반복 ${m.every}` : "", m && m.kind === "schedule" && m.channel ? `보낼 곳: ${targetName(m.channel)}` : ""].filter(Boolean);
   return el("div", { class: `as-row as-stat${i ? " as-int" : " as-conn"}`, "data-watch": m ? m.watch || m.name : i.id, ...(i ? { "data-internal": i.id, "data-kind": i.kind } : { "data-conn": dot === "fail" ? "disconnected" : dot === "ok" ? "connected" : "unknown" }) },
     el("span", { class: `as-dot ${dot}`, "aria-hidden": "true" }),
@@ -17883,9 +18470,9 @@ function asConnNode(app) {
 function asSettingRow(app, f, feat, box) {
   const bound = feat && feat.features.find(x => x.setting === f.key), wait = bound && /승인 대기/.test(bound.status) ? bound.status : "";
   return el("div", { class: "as-row", "data-setting": f.key },
-    el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), f.help ? el("span", { class: "as-h", text: f.help }) : null, wait ? el("span", { class: "as-h", "data-wait": "1", text: wait }) : null),
+    el("span", { class: "as-b" }, el("span", { class: "as-n", text: f.label }), f.blocked || f.help ? el("span", { class: "as-h", text: f.blocked || f.help }) : null, wait ? el("span", { class: "as-h", "data-wait": "1", text: wait }) : null),
     // A list is edited in the conversation (a change card); here it only says how many.
-    f.type === "list" ? el("span", { class: "as-v", text: asFmt(f, f.value) }) : asControl(f, async v => {
+    f.type === "list" ? el("span", { class: "as-v", text: asFmt(f, f.value) }) : f.blocked ? Object.assign(kkSwitch(false, f.label, f.key, () => {}), { disabled: true }) : asControl(f, async v => {
       if (AS.busy[app]) return;
       AS.busy[app] = true;
       try { await asPatch(app, { [f.key]: v }); } catch (e) { toast(e.message || "설정을 바꾸지 못했어요"); }
@@ -19291,7 +19878,7 @@ function rpStart(n) {
   const e = RP.src.get(n);
   if (!e) return;
   // tone: the status tag of the quoted bot message, shown in the bar like in the message (not sent; the server only gets id, author, content)
-  RP.cur = { t: target, id: n.dataset.rid, author: rpOwnerKind(e) ? "" : ($(".mn", n)?.textContent || botName), content: rpText(e).slice(0, RP_QUOTE), tone: rpOwnerKind(e) ? "" : parseTone(noHandoff(String(e.text ?? ""))).tone };
+  RP.cur = { t: target, id: n.dataset.rid, author: rpOwnerKind(e) ? "" : ($(".mn", n)?.textContent || botName), content: rpText(e).slice(0, RP_QUOTE), tone: rpOwnerKind(e) || parkedTone(parseTone(noHandoff(String(e.text ?? ""))).tone) ? "" : parseTone(noHandoff(String(e.text ?? ""))).tone };
   rpPaint();
   const ta = $("#text");
   if (!ta.disabled) ta.focus({ preventScroll: true });
@@ -19483,8 +20070,9 @@ const RUN_DOT = { working: "pri", waiting: "warn", idle: "", limited: "warn", er
 // "답을 기다려요" only when the owner's answer is awaited (a question); work the agent handed off reads as its own progress and is not
 // colored as needing him (owner 2026-10-28: "답을 기다려요" read as waiting on him; he picked "맡긴 작업 진행 중").
 // recover: a background worker failed and the agent takes it up itself (hub/runstate.ts failedRun) - its progress, not a request to the owner.
-const waitLabel = r => r.reason === "ask" ? RUN_LABEL.waiting : runQueued(r) ? "순서를 기다려요" : r.reason === "recover" ? "이어서 처리 중" : "맡긴 작업 진행 중";
-const waitsOnOwner = r => r.kind === "waiting" && r.reason === "ask";
+const waitLabel = r => waitsOnOwner(r) ? RUN_LABEL.waiting : runQueued(r) ? "순서를 기다려요" : r.reason === "recover" ? "이어서 처리 중" : "맡긴 작업 진행 중";
+// standby: no question, but nothing moves until the owner writes (a [wait] report, hub/runstate.ts waitsForOwner).
+const waitsOnOwner = r => r.kind === "waiting" && (r.reason === "ask" || r.reason === "standby");
 // A conversation waiting on work it handed off is progressing: blue on every row that shows it, like this line. One whose turn or whose
 // only worker is still queued has not started, so it is gray and counts as running nowhere; a session held by the limits is the same (S.lanes waiting).
 const runOf = t => (S && S.runs && S.runs[t === MAIN ? "main" : t]) || null;
@@ -19516,9 +20104,11 @@ const runStateOf = () => {
   // A mail conversation's run state is the background worker its request was deferred to (hub/routes.ts stateRuns): this
   // computer's under /api/state `runs`, the other computer's in its monitoring snapshot (34-peer-monitoring.js pqRuns).
   if (isMailT(target)) return (typeof pqRuns === "function" && pqRuns(target)) || runs[target] || null;
-  // A project channel, thread or settings screen with a session of its own (hub/convsessions.ts) has its own line.
-  return (isLaneT(target) ? runs[target] : runs[target] || runs.main) || null;
+  // A project channel or thread with a session of its own (hub/convsessions.ts) has its own line: main's work is not its work.
+  return runs[target] || (isLaneT(target) || (isProjT(target) && !projOnMain(target)) ? null : runs.main) || null;
 };
+// The only project that runs on main: one whose kind has no sessions of its own, known once GET /api/context is in.
+const projOnMain = t => isProjT(t) && !!C && !(C.conversation_kinds || []).includes("ch");
 // The gateway's clock, not this device's, so the elapsed time ticks every second between state refreshes (workNow, 06-subagents.js).
 const runClock = () => (typeof workNow === "function" ? workNow() : Date.now());
 function runSince(iso) {
@@ -19561,7 +20151,29 @@ function runAction(r, t = target) {
   if (r.kind === "stopped") return { label: "다시 시작", run: ev => runRestart(ev.currentTarget) };
   return null;
 }
+// The live tag of a report: the conversation's state now. `of` is the session the report came from, else the open conversation.
+const liveTone = of => {
+  const r = of ? runOf(of) : runStateOf();
+  return !r || runQueued(r) ? "" : runMoving(r) ? "run" : waitsOnOwner(r) ? "wait" : "";
+};
+// Only the newest message may carry one, so an older [run] and a finished, stopped or exited session show none. Called on every
+// state paint and new message; nothing polls for it.
+function syncLiveTags() {
+  const all = tl.querySelectorAll(".bm"), last = all[all.length - 1];
+  for (const n of tl.querySelectorAll(".bm[data-live-tone]")) {
+    const tone = n === last ? liveTone(n.dataset.liveOf) : "";
+    if ((n.dataset.liveShown || "") === tone) continue;
+    n.dataset.liveShown = tone;
+    const root = n.querySelector(":scope > .md"), old = root.querySelector(".st-tag"), p = old && old.parentNode;
+    if (old) old.remove();
+    if (p && p !== root && !p.textContent.trim()) p.remove();
+    toneLead(root, tone);
+  }
+  // The gateway's live status of a turn that has ended, and a session's last progress note, also of a session that is gone.
+  if ((runStateOf() || (S && isLaneT(target))) && liveTone() !== "run") for (const t of tl.querySelectorAll(".lv .st-tag")) t.remove();
+}
 function paintRunState() {
+  syncLiveTags();
   const box = $("#runstate");
   if (!box) return;
   const r = runStateOf();
@@ -19810,6 +20422,7 @@ document.addEventListener("visibilitychange", relayTick);
   const noCustom = () => { if (!window.dotzCustom && current === "cardform") go("home"); };
   const custom = () => document.body.append(Object.assign(document.createElement("script"), { src: "/demo/custom.js", onload: noCustom, onerror: noCustom }));
   if (document.readyState === "complete") custom(); else addEventListener("load", custom, { once: true });
+  pushTapCheck();
   await snapHomeSeed();
   let h = parseHash();
   if (pushOpenTs && h.view === "chat" && h.t === "alert") h = { view: "notices", t: "" };   // #chat/alert is the 알림 screen: drawn first, then pushOpen lands on the item
@@ -19863,7 +20476,7 @@ document.addEventListener("visibilitychange", relayTick);
     else if (e.kind === "read") convOnRead(e);
     else if (e.kind === "comment" || e.kind === "comment_send" || e.kind === "comment_draft" || e.kind === "comment_sources") cmLive(e);
     else if (e.kind === "kakao" || e.kind === "kakao_send" || e.kind === "kakao_draft" || e.kind === "kakao_rooms" || e.kind === "kakao_read" || e.kind === "kakao_unreplied") kkLive(e);
-    else if (e.kind === "mail_unreplied") { convLoad(); loadIntegrations(); }
+    else if (e.kind === "mail_unreplied") mailLive();
     else if (e.kind === "project_info") pmLive(e);
     else if (e.kind === "runtime_check") { if (rtLive) rtLive(); }
     else if (e.kind === "update_available") loadUpdate();   // the top update bar (24-settings-update.js) offers it
@@ -19898,6 +20511,7 @@ document.addEventListener("visibilitychange", relayTick);
   // The stream stalls while the phone sleeps (a push can land before the message does): coming back after a few seconds away, refetch.
   let hiddenAt = 0;
   const wake = () => {
+    pushTapCheck();
     const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0; if (es.readyState === 2) openStream();
     if (away > 5000) resync(); else if (missed.state) refreshState();
     if (missed.models) loadModels(true);
