@@ -924,6 +924,7 @@ dialog.lbox::backdrop { background: transparent; }
 .bm .md p.meta { margin: var(--sp-1) 0 0; font-size: 13px; line-height: 20px; color: var(--fg-2); }
 .bm .md p.meta + p:not(.meta) { margin-top: var(--sp-3); }
 .md li.sub { margin-left: var(--sp-5); list-style-type: circle; }
+.md hr { margin: var(--sp-3) 0; border: 0; border-top: 1px solid var(--line); }
 .md blockquote { margin: 0 0 var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); }
 details.work > summary { display: flex; align-items: center; gap: var(--sp-2); width: fit-content; max-width: 100%; min-height: 28px; margin-left: calc(var(--sp-1) * -1); padding: 0 var(--sp-2) 0 var(--sp-1); border-radius: 8px; color: var(--fg-2); font-size: 13px; line-height: 20px; cursor: pointer; list-style: none; }
 details.work > summary:hover { background: var(--hover); color: var(--fg); }
@@ -1251,7 +1252,7 @@ details.think .md { padding: var(--sp-1) var(--sp-2) var(--sp-2) var(--box-ind);
 .hr .sproj { flex: 0 1 auto; min-width: 0; max-width: 60%; overflow: hidden; text-overflow: ellipsis; color: var(--fg); font-weight: 500; }
 .hr .sproj.none { color: var(--fg-3); font-weight: 400; }
 .hr .sline { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg-3); }
-.hr .sline::before { content: "·"; margin-right: var(--sp-15); }
+.hr .sproj + .sline::before { content: "·"; margin-right: var(--sp-15); }
 .srows .hr + .li, .srows .li + .hr { box-shadow: inset 0 1px 0 var(--line); }
 /* 답변 필요 (09-needs-you.js): a critical row's dot is the error ink; 더 보기 is the list's last row, full width */
 .hr .dot.att.err { background: var(--err); }
@@ -2168,6 +2169,8 @@ button.nt-x:active { background: var(--active); color: var(--fg); }
 .cv-foot { display: flex; justify-content: center; margin-top: var(--sp-2); }
 .cv-card { overflow: hidden; border-radius: var(--r-card); background: var(--card); }
 .cv-sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); color: var(--fg-2); font: 600 14px/20px var(--font); }
+.cv-sec:first-child { margin-top: 0; }
+.cv-card + .cv-card { margin-top: var(--sp-6); }
 #chat-convo .cv-gh { padding: var(--sp-3) var(--sp-4) var(--sp-1); }
 #chat-convo .cv-row { min-height: 48px; padding: var(--sp-2) var(--sp-4); gap: var(--sp-3); border-radius: 0; }
 #chat-convo .cv-row + .cv-row { margin-top: 0; border-top: 1px solid var(--line); }
@@ -2946,6 +2949,7 @@ dialog.fs-card::backdrop { background: var(--scrim); }
 .rc-w { min-width: 0; font: 400 15px/22px var(--font); overflow-wrap: anywhere; }
 .rc-w b { font-weight: 500; }
 .rc-d { margin-left: var(--sp-1); color: var(--fg-3); font-size: 13px; }
+.rc-w > .rc-d.nw-chg { margin-left: 0; font-size: inherit; }
 .rc-d.nw-chg s { color: var(--fg-3); }
 .rc-d.nw-chg em { color: var(--fg-2); font-style: normal; font-weight: 500; }
 .rc-sh { color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 600; }
@@ -3837,10 +3841,12 @@ span.mr-star:not(.on) { opacity: .45; }
 .tl-in > .bm.rc.mopen { --mpx: 18px; gap: var(--sp-1); padding: 0 var(--mpx) var(--sp-4); }
 @media (max-width: 639px) { .tl-in > .bm.rc.mopen { --mpx: 16px; padding-bottom: var(--sp-3); } }
 .mtop { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 0; height: 40px; margin: 0 calc(var(--mpx) * -1) var(--sp-2); padding: 0 calc(var(--mpx) - var(--sp-2)); border-radius: var(--r-ctl); background: var(--layer); }
-.mtop .mtop-b, .mtop .mr-more { flex: 0 1 36px; min-width: 32px; width: 36px; height: 32px; border-radius: var(--r-ctl); color: var(--fg-2); }
-.mtop .mtop-b .ic, .mtop .mr-more .ic { width: 16px; height: 16px; }
-.mtop .mtop-b:hover, .mtop .mr-more[aria-expanded="true"] { background: var(--active); color: var(--fg); }
-.mtop .mr-more { margin: 0; }
+.mtop .mtop-b { flex: 0 1 36px; min-width: 32px; width: 36px; height: 32px; border-radius: var(--r-ctl); color: var(--fg-2); }
+.mtop .mtop-b .ic { width: 16px; height: 16px; }
+.mtop .mtop-b:hover { background: var(--active); color: var(--fg); }
+/* the phone's bar holds all nine at the .ib touch size (36px) */
+@media (pointer: coarse), (max-width: 639px) { .mtop .mtop-b { height: 36px; } }
+@media (max-width: 639px) { .mtop { padding: 0 var(--sp-05); } }
 /* the day / 지난 기록 lines above an open mail only push it down: the mail's own time is in its header */
 #tl > .a-div:has(~ .bm.mopen) { display: none; }
 .mopen > .rc-title { margin-top: var(--sp-1); font-size: 15px; line-height: 21px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -3863,7 +3869,7 @@ span.mr-star:not(.on) { opacity: .45; }
 .mopen > .mr-files > .mr-file::after { content: ""; position: absolute; inset: -4px 0; }
 .mopen > .mr-files > .mr-file:hover { background: var(--hover); }
 .mopen > .mr-files > .mr-file .ic { width: 16px; height: 16px; }
-.mopen > .rc-raw[open] > summary { display: none; }
+.mopen > .rc-raw > summary { display: none; }
 .mopen > .rc-raw { margin-top: var(--sp-1); }
 .mopen > .rc-raw > .rc-rawbody { margin-top: 0; }
 
@@ -4056,6 +4062,180 @@ textarea.mbox-ta { display: block; flex: 1; min-height: 160px; margin: var(--sp-
   #v-chat.mail-thr #mail-thread { display: flex; flex-direction: column; flex: 0 0 280px; min-height: 0; margin: 0 0 var(--sp-4); padding: var(--sp-2) var(--sp-15) var(--sp-2) var(--sp-2); border-radius: var(--r-card); background: var(--card); overflow: hidden; }
   #mail-thread[hidden] { display: none; }
   #mail-thread > .mth-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+}
+
+/* The two screens that replace the mail list in the same view (web/js/30-mailboxes-set.js): 메일함 설정 and 메일함 추가, ported from site/prototype/mailbox.css onto the web tokens. */
+.mxs { display: flex; flex-direction: column; width: 100%; max-width: calc(var(--view-w) - var(--sp-8)); margin: 0 auto; padding-bottom: var(--sp-8); --ff-fill: var(--layer); }
+.mxs > .sec:first-child, .mxs > .mxs-note + .sec { margin-top: var(--sp-6); }
+#v-monitoring.mx-scr > .cv-head { display: none; }
+.mxs-hd { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+.mxs-hd .av { flex: none; display: grid; place-items: center; width: calc(var(--sp-8) + var(--sp-1)); height: calc(var(--sp-8) + var(--sp-1)); border-radius: 50%; background: var(--layer); color: var(--fg-2); }
+.mxs-hd .btn { flex: none; }
+.mxs-hd .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.mxs-hd .hd { display: flex; align-items: center; gap: var(--sp-2); font: 600 var(--fs-row)/var(--lh-row) var(--font); }
+.mxs-hd .sup { color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.mxs-note, .mxs-h { color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.mxs-note { margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: var(--fs-sec); line-height: var(--lh-sec); }
+.mxs-h { margin: var(--sp-2) var(--sp-1) 0; }
+.mxs-ab .mxs-h, .mxs-pad .mxs-h { margin: 0; }
+.mxs-inh { align-self: flex-start; margin-top: var(--sp-2); }
+.mxs-h.mxs-inh { margin-left: var(--sp-1); }
+
+/* 처리 방식 */
+.mxs-modes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); }
+.mxs-mode { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; padding: var(--sp-3); border: 0; border-radius: var(--r-card); background: var(--card); color: var(--fg); text-align: left; }
+.mxs-mode:hover { background: var(--card-hover); }
+.mxs-mode.on, .mxs-mode.on:hover { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+.mxs-mt { display: flex; align-items: center; gap: var(--sp-2); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); white-space: nowrap; }
+.mxs-rd { flex: none; width: 16px; height: 16px; border: 1.5px solid var(--line-2); border-radius: 50%; }
+.mxs-mode.on .mxs-rd { border: 5px solid var(--accent); }
+.mxs-md { color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+
+/* one folding item at a time */
+.mxs .list > button.li + button.li { border-top: 1px solid var(--line); }
+.mxs-ah { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: calc(var(--row-h) + var(--sp-1)); padding: var(--sp-2) var(--sp-4); border: 0; background: none; color: var(--fg); text-align: left; }
+.mxs-ah:hover { background: var(--card-hover); }
+.mxs-al { flex: none; font: 500 var(--fs-row)/var(--lh-row) var(--font); }
+.mxs-av { flex: 1; min-width: 0; overflow: hidden; color: var(--fg-3); font-size: var(--fs-body); line-height: var(--lh-sec); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.mxs-ah .ic { flex: none; color: var(--fg-3); transition: transform var(--m-fast) var(--m-ease); }
+.mxs-ac.open .mxs-ah .ic { transform: rotate(180deg); }
+.mxs-ab { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-1) var(--sp-4) var(--sp-4); }
+.mxs-pad { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); }
+.mxs-kv { display: grid; grid-template-columns: calc(var(--sp-8) * 3 + var(--sp-4)) minmax(0, 1fr); gap: var(--sp-3); align-items: start; }
+.mxs-k { color: var(--fg-2); font: 500 var(--fs-meta)/var(--field-h) var(--font); }
+.mxs-ac .mxs-k:not(.mxs-kv > .mxs-k) { line-height: var(--lh-sec); }
+.mxs-am2 { display: inline-flex; align-items: center; gap: var(--sp-15); color: var(--fg-2); font-size: var(--fs-meta); }
+
+/* chips with an x, and the input that adds one */
+.mxs-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); min-width: 0; }
+.mxs-c { max-width: 100%; padding: 0 var(--sp-1) 0 var(--sp-3); background: var(--card); }
+.mxs-c .tx { min-width: 0; }
+.mxs-cx { display: grid; place-items: center; width: var(--sp-6); height: var(--sp-6); padding: 0; border: 0; border-radius: var(--r-pill); background: none; color: var(--fg-3); }
+.mxs-cx:hover { background: var(--active); color: var(--fg); }
+.mxs-cx .ic { width: 12px; height: 12px; }
+.mxs-c2 { background: transparent; color: var(--fg-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+.mxs-c2:hover { background: var(--hover); }
+.mxs-c2 .ic { width: 14px; height: 14px; }
+.mxs-ci { width: calc(var(--sp-10) * 4 + var(--sp-5)); max-width: 100%; height: var(--ctl-h); }
+.mxs-ic { padding: 0 var(--sp-3); }
+.mxs-ic.on, .mxs-ic.on:hover { background: var(--fg); color: var(--bg); }
+.mxs-ic .ic { width: 16px; height: 16px; }
+.mxs-jr { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: var(--ctl-h); }
+
+/* 말투, 답장 지시, 인사말 */
+.mxs-sum { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: var(--fs-body); line-height: var(--lh-body); }
+.mxs-fx { margin: 0; padding-left: var(--sp-5); color: var(--fg-2); font-size: var(--fs-body); line-height: var(--lh-body); }
+.mxs-ta { height: auto; min-height: calc(var(--field-h) * 2); padding: var(--sp-2) var(--sp-3); font-family: inherit; line-height: var(--lh-body); resize: vertical; }
+.mxs-gl { display: flex; flex-direction: column; }
+.mxs-g { display: grid; grid-template-columns: calc(var(--sp-10) * 4 + var(--sp-2)) minmax(0, 1fr) var(--sp-8); gap: var(--sp-2); align-items: center; padding: var(--sp-2) 0; }
+.mxs-g + .mxs-g { box-shadow: inset 0 1px 0 var(--line); }
+.mxs-g .tx { display: flex; flex-direction: column; min-width: 0; }
+.mxs-in { width: 100%; padding: 0; border: 0; outline: 0; background: none; color: var(--fg); font: 500 var(--fs-body)/var(--lh-sec) var(--font); }
+.mxs-in.s { color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); }
+.mxs-in::placeholder { color: var(--fg-3); }
+
+.mxs-del { display: flex; justify-content: flex-end; margin-top: var(--sp-4); }
+.mxs-foot { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-5); }
+
+@media (max-width: 639px) {
+  .mxs-modes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mxs-kv { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .mxs-g { grid-template-columns: minmax(0, 1fr) var(--sp-8); }
+  .mxs-g .fi { grid-column: 1 / -1; }
+}
+
+/* The mail app's mailboxes (web/js/30-mailboxes.js), ported from site/prototype/mailbox.css onto the web tokens: the pane beside the list (wide) or the chip row (narrow),
+   the box title and note, the account mark and the box name on a row, the account chip of the app bar, the move button and the small box after a move. */
+.mx-pane { display: none; }
+.mx-tabs { display: flex; flex: none; gap: var(--sp-1); overflow-x: auto; scrollbar-width: none; }
+.mx-tabs::-webkit-scrollbar { display: none; }
+.mx-tab { flex: none; display: inline-flex; align-items: center; gap: var(--sp-15); height: var(--ctl-h); padding: 0 var(--sp-3); border: 0; border-radius: var(--r-pill); background: var(--card); color: var(--fg-2); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); white-space: nowrap; }
+.mx-tab > span:last-child { color: var(--fg-3); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+.mx-tab.on { background: var(--fg); color: var(--bg); font-weight: 600; }
+.mx-tab.on > span:last-child { color: inherit; opacity: .7; }
+.mx-tab .ic { width: 16px; height: 16px; }
+
+/* the pane: all, then the boxes in one card, then 메일함 추가 */
+.mx-pr { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: calc(var(--row-h) + var(--sp-3)); padding: var(--sp-2) var(--sp-3); border: 0; background: none; color: var(--fg); text-align: left; }
+.mx-pr + .mx-pr { box-shadow: inset 0 1px 0 var(--line); }
+.mx-pr:hover { background: var(--card-hover); }
+.mx-pr.on, .mx-pr.on:hover { background: var(--row-sel); }
+.mx-pr .av { flex: none; display: grid; place-items: center; width: var(--sp-8); height: var(--sp-8); border-radius: var(--r-ctl); background: var(--layer); color: var(--fg-2); }
+.mx-pr.on .av { background: var(--card); }
+.mx-pr .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.mx-pr .hd { display: flex; align-items: center; gap: var(--sp-15); font: 500 var(--fs-sec)/var(--lh-sec) var(--font); white-space: nowrap; }
+.mx-pr .sup { overflow: hidden; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); text-overflow: ellipsis; white-space: nowrap; }
+.mx-pn { flex: none; display: inline-flex; align-items: center; gap: var(--sp-15); color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); font-variant-numeric: tabular-nums; }
+.mx-base { height: var(--tag-h); padding: 0 var(--tag-px); font-size: var(--fs-tag); }
+.mx-add { justify-content: flex-start; padding: 0 var(--sp-3); }
+
+/* an account's mark: one letter in a small circle, in one of four looks */
+.mx-am { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: var(--fs-tag); line-height: 1; font-weight: 700; font-style: normal; }
+.mx-am.t-0 { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.mx-am.t-1 { background: var(--hover); color: var(--fg); }
+.mx-am.t-2 { background: var(--layer); color: var(--accent); }
+.mx-am.t-3 { background: var(--layer); color: var(--fg-2); }
+.mx-tab.on .mx-am { background: var(--bg); }
+.mx-al { display: inline-flex; align-items: center; gap: var(--sp-15); }
+.mx-bt { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); text-overflow: ellipsis; white-space: nowrap; }
+
+/* above the filter tabs: the box title, an account that needs its login, the base box's note */
+.mx-bh { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--sp-8); margin-bottom: calc(var(--sp-2) * -1); }
+.mx-bh h2 { font: 700 var(--fs-big)/var(--lh-big) var(--font); white-space: nowrap; }
+.mx-bh .meta { min-width: 0; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
+.mx-setb { margin-left: auto; }
+.mx-note, .mx-exp { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); color: var(--fg-2); font-size: var(--fs-sec); line-height: var(--lh-sec); }
+.mx-note { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.mx-exp.down { background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.mx-exp .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.mx-exp b { color: var(--fg); font-weight: 500; }
+.mx-exp .btn { flex: none; height: var(--btn-h-sm); background: var(--card); }
+
+/* the account chip of the app bar: only while the mail screen is open */
+.mx-acc { display: none; flex: none; align-items: center; gap: var(--sp-1); height: 28px; margin-right: var(--sp-1); padding: 0 var(--sp-2); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font-size: var(--fs-meta); font-weight: 500; white-space: nowrap; }
+.mx-acc:hover { background: var(--card-hover); }
+.mx-acc .ic { width: 14px; height: 14px; }
+.main:has(#v-monitoring.mx-on:not(.mx-scr):not([hidden])) .mx-acc { display: inline-flex; }
+
+.mr-mv { flex: none; }
+
+/* the small box after a move */
+.mx-teach { display: none; position: fixed; z-index: 120; left: calc(50% - 84px); bottom: var(--sp-6); width: 400px; max-width: calc(100vw - var(--sp-6)); padding: var(--sp-3) var(--sp-4) var(--sp-2); border-radius: var(--r-card); background: var(--pop); box-shadow: var(--float); }
+body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
+.mx-tt { display: flex; align-items: center; gap: var(--sp-2); }
+.mx-tt b { font: 600 var(--fs-body)/var(--lh-sec) var(--font); }
+.mx-tt .ib { width: 28px; height: 28px; margin-left: auto; }
+.mx-tq { margin-top: var(--sp-05); color: var(--fg-2); font-size: var(--fs-sec); line-height: var(--lh-sec); }
+.mx-to { display: flex; flex-direction: column; margin-top: var(--sp-1); }
+.mx-to button { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--sp-10); padding: var(--sp-1) var(--sp-2); border: 0; border-radius: var(--r-ctl); background: none; color: var(--fg); font-size: var(--fs-body); line-height: var(--lh-sec); text-align: left; }
+.mx-to button:hover { background: var(--hover); }
+.mx-rd { flex: none; width: 16px; height: 16px; border: 1.5px solid var(--line-2); border-radius: 50%; }
+.mx-tf { display: flex; justify-content: flex-end; gap: var(--sp-1); margin-top: var(--sp-1); }
+.mx-tf .btn { height: var(--btn-h-sm); }
+
+@media (min-width: 1100px) {
+  /* the pane stands beside the scrolling list, the head over both; the page is wider than a plain item's 920px to leave the list its width */
+  #v-monitoring.mx-on:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: 1180px; grid-template-columns: 256px minmax(0, 1fr); column-gap: var(--sp-5); }
+  #v-monitoring.mx-on:not(.cv-listing) > * { grid-column: 2; }
+  #v-monitoring.mx-on:not(.cv-listing) > .cv-head { grid-column: 1 / -1; }
+  #v-monitoring.mx-on:not(.cv-listing) > #mx-pane { grid-column: 1; grid-row: 4; display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; overflow-y: auto; scrollbar-width: none; }
+  #mon-tl > .mx-tabs { display: none; }
+  #v-monitoring.mx-on #mon-tl { padding-top: 0; }
+  /* 메일함 설정 and 메일함 추가 take the whole view */
+  #v-monitoring.mx-on.mx-scr:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: var(--view-w); grid-template-columns: minmax(0, 1fr); }
+  #v-monitoring.mx-on.mx-scr:not(.cv-listing) > * { grid-column: 1; }
+  #v-monitoring.mx-on.mx-scr:not(.cv-listing) > #mx-pane { display: none; }
+  #mon-tl > .mr .rc-hd > .mr-mv { order: 9; }
+  /* the sender gives its column to the account mark and the box name */
+  #mon-tl > .mr .rc-hd > .rc-src:has(+ .mx-am, + .mx-bt) { flex-basis: 104px; }
+  #mon-tl > .mr .rc-hd > .mx-bt { flex: none; max-width: 96px; }
+}
+@media (max-width: 639px) {
+  .mx-bh .meta, .mx-setb span { display: none; }
+  .mx-setb { width: var(--field-h); padding: 0; }
+  .mx-note { align-items: flex-start; }
+  .mr .mx-am + .mx-bt { display: none; }
+  .mx-teach { left: var(--sp-3); right: var(--sp-3); bottom: calc(72px + env(safe-area-inset-bottom)); width: auto; }
 }
 
 /* 모니터링 (web/js/30-monitoring.js): a monitor's wait drawn as a thin bar from its last run to its next, the result as a tag, the connection
