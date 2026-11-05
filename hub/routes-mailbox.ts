@@ -41,6 +41,14 @@ export function boxPass(dir: string): (m: MailRecord) => { box: string; boxWhy?:
 	};
 }
 
+/** A judge hit (features/reply-drafts/lib/offer.ts): the stored mail `key` is placed in `box` with `mwhy` kind judge. False when no such record is stored. */
+export function placeByJudge(key: string, box: string): boolean {
+	const r = mailByKey(key);
+	if (!r) return false;
+	recordMail({ ...r, mbox: box, mwhy: { kind: "judge" } });
+	return true;
+}
+
 /** A mail item of GET /api/integrations gains its account's mailboxes and the account address (`filter.account`, else the one zele login). */
 export function withBoxes<T extends { key: string; app: string }>(item: T, dir = DATA_DIR): T {
 	if (item.app !== "mail") return item;

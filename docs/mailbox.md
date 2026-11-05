@@ -75,7 +75,8 @@ send route: the instance stays the same, because a move never crosses accounts.
 
 Reply settings of a mailbox apply to drafts made in it: `how` after 기본 규칙; `greets` and `bans` as instruction lines; a draft holding a banned phrase
 gets a warning on its card; `folders` in front of the app's 첨부 파일 폴더; `rules` in place of the instance's draft rules when non-empty; tone
-`tone/<instance>/<box id>.md` (`ToneKey.room`), falling back to the instance, then the install.
+`tone/<instance>/<box id>.md` (`ToneKey.room`), falling back to the instance (the shared mail profile when the instance has none of its own), then the install.
+A draft records its `box` and `instance`, so a revision and the send check use the same tone, and a correction goes to the box's tone only when that file exists. A mail a judge moved is not matched against that box's own `rules` (no second call); the box's mode and the other reply settings apply.
 
 ## Moving
 
