@@ -82,7 +82,7 @@ import { machineHost } from "./hostname.ts";
 import { queue, bgWork, workRows, out, progress, fileRoots } from "./outbound.ts";
 import { convs, maxLiveView } from "./convsessions.ts";
 import { MAIN, primaryTarget } from "./session-key.ts";
-import { parseReply, replyLine, sendWeb } from "./intake.ts";
+import { authHeld, parseReply, replyLine, sendWeb } from "./intake.ts";
 import { json, body, terminals } from "./routes-util.ts";
 import { ptyRoute } from "./pty.ts";
 import { desk } from "./remote-desktop.ts";
@@ -1021,7 +1021,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				}
 			}
 			// The queue sends to the main conversation when the turn ends; a project message goes in now (intake merges a burst).
-			if (mode === "queue" && !project && !mail && !conv && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text)) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
+			if (mode === "queue" && !project && !mail && !conv && (lane ? lanes.has(lane) : !parseCommand(text) && !looksLikeCommand(text) && !authHeld("web")) && (lane ? lanes.get(lane)?.status === "working" : orch.status === "working")) {
 				const item = enqueue(lane ? `lane:${lane}` : "main", [reply ? replyLine(reply) : "", text, files.length ? attachmentLines(files) : "", elements.length ? pickedLines(elements) : "", ...refs].filter(Boolean).join("\n"), login);
 				return json({ ok: true, queued: item });
 			}

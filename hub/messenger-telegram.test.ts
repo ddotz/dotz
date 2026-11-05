@@ -125,6 +125,8 @@ describe("telegram messenger", () => {
 			{ update_id: 11, message: { message_id: 2, text: "남의 말", from: { id: 43 }, chat: { id: 111 } } },
 			{ update_id: 12, message: { message_id: 3, photo: [{ file_id: "x" }], from: { id: 42 }, chat: { id: 111 } } },
 			{ update_id: 13, message: { message_id: 4, text: "알림방", from: { id: 42 }, chat: { id: -222 } } },
+			{ update_id: 14, message: { message_id: 5, text: "취소", forward_date: 1, from: { id: 42 }, chat: { id: 111 } } },
+			{ update_id: 15, message: { message_id: 6, text: "취소", reply_to_message: { text: "메일 보낼까요?" }, from: { id: 42 }, chat: { id: 111 } } },
 		];
 		const fake = telegramFetch({ updates });
 		const a = createTelegramAdapter(dir, { fetch: fake.fetch, pollMs: 60_000 });
@@ -137,8 +139,10 @@ describe("telegram messenger", () => {
 		expect(received).toEqual([
 			{ adapter: "telegram", target: "main", text: "안녕", author: "42", messageId: "1" },
 			{ adapter: "telegram", target: "alert", text: "알림방", author: "42", messageId: "4" },
+			{ adapter: "telegram", target: "main", text: "취소", author: "42", messageId: "5", quoted: "취소" },
+			{ adapter: "telegram", target: "main", text: "취소", author: "42", messageId: "6", quoted: "메일 보낼까요?" },
 		]);
-		expect(loadTelegramConfig(dir).cursor).toBe(14);
+		expect(loadTelegramConfig(dir).cursor).toBe(16);
 		const polls = fake.calls.filter(c => c.method === "getUpdates");
 		expect(polls).toHaveLength(1);
 		expect(polls[0]!.body).toMatchObject({ limit: 100, timeout: 0 });
@@ -147,8 +151,8 @@ describe("telegram messenger", () => {
 		await a.pollNow();
 		a.stop();
 		const second = fake.calls.filter(c => c.method === "getUpdates");
-		expect(second[1]!.body).toMatchObject({ offset: 14, limit: 100, timeout: 0 });
-		expect(received).toHaveLength(2);
+		expect(second[1]!.body).toMatchObject({ offset: 16, limit: 100, timeout: 0 });
+		expect(received).toHaveLength(4);
 
 		const settings = a.settings!() as Settings;
 		expect(JSON.stringify(settings)).not.toContain(TOKEN);
