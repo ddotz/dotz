@@ -46,7 +46,8 @@ test("a result for the main chat is a message, an older late event never replace
 });
 
 test("lists are sorted by latest message, live targets without messages come last", () => {
-	emit("outbox", { ts: "9000-02-01T07:00:00.000Z", kind: "out", source: "orchestrator", target: "ch:11", text: "제일 최근" });
+	// Later than any stamp another file leaves in the shared log (notices.test.ts writes 9999-12-31T00:00:00).
+	emit("outbox", { ts: "9999-12-31T23:59:59.000Z", kind: "out", source: "orchestrator", target: "ch:11", text: "제일 최근" });
 	const items = conversationList(["lane:silent", "ch:99"]);
 	expect(items[0].target).toBe("ch:11");
 	const tail = items.slice(-2).map(c => c.target);

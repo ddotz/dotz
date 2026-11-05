@@ -428,12 +428,13 @@ function convPaint() {
     convSig = sig;
     convSide.setAttribute("aria-label", monCtx ? "모니터링 목록" : "채팅 목록");
     // 진행 중 grows and shrinks under 작업내역: a list read further down stays where it is when a session starts or ends, held by where 진행 중 (or, without it, 작업내역) ends.
-    const end = () => { const n = ([...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === "진행 중") || {}).nextElementSibling || convSide.querySelector('.cv-row[data-t="worklog"]'); return n ? n.offsetTop + n.offsetHeight : 0; };
+    // Measured in fractions and rounded once at the end: offsetTop rounds each place and scrollTop truncates, which moved the list by a pixel or more.
+    const end = () => { const n = ([...convSide.querySelectorAll(".cv-sec")].find(s => s.textContent === "진행 중") || {}).nextElementSibling || convSide.querySelector('.cv-row[data-t="worklog"]'); return n ? n.getBoundingClientRect().bottom + convSide.scrollTop : 0; };
     const top = convSide.scrollTop, was = end();
     // A conversation opened from 모니터링 keeps 모니터링's own panel (sections, cards, bars: 30-monitoring.js), never the chat list's rows.
     clear(convSide).append(...(monCtx ? monSideNodes(rows) : convCards(rows)));
     if (monCtx) monDecorateRows(convSide, items);
-    convSide.scrollTop = top && top + end() - was;
+    convSide.scrollTop = top && Math.round(top + end() - was);
   }
   convSide.classList.toggle("mon-side", !!monCtx);
   $("#v-chat").classList.toggle("mon-ctx", !!monCtx);

@@ -166,10 +166,7 @@ export function createPrompts(deps: PromptDeps) {
 	const linksOf = (p: { target?: string; replyTo?: string }) => [...links.values()].filter(l => (l.target === p.target && l.replyTo === p.replyTo) || (p.replyTo !== undefined && l.also?.includes(p.replyTo)));
 	// Every turn that ran (omp started it from a delivered prompt), oldest first: a worker belongs to the turn it was spawned in.
 	const turns: { prompt: Prompt; start: number; end?: number }[] = [];
-	const closeTurn = () => {
-		const t = turns.at(-1);
-		if (t && t.end === undefined) t.end = Date.now();
-	};
+	const closeTurn = () => { const t = turns.at(-1); if (t && t.end === undefined) t.end = Date.now(); };
 	const openDeferred = () => deferred.filter(p => !p.done && !isAnswered(p.replyTo) && Date.now() - p.at <= DEFER_MAX_AGE_MS);
 
 	/** A worker still running in another conversation whose request is still waiting: its answer may arrive while this turn runs. */
@@ -559,9 +556,8 @@ export function createPrompts(deps: PromptDeps) {
 		saveLinks();
 	}
 
-	/** The owner message a turn's worker serves: the turn's own, else (a note started the turn, such as a new session's history) the newest one steered in. Without it the result named no message and the open-request check asked for a second answer (2026-11-05 st_01a1aa4c). */
+	/** The owner message a turn's worker serves: the turn's own, else (a note started the turn: a new session's history) the newest one steered in; without it the open-request check asked for a second answer (st_01a1aa4c). */
 	const requestOf = (p: Prompt) => p.replyTo ?? prompts.findLast(q => q.steered && q.replyTo && q.target === p.target)?.replyTo;
-
 	/** Workers the runtime just spawned: the running turn's request is theirs; a run no prompt started serves the request of the worker that woke it. */
 	function workersSpawned(workers: { id: string; description?: string }[]): void {
 		if (current?.target) {

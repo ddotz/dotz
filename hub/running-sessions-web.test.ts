@@ -57,7 +57,8 @@ test("the project's 세션 section holds them all under the one status: waiting,
 });
 
 test("a session leaves and joins 진행 중 by itself; with nothing running the list has no header, and neither a read further down nor the very top moves", async () => {
-	const top = (t: string) => `document.querySelector('#chat-convo [data-t="${t}"]').getBoundingClientRect().top`;
+	// Against the list's own top: the screen's opening animation may still move the whole list while the test measures.
+	const top = (t: string) => `document.querySelector('#chat-convo [data-t="${t}"]').getBoundingClientRect().top - document.querySelector("#chat-convo").getBoundingClientRect().top`;
 	const below = top("ch:7001"), mainTop = top("main");
 	await run(v, `go("chat", "list"); const side = document.querySelector("#chat-convo"); side.style.height = "160px"; side.style.overflowY = "auto"; side.scrollTop = 120`);
 	await waitFor(v, `document.querySelector("#chat-convo").scrollTop === 120`);

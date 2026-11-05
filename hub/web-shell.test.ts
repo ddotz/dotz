@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { fakeHub, json, waitFor, type View } from "./test-web.ts";
 
 // A stand-in for the owner's shell: a prompt, an echo for plain commands, and a sudo that asks for a password with echo off.
-const SHELL = `printf '$ '; while IFS= read -r line; do case "$line" in sudo*) printf '[sudo] password for test: '; stty -echo; IFS= read -r pw; stty echo; printf '\\n'; printf 'PW:%s\\n' "$(printf %s "$pw" | cksum | cut -d' ' -f1)";; *) printf 'RAN:%s\\n' "$line";; esac; printf '$ '; done`;
+// Like an interactive shell it lives through ^C and ^D: when it died on them, the keys after them raced its exit frame (SH.alive false drops input), 5 of 8 runs.
+const SHELL = `trap : INT; printf '$ '; while :; do IFS= read -r line || { [ -t 0 ] && continue; exit; }; case "$line" in sudo*) printf '[sudo] password for test: '; stty -echo; IFS= read -r pw; stty echo; printf '\\n'; printf 'PW:%s\\n' "$(printf %s "$pw" | cksum | cut -d' ' -f1)";; *) printf 'RAN:%s\\n' "$line";; esac; printf '$ '; done`;
 const SECRET = "s3cret-테스트-77";
 const cksum = (s: string) => new TextDecoder().decode(Bun.spawnSync(["sh", "-c", `printf %s "$1" | cksum | cut -d' ' -f1`, "sh", s]).stdout).trim();
 
@@ -43,8 +44,9 @@ const waitOut = async (v: View, expr: string) => {
 };
 // The page's POSTs arrive on the stub server; this resolves when the node-side condition holds, within a bound.
 const waitUntil = (cond: () => boolean, ms = 15_000) => new Promise<void>((res, rej) => {
-	const t = setTimeout(() => { wake.delete(check); rej(new Error(`timeout: ${cond}`)); }, ms);
-	const check = () => { if (cond()) { clearTimeout(t); wake.delete(check); res(); } };
+	// Bun.sleep, not setTimeout: the test clock never fires a timer by itself, so a wait that runs out would hang until the test's own 90 s limit and name no step.
+	void Bun.sleep(ms).then(() => { if (wake.delete(check)) rej(new Error(`timeout: ${cond} sent=${JSON.stringify(sent)}`)); });
+	const check = () => { if (cond()) { wake.delete(check); res(); } };
 	wake.add(check);
 	check();
 });
