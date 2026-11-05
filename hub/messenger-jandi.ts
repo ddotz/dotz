@@ -10,7 +10,7 @@ import { createSelfChat, normalizeSelfChat, type SelfChat, type SelfChatConfig }
 import { type Adapter, type AdapterStatus, type DeliverResult, type DesiredRoom, type MessengerCtx, type OutMsg, type Settings, type SettingsPut, SettingsError, type TestResult } from "./messenger.ts";
 import { sameRoom } from "./messenger-rooms.ts";
 import { postClass } from "./notify-route.ts";
-import { parseTone, plainChoice, stripHandoff, TONE_EMOJI } from "./tone.ts";
+import { parkedTone, parseTone, plainChoice, stripHandoff, TONE_EMOJI } from "./tone.ts";
 
 // JANDI (on-prem, LAN) as a built-in messenger. Inbound: a JANDI Team Outgoing Webhook POSTs to /jandi/<room id> on our own listener
 // (no Tailscale needed). Outbound: each room has a JANDI Incoming Webhook URL. JANDI cannot edit a posted message, so progress edits are skipped.
@@ -126,7 +126,7 @@ function jandiText(msg: OutMsg): string | undefined {
 	const shown = dropForLine(kept);
 	if (shown === kept && forLines(kept)) return undefined;
 	const { tone, text } = parseTone(shown);
-	if (tone === "run" && !msg.options?.length) return undefined;
+	if (parkedTone(tone) && !msg.options?.length) return undefined;
 	let body = plainChoice(text).trim();
 	if (!body) return msg.files?.length ? FILES_IN_WEB : undefined;
 	if (NO_REPLY.test(body)) return undefined;

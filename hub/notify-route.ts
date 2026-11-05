@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { cfg, DATA_DIR, writeAtomic } from "./config.ts";
 import { isWebLane, postKind, postSettings } from "./discord-post.ts";
 import { CLASS_PUSH_DEFAULTS, NOTICE_CLASSES, type NoticeClass } from "./notice-class.ts";
-import { splitTone } from "./tone.ts";
+import { parkedTone, splitTone } from "./tone.ts";
 
 export type RouteInput = {
 	/** The notice class. Without it the class of the post (`target` + `text`) decides; a post with no class (progress, the work log) is "log". */
@@ -36,7 +36,7 @@ export type Route = { web: boolean; push: boolean; messengers: Record<string, bo
 export function postClass(target: string, text: string, extra: Record<string, unknown> = {}): NoticeClass | undefined {
 	const { tone } = splitTone(text);
 	const t = target === "web:alert" ? "alert" : target === "web:worklog" ? "worklog" : target;
-	if (tone === "run" || t === "worklog" || typeof extra.update_key === "string") return undefined;
+	if (parkedTone(tone) || t === "worklog" || typeof extra.update_key === "string") return undefined;
 	if (tone === "ask") return "ask";
 	if (t === "alert") return "alert";
 	if (t.startsWith("lane:")) return tone === "done" || tone === "fail" || extra.lane_report === true ? "result" : undefined;

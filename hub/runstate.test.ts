@@ -1,6 +1,6 @@
 // The run state derivation (hub/runstate.ts): every kind and every reason an idle conversation can give for leaving todos open.
 import { expect, test } from "bun:test";
-import { failureText, lastTurnEnd, lastTurnFailed, mailConversation, openTodos, promisesWork, runIntent, runState, STALL_MS, stallNudge, workConversationRuns } from "./runstate.ts";
+import { failureText, lastTurnActed, lastTurnEnd, lastTurnFailed, mailConversation, openTodos, promisesWork, runIntent, runState, STALL_MS, stallNudge, stallStep, waitsForOwner, workConversationRuns, type RunState, type StallMemo } from "./runstate.ts";
 
 const now = Date.UTC(2026, 9, 26, 3, 0);
 const iso = (msAgo: number) => new Date(now - msAgo).toISOString();
@@ -233,4 +233,47 @@ test("a session whose only worker is queued says so, and a running worker outran
 	expect(runState({ ...base, work: [q] })).toMatchObject({ kind: "waiting", reason: "work", work: "q", queued: true });
 	const both = runState({ ...base, work: [q, r] });
 	expect([both.work, both.queued]).toEqual(["r", undefined]);
+});
+
+// lane company-xhigh 2026-11-05: these reports rested with an empty plan, and the last was told to go on.
+test("a session waiting for the owner with no open work is waiting, and gets no nudge", () => {
+	for (const lastAnswer of ["[wait] 형 메시지만 남았어요", "[run] 준비됐고 형 메시지를 기다리는 중이에요.", "[run] 남은 일은 형 메시지가 와야 시작할 수 있어서 할 일 목록은 비워 뒀고, 메모 파일은 형이 끝내자고 할 때 쓸게요.", "[run] 지금 할 수 있는 일은 끝났고, 다음은 형 메시지가 와야 시작해요.", "오너 답을 기다릴게요."]) {
+		const r = runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer });
+		expect(r).toEqual({ kind: "waiting", reason: "standby", since: iso(1_500_000) });
+		expect(stallStep(r, now, { at: [] }).nudge).toBe(false);
+	}
+	expect(waitsForOwner("[done] 형 메시지를 기다려요")).toBe(false);
+	expect(waitsForOwner("[run] 빌드가 끝나길 기다리는 중이에요.")).toBe(false);
+});
+
+test("a promise still stands beside a wait, and open plan tasks win over a wait", () => {
+	const promised = runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer: "[run] 형 메시지를 기다리는 동안 로그를 볼게요." });
+	expect(promised).toMatchObject({ kind: "idle", reason: "unfinished" });
+	expect(stallStep(promised, now, { at: [] }).nudge).toBe(true);
+	expect(stallStep(runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer: "[wait] 형 메시지 기다려요", todos: todos(2) }), now, { at: [] }).nudge).toBe(true);
+	expect(stallStep(runState({ ...base, lastTurnEnd: iso(1_500_000), lastAnswer: "바로 고칠게요." }), now, { at: [] }).nudge).toBe(true);
+});
+
+test("a nudged turn with nothing new ends the nudging, until a turn of real work or a later spell", () => {
+	const rest = (msAgo: number, over: object = {}): RunState => runState({ ...base, lastTurnEnd: iso(msAgo), lastAnswer: "곧 할게요.", acted: false, ...over });
+	const first = stallStep(rest(500_000), now, { at: [] });
+	expect(first.nudge).toBe(true);
+	const working = stallStep({ kind: "working" }, now, first.memo);
+	expect(working).toEqual({ nudge: false, memo: first.memo });
+	// The nudged turn said words only: no second nudge, this sweep or any later one.
+	const spent = stallStep(rest(400_000), now, first.memo);
+	expect(spent.nudge).toBe(false);
+	expect(stallStep(rest(400_000), now + 7_200_000, spent.memo).nudge).toBe(false);
+	// A later turn (the owner wrote) that promises and rests is a new spell.
+	expect(stallStep(rest(300_000), now, spent.memo).nudge).toBe(true);
+	// The nudged turn did work: it may be told again, and a plan task closed counts the same.
+	expect(stallStep(rest(400_000, { acted: true }), now, first.memo).nudge).toBe(true);
+	const planned: StallMemo = { at: [now - 1_000], since: iso(500_000), answering: true, todos: 3 };
+	expect(stallStep(rest(400_000, { todos: todos(2) }), now, planned).nudge).toBe(true);
+	expect(stallStep(rest(400_000, { todos: todos(3) }), now, planned).nudge).toBe(false);
+});
+
+test("lastTurnActed reads the newest turn only", () => {
+	expect(lastTurnActed([{ type: "turn_start" }, { type: "tool_call" }, { type: "text" }])).toBe(true);
+	expect(lastTurnActed([{ type: "tool_call" }, { type: "turn_end" }, { type: "turn_start" }, { type: "text" }])).toBe(false);
 });

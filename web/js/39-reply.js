@@ -25,7 +25,7 @@ function rpStart(n) {
   const e = RP.src.get(n);
   if (!e) return;
   // tone: the status tag of the quoted bot message, shown in the bar like in the message (not sent; the server only gets id, author, content)
-  RP.cur = { t: target, id: n.dataset.rid, author: rpOwnerKind(e) ? "" : ($(".mn", n)?.textContent || botName), content: rpText(e).slice(0, RP_QUOTE), tone: rpOwnerKind(e) ? "" : parseTone(noHandoff(String(e.text ?? ""))).tone };
+  RP.cur = { t: target, id: n.dataset.rid, author: rpOwnerKind(e) ? "" : ($(".mn", n)?.textContent || botName), content: rpText(e).slice(0, RP_QUOTE), tone: rpOwnerKind(e) || parkedTone(parseTone(noHandoff(String(e.text ?? ""))).tone) ? "" : parseTone(noHandoff(String(e.text ?? ""))).tone };
   rpPaint();
   const ta = $("#text");
   if (!ta.disabled) ta.focus({ preventScroll: true });

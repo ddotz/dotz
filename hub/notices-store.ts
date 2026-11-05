@@ -7,7 +7,7 @@ import { askDefaults } from "./ask-options.ts";
 import { alertMatter, quietAlert } from "./alert-gate.ts";
 import { eventTarget, type HubEvent } from "./events.ts";
 import { classOfNotice } from "./notice-class.ts";
-import { isSilent } from "./tone.ts";
+import { isSilent, parkedTone } from "./tone.ts";
 import { describeOutput, humanLabel, isIssue, itemRefOf, LOGIN_BLOCKED_KO, PROVIDER_BACK_KO, scheduleLine, watchLine } from "./watchtext.ts";
 import { resolveItem, type WatchItem } from "./watchitem.ts";
 import type { Decision, DecisionOpt, Notice, NoticeKind, NoticeTone } from "./notices-types.ts";
@@ -295,7 +295,7 @@ function fromAnswer(e: HubEvent): void {
 	const { tone, text } = clean(e.text);
 	if (!text || /^(?:ok|-)$/i.test(text) || isSilent(String(e.text ?? "")) || (lane && LOUD.has(tone))) return;
 	// A [run] report only edits the session's progress line on Discord, unless it answers the owner (hub/lanewire.ts `running`).
-	if (e.kind === "lane_report" && tone === "run" && e.answering !== true) return;
+	if (e.kind === "lane_report" && parkedTone(tone) && e.answering !== true) return;
 	const conv = eventTarget(e) ?? "main";
 	if (isViewing(conv)) return;
 	const preview = text.replace(/\s+/g, " ");

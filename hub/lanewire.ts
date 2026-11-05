@@ -10,7 +10,7 @@ import { orch, steer as steerOrchestrator } from "./orchestrator.ts";
 import { convs } from "./convsessions.ts";
 import { createLaneRelay } from "./lanerelay.ts";
 import { inOrder, localize, noteHandoffLeak } from "./outlang.ts";
-import { parseTone, stripHandoff } from "./tone.ts";
+import { parkedTone, parseTone, stripHandoff } from "./tone.ts";
 import { send, deliver, out } from "./outbound.ts";
 import { dropForLine, forLines } from "./forline.ts";
 import { clipKeepingAsk, normalizeAsk, plainBareAsk } from "./ask-normalize.ts";
@@ -30,9 +30,9 @@ export function installLaneHandlers(): void {
 		else if (how !== "held") log(`lane ${lane.name} report ${how === "disk" ? "kept on disk (routine progress)" : how === "owner" ? "kept on disk (answer to the owner in the lane channel)" : "dropped (same as the last one)"}`);
 		if (how === "held") log(`lane ${lane.name} report held for the orchestrator's next idle point`);
 		const channel = `lane:${lane.name}`;
-		// A [run] report is progress: it edits the lane's one progress message. Results, questions and failures are real messages.
+		// A [run] or [wait] report is progress: it edits the lane's one progress message (on the web the newest one takes the older one's place, chatPush). Results, questions and failures are real messages.
 		// A [run] text that is the answer to an owner message is that answer, not progress to edit away.
-		const running = parseTone(text).tone === "run" && !answering;
+		const running = parkedTone(parseTone(text).tone) && !answering;
 		// The owner-visible part is localized once, before it is recorded: the web chat, the bell, push and Discord all show that
 		// text (the web showed a lane's English report while only Discord got the rewrite). The orchestrator and report.md keep
 		// the raw report, and the "For <bot>:" line stays as written (notices.ts reads it).
@@ -80,7 +80,7 @@ export function installLaneHandlers(): void {
 		const real = tone === "ask" || tone === "fail" || tone === "done";
 		void inOrder(channel, async () => {
 			const local = await localize(clipKeepingAsk(dropForLine(text), real ? 1800 : 900), channel, "lane");
-			const shown = real || tone === "run" ? local : `[run] ${local}`;
+			const shown = real || parkedTone(tone) ? local : `[run] ${local}`;
 			emit("outbox", { ts: now(), kind: "out", source: channel, target: channel, text: shown, ...(real ? {} : { update_key: "progress" }) });
 			return shown;
 		})
