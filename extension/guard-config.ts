@@ -44,6 +44,8 @@ export interface GuardConfig {
 	harness_tools: boolean;
 	// Cumulative tokens (input + cache read/write + output) an OmO task worker may use before its tools are disabled (task-cap.ts); 0 = no cap.
 	task_token_cap: number;
+	// Context tokens past which an OmO task worker compacts itself at a turn end between tool steps, once per crossing (task-cap.ts); 0 = never.
+	task_compact_tokens: number;
 }
 
 // A subagent's compactions: the first steers it to wrap up, the second disables its tools (guard.ts).
@@ -69,6 +71,7 @@ export const GUARD_DEFAULTS: GuardConfig = {
 	defer_to_installed: true,
 	harness_tools: true,
 	task_token_cap: 12_000_000,
+	task_compact_tokens: 150_000,
 };
 
 export const dataDir = () => process.env.DOTZ_DIR ?? join(homedir(), ".dotz");
@@ -100,6 +103,7 @@ export function guardConfigFrom(raw: unknown): GuardConfig {
 		defer_to_installed: flag(g.defer_to_installed, D.defer_to_installed),
 		harness_tools: flag(g.harness_tools, D.harness_tools),
 		task_token_cap: g.task_token_cap === 0 ? 0 : positive(g.task_token_cap, D.task_token_cap),
+		task_compact_tokens: g.task_compact_tokens === 0 ? 0 : positive(g.task_compact_tokens, D.task_compact_tokens),
 	};
 }
 
