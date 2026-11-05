@@ -149,7 +149,9 @@ const convBox = new Map<string, string>();
 export const CONV_MAX = 40_000;
 export const trackBox = (r: { source: string; id: string; mbox?: string; dir?: string }): void => {
 	if (r.dir === "out") return;
-	convBox.set(convKey(r.source, r.id), r.mbox ?? "");
+	const key = convKey(r.source, r.id);
+	convBox.delete(key);   // a Map keeps first insertion order: this makes the cap below forget the conversation quiet the longest
+	convBox.set(key, r.mbox ?? "");
 	if (convBox.size > CONV_MAX) convBox.delete(convBox.keys().next().value as string);
 };
 export const boxOfConv = (source: string, id: string): string | undefined => convBox.get(convKey(source, id));
