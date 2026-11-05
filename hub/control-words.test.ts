@@ -6,6 +6,7 @@ import { previewOf } from "./conversations.ts";
 import { buildPayloads } from "./discord-format.ts";
 import { activityItems, type HubEvent, onEmit } from "./events.ts";
 import { out } from "./outbound.ts";
+import { noticeKo } from "./notice-ko.ts";
 import { ownerText, shownEvent } from "./owner-text.ts";
 import { classify } from "./push.ts";
 import { isLater, laterParts, stripLater, stripMarkers } from "./tone.ts";
@@ -101,4 +102,17 @@ test("an id in brackets leaves Discord and a push, a code span keeps it", () => 
 	expect(buildPayloads("워커(st_01a1a07f)가 돌아요. `(st_01a1a07f)`")[0]!.content).toBe("워커가 돌아요. `(st_01a1a07f)`");
 	const push = classify({ kind: "lane_report", lane: "a", source: "lane:a", ts: "2026-11-05T01:00:00Z", text: "[done] 워커(st_01a1a07f)가 <#1564971207911284746>에 올렸어요." } as HubEvent);
 	expect(push?.body).toBe("워커가 채널에 올렸어요.");
+});
+
+test("a bare worker id and a code word stay readable on Discord, a push and a preview", () => {
+	const text = "[done] 답글 연결 수정. st_01a1a6ca가 멈춰 있으면 task_send로 이어 가요.";
+	const read = "답글 연결 수정. 워커가 멈춰 있으면 task_send로 이어 가요.";
+	expect(buildPayloads(text)[0]!.content).toBe(`✅ ${read}`);
+	expect(classify({ kind: "lane_report", lane: "a", source: "lane:a", ts: "2026-11-05T01:00:00Z", text } as HubEvent)?.body).toBe(read);
+	expect(previewOf(text)).toContain(read);
+});
+
+test("notice words keep an id and a half-named code word whole, and still name what they know", () => {
+	expect(noticeKo("`st_01a1a6ca`는 `task_send`로, `dotz_send`는 lane_watch로 가요.")).toBe("`st_01a1a6ca`는 `task_send`로, 보내기는 세션 모니터링으로 가요.");
+	expect(buildPayloads("로그는 /tmp/st_01a1a6ca/run.log, 번호 `st_01a1a6ca`예요.")[0]!.content).toBe("로그는 /tmp/st_01a1a6ca/run.log, 번호 `st_01a1a6ca`예요.");
 });

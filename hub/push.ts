@@ -81,7 +81,7 @@ const origin = (endpoint: string) => {
 let subject = () => "mailto:dotz@example.com";
 
 const plain = (t: string, max = 180) => {
-	const s = plainTable(noticeKo(stripMarkers(previewSource(t.split("\n").some(l => DECISION_HEAD.test(l)) ? decisionText(t, 0) || t : t)), { lane: laneNameKo }).replace(/```[\s\S]*?```/g, " ")).replace(/^\s*-#\s+/gm, "").replace(/[*_`#>|]/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\s+/g, " ").trim();
+	const s = plainTable(noticeKo(stripMarkers(previewSource(t.split("\n").some(l => DECISION_HEAD.test(l)) ? decisionText(t, 0) || t : t)), { lane: laneNameKo }).replace(/```[\s\S]*?```/g, " ")).replace(/^\s*-#\s+/gm, "").replace(/[*`#>|]|(?<![A-Za-z0-9])_|_(?![A-Za-z0-9])/g, "").replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\s+/g, " ").trim();
 	return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 };
 

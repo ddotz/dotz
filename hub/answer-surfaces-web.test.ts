@@ -118,6 +118,21 @@ test("an id in brackets goes and a channel tag never shows raw on any surface", 
 	expect(await drawn(SURFACES["main chat"]!(text), 'a[href="#chat/ch:1564971207911284746"]')).toBe(1);
 });
 
+test("a bare worker id reads as a word with its particle and a code word stays whole on every surface", async () => {
+	const text = "끊겼던 st_01a1ab97을 st_01a1a6f2, st_01a1a6f3 패치로 확인했어요. task_send로 이어 가요.";
+	for (const [surface, draw] of Object.entries(SURFACES)) {
+		const seen = await shown(draw(text));
+		expect(`${surface}: ${seen}`).toContain("끊겼던 워커를 워커 2개 패치로 확인했어요. task_send로 이어 가요.");
+		expect(`${surface}: ${seen}`).not.toMatch(/st_/);
+	}
+});
+
+test("a bare channel id in a chat line links to the channel, a quoted command keeps it", async () => {
+	const line = "대기 중: conversation session ch:1564971207911284746, 명령 DOTZ_APPROVAL_CONV=ch:1564971207911284747 끝";
+	expect(await drawn(SURFACES["main chat"]!(line), 'a[href="#chat/ch:1564971207911284746"]')).toBe(1);
+	expect(await shown(SURFACES["main chat"]!(line))).toContain("DOTZ_APPROVAL_CONV=ch:1564971207911284747");
+});
+
 test("a code span that talks about a control word is kept on every surface", async () => {
 	const text = "그 턴은 `[later]`로 끝나고 `[done]`은 이모지로 나가요.";
 	for (const [surface, draw] of Object.entries(SURFACES)) {

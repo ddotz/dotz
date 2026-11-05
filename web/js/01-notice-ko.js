@@ -157,12 +157,14 @@ function cronKo(expr) {
   return "정해진 시각마다";
 }
 const CRON = /^\s*(?:[\d*/,-]+\s+){4}[\d*/,A-Za-z-]+\s*$/;
-const words = (s) => {
+const nameParts = (s) => {
   const parts = s.split(/[_\s]+/).filter(Boolean);
   if (parts.length > 1 && parts[0].toLowerCase() === "dotz")
     parts.shift();
-  return parts.map((p) => NAMES[p.toLowerCase()] ?? p).join(" ");
+  return parts;
 };
+const words = (s) => nameParts(s).map((p) => NAMES[p.toLowerCase()] ?? p).join(" ");
+const named = (s) => nameParts(s).every((p) => NAMES[p.toLowerCase()]);
 const sshKo = (s) => s.replace(/\bssh\s+(?:-\S+\s+(?:\d+\s+|\S+\s+(?=\S+@|[\w.-]+\s*$))?)*(?:[\w.-]+@)?([A-Za-z0-9][\w.-]*)(?:\s+(?:'[^']*'|"[^"]*"))?/g, (_m, host) => `${host}에 원격 접속`);
 function commandKo(s) {
   const t = s.trim().replace(/^\$\s+/, "");
@@ -196,7 +198,14 @@ const ISO = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\
 const STATUS = /[ \t]*\[(?:run|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|결정|실패|경고|차단|부분|나중|오류)\](?!\()/gi;
 const SLASH_RE = new RegExp(`(?<![\\w/:.])\\/(${Object.keys(SLASH).join("|")})(?![\\w/가-힣-])`, "g");
 const TARGET = /\b(lane|ch|th|mail|settings|auth|msg|dec)((?::[\w.@~%-]+)+)/g;
-const dropIdNote = (s) => s.replace(/`[^`\n]+`|[ \t]*\((?:st_[0-9a-f]{8}|(?:ch|th):\d{10,})\)/g, (m) => m[0] === "`" ? m : "");
+const dropIdNote = (s) => josa(s.replace(/`[^`\n]+`|[ \t]*\((?:st_[0-9a-f]{8}|(?:ch|th):\d{10,})\)|(?<![\w/.:=-])st_[0-9a-f]{8}(?:,[ \t]*st_[0-9a-f]{8})*(?![\w-]|\.\w)/g, (m) => {
+  if (m[0] === "`")
+    return m;
+  if (m.trimStart()[0] === "(")
+    return "";
+  const n = m.split(",").length;
+  return w(n > 1 ? `워커 ${n}개` : "워커");
+}));
 function target(kind, rest, o) {
   const id = rest.slice(1);
   if (kind === "lane")
@@ -236,7 +245,7 @@ function spanRaw(code, o) {
     return words(t.split("__").at(-1));
   if (!/\s/.test(t) && t.includes("/") && isPath(t))
     return pathKo(t);
-  if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(t))
+  if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(t) && named(t))
     return words(t);
   if (new RegExp(TARGET.source).test(t) && !/\s/.test(t))
     return t.replace(TARGET, (_m, k, r) => target(k, r, o));
@@ -259,7 +268,7 @@ function prose(s, o) {
   t = t.replace(/\bgit\s+(push|pull|commit|merge|rebase|status|diff|log|checkout|reset)\b/g, (_m, sub) => w(SUB[sub]));
   t = t.replace(/\bmcp__\w+?__(\w+)/g, (_m, n) => w(words(n)));
   t = t.replace(TARGET, (_m, k, r) => w(target(k, r, o)));
-  t = t.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b(?!\.[A-Za-z0-9])/g, (m) => w(words(m)));
+  t = t.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b(?!\.[A-Za-z0-9])/g, (m) => named(m) ? w(words(m)) : m);
   t = t.replace(LONG_ID, "");
   t = t.split(/(`[^`\n]*`)/).map((s, i) => i % 2 ? s : s.replace(STATUS, "")).join("");
   t = t.replace(/^\[([^\]\n]{2,30})\][ \t]+(?=\S)/gm, (m, label) => /^[\d\sx]+$/i.test(label) ? m : `${label}: `);

@@ -83,10 +83,14 @@ export function splitTone(text: string): { tone?: Tone; head: string; rest: stri
 	return m ? { tone: TAGS[m[1]!.toLowerCase()], head: m[0], rest: text.slice(m[0].length) } : { head: "", rest: text };
 }
 
-// The claim word in front of a lane's worklog entry (laneops.ts claimPrefix). Discord reads it as written; notices, previews and
-// pushes drop it, and the web draws it as a tag (web/js/02-basic-markdown.js parseTone, keep in step).
+// The claim word in front of a lane's worklog entry (laneops.ts claimPrefix). Notices, previews and pushes drop it, the web draws it
+// as a tag (web/js/02-basic-markdown.js parseTone, keep in step), and Discord, which has no tags, moves it to a subtext line.
 const CLAIM_LEAD = /^(?:(?:확인됨|보고됨|verified|reported) · )+/;
 export const dropClaim = (text: string): string => text.replace(CLAIM_LEAD, "");
+export const claimWord = (text: string): string => {
+	const lead = CLAIM_LEAD.exec(text)?.[0];
+	return lead ? (/^(?:확인됨|verified)/.test(lead) ? "확인됨" : "보고만 함") : "";
+};
 
 // `text` is what may be shown: the status marker and every other machine marker are gone.
 export function parseTone(text: string): { tone?: Tone; text: string } {
