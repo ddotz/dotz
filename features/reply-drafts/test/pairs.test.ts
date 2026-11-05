@@ -7,11 +7,11 @@ import { buildPrompt, type ReplyItem, type ReplyStyle } from "../../../hub/reply
 import { buildDraft, mailStyleOf, reviseDraft, sendDraft } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { habitsOf } from "../../../hub/comments/past.ts";
-import { addPair, loadPairs, savePairs, styleWithExamples } from "../lib/pairs.ts";
-import { learnFirst, MAIL_TONE_VERSION } from "../lib/persona.ts";
-import { listProfiles, loadStyle, paths, toneFile } from "../lib/settings.ts";
+import { addPair, loadPairs, MAX_PAIRS, savePairs, styleWithExamples } from "../lib/pairs.ts";
+import { learnFirst, learnSiteSent, MAIL_TONE_VERSION } from "../lib/persona.ts";
+import { identityOf, listProfiles, loadStyle, paths, toneFile } from "../lib/settings.ts";
 import { getDraft, listDrafts as storedDrafts } from "../lib/store.ts";
-import { learnTone, ownText, sentMail, type Runner } from "../lib/tone.ts";
+import { learnTone, ownText, sentMail, sentPairs, type PluginSent, type Runner, type SentMail } from "../lib/tone.ts";
 import { enable, fakeModel, j, mailFixture, pick, setupEnv } from "./helpers.ts";
 
 const env = setupEnv();
@@ -255,6 +255,14 @@ test("a pair keeps the address it answered; a re-read upgrades an old pair, and 
 	expect(styleWithExamples(style, "mail", mailItem.text, "lee@example.org").examples!.some(e => e.same)).toBe(false);
 });
 
+test("the sent read stops once it holds enough pairs", async () => {
+	const reads: string[] = [];
+	const inner = fakeZele({ t1: { text: threadOf(ASK, OWN) }, t2: { text: threadOf(ASK, "다른 답장이에요.") } });
+	const run: Runner = async argv => (argv[2] === "read" && reads.push(argv[3]!), inner(argv));
+	expect((await sentMail(run, 10, [], undefined, 1)).pairs).toHaveLength(1);
+	expect(reads).toHaveLength(1);
+});
+
 test("a named account is passed on the list and the reads; without one each read uses the listed mail's own account", async () => {
 	const argvs: string[][] = [];
 	const inner = fakeZele({ t1: { text: threadOf(ASK, OWN) } });
@@ -307,7 +315,7 @@ test("a failing account keeps the pairs read from the accounts before it, and th
 		const inner = fakeZele({ t1: { text: threadOf(ASK, OWN) } });
 		await refreshPairs(async argv => (argv.includes("other@example.net") ? { code: 1, stdout: "", stderr: "no" } : inner(argv)), now);
 		expect(loadPairs("mail")).toHaveLength(1);
-		expect(JSON.parse(readFileSync(paths.learned(), "utf8"))["pairs-mail@1"]).toBeUndefined();
+		expect(JSON.parse(readFileSync(paths.learned(), "utf8"))["pairs-mail@2"]).toBeUndefined();
 	} finally {
 		which.mockRestore();
 	}
@@ -326,7 +334,7 @@ test("pairs are refreshed without a model: the first read is wide, later ones on
 		await refreshPairs(run, now);
 		await refreshPairs(run, new Date(now.getTime() + 3_600_000));
 		await refreshPairs(run, new Date(now.getTime() + 25 * 3_600_000));
-		expect(limits).toEqual(["500", "40"]);
+		expect(limits).toEqual(["3000", "40"]);
 		expect(loadPairs("mail")).toMatchObject([{ reply: "네 가능해요.", from: "kim@example.com" }]);
 	} finally {
 		which.mockRestore();
@@ -394,5 +402,104 @@ test("a revision records only its lasting lesson: the model's line, nothing for 
 		expect(step.ok).toBe(true);
 		expect(loadStyle({ app: "mail" }).corrections.map(c => c.replace(/^\d{4}-\d\d-\d\d: /, ""))).toEqual(expected);
 		expect(getDraft(step.id!)!.changes).toEqual(["더 짧게"]);
+	}
+});
+
+// A sent folder a mail site or a plugin hands over (tone.ts sentPairs, persona.ts learnSiteSent, refreshPairs).
+const sent = (n: number, over: Partial<SentMail> = {}): SentMail => ({ to: `rcpt${n}@example.test`, subject: `Re: q${n}`, at: day + n, body: `사이트답${n} 가능해요.\n> 질문${n} 인가요?`, ...over });
+
+test("sentPairs keeps a real reply with its quote and skips forwards, empty quotes, automated receivers, bot drafts and long texts", () => {
+	const items: SentMail[] = [
+		sent(1),
+		sent(2, { subject: "Fwd: q2" }),
+		sent(3, { body: "---------- Forwarded message ---------\n사이트답3\n> 질문3" }),
+		sent(4, { body: "사이트답4 가능해요." }),
+		sent(5, { to: "noreply@example.test" }),
+		sent(6, { body: "봇이 쓴 초안입니다 6.\n> 질문6" }),
+		sent(7, { body: `${"가".repeat(1600)}\n> 질문7` }),
+		sent(8, { body: "사이트답8\n-----원본 메일-----\n질문8" }),
+		sent(9, { received: "넘겨받은 질문", body: "사이트답9" }),
+	];
+	expect(sentPairs(items, "work", ["봇이 쓴 초안입니다"]).map(p => [p.reply, p.received, p.from, p.source])).toEqual([
+		["사이트답1 가능해요.", "질문1 인가요?", "rcpt1@example.test", "work"],
+		["사이트답8", "질문8", "rcpt8@example.test", "work"],
+		["사이트답9", "넘겨받은 질문", "rcpt9@example.test", "work"],
+	]);
+});
+
+test("the newest MAX_PAIRS are kept per source, so a big folder of one source never pushes out another", () => {
+	const many = Array.from({ length: MAX_PAIRS + 5 }, (_, i) => ({ received: `q${i}`, reply: `r${i}`, at: day + 100 + i }));
+	savePairs("mail", [...many, { received: "qs", reply: "rs", at: day, source: "work" }]);
+	const all = loadPairs("mail");
+	expect(all.filter(p => !p.source)).toHaveLength(MAX_PAIRS);
+	expect(all.filter(p => p.source === "work")).toHaveLength(1);
+});
+
+test("a draft sees the pairs of its own source only: a site's draft its site's, a zele draft none of the site's", async () => {
+	seedPairs(3);
+	savePairs("mail", [...loadPairs("mail"), { received: "일정 문의드립니다. 시간을 알려 주세요.", reply: "사이트답 목요일 가능해요", at: day + 50, source: "work" }]);
+	const draft = j({ action: "draft", reason: "r", to: "kim@example.com", subject: "Re: 일정 문의", body: "네", questions: [] });
+	const promptOf = async (source: string, over: Partial<ReplyItem> = {}) => {
+		const model = fakeModel([draft]);
+		await buildDraft({ ...mailItem, ...over }, { ...meta, source }, { call: model.call });
+		return model.calls[0]!.user;
+	};
+	const site = await promptOf("work");
+	expect(site).toContain("사이트답 목요일");
+	expect(site).not.toContain("화요일 괜찮아요");
+	const zele = await promptOf("zele");
+	expect(zele).toContain("화요일 괜찮아요");
+	expect(zele).not.toContain("사이트답");
+	expect(await promptOf("zele", { profile: "mail-2" })).not.toContain("<<<RECEIVED");
+	expect(await promptOf("work", { profile: "mail-work" })).toContain("사이트답 목요일");
+});
+
+test("learning a site's sent folder saves its pairs and its own profile once, never rewrites a profile that has an identity, and keeps the pairs when the model fails", async () => {
+	const items = [1, 2, 3].map(n => sent(n));
+	const model = fakeModel([j({ identity: ["해요체로 짧게 답한다"], templates: [] })]);
+	await learnSiteSent("work", items, "mail-work", model.call);
+	expect(loadPairs("mail").filter(p => p.source === "work")).toHaveLength(3);
+	expect(identityOf({ app: "mail-work" })).toEqual(["해요체로 짧게 답한다"]);
+	const file = readFileSync(toneFile({ app: "mail-work" }), "utf8");
+	const again = fakeModel([j({ identity: ["다른 말투"], templates: [] })]);
+	await learnSiteSent("work", items, "mail-work", again.call);
+	expect(again.calls).toHaveLength(0);
+	expect(readFileSync(toneFile({ app: "mail-work" }), "utf8")).toBe(file);
+	expect(typeof (await learnSiteSent("down", [sent(4)], "mail-down", async () => { throw new Error("model down"); }))).toBe("string");
+	expect(loadPairs("mail").filter(p => p.source === "down")).toHaveLength(1);
+	expect(identityOf({ app: "mail-down" })).toEqual([]);
+	expect(JSON.parse(readFileSync(paths.learned(), "utf8"))["pairs-down@1"]).toBeTruthy();
+});
+
+test("each source is refreshed on its own: a failing zele read stops neither a mail site nor a plugin; the first read is wide, later ones 40", async () => {
+	const which = spyOn(Bun, "which").mockReturnValue("/bin/zele");
+	const logged = spyOn(console, "error").mockImplementation(() => {});
+	try {
+		mkdirSync(join(env.dir, "custom", "webmail", "work"), { recursive: true });
+		writeFileSync(join(env.dir, "custom", "webmail", "work", "spec.json"), JSON.stringify({ sent: { path: "/x", listPath: "m", fields: { id: "id" } } }));
+		writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify({ mail: { app: "mail", filter: { account: "me@example.net" } } }));
+		const { refreshPairs } = await import("../lib/tone.ts");
+		const limits: string[] = [];
+		const run: Runner = async argv => {
+			if (argv[0] === "zele") return { code: 1, stdout: "", stderr: "zele down" };
+			limits.push(argv[argv.indexOf("--limit") + 1]!);
+			return { code: 0, stdout: `${[1, 2].map(n => JSON.stringify(sent(n))).join("\n")}\nnot a mail line\n`, stderr: "" };
+		};
+		const asked: number[] = [];
+		const plugins: PluginSent = async limit => {
+			asked.push(typeof limit === "number" ? limit : limit("p1"));
+			return [{ plugin: "p1", source: "shop", items: [sent(3)] }];
+		};
+		const at = new Date("2026-10-05T00:00:00Z");
+		await refreshPairs(run, at, plugins);
+		expect(loadPairs("mail").map(p => p.source).sort()).toEqual(["shop", "work", "work"]);
+		expect(limits).toEqual(["3000"]);
+		expect(logged).toHaveBeenCalledTimes(1);
+		await refreshPairs(run, new Date(at.getTime() + 25 * 3_600_000), plugins);
+		expect(limits).toEqual(["3000", "40"]);
+		expect(asked).toEqual([3000, 40]);
+	} finally {
+		which.mockRestore();
+		logged.mockRestore();
 	}
 });

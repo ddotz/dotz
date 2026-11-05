@@ -104,6 +104,20 @@ mailActions(source) { return source === "work" ? ["read", "unread", "trash"] : u
 - `"trash"` runs only when the owner deletes a mail in the web app with the app's 삭제하면 원본도 삭제 switch on (off by default, shown disabled for a source that does not list it). Move only the mail `id` names to the mailbox's trash, never a permanent delete; a mail stays in dotz unless the hook returns true.
 - The other way, post what the mailbox shows on every poll: `POST /api/mail/state` items may carry `read`/`unread`, `archived`, `starred` and `trashed` besides `replied`. Only a change from the last report is applied, so a poll that has not seen a dotz action yet never undoes it; `trashed` removes the mail from dotz.
 
+## Feeding the sent folder to the reply examples
+
+A reply draft is written from the owner's real past replies. zele's sent mail and a webmail-no-api site's sent folder (its onboarding captures it) are read by dotz itself; a mail plugin whose mailbox dotz cannot read says what the owner sent with `sentMail`:
+
+```ts
+async sentMail({ limit }) { // newest first, at most `limit`
+	return { source: "work", items: [{ to: "kim@example.com", subject: "Re: 일정", at: 1760000000000, body: "네 가능해요.\n\n> 다음 주 일정 가능한가요?", received: "다음 주 일정 가능한가요?" }] };
+},
+```
+
+- `source` = the `source` the plugin posts mails with: only drafts of that source see these examples (zele's and other sources' stay apart). `at` is epoch ms, `to` the receivers; `received` is the message the mail answered and may be left out when `body` quotes it.
+- dotz drops forwards, mail to automated senders, long texts and the owner's unedited bot drafts. The first call asks for the newest 3000 (`limit`), later ones once a day for the newest 40. A throw is logged and skips only this plugin. Read-only: nothing is sent or posted.
+- A site CLI of webmail-no-api does the same through its `sent` command (`mail.ts <site> sent [--limit n]`, one JSON line `{id,to,subject,at,body}` per mail).
+
 ## Registering a mail reader as a mail instance
 
 A mail reader of one install (a company webmail with no API, read by a plugin) is another instance of the 메일 app: it gets its own row in 모니터링, settings panel, name, off/제거/삭제, its own watches and only its own source's mails, with the same reply-draft and summary options. Once the plugin posts mails with a fixed `source`, register the instance once (same auth as `POST /api/mail`):

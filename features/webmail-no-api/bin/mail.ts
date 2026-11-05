@@ -5,7 +5,7 @@ import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { endpointUrl, type SiteSpec } from "../lib/spec.ts";
 import { headers } from "../lib/session.ts";
-import { list, read, search, makeDraft, type Draft } from "../lib/adapter.ts";
+import { list, read, search, sentList, SENT_LIMIT, makeDraft, type Draft } from "../lib/adapter.ts";
 import { loadConfig, loadSpec, liveCtx, paths, writeJson, type Ctx, type SiteConfig } from "../lib/config.ts";
 import { cookieHeaderFromAside } from "../lib/cookies.ts";
 import { draftFile, uploadFile, type UploadedFile } from "../lib/upload.ts";
@@ -46,6 +46,22 @@ export async function runRead(ctx: Ctx, spec: SiteSpec, id: string): Promise<{ l
 export async function runSearch(ctx: Ctx, spec: SiteSpec, q: string): Promise<{ lines: string[]; code: number }> {
 	const mails = await search(ctx, spec, q);
 	return { lines: mails.slice(0, 30).map((m) => `${m.id}\t${m.time}\t${m.from}\t${m.subject}`), code: 0 };
+}
+
+// epoch seconds or ms as a string, else a date text; 0 when the site gives none
+const atOf = (time: string): number => (/^\d{10}$/.test(time) ? Number(time) * 1000 : /^\d{13}$/.test(time) ? Number(time) : Date.parse(time) || 0);
+const SENT_READERS = 4;
+
+// The sent folder as one JSON line per mail `{id,to,subject,at,body}` (reply-drafts SentMail), newest first. A mail that cannot be read is left out. Read-only.
+export async function runSent(ctx: Ctx, spec: SiteSpec, limit = SENT_LIMIT): Promise<{ lines: string[]; code: number }> {
+	if (!spec.sent) return { lines: ["이 사이트 스펙에는 보낸편지함(sent)이 없어요"], code: 1 };
+	const mails = await sentList(ctx, spec, limit);
+	const lines: string[] = [];
+	for (let i = 0; i < mails.length; i += SENT_READERS) {
+		const got = await Promise.all(mails.slice(i, i + SENT_READERS).map((m) => read(ctx, spec, m.id).then((d) => ({ m, d }), (e: Error) => (ctx.log(`sent ${m.id}: ${e.message}`), undefined))));
+		for (const g of got) if (g) lines.push(JSON.stringify({ id: g.m.id, to: g.m.to ?? "", subject: g.m.subject, at: atOf(g.m.time), body: g.d.body }));
+	}
+	return { lines, code: 0 };
 }
 
 // `files` are paths; the draft keeps path, name and size only (the bytes are read from disk at send).
@@ -111,6 +127,11 @@ async function main(argv: string[]): Promise<number> {
 		case "search":
 			out = await runSearch(ctx, spec, rest.join(" "));
 			break;
+		case "sent": {
+			const n = Number(rest[rest.indexOf("--limit") + 1]);
+			out = await runSent(ctx, spec, rest.includes("--limit") && Number.isInteger(n) && n > 0 ? n : SENT_LIMIT).catch((e: Error) => ({ lines: [`보낸편지함을 못 읽었어요: ${e.message}`], code: 1 }));
+			break;
+		}
 		case "draft": {
 			const files: string[] = [];
 			const args = rest.filter((a, i) => {
@@ -135,7 +156,7 @@ async function main(argv: string[]): Promise<number> {
 			out = await runSend(ctx, spec, site, rest[0], now);
 			break;
 		default:
-			out = { lines: ["사용법: list | read <id> | search <말> | draft <받는이> <제목> <본문...> [--file <경로>]... | approve | send <초안id>"], code: 1 };
+			out = { lines: ["사용법: list | read <id> | search <말> | sent [--limit n] | draft <받는이> <제목> <본문...> [--file <경로>]... | approve | send <초안id>"], code: 1 };
 	}
 	for (const l of out.lines) console.log(l);
 	return out.code;

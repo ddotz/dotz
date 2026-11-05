@@ -52,6 +52,8 @@ function fakeIo(srv: ReturnType<typeof startFakeServer>, gw: { down?: boolean; c
 		loginState: async () => "in",
 		login: async () => "in",
 		record: () => recordFrom(srv),
+		recordSent: async () => [],
+		learnSent: async () => undefined,
 		gateway: async (method, path, body) => {
 			if (gw.down) throw new Error("게이트웨이에 연결하지 못했어요 (게이트웨이가 켜져 있나요?)");
 			gw.calls.push({ path, body });

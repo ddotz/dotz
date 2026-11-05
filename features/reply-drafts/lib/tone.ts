@@ -1,26 +1,30 @@
 // Learning the user's tone: the user's own sent texts -> sentences of 3-120 characters, quoted history and signatures dropped,
 // deduped, at most 40 -> the "## 예시" section of ONE tone profile (settings.ts: install, app or app+room). The sources are injected
 // (a command runner for the sent-mail reader, a file, ready-made texts such as one messenger room's own lines), so tests never touch mail.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { addressesOf, AUTOMATED } from "../../../hub/reply-draft.ts";
 import { SIDE_MAX } from "../../../hub/comments/past.ts";
 import { readAppsFile } from "../../../hub/integrations.ts";
-import { loadPairs, normText, savePairs, type Pair } from "./pairs.ts";
+import { loadPlugins, pluginsLoaded, pluginSentMail } from "../../../hub/plugins.ts";
+import { MAX_PAIRS, loadPairs, normText, savePairs, type Pair } from "./pairs.ts";
 import { dataDir, markLearned, readLearned, writeExamples, type ToneKey } from "./settings.ts";
 import { listDrafts } from "./store.ts";
 
 export type RunResult = { code: number; stdout: string; stderr: string };
-export type Runner = (argv: string[]) => Promise<RunResult>;
+export type Runner = (argv: string[], ms?: number) => Promise<RunResult>;
+
+/** One mail of the owner's sent folder as a mail site or a plugin hands it over (webmail-no-api mail.ts `sent`, a plugin's `sentMail`). `to`: the receivers; `at`: epoch ms; `received`: the message it answered, when the source knows it (else read from the quote in `body`). */
+export type SentMail = { to?: string; subject?: string; at: number; body: string; received?: string };
 
 export const MAX_EXAMPLES = 40;
 export const SWEEP_LIMIT = 200; // sent texts the first sweep reads for the identity (persona.ts)
 const MIN_LEN = 3;
 const MAX_LEN = 120;
 
-export const realRunner: Runner = async argv => {
+export const realRunner: Runner = async (argv, ms = 90_000) => {
 	const p = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
-	const t = setTimeout(() => p.kill("SIGKILL"), 90_000);
+	const t = setTimeout(() => p.kill("SIGKILL"), ms);
 	const [stdout, stderr] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
 	const code = await p.exited;
 	clearTimeout(t);
@@ -31,6 +35,7 @@ const HEADER = /^\s*(from|to|cc|bcc|subject|date|id|account|labels|thread|snippe
 const HISTORY = [
 	/^\s*on .{3,200}wrote:\s*$/i,
 	/^\s*-{2,}\s*(original|forwarded)\b/i,
+	/^\s*-{2,}\s*(원본\s*(메일|메시지)|전달된\s*메일)/,
 	/^\s*_{5,}\s*$/,
 	/^\s*(보낸\s*사람|From)\s*:/i,
 	/^\s*.{0,80}님이.{0,80}작성/,
@@ -92,7 +97,7 @@ const FWD_SUBJECT = /^\s*(fwd?|전달)\s*:/i;
 // An own message that answers the nearest earlier message of someone else, sent to that sender, is also kept as a reply pair; forwards,
 // automated senders, long texts and bot drafts sent unchanged (`ownerDrafts`: their bodies) are not pairs.
 // `account`: one zele account (a mail app names it); without one zele lists every account, and each read uses the listed mail's own account.
-export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: string[] = [], account?: string): Promise<{ texts: string[]; pairs: Pair[] }> {
+export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: string[] = [], account?: string, enough = Infinity): Promise<{ texts: string[]; pairs: Pair[] }> {
 	const listed = await run(["zele", "mail", "list", "--folder", "sent", "--limit", String(limit), ...(account ? ["--account", account] : [])]);
 	if (listed.code !== 0) throw new Error(`보낸 메일 목록을 못 읽었어요: ${(listed.stderr || listed.stdout).trim().slice(0, 160)}`);
 	const items = ((Bun.YAML.parse(listed.stdout) as { items?: Record<string, unknown>[] } | null)?.items ?? []).slice(0, limit);
@@ -105,6 +110,7 @@ export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: s
 	const pairs: Pair[] = [];
 	const now = Date.now();
 	for (const [n, m] of items.entries()) {
+		if (pairs.length >= enough) break;
 		const id = String(m.id ?? "");
 		const me = addressesOf(String(m.account ?? sole ?? ""))[0];
 		const readAs = account ?? (String(m.account ?? "").trim() || undefined);
@@ -137,8 +143,23 @@ export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: s
 	return { texts, pairs };
 }
 
+// Reply pairs from a sent folder a site or plugin read: the same rules as sentMail (no forwards, automated receivers, long texts or bot drafts), the answered
+// message from `received` or the quote in the body. `source` tags each pair, so a draft of that source is the only one that sees them.
+export function sentPairs(items: SentMail[], source: string, ownerDrafts: string[] = []): Pair[] {
+	const bots = ownerDrafts.map(normText).filter(Boolean);
+	const out: Pair[] = [];
+	for (const m of items) {
+		const mine = ownText(m.body).trim();
+		const received = (m.received ?? quotedText(m.body)).trim();
+		const to = addressesOf(m.to)[0];
+		if (!mine || !received || mine.length > SIDE_MAX || FORWARD.test(m.body) || FORWARD.test(mine) || FWD_SUBJECT.test(m.subject ?? "") || (to && AUTOMATED.test(to.split("@")[0]!)) || bots.some(b => normText(mine).startsWith(b))) continue;
+		out.push({ received, reply: mine, at: m.at, source, ...(to ? { from: to } : {}) });
+	}
+	return out;
+}
+
 // Bodies of the drafts the user sent without changing a word: not his own wording, so they make no pair.
-const botDrafts = (): string[] => listDrafts().filter(d => d.status === "sent" && !d.changes.length).map(d => d.body);
+export const botDrafts = (): string[] => listDrafts().filter(d => d.status === "sent" && !d.changes.length).map(d => d.body);
 
 // The sent mail is also kept as reply pairs for the prompt's examples (lib/pairs.ts), merged with the ones already stored.
 async function learnSentMail(run: Runner, accounts: (string | undefined)[]): Promise<string[]> {
@@ -183,27 +204,95 @@ export async function installSentMail(run: Runner): Promise<string[]> {
 	return accounts.length ? learnSentMail(run, accounts) : [];
 }
 
-export const PAIR_SWEEP = 500;
+export const PAIR_SWEEP = 3000; // newest first: past this, closer examples stop paying off for the read it costs
 const PAIR_DAILY = 40;
 const DAY = 24 * 60 * 60 * 1000;
-// Keeps the past reply pairs (and who each answered) current, with no model call and no profile change: the first read takes PAIR_SWEEP threads per
-// account, later ones at most once a day the newest PAIR_DAILY. The day mark is set before reading, so a failure waits a day.
-export async function refreshPairs(run: Runner, now = new Date()): Promise<void> {
-	const accounts = sentAccounts(installConfig());
-	if (!accounts.length) return;
-	const learned = readLearned();
-	if (now.getTime() - Date.parse(learned["pairs-mail~day"] ?? "") < DAY) return;
-	markLearned(["pairs-mail~day"], now);
-	const first = !learned["pairs-mail@1"];
+const WEBMAIL_MAIL = join(import.meta.dir, "..", "..", "webmail-no-api", "bin", "mail.ts");
+const SITE_RUN_MS = 30 * 60_000;
+
+// The mail sites of this install whose spec has a sent folder (webmail-no-api onboarding captures it).
+export function sentSites(): string[] {
+	const dir = join(dataDir(), "custom", "webmail");
 	try {
-		const bots = botDrafts();
-		for (const account of accounts) {
-			const { pairs } = await sentMail(run, first ? PAIR_SWEEP : PAIR_DAILY, bots, account);
-			if (pairs.length) savePairs("mail", [...loadPairs("mail"), ...pairs]);
+		return readdirSync(dir).filter(site => {
+			try {
+				return !!JSON.parse(readFileSync(join(dir, site, "spec.json"), "utf8")).sent;
+			} catch {
+				return false;
+			}
+		}).sort();
+	} catch {
+		return [];
+	}
+}
+
+// The JSON lines of `mail.ts <site> sent`; any other line (a log, a message) is not a mail.
+export const parseSent = (stdout: string): SentMail[] =>
+	stdout.split("\n").filter(l => l.startsWith("{")).flatMap(l => {
+		try {
+			const m = JSON.parse(l);
+			return typeof m?.body === "string" && typeof m.at === "number" ? [m as SentMail] : [];
+		} catch {
+			return [];
 		}
-		if (first) markLearned(["pairs-mail@1"], now);
-	} catch (e) {
-		console.error(`reply draft: past mail pairs not refreshed: ${(e as Error).message}`);
+	});
+
+async function siteSent(run: Runner, site: string, limit: number): Promise<SentMail[]> {
+	const r = await run(["bun", WEBMAIL_MAIL, site, "sent", "--limit", String(limit)], SITE_RUN_MS);
+	const items = parseSent(r.stdout);
+	if (!items.length && r.code !== 0) throw new Error(`${site} sent folder not read: ${(r.stderr || r.stdout).trim().slice(0, 160)}`);
+	return items;
+}
+
+export type PluginSent = (limit: number | ((plugin: string) => number)) => ReturnType<typeof pluginSentMail>;
+const pluginsSent: PluginSent = async limit => {
+	if (!pluginsLoaded()) await loadPlugins(dataDir());
+	return pluginSentMail(limit);
+};
+
+// Keeps the past reply pairs (and who each answered) current, with no model call and no profile change. Each source reads on its own: zele (the accounts
+// of sentAccounts), every mail site with a sent folder, every plugin with `sentMail`. The first read of a source takes the newest PAIR_SWEEP (zele stops at MAX_PAIRS pairs), later ones
+// at most once a day the newest PAIR_DAILY. The day mark is set before reading, so a failure waits a day; one source failing never stops the others.
+export async function refreshPairs(run: Runner, now = new Date(), plugins: PluginSent = pluginsSent): Promise<void> {
+	const learned = readLearned();
+	const due = (id: string): boolean => {
+		if (now.getTime() - Date.parse(learned[`pairs-${id}~day`] ?? "") < DAY) return false;
+		markLearned([`pairs-${id}~day`], now);
+		return true;
+	};
+	const keep = (pairs: Pair[]): void => {
+		if (pairs.length) savePairs("mail", [...loadPairs("mail"), ...pairs]);
+	};
+	const bots = botDrafts();
+	const jobs: [string, () => Promise<void>][] = [];
+	const accounts = sentAccounts(installConfig());
+	if (accounts.length && due("mail")) {
+		jobs.push(["mail", async () => {
+			const first = !learned["pairs-mail@2"];
+			for (const account of accounts) keep((await sentMail(run, first ? PAIR_SWEEP : PAIR_DAILY, bots, account, MAX_PAIRS)).pairs);
+			if (first) markLearned(["pairs-mail@2"], now);
+		}]);
+	}
+	for (const site of sentSites()) {
+		if (!due(site)) continue;
+		jobs.push([site, async () => {
+			const first = !learned[`pairs-${site}@1`];
+			keep(sentPairs(await siteSent(run, site, first ? PAIR_SWEEP : PAIR_DAILY), site, bots));
+			if (first) markLearned([`pairs-${site}@1`], now);
+		}]);
+	}
+	jobs.push(["plugins", async () => {
+		for (const p of await plugins(name => (due(`plugin-${name}`) ? (learned[`pairs-plugin-${name}@1`] ? PAIR_DAILY : PAIR_SWEEP) : 0))) {
+			keep(sentPairs(p.items, p.source, bots));
+			markLearned([`pairs-plugin-${p.plugin}@1`], now);
+		}
+	}]);
+	for (const [id, job] of jobs) {
+		try {
+			await job();
+		} catch (e) {
+			console.error(`reply draft: past ${id} pairs not refreshed: ${(e as Error).message}`);
+		}
 	}
 }
 

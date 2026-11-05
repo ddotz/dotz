@@ -2,11 +2,15 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSpec, paths, type Ctx } from "../lib/config.ts";
-import { loadOnboard, runOnboard, type Io, type LoginResult } from "../lib/onboard.ts";
+import { loadSpec, paths, writeJson, type Ctx } from "../lib/config.ts";
+import { loadOnboard, NO_SENT, runOnboard, type Io, type LoginResult } from "../lib/onboard.ts";
+import { runSent } from "../bin/mail.ts";
+import { loadPairs } from "../../reply-drafts/lib/pairs.ts";
+import { learnSiteSent } from "../../reply-drafts/lib/persona.ts";
+import { identityOf } from "../../reply-drafts/lib/settings.ts";
 import { cardFile, personalFeatureFile } from "../bin/setup.ts";
 import type { CapturedRequest } from "../lib/capture.ts";
-import { startFakeServer, mkMail } from "./fakeserver.ts";
+import { startFakeServer, mkMail, mkSent } from "./fakeserver.ts";
 
 const prevDir = process.env.DOTZ_DIR;
 beforeAll(() => {
@@ -27,10 +31,25 @@ async function recordFrom(srv: ReturnType<typeof startFakeServer>, withRead: boo
 	return out;
 }
 
-type Calls = { loginState: number; login: boolean[]; record: number; gateway: { method: string; path: string; body: any }[]; progress: string[] };
+// The calls the site's client makes when its sent folder is opened.
+async function recordSentFrom(srv: ReturnType<typeof startFakeServer>): Promise<CapturedRequest[]> {
+	const path = "/mail/mboxes/200/mails?page=1";
+	const r = await fetch(srv.origin + path, { headers: { cookie: "session=good" } });
+	return [{ url: srv.origin + path, method: "GET", status: r.status, contentType: r.headers.get("content-type") ?? "", responseBody: await r.text() }];
+}
+
+const identityJson = "```json\n" + JSON.stringify({ identity: ["해요체로 짧게 답한다"], templates: [] }) + "\n```";
+
+// The live learnSent with the same reading code (mail.ts sent) and a fake model.
+const learnWith = (io: Io, call: (system: string, user: string) => Promise<string>) => async (site: string) => {
+	const { lines } = await runSent(io.ctx, loadSpec(site)!);
+	return learnSiteSent(site, lines.map((l) => JSON.parse(l)), `mail-${site}`, call);
+};
+
+type Calls = { loginState: number; login: boolean[]; record: number; recordSent: number; learnSent: number; gateway: { method: string; path: string; body: any }[]; progress: string[] };
 
 function fakeIo(srv: ReturnType<typeof startFakeServer>, over: Partial<Io> & { loginResults?: LoginResult[]; recordings?: (() => Promise<CapturedRequest[]>)[] } = {}): { io: Io; calls: Calls } {
-	const calls: Calls = { loginState: 0, login: [], record: 0, gateway: [], progress: [] };
+	const calls: Calls = { loginState: 0, login: [], record: 0, recordSent: 0, learnSent: 0, gateway: [], progress: [] };
 	const ctx: Ctx = { fetch: (...a) => fetch(...a), cookieHeader: srv.cookieHeader, now: () => 1_700_000_000_000, sleep: async () => {}, log: () => {} };
 	const io: Io = {
 		ctx,
@@ -48,6 +67,14 @@ function fakeIo(srv: ReturnType<typeof startFakeServer>, over: Partial<Io> & { l
 			calls.record++;
 			const next = over.recordings?.shift();
 			return next ? next() : recordFrom(srv, true);
+		},
+		recordSent: async () => {
+			calls.recordSent++;
+			return [];
+		},
+		learnSent: async () => {
+			calls.learnSent++;
+			return undefined;
 		},
 		gateway: async (method, path, body) => {
 			calls.gateway.push({ method, path, body });
@@ -100,6 +127,67 @@ test("one request runs to the end: one batched ask, an interruption, resume, rea
 		expect(readFileSync(personalFeatureFile(), "utf8")).toMatch(/^enabled: true$/m);
 		expect(existsSync(cardFile(site))).toBe(true);
 		expect(calls.progress.at(-1)).not.toContain("⏳");
+	} finally {
+		srv.close();
+	}
+});
+
+test("onboarding captures the sent folder, reads every page and learns its pairs and an own profile", async () => {
+	const srv = startFakeServer([mkMail(2), mkMail(1)]);
+	try {
+		srv.setSent([11, 12, 13, 14, 15].map(mkSent), { pageSize: 2 });
+		const { io, calls } = fakeIo(srv, { recordSent: async () => recordSentFrom(srv) });
+		io.learnSent = learnWith(io, async () => identityJson);
+		const r = await runOnboard(io, { site: "sentsite", url: `${srv.origin}/mail/` });
+		expect(r.status).toBe("done");
+		expect(r.state.summary).not.toContain(NO_SENT);
+		const sent = loadSpec("sentsite")?.sent;
+		expect(sent).toMatchObject({ path: "/mail/mboxes/{mailbox}/mails", mailbox: "200", params: { page: "{page}" }, listPath: "mails", fields: { id: "id", to: "to" } });
+		// the recording, the one-list test, then the walk: 5 mails over pages of 2, the page after the short one is empty
+		expect(srv.sentPages).toEqual([1, 1, 1, 2, 3, 4]);
+		const pairs = loadPairs("mail").filter((p) => p.source === "sentsite");
+		expect(pairs.map((p) => [p.reply, p.received, p.from]).sort()).toEqual([11, 12, 13, 14, 15].map((n) => [`reply ${n} 가능해요.`, `question ${n}인가요?`, `rcpt${n}@example.test`]));
+		expect(identityOf({ app: "mail-sentsite" })).toEqual(["해요체로 짧게 답한다"]);
+		expect(calls.gateway.filter((c) => c.method === "POST" && c.path !== "/api/watches" && c.path !== "/api/apps")).toEqual([]);
+	} finally {
+		srv.close();
+	}
+});
+
+test("a site with no sent link finishes onboarding with the note and learns nothing", async () => {
+	const srv = startFakeServer([mkMail(2), mkMail(1)]);
+	try {
+		const { io, calls } = fakeIo(srv);
+		const r = await runOnboard(io, { site: "nosent", url: `${srv.origin}/mail/` });
+		expect(r.status).toBe("done");
+		expect(r.state.done).toContain("sent");
+		expect(r.state.summary).toContain(NO_SENT);
+		expect(loadSpec("nosent")?.sent).toBeUndefined();
+		expect(calls.learnSent).toBe(0);
+	} finally {
+		srv.close();
+	}
+});
+
+test("an already connected site runs only the sent step when the command is run again", async () => {
+	const srv = startFakeServer([mkMail(2), mkMail(1)]);
+	try {
+		srv.setSent([mkSent(21)]);
+		const { io, calls } = fakeIo(srv);
+		await runOnboard(io, { site: "older", url: `${srv.origin}/mail/` });
+		const file = paths.onboard("older");
+		const state = JSON.parse(readFileSync(file, "utf8"));
+		writeJson(file, { ...state, done: state.done.filter((d: string) => d !== "sent") });
+		const before = { login: calls.loginState, record: calls.record, watches: calls.gateway.length };
+		io.recordSent = async () => {
+			calls.recordSent++;
+			return recordSentFrom(srv);
+		};
+		const r = await runOnboard(io, { site: "older" });
+		expect(r.status).toBe("done");
+		expect([calls.loginState, calls.record, calls.gateway.length]).toEqual([before.login, before.record, before.watches]);
+		expect(calls.learnSent).toBe(1);
+		expect(loadSpec("older")?.sent?.mailbox).toBe("200");
 	} finally {
 		srv.close();
 	}
