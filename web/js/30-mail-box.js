@@ -236,6 +236,7 @@ function mbPaintBar() {
   const btns = acts.map(([a, label, ic]) => mbBtn(label, ic, () => (a === "trash" ? mbTrash(keys) : mbRun(keys, a)).then(() => mbPaintBar()), { k: `mail-${a}`, short: MB_SHORT[a] }));
   // 답장 안 함 sits before 삭제, and only while a chosen mail owes a reply; a mixed selection says how many it reaches.
   if (owed) btns.splice(3, 0, mbBtn("답장 안 함", "replyoff", () => mbFyi(keys).then(() => mbPaintBar()), { k: "mail-fyi", cls: "mbox-fyi", count: owed < keys.length ? owed : 0 }));
+  if (keys.some(mxCanMove)) btns.unshift(mbBtn("메일함 옮기기", "folder", ev => mxMoveOpen(ev.currentTarget, keys), { k: "mail-move-sel", short: "옮기기" }));
   bar.classList.add("on");
   clear(bar).append(chk, el("span", { class: "mbox-n", "aria-live": "polite", text: `${keys.length}개 선택` }), ...btns,
     el("button", { class: "mbox-b mbox-x", type: "button", "aria-label": "선택 해제", title: "선택 해제", onclick: () => { MBOX.sel.clear(); document.querySelectorAll("#mon-tl .mr.mr-sel").forEach(r => { r.classList.remove("mr-sel"); const c = r.querySelector(".mr-chk"); if (c) c.checked = false; }); mbPaintBar(); } }, icon("close")));
@@ -252,7 +253,7 @@ function mbDrawn(scope) {
 // an open decision, the opened original, the summary line and the time text. Only rows drawn by the last repaint are kept (mbRowsPrune).
 function mbRow(t, label) {
   const m = MAILS.get(t), last = CONV.get(t), when = (m ? mailRowWhen : rcWhen)(last ? last.ts : m && m.at);
-  const sig = JSON.stringify([label, m, last, ts(t).unread, MBOX.sel.has(t), ntHasDecision(t), MR_OG.has(t), m ? mailBrief(m, t) : "", when]), hit = MBOX.rows.get(t);
+  const sig = JSON.stringify([label, m, last, ts(t).unread, MBOX.sel.has(t), ntHasDecision(t), MR_OG.has(t), m ? mailBrief(m, t) : "", when, mxSig(t)]), hit = MBOX.rows.get(t);
   MBOX.pass.add(t);
   if (hit && hit.sig === sig) return hit.node;
   const node = monConvNode(t, label);
