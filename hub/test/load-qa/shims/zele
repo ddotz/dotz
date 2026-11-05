@@ -26,7 +26,10 @@ const flagged = (name: string): boolean => Boolean(process.env.LOAD_QA_RUN) && e
 const isSend = group === "mail" && WRITE.has(verb ?? "");
 const failing = isSend && flagged("fail-mail");
 begin("zele", argv, isSend ? (failing ? { would_send: false, failed: true } : { would_send: true }) : {});
-if (isSend) for (let i = 0; i < 1200 && flagged("hang-mail"); i++) await Bun.sleep(100);
+// hang-mail-<account> holds the sends of that one account (--account), so another account's send can be checked beside it.
+const account = opt("--account");
+const hanging = (): boolean => flagged("hang-mail") || (Boolean(account) && flagged(`hang-mail-${account}`));
+if (isSend) for (let i = 0; i < 1200 && hanging(); i++) await Bun.sleep(100);
 if (isSend && flagged("fail-mail")) {
 	console.error("load-qa: fake mail failure (fail-mail)");
 	process.exit(1);

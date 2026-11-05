@@ -10,6 +10,7 @@
   "scripts": {
     "gateway": "bun hub/main.ts",
     "setup": "bun setup.ts",
-    "test": "bun test --parallel=4"
+    "test": "bun test --parallel=4",
+    "load-qa": "bun hub/test/load-qa/run.ts --scale large --out /tmp/load-qa/run"
   }
 }
