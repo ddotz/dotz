@@ -105,8 +105,8 @@ function syncLiveTags() {
     if (p && p !== root && !p.textContent.trim()) p.remove();
     toneLead(root, tone);
   }
-  // The gateway's live status of a turn that has ended.
-  if (runStateOf() && liveTone() !== "run") for (const t of tl.querySelectorAll(".lv .st-tag")) t.remove();
+  // The gateway's live status of a turn that has ended, and a session's last progress note, also of a session that is gone.
+  if ((runStateOf() || (S && isLaneT(target))) && liveTone() !== "run") for (const t of tl.querySelectorAll(".lv .st-tag")) t.remove();
 }
 function paintRunState() {
   syncLiveTags();

@@ -161,7 +161,7 @@ async function ntReach(t, at) {
 // The element that carries the highlight: the card or bubble inside the message when there is one (so the glow follows its own rounded shape),
 // else the message itself, drawn as a bar + tint ("nt-bar"). ~2s soft fade (a brief still tint under reduced motion: 09-notices.css).
 function ntHlHost(node) {
-  const card = node.matches(".um") ? node.querySelector(":scope > .ub") : node.matches(".bm") ? node.querySelector(":scope > .ccard") : node.matches(".cmdbox") ? node.querySelector(":scope > .ccard") : node.matches(".sn, .pn, .ccard") ? node : null;
+  const card = node.matches(".um") ? node.querySelector(":scope > .ub") : node.matches(".bm") ? node.querySelector(":scope > .ccard") : node.matches(".cmdbox") ? node.querySelector(":scope > .ccard") : node.matches(".sn, .ccard") ? node : null;
   if (!card && node.matches(".bm.rep, .bm.alert")) return { host: node, bar: false };   // these carry their own rounded card background
   return { host: card || node, bar: !card };
 }

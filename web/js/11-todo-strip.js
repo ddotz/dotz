@@ -308,23 +308,18 @@ function msgNode(e) {
     }
     default: {
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
-      // A session's report or answer is a full message; only the gateway's progress line (update_key) stays one compact note.
+      // A session's report or answer is a full message; its mid-turn progress line (update_key), new or stored, reads as the live status.
       const isNote = e.kind === "out" && !!e.update_key && !e.live && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:")));
       const { tone: mark, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text), true) : { tone: "", text };
       // A stored [run] or [wait] draws no tag of its own: syncLiveTags gives the newest report the state of now.
-      const parked = parkedTone(mark) && !e.live, tone = parked ? "" : mark;
+      const parked = parkedTone(mark) && !e.live && !isNote, tone = parked ? "" : isNote ? mark || "run" : mark;
       // The marker is a status tag in front of the first line (02-basic-markdown.js toneLead), for the orchestrator and a session alike.
-      const body = parsed;
-      if (isNote) {
-        const n = el("div", { class: "pn", tabindex: "0", role: "button" }, el("span", { class: "mt", text: hm }), el("span", { class: "pt", text: body.replace(/^진행 중:\s*/, "") }));
-        n.onclick = () => { if (!getSelection().toString()) n.classList.toggle("open"); };
-        return n;
-      }
+      const body = isNote ? parsed.replace(/^진행 중:\s*/, "") : parsed;
       const name = e.kind === "lane_report" ? String(e.lane ?? "") : fromLane ? targetName(e.source) : e.target === "alert" ? "알림" : e.target === "worklog" ? "작업내역" : isRestart(e) ? "게이트웨이" : e.relay ? targetName(e.target) : botName;
       if (e.kind === "out" && e.card && Array.isArray(e.card.facts)) return el("div", { class: "bm" }, el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null), rpQuote(e), cardNode(e.card));
       const card = e.kind === "lane_report" && !isLaneT(target) ? " rep" : e.target === "alert" ? " alert" : "";
       const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null);
-      if (e.live) return el("div", { class: `bm${card}` }, head, liveNode(body, tone));
+      if (e.live || isNote) return el("div", { class: `bm${card}` }, head, liveNode(body, tone, isNote));
       const liveAttr = parked ? { "data-live-tone": "1", "data-live-of": fromLane ? e.source : e.kind === "lane_report" ? `lane:${e.lane}` : "" } : {};
       const pc0 = !e.relay && (e.kind === "out" || e.kind === "lane_report") ? parseChoices(parsed) : null, pc = pc0 && choiceAsks(e, tone, pc0) ? pc0 : null;
       // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, and a tap on it opens
@@ -351,12 +346,14 @@ function msgNode(e) {
     }
   }
 }
-// The gateway's status while a turn runs (hub/livestatus.ts, e.live): the head line, one row per fact, then recent steps muted.
-// Every row stays on one line, so a long step never wraps on a phone and an update keeps the note's shape.
-function liveNode(body, tone) {
-  const [lead, ...rows] = body.split("\n");
-  return toneLead(el("div", { class: "lv" }, el("p", { text: lead }), ...rows.map(l =>
+// The gateway's status while a turn runs (hub/livestatus.ts, e.live) and a session's progress note: the head line, one row per fact, then recent steps muted.
+// Every row stays on one line, so a long step never wraps on a phone and an update keeps the note's shape. A note is free text, so a tap (`tap`) opens what was cut.
+function liveNode(body, tone, tap) {
+  const [lead, ...rows] = body.split("\n").filter(l => l.trim());
+  const lv = toneLead(el("div", { class: "lv", ...(tap ? { tabindex: "0", role: "button" } : {}) }, el("p", { text: lead }), ...rows.map(l =>
     /^- /.test(l) ? el("div", { class: "lv-s", text: l.slice(2) }) : l.endsWith(":") ? el("div", { class: "lv-s lv-h", text: l.slice(0, -1) }) : el("div", { class: "lv-r", text: l }))), tone);
+  if (tap) lv.onclick = () => { if (!getSelection().toString()) lv.classList.toggle("open"); };
+  return lv;
 }
 const WORK = new Set(["tool_call", "tool_result", "thinking", "text", "error"]);
 function newGroup(a) {
@@ -419,7 +416,8 @@ function chatPush(en, bulk) {
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
       rpMark(n, e);
       if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { CV.divNode = tl.appendChild(convDivider()); CS.who = ""; }
-      const who = n.matches(".um, .bm") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
+      // A status goes when the answer comes, so it never carries a run of speaker heads: the answer keeps its own.
+      const who = n.matches(".um, .bm") && !n.querySelector(":scope > .lv") ? speakerOf(e) : "", t = Date.parse(e.ts) || 0;
       if (who && who === CS.who && t - CS.whoT < 600000 && !(e.target === "alert" && n.querySelector(":scope > .mt > .tag"))) n.classList.add("cont");   // an 알림 row that carries a status tag keeps its head, so the tag shows
       CS.who = who; CS.whoT = t;
       if (convIncoming(e)) fresh = n;
