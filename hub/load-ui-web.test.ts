@@ -20,6 +20,7 @@ const hub = fakeHub({
 	api: (req, url) => {
 		const p = url.pathname;
 		if (p === "/api/notices") return json({ items: notices, unread: 0 });
+		if (p === "/api/approvals") return json({ groups: [], results: [], triageMin: 3 });
 		if (p === "/api/integrations") return json({ items: [app("mail", "메일", { icon: "mail", conv: ["mail:"] }), app("youtube", "유튜브"), app("instagram", "인스타그램")], available: [] });
 		if (p === "/api/conversations") return json({ items: mails.map(m => ({ target: `mail:${m.key}`, unread: 0, read: null, mail: { subject: m.subject, from: "Kim <kim@example.com>", source: "company", at: m.at, summary: "요약", read: true, archived: false, starred: false, can: CAN }, last: { ts: m.at, text: m.subject, from: "bot" } })) });
 		return undefined;
@@ -84,6 +85,17 @@ describe("답장 대기 with a big backlog", () => {
 		await waitFor(v, `document.querySelector("#mon-tl .rq-qm .meta") && document.querySelector("#mon-tl .rq-qm .meta").textContent.includes("보내는 중 3건")`);
 		await run(v, `for (const ref of ["a", "b", "c"]) trLive({ ref, state: "sent", at: Date.now() }); rqSoon()`);
 		await waitFor(v, `!document.querySelector("#mon-tl .rq-qm .meta").textContent.includes("보내는 중")`);
+	});
+
+	test("a send the gateway no longer holds stops counting on the next load, so a lost frame leaves no 보내는 중 behind", async () => {
+		notices = [];
+		const v = await boot();
+		await run(v, `TR.results = { gone: { ref: "gone", state: "sending", at: Date.now() }, done: { ref: "done", state: "sent", at: Date.now() } }`);
+		await seed(v, comments(1));
+		await waitFor(v, `document.querySelector("#mon-tl .rq-qm .meta") && document.querySelector("#mon-tl .rq-qm .meta").textContent.includes("보내는 중 1건")`);
+		await run(v, `trLoad()`);
+		await waitFor(v, `!document.querySelector("#mon-tl .rq-qm .meta").textContent.includes("보내는 중")`);
+		expect(await ev<string>(v, `TR.results.done.state`)).toBe("sent");
 	});
 
 	test("a live update keeps the row nodes and the reader's place", async () => {
