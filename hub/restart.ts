@@ -31,7 +31,7 @@ export function createRestartGate(deps: RestartGateDeps) {
 		if (Date.now() < earliest() || busy.length || deps.collecting()) {
 			if (busy.length && !noticed && Date.now() - since! >= deps.noticeAfterMs) {
 				noticed = true;
-				deps.notice(`게이트웨이 재시작을 기다리는 중이에요: ${busy.join(", ")} 작업이 끝나면 다시 시작해요 (강제로 끊지 않아요).`);
+				deps.notice(`게이트웨이 재시작을 기다리는 중이에요: 돌고 있는 작업 ${busy.length}개가 끝나면 다시 시작해요 (강제로 끊지 않아요).`);
 			}
 			// Past the notice time the wait only grows: say so in the log every period, and keep waiting (only the owner's "restart now" cuts it).
 			if (busy.length && Date.now() - since! >= deps.noticeAfterMs && Date.now() - lastStill >= deps.noticeAfterMs) {
