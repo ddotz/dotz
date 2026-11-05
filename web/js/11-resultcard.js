@@ -66,15 +66,15 @@ function rcRowsNode(text) {
     const m = /^[-*\u2022]\s+(.*)$/.exec(l), k = m && RC_KEY.exec(m[1]);
     if (!m) {   // a short line without punctuation is a small heading over the rows below it (오늘 일정 / 메일 / 감시)
       if (l.length > 16 || /[.!?,]/.test(l)) return null;
-      out.push(el("div", { class: "rc-sh", text: l }));
+      out.push(`<div class="rc-sh">${esc(l)}</div>`);
       continue;
     }
     if (!k) return null;
-    const chg = NW_CHANGE.exec(k[2]), [what, detail] = chg ? [chg[1].trim(), null] : k[2].split(/\s+·\s+/, 2);
-    out.push(el("div", { class: "rc-row" }, el("span", { class: "rc-k", text: k[1] }), el("span", { class: "rc-w" }, el("b", { text: what }), chg ? el("span", { class: "rc-d nw-chg" }, el("s", { text: chg[2] }), " → ", el("em", { text: chg[3] })) : detail ? el("span", { class: "rc-d", text: detail }) : null)));
+    const chg = NW_CHANGE.exec(k[2]);
+    out.push(chg ? rcRowHtml(k[1], chg[1].trim(), `<span class="rc-d nw-chg"><s>${esc(chg[2])}</s> → <em>${esc(chg[3])}</em></span>`) : rcRowHtml(k[1], k[2]));
     n++;
   }
-  return n >= 2 ? el("div", { class: "rc-rows" }, ...out) : null;
+  return n >= 2 ? el("div", { class: "rc-rows", safeHtml: out.join("") }) : null;
 }
 // opts: src (sender or source), at (ISO), title (else the first line of text), text (summary; may carry the original), raw (else taken
 // from text), tag (a node), actions (buttons), rawNode (raw -> node: draws the original itself, as a mail does), rawOpen (the original starts open).
@@ -100,20 +100,23 @@ function resultCard(opts) {
   return el("div", { class: "bm alert rc" }, ...kids);
 }
 
-// A bot answer shaped like a morning briefing (a run of "- 10:00 title" lines, then counts and a mail line) is drawn as rows and chips;
-// the words are the bot's own and stay as written. Any other text returns null and is drawn as plain markdown.
-const HCB_ROW = /^\s*[-*\u2022]\s*(\d{1,2}:\d{2})\s+(\S.*?)\s*$/;
+// A morning briefing (a run of "- 10:00 title" lines with counts and a mail line) is drawn as the time rows plus chips; the words are the
+// bot's own and stay as written. Any other text returns null: its time lists are drawn by the markdown renderer (timeRowsHtml).
+const HCB_ROW = /^\s*[-*\u2022]\s+\d{1,2}:\d{2}\s+\S/;
+const HCB_ITEM = /^\s*(?:[-*\u2022]|\d+[.)])\s/;
 const HCB_MAIL = /메일\s*\d+통/;
 const HCB_COUNT = /\d+\s*(?:개|통|건|명)/;
 const hcbNums = s => { const out = []; String(s).split(/(\d+)/).forEach((p, i) => out.push(i % 2 ? el("span", { class: "hcb-n", text: p }) : p)); return out; };
 function hcBriefParse(text) {
   const lines = String(text ?? "").replace(/\r/g, "").split("\n");
-  let a = -1, b = -1;
+  if (!/브리핑|아침/.test(text) && !HCB_MAIL.test(text)) return null;
+  let a = -1, b = -1, fence = false;
   for (let i = 0; i < lines.length; i++) {
-    if (!HCB_ROW.test(lines[i])) continue;
+    if (/^\s*```/.test(lines[i])) fence = !fence;
+    if (fence || !HCB_ROW.test(lines[i])) continue;
     let j = i;
     while (j + 1 < lines.length && HCB_ROW.test(lines[j + 1])) j++;
-    if (j > i) { a = i; b = j; break; }
+    if (j > i && !HCB_ITEM.test(lines[i - 1] ?? "") && !HCB_ITEM.test(lines[j + 1] ?? "")) { a = i; b = j; break; }
     i = j;
   }
   if (a < 0) return null;
@@ -121,19 +124,19 @@ function hcBriefParse(text) {
   while (h >= 0 && !lines[h].trim()) h--;
   const head = h >= 0 && lines[h].trim().length <= 24 && !/[.!?요]$/.test(lines[h].trim()) ? lines[h].trim() : "";
   const pre = lines.slice(0, head ? h : a).join("\n").trim();
-  return { pre, head, rows: lines.slice(a, b + 1).map(l => HCB_ROW.exec(l).slice(1, 3)), post: lines.slice(b + 1) };
+  return { pre, head, rows: lines.slice(a, b + 1).map(l => ({ text: l.replace(/^\s*[-*\u2022]\s+/, "").trim(), raw: l.trim() })), post: lines.slice(b + 1) };
 }
 function hcBriefNode(text) {
   const p = hcBriefParse(text);
   if (!p) return null;
   const kids = [];
-  if (p.pre) kids.push(mdNode(p.pre));
+  if (p.pre) kids.push(mdNode(p.pre, "md", false, true));
   const tag = /브리핑|아침/.test(text) ? el("span", { class: "tag pri", text: "아침 점검" }) : null;
-  kids.push(el("div", { class: "hcb-card" },
-    tag || p.head ? el("div", { class: "hcb-hd" }, tag, p.head ? el("span", { class: "hcb-h" }, ...hcbNums(p.head)) : null) : null,
-    el("div", { class: "hcb-rows" }, ...p.rows.map(([t, title]) => el("div", { class: "hcb-r" }, el("span", { class: "hcb-t", text: t }), el("span", { class: "hcb-ti", text: title }))))));
+  const card = el("div", { class: "hcb-card", safeHtml: timeRowsHtml(p.rows) });
+  if (tag || p.head) card.prepend(el("div", { class: "hcb-hd" }, tag, p.head ? el("span", { class: "hcb-h" }, ...hcbNums(p.head)) : null));
+  kids.push(card);
   let plain = [];
-  const flush = () => { const s = plain.join("\n").trim(); plain = []; if (s) kids.push(mdNode(s)); };
+  const flush = () => { const s = plain.join("\n").trim(); plain = []; if (s) kids.push(mdNode(s, "md", false, true)); };
   for (const l of p.post) {
     if (!l.trim()) { plain.push(l); continue; }
     if (HCB_MAIL.test(l)) { flush(); kids.push(el("div", { class: "hcb-chip" }, icon("mail"), el("span", {}, ...hcbNums(l.trim())))); }
