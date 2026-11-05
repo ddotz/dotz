@@ -122,6 +122,28 @@ test("a fallback inside a 429 window is attributed to the intended model and sta
 	expect(f.evidence).toContain("한도");
 });
 
+test("a start on a model that never answered is no fallback; a hop after an answer is, and names the model it left", () => {
+	const opus = { provider: "anthropic-subscription", modelId: "claude-opus-5-5" };
+	const change = (min: number, to: object) => JSON.stringify({ type: "model_change", timestamp: at(min), ...to });
+	// The session 01a1a3bb: started on the quota fallback, which refused with a 402; the resumed process answered on the configured model and recorded no model_change.
+	const seeded = analyze(session("audit-seed", [
+		change(0, { provider: "opengateway", modelId: "deepseek/deepseek-v4.1-flash-ultrafast" }),
+		user(0), turn(0, 0, 0, { provider: "opengateway", model: "deepseek/deepseek-v4.1-flash-ultrafast", error: "402: no balance" }),
+		user(55), ...[55, 56, 57, 58, 59].map(min => turn(min, 20_000, 1_000)),
+		change(60, { ...opus, originalProvider: opus.provider, originalModelId: opus.modelId, source: "rpc" }), turn(61, 20_000, 1_000),
+	]), T0 - 1);
+	expect(seeded.fbTurns).toBe(0);
+	expect(findingsOf([seeded]).map(x => x.kind)).not.toContain("폴백 모델");
+
+	const gpt = { provider: "openai", model: "gpt-5.5" };
+	const hopped = analyze(session("audit-hop", [
+		change(0, opus), user(0), turn(0, 0, 20_000), ...[1, 2, 3, 4, 5].map(min => turn(min, 20_000, 1_000, gpt)),
+		change(6, { provider: gpt.provider, modelId: gpt.model, source: "rpc" }), turn(7, 20_000, 1_000, gpt),
+	]), T0 - 1);
+	expect(hopped.fbTurns).toBe(5);
+	expect(findingsOf([hopped]).find(x => x.kind === "폴백 모델")?.what).toContain("anthropic-subscription/claude-opus-5-5");
+});
+
 test("fallback minutes count only after the 429 window ends", () => {
 	const w = [{ from: 0, to: 60 * 60e3 }];
 	expect(fallbackAfterCapacity([10 * 60e3, 50 * 60e3], w)).toBe(0);
