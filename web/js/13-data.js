@@ -204,6 +204,7 @@ function renderAll0(keepScroll) {
   const s = ts(target);
   if (!keepScroll && chatReuse(s)) return;
   if (CV.full) { CV.snap = { top: timeline.scrollTop, stick: chatStick }; CV.full = false; }   // a redraw keeps the owner's place (chatOpen)
+  const lit = tl.querySelector(".nt-hl")?.closest("[data-ts]")?.dataset.ts;   // the glow of a jump (ntFlash) sits on a row this draw replaces: it moves to the new row
   resetChat(); resetTerm();
   if (!((s.hLoaded && s.aLoaded) || hasCached(s)) || !chatReady()) {
     CS.empty = tl.appendChild(el("div", { class: "a-div", text: "불러오는 중…" }));
@@ -227,6 +228,7 @@ function renderAll0(keepScroll) {
   if (isRelayT(target)) relayTail(s);   // a send still waiting for its line and the last error, before the "no conversation yet" line is considered
   if (tl.children.length <= 1) CS.empty = tl.appendChild(el("div", { class: s.herr ? "a-error" : "empty", text: s.herr ? "대화를 불러오지 못했어요" : "아직 대화가 없어요" }));   // only the top sentinel is there
   if (LOG_VIEW && !term.children.length) termEmpty = term.appendChild(el("div", { class: "a-div", text: "활동이 없어요" }));
+  if (lit) { const n = [...tl.querySelectorAll("[data-ts]")].find(m => m.dataset.ts === lit); if (n) ntFlash(n); }
   if (!keepScroll) { chatOpen(); if (LOG_VIEW) scrollTerm(true); } else { CV.snap = null; CV.full = true; }
   markLive();
   CV.drawn = CV.divNode ? "" : chatSig(s);   // a divider belongs to one opening: the next one draws anew
