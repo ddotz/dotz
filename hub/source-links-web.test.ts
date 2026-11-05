@@ -75,5 +75,22 @@ test("rows ask for nothing from the network and stay inside a phone screen", asy
 
 test("selecting the message copies the original URLs", async () => {
 	const text = await page<string>(`(() => { const r = document.createRange(); r.selectNodeContents(${lists}[0]); const s = getSelection(); s.removeAllRanges(); s.addRange(r); return s.toString(); })()`);
-	expect(text.split(/\s+/).filter(Boolean)).toEqual(URLS);
+	expect(text.split(/\s+/).filter(w => w.startsWith("https://"))).toEqual(URLS);
+});
+
+test("the words of a source row can be selected, and a click with text selected in the row does not open it", async () => {
+	expect(await page<string[]>(`[".mlist-h", ".mlist-main", ".mlist-t", ".mlist-s"].map(q => { const c = getComputedStyle(${lists}[0].querySelector(q)); return c.userSelect || c.webkitUserSelect; })`)).not.toContain("none");
+	const prevented = await page<boolean[]>(`(() => {
+		const row = ${lists}[0].querySelector("a.mlist-row"), sel = getSelection(), out = [];
+		sel.removeAllRanges();
+		const probe = ev => { out.push(ev.defaultPrevented); ev.preventDefault(); };
+		document.addEventListener("click", probe);
+		row.click();
+		sel.selectAllChildren(row.querySelector(".mlist-t"));
+		row.click();
+		sel.removeAllRanges();
+		document.removeEventListener("click", probe);
+		return out;
+	})()`);
+	expect(prevented).toEqual([false, true]);
 });
