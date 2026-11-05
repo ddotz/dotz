@@ -4,10 +4,12 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { ASK_A } from "./ask-normalize.fixture.ts";
 import { cfg, HUB_TOKEN, NAME, paths } from "./config.ts";
+import { convs } from "./convsessions.ts";
 import { type HubEvent, onEmit } from "./events.ts";
 import { report } from "./lanereport.ts";
-import { lanes, type Lane } from "./lanestate.ts";
+import { hooks, lanes, type Lane } from "./lanestate.ts";
 import { installLaneHandlers, laneRelay } from "./lanewire.ts";
 import { listNotices, needsAnswer, resetNoticesForTest } from "./notices.ts";
 import { queue } from "./outbound.ts";
@@ -136,4 +138,47 @@ test("a message to the lane from a turn no owner message started leaves his card
 	await post(`/api/lanes/${l.name}/send`, { text: "답이 올 때까지 다른 칸을 계속해요" });
 	expect(sent.at(-1)).toContain("다른 칸을 계속해요");
 	expect(cards()).toHaveLength(1);
+});
+
+// A card with buttons for every open decision, from every sender that can ask: a list in the wrong form included. A lane has no dotz_send
+// (extension/index.ts gives it to the orchestrator and its conversation sessions); it asks by its report and its mid-turn text.
+const ASK_LABELS = ["그대로 반영", "알림 행만 조정하고 반영", "반영 보류"];
+const labelsOf = (to: string) => cards().filter(c => c.decision!.to === to).map(c => c.decision!.options.map(o => o.label));
+const posted = (target: string) =>
+	new Promise<void>((resolve, reject) => {
+		const timer = setTimeout(() => reject(new Error(`nothing posted to ${target}`)), 5000);
+		onEmit(e => {
+			if (e.kind === "out" && e.target === target) {
+				clearTimeout(timer);
+				resolve();
+			}
+		});
+	});
+
+test("a conversation session's dotz_send of an option list is a card in its own conversation", async () => {
+	const target = "mail:choice-flow";
+	const r = await post("/api/send", { target, text: ASK_A, session: convs.keyOf(target) });
+	expect(r.delivered).toBe(true);
+	expect(labelsOf(target)).toEqual([ASK_LABELS]);
+});
+
+test("a scheduled turn's dotz_send is a card, to another channel at once and to its own channel with the final answer", async () => {
+	queue.deliver("[schedule] 아침 점검", { target: "web" });
+	queue.onPrompt("[schedule] 아침 점검");
+	expect(await dotzSend(ASK_A, "mail:schedule-flow")).toMatchObject({ delivered: true });
+	expect(labelsOf("mail:schedule-flow")).toEqual([ASK_LABELS]);
+	const held = await dotzSend(OWN_ASK);
+	expect(held).toMatchObject({ delivered: true, held: true });
+	const seen = posted("web");
+	queue.onAnswer("점검을 끝냈어요.");
+	await seen;
+	expect(labelsOf("main")).toEqual([["지금 받기", "내일 받기"]]);
+});
+
+test("a lane's mid-turn text with an option list is a card, as its report is", async () => {
+	const l = lane();
+	const seen = posted(`lane:${l.name}`);
+	hooks.progress(l, `[ask] ${ASK_A}`);
+	await seen;
+	expect(labelsOf(`lane:${l.name}`)).toEqual([ASK_LABELS]);
 });
