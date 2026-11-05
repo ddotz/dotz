@@ -14,7 +14,6 @@
 .nsc-m .meta { color: var(--fg-3); font: 400 var(--fs-meta)/var(--lh-meta) var(--font); font-variant-numeric: tabular-nums; }
 .nsc-l .sec { margin: var(--sp-6) var(--sp-1) var(--sp-2); }
 .nsc-l .sec:first-child { margin-top: var(--sp-2); }
-.nsc-more { display: flex; justify-content: center; margin-top: var(--sp-2); }
 .nsc-r { position: relative; align-items: flex-start; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--row-px); }
 .nsc-r + .nsc-r { border-top: 1px solid var(--line); }
 .nsc-r:hover { background: var(--card-hover); }

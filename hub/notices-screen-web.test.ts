@@ -243,4 +243,8 @@ describe("the 알림 screen", () => {
 		await settled(v);
 		expect(await on(v).ev(`[current, location.search, document.querySelectorAll(".snack").length]`)).toEqual(["notices", "", 0]);
 	}, 30_000);
+	test("more than a page of old alerts: 더 보기 is the list's own last line, not a control under it", async () => {
+		const v = await shown(await open(390));
+		expect(await on(v).ev(`(() => { const old = NT.items.find(n => nscGroup(n) === "past"), out = nscList(Array.from({ length: 51 }, (_, i) => ({ ...old, id: "x" + i }))), last = out.find(n => n.dataset.g === "past").lastElementChild; return last.dataset.k + ":" + last.textContent; })()`)).toBe("more:1개 더 보기");
+	});
 });

@@ -78,8 +78,8 @@ function nscList(rows) {
     const all = rows.filter(n => nscGroup(n) === g);
     if (!all.length) continue;
     const shown = g === "need" ? all : all.slice(0, NSC.lim[g]);   // 새 소식 and 지난 알림 draw 50 at a time: 300 rows are never all in the page
-    out.push(el("div", { class: "sec", text: label }), el("div", { class: "list", "data-g": g }, ...shown.flatMap(n => nscRows(n, g))));
-    if (all.length > shown.length) out.push(el("div", { class: "nsc-more" }, el("button", { class: "btn text sm", type: "button", "data-k": "more", onclick: () => { NSC.lim[g] += NSC_PAGE; nscPaint(true); } }, `${all.length - shown.length}개 더 보기`)));
+    const more = all.length > shown.length ? moreRow(`${all.length - shown.length}개 더 보기`, () => { NSC.lim[g] += NSC_PAGE; nscPaint(true); }) : null;
+    out.push(el("div", { class: "sec", text: label }), el("div", { class: "list", "data-g": g }, ...shown.flatMap(n => nscRows(n, g)), more));
   }
   return out;
 }
