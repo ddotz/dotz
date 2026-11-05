@@ -36,7 +36,7 @@ import { setUsageSource, tick as accountTick } from "./account-rules.ts";
 import { onSwitch as onAccountSwitch } from "./account-sticky.ts";
 import { announceUsedChanges } from "./accounts-api.ts";
 import { activeHarness, runtimeFor } from "./runtime/index.ts";
-import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch, orchBusy, resumeAfterError, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator, turnFailed } from "./orchestrator.ts";
+import { applyAccountChange as holdOrchestratorKeepalive, applyAccountPin, orch, orchBusy, resumeAfterError, steer as steerOrchestrator, setErrorHandler, setIdleHandler as setOrchIdleHandler, setRestartedHandler, start as startOrchestrator, stop as stopOrchestrator, turnFailed } from "./orchestrator.ts";
 import { errorAsk, startErrorWatch } from "./orch-error.ts";
 import { queuedTargets } from "./queue.ts";
 import { createRestartGate, RESTART_NOTICE_MS } from "./restart.ts";
@@ -525,7 +525,7 @@ startSchedules(s => {
 	deliver(inboxText(event), { target: channel });
 });
 syncRoutineSchedules();
-startReflection(text => deliver(text), () => orch.sessionFile, text => out("alert", text, undefined, { source: "gateway" }));
+startReflection(text => deliver(text), () => orch.sessionFile, text => out("alert", text, undefined, { source: "gateway" }), text => void steerOrchestrator(text));
 for (const l of telemetryOff()) log(l);
 startHarnessUpdate(text => void out("worklog", text, undefined, { source: "gateway" }).catch(e => log(`harness update post failed: ${e}`)), restartGateway, alert);
 startTokenAudit(alert);

@@ -177,7 +177,7 @@ export function gateLessons(tell: (text: string) => void, reset = false): Reject
 	acceptedLessons = r.text;
 	if (r.rejected.length) {
 		writeAtomic(paths.lessons, r.text);
-		log(`lessons gate: refused ${r.rejected.length} line(s)`);
+		log(`lessons gate: refused ${r.rejected.length} line(s): ${r.rejected.map(x => `${x.why}: ${x.line.slice(0, 120)}`).join(" | ")}`);
 		tell(msg().lessonsRefused(r.rejected, LESSONS_MAX_BYTES));
 	}
 	return r.rejected;
@@ -376,14 +376,15 @@ if (import.meta.main && process.argv[2] === "--candidates" && process.argv[3]) {
 	console.log(JSON.stringify(lessonCandidates(readFileSync(process.argv[3], "utf8"), Date.now()), null, 2));
 }
 
-export function startReflection(deliver: (text: string) => void, sessionFile: () => string, post: (text: string) => Promise<unknown>): void {
-	gateLessons(deliver, true);
+// `note` tells a running turn what the lessons gate refused. It starts no turn: the 7 turns the refusal started in 7 days (2026-11-05, 1.7M tokens) all answered "-".
+export function startReflection(deliver: (text: string) => void, sessionFile: () => string, post: (text: string) => Promise<unknown>, note: (text: string) => void): void {
+	gateLessons(note, true);
 	let gate: ReturnType<typeof setTimeout> | undefined;
 	// The folder, not the file: an edit that replaces the file by rename ends a watch on the file itself.
 	watch(DATA_DIR, (_, name) => {
 		if (name !== "LESSONS.md") return;
 		clearTimeout(gate);
-		gate = setTimeout(() => gateLessons(deliver), 500);
+		gate = setTimeout(() => gateLessons(note), 500);
 		trackTimer("lessons-gate", gate);
 	});
 	const at = String((cfg as { reflect_at?: string }).reflect_at ?? DEFAULTS.reflect_at);
