@@ -73,7 +73,7 @@ for (const width of [1440, 390]) {
 			table: d.includes("<table"), th: d.includes("<th>항목</th>"), style: d.includes("color:#1a5fd0"), script: /<script|onerror|javascript:/i.test(d), pwn: window.__pwn ?? null,
 			csp: d.includes("default-src 'none'") && d.includes("img-src data:;"), inlined: /<img[^>]+src="data:image\\/png;base64,/.test(d), remote: /\ssrc="https?:/.test(d), base: d.includes('<base target="_blank">'),
 			links: [...new DOMParser().parseFromString(d, "text/html").querySelectorAll("a[href]")].map(a => [a.getAttribute("href"), a.getAttribute("rel"), a.getAttribute("target")]),
-			bar: document.querySelector(".mb-bar").textContent, files: document.querySelector(".mr-files")?.textContent ?? "", filesAfter: !!(document.querySelector(".rc-raw").compareDocumentPosition(document.querySelector(".mr-files")) & Node.DOCUMENT_POSITION_FOLLOWING) }; })()`);
+			bar: document.querySelector(".mb-bar").textContent, files: document.querySelector(".mr-files")?.textContent ?? "", order: [...document.querySelector(".mopen").children].map(c => ["msum", "mr-files", "rc-raw"].find(k => c.classList.contains(k))).filter(Boolean) }; })()`);
 		expect(f.sandbox).not.toContain("allow-scripts");
 		expect(f.sandbox).not.toContain("allow-same-origin");
 		expect(f.h).toBeGreaterThan(150);
@@ -82,7 +82,7 @@ for (const width of [1440, 390]) {
 		expect(f.links).toEqual([["https://example.com/report", "noopener noreferrer", "_blank"]]);
 		expect(f.bar).toContain("바깥 이미지 1개를 막았어요");
 		expect(f.files).toContain("report.pdf");
-		expect(f.filesAfter).toBe(true);
+		expect(f.order).toEqual(["msum", "mr-files", "rc-raw"]);
 		expect(f.w).toBeGreaterThan(width === 390 ? 250 : 500);
 		if (SHOTS) {
 			mkdirSync(SHOTS, { recursive: true });

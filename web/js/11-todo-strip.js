@@ -280,7 +280,7 @@ function msgNode(e) {
         const noSum = e.dir === "out" || rec.dir === "out" || mailSumIsBody(sum, e.preview, rec.preview, sp.raw);
         const card = resultCard({ src: mailSender(e.from) || SYS_LABEL.mail, at: e.ts, title: e.subject, text: noSum ? "" : sum, raw: sp.raw, rawOpen: !!key, rawNode: key ? raw => mailBodyNode(key, html, raw, e.subject) : undefined });
         // Gmail-like, top to bottom: the bar of icons (30-mail-box.js mailOpenBar, 초안 작성 and the ⋯ in it), the subject, the sender and time,
-        // one muted line of 받는 사람 / 참조 that opens the full header (30-mail-thread.js), the summary, then the original.
+        // one muted line of 받는 사람 / 참조 that opens the full header (30-mail-thread.js), the summary, the attachments, then the original.
         if (card && key) {
           const hd = card.querySelector(".rc-hd"), title = card.querySelector(".rc-title"), meta = mailMetaNode(`mail:${key}`, e);
           card.classList.add("mopen");
@@ -289,7 +289,7 @@ function msgNode(e) {
           if (MT_READY) mailThreadSync();
         }
         const files = card && key && Array.isArray(e.attachments) ? mailFilesNode(key, e.attachments) : null;
-        if (files) card.append(files);
+        if (files) card.querySelector(":scope > .rc-raw").before(files);
         return card;
       }
       const f = k => (text.match(new RegExp(`^${k}: ?(.*)$`, "m")) || [])[1] || "";
