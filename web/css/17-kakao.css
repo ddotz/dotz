@@ -196,9 +196,12 @@
 .kk-m.me.kk-hl::before { left: auto; right: 0; }
 .kk-quote:disabled { cursor: default; }
 /* a quote tap flashes the original message (30-kakao.js kkFlash) */
-.kk-m.kk-hl .kk-bub, .kk-m.kk-hl .kk-media, .kk-m.kk-hl .kk-sticker { animation: kk-hl 3.2s ease; border-radius: 10px; }
-@keyframes kk-hl { 0%, 75% { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); } 100% { background: transparent; box-shadow: none; } }
-@media (prefers-reduced-motion: reduce) { .kk-m.kk-hl .kk-bub, .kk-m.kk-hl .kk-media, .kk-m.kk-hl .kk-sticker { animation-duration: .01s; } }
+/* the overlay is the shared highlight (09-notices.css); a photo or sticker has no radius of its own to copy */
+.kk-m.kk-hl :is(.kk-bub, .kk-media, .kk-sticker) { position: relative; --hl: 22%; --hl-ring: 22%; --hl-glow: 0%; --hl-spread: var(--sp-1); }
+.kk-m.kk-hl :is(.kk-bub, .kk-media, .kk-sticker)::after { animation: kk-hl 3.2s ease; }
+.kk-m.kk-hl :is(.kk-media, .kk-sticker)::after { border-radius: var(--r-ctl); }
+@keyframes kk-hl { 0%, 75% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .kk-m.kk-hl :is(.kk-bub, .kk-media, .kk-sticker)::after { animation-duration: .01s; } }
 .kk-qn { font-weight: 600; opacity: .85; }
 .kk-qt { opacity: .75; }
 .kk-qt { overflow-wrap: anywhere; }

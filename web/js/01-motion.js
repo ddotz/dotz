@@ -65,11 +65,11 @@ function motionOut(el, to = "fade", ms = M_MS.fast) {
   return a.finished.then(() => a, () => a);
 }
 
-// The same element changes state in place (보내기 -> 보냈어요, a task finishing): change() runs at once, the new look fades up.
+// The same element changes state in place (보내기 -> 보냈어요, a task finishing): change() runs at once, the new look fades up at its own size.
 function motionSwap(el, change, ms = M_MS.base) {
   change();
   if (!el || !el.animate || reducedMotion()) return;
-  el.animate([{ opacity: .35, transform: "scale(.985)" }, { opacity: 1, transform: "none" }], { duration: ms, easing: M_EASE });
+  el.animate([{ opacity: .35 }, { opacity: 1 }], { duration: ms, easing: M_EASE });
 }
 
 // A count that changed: only the digits that differ roll in. textContent stays the plain number.

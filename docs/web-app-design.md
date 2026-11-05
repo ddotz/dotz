@@ -2626,7 +2626,7 @@ JS 사용 횟수는 `web/js`, `web/custom.js`, `web/index.html`, `hub/*.ts` 전�
 | `motionPop(el)` | `{opacity 0, scale(.6)}` → `{opacity 1, scale(1)}` | 200 (리터럴) | 0 | M_EASE | 없음 | `reducedMotion()`이면 반환 | web/js/01-motion.js:43-46 | J011, J012 |
 | `motionView(name, boxes, rows=true)` | 박스마다 motionIn(b, "rise", M_MS.fast). rows면 보이는 `.li, .card, .rc, .cv-row, .hr, .pj-card` 앞 8개에 motionIn(r, "rise", M_MS.fast, i*12) | 150 (--m-fast) | 행 i번째 i x 12 (0~84) | M_EASE | backwards | `reducedMotion()`이거나 처음 그리기, 같은 화면이면 반환 | web/js/01-motion.js:51-60 | J013, J014, J015 |
 | `motionOut(el, to="fade", ms=M_MS.fast)` | `{opacity 1, transform none}` → `{opacity 0, transform M_FROM[to] \|\| none}`. Promise를 돌려줌 | 기본 150 (--m-fast) | 0 | M_EASE | forwards | `reducedMotion()`이면 즉시 resolve (바로 사라진 것처럼) | web/js/01-motion.js:62-66 | J016, J017 |
-| `motionSwap(el, change, ms=M_MS.base)` | change()를 먼저 실행하고 `{opacity .35, scale(.985)}` → `{opacity 1, none}` | 기본 220 (--m-base) | 0 | M_EASE | 없음 | change()는 실행하고 애니메이션만 건너뜀 | web/js/01-motion.js:69-73 | J018, J019 |
+| `motionSwap(el, change, ms=M_MS.base)` | change()를 먼저 실행하고 `{opacity .35}` → `{opacity 1}` | 기본 220 (--m-base) | 0 | M_EASE | 없음 | change()는 실행하고 애니메이션만 건너뜀 | web/js/01-motion.js:69-73 | J018, J019 |
 | `rollCount(el, next)` | 바뀐 자릿수 span `.m-dg`만 `{opacity 0, translateY(+60% 증가 / -60% 감소)}` → `{opacity 1, none}` | 220 (M_MS.base) | 0 | M_EASE | 없음 | `reducedMotion()`이거나 숫자가 아니면 textContent만 바꿈 | web/js/01-motion.js:76-89 | J020, J021 |
 | `freshKeys(store, keys)` | 애니메이션 없음. store에 없던 키 집합을 돌려주고 첫 그리기는 빈 집합 | - | - | - | - | 해당 없음 (motionIn 호출 쪽이 가드) | web/js/01-motion.js:93-99 | J022 |
 
@@ -2706,7 +2706,7 @@ CSS 쪽 반응(위 R001~R009에 속한 선언)은 C001, C002, C003 (전역), C02
 | 대상 | 트리거 | 구분 | 속성 | 길이(ms) | 지연(ms) | 이징 | 근거 | 원시 ID |
 |---|---|---|---|---|---|---|---|---|
 | 홈 진행 행 (`restRow`) | 새 행이 처음 보일 때 (freshKeys HOME_ROWS, 08-home.js:383-384) | 진입 | opacity 0→1, transform translateY(-8px)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/08-home.js:383, web/js/08-home.js:384 | J041, J042 |
-| 홈 끝난 일 행 | 일이 끝나 settle될 때 (08-home.js:380) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/08-home.js:380 | J040 |
+| 홈 끝난 일 행 | 일이 끝나 settle될 때 (08-home.js:380) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/08-home.js:380 | J040 |
 | 홈 카드 `.card.tap` 배경 `.card.tap` | CSS 상태 변화 (호버 등) (08-home.js) | 제자리 | background | 150 (--m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/02-cards-lists-tags.css:5 | C005 |
 | 보드 항목 노드 (07-board.js set) | freshKeys 'shown'에 없던 id가 도착 (07-board.js:180, 201) | 진입 | opacity 0→1, transform translateY(8px)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/07-board.js:180, web/js/07-board.js:201 | J028, J029 |
 | 보드 카드 `.bi` 위치와 크기 `.bi`, `.board.bnt .bi`, `.bi, .board.narrow .bi, .bph` | 카드가 재배치, 크기 변경될 때 (드래그 중에는 `.bnt`가 전환을 끔) | 제자리 | left, top, width, height, box-shadow, (전환 끔) | left 220 (--m-base); top 220 (--m-base); width 220 (--m-base); height 220 (--m-base); box-shadow 150 (--m-fast); 0 | 0 / - | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/05-log.css:172, web/css/05-log.css:177, web/css/05-log.css:184 | C020, C021, C025 |
@@ -2733,7 +2733,7 @@ CSS 쪽 반응(위 R001~R009에 속한 선언)은 C001, C002, C003 (전역), C02
 | 대상 | 트리거 | 구분 | 속성 | 길이(ms) | 지연(ms) | 이징 | 근거 | 원시 ID |
 |---|---|---|---|---|---|---|---|---|
 | 결정 카드 박스 | 새 결정이 도착 (freshKeys DC_SEEN, 10-decision-card.js:556, 572) | 진입 | opacity 0→1, transform translateY(8px)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/10-decision-card.js:556, web/js/10-decision-card.js:572 | J053, J055 |
-| 결정 카드 박스 | 상태가 바뀜 (swap, 10-decision-card.js:538, 570) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/10-decision-card.js:538, web/js/10-decision-card.js:570 | J051, J054 |
+| 결정 카드 박스 | 상태가 바뀜 (swap, 10-decision-card.js:538, 570) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/10-decision-card.js:538, web/js/10-decision-card.js:570 | J051, J054 |
 | 결정 카드 박스 | 답한 뒤 사라짐 (dcLeave, 10-decision-card.js:543) | 이탈 | opacity 1→0 (fade, 끝나면 fill forwards) | 150 (M_MS.fast = --m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill forwards | web/js/10-decision-card.js:543 | J052 |
 | 결정 카드 행 `.dc-row, .dcm-row` 배경 `.dc-row, .dcm-row` | CSS 상태 변화 (호버 등) | 제자리 | background-color | 150 (--m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/07-chat.css:107 | C038 |
 | 결정 카드 접기 화살표 `.dc-fold .ic` `.dc-fold .ic`, `.dc-fold .ic, .td-ch` | 접기, 펼치기 | 제자리 | transform, (전환 끔) | transform 150 (--m-fast); 0 | 0 / - | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/07-chat.css:97, web/css/07-chat.css:174 | C037, C040 |
@@ -2744,10 +2744,10 @@ CSS 쪽 반응(위 R001~R009에 속한 선언)은 C001, C002, C003 (전역), C02
 |---|---|---|---|---|---|---|---|---|
 | 채팅 타임라인의 새 메시지 행 | 실시간으로 도착한 메시지 (11-todo-strip.js:357, bulk가 아닐 때) | 진입 | opacity 0→1, transform translateY(8px)→none | 150 (M_MS.fast = --m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/11-todo-strip.js:357 | J061 |
 | 스트림 도착 메시지 root | 15초 안에 도착한 새 스트림 (streamIn, 11-todo-strip.js:97) | 진입 | opacity 0→1 | 300 (리터럴, --m-slow와 같은 값) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/11-todo-strip.js:97 | J059 |
-| 할 일 줄 박스 | 할 일 단계 갱신 draw (11-todo-strip.js:32) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/11-todo-strip.js:32 | J058 |
-| 시스템 줄 `.cv-sys` (running에서 완료로) | paintSysLines (11-todo-strip.js:149) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/11-todo-strip.js:149 | J060 |
-| 작업 묶음 끝 표시 | g.live 묶음이 끝남 (11-todo-strip.js:373) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/11-todo-strip.js:373 | J062 |
-| 실행 상태 줄 (runstate) | paintRunState에서 swap=true (41-runstate.js:107) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/41-runstate.js:107 | J122 |
+| 할 일 줄 박스 | 할 일 단계 갱신 draw (11-todo-strip.js:32) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/11-todo-strip.js:32 | J058 |
+| 시스템 줄 `.cv-sys` (running에서 완료로) | paintSysLines (11-todo-strip.js:149) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/11-todo-strip.js:149 | J060 |
+| 작업 묶음 끝 표시 | g.live 묶음이 끝남 (11-todo-strip.js:373) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/11-todo-strip.js:373 | J062 |
+| 실행 상태 줄 (runstate) | paintRunState에서 swap=true (41-runstate.js:107) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/41-runstate.js:107 | J122 |
 | 할 일 접기 화살표 `.td-ch` `.td-ch` | 접기, 펼치기 | 제자리 | transform | 150 (--m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/07-chat.css:157 | C039 |
 | 채팅창, 터미널 박스 가장자리 그림자 `.chatbox::before/::after`, `.termbox::before/::after` `.chatbox::before, .chatbox::after, .termbox::before, .termbox::after` | 스크롤 위치에 따라 가장자리 표시 | 제자리 | opacity | 150 (--m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/03-base.css:319 | C014 |
 | 파일 요약, 작업 요약 화살표 (`.ended > summary svg`, `details.work > summary::before`) `.ended > summary svg`, `details.work > summary::before` | 접기, 펼치기 (04-files.css) | 제자리 | transform | 150 (--m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/04-files.css:36, web/css/04-files.css:153 | C015, C016 |
@@ -2773,7 +2773,7 @@ CSS 쪽 반응(위 R001~R009에 속한 선언)은 C001, C002, C003 (전역), C02
 | 알림 정렬 목록의 새 행 (`ntAlertMarks`) | 새 알림 행이 도착, 이전보다 최신 (30-notices.js:322-325) | 진입 | opacity 0→1, transform translateY(8px)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/30-notices.js:322, web/js/30-notices.js:325 | J090, J091 |
 | 알림 행 (무시) | ntIgnore (30-notices.js:481) | 이탈 | opacity 1→0 (fade, 끝나면 fill forwards) | 150 (M_MS.fast = --m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill forwards | web/js/30-notices.js:481 | J092 |
 | 알림 화면 새 행 | freshKeys NSC.seen (31-notices-screen.js:117-119) | 진입 | opacity 0→1, transform translateY(-8px)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/31-notices-screen.js:117, web/js/31-notices-screen.js:119 | J098, J099 |
-| 알림 화면 목록 (필터 바꿈) | nscFilter (31-notices-screen.js:144) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/31-notices-screen.js:144 | J101 |
+| 알림 화면 목록 (필터 바꿈) | nscFilter (31-notices-screen.js:144) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/31-notices-screen.js:144 | J101 |
 | 알림 화면 접힌 반복 행 | nscFold: 접힘 시 이탈, 펼침 시 진입 (31-notices-screen.js:154, 159) | 이탈 / 진입 | 이탈: opacity 1→0 (fade, 끝나면 fill forwards); 진입: opacity 0→1, transform translateY(-8px)→none | 150 (M_MS.fast = --m-fast) (이탈), 220 (M_MS.base = --m-base) (진입) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/31-notices-screen.js:154, web/js/31-notices-screen.js:159 | J102, J103 |
 | 알림 화면 행 (처리, 읽음) | nscLeave (31-notices-screen.js:183-187): 이탈 뒤 이동한 행이 진입 | 이탈 / 진입 | 이탈: opacity 1→0 (fade, 끝나면 fill forwards); 진입: opacity 0→1, transform translateY(-8px)→none | 150 (M_MS.fast = --m-fast) (이탈), 220 (M_MS.base = --m-base) (진입) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/31-notices-screen.js:183, web/js/31-notices-screen.js:187 | J104, J105 |
 | 알림 화면 되돌린 행 (nscUndo) | 실행 취소 (31-notices-screen.js:224, rAF 두 번 뒤) | 진입 | opacity 0→1, transform translateY(-8px)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/31-notices-screen.js:224 | J106, J107, J108 |
@@ -2791,7 +2791,7 @@ CSS 쪽 반응(위 R001~R009에 속한 선언)은 C001, C002, C003 (전역), C02
 | 인용된 메시지 하이라이트 `[data-rid].rp-flash` `[data-rid].rp-flash` | 인용 줄을 눌러 원문으로 이동 (39-reply.js:56, animationend에서 클래스 제거) | 제자리 | rp-flash: background | 1200 | 0 | ease-out; 반복 1, fill none | web/css/15-reply.css:9, web/css/15-reply.css:8 | C063, K008 |
 | 답장 버튼 `.rp-btn` `.rp-btn` | 행 호버, 키보드 포커스 | 제자리 | opacity, background-color | 150 (--m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/15-reply.css:12 | C064 |
 | 인용 원문으로 스크롤 (rpJump) | scrollIntoView({ behavior: "smooth" }) (39-reply.js:55) | 제자리 | 스크롤 위치 (브라우저 smooth) | 브라우저 기본 | 0 | 브라우저 기본 | web/js/39-reply.js:55 | J121 |
-| 답장 큐 하단 액션 `foot` | rqStoreActs (30-replies.js:99) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/30-replies.js:99 | J093 |
+| 답장 큐 하단 액션 `foot` | rqStoreActs (30-replies.js:99) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/30-replies.js:99 | J093 |
 | 트리아지 진행 막대 `.tr-bar > span` `.tr-bar > span` | 처리된 개수가 바뀜 | 제자리 | width | 220 (--m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/15-triage.css:17 | C065 |
 
 ### 카카오 (web/js/30-kakao.js, web/css/17-kakao.css)
@@ -2822,12 +2822,12 @@ CSS 쪽 반응(위 R001~R009에 속한 선언)은 C001, C002, C003 (전역), C02
 | 하니스 스위치 `.hs-sw` 배경, `.hs-sw::after` 손잡이 `.hs-sw`, `.hs-sw::after` | 켜고 끔 | 제자리 | background, transform | background 150 (--m-fast); transform 220 (--m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/06-harness.css:95, web/css/06-harness.css:96 | C033, C034 |
 | 하니스 기능 카드 `.fc-card` 배경, `.fc-gh .ic` 화살표 `.fc-gh .ic`, `.fc-card` | CSS 상태 변화 (호버 등), 접기 | 제자리 | transform, background | 150 (--m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/06-harness.css:164, web/css/06-harness.css:169 | C035, C036 |
 | 연결된 기기 행 `[data-dev]` | 기기 빼기 (25-settings-devices.js:55). 진입 모션은 없음 | 이탈 | opacity 1→0 (fade, 끝나면 fill forwards) | 150 (M_MS.fast = --m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill forwards | web/js/25-settings-devices.js:55 | J069 |
-| 온보딩 머리글 (v.swap) | 다음 단계로 바뀔 때, rAF 한 번 뒤 (25-settings-onboarding.js:107) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/25-settings-onboarding.js:107 | J070, J071 |
-| 온보딩 버튼 라벨 (stFlash) | 누른 직후와 1800ms 뒤 원래 글자로 (25-settings-onboarding.js:120-121) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/25-settings-onboarding.js:120, web/js/25-settings-onboarding.js:121 | J072, J073 |
-| 하니스 버튼 라벨 (hFlash) | 누른 직후와 1800ms 뒤 (27-harness.js:46-47) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/27-harness.js:46, web/js/27-harness.js:47 | J074, J075 |
-| 하니스 프로젝트 스위치 컨트롤 | 초안 토글 (28-harness-project.js:429) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/28-harness-project.js:429 | J076 |
-| 하니스 기능 요청 보냄 표시 | post (29-harness-features.js:65) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/29-harness-features.js:65 | J077 |
-| 앱 설정 카드 다시 그림 | redraw (32-app-settings.js:606) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/32-app-settings.js:606 | J110 |
+| 온보딩 머리글 (v.swap) | 다음 단계로 바뀔 때, rAF 한 번 뒤 (25-settings-onboarding.js:107) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/25-settings-onboarding.js:107 | J070, J071 |
+| 온보딩 버튼 라벨 (stFlash) | 누른 직후와 1800ms 뒤 원래 글자로 (25-settings-onboarding.js:120-121) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/25-settings-onboarding.js:120, web/js/25-settings-onboarding.js:121 | J072, J073 |
+| 하니스 버튼 라벨 (hFlash) | 누른 직후와 1800ms 뒤 (27-harness.js:46-47) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/27-harness.js:46, web/js/27-harness.js:47 | J074, J075 |
+| 하니스 프로젝트 스위치 컨트롤 | 초안 토글 (28-harness-project.js:429) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/28-harness-project.js:429 | J076 |
+| 하니스 기능 요청 보냄 표시 | post (29-harness-features.js:65) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/29-harness-features.js:65 | J077 |
+| 앱 설정 카드 다시 그림 | redraw (32-app-settings.js:606) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/32-app-settings.js:606 | J110 |
 | 공급자, 모니터링 접기 화살표 `.fr-chev`, 로그 접기 `.ls > summary::after`, `details.box > summary::before`, `.subsum .chev` `.fr-chev`, `.ls > summary::after`, `details.box > summary::before`, `.subsum .chev` | 접기, 펼치기 (19-volume.css, 05-log.css) | 제자리 | transform, (전환 끔) | transform 150 (--m-fast); 0 | 0 / - | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/css/19-volume.css:24, web/css/19-volume.css:37, web/css/05-log.css:26, web/css/05-log.css:81, web/css/05-log.css:100 | C074, C075, C017, C018, C019 |
 
 ### 공통 컴포넌트 (web/css/01-tokens.css, 02-cards-lists-tags.css)
@@ -2843,9 +2843,9 @@ CSS 쪽 반응(위 R001~R009에 속한 선언)은 C001, C002, C003 (전역), C02
 | 대상 | 트리거 | 구분 | 속성 | 길이(ms) | 지연(ms) | 이징 | 근거 | 원시 ID |
 |---|---|---|---|---|---|---|---|---|
 | 원격 데스크톱 접속자 pill `p` | 처음 나타남 (37-remote-desktop.js:89) | 진입 | opacity 0→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill backwards | web/js/37-remote-desktop.js:89 | J116 |
-| 원격 데스크톱 pill 글자 | 접속자 글이 바뀜 (37-remote-desktop.js:90) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/37-remote-desktop.js:90 | J117 |
+| 원격 데스크톱 pill 글자 | 접속자 글이 바뀜 (37-remote-desktop.js:90) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/js/37-remote-desktop.js:90 | J117 |
 | 원격 데스크톱 pill | 접속자가 없어짐 (37-remote-desktop.js:92) | 이탈 | opacity 1→0 (fade, 끝나면 fill forwards) | 150 (M_MS.fast = --m-fast) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease); fill forwards | web/js/37-remote-desktop.js:92 | J118 |
-| 카드 양식 미리보기 `pvBox` | swapPreview 호출 (custom.js:456) | 제자리 | opacity .35→1, transform scale(.985)→none | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/custom.js:456 | J124 |
+| 카드 양식 미리보기 `pvBox` | swapPreview 호출 (custom.js:456) | 제자리 | opacity .35→1 | 220 (M_MS.base = --m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (M_EASE = --m-ease) | web/custom.js:456 | J124 |
 | `.cu-vt-c` 보기 방식 카드 배경 (custom.js 안 CSS 문자열) | 호버, 선택 (custom.js:44) | 제자리 | background-color | 220 (--m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/custom.js:44 | I001 |
 | `.cu-more summary svg.ic` 화살표 (custom.js 안 CSS 문자열) | 접기, 펼치기 (custom.js:66) | 제자리 | transform | 220 (--m-base) | 0 | cubic-bezier(.2, .7, .2, 1) (--m-ease) | web/custom.js:66 | I002 |
 

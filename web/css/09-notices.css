@@ -11,17 +11,17 @@
 .nt-t { font: 500 15px/22px var(--font); overflow-wrap: anywhere; }
 .nt-row.un .nt-t { font-weight: 600; }
 .nt-m { color: var(--fg-3); font: 400 12px/16px var(--font); }
-/* The message a notice led to (ntFlash in 30-notices.js marks the element with .nt-hl). The effect sits on the content, never on the row:
-   - a card or bubble (.ub, .ccard, .sn) is lit inside its own rounded shape: a faint tint of itself plus a soft accent ring (the overlay copies the host's radius);
-   - plain text (.nt-hl.nt-bar) gets only a faint tint inside the message's own bounds (no left bar: owner 2026-10-22).
+/* The one highlight rule, for ntFlash (30-notices.js, .nt-hl) and a KakaoTalk quote (17-kakao.css): an overlay painted over the host, so a highlight never changes the host's size, radius, padding or margin.
+   - anything with its own fill (a card, a bubble, a work card) is lit inside its own rounded shape: a faint tint of itself plus a soft accent ring (the overlay copies the host's radius);
+   - plain text (.nt-hl.nt-bar) gets only a faint tint around the message (no left bar: owner 2026-10-22).
    It fades in ~0.2s after the scroll lands (delay), holds, and is gone at ~2s. The ring and glow stay within 8px: the timeline's own 8px gutter (03-base.css) keeps them from being clipped. */
 .nt-hl { position: relative; --hl: 9%; --hl-ring: 34%; --hl-glow: 20%; }
 :root[data-theme="dark"] .nt-hl { --hl: 13%; --hl-ring: 46%; --hl-glow: 26%; }
-.nt-hl::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: color-mix(in srgb, var(--accent) var(--hl), transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) var(--hl-ring), transparent), 0 0 8px 0 color-mix(in srgb, var(--accent) var(--hl-glow), transparent); opacity: 0; pointer-events: none; animation: nt-hl 1.8s ease-in-out .2s both; }
-/* Plain text: the phone's message already has 16px side padding, so the bar sits in it. From 640px up the host grows 8px each side as padding and gives it back as margin: the text does not move. */
-.nt-hl.nt-bar { border-radius: var(--r-ctl); }
-@media (min-width: 640px) { .nt-hl.nt-bar { margin-inline: calc(var(--sp-2) * -1); padding-inline: var(--sp-2); } }
-.nt-hl.nt-bar::after { box-shadow: none; }
+.nt-hl::after, .kk-m.kk-hl :is(.kk-bub, .kk-media, .kk-sticker)::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: color-mix(in srgb, var(--accent) var(--hl), transparent); box-shadow: 0 0 0 var(--hl-spread, 2px) color-mix(in srgb, var(--accent) var(--hl-ring), transparent), 0 0 8px 0 color-mix(in srgb, var(--accent) var(--hl-glow), transparent); opacity: 0; pointer-events: none; }
+.nt-hl::after { animation: nt-hl 1.8s ease-in-out .2s both; }
+/* Plain text: the phone's message already has 16px side padding, so the tint sits in it. From 640px up the tint hangs 8px past each side, into the timeline's gutter. */
+.nt-hl.nt-bar::after { border-radius: var(--r-ctl); box-shadow: none; }
+@media (min-width: 640px) { .tl-in > .nt-hl.nt-bar::after { inset-inline: calc(var(--sp-2) * -1); } }
 @keyframes nt-hl { 0% { opacity: 0; } 14% { opacity: 1; } 50% { opacity: 1; } 100% { opacity: 0; } }
 /* Reduced motion: no fade or scroll animation, just a still tint for a moment (a step animation; !important beats the global animation: none). */
 @media (prefers-reduced-motion: reduce) {
