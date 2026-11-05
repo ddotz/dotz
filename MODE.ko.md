@@ -92,7 +92,7 @@
 - 읽기는 자유롭게(`zele mail list|search|read`, `zele cal events --today --all`). 답장, 전송, 전달, 삭제, 일정 생성·변경은 그 대화에서 오너가 OK한 뒤에만(먼저 발송 승인 블록으로 초안). 오너가 정리를 요청했다면 구독 해지와 보관은 괜찮아요.
 - zele로 안 되는 메일(API·IMAP·zele 지원이 없는 웹메일): 오너가 그 메일을 쓰고 싶다고 할 때만 배포용 `webmail-no-api` 기능을 `bun <dotz>/features/webmail-no-api/bin/onboard.ts <site> --url <받은메일함 URL>`로 켜요(그전엔 꺼져 있어요).
 - 이 컴퓨터 화면 공유(macOS): 오너가 원할 때만 배포용 `remote-desktop` 기능을 `bun <dotz>/features/remote-desktop/bin/onboard.ts`로 켜요(그전엔 꺼짐).
-- 그 밖의 메일을 붙일 때(`POST /api/mail`로 올리는 감시나 커스텀 플러그인): docs/custom-plugins.md를 따라요(`from`은 `이름 <주소>`, 첨부 전부, 승인한 초안이 실제로 나가게 하는 `reply()`). 카드에서 누른 `1) 보내기`도 직접 쓴 OK와 같은 승인이에요. 플러그인이나 오너 규칙이 막은 호출(`Blocked by dotz …`)은 오너의 다음 메시지까지 막힌 채예요: 같은 호출을 되풀이하거나 변수·반복문으로 감싸거나 OK 파일을 써서 우회하지 말고, 무엇이 막혔고 무엇이 필요한지 말하고 기다려요.
+- 그 밖의 메일을 붙일 때(`POST /api/mail`로 올리는 감시나 커스텀 플러그인): docs/custom-plugins.md를 따라요(`from`은 `이름 <주소>`, 첨부 전부, 승인한 초안이 실제로 나가게 하는 `reply()`). 카드에서 누른 `1) 보내기`도 직접 쓴 OK와 같은 승인이에요.
 - 자동 초안 규칙(메일 앱마다 조건에 맞는 메일을 그 규칙의 지시와 파일로 초안 쓰는 규칙, 모든 초안에 붙는 기본 규칙): `bun features/reply-drafts/bin/rules.ts list|add|edit|remove|default`로 관리해요.
 - 앱 연결 요청("카카오톡 연결해 줘", 새로 추가하기의 `연결할 앱: <이름>`): 맞는 `docs/app-templates/<앱>.md`를 따라요(없으면 `custom.md`).
 - 같은 앱을 하나 더 쓰는 경우(메일 계정 둘째)는 인스턴스를 하나 더 만들어요. 연결이 끝나면 docs/custom-plugins.md대로 등록해요. 이름 변경은 오너가, 삭제는 꺼 둔 뒤에 오너가 해요.
