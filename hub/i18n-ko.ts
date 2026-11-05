@@ -65,6 +65,44 @@ export const ko: Catalog = {
 		prefixHint: "그 컴퓨터가 답 맨 앞에 붙이는 말이에요.",
 		invalid: "키워드와 답 머리말을 확인해 주세요. 다른 컴퓨터와 겹치면 안 되고, 8대까지 넣을 수 있어요.",
 	},
+
+	// Messenger connect flows (hub/onboarding*.ts, hub/messenger-login.ts): owner-facing lines, plain and short.
+	connect: {
+		say: {
+			waiting: (label: string, hint: string) => `${label}: ${hint}`,
+			failed: (error: string, hint: string) => `연결하지 못했어요. ${error} ${hint}`.replace(/\s+/g, " ").trim(),
+			done: "연결이 끝났어요.",
+		},
+		login: {
+			unavailable: "Aside를 열 수 없어서 로그인 창을 읽지 못했어요. Aside 앱을 켜 두고 연결을 다시 시작해 주세요.",
+			gaveUp: "10분 안에 로그인이 끝나지 않아 멈췄어요. 연결을 다시 시작하면 처음부터 해요.",
+			unreadable: "로그인 창을 읽지 못했어요. 연결을 다시 시작해 주세요.",
+		},
+		jandi: {
+			mainRoom: "메인",
+			reuse: { title: "저장된 JANDI 방 확인", detail: "웹훅으로 연결된 방이 있으면 그대로 써요.", label: "저장된 설정 확인", hint: "설정 → JANDI의 직접 입력에서 웹훅 값을 확인한 뒤 계속을 누르세요." },
+			notice: { title: "안내", detail: "이 연결이 무엇을 읽는지 먼저 알려 드려요.", label: "확인하고 계속", hint: "이 연결은 JANDI가 공개하지 않은 웹 로그인 정보를 써요. 나와의 대화 방만 읽고, 다른 사람과 나눈 대화는 읽지 않아요. 괜찮으면 계속을 누르세요." },
+			login: { title: "JANDI 로그인", detail: "Aside에서 JANDI에 로그인해 있으면 그대로 이어가요.", label: "JANDI 로그인", hint: "Aside 앱을 열면 JANDI 탭이 있어요. 거기서 로그인하면 자동으로 이어져요." },
+			team: { title: "팀 고르기", detail: "로그인한 계정의 JANDI 팀을 확인해요.", label: "팀 고르기", hint: "연결할 팀을 골라 주세요." },
+			room: { title: "나와의 대화 찾기", detail: "JANDI 봇과의 나와의 대화 방을 찾아 맞는지 확인해요.", label: "연결 다시 시작", hint: "연결을 다시 시작해 주세요. 계속 안 되면 JANDI 앱에서 나와의 대화를 한 번 열어 보세요." },
+			save: { title: "연결 저장", detail: "로그인 정보와 방을 저장하고 읽기를 시작해요.", label: "연결 다시 시작", hint: "연결을 다시 시작해 주세요." },
+			done: { title: "연결 완료", detail: "JANDI 나와의 대화가 연결됐어요.", label: "다시 확인", hint: "연결을 다시 시작하면 지금 상태를 다시 확인해요." },
+			noTeams: "이 계정의 JANDI 팀을 찾지 못했어요.",
+			noRoom: "나와의 대화 방을 찾지 못했어요. 아무것도 저장하지 않았어요.",
+			notMine: "찾은 방이 나와의 대화가 맞는지 확인하지 못했어요. 아무것도 저장하지 않았어요.",
+			denied: "JANDI가 로그인 정보를 받아 주지 않았어요. 다시 로그인해 주세요.",
+			unreadable: "JANDI의 답을 읽지 못했어요. 아무것도 저장하지 않았어요.",
+			noToken: "JANDI 로그인 정보를 찾지 못했어요. 로그인한 뒤 다시 시작해 주세요.",
+		},
+		expiry: {
+			alert: "JANDI 로그인이 끝나서 나와의 대화를 읽을 수 없어요. 설정 → 메신저 → JANDI에서 다시 연결해 주세요.",
+			ok: { label: "나와의 대화 연결됨", hint: "JANDI 로그인으로 연결돼 있어요." },
+			lost: { label: "JANDI 로그인이 끝났어요", hint: "나와의 대화를 읽을 수 없어요. 다시 연결하면 바로 이어져요." },
+			off: { label: "JANDI 로그인으로 연결", hint: "JANDI에 로그인만 하면 나와의 대화로 말을 걸 수 있어요." },
+			reconnect: "다시 연결",
+			connect: "잔디 로그인으로 연결",
+		},
+	},
 	cmd: {
 		failed: "실행하지 못했어요",
 		applyAnyway: "그래도 적용",
@@ -223,7 +261,7 @@ export const ko: Catalog = {
 	nowLaneBusy: "작업 중",
 	nowWorkers: (n, names) => `서브에이전트 ${n}${names ? ` ${names}` : ""}`,
 	nowOrchestrator: (n, names) => `오케스트레이터 서브에이전트 ${n}${names ? `(${names})` : ""}`,
-	firstStart: target => `[dotz gateway] 이 설치의 첫 시작이에요. ${target}에서 먼저 말을 거세요: 짧은 메시지 몇 개로 오너에게 인사하세요(이름은 ${NAME}; 당신이 누구인지, 할 수 있는 일: 프로젝트별 채널, 모니터링, 세션, 스케줄). 그다음 오너의 환경을 읽기 전용으로 파악해도 되는지 한 번만 물어보세요: Aside에 있는 오너에 대한 메모리(aside memory list / search: 누구인지, 사람들, 프로젝트, 사이트), 로그인해 둔 사이트, 코딩 에이전트 대화 기록과 프로젝트, 쓰는 도구와 CLI, 이 머신의 로그와 스케줄. 승낙하면 읽기 전용 서브에이전트로 진행하고, 진행 메시지 하나를 제자리에서 갱신하고(dotz_send update_key "onboarding"), 알게 된 것은 그때그때 메모리에 기록하고, 알아낸 것과 아직 모르는 것을 짧게 요약하며 끝내세요. 거절하면 시작하는 방법만 알려 주세요.`,
+	firstStart: target => `[dotz gateway] 이 설치의 첫 시작이에요. ${target}에서 먼저 말을 거세요: 짧은 메시지 몇 개로 오너에게 인사하세요(이름은 ${NAME}; 당신이 누구인지, 할 수 있는 일: 프로젝트별 채널, 모니터링, 세션, 스케줄). 그다음 오너의 환경을 읽기 전용으로 파악해도 되는지 한 번만 물어보세요: Aside에 있는 오너에 대한 메모리(aside memory list / search: 누구인지, 사람들, 프로젝트, 사이트), 로그인해 둔 사이트, 코딩 에이전트 대화 기록과 프로젝트, 쓰는 도구와 CLI, 이 머신의 로그와 스케줄. 승낙하면 읽기 전용 서브에이전트로 진행하고, 진행 메시지 하나를 제자리에서 갱신하고(dotz_send update_key "onboarding"), 알게 된 것은 그때그때 메모리에 기록하고, 알아낸 것과 아직 모르는 것을 짧게 요약하며 끝내세요. 거절하면 시작하는 방법만 알려 주세요. 오너가 쓰는 메신저(discord, jandi, slack, telegram)가 있으면 dotz_connect 도구로 연결해 드릴지 물어보세요.`,
 
 	inboxLaneReport: lane => `[dotz inbox] 세션 ${lane}의 보고:`,
 	inboxLaneReports: n => `[dotz inbox] 세션 보고 ${n}건 (일상 진행은 report.md와 지금 도는 것 줄에만 있어요):`,

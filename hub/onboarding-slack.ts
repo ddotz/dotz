@@ -1,4 +1,5 @@
 import { loadSlackConfig, saveSlackConfig, type SlackChannel, type SlackConfig } from "./messenger-slack.ts";
+import { NAME } from "./config.ts";
 import type { OnboardFlow, OnboardFlowContext, OnboardOwnerStep } from "./onboarding.ts";
 
 const SLACK_TOKEN = /^xox[baprs]-[A-Za-z0-9-]{10,}$/;
@@ -15,7 +16,16 @@ const CHANNEL_OWNER: OnboardOwnerStep = {
 	hint: "Slack에서 봇을 대화 채널에 초대한 뒤 계속을 누르세요.",
 };
 
-type Listed = { id: string; name: string; is_member?: boolean; is_archived?: boolean };
+type Listed = { id: string; name: string; is_member?: boolean; is_archived?: boolean; is_private?: boolean };
+
+class SlackError extends Error {
+	constructor(
+		method: string,
+		readonly code: string,
+	) {
+		super(`Slack ${method}: ${code}`);
+	}
+}
 
 function normalizeToken(value: string): string {
 	const s = value.trim();
@@ -29,9 +39,10 @@ async function call(ctx: OnboardFlowContext, token: string, method: string, body
 		method: "POST",
 		headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8" },
 		body: form.toString(),
+		signal: AbortSignal.timeout(15_000),
 	});
 	const json = await res.json().catch(() => undefined);
-	if (!res.ok || !json?.ok) throw new Error(`Slack ${method}: ${String(json?.error ?? `HTTP ${res.status}`)}`);
+	if (!res.ok || !json?.ok) throw new SlackError(method, String(json?.error ?? `HTTP ${res.status}`));
 	return json;
 }
 
@@ -49,6 +60,28 @@ function mapping(channels: Listed[]): SlackChannel[] {
 	const worklog = findChannel(usable, /작업|worklog|로그|log/i);
 	if (worklog && worklog.id !== main.id) out.push({ id: worklog.id, name: worklog.name, kind: "worklog" });
 	return out;
+}
+
+const SUFFIXES: Record<SlackChannel["kind"], string> = { main: "main", alert: "alert", worklog: "worklog" };
+const channelBase = (): string => NAME.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "dotz";
+
+/** The channels the bot works in: the ones it picks among the visible channels (public ones it is not in yet are joined), or three new ones (main, alert, worklog) when there are none. */
+async function place(ctx: OnboardFlowContext, token: string, found: Listed[]): Promise<SlackChannel[]> {
+	const picked = mapping(found);
+	if (picked.length) {
+		for (const c of picked) {
+			const channel = found.find(f => f.id === c.id);
+			if (channel && channel.is_member === false && !channel.is_private) await call(ctx, token, "conversations.join", { channel: c.id });
+		}
+		return picked;
+	}
+	const made: SlackChannel[] = [];
+	for (const kind of ["main", "alert", "worklog"] as const) {
+		const name = `${channelBase()}-${SUFFIXES[kind]}`;
+		const res = await call(ctx, token, "conversations.create", { name });
+		made.push({ id: String(res.channel?.id ?? ""), name, kind });
+	}
+	return made.filter(c => c.id);
 }
 
 const save = (ctx: OnboardFlowContext, patch: Partial<SlackConfig>): SlackConfig => {
@@ -92,7 +125,7 @@ export const slackFlow: OnboardFlow = {
 					if (ctx.attempt === 0) return { waiting: LOGIN_OWNER };
 					const got = await ctx.deps.browser.run("slack-app", { name: "dotz" });
 					if (!got.ok || got.waiting) return { waiting: LOGIN_OWNER };
-					token = normalizeToken(String(got.value ?? ""));
+					token = normalizeToken(String(got.data?.token ?? ""));
 					if (!token) throw new Error("Slack 봇 토큰을 읽지 못했어요");
 					ctx.seen(token);
 					ctx.saveSecret(SECRET, token);
@@ -113,8 +146,13 @@ export const slackFlow: OnboardFlow = {
 				if (!token) throw new Error("Slack 봇 토큰이 없어요");
 				ctx.seen(token);
 				const listed = await call(ctx, token, "conversations.list", { types: TYPES, limit: 200, exclude_archived: true });
-				const channels = mapping(Array.isArray(listed.channels) ? (listed.channels as Listed[]) : []);
-				if (!channels.length) return { waiting: CHANNEL_OWNER };
+				const found = Array.isArray(listed.channels) ? (listed.channels as Listed[]) : [];
+				// An older app without channels:join / channels:manage answers missing_scope: the owner invites the bot, as before.
+				const channels = await place(ctx, token, found).catch((e: unknown) => {
+					if (e instanceof SlackError && e.code === "missing_scope") return undefined;
+					throw e;
+				});
+				if (!channels?.length) return { waiting: CHANNEL_OWNER };
 				save(ctx, { token, channels, enabled: true });
 				return { done: true };
 			},

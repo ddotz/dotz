@@ -20,7 +20,7 @@ export type DeliverResult = { delivered: boolean; reason?: string; ids?: string[
 export type Incoming = { adapter: string; target: string; text: string; author: string; replyTo?: string; messageId?: string; quoted?: string; files?: Upload[] };
 /** A phone notification an adapter raises for something that reached it outside the owner's own conversations (hub/push.ts notify). */
 export type AdapterPush = { kind: "ask" | "result" | "conv"; title: string; body: string; url: string; tag: string };
-export type MessengerCtx = { receive(m: Incoming): void; log(s: string): void; notify?(m: AdapterPush): void };
+export type MessengerCtx = { receive(m: Incoming): void; log(s: string): void; notify?(m: AdapterPush): void; /** One plain alert line for the owner (hub/outbound.ts alert). */ alert?(text: string): void };
 /** One line of a conversation with a computer reached through a messenger: `me` is the owner's own line, `at` its time in ms (0 = unknown). */
 export type RelayLine = { id: number; at: number; me: boolean; text: string };
 /** A row of the computer list (hub/peers.ts) reached through a messenger: `key` names it to the adapter, `note` is the adapter's one line about the transport. */
@@ -62,6 +62,8 @@ export type Settings = {
 	link?: { label: string; view: string };
 	/** Which notice classes this messenger receives (hub/notify-route.ts); filled in by hub/messengers-api.ts, set with PUT { notify }. */
 	notify?: Record<string, boolean>;
+	/** JANDI's 나와의 대화 connection (hub/messenger-jandi.ts): the row web/js/25-settings-messengers.js draws; `connect` is the button text. */
+	self_chat?: { state: "ok" | "lost" | "off"; label: string; hint: string; connect: string };
 };
 /** A room the web app's conversation structure calls for (hub/messenger-rooms.ts desiredRooms): main, alert, worklog and one per project. */
 export type DesiredRoom = { kind: "main" | "project" | "alert" | "worklog"; name: string; project?: string };
@@ -253,9 +255,10 @@ export async function answerAsk(target: string, text: string, author = "owner"):
 }
 
 /** The ctx adapters get: an incoming message answers an open decision when it is an option number, else `enter` takes it as an owner message. */
-export function makeCtx(enter: (m: Incoming) => Promise<void>, notify?: (m: AdapterPush) => void): MessengerCtx {
+export function makeCtx(enter: (m: Incoming) => Promise<void>, notify?: (m: AdapterPush) => void, alert?: (text: string) => void): MessengerCtx {
 	return {
 		...(notify ? { notify } : {}),
+		...(alert ? { alert } : {}),
 		receive: m => {
 			void (async () => {
 				// A number sent with a file is a message about that file, not a pick.

@@ -21,7 +21,7 @@ const FILE_LINE_CEILINGS: Counts = {
 const FN_LINE_LIMIT = 300;
 const FN_LINE_CEILINGS: Counts = {
 	"extension/guard.ts installGuard": 375, "hub/bgwork.ts createBgWork": 375, "hub/comments/engine.ts createEngine": 675, "hub/devices.ts createDevices": 325,
-	"hub/kakao/web.ts createKakaoWeb": 700, "hub/messenger-agent.ts createAgentAdapter": 475, "hub/messenger-jandi.ts createJandiAdapter": 325,
+	"hub/kakao/web.ts createKakaoWeb": 700, "hub/messenger-agent.ts createAgentAdapter": 475,
 	"hub/orchestrator.ts createOrchestrator": 1025, "hub/peer-monitor.ts createPeerMonitor": 400, "hub/prompts.ts createPrompts": 700, "hub/routes.ts makeRoute": 750,
 	"web/js/07-board.js makeBoard": 375,
 };
