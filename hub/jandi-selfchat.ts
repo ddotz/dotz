@@ -1,6 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { writeAtomic } from "./config.ts";
+import { attachmentLine, safeName, UPLOAD_MAX_BYTES, type Upload } from "./files.ts";
 import { readSecretFile, writeSecretFile } from "./secretbox.ts";
 
 // JANDI "나와의 대화" (the member's private chat with the JANDI bot) as an inbound path for members who cannot add a Team Outgoing Webhook.
@@ -17,7 +18,11 @@ export type SelfChatDeps = {
 	fetch?: typeof fetch;
 	sleep?: (ms: number) => Promise<void>;
 	api?: string;
-	receive: (text: string) => void;
+	/** An owner message: its command text ("" for a file sent without text) and the files it carried, saved under <data dir>/uploads/<day>/jandi-<message id>/.
+	 *  A file that could not be saved is an `[attachment] <name> <url>` line in `text` instead. */
+	receive: (text: string, files: Upload[]) => void;
+	/** The largest file saved (default: the web upload limit). */
+	maxFileBytes?: number;
 	/** A new reply of a peer (a post by anyone but the owner that starts with its reply prefix), the prefix taken off; never for a peer with `notify: false`. */
 	peerReply?: (peer: SelfChatPeer, text: string, id: number) => void;
 	log: (msg: string) => void;
@@ -30,6 +35,8 @@ const MAX_BACKOFF = 5 * 60_000;
 const TOKEN_MARGIN_MS = 5 * 60_000;
 
 const MAX_PEERS = 8;
+const MAX_FILES = 10;
+const MAX_REDIRECTS = 3;
 
 const int = (v: unknown) => (Number.isSafeInteger(v) && (v as number) > 0 ? (v as number) : 0);
 
@@ -94,7 +101,23 @@ export function peerReplyOf(body: string, peers: readonly SelfChatPeer[] | undef
 	return undefined;
 }
 
-type Record_ = { id: number; fromEntity: number; message?: { content?: { body?: unknown } } };
+/** `body` is the keyword alone (`dotz`, `/dotz`, `곰돌아`): the caption of a file sent to this gateway. */
+const bareKeyword = (body: string, keyword: string): boolean => new RegExp(`^\\s*/?${escapeRe(keyword)}(?:아|야)?[,.:!~]*\\s*$`, "i").test(body);
+
+// A file in the JANDI room: either a text record's `attachments[]` entry ({ contentType: "file", content }) or a record of contentType "file" itself.
+type JandiFile = { name?: unknown; filename?: unknown; title?: unknown; type?: unknown; size?: unknown; fileUrl?: unknown };
+type Message_ = { contentType?: unknown; content?: { body?: unknown } & JandiFile; attachments?: unknown };
+type Record_ = { id: number; fromEntity: number; message?: Message_ };
+
+/** The files of a message that carry a URL, at most MAX_FILES. */
+function filesOf(m: Message_ | undefined): JandiFile[] {
+	const out: JandiFile[] = [];
+	for (const a of Array.isArray(m?.attachments) ? m.attachments : []) if (a?.contentType === "file" && typeof a.content?.fileUrl === "string") out.push(a.content);
+	if (m?.contentType === "file" && typeof m.content?.fileUrl === "string") out.push(m.content);
+	return out.slice(0, MAX_FILES);
+}
+
+const seoulDay = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" });
 
 export class SelfChatError extends Error {}
 
@@ -169,6 +192,79 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 
 	const get = async (path: string, version: number): Promise<any> => (await request(path, version)).json();
 
+	// The owner's session goes only to JANDI itself (the API's origin or a jandi.com host), never to a host a redirect points at.
+	const apiOrigin = new URL(api).origin;
+	const trusted = (u: URL) => u.origin === apiOrigin || (u.protocol === "https:" && (u.hostname === "jandi.com" || u.hostname.endsWith(".jandi.com")));
+
+	/** The bytes of one file, at most `max`; throws with a short reason. */
+	async function fileBytes(url: URL, max: number): Promise<Uint8Array> {
+		let retried = false;
+		for (let hops = 0; hops <= MAX_REDIRECTS; ) {
+			const res = await f(url, { headers: trusted(url) ? { Authorization: `bearer ${await token()}` } : {}, redirect: "manual", signal: AbortSignal.timeout(60_000) });
+			const to = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+			if (to) {
+				void res.body?.cancel();
+				url = new URL(to, url);
+				hops++;
+				continue;
+			}
+			if (res.status === 401 && trusted(url) && !retried) {
+				void res.body?.cancel();
+				access = undefined;
+				retried = true;
+				continue;
+			}
+			if (!res.ok || !res.body) {
+				void res.body?.cancel();
+				throw new SelfChatError(`HTTP ${res.status}`);
+			}
+			if (Number(res.headers.get("content-length")) > max) {
+				void res.body.cancel();
+				throw new SelfChatError("too big");
+			}
+			const chunks: Uint8Array[] = [];
+			let total = 0;
+			for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+				total += chunk.byteLength;
+				if (total > max) throw new SelfChatError("too big");
+				chunks.push(chunk);
+			}
+			if (!total) throw new SelfChatError("empty");
+			return Buffer.concat(chunks);
+		}
+		throw new SelfChatError("too many redirects");
+	}
+
+	/** Saves a message's files into its own folder; a file that cannot be saved becomes an [attachment] line with its JANDI URL. */
+	async function saveFiles(id: number, list: JandiFile[]): Promise<{ files: Upload[]; lines: string[] }> {
+		const max = deps.maxFileBytes ?? UPLOAD_MAX_BYTES;
+		const folder = join(deps.dataDir, "uploads", seoulDay(), `jandi-${id}`);
+		const files: Upload[] = [];
+		const lines: string[] = [];
+		const taken = new Set<string>();
+		for (const file of list) {
+			const raw = [file.name, file.filename, file.title].find((x): x is string => typeof x === "string" && x.trim() !== "") ?? "file";
+			let name = safeName(raw);
+			for (let n = 2; taken.has(name); n++) name = `${n}-${safeName(raw)}`;
+			taken.add(name);
+			const type = typeof file.type === "string" && /^[\w.+-]+\/[\w.+-]+$/.test(file.type) ? file.type : "";
+			const url = String(file.fileUrl);
+			try {
+				if (typeof file.size === "number" && file.size > max) throw new SelfChatError("too big");
+				const bytes = await fileBytes(new URL(url), max);
+				mkdirSync(folder, { recursive: true });
+				const path = join(folder, name);
+				writeAtomic(path, bytes);
+				files.push({ path, name, ...(raw !== name ? { original: raw.slice(0, 300) } : {}), type: type || Bun.file(path).type || "application/octet-stream", size: bytes.byteLength });
+			} catch (e) {
+				// Never the URL in the log: it can carry a file token.
+				deps.log(`jandi self-chat: file ${name} of message ${id} not saved (${e instanceof SelfChatError ? e.message : String((e as Error)?.name ?? "error")})`);
+				lines.push(attachmentLine({ name, ...(type ? { type } : {}) }, url));
+			}
+		}
+		return { files, lines };
+	}
+
 	/** A JSON POST as the owner; the answer is not read. */
 	async function post(path: string, version: number, body: unknown): Promise<void> {
 		const res = await request(path, version, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -202,8 +298,17 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 				if (reply && reply.peer.notify !== false) deps.peerReply?.(reply.peer, reply.text, r.id);
 				continue;
 			}
-			const text = typeof body === "string" ? commandOf(body, cfg.keyword) : undefined;
-			if (text) deps.receive(text);
+			// A file alone, or with the keyword as its caption, is for this gateway; a caption without the keyword is not (like any other text).
+			const list = filesOf(r.message);
+			const said = typeof body === "string" ? body.trim() : "";
+			const text = said ? (commandOf(said, cfg.keyword) ?? (list.length && bareKeyword(said, cfg.keyword) ? "" : undefined)) : list.length ? "" : undefined;
+			if (text === undefined) continue;
+			if (!list.length) {
+				deps.receive(text, []);
+				continue;
+			}
+			const { files, lines } = await saveFiles(r.id, list);
+			deps.receive([text, ...lines].filter(Boolean).join("\n"), files);
 		}
 		return last;
 	}

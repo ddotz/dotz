@@ -2,6 +2,7 @@ import { parseChoices } from "./choices.ts";
 import { log } from "./config.ts";
 import { postKind } from "./discord-post.ts";
 import { type HubEvent, onEmit } from "./events.ts";
+import type { Upload } from "./files.ts";
 import { postClass, route } from "./notify-route.ts";
 import { allNotices } from "./notices.ts";
 import type { Peer } from "./peers.ts";
@@ -15,7 +16,8 @@ export type Kind = "main" | "project" | "lane" | "alert" | "worklog";
 export type AdapterStatus = { state: "off" | "connecting" | "ok" | "error"; error?: string };
 export type OutMsg = { target: string; kind: Kind; text: string; replyTo?: string; updateKey?: string; options?: { n: number; label: string }[]; files?: string[]; /** A gateway status line, not an answer (see gatewayNote). */ gatewayNote?: true; /** The conversation's address in the web app, when there is one. */ link?: string };
 export type DeliverResult = { delivered: boolean; reason?: string; ids?: string[] };
-export type Incoming = { adapter: string; target: string; text: string; author: string; replyTo?: string; messageId?: string; quoted?: string };
+/** `files`: what the message carried, already saved locally (hub/files.ts Upload); the turn gets one [attachment] line per file. */
+export type Incoming = { adapter: string; target: string; text: string; author: string; replyTo?: string; messageId?: string; quoted?: string; files?: Upload[] };
 /** A phone notification an adapter raises for something that reached it outside the owner's own conversations (hub/push.ts notify). */
 export type AdapterPush = { kind: "ask" | "result" | "conv"; title: string; body: string; url: string; tag: string };
 export type MessengerCtx = { receive(m: Incoming): void; log(s: string): void; notify?(m: AdapterPush): void };
@@ -253,7 +255,8 @@ export function makeCtx(enter: (m: Incoming) => Promise<void>, notify?: (m: Adap
 		...(notify ? { notify } : {}),
 		receive: m => {
 			void (async () => {
-				if (await answerAsk(m.target, m.text, m.author)) return;
+				// A number sent with a file is a message about that file, not a pick.
+				if (!m.files?.length && (await answerAsk(m.target, m.text, m.author))) return;
 				await enter(m);
 			})().catch(e => log(`messenger ${m.adapter} message from ${m.author} failed: ${e}`));
 		},
