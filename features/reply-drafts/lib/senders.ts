@@ -27,18 +27,55 @@ export const sendArgv = (to: string, subject: string, body: string, files: strin
 export const replyArgv = (mailId: string, to: string, body: string, files: string[] = [], cc: string[] = [], account?: string): string[] => ["zele", "mail", "reply", mailId, ...accountArgv(account), "--to", to, ...ccArgv(cc), "--body", body, ...files.flatMap(f => ["--attach", f])];
 
 // The zele account a mail belongs to: the one the draft recorded, else the one the stored mail came to (mail-conversations.json, read as plain
-// data so the CLI process needs no gateway), else the account of the app instance (custom/apps.json filter.account). Never guessed: undefined
-// leaves zele to refuse a send that is ambiguous.
-export function mailAccountOf(ref: string): string | undefined {
+// data so the CLI process needs no gateway), else the account of the app instance (custom/apps.json filter.account). A new mail takes the account
+// of the mail it follows. Never guessed: settleAccount goes on from here with what zele itself can tell.
+function storedMail(ref: string): { key?: string; account?: string; to?: string } | undefined {
 	try {
-		const all = JSON.parse(readFileSync(join(dataDir(), "mail-conversations.json"), "utf8")) as { key?: string; account?: string }[];
-		return all.find(r => r.key === ref)?.account || undefined;
+		const all = JSON.parse(readFileSync(join(dataDir(), "mail-conversations.json"), "utf8")) as { key?: string; account?: string; to?: string }[];
+		return all.find(r => r.key === ref);
 	} catch {
 		return undefined;
 	}
 }
-export const appAccountOf = (app: string): string | undefined => readAppsFile(dataDir())[app]?.filter?.account?.trim() || undefined;
-export const zeleAccountOf = (rec: Pick<DraftRec, "account" | "compose" | "ref" | "app">): string | undefined => rec.account || (rec.compose ? undefined : mailAccountOf(rec.ref)) || appAccountOf(rec.app);
+export const mailAccountOf = (ref: string): string | undefined => storedMail(ref)?.account || undefined;
+// A draft's `app` is its tone profile (`mail`), so a category mail (source score = instance mail-score) finds its instance by the source. `zele` is the
+// whole mailbox, not a category: an instance with that source says nothing about which account one mail came to.
+export function appAccountOf(app: string, source?: string): string | undefined {
+	const apps = readAppsFile(dataDir());
+	const own = apps[app]?.filter?.account?.trim();
+	if (own || !source || source === "zele") return own || undefined;
+	const named = new Set(Object.values(apps).flatMap(a => (!a.deleted && a.filter?.source?.trim().toLowerCase() === source.toLowerCase() && a.filter.account?.trim() ? [a.filter.account.trim()] : [])));
+	return named.size === 1 ? [...named][0] : undefined;
+}
+type AccountRec = Pick<DraftRec, "account" | "compose" | "ref" | "app"> & Partial<Pick<DraftRec, "source" | "origin">>;
+const originAccount = (rec: AccountRec) => (rec.origin?.kind === "mail" ? mailAccountOf(rec.origin.id) : undefined);
+export const zeleAccountOf = (rec: AccountRec): string | undefined => rec.account || (rec.compose ? originAccount(rec) : mailAccountOf(rec.ref)) || appAccountOf(rec.app, rec.source);
+
+const ADDRESS = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
+const zeleLogins = async (run: Runner): Promise<string[]> => {
+	// No zele at all reads as no accounts.
+	const r = await run(["zele", "whoami"]).catch(e => ({ code: 1, stdout: "", stderr: String(e) }));
+	return r.code === 0 ? [...new Set(r.stdout.match(ADDRESS) ?? [])] : [];
+};
+// Category mails are posted as "<thread id>.<message count>".
+const threadOf = (rec: DraftRec) => (rec.source === "zele" ? rec.mailId : rec.mailId.replace(/\.\d+$/, ""));
+/**
+ * The account a send goes through. With several accounts and no record of it: the one account the stored mail was addressed to, else the one
+ * account that can open the thread. `several` = they are named and none could be settled; with one account zele needs no choice.
+ */
+export async function settleAccount(rec: DraftRec, run: Runner): Promise<{ account?: string; several?: string[] }> {
+	const known = zeleAccountOf(rec);
+	if (known) return { account: known };
+	const logins = await zeleLogins(run);
+	if (logins.length < 2) return {};
+	if (rec.compose) return { several: logins };
+	const to = storedMail(rec.ref)?.to?.toLowerCase() ?? "";
+	const addressed = logins.filter(a => to.includes(a.toLowerCase()));
+	if (addressed.length === 1) return { account: addressed[0] };
+	const holders: string[] = [];
+	for (const a of logins) if ((await run(readArgv(threadOf(rec), a))).code === 0) holders.push(a);
+	return holders.length === 1 ? { account: holders[0] } : { several: logins };
+}
 
 // A webmail-no-api site: "webmail:<site>" (a new mail composed for it), or the plain site name its watch posts as the mail's `source`
 // (features/webmail-no-api/lib/watchkit.ts postToGateway) when this install onboarded that site.
@@ -71,7 +108,9 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 	// This site's adapter saves a text draft with one recipient and no 참조: sending it would drop the rest without a word.
 	if (webmailSite(rec.source) && (cc.length || recipientList(rec.to).length > 1))
 		return fail("이 웹메일은 참조나 여러 받는 사람에게 보낼 수 없어요. 받는 사람을 한 명만 남기고 참조를 비우면 보내요");
-	const account = rec.source === "zele" ? zeleAccountOf(rec) : undefined;
+	const settled = rec.source === "zele" ? await settleAccount(rec, run) : {};
+	if (settled.several) return fail(`메일 계정이 ${settled.several.join(", ")} 여러 개인데 이 메일이 어느 계정 것인지 알 수 없어서 보내지 않았어요. 초안은 그대로 있어요`);
+	const account = settled.account;
 	if (rec.compose && rec.source === "zele") {
 		const r = await run(sendArgv(rec.to, rec.subject ?? "", rec.body, files.map(f => f.path), cc, account));
 		return r.code === 0 ? { ok: true, message: `${rec.to}에게 메일을 보냈어요` } : fail(`보내지 못했어요: ${tail(r)}`);
@@ -86,7 +125,9 @@ export async function sendWith(rec: DraftRec, run: Runner): Promise<SendOutcome>
 	const site = webmailSite(rec.source);
 	if (!site) {
 		if (rec.compose) return fail(MANUAL);
-		const sent = await pluginReply({ source: rec.source, id: rec.mailId, to: rec.to, ...(cc.length ? { cc: cc.join(", ") } : {}), ...(rec.mode === "all" ? { all: true } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, attachments: files.map(f => ({ name: f.name, path: f.path, size: f.size })) });
+		// A plugin may not send through zele at all: it gets what is on record and refuses the rest itself.
+		const mailbox = zeleAccountOf(rec);
+		const sent = await pluginReply({ source: rec.source, id: rec.mailId, ...(mailbox ? { account: mailbox } : {}), to: rec.to, ...(cc.length ? { cc: cc.join(", ") } : {}), ...(rec.mode === "all" ? { all: true } : {}), ...(rec.subject ? { subject: rec.subject } : {}), body: rec.body, attachments: files.map(f => ({ name: f.name, path: f.path, size: f.size })) });
 		return sent ?? fail(MANUAL);
 	}
 	const saved = await run(["bun", WEBMAIL_MAIL, site, "draft", rec.to, rec.subject ?? "", rec.body]);

@@ -1,10 +1,10 @@
 // Mail read / replied / 답장 필요 follow the real state (hub/mail.ts syncMailStates, hub/mail-state.ts replyExclusion, hub/zele.ts tick states):
 // read in the mailbox is read in dotz on the next poll, a reply sent outside dotz is 답장함, and a mail he is not a main recipient of is never 답장 필요.
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR } from "./config.ts";
-import { replyExclusion, replyExpected, setOwnAddresses } from "./mail-state.ts";
+import { replyExclusion, replyExpected, resetOwnAddresses, setOwnAddresses } from "./mail-state.ts";
 import { mailByKey, mailCard, postMail, setMailReply, syncMailStates, type MailDeps } from "./mail.ts";
 import { markRead, readOf } from "./reads.ts";
 import { tick } from "./zele.ts";
@@ -48,6 +48,7 @@ describe("main recipient", () => {
 
 describe("syncMailStates", () => {
 	beforeEach(() => setOwnAddresses("zele", ["me@example.com"]));
+	afterEach(() => resetOwnAddresses());
 	test("read in the mailbox becomes read in dotz on the next poll; unread there never unreads it", async () => {
 		const id = uid("r");
 		const { key, target } = await postMail({ source: "fxs", id, subject: "회의", from: "Kim <kim@example.com>", to: ME, body: "회의 일정 문의" }, deps);

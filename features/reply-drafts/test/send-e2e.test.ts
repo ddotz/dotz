@@ -34,7 +34,7 @@ const replyJson = { action: "draft", reason: "asks for a score", to: "stu@exampl
 function fakeZele(o: { replyCode?: number } = {}) {
 	const calls: string[][] = [];
 	const run: Runner = async argv => {
-		calls.push(argv);
+		if (argv[1] !== "whoami") calls.push(argv);
 		const reply = argv[2] === "reply" || argv[2] === "send";
 		return reply && o.replyCode ? { code: o.replyCode, stdout: "", stderr: "zele: thread changed" } : { code: 0, stdout: reply ? "sent" : "mail body", stderr: "" };
 	};

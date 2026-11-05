@@ -1,8 +1,8 @@
 // Mail reconcile (hub/mail-reconcile.ts): a mail that waits and was answered outside dotz becomes 답장함 and its drafts close; zele is never really called.
-import { beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mailDraftHandled } from "./draft-handled.ts";
 import { createReconciler, reconcileMails, resetReconcile, type ReconcileDeps, type ReconcileMail } from "./mail-reconcile.ts";
-import { setOwnAddresses } from "./mail-state.ts";
+import { resetOwnAddresses, setOwnAddresses } from "./mail-state.ts";
 import { mailByKey, postMail, setMailReply, type MailDeps } from "./mail.ts";
 import { HUB_TOKEN } from "./config.ts";
 import { makeRoute } from "./routes.ts";
@@ -116,6 +116,7 @@ describe("reconcile", () => {
 describe("with the real stores", () => {
 	const deps: MailDeps = { createThread: async () => ({ id: "1" }), send: async () => {}, mailChannel: async () => undefined, discordOn: false, emit: () => {}, wake: () => {} };
 	beforeEach(() => setOwnAddresses("zele", [ME]));
+	afterEach(() => resetOwnAddresses());
 
 	test("an incoming mail answered from Gmail: replied, its pending draft is answered, its card is handled; again = same", async () => {
 		const id = `rc${Date.now().toString(36)}`;

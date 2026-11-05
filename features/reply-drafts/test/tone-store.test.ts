@@ -175,7 +175,7 @@ test("youtube/instagram: the app profile wins over the sns tone examples", async
 test("zele send: read first, then reply with --to and --body; a refusal is reported as a stale draft; a failed read sends nothing", async () => {
 	const rec = { id: "R1", kind: "mail", app: "mail", source: "zele", mailId: "t-9", ref: "k", to: "kim@example.com", body: "곧 알려 드릴게요.", status: "pending", created: "", changes: [], questions: [], item: { kind: "mail", from: "kim@example.com", text: "" } } as const;
 	const argvs: string[][] = [];
-	const ok: Runner = async argv => (argvs.push(argv), { code: 0, stdout: "", stderr: "" });
+	const ok: Runner = async argv => (argv[1] === "whoami" || argvs.push(argv), { code: 0, stdout: "", stderr: "" });
 	expect((await sendWith(rec, ok)).ok).toBe(true);
 	expect(argvs).toEqual([["zele", "mail", "read", "t-9"], ["zele", "mail", "reply", "t-9", "--to", "kim@example.com", "--body", "곧 알려 드릴게요."]]);
 	argvs.length = 0;
@@ -184,7 +184,7 @@ test("zele send: read first, then reply with --to and --body; a refusal is repor
 	expect(refused.ok).toBe(false);
 	expect(refused.message).toContain("newer message in thread");
 	argvs.length = 0;
-	const noRead: Runner = async argv => (argvs.push(argv), { code: 1, stdout: "", stderr: "not found" });
+	const noRead: Runner = async argv => (argv[1] === "whoami" || argvs.push(argv), { code: 1, stdout: "", stderr: "not found" });
 	expect((await sendWith(rec, noRead)).ok).toBe(false);
 	expect(argvs).toHaveLength(1);
 });

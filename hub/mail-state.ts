@@ -140,6 +140,8 @@ const registered = new Map<string, Set<string>>();
 export function setOwnAddresses(source: string, addresses: readonly string[]): void {
 	registered.set(source, new Set(addresses.map(addressKey).filter(Boolean)));
 }
+/** What one source registered: `zele` = the accounts it is logged in to. */
+export const addressesOf = (source: string): ReadonlySet<string> => registered.get(source) ?? new Set();
 export function resetOwnAddresses(): void {
 	registered.clear();
 }
