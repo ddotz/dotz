@@ -12,6 +12,10 @@ const oneLine = (s: string) => s.replace(/\s*\n\s*/g, " ");
 // A tab the owner already closed makes closeTab fail: said in the repl output, which is only read for its RESULT line.
 const CLOSE = "const dzClose = async tab => { try { await closeTab(tab); } catch (e) { console.log('closeTab failed: ' + String((e && e.message) || e).slice(0, 80)); } };";
 
+/** The repl code that posts `body` (a JS expression) to the one-shot inbox. The repl has no AbortSignal, so the time limit is a race. */
+export const inboxPost = (inbox: string, body: string): string =>
+	`await Promise.race([fetch(${JSON.stringify(inbox)}, { method: 'POST', body: JSON.stringify(${body}) }), new Promise((_, no) => setTimeout(() => no(new Error('inbox post timed out')), 10000))]);`;
+
 /** The repl code that opens (or reuses) the tab of `key`, runs `read` in it and posts a found object to `inbox`; it prints only a verdict. `read` has no // comments. */
 export function loginCaptureScript(o: { key: string; url: string; read: string; inbox: string }): string {
 	const key = JSON.stringify(o.key);
@@ -20,7 +24,7 @@ let tab = globalThis.dzLogin[${key}];
 if (!tab) { tab = await openTab(${JSON.stringify(o.url)}); globalThis.dzLogin[${key}] = tab; await new Promise(r => setTimeout(r, 3000)); }
 const found = await tab.evaluate(${o.read}).catch(() => { if (tab.isClosed()) delete globalThis.dzLogin[${key}]; return null; });
 if (!found) { console.log('RESULT ' + JSON.stringify({ ok: true, waiting: 'login' })); }
-else { await fetch(${JSON.stringify(o.inbox)}, { method: 'POST', body: JSON.stringify(found) }); await dzClose(tab); delete globalThis.dzLogin[${key}]; console.log('RESULT ' + JSON.stringify({ ok: true })); }`);
+else { ${inboxPost(o.inbox, "found")} await dzClose(tab); delete globalThis.dzLogin[${key}]; console.log('RESULT ' + JSON.stringify({ ok: true })); }`);
 }
 
 export function loginCloseScript(key: string): string {
