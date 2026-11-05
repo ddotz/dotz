@@ -48,7 +48,7 @@ test("the process wire loses the mark before any event exists, whatever frame ca
 
 test("what is shown or logged has no mark: events, the log, the session transcript, stripped text", async () => {
 	expect(stripSteerMark(`멈춰\n${MARK}`)).toBe("멈춰");
-	emit("outbox", { ts: "t", kind: "out", source: "lane:a", target: "lane:a", text: `답 ${MARK}` });
+	emit("outbox", { ts: new Date().toISOString(), kind: "out", source: "lane:a", target: "lane:a", text: `답 ${MARK}` });
 	expect(readFileSync(paths.outbox, "utf8")).not.toContain("dotz-steer");
 	log(`seen ${MARK}`);
 	expect(readFileSync(paths.log, "utf8")).not.toContain("dotz-steer");
