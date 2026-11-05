@@ -8,7 +8,7 @@ import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, fileSizeT
 import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Store, type Tokens } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
-import { EXAMPLES, pastPairs, SEEDED_NOTE, similarPairs, withExamples } from "./past.ts";
+import { EXAMPLES, mergePast, PAST_TARGET, pairKey, type PastPair, pastPairs, SEEDED_NOTE, similarPairs, withExamples } from "./past.ts";
 
 // The mail that rides on a comment reply (hub/comments/mail-link.ts is the real one): written with the draft, shown in the same card, sent right
 // after the reply is posted, revised or dropped with it.
@@ -55,6 +55,12 @@ export type EngineDeps = {
 	mail?: MailLink;
 	/** Comment <-> mail matching for sources with `mailMatch` on (hub/comments/mail-match.ts): card lines `메일 대조:` / `근거:` / `초안 메모:`. Missing = no matching. */
 	mailMatch?: (q: MailQuery) => Promise<string[]>;
+	/** The owner's past pairs of a source in a file of their own (features/reply-drafts/lib/pairs.ts), so a store that trims old rows loses none. `save` replaces the whole list. Missing = the store's pairs only, and no history is read. */
+	pairs?: { load: (key: string) => PastPair[]; save: (key: string, pairs: PastPair[]) => void };
+	/** What was learned, by mark (features/reply-drafts learned.json): `pairs-<key>@1` = the history was read, `pairs-<key>~tried` = a read failed at that time. Missing = no history is read. */
+	learned?: { read: () => Record<string, string>; mark: (marks: string[], now: Date) => void };
+	/** The one-time identity of a source's tone profile from its past replies, newest first, each followed by the comment it answered as `> ` lines (persona.ts learnFirst). */
+	identity?: (src: SourceConfig, replies: string[], where: string, call: (system: string, user: string) => Promise<string>, now: Date) => Promise<unknown>;
 };
 const MATCH_NOTE = /^(메일 대조|근거|초안 메모):/;
 
@@ -73,6 +79,9 @@ export const OFF_REASON = "댓글 답글이 꺼져 있어요. 앱 설정에서 �
 const MAX_AUTO_PER_RUN = 5;
 const RECHECK_CAP = 200;
 const RECHECK_EVERY_MS = 30 * 60_000;
+const PAST_RETRY_MS = 24 * 3600_000;
+const IDENTITY_MIN = 20;
+const PLACE: Record<SourceKind, string> = { youtube: "유튜브 댓글", instagram: "인스타 댓글", website: "웹사이트 댓글" };
 export const MAIL_KEPT_NOTE = "확인: 댓글은 이미 답했어요. 메일은 따로 확인해 주세요";
 export const MAIL_NO_APP_NOTE = "확인: 메일 앱이 정해지지 않아 메일 초안은 만들지 않았어요";
 const LIBRARY_MISS_NOTE = "확인: 첨부 파일 폴더에서 맞는 파일을 찾지 못했어요";
@@ -172,6 +181,12 @@ export function createEngine(deps: EngineDeps) {
 		}
 	};
 
+	// The pairs the store holds for a source; a site whose own replies never carry a parent is read as private messages (a reply answers the message before it).
+	const pairsOf = (src: SourceConfig): PastPair[] => {
+		const own = store.comments().filter(c => c.source === src.key);
+		return pastPairs(own, store.replies(), src.key, store.drafts(), src.kind === "website" && !own.some(c => c.mine && c.parent));
+	};
+
 	async function run(c: Comment, src: SourceConfig, previous?: Draft, change?: string): Promise<Step> {
 		if (!deps.model) return { ok: false, reason: "초안 만들기를 쓸 수 없어요" };
 		const tokens = { in: 0, out: 0, reported: false, chars: 0, outChars: 0 };
@@ -184,8 +199,8 @@ export function createEngine(deps: EngineDeps) {
 			tokens.outChars += r.text.length;
 			return r.text;
 		};
-		const past = pastPairs(store.comments(), store.replies(), src.key, store.drafts());
-		const seeds = src.pastSeed ? similarPairs(c.text, past, 3, c.thread) : [];
+		const past = mergePast(pairsOf(src), deps.pairs?.load(src.key) ?? []);
+		const seeds = src.pastSeed ? similarPairs(c.text, past, 3, c.thread, deps.now()) : [];
 		// The mail check runs once per comment (a revision keeps the lines of the draft it revises); a failure is a line on the card, not a lost draft.
 		const matched = previous
 			? previous.notes.filter(n => MATCH_NOTE.test(n))
@@ -193,7 +208,7 @@ export function createEngine(deps: EngineDeps) {
 				? await deps.mailMatch({ author: c.author, postTitle: c.postTitle, text: c.text, at: c.at }).catch(e => [`메일 대조: 확인 실패 - ${e instanceof Error ? clip(e.message, 160) : "알 수 없는 이유"}`])
 				: [];
 		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: [contextOf(c), ...matched].join("\n") };
-		const style = withExamples(styleOf(src), similarPairs(c.text, past, EXAMPLES), past.map(p => p.reply));
+		const style = withExamples(styleOf(src), similarPairs(c.text, past, EXAMPLES, undefined, deps.now()), [...past].sort((a, b) => b.at - a.at).map(p => p.reply));
 		const r = previous && change !== undefined ? await reviseReply(item, style, { to: `${c.author} 댓글`, body: previous.text }, change, call) : await generateReply(item, style, call);
 		// pastSeed: no empty card. An empty or skipped reply takes the closest past answer of the owner, marked 확인 필요.
 		const seed = (r.action === "skip" || !r.draft.body.trim()) && !previous ? seeds[0] : undefined;
@@ -361,6 +376,64 @@ export function createEngine(deps: EngineDeps) {
 			if (st === "sent") return { state: "sent", label: "메일 보냄" };
 		}
 		return undefined;
+	}
+
+	// The owner's past replies of the sources he chose, read back for tone (nothing is posted, stored as a comment, drafted or woken):
+	// 1) every run saves the store's pairs into the pair file, with no platform call, so the store trimming old rows loses nothing;
+	// 2) unless `read` is false, at most ONE source whose history was never read (`pairs-<key>@1`) and did not fail in the last 24 h (`~tried`) reads it, newest first up to
+	//    PAST_TARGET pairs. `key` (setting a source up) reads that source now, whatever failed before. With 20 or more replies the source's tone profile learns its identity once.
+	// Undefined = nothing was read (no history here, nothing due, or not wired).
+	async function refreshPast(opts: { deadline: number; key?: string; read?: boolean }): Promise<{ key: string; status: "read" | "known" | "failed"; pairs: number; replies: string[]; error?: string } | undefined> {
+		const cfg = store.config();
+		const { pairs, learned } = deps;
+		if (!cfg.enabled || !pairs || !learned) return undefined;
+		const sources = Object.values(cfg.sources).filter(s => s.watch.length);
+		for (const src of sources) {
+			const fresh = pairsOf(src);
+			const have = new Map(pairs.load(src.key).map(p => [pairKey(p), p]));
+			if (fresh.some(p => !have.has(pairKey(p)) || (p.edited && !have.get(pairKey(p))!.edited))) pairs.save(src.key, mergePast([...have.values()], fresh));
+		}
+		if (opts.read === false) return undefined;
+		const marks = learned.read();
+		const mark = (key: string) => `pairs-${key}@1`;
+		const tried = (key: string) => `pairs-${key}~tried`;
+		const src = opts.key
+			? sources.find(s => s.key === opts.key && deps.adapters[s.kind]?.history)
+			: sources.find(s => deps.adapters[s.kind]?.history && !marks[mark(s.key)] && !(Date.parse(marks[tried(s.key)] ?? "") > deps.now() - PAST_RETRY_MS));
+		if (!src) return undefined;
+		if (marks[mark(src.key)]) return { key: src.key, status: "known", pairs: 0, replies: [] };
+		const stamp = () => new Date(deps.now());
+		let rows: RawComment[];
+		try {
+			rows = await deps.adapters[src.kind]!.history!(src, { target: PAST_TARGET, deadline: opts.deadline });
+		} catch (e) {
+			learned.mark([tried(src.key)], stamp());
+			return { key: src.key, status: "failed", pairs: 0, replies: [], error: e instanceof Error ? clip(e.message, 160) : "지난 답글을 읽지 못했어요" };
+		}
+		const comments = rows.map(r => toComment(src, r, deps.collector));
+		const found = pastPairs(comments, [], src.key, store.drafts(), src.kind === "website" && !comments.some(c => c.mine && c.parent))
+			.sort((a, b) => b.at - a.at)
+			.slice(0, PAST_TARGET);
+		if (found.length) pairs.save(src.key, mergePast(pairs.load(src.key), found));
+		learned.mark([mark(src.key)], stamp());
+		const replies = found.map(p => p.reply);
+		if (found.length >= IDENTITY_MIN && deps.identity && deps.now() < opts.deadline) {
+			const call = async (system: string, user: string): Promise<string> => {
+				let timer: ReturnType<typeof setTimeout> | undefined;
+				const late = new Promise<never>((_, reject) => void (timer = setTimeout(() => reject(new Error("시간 안에 끝내지 못했어요")), Math.max(0, opts.deadline - deps.now()))));
+				try {
+					return await Promise.race([deps.model!(system, user, ownerOf(src)).then(r => r.text), late]);
+				} finally {
+					clearTimeout(timer);
+				}
+			};
+			try {
+				if (deps.model) await deps.identity(src, found.map(p => `${p.reply}\n${p.comment.split("\n").map(l => `> ${l}`).join("\n")}`), PLACE[src.kind], call, stamp());
+			} catch (e) {
+				console.error(`comments: tone of ${src.key} not learned: ${e instanceof Error ? clip(e.message, 160) : "error"}`);
+			}
+		}
+		return { key: src.key, status: "read", pairs: found.length, replies };
 	}
 
 	// Stores what an adapter read. New ids are added (and returned). A stored reply row keyed by position (Instagram's old `<comment>.<index>`) is replaced by
@@ -794,6 +867,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState }), collect, reconcile, makeDraft, revise, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailMarkOf, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
+	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState }), collect, refreshPast, reconcile, makeDraft, revise, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailMarkOf, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

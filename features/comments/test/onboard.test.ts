@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEngine } from "../../../hub/comments/engine.ts";
 import type { CommentAdapter } from "../../../hub/comments/contract.ts";
+import type { PastPair } from "../../../hub/comments/past.ts";
 import { type Gateway, runOnboard } from "../bin/onboard.ts";
 
 let dir: string;
@@ -35,6 +36,34 @@ const gateway = (names: string[] = []) => {
 };
 
 describe("onboard", () => {
+	test("a source with a history read learns from its past replies instead of the 30 it can list, and says how many", async () => {
+		const said = ["영상 봐 주셔서 고마워요.", "다음 영상도 기대해 주세요!", "링크는 설명란에 있어요."];
+		const rows = said.flatMap((text, i) => [
+			{ native: `q${i}`, thread: "v1", author: "A", text: `question ${i}?`, postTitle: "T", at: 10 + i },
+			{ native: `a${i}`, thread: "v1", parent: `q${i}`, author: "me", text, postTitle: "T", at: 20 + i, mine: true },
+		]);
+		const a: CommentAdapter = { ...adapter(["listed only"]), history: async () => rows };
+		const files = new Map<string, PastPair[]>();
+		const marks: Record<string, string> = {};
+		const engine = createEngine({
+			dir: join(dir, "custom", "comments"),
+			now: () => 1000,
+			collector: "m",
+			adapters: { youtube: a, website: a },
+			pairs: { load: k => files.get(k) ?? [], save: (k, l) => void files.set(k, l) },
+			learned: { read: () => ({ ...marks }), mark: (m, at) => m.forEach(x => (marks[x] = at.toISOString())) },
+		});
+		const r = await runOnboard(["on", "--app", "youtube"], { engine, gateway: gateway().g, connected: () => true });
+		expect(r.code).toBe(0);
+		expect(r.lines.join("\n")).toContain("3개");
+		expect(files.get("youtube")).toHaveLength(3);
+		const tone = readFileSync(join(dir, "custom", "reply-drafts", "tone", "youtube.md"), "utf8");
+		expect(tone).toContain("링크는 설명란에 있어요.");
+		expect(tone).not.toContain("listed only");
+		const again = await runOnboard(["on", "--app", "youtube"], { engine, gateway: gateway().g, connected: () => true });
+		expect(again.lines.join("\n")).not.toContain("3개");
+	});
+
 	test("an unconnected platform stops with the owner-only step and turns nothing on", async () => {
 		const gw = gateway();
 		const r = await runOnboard(["on", "--app", "youtube"], { engine: engineOf(adapter()), gateway: gw.g, connected: () => false });

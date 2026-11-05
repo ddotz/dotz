@@ -461,7 +461,7 @@ export async function sendDraft(id: string, deps: FlowDeps, opts: { withReply?: 
 		if (now.kind === "mail" && !now.compose && now.changes.length > 0 && now.item.text.trim()) {
 			try {
 				const source = pairSource(now.source);
-				addPair("mail", { received: now.item.text, reply: now.body, at: nowOf(deps).getTime(), ...(addressesOf(now.item.from)[0] ? { from: addressesOf(now.item.from)[0] } : {}), ...(source !== "zele" ? { source } : {}) });
+				addPair("mail", { received: now.item.text, reply: now.body, at: nowOf(deps).getTime(), edited: true, ...(addressesOf(now.item.from)[0] ? { from: addressesOf(now.item.from)[0] } : {}), ...(source !== "zele" ? { source } : {}) });
 			} catch (e) {
 				console.error(`reply draft: sent draft ${id} not kept as a past reply: ${(e as Error).message}`);
 			}

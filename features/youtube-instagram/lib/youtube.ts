@@ -277,6 +277,36 @@ export async function ownReplies(ctx: Ctx, channelId: string, limit: number, max
 	return out.slice(0, limit);
 }
 
+export const HISTORY_PAGES = 30; // 3000 threads, 30 quota units
+
+// The channel's past replies with the comments they answer, newest threads first (commentThreads.list, 1 unit per page of 100): each thread the channel answered, with the
+// replies the thread shows. Stops at `target` replies, at the last page, at `maxPages` or when `deadline` (epoch ms) has passed. A page that fails keeps what was read; only a read
+// that got nothing throws.
+export async function ownerHistory(ctx: Ctx, channelId: string, opts: { target: number; deadline: number; maxPages?: number }): Promise<YtComment[]> {
+	const token = await accessToken(ctx);
+	const out: YtComment[] = [];
+	let replies = 0;
+	let pages = 0;
+	try {
+		if (ctx.now().getTime() >= opts.deadline) return out;
+		for await (const page of threadPages(ctx, token, channelId, opts.maxPages ?? HISTORY_PAGES)) {
+			pages++;
+			for (const t of page.items) {
+				const top = t.snippet.topLevelComment;
+				const authorId = top.snippet.authorChannelId?.value;
+				const own = authorId === channelId ? [] : ownerRepliesOf(t, channelId);
+				if (!own.length) continue;
+				out.push({ id: top.id, videoId: t.snippet.videoId ?? "", author: top.snippet.authorDisplayName, authorChannelId: authorId, text: top.snippet.textDisplay ?? top.snippet.textOriginal ?? "", publishedAt: top.snippet.publishedAt, replied: true, ownerReplies: own });
+				replies += own.length;
+			}
+			if (replies >= opts.target || ctx.now().getTime() >= opts.deadline) break;
+		}
+	} catch (e) {
+		if (!pages) throw e;
+	}
+	return out;
+}
+
 export async function recentUploads(ctx: Ctx, channelId: string, max = 10): Promise<{ id: string; title: string; publishedAt: string }[]> {
 	const t = await accessToken(ctx);
 	const uploads = `UU${channelId.slice(2)}`;

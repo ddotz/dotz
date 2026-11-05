@@ -10,7 +10,7 @@ One contract for the comments of every platform, shipped in `hub/comments/`, off
 - A source is one account, channel or site: `{key, kind: youtube|instagram|website, label, watch[], autoDraft, autoSend?, everyMin?, site?, autoMail?, mailApp?}`.
   `watch` lists the post ids to follow (`"*"` = all). An empty `watch` reads nothing and costs nothing.
 - An adapter implements `list(src, cursor) -> {comments, cursor}` (comments newer than the adapter's own opaque cursor), `reply(src, comment, text, sendId)`,
-  and optionally `posts(src)` (what the owner can choose to follow) and `ownReplies(src, limit)` (tone examples).
+  and optionally `posts(src)` (what the owner can choose to follow), `ownReplies(src, limit)` (tone examples) and `history(src, {target, deadline})` (the owner's past replies with the comments they answer, newest first, for the pair file; see below).
   A comment has: stable id, `thread` (the post), `parent` (for a reply), `author`, `text`, `postTitle`, `postLink`, `at`, `mine`.
 - One send gate, `dispatchReply`: it posts only after the owner's `보내기` (route `POST /api/comments/drafts/<code>/send` or a picked
   `[ask]` checked by `bin/comments.ts send`) or, for a source whose owner turned `autoSend` on, a rule match (regex list, daily cap,
@@ -23,8 +23,19 @@ One contract for the comments of every platform, shipped in `hub/comments/`, off
 
 `bin/watch.ts` is a dotz_watch script (every 5 minutes): it reads, stores new ids (dedupe by stable id) and prints nothing unless a
 source with auto-draft on made a draft. No model call happens while collecting. A draft is one cheap subscription model call with:
-the comment stream, the post title and at most 5 of the owner's past replies (`tone/<source>.md`). Token use is stored on every draft
+the comment stream, the post title, the owner's tone profile (`tone/<source>.md`) and the 8 past replies whose comment reads most like this one, verbatim, from the store's pairs merged with the source's pair file (below). Token use is stored on every draft
 (`tokens`; `estimated` when the model reports none) and shown by `bin/comments.ts status`.
+
+## Past replies (`history`, `engine.refreshPast`)
+
+A draft learns from a meaningful amount of the owner's past replies, not only what was collected since connecting (the store trims old rows). Each source keeps its pairs (a comment and the owner's reply to it) in the
+reply-drafts pair file of its key (`custom/reply-drafts/pairs/<key>.jsonl`, 1000 newest). `history` is read-only: it returns rows in the shape of `list` (a reply is `mine: true` with its `parent`), stores no comment, makes no draft or card, wakes nobody.
+
+- Limits (`hub/comments/past.ts`): `PAST_TARGET` 1000 pairs per source, newest first, stop as soon as it is reached. YouTube: threads newest first (30 pages = 3000 threads = 30 quota units); Instagram: the newest 300 media, at most 1000 author lookups; every read also stops at its deadline. Rows read so far are kept when a later page fails; a read that got nothing throws.
+- Weights: the closeness of a past comment is multiplied by `1 + 0.5^(age in days / 90)` (a reply of today counts double) and by 1.5 for a reply the owner changed by hand before sending; habits are measured over the newest 300 replies.
+- When: `bin/watch.ts` calls `refreshPast` after each collect and reads at most ONE source per run, the first whose `pairs-<key>@1` mark is missing in `learned.json`; a failed read sets `pairs-<key>~tried` and waits 24 h. Setting a source up (`onboard.ts on`) reads it right after its first collect, so an existing source is read by the watch alone, with no rerun. Every run also saves the store's pairs into the pair file (no platform call), so a trimmed store loses nothing. A source with an empty `watch` is skipped.
+- With 20 or more replies the source's tone profile learns its identity once (`learnFirst`, version `1`); a tuned profile is skipped and a hand-written `## 답장 틀` is kept.
+- A bot draft the owner sent unchanged is never learned (also when the platform trimmed it).
 
 ## Keeping comments true to the platform (reconcile)
 
@@ -60,6 +71,7 @@ Reading (`site.read`):
   `title` ("Comment on <post> by <author>") = post title. Comments by `site.owner` are his own.
 - `json`: `GET <url>?since=<cursor>` answering the shape below.
 - `script`: `command` is run as `<command...> --since <cursor>` (a leading `{site}` is replaced by `~/.dotz/custom/comments/sites`) and prints the shape below to stdout.
+- The cursor `1` (`--since 1`, JSON `?since=1`) means "from the beginning": answer with the owner's past replies (`mine: true`, `parent`) and the comments they answer, as many as you can (the read gets 240 s). It must only read: no mark, no read receipt, nothing changed on the site. RSS is read as usual. The private-message inbox (`site.dm`) is not read for history.
 
 ```json
 {"comments": [{"id": "42", "thread": "post-7", "parent": "40", "author": "A", "text": "...", "postTitle": "...", "postLink": "https://...", "at": "2026-01-01T00:00:00Z", "mine": false}], "cursor": "42"}

@@ -154,7 +154,7 @@ const forRecipient = (s: string): string =>
 		.replace("Output exactly one JSON", () => `${RECIPIENT}\nOutput exactly one JSON`);
 // Revise mode (mail and comment): what the change teaches, so only a lasting preference enters the profile.
 const LESSON = 'Also add to the JSON object "lesson": the lasting preference this change shows, one short line in the user\'s language with its condition (when ... then ...), in the user\'s own words where possible; "" when the change is only about this message, its file, its song or its exact text.';
-const CORRECTIONS = "The user's past corrections. Each was about one draft: carry over the preference it shows to the same kind of situation, never its specific words, songs, files or names; skip one that only rewrites a single draft:";
+const CORRECTIONS = "The user's past corrections, newest first; when two disagree, the newer one wins. Each was about one draft: carry over the preference it shows to the same kind of situation, never its specific words, songs, files or names; skip one that only rewrites a single draft:";
 
 // Chat only. The same single model call first decides whether the message needs the user's own decision.
 const CHAT_ASK = `
@@ -196,7 +196,7 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		"",
 		list("The user's rules:", style.rules, "(none)"),
 		"",
-		item.kind === "chat" ? list("The user's past corrections (follow them):", style.corrections, "(none)") : list(CORRECTIONS, style.corrections.slice(-12).map(c => c.slice(0, 200)), "(none)"),
+		item.kind === "chat" ? list("The user's past corrections (follow them):", style.corrections, "(none)") : list(CORRECTIONS, style.corrections.slice(-12).reverse().map(c => c.slice(0, 200)), "(none)"),
 		"",
 		list("Forbidden expressions:", style.forbidden, "(none)"),
 		"",

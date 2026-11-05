@@ -25,7 +25,16 @@ const style: ReplyStyle = { samples: ["네, 확인했어요."], rules: [], corre
 const mailItem: ReplyItem = { kind: "mail", from: "Kim <kim@example.com>", self: ["me@example.net"], subject: "일정 문의", text: "다음 주 일정 문의드립니다. 가능한 시간을 알려 주세요." };
 const meta = { source: "zele", mailId: "x", ref: "r" };
 const day = Date.parse("2026-10-01T00:00:00Z");
+const DAYS = 86_400_000;
 const seedPairs = (n: number) => savePairs("mail", Array.from({ length: n }, (_, i) => ({ received: `일정 문의드립니다 ${i}번째 건입니다. 시간을 알려 주세요.`, reply: `${i}번 건은 화요일 괜찮아요^^`, at: day + i })));
+
+test("an edited mark and the post of a pair survive a re-read of the same pair without them; an edited pair leads the examples", () => {
+	savePairs("mail", [{ received: "q", reply: "r", at: day, edited: true, thread: "p" }]);
+	savePairs("mail", [...loadPairs("mail"), { received: "Q", reply: "R ", at: day + 5 }]);
+	expect(loadPairs("mail")).toEqual([{ received: "Q", reply: "R ", at: day + 5, edited: true, thread: "p" }]);
+	savePairs("mail", [{ received: "일정 문의드립니다 시간을 알려 주세요", reply: "plain", at: day + DAYS }, { received: "일정 문의드립니다 시간을 알려 주세요", reply: "edited", at: day, edited: true }]);
+	expect(styleWithExamples(style, "mail", "일정 문의드립니다 시간을 알려 주세요").examples![0]!.reply).toBe("edited");
+});
 
 test("an unreadable pair line is skipped and reported, a blank line is not", () => {
 	mkdirSync(join(paths.pairs("mail"), ".."), { recursive: true });

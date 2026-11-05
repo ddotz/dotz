@@ -16,9 +16,19 @@ export type YoutubeApi = {
 	ownReplies: (channelId: string, limit: number) => Promise<string[]>;
 	/** Re-reads top-level comments by id: the video and the channel's replies of each one still there; an id missing from the answer is deleted. */
 	threadsByIds?: (channelId: string, ids: string[]) => Promise<Record<string, { videoId: string; replies: YtReply[] }>>;
+	/** The threads the channel answered, newest first, with its replies (youtube.ts ownerHistory); `deadline` is epoch ms. Missing = no history. */
+	history?: (channelId: string, opts: { target: number; deadline: number }) => Promise<YtComment[]>;
 };
 
 const videoLink = (id: string) => `https://www.youtube.com/watch?v=${id}`;
+
+// A thread as stored rows: the top comment, then the channel's own replies that came with it (its answer is stored next to the comment, so the comment is not open).
+function ytRows(c: YtComment, channelId: string, shown: Pick<RawComment, "postTitle" | "postLink" | "thumb">): RawComment[] {
+	return [
+		{ native: c.id, thread: c.videoId, author: c.author, text: c.text, ...shown, at: Date.parse(c.publishedAt) || 0, mine: c.authorChannelId === channelId },
+		...(c.ownerReplies ?? []).map((r): RawComment => ({ native: r.id, thread: c.videoId, parent: c.id, author: r.author, text: r.text, ...shown, at: Date.parse(r.publishedAt) || 0, mine: true })),
+	];
+}
 
 export function youtubeAdapter(api: () => YoutubeApi): CommentAdapter {
 	return {
@@ -36,12 +46,15 @@ export function youtubeAdapter(api: () => YoutubeApi): CommentAdapter {
 			const found = bare.length && a.threadsByIds ? await a.threadsByIds(id, bare).catch(() => undefined) : undefined;
 			for (const c of comments) if (!c.ownerReplies && found?.[c.id]?.replies.length) c.ownerReplies = found[c.id]!.replies;
 			const shown = (videoId: string) => ({ postTitle: info[videoId]?.title ?? FALLBACK_TITLE.youtube, postLink: videoLink(videoId), ...(info[videoId]?.thumb ? { thumb: info[videoId]!.thumb } : {}) });
-			const raw: RawComment[] = comments.flatMap(c => [
-				{ native: c.id, thread: c.videoId, author: c.author, text: c.text, ...shown(c.videoId), at: Date.parse(c.publishedAt) || 0, mine: c.authorChannelId === id },
-				// The channel's own replies that came with the thread: its answer is stored next to the comment, so the comment is not open.
-				...(c.ownerReplies ?? []).map((r): RawComment => ({ native: r.id, thread: c.videoId, parent: c.id, author: r.author, text: r.text, ...shown(c.videoId), at: Date.parse(r.publishedAt) || 0, mine: true })),
-			]);
+			const raw: RawComment[] = comments.flatMap(c => ytRows(c, id, shown(c.videoId)));
 			return { comments: raw, cursor: newest ?? cursor };
+		},
+		// Past replies for the pair file: no video titles are looked up (a title costs quota and no pair needs it).
+		async history(_src, opts) {
+			const a = api();
+			if (!a.history) return [];
+			const id = a.channelId();
+			return (await a.history(id, opts)).flatMap(c => ytRows(c, id, { postTitle: FALLBACK_TITLE.youtube, postLink: videoLink(c.videoId) }));
 		},
 		// The owner may answer an old comment long after it was read (the list reads "since newest"): look at the open ones again, by id.
 		async recheck(_src, open) {
@@ -92,17 +105,20 @@ export type InstagramApi = {
 	author?: (replyId: string) => Promise<IgAuthor>;
 	/** Resolved authors by reply id, kept for good (an author never changes). */
 	authorCache?: { get: (replyId: string) => IgAuthor | undefined; put: (entries: Record<string, IgAuthor>) => void };
+	/** The newest media of the account, paged (instagram.ts mediaHistory). Missing = `media`. */
+	mediaHistory?: () => Promise<IgMedia[]>;
 };
 const MAX_AUTHOR_LOOKUPS = 150;
+const MAX_HISTORY_LOOKUPS = 1000;
 
 // Fills in the author of replies that came without one: from the cache first, else one single-object GET per reply (then cached).
 // A lookup that fails (deleted reply, rate limit) leaves that reply as it was; a later read tries again.
-async function withAuthors(a: InstagramApi, list: IgComment[]): Promise<IgComment[]> {
+// `budget`: lookups left, shared by the media of one history read.
+async function withAuthors(a: InstagramApi, list: IgComment[], budget = { left: MAX_AUTHOR_LOOKUPS }): Promise<IgComment[]> {
 	if (!a.author) return list;
 	const fresh: Record<string, IgAuthor> = {};
 	// A reply the list also gives at top level (the owner's, pinned ones) has its author there: no lookup for it (igRows borrows it).
 	const topAuthor = new Set(list.filter(c => known(c.username)).map(c => c.id));
-	let lookups = 0;
 	const out: IgComment[] = [];
 	for (const c of list) {
 		const replies = [];
@@ -112,8 +128,8 @@ async function withAuthors(a: InstagramApi, list: IgComment[]): Promise<IgCommen
 				continue;
 			}
 			let who = a.authorCache?.get(r.id);
-			if (!who && lookups < MAX_AUTHOR_LOOKUPS) {
-				lookups++;
+			if (!who && budget.left > 0) {
+				budget.left--;
 				who = await a.author(r.id).catch(() => undefined);
 				if (who && (who.username || who.fromId)) fresh[r.id] = who;
 			}
@@ -154,6 +170,15 @@ function igRows(list: IgComment[], isOwner: (c: { id?: string; username?: string
 		} catch {}
 	}
 	return out;
+}
+
+// History rows of one media: an own top-level row that @mentions the author of an earlier comment answers that comment (the owner's way of replying here), so it gets it as `parent`.
+function withMentionParents(rows: RawComment[]): RawComment[] {
+	return rows.map(r => {
+		if (!r.mine || r.parent) return r;
+		const asked = rows.filter(x => !x.mine && !x.parent && x.at < r.at && mentions(r.text, x.author)).sort((a, b) => b.at - a.at)[0];
+		return asked ? { ...r, parent: asked.native } : r;
+	});
 }
 
 // A media is read again only when its comment count moved since the last run (the count comes with the media list), so a quiet
@@ -213,6 +238,36 @@ export function instagramAdapter(api: () => InstagramApi): CommentAdapter {
 			// One media that cannot be read (deleted, no access) must not hide the rest; a read that failed everywhere is an error.
 			if (failure && !read) throw failure;
 			return { comments, gone };
+		},
+		// Past replies for the pair file, newest media first: each media that has comments is read like `list` does (authors looked up from one shared budget); only the owner's
+		// replies and the comments they answer are kept. One media that cannot be read is skipped; a read that failed everywhere is an error.
+		async history(_src, opts) {
+			const a = api();
+			const owner = { userId: a.userId?.(), username: a.username() };
+			const budget = { left: MAX_HISTORY_LOOKUPS };
+			const out: RawComment[] = [];
+			let replies = 0;
+			let failure: unknown;
+			let read = 0;
+			for (const m of a.mediaHistory ? await a.mediaHistory() : await a.media()) {
+				if (replies >= opts.target || Date.now() >= opts.deadline) break;
+				if (!m.comments_count) continue;
+				try {
+					const link = m.permalink, thumb = igThumb(m);
+					const shown = { postTitle: igTitle(m), ...(link ? { postLink: link } : {}), ...(thumb ? { thumb } : {}) };
+					const list = await withAuthors(a, (await readMedia(a, m.id)).comments, budget);
+					const rows = withMentionParents(igRows(list, ownerView(list, owner).isOwner, m.id, shown));
+					const answers = rows.filter(r => r.mine && r.parent && !/\.\d+$/.test(r.native));
+					const asked = new Set(answers.map(r => r.parent));
+					out.push(...answers, ...rows.filter(r => !r.mine && asked.has(r.native)));
+					replies += answers.length;
+					read++;
+				} catch (e) {
+					failure ??= e;
+				}
+			}
+			if (failure && !read) throw failure;
+			return out;
 		},
 		answered: (c, mine) => mine.some(x => x.at >= c.at && mentions(x.text, c.author)),
 		// The target is always a comment id (a reply goes to its top-level comment), never a username.
