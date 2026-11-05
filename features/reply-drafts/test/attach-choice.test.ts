@@ -194,6 +194,20 @@ describe("(f) a file that is slow to download is not lost", () => {
 		expect(names(rec.id)).toEqual(["고정.pdf"]);
 		expect(getDraft(rec.id)!.wantFiles ?? []).toEqual([]);
 	});
+	test("a retry that ran out is not started again when the cards are read", async () => {
+		enable(env);
+		const rec: DraftRec = { id: "RCHOICE4", kind: "mail", app: "mail", source: "zele", mailId: "T4", ref: "zele-t4", to: "kim@example.com", body: "x", status: "pending", created: new Date().toISOString(), changes: [], questions: [], wantFiles: [{ name: "고정.pdf", path: join(lib, "고정.pdf") }], item: { kind: "mail", from: "Kim <kim@example.com>", text: "x" } };
+		addDraft(rec);
+		let tries = 0;
+		const opts = { copy: () => { tries++; throw new Error("boom"); } };
+		resumeWantedFiles(opts);
+		for (let n = 0; n < 10; n++) await advance(30_000);
+		expect(tries).toBe(10);
+		resumeWantedFiles(opts);
+		await advance(30_000);
+		expect(tries).toBe(10);
+		expect(getDraft(rec.id)!.wantFiles?.map(w => w.name)).toEqual(["고정.pdf"]);
+	});
 });
 
 describe("(g) phrases that ask for or promise a file", () => {
