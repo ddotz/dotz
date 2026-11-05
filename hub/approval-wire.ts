@@ -24,7 +24,7 @@ import { claimHolder } from "./draft-claim.ts";
 import { createApprovalSender, MAY_HAVE_GONE_OUT, refOfQuestion, runCli, sendActionOf, type SendAction, type SendJob, type SendLook, type SendResult, type SendTarget } from "./approval-send.ts";
 import { answerBatch, batchCard, STALE_OPTIONS, type BatchCard, type BatchPick } from "./approval-batch.ts";
 import { DRAFT_BODY_MAX, withAttachIssues, withStagedFiles } from "./draft-approval.ts";
-import { pendingDraftFiles, pendingDraftIssues, syncCardFiles } from "./draft-attach.ts";
+import { askText, pendingDraftFiles, pendingDraftIssues, syncCardFiles } from "./draft-attach.ts";
 
 // How many waiting cards of one conversation make the web open its triage view instead of one card at a time (settings: web.triage_min).
 export const TRIAGE_MIN_DEFAULT = 3;
@@ -60,9 +60,19 @@ export const draftAppOf = (ref: string): string | undefined => {
 // A conversation's gateway note goes where its cards were posted.
 const targetOf = (conv: string, ref: string): string => approvals.targetOf(conv, ref) ?? (conv === "main" ? "web" : conv);
 
-const reportSend = (r: SendResult): void => {
+// 답글만 보내기 posts the reply and leaves its mail draft on its own; the CLI line that asks for it (hub/mail-cli.ts ask) is for the bot, and this path runs no
+// model turn. The card is posted as the assistant would post it: a "gateway" post never becomes a decision (hub/notices-decisions.ts). Judged from the stores, so a restart is covered and a second report finds the card already open.
+function cardOwedMail(r: SendResult): void {
+	const mailId = commentPostedOf(r.ref)?.mail;
+	const mail = mailId ? getDraft(mailId) : undefined;
+	if (!mailId || mail?.status !== "pending" || openDraftCards().some(c => c.ref === mailId)) return;
+	void out(targetOf(r.conv, mailId), askText(mail, []), undefined, { source: "orchestrator" }).catch(e => log(`mail card for ${mailId} failed: ${e instanceof Error ? e.message : String(e)}`));
+}
+
+export const reportSend = (r: SendResult): void => {
 	markDraftSend(r.conv, r.ref, r.state, r.text);
 	broadcast({ ts: now(), kind: "approval_send", source: "gateway", ...r });
+	if (r.state === "sent") cardOwedMail(r);
 	if (r.state !== "failed") return;
 	const what = r.title.replace(/\s*\([^()]*\)\s*$/, "");
 	void out(targetOf(r.conv, r.ref), `[fail] 보내지 못했어요: ${what} (${r.ref})\n${r.text || "이유를 알 수 없어요"}\n다른 카드는 그대로 보내고 있어요.`, undefined, { source: "gateway" }).catch(e => log(`send failure note for ${r.ref} failed: ${e}`));
