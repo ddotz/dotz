@@ -101,9 +101,10 @@ function blocks(text, last, answer) {
   };
   const flushL = () => {
     if (!list) return;
-    const card = answer && (timeList(list) ? `<div class="hcb-card">${timeRowsHtml(list.items)}</div>` : ansListHtml(list));
-    if (card) answer.shaped = true;
-    html.push(card || `<${list.t}>${list.items.map(i => `<li${i.sub ? ' class="sub"' : ""}>${inline(i.text)}</li>`).join("")}</${list.t}>`);
+    const plain = `${list.head ? `<p>${inline(list.head)}</p>` : ""}<${list.t}>${list.items.map(i => `<li${i.sub ? ' class="sub"' : ""}>${inline(i.text)}</li>`).join("")}</${list.t}>`;
+    const shaped = !answer ? null : list.head ? ansSection(list, plain) : timeList(list) ? `<div class="hcb-card">${timeRowsHtml(list.items)}</div>` : ansListHtml(list);
+    if (typeof shaped === "string") answer.shaped = true;
+    html.push(shaped || plain);
     list = null;
   };
   const flushT = () => {
@@ -133,9 +134,10 @@ function blocks(text, last, answer) {
     }
     // An indented item (2+ spaces) is a sub-item of the list it sits in, whatever its own marker.
     if ((m = line.match(/^(\s*)(?:[-*•]|(\d+)[.)])\s+(.*)/))) {
+      const head = answer && para.length === 1 && ANS_HEAD.test(para[0].trim()) ? para.pop().trim() : "";   // a title right above a list
       flushP();
       const t = m[2] ? "ol" : "ul", sub = m[1].length >= 2 && !!list;
-      if (!sub && (!list || list.t !== t)) { flushL(); list = { t, items: [] }; }
+      if (!sub && (!list || list.t !== t)) { flushL(); list = { t, items: [], head }; }
       list.items.push({ text: m[3], sub, raw: line.trim() });
     }
     else if ((m = line.match(/^\s*>\s?(.*)/))) { flushL(); if (para.length) { const q = quote; quote = []; flushP(); quote = q; } quote.push(m[1]); }
@@ -145,7 +147,7 @@ function blocks(text, last, answer) {
   }
   flushP(); flushL(); flushT();
   if (answer && html.length) answer.opened = true;
-  return html.join("");
+  return (answer ? ansJoin(html, answer) : html).join("");
 }
 // A fence tagged 목록 is a list shown as UI rows (hub/listblock.ts writes it): an optional "# " title line, then one row per line
 // "title | subtitle | meta | badge" (the last three optional). Each row gets a round initial, the meta on the right and a count badge.
