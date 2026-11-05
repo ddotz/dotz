@@ -5,8 +5,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { addressesOf, AUTOMATED } from "../../../hub/reply-draft.ts";
 import { SIDE_MAX } from "../../../hub/comments/past.ts";
+import { readAppsFile } from "../../../hub/integrations.ts";
 import { loadPairs, normText, savePairs, type Pair } from "./pairs.ts";
-import { dataDir, writeExamples, type ToneKey } from "./settings.ts";
+import { dataDir, markLearned, readLearned, writeExamples, type ToneKey } from "./settings.ts";
 import { listDrafts } from "./store.ts";
 
 export type RunResult = { code: number; stdout: string; stderr: string };
@@ -90,8 +91,9 @@ const FWD_SUBJECT = /^\s*(fwd?|전달)\s*:/i;
 // whose From is the listed account are the user's words (`texts`); a mail without one falls back to what the read or the snippet gave.
 // An own message that answers the nearest earlier message of someone else, sent to that sender, is also kept as a reply pair; forwards,
 // automated senders, long texts and bot drafts sent unchanged (`ownerDrafts`: their bodies) are not pairs.
-export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: string[] = []): Promise<{ texts: string[]; pairs: Pair[] }> {
-	const listed = await run(["zele", "mail", "list", "--folder", "sent", "--limit", String(limit)]);
+// `account`: one zele account (a mail app names it); without one zele lists every account, and each read uses the listed mail's own account.
+export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: string[] = [], account?: string): Promise<{ texts: string[]; pairs: Pair[] }> {
+	const listed = await run(["zele", "mail", "list", "--folder", "sent", "--limit", String(limit), ...(account ? ["--account", account] : [])]);
 	if (listed.code !== 0) throw new Error(`보낸 메일 목록을 못 읽었어요: ${(listed.stderr || listed.stdout).trim().slice(0, 160)}`);
 	const items = ((Bun.YAML.parse(listed.stdout) as { items?: Record<string, unknown>[] } | null)?.items ?? []).slice(0, limit);
 	// Loaded on use: hub/zele.ts reads the gateway config when it is imported.
@@ -102,11 +104,12 @@ export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: s
 	const now = Date.now();
 	for (const [n, m] of items.entries()) {
 		const id = String(m.id ?? "");
-		const account = addressesOf(String(m.account ?? ""))[0];
-		const body = id ? await run(["zele", "mail", "read", id]) : undefined;
+		const me = addressesOf(String(m.account ?? ""))[0];
+		const readAs = account ?? (String(m.account ?? "").trim() || undefined);
+		const body = id ? await run(["zele", "mail", "read", id, ...(readAs ? ["--account", readAs] : [])]) : undefined;
 		const read = body && body.code === 0 && body.stdout.trim() ? body.stdout : "";
-		const thread = account ? parseThread(read) : [];
-		const own = (x: { from: string }) => addressesOf(x.from).includes(account!);
+		const thread = me ? parseThread(read) : [];
+		const own = (x: { from: string }) => addressesOf(x.from).includes(me!);
 		if (!thread.some(own)) {
 			const text = read || String(m.snippet ?? "");
 			if (text.trim()) texts.push(text);
@@ -126,7 +129,7 @@ export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: s
 			if (!received) continue;
 			paired.add(at);
 			const stamp = Date.parse(msg.date);
-			pairs.push({ received, reply: mine, at: Number.isFinite(stamp) ? stamp : now - n });
+			pairs.push({ received, reply: mine, at: Number.isFinite(stamp) ? stamp : now - n, from: sender });
 		}
 	}
 	return { texts, pairs };
@@ -136,27 +139,71 @@ export async function sentMail(run: Runner, limit = MAX_EXAMPLES, ownerDrafts: s
 const botDrafts = (): string[] => listDrafts().filter(d => d.status === "sent" && !d.changes.length).map(d => d.body);
 
 // The sent mail is also kept as reply pairs for the prompt's examples (lib/pairs.ts), merged with the ones already stored.
-async function learnSentMail(run: Runner): Promise<string[]> {
-	const { texts, pairs } = await sentMail(run, SWEEP_LIMIT, botDrafts());
+async function learnSentMail(run: Runner, accounts: (string | undefined)[]): Promise<string[]> {
+	const bots = botDrafts();
+	const texts: string[] = [];
+	const pairs: Pair[] = [];
+	for (const account of accounts) {
+		const r = await sentMail(run, SWEEP_LIMIT, bots, account);
+		texts.push(...r.texts);
+		pairs.push(...r.pairs);
+	}
 	if (pairs.length) savePairs("mail", [...loadPairs("mail"), ...pairs]);
 	return texts;
 }
 
-// Only an install whose config.json turned zele on reads mail with it (MODE: zele.enabled true); an installed CLI alone is not enough.
+// Whether this install's config.json turned zele on (all its accounts are read) and the CLI is here; an installed CLI alone is not enough.
 export function zeleEnabled(config: Record<string, any> | undefined): boolean {
 	return config?.zele?.enabled === true && !!Bun.which("zele");
 }
 
-// The install's sent mail for the identity sweep: read with zele only when this install's config.json turned zele on, else nothing.
-export async function installSentMail(run: Runner): Promise<string[]> {
-	let config: Record<string, any> | undefined;
+function installConfig(): Record<string, any> | undefined {
 	try {
-		config = JSON.parse(readFileSync(join(dataDir(), "config.json"), "utf8"));
-	} catch {}
-	return zeleEnabled(config) ? learnSentMail(run) : [];
+		return JSON.parse(readFileSync(join(dataDir(), "config.json"), "utf8"));
+	} catch {
+		return undefined;
+	}
 }
 
-export type LearnOpts = { fromFile?: string; run?: Runner; zeleOn?: boolean; texts?: string[]; textsLabel?: string };
+// Where this install's sent mail can be read: every account when config.json turned zele on (`[undefined]`); else, with zele installed, the accounts
+// the mail apps of custom/apps.json name (a mail that comes from a watch has no zele switch but zele sends its replies); else nowhere.
+export function sentAccounts(config: Record<string, any> | undefined): (string | undefined)[] {
+	if (zeleEnabled(config)) return [undefined];
+	if (!Bun.which("zele")) return [];
+	const named = Object.values(readAppsFile(dataDir())).filter(a => a?.app === "mail").map(a => a.filter?.account?.trim());
+	return [...new Set(named.filter((a): a is string => !!a))];
+}
+
+// The install's sent mail for the identity sweep, from the accounts sentAccounts names.
+export async function installSentMail(run: Runner): Promise<string[]> {
+	const accounts = sentAccounts(installConfig());
+	return accounts.length ? learnSentMail(run, accounts) : [];
+}
+
+export const PAIR_SWEEP = 500;
+const PAIR_DAILY = 40;
+const DAY = 24 * 60 * 60 * 1000;
+// Keeps the past reply pairs (and who each answered) current, with no model call and no profile change: the first read takes PAIR_SWEEP threads per
+// account, later ones at most once a day the newest PAIR_DAILY. The day mark is set before reading, so a failure waits a day.
+export async function refreshPairs(run: Runner, now = new Date()): Promise<void> {
+	const accounts = sentAccounts(installConfig());
+	if (!accounts.length) return;
+	const learned = readLearned();
+	if (now.getTime() - Date.parse(learned["pairs-mail~day"] ?? "") < DAY) return;
+	markLearned(["pairs-mail~day"], now);
+	const first = !learned["pairs-mail@1"];
+	try {
+		const bots = botDrafts();
+		const pairs: Pair[] = [];
+		for (const account of accounts) pairs.push(...(await sentMail(run, first ? PAIR_SWEEP : PAIR_DAILY, bots, account)).pairs);
+		if (pairs.length) savePairs("mail", [...loadPairs("mail"), ...pairs]);
+		if (first) markLearned(["pairs-mail@1"], now);
+	} catch (e) {
+		console.error(`reply draft: past mail pairs not refreshed: ${(e as Error).message}`);
+	}
+}
+
+export type LearnOpts = { fromFile?: string; run?: Runner; zeleOn?: boolean; /** The accounts the sent mail is read from (sentAccounts); absent = every account when zeleOn. */ accounts?: (string | undefined)[]; texts?: string[]; textsLabel?: string };
 export type LearnResult = { examples: string[]; from: string[]; texts: string[]; warning?: string };
 
 // The sent-mail source (zele) belongs to the mail app only; any key can take a file or ready-made texts.
@@ -172,9 +219,10 @@ export async function learnTone(key: ToneKey | "install", opts: LearnOpts): Prom
 		from.push("파일");
 	}
 	let warning: string | undefined;
-	if (opts.zeleOn && opts.run && key !== "install" && key.app === "mail" && key.room === undefined) {
+	const accounts = opts.accounts ?? (opts.zeleOn ? [undefined] : []);
+	if (accounts.length && opts.run && key !== "install" && key.app === "mail" && key.room === undefined) {
 		try {
-			const mails = await learnSentMail(opts.run);
+			const mails = await learnSentMail(opts.run, accounts);
 			texts.push(...mails);
 			if (mails.length) from.push(`보낸 메일 ${mails.length}통`);
 		} catch (e) {

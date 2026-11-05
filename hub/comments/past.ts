@@ -6,7 +6,8 @@ import type { ReplyStyle } from "../reply-draft.ts";
 import type { Comment } from "./contract.ts";
 import type { Draft, Reply } from "./store.ts";
 
-export type PastPair = { comment: string; reply: string; at: number; thread: string };
+/** `same`: the reply went to the very sender of the message being drafted (lib/pairs.ts styleWithExamples). */
+export type PastPair = { comment: string; reply: string; at: number; thread: string; same?: boolean };
 
 export const EXAMPLES = 8;
 export const SIDE_MAX = 1500;
@@ -91,5 +92,5 @@ const clip = (s: string) => s.trim().slice(0, SIDE_MAX);
 export function withExamples(style: ReplyStyle, close: PastPair[], replies: string[]): ReplyStyle {
 	if (!close.length) return style;
 	const habits = habitsOf(replies);
-	return { ...style, examples: close.map(p => ({ received: clip(p.comment), reply: clip(p.reply) })), ...(habits.length ? { habits } : {}) };
+	return { ...style, examples: close.map(p => ({ received: clip(p.comment), reply: clip(p.reply), ...(p.same ? { same: true as const } : {}) })), ...(habits.length ? { habits } : {}) };
 }

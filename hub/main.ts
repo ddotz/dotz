@@ -71,8 +71,8 @@ import { mailByKey, mailByThread, mailRecords, mailTarget, migrateStoredMails, p
 import { ownAddresses, replyExpected } from "./mail-state.ts";
 import { offerMailDraft, requestMailDraft } from "../features/reply-drafts/lib/offer.ts";
 import { listDrafts } from "../features/reply-drafts/lib/store.ts";
-import { readMailBody } from "../features/reply-drafts/lib/senders.ts";
-import { installSentMail, realRunner } from "../features/reply-drafts/lib/tone.ts";
+import { readMailBody, zeleHistory } from "../features/reply-drafts/lib/senders.ts";
+import { installSentMail, realRunner, refreshPairs } from "../features/reply-drafts/lib/tone.ts";
 import { defaultCall } from "../features/reply-drafts/lib/flow.ts";
 import { loadSettings } from "../features/reply-drafts/lib/settings.ts";
 import { setFollowupWake } from "./followup.ts";
@@ -319,8 +319,8 @@ const mailDeps = (): MailDeps => ({
 	emit: event => emit("inbox", event as Parameters<typeof emit>[1]),
 	wake: (event, target) => deliver(inboxText(event), { target }),
 	offerDraft: m =>
-		void offerMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
-	requestDraft: m => requestMailDraft(m, { send: (target, text) => out(target, text), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }),
+		void offerMailDraft(m, { send: (target, text) => out(target, text), history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }).then(r => r === "failed" && log(`mail ${m.key}: reply draft not offered`)),
+	requestDraft: m => requestMailDraft(m, { send: (target, text) => out(target, text), history: zeleHistory, refreshPairs: () => refreshPairs(realRunner), readBody: (source, id, account) => readMailBody(source, id, realRunner, account), log, suggest: (key, s) => void setMailSuggest(key, s), analyze: defaultCall(loadSettings().model), sentTexts: () => installSentMail(realRunner), own: () => [...ownAddresses()] }),
 });
 
 function classifyStoredMails(): void {

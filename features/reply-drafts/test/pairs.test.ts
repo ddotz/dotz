@@ -9,7 +9,8 @@ import { offerMailDraft } from "../lib/offer.ts";
 import { habitsOf } from "../../../hub/comments/past.ts";
 import { addPair, loadPairs, savePairs, styleWithExamples } from "../lib/pairs.ts";
 import { learnFirst, MAIL_TONE_VERSION } from "../lib/persona.ts";
-import { listProfiles, paths, toneFile } from "../lib/settings.ts";
+import { listProfiles, loadStyle, paths, toneFile } from "../lib/settings.ts";
+import { getDraft, listDrafts as storedDrafts } from "../lib/store.ts";
 import { learnTone, ownText, sentMail, type Runner } from "../lib/tone.ts";
 import { enable, fakeModel, j, mailFixture, pick, setupEnv } from "./helpers.ts";
 
@@ -154,7 +155,9 @@ test("an edited draft the user sent joins his pairs; an unchanged bot draft neve
 	expect(loadPairs("mail")).toMatchObject([{ received: mailFixture.body, reply: "곧 알려 드릴게요." }]);
 });
 
-const OLD = ["## 정체성", "", "- 옛 정체성", "", "## 답장 틀", "", "- 옛 틀 => 옛 문장", "", "## 말투", "", "- 반말 금지   (공백  그대로)", "", "## 예시", "", "- 옛 예시", "", "## 금지", "", "- /secret/i", "", "## 고친 점", "", "- 2026-10-01: 더 짧게", "", "## 내 메모", "", "- 직접 적은 줄", ""].join("\n");
+const OLD = ["## 정체성", "", "- 옛 정체성", "", "## 답장 틀", "", "- 옛 틀 => 옛 문장", "", "## 말투", "", "- 반말 금지   (공백  그대로)", "", "## 예시", "", "- 옛 예시", "", "## 금지", "", "- /secret/i", ""].join("\n");
+// The same profile after the user tuned it: a correction and a section of their own.
+const TUNED = [OLD, "## 고친 점", "", "- 2026-10-01: 더 짧게", "", "## 내 메모", "", "- 직접 적은 줄", ""].join("\n");
 const section = (md: string, heading: string) => {
 	const rest = md.slice(md.indexOf(heading));
 	const next = rest.slice(heading.length).search(/^## /m);
@@ -163,9 +166,9 @@ const section = (md: string, heading: string) => {
 const NEW = j({ identity: ["새 정체성"], templates: [{ when: "문의", lines: ["확인했어요."] }] });
 const now = new Date("2026-11-05T09:00:00Z");
 const texts = ["안녕하세요. 확인했어요.\n"];
-function oldProfile() {
+function oldProfile(md = OLD) {
 	mkdirSync(join(toneFile({ app: "mail" }), ".."), { recursive: true });
-	writeFileSync(toneFile({ app: "mail" }), OLD);
+	writeFileSync(toneFile({ app: "mail" }), md);
 	writeFileSync(paths.learned(), `${JSON.stringify({ mail: "2026-10-01T00:00:00.000Z" })}\n`);
 }
 
@@ -177,7 +180,7 @@ test("a mail profile learned the old way is relearned once: backup, only identit
 	expect(await learnFirst({ app: "mail" }, source, "메일", model.call, now, MAIL_TONE_VERSION)).toBe("learned");
 	const after = readFileSync(toneFile({ app: "mail" }), "utf8");
 	expect(readFileSync(`${toneFile({ app: "mail" })}.bak-2026-11-05`, "utf8")).toBe(OLD);
-	for (const h of ["## 말투", "## 금지", "## 고친 점", "## 내 메모"]) expect(section(after, h)).toBe(section(OLD, h));
+	for (const h of ["## 말투", "## 금지"]) expect(section(after, h)).toBe(section(OLD, h));
 	expect(section(after, "## 정체성")).toContain("새 정체성");
 	expect(section(after, "## 답장 틀")).toContain("문의 => 확인했어요.");
 	expect(section(after, "## 예시")).not.toContain("옛 예시");
@@ -187,6 +190,19 @@ test("a mail profile learned the old way is relearned once: backup, only identit
 	expect(await learnFirst({ app: "mail" }, source, "메일", model.call, now, MAIL_TONE_VERSION)).toBe("known");
 	expect([reads, model.calls.length]).toEqual([1, 1]);
 	expect(await learnFirst({ app: "mail" }, source, "메일", model.call, now)).toBe("known");
+});
+
+test("a profile the user tuned (a correction, or a section of their own) is never relearned: marked learned, nothing read, nothing written", async () => {
+	for (const md of [TUNED, `${OLD}\n## 내 메모\n\n- 직접 적은 줄\n`, `${OLD}\n## 고친 점\n\n- 2026-10-01: 더 짧게\n`]) {
+		rmSync(paths.learned(), { force: true });
+		oldProfile(md);
+		let reads = 0;
+		const model = fakeModel([NEW]);
+		expect(await learnFirst({ app: "mail" }, async () => (reads++, texts), "메일", model.call, now, MAIL_TONE_VERSION)).toBe("known");
+		expect([reads, model.calls.length]).toEqual([0, 0]);
+		expect(readFileSync(toneFile({ app: "mail" }), "utf8")).toBe(md);
+		expect(JSON.parse(readFileSync(paths.learned(), "utf8"))[`mail@${MAIL_TONE_VERSION}`]).toBeTruthy();
+	}
 });
 
 test("a relearn never overwrites an existing backup", async () => {
@@ -223,4 +239,99 @@ test("a bot draft that went out with a signature makes no pair either", async ()
 	const run = async (argv: string[]) => ({ code: 0, stderr: "", stdout: argv[2] === "list" ? JSON.stringify({ items: [{ id: "t", account: own, subject: "악보" }] }) : read });
 	expect((await sentMail(run, 1, ["네 보내드립니다."])).pairs).toEqual([]);
 	expect((await sentMail(run, 1)).pairs.length).toBe(1);
+});
+
+test("a pair keeps the address it answered; a re-read upgrades an old pair, and the same sender's replies lead the examples", async () => {
+	const { pairs } = await sentMail(fakeZele({ t1: { text: threadOf(ASK, OWN) } }), 10);
+	expect(pairs[0]!.from).toBe("kim@example.com");
+	savePairs("mail", [{ received: "질문입니다", reply: "답이에요", at: day }]);
+	savePairs("mail", [...loadPairs("mail"), { received: "질문입니다", reply: "답이에요", at: day - 5, from: "kim@example.com" }]);
+	expect(loadPairs("mail")).toEqual([{ received: "질문입니다", reply: "답이에요", at: day, from: "kim@example.com" }]);
+	seedPairs(12);
+	savePairs("mail", [...loadPairs("mail"), { received: "전혀 다른 내용", reply: "예전에 이분께 쓴 답", at: day - 100, from: "kim@example.com" }]);
+	const ex = styleWithExamples(style, "mail", mailItem.text, "Kim <kim@example.com>").examples!;
+	expect(ex).toHaveLength(8);
+	expect(ex.filter(e => e.same).map(e => e.reply)).toContain("예전에 이분께 쓴 답");
+	expect(styleWithExamples(style, "mail", mailItem.text, "lee@example.org").examples!.some(e => e.same)).toBe(false);
+});
+
+test("a named account is passed on the list and the reads; without one each read uses the listed mail's own account", async () => {
+	const argvs: string[][] = [];
+	const inner = fakeZele({ t1: { text: threadOf(ASK, OWN) } });
+	const run: Runner = async argv => (argvs.push(argv), inner(argv));
+	await sentMail(run, 5, [], "work@example.net");
+	expect(argvs.map(a => a.slice(-2))).toEqual([["--account", "work@example.net"], ["--account", "work@example.net"]]);
+	argvs.length = 0;
+	await sentMail(run, 5);
+	expect(argvs[0]).not.toContain("--account");
+	expect(argvs[1]!.slice(-2)).toEqual(["--account", "me@example.net"]);
+});
+
+test("pairs are refreshed without a model: the first read is wide, later ones once a day, and a mail app's account is enough", async () => {
+	const which = spyOn(Bun, "which").mockReturnValue("/bin/zele");
+	try {
+		mkdirSync(join(env.dir, "custom"), { recursive: true });
+		writeFileSync(join(env.dir, "custom", "apps.json"), JSON.stringify({ mail: { app: "mail", filter: { account: "me@example.net" } } }));
+		const { refreshPairs, sentAccounts } = await import("../lib/tone.ts");
+		expect(sentAccounts({})).toEqual(["me@example.net"]);
+		const limits: string[] = [];
+		const inner = fakeZele({ t1: { text: threadOf(ASK, OWN) } });
+		const run: Runner = async argv => (argv[2] === "list" && limits.push(argv[argv.indexOf("--limit") + 1]!), inner(argv));
+		await refreshPairs(run, now);
+		await refreshPairs(run, new Date(now.getTime() + 3_600_000));
+		await refreshPairs(run, new Date(now.getTime() + 25 * 3_600_000));
+		expect(limits).toEqual(["500", "40"]);
+		expect(loadPairs("mail")).toMatchObject([{ reply: "네 가능해요.", from: "kim@example.com" }]);
+	} finally {
+		which.mockRestore();
+	}
+});
+
+const withWho = (evidence: string) => j({ recipient: { who: "문의하는 사람", evidence }, action: "draft", reason: "r", to: "kim@example.com", subject: "Re: 일정 문의", body: "화요일 괜찮아요^^", questions: [] });
+
+test("the model's recipient judgement is kept on the draft; evidence that is not in the message is rewritten once and then a warning", async () => {
+	const ok = fakeModel([withWho("다음주 일정  문의드립니다")]);
+	const built = await buildDraft(mailItem, meta, { call: ok.call });
+	expect(ok.calls).toHaveLength(1);
+	expect(built.action === "draft" && built.rec.recipient).toEqual({ who: "문의하는 사람", evidence: "다음주 일정  문의드립니다" });
+	expect(built.action === "draft" && built.warnings).toEqual([]);
+
+	const bad = fakeModel([withWho("저는 학부모입니다")]);
+	const failed = await buildDraft(mailItem, meta, { call: bad.call });
+	expect(bad.calls).toHaveLength(2);
+	expect(failed.action === "draft" && failed.warnings.some(w => w.startsWith("the recipient evidence"))).toBe(true);
+	expect(bad.calls[1]!.user).toContain("the recipient evidence");
+
+	const none = fakeModel([withWho("")]);
+	expect((await buildDraft(mailItem, meta, { call: none.call })).action).toBe("draft");
+	expect(none.calls).toHaveLength(1);
+});
+
+test("only the newest 12 corrections reach a mail prompt, each clipped to 200 characters; a chat prompt keeps all of them", () => {
+	const corrections = Array.from({ length: 15 }, (_, i) => `corr-${String(i).padStart(2, "0")}-${"가".repeat(300)}`);
+	const { user } = buildPrompt(mailItem, { ...style, corrections });
+	expect(user).not.toContain("corr-02-");
+	expect(user).toContain("corr-03-");
+	expect(user).toContain("corr-14-");
+	expect(user).not.toContain("가".repeat(201));
+	expect(buildPrompt({ ...mailItem, kind: "chat" }, { ...style, corrections }).user).toContain("corr-00-");
+});
+
+test("a revision records only its lasting lesson: the model's line, nothing for an empty one, the verbatim change when the field is missing", async () => {
+	const first = fakeModel([replyJson("확인해 보고 말씀드릴게요.")]);
+	const cases: [Record<string, unknown>, string[]][] = [
+		[{ lesson: "" }, []],
+		[{ lesson: "when 일정을 물으면 then 요일만 답함" }, ["when 일정을 물으면 then 요일만 답함"]],
+		[{}, ["더 짧게"]],
+	];
+	for (const [i, [extra, expected]] of cases.entries()) {
+		rmSync(paths.toneDir(), { force: true, recursive: true });
+		await offerMailDraft({ ...mailFixture, key: `m-l${i}` }, { send: () => {}, call: first.call });
+		const d = storedDrafts().find(x => x.ref === `m-l${i}`)!;
+		const revised = fakeModel([j({ action: "draft", reason: "r", to: "kim@example.com", subject: "Re: 회의 일정 문의", body: "곧요.", questions: [], ...extra })]);
+		const step = await reviseDraft(d.id, "더 짧게", { call: revised.call, now: () => new Date(day) });
+		expect(step.ok).toBe(true);
+		expect(loadStyle({ app: "mail" }).corrections.map(c => c.replace(/^\d{4}-\d\d-\d\d: /, ""))).toEqual(expected);
+		expect(getDraft(step.id!)!.changes).toEqual(["더 짧게"]);
+	}
 });

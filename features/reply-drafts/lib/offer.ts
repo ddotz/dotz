@@ -4,6 +4,9 @@ import { basename } from "node:path";
 import { addressesOf, precheck, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { asksForFile } from "../../../hub/draft-approval.ts";
+import { threadText } from "../../../hub/zele.ts";
+import { ownAddresses } from "../../../hub/mail-state.ts";
+import { threadIdOf, webmailSite } from "./senders.ts";
 import type { StageOpts } from "./staged.ts";
 import { askText, attachFolder, buildDraft, callOf, draftTrace, libraryFor, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
 import { anyRuleOn, mailInstanceOf, matchRule, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles } from "./rules.ts";
@@ -23,6 +26,10 @@ export type OfferDeps = {
 	analyze?: ModelCall;
 	sentTexts?: () => Promise<string[]>;
 	readBody?: (source: string, id: string, account?: string) => Promise<string | undefined>;
+	/** Lines `<date> <subject>: <snippet>` of earlier mail from one sender, the current thread left out (senders.ts senderHistory); started beside the body read. */
+	history?: (address: string, account?: string, thread?: string) => Promise<string[]>;
+	/** Keeps the past reply pairs current (tone.ts refreshPairs); fire and forget beside the identity sweep. */
+	refreshPairs?: () => Promise<void>;
 	log?: (line: string) => void;
 	/** Records the suggested action on the mail (hub/mail.ts setMailSuggest), for the web's suggestion slot of that mail. */
 	suggest?: (key: string, s: { kind: "reply-draft"; label: string; ref: string; rule?: string }) => void;
@@ -32,6 +39,33 @@ export type OfferDeps = {
 
 // The text a model call sees is capped; a long thread's tail (quoted history) adds tokens and nothing for the reply.
 const BODY_MAX = 8000;
+
+// The full text of a mail, read before the poster's snippet is trusted (a watch posts a 300-character snippet as `body`); the snippet is the fallback.
+// A webmail watch posts the mail it already read: reading it again costs a site round trip and adds nothing.
+// The account: the poster's, else for a source that is not zele the first address the mail came to (a category of one mailbox).
+const accountOf = (m: OfferMail): string | undefined => m.account || (m.source !== "zele" ? addressesOf(m.to)[0] : undefined);
+function fullBody(m: OfferMail, deps: OfferDeps): Promise<string | undefined> {
+	if (!deps.readBody || (m.body !== undefined && webmailSite(m.source))) return Promise.resolve(m.body);
+	return deps.readBody(m.source, m.id, accountOf(m)).then(t => t ?? m.body, e => ((deps.log ?? console.error)(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), m.body));
+}
+
+// One pair refresh at a time; it never delays or fails a draft.
+let refreshing = false;
+function refreshPairs(deps: OfferDeps, log: (line: string) => void): void {
+	if (!deps.refreshPairs || refreshing) return;
+	refreshing = true;
+	deps.refreshPairs().catch(e => log(`reply draft: past mail pairs not refreshed: ${(e as Error).message}`)).finally(() => void (refreshing = false));
+}
+
+// Earlier mail from the sender: never delays a draft past this long, and a failure is no history.
+const HISTORY_WAIT_MS = 8000;
+function startHistory(m: OfferMail, deps: OfferDeps): Promise<string[]> {
+	const address = addressesOf(m.from)[0];
+	if (!deps.history || !address) return Promise.resolve([]);
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const late = new Promise<string[]>(done => void (timer = setTimeout(() => done([]), HISTORY_WAIT_MS)));
+	return Promise.race([deps.history(address, accountOf(m), threadIdOf(m.source, m.id)).catch(() => [] as string[]), late]).finally(() => clearTimeout(timer));
+}
 
 // The cheap checks of offerOne, without side effects: a mail the feature is off for, already looked at, or that needs no reply is not read ahead.
 function mayDraft(m: OfferMail): boolean {
@@ -54,22 +88,23 @@ let chain: Promise<unknown> = Promise.resolve();
  *  the sender filter do not apply, and the model must draft (ReplyItem.requested). The draft arrives like an offered one: the send-approval card
  *  in the mail's conversation and the 답장 초안 chip on its row. */
 export function requestMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offered" | "skipped" | "off" | "failed"> {
-	const body = m.body !== undefined || !deps.readBody ? Promise.resolve(m.body) : deps.readBody(m.source, m.id, m.account).catch(() => undefined);
+	const body = fullBody(m, deps), history = startHistory(m, deps);
 	const queued = Date.now();
-	const next = chain.then(() => offerOne(m, deps, body, queued, true));
+	const next = chain.then(() => offerOne(m, deps, body, history, queued, true));
 	chain = next.catch(() => undefined);
 	return next;
 }
 export function offerMailDraft(m: OfferMail, deps: OfferDeps): Promise<"offered" | "skipped" | "off" | "failed"> {
 	// The body read (a mail CLI or webmail round trip) starts now, while an earlier offer may still be in its model call; only the model calls queue.
-	const body = m.body !== undefined || !deps.readBody || !mayDraft(m) ? Promise.resolve(m.body) : deps.readBody(m.source, m.id, m.account).catch(e => ((deps.log ?? console.error)(`reply draft: mail ${m.key} body not read: ${(e as Error).message}`), undefined));
+	const may = mayDraft(m);
+	const body = may ? fullBody(m, deps) : Promise.resolve(m.body), history = may ? startHistory(m, deps) : Promise.resolve([] as string[]);
 	const queued = Date.now();
-	const next = chain.then(() => offerOne(m, deps, body, queued));
+	const next = chain.then(() => offerOne(m, deps, body, history, queued));
 	chain = next.catch(() => undefined);
 	return next;
 }
 
-async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | undefined>, queued: number, requested = false): Promise<"offered" | "skipped" | "off" | "failed"> {
+async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | undefined>, history: Promise<string[]>, queued: number, requested = false): Promise<"offered" | "skipped" | "off" | "failed"> {
 	const log = deps.log ?? ((line: string) => console.error(line));
 	const started = Date.now();
 	let trace: DraftTrace | undefined;
@@ -89,7 +124,12 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 			markDrafted(looked);
 			return "skipped";
 		}
-		item.text = ((await body) ?? m.summary ?? "").trim().slice(0, BODY_MAX) || m.subject;
+		// A thread read: the newest message of the sender is the text, the earlier ones the context. Any other text is the text.
+		const thread = threadText((await body) ?? m.summary ?? "", ownAddresses(item.self));
+		item.text = thread.text.trim().slice(0, BODY_MAX) || m.subject;
+		const earlier = await history;
+		const context = [thread.context, ...(earlier.length ? ["Earlier mail from this sender:", ...earlier] : [])].filter(Boolean).join("\n");
+		if (context) item.context = context;
 		// A source that reports the sender by name only: the address comes from the mail's own text (its quoted headers, the signature).
 		item.from = withSenderAddress(item.from, item.text, item.self);
 		if (!requested && precheck(item, settings.senders)) {
@@ -107,6 +147,7 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		const instruction = ruleInstruction(own?.base ?? "", rule, requested ? m.instruction?.trim().slice(0, 500) : undefined);
 		if (instruction) item.instruction = instruction;
 		const read = Date.now();
+		refreshPairs(deps, log);
 		if (deps.analyze && deps.sentTexts) await learnFirst({ app: "mail" }, deps.sentTexts, "메일 (보낸 메일함)", deps.analyze, undefined, MAIL_TONE_VERSION).catch(e => log(`reply draft: mail identity not learned: ${(e as Error).message}`));
 		const learned = Date.now();
 		// The files are picked BEFORE the words are written, so the draft is told which files ride on it (and that none fits) and its text agrees

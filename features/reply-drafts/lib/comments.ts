@@ -3,7 +3,7 @@
 // behind it, so no orchestrator drafting turn is needed. A source plugs in with a CommentAdapter; this file knows no platform.
 // Nothing is posted here: the adapter only stages a pending reply, and the source's own approve command checks the user's pick.
 import { draftApprovalBlock } from "../../../hub/draft-approval.ts";
-import { precheck, reviseReply, type ReplyItem } from "../../../hub/reply-draft.ts";
+import { lessonOf, precheck, reviseReply, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { buildDraft, type FlowDeps, refineAfterCorrection, replyCall, toneKey } from "./flow.ts";
 import { learnFirst } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings, loadStyle, recordCorrection } from "./settings.ts";
@@ -80,7 +80,7 @@ export async function draftComments(a: CommentAdapter, lines: string[], deps: Co
 
 export type ReviseStep = { ok: boolean; text: string };
 
-// 2) 고치기 of a pending comment reply: the change goes verbatim into that app's tone profile, the reply is rewritten, the new pending
+// 2) 고치기 of a pending comment reply: the reply is rewritten and its lasting lesson goes into that app's tone profile, the new pending
 // reply gets its own id and ask, and the old one is discarded.
 export async function reviseComment(a: CommentAdapter, id: string, change: string, deps: FlowDeps = {}): Promise<ReviseStep> {
 	const old = getDraft(id);
@@ -88,11 +88,15 @@ export async function reviseComment(a: CommentAdapter, id: string, change: strin
 	if (old.status !== "pending") return { ok: false, text: `답글 초안 ${id}은(는) 이미 ${old.status} 상태라 고칠 수 없어요` };
 	if (!change.trim()) return { ok: false, text: "무엇을 고칠지 적어 주세요 (--change)" };
 	const now = (deps.now ?? (() => new Date()))();
-	recordCorrection(toneKey(old), change, now);
-	await refineAfterCorrection(toneKey(old), deps);
 	const call = deps.call ?? replyCall(a.app);
 	const r = await reviseReply(old.item, loadStyle(toneKey(old)), { to: old.to, body: old.body }, change, call);
 	if (r.action === "skip") return { ok: false, text: `고친 답글을 만들지 못했어요: ${r.reason}` };
+	// Only the lasting preference enters the profile (the change itself when the model left the lesson out; nothing when it was about this reply only).
+	const lesson = lessonOf(r, change);
+	if (lesson) {
+		recordCorrection(toneKey(old), lesson, now);
+		await refineAfterCorrection(toneKey(old), deps);
+	}
 	const c: CommentInput = { id: old.mailId, author: old.item.from, text: old.item.text, context: old.item.context ?? "" };
 	const next = await a.stage(c, r.draft.body);
 	setStatus(id, "stale");
