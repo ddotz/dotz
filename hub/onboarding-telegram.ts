@@ -24,6 +24,7 @@ async function call(ctx: OnboardFlowContext, token: string, method: string, body
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(body),
+		signal: AbortSignal.timeout(15_000),
 	});
 	const json = await res.json().catch(() => undefined);
 	if (!res.ok || !json?.ok) throw new Error(`Telegram ${method}: ${String(json?.description ?? `HTTP ${res.status}`)}`);
@@ -83,7 +84,7 @@ export const telegramFlow: OnboardFlow = {
 					if (ctx.attempt === 0) return { waiting: LOGIN_OWNER };
 					const got = await ctx.deps.browser.run("telegram-bot");
 					if (!got.ok || got.waiting) return { waiting: LOGIN_OWNER };
-					token = normalizeToken(String(got.value ?? ""));
+					token = normalizeToken(String(got.data?.token ?? ""));
 					if (!token) throw new Error("Telegram 봇 토큰을 읽지 못했어요");
 					ctx.seen(token);
 					ctx.saveSecret(SECRET, token);

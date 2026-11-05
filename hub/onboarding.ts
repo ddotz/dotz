@@ -4,22 +4,26 @@
 // Browser work runs in the owner's background Aside session (no window forward, no Chrome.app, no OS keys).
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { asideState } from "../onboard/aside.ts";
 import { AsideRepl, resetToken } from "../onboard/discord.ts";
+import { ensureAside, oneShotInbox } from "./aside.ts";
 import { DATA_DIR, log, writeAtomic } from "./config.ts";
 import { createDiscordStore, type DiscordStore } from "./discord-connection.ts";
+import { msg } from "./i18n.ts";
+import { loginCaptureScript, loginCloseScript } from "./messenger-login.ts";
 import { discordFlow } from "./onboarding-discord.ts";
 import { createJandiStore, jandiFlow, type JandiStore } from "./onboarding-jandi.ts";
 import { slackFlow } from "./onboarding-slack.ts";
 import { telegramFlow } from "./onboarding-telegram.ts";
 import { webAccessFlow } from "./onboarding-web-access.ts";
 import { json } from "./routes-util.ts";
+import { writeSecretFile } from "./secretbox.ts";
 
 export const ONBOARD_KEYS = ["discord", "jandi", "slack", "telegram", "web-access"] as const;
 export type OnboardKey = (typeof ONBOARD_KEYS)[number];
 export type OnboardState = "idle" | "running" | "waiting" | "done" | "failed";
 export type OnboardOwnerStep = { label: string; hint: string };
 export type OnboardStep = { id: string; title: string; detail: string };
+export type OnboardChoice = { id: string; label: string };
 export type OnboardView = {
 	key: OnboardKey;
 	state: OnboardState;
@@ -27,12 +31,16 @@ export type OnboardView = {
 	owner: OnboardOwnerStep | null; // exactly one action when state is waiting or failed
 	error: string | null; // scrubbed, capped; owner.hint carries the one next step
 	url: string | null;
+	/** Set while waiting for the owner to pick one of them (continue with { choice }). */
+	choices?: OnboardChoice[];
+	/** Only the owner can answer this step: the web panel must not continue by itself. */
+	manual?: true;
 	updated_at: string;
 };
 
 /** Runs one scripted step in the owner's background Aside browser. Returns plain data; never logs a secret. */
 export type BrowserLike = {
-	run(action: string, arg?: Record<string, unknown>): Promise<{ ok: boolean; value?: string; waiting?: string }>;
+	run(action: string, arg?: Record<string, unknown>): Promise<{ ok: boolean; value?: string; waiting?: string; data?: Record<string, unknown> }>;
 };
 
 export type OnboardDeps = {
@@ -48,13 +56,18 @@ export type OnboardDeps = {
 	/** Overrides ~ for ~/.cloudflared (tests). */
 	home?: string;
 	now?: () => number;
+	/** Runs `fn` after `ms` (setTimeout by default): the recheck of a waiting step. Tests hold it and call it themselves. */
+	after?: (ms: number, fn: () => void) => void;
+	/** One plain line to the chat that asked for the connection (hub/outbound.ts send by default). */
+	say?: (target: string, text: string) => Promise<unknown>;
 	// Injectable stores for tests; the defaults read the real data dir (the DISCORD one is the live config).
 	discord?: DiscordStore;
 	jandi?: JandiStore;
 };
 
 export type OnboardInventory = { secrets: string[]; config: boolean; messengers: string[]; accounts: boolean };
-export type OnboardStepOutcome = { done: true; url?: string } | { waiting: OnboardOwnerStep };
+/** `waiting` with `recheckMs` is run again by the engine after that long (a login the owner is doing); with `choices` it waits for { choice }. */
+export type OnboardStepOutcome = { done: true; url?: string } | { waiting: OnboardOwnerStep; recheckMs?: number; choices?: OnboardChoice[]; manual?: true };
 
 export type OnboardFlowContext = {
 	deps: OnboardDeps;
@@ -62,6 +75,8 @@ export type OnboardFlowContext = {
 	inventory: OnboardInventory;
 	/** How many times continue ran this flow since the last start (0 on start): a browser step that waits for the owner skips its first pass. */
 	attempt: number;
+	/** The choice the owner made with the last continue that carried one. */
+	choice: string | undefined;
 	/** Per-run scratch for a value one step computes for a later one (never persisted, never a secret). */
 	memo: Map<string, string>;
 	/** Remembers a secret so any later error text is scrubbed, and returns it unchanged. */
@@ -72,6 +87,8 @@ export type OnboardFlowContext = {
 	hasChanged(): boolean;
 	secret(name: string): string;
 	saveSecret(name: string, value: string): void;
+	/** Like saveSecret, but encrypted (hub/secretbox.ts); for values only the gateway reads back. */
+	saveSealed(name: string, value: string): void;
 	readJson(rel: string): Record<string, unknown> | undefined;
 	writeJson(rel: string, value: unknown, mode?: number): void;
 	discord: DiscordStore;
@@ -86,9 +103,10 @@ export type OnboardFlowStep = {
 	owner: OnboardOwnerStep;
 	run(ctx: OnboardFlowContext): Promise<OnboardStepOutcome>;
 };
-export type OnboardFlow = { key: OnboardKey; steps: OnboardFlowStep[] };
+export type OnboardFlow = { key: OnboardKey; steps: OnboardFlowStep[]; /** Runs on cancel and when the flow fails or gives up (closes a login tab). */ cleanup?(ctx: OnboardFlowContext): Promise<unknown>; /** After a failure the next run begins at the first step: its later steps need what the run held in memory. */ restartOnFail?: true };
 
-type Saved = { version: 1; index: number; attempt: number; view: OnboardView };
+type Saved = { version: 1; index: number; attempt: number; view: OnboardView; notify?: string; choice?: string };
+const noChoices = ({ choices: _choices, manual: _manual, ...rest }: OnboardView): OnboardView => rest;
 const DEFAULT_OWNER: OnboardOwnerStep = { label: "연결 다시 시작", hint: "연결을 다시 시작하고 화면에 남은 안내를 따라 주세요." };
 const TOKEN_LIKE = /[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{25,}/g;
 
@@ -130,8 +148,9 @@ registerFlow(webAccessFlow);
 
 export type OnboardingService = {
 	view(key: OnboardKey): OnboardView;
-	start(key: OnboardKey): OnboardView;
-	continue(key: OnboardKey): OnboardView;
+	/** `notify`: the chat that asked; it gets one plain line at each new owner step, failure and the end. */
+	start(key: OnboardKey, opts?: { notify?: string }): OnboardView;
+	continue(key: OnboardKey, opts?: { choice?: string }): OnboardView;
 	cancel(key: OnboardKey): OnboardView;
 	/** Done without running the steps (a mode that needs none); the web-access local choice uses it. */
 	markDone(key: OnboardKey): OnboardView;
@@ -167,7 +186,7 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 			const raw = JSON.parse(readFileSync(statePath(deps.dir, key), "utf8")) as Partial<Saved>;
 			const view = raw.view;
 			if (view && view.key === key && (ONBOARD_KEYS as readonly string[]).includes(view.key)) {
-				value = { version: 1, index: Math.max(0, Number(raw.index) || 0), attempt: Math.max(0, Number(raw.attempt) || 0), view: { ...value.view, ...view, key } };
+				value = { version: 1, index: Math.max(0, Number(raw.index) || 0), attempt: Math.max(0, Number(raw.attempt) || 0), view: { ...value.view, ...view, key }, ...(typeof raw.notify === "string" ? { notify: raw.notify } : {}), ...(typeof raw.choice === "string" ? { choice: raw.choice } : {}) };
 			}
 		} catch {}
 		saved.set(key, value);
@@ -208,7 +227,7 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 		return out;
 	};
 
-	const context = (attempt: number): OnboardFlowContext => {
+	const context = (attempt: number, choice?: string): OnboardFlowContext => {
 		const secrets = secretsOf();
 		let changed = false;
 		const seen = (value: string): string => {
@@ -220,6 +239,7 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 			dir: deps.dir,
 			inventory: inventoryOf(deps.dir),
 			attempt,
+			choice,
 			memo: new Map<string, string>(),
 			seen,
 			scrub: text => scrubText(text, secrets),
@@ -243,6 +263,13 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 				writeAtomic(file, `${value}\n`, 0o600);
 				chmodSync(file, 0o600);
 			},
+			saveSealed: (name, value) => {
+				seen(value);
+				const secretsDir = join(deps.dir, "secrets");
+				mkdirSync(secretsDir, { recursive: true, mode: 0o700 });
+				chmodSync(secretsDir, 0o700);
+				writeSecretFile(join(secretsDir, name), value);
+			},
 			readJson: rel => {
 				try {
 					const v = JSON.parse(readFileSync(join(deps.dir, rel), "utf8"));
@@ -262,18 +289,31 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 		};
 	};
 
-	const run = async (key: OnboardKey, value: Saved, from: number, generation: number): Promise<void> => {
+	const lastWaiting = new Map<OnboardKey, string>();
+	const tell = (key: OnboardKey, text: string): void => {
+		const target = load(key).notify;
+		if (!target) return;
+		const say = deps.say ?? (async (to: string, line: string) => (await import("./outbound.ts")).send(to, line));
+		void say(target, text).catch(e => log(`onboarding ${key}: could not tell ${target}: ${errorText(e)}`));
+	};
+	const closeUp = (key: OnboardKey): void => {
 		const flow = flows.get(key);
-		if (!flow) return;
-		const ctx = context(value.attempt);
+		if (flow?.cleanup) void flow.cleanup(context(0)).catch(e => log(`onboarding ${key}: cleanup failed: ${errorText(e)}`));
+	};
+
+	/** Returns how long to wait before the engine runs the step again, when the step asked for a recheck. */
+	const run = async (key: OnboardKey, value: Saved, from: number, generation: number): Promise<number | undefined> => {
+		const flow = flows.get(key);
+		if (!flow) return undefined;
+		const ctx = context(value.attempt, value.choice);
 		let current: OnboardFlowStep | undefined = flow.steps[from];
 		try {
 			for (let i = from; i < flow.steps.length; i++) {
-				if (generations.get(key) !== generation) return;
+				if (generations.get(key) !== generation) return undefined;
 				const step = flow.steps[i]!;
 				current = step;
 				value.index = i;
-				value.view = { ...value.view, state: "running", step: stepOf(step), owner: null, error: null, updated_at: stamp() };
+				value.view = { ...noChoices(value.view), state: "running", step: stepOf(step), owner: null, error: null, updated_at: stamp() };
 				store(key, value);
 				let outcome: OnboardStepOutcome;
 				try {
@@ -281,29 +321,42 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 				} catch (e) {
 					throw new StepError(step, e);
 				}
-				if (generations.get(key) !== generation) return;
+				if (generations.get(key) !== generation) return undefined;
 				if ("waiting" in outcome) {
-					value.view = { ...value.view, state: "waiting", step: stepOf(step), owner: outcome.waiting, error: null, updated_at: stamp() };
+					value.view = { ...noChoices(value.view), state: "waiting", step: stepOf(step), owner: outcome.waiting, error: null, ...(outcome.choices ? { choices: outcome.choices } : {}), ...(outcome.manual ? { manual: true as const } : {}), updated_at: stamp() };
 					store(key, value);
-					return;
+					if (lastWaiting.get(key) !== step.id) tell(key, msg().connect.say.waiting(outcome.waiting.label, outcome.waiting.hint));
+					lastWaiting.set(key, step.id);
+					return outcome.recheckMs;
 				}
-				if (outcome.url !== undefined) value.view = { ...value.view, url: outcome.url };
+				if (outcome.url !== undefined) value.view = { ...noChoices(value.view), url: outcome.url };
 			}
-			if (generations.get(key) !== generation) return;
+			if (generations.get(key) !== generation) return undefined;
 			if (ctx.hasChanged()) await deps.restart();
-			if (generations.get(key) !== generation) return;
+			if (generations.get(key) !== generation) return undefined;
 			const last = flow.steps[flow.steps.length - 1];
 			value.index = flow.steps.length;
-			value.view = { ...value.view, state: "done", step: last ? stepOf(last) : null, owner: null, error: null, updated_at: stamp() };
+			value.view = { ...noChoices(value.view), state: "done", step: last ? stepOf(last) : null, owner: null, error: null, updated_at: stamp() };
 			store(key, value);
+			lastWaiting.delete(key);
+			tell(key, msg().connect.say.done);
 			log(`onboarding ${key} done`);
+			return undefined;
 		} catch (e) {
-			if (generations.get(key) !== generation) return;
+			if (generations.get(key) !== generation) return undefined;
 			const step = e instanceof StepError ? e.step : current;
 			const text = ctx.scrub(errorText(e instanceof StepError ? e.cause : e));
-			value.view = { ...value.view, state: "failed", step: step ? stepOf(step) : null, owner: step?.owner ?? DEFAULT_OWNER, error: text, updated_at: stamp() };
+			if (flow.restartOnFail) {
+				value.index = 0;
+				value.attempt = 0;
+			}
+			value.view = { ...noChoices(value.view), state: "failed", step: step ? stepOf(step) : null, owner: step?.owner ?? DEFAULT_OWNER, error: text, updated_at: stamp() };
 			store(key, value);
 			log(`onboarding ${key} failed at ${step?.id ?? "?"}: ${text}`);
+			lastWaiting.delete(key);
+			tell(key, msg().connect.say.failed(text, step?.owner.hint ?? DEFAULT_OWNER.hint));
+			closeUp(key);
+			return undefined;
 		}
 	};
 
@@ -315,36 +368,46 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 		const flow = flows.get(key);
 		value.index = from;
 		value.attempt = Math.max(0, attempt);
-		value.view = { ...value.view, state: "running", step: flow?.steps[from] ? stepOf(flow.steps[from]!) : null, owner: null, error: null, ...(from === 0 ? { url: null } : {}), updated_at: stamp() };
+		value.view = { ...noChoices(value.view), state: "running", step: flow?.steps[from] ? stepOf(flow.steps[from]!) : null, owner: null, error: null, ...(from === 0 ? { url: null } : {}), updated_at: stamp() };
 		store(key, value);
 		const view = { ...value.view };
-		const promise = run(key, value, from, generation).finally(() => {
-			if (generations.get(key) === generation) {
+		let recheck: number | undefined;
+		const promise = run(key, value, from, generation)
+			.then(ms => void (recheck = ms))
+			.finally(() => {
+				if (generations.get(key) !== generation) return;
 				running.delete(key);
 				if (runs.get(key) === promise) runs.delete(key);
-			}
-		});
+				if (recheck !== undefined) (deps.after ?? ((ms, fn) => void setTimeout(fn, ms)))(recheck, () => generations.get(key) === generation && load(key).view.state === "waiting" && void cont(key));
+			});
 		runs.set(key, promise);
 		void promise;
 		return view;
 	};
 
-	const start = (key: OnboardKey): OnboardView => {
+	const start = (key: OnboardKey, opts: { notify?: string } = {}): OnboardView => {
 		if (running.has(key)) return load(key).view;
 		const flow = flows.get(key);
 		if (!flow || !flow.steps.length) return load(key).view;
 		const value = load(key);
 		const resume = value.view.state === "waiting" || value.view.state === "failed";
 		const from = resume ? Math.min(Math.max(0, value.index), flow.steps.length - 1) : 0;
+		if (from === 0) {
+			delete value.choice;
+			lastWaiting.delete(key);
+		}
+		if (opts.notify) value.notify = opts.notify;
+		else if (from === 0) delete value.notify;
 		return begin(key, from, 0);
 	};
 
-	const cont = (key: OnboardKey): OnboardView => {
+	const cont = (key: OnboardKey, opts: { choice?: string } = {}): OnboardView => {
 		if (running.has(key)) return load(key).view;
 		const flow = flows.get(key);
 		if (!flow || !flow.steps.length) return load(key).view;
 		const value = load(key);
 		if (value.view.state !== "waiting" && value.view.state !== "failed") return value.view;
+		if (opts.choice) value.choice = opts.choice;
 		const from = Math.min(Math.max(0, value.index), flow.steps.length - 1);
 		return begin(key, from, (value.attempt ?? 0) + 1);
 	};
@@ -353,10 +416,13 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 		generations.set(key, (generations.get(key) ?? 0) + 1);
 		running.delete(key);
 		runs.delete(key);
+		lastWaiting.delete(key);
+		closeUp(key);
 		const value = load(key);
+		delete value.choice;
 		value.index = 0;
 		value.attempt = 0;
-		value.view = { ...value.view, state: "idle", step: null, owner: null, error: null, url: null, updated_at: stamp() };
+		value.view = { ...noChoices(value.view), state: "idle", step: null, owner: null, error: null, url: null, updated_at: stamp() };
 		store(key, value);
 		return { ...value.view };
 	};
@@ -370,7 +436,7 @@ export function createOnboarding(deps: OnboardDeps): OnboardingService {
 		const flow = flows.get(key);
 		const last = flow && flow.steps.length ? flow.steps[flow.steps.length - 1] : undefined;
 		value.index = flow?.steps.length ?? 0;
-		value.view = { ...value.view, state: "done", step: last ? stepOf(last) : null, owner: null, error: null, url: null, updated_at: stamp() };
+		value.view = { ...noChoices(value.view), state: "done", step: last ? stepOf(last) : null, owner: null, error: null, url: null, updated_at: stamp() };
 		store(key, value);
 		return { ...value.view };
 	};
@@ -421,40 +487,32 @@ function inviteScript(url: string): string {
 	].join(" ");
 }
 
-function jandiScript(url: string): string {
-	return [
-		`await openTab(${JSON.stringify(url)});`,
-		tick(4000),
-		`const where = page.url();`,
-		`if (/login|signin|sign-in/i.test(where)) { console.log('RESULT ' + JSON.stringify({ ok: true, waiting: 'login' })); } else { const data = await page.evaluate(() => { const text = document.body.innerText; const urls = [...text.matchAll(/https?:\\/\\/[^\\s"'<>]+/g)].map(m => m[0]).filter(u => /webhook|hook|incoming/i.test(u)); const tokens = [...text.matchAll(/(?:token|토큰)[^A-Za-z0-9]{0,10}([A-Za-z0-9_-]{16,})/gi)].map(m => m[1]); return { urls: [...new Set(urls)], tokens: [...new Set(tokens)] }; }); const rooms = data.urls.slice(0, 1).map((u, i) => ({ id: 'room' + (i + 1), name: '메인', kind: 'main', incoming_url: u, outgoing_token: data.tokens[i] || '' })); console.log('RESULT ' + JSON.stringify(rooms.length ? { ok: true, value: JSON.stringify(rooms) } : { ok: false, waiting: 'webhook' })); }`,
-		`await page.close();`,
-	].join(" ");
-}
-
 function cloudflareLoginScript(url: string): string {
 	// The tab stays open: the owner approves the login in it, and cloudflared writes ~/.cloudflared/cert.pem when they do.
 	return [`await openTab(${JSON.stringify(url)});`, tick(2000), `console.log('RESULT ' + JSON.stringify({ ok: true }));`].join(" ");
 }
 
-function slackAppScript(name: string): string {
-	const manifest = { display_information: { name }, features: { bot_user: { display_name: name, always_online: true } }, oauth_config: { scopes: { bot: ["chat:write", "channels:read", "users:read"] } }, settings: { org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false } };
+function slackAppScript(name: string, inbox: string): string {
+	const manifest = { display_information: { name }, features: { bot_user: { display_name: name, always_online: true } }, oauth_config: { scopes: { bot: ["chat:write", "channels:read", "channels:join", "channels:manage", "users:read"] } }, settings: { org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false } };
 	return [
 		`await openTab('https://api.slack.com/apps?new_app=1');`,
 		tick(3500),
 		`await page.evaluate(async m => { const byText = t => [...document.querySelectorAll('button,a,[role="button"]')].find(b => (b.innerText || '').trim() === t); const from = byText('From a manifest') || byText('매니페스트에서'); if (from) { from.click(); await new Promise(r => setTimeout(r, 1200)); } const next = byText('Next') || byText('다음'); if (next) { next.click(); await new Promise(r => setTimeout(r, 1200)); } const area = document.querySelector('textarea'); if (area) { const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; set.call(area, JSON.stringify(m, null, 2)); area.dispatchEvent(new Event('input', { bubbles: true })); await new Promise(r => setTimeout(r, 800)); } const create = byText('Create') || byText('만들기'); if (create) { create.click(); await new Promise(r => setTimeout(r, 2500)); } const install = [...document.querySelectorAll('button,a,[role="button"]')].find(b => /Install to Workspace|워크스페이스에 설치/i.test(b.innerText || '')); if (install) { install.click(); await new Promise(r => setTimeout(r, 2000)); } const allow = [...document.querySelectorAll('button,a,[role="button"]')].find(b => /^(Allow|허용)$/.test((b.innerText || '').trim())); if (allow) { allow.click(); await new Promise(r => setTimeout(r, 4000)); } }, ${JSON.stringify(manifest)});`,
 		`const token = await page.evaluate(() => ((document.body.innerText || '') + ' ' + [...document.querySelectorAll('input,textarea')].map(x => x.value || '').join(' ')).match(/xox[baprs]-[A-Za-z0-9-]{10,}/));`,
-		`console.log('RESULT ' + JSON.stringify(token ? { ok: true, value: token[0] } : { ok: false, waiting: 'login' }));`,
+		`if (token) { await fetch(${JSON.stringify(inbox)}, { method: 'POST', body: JSON.stringify({ token: token[0] }), signal: AbortSignal.timeout(10000) }); }`,
+		`console.log('RESULT ' + JSON.stringify(token ? { ok: true } : { ok: false, waiting: 'login' }));`,
 		`await page.close();`,
 	].join(" ");
 }
 
-function telegramBotScript(): string {
+function telegramBotScript(inbox: string): string {
 	return [
 		`await openTab('https://web.telegram.org/k/#@BotFather');`,
 		tick(4000),
 		`await page.evaluate(async () => { const box = document.querySelector('.input-message-input[contenteditable="true"], .input-message-input'); if (!box) return; box.focus(); document.execCommand('insertText', false, '/newbot'); await new Promise(r => setTimeout(r, 500)); box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true })); await new Promise(r => setTimeout(r, 2500)); });`,
 		`const token = await page.evaluate(() => ((document.body.innerText || '') + ' ' + [...document.querySelectorAll('input,textarea')].map(x => x.value || '').join(' ')).match(/(?:^|[^0-9])(\d{5,}:[A-Za-z0-9_-]{10,})/));`,
-		`console.log('RESULT ' + JSON.stringify(token ? { ok: true, value: token[1] } : { ok: false, waiting: 'login' }));`,
+		`if (token) { await fetch(${JSON.stringify(inbox)}, { method: 'POST', body: JSON.stringify({ token: token[1] }), signal: AbortSignal.timeout(10000) }); }`,
+		`console.log('RESULT ' + JSON.stringify(token ? { ok: true } : { ok: false, waiting: 'login' }));`,
 		`await page.close();`,
 	].join(" ");
 }
@@ -473,16 +531,14 @@ function createAsideBrowser(): BrowserLike {
 	let repl: AsideRepl | undefined;
 	const ensure = async (): Promise<AsideRepl> => {
 		if (repl) return repl;
-		const state = await asideState();
-		if (!state.cli) throw new Error("Aside CLI를 찾을 수 없어요");
-		if (!state.app) {
-			await Bun.spawn(["open", "-g", "-j", "-a", "Aside"]).exited;
-			await Bun.sleep(4000);
-		}
+		await ensureAside().catch((e: unknown) => {
+			log(`onboarding: Aside not available: ${errorText(e)}`);
+			throw new Error(msg().connect.login.unavailable);
+		});
 		repl = new AsideRepl();
 		return repl;
 	};
-	const script = async (code: string): Promise<{ ok: boolean; value?: string; waiting?: string }> => {
+	const script = async (code: string): Promise<{ ok: boolean; value?: string; waiting?: string; data?: Record<string, unknown> }> => {
 		const out = await (await ensure()).run(code);
 		const hits = [...out.matchAll(RESULT_LINE)];
 		const raw = hits[hits.length - 1]?.[1];
@@ -493,6 +549,23 @@ function createAsideBrowser(): BrowserLike {
 			return { ok: false };
 		}
 	};
+	/** Runs a script that posts what it read to a one-shot localhost inbox; the value comes back as `data`, never through the script's output. */
+	const captured = async (build: (inbox: string) => string): Promise<{ ok: boolean; value?: string; waiting?: string; data?: Record<string, unknown> }> => {
+		const inbox = oneShotInbox();
+		try {
+			const r = await script(build(inbox.url));
+			const data = inbox.got();
+			return r.ok && data ? { ok: true, data } : r;
+		} finally {
+			inbox.stop();
+		}
+	};
+	/** A finished login needs no repl: it holds no tab any more, so the process does not stay around. */
+	const released = async <T extends { data?: unknown }>(r: T, always = false): Promise<T> => {
+		if (repl && (always || r.data)) await repl.close();
+		if (always || r.data) repl = undefined;
+		return r;
+	};
 	return {
 		async run(action, arg = {}) {
 			switch (action) {
@@ -502,16 +575,18 @@ function createAsideBrowser(): BrowserLike {
 					return script(discordGuildScript());
 				case "discord-invite":
 					return script(inviteScript(String(arg.url ?? "")));
-				case "jandi-webhooks":
-					return script(jandiScript(String(arg.url ?? "https://www.jandi.com")));
+				case "login-capture":
+					return released(await captured(inbox => loginCaptureScript({ key: String(arg.key ?? ""), url: String(arg.url ?? ""), read: String(arg.read ?? ""), inbox })));
+				case "login-close":
+					return released(await script(loginCloseScript(String(arg.key ?? ""))), true);
 				case "cloudflare-login":
 					return script(cloudflareLoginScript(String(arg.url ?? "")));
 				case "cloudflare-zone":
 					return script(cloudflareZoneScript());
 				case "slack-app":
-					return script(slackAppScript(String(arg.name ?? "dotz")));
+					return captured(inbox => slackAppScript(String(arg.name ?? "dotz"), inbox));
 				case "telegram-bot":
-					return script(telegramBotScript());
+					return captured(inbox => telegramBotScript(inbox));
 				case "discord-token": {
 					const r = await ensure();
 					try {
@@ -597,7 +672,11 @@ export async function onboardingRoute(req: Request, url: URL, svc?: OnboardingSe
 	}
 	if (parts.length === 4 && (parts[3] === "start" || parts[3] === "continue" || parts[3] === "cancel")) {
 		if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
-		return json(parts[3] === "start" ? service.start(key) : parts[3] === "continue" ? service.continue(key) : service.cancel(key));
+		const body = (await req.json().catch(() => undefined)) as { notify?: unknown; choice?: unknown } | null | undefined;
+		const text = (v: unknown, max: number): string | undefined => (typeof v === "string" && v.trim() && v.length <= max ? v.trim() : undefined);
+		const notify = text(body?.notify, 200);
+		const choice = text(body?.choice, 100);
+		return json(parts[3] === "start" ? service.start(key, notify ? { notify } : {}) : parts[3] === "continue" ? service.continue(key, choice ? { choice } : {}) : service.cancel(key));
 	}
 	return undefined;
 }

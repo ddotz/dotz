@@ -32,9 +32,11 @@ export type SelfChatDeps = {
 	peerReply?: (peer: SelfChatPeer, text: string, id: number) => void;
 	log: (msg: string) => void;
 	onError: (err: string | undefined) => void;
+	/** The owner's JANDI login ended (the token exchange was refused, or there is no session secret): the owner must log in again. */
+	onSessionLost?: () => void;
 };
 
-const API = "https://i1.jandi.com/";
+export const API = "https://i1.jandi.com/";
 const PAGE = 50;
 const MAX_BACKOFF = 5 * 60_000;
 const TOKEN_MARGIN_MS = 5 * 60_000;
@@ -87,6 +89,9 @@ export function normalizeSelfChat(raw: unknown): SelfChatConfig | undefined {
 	};
 }
 
+/** Self chat is switched on and knows its team, room, member and bot. */
+export const selfChatReady = (c: SelfChatConfig | undefined): c is SelfChatConfig => !!c?.enabled && !!c.team_id && !!c.room_id && !!c.member_id && !!c.bot_id;
+
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** The command in an owner message, or undefined: `dotz <text>` or `/dotz <text>` (case-insensitive), the rest trimmed. The keyword may carry a
@@ -136,6 +141,36 @@ function plainUrl(raw: string): string {
 }
 
 export class SelfChatError extends Error {}
+/** The owner's session is gone for good (the exchange answered 400/401/403, or there is no refresh token); a 5xx or a network failure is not this. */
+export class SessionLost extends SelfChatError {}
+
+/** The web client's token exchange: a new access token, and the refresh token when JANDI rotated it. */
+export async function refreshAccess(f: typeof fetch, api: string, refreshToken: string): Promise<{ access: string; refresh?: string; ttlMs: number }> {
+	const res = await f(`${api}inner-api/token`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json;charset=UTF-8", Accept: "application/vnd.tosslab.jandi-v4+json" },
+		body: JSON.stringify({ grant_type: "refresh_token", refresh_token: refreshToken, platform: "web" }),
+		signal: AbortSignal.timeout(15_000),
+	});
+	const j = (await res.json().catch(() => ({}))) as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown };
+	if (!res.ok || typeof j.access_token !== "string") {
+		const text = `JANDI session refresh failed (HTTP ${res.status}); log in again`;
+		throw [400, 401, 403].includes(res.status) ? new SessionLost(text) : new SelfChatError(text);
+	}
+	return {
+		access: j.access_token,
+		...(typeof j.refresh_token === "string" && j.refresh_token ? { refresh: j.refresh_token } : {}),
+		ttlMs: typeof j.expires_in === "number" && j.expires_in > 0 ? j.expires_in * 1000 : 3_600_000,
+	};
+}
+
+/** The room must be the member's own chat with the JANDI bot; anything else is refused before a message is read. */
+export async function checkRoomOf(get: (path: string, version: number) => Promise<unknown>, cfg: Pick<SelfChatConfig, "team_id" | "room_id" | "bot_id" | "member_id">): Promise<void> {
+	const r = (await get(`room-api/v2/teams/${cfg.team_id}/rooms/${cfg.room_id}`, 2)) as { type?: unknown; companionId?: unknown; members?: unknown };
+	const members = Array.isArray(r.members) ? r.members : [];
+	if (r.type !== "chat" || r.companionId !== cfg.bot_id || !members.includes(cfg.member_id))
+		throw new SelfChatError(`JANDI room ${cfg.room_id} is not this member's chat with the JANDI bot; nothing was read`);
+}
 
 export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 	const f = deps.fetch ?? fetch;
@@ -158,31 +193,23 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 	const saveLast = (id: number) => writeAtomic(stateFile, `${JSON.stringify({ room_id: cfg.room_id, last_link_id: id })}\n`, 0o600);
 
 	function refreshToken(): string {
-		if (!existsSync(secretFile)) throw new SelfChatError(`no JANDI session (dotz secret ${cfg.session_secret})`);
+		if (!existsSync(secretFile)) throw new SessionLost(`no JANDI session (dotz secret ${cfg.session_secret})`);
 		let v: unknown;
 		try {
 			v = (JSON.parse(readSecretFile(secretFile)) as Record<string, unknown>).refresh_token;
 		} catch {
 			throw new SelfChatError(`dotz secret ${cfg.session_secret} is unreadable`);
 		}
-		if (typeof v !== "string" || !v) throw new SelfChatError(`dotz secret ${cfg.session_secret} has no refresh_token`);
+		if (typeof v !== "string" || !v) throw new SessionLost(`dotz secret ${cfg.session_secret} has no refresh_token`);
 		return v;
 	}
 
 	async function token(): Promise<string> {
 		if (access && Date.now() < access.until) return access.token;
 		const rt = refreshToken();
-		const res = await f(`${api}inner-api/token`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json;charset=UTF-8", Accept: "application/vnd.tosslab.jandi-v4+json" },
-			body: JSON.stringify({ grant_type: "refresh_token", refresh_token: rt, platform: "web" }),
-			signal: AbortSignal.timeout(15_000),
-		});
-		const j = (await res.json().catch(() => ({}))) as { access_token?: unknown; refresh_token?: unknown; expires_in?: unknown };
-		if (!res.ok || typeof j.access_token !== "string") throw new SelfChatError(`JANDI session refresh failed (HTTP ${res.status}); log in again`);
-		if (typeof j.refresh_token === "string" && j.refresh_token && j.refresh_token !== rt) writeSecretFile(secretFile, JSON.stringify({ refresh_token: j.refresh_token }));
-		const ttl = typeof j.expires_in === "number" && j.expires_in > 0 ? j.expires_in * 1000 : 3_600_000;
-		access = { token: j.access_token, until: Date.now() + Math.max(60_000, ttl - TOKEN_MARGIN_MS) };
+		const got = await refreshAccess(f, api, rt);
+		if (got.refresh && got.refresh !== rt) writeSecretFile(secretFile, JSON.stringify({ refresh_token: got.refresh }));
+		access = { token: got.access, until: Date.now() + Math.max(60_000, got.ttlMs - TOKEN_MARGIN_MS) };
 		return access.token;
 	}
 
@@ -295,13 +322,7 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 		void res.body?.cancel();
 	}
 
-	/** The room must be the member's own chat with the JANDI bot; anything else is refused before a message is read. */
-	async function checkRoom(): Promise<void> {
-		const r = (await get(`room-api/v2/teams/${cfg.team_id}/rooms/${cfg.room_id}`, 2)) as { type?: unknown; companionId?: unknown; members?: unknown };
-		const members = Array.isArray(r.members) ? r.members : [];
-		if (r.type !== "chat" || r.companionId !== cfg.bot_id || !members.includes(cfg.member_id))
-			throw new SelfChatError(`JANDI room ${cfg.room_id} is not this member's chat with the JANDI bot; nothing was read`);
-	}
+	const checkRoom = (): Promise<void> => checkRoomOf(get, cfg);
 
 	async function latest(): Promise<number> {
 		const j = (await get(`message-api/v2/teams/${cfg.team_id}/rooms/${cfg.room_id}/messages?count=1`, 2)) as { lastLinkId?: unknown };
@@ -319,11 +340,13 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 			last = r.id;
 			saveLast(last); // before handing it on: a crash never runs the same command twice (nor notifies the same reply twice)
 			const body = r.message?.content?.body;
-			if (r.fromEntity !== cfg.member_id) {
-				const reply = typeof body === "string" ? peerReplyOf(body, deps.peers?.()) : undefined;
-				if (reply && reply.peer.notify !== false) deps.peerReply?.(reply.peer, reply.text, r.id);
+			// A peer's reply may come from another member or, when that peer answers through its owner's session, from this owner: checked before the command.
+			const reply = typeof body === "string" ? peerReplyOf(body, deps.peers?.()) : undefined;
+			if (reply) {
+				if (reply.peer.notify !== false) deps.peerReply?.(reply.peer, reply.text, r.id);
 				continue;
 			}
+			if (r.fromEntity !== cfg.member_id) continue;
 			// A file alone, or with the keyword as its caption, is for this gateway; a caption without the keyword is not (like any other text).
 			const list = filesOf(r.message);
 			const said = typeof body === "string" ? body.trim() : "";
@@ -363,6 +386,7 @@ export function createSelfChat(cfg: SelfChatConfig, deps: SelfChatDeps) {
 				deps.onError(undefined);
 				backoff = cfg.interval_ms;
 			} catch (e) {
+				if (e instanceof SessionLost) deps.onSessionLost?.();
 				const msg = e instanceof SelfChatError ? e.message : `JANDI ${String((e as { code?: unknown })?.code ?? (e as Error)?.name ?? "error")}`;
 				deps.onError(msg);
 				deps.log(`jandi self-chat: ${msg}`);

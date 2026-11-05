@@ -7,7 +7,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 - `hub/main.ts` gateway process (startup, timers, shutdown, restart gate)
 - `setup.ts` + `onboard/` install wizard (`harness.ts`, `service.ts`, `tailscale.ts`, `aside.ts`, `discord.ts`, `permissions.ts`)
 - `firstrun/` first-run web onboarding between hub and onboard: the marker (`first-run.ts`, `first-run-boot.ts`), the gate and its jobs (`setup-gate.ts`, `setup-jobs.ts`, `setup-state.ts`, `setup-term.ts`, `setup-apply.ts`) and the shared answers/apply/scan/exec code; it may import hub and onboard, and only `hub/main.ts`, `hub/routes.ts`, `hub/routes-settings.ts` and `setup.ts` import it
-- `extension/index.ts` agent-side extension (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `output-cap.ts`, `owner-values.ts`, `task-cap.ts`, `compact-kept.ts`, `schema.ts`, `token-audit.ts`)
+- `extension/index.ts` agent-side extension (`guard.ts`, `guard-config.ts`, `harness-tools.ts`, `output-cap.ts`, `owner-values.ts`, `task-cap.ts`, `compact-kept.ts`, `schema.ts`, `token-audit.ts`, `connect-view.ts` (the `dotz_connect` tool's plain-text view of a messenger connection))
 
 ## Gateway core
 
@@ -36,6 +36,7 @@ Paths only; each file's header comment says what it does. Tests sit next to thei
 - per-install custom code (not part of the product): `hub/custom.ts` (cards, pins, routines), `hub/plugins.ts` (plugin hooks, see `docs/custom-plugins.md`; loaded from `<DATA_DIR>/custom/plugins/`)
 - mail: `hub/mail-move.ts` (moves a stored mail to another mail app, `/api/mail/move`)
 - mail: `hub/mail-delete.ts` (삭제하면 원본도 삭제: the source adapters behind the owner's delete, `/api/mail/delete-original`)
+- messenger login: `hub/messenger-login.ts` (the browser login capture the messenger onboarding flows share: it reads one page value in the owner's background Aside tab, and the value reaches the flow in memory through a one-shot localhost inbox, never stdout, argv or logs), `hub/jandi-session.ts` (reads the owner's JANDI session: token exchange, team, member, bot and the 나와의 대화 room)
 - Relay chat (a computer reached only through a messenger, the adapter's `relay`): `hub/relay-route.ts`, web `web/js/42-relay-chat.js`
 
 ## Accounts, providers, runtimes

@@ -30,6 +30,7 @@ const jandi = () => ({
 	},
 	projects: PROJECTS,
 	notify: { ask: true, alert: true, result: true, news: true, conv: true, log: true },
+	...(selfChat ? { self_chat: selfChat } : {}),
 });
 const slack = () => ({
 	enabled: false,
@@ -50,9 +51,11 @@ const telegram = () => ({
 	notify: { ask: true, alert: true, result: true, news: true, conv: true, log: true },
 });
 let items: any[];
+let selfChat: { state: string; label: string; hint: string; connect: string } | undefined;
 let secretSet = false;
 let allow: string[];
 let onboard: string[] = [];
+let picks: string[] = [];
 const puts = inbox<any>();
 let ob: Record<string, any>;
 const idle = key => ({ key, state: "idle", step: null, owner: null, error: null, url: null, updated_at: new Date(0).toISOString() });
@@ -60,6 +63,7 @@ const waiting = (key, label, hint) => ({ key, state: "waiting", step: { id: "own
 const done = (key, url = null) => ({ key, state: "done", step: { id: "done", title: "완료", detail: "연결했어요" }, owner: null, error: null, url, updated_at: new Date(0).toISOString() });
 function reset() {
 	items = baseItems();
+	selfChat = undefined;
 	secretSet = false;
 	allow = ["boss@corp.test"];
 	puts.length = 0;
@@ -100,7 +104,11 @@ const hub = fakeHub({
 			if (!action) return json(ob[key]);
 			onboard.push(`${key}/${action}`);
 			if (action === "start") ob[key] = waiting(key, key === "discord" ? "Discord 열기" : "관리자로 로그인", key === "telegram" ? "Telegram에서 시작을 눌러 주세요." : "브라우저에서 남은 한 가지를 마쳐 주세요.");
-			else if (action === "continue") ob[key] = done(key, key === "telegram" ? "https://t.me/example" : null);
+			else if (action === "continue") {
+				const b = (await req.clone().json().catch(() => ({}))) as { choice?: string };
+				if (b.choice) picks.push(b.choice);
+				ob[key] = done(key, key === "telegram" ? "https://t.me/example" : null);
+			}
 			else ob[key] = idle(key);
 			return json(ob[key]);
 		}
@@ -209,6 +217,39 @@ describe("메신저 설정", () => {
 		await click(v, "#jandi [data-ms-connect]");
 		await waitFor(v, `document.querySelector("#jandi [data-ms-connect]").textContent === "연결"`);
 		expect(puts).toEqual([{ enabled: true }]);
+	}, 30_000);
+
+	test("JANDI 나와의 대화 row: absent without self_chat; carries the settings words and starts the JANDI flow in every state", async () => {
+		const v = await open(1280, 800, "light", "jandi");
+		expect(await ev<number>(v, `document.querySelectorAll("#jandi [data-ms-selfchat]").length`)).toBe(0);
+		const words = { off: ["잔디 나와의 대화", "아직 연결하지 않았어요.", "잔디 로그인으로 연결"], ok: ["잔디 나와의 대화", "연결돼 있어요.", "다시 연결"], lost: ["잔디 나와의 대화", "로그인이 끝났어요.", "다시 연결"] } as const;
+		for (const state of ["off", "ok", "lost"] as const) {
+			const [label, hint, connect] = words[state];
+			selfChat = { state, label, hint, connect };
+			await run(v, `MSS.page.s = null; renderMessenger("jandi")`);
+			await waitFor(v, `document.querySelector('#jandi [data-ms-selfchat="${state}"]')`);
+			const row = await ev<{ n: number; text: string; button: string; lead: boolean }>(v, `({ n: document.querySelectorAll("#jandi [data-ms-selfchat]").length, text: document.querySelector("#jandi [data-ms-selfchat] .tx").textContent, button: document.querySelector("#jandi [data-ms-selfchat-connect]").textContent, lead: !document.querySelector("#jandi [data-ms-selfchat-connect]").classList.contains("tonal") })`);
+			expect(row).toEqual({ n: 1, text: label + hint, button: connect, lead: state === "lost" });
+		}
+		onboard = [];
+		await click(v, "#jandi [data-ms-selfchat-connect]");
+		await waitFor(v, `document.querySelector('#jandi [data-onb-state="waiting"]')`);
+		expect(onboard).toEqual(["jandi/start"]);
+	}, 30_000);
+
+	test("a question with choices shows one row each, no continue button, never auto-continues, and a pick posts the choice", async () => {
+		const v = await open(1280, 800, "light", "jandi");
+		onboard = [];
+		picks = [];
+		ob.jandi = { ...waiting("jandi", "팀 고르기", "연결할 팀을 골라 주세요."), manual: true, choices: [{ id: "11", label: "Alpha" }, { id: "12", label: "Beta" }] };
+		await run(v, `loadOnboarding("jandi")`);
+		await waitFor(v, `document.querySelectorAll('#jandi [data-onb-choice]').length === 2`);
+		expect(await ev<number>(v, `document.querySelectorAll("#jandi [data-onb-continue]").length`)).toBe(0);
+		expect(await ev<number>(v, `OB.jandi.autoTimer`)).toBe(0);
+		await click(v, '#jandi [data-onb-choice="12"] button');
+		await waitFor(v, `document.querySelector('#jandi [data-onb-state="done"]')`);
+		expect(picks).toEqual(["12"]);
+		expect(await ev<number>(v, `document.querySelectorAll("#jandi [data-onb-choice]").length`)).toBe(0);
 	}, 30_000);
 
 	test("연결 starts onboarding; waiting shows one owner line and continue posts /continue", async () => {

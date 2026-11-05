@@ -71,6 +71,44 @@ export const en = {
 		prefixHint: "What that computer puts at the very start of its replies.",
 		invalid: "Check the keyword and the reply prefix. Neither can match another computer's, and the list holds up to 8.",
 	},
+
+	// Messenger connect flows (hub/onboarding*.ts, hub/messenger-login.ts): owner-facing lines, plain and short.
+	connect: {
+		say: {
+			waiting: (label: string, hint: string) => `${label}: ${hint}`,
+			failed: (error: string, hint: string) => `Could not connect. ${error} ${hint}`.replace(/\s+/g, " ").trim(),
+			done: "Connected.",
+		},
+		login: {
+			unavailable: "Aside could not be opened, so the login window was not read. Start Aside and restart the connection.",
+			gaveUp: "The login did not finish within 10 minutes, so this stopped. Restart the connection to begin again.",
+			unreadable: "The login window could not be read. Restart the connection.",
+		},
+		jandi: {
+			mainRoom: "Main",
+			reuse: { title: "Check saved JANDI rooms", detail: "Rooms already connected with webhooks are used as they are.", label: "Check saved settings", hint: "Check the webhook values under Settings → JANDI, then press Continue." },
+			notice: { title: "Notice", detail: "What this connection reads, before it starts.", label: "Read it and continue", hint: "This uses JANDI's web login, which JANDI does not document. It reads only your chat with yourself and never the chats you have with other members. If that is fine, press Continue." },
+			login: { title: "JANDI login", detail: "If Aside is already logged in to JANDI, this goes on by itself.", label: "Log in to JANDI", hint: "Open the Aside app and log in on the JANDI tab. It goes on by itself once you are in." },
+			team: { title: "Pick the team", detail: "Reads the JANDI teams of the logged-in account.", label: "Pick the team", hint: "Pick the team to connect." },
+			room: { title: "Find the chat with yourself", detail: "Finds your chat with the JANDI bot and checks it is the right one.", label: "Restart the connection", hint: "Restart the connection. If it keeps failing, open your chat with yourself once in the JANDI app." },
+			save: { title: "Save the connection", detail: "Saves the login and the room, then starts reading.", label: "Restart the connection", hint: "Restart the connection." },
+			done: { title: "Connected", detail: "Your JANDI chat with yourself is connected.", label: "Check again", hint: "Restarting the connection checks the current state again." },
+			noTeams: "No JANDI team was found for this account.",
+			noRoom: "The chat with yourself was not found. Nothing was saved.",
+			notMine: "The room found could not be confirmed as your chat with yourself. Nothing was saved.",
+			denied: "JANDI did not accept the login. Log in again.",
+			unreadable: "JANDI's answer could not be read. Nothing was saved.",
+			noToken: "No JANDI login was found. Log in, then start again.",
+		},
+		expiry: {
+			alert: "The JANDI login ended, so the chat with yourself cannot be read. Reconnect under Settings → Messengers → JANDI.",
+			ok: { label: "Chat with yourself connected", hint: "Connected with your JANDI login." },
+			lost: { label: "The JANDI login ended", hint: "The chat with yourself cannot be read. Reconnecting picks up right away." },
+			off: { label: "Connect with your JANDI login", hint: "Log in to JANDI and you can talk to the gateway from your chat with yourself." },
+			reconnect: "Reconnect",
+			connect: "Connect with JANDI login",
+		},
+	},
 	cmd: {
 		failed: "That did not work",
 		applyAnyway: "Apply anyway",
@@ -234,7 +272,7 @@ export const en = {
 	nowLaneBusy: "working",
 	nowWorkers: (n: number, names: string) => `subagents ${n}${names ? ` ${names}` : ""}`,
 	nowOrchestrator: (n: number, names: string) => `orchestrator subagents ${n}${names ? `(${names})` : ""}`,
-	firstStart: (target: string) => `[dotz gateway] First start of this install. Speak first in ${target}: greet the owner in a few short messages as ${NAME} (who you are, what you can do: channels per project, monitoring, sessions, schedules). Then ask once whether you may learn their setup, read-only: Aside's memory of them (aside memory list / search: who they are, people, projects, sites) and the sites they are signed in to, coding agent conversations and their projects, tools and CLIs in use, logs and schedules on this machine. On yes, do it with read-only subagents, keep one progress message updated in place (dotz_send update_key "onboarding"), record what you learn in memory as you go, and end with a short summary of what you learned and what is still missing. On no, just say how to start.`,
+	firstStart: (target: string) => `[dotz gateway] First start of this install. Speak first in ${target}: greet the owner in a few short messages as ${NAME} (who you are, what you can do: channels per project, monitoring, sessions, schedules). Then ask once whether you may learn their setup, read-only: Aside's memory of them (aside memory list / search: who they are, people, projects, sites) and the sites they are signed in to, coding agent conversations and their projects, tools and CLIs in use, logs and schedules on this machine. On yes, do it with read-only subagents, keep one progress message updated in place (dotz_send update_key "onboarding"), record what you learn in memory as you go, and end with a short summary of what you learned and what is still missing. On no, just say how to start. Also offer to connect the messengers the owner uses (discord, jandi, slack, telegram) with the dotz_connect tool.`,
 
 	inboxLaneReport: (lane: string) => `[dotz inbox] session report from ${lane}:`,
 	inboxLaneReports: (n: number) => `[dotz inbox] ${n === 1 ? "session report" : `${n} session reports`} (routine progress stays in report.md and the what-runs-now line):`,
