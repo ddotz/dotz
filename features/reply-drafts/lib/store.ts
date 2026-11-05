@@ -1,7 +1,7 @@
 // Drafts made by the feature: <DATA_DIR>/custom/reply-drafts/drafts.json = { drafts, keys }. `keys` remembers every mail key that
 // was already looked at (drafted or skipped) so a mail is never drafted twice, even after its draft is gone.
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ReplyItem, ReplyKind } from "../../../hub/reply-draft.ts";
 import { paths, writeAtomic } from "./settings.ts";
@@ -47,15 +47,26 @@ const MAX_DRAFTS = 200;
 const MAX_KEYS = 2000;
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
-function read(): File {
-	if (!existsSync(paths.drafts())) return { drafts: [], keys: [] };
+// The parsed file is kept while its identity (path, inode, mtime, size) is the same: every write is an atomic rename, so a write by the CLI in another
+// process changes the inode. Every public read hands out a copy of what it returns; `read()` (the write paths) works on a copy too.
+let cached: { id: string; file: File } | undefined;
+
+function parsed(): File {
+	const path = paths.drafts();
 	try {
-		const raw = JSON.parse(readFileSync(paths.drafts(), "utf8"));
-		return { drafts: Array.isArray(raw?.drafts) ? raw.drafts : [], keys: Array.isArray(raw?.keys) ? raw.keys : [] };
+		const st = statSync(path);
+		const id = `${path}|${st.ino}|${st.mtimeMs}|${st.size}`;
+		if (cached?.id === id) return cached.file;
+		const raw = JSON.parse(readFileSync(path, "utf8"));
+		const file = { drafts: Array.isArray(raw?.drafts) ? raw.drafts : [], keys: Array.isArray(raw?.keys) ? raw.keys : [] };
+		cached = { id, file };
+		return file;
 	} catch {
+		cached = undefined;
 		return { drafts: [], keys: [] };
 	}
 }
+const read = (): File => structuredClone(parsed());
 
 // Only closed drafts (sent, dropped, stale, answered) are trimmed, oldest first: a pending or held draft still has a card, so it always stays.
 // A key of a kept draft is never forgotten either (the mail would be drafted twice); other keys beyond MAX_KEYS go oldest first.
@@ -77,9 +88,13 @@ export function newId(taken: Set<string> = new Set(listDrafts().map(d => d.id)))
 	}
 }
 
-export const listDrafts = (): DraftRec[] => read().drafts;
-export const getDraft = (id: string): DraftRec | undefined => read().drafts.find(d => d.id === id);
-export const isDrafted = (ref: string): boolean => read().keys.includes(ref);
+// What the readers get is a copy, so nothing they change reaches the kept parse.
+export const listDrafts = (): DraftRec[] => structuredClone(parsed().drafts);
+export const getDraft = (id: string): DraftRec | undefined => {
+	const d = parsed().drafts.find(x => x.id === id);
+	return d && structuredClone(d);
+};
+export const isDrafted = (ref: string): boolean => parsed().keys.includes(ref);
 
 export function markDrafted(ref: string): void {
 	const f = read();
