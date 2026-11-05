@@ -31,6 +31,7 @@ import { refreshReplyModelChoices, replyModelLabel } from "./reply-model-choices
 import { replyModel } from "./reply-model.ts";
 import { watchOfSubject } from "./watch-settings.ts";
 import { markRead, markUnread } from "./reads.ts";
+import { shownEvent } from "./owner-text.ts";
 import { activityItems, broadcast, historyEvents, historyPage, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { subagentLists } from "./activity.ts";
 import { cancelOmoWorker, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
@@ -578,7 +579,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		}
 		if (req.method === "POST" && url.pathname === "/api/gateway/restart") return json({ ok: true, output: restartGateway() });
 		if (url.pathname === "/api/state")
-			return json({ name: NAME, address: ADDRESS, upload_max: UPLOAD_MAX_BYTES, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), waitlist: stateWaitlist(), work_now: Date.now(), web_build: webBuild(), desk: desk.summary() });
+			return json({ name: NAME, address: ADDRESS, upload_max: UPLOAD_MAX_BYTES, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)).map(shownEvent), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), waitlist: stateWaitlist(), work_now: Date.now(), web_build: webBuild(), desk: desk.summary() });
 		if (req.method === "GET" && url.pathname === "/api/notices") syncCardFiles();
 		if (req.method === "GET" && url.pathname === "/api/notices") return json({ ...listNotices(Number(url.searchParams.get("limit") ?? 100), true), gone: dismissedAlertAts() });
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });

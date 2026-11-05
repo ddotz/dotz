@@ -4,6 +4,7 @@ import { fileLinePaths, snapshotSent } from "./files.ts";
 import { liveEmitRefusal } from "./live-guard.ts";
 import { stripSteerMark } from "./steer-mark.ts";
 import { mailByThread, mailTarget } from "./mail.ts";
+import { noteBroken, ownerKind, ownerText, shownEvent } from "./owner-text.ts";
 
 export type HubEvent = { ts: string; kind: string; source: string; text: string; [key: string]: unknown };
 
@@ -37,6 +38,8 @@ const emitRefused = liveEmitRefusal(DATA_DIR);
 export function emit(box: "inbox" | "outbox", event: HubEvent): void {
 	if (emitRefused) throw new Error(emitRefused);
 	if (typeof event.text === "string") event.text = stripSteerMark(event.text);
+	// The choke point of what the owner reads (hub/owner-text.ts): the page, the bell, push and every messenger read this text.
+	if (typeof event.text === "string" && ownerKind(event.kind)) event.text = ownerText(event.text, head => noteBroken(event.source, head), event.source === "gateway");
 	appendFileSync(box === "inbox" ? paths.inbox : paths.outbox, `${JSON.stringify(event)}\n`);
 	if (typeof event.text === "string" && event.text.includes("[file]")) snapshotSent(event.text);
 	recent.push(event);
@@ -298,7 +301,7 @@ function conversationEvents(target: string, before?: string): HubEvent[] {
 }
 // `before` (an ISO ts) pages backwards: the newest `limit` events older than it.
 export function historyEvents(target: string, limit: number, before?: string): HubEvent[] {
-	return conversationEvents(target, before).slice(-limit);
+	return conversationEvents(target, before).slice(-limit).map(shownEvent);
 }
 // A page that need not touch what the page already has: `around` centres it on one message (its mid, message_id or ts), `after` starts it past a ts.
 // `at` is the ts of the `around` message (no `at`: the window of history does not hold it), `prev` and `next` the ts just outside the page, absent at
@@ -309,7 +312,7 @@ export function historyPage(target: string, limit: number, where: { around: stri
 	if ("around" in where && hit < 0) return { events: [] };
 	const after = "after" in where ? all.findIndex(e => e.ts > where.after) : -1;
 	const lo = "around" in where ? Math.max(0, hit - (limit >> 1)) : after < 0 ? all.length : after;
-	return { events: all.slice(lo, lo + limit), at: all[hit]?.ts, prev: all[lo - 1]?.ts, next: all[lo + limit]?.ts };
+	return { events: all.slice(lo, lo + limit).map(shownEvent), at: all[hit]?.ts, prev: all[lo - 1]?.ts, next: all[lo + limit]?.ts };
 }
 
 export function sseResponse(lastId?: string | null): Response {

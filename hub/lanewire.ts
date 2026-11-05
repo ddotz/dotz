@@ -41,7 +41,9 @@ export function installLaneHandlers(): void {
 			const local = await localize(body, channel, "lane");
 			const kept = local === body ? text : [local, forLines(text)].filter(Boolean).join("\n\n");
 			// `answering`: the report answers an owner message (the bell and push treat it as the session's answer, hub/notices.ts, hub/push.ts).
-			emit("inbox", { ts: now(), kind: "lane_report", source: channel, lane: lane.name, text: kept, ...(answering ? { answering: true } : {}) });
+			// An ask's event carries the ask's own time: the docked card (pendingAsk) and the decision notice (this event) must name one message, or an answer on one leaves the other open (company-stage1 2026-11-05: tapped twice, 2 ms apart).
+			const ts = lane.pendingAsk?.text === text ? lane.pendingAsk.at : now();
+			emit("inbox", { ts, kind: "lane_report", source: channel, lane: lane.name, text: kept, ...(answering ? { answering: true } : {}) });
 			return clipKeepingAsk(local, 1800);
 		})
 			.then(async shown => {
