@@ -181,11 +181,14 @@ const LANE_TONE = { done: ["ok", "완료"], run: ["pri", "진행 중"], wait: ["
 // [run] and [wait] are true only of the moment they were written: 41-runstate.js syncLiveTags draws them from the current state.
 const parkedTone = tone => tone === "run" || tone === "wait";
 const toneTag = tone => LANE_TONE[tone] ? el("span", { class: `tag ${LANE_TONE[tone][0]} st-tag`, text: LANE_TONE[tone][1] }) : null;
+// A lane's worklog entry says whether its report was checked in words (hub/laneops.ts claimPrefix, which Discord reads as written); here it is the tag of a project's result row (19-project-main.js pmResultRow).
+const CLAIM_LEAD = /^(?:(?:확인됨|보고됨|verified|reported) · )+/, CLAIM_TAG = { verified: ["ok", "확인됨"], reported: ["", "보고만 함"] };
+const claimTag = claim => CLAIM_TAG[claim] ? el("span", { class: `tag ${CLAIM_TAG[claim][0]} st-tag claim-tag`, text: CLAIM_TAG[claim][1] }) : null;
 // The tag goes in front of the first paragraph's text; a body that opens with a list or a card gets a line of its own.
-function toneLead(root, tone) {
-  const tag = toneTag(tone), f = root.firstElementChild;
-  if (!tag) return root;
-  if (f && /^(P|LI)$/.test(f.tagName)) f.prepend(tag); else root.prepend(el("p", {}, tag));
+function toneLead(root, tone, claim = "") {
+  const tags = [toneTag(tone), claimTag(claim)].filter(Boolean), f = root.firstElementChild;
+  if (!tags.length) return root;
+  if (f && /^(P|LI)$/.test(f.tagName)) f.prepend(...tags); else root.prepend(el("p", {}, ...tags));
   return root;
 }
 // Machine markers never reach the owner as text (owner 2026-10-23). Same shapes as hub/tone.ts stripMarkers (keep in step):
@@ -238,7 +241,8 @@ function stripMarkers(text, keepFiles = false) {
 function parseTone(text, keepFiles = false) {
   text = String(text ?? "");
   const m = text.match(/^\[([^\]\n]+)\][ \t]*/), tag = m && TONE_TAGS.get(m[1].toLowerCase());
-  return tag ? { tone: tag, text: stripMarkers(text.slice(m[0].length), keepFiles) } : { tone: "", text: stripMarkers(text, keepFiles) };
+  const body = tag ? text.slice(m[0].length) : text, c = CLAIM_LEAD.exec(body);
+  return { tone: tag || "", claim: c ? (/^(?:확인됨|verified)/.test(c[0]) ? "verified" : "reported") : "", text: stripMarkers(c ? body.slice(c[0].length) : body, keepFiles) };
 }
 
 /* ---------- api ---------- */
