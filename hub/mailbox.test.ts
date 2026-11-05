@@ -8,7 +8,7 @@ import { unreadOf } from "./conversations.ts";
 import { emit } from "./events.ts";
 import { mailByKey, mailCard, mailKey, mailTarget, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
 import { boxesOf, cleanBox, loadMailboxes, MAX_BOXES, MAX_LIST, MAX_PINS, pickBox, setPin, type Box } from "./mailbox.ts";
-import { boxPass, instanceOf, mailboxRoute, placeMail, withBoxes } from "./routes-mailbox.ts";
+import { boxPass, instanceOf, mailboxRoute, placeMail, SUGGEST_MAX, withBoxes } from "./routes-mailbox.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "mailbox-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -284,5 +284,48 @@ describe("boxes", () => {
 	test("integration items of other apps are left as they are", () => {
 		const item = { key: "kakao", app: "kakao" };
 		expect(withBoxes(item, dir)).toBe(item);
+	});
+});
+
+describe("suggest and tone", () => {
+	const get = async (path: string) => {
+		const res = await mailboxRoute(new Request(`http://hub${path}`), new URL(`http://hub${path}`), dir);
+		return { status: res.status, json: (await res.json()) as Record<string, any> };
+	};
+
+	test("suggest groups the mail still in base by sender domain, bounded, without free-mail domains or mail already in a box", async () => {
+		const { deps } = fakes(), source = uid("sg"), tag = uid("t");
+		put({ accounts: { mail: { boxes: [{ id: "b-boxed", name: "나눈 함", conds: { from: [`@boxed-${tag}.com`] } }] } } });
+		let n = 0;
+		const send = async (from: string, times: number) => { for (let i = 0; i < times; i++) await post(deps, source, String(++n), { from, subject: `s${n}` }); };
+		await send(`Big <a@big-${tag}.com>`, 30);
+		for (let i = 0; i < SUGGEST_MAX + 4; i++) await send(`m@g${i}-${tag}.com`, 2);
+		await send(`one@one-${tag}.com`, 1);
+		await send("a@gmail.com", 3);
+		await send("b@naver.com", 3);
+		await send(`c@boxed-${tag}.com`, 3);
+		const res = await get("/api/mailbox/suggest?app=mail");
+		const groups = res.json.groups as { domain: string; label: string; count: number; senders: string[]; keys: string[] }[];
+		expect(res.status).toBe(200);
+		expect(groups).toHaveLength(SUGGEST_MAX);
+		expect(groups.map(g => g.count)).toEqual([...groups.map(g => g.count)].sort((a, b) => b - a));
+		expect(groups.every(g => g.count >= 2)).toBe(true);
+		const domains = groups.map(g => g.domain);
+		for (const free of ["@gmail.com", "@naver.com", `@boxed-${tag}.com`, `@one-${tag}.com`]) expect(domains).not.toContain(free);
+		const big = groups.find(g => g.domain === `@big-${tag}.com`)!;
+		expect([big.count, big.label, big.senders, big.keys]).toEqual([30, `big-${tag}`, ["Big"], expect.any(Array)]);
+		expect(big.keys).toHaveLength(30);
+		expect((await get("/api/mailbox/suggest?app=nope")).status).toBe(404);
+	});
+
+	test("tone reads the box's own file: the summary, the corrections, and whether the box has a file of its own", async () => {
+		put({ accounts: { mail: { boxes: [team, { id: "b-plain", name: "조용한 함" }] } } });
+		{
+			mkdirSync(join(dir, "custom", "reply-drafts", "tone", "mail"), { recursive: true });
+			writeFileSync(join(dir, "custom", "reply-drafts", "tone", "mail", "b-team.md"), "## 정체성\n\n- 정중하게 써요\n\n## 고친 점\n\n- 2031-01-01: 더 짧게\n");
+			expect((await get("/api/mailbox/tone?app=mail&box=b-team")).json).toEqual({ ok: true, own: true, summary: "정중하게 써요", corrections: ["2031-01-01: 더 짧게"] });
+			expect((await get("/api/mailbox/tone?app=mail&box=b-plain")).json).toEqual({ ok: true, own: false, summary: "", corrections: [] });
+			expect((await get("/api/mailbox/tone?app=mail&box=b-none")).status).toBe(404);
+		}
 	});
 });

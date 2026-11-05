@@ -84,6 +84,15 @@ A draft records its `box` and `instance`, so a revision and the send check use t
 undo needs. `POST /api/mailbox/learn {box, kind, value}` adds a `from`/`subj` condition or a `not.from` veto; it is only called when the owner picks it in
 the small 앞으로는 어떻게 할까요? box. A move alone teaches nothing.
 
+## Settings and 메일함 추가 (web)
+
+Two more screens of the same view, drawn in place of the list: `MX.scr` is `set` or `new` and is the last part of the address, `monitoring/i%3Amail/<account>/<box>/set` (an old address without it opens the list). 메일함 설정 saves each change at once with
+`PUT /api/mailbox/box` (the whole box, so `alone`, `rules` and `conds.src` come back unchanged); a refused save restores the box and shows the hub's reason. A box list's `n:<name>` entry opens the first account's box of that name. The base box has no delete; deleting another sends
+`DELETE /api/mailbox/box` and its mail reads as 일반. 메일함 추가 starts from a suggestion, an empty box or another box's settings; a suggestion fills the name and a `conds.from` domain, and the mail already there moves only when the owner switches that on (then `POST /api/mailbox/move`).
+
+- `GET /api/mailbox/tone?app=<instance>&box=<id>` -> `{ok, own, summary, corrections}`: the box's tone file `tone/<instance>/<box>.md` (the summary falls back to the instance's, then the install's, like a draft does; `corrections` is the box's own file only). Read when the settings item 말투 opens, never per card. 다시 배우기 and 예시 보기 have no route and are not on the screen.
+- `GET /api/mailbox/suggest?app=<instance>` -> `{ok, groups: [{domain, label, count, senders, keys}]}`: one pass over the stored mail of that account that is still in its base box, grouped by sender domain (at most 8 groups of 2 mails or more, 3 senders and 100 keys each), without free-mail domains and outgoing mail. No model call; once per opening of the screen.
+
 ## Web
 
 The mail app is one row in 모니터링 and one screen for all instances: head card, account chip in the app bar (only with 2+ accounts), left pane on wide
