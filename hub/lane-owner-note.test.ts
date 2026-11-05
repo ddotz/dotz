@@ -147,6 +147,29 @@ test("the final report answers what the note did not, and a [run] final is flagg
 	await advance(300);
 });
 
+test("a [wait] final after a mid-turn note is the answer to the owner; the next turn's [wait] with no new owner message stays progress", async () => {
+	const { agent } = await working("note-wait");
+	expect(l.sendToLane("note-wait", "[owner via Discord] 10메가로 나눠서 보내", "m3")).toBe("steered");
+	agent.push({ type: "assistant", text: "나눠서 보낼게요.", stop: "other" });
+	await flush();
+	expect(shown).toHaveLength(1);
+	agent.push({ type: "assistant", text: "[wait] 시험판을 세 통으로 나눠 보냈어요. 받으면 알려 주세요.", stop: "stop" });
+	agent.push({ type: "turn_end" });
+	await flush();
+	await advance(1000);
+	await flush();
+	expect(reports.at(-1)).toEqual({ text: "[wait] 시험판을 세 통으로 나눠 보냈어요. 받으면 알려 주세요.", answering: true });
+	agent.push({ type: "turn_start" });
+	agent.push({ type: "assistant", text: "[wait] 회사 PC 시험 결과를 기다려요.", stop: "stop" });
+	agent.push({ type: "turn_end" });
+	await flush();
+	await advance(1000);
+	await flush();
+	expect(reports.at(-1)).toEqual({ text: "[wait] 회사 PC 시험 결과를 기다려요.", answering: false });
+	l.stopLane("note-wait");
+	await advance(300);
+});
+
 test("an idle session receives the message at once; a stopped one is resumed; one with no session refuses and is not waited on", async () => {
 	const { lane, agent } = await working("note-idle");
 	agent.push({ type: "turn_end" });
