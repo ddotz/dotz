@@ -71,7 +71,9 @@ corrections turned into a checklist). `lib/persona.ts`:
   situation seen at least twice, in their own sentences with `{slots}`, conditional lines marked `[...]`). Lines with an e-mail, a URL
   or a phone number are dropped; names are asked as `{slots}`.
 - The draft prompt opens with the identity and the reply templates: a fitting template is filled, otherwise the user's own sentences
-  are preferred over new ones; samples, rules and corrections refine it.
+  are preferred over new ones; samples, rules and corrections refine it. With past replies as examples (mail, comment), a message close to one of them
+  (`examplesUse` in `hub/reply-draft.ts`: mail 0.27, comment 0.36, plain similarity of the shown pairs) follows that reply's shape; any other message is
+  unfamiliar and is written in the user's voice in new sentences, with three examples for voice only.
 - Every `REFINE_EVERY` (5) corrections of a profile, one call folds them into its identity and templates (`maybeRefine`).
 - Reply pairs (`pairs/<app>.jsonl`, `lib/pairs.ts`) are read from the sent mail of the accounts the mail apps name, even when zele is not switched on in config.json. They are refreshed without a model call: the first 500 threads, then the newest 40 once a day. Each pair keeps who it answered, and replies to the same sender lead the examples.
 - Where it runs: mail before the first offered draft (`offer.ts`, gateway passes zele's sent mail when zele is on), a comment source

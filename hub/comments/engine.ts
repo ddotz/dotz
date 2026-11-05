@@ -194,7 +194,7 @@ export function createEngine(deps: EngineDeps) {
 				? await deps.mailMatch({ author: c.author, postTitle: c.postTitle, text: c.text, at: c.at }).catch(e => [`메일 대조: 확인 실패 - ${e instanceof Error ? clip(e.message, 160) : "알 수 없는 이유"}`])
 				: [];
 		const item: ReplyItem = { kind: "comment", app: src.key, from: c.author, text: c.text, context: [contextOf(c), ...matched].join("\n") };
-		const style = withExamples(styleOf(src), similarPairs(c.text, past, EXAMPLES, undefined, deps.now()), [...past].sort((a, b) => b.at - a.at).map(p => p.reply));
+		const style = withExamples(styleOf(src), similarPairs(c.text, past, EXAMPLES, undefined, deps.now()), [...past].sort((a, b) => b.at - a.at).map(p => p.reply), c.text);
 		const r = previous && change !== undefined ? await reviseReply(item, style, { to: `${c.author} 댓글`, body: previous.text }, change, call) : await generateReply(item, style, call);
 		// pastSeed: no empty card. An empty or skipped reply takes the closest past answer of the owner, marked 확인 필요.
 		const seed = (r.action === "skip" || !r.draft.body.trim()) && !previous ? seeds[0] : undefined;
