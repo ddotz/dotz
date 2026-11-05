@@ -15,6 +15,7 @@ export type DraftRec = {
 	kind: ReplyKind;
 	app: string; // tone profile of the draft: mail, youtube, instagram, kakao, ...
 	room?: string; // the messenger conversation, when the app has rooms
+	profile?: string; // the mail app instance whose own tone profile wrote this draft (ReplyItem.profile); `app` stays the app
 	source: string; // "zele" | "webmail:<site>" | anything else (cannot be sent from here)
 	mailId: string; // the id the source knows the mail by
 	ref: string; // the gateway's mail key

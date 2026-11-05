@@ -38,10 +38,14 @@ export function sendTargetOf(ref: string): SendTarget | undefined {
 	return undefined;
 }
 
-/** The app a draft belongs to (a mail draft's own app, a comment draft's source app), for the 실패 / 보낸 것 rows. */
+/** The app a draft belongs to (a comment draft's source app; a mail draft's app instance, found from its mail like groupOf), for the 실패 / 보낸 것 rows. */
 export const draftAppOf = (ref: string): string | undefined => {
 	const c = commentDraftOf(ref);
-	return c ? commentSourceApp(c.source) : getDraft(ref)?.app;
+	if (c) return commentSourceApp(c.source);
+	const m = getDraft(ref);
+	if (!m || m.kind !== "mail" || m.compose) return m?.app;
+	const inst = instanceOf(appEntries(DATA_DIR), "mail", `mail:${m.ref}`);
+	return inst === "mail" ? m.app : inst;
 };
 
 // A conversation's gateway note goes where its cards were posted.
