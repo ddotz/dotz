@@ -651,6 +651,16 @@ dotz 웹앱의 `views` 배열(`web/js/04-state.js:36`)은 23개예요. 설정 �
 - 근거: web/js/11-resultcard.js:109(hcBriefParse), :126(hcBriefNode).
 - css: web/css/16-result-card.css(`.hcb-*`), 01-tokens.css.
 
+### 채팅 답 모양
+- 목적: 봇이 끝낸 답을 글의 모양대로 행과 카드로 그려요. 글자는 그대로이고 모델을 더 부르지 않아요. 시안은 `site/prototype`의 `#answers`예요.
+- 구성: `.ans-card` 안에 결과 카드와 같은 `.rc-rows`/`.rc-row`. 라벨 행(`.ans-keys`), 묶음 보고(`.ans-secs`, `.ans-li`), 단계(`.ans-steps`), 시각 행, 표(`.ans-tb`), 파일 행(`.ans-files`), 끝의 근거 줄(`.ans-ev`). 모양이 있는 답은 첫 문장만 진해요(`.ans-lead`).
+- 기능: 읽기 전용. 행마다 원문 줄을 잘린 `.mlist-url`로 들고 있어서 복사하면 마크다운이 그대로 나와요.
+- 상태: 항목 둘 이상이고 하위 목록이 없을 때만 카드가 돼요. 맞는 모양이 없으면 평소 글이에요. 표는 머리 줄이 있고 다섯 칸 이하일 때만, 근거 줄은 답의 마지막 줄일 때만이에요. 진행 메모, 게이트웨이 글, 다른 컴퓨터의 글, 결정 답, 시작 알림은 그리지 않아요. 답은 끝난 뒤 한 번에 오기 때문에 글에서 카드로 바뀌는 일이 없어요.
+- 숫자 요약과 전후 변경: 지침 줄만 있어요. 그리는 건 실제 답을 며칠 본 뒤에 정해요.
+- 데이터: 없음.
+- 근거: web/js/02-answer-shapes.js, web/js/02-basic-markdown.js(blocks, mdHtml), web/js/11-todo-strip.js(msgNode).
+- css: web/css/16-answer-shapes.css.
+
 ### 감시/예약 알림 문구 (watchtext)
 - 목적: 감시(watch)와 예약(schedule) 이벤트를 사람이 읽는 한국어로 바꾸고 기계 출력은 접힌 `원문`에 둬요(hub/watchtext.ts와 같은 규칙).
 - 구성: 화면 없음. 문자열을 만들어 마크다운으로 넘겨요(`원문` 울타리는 접힌 `details.more.raw`로 렌더).
