@@ -34,10 +34,10 @@ test("on boot the file's jobs are taken up: a running one is judged and never re
 	expect(JSON.parse(await Bun.file(join(DATA_DIR, "approval-sends.json")).text())).toEqual([]);
 });
 
-test("a comment reply left sending by the run that stopped ends failed, visible, and is not sent again by itself", () => {
+test("a comment reply left sending by the run that stopped ends unsure, visible, and is not sent again by itself", () => {
 	const store = createStore(commentsDir(DATA_DIR));
 	store.putReply({ id: "send:cm:a:1", commentId: "cm:a:1", source: "a", thread: "p", text: "답", state: "sending", at: 1, draft: "D9", via: "owner", collector: "x" });
 	expect(commentSettleSending()).toBe(1);
-	expect(store.replies().find(r => r.id === "send:cm:a:1")).toMatchObject({ state: "failed" });
+	expect(store.replies().find(r => r.id === "send:cm:a:1")).toMatchObject({ state: "unsure" });
 	expect(commentSettleSending()).toBe(0);
 });

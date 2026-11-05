@@ -141,11 +141,11 @@ export function createCommentsWeb({ engine, broadcast }: WebDeps) {
 		}
 		// The pending drafts of every source (the 답장 확인 queue across apps).
 		if (area === "drafts" && parts.length === 3 && method === "GET") return json({ items: cfg.enabled ? engine.pendingDrafts() : [] });
-		// A failed reply: 다시 보내기 (the same text through the same gate) or 지우기 (the record goes, the draft stays).
-		if (area === "sends" && parts.length === 5 && method === "POST" && (parts[4] === "retry" || parts[4] === "dismiss")) {
+		// A failed reply: 다시 보내기 (the same text through the same gate) or 지우기 (the record goes, the draft stays). An unsure one (recover.ts): 다시 보내기 or 완료 (`done`: closed as sent, nothing is posted).
+		if (area === "sends" && parts.length === 5 && method === "POST" && (parts[4] === "retry" || parts[4] === "dismiss" || parts[4] === "done")) {
 			if (!cfg.enabled) return json(OFF, 409);
-			if (parts[4] === "dismiss") {
-				const r = engine.dismissSend(arg(3));
+			if (parts[4] !== "retry") {
+				const r = parts[4] === "done" ? engine.markPosted(arg(3)) : engine.dismissSend(arg(3));
 				return r.ok ? json({ ok: true }) : json({ error: r.reason }, 409);
 			}
 			const r = engine.retrySend(arg(3));

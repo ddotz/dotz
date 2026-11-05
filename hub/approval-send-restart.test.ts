@@ -57,6 +57,20 @@ test("a send that was running when the gateway stopped is never run again: it en
 	expect(left(m)).toEqual([]);
 });
 
+test("a comment nobody can say went up ends unsure: never run again, no second approval runs it, and a later answer settles it", async () => {
+	const m = memoryStore();
+	m.box.body = JSON.stringify([{ ...job("D1"), state: "sending" }]);
+	const { s, reports, ran } = boot(m, { look: () => ({ state: "unsure", text: "확인 필요" }) });
+	s.recover();
+	expect(reports.map(r => r.state)).toEqual(["unsure"]);
+	expect(s.enqueue(job("D1"))).toBe(true);
+	await s.idle();
+	expect(ran).toEqual([]);
+	expect(left(m)).toEqual([]);
+	s.settle(job("D1"), "sent");
+	expect(s.results().map(r => r.state)).toEqual(["sent"]);
+});
+
 test("a send whose draft is already sent is marked sent, not run", async () => {
 	const m = memoryStore();
 	boot(m, { run: never }).s.enqueue(job("RAAAAAA"));

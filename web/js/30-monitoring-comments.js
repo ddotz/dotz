@@ -242,6 +242,7 @@ function cmFlow(c, v) {
   const d = v.drafts.find(x => x.commentId === c.id), s = v.sends.filter(x => x.commentId === c.id).sort((p, q) => p.at - q.at).at(-1);
   let reply = null;
   if (s && s.state === "sending") reply = [step("초안", "done"), step("확인", "done"), step("보내는 중", "busy")];
+  else if (s && s.state === "unsure") reply = [step("초안", "done"), step("확인", "done"), step("확인 필요", "ask")];
   else if (d) reply = [step("초안", "done"), step("확인 대기", "ask"), step("보냄", "todo")];
   else if (s && s.state === "sent") reply = [step("초안", "done"), step("확인", "done"), step(s.via === "rule" ? "보냄 · 자동" : "보냄", "done")];
   else if (s && s.state === "failed") reply = [step("초안", "done"), step("확인", "done"), step(`실패${s.reason ? ` · ${s.reason}` : ""}`, "err")];
@@ -278,6 +279,7 @@ function cmCommentNode(c, v, by, nested) {
       make || no ? el("div", { class: "cm-acts" }, make, no) : null));
 }
 // A reply that did not go out offers 다시 보내기 (the same text through the same gate) and 지우기 (the record goes, the draft stays), like KakaoTalk.
+// One nobody can say went up (hub/comments/recover.ts) offers 다시 보내기 and 완료 (closed as sent, nothing is posted).
 const cmSendCall = (s, op) => cmApi(`/api/comments/sends/${enc(s.id)}/${op}`, "POST", {});
 async function cmSendFix(btn, s, op) {
   btn.disabled = true;
@@ -285,11 +287,12 @@ async function cmSendFix(btn, s, op) {
   catch (e) { toast(e.message, true); btn.disabled = false; }
 }
 function cmSendNode(s) {
-  const failed = s.state === "failed", st = failed ? `실패${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? "보냄" : "보내는 중";
+  const failed = s.state === "failed", unsure = s.state === "unsure", st = failed ? `실패${s.reason ? ` · ${s.reason}` : ""}` : unsure ? `확인 필요${s.reason ? ` · ${s.reason}` : ""}` : s.state === "sent" ? "보냄" : "보내는 중";
   return el("div", { class: `kk-m me pend ${s.state} first`, "data-send": s.id }, el("div", { class: "kk-line" }, el("div", { class: "kk-bub", text: s.text })),
-    el("div", { class: "kk-st", role: failed ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st }),
-      failed ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: "다시 보내기", onclick: ev => cmSendFix(ev.currentTarget, s, "retry") }) : null,
-      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: ev => cmSendFix(ev.currentTarget, s, "dismiss") }) : null));
+    el("div", { class: "kk-st", role: failed || unsure ? "alert" : "status" }, s.state === "sent" ? rqSentNode() : el("span", { class: "kk-state", text: st }),
+      failed || unsure ? el("button", { class: "btn text", type: "button", "data-k": "retry", text: "다시 보내기", onclick: ev => cmSendFix(ev.currentTarget, s, "retry") }) : null,
+      failed ? el("button", { class: "btn text", type: "button", "data-k": "dismiss", text: "지우기", onclick: ev => cmSendFix(ev.currentTarget, s, "dismiss") }) : null,
+      unsure ? el("button", { class: "btn text", type: "button", "data-k": "done", text: "완료", onclick: ev => cmSendFix(ev.currentTarget, s, "done") }) : null));
 }
 function cmPaintChat(stick) {
   if (CM.tab === "dm") { dmPaintChat(); return; }
@@ -364,7 +367,7 @@ async function cmRestore(code) {
 }
 function cmDraftCard(d) {
   const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { toast(e.message, true); cmReload(); } finally { btn.disabled = false; } };
-  const sending = CM.view.sends.some(s => s.commentId === d.commentId && s.state === "sending");
+  const sending = CM.view.sends.some(s => s.commentId === d.commentId && (s.state === "sending" || s.state === "unsure"));
   const edit = CM.revising === d.code, src = CM.view.source || {};
   // A reply that carries a mail (hub/comments/engine.ts Draft.mail): 고치기 says which part it changes.
   const part = d.mail ? selectButton({ label: "고칠 곳", items: [{ value: "reply", label: "답글" }, { value: "mail", label: "메일" }], value: "reply" }) : null;
