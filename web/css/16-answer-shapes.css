@@ -1,0 +1,16 @@
+/* Assistant answers drawn by their shape (02-answer-shapes.js, prototype answers.css). Rows are the result card's .rc-row; this file only adds the card
+   around them, a wider key and the phone stack. Only the clipped original line is selectable, so a copy gives the markdown as written. */
+.md .ans-card { position: relative; min-width: 0; margin: var(--sp-3) 0; padding: var(--sp-4); border-radius: var(--r-card); background: var(--layer); }
+.md .ans-card:first-child { margin-top: 0; }
+.md .ans-card:last-child { margin-bottom: 0; }
+.ans-lead { font-weight: 600; }
+.ans-card .rc-rows { gap: var(--sp-3); }
+.ans-card .rc-row { position: relative; padding: 0; }
+.ans-card .rc-k, .ans-card .rc-w { -webkit-user-select: none; user-select: none; }
+.ans-keys { --rc-k-w: 88px; }
+.ans-keys .rc-k { overflow-wrap: anywhere; }
+.ans-keys .rc-w b { font-weight: 400; }
+@media (max-width: 759px) {
+  .ans-wordy .rc-row { display: block; }
+  .ans-wordy .rc-k { display: block; width: auto; line-height: var(--lh-sec); }
+}

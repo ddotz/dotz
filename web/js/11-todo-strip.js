@@ -336,7 +336,10 @@ function msgNode(e) {
       }
       // A result file of another computer's conversation lives on that computer: its chips and paths open through the peer proxy.
       // A relayed line is another computer's text, not this gateway's: no file chips, no path chips, no choice card; its `[file]` lines stay text (e.relay, 42-relay-chat.js).
-      const fl = e.relay ? { text: body, files: [] } : fileLines(body), host = pqPc(eventTarget(e) || ""), md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text, "md", !!e.relay, e.kind === "out" && !e.relay), files = e.relay ? null : pathFiles(md, host);
+      const fl = e.relay ? { text: body, files: [] } : fileLines(body), host = pqPc(eventTarget(e) || "");
+      // Shapes are for a finished answer of the assistant: never a progress note, a gateway line, a relayed line, a decision or a "started" note.
+      const answer = e.kind === "out" && !e.relay && !e.update_key && e.source !== "gateway" && !(pc0 && pc0.blocks.length) && tone !== "run" && !fl.text.startsWith("\u23f3");
+      const md = mdNode(pc && pc.blocks.length ? stripChoices(fl.text) : fl.text, "md", !!e.relay, answer), files = e.relay ? null : pathFiles(md, host);
       // A briefing-shaped answer (schedule rows, a mail line, counts) is drawn as a card of rows and chips (11-resultcard.js hcBriefNode).
       const brief = e.kind === "out" && !e.relay && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
       if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);

@@ -85,12 +85,27 @@ const timeList = l => l.t === "ul" && l.items.length >= 2 && l.items.every(i => 
 function timeRowsHtml(items) {
   return `<div class="rc-rows">${items.map(i => { const m = TIME_ROW.exec(i.text); return rcRowHtml(m[1], m[2], "", i.raw); }).join("")}</div>`;
 }
-function blocks(text, last, timeRows) {
+// answer: the shape state of one answer (02-answer-shapes.js), null for every other caller.
+function blocks(text, last, answer) {
   const html = [], meta = metaRe(), lines = unquoteChoices(text.split("\n")), sources = sourceRuns(lines, last);
   let list = null, para = [], table = null, quote = [];
   const flushQ = () => { if (quote.length) html.push(`<blockquote>${quote.map(inline).join("<br>")}</blockquote>`); quote = []; };
-  const flushP = () => { flushQ(); if (para.length) html.push(`<p>${para.map(inline).join("<br>")}</p>`); para = []; };
-  const flushL = () => { if (list) html.push(timeRows && timeList(list) ? `<div class="hcb-card">${timeRowsHtml(list.items)}</div>` : `<${list.t}>${list.items.map(i => `<li${i.sub ? ' class="sub"' : ""}>${inline(i.text)}</li>`).join("")}</${list.t}>`); list = null; };
+  const flushP = () => {
+    flushQ();
+    if (para.length) {
+      const p = `<p>${para.map(inline).join("<br>")}</p>`;
+      if (answer && !answer.opened && !html.length) { answer.plain = p; answer.rich = ansLeadHtml(para); }
+      html.push(p);
+    }
+    para = [];
+  };
+  const flushL = () => {
+    if (!list) return;
+    const card = answer && (timeList(list) ? `<div class="hcb-card">${timeRowsHtml(list.items)}</div>` : ansListHtml(list));
+    if (card) answer.shaped = true;
+    html.push(card || `<${list.t}>${list.items.map(i => `<li${i.sub ? ' class="sub"' : ""}>${inline(i.text)}</li>`).join("")}</${list.t}>`);
+    list = null;
+  };
   const flushT = () => {
     if (!table) return;
     const [head, ...rest] = table.head ? table.rows : [null, ...table.rows];
@@ -123,6 +138,7 @@ function blocks(text, last, timeRows) {
     else { flushL(); para.push(line); }
   }
   flushP(); flushL(); flushT();
+  if (answer && html.length) answer.opened = true;
   return html.join("");
 }
 // A fence tagged 목록 is a list shown as UI rows (hub/listblock.ts writes it): an optional "# " title line, then one row per line
@@ -138,15 +154,17 @@ function listBlockHtml(src) {
   return `<div class="mlist">${head ? `<div class="mlist-h">${esc(head)}</div>` : ""}${rows.join("")}</div>`;
 }
 // relayed: another computer's reply (42-relay-chat.js) is text only: `[file]` lines stay text and a fence is a plain code block, with no run button and no settings card to act on here.
-// timeRows: an assistant answer (11-todo-strip.js) draws a time list as rows; every other caller keeps its list.
-function mdHtml(src, relayed = false, timeRows = false) {
+// answer: an assistant answer (11-todo-strip.js) is drawn by its shapes (02-answer-shapes.js); every other caller keeps its text.
+function mdHtml(src, relayed = false, answer = false) {
+  const shape = answer ? { shaped: false, opened: false, plain: "", rich: "" } : null;
   // split() with two groups: [text, language, code, text, language, code, ...]; each code block gets its copy / run bar (35-code-blocks.js).
   // A fence opens only at the start of a line (``` in the middle of a sentence stays text) and closes with ``` at the end of a line.
   const parts = stripRecMark(stripMarkers(src, relayed)).split(/(?:^|\n)[ \t]{0,3}```([^\n`]*)\n?([\s\S]*?)(?:```[ \t]*(?=\n|$)|$)/);
   // A fence tagged 원문 is a post's raw machine output (hub/watchtext.ts rawFence): folded, monospace, tap to open.
-  return parts.map((p, i) => i % 3 === 0 ? blocks(p, i === parts.length - 1, timeRows) : i % 3 === 2 ? (relayed ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>` : parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "dotz-settings" ? settingsCardHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
+  const out = parts.map((p, i) => i % 3 === 0 ? blocks(p, i === parts.length - 1, shape) : i % 3 === 2 ? (relayed ? `<pre><code>${esc(p.replace(/\n$/, ""))}</code></pre>` : parts[i - 1].trim() === "목록" ? listBlockHtml(p) : parts[i - 1].trim() === "dotz-settings" ? settingsCardHtml(p) : parts[i - 1].trim() === "원문" ? `<details class="more raw"><summary>원문</summary><pre>${esc(p.replace(/\n$/, ""))}</pre></details>` : codeBlockHtml(parts[i - 1], p)) : "").join("");
+  return shape && shape.shaped && shape.rich && out.startsWith(shape.plain) ? shape.rich + out.slice(shape.plain.length) : out;
 }
-const mdNode = (src, cls = "md", relayed = false, timeRows = false) => el("div", { class: cls, safeHtml: mdHtml(src, relayed, timeRows) });
+const mdNode = (src, cls = "md", relayed = false, answer = false) => el("div", { class: cls, safeHtml: mdHtml(src, relayed, answer) });
 
 /* ---------- message status (only an explicit line-1 marker sets it; it becomes one leading emoji) ---------- */
 const TONE_TAGS = new Map(Object.entries({ done: "done", "완료": "done", run: "run", "진행": "run", ask: "ask", "결정": "ask", fail: "fail", "실패": "fail", warn: "fail", "경고": "fail" }));
