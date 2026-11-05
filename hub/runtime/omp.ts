@@ -4,7 +4,7 @@
 import type { Subprocess } from "bun";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { type Block, blocks, failedCall, joined, summary } from "../activity.ts";
+import { type Block, blocks, failedCall, joined, ownIntent, summary } from "../activity.ts";
 import { DATA_DIR, OMP, parseSelector, splitThinking } from "../config.ts";
 import { isNote } from "../i18n.ts";
 import { keyedWorker } from "../fallback.ts";
@@ -68,7 +68,7 @@ function activityFromFrame(f: Frame): ActivityRow[] {
 		}
 		case "tool_execution_start": {
 			const label = summary(f.args, f.intent);
-			return [{ type: "tool_call", tool: f.toolName, call_id: f.toolCallId, intent: label, text: label ? `${f.toolName}: ${label}` : String(f.toolName ?? ""), args: typeof f.args === "string" ? f.args : JSON.stringify(f.args ?? {}, null, 2) }];
+			return [{ type: "tool_call", tool: f.toolName, call_id: f.toolCallId, intent: label, ...(ownIntent(f.args, f.intent) ? { said: true } : {}), text: label ? `${f.toolName}: ${label}` : String(f.toolName ?? ""), args: typeof f.args === "string" ? f.args : JSON.stringify(f.args ?? {}, null, 2) }];
 		}
 		case "tool_execution_end": {
 			const r = f.result as { content?: Block[] | string } | string | undefined;
