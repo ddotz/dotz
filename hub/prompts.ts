@@ -23,9 +23,8 @@
 // such message it still reaches the owner: the conversation of his newest message of any age, else the main chat. Such an answer
 // names no message: only a link, a stopped turn or a worker's recorded request gives an answer a reply target, never recency.
 //
-// A turn that hands code work to a background task worker ends with exactly `[later]` (MODE Routing; owner 2026-10-21:
-// a long inline turn kept every next message waiting a median 238 s): its prompt stays open (deferred) with nothing sent,
-// and the answer of the run the worker's result wakes (no prompt of ours) goes to that worker's request.
+// A turn that hands code work to a background task worker ends with exactly `[later]` (MODE Routing; owner 2026-10-21: a long inline turn kept every next message waiting a median 238 s): its prompt stays open (deferred) with nothing sent,
+// and the answer of the run the worker's result wakes (no prompt of ours) goes to that worker's request. The word is read by meaning (tone.ts laterParts): words around it reach the owner as a note that settles nothing, and the prompt stays open.
 //
 // A worker is linked to its request when it is spawned (WorkLink, kept on disk next to pending.json): every worker a turn spawned
 // gets its own receipt line, and the answer of the run its result woke goes to exactly that request, whatever order workers finish
@@ -35,7 +34,7 @@
 // one request back), and its request is asked again once. orphanTarget only picks a conversation for what no link explains; a run no
 // worker woke closes no request, and an answer no message explains is posted with no reply link.
 
-import { isSilent } from "./tone.ts";
+import { isSilent, laterParts, stripLater } from "./tone.ts";
 
 export type Prompt = { key: string; text: string; at: number; target?: string; replyTo?: string; refs?: string[]; sent: { target: string; text: string }[]; done?: boolean; steered?: boolean; held?: string[]; last?: string; unmatched?: boolean; deferred?: boolean; cancelled?: boolean; told?: string[]; retry?: boolean };
 /** An owner message the gateway delivered (or, from the inbox log, delivered before this process started). */
@@ -64,6 +63,7 @@ export type PromptDeps = {
 	post: (target: string, text: string, replyTo?: string) => Promise<{ delivered: boolean }>;
 	/** A gateway note in a conversation that answers nothing (the deferral acknowledgement must not settle the open prompt). */
 	announce?: (target: string, text: string, worker?: string) => void;
+	interim?: (target: string, text: string) => void;   // what a [later] turn wrote around the word: a message that answers nothing
 	/** The background worker now running for a conversation (the oldest one), when it is already listed. */
 	workFor?: (target: string) => { id: string; description: string } | undefined;
 	/** The gateway note (one line) that points a new owner message at the worker already running for its conversation. */
@@ -118,8 +118,6 @@ const REPLAY_MAX_AGE_MS = 12 * 3600_000;
 // How old an owner message may be to receive an answer that has no prompt of its own.
 const ORPHAN_MAX_AGE_MS = 30 * 60_000;
 const MAX_RECENT = 20;
-// The marker a turn ends with when a background worker will produce its answer, and how long such a prompt stays open.
-const LATER = "[later]";
 const DEFER_MAX_AGE_MS = 3 * 3600_000;
 // A restart waits for a deferred prompt this young (its worker dies with the orchestrator process); older ones do not block.
 const DEFER_BLOCKS_RESTART_MS = 60 * 60_000;
@@ -141,7 +139,7 @@ export function createPrompts(deps: PromptDeps) {
 	// Owner messages and dotz_send texts of the last half hour: who an answer without a prompt goes to, and what it may not repeat.
 	const owners: OwnerMessage[] = (deps.recent?.() ?? []).slice(-MAX_RECENT);
 	const recentSent: { target: string; text: string; at: number }[] = [];
-	// Prompts whose turn ended with LATER, oldest first, until a later run answers them.
+	// Prompts whose turn ended with [later], oldest first, until a later run answers them.
 	const deferred: Prompt[] = [];
 	// Deferral receipts already announced, one per (conversation, worker id); the key with an empty id is the plain note sent while no
 	// worker was listed. The plain one is dropped when a non-deferred answer goes out there, a worker receipt stays while its worker runs.
@@ -259,8 +257,8 @@ export function createPrompts(deps: PromptDeps) {
 		current?.sent.push({ target, text: text.trim() });
 		recentSent.push({ target, text: text.trim(), at: Date.now() });
 		if (recentSent.length > MAX_RECENT) recentSent.shift();
-		// A run with no prompt of ours (a worker's result woke it) answering with dotz_send settles the deferred prompt it
-		// answers: the one with this reply_to or the waking worker's. A send that names neither closes nothing.
+		if (laterParts(text).later) return undefined;
+		// A run with no prompt of ours (a worker's result woke it) answering with dotz_send settles the deferred prompt it answers: the one with this reply_to or the waking worker's. A send that names neither closes nothing.
 		const ref = replyTo ?? (current ? undefined : resultFor(target));
 		if (!current || replyTo) {
 			const d = ref ? openDeferred().find(p => p.target === target && p.replyTo === ref) : undefined;
@@ -284,7 +282,7 @@ export function createPrompts(deps: PromptDeps) {
 		const p = current;
 		if (!p || p.done || p.target !== target || !text.trim()) return false;
 		if (prompts.some(q => q.steered && q.target === target && (replyTo ? q.replyTo === replyTo : true))) return false;
-		(p.held ??= []).push(text.trim());
+		(p.held ??= []).push(stripLater(text).trim());
 		deps.log(`held an early send to ${target} until the turn's answer (${text.trim().length} chars)`);
 		return true;
 	}
@@ -638,15 +636,16 @@ export function createPrompts(deps: PromptDeps) {
 
 	/** An answer that came without a prompt: to the request of the worker whose result it carries, else the 30-minute rule above, else lastResortTarget, never a repeat of what was already sent there. */
 	function onOrphanAnswer(text: string): void {
-		const t = text.trim();
+		const { later, text: t } = laterParts(text);
+		// Woken before the worker's result was in: the deferred prompt keeps waiting.
+		if (later) {
+			for (const w of woke) w.waited = true;
+			if (t) deps.interim?.((orphanTarget(wokenRun()) ?? lastResortTarget()).target, t);
+			return void deps.log(`a run without a prompt said [later]; ${openDeferred().length} deferred prompt(s) keep waiting`);
+		}
 		// Keepalive "ok" and "-" have no prompt by design.
 		if (t.length <= 3) return;
 		if (isSilent(t)) return void deps.log(`a no-op answer without a prompt was not posted: ${t.slice(0, 160)}`);
-		// Woken before the worker's result was in: the deferred prompt keeps waiting.
-		if (t === LATER) {
-			for (const w of woke) w.waited = true;
-			return void deps.log(`a run without a prompt said ${LATER}; ${openDeferred().length} deferred prompt(s) keep waiting`);
-		}
 		const fromWorker = wokenRun();
 		const result = fromWorker || !unpairedRun ? nextResult() : undefined;
 		if (result) {
@@ -694,8 +693,9 @@ export function createPrompts(deps: PromptDeps) {
 		// A turn omp continues (steered notes) stops again; the prompt it started with was answered at the first stop.
 		if (!p) return onOrphanAnswer(text);
 		if (p.done) return;
-		const t = text.trim();
-		if (t === LATER && p.target && !p.deferred) {
+		const { later, text: t } = laterParts(text);
+		if (later && p.target && !p.deferred) {
+			if (t) deps.interim?.(p.target, t);
 			// The answer itself waits for the worker, but the conversation must not look silent (owner 2026-10-27: "메일 내 대화에서
 			// 다른 일 시키니까 일 안하네"): one short note names who took it. It is a gateway note, so it settles no prompt.
 			// A turn the gateway woke for a request already waiting: that one entry keeps waiting.
@@ -727,12 +727,12 @@ export function createPrompts(deps: PromptDeps) {
 				receipted.add(rk);
 				if (receipted.size > MAX_ANSWERED) receipted.delete(receipted.values().next().value!);
 				deps.log(`the answer to ${p.target} is deferred to a background worker`);
-				deps.announce?.(p.target, note, w?.id);
+				if (!t) deps.announce?.(p.target, note, w?.id);
 			}
 			save();
 			return;
 		}
-		if (t === LATER) return;
+		if (later) return void (p.target && t && deps.interim?.(p.target, t));
 		p.done = true;
 		const silent = isSilent(t);
 		if (silent && t !== "-") deps.log(`a no-op answer for ${p.target ?? "-"} was not posted: ${t.slice(0, 160)}`);

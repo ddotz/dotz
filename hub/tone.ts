@@ -24,35 +24,58 @@ const META = new RegExp(`^\\s*(?:-\\s+)?(?:근거:|출처:|Evidence:|Source:|For
 // `[name] ...` that is not one of these shapes, anything mid-line, code.
 //   status      [run] [wait] [done] [ask] [fail] [warn] [blocked] [partial] [later] [ok] [error] and Korean forms
 //   gateway     [lane <word>] ([lane error]/[lane exited]/[lane stuck]) [dotz gateway|inbox|reflect|lane <name>|...] [dotz]
-//               [orchestrator-guard] [지금 도는 것] [now running] [handover] [keepalive] [system] [attachment] [owner via <x>]
+//               [orchestrator-guard] [gateway check] [web:<target>] [지금 도는 것] [now running] [handover] [keepalive] [system] [attachment] [owner via <x>]
 //   tool        [ok | 12ms] [error | 3s] ; routine [routine:<id>:<hash>] ; clock [10-23]
 //   [file] lines are attachments (hub/discord-files.ts takes them first); a left-over one is dropped with its path.
+// A control word also acts as one in three more places (owner 2026-11-05: "`[later]` 연도(2026)와..." reached him as a code chip), bare, in a code span or bold:
+// opening the message before a space (not before a word that names it: "`[later]` 표시를 고쳤어요", "`[later]`로 끝나요"), alone on a line, and closing the
+// message after a finished sentence. Anywhere else it is being talked about: mid-sentence, a list item, a span with a particle, a fence.
+// A lone `-` closing a message is the no-op sentinel left under a note.
 const STATUS_WORDS = "run|wait|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|대기|결정|실패|경고|차단|부분|나중|오류";
-const MARKER_BODY = `(?:${STATUS_WORDS}|attachment|system|handover|keepalive|orchestrator-guard|지금 도는 것|now running|dotz(?: [a-z][\\w:-]*(?: [^\\]\\n]{1,40})?)?|lane [a-z가-힣][^\\]\\n]{0,30}|owner via [^\\]\\n]{1,30}|(?:ok|error|err|fail)[ ]*\\|[^\\]\\n]{1,24}|routine:[^\\]\\n]{1,60}|\\d{2}-\\d{2})`;
-const LINE_LEAD = "[ \\t]*(?:[-*][ \\t]+)?(?:\\*\\*[^*\\n]{1,60}\\*\\*:?[ \\t]+)?";
+const MARKER_BODY = `(?:${STATUS_WORDS}|attachment|system|handover|keepalive|orchestrator-guard|gateway check|web:[a-z-]+|지금 도는 것|now running|dotz(?: [a-z][\\w:-]*(?: [^\\]\\n]{1,40})?)?|lane [a-z가-힣][^\\]\\n]{0,30}|owner via [^\\]\\n]{1,30}|(?:ok|error|err|fail)[ ]*\\|[^\\]\\n]{1,24}|routine:[^\\]\\n]{1,60}|\\d{2}-\\d{2})`;
+const LINE_LEAD = "[ \\t]*(?:[-*][ \\t]+)?(?:진행 중:[ \\t]*)?(?:\\*\\*[^*\\n]{1,60}\\*\\*:?[ \\t]+)?";
 const MARKER_LEAD = new RegExp(`^(${LINE_LEAD})(\\*\\*)?\\[${MARKER_BODY}\\](\\*\\*)?[ \\t]*`, "i");
 const FILE_MARK = /^[ \t]*\[file\][ \t]/i;
-export function stripMarkers(text: string): string {
-	if (!text.includes("[")) return text;
-	let fence = false;
+const LONE_DASH = /\n[ \t]*-\s*$/;
+const NAMES_IT = "(?:마커|표시|표식|문구|제어어|단어|토큰|글자|신호|처리|누출|같은|marker|sentinel|token|word)";
+const edges = (word: string, skip = "") => ({
+	open: new RegExp(`^([ \\t]*${skip})(\`|\\*\\*)?\\[${word}\\]\\2(?:[ \\t]+(?!${NAMES_IT})|[ \\t]*$)`, "i"),
+	alone: new RegExp(`^[ \\t]*(\`|\\*\\*)?\\[${word}\\]\\1[ \\t]*$`, "i"),
+	close: new RegExp(`(?<=[.!?…요다])[ \\t]+(\`|\\*\\*)?\\[${word}\\]\\1[ \\t]*$`, "i"),
+});
+const CONTROL = edges("(?:run|wait|done|ask|fail|later|keepalive)");
+// A tone marker may stand before `[later]` (it is the message's tone, stripLater keeps it).
+const LATER_EDGES = edges("later", `(?:\\[(?:${STATUS_WORDS})\\][ \\t]*)*`);
+
+// The lines outside fences with `lead` markers and control words at the edges gone. `tail`: the last line with text.
+function stripWords(text: string, w: typeof CONTROL, full: boolean): string {
+	let fence = false, opened = false, tail = -1;
 	const out: string[] = [];
 	for (const line of text.split("\n")) {
-		if (FENCE.test(line)) {
-			fence = !fence;
+		if (FENCE.test(line) || fence) {
+			if (FENCE.test(line)) fence = !fence;
 			out.push(line);
+			if (line.trim()) tail = -1;
 			continue;
 		}
-		if (fence) {
-			out.push(line);
-			continue;
-		}
-		if (FILE_MARK.test(line)) continue;
+		if (full && FILE_MARK.test(line)) continue;
 		let l = line;
-		for (let m = MARKER_LEAD.exec(l); m; m = MARKER_LEAD.exec(l)) l = m[1]! + l.slice(m[0].length);
+		if (full) for (let m = MARKER_LEAD.exec(l); m; m = MARKER_LEAD.exec(l)) l = m[1]! + l.slice(m[0].length);
+		if (!opened && l.trim()) {
+			opened = true;
+			const m = w.open.exec(l);
+			if (m) l = m[1]! + l.slice(m[0].length);
+		}
+		if (w.alone.test(l)) l = "";
+		if (l.trim()) tail = out.length;
 		out.push(l);
 	}
+	if (tail < 0) return out.join("\n");
+	if (full && out[tail]!.trim() === "-" && out.slice(0, tail).some(l => l.trim())) out[tail] = "";
+	else out[tail] = out[tail]!.replace(w.close, "");
 	return out.join("\n");
 }
+export const stripMarkers = (text: string): string => (text.includes("[") || LONE_DASH.test(text) ? stripWords(text, CONTROL, true) : text);
 
 // The leading status marker apart from the rest: `head` is the raw marker text, `rest` still carries the other markers.
 export function splitTone(text: string): { tone?: Tone; head: string; rest: string } {
@@ -88,7 +111,14 @@ export const leaksHandoff = (text: string): boolean => /\bFor you:[\s\S]*\bNow:[
 // `[later]` ends a turn whose answer a background worker will bring: a sentinel for the gateway, never text for the owner.
 // Where a preview must show something, it reads LATER_LINE.
 export const LATER_LINE = "백그라운드 작업 중";
-export const isLater = (text: string): boolean => /^\s*\[later\]\s*$/i.test(text);
+export const isLater = (text: string): boolean => /^\s*(`|\*\*)?\[later\]\1\s*$/i.test(text);
+/** `text` without `[later]` where it acts as the control word (stripWords); everything else stays, the tone marker too. */
+export const stripLater = (text: string): string => (/\[later\]/i.test(text) ? stripWords(text, LATER_EDGES, false).trimEnd() : text);
+/** A final text read by meaning: `later` when the word acts as control, whatever stands around it; `text` is what the owner may still read of it. */
+export function laterParts(text: string): { later: boolean; text: string } {
+	const t = text.trim(), prose = stripLater(t).trim();
+	return prose === t ? { later: false, text: t } : { later: true, text: isSilent(prose) ? "" : prose };
+}
 
 // `-` is the no-op sentinel: a turn with nothing to say answers it alone and the gateway posts nothing. A model sometimes wraps
 // it in a short meta note ("Already posted. -", or the note then "-" on its own line); that is still a no-op. Only a short

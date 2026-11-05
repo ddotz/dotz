@@ -147,7 +147,7 @@ function prose(s: string, o: PlainOpts): string {
 	t = t.replace(TARGET, (_m, k: string, r: string) => w(target(k, r, o)));
 	t = t.replace(/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b(?!\.[A-Za-z0-9])/g, m => w(words(m)));
 	t = t.replace(LONG_ID, "");
-	t = t.replace(STATUS, "");
+	t = t.split(/(`[^`\n]*`)/).map((s, i) => (i % 2 ? s : s.replace(STATUS, ""))).join("");
 	t = t.replace(/^\[([^\]\n]{2,30})\][ \t]+(?=\S)/gm, (m, label: string) => (/^[\d\sx]+$/i.test(label) ? m : `${label}: `));
 	// An id can be all a code span held, or all a "근거:" piece: neither its marks nor its separator stay behind.
 	t = t.replace(/``/g, "").replace(/(:|·)[ \t]*·/g, "$1");

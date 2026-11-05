@@ -25,7 +25,7 @@ import type { AgentError, AgentProcess, RuntimeAdapter } from "./runtime/types.t
 import { setupsSummary } from "./workchannels.ts";
 import { orchestratorTurnStarted } from "./notices.ts";
 import { errorAskHold, noteErrorAsked, type OrchError, plainError } from "./orch-error.ts";
-import { isLater, LATER_LINE } from "./tone.ts";
+import { LATER_LINE, stripLater } from "./tone.ts";
 
 const ROTATE_BYTES = 50e6;
 // The compaction point of a session: the running model's own (config context.models, the 컨텍스트 screen) or
@@ -495,7 +495,7 @@ export function createOrchestrator(opts: OrchOpts) {
 					break;
 				case "assistant":
 					if (ev.text) {
-						orch.lastText = isLater(ev.text) ? LATER_LINE : ev.text;
+						orch.lastText = stripLater(ev.text) || LATER_LINE;
 						onText(ev.text);
 					}
 					if (ev.text && (ev.stop === "stop" || ev.stop === "length")) onAnswer(ev.text);

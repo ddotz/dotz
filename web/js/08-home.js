@@ -227,7 +227,7 @@ function nowLine(t) {
 // A preview line shows what the owner may read: never the [later] sentinel (a turn handed to a background worker), the handoff
 // block, or an "Ask: " label. Same rule as hub/tone.ts previewSource.
 const LATER_LINE = "백그라운드 작업 중";
-const isLaterText = s => /^\s*\[later\]\s*$/i.test(String(s ?? ""));
+const isLaterText = s => /^\s*(`|\*\*)?\[later\]\1\s*$/i.test(String(s ?? ""));
 function previewSrc(raw) {
   const s = noHandoff(peerMsgLine(raw)).replace(/^\s*Ask:[ \t]*/i, "");
   return isLaterText(s) ? LATER_LINE : s;
