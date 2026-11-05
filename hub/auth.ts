@@ -28,6 +28,8 @@ type AuthRequest = {
 	status: Status;
 	channelId: string;
 	messageId: string;
+	// The conversation that asked (dotz_auth `target`): the gateway answers owner messages there while this waits (hub/auth-wait.ts).
+	target: string;
 	form?: FormField[];
 	remember: boolean;
 	keys?: string[];
@@ -73,6 +75,16 @@ export const setFormLink = (fn: () => string | undefined): void => {
 	formLink = fn;
 };
 const clock = new Intl.DateTimeFormat("en-GB", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false });
+
+// A pending request as the gateway's own replies need it (hub/auth-wait.ts): no values, no form.
+export type AuthWait = { id: string; site: string; purpose: string; expiresAt: number; target: string };
+const waitOf = (r: AuthRequest): AuthWait => ({ id: r.id, site: r.site, purpose: r.purpose, expiresAt: r.expiresAt, target: r.target });
+// Told when a request opens, besides Discord's button message (`discordPosted`): main.ts posts it to the asking conversation, so a
+// messenger room (JANDI, Slack, Telegram) learns that a form is open in the web app and how to close it.
+let onOpened: (w: AuthWait, discordPosted: boolean) => void = () => undefined;
+export const setAuthOpened = (fn: typeof onOpened): void => {
+	onOpened = fn;
+};
 
 function contentOf(r: AuthRequest): string {
 	const m = msg().auth;
@@ -268,7 +280,7 @@ async function create(req: Request): Promise<Response> {
 		form = built;
 	}
 	if (b.remember !== undefined && typeof b.remember !== "boolean") return err("remember must be true or false", 400);
-	const r: AuthRequest = { id: randomBytes(6).toString("hex"), site, kind, fields, form, remember: b.remember === true, purpose, expiresAt: Date.now() + minutes * 60_000, status: "pending", channelId: "", messageId: "", waiters: new Set() };
+	const r: AuthRequest = { id: randomBytes(6).toString("hex"), site, kind, fields, form, remember: b.remember === true, purpose, expiresAt: Date.now() + minutes * 60_000, status: "pending", channelId: "", messageId: "", target, waiters: new Set() };
 	// Discord is one way to answer; the web app is always the other, so a failed or missing Discord post is not fatal.
 	if (discord.status.enabled) {
 		try {
@@ -286,7 +298,24 @@ async function create(req: Request): Promise<Response> {
 		refresh(r);
 	}, minutes * 60_000);
 	log(`auth ${r.id} ${r.site} ${r.kind} pending`);
+	try {
+		onOpened(waitOf(r), Boolean(r.messageId));
+	} catch (e) {
+		log(`auth ${r.id} open notice failed: ${e}`);
+	}
 	return json({ id: r.id });
+}
+
+/** Requests still waiting for the owner, for the gateway's own replies while one is open (hub/auth-wait.ts). */
+export const pendingWaits = (): AuthWait[] => [...reqs.values()].filter(r => r.status === "pending").map(waitOf);
+
+/** The owner closed a pending request from a conversation ("취소"): the same as DELETE /api/auth/<id>. False when it is not pending. */
+export function cancelAuth(id: string): boolean {
+	const r = reqs.get(id);
+	if (!r || r.status !== "pending") return false;
+	settle(r, "cancelled");
+	refresh(r);
+	return true;
 }
 
 // OTP values leave the gateway only to a caller holding the hub token itself: a tailscale-authorized web login gets 403.
