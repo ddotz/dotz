@@ -170,6 +170,41 @@ test("a [wait] final after a mid-turn note is the answer to the owner; the next 
 	await advance(300);
 });
 
+// 2026-11-05 hatch-stage1: owner message -> mid-turn note -> a [run] report ends a turn -> the [wait] result -> a [wait] repeat 2s later.
+// The [run] must not consume the note, or the real result stays parked and is replaced by the repeat.
+async function reportTurn(agent: FakeAgent, text: string): Promise<boolean | undefined> {
+	agent.push({ type: "turn_start" });
+	agent.push({ type: "assistant", text, stop: "stop" });
+	agent.push({ type: "turn_end" });
+	await flush();
+	await advance(1000);
+	await flush();
+	return reports.at(-1)?.text === text ? reports.at(-1)!.answering : undefined;
+}
+
+test("owner message -> note -> [run] -> [wait] result -> [wait] repeat: only the [wait] result is the answer", async () => {
+	const { agent } = await working("note-run-wait");
+	l.sendToLane("note-run-wait", "[owner via Discord] 메일 보내", "m7");
+	agent.push({ type: "assistant", text: "보낼게요.", stop: "other" });
+	await flush();
+	expect(shown).toHaveLength(1);
+	expect(await reportTurn(agent, "[run] 메일 세 통을 차례로 보내고 있어요")).toBe(false);
+	expect(await reportTurn(agent, "[wait] 시험판을 세 통으로 나눠 보냈어요. 받으면 알려 주세요.")).toBe(true);
+	expect(await reportTurn(agent, "[wait] 회사 PC 시험 결과를 기다리고 있어요.")).toBe(false);
+	l.stopLane("note-run-wait");
+	await advance(300);
+});
+
+test("owner message -> [run] -> [wait] result -> [wait] repeat: the [run] answers, the [wait] result still counts, the repeat is progress", async () => {
+	const { agent } = await working("note-run-open");
+	l.sendToLane("note-run-open", "[owner via Discord] 메일 보내", "m8");
+	expect(await reportTurn(agent, "[run] 메일 세 통을 차례로 보내고 있어요")).toBe(true);
+	expect(await reportTurn(agent, "[wait] 시험판을 세 통으로 나눠 보냈어요. 받으면 알려 주세요.")).toBe(true);
+	expect(await reportTurn(agent, "[wait] 회사 PC 시험 결과를 기다리고 있어요.")).toBe(false);
+	l.stopLane("note-run-open");
+	await advance(300);
+});
+
 test("an idle session receives the message at once; a stopped one is resumed; one with no session refuses and is not waited on", async () => {
 	const { lane, agent } = await working("note-idle");
 	agent.push({ type: "turn_end" });
