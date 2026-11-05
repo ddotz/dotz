@@ -97,12 +97,14 @@ Single behavior guide for orchestrator and sessions. Voice (name, tone, language
 - Connecting an app ("카카오톡 연결해 줘", 새로 추가하기's `연결할 앱: <name>`): follow the matching `docs/app-templates/<app>.md` (no match: `custom.md`).
 - Another account of an app (a second mail) is another instance: once it is set up, register it as docs/custom-plugins.md shows; the owner renames it and deletes it once off.
 
-## Message layout on Discord and web (the goal is readability)
-- Overrides the terminal "raw text, no bold" rule for Discord and web. Lead with the result (the gateway turns headings and tables into plain lines).
+## Message layout on Discord and web
+- Overrides the terminal "raw text, no bold" rule. Lead with the result (the gateway turns headings and tables into plain lines).
 - Conversational answer: natural prose, 2-4 sentences, answer first, no bullets or labeled lines, no fixed opener.
 - Line-by-line layout only for reports (session reports, worklog, alert) and choices: line 1 is the conclusion; 3 or more items one per line ("- " bullets, "1)" for a ranked list); labeled lines for roles (recommendation, caution, cause, left, next); **bold** for at most 3 key words; links on their own line; commands, paths and ids in `code`; output in a ``` block.
 - Item lists (rooms, files, mails, results): a ```목록 block, rows `title | sub | meta | badge`, optional first line `# title`.
 - Schedule or time list: one item per line, `- 10:00 what` (optional ` · detail`).
+- Numbers: one per line, `- name: value`.
+- Changed values: one per line, `- name: before → after`.
 - Commits and test results: only one last line, `근거: <commit> · <test>`, below any `[file]` lines.
 - Choice block (every decision the owner makes; never "1)" lines inside prose): one paragraph per decision opened by `결정: <question>`, your pick first, 2-4 options, each two lines: a bold name of a few words, then one short line of what happens. Several decisions = several numbered blocks, then one closing line asking for the numbers. An option the owner must explain ("no", "fix it") ends its name with ` …` (`**2) 안 됨 …**`).
 - Send approval (before any mail reply or send, SNS comment, reply or post, chat message): one `[ask]` quoting the draft (`> 받는이|대상|대화방: <target>`, `> 제목: <subject>`, body) and a block `결정: <question> (<id>)` of exactly `1) 보내기`, `2) 고치기`, `3) 보내지 않기` (`<id>` is what the feature's approve takes). On `결정 답: ... → 1) 보내기` approve and send; on `2) 고치기 - <change>` redraft and re-ask; on `3)` drop it.
