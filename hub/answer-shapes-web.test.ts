@@ -22,6 +22,9 @@ const cases: Record<string, object> = {
 	picture: answer("사진이에요.\n\n[file] /files/앨범.png"),
 	evidence: answer("고쳤어요. 끝이에요.\n\n근거: `a1b2c3d` · 테스트 24개 통과"),
 	evidenceMid: answer("고쳤어요. 끝이에요.\n\n근거: 로그를 봤어요.\n\n내일 다시 볼게요."),
+	bundle: answer("문의를 묶어 봤어요. 둘은 남았어요.\n\n**아직 남음**\n- **배송 늦음 (6회):** 주말 주문이 몰렸어요.\n\n**처리함**\n- **영수증 재발급 (4회):** 바로 받을 수 있어요.\n- **비밀번호 찾기:** 스팸함으로 갔어요.\n\n오늘 안에 볼게요."),
+	loneTitle: answer("**아직 남음**\n- **배송 늦음:** 주말 주문이 몰렸어요."),
+	titleOverText: answer("**아직 남음**\n- 라벨 없는 줄이에요.\n- 또 하나예요."),
 	user: { kind: "in", source: "web", target: "web", text: LABELS },
 	last: answer("끝이에요."),
 };
@@ -113,4 +116,23 @@ test("a last 근거: line is small pieces and turns the lead on; with text after
 
 test("a copied selection gives the [file] and 근거: lines as written", async () => {
 	expect(lines(await copied(msg("files"))).slice(-3)).toEqual(["[file] /files/가계부.xlsx", "[file] /files/요약.pdf", "근거: 카드 212건 대조 · 빠진 건 없음"]);
+});
+
+test("titles over label lists share one card, the count on the right", async () => {
+	expect(await count("bundle", ".ans-card")).toBe(1);
+	expect(await page<string[]>(`[...${msg("bundle")}.querySelectorAll(".ans-card .rc-sh")].map(e => e.querySelector(":scope > span:not(.mlist-url)").textContent)`)).toEqual(["아직 남음", "처리함"]);
+	expect(await page<string[]>(`[...${msg("bundle")}.querySelectorAll(".ans-card .ans-li")].map(e => [e.querySelector(".rc-k").textContent, e.querySelector(".ans-n")?.textContent ?? ""].join("|"))`)).toEqual(["배송 늦음|6회", "영수증 재발급|4회", "비밀번호 찾기|"]);
+	expect(await lead("bundle")).toBe("문의를 묶어 봤어요.");
+});
+
+test("a lone title with one item, or a title over a plain list, stays as written", async () => {
+	expect(await count("loneTitle", ".ans-card")).toBe(0);
+	expect(await page<string>(`${msg("loneTitle")}.querySelector("p b").textContent`)).toBe("아직 남음");
+	expect(await count("titleOverText", ".ans-card")).toBe(0);
+	expect(await count("titleOverText", "li")).toBe(2);
+	expect(await count("titleOverText", "p b")).toBe(1);
+});
+
+test("a copied bundle gives its title and lines as written", async () => {
+	expect(lines(await copied(`${msg("bundle")}.querySelector(".ans-card")`))).toEqual(["**아직 남음**", "- **배송 늦음 (6회):** 주말 주문이 몰렸어요.", "**처리함**", "- **영수증 재발급 (4회):** 바로 받을 수 있어요.", "- **비밀번호 찾기:** 스팸함으로 갔어요."]);
 });

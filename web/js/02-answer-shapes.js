@@ -5,6 +5,7 @@
 // its first paint: the live status and progress notes never come through here, and there is no text that later turns into a card.
 const ANS_LABEL = /^\*\*([^*\n]{1,24}?):?\*\*:?\s+(\S.*)$/;
 const ANS_EVIDENCE = /^근거:\s*(\S.*)$/;
+const ANS_HEAD = /^\*\*([^*\n]+)\*\*$/, ANS_COUNT = /^(.+?)\s*\((\d+회)\)$/;
 const ANS_SENTENCE = /^.+?[.!?](?=\s|$)/;
 const ANS_WORDY = 30, ANS_LEAD_MAX = 80;
 const ansRaw = line => `<span class="mlist-url" aria-hidden="true">${esc(line)}</span>`;
@@ -38,4 +39,28 @@ function ansFiles(files) {
     docs.forEach((f, i) => box.children[i].append(el("span", { class: "mlist-url", "aria-hidden": "true", text: `[file] ${f.path}` })));
   }
   return [box, filesNode(files.filter(isImg))];
+}
+// A "**title**" line over a list of labels: one part of a bundle report, or null when the list is not all labels. ansJoin draws the parts.
+function ansSection(list, plain) {
+  const kv = list.items.map(i => ANS_LABEL.exec(i.text));
+  if (!kv.every(Boolean) || list.items.some(i => i.sub)) return null;
+  const rows = kv.map((m, i) => {
+    const c = ANS_COUNT.exec(m[1]);
+    return `<div class="rc-row ans-li">${ansRaw(list.items[i].raw)}<span class="rc-k">${inline(c ? c[1] : m[1])}</span>${c ? `<span class="ans-n">${esc(c[2])}</span>` : ""}<span class="rc-w">${inline(m[2])}</span></div>`;
+  });
+  return { n: rows.length, plain, html: `<div class="rc-sh">${ansRaw(list.head)}<span>${inline(ANS_HEAD.exec(list.head)[1])}</span></div>${rows.join("")}` };
+}
+// Neighbouring parts of a bundle share one card; a lone part with a single item stays text.
+function ansJoin(html, answer) {
+  const out = [];
+  for (let i = 0; i < html.length; i++) {
+    if (typeof html[i] === "string") { out.push(html[i]); continue; }
+    const run = [];
+    for (; typeof html[i] === "object"; i++) run.push(html[i]);
+    i--;
+    const big = run.reduce((n, p) => n + p.n, 0) >= 2;
+    if (big) answer.shaped = true;
+    out.push(big ? `<div class="ans-card"><div class="rc-rows ans-secs">${run.map(p => p.html).join("")}</div></div>` : run.map(p => p.plain).join(""));
+  }
+  return out;
 }
