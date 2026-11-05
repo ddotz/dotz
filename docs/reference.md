@@ -273,7 +273,7 @@ the dotz extension into every agent it runs in: the orchestrator, sessions and t
   budget line (answer length, context budget); writing subagents are forced `isolated` in a git repo and checkout paths in the
   brief become cwd-relative. Subagent output over `max_output_chars` (2000) is trimmed in the orchestrator's context
   (`history://<id>` keeps the full text).
-- *Review before apply*: `git apply <x>.patch` is blocked until the patch was read in the conversation. A message to a finished
+- *Review before apply*: `git apply <x>.patch` is blocked until the patch was read in the conversation: the `read` tool on that path, or `read('<path>')` / `Bun.file(<path>)` / `cat` in a cell (a path written with a variable counts when the variable is a plain string set earlier in the session). Each session start names this and the brief rules once, so the first call follows them. A message to a finished
   subagent is blocked (spawn a new one).
 - *Subagents*: external-impact commands (`git push`, `gh` writes, publish, deploy, `ssh`/`scp`/`rsync`, outbound HTTP writes,
   plus your `external_commands`) are blocked and handed back; the first compaction steers a subagent to wrap up and the second

@@ -67,6 +67,51 @@ describe("hub-made mail summaries", () => {
 		expect(t.changed).toEqual([r.key]);
 	});
 
+	test("a usage limit with a known reset waits for the reset: no retry is spent, no other mail calls the model, the mail stays queued", async () => {
+		const RESET = 10_000_000;
+		let now = RESET - 3_600_000;
+		let limited = true;
+		const waits: number[] = [];
+		const timers: Array<() => void> = [];
+		const calls: string[] = [];
+		const summarizer = createMailSummarizer({
+			model: async (_s, text) => {
+				calls.push(text);
+				if (limited) throw Object.assign(new Error("구독 한도에 걸렸어요"), { resetAt: RESET });
+				return GOOD;
+			},
+			get: mailByKey,
+			store: setMailSummary,
+			changed: () => undefined,
+			bodyOf: r => (r.subject.includes("A") ? "본문 A" : "본문 B"),
+			later: (fn, ms) => (timers.push(fn), void waits.push(ms)),
+			now: () => now,
+			retryMs: [1],
+		});
+		const deps = { ...setup(async () => GOOD).deps, summarize: (key: string, hint?: { body?: string }) => summarizer.request(key, hint) };
+		const a = await post(deps, { subject: "견적 A" });
+		const b = await post(deps, { subject: "견적 B" });
+		await summarizer.drain();
+		// one probe call found the limit; the second mail did not call at all, and one timer waits for the reset
+		expect(calls).toHaveLength(1);
+		expect(waits).toHaveLength(2);
+		expect(waits.every(ms => ms >= 3_600_000 && ms <= 3_600_000 + 120_000)).toBe(true);
+		// the wait is not a retry: after several limited rounds the mails are still queued, not given up
+		for (let round = 0; round < 3; round++) {
+			now = RESET - 1;
+			timers.splice(0).forEach(fn => fn());
+			await summarizer.drain();
+		}
+		expect(mailByKey(a.key)!.summary ?? "").toBe("");
+		expect(mailByKey(b.key)!.summary ?? "").toBe("");
+		limited = false;
+		now = RESET + 120_000;
+		timers.splice(0).forEach(fn => fn());
+		await summarizer.drain();
+		expect(mailByKey(a.key)!.summary).toBe(GOOD);
+		expect(mailByKey(b.key)!.summary).toBe(GOOD);
+	});
+
 	test("a good summary and an outgoing mail make no model call", async () => {
 		const t = setup(async () => GOOD);
 		const a = await post(t.deps, { summary: GOOD });
