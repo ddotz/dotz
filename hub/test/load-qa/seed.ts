@@ -209,7 +209,15 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 	const libs = await timed("libraries", () => makeLibraries(dir, size.library));
 	await timed("config", () => {
 		writeJson(join(dir, "custom", "apps.json"), Object.fromEntries(ACCOUNTS.map(a => [a.inst, { ...(a.inst === "mail" ? {} : { app: "mail" }), label: a.label, filter: { source: a.source, account: a.address } }])));
-		writeJson(join(dir, "custom", "sns", "config.json"), { youtube: { channel_id: "UCfakechannel0000000000" }, instagram: { user_id: "17841400000000000", username: "fake_account" } });
+		writeJson(join(dir, "custom", "sns", "config.json"), {
+			version: 1,
+			youtube: { channel_id: "UCfakechannel0000000000", base_language: "ko", languages: [], privacy: "private", upload_via: "api" },
+			instagram: { user_id: "17841400000000000", username: "fake_account", post_via: "api" },
+			timezone: "Asia/Seoul", posting_times: ["18:00"], approval: "each", inbox_dir: join(dir, "custom", "sns", "inbox"), quota: { daily_budget: 9000 },
+		});
+		// made-up logins, so the comment adapters pass "login is not set up"; hub/test/load-qa/fake-net.ts answers their API calls
+		writeJson(join(dir, "secrets", "youtube-oauth.json"), { client_id: "fake-client-id", client_secret: "fake-client-secret", refresh_token: "fake-refresh-token" });
+		writeJson(join(dir, "secrets", "instagram.json"), { access_token: "fake-ig-token", user_id: "17841400000000000", username: "fake_account", obtained_at: nowIso });
 		const kakao = join(dir, "features", "kakao", "feature.md");
 		mkdirSync(dirname(kakao), { recursive: true });
 		writeFileSync(kakao, readFileSync(join(import.meta.dir, "..", "..", "..", "features", "kakao", "feature.md"), "utf8").replace(/^enabled:\s*false\s*$/m, "enabled: true"));
@@ -289,7 +297,7 @@ export async function seed(dirArg: string, scale: Scale, opts: { realMail?: "all
 	});
 	const composeRecs = Array.from({ length: size.compose }, (_, i) => {
 		const id = newId(), person = makePerson(r, "student");
-		return { person, rec: { id, kind: "mail" as const, app: "mail", source: "zele", mailId: `compose-${id}`, ref: `compose-${id.toLowerCase()}`, compose: true, asksFile: true, to: person.addr, subject: "요청하신 자료 보내드립니다", body: "안녕하세요, 하늘 선생입니다.\n요청하신 자료를 보내드립니다.\n감사합니다.", status: "pending" as const, created: iso(base - 60_000 * (10 + i * 7)), changes: [], questions: [], item: { kind: "mail" as const, app: "mail", from: person.addr, subject: "자료 요청", text: "자료를 받을 수 있을까요?" } } };
+		return { person, rec: { id, kind: "mail" as const, app: "mail", source: "zele", mailId: `compose-${id}`, ref: `compose-${id.toLowerCase()}`, compose: true, asksFile: true, to: person.addr, subject: "요청하신 자료 보내드립니다", body: "안녕하세요, 하늘 선생입니다.\n요청하신 자료를 보내드립니다.\n감사합니다.", status: "pending" as const, created: iso(base - 60_000 * (10 + i * 7)), changes: [], questions: [], item: { kind: "mail" as const, app: "mail", from: person.addr, text: "안녕하세요, 하늘 선생입니다.\n요청하신 자료를 보내드립니다.\n감사합니다." } } };
 	});
 	const allRecs = [...recs, ...kakaoRecs, ...composeRecs.map(c => c.rec)];
 	const lost = await timed("drafts.store", () => {
