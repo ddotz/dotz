@@ -14,8 +14,9 @@ import type { AccountSwitch } from "./account-sticky.ts";
 import type { AccountReport } from "./usage-account.ts";
 import * as discord from "./discord.ts";
 import { keepHome, laneWorkerModel } from "./lanestate.ts";
-import { convs } from "./convsessions.ts";
+import { convs, type Conv } from "./convsessions.ts";
 import { isProjectTarget } from "./projectchat.ts";
+import { MAIN } from "./session-key.ts";
 import { abortLane, applyChainChange as applyLaneChain, compactLane, laneLive, laneModels, lanes, restartLane, resumeByName, setLaneModel, setLaneWorkerModel, stopLane } from "./lanes.ts";
 import { cancelByOwner, applyChainChange as applyOrchestratorChain, applyModelChange, compact as compactOrchestrator, orch, restart as restartOrchestrator } from "./orchestrator.ts";
 import { availableModels, cancelLogin, completeLogin, ControlError, listProviders, loginProviders, logoutProvider, type ModelInfo, pendingLogin, quota, startLogin } from "./providers.ts";
@@ -62,6 +63,12 @@ function fallbacksView() {
 // A project conversation with its own session: its chip reads and changes that conversation alone (ConvMeta.ownModel); with
 // conversation sessions off the project runs on main, so its target is main's.
 const projectOf = (target: string) => (isProjectTarget(target) && convs.keyOf(target) === target ? target : undefined);
+// The conversation session that answers `target`, of any kind (mail, app settings, alert...): its context chip, /context and /compact act on that
+// session, unlike the model, which only a project chooses. A lane keeps its bare name.
+const convOf = (target: string) => {
+	const key = lanes.has(target) ? MAIN : convs.keyOf(target);
+	return key === MAIN ? undefined : key;
+};
 const ownModelOf = (key: string) => convs.get(key)?.meta.ownModel;
 const convModel = (key: string) => (ownModelOf(key) ? parseSelector(ownModelOf(key)!) : orchestratorModel());
 // What the composer chips of every device read: project conversations that chose a model or run now. Absent means it inherits main's.
@@ -93,13 +100,22 @@ function procCtx(model: string, c: Ctx, roleDefault: number) {
 	const window = contextLimitsOf(model).window ?? c.window;
 	return { ...ctxView(c), window, percent: percentOf({ ...c, window }), compact_at: compactAtFor(model, roleDefault) };
 }
+const orchRoleAt = () => cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens;
+// A conversation session's numbers. Parked it still holds the figure of its last run (memory only: none after a hub restart); it next
+// starts on the model chosen since, so that model's window applies, the last run's only while the model is the same.
+function convCtx(c: Conv) {
+	const running = convs.live(c), { ctx, activeModel, status } = c.o.orch;
+	const model = (running && activeModel) || selectorOf(convModel(c.key)), id = parseSelector(model).model;
+	const same = !activeModel || parseSelector(activeModel).model === id;
+	return { key: c.key, kind: "conversation", status, running, model, ...procCtx(model, same ? ctx : { ...ctx, window: nativeWindows.get(id) ?? 0 }, orchRoleAt()) };
+}
 const CONTEXT_APPLIES = "저장하면 다음 턴부터 적용돼요. 다시 시작할 필요는 없어요. omp·Claude Code 런타임 세션은 다음에 시작하거나 재개할 때 적용돼요.";
 
 // Per-process context size and compaction state (orchestrator first, then every lane), and the context limits of every
 // model in use (the orchestrator's, each lane's and the default for new lanes) with their defaults.
 export function contextView() {
 	const orchModel = orch.activeModel || selectorOf(orchestratorModel());
-	const orchDefault = cfg.orchestrator?.rotate_tokens ?? DEFAULTS.rotate_tokens;
+	const orchDefault = orchRoleAt();
 	const processes = [
 		{ name: "orchestrator", kind: "orchestrator", status: orch.status, running: orch.status !== "stopped", model: selectorOf(orchestratorModel()), ...procCtx(orchModel, orch.ctx, orchDefault) },
 		...[...lanes.values()].map(l => ({ name: l.name, kind: "lane", status: l.status, live: laneLive(l), running: Boolean(l.proc), model: l.model, ...procCtx(l.activeModel || l.model, l.ctx, lanesCompactAt()) })),
@@ -125,7 +141,9 @@ export function contextView() {
 			compact_at_default: l.window ? Math.min(u.roleDefault, l.window - CONTEXT_RESERVE) : u.roleDefault,
 		};
 	});
-	return { note: COMPACT_NOTE, processes, models, limits: { ...CONTEXT_LIMITS, applies: CONTEXT_APPLIES } };
+	// Only sessions with something to show: a composer repaint reads this list, and most stored sessions rest with no figure.
+	const conversations = convs.conversations().filter(c => convs.live(c) || c.o.orch.ctx.tokens > 0).map(convCtx);
+	return { note: COMPACT_NOTE, processes, conversations, conversation_kinds: convs.ownKinds(), models, limits: { ...CONTEXT_LIMITS, applies: CONTEXT_APPLIES } };
 }
 
 // PUT /api/context/model {model, window, compact_at}: null (or missing) resets a value to the default.
@@ -190,11 +208,11 @@ const choicesFor = async (model: string) => {
 // A project conversation's chips: `own` says whether the value is its own, `inherited` is main's. `key` opens the 모델 · 폴백 screen on main's chain, which it shares.
 async function projectView(key: string) {
 	const c = convs.get(key), cur = convModel(key);
-	return { target: key, key: "orchestrator", own: Boolean(ownModelOf(key)), inherited: selectorOf(orchestratorModel()), model: cur.model, thinking: cur.thinking, active_model: c?.o.orch.activeModel ?? "", running: Boolean(c && convs.live(c)), busy: c?.o.orch.status === "working", models: await choicesFor(cur.model), thinking_levels: [...THINKING_LEVELS], note: "" };
+	return { target: key, key: "orchestrator", own: Boolean(ownModelOf(key)), inherited: selectorOf(orchestratorModel()), model: cur.model, thinking: cur.thinking, active_model: c?.o.orch.activeModel ?? "", running: Boolean(c && convs.live(c)), busy: c?.o.orch.status === "working", context: c && convCtx(c), models: await choicesFor(cur.model), thinking_levels: [...THINKING_LEVELS], note: "" };
 }
 export async function targetView(target: string) {
-	const key = targetKey(target);
-	if (key.startsWith("ch:")) return projectView(key);
+	const key = targetKey(target), conv = convOf(target);
+	if (conv) return projectView(conv);
 	const lane = key === "orchestrator" ? undefined : lanes.get(key.slice(5));
 	if (key !== "orchestrator" && !lane) throw new ControlError(`no lane ${key.slice(5)}`, 404);
 	const cur = lane ? parseSelector(lane.model) : orchestratorModel();
@@ -220,7 +238,7 @@ export async function changeTarget(target: string, change: { model?: string; thi
 	const key = targetKey(target);
 	if (change.inherit && key.startsWith("ch:")) return inheritMain(key);
 	if (change.compact) {
-		const r = compactTarget(key === "orchestrator" ? key : key.slice(5));
+		const r = compactTarget(key.replace(/^lane:/, ""));
 		return { ok: true, target: key, compaction: r.compaction.state, note: r.message };
 	}
 	if (change.workerModel) return target === "workers" ? setModel(target, change.workerModel) : setLaneWorker(key, change.workerModel, change.byLane === true);
@@ -405,11 +423,13 @@ const laneLabel = (name: string) => lanes.get(name)?.title || name;
 // "anthropic/claude-opus-5-5" -> "Opus 5.5" (the names the 모델 screen shows); an unknown id stays as its last part.
 export const modelName = (selector: string) => { const m = parseSelector(selector).model, id = modelIdentity(m); return id ? `${id.family} ${id.version}` : (m.split("/").pop() ?? m); };
 const whoIs = (target: string) => (target.startsWith("ch:") ? (discord.channels.work[target.slice(3)] ?? target) : target === "orchestrator" ? NAME : target === "lanes" ? T().newSessions : target === "workers" ? T().subagents : laneLabel(target.replace(/^lane:/, "")));
-function ctxValue(p: Proc): string {
+function ctxValue(p: Pick<Proc, "kind" | "running" | "tokens" | "window" | "percent" | "compaction">): string {
 	const t = T();
-	if (!p.running) return t.notRunning;
+	// A parked conversation keeps its last figure; a stopped lane's is gone with its process.
+	const last = !p.running && p.kind === "conversation" && p.tokens > 0;
+	if (!p.running && !last) return t.notRunning;
 	const figure = p.window ? t.usage(`${Math.round(p.percent ?? 0)}%`, kTokens(p.tokens), kTokens(p.window)) : kTokens(p.tokens);
-	return [figure, p.compaction.state ? t.compaction[p.compaction.state] : ""].filter(Boolean).join(" · ");
+	return [figure, last ? t.notRunning : "", p.compaction.state ? t.compaction[p.compaction.state] : ""].filter(Boolean).join(" · ");
 }
 
 // A failed command is an err card: the first line of the reason, with the home folder shortened.
@@ -454,13 +474,23 @@ function currentOf(target: string): { model: string; thinking: string } {
 	return cur;
 }
 
-// Compacts one process: "orchestrator" or a lane name. A working process queues it until its turn ends.
+const compactWhat = (c: Compaction) => (c.state === "queued" ? "is working: compaction queued, it starts right after the current turn ends" : c.state === "compacting" ? "is compacting now" : describeCompaction(c));
+// A parked session has no process to compact, and needs none until its next message.
+function compactConv(key: string): { target: string; compaction: Compaction; message: string } {
+	const c = convs.get(key);
+	if (!c || !convs.live(c)) throw new ControlError(`conversation ${key} has no running session: it starts on its next message`, 409);
+	const compaction = c.o.compact();
+	return { target: key, compaction, message: `conversation ${key} ${compactWhat(compaction)}. ${COMPACT_NOTE}` };
+}
+
+// Compacts one process: "orchestrator", a lane name or a conversation with its own session. A working process queues it until its turn ends.
 export function compactTarget(arg: string): { target: string; compaction: Compaction; message: string } {
+	const conv = convOf(arg);
+	if (conv) return compactConv(conv);
 	const orchestrator = arg === "orchestrator";
 	const target = orchestrator ? arg : arg.replace(/^lane:/, "");
 	const compaction = orchestrator ? compactOrchestrator() : compactLane(target);
-	const what = compaction.state === "queued" ? "is working: compaction queued, it starts right after the current turn ends" : compaction.state === "compacting" ? "is compacting now" : describeCompaction(compaction);
-	return { target, compaction, message: `${orchestrator ? "orchestrator" : `lane ${target}`} ${what}. ${COMPACT_NOTE}` };
+	return { target, compaction, message: `${orchestrator ? "orchestrator" : `lane ${target}`} ${compactWhat(compaction)}. ${COMPACT_NOTE}` };
 }
 
 // One button per pickable model (the list the model picker shows, newest first), each sending the command that switches `arg`.
@@ -510,6 +540,7 @@ async function execute(text: string, from?: string): Promise<CommandCard> {
 	const isForce = (a: string) => a === "--force" || a === "force";
 	const force = cmd.args.some(isForce);
 	const [first, second, third] = cmd.args.filter(a => !isForce(a));
+	const here = from ? convOf(from) : undefined;
 	if (cmd.name === "model" || cmd.name === "effort") {
 		if (first && projectOf(first)) return projectCommand(first, cmd.name, second, third, force);
 		const here = from && projectOf(from);
@@ -539,13 +570,16 @@ async function execute(text: string, from?: string): Promise<CommandCard> {
 				{ tone: toneOf(orch.status) },
 			);
 		}
-		case "context":
+		case "context": {
+			const conv = here && convs.get(here);
+			if (here) return card(t.contextTitle, [{ label: t.thisConversation, value: conv ? ctxValue(convCtx(conv)) : t.notRunning }], { note: t.compactNote });
 			return card(t.contextTitle, contextView().processes.filter(p => p.kind === "orchestrator" || p.running).map(p => ({ label: p.kind === "orchestrator" ? NAME : laneLabel(p.name), value: ctxValue(p) })), { note: t.compactNote });
+		}
 		case "compact": {
-			if (!first) throw new ControlError("usage: /compact <orchestrator|lane>");
-			const r = compactTarget(first);
+			if (!first && !here) throw new ControlError("usage: /compact <orchestrator|lane>");
+			const r = compactTarget(first ?? here!);
 			const state = r.compaction.state ?? "compacting";
-			const who = r.target === "orchestrator" ? NAME : laneLabel(r.target);
+			const who = r.target === "orchestrator" ? NAME : convOf(r.target) ? t.thisConversation : laneLabel(r.target);
 			return card(t.compactTitle[state](who), [], { tone: state === "done" ? "ok" : state === "error" ? "err" : "busy", note: state === "error" ? r.compaction.error : t.compactNote });
 		}
 		case "lanes": {

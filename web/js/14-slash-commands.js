@@ -12,7 +12,7 @@ const slAccounts = () => [["auto", "자동으로 고르기"], ...((ACC && ACC.ac
 const CMDS = [
   { c: "/status", d: "봇·세션·Discord 상태와 컨텍스트" },
   { c: "/context", d: "프로세스별 컨텍스트 사용량과 압축 상태", dup: true },
-  { c: "/compact", d: "컨텍스트 압축 (작업 중이면 끝난 뒤)", args: [{ n: "대상", opts: slProcs }] },
+  { c: "/compact", d: "컨텍스트 압축 (작업 중이면 끝난 뒤)", args: [{ n: "대상", opts: slProcs, get opt() { return isConvT(target); } }] },
   { c: "/lanes", d: "세션마다 상태와 모델" },
   { c: "/model", d: "모델 보기, 또는 대상의 모델 바꾸기", args: [{ n: "대상", opts: slModelTargets, opt: true }, { n: "모델", opts: slModels, opt: true }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]), opt: true }] },
   { c: "/effort", d: "추론 강도 바꾸기", args: [{ n: "대상", opts: slModelTargets }, { n: "강도", opts: () => SL_LEVELS.map(v => [v]) }] },
@@ -228,7 +228,7 @@ async function sendCommand(text) {
   chatStick = true; termStick = true;
   ingestMsg(mk("_cmd", { text }));
   try {
-    const r = await api("/api/command", "POST", { text, ...(isProjT(t) ? { from: t } : {}) });
+    const r = await api("/api/command", "POST", { text, ...(isConvT(t) ? { from: t } : {}) });
     ingestMsg(mk("_cmdout", { text: String(r.output ?? "") || "✓", ...(r.card ? { card: r.card } : {}) }));
     if (/^\/(model|effort|compact|restart|resume|stop|abort)\b/i.test(text)) { refreshState(); loadModels(true); loadContext(true); }
   } catch (e) { ingestMsg(mk("_cmdout", { text: e.message, is_error: true, ...(e.data && e.data.card ? { card: e.data.card } : {}) })); }
@@ -390,6 +390,15 @@ function modelChipText(sel) {
   const nm = modelLabel(base, a);
   return level ? `${nm} · ${thinkKo(level)}` : nm;
 }
+// The session whose context the chip shows: the conversation on screen's own (GET /api/context conversations, already loaded: a repaint fetches nothing).
+// Never main's for a conversation with its own session; only a project whose kind has none really runs on main.
+function ctxSession(t) {
+  const procs = (C && C.processes) || [], main = () => procs.find(x => x.name === "orchestrator");
+  if (t === MAIN) return main();
+  if (isLaneT(t)) return procs.find(x => x.name === laneOf(t));
+  if (isProjT(t) && C && !(C.conversation_kinds || []).includes("ch")) return main();
+  return ((C && C.conversations) || []).find(x => x.key === t);
+}
 function renderCtxRing() {
   const mb = $("#c-model"), lane = isLaneT(target) && S ? S.lanes.find(x => x.name === laneOf(target)) : null;
   const orchT = target === MAIN || isProjT(target);
@@ -416,11 +425,13 @@ function renderCtxRing() {
   fbc.hidden = !fb;
   if (fb) { fbc.textContent = fbTagText(fb); fbc.title = `${owner} 기본 모델 ${selText(live.conf)} 대신 쓰는 중`; }
   $("#cbar").classList.toggle("api", keyed);
-  const b = $("#ctx-ring"), p = ((C && C.processes) || []).find(x => x.name === (orchT ? "orchestrator" : laneOf(target)));
-  b.hidden = !(p && p.running && p.tokens != null);
+  const b = $("#ctx-ring"), p = ctxSession(target);
+  // A parked conversation keeps its last figure; a session with no figure yet has no chip.
+  b.hidden = !(p && (p.kind === "conversation" ? p.tokens > 0 : p.running && p.tokens != null));
   if (b.hidden) return;
   const pct = p.percent != null ? Math.min(100, Math.max(0, p.percent)) : 0;
-  const label = `${owner} 컨텍스트 ${p.percent != null ? `${Math.round(p.percent)}% · ${kfmt(p.tokens)}/${kfmt(p.window)}` : `${kfmt(p.tokens)} 토큰`}`;
+  const who = isProjT(target) ? chipOwner : isConvT(target) ? "이 대화" : owner;
+  const label = `${who} 컨텍스트 ${p.percent != null ? `${Math.round(p.percent)}% · ${kfmt(p.tokens)}/${kfmt(p.window)}` : `${kfmt(p.tokens)} 토큰`}${p.running ? "" : " · 쉬는 중이라 마지막 값이에요"}`;
   b.title = label; b.setAttribute("aria-label", label);
   b.textContent = p.percent != null ? `컨텍스트 ${Math.round(p.percent)}%` : `컨텍스트 ${kfmt(p.tokens)}`;
   b.classList.toggle("warn", pct >= 80);
@@ -429,8 +440,8 @@ function renderCtxRing() {
 // The chips are quick switches; the last row of each opens the 모델 · 폴백 screen at this target (fallback order lives there).
 const MODELS_LINK = { value: "__models", label: "모델 · 폴백 설정", sub: "폴백 순서까지" };
 const targetParam = () => isLaneT(target) || isProjT(target) ? target : "main";
-// The context ring and its 압축 stay on the process they read (a project's ring shows main's numbers, as before).
-const ctxParam = () => isLaneT(target) ? target : "main";
+// The context ring and its 압축 stay on the session they read; the hub maps the target to it (hub/control.ts convOf).
+const ctxParam = () => target;
 // A project conversation's way back: the first row of its menus, checked while it made no choice (T.own is absent elsewhere).
 const INHERIT = "__inherit";
 const inheritRow = T => T.own === undefined ? [] : [{ value: INHERIT, label: "메인 대화와 같게", sub: selText(T.inherited) }];
@@ -495,6 +506,7 @@ $("#ctx-ring").onclick = ev => busy(null, async () => {
   const items = [{ header: c.percent != null ? `컨텍스트 ${Math.round(c.percent)}% · ${kfmt(c.tokens)}/${kfmt(c.window)}` : `컨텍스트 ${kfmt(c.tokens || 0)} 토큰` }];
   if (T.running && !inFlight) items.push({ value: "compact", label: "지금 압축", sub: T.busy ? "작업이 끝나면 압축해요" : "캐시가 한 번 다시 쓰여요" });
   else if (inFlight) items.push({ value: "none", label: "압축 진행 중" });
+  else items.push({ value: "none", label: "쉬는 중이에요", sub: "다음 메시지가 오면 다시 시작해요" });
   items.push({ value: "open", label: "컨텍스트 화면 열기" });
   showMenu(anchor, items, { onPick: v => v === "open" ? go("context") : v === "compact" ? busy(null, () => targetChange(targetName(target), { compact: true }, "", ctxParam())) : null });
 });
