@@ -115,7 +115,7 @@ export const detailOf = (o: { label: string; desc?: string; detail?: boolean }):
 // a bare numbered list without the "결정:" line is not.
 type DecisionBlock = { title: string; options: DecisionOption[]; headed?: true };
 export const hasDecisionHead = (blocks: DecisionBlock[]): boolean => blocks.some(b => b.headed);
-const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*$/;
+export const D_OPT = /^\s*(?:\*\*)?\s*(\d+)\)\s*(.+?)\s*(?:\*\*)?\s*$/;
 export const DECISION_HEAD = /^\s*(?:\*\*)?\s*(?:결정|decision(?: needed)?)(?:\s*#?\d{1,2})?\s*[:：]\s*(.*?)\s*(?:\*\*)?\s*$/i;
 export const D_CLOSE = /번호(?:로|를).*(?:답|알려)/;
 // One decision of a several-decision message: the lead text before the first "결정:" line plus that block's own lines, without its option

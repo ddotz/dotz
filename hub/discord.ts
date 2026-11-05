@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { cfg, DATA_DIR, expand, log, NAME, paths, writeAtomic } from "./config.ts";
 import { askComponentsFor } from "./askbuttons.ts";
+import { hasDecisionHead, parseDecisions } from "./choices.ts";
+import { ownerText } from "./owner-text.ts";
 import { kindOf } from "./messenger.ts";
 import { convPath, webLink } from "./weblink.ts";
 import type { Pick } from "./intake.ts";
@@ -564,6 +566,7 @@ export async function send(
 	opts?: { nonce: string; skip: number; onPart: (index: number) => void; ping?: boolean },
 ): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
+	text = ownerText(text);
 	let id = resolve(target);
 	// Nothing recorded for the lane: its message goes to the worklog with the lane title in front, never dropped. A web lane
 	// (started from the web, threads.ts lanePlace) has no Discord place on purpose, so nothing of it goes to Discord.
@@ -589,7 +592,8 @@ export async function send(
 		const components = askComponentsFor(target, bare, bodies[last]!.content);
 		// Only a decision or an alert also carries a link button to its web conversation; an ordinary message carries none. The link holds no token.
 		// The address comes from the same rule as hub/messenger.ts: the kind of the target, then convPath; a lane or any target the web has no chat route for gets no button.
-		const kind = components.length || target === "alert" ? kindOf(target) : undefined;
+		// Several decisions have no one answer to click: the link is their button.
+		const kind = components.length || target === "alert" || hasDecisionHead(parseDecisions(bare).blocks) ? kindOf(target) : undefined;
 		const path = kind ? convPath(kind, target) : undefined;
 		const link = path ? webLink(path) : undefined;
 		if (link && components.length < 5) components.push({ type: 1, components: [{ type: 2, style: 5, label: "웹에서 보기", url: link }] });
@@ -605,6 +609,7 @@ export async function send(
 }
 
 export async function edit(target: string, messageId: string, text: string, opts?: { clearComponents?: boolean }): Promise<{ delivered: boolean; reason?: string; ids?: string[] }> {
+	text = ownerText(text);
 	const id = resolve(target);
 	if (!status.enabled || !id) return { delivered: false, reason: `unknown target ${target}` };
 	// `embeds: []` clears the embed of a legacy message (sent before messages became plain text) when it is edited in place.
@@ -634,6 +639,7 @@ const progressIds = new Map<string, Map<string, string>>();
 const PROGRESS_FILE = join(DATA_DIR, "discord-progress.json");
 const saveProgress = () => writeAtomic(PROGRESS_FILE, `${JSON.stringify(Object.fromEntries([...progressIds].map(([t, m]) => [t, Object.fromEntries(m)])))}\n`);
 export async function progress(target: string, key: string, text: string, replyTo?: string): Promise<{ delivered: boolean; reason?: string; edited?: boolean }> {
+	text = ownerText(text);
 	const prev = progressIds.get(target)?.get(key);
 	if (prev) return { ...(await edit(target, prev, text)), edited: true };
 	if (!status.enabled) return { delivered: false, reason: "discord not configured (run setup with a bot token)" };
