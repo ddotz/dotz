@@ -37,7 +37,7 @@ export function sendTargetOf(ref: string, action?: SendAction): SendTarget | und
 	const p = commentPostedOf(ref);
 	if (p?.mail && (!action || action === "send-mail") && getDraft(p.mail)?.status === "pending") return { kind: "comment", lane: `comment:${p.source}` };
 	const m = getDraft(ref);
-	if (m && m.kind === "mail" && m.status === "pending" && !linkedComment(ref)) return { kind: "mail", lane: `mail:${m.source}` };
+	if (m && m.kind === "mail" && m.status === "pending" && !linkedComment(ref)) return { kind: "mail", lane: `mail:${m.source}:${m.account ?? m.app}` };
 	return undefined;
 }
 
