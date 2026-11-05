@@ -1,10 +1,12 @@
 /* The two screens that replace the mail list in the same view (web/js/30-mailboxes-set.js): 메일함 설정 and 메일함 추가, ported from site/prototype/mailbox.css onto the web tokens. */
-.mxs { display: flex; flex-direction: column; max-width: calc(var(--view-w) - var(--sp-8)); margin: 0 auto; padding-bottom: var(--sp-8); --ff-fill: var(--layer); }
+.mxs { display: flex; flex-direction: column; width: 100%; max-width: calc(var(--view-w) - var(--sp-8)); margin: 0 auto; padding-bottom: var(--sp-8); --ff-fill: var(--layer); }
 .mxs > .sec:first-child, .mxs > .mxs-note + .sec { margin-top: var(--sp-6); }
-.mxs-hd { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--sp-10); }
-.mxs-hd .ib { flex: none; }
+#v-monitoring.mx-scr > .cv-head { display: none; }
+.mxs-hd { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--card); }
+.mxs-hd .av { flex: none; display: grid; place-items: center; width: calc(var(--sp-8) + var(--sp-1)); height: calc(var(--sp-8) + var(--sp-1)); border-radius: 50%; background: var(--layer); color: var(--fg-2); }
+.mxs-hd .btn { flex: none; }
 .mxs-hd .tx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.mxs-hd .hd { display: flex; align-items: center; gap: var(--sp-2); font: 700 var(--fs-big)/var(--lh-big) var(--font); }
+.mxs-hd .hd { display: flex; align-items: center; gap: var(--sp-2); font: 600 var(--fs-row)/var(--lh-row) var(--font); }
 .mxs-hd .sup { color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .mxs-note, .mxs-h { color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 .mxs-note { margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--fg-2); font-size: var(--fs-sec); line-height: var(--lh-sec); }
@@ -18,11 +20,13 @@
 .mxs-mode { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; padding: var(--sp-3); border: 0; border-radius: var(--r-card); background: var(--card); color: var(--fg); text-align: left; }
 .mxs-mode:hover { background: var(--card-hover); }
 .mxs-mode.on, .mxs-mode.on:hover { background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
-.mxs-mt { font: 600 var(--fs-sec)/var(--lh-sec) var(--font); white-space: nowrap; }
+.mxs-mt { display: flex; align-items: center; gap: var(--sp-2); font: 600 var(--fs-sec)/var(--lh-sec) var(--font); white-space: nowrap; }
+.mxs-rd { flex: none; width: 16px; height: 16px; border: 1.5px solid var(--line-2); border-radius: 50%; }
+.mxs-mode.on .mxs-rd { border: 5px solid var(--accent); }
 .mxs-md { color: var(--fg-2); font-size: var(--fs-meta); line-height: var(--lh-meta); }
 
 /* one folding item at a time */
-.mxs-ac + .mxs-ac, .mxs-ac + .li, .li + .mxs-ac { box-shadow: inset 0 1px 0 var(--line); }
+.mxs .list > button.li + button.li { border-top: 1px solid var(--line); }
 .mxs-ah { display: flex; align-items: center; gap: var(--sp-3); width: 100%; min-height: calc(var(--row-h) + var(--sp-1)); padding: var(--sp-2) var(--sp-4); border: 0; background: none; color: var(--fg); text-align: left; }
 .mxs-ah:hover { background: var(--card-hover); }
 .mxs-al { flex: none; font: 500 var(--fs-row)/var(--lh-row) var(--font); }

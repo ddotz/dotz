@@ -175,6 +175,7 @@ function mxAcctPop(btn) {
 function mxPaint(sel) {
   const on = !!(sel && sel.accounts) && !MON.list;
   $("#v-monitoring").classList.toggle("mx-on", on);
+  $("#v-monitoring").classList.toggle("mx-scr", on && !!MX.scr);
   MX.it = on ? sel : null;
   if (on) mxPane(sel); else mxTeachClose();
   mxChip(on ? sel : null);

@@ -49,7 +49,7 @@
 .mx-acc { display: none; flex: none; align-items: center; gap: var(--sp-1); height: 28px; margin-right: var(--sp-1); padding: 0 var(--sp-2); border: 0; border-radius: var(--r-ctl); background: var(--card); color: var(--fg-2); font-size: var(--fs-meta); font-weight: 500; white-space: nowrap; }
 .mx-acc:hover { background: var(--card-hover); }
 .mx-acc .ic { width: 14px; height: 14px; }
-.main:has(#v-monitoring.mx-on:not([hidden])) .mx-acc { display: inline-flex; }
+.main:has(#v-monitoring.mx-on:not(.mx-scr):not([hidden])) .mx-acc { display: inline-flex; }
 
 .mr-mv { flex: none; }
 
@@ -75,6 +75,10 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
   #v-monitoring.mx-on:not(.cv-listing) > #mx-pane { grid-column: 1; grid-row: 4; display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; overflow-y: auto; scrollbar-width: none; }
   #mon-tl > .mx-tabs { display: none; }
   #v-monitoring.mx-on #mon-tl { padding-top: 0; }
+  /* 메일함 설정 and 메일함 추가 take the whole view */
+  #v-monitoring.mx-on.mx-scr:not(.cv-listing):not(:has(> .kk.chat-open:not([hidden]))) { max-width: var(--view-w); grid-template-columns: minmax(0, 1fr); }
+  #v-monitoring.mx-on.mx-scr:not(.cv-listing) > * { grid-column: 1; }
+  #v-monitoring.mx-on.mx-scr:not(.cv-listing) > #mx-pane { display: none; }
   #mon-tl > .mr .rc-hd > .mr-mv { order: 9; }
   /* the sender gives its column to the account mark and the box name */
   #mon-tl > .mr .rc-hd > .rc-src:has(+ .mx-am, + .mx-bt) { flex-basis: 104px; }
