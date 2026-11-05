@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { log, now, writeAtomic } from "./config.ts";
 import { broadcast, emit } from "./events.ts";
 import { approvals, convOfTarget, newMid, out } from "./outbound.ts";
-import { answerDecision, type DecisionSend, listNotices, markDraftSend, NOTICE_CAP, openDraftCards, settleOpenDecision } from "./notices.ts";
+import { answerDecision, type DecisionSend, allNotices, markDraftSend, openDraftCards, settleOpenDecision } from "./notices.ts";
 import type { Upload } from "./files.ts";
 import { commentContextOf, commentDraftOf, commentDraftsByCode, commentPending, commentSendFailed, commentSendOutcome, commentSettleSending, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
 import { dropFailed, retryFailed, type RetryDeps } from "./reply-outcomes.ts";
@@ -87,7 +87,7 @@ export function settleSends(): void {
 }
 // A send run from a CLI (a session's draft.ts send) failed: the card it answers shows it and the owner hears it, like a send of the gateway's own.
 function reportCliFailure(ref: string, conv: string, text: string): void {
-	const card = listNotices(NOTICE_CAP).items.find(i => i.decision && i.title.endsWith(`(${ref})`));
+	const card = allNotices().find(i => i.decision && i.title.endsWith(`(${ref})`));
 	reportSend({ ref, conv: card?.decision?.to ?? conv, title: card?.title ?? "답장", state: "failed", text, at: Date.now() });
 }
 
@@ -134,7 +134,7 @@ export type CardGroup = { key: string; label: string; count: number; cards: Wait
  * card closes (its queue shows the next one at once) and the send is queued; 직접 수정 files ride to the bot, so such an answer keeps its path.
  */
 export async function webAnswer(id: string, body: { n?: unknown; note?: unknown; files?: Upload[] }, login: string, deliver: DecisionSend) {
-	const card = listNotices(NOTICE_CAP).items.find(n => n.id === id);
+	const card = allNotices().find(n => n.id === id);
 	const opt = card?.decision?.state === "open" ? card.decision.options.find(o => o.n === Number(body.n)) : undefined;
 	const gw = card && opt && !body.files?.length ? gatewaySendOf(card.decision!.to, card.title, opt.label) : undefined;
 	const r = await answerDecision(id, body, async a => (gw ? recordAnswer({ source: "web", channel: channelOf(a.to), author: login, text: a.text, picks: a.picks ?? [], decision: a.notice }) : deliver(a)));
@@ -229,7 +229,7 @@ export async function approvalRoute(req: Request, url: URL, deps: { login: strin
 			return json({ ok: true });
 		}
 		if ((b.op !== "retry" && b.op !== "drop") || !Array.isArray(b.items) || b.items.length > FAILED_BATCH_MAX) return json({ error: "op (retry | drop) and items are required" }, 400);
-		const deps: RetryDeps = { notices: listNotices(NOTICE_CAP).items, can: (ref, action) => sender.can(ref, action), enqueue: j => sender.enqueue(j), commentFailed: commentSendFailed, drop: dropDraftRef };
+		const deps: RetryDeps = { notices: allNotices(), can: (ref, action) => sender.can(ref, action), enqueue: j => sender.enqueue(j), commentFailed: commentSendFailed, drop: dropDraftRef };
 		return json({ results: b.op === "retry" ? retryFailed(b.items, deps) : await dropFailed(b.items, deps) });
 	}
 	async function answerConv(conv: string, items: { ref: string; n: number; note?: string }[]) {

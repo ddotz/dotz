@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run as runComments } from "../../features/comments/bin/comments.ts";
 import { parseDecisions } from "../choices.ts";
-import { parseDraftApproval } from "../draft-approval.ts";
+import { LINT_REFUSED, parseDraftApproval } from "../draft-approval.ts";
 import { commentAsk } from "./ask.ts";
 import { type Comment, type CommentAdapter, commentId, type RawComment, type SourceConfig } from "./contract.ts";
 import { createEngine, type MailLink, type MailView } from "./engine.ts";
@@ -25,7 +25,7 @@ beforeEach(() => {
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 // A mail link that only records: `log` is shared with the adapter so the order reply -> mail is visible.
-function fakeMail(log: string[], o: { failSend?: string; issues?: string[] } = {}) {
+function fakeMail(log: string[], o: { failSend?: string; issues?: string[]; lint?: string[] } = {}) {
 	const drafts = new Map<string, MailView>();
 	let n = 0;
 	const link: MailLink = {
@@ -36,6 +36,7 @@ function fakeMail(log: string[], o: { failSend?: string; issues?: string[] } = {
 			return { ok: true, id };
 		},
 		issues: () => o.issues ?? [],
+		lint: () => o.lint ?? [],
 		send: async (id, opts) => (log.push(`send ${id}${opts?.asIs ? " as-is" : ""}`), o.failSend ? { ok: false, text: o.failSend } : { ok: true, text: "메일을 보냈어요" }),
 		drop: id => void log.push(`drop ${id}`),
 		revise: async (id, change) => {
@@ -53,7 +54,7 @@ function fakeMail(log: string[], o: { failSend?: string; issues?: string[] } = {
 	return link;
 }
 
-function setup(o: { failSend?: string; issues?: string[]; noMail?: boolean; failReply?: string; sub?: string } = {}) {
+function setup(o: { failSend?: string; issues?: string[]; lint?: string[]; noMail?: boolean; failReply?: string; sub?: string } = {}) {
 	const root = o.sub ? join(dir, o.sub) : dir;
 	mkdirSync(root, { recursive: true });
 	writeFileSync(join(root, "config.json"), JSON.stringify({ enabled: true, sources: { youtube: source } }));
@@ -190,6 +191,23 @@ describe("the combined card", () => {
 		const out = await runComments(["send", d.code, "--as-is"], t.engine, t.inbox);
 		expect(out.code).toBe(0);
 		expect(t.log).toEqual(["compose M1", "reply", "send M1 as-is"]);
+	});
+
+	test("a mail the send-time lint refuses is refused before the reply is posted, also with 이대로 보내기; 답글만 보내기 skips it", async () => {
+		const t = setup({ lint: ["채워 넣지 않은 자리표시가 있어요"] });
+		const d = await withMail(t);
+		pick(t, d.code, 1);
+		const refused = await runComments(["send", d.code], t.engine, t.inbox);
+		expect(refused.code).toBe(1);
+		expect(refused.lines[0]).toStartWith(LINT_REFUSED);
+		expect(t.log).toEqual(["compose M1"]);   // no "reply": a posted reply beside an unsent mail
+		expect(t.engine.store.drafts()[0]!.status).toBe("pending");
+		appendFileSync(t.inbox, `${JSON.stringify({ ts: new Date(NOW + 6000).toISOString(), kind: "message", source: "web", text: "4) 이대로 보내기", picks: [{ q: `이 답글을 올리고 메일도 보낼까요? (${d.code})`, n: 4, label: "이대로 보내기" }] })}\n`);
+		expect((await runComments(["send", d.code, "--as-is"], t.engine, t.inbox)).code).toBe(1);
+		expect(t.log).toEqual(["compose M1"]);
+		const only = await runComments(["send", d.code, "--only", "reply"], t.engine, t.inbox);
+		expect(only.code).toBe(0);
+		expect(t.log).toEqual(["compose M1", "reply"]);
 	});
 
 	test("고치기 changes the mail alone (same card code) or the reply alone (mail stays attached)", async () => {

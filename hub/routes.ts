@@ -57,7 +57,7 @@ import { withHomes } from "./laneviews.ts";
 import { main as mainOrch, orch } from "./orchestrator.ts";
 import { enqueue, queueItems, restore, take } from "./queue.ts";
 import { listMonitors } from "./monitors.ts";
-import { type DecisionSend, type Notice, NOTICE_CAP, settleHandledDrafts, answerDecision, dismissedAlertAts, dismissNotice, handledNotice, ignoreNotice, undismissNotice, listNotices, markNoticesRead, readConversationNotices, reopenDraftNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
+import { type DecisionSend, type Notice, allNotices, settleHandledDrafts, answerDecision, dismissedAlertAts, dismissNotice, handledNotice, ignoreNotice, undismissNotice, listNotices, markNoticesRead, readConversationNotices, reopenDraftNotices, reopenNotices, resolveNotices, setViewing, unignoreNotice, unreadCount } from "./notices.ts";
 import { projectFiles } from "./projectinfo.ts";
 import { loadProjects, saveProject } from "./projects.ts";
 import { deleteProject, planDelete, ProjectDeleteError } from "./projectdelete.ts";
@@ -171,7 +171,7 @@ function stateRuns(): Record<string, RunState> {
 	const works = bgWork.list();
 	const running = works.filter(w => w.status === "running");
 	const deferred = queue.deferredOpen();
-	const asks = listNotices(NOTICE_CAP).items
+	const asks = allNotices()
 		.filter(n => n.kind === "decision" && n.decision?.state === "open")
 		.sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")));
 	const askFor = (target: string) => {
@@ -582,7 +582,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (url.pathname === "/api/state")
 			return json({ name: NAME, address: ADDRESS, discord: discord.status, channels: discord.channels, orchestrator: { ...orch, lastText: orch.lastText.slice(0, 600), key_fallback: keyedSelector(orch.activeModel) }, terminals: Object.fromEntries(terminals), lanes: withHomes(laneSummary(), discord.channels), runs: stateRuns(), capacity: laneCapacity(), schedules: listSchedules(), auth: pendingAuth(), events: recentEvents(Number(url.searchParams.get("limit") ?? 100)), notices_unread: unreadCount(), work: bgWork.list(), convs: stateConvs(), waitlist: stateWaitlist(), work_now: Date.now(), web_build: webBuild(), desk: desk.summary() });
 		if (req.method === "GET" && url.pathname === "/api/notices") syncCardFiles();
-		if (req.method === "GET" && url.pathname === "/api/notices") return json({ ...listNotices(Number(url.searchParams.get("limit") ?? 100)), gone: dismissedAlertAts() });
+		if (req.method === "GET" && url.pathname === "/api/notices") return json({ ...listNotices(Number(url.searchParams.get("limit") ?? 100), true), gone: dismissedAlertAts() });
 		if (req.method === "GET" && url.pathname === "/api/monitors") return json({ items: listMonitors() });
 		// Run one watch now (the web's 지금 확인 / 지금 다시 확인): the same runner the timer uses, awaited so the answer carries the new result.
 		const watchRun = req.method === "POST" ? /^\/api\/watches\/([a-z0-9-]{1,40})\/run$/.exec(url.pathname) : null;
@@ -604,14 +604,14 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		const sentMailRefs = () => sentReplyRefs(listDrafts());
 		const unrepliedMailList = () => unrepliedMails(sentMailRefs());
 		// A draft a send-approval notice already shows (its `> 참조:` ref) is that notice's card; the store's own list leaves it out, so nothing counts twice.
-		const noticeDraftRefs = (): Set<string> => new Set(listNotices(NOTICE_CAP).items.flatMap(n => (n.decision?.state === "open" && !n.ignored && typeof n.decision.draft?.ref === "string" ? [n.decision.draft.ref] : [])));
+		const noticeDraftRefs = (): Set<string> => new Set(allNotices().flatMap(n => (n.decision?.state === "open" && !n.ignored && typeof n.decision.draft?.ref === "string" ? [n.decision.draft.ref] : [])));
 		// The KakaoTalk reply drafts waiting in watched rooms count as the kakao app's drafts beside the comment apps' (hub/integrations.ts needs.drafts).
 		const draftNeeds = () => withStoreDrafts(commentNeeds(), "kakao", kakaoPendingCount(noticeDraftRefs()));
 		const integrationView = () => {
 			const convUnread = Object.fromEntries(mailTargets().map(t => [t, unreadOf(t)]));
 			const ctx = integrationContext(DATA_DIR, (cfg as { zele?: { enabled?: boolean } }).zele?.enabled !== false && Bun.which("zele") ? ["zele", ...commentFlags()] : commentFlags());
 			const own = ownedWatches(DATA_DIR, allWatches());
-			const items = integrationItems(ctx, listNotices(NOTICE_CAP).items, convUnread, 100, undefined, mailSuggests(), Date.now(), draftNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => withConnection({ ...i, own: own.get(i.key) ?? [] }, allWatches()));
+			const items = integrationItems(ctx, allNotices(), convUnread, 100, undefined, mailSuggests(), Date.now(), draftNeeds(), { targets: unrepliedMailList().map(m => mailTarget(m.key)), apps: { kakao: kakaoUnreplied() } }).map(i => withConnection({ ...i, own: own.get(i.key) ?? [] }, allWatches()));
 			return { items, available: integrationAvailable(items, ctx) };
 		};
 		if (req.method === "GET" && url.pathname === "/api/integrations") return json(integrationView());
@@ -631,7 +631,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 			const items = await Promise.all([...kakao, ...comments].map(withModel));
 			// 실패 / 보낸 것 / 멈춘 이유 (hub/reply-outcomes.ts): the stores' own records, read once here; `items` stays as it was.
 			const at = Date.now();
-			const outcomes = collectOutcomes({ notices: listNotices(NOTICE_CAP).items, sendKind: ref => sendTargetOf(ref)?.kind, appOf: draftAppOf, comments: commentOutcomeFacts(), kakao: kakaoDraftSends(), since: localMidnight(at), now: at });
+			const outcomes = collectOutcomes({ notices: allNotices(), sendKind: ref => sendTargetOf(ref)?.kind, appOf: draftAppOf, comments: commentOutcomeFacts(), kakao: kakaoDraftSends(), since: localMidnight(at), now: at });
 			return json({ items: items.sort((a, b) => b.at - a.at), ...outcomes });
 		}
 		// The 앱 list (hub/user-apps.ts): the 모니터링 apps this install has on, then the owner's own manifests (with their health).
@@ -699,7 +699,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				}
 				if (op === "retry" && req.method === "POST") await retryInternal(DATA_DIR, app!, (await body(req)).watch, allWatches(), runWatch, approveWatch);
 				else if (op === "retry" || (req.method !== "GET" && req.method !== "PATCH")) return json({ error: "not found" }, 404);
-				return json(featuresOf(DATA_DIR, app!, allWatches(), listNotices(NOTICE_CAP).items));
+				return json(featuresOf(DATA_DIR, app!, allWatches(), allNotices()));
 			} catch (error) {
 				return json({ error: (error as Error).message }, error instanceof SettingsError ? error.status : 400);
 			}
@@ -721,7 +721,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 		if (req.method === "POST" && url.pathname === "/api/notices/resolve") return json(resolveNotices(await body(req)));
 		// 되돌리기 after 보내지 않기 also puts the mail reply draft back in its store (the peer act notice reopen lands here too).
 		if (req.method === "POST" && url.pathname === "/api/notices/reopen") {
-			const ids = (await body(req)).ids, refs = droppedDraftRefs(listNotices(NOTICE_CAP).items, ids);
+			const ids = (await body(req)).ids, refs = droppedDraftRefs(allNotices(), ids);
 			const r = reopenNotices(ids);
 			await restoreReopenedDrafts(refs, r.reopened, log);
 			return json(r);
