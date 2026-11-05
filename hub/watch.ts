@@ -58,6 +58,9 @@ export type Watch = {
 };
 
 const RUN_TIMEOUT_MS = 120_000;
+// Watch commands run in zsh where it is installed (macOS default); Linux machines often have only bash, a slim one only sh.
+export const watchShell = (has: (path: string) => boolean = existsSync): string => ["/bin/zsh", "/bin/bash"].find(has) ?? "/bin/sh";
+const WATCH_SHELL = watchShell();
 const READ_GRACE_MS = 2_000;
 export const FAIL_ALERT_EVERY_MS = 12 * 3600_000;
 export const FAIL_ALERT_AFTER = 2; // failures in a row before the first alert
@@ -268,7 +271,7 @@ async function runOnce(w: Watch): Promise<void> {
 		if (w.state.paused) w.state.paused = undefined;
 		mkdirSync(stateDir(w), { recursive: true });
 		const env = { DOTZ_WATCH_STATE_DIR: stateDir(w), ...(w.approval_minutes ? { DOTZ_APPROVED: ok ? "1" : "0", DOTZ_APPROVAL_FILE: approvalFile(w) } : {}) };
-		const argv = w.script ? [w.script] : ["/bin/zsh", "-lc", w.command];
+		const argv = w.script ? [w.script] : [WATCH_SHELL, "-lc", w.command];
 		const { code, output } = w.session ? await serialSessionRun(w, ok) : await exec(argv, w.cwd, (w.timeout_seconds ?? RUN_TIMEOUT_MS / 1000) * 1000, env, undefined, k => killers.set(w.id, k));
 		killers.delete(w.id);
 		if (cancelled.delete(w.id)) {
