@@ -74,6 +74,11 @@ function sourcePath(url) {
   const segs = url.pathname.split("/").filter(Boolean).map(sourcePart);
   return (segs.length > 2 ? "…/" : "") + segs.slice(-2).join("/");
 }
+// A tap after a drag-selection inside a row is the end of the selection, not a request to open it (as 15-attachments.js does for a file row).
+document.addEventListener("click", ev => {
+  const row = ev.target.closest?.(".mlist-src a.mlist-row"), sel = getSelection();
+  if (row && !sel.isCollapsed && sel.containsNode(row, true)) ev.preventDefault();
+});
 function sourceListHtml({ head, items }) {
   const rows = items.map(({ title, href }) => {
     const url = new URL(href), site = url.hostname.replace(/^www\./, ""), sub = title || sourcePath(url);
