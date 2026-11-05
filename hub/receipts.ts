@@ -72,8 +72,8 @@ function prune(dir: string): void {
 
 function run(command: string, cwd: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
 	const { promise, resolve: done } = Promise.withResolvers<{ exitCode: number; stdout: string; stderr: string }>();
-	// Own process group, so a hung check is killed with everything it started.
-	const child = spawn("bash", ["-lc", command], { cwd, stdio: ["ignore", "pipe", "pipe"], detached: true });
+	// Own process group, so a hung check is killed with everything it started. DOTZ_HEAVY_HELD: the run it starts must not wait for the slot this process holds (hub/runtime/test-slot.ts).
+	const child = spawn("bash", ["-lc", command], { cwd, stdio: ["ignore", "pipe", "pipe"], detached: true, env: { ...process.env, DOTZ_HEAVY_HELD: "1" } });
 	let timedOut = false;
 	const timer = setTimeout(() => {
 		timedOut = true;
