@@ -351,7 +351,8 @@ export function createPrompts(deps: PromptDeps) {
 		if (text.trimStart().startsWith("<")) return false;
 		for (const q of prompts.filter(q => q.cancelled && Date.now() - q.at > CANCEL_NOTE_MS)) prompts.splice(prompts.indexOf(q), 1);
 		const i = prompts.findIndex(p => !p.steered && text.includes(p.key));
-		if (i >= 0 && prompts[i]!.cancelled) {
+		const started = prompts[i];
+		if (i >= 0 && started!.cancelled) {
 			prompts.splice(i, 1);
 			deps.log("a turn started with a message the owner cancelled; it is stopped");
 			return true;
@@ -372,7 +373,7 @@ export function createPrompts(deps: PromptDeps) {
 			return false;
 		}
 		closeTurn();
-		current = i >= 0 ? prompts.splice(i, 1)[0] : undefined;
+		current = started && prompts.splice(prompts.indexOf(started), 1)[0];   // not by `i`: the prompts dropped above moved it (2026-11-04 15:52: the turn lost its prompt)
 		unpairedRun = !current;
 		if (current) {
 			turns.push({ prompt: current, start: Date.now() });
