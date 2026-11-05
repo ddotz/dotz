@@ -33,16 +33,24 @@ export function isFullSuite(words: string[]): boolean {
 
 const commandLine = (pid: number): string[] => Bun.spawnSync(["/bin/ps", "-o", "command=", "-p", String(pid)]).stdout.toString().trim().split(/\s+/);
 
+// The pid and everything above it, read from one process table.
+function ancestors(pid: number): number[] {
+	const parent = new Map(Bun.spawnSync(["/bin/ps", "-axo", "pid=,ppid="]).stdout.toString().trim().split("\n").map(l => l.trim().split(/\s+/).map(Number) as [number, number]));
+	const out: number[] = [];
+	for (let p = pid; p > 1 && out.length < 32; p = parent.get(p) ?? 0) out.push(p);
+	return out;
+}
+
 // Takes the slot for a whole-suite run. The run is one holder, named by the pid of the process that was started (the coordinator for the
 // workers of a --parallel run), so every worker of that run counts as the holder and a killed run leaves a slot the next waiter reclaims.
-// `env.DOTZ_HEAVY_HELD` is set by hub/receipts.ts, which already holds a slot for the command it runs.
+// A run started under a holder of the slot (dotz_verify, hub/receipts.ts) goes on at once: waiting for it would wait for itself.
 export async function takeSuiteSlot(env: Record<string, string | undefined>): Promise<void> {
 	const worker = env.BUN_TEST_WORKER_ID !== undefined;
 	const run = worker ? process.ppid : process.pid;
 	// Decided once per run: a --isolate worker loads the preload again for every file. The run's pid is part of the value, so a
 	// `bun test` that a test starts (which inherits the variable) decides for itself.
 	const decided = env.TEST_SLOT_DECISION?.split(":");
-	if (decided?.[0] !== String(run)) env.TEST_SLOT_DECISION = `${run}:${!env.DOTZ_HEAVY_HELD && isFullSuite(commandLine(run)) ? "full" : "free"}`;
+	if (decided?.[0] !== String(run)) env.TEST_SLOT_DECISION = `${run}:${isFullSuite(commandLine(run)) ? "full" : "free"}`;
 	if (env.TEST_SLOT_DECISION!.split(":")[1] !== "full") return;
 	const slot = await acquireHeavySlot({
 		dir: join(env.DOTZ_DIR ?? join(homedir(), ".dotz"), "heavy"),
@@ -50,12 +58,11 @@ export async function takeSuiteSlot(env: Record<string, string | undefined>): Pr
 		slots: 1,
 		timeoutMs: WAIT_MS,
 		pid: run,
+		family: ancestors(run),
 		onWait: heldBy => console.error(`[dotz] another full test run holds the heavy slot (${heldBy.slice(0, 80)}); waiting for it before starting`),
 	});
-	// A --isolate worker comes back here for every file, and the wait must not repeat.
-	if (slot.note) {
-		env.TEST_SLOT_DECISION = `${run}:free`;
-		console.error(`[dotz] ${slot.note}`);
-	}
+	// A --isolate worker comes back here for every file: it asks once.
+	env.TEST_SLOT_DECISION = `${run}:free`;
+	if (slot.note) console.error(`[dotz] ${slot.note}`);
 	if (!worker) process.on("exit", slot.release);
 }
