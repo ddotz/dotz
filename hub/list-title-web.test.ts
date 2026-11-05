@@ -15,6 +15,13 @@ const measure = (selector: string) => `(() => {
 const row = (cls: string, title: string) => `<div class="li" style="width:300px"><span class="tx"><span class="hd ${cls}">${title}</span></span></div>
 	<span class="hr" style="display:block;width:300px"><span class="hn1"><span class="nm ${cls}">${title}</span><span class="tag">알림</span></span></span>`;
 
+test("an attachment's name in an open mail fades like any list title", async () => {
+	const v = await hub.view({ width: 390, height: 844 }, "/");
+	await waitFor(v, `getComputedStyle(document.documentElement).getPropertyValue("--sp-5").trim() === "20px"`);
+	await v.evaluate(`document.body.insertAdjacentHTML("beforeend", ${JSON.stringify(`<div style="width:300px"><span class="mr-fname long">${LONG}</span></div>`)}), 0`);
+	expect(await ev<{ lines: number; cut: boolean; mask: boolean }>(v, measure(".mr-fname.long"))).toMatchObject({ lines: 1, cut: true, mask: true });
+});
+
 test("a long title fades on one line, a short one stays clear of the fade, in a full-width and a shrink-to-fit box", async () => {
 	const v = await hub.view({ width: 390, height: 844 }, "/");
 	await waitFor(v, `getComputedStyle(document.documentElement).getPropertyValue("--sp-5").trim() === "20px"`);
