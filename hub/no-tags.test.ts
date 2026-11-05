@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildPayloads, buildSingle } from "./discord-format.ts";
+import { dropForLine } from "./forline.ts";
 import { classify } from "./push.ts";
 import { parseTone, previewSource, stripMarkers } from "./tone.ts";
 
@@ -39,6 +40,22 @@ const TABLE: [string, string][] = [
 	["[Re: 안녕하세요] 제목", "[Re: 안녕하세요] 제목"],
 	["```\n[done] 코드 안\n[file] x\n```", "```\n[done] 코드 안\n[file] x\n```"],
 	["const a = [1, 2];", "const a = [1, 2];"],
+	["`[later]` 이동이 끝나요.", "이동이 끝나요."],
+	["이동이 끝나요. `[later]`", "이동이 끝나요."],
+	["이동이 끝나요. [later]", "이동이 끝나요."],
+	["그 턴은 `[later]`로 끝나요.", "그 턴은 `[later]`로 끝나요."],
+	["`[later]` 표시를 고쳤어요.", "`[later]` 표시를 고쳤어요."],
+	["- `[later]`: 미루는 표식", "- `[later]`: 미루는 표식"],
+	["[gateway check] [done] 안 됐어요", "안 됐어요"],
+	["[web:alert] 멈췄어요", "멈췄어요"],
+	["진행 중: [ask] 옮겨요", "진행 중: 옮겨요"],
+];
+
+// The hub keeps these lines in stripMarkers for the orchestrator's raw read; its owner surfaces run dropForLine, the page does both in one.
+const FOR_LINES: [string, string][] = [
+	["옮겼어요.\n**For 땃쥐:** 재시작", "옮겼어요."],
+	["옮겼어요.\n\n-# For 땃쥐: 재시작", "옮겼어요."],
+	["옮겼어요.\n- 땃쥐 몫: 없음", "옮겼어요."],
 ];
 
 // The web file is a classic script: take the strip + parseTone source (TONE_TAGS up to the api section) and run it.
@@ -46,13 +63,19 @@ function webFns(): { stripMarkers: (s: string) => string; parseTone: (s: string)
 	const src = readFileSync(join(import.meta.dir, "..", "web", "js", "02-basic-markdown.js"), "utf8");
 	const from = src.indexOf("const TONE_TAGS");
 	const to = src.indexOf("/* ---------- api ----------");
-	return new Function(`${src.slice(from, to)}; return { stripMarkers, parseTone };`)();
+	return new Function(`const botName = "dotz", escRe = s => s; ${src.slice(from, to)}; return { stripMarkers, parseTone };`)();
 }
 
 describe("owner-facing text has no [tag]", () => {
 	const web = webFns();
 	test("hub stripMarkers: input -> shown text", () => {
 		for (const [input, shown] of TABLE) expect([input, stripMarkers(input)]).toEqual([input, shown]);
+	});
+	test("a For <bot> line goes on the hub and the page alike", () => {
+		for (const [input, shown] of FOR_LINES) {
+			expect([input, dropForLine(input)]).toEqual([input, shown]);
+			expect([input, web.stripMarkers(input).trimEnd()]).toEqual([input, shown]);
+		}
 	});
 	test("web stripMarkers gives the same text as the hub", () => {
 		for (const [input, shown] of TABLE) expect([input, web.stripMarkers(input)]).toEqual([input, shown]);

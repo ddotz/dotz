@@ -191,23 +191,48 @@ function toneLead(root, tone) {
 // Machine markers never reach the owner as text (owner 2026-10-23). Same shapes as hub/tone.ts stripMarkers (keep in step):
 // known marker shapes at line start (behind an optional list dash, `**` or `**name**: ` lead), outside ``` fences; any
 // other bracket is content. Status words, [lane <word>], [dotz ...], [orchestrator-guard], [지금 도는 것], [attachment],
-// [system], [owner via <x>], [ok | 12ms], [routine:...], [10-23]; a left-over [file] line is dropped.
-const MK_BODY = "(?:run|wait|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|대기|결정|실패|경고|차단|부분|나중|오류|attachment|system|handover|keepalive|orchestrator-guard|지금 도는 것|now running|dotz(?: [a-z][\\w:-]*(?: [^\\]\\n]{1,40})?)?|lane [a-z가-힣][^\\]\\n]{0,30}|owner via [^\\]\\n]{1,30}|(?:ok|error|err|fail)[ ]*\\|[^\\]\\n]{1,24}|routine:[^\\]\\n]{1,60}|\\d{2}-\\d{2})";
-const MK_LEAD = new RegExp("^([ \\t]*(?:[-*][ \\t]+)?(?:\\*\\*[^*\\n]{1,60}\\*\\*:?[ \\t]+)?)(\\*\\*)?\\[" + MK_BODY + "\\](\\*\\*)?[ \\t]*", "i");
+// [system], [owner via <x>], [ok | 12ms], [routine:...], [10-23]; a left-over [file] line is dropped. A control word also acts as one opening the
+// message, alone on a line, or closing it after a finished sentence (bare, in a code span or bold); a word that names it, a particle or a list keeps it.
+// A lone `-` closing a message and a "For <bot>:" line (hub/forline.ts) go too; the page reads no other rule of these.
+const MK_BODY = "(?:run|wait|done|ask|fail|warn|blocked|partial|later|ok|error|err|완료|진행|대기|결정|실패|경고|차단|부분|나중|오류|attachment|system|handover|keepalive|orchestrator-guard|gateway check|web:[a-z-]+|지금 도는 것|now running|dotz(?: [a-z][\\w:-]*(?: [^\\]\\n]{1,40})?)?|lane [a-z가-힣][^\\]\\n]{0,30}|owner via [^\\]\\n]{1,30}|(?:ok|error|err|fail)[ ]*\\|[^\\]\\n]{1,24}|routine:[^\\]\\n]{1,60}|\\d{2}-\\d{2})";
+const MK_LEAD = new RegExp("^([ \\t]*(?:[-*][ \\t]+)?(?:\uc9c4\ud589 \uc911:[ \\t]*)?(?:\\*\\*[^*\\n]{1,60}\\*\\*:?[ \\t]+)?)(\\*\\*)?\\[" + MK_BODY + "\\](\\*\\*)?[ \\t]*", "i");
+const MK_WORD = "\\[(?:run|wait|done|ask|fail|later|keepalive)\\]";
+const MK_OPEN = new RegExp("^[ \\t]*(`|\\*\\*)?" + MK_WORD + "\\1(?:[ \\t]+(?!(?:\ub9c8\ucee4|\ud45c\uc2dc|\ud45c\uc2dd|\ubb38\uad6c|\uc81c\uc5b4\uc5b4|\ub2e8\uc5b4|\ud1a0\ud070|\uae00\uc790|\uc2e0\ud638|\ucc98\ub9ac|\ub204\ucd9c|\uac19\uc740|marker|sentinel|token|word))|[ \\t]*$)", "i");
+const MK_ALONE = new RegExp("^[ \\t]*(`|\\*\\*)?" + MK_WORD + "\\1[ \\t]*$", "i");
+const MK_CLOSE = new RegExp("(?<=[.!?\u2026\uc694\ub2e4])[ \\t]+(`|\\*\\*)?" + MK_WORD + "\\1[ \\t]*$", "i");
+const forRe = () => new RegExp(`^\\s*(?:-#?\\s+)?(?:\\*\\*)?(?:For (?:${escRe(botName)}|땃쥐):|(?:${escRe(botName)}|땃쥐) 몫:)`, "i");
 // keepFiles: a message body keeps its `[file]` lines for the attachment chips (fileLines, 15-attachments.js); mdNode drops them.
 function stripMarkers(text, keepFiles = false) {
   text = String(text ?? "");
-  if (!text.includes("[")) return text;
-  let fence = false;
-  const out = [];
+  if (!/\[|몫:|For |<project-info>|\n[ \t]*-\s*$/.test(text)) return text;
+  text = text.replace(/\s*<project-info>[\s\S]*?(?:<\/project-info>|$)/g, "");
+  let fence = false, opened = false, tail = -1;
+  const out = [], fors = [], forLine = forRe();
   for (const line of text.split("\n")) {
-    if (/^\s*```/.test(line)) { fence = !fence; out.push(line); continue; }
-    if (fence) { out.push(line); continue; }
+    if (/^\s*```/.test(line) || fence) {
+      if (/^\s*```/.test(line)) fence = !fence;
+      out.push(line);
+      if (line.trim()) tail = -1;
+      continue;
+    }
     if (/^[ \t]*\[file\][ \t]/i.test(line)) { if (keepFiles) out.push(line); continue; }
+    if (forLine.test(line)) { fors.push(line); continue; }
     let l = line;
     for (let m = MK_LEAD.exec(l); m; m = MK_LEAD.exec(l)) l = m[1] + l.slice(m[0].length);
+    if (!opened && l.trim()) {
+      opened = true;
+      const m = MK_OPEN.exec(l);
+      if (m) l = l.slice(m[0].length);
+    }
+    if (MK_ALONE.test(l)) l = "";
+    if (l.trim()) tail = out.length;
     out.push(l);
   }
+  // A message that is only the line keeps it: nothing else would be drawn.
+  if (!out.some(l => l.trim())) return [...out, ...fors].join("\n");
+  if (tail < 0) return out.join("\n");
+  if (out[tail].trim() === "-" && out.slice(0, tail).some(l => l.trim())) out[tail] = "";
+  else out[tail] = out[tail].replace(MK_CLOSE, "");
   return out.join("\n");
 }
 function parseTone(text, keepFiles = false) {

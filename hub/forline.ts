@@ -4,7 +4,8 @@ import { NAME } from "./config.ts";
 // A report's "For <bot>:" / "<bot> 몫:" line is a chore for the orchestrator (empty, "없음", "-", or a real hand-off). The
 // orchestrator reads the raw report; the owner's chat view and Discord never show the line (2026-10-23, "땃쥐 몫: 없음").
 const NAME_RE = NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const FOR_LINE = new RegExp(`^\\s*(?:-\\s+)?(?:For ${NAME_RE}:|${NAME_RE} 몫:)`, "i");
+// 땃쥐 is the other gateway's name: reports stored there still carry it. `-# ` is how a system note is stored (hub/outbound.ts).
+const FOR_LINE = new RegExp(`^\\s*(?:-#?\\s+)?(?:\\*\\*)?(?:For (?:${NAME_RE}|땃쥐):|(?:${NAME_RE}|땃쥐) 몫:)`, "i");
 const FENCE = /^\s*```/;
 
 export function dropForLine(text: string): string {

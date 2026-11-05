@@ -301,6 +301,46 @@ test("OmO frames of a run with a raw mid-run message still deliver the answer", 
 	expect(state.posts).toEqual([{ target: "web", text: "both are done", replyTo: undefined }]);
 });
 
+test("words around [later] reach the owner as a note, and the request stays open until the worker's answer", async () => {
+	for (const said of ["`[later]` 이동이 끝나면 등록할게요.\n\n[later]", "이동이 끝나면 등록할게요.\n\n`[later]`", "이동이 끝나면 등록할게요. [later]"]) {
+		const notes: { target: string; text: string }[] = [];
+		const { q, state, startTurn } = setup([], [], { interim: (target, text) => notes.push({ target, text }) });
+		startTurn("옮겨 줘", { target: "web", replyTo: "m1" });
+		q.workersSpawned([{ id: "st_move" }]);
+		q.onAnswer(said);
+		state.working = false;
+		q.settleTurn();
+		expect(notes).toEqual([{ target: "web", text: "이동이 끝나면 등록할게요." }]);
+		expect(state.posts).toEqual([]);
+		expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["m1"]);
+		q.workersDone(["st_move"]);
+		q.onAnswer("`[later]` 복사 중이에요.\n\n[later]");
+		expect(notes.at(-1)).toEqual({ target: "web", text: "복사 중이에요." });
+		expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["m1"]);
+		q.onAnswer("다 옮겼어요");
+		await Promise.resolve();
+		expect(state.posts).toEqual([{ target: "web", text: "다 옮겼어요", replyTo: "m1" }]);
+		expect(q.deferredOpen()).toEqual([]);
+	}
+});
+
+test("a dotz_send that holds [later] leaves the request open, a sentence about the word answers as usual", async () => {
+	const { q, state, startTurn } = setup();
+	startTurn("옮겨 줘", { target: "web", replyTo: "m1" });
+	q.workersSpawned([{ id: "st_move" }]);
+	q.onAnswer("[later]");
+	state.working = false;
+	q.settleTurn();
+	q.sent("web", "복사 중이에요. [later]", "m1");
+	expect(q.deferredOpen().map(d => d.replyTo)).toEqual(["m1"]);
+	const about = setup();
+	about.startTurn("왜 그래?", { target: "web", replyTo: "m2" });
+	about.q.onAnswer("그 턴은 `[later]`로 끝나요.");
+	await Promise.resolve();
+	expect(about.state.posts).toEqual([{ target: "web", text: "그 턴은 `[later]`로 끝나요.", replyTo: "m2" }]);
+	expect(about.q.deferredOpen()).toEqual([]);
+});
+
 test("a turn that defers to a background worker sends nothing; the run the worker's result wakes answers that request", async () => {
 	const { q, state, open, startTurn } = setup([], []);
 	startTurn("fix the sidebar", { target: "web" });

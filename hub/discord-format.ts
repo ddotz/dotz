@@ -2,6 +2,7 @@
 // Moved out of discord.ts unchanged; discord.ts re-exports the public functions. No module state, no imports from discord.ts.
 import { isSnowflake } from "./threads.ts";
 import { DECISION_HEAD } from "./choices.ts";
+import { dropForLine } from "./forline.ts";
 import { metaToSubtext, parseTone, plainChoice, TONE_EMOJI } from "./tone.ts";
 
 const LIMIT = 1900;
@@ -73,7 +74,7 @@ export const reference = (replyTo?: string) => (replyTo && isSnowflake(replyTo) 
 // Plain message text: the explicit marker becomes the one status emoji, the model's own emoji are stripped (before the
 // status emoji is added), choice blocks lose their quote prefixes and meta lines become subtext.
 function plainParts(text: string): { emoji: string; body: string } {
-	const { tone, text: bare } = parseTone(text);
+	const { tone, text: bare } = parseTone(dropForLine(text));
 	return { emoji: tone ? TONE_EMOJI[tone] : "", body: noEmoji(metaToSubtext(plainChoice(readable(tone ? bare.trimStart() : bare)))) };
 }
 

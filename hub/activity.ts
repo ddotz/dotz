@@ -6,7 +6,7 @@ import { broadcast, emitActivity } from "./events.ts";
 import { mask, secretValues } from "./providers.ts";
 import { now } from "./config.ts";
 import { isNote } from "./i18n.ts";
-import { isLater } from "./tone.ts";
+import { stripLater } from "./tone.ts";
 import { stripSteerMark } from "./steer-mark.ts";
 import type { AgentEvent, SubagentUpdate } from "./runtime/types.ts";
 
@@ -47,8 +47,8 @@ export function ownIntent(args: unknown, intent?: string): boolean {
 export function emitEventActivity(source: string, ev: AgentEvent): void {
 	if (ev.type === "subagent") return trackSubagent(source, ev.update);
 	if (ev.type !== "activity") return;
-	const a = ev.row;
-	if (a.type === "text" && isLater(a.text)) return;
+	const a = ev.row.type === "text" ? { ...ev.row, text: stripLater(ev.row.text) } : ev.row;
+	if (a.type === "text" && !a.text) return;
 	emitActivity({ ts: now(), kind: "activity", source, ...a, text: scrub(a.text), ...(a.args !== undefined ? { args: scrub(a.args) } : {}), ...(a.intent ? { intent: scrub(a.intent) } : {}) });
 }
 
@@ -162,7 +162,7 @@ function itemsOf(lines: string[]): TranscriptItem[] {
 		} else if (m.role === "assistant") {
 			for (const b of Array.isArray(m.content) ? m.content : []) {
 				if (b.type === "thinking" && b.thinking?.trim()) items.push({ ts, type: "thinking", text: scrub(b.thinking.trim()) });
-				else if (b.type === "text" && b.text?.trim() && !isLater(b.text)) items.push({ ts, type: "text", text: scrub(b.text.trim()) });
+				else if (b.type === "text" && stripLater(b.text ?? "").trim()) items.push({ ts, type: "text", text: scrub(stripLater(b.text!).trim()) });
 				else if (b.type === "toolCall") {
 					const label = summary(b.arguments, b.intent);
 					items.push({ ts, type: "tool_call", tool: b.name, intent: scrub(label), text: label ? `${b.name}: ${scrub(label)}` : String(b.name ?? ""), args: scrub(JSON.stringify(b.arguments ?? {}, null, 2)) });
