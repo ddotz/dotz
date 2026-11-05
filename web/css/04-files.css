@@ -93,7 +93,7 @@ dialog.lbox::backdrop { background: transparent; }
 .bm .md p.h { margin: var(--sp-6) 0 var(--sp-2); font-size: 17px; line-height: 26px; } .bm .md p.h b { font-weight: 700; } .bm .md p.h:first-child { margin-top: 0; }
 .bm .md ul, .bm .md ol { margin: 0 0 var(--sp-3); padding-left: var(--sp-6); }
 .bm .md li + li { margin-top: var(--sp-1); }
-.bm .md code { padding: var(--sp-05) var(--sp-15); border-radius: 6px; background: var(--layer); color: var(--fg); font-size: .84em; }
+.bm .md code, .dc-dr-b code, .tr-rb code { padding: var(--sp-05) var(--sp-15); border-radius: 6px; background: var(--layer); color: var(--fg); font-size: .84em; }
 .bm .md code.path { color: var(--accent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
 .bm .md b { font-weight: 700; }
 .bm pre { margin: var(--sp-3) 0 var(--sp-4); padding: var(--sp-3) var(--sp-4); border: 0; border-radius: 12px; background: var(--layer); color: var(--fg); font-size: 13px; line-height: 20px; white-space: pre; overflow-wrap: normal; overflow: auto; max-height: 360px; }

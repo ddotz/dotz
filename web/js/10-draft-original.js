@@ -50,6 +50,14 @@ function orgFill(pane, d, t, retry) {
     files.length ? el("div", { class: "od-files" }, ...files.map(({ f, i }) => el("a", { class: "dr-att", href: mailFileUrl(m.key, i), target: "_blank", rel: "noopener", title: `${f.name} 열기` },
       icon("clip"), el("span", { class: "dr-fn", text: f.name }), f.size ? el("span", { class: "dr-fs", text: mailSize(f.size) }) : null))) : null].filter(Boolean));
 }
+// Whether a draft has an original to open: the hub says so with its files (`original`), so a block a session wrote, with nothing behind it, offers no 원문.
+// Until the answer is here the sheet shows no tab; `repaint` draws it once it is.
+function orgHas(ref, t, repaint) {
+  const st = ref ? DRF.st[ref] : null;
+  if (st) return st.original !== false;
+  if (ref) { DRF.pc[ref] = t ? pqPc(t) : null; drfLoad(ref).then(repaint); }
+  return false;
+}
 // The comment a combined card (reply + mail) answers, as a compact block at the top of the card: the side panel has no room beside the mail part, so
 // the same pane content (orgFill) is drawn inline under a 댓글 원문 header. Null unless `d` is a comment reply.
 function orgInline(d, t) {

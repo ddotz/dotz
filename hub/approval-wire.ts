@@ -155,9 +155,11 @@ export function discordGatewayAnswer(target: string, conv: string, text: string,
 	return true;
 }
 
-export type WaitingCard = BatchCard & { to: string; sendable: boolean; group: string; info: string[] };
+export type WaitingCard = BatchCard & { to: string; sendable: boolean; editable: boolean; group: string; info: string[] };
 
 // The lines a card carries above its draft (원댓글, 메일 대조, 확인 필요, a note of the bot): what the owner reads before he decides.
+// A draft whose words POST /api/drafts/<ref>/body can change; a block a session wrote lives only in its message, so 고치기 asks the session instead.
+const textEditable = (ref: string): boolean => !!commentDraftOf(ref) || getDraft(ref)?.status === "pending";
 export const cardInfo = (text: string): string[] => {
 	const lines = text.split("\n"), stop = lines.findIndex(l => l.startsWith(">") || l.startsWith("결정"));
 	return (stop < 0 ? [] : lines.slice(0, stop)).map(l => l.trim().replace(/^\[[^\]]+\][ \t]*/, "")).filter(l => l && !/^-# /.test(l)).slice(0, 8).map(l => l.slice(0, 300));
@@ -201,7 +203,7 @@ export function waitingCards(): WaitingCard[] {
 	};
 	const open = openDraftCards().map(c => ({ ref: c.ref, to: c.to, question: c.title, text: c.text, draft: c.draft, notice: c.id }));
 	const held = approvals.held().map(h => ({ ...batchCard(h.ref, staged(h.ref, h.text)), to: convOfTarget(h.target) })).filter(h => !open.some(o => o.ref === h.ref && o.to === h.to));
-	return [...open, ...held].map(c => ({ ...c, sendable: sender.can(c.ref, "send"), group: groupOf(c.ref, c.to, entries, comments).key, info: cardInfo(c.text) }));
+	return [...open, ...held].map(c => ({ ...c, sendable: sender.can(c.ref, "send"), editable: textEditable(c.ref), group: groupOf(c.ref, c.to, entries, comments).key, info: cardInfo(c.text) }));
 }
 
 /** The waiting cards by app instance, largest group first; one category never mixes into another. */
@@ -306,7 +308,7 @@ export async function approvalRoute(req: Request, url: URL, deps: { login: strin
 			if (!c.mail || getDraft(c.mail)?.status !== "pending") return json({ error: "함께 보낼 메일이 없어요" }, 404);
 			patchDraft(c.mail, { body: text });
 		} else if (c) setCommentDraftText(ref, text);
-		else if (getDraft(ref)?.status === "pending") patchDraft(ref, { body: text });
+		else if (textEditable(ref)) patchDraft(ref, { body: text });
 		else return json({ error: "이미 처리됐거나 없는 초안이에요" }, 404);
 		log(`draft ${ref}${b.part === "mail" ? " (mail)" : ""}: the owner edited its text in place (${text.length} chars)`);
 		return json({ ok: true });

@@ -206,3 +206,27 @@ test("a gateway nudge does not make the session's next untagged reply a report f
 	l.stopLane("note-nudge");
 	await advance(300);
 });
+
+// 2026-11-05: the session got "[owner via web] 1) 보내기" without the question, while MODE.md tells it to act on "결정 답: ... → 1) 보내기".
+test("a button on a session's send approval reaches the session as 결정 답 with the question, 고치기 with the change", async () => {
+	const { webAnswer } = await import("./approval-wire.ts");
+	const { emit } = await import("./events.ts");
+	const { listNotices } = await import("./notices.ts");
+	const { deliverAnswer } = await import("./routes.ts");
+	const { SHOT_LABELLED } = await import("./owner-text.fixture.ts");
+	const { agent } = await working("note-answer");
+	const ask = (ts: string) => {
+		emit("inbox", { ts, kind: "lane_report", source: "lane:note-answer", lane: "note-answer", text: SHOT_LABELLED });
+		return listNotices(100).items.find(n => n.decision?.state === "open" && n.decision.to === "lane:note-answer")!;
+	};
+	const q = "이 메일을 회사 메일로 보낼까요? (hatch-5d3d419)";
+	const tap = async (n: number, label: string, note?: string) => {
+		const card = ask(new Date(Date.parse("2050-02-01T00:00:00.000Z") + n * 1000).toISOString());
+		expect((await webAnswer(card.id, { n, label, ...(note ? { note } : {}) }, "me", a => deliverAnswer({ ...a, login: "me" }))).status).toBe(200);
+		return agent.sent.at(-1)!.text;
+	};
+	expect(await tap(1, "보내기")).toContain(msg().decisionAnswer([{ q, n: 1, label: "보내기" }]));
+	const edit = await tap(2, "고치기", "제목을 줄여 줘");
+	expect(edit).toContain(msg().decisionAnswer([{ q, n: 2, label: "고치기" }]));
+	expect(edit).toContain("2) 고치기 - 제목을 줄여 줘");
+});
