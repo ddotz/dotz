@@ -847,12 +847,14 @@ function monChronoNodes(it, names) {
       return x;
     } }];
   };
-  const msgs = [...(it.mon && !held ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunRow(it) }] : []), ...runs.slice(cut).flatMap(rep), ...(held ? [] : mf ? it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, node: () => monConvNode(t, it.name) }))];
+  const msgs = [...(it.mon && !held ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunRow(it) }] : []), ...runs.slice(cut).flatMap(rep), ...(held ? [] : mf ? it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, mail: true, node: () => monConvNode(t, it.name) }))];
   // A mail app reads like a mailbox, newest on top (owner 2026-10-27); a monitor stays a chat, oldest to newest. Equal times keep their order.
   // A monitor's log reads like the prototype's list, newest on top; its latest run leads on a tie.
   const newestTop = monMailList(it) || !!it.mon;
   msgs.sort((a, b) => newestTop ? b.at - a.at : a.at - b.at);
-  let nodes = msgs.map(x => x.node()).filter(Boolean);
+  // A mail list draws the newest mbDrawn mails; the rest comes a page at a time (mbMoreNodes). Select-all and the count read MBOX.vis, not these rows.
+  const hidden = withMails ? new Set(msgs.filter(x => x.mail).slice(mbDrawn(`${it.key}|${MON.mailFilter}`))) : null;
+  let nodes = msgs.filter(x => !hidden || !hidden.has(x)).map(x => x.node()).filter(Boolean);
   if (it.mon) {   // the compact rows of one stretch share one card; an opened report or a decision card ends the stretch
     const out = [];
     let box = null;
@@ -864,6 +866,7 @@ function monChronoNodes(it, names) {
   }
   if (cut && newestTop) nodes.push(...(it.mon ? [monOlderSentinel(it.key, cut, "end")] : []), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
   else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
+  if (hidden && hidden.size) nodes.push(...mbMoreNodes(hidden.size));
   if (withMails) return [mailFilterBar(it.mails, it.notices.filter(ok)), ...[mbNote(it.mails)].filter(Boolean), mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t))), ...(nodes.length ? nodes : [el("div", { class: "empty", text: held ? "확인할 초안이 없어요" : "이 보기에 해당하는 메일이 없어요" })]), mbFab()];
   return nodes;
 }
@@ -1070,11 +1073,12 @@ function renderMonitoring() {
   if (sel.rq) {   // 답장 대기: the rows of 30-replies.js, redrawn only when an item or the screen's own state changes
     const sig = rqSig();
     if (sig !== MON.sig) {
-      const keep = MON.shown === sel.key ? box.scrollTop : 0;
+      const keep = MON.shown === sel.key ? box.scrollTop : 0, anchor = keep > 0 ? rqAnchor() : null;   // the first row in view stays where it was
       MON.sig = sig; MON.shown = sel.key;
       clear($("#mon-head")).append(...monHead(sel));
       clear(tl).append(...rqNodes());
       box.scrollTop = keep;
+      rqHold(anchor);
       edgeFade(box);
     }
     convTitle();
@@ -1096,6 +1100,7 @@ function renderMonitoring() {
   }
   MON.olderBusy = false;
   monObserveOlder();
+  mbObserve();
   convTitle();
   monSeen();
 }

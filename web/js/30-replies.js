@@ -9,7 +9,7 @@
 // a notice through its answer path (answerInline / ntPost, a peer's through /api/peer/act), a store draft through its app's route or the peer act, a held card
 // through trPost. 모두 다시 보내기 hands back only sends the owner already approved and that failed, each by its own route; nothing else sends from here.
 // Reached from 홈 답장 대기, the app rows' 답장 대기 button, the chat's 답장 초안 line and the list row itself; the row shows only while something waits (or it is open).
-const RQ = { local: [], failed: [], done: [], stops: {}, loaded: false, app: "", tab: "all", edit: "", note: {}, busy: new Set(), gone: new Set(), just: new Map(), fold: new Set(), cur: "", sheet: null, shSig: "", rows: null, t: 0 };   // just: a store draft just sent stays as its card, 보냈어요 in the action row's place, until the queue is opened again
+const RQ = { local: [], failed: [], done: [], stops: {}, loaded: false, app: "", tab: "all", edit: "", note: {}, busy: new Set(), gone: new Set(), just: new Map(), fold: new Set(), cur: "", sheet: null, shSig: "", rows: null, t: 0, lim: {}, reset: false };   // just: a store draft just sent stays as its card, 보냈어요 in the action row's place, until the queue is opened again
 const RQ_KEY = "replies";
 
 async function rqLoad() {
@@ -81,7 +81,8 @@ const rqRefOf = x => (x.kind === "notice" ? x.n.decision.draft.ref : x.kind === 
 function rqAskRow(x) {
   const o = rqOriginalOf(x), dr = x.kind === "notice" ? x.n.decision.draft : x.kind === "held" ? x.tr.draft : null;
   const who = x.kind === "notice" ? (o && o.who) || (dr && dr.to) || "" : x.kind === "held" ? (dr && dr.to) || "" : x.kind === "kakao" ? x.d.room || "" : (x.d.original && x.d.original.who) || x.d.to || "";
-  const what = x.kind === "notice" ? ntPlain(x.n.title).replace(/\s*\([^()]*\)\s*$/, "") : x.kind === "held" ? draftQ(x.tr.question) : x.kind === "kakao" ? "카카오톡 답장" : x.d.title || "";
+  // What the row is about: the mail's subject, the held draft's subject, a comment's post title or its text; the card's question only when none is known.
+  const what = x.kind === "notice" ? (MAILS.get(x.n.decision.to) || {}).subject || dr.subject || ntPlain(x.n.title).replace(/\s*\([^()]*\)\s*$/, "") : x.kind === "held" ? (dr && dr.subject) || draftQ(x.tr.question) : x.kind === "kakao" ? "카카오톡 답장" : x.d.title || (x.d.original && x.d.original.text) || "";
   return { key: x.key, state: "ask", who, what, inst: x.inst, app: x.label || rqAppName(x.inst), pc: x.pc, at: x.at, why: rqAskWhy(x), x };
 }
 // Every row of the screen: ask (rqAll), fail and sent (this computer's and the peers'), failures first. A failed send whose draft still waits shows once, as the failure,
@@ -295,7 +296,7 @@ function rqUi() {
 }
 function rqTab(k) {
   if (RQ.tab === k) return;
-  RQ.tab = k; RQ.now = true;
+  RQ.tab = k; RQ.now = true; RQ.reset = true; RQ.lim = {};
   motionSwap(rqUi().ls, () => { MON.sig = ""; renderMonitoring(); });
   const box = $("#mon-timeline"); if (box) box.scrollTop = 0;
 }
@@ -305,13 +306,14 @@ function rqFold(key) {
   RQ.now = true; MON.sig = ""; renderMonitoring();
   if (open) for (const k of rqUi().ls.querySelectorAll("[data-kid]")) if (k.dataset.kid === key) motionIn(k, "top");
 }
-// The app chips: shown while one app is picked (an app row's 답장 대기 button), to get back to 전체.
+// The app chips with each app's count: shown while two or more apps wait and the waiting count reaches the triage minimum, or while one app is picked (an app row's 답장 대기 button).
 function rqFilterBar(rows) {
   const by = new Map();
   for (const r of rows) { if (r.state === "sent") continue; const k = rqFilterKey(r.pc, r.inst), cur = by.get(k); by.set(k, { n: (cur ? cur.n : 0) + 1, text: `${r.app || rqAppName(r.inst)}${r.pc ? ` · ${r.pc.name}` : ""}` }); }
   if (RQ.app && !by.has(RQ.app)) RQ.app = "";
-  const chip = (k, text, n) => el("button", { class: `cchip mr-f${RQ.app === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(RQ.app === k), "data-filter": k || "all", onclick: () => { RQ.app = k; MON.sig = ""; monSchedule(); } }, text, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
-  return RQ.app ? el("div", { class: "mr-filter rq-filter", role: "tablist", "aria-label": "앱별 답장" }, chip("", "전체", [...by.values()].reduce((c, v) => c + v.n, 0)), ...[...by].map(([k, v]) => chip(k, v.text, v.n))) : null;
+  const chip = (k, text, n) => el("button", { class: `cchip mr-f${RQ.app === k ? " on" : ""}`, type: "button", role: "tab", "aria-selected": String(RQ.app === k), "data-filter": k || "all", onclick: () => { RQ.app = k; RQ.lim = {}; MON.sig = ""; monSchedule(); } }, text, n ? el("span", { class: "mr-fn", text: String(n) }) : null);
+  const total = [...by.values()].reduce((c, v) => c + v.n, 0);
+  return RQ.app || (by.size >= 2 && total >= TR.min) ? el("div", { class: "mr-filter rq-filter", role: "tablist", "aria-label": "앱별 답장" }, chip("", "전체", total), ...[...by].map(([k, v]) => chip(k, v.text, v.n))) : null;
 }
 // 방금 / N분 전 within the hour, as the prototype's rows, then the plain time.
 const rqWhen = at => { const m = at ? Math.floor((Date.now() - at) / 60_000) : -1; return !at ? "" : m < 1 ? "방금" : m < 60 ? `${m}분 전` : rcWhen(new Date(at).toISOString()); };
@@ -320,30 +322,38 @@ function rqRowNode(r, kid) {
   const at = rqWhen(r.at), head = r.who || r.what || r.app, sub = [r.app, r.who ? r.what : ""].filter(Boolean).join(" · ");
   return el("div", { class: `li nsc-r rq-r ${r.state}`, "data-qr": r.key, ...(kid ? { "data-kid": kid } : {}) },
     el("span", { class: "lead" }, el("span", { class: `dot ${RQ_TONE[r.state]}` })),
-    el("button", { class: "tx nsc-tx", type: "button", onclick: () => rqSheetOpen(r) },
+    el("button", { class: "tx nsc-tx", type: "button", onclick: () => rqSheetOpen(rqRows().find(x => x.key === r.key) || r) },
       el("span", { class: "ln" }, el("span", { class: "hd", text: head }), at ? el("span", { class: "t", text: at }) : null),
       sub || r.why ? el("span", { class: "ln" }, sub ? el("span", { class: "nsc-s", text: sub }) : null, r.why ? el("span", { class: `tag${r.state === "fail" ? " err" : ""}`, text: r.why }) : null) : null));
 }
+// A row as a keyed descriptor: rqSync keeps its node while the signature (everything the row shows) is the same.
+const rqRowDesc = (r, kid) => ({ key: `r:${r.key}`, sig: JSON.stringify([r.state, r.who, r.what, r.app, r.why, rqWhen(r.at), kid || ""]), make: () => rqRowNode(r, kid) });
 // 2 or more failures of one app with the same reason fold into one row; the others stay plain rows.
-function rqFailNodes(rows) {
+function rqFailDescs(rows) {
   const by = new Map(), out = [];
   for (const r of rows) { const k = `${rqPcKey(r.pc)}|${r.inst}|${r.why}`; if (r.why) by.set(k, [...(by.get(k) || []), r]); }
   const done = new Set();
   for (const r of rows) {
     const k = `${rqPcKey(r.pc)}|${r.inst}|${r.why}`, g = r.why ? by.get(k) : null;
-    if (!g || g.length < 2) { out.push(rqRowNode(r)); continue; }
+    if (!g || g.length < 2) { out.push(rqRowDesc(r)); continue; }
     if (done.has(k)) continue;
     done.add(k);
     const open = RQ.fold.has(k), busy = RQ.busy.has(k);
-    out.push(el("div", { class: "li nsc-r rq-r rq-g fail", "data-qg": k },
+    out.push({ key: `g:${k}`, sig: JSON.stringify([busy, open, r.why, rqAppName(r.inst) || r.app, g.map(x => x.key)]), make: () => el("div", { class: "li nsc-r rq-r rq-g fail", "data-qg": k },
       el("span", { class: "lead" }, el("span", { class: `dot ${busy ? "pri" : "err"}` })),
       el("button", { class: "tx nsc-tx", type: "button", "aria-expanded": String(open), onclick: () => rqFold(k) },
         el("span", { class: "ln" }, el("span", { class: "hd", text: `${rqAppName(r.inst) || r.app} ${g.length}건을 못 보냈어요` })),
         el("span", { class: "ln" }, el("span", { class: "nsc-s", text: busy ? "다시 보내는 중" : r.why }))),
       el("button", { class: "btn tonal sm rq-retry", type: "button", "data-k": "retry-all", disabled: busy, text: "모두 다시 보내기", onclick: () => rqRetryAll(g, k) }),
-      el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("drop"))), ...(open ? g.map(x => rqRowNode(x, k)) : []));
+      el("span", { class: "nsc-tr", "aria-hidden": "true" }, icon("drop"))) }, ...(open ? g.map(x => rqRowDesc(x, k)) : []));
   }
   return out;
+}
+// Replies the owner approved that are queued or on their way (a notice's decision.send), of this computer and the others.
+function rqSending() {
+  const seen = new Set();
+  for (const n of [...NT.items, ...rqApps().filter(a => a.pc).flatMap(a => a.notices)]) { const s = n.decision && n.decision.send; if (s && (s.state === "queued" || s.state === "sending")) seen.add(`${n.pc ? n.pc.url : ""}|${n.id}`); }
+  return seen.size;
 }
 function rqPaintHead(rows) {
   const u = rqUi(), n = { ask: 0, fail: 0, sent: 0 };
@@ -354,27 +364,63 @@ function rqPaintHead(rows) {
     rollCount(b.querySelector(".n"), k === "all" || !n[k] ? "" : String(n[k]));
   }
   const fast = (RQ.tab === "all" || RQ.tab === "ask") && n.ask >= TR.min, apps = new Set(rows.filter(r => r.state === "ask").map(r => rqFilterKey(r.pc, r.inst))).size;
-  const text = fast ? `앱 ${apps}곳에서 ${n.ask}건 기다려요` : RQ.tab === "sent" && n.sent ? `오늘 보낸 답장 ${n.sent}건` : "";
+  const sending = rqSending(), text = [fast ? `앱 ${apps}곳에서 ${n.ask}건 기다려요` : RQ.tab === "sent" && n.sent ? `오늘 보낸 답장 ${n.sent}건` : "", sending ? `보내는 중 ${sending}건` : ""].filter(Boolean).join(" · ");
   u.mt.textContent = text; u.fast.hidden = !fast; u.meta.hidden = !text;
 }
-function rqPaintList(rows) {
-  const u = rqUi(), shown = RQ.tab === "all" ? rows : rows.filter(r => r.state === RQ.tab);
-  const build = () => {
-    const nodes = [];
-    if (!shown.length) nodes.push(el("div", { class: "list" }, el("div", { class: "empty", text: RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : "불러오는 중…" })));
-    else for (const [s, label] of RQ_SECS) {
-      const part = shown.filter(r => r.state === s);
-      if (!part.length) continue;
-      if (RQ.tab === "all") nodes.push(el("div", { class: "sec" }, label, " ", el("span", { class: "meta", text: `${part.length}건` })));
-      nodes.push(el("div", { class: "list rq-list" }, ...(s === "fail" ? rqFailNodes(part) : part.map(r => rqRowNode(r)))));
+const RQ_PAGE = 200;   // rows drawn per section; 더 보기 adds a page (the failed section always draws all)
+// Keyed update of one box: a child stays when its key and signature are the same, the rest is removed, replaced or inserted in order.
+function rqSync(box, descs) {
+  const want = new Set(descs.map(d => d.key)), have = new Map();
+  for (const n of [...box.children]) { if (want.has(n.dataset.rk)) have.set(n.dataset.rk, n); else n.remove(); }
+  let at = box.firstChild;
+  for (const d of descs) {
+    let n = have.get(d.key);
+    if (!n || n._sig !== d.sig) {
+      const x = d.make();
+      x._sig = d.sig; x.dataset.rk = d.key;
+      if (n) { if (n === at) at = n.nextSibling; n.remove(); }
+      n = x;
     }
-    return nodes;
-  };
+    if (n === at) at = at.nextSibling; else box.insertBefore(n, at);
+  }
+}
+// The first row in view and its offset from the top of the scroll box; rqHold puts it back after the rows above it changed.
+function rqAnchor() {
+  const box = $("#mon-timeline"), u = rqUi();
+  if (!box || box.scrollTop <= 0 || !u.ls.isConnected) return null;
+  const top = box.getBoundingClientRect().top, n = [...u.ls.querySelectorAll(".rq-r")].find(e => e.getBoundingClientRect().bottom > top);
+  return n ? { key: n.dataset.rk, off: n.getBoundingClientRect().top - top } : null;
+}
+function rqHold(a) {
+  const box = $("#mon-timeline"), n = a && [...rqUi().ls.querySelectorAll(".rq-r")].find(e => e.dataset.rk === a.key);
+  if (n && box) box.scrollTop += n.getBoundingClientRect().top - box.getBoundingClientRect().top - a.off;
+}
+// What the list holds: the section heads and one box of rows per section (their own descriptors under `rows`).
+function rqDescs(shown) {
+  if (!shown.length) { const text = RQ.loaded || NT.loaded ? RQ_EMPTY[RQ.tab] : "불러오는 중…"; return [{ key: "empty", sig: text, make: () => el("div", { class: "list" }, el("div", { class: "empty", text })) }]; }
+  const out = [];
+  for (const [s, label] of RQ_SECS) {
+    const part = shown.filter(r => r.state === s);
+    if (!part.length) continue;
+    if (RQ.tab === "all") out.push({ key: `sec:${s}`, sig: `${label}|${part.length}`, make: () => el("div", { class: "sec" }, label, " ", el("span", { class: "meta", text: `${part.length}건` })) });
+    const lim = s === "fail" ? part.length : RQ.lim[s] || RQ_PAGE, rows = s === "fail" ? rqFailDescs(part) : part.slice(0, lim).map(r => rqRowDesc(r));
+    if (part.length > lim) rows.push({ key: `more:${s}`, sig: String(part.length - lim), make: () => moreRow(`${part.length - lim}개 더 보기`, () => { RQ.lim[s] = lim + RQ_PAGE; MON.sig = ""; monSchedule(); }) });
+    out.push({ key: `list:${s}`, sig: "", make: () => el("div", { class: "list rq-list" }), rows });
+  }
+  return out;
+}
+function rqPaintList(rows) {
+  const u = rqUi(), shown = RQ.tab === "all" ? rows : rows.filter(r => r.state === RQ.tab), reset = RQ.reset;
+  RQ.reset = false;
   const apply = () => {
-    const at = document.activeElement, f = at && u.ls.contains(at) ? at.closest("[data-qr],[data-qg]") : null, fk = f ? (f.dataset.qr ? ["qr", f.dataset.qr] : ["qg", f.dataset.qg]) : null;
-    clear(u.ls).append(...build());
+    const at = document.activeElement, f = at && u.ls.contains(at) ? at.closest(".rq-r") : null, fk = f ? f.dataset.rk : "", anchor = rqAnchor();
+    if (reset) clear(u.ls);
+    const top = rqDescs(shown);
+    rqSync(u.ls, top);
+    for (const d of top) if (d.rows) rqSync([...u.ls.children].find(n => n.dataset.rk === d.key), d.rows);
     u.ls.dataset.on = "1";
-    if (fk) { const n = [...u.ls.querySelectorAll(`[data-${fk[0]}]`)].find(e => e.dataset[fk[0]] === fk[1]); const b = n && n.querySelector(".tx"); if (b) b.focus({ preventScroll: true }); }
+    if (fk) { const n = [...u.ls.querySelectorAll(".rq-r")].find(e => e.dataset.rk === fk), b = n && n.querySelector(".tx"); if (b && document.activeElement !== b) b.focus({ preventScroll: true }); }
+    rqHold(anchor);
   };
   // Rows that left (answered, sent again, dropped) fade out first; a tab change or a fold redraws at once.
   const keys = new Set(shown.map(r => r.key)), gone = RQ.now || !u.ls.dataset.on ? [] : [...u.ls.querySelectorAll("[data-qr]")].filter(n => !keys.has(n.dataset.qr));
@@ -420,6 +466,6 @@ const rqXSig = r => (r.x ? (r.x.kind === "notice" ? [r.x.n.decision.state, r.x.n
 // What the screen shows; it is redrawn only when this changes.
 function rqSig() {
   const rows = (RQ.rows = rqRows());
-  return JSON.stringify([RQ.app, RQ.tab, RQ.edit, [...RQ.busy], [...RQ.just.keys()], [...RQ.fold], TR.min, RQ.loaded, rows.map(r => [r.key, r.state, r.at, r.who, r.what, r.app, r.why, rqXSig(r)])]);
+  return JSON.stringify([RQ.app, RQ.tab, RQ.edit, RQ.lim, rqSending(), [...RQ.busy], [...RQ.just.keys()], [...RQ.fold], TR.min, RQ.loaded, rows.map(r => [r.key, r.state, r.at, r.who, r.what, r.app, r.why, rqXSig(r)])]);
 }
 rqLoad();
