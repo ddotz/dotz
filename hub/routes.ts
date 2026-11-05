@@ -42,6 +42,7 @@ import { draftFileRoute } from "./draft-files.ts";
 import { draftRecipientsRoute } from "./draft-recipients.ts";
 import { stagedFiles } from "../features/reply-drafts/lib/staged.ts";
 import { composeMail, deleteMail, mailKey, recordSentByDotz, mailOpened, MailError, syncMailStates, type MailSourceState, mailBodyRoute, settleMailDrafts, mailCard, mailByKey, mailByThread, mailFileRoute, mailSuggests, mailTarget, mailTargets, postMail, setMailFyi, setMailNoReply, setMailsFyi, mailKeep, setMailSuggest, sentMailEvent, sentReplyRefs, setMailReply, unrepliedMails, type MailDeps } from "./mail.ts";
+import { moveMailRoute } from "./mail-move.ts";
 import { applyMailboxFlags, canOf, isMailAction, mailAction, mailActions, type SyncDeps } from "./mail-sync.ts";
 import { manualDraft } from "./mail-manual.ts";
 import { askText } from "../features/reply-drafts/lib/flow.ts";
@@ -924,6 +925,7 @@ export function makeRoute({ busyNow, restartGateway, restartGatewayNow, mailDeps
 				return json({ error: (error as Error).message }, error instanceof MailError ? error.status : 500);
 			}
 		}
+		if (req.method === "POST" && url.pathname === "/api/mail/move" && mailDeps) return moveMailRoute(await body(req), mailDeps());
 		if (url.pathname === "/api/events") return sseResponse(req.headers.get("last-event-id") ?? url.searchParams.get("last"));
 		if (req.method === "GET" && url.pathname === "/api/history") {
 			const target = url.searchParams.get("target") ?? "main";

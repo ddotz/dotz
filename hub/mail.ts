@@ -457,7 +457,7 @@ export function briefMail(key: string, text: string): boolean {
 }
 
 const plainAsHtml = (body: string | undefined): string | undefined => (body?.trim() ? `<div style="white-space:pre-wrap">${body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</div>` : undefined);
-const BODY_FILE = (key: string) => join(MAIL_FILES, key, "body.html");
+export const BODY_FILE = (key: string) => join(MAIL_FILES, key, "body.html");
 
 // Stores the sanitized HTML body next to the attachments (not in the records file, which stays small). True when a body was kept.
 async function saveHtml(key: string, html: string | undefined, attachments: MailAttachment[]): Promise<boolean> {

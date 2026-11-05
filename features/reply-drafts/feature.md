@@ -27,6 +27,8 @@ setup: bun {repo}/features/reply-drafts/bin/onboard.ts on --to <asking target>
 
 말투 다시 배우기·끄기: `onboard.ts learn [--app <앱|install>] [--room <방 id>] [--from-file <파일>]`, `onboard.ts off`. 보낸 사람을 제한하려면 `~/.dotz/custom/reply-drafts/config.json`의 `senders.only`·`senders.skip`(주소 또는 `@도메인`)을 고쳐요.
 
+잘못된 메일 앱에 들어간 메일 옮기기: `bun {repo}/hub/mail-cli.ts move --key <메일 키> --app <메일 앱>`. 그 앱의 메일로 다시 올라가고 초안도 거기서 만들어져요.
+
 새 메일 초안(답할 메일이 없는 메일): `bun {repo}/hub/mail-cli.ts compose --app <메일 앱> --to <주소> --subject "<제목>" [--attach <경로>]... [--from-library <키워드>] [--origin comment|mail|kakao:<id>]`를 실행하고 본문은 stdin으로 넘겨요. 파일을 붙여 두고 초안을 기록한 뒤 받는이·제목·첨부·본문·보내기/고치기/보내지 않기 블록을 찍으니 그대로 [ask]로 올려요. `결정 답: ... → 1) 보내기`일 때만 `bun {repo}/hub/mail-cli.ts send --draft <코드>`로 보내요. 고치기와 보내지 않기는 위의 `draft.ts revise`·`drop`과 같아요. 웹 메일 앱에는 답장 초안처럼 '메일 초안' 항목으로 보여요.
 
 답글과 메일을 한 장으로: 댓글 답글 초안이 이미 있고 메일이 필요한 게 분명하면(댓글이 파일을 달라고 하고 주소를 적음) `mail-cli.ts compose ... --with-comment <댓글 초안 id>`를 써요. 메일은 별도 [ask] 없이 그 댓글 카드 안에 '함께 보낼 메일'(받는이, 제목, 첨부, 본문)로 붙고, 사용자의 `1) 보내기` 한 번이 `features/comments/bin/comments.ts send <초안 id>`로 답글을 올린 뒤 메일을 보내요(메일이 실패해도 올린 답글은 그대로고 실패를 알려요). 이 메일은 `mail-cli.ts send`·`draft.ts send`로 따로 보내지지 않고, 메일만 다시 물을 때는 `mail-cli.ts ask --draft <메일 초안 id>`예요. 단계 전체는 `features/comments/feature.md`예요.
