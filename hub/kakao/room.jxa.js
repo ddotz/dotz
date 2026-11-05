@@ -25,6 +25,7 @@
 // means the button was (or may have been) pressed but the send is not confirmed, so it must not be sent again; left is what the input
 // still holds after a failed attempt.
 // close {name?} closes only the window of that name when given.
+// attach is in attach.jxa.js, appended to this script (a second osascript -e) by sendfile.ts only, so a text send does not carry it.
 ObjC.import("Foundation");
 ObjC.import("ApplicationServices");
 ObjC.import("AppKit");
@@ -304,7 +305,7 @@ function batch(els, name) {
 	}
 }
 
-function facts(w, deep) {
+function facts(w, deep, budgetMs) {
 	var info = { title: attr(w, "name") };
 	var els = w.uiElements;
 	var roles = batch(els, "role");
@@ -318,15 +319,20 @@ function facts(w, deep) {
 	}
 	if (!deep || info.self) return info;
 	var seen = 0;
+	// `budgetMs` (the file send's gate): the walk ends at the words or at the budget; what it did not reach stays "not shown".
+	var end = budgetMs ? Date.now() + budgetMs : 0;
+	var done = function () {
+		return seen >= MAX_NODES || (end > 0 && (info.self === true || Date.now() > end));
+	};
 	var walk = function (el, depth) {
-		if (seen >= MAX_NODES || depth > MAX_DEPTH) return;
+		if (done() || depth > MAX_DEPTH) return;
 		var kids = [];
 		try {
 			kids = el.uiElements();
 		} catch (e) {
 			return;
 		}
-		for (var i = 0; i < kids.length && seen < MAX_NODES; i++) {
+		for (var i = 0; i < kids.length && !done(); i++) {
 			seen++;
 			var k = kids[i];
 			var role = attr(k, "role");
@@ -372,6 +378,20 @@ function listTable() {
 function windowNamed(name) {
 	var ws = chatWindows();
 	for (var q = 0; q < ws.length; q++) if (sameTitle(attr(ws[q], "name"), name)) return ws[q];
+	return null;
+}
+
+// The message input of a chat window, null when it has none.
+function inputOf(w) {
+	var areas = w.scrollAreas();
+	for (var i = 0; i < areas.length; i++) {
+		try {
+			var t = areas[i].textAreas();
+			if (t.length) return t[0];
+		} catch (e) {
+			// Not a text area: the next scroll area is read.
+		}
+	}
 	return null;
 }
 
@@ -566,14 +586,7 @@ function openRowAt(index, name, expect) {
 function sendInto(name, text, ours, priorPressed) {
 	var w = windowNamed(name);
 	if (!w) return { ok: false, why: "no_window" };
-	var input = null;
-	var areas = w.scrollAreas();
-	for (var i = 0; i < areas.length && !input; i++) {
-		try {
-			var t = areas[i].textAreas();
-			if (t.length) input = t[0];
-		} catch (e) {}
-	}
+	var input = inputOf(w);
 	if (!input) return { ok: false, why: "no_input" };
 	var btn = null;
 	try {
@@ -659,154 +672,6 @@ function sendInto(name, text, ours, priorPressed) {
 	return { ok: false, why: "unclear", pressed: true, ...(held ? { left: held } : {}) };
 }
 
-// attach (the owner's own 나와의 채팅 only, hub/kakao/sendfile.ts) pastes ONE file into the one window titled `name`: the general pasteboard
-// gets the file URL, the window is raised inside KakaoTalk (AXRaise, no activation) with its input focused, and KakaoTalk's own menu item
-// 편집 > 붙여넣기 is pressed (AXPress, no key event). KakaoTalk then shows its file send dialog, whose 전송 button is pressed. `front`: the
-// fallback when no dialog showed: KakaoTalk is brought to the front for that one paste, and the app in front before is put back at once.
-// The owner's pasteboard is saved before and restored after, whatever happened. An input holding the owner's text is never touched.
-// Prints {ok:true, pressed:true} once the dialog closed after the press, or {ok:false, why, pressed?, seen?}: seen names the windows and
-// buttons that were there instead of the dialog (for the send record).
-function pasteMenuItem(proc) {
-	var bar = proc.menuBars[0].menuBarItems();
-	for (var i = 0; i < bar.length; i++) {
-		if (!/^(편집|Edit)$/.test(attr(bar[i], "name"))) continue;
-		var items = bar[i].menus[0].menuItems();
-		for (var k = 0; k < items.length; k++) if (/^(붙여넣기|Paste)$/.test(attr(items[k], "name"))) return items[k];
-	}
-	return null;
-}
-
-function savePasteboard(pb) {
-	var saved = $.NSMutableArray.array;
-	var items = pb.pasteboardItems;
-	var n = items && !items.isNil() ? items.count : 0;
-	for (var i = 0; i < n; i++) {
-		var it = items.objectAtIndex(i);
-		var copy = $.NSPasteboardItem.alloc.init;
-		var types = it.types;
-		for (var t = 0; t < types.count; t++) {
-			var ty = types.objectAtIndex(t);
-			var data = it.dataForType(ty);
-			if (data && !data.isNil()) copy.setDataForType(data, ty);
-		}
-		saved.addObject(copy);
-	}
-	return saved;
-}
-
-// A send button of a sheet of the chat window or of a window that was not there before the paste (the chat's own 전송 is not one).
-function dialogButton(proc, w, before) {
-	var places = [];
-	try {
-		places = places.concat(w.sheets());
-	} catch (e) {}
-	try {
-		var wins = proc.windows();
-		for (var i = 0; i < wins.length; i++) if (before.indexOf(attr(wins[i], "name") + "|" + attr(wins[i], "subrole")) === -1) places.push(wins[i]);
-	} catch (e) {}
-	for (var p = 0; p < places.length; p++) {
-		var btns = [];
-		try {
-			btns = places[p].buttons();
-		} catch (e) {}
-		for (var b = 0; b < btns.length; b++) if (/^(전송|보내기|Send)$/.test(attr(btns[b], "name"))) return { place: places[p], button: btns[b] };
-	}
-	return null;
-}
-
-function seenNow(proc, w) {
-	var out = [];
-	try {
-		var wins = proc.windows();
-		for (var i = 0; i < wins.length; i++) out.push("win:" + attr(wins[i], "name") + "/" + batch(wins[i].buttons, "name").join(","));
-	} catch (e) {}
-	try {
-		var sh = w.sheets();
-		for (var s = 0; s < sh.length; s++) out.push("sheet:" + batch(sh[s].buttons, "name").join(","));
-	} catch (e) {}
-	return out.join(" | ").slice(0, 400);
-}
-
-function attachFile(name, path, front) {
-	var se = Application("System Events");
-	var procs = se.processes.whose({ bundleIdentifier: BUNDLE })();
-	if (!procs.length) return { ok: false, why: "not_running" };
-	var proc = procs[0];
-	var w = windowNamed(name);
-	if (!w) return { ok: false, why: "no_window" };
-	var input = null;
-	var areas = w.scrollAreas();
-	for (var i = 0; i < areas.length && !input; i++) {
-		try {
-			var t = areas[i].textAreas();
-			if (t.length) input = t[0];
-		} catch (e) {}
-	}
-	if (!input) return { ok: false, why: "no_input" };
-	if (!freeValue(attr(input, "value"), attr(input, "placeholderValue"))) return { ok: false, why: "owner_text" };
-	var item = pasteMenuItem(proc);
-	if (!item) return { ok: false, why: "no_paste_item" };
-	var before = batch(proc.windows, "name").map(function (n, k) {
-		return n + "|" + String(batch(proc.windows, "subrole")[k] || "");
-	});
-	var from = "";
-	try {
-		from = String(se.processes.whose({ frontmost: true })()[0].bundleIdentifier());
-	} catch (e) {}
-	var pb = $.NSPasteboard.generalPasteboard;
-	var saved = savePasteboard(pb);
-	var out;
-	try {
-		pb.clearContents;
-		var urls = $.NSMutableArray.array;
-		urls.addObject($.NSURL.fileURLWithPath(path));
-		if (!pb.writeObjects(urls)) return (out = { ok: false, why: "pasteboard" });
-		if (front) proc.frontmost = true;
-		try {
-			w.actions.byName("AXRaise").perform();
-		} catch (e) {}
-		try {
-			input.focused = true;
-		} catch (e) {}
-		try {
-			item.actions.byName("AXPress").perform();
-		} catch (e) {
-			return (out = { ok: false, why: "paste_error", err: String(e).slice(0, 100) });
-		}
-		var hit = until(function () {
-			return dialogButton(proc, w, before);
-		}, 4);
-		if (!hit) {
-			// The paste went in as text (a path, a name): put the input back as it was; nothing was sent.
-			if (!freeValue(attr(input, "value"), attr(input, "placeholderValue"))) {
-				try {
-					input.value = "";
-				} catch (e) {}
-				return (out = { ok: false, why: "pasted_text", seen: seenNow(proc, w) });
-			}
-			return (out = { ok: false, why: "no_dialog", seen: seenNow(proc, w) });
-		}
-		try {
-			hit.button.actions.byName("AXPress").perform();
-		} catch (e) {
-			return (out = { ok: false, why: "press_error", pressed: true });
-		}
-		var gone = until(function () {
-			return dialogButton(proc, w, before) ? null : "gone";
-		}, 5);
-		return (out = gone ? { ok: true, pressed: true } : { ok: false, why: "dialog_stayed", pressed: true, seen: seenNow(proc, w) });
-	} finally {
-		pb.clearContents;
-		if (saved.count) pb.writeObjects(saved);
-		if (front && from && from !== BUNDLE) {
-			try {
-				se.processes.whose({ bundleIdentifier: from })()[0].frontmost = true;
-			} catch (e) {}
-		}
-		if (out && front) out.front = from;
-	}
-}
-
 function readInput() {
 	var data = $.NSFileHandle.fileHandleWithStandardInput.readDataToEndOfFile;
 	var text = $.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding).js;
@@ -829,7 +694,7 @@ function run() {
 		if (req.action === "openlist") return JSON.stringify(openList());
 		if (req.action === "send" && typeof req.name === "string" && req.name && typeof req.text === "string" && req.text)
 			return JSON.stringify(sendInto(req.name, req.text, Array.isArray(req.ours) ? req.ours.filter(function (s) { return typeof s === "string"; }) : [], Array.isArray(req.priorPressed) ? req.priorPressed.filter(function (s) { return typeof s === "string"; }) : []));
-		if (req.action === "attach" && typeof req.name === "string" && req.name && typeof req.path === "string" && req.path.charAt(0) === "/") return JSON.stringify(attachFile(req.name, req.path, req.front === true));
+		if (req.action === "attach" && typeof req.name === "string" && req.name && typeof req.path === "string" && req.path.charAt(0) === "/") return JSON.stringify(attachFile(req.name, req.path));
 		if (req.action === "rows" && typeof req.name === "string" && req.name)
 			return JSON.stringify(readRows(req.name, Math.min(Math.max(1, req.max | 0), 300), Math.min(Math.max(500, req.budgetMs | 0), 6500), req.first === true, Number.isInteger(req.hint) ? req.hint : undefined, Number.isInteger(req.need) ? req.need : 0));
 		if (req.action === "open" && typeof req.name === "string" && req.name && Number.isInteger(req.row) && req.row >= 0) return JSON.stringify(openRowAt(req.row, req.name, req.expect && typeof req.expect === "object" ? req.expect : undefined));

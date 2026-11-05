@@ -2,7 +2,7 @@
 // orchestrator and the owner. Off by default: until `setup` wrote an enabled config, every command except setup/status/off prints
 // one line and does nothing else (no runner call, no gateway call). The db / creds / login / send modules are loaded on first use
 // (variable specifier, like watch.ts does for creds.ts), so `status` and `off` stay cheap and never touch the app.
-import { existsSync, readFileSync, rmdirSync, rmSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, rmdirSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { atomicWrite, cardFile, featureFile, isOn, OFF_LINE, type Deps, pidAlive, type Ports, readJson, readState, RUNNING_LINE, runDry, runLoginOnly, runOnboarding, stepName, WATCH_NAME } from "./onboard.ts";
@@ -204,18 +204,22 @@ async function send(args: Record<string, string | true>, ctx: Ctx, config: Kakao
 // Files go only to the owner's own 나와의 채팅 (the one database room of type 5), so no draft approval: no other room can be named here.
 async function sendFile(argv: string[], args: Record<string, string | true>, ctx: Ctx, config: KakaoConfig): Promise<number> {
 	if (args.self !== true || args.chat !== undefined) return ctx.out("파일은 나와의 채팅에만 보낼 수 있어요: send-file --self --file <경로>"), 2;
-	const files = argv.flatMap((a, i) => (a === "--file" && argv[i + 1] !== undefined && !argv[i + 1]!.startsWith("--") ? [resolve(argv[i + 1]!)] : []));
-	if (!files.length) return ctx.out(USAGE), 2;
+	const given = argv.flatMap((a, i) => (a === "--file" ? [argv[i + 1] ?? ""] : []));
+	// A --file with no path is refused whole, not skipped: the owner asked for that file.
+	if (!given.length || given.some(f => !f || f.startsWith("--"))) return ctx.out(USAGE), 2;
+	const files = given.map(f => resolve(f));
 	if (files.length > MAX_FILES) return ctx.out(`파일은 한 번에 ${MAX_FILES}개까지 보낼 수 있어요`), 2;
 	for (const f of files) {
 		let size: number;
 		try {
 			const st = statSync(f);
 			if (!st.isFile()) return ctx.out(`파일이 아니에요: ${f}`), 1;
+			accessSync(f, constants.R_OK);
 			size = st.size;
 		} catch {
-			return ctx.out(`파일을 찾지 못했어요: ${f}`), 1;
+			return ctx.out(`파일을 찾지 못했거나 읽을 수 없어요: ${f}`), 1;
 		}
+		if (size === 0) return ctx.out(`빈 파일은 보낼 수 없어요: ${f}`), 1;
 		if (size > MAX_FILE_BYTES) return ctx.out(`카카오톡으로 보낼 수 있는 크기(300MB)를 넘어요: ${f}`), 1;
 	}
 	const reader = await ctx.reader(config);
@@ -229,7 +233,8 @@ async function sendFile(argv: string[], args: Record<string, string | true>, ctx
 	const r = await ctx.sendFiles({ files, room: { chatId: self.chatId, name, kind: "self", members: self.members }, all: facts, messages: limit => reader.messages(self.chatId, limit) });
 	if (r.ok) ctx.out(`나와의 채팅에 파일 ${r.sent}개를 보냈어요`);
 	else ctx.out(`${r.sent ? `${files.length}개 중 ${r.sent}개를 보냈어요. ` : ""}보내지 못했어요: ${r.reason ?? "이유를 알 수 없어요"}`);
-	for (const s of r.steps) ctx.log?.(s);
+	if (r.warning) ctx.out(r.warning);
+	if (!r.ok) for (const s of r.steps) ctx.log?.(s);
 	return r.ok ? 0 : 1;
 }
 
