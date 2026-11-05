@@ -34,7 +34,7 @@ import { markRead, markUnread } from "./reads.ts";
 import { activityItems, broadcast, historyEvents, historyPage, ownerMessage, recentEvents, sentFiles, sseResponse } from "./events.ts";
 import { subagentLists } from "./activity.ts";
 import { cancelOmoWorker, retryText, runningOmoWork, workConversation } from "./bgwork.ts";
-import { lastTurnEnd, lastTurnFailed, mailConversation, openTodos, runIntent, runState, stallNudge, workConversationRuns, type RunState } from "./runstate.ts";
+import { lastTurnActed, lastTurnEnd, lastTurnFailed, mailConversation, openTodos, runIntent, runState, stallStep, workConversationRuns, type RunState, type StallMemo } from "./runstate.ts";
 import { isProjectTarget, projectTarget } from "./projectchat.ts";
 import { askedFile, draftAttachRoute, syncCardFiles } from "./draft-attach.ts";
 import { parseFollowup, triggerFollowup } from "./followup.ts";
@@ -143,9 +143,9 @@ function authorized(req: Request, cfOk = false, devOk = false, peerIp?: string):
 
 const compactingNow = (ctx: { compaction?: { state?: string } } | undefined): boolean => ctx?.compaction?.state === "queued" || ctx?.compaction?.state === "compacting";
 // Every 30 s: a conversation (main, a conversation session or a session) resting with plan tasks left and nothing to wait for is told to go on
-// (runstate.ts stallNudge); `nudge` delivers the prompt into that conversation's own session.
+// (runstate.ts stallStep); `nudge` delivers the prompt into that conversation's own session.
 export function startStallSweep(nudge: (conversation: string, r: RunState) => void): void {
-	const told = new Map<string, { at: number[]; since?: string }>();
+	const told = new Map<string, StallMemo>();
 	const timer = setInterval(() => {
 		try {
 			const runs = stateRuns(), now = Date.now();
@@ -153,9 +153,9 @@ export function startStallSweep(nudge: (conversation: string, r: RunState) => vo
 			// nothing woke it (a [run] report stays on disk)
 			const keys = ["main", ...convs.conversations().filter(c => convs.live(c)).map(c => c.primary), ...[...lanes.values()].filter(l => !!l.proc).map(l => `lane:${l.name}`)];
 			for (const k of keys) {
-				const r = runs[k], seen = told.get(k) ?? { at: [] };
-				if (!r || !stallNudge(r, now, seen.at, seen.since)) continue;
-				told.set(k, { at: [...seen.at.filter(at => now - at < 3_600_000), now], since: r.since });
+				const r = runs[k], step = r && stallStep(r, now, told.get(k) ?? { at: [] });
+				if (step) told.set(k, step.memo);
+				if (!r || !step?.nudge) continue;
 				log(`stall: ${k} rested (${r.todos ? `${r.todos} task(s) left` : "promised work not done"}) since ${r.since}; told to go on`);
 				nudge(k, r);
 			}
@@ -197,7 +197,7 @@ function stateRuns(): Record<string, RunState> {
 		lastTurnEnd: lastTurnEnd(mainItems),
 		turnFailed: lastTurnFailed(mainItems),
 		resuming: orch.resuming,
-		lastAnswer: orch.lastText,
+		lastAnswer: orch.lastText, acted: lastTurnActed(mainItems),
 		compacting: compactingNow(orch.ctx),
 		queued: mainOrch.heldCount(),
 		watching: openMonitor(orch.sessionFile),
@@ -219,7 +219,7 @@ function stateRuns(): Record<string, RunState> {
 			lastTurnEnd: lastTurnEnd(items),
 			turnFailed: lastTurnFailed(items),
 			resuming: lane.resuming,
-			lastAnswer: lane.lastText,
+			lastAnswer: lane.lastText, acted: lastTurnActed(items),
 			compacting: compactingNow(lane.ctx),
 			watching: openMonitor(lane.sessionFile),
 			todos: openTodos(readTodo(lane.sessionFile)),
@@ -248,7 +248,7 @@ function stateRuns(): Record<string, RunState> {
 			lastTurnEnd: lastTurnEnd(items),
 			turnFailed: lastTurnFailed(items),
 			resuming: c.o.orch.resuming,
-			lastAnswer: c.o.orch.lastText,
+			lastAnswer: c.o.orch.lastText, acted: lastTurnActed(items),
 			compacting: compactingNow(c.o.orch.ctx),
 			queued: c.o.heldCount(),
 			watching: openMonitor(c.o.orch.sessionFile),

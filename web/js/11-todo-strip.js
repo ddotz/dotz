@@ -310,7 +310,9 @@ function msgNode(e) {
       const fromLane = typeof e.source === "string" && e.source.startsWith("lane:");
       // A session's report or answer is a full message; only the gateway's progress line (update_key) stays one compact note.
       const isNote = e.kind === "out" && !!e.update_key && !e.live && (fromLane || (typeof e.target === "string" && e.target.startsWith("lane:")));
-      const { tone, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text), true) : { tone: "", text };
+      const { tone: mark, text: parsed } = e.kind === "out" || e.kind === "lane_report" ? parseTone(noHandoff(text), true) : { tone: "", text };
+      // A stored [run] or [wait] draws no tag of its own: syncLiveTags gives the newest report the state of now.
+      const parked = parkedTone(mark) && !e.live, tone = parked ? "" : mark;
       // The marker is a status tag in front of the first line (02-basic-markdown.js toneLead), for the orchestrator and a session alike.
       const body = parsed;
       if (isNote) {
@@ -323,6 +325,7 @@ function msgNode(e) {
       const card = e.kind === "lane_report" && !isLaneT(target) ? " rep" : e.target === "alert" ? " alert" : "";
       const head = el("div", { class: "mt" }, name ? el("span", { class: "mn", text: name }) : null, hm ? `${name ? " · " : ""}${hm}` : null);
       if (e.live) return el("div", { class: `bm${card}` }, head, liveNode(body, tone));
+      const liveAttr = parked ? { "data-live-tone": "1", "data-live-of": fromLane ? e.source : e.kind === "lane_report" ? `lane:${e.lane}` : "" } : {};
       const pc0 = !e.relay && (e.kind === "out" || e.kind === "lane_report") ? parseChoices(parsed) : null, pc = pc0 && choiceAsks(e, tone, pc0) ? pc0 : null;
       // A plain alert is one human line with the raw text folded; an alert that asks (a choice block) shows whole, and a tap on it opens
       // the decision sheet (30-notices.js) — the options themselves live there, never in the message body.
@@ -344,7 +347,7 @@ function msgNode(e) {
       const brief = e.kind === "out" && !e.relay && !(pc && pc.blocks.length) ? hcBriefNode(fl.text) : null;
       if (e.kind === "out" && !isRestart(e)) streamIn(brief || md, `${e.ts}|${text.length}`, e.ts);
       const ev = answer && fl.files.length ? md.querySelector(":scope > .ans-ev:last-child") : null;   // the evidence line stays the last thing, under the files
-      return el("div", { class: `bm${card}`, ...(pc && pc.blocks.length > 1 ? { "data-dat": e.ts } : {}) }, head, rpQuote(e), brief ? (tone ? [toneLead(el("div", { class: "md" }), tone), brief] : brief) : toneLead(md, tone), (answer ? ansFiles : filesNode)(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, ev);
+      return el("div", { class: `bm${card}`, ...liveAttr, ...(pc && pc.blocks.length > 1 ? { "data-dat": e.ts } : {}) }, head, rpQuote(e), brief ? (tone || parked ? [toneLead(el("div", { class: "md" }), tone), brief] : brief) : toneLead(md, tone), (answer ? ansFiles : filesNode)(host ? fl.files.map(f => ({ ...f, pc: host })) : fl.files), files, ev);
     }
   }
 }
@@ -407,8 +410,12 @@ function chatPush(en, bulk) {
       const t = e.kind === "lane_report" || laneT ? et : String(e.target ?? "");
       for (const [k, v] of CS.prog) if (v.target === t) dropProgress(k);
     }
+    // Repeated [run]/[wait] reports are one message, as on Discord (hub/lanewire.ts): the newest takes the place of the one before it, until another message stands between.
+    const parked = e.kind === "lane_report" && !e.answering && parkedTone(parseTone(noHandoff(String(e.text ?? ""))).tone);
+    if (parked && CS.parked) { if (!CS.parked.classList.contains("cont")) CS.who = ""; CS.parked.remove(); CS.parked = null; }
     const n = msgNode(e);
     if (n) {
+      if (!pkey) CS.parked = parked ? n : null;
       n.dataset.ts = e.ts;   // the notice jump finds its source message by this (30-notices.js ntFind)
       rpMark(n, e);
       if (CV.div && !CV.divNode && convIncoming(e) && e.ts > CV.div) { CV.divNode = tl.appendChild(convDivider()); CS.who = ""; }
@@ -425,6 +432,7 @@ function chatPush(en, bulk) {
     if (!CS.group) { dayDiv(en.a.ts); CS.group = newGroup(en.a); tl.append(CS.group.node); }
     CS.group.add(en.a);
   }
+  if (!bulk) syncLiveTags();
   const fixed = TL_TOP_NODE && TL_TOP_NODE.parentNode === tl ? 1 : 0;
   while (tl.children.length > ts(target).cap + fixed) (fixed ? tl.children[1] : tl.firstElementChild)?.remove();
   markLive();

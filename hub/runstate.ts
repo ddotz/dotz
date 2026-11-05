@@ -4,8 +4,8 @@
 // composer (web/js/41-runstate.js). The derivation is pure so every case is tested without a gateway.
 import { parseTone } from "./tone.ts";
 export type RunKind = "working" | "waiting" | "idle" | "limited" | "error" | "stopped" | "done";
-// waiting: ask | work | recover (a failed worker the agent is taking up itself) | child | later | capacity · idle: unfinished | interrupted · limited: rate | owner (a billing/auth block) · stopped: owner
-export type RunReason = "ask" | "work" | "recover" | "child" | "later" | "capacity" | "unfinished" | "interrupted" | "unknown" | "rate" | "owner";
+// waiting: ask | standby (no question, the session has nothing to do until the owner writes) | work | recover (a failed worker the agent is taking up itself) | child | later | capacity · idle: unfinished | interrupted · limited: rate | owner (a billing/auth block) · stopped: owner
+export type RunReason = "ask" | "standby" | "work" | "recover" | "child" | "later" | "capacity" | "unfinished" | "interrupted" | "unknown" | "rate" | "owner";
 // work: the background worker the line is about (중단 while it runs, 다시 맡기기 after it failed); cancelled: the owner stopped it.
 // queued: every worker the line could name is still waiting to start, so nothing runs for this conversation yet.
 export type RunState = { kind: RunKind; reason?: RunReason; since?: string; detail?: string; todos?: number; work?: string; cancelled?: boolean; queued?: boolean };
@@ -28,6 +28,8 @@ export type RunInput = {
 	lastTurnEnd?: string;
 	/** The last turn's final answer text: a promise in it ("바로 할게") that nothing is running for is unfinished work. */
 	lastAnswer?: string;
+	/** The newest turn called a tool: a nudged turn that did not has nothing new, and the sweep stops there (stallStep). */
+	acted?: boolean;
 	todos?: { open: number; current?: string };
 	/** A watch the last turn started that has not come back (hub/todo.ts openMonitor): the session waits on its own background job. */
 	watching?: string;
@@ -74,10 +76,12 @@ export function runState(i: RunInput): RunState {
 	if (f && f.status === "failed" && (f.ended_at ?? 0) > (Date.parse(i.lastTurnEnd ?? "") || 0)) return { ...failedRun(f, false), ...todos };
 	if (i.later) return { kind: "waiting", reason: "later", since: i.lastTurnEnd, ...todos };
 	if (i.capacity) return { kind: "waiting", reason: "capacity", detail: short(i.capacity), ...todos };
-	if (open) return { kind: "idle", reason: i.lastTurnEnd ? "unfinished" : "interrupted", since: i.lastTurnEnd, ...(short(i.todos?.current) ? { detail: short(i.todos?.current) } : {}), ...todos };
+	if (open) return { kind: "idle", reason: i.lastTurnEnd ? "unfinished" : "interrupted", since: i.lastTurnEnd, ...(short(i.todos?.current) ? { detail: short(i.todos?.current) } : {}), ...(i.acted === undefined ? {} : { acted: i.acted }), ...todos };
 	// A turn that ended promising work it did not start (2026-11-01 15:20Z) is unfinished even with no plan: the session rested 25
 	// minutes and answered "아직 시작 안 했어".
-	if (i.lastTurnEnd && promisesWork(i.lastAnswer)) return { kind: "idle", reason: "unfinished", since: i.lastTurnEnd, detail: "말한 일을 아직 안 했어요" };
+	if (i.lastTurnEnd && promisesWork(i.lastAnswer)) return { kind: "idle", reason: "unfinished", since: i.lastTurnEnd, detail: "말한 일을 아직 안 했어요", ...(i.acted === undefined ? {} : { acted: i.acted }) };
+	// No open work and it said it waits for the owner (lane stx-xhigh 2026-11-05: five "형 메시지를 기다려요" under 진행 중, told to go on): not finished, not stalled.
+	if (i.lastTurnEnd && waitsForOwner(i.lastAnswer)) return { kind: "waiting", reason: "standby", since: i.lastTurnEnd };
 	// A turn that died on an error ended, but nothing was finished: 끝났어요 under "오류 4" told the owner the opposite (owner 2026-11-04).
 	if (i.lastTurnEnd && i.turnFailed) return { kind: "error", since: i.lastTurnEnd, detail: "답을 끝내지 못했어요" };
 	if (i.lastTurnEnd) return { kind: "done", since: i.lastTurnEnd };
@@ -89,10 +93,20 @@ export type TodoLike = { phases?: { tasks?: { content?: string; status?: string 
 // The last answer promised to do the work itself ("바로 할게") and then the session rested with nothing running. Pure and
 // conservative: the verdict decides one nudge, so a false positive costs a nudge while a miss costs a resting session day-long.
 // Done/ask/fail reports, a closing question and a promise the owner must unlock first ("알려 주면 할게") are not promises.
+// "답을 기다릴게요" ends like a promise, but waiting is no work to go on with.
+const WAIT_PROMISE = /(?:(?:기다릴|대기할)게요?|(?:기다리|대기하)겠(?:습니다|어요|어))[^가-힣]*$/u;
+// Who it waits for and the waiting, in one clause: a build or a video is not the owner, and a watch of its own is caught before this.
+const OWNER_WAIT = /(?:(?<![가-힣])형|오너|답|메시지|지시|말씀|결정|승인|연락)[^\n.!?]{0,24}(?:기다|대기)|(?:답|메시지|지시|말씀|결정|승인|연락)[이가은는을를]?\s*(?:와야|오면|있어야|있으면|받으면)|\bwait(?:ing)?\s+(?:for|on)\s+(?:the\s+owner|your|you\b)/iu;
+/** The last answer says the session has nothing to do until the owner writes: an explicit [wait], or a [run]/unmarked report saying so. */
+export function waitsForOwner(text: string | undefined): boolean {
+	const { tone, text: bare } = parseTone(String(text ?? ""));
+	return tone === "wait" || ((!tone || tone === "run") && OWNER_WAIT.test(bare));
+}
+
 export function promisesWork(text: string | undefined): boolean {
 	if (!text) return false;
 	const { tone, text: bare } = parseTone(String(text));
-	if (tone === "done" || tone === "ask" || tone === "fail") return false;
+	if (tone === "done" || tone === "ask" || tone === "fail" || tone === "wait") return false;
 	const body = bare.trim();
 	if (!body) return false;
 	// A closing question to the owner is a wait on him, not a promise to go on.
@@ -100,10 +114,10 @@ export function promisesWork(text: string | undefined): boolean {
 	return body.split(/\n+|(?<=[.!?！？。…])\s+/u).some(piece => {
 		const sentence = piece.trim();
 		const end = promiseEnd(sentence);
-		if (!end) return false;
+		if (!end || WAIT_PROMISE.test(sentence)) return false;
 		const before = sentence.slice(0, sentence.length - end.length);
-		// "말해 주면 할게", "올리면 그때 할게": a -면 clause before the promise makes it wait on the owner or outside work.
-		return !/[가-힣]면(?=$|[\s,、.!?~…'"’”)\]}])/u.test(before);
+		// "말해 주면 할게", "끝내자고 할 때 쓸게요", "답이 와야 할게": such a clause before the promise makes it wait on the owner or outside work.
+		return !/(?:[가-힣]면|[가-힣] 때(?:에|면)?|(?:와|줘|주셔|받아|있어)야)(?=$|[\s,、.!?~…'"’”)\]}])/u.test(before);
 	});
 }
 
@@ -240,6 +254,15 @@ export function lastTurnFailed(items: Act[]): boolean {
 	return false;
 }
 
+/** Whether the newest turn called any tool: a turn of words only changed nothing. */
+export function lastTurnActed(items: Act[]): boolean {
+	for (let i = items.length - 1; i >= 0; i--) {
+		if (items[i]!.type === "turn_start") return false;
+		if (items[i]!.type === "tool_call") return true;
+	}
+	return false;
+}
+
 export function lastTurnEnd(items: Act[]): string | undefined {
 	for (let i = items.length - 1; i >= 0; i--) if (items[i]!.type === "turn_end") return items[i]!.ts;
 	return undefined;
@@ -248,10 +271,25 @@ export function lastTurnEnd(items: Act[]): string | undefined {
 // The stall rule (owner 2026-10-29: "할일이 남아있는데 쉬는중 뜨다가 ... 바로 작업 진행되도록"): a session resting with plan tasks left and
 // nothing to wait for is told to go on after STALL_MS, once per resting spell, and at most STALL_MAX times an hour so a plan it cannot
 // finish does not loop. hub/routes.ts startStallSweep applies it to the main conversation and every conversation session.
+// A nudged turn with nothing new ends it: no tool called and no plan task closed means the session has nothing to add (OmO stops its todo
+// continuation on no progress the same way), so that spell is not nudged again; the hourly cap alone would burn three turns an hour for ever.
 export const STALL_MS = 90_000;
 export const STALL_MAX = 3;
 export function stallNudge(r: RunState, now: number, told: readonly number[], lastSince?: string): boolean {
 	if (r.kind !== "idle" || r.reason !== "unfinished" || !r.since || r.since === lastSince) return false;
 	if (now - Date.parse(r.since) < STALL_MS) return false;
 	return told.filter(at => now - at < 3_600_000).length < STALL_MAX;
+}
+
+/** What the sweep remembers per conversation: `answering` is set while the turn a nudge asked for has not rested yet. */
+export type StallMemo = { at: number[]; since?: string; answering?: boolean; todos?: number };
+export function stallStep(r: RunState, now: number, seen: StallMemo): { nudge: boolean; memo: StallMemo } {
+	if (r.kind === "working") return { nudge: false, memo: seen };
+	if (seen.answering && r.since && r.since !== seen.since) {
+		const nothingNew = r.kind === "idle" && r.reason === "unfinished" && !r.acted && (r.todos ?? 0) >= (seen.todos ?? 0);
+		if (nothingNew) return { nudge: false, memo: { ...seen, answering: false, since: r.since } };
+		seen = { ...seen, answering: false };
+	}
+	if (!stallNudge(r, now, seen.at, seen.since)) return { nudge: false, memo: seen };
+	return { nudge: true, memo: { at: [...seen.at.filter(at => now - at < 3_600_000), now], since: r.since, answering: true, todos: r.todos ?? 0 } };
 }

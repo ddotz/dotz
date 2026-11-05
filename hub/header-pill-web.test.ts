@@ -34,7 +34,7 @@ const server = Bun.serve({
 		const asset = appAsset(req, p);
 		if (asset) return asset;
 		if (p === "/api/file") return fileRoute(req, url, [ROOT], new Set());
-		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {} });
+		if (p === "/api/state") return json({ name: "dotz", orchestrator: { status: "idle" }, lanes: [], terminals: {}, channels: { work: [] }, discord: {}, runs: { "lane:notify-update": { kind: "working" } } });
 		if (p === "/api/history") return json({ target: url.searchParams.get("target"), events: HIST });
 		if (p === "/api/activity") return json({ items: [], more: false, history: false });
 		if (p === "/api/conversations") return json({ items: [] });

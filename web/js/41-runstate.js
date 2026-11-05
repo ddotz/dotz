@@ -8,8 +8,9 @@ const RUN_DOT = { working: "pri", waiting: "warn", idle: "", limited: "warn", er
 // "답을 기다려요" only when the owner's answer is awaited (a question); work the agent handed off reads as its own progress and is not
 // colored as needing him (owner 2026-10-28: "답을 기다려요" read as waiting on him; he picked "맡긴 작업 진행 중").
 // recover: a background worker failed and the agent takes it up itself (hub/runstate.ts failedRun) - its progress, not a request to the owner.
-const waitLabel = r => r.reason === "ask" ? RUN_LABEL.waiting : runQueued(r) ? "순서를 기다려요" : r.reason === "recover" ? "이어서 처리 중" : "맡긴 작업 진행 중";
-const waitsOnOwner = r => r.kind === "waiting" && r.reason === "ask";
+const waitLabel = r => waitsOnOwner(r) ? RUN_LABEL.waiting : runQueued(r) ? "순서를 기다려요" : r.reason === "recover" ? "이어서 처리 중" : "맡긴 작업 진행 중";
+// standby: no question, but nothing moves until the owner writes (a [wait] report, hub/runstate.ts waitsForOwner).
+const waitsOnOwner = r => r.kind === "waiting" && (r.reason === "ask" || r.reason === "standby");
 // A conversation waiting on work it handed off is progressing: blue on every row that shows it, like this line. One whose turn or whose
 // only worker is still queued has not started, so it is gray and counts as running nowhere; a session held by the limits is the same (S.lanes waiting).
 const runOf = t => (S && S.runs && S.runs[t === MAIN ? "main" : t]) || null;
@@ -86,7 +87,29 @@ function runAction(r, t = target) {
   if (r.kind === "stopped") return { label: "다시 시작", run: ev => runRestart(ev.currentTarget) };
   return null;
 }
+// The live tag of a report: the conversation's state now. `of` is the session the report came from, else the open conversation.
+const liveTone = of => {
+  const r = of ? runOf(of) : runStateOf();
+  return !r || runQueued(r) ? "" : runMoving(r) ? "run" : waitsOnOwner(r) ? "wait" : "";
+};
+// Only the newest message may carry one, so an older [run] and a finished, stopped or exited session show none. Called on every
+// state paint and new message; nothing polls for it.
+function syncLiveTags() {
+  const all = tl.querySelectorAll(".bm"), last = all[all.length - 1];
+  for (const n of tl.querySelectorAll(".bm[data-live-tone]")) {
+    const tone = n === last ? liveTone(n.dataset.liveOf) : "";
+    if ((n.dataset.liveShown || "") === tone) continue;
+    n.dataset.liveShown = tone;
+    const root = n.querySelector(":scope > .md"), old = root.querySelector(".st-tag"), p = old && old.parentNode;
+    if (old) old.remove();
+    if (p && p !== root && !p.textContent.trim()) p.remove();
+    toneLead(root, tone);
+  }
+  // The gateway's live status of a turn that has ended.
+  if (runStateOf() && liveTone() !== "run") for (const t of tl.querySelectorAll(".lv .st-tag")) t.remove();
+}
 function paintRunState() {
+  syncLiveTags();
   const box = $("#runstate");
   if (!box) return;
   const r = runStateOf();
