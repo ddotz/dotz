@@ -14,6 +14,7 @@
 .rc-w { min-width: 0; font: 400 15px/22px var(--font); overflow-wrap: anywhere; }
 .rc-w b { font-weight: 500; }
 .rc-d { margin-left: var(--sp-1); color: var(--fg-3); font-size: 13px; }
+.rc-w > .rc-d.nw-chg { margin-left: 0; font-size: inherit; }
 .rc-d.nw-chg s { color: var(--fg-3); }
 .rc-d.nw-chg em { color: var(--fg-2); font-style: normal; font-weight: 500; }
 .rc-sh { color: var(--fg-2); font-size: 14px; line-height: 20px; font-weight: 600; }
