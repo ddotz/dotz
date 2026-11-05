@@ -109,10 +109,18 @@ export async function bench(c: Ctx): Promise<number> {
 		}
 	};
 	await quiet();
-	const card = (appr0.groups as Json[]).flatMap(g => g.cards as Json[]).find(x => x.sendable);
+	// The card is picked from a fresh list: the draft store keeps only the newest 200, so a card listed at boot can be gone after the API samples above.
+	const sendableOf = (a: Json): Json[] => (a.groups as Json[]).flatMap(g => g.cards as Json[]).filter(x => x.sendable);
+	const bootPick = sendableOf(appr0)[0];
+	const fresh = sendableOf(await get("/api/approvals"));
+	const card = fresh[0];
+	res.approval_pick = { boot_card: bootPick?.ref, boot_card_still_sendable_at_approval: bootPick ? fresh.some(x => x.ref === bootPick.ref) : null, sendable_cards_at_boot: sendableOf(appr0).length, sendable_cards_at_approval: fresh.length };
 	if (card) {
 		const before = snapshot(c.dataDir, 3);
 		const t = await timed(c.base, { method: "POST", path: "/api/approvals", body: { items: [{ ref: card.ref, to: card.to, n: 1 }] } }, h);
+		// An approved send runs the fake zele; wait (bounded) for the recorded would_send line.
+		const shimFile = join(c.out, "shim-calls.jsonl");
+		for (let i = 0; i < 60 && !(existsSync(shimFile) && readFileSync(shimFile, "utf8").includes('"would_send":true')); i++) await Bun.sleep(500);
 		await quiet();
 		writes.draft_status_change = { request_ms: Math.round(t.ms * 100) / 100, status: t.status, files_rewritten: rewritten(before, snapshot(c.dataDir, 3)).slice(0, 6) };
 	}
@@ -184,6 +192,7 @@ export async function bench(c: Ctx): Promise<number> {
 	for (const [k, v] of Object.entries(api as Record<string, { statuses: Record<string, number> }>)) if (Object.keys(v.statuses).some(s => s !== "200")) bad.push(`${k}: statuses ${JSON.stringify(v.statuses)}`);
 	if (failed.length) bad.push(`${failed.length} flood posts failed (${[...new Set(failed)].join(",")})`);
 	if (!c.probe.ok) bad.push("isolation probe has a [FAIL] line");
+	if (sends.length < 1) bad.push("the approved draft left no would_send line in shim-calls.jsonl");
 	if (!calls().length) bad.push("the fake model recorded no call");
 	res.checks = { failed: bad };
 	res.notes = notes;
