@@ -14,7 +14,11 @@ import { EXAMPLES, pastPairs, SEEDED_NOTE, similarPairs, withExamples } from "./
 // `library: "mr"`: only audio (MR) files of one song are taken from the library (a buyer's request); see hub/mail-cli.ts composeMail.
 export type MailSpec = { app: string; to: string; subject: string; body: string; attach?: string[]; fromLibrary?: string; library?: "mr" };
 export type MailView = { id: string; to: string; subject?: string; body: string; attachments: { name: string; size?: number }[]; asksFile?: boolean; libraryMiss?: boolean };
+/** What the mail text is written from: the comment, its author and post, the mail app of the source and the address the mail goes to. */
+export type MailWrite = { app: string; to: string; author: string; text: string; postTitle: string };
 export type MailLink = {
+	/** The mail text in the owner's voice; undefined = none (the fixed text is used). */
+	write?: (spec: MailWrite) => Promise<string | undefined>;
 	/** `notes` (owner-facing "확인: ..." lines) and `libraryMiss` (no file of the library fits) are what composing said besides the id. */
 	compose: (spec: MailSpec) => Promise<{ ok: true; id: string; notes?: string[]; libraryMiss?: boolean } | { ok: false; reason: string }>;
 	/** The status of a mail draft whatever it is ("pending", "sent", ...); missing = only pending drafts are known (`view`). */
@@ -218,7 +222,7 @@ export function createEngine(deps: EngineDeps) {
 				app: src.mailApp,
 				to,
 				subject: title ? `${title} 자료 보내드립니다` : "요청하신 자료 보내드립니다",
-				body: `안녕하세요, ${c.author}님.\n\n댓글로 요청하신 자료를 보내드립니다. 확인 후 부족한 점이 있으면 편하게 말씀해 주세요.\n\n감사합니다.`,
+				body: (await deps.mail.write?.({ app: src.mailApp, to, author: c.author, text: c.text, postTitle: title }).catch(e => (addNote(`확인: 메일 본문을 쓰지 못해 기본 문구로 했어요 - ${e instanceof Error && e.message ? clip(e.message, 160) : "알 수 없는 이유"}`), undefined)))?.trim() || `안녕하세요, ${c.author}님.\n\n댓글로 요청하신 자료를 보내드립니다. 확인 후 부족한 점이 있으면 편하게 말씀해 주세요.\n\n감사합니다.`,
 				fromLibrary: clip(`${title} ${c.text.replace(to, " ")}`, 200),
 				// A writer who says he bought the score already has it: only the MR is attached (the owner's rule; 총보 goes to buyers only).
 				...(BOUGHT.test(c.text) ? { library: "mr" as const } : {}),

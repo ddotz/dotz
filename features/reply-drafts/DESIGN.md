@@ -15,8 +15,10 @@ tone is learned per install, from that install's user, and lives only under `<DA
 3. Deterministic lint (recipient is the sender/reply-to/cc and not the user, `Re:` subject, length, no placeholders, no forbidden
    expression). One retry with the failures listed; what still fails is shown as a warning with the draft.
 4. The same lint runs again right before sending (`draft.ts send`).
-5. Each 2) 고치기 text is stored verbatim and dated under `## 고친 점` of the tone profile of the draft that was revised (its room, else its app).
+5. A revision records only the lasting preference the change shows (the model's `lesson`), dated under `## 고친 점` of the tone profile of the draft that was revised (its room, else its app). A one-off change (`lesson` empty) records nothing; a model that gives no `lesson` leaves the change itself. Only the newest 12, clipped to 200 characters, reach a mail or comment prompt.
 6. `drafts.json` remembers every mail key already looked at, so a mail is not drafted twice.
+7. A mail draft reads the whole mail and the sender's earlier mail, and judges who wrote before writing: `recipient {who, evidence}`, where the evidence must be the sender's own words.
+8. An edit asked outside a card, numbered answers in a chat included, goes through `draft.ts correct`, so the next draft sees it.
 
 ## Approval
 
@@ -46,6 +48,7 @@ A chat message that needs his own decision still asks first (exit 4), since the 
   which level that was; 말투, 고친 점 and 금지 are merged from all levels, install first and the narrower ones later. Writing
   (`learnTone`, `recordCorrection`) goes into exactly one profile. Two rooms of one messenger therefore never share a tone, a room
   that was never written to follows its app, an app without samples follows the install.
+  A profile with corrections or a section of its own is not relearned. A `## ` section the code does not know reaches the rules.
   Legacy: an old `style.md` is read as the `mail` profile until `tone/mail.md` exists (the next write moves it over); for the `youtube`
   and `instagram` apps without samples, `## 예시` of `custom/sns/tone.md` is used (only for those apps, between app and install).
 - `drafts.json` `{drafts, keys}`; draft ids are `R` + 6 base32 characters; a newer draft for the same mail makes the older one stale. Each draft keeps its `app` and `room`.
@@ -65,6 +68,7 @@ corrections turned into a checklist). `lib/persona.ts`:
 - The draft prompt opens with the identity and the reply templates: a fitting template is filled, otherwise the user's own sentences
   are preferred over new ones; samples, rules and corrections refine it.
 - Every `REFINE_EVERY` (5) corrections of a profile, one call folds them into its identity and templates (`maybeRefine`).
+- Reply pairs (`pairs/<app>.jsonl`, `lib/pairs.ts`) are read from the sent mail of the accounts the mail apps name, even when zele is not switched on in config.json. They are refreshed without a model call: the first 500 threads, then the newest 40 once a day. Each pair keeps who it answered, and replies to the same sender lead the examples.
 - Where it runs: mail before the first offered draft (`offer.ts`, gateway passes zele's sent mail when zele is on), a comment source
   before its first draft (`CommentAdapter.ownTexts`), a KakaoTalk room on its first draft (`ensureKakaoRoom`), and `onboard.ts on|learn`.
   Without an injected `analyze` call (tests, library use) nothing is analysed.

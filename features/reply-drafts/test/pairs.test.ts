@@ -4,7 +4,7 @@ import { afterAll, beforeEach, expect, test, spyOn } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildPrompt, type ReplyItem, type ReplyStyle } from "../../../hub/reply-draft.ts";
-import { buildDraft, reviseDraft, sendDraft } from "../lib/flow.ts";
+import { buildDraft, mailStyleOf, reviseDraft, sendDraft } from "../lib/flow.ts";
 import { offerMailDraft } from "../lib/offer.ts";
 import { habitsOf } from "../../../hub/comments/past.ts";
 import { addPair, loadPairs, savePairs, styleWithExamples } from "../lib/pairs.ts";
@@ -302,9 +302,24 @@ test("the model's recipient judgement is kept on the draft; evidence that is not
 	expect(failed.action === "draft" && failed.warnings.some(w => w.startsWith("the recipient evidence"))).toBe(true);
 	expect(bad.calls[1]!.user).toContain("the recipient evidence");
 
+	const joined = fakeModel([withWho("다음주 일정 / 문의드립니다")]);
+	await buildDraft(mailItem, meta, { call: joined.call });
+	expect(joined.calls).toHaveLength(1);
+	const oneOff = fakeModel([withWho("다음주 일정 / 저는 학부모입니다"), withWho("")]);
+	await buildDraft(mailItem, meta, { call: oneOff.call });
+	expect(oneOff.calls).toHaveLength(2);
+
 	const none = fakeModel([withWho("")]);
 	expect((await buildDraft(mailItem, meta, { call: none.call })).action).toBe("draft");
 	expect(none.calls).toHaveLength(1);
+});
+
+test("a linked mail is written from the mail profile whichever mail app it goes through; no profile yet means no style", () => {
+	expect(mailStyleOf("악보 부탁드려요", "kim@example.com")).toBeUndefined();
+	mkdirSync(join(toneFile({ app: "mail" }), ".."), { recursive: true });
+	writeFileSync(toneFile({ app: "mail" }), "## 예시\n\n- 네 보내드렸어요\n");
+	savePairs("mail", [{ received: "악보 부탁드려요", reply: "보내드립니다", at: day, from: "kim@example.com" }]);
+	expect(mailStyleOf("악보 부탁드려요", "kim@example.com")?.examples?.[0]).toMatchObject({ reply: "보내드립니다", same: true });
 });
 
 test("only the newest 12 corrections reach a mail prompt, each clipped to 200 characters; a chat prompt keeps all of them", () => {

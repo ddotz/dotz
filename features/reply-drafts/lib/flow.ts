@@ -5,7 +5,7 @@ import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimSend } from "../../../hub/draft-claim.ts";
 import { asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
-import { addressesOf, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind } from "../../../hub/reply-draft.ts";
+import { addressesOf, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { matchLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
 import { canAttach, sendWith, webmailSite, type SendOutcome } from "./senders.ts";
@@ -87,6 +87,12 @@ function tracedCall(deps: FlowDeps, item: ReplyItem, conv: string | undefined, t
 
 export const callOf = (deps: FlowDeps, item: ReplyItem, conv?: string, what = "draft"): ModelCall => (deps.trace ? tracedCall(deps, item, conv, deps.trace, what) : deps.call ?? replyCall(item.app ?? "mail", conv));
 const nowOf = (deps: FlowDeps) => (deps.now ?? (() => new Date()))();
+/** The style of a mail written outside a draft (examples of the same sender first), or undefined when the mail profile has no samples and no identity yet.
+ *  Every mail app instance shares the `mail` profile and its pairs, as offered drafts do. */
+export function mailStyleOf(text: string, from: string): ReplyStyle | undefined {
+	const s = loadStyle({ app: "mail" });
+	return s.samples.length || s.identity?.length ? styleWithExamples(s, "mail", text, from) : undefined;
+}
 // A mail draft's style carries the user's closest real past replies as examples; chat and comments keep theirs.
 const styleOf = (item: ReplyItem, key: ToneKey) => (item.kind === "mail" ? styleWithExamples(loadStyle(key), "mail", item.text, item.from) : loadStyle(key));
 
