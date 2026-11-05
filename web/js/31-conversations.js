@@ -462,7 +462,7 @@ function convChrome() {
   $("#back").hidden = !back;
   // Inside an app on a wide screen the bar's back button reads ‹ 모니터링 in the title's place; the app's own name stands in its head.
   $("#back").classList.toggle("mon-up", up);
-  $("#back").setAttribute("aria-label", up ? "모니터링 목록으로" : "뒤로");
+  $("#back").setAttribute("aria-label", up ? (MX.it && MX.scr ? "메일 목록으로" : "모니터링 목록으로") : "뒤로");
   bar.classList.toggle("back", back);
   bar.classList.toggle("cvconv", conv);
   $("#v-chat").classList.toggle("cv-listing", convListing());

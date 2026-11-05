@@ -110,7 +110,7 @@ describe("메일함 설정", () => {
 		await run(v, `(() => { const i = document.querySelector("[data-mxs-add]"); i.value = "곤란합니다"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
 		await waitForPosts(2);
 		expect(posts[1]!.body.box.bans).toEqual(["죄송", "곤란합니다"]);
-		await click(v, '.mxs-hd .ib');
+		await click(v, "#back");
 		await waitFor(v, `MX.scr === "" && document.querySelector("#mon-tl > .mr")`);
 		expect(await ev<string>(v, `decodeURIComponent(location.hash)`)).toBe("#monitoring/i:mail/mail/b-score");
 	}, 40_000);

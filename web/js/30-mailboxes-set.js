@@ -17,6 +17,9 @@ const mxsBlank = acct => ({ acct, step: "start", name: "", icon: "folder", mode:
 const mxsGo = scr => go("monitoring", `${MX.key}/${enc(MX.acct)}/${enc(MX.box)}${scr ? `/${scr}` : ""}`);
 // The browser's back from a screen lands on the box list (32-history-nav.js routeChain).
 const mxChain = hash => (MX.scr && MON.sel === MX.key ? [hash.slice(0, hash.lastIndexOf("/")), hash] : [hash]);
+// The screens name the app bar (monName) and its back arrow returns to the box list (#back, 04-state.js).
+const mxsName = () => (MON.sel === MX.key && MX.scr ? (MX.scr === "set" ? "메일함 설정" : "메일함 추가") : "");
+const mxsBack = () => { if (current !== "monitoring" || !MX.it || !MX.scr) return false; MX.scr = ""; mxsGo(""); return true; };
 function mxsEnter(scr, note = "") { MXS.note = note; MXS.open = ""; MXS.add = ""; MXS.blank = 0; MXS.reply = ""; MXS.more.clear(); MXS.tone.clear(); MXS.d = null; MXS.sug = null; MXS.sugFor = ""; mxsGo(scr); }
 // box "n:<name>" (the merged entry) opens the first account's box of that name.
 function mxOpenSet(id) {
@@ -55,12 +58,12 @@ const mxsNewApply = () => (fn, paint = true) => { fn(MXS.d); if (paint) mxsPaint
 /* ---- parts both screens use ---- */
 const mxsSw = (on, label, onclick, off) => el("button", { class: "hs-sw", type: "button", role: "switch", "aria-checked": String(on), "aria-label": label, disabled: off ? true : null, onclick });
 const mxsRow = (head, sup, end) => el("div", { class: "li" }, el("span", { class: "tx" }, el("span", { class: "hd", text: head }), sup ? el("span", { class: "sup", text: sup }) : null), end ? liEnd(end) : null);
-const mxsHead = (title, sup, tag) => el("div", { class: "mxs-hd" }, el("button", { class: "ib", type: "button", "aria-label": "메일함으로 돌아가기", onclick: () => { MX.scr = ""; mxsGo(""); } }, icon("back")),
-  el("span", { class: "tx" }, el("span", { class: "hd" }, title, tag ? el("span", { class: "tag", text: tag }) : null), sup ? el("span", { class: "sup", text: sup }) : null));
+const mxsHead = (b, sup) => el("div", { class: "mxs-hd" }, el("span", { class: "av" }, mxIc(b.icon)), el("span", { class: "tx" }, el("span", { class: "hd" }, b.name, b.base ? el("span", { class: "tag", text: "기본" }) : null), el("span", { class: "sup", text: sup })),
+  el("button", { class: "btn tonal sm", type: "button", text: "메일 보기", onclick: mxsBack }));
 const mxsSec = text => el("div", { class: "sec", text });
 function mxsTiles(cur, pick) {
   return el("div", { class: "mxs-modes", role: "radiogroup", "aria-label": "처리 방식" }, ...Object.entries(MXS_MODES).map(([k, [l, t]]) => el("button", { class: `mxs-mode${cur === k ? " on" : ""}`, type: "button", role: "radio", "aria-checked": String(cur === k), "data-m": k, onclick: () => pick(k) },
-    el("span", { class: "mxs-mt", text: l }), el("span", { class: "mxs-md", text: t }))));
+    el("span", { class: "mxs-mt" }, el("span", { class: "mxs-rd" }), l), el("span", { class: "mxs-md", text: t }))));
 }
 // A list of short texts as chips: each one has an x, an input opens at the end (Enter adds and stays, Esc closes), more than MXS_CAP fold.
 function mxsChips(o, path, add, ph, apply) {
@@ -123,7 +126,7 @@ function mxsToneBody(a, b) {
     t.corrections.length ? el("div", { class: "mxs-k", text: "고친 점" }) : null, t.corrections.length ? el("ul", { class: "mxs-fx" }, ...fixes.map(f => el("li", { text: f }))) : null,
     t.corrections.length > MXS_FIX && !more ? el("button", { class: "chip mxs-c2", type: "button", onclick: () => { MXS.more.add("fix"); mxsPaint(); } }, `더 보기 · ${t.corrections.length - MXS_FIX}개`) : null];
 }
-const mxsCondSum = b => [...MXS_KINDS.filter(([k]) => b.conds[k].length).map(([k, l]) => `${l} ${b.conds[k].length}`), b.not.from.length ? `제외 ${b.not.from.length}` : ""].filter(Boolean).join(" · ") || "조건 없음";
+const mxsCondSum = b => [...MXS_KINDS.filter(([k]) => b.conds[k].length).map(([k, l]) => `${l} ${b.conds[k].length}`), b.not.from.length ? `제외 ${b.not.from.length}` : ""].filter(Boolean).join(" · ") || "기준 없음";
 const mxsFirst = (l, none = "없음") => (l.length ? l[0] + (l.length > 1 ? ` 외 ${l.length - 1}개` : "") : none);
 function mxsSetNodes() {
   const a = MX.accts.get(MX.acct), b = a && a.byId.get(MX.box);
@@ -134,22 +137,22 @@ function mxsSetNodes() {
     const v = ev.target.value.trim();
     if (v) ap(x => { x.name = v; }, false); else { ev.target.value = b.name; toast("이름을 비워 둘 수 없어요", true); }
   } }), mxsIcons(b, ap)];
-  const reply = [["tone", "말투", "", () => mxsToneBody(a, b)], ["how", "답장 지시", b.how ? b.how.slice(0, 24) : "없음", () => [text(b.how, (x, v) => { x.how = v; }, "이 메일함의 초안을 쓸 때마다 지킬 말", "답장 지시", 3), el("div", { class: "mxs-h", text: "이 메일함의 모든 초안에 붙어요." })]],
-    ["greet", "인사말", b.greets.length ? `${b.greets.length}명` : "없음", () => mxsGreets(b, ap)],
+  const reply = [["tone", "말투", "", () => mxsToneBody(a, b)], ["how", "기본 지시", b.how ? b.how.slice(0, 24) : "없음", () => [text(b.how, (x, v) => { x.how = v; }, "이 메일함의 초안을 쓸 때마다 지킬 말", "기본 지시", 3), el("div", { class: "mxs-h", text: "이 메일함의 모든 초안에 붙어요." })]],
+    ["greet", "받는 사람별 인사", b.greets.length ? `${b.greets.length}명` : "없음", () => mxsGreets(b, ap)],
     ["files", "첨부 폴더", mxsFirst(b.folders), () => [mxsChips(b, "folders", "폴더 추가", "~/폴더", ap), el("div", { class: "mxs-h", text: "초안이 약속한 파일을 이 폴더에서 찾아 붙여요." })]],
     ["bans", "금지 문구", b.bans.length ? `${b.bans.length}개` : "없음", () => [mxsChips(b, "bans", "문구 추가", "쓰지 않을 말", ap), el("div", { class: "mxs-h", text: "초안에 이 말이 나오면 카드에 알려 줘요." })]]];
   const quiet = b.mode === "quiet", srcs = b.conds.src.length;
-  const match = b.base ? mxsRow("분류 조건", `조건이 없어요. ${MX.accts.size > 1 ? `${a.label} 계정의 ` : ""}다른 메일함에 맞지 않는 메일이 모두 여기로 와요.`, el("span", { class: "tag", text: "기본" }))
-    : mxsItem("match", "분류 조건", mxsCondSum(b), () => [...mxsConds(b, ap), srcs ? el("div", { class: "mxs-h", text: `처음부터 정해진 분류 조건 ${srcs}개도 함께 쓰여요. 여기서는 바꾸지 않아요.` }) : null,
+  const match = b.base ? mxsRow("분류 기준", `기준이 없어요. ${MX.accts.size > 1 ? `${a.label} 계정의 ` : ""}다른 메일함에 맞지 않는 메일이 모두 여기로 와요.`, el("span", { class: "tag", text: "기본" }))
+    : mxsItem("match", "분류 기준", mxsCondSum(b), () => [...mxsConds(b, ap), srcs ? el("div", { class: "mxs-h", text: `처음부터 정해진 분류 기준 ${srcs}개도 함께 쓰여요. 여기서는 바꾸지 않아요.` }) : null,
       el("div", { class: "mxs-h", text: `여러 메일함에 맞으면 목록에서 위에 있는 메일함으로 가요. 지금 조건으로 메일 ${mails.length}통이 여기 있어요.` })]);
-  return [mxsHead(b.name, `메일 ${mails.length}통 · 안 읽음 ${unread}`, b.base ? "기본" : ""), MXS.note ? el("div", { class: "mxs-note", text: MXS.note }) : null,
+  return [mxsHead(b, `메일 ${mails.length}통 · 안 읽음 ${unread}`), MXS.note ? el("div", { class: "mxs-note", text: MXS.note }) : null,
     mxsSec("처리 방식"), mxsTiles(b.mode, m => ap(x => { if (x.mode === "quiet" && m !== "quiet") x.notify = true; x.mode = m; })),
     b.base && b.mode ? el("button", { class: "btn text sm mxs-inh", type: "button", onclick: () => ap(x => { delete x.mode; }) }, "앱 설정대로 되돌리기") : null,
     b.base && !b.mode ? el("div", { class: "mxs-h mxs-inh", text: "고르지 않으면 메일 앱 설정대로 움직여요." }) : null,
     mxsSec("이 메일함"), el("div", { class: "list" }, MX.accts.size > 1 ? mxsRow("계정", a.account ? `답장은 메일을 받은 주소 ${a.account}에서 나가요` : "", el("span", { class: "mxs-am2" }, mxMark(a), a.label)) : null, mxsItem("name", "이름", b.name, nameBody), match,
       b.base ? null : mxsItem("judge", "판단 조건", b.judge.on ? b.judge.text || "켜짐" : "꺼짐", () => mxsJudge(b, ap))),
     mxsSec("답장 쓸 때"), drafts || MXS.reply === b.id ? el("div", { class: "list" }, ...reply.map(([k, l, s, body]) => mxsItem(k, l, s, body)))
-      : el("div", { class: "list" }, el("button", { class: "li", type: "button", onclick: () => { MXS.reply = b.id; mxsPaint(); } }, el("span", { class: "tx" }, el("span", { class: "hd", text: "말투와 답장 지시" }), el("span", { class: "sup", text: `${MXS_MODES[b.mode][0]} 메일함은 초안을 쓰지 않아서 접어 뒀어요` })), icon("drop"))),
+      : el("div", { class: "list" }, el("button", { class: "li", type: "button", onclick: () => { MXS.reply = b.id; mxsPaint(); } }, el("span", { class: "tx" }, el("span", { class: "hd", text: "말투와 기본 지시" }), el("span", { class: "sup", text: `${MXS_MODES[b.mode][0]} 메일함은 초안을 쓰지 않아서 접어 뒀어요` })), icon("drop"))),
     mxsSec("알림"), el("div", { class: "list" }, mxsRow("알림 켜기", quiet ? "조용히 모으는 메일함은 알리지 않아요" : "새 메일이 오면 알려 줘요", mxsSw(!quiet && b.notify !== false, "알림 켜기", () => ap(x => { x.notify = x.notify === false; }), quiet))),
     b.base ? null : el("div", { class: "mxs-del" }, el("button", { class: "btn danger sm", type: "button", onclick: () => mxsDelete(a, b) }, "메일함 지우기"))];
 }
@@ -183,21 +186,21 @@ function mxsStartNodes(d) {
   return [...mxsAcctRow(d), mxsSec("메일을 보니 이런 묶음이 있어요"), el("div", { class: "list" }, ...(groups === null ? [el("div", { class: "empty", text: "묶음을 찾는 중이에요" })] : groups.length ? groups.map(g => row(g.label, `${g.domain} · ${g.senders.join(", ")} · 메일 ${g.count}통`,
     () => mxsStart(d, { name: g.label, conds: { from: [g.domain], subj: [], body: [] }, keys: g.keys, count: g.count }))) : [el("div", { class: "empty", text: "지금은 눈에 띄는 묶음이 없어요" })])),
   mxsSec("직접 만들기"), el("div", { class: "list" }, row("빈 메일함으로 시작", "이름과 조건을 직접 정해요", () => mxsStart(d, {})),
-    copyable.length ? row("다른 메일함 설정 복사", "같은 처리 방식과 답장 지시를 다시 적지 않아도 돼요", () => { d.step = "copy"; mxsPaint(); }) : null)];
+    copyable.length ? row("다른 메일함 설정 복사", "같은 처리 방식과 기본 지시를 다시 적지 않아도 돼요", () => { d.step = "copy"; mxsPaint(); }) : null)];
 }
 function mxsCopyNodes(d) {
   return [...mxsAcctRow(d), mxsSec("어느 메일함 설정을 가져올까요?"), el("div", { class: "list" }, ...[...MX.accts.values()].flatMap(a => a.boxes.filter(b => !b.base).map(b => el("button", { class: "li", type: "button", onclick: () => mxsStart(d, structuredClone({ name: b.name, icon: b.icon, mode: b.mode || "ask", conds: { from: b.conds.from, subj: b.conds.subj, body: b.conds.body }, judge: b.judge, how: b.how, greets: b.greets, folders: b.folders, bans: b.bans, copied: b.name })) },
     el("span", { class: "tx" }, el("span", { class: "hd", text: b.name }), el("span", { class: "sup", text: `${MX.accts.size > 1 ? `${a.label} · ` : ""}${b.mode ? MXS_MODES[b.mode][0] : "기본 방식"} · ${mxsCondSum(b)}` })), icon("chev"))))),
-  el("div", { class: "mxs-h", text: "처리 방식, 분류 조건, 답장 지시, 인사말을 그대로 가져와요. 말투는 이 메일함에서 따로 쌓여요. 원래 메일함은 바뀌지 않아요." })];
+  el("div", { class: "mxs-h", text: "처리 방식, 분류 기준, 기본 지시, 인사말을 그대로 가져와요. 말투는 이 메일함에서 따로 쌓여요. 원래 메일함은 바뀌지 않아요." })];
 }
 function mxsSetupNodes(d) {
   const ap = mxsNewApply(), base = MX.accts.get(d.acct).base.name, fix = (node, f) => node.addEventListener("input", f);
   const name = el("input", { class: "fi", value: d.name, placeholder: "예: 강의 자료", "aria-label": "메일함 이름" });
   fix(name, () => { d.name = name.value; const go0 = MXS.root.querySelector("[data-mxs-go]"); if (go0) go0.disabled = !d.name.trim() || d.busy; });
   return [...mxsAcctRow(d), mxsSec("이름"), el("div", { class: "list mxs-pad" }, name, mxsIcons(d, ap)), mxsSec("처리 방식"), mxsTiles(d.mode, m => ap(x => { x.mode = m; })),
-    mxsSec("분류 조건"), el("div", { class: "list mxs-pad" }, ...mxsConds(d, ap), ...mxsJudge(d, ap)),
+    mxsSec("분류 기준"), el("div", { class: "list mxs-pad" }, ...mxsConds(d, ap), ...mxsJudge(d, ap)),
     d.keys.length ? mxsSec("지금 있는 메일") : null, d.keys.length ? el("div", { class: "list" }, mxsRow(`메일 ${d.keys.length}통도 옮기기`, d.count > d.keys.length ? `보낸 사람이 같은 메일 ${d.count}통 중 최근 ${d.keys.length}통만 옮겨요` : "옮기지 않으면 지금 있는 메일은 그대로 있어요", mxsSw(d.bring, "지금 있는 메일도 옮기기", () => ap(x => { x.bring = !x.bring; })))) : null,
-    el("div", { class: "mxs-h", text: `${d.copied ? `${d.copied} 설정을 가져왔어요. 분류 조건이 이 계정에 맞는지만 봐 주세요. ` : "말투와 답장 지시는 만든 뒤 설정에서 정해요. "}맞지 않는 메일은 계속 ${base}으로 가요.` }),
+    el("div", { class: "mxs-h", text: `${d.copied ? `${d.copied} 설정을 가져왔어요. 분류 기준이 이 계정에 맞는지만 봐 주세요. ` : "말투와 기본 지시는 만든 뒤 설정에서 정해요. "}맞지 않는 메일은 계속 ${base}으로 가요.` }),
     el("div", { class: "mxs-foot" }, el("button", { class: "btn text", type: "button", onclick: () => { MXS.d = mxsBlank(d.acct); mxsPaint(); } }, "취소"), el("button", { class: "btn", type: "button", "data-mxs-go": "", disabled: d.name.trim() && !d.busy ? null : true, onclick: mxsCreate }, "메일함 만들기"))];
 }
 async function mxsCreate() {
@@ -216,7 +219,7 @@ async function mxsCreate() {
 function mxsNewNodes() {
   const d = MXS.d ??= mxsBlank(MX.acct !== "all" ? MX.acct : MX.accts.size === 1 ? [...MX.accts.keys()][0] : "");
   if (d.acct && !MX.accts.has(d.acct)) d.acct = "";
-  return [mxsHead("메일함 추가", ""), ...(!d.acct ? mxsPickNodes(d) : d.step === "setup" ? mxsSetupNodes(d) : d.step === "copy" ? mxsCopyNodes(d) : mxsStartNodes(d))];
+  return [...(!d.acct ? mxsPickNodes(d) : d.step === "setup" ? mxsSetupNodes(d) : d.step === "copy" ? mxsCopyNodes(d) : mxsStartNodes(d))];
 }
 
 /* ---- the node in the timeline ---- */
