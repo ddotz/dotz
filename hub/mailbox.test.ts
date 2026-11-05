@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { unreadOf } from "./conversations.ts";
 import { emit } from "./events.ts";
 import { mailByKey, mailCard, mailKey, mailTarget, postMail, setMailSuggest, type MailDeps } from "./mail.ts";
-import { boxesOf, cleanBox, loadMailboxes, MAX_BOXES, MAX_LIST, MAX_PINS, pickBox, setPin, type Box } from "./mailbox.ts";
+import { boxesOf, boxOfConv, cleanBox, CONV_MAX, loadMailboxes, MAX_BOXES, MAX_LIST, MAX_PINS, pickBox, setPin, trackBox, type Box } from "./mailbox.ts";
 import { boxPass, instanceOf, mailboxRoute, placeByJudge, placeMail, SUGGEST_MAX, withBoxes } from "./routes-mailbox.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "mailbox-"));
@@ -88,6 +88,14 @@ describe("limits", () => {
 		expect(store.pins["mail|s-c0"]).toBeUndefined();
 		expect(store.pins[`mail|s-c${MAX_PINS + 2}`]).toBe("b-1");
 	});
+});
+
+test("the conversation map stops at its cap and forgets the oldest", () => {
+	const source = uid("cap");
+	for (let i = 0; i <= CONV_MAX; i++) trackBox({ source, id: `${i}`, mbox: "b" });
+	expect(boxOfConv(source, "0")).toBeUndefined();
+	expect(boxOfConv(source, "1")).toBe("b");
+	expect(boxOfConv(source, `${CONV_MAX}`)).toBe("b");
 });
 
 describe("pickBox", () => {
