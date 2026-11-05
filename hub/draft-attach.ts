@@ -21,7 +21,7 @@ import { getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { type DraftFileIn, fileSizeText, parseDraftApproval } from "./draft-approval.ts";
 import { syncDraftFiles } from "./notices.ts";
 import { fileLinePaths, messageFiles, resolveAllowed } from "./files.ts";
-import { commentOriginalOf } from "./comments/gateway.ts";
+import { commentDraftOf, commentOriginalOf } from "./comments/gateway.ts";
 import type { CommentOriginal } from "./comments/original.ts";
 import { attachmentList, mailByKey } from "./mail.ts";
 
@@ -30,15 +30,15 @@ const LIBRARY_LIST_MAX = 100;
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 
 // A send approval dotz did not make (a block a session wrote, sent by its own tool with the file, e.g. company-mail-act.ts --att-file): its
-// `> 첨부:` files are the ones the asking message names in its [file] lines, matched by file name. Each has to be a file GET /api/file
+// `> 첨부:` files are the ones the asking message (a post, or a session's report) names in its [file] lines, matched by file name. Each has to be a file GET /api/file
 // serves for that message (resolveAllowed with the sent [file] lines), so nothing else is reachable. undefined unless every file is found.
 const nfc = (s: string) => s.normalize("NFC").trim();
 export function askedFiles(ref: string): { name: string; size: string; path: string }[] | undefined {
 	const tag = `(${ref})`;
-	const events = tailEvents(paths.outbox);
+	const events = [...tailEvents(paths.inbox), ...tailEvents(paths.outbox)];
 	for (let i = events.length - 1; i >= 0; i--) {
 		const e = events[i]!;
-		if (e.kind !== "out" || typeof e.text !== "string" || !e.text.includes(tag) || !e.text.includes("[file]")) continue;
+		if ((e.kind !== "out" && e.kind !== "lane_report") || typeof e.text !== "string" || !e.text.includes(tag) || !e.text.includes("[file]")) continue;
 		const draft = parseDraftApproval(e.text);
 		if (draft?.ref !== ref) continue;
 		const lines = fileLinePaths(e.text);
@@ -90,6 +90,8 @@ async function view(rec: DraftRec | undefined, ref: string) {
 		// files dotz has staged and nothing here can say they go out.
 		// A block a session wrote counts as tracked when every file it names is a [file] line of the asking message (askedFiles).
 		tracked: !!rec || !!asked,
+		// false: nothing behind this card to open as 원문 (a block a session wrote), so the sheet offers no such tab. A comment draft whose comment is gone keeps it: the tab says so.
+		original: original(rec, ref).ok || !!commentDraftOf(ref),
 	};
 }
 
