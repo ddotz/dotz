@@ -19,6 +19,17 @@ test("one holder at a time; the release lets the next one claim", () => {
 	b!();
 });
 
+test("a claim of a pid another process now uses is dead: the start time differs; a holder's own claim stays live", () => {
+	const f = join(dir, "sending", "R3");
+	writeFileSync(f, `${process.pid} Mon Jan  1 00:00:00 2001`);
+	expect(claimHolder(f)).toBe("dead");
+	expect(claimSend(f)).toBeUndefined();
+	const mine = claimSend(f, true);
+	expect(mine).toBeDefined();
+	expect(claimHolder(f)).toBe("live");
+	mine!();
+});
+
 test("a claim left by a process that is gone may have sent: it is kept until the caller says it takes over; one of a live process is never taken", async () => {
 	const gone = Bun.spawn([process.execPath, "-e", "0"]);
 	await gone.exited;

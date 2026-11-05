@@ -1,6 +1,7 @@
 // The comment engine: collect (script only, no model), draft (a model call only on request or per-source auto-draft), send (only through
 // the gate in contract.ts). Everything is injected (adapters, model, clock, tone, broadcast) so tests run without a network.
 import { generateReply, lessonOf, reviseReply, type ReplyItem, type ReplyStyle } from "../reply-draft.ts";
+import { createSendRecovery } from "./recover.ts";
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, type RawComment, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts";
@@ -306,9 +307,9 @@ export function createEngine(deps: EngineDeps) {
 	// sends no mail. A failed mail leaves the reply posted and says so in the send record (Reply.mail) and the event.
 	// `only: "reply"` posts the reply and leaves the mail draft on its own (no longer linked once the reply draft is sent, so it is asked and sent
 	// by itself: hub/mail-cli.ts ask/send).
-	function send(codeOrId: string, opts: { text?: string; by: "owner" | "rule"; only?: "reply"; asIs?: true }): GateResult {
+	function send(codeOrId: string, opts: { text?: string; by: "owner" | "rule"; only?: "reply"; asIs?: true; resend?: true }): GateResult {
 		const mailId = opts.by === "owner" && opts.only !== "reply" ? store.drafts().find(d => d.code === codeOrId)?.mail : undefined;
-		const r = (mailId ? mailLintRefusal(deps.mail, mailId) : undefined) ?? (mailId && !opts.asIs ? mailRefusal(deps.mail, mailId) : undefined) ?? dispatchReply({ code: codeOrId, approval: { by: opts.by }, ...(opts.text !== undefined ? { text: opts.text } : {}) }, gate);
+		const r = (mailId ? mailLintRefusal(deps.mail, mailId) : undefined) ?? (mailId && !opts.asIs ? mailRefusal(deps.mail, mailId) : undefined) ?? dispatchReply({ code: codeOrId, approval: { by: opts.by }, ...(opts.text !== undefined ? { text: opts.text } : {}), ...(opts.resend ? { resend: true as const } : {}) }, gate);
 		if (!r.ok) return r;
 		const done = mailId ? r.done.then(rep => sendMail(rep, mailId, opts.asIs)) : r.done;
 		pending.add(done);
@@ -415,7 +416,7 @@ export function createEngine(deps: EngineDeps) {
 		for (const d of store.drafts()) {
 			if (d.status !== "pending") continue;
 			const c = find(d.commentId);
-			if (!c || replies.some(r => r.commentId === c.id && r.state === "sending")) continue;
+			if (!c || replies.some(r => r.commentId === c.id && (r.state === "sending" || r.state === "unsure"))) continue;
 			const reason = closing(c, replies, dismissed);
 			if (!reason) continue;
 			const { mail, mailAt: _mailAt, ...rest } = d;
@@ -623,8 +624,8 @@ export function createEngine(deps: EngineDeps) {
 	function retrySend(id: string): GateResult {
 		const r = store.replies().find(x => x.id === id);
 		if (!r) return { ok: false, reason: "그 보낸 기록을 찾지 못했어요" };
-		if (r.state !== "failed") return { ok: false, reason: "실패한 답글만 다시 보낼 수 있어요" };
-		return send(r.draft, { by: "owner", text: r.text });
+		if (r.state !== "failed" && r.state !== "unsure") return { ok: false, reason: "실패한 답글만 다시 보낼 수 있어요" };
+		return send(r.draft, { by: "owner", text: r.text, ...(r.state === "unsure" ? { resend: true as const } : {}) });
 	}
 	function dismissSend(id: string): { ok: boolean; reason?: string } {
 		const r = store.replies().find(x => x.id === id);
@@ -793,6 +794,6 @@ export function createEngine(deps: EngineDeps) {
 	const idle = async () => {
 		while (pending.size) await Promise.all([...pending]);
 	};
-	return { store, ownerOf, collect, reconcile, makeDraft, revise, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailMarkOf, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
+	return { store, ownerOf, ...createSendRecovery({ store, adapters: deps.adapters, onState: gate.onState }), collect, reconcile, makeDraft, revise, drop, restore, retrySend, dismissSend, pendingDrafts, send, sendMailOnly, update, threads, threadView, markRead, addDraft, linkMail, mailView, mailMarkOf, needs, noReply, unreplied, tokenStats, posts, ownReplies, idle, needsReply };
 }
 export type Engine = ReturnType<typeof createEngine>;

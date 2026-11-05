@@ -15,7 +15,9 @@ One contract for the comments of every platform, shipped in `hub/comments/`, off
 - One send gate, `dispatchReply`: it posts only after the owner's `보내기` (route `POST /api/comments/drafts/<code>/send` or a picked
   `[ask]` checked by `bin/comments.ts send`) or, for a source whose owner turned `autoSend` on, a rule match (regex list, daily cap,
   only clean drafts). A comment gets one reply: a second send is refused while the first is sending or sent; a failed one may be
-  retried. State: `보내는 중` -> `보냄` | `실패` + reason (`replies.json`).
+  retried. State: `보내는 중` -> `보냄` | `실패` + reason (`replies.json`). A reply left `sending` by a restart may or may not be up: it becomes `확인 필요` (`unsure`,
+  hub/comments/recover.ts), the gate refuses it, and on boot the platform is read back (`recheck`, or `list` for a site). The owner's reply with the same words proves it `보냄`;
+  without proof only the owner ends it: `POST /api/comments/sends/<id>/retry` or `.../done` (closed as sent, nothing is posted). It is never sent again by itself.
 
 ## Collecting and drafting
 

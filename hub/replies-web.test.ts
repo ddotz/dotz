@@ -100,7 +100,7 @@ const server = Bun.serve({
 			const b = await req.json().catch(() => null);
 			localPosts.push({ path: p, body: b });
 			// a retry hands the send back: the failed row leaves (what the hub does once the send is queued)
-			const cs = /^\/api\/comments\/sends\/(\w+)\/retry$/.exec(p), ks = /^\/api\/kakao\/chat\/\w+\/send\/(\w+)\/retry$/.exec(p);
+			const cs = /^\/api\/comments\/sends\/(\w+)\/(?:retry|done)$/.exec(p), ks = /^\/api\/kakao\/chat\/\w+\/send\/(\w+)\/retry$/.exec(p);
 			if (cs || ks) failedList = failedList.filter(x => (x as { sendId?: string }).sendId !== (cs || ks)![1]);
 			if (p === "/api/approvals/failed") {
 				const items = ((b as { items?: { ref: string }[] } | null)?.items ?? []);
@@ -219,6 +219,24 @@ describe.each([[390, 844], [1280, 900]])("답장 대기 at %ipx", (width, height
 		expect(localPosts.some(x => x.path === "/api/approvals")).toBe(false);   // nothing was answered with a pick
 		expect(acts).toEqual([]);
 		expect(await q<string>(v, `return document.querySelector("#nav-mon").textContent`)).toBe("5");   // the failures left the number
+	});
+
+	test("a comment nobody can say went up says 확인 필요, is never bundled into 모두 다시 보내기, and offers 다시 보내기 and 완료", async () => {
+		const v = await boot(width, height);
+		const unsure = (id: string) => ({ key: id, kind: "comment", app: "youtube", who: "가나", what: "첫 번째 영상", why: "올라갔는지 알 수 없어요", at: Date.now(), ref: id, sendId: id, text: "답글", unsure: true });
+		failedList = [unsure("U1"), unsure("U2")];
+		await run(v, `rqLoad()`);
+		await openQueue(v);
+		await run(v, `document.querySelector('.rq-tabs [data-f="fail"]').click()`);
+		await waitFor(v, `${rowOf("f:|U1")} && ${rowOf("f:|U2")}`);
+		expect(await q<number>(v, `return document.querySelectorAll(".rq-g").length`)).toBe(0);
+		expect(await q<string>(v, `return ${rowOf("f:|U1")}.textContent`)).toContain("확인 필요");
+		await run(v, `${rowOf("f:|U1")}.querySelector(".tx").click()`);
+		await waitFor(v, `document.querySelector('.rq-sheet [data-k="done"]')`);
+		expect(await q<string[]>(v, `return [...document.querySelectorAll(".rq-sheet .rq-acts button")].map(b => b.textContent.trim())`)).toEqual(["다시 보내기", "완료"]);
+		await run(v, `document.querySelector('.rq-sheet [data-k="done"]').click()`);
+		await waitFor(v, `!${rowOf("f:|U1")}`);
+		expect(localPosts.map(x => x.path)).toEqual(["/api/comments/sends/U1/done"]);
 	});
 
 	test("a row opens ONE sheet with the why line on top and the reply card under it; a failed item offers 다시 보내기 and 보내지 않기, a sent one only 보냈어요", async () => {

@@ -13,7 +13,7 @@ import { broadcast, emit } from "./events.ts";
 import { approvals, convOfTarget, newMid, out } from "./outbound.ts";
 import { answerDecision, type DecisionSend, allNotices, markDraftSend, openDraftCards, settleOpenDecision } from "./notices.ts";
 import type { Upload } from "./files.ts";
-import { commentContextOf, commentDraftOf, commentPostedOf, commentDraftsByCode, commentPending, commentSendFailed, commentSendOutcome, commentSettleSending, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
+import { commentContextOf, commentDraftOf, commentPostedOf, commentDraftsByCode, commentPending, commentProveSends, commentSendFailed, commentSendOutcome, commentSettleSending, commentSourceApp, dropCommentDraft, setCommentDraftText } from "./comments/gateway.ts";
 import { dropFailed, retryFailed, type RetryDeps } from "./reply-outcomes.ts";
 import { appEntries, commentOwner } from "./integrations.ts";
 import { instanceOf } from "./reply-model.ts";
@@ -73,8 +73,9 @@ export const reportSend = (r: SendResult): void => {
 	markDraftSend(r.conv, r.ref, r.state, r.text);
 	broadcast({ ts: now(), kind: "approval_send", source: "gateway", ...r });
 	if (r.state === "sent") cardOwedMail(r);
-	if (r.state !== "failed") return;
+	if (r.state !== "failed" && r.state !== "unsure") return;
 	const what = r.title.replace(/\s*\([^()]*\)\s*$/, "");
+	if (r.state === "unsure") return void out(targetOf(r.conv, r.ref), `[wait] 확인 필요: ${what} (${r.ref})\n${r.text}\n저절로 다시 보내지 않아요. 답장 대기에서 골라 주세요.`, undefined, { source: "gateway" }).catch(e => log(`send check note for ${r.ref} failed: ${e}`));
 	void out(targetOf(r.conv, r.ref), `[fail] 보내지 못했어요: ${what} (${r.ref})\n${r.text || "이유를 알 수 없어요"}\n다른 카드는 그대로 보내고 있어요.`, undefined, { source: "gateway" }).catch(e => log(`send failure note for ${r.ref} failed: ${e}`));
 };
 // The approved sends still queued or sending are kept here (hub/approval-send.ts), so a restart finds them.
@@ -87,7 +88,7 @@ const jobStore = {
 	},
 	save: (body: string): void => writeAtomic(JOBS_FILE, `${body}\n`),
 };
-/** A send that was running when the gateway stopped: sent, its sender still running (a mail CLI holding its claim), or lost with the mail possibly out. */
+/** A send that was running when the gateway stopped: sent, its sender still running (a mail CLI holding its claim), lost with the mail possibly out, or a comment nobody can say went up. */
 function lookSend(j: SendJob): SendLook {
 	const mail = getDraft(j.ref);
 	if (mail) return mail.status === "sent" ? { state: "sent" } : claimHolder(claimFile(j.ref)) === "live" ? { state: "alive" } : { state: "failed", text: MAY_HAVE_GONE_OUT };
@@ -95,14 +96,31 @@ function lookSend(j: SendJob): SendLook {
 }
 export const sender = createApprovalSender({ kind: sendTargetOf, run: runCli, report: reportSend, log, store: jobStore, look: lookSend });
 let sendsBooted = false;
-/** Boot and every sweep after it: the first call takes up the sends the last run left (queued ones are queued again, running ones are judged, never re-run), later calls check the ones still running. */
+// A card left 확인 필요 follows the comment's record: proof read back, the owner's 완료 or 다시 보내기, or the old sender that finished after all.
+function settleUnsureCards(): void {
+	for (const n of allNotices()) {
+		const d = n.decision, ref = d?.draft?.ref;
+		if (d?.send?.state !== "unsure" || !ref) continue;
+		const o = commentSendOutcome(ref);
+		if (o?.state === "sent" || o?.state === "failed") sender.settle({ ref, conv: d.to, action: "send", title: n.title }, o.state, o.state === "failed" ? o.text : "");
+	}
+}
+/** Boot and every sweep after it: the first call takes up the sends the last run left (queued ones are queued again, running ones are judged, never re-run) and reads unsure comments back; later calls check the ones still running. */
 export function settleSends(): void {
 	if (!sendsBooted) {
 		sendsBooted = true;
 		commentSettleSending();
 		sender.recover();
+		void commentProveSends().then(
+			r => {
+				if (r.proved.length || r.errors.length) log(`comment read-back: proved ${r.proved.join(", ") || "none"}${r.errors.length ? `; not read: ${r.errors.join("; ")}` : ""}`);
+				settleUnsureCards();
+			},
+			e => log(`comment read-back failed: ${e instanceof Error ? e.message : String(e)}`),
+		);
 	}
 	sender.recheck();
+	settleUnsureCards();
 }
 // A send run from a CLI (a session's draft.ts send) failed: the card it answers shows it and the owner hears it, like a send of the gateway's own.
 function reportCliFailure(ref: string, conv: string, text: string): void {

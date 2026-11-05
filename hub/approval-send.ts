@@ -9,7 +9,7 @@
 // Restarts (owner rule: a restart never sends twice, a failure is always seen): the queued and sending jobs are kept in one small file (`store`) on every
 // state change. On boot a job still `queued` is queued again (the owner's pick is in the inbox and the CLI's gate checks it). A job that was `sending` is never run
 // again by itself: `look` tells whether its draft is sent (then it is marked sent), its sender still runs (it is checked again later), or neither (it ends failed
-// with a text that says the mail may have gone out; only the owner's 다시 보내기 sends it again).
+// with a text that says the mail may have gone out; only the owner's 다시 보내기 sends it again). A comment nobody can say went up ends `unsure` (hub/comments/recover.ts).
 //
 // Refs the gateway does not know (a card the bot wrote by hand, a KakaoTalk draft, a 직접 입력 pick) still go to the bot as before.
 import { join } from "node:path";
@@ -22,9 +22,9 @@ export type SendAction = "send" | "send-main" | "send-mail" | "send-as-is";
 /** `retry`: the owner pressed 다시 보내기 (the mail CLI then takes over a claim a dead sender left, features/reply-drafts/lib/flow.ts sendDraft). */
 export type SendJob = { ref: string; conv: string; action: SendAction; title: string; retry?: true };
 /** What is known of a job that was sending when the gateway stopped. */
-export type SendLook = { state: "sent" } | { state: "alive" } | { state: "failed"; text: string };
+export type SendLook = { state: "sent" } | { state: "alive" } | { state: "failed" | "unsure"; text: string };
 type Kept = SendJob & { state: "queued" | "sending" };
-export type SendResult = { ref: string; conv: string; title: string; state: "queued" | "sending" | "sent" | "failed"; text: string; at: number };
+export type SendResult = { ref: string; conv: string; title: string; state: "queued" | "sending" | "sent" | "failed" | "unsure"; text: string; at: number };
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -106,7 +106,7 @@ export function createApprovalSender(deps: SenderDeps) {
 		const t = deps.kind(j.ref, j.action);
 		if (!t || !sendArgv(t.kind, j.ref, j.action)) return false;
 		const st = results.get(j.ref)?.state;
-		if (st === "queued" || st === "sending" || st === "sent") {
+		if (st === "queued" || st === "sending" || st === "sent" || st === "unsure") {
 			deps.log(`approved send ${j.ref} in ${j.conv} is already ${st}; the second approval sends nothing`);
 			return true;
 		}
@@ -146,7 +146,7 @@ export function createApprovalSender(deps: SenderDeps) {
 			set(j, "sending");
 		} else {
 			orphans.delete(j.ref);
-			set(j, l.state === "sent" ? "sent" : "failed", l.state === "sent" ? "" : l.text);
+			set(j, l.state, l.state === "sent" ? "" : l.text);
 		}
 	}
 	let recovered = false;
@@ -178,6 +178,8 @@ export function createApprovalSender(deps: SenderDeps) {
 		recheck: () => {
 			for (const j of [...orphans.values()]) settleLeft(j);
 		},
+		/** An unsure job got its answer (proof read back, the owner's pick, its old sender finished). */
+		settle: (j: SendJob, state: "sent" | "failed", text = "") => set(j, state, text),
 		/** The latest state of each recent job (in `conv`, or everywhere), oldest first. */
 		results: (conv?: string) => [...results.values()].filter(r => conv === undefined || r.conv === conv),
 		/** Resolves when every queued send is done (tests, shutdown). */
