@@ -92,7 +92,7 @@ function rqRows() {
   const from = [[null, RQ.failed, RQ.done], ...PQ.list.filter(p => p && p.items).map(p => [pqPcOf(p), p.items.failed || [], p.items.sent || []])];
   const fail = [], sent = [];
   for (const [pc, failed, done] of from) {
-    for (const f of failed) { const key = `f:${rqPcKey(pc)}|${f.key}`; if (!RQ.gone.has(key)) fail.push({ key, state: "fail", who: f.who || "", what: f.what || "", inst: f.app, app: labelOf(pc, f.app), pc, at: f.at, why: rqNorm(f.why), f }); }
+    for (const f of failed) { const key = `f:${rqPcKey(pc)}|${f.key}`; if (!RQ.gone.has(key)) fail.push({ key, state: "fail", who: f.who || "", what: f.what || "", inst: f.app, app: labelOf(pc, f.app), pc, at: f.at, why: rqNorm(f.unsure ? `확인 필요: ${f.why}` : f.why), f }); }
     for (const s of done) sent.push({ key: `s:${rqPcKey(pc)}|${s.key}`, state: "sent", who: s.who || "", what: s.what || "", inst: s.app, app: labelOf(pc, s.app), pc, at: s.at, why: RQ_SENT[s.how] || "", s });
   }
   const failedAt = new Map(fail.filter(r => r.f.ref).map(r => [r.f.ref, r.at || 0]));
@@ -229,9 +229,11 @@ function rqRecordCard(r, rec, foot) {
     original: o ? { who: o.who, text: o.text } : null, to: rec.who ? [kind === "kakao" ? "대화방" : kind === "comment" ? "댓글" : "받는이", rec.who] : null, subject: kind === "comment" ? rec.what : "",
     body: { text: rec.text }, attach: el("div", { hidden: true }), ...foot });
 }
+// A comment nobody can say went up (hub/comments/recover.ts): 다시 보내기 or 완료, each by the owner's own click on that one card.
 const rqFailActs = r => el("div", { class: "dr-act dr-row rq-acts" },
   el("button", { class: "btn sm dr-send", type: "button", "data-k": "retry", disabled: RQ.busy.has(r.key), text: "다시 보내기", onclick: () => rqRetryAll([r]) }),
-  el("button", { class: "btn text sm dr-drop", type: "button", "data-k": "drop", disabled: RQ.busy.has(r.key), text: "보내지 않기", onclick: () => rqDropFailed(r) }));
+  r.f.unsure ? el("button", { class: "btn text sm", type: "button", "data-k": "done", disabled: RQ.busy.has(r.key), text: "완료", onclick: () => rqMarkPosted(r) })
+    : el("button", { class: "btn text sm dr-drop", type: "button", "data-k": "drop", disabled: RQ.busy.has(r.key), text: "보내지 않기", onclick: () => rqDropFailed(r) }));
 
 /* ---- failed sends: only what the owner already approved, each by its own route ---- */
 // This computer's route, or the other computer's act (hub/peer-monitor.ts "comments" / "kakao" / "approvals").
@@ -263,6 +265,15 @@ function rqRetryAll(rows, key) {
     toast(bad.length ? `${bad.length}건은 다시 보내지 못했어요 · ${bad[0]}` : `${app} ${rows.length}건을 다시 보내고 있어요`, bad.length > 0);
     if (rows.some(r => r.pc)) pqLoad();
     rqLoad();
+  });
+}
+// 완료 of an unsure comment: closed as sent, nothing is posted.
+function rqMarkPosted(r) {
+  return rqRunKey(r.key, async () => {
+    await rqSendIt(r.pc, `/api/comments/sends/${enc(r.f.sendId)}/done`, {}, "comments", { op: "send-done", id: r.f.sendId });
+    RQ.gone.add(r.key); toast("완료로 표시했어요");
+    if (r.pc) pqLoad();
+    rqLoad(); loadIntegrations();
   });
 }
 // 보내지 않기 of a failed send: the draft is dropped by its own route and leaves the list.
@@ -331,10 +342,12 @@ const rqRowDesc = (r, kid) => ({ key: `r:${r.key}`, sig: JSON.stringify([r.state
 // 2 or more failures of one app with the same reason fold into one row; the others stay plain rows.
 function rqFailDescs(rows) {
   const by = new Map(), out = [];
-  for (const r of rows) { const k = `${rqPcKey(r.pc)}|${r.inst}|${r.why}`; if (r.why) by.set(k, [...(by.get(k) || []), r]); }
+  // An unsure reply is never bundled: 모두 다시 보내기 could post it twice.
+  const bundles = r => r.why && !(r.f && r.f.unsure);
+  for (const r of rows) { const k = `${rqPcKey(r.pc)}|${r.inst}|${r.why}`; if (bundles(r)) by.set(k, [...(by.get(k) || []), r]); }
   const done = new Set();
   for (const r of rows) {
-    const k = `${rqPcKey(r.pc)}|${r.inst}|${r.why}`, g = r.why ? by.get(k) : null;
+    const k = `${rqPcKey(r.pc)}|${r.inst}|${r.why}`, g = bundles(r) ? by.get(k) : null;
     if (!g || g.length < 2) { out.push(rqRowDesc(r)); continue; }
     if (done.has(k)) continue;
     done.add(k);

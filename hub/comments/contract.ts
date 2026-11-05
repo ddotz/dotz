@@ -2,7 +2,7 @@
 // website): list the new ones since a cursor, post a reply. A platform is an adapter; nothing else in the engine knows a platform.
 // Identity: commentId() is built from the platform's own comment id, so it is the same on every machine that collects it (`collector`
 // only says who saw it first). One door out: dispatchReply() is the only function a reply is posted through (owner's 보내기 or an
-// owner-enabled rule), a reply is posted at most once per comment, and the record goes sending -> sent | failed(+reason).
+// owner-enabled rule), a reply is posted at most once per comment, and the record goes sending -> sent | failed(+reason); one cut off by a restart goes to unsure (recover.ts).
 import { type Draft, type Reply, type Store } from "./store.ts";
 
 export type SourceKind = "youtube" | "instagram" | "website";
@@ -49,6 +49,8 @@ export type CommentAdapter = {
 	answered?(c: Comment, mine: Comment[]): boolean;
 };
 
+// Sites rewrite line breaks (one forum stores \n as \r\n), so a read-back compares only the words: a false "not sent" invites a duplicate.
+export const sameWords = (a: string, b: string): boolean => a.replace(/\s+/g, " ").trim() === b.replace(/\s+/g, " ").trim();
 export const commentId = (source: string, native: string): string => `cm:${source}:${native}`;
 export const threadKey = (source: string, thread: string): string => `${source}/${thread}`;
 export const DM_THREAD = "dm:";
@@ -67,7 +69,8 @@ export function toComment(src: SourceConfig, r: RawComment, collector: string): 
 }
 
 export type Approval = { by: "owner" } | { by: "rule" };
-export type ReplyRequest = { code: string; approval: Approval; text?: string };
+/** `resend`: the owner's 다시 보내기 of a reply nobody can say went up, the only send that passes an unsure record. */
+export type ReplyRequest = { code: string; approval: Approval; text?: string; resend?: true };
 export type GateDeps = { store: Store; adapters: Partial<Record<SourceKind, CommentAdapter>>; now: () => number; collector: string; inflight: Set<string>; onState?: (r: Reply) => void };
 export type GateResult = { ok: true; reply: Reply; done: Promise<Reply> } | { ok: false; reason: string };
 
@@ -115,10 +118,11 @@ export function dispatchReply(req: ReplyRequest, deps: GateDeps): GateResult {
 	} else if (req.approval.by !== "owner") return refuse("보내기 승인이 없어요");
 	const sendId = `send:${comment.id}`;
 	const prior = store.replies().find(r => r.id === sendId);
+	if (prior?.state === "unsure" && !(req.resend && req.approval.by === "owner")) return refuse("이 답글은 올라갔는지 확인이 필요해요. 다시 보내기나 완료를 골라 주세요");
 	if (deps.inflight.has(sendId) || prior?.state === "sending" || prior?.state === "sent") return refuse(prior?.state === "sent" ? "이미 답글을 보냈어요" : "이미 보내는 중이에요");
 	const adapter = deps.adapters[src.kind];
 	if (!adapter) return refuse("이 댓글 종류를 보낼 수 없어요");
-	const record: Reply = { id: sendId, commentId: comment.id, source: src.key, thread: comment.thread, text, state: "sending", at: now(), draft: draft.code, via: req.approval.by, collector: deps.collector, ...(prior?.state === "failed" ? { attempts: (prior.attempts ?? 1) + 1 } : {}) };
+	const record: Reply = { id: sendId, commentId: comment.id, source: src.key, thread: comment.thread, text, state: "sending", at: now(), draft: draft.code, via: req.approval.by, collector: deps.collector, ...(prior?.state === "failed" || prior?.state === "unsure" ? { attempts: (prior.attempts ?? 1) + 1 } : {}) };
 	deps.inflight.add(sendId);
 	store.putReply(record);
 	deps.onState?.(record);

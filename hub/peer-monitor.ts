@@ -397,12 +397,12 @@ export function createPeerMonitor(deps: MonitorDeps): PeerMonitor {
 					const b = a.op === "draft-revise" ? { change: a.change, ...(a.part ? { part: a.part } : {}) } : a.op === "draft-send" && typeof a.text === "string" ? { text: a.text } : {};
 					return ask("POST", `/api/comments/drafts/${e(a.code)}/${a.op.slice(6)}`, b, login);
 				}
-				if ((a.op === "send-retry" || a.op === "send-dismiss") && a.id) return ask("POST", `/api/comments/sends/${e(a.id)}/${a.op.slice(5)}`, {}, login);
+				if ((a.op === "send-retry" || a.op === "send-dismiss" || a.op === "send-done") && a.id) return ask("POST", `/api/comments/sends/${e(a.id)}/${a.op.slice(5)}`, {}, login);
 				if (a.op === "draft" && a.commentId) return ask("POST", `/api/comments/comment/${e(a.commentId)}/draft`, {}, login);
 				if (a.op === "no-reply" && a.commentId) return ask(a.on === false ? "DELETE" : "POST", `/api/comments/comment/${e(a.commentId)}/no-reply`, a.on === false ? undefined : {}, login);
 				if (a.op === "read" && a.source && a.thread) return ask("POST", `/api/comments/thread/${e(a.source)}/${e(a.thread)}/read`, {}, login);
 				if (a.op === "source" && a.key) return ask("PUT", `/api/comments/sources/${e(a.key)}`, { ...(a.watch !== undefined ? { watch: a.watch } : {}), ...(a.autoDraft !== undefined ? { autoDraft: a.autoDraft } : {}) }, login);
-				return bad("op must be draft-send, draft-drop, draft-restore, draft-revise, send-retry, send-dismiss, draft, no-reply, read or source");
+				return bad("op must be draft-send, draft-drop, draft-restore, draft-revise, send-retry, send-dismiss, send-done, draft, no-reply, read or source");
 			}
 			// 다시 보내기 / 지우기 of failed sends the other computer ran for the owner's pick (hub/reply-outcomes.ts): its own gate checks the pick again there.
 			case "approvals":

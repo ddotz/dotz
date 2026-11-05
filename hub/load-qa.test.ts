@@ -137,4 +137,24 @@ describe.skipIf(!existsSync(SANDBOX_EXEC))("load-qa", () => {
 		expect(composeSends() - mails).toBe(1);
 		expect(posts() - comments).toBe(1);
 	});
+
+	test("7 a comment POST cut by a restart ends 확인 필요, posts nothing by itself, and the owner closes it", async () => {
+		const card = (await cards()).find(c => /^CD/.test(c.ref) && !COMBINED.includes(c.ref))!;
+		const before = posts();
+		flag("hang-comment", true);
+		await approve(card);
+		await waitFor("the POST to start", () => posts() === before + 1);
+		process.kill(g.pid, "SIGKILL");
+		await waitFor("the gateway to die", () => !alive(g.pid));
+		await Bun.$`pkill -9 -f ${`comments.ts send ${card.ref}`}`.quiet();
+		await start(g);
+		flag("hang-comment", false);
+		const row = await waitFor("the unsure row", async () => (await api.get("/api/replies")).failed.find((f: Json) => f.ref === card.ref && f.unsure) ?? false);
+		expect((await resultOf(card.ref))?.state).toBe("unsure");
+		expect((await api.post("/api/approvals", { items: [{ ref: card.ref, to: card.to, n: 1 }] })).status).toBeLessThan(500);
+		expect(posts()).toBe(before + 1);
+		expect((await api.post(`/api/comments/sends/${encodeURIComponent(row.sendId)}/done`, {})).status).toBe(200);
+		expect((await api.get("/api/replies")).failed.some((f: Json) => f.ref === card.ref)).toBe(false);
+		expect(posts()).toBe(before + 1);
+	});
 });

@@ -1,13 +1,14 @@
 // Real wiring of the comment routes inside the gateway (hub/routes.ts imports this). The watch itself is a dotz_watch script
 // (features/comments/bin/watch.ts), so the gateway holds no timer and a quiet install costs nothing.
 import { hostname } from "node:os";
-import { MAY_HAVE_GONE_OUT } from "../approval-send.ts";
+import { MAY_HAVE_GONE_OUT, type SendLook } from "../approval-send.ts";
 import { cfg, DATA_DIR, log } from "../config.ts";
 import { broadcast } from "../events.ts";
 import { resolveName } from "../machine-name.ts";
 import { triggerFollowup } from "../followup.ts";
 import { commentOriginal } from "./original.ts";
 import { realEngine } from "./real.ts";
+import { POST_UNKNOWN } from "./recover.ts";
 import { createCommentsWeb } from "./web.ts";
 
 // An approved reply that was posted starts the app's 이어서 할 일 check (hub/followup.ts), once per send record.
@@ -40,19 +41,14 @@ export const commentOutcomeFacts = () => {
 	return { sources: Object.fromEntries(Object.values(cfg.sources).map(s => [s.key, { src: s, app: engine.ownerOf(s) }])), drafts: engine.store.drafts().filter(d => d.status === "pending" && cfg.sources[d.source]), replies: engine.store.replies(), comments: engine.store.comments() };
 };
 /** Whether a send of comment draft `code` failed and is on record (its 다시 보내기 / 지우기 are the comment routes'). */
-/**
- * On boot: a reply left `sending` by the run that stopped has no sender in this process. It ends failed, visible in the failed list, with a text that says it may have
- * gone out; the owner's 다시 보내기 is the only thing that sends it again (the gate allows a second try of a failed reply, never of a sending one).
- */
-export function commentSettleSending(): number {
-	const stuck = engine.store.replies().filter(r => r.state === "sending");
-	for (const r of stuck) engine.store.putReply({ ...r, state: "failed", reason: MAY_HAVE_GONE_OUT });
-	return stuck.length;
-}
+/** On boot: a reply left `sending` by the run that stopped ends unsure (recover.ts): only proof read back from the platform or the owner's own pick ends it. */
+export const commentSettleSending = (): number => engine.leaveUnsure();
+export const commentProveSends = () => engine.proveSends();
 /** How the last send of comment draft `code` ended, when the store knows. */
-export function commentSendOutcome(code: string): { state: "sent" } | { state: "failed"; text: string } | undefined {
+export function commentSendOutcome(code: string): Exclude<SendLook, { state: "alive" }> | undefined {
 	const reply = engine.store.replies().find(r => r.draft === code);
 	if (reply?.state === "sent" || engine.store.drafts().find(d => d.code === code)?.status === "sent") return { state: "sent" };
+	if (reply?.state === "unsure") return { state: "unsure", text: reply.reason ?? POST_UNKNOWN };
 	return reply?.state === "failed" ? { state: "failed", text: reply.reason ?? MAY_HAVE_GONE_OUT } : undefined;
 }
 export const commentSendFailed = (code: string): boolean => engine.store.replies().some(r => r.draft === code && r.state === "failed");

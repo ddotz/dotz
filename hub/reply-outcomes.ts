@@ -10,7 +10,7 @@ import type { Draft, Reply } from "./comments/store.ts";
 import { type SendAction, type SendJob, sendActionOf } from "./approval-send.ts";
 import { DRAFT_BODY_MAX } from "./draft-approval.ts";
 
-export type Failed = { key: string; kind: "mail" | "comment" | "kakao"; app: string; who: string; what: string; why?: string; at: number; ref?: string; conv?: string; sendId?: string; chatId?: string; text: string; original?: { who: string; text: string }; attempts?: number };
+export type Failed = { key: string; kind: "mail" | "comment" | "kakao"; app: string; who: string; what: string; why?: string; at: number; ref?: string; conv?: string; sendId?: string; chatId?: string; text: string; original?: { who: string; text: string }; attempts?: number; /** A comment reply nobody can say went up (comments/recover.ts): 다시 보내기 or 완료, never in a bulk retry. */ unsure?: true };
 export type Sent = { key: string; kind: "mail" | "comment" | "kakao"; app: string; who: string; what: string; at: number; how: "owner" | "rule" | "retry"; text: string; original?: { who: string; text: string } };
 
 /** The parts of a decision notice (hub/notices.ts) the outcomes read. */
@@ -87,9 +87,9 @@ export function collectOutcomes(i: OutcomeInputs): { failed: Failed[]; sent: Sen
 	for (const r of cf.replies) {
 		const s = cf.sources[r.source], c = byComment.get(r.commentId);
 		if (!s) continue;
-		if (r.state === "failed" && pending.has(r.draft)) {
+		if ((r.state === "failed" || r.state === "unsure") && pending.has(r.draft)) {
 			commentFailed.add(r.draft);
-			failed.push({ key: `comment:${r.id}`, kind: "comment", app: s.app, who: c?.author ?? "", what: c?.postTitle ?? "", ...(r.reason ? { why: clip(r.reason, WHY_MAX) } : {}), at: r.at, ref: r.draft, sendId: r.id, text: r.text.slice(0, DRAFT_BODY_MAX), ...original(c), ...(r.attempts ? { attempts: r.attempts } : {}) });
+			failed.push({ key: `comment:${r.id}`, kind: "comment", app: s.app, who: c?.author ?? "", what: c?.postTitle ?? "", ...(r.reason ? { why: clip(r.reason, WHY_MAX) } : {}), at: r.at, ref: r.draft, sendId: r.id, text: r.text.slice(0, DRAFT_BODY_MAX), ...original(c), ...(r.attempts ? { attempts: r.attempts } : {}), ...(r.state === "unsure" ? { unsure: true as const } : {}) });
 		} else if (r.state === "sent" && r.at >= i.since)
 			sent.push({ key: `comment:${r.id}`, kind: "comment", app: s.app, who: c?.author ?? "", what: c?.postTitle ?? "", at: r.at, how: r.via === "rule" ? "rule" : (r.attempts ?? 1) > 1 ? "retry" : "owner", text: r.text.slice(0, DRAFT_BODY_MAX), ...original(c) });
 	}
