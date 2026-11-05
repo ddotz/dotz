@@ -72,7 +72,7 @@ Slack, JANDI, Telegram과 Cloudflare 접속은 터미널 마법사에도 없어�
 | `config.json` 있고 첫 실행 표시 없음 | 지금과 같음. 온보딩은 절대 안 뜸 |
 | 첫 실행 표시가 `pending` | 코드만 바꾸고 새 토큰 주소로 이어서 열기 |
 
-Linux의 화면 판별은 `DISPLAY` 또는 `WAYLAND_DISPLAY`, SSH 판별은 `SSH_CONNECTION`이에요. `open`이나 `xdg-open`이 실패하면 주소를 찍어요.
+Linux의 화면 판별은 `DISPLAY` 또는 `WAYLAND_DISPLAY`, SSH 판별은 `SSH_CONNECTION`이에요. WSL에서는 윈도우 브라우저를 쓰므로 화면 판별을 건너뛰고 `wslview`나 PowerShell `Start-Process`로 열어요. `open`이나 `xdg-open`이 실패하면 주소를 찍어요.
 
 ## 씨앗 설정과 첫 실행 모드
 

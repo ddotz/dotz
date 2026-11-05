@@ -13,7 +13,7 @@
 
 <p align="center">
   <img alt="최신 버전" src="https://img.shields.io/github/v/tag/ddotz/dotz?label=version&color=3182f6">
-  <img alt="macOS와 Linux 지원" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-191f28">
+  <img alt="macOS, Linux, Windows(WSL) 지원" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows%20(WSL)-191f28">
 </p>
 
 <p align="center">
@@ -36,6 +36,8 @@
 curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh
 ```
 
+맥과 리눅스는 터미널에서 바로, 윈도우는 WSL 안에서 실행해요. WSL에 깔린 dotz가 윈도우를 다뤄요: [윈도우 설치 가이드](docs/windows.md)
+
 새로 설치하면 브라우저가 열리고, 거기서 이름과 말투, 연결할 것을 차례로 정해요. 한 번 쓰는 주소는 이 컴퓨터에서만 열려요. 끝나면 게이트웨이가 켜지고 화면 안내가 한 번 떠요. 업데이트는 이 레포에서 알아서 받아요.
 
 - `--no-open`을 주거나 SSH, 화면 없는 컴퓨터에서는 브라우저를 열지 않고 주소를 터미널에 찍어요. SSH면 내 컴퓨터에서 쓸 `ssh -L` 한 줄도 같이 나와요.
@@ -47,5 +49,6 @@ curl -fsSL https://raw.githubusercontent.com/ddotz/dotz/main/install.sh | sh
 - [구조](docs/ARCHITECTURE.md)
 - [내 설정으로 바꾸기](docs/customization.md)
 - [밖에서 웹 앱 열기](docs/web-access.ko.md)
+- [윈도우(WSL) 설치](docs/windows.md)
 - [개발 가이드](docs/development.md)
 - [서드파티 고지](THIRD_PARTY_NOTICES.md)
