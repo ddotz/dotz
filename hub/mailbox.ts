@@ -2,9 +2,9 @@
 // `<data dir>/custom/mailboxes.json` is the only store; a missing or broken file means no boxes (every mail is in the implicit base box).
 // Leaf module: hub/mail.ts imports it (trackBox), so it never imports hub/mail.ts; the parts that need the mail records or the app
 // instances are in hub/routes-mailbox.ts.
-import { mkdirSync, readFileSync, statSync } from "node:fs";
+// No hub/config.ts either: its import reads config.json, and the reply-draft code that imports this also runs in setup CLIs before an install has one.
+import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { log, writeAtomic } from "./config.ts";
 
 export const BASE_ID = "base";
 export type MailboxWhy = { kind: "from" | "subj" | "body" | "src" | "judge" | "moved" | "thread"; value?: string };
@@ -83,14 +83,16 @@ export function loadMailboxes(dir: string): Mailboxes {
 	try {
 		store = parse(JSON.parse(readFileSync(file, "utf8")));
 	} catch (error) {
-		log(`mailbox: ${file} unreadable, no mailboxes: ${error}`);
+		console.error(`mailbox: ${file} unreadable, no mailboxes: ${error}`);
 	}
 	cache.set(file, { sig, store });
 	return store;
 }
 export function saveMailboxes(dir: string, store: Mailboxes): void {
 	mkdirSync(join(dir, "custom"), { recursive: true });
-	writeAtomic(fileOf(dir), `${JSON.stringify(store, null, 2)}\n`);
+	const file = fileOf(dir), tmp = `${file}.${process.pid}.tmp`;
+	writeFileSync(tmp, `${JSON.stringify(store, null, 2)}\n`);
+	renameSync(tmp, file);
 	cache.delete(fileOf(dir));
 }
 
@@ -143,7 +145,7 @@ export const pinKey = (instance: string, source: string, id: string) => `${insta
 
 // conversation -> box id of the stored mail, "" for a stored mail with no box of its own (filled by hub/mail.ts at load and on every recordMail): rule 1 reads it, no file read per mail.
 const convBox = new Map<string, string>();
-export const trackBox = (r: { source: string; id: string; mbox?: string }): void => void convBox.set(convKey(r.source, r.id), r.mbox ?? "");
+export const trackBox = (r: { source: string; id: string; mbox?: string; dir?: string }): void => void (r.dir !== "out" && convBox.set(convKey(r.source, r.id), r.mbox ?? ""));
 export const boxOfConv = (source: string, id: string): string | undefined => convBox.get(convKey(source, id));
 
 /** Remembers the owner's move of a conversation past the eviction of its records; the oldest pins go over the cap. */

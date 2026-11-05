@@ -947,7 +947,7 @@ function monStatNode(m) {
     st.tone === "err" ? el("span", { class: "tag err", text: st.text }) : null);
 }
 // A peer's app is `<its key>~<computer hash>`: the same key may exist on this computer too (34-peer-monitoring.js pqApp).
-const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? it.key.slice(2) : it.app && it.pc ? pqApp(it.inst, it.pc) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : it.mon && it.mon.kind === "schedule" && it.mon.schedule && !it.pc ? `s:${it.mon.schedule}` : "";
+const monSettingsApp = it => !it || it.off ? "" : it.app && !it.pc ? (it.accounts && MX.acct !== "all" ? MX.acct : it.key.slice(2)) : it.app && it.pc ? pqApp(it.inst, it.pc) : it.mon && it.mon.kind === "watch" && it.mon.watch ? `w:${it.mon.watch}` : it.mon && it.mon.kind === "schedule" && it.mon.schedule && !it.pc ? `s:${it.mon.schedule}` : "";
 // A connection that is down says so at the top of the conversation, whether or not an alert went out, with the way to check again.
 // Two states, two banners: kind "down" (the connection is gone: err tone, 연결이 끊겼어요) and "fail" (connected, the last check failed: err tone too,
 // 확인 실패). The head is passed in, never guessed from the detail text.

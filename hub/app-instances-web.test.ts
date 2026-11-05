@@ -7,7 +7,7 @@ import { readSettings, writeSettings } from "./app-settings.ts";
 import { appEntries, integrationAvailable, integrationContext, integrationItems } from "./integrations.ts";
 import { fakeHub, json, waitFor, run, type View } from "./test-web.ts";
 
-// App instances in the shipped web (web/js/30-monitoring.js, 32-app-settings.js, 34-peer-monitoring.js): two mail rows with their own items, the name
+// App instances in the shipped web (web/js/30-monitoring.js, 30-mailboxes.js, 32-app-settings.js, 34-peer-monitoring.js): one mail row with an account per instance, the name
 // field in the settings panel, 삭제 with its confirm in 앱 관리, and the same on a peer's apps. Headless Bun.WebView at 390px against a stub gateway whose
 // integration, settings and app routes call the real hub code on a temp data dir. Screenshots go to the folder APP_INSTANCE_SHOTS names, if set.
 const SHOTS = process.env.APP_INSTANCE_SHOTS;
@@ -100,32 +100,31 @@ const boot = async (): Promise<View> => {
 	await waitFor(v, `S && NM.loaded && NT.loaded && PR.fresh && INTG.items.length`);
 	await run(v, `if (dotzTheme.get() === "dark") dotzTheme.toggle()`);
 	await run(v, `go("monitoring")`);
-	await waitFor(v, `PQ.loaded && ${rowOf("i:mail-2")}`);
+	await waitFor(v, `PQ.loaded && INTG.items.some(i => i.key === "mail-2") && ${rowOf("i:mail")}`);
 	return v;
 };
 
 describe("앱 인스턴스 at 390px", () => {
-	test("two mail rows, each with its own label and its own source's items only", async () => {
+	test("one mail row for both instances; each account shows its own source's items only", async () => {
 		const v = await boot();
 		expect(appEntries(data).filter(e => e.app === "mail").map(e => e.key)).toEqual(["mail", "mail-2", "mail-3"]);
 		const names = await q<string[]>(v, `return [...document.querySelectorAll("#mon-side .cv-row")].filter(r => /^i:mail/.test(r.dataset.k) && !r.dataset.k.includes("|")).map(r => r.dataset.k + "=" + r.querySelector(".cv-n").textContent)`);
-		expect(names).toEqual(["i:mail=메일", "i:mail-2=개인 메일"]);
-		expect(await q(v, `return ${rowOf("i:mail")}.querySelector(".cv-p").textContent`)).toContain("1");
-		expect(await q(v, `return ${rowOf("i:mail-2")}.querySelector(".cv-p").textContent`)).toContain("2");
-		await shot(v, "01-two-mail-rows.png");
-		await run(v, `${rowOf("i:mail-2")}.click()`);
-		await waitFor(v, `MON.sel === "i:mail-2" && document.querySelector("#mon-tl .rc")`);
+		expect(names).toEqual(["i:mail=메일"]);
+		expect(await q(v, `return ${rowOf("i:mail")}.querySelector(".cv-p").textContent`)).toContain("3");
+		await shot(v, "01-one-mail-row.png");
+		await run(v, `go("monitoring", "i:mail/mail-2/all")`);
+		await waitFor(v, `MON.sel === "i:mail" && MX.acct === "mail-2" && document.querySelector("#mon-tl .rc")`);
 		const second = await q<string[]>(v, `return [...document.querySelectorAll("#mon-tl .rc .rc-title")].map(t => t.textContent)`);
 		expect(second.sort()).toEqual(["청구서 발송", "택배 도착 안내"]);
-		expect(await q(v, `return monName()`)).toBe("개인 메일");
-		await run(v, `go("monitoring", "i:mail")`);
-		await waitFor(v, `MON.sel === "i:mail" && document.querySelector("#mon-tl .rc")`);
+		expect(await q(v, `return monName()`)).toBe("메일");
+		await run(v, `go("monitoring", "i:mail/mail/all")`);
+		await waitFor(v, `MX.acct === "mail" && document.querySelectorAll("#mon-tl .rc").length === 1`);
 		expect(await q(v, `return [...document.querySelectorAll("#mon-tl .rc .rc-title")].map(t => t.textContent)`)).toEqual(["회의 일정 확인"]);
 	}, 20_000);
 
 	test("the settings panel has a name field; changing it PATCHes label and the row, the detail title and the sheet show the new name", async () => {
 		const v = await boot();
-		await run(v, `go("monitoring", "i:mail-2")`);
+		await run(v, `go("monitoring", "i:mail/mail-2/all")`);
 		await waitFor(v, `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd")`);
 		await run(v, `document.querySelector("#as-bar:not([hidden]), #mon-head .as-hd").click()`);
 		await waitFor(v, `target === "settings:mail-2"`);
@@ -139,9 +138,8 @@ describe("앱 인스턴스 at 390px", () => {
 		expect(calls.filter(c => c.startsWith("PATCH mail-2"))).toEqual([`PATCH mail-2 {"label":"회사 보조"}`]);
 		expect(appsFile()["mail-2"].label).toBe("회사 보조");
 		await closeScreen(v);
-		await run(v, `go("monitoring", "i:mail-2")`);
-		await waitFor(v, `monName() === "회사 보조"`);
-		expect(await q(v, `return monItems().find(i => i.key === "i:mail-2").name`)).toBe("회사 보조");
+		await run(v, `go("monitoring", "i:mail/mail-2/all")`);
+		await waitFor(v, `MX.accts.get("mail-2").label === "회사 보조"`);
 	}, 20_000);
 
 	test("앱 관리 lists the off instance with 다시 켜기 and 삭제; 삭제 opens a confirm, 취소 closes it, 삭제 확인 deletes it for good", async () => {
