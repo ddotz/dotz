@@ -466,10 +466,19 @@ function ntApply(item, unread) {
 }
 // Throws with the hub's reason when the answer could not be delivered.
 // `files` (uploads, 10-decision-card.js uploadFile) go with a draft's 직접 수정 answer to the bot; a peer's question takes none.
-async function ntPost(n, num, note, files) {
-  if (n.pc) { await pqNotice(n, "answer", { id: String(n.id), n: num, ...(note ? { note } : {}) }); return; }   // a peer's question: answered on that computer (34-peer-monitoring.js)
-  const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(note ? { note } : {}), ...(files && files.length ? { files } : {}) });
-  ntApply(r.item, r.unread);
+// `label` is the button text the owner saw for `num` (default: the option of that number on the card as shown); the hub refuses it when the card's options changed since,
+// and the list is read again so the new options show (the error is thrown to the caller's toast like any other).
+const NT_STALE = "카드 선택지가 바뀌었어요. 다시 확인하고 골라 주세요";
+async function ntPost(n, num, note, files, label) {
+  const seen = label || ((n.decision && n.decision.options || []).find(o => o.n === num) || {}).label;
+  try {
+    if (n.pc) { await pqNotice(n, "answer", { id: String(n.id), n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}) }); return; }   // a peer's question: answered on that computer (34-peer-monitoring.js)
+    const r = await api(`/api/notices/${enc(n.id)}/answer`, "POST", { n: num, ...(seen ? { label: seen } : {}), ...(note ? { note } : {}), ...(files && files.length ? { files } : {}) });
+    ntApply(r.item, r.unread);
+  } catch (e) {
+    if (e && e.message === NT_STALE) await loadNotices();
+    throw e;
+  }
 }
 // The open decision that is this chat card's question (a card with one block), so the card and the notice answer through the same path.
 function ntFor(t, at, opt) {
@@ -557,7 +566,7 @@ async function ntAnswer(n, opt, note) {
   if (opt.action === "form") { ntDirect(n); return; }
   if (!note && ntNeedsNote(n, opt)) { NS.edit = { id: String(n.id), opt, text: "", fresh: true }; ntSheetPaint(); return; }
   NS.busy = true; ntSheetPaint();
-  try { await ntPost(n, opt.n, note); NS.edit = null; }
+  try { await ntPost(n, opt.n, note, undefined, opt.label); NS.edit = null; }
   catch (err) { toast(err.message, true); }
   NS.busy = false; ntSheetPaint();
 }

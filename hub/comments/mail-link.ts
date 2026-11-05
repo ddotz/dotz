@@ -38,7 +38,7 @@ export function realMailLink(deps: FlowDeps = {}): RealMailLink {
 		},
 		state: id => getDraft(id)?.status,
 		send: async (id, opts) => {
-			const r = await sendDraft(id, deps, { withReply: true, ...(opts?.asIs ? { asIs: true as const } : {}) });
+			const r = await sendDraft(id, deps, { withReply: true, ...(opts?.asIs ? { asIs: true as const } : {}), ...(opts?.retry ? { retry: true as const } : {}) });
 			return { ok: r.ok, text: r.text };
 		},
 		issues: id => {

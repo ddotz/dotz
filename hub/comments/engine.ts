@@ -4,7 +4,7 @@ import { generateReply, lessonOf, reviseReply, type ReplyItem, type ReplyStyle }
 import { type Comment, type CommentAdapter, dispatchReply, type GateResult, isUntitled, type Post, type RawComment, ruleAllows, type SourceConfig, type SourceKind, threadKey, toComment, watches } from "./contract.ts";
 import { UNKNOWN_USER } from "../../features/youtube-instagram/lib/ig-owner.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, LINT_REFUSED, asksForFile, fileSizeText, recipientCheck } from "../draft-approval.ts";
-import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Tokens } from "./store.ts";
+import { type ClosedReason, createStore, type Draft, type MailOutcome, type Reply, type Store, type Tokens } from "./store.ts";
 import { unrepliedFresh } from "../unreplied.ts";
 import type { MailQuery } from "./mail-match.ts";
 import { EXAMPLES, pastPairs, SEEDED_NOTE, similarPairs, withExamples } from "./past.ts";
@@ -24,7 +24,7 @@ export type MailLink = {
 	/** The status of a mail draft whatever it is ("pending", "sent", ...); missing = only pending drafts are known (`view`). */
 	state?: (id: string) => string | undefined;
 	/** Sends the mail draft; the reply was just posted by the owner's pick, so no second pick is asked. A mail whose files disagree with its words is refused unless `asIs` (the owner picked 이대로 보내기). */
-	send: (id: string, opts?: { asIs?: true }) => Promise<{ ok: boolean; text: string }>;
+	send: (id: string, opts?: { asIs?: true; retry?: true }) => Promise<{ ok: boolean; text: string }>;
 	/** Where the mail draft's words and files disagree; checked before the reply is posted. Missing = nothing to check. */
 	issues?: (id: string) => string[];
 	/** What the mail's send-time lint would refuse (placeholder, forbidden expression, recipient), as the owner reads it; checked before the reply is posted, also for 이대로 보내기. Missing = nothing to check. */
@@ -100,6 +100,22 @@ function threadMailCounts(replies: Reply[], drafts: Draft[], stateOf: (commentId
 }
 
 export type Step = { ok: true; draft: Draft } | { ok: false; reason: string };
+
+/**
+ * 다시 보내기 of a combined card whose reply is posted while its mail failed (Reply.mail): that mail alone goes out, the reply is never posted twice.
+ * Refused once the mail went out or its draft is gone.
+ */
+async function resendPostedMail(store: Store, mail: MailLink | undefined, d: Draft, retry: true | undefined, emit: (e: Record<string, unknown>) => void): Promise<{ ok: boolean; text: string }> {
+	const rep = store.replies().filter(r => r.draft === d.code && r.state === "sent").at(-1);
+	if (!d.mail || !mail) return { ok: false, text: "이 초안에는 함께 보낼 메일이 없어요" };
+	if (rep?.mail?.state !== "failed" || (mail.state?.(d.mail) ?? (mail.view(d.mail) ? "pending" : undefined)) !== "pending") return { ok: false, text: "함께 보낼 메일은 이미 나갔거나 초안이 없어요" };
+	const m = await mail.send(d.mail, retry ? { retry } : undefined).catch(e => ({ ok: false, text: e instanceof Error && e.message ? e.message.slice(0, 160) : "메일을 보내는 중 오류가 났어요" }));
+	if (m.ok) {
+		store.putReply({ ...rep, mail: { state: "sent", text: m.text } });
+		emit({ kind: "comment_send", source: rep.source, thread: rep.thread, id: rep.id, state: rep.state, mail: "sent" });
+	}
+	return m;
+}
 
 export function createEngine(deps: EngineDeps) {
 	const store = createStore(deps.dir);
@@ -313,11 +329,11 @@ export function createEngine(deps: EngineDeps) {
 	}
 
 	// 메일만 보내기 (owner only): the mail of a reply + mail card goes out now; the reply draft stays pending alone and is asked again.
-	async function sendMailOnly(draftCode: string): Promise<{ ok: boolean; text: string }> {
+	async function sendMailOnly(draftCode: string, opts: { retry?: true } = {}): Promise<{ ok: boolean; text: string }> {
 		const d = store.drafts().find(x => x.code === draftCode);
-		if (!d || d.status !== "pending") return { ok: false, text: "그 초안을 찾지 못했거나 이미 처리됐어요" };
+		if (!d || d.status !== "pending") return d?.status === "sent" ? resendPostedMail(store, deps.mail, d, opts.retry, emit) : { ok: false, text: "그 초안을 찾지 못했거나 이미 처리됐어요" };
 		if (!d.mail || !deps.mail) return { ok: false, text: "이 초안에는 함께 보낼 메일이 없어요" };
-		const m = await deps.mail.send(d.mail).catch(e => ({ ok: false, text: e instanceof Error && e.message ? clip(e.message, 160) : "메일을 보내는 중 오류가 났어요" }));
+		const m = await deps.mail.send(d.mail, opts.retry ? { retry: true } : undefined).catch(e => ({ ok: false, text: e instanceof Error && e.message ? clip(e.message, 160) : "메일을 보내는 중 오류가 났어요" }));
 		if (m.ok) {
 			const { mail: _mail, mailAt: _mailAt, ...rest } = d;
 			store.putDraft({ ...rest, clean: !rest.notes.length, mailKept: d.mail });

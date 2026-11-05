@@ -119,7 +119,7 @@ describe("decision options that need detail", () => {
 		const posted = await posts();
 		expect(posted).toHaveLength(1);
 		expect(posted[0]!.path).toBe(`/api/notices/${n.id}/answer`);
-		expect(posted[0]!.body).toEqual({ n: 2, note: "3시 말고 4시로" });
+		expect(posted[0]!.body).toEqual({ n: 2, label: "고치기", note: "3시 말고 4시로" });
 		// the sheet stays open saying 고치는 중… with the old draft; the rewritten draft (a newer open one of the same conversation) replaces it
 		expect(await view.evaluate(`document.querySelector(".fs-ft .dc-st").textContent`)).toBeTruthy();
 		await view.evaluate(`(() => {
@@ -144,7 +144,7 @@ describe("decision options that need detail", () => {
 		await type("다음 주 화요일 일정을 보내 드립니다.");
 		await view.evaluate(`(document.querySelector(".fs-ft .dc-go").click(), 0)`);
 		await waitForPost();
-		expect((await posts())[0]!.body).toEqual({ n: 2, note: "이 내용으로 고쳐 주세요: 다음 주 화요일 일정을 보내 드립니다." });
+		expect((await posts())[0]!.body).toEqual({ n: 2, label: "고치기", note: "이 내용으로 고쳐 주세요: 다음 주 화요일 일정을 보내 드립니다." });
 	});
 
 	test("the notice sheet of a plain decision asks for the reason of '안 됨' too", async () => {
@@ -163,7 +163,7 @@ describe("decision options that need detail", () => {
 		await waitForPost();
 		const posted = await posts();
 		expect(posted[0]!.path).toBe(`/api/notices/${n.id}/answer`);
-		expect(posted[0]!.body).toEqual({ n: 2, note: "로그인이 안 돼요" });
+		expect(posted[0]!.body).toEqual({ n: 2, label: "안 됨", note: "로그인이 안 돼요" });
 	});
 });
 

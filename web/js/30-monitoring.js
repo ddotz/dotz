@@ -334,7 +334,7 @@ function draftCardNode(n, o = {}) {
       const text = ta.value.trim();
       if (!text || !oEdit) return;
       dcSending.add(n.id); syncInlineChoices(); redraw();
-      try { await ntPost(n, oEdit.n, man ? MANUAL_LEAD + text : text); leave(); } catch (e) { toast(e.message, true); }
+      try { await ntPost(n, oEdit.n, man ? MANUAL_LEAD + text : text, undefined, oEdit.label); leave(); } catch (e) { toast(e.message, true); }
       dcSending.delete(n.id); syncInlineChoices();
     } });
   }

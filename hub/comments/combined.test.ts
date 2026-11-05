@@ -37,7 +37,7 @@ function fakeMail(log: string[], o: { failSend?: string; issues?: string[]; lint
 		},
 		issues: () => o.issues ?? [],
 		lint: () => o.lint ?? [],
-		send: async (id, opts) => (log.push(`send ${id}${opts?.asIs ? " as-is" : ""}`), o.failSend ? { ok: false, text: o.failSend } : { ok: true, text: "메일을 보냈어요" }),
+		send: async (id, opts) => (log.push(`send ${id}${opts?.asIs ? " as-is" : ""}${opts?.retry ? " retry" : ""}`), o.failSend ? { ok: false, text: o.failSend } : { ok: true, text: "메일을 보냈어요" }),
 		drop: id => void log.push(`drop ${id}`),
 		revise: async (id, change) => {
 			const v = drafts.get(id)!;
@@ -346,6 +346,22 @@ describe("sending one part of the card (send --only)", () => {
 		expect(after.status).toBe("pending");
 		expect(after.mail).toBeUndefined();
 		expect(r.lines.join("\n")).toContain("이 답글 올릴까요?");
+	});
+
+	test("a posted reply whose mail failed: --only mail --retry sends just the mail, once, and never posts the reply again", async () => {
+		const o: { failSend?: string } = { failSend: "SMTP 거부" };
+		const t = setup(o);
+		const d = await withMail(t);
+		pick(t, d.code, 1);
+		expect((await runComments(["send", d.code], t.engine, t.inbox)).code).toBe(1);
+		delete o.failSend;
+		const again = ["send", d.code, "--only", "mail", "--retry"];
+		const r = await runComments(again, t.engine, t.inbox);
+		expect(r.code).toBe(0);
+		expect(t.log).toEqual(["compose M1", "reply", "send M1", "send M1 retry"]);
+		expect(t.engine.store.replies()[0]).toMatchObject({ state: "sent", mail: { state: "sent" } });
+		expect((await runComments(again, t.engine, t.inbox)).code).toBe(1);
+		expect(t.log).toHaveLength(4);
 	});
 
 	test("without the owner's pick nothing goes out, and --only takes reply or mail only", async () => {

@@ -35,6 +35,13 @@ const PLACES: Record<string, { kind: "comment" | "mail"; lane: string }> = {
 };
 
 describe("approval sender", () => {
+	test("the sender asks the store about the action too: a posted reply with a mail left can send the mail and nothing else", () => {
+		const s = createApprovalSender({ kind: (ref, action) => (ref === "D9" && action === "send-mail" ? PLACES.D1 : undefined), run: async () => ({ code: 0, out: "" }), report: () => undefined, log: () => undefined });
+		expect(s.can("D9", "send")).toBe(false);
+		expect(s.can("D9", "send-mail")).toBe(true);
+		expect(s.enqueue({ ref: "D9", conv: "ch:1", action: "send", title: "x (D9)" })).toBe(false);
+	});
+
 	test("one place sends in the order approved, another place runs beside it, and a failure stops nothing", async () => {
 		const g = gatedRun();
 		const reports: SendResult[] = [];
@@ -77,6 +84,7 @@ describe("approval sender", () => {
 
 	test("the send commands are the ones the bot runs", () => {
 		expect(sendArgv("comment", "D1", "send-mail", "bun").slice(2)).toEqual(["send", "D1", "--only", "mail"]);
+		expect(sendArgv("comment", "D1", "send-mail", "bun", true)!.slice(2)).toEqual(["send", "D1", "--only", "mail", "--retry"]);
 		expect(sendArgv("mail", "RAAAAAA", "send", "bun")![1]).toEndWith("features/reply-drafts/bin/draft.ts");
 		expect(sendActionOf("보내기")).toBe("send");
 		expect(sendActionOf("고치기")).toBeUndefined();

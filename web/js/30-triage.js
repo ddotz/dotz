@@ -92,10 +92,17 @@ function trNext() {
   trPaint();
 }
 
+// Each item names the label of its button (1 보내기, 2 고치기, 3 보내지 않기); a hub that refuses a changed card (409) makes the list read again.
+const TR_LABEL = { 1: "보내기", 2: "고치기", 3: "보내지 않기" };
 async function trPost(items) {
-  const r = await api("/api/approvals", "POST", { items });
-  if (r && r.error) throw new Error(r.error);
-  return r;
+  try {
+    const r = await api("/api/approvals", "POST", { items: items.map(i => ({ ...i, label: TR_LABEL[i.n] })) });
+    if (r && r.error) throw new Error(r.error);
+    return r;
+  } catch (e) {
+    if (e && e.message === NT_STALE) await trLoad();
+    throw e;
+  }
 }
 // The owner's own words replace the draft's text before it is sent (POST /api/drafts/<ref>/body).
 async function trSaveEdits(c) {
