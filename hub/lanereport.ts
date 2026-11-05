@@ -37,8 +37,8 @@ export function nextLastText(lane: Lane, text: string): string {
 }
 
 // `notice` marks a gateway-written text ([lane error], [lane exited], pause/rate-limit): it is not the lane speaking, so it
-// leaves a pending ask alone.
-export function report(lane: Lane, written: string, notice = false): void {
+// leaves a pending ask alone. "pause": a usage-limit stop or recovery, which also starts no orchestrator turn (hub/lanerelay.ts).
+export function report(lane: Lane, written: string, notice: boolean | "pause" = false): void {
 	let text = notice ? written : normalizeAsk(written);
 	rmSync(pendingFile(lane), { force: true });
 	lane.unreported = false;
@@ -74,7 +74,7 @@ export function report(lane: Lane, written: string, notice = false): void {
 	writeFileSync(join(dir(lane.name), "report.md"), `${text}\n`);
 	// A [done] is checked against the task metadata before it is relayed; what contradicts it goes along with it. So is a
 	// report without a leading marker that says [done] further down (an OmO lane can open with its handoff block, "Ask: ...").
-	if (notice || !claimsDone) return hooks.report(lane, text, answering);
+	if (notice || !claimsDone) return hooks.report(lane, text, answering, notice === "pause");
 	const what = tone === "done" ? "[done]" : "report";
 	const claim = lane.claim;
 	void workerCheck(`lane:${lane.name}`, lane.workingSince ?? 0, lane.sessionFile)
