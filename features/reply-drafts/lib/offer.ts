@@ -1,14 +1,13 @@
 // The gateway's hook for a new mail: when this install turned the feature on (and auto), a mail that warrants a reply gets a draft in
 // the user's tone, offered as a send-approval [ask] (hub/draft-approval.ts). Never throws; nothing is sent from here.
-import { basename } from "node:path";
 import { addressesOf, precheck, withSenderAddress, type ReplyItem } from "../../../hub/reply-draft.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { asksForFile } from "../../../hub/draft-approval.ts";
 import { threadText } from "../../../hub/zele.ts";
 import { ownAddresses } from "../../../hub/mail-state.ts";
 import { threadIdOf, webmailSite } from "./senders.ts";
-import type { StageOpts } from "./staged.ts";
-import { askText, attachFolder, buildDraft, callOf, draftTrace, libraryFor, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
+import { retryWanted, type StageOpts, type Want } from "./staged.ts";
+import { askText, attachFolder, buildDraft, callOf, candidatesFor, chosenFrom, draftTrace, libraryFor, stageForReply, traceLine, type DraftTrace } from "./flow.ts";
 import { anyRuleOn, mailInstanceOf, matchRule, ruleFileMissing, ruleInstruction, rulesOf, stageRuleFiles } from "./rules.ts";
 import { learnFirst, MAIL_TONE_VERSION } from "./persona.ts";
 import { appOn, ensureSwitch, loadSettings } from "./settings.ts";
@@ -139,7 +138,8 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		}
 		// One budget for every model call of this draft: the rule match, the draft call and the file tie-break.
 		trace = draftTrace();
-		const flow = { call: deps.call, pick: deps.pick, trace, stage: deps.stage };
+		// A short wait for an iCloud file to come back (the offer queue waits on this draft); what is still away is retried in the background (wantFiles).
+		const flow = { call: deps.call, pick: deps.pick, trace, stage: { tries: 5, ...deps.stage } };
 		const rule = rules.length ? await matchRule({ from: item.from, subject: item.subject, text: item.text }, rules, callOf(flow, item, m.key, "rule")).catch(e => (log(`reply draft: rules for mail ${m.key} not matched: ${(e as Error).message}`), undefined)) : undefined;
 		if (!requested && !auto && !rule) {
 			markDrafted(looked);
@@ -154,8 +154,11 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		// The files are picked BEFORE the words are written, so the draft is told which files ride on it (and that none fits) and its text agrees
 		// with the attachments. A rule that names its files stages those instead.
 		const ruleFiles = !!rule?.files.length;
-		const files = ruleFiles ? undefined : await libraryFor(item, { source: m.source, ref: m.key }, flow).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined));
-		if (files && asksForFile(item.text)) item.files = files.map(f => basename(f.path));
+		// The model chooses among candidates (the rule's files first, then the library matches); no model call picks them.
+		const asked = asksForFile(item.text);
+		const cands = ruleFiles || asked ? await candidatesFor(item, { source: m.source, ref: m.key }, rule).catch(e => (log(`reply draft: files for mail ${m.key} not matched: ${(e as Error).message}`), undefined)) : undefined;
+		if (cands?.files.length) item.candidates = cands.files.map(f => f.rel);
+		else if (cands && asked) item.files = [];
 		const built = await buildDraft(item, { source: m.source, mailId: m.id, ref: m.key, ...(m.account ? { account: m.account } : {}), ...(m.attachments?.length ? { origAttachments: m.attachments.length } : {}) }, flow);
 		if (built.action !== "draft") {
 			markDrafted(looked);
@@ -166,13 +169,23 @@ async function offerOne(m: OfferMail, deps: OfferDeps, body: Promise<string | un
 		ensureSwitch();
 		if (rule) built.rec.rule = { id: rule.id, name: rule.name };
 		const warnings = [...built.warnings];
-		if (rule && ruleFiles) {
+		const chosen = chosenFrom(cands, built.files);
+		const notStaged = (e: Error): string[] => (log(`reply draft: files for mail ${m.key} not staged: ${e.message}`), []);
+		if (chosen) {
+			// Exactly what the model chose; with no `files` in its answer (chosen undefined) the matching below is today's.
+			warnings.push(...(await stageForReply(built.rec, flow, Promise.resolve(chosen)).catch(notStaged)));
+			if (cands?.missing.length) warnings.push(ruleFileMissing(cands.missing));
+		} else if (rule && ruleFiles) {
 			built.rec.asksFile = asksForFile(item.text) || undefined;
-			const missing = await stageRuleFiles(built.rec.id, rule, await attachFolder(m.key), flow.stage);
+			const later = { want: [] as Want[], why: [] as string[] };
+			const missing = await stageRuleFiles(built.rec.id, rule, await attachFolder(m.key), flow.stage, later);
+			if (later.want.length) built.rec.wantFiles = later.want;
+			warnings.push(...later.why);
 			if (missing.length) warnings.push(ruleFileMissing(missing));
-		} else warnings.push(...(await stageForReply(built.rec, flow, Promise.resolve(files)).catch(e => (log(`reply draft: files for mail ${m.key} not staged: ${(e as Error).message}`), []))));
+		} else warnings.push(...(await stageForReply(built.rec, flow).catch(notStaged)));
 		await deps.send(m.thread ? `th:${m.thread}` : m.target, askText(built.rec, warnings));
 		addDraft(built.rec);
+		if (built.rec.wantFiles?.length) retryWanted(built.rec.id, flow.stage);
 		markDrafted(looked);
 		deps.suggest?.(m.key, { kind: "reply-draft", label: "답장 초안", ref: built.rec.id, ...(rule ? { rule: rule.name } : {}) });
 		// Where the time went, so a slow draft can be traced: queue wait, body read, identity sweep (first draft only), the draft model call and the rest.

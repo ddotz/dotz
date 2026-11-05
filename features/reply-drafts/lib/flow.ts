@@ -1,16 +1,19 @@
 // The draft life cycle shared by the gateway offer (offer.ts) and the CLI (bin/draft.ts): build -> ask -> revise | send | drop.
 // Nothing here sends without the user's 1) 보내기 pick for exactly that draft id, read from the inbox log.
+import { statSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { DraftRule } from "../../../hub/app-settings.ts";
 import { linkedComment } from "../../../hub/comments/linked.ts";
 import { claimSend } from "../../../hub/draft-claim.ts";
 import { attachIssues } from "../../../hub/attach-check.ts";
 import { ATTACH_AS_IS_HINT, ATTACH_REFUSED, asksForFile, claimsAttachment, draftApprovalBlock, draftVerdict, type DraftVerdict } from "../../../hub/draft-approval.ts";
 import type { ReplyCall } from "../../../hub/reply-model.ts";
 import { addressesOf, generateChatReply, lintReply, lessonOf, NO_RECIPIENT, RECIPIENT_FAILURE, reviseReply, SENT_CLAIM_FAILURE, withSenderAddress, type ModelCall, type Recipient, type ReplyItem, type ReplyKind, type ReplyStyle } from "../../../hub/reply-draft.ts";
-import { matchLibrary, type LibraryFile } from "./library.ts";
+import { listLibrary, matchLibrary, MIN_SCORE, rankLibrary, type LibraryFile } from "./library.ts";
 import { basename } from "node:path";
+import { ruleFilePath } from "./rules.ts";
 import { canAttach, sendWith, webmailSite, type SendOutcome } from "./senders.ts";
-import { carryStagedFiles, stagedFiles, stagedName, stageLibraryFile, type StageOpts } from "./staged.ts";
+import { carryStagedFiles, removeStagedFile, stagedFiles, stagedName, stageFiles, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, loadSettings, loadStyle, paths, recordCorrection, type ToneKey } from "./settings.ts";
 import { maybeRefine } from "./persona.ts";
 import { addPair, styleWithExamples } from "./pairs.ts";
@@ -30,7 +33,7 @@ export async function refineAfterCorrection(key: ToneKey, deps: FlowDeps): Promi
 export const toneKey = (x: { app?: string; room?: string }): ToneKey => ({ app: x.app ?? "mail", ...(x.room !== undefined ? { room: x.room } : {}) });
 export type Meta = { source: string; mailId: string; ref: string; origAttachments?: number; /** The zele account the mail belongs to (its record's `account`); every zele call of the draft passes it. */ account?: string };
 // "ask" (chat only): the message needs a decision only the user can make; `choices` are 2-4 short answers.
-export type Built = { action: "skip"; reason: string } | { action: "draft"; rec: DraftRec; warnings: string[] } | { action: "ask"; question: string; choices: string[] };
+export type Built = { action: "skip"; reason: string } | { action: "draft"; rec: DraftRec; warnings: string[]; /** The candidates the model chose (ReplyResult.files); absent = it gave no choice. */ files?: string[] } | { action: "ask"; question: string; choices: string[] };
 
 // The subscription-only model call of the gateway (hub/outlang.ts callModel), loaded on first use so nothing else pulls in the gateway config.
 export function defaultCall(model?: string): ModelCall {
@@ -98,7 +101,9 @@ export function mailStyleOf(text: string, from: string): ReplyStyle | undefined 
 const styleOf = (item: ReplyItem, key: ToneKey) => (item.kind === "mail" ? styleWithExamples(loadStyle(key), "mail", item.text, item.from) : loadStyle(key));
 
 function toRec(item: ReplyItem, meta: Meta, r: { draft: { to: string; subject?: string; body: string }; questions: string[]; recipient?: Recipient }, changes: string[], deps: FlowDeps): DraftRec {
-	return { id: newId(), ...(r.recipient ? { recipient: r.recipient } : {}), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...meta, to: r.draft.to, ...(r.draft.subject ? { subject: r.draft.subject } : {}), body: r.draft.body, status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item };
+	// The candidates were for this one model call; a later revision builds its own.
+	const { candidates: _candidates, ...kept } = item;
+	return { id: newId(), ...(r.recipient ? { recipient: r.recipient } : {}), kind: item.kind, app: item.app ?? "mail", ...(item.room !== undefined ? { room: item.room } : {}), ...meta, to: r.draft.to, ...(r.draft.subject ? { subject: r.draft.subject } : {}), body: r.draft.body, status: "pending", created: nowOf(deps).toISOString(), changes, questions: r.questions, item: kept };
 }
 
 // The owner is asked once, with a complete draft (owner 2026-10-26): the one draft call already settles every open point it can from what it
@@ -111,7 +116,7 @@ export async function buildDraft(item: ReplyItem, meta: Meta, deps: FlowDeps): P
 	const r = await generateChatReply(item, style, call);
 	if (r.action !== "draft") return r;
 	const questions = item.kind === "mail" ? r.questions.filter(q => !ADDRESS_ASK.test(q)) : r.questions;
-	return { action: "draft", rec: toRec(item, meta, { ...r, questions }, [], deps), warnings: r.warnings };
+	return { action: "draft", rec: toRec(item, meta, { ...r, questions }, [], deps), warnings: r.warnings, ...(r.files ? { files: r.files } : {}) };
 }
 
 
@@ -131,6 +136,20 @@ const ADDRESS_ASK = /e-?mail address|recipient|address|주소|받는\s*(?:사람
 const FILE_WORD = /파일|첨부|문서|attach|file/i;
 const CANNOT = /못|없|불가|can'?not|can'?t|unable|not able|no access|don'?t have|do not have/i;
 export const claimsNoFile = (q: string): boolean => FILE_WORD.test(q) && CANNOT.test(q);
+// The owner's change is about the files of the draft (not its wording): the model then chooses the files again.
+const FILE_CHANGE = new RegExp(`${FILE_WORD.source}|보고서|전체본|음원|자료|사진|음원|\\bmr\\b`, "i");
+type Revision = { /** Library files offered besides those on the draft. */ lib: LibraryFile[]; /** Names the model may choose from: the files on the draft, then the library matches. */ names: string[] };
+
+// Candidates for a revision whose change is about files: the files on the draft plus the library matches for the change.
+async function revisionCandidates(old: DraftRec, change: string): Promise<Revision | undefined> {
+	if (old.kind !== "mail" || !canAttach(old.source) || !FILE_CHANGE.test(change)) return undefined;
+	const folder = await attachFolder(old.ref);
+	if (!folder) return undefined;
+	const held = stagedFiles(old.id).map(f => f.name);
+	const lib = rankLibrary(listLibrary(folder), { subject: change, text: change }).filter(r => r.score >= MIN_SCORE && !held.includes(stagedName(basename(r.file.path)))).map(r => r.file).slice(0, Math.max(0, CANDIDATE_MAX - held.length));
+	const names = [...held, ...lib.map(f => f.rel)];
+	return names.length ? { lib, names } : undefined;
+}
 const withoutNoFileClaims = (rec: DraftRec): string[] => {
 	const all = rec.questions ?? [];
 	return stagedFiles(rec.id).length ? all.filter(q => !claimsNoFile(q)) : all;
@@ -159,7 +178,7 @@ export function draftAttachIssues(rec: DraftRec): string[] {
 	if (rec.kind !== "mail" || !canAttach(rec.source)) return [];
 	const files = stagedFiles(rec.id).map(f => f.name);
 	const found = attachIssues({ subject: rec.subject, body: rec.body, files, request: rec.compose ? undefined : rec.item.text }).map(i => i.text);
-	const want = (rec.wantFiles ?? []).map(f => f.name);
+	const want = (rec.wantFiles ?? []).map(f => f.name).filter(n => !files.includes(stagedName(n)));
 	return want.length ? [...found, `아직 못 붙인 파일: ${want.join(", ")}`] : found;
 }
 
@@ -189,9 +208,10 @@ export async function attachFolder(ref: string): Promise<string | undefined> {
 	}
 }
 
+const PICK_TEXT_MAX = 600;
 function pickByModel(item: ReplyItem, ref: string, deps: FlowDeps): (names: string[]) => Promise<string[]> {
 	return async names => {
-		const text = await callOf(deps, item, ref, "pick")("파일 이름만 보고 메일에 보낼 파일을 고릅니다. 고른 파일 이름을 한 줄에 하나씩, 최대 3개만 적습니다. 다른 말은 쓰지 않습니다.", `메일 제목: ${item.subject ?? ""}\n\n파일 이름:\n${names.map(n => `- ${n}`).join("\n")}`);
+		const text = await callOf(deps, item, ref, "pick")("파일 이름만 보고 메일에 보낼 파일을 고릅니다. 고른 파일 이름을 한 줄에 하나씩, 최대 3개만 적습니다. 다른 말은 쓰지 않습니다.", `메일 제목: ${item.subject ?? ""}\n\n메일 내용(앞부분):\n${item.text.trim().slice(0, PICK_TEXT_MAX)}\n\n파일 이름:\n${names.map(n => `- ${n}`).join("\n")}`);
 		return text.split("\n").map(l => l.replace(/^[-*\d.)\s]+/, "").trim()).filter(Boolean);
 	};
 }
@@ -207,20 +227,46 @@ export async function libraryFor(item: ReplyItem, meta: { source: string; ref: s
 	return matchLibrary(folder, { subject: item.subject ?? "", text: item.text }, pick);
 }
 
+export const CANDIDATE_MAX = 12;
+export type Candidates = { files: LibraryFile[]; /** Rule entries that name no file. */ missing: string[] };
+
+// The files the model may choose from for a mail, before the draft is written: the matched rule's files (resolved) first, then the library files that
+// share a word with the mail, CANDIDATE_MAX in all. Plain code, no model call; the model sees their names. undefined: this mail has no folder to choose from.
+export async function candidatesFor(item: ReplyItem, meta: { source: string; ref: string }, rule?: DraftRule): Promise<Candidates | undefined> {
+	if (item.kind !== "mail" || !canAttach(meta.source)) return undefined;
+	const folder = await attachFolder(meta.ref);
+	if (!folder) return undefined;
+	const library = listLibrary(folder);
+	const files: LibraryFile[] = [], missing: string[] = [];
+	const add = (f: LibraryFile) => void (files.length < CANDIDATE_MAX && !files.some(x => x.path === f.path) && files.push(f));
+	for (const entry of rule?.files ?? []) {
+		const path = ruleFilePath(entry, folder);
+		if (!path) missing.push(entry);
+		else add(library.find(f => f.path === path) ?? { rel: basename(path), path, size: statSync(path).size });
+	}
+	for (const r of rankLibrary(library, { subject: item.subject ?? "", text: item.text })) if (r.score > 0) add(r.file);
+	return { files, missing };
+}
+
+// What the model chose among the candidates (ReplyResult.files); undefined = it made no choice, so the caller keeps today's matching.
+export const chosenFrom = (c: Candidates | undefined, names: string[] | undefined): LibraryFile[] | undefined => (c ? (c.files.length ? (names ? c.files.filter(f => names.includes(f.rel)) : undefined) : []) : undefined);
+
 // A reply that promises a file or answers a mail that asks for one: the best matches of the 첨부 파일 폴더 are staged for the owner to confirm
 // (they go out only with the owner's 보내기). Nothing fits -> the approval carries the warning and says so. A source that cannot send files gets neither.
-// `files`: the match libraryFor started beside the draft call. Returns why a matched file is not on the draft (one line each), for the card;
+// `files`: the files already chosen (the model's choice among candidatesFor, or libraryFor's match); only those are staged. A file that cannot be copied
+// (an iCloud file still away) is kept in rec.wantFiles, never lost. Returns why a chosen file is not on the draft (one line each), for the card;
 // one file that cannot be copied never keeps the others off.
 export async function stageForReply(rec: DraftRec, deps: FlowDeps, files?: Promise<LibraryFile[] | undefined>): Promise<string[]> {
 	if (rec.kind !== "mail") return [];
 	rec.asksFile = asksForFile(rec.item.text) || undefined;
-	if (!rec.asksFile && !claimsAttachment(`${rec.subject ?? ""}\n${rec.body}`)) return [];
-	const found = await (files ?? libraryFor(rec.item, rec, deps));
-	if (!found) return [];
+	const wants = !!rec.asksFile || claimsAttachment(`${rec.subject ?? ""}\n${rec.body}`);
+	const found = files ? await files : wants ? await libraryFor(rec.item, rec, deps) : undefined;
+	if (!found || (!found.length && !wants)) return [];
 	if (!found.length) rec.libraryMiss = true;
-	const failed: string[] = [];
-	// Together, not one by one: each evicted iCloud file may wait up to 30 s for its download, and the offer queue waits on this draft.
-	await Promise.all(found.map(f => stageLibraryFile(rec.id, f.path, deps.stage).catch(e => void failed.push((e as Error).message))));
+	// Together, not one by one: each evicted iCloud file may wait for its download, and the offer queue waits on this draft.
+	const want = rec.wantFiles ?? [];
+	const failed = await stageFiles(rec.id, found.map(f => f.path), want, deps.stage);
+	if (want.length) rec.wantFiles = want;
 	// Files are on the draft now: a model question that says no file can be attached is false.
 	if (stagedFiles(rec.id).length) rec.questions = withoutNoFileClaims(rec);
 	return failed;
@@ -229,8 +275,23 @@ export async function stageForReply(rec: DraftRec, deps: FlowDeps, files?: Promi
 // A revised draft looks for files again with the same library pick (the first one ran before the words existed): when the owner's change names a file,
 // those matches are added; else when the draft asks for a file or promises one and none is staged, the mail's own pick runs. Files already on the draft
 // (the owner's own, or an earlier pick) stay. Returns why a matched file is not on the draft.
-async function restageForRevision(rec: DraftRec, change: string, deps: FlowDeps): Promise<string[]> {
+async function restageForRevision(rec: DraftRec, change: string, deps: FlowDeps, choice?: { rev: Revision; chosen: string[] }): Promise<string[]> {
 	if (rec.kind !== "mail" || !canAttach(rec.source)) return [];
+	// The change is about files and the model chose among the draft's files and the library matches: the staged set becomes exactly that choice.
+	if (choice) {
+		const have = stagedFiles(rec.id);
+		for (let i = have.length - 1; i >= 0; i--) if (!choice.chosen.includes(have[i]!.name)) removeStagedFile(rec.id, i);
+		const add = choice.rev.lib.filter(f => choice.chosen.includes(f.rel) && !have.some(h => h.name === stagedName(basename(f.path))));
+		delete rec.wantFiles;
+		const want: Want[] = [];
+		const failed = await stageFiles(rec.id, add.map(f => f.path), want, deps.stage);
+		if (want.length) rec.wantFiles = want;
+		if (stagedFiles(rec.id).length) {
+			delete rec.libraryMiss;
+			rec.questions = withoutNoFileClaims(rec);
+		}
+		return failed;
+	}
 	const folder = await attachFolder(rec.ref);
 	if (!folder) return [];
 	const have = () => new Set(stagedFiles(rec.id).map(f => f.name));
@@ -242,8 +303,9 @@ async function restageForRevision(rec: DraftRec, change: string, deps: FlowDeps)
 		found = (await libraryFor(rec.item, rec, deps)) ?? [];
 		missed = !found.length;
 	}
-	const failed: string[] = [];
-	for (const f of found) await stageLibraryFile(rec.id, f.path, deps.stage).catch(e => failed.push((e as Error).message));
+	const want = rec.wantFiles ?? [];
+	const failed = await stageFiles(rec.id, found.map(f => f.path), want, deps.stage);
+	if (want.length) rec.wantFiles = want;
 	if (stagedFiles(rec.id).length) {
 		delete rec.libraryMiss;
 		rec.questions = withoutNoFileClaims(rec);
@@ -264,7 +326,8 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	if (!change.trim()) return { ok: false, text: "무엇을 고칠지 적어 주세요 (--change)" };
 	// The words are rewritten knowing which files ride on the draft now.
 	const held = stagedFiles(old.id).map(f => f.name);
-	const item = held.length ? { ...old.item, files: held } : old.item;
+	const rev = await revisionCandidates(old, change);
+	const item = rev ? { ...old.item, candidates: rev.names } : held.length ? { ...old.item, files: held } : old.item;
 	const r = await reviseReply(item, styleOf(old.item, toneKey(old)), { to: old.to, subject: old.subject, body: old.body }, change, callOf(deps, old.item, old.ref));
 	if (r.action === "skip") return { ok: false, text: `고친 초안을 만들지 못했어요: ${r.reason}` };
 	const lesson = lessonOf(r, change);
@@ -279,12 +342,13 @@ export async function reviseDraft(id: string, change: string, deps: FlowDeps): P
 	if (old.mode) rec.mode = old.mode;
 	if (old.ownerRecipients) rec.ownerRecipients = true;
 	if (old.asksFile) rec.asksFile = true;
+	if (old.wantFiles?.length) rec.wantFiles = old.wantFiles;
 	if (old.libraryMiss) rec.libraryMiss = true;
 	if (old.compose) rec.compose = true;
 	if (old.origin) rec.origin = old.origin;
 	if (old.rule) rec.rule = old.rule;
 	carryStagedFiles(old.id, rec.id);
-	const notStaged = await restageForRevision(rec, change, deps).catch(e => [(e as Error).message]);
+	const notStaged = await restageForRevision(rec, change, deps, rev && r.files ? { rev, chosen: r.files } : undefined).catch(e => [(e as Error).message]);
 	addDraft(rec);
 	return { ok: true, text: askText(rec, [...r.warnings, ...notStaged], "답장 초안을 고쳤어요"), id: rec.id };
 }

@@ -7,9 +7,10 @@ import { replyChoiceBlock } from "../../../hub/choices.ts";
 import { type HubLike, mailInstance, notifyGateway, reportSendFailed } from "../../../hub/followup.ts";
 import { addressesOf, type ReplyItem } from "../../../hub/reply-draft.ts";
 import { ensureKakaoRoom, defaultKakaoReader, KAKAO_APP, type OwnerReader } from "../lib/kakao-tone.ts";
-import { askText, attachFolder, buildDraft, defaultCall, dropDraft, kindOf, refineAfterCorrection, reviseDraft, sendDraft, type FlowDeps } from "../lib/flow.ts";
+import { asksForFile } from "../../../hub/draft-approval.ts";
+import { askText, attachFolder, buildDraft, candidatesFor, chosenFrom, defaultCall, dropDraft, kindOf, refineAfterCorrection, reviseDraft, sendDraft, stageForReply, type FlowDeps } from "../lib/flow.ts";
 import { INSTALL, loadSettings, recordCorrection, validApp } from "../lib/settings.ts";
-import { addDraft, type DraftRec, getDraft, listDrafts } from "../lib/store.ts";
+import { addDraft, type DraftRec, getDraft, listDrafts, patchDraft } from "../lib/store.ts";
 import { listLibrary } from "../lib/library.ts";
 import { canAttach } from "../lib/senders.ts";
 import { removeStagedFile, stagedFiles, stageLibraryFile } from "../lib/staged.ts";
@@ -83,12 +84,20 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			}
 			const choice = flag(rest, "--choice")?.trim();
 			const item: ReplyItem = { kind, app, ...(room !== undefined ? { room } : {}), from, subject: flag(rest, "--subject"), text: stdin, context: flag(rest, "--context"), ...(kind === "chat" && choice ? { choice } : {}) };
-			const built = await buildDraft(item, { source: flag(rest, "--source") ?? "manual", mailId: flag(rest, "--id") ?? key, ref: key }, deps);
+			const meta = { source: flag(rest, "--source") ?? "manual", mailId: flag(rest, "--id") ?? key, ref: key };
+			// Same path as the gateway's offer (offer.ts): the model chooses among candidates, then only the chosen files are staged.
+			const cands = kind === "mail" && asksForFile(stdin) ? await candidatesFor(item, meta).catch(e => (notes.push(`확인: 첨부 파일 후보를 찾지 못했어요 (${(e as Error).message})`), undefined)) : undefined;
+			if (cands?.files.length) item.candidates = cands.files.map(f => f.rel);
+			else if (cands) item.files = [];
+			const flow = { ...deps, stage: { tries: 5, ...deps.stage } };
+			const built = await buildDraft(item, meta, flow);
 			if (built.action === "ask") return { lines: [replyChoiceBlock(built.question, built.choices)], code: ASK_EXIT, notes };
 			if (built.action === "skip") return { lines: [`답장이 필요 없어 보여요: ${built.reason}`], code: kind === "chat" ? 3 : 0, notes };
 			if (kind === "comment" || kind === "chat") return { lines: [built.rec.body], code: 0, notes: [...notes, ...built.warnings.map(w => `확인: ${w}`)] };
+			const chosen = chosenFrom(cands, built.files);
+			const warnings = [...built.warnings, ...(await stageForReply(built.rec, flow, chosen && Promise.resolve(chosen)).catch(e => [(e as Error).message]))];
 			addDraft(built.rec);
-			return { lines: [askText(built.rec, built.warnings)], code: 0, notes };
+			return { lines: [askText(built.rec, warnings)], code: 0, notes };
 		}
 		case "revise": {
 			if (!pos[0]) return { lines: [USAGE], code: 2 };
@@ -139,6 +148,12 @@ export async function runDraft(args: string[], stdin: string, deps: DraftDeps = 
 			if (!pos[0] || !pos[1]) return { lines: [USAGE], code: 2 };
 			const rec = editable(pos[0]);
 			if (typeof rec === "string") return { lines: [rec], code: 1 };
+			// A file still waited for (wantFiles) that will not come is taken off by its name too.
+			const wanted = (rec.wantFiles ?? []).filter(w => nfc(w.name) !== nfc(pos[1]!));
+			if (wanted.length < (rec.wantFiles ?? []).length) {
+				patchDraft(rec.id, { wantFiles: wanted.length ? wanted : undefined });
+				return { lines: [askText(getDraft(rec.id)!, [], "파일을 뺐어요")], code: 0 };
+			}
 			const files = stagedFiles(rec.id);
 			const at = /^\d+$/.test(pos[1]) ? Number(pos[1]) - 1 : files.findIndex(f => nfc(f.name) === nfc(pos[1]!));
 			if (!removeStagedFile(rec.id, at)) return { lines: [`없는 파일이에요: ${pos[1]} (붙은 파일: ${files.map((f, i) => `${i + 1}) ${f.name}`).join(", ") || "없음"})`], code: 1 };

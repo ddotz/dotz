@@ -14,7 +14,7 @@ import { sentFiles, tailEvents } from "./events.ts";
 import { attachFolder, draftAttachIssues } from "../features/reply-drafts/lib/flow.ts";
 import { libraryFile, listLibrary, rankLibrary } from "../features/reply-drafts/lib/library.ts";
 import { canAttach } from "../features/reply-drafts/lib/senders.ts";
-import { addStagedBytes, addStagedFile, removeStagedFile, stagedFiles } from "../features/reply-drafts/lib/staged.ts";
+import { addStagedBytes, addStagedFile, removeStagedFile, resumeWantedFiles, stagedFiles } from "../features/reply-drafts/lib/staged.ts";
 import { getDraft, type DraftRec } from "../features/reply-drafts/lib/store.ts";
 import { type DraftFileIn, fileSizeText, parseDraftApproval } from "./draft-approval.ts";
 import { syncDraftFiles } from "./notices.ts";
@@ -67,7 +67,11 @@ export function pendingDraftIssues(id: string): string[] | undefined {
 }
 // Every open card re-checked against its staged files and the findings on them (hub/notices.ts refreshDraftFiles): on start, after a file changes here,
 // and when the approvals or the bell are read, so a file staged by another process (draft.ts revise, attach, a rule) shows too.
-export const syncCardFiles = (): number => syncDraftFiles(pendingDraftFiles, pendingDraftIssues);
+// A draft of such a process that still waits for a file (wantFiles) gets its background retry here: that process is gone.
+export const syncCardFiles = (): number => {
+	resumeWantedFiles({ changed: syncCardFiles });
+	return syncDraftFiles(pendingDraftFiles, pendingDraftIssues);
+};
 export const askedFile = (ref: string, n: number): { path: string; name: string } | undefined => (getDraft(ref) ? undefined : askedFiles(ref)?.[n]);
 
 async function view(rec: DraftRec | undefined, ref: string) {
