@@ -34,7 +34,7 @@
 .mx-bt { flex: 0 1 auto; min-width: 0; overflow: hidden; color: var(--fg-3); font-size: var(--fs-meta); line-height: var(--lh-meta); text-overflow: ellipsis; white-space: nowrap; }
 
 /* above the filter tabs: the box title, an account that needs its login, the base box's note */
-.mx-bh { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--sp-10); }
+.mx-bh { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--sp-8); margin-bottom: calc(var(--sp-2) * -1); }
 .mx-bh h2 { font: 700 var(--fs-big)/var(--lh-big) var(--font); white-space: nowrap; }
 .mx-bh .meta { min-width: 0; }
 .mx-setb { margin-left: auto; }
@@ -51,12 +51,7 @@
 .mx-acc .ic { width: 14px; height: 14px; }
 .main:has(#v-monitoring.mx-on:not([hidden])) .mx-acc { display: inline-flex; }
 
-/* a row: the folder button shows on hover where there is one, always on a touch screen */
 .mr-mv { flex: none; }
-@media (hover: hover) and (pointer: fine) {
-  #mon-tl > .mr .rc-hd .mr-mv { opacity: 0; }
-  #mon-tl > .mr:hover .rc-hd .mr-mv, #mon-tl > .mr .rc-hd .mr-mv:focus-visible, #mon-tl > .mr .rc-hd .mr-mv[aria-expanded="true"] { opacity: 1; }
-}
 
 /* the small box after a move */
 .mx-teach { display: none; position: fixed; z-index: 120; left: calc(50% - 84px); bottom: var(--sp-6); width: 400px; max-width: calc(100vw - var(--sp-6)); padding: var(--sp-3) var(--sp-4) var(--sp-2); border-radius: var(--r-card); background: var(--pop); box-shadow: var(--float); }
@@ -79,11 +74,16 @@ body:has(#v-monitoring.mx-on:not([hidden])) .mx-teach { display: block; }
   #v-monitoring.mx-on:not(.cv-listing) > .cv-head { grid-column: 1 / -1; }
   #v-monitoring.mx-on:not(.cv-listing) > #mx-pane { grid-column: 1; grid-row: 4; display: flex; flex-direction: column; gap: var(--sp-2); min-height: 0; overflow-y: auto; scrollbar-width: none; }
   #mon-tl > .mx-tabs { display: none; }
+  #v-monitoring.mx-on #mon-tl { padding-top: 0; }
   #mon-tl > .mr .rc-hd > .mr-mv { order: 9; }
+  /* the sender gives its column to the account mark and the box name */
+  #mon-tl > .mr .rc-hd > .rc-src:has(+ .mx-am, + .mx-bt) { flex-basis: 104px; }
+  #mon-tl > .mr .rc-hd > .mx-bt { flex: none; max-width: 96px; }
 }
 @media (max-width: 639px) {
   .mx-bh .meta, .mx-setb span { display: none; }
   .mx-setb { width: var(--field-h); padding: 0; }
   .mx-note { align-items: flex-start; }
+  .mr .mx-am + .mx-bt { display: none; }
   .mx-teach { left: var(--sp-3); right: var(--sp-3); bottom: calc(72px + env(safe-area-inset-bottom)); width: auto; }
 }
