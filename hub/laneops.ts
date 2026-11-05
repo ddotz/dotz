@@ -396,7 +396,9 @@ export function restoreLanes(): string[] {
 			lane.quiet = true;
 			log(`lane ${name} stays parked (idle, no process; a message resumes it)`);
 		} else if (session && rec.status === "idle") {
-			const note = restartNote(lane);
+			// A message a busy session refused, its retry cut off by the restart (laneevents.ts refusedTurn).
+			const note = lane.refused?.text ?? restartNote(lane);
+			lane.refused = undefined;
 			if (note) {
 				resumeLane(lane, note);
 				resumed.push(name);
