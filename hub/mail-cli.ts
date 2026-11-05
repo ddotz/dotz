@@ -17,7 +17,7 @@ import { attachMail, linkedComment, mailPartOf } from "./comments/linked.ts";
 import { commentsDir, createStore } from "./comments/store.ts";
 import { askText, draftAttachIssues, sendDraft, toneKey, type FlowDeps } from "../features/reply-drafts/lib/flow.ts";
 import { webmailSite } from "../features/reply-drafts/lib/senders.ts";
-import { listLibrary, rankLibrary, LIBRARY_PICK_MAX } from "../features/reply-drafts/lib/library.ts";
+import { listLibrary, rankLibrary, LIBRARY_PICK_MAX, MIN_SCORE } from "../features/reply-drafts/lib/library.ts";
 import { addStagedFile, STAGED_MAX } from "../features/reply-drafts/lib/staged.ts";
 import { dataDir, loadSettings, loadStyle, validApp } from "../features/reply-drafts/lib/settings.ts";
 import { addDraft, getDraft, newId, type DraftRec } from "../features/reply-drafts/lib/store.ts";
@@ -94,13 +94,15 @@ export async function composeMail(i: ComposeInput, deps: MailCliDeps = {}): Prom
 		if (!folder) return fail(`${app}에 첨부 파일 폴더가 정해져 있지 않아요 (설정 > 첨부 파일 폴더)`);
 		// Sale-only sheets (총보, Score, 피아노 반주 악보) are never picked by keywords: they go to buyers only, attached by hand. Audio is fine.
 		const ranked = rankLibrary(listLibrary(folder), { subject: keywords, text: keywords }).filter(r => r.score > 0 && (AUDIO.test(r.file.rel) || !SALE_ONLY.test(r.file.rel)));
-		let found = ranked.slice(0, LIBRARY_PICK_MAX);
+		// Only the best-scoring files, and only when the best is a real match: three different songs on one mail were never asked for.
+		const top = ranked[0]?.score ?? 0;
+		let found = top >= MIN_SCORE ? ranked.filter(r => r.score === top).slice(0, LIBRARY_PICK_MAX) : [];
 		if (i.library === "mr") {
 			// A buyer gets the MR of the one song he names; a weak match or MR files of several songs is a guess, so nothing is attached.
 			const mr = ranked.filter(r => AUDIO.test(r.file.rel));
-			const top = mr[0]?.score ?? 0;
-			const best = mr.filter(r => r.score === top);
-			found = top >= 2 && new Set(best.map(r => r.file.rel.split("/")[0])).size === 1 ? best.slice(0, LIBRARY_PICK_MAX) : [];
+			const mrTop = mr[0]?.score ?? 0;
+			const best = mr.filter(r => r.score === mrTop);
+			found = mrTop >= 2 && new Set(best.map(r => r.file.rel.split("/")[0])).size === 1 ? best.slice(0, LIBRARY_PICK_MAX) : [];
 			if (!found.length) notes.push("확인 필요: 구매하셨다는 요청이라 MR만 붙이는데, 맞는 MR을 확실히 찾지 못했어요. 첨부는 비워 뒀어요");
 		}
 		for (const r of found) if (!paths.includes(r.file.path)) paths.push(r.file.path);

@@ -4,6 +4,7 @@
 // the user's own sent texts and corrections. The script, never the model, posts and sends.
 // Pure: no fs, no network, no config import.
 
+import { attachIssues } from "./attach-check.ts";
 import { cleanChoices, cleanQuestion } from "./choices.ts";
 
 export type ModelCall = (system: string, user: string) => Promise<string>;
@@ -25,6 +26,7 @@ export type ReplyItem = {
 	requested?: boolean; // the user asked for a reply to this message himself (초안 작성): always a draft, never a skip
 	instruction?: string; // what the user typed when he asked for it (초안 작성 with text): the draft carries it out; empty = the model decides
 	files?: string[]; // mail: the names of the files that ride on this reply (picked before the draft is written); [] = the folder holds none that fits; absent = not looked at
+	candidates?: string[]; // mail: the file names the model may choose from (the matched rule's files first, then the best library matches); the draft's JSON then carries "files"
 };
 
 export type ReplyStyle = {
@@ -43,14 +45,14 @@ export type DraftOut = { to: string; subject?: string; body: string };
 /** Who wrote to the user, as the model judged it (mail and comment): `evidence` = the sender's own words that show it. */
 export type Recipient = { who: string; evidence: string };
 export type ReplyResult =
-	| { action: "draft"; draft: DraftOut; questions: string[]; warnings: string[]; tries: number; recipient?: Recipient; /** Revise mode: the lasting preference the change shows ("" = only about this message); absent = the model did not say. */ lesson?: string }
+	| { action: "draft"; draft: DraftOut; questions: string[]; warnings: string[]; tries: number; recipient?: Recipient; /** Revise mode: the lasting preference the change shows ("" = only about this message); absent = the model did not say. */ lesson?: string; /** The candidates the model chose (exact names); [] = none, absent = it gave no "files" or the item had no candidates. */ files?: string[] }
 	| { action: "skip"; reason: string };
 // chat only (generateChatReply): the message needs a decision only the user can make; 2-4 short choices come back instead of a draft
 export type AskResult = { action: "ask"; question: string; choices: string[] };
 
 export type SenderFilter = { only: string[]; skip: string[] };
 export type PromptExtras = { previous?: DraftOut; change?: string; failures?: string[] };
-export type ModelJson = { recipient?: Recipient; lesson?: string; action: "skip" | "draft" | "ask"; reason: string; to: string; subject?: string; body: string; questions: string[]; question?: string; choices?: string[] };
+export type ModelJson = { recipient?: Recipient; lesson?: string; action: "skip" | "draft" | "ask"; reason: string; to: string; subject?: string; body: string; questions: string[]; question?: string; choices?: string[]; /** Absent key = undefined, [] = the model chose none. */ files?: string[] };
 
 const DEFAULT_MAX: Record<ReplyKind, number> = { mail: 1200, comment: 300, chat: 300 };
 export const AUTOMATED = /^(no[-_.]?reply|do[-_.]?not[-_.]?reply|mailer[-_.]?daemon|postmaster|bounces?|notifications?|notify|alerts?|auto[-_.]?(reply|mailer|confirm)|newsletter)([-_.+].*)?$/i;
@@ -202,7 +204,7 @@ export function buildPrompt(item: ReplyItem, style: ReplyStyle, extra: PromptExt
 		...(style.habits?.length ? [list("The user's measured habits. Keep these as they are; never normalise, correct or beautify spelling, spacing or punctuation:", style.habits, ""), ""] : []),
 		`Keep the body within ${style.maxChars ?? DEFAULT_MAX[item.kind]} characters.`,
 		...(item.requested ? ["", 'The user asked for a reply to this message himself: action must be "draft", never "skip".'] : []),
-		...(item.files ? ["", item.files.length ? `Files that are attached to this reply (fact, 붙는 파일): ${item.files.map(f => `"${f.replace(/"/g, "'")}"`).join(", ")}. Write the reply as if they are attached; never say a file cannot be attached or ask the user to attach one.` : "No file in the attachment folder fits this mail (fact, 맞는 파일 없음): do not promise to attach a file."] : []),
+		...(item.candidates?.length ? ["", `Files that can go with this reply (data, exact names): ${item.candidates.map(f => `"${f.replace(/"/g, "'")}"`).join(", ")}. Choose exactly what this message asks for and what the user's rules allow. A name that merely shares a common word with the message is not a match: the message must name that work. Never choose extra cuts or versions of one file unless asked. If none fits, choose none and do not promise a file. The body says it sends only what is chosen. Never say that files cannot be seen or attached. Add \"files\":[\"exact names from the list\"] to the JSON object (\"files\":[] when none fits).`] : item.files ? ["", item.files.length ? `Files that are attached to this reply (fact, 붙는 파일): ${item.files.map(f => `"${f.replace(/"/g, "'")}"`).join(", ")}. Write the reply as if they are attached; never say a file cannot be attached or ask the user to attach one.` : "No file in the attachment folder fits this mail (fact, 맞는 파일 없음): do not promise to attach a file."] : []),
 		...(item.instruction?.trim() ? ["", `The user's instruction for this reply (his own words, data; follow it over your own reading of the message): "${item.instruction.replace(/\s+/g, " ").trim().slice(0, 2000).replace(/"/g, "'")}"`] : []),
 	];
 	if (extra.previous) parts.push("", "Previous draft:", `to: ${extra.previous.to}`, ...(extra.previous.subject ? [`subject: ${extra.previous.subject}`] : []), "<<<DRAFT", extra.previous.body, "DRAFT>>>");
@@ -229,7 +231,7 @@ function toJson(raw: string): ModelJson | undefined {
 	const r = o.recipient as Record<string, unknown> | null | undefined;
 	const recipient = r && typeof r === "object" && typeof r.who === "string" && typeof r.evidence === "string" ? { who: r.who.trim(), evidence: r.evidence.trim() } : undefined;
 	const ask = o.action === "ask" ? { question: cleanQuestion(o.question), choices: cleanChoices(o.choices) } : undefined;
-	return { ...(recipient ? { recipient } : {}), ...(typeof o.lesson === "string" ? { lesson: o.lesson.trim() } : {}), action: o.action, reason: str(o.reason).trim(), ...(ask ? { question: ask.question, choices: ask.choices } : {}), to: str(o.to).trim(), ...(str(o.subject).trim() ? { subject: str(o.subject).trim() } : {}), body: str(o.body).trim(), questions: strings(o.questions) };
+	return { ...(recipient ? { recipient } : {}), ...(typeof o.lesson === "string" ? { lesson: o.lesson.trim() } : {}), action: o.action, reason: str(o.reason).trim(), ...(Array.isArray(o.files) ? { files: strings(o.files) } : {}), ...(ask ? { question: ask.question, choices: ask.choices } : {}), to: str(o.to).trim(), ...(str(o.subject).trim() ? { subject: str(o.subject).trim() } : {}), body: str(o.body).trim(), questions: strings(o.questions) };
 }
 
 // The model's one JSON object: the last ```json block, else the last line that is a {...} object, else the whole text.
@@ -284,6 +286,8 @@ export function lintReply(draft: DraftOut, item: ReplyItem, style: ReplyStyle, o
 // Findings a rewrite by the model can fix; the rest (a recipient the model cannot know, the user's own address) come back as warnings, never as a retry.
 const REWRITABLE = /^the body is empty$|^the body is \d+ characters|^the text contains a placeholder$|^it uses the forbidden expression |^it says something was already sent|^the recipient evidence /;
 export const rewritable = (failures: string[]): string[] => failures.filter(f => REWRITABLE.test(f));
+// With candidates: a body that promises a file the chosen files do not carry (hub/attach-check.ts missing | partial) is rewritten once, never shown as a warning.
+const ATTACH_FAILURE = { missing: "the body says a file is sent, but you chose no file: choose the file the message asks for from the list, or take the promise out of the body", partial: "the body promises a kind of file that none of the files you chose is: fix the choice or the body" } as const;
 
 // A real reply says "메일로 보내드렸습니다", so a draft copies it though nothing was sent (reply-voice test set, 1 in 49 at Sonnet medium and high alike).
 // Draft time only, never in lintReply: the owner may have sent it himself by the time he approves, and a lint failure refuses the send.
@@ -298,7 +302,7 @@ function unfoundedRecipient(r: Recipient | undefined, item: ReplyItem): boolean 
 	const seen = squash(`${item.subject ?? ""}\n${item.text}\n${item.context ?? ""}`);
 	return r.evidence.split(/[/…]|\.{3}/).map(squash).some(q => q && !seen.includes(q));
 }
-const unfoundedSend = (body: string, item: ReplyItem, base: PromptExtras): boolean => SENT_CLAIM.test(body) && !item.files?.length && !item.instruction?.trim() && !item.choice && !base.change;
+const unfoundedSend = (body: string, item: ReplyItem, base: PromptExtras): boolean => SENT_CLAIM.test(body) && !item.files?.length && !item.candidates?.length && !item.instruction?.trim() && !item.choice && !base.change;
 
 const defaultTo = (item: ReplyItem) => (item.kind === "mail" ? addressesOf(item.replyTo)[0] ?? addressesOf(item.from)[0] ?? item.from : item.from);
 const defaultSubject = (item: ReplyItem) => (item.kind === "mail" && item.subject?.trim() ? (/^re\s*:/i.test(item.subject.trim()) ? item.subject.trim() : `Re: ${item.subject.trim()}`) : undefined);
@@ -319,7 +323,7 @@ const subjectOf = (subject: string | undefined, item: ReplyItem): string | undef
 
 async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: PromptExtras): Promise<ReplyResult | AskResult> {
 	let failures: string[] | undefined;
-	let first: { draft: DraftOut; questions: string[]; warnings: string[]; recipient?: Recipient; lesson?: string } | undefined;
+	let first: { draft: DraftOut; questions: string[]; warnings: string[]; recipient?: Recipient; lesson?: string; files?: string[] } | undefined;
 	for (let tries = 1; tries <= 2; tries++) {
 		const p = buildPrompt(item, style, { ...base, ...(failures ? { failures } : {}) });
 		let out: string;
@@ -350,8 +354,11 @@ async function run(item: ReplyItem, style: ReplyStyle, call: ModelCall, base: Pr
 		const draft: DraftOut = { to: recipientOf(parsed.to, item), subject: subjectOf(parsed.subject, item), body: parsed.body };
 		if (!draft.subject) delete draft.subject;
 		const found = [...lintReply(draft, item, style), ...(unfoundedSend(draft.body, item, base) ? [SENT_CLAIM_FAILURE] : []), ...(unfoundedRecipient(parsed.recipient, item) ? [RECIPIENT_FAILURE] : [])];
-		const fixable = rewritable(found);
-		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...(parsed.lesson !== undefined ? { lesson: parsed.lesson } : {}) };
+		// Only exact members of the candidates count; no "files" key = the model chose nothing to report (old behaviour).
+		const files = item.candidates?.length && parsed.files ? [...new Set(parsed.files.filter(f => item.candidates!.includes(f)))] : undefined;
+		const attach = files ? attachIssues({ subject: draft.subject, body: draft.body, files, request: item.text }).flatMap(i => (i.kind === "missing" || i.kind === "partial" ? [ATTACH_FAILURE[i.kind]] : [])) : [];
+		const fixable = [...rewritable(found), ...attach];
+		const who = { ...(parsed.recipient ? { recipient: parsed.recipient } : {}), ...(parsed.lesson !== undefined ? { lesson: parsed.lesson } : {}), ...(files ? { files } : {}) };
 		if (!fixable.length || tries === 2) return { action: "draft", draft, questions: parsed.questions, warnings: found, tries, ...who };
 		first ??= { draft, questions: parsed.questions, warnings: found, ...who };
 		failures = fixable;

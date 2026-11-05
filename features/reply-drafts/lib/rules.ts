@@ -8,7 +8,7 @@ import { basename, isAbsolute, join } from "node:path";
 import type { DraftRule } from "../../../hub/app-settings.ts";
 import type { ModelCall } from "../../../hub/reply-draft.ts";
 import { libraryFile, listLibrary } from "./library.ts";
-import { stageLibraryFile, type StageOpts } from "./staged.ts";
+import { stageFiles, stageLibraryFile, type StageOpts, type Want } from "./staged.ts";
 import { dataDir, loadSettings } from "./settings.ts";
 
 export type InstanceRules = { instance: string; base: string; rules: DraftRule[] };
@@ -76,13 +76,17 @@ export function ruleFilePath(entry: string, folder: string | undefined): string 
 	return listLibrary(folder).find(f => basename(f.rel).normalize("NFC") === p.normalize("NFC"))?.path;
 }
 
-/** Stages the rule's files on the draft `ref`; returns the entries that were not found. */
-export async function stageRuleFiles(ref: string, rule: DraftRule, folder: string | undefined, opts?: StageOpts): Promise<string[]> {
+/** Stages the rule's files on the draft `ref`; returns the entries that were not found. With `later`, a file that cannot be copied is kept in `later.want` (the draft's wantFiles) with its reason in `later.why` instead of counting as missing. */
+export async function stageRuleFiles(ref: string, rule: DraftRule, folder: string | undefined, opts?: StageOpts, later?: { want: Want[]; why: string[] }): Promise<string[]> {
 	const missing: string[] = [];
 	for (const entry of rule.files) {
 		const path = ruleFilePath(entry, folder);
 		if (!path) {
 			missing.push(entry);
+			continue;
+		}
+		if (later) {
+			later.why.push(...(await stageFiles(ref, [path], later.want, opts)));
 			continue;
 		}
 		try {
