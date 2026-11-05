@@ -847,7 +847,7 @@ function monChronoNodes(it, names) {
       return x;
     } }];
   };
-  const msgs = [...(it.mon && !held ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunRow(it) }] : []), ...runs.slice(cut).flatMap(rep), ...(held ? [] : mf ? it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, mail: true, node: () => monConvNode(t, it.name) }))];
+  const msgs = [...(it.mon && !held ? [{ at: Date.parse(it.mon.last_run) || 0, node: () => monRunRow(it) }] : []), ...runs.slice(cut).flatMap(rep), ...(held ? [] : mf ? it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t)) : it.mails).map(t => ({ at: Date.parse((CONV.get(t) || {}).ts) || Date.parse((MAILS.get(t) || {}).at) || 0, mail: true, node: () => withMails ? mbRow(t, it.name) : monConvNode(t, it.name) }))];
   // A mail app reads like a mailbox, newest on top (owner 2026-10-27); a monitor stays a chat, oldest to newest. Equal times keep their order.
   // A monitor's log reads like the prototype's list, newest on top; its latest run leads on a tie.
   const newestTop = monMailList(it) || !!it.mon;
@@ -867,6 +867,7 @@ function monChronoNodes(it, names) {
   if (cut && newestTop) nodes.push(...(it.mon ? [monOlderSentinel(it.key, cut, "end")] : []), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
   else if (cut) nodes.unshift(monOlderSentinel(it.key, cut), monMoreBtn(it.key, cut, `이전 소식 ${cut}개 보기`));
   if (hidden && hidden.size) nodes.push(...mbMoreNodes(hidden.size));
+  if (withMails) mbRowsPrune();
   if (withMails) return [mailFilterBar(it.mails, it.notices.filter(ok)), ...[mbNote(it.mails)].filter(Boolean), mbList(held ? [] : it.mails.filter(t => MAILS.has(t) && mf[2](MAILS.get(t), t))), ...(nodes.length ? nodes : [el("div", { class: "empty", text: held ? "확인할 초안이 없어요" : "이 보기에 해당하는 메일이 없어요" })]), mbFab()];
   return nodes;
 }
@@ -1078,7 +1079,7 @@ function renderMonitoring() {
       clear($("#mon-head")).append(...monHead(sel));
       clear(tl).append(...rqNodes());
       box.scrollTop = keep;
-      rqHold(anchor);
+      rowHold(anchor);
       edgeFade(box);
     }
     convTitle();
@@ -1088,13 +1089,16 @@ function renderMonitoring() {
   if (sig !== MON.sig) {
     MON.sig = sig;
     const again = MON.shown === sel.key, keep = box.scrollTop, was = box.scrollHeight, stick = !again || box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
+    // The same mail list repainting keeps its row nodes in place and the first row in view where it was; anything else is drawn afresh.
+    const same = again && monMailList(sel), anchor = same && keep > 0 && !MON.grew ? rowAnchor(tl, ":scope > .mr", "t") : null;
     MON.shown = sel.key;
     clear($("#mon-head")).append(...monHead(sel));
-    clear(tl).append(...monTimeline(sel));
+    if (same) listPlace(tl, monTimeline(sel)); else clear(tl).append(...monTimeline(sel));
     if (monMailList(sel)) mbFresh(`${sel.key}|${MON.mailFilter || "all"}`, tl);
     // Older reports added above (이전 소식 보기) keep what was on screen where it is.
     if (MON.grew) { MON.grew = false; box.scrollTop = keep + (box.scrollHeight - was); }
     else box.scrollTop = monFeed(sel) || monMailList(sel) || sel.mon ? (again ? keep : 0) : stick ? box.scrollHeight : keep;
+    rowHold(anchor);
     edgeFade(box);
     if (MON.hl && Date.now() < MON.hlUntil) { const r = monRowOf(MON.hl); if (r) ntFlash(r); }
   }
