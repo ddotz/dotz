@@ -6,30 +6,66 @@ import type { ReplyStyle } from "../reply-draft.ts";
 import type { Comment } from "./contract.ts";
 import type { Draft, Reply } from "./store.ts";
 
-/** `same`: the reply went to the very sender of the message being drafted (lib/pairs.ts styleWithExamples). */
-export type PastPair = { comment: string; reply: string; at: number; thread: string; same?: boolean };
+/** `same`: the reply went to the very sender of the message being drafted (lib/pairs.ts styleWithExamples). `edited`: the owner changed the draft by hand before sending. `from`: who wrote the comment, when known. */
+export type PastPair = { comment: string; reply: string; at: number; thread: string; same?: boolean; edited?: true; from?: string };
 
 export const EXAMPLES = 8;
 export const SIDE_MAX = 1500;
 const MIN_HABITS = 5;
+/** Usable pairs one source reads back from its platform, newest first (engine.ts refreshPast); closeness of retrieved replies flattens near 100 to 300. */
+export const PAST_TARGET = 1000;
+/** A pair of today counts double, one of this many days ago 1.5 times (similarPairs). */
+export const RECENT_HALF_LIFE_DAYS = 90;
+/** A reply the owner changed by hand counts this much more (similarPairs). */
+export const EDITED_WEIGHT = 1.5;
+/** Habits are measured over the newest replies only (habitsOf). */
+export const HABIT_REPLIES = 300;
 
 const words = (s: string) => s.replace(/\s+/g, " ").trim();
+const norm = (s: string) => words(s).toLowerCase();
 
-export function pastPairs(comments: Comment[], replies: Reply[], source: string, drafts: Draft[] = []): PastPair[] {
-	const bots = new Set(drafts.filter(d => d.status === "sent" && !d.changes.length).map(d => words(d.text)));
+// A bot draft the owner sent unchanged: the reply is the draft, or the platform trimmed it (a prefix of most of it).
+const isBot = (bots: string[], text: string): boolean => bots.some(b => text === b || (b.startsWith(text) && text.length >= b.length * 0.8));
+
+// `rooms`: a site's private messages have no parent: a parentless reply of the owner answers the nearest earlier message of someone else in its thread.
+export function pastPairs(comments: Comment[], replies: Reply[], source: string, drafts: Draft[] = [], rooms = false): PastPair[] {
+	const sent = drafts.filter(d => d.status === "sent");
+	const bots = sent.filter(d => !d.changes.length).map(d => words(d.text));
+	const editedDrafts = new Set(sent.filter(d => d.changes.length).map(d => d.code));
 	const own = comments.filter(c => c.source === source);
 	const byNative = new Map(own.map(c => [c.native, c]));
 	const byId = new Map(own.map(c => [c.id, c]));
 	const out: PastPair[] = [];
+	const pair = (parent: Comment, reply: string, at: number): PastPair => ({ comment: parent.text, reply, at, thread: parent.thread, ...(parent.author ? { from: parent.author } : {}) });
 	for (const c of own) {
-		const parent = c.mine && c.parent ? byNative.get(c.parent) : undefined;
-		if (parent && !parent.mine && c.text.trim() && !bots.has(words(c.text))) out.push({ comment: parent.text, reply: c.text.trim(), at: c.at, thread: c.thread });
+		if (!c.mine || !c.text.trim() || isBot(bots, words(c.text))) continue;
+		const parent = c.parent ? byNative.get(c.parent) : rooms ? own.filter(x => !x.mine && x.thread === c.thread && x.at <= c.at).sort((a, b) => b.at - a.at)[0] : undefined;
+		if (parent && !parent.mine) out.push(pair(parent, c.text.trim(), c.at));
 	}
 	for (const r of replies) {
-		const c = r.state === "sent" && r.source === source && !bots.has(words(r.text)) ? byId.get(r.commentId) : undefined;
-		if (c && !out.some(p => p.reply === r.text.trim() && p.comment === c.text)) out.push({ comment: c.text, reply: r.text.trim(), at: r.at, thread: c.thread });
+		const c = r.state === "sent" && r.source === source && !isBot(bots, words(r.text)) ? byId.get(r.commentId) : undefined;
+		if (!c) continue;
+		const edited = editedDrafts.has(r.draft);
+		const have = out.find(p => p.reply === r.text.trim() && p.comment === c.text);
+		if (have) {
+			if (edited) have.edited = true;
+		} else out.push({ ...pair(c, r.text.trim(), r.at), ...(edited ? { edited: true as const } : {}) });
 	}
 	return out;
+}
+
+export const pairKey = (p: PastPair): string => `${norm(p.reply)}\n${norm(p.comment)}`;
+
+// Pairs of several lists as one, no repeats (same reply and comment, ignoring spacing and case): the newest copy stays and keeps an `edited` mark or a sender any copy had.
+export function mergePast(...lists: PastPair[][]): PastPair[] {
+	const seen = new Map<string, PastPair>();
+	for (const p of lists.flat()) {
+		const k = pairKey(p);
+		const old = seen.get(k);
+		const [a, b] = old && old.at > p.at ? [old, p] : [p, old];
+		seen.set(k, { ...a, ...(b?.edited && !a.edited ? { edited: true as const } : {}), ...(!a.from && b?.from ? { from: b.from } : {}), ...(!a.thread && b?.thread ? { thread: b.thread } : {}) });
+	}
+	return [...seen.values()];
 }
 
 // Character bigrams without addresses and punctuation: works for Korean and English without a tokenizer.
@@ -40,8 +76,9 @@ function grams(s: string): Set<string> {
 	return g;
 }
 
-// The k pairs whose comment reads most like `text` (cosine of bigram sets); a pair under the same post counts a bit more.
-export function similarPairs(text: string, pairs: PastPair[], k = 3, thread?: string): PastPair[] {
+// The k pairs whose comment reads most like `text` (cosine of bigram sets); a recent pair counts up to double (RECENT_HALF_LIFE_DAYS), one the owner
+// edited EDITED_WEIGHT times more, and a pair under the same post a bit more.
+export function similarPairs(text: string, pairs: PastPair[], k = 3, thread?: string, now = Date.now()): PastPair[] {
 	const q = grams(text);
 	if (!q.size) return [];
 	return pairs
@@ -49,7 +86,8 @@ export function similarPairs(text: string, pairs: PastPair[], k = 3, thread?: st
 			const g = grams(p.comment);
 			let n = 0;
 			for (const x of g) if (q.has(x)) n++;
-			return { p, s: g.size ? n / Math.sqrt(g.size * q.size) + (thread && p.thread === thread ? 0.1 : 0) : 0 };
+			const recent = 1 + 0.5 ** (Math.max(0, now - p.at) / 86_400_000 / RECENT_HALF_LIFE_DAYS);
+			return { p, s: g.size ? (n / Math.sqrt(g.size * q.size)) * recent * (p.edited ? EDITED_WEIGHT : 1) + (thread && p.thread === thread ? 0.1 : 0) : 0 };
 		})
 		.filter(x => x.s > 0)
 		.sort((a, b) => b.s - a.s || b.p.at - a.p.at)
@@ -66,9 +104,9 @@ const top = (xs: string[], n = 4): [string, number][] => {
 };
 const shown = (xs: [string, number][]) => xs.map(([x, n]) => `${x} x${n}`).join(", ");
 
-// Measured lines about the replies, with no message text beyond short marks; none under MIN_HABITS replies.
+// Measured lines about the replies (newest first; only the newest HABIT_REPLIES count), with no message text beyond short marks; none under MIN_HABITS replies.
 export function habitsOf(replies: string[]): string[] {
-	const rs = replies.map(r => r.trim()).filter(Boolean);
+	const rs = replies.slice(0, HABIT_REPLIES).map(r => r.trim()).filter(Boolean);
 	if (rs.length < MIN_HABITS) return [];
 	const pct = (n: number) => `${Math.round((100 * n) / rs.length)}%`;
 	const share = (re: RegExp) => rs.filter(r => re.test(r)).length;

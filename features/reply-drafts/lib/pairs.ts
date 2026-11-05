@@ -6,8 +6,9 @@ import { addressesOf, type ReplyStyle } from "../../../hub/reply-draft.ts";
 import { EXAMPLES, similarPairs, withExamples, type PastPair } from "../../../hub/comments/past.ts";
 import { paths, writeAtomic } from "./settings.ts";
 
-/** `from`: the address of the person the reply went to (absent in pairs stored before it was kept). `source`: the mail source whose sent folder it came from (a mail site, a plugin); absent = zele. */
-export type Pair = { received: string; reply: string; at: number; from?: string; source?: string };
+/** `from`: the address of the person the reply went to (absent in pairs stored before it was kept). `source`: the mail source whose sent folder it came from (a mail site, a plugin); absent = zele (comment pairs have their own file per source, so no tag).
+ * `edited`: the user changed the draft by hand before sending. `thread`: the post a comment pair sits under. */
+export type Pair = { received: string; reply: string; at: number; from?: string; source?: string; edited?: true; thread?: string };
 
 export const MAX_PAIRS = 1000;
 
@@ -22,7 +23,7 @@ export function loadPairs(app: string): Pair[] {
 		if (!line.trim()) continue;
 		try {
 			const p = JSON.parse(line);
-			if (p && typeof p.received === "string" && typeof p.reply === "string" && typeof p.at === "number" && p.reply.trim()) out.push({ received: p.received, reply: p.reply, at: p.at, ...(typeof p.from === "string" && p.from ? { from: p.from } : {}), ...(typeof p.source === "string" && p.source ? { source: p.source } : {}) });
+			if (p && typeof p.received === "string" && typeof p.reply === "string" && typeof p.at === "number" && p.reply.trim()) out.push({ received: p.received, reply: p.reply, at: p.at, ...(typeof p.from === "string" && p.from ? { from: p.from } : {}), ...(typeof p.source === "string" && p.source ? { source: p.source } : {}), ...(p.edited === true ? { edited: true as const } : {}), ...(typeof p.thread === "string" && p.thread ? { thread: p.thread } : {}) });
 		} catch {
 			unreadable++;
 		}
@@ -31,7 +32,7 @@ export function loadPairs(app: string): Pair[] {
 	return out;
 }
 
-// Deduped by reply + received (the newest of a repeat stays, but takes the sender from a copy that has one, so a re-read upgrades an old pair),
+// Deduped by reply + received (the newest of a repeat stays, but takes the sender, the edited mark and the post from a copy that has one, so a re-read upgrades an old pair and never drops a mark),
 // the newest MAX_PAIRS of each source kept (a big sent folder of one source never pushes out another's), oldest first.
 export function savePairs(app: string, pairs: Pair[]): void {
 	const seen = new Map<string, Pair>();
@@ -39,7 +40,7 @@ export function savePairs(app: string, pairs: Pair[]): void {
 		const k = `${p.source ?? ""}\n${normText(p.reply)}\n${normText(p.received)}`;
 		const before = seen.get(k);
 		if (!before) seen.set(k, p);
-		else if (!before.from && p.from) seen.set(k, { ...before, from: p.from });
+		else seen.set(k, { ...before, ...(!before.from && p.from ? { from: p.from } : {}), ...(!before.edited && p.edited ? { edited: true as const } : {}), ...(!before.thread && p.thread ? { thread: p.thread } : {}) });
 	}
 	const count = new Map<string, number>();
 	const kept = [...seen.values()].filter(p => {
@@ -57,8 +58,8 @@ export const addPair = (app: string, pair: Pair): void => savePairs(app, [...loa
 export function styleWithExamples(style: ReplyStyle, app: string, text: string, from?: string, source?: string): ReplyStyle {
 	const pairs = loadPairs(app).filter(p => source === undefined || (p.source ?? "zele") === source);
 	const who = addressesOf(from)[0];
-	const past: PastPair[] = pairs.map(p => ({ comment: p.received, reply: p.reply, at: p.at, thread: "", ...(who && p.from && addressesOf(p.from)[0] === who ? { same: true } : {}) }));
+	const past: PastPair[] = pairs.map(p => ({ comment: p.received, reply: p.reply, at: p.at, thread: "", ...(p.edited ? { edited: true as const } : {}), ...(who && p.from && addressesOf(p.from)[0] === who ? { same: true } : {}) }));
 	const same = past.filter(p => p.same).sort((a, b) => b.at - a.at).slice(0, 2);
 	const close = [...same, ...similarPairs(text, past.filter(p => !same.includes(p)), EXAMPLES)].slice(0, EXAMPLES);
-	return withExamples(style, close, pairs.map(p => p.reply));
+	return withExamples(style, close, [...pairs].sort((a, b) => b.at - a.at).map(p => p.reply));
 }

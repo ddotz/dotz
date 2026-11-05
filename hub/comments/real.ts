@@ -2,11 +2,12 @@
 // profiles of features/reply-drafts, and the one subscription-only model call. The gateway and the watch/onboard scripts build the engine here.
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
-import { loadStyle, recordCorrection } from "../../features/reply-drafts/lib/settings.ts";
+import { loadPairs, savePairs } from "../../features/reply-drafts/lib/pairs.ts";
+import { loadStyle, markLearned, readLearned, recordCorrection } from "../../features/reply-drafts/lib/settings.ts";
 import { loadConfig, realCtx } from "../../features/youtube-instagram/lib/config.ts";
-import { commentsFor, commentsRead, mediaWithCounts, replyAuthor, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
+import { commentsFor, commentsRead, mediaHistory, mediaWithCounts, replyAuthor, reply as igReply } from "../../features/youtube-instagram/lib/instagram.ts";
 import { readCommentsSince } from "../../features/youtube-instagram/lib/yt-read.ts";
-import { ownReplies, recentUploads, replyToComment, threadsByIds, videoInfos } from "../../features/youtube-instagram/lib/youtube.ts";
+import { ownerHistory, ownReplies, recentUploads, replyToComment, threadsByIds, videoInfos } from "../../features/youtube-instagram/lib/youtube.ts";
 import { appBase, appEntries, commentOwner } from "../integrations.ts";
 import { featureEnabled } from "../app-feature-flags.ts";
 import { callReplyModel } from "../reply-model.ts";
@@ -57,6 +58,17 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 		...(opts.sent ? { sent: opts.sent } : {}),
 		style: src => loadStyle({ app: src.key }),
 		learn: (src, change) => recordCorrection({ app: src.key }, change, new Date()),
+		// The past pairs of a source live in the reply-drafts pair file of its key (a comment pair carries no `source` tag): comment <-> received, author <-> from.
+		pairs: {
+			load: key => loadPairs(key).map(p => ({ comment: p.received, reply: p.reply, at: p.at, thread: p.thread ?? "", ...(p.from ? { from: p.from } : {}), ...(p.edited ? { edited: true as const } : {}) })),
+			save: (key, list) => savePairs(key, list.map(p => ({ received: p.comment, reply: p.reply, at: p.at, ...(p.from ? { from: p.from } : {}), ...(p.thread ? { thread: p.thread } : {}), ...(p.edited ? { edited: true as const } : {}) }))),
+		},
+		learned: { read: readLearned, mark: markLearned },
+		// Loaded on first use, like mailMatch: persona.ts pulls in the mail tone code.
+		identity: async (src, replies, where, call, now) => {
+			const [{ COMMENT_TONE_VERSION, learnFirst }, { SWEEP_LIMIT }] = await Promise.all([import("../../features/reply-drafts/lib/persona.ts"), import("../../features/reply-drafts/lib/tone.ts")]);
+			return learnFirst({ app: src.key }, async () => replies.slice(0, SWEEP_LIMIT), where, call, now, COMMENT_TONE_VERSION);
+		},
 		adapters: {
 			youtube: youtubeAdapter(() => ({
 				channelId: () => requireYoutube().channel_id,
@@ -66,6 +78,7 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 				videos: ids => videoInfos(realCtx(), ids),
 				reply: (parent, text) => replyToComment(realCtx(), parent, text),
 				ownReplies: (id, limit) => ownReplies(realCtx(), id, limit),
+				history: (id, opts) => ownerHistory(realCtx(), id, opts),
 			})),
 			instagram: instagramAdapter(() => ({
 				username: () => requireInstagram().username,
@@ -74,6 +87,7 @@ export function realEngine(dataDir: string, opts: { broadcast?: (e: Record<strin
 				comments: id => commentsFor(realCtx(), id),
 				read: id => commentsRead(realCtx(), id),
 				author: id => replyAuthor(realCtx(), id),
+				mediaHistory: () => mediaHistory(realCtx()),
 				authorCache: { get: id => authors.authors()[id], put: e => authors.putAuthors(e) },
 				reply: (id, text) => igReply(realCtx(), id, text),
 			})),

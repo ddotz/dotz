@@ -144,6 +144,14 @@ test("the prompt keeps received text as data and carries the user's samples, cor
 	expect(addressesOf("Kim <KIM@example.com>, lee@example.com")).toEqual(["kim@example.com", "lee@example.com"]);
 });
 
+test("mail and comment prompts list the newest 12 corrections newest first; the chat prompt keeps all of them in their order", () => {
+	const corrections = Array.from({ length: 15 }, (_, i) => `c${String(i).padStart(2, "0")}`);
+	const listed = (user: string) => [...user.matchAll(/^- (c\d\d)$/gm)].map(m => m[1]);
+	expect(listed(buildPrompt(item, { ...style, corrections }).user)).toEqual(corrections.slice(-12).reverse());
+	expect(listed(buildPrompt({ ...item, kind: "comment", from: "viewer" }, { ...style, corrections }).user)).toEqual(corrections.slice(-12).reverse());
+	expect(listed(buildPrompt({ ...item, kind: "chat" }, { ...style, corrections }).user)).toEqual(corrections);
+});
+
 test("a reply the user asked for himself (초안 작성) is never a skip: the prompt says so and a skip is sent back once", async () => {
 	const m = fake([j({ action: "skip", reason: "newsletter" }), j(good)]);
 	const r = await generateReply({ ...item, requested: true }, style, m.call);
